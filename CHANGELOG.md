@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rows of one repo (frontend + backend) stay together; the later ones say "same changes as the row above" instead of repeating commits, oldest commit and open PRs.
 - Fixed: costs, budget and provider outages refresh while the app runs (menu bar), not only at start; status feeds load in parallel.
 - Fixed: the site check no longer holds a build slot of the queue.
 - Fixed: after a deploy run the lists reload; a running deploy on one platform no longer pauses the other.
