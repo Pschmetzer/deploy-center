@@ -614,11 +614,6 @@ BASH
   "vercel cancel")
     vercel api "$(with_team "/v12/deployments/${3:?deployment id}/cancel")" --method PATCH >/dev/null 2>&1 || die "Vercel: could not cancel ${3}"
     echo '{"state":"CANCELED"}' ;;
-  "vercel promote")
-    # A finished preview goes live as it is, without building again.
-    vercel api "$(with_team "/v10/projects/${3:?project}/promote/${4:?deployment id}")" --method POST >/dev/null 2>&1 \
-      || die "Vercel: could not promote ${4} on ${3}"
-    echo "{\"id\":\"${4}\",\"state\":\"READY\"}" ;;
   "vercel status")
     vercel_call "/v13/deployments/${3:?deployment id}" \
       | jq '{id, url:("https://" + .url), state:(.readyState // .status), error:(.errorMessage // null)}' ;;
@@ -632,7 +627,9 @@ BASH
       | jq -r --arg cur "$cur" '.deployments as $d | ($d | map(.uid) | index($cur)) as $i
           | if $i == null then ($d[1].uid // empty) else ($d[$i+1].uid // empty) end')"
     [ -n "$prev" ] || die "No earlier production deployment of $p to roll back to"
-    vercel api "$(with_team "/v1/projects/$p/rollback/$prev")" --method POST >/dev/null 2>&1 || die "Vercel: rollback of $p failed"
+    # The project's id, not its name: Vercel answers 404 to a name on these endpoints.
+    pid="$(vercel_call "/v9/projects/$p" | jq -r '.id // empty')"
+    vercel api "$(with_team "/v1/projects/${pid:-$p}/rollback/$prev")" --method POST >/dev/null 2>&1 || die "Vercel: rollback of $p failed"
     echo "{\"id\":\"$prev\",\"state\":\"READY\"}" ;;
   "vercel team")
     if [ -n "${3:-}" ]; then printf '%s' "$3" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $3"; else vercel_team; echo; fi ;;

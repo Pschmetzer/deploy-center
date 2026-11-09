@@ -23,7 +23,6 @@ struct ContentView: View {
     @State private var noteItem: Item?
     @State private var noteText = ""
     @State private var logItem: Item?
-    @State private var promoteItem: Item?
 
     /// The platforms the list shows: one tab, or both under "All".
     private var scopes: [Platform] { showAll ? Platform.allCases : [platform] }
@@ -113,14 +112,6 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.2), value: store.toast)
         .sheet(item: $logItem) { item in BuildLog(item: item) }
         .sheet(item: $detailItem) { item in ProjectDetail(item: item) { sha in store.deployOne(item, preview: false, sha: sha) } }
-        .alert(L("Make the preview live?", "Vorschau live schalten?"),
-               isPresented: Binding(get: { promoteItem != nil }, set: { if !$0 { promoteItem = nil } })) {
-            Button(L("Cancel", "Abbrechen"), role: .cancel) { promoteItem = nil }
-            Button(L("Make live", "Live schalten")) { if let i = promoteItem { store.promote(i) }; promoteItem = nil }
-        } message: {
-            Text(L("\(promoteItem?.name ?? "")'s finished preview becomes production. Nothing is built again.",
-                   "Die fertige Vorschau von \(promoteItem?.name ?? "") wird live. Es wird nichts neu gebaut."))
-        }
         .onChange(of: store.pendingDeployAll) { _, go in
             guard go else { return }
             store.pendingDeployAll = false
@@ -402,7 +393,6 @@ struct ContentView: View {
                     showLog: { logItem = item },
                     onCancel: { store.cancel(item) },
                     onRetry: item.deployable ? { store.deployOne(item, preview: false) } : nil,
-                    onPromote: item.platform == .vercel ? { promoteItem = item } : nil,
                     usualMinutes: store.usualMinutes(item), search: search) { tick(item) }
                     .contextMenu {
                         if item.repo != nil {
@@ -594,7 +584,6 @@ struct Row: View {
     var showLog: (() -> Void)? = nil
     var onCancel: (() -> Void)? = nil
     var onRetry: (() -> Void)? = nil
-    var onPromote: (() -> Void)? = nil
     var usualMinutes: Int? = nil
     var search = ""
     let toggle: () -> Void
@@ -768,10 +757,6 @@ struct Row: View {
                             label: { Image(systemName: "link") }
                             .buttonStyle(.borderless).help(L("Copy the preview link", "Vorschau-Link kopieren"))
                     }
-                }
-                if item.previewId != nil, let onPromote {
-                    Button(L("Make live", "Live schalten"), action: onPromote).controlSize(.small)
-                        .help(L("This preview goes live as it is, without another build", "Diese Vorschau geht so live, wie sie ist, ohne neuen Build"))
                 }
             }
         case .skipped(let msg):

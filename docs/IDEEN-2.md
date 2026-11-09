@@ -51,7 +51,7 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 37. ✅ **Nach dem Deploy prüfen:** die Seite aufrufen und HTTP 200 sowie die erwartete Commit-Kennung (falls ausgeliefert) bestätigen.
 38. ✅ (ungetestet: startet echte Builds) **Bestimmten Commit deployen** (Rechtsklick → Liste der letzten 10 Commits).
 39. ✅ (ungetestet: startet echte Builds) **Vercel-Vorschau als Link zum Teilen** kopieren, sobald fertig.
-40. ✅ (ungetestet: startet echte Builds) **Production-Beförderung:** eine fertige Vorschau per Klick live schalten (`promote`), statt neu zu bauen. Spart einen Build.
+40. ✗ (getestet: Vercel lehnt das Befördern einer Vorschau ab, 422; entfernt) **Production-Beförderung:** eine fertige Vorschau per Klick live schalten (`promote`), statt neu zu bauen. Spart einen Build.
 41. ✅ (ungetestet: startet echte Builds) **Render: „Cache leeren und deployen“** als Option (`clearCache: clear`).
 42. ✅ (ungetestet: startet echte Builds) **Sperre gegen Doppelklick über Prozesse hinweg:** App und Skript schreiben eine kleine Sperrdatei pro Projekt, solange ein Deploy startet.
 43. ✅ (ungetestet: startet echte Builds) **Dauer pro Deploy merken** und beim nächsten Mal eine Schätzung zeigen („dauert meist 3 Min“).

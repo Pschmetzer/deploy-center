@@ -387,16 +387,6 @@ final class Store: ObservableObject {
         }
     }
 
-    /// A finished Vercel preview goes live without another build.
-    func promote(_ item: Item) {
-        guard let pid = itemNow(item)?.previewId else { return }
-        Task {
-            set(item.platform, item.id, .starting)
-            do { _ = try await Tool.run(["vercel", "promote", item.id, pid]); clearPreview(item); set(item.platform, item.id, .done(item.link)) }
-            catch { set(item.platform, item.id, .failed(error.localizedDescription)) }
-        }
-    }
-
     // MARK: The daily reminder: a notification at the chosen hour when something waits.
     // It reminds; it never deploys by itself.
 
