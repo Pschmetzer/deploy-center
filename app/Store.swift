@@ -26,6 +26,7 @@ final class Store: ObservableObject {
             costs = try? await Tool.json(["costs", "14"], as: Costs.self)
             checkBudget()
         }
+        Task { await checkProviders() }
         triggers = (try? await Tool.json(["triggers"], as: [Trigger].self)) ?? []
         if doctor?.githubLoggedIn == true {
             githubBudget = try? await Tool.json(["github-budget"], as: Budget.self)
@@ -66,6 +67,23 @@ final class Store: ObservableObject {
         let m = month.formatted(.currency(code: "USD")), b = budget.formatted(.currency(code: "USD"))
         say(L("Build costs near your budget", "Build-Kosten nahe am Budget"),
             L("At this pace ≈ \(m) a month, budget \(b)", "Bei diesem Tempo ≈ \(m) im Monat, Budget \(b)"), ok: false)
+    }
+
+    /// Outages at Vercel, Render and GitHub: a failing deploy may not be the project's fault.
+    @Published var providerIssues: [String] = []
+    func checkProviders() async {
+        let feeds = [("Vercel", "https://www.vercel-status.com/api/v2/status.json"),
+                     ("Render", "https://status.render.com/api/v2/status.json"),
+                     ("GitHub", "https://www.githubstatus.com/api/v2/status.json")]
+        var issues: [String] = []
+        for (name, link) in feeds {
+            guard let url = URL(string: link),
+                  let (data, _) = try? await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 10)),
+                  let st = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["status"] as? [String: Any],
+                  let indicator = st["indicator"] as? String, indicator != "none" else { continue }
+            issues.append("\(name): \(st["description"] as? String ?? indicator)")
+        }
+        providerIssues = issues
     }
 
     func buildCost(_ project: String) -> Double? {
@@ -304,6 +322,13 @@ final class Store: ObservableObject {
             items[p]![i].changed = false; items[p]![i].pendingCommits = 0; items[p]![i].pendingPRs = 0
         }
         let name = items[p]![i].name
+        let took = items[p]![i].startedAt.map { Date().timeIntervalSince($0) }
+        switch s {
+        case .done: Journal.append(JournalEntry(platform: p.rawValue, name: name, result: countsAsLive ? "live" : "other", seconds: took, detail: nil))
+        case .failed(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "failed", seconds: took, detail: m))
+        case .skipped(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "skipped", seconds: took, detail: m))
+        default: break
+        }
         switch s {
         case .done: say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true)
         case .failed(let m): say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false)

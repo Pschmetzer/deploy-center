@@ -20,6 +20,9 @@
 - Hiding a project can be undone from the message; hidden projects are listed in Settings, one by one.
 - A bell in the footer lists the latest messages; queued rows say "place 2 of 5".
 - Settings: warn when commits wait longer than N days; "Copy diagnostics" (versions only, no names or keys).
+- Deploy history (clock in the footer): every ended deploy with duration, "n of the last 10 failed", CSV copy.
+- A banner when Vercel, Render or GitHub report a problem on their status pages; an empty state for accounts without projects.
+- A build that takes twice as long as usual turns orange. `deploys status --watch`. Docs: security, contributing, launchd and deploy-on-label examples.
 - `deploys diff <project>` and `deploys notes <project>` (release notes in Markdown).
 
 ## 0.5.0

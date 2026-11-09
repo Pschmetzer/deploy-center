@@ -24,6 +24,7 @@ struct ContentView: View {
     @AppStorage("showAll") private var showAll = false
     @State private var pathItem: Item?
     @State private var showMessages = false
+    @State private var showJournal = false
     @State private var pathText = ""
     @State private var noteItem: Item?
     @State private var noteText = ""
@@ -92,6 +93,7 @@ struct ContentView: View {
                 .padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue.opacity(0.06))
             }
             triggerBanner
+            providerBanner
             autoBanner
             waitingBar
             githubBanner
@@ -120,6 +122,7 @@ struct ContentView: View {
         }
         .animation(.easeOut(duration: 0.2), value: store.toast)
         .sheet(item: $logItem) { item in BuildLog(item: item) }
+        .sheet(isPresented: $showJournal) { JournalView() }
         .sheet(item: $detailItem) { item in ProjectDetail(item: item) { sha in store.deployOne(item, preview: false, sha: sha) } }
         .onChange(of: store.pendingDeployAll) { _, go in
             guard go else { return }
@@ -252,6 +255,19 @@ struct ContentView: View {
                 Spacer()
             }
             .padding(12).background(Color.red.opacity(0.1))
+        }
+    }
+
+    /// A status page of Vercel, Render or GitHub reports a problem.
+    @ViewBuilder private var providerBanner: some View {
+        if !store.providerIssues.isEmpty {
+            HStack(spacing: 10) {
+                Image(systemName: "bolt.horizontal.circle.fill").foregroundStyle(.orange)
+                Text(L("Problem at the provider: ", "Störung beim Anbieter: ") + store.providerIssues.joined(separator: " · "))
+                    .font(.caption).textSelection(.enabled)
+                Spacer()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
         }
     }
 
@@ -406,6 +422,14 @@ struct ContentView: View {
                     .font(.headline)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if visible.isEmpty {
+            VStack(spacing: 8) {
+                Image(systemName: "tray").font(.system(size: 34)).foregroundStyle(.secondary)
+                Text(L("No projects here", "Keine Projekte hier")).font(.headline)
+                Text(L("This account has none on \(platform.rawValue), or all are hidden.", "Dieses Konto hat hier keine bei \(platform.rawValue), oder alle sind ausgeblendet."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             List(visible) { item in
                 Row(item: item, cost: item.platform == .vercel ? store.buildCost(item.name) : nil,
@@ -468,6 +492,8 @@ struct ContentView: View {
                             : L("\(count) selected", "\(count) ausgewählt"))
                 .foregroundStyle(.secondary)
             Spacer()
+            Button { showJournal = true } label: { Image(systemName: "clock.arrow.circlepath") }
+                .buttonStyle(.borderless).help(L("Deploy history", "Deploy-Verlauf"))
             if !store.messages.isEmpty {
                 Button { showMessages.toggle() } label: { Image(systemName: "bell") }
                     .buttonStyle(.borderless).help(L("Latest messages", "Letzte Meldungen"))
@@ -787,6 +813,8 @@ struct Row: View {
                         Text("\(s) · \(secs / 60):\(String(format: "%02d", secs % 60))"
                              + (usualMinutes.map { L(" (usually ~\($0) min)", " (meist ~\($0) Min)") } ?? ""))
                             .font(.caption.monospacedDigit())
+                            // Twice as long as usual: something may be stuck.
+                            .foregroundStyle(usualMinutes.map { secs > 120 * $0 } == true ? Color.orange : Color.primary)
                     }
                 } else { Text(s).font(.caption) }
                 cancelButton

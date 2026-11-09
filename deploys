@@ -27,6 +27,8 @@
 #   deploys render deploy <service>           deploy the newest commit
 #   deploys render set-key                    store the Render API key (read from stdin)
 #
+# Exit codes: 0 done (also "nothing to deploy"), 1 an error or something failed to start.
+#
 # Config lives in ${DEPLOYS_CONFIG:-~/.config/deploys}:
 #   vercel-repos.json  which repo/branch each Vercel project deploys from
 #   vercel-team        team id (auto-detected; empty for a personal account)
@@ -380,6 +382,7 @@ case "${1:-} ${2:-}" in
     github_budget ;;
 
   "status "*)
+    if [ "${2:-}" = "--watch" ]; then while :; do clear; "$0" status; sleep 10; done; fi
     # What is building right now, on both platforms, and what the newest attempt said.
     t="$(mktemp -d)"
     ( "$0" vercel json 2>/dev/null | jq 'map(. + {platform:"vercel"})' > "$t/v.json" || echo '[]' > "$t/v.json" ) &
@@ -734,5 +737,5 @@ BASH
     with_heads "$list" ;;
 
   *)
-    sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

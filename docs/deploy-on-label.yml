@@ -1,0 +1,13 @@
+# Example: deploy by label instead of on every push (copy to .github/workflows/ in YOUR app's repo).
+# A merged PR with the label "deploy" triggers one build; other merges cost nothing.
+name: Deploy on label
+on:
+  pull_request:
+    types: [closed]
+jobs:
+  deploy:
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'deploy')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the Render deploy hook
+        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
