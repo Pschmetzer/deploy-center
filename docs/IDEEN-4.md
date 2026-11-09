@@ -96,7 +96,7 @@ Keine Projektnamen aus dem Screenshot, weil das Repo öffentlich ist.
 78. **Dunkelmodus:** der orangefarbene Banner „Jeder Push kostet Build-Minuten“ hat im Screenshot gutes Kontrastverhältnis; die graue Zeile „Projekte anhaken, die live gehen sollen“ unten ist kontrastarm. Kontrast prüfen.
 79. **Sprache pro App wählbar,** nicht nur vom System. Nutzer mit englischem Mac, deutschen Projekten (und umgekehrt) wechseln sonst nur per Systemeinstellung.
 80. **Zeitangaben gemischt:** „vor 1 Tag“, „vor 6 Stunden“, „1:05“. Einheitliche Relativzeiten, Tooltip mit exakter Zeit (teils schon da).
-81. **Menüleistensymbol: Zahl der Projekte mit Änderungen,** zusätzlich ein Strich/Punkt wenn Auto-Deploy irgendwo noch an ist (das kostet Geld).
+81. ◐ (Hinweis und Störungen im Menü, kein Symbol-Punkt) **Menüleistensymbol: Zahl der Projekte mit Änderungen,** zusätzlich ein Strich/Punkt wenn Auto-Deploy irgendwo noch an ist (das kostet Geld).
 82. **Fenster merkt sich Scroll-Position** nach einem Neuladen; heute springt die Liste nach oben, wenn die Reihenfolge sich ändert (Sortierung nach Commits verschiebt Zeilen während man klickt). Zeilen während Interaktion nicht umsortieren.
 83. **Tastatur: ↑/↓ Auswahl, Leertaste anhaken, Return Details** (Idee 84 „teilweise“): Fokusring für Zeilen sichtbar machen, VoiceOver-Rotor-Aktionen.
 
