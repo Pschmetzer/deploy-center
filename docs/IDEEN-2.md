@@ -13,7 +13,7 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 5. ✅ **„Alle mit Änderungen anhaken“ bleibt grau, wenn das Laden scheitert.** `fromCache` wird nur bei Erfolg gelöscht; nach einem Netzfehler bleibt der Knopf für immer aus.
 6. ✅ **`vercel deploy` baut auch ohne Änderung.** Weder Skript noch App prüfen `changed` vor einem einzelnen Deploy. Ein Klick auf ein Projekt ohne neuen Commit kostet einen Build für nichts. Hinweis „Nichts Neues – trotzdem bauen?“.
 7. ✅ **Vercel-Rollback nimmt `deployments[1]`**, den zweitneuesten fertigen Production-Deploy. Wurde vorher schon zurückgerollt oder ein älterer Deploy befördert, ist das nicht „der davor“. Die Alias-Zuordnung (`/v2/aliases`) oder `isRollbackCandidate` lesen.
-8. **`build.sh` bricht bei einem Netz-Aussetzer während `notarytool --wait` ab** (passiert am ersten Tag). Die Einreichung läuft bei Apple weiter, aber das Skript vergisst die ID. ID merken und `notarytool wait <id>` wiederholen, danach heften (staple).
+8. ✅ (in release.sh) **`build.sh` bricht bei einem Netz-Aussetzer während `notarytool --wait` ab** (passiert am ersten Tag). Die Einreichung läuft bei Apple weiter, aber das Skript vergisst die ID. ID merken und `notarytool wait <id>` wiederholen, danach heften (staple).
 9. ✅ **Der Pfad der GUI kennt kein nvm/volta/fnm.** `Tool.run` setzt PATH fest auf Homebrew und `~/.local/bin`. Wer `vercel` über nvm installiert hat, sieht „Vercel-CLI fehlt“. Einmal `zsh -lc 'echo $PATH'` lesen und übernehmen.
 10. ✅ **`doctor` prüft nicht, ob `gh` angemeldet ist.** Ohne `gh auth` fehlen alle Zahlen still. Ein Feld `githubLoggedIn` und ein Hinweis in der App.
 11. ✅ **GitHub-Grenze:** Pro Neuladen gehen etwa 3 Aufrufe pro Projekt an GitHub (Kopf, Vergleich, offene PRs). Bei 50 Projekten und alle 15 Minuten sind das rund 600 pro Stunde von 5000. Bei Überschreitung kommt `403` und die Zahlen verschwinden ohne Meldung. Rest-Kontingent lesen und anzeigen; mit ETag / `If-None-Match` abfragen (zählt bei 304 nicht).
@@ -80,7 +80,7 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 60. ✅ **Projekt ausblenden** (Rechtsklick), z. B. alte Projekte; Liste der Ausgeblendeten in den Einstellungen.
 61. ✅ **Favoriten** oben anheften.
 62. ✅ **Eigene Notiz pro Projekt** („erst nach Absprache deployen“).
-63. **Farbe nach Umgebung:** Production rot umrandet, Staging grün.
+63. ✗ (die Listen kennen keine Umgebung, nur Production) **Farbe nach Umgebung:** Production rot umrandet, Staging grün.
 64. ✅ **Menüleiste: Klick auf ein Projekt** öffnet das Fenster gefiltert auf dieses Projekt.
 65. ✅ **Menüleiste: „Alles mit Änderungen deployen …“** mit eigener Bestätigung.
 66. **Dunkel/Hell prüfen**, besonders der blaue Balken und die Logos auf Weiß.
