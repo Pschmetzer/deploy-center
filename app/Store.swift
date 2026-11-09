@@ -118,13 +118,14 @@ final class Store: ObservableObject {
     }
 
     /// A reload keeps what the person did: ticks stay, a deploy being followed keeps its state.
-    private func merge(_ p: Platform, _ fresh: [Item]) {
+    func merge(_ p: Platform, _ fresh: [Item]) {
         let old = Dictionary((items[p] ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         items[p] = fresh.map { n in
             var n = n
             if let o = old[n.id] {
                 n.selected = o.selected && n.deployable
-                if o.state != .idle { n.state = o.state }
+                // A deploy being followed keeps what cancelling, the timer and promoting need.
+                if o.state != .idle { n.state = o.state; n.deployId = o.deployId; n.startedAt = o.startedAt; n.previewId = o.previewId }
             }
             return n
         }
@@ -339,6 +340,9 @@ final class Store: ObservableObject {
     }
 
     private func itemNow(_ i: Item) -> Item? { items[i.platform]?.first { $0.id == i.id } }
+    private func clearPreview(_ i: Item) {
+        if let k = items[i.platform]?.firstIndex(where: { $0.id == i.id }) { items[i.platform]![k].previewId = nil }
+    }
 
     private func pump() {
         while running < maxParallel, let k = queue.firstIndex(where: { waitsFor($0) == nil }) {
@@ -388,7 +392,7 @@ final class Store: ObservableObject {
         guard let pid = itemNow(item)?.previewId else { return }
         Task {
             set(item.platform, item.id, .starting)
-            do { _ = try await Tool.run(["vercel", "promote", item.id, pid]); set(item.platform, item.id, .done(item.link)) }
+            do { _ = try await Tool.run(["vercel", "promote", item.id, pid]); clearPreview(item); set(item.platform, item.id, .done(item.link)) }
             catch { set(item.platform, item.id, .failed(error.localizedDescription)) }
         }
     }
@@ -428,6 +432,7 @@ final class Store: ObservableObject {
     /// Production back to what was live before.
     func rollback(_ item: Item) {
         Notify.ask()
+        clearPreview(item)
         Task {
             let p = item.platform
             set(p, item.id, .starting)
@@ -444,6 +449,7 @@ final class Store: ObservableObject {
         if p == .render { queueBatch.insert(item.id) }
         set(p, item.id, .starting)
         cancelled.remove(item.id)
+        clearPreview(item)   // an older preview must not be promoted over what this deploy brings
         do {
             var args = [p.cli, "deploy-json", item.id]
             if job.preview { args.append("--preview") }

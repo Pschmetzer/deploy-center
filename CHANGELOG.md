@@ -9,6 +9,7 @@
 - A deploy queue (at most N builds at once), a backend before the frontend of the same repo,
   cancel, retry, deploy up to a chosen commit, Render with a cleared cache, make a finished
   Vercel preview live without another build, a lock against starting a project twice.
+  These start real builds and have not been run against Vercel or Render yet.
 - A daily reminder at a chosen hour (it never deploys by itself); search marks; Shift-click ranges.
 - The code is split into a few files; tests for the script and the app.
 - Project details: the waiting commits with their PRs, files changed, files worth a look

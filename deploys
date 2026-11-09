@@ -122,8 +122,9 @@ vercel_off() {
   echo "Vercel: $p no longer deploys on push"
 }
 
-# A start that is already under way for the same project is refused, across the app and the
-# terminal: two quick clicks, or the app and a script at once, would pay for two builds.
+# A second start of the same project within a minute of a successful one is refused, across the
+# app and the terminal: two quick clicks, or the app and a script at once, would pay for two
+# builds. The lock ages out after a minute; a start that failed removes it at once.
 start_lock() {
   local d="$CONFIG_DIR/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
   if [ -f "$f" ] && [ $(( $(date +%s) - $(stat -f %m "$f") )) -lt 60 ]; then die "$1 is being started already (wait a minute)"; fi
@@ -133,17 +134,17 @@ start_lock() {
 vercel_deploy_json() {
   local target="$1" preview="${2:-}" sha="${3:-}" body out lock
   jq -e --arg p "$target" 'has($p)' "$REPOS" >/dev/null || die "$target has no remembered repo. Turn its auto-deploy off with this tool, or add it to $REPOS"
-  lock="$(start_lock "vercel-$target")"
-  body="$(mktemp)"; trap 'rm -f "$body" "$lock"' RETURN
+  lock="$(start_lock "vercel-$target")" || exit 1
+  body="$(mktemp)"; trap 'rm -f "$body"' RETURN
   jq --arg p "$target" --arg prev "$preview" --arg sha "$sha" '.[$p] as $r | {name:$p, project:$p}
     + (if $prev == "" then {target:"production"} else {} end)
     + {gitSource:({type:"github", ref:$r.ref} + (if $r.repoId then {repoId:$r.repoId} else {org:$r.org, repo:$r.repo} end)
                   + (if $sha != "" then {sha:$sha} else {} end))}' "$REPOS" > "$body"
   local errf; errf="$(mktemp)"
   out="$(vercel api "$(with_team /v13/deployments)" --method POST --input "$body" 2>"$errf")" \
-    || { local e; e="$(tail -c 400 "$errf")"; rm -f "$errf"; die "Vercel: $e $(echo "$out" | jq -r '.error.message // empty' 2>/dev/null)"; }
+    || { local e; e="$(tail -c 400 "$errf")"; rm -f "$errf" "$lock"; die "Vercel: $e $(echo "$out" | jq -r '.error.message // empty' 2>/dev/null)"; }
   rm -f "$errf"
-  echo "$out" | jq -e '.id' >/dev/null 2>&1 || die "Vercel: $(echo "$out" | head -c 400)"
+  echo "$out" | jq -e '.id' >/dev/null 2>&1 || { rm -f "$lock"; die "Vercel: $(echo "$out" | head -c 400)"; }
   echo "$out" | jq '{id, url:("https://" + .url), state:(.readyState // .status)}'
 }
 
@@ -675,9 +676,10 @@ BASH
     # deploy-json <service> [--sha <commit>] [--clear-cache]
     id="$(render_id_of "${3:?service}")"; sha=""; cc=""; shift 3 || true
     while [ $# -gt 0 ]; do case "$1" in --sha) sha="${2:?commit}"; shift;; --clear-cache) cc=1;; esac; shift; done
-    lock="$(start_lock "render-$id")"; trap 'rm -f "$lock"' EXIT
+    lock="$(start_lock "render-$id")" || exit 1
     body="$(jq -nc --arg sha "$sha" --arg cc "$cc" '(if $sha != "" then {commitId:$sha} else {} end) + (if $cc != "" then {clearCache:"clear"} else {} end)')"
-    render_call POST "/services/$id/deploys" "$body" | jq --arg s "$id" '{id, serviceId:$s, state:.status}' ;;
+    out="$(render_call POST "/services/$id/deploys" "$body")" || { rm -f "$lock"; exit 1; }
+    echo "$out" | jq --arg s "$id" '{id, serviceId:$s, state:.status}' ;;
   "render cancel")
     render_call POST "/services/${3:?service id}/deploys/${4:?deploy id}/cancel" '{}' | jq '{id, state:.status}' ;;
   "render rollback")

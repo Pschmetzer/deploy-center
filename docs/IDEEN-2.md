@@ -42,19 +42,19 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 
 ## C. Deployen
 
-31. ✅ ★ **Warteschlange mit Grenze:** höchstens N Builds gleichzeitig (Vercel-Tarif-Grenze), der Rest wartet sichtbar „in der Schlange“.
-32. ✅ ★ **Reihenfolge in Gruppen:** Backend (Render) zuerst, erst wenn es live ist, das Frontend (Vercel).
+31. ✅ (ungetestet: startet echte Builds) ★ **Warteschlange mit Grenze:** höchstens N Builds gleichzeitig (Vercel-Tarif-Grenze), der Rest wartet sichtbar „in der Schlange“.
+32. ✅ (ungetestet: startet echte Builds) ★ **Reihenfolge in Gruppen:** Backend (Render) zuerst, erst wenn es live ist, das Frontend (Vercel).
 33. ✅ **Täglicher Deploy zur festen Zeit**, nur wenn ein Häkchen gesetzt ist und nur Projekte mit grünem CI. Mit Mitteilung und Bestätigung per Klick statt ganz automatisch.
-34. ✅ **Deploy abbrechen**, solange er baut (Vercel `PATCH …/cancel`, Render `POST …/cancel`).
+34. ✅ (ungetestet: startet echte Builds) **Deploy abbrechen**, solange er baut (Vercel `PATCH …/cancel`, Render `POST …/cancel`).
 35. ✅ **Build-Log in der App** (letzte 200 Zeilen) beim Fehler, statt nur der Fehlermeldung.
-36. ✅ **„Erneut versuchen“** direkt am gescheiterten Projekt.
+36. ✅ (ungetestet: startet echte Builds) **„Erneut versuchen“** direkt am gescheiterten Projekt.
 37. ✅ **Nach dem Deploy prüfen:** die Seite aufrufen und HTTP 200 sowie die erwartete Commit-Kennung (falls ausgeliefert) bestätigen.
-38. ✅ **Bestimmten Commit deployen** (Rechtsklick → Liste der letzten 10 Commits).
-39. ✅ **Vercel-Vorschau als Link zum Teilen** kopieren, sobald fertig.
-40. ✅ **Production-Beförderung:** eine fertige Vorschau per Klick live schalten (`promote`), statt neu zu bauen. Spart einen Build.
-41. ✅ **Render: „Cache leeren und deployen“** als Option (`clearCache: clear`).
-42. ✅ **Sperre gegen Doppelklick über Prozesse hinweg:** App und Skript schreiben eine kleine Sperrdatei pro Projekt, solange ein Deploy startet.
-43. ✅ **Dauer pro Deploy merken** und beim nächsten Mal eine Schätzung zeigen („dauert meist 3 Min“).
+38. ✅ (ungetestet: startet echte Builds) **Bestimmten Commit deployen** (Rechtsklick → Liste der letzten 10 Commits).
+39. ✅ (ungetestet: startet echte Builds) **Vercel-Vorschau als Link zum Teilen** kopieren, sobald fertig.
+40. ✅ (ungetestet: startet echte Builds) **Production-Beförderung:** eine fertige Vorschau per Klick live schalten (`promote`), statt neu zu bauen. Spart einen Build.
+41. ✅ (ungetestet: startet echte Builds) **Render: „Cache leeren und deployen“** als Option (`clearCache: clear`).
+42. ✅ (ungetestet: startet echte Builds) **Sperre gegen Doppelklick über Prozesse hinweg:** App und Skript schreiben eine kleine Sperrdatei pro Projekt, solange ein Deploy startet.
+43. ✅ (ungetestet: startet echte Builds) **Dauer pro Deploy merken** und beim nächsten Mal eine Schätzung zeigen („dauert meist 3 Min“).
 
 ## D. Kosten
 
@@ -82,7 +82,7 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 62. ✅ **Eigene Notiz pro Projekt** („erst nach Absprache deployen“).
 63. ✗ (die Listen kennen keine Umgebung, nur Production) **Farbe nach Umgebung:** Production rot umrandet, Staging grün.
 64. ✅ **Menüleiste: Klick auf ein Projekt** öffnet das Fenster gefiltert auf dieses Projekt.
-65. ✅ **Menüleiste: „Alles mit Änderungen deployen …“** mit eigener Bestätigung.
+65. ✅ (ungetestet: startet echte Builds) **Menüleiste: „Alles mit Änderungen deployen …“** mit eigener Bestätigung.
 66. **Dunkel/Hell prüfen**, besonders der blaue Balken und die Logos auf Weiß.
 67. ✅ **Logos mit transparentem Rand** passend hinterlegen (Bildhelligkeit messen).
 68. ✅ **Zeilen-Tooltip mit Commit-Nachricht des Live-Stands** neben der neuesten.

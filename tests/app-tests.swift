@@ -61,5 +61,21 @@ expect("white on clear", image(.white, clear: true).isLightOnClear, true)
 expect("white on blue", image(.white, clear: false).isLightOnClear, false)
 expect("black on clear", image(.black, clear: true).isLightOnClear, false)
 
+// A reload while a deploy is followed keeps what cancelling, the timer and promoting need.
+MainActor.assumeIsolated {
+    let store = Store()
+    var running = item(); running.state = .running("building"); running.deployId = "dpl_1"; running.startedAt = Date(timeIntervalSince1970: 5); running.selected = false
+    store.items[.vercel] = [running]
+    store.merge(.vercel, [item()])
+    let after = store.items[.vercel]![0]
+    expect("reload keeps the deploy id", after.deployId ?? "nil", "dpl_1")
+    expect("reload keeps the start time", after.startedAt?.timeIntervalSince1970 ?? 0, 5.0)
+    expect("reload keeps the state", after.state.isActive, true)
+    var idle = item(); idle.deployId = "old"
+    store.items[.vercel] = [idle]
+    store.merge(.vercel, [item()])
+    expect("an idle row takes the fresh data", store.items[.vercel]![0].deployId ?? "nil", "nil")
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
