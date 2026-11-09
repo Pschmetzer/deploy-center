@@ -1,0 +1,279 @@
+#!/bin/bash
+# deploys — turn off auto-deploy on Vercel and Render, then deploy by hand.
+#
+# Why: every git push builds every project. Build minutes cost money.
+# Deploying once a day by hand costs a fraction.
+#
+# Access:
+#   Vercel  the `vercel` CLI login on this Mac (`vercel login`).
+#   Render  an API key in the macOS keychain (`deploys render set-key`, reads stdin).
+# No key is ever printed.
+#
+# Commands:
+#   deploys doctor                            check tools and access (JSON)
+#   deploys vercel list                       projects and whether a push still deploys them
+#   deploys vercel autodeploy-off <p>|--all   disconnect Git (remembers the repo first)
+#   deploys vercel deploy <p> [--preview]     deploy the newest commit of the remembered repo
+#   deploys vercel team [<id>]                show or set the Vercel team
+#   deploys render list                       services and their auto-deploy setting
+#   deploys render autodeploy-off <s>|--all
+#   deploys render deploy <service>           deploy the newest commit
+#   deploys render set-key                    store the Render API key (read from stdin)
+#
+# Config lives in ${DEPLOYS_CONFIG:-~/.config/deploys}:
+#   vercel-repos.json  which repo/branch each Vercel project deploys from
+#   vercel-team        team id (auto-detected; empty for a personal account)
+
+set -euo pipefail
+
+CONFIG_DIR="${DEPLOYS_CONFIG:-$HOME/.config/deploys}"
+REPOS="$CONFIG_DIR/vercel-repos.json"
+RENDER_API="https://api.render.com/v1"
+KEYCHAIN_SERVICE="deploy-center-render"
+LEGACY_KEYCHAIN_SERVICE="render-api-key"
+
+mkdir -p "$CONFIG_DIR"
+[ -f "$REPOS" ] || echo '{}' > "$REPOS"
+
+die() { echo "Error: $*" >&2; exit 1; }
+
+# ---------- Vercel ----------
+
+# The team the commands act on. Detected once and remembered; a personal account has none.
+vercel_team() {
+  if [ -n "${DEPLOYS_VERCEL_TEAM:-}" ]; then echo "$DEPLOYS_VERCEL_TEAM"; return; fi
+  if [ -f "$CONFIG_DIR/vercel-team" ]; then cat "$CONFIG_DIR/vercel-team"; return; fi
+  local teams n
+  teams="$(vercel api /v2/teams 2>/dev/null)" || die "The vercel CLI is not logged in. Run: vercel login"
+  n="$(echo "$teams" | jq '.teams | length')"
+  if [ "$n" = "0" ]; then
+    : > "$CONFIG_DIR/vercel-team"; echo ""
+  elif [ "$n" = "1" ]; then
+    echo "$teams" | jq -r '.teams[0].id' | tr -d '\n' | tee "$CONFIG_DIR/vercel-team"
+  else
+    echo "$teams" | jq -r '.teams[] | "  \(.id)  \(.slug)"' >&2
+    die "Several Vercel teams. Choose one: deploys vercel team <id>"
+  fi
+}
+
+# Query string for the team, empty for a personal account.
+team_q() { local t; t="$(vercel_team)"; [ -n "$t" ] && echo "teamId=$t" || echo ""; }
+with_team() { local q; q="$(team_q)"; case "$1" in *\?*) echo "$1${q:+&$q}";; *) echo "$1${q:+?$q}";; esac; }
+
+vercel_call() { vercel api "$(with_team "$1")" "${@:2}" 2>/dev/null; }
+
+vercel_projects() {
+  local all="[]" page next="" url
+  while :; do
+    url="/v10/projects?limit=100${next:+&until=$next}"
+    page="$(vercel_call "$url")" || die "Could not list Vercel projects"
+    all="$(jq -s '.[0] + .[1].projects' <(echo "$all") <(echo "$page"))"
+    next="$(echo "$page" | jq -r '.pagination.next // empty')"
+    [ -n "$next" ] || break
+  done
+  echo "$all"
+}
+
+# Write down where a project deploys from. Only ever adds; an entry once known is kept.
+remember_repo() {
+  local entry="$1" tmp
+  tmp="$(mktemp)"
+  jq --argjson e "$entry" '. + ($e | with_entries(select(.value.repo != null)))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
+}
+
+vercel_off() {
+  local p="$1" info
+  info="$(vercel_call "/v9/projects/$p")" || die "Vercel project $p not found"
+  # The link is the only place the repo is written down. Keep it before removing it.
+  remember_repo "$(echo "$info" | jq --arg p "$p" '{($p): (.link // {}) | {org, repo, repoId, ref:(.productionBranch // "main")}}')"
+  [ "$(echo "$info" | jq '.link != null')" = "true" ] || { echo "Vercel: $p was already manual"; return; }
+  vercel api "$(with_team "/v9/projects/$p/link")" --method DELETE --dangerously-skip-permissions >/dev/null 2>&1 \
+    || die "Vercel: could not disconnect $p"
+  echo "Vercel: $p no longer deploys on push"
+}
+
+vercel_deploy_json() {
+  local target="$1" preview="${2:-}" body out
+  jq -e --arg p "$target" 'has($p)' "$REPOS" >/dev/null || die "$target has no remembered repo. Turn its auto-deploy off with this tool, or add it to $REPOS"
+  body="$(mktemp)"; trap 'rm -f "$body"' RETURN
+  jq --arg p "$target" --arg prev "$preview" '.[$p] as $r | {name:$p, project:$p}
+    + (if $prev == "" then {target:"production"} else {} end)
+    + {gitSource:({type:"github", ref:$r.ref} + (if $r.repoId then {repoId:$r.repoId} else {org:$r.org, repo:$r.repo} end))}' "$REPOS" > "$body"
+  local errf; errf="$(mktemp)"
+  out="$(vercel api "$(with_team /v13/deployments)" --method POST --input "$body" 2>"$errf")" \
+    || { local e; e="$(tail -c 400 "$errf")"; rm -f "$errf"; die "Vercel: $e $(echo "$out" | jq -r '.error.message // empty' 2>/dev/null)"; }
+  rm -f "$errf"
+  echo "$out" | jq -e '.id' >/dev/null 2>&1 || die "Vercel: $(echo "$out" | head -c 400)"
+  echo "$out" | jq '{id, url:("https://" + .url), state:(.readyState // .status)}'
+}
+
+# ---------- GitHub (optional, for "new changes") ----------
+
+head_of() {
+  local repo="$1" ref="$2" out="$3"
+  gh api "repos/$repo/commits/$ref" 2>/dev/null \
+    | jq -c --arg k "$repo@$ref" '{key:$k, value:{at:(.commit.committer.date|fromdateiso8601), msg:(.commit.message|split("\n")[0])}}' \
+    > "$out/$(echo "$repo@$ref" | tr '/@' '__').json" 2>/dev/null || true
+}
+export -f head_of
+
+with_heads() {
+  local list="$1" tmp heads
+  if ! command -v gh >/dev/null 2>&1; then echo "$list"; return; fi
+  tmp="$(mktemp -d)"
+  echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
+    | xargs -P 8 -n 2 bash -c 'head_of "$0" "$1" "'"$tmp"'"'
+  heads="$(cat "$tmp"/*.json 2>/dev/null | jq -s 'from_entries')"
+  rm -rf "$tmp"
+  echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg}))'
+}
+
+# ---------- Render ----------
+
+render_key() {
+  security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w 2>/dev/null \
+    || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" -w 2>/dev/null \
+    || die "No Render API key. Create one at dashboard.render.com > Account Settings > API Keys, then: deploys render set-key"
+}
+export KEYCHAIN_SERVICE LEGACY_KEYCHAIN_SERVICE
+
+# The key goes to curl on stdin so it never shows in the process list.
+render_call() {
+  local method="$1" path="$2" body="${3:-}" key out code
+  key="$(render_key)"
+  local args=(-sS -X "$method" -H "Accept: application/json" -K -)
+  [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
+  out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$RENDER_API$path")"
+  code="${out##*$'\n'}"; out="${out%$'\n'*}"
+  [[ "$code" == 2* ]] || die "Render $method $path -> HTTP $code: $out"
+  printf '%s' "$out"
+}
+
+render_services() {
+  local cursor="" page all="[]"
+  while :; do
+    page="$(render_call GET "/services?limit=100${cursor:+&cursor=$cursor}")"
+    all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$page"))"
+    [ "$(echo "$page" | jq 'length')" -lt 100 ] && break
+    cursor="$(echo "$page" | jq -r '.[-1].cursor')"
+  done
+  echo "$all" | jq '[.[].service]'
+}
+
+render_auto() { echo '(.autoDeployTrigger // (if .autoDeploy=="yes" then "commit" else "off" end))'; }
+
+render_id_of() {
+  local name="$1" id
+  case "$name" in srv-*|crn-*) echo "$name"; return;; esac
+  id="$(render_services | jq -r --arg n "$name" '.[] | select(.name==$n) | .id')"
+  [ -n "$id" ] || die "No Render service named \"$name\". See: deploys render list"
+  echo "$id"
+}
+
+render_off() {
+  render_call PATCH "/services/$1" '{"autoDeployTrigger":"off"}' >/dev/null
+  echo "Render: $2 no longer deploys on push"
+}
+
+render_last_of() {
+  local id="$1" out="$2" key
+  key="$(security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w 2>/dev/null \
+    || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" -w 2>/dev/null)" || return 0
+  printf 'header = "Authorization: Bearer %s"\n' "$key" \
+    | curl -sS -K - -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=1" \
+    | jq -c --arg id "$id" '{key:$id, value:((.[0].deploy // {}) | {lastAt:((.finishedAt // .createdAt // null) | if . then (sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) else null end), lastState:.status})}' \
+    > "$out/$id.json" 2>/dev/null || true
+}
+export -f render_last_of
+
+# ---------- Commands ----------
+
+case "${1:-} ${2:-}" in
+  "doctor "*)
+    # Written with printf, not jq: this is the command that has to work when jq is missing.
+    has() { command -v "$1" >/dev/null 2>&1 && echo true || echo false; }
+    vapi=false; vercel api --help >/dev/null 2>&1 && vapi=true
+    vlogin=false; vercel whoami >/dev/null 2>&1 && vlogin=true
+    rkey=false; { security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w >/dev/null 2>&1 \
+      || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" -w >/dev/null 2>&1; } && rkey=true
+    printf '{"jq":%s,"vercelCli":%s,"vercelApi":%s,"vercelLoggedIn":%s,"githubCli":%s,"renderKey":%s}\n' \
+      "$(has jq)" "$(has vercel)" "$vapi" "$vlogin" "$(has gh)" "$rkey" ;;
+
+  "vercel list")
+    vercel_projects | jq -r '.[] | [.name, (if .link then "AUTO (\(.link.org // "")/\(.link.repo // ""))" else "manual" end)] | @tsv' \
+      | column -t -s $'\t' ;;
+  "vercel autodeploy-off")
+    target="${3:-}"; [ -n "$target" ] || die "Give a project name or --all"
+    if [ "$target" = "--all" ]; then
+      for p in $(vercel_projects | jq -r '.[] | select(.link) | .name'); do vercel_off "$p"; done
+      echo "Done. No Vercel project deploys on push any more."
+    else
+      vercel_off "$target"
+    fi ;;
+  "vercel deploy")
+    target="${3:-}"; [ -n "$target" ] || die "Give a project name"
+    vercel_deploy_json "$target" "$([ "${4:-}" = "--preview" ] && echo 1)" \
+      | jq -r '"Vercel: deploy started -> \(.url) (\(.state))"' ;;
+  "vercel deploy-json")
+    vercel_deploy_json "${3:?project}" "$([ "${4:-}" = "--preview" ] && echo 1)" ;;
+  "vercel status")
+    vercel_call "/v13/deployments/${3:?deployment id}" \
+      | jq '{id, url:("https://" + .url), state:(.readyState // .status), error:(.errorMessage // null)}' ;;
+  "vercel team")
+    if [ -n "${3:-}" ]; then printf '%s' "$3" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $3"; else vercel_team; echo; fi ;;
+  "vercel json")
+    list="$(vercel_projects | jq --slurpfile r "$REPOS" '[.[] |
+      ((.link // null) | if . then {repo:"\(.org)/\(.repo)", ref:"main"} else null end) as $live |
+      ($r[0][.name] // null) as $known |
+      {name, auto:(.link != null),
+       repo:(if $known.repo then "\($known.org)/\($known.repo)" else $live.repo end),
+       ref:($known.ref // (.link.productionBranch // null)),
+       deployable:($known.repo != null),
+       domain:(((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // null),
+       lastAt:((.targets.production.createdAt // 0) / 1000 | floor),
+       lastState:(.targets.production.readyState // null)}] | sort_by(.name | ascii_downcase)')"
+    with_heads "$list" ;;
+
+  "render list")
+    render_services | jq -r '.[] | [.name, .type, '"$(render_auto)"', (if .suspended=="suspended" then "suspended" else "active" end)] | @tsv' \
+      | (printf 'NAME\tTYPE\tAUTO-DEPLOY\tSTATE\n'; cat) | column -t -s $'\t' ;;
+  "render autodeploy-off")
+    target="${3:-}"; [ -n "$target" ] || die "Give a service name or --all"
+    if [ "$target" = "--all" ]; then
+      render_services | jq -r '.[] | select('"$(render_auto)"' != "off") | "\(.id)\t\(.name)"' \
+        | while IFS=$'\t' read -r id name; do render_off "$id" "$name"; done
+      echo "Done. No Render service deploys on push any more."
+    else
+      render_off "$(render_id_of "$target")" "$target"
+    fi ;;
+  "render deploy")
+    id="$(render_id_of "${3:?service}")"
+    render_call POST "/services/$id/deploys" '{}' | jq -r '"Render: deploy started (\(.id), \(.status))"' ;;
+  "render deploy-json")
+    id="$(render_id_of "${3:?service}")"
+    render_call POST "/services/$id/deploys" '{}' | jq --arg s "$id" '{id, serviceId:$s, state:.status}' ;;
+  "render status")
+    render_call GET "/services/${3:?service id}/deploys/${4:?deploy id}" | jq '{id, state:.status}' ;;
+  "render set-key")
+    IFS= read -r key || true
+    [ -n "$key" ] || die "Pipe the key in: pbpaste | deploys render set-key"
+    case "$key" in *\'*|*\"*|*' '*) die "That does not look like a Render API key";; esac
+    # Sent to `security -i` on stdin, so the key is never an argument anyone can see.
+    printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$KEYCHAIN_SERVICE" "$key" | security -i >/dev/null
+    render_call GET "/services?limit=1" >/dev/null && echo "Render key saved and working." ;;
+  "render json")
+    list="$(render_services | jq '[.[] | {id, name, type, paused:(.suspended=="suspended"),
+      auto:('"$(render_auto)"' != "off"), deployable:(.suspended!="suspended"),
+      url:(.serviceDetails.url // null),
+      domain:((.serviceDetails.url // "") | sub("^https?://";"") | if . == "" then null else . end),
+      repo:((.repo // "") | sub("^https://github.com/";"") | sub("\\.git$";"") | if . == "" then null else . end),
+      ref:(.branch // null)}] | sort_by(.name | ascii_downcase)')"
+    tmp="$(mktemp -d)"
+    echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$0" "'"$tmp"'"'
+    lasts="$(cat "$tmp"/*.json 2>/dev/null | jq -s 'from_entries')"; rm -rf "$tmp"
+    list="$(echo "$list" | jq --argjson l "${lasts:-{\}}" 'map(. + ($l[.id] // {}))')"
+    with_heads "$list" ;;
+
+  *)
+    sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
