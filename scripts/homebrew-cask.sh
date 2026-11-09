@@ -32,10 +32,10 @@ cask "deploy-center" do
   app "Deploy Center.app"
   binary "#{appdir}/Deploy Center.app/Contents/Resources/deploys"
 
+  # ~/.config/deploys stays: it holds which repo each disconnected Vercel project came from.
   zap trash: [
     "~/Library/Preferences/app.deploycenter.mac.plist",
     "~/Library/Logs/DeployCenter.log",
-    "~/.config/deploys",
   ]
 end
 CASK

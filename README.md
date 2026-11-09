@@ -135,7 +135,7 @@ tests/app-tests.sh      # the rules in the app
 
 ## Help wanted
 
-Ideas and bug reports are welcome in [Issues](../../issues). Most wanted: Cloudflare Pages as a third platform,
+Ideas and bug reports are welcome in [Issues](../../issues). Most wanted: a third platform (Cloudflare Pages is being looked at),
 GitLab next to GitHub, and reports when a number in the app looks wrong.
 
 ## License
