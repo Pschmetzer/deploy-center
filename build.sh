@@ -44,7 +44,11 @@ PLIST
 # Signing. With a "Developer ID Application" certificate in the keychain and a notarytool
 # profile, the app is signed for distribution and notarized, so it opens without a warning:
 #   DEVELOPER_ID="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=deploy-center ./build.sh
-# Without them it is signed ad hoc, which is enough on the Mac that built it.
+# The identity can also live in ~/.config/deploys/signing-identity (one line, never in the repo).
+# Without one it is signed ad hoc: the app runs, but macOS refuses it as a login item.
+if [ -z "${DEVELOPER_ID:-}" ] && [ -s "$HOME/.config/deploys/signing-identity" ]; then
+  DEVELOPER_ID="$(head -n1 "$HOME/.config/deploys/signing-identity")"
+fi
 ZIP="build/DeployCenter-${VERSION}-universal.zip"
 if [ -n "${DEVELOPER_ID:-}" ]; then
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/deploys"
