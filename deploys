@@ -40,6 +40,11 @@ LEGACY_KEYCHAIN_SERVICE="render-api-key"
 mkdir -p "$CONFIG_DIR"
 [ -f "$REPOS" ] || echo '{}' > "$REPOS"
 
+# BSD (macOS) and GNU (Linux) spell file times, date maths and base64 differently.
+mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
+days_ago() { date -u -v-"$1"d +%Y-%m-%d 2>/dev/null || date -u -d "$1 days ago" +%Y-%m-%d; }
+b64d() { base64 -D 2>/dev/null || base64 -d; }
+
 die() { echo "Error: ${RED}$*${PLAIN}" >&2; exit 1; }
 
 # Colour only for a person at a terminal, never in what the app or a pipe reads.
@@ -127,7 +132,7 @@ vercel_off() {
 # builds. The lock ages out after a minute; a start that failed removes it at once.
 start_lock() {
   local d="$CONFIG_DIR/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
-  if [ -f "$f" ] && [ $(( $(date +%s) - $(stat -f %m "$f") )) -lt 60 ]; then die "$1 is being started already (wait a minute)"; fi
+  if [ -f "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -lt 60 ]; then die "$1 is being started already (wait a minute)"; fi
   touch "$f"; echo "$f"
 }
 
@@ -336,7 +341,7 @@ cost_day() {
           | map({name:(.[0].Tags.ProjectName // "?"), build:(map(.BilledCost)|add)}))}' \
     > "$out/$from.json" 2>/dev/null || true
 }
-export -f cost_day
+export -f cost_day days_ago
 
 # ---------- Other things that start builds ----------
 
@@ -344,13 +349,13 @@ export -f cost_day
 workflow_hits() {
   local repo="$1" out="$2"
   gh api "repos/$repo/contents/.github/workflows" --jq '.[] | select(.type=="file") | .path' 2>/dev/null | while read -r f; do
-    gh api "repos/$repo/contents/$f" --jq '.content' 2>/dev/null | base64 -D 2>/dev/null \
+    gh api "repos/$repo/contents/$f" --jq '.content' 2>/dev/null | b64d 2>/dev/null \
       | grep -vE '^[[:space:]]*#' \
       | grep -qE 'vercel (deploy|--prod)|vercel-action|api\.render\.com/deploy|render-deploy|deploy[-_]hook|DEPLOY_HOOK' \
       && printf '{"kind":"workflow","where":"%s","detail":"%s"}\n' "$repo" "$f"
   done > "$out/$(echo "$repo" | tr '/' '_').jsonl" || true
 }
-export -f workflow_hits
+export -f workflow_hits b64d
 
 # ---------- Commands ----------
 
@@ -499,7 +504,7 @@ BASH
     # Vercel charges for the last N days (default 7), per day and builds per project.
     days="${2:-7}"; team="$(vercel_team)"; tmp="$(mktemp -d)"
     for i in $(seq "$days" -1 1); do
-      echo "$(date -u -v-"${i}"d +%Y-%m-%d) $(date -u -v-"$((i-1))"d +%Y-%m-%d)"
+      echo "$(days_ago "$i") $(days_ago "$((i-1))")"
     done | xargs -P 4 -n 2 bash -c 'cost_day "$0" "$1" "'"$team"'" "'"$tmp"'"'
     # Builds per project over the last 7 days, to put a price on one build.
     since=$(( ($(date +%s) - 7*86400) * 1000 ))

@@ -11,6 +11,12 @@
 - Build log: failing lines in red, "Jump to the first error", "Errors only", "Copy for Claude".
 - Demo mode (Settings): project names and domains are replaced, for screenshots.
 - CI on GitHub (tests and type-check; no deploys).
+- A wait before a deploy starts (Settings, default 8 s) with "cancel" in the row; "Stop all" in the footer; a summary when a run of several deploys ends.
+- "Copy release notes" in the project details; "Page to check after deploy" per project (e.g. /health).
+- Monthly build budget with a warning at 80 % of the pace; the cost bar also shows under "All".
+- Tab and filters are remembered; the menu bar icon shows building and failed; lists reload after sleep.
+- `deploycenter://select?project=name` shows a project (never starts a build).
+- The script runs on Linux too (stat, date, base64).
 
 ## 0.5.0
 

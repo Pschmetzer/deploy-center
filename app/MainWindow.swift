@@ -10,16 +10,20 @@ import ServiceManagement
 
 struct ContentView: View {
     @ObservedObject var store: Store
-    @State private var platform: Platform = .vercel
+    // The tab and the filter are remembered between launches.
+    @AppStorage("lastPlatform") private var platformRaw = Platform.vercel.rawValue
+    private var platform: Platform { get { Platform(rawValue: platformRaw) ?? .vercel } nonmutating set { platformRaw = newValue.rawValue } }
     @State private var search = ""
     @State private var confirming = false
     @State private var confirmingOff = false
-    @State private var onlyChanged = false
+    @AppStorage("onlyChanged") private var onlyChanged = false
     @State private var rollbackItem: Item?
     @FocusState private var searchFocused: Bool
     @State private var unchangedItem: Item?
     @State private var detailItem: Item?
-    @State private var showAll = false
+    @AppStorage("showAll") private var showAll = false
+    @State private var pathItem: Item?
+    @State private var pathText = ""
     @State private var noteItem: Item?
     @State private var noteText = ""
     @State private var logItem: Item?
@@ -91,7 +95,7 @@ struct ContentView: View {
             autoBanner
             waitingBar
             githubBanner
-            if platform == .vercel, let c = store.costs { CostBar(costs: c) }
+            if showAll || platform == .vercel, let c = store.costs { CostBar(costs: c) }
             content
             Divider()
             footer
@@ -118,6 +122,14 @@ struct ContentView: View {
             showAll = true; onlyChanged = true
             Platform.allCases.forEach { store.selectChanged($0) }
             if !selectedAll.isEmpty { confirming = true }
+        }
+        .alert(L("Check after deploy", "Prüfung nach dem Deploy"), isPresented: Binding(get: { pathItem != nil }, set: { if !$0 { pathItem = nil } })) {
+            TextField("/health", text: $pathText)
+            Button(L("Cancel", "Abbrechen"), role: .cancel) { pathItem = nil }
+            Button(L("Save", "Speichern")) { if let i = pathItem { store.setHealthPath(i, pathText) }; pathItem = nil }
+        } message: {
+            Text(L("This path is asked once \(pathItem?.name ?? "") is live, instead of the front page. Empty = front page.",
+                   "Dieser Pfad wird abgefragt, sobald \(pathItem?.name ?? "") live ist, statt der Startseite. Leer = Startseite."))
         }
         .alert(L("Note", "Notiz"), isPresented: Binding(get: { noteItem != nil }, set: { if !$0 { noteItem = nil } })) {
             TextField(L("e.g. only after the release mail", "z. B. erst nach der Release-Mail"), text: $noteText)
@@ -432,6 +444,9 @@ struct ContentView: View {
                         Button(store.note(item) == nil ? L("Add a note …", "Notiz hinzufügen …") : L("Edit the note …", "Notiz ändern …")) {
                             noteText = store.note(item) ?? ""; noteItem = item
                         }
+                        Button(L("Page to check after deploy …", "Seite für die Prüfung nach dem Deploy …")) {
+                            pathText = store.healthPath(item); pathItem = item
+                        }
                         Button(L("Hide", "Ausblenden")) { store.toggleHidden(item) }
                     }
             }
@@ -447,6 +462,9 @@ struct ContentView: View {
                             : L("\(count) selected", "\(count) ausgewählt"))
                 .foregroundStyle(.secondary)
             Spacer()
+            if scopes.contains(where: { p in (store.items[p] ?? []).contains { $0.state.isActive } }) {
+                Button(L("Stop all", "Alles abbrechen"), role: .destructive) { store.cancelAll() }
+            }
             if count > 0 {
                 Button(L("Clear", "Auswahl leeren")) { scopes.forEach { store.clearSelection($0) } }
             } else if changedHere > 0 {

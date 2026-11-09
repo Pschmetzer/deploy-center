@@ -24,11 +24,26 @@ final class Store: ObservableObject {
     func loadExtras() async {
         if doctor?.vercelLoggedIn == true {
             costs = try? await Tool.json(["costs", "14"], as: Costs.self)
+            checkBudget()
         }
         triggers = (try? await Tool.json(["triggers"], as: [Trigger].self)) ?? []
         if doctor?.githubLoggedIn == true {
             githubBudget = try? await Tool.json(["github-budget"], as: Budget.self)
         }
+    }
+
+    /// Once a day: if the pace of the last 7 days passes 80 % of the monthly budget (Settings), say so.
+    private func checkBudget() {
+        let d = UserDefaults.standard
+        let budget = d.double(forKey: "monthlyBudget")
+        guard budget > 0, let days = costs?.days.suffix(7), !days.isEmpty else { return }
+        let month = days.map(\.build).reduce(0, +) / Double(days.count) * 30
+        let today = Date().formatted(.iso8601.year().month().day())
+        guard month > budget * 0.8, d.string(forKey: "lastBudgetAlarm") != today else { return }
+        d.set(today, forKey: "lastBudgetAlarm")
+        let m = month.formatted(.currency(code: "USD")), b = budget.formatted(.currency(code: "USD"))
+        say(L("Build costs near your budget", "Build-Kosten nahe am Budget"),
+            L("At this pace ≈ \(m) a month, budget \(b)", "Bei diesem Tempo ≈ \(m) im Monat, Budget \(b)"), ok: false)
     }
 
     func buildCost(_ project: String) -> Double? {
@@ -69,6 +84,14 @@ final class Store: ObservableObject {
         booted = true
         if UserDefaults.standard.bool(forKey: "hideDock") { NSApp.setActivationPolicy(.accessory) }
         LogoCache.sweep()
+        for p in Platform.allCases { try? FileManager.default.removeItem(at: Self.cacheDir.appendingPathComponent("\(p.cli)-v1.json")) }
+        // After sleep the lists can be hours old, and the daily reminder may be overdue.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)   // the network needs a moment
+                await self?.autoRefresh(); self?.remindIfDue()
+            }
+        }
         Task { await checkForUpdate() }
         Task {
             await start()
@@ -339,13 +362,39 @@ final class Store: ObservableObject {
         enqueue([Job(item: item, preview: preview, sha: sha, clearCache: clearCache)])
     }
 
+    /// Seconds between the click and the first build; in this time "cancel" in the row still costs nothing.
+    var undoSeconds: Int { UserDefaults.standard.object(forKey: "undoSeconds") as? Int ?? 8 }
+    private var holdUntil = Date.distantPast
+    private var batch: [(Platform, String)] = []
+
     func enqueue(_ jobs: [Job]) {
         Notify.ask()
+        var added = 0
         for j in jobs where !(itemNow(j.item)?.state.isActive ?? false) {
             set(j.item.platform, j.item.id, .queued)
-            queue.append(j)
+            queue.append(j); batch.append((j.item.platform, j.item.id)); added += 1
+        }
+        if added > 0, undoSeconds > 0 {
+            let n = undoSeconds
+            holdUntil = Date().addingTimeInterval(Double(n))
+            toast = Toast(text: L("Starting in \(n) s – cancel in the row to stop", "Startet in \(n) s – in der Zeile abbrechen"), ok: true)
+            Task { try? await Task.sleep(nanoseconds: UInt64(n) * 1_000_000_000 + 300_000_000); pump() }
         }
         pump()
+    }
+
+    /// Stops everything that is queued or building.
+    func cancelAll() { for i in Array(items.values.joined()) where i.state.isActive { cancel(i) } }
+
+    private func summarize() {
+        defer { batch = [] }
+        guard batch.count >= 2 else { return }
+        var ok = 0, bad = 0
+        for (p, id) in batch {
+            guard let s = items[p]?.first(where: { $0.id == id })?.state else { continue }
+            if case .done = s { ok += 1 } else if case .failed = s { bad += 1 }
+        }
+        say(L("\(ok) live, \(bad) failed", "\(ok) live, \(bad) fehlgeschlagen"), L("Deploy run finished", "Deploy-Lauf beendet"), ok: bad == 0)
     }
 
     private func itemNow(_ i: Item) -> Item? { items[i.platform]?.first { $0.id == i.id } }
@@ -354,7 +403,7 @@ final class Store: ObservableObject {
     }
 
     private func pump() {
-        while running < maxParallel, let k = queue.firstIndex(where: { waitsFor($0) == nil }) {
+        while Date() >= holdUntil, running < maxParallel, let k = queue.firstIndex(where: { waitsFor($0) == nil }) {
             let job = queue.remove(at: k)
             running += 1
             Task { await deploy(job); running -= 1; pump() }
@@ -367,7 +416,7 @@ final class Store: ObservableObject {
                                                              "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
             }
         }
-        if queue.isEmpty && running == 0 { queueBatch = [] }
+        if queue.isEmpty && running == 0 { queueBatch = []; if Date() >= holdUntil { summarize() } }
     }
 
     /// The Render service of the same repo that a Vercel frontend waits for, while it is queued or building.
@@ -387,7 +436,10 @@ final class Store: ObservableObject {
         if let k = queue.firstIndex(where: { $0.item.id == item.id }) {
             queue.remove(at: k); set(item.platform, item.id, .idle); return
         }
-        guard let id = itemNow(item)?.deployId else { return }
+        guard let id = itemNow(item)?.deployId else {
+            toast = Toast(text: L("\(item.name) is still starting – try again in a moment", "\(item.name) startet noch – gleich nochmal versuchen"), ok: false)
+            return
+        }
         cancelled.insert(item.id)
         Task {
             let args = item.platform == .vercel ? ["vercel", "cancel", id] : ["render", "cancel", item.id, id]
@@ -499,7 +551,7 @@ final class Store: ObservableObject {
                         recordDuration(item)
                         set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link))
                     }
-                    if let l = item.link { await checkSite(item.name, l) }
+                    if let l = item.link { await checkSite(item.name, l.hasSuffix("/") ? String(l.dropLast()) + healthPath(item) : l + healthPath(item)) }
                 }
                 return
             case (.render, "succeeded"):
@@ -516,6 +568,15 @@ final class Store: ObservableObject {
             }
         }
         set(p, item.id, .failed(L("No result after 40 minutes – check the dashboard", "Kein Ergebnis nach 40 Minuten – im Dashboard nachsehen")))
+    }
+
+    /// A path to ask after going live instead of the front page (/health), per project. Kept on this Mac.
+    func healthPath(_ i: Item) -> String { ((UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:])[Self.key(i)] ?? "" }
+    func setHealthPath(_ i: Item, _ path: String) {
+        var all = (UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:]
+        let t = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        all[Self.key(i)] = t.isEmpty ? nil : (t.hasPrefix("/") ? t : "/" + t)
+        UserDefaults.standard.set(all, forKey: "healthPaths")
     }
 
     /// After going live: does the site answer? A deploy can be "ready" and the page still broken.

@@ -29,6 +29,19 @@ enum LogTools {
     }
 }
 
+extension LogTools {
+    /// What is about to go live, as Markdown for a release mail or a chat message. Bot commits last.
+    static func releaseNotes(name: String, commits: [Details.Commit]) -> String {
+        let human = commits.filter { !($0.bot ?? false) }, bots = commits.filter { $0.bot ?? false }
+        func line(_ c: Details.Commit) -> String {
+            "- \(c.msg)" + (c.pr.map { " (#\($0))" } ?? "") + (c.author.map { " – \($0)" } ?? "")
+        }
+        var out = "## \(name)\n" + human.map(line).joined(separator: "\n")
+        if !bots.isEmpty { out += "\n\nDependency updates:\n" + bots.map(line).joined(separator: "\n") }
+        return out
+    }
+}
+
 /// Demo mode: names, repos and domains are replaced by stable stand-ins, so a screenshot or a
 /// screen recording can be shared without showing real projects (the repo is public).
 enum Demo {

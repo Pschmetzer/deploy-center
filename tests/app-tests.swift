@@ -95,5 +95,10 @@ expect("first error line", LogTools.firstErrorLine(["ok", "0 errors", "npm ERR! 
 expect("no error in a clean log", LogTools.firstErrorLine(["ok", "done"]) == nil, true)
 expect("prompt names the project", LogTools.claudePrompt(name: "web", repo: "me/web", ref: "main", sha: nil, message: nil, log: "a\nError: x").contains("\"web\""), true)
 
+let c1 = Details.Commit(sha: "a", full: nil, url: nil, msg: "Fix login", author: "ann", bot: false, at: 0, pr: 12)
+let c2 = Details.Commit(sha: "b", full: nil, url: nil, msg: "Bump x", author: "dependabot", bot: true, at: 0, pr: nil)
+expect("release notes list humans first", LogTools.releaseNotes(name: "web", commits: [c2, c1]),
+       "## web\n- Fix login (#12) – ann\n\nDependency updates:\n- Bump x – dependabot")
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

@@ -98,6 +98,13 @@ struct ProjectDetail: View {
                     Text(item.detail).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
+                if let d = details, !d.commits.isEmpty {
+                    Button(L("Copy release notes", "Release-Notes kopieren")) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(LogTools.releaseNotes(name: item.name, commits: d.commits), forType: .string)
+                    }
+                    .help(L("The waiting commits as a list, ready for a mail or a chat message", "Die wartenden Commits als Liste, fertig für Mail oder Chat"))
+                }
                 Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
             }
             .padding(16)

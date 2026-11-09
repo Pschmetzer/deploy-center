@@ -15,21 +15,21 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 7. **`ignore` (CLI) und „Ausblenden“ (App) sind zwei getrennte Listen.** Ein ignoriertes Projekt taucht in der App weiter als „Änderungen“ auf. Eine Quelle in `~/.config/deploys/` für beides.
 8. ✅ **`triggers` fragt Render-Dienste nacheinander** (`for id in …`). Bei 20 Diensten spürbar; mit `xargs -P` parallel.
 9. **`costs` startet pro Tag ein `vercel api` (node).** 14 Tage = 14 Node-Starts, danach 5 Seiten sequenziell. Direkt per `curl` mit Token oder einen breiteren Zeitraum pro Aufruf.
-10. **`stat -f`, `date -v`, `base64 -D` sind BSD-only.** Skript läuft nur auf macOS; auf Linux/CI bricht es still. Kleine Kompat-Funktionen.
-11. **Erinnerung (`remindIfDue`) feuert nur in der Refresh-Schleife.** Bei 60-Min-Intervall kann „9 Uhr“ erst um 9:59 kommen; nach dem Aufwachen aus dem Ruhezustand wird gewartet statt sofort geprüft. `NSWorkspace.didWakeNotification` nutzen.
-12. **Nach dem Aufwachen/Netzwechsel kein Neuladen.** Liste kann Stunden alt sein, bis der Timer zuschlägt. Wake- und Netzwerk-Events (`NWPathMonitor`) auslösen.
+10. ✅ **`stat -f`, `date -v`, `base64 -D` sind BSD-only.** Skript läuft nur auf macOS; auf Linux/CI bricht es still. Kleine Kompat-Funktionen.
+11. ✅ **Erinnerung (`remindIfDue`) feuert nur in der Refresh-Schleife.** Bei 60-Min-Intervall kann „9 Uhr“ erst um 9:59 kommen; nach dem Aufwachen aus dem Ruhezustand wird gewartet statt sofort geprüft. `NSWorkspace.didWakeNotification` nutzen.
+12. ✅ **Nach dem Aufwachen/Netzwechsel kein Neuladen.** Liste kann Stunden alt sein, bis der Timer zuschlägt. Wake- und Netzwerk-Events (`NWPathMonitor`) auslösen.
 13. **Notizen, Pins, Ausgeblendet, Dauer-Statistik liegen unter `platform/name` in UserDefaults.** Umbenennung = alles weg, Backup/Umzug auf neuen Mac unmöglich. Auf stabile ID umstellen, Export/Import.
 14. **`visible`-Sortierung hat doppelten, widersprüchlichen Kommentar** und sortiert „Alle“ anders als die Einzeltabs (Änderungen nach Commits, Rest nach Name nur in „Alle“). Vereinheitlichen.
-15. **`cancel()` bei `.starting` tut nichts** (kein `deployId`, `guard` kehrt still zurück). Klick wirkt kaputt; zumindest „startet noch, gleich nochmal“ melden.
+15. ✅ **`cancel()` bei `.starting` tut nichts** (kein `deployId`, `guard` kehrt still zurück). Klick wirkt kaputt; zumindest „startet noch, gleich nochmal“ melden.
 16. **`Row.onTapGesture` + Button für dasselbe Ziel**: Doppeltes Auslösen bei Shift-Klick-Bereichen möglich (`tick` über `NSEvent.modifierFlags` statt Ereignis).
-17. **Cache-Versionierung steht nur im Dateinamen (`-v2`).** Alte Dateien bleiben liegen; beim Start löschen.
-18. **CostBar nur im Vercel-Tab.** In „Alle“ fehlen die Kosten, obwohl die Kosten das Kernversprechen der App sind.
+17. ✅ **Cache-Versionierung steht nur im Dateinamen (`-v2`).** Alte Dateien bleiben liegen; beim Start löschen.
+18. ✅ **CostBar nur im Vercel-Tab.** In „Alle“ fehlen die Kosten, obwohl die Kosten das Kernversprechen der App sind.
 19. ✅ **Kein CI.** Es gibt kein `.github/`: Tests (`tests/*.sh`), shellcheck und ein Build-Test laufen nur lokal.
 20. **Tests sehr dünn:** `app-tests.swift` 81 Zeilen, `script-tests.sh` 67. `merge`, `waiting`, Rollback-Zustand, Queue-Reihenfolge (`waitsFor`) und `follow()`-Zustandsmapping haben keine Tests.
 
 ## B. Deploy-Ablauf und Sicherheit
 
-21. ★ **Rückgängig-Fenster („Deployt in 10 s – Abbrechen“)** vor dem Start, wie bei Mail „Senden rückgängig“.
+21. ✅ ★ **Rückgängig-Fenster („Deployt in 10 s – Abbrechen“)** vor dem Start, wie bei Mail „Senden rückgängig“.
 22. ★ **Automatischer Rollback bei kaputter Seite** (Idee 5): Nach `checkSite` fehlgeschlagen → Knopf „Zurückrollen?“ in der Mitteilung.
 23. ★ **Smoke-Tests pro Projekt:** Liste von Pfaden + erwarteter Text/Status (`/health`, `/api/ping`), im Projekt-Detail pflegbar.
 24. ★ **Sammel-Vorschau vor „Deployen“:** Summe der erwarteten Dauer und Kosten, Reihenfolge, riskante Dateien aller Projekte in einem Dialog.
@@ -49,7 +49,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 38. **Queue-Anzeige:** „Platz 3 von 7“, geschätzte Wartezeit aus `usualMinutes`.
 39. **Queue pausieren/fortsetzen** (z. B. Mittagspause), Reihenfolge per Ziehen ändern.
 40. **Deploy-Abhängigkeiten selbst definieren** statt nur „gleiches Repo“ (Frontend A braucht Backend B in anderem Repo).
-41. **Notbremse:** Ein Knopf „Alles Laufende abbrechen“.
+41. ✅ **Notbremse:** Ein Knopf „Alles Laufende abbrechen“.
 42. **Dry-Run-Modus** in der App, der nur zeigt, was passieren würde.
 
 ## C. Nach dem Deploy: Fehleranalyse
@@ -63,11 +63,11 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 49. **Letzten erfolgreichen Stand merken** und im Fehlerfall „Zurück auf Abc123“ anbieten.
 50. **Deploy-Protokoll (Journal):** wer/wann/was/Ergebnis/Dauer, lokal als JSONL, durchsuchbar, Export CSV.
 51. **Mitteilungen mit Aktionen** (Seite öffnen, Log, Zurückrollen) statt nur Text.
-52. **Zusammenfassung nach einem Sammel-Deploy:** „7 live, 1 Fehler, 1 übersprungen, 14 Min, ≈ 2,10 $“.
+52. ✅ **Zusammenfassung nach einem Sammel-Deploy:** „7 live, 1 Fehler, 1 übersprungen, 14 Min, ≈ 2,10 $“.
 
 ## D. Was wartet – Inhalte besser nutzbar machen
 
-53. ★ **Release-Notes aus wartenden PRs** erzeugen (Markdown, Slack, Deutsch/Englisch), Knopf „Kopieren“.
+53. ✅ ★ **Release-Notes aus wartenden PRs** erzeugen (Markdown, Slack, Deutsch/Englisch), Knopf „Kopieren“.
 54. ★ **PRs mergen aus der App** (grüne CI, Bestätigung), danach „und deployen“. (offen aus IDEEN-2 #24)
 55. **CI-Ampel in der Zeile** (grün/rot/läuft) für den Kopf-Commit.
 56. **Risiko-Punktzahl pro Projekt:** Migrationen, Lockfile, `.env`, Größe des Diffs, Alter; sortierbar.
@@ -84,7 +84,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 ## E. Kosten (Kernversprechen ausbauen)
 
 66. ★ **Kostenübersicht auch für Render** (Dienstpläne, Bandbreite, Build-Minuten soweit die API es liefert).
-67. ★ **Budget-Grenze:** „Monatsbudget 50 $“, Mitteilung bei 80 %, Anzeige „Rest bis Limit“.
+67. ✅ ★ **Budget-Grenze:** „Monatsbudget 50 $“, Mitteilung bei 80 %, Anzeige „Rest bis Limit“.
 68. **„Was hätte Auto-Deploy gekostet?“:** Pushes × Preis pro Build gegen tatsächliche Builds, als Ersparnis-Zahl groß im Fenster.
 69. **Teuerste Projekte** als Rangliste (heute nur kleine Zahl in der Zeile).
 70. **Kosten pro Deploy in der Bestätigung** (steht in IDEEN-2 #46 als erledigt – für Sammel-Deploy als Summe fehlt sie).
@@ -98,7 +98,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 ## F. Oberfläche
 
 77. ✅ ★ **Demo-/Maskier-Modus:** Projektnamen und Repos unkenntlich oder durch Beispieldaten ersetzen – für Screenshots, Videos, README (das Repo ist öffentlich, der Screenshot zeigt echte Namen).
-78. ★ **Tab, Filter, Sortierung, Fenstergröße merken** (alte #50, nie umgesetzt).
+78. ✅ ★ **Tab, Filter, Sortierung, Fenstergröße merken** (alte #50, nie umgesetzt).
 79. **Gruppen/Etiketten** („Kunde A“, „intern“) mit Farbe; Filter und Sammel-Auswahl pro Etikett.
 80. **Gespeicherte Ansichten** („Nur Prod + Änderungen“).
 81. **Pins per Ziehen sortieren.**
@@ -114,7 +114,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 91. **Leerer Zustand mit Anleitung**, wenn das Konto 0 Projekte hat.
 92. **Ladezustand je Zeile** (Skeleton) statt Gesamtspinner.
 93. **Letzte Aktualisierung pro Plattform getrennt** im Kopf, nicht nur für den aktiven Tab.
-94. **Menüleiste:** Spinner/Punkt bei laufenden Deploys, roter Punkt bei Fehler, Zahl getrennt nach Plattform.
+94. ✅ **Menüleiste:** Spinner/Punkt bei laufenden Deploys, roter Punkt bei Fehler, Zahl getrennt nach Plattform.
 95. **Menüleiste: direkt deployen** mit Bestätigung im Menü, ohne Fenster.
 96. **Rechtsklick-Menü der Menüleisten-Einträge** (Seite öffnen, Log).
 97. **Dock-Menü** mit „Alles deployen …“ und Liste der Projekte mit Änderungen.
@@ -132,7 +132,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 
 ## G. Automatisierung und Integration
 
-109. ★ **URL-Schema `deploycenter://deploy?project=x&preview=1`** für Alfred/Raycast/Shortcuts.
+109. ✅ ★ **URL-Schema `deploycenter://deploy?project=x&preview=1`** für Alfred/Raycast/Shortcuts.
 110. ★ **App Intents / Kurzbefehle:** „Wartende PRs zählen“, „Projekt deployen“, „Alles Geänderte deployen“, Siri-fähig.
 111. **Widget** (WidgetKit): Zahl wartender PRs, Mini-Verlauf.
 112. **MCP-Server** über `deploys` (alte #94/#80, nie gebaut) – für Claude-Sitzungen.

@@ -21,6 +21,8 @@ struct SettingsView: View {
     @AppStorage("notifications") private var notifications = true
     @AppStorage("checkUpdates") private var checkUpdates = true
     @AppStorage("demoMode") private var demoMode = false
+    @AppStorage("undoSeconds") private var undoSeconds = 8
+    @AppStorage("monthlyBudget") private var monthlyBudget = 0.0
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
 
@@ -45,6 +47,14 @@ struct SettingsView: View {
                     catch { loginError = error.localizedDescription; openAtLogin = SMAppService.mainApp.status == .enabled }
                 }
             if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
+            Picker(L("Wait before a deploy starts", "Warten, bevor ein Deploy startet"), selection: $undoSeconds) {
+                Text(L("No wait", "Nicht warten")).tag(0)
+                ForEach([5, 8, 15], id: \.self) { Text(L("\($0) seconds (cancel possible)", "\($0) Sekunden (Abbrechen möglich)")).tag($0) }
+            }
+            HStack {
+                Text(L("Monthly build budget (USD, 0 = off)", "Monatliches Build-Budget (USD, 0 = aus)"))
+                TextField("0", value: $monthlyBudget, format: .number).frame(width: 70).multilineTextAlignment(.trailing)
+            }
             Toggle(L("Notify when a deploy ends", "Mitteilung, wenn ein Deploy fertig ist"), isOn: $notifications)
             Picker(L("Daily reminder to deploy", "Tägliche Erinnerung zum Deployen"), selection: $reminderHour) {
                 Text(L("Off", "Aus")).tag(0)
@@ -80,14 +90,26 @@ struct DeployCenterApp: App {
     @AppStorage("showMenuBar") private var showMenuBar = true
 
     var body: some Scene {
-        WindowGroup("Deploy Center", id: "main") { ContentView(store: store) }
+        WindowGroup("Deploy Center", id: "main") {
+            ContentView(store: store)
+                // deploycenter://select?project=name shows and ticks a project. It never starts a build:
+                // any web page could open such a link.
+                .onOpenURL { url in
+                    guard url.scheme == "deploycenter",
+                          let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "project" })?.value else { return }
+                    store.pendingSearch = name
+                }
+        }
             .windowResizability(.contentMinSize)
         Settings { SettingsView(store: store) }
         MenuBarExtra(isInserted: $showMenuBar) {
             MenuBarContent(store: store)
         } label: {
             let n = store.waiting.prs > 0 ? store.waiting.prs : store.waiting.projects
-            Image(systemName: "paperplane").task { store.boot() }
+            let all = Array(store.items.values.joined())
+            let icon = all.contains { $0.state.isActive } ? "paperplane.fill"
+                : (all.contains { if case .failed = $0.state { return true } else { return false } } ? "exclamationmark.triangle.fill" : "paperplane")
+            Image(systemName: icon).task { store.boot() }
             if n > 0 { Text("\(n)") }
         }
     }
