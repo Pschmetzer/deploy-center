@@ -20,6 +20,23 @@ enum Tool {
         Bundle.main.path(forResource: "deploys", ofType: nil) ?? NSHomeDirectory() + "/bin/deploys"
     }
 
+    /// The PATH of the person's login shell, read once, so `vercel` installed through nvm, volta or
+    /// fnm is found too. The usual places come first in case the shell says nothing in time.
+    static let searchPath: String = {
+        let fixed = "/opt/homebrew/bin:/usr/local/bin:" + NSHomeDirectory() + "/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh")
+        p.arguments = ["-lc", "printf %s \"$PATH\""]
+        let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return fixed }
+        let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: killer)
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit(); killer.cancel()
+        let shell = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return shell.isEmpty ? fixed : fixed + ":" + shell
+    }()
+
     /// Runs off the main thread. A GUI app does not get the shell's PATH, and `vercel` needs node.
     /// stdout and stderr are read at the same time (reading one to the end first can deadlock
     /// once the other fills its pipe), and a command that hangs is ended after `timeout` seconds.
@@ -30,7 +47,7 @@ enum Tool {
                 p.executableURL = URL(fileURLWithPath: "/bin/bash")
                 p.arguments = [path] + args
                 var env = ProcessInfo.processInfo.environment
-                env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + NSHomeDirectory() + "/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+                env["PATH"] = searchPath
                 p.environment = env
                 let out = Pipe(), err = Pipe()
                 p.standardOutput = out
@@ -86,7 +103,7 @@ enum Platform: String, CaseIterable, Identifiable {
 }
 
 struct Doctor: Decodable {
-    let jq: Bool; let vercelCli: Bool; let vercelApi: Bool; let vercelLoggedIn: Bool; let githubCli: Bool; let renderKey: Bool
+    let jq: Bool; let vercelCli: Bool; let vercelApi: Bool; let vercelLoggedIn: Bool; let githubCli: Bool; let githubLoggedIn: Bool?; let renderKey: Bool
 }
 
 struct VercelProject: Decodable {
@@ -94,6 +111,8 @@ struct VercelProject: Decodable {
     let domain: String?; let lastAt: Double?; let lastState: String?; let headAt: Double?; let headMsg: String?
     let lastSha: String?; let headSha: String?
     let changed: Bool?; let pendingCommits: Int?; let pendingPRs: Int?; let openPRs: Int?
+    let building: Bool?; let pendingPartial: Bool?; let oldestPendingAt: Double?; let rewritten: Bool?
+    let openDrafts: Int?; let openBots: Int?
 }
 struct RenderService: Decodable {
     let id: String; let name: String; let type: String; let paused: Bool; let auto: Bool; let deployable: Bool
@@ -101,6 +120,8 @@ struct RenderService: Decodable {
     let lastAt: Double?; let lastState: String?; let headAt: Double?; let headMsg: String?
     let lastSha: String?; let headSha: String?
     let changed: Bool?; let pendingCommits: Int?; let pendingPRs: Int?; let openPRs: Int?
+    let building: Bool?; let pendingPartial: Bool?; let oldestPendingAt: Double?; let rewritten: Bool?
+    let openDrafts: Int?; let openBots: Int?
 }
 struct Costs: Decodable {
     struct Day: Decodable, Identifiable { let day: String; let total: Double; let build: Double; var id: String { day } }
@@ -143,6 +164,12 @@ struct Item: Identifiable {
     var pendingCommits: Int? = nil
     var pendingPRs: Int? = nil
     var openPRs: Int? = nil
+    var openDrafts: Int? = nil
+    var openBots: Int? = nil
+    var building = false
+    var pendingPartial = false
+    var oldestPendingAt: Date? = nil
+    var rewritten = false
     var selected = false
     var state: RunState = .idle
 
@@ -210,6 +237,9 @@ final class Store: ObservableObject {
             costs = try? await Tool.json(["costs", "7"], as: Costs.self)
         }
         triggers = (try? await Tool.json(["triggers"], as: [Trigger].self)) ?? []
+        if doctor?.githubLoggedIn == true {
+            githubBudget = try? await Tool.json(["github-budget"], as: Budget.self)
+        }
     }
 
     func buildCost(_ project: String) -> Double? {
@@ -226,7 +256,7 @@ final class Store: ObservableObject {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("app.deploycenter.mac", isDirectory: true)
     }()
-    private func cacheURL(_ p: Platform) -> URL { Self.cacheDir.appendingPathComponent("\(p.cli).json") }
+    private func cacheURL(_ p: Platform) -> URL { Self.cacheDir.appendingPathComponent("\(p.cli)-v2.json") }
 
     private func readCache() {
         for p in Platform.allCases {
@@ -240,6 +270,28 @@ final class Store: ObservableObject {
     private func writeCache(_ p: Platform, _ data: Data) {
         try? FileManager.default.createDirectory(at: Self.cacheDir, withIntermediateDirectories: true)
         try? data.write(to: cacheURL(p), options: .atomic)
+    }
+
+    /// Started once, by whichever comes first: the window or the menu bar. The refresh loop lives
+    /// here and not in a view, so the menu bar stays true while the window is closed.
+    private var booted = false
+    func boot() {
+        guard !booted else { return }
+        booted = true
+        LogoCache.sweep()
+        Task {
+            await start()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(refreshMinutes) * 60 * 1_000_000_000)
+                await autoRefresh()
+            }
+        }
+    }
+
+    /// Minutes between automatic reloads (Settings).
+    var refreshMinutes: Int {
+        let m = UserDefaults.standard.integer(forKey: "refreshMinutes")
+        return m >= 5 ? m : 15
     }
 
     func start() async {
@@ -299,7 +351,9 @@ final class Store: ObservableObject {
                          domain: v.domain, lastAt: date(v.lastAt), lastState: v.lastState,
                          headAt: date(v.headAt), headMsg: v.headMsg, lastSha: v.lastSha, headSha: v.headSha,
                          repo: v.repo, ref: v.ref, changed: v.changed, pendingCommits: v.pendingCommits,
-                         pendingPRs: v.pendingPRs, openPRs: v.openPRs)
+                         pendingPRs: v.pendingPRs, openPRs: v.openPRs, openDrafts: v.openDrafts, openBots: v.openBots,
+                         building: v.building ?? false, pendingPartial: v.pendingPartial ?? false,
+                         oldestPendingAt: date(v.oldestPendingAt), rewritten: v.rewritten ?? false)
                 }
             case .render:
                 let list = try JSONDecoder().decode([RenderService].self, from: data)
@@ -312,7 +366,9 @@ final class Store: ObservableObject {
                          link: r.url, domain: r.domain, lastAt: date(r.lastAt), lastState: r.lastState,
                          headAt: date(r.headAt), headMsg: r.headMsg, lastSha: r.lastSha, headSha: r.headSha,
                          repo: r.repo, ref: r.ref, kind: r.type, changed: r.changed, pendingCommits: r.pendingCommits,
-                         pendingPRs: r.pendingPRs, openPRs: r.openPRs)
+                         pendingPRs: r.pendingPRs, openPRs: r.openPRs, openDrafts: r.openDrafts, openBots: r.openBots,
+                         building: r.building ?? false, pendingPartial: r.pendingPartial ?? false,
+                         oldestPendingAt: date(r.oldestPendingAt), rewritten: r.rewritten ?? false)
                 }
             }
     }
@@ -321,7 +377,8 @@ final class Store: ObservableObject {
     /// Not while something is deploying, so nothing being followed is disturbed.
     func autoRefresh() async {
         let busy = items.values.joined().contains { $0.state.isActive }
-        guard !busy, doctor != nil, loading.isEmpty else { return }
+        guard !busy, loading.isEmpty else { return }
+        if doctor == nil { await start(); return }
         async let a: Void = doctor?.vercelLoggedIn == true ? load(.vercel) : ()
         async let b: Void = doctor?.renderKey == true ? load(.render) : ()
         _ = await (a, b)
@@ -398,12 +455,27 @@ final class Store: ObservableObject {
         }
         let name = items[p]![i].name
         switch s {
-        case .done: Notify.post(L("\(name) is live", "\(name) ist live"), p.rawValue)
-        case .failed(let m): Notify.post(L("\(name) failed", "\(name) fehlgeschlagen"), m)
-        case .skipped(let m): Notify.post(L("\(name) skipped", "\(name) übersprungen"), m)
+        case .done: say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true)
+        case .failed(let m): say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false)
+        case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true)
         default: break
         }
     }
+
+    /// The end of a deploy: a Mac notification when the app is in the background, a line in the
+    /// window in any case (the person may be looking at the other tab).
+    struct Toast: Equatable { let id = UUID(); let text: String; let ok: Bool }
+    @Published var toast: Toast?
+    private func say(_ title: String, _ body: String, ok: Bool) {
+        Notify.post(title, body)
+        let t = Toast(text: title, ok: ok)
+        toast = t
+        Task { try? await Task.sleep(nanoseconds: 5_000_000_000); if toast == t { toast = nil } }
+    }
+
+    /// GitHub's hourly budget for the gh login; the counts need it.
+    struct Budget: Decodable { let remaining: Int; let limit: Int; let reset: Double }
+    @Published var githubBudget: Budget?
 
     func deploySelected(_ p: Platform, preview: Bool = false) {
         Notify.ask()
@@ -490,6 +562,7 @@ struct ContentView: View {
     @State private var onlyChanged = false
     @State private var rollbackItem: Item?
     @FocusState private var searchFocused: Bool
+    @State private var unchangedItem: Item?
 
     private var visible: [Item] {
         var all = store.items[platform] ?? []
@@ -514,20 +587,35 @@ struct ContentView: View {
             triggerBanner
             autoBanner
             waitingBar
+            githubBanner
             if platform == .vercel, let c = store.costs { CostBar(costs: c) }
             content
             Divider()
             footer
         }
         .frame(minWidth: 680, minHeight: 540)
-        .task {
-            await store.start()
-            // Every 15 minutes the lists are read again, so the counts above stay true.
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 15 * 60 * 1_000_000_000)
-                await store.autoRefresh()
+        .overlay(alignment: .bottom) {
+            if let t = store.toast {
+                Label(t.text, systemImage: t.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                    .font(.callout.weight(.medium))
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Capsule().fill(.regularMaterial))
+                    .overlay(Capsule().stroke(t.ok ? Color.green.opacity(0.5) : Color.red.opacity(0.5)))
+                    .padding(.bottom, 72)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .accessibilityAddTraits(.updatesFrequently)
             }
         }
+        .animation(.easeOut(duration: 0.2), value: store.toast)
+        .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"),
+               isPresented: Binding(get: { unchangedItem != nil }, set: { if !$0 { unchangedItem = nil } })) {
+            Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
+            Button(L("Build anyway", "Trotzdem bauen")) { if let i = unchangedItem { store.deployOne(i, preview: false) }; unchangedItem = nil }
+        } message: {
+            Text(L("\(unchangedItem?.name ?? "") is already on the newest commit. A build costs build minutes and changes nothing.",
+                   "\(unchangedItem?.name ?? "") ist schon auf dem neuesten Stand. Ein Build kostet Build-Minuten und ändert nichts."))
+        }
+        .task { store.boot() }
         .alert(L("Deploy to production?", "Live deployen?"), isPresented: $confirming) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             Button(L("Deploy", "Deployen")) { store.deploySelected(platform) }
@@ -535,7 +623,8 @@ struct ContentView: View {
             Text(store.selected(platform).map { i in
                     i.name + ((i.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText(i) : "") }.joined(separator: "\n")
                  + "\n\n" + L("The newest commit on GitHub goes live on \(platform.rawValue).",
-                               "Der neueste Stand von GitHub geht auf \(platform.rawValue) live."))
+                               "Der neueste Stand von GitHub geht auf \(platform.rawValue) live.")
+                 + unchangedNote)
         }
         .alert(L("Roll back production?", "Live zurückrollen?"),
                isPresented: Binding(get: { rollbackItem != nil }, set: { if !$0 { rollbackItem = nil } })) {
@@ -626,6 +715,37 @@ struct ContentView: View {
         case "render-build": return L("Render build from push", "Render-Build durch Push")
         case "render-blueprint": return L("Render Blueprint auto-sync", "Render-Blueprint Auto-Sync")
         default: return k
+        }
+    }
+
+    /// Ticked projects that are already on their newest commit: building them costs and changes nothing.
+    private var unchangedNote: String {
+        let same = store.selected(platform).filter { !$0.hasNewCommits && $0.headSha != nil }.map(\.name)
+        guard !same.isEmpty else { return "" }
+        return "\n\n" + L("Already up to date, builds anyway: ", "Schon aktuell, baut trotzdem: ") + same.joined(separator: ", ")
+    }
+
+    /// Without a GitHub login, or with its hourly budget spent, the counts are missing. Say why.
+    @ViewBuilder private var githubBanner: some View {
+        if let d = store.doctor, d.githubCli, d.githubLoggedIn == false {
+            HStack(spacing: 10) {
+                Image(systemName: "person.crop.circle.badge.exclamationmark").foregroundStyle(.orange)
+                Text(L("GitHub CLI is not logged in, so the waiting commits and PRs cannot be counted. In Terminal: gh auth login",
+                       "Die GitHub-CLI ist nicht angemeldet, darum fehlen die Zahlen wartender Commits und PRs. Im Terminal: gh auth login"))
+                    .font(.caption).textSelection(.enabled)
+                Spacer()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
+        } else if let b = store.githubBudget, b.remaining < 300 {
+            HStack(spacing: 10) {
+                Image(systemName: "gauge.with.dots.needle.0percent").foregroundStyle(.orange)
+                Text(L("GitHub's hourly budget is nearly spent (\(b.remaining) of \(b.limit) left). Counts pause until ",
+                       "GitHubs Stunden-Kontingent ist fast aufgebraucht (\(b.remaining) von \(b.limit) übrig). Die Zahlen pausieren bis ")
+                     + Date(timeIntervalSince1970: b.reset).formatted(date: .omitted, time: .shortened) + ".")
+                    .font(.caption)
+                Spacer()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
         }
     }
 
@@ -723,7 +843,10 @@ struct ContentView: View {
                 Row(item: item, cost: platform == .vercel ? store.buildCost(item.name) : nil) { store.toggle(platform, item.id) }
                     .contextMenu {
                         if item.deployable && !item.state.isActive {
-                            Button(L("Deploy to production", "Live deployen")) { store.deployOne(item, preview: false) }
+                            Button(L("Deploy to production", "Live deployen")) {
+                                if item.hasNewCommits || item.headSha == nil { store.deployOne(item, preview: false) }
+                                else { unchangedItem = item }
+                            }
                             if platform == .vercel {
                                 Button(L("Preview deploy (not live)", "Vorschau-Deploy (nicht live)")) { store.deployOne(item, preview: true) }
                             }
@@ -756,8 +879,9 @@ struct ContentView: View {
                 Button(L("Clear", "Auswahl leeren")) { store.clearSelection(platform) }
             } else if store.changedCount(platform) > 0 {
                 Button(L("Select all changed", "Alle mit Änderungen anhaken")) { store.selectChanged(platform) }
-                    // The saved copy may be hours old; tick from what is true now.
-                    .disabled(store.fromCache.contains(platform))
+                    // The saved copy may be hours old; tick from what is true now. If reading it
+                    // again failed, the error is on screen and the copy is all there is.
+                    .disabled(store.fromCache.contains(platform) && store.loadError[platform] == nil)
             }
             if platform == .vercel {
                 Button(L("Preview", "Vorschau")) { store.deploySelected(platform, preview: true) }
@@ -901,8 +1025,13 @@ struct Row: View {
                             .help(item.headMsg.map { L("Newest commit: ", "Neuester Commit: ") + $0
                                 + (item.headAt.map { " (\(Self.ago($0)))" } ?? "") } ?? "")
                     }
+                    if item.hasNewCommits, let since = item.oldestPendingAt {
+                        Text(L("oldest waiting commit ", "ältester wartender Commit ") + Self.ago(since))
+                            .font(.caption2).foregroundStyle(Date().timeIntervalSince(since) > 3 * 86400 ? .orange : .secondary)
+                            .help(L("The oldest commit that is not live", "Der älteste Commit, der noch nicht live ist"))
+                    }
                     if let o = item.openPRs, o > 0 {
-                        Text(L("\(o) open \(o == 1 ? "PR" : "PRs")", "\(o) \(o == 1 ? "offener PR" : "offene PRs")"))
+                        Text(Self.openText(item, o))
                             .font(.caption2).foregroundStyle(.secondary)
                             .help(L("Pull requests on the repo that are not merged yet", "Pull Requests im Repo, die noch nicht gemergt sind"))
                     }
@@ -926,11 +1055,23 @@ struct Row: View {
     }
 
     static func waitingText(_ i: Item) -> String {
+        if i.rewritten { return L("New changes (branch was rewritten)", "Neue Änderungen (Branch wurde umgeschrieben)") }
         guard let c = i.pendingCommits, c > 0 else { return L("New changes", "Neue Änderungen") }
         let prs = i.pendingPRs ?? 0
+        if i.pendingPartial {
+            return L("\(c) commits, at least \(prs) PRs waiting", "\(c) Commits, mindestens \(prs) PRs warten")
+        }
         let commits = L("\(c) \(c == 1 ? "commit" : "commits")", "\(c) \(c == 1 ? "Commit" : "Commits")")
         return prs > 0 ? commits + " · " + L("\(prs) \(prs == 1 ? "PR" : "PRs") waiting", "\(prs) \(prs == 1 ? "PR wartet" : "PRs warten")")
                        : commits + L(" waiting", " warten")
+    }
+
+    static func openText(_ i: Item, _ o: Int) -> String {
+        var parts: [String] = []
+        if let d = i.openDrafts, d > 0 { parts.append(L("\(d) \(d == 1 ? "draft" : "drafts")", "\(d) \(d == 1 ? "Entwurf" : "Entwürfe")")) }
+        if let b = i.openBots, b > 0 { parts.append(L("\(b) \(b == 1 ? "bot" : "bots")", "\(b) \(b == 1 ? "Bot" : "Bots")")) }
+        let base = L("\(o) open \(o == 1 ? "PR" : "PRs")", "\(o) \(o == 1 ? "offener PR" : "offene PRs")")
+        return parts.isEmpty ? base : base + " (" + parts.joined(separator: ", ") + ")"
     }
 
     static func ago(_ d: Date) -> String {
@@ -1000,6 +1141,16 @@ actor LogoCache {
     /// Logos are kept on disk for a week; an empty file remembers "this site has none".
     private static let dir = Store.cacheDir.appendingPathComponent("logos", isDirectory: true)
     private static let week: TimeInterval = 7 * 24 * 3600
+
+    /// Once at start: logos of sites not seen for a month go, so the folder does not grow for ever.
+    nonisolated static func sweep() {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        for f in files {
+            let at = (try? f.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if Date().timeIntervalSince(at) > 30 * 24 * 3600 { try? fm.removeItem(at: f) }
+        }
+    }
 
     func image(for domain: String) async -> NSImage? {
         if let hit = cache[domain] { return hit }
@@ -1106,7 +1257,7 @@ struct DeployCenterApp: App {
             MenuBarContent(store: store)
         } label: {
             let n = store.waiting.prs > 0 ? store.waiting.prs : store.waiting.projects
-            Image(systemName: "paperplane")
+            Image(systemName: "paperplane").task { store.boot() }
             if n > 0 { Text("\(n)") }
         }
     }

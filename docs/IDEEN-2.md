@@ -6,31 +6,31 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 
 ## A. Fehler, die beim Lesen aufgefallen sind
 
-1. ★ **Render: ein gescheiterter Deploy versteckt die Änderungen.** `render_last_of` liest `deploys?limit=1`. Ist der neueste Deploy gescheitert, wird sein Commit zu `lastSha`, und das Projekt gilt als „ohne Änderungen“, obwohl live noch der alte Stand läuft. `lastSha` muss vom letzten *live* Deploy kommen, der Status vom neuesten Versuch.
-2. ★ **Ein Deploy, der gerade woanders baut, wird nochmal angehakt.** `CHANGED_RULE` schließt laufende Deploys aus, liest bei Vercel aber nur `targets.production` (das ist immer der fertige Stand). Ein per CLI oder Dashboard gestarteter Build ist unsichtbar, und „Alle mit Änderungen anhaken“ startet ihn ein zweites Mal. Den neuesten Deploy (`/v6/deployments?projectId=…&limit=1`) dazu lesen.
-3. ★ **Die Menüleiste wird nicht mehr aktuell, wenn das Fenster zu ist.** Die 15-Minuten-Schleife hängt an `.task` von `ContentView`; schließt man das Fenster, endet sie. Die Schleife gehört in den `Store` oder die App.
-4. ★ **Startet die App ohne Fenster, lädt sie nie.** `store.start()` wird nur vom Fenster aufgerufen. „Neu laden“ in der Menüleiste ruft `autoRefresh`, das ohne `doctor` sofort zurückkehrt.
-5. **„Alle mit Änderungen anhaken“ bleibt grau, wenn das Laden scheitert.** `fromCache` wird nur bei Erfolg gelöscht; nach einem Netzfehler bleibt der Knopf für immer aus.
-6. **`vercel deploy` baut auch ohne Änderung.** Weder Skript noch App prüfen `changed` vor einem einzelnen Deploy. Ein Klick auf ein Projekt ohne neuen Commit kostet einen Build für nichts. Hinweis „Nichts Neues – trotzdem bauen?“.
-7. **Vercel-Rollback nimmt `deployments[1]`**, den zweitneuesten fertigen Production-Deploy. Wurde vorher schon zurückgerollt oder ein älterer Deploy befördert, ist das nicht „der davor“. Die Alias-Zuordnung (`/v2/aliases`) oder `isRollbackCandidate` lesen.
+1. ✅ ★ **Render: ein gescheiterter Deploy versteckt die Änderungen.** `render_last_of` liest `deploys?limit=1`. Ist der neueste Deploy gescheitert, wird sein Commit zu `lastSha`, und das Projekt gilt als „ohne Änderungen“, obwohl live noch der alte Stand läuft. `lastSha` muss vom letzten *live* Deploy kommen, der Status vom neuesten Versuch.
+2. ✅ ★ **Ein Deploy, der gerade woanders baut, wird nochmal angehakt.** `CHANGED_RULE` schließt laufende Deploys aus, liest bei Vercel aber nur `targets.production` (das ist immer der fertige Stand). Ein per CLI oder Dashboard gestarteter Build ist unsichtbar, und „Alle mit Änderungen anhaken“ startet ihn ein zweites Mal. Den neuesten Deploy (`/v6/deployments?projectId=…&limit=1`) dazu lesen.
+3. ✅ ★ **Die Menüleiste wird nicht mehr aktuell, wenn das Fenster zu ist.** Die 15-Minuten-Schleife hängt an `.task` von `ContentView`; schließt man das Fenster, endet sie. Die Schleife gehört in den `Store` oder die App.
+4. ✅ ★ **Startet die App ohne Fenster, lädt sie nie.** `store.start()` wird nur vom Fenster aufgerufen. „Neu laden“ in der Menüleiste ruft `autoRefresh`, das ohne `doctor` sofort zurückkehrt.
+5. ✅ **„Alle mit Änderungen anhaken“ bleibt grau, wenn das Laden scheitert.** `fromCache` wird nur bei Erfolg gelöscht; nach einem Netzfehler bleibt der Knopf für immer aus.
+6. ✅ **`vercel deploy` baut auch ohne Änderung.** Weder Skript noch App prüfen `changed` vor einem einzelnen Deploy. Ein Klick auf ein Projekt ohne neuen Commit kostet einen Build für nichts. Hinweis „Nichts Neues – trotzdem bauen?“.
+7. ✅ **Vercel-Rollback nimmt `deployments[1]`**, den zweitneuesten fertigen Production-Deploy. Wurde vorher schon zurückgerollt oder ein älterer Deploy befördert, ist das nicht „der davor“. Die Alias-Zuordnung (`/v2/aliases`) oder `isRollbackCandidate` lesen.
 8. **`build.sh` bricht bei einem Netz-Aussetzer während `notarytool --wait` ab** (passiert am ersten Tag). Die Einreichung läuft bei Apple weiter, aber das Skript vergisst die ID. ID merken und `notarytool wait <id>` wiederholen, danach heften (staple).
-9. **Der Pfad der GUI kennt kein nvm/volta/fnm.** `Tool.run` setzt PATH fest auf Homebrew und `~/.local/bin`. Wer `vercel` über nvm installiert hat, sieht „Vercel-CLI fehlt“. Einmal `zsh -lc 'echo $PATH'` lesen und übernehmen.
-10. **`doctor` prüft nicht, ob `gh` angemeldet ist.** Ohne `gh auth` fehlen alle Zahlen still. Ein Feld `githubLoggedIn` und ein Hinweis in der App.
-11. **GitHub-Grenze:** Pro Neuladen gehen etwa 3 Aufrufe pro Projekt an GitHub (Kopf, Vergleich, offene PRs). Bei 50 Projekten und alle 15 Minuten sind das rund 600 pro Stunde von 5000. Bei Überschreitung kommt `403` und die Zahlen verschwinden ohne Meldung. Rest-Kontingent lesen und anzeigen; mit ETag / `If-None-Match` abfragen (zählt bei 304 nicht).
-12. **Offene PRs zählen Entwürfe und Bot-PRs mit** (`pulls?state=open`). Dependabot treibt die Zahl hoch. Getrennt zählen: „5 offen, davon 3 Entwürfe, 2 Bots“.
-13. **Mehr als 250 Commits Abstand:** `pendingPRs` liest nur die 250 Commits, die GitHub listet; die Zahl ist dann zu klein. Als „mindestens“ kennzeichnen.
-14. **Merge-Commits ohne PR-Nummer** (Rebase-Merges) werden nicht als PR gezählt. Über `commits/{sha}/pulls` zuordnen, wenn die Nachricht keine Nummer hat.
-15. **`changed_json` ruft das Skript zweimal rekursiv** (`"$0" vercel json`, `"$0" render json`) nacheinander. Parallel starten spart etwa 10 Sekunden bei `deploys changed`.
-16. **`deploy-changed --yes` startet alles auf einmal ohne Pause** und meldet Fehler nur auf stderr. Am Ende eine Zusammenfassung „8 gestartet, 1 Fehler“ und Exit-Code ≠ 0 bei Fehlern.
-17. **Der Zwischenspeicher hat keine Version.** Ändert sich das JSON-Format, liest eine neue App einen alten Cache vielleicht falsch oder gar nicht. Version in den Dateinamen.
-18. **Logos werden nach Domain gespeichert, nie gelöscht.** Domains, die es nicht mehr gibt, bleiben ewig liegen. Beim Start alles älter als 30 Tage löschen.
-19. **Mitteilungen kommen nur, wenn die App nicht vorne ist** (`NSApp.isActive`). Wer im Fenster bleibt, aber in einem anderen Tab (Render statt Vercel) ist, sieht das Ende eines Deploys nicht. Ein kurzer Hinweis im Fenster selbst („my-site ist live“) fehlt.
-20. **`pending_of` nutzt den Live-Commit als Basis.** Wurde der Branch neu geschrieben (Force-Push), gibt es den Commit nicht mehr; der Vergleich scheitert still, und es steht nur „Neue Änderungen“ ohne Zahl. Hinweis „Branch wurde umgeschrieben“.
+9. ✅ **Der Pfad der GUI kennt kein nvm/volta/fnm.** `Tool.run` setzt PATH fest auf Homebrew und `~/.local/bin`. Wer `vercel` über nvm installiert hat, sieht „Vercel-CLI fehlt“. Einmal `zsh -lc 'echo $PATH'` lesen und übernehmen.
+10. ✅ **`doctor` prüft nicht, ob `gh` angemeldet ist.** Ohne `gh auth` fehlen alle Zahlen still. Ein Feld `githubLoggedIn` und ein Hinweis in der App.
+11. ✅ **GitHub-Grenze:** Pro Neuladen gehen etwa 3 Aufrufe pro Projekt an GitHub (Kopf, Vergleich, offene PRs). Bei 50 Projekten und alle 15 Minuten sind das rund 600 pro Stunde von 5000. Bei Überschreitung kommt `403` und die Zahlen verschwinden ohne Meldung. Rest-Kontingent lesen und anzeigen; mit ETag / `If-None-Match` abfragen (zählt bei 304 nicht).
+12. ✅ **Offene PRs zählen Entwürfe und Bot-PRs mit** (`pulls?state=open`). Dependabot treibt die Zahl hoch. Getrennt zählen: „5 offen, davon 3 Entwürfe, 2 Bots“.
+13. ✅ **Mehr als 250 Commits Abstand:** `pendingPRs` liest nur die 250 Commits, die GitHub listet; die Zahl ist dann zu klein. Als „mindestens“ kennzeichnen.
+14. ✅ **Merge-Commits ohne PR-Nummer** (Rebase-Merges) werden nicht als PR gezählt. Über `commits/{sha}/pulls` zuordnen, wenn die Nachricht keine Nummer hat.
+15. ✅ **`changed_json` ruft das Skript zweimal rekursiv** (`"$0" vercel json`, `"$0" render json`) nacheinander. Parallel starten spart etwa 10 Sekunden bei `deploys changed`.
+16. ✅ **`deploy-changed --yes` startet alles auf einmal ohne Pause** und meldet Fehler nur auf stderr. Am Ende eine Zusammenfassung „8 gestartet, 1 Fehler“ und Exit-Code ≠ 0 bei Fehlern.
+17. ✅ **Der Zwischenspeicher hat keine Version.** Ändert sich das JSON-Format, liest eine neue App einen alten Cache vielleicht falsch oder gar nicht. Version in den Dateinamen.
+18. ✅ **Logos werden nach Domain gespeichert, nie gelöscht.** Domains, die es nicht mehr gibt, bleiben ewig liegen. Beim Start alles älter als 30 Tage löschen.
+19. ✅ **Mitteilungen kommen nur, wenn die App nicht vorne ist** (`NSApp.isActive`). Wer im Fenster bleibt, aber in einem anderen Tab (Render statt Vercel) ist, sieht das Ende eines Deploys nicht. Ein kurzer Hinweis im Fenster selbst („my-site ist live“) fehlt.
+20. ✅ **`pending_of` nutzt den Live-Commit als Basis.** Wurde der Branch neu geschrieben (Force-Push), gibt es den Commit nicht mehr; der Vergleich scheitert still, und es steht nur „Neue Änderungen“ ohne Zahl. Hinweis „Branch wurde umgeschrieben“.
 
 ## B. Was wartet (die neue Hauptfunktion ausbauen)
 
 21. ★ **Liste der wartenden PRs pro Projekt** zum Aufklappen: Nummer, Titel, Autor, gemergt vor x Stunden, Link.
-22. ★ **Ältester wartender Commit:** „wartet seit 3 Tagen“. Hilft zu sehen, was dringend live muss.
+22. ✅ ★ **Ältester wartender Commit:** „wartet seit 3 Tagen“. Hilft zu sehen, was dringend live muss.
 23. **Offene PRs pro Repo aufklappen**, mit CI-Status (grün/rot) und „bereit zum Mergen“.
 24. **Mergen aus der App** für grüne PRs, mit Bestätigung. Danach direkt deployen.
 25. **„Was ändert sich?“ vor dem Deploy:** geänderte Dateien und Zeilen (+/−) aus dem Vergleich in der Bestätigung.
