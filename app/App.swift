@@ -1,0 +1,135 @@
+// Deploy Center — turn off auto-deploy on Vercel and Render, then deploy by hand from one window.
+// All the work is done by the `deploys` script bundled with the app; the app only calls it.
+// Built by build.sh (swiftc over app/*.swift, Swift 5 mode, no Xcode project needed).
+// This file: Settings, the app, and the menu bar.
+
+import SwiftUI
+import AppKit
+import Charts
+import UserNotifications
+import ServiceManagement
+
+// MARK: - Settings (⌘,)
+
+struct SettingsView: View {
+    @ObservedObject var store: Store
+    @AppStorage("refreshMinutes") private var refreshMinutes = 15
+    @AppStorage("maxParallel") private var maxParallel = 3
+    @AppStorage("reminderHour") private var reminderHour = 0
+    @AppStorage("showMenuBar") private var showMenuBar = true
+    @AppStorage("hideDock") private var hideDock = false
+    @AppStorage("notifications") private var notifications = true
+    @AppStorage("checkUpdates") private var checkUpdates = true
+    @State private var openAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var loginError: String?
+
+    var body: some View {
+        Form {
+            Picker(L("Reload the lists every", "Listen neu laden alle"), selection: $refreshMinutes) {
+                ForEach([5, 15, 30, 60], id: \.self) { Text(L("\($0) minutes", "\($0) Minuten")).tag($0) }
+            }
+            Picker(L("Builds at the same time", "Builds gleichzeitig"), selection: $maxParallel) {
+                ForEach([1, 2, 3, 5, 10], id: \.self) { Text("\($0)").tag($0) }
+            }
+            Toggle(L("Show in the menu bar", "In der Menüleiste zeigen"), isOn: $showMenuBar)
+            Toggle(L("No Dock icon (menu bar only)", "Kein Dock-Symbol (nur Menüleiste)"), isOn: $hideDock)
+                .disabled(!showMenuBar)
+                .onChange(of: hideDock) { _, on in
+                    NSApp.setActivationPolicy(on ? .accessory : .regular)
+                    if !on { NSApp.activate(ignoringOtherApps: true) }
+                }
+            Toggle(L("Open at login", "Beim Anmelden öffnen"), isOn: $openAtLogin)
+                .onChange(of: openAtLogin) { _, on in
+                    do { if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }; loginError = nil }
+                    catch { loginError = error.localizedDescription; openAtLogin = SMAppService.mainApp.status == .enabled }
+                }
+            if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
+            Toggle(L("Notify when a deploy ends", "Mitteilung, wenn ein Deploy fertig ist"), isOn: $notifications)
+            Picker(L("Daily reminder to deploy", "Tägliche Erinnerung zum Deployen"), selection: $reminderHour) {
+                Text(L("Off", "Aus")).tag(0)
+                ForEach(7...20, id: \.self) { Text(L("at \($0):00", "um \($0):00 Uhr")).tag($0) }
+            }
+            .onChange(of: reminderHour) { _, h in if h > 0 { Notify.ask() } }
+            .help(L("Only a reminder, and only when something waits. Nothing is deployed by itself.",
+                    "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
+            Toggle(L("Look for a new version once a day", "Einmal am Tag nach einer neuen Version sehen"), isOn: $checkUpdates)
+            Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
+                if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
+                NSWorkspace.shared.open(Log.url)
+            }
+            if !store.hidden.isEmpty {
+                Button(L("Show \(store.hidden.count) hidden projects again", "\(store.hidden.count) ausgeblendete Projekte wieder zeigen")) {
+                    store.hidden = []; UserDefaults.standard.set([String](), forKey: "hidden")
+                }
+            }
+            Text(L("Version ", "Version ") + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")
+                 + L(" · no telemetry; GitHub, Vercel and Render are asked with your own logins", " · keine Telemetrie; GitHub, Vercel und Render werden mit deinen eigenen Anmeldungen gefragt"))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .formStyle(.grouped)
+        .frame(width: 460)
+    }
+}
+
+@main
+struct DeployCenterApp: App {
+    /// One store for the window and the menu bar, so both show the same counts.
+    @StateObject private var store = Store()
+    @AppStorage("showMenuBar") private var showMenuBar = true
+
+    var body: some Scene {
+        WindowGroup("Deploy Center", id: "main") { ContentView(store: store) }
+            .windowResizability(.contentMinSize)
+        Settings { SettingsView(store: store) }
+        MenuBarExtra(isInserted: $showMenuBar) {
+            MenuBarContent(store: store)
+        } label: {
+            let n = store.waiting.prs > 0 ? store.waiting.prs : store.waiting.projects
+            Image(systemName: "paperplane").task { store.boot() }
+            if n > 0 { Text("\(n)") }
+        }
+    }
+}
+
+/// The menu bar: what waits to go live, and a way to the window. Deploying stays in the window,
+/// where the confirmation is.
+struct MenuBarContent: View {
+    @ObservedObject var store: Store
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        let w = store.waiting
+        let changed = Array(store.items.values.joined()).filter { $0.hasNewCommits && $0.deployable && $0.state == .idle }
+            .sorted { ($0.pendingCommits ?? 0) > ($1.pendingCommits ?? 0) }
+        if w.projects == 0 {
+            Text(L("Everything merged is live", "Alles Gemergte ist live"))
+        } else {
+            Text(L("\(w.prs) PRs, \(w.commits) commits waiting", "\(w.prs) PRs, \(w.commits) Commits warten"))
+            Divider()
+            ForEach(changed.prefix(12)) { i in
+                Button("\(i.name)  –  \(Row.waitingText(i))") {
+                    store.pendingSearch = i.name
+                    openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
+                }
+            }
+            if changed.count > 12 { Text(L("and \(changed.count - 12) more", "und \(changed.count - 12) weitere")) }
+        }
+        if w.openPRs > 0 {
+            Text(L("\(w.openPRs) PRs still open", "\(w.openPRs) PRs noch offen"))
+        }
+        Divider()
+        Button(L("Open Deploy Center", "Deploy Center öffnen")) {
+            openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
+        }
+        .keyboardShortcut("o")
+        if w.projects > 0 {
+            Button(L("Deploy everything with changes …", "Alles mit Änderungen deployen …")) {
+                openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
+                store.pendingDeployAll = true
+            }
+        }
+        Button(L("Reload", "Neu laden")) { Task { await store.autoRefresh() } }
+        Divider()
+        Button(L("Quit", "Beenden")) { NSApp.terminate(nil) }.keyboardShortcut("q")
+    }
+}

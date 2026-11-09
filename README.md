@@ -100,7 +100,13 @@ after a deploy, and once a day to GitHub's release page to see whether a new ver
 ./build.sh --install  # also copy it to ~/Applications
 ```
 
-Needs Xcode or the Command Line Tools. No Xcode project, one Swift file.
+Needs Xcode or the Command Line Tools. No Xcode project: a few Swift files in `app/` and the
+`deploys` script. Tests, no network needed:
+
+```bash
+tests/script-tests.sh   # the rules in deploys (a stand-in answers for gh)
+tests/app-tests.sh      # the rules in the app
+```
 `./release.sh` signs, notarizes and zips a release (it needs a Developer ID; see the file).
 
 ## License

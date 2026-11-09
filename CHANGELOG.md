@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+(nothing yet)
+
+## 0.5.0
+
+- A deploy queue (at most N builds at once), a backend before the frontend of the same repo,
+  cancel, retry, deploy up to a chosen commit, Render with a cleared cache, make a finished
+  Vercel preview live without another build, a lock against starting a project twice.
+- A daily reminder at a chosen hour (it never deploys by itself); search marks; Shift-click ranges.
+- The code is split into a few files; tests for the script and the app.
 - Project details: the waiting commits with their PRs, files changed, files worth a look
   (migrations, lockfiles, env, Dockerfile, workflows), CI of the branch, open PRs with CI.
 - The last build log in the app and as `deploys logs <project>`.

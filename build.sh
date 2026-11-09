@@ -14,7 +14,7 @@ rm -rf build && mkdir -p "$BUILD/Contents/MacOS" "$BUILD/Contents/Resources"
 for arch in arm64 x86_64; do
   swiftc -O -parse-as-library -swift-version 5 \
     -target "$arch-apple-macosx15.0" \
-    -o "build/DeployCenter-$arch" app/DeployCenter.swift
+    -o "build/DeployCenter-$arch" app/*.swift
 done
 lipo -create build/DeployCenter-arm64 build/DeployCenter-x86_64 -output "$BUILD/Contents/MacOS/DeployCenter"
 rm build/DeployCenter-arm64 build/DeployCenter-x86_64

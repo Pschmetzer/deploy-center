@@ -169,7 +169,7 @@ pending_of() {
     printf '{"key":"%s","value":{"rewritten":true}}\n' "$key" > "$f"; return 0
   fi
   echo "$cmp" | jq -c --arg k "$key" '
-      [.commits[] | {sha, n:(.commit.message | (capture("\\(#(?<n>[0-9]+)\\)") // capture("Merge pull request #(?<n>[0-9]+)")) | .n)}] as $c
+      [.commits[] | {sha, n:(first(.commit.message | (capture("\\(#(?<n>[0-9]+)\\)") // capture("Merge pull request #(?<n>[0-9]+)")) | .n) // null)}] as $c
       | {key:$k, value:{commits:.ahead_by,
           prs:([$c[] | .n // empty] | unique | length),
           # GitHub lists 250 commits at most; past that the PR count is a floor.
@@ -352,6 +352,9 @@ workflow_hits() {
 export -f workflow_hits
 
 # ---------- Commands ----------
+
+# Sourced by tests/script-tests.sh: the functions above, no command.
+if [ "${DEPLOYS_LIB:-}" = 1 ]; then return 0 2>/dev/null || exit 0; fi
 
 case "${1:-} ${2:-}" in
   "doctor "*)

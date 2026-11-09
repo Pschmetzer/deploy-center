@@ -118,11 +118,11 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 89. ✅ ★ **`release.sh`:** baut, notarisiert, heftet, legt das GitHub-Release mit Zip und SHA-256 an – ein Befehl.
 90. ✅ ★ **Update-Hinweis in der App** über die GitHub-Releases-API (einmal am Tag, abschaltbar).
 91. **Homebrew-Cask** im eigenen Tap.
-92. **Tests für das Skript** (bats) mit nachgebauten API-Antworten; besonders `CHANGED_RULE` und `pending_of`.
-93. **Unit-Tests für `waiting`, `merge`, `waitingText`, `compareURL`.**
+92. ✅ **Tests für das Skript** (bats) mit nachgebauten API-Antworten; besonders `CHANGED_RULE` und `pending_of`.
+93. ✅ **Unit-Tests für `waiting`, `merge`, `waitingText`, `compareURL`.**
 94. **shellcheck in CI** (GitHub Actions, nur Lint, kein Deploy).
-95. **Swift-Datei aufteilen** (1100 Zeilen): Tool, Modell, Store, Ansichten, Logos.
-96. **Swift-6-Modus**, die eine Warnung (`cacheDir`) war der Anfang.
+95. ✅ **Swift-Datei aufteilen** (1100 Zeilen): Tool, Modell, Store, Ansichten, Logos.
+96. ◐ (kompiliert in Swift 6 ohne Fehler; Umstellung erst nach Laufzeit-Test, weil Swift 6 bei falscher Thread-Zuordnung zur Laufzeit abstürzt) **Swift-6-Modus**, die eine Warnung (`cacheDir`) war der Anfang.
 97. **README mit Screenshot und kurzem GIF** der Menüleiste.
 98. ✅ **CHANGELOG.md** und Versionsnummer im Fenster (Über-Dialog).
 99. ✅ **Datenschutz-Absatz:** keine Telemetrie; Logos direkt von den eigenen Seiten; GitHub nur über die eigene `gh`-Anmeldung.
