@@ -7,7 +7,7 @@
 ## 0.5.0
 
 - A deploy queue (at most N builds at once), a backend before the frontend of the same repo,
-  cancel, retry, deploy up to a chosen commit, Render with a cleared cache,, a lock against
+  cancel, retry, deploy up to a chosen commit, Render with a cleared cache, a lock against
   starting a project twice.
   Tested against Vercel: a preview build, the lock and following a build. Not yet: the queue
   in the app, cancel, Render.
