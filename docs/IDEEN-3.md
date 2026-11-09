@@ -19,7 +19,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 11. ✅ **Erinnerung (`remindIfDue`) feuert nur in der Refresh-Schleife.** Bei 60-Min-Intervall kann „9 Uhr“ erst um 9:59 kommen; nach dem Aufwachen aus dem Ruhezustand wird gewartet statt sofort geprüft. `NSWorkspace.didWakeNotification` nutzen.
 12. ✅ **Nach dem Aufwachen/Netzwechsel kein Neuladen.** Liste kann Stunden alt sein, bis der Timer zuschlägt. Wake- und Netzwerk-Events (`NWPathMonitor`) auslösen.
 13. **Notizen, Pins, Ausgeblendet, Dauer-Statistik liegen unter `platform/name` in UserDefaults.** Umbenennung = alles weg, Backup/Umzug auf neuen Mac unmöglich. Auf stabile ID umstellen, Export/Import.
-14. **`visible`-Sortierung hat doppelten, widersprüchlichen Kommentar** und sortiert „Alle“ anders als die Einzeltabs (Änderungen nach Commits, Rest nach Name nur in „Alle“). Vereinheitlichen.
+14. ✅ **`visible`-Sortierung hat doppelten, widersprüchlichen Kommentar** und sortiert „Alle“ anders als die Einzeltabs (Änderungen nach Commits, Rest nach Name nur in „Alle“). Vereinheitlichen.
 15. ✅ **`cancel()` bei `.starting` tut nichts** (kein `deployId`, `guard` kehrt still zurück). Klick wirkt kaputt; zumindest „startet noch, gleich nochmal“ melden.
 16. **`Row.onTapGesture` + Button für dasselbe Ziel**: Doppeltes Auslösen bei Shift-Klick-Bereichen möglich (`tick` über `NSEvent.modifierFlags` statt Ereignis).
 17. ✅ **Cache-Versionierung steht nur im Dateinamen (`-v2`).** Alte Dateien bleiben liegen; beim Start löschen.
@@ -46,7 +46,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 35. **Render „Neu starten“ ohne Build** (kostet keine Build-Minuten).
 36. **Erneut versuchen** soll bei Build-Fehler „mit leerem Cache“ anbieten (Render hat `--clear-cache`).
 37. **Doppelstart-Schutz sichtbar machen:** Wenn die 60-s-Sperre greift, Mitteilung erklären statt nur Fehler.
-38. **Queue-Anzeige:** „Platz 3 von 7“, geschätzte Wartezeit aus `usualMinutes`.
+38. ✅ **Queue-Anzeige:** „Platz 3 von 7“, geschätzte Wartezeit aus `usualMinutes`.
 39. **Queue pausieren/fortsetzen** (z. B. Mittagspause), Reihenfolge per Ziehen ändern.
 40. **Deploy-Abhängigkeiten selbst definieren** statt nur „gleiches Repo“ (Frontend A braucht Backend B in anderem Repo).
 41. ✅ **Notbremse:** Ein Knopf „Alles Laufende abbrechen“.
@@ -73,7 +73,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 56. **Risiko-Punktzahl pro Projekt:** Migrationen, Lockfile, `.env`, Größe des Diffs, Alter; sortierbar.
 57. **„Nur Abhängigkeits-Updates“-Abzeichen** in der Zeile und Option „solche Projekte nicht anhaken“.
 58. **Autoren-Filter:** „nur wenn ich Autor bin“ / „von Kollegen“.
-59. **Wartezeit-Alarm:** Commit wartet > N Tage → Mitteilung (Schwelle einstellbar; heute nur Farbe bei 3 Tagen).
+59. ✅ **Wartezeit-Alarm:** Commit wartet > N Tage → Mitteilung (Schwelle einstellbar; heute nur Farbe bei 3 Tagen).
 60. **Verlauf je Projekt**, nicht nur Gesamtzahl: welches Projekt staut sich.
 61. **PR-Details im Hover** direkt in der Liste, ohne Detail-Fenster.
 62. **Commits seit Live nach Dateipfad filtern** (Monorepo: betrifft mich der Ordner `apps/web`?).
@@ -105,15 +105,15 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 82. **Spalten-Tabelle** (alte #55) mit Sortierung nach Commits, Alter, Kosten, Dauer.
 83. **Kompakte Zeile** (eine Zeile, Details beim Hover) für 50+ Projekte.
 84. **Tastatur-Navigation komplett:** ↑↓, Leertaste anhaken, Return Details, ⌘A, ⌘⏎ deployen (teilweise da).
-85. **Rückgängig für „Ausblenden“** (Toast mit „Rückgängig“).
-86. **Ausgeblendete einzeln wieder zeigen**, nicht nur alle.
+85. ✅ **Rückgängig für „Ausblenden“** (Toast mit „Rückgängig“).
+86. ✅ **Ausgeblendete einzeln wieder zeigen**, nicht nur alle.
 87. **Statusfarben nicht nur durch Farbe** (Form/Text zusätzlich; Rot/Grün-Schwäche).
 88. **Dunkel/Hell prüfen** (alte #66): blaue/orange Balken mit `opacity` sehen auf Dunkel anders aus.
 89. **Dynamic Type/große Schrift** testen; Zeilen haben feste `caption2`-Größen.
 90. **Mehrzeilige Zeilen kürzen:** zu viele Abzeichen (Kosten, Commits, ältester, offen) → „Mehr…“-Aufklappen.
 91. **Leerer Zustand mit Anleitung**, wenn das Konto 0 Projekte hat.
 92. **Ladezustand je Zeile** (Skeleton) statt Gesamtspinner.
-93. **Letzte Aktualisierung pro Plattform getrennt** im Kopf, nicht nur für den aktiven Tab.
+93. ✅ **Letzte Aktualisierung pro Plattform getrennt** im Kopf, nicht nur für den aktiven Tab.
 94. ✅ **Menüleiste:** Spinner/Punkt bei laufenden Deploys, roter Punkt bei Fehler, Zahl getrennt nach Plattform.
 95. **Menüleiste: direkt deployen** mit Bestätigung im Menü, ohne Fenster.
 96. **Rechtsklick-Menü der Menüleisten-Einträge** (Seite öffnen, Log).
@@ -122,8 +122,8 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 99. **Schnellsuche mit Befehlen** („deploy perch…“, „log …“).
 100. **Mehrere Fenster** (eins pro Plattform) / Split-View.
 101. **Fortschrittsbalken** mit echter Schätzung aus `usualMinutes` (heute nur Text).
-102. **Toast-Stapel** statt einem Toast: bei Sammel-Deploys überschreibt jeder den vorigen nach 5 s.
-103. **Toast-Verlauf** („Letzte Meldungen“ im Fenster).
+102. ✅ **Toast-Stapel** statt einem Toast: bei Sammel-Deploys überschreibt jeder den vorigen nach 5 s.
+103. ✅ **Toast-Verlauf** („Letzte Meldungen“ im Fenster).
 104. **Onboarding-Rundgang** (Vercel/Render/GitHub verbinden, Ersparnis zeigen).
 105. **Tooltips auf Deutsch/Englisch prüfen:** manche Hilfetexte sind nur ein Satz lang und tragen die ganze Erklärung.
 106. **Zeilen-Doppelklick** öffnet Details.
@@ -142,8 +142,8 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 116. **launchd-Vorlage** für `deploys deploy-changed --yes` mit Log-Datei.
 117. **GitHub-Action-Vorlage:** Deploy nach Merge mit Label `deploy` – ersetzt Auto-Deploy ohne Dauerbuilds.
 118. **`deploys status --watch`** als Live-Ansicht im Terminal (Tabelle aktualisiert sich).
-119. **`deploys diff <projekt>`** zeigt Commits/Dateien im Terminal.
-120. **`deploys notes`** erzeugt Release-Notes (Idee 53) im Terminal.
+119. ✅ **`deploys diff <projekt>`** zeigt Commits/Dateien im Terminal.
+120. ✅ **`deploys notes`** erzeugt Release-Notes (Idee 53) im Terminal.
 121. **`deploys doctor --fix`**: bietet an, `jq`/`gh` zu installieren, Version zu aktualisieren.
 122. **Exit-Codes dokumentieren** (0/1 heute; „nichts zu tun“ vs. „Fehler“).
 123. **`--quiet`/`--verbose`** und konsistentes Protokollformat (JSON Lines) für Skripte.
@@ -172,7 +172,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 140. **Sparkle oder eigener Updater mit SHA-256-Prüfung** statt nur „Herunterladen“-Link.
 141. **Swift 6 / strikte Nebenläufigkeit** stufenweise (Kommentar in `build.sh`: Swift 5-Modus).
 142. **Lokalisierung in Tabelle** (`.strings`) statt `L(en, de)` im Code; danach Spanisch/Französisch möglich.
-143. **Crash-/Fehlerprotokoll rotieren** (Größe begrenzen), Knopf „Diagnose kopieren“ (Version, macOS, Tool-Versionen, ohne Tokens).
+143. ✅ **Crash-/Fehlerprotokoll rotieren** (Größe begrenzen), Knopf „Diagnose kopieren“ (Version, macOS, Tool-Versionen, ohne Tokens).
 144. **Rate-Limit-Backoff** für GitHub (nicht nur Pause unter 300 Resten).
 145. **Offline-Banner** und Wiederholung mit Backoff statt Fehlerseite.
 146. **Token-Sicherheit:** Render-Key mit eigener Schlüsselbund-Zugriffssteuerung; Hinweis, einen eigenen Key nur für die App anzulegen (alte #91).

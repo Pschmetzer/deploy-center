@@ -32,6 +32,28 @@ final class Store: ObservableObject {
         }
     }
 
+    /// Once a day: commits that have waited longer than the chosen number of days (Settings).
+    private func checkStale() {
+        let d = UserDefaults.standard
+        let days = d.integer(forKey: "staleDays")
+        let today = Date().formatted(.iso8601.year().month().day())
+        guard days > 0, d.string(forKey: "lastStaleAlarm") != today else { return }
+        let old = items.values.joined().filter { i in
+            i.hasNewCommits && i.state == .idle && !isHidden(i)
+                && (i.oldestPendingAt.map { Date().timeIntervalSince($0) > Double(days) * 86400 } ?? false)
+        }
+        guard !old.isEmpty else { return }
+        d.set(today, forKey: "lastStaleAlarm")
+        say(L("\(old.count) projects wait for more than \(days) days", "\(old.count) Projekte warten schon über \(days) Tage"),
+            old.prefix(5).map(\.name).joined(separator: ", "), ok: false)
+    }
+
+    /// "Place 2 of 5" for a queued row; nil when it is alone.
+    func queueText(_ i: Item) -> String? {
+        guard queue.count > 1, let k = queue.firstIndex(where: { $0.item.id == i.id }) else { return nil }
+        return L("place \(k + 1) of \(queue.count)", "Platz \(k + 1) von \(queue.count)")
+    }
+
     /// Once a day: if the pace of the last 7 days passes 80 % of the monthly budget (Settings), say so.
     private func checkBudget() {
         let d = UserDefaults.standard
@@ -135,6 +157,7 @@ final class Store: ObservableObject {
             writeCache(p, data)
             fromCache.remove(p); loadedAt[p] = Date()
             recordHistory()
+            checkStale()
         } catch {
             loadError[p] = error.localizedDescription
         }
@@ -291,12 +314,21 @@ final class Store: ObservableObject {
 
     /// The end of a deploy: a Mac notification when the app is in the background, a line in the
     /// window in any case (the person may be looking at the other tab).
-    struct Toast: Equatable { let id = UUID(); let text: String; let ok: Bool }
+    struct Toast: Equatable {
+        let id = UUID(); let text: String; let ok: Bool
+        var undoLabel: String? = nil; var undo: (() -> Void)? = nil
+        static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
+    }
     @Published var toast: Toast?
+    /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
+    struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool }
+    @Published var messages: [Message] = []
     private func say(_ title: String, _ body: String, ok: Bool) {
         Notify.post(title, body)
         let t = Toast(text: title, ok: ok)
         toast = t
+        messages.insert(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok), at: 0)
+        if messages.count > 30 { messages.removeLast() }
         Task { try? await Task.sleep(nanoseconds: 5_000_000_000); if toast == t { toast = nil } }
     }
 
@@ -321,6 +353,15 @@ final class Store: ObservableObject {
         if hidden.remove(Self.key(i)) == nil { hidden.insert(Self.key(i)); items[i.platform]?.indices.forEach { j in
             if items[i.platform]![j].id == i.id { items[i.platform]![j].selected = false } } }
         UserDefaults.standard.set(Array(hidden), forKey: "hidden")
+    }
+    /// Hide with a way back: the toast offers "Undo" for a few seconds.
+    func hideWithUndo(_ i: Item) {
+        toggleHidden(i)
+        toast = Toast(text: L("\(i.name) hidden", "\(i.name) ausgeblendet"), ok: true,
+                      undoLabel: L("Undo", "Rückgängig"), undo: { [weak self] in self?.toggleHidden(i) })
+    }
+    func unhide(_ key: String) {
+        hidden.remove(key); UserDefaults.standard.set(Array(hidden), forKey: "hidden")
     }
     func setNote(_ i: Item, _ text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)

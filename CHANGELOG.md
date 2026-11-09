@@ -17,6 +17,10 @@
 - Tab and filters are remembered; the menu bar icon shows building and failed; lists reload after sleep.
 - `deploycenter://select?project=name` shows a project (never starts a build).
 - The script runs on Linux too (stat, date, base64).
+- Hiding a project can be undone from the message; hidden projects are listed in Settings, one by one.
+- A bell in the footer lists the latest messages; queued rows say "place 2 of 5".
+- Settings: warn when commits wait longer than N days; "Copy diagnostics" (versions only, no names or keys).
+- `deploys diff <project>` and `deploys notes <project>` (release notes in Markdown).
 
 ## 0.5.0
 

@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var detailItem: Item?
     @AppStorage("showAll") private var showAll = false
     @State private var pathItem: Item?
+    @State private var showMessages = false
     @State private var pathText = ""
     @State private var noteItem: Item?
     @State private var noteText = ""
@@ -44,7 +45,6 @@ struct ContentView: View {
             all = all.filter { $0.name.localizedCaseInsensitiveContains(search) || $0.detail.localizedCaseInsensitiveContains(search)
                 || ($0.domain ?? "").localizedCaseInsensitiveContains(search) }
         }
-        // What waits to go live first, most commits first; the rest by name as the script sorted it.
         // Pinned first, then what waits to go live (most commits first), then the rest by name.
         let pins = all.filter { store.isPinned($0) }
         let rest = all.filter { !store.isPinned($0) }
@@ -103,7 +103,12 @@ struct ContentView: View {
         .frame(minWidth: 680, minHeight: 540)
         .overlay(alignment: .bottom) {
             if let t = store.toast {
-                Label(t.text, systemImage: t.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                HStack(spacing: 10) {
+                    Label(t.text, systemImage: t.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                    if let label = t.undoLabel, let undo = t.undo {
+                        Button(label) { undo(); store.toast = nil }.buttonStyle(.link)
+                    }
+                }
                     .font(.callout.weight(.medium))
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(Capsule().fill(.regularMaterial))
@@ -212,9 +217,10 @@ struct ContentView: View {
             .help(L("Only projects with a commit on GitHub that is not live yet",
                     "Nur Projekte mit einem Commit auf GitHub, der noch nicht live ist"))
 
-            if let at = store.loadedAt[platform] {
-                Text((store.fromCache.contains(platform) ? L("saved ", "gespeichert ") : L("as of ", "Stand "))
-                     + at.formatted(date: .omitted, time: .shortened))
+            let stamps = scopes.compactMap { p in store.loadedAt[p].map { (showAll ? p.rawValue + " " : "") + $0.formatted(date: .omitted, time: .shortened) } }
+            if !stamps.isEmpty {
+                Text((scopes.contains { store.fromCache.contains($0) } ? L("saved ", "gespeichert ") : L("as of ", "Stand "))
+                     + stamps.joined(separator: " · "))
                     .font(.caption2).foregroundStyle(.secondary).fixedSize()
             }
             Button { Task { for p in scopes { await store.load(p) }; await store.loadExtras() } } label: {
@@ -409,7 +415,7 @@ struct ContentView: View {
                     showLog: { logItem = item },
                     onCancel: { store.cancel(item) },
                     onRetry: item.deployable ? { store.deployOne(item, preview: false) } : nil,
-                    usualMinutes: store.usualMinutes(item), search: search) { tick(item) }
+                    usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: search) { tick(item) }
                     .contextMenu {
                         if item.repo != nil {
                             Button(L("Details …", "Details …")) { detailItem = item }
@@ -447,7 +453,7 @@ struct ContentView: View {
                         Button(L("Page to check after deploy …", "Seite für die Prüfung nach dem Deploy …")) {
                             pathText = store.healthPath(item); pathItem = item
                         }
-                        Button(L("Hide", "Ausblenden")) { store.toggleHidden(item) }
+                        Button(L("Hide", "Ausblenden")) { store.hideWithUndo(item) }
                     }
             }
             .listStyle(.inset)
@@ -462,6 +468,22 @@ struct ContentView: View {
                             : L("\(count) selected", "\(count) ausgewählt"))
                 .foregroundStyle(.secondary)
             Spacer()
+            if !store.messages.isEmpty {
+                Button { showMessages.toggle() } label: { Image(systemName: "bell") }
+                    .buttonStyle(.borderless).help(L("Latest messages", "Letzte Meldungen"))
+                    .popover(isPresented: $showMessages) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(store.messages.prefix(15)) { m in
+                                HStack(alignment: .top, spacing: 6) {
+                                    Image(systemName: m.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(m.ok ? .green : .red)
+                                    Text(m.date.formatted(date: .omitted, time: .shortened)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                    Text(m.text).font(.caption).textSelection(.enabled)
+                                }
+                            }
+                        }
+                        .padding(12).frame(width: 420, alignment: .leading)
+                    }
+            }
             if scopes.contains(where: { p in (store.items[p] ?? []).contains { $0.state.isActive } }) {
                 Button(L("Stop all", "Alles abbrechen"), role: .destructive) { store.cancelAll() }
             }
@@ -607,6 +629,7 @@ struct Row: View {
     var onCancel: (() -> Void)? = nil
     var onRetry: (() -> Void)? = nil
     var usualMinutes: Int? = nil
+    var queueText: String? = nil
     var search = ""
     let toggle: () -> Void
 
@@ -749,7 +772,7 @@ struct Row: View {
         case .queued:
             HStack(spacing: 6) {
                 Image(systemName: "hourglass").foregroundStyle(.secondary)
-                Text(L("queued", "in der Schlange")).font(.caption)
+                Text(queueText ?? L("queued", "in der Schlange")).font(.caption)
                 cancelButton
             }
         case .starting:

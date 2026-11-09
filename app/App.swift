@@ -22,6 +22,7 @@ struct SettingsView: View {
     @AppStorage("checkUpdates") private var checkUpdates = true
     @AppStorage("demoMode") private var demoMode = false
     @AppStorage("undoSeconds") private var undoSeconds = 8
+    @AppStorage("staleDays") private var staleDays = 0
     @AppStorage("monthlyBudget") private var monthlyBudget = 0.0
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
@@ -55,6 +56,10 @@ struct SettingsView: View {
                 Text(L("Monthly build budget (USD, 0 = off)", "Monatliches Build-Budget (USD, 0 = aus)"))
                 TextField("0", value: $monthlyBudget, format: .number).frame(width: 70).multilineTextAlignment(.trailing)
             }
+            Picker(L("Warn when commits wait longer than", "Warnen, wenn Commits länger warten als"), selection: $staleDays) {
+                Text(L("Off", "Aus")).tag(0)
+                ForEach([2, 3, 5, 7], id: \.self) { Text(L("\($0) days", "\($0) Tage")).tag($0) }
+            }
             Toggle(L("Notify when a deploy ends", "Mitteilung, wenn ein Deploy fertig ist"), isOn: $notifications)
             Picker(L("Daily reminder to deploy", "Tägliche Erinnerung zum Deployen"), selection: $reminderHour) {
                 Text(L("Off", "Aus")).tag(0)
@@ -70,10 +75,26 @@ struct SettingsView: View {
                 NSWorkspace.shared.open(Log.url)
             }
             if !store.hidden.isEmpty {
-                Button(L("Show \(store.hidden.count) hidden projects again", "\(store.hidden.count) ausgeblendete Projekte wieder zeigen")) {
-                    store.hidden = []; UserDefaults.standard.set([String](), forKey: "hidden")
+                DisclosureGroup(L("\(store.hidden.count) hidden projects", "\(store.hidden.count) ausgeblendete Projekte")) {
+                    ForEach(store.hidden.sorted(), id: \.self) { k in
+                        HStack {
+                            Text(Demo.mask(String(k.split(separator: "/", maxSplits: 1).last ?? Substring(k))))
+                            Spacer()
+                            Button(L("Show", "Zeigen")) { store.unhide(k) }
+                        }
+                    }
                 }
             }
+            Button(L("Copy diagnostics", "Diagnose kopieren")) {
+                let d = store.doctor
+                let info = ["Deploy Center \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")",
+                            ProcessInfo.processInfo.operatingSystemVersionString,
+                            "jq \(d?.jq ?? false), vercel \(d?.vercelCli ?? false)/api \(d?.vercelApi ?? false)/login \(d?.vercelLoggedIn ?? false)",
+                            "gh \(d?.githubCli ?? false)/login \(d?.githubLoggedIn ?? false), render key \(d?.renderKey ?? false)",
+                            "Vercel \(store.items[.vercel]?.count ?? 0), Render \(store.items[.render]?.count ?? 0) projects"]
+                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(info.joined(separator: "\n"), forType: .string)
+            }
+            .help(L("Versions and what is connected; no names, no keys", "Versionen und was verbunden ist; keine Namen, keine Schlüssel"))
             Text(L("Version ", "Version ") + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")
                  + L(" · no telemetry; GitHub, Vercel and Render are asked with your own logins", " · keine Telemetrie; GitHub, Vercel und Render werden mit deinen eigenen Anmeldungen gefragt"))
                 .font(.caption).foregroundStyle(.secondary)

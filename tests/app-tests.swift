@@ -100,5 +100,15 @@ let c2 = Details.Commit(sha: "b", full: nil, url: nil, msg: "Bump x", author: "d
 expect("release notes list humans first", LogTools.releaseNotes(name: "web", commits: [c2, c1]),
        "## web\n- Fix login (#12) – ann\n\nDependency updates:\n- Bump x – dependabot")
 
+// Hide with a way back.
+MainActor.assumeIsolated {
+    let st = Store(); let it = item()
+    st.hideWithUndo(it)
+    expect("hidden after hide", st.isHidden(it), true)
+    st.toast?.undo?()
+    expect("shown again after undo", st.isHidden(it), false)
+    UserDefaults.standard.removeObject(forKey: "hidden")
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
