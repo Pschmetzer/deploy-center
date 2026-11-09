@@ -18,6 +18,11 @@ cd "$(dirname "$0")"
 : "${NOTARY_PROFILE:?Set NOTARY_PROFILE (see the top of this file)}"
 
 VERSION="$(cat VERSION)"
+# A release without words in the changelog, or a version that is already tagged, is a mistake.
+awk '/^## Unreleased/{f=1;next} /^## /{f=0} f&&/^- /{n++} END{exit n?0:1}' CHANGELOG.md \
+  || grep -q "^## $VERSION" CHANGELOG.md || { echo "CHANGELOG.md has nothing under Unreleased or $VERSION" >&2; exit 1; }
+! git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null || [ "${1:-}" != "--publish" ] \
+  || { echo "Tag v$VERSION exists already: raise VERSION" >&2; exit 1; }
 APP="build/Deploy Center.app"
 ZIP="build/DeployCenter-${VERSION}-universal.zip"
 
