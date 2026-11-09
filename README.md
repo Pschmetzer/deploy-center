@@ -24,9 +24,8 @@ fast. Deploying once a day with a click costs a fraction, and nothing ships by a
 
 ## Install
 
-1. Download the zip from [Releases](../../releases), unzip, and move **Deploy Center** to *Applications*.
-2. The app is not notarized by Apple. The first time you open it, macOS blocks it:
-   go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
+Download the zip from [Releases](../../releases), unzip, and move **Deploy Center** to *Applications*.
+It is signed and notarized by Apple, so it opens without a warning.
 
 Requirements: macOS 15 or newer (Apple silicon or Intel).
 
