@@ -500,14 +500,14 @@ struct CostBar: View {
             }
             Chart(costs.days) { d in
                 // A day over twice the average stands out.
-                BarMark(x: .value("Day", String(d.day.suffix(5))), y: .value("USD", d.build))
+                BarMark(x: .value("Day", String(d.day.suffix(2))), y: .value("USD", d.build))
                     .foregroundStyle(d.build > 2 * average && average > 0 ? Color.orange.gradient : Color.accentColor.gradient)
                 if let off = costs.offDay, d.day == off {
-                    RuleMark(x: .value("Day", String(d.day.suffix(5)))).foregroundStyle(.green).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
+                    RuleMark(x: .value("Day", String(d.day.suffix(2)))).foregroundStyle(.green).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
                 }
             }
             .chartYAxis { AxisMarks(position: .leading) { _ in AxisValueLabel() } }
-            .chartXAxis { AxisMarks(values: .automatic(desiredCount: 7)) }
+            .chartXAxis { AxisMarks { _ in AxisValueLabel() } }
             .frame(height: 64)
             .accessibilityLabel(L("Build costs per day", "Build-Kosten pro Tag"))
         }
