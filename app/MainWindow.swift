@@ -50,9 +50,25 @@ struct ContentView: View {
         let pins = all.filter { store.isPinned($0) }
         let rest = all.filter { !store.isPinned($0) }
         let changed = rest.filter { $0.hasNewCommits && $0.deployable }
-            .sorted { ($0.pendingCommits ?? 0) > ($1.pendingCommits ?? 0) }
+            .sorted {
+                let a = $0.pendingCommits ?? 0, b = $1.pendingCommits ?? 0
+                if a != b { return a > b }
+                // Projects of one repo stay together, so the rows can say "same as above".
+                if ($0.repo ?? "") != ($1.repo ?? "") { return ($0.repo ?? "") < ($1.repo ?? "") }
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
         let others = rest.filter { !($0.hasNewCommits && $0.deployable) }
         return pins + changed + (showAll ? others.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } : others)
+    }
+
+    /// Rows whose waiting changes are those of the row above (same repo): they need not repeat them.
+    private var sameRepoAsAbove: Set<String> {
+        var out = Set<String>(); var prev: Item?
+        for i in visible {
+            if let p = prev, let r = i.repo, r == p.repo, i.hasNewCommits, p.hasNewCommits { out.insert(Store.key(i)) }
+            prev = i
+        }
+        return out
     }
 
     private var selectedAll: [Item] { scopes.flatMap { store.selected($0) } }
@@ -436,8 +452,9 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
+            let dupes = sameRepoAsAbove
             List(visible) { item in
-                Row(item: item, cost: item.platform == .vercel ? store.buildCost(item.name) : nil,
+                Row(item: item, sameRepoAsAbove: dupes.contains(Store.key(item)), cost: item.platform == .vercel ? store.buildCost(item.name) : nil,
                     perBuild: item.platform == .vercel ? store.costs?.perBuild(item.name) : nil,
                     pinned: store.isPinned(item), note: store.note(item),
                     showDetails: item.repo == nil ? nil : { detailItem = item },
@@ -651,6 +668,7 @@ struct RenderKeySetup: View {
 
 struct Row: View {
     let item: Item
+    var sameRepoAsAbove = false
     var cost: Double? = nil
     var perBuild: Double? = nil
     var pinned = false
@@ -705,18 +723,21 @@ struct Row: View {
                             .font(.caption2).foregroundStyle(cost >= 5 ? .orange : .secondary)
                             .help(perBuild.map { L("About ", "Etwa ") + $0.formatted(.currency(code: "USD")) + L(" per build", " pro Build") } ?? "")
                     }
-                    if item.hasNewCommits {
+                    if item.hasNewCommits && sameRepoAsAbove {
+                        Label(L("same changes as the row above (same repo)", "gleiche Änderungen wie die Zeile darüber (gleiches Repo)"), systemImage: "arrow.up.circle")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else if item.hasNewCommits {
                         Label(Self.waitingText(item), systemImage: "arrow.up.circle.fill")
                             .font(.caption2.weight(.semibold)).foregroundStyle(.blue)
                             .help(item.headMsg.map { L("Newest commit: ", "Neuester Commit: ") + $0
                                 + (item.headAt.map { " (\(Self.ago($0)))" } ?? "") } ?? "")
                     }
-                    if item.hasNewCommits, let since = item.oldestPendingAt {
+                    if item.hasNewCommits, !sameRepoAsAbove, let since = item.oldestPendingAt {
                         Text(L("oldest waiting commit ", "ältester wartender Commit ") + Self.ago(since))
                             .font(.caption2).foregroundStyle(Date().timeIntervalSince(since) > 3 * 86400 ? .orange : .secondary)
                             .help(L("The oldest commit that is not live", "Der älteste Commit, der noch nicht live ist"))
                     }
-                    if let o = item.openPRs, o > 0 {
+                    if !sameRepoAsAbove, let o = item.openPRs, o > 0 {
                         Text(Self.openText(item, o))
                             .font(.caption2).foregroundStyle(.secondary)
                             .help(L("Pull requests on the repo that are not merged yet", "Pull Requests im Repo, die noch nicht gemergt sind"))
