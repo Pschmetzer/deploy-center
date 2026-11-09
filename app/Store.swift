@@ -24,11 +24,48 @@ final class Store: ObservableObject {
     func loadExtras() async {
         if doctor?.vercelLoggedIn == true {
             costs = try? await Tool.json(["costs", "14"], as: Costs.self)
+            checkBudget()
         }
         triggers = (try? await Tool.json(["triggers"], as: [Trigger].self)) ?? []
         if doctor?.githubLoggedIn == true {
             githubBudget = try? await Tool.json(["github-budget"], as: Budget.self)
         }
+    }
+
+    /// Once a day: commits that have waited longer than the chosen number of days (Settings).
+    private func checkStale() {
+        let d = UserDefaults.standard
+        let days = d.integer(forKey: "staleDays")
+        let today = Date().formatted(.iso8601.year().month().day())
+        guard days > 0, d.string(forKey: "lastStaleAlarm") != today else { return }
+        let old = items.values.joined().filter { i in
+            i.hasNewCommits && i.state == .idle && !isHidden(i)
+                && (i.oldestPendingAt.map { Date().timeIntervalSince($0) > Double(days) * 86400 } ?? false)
+        }
+        guard !old.isEmpty else { return }
+        d.set(today, forKey: "lastStaleAlarm")
+        say(L("\(old.count) projects wait for more than \(days) days", "\(old.count) Projekte warten schon über \(days) Tage"),
+            old.prefix(5).map(\.name).joined(separator: ", "), ok: false)
+    }
+
+    /// "Place 2 of 5" for a queued row; nil when it is alone.
+    func queueText(_ i: Item) -> String? {
+        guard queue.count > 1, let k = queue.firstIndex(where: { $0.item.id == i.id }) else { return nil }
+        return L("place \(k + 1) of \(queue.count)", "Platz \(k + 1) von \(queue.count)")
+    }
+
+    /// Once a day: if the pace of the last 7 days passes 80 % of the monthly budget (Settings), say so.
+    private func checkBudget() {
+        let d = UserDefaults.standard
+        let budget = d.double(forKey: "monthlyBudget")
+        guard budget > 0, let days = costs?.days.suffix(7), !days.isEmpty else { return }
+        let month = days.map(\.build).reduce(0, +) / Double(days.count) * 30
+        let today = Date().formatted(.iso8601.year().month().day())
+        guard month > budget * 0.8, d.string(forKey: "lastBudgetAlarm") != today else { return }
+        d.set(today, forKey: "lastBudgetAlarm")
+        let m = month.formatted(.currency(code: "USD")), b = budget.formatted(.currency(code: "USD"))
+        say(L("Build costs near your budget", "Build-Kosten nahe am Budget"),
+            L("At this pace ≈ \(m) a month, budget \(b)", "Bei diesem Tempo ≈ \(m) im Monat, Budget \(b)"), ok: false)
     }
 
     func buildCost(_ project: String) -> Double? {
@@ -69,6 +106,14 @@ final class Store: ObservableObject {
         booted = true
         if UserDefaults.standard.bool(forKey: "hideDock") { NSApp.setActivationPolicy(.accessory) }
         LogoCache.sweep()
+        for p in Platform.allCases { try? FileManager.default.removeItem(at: Self.cacheDir.appendingPathComponent("\(p.cli)-v1.json")) }
+        // After sleep the lists can be hours old, and the daily reminder may be overdue.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)   // the network needs a moment
+                await self?.autoRefresh(); self?.remindIfDue()
+            }
+        }
         Task { await checkForUpdate() }
         Task {
             await start()
@@ -112,6 +157,7 @@ final class Store: ObservableObject {
             writeCache(p, data)
             fromCache.remove(p); loadedAt[p] = Date()
             recordHistory()
+            checkStale()
         } catch {
             loadError[p] = error.localizedDescription
         }
@@ -184,9 +230,18 @@ final class Store: ObservableObject {
     var waiting: Waiting {
         var w = Waiting()
         let all = Array(items.values.joined())
+        // Projects of one repo (frontend + backend) share their commits and PRs: count them once.
+        var perRepo: [String: (commits: Int, prs: Int)] = [:]
         for i in all where i.hasNewCommits && i.state == .idle {
-            w.projects += 1; w.commits += i.pendingCommits ?? 0; w.prs += i.pendingPRs ?? 0
+            w.projects += 1
+            if let r = i.repo {
+                let o = perRepo[r] ?? (0, 0)
+                perRepo[r] = (max(o.commits, i.pendingCommits ?? 0), max(o.prs, i.pendingPRs ?? 0))
+            } else {
+                w.commits += i.pendingCommits ?? 0; w.prs += i.pendingPRs ?? 0
+            }
         }
+        for v in perRepo.values { w.commits += v.commits; w.prs += v.prs }
         // Open pull requests belong to a repo, and several projects can share one.
         var seen = Set<String>()
         for i in all { if let r = i.repo, let n = i.openPRs, seen.insert(r).inserted { w.openPRs += n } }
@@ -259,12 +314,21 @@ final class Store: ObservableObject {
 
     /// The end of a deploy: a Mac notification when the app is in the background, a line in the
     /// window in any case (the person may be looking at the other tab).
-    struct Toast: Equatable { let id = UUID(); let text: String; let ok: Bool }
+    struct Toast: Equatable {
+        let id = UUID(); let text: String; let ok: Bool
+        var undoLabel: String? = nil; var undo: (() -> Void)? = nil
+        static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
+    }
     @Published var toast: Toast?
+    /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
+    struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool }
+    @Published var messages: [Message] = []
     private func say(_ title: String, _ body: String, ok: Bool) {
         Notify.post(title, body)
         let t = Toast(text: title, ok: ok)
         toast = t
+        messages.insert(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok), at: 0)
+        if messages.count > 30 { messages.removeLast() }
         Task { try? await Task.sleep(nanoseconds: 5_000_000_000); if toast == t { toast = nil } }
     }
 
@@ -289,6 +353,15 @@ final class Store: ObservableObject {
         if hidden.remove(Self.key(i)) == nil { hidden.insert(Self.key(i)); items[i.platform]?.indices.forEach { j in
             if items[i.platform]![j].id == i.id { items[i.platform]![j].selected = false } } }
         UserDefaults.standard.set(Array(hidden), forKey: "hidden")
+    }
+    /// Hide with a way back: the toast offers "Undo" for a few seconds.
+    func hideWithUndo(_ i: Item) {
+        toggleHidden(i)
+        toast = Toast(text: L("\(i.name) hidden", "\(i.name) ausgeblendet"), ok: true,
+                      undoLabel: L("Undo", "Rückgängig"), undo: { [weak self] in self?.toggleHidden(i) })
+    }
+    func unhide(_ key: String) {
+        hidden.remove(key); UserDefaults.standard.set(Array(hidden), forKey: "hidden")
     }
     func setNote(_ i: Item, _ text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -330,13 +403,39 @@ final class Store: ObservableObject {
         enqueue([Job(item: item, preview: preview, sha: sha, clearCache: clearCache)])
     }
 
+    /// Seconds between the click and the first build; in this time "cancel" in the row still costs nothing.
+    var undoSeconds: Int { UserDefaults.standard.object(forKey: "undoSeconds") as? Int ?? 8 }
+    private var holdUntil = Date.distantPast
+    private var batch: [(Platform, String)] = []
+
     func enqueue(_ jobs: [Job]) {
         Notify.ask()
+        var added = 0
         for j in jobs where !(itemNow(j.item)?.state.isActive ?? false) {
             set(j.item.platform, j.item.id, .queued)
-            queue.append(j)
+            queue.append(j); batch.append((j.item.platform, j.item.id)); added += 1
+        }
+        if added > 0, undoSeconds > 0 {
+            let n = undoSeconds
+            holdUntil = Date().addingTimeInterval(Double(n))
+            toast = Toast(text: L("Starting in \(n) s – cancel in the row to stop", "Startet in \(n) s – in der Zeile abbrechen"), ok: true)
+            Task { try? await Task.sleep(nanoseconds: UInt64(n) * 1_000_000_000 + 300_000_000); pump() }
         }
         pump()
+    }
+
+    /// Stops everything that is queued or building.
+    func cancelAll() { for i in Array(items.values.joined()) where i.state.isActive { cancel(i) } }
+
+    private func summarize() {
+        defer { batch = [] }
+        guard batch.count >= 2 else { return }
+        var ok = 0, bad = 0
+        for (p, id) in batch {
+            guard let s = items[p]?.first(where: { $0.id == id })?.state else { continue }
+            if case .done = s { ok += 1 } else if case .failed = s { bad += 1 }
+        }
+        say(L("\(ok) live, \(bad) failed", "\(ok) live, \(bad) fehlgeschlagen"), L("Deploy run finished", "Deploy-Lauf beendet"), ok: bad == 0)
     }
 
     private func itemNow(_ i: Item) -> Item? { items[i.platform]?.first { $0.id == i.id } }
@@ -345,7 +444,7 @@ final class Store: ObservableObject {
     }
 
     private func pump() {
-        while running < maxParallel, let k = queue.firstIndex(where: { waitsFor($0) == nil }) {
+        while Date() >= holdUntil, running < maxParallel, let k = queue.firstIndex(where: { waitsFor($0) == nil }) {
             let job = queue.remove(at: k)
             running += 1
             Task { await deploy(job); running -= 1; pump() }
@@ -358,7 +457,7 @@ final class Store: ObservableObject {
                                                              "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
             }
         }
-        if queue.isEmpty && running == 0 { queueBatch = [] }
+        if queue.isEmpty && running == 0 { queueBatch = []; if Date() >= holdUntil { summarize() } }
     }
 
     /// The Render service of the same repo that a Vercel frontend waits for, while it is queued or building.
@@ -378,7 +477,10 @@ final class Store: ObservableObject {
         if let k = queue.firstIndex(where: { $0.item.id == item.id }) {
             queue.remove(at: k); set(item.platform, item.id, .idle); return
         }
-        guard let id = itemNow(item)?.deployId else { return }
+        guard let id = itemNow(item)?.deployId else {
+            toast = Toast(text: L("\(item.name) is still starting – try again in a moment", "\(item.name) startet noch – gleich nochmal versuchen"), ok: false)
+            return
+        }
         cancelled.insert(item.id)
         Task {
             let args = item.platform == .vercel ? ["vercel", "cancel", id] : ["render", "cancel", item.id, id]
@@ -419,6 +521,13 @@ final class Store: ObservableObject {
         d.append(Date().timeIntervalSince(start)); all[Self.key(i)] = Array(d.suffix(5)); durations = all
     }
 
+    /// After a rollback production is older than the branch: the project has changes again.
+    private func markBehind(_ p: Platform, _ id: String) {
+        guard let i = items[p]?.firstIndex(where: { $0.id == id }) else { return }
+        items[p]![i].changed = true; items[p]![i].lastSha = nil
+        items[p]![i].lastAt = Date()
+    }
+
     /// Production back to what was live before.
     func rollback(_ item: Item) {
         Notify.ask()
@@ -428,8 +537,8 @@ final class Store: ObservableObject {
             set(p, item.id, .starting)
             do {
                 let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self)
-                if p == .vercel { set(p, item.id, .done(item.link)) }
-                else { set(p, item.id, .running(L("rolling back", "rollt zurück"))); try await follow(item, deployId: r.id, url: item.link) }
+                if p == .vercel { set(p, item.id, .done(item.link), countsAsLive: false); markBehind(p, item.id) }
+                else { set(p, item.id, .running(L("rolling back", "rollt zurück"))); try await follow(item, deployId: r.id, url: item.link, rolledBack: true) }
             } catch { set(p, item.id, .failed(error.localizedDescription)) }
         }
     }
@@ -456,13 +565,20 @@ final class Store: ObservableObject {
     }
 
     /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
-    private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false) async throws {
+    private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false, rolledBack: Bool = false) async throws {
         let p = item.platform
+        var misses = 0
         for _ in 0..<400 {
             try await Task.sleep(nanoseconds: 6_000_000_000)
             if cancelled.contains(item.id) { return }
             let args = p == .vercel ? ["vercel", "status", deployId] : ["render", "status", item.id, deployId]
-            guard let s = try? await Tool.json(args, as: StatusReply.self) else { continue }
+            guard let s = try? await Tool.json(args, as: StatusReply.self) else {
+                // Network or login gone: say so instead of spinning for 40 minutes without a word.
+                misses += 1
+                if misses >= 5 { set(p, item.id, .running(L("status unavailable, retrying", "Status nicht abrufbar, neuer Versuch"))) }
+                continue
+            }
+            misses = 0
             let state = (s.state ?? "").lowercased()
             switch (p, state) {
             case (.vercel, "ready"), (.render, "live"):
@@ -470,13 +586,17 @@ final class Store: ObservableObject {
                     if let k = items[p]?.firstIndex(where: { $0.id == item.id }) { items[p]![k].previewId = deployId }
                     set(p, item.id, .done(s.url ?? url), countsAsLive: false)
                 } else {
-                    recordDuration(item)
-                    set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link))
-                    if let l = item.link { await checkSite(item.name, l) }
+                    if rolledBack {
+                        set(p, item.id, .done(item.link), countsAsLive: false); markBehind(p, item.id)
+                    } else {
+                        recordDuration(item)
+                        set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link))
+                    }
+                    if let l = item.link { await checkSite(item.name, l.hasSuffix("/") ? String(l.dropLast()) + healthPath(item) : l + healthPath(item)) }
                 }
                 return
             case (.render, "succeeded"):
-                set(p, item.id, .done(nil)); return
+                set(p, item.id, .done(nil), countsAsLive: !rolledBack); return
             case (.vercel, "canceled"):
                 // Usually the project's "Ignored Build Step" decided nothing changed.
                 set(p, item.id, .skipped(L("Skipped or canceled by Vercel (Ignored Build Step?)",
@@ -491,13 +611,28 @@ final class Store: ObservableObject {
         set(p, item.id, .failed(L("No result after 40 minutes – check the dashboard", "Kein Ergebnis nach 40 Minuten – im Dashboard nachsehen")))
     }
 
+    /// A path to ask after going live instead of the front page (/health), per project. Kept on this Mac.
+    func healthPath(_ i: Item) -> String { ((UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:])[Self.key(i)] ?? "" }
+    func setHealthPath(_ i: Item, _ path: String) {
+        var all = (UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:]
+        let t = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        all[Self.key(i)] = t.isEmpty ? nil : (t.hasPrefix("/") ? t : "/" + t)
+        UserDefaults.standard.set(all, forKey: "healthPaths")
+    }
+
     /// After going live: does the site answer? A deploy can be "ready" and the page still broken.
     private func checkSite(_ name: String, _ link: String) async {
         guard let url = URL(string: link) else { return }
-        var req = URLRequest(url: url, timeoutInterval: 20)
-        req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
-        let code = ((try? await URLSession.shared.data(for: req))?.1 as? HTTPURLResponse)?.statusCode
-        if let code, code < 400 { return }   // fine: the "is live" line already said enough
+        var code: Int?
+        // A fresh Render service can answer 502/503 for a few seconds: ask up to three times.
+        for attempt in 0..<3 {
+            var req = URLRequest(url: url, timeoutInterval: 20)
+            req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
+            code = ((try? await URLSession.shared.data(for: req))?.1 as? HTTPURLResponse)?.statusCode
+            // 401/403: the site answers but is protected (Deployment Protection, login) — not broken.
+            if let c = code, c < 400 || c == 401 || c == 403 { return }
+            if attempt < 2 { try? await Task.sleep(nanoseconds: 6_000_000_000) }
+        }
         say(L("\(name) is live, but the site answers \(code.map(String.init) ?? "nothing")",
               "\(name) ist live, aber die Seite antwortet mit \(code.map(String.init) ?? "nichts")"), link, ok: false)
     }

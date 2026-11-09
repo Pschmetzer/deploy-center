@@ -37,6 +37,7 @@ cat > "$BUILD/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>${VERSION}</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>app.deploycenter.mac</string><key>CFBundleURLSchemes</key><array><string>deploycenter</string></array></dict></array>
 </dict></plist>
 PLIST
 

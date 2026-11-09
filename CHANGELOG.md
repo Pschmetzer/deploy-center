@@ -2,7 +2,25 @@
 
 ## Unreleased
 
-(nothing yet)
+- Fixed: after a rollback the row no longer claims to be on the newest commit.
+- Fixed: a repo shared by a frontend and a backend counts its PRs and commits once in the banner and the menu bar.
+- Fixed: the banner says how many of the waiting projects are on the open tab.
+- Fixed: a lost network or login is shown during a deploy instead of spinning silently.
+- Fixed: the site check asks three times (fresh Render services answer 502 at first) and treats 401/403 as protected, not broken.
+- `deploy-changed` starts Render services through the same lock as the app; `triggers` asks Render in parallel.
+- Build log: failing lines in red, "Jump to the first error", "Errors only", "Copy for Claude".
+- Demo mode (Settings): project names and domains are replaced, for screenshots.
+- CI on GitHub (tests and type-check; no deploys).
+- A wait before a deploy starts (Settings, default 8 s) with "cancel" in the row; "Stop all" in the footer; a summary when a run of several deploys ends.
+- "Copy release notes" in the project details; "Page to check after deploy" per project (e.g. /health).
+- Monthly build budget with a warning at 80 % of the pace; the cost bar also shows under "All".
+- Tab and filters are remembered; the menu bar icon shows building and failed; lists reload after sleep.
+- `deploycenter://select?project=name` shows a project (never starts a build).
+- The script runs on Linux too (stat, date, base64).
+- Hiding a project can be undone from the message; hidden projects are listed in Settings, one by one.
+- A bell in the footer lists the latest messages; queued rows say "place 2 of 5".
+- Settings: warn when commits wait longer than N days; "Copy diagnostics" (versions only, no names or keys).
+- `deploys diff <project>` and `deploys notes <project>` (release notes in Markdown).
 
 ## 0.5.0
 

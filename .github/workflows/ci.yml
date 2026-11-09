@@ -1,0 +1,22 @@
+name: CI
+# Lint and tests only. Nothing here deploys anything.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: brew install jq shellcheck
+      - name: shellcheck (errors only)
+        run: shellcheck --severity=error deploys build.sh release.sh tests/*.sh
+      - name: Script tests
+        run: bash tests/script-tests.sh
+      - name: App tests
+        run: bash tests/app-tests.sh
+      - name: Type-check the app
+        run: swiftc -parse-as-library -swift-version 5 -typecheck app/*.swift

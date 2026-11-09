@@ -13,6 +13,8 @@
 #   deploys doctor                            check tools and access (JSON)
 #   deploys changed [--json]                  what has commits on GitHub that are not live
 #   deploys deploy-changed [--yes]            deploy all of those (shows the list without --yes)
+#   deploys diff <project>                    commits and files between what is live and the branch
+#   deploys notes <project>                   the same as release notes (Markdown)
 #   deploys vercel map <p> <owner/repo> [br]  say where a project deploys from
 #   deploys vercel list                       projects and whether a push still deploys them
 #   deploys vercel autodeploy-off <p>|--all   disconnect Git (remembers the repo first)
@@ -39,6 +41,11 @@ LEGACY_KEYCHAIN_SERVICE="render-api-key"
 
 mkdir -p "$CONFIG_DIR"
 [ -f "$REPOS" ] || echo '{}' > "$REPOS"
+
+# BSD (macOS) and GNU (Linux) spell file times, date maths and base64 differently.
+mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
+days_ago() { date -u -v-"$1"d +%Y-%m-%d 2>/dev/null || date -u -d "$1 days ago" +%Y-%m-%d; }
+b64d() { base64 -D 2>/dev/null || base64 -d; }
 
 die() { echo "Error: ${RED}$*${PLAIN}" >&2; exit 1; }
 
@@ -127,7 +134,7 @@ vercel_off() {
 # builds. The lock ages out after a minute; a start that failed removes it at once.
 start_lock() {
   local d="$CONFIG_DIR/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
-  if [ -f "$f" ] && [ $(( $(date +%s) - $(stat -f %m "$f") )) -lt 60 ]; then die "$1 is being started already (wait a minute)"; fi
+  if [ -f "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -lt 60 ]; then die "$1 is being started already (wait a minute)"; fi
   touch "$f"; echo "$f"
 }
 
@@ -336,7 +343,7 @@ cost_day() {
           | map({name:(.[0].Tags.ProjectName // "?"), build:(map(.BilledCost)|add)}))}' \
     > "$out/$from.json" 2>/dev/null || true
 }
-export -f cost_day
+export -f cost_day days_ago
 
 # ---------- Other things that start builds ----------
 
@@ -344,13 +351,13 @@ export -f cost_day
 workflow_hits() {
   local repo="$1" out="$2"
   gh api "repos/$repo/contents/.github/workflows" --jq '.[] | select(.type=="file") | .path' 2>/dev/null | while read -r f; do
-    gh api "repos/$repo/contents/$f" --jq '.content' 2>/dev/null | base64 -D 2>/dev/null \
+    gh api "repos/$repo/contents/$f" --jq '.content' 2>/dev/null | b64d 2>/dev/null \
       | grep -vE '^[[:space:]]*#' \
       | grep -qE 'vercel (deploy|--prod)|vercel-action|api\.render\.com/deploy|render-deploy|deploy[-_]hook|DEPLOY_HOOK' \
       && printf '{"kind":"workflow","where":"%s","detail":"%s"}\n' "$repo" "$f"
   done > "$out/$(echo "$repo" | tr '/' '_').jsonl" || true
 }
-export -f workflow_hits
+export -f workflow_hits b64d
 
 # ---------- Commands ----------
 
@@ -437,9 +444,23 @@ case "${1:-} ${2:-}" in
     else jq --arg p "$p" '. + [$p] | unique' "$f" > "$tmp"; echo "$p is left out of changed and deploy-changed"; fi
     mv "$tmp" "$f" ;;
 
+  "diff "*|"notes "*)
+    # What is merged but not live for one project, from the same data the window shows.
+    p="${2:?project}"; plat="$(platform_of "$p")"
+    j="$("$0" "$plat" json | jq -c --arg p "$p" '.[] | select(.name == $p)')"
+    [ -n "$j" ] || die "$p not found"
+    repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
+    d="$("$0" details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // "main"')")"
+    if [ "${1:-}" = "notes" ]; then
+      echo "$d" | jq -r --arg p "$p" '"## \($p)", (.commits | map(select(.bot | not)) | .[] | "- \(.msg)\(if .pr then " (#\(.pr))" else "" end) – \(.author // "?")"),
+        (if (.commits | map(select(.bot)) | length) > 0 then "", "Dependency updates:", (.commits | map(select(.bot)) | .[] | "- \(.msg) – \(.author // "?")") else empty end)'
+    else
+      echo "$d" | jq -r '(.commits | .[] | "\(.sha)  \(.msg)  (\(.author // "?"))"), "", "\(.commits | length) commits, \(.files) files, +\(.additions) -\(.deletions)", (if (.risky | length) > 0 then "Check before shipping: " + (.risky | join(", ")) else empty end)'
+    fi ;;
+
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
-    cmds="doctor changed deploy-changed status watch logs open ignore costs triggers details vercel render completion"
+    cmds="doctor changed deploy-changed status watch logs open ignore diff notes costs triggers details vercel render completion"
     case "${2:-zsh}" in
       zsh) cat <<ZSH
 _deploys() {
@@ -499,7 +520,7 @@ BASH
     # Vercel charges for the last N days (default 7), per day and builds per project.
     days="${2:-7}"; team="$(vercel_team)"; tmp="$(mktemp -d)"
     for i in $(seq "$days" -1 1); do
-      echo "$(date -u -v-"${i}"d +%Y-%m-%d) $(date -u -v-"$((i-1))"d +%Y-%m-%d)"
+      echo "$(days_ago "$i") $(days_ago "$((i-1))")"
     done | xargs -P 4 -n 2 bash -c 'cost_day "$0" "$1" "'"$team"'" "'"$tmp"'"'
     # Builds per project over the last 7 days, to put a price on one build.
     since=$(( ($(date +%s) - 7*86400) * 1000 ))
@@ -530,13 +551,16 @@ BASH
             | {kind:"vercel-build", where:.name, detail:"source \(.source), \(.created/1000|strftime("%Y-%m-%d %H:%M")) UTC"}'
       if render_key >/dev/null 2>&1; then
         roff="$CONFIG_DIR/render-off.json"; [ -f "$roff" ] || echo '{}' > "$roff"
+        # All services at once: twenty calls one after another take a while.
         for id in $(render_services | jq -r '.[] | select(.suspended!="suspended") | .id'); do
-          render_call GET "/services/$id/deploys?limit=5" 2>/dev/null \
+          ( render_call GET "/services/$id/deploys?limit=5" 2>/dev/null \
             | jq -c --arg id "$id" --argjson since "$((since/1000))" --slurpfile o "$roff" '.[].deploy
                 | select(.trigger as $t | ["new_commit","deploy_hook","blueprint_sync"] | index($t))
                 | select((.createdAt|sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) > ([$since, ($o[0][$id] // 1e12)] | max))
-                | {kind:"render-build", where:$id, detail:"trigger \(.trigger), \(.createdAt)"}' || true
+                | {kind:"render-build", where:$id, detail:"trigger \(.trigger), \(.createdAt)"}' > "$tmp/r_$id.out" || true ) &
         done
+        wait
+        cat "$tmp"/r_*.out 2>/dev/null || true
         render_call GET "/blueprints?limit=50" 2>/dev/null \
           | jq -c '.[].blueprint | select(.autoSync==true) | {kind:"render-blueprint", where:.name, detail:"auto-sync on"}' || true
       fi
@@ -572,7 +596,8 @@ BASH
         if ( vercel_deploy_json "$name" | jq -r --arg n "$name" '"Vercel: \($n) started -> \(.url)"' ); then ok=$((ok+1))
         else echo "Vercel: $name failed to start" >&2; bad=$((bad+1)); fi
       else
-        if ( render_call POST "/services/$id/deploys" '{}' | jq -r --arg n "$name" '"Render: \($n) started (\(.id))"' ); then ok=$((ok+1))
+        # deploy-json takes the same start lock as the app, so a second start within a minute is refused.
+        if ( "$0" render deploy-json "$name" | jq -r --arg n "$name" '"Render: \($n) started (\(.id))"' ); then ok=$((ok+1))
         else echo "Render: $name failed to start" >&2; bad=$((bad+1)); fi
       fi
     done < <(echo "$list" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.id // "")"')
@@ -709,5 +734,5 @@ BASH
     with_heads "$list" ;;
 
   *)
-    sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

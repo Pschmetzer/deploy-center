@@ -20,6 +20,10 @@ struct SettingsView: View {
     @AppStorage("hideDock") private var hideDock = false
     @AppStorage("notifications") private var notifications = true
     @AppStorage("checkUpdates") private var checkUpdates = true
+    @AppStorage("demoMode") private var demoMode = false
+    @AppStorage("undoSeconds") private var undoSeconds = 8
+    @AppStorage("staleDays") private var staleDays = 0
+    @AppStorage("monthlyBudget") private var monthlyBudget = 0.0
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
 
@@ -44,6 +48,18 @@ struct SettingsView: View {
                     catch { loginError = error.localizedDescription; openAtLogin = SMAppService.mainApp.status == .enabled }
                 }
             if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
+            Picker(L("Wait before a deploy starts", "Warten, bevor ein Deploy startet"), selection: $undoSeconds) {
+                Text(L("No wait", "Nicht warten")).tag(0)
+                ForEach([5, 8, 15], id: \.self) { Text(L("\($0) seconds (cancel possible)", "\($0) Sekunden (Abbrechen möglich)")).tag($0) }
+            }
+            HStack {
+                Text(L("Monthly build budget (USD, 0 = off)", "Monatliches Build-Budget (USD, 0 = aus)"))
+                TextField("0", value: $monthlyBudget, format: .number).frame(width: 70).multilineTextAlignment(.trailing)
+            }
+            Picker(L("Warn when commits wait longer than", "Warnen, wenn Commits länger warten als"), selection: $staleDays) {
+                Text(L("Off", "Aus")).tag(0)
+                ForEach([2, 3, 5, 7], id: \.self) { Text(L("\($0) days", "\($0) Tage")).tag($0) }
+            }
             Toggle(L("Notify when a deploy ends", "Mitteilung, wenn ein Deploy fertig ist"), isOn: $notifications)
             Picker(L("Daily reminder to deploy", "Tägliche Erinnerung zum Deployen"), selection: $reminderHour) {
                 Text(L("Off", "Aus")).tag(0)
@@ -52,16 +68,33 @@ struct SettingsView: View {
             .onChange(of: reminderHour) { _, h in if h > 0 { Notify.ask() } }
             .help(L("Only a reminder, and only when something waits. Nothing is deployed by itself.",
                     "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
+            Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
             Toggle(L("Look for a new version once a day", "Einmal am Tag nach einer neuen Version sehen"), isOn: $checkUpdates)
             Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
                 if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
                 NSWorkspace.shared.open(Log.url)
             }
             if !store.hidden.isEmpty {
-                Button(L("Show \(store.hidden.count) hidden projects again", "\(store.hidden.count) ausgeblendete Projekte wieder zeigen")) {
-                    store.hidden = []; UserDefaults.standard.set([String](), forKey: "hidden")
+                DisclosureGroup(L("\(store.hidden.count) hidden projects", "\(store.hidden.count) ausgeblendete Projekte")) {
+                    ForEach(store.hidden.sorted(), id: \.self) { k in
+                        HStack {
+                            Text(Demo.mask(String(k.split(separator: "/", maxSplits: 1).last ?? Substring(k))))
+                            Spacer()
+                            Button(L("Show", "Zeigen")) { store.unhide(k) }
+                        }
+                    }
                 }
             }
+            Button(L("Copy diagnostics", "Diagnose kopieren")) {
+                let d = store.doctor
+                let info = ["Deploy Center \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")",
+                            ProcessInfo.processInfo.operatingSystemVersionString,
+                            "jq \(d?.jq ?? false), vercel \(d?.vercelCli ?? false)/api \(d?.vercelApi ?? false)/login \(d?.vercelLoggedIn ?? false)",
+                            "gh \(d?.githubCli ?? false)/login \(d?.githubLoggedIn ?? false), render key \(d?.renderKey ?? false)",
+                            "Vercel \(store.items[.vercel]?.count ?? 0), Render \(store.items[.render]?.count ?? 0) projects"]
+                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(info.joined(separator: "\n"), forType: .string)
+            }
+            .help(L("Versions and what is connected; no names, no keys", "Versionen und was verbunden ist; keine Namen, keine Schlüssel"))
             Text(L("Version ", "Version ") + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")
                  + L(" · no telemetry; GitHub, Vercel and Render are asked with your own logins", " · keine Telemetrie; GitHub, Vercel und Render werden mit deinen eigenen Anmeldungen gefragt"))
                 .font(.caption).foregroundStyle(.secondary)
@@ -78,14 +111,26 @@ struct DeployCenterApp: App {
     @AppStorage("showMenuBar") private var showMenuBar = true
 
     var body: some Scene {
-        WindowGroup("Deploy Center", id: "main") { ContentView(store: store) }
+        WindowGroup("Deploy Center", id: "main") {
+            ContentView(store: store)
+                // deploycenter://select?project=name shows and ticks a project. It never starts a build:
+                // any web page could open such a link.
+                .onOpenURL { url in
+                    guard url.scheme == "deploycenter",
+                          let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "project" })?.value else { return }
+                    store.pendingSearch = name
+                }
+        }
             .windowResizability(.contentMinSize)
         Settings { SettingsView(store: store) }
         MenuBarExtra(isInserted: $showMenuBar) {
             MenuBarContent(store: store)
         } label: {
             let n = store.waiting.prs > 0 ? store.waiting.prs : store.waiting.projects
-            Image(systemName: "paperplane").task { store.boot() }
+            let all = Array(store.items.values.joined())
+            let icon = all.contains { $0.state.isActive } ? "paperplane.fill"
+                : (all.contains { if case .failed = $0.state { return true } else { return false } } ? "exclamationmark.triangle.fill" : "paperplane")
+            Image(systemName: icon).task { store.boot() }
             if n > 0 { Text("\(n)") }
         }
     }
@@ -107,7 +152,7 @@ struct MenuBarContent: View {
             Text(L("\(w.prs) PRs, \(w.commits) commits waiting", "\(w.prs) PRs, \(w.commits) Commits warten"))
             Divider()
             ForEach(changed.prefix(12)) { i in
-                Button("\(i.name)  –  \(Row.waitingText(i))") {
+                Button("\(Demo.mask(i.name))  –  \(Row.waitingText(i))") {
                     store.pendingSearch = i.name
                     openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
                 }
