@@ -158,7 +158,12 @@ struct ContentView: View {
             Text(L("\(unchangedItem?.name ?? "") is already on the newest commit. A build costs build minutes and changes nothing.",
                    "\(unchangedItem?.name ?? "") ist schon auf dem neuesten Stand. Ein Build kostet Build-Minuten und ändert nichts."))
         }
-        .task { store.boot() }
+        .task {
+            store.boot()
+            // The search field would take the keyboard (and the space bar) at once; ⌘F still gets there.
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            if search.isEmpty { NSApp.keyWindow?.makeFirstResponder(nil) }
+        }
         .alert(L("Deploy to production?", "Live deployen?"), isPresented: $confirming) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             Button(L("Deploy", "Deployen")) { scopes.forEach { store.deploySelected($0) } }

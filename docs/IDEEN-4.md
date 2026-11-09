@@ -7,19 +7,19 @@ Keine Projektnamen aus dem Screenshot, weil das Repo öffentlich ist.
 
 ## A. Neue Fehler in der App (beim Lesen aufgefallen)
 
-1. ★ **Die Menüleisten-App bleibt tagelang bei alten Kosten.** `loadExtras()` läuft nur in `start()`. `autoRefresh()` lädt nur die Listen. `costs`, `triggers`, `providerIssues`, `githubBudget` und damit Budget-Alarm und Kostenleiste sind nach dem Start eingefroren. (`Store.start/autoRefresh`)
-2. ★ **Die Störungs-Anzeige (Vercel/Render/GitHub) wird nie aktualisiert.** `checkProviders()` läuft einmal beim Start. Eine Störung, die um 14 Uhr beginnt, zeigt die App nicht; eine, die vorbei ist, bleibt als Banner stehen. Bei jedem Reload prüfen, die drei Abfragen parallel (heute nacheinander, je bis 10 s).
-3. ★ **`checkSite` hält den Build-Platz fest.** Der Aufruf steckt in `follow()`, das in `deploy()` awaited wird. Bis zu ~70 s (3 × 20 s Timeout + 2 × 6 s Pause) bleibt `running` belegt, die Warteschlange stockt, ein Frontend wartet unnötig. Prüfung als eigene `Task` abkoppeln. (`Store.follow/checkSite`)
-4. ★ **Nach einem Sammel-Deploy wird nicht neu geladen.** `set(.done)` schreibt `lastSha = headSha` aus dem Speicher. Kam inzwischen ein neuer Commit, zeigt die Zeile „aktuell“, bis der Timer nach bis zu 15 Min zuschlägt. Am Ende von `summarize()` einmal `load` für die betroffenen Plattformen.
-5. **`autoRefresh` pausiert bei jedem laufenden Deploy komplett,** auch für die andere Plattform und auch bei einem Cron-Job, der 40 Min „läuft“. Dann bleibt die ganze Liste so lange alt. Nur die Plattform aussetzen, deren Zeile aktiv ist.
-6. **Ein Rollback meldet „… ist live“.** `set(.done)` löst `say("… ist live")` aus, auch bei `countsAsLive: false` (Rollback, Vorschau). Das Journal sagt „other“, die Mitteilung sagt „live“. Eigene Texte: „zurückgerollt“, „Vorschau fertig“. (`Store.set`)
+1. ✅ ★ **Die Menüleisten-App bleibt tagelang bei alten Kosten.** `loadExtras()` läuft nur in `start()`. `autoRefresh()` lädt nur die Listen. `costs`, `triggers`, `providerIssues`, `githubBudget` und damit Budget-Alarm und Kostenleiste sind nach dem Start eingefroren. (`Store.start/autoRefresh`)
+2. ✅ ★ **Die Störungs-Anzeige (Vercel/Render/GitHub) wird nie aktualisiert.** `checkProviders()` läuft einmal beim Start. Eine Störung, die um 14 Uhr beginnt, zeigt die App nicht; eine, die vorbei ist, bleibt als Banner stehen. Bei jedem Reload prüfen, die drei Abfragen parallel (heute nacheinander, je bis 10 s).
+3. ✅ ★ **`checkSite` hält den Build-Platz fest.** Der Aufruf steckt in `follow()`, das in `deploy()` awaited wird. Bis zu ~70 s (3 × 20 s Timeout + 2 × 6 s Pause) bleibt `running` belegt, die Warteschlange stockt, ein Frontend wartet unnötig. Prüfung als eigene `Task` abkoppeln. (`Store.follow/checkSite`)
+4. ✅ ★ **Nach einem Sammel-Deploy wird nicht neu geladen.** `set(.done)` schreibt `lastSha = headSha` aus dem Speicher. Kam inzwischen ein neuer Commit, zeigt die Zeile „aktuell“, bis der Timer nach bis zu 15 Min zuschlägt. Am Ende von `summarize()` einmal `load` für die betroffenen Plattformen.
+5. ✅ **`autoRefresh` pausiert bei jedem laufenden Deploy komplett,** auch für die andere Plattform und auch bei einem Cron-Job, der 40 Min „läuft“. Dann bleibt die ganze Liste so lange alt. Nur die Plattform aussetzen, deren Zeile aktiv ist.
+6. ✅ **Ein Rollback meldet „… ist live“.** `set(.done)` löst `say("… ist live")` aus, auch bei `countsAsLive: false` (Rollback, Vorschau). Das Journal sagt „other“, die Mitteilung sagt „live“. Eigene Texte: „zurückgerollt“, „Vorschau fertig“. (`Store.set`)
 7. **Rollback geht an Warteschlange, Sperre und Bestätigung vorbei.** `rollback()` startet sofort, ohne `start_lock`, ohne Wartezeit, ohne Journal-Eintrag „rollback“ (nur „other“). Zwei Klicks = zwei Rollbacks nacheinander, der zweite geht auf den vorvorigen Stand.
 8. **Eine zweite Auswahl verlängert die Wartezeit der ersten.** `enqueue` setzt `holdUntil` neu. Wer 8 s nach dem ersten Klick noch ein Projekt startet, schiebt den ersten Deploy um weitere 8 s. Pro Job eigene Startzeit.
 9. **Während der Wartezeit zeigt die Zeile „queued“ ohne Zähler.** Die Toast-Zeile verschwindet nach 5 s, die Wartezeit dauert womöglich länger (Einstellung). Zeile: „startet in 6 s“ als Countdown.
 10. **`Task.sleep` in `follow` wirft bei Abbruch,** der `catch` in `deploy()` macht daraus „fehlgeschlagen“, obwohl nur die Aufgabe beendet wurde (App-Ende, Fenster zu bei manchen Pfaden). Abbruch getrennt behandeln, sonst schreibt das Journal falsche „failed“.
 11. **Dauer-Statistik zählt nur Erfolge** (`recordDuration` nur bei `.done`). Ein Projekt, das meist nach 40 s scheitert, zeigt „dauert etwa 3 Min“ vom letzten Erfolg. Fehlschläge getrennt führen, „scheitert meist früh“ anzeigen.
 12. **`building` kommt bei Vercel aus den neuesten 100 Production-Deploys aller Projekte** (`vercel json`, `limit=100`). Ein Projekt mit vielen Builds verdrängt die anderen; deren laufender Build fehlt, die Zeile wirkt „deploybar“, Doppelstart möglich. Pro Projekt `limit=1`, parallel, oder `since=` der letzten Stunde.
-13. **Die Start-Sperre ist nicht atomar** (`start_lock`: erst prüfen, dann `touch`). App und Skript im selben Moment starten beide. `mkdir`/`set -C` als echte Sperre.
+13. ✅ **Die Start-Sperre ist nicht atomar** (`start_lock`: erst prüfen, dann `touch`). App und Skript im selben Moment starten beide. `mkdir`/`set -C` als echte Sperre.
 14. **Die Sperre gilt 60 s, ein Render-Cache-Build dauert Minuten.** Nach 61 s lässt sich dasselbe Projekt wieder starten, obwohl der erste Build läuft. Die Sperre gegen `building` prüfen statt gegen die Uhr.
 15. **Zwei Listen für „nicht anzeigen“ mit Namen ohne Plattform** (`ignored.json` hat nur `name`). Ein Vercel-Projekt und ein Render-Dienst mit demselben Namen (üblich: `x-web`/`x-api` ist selten, `x` auf beiden dagegen oft) werden zusammen ignoriert.
 16. **`remindIfDue` kennt Stunde 0 nicht** (`reminderHour` 0 = aus). Eine Erinnerung um Mitternacht ist nicht wählbar; außerdem feuert sie bis Tagesende, auch um 23:50 für den ganzen Tag. Fenster „zwischen 9 und 12 Uhr“.
@@ -32,7 +32,7 @@ Keine Projektnamen aus dem Screenshot, weil das Repo öffentlich ist.
 
 ## B. Skript (`deploys`)
 
-23. ★ **`render_call` meldet bei HTTP 429 nur „HTTP 429“.** Retry mit `Retry-After`, sonst bricht die ganze Liste bei Rate-Limit ab. Dasselbe für Vercel (`vercel api` gibt den Header nicht zurück: Fehlertext auswerten).
+23. ✅ ★ **`render_call` meldet bei HTTP 429 nur „HTTP 429“.** Retry mit `Retry-After`, sonst bricht die ganze Liste bei Rate-Limit ab. Dasselbe für Vercel (`vercel api` gibt den Header nicht zurück: Fehlertext auswerten).
 24. **`render_services` und `vercel_projects` laden bei jedem Befehl neu.** `changed`, `status`, `completion` und die App rufen sie je mehrfach pro Minute. 60-Sekunden-Zwischenspeicher mit `mtime`, abschaltbar per `--fresh`.
 25. **`platform_of` fragt erst Vercel, dann Render** (zwei Netzaufrufe für ein `watch`). Den Namen aus `names` (Cache) nehmen, falls schon bekannt, mit Plattform dazu: `vercel:name`.
 26. **`names.tmp` wird nie aufgeräumt** und wächst; `sort -u` liest bei jedem Aufruf alles. Direkt `sort -u` mit Ersetzen, und Plattform-Präfix speichern (siehe 25).
@@ -74,11 +74,11 @@ Keine Projektnamen aus dem Screenshot, weil das Repo öffentlich ist.
 
 ## D. Oberfläche (aus dem Screenshot und dem Code)
 
-59. ★ **„1 Projekte bauen bei jedem Push“.** Plural-Fehler im Banner (`MainWindow.swift:369`). `Projekt`/`Projekte`, `project`/`projects`. Prüfen, wo noch `\(n) PRs`, `\(n) Commits` ohne Einzahl steht.
+59. ✅ ★ **„1 Projekte bauen bei jedem Push“.** Plural-Fehler im Banner (`MainWindow.swift:369`). `Projekt`/`Projekte`, `project`/`projects`. Prüfen, wo noch `\(n) PRs`, `\(n) Commits` ohne Einzahl steht.
 60. ★ **Drei Projekte desselben Repos wiederholen dieselbe Zeile:** „107 Commits · 107 PRs warten · 14 offene PRs“ steht dreimal untereinander. Nach Repo gruppieren: eine Kopfzeile „owner/repo – 107 Commits“, darunter die Dienste mit eigenem Status. Spart Platz und zeigt die Bindung Frontend ↔ Backend.
 61. ★ **Zu viele Abzeichen pro Zeile:** Letzter Deploy, Commits, PRs, ältester Commit, offene PRs, Kosten, Status. Bei schmalem Fenster bricht „ältester wartender Commit vor 6 Stunden“ auf zwei Zeilen. Dichte-Regler (Kompakt/Normal/Ausführlich) und feste Spalten.
 62. ★ **Nur ein Wert pro Zeile hervorheben:** „wartet seit …“ oder „X PRs“, nicht beides gleich laut. Das Auge sucht „was ist dringend“.
-63. **Die Suche hat beim Start den Fokus mit großem blauem Rahmen.** Das lenkt ab und fängt Tastatureingaben (Leertaste zum Anhaken geht nicht, solange der Fokus im Suchfeld ist). Fokus erst bei ⌘F.
+63. ✅ **Die Suche hat beim Start den Fokus mit großem blauem Rahmen.** Das lenkt ab und fängt Tastatureingaben (Leertaste zum Anhaken geht nicht, solange der Fokus im Suchfeld ist). Fokus erst bei ⌘F.
 64. **Cron-Jobs stehen in der Deploy-Liste wie Dienste** („Zuletzt deployt vor 1 Tag · 107 PRs warten“). Ein Cron-Job „deployt“ nur, damit neue Version läuft; die 107 sind nicht seine. Eigene Gruppe „Cron/Worker“ mit „nächster Lauf“, „letzter Lauf“.
 65. **Tab „Alle“ ohne Plattform-Kennung am Namen** (nur kleiner Kreis-Buchstabe im Logo). Plattform als Text-Chip „Vercel“/„Render“ zeigen, wie es auch Farbenblinde brauchen.
 66. **Fortschritt „baut · 1:05“ zeigt Zeit, nicht „von etwa“.** `usualMinutes` ist da: „baut · 1:05 von ≈ 2:30“ mit Balken.
