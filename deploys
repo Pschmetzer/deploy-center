@@ -365,8 +365,24 @@ case "${1:-} ${2:-}" in
     for i in $(seq "$days" -1 1); do
       echo "$(date -u -v-"${i}"d +%Y-%m-%d) $(date -u -v-"$((i-1))"d +%Y-%m-%d)"
     done | xargs -P 4 -n 2 bash -c 'cost_day "$0" "$1" "'"$team"'" "'"$tmp"'"'
-    cat "$tmp"/*.json 2>/dev/null | jq -s 'sort_by(.day) | {currency:"USD", days:map({day, total, build}),
-      projects:(map(.projects[]) | group_by(.name) | map({name:.[0].name, build:(map(.build)|add)}) | sort_by(-.build))}'
+    # Builds per project over the last 7 days, to put a price on one build.
+    since=$(( ($(date +%s) - 7*86400) * 1000 ))
+    names="" next=""
+    for _ in 1 2 3 4 5; do   # five pages of 100 at most
+      page="$(vercel_call "/v6/deployments?limit=100&since=$since${next:+&until=$next}")" || break
+      names="$names$(echo "$page" | jq -r '.deployments[].name')"$'\n'
+      next="$(echo "$page" | jq -r '.pagination.next // empty')"; [ -n "$next" ] || break
+    done
+    # Past five pages the counts are short, and a price per build would be too high.
+    complete=true; [ -n "$next" ] && complete=false
+    builds="$(printf '%s' "$names" | jq -R -s 'split("\n") | map(select(. != "")) | group_by(.) | map({key:.[0], value:length}) | from_entries')"
+    # The day auto-deploy was first turned off here: the line between "before" and "since".
+    offday="$( { jq '[.[] | .offAt? // empty]' "$REPOS"; jq '[.[]]' "$CONFIG_DIR/render-off.json" 2>/dev/null || echo '[]'; } \
+      | jq -rs 'add | map(select(type=="number")) | min // empty | strftime("%Y-%m-%d")' 2>/dev/null)"
+    cat "$tmp"/*.json 2>/dev/null | jq -s --argjson b "${builds:-{\}}" --arg off "$offday" --argjson complete "$complete" 'sort_by(.day) | {currency:"USD", offDay:(if $off == "" then null else $off end), buildsComplete:$complete,
+      days:map({day, total, build}),
+      projects:(.[-7:] | map(.projects[]) | group_by(.name)
+        | map({name:.[0].name, build:(map(.build)|add), builds:($b[.[0].name] // null)}) | sort_by(-.build))}'
     rm -rf "$tmp" ;;
 
   "triggers "*)

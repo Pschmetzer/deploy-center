@@ -36,7 +36,7 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 25. ✅ **„Was ändert sich?“ vor dem Deploy:** geänderte Dateien und Zeilen (+/−) aus dem Vergleich in der Bestätigung.
 26. ✅ **Hinweis auf riskante Änderungen:** Migrationen (`migrations/`, `prisma/`), `.env.example`, `package.json`-Abhängigkeiten im Vergleich → gelbes Schild.
 27. **Gruppieren nach Repo:** ein Repo mit Vercel-Frontend und Render-Backend als ein Eintrag mit beiden Zielen.
-28. **Verlauf der Zahl:** wie viele PRs am Tag gewartet haben, als kleine Linie. Zeigt, ob der tägliche Deploy reicht.
+28. ✅ **Verlauf der Zahl:** wie viele PRs am Tag gewartet haben, als kleine Linie. Zeigt, ob der tägliche Deploy reicht.
 29. ✅ **CI-Status des Kopf-Commits** (Checks API) in der Zeile: nicht deployen, was auf GitHub rot ist.
 30. ✅ **Kennzeichnung „nur Abhängigkeiten“:** wenn alle wartenden Commits von Dependabot/Renovate sind, kann das warten.
 
@@ -58,36 +58,36 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 
 ## D. Kosten
 
-44. ★ **„Gespart seit dem Abschalten“:** Builds pro Tag vor `offAt` gegen danach, in Dollar.
+44. ✅ ★ **„Gespart seit dem Abschalten“:** Builds pro Tag vor `offAt` gegen danach, in Dollar.
 45. **Render-Kosten** (Bandbreite/Build-Minuten über die Render-API, soweit verfügbar) neben Vercel.
-46. **Kosten pro Deploy schätzen** aus Dauer × Preis pro Minute, in der Bestätigung: „etwa 0,40 $“.
-47. **Monatsprognose** aus den letzten 7 Tagen.
-48. **Warnung bei Ausreißern:** ein Tag mehr als doppelt so teuer wie der Schnitt.
-49. **Kosten auch für Vorschau-Deploys getrennt** zeigen.
+46. ✅ **Kosten pro Deploy schätzen** aus Dauer × Preis pro Minute, in der Bestätigung: „etwa 0,40 $“.
+47. ✅ **Monatsprognose** aus den letzten 7 Tagen.
+48. ✅ **Warnung bei Ausreißern:** ein Tag mehr als doppelt so teuer wie der Schnitt.
+49. ✗ (Vercels Abrechnung trennt Vorschau und Live nicht) **Kosten auch für Vorschau-Deploys getrennt** zeigen.
 50. **Ignored Build Step vorschlagen:** für Monorepos ein Befehl, der nur baut, wenn sich der eigene Ordner geändert hat.
 
 ## E. Oberfläche
 
-51. ★ **Fenster schließen = App bleibt in der Menüleiste**, ohne Dock-Symbol (Einstellung).
-52. ★ **Beim Anmelden starten** (`SMAppService`), Einstellung.
-53. **Einstellungsfenster** (⌘,): Auto-Refresh-Intervall, Mitteilungen, Menüleiste ein/aus, Sprache.
-54. **Ansicht „Alles“** mit Vercel und Render in einer Liste (bei „Nur mit Änderungen“ besonders nützlich).
+51. ✅ ★ **Fenster schließen = App bleibt in der Menüleiste**, ohne Dock-Symbol (Einstellung).
+52. ✅ ★ **Beim Anmelden starten** (`SMAppService`), Einstellung.
+53. ✅ **Einstellungsfenster** (⌘,): Auto-Refresh-Intervall, Mitteilungen, Menüleiste ein/aus, Sprache.
+54. ✅ **Ansicht „Alles“** mit Vercel und Render in einer Liste (bei „Nur mit Änderungen“ besonders nützlich).
 55. **Spalten-Ansicht** (Table) mit sortierbaren Spalten: Name, Commits, PRs, letzter Deploy, Kosten.
-56. **Fortschrittsbalken** für laufende Deploys statt nur Text.
-57. **Leerer Zustand** bei „Nur mit Änderungen“ und null Treffern: „Alles ist live ✓“.
+56. ✅ **Fortschrittsbalken** für laufende Deploys statt nur Text.
+57. ✅ **Leerer Zustand** bei „Nur mit Änderungen“ und null Treffern: „Alles ist live ✓“.
 58. **Suchtreffer hervorheben.**
 59. **Mehrfachauswahl mit Shift-Klick.**
-60. **Projekt ausblenden** (Rechtsklick), z. B. alte Projekte; Liste der Ausgeblendeten in den Einstellungen.
-61. **Favoriten** oben anheften.
-62. **Eigene Notiz pro Projekt** („erst nach Absprache deployen“).
+60. ✅ **Projekt ausblenden** (Rechtsklick), z. B. alte Projekte; Liste der Ausgeblendeten in den Einstellungen.
+61. ✅ **Favoriten** oben anheften.
+62. ✅ **Eigene Notiz pro Projekt** („erst nach Absprache deployen“).
 63. **Farbe nach Umgebung:** Production rot umrandet, Staging grün.
-64. **Menüleiste: Klick auf ein Projekt** öffnet das Fenster gefiltert auf dieses Projekt.
+64. ✅ **Menüleiste: Klick auf ein Projekt** öffnet das Fenster gefiltert auf dieses Projekt.
 65. **Menüleiste: „Alles mit Änderungen deployen …“** mit eigener Bestätigung.
 66. **Dunkel/Hell prüfen**, besonders der blaue Balken und die Logos auf Weiß.
-67. **Logos mit transparentem Rand** passend hinterlegen (Bildhelligkeit messen).
+67. ✅ **Logos mit transparentem Rand** passend hinterlegen (Bildhelligkeit messen).
 68. ✅ **Zeilen-Tooltip mit Commit-Nachricht des Live-Stands** neben der neuesten.
-69. **„Zuletzt aktualisiert vor x Min“ sichtbar** statt nur im Tooltip des Knopfs.
-70. **Schrift- und Kontrast-Prüfung mit VoiceOver**: der Balken oben braucht eine Überschrift-Rolle.
+69. ✅ **„Zuletzt aktualisiert vor x Min“ sichtbar** statt nur im Tooltip des Knopfs.
+70. ✅ **Schrift- und Kontrast-Prüfung mit VoiceOver**: der Balken oben braucht eine Überschrift-Rolle.
 
 ## F. Kommandozeile und Automatisierung
 
