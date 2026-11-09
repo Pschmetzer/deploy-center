@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deploy Center: stop paying for a build on every push</title>
+<meta name="description" content="Free, open-source Mac app. Turn off auto-deploy on Vercel and Render in one click, then deploy what changed in two. No account, no telemetry.">
+<link rel="canonical" href="https://deploycenter.app/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Deploy Center: stop paying for a build on every push">
+<meta property="og:description" content="Turn off auto-deploy on Vercel and Render in one click. Deploy what changed in two. Free and open source for macOS.">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:url" content="https://deploycenter.app/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="img/icon.png">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Deploy Center","operatingSystem":"macOS 15","applicationCategory":"DeveloperApplication","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://opensource.org/licenses/MIT","url":"https://deploycenter.app/","downloadUrl":"https://github.com/Pschmetzer/deploy-center/releases/latest"}
+</script>
+<style>
+:root{
+  --bg:#0b0d12; --bg2:#11141b; --card:#151924; --line:#232838; --text:#e9ecf3; --muted:#9aa3b5;
+  --accent:#4f7cff; --accent2:#8b5cf6; --green:#34c759; --red:#ff5f57; --orange:#ff9f0a;
+  --radius:16px; --max:1120px;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475}
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:17px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 20px}
+nav{position:sticky;top:0;z-index:10;backdrop-filter:saturate(180%) blur(16px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:20px;height:56px}
+nav .brand{display:flex;align-items:center;gap:10px;font-weight:650;color:var(--text)}
+nav .brand img{width:26px;height:26px;border-radius:7px}
+nav .links{margin-left:auto;display:flex;gap:18px;font-size:15px}
+nav .links a{color:var(--muted)}
+nav .links a.gh{color:var(--text)}
+@media (max-width:640px){nav .links a:not(.gh){display:none}}
+.hero{padding:84px 0 40px;text-align:center;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:-30% -10% auto;height:620px;background:radial-gradient(closest-side,color-mix(in srgb,var(--accent) 35%,transparent),transparent),radial-gradient(closest-side at 70% 40%,color-mix(in srgb,var(--accent2) 30%,transparent),transparent);filter:blur(30px);opacity:.55;pointer-events:none}
+.hero > *{position:relative}
+.pill{display:inline-flex;gap:8px;align-items:center;font-size:14px;color:var(--muted);border:1px solid var(--line);background:var(--card);padding:6px 12px;border-radius:999px}
+.pill b{color:var(--green);font-weight:600}
+h1{font-size:clamp(38px,6.4vw,72px);line-height:1.04;letter-spacing:-.035em;margin:22px auto 18px;max-width:900px}
+h1 .strike{position:relative;color:var(--muted);white-space:nowrap}
+h1 .strike::after{content:"";position:absolute;left:-2%;right:-2%;top:55%;height:.09em;background:var(--red);transform:rotate(-3deg);border-radius:4px}
+.lead{font-size:clamp(18px,2.2vw,22px);color:var(--muted);max-width:720px;margin:0 auto 30px}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:13px 22px;border-radius:12px;font-weight:600;font-size:16px;border:1px solid var(--line);color:var(--text);background:var(--card)}
+.btn:hover{text-decoration:none;border-color:color-mix(in srgb,var(--accent) 60%,var(--line))}
+.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:0;color:#fff;box-shadow:0 8px 30px -8px color-mix(in srgb,var(--accent) 70%,transparent)}
+.btn svg{width:18px;height:18px}
+.small{font-size:14px;color:var(--muted);margin-top:14px}
+.brew{display:inline-flex;align-items:center;gap:10px;margin-top:16px;font:14px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);border:1px solid var(--line);padding:9px 12px;border-radius:10px;color:var(--text);max-width:100%;overflow-x:auto}
+.brew button{all:unset;cursor:pointer;color:var(--muted);font:13px -apple-system,sans-serif}
+.brew button:hover{color:var(--text)}
+.shot{margin:48px auto 0;max-width:1000px;border-radius:14px;box-shadow:0 40px 120px -30px rgba(0,0,0,.7),0 0 0 1px var(--line);overflow:hidden;transform:perspective(1600px) rotateX(4deg);transition:transform .6s}
+.shot:hover{transform:none}
+.shot img{display:block;width:100%;height:auto}
+.caption{font-size:13px;color:var(--muted);margin-top:14px}
+section{padding:84px 0}
+section.alt{background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+h2{font-size:clamp(28px,4vw,44px);letter-spacing:-.025em;line-height:1.1;margin:0 0 14px}
+.sub{color:var(--muted);font-size:19px;max-width:700px;margin:0 0 40px}
+.center{text-align:center}.center .sub{margin-left:auto;margin-right:auto}
+.flow{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:820px){.flow{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px}
+.card h3{margin:10px 0 8px;font-size:19px}
+.card p{margin:0;color:var(--muted);font-size:16px}
+.num{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);font-weight:700;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:600px){.grid{grid-template-columns:1fr}}
+.ico{font-size:24px}
+/* push counter */
+.pushes{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:820px){.pushes{grid-template-columns:1fr}}
+.lane{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px;min-height:250px;position:relative;overflow:hidden}
+.lane h3{margin:0 0 4px;font-size:18px}
+.lane .meta{color:var(--muted);font-size:14px;margin-bottom:14px}
+.ticks{display:flex;flex-wrap:wrap;gap:6px;min-height:96px;align-content:flex-start}
+.tick{font:12px ui-monospace,Menlo,monospace;padding:4px 7px;border-radius:6px;background:color-mix(in srgb,var(--red) 16%,transparent);color:var(--red);animation:pop .35s ease}
+.tick.ok{background:color-mix(in srgb,var(--green) 16%,transparent);color:var(--green)}
+.tick.wait{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+.bill{position:absolute;right:22px;bottom:18px;font-size:30px;font-weight:700;letter-spacing:-.02em}
+.bill small{display:block;font-size:12px;color:var(--muted);font-weight:500;text-align:right}
+.bad .bill{color:var(--red)}.good .bill{color:var(--green)}
+/* calculator */
+.calc{display:grid;grid-template-columns:1.1fr .9fr;gap:20px;align-items:stretch}
+@media (max-width:820px){.calc{grid-template-columns:1fr}}
+.field{margin-bottom:20px}
+.field label{display:flex;justify-content:space-between;font-weight:600;font-size:15px;margin-bottom:8px}
+.field label output{color:var(--accent);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.hint{font-size:13px;color:var(--muted);margin-top:4px}
+.result{display:flex;flex-direction:column;justify-content:center;text-align:center;background:linear-gradient(160deg,color-mix(in srgb,var(--green) 16%,var(--card)),var(--card));}
+.result .big{font-size:clamp(44px,7vw,68px);font-weight:750;letter-spacing:-.03em;color:var(--green);font-variant-numeric:tabular-nums;line-height:1}
+.result .row{display:flex;justify-content:space-between;font-size:15px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;margin-top:10px}
+.result .row b{color:var(--text);font-variant-numeric:tabular-nums}
+.share{margin-top:18px}
+/* terminal */
+.term{background:#0a0c10;border:1px solid #232838;border-radius:14px;overflow:hidden;color:#d7dbe6;font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace}
+.term .bar{display:flex;gap:7px;padding:12px 14px;background:#141821;border-bottom:1px solid #232838}
+.term .bar i{width:12px;height:12px;border-radius:50%;background:#ff5f57}.term .bar i:nth-child(2){background:#febc2e}.term .bar i:nth-child(3){background:#28c840}
+.term pre{margin:0;padding:18px 20px;overflow-x:auto;white-space:pre}
+.term .p{color:#7c8db5}.term .c{color:#6b7385}.term .g{color:#34c759}.term .y{color:#febc2e}.term .b{color:#7aa2ff}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+@media (max-width:900px){.two{grid-template-columns:1fr}}
+ul.checks{list-style:none;padding:0;margin:0}
+ul.checks li{padding:8px 0 8px 30px;position:relative;color:var(--muted)}
+ul.checks li b{color:var(--text)}
+ul.checks li::before{content:"✓";position:absolute;left:0;top:8px;color:var(--green);font-weight:700}
+/* compare */
+table{width:100%;border-collapse:collapse;font-size:16px}
+th,td{padding:14px 12px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--muted);font-weight:600;font-size:14px}
+td.y{color:var(--green);font-weight:600}td.n{color:var(--muted)}
+.tablewrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:4px 12px}
+/* faq */
+details{border-bottom:1px solid var(--line);padding:18px 0}
+summary{cursor:pointer;font-weight:600;font-size:18px;list-style:none;display:flex;justify-content:space-between;gap:20px}
+summary::after{content:"+";color:var(--muted);font-weight:400;font-size:24px;line-height:1}
+details[open] summary::after{content:"–"}
+details p{color:var(--muted);margin:12px 0 0}
+.final{text-align:center;padding:100px 0}
+footer{border-top:1px solid var(--line);padding:30px 0;color:var(--muted);font-size:14px}
+footer .wrap{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between}
+code{font:.9em ui-monospace,Menlo,monospace;background:var(--card);border:1px solid var(--line);padding:1px 6px;border-radius:6px}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="brand" href="#"><img src="img/icon.png" alt="">Deploy Center</a>
+  <div class="links">
+    <a href="#how">How it works</a>
+    <a href="#calc">Calculator</a>
+    <a href="#cli">CLI</a>
+    <a href="#faq">FAQ</a>
+    <a class="gh" href="https://github.com/Pschmetzer/deploy-center">GitHub ★</a>
+  </div>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <span class="pill"><b>●</b> Free · open source · MIT · for macOS 15+</span>
+  <h1>Stop paying for a build on <span class="strike">every push</span>.<br>Pay for what you ship.</h1>
+  <p class="lead">Deploy Center turns off auto-deploy on <b>Vercel</b> and <b>Render</b> in one click, shows what is waiting to go live, and deploys it when <i>you</i> decide. One window for all your projects.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.37 12.62c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.77-3.32-1.8-1.41-.14-2.76.83-3.47.83-.72 0-1.82-.81-3-.79-1.54.02-2.96.9-3.76 2.28-1.6 2.78-.41 6.9 1.15 9.16.76 1.1 1.67 2.34 2.86 2.3 1.15-.05 1.58-.74 2.97-.74 1.38 0 1.77.74 2.98.72 1.23-.02 2.01-1.12 2.76-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.39-.92-2.38-3.69zM14.1 5.86c.63-.77 1.06-1.83.94-2.89-.91.04-2.02.61-2.67 1.37-.58.67-1.09 1.76-.96 2.8 1.02.08 2.06-.52 2.69-1.28z"/></svg>
+      Download for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg>
+      Star on GitHub</a>
+  </div>
+  <div><span class="brew" id="brew"><span>$ brew install --cask pschmetzer/tap/deploy-center</span><button type="button" data-copy="brew install --cask pschmetzer/tap/deploy-center">Copy</button></span></div>
+  <p class="small">Signed and notarized by Apple · no account · no telemetry · not affiliated with Vercel or Render</p>
+  <figure class="shot"><img src="img/app.png" width="1800" height="1144" alt="Deploy Center window: 149 PRs waiting to deploy, Vercel build costs of the last 7 days, and a list of projects with commits waiting" loading="eager"></figure>
+  <p class="caption">The real app with the author's real build bill: $99 in a week. Project names are hidden by demo mode.</p>
+</div></header>
+
+<section class="alt" id="why"><div class="wrap">
+  <h2>Every push builds every project.</h2>
+  <p class="sub">Ten small commits in an afternoon are ten builds. A README typo is a build. A monorepo push builds every app connected to it. You only needed the last one live.</p>
+  <div class="pushes">
+    <div class="lane bad">
+      <h3>Auto-deploy</h3>
+      <div class="meta">Every <code>git push</code> starts a paid build.</div>
+      <div class="ticks" id="laneA"></div>
+      <div class="bill"><span id="billA">0</span> builds<small>today</small></div>
+    </div>
+    <div class="lane good">
+      <h3>Deploy Center</h3>
+      <div class="meta">Pushes wait. One click at the end of the day ships them all.</div>
+      <div class="ticks" id="laneB"></div>
+      <div class="bill"><span id="billB">0</span> builds<small>today</small></div>
+    </div>
+  </div>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <h2>Three steps. Then two clicks a day.</h2>
+  <p class="sub">Connect once with the logins you already have. Nothing goes through a server of ours.</p>
+  <div class="flow">
+    <div class="card"><span class="num">1</span><h3>Connect</h3><p>Vercel uses your <code>vercel</code> CLI login. Render takes an API key, stored in your macOS keychain. GitHub through <code>gh</code> is optional.</p></div>
+    <div class="card"><span class="num">2</span><h3>Turn auto-deploy off</h3><p>One click for every project. On Vercel the Git connection is removed and the repo remembered; on Render auto-deploy is set to Off.</p></div>
+    <div class="card"><span class="num">3</span><h3>Deploy when you want</h3><p><b>Select all changed</b>, then <b>Deploy</b>. The app ships the newest commit and follows each deploy until it is live or failed.</p></div>
+  </div>
+</div></section>
+
+<section class="alt"><div class="wrap">
+  <h2>Everything you need around a deploy.</h2>
+  <p class="sub">Built for people with many projects and little patience.</p>
+  <div class="grid">
+    <div class="card"><div class="ico">⏳</div><h3>What is waiting</h3><p>Commits and merged PRs that are on GitHub but not live, per project and in total. Open PRs too.</p></div>
+    <div class="card"><div class="ico">💸</div><h3>Build costs</h3><p>Vercel build spend for the last 7 days, the monthly pace, a budget with a warning at 80 %.</p></div>
+    <div class="card"><div class="ico">🧾</div><h3>Readable build logs</h3><p>Failing lines in red, <b>Jump to first error</b>, <b>Errors only</b>, and <b>Copy for Claude</b> to paste a fix request.</p></div>
+    <div class="card"><div class="ico">↩️</div><h3>Preview and rollback</h3><p>Preview deploys and a rollback to the previous live deploy on Vercel, from the right-click menu.</p></div>
+    <div class="card"><div class="ico">🛑</div><h3>A second to change your mind</h3><p>A short wait before a deploy starts, with cancel. <b>Stop all</b> in the footer. No accidental ships.</p></div>
+    <div class="card"><div class="ico">📍</div><h3>Menu bar</h3><p>The number of PRs waiting, building and failed states, and a notification when a deploy ends.</p></div>
+    <div class="card"><div class="ico">✅</div><h3>Site check</h3><p>After a deploy the app opens your page (or <code>/health</code>) and tells you if it really answers.</p></div>
+    <div class="card"><div class="ico">🕶️</div><h3>Demo mode</h3><p>Replaces project names and domains, so you can share a screenshot without sharing your clients.</p></div>
+    <div class="card"><div class="ico">⌨️</div><h3>Keyboard first</h3><p>⌘R, ⌘F, ⌘1 / ⌘2, Esc, and a <code>deploycenter://</code> link to jump to a project.</p></div>
+  </div>
+</div></section>
+
+<section id="calc"><div class="wrap">
+  <h2>What does auto-deploy cost you?</h2>
+  <p class="sub">Move the sliders. Your own cost per build is on your Vercel or Render usage page.</p>
+  <div class="calc">
+    <div class="card">
+      <div class="field"><label for="p">Projects connected to Git <output id="po"></output></label><input id="p" type="range" min="1" max="80" value="20"></div>
+      <div class="field"><label for="u">Pushes per project per working day <output id="uo"></output></label><input id="u" type="range" min="1" max="40" value="8"></div>
+      <div class="field"><label for="c">Average cost per build <output id="co"></output></label><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In cents. A few cents is typical for a small site; heavy builds cost more.</div></div>
+      <div class="field"><label for="d">Deploys by hand per project per day <output id="do"></output></label><input id="d" type="range" min="1" max="5" value="1"></div>
+    </div>
+    <div class="card result" aria-live="polite">
+      <div class="hint">You would save about</div>
+      <div class="big" id="save">$0</div>
+      <div class="hint">a month (22 working days)</div>
+      <div class="row"><span>With auto-deploy</span><b id="now">$0</b></div>
+      <div class="row"><span>Deploying by hand</span><b id="after">$0</b></div>
+      <div class="share"><a class="btn" id="tweet" target="_blank" rel="noopener">Share your number</a></div>
+    </div>
+  </div>
+</div></section>
+
+<section class="alt" id="cli"><div class="wrap two">
+  <div>
+    <h2>A window over one bash script.</h2>
+    <p class="sub" style="margin-bottom:20px">Everything the app does, <code>deploys</code> does in your terminal, on a server or in CI. Add <code>--json</code> to any command.</p>
+    <ul class="checks">
+      <li><b>No Xcode project.</b> A few Swift files and one script, built with <code>swiftc</code>.</li>
+      <li><b>Your logins.</b> <code>vercel</code> CLI, a Render key in the keychain, <code>gh</code>.</li>
+      <li><b>Scriptable.</b> A daily deploy from <code>launchd</code> or a GitHub label.</li>
+      <li><b>Tested.</b> Script and app tests run without a network.</li>
+    </ul>
+  </div>
+  <div class="term" aria-label="Terminal example">
+    <div class="bar"><i></i><i></i><i></i></div>
+<pre><span class="p">$</span> deploys changed
+<span class="b">web-shop</span>     <span class="y">12 commits · 9 PRs waiting</span>
+<span class="b">api</span>          <span class="y"> 3 commits · 3 PRs waiting</span>
+<span class="b">docs</span>         <span class="c">up to date</span>
+
+<span class="p">$</span> deploys deploy-changed --yes
+<span class="c">→ web-shop  building …</span>
+<span class="c">→ api       building …</span>
+<span class="g">✓ web-shop  live in 48 s</span>
+<span class="g">✓ api       live in 1 m 12 s</span>
+
+<span class="p">$</span> deploys vercel autodeploy-off --all
+<span class="g">✓ 35 projects no longer build on push</span></pre>
+  </div>
+  <p class="caption" style="grid-column:2">Shortened illustration; the real output has a few more columns.</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Why not just …</h2>
+  <p class="sub">There are good ways to cut builds by hand. Deploy Center is the fast way when you have many projects.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th></th><th>Ignored Build Step</th><th>Disconnect Git by hand</th><th>Deploy Center</th></tr></thead>
+    <tbody>
+      <tr><td>Setup for 30 projects</td><td class="n">A script per project</td><td class="n">30 settings pages</td><td class="y">One click</td></tr>
+      <tr><td>See what is waiting</td><td class="n">No</td><td class="n">No</td><td class="y">Per project and total</td></tr>
+      <tr><td>Deploy many at once</td><td class="n">Push again</td><td class="n">CLI, one by one</td><td class="y">Select all changed → Deploy</td></tr>
+      <tr><td>Render too</td><td class="n">Different setting</td><td class="n">Different setting</td><td class="y">Same window</td></tr>
+      <tr><td>Build costs in view</td><td class="n">Dashboard</td><td class="n">Dashboard</td><td class="y">7-day chart and budget</td></tr>
+    </tbody>
+  </table></div>
+</div></section>
+
+<section class="alt" id="faq"><div class="wrap" style="max-width:820px">
+  <h2>Questions</h2>
+  <details><summary>Is it really free?</summary><p>Yes. MIT license, no paid tier, no account. The code is on GitHub.</p></details>
+  <details><summary>Does my data go anywhere?</summary><p>No server of ours. The app talks to Vercel and Render with your own logins, to GitHub through <code>gh</code>, and once a day to GitHub's release page to look for updates (you can turn that off). No telemetry.</p></details>
+  <details><summary>What do I lose without auto-deploy?</summary><p>Automatic deploys and automatic preview builds per pull request. You have to remember to deploy; the menu bar count and an optional daily reminder help. Preview deploys can still be started by hand.</p></details>
+  <details><summary>Can I go back?</summary><p>Yes. Reconnect the repository in the Vercel dashboard, or set auto-deploy to On Commit in Render. Deploy Center remembers each Vercel repo before it disconnects it.</p></details>
+  <details><summary>Netlify, Cloudflare Pages, Railway, Fly?</summary><p>Vercel and Render today. Cloudflare Pages is next on the list; Netlify cannot start a build while its builds are stopped, so it needs a different approach. Vote or help in the GitHub issues.</p></details>
+  <details><summary>Windows or Linux?</summary><p>The app is macOS only. The <code>deploys</code> script is bash and runs on Linux and in CI.</p></details>
+</div></section>
+
+<section class="final"><div class="wrap">
+  <h2>Ship when you decide.</h2>
+  <p class="sub" style="margin:0 auto 28px">Free for macOS 15 and newer, Apple silicon and Intel.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <span>Deploy Center · MIT · made by an indie dev who got a build bill</span>
+  <span><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/Pschmetzer/deploy-center/issues">Issues</a> · Not affiliated with Vercel or Render</span>
+</div></footer>
+
+<script>
+// copy brew command
+document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{
+  try{navigator.clipboard.writeText(b.dataset.copy);b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1500)}catch(e){}
+}));
+
+// push simulation
+(function(){
+  const A=document.getElementById('laneA'),B=document.getElementById('laneB');
+  const bA=document.getElementById('billA'),bB=document.getElementById('billB');
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const msgs=['fix typo','bump deps','wip','tweak css','add test','readme','refactor','fix lint','copy edits','try again'];
+  let n=0,a=0;
+  function chip(el,cls,txt){const s=document.createElement('span');s.className='tick '+cls;s.textContent=txt;el.appendChild(s)}
+  function step(){
+    if(n>=14){ // end of day
+      B.querySelectorAll('.wait').forEach(e=>e.remove());
+      chip(B,'ok','✓ one deploy · 14 commits'); bB.textContent=1;
+      setTimeout(()=>{A.innerHTML='';B.innerHTML='';n=0;a=0;bA.textContent=0;bB.textContent=0;run()},3200);
+      return;
+    }
+    const m=msgs[n%msgs.length]; n++;
+    a+=3; chip(A,'',`build ×3 · ${m}`); bA.textContent=a;
+    chip(B,'wait',`waiting · ${m}`);
+    setTimeout(step,520);
+  }
+  function run(){ if(reduce){for(let i=0;i<14;i++){chip(A,'','build ×3');} bA.textContent=42; chip(B,'ok','✓ one deploy · 14 commits'); bB.textContent=1; return;} step() }
+  const io=new IntersectionObserver(es=>{if(es[0].isIntersecting){io.disconnect();run()}},{threshold:.3});
+  io.observe(A);
+})();
+
+// calculator
+(function(){
+  const $=id=>document.getElementById(id);
+  const fmt=v=>'$'+Math.round(v).toLocaleString('en-US');
+  function calc(){
+    const p=+$('p').value,u=+$('u').value,c=+$('c').value/100,d=+$('d').value;
+    $('po').textContent=p;$('uo').textContent=u;$('co').textContent='$'+c.toFixed(2);$('do').textContent=d;
+    const days=22, now=p*u*c*days, after=p*Math.min(d,u)*c*days, save=Math.max(0,now-after);
+    $('now').textContent=fmt(now);$('after').textContent=fmt(after);$('save').textContent=fmt(save);
+    const t=`Auto-deploy would cost me about ${fmt(now)}/month in builds. Deploying by hand: ${fmt(after)}. Calculated with Deploy Center`;
+    $('tweet').href='https://x.com/intent/post?text='+encodeURIComponent(t)+'&url='+encodeURIComponent('https://deploycenter.app/#calc');
+  }
+  ['p','u','c','d'].forEach(id=>$(id).addEventListener('input',calc));calc();
+})();
+</script>
+</body>
+</html>
