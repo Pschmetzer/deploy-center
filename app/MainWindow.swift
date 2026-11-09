@@ -575,7 +575,10 @@ struct CostBar: View {
     /// Average build cost per day before auto-deploy was turned off and since, whole days only.
     private var saving: (before: Double, after: Double)? {
         guard let off = costs.offDay else { return nil }
-        let before = costs.days.filter { $0.day < off }, after = costs.days.filter { $0.day > off }
+        // Today is not over yet: a half day would make "since" look cheaper than it is.
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC")
+        let today = f.string(from: Date())
+        let before = costs.days.filter { $0.day < off }, after = costs.days.filter { $0.day > off && $0.day < today }
         guard !before.isEmpty, !after.isEmpty else { return nil }
         return (before.map(\.build).reduce(0, +) / Double(before.count), after.map(\.build).reduce(0, +) / Double(after.count))
     }
@@ -652,7 +655,7 @@ struct SavingCard: View {
             }
             Text(L("≈ ", "≈ ") + month.formatted(.currency(code: "USD").precision(.fractionLength(0))) + L(" a month saved", " im Monat gespart"))
                 .font(.title2.weight(.bold)).foregroundStyle(.white)
-            Text("deploycenter.app").font(.caption).foregroundStyle(.white.opacity(0.6))
+            Text("github.com/Pschmetzer/deploy-center").font(.caption).foregroundStyle(.white.opacity(0.6))
         }
         .padding(28).frame(width: 520, alignment: .leading)
         .background(LinearGradient(colors: [Color(red: 0.07, green: 0.09, blue: 0.16), Color(red: 0.18, green: 0.11, blue: 0.32)],
@@ -662,8 +665,8 @@ struct SavingCard: View {
     /// The sentence that goes with the picture.
     static func text(before: Double, after: Double) -> String {
         let m = (max(0, before - after) * 30).formatted(.currency(code: "USD").precision(.fractionLength(0)))
-        return L("I turned off auto-deploy and now deploy by hand: builds went from \(before.formatted(.currency(code: "USD"))) to \(after.formatted(.currency(code: "USD"))) a day, about \(m) a month saved. https://deploycenter.app",
-                 "Ich habe Auto-Deploy ausgeschaltet und deploye jetzt von Hand: Builds von \(before.formatted(.currency(code: "USD"))) auf \(after.formatted(.currency(code: "USD"))) am Tag, etwa \(m) im Monat gespart. https://deploycenter.app")
+        return L("I turned off auto-deploy and now deploy by hand: builds went from \(before.formatted(.currency(code: "USD"))) to \(after.formatted(.currency(code: "USD"))) a day, about \(m) a month saved. https://github.com/Pschmetzer/deploy-center",
+                 "Ich habe Auto-Deploy ausgeschaltet und deploye jetzt von Hand: Builds von \(before.formatted(.currency(code: "USD"))) auf \(after.formatted(.currency(code: "USD"))) am Tag, etwa \(m) im Monat gespart. https://github.com/Pschmetzer/deploy-center")
     }
 
     /// Picture and sentence on the clipboard at once; a chat or post takes whichever it can.
