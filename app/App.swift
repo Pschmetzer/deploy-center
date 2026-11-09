@@ -162,6 +162,12 @@ struct MenuBarContent: View {
         if w.openPRs > 0 {
             Text(L("\(w.openPRs) PRs still open", "\(w.openPRs) PRs noch offen"))
         }
+        let auto = Platform.allCases.reduce(0) { $0 + store.autoOn($1).count }
+        if auto > 0 {
+            Text(L("Auto-deploy is still on for \(auto) \(auto == 1 ? "project" : "projects") (costs build minutes)",
+                   "Auto-Deploy ist noch an bei \(auto) \(auto == 1 ? "Projekt" : "Projekten") (kostet Build-Minuten)"))
+        }
+        ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
         Divider()
         Button(L("Open Deploy Center", "Deploy Center öffnen")) {
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
