@@ -6,6 +6,7 @@
 - Fixed: the site check no longer holds a build slot of the queue.
 - Fixed: after a deploy run the lists reload; a running deploy on one platform no longer pauses the other.
 - Fixed: a rollback says "rolled back" and a preview "preview is ready" instead of "is live"; "1 Projekt" instead of "1 Projekte".
+- Fixed: every queued deploy waits from its own click; a later selection no longer delays an earlier one.
 - Fixed: the start lock cannot be taken twice at the same moment; Render rate limits (429) are retried (also in the parallel list read) and errors say what to do.
 - Fixed: after a rollback the row no longer claims to be on the newest commit.
 - Fixed: a repo shared by a frontend and a backend counts its PRs and commits once in the banner and the menu bar.

@@ -428,7 +428,7 @@ final class Store: ObservableObject {
 
     // MARK: The queue: at most N builds at once, a frontend after the backend of its repo
 
-    struct Job { let item: Item; var preview = false; var sha: String? = nil; var clearCache = false }
+    struct Job { let item: Item; var preview = false; var sha: String? = nil; var clearCache = false; var readyAt = Date.distantPast }
     private var queue: [Job] = []
     private var running = 0
     private var cancelled: Set<String> = []
@@ -446,7 +446,6 @@ final class Store: ObservableObject {
 
     /// Seconds between the click and the first build; in this time "cancel" in the row still costs nothing.
     var undoSeconds: Int { UserDefaults.standard.object(forKey: "undoSeconds") as? Int ?? 8 }
-    private var holdUntil = Date.distantPast
     private var batch: [(Platform, String)] = []
 
     func enqueue(_ jobs: [Job]) {
@@ -454,11 +453,11 @@ final class Store: ObservableObject {
         var added = 0
         for j in jobs where !(itemNow(j.item)?.state.isActive ?? false) {
             set(j.item.platform, j.item.id, .queued)
+            var j = j; j.readyAt = Date().addingTimeInterval(Double(undoSeconds))   // each job counts from its own click
             queue.append(j); batch.append((j.item.platform, j.item.id)); added += 1
         }
         if added > 0, undoSeconds > 0 {
             let n = undoSeconds
-            holdUntil = Date().addingTimeInterval(Double(n))
             toast = Toast(text: L("Starting in \(n) s – cancel in the row to stop", "Startet in \(n) s – in der Zeile abbrechen"), ok: true)
             Task { try? await Task.sleep(nanoseconds: UInt64(n) * 1_000_000_000 + 300_000_000); pump() }
         }
@@ -485,7 +484,7 @@ final class Store: ObservableObject {
     }
 
     private func pump() {
-        while Date() >= holdUntil, running < maxParallel, let k = queue.firstIndex(where: { waitsFor($0) == nil }) {
+        while running < maxParallel, let k = queue.firstIndex(where: { $0.readyAt <= Date() && waitsFor($0) == nil }) {
             let job = queue.remove(at: k)
             running += 1
             Task { await deploy(job); running -= 1; pump() }
@@ -500,7 +499,7 @@ final class Store: ObservableObject {
         }
         if queue.isEmpty && running == 0 {
             queueBatch = []
-            if Date() >= holdUntil {
+            do {
                 let hadRun = !batch.isEmpty
                 summarize()
                 // The row says "current" from what the app remembers; read what GitHub says now.
