@@ -24,7 +24,7 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 16. **`deploy-changed --yes` startet alles auf einmal ohne Pause** und meldet Fehler nur auf stderr. Am Ende eine Zusammenfassung „8 gestartet, 1 Fehler“ und Exit-Code ≠ 0 bei Fehlern.
 17. **Der Zwischenspeicher hat keine Version.** Ändert sich das JSON-Format, liest eine neue App einen alten Cache vielleicht falsch oder gar nicht. Version in den Dateinamen.
 18. **Logos werden nach Domain gespeichert, nie gelöscht.** Domains, die es nicht mehr gibt, bleiben ewig liegen. Beim Start alles älter als 30 Tage löschen.
-19. **Mitteilungen kommen nur, wenn die App nicht vorne ist** (`NSApp.isActive`). Wer im Fenster bleibt, aber in einem anderen Tab (Render statt Vercel) ist, sieht das Ende eines Deploys nicht. Ein kurzer Hinweis im Fenster selbst („perchads ist live“) fehlt.
+19. **Mitteilungen kommen nur, wenn die App nicht vorne ist** (`NSApp.isActive`). Wer im Fenster bleibt, aber in einem anderen Tab (Render statt Vercel) ist, sieht das Ende eines Deploys nicht. Ein kurzer Hinweis im Fenster selbst („my-site ist live“) fehlt.
 20. **`pending_of` nutzt den Live-Commit als Basis.** Wurde der Branch neu geschrieben (Force-Push), gibt es den Commit nicht mehr; der Vergleich scheitert still, und es steht nur „Neue Änderungen“ ohne Zahl. Hinweis „Branch wurde umgeschrieben“.
 
 ## B. Was wartet (die neue Hauptfunktion ausbauen)
