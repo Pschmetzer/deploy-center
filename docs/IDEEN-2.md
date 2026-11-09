@@ -44,7 +44,7 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 
 31. ✅ ★ **Warteschlange mit Grenze:** höchstens N Builds gleichzeitig (Vercel-Tarif-Grenze), der Rest wartet sichtbar „in der Schlange“.
 32. ✅ ★ **Reihenfolge in Gruppen:** Backend (Render) zuerst, erst wenn es live ist, das Frontend (Vercel).
-33. **Täglicher Deploy zur festen Zeit**, nur wenn ein Häkchen gesetzt ist und nur Projekte mit grünem CI. Mit Mitteilung und Bestätigung per Klick statt ganz automatisch.
+33. ✅ **Täglicher Deploy zur festen Zeit**, nur wenn ein Häkchen gesetzt ist und nur Projekte mit grünem CI. Mit Mitteilung und Bestätigung per Klick statt ganz automatisch.
 34. ✅ **Deploy abbrechen**, solange er baut (Vercel `PATCH …/cancel`, Render `POST …/cancel`).
 35. ✅ **Build-Log in der App** (letzte 200 Zeilen) beim Fehler, statt nur der Fehlermeldung.
 36. ✅ **„Erneut versuchen“** direkt am gescheiterten Projekt.
@@ -64,7 +64,7 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 47. ✅ **Monatsprognose** aus den letzten 7 Tagen.
 48. ✅ **Warnung bei Ausreißern:** ein Tag mehr als doppelt so teuer wie der Schnitt.
 49. ✗ (Vercels Abrechnung trennt Vorschau und Live nicht) **Kosten auch für Vorschau-Deploys getrennt** zeigen.
-50. **Ignored Build Step vorschlagen:** für Monorepos ein Befehl, der nur baut, wenn sich der eigene Ordner geändert hat.
+50. ✅ **Ignored Build Step vorschlagen:** für Monorepos ein Befehl, der nur baut, wenn sich der eigene Ordner geändert hat.
 
 ## E. Oberfläche
 
@@ -75,8 +75,8 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 55. **Spalten-Ansicht** (Table) mit sortierbaren Spalten: Name, Commits, PRs, letzter Deploy, Kosten.
 56. ✅ **Fortschrittsbalken** für laufende Deploys statt nur Text.
 57. ✅ **Leerer Zustand** bei „Nur mit Änderungen“ und null Treffern: „Alles ist live ✓“.
-58. **Suchtreffer hervorheben.**
-59. **Mehrfachauswahl mit Shift-Klick.**
+58. ✅ **Suchtreffer hervorheben.**
+59. ✅ **Mehrfachauswahl mit Shift-Klick.**
 60. ✅ **Projekt ausblenden** (Rechtsklick), z. B. alte Projekte; Liste der Ausgeblendeten in den Einstellungen.
 61. ✅ **Favoriten** oben anheften.
 62. ✅ **Eigene Notiz pro Projekt** („erst nach Absprache deployen“).
@@ -96,7 +96,7 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 73. ✅ **`deploys watch <projekt>`** – folgt einem Deploy im Terminal bis live/Fehler.
 74. ✅ **`deploys logs <projekt>`** – Build-Log des letzten Deploys.
 75. ✅ **`deploys open <projekt>`** – Seite oder Dashboard im Browser.
-76. **`deploys cancel <projekt>`.**
+76. ✅ **`deploys cancel <projekt>`.**
 77. ✅ **`deploys ignore <projekt>`** – aus `changed` und `deploy-changed` herausnehmen.
 78. ✅ **Shell-Vervollständigung** (zsh, bash) mit Projektnamen aus dem Cache.
 79. ✅ **Farbige Ausgabe** im Terminal (nur wenn `-t 1`).

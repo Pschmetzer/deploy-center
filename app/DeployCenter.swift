@@ -251,6 +251,12 @@ enum Notify {
         asked = true
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
+    /// A reminder the person set up themselves: shown whether or not the window is in front.
+    static func remind(_ title: String, _ body: String) {
+        let c = UNMutableNotificationContent()
+        c.title = title; c.body = body; c.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "daily-reminder", content: c, trigger: nil))
+    }
     static func post(_ title: String, _ body: String) {
         guard asked, !NSApp.isActive, UserDefaults.standard.object(forKey: "notifications") as? Bool ?? true else { return }
         let c = UNMutableNotificationContent()
@@ -330,6 +336,7 @@ final class Store: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(refreshMinutes) * 60 * 1_000_000_000)
                 await autoRefresh()
+                remindIfDue()
             }
         }
     }
@@ -647,6 +654,22 @@ final class Store: ObservableObject {
         }
     }
 
+    // MARK: The daily reminder: a notification at the chosen hour when something waits.
+    // It reminds; it never deploys by itself.
+
+    private func remindIfDue() {
+        let d = UserDefaults.standard
+        let hour = d.integer(forKey: "reminderHour")   // 0 = off
+        guard hour > 0, Calendar.current.component(.hour, from: Date()) >= hour else { return }
+        let today = Date().formatted(.iso8601.year().month().day())
+        guard d.string(forKey: "lastReminder") != today else { return }
+        let w = waiting
+        guard w.projects > 0 else { return }
+        d.set(today, forKey: "lastReminder")
+        Notify.remind(L("Time for the daily deploy", "Zeit für den täglichen Deploy"),
+                      L("\(w.prs) PRs in \(w.projects) projects wait to go live.", "\(w.prs) PRs in \(w.projects) Projekten warten darauf, live zu gehen."))
+    }
+
     // MARK: How long a build usually takes, per project (the last five)
 
     private var durations: [String: [Double]] {
@@ -819,6 +842,21 @@ struct ContentView: View {
     }
 
     private var selectedAll: [Item] { scopes.flatMap { store.selected($0) } }
+
+    /// A tick; with Shift held, everything between the last tick and this one (as the list shows it).
+    @State private var lastTicked: String?
+    private func tick(_ item: Item) {
+        let key = Store.key(item)
+        if NSEvent.modifierFlags.contains(.shift), let last = lastTicked,
+           let a = visible.firstIndex(where: { Store.key($0) == last }), let b = visible.firstIndex(where: { Store.key($0) == key }) {
+            for i in visible[min(a, b)...max(a, b)] where i.deployable && !i.state.isActive && !i.selected {
+                store.toggle(i.platform, i.id)
+            }
+        } else {
+            store.toggle(item.platform, item.id)
+        }
+        lastTicked = key
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1155,7 +1193,7 @@ struct ContentView: View {
                     onCancel: { store.cancel(item) },
                     onRetry: item.deployable ? { store.deployOne(item, preview: false) } : nil,
                     onPromote: item.platform == .vercel ? { promoteItem = item } : nil,
-                    usualMinutes: store.usualMinutes(item)) { store.toggle(item.platform, item.id) }
+                    usualMinutes: store.usualMinutes(item), search: search) { tick(item) }
                     .contextMenu {
                         if item.repo != nil {
                             Button(L("Details …", "Details …")) { detailItem = item }
@@ -1348,7 +1386,16 @@ struct Row: View {
     var onRetry: (() -> Void)? = nil
     var onPromote: (() -> Void)? = nil
     var usualMinutes: Int? = nil
+    var search = ""
     let toggle: () -> Void
+
+    /// The part of the name that matches the search, marked.
+    private func highlighted(_ text: String) -> AttributedString {
+        var a = AttributedString(text)
+        guard !search.isEmpty, let r = a.range(of: search, options: .caseInsensitive) else { return a }
+        a[r].backgroundColor = .yellow.opacity(0.35)
+        return a
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1368,7 +1415,7 @@ struct Row: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
-                    Text(item.name).font(.body.weight(.medium))
+                    Text(highlighted(item.name)).font(.body.weight(.medium))
                     if let d = item.domain, let u = item.link.flatMap(URL.init(string:)) {
                         Button { NSWorkspace.shared.open(u) } label: { Text(d).font(.caption) }
                             .buttonStyle(.link).help(L("Open site", "Seite öffnen"))
@@ -1697,6 +1744,20 @@ struct ProjectDetail: View {
             } else {
                 Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             }
+            if item.platform == .vercel {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("Fewer builds in a monorepo", "Weniger Builds im Monorepo")).font(.headline)
+                    Text(L("In Vercel's project settings, Git → Ignored Build Step, this command skips a build when nothing in the project's folder changed:",
+                           "In Vercels Projekteinstellungen unter Git → Ignored Build Step überspringt dieser Befehl einen Build, wenn sich im Ordner des Projekts nichts geändert hat:"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text("git diff --quiet HEAD^ HEAD -- .").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                        Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString("git diff --quiet HEAD^ HEAD -- .", forType: .string) }
+                            label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless)
+                    }
+                    .padding(6).background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.1)))
+                }
+            }
             VStack(alignment: .leading, spacing: 6) {
                 Text(L("Open pull requests (not merged)", "Offene Pull Requests (nicht gemergt)")).font(.headline)
                 if d.open.isEmpty {
@@ -1876,6 +1937,7 @@ struct SettingsView: View {
     @ObservedObject var store: Store
     @AppStorage("refreshMinutes") private var refreshMinutes = 15
     @AppStorage("maxParallel") private var maxParallel = 3
+    @AppStorage("reminderHour") private var reminderHour = 0
     @AppStorage("showMenuBar") private var showMenuBar = true
     @AppStorage("hideDock") private var hideDock = false
     @AppStorage("notifications") private var notifications = true
@@ -1905,6 +1967,13 @@ struct SettingsView: View {
                 }
             if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
             Toggle(L("Notify when a deploy ends", "Mitteilung, wenn ein Deploy fertig ist"), isOn: $notifications)
+            Picker(L("Daily reminder to deploy", "Tägliche Erinnerung zum Deployen"), selection: $reminderHour) {
+                Text(L("Off", "Aus")).tag(0)
+                ForEach(7...20, id: \.self) { Text(L("at \($0):00", "um \($0):00 Uhr")).tag($0) }
+            }
+            .onChange(of: reminderHour) { _, h in if h > 0 { Notify.ask() } }
+            .help(L("Only a reminder, and only when something waits. Nothing is deployed by itself.",
+                    "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
             Toggle(L("Look for a new version once a day", "Einmal am Tag nach einer neuen Version sehen"), isOn: $checkUpdates)
             Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
                 if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
