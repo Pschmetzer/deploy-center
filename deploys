@@ -13,6 +13,7 @@
 #   deploys doctor                            check tools and access (JSON)
 #   deploys changed [--json]                  what has commits on GitHub that are not live
 #   deploys deploy-changed [--yes]            deploy all of those (shows the list without --yes)
+#   deploys explain <project>                 why a project is (not) counted as changed
 #   deploys diff <project>                    commits and files between what is live and the branch
 #   deploys notes <project>                   the same as release notes (Markdown)
 #   deploys vercel map <p> <owner/repo> [br]  say where a project deploys from
@@ -468,6 +469,20 @@ case "${1:-} ${2:-}" in
     else jq --arg p "$p" '. + [$p] | unique' "$f" > "$tmp"; echo "$p is left out of changed and deploy-changed"; fi
     mv "$tmp" "$f" ;;
 
+  "explain "*)
+    # One sentence on why a project is, or is not, counted as having changes.
+    p="${2:?project}"; plat="$(platform_of "$p")"
+    j="$("$0" "$plat" json | jq -c --arg p "$p" '.[] | select(.name == $p)')"
+    [ -n "$j" ] || die "$p not found"
+    echo "$j" | jq -r 'def s: (. // "?") | tostring | .[0:7];
+      if (.deployable // false) | not then "no: not deployable (repo unknown, or the service is suspended)"
+      elif .paused // false then "no: suspended"
+      elif .building then "no: a build is running right now"
+      elif .headSha == null and .headAt == null then "unknown: the branch head is not known (gh missing or not logged in?)"
+      elif .rewritten then "yes: the live commit is gone from the repo (branch rewritten)"
+      elif .changed then "yes: live \(.lastSha | s), branch \(.headSha | s), \(.pendingCommits // "?") commits, \(.pendingPRs // "?") PRs waiting"
+      else "no: live commit \(.lastSha | s) is the branch head" end' ;;
+
   "diff "*|"notes "*)
     # What is merged but not live for one project, from the same data the window shows.
     p="${2:?project}"; plat="$(platform_of "$p")"
@@ -484,7 +499,7 @@ case "${1:-} ${2:-}" in
 
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
-    cmds="doctor changed deploy-changed status watch logs open ignore diff notes costs triggers details vercel render completion"
+    cmds="doctor changed deploy-changed status watch logs open ignore explain diff notes costs triggers details vercel render completion"
     case "${2:-zsh}" in
       zsh) cat <<ZSH
 _deploys() {

@@ -50,7 +50,7 @@ Keine Projektnamen aus dem Screenshot, weil das Repo öffentlich ist.
 38. **`DEPLOYS_CONFIG` ist nur eine Umgebungsvariable.** Für Tests praktisch, für zwei Konten (Privat/Firma) wäre `--profile work` bequemer; je Profil eigener Schlüsselbund-Eintrag und eigene Vercel-Team-ID.
 39. **`deploys changed --since 6h`** und **`--platform render`** als Filter, damit Skripte nicht jq-Gymnastik brauchen.
 40. **`deploys json` für alles** (ein Aufruf für beide Plattformen, wie die App ihn bräuchte statt zweier getrennter Prozesse mit doppelter GitHub-Last).
-41. **`deploys explain <projekt>`** sagt in einem Satz, warum ein Projekt „changed“ ist oder nicht („Live-Stand abc123, Branch def456, 4 Commits, Build läuft nicht“). Spart beim Debuggen der CHANGED_RULE jede Menge Zeit.
+41. ✅ **`deploys explain <projekt>`** sagt in einem Satz, warum ein Projekt „changed“ ist oder nicht („Live-Stand abc123, Branch def456, 4 Commits, Build läuft nicht“). Spart beim Debuggen der CHANGED_RULE jede Menge Zeit.
 42. **Selbsttest `deploys doctor --deep`:** schreibt nichts, startet nichts, prüft aber einmal Token-Rechte (Vercel `/v2/teams`, Render `/services?limit=1`, GitHub `rate_limit`) und meldet pro Zugang „ok / abgelaufen / zu wenig Rechte“.
 
 ## C. Deploy-Ablauf
@@ -85,13 +85,13 @@ Keine Projektnamen aus dem Screenshot, weil das Repo öffentlich ist.
 67. **Banner „252 PRs warten“ ist eine riesige Zahl ohne Bezug.** Dazu „davon älter als 2 Tage: 31“, „aus Abhängigkeiten: 40“. Ein Klick auf „Anzeigen“ listet nach Projekt.
 68. **„Auto-Deploy ausschalten“ ohne Vorschau, was passiert.** Der Knopf soll zuerst zeigen: „Betrifft 1 Projekt: …, Vercel-Git-Verbindung wird getrennt, Repo wird gemerkt, Rückweg: `autodeploy-on`“ (gibt es noch nicht, siehe 114).
 69. **Fenster-Mindestgröße** auf das Banner-Layout abstimmen; bei 600 px Breite sind die Zeilen unlesbar.
-70. **Die Statistikspalte „Stand 0:48“ (Uhrzeit)** ist missverständlich (Stand wovon?). „Aktualisiert 0:48“ oder „vor 2 Min“, Tooltip mit Quelle (Cache/Live).
+70. ✅ **Die Statistikspalte „Stand 0:48“ (Uhrzeit)** ist missverständlich (Stand wovon?). „Aktualisiert 0:48“ oder „vor 2 Min“, Tooltip mit Quelle (Cache/Live).
 71. **Bei Fehlern in einer Plattform steht nur ein roter Text im Tab.** Eigene Zeile „Render: Key abgelaufen – erneuern“ mit Knopf.
 72. **Filterleiste speichert „Nur mit Änderungen“ nicht pro Tab** (nur global).
 73. **Zeilen-Rechtsklickmenü ist lang** (Vorschau, Commit wählen, Cache leeren, Notiz, Pin, Ausblenden …). Gruppieren und Tastenkürzel anzeigen.
 74. **Doppelklick auf eine Zeile öffnet die Details** nicht (Idee 106 offen); Leertaste = Quick-Look-Fenster mit Commits, so wie im Finder.
 75. **Sortierung „Wartezeit“ (älteste zuerst)** ergänzen, die Reihenfolge „Änderungen nach Commits“ trifft nicht „was brennt“.
-76. **Zähler im Tab („Vercel 35“) zeigen Gesamtzahl,** nicht die mit Änderungen. Zweiter Wert klein dahinter: „35 · 9“.
+76. ✅ **Zähler im Tab („Vercel 35“) zeigen Gesamtzahl,** nicht die mit Änderungen. Zweiter Wert klein dahinter: „35 · 9“.
 77. **Beim Anhaken nach „Deploy“ zeigt der Knopf nur „Deployen“.** „7 deployen (≈ 12 Min, ≈ 1,40 $)“ direkt auf dem Knopf, Idee 24 (alte Liste) in kleinster Form.
 78. **Dunkelmodus:** der orangefarbene Banner „Jeder Push kostet Build-Minuten“ hat im Screenshot gutes Kontrastverhältnis; die graue Zeile „Projekte anhaken, die live gehen sollen“ unten ist kontrastarm. Kontrast prüfen.
 79. **Sprache pro App wählbar,** nicht nur vom System. Nutzer mit englischem Mac, deutschen Projekten (und umgekehrt) wechseln sonst nur per Systemeinstellung.
@@ -182,16 +182,16 @@ Keine Projektnamen aus dem Screenshot, weil das Repo öffentlich ist.
 152. **Snapshot-Tests der Zeile** mit vielen Abzeichen in Hell/Dunkel/große Schrift; fängt Layout-Brüche wie im Screenshot (Umbruch „ältester Commit …“).
 153. **UI-Test für das Banner-Plural** („1 Projekt“): ein Test, der alle `L(…)`-Texte mit `\(n)` auf 0/1/2 durchspielt.
 154. **Lokalisierungs-Linter:** prüft, dass jeder `L(en, de)` beide Texte hat und die gleichen Platzhalter.
-155. **Release: `release.sh` prüft CHANGELOG-Eintrag** und lehnt ab, wenn „Unreleased“ leer ist oder die VERSION schon getaggt ist.
+155. ✅ **Release: `release.sh` prüft CHANGELOG-Eintrag** und lehnt ab, wenn „Unreleased“ leer ist oder die VERSION schon getaggt ist.
 156. **Reproduzierbarer Build:** `build.sh` schreibt die Compiler-Version und Commit-Hash in `Info.plist` (Über-Dialog und „Diagnose kopieren“ zeigen sie).
 157. **Abstürze abfangen:** `NSSetUncaughtExceptionHandler` schreibt in `DeployCenter.log` (Log gibt es, aber nur für Skriptfehler, nicht für App-Abstürze).
 158. **Datenschutz-Test:** Ein CI-Schritt, der `grep`t, dass kein Projektname, keine Team-ID und kein Pfad aus dem eigenen Konto im Repo steht (das steht meist fest, wird aber leicht vergessen; Docs wie diese hier zählen mit).
-159. **Dokumentation: „Wie die App zählt“.** Eine Seite, die `CHANGED_RULE`, Gruppen pro Repo, „wartet“, „offen“ erklärt; die Zahlen sind das Vertrauenskapital der App, und sie sind aus dem Code nicht leicht abzulesen.
+159. ✅ **Dokumentation: „Wie die App zählt“.** Eine Seite, die `CHANGED_RULE`, Gruppen pro Repo, „wartet“, „offen“ erklärt; die Zahlen sind das Vertrauenskapital der App, und sie sind aus dem Code nicht leicht abzulesen.
 160. **Beispielkonfigurationen** für drei Setups (nur Vercel, nur Render, beides + Monorepo) in `docs/`, jeweils mit erwarteter Ausgabe von `changed`.
 161. **Barrierefreiheits-Prüfung per `accessibilityAudit`** in einem UI-Test (Xcode 15+) für Hauptfenster und Einstellungen.
 162. **Sparkle-Update mit EdDSA-Signatur** statt „Herunterladen“-Link (Idee 140 alt, hier mit Begründung: Hash-Prüfung ersetzt Vertrauen in GitHub-Zugang).
 163. **Homebrew-Cask-Tap** mit automatischem Update durch die Release-Action.
-164. **Issue-Vorlage „Zahl stimmt nicht“** mit Feldern: Projekt (anonymisiert), `deploys changed --json`-Ausschnitt, erwartete Zahl. Die häufigste Art Fehler dieser App.
+164. ✅ **Issue-Vorlage „Zahl stimmt nicht“** mit Feldern: Projekt (anonymisiert), `deploys changed --json`-Ausschnitt, erwartete Zahl. Die häufigste Art Fehler dieser App.
 165. **`deploys doctor --report`** erzeugt einen anonymisierten Bericht (keine Namen, keine IDs) zum Anhängen an Issues; der Knopf „Diagnose kopieren“ in der App nutzt dasselbe.
 166. **Performance-Messung:** Zeit pro Befehl (`changed`, `vercel json`, `render json`) ins Log schreiben, damit „die App ist langsam“ eine Zahl hat und GitHub-Aufrufe pro Reload sichtbar werden.
 167. **Fehlerbudget für GitHub:** die App zeigt bei Reload „verbraucht 38 von 5000“, nicht nur „noch 4870“; Verbrauch pro Reload ist die Zahl, an der man Optimierungen misst.

@@ -31,6 +31,12 @@ struct ContentView: View {
     @State private var logItem: Item?
 
     /// The platforms the list shows: one tab, or both under "All".
+    /// "35" projects, or "35 · 9" when 9 of them have changes waiting.
+    private static func tabCount(_ store: Store, _ p: Platform) -> String {
+        let n = store.items[p]?.count ?? 0, c = store.changedCount(p)
+        return c > 0 ? "\(n) · \(c)" : "\(n)"
+    }
+
     private var scopes: [Platform] { showAll ? Platform.allCases : [platform] }
 
     private enum Tab: Hashable { case all, vercel, render }
@@ -215,8 +221,8 @@ struct ContentView: View {
         HStack(spacing: 12) {
             Picker("", selection: tab) {
                 Text(L("All", "Alle")).tag(Tab.all)
-                Text("Vercel  \(store.items[.vercel]?.count ?? 0)").tag(Tab.vercel)
-                Text("Render  \(store.items[.render]?.count ?? 0)").tag(Tab.render)
+                Text("Vercel  " + Self.tabCount(store, .vercel)).tag(Tab.vercel)
+                Text("Render  " + Self.tabCount(store, .render)).tag(Tab.render)
             }
             .pickerStyle(.segmented).labelsHidden().frame(width: 290)
 
@@ -243,7 +249,7 @@ struct ContentView: View {
 
             let stamps = scopes.compactMap { p in store.loadedAt[p].map { (showAll ? p.rawValue + " " : "") + $0.formatted(date: .omitted, time: .shortened) } }
             if !stamps.isEmpty {
-                Text((scopes.contains { store.fromCache.contains($0) } ? L("saved ", "gespeichert ") : L("as of ", "Stand "))
+                Text((scopes.contains { store.fromCache.contains($0) } ? L("saved ", "gespeichert ") : L("updated ", "Aktualisiert "))
                      + stamps.joined(separator: " · "))
                     .font(.caption2).foregroundStyle(.secondary).fixedSize()
             }
@@ -252,7 +258,7 @@ struct ContentView: View {
                 else { Image(systemName: "arrow.clockwise") }
             }
             .help(L("Reload (⌘R)", "Neu laden (⌘R)") + (store.loadedAt[platform].map {
-                "\n" + L("As of ", "Stand ") + $0.formatted(date: .omitted, time: .shortened)
+                "\n" + L("Updated ", "Aktualisiert ") + $0.formatted(date: .omitted, time: .shortened)
                     + (store.fromCache.contains(platform) ? L(" (saved copy)", " (gespeicherte Kopie)") : "") } ?? ""))
             .keyboardShortcut("r")
             .disabled(store.loading.contains(platform))

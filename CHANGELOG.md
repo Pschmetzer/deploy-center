@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `deploys explain <project>` says why a project is, or is not, counted as having changes.
+- Tabs show "35 · 9" (projects · with changes); "Stand" reads "Aktualisiert".
+- `release.sh` refuses an empty changelog and an already tagged version; issue template "A number is wrong"; `docs/ZAHLEN.md` explains the counts.
 - Rows of one repo (frontend + backend) stay together; the later ones say "same changes as the row above" instead of repeating commits, oldest commit and open PRs.
 - Fixed: costs, budget and provider outages refresh while the app runs (menu bar), not only at start; status feeds load in parallel.
 - Fixed: the site check no longer holds a build slot of the queue.
