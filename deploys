@@ -696,8 +696,11 @@ BASH
     # promotion is not always the newest one.
     cur="$(vercel_call "/v9/projects/$p" | jq -r '.targets.production.id // empty')"
     prev="$(vercel_call "/v6/deployments?projectId=$p&target=production&state=READY&limit=20" \
-      | jq -r --arg cur "$cur" '.deployments as $d | ($d | map(.uid) | index($cur)) as $i
-          | if $i == null then ($d[1].uid // empty) else ($d[$i+1].uid // empty) end')"
+      | jq -r --arg cur "$cur" '.deployments as $d | (($d | map(.uid) | index($cur)) // 0) as $i
+          | ($d[$i].meta.githubCommitSha // null) as $sha
+          # An older deploy of the same commit (a redeploy) would change nothing: skip to a different one.
+          | ($d | to_entries | map(select(.key > $i) | .value)
+             | map(select($sha == null or (.meta.githubCommitSha // "") != $sha)) | .[0].uid // empty)')"
     [ -n "$prev" ] || die "No earlier production deployment of $p to roll back to"
     # The project's id, not its name: Vercel answers 404 to a name on these endpoints.
     pid="$(vercel_call "/v9/projects/$p" | jq -r '.id // empty')"
@@ -754,7 +757,8 @@ BASH
   "render rollback")
     # Back to the deploy that was live before the current one.
     id="$(render_id_of "${3:?service}")"
-    prev="$(render_call GET "/services/$id/deploys?limit=20" | jq -r '[.[].deploy | select(.status=="deactivated")][0].id // empty')"
+    prev="$(render_call GET "/services/$id/deploys?limit=20" | jq -r '([.[].deploy | select(.status=="live")][0].commit.id // "") as $cur
+        | [.[].deploy | select(.status=="deactivated" and ((.commit.id // "") != $cur))][0].id // empty')"
     [ -n "$prev" ] || die "No earlier live deploy to roll back to"
     render_call POST "/services/$id/rollback" "{\"deployId\":\"$prev\"}" | jq --arg s "$id" '{id, serviceId:$s, state:.status}' ;;
   "render status")
