@@ -160,7 +160,7 @@ struct Trigger: Decodable, Identifiable {
 /// One repo in detail, read when the details are opened (`deploys details`).
 struct Details: Decodable {
     struct Commit: Decodable, Identifiable {
-        let sha: String; let url: String?; let msg: String; let author: String?; let bot: Bool?; let at: Double; let pr: Int?
+        let sha: String; let full: String?; let url: String?; let msg: String; let author: String?; let bot: Bool?; let at: Double; let pr: Int?
         var id: String { sha }
     }
     struct Checks: Decodable { let total: Int; let failed: Int; let running: Int }
@@ -176,8 +176,8 @@ struct Started: Decodable { let id: String; let url: String?; let state: String?
 struct StatusReply: Decodable { let id: String; let url: String?; let state: String?; let error: String? }
 
 enum RunState: Equatable {
-    case idle, starting, running(String), done(String?), failed(String), skipped(String)
-    var isActive: Bool { switch self { case .starting, .running: return true; default: return false } }
+    case idle, queued, starting, running(String), done(String?), failed(String), skipped(String)
+    var isActive: Bool { switch self { case .queued, .starting, .running: return true; default: return false } }
 }
 
 struct Item: Identifiable {
@@ -214,6 +214,8 @@ struct Item: Identifiable {
     var selected = false
     var state: RunState = .idle
     var startedAt: Date? = nil
+    var deployId: String? = nil      // the deploy being followed, for cancelling
+    var previewId: String? = nil     // a finished preview, for promoting it
 
     /// GitHub's page of the commits between what is live and the branch.
     var compareURL: URL? {
@@ -560,15 +562,106 @@ final class Store: ObservableObject {
 
     /// Set by the menu bar to show one project in the window.
     @Published var pendingSearch: String?
+    /// Set by the menu bar: tick everything with changes and ask, in the window.
+    @Published var pendingDeployAll = false
+
+    // MARK: The queue: at most N builds at once, a frontend after the backend of its repo
+
+    struct Job { let item: Item; var preview = false; var sha: String? = nil; var clearCache = false }
+    private var queue: [Job] = []
+    private var running = 0
+    private var cancelled: Set<String> = []
+    var maxParallel: Int { let n = UserDefaults.standard.integer(forKey: "maxParallel"); return n >= 1 ? n : 3 }
 
     func deploySelected(_ p: Platform, preview: Bool = false) {
-        Notify.ask()
         let chosen = selected(p)
         clearSelection(p)
-        for item in chosen { Task { await deploy(item, preview: preview) } }
+        enqueue(chosen.map { Job(item: $0, preview: preview) })
     }
 
-    func deployOne(_ item: Item, preview: Bool) { Notify.ask(); Task { await deploy(item, preview: preview) } }
+    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false) {
+        enqueue([Job(item: item, preview: preview, sha: sha, clearCache: clearCache)])
+    }
+
+    func enqueue(_ jobs: [Job]) {
+        Notify.ask()
+        for j in jobs where !(itemNow(j.item)?.state.isActive ?? false) {
+            set(j.item.platform, j.item.id, .queued)
+            queue.append(j)
+        }
+        pump()
+    }
+
+    private func itemNow(_ i: Item) -> Item? { items[i.platform]?.first { $0.id == i.id } }
+
+    private func pump() {
+        while running < maxParallel, let k = queue.firstIndex(where: { waitsFor($0) == nil }) {
+            let job = queue.remove(at: k)
+            running += 1
+            Task { await deploy(job); running -= 1; pump() }
+        }
+        // A frontend whose backend failed in this batch does not go out alone.
+        for job in queue {
+            if case .failed? = waitsFor(job).flatMap({ itemNow($0)?.state }) {
+                queue.removeAll { $0.item.id == job.item.id }
+                set(job.item.platform, job.item.id, .failed(L("Not started: the backend of the same repo failed",
+                                                             "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
+            }
+        }
+        if queue.isEmpty && running == 0 { queueBatch = [] }
+    }
+
+    /// The Render service of the same repo that a Vercel frontend waits for, while it is queued or building.
+    private func waitsFor(_ job: Job) -> Item? {
+        guard job.item.platform == .vercel, !job.preview, let repo = job.item.repo else { return nil }
+        return (items[.render] ?? []).first { b in
+            guard b.repo == repo else { return false }
+            if b.state.isActive || queue.contains(where: { $0.item.id == b.id }) { return true }
+            if case .failed = b.state, queueBatch.contains(b.id) { return true }
+            return false
+        }
+    }
+    /// Render services started in the current run of the queue, so an old failure does not hold a frontend.
+    private var queueBatch: Set<String> = []
+
+    func cancel(_ item: Item) {
+        if let k = queue.firstIndex(where: { $0.item.id == item.id }) {
+            queue.remove(at: k); set(item.platform, item.id, .idle); return
+        }
+        guard let id = itemNow(item)?.deployId else { return }
+        cancelled.insert(item.id)
+        Task {
+            let args = item.platform == .vercel ? ["vercel", "cancel", id] : ["render", "cancel", item.id, id]
+            do { _ = try await Tool.run(args); set(item.platform, item.id, .failed(L("Cancelled", "Abgebrochen"))) }
+            catch { cancelled.remove(item.id); say(L("Could not cancel \(item.name)", "\(item.name) ließ sich nicht abbrechen"), error.localizedDescription, ok: false) }
+        }
+    }
+
+    /// A finished Vercel preview goes live without another build.
+    func promote(_ item: Item) {
+        guard let pid = itemNow(item)?.previewId else { return }
+        Task {
+            set(item.platform, item.id, .starting)
+            do { _ = try await Tool.run(["vercel", "promote", item.id, pid]); set(item.platform, item.id, .done(item.link)) }
+            catch { set(item.platform, item.id, .failed(error.localizedDescription)) }
+        }
+    }
+
+    // MARK: How long a build usually takes, per project (the last five)
+
+    private var durations: [String: [Double]] {
+        get { (UserDefaults.standard.dictionary(forKey: "durations") as? [String: [Double]]) ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: "durations") }
+    }
+    func usualMinutes(_ i: Item) -> Int? {
+        guard let d = durations[Self.key(i)], !d.isEmpty else { return nil }
+        return max(1, Int((d.reduce(0, +) / Double(d.count) / 60).rounded()))
+    }
+    private func recordDuration(_ i: Item) {
+        guard let start = itemNow(i)?.startedAt else { return }
+        var all = durations; var d = all[Self.key(i)] ?? []
+        d.append(Date().timeIntervalSince(start)); all[Self.key(i)] = Array(d.suffix(5)); durations = all
+    }
 
     /// Production back to what was live before.
     func rollback(_ item: Item) {
@@ -584,16 +677,24 @@ final class Store: ObservableObject {
         }
     }
 
-    private func deploy(_ item: Item, preview: Bool = false) async {
-        let p = item.platform
+    private func deploy(_ job: Job) async {
+        let item = job.item, p = item.platform
+        if p == .render { queueBatch.insert(item.id) }
         set(p, item.id, .starting)
+        cancelled.remove(item.id)
         do {
-            let started = try await Tool.json([p.cli, "deploy-json", item.id] + (preview ? ["--preview"] : []), as: Started.self)
+            var args = [p.cli, "deploy-json", item.id]
+            if job.preview { args.append("--preview") }
+            if let sha = job.sha { args += ["--sha", sha] }
+            if job.clearCache { args.append("--clear-cache") }
+            let started = try await Tool.json(args, as: Started.self)
+            if let k = items[p]?.firstIndex(where: { $0.id == item.id }) { items[p]![k].deployId = started.id }
             set(p, item.id, .running(started.state ?? L("started", "gestartet")))
-            try await follow(item, deployId: started.id, url: started.url, preview: preview)
+            try await follow(item, deployId: started.id, url: started.url, preview: job.preview)
         } catch {
             set(p, item.id, .failed(error.localizedDescription))
         }
+        pump()
     }
 
     /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
@@ -601,13 +702,17 @@ final class Store: ObservableObject {
         let p = item.platform
         for _ in 0..<400 {
             try await Task.sleep(nanoseconds: 6_000_000_000)
+            if cancelled.contains(item.id) { return }
             let args = p == .vercel ? ["vercel", "status", deployId] : ["render", "status", item.id, deployId]
             guard let s = try? await Tool.json(args, as: StatusReply.self) else { continue }
             let state = (s.state ?? "").lowercased()
             switch (p, state) {
             case (.vercel, "ready"), (.render, "live"):
-                if preview { set(p, item.id, .done(s.url ?? url), countsAsLive: false) }
-                else {
+                if preview {
+                    if let k = items[p]?.firstIndex(where: { $0.id == item.id }) { items[p]![k].previewId = deployId }
+                    set(p, item.id, .done(s.url ?? url), countsAsLive: false)
+                } else {
+                    recordDuration(item)
                     set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link))
                     if let l = item.link { await checkSite(item.name, l) }
                 }
@@ -685,6 +790,7 @@ struct ContentView: View {
     @State private var noteItem: Item?
     @State private var noteText = ""
     @State private var logItem: Item?
+    @State private var promoteItem: Item?
 
     /// The platforms the list shows: one tab, or both under "All".
     private var scopes: [Platform] { showAll ? Platform.allCases : [platform] }
@@ -757,8 +863,23 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: store.toast)
-        .sheet(item: $detailItem) { item in ProjectDetail(item: item) }
         .sheet(item: $logItem) { item in BuildLog(item: item) }
+        .sheet(item: $detailItem) { item in ProjectDetail(item: item) { sha in store.deployOne(item, preview: false, sha: sha) } }
+        .alert(L("Make the preview live?", "Vorschau live schalten?"),
+               isPresented: Binding(get: { promoteItem != nil }, set: { if !$0 { promoteItem = nil } })) {
+            Button(L("Cancel", "Abbrechen"), role: .cancel) { promoteItem = nil }
+            Button(L("Make live", "Live schalten")) { if let i = promoteItem { store.promote(i) }; promoteItem = nil }
+        } message: {
+            Text(L("\(promoteItem?.name ?? "")'s finished preview becomes production. Nothing is built again.",
+                   "Die fertige Vorschau von \(promoteItem?.name ?? "") wird live. Es wird nichts neu gebaut."))
+        }
+        .onChange(of: store.pendingDeployAll) { _, go in
+            guard go else { return }
+            store.pendingDeployAll = false
+            showAll = true; onlyChanged = true
+            Platform.allCases.forEach { store.selectChanged($0) }
+            if !selectedAll.isEmpty { confirming = true }
+        }
         .alert(L("Note", "Notiz"), isPresented: Binding(get: { noteItem != nil }, set: { if !$0 { noteItem = nil } })) {
             TextField(L("e.g. only after the release mail", "z. B. erst nach der Release-Mail"), text: $noteText)
             Button(L("Cancel", "Abbrechen"), role: .cancel) { noteItem = nil }
@@ -1030,7 +1151,11 @@ struct ContentView: View {
                     perBuild: item.platform == .vercel ? store.costs?.perBuild(item.name) : nil,
                     pinned: store.isPinned(item), note: store.note(item),
                     showDetails: item.repo == nil ? nil : { detailItem = item },
-                    showLog: { logItem = item }) { store.toggle(item.platform, item.id) }
+                    showLog: { logItem = item },
+                    onCancel: { store.cancel(item) },
+                    onRetry: item.deployable ? { store.deployOne(item, preview: false) } : nil,
+                    onPromote: item.platform == .vercel ? { promoteItem = item } : nil,
+                    usualMinutes: store.usualMinutes(item)) { store.toggle(item.platform, item.id) }
                     .contextMenu {
                         if item.repo != nil {
                             Button(L("Details …", "Details …")) { detailItem = item }
@@ -1040,6 +1165,9 @@ struct ContentView: View {
                             Button(L("Deploy to production", "Live deployen")) {
                                 if item.hasNewCommits || item.headSha == nil { store.deployOne(item, preview: false) }
                                 else { unchangedItem = item }
+                            }
+                            if item.platform == .render {
+                                Button(L("Deploy with a cleared build cache", "Mit geleertem Build-Cache deployen")) { store.deployOne(item, preview: false, clearCache: true) }
                             }
                             if item.platform == .vercel {
                                 Button(L("Preview deploy (not live)", "Vorschau-Deploy (nicht live)")) { store.deployOne(item, preview: true) }
@@ -1216,6 +1344,10 @@ struct Row: View {
     var note: String? = nil
     var showDetails: (() -> Void)? = nil
     var showLog: (() -> Void)? = nil
+    var onCancel: (() -> Void)? = nil
+    var onRetry: (() -> Void)? = nil
+    var onPromote: (() -> Void)? = nil
+    var usualMinutes: Int? = nil
     let toggle: () -> Void
 
     var body: some View {
@@ -1335,10 +1467,23 @@ struct Row: View {
         }
     }
 
+    @ViewBuilder private var cancelButton: some View {
+        if let onCancel {
+            Button(action: onCancel) { Image(systemName: "stop.circle") }
+                .buttonStyle(.borderless).help(L("Cancel", "Abbrechen"))
+        }
+    }
+
     @ViewBuilder private var status: some View {
         switch item.state {
         case .idle:
             EmptyView()
+        case .queued:
+            HStack(spacing: 6) {
+                Image(systemName: "hourglass").foregroundStyle(.secondary)
+                Text(L("queued", "in der Schlange")).font(.caption)
+                cancelButton
+            }
         case .starting:
             HStack(spacing: 6) { ProgressView().controlSize(.small); Text(L("starting", "startet")).font(.caption) }
         case .running(let s):
@@ -1348,9 +1493,12 @@ struct Row: View {
                     // Seconds since the start, so a long build is seen as long.
                     TimelineView(.periodic(from: .now, by: 1)) { ctx in
                         let secs = Int(ctx.date.timeIntervalSince(start))
-                        Text("\(s) · \(secs / 60):\(String(format: "%02d", secs % 60))").font(.caption.monospacedDigit())
+                        Text("\(s) · \(secs / 60):\(String(format: "%02d", secs % 60))"
+                             + (usualMinutes.map { L(" (usually ~\($0) min)", " (meist ~\($0) Min)") } ?? ""))
+                            .font(.caption.monospacedDigit())
                     }
                 } else { Text(s).font(.caption) }
+                cancelButton
             }
         case .done(let url):
             HStack(spacing: 6) {
@@ -1358,6 +1506,15 @@ struct Row: View {
                 if let url, let u = URL(string: url) {
                     Button { NSWorkspace.shared.open(u) } label: { Image(systemName: "arrow.up.right.square") }
                         .buttonStyle(.borderless).help(url)
+                    if item.previewId != nil {
+                        Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url, forType: .string) }
+                            label: { Image(systemName: "link") }
+                            .buttonStyle(.borderless).help(L("Copy the preview link", "Vorschau-Link kopieren"))
+                    }
+                }
+                if item.previewId != nil, let onPromote {
+                    Button(L("Make live", "Live schalten"), action: onPromote).controlSize(.small)
+                        .help(L("This preview goes live as it is, without another build", "Diese Vorschau geht so live, wie sie ist, ohne neuen Build"))
                 }
             }
         case .skipped(let msg):
@@ -1375,6 +1532,10 @@ struct Row: View {
                 if let showLog {
                     Button(action: showLog) { Image(systemName: "text.alignleft") }
                         .buttonStyle(.borderless).help(L("Build log", "Build-Log"))
+                }
+                if let onRetry {
+                    Button(action: onRetry) { Image(systemName: "arrow.clockwise") }
+                        .buttonStyle(.borderless).help(L("Try again", "Erneut versuchen"))
                 }
             }
         }
@@ -1422,7 +1583,9 @@ struct BuildLog: View {
 
 struct ProjectDetail: View {
     let item: Item
+    var deployCommit: ((String) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    @State private var commitToDeploy: Details.Commit?
     @State private var details: Details?
     @State private var error: String?
 
@@ -1448,6 +1611,17 @@ struct ProjectDetail: View {
             }
         }
         .frame(width: 620, height: 560)
+        .alert(L("Deploy this commit?", "Diesen Commit deployen?"),
+               isPresented: Binding(get: { commitToDeploy != nil }, set: { if !$0 { commitToDeploy = nil } })) {
+            Button(L("Cancel", "Abbrechen"), role: .cancel) { commitToDeploy = nil }
+            Button(L("Deploy", "Deployen")) {
+                if let c = commitToDeploy, let full = c.full { deployCommit?(full); dismiss() }
+                commitToDeploy = nil
+            }
+        } message: {
+            Text(L("\(item.name) goes live at \(commitToDeploy?.sha ?? "") – \(commitToDeploy?.msg ?? ""). Newer commits stay waiting.",
+                   "\(item.name) geht mit \(commitToDeploy?.sha ?? "") live – \(commitToDeploy?.msg ?? ""). Neuere Commits warten weiter."))
+        }
         .task {
             guard let repo = item.repo else { return }
             do {
@@ -1509,6 +1683,10 @@ struct ProjectDetail: View {
                             Spacer(minLength: 8)
                             Text((c.author ?? "") + " · " + Row.ago(Date(timeIntervalSince1970: c.at)))
                                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            if deployCommit != nil, item.deployable, c.full != nil {
+                                Button { commitToDeploy = c } label: { Image(systemName: "paperplane") }
+                                    .buttonStyle(.borderless).help(L("Deploy up to this commit", "Bis zu diesem Commit deployen"))
+                            }
                         }
                     }
                 }
@@ -1697,6 +1875,7 @@ struct Logo: View {
 struct SettingsView: View {
     @ObservedObject var store: Store
     @AppStorage("refreshMinutes") private var refreshMinutes = 15
+    @AppStorage("maxParallel") private var maxParallel = 3
     @AppStorage("showMenuBar") private var showMenuBar = true
     @AppStorage("hideDock") private var hideDock = false
     @AppStorage("notifications") private var notifications = true
@@ -1708,6 +1887,9 @@ struct SettingsView: View {
         Form {
             Picker(L("Reload the lists every", "Listen neu laden alle"), selection: $refreshMinutes) {
                 ForEach([5, 15, 30, 60], id: \.self) { Text(L("\($0) minutes", "\($0) Minuten")).tag($0) }
+            }
+            Picker(L("Builds at the same time", "Builds gleichzeitig"), selection: $maxParallel) {
+                ForEach([1, 2, 3, 5, 10], id: \.self) { Text("\($0)").tag($0) }
             }
             Toggle(L("Show in the menu bar", "In der Menüleiste zeigen"), isOn: $showMenuBar)
             Toggle(L("No Dock icon (menu bar only)", "Kein Dock-Symbol (nur Menüleiste)"), isOn: $hideDock)
@@ -1793,6 +1975,12 @@ struct MenuBarContent: View {
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
         }
         .keyboardShortcut("o")
+        if w.projects > 0 {
+            Button(L("Deploy everything with changes …", "Alles mit Änderungen deployen …")) {
+                openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
+                store.pendingDeployAll = true
+            }
+        }
         Button(L("Reload", "Neu laden")) { Task { await store.autoRefresh() } }
         Divider()
         Button(L("Quit", "Beenden")) { NSApp.terminate(nil) }.keyboardShortcut("q")
