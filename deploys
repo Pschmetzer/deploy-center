@@ -530,13 +530,16 @@ BASH
             | {kind:"vercel-build", where:.name, detail:"source \(.source), \(.created/1000|strftime("%Y-%m-%d %H:%M")) UTC"}'
       if render_key >/dev/null 2>&1; then
         roff="$CONFIG_DIR/render-off.json"; [ -f "$roff" ] || echo '{}' > "$roff"
+        # All services at once: twenty calls one after another take a while.
         for id in $(render_services | jq -r '.[] | select(.suspended!="suspended") | .id'); do
-          render_call GET "/services/$id/deploys?limit=5" 2>/dev/null \
+          ( render_call GET "/services/$id/deploys?limit=5" 2>/dev/null \
             | jq -c --arg id "$id" --argjson since "$((since/1000))" --slurpfile o "$roff" '.[].deploy
                 | select(.trigger as $t | ["new_commit","deploy_hook","blueprint_sync"] | index($t))
                 | select((.createdAt|sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) > ([$since, ($o[0][$id] // 1e12)] | max))
-                | {kind:"render-build", where:$id, detail:"trigger \(.trigger), \(.createdAt)"}' || true
+                | {kind:"render-build", where:$id, detail:"trigger \(.trigger), \(.createdAt)"}' > "$tmp/r_$id.out" || true ) &
         done
+        wait
+        cat "$tmp"/r_*.out 2>/dev/null || true
         render_call GET "/blueprints?limit=50" 2>/dev/null \
           | jq -c '.[].blueprint | select(.autoSync==true) | {kind:"render-blueprint", where:.name, detail:"auto-sync on"}' || true
       fi
@@ -572,7 +575,8 @@ BASH
         if ( vercel_deploy_json "$name" | jq -r --arg n "$name" '"Vercel: \($n) started -> \(.url)"' ); then ok=$((ok+1))
         else echo "Vercel: $name failed to start" >&2; bad=$((bad+1)); fi
       else
-        if ( render_call POST "/services/$id/deploys" '{}' | jq -r --arg n "$name" '"Render: \($n) started (\(.id))"' ); then ok=$((ok+1))
+        # deploy-json takes the same start lock as the app, so a second start within a minute is refused.
+        if ( "$0" render deploy-json "$name" | jq -r --arg n "$name" '"Render: \($n) started (\(.id))"' ); then ok=$((ok+1))
         else echo "Render: $name failed to start" >&2; bad=$((bad+1)); fi
       fi
     done < <(echo "$list" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.id // "")"')

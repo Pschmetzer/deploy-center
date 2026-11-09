@@ -13,6 +13,12 @@ struct BuildLog: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text: String?
     @State private var error: String?
+    @State private var onlyErrors = false
+
+    private var lines: [String] { (text ?? "").components(separatedBy: "\n") }
+    private var firstError: Int? { LogTools.firstErrorLine(lines) }
+
+    private func copy(_ s: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -20,17 +26,47 @@ struct BuildLog: View {
                 Text(L("Build log: ", "Build-Log: ") + item.name).font(.headline)
                 Spacer()
                 if let text {
-                    Button(L("Copy", "Kopieren")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
+                    Toggle(L("Errors only", "Nur Fehler"), isOn: $onlyErrors).toggleStyle(.button)
+                        .disabled(firstError == nil)
+                    Button(L("Copy", "Kopieren")) { copy(text) }
+                    Button(L("Copy for Claude", "Für Claude kopieren")) {
+                        var msg: String?
+                        if case .failed(let m) = item.state { msg = m }
+                        copy(LogTools.claudePrompt(name: item.name, repo: item.repo, ref: item.ref, sha: item.headSha, message: msg, log: text))
+                    }
+                    .help(L("A prompt with the error and the log around it, ready to paste", "Ein Prompt mit Fehler und Log drumherum, zum Einfügen"))
                 }
                 Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
             }
             .padding(12)
             Divider()
             if let error { Text(error).foregroundStyle(.secondary).padding(16).textSelection(.enabled) }
-            else if let text {
-                ScrollView { Text(text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(12) }
+            else if text != nil {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(lines.enumerated()), id: \.offset) { n, line in
+                                let bad = LogTools.isErrorLine(line)
+                                if !onlyErrors || bad {
+                                    Text(line.isEmpty ? " " : line)
+                                        .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                                        .foregroundStyle(bad ? Color.red : Color.primary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(n == firstError ? Color.red.opacity(0.12) : Color.clear)
+                                        .id(n)
+                                }
+                            }
+                        }
+                        .padding(12)
+                    }
                     .defaultScrollAnchor(.bottom)
+                    .overlay(alignment: .bottomTrailing) {
+                        if let e = firstError {
+                            Button(L("Jump to the first error", "Zum ersten Fehler")) { withAnimation { proxy.scrollTo(e, anchor: .center) } }
+                                .buttonStyle(.borderedProminent).padding(12)
+                        }
+                    }
+                }
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
         .frame(width: 760, height: 520)

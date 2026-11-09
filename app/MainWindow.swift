@@ -295,6 +295,10 @@ struct ContentView: View {
                     } else {
                         Text(L("Everything merged is live", "Alles Gemergte ist live")).font(.headline)
                     }
+                    if !showAll, w.projects > 0, store.changedCount(platform) != w.projects {
+                        Text(L("\(store.changedCount(platform)) of them on \(platform.rawValue)", "davon \(store.changedCount(platform)) auf \(platform.rawValue)"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if w.openPRs > 0 {
                         Text(L("\(w.openPRs) more \(w.openPRs == 1 ? "PR is" : "PRs are") still open (not merged)",
                                "\(w.openPRs) weitere \(w.openPRs == 1 ? "PR ist" : "PRs sind") noch offen (nicht gemergt)"))
@@ -609,18 +613,18 @@ struct Row: View {
             .accessibilityLabel(item.name)
             .accessibilityValue(item.selected ? L("selected", "ausgewählt") : L("not selected", "nicht ausgewählt"))
 
-            Logo(domain: item.domain, name: item.name)
+            Logo(domain: Demo.on ? nil : item.domain, name: Demo.mask(item.name))
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
-                    Text(highlighted(item.name)).font(.body.weight(.medium))
+                    Text(Demo.on ? AttributedString(Demo.mask(item.name)) : highlighted(item.name)).font(.body.weight(.medium))
                     if let d = item.domain, let u = item.link.flatMap(URL.init(string:)) {
-                        Button { NSWorkspace.shared.open(u) } label: { Text(d).font(.caption) }
+                        Button { NSWorkspace.shared.open(u) } label: { Text(Demo.mask(d)).font(.caption) }
                             .buttonStyle(.link).help(L("Open site", "Seite öffnen"))
                     }
                 }
-                Text(item.detail).font(.caption).foregroundStyle(.secondary)
+                Text(Demo.on ? item.platform.rawValue : item.detail).font(.caption).foregroundStyle(.secondary)
                 if let note { Text(note).font(.caption.italic()).foregroundStyle(.orange) }
                 HStack(spacing: 8) {
                     lastDeploy

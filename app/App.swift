@@ -20,6 +20,7 @@ struct SettingsView: View {
     @AppStorage("hideDock") private var hideDock = false
     @AppStorage("notifications") private var notifications = true
     @AppStorage("checkUpdates") private var checkUpdates = true
+    @AppStorage("demoMode") private var demoMode = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
 
@@ -52,6 +53,7 @@ struct SettingsView: View {
             .onChange(of: reminderHour) { _, h in if h > 0 { Notify.ask() } }
             .help(L("Only a reminder, and only when something waits. Nothing is deployed by itself.",
                     "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
+            Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
             Toggle(L("Look for a new version once a day", "Einmal am Tag nach einer neuen Version sehen"), isOn: $checkUpdates)
             Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
                 if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
@@ -107,7 +109,7 @@ struct MenuBarContent: View {
             Text(L("\(w.prs) PRs, \(w.commits) commits waiting", "\(w.prs) PRs, \(w.commits) Commits warten"))
             Divider()
             ForEach(changed.prefix(12)) { i in
-                Button("\(i.name)  –  \(Row.waitingText(i))") {
+                Button("\(Demo.mask(i.name))  –  \(Row.waitingText(i))") {
                     store.pendingSearch = i.name
                     openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
                 }

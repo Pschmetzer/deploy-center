@@ -2,7 +2,15 @@
 
 ## Unreleased
 
-(nothing yet)
+- Fixed: after a rollback the row no longer claims to be on the newest commit.
+- Fixed: a repo shared by a frontend and a backend counts its PRs and commits once in the banner and the menu bar.
+- Fixed: the banner says how many of the waiting projects are on the open tab.
+- Fixed: a lost network or login is shown during a deploy instead of spinning silently.
+- Fixed: the site check asks three times (fresh Render services answer 502 at first) and treats 401/403 as protected, not broken.
+- `deploy-changed` starts Render services through the same lock as the app; `triggers` asks Render in parallel.
+- Build log: failing lines in red, "Jump to the first error", "Errors only", "Copy for Claude".
+- Demo mode (Settings): project names and domains are replaced, for screenshots.
+- CI on GitHub (tests and type-check; no deploys).
 
 ## 0.5.0
 

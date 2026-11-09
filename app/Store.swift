@@ -184,9 +184,18 @@ final class Store: ObservableObject {
     var waiting: Waiting {
         var w = Waiting()
         let all = Array(items.values.joined())
+        // Projects of one repo (frontend + backend) share their commits and PRs: count them once.
+        var perRepo: [String: (commits: Int, prs: Int)] = [:]
         for i in all where i.hasNewCommits && i.state == .idle {
-            w.projects += 1; w.commits += i.pendingCommits ?? 0; w.prs += i.pendingPRs ?? 0
+            w.projects += 1
+            if let r = i.repo {
+                let o = perRepo[r] ?? (0, 0)
+                perRepo[r] = (max(o.commits, i.pendingCommits ?? 0), max(o.prs, i.pendingPRs ?? 0))
+            } else {
+                w.commits += i.pendingCommits ?? 0; w.prs += i.pendingPRs ?? 0
+            }
         }
+        for v in perRepo.values { w.commits += v.commits; w.prs += v.prs }
         // Open pull requests belong to a repo, and several projects can share one.
         var seen = Set<String>()
         for i in all { if let r = i.repo, let n = i.openPRs, seen.insert(r).inserted { w.openPRs += n } }
@@ -419,6 +428,13 @@ final class Store: ObservableObject {
         d.append(Date().timeIntervalSince(start)); all[Self.key(i)] = Array(d.suffix(5)); durations = all
     }
 
+    /// After a rollback production is older than the branch: the project has changes again.
+    private func markBehind(_ p: Platform, _ id: String) {
+        guard let i = items[p]?.firstIndex(where: { $0.id == id }) else { return }
+        items[p]![i].changed = true; items[p]![i].lastSha = nil
+        items[p]![i].lastAt = Date()
+    }
+
     /// Production back to what was live before.
     func rollback(_ item: Item) {
         Notify.ask()
@@ -428,8 +444,8 @@ final class Store: ObservableObject {
             set(p, item.id, .starting)
             do {
                 let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self)
-                if p == .vercel { set(p, item.id, .done(item.link)) }
-                else { set(p, item.id, .running(L("rolling back", "rollt zurück"))); try await follow(item, deployId: r.id, url: item.link) }
+                if p == .vercel { set(p, item.id, .done(item.link), countsAsLive: false); markBehind(p, item.id) }
+                else { set(p, item.id, .running(L("rolling back", "rollt zurück"))); try await follow(item, deployId: r.id, url: item.link, rolledBack: true) }
             } catch { set(p, item.id, .failed(error.localizedDescription)) }
         }
     }
@@ -456,13 +472,20 @@ final class Store: ObservableObject {
     }
 
     /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
-    private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false) async throws {
+    private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false, rolledBack: Bool = false) async throws {
         let p = item.platform
+        var misses = 0
         for _ in 0..<400 {
             try await Task.sleep(nanoseconds: 6_000_000_000)
             if cancelled.contains(item.id) { return }
             let args = p == .vercel ? ["vercel", "status", deployId] : ["render", "status", item.id, deployId]
-            guard let s = try? await Tool.json(args, as: StatusReply.self) else { continue }
+            guard let s = try? await Tool.json(args, as: StatusReply.self) else {
+                // Network or login gone: say so instead of spinning for 40 minutes without a word.
+                misses += 1
+                if misses >= 5 { set(p, item.id, .running(L("status unavailable, retrying", "Status nicht abrufbar, neuer Versuch"))) }
+                continue
+            }
+            misses = 0
             let state = (s.state ?? "").lowercased()
             switch (p, state) {
             case (.vercel, "ready"), (.render, "live"):
@@ -470,13 +493,17 @@ final class Store: ObservableObject {
                     if let k = items[p]?.firstIndex(where: { $0.id == item.id }) { items[p]![k].previewId = deployId }
                     set(p, item.id, .done(s.url ?? url), countsAsLive: false)
                 } else {
-                    recordDuration(item)
-                    set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link))
+                    if rolledBack {
+                        set(p, item.id, .done(item.link), countsAsLive: false); markBehind(p, item.id)
+                    } else {
+                        recordDuration(item)
+                        set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link))
+                    }
                     if let l = item.link { await checkSite(item.name, l) }
                 }
                 return
             case (.render, "succeeded"):
-                set(p, item.id, .done(nil)); return
+                set(p, item.id, .done(nil), countsAsLive: !rolledBack); return
             case (.vercel, "canceled"):
                 // Usually the project's "Ignored Build Step" decided nothing changed.
                 set(p, item.id, .skipped(L("Skipped or canceled by Vercel (Ignored Build Step?)",
@@ -494,10 +521,16 @@ final class Store: ObservableObject {
     /// After going live: does the site answer? A deploy can be "ready" and the page still broken.
     private func checkSite(_ name: String, _ link: String) async {
         guard let url = URL(string: link) else { return }
-        var req = URLRequest(url: url, timeoutInterval: 20)
-        req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
-        let code = ((try? await URLSession.shared.data(for: req))?.1 as? HTTPURLResponse)?.statusCode
-        if let code, code < 400 { return }   // fine: the "is live" line already said enough
+        var code: Int?
+        // A fresh Render service can answer 502/503 for a few seconds: ask up to three times.
+        for attempt in 0..<3 {
+            var req = URLRequest(url: url, timeoutInterval: 20)
+            req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
+            code = ((try? await URLSession.shared.data(for: req))?.1 as? HTTPURLResponse)?.statusCode
+            // 401/403: the site answers but is protected (Deployment Protection, login) — not broken.
+            if let c = code, c < 400 || c == 401 || c == 403 { return }
+            if attempt < 2 { try? await Task.sleep(nanoseconds: 6_000_000_000) }
+        }
         say(L("\(name) is live, but the site answers \(code.map(String.init) ?? "nothing")",
               "\(name) ist live, aber die Seite antwortet mit \(code.map(String.init) ?? "nichts")"), link, ok: false)
     }

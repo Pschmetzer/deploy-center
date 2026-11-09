@@ -77,5 +77,23 @@ MainActor.assumeIsolated {
     expect("an idle row takes the fresh data", store.items[.vercel]![0].deployId ?? "nil", "nil")
 }
 
+// Rollback leaves the project behind the branch; a shared repo counts its PRs once.
+@MainActor func moreTests() {
+    let store = Store()
+    var a = item(changed: true, commits: 1, prs: 1); a.state = .idle
+    var b = item(.render, changed: true, commits: 1, prs: 1)
+    b = Item(id: "srv-2", name: "api", detail: "", platform: .render, deployable: true, auto: false, note: nil, link: nil)
+    b.changed = true; b.pendingCommits = 1; b.pendingPRs = 1; b.repo = "me/app"
+    store.items[.vercel] = [a]; store.items[.render] = [b]
+    expect("two projects of one repo count the PR once", store.waiting.prs, 1)
+    expect("but both projects are listed", store.waiting.projects, 2)
+}
+MainActor.assumeIsolated { moreTests() }
+
+// Reading a log.
+expect("first error line", LogTools.firstErrorLine(["ok", "0 errors", "npm ERR! missing", "x"]) ?? -1, 2)
+expect("no error in a clean log", LogTools.firstErrorLine(["ok", "done"]) == nil, true)
+expect("prompt names the project", LogTools.claudePrompt(name: "web", repo: "me/web", ref: "main", sha: nil, message: nil, log: "a\nError: x").contains("\"web\""), true)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
