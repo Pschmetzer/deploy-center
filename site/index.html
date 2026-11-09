@@ -281,7 +281,7 @@ code{font:.9em ui-monospace,Menlo,monospace;background:var(--card);border:1px so
   <details><summary>Does my data go anywhere?</summary><p>No server of ours. The app talks to Vercel and Render with your own logins, to GitHub through <code>gh</code>, and once a day to GitHub's release page to look for updates (you can turn that off). No telemetry.</p></details>
   <details><summary>What do I lose without auto-deploy?</summary><p>Automatic deploys and automatic preview builds per pull request. You have to remember to deploy; the menu bar count and an optional daily reminder help. Preview deploys can still be started by hand.</p></details>
   <details><summary>Can I go back?</summary><p>Yes. Reconnect the repository in the Vercel dashboard, or set auto-deploy to On Commit in Render. Deploy Center remembers each Vercel repo before it disconnects it.</p></details>
-  <details><summary>Netlify, Cloudflare Pages, Railway, Fly?</summary><p>Vercel and Render today. Cloudflare Pages is being looked at; Netlify cannot start a build while its builds are stopped, so it needs a different approach. Vote or help in the GitHub issues.</p></details>
+  <details><summary>Netlify, Cloudflare Pages, Railway, Fly?</summary><p>Vercel and Render. Netlify cannot start a build while its builds are stopped, and Cloudflare Pages limits the number of builds instead of charging for each one, so neither is planned. Issues with other ideas are welcome.</p></details>
   <details><summary>Windows or Linux?</summary><p>The app is macOS only. The <code>deploys</code> script is bash and runs on Linux and in CI.</p></details>
 </div></section>
 
