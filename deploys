@@ -87,7 +87,7 @@ vercel_off() {
   local p="$1" info
   info="$(vercel_call "/v9/projects/$p")" || die "Vercel project $p not found"
   # The link is the only place the repo is written down. Keep it before removing it.
-  remember_repo "$(echo "$info" | jq --arg p "$p" '{($p): (.link // {}) | {org, repo, repoId, ref:(.productionBranch // "main")}}')"
+  remember_repo "$(echo "$info" | jq --arg p "$p" '{($p): (.link // {}) | {org, repo, repoId, ref:(.productionBranch // "main"), offAt:now|floor}}')"
   [ "$(echo "$info" | jq '.link != null')" = "true" ] || { echo "Vercel: $p was already manual"; return; }
   vercel api "$(with_team "/v9/projects/$p/link")" --method DELETE --dangerously-skip-permissions >/dev/null 2>&1 \
     || die "Vercel: could not disconnect $p"
@@ -174,6 +174,9 @@ render_id_of() {
 
 render_off() {
   render_call PATCH "/services/$1" '{"autoDeployTrigger":"off"}' >/dev/null
+  # When it was turned off, so a later push-triggered build can be told apart from earlier ones.
+  local f="$CONFIG_DIR/render-off.json" tmp; [ -f "$f" ] || echo '{}' > "$f"; tmp="$(mktemp)"
+  jq --arg id "$1" '.[$id] = (.[$id] // (now|floor))' "$f" > "$tmp" && mv "$tmp" "$f"
   echo "Render: $2 no longer deploys on push"
 }
 
@@ -188,6 +191,35 @@ render_last_of() {
 }
 export -f render_last_of
 
+# ---------- Costs (Vercel billing, one UTC day per request) ----------
+
+# One day of charges, summed: total, builds, and builds per project.
+cost_day() {
+  local from="$1" to="$2" team="$3" out="$4"
+  vercel api "/v1/billing/charges?from=${from}T00:00:00.000Z&to=${to}T00:00:00.000Z${team:+&teamId=$team}" 2>/dev/null \
+    | jq -sc --arg d "$from" '{day:$d,
+        total:(map(.BilledCost) | add // 0),
+        build:(map(select(.ServiceCategory=="Build & Deploy" or (.ServiceName|test("Build")))) | map(.BilledCost) | add // 0),
+        projects:(map(select(.ServiceName|test("Build"))) | group_by(.Tags.ProjectName // "?")
+          | map({name:(.[0].Tags.ProjectName // "?"), build:(map(.BilledCost)|add)}))}' \
+    > "$out/$from.json" 2>/dev/null || true
+}
+export -f cost_day
+
+# ---------- Other things that start builds ----------
+
+# A workflow that deploys by itself defeats turning auto-deploy off.
+workflow_hits() {
+  local repo="$1" out="$2"
+  gh api "repos/$repo/contents/.github/workflows" --jq '.[] | select(.type=="file") | .path' 2>/dev/null | while read -r f; do
+    gh api "repos/$repo/contents/$f" --jq '.content' 2>/dev/null | base64 -D 2>/dev/null \
+      | grep -vE '^[[:space:]]*#' \
+      | grep -qE 'vercel (deploy|--prod)|vercel-action|api\.render\.com/deploy|render-deploy|deploy[-_]hook|DEPLOY_HOOK' \
+      && printf '{"kind":"workflow","where":"%s","detail":"%s"}\n' "$repo" "$f"
+  done > "$out/$(echo "$repo" | tr '/' '_').jsonl" || true
+}
+export -f workflow_hits
+
 # ---------- Commands ----------
 
 case "${1:-} ${2:-}" in
@@ -200,6 +232,44 @@ case "${1:-} ${2:-}" in
       || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" -w >/dev/null 2>&1; } && rkey=true
     printf '{"jq":%s,"vercelCli":%s,"vercelApi":%s,"vercelLoggedIn":%s,"githubCli":%s,"renderKey":%s}\n' \
       "$(has jq)" "$(has vercel)" "$vapi" "$vlogin" "$(has gh)" "$rkey" ;;
+
+  "costs "*)
+    # Vercel charges for the last N days (default 7), per day and builds per project.
+    days="${2:-7}"; team="$(vercel_team)"; tmp="$(mktemp -d)"
+    for i in $(seq "$days" -1 1); do
+      echo "$(date -u -v-"${i}"d +%Y-%m-%d) $(date -u -v-"$((i-1))"d +%Y-%m-%d)"
+    done | xargs -P 4 -n 2 bash -c 'cost_day "$0" "$1" "'"$team"'" "'"$tmp"'"'
+    cat "$tmp"/*.json 2>/dev/null | jq -s 'sort_by(.day) | {currency:"USD", days:map({day, total, build}),
+      projects:(map(.projects[]) | group_by(.name) | map({name:.[0].name, build:(map(.build)|add)}) | sort_by(-.build))}'
+    rm -rf "$tmp" ;;
+
+  "triggers "*)
+    # Builds in the last 24 h that nobody started from here, and workflows that deploy by themselves.
+    since=$(( ($(date +%s) - 86400) * 1000 )); tmp="$(mktemp -d)"
+    { vercel_call "/v6/deployments?limit=100&since=$since" \
+        | jq -c --slurpfile r "$REPOS" '.deployments[] | select(.source=="git" or .source=="hook" or .source=="deploy-hook" or .source=="import")
+            | select(.created/1000 > ($r[0][.name].offAt // 1e12))
+            | {kind:"vercel-build", where:.name, detail:"source \(.source), \(.created/1000|strftime("%Y-%m-%d %H:%M")) UTC"}'
+      if render_key >/dev/null 2>&1; then
+        roff="$CONFIG_DIR/render-off.json"; [ -f "$roff" ] || echo '{}' > "$roff"
+        for id in $(render_services | jq -r '.[] | select(.suspended!="suspended") | .id'); do
+          render_call GET "/services/$id/deploys?limit=5" 2>/dev/null \
+            | jq -c --arg id "$id" --argjson since "$((since/1000))" --slurpfile o "$roff" '.[].deploy
+                | select(.trigger as $t | ["new_commit","deploy_hook","blueprint_sync"] | index($t))
+                | select((.createdAt|sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) > ([$since, ($o[0][$id] // 1e12)] | max))
+                | {kind:"render-build", where:$id, detail:"trigger \(.trigger), \(.createdAt)"}' || true
+        done
+        render_call GET "/blueprints?limit=50" 2>/dev/null \
+          | jq -c '.[].blueprint | select(.autoSync==true) | {kind:"render-blueprint", where:.name, detail:"auto-sync on"}' || true
+      fi
+      if command -v gh >/dev/null 2>&1; then
+        { jq -r '.[] | select(.repo) | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
+          render_services 2>/dev/null | jq -r '.[] | .repo // empty | sub("^https://github.com/";"") | sub("\\.git$";"")'
+        } | sort -u | xargs -P 8 -n 1 bash -c 'workflow_hits "$0" "'"$tmp"'"'
+        cat "$tmp"/*.jsonl 2>/dev/null
+      fi
+    } | jq -s '.'
+    rm -rf "$tmp" ;;
 
   "vercel list")
     vercel_projects | jq -r '.[] | [.name, (if .link then "AUTO (\(.link.org // "")/\(.link.repo // ""))" else "manual" end)] | @tsv' \

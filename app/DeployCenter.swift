@@ -4,6 +4,7 @@
 
 import SwiftUI
 import AppKit
+import Charts
 
 // MARK: - Language (German if the Mac prefers it, English otherwise)
 
@@ -98,6 +99,15 @@ struct RenderService: Decodable {
     let lastAt: Double?; let lastState: String?; let headAt: Double?; let headMsg: String?
     let lastSha: String?; let headSha: String?
 }
+struct Costs: Decodable {
+    struct Day: Decodable, Identifiable { let day: String; let total: Double; let build: Double; var id: String { day } }
+    struct Project: Decodable { let name: String; let build: Double }
+    let days: [Day]; let projects: [Project]
+}
+struct Trigger: Decodable, Identifiable {
+    let kind: String; let `where`: String; let detail: String
+    var id: String { kind + `where` + detail }
+}
 struct Started: Decodable { let id: String; let url: String?; let state: String? }
 struct StatusReply: Decodable { let id: String; let url: String?; let state: String?; let error: String? }
 
@@ -148,6 +158,20 @@ final class Store: ObservableObject {
     @Published var busyMessage: String?
 
     @Published var doctorError: String?
+    @Published var costs: Costs?
+    @Published var triggers: [Trigger] = []
+
+    /// Costs and stray build triggers load after the lists; neither blocks deploying.
+    func loadExtras() async {
+        if doctor?.vercelLoggedIn == true {
+            costs = try? await Tool.json(["costs", "7"], as: Costs.self)
+        }
+        triggers = (try? await Tool.json(["triggers"], as: [Trigger].self)) ?? []
+    }
+
+    func buildCost(_ project: String) -> Double? {
+        costs?.projects.first(where: { $0.name == project }).map(\.build)
+    }
 
     func start() async {
         do {
@@ -162,6 +186,7 @@ final class Store: ObservableObject {
         async let a: Void = v ? load(.vercel) : ()
         async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
+        await loadExtras()
     }
 
     func load(_ p: Platform) async {
@@ -351,7 +376,9 @@ struct ContentView: View {
             if let msg = store.busyMessage {
                 HStack { ProgressView().controlSize(.small); Text(msg) }.padding(8)
             }
+            triggerBanner
             autoBanner
+            if platform == .vercel, let c = store.costs { CostBar(costs: c) }
             content
             Divider()
             footer
@@ -412,6 +439,35 @@ struct ContentView: View {
         .padding(12)
     }
 
+    @ViewBuilder private var triggerBanner: some View {
+        if !store.triggers.isEmpty {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundStyle(.red)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L("Something else still starts builds", "Etwas anderes startet noch Builds")).font(.headline)
+                    ForEach(store.triggers.prefix(6)) { tr in
+                        Text("• \(Self.triggerName(tr.kind)): \(tr.where) – \(tr.detail)").font(.caption).textSelection(.enabled)
+                    }
+                    if store.triggers.count > 6 {
+                        Text(L("and \(store.triggers.count - 6) more", "und \(store.triggers.count - 6) weitere")).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+            }
+            .padding(12).background(Color.red.opacity(0.1))
+        }
+    }
+
+    static func triggerName(_ k: String) -> String {
+        switch k {
+        case "workflow": return L("GitHub workflow deploys", "GitHub-Workflow deployt")
+        case "vercel-build": return L("Vercel build from Git", "Vercel-Build von Git")
+        case "render-build": return L("Render build from push", "Render-Build durch Push")
+        case "render-blueprint": return L("Render Blueprint auto-sync", "Render-Blueprint Auto-Sync")
+        default: return k
+        }
+    }
+
     @ViewBuilder private var autoBanner: some View {
         let on = store.autoOn(platform)
         if !on.isEmpty {
@@ -468,7 +524,7 @@ struct ContentView: View {
             ProgressView(L("Loading \(platform.rawValue) …", "Lade \(platform.rawValue) …")).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             List(visible) { item in
-                Row(item: item) { store.toggle(platform, item.id) }
+                Row(item: item, cost: platform == .vercel ? store.buildCost(item.name) : nil) { store.toggle(platform, item.id) }
                     .contextMenu {
                         if item.deployable && !item.state.isActive {
                             Button(L("Deploy to production", "Live deployen")) { store.deployOne(item, preview: false) }
@@ -513,6 +569,35 @@ struct ContentView: View {
             .disabled(count == 0)
         }
         .padding(12)
+    }
+}
+
+struct CostBar: View {
+    let costs: Costs
+    private var week: Double { costs.days.map(\.build).reduce(0, +) }
+
+    var body: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("Vercel builds, last 7 days", "Vercel-Builds, letzte 7 Tage")).font(.caption).foregroundStyle(.secondary)
+                Text(week, format: .currency(code: "USD")).font(.title3.weight(.semibold).monospacedDigit())
+                if let last = costs.days.last {
+                    Text(L("yesterday ", "gestern ") + last.build.formatted(.currency(code: "USD")))
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Chart(costs.days) { d in
+                BarMark(x: .value("Day", String(d.day.suffix(5))), y: .value("USD", d.build))
+                    .foregroundStyle(Color.accentColor.gradient)
+            }
+            .chartYAxis { AxisMarks(position: .leading) { _ in AxisValueLabel() } }
+            .frame(height: 54)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Color.secondary.opacity(0.06))
+        .help(L("Build costs from Vercel's billing data. Total spend incl. other usage: ",
+                "Build-Kosten aus Vercels Abrechnung. Gesamt inkl. sonstiger Nutzung: ")
+              + costs.days.map(\.total).reduce(0, +).formatted(.currency(code: "USD")))
     }
 }
 
@@ -573,6 +658,7 @@ struct RenderKeySetup: View {
 
 struct Row: View {
     let item: Item
+    var cost: Double? = nil
     let toggle: () -> Void
 
     var body: some View {
@@ -601,6 +687,10 @@ struct Row: View {
                 Text(item.detail).font(.caption).foregroundStyle(.secondary)
                 HStack(spacing: 8) {
                     lastDeploy
+                    if let cost, cost >= 0.01 {
+                        Text(L("builds 7 days: ", "Builds 7 Tage: ") + cost.formatted(.currency(code: "USD")))
+                            .font(.caption2).foregroundStyle(cost >= 5 ? .orange : .secondary)
+                    }
                     if item.hasNewCommits {
                         Label(L("New changes", "Neue Änderungen"), systemImage: "arrow.up.circle.fill")
                             .font(.caption2.weight(.semibold)).foregroundStyle(.blue)
