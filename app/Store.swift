@@ -21,7 +21,9 @@ final class Store: ObservableObject {
     @Published var triggers: [Trigger] = []
 
     /// Costs and stray build triggers load after the lists; neither blocks deploying.
+    private var lastExtras = Date.distantPast
     func loadExtras() async {
+        lastExtras = Date()
         if doctor?.vercelLoggedIn == true {
             costs = try? await Tool.json(["costs", "14"], as: Costs.self)
             checkBudget()
@@ -75,14 +77,21 @@ final class Store: ObservableObject {
         let feeds = [("Vercel", "https://www.vercel-status.com/api/v2/status.json"),
                      ("Render", "https://status.render.com/api/v2/status.json"),
                      ("GitHub", "https://www.githubstatus.com/api/v2/status.json")]
-        var issues: [String] = []
-        for (name, link) in feeds {
-            guard let url = URL(string: link),
-                  let (data, _) = try? await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 10)),
-                  let st = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["status"] as? [String: Any],
-                  let indicator = st["indicator"] as? String, indicator != "none" else { continue }
-            issues.append("\(name): \(st["description"] as? String ?? indicator)")
+        let found = await withTaskGroup(of: (Int, String?).self) { group -> [(Int, String)] in
+            for (k, feed) in feeds.enumerated() {
+                group.addTask {
+                    guard let url = URL(string: feed.1),
+                          let (data, _) = try? await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 10)),
+                          let st = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["status"] as? [String: Any],
+                          let indicator = st["indicator"] as? String, indicator != "none" else { return (k, nil) }
+                    return (k, "\(feed.0): \(st["description"] as? String ?? indicator)")
+                }
+            }
+            var out: [(Int, String)] = []
+            for await (k, text) in group { if let text { out.append((k, text)) } }
+            return out
         }
+        let issues = found.sorted { $0.0 < $1.0 }.map(\.1)
         providerIssues = issues
     }
 
@@ -234,12 +243,16 @@ final class Store: ObservableObject {
     /// Lists only, both platforms; costs and triggers cost many GitHub calls and stay manual.
     /// Not while something is deploying, so nothing being followed is disturbed.
     func autoRefresh() async {
-        let busy = items.values.joined().contains { $0.state.isActive }
-        guard !busy, loading.isEmpty else { return }
+        guard loading.isEmpty else { return }
         if doctor == nil { await start(); return }
-        async let a: Void = doctor?.vercelLoggedIn == true ? load(.vercel) : ()
-        async let b: Void = doctor?.renderKey == true ? load(.render) : ()
+        // Only the platform with a deploy under way is left alone; the other one stays current.
+        let v = doctor?.vercelLoggedIn == true && !(items[.vercel] ?? []).contains { $0.state.isActive }
+        let r = doctor?.renderKey == true && !(items[.render] ?? []).contains { $0.state.isActive }
+        async let a: Void = v ? load(.vercel) : ()
+        async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
+        // Costs and strays cost many calls: hourly. The status feeds are cheap: every time.
+        if Date().timeIntervalSince(lastExtras) > 3600 { await loadExtras() } else { await checkProviders() }
     }
 
     // MARK: What is waiting on GitHub, over both platforms
@@ -330,7 +343,10 @@ final class Store: ObservableObject {
         default: break
         }
         switch s {
-        case .done: say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true)
+        case .done:
+            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true) }
+            else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true) }
+            else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true) }
         case .failed(let m): say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false)
         case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true)
         default: break
@@ -482,7 +498,15 @@ final class Store: ObservableObject {
                                                              "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
             }
         }
-        if queue.isEmpty && running == 0 { queueBatch = []; if Date() >= holdUntil { summarize() } }
+        if queue.isEmpty && running == 0 {
+            queueBatch = []
+            if Date() >= holdUntil {
+                let hadRun = !batch.isEmpty
+                summarize()
+                // The row says "current" from what the app remembers; read what GitHub says now.
+                if hadRun { Task { await autoRefresh() } }
+            }
+        }
     }
 
     /// The Render service of the same repo that a Vercel frontend waits for, while it is queued or building.
@@ -617,7 +641,7 @@ final class Store: ObservableObject {
                         recordDuration(item)
                         set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link))
                     }
-                    if let l = item.link { await checkSite(item.name, l.hasSuffix("/") ? String(l.dropLast()) + healthPath(item) : l + healthPath(item)) }
+                    if let l = item.link { Task { await checkSite(item.name, l.hasSuffix("/") ? String(l.dropLast()) + healthPath(item) : l + healthPath(item)) } }
                 }
                 return
             case (.render, "succeeded"):

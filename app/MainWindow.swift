@@ -366,7 +366,7 @@ struct ContentView: View {
             HStack(spacing: 10) {
                 Image(systemName: "dollarsign.circle.fill").font(.title2).foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(L("\(on.count) projects build on every push", "\(on.count) Projekte bauen bei jedem Push"))
+                    Text(on.count == 1 ? L("1 project builds on every push", "1 Projekt baut bei jedem Push") : L("\(on.count) projects build on every push", "\(on.count) Projekte bauen bei jedem Push"))
                         .font(.headline)
                     Text(L("Every push costs build minutes. Turn it off and deploy here when you want.",
                            "Jeder Push kostet Build-Minuten. Ausschalten und hier deployen, wann du willst."))

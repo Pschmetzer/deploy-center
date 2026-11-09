@@ -136,8 +136,10 @@ vercel_off() {
 # builds. The lock ages out after a minute; a start that failed removes it at once.
 start_lock() {
   local d="$CONFIG_DIR/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
-  if [ -f "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -lt 60 ]; then die "$1 is being started already (wait a minute)"; fi
-  touch "$f"; echo "$f"
+  if [ -f "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -ge 60 ]; then rm -f "$f"; fi
+  # noclobber makes creating the file the check: two starts at the same moment cannot both pass.
+  ( set -C; : > "$f" ) 2>/dev/null || die "$1 is being started already (wait a minute)"
+  echo "$f"
 }
 
 vercel_deploy_json() {
@@ -280,9 +282,19 @@ render_call() {
   key="$(render_key)"
   local args=(-sS -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
-  out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$RENDER_API$path")"
-  code="${out##*$'\n'}"; out="${out%$'\n'*}"
-  [[ "$code" == 2* ]] || die "Render $method $path -> HTTP $code: $out"
+  local try
+  for try in 1 2 3; do
+    out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$RENDER_API$path")"
+    code="${out##*$'\n'}"; out="${out%$'\n'*}"
+    # 429: Render's rate limit. Wait and ask again instead of failing a whole list.
+    [ "$code" = 429 ] && [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; }
+    break
+  done
+  if [[ "$code" != 2* ]]; then
+    local hint=""
+    case "$code" in 401|403) hint=" (the Render key is wrong or expired: deploys render set-key)";; 404) hint=" (not found: renamed or deleted?)";; 429) hint=" (rate limit: try again in a minute)";; esac
+    die "Render $method $path -> HTTP $code$hint: $out"
+  fi
   printf '%s' "$out"
 }
 
@@ -320,8 +332,17 @@ render_off() {
 render_last_of() {
   local id="$1" out="$2" key
   key="$(cat "$3" 2>/dev/null)"; [ -n "$key" ] || return 0
-  printf 'header = "Authorization: Bearer %s"\n' "$key" \
-    | curl -sS -K - -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=10" \
+  # Eight of these run at once: this is where Render's rate limit (429) hits. Wait and ask again.
+  local raw code try
+  for try in 1 2 3; do
+    raw="$(printf 'header = "Authorization: Bearer %s"\n' "$key" \
+      | curl -sS -K - -w '\n%{http_code}' -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=10")" || raw=$'\n000'
+    code="${raw##*$'\n'}"
+    [ "$code" = 429 ] && [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; }
+    break
+  done
+  [[ "$code" == 2* ]] || return 0
+  printf '%s' "${raw%$'\n'*}" \
     | jq -c --arg id "$id" 'def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) else null end;
         [.[].deploy] as $d | ($d[0] // {}) as $new | (($d | map(select(.status=="live")) | .[0]) // {}) as $live
         # The status is the newest attempt (a failure shows), the commit is what is live: a failed
