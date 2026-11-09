@@ -29,16 +29,16 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 
 ## B. Was wartet (die neue Hauptfunktion ausbauen)
 
-21. ★ **Liste der wartenden PRs pro Projekt** zum Aufklappen: Nummer, Titel, Autor, gemergt vor x Stunden, Link.
+21. ✅ ★ **Liste der wartenden PRs pro Projekt** zum Aufklappen: Nummer, Titel, Autor, gemergt vor x Stunden, Link.
 22. ✅ ★ **Ältester wartender Commit:** „wartet seit 3 Tagen“. Hilft zu sehen, was dringend live muss.
-23. **Offene PRs pro Repo aufklappen**, mit CI-Status (grün/rot) und „bereit zum Mergen“.
+23. ✅ **Offene PRs pro Repo aufklappen**, mit CI-Status (grün/rot) und „bereit zum Mergen“.
 24. **Mergen aus der App** für grüne PRs, mit Bestätigung. Danach direkt deployen.
-25. **„Was ändert sich?“ vor dem Deploy:** geänderte Dateien und Zeilen (+/−) aus dem Vergleich in der Bestätigung.
-26. **Hinweis auf riskante Änderungen:** Migrationen (`migrations/`, `prisma/`), `.env.example`, `package.json`-Abhängigkeiten im Vergleich → gelbes Schild.
+25. ✅ **„Was ändert sich?“ vor dem Deploy:** geänderte Dateien und Zeilen (+/−) aus dem Vergleich in der Bestätigung.
+26. ✅ **Hinweis auf riskante Änderungen:** Migrationen (`migrations/`, `prisma/`), `.env.example`, `package.json`-Abhängigkeiten im Vergleich → gelbes Schild.
 27. **Gruppieren nach Repo:** ein Repo mit Vercel-Frontend und Render-Backend als ein Eintrag mit beiden Zielen.
 28. **Verlauf der Zahl:** wie viele PRs am Tag gewartet haben, als kleine Linie. Zeigt, ob der tägliche Deploy reicht.
-29. **CI-Status des Kopf-Commits** (Checks API) in der Zeile: nicht deployen, was auf GitHub rot ist.
-30. **Kennzeichnung „nur Abhängigkeiten“:** wenn alle wartenden Commits von Dependabot/Renovate sind, kann das warten.
+29. ✅ **CI-Status des Kopf-Commits** (Checks API) in der Zeile: nicht deployen, was auf GitHub rot ist.
+30. ✅ **Kennzeichnung „nur Abhängigkeiten“:** wenn alle wartenden Commits von Dependabot/Renovate sind, kann das warten.
 
 ## C. Deployen
 
@@ -85,7 +85,7 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 65. **Menüleiste: „Alles mit Änderungen deployen …“** mit eigener Bestätigung.
 66. **Dunkel/Hell prüfen**, besonders der blaue Balken und die Logos auf Weiß.
 67. **Logos mit transparentem Rand** passend hinterlegen (Bildhelligkeit messen).
-68. **Zeilen-Tooltip mit Commit-Nachricht des Live-Stands** neben der neuesten.
+68. ✅ **Zeilen-Tooltip mit Commit-Nachricht des Live-Stands** neben der neuesten.
 69. **„Zuletzt aktualisiert vor x Min“ sichtbar** statt nur im Tooltip des Knopfs.
 70. **Schrift- und Kontrast-Prüfung mit VoiceOver**: der Balken oben braucht eine Überschrift-Rolle.
 

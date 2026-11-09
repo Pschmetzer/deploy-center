@@ -276,7 +276,7 @@ render_last_of() {
         # The status is the newest attempt (a failure shows), the commit is what is live: a failed
         # deploy of the newest commit must not make the project look up to date.
         | {key:$id, value:{lastAt:(($new.finishedAt // $new.createdAt) | t), lastState:$new.status,
-                           lastSha:($live.commit.id // null), liveAt:(($live.finishedAt // $live.createdAt) | t)}}' \
+                           lastSha:($live.commit.id // null), lastMsg:($live.commit.message // null | if . then split("\n")[0] else null end), liveAt:(($live.finishedAt // $live.createdAt) | t)}}' \
     > "$out/$id.json" 2>/dev/null || true
 }
 export -f render_last_of
@@ -326,6 +326,38 @@ case "${1:-} ${2:-}" in
 
   "github-budget "*)
     github_budget ;;
+
+  "details "*)
+    # Everything about one repo the window shows on demand: the commits between what is live and
+    # the branch (with their PRs), the files they touch and which of them are risky to ship
+    # unread, the CI result of the branch head, and the pull requests still open.
+    repo="${2:?owner/repo}"; base="${3:-}"; ref="${4:-main}"
+    cmp='null'
+    if [ -n "$base" ] && [ "$base" != "null" ]; then cmp="$(gh api --cache 5m "repos/$repo/compare/$base...$ref" 2>/dev/null || echo null)"; fi
+    checks="$(gh api --cache 2m "repos/$repo/commits/$ref/check-runs?per_page=100" 2>/dev/null \
+      | jq '{total:.total_count, failed:([.check_runs[] | select(.conclusion=="failure" or .conclusion=="timed_out" or .conclusion=="cancelled")] | length),
+             running:([.check_runs[] | select(.status!="completed")] | length)}' 2>/dev/null || echo null)"
+    open="$(gh pr list -R "$repo" --state open --limit 50 --json number,title,author,isDraft,updatedAt,url,statusCheckRollup 2>/dev/null \
+      | jq '[.[] | {number, title, author:.author.login, bot:(.author.is_bot // (.author.login | test("\\[bot\\]|dependabot|renovate"))),
+                    draft:.isDraft, updatedAt, url,
+                    ci:(.statusCheckRollup // [] | map(.conclusion // .state // "") | map(ascii_upcase)
+                        | if length == 0 then "none" elif any(. == "FAILURE" or . == "ERROR" or . == "TIMED_OUT") then "failed"
+                          elif any(. == "" or . == "PENDING" or . == "IN_PROGRESS" or . == "QUEUED") then "running" else "passed" end)}]' 2>/dev/null || echo '[]')"
+    jq -n --argjson c "$cmp" --argjson checks "$checks" --argjson open "$open" --arg repo "$repo" '
+      ($c // {}) as $c |
+      {commits:[($c.commits // [])[] | {sha:.sha[0:7], url:.html_url,
+                 msg:(.commit.message | split("\n")[0]), author:(.author.login // .commit.author.name),
+                 bot:((.author.type // "") == "Bot"),
+                 at:(.commit.committer.date | fromdateiso8601),
+                 pr:((.commit.message | (capture("\\(#(?<n>[0-9]+)\\)") // capture("Merge pull request #(?<n>[0-9]+)")) | .n | tonumber) // null)}] | reverse,
+       files:(($c.files // []) | length), additions:(($c.files // []) | map(.additions) | add // 0),
+       deletions:(($c.files // []) | map(.deletions) | add // 0),
+       # Files that change how the thing runs, not only what it shows: worth a look before going live.
+       risky:[($c.files // [])[] | .filename
+              | select(test("(^|/)(migrations?|prisma)/|schema\\.(prisma|sql|rb)$|(^|/)\\.env|(^|/)(package\\.json|package-lock\\.json|pnpm-lock\\.yaml|yarn\\.lock|requirements\\.txt|Pipfile\\.lock|poetry\\.lock|go\\.mod|Gemfile\\.lock|Cargo\\.lock)$|Dockerfile|render\\.yaml$|vercel\\.json$|\\.github/workflows/"))],
+       onlyBots:(($c.commits // []) | length > 0 and all((.author.type // "") == "Bot" or ((.author.login // "") | test("\\[bot\\]")))),
+       compareUrl:($c.html_url // null),
+       checks:$checks, open:$open}' ;;
 
   "costs "*)
     # Vercel charges for the last N days (default 7), per day and builds per project.
@@ -457,6 +489,7 @@ case "${1:-} ${2:-}" in
        lastAt:((.targets.production.createdAt // 0) / 1000 | floor),
        lastState:(.targets.production.readyState // null),
        lastSha:(.targets.production.meta.githubCommitSha // null),
+       lastMsg:(.targets.production.meta.githubCommitMessage // null | if . then split("\n")[0] else null end),
        latestState:($recent[.name].state // null)}] | sort_by(.name | ascii_downcase)')"
     with_heads "$list" ;;
 

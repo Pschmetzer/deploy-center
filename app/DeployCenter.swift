@@ -113,6 +113,7 @@ struct VercelProject: Decodable {
     let changed: Bool?; let pendingCommits: Int?; let pendingPRs: Int?; let openPRs: Int?
     let building: Bool?; let pendingPartial: Bool?; let oldestPendingAt: Double?; let rewritten: Bool?
     let openDrafts: Int?; let openBots: Int?
+    let lastMsg: String?
 }
 struct RenderService: Decodable {
     let id: String; let name: String; let type: String; let paused: Bool; let auto: Bool; let deployable: Bool
@@ -122,6 +123,7 @@ struct RenderService: Decodable {
     let changed: Bool?; let pendingCommits: Int?; let pendingPRs: Int?; let openPRs: Int?
     let building: Bool?; let pendingPartial: Bool?; let oldestPendingAt: Double?; let rewritten: Bool?
     let openDrafts: Int?; let openBots: Int?
+    let lastMsg: String?
 }
 struct Costs: Decodable {
     struct Day: Decodable, Identifiable { let day: String; let total: Double; let build: Double; var id: String { day } }
@@ -132,6 +134,21 @@ struct Trigger: Decodable, Identifiable {
     let kind: String; let `where`: String; let detail: String
     var id: String { kind + `where` + detail }
 }
+/// One repo in detail, read when the details are opened (`deploys details`).
+struct Details: Decodable {
+    struct Commit: Decodable, Identifiable {
+        let sha: String; let url: String?; let msg: String; let author: String?; let bot: Bool?; let at: Double; let pr: Int?
+        var id: String { sha }
+    }
+    struct Checks: Decodable { let total: Int; let failed: Int; let running: Int }
+    struct OpenPR: Decodable, Identifiable {
+        let number: Int; let title: String; let author: String?; let bot: Bool?; let draft: Bool; let updatedAt: String; let url: String; let ci: String
+        var id: Int { number }
+    }
+    let commits: [Commit]; let files: Int; let additions: Int; let deletions: Int; let risky: [String]
+    let onlyBots: Bool; let compareUrl: String?; let checks: Checks?; let open: [OpenPR]
+}
+
 struct Started: Decodable { let id: String; let url: String?; let state: String? }
 struct StatusReply: Decodable { let id: String; let url: String?; let state: String?; let error: String? }
 
@@ -164,6 +181,7 @@ struct Item: Identifiable {
     var pendingCommits: Int? = nil
     var pendingPRs: Int? = nil
     var openPRs: Int? = nil
+    var lastMsg: String? = nil
     var openDrafts: Int? = nil
     var openBots: Int? = nil
     var building = false
@@ -351,7 +369,7 @@ final class Store: ObservableObject {
                          domain: v.domain, lastAt: date(v.lastAt), lastState: v.lastState,
                          headAt: date(v.headAt), headMsg: v.headMsg, lastSha: v.lastSha, headSha: v.headSha,
                          repo: v.repo, ref: v.ref, changed: v.changed, pendingCommits: v.pendingCommits,
-                         pendingPRs: v.pendingPRs, openPRs: v.openPRs, openDrafts: v.openDrafts, openBots: v.openBots,
+                         pendingPRs: v.pendingPRs, openPRs: v.openPRs, lastMsg: v.lastMsg, openDrafts: v.openDrafts, openBots: v.openBots,
                          building: v.building ?? false, pendingPartial: v.pendingPartial ?? false,
                          oldestPendingAt: date(v.oldestPendingAt), rewritten: v.rewritten ?? false)
                 }
@@ -366,7 +384,7 @@ final class Store: ObservableObject {
                          link: r.url, domain: r.domain, lastAt: date(r.lastAt), lastState: r.lastState,
                          headAt: date(r.headAt), headMsg: r.headMsg, lastSha: r.lastSha, headSha: r.headSha,
                          repo: r.repo, ref: r.ref, kind: r.type, changed: r.changed, pendingCommits: r.pendingCommits,
-                         pendingPRs: r.pendingPRs, openPRs: r.openPRs, openDrafts: r.openDrafts, openBots: r.openBots,
+                         pendingPRs: r.pendingPRs, openPRs: r.openPRs, lastMsg: r.lastMsg, openDrafts: r.openDrafts, openBots: r.openBots,
                          building: r.building ?? false, pendingPartial: r.pendingPartial ?? false,
                          oldestPendingAt: date(r.oldestPendingAt), rewritten: r.rewritten ?? false)
                 }
@@ -563,6 +581,7 @@ struct ContentView: View {
     @State private var rollbackItem: Item?
     @FocusState private var searchFocused: Bool
     @State private var unchangedItem: Item?
+    @State private var detailItem: Item?
 
     private var visible: [Item] {
         var all = store.items[platform] ?? []
@@ -607,6 +626,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: store.toast)
+        .sheet(item: $detailItem) { item in ProjectDetail(item: item) }
         .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"),
                isPresented: Binding(get: { unchangedItem != nil }, set: { if !$0 { unchangedItem = nil } })) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
@@ -840,8 +860,13 @@ struct ContentView: View {
             ProgressView(L("Loading \(platform.rawValue) …", "Lade \(platform.rawValue) …")).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             List(visible) { item in
-                Row(item: item, cost: platform == .vercel ? store.buildCost(item.name) : nil) { store.toggle(platform, item.id) }
+                Row(item: item, cost: platform == .vercel ? store.buildCost(item.name) : nil,
+                    showDetails: item.repo == nil ? nil : { detailItem = item }) { store.toggle(platform, item.id) }
                     .contextMenu {
+                        if item.repo != nil {
+                            Button(L("Details …", "Details …")) { detailItem = item }
+                            Divider()
+                        }
                         if item.deployable && !item.state.isActive {
                             Button(L("Deploy to production", "Live deployen")) {
                                 if item.hasNewCommits || item.headSha == nil { store.deployOne(item, preview: false) }
@@ -987,6 +1012,7 @@ struct RenderKeySetup: View {
 struct Row: View {
     let item: Item
     var cost: Double? = nil
+    var showDetails: (() -> Void)? = nil
     let toggle: () -> Void
 
     var body: some View {
@@ -1047,6 +1073,12 @@ struct Row: View {
                     .background(Capsule().fill(item.auto ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.15)))
             }
             status
+            if let showDetails {
+                Button(action: showDetails) { Image(systemName: "info.circle") }
+                    .buttonStyle(.borderless)
+                    .help(L("Details: waiting commits, files, CI, open PRs", "Details: wartende Commits, Dateien, CI, offene PRs"))
+                    .accessibilityLabel(L("Details for \(item.name)", "Details zu \(item.name)"))
+            }
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
@@ -1127,6 +1159,143 @@ struct Row: View {
                     .buttonStyle(.borderless).help(L("Copy the error", "Fehler kopieren"))
             }
         }
+    }
+}
+
+// MARK: - One project in detail
+
+struct ProjectDetail: View {
+    let item: Item
+    @Environment(\.dismiss) private var dismiss
+    @State private var details: Details?
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Logo(domain: item.domain, name: item.name)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name).font(.title3.weight(.semibold))
+                    Text(item.detail).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+            .padding(16)
+            Divider()
+            if let error {
+                Text(error).foregroundStyle(.secondary).padding(20).textSelection(.enabled)
+            } else if let d = details {
+                ScrollView { content(d).padding(16) }
+            } else {
+                ProgressView(L("Asking GitHub …", "Frage GitHub …")).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(width: 620, height: 560)
+        .task {
+            guard let repo = item.repo else { return }
+            do {
+                details = try await Tool.json(["details", repo, item.lastSha ?? "", item.ref ?? "main"], as: Details.self)
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    @ViewBuilder private func content(_ d: Details) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            // What is live, and what the branch would bring.
+            if let live = item.lastMsg {
+                labelled(L("Live now", "Jetzt live"), live + (item.lastSha.map { "  (\($0.prefix(7)))" } ?? ""))
+            }
+            if let checks = d.checks, checks.total > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: checks.failed > 0 ? "xmark.octagon.fill" : (checks.running > 0 ? "clock.fill" : "checkmark.seal.fill"))
+                        .foregroundStyle(checks.failed > 0 ? .red : (checks.running > 0 ? .orange : .green))
+                    Text(checks.failed > 0
+                         ? L("CI on the branch: \(checks.failed) of \(checks.total) checks failed", "CI auf dem Branch: \(checks.failed) von \(checks.total) Checks rot")
+                         : checks.running > 0
+                           ? L("CI on the branch: \(checks.running) checks still running", "CI auf dem Branch: \(checks.running) Checks laufen noch")
+                           : L("CI on the branch: all \(checks.total) checks passed", "CI auf dem Branch: alle \(checks.total) Checks grün"))
+                        .font(.callout)
+                }
+            }
+            if !d.commits.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(L("Waiting to go live", "Wartet darauf, live zu gehen")).font(.headline)
+                        if d.onlyBots {
+                            Text(L("dependency updates only", "nur Abhängigkeits-Updates"))
+                                .font(.caption).padding(.horizontal, 6).padding(.vertical, 1)
+                                .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                        }
+                        Spacer()
+                        if let u = d.compareUrl.flatMap(URL.init(string:)) {
+                            Button(L("On GitHub", "Auf GitHub")) { NSWorkspace.shared.open(u) }.buttonStyle(.link)
+                        }
+                    }
+                    Text(L("\(d.files) files, +\(d.additions) −\(d.deletions) lines", "\(d.files) Dateien, +\(d.additions) −\(d.deletions) Zeilen"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    if !d.risky.isEmpty {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                            Text(L("Worth a look before it goes live: ", "Vor dem Live-Gang ansehen: ") + d.risky.prefix(8).joined(separator: ", ")
+                                 + (d.risky.count > 8 ? " …" : ""))
+                                .font(.caption).textSelection(.enabled)
+                        }
+                    }
+                    ForEach(d.commits) { c in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            if let pr = c.pr, let repo = item.repo, let u = URL(string: "https://github.com/\(repo)/pull/\(pr)") {
+                                Button("#\(pr)") { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospacedDigit())
+                            } else if let u = c.url.flatMap(URL.init(string:)) {
+                                Button(c.sha) { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospaced())
+                            }
+                            Text(c.msg).font(.callout).lineLimit(2)
+                            Spacer(minLength: 8)
+                            Text((c.author ?? "") + " · " + Row.ago(Date(timeIntervalSince1970: c.at)))
+                                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                }
+            } else if item.hasNewCommits {
+                Text(L("GitHub could not compare what is live with the branch (rewritten branch, or the live commit is unknown).",
+                       "GitHub konnte Live-Stand und Branch nicht vergleichen (Branch umgeschrieben oder Live-Commit unbekannt)."))
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("Open pull requests (not merged)", "Offene Pull Requests (nicht gemergt)")).font(.headline)
+                if d.open.isEmpty {
+                    Text(L("None", "Keine")).font(.callout).foregroundStyle(.secondary)
+                }
+                ForEach(d.open) { pr in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Button("#\(pr.number)") { if let u = URL(string: pr.url) { NSWorkspace.shared.open(u) } }
+                            .buttonStyle(.link).font(.caption.monospacedDigit())
+                        Text(pr.title).font(.callout).lineLimit(2)
+                        if pr.draft { tag(L("draft", "Entwurf")) }
+                        if pr.bot == true { tag("bot") }
+                        Spacer(minLength: 8)
+                        Image(systemName: pr.ci == "failed" ? "xmark.circle.fill" : pr.ci == "running" ? "clock" : pr.ci == "passed" ? "checkmark.circle.fill" : "minus.circle")
+                            .foregroundStyle(pr.ci == "failed" ? .red : pr.ci == "passed" ? .green : .secondary)
+                            .help("CI: \(pr.ci)")
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func labelled(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(text).font(.callout).textSelection(.enabled)
+        }
+    }
+
+    private func tag(_ s: String) -> some View {
+        Text(s).font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
+            .background(Capsule().fill(Color.secondary.opacity(0.15)))
     }
 }
 
