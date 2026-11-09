@@ -40,8 +40,25 @@ cat > "$BUILD/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 
-codesign --force --deep -s - "$BUILD"
-(cd build && ditto -c -k --keepParent "Deploy Center.app" "DeployCenter-${VERSION}-universal.zip")
+# Signing. With a "Developer ID Application" certificate in the keychain and a notarytool
+# profile, the app is signed for distribution and notarized, so it opens without a warning:
+#   DEVELOPER_ID="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=deploy-center ./build.sh
+# Without them it is signed ad hoc, which is enough on the Mac that built it.
+ZIP="build/DeployCenter-${VERSION}-universal.zip"
+if [ -n "${DEVELOPER_ID:-}" ]; then
+  codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/deploys"
+  codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD"
+  codesign --verify --strict "$BUILD"
+  if [ -n "${NOTARY_PROFILE:-}" ]; then
+    (cd build && ditto -c -k --keepParent "Deploy Center.app" notarize.zip)
+    xcrun notarytool submit build/notarize.zip --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$BUILD"
+    rm build/notarize.zip
+  fi
+else
+  codesign --force --deep -s - "$BUILD"
+fi
+(cd build && ditto -c -k --keepParent "Deploy Center.app" "$(basename "$ZIP")")
 echo "Built: $BUILD and build/DeployCenter-${VERSION}-universal.zip"
 
 if [ "${1:-}" = "--install" ]; then
