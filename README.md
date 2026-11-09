@@ -15,6 +15,7 @@ fast. Deploying once a day with a click costs a fraction, and nothing ships by a
   and follows each deploy until it is live or failed.
 - **Shows what is waiting**: the last deploy and its state, and a *New changes* badge when
   GitHub has a commit that is not live yet. *Select all changed* + *Deploy* is a daily deploy in two clicks.
+- **Preview deploys** (Vercel) and **rollback** to the previous live deploy, from the right-click menu.
 - Site logos, domains to click, search, English and German.
 
 ## Install
@@ -23,7 +24,7 @@ fast. Deploying once a day with a click costs a fraction, and nothing ships by a
 2. The app is not notarized by Apple. The first time you open it, macOS blocks it:
    go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
 
-Requirements: macOS 15 or newer (Apple silicon).
+Requirements: macOS 15 or newer (Apple silicon or Intel).
 
 ## Connect your accounts
 
@@ -53,6 +54,7 @@ deploys vercel deploy my-project --preview
 deploys render list
 deploys render autodeploy-off --all
 deploys render deploy my-service
+deploys vercel rollback my-project
 ```
 
 Settings live in `~/.config/deploys/`: `vercel-repos.json` (which repo and branch each Vercel project

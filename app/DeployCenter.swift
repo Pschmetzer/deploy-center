@@ -19,7 +19,9 @@ enum Tool {
     }
 
     /// Runs off the main thread. A GUI app does not get the shell's PATH, and `vercel` needs node.
-    static func run(_ args: [String], stdin: String? = nil) async throws -> Data {
+    /// stdout and stderr are read at the same time (reading one to the end first can deadlock
+    /// once the other fills its pipe), and a command that hangs is ended after `timeout` seconds.
+    static func run(_ args: [String], stdin: String? = nil, timeout: Double = 120) async throws -> Data {
         try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 let p = Process()
@@ -38,10 +40,21 @@ enum Tool {
                     try? inPipe.fileHandleForWriting.close()
                 }
                 do { try p.run() } catch { cont.resume(throwing: error); return }
+                var errData = Data()
+                let errDone = DispatchGroup()
+                errDone.enter()
+                DispatchQueue.global().async { errData = err.fileHandleForReading.readDataToEndOfFile(); errDone.leave() }
+                var timedOut = false
+                let killer = DispatchWorkItem { if p.isRunning { timedOut = true; p.terminate() } }
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
                 let data = out.fileHandleForReading.readDataToEndOfFile()
-                let errData = err.fileHandleForReading.readDataToEndOfFile()
+                errDone.wait()
                 p.waitUntilExit()
-                if p.terminationStatus == 0 {
+                killer.cancel()
+                if timedOut {
+                    cont.resume(throwing: ToolError(message: L("No answer after \(Int(timeout)) seconds – try again.",
+                                                              "Keine Antwort nach \(Int(timeout)) Sekunden – nochmal versuchen.")))
+                } else if p.terminationStatus == 0 {
                     cont.resume(returning: data)
                 } else {
                     let msg = String(data: errData, encoding: .utf8)?
@@ -77,17 +90,19 @@ struct Doctor: Decodable {
 struct VercelProject: Decodable {
     let name: String; let auto: Bool; let repo: String?; let ref: String?; let deployable: Bool
     let domain: String?; let lastAt: Double?; let lastState: String?; let headAt: Double?; let headMsg: String?
+    let lastSha: String?; let headSha: String?
 }
 struct RenderService: Decodable {
     let id: String; let name: String; let type: String; let paused: Bool; let auto: Bool; let deployable: Bool
     let url: String?; let domain: String?; let repo: String?; let ref: String?
     let lastAt: Double?; let lastState: String?; let headAt: Double?; let headMsg: String?
+    let lastSha: String?; let headSha: String?
 }
 struct Started: Decodable { let id: String; let url: String?; let state: String? }
 struct StatusReply: Decodable { let id: String; let url: String?; let state: String?; let error: String? }
 
 enum RunState: Equatable {
-    case idle, starting, running(String), done(String?), failed(String)
+    case idle, starting, running(String), done(String?), failed(String), skipped(String)
     var isActive: Bool { switch self { case .starting, .running: return true; default: return false } }
 }
 
@@ -105,11 +120,15 @@ struct Item: Identifiable {
     var lastState: String? = nil
     var headAt: Date? = nil
     var headMsg: String? = nil
+    var lastSha: String? = nil
+    var headSha: String? = nil
     var selected = false
     var state: RunState = .idle
 
     /// A commit on GitHub that is not live yet.
     var hasNewCommits: Bool {
+        // Compare commits when both are known; times only as a fallback.
+        if let live = lastSha, let head = headSha, !live.isEmpty, !head.isEmpty { return live != head }
         guard let h = headAt else { return false }
         guard let l = lastAt else { return true }
         return h > l.addingTimeInterval(60)
@@ -137,8 +156,12 @@ final class Store: ObservableObject {
             doctorError = error.localizedDescription; return
         }
         guard doctor?.jq == true else { return }
-        if doctor?.vercelLoggedIn == true && doctor?.vercelApi == true { await load(.vercel) }
-        if doctor?.renderKey == true { await load(.render) }
+        // Both at once: each takes several seconds.
+        let v = doctor?.vercelLoggedIn == true && doctor?.vercelApi == true
+        let r = doctor?.renderKey == true
+        async let a: Void = v ? load(.vercel) : ()
+        async let b: Void = r ? load(.render) : ()
+        _ = await (a, b)
     }
 
     func load(_ p: Platform) async {
@@ -156,7 +179,7 @@ final class Store: ObservableObject {
                              : (v.deployable ? nil : L("repo unknown", "Repo unbekannt")),
                          link: v.domain.map { "https://\($0)" },
                          domain: v.domain, lastAt: date(v.lastAt), lastState: v.lastState,
-                         headAt: date(v.headAt), headMsg: v.headMsg)
+                         headAt: date(v.headAt), headMsg: v.headMsg, lastSha: v.lastSha, headSha: v.headSha)
                 }
             case .render:
                 let list = try await Tool.json(["render", "json"], as: [RenderService].self)
@@ -167,7 +190,7 @@ final class Store: ObservableObject {
                          note: r.paused ? L("suspended", "pausiert")
                              : (r.auto ? L("deploys on every push", "deployt bei jedem Push") : nil),
                          link: r.url, domain: r.domain, lastAt: date(r.lastAt), lastState: r.lastState,
-                         headAt: date(r.headAt), headMsg: r.headMsg)
+                         headAt: date(r.headAt), headMsg: r.headMsg, lastSha: r.lastSha, headSha: r.headSha)
                 }
             }
         } catch {
@@ -199,7 +222,7 @@ final class Store: ObservableObject {
     }
 
     func selectChanged(_ p: Platform) {
-        for i in (items[p] ?? []).indices where items[p]![i].deployable && items[p]![i].hasNewCommits {
+        for i in (items[p] ?? []).indices where items[p]![i].deployable && items[p]![i].hasNewCommits && !items[p]![i].state.isActive {
             items[p]![i].selected = true
         }
     }
@@ -221,34 +244,50 @@ final class Store: ObservableObject {
         } catch { return error.localizedDescription }
     }
 
-    private func set(_ p: Platform, _ id: String, _ s: RunState) {
+    private func set(_ p: Platform, _ id: String, _ s: RunState, countsAsLive: Bool = true) {
         guard let i = items[p]?.firstIndex(where: { $0.id == id }) else { return }
         items[p]![i].state = s
-        if case .done = s {
+        if case .done = s, countsAsLive {
+            items[p]![i].lastSha = items[p]![i].headSha
             items[p]![i].lastAt = Date(); items[p]![i].lastState = p == .vercel ? "READY" : "live"
         }
     }
 
-    func deploySelected(_ p: Platform) {
+    func deploySelected(_ p: Platform, preview: Bool = false) {
         let chosen = selected(p)
         clearSelection(p)
-        for item in chosen { Task { await deploy(item) } }
+        for item in chosen { Task { await deploy(item, preview: preview) } }
     }
 
-    private func deploy(_ item: Item) async {
+    func deployOne(_ item: Item, preview: Bool) { Task { await deploy(item, preview: preview) } }
+
+    /// Production back to what was live before.
+    func rollback(_ item: Item) {
+        Task {
+            let p = item.platform
+            set(p, item.id, .starting)
+            do {
+                let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self)
+                if p == .vercel { set(p, item.id, .done(item.link)) }
+                else { set(p, item.id, .running(L("rolling back", "rollt zurück"))); try await follow(item, deployId: r.id, url: item.link) }
+            } catch { set(p, item.id, .failed(error.localizedDescription)) }
+        }
+    }
+
+    private func deploy(_ item: Item, preview: Bool = false) async {
         let p = item.platform
         set(p, item.id, .starting)
         do {
-            let started = try await Tool.json([p.cli, "deploy-json", item.id], as: Started.self)
+            let started = try await Tool.json([p.cli, "deploy-json", item.id] + (preview ? ["--preview"] : []), as: Started.self)
             set(p, item.id, .running(started.state ?? L("started", "gestartet")))
-            try await follow(item, deployId: started.id, url: started.url)
+            try await follow(item, deployId: started.id, url: started.url, preview: preview)
         } catch {
             set(p, item.id, .failed(error.localizedDescription))
         }
     }
 
     /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
-    private func follow(_ item: Item, deployId: String, url: String?) async throws {
+    private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false) async throws {
         let p = item.platform
         for _ in 0..<400 {
             try await Task.sleep(nanoseconds: 6_000_000_000)
@@ -257,12 +296,14 @@ final class Store: ObservableObject {
             let state = (s.state ?? "").lowercased()
             switch (p, state) {
             case (.vercel, "ready"), (.render, "live"):
-                set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link)); return
+                if preview { set(p, item.id, .done(s.url ?? url), countsAsLive: false) }
+                else { set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link)) }
+                return
             case (.render, "succeeded"):
                 set(p, item.id, .done(nil)); return
             case (.vercel, "canceled"):
                 // Usually the project's "Ignored Build Step" decided nothing changed.
-                set(p, item.id, .failed(L("Skipped or canceled by Vercel (Ignored Build Step?)",
+                set(p, item.id, .skipped(L("Skipped or canceled by Vercel (Ignored Build Step?)",
                                           "Von Vercel übersprungen oder abgebrochen (Ignored Build Step?)"))); return
             case (.vercel, "error"), (.render, "build_failed"), (.render, "update_failed"),
                  (.render, "canceled"), (.render, "pre_deploy_failed"), (.render, "deactivated"):
@@ -293,6 +334,7 @@ struct ContentView: View {
     @State private var confirming = false
     @State private var confirmingOff = false
     @State private var onlyChanged = false
+    @State private var rollbackItem: Item?
 
     private var visible: [Item] {
         var all = store.items[platform] ?? []
@@ -323,6 +365,14 @@ struct ContentView: View {
             Text(store.selected(platform).map(\.name).joined(separator: "\n")
                  + "\n\n" + L("The newest commit on GitHub goes live on \(platform.rawValue).",
                                "Der neueste Stand von GitHub geht auf \(platform.rawValue) live."))
+        }
+        .alert(L("Roll back production?", "Live zurückrollen?"),
+               isPresented: Binding(get: { rollbackItem != nil }, set: { if !$0 { rollbackItem = nil } })) {
+            Button(L("Cancel", "Abbrechen"), role: .cancel) { rollbackItem = nil }
+            Button(L("Roll back", "Zurückrollen"), role: .destructive) { if let i = rollbackItem { store.rollback(i) }; rollbackItem = nil }
+        } message: {
+            Text(L("\(rollbackItem?.name ?? "") goes back to the deploy that was live before this one.",
+                   "\(rollbackItem?.name ?? "") geht zurück auf den Stand, der davor live war."))
         }
         .alert(L("Turn off auto-deploy?", "Auto-Deploy ausschalten?"), isPresented: $confirmingOff) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
@@ -419,6 +469,19 @@ struct ContentView: View {
         } else {
             List(visible) { item in
                 Row(item: item) { store.toggle(platform, item.id) }
+                    .contextMenu {
+                        if item.deployable && !item.state.isActive {
+                            Button(L("Deploy to production", "Live deployen")) { store.deployOne(item, preview: false) }
+                            if platform == .vercel {
+                                Button(L("Preview deploy (not live)", "Vorschau-Deploy (nicht live)")) { store.deployOne(item, preview: true) }
+                            }
+                            Divider()
+                            Button(L("Roll back production …", "Live zurückrollen …")) { rollbackItem = item }
+                        }
+                        if let l = item.link, let u = URL(string: l) {
+                            Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) }
+                        }
+                    }
             }
             .listStyle(.inset)
         }
@@ -435,6 +498,11 @@ struct ContentView: View {
                 Button(L("Clear", "Auswahl leeren")) { store.clearSelection(platform) }
             } else if store.changedCount(platform) > 0 {
                 Button(L("Select all changed", "Alle mit Änderungen anhaken")) { store.selectChanged(platform) }
+            }
+            if platform == .vercel {
+                Button(L("Preview", "Vorschau")) { store.deploySelected(platform, preview: true) }
+                    .disabled(count == 0)
+                    .help(L("Build a preview deployment. Production stays as it is.", "Baut einen Vorschau-Deploy. Live bleibt unverändert."))
             }
             Button { confirming = true } label: {
                 Label(count > 1 ? L("Deploy \(count)", "\(count) deployen") : L("Deploy", "Deployen"),
@@ -509,10 +577,16 @@ struct Row: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: item.selected ? "checkmark.circle.fill" : "circle")
-                .font(.title3)
-                .foregroundStyle(item.selected ? Color.accentColor : .secondary)
-                .opacity(item.deployable ? 1 : 0.3)
+            Button(action: toggle) {
+                Image(systemName: item.selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(item.selected ? Color.accentColor : .secondary)
+                    .opacity(item.deployable ? 1 : 0.3)
+            }
+            .buttonStyle(.plain)
+            .disabled(!item.deployable || item.state.isActive)
+            .accessibilityLabel(item.name)
+            .accessibilityValue(item.selected ? L("selected", "ausgewählt") : L("not selected", "nicht ausgewählt"))
 
             Logo(domain: item.domain, name: item.name)
 
@@ -591,6 +665,10 @@ struct Row: View {
                         .buttonStyle(.borderless).help(url)
                 }
             }
+        case .skipped(let msg):
+            Label(L("Skipped", "Übersprungen"), systemImage: "forward.circle.fill")
+                .foregroundStyle(.secondary).font(.caption.weight(.semibold))
+                .help(msg)
         case .failed(let msg):
             Label(L("Failed", "Fehler"), systemImage: "xmark.octagon.fill")
                 .foregroundStyle(.red).font(.caption.weight(.semibold))

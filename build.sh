@@ -10,10 +10,14 @@ BUILD="build/Deploy Center.app"
 
 rm -rf build && mkdir -p "$BUILD/Contents/MacOS" "$BUILD/Contents/Resources"
 
-# macOS 15 is the floor because it ships /usr/bin/jq, which the script needs.
-swiftc -O -parse-as-library -swift-version 5 \
-  -target arm64-apple-macosx15.0 \
-  -o "$BUILD/Contents/MacOS/DeployCenter" app/DeployCenter.swift
+# Universal binary: Apple silicon and Intel. macOS 15 is the floor; the app checks for jq itself.
+for arch in arm64 x86_64; do
+  swiftc -O -parse-as-library -swift-version 5 \
+    -target "$arch-apple-macosx15.0" \
+    -o "build/DeployCenter-$arch" app/DeployCenter.swift
+done
+lipo -create build/DeployCenter-arm64 build/DeployCenter-x86_64 -output "$BUILD/Contents/MacOS/DeployCenter"
+rm build/DeployCenter-arm64 build/DeployCenter-x86_64
 
 cp deploys "$BUILD/Contents/Resources/deploys"
 chmod +x "$BUILD/Contents/Resources/deploys"
@@ -37,8 +41,8 @@ cat > "$BUILD/Contents/Info.plist" <<PLIST
 PLIST
 
 codesign --force --deep -s - "$BUILD"
-(cd build && ditto -c -k --keepParent "Deploy Center.app" "DeployCenter-${VERSION}-arm64.zip")
-echo "Built: $BUILD and build/DeployCenter-${VERSION}-arm64.zip"
+(cd build && ditto -c -k --keepParent "Deploy Center.app" "DeployCenter-${VERSION}-universal.zip")
+echo "Built: $BUILD and build/DeployCenter-${VERSION}-universal.zip"
 
 if [ "${1:-}" = "--install" ]; then
   mkdir -p "$HOME/Applications"

@@ -14,6 +14,8 @@
 #   deploys vercel list                       projects and whether a push still deploys them
 #   deploys vercel autodeploy-off <p>|--all   disconnect Git (remembers the repo first)
 #   deploys vercel deploy <p> [--preview]     deploy the newest commit of the remembered repo
+#   deploys vercel rollback <p>               production back to the previous deployment
+#   deploys render rollback <service>          back to the deploy that was live before
 #   deploys vercel team [<id>]                show or set the Vercel team
 #   deploys render list                       services and their auto-deploy setting
 #   deploys render autodeploy-off <s>|--all
@@ -112,7 +114,7 @@ vercel_deploy_json() {
 head_of() {
   local repo="$1" ref="$2" out="$3"
   gh api "repos/$repo/commits/$ref" 2>/dev/null \
-    | jq -c --arg k "$repo@$ref" '{key:$k, value:{at:(.commit.committer.date|fromdateiso8601), msg:(.commit.message|split("\n")[0])}}' \
+    | jq -c --arg k "$repo@$ref" '{key:$k, value:{at:(.commit.committer.date|fromdateiso8601), msg:(.commit.message|split("\n")[0]), sha:.sha}}' \
     > "$out/$(echo "$repo@$ref" | tr '/@' '__').json" 2>/dev/null || true
 }
 export -f head_of
@@ -125,7 +127,7 @@ with_heads() {
     | xargs -P 8 -n 2 bash -c 'head_of "$0" "$1" "'"$tmp"'"'
   heads="$(cat "$tmp"/*.json 2>/dev/null | jq -s 'from_entries')"
   rm -rf "$tmp"
-  echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg}))'
+  echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))'
 }
 
 # ---------- Render ----------
@@ -181,7 +183,7 @@ render_last_of() {
     || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" -w 2>/dev/null)" || return 0
   printf 'header = "Authorization: Bearer %s"\n' "$key" \
     | curl -sS -K - -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=1" \
-    | jq -c --arg id "$id" '{key:$id, value:((.[0].deploy // {}) | {lastAt:((.finishedAt // .createdAt // null) | if . then (sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) else null end), lastState:.status})}' \
+    | jq -c --arg id "$id" '{key:$id, value:((.[0].deploy // {}) | {lastAt:((.finishedAt // .createdAt // null) | if . then (sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) else null end), lastState:.status, lastSha:(.commit.id // null)})}' \
     > "$out/$id.json" 2>/dev/null || true
 }
 export -f render_last_of
@@ -219,6 +221,13 @@ case "${1:-} ${2:-}" in
   "vercel status")
     vercel_call "/v13/deployments/${3:?deployment id}" \
       | jq '{id, url:("https://" + .url), state:(.readyState // .status), error:(.errorMessage // null)}' ;;
+  "vercel rollback")
+    # Production back to the previous ready production deployment.
+    p="${3:?project}"
+    prev="$(vercel_call "/v6/deployments?projectId=$p&target=production&state=READY&limit=2" | jq -r '.deployments[1].uid // empty')"
+    [ -n "$prev" ] || die "No earlier production deployment of $p to roll back to"
+    vercel api "$(with_team "/v1/projects/$p/rollback/$prev")" --method POST >/dev/null 2>&1 || die "Vercel: rollback of $p failed"
+    echo "{\"id\":\"$prev\",\"state\":\"READY\"}" ;;
   "vercel team")
     if [ -n "${3:-}" ]; then printf '%s' "$3" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $3"; else vercel_team; echo; fi ;;
   "vercel json")
@@ -231,7 +240,8 @@ case "${1:-} ${2:-}" in
        deployable:($known.repo != null),
        domain:(((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // null),
        lastAt:((.targets.production.createdAt // 0) / 1000 | floor),
-       lastState:(.targets.production.readyState // null)}] | sort_by(.name | ascii_downcase)')"
+       lastState:(.targets.production.readyState // null),
+       lastSha:(.targets.production.meta.githubCommitSha // null)}] | sort_by(.name | ascii_downcase)')"
     with_heads "$list" ;;
 
   "render list")
@@ -252,6 +262,12 @@ case "${1:-} ${2:-}" in
   "render deploy-json")
     id="$(render_id_of "${3:?service}")"
     render_call POST "/services/$id/deploys" '{}' | jq --arg s "$id" '{id, serviceId:$s, state:.status}' ;;
+  "render rollback")
+    # Back to the deploy that was live before the current one.
+    id="$(render_id_of "${3:?service}")"
+    prev="$(render_call GET "/services/$id/deploys?limit=20" | jq -r '[.[].deploy | select(.status=="deactivated")][0].id // empty')"
+    [ -n "$prev" ] || die "No earlier live deploy to roll back to"
+    render_call POST "/services/$id/rollback" "{\"deployId\":\"$prev\"}" | jq --arg s "$id" '{id, serviceId:$s, state:.status}' ;;
   "render status")
     render_call GET "/services/${3:?service id}/deploys/${4:?deploy id}" | jq '{id, state:.status}' ;;
   "render set-key")
@@ -275,5 +291,5 @@ case "${1:-} ${2:-}" in
     with_heads "$list" ;;
 
   *)
-    sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
