@@ -248,7 +248,11 @@ with_heads() {
 }
 
 # Names for tab completion, kept up to date by every list read.
-remember_names() { jq -r '.[].name' 2>/dev/null >> "$CONFIG_DIR/names.tmp"; sort -u "$CONFIG_DIR/names.tmp" > "$CONFIG_DIR/names" 2>/dev/null; }
+remember_names() {
+  # Old names stay, new ones join; one file, so nothing grows without end.
+  { cat "$CONFIG_DIR/names" 2>/dev/null; jq -r '.[].name' 2>/dev/null; } | sort -u > "$CONFIG_DIR/names.new" 2>/dev/null \
+    && mv "$CONFIG_DIR/names.new" "$CONFIG_DIR/names"; rm -f "$CONFIG_DIR/names.tmp"
+}
 
 # Every project with changes, both platforms, each marked with its platform. Both read at once.
 changed_json() {
@@ -615,6 +619,10 @@ BASH
   "changed "*)
     # Everything with commits on GitHub that are not live, and how many of them.
     list="$(changed_json)"
+    # changed [--json] [--platform vercel|render]
+    for ((i=2; i<=$#; i++)); do
+      if [ "${!i}" = "--platform" ]; then j=$((i+1)); list="$(echo "$list" | jq --arg p "${!j:?vercel or render}" 'map(select(.platform == $p))')"; fi
+    done
     if [ "${2:-}" = "--json" ]; then echo "$list"; exit 0; fi
     [ "$(echo "$list" | jq length)" = "0" ] && { echo "Nothing to deploy: every project is on its newest commit."; exit 0; }
     echo "$list" | jq -r '.[] | [.platform, .name, "\(.pendingCommits // "?") commit\(if .pendingCommits == 1 then "" else "s" end)", "\(.pendingPRs // "?") PR\(if .pendingPRs == 1 then "" else "s" end)", (.headMsg // "" | .[0:60])] | @tsv' \

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `deploys changed --platform vercel|render`; the completion names file no longer grows; the login-shell PATH is read once a day instead of at every start.
 - `deploys explain <project>` says why a project is, or is not, counted as having changes.
 - Tabs show "35 · 9" (projects · with changes); "Stand" reads "Aktualisiert".
 - `release.sh` refuses an empty changelog and an already tagged version; issue template "A number is wrong"; `docs/ZAHLEN.md` explains the counts.

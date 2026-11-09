@@ -26,7 +26,7 @@ Keine Projektnamen aus dem Screenshot, weil das Repo öffentlich ist.
 17. **`checkBudget` vergleicht nur Build-Kosten mit dem Budget,** nicht die Gesamtrechnung (`days.map(\.build)`). Wer „Monatsbudget 50 $“ meint, meint meist alles. Umschalter „nur Builds / alles“.
 18. **Die Hochrechnung nimmt 7 Tage × 30.** Ein Montag nach einem ruhigen Wochenende oder ein Release-Tag verzerren stark. Median statt Mittel, Wochentage getrennt, oder Monat-bis-heute plus Rest.
 19. **Updateprüfung ohne Prüfung der Datei.** `checkForUpdate` liest nur `tag_name`; die App verlinkt zum Download ohne Hash-Anzeige. SHA-256 aus dem Release anzeigen (steht schon im Release-Text von `release.sh`).
-20. **`Tool.searchPath` startet bei jedem App-Start eine Login-Shell** mit bis zu 3 s Wartezeit, noch bevor die Liste lädt. Ergebnis 24 h zwischenspeichern, Shell asynchron lesen.
+20. ✅ **`Tool.searchPath` startet bei jedem App-Start eine Login-Shell** mit bis zu 3 s Wartezeit, noch bevor die Liste lädt. Ergebnis 24 h zwischenspeichern, Shell asynchron lesen.
 21. **`Tool.run` nutzt `readDataToEndOfFile` im Haupt-Hintergrund-Thread pro Aufruf,** bei vielen parallelen Aufrufen (Status-Abfragen alle 6 s × N Deploys) entstehen viele Prozesse. Ein gemeinsamer Statusabruf (`deploys status --json`) für alle laufenden Deploys statt je einer.
 22. **`Row`: `onTapGesture` auf der ganzen Zeile + Button im Inneren.** Ein Klick auf Kommentar-/Notiz-Text hakt versehentlich an. Nur die Checkbox und die Namenszeile klickbar machen.
 
@@ -35,7 +35,7 @@ Keine Projektnamen aus dem Screenshot, weil das Repo öffentlich ist.
 23. ✅ ★ **`render_call` meldet bei HTTP 429 nur „HTTP 429“.** Retry mit `Retry-After`, sonst bricht die ganze Liste bei Rate-Limit ab. Dasselbe für Vercel (`vercel api` gibt den Header nicht zurück: Fehlertext auswerten).
 24. **`render_services` und `vercel_projects` laden bei jedem Befehl neu.** `changed`, `status`, `completion` und die App rufen sie je mehrfach pro Minute. 60-Sekunden-Zwischenspeicher mit `mtime`, abschaltbar per `--fresh`.
 25. **`platform_of` fragt erst Vercel, dann Render** (zwei Netzaufrufe für ein `watch`). Den Namen aus `names` (Cache) nehmen, falls schon bekannt, mit Plattform dazu: `vercel:name`.
-26. **`names.tmp` wird nie aufgeräumt** und wächst; `sort -u` liest bei jedem Aufruf alles. Direkt `sort -u` mit Ersetzen, und Plattform-Präfix speichern (siehe 25).
+26. ✅ **`names.tmp` wird nie aufgeräumt** und wächst; `sort -u` liest bei jedem Aufruf alles. Direkt `sort -u` mit Ersetzen, und Plattform-Präfix speichern (siehe 25).
 27. **`doctor` schreibt `jq`-freies JSON mit `printf`,** aber `github-budget` und `changed` brauchen `jq`. Ohne `jq` zeigt `doctor` korrekt, `changed` stirbt mit kryptischer Meldung. Beim Start prüfen und klar sagen: „jq fehlt: brew install jq“.
 28. **`vercel_deploy_json` bricht mit „no remembered repo“, wenn `auto` noch an ist** und kein Eintrag existiert. Besser: aus `link` lesen und merken (die Daten stehen im selben Projektaufruf).
 29. **`vercel rollback` nimmt „READY“ Production ohne Prüfung,** ob dieser Deploy einen anderen Stand ausliefert. Ein Rollback auf einen gleichen Stand (nach einem Redeploy ohne Änderung) tut nichts. Beim Auswählen den `githubCommitSha` überspringen, der dem aktuellen gleicht.
@@ -48,7 +48,7 @@ Keine Projektnamen aus dem Screenshot, weil das Repo öffentlich ist.
 36. **`die` in `$(…)` beendet nur die Unterschale.** Es klappt heute, weil `set -e` auf der reinen Zuweisung (`id="$(render_id_of …)"`) greift. Sobald jemand `local x="$(…)"` oder `echo "$(…)"` schreibt, schluckt das den Fehler (so ein Muster gibt es im Skript noch nicht, geprüft per grep). Regel in CONTRIBUTING und `shellcheck`-Warnstufe (SC2155) als Schutz.
 37. **Fehlermeldungen sind englisch und kommen roh in die App** (`HTTP 401: {…}` als JSON-Text). Die App kennt keine Fehlernummern. Klartext-Mapping: 401 → „Anmeldung abgelaufen“, 404 → „gibt es nicht mehr“, 429 → „Limit erreicht, gleich nochmal“.
 38. **`DEPLOYS_CONFIG` ist nur eine Umgebungsvariable.** Für Tests praktisch, für zwei Konten (Privat/Firma) wäre `--profile work` bequemer; je Profil eigener Schlüsselbund-Eintrag und eigene Vercel-Team-ID.
-39. **`deploys changed --since 6h`** und **`--platform render`** als Filter, damit Skripte nicht jq-Gymnastik brauchen.
+39. ◐ (nur --platform) **`deploys changed --since 6h`** und **`--platform render`** als Filter, damit Skripte nicht jq-Gymnastik brauchen.
 40. **`deploys json` für alles** (ein Aufruf für beide Plattformen, wie die App ihn bräuchte statt zweier getrennter Prozesse mit doppelter GitHub-Last).
 41. ✅ **`deploys explain <projekt>`** sagt in einem Satz, warum ein Projekt „changed“ ist oder nicht („Live-Stand abc123, Branch def456, 4 Commits, Build läuft nicht“). Spart beim Debuggen der CHANGED_RULE jede Menge Zeit.
 42. **Selbsttest `deploys doctor --deep`:** schreibt nichts, startet nichts, prüft aber einmal Token-Rechte (Vercel `/v2/teams`, Render `/services?limit=1`, GitHub `rate_limit`) und meldet pro Zugang „ok / abgelaufen / zu wenig Rechte“.

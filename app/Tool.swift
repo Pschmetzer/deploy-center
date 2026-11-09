@@ -22,6 +22,15 @@ enum Tool {
     /// The PATH of the person's login shell, read once, so `vercel` installed through nvm, volta or
     /// fnm is found too. The usual places come first in case the shell says nothing in time.
     static let searchPath: String = {
+        // Reading it starts a login shell (up to 3 s); once a day is enough.
+        let d = UserDefaults.standard
+        if let saved = d.string(forKey: "searchPath"), Date().timeIntervalSince1970 - d.double(forKey: "searchPathAt") < 86400 { return saved }
+        let result = computeSearchPath()
+        d.set(result, forKey: "searchPath"); d.set(Date().timeIntervalSince1970, forKey: "searchPathAt")
+        return result
+    }()
+
+    private static func computeSearchPath() -> String {
         let fixed = "/opt/homebrew/bin:/usr/local/bin:" + NSHomeDirectory() + "/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         let p = Process()
         p.executableURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh")
@@ -34,7 +43,7 @@ enum Tool {
         p.waitUntilExit(); killer.cancel()
         let shell = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return shell.isEmpty ? fixed : fixed + ":" + shell
-    }()
+    }
 
     /// Runs off the main thread. A GUI app does not get the shell's PATH, and `vercel` needs node.
     /// stdout and stderr are read at the same time (reading one to the end first can deadlock
