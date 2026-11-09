@@ -20,7 +20,7 @@ Durchgesehen: `deploys` (Skript), `app/DeployCenter.swift`, `build.sh`, README.
 13. **Der Link zu den Render-API-Keys** (`/u/settings#api-keys`) ist geraten, nicht geprüft.
 14. ✅ **„Alle mit Änderungen anhaken"** hakt auch Projekte an, die gerade deployen.
 15. ✅ **Ein Deploy-Fehler zeigt den Grund nur als Tooltip.** Sichtbar machen und kopierbar anbieten.
-16. **Logos werden bei jedem Start neu geladen.** Auf der Platte zwischenspeichern.
+16. ✅ **Logos werden bei jedem Start neu geladen.** Auf der Platte zwischenspeichern.
 17. **Logos mit transparentem dunklem Motiv** sind auf dem weißen Hintergrund manchmal schlecht zu sehen. Den Hintergrund an das Bild anpassen.
 18. **`--dangerously-skip-permissions` beim Trennen** hängt an einem CLI-Schalter, den Vercel ändern kann. Als Ausweg den REST-Aufruf direkt einbauen.
 19. ✅ **Die App lädt jedes Mal die volle Liste (8 s).** Den letzten Stand sofort zeigen und im Hintergrund auffrischen.
@@ -32,12 +32,12 @@ Durchgesehen: `deploys` (Skript), `app/DeployCenter.swift`, `build.sh`, README.
 22. ★ **Rollback-Knopf:** Vercel stuft den vorherigen Deploy wieder hoch, bei Render gibt es Rollback per API.
 23. **Deploy abbrechen**, solange er baut.
 24. **Build-Log** und Link zum Deploy im Dashboard direkt in der Zeile.
-25. ✅ (Anzahl) **Commits zwischen Live und GitHub auflisten**, mit Link auf den Vergleich bei GitHub.
+25. ✅ (Anzahl, Link zum Vergleich) **Commits zwischen Live und GitHub auflisten**, mit Link auf den Vergleich bei GitHub.
 26. **Branch oder Commit wählen** statt immer den neuesten.
 27. **Gruppen:** Frontend (Vercel) und Backend (Render) desselben Produkts als ein Paket deployen.
 28. **Reihenfolge innerhalb einer Gruppe:** erst das Backend, dann das Frontend.
 29. **Warteschlange:** Nicht alles gleichzeitig starten, damit Vercels Limit für parallele Builds nicht greift.
-30. **Bestätigungsdialog mit den Commit-Nachrichten**, nicht nur den Namen.
+30. ✅ **Bestätigungsdialog mit den Commit-Nachrichten**, nicht nur den Namen.
 31. **Option „Nicht mehr fragen"** für Vorschau-Deploys.
 32. **Verlauf:** Liste der Deploys, die aus der App gestartet wurden, mit Dauer und Ergebnis.
 33. ✅ **Benachrichtigung** des Macs, wenn ein Deploy fertig ist oder fehlschlägt.
@@ -58,8 +58,8 @@ Durchgesehen: `deploys` (Skript), `app/DeployCenter.swift`, `build.sh`, README.
 
 ## D. Oberfläche
 
-45. **Menüleisten-Symbol** mit der Zahl der Projekte mit Änderungen.
-46. **Sortieren** nach Name, letztem Deploy oder Änderungen zuerst.
+45. ✅ **Menüleisten-Symbol** mit der Zahl der Projekte mit Änderungen.
+46. ✅ (Änderungen zuerst) **Sortieren** nach Name, letztem Deploy oder Änderungen zuerst.
 47. **Abschnitte:** „Mit Änderungen" oben, „Pausiert/unbekannt" eingeklappt unten.
 48. ✅ **Tastenkürzel:** ⌘F Suche, ⌘R Neu laden, Leertaste anhaken, ⌘A alle mit Änderungen.
 49. ✅ **Esc leert die Suche.**

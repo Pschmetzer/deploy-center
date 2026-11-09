@@ -136,6 +136,8 @@ struct Item: Identifiable {
     var lastSha: String? = nil
     var headSha: String? = nil
     var repo: String? = nil
+    var ref: String? = nil
+    var kind: String? = nil        // Render service type, for the dashboard link
     /// Decided by the script (`changed`), so the app and `deploys changed` never disagree.
     var changed: Bool? = nil
     var pendingCommits: Int? = nil
@@ -143,6 +145,19 @@ struct Item: Identifiable {
     var openPRs: Int? = nil
     var selected = false
     var state: RunState = .idle
+
+    /// GitHub's page of the commits between what is live and the branch.
+    var compareURL: URL? {
+        guard let repo, let live = lastSha, !live.isEmpty, hasNewCommits else { return nil }
+        return URL(string: "https://github.com/\(repo)/compare/\(live)...\(ref ?? headSha ?? "main")")
+    }
+
+    /// The service's page on Render; Vercel's address needs the team's slug, which the list does not carry.
+    var dashboardURL: URL? {
+        guard platform == .render else { return nil }
+        let section = ["static_site": "static", "cron_job": "cron", "background_worker": "worker"][kind ?? ""] ?? "web"
+        return URL(string: "https://dashboard.render.com/\(section)/\(id)")
+    }
 
     /// A commit on GitHub that is not live yet.
     var hasNewCommits: Bool {
@@ -207,7 +222,7 @@ final class Store: ObservableObject {
 
     // MARK: Cache — the last lists, so the window is full at once instead of after 10 seconds
 
-    static let cacheDir: URL = {
+    nonisolated static let cacheDir: URL = {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("app.deploycenter.mac", isDirectory: true)
     }()
@@ -283,7 +298,7 @@ final class Store: ObservableObject {
                          link: v.domain.map { "https://\($0)" },
                          domain: v.domain, lastAt: date(v.lastAt), lastState: v.lastState,
                          headAt: date(v.headAt), headMsg: v.headMsg, lastSha: v.lastSha, headSha: v.headSha,
-                         repo: v.repo, changed: v.changed, pendingCommits: v.pendingCommits,
+                         repo: v.repo, ref: v.ref, changed: v.changed, pendingCommits: v.pendingCommits,
                          pendingPRs: v.pendingPRs, openPRs: v.openPRs)
                 }
             case .render:
@@ -296,7 +311,7 @@ final class Store: ObservableObject {
                              : (r.auto ? L("deploys on every push", "deployt bei jedem Push") : nil),
                          link: r.url, domain: r.domain, lastAt: date(r.lastAt), lastState: r.lastState,
                          headAt: date(r.headAt), headMsg: r.headMsg, lastSha: r.lastSha, headSha: r.headSha,
-                         repo: r.repo, changed: r.changed, pendingCommits: r.pendingCommits,
+                         repo: r.repo, ref: r.ref, kind: r.type, changed: r.changed, pendingCommits: r.pendingCommits,
                          pendingPRs: r.pendingPRs, openPRs: r.openPRs)
                 }
             }
@@ -467,7 +482,7 @@ final class Store: ObservableObject {
 // MARK: - Window
 
 struct ContentView: View {
-    @StateObject private var store = Store()
+    @ObservedObject var store: Store
     @State private var platform: Platform = .vercel
     @State private var search = ""
     @State private var confirming = false
@@ -479,9 +494,14 @@ struct ContentView: View {
     private var visible: [Item] {
         var all = store.items[platform] ?? []
         if onlyChanged { all = all.filter { $0.hasNewCommits } }
-        guard !search.isEmpty else { return all }
-        return all.filter { $0.name.localizedCaseInsensitiveContains(search) || $0.detail.localizedCaseInsensitiveContains(search)
-            || ($0.domain ?? "").localizedCaseInsensitiveContains(search) }
+        if !search.isEmpty {
+            all = all.filter { $0.name.localizedCaseInsensitiveContains(search) || $0.detail.localizedCaseInsensitiveContains(search)
+                || ($0.domain ?? "").localizedCaseInsensitiveContains(search) }
+        }
+        // What waits to go live first, most commits first; the rest by name as the script sorted it.
+        let changed = all.filter { $0.hasNewCommits && $0.deployable }
+            .sorted { ($0.pendingCommits ?? 0) > ($1.pendingCommits ?? 0) }
+        return changed + all.filter { !($0.hasNewCommits && $0.deployable) }
     }
 
     var body: some View {
@@ -512,7 +532,8 @@ struct ContentView: View {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             Button(L("Deploy", "Deployen")) { store.deploySelected(platform) }
         } message: {
-            Text(store.selected(platform).map(\.name).joined(separator: "\n")
+            Text(store.selected(platform).map { i in
+                    i.name + ((i.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText(i) : "") }.joined(separator: "\n")
                  + "\n\n" + L("The newest commit on GitHub goes live on \(platform.rawValue).",
                                "Der neueste Stand von GitHub geht auf \(platform.rawValue) live."))
         }
@@ -711,6 +732,12 @@ struct ContentView: View {
                         }
                         if let l = item.link, let u = URL(string: l) {
                             Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) }
+                        }
+                        if let u = item.compareURL {
+                            Button(L("Show the waiting commits on GitHub", "Wartende Commits auf GitHub ansehen")) { NSWorkspace.shared.open(u) }
+                        }
+                        if let u = item.dashboardURL {
+                            Button(L("Open in the Render dashboard", "Im Render-Dashboard öffnen")) { NSWorkspace.shared.open(u) }
                         }
                     }
             }
@@ -970,10 +997,24 @@ actor LogoCache {
     static let shared = LogoCache()
     private var cache: [String: NSImage?] = [:]
 
+    /// Logos are kept on disk for a week; an empty file remembers "this site has none".
+    private static let dir = Store.cacheDir.appendingPathComponent("logos", isDirectory: true)
+    private static let week: TimeInterval = 7 * 24 * 3600
+
     func image(for domain: String) async -> NSImage? {
         if let hit = cache[domain] { return hit }
-        let img = await fetch(domain)
+        let file = Self.dir.appendingPathComponent(domain.replacingOccurrences(of: "/", with: "_"))
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
+           let at = attrs[.modificationDate] as? Date, Date().timeIntervalSince(at) < Self.week,
+           let data = try? Data(contentsOf: file) {
+            let img = data.isEmpty ? nil : NSImage(data: data)
+            cache[domain] = img
+            return img
+        }
+        let (img, data) = await fetch(domain)
         cache[domain] = img
+        try? FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)
+        try? (data ?? Data()).write(to: file, options: .atomic)
         return img
     }
 
@@ -985,8 +1026,8 @@ actor LogoCache {
         return data
     }
 
-    private func fetch(_ domain: String) async -> NSImage? {
-        guard let base = URL(string: "https://\(domain)/") else { return nil }
+    private func fetch(_ domain: String) async -> (NSImage?, Data?) {
+        guard let base = URL(string: "https://\(domain)/") else { return (nil, nil) }
         var candidates: [URL] = []
         if let html = await get(base), let text = String(data: html, encoding: .utf8) {
             candidates += Self.iconLinks(in: text).compactMap { URL(string: $0, relativeTo: base)?.absoluteURL }
@@ -994,9 +1035,9 @@ actor LogoCache {
         candidates += ["apple-touch-icon.png", "favicon.svg", "favicon.png", "favicon.ico"]
             .compactMap { URL(string: $0, relativeTo: base)?.absoluteURL }
         for url in candidates {
-            if let data = await get(url), let img = NSImage(data: data), img.size.width > 0 { return img }
+            if let data = await get(url), let img = NSImage(data: data), img.size.width > 0 { return (img, data) }
         }
-        return nil
+        return (nil, nil)
     }
 
     /// apple-touch-icon first: it is large and square.
@@ -1055,8 +1096,52 @@ struct Logo: View {
 
 @main
 struct DeployCenterApp: App {
+    /// One store for the window and the menu bar, so both show the same counts.
+    @StateObject private var store = Store()
+
     var body: some Scene {
-        WindowGroup("Deploy Center") { ContentView() }
+        WindowGroup("Deploy Center", id: "main") { ContentView(store: store) }
             .windowResizability(.contentMinSize)
+        MenuBarExtra {
+            MenuBarContent(store: store)
+        } label: {
+            let n = store.waiting.prs > 0 ? store.waiting.prs : store.waiting.projects
+            Image(systemName: "paperplane")
+            if n > 0 { Text("\(n)") }
+        }
+    }
+}
+
+/// The menu bar: what waits to go live, and a way to the window. Deploying stays in the window,
+/// where the confirmation is.
+struct MenuBarContent: View {
+    @ObservedObject var store: Store
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        let w = store.waiting
+        let changed = Array(store.items.values.joined()).filter { $0.hasNewCommits && $0.deployable && $0.state == .idle }
+            .sorted { ($0.pendingCommits ?? 0) > ($1.pendingCommits ?? 0) }
+        if w.projects == 0 {
+            Text(L("Everything merged is live", "Alles Gemergte ist live"))
+        } else {
+            Text(L("\(w.prs) PRs, \(w.commits) commits waiting", "\(w.prs) PRs, \(w.commits) Commits warten"))
+            Divider()
+            ForEach(changed.prefix(12)) { i in
+                Text("\(i.name)  –  \(Row.waitingText(i))")
+            }
+            if changed.count > 12 { Text(L("and \(changed.count - 12) more", "und \(changed.count - 12) weitere")) }
+        }
+        if w.openPRs > 0 {
+            Text(L("\(w.openPRs) PRs still open", "\(w.openPRs) PRs noch offen"))
+        }
+        Divider()
+        Button(L("Open Deploy Center", "Deploy Center öffnen")) {
+            openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
+        }
+        .keyboardShortcut("o")
+        Button(L("Reload", "Neu laden")) { Task { await store.autoRefresh() } }
+        Divider()
+        Button(L("Quit", "Beenden")) { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
 }

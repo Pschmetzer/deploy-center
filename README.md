@@ -17,7 +17,7 @@ fast. Deploying once a day with a click costs a fraction, and nothing ships by a
   GitHub has a commit that is not live yet. *Select all changed* + *Deploy* is a daily deploy in two clicks.
 - **Counts what is waiting**: how many commits and merged pull requests on GitHub are not live,
   per project and in total, and how many pull requests are still open.
-- Opens with the last lists at once and reads them again every 15 minutes; a notification when a
+- A menu bar icon with the number of PRs waiting. Opens with the last lists at once and reads them again every 15 minutes; a notification when a
   deploy ends while the window is in the background; ⌘R, ⌘F, ⌘1/⌘2, Esc.
 - **Preview deploys** (Vercel) and **rollback** to the previous live deploy, from the right-click menu.
 - Site logos, domains to click, search, English and German.
