@@ -40,7 +40,32 @@ LEGACY_KEYCHAIN_SERVICE="render-api-key"
 mkdir -p "$CONFIG_DIR"
 [ -f "$REPOS" ] || echo '{}' > "$REPOS"
 
-die() { echo "Error: $*" >&2; exit 1; }
+die() { echo "Error: ${RED}$*${PLAIN}" >&2; exit 1; }
+
+# Colour only for a person at a terminal, never in what the app or a pipe reads.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then RED=$'\033[31m'; GREEN=$'\033[32m'; BOLD=$'\033[1m'; PLAIN=$'\033[0m'
+else RED=""; GREEN=""; BOLD=""; PLAIN=""; fi
+
+# --json anywhere asks for the machine answer: `vercel list --json` is `vercel json`,
+# `vercel deploy p --json` is `vercel deploy-json p`. The old spellings keep working.
+json=0
+args=()
+for a in "$@"; do if [ "$a" = "--json" ]; then json=1; else args+=("$a"); fi; done
+if [ "$json" = 1 ]; then
+  case "${args[0]:-} ${args[1]:-}" in
+    "vercel list"|"render list") args[1]="json" ;;
+    "vercel deploy"|"render deploy") args[1]="deploy-json" ;;
+  esac
+  [ "${args[0]:-}" = "changed" ] && args=("changed" "--json")
+fi
+set -- ${args[@]+"${args[@]}"}
+
+# Which platform a name belongs to: a Vercel project first, then a Render service.
+platform_of() {
+  if vercel_call "/v9/projects/$1" >/dev/null 2>&1; then echo vercel
+  elif render_key >/dev/null 2>&1 && render_id_of "$1" >/dev/null 2>&1; then echo render
+  else die "No Vercel project or Render service named \"$1\""; fi
+}
 
 # ---------- Vercel ----------
 
@@ -199,6 +224,9 @@ with_heads() {
     | jq "$CHANGED_RULE"
 }
 
+# Names for tab completion, kept up to date by every list read.
+remember_names() { jq -r '.[].name' 2>/dev/null >> "$CONFIG_DIR/names.tmp"; sort -u "$CONFIG_DIR/names.tmp" > "$CONFIG_DIR/names" 2>/dev/null; }
+
 # Every project with changes, both platforms, each marked with its platform. Both read at once.
 changed_json() {
   local t; t="$(mktemp -d)"
@@ -207,7 +235,8 @@ changed_json() {
     ( "$0" render json 2>/dev/null | jq 'map(. + {platform:"render"})' > "$t/r.json" || echo '[]' > "$t/r.json" ) &
   fi
   wait
-  cat "$t"/*.json 2>/dev/null | jq -s 'add // [] | map(select(.changed))'
+  local ign="$CONFIG_DIR/ignored.json"; [ -f "$ign" ] || echo '[]' > "$ign"
+  cat "$t"/*.json 2>/dev/null | jq -s --slurpfile ign "$ign" 'add // [] | map(select(.changed and ((.name as $n | $ign[0] | index($n)) | not)))'
   rm -rf "$t"
 }
 
@@ -217,6 +246,8 @@ github_budget() { gh api rate_limit --jq '.resources.core | {remaining, limit, r
 # ---------- Render ----------
 
 render_key() {
+  # On a server or in CI there is no keychain: the key may come from the environment.
+  if [ -n "${RENDER_API_KEY:-}" ]; then printf '%s' "$RENDER_API_KEY"; return; fi
   security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w 2>/dev/null \
     || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" -w 2>/dev/null \
     || die "No Render API key. Create one at dashboard.render.com > Account Settings > API Keys, then: deploys render set-key"
@@ -326,6 +357,97 @@ case "${1:-} ${2:-}" in
 
   "github-budget "*)
     github_budget ;;
+
+  "status "*)
+    # What is building right now, on both platforms, and what the newest attempt said.
+    t="$(mktemp -d)"
+    ( "$0" vercel json 2>/dev/null | jq 'map(. + {platform:"vercel"})' > "$t/v.json" || echo '[]' > "$t/v.json" ) &
+    if render_key >/dev/null 2>&1; then ( "$0" render json 2>/dev/null | jq 'map(. + {platform:"render"})' > "$t/r.json" || echo '[]' > "$t/r.json" ) & fi
+    wait
+    all="$(cat "$t"/*.json | jq -s 'add // []')"; rm -rf "$t"
+    if [ "$json" = 1 ]; then echo "$all" | jq 'map({platform, name, building, state:(.latestState // .lastState), changed})'; exit 0; fi
+    echo "$all" | jq -r '.[] | select(.building or ((.latestState // .lastState // "") | ascii_downcase | test("error|fail"))) | [.platform, .name, (.latestState // .lastState)] | @tsv' \
+      | (printf 'PLATFORM\tPROJECT\tSTATE\n'; cat) | column -t -s $'\t'
+    echo "$all" | jq -r '"\(map(select(.building)) | length) building, \(map(select(.changed)) | length) with changes."' ;;
+
+  "watch "*)
+    # Follow the newest deploy of one project until it is live or failed.
+    p="${2:?project}"; plat="$(platform_of "$p")"
+    while :; do
+      if [ "$plat" = vercel ]; then
+        s="$(vercel_call "/v6/deployments?app=$p&limit=1&target=production" | jq -r '.deployments[0].state // "?"')"
+      else
+        s="$(render_call GET "/services/$(render_id_of "$p")/deploys?limit=1" | jq -r '.[0].deploy.status // "?"')"
+      fi
+      printf '%s  %s\n' "$(date +%H:%M:%S)" "$s"
+      case "$s" in READY|live|succeeded) exit 0;; ERROR|CANCELED|build_failed|update_failed|canceled|pre_deploy_failed|deactivated) exit 1;; esac
+      sleep 6
+    done ;;
+
+  "logs "*)
+    # The last lines of the newest build log of one project.
+    p="${2:?project}"; n="${3:-80}"; plat="$(platform_of "$p")"
+    if [ "$plat" = vercel ]; then
+      d="$(vercel_call "/v6/deployments?app=$p&limit=1&target=production" | jq -r '.deployments[0].uid // empty')"
+      [ -n "$d" ] || die "No deployment of $p"
+      vercel_call "/v3/deployments/$d/events?builds=1&direction=backward&limit=2000" \
+        | jq -r --argjson n "$n" 'sort_by(.created) | map(.payload.text // .text // "" | select(test("\\S"))) | .[-$n:][]'
+    else
+      id="$(render_id_of "$p")"; owner="$(render_call GET "/services/$id" | jq -r .ownerId)"
+      render_call GET "/logs?ownerId=$owner&resource=$id&type=build&limit=$n&direction=backward" \
+        | jq -r '.logs | reverse | .[].message' | sed $'s/\x1b\\[[0-9;]*m//g'
+    fi ;;
+
+  "open "*)
+    # The site, or with --dashboard the project's page at Vercel or Render.
+    p="${2:?project}"; plat="$(platform_of "$p")"
+    if [ "$plat" = vercel ]; then
+      if [ "${3:-}" = "--dashboard" ]; then
+        slug="$(vercel_call "/v2/teams/$(vercel_team)" | jq -r '.slug // empty' 2>/dev/null)"
+        url="https://vercel.com/${slug:+$slug/}$p"
+      else
+        url="$(vercel_call "/v9/projects/$p" | jq -r '((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // (.targets.production.alias[0] // empty) | "https://\(.)"')"
+      fi
+    else
+      svc="$(render_call GET "/services/$(render_id_of "$p")")"
+      if [ "${3:-}" = "--dashboard" ]; then url="$(echo "$svc" | jq -r '.dashboardUrl // empty')"
+      else url="$(echo "$svc" | jq -r '.serviceDetails.url // .dashboardUrl // empty')"; fi
+    fi
+    [ -n "$url" ] || die "No address known for $p"
+    open "$url" 2>/dev/null || echo "$url" ;;
+
+  "ignore "*)
+    # Leave a project out of `changed` and `deploy-changed` (again with: ignore <p> --undo).
+    p="${2:?project}"; f="$CONFIG_DIR/ignored.json"; [ -f "$f" ] || echo '[]' > "$f"; tmp="$(mktemp)"
+    if [ "${3:-}" = "--undo" ]; then jq --arg p "$p" 'map(select(. != $p))' "$f" > "$tmp"; echo "$p is counted again"
+    else jq --arg p "$p" '. + [$p] | unique' "$f" > "$tmp"; echo "$p is left out of changed and deploy-changed"; fi
+    mv "$tmp" "$f" ;;
+
+  "completion "*)
+    # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
+    cmds="doctor changed deploy-changed status watch logs open ignore costs triggers details vercel render completion"
+    case "${2:-zsh}" in
+      zsh) cat <<ZSH
+_deploys() {
+  local -a names; names=(\${(f)"\$(cat "$CONFIG_DIR/names" 2>/dev/null)"})
+  if (( CURRENT == 2 )); then compadd $cmds
+  elif [[ \$words[2] == (vercel|render) && CURRENT == 3 ]]; then compadd list deploy rollback status autodeploy-off json map
+  else compadd -a names; fi
+}
+compdef _deploys deploys
+ZSH
+      ;;
+      bash) cat <<BASH
+_deploys() {
+  local cur=\${COMP_WORDS[COMP_CWORD]}
+  if [ \$COMP_CWORD -eq 1 ]; then COMPREPLY=(\$(compgen -W "$cmds" -- "\$cur"))
+  else COMPREPLY=(\$(compgen -W "\$(cat "$CONFIG_DIR/names" 2>/dev/null)" -- "\$cur")); fi
+}
+complete -F _deploys deploys
+BASH
+      ;;
+      *) die "zsh or bash" ;;
+    esac ;;
 
   "details "*)
     # Everything about one repo the window shows on demand: the commits between what is live and
@@ -507,6 +629,7 @@ case "${1:-} ${2:-}" in
        lastSha:(.targets.production.meta.githubCommitSha // null),
        lastMsg:(.targets.production.meta.githubCommitMessage // null | if . then split("\n")[0] else null end),
        latestState:($recent[.name].state // null)}] | sort_by(.name | ascii_downcase)')"
+    echo "$list" | remember_names
     with_heads "$list" ;;
 
   "render list")

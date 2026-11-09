@@ -79,7 +79,9 @@ enum Tool {
                 } else {
                     let msg = String(data: errData, encoding: .utf8)?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    cont.resume(throwing: ToolError(message: msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg))
+                    let text = msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg
+                    Log.write("deploys \(args.joined(separator: " ")): \(text)")
+                    cont.resume(throwing: ToolError(message: text))
                 }
             }
         }
@@ -93,6 +95,20 @@ enum Tool {
 struct ToolError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
+}
+
+/// Errors go to ~/Library/Logs/DeployCenter.log, so one can be attached to an issue.
+/// Only what the script said and when; no keys ever reach the script's output.
+enum Log {
+    static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/DeployCenter.log")
+    static func write(_ line: String) {
+        let text = "\(Date().formatted(.iso8601))  \(line)\n"
+        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(text.utf8)); try? h.close() }
+        else { try? Data(text.utf8).write(to: url) }
+        // Kept small: past 1 MB the older half goes.
+        if let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int, size > 1_000_000,
+           let data = try? Data(contentsOf: url) { try? data.suffix(500_000).write(to: url) }
+    }
 }
 
 // MARK: - Data
@@ -306,6 +322,7 @@ final class Store: ObservableObject {
         booted = true
         if UserDefaults.standard.bool(forKey: "hideDock") { NSApp.setActivationPolicy(.accessory) }
         LogoCache.sweep()
+        Task { await checkForUpdate() }
         Task {
             await start()
             while !Task.isCancelled {
@@ -590,7 +607,10 @@ final class Store: ObservableObject {
             switch (p, state) {
             case (.vercel, "ready"), (.render, "live"):
                 if preview { set(p, item.id, .done(s.url ?? url), countsAsLive: false) }
-                else { set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link)) }
+                else {
+                    set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link))
+                    if let l = item.link { await checkSite(item.name, l) }
+                }
                 return
             case (.render, "succeeded"):
                 set(p, item.id, .done(nil)); return
@@ -606,6 +626,36 @@ final class Store: ObservableObject {
             }
         }
         set(p, item.id, .failed(L("No result after 40 minutes – check the dashboard", "Kein Ergebnis nach 40 Minuten – im Dashboard nachsehen")))
+    }
+
+    /// After going live: does the site answer? A deploy can be "ready" and the page still broken.
+    private func checkSite(_ name: String, _ link: String) async {
+        guard let url = URL(string: link) else { return }
+        var req = URLRequest(url: url, timeoutInterval: 20)
+        req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
+        let code = ((try? await URLSession.shared.data(for: req))?.1 as? HTTPURLResponse)?.statusCode
+        if let code, code < 400 { return }   // fine: the "is live" line already said enough
+        say(L("\(name) is live, but the site answers \(code.map(String.init) ?? "nothing")",
+              "\(name) ist live, aber die Seite antwortet mit \(code.map(String.init) ?? "nichts")"), link, ok: false)
+    }
+
+    // MARK: A newer version on GitHub, asked once a day (Settings can turn it off)
+
+    @Published var newVersion: String?
+    func checkForUpdate() async {
+        let d = UserDefaults.standard
+        guard d.object(forKey: "checkUpdates") as? Bool ?? true else { return }
+        let last = d.double(forKey: "lastUpdateCheck")
+        guard Date().timeIntervalSince1970 - last > 86400 else { newVersion = d.string(forKey: "newVersion"); return }
+        d.set(Date().timeIntervalSince1970, forKey: "lastUpdateCheck")
+        guard let url = URL(string: "https://api.github.com/repos/Pschmetzer/deploy-center/releases/latest"),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let tag = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["tag_name"] as? String else { return }
+        let latest = tag.trimmingCharacters(in: CharacterSet(charactersIn: "v"))
+        let mine = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        let newer = latest.compare(mine, options: .numeric) == .orderedDescending
+        newVersion = newer ? latest : nil
+        d.set(newVersion, forKey: "newVersion")
     }
 
     static func stateName(_ s: String) -> String {
@@ -634,6 +684,7 @@ struct ContentView: View {
     @State private var showAll = false
     @State private var noteItem: Item?
     @State private var noteText = ""
+    @State private var logItem: Item?
 
     /// The platforms the list shows: one tab, or both under "All".
     private var scopes: [Platform] { showAll ? Platform.allCases : [platform] }
@@ -670,6 +721,19 @@ struct ContentView: View {
             if let msg = store.busyMessage {
                 HStack { ProgressView().controlSize(.small); Text(msg) }.padding(8)
             }
+            if let v = store.newVersion {
+                HStack {
+                    Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
+                    Text(L("Version \(v) is out.", "Version \(v) ist da.")).font(.callout)
+                    Button(L("Download", "Herunterladen")) {
+                        NSWorkspace.shared.open(URL(string: "https://github.com/Pschmetzer/deploy-center/releases/latest")!)
+                    }.buttonStyle(.link)
+                    Spacer()
+                    Button { store.newVersion = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                        .help(L("Not now", "Nicht jetzt"))
+                }
+                .padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue.opacity(0.06))
+            }
             triggerBanner
             autoBanner
             waitingBar
@@ -694,6 +758,7 @@ struct ContentView: View {
         }
         .animation(.easeOut(duration: 0.2), value: store.toast)
         .sheet(item: $detailItem) { item in ProjectDetail(item: item) }
+        .sheet(item: $logItem) { item in BuildLog(item: item) }
         .alert(L("Note", "Notiz"), isPresented: Binding(get: { noteItem != nil }, set: { if !$0 { noteItem = nil } })) {
             TextField(L("e.g. only after the release mail", "z. B. erst nach der Release-Mail"), text: $noteText)
             Button(L("Cancel", "Abbrechen"), role: .cancel) { noteItem = nil }
@@ -964,7 +1029,8 @@ struct ContentView: View {
                 Row(item: item, cost: item.platform == .vercel ? store.buildCost(item.name) : nil,
                     perBuild: item.platform == .vercel ? store.costs?.perBuild(item.name) : nil,
                     pinned: store.isPinned(item), note: store.note(item),
-                    showDetails: item.repo == nil ? nil : { detailItem = item }) { store.toggle(item.platform, item.id) }
+                    showDetails: item.repo == nil ? nil : { detailItem = item },
+                    showLog: { logItem = item }) { store.toggle(item.platform, item.id) }
                     .contextMenu {
                         if item.repo != nil {
                             Button(L("Details …", "Details …")) { detailItem = item }
@@ -984,6 +1050,7 @@ struct ContentView: View {
                         if let l = item.link, let u = URL(string: l) {
                             Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) }
                         }
+                        Button(L("Last build log …", "Letztes Build-Log …")) { logItem = item }
                         if let u = item.compareURL {
                             Button(L("Show the waiting commits on GitHub", "Wartende Commits auf GitHub ansehen")) { NSWorkspace.shared.open(u) }
                         }
@@ -1148,6 +1215,7 @@ struct Row: View {
     var pinned = false
     var note: String? = nil
     var showDetails: (() -> Void)? = nil
+    var showLog: (() -> Void)? = nil
     let toggle: () -> Void
 
     var body: some View {
@@ -1304,7 +1372,48 @@ struct Row: View {
                 Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString("\(item.name): \(msg)", forType: .string) }
                     label: { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.borderless).help(L("Copy the error", "Fehler kopieren"))
+                if let showLog {
+                    Button(action: showLog) { Image(systemName: "text.alignleft") }
+                        .buttonStyle(.borderless).help(L("Build log", "Build-Log"))
+                }
             }
+        }
+    }
+}
+
+// MARK: - Build log
+
+struct BuildLog: View {
+    let item: Item
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String?
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(L("Build log: ", "Build-Log: ") + item.name).font(.headline)
+                Spacer()
+                if let text {
+                    Button(L("Copy", "Kopieren")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
+                }
+                Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+            .padding(12)
+            Divider()
+            if let error { Text(error).foregroundStyle(.secondary).padding(16).textSelection(.enabled) }
+            else if let text {
+                ScrollView { Text(text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(12) }
+                    .defaultScrollAnchor(.bottom)
+            } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+        }
+        .frame(width: 760, height: 520)
+        .task {
+            do {
+                let data = try await Tool.run(["logs", item.id, "200"])
+                text = String(data: data, encoding: .utf8).map { $0.isEmpty ? L("(empty)", "(leer)") : $0 }
+            } catch { self.error = error.localizedDescription }
         }
     }
 }
@@ -1615,6 +1724,10 @@ struct SettingsView: View {
             if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
             Toggle(L("Notify when a deploy ends", "Mitteilung, wenn ein Deploy fertig ist"), isOn: $notifications)
             Toggle(L("Look for a new version once a day", "Einmal am Tag nach einer neuen Version sehen"), isOn: $checkUpdates)
+            Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
+                if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
+                NSWorkspace.shared.open(Log.url)
+            }
             if !store.hidden.isEmpty {
                 Button(L("Show \(store.hidden.count) hidden projects again", "\(store.hidden.count) ausgeblendete Projekte wieder zeigen")) {
                     store.hidden = []; UserDefaults.standard.set([String](), forKey: "hidden")

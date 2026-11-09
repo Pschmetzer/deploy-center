@@ -46,9 +46,9 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 32. ★ **Reihenfolge in Gruppen:** Backend (Render) zuerst, erst wenn es live ist, das Frontend (Vercel).
 33. **Täglicher Deploy zur festen Zeit**, nur wenn ein Häkchen gesetzt ist und nur Projekte mit grünem CI. Mit Mitteilung und Bestätigung per Klick statt ganz automatisch.
 34. **Deploy abbrechen**, solange er baut (Vercel `PATCH …/cancel`, Render `POST …/cancel`).
-35. **Build-Log in der App** (letzte 200 Zeilen) beim Fehler, statt nur der Fehlermeldung.
+35. ✅ **Build-Log in der App** (letzte 200 Zeilen) beim Fehler, statt nur der Fehlermeldung.
 36. **„Erneut versuchen“** direkt am gescheiterten Projekt.
-37. **Nach dem Deploy prüfen:** die Seite aufrufen und HTTP 200 sowie die erwartete Commit-Kennung (falls ausgeliefert) bestätigen.
+37. ✅ **Nach dem Deploy prüfen:** die Seite aufrufen und HTTP 200 sowie die erwartete Commit-Kennung (falls ausgeliefert) bestätigen.
 38. **Bestimmten Commit deployen** (Rechtsklick → Liste der letzten 10 Commits).
 39. **Vercel-Vorschau als Link zum Teilen** kopieren, sobald fertig.
 40. **Production-Beförderung:** eine fertige Vorschau per Klick live schalten (`promote`), statt neu zu bauen. Spart einen Build.
@@ -91,15 +91,15 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 
 ## F. Kommandozeile und Automatisierung
 
-71. ★ **`--json` bei jedem Befehl** einheitlich (heute `…-json`-Befehle und `changed --json` gemischt).
-72. **`deploys status`** – eine Zeile pro Projekt mit laufenden Deploys.
-73. **`deploys watch <projekt>`** – folgt einem Deploy im Terminal bis live/Fehler.
-74. **`deploys logs <projekt>`** – Build-Log des letzten Deploys.
-75. **`deploys open <projekt>`** – Seite oder Dashboard im Browser.
+71. ✅ ★ **`--json` bei jedem Befehl** einheitlich (heute `…-json`-Befehle und `changed --json` gemischt).
+72. ✅ **`deploys status`** – eine Zeile pro Projekt mit laufenden Deploys.
+73. ✅ **`deploys watch <projekt>`** – folgt einem Deploy im Terminal bis live/Fehler.
+74. ✅ **`deploys logs <projekt>`** – Build-Log des letzten Deploys.
+75. ✅ **`deploys open <projekt>`** – Seite oder Dashboard im Browser.
 76. **`deploys cancel <projekt>`.**
-77. **`deploys ignore <projekt>`** – aus `changed` und `deploy-changed` herausnehmen.
-78. **Shell-Vervollständigung** (zsh, bash) mit Projektnamen aus dem Cache.
-79. **Farbige Ausgabe** im Terminal (nur wenn `-t 1`).
+77. ✅ **`deploys ignore <projekt>`** – aus `changed` und `deploy-changed` herausnehmen.
+78. ✅ **Shell-Vervollständigung** (zsh, bash) mit Projektnamen aus dem Cache.
+79. ✅ **Farbige Ausgabe** im Terminal (nur wenn `-t 1`).
 80. **MCP-Server**, damit jede Claude-Sitzung `changed` und `deploy-changed` als Werkzeug hat.
 81. **Kurzbefehle-Aktion** (Apple Shortcuts) „Wartende PRs zählen“ und „Alles deployen“.
 82. **Raycast-Erweiterung** mit derselben Liste.
@@ -111,12 +111,12 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 85. **Netlify, Railway, Fly.io, Cloudflare Pages** über ein Anbieter-Modul im Skript.
 86. **GitLab/Bitbucket** für Kopf, Vergleich und PRs.
 87. **Linux:** `secret-tool` statt Schlüsselbund, `date -d` statt `date -v`, damit das Skript auf Servern läuft.
-88. **Umgebungsvariablen `RENDER_API_KEY`/`VERCEL_TOKEN`** als Alternative zum Schlüsselbund (CI).
+88. ✅ **Umgebungsvariablen `RENDER_API_KEY`/`VERCEL_TOKEN`** als Alternative zum Schlüsselbund (CI).
 
 ## H. Qualität, Veröffentlichung, Pflege
 
-89. ★ **`release.sh`:** baut, notarisiert, heftet, legt das GitHub-Release mit Zip und SHA-256 an – ein Befehl.
-90. ★ **Update-Hinweis in der App** über die GitHub-Releases-API (einmal am Tag, abschaltbar).
+89. ✅ ★ **`release.sh`:** baut, notarisiert, heftet, legt das GitHub-Release mit Zip und SHA-256 an – ein Befehl.
+90. ✅ ★ **Update-Hinweis in der App** über die GitHub-Releases-API (einmal am Tag, abschaltbar).
 91. **Homebrew-Cask** im eigenen Tap.
 92. **Tests für das Skript** (bats) mit nachgebauten API-Antworten; besonders `CHANGED_RULE` und `pending_of`.
 93. **Unit-Tests für `waiting`, `merge`, `waitingText`, `compareURL`.**
@@ -124,6 +124,6 @@ Hier steht nur, was dort noch nicht steht oder sich durch 0.4.0 geändert hat.
 95. **Swift-Datei aufteilen** (1100 Zeilen): Tool, Modell, Store, Ansichten, Logos.
 96. **Swift-6-Modus**, die eine Warnung (`cacheDir`) war der Anfang.
 97. **README mit Screenshot und kurzem GIF** der Menüleiste.
-98. **CHANGELOG.md** und Versionsnummer im Fenster (Über-Dialog).
-99. **Datenschutz-Absatz:** keine Telemetrie; Logos direkt von den eigenen Seiten; GitHub nur über die eigene `gh`-Anmeldung.
-100. **Absturzbericht lokal** (letzter Fehler in `~/Library/Logs/DeployCenter.log`), zum Anhängen an ein Issue.
+98. ✅ **CHANGELOG.md** und Versionsnummer im Fenster (Über-Dialog).
+99. ✅ **Datenschutz-Absatz:** keine Telemetrie; Logos direkt von den eigenen Seiten; GitHub nur über die eigene `gh`-Anmeldung.
+100. ✅ **Absturzbericht lokal** (letzter Fehler in `~/Library/Logs/DeployCenter.log`), zum Anhängen an ein Issue.

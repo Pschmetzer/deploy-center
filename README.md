@@ -62,7 +62,16 @@ deploys render list
 deploys render autodeploy-off --all
 deploys render deploy my-service
 deploys vercel rollback my-project
+deploys status                          # what is building now, and what failed last
+deploys watch my-project                # follow the newest deploy until live or failed
+deploys logs my-project                 # the end of the newest build log
+deploys open my-project [--dashboard]   # the site, or its page at Vercel/Render
+deploys ignore my-project               # leave it out of changed / deploy-changed
+eval "$(deploys completion zsh)"        # tab completion (also: bash)
 ```
+
+Add `--json` to any command for the machine answer. On a server or in CI, `RENDER_API_KEY`
+takes the place of the keychain and `VERCEL_TOKEN` is read by the Vercel CLI.
 
 Settings live in `~/.config/deploys/`: `vercel-repos.json` (which repo and branch each Vercel project
 deploys from, written when auto-deploy is turned off) and `vercel-team` (detected automatically).
@@ -78,6 +87,13 @@ deploys from, written when auto-deploy is turned off) and `vercel-team` (detecte
 - Your Render key gives full access to your Render account. It never leaves your Mac
   except in requests to api.render.com.
 
+## Privacy
+
+No telemetry, no account, no server of ours. The app talks to Vercel and Render with your own
+logins, to GitHub through your `gh` login, to your own sites for their logos and the check
+after a deploy, and once a day to GitHub's release page to see whether a new version is out
+(Settings can turn that off). Errors are written to `~/Library/Logs/DeployCenter.log` on your Mac.
+
 ## Build from source
 
 ```bash
@@ -86,6 +102,7 @@ deploys from, written when auto-deploy is turned off) and `vercel-team` (detecte
 ```
 
 Needs Xcode or the Command Line Tools. No Xcode project, one Swift file.
+`./release.sh` signs, notarizes and zips a release (it needs a Developer ID; see the file).
 
 ## License
 
