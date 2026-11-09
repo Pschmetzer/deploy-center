@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rollback skips an older deploy of the same commit (Vercel and Render), so it really changes what is live.
 - Menu bar: a line when auto-deploy is still on somewhere, and the current provider outages.
 - `deploys changed --platform vercel|render`; the completion names file no longer grows; the login-shell PATH is read once a day instead of at every start.
 - `deploys explain <project>` says why a project is, or is not, counted as having changes.
