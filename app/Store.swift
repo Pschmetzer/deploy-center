@@ -21,11 +21,14 @@ final class Store: ObservableObject {
     @Published var triggers: [Trigger] = []
 
     /// Costs and stray build triggers load after the lists; neither blocks deploying.
+    private var lastExtras = Date.distantPast
     func loadExtras() async {
+        lastExtras = Date()
         if doctor?.vercelLoggedIn == true {
             costs = try? await Tool.json(["costs", "14"], as: Costs.self)
             checkBudget()
         }
+        Task { await checkProviders() }
         triggers = (try? await Tool.json(["triggers"], as: [Trigger].self)) ?? []
         if doctor?.githubLoggedIn == true {
             githubBudget = try? await Tool.json(["github-budget"], as: Budget.self)
@@ -66,6 +69,30 @@ final class Store: ObservableObject {
         let m = month.formatted(.currency(code: "USD")), b = budget.formatted(.currency(code: "USD"))
         say(L("Build costs near your budget", "Build-Kosten nahe am Budget"),
             L("At this pace ≈ \(m) a month, budget \(b)", "Bei diesem Tempo ≈ \(m) im Monat, Budget \(b)"), ok: false)
+    }
+
+    /// Outages at Vercel, Render and GitHub: a failing deploy may not be the project's fault.
+    @Published var providerIssues: [String] = []
+    func checkProviders() async {
+        let feeds = [("Vercel", "https://www.vercel-status.com/api/v2/status.json"),
+                     ("Render", "https://status.render.com/api/v2/status.json"),
+                     ("GitHub", "https://www.githubstatus.com/api/v2/status.json")]
+        let found = await withTaskGroup(of: (Int, String?).self) { group -> [(Int, String)] in
+            for (k, feed) in feeds.enumerated() {
+                group.addTask {
+                    guard let url = URL(string: feed.1),
+                          let (data, _) = try? await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 10)),
+                          let st = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["status"] as? [String: Any],
+                          let indicator = st["indicator"] as? String, indicator != "none" else { return (k, nil) }
+                    return (k, "\(feed.0): \(st["description"] as? String ?? indicator)")
+                }
+            }
+            var out: [(Int, String)] = []
+            for await (k, text) in group { if let text { out.append((k, text)) } }
+            return out
+        }
+        let issues = found.sorted { $0.0 < $1.0 }.map(\.1)
+        providerIssues = issues
     }
 
     func buildCost(_ project: String) -> Double? {
@@ -216,12 +243,16 @@ final class Store: ObservableObject {
     /// Lists only, both platforms; costs and triggers cost many GitHub calls and stay manual.
     /// Not while something is deploying, so nothing being followed is disturbed.
     func autoRefresh() async {
-        let busy = items.values.joined().contains { $0.state.isActive }
-        guard !busy, loading.isEmpty else { return }
+        guard loading.isEmpty else { return }
         if doctor == nil { await start(); return }
-        async let a: Void = doctor?.vercelLoggedIn == true ? load(.vercel) : ()
-        async let b: Void = doctor?.renderKey == true ? load(.render) : ()
+        // Only the platform with a deploy under way is left alone; the other one stays current.
+        let v = doctor?.vercelLoggedIn == true && !(items[.vercel] ?? []).contains { $0.state.isActive }
+        let r = doctor?.renderKey == true && !(items[.render] ?? []).contains { $0.state.isActive }
+        async let a: Void = v ? load(.vercel) : ()
+        async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
+        // Costs and strays cost many calls: hourly. The status feeds are cheap: every time.
+        if Date().timeIntervalSince(lastExtras) > 3600 { await loadExtras() } else { await checkProviders() }
     }
 
     // MARK: What is waiting on GitHub, over both platforms
@@ -304,8 +335,18 @@ final class Store: ObservableObject {
             items[p]![i].changed = false; items[p]![i].pendingCommits = 0; items[p]![i].pendingPRs = 0
         }
         let name = items[p]![i].name
+        let took = items[p]![i].startedAt.map { Date().timeIntervalSince($0) }
         switch s {
-        case .done: say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true)
+        case .done: Journal.append(JournalEntry(platform: p.rawValue, name: name, result: countsAsLive ? "live" : "other", seconds: took, detail: nil))
+        case .failed(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "failed", seconds: took, detail: m))
+        case .skipped(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "skipped", seconds: took, detail: m))
+        default: break
+        }
+        switch s {
+        case .done:
+            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true) }
+            else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true) }
+            else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true) }
         case .failed(let m): say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false)
         case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true)
         default: break
@@ -387,7 +428,7 @@ final class Store: ObservableObject {
 
     // MARK: The queue: at most N builds at once, a frontend after the backend of its repo
 
-    struct Job { let item: Item; var preview = false; var sha: String? = nil; var clearCache = false }
+    struct Job { let item: Item; var preview = false; var sha: String? = nil; var clearCache = false; var readyAt = Date.distantPast }
     private var queue: [Job] = []
     private var running = 0
     private var cancelled: Set<String> = []
@@ -405,7 +446,6 @@ final class Store: ObservableObject {
 
     /// Seconds between the click and the first build; in this time "cancel" in the row still costs nothing.
     var undoSeconds: Int { UserDefaults.standard.object(forKey: "undoSeconds") as? Int ?? 8 }
-    private var holdUntil = Date.distantPast
     private var batch: [(Platform, String)] = []
 
     func enqueue(_ jobs: [Job]) {
@@ -413,11 +453,11 @@ final class Store: ObservableObject {
         var added = 0
         for j in jobs where !(itemNow(j.item)?.state.isActive ?? false) {
             set(j.item.platform, j.item.id, .queued)
+            var j = j; j.readyAt = Date().addingTimeInterval(Double(undoSeconds))   // each job counts from its own click
             queue.append(j); batch.append((j.item.platform, j.item.id)); added += 1
         }
         if added > 0, undoSeconds > 0 {
             let n = undoSeconds
-            holdUntil = Date().addingTimeInterval(Double(n))
             toast = Toast(text: L("Starting in \(n) s – cancel in the row to stop", "Startet in \(n) s – in der Zeile abbrechen"), ok: true)
             Task { try? await Task.sleep(nanoseconds: UInt64(n) * 1_000_000_000 + 300_000_000); pump() }
         }
@@ -444,7 +484,7 @@ final class Store: ObservableObject {
     }
 
     private func pump() {
-        while Date() >= holdUntil, running < maxParallel, let k = queue.firstIndex(where: { waitsFor($0) == nil }) {
+        while running < maxParallel, let k = queue.firstIndex(where: { $0.readyAt <= Date() && waitsFor($0) == nil }) {
             let job = queue.remove(at: k)
             running += 1
             Task { await deploy(job); running -= 1; pump() }
@@ -457,7 +497,15 @@ final class Store: ObservableObject {
                                                              "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
             }
         }
-        if queue.isEmpty && running == 0 { queueBatch = []; if Date() >= holdUntil { summarize() } }
+        if queue.isEmpty && running == 0 {
+            queueBatch = []
+            do {
+                let hadRun = !batch.isEmpty
+                summarize()
+                // The row says "current" from what the app remembers; read what GitHub says now.
+                if hadRun { Task { await autoRefresh() } }
+            }
+        }
     }
 
     /// The Render service of the same repo that a Vercel frontend waits for, while it is queued or building.
@@ -592,7 +640,7 @@ final class Store: ObservableObject {
                         recordDuration(item)
                         set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link))
                     }
-                    if let l = item.link { await checkSite(item.name, l.hasSuffix("/") ? String(l.dropLast()) + healthPath(item) : l + healthPath(item)) }
+                    if let l = item.link { Task { await checkSite(item.name, l.hasSuffix("/") ? String(l.dropLast()) + healthPath(item) : l + healthPath(item)) } }
                 }
                 return
             case (.render, "succeeded"):

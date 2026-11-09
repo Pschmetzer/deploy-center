@@ -57,11 +57,11 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 43. ✅ ★ **„Für Claude kopieren“:** Fehler + letzte 80 Log-Zeilen + Repo/Commit als fertiger Prompt in die Zwischenablage.
 44. ✅ ★ **Build-Log springt zur ersten Fehlerzeile**, markiert `error`/`ERR!`/`failed`, filtert Rauschen.
 45. **Fehler-Klassifikation** (Abhängigkeit fehlt, Node-Version, Speicher, Zeitlimit, Umgebungsvariable) mit Tipp.
-46. **Build-Dauer-Verlauf pro Projekt** (nur die letzten 5 werden gespeichert) als Mini-Diagramm; Warnung bei plötzlich doppelter Zeit.
-47. **Fehlerquote pro Projekt** („3 der letzten 10 Deploys schlugen fehl“).
+46. ✅ **Build-Dauer-Verlauf pro Projekt** (nur die letzten 5 werden gespeichert) als Mini-Diagramm; Warnung bei plötzlich doppelter Zeit.
+47. ✅ **Fehlerquote pro Projekt** („3 der letzten 10 Deploys schlugen fehl“).
 48. **Runtime-Fehler nach dem Deploy** (Vercel Runtime Logs/Render Logs) 5 Minuten beobachten und bei Anstieg warnen.
 49. **Letzten erfolgreichen Stand merken** und im Fehlerfall „Zurück auf Abc123“ anbieten.
-50. **Deploy-Protokoll (Journal):** wer/wann/was/Ergebnis/Dauer, lokal als JSONL, durchsuchbar, Export CSV.
+50. ✅ **Deploy-Protokoll (Journal):** wer/wann/was/Ergebnis/Dauer, lokal als JSONL, durchsuchbar, Export CSV.
 51. **Mitteilungen mit Aktionen** (Seite öffnen, Log, Zurückrollen) statt nur Text.
 52. ✅ **Zusammenfassung nach einem Sammel-Deploy:** „7 live, 1 Fehler, 1 übersprungen, 14 Min, ≈ 2,10 $“.
 
@@ -89,7 +89,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 69. **Teuerste Projekte** als Rangliste (heute nur kleine Zahl in der Zeile).
 70. **Kosten pro Deploy in der Bestätigung** (steht in IDEEN-2 #46 als erledigt – für Sammel-Deploy als Summe fehlt sie).
 71. **Zeitraum wählbar** (7/14/30/90 Tage), Monatsvergleich.
-72. **CSV/PDF-Export** für Buchhaltung.
+72. ✅ **CSV/PDF-Export** für Buchhaltung.
 73. **Ersparnis-Karte teilen** (Bild mit Zahlen, ohne Projektnamen) für README/Posts.
 74. **Warnung bei Projekten mit sehr vielen Builds pro Tag** (Bot-Schleifen, Dependabot).
 75. **Ignored-Build-Step-Vorschlag direkt anwenden** (IDEEN-2 #50 nennt nur den Vorschlag).
@@ -111,7 +111,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 88. **Dunkel/Hell prüfen** (alte #66): blaue/orange Balken mit `opacity` sehen auf Dunkel anders aus.
 89. **Dynamic Type/große Schrift** testen; Zeilen haben feste `caption2`-Größen.
 90. **Mehrzeilige Zeilen kürzen:** zu viele Abzeichen (Kosten, Commits, ältester, offen) → „Mehr…“-Aufklappen.
-91. **Leerer Zustand mit Anleitung**, wenn das Konto 0 Projekte hat.
+91. ✅ **Leerer Zustand mit Anleitung**, wenn das Konto 0 Projekte hat.
 92. **Ladezustand je Zeile** (Skeleton) statt Gesamtspinner.
 93. ✅ **Letzte Aktualisierung pro Plattform getrennt** im Kopf, nicht nur für den aktiven Tab.
 94. ✅ **Menüleiste:** Spinner/Punkt bei laufenden Deploys, roter Punkt bei Fehler, Zahl getrennt nach Plattform.
@@ -139,13 +139,13 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 113. **`deploys` als Homebrew-Formel** und Cask für die App.
 114. **Slack/Discord/Teams-Webhook** nach Sammel-Deploy mit Release-Notes (Idee 53).
 115. **E-Mail-/Push-Zusammenfassung am Abend** („heute 6 live, 2 offen“).
-116. **launchd-Vorlage** für `deploys deploy-changed --yes` mit Log-Datei.
-117. **GitHub-Action-Vorlage:** Deploy nach Merge mit Label `deploy` – ersetzt Auto-Deploy ohne Dauerbuilds.
-118. **`deploys status --watch`** als Live-Ansicht im Terminal (Tabelle aktualisiert sich).
+116. ✅ **launchd-Vorlage** für `deploys deploy-changed --yes` mit Log-Datei.
+117. ✅ **GitHub-Action-Vorlage:** Deploy nach Merge mit Label `deploy` – ersetzt Auto-Deploy ohne Dauerbuilds.
+118. ✅ **`deploys status --watch`** als Live-Ansicht im Terminal (Tabelle aktualisiert sich).
 119. ✅ **`deploys diff <projekt>`** zeigt Commits/Dateien im Terminal.
 120. ✅ **`deploys notes`** erzeugt Release-Notes (Idee 53) im Terminal.
 121. **`deploys doctor --fix`**: bietet an, `jq`/`gh` zu installieren, Version zu aktualisieren.
-122. **Exit-Codes dokumentieren** (0/1 heute; „nichts zu tun“ vs. „Fehler“).
+122. ✅ **Exit-Codes dokumentieren** (0/1 heute; „nichts zu tun“ vs. „Fehler“).
 123. **`--quiet`/`--verbose`** und konsistentes Protokollformat (JSON Lines) für Skripte.
 
 ## H. Plattformen und Konten
@@ -159,7 +159,7 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 130. **Vercel-Cron-Jobs** und Render-Cron im Blick (letzter Lauf, Fehler).
 131. **Umgebungsvariablen-Vergleich** zwischen Production und Vorschau (nur Namen, nie Werte).
 132. **Fehlende Variable nach Deploy melden** (Namen aus `.env.example` im Repo gegen Plattform).
-133. **Statusseiten von Vercel/Render/GitHub** einlesen und bei Störung warnen („Render hat gerade ein Problem“ statt eigener Fehlersuche).
+133. ✅ **Statusseiten von Vercel/Render/GitHub** einlesen und bei Störung warnen („Render hat gerade ein Problem“ statt eigener Fehlersuche).
 
 ## I. Qualität, Veröffentlichung, Pflege
 
@@ -176,10 +176,10 @@ Hinweis: Das sind ~150 geprüfte Punkte, keine 1000. Mehr wäre Füllmaterial; d
 144. **Rate-Limit-Backoff** für GitHub (nicht nur Pause unter 300 Resten).
 145. **Offline-Banner** und Wiederholung mit Backoff statt Fehlerseite.
 146. **Token-Sicherheit:** Render-Key mit eigener Schlüsselbund-Zugriffssteuerung; Hinweis, einen eigenen Key nur für die App anzulegen (alte #91).
-147. **SBOM/Lizenzliste** und `SECURITY.md` (öffentliches Repo).
+147. ✅ **SBOM/Lizenzliste** und `SECURITY.md` (öffentliches Repo).
 148. **README mit Screenshot** (mit Demo-Modus aus Idee 77 erzeugt) und GIF des Ablaufs.
 149. **Landingpage + Kostenrechner** (alte #93).
-150. **Issue-/PR-Vorlagen, CONTRIBUTING**.
+150. ✅ **Issue-/PR-Vorlagen, CONTRIBUTING**.
 
 ## Empfohlene Reihenfolge
 

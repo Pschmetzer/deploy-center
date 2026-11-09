@@ -110,5 +110,11 @@ MainActor.assumeIsolated {
     UserDefaults.standard.removeObject(forKey: "hidden")
 }
 
+// The journal: CSV quoting and the failure count.
+let je = [JournalEntry(platform: "Vercel", name: "a\"b", result: "failed", seconds: 61, detail: "x"),
+          JournalEntry(platform: "Vercel", name: "a\"b", result: "live", seconds: 30, detail: nil)]
+expect("csv quotes names", Journal.csv(je).contains("\"a\"\"b\""), true)
+expect("failures of the last deploys", "\(Journal.failures(of: "a\"b", in: je))", "(failed: 1, total: 2)")
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

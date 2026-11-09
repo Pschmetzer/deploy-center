@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fixed: costs, budget and provider outages refresh while the app runs (menu bar), not only at start; status feeds load in parallel.
+- Fixed: the site check no longer holds a build slot of the queue.
+- Fixed: after a deploy run the lists reload; a running deploy on one platform no longer pauses the other.
+- Fixed: a rollback says "rolled back" and a preview "preview is ready" instead of "is live"; "1 Projekt" instead of "1 Projekte".
+- Fixed: every queued deploy waits from its own click; a later selection no longer delays an earlier one.
+- Fixed: the start lock cannot be taken twice at the same moment; Render rate limits (429) are retried (also in the parallel list read) and errors say what to do.
 - Fixed: after a rollback the row no longer claims to be on the newest commit.
 - Fixed: a repo shared by a frontend and a backend counts its PRs and commits once in the banner and the menu bar.
 - Fixed: the banner says how many of the waiting projects are on the open tab.
@@ -20,6 +26,9 @@
 - Hiding a project can be undone from the message; hidden projects are listed in Settings, one by one.
 - A bell in the footer lists the latest messages; queued rows say "place 2 of 5".
 - Settings: warn when commits wait longer than N days; "Copy diagnostics" (versions only, no names or keys).
+- Deploy history (clock in the footer): every ended deploy with duration, "n of the last 10 failed", CSV copy.
+- A banner when Vercel, Render or GitHub report a problem on their status pages; an empty state for accounts without projects.
+- A build that takes twice as long as usual turns orange. `deploys status --watch`. Docs: security, contributing, launchd and deploy-on-label examples.
 - `deploys diff <project>` and `deploys notes <project>` (release notes in Markdown).
 
 ## 0.5.0

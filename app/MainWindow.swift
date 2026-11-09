@@ -24,6 +24,7 @@ struct ContentView: View {
     @AppStorage("showAll") private var showAll = false
     @State private var pathItem: Item?
     @State private var showMessages = false
+    @State private var showJournal = false
     @State private var pathText = ""
     @State private var noteItem: Item?
     @State private var noteText = ""
@@ -92,6 +93,7 @@ struct ContentView: View {
                 .padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue.opacity(0.06))
             }
             triggerBanner
+            providerBanner
             autoBanner
             waitingBar
             githubBanner
@@ -120,6 +122,7 @@ struct ContentView: View {
         }
         .animation(.easeOut(duration: 0.2), value: store.toast)
         .sheet(item: $logItem) { item in BuildLog(item: item) }
+        .sheet(isPresented: $showJournal) { JournalView() }
         .sheet(item: $detailItem) { item in ProjectDetail(item: item) { sha in store.deployOne(item, preview: false, sha: sha) } }
         .onChange(of: store.pendingDeployAll) { _, go in
             guard go else { return }
@@ -155,7 +158,12 @@ struct ContentView: View {
             Text(L("\(unchangedItem?.name ?? "") is already on the newest commit. A build costs build minutes and changes nothing.",
                    "\(unchangedItem?.name ?? "") ist schon auf dem neuesten Stand. Ein Build kostet Build-Minuten und ändert nichts."))
         }
-        .task { store.boot() }
+        .task {
+            store.boot()
+            // The search field would take the keyboard (and the space bar) at once; ⌘F still gets there.
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            if search.isEmpty { NSApp.keyWindow?.makeFirstResponder(nil) }
+        }
         .alert(L("Deploy to production?", "Live deployen?"), isPresented: $confirming) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             Button(L("Deploy", "Deployen")) { scopes.forEach { store.deploySelected($0) } }
@@ -255,6 +263,19 @@ struct ContentView: View {
         }
     }
 
+    /// A status page of Vercel, Render or GitHub reports a problem.
+    @ViewBuilder private var providerBanner: some View {
+        if !store.providerIssues.isEmpty {
+            HStack(spacing: 10) {
+                Image(systemName: "bolt.horizontal.circle.fill").foregroundStyle(.orange)
+                Text(L("Problem at the provider: ", "Störung beim Anbieter: ") + store.providerIssues.joined(separator: " · "))
+                    .font(.caption).textSelection(.enabled)
+                Spacer()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
+        }
+    }
+
     static func triggerName(_ k: String) -> String {
         switch k {
         case "workflow": return L("GitHub workflow deploys", "GitHub-Workflow deployt")
@@ -350,7 +371,7 @@ struct ContentView: View {
             HStack(spacing: 10) {
                 Image(systemName: "dollarsign.circle.fill").font(.title2).foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(L("\(on.count) projects build on every push", "\(on.count) Projekte bauen bei jedem Push"))
+                    Text(on.count == 1 ? L("1 project builds on every push", "1 Projekt baut bei jedem Push") : L("\(on.count) projects build on every push", "\(on.count) Projekte bauen bei jedem Push"))
                         .font(.headline)
                     Text(L("Every push costs build minutes. Turn it off and deploy here when you want.",
                            "Jeder Push kostet Build-Minuten. Ausschalten und hier deployen, wann du willst."))
@@ -404,6 +425,14 @@ struct ContentView: View {
                     .foregroundStyle(onlyChanged ? .green : .secondary)
                 Text(onlyChanged ? L("Everything is live", "Alles ist live") : L("Nothing matches “\(search)”", "Nichts passt zu „\(search)“"))
                     .font(.headline)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if visible.isEmpty {
+            VStack(spacing: 8) {
+                Image(systemName: "tray").font(.system(size: 34)).foregroundStyle(.secondary)
+                Text(L("No projects here", "Keine Projekte hier")).font(.headline)
+                Text(L("This account has none on \(platform.rawValue), or all are hidden.", "Dieses Konto hat hier keine bei \(platform.rawValue), oder alle sind ausgeblendet."))
+                    .font(.caption).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -468,6 +497,8 @@ struct ContentView: View {
                             : L("\(count) selected", "\(count) ausgewählt"))
                 .foregroundStyle(.secondary)
             Spacer()
+            Button { showJournal = true } label: { Image(systemName: "clock.arrow.circlepath") }
+                .buttonStyle(.borderless).help(L("Deploy history", "Deploy-Verlauf"))
             if !store.messages.isEmpty {
                 Button { showMessages.toggle() } label: { Image(systemName: "bell") }
                     .buttonStyle(.borderless).help(L("Latest messages", "Letzte Meldungen"))
@@ -787,6 +818,8 @@ struct Row: View {
                         Text("\(s) · \(secs / 60):\(String(format: "%02d", secs % 60))"
                              + (usualMinutes.map { L(" (usually ~\($0) min)", " (meist ~\($0) Min)") } ?? ""))
                             .font(.caption.monospacedDigit())
+                            // Twice as long as usual: something may be stuck.
+                            .foregroundStyle(usualMinutes.map { secs > 120 * $0 } == true ? Color.orange : Color.primary)
                     }
                 } else { Text(s).font(.caption) }
                 cancelButton
