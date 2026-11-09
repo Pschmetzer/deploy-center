@@ -15,6 +15,10 @@ fast. Deploying once a day with a click costs a fraction, and nothing ships by a
   and follows each deploy until it is live or failed.
 - **Shows what is waiting**: the last deploy and its state, and a *New changes* badge when
   GitHub has a commit that is not live yet. *Select all changed* + *Deploy* is a daily deploy in two clicks.
+- **Counts what is waiting**: how many commits and merged pull requests on GitHub are not live,
+  per project and in total, and how many pull requests are still open.
+- Opens with the last lists at once and reads them again every 15 minutes; a notification when a
+  deploy ends while the window is in the background; ⌘R, ⌘F, ⌘1/⌘2, Esc.
 - **Preview deploys** (Vercel) and **rollback** to the previous live deploy, from the right-click menu.
 - Site logos, domains to click, search, English and German.
 
@@ -47,6 +51,9 @@ The app is a window over one bash script, `deploys`, which you can use on its ow
 
 ```bash
 deploys doctor                          # what is connected
+deploys changed                         # what is merged on GitHub and not live: commits and PRs per project
+deploys deploy-changed                  # the daily deploy: shows the list; add --yes to start it
+deploys vercel map my-project me/my-repo main   # where a project deploys from, set by hand
 deploys vercel list                     # which projects still deploy on push
 deploys vercel autodeploy-off --all
 deploys vercel deploy my-project        # newest commit to production
@@ -62,8 +69,8 @@ deploys from, written when auto-deploy is turned off) and `vercel-team` (detecte
 
 ## Good to know
 
-- A project you disconnected **before** using Deploy Center has no remembered repo. Add it to
-  `~/.config/deploys/vercel-repos.json`: `{"my-project": {"org": "me", "repo": "my-repo", "ref": "main"}}`.
+- A project you disconnected **before** using Deploy Center has no remembered repo. Tell it:
+  `deploys vercel map my-project me/my-repo main`.
 - To go back to auto-deploy, reconnect the repository in the Vercel dashboard, or set
   auto-deploy to *On Commit* in Render.
 - On Render, a Blueprint with auto-sync can apply `render.yaml` again on push. Add

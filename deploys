@@ -11,6 +11,9 @@
 #
 # Commands:
 #   deploys doctor                            check tools and access (JSON)
+#   deploys changed [--json]                  what has commits on GitHub that are not live
+#   deploys deploy-changed [--yes]            deploy all of those (shows the list without --yes)
+#   deploys vercel map <p> <owner/repo> [br]  say where a project deploys from
 #   deploys vercel list                       projects and whether a push still deploys them
 #   deploys vercel autodeploy-off <p>|--all   disconnect Git (remembers the repo first)
 #   deploys vercel deploy <p> [--preview]     deploy the newest commit of the remembered repo
@@ -119,15 +122,61 @@ head_of() {
 }
 export -f head_of
 
+# What is merged but not live: commits from the live commit to the branch, and the pull
+# requests among them (squash "(#12)" or "Merge pull request #12"). ahead_by is exact;
+# the PR count reads at most the 250 commits GitHub lists.
+pending_of() {
+  local repo="$1" base="$2" ref="$3" out="$4"
+  gh api "repos/$repo/compare/$base...$ref" 2>/dev/null \
+    | jq -c --arg k "$repo@$base@$ref" '{key:$k, value:{commits:.ahead_by,
+        prs:([.commits[].commit.message | (capture("\\(#(?<n>[0-9]+)\\)") // capture("Merge pull request #(?<n>[0-9]+)")) | .n] | unique | length)}}' \
+    > "$out/$(echo "$repo@$base@$ref" | tr '/@' '__').json" 2>/dev/null || true
+}
+export -f pending_of
+
+# Pull requests still open on the repo: not merged, so not deployable yet either.
+open_prs_of() {
+  local repo="$1" out="$2"
+  gh api "repos/$repo/pulls?state=open&per_page=100" --jq "{key:\"$repo\", value:length}" \
+    > "$out/$(echo "$repo" | tr '/' '_').json" 2>/dev/null || true
+}
+export -f open_prs_of
+
+# The one rule for "has changes to deploy", read by `changed`, `deploy-changed` and the app.
+# Not deployable, paused, already building, or with no known head: not changed.
+CHANGED_RULE='map(. + {changed: (
+  (.deployable // false) and ((.paused // false) | not) and (.headSha != null or .headAt != null)
+  and ((.lastState // "" | ascii_downcase) as $s
+       | ["building","queued","initializing","created","build_in_progress","update_in_progress","pre_deploy_in_progress"]
+       | index($s) | not)
+  and (if .lastSha and .headSha then .lastSha != .headSha else (.headAt // 0) > (.lastAt // 0) end))})'
+
 with_heads() {
-  local list="$1" tmp heads
-  if ! command -v gh >/dev/null 2>&1; then echo "$list"; return; fi
-  tmp="$(mktemp -d)"
+  local list="$1" tmp heads pend opens
+  if ! command -v gh >/dev/null 2>&1; then echo "$list" | jq "$CHANGED_RULE"; return; fi
+  tmp="$(mktemp -d)"; mkdir "$tmp/h" "$tmp/p" "$tmp/o"
   echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
-    | xargs -P 8 -n 2 bash -c 'head_of "$0" "$1" "'"$tmp"'"'
-  heads="$(cat "$tmp"/*.json 2>/dev/null | jq -s 'from_entries')"
+    | xargs -P 8 -n 2 bash -c 'head_of "$0" "$1" "'"$tmp/h"'"'
+  heads="$(cat "$tmp/h"/*.json 2>/dev/null | jq -s 'from_entries')"
+  list="$(echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))')"
+  # Compared only where the branch moved past the live commit.
+  echo "$list" | jq -r '.[] | select(.repo and .ref and .lastSha and .headSha and .lastSha != .headSha) | "\(.repo) \(.lastSha) \(.ref)"' \
+    | sort -u | xargs -P 8 -n 3 bash -c 'pending_of "$0" "$1" "$2" "'"$tmp/p"'"'
+  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'open_prs_of "$0" "'"$tmp/o"'"'
+  pend="$(cat "$tmp/p"/*.json 2>/dev/null | jq -s 'from_entries')"
+  opens="$(cat "$tmp/o"/*.json 2>/dev/null | jq -s 'from_entries')"
   rm -rf "$tmp"
-  echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))'
+  echo "$list" | jq --argjson p "${pend:-{\}}" --argjson o "${opens:-{\}}" 'map(
+      (if .lastSha and .headSha and .lastSha == .headSha then {commits:0, prs:0} else ($p["\(.repo)@\(.lastSha)@\(.ref)"] // {}) end) as $x
+      | . + {pendingCommits:($x.commits // null), pendingPRs:($x.prs // null), openPRs:($o[.repo // ""] // null)})' \
+    | jq "$CHANGED_RULE"
+}
+
+# Every project with changes, both platforms, each marked with its platform.
+changed_json() {
+  { "$0" vercel json 2>/dev/null | jq 'map(. + {platform:"vercel"})' || echo '[]'
+    if render_key >/dev/null 2>&1; then "$0" render json 2>/dev/null | jq 'map(. + {platform:"render"})' || echo '[]'; fi
+  } | jq -s 'add // [] | map(select(.changed))'
 }
 
 # ---------- Render ----------
@@ -180,10 +229,11 @@ render_off() {
   echo "Render: $2 no longer deploys on push"
 }
 
+# The key comes from a 0600 file the caller wrote once, so twenty services do not mean
+# twenty keychain reads (or twenty permission prompts).
 render_last_of() {
   local id="$1" out="$2" key
-  key="$(security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w 2>/dev/null \
-    || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" -w 2>/dev/null)" || return 0
+  key="$(cat "$3" 2>/dev/null)"; [ -n "$key" ] || return 0
   printf 'header = "Authorization: Bearer %s"\n' "$key" \
     | curl -sS -K - -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=1" \
     | jq -c --arg id "$id" '{key:$id, value:((.[0].deploy // {}) | {lastAt:((.finishedAt // .createdAt // null) | if . then (sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) else null end), lastState:.status, lastSha:(.commit.id // null)})}' \
@@ -271,6 +321,43 @@ case "${1:-} ${2:-}" in
     } | jq -s '.'
     rm -rf "$tmp" ;;
 
+  "changed "*)
+    # Everything with commits on GitHub that are not live, and how many of them.
+    list="$(changed_json)"
+    if [ "${2:-}" = "--json" ]; then echo "$list"; exit 0; fi
+    [ "$(echo "$list" | jq length)" = "0" ] && { echo "Nothing to deploy: every project is on its newest commit."; exit 0; }
+    echo "$list" | jq -r '.[] | [.platform, .name, "\(.pendingCommits // "?") commit\(if .pendingCommits == 1 then "" else "s" end)", "\(.pendingPRs // "?") PR\(if .pendingPRs == 1 then "" else "s" end)", (.headMsg // "" | .[0:60])] | @tsv' \
+      | (printf 'PLATFORM\tPROJECT\tWAITING\tPRS\tNEWEST COMMIT\n'; cat) | column -t -s $'\t'
+    echo "$list" | jq -r '"\(length) projects, \(map(.pendingCommits // 0) | add) commits, \(map(.pendingPRs // 0) | add) pull requests waiting."' ;;
+
+  "deploy-changed "*)
+    # The daily deploy: everything with changes. Without --yes it only shows what it would do.
+    list="$(changed_json)"; n="$(echo "$list" | jq length)"
+    [ "$n" = "0" ] && { echo "Nothing to deploy."; exit 0; }
+    if [ "${2:-}" != "--yes" ]; then
+      echo "$list" | jq -r '.[] | "  \(.platform)  \(.name)  (\(.pendingCommits // "?") commits)"'
+      echo "Would deploy these $n. Run again with --yes to start them."; exit 0
+    fi
+    echo "$list" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.id // "")"' | while IFS=$'\t' read -r plat name id; do
+      if [ "$plat" = "vercel" ]; then
+        ( vercel_deploy_json "$name" | jq -r --arg n "$name" '"Vercel: \($n) started -> \(.url)"' ) || echo "Vercel: $name failed to start" >&2
+      else
+        ( render_call POST "/services/$id/deploys" '{}' | jq -r --arg n "$name" '"Render: \($n) started (\(.id))"' ) || echo "Render: $name failed to start" >&2
+      fi
+    done ;;
+
+  "vercel map")
+    # Say by hand where a project deploys from, for one disconnected before this tool knew it.
+    p="${3:?project}"; r="${4:?owner/repo}"; ref="${5:-main}"
+    case "$r" in */*) ;; *) die "Give the repo as owner/name";; esac
+    rid=""; command -v gh >/dev/null 2>&1 && rid="$(gh api "repos/$r" --jq .id 2>/dev/null || true)"
+    tmp="$(mktemp)"
+    # The whole entry is replaced: an old repoId would win over the new repo name.
+    jq --arg p "$p" --arg o "${r%%/*}" --arg n "${r#*/}" --arg ref "$ref" --arg rid "$rid" \
+      '.[$p] = ({org:$o, repo:$n, ref:$ref} + (if .[$p].offAt then {offAt:.[$p].offAt} else {} end)
+                + (if $rid != "" then {repoId:($rid|tonumber)} else {} end))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
+    echo "Vercel: $p deploys from $r ($ref)" ;;
+
   "vercel list")
     vercel_projects | jq -r '.[] | [.name, (if .link then "AUTO (\(.link.org // "")/\(.link.repo // ""))" else "manual" end)] | @tsv' \
       | column -t -s $'\t' ;;
@@ -354,12 +441,13 @@ case "${1:-} ${2:-}" in
       domain:((.serviceDetails.url // "") | sub("^https?://";"") | if . == "" then null else . end),
       repo:((.repo // "") | sub("^https://github.com/";"") | sub("\\.git$";"") | if . == "" then null else . end),
       ref:(.branch // null)}] | sort_by(.name | ascii_downcase)')"
-    tmp="$(mktemp -d)"
-    echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$0" "'"$tmp"'"'
+    tmp="$(mktemp -d)"; kf="$tmp/key"; (umask 077; render_key > "$kf")
+    echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$0" "'"$tmp"'" "'"$kf"'"'
+    rm -f "$kf"
     lasts="$(cat "$tmp"/*.json 2>/dev/null | jq -s 'from_entries')"; rm -rf "$tmp"
     list="$(echo "$list" | jq --argjson l "${lasts:-{\}}" 'map(. + ($l[.id] // {}))')"
     with_heads "$list" ;;
 
   *)
-    sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

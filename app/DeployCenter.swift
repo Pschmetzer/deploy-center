@@ -5,6 +5,7 @@
 import SwiftUI
 import AppKit
 import Charts
+import UserNotifications
 
 // MARK: - Language (German if the Mac prefers it, English otherwise)
 
@@ -92,12 +93,14 @@ struct VercelProject: Decodable {
     let name: String; let auto: Bool; let repo: String?; let ref: String?; let deployable: Bool
     let domain: String?; let lastAt: Double?; let lastState: String?; let headAt: Double?; let headMsg: String?
     let lastSha: String?; let headSha: String?
+    let changed: Bool?; let pendingCommits: Int?; let pendingPRs: Int?; let openPRs: Int?
 }
 struct RenderService: Decodable {
     let id: String; let name: String; let type: String; let paused: Bool; let auto: Bool; let deployable: Bool
     let url: String?; let domain: String?; let repo: String?; let ref: String?
     let lastAt: Double?; let lastState: String?; let headAt: Double?; let headMsg: String?
     let lastSha: String?; let headSha: String?
+    let changed: Bool?; let pendingCommits: Int?; let pendingPRs: Int?; let openPRs: Int?
 }
 struct Costs: Decodable {
     struct Day: Decodable, Identifiable { let day: String; let total: Double; let build: Double; var id: String { day } }
@@ -132,16 +135,41 @@ struct Item: Identifiable {
     var headMsg: String? = nil
     var lastSha: String? = nil
     var headSha: String? = nil
+    var repo: String? = nil
+    /// Decided by the script (`changed`), so the app and `deploys changed` never disagree.
+    var changed: Bool? = nil
+    var pendingCommits: Int? = nil
+    var pendingPRs: Int? = nil
+    var openPRs: Int? = nil
     var selected = false
     var state: RunState = .idle
 
     /// A commit on GitHub that is not live yet.
     var hasNewCommits: Bool {
-        // Compare commits when both are known; times only as a fallback.
+        if let changed { return changed }
+        // An older script without `changed`: compare commits, times only as a fallback.
         if let live = lastSha, let head = headSha, !live.isEmpty, !head.isEmpty { return live != head }
         guard let h = headAt else { return false }
         guard let l = lastAt else { return true }
         return h > l.addingTimeInterval(60)
+    }
+}
+
+/// A Mac notification when a deploy ends while the window is in the background.
+/// Permission is asked at the first deploy, not at launch. An ad-hoc build may be refused; then nothing shows.
+@MainActor
+enum Notify {
+    private static var asked = false
+    static func ask() {
+        guard !asked else { return }
+        asked = true
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+    static func post(_ title: String, _ body: String) {
+        guard asked, !NSApp.isActive else { return }
+        let c = UNMutableNotificationContent()
+        c.title = title; c.body = body; c.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
     }
 }
 
@@ -173,7 +201,34 @@ final class Store: ObservableObject {
         costs?.projects.first(where: { $0.name == project }).map(\.build)
     }
 
+    /// When each list was last read, and which ones are still the copy from the last run.
+    @Published var loadedAt: [Platform: Date] = [:]
+    @Published var fromCache: Set<Platform> = []
+
+    // MARK: Cache — the last lists, so the window is full at once instead of after 10 seconds
+
+    static let cacheDir: URL = {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("app.deploycenter.mac", isDirectory: true)
+    }()
+    private func cacheURL(_ p: Platform) -> URL { Self.cacheDir.appendingPathComponent("\(p.cli).json") }
+
+    private func readCache() {
+        for p in Platform.allCases {
+            guard let data = try? Data(contentsOf: cacheURL(p)), let list = try? decode(p, data) else { continue }
+            items[p] = list
+            fromCache.insert(p)
+            loadedAt[p] = (try? FileManager.default.attributesOfItem(atPath: cacheURL(p).path)[.modificationDate]) as? Date
+        }
+    }
+
+    private func writeCache(_ p: Platform, _ data: Data) {
+        try? FileManager.default.createDirectory(at: Self.cacheDir, withIntermediateDirectories: true)
+        try? data.write(to: cacheURL(p), options: .atomic)
+    }
+
     func start() async {
+        if items.values.allSatisfy({ $0.isEmpty }) { readCache() }
         do {
             doctor = try await Tool.json(["doctor"], as: Doctor.self); doctorError = nil
         } catch {
@@ -193,10 +248,33 @@ final class Store: ObservableObject {
         loading.insert(p); loadError[p] = nil
         defer { loading.remove(p) }
         do {
+            let data = try await Tool.run([p.cli, "json"])
+            merge(p, try decode(p, data))
+            writeCache(p, data)
+            fromCache.remove(p); loadedAt[p] = Date()
+        } catch {
+            loadError[p] = error.localizedDescription
+        }
+    }
+
+    /// A reload keeps what the person did: ticks stay, a deploy being followed keeps its state.
+    private func merge(_ p: Platform, _ fresh: [Item]) {
+        let old = Dictionary((items[p] ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        items[p] = fresh.map { n in
+            var n = n
+            if let o = old[n.id] {
+                n.selected = o.selected && n.deployable
+                if o.state != .idle { n.state = o.state }
+            }
+            return n
+        }
+    }
+
+    private func decode(_ p: Platform, _ data: Data) throws -> [Item] {
             switch p {
             case .vercel:
-                let list = try await Tool.json(["vercel", "json"], as: [VercelProject].self)
-                items[.vercel] = list.map { v in
+                let list = try JSONDecoder().decode([VercelProject].self, from: data)
+                return list.map { v in
                     Item(id: v.name, name: v.name,
                          detail: v.repo.map { "\($0) · \(v.ref ?? "main")" } ?? L("no Git repository", "kein Git-Repo"),
                          platform: .vercel, deployable: v.deployable, auto: v.auto,
@@ -204,23 +282,49 @@ final class Store: ObservableObject {
                              : (v.deployable ? nil : L("repo unknown", "Repo unbekannt")),
                          link: v.domain.map { "https://\($0)" },
                          domain: v.domain, lastAt: date(v.lastAt), lastState: v.lastState,
-                         headAt: date(v.headAt), headMsg: v.headMsg, lastSha: v.lastSha, headSha: v.headSha)
+                         headAt: date(v.headAt), headMsg: v.headMsg, lastSha: v.lastSha, headSha: v.headSha,
+                         repo: v.repo, changed: v.changed, pendingCommits: v.pendingCommits,
+                         pendingPRs: v.pendingPRs, openPRs: v.openPRs)
                 }
             case .render:
-                let list = try await Tool.json(["render", "json"], as: [RenderService].self)
-                items[.render] = list.map { r in
+                let list = try JSONDecoder().decode([RenderService].self, from: data)
+                return list.map { r in
                     Item(id: r.id, name: r.name,
                          detail: Self.typeName(r.type) + (r.repo.map { " · \($0) · \(r.ref ?? "main")" } ?? ""),
                          platform: .render, deployable: r.deployable, auto: r.auto,
                          note: r.paused ? L("suspended", "pausiert")
                              : (r.auto ? L("deploys on every push", "deployt bei jedem Push") : nil),
                          link: r.url, domain: r.domain, lastAt: date(r.lastAt), lastState: r.lastState,
-                         headAt: date(r.headAt), headMsg: r.headMsg, lastSha: r.lastSha, headSha: r.headSha)
+                         headAt: date(r.headAt), headMsg: r.headMsg, lastSha: r.lastSha, headSha: r.headSha,
+                         repo: r.repo, changed: r.changed, pendingCommits: r.pendingCommits,
+                         pendingPRs: r.pendingPRs, openPRs: r.openPRs)
                 }
             }
-        } catch {
-            loadError[p] = error.localizedDescription
+    }
+
+    /// Lists only, both platforms; costs and triggers cost many GitHub calls and stay manual.
+    /// Not while something is deploying, so nothing being followed is disturbed.
+    func autoRefresh() async {
+        let busy = items.values.joined().contains { $0.state.isActive }
+        guard !busy, doctor != nil, loading.isEmpty else { return }
+        async let a: Void = doctor?.vercelLoggedIn == true ? load(.vercel) : ()
+        async let b: Void = doctor?.renderKey == true ? load(.render) : ()
+        _ = await (a, b)
+    }
+
+    // MARK: What is waiting on GitHub, over both platforms
+
+    struct Waiting { var projects = 0, commits = 0, prs = 0, openPRs = 0 }
+    var waiting: Waiting {
+        var w = Waiting()
+        let all = Array(items.values.joined())
+        for i in all where i.hasNewCommits && i.state == .idle {
+            w.projects += 1; w.commits += i.pendingCommits ?? 0; w.prs += i.pendingPRs ?? 0
         }
+        // Open pull requests belong to a repo, and several projects can share one.
+        var seen = Set<String>()
+        for i in all { if let r = i.repo, let n = i.openPRs, seen.insert(r).inserted { w.openPRs += n } }
+        return w
     }
 
     static func typeName(_ t: String) -> String {
@@ -275,19 +379,29 @@ final class Store: ObservableObject {
         if case .done = s, countsAsLive {
             items[p]![i].lastSha = items[p]![i].headSha
             items[p]![i].lastAt = Date(); items[p]![i].lastState = p == .vercel ? "READY" : "live"
+            items[p]![i].changed = false; items[p]![i].pendingCommits = 0; items[p]![i].pendingPRs = 0
+        }
+        let name = items[p]![i].name
+        switch s {
+        case .done: Notify.post(L("\(name) is live", "\(name) ist live"), p.rawValue)
+        case .failed(let m): Notify.post(L("\(name) failed", "\(name) fehlgeschlagen"), m)
+        case .skipped(let m): Notify.post(L("\(name) skipped", "\(name) übersprungen"), m)
+        default: break
         }
     }
 
     func deploySelected(_ p: Platform, preview: Bool = false) {
+        Notify.ask()
         let chosen = selected(p)
         clearSelection(p)
         for item in chosen { Task { await deploy(item, preview: preview) } }
     }
 
-    func deployOne(_ item: Item, preview: Bool) { Task { await deploy(item, preview: preview) } }
+    func deployOne(_ item: Item, preview: Bool) { Notify.ask(); Task { await deploy(item, preview: preview) } }
 
     /// Production back to what was live before.
     func rollback(_ item: Item) {
+        Notify.ask()
         Task {
             let p = item.platform
             set(p, item.id, .starting)
@@ -360,6 +474,7 @@ struct ContentView: View {
     @State private var confirmingOff = false
     @State private var onlyChanged = false
     @State private var rollbackItem: Item?
+    @FocusState private var searchFocused: Bool
 
     private var visible: [Item] {
         var all = store.items[platform] ?? []
@@ -378,13 +493,21 @@ struct ContentView: View {
             }
             triggerBanner
             autoBanner
+            waitingBar
             if platform == .vercel, let c = store.costs { CostBar(costs: c) }
             content
             Divider()
             footer
         }
         .frame(minWidth: 680, minHeight: 540)
-        .task { await store.start() }
+        .task {
+            await store.start()
+            // Every 15 minutes the lists are read again, so the counts above stay true.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 15 * 60 * 1_000_000_000)
+                await store.autoRefresh()
+            }
+        }
         .alert(L("Deploy to production?", "Live deployen?"), isPresented: $confirming) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             Button(L("Deploy", "Deployen")) { store.deploySelected(platform) }
@@ -424,6 +547,17 @@ struct ContentView: View {
             .pickerStyle(.segmented).labelsHidden().frame(width: 240)
 
             TextField(L("Search", "Suchen"), text: $search).textFieldStyle(.roundedBorder)
+                .focused($searchFocused)
+                .onExitCommand { search = ""; searchFocused = false }
+                .background {
+                    // Keyboard only: ⌘F to the search, ⌘1 and ⌘2 to the tabs.
+                    Group {
+                        Button("") { searchFocused = true }.keyboardShortcut("f")
+                        Button("") { platform = .vercel }.keyboardShortcut("1")
+                        Button("") { platform = .render }.keyboardShortcut("2")
+                    }
+                    .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+                }
 
             Toggle(isOn: $onlyChanged) {
                 Text(L("Changed only", "Nur mit Änderungen") + " (\(store.changedCount(platform)))")
@@ -432,9 +566,15 @@ struct ContentView: View {
             .help(L("Only projects with a commit on GitHub that is not live yet",
                     "Nur Projekte mit einem Commit auf GitHub, der noch nicht live ist"))
 
-            Button { Task { await store.load(platform) } } label: { Image(systemName: "arrow.clockwise") }
-                .help(L("Reload", "Neu laden"))
-                .disabled(store.loading.contains(platform))
+            Button { Task { await store.load(platform); await store.loadExtras() } } label: {
+                if store.loading.contains(platform) { ProgressView().controlSize(.small) }
+                else { Image(systemName: "arrow.clockwise") }
+            }
+            .help(L("Reload (⌘R)", "Neu laden (⌘R)") + (store.loadedAt[platform].map {
+                "\n" + L("As of ", "Stand ") + $0.formatted(date: .omitted, time: .shortened)
+                    + (store.fromCache.contains(platform) ? L(" (saved copy)", " (gespeicherte Kopie)") : "") } ?? ""))
+            .keyboardShortcut("r")
+            .disabled(store.loading.contains(platform))
         }
         .padding(12)
     }
@@ -468,6 +608,41 @@ struct ContentView: View {
         }
     }
 
+    /// What GitHub has that is not live, over Vercel and Render together.
+    @ViewBuilder private var waitingBar: some View {
+        let w = store.waiting
+        if w.projects > 0 || w.openPRs > 0 {
+            HStack(spacing: 10) {
+                Image(systemName: "shippingbox.fill").font(.title2).foregroundStyle(.blue)
+                VStack(alignment: .leading, spacing: 2) {
+                    if w.projects > 0 {
+                        Text(L("\(w.prs) \(w.prs == 1 ? "PR" : "PRs") waiting to deploy",
+                               "\(w.prs) \(w.prs == 1 ? "PR wartet" : "PRs warten") auf Deploy"))
+                            .font(.headline)
+                        Text(L("\(w.commits) \(w.commits == 1 ? "commit" : "commits") in \(w.projects) \(w.projects == 1 ? "project" : "projects"), merged on GitHub and not live",
+                               "\(w.commits) \(w.commits == 1 ? "Commit" : "Commits") in \(w.projects) \(w.projects == 1 ? "Projekt" : "Projekten"), auf GitHub gemergt und nicht live"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text(L("Everything merged is live", "Alles Gemergte ist live")).font(.headline)
+                    }
+                    if w.openPRs > 0 {
+                        Text(L("\(w.openPRs) more \(w.openPRs == 1 ? "PR is" : "PRs are") still open (not merged)",
+                               "\(w.openPRs) weitere \(w.openPRs == 1 ? "PR ist" : "PRs sind") noch offen (nicht gemergt)"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if w.projects > 0 {
+                    Button(L("Show them", "Anzeigen")) {
+                        onlyChanged = true
+                        if store.changedCount(platform) == 0 { platform = platform == .vercel ? .render : .vercel }
+                    }
+                }
+            }
+            .padding(12).background(Color.blue.opacity(0.08))
+        }
+    }
+
     @ViewBuilder private var autoBanner: some View {
         let on = store.autoOn(platform)
         if !on.isEmpty {
@@ -492,7 +667,7 @@ struct ContentView: View {
     @ViewBuilder private var content: some View {
         if let err = store.doctorError {
             Setup(title: L("Something is missing", "Etwas fehlt"), text: err, commands: []) { Task { await store.start() } }
-        } else if store.doctor == nil {
+        } else if store.doctor == nil && (store.items[platform] ?? []).isEmpty {
             ProgressView(L("Checking access …", "Prüfe Zugang …")).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let d = store.doctor, !d.jq {
             Setup(title: L("jq is missing", "jq fehlt"),
@@ -554,6 +729,8 @@ struct ContentView: View {
                 Button(L("Clear", "Auswahl leeren")) { store.clearSelection(platform) }
             } else if store.changedCount(platform) > 0 {
                 Button(L("Select all changed", "Alle mit Änderungen anhaken")) { store.selectChanged(platform) }
+                    // The saved copy may be hours old; tick from what is true now.
+                    .disabled(store.fromCache.contains(platform))
             }
             if platform == .vercel {
                 Button(L("Preview", "Vorschau")) { store.deploySelected(platform, preview: true) }
@@ -692,10 +869,15 @@ struct Row: View {
                             .font(.caption2).foregroundStyle(cost >= 5 ? .orange : .secondary)
                     }
                     if item.hasNewCommits {
-                        Label(L("New changes", "Neue Änderungen"), systemImage: "arrow.up.circle.fill")
+                        Label(Self.waitingText(item), systemImage: "arrow.up.circle.fill")
                             .font(.caption2.weight(.semibold)).foregroundStyle(.blue)
                             .help(item.headMsg.map { L("Newest commit: ", "Neuester Commit: ") + $0
                                 + (item.headAt.map { " (\(Self.ago($0)))" } ?? "") } ?? "")
+                    }
+                    if let o = item.openPRs, o > 0 {
+                        Text(L("\(o) open \(o == 1 ? "PR" : "PRs")", "\(o) \(o == 1 ? "offener PR" : "offene PRs")"))
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .help(L("Pull requests on the repo that are not merged yet", "Pull Requests im Repo, die noch nicht gemergt sind"))
                     }
                 }
             }
@@ -714,6 +896,14 @@ struct Row: View {
         .contentShape(Rectangle())
         .opacity(item.deployable ? 1 : 0.55)
         .onTapGesture { if !item.state.isActive { toggle() } }
+    }
+
+    static func waitingText(_ i: Item) -> String {
+        guard let c = i.pendingCommits, c > 0 else { return L("New changes", "Neue Änderungen") }
+        let prs = i.pendingPRs ?? 0
+        let commits = L("\(c) \(c == 1 ? "commit" : "commits")", "\(c) \(c == 1 ? "Commit" : "Commits")")
+        return prs > 0 ? commits + " · " + L("\(prs) \(prs == 1 ? "PR" : "PRs") waiting", "\(prs) \(prs == 1 ? "PR wartet" : "PRs warten")")
+                       : commits + L(" waiting", " warten")
     }
 
     static func ago(_ d: Date) -> String {
@@ -760,9 +950,14 @@ struct Row: View {
                 .foregroundStyle(.secondary).font(.caption.weight(.semibold))
                 .help(msg)
         case .failed(let msg):
-            Label(L("Failed", "Fehler"), systemImage: "xmark.octagon.fill")
-                .foregroundStyle(.red).font(.caption.weight(.semibold))
-                .help(msg)
+            HStack(spacing: 4) {
+                Label(L("Failed", "Fehler"), systemImage: "xmark.octagon.fill")
+                    .foregroundStyle(.red).font(.caption.weight(.semibold))
+                    .help(msg)
+                Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString("\(item.name): \(msg)", forType: .string) }
+                    label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.borderless).help(L("Copy the error", "Fehler kopieren"))
+            }
         }
     }
 }
