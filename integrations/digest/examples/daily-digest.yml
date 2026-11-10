@@ -19,13 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      # Pin both to a release tag or a full commit SHA, not a branch.
-      - uses: actions/checkout@v7
-        with:
-          repository: Pschmetzer/deploy-center
-          ref: main
-          path: deploy-center
-      # Only lists (no deploy: true); it also sets up `deploys` for the next step.
+      # Pin to a release tag or a full commit SHA, not a branch. Only lists (no deploy: true); it
+      # also sets up `deploys` (env DEPLOYS) for the next step, and the digest script comes from the
+      # same copy of the repo, so both are always the same version.
       - uses: Pschmetzer/deploy-center/integrations/action@v0.9.1
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -47,5 +43,5 @@ jobs:
           set -euo pipefail
           args=(--issue --out digest.md)
           [ -n "$DEPLOYS_NOTIFY_URL" ] && args+=(--post)
-          deploy-center/integrations/digest/digest.sh "${args[@]}"
+          "$(dirname "$DEPLOYS")/integrations/digest/digest.sh" "${args[@]}"
           cat digest.md >> "$GITHUB_STEP_SUMMARY"
