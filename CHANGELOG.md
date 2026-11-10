@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.1
 
 - Settings → General → Language: English, Deutsch or the Mac's language (the default). The app restarts to switch; the widgets follow it.
 
