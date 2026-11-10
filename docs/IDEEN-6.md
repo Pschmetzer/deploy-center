@@ -290,7 +290,7 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 170. ✅ [Bug] **Vergleichslink zeigt bei GitLab-Repos auf github.com.** `compareURL` ist fest `https://github.com/…`, seit 0.8.0 kann die Quelle GitLab sein. Host aus dem Skript (`repoHost`/`compareUrl`) mitliefern. (app/Model.swift:180)
 171. ✅ [Bug] **„Claude fragen“ übergibt bei Render die Service-ID ohne Plattform.** `ClaudeAI.ask(…, project: item.id)` schickt `srv-…` bzw. bei Vercel den Namen ohne Präfix; ein Name auf zwei Plattformen ist mehrdeutig. `platform:name` wie bei anderen Befehlen. (Vermutung zur Skriptseite) (app/ClaudeAI.swift:278)
 172. ✅ [Bug] **Fehler-JSON des Skripts wird zu „data couldn't be read“.** Antwortet `vercel json` mit einem Objekt statt einer Liste (z. B. `{"error":…}`), scheitert `decodeLossy` mit der englischen Systemmeldung, die so in der Zeile steht. Objekt mit `error` erkennen und dessen Text zeigen. (app/Model.swift:42, app/Store.swift:333)
-173. [Bug] **Widget rechnet „heute“ in UTC, das Fenster lokal.** `snapshotSaving` nutzt einen UTC-`DateFormatter`, `Costs.saving` bekommt den lokalen Tag; um Mitternacht zeigen Widget und Fenster verschiedene Ersparnisse. `costs.saving(today: localDay())` wiederverwenden statt Kopie. (app/Snapshot.swift:67–77)
+173. ✅ [Bug] **Widget rechnet „heute“ in UTC, das Fenster lokal.** `snapshotSaving` nutzt einen UTC-`DateFormatter`, `Costs.saving` bekommt den lokalen Tag; um Mitternacht zeigen Widget und Fenster verschiedene Ersparnisse. `costs.saving(today: localDay())` wiederverwenden statt Kopie. (app/Snapshot.swift:67–77)
 174. ✅ [Bug] **Strenge Dekodierung in Settings-Bereichen.** `AutofixStatus` (`scheduled`), `GuardStatus` und `TeamConfig` (`readonly`, `sources`) verlangen Felder; fehlt eins (ältere/neuere Skriptversion), zeigt der Bereich „nicht eingerichtet“ bzw. nichts, und `teamObserver` wird nie gesetzt. Tolerant wie `Doctor`. (app/Autofix.swift:22–25, app/Guard.swift:23–27, app/Team.swift:22–27)
 175. ✅ [Bug] **Deutsche Schätzmethode ist fest eingebaut.** `EstimateFooter` zeigt auf Englisch die Methode aus dem Skript, auf Deutsch immer denselben festen Text; ändert das Skript seine Methode, steht im deutschen Fenster etwas Falsches. Skript-Text in beiden Sprachen zeigen oder `method_de` liefern. (app/Savings.swift:406–407)
 176. ✅ [Bug] **„Kopieren des Prompts“ scheitert still.** `copyPrompt` kehrt bei einem Fehler ohne Meldung zurück; der Knopf wirkt kaputt. Fehler in `message`. (app/Autofix.swift:133)
@@ -304,7 +304,7 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 180. ✅ [Bug] **Der QR-Code mit allen Schlüsseln erscheint auch im Demo-Modus.** Gerade dann wird aufgenommen. Im Demo-Modus Knopf sperren oder Code verpixeln. (app/PhoneLinkMac.swift:123 und 159–163)
 181. ✅ [Bug] **Plural-Reste.** „1 projects wait …“, „1 PRs in 1 projects“, „1 PRs, 1 commits waiting“, „1 PRs still open“ (EN und DE). Gleiche Hilfsfunktion wie in `summaryLine`. (app/Store.swift:68 und 799, app/App.swift:394 und 410)
 182. ✅ [Bug] **Plattformnamen per `capitalized`.** „Digitalocean“, „Cloudflare“ statt „DigitalOcean“, „Cloudflare Pages“ in Simulator, Bilanz und Wächter. `ProviderInfo.label` nutzen. (app/Savings.swift:509 und 670, app/Guard.swift:105 und 168)
-183. [UX] **Render-Diensttypen und rohe Status bleiben englisch.** `typeName` („Web Service“, „Worker“) und `"Status: \(state)"` sind nicht übersetzt. In `L()` ziehen. (app/Store.swift:469–477 und 961)
+183. ✅ [UX] **Render-Diensttypen und rohe Status bleiben englisch.** `typeName` („Web Service“, „Worker“) und `"Status: \(state)"` sind nicht übersetzt. In `L()` ziehen. (app/Store.swift:469–477 und 961)
 
 
 ### Sicherheit
@@ -329,7 +329,7 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 197. ✅ [Perf] **Ruhezustand während einer Deploy-Schlange verzögern.** Schläft der Mac mitten im Lauf, startet die Schlange nicht weiter und `follow` läuft in die Deadline. `.idleSystemSleepDisabled` mit Grund, solange `queue` nicht leer ist. (app/Store.swift:722)
 198. ✅ [Perf] **`Tool.run` belegt drei blockierte GCD-Threads pro Aufruf.** Bei vielen Status-Abfragen und Ladevorgängen gleichzeitig droht die GCD-Thread-Grenze (64). `terminationHandler` plus `readabilityHandler` statt `read.wait()`/`waitUntilExit()`. (app/Tool.swift:164–233)
 199. ◐ [Perf] **Log- und Journal-Schreiben auf dem Hauptthread.** `Log.write` öffnet, sucht, schreibt und `stat`et die Datei synchron, aufgerufen vom `@MainActor`-Store; `Journal.append` ebenso. Eigene serielle Queue. (app/Tool.swift:293–307, app/Journal.swift:42–59)
-200. [Perf] **Savings-Berichte als JSON-Blob in UserDefaults.** `savingsSimulation`/`savingsLedger` (mit allen übersprungenen Pushes) landen in der Preferences-plist und werden beim ersten Zugriff auf dem Hauptthread dekodiert. Datei in Application Support, Dekodierung im Hintergrund. (app/Savings.swift:192–199 und 208)
+200. ✅ [Perf] **Savings-Berichte als JSON-Blob in UserDefaults.** `savingsSimulation`/`savingsLedger` (mit allen übersprungenen Pushes) landen in der Preferences-plist und werden beim ersten Zugriff auf dem Hauptthread dekodiert. Datei in Application Support, Dekodierung im Hintergrund. (app/Savings.swift:192–199 und 208)
 201. ✅ [Perf] **`DateFormatter` pro Aufruf in `SavingsFormat.day`.** Die Bilanz ruft das für jeden übersprungenen Push. Statisch halten. (app/Savings.swift:270)
 202. ✅ [Perf] **`Demo.scrub` baut bei jedem Aufruf einen Regex über alle Namen.** `makeSnapshot` ruft es pro Zeile, `tell` pro Toast. Regex zwischenspeichern, solange sich `items` nicht ändert. (app/DemoText.swift:9–34, app/Snapshot.swift:51)
 203. ✅ [Perf] **Logo-Abruf lädt die ganze Startseite.** `get(base)` liest das komplette HTML (bei manchen Seiten MBs) nur für `<link rel=icon>`. Nach 64 KB abbrechen (`bytes(for:)`) oder nur `<head>` lesen. (app/Logos.swift:114)
@@ -340,10 +340,10 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 
 ### Fehlerbehandlung und Rückmeldung
 
-207. [UX] **Nach einem Ladefehler den Doctor neu fragen.** Läuft eine Anmeldung ab, die beim Start gültig war, kommt nur „HTTP 401“ in der Zeile; die Einrichtungsansicht erscheint nie, weil `autoRefresh` den Doctor nur bei fehlenden Feldern neu fragt. Bei 401/403 im Ladefehler sofort `doctor`. (app/Store.swift:428–432 und 352–356)
-208. [UX] **`autofix sync`-Fehler werden verschluckt.** `try?` ohne Log; „Claude behebt es“ hängt dann wieder ohne Hinweis. Ins Log und in `extrasFailedAt`. (app/Store.swift:135)
-209. [UX] **Gerade erst übergebene Ergebnisse aus `messages` überleben keinen Neustart.** Die Glocke ist nach einem Update oder Sprachwechsel leer; die letzten 30 Meldungen in Application Support sichern. (app/Store.swift:575–581)
-210. [UX] **Antworten von Claude als Markdown darstellen.** `Text(answer.text)` zeigt `**`, `-` und `#` roh. `AttributedString(markdown:)` mit `.inlineOnlyPreservingWhitespace`. (app/ClaudeAI.swift:244)
+207. ✅ [UX] **Nach einem Ladefehler den Doctor neu fragen.** Läuft eine Anmeldung ab, die beim Start gültig war, kommt nur „HTTP 401“ in der Zeile; die Einrichtungsansicht erscheint nie, weil `autoRefresh` den Doctor nur bei fehlenden Feldern neu fragt. Bei 401/403 im Ladefehler sofort `doctor`. (app/Store.swift:428–432 und 352–356)
+208. ✅ [UX] **`autofix sync`-Fehler werden verschluckt.** `try?` ohne Log; „Claude behebt es“ hängt dann wieder ohne Hinweis. Ins Log und in `extrasFailedAt`. (app/Store.swift:135)
+209. ✅ [UX] **Gerade erst übergebene Ergebnisse aus `messages` überleben keinen Neustart.** Die Glocke ist nach einem Update oder Sprachwechsel leer; die letzten 30 Meldungen in Application Support sichern. (app/Store.swift:575–581)
+210. ✅ [UX] **Antworten von Claude als Markdown darstellen.** `Text(answer.text)` zeigt `**`, `-` und `#` roh. `AttributedString(markdown:)` mit `.inlineOnlyPreservingWhitespace`. (app/ClaudeAI.swift:244)
 
 
 ### Persistenz und Neustart
@@ -356,30 +356,30 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 ### Code-Struktur
 
 214. [Code] **Andere Plattformen über `deploys list --json` laden statt über das `Platform`-Enum.** Netlify, Cloudflare, Coolify, DigitalOcean, Amplify und Hook kann man in Settings einschalten, ihr Tab sagt aber nur „kann diese Projekte noch nicht auflisten“, weil nur `Platform.vercel/.render` einen Lader hat. Ein generisches `Item` aus `list --json` mit `phase`, Fähigkeiten aus `ProviderCaps`. (app/Model.swift:11–15, app/Providers.swift:46, app/Store.swift:385–419)
-215. [Code] **`decode()` mappt Vercel und Render fast identisch.** 30 Zeilen doppelt; ein gemeinsames Protokoll `ScriptProject` mit den gleichen Feldern und eine Abbildung. (app/Store.swift:385–419)
+215. ✅ [Code] **`decode()` mappt Vercel und Render fast identisch.** 30 Zeilen doppelt; ein gemeinsames Protokoll `ScriptProject` mit den gleichen Feldern und eine Abbildung. (app/Store.swift:385–419)
 216. [Code] **Zwei Typen für `autofix status`.** `AutofixStatus` (Autofix.swift) und `AutofixReport` (Model.swift) lesen dasselbe Kommando unterschiedlich tolerant. Einer reicht. (app/Autofix.swift:8–26, app/Model.swift:296–347)
-217. [Code] **Dreimal die Regel „fehlgeschlagen“.** `Item.lastFailed`, `ClaudeAI.isFailed` und `makeSnapshot` prüfen verschiedene Listen von Statuswörtern. Eine Eigenschaft am `Item`. (app/Model.swift:288–291, app/ClaudeAI.swift:70–73, app/Snapshot.swift:41–45)
-218. [Code] **Gleicher Beenden-Dialog zweimal.** Menüleiste „Beenden“ und `relaunchApp` haben denselben NSAlert-Text kopiert. Eine Funktion `confirmQuit(running:)`. (app/App.swift:445–456, app/Tool.swift:49–59)
+217. ✅ [Code] **Dreimal die Regel „fehlgeschlagen“.** `Item.lastFailed`, `ClaudeAI.isFailed` und `makeSnapshot` prüfen verschiedene Listen von Statuswörtern. Eine Eigenschaft am `Item`. (app/Model.swift:288–291, app/ClaudeAI.swift:70–73, app/Snapshot.swift:41–45)
+218. ✅ [Code] **Gleicher Beenden-Dialog zweimal.** Menüleiste „Beenden“ und `relaunchApp` haben denselben NSAlert-Text kopiert. Eine Funktion `confirmQuit(running:)`. (app/App.swift:445–456, app/Tool.swift:49–59)
 219. [Code] **Settings-Bereiche wiederholen `busy/message/failed/run()`.** Autofix, Guard, Team, ClaudeAI haben je eine eigene Kopie. Ein kleines `ScriptAction`-ObservableObject. (app/Autofix.swift:150–159, app/Guard.swift:79–89, app/Team.swift:115–125, app/ClaudeAI.swift:161–168)
-220. [Code] **Tote Funktion `buildCost`.** Wird nirgends aufgerufen (und würde Render-Dienste mit Vercel-Kosten gleichen Namens versehen). Entfernen. (app/Store.swift:215–217)
-221. [Code] **Unnötige Imports.** Model, Tool, Logos, Store importieren `Charts`, `UserNotifications`, `ServiceManagement`, ohne sie alle zu brauchen; das verlangsamt `swiftc` über alle Dateien. Pro Datei nur das Nötige. (app/Model.swift:3–7, app/Tool.swift:3–7, app/Logos.swift:3–7)
+220. ✅ [Code] **Tote Funktion `buildCost`.** Wird nirgends aufgerufen (und würde Render-Dienste mit Vercel-Kosten gleichen Namens versehen). Entfernen. (app/Store.swift:215–217)
+221. ✅ [Code] **Unnötige Imports.** Model, Tool, Logos, Store importieren `Charts`, `UserNotifications`, `ServiceManagement`, ohne sie alle zu brauchen; das verlangsamt `swiftc` über alle Dateien. Pro Datei nur das Nötige. (app/Model.swift:3–7, app/Tool.swift:3–7, app/Logos.swift:3–7)
 222. [Code] **Magische Statuswörter.** `"READY"`, `"live"`, `"canceled"`, `"build_failed"` stehen verstreut als Strings; ein Enum pro Plattform (oder das `phase` des Skripts) verhindert Tippfehler. (app/Store.swift:528 und 935–961)
-223. [Code] **Claude-Konfiguration verliert die Schlüsselreihenfolge.** `JSONSerialization` schreibt die Datei des Nutzers in beliebiger Reihenfolge zurück; bei Hand-Pflege sieht jede Änderung wie ein Komplettumbau aus. Mindestens `.sortedKeys` für stabile Diffs. (app/ClaudeConnect.swift:35)
-224. [Code] **Feste Plattformliste in Guard, Savings und Diagnose.** `[Platform.vercel, .render]` bzw. nur zwei Zähler in „Diagnose kopieren“; mit weiteren Anbietern fehlen sie. `enabledProviders` nutzen und Skriptversion (`deploys --version`) in die Diagnose. (app/Guard.swift:88 und 188, app/App.swift:259–264)
+223. ✅ [Code] **Claude-Konfiguration verliert die Schlüsselreihenfolge.** `JSONSerialization` schreibt die Datei des Nutzers in beliebiger Reihenfolge zurück; bei Hand-Pflege sieht jede Änderung wie ein Komplettumbau aus. Mindestens `.sortedKeys` für stabile Diffs. (app/ClaudeConnect.swift:35)
+224. ◐ [Code] **Feste Plattformliste in Guard, Savings und Diagnose.** `[Platform.vercel, .render]` bzw. nur zwei Zähler in „Diagnose kopieren“; mit weiteren Anbietern fehlen sie. `enabledProviders` nutzen und Skriptversion (`deploys --version`) in die Diagnose. (app/Guard.swift:88 und 188, app/App.swift:259–264)
 
 
 ### Tests
 
 225. [Test] **Tests in beiden Sprachen laufen lassen.** `isGerman` wird einmal beim Start festgelegt; `app-tests.sh` testet also nur die Sprache des Macs. Zweiter Lauf mit `-AppleLanguages '(de)'` bzw. `(en)`. (tests/app-tests.sh:13, app/Tool.swift:13)
-226. [Test] **Test: `selectChanged` lässt Ausgeblendete und laufende Zeilen aus.** Fängt den Fehler oben und den Menüleisten-Pfad. (app/Store.swift:492)
-227. [Test] **Test: `waiting` mit zwei Branches eines Repos.** Zwei Projekte, gleiches Repo, verschiedene `ref`. (app/Store.swift:447)
-228. [Test] **Test: `loadProviders` behält die Liste bei Fehler.** Mit einem Fake-Skript, das beim zweiten Aufruf nichts liefert. (app/Providers.swift:229)
-229. [Test] **Test: `Tool.run`-Timeout und Abbruch.** Ein Skript mit `sleep 30`: Timeout liefert `timedOut`, ein gecancelter Task liefert `CancellationError`, keiner hängt (killTree ist getestet, die Antwortpfade nicht). (app/Tool.swift:143–233)
-230. [Test] **Test: `makeSnapshot`.** Reihenfolge building → failed → waiting, Demo-Maskierung, ausgeblendete fehlen, `sameContent` ignoriert nur `at`. (app/Snapshot.swift:37–65)
-231. [Test] **Test: `AutoDeployAllowance` mit Millisekunden und ISO mit Bruchteilen.** Beide Pfade des Dekoders sind ungetestet. (app/Model.swift:403–418)
+226. ✅ [Test] **Test: `selectChanged` lässt Ausgeblendete und laufende Zeilen aus.** Fängt den Fehler oben und den Menüleisten-Pfad. (app/Store.swift:492)
+227. ✅ [Test] **Test: `waiting` mit zwei Branches eines Repos.** Zwei Projekte, gleiches Repo, verschiedene `ref`. (app/Store.swift:447)
+228. ✅ [Test] **Test: `loadProviders` behält die Liste bei Fehler.** Mit einem Fake-Skript, das beim zweiten Aufruf nichts liefert. (app/Providers.swift:229)
+229. ✅ [Test] **Test: `Tool.run`-Timeout und Abbruch.** Ein Skript mit `sleep 30`: Timeout liefert `timedOut`, ein gecancelter Task liefert `CancellationError`, keiner hängt (killTree ist getestet, die Antwortpfade nicht). (app/Tool.swift:143–233)
+230. ✅ [Test] **Test: `makeSnapshot`.** Reihenfolge building → failed → waiting, Demo-Maskierung, ausgeblendete fehlen, `sameContent` ignoriert nur `at`. (app/Snapshot.swift:37–65)
+231. ✅ [Test] **Test: `AutoDeployAllowance` mit Millisekunden und ISO mit Bruchteilen.** Beide Pfade des Dekoders sind ungetestet. (app/Model.swift:403–418)
 232. [Test] **Test: `cancel` während des CI-Wartens und `follow`-Deadline.** Mit einer Uhr, die man vorstellen kann (Idee „Clock injizierbar“ ist bekannt; hier die zwei konkreten Fälle). (app/Store.swift:761–784 und 918–970)
 233. [Test] **Test: Maskierer gegen die Muster des Skripts.** Je ein Beispiel für Stripe, GitLab, npm, Google, Private-Key-Block; gleiche Fixtures für `tests/script-tests.sh`. (app/LogTools.swift:26)
-234. [Test] **Tests schreiben nicht in die echte Application-Support-Ablage.** `Journal.dir` und `Store.cacheDir` sind fest `app.deploycenter.mac`; ein Test, der `Journal.append` oder `writeCache` erreicht, schreibt in die Daten des echten Nutzers. Ordner per Umgebungsvariable umlenkbar machen. (app/Journal.swift:22–26, app/Store.swift:242–245)
+234. ✅ [Test] **Tests schreiben nicht in die echte Application-Support-Ablage.** `Journal.dir` und `Store.cacheDir` sind fest `app.deploycenter.mac`; ein Test, der `Journal.append` oder `writeCache` erreicht, schreibt in die Daten des echten Nutzers. Ordner per Umgebungsvariable umlenkbar machen. (app/Journal.swift:22–26, app/Store.swift:242–245)
 235. [Test] **`swiftc -strict-concurrency=complete` im Testlauf.** Zeigt die Datenrennen (statische Vars, `NSImage` über Actor-Grenzen, `NotifyRouter.onCancel`) als Warnungen, ohne den App-Build auf Swift 6 umzustellen. (tests/app-tests.sh:12)
 
 
