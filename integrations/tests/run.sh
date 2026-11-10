@@ -54,7 +54,9 @@ case "\$*" in
     # An older CLI without list: the MCP server falls back to status --json --no-github.
     [ -n "\${FAKE_NO_LIST:-}" ] && { echo "Unknown command list" >&2; exit 1; }
     if [ -n "\${RENDER_API_KEY:-}" ] || [ "\${FAKE_RENDER_KEY:-false}" = true ]; then r="$tmp/render.json"; else r=/dev/null; fi
-    jq -s '(.[0] | map(. + {platform:"vercel"})) + ((.[1] // []) | map(. + {platform:"render"}))' "$tmp/vercel.json" \$r ;;
+    # FAKE_MORE=1: a Netlify project too, and a name on two platforms.
+    jq -s --arg more "\${FAKE_MORE:-}" '(.[0] | map(. + {platform:"vercel"})) + ((.[1] // []) | map(. + {platform:"render"}))
+      + (if \$more == "1" then [{name:"shop",platform:"netlify"},{name:"twin",platform:"vercel"},{name:"twin",platform:"netlify"}] else [] end)' "$tmp/vercel.json" \$r ;;
   "notes app-web") printf '## app-web\\n- New billing page (#12) – Ana\\n- Faster search – Ben\\n\\nDependency updates:\\n- Bump jq – dependabot\\n' ;;
   "notes "*) exit 1 ;;
   "simulate --days "*" --json") jq --argjson d "\$3" '.days = \$d' "$here/../tests/fixtures/savings/simulate-report.json" ;;
@@ -71,8 +73,8 @@ case "\$*" in
     if [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
     exit "\${FAKE_RC:-0}" ;;
   "status --json"|"status --json --no-github")
-    jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
-      | map({platform, name, building:false, state:"READY", changed})' "$tmp/vercel.json" "$tmp/render.json" ;;
+    jq -s --arg b "\${FAKE_BUILDING:-}" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
+      | map({platform, name, building:(.name == \$b), state:"READY", changed})' "$tmp/vercel.json" "$tmp/render.json" ;;
   "explain "*) echo "explain: \$2" ;;
   "logs secret-app "*) cat "$tmp/secret.log" ;;
   # The last lines of a log can start or end inside a key.
@@ -80,7 +82,10 @@ case "\$*" in
   "logs bottomkey-app "*) printf 'before the key\\n-----BEGIN RSA PRIVATE KEY-----\\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo3\\n' ;;
   "logs big-app "*) cat "$tmp/big.log" ;;
   "logs "*) seq 1 "\${3:-80}" ;;
-  "vercel deploy-json app-web"|"vercel deploy-json app-web --preview") echo '{"id":"dpl_1","url":"https://app-web-x.vercel.app","state":"QUEUED"}' ;;
+  "vercel deploy-json app-web"|"vercel deploy-json app-web --preview") [ -n "\${FAKE_DEPLOY_SLEEP:-}" ] && sleep "\$FAKE_DEPLOY_SLEEP"
+    echo '{"id":"dpl_1","url":"https://app-web-x.vercel.app","state":"QUEUED"}' ;;
+  "netlify deploy-json shop") echo '{"id":"nd-1","url":"https://shop.netlify.app","state":"new"}' ;;
+  "netlify rollback shop") echo '{"id":"nd-0","state":"ready"}' ;;
   "render deploy-json api") echo '{"id":"dep-1","serviceId":"srv-1","state":"created"}' ;;
   "vercel rollback app-web") echo '{"id":"dpl_0","state":"READY"}' ;;
   "details me/app aaaa111 main") cat "$tmp/details-web.json" ;;
