@@ -57,7 +57,7 @@ they exist). Where a capability is `false` in `_meta`, the function still exists
 | `<p>_latest <id> [--preview]` | The same line for the newest deploy (production, or any target with `--preview`); `none<TAB><TAB>none` when there is none (not an error: `watch` says "no deploy"). |
 | `<p>_cancel <id> <deployId>` | Cancel; print `{id, state, phase}` (a `message` for people may come along). |
 | `<p>_rollback <id>` | Production back to the deploy that was live before; print `{id, state}` (and `phase`, `message`). The app reads it from `deploys <p> rollback <id>`, so no `_cli_rollback` with prose. |
-| `<p>_logs <id> <lines> [deployId]` | The end of a build log, plain text. All three positional: `deploys logs` passes an empty `deployId` for the newest. |
+| `<p>_logs <id> <lines> [deployId]` | The end of a build log, plain text. All three positional: `deploys logs` passes an empty `deployId` for the newest. A provider whose `_meta` says `"runtimeLogs":true` (Render, Coolify) takes `--runtime` in the third place for the running app's own log instead. |
 | `<p>_url <id> [--dashboard]` | The site's address, or the project's page at the platform. |
 | `<p>_set_key` | Read a key from stdin, try it, save it in the keychain as `deploy-center-<p>`. |
 | `<p>_doctor` | One JSON object of checks (`{"<p>Key":true, …}`), with `printf`, not jq. Its fields join `deploys doctor`. Providers with `"provider"` in it also give `expiresAt` (Unix seconds, when the key ends) and `rateLimit` (`{remaining, resetAt}`, Unix seconds) from the call the doctor makes anyway, `null` where the platform does not say (below). |

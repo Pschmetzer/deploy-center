@@ -1,0 +1,2 @@
+{"hasMore": false, "nextStartTime": "2026-11-10T09:00:00Z", "nextEndTime": "2026-11-10T10:00:00Z", "logs": [{"id": "l2", "message": "GET / 200", "timestamp": "2026-11-10T10:00:01Z", "labels": [{"name": "type", "value": "app"}]}, {"id": "l1", "message": "\u001b[32mlistening on 10000\u001b[0m", "timestamp": "2026-11-10T10:00:00Z", "labels": [{"name": "type", "value": "app"}]}]}
+200

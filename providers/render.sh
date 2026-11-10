@@ -10,7 +10,7 @@ RENDER_LEGACY_KEYCHAIN_SERVICE="render-api-key"
 export RENDER_KEYCHAIN_SERVICE RENDER_LEGACY_KEYCHAIN_SERVICE
 
 render_meta() {
-  printf '%s\n' '{"id":"render","label":"Render","noun":"service","defaultOn":true,"keyEnv":["RENDER_API_KEY"],"keychain":"deploy-center-render","auth":"API key","caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":false}}'
+  printf '%s\n' '{"id":"render","label":"Render","noun":"service","defaultOn":true,"keyEnv":["RENDER_API_KEY"],"keychain":"deploy-center-render","auth":"API key","runtimeLogs":true,"caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":false}}'
 }
 
 render_key() {
@@ -326,15 +326,18 @@ render_rollback() {
 }
 
 # render_logs <service> <lines> [deployId]
+# render_logs <service> <lines> [deployId | --runtime]: a build log, or with --runtime (FEA-022,
+# FEA-093) the running service's own log (type=app, the last hour) instead.
 render_logs() {
-  local id n="$2" did="${3:-}" owner win=""
+  local id n="$2" did="${3:-}" owner win="" type=build
+  [ "$did" != --runtime ] || { type=app; did=""; }
   id="$(render_id_of "$1")"; owner="$(render_call GET "/services/$id" | jq -r '.ownerId // empty')"
   [ -n "$owner" ] || die "Render: could not read the owner of $1 (needed for its logs)"
   # Render's logs have no deploy filter: the deploy's own time window stands in for it.
   case "$did" in ''|dep-[a-z0-9]*) ;; *) die "Render: \"$did\" is not a deploy id (dep-...)";; esac
   case "$did" in *[!a-z0-9-]*) die "Render: \"$did\" is not a deploy id (dep-...)";; esac
   [ -z "$did" ] || win="$(render_call GET "/services/$id/deploys/$did" | jq -r '"&startTime=\(.createdAt | @uri)" + (if .finishedAt then "&endTime=\(.finishedAt | @uri)" else "" end)')"
-  render_call GET "/logs?ownerId=$owner&resource=$id&type=build&limit=$n&direction=backward$win" \
+  render_call GET "/logs?ownerId=$owner&resource=$id&type=$type&limit=$n&direction=backward$win" \
     | jq -r '.logs | reverse | .[].message' | sed $'s/\x1b\\[[0-9;]*m//g'
 }
 

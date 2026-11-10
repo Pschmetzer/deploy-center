@@ -190,7 +190,7 @@ COOLIFY_JQ='
 # Compact (jq -c): deploys greps it (meta_flag, meta_str, key_of). Contract fields: id, label,
 # noun, defaultOn, keyEnv (an array), keychain, caps (docs/PROVIDERS.md). Off by default.
 coolify_meta() {
-  jq -nc --arg k "$COOLIFY_KEYCHAIN" '{id:"coolify", label:"Coolify", noun:"application", defaultOn:false, keyEnv:["COOLIFY_TOKEN"], urlEnv:"COOLIFY_URL", keychain:$k,
+  jq -nc --arg k "$COOLIFY_KEYCHAIN" '{id:"coolify", label:"Coolify", noun:"application", defaultOn:false, keyEnv:["COOLIFY_TOKEN"], urlEnv:"COOLIFY_URL", keychain:$k, runtimeLogs:true,
     caps:{off:true, sha:true, cancel:true, rollback:true, logs:true, preview:false}}'
 }
 

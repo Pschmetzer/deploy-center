@@ -70,5 +70,11 @@ expect "FEA-110: one service" "$(echo "$out" | jq -c '[.items[] | [.name, .actio
 out="$(PATH="$STUBPATH" DEPLOYS_CONFIG="$tmp/config" HOME="$tmp" NO_COLOR=1 /bin/bash ./deploys render autodeploy-on --all --dry-run --json 2>"$tmp/err" </dev/null)"
 expect "FEA-110: through deploys render autodeploy-on" "$(echo "$out" | jq -c .on 2>&1)" 3
 
+# --- FEA-022/FEA-093: --runtime reads the running service's log (type=app), oldest first ---
+out="$(lib 'render_logs srv-a 5 --runtime')"
+expect "runtime log: the app's lines, oldest first, colours removed" "$out" "$(printf 'listening on 10000\nGET / 200')"
+expect "runtime log: type=app, no deploy window" "$(grep -c 'type=app&limit=5&direction=backward$' "$CALLS")" 1
+expect "meta says runtimeLogs" "$(lib 'render_meta' | jq .runtimeLogs)" true
+
 echo
 [ "$fails" = 0 ] && echo "All Render tests passed." || { echo "$fails Render test(s) failed."; exit 1; }
