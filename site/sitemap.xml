@@ -34,7 +34,10 @@
   <url><loc>https://deploycenter.app/docs/integrations/notify/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/hooks/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/mcp/</loc><lastmod>2026-11-10</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/docker/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/claude-code/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/digest/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/raycast/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/vscode/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/docker/</loc><lastmod>2026-11-10</lastmod></url>
   <!-- /docs -->
 </urlset>

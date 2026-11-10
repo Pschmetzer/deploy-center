@@ -169,7 +169,7 @@ vercel deploy --prod
 <span class="c"># or build on your machine or in CI and upload the result</span>
 vercel build --prod
 vercel deploy --prebuilt --prod</code></pre>
-<div class="note"><p><b>Trade-offs.</b> No preview deployment per pull request, no automatic production deploy, and deploy hooks live in the Git settings, so they go with the connection. Your existing deployments, domains and environment variables stay.</p></div>
+<div class="note"><p><b>Trade-offs.</b> No preview deployment per pull request, no automatic production deploy, and deploy hooks live in the Git settings, so they go with the connection (<code>deploys triggers</code> lists what can still start a build). Your existing deployments, domains and environment variables stay.</p></div>
 
 <h2 id="deployment-enabled">2. <code>git.deploymentEnabled</code> in vercel.json</h2>
 <p>The repository stays connected, but Vercel skips Git deployments for the branches you turn off. Put <code>vercel.json</code> in the project's root directory.</p>

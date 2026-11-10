@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Build site/docs/ from the repo's Markdown. Python 3.9+, standard library only.
 
-    python3 scripts/build-docs.py            # writes site/docs/ and the docs part of site/sitemap.xml
+    python3 scripts/build-docs.py            # writes site/docs/ and the docs part of site/sitemap.xml,
+                                             # and puts VERSION into site/index.html
 
 The pages are listed in PAGES below. Links between converted files become links between docs
 pages; links to any other file in the repo go to GitHub. A relative link to a file that does not
@@ -70,8 +71,13 @@ INTEGRATIONS = {
     "hooks": ("pre-push hook", "A git pre-push hook that warns how many Vercel and Render builds a push would start."),
     "mcp": ("MCP server", "An MCP server for Claude Code, Claude Desktop, Cursor and VS Code: what is waiting, release notes, logs, and opt-in deploys."),
     "docker": ("Docker image", "A Linux image with the deploys CLI and its tools, for CI."),
+    "claude-code": ("Claude Code plugin", "A Claude Code plugin: the MCP server, a skill, commands and a push hook, so Claude knows how deploys work."),
+    "digest": ("Agent digest", "Once a day, what coding agents pushed per project, with a one-click approval through a GitHub workflow."),
+    "raycast": ("Raycast extension", "See which projects have commits waiting and deploy them by hand, from Raycast."),
+    "vscode": ("VS Code extension", "What is merged but not live, and a deploy by hand, inside VS Code, Cursor and Windsurf."),
 }
-INTEGRATION_ORDER = ["action", "badge", "statuspage", "notify", "hooks", "mcp", "docker"]
+INTEGRATION_ORDER = ["action", "badge", "statuspage", "notify", "hooks", "mcp", "claude-code", "digest",
+                     "raycast", "vscode", "docker"]
 GROUPS = ["Start", "Using it", "Reference", "Integrations"]
 # CLI help lines without a description of their own.
 MISSING = {
@@ -546,7 +552,8 @@ def render(page, pages, version):
     title = f"{page.title} · Deploy Center docs" if page.slug else "Deploy Center docs"
     edit = (f' · <a href="{REPO}/edit/{BRANCH}/{page.source}" rel="noopener">Edit on GitHub</a>'
             if page.source else "")
-    updated = datetime.date.fromisoformat(page.updated).strftime("%B %-d, %Y")
+    ud = datetime.date.fromisoformat(page.updated)
+    updated = f"{ud:%B} {ud.day}, {ud.year}"  # not %-d: Windows has no such flag
     toc_html = toc(page)
     return f"""<!doctype html>
 <html lang="en">
@@ -672,11 +679,37 @@ def update_sitemap(urls):
         f.write(text)
 
 
+VERSION_RE = r"\d+\.\d+\.\d+"
+
+
+def sync_site_version(version):
+    """Put VERSION into site/index.html: the line under the download button and the JSON-LD.
+
+    scripts/bump.sh does the same, but only from the previous version; this catches any drift.
+    """
+    if not re.fullmatch(VERSION_RE, version):
+        raise BuildError(f"VERSION is not x.y.z: {version!r}")
+    path = os.path.join(SITE, "index.html")
+    if not os.path.exists(path):
+        return
+    text = open(path, encoding="utf-8").read()
+    new, n1 = re.subn(r'("softwareVersion":\s*")' + VERSION_RE + '"', r"\g<1>" + version + '"', text)
+    new, n2 = re.subn(r'(id="version">Version )' + VERSION_RE, r"\g<1>" + version, new)
+    if not (n1 and n2):
+        raise BuildError("site/index.html: softwareVersion or the Version line is missing")
+    if new != text:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new)
+        print(f"build-docs: site/index.html now says version {version}")
+
+
 def main():
     pages = page_list()
     build_pages(pages)
     index = index_page(pages)
     version = (open(os.path.join(ROOT, "VERSION")).read().strip() if os.path.exists(os.path.join(ROOT, "VERSION")) else "0")
+    if version != "0":
+        sync_site_version(version)
     version += "-" + (git("rev-parse", "--short", "HEAD") or "dev")
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)

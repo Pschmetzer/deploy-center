@@ -46,7 +46,7 @@ See [integrations/docker](integrations/docker/README.md). For GitHub Actions the
 [an action](integrations/action/README.md).
 
 **By hand:** download `deploys-cli-<version>.tar.gz` and `checksums.txt` from
-[Releases](https://github.com/Pschmetzer/deploy-center/releases), run `sha256sum -c checksums.txt --ignore-missing`,
+[Releases](https://github.com/Pschmetzer/deploy-center/releases), run `sha256sum -c checksums.txt --ignore-missing` (macOS: `shasum -a 256 -c checksums.txt --ignore-missing`),
 unpack, and put the folder anywhere; run `deploys` from inside it (it reads `VERSION` and
 `providers/` next to itself).
 

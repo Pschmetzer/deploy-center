@@ -163,6 +163,7 @@
 <pre><code class="language-bash">curl -s "https://api.render.com/v1/services?limit=100" \
   -H "Authorization: Bearer $RENDER_API_KEY" \
   | jq -r '.[].service | [.id, .name, (.autoDeployTrigger // .autoDeploy)] | @tsv'</code></pre>
+<p>This returns at most 100 services. With more, pass the <code>cursor</code> of the last item as <code>&amp;cursor=…</code> to get the next page, or some services are missing from the list.</p>
 <p>Turn it off for one service:</p>
 <pre><code class="language-bash">curl -s -X PATCH "https://api.render.com/v1/services/$SERVICE_ID" \
   -H "Authorization: Bearer $RENDER_API_KEY" \
