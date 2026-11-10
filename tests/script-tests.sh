@@ -651,6 +651,7 @@ expect "autofix status --json: prNumber, prState, prUrl, session, mergedSha (and
 af_reset
 jq -n --argjson t "$((now - 600))" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",sha:"aaaa111",status:"fired",at:$t}]}' > "$AUTOFIX_STATE"
 ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"}]'
+# shellcheck disable=SC2034  # all/dry are read by af_sync_fires (dynamic scope)
 expect "autofix sync: a merged fix PR is recorded, nothing fired" \
   "$( ( st="$(af_state)"; all="$ALL"; dry=""; rc=0; DEPLOYS_NOTIFY=0 af_sync_fires >/dev/null; echo "$st" | jq -c '.fires[0] | [.prState, .mergedSha]' ) ):$(fired)" '["merged","ffff999"]:0'
 expect "autofix --only: syncs that project's PR first (merged, so not handed over again)" \

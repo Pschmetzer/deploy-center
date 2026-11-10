@@ -10,6 +10,18 @@
 - GitHub Action: with `deploy: true` only the projects of the workflow's repository are started (new input `repo`, `*` for every repo); it fails and starts nothing when that cannot be made sure.
 - Claude Code plugin: the push reminder ignores `git stash push`, `--dry-run` and rejected pushes, and reads the right repo for `cd dir && git push` and `git -C dir push`.
 - `examples/daily-deploy.yml` installs the checked release tarball (with providers/ and lib/), pins the vercel CLI and sets `permissions:`. CI runs `integrations/tests/run.sh` with `REQUIRE_ALL=1`; a skipped part is reported as skipped, not passed.
+- Netlify, Cloudflare Pages, Coolify, DigitalOcean and Amplify keep the provider contract: `<p> has` prints the id, `_status`/`_latest` give `id<TAB>phase<TAB>state`, so `deploy --wait`, group deploys, `watch` and `verify` work for them. The contract tests now run for all five. **Changed:** a Cloudflare project's id is its name (the API paths need it), not the UUID; `netlify logs` exits 1 because Netlify has no build log API.
+- `deploys deploy <p>` and group deploys respect the deploy window like `<p> deploy`; forced starts go to the journal.
+- Observer mode: `deploy-changed … --yes` is refused wherever `--yes` stands; `autodeploy allow|revoke` and `verify` (unless `--no-rollback`) are refused too.
+- `--when-green` no longer passes `--sha` to hosts that cannot build a given commit; it says the branch's newest commit is built.
+- Projects without a git repo (image services, unsupported git hosts) are `noRepo`, not "state unknown": `changed` no longer exits 1 for them on every run.
+- Render: `render_last_of` has timeouts; a keychain that cannot be read makes `changed` fail ("keychain could not be read") instead of "Nothing to deploy".
+- App: hidden projects are never ticked or deployed; ⌘A ticks only the rows the search and filter show.
+- App: single deploys (row menu, retry, palette, commit deploy in details) check the deploy window and "only when green" like the batch.
+- App: a build past 40 minutes is not shown as failed and keeps its row locked (polled every 30 s, at most 12 hours), so a second paid build cannot start by mistake.
+- App: waiting for green CI no longer holds a build slot and can be cancelled; the auto-rollback is skipped when a newer deploy has started; allowances for all platforms or all projects show their badge; demo mode hides the favicon in details; "Copy" in the build log masks secrets (⌥ copies the raw log).
+- iPhone: a second tap cannot start a second deploy; demo deploys need no passcode; rollback refuses when the live deploy is unknown instead of guessing; a QR import keeps keys the QR code leaves empty; a rewritten history or a compare error shows "count unknown" instead of "0 commits".
+- Docs and site: README, FAQ and guides no longer call built features "coming"; the site takes its version from `VERSION`; SECURITY.md and UNINSTALL.md list every data flow, job and keychain entry. `install.sh` runs from `main()` (a cut-off download installs nothing) and stops on Ctrl-C.
 
 ## 0.9.1
 
