@@ -137,27 +137,47 @@ struct Item: Identifiable {
 }
 
 /// A Mac notification when a deploy ends while the window is in the background.
-/// Permission is asked at the first deploy, not at launch. An ad-hoc build may be refused; then nothing shows.
+/// Permission is asked at the first deploy, when a reminder is turned on, or – if neither came first –
+/// when the first alarm (stale commits, budget) is due, which may be while the window is in the
+/// background. macOS asks the person only once.
+/// An ad-hoc build may be refused; then nothing shows.
 @MainActor
 enum Notify {
-    private static var asked = false
-    static func ask() {
-        guard !asked else { return }
-        asked = true
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    static func ask(then: (@Sendable (Bool) -> Void)? = nil) {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in then?(granted) }
     }
     /// A reminder the person set up themselves: shown whether or not the window is in front.
     static func remind(_ title: String, _ body: String) {
-        let c = UNMutableNotificationContent()
-        c.title = title; c.body = body; c.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "daily-reminder", content: c, trigger: nil))
+        add(title, body, id: "daily-reminder")
     }
     static func post(_ title: String, _ body: String) {
-        guard asked, !NSApp.isActive, UserDefaults.standard.object(forKey: "notifications") as? Bool ?? true else { return }
-        let c = UNMutableNotificationContent()
-        c.title = title; c.body = body; c.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
+        guard !NSApp.isActive, UserDefaults.standard.object(forKey: "notifications") as? Bool ?? true else { return }
+        add(title, body, id: UUID().uuidString)
     }
+    /// Asks first only when the person was never asked, so the first alarm of a run is not lost.
+    private static func add(_ title: String, _ body: String, id: String) {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            switch await center.notificationSettings().authorizationStatus {
+            case .authorized, .provisional: break
+            case .notDetermined:
+                guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
+            default: return
+            }
+            let c = UNMutableNotificationContent()
+            c.title = title; c.body = body; c.sound = .default
+            try? await center.add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
+        }
+    }
+}
+
+/// The calendar day on this Mac ("2026-11-10"), for "once a day" and the daily history.
+/// Not UTC: a day must not end at 1 or 2 a.m. local time.
+/// Always the Gregorian calendar, so a Mac set to another calendar keeps the same keys.
+func localDay(_ d: Date = Date(), timeZone: TimeZone = .current) -> String {
+    var cal = Calendar(identifier: .gregorian); cal.timeZone = timeZone
+    let c = cal.dateComponents([.year, .month, .day], from: d)
+    return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
 }
 
 func date(_ secs: Double?) -> Date? { secs.flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0) : nil } }
