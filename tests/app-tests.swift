@@ -322,8 +322,8 @@ if let led = try? JSONDecoder().decode(LedgerReport.self, from: savingsData("led
     // (0.8 + 0.2) / 11 days before, 0.2 / 11 since: the share card gets per-day numbers.
     expect("ledger: per day for the share card", led.perDay.map { "\(($0.before * 11).rounded()) \((($0.after * 11) * 10).rounded())" } ?? "", "1.0 2.0")
 } else { expect("ledger fixture decodes", false, true) }
-let odd = Data(#"{"since":null,"days":"3","projects":[{"name":"ok","skipped":"2","savedUsd":"x"},{"nope":1},7],"total":{"usd":null}}"#.utf8)
-if let led = try? JSONDecoder().decode(LedgerReport.self, from: odd) {
+let oddLedger = Data(#"{"since":null,"days":"3","projects":[{"name":"ok","skipped":"2","savedUsd":"x"},{"nope":1},7],"total":{"usd":null}}"#.utf8)
+if let led = try? JSONDecoder().decode(LedgerReport.self, from: oddLedger) {
     expect("lenient: bad rows are dropped, numbers as text read", "\(led.projects.map(\.name)) \(led.projects[0].skipped) \(led.days)", "[\"ok\"] 2.0 3.0")
     expect("lenient: unreadable dollars are unknown", led.projects[0].savedUsd == nil, true)
     expect("lenient: no start, no ledger", led.hasStarted, false)
