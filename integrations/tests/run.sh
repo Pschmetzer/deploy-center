@@ -350,6 +350,11 @@ else
   echo "skip action: needs ruby"
 fi
 
+# --- Raycast copies the log rules of VS Code (no shared package): the two must not drift ---
+# Prettier wraps the Raycast copy differently: compared without whitespace and trailing commas.
+rules() { sed -n '/^const errorPattern/,$p' "$1" | grep -v 'eslint-disable' | tr -d ' \n' | sed -e 's/,\]/]/g' -e 's/,)/)/g'; }
+[ "$(rules vscode/src/log.ts)" = "$(rules raycast/src/lib/log.ts)" ] && ok "raycast log.ts has the same error and masking rules as vscode" || fail "raycast log.ts has the same error and masking rules as vscode" "they differ"
+
 # --- VS Code extension: its own unit tests (node), when its dev dependencies are installed ---
 if command -v npm >/dev/null && [ -d vscode/node_modules ]; then
   (cd vscode && npm test --silent >"$tmp/vscode.log" 2>&1) && ok "vscode: unit tests" || { fail "vscode: unit tests" "see below"; cat "$tmp/vscode.log"; }

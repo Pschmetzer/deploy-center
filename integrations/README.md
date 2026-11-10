@@ -35,7 +35,7 @@ approve-workflow tests need `ruby`, and the VS Code tests `npm ci` in `vscode/`;
 | Claude Code plugin | the hook (which commands count), the files with `claude plugin validate` when installed | a session against real accounts |
 | pre-push hook | which pushes start builds, the timeouts | — |
 | VS Code extension | the CLI runner, the model, the masker, scoping; the controller against a stand-in `vscode` (confirmation, double start, deploy a repo, failures, Copy for AI) | inside a real editor (no `@vscode/test-electron` run) |
-| Raycast extension | type check | the commands in Raycast |
+| Raycast extension | type check, lint; the log rules are the same as VS Code's | the commands in Raycast |
 | Docker image | builds and runs `doctor` (by hand) | a run against real accounts |
 
 ## Reading every project

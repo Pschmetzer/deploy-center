@@ -260,6 +260,11 @@ export async function deploy(p: { name: string; platform: string }): Promise<Dep
   return data;
 }
 
+// The end of the newest build log (200 lines: enough for the first error block).
+export function buildLog(name: string): Promise<string> {
+  return runText(["logs", name, "200"], TIMEOUT.read);
+}
+
 export function releaseNotes(name: string): Promise<string> {
   return runText(["notes", name], TIMEOUT.read);
 }

@@ -1,7 +1,7 @@
 import { Action, ActionPanel, Color, Icon, List } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { StatusProject, isFailedState, platformLabel, status } from "./lib/deploys";
-import { ErrorView, ProjectActions, WarningItem, platformTag } from "./lib/ui";
+import { ErrorView, ProjectActions, WarningItem, copyBuildError, platformTag } from "./lib/ui";
 
 function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
   const { p } = props;
@@ -23,6 +23,14 @@ function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
       ]}
       actions={
         <ActionPanel title={`${p.name} (${platformLabel(p.platform)})`}>
+          {!building && (
+            <Action
+              title="Copy Build Error"
+              icon={Icon.Bug}
+              shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
+              onAction={() => copyBuildError(p)}
+            />
+          )}
           <ProjectActions name={p.name} onRefresh={props.onRefresh} />
         </ActionPanel>
       }
