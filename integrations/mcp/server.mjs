@@ -17,14 +17,21 @@
 //   DEPLOYS_MCP_MAX_DEPLOYS   deploys plus rollbacks one server process may start (default 3)
 
 import { spawn } from "node:child_process";
-import { accessSync, constants, statSync } from "node:fs";
+import { accessSync, constants, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
-const VERSION = "0.1.0";
+// One version, in package.json (it ships next to this file, in the repo and in the app).
+const VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version || "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
 const NAME_RE = /^[A-Za-z0-9._:-]+$/;
 const ALLOW_DEPLOY = process.env.DEPLOYS_MCP_ALLOW_DEPLOY === "1";
 const TIMEOUT_MS = posInt(process.env.DEPLOYS_MCP_TIMEOUT, 90) * 1000;

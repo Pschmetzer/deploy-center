@@ -16,9 +16,11 @@ all_projects() {
   jq -c 'if type=="array" then . else [] end' <<<"${out:-[]}" 2>/dev/null || echo '[]'
 }
 
-# What `deploys changed --json` lists: changed, and not left out with `deploys ignore`.
+# What `deploys changed --json` lists, asked from the CLI itself: its ignore rules (ignored.json,
+# the team's ignored list, overrides.json) are not rebuilt here. Exit 1 with a list means some
+# project could not be read; the list of the others is still used.
 changed_projects() {
-  local ign="${DEPLOYS_CONFIG:-$HOME/.config/deploys}/ignored.json" i='[]'
-  [ -f "$ign" ] && i="$(jq -c 'if type=="array" then . else [] end' "$ign" 2>/dev/null || echo '[]')"
-  all_projects | jq --argjson ign "$i" 'map(select(.changed and ((.name as $n | $ign | index($n)) | not)))'
+  local out
+  out="$("$DEPLOYS" changed --json 2>/dev/null </dev/null)" || true
+  jq -c 'if type=="array" then . else [] end' <<<"${out:-[]}" 2>/dev/null || echo '[]'
 }

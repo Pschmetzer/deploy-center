@@ -71,6 +71,8 @@ const READ = ["deploys_changed", "deploys_doctor", "deploys_explain", "deploys_l
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
 const info = await s.init();
 check("initialize names the server", info?.serverInfo?.name === "deploys", JSON.stringify(info?.serverInfo));
+const pkgVersion = JSON.parse(readFileSync(join(here, "..", "mcp", "package.json"), "utf8")).version;
+check("the server's version is package.json's", info?.serverInfo?.version === pkgVersion, `${info?.serverInfo?.version} vs ${pkgVersion}`);
 check("instructions say read-only", /read-only/.test(info?.instructions ?? ""), info?.instructions);
 const names = await s.names();
 check("lists the eight read tools", JSON.stringify(names) === JSON.stringify(READ), JSON.stringify(names));
@@ -239,6 +241,9 @@ r = await s.call("deploys_deploy", { project: "api", preview: true });
 check("no preview on Render", r.error && /preview/.test(r.text), r.text);
 r = await s.call("deploys_deploy", { project: "nope" });
 check("an unknown project is not deployed", r.error && /No project or service named "nope"/.test(r.text) && !callLog().includes("deploy-json nope"), r.text);
+writeFileSync(calls, "");
+r = await s.call("deploys_rollback", { project: "nope" });
+check("an unknown project is not rolled back", r.error && /No project or service named "nope"/.test(r.text) && !/rollback/.test(callLog()), r.text + " | " + callLog());
 r = await s.call("deploys_deploy", { project: "app-web,api" });
 check("one project per call: a list is refused", r.error, r.text);
 r = await s.call("deploys_deploy", { project: ["app-web", "api"] });

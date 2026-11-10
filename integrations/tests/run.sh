@@ -163,7 +163,7 @@ expect "with a key in the env Render is read too" "$(RENDER_API_KEY=x all_projec
 expect "doctor's renderKey counts as a key" "$(FAKE_RENDER_KEY=true all_projects | jq length)" 3
 expect "a CLI that fails is an empty list, not an error" "$(DEPLOYS=/bin/false all_projects)" "[]"
 mkdir -p "$DEPLOYS_CONFIG"; echo '["api"]' > "$DEPLOYS_CONFIG/ignored.json"
-expect "changed leaves out ignored and up-to-date" "$(RENDER_API_KEY=x changed_projects | jq -c 'map(.name)')" '["app-web"]'
+expect "changed is what deploys changed --json says" "$(RENDER_API_KEY=x changed_projects | jq -c 'map(.name)')" '["app-web","api"]'
 rm -f "$DEPLOYS_CONFIG/ignored.json"
 
 # --- badge ---
