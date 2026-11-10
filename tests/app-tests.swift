@@ -304,6 +304,83 @@ MainActor.assumeIsolated {
     expect("undo toast is not pushed away", st.toast?.text ?? "nil", "hidden")
 }
 
+// Tabs from the enabled providers. No `deploys providers` (older script): Vercel and Render.
+func ids(_ l: [ProviderInfo]) -> [String] { l.map(\.id) }
+expect("no answer: Vercel and Render", ids(ProviderInfo.parse(nil).list), ["vercel", "render"])
+expect("no answer: not from the script", ProviderInfo.parse(nil).fromScript, false)
+expect("usage text instead of JSON: fallback", ids(ProviderInfo.parse(Data("Usage: deploys …".utf8)).list), ["vercel", "render"])
+expect("empty list: fallback", ids(ProviderInfo.parse(Data("[]".utf8)).list), ["vercel", "render"])
+let reported = ProviderInfo.parse(Data(#"""
+[{"id":"vercel","label":"Vercel","enabled":true,"caps":{"off":true,"preview":true}},
+ {"id":"render","label":"Render","enabled":true,"caps":{"off":true}},
+ {"id":"netlify","label":"Netlify","enabled":false,"caps":{}},
+ {"label":"broken"},
+ {"id":"vercel","enabled":false}]
+"""#.utf8))
+expect("script list is read, broken and doubled entries skipped", ids(reported.list), ["vercel", "render", "netlify"])
+expect("script list is from the script", reported.fromScript, true)
+expect("only enabled ones are tabs", ids(ProviderInfo.enabled(reported.list)), ["vercel", "render"])
+expect("caps: missing means no", "\(reported.list[0].caps.preview) \(reported.list[1].caps.preview)", "true false")
+let noneOn = ProviderInfo.parse(Data(#"[{"id":"vercel","enabled":false}]"#.utf8)).list
+expect("nothing enabled: still Vercel and Render", ids(ProviderInfo.enabled(noneOn)), ["vercel", "render"])
+expect("label from the id when missing", ProviderInfo.parse(Data(#"[{"id":"fly","enabled":true}]"#.utf8)).list.first?.label ?? "", "Fly")
+expect("settings: reported first, then coming soon", ProviderInfo.settingsRows(reported.list).map { "\($0.info.id):\($0.available)" }.prefix(4).joined(separator: " "),
+       "vercel:true render:true netlify:true cloudflare:false")
+expect("settings: no double of a reported one", ProviderInfo.settingsRows(reported.list).filter { $0.info.id == "netlify" }.count, 1)
+
+// Layout: 1 provider no tabs, 2–3 segmented with All, 4 and more a menu.
+expect("layout 1", TabLayout.decide(1), TabLayout.hidden)
+expect("layout 2", TabLayout.decide(2), TabLayout.segmented)
+expect("layout 3", TabLayout.decide(3), TabLayout.segmented)
+expect("layout 4", TabLayout.decide(4), TabLayout.menu)
+expect("layout 7", TabLayout.decide(7), TabLayout.menu)
+func prov(_ n: Int) -> [ProviderInfo] { (0..<n).map { ProviderInfo(id: "p\($0)", label: "P\($0)", enabled: true) } }
+expect("one provider: one tab, no All", ProviderTab.tabs(prov(1)), [ProviderTab.provider("p0")])
+expect("two providers: All first", ProviderTab.tabs(prov(2)), [ProviderTab.all, .provider("p0"), .provider("p1")])
+expect("four providers: All and four", ProviderTab.tabs(prov(4)).count, 5)
+let two = ProviderTab.tabs(ProviderInfo.builtIn)
+expect("shortcuts as before: ⌘1 Vercel, ⌘2 Render, ⌘3 All",
+       "\(ProviderTab.shortcuts(two)[.provider("vercel")] ?? 0) \(ProviderTab.shortcuts(two)[.provider("render")] ?? 0) \(ProviderTab.shortcuts(two)[.all] ?? 0)", "1 2 3")
+expect("shortcuts stop at 9", ProviderTab.shortcuts(ProviderTab.tabs(prov(12))).values.max() ?? 0, 9)
+expect("remembered tab kept", ProviderTab.resolve(.provider("render"), in: two), ProviderTab.provider("render"))
+expect("gone tab: first provider", ProviderTab.resolve(.provider("netlify"), in: two), ProviderTab.provider("vercel"))
+expect("All with one provider: that provider", ProviderTab.resolve(.all, in: ProviderTab.tabs(prov(1))), ProviderTab.provider("p0"))
+
+// Rows of one repo sit together under one header; a single row gets none.
+func named(_ n: String, _ repo: String?) -> Item {
+    var i = Item(id: n, name: n, detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil); i.repo = repo; return i
+}
+let mixedRows = [named("a", "me/x"), named("b", "me/y"), named("c", "me/x"), named("d", nil), named("e", nil)]
+let clustered = RepoGroup.cluster(mixedRows)
+expect("cluster keeps first appearance", clustered.map(\.name), ["a", "c", "b", "d", "e"])
+let groups = RepoGroup.groups(clustered)
+expect("groups", groups.map { $0.items.map(\.name).joined() }, ["ac", "b", "d", "e"])
+expect("header only for several rows", groups.map(\.showsHeader), [true, false, false, false])
+
+// One key figure per row.
+var failedRow = item(changed: true); failedRow.lastAt = Date(); failedRow.lastState = "ERROR"
+expect("failed deploy first", Row.keyFigure(failedRow), Row.KeyFigure.failed)
+var waitingRow = item(changed: true); waitingRow.lastAt = Date(); waitingRow.lastState = "READY"
+expect("then what waits", Row.keyFigure(waitingRow), Row.KeyFigure.waiting)
+var liveRow = item(changed: false); liveRow.lastAt = Date(); liveRow.lastState = "READY"
+expect("then the last deploy", Row.keyFigure(liveRow), Row.KeyFigure.lastDeploy)
+expect("never deployed", Row.keyFigure(item(changed: false)), Row.KeyFigure.never)
+
+// The summary line and the saving.
+var wait = Store.Waiting(); wait.projects = 3; wait.prs = 12
+expect("summary with saving", summaryLine(wait, saved: 41), L("12 PRs waiting · \(usd0(41)) saved", "12 PRs warten · \(usd0(41)) gespart"))
+expect("summary without saving", summaryLine(wait, saved: nil), L("12 PRs waiting", "12 PRs warten"))
+wait.prs = 0
+expect("summary without PRs", summaryLine(wait, saved: nil), L("3 projects waiting", "3 Projekte warten"))
+expect("summary when all is live", summaryLine(Store.Waiting(), saved: nil), L("Everything merged is live", "Alles Gemergte ist live"))
+let offCosts = try! JSONDecoder().decode(Costs.self, from: Data("""
+{"days":[{"day":"2026-11-01","total":10,"build":10},{"day":"2026-11-02","total":10,"build":10},{"day":"2026-11-03","total":4,"build":4},
+         {"day":"2026-11-04","total":1,"build":1},{"day":"2026-11-05","total":3,"build":3},{"day":"2026-11-06","total":9,"build":9}],
+ "projects":[],"offDay":"2026-11-03","buildsComplete":true}
+""".utf8))
+expect("saved over whole days since off", offCosts.saved(today: "2026-11-06") ?? -1, 16.0)
+expect("no saving before a whole day", offCosts.saved(today: "2026-11-04") == nil, true)
+
 // Autofix in the rows: old and new status shapes, each state and when it ends by itself.
 func fire(_ json: String) -> AutofixReport { try! JSONDecoder().decode(AutofixReport.self, from: Data(json.utf8)) }
 let oldShape = fire(#"{"routine":"trig_1","token":true,"scheduled":false,"fires":[{"at":100,"project":"app","platform":"vercel","status":"fired","session":"https://claude.ai/code/s1","pr":7,"mergedSha":null},{"broken":true}]}"#)

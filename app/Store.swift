@@ -23,6 +23,9 @@ final class Store: ObservableObject {
     @Published var doctorError: String?
     @Published var costs: Costs?
     @Published var triggers: [Trigger] = []
+    /// The platforms `deploys providers --json` reports (Vercel and Render without it), see Providers.swift.
+    @Published var providers: [ProviderInfo] = ProviderInfo.builtIn
+    @Published var providersFromScript = false
 
     /// Costs and stray build triggers load after the lists; neither blocks deploying.
     private var lastExtras = Date.distantPast
@@ -291,9 +294,10 @@ final class Store: ObservableObject {
         }
         guard doctor?.jq == true else { return }
         Task { if let t = try? await Tool.json(["config", "--json"], as: TeamConfig.self, timeout: 60) { teamObserver = t.readonly.value } }
-        // Both at once: each takes several seconds.
-        let v = doctor?.vercelLoggedIn == true && doctor?.vercelApi == true
-        let r = doctor?.renderKey == true
+        await loadProviders()
+        // Both at once: each takes several seconds. A platform switched off in Settings is not read.
+        let v = doctor?.vercelLoggedIn == true && doctor?.vercelApi == true && isEnabled(.vercel)
+        let r = doctor?.renderKey == true && isEnabled(.render)
         async let a: Void = v ? load(.vercel) : ()
         async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
@@ -413,8 +417,8 @@ final class Store: ObservableObject {
             if let fresh = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { doctor = fresh; doctorError = nil }
         }
         // Only the platform with a deploy under way is left alone; the other one stays current.
-        let v = doctor?.vercelLoggedIn == true && !(items[.vercel] ?? []).contains { $0.state.isActive }
-        let r = doctor?.renderKey == true && !(items[.render] ?? []).contains { $0.state.isActive }
+        let v = doctor?.vercelLoggedIn == true && isEnabled(.vercel) && !(items[.vercel] ?? []).contains { $0.state.isActive }
+        let r = doctor?.renderKey == true && isEnabled(.render) && !(items[.render] ?? []).contains { $0.state.isActive }
         async let a: Void = v ? load(.vercel) : ()
         async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
