@@ -69,7 +69,7 @@ Try the [cost calculator](https://deploycenter.app/#calc).
 - **Counts what is waiting**: how many commits and merged pull requests on GitHub are not live,
   per project and in total, and how many pull requests are still open.
 - A menu bar icon with the number of PRs waiting. Opens with the last lists at once and reads them again every 15 minutes; a notification when a
-  deploy ends while the window is in the background; ⌘R, ⌘F, ⌘1/⌘2, Esc.
+  deploy ends while the window is in the background; ⌘R, ⌘F, ⌘1/⌘2/⌘3, ⌘A, Esc.
 - **Preview deploys** (Vercel) and **rollback** to the previous live deploy, from the right-click menu.
 - Site logos, domains to click, search, English and German.
 

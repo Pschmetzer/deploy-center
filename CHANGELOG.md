@@ -3,6 +3,9 @@
 ## Unreleased
 
 - `integrations/mcp/`: an MCP server for AI coding agents. Read-only by default (`changed`, `status`, `explain`, `notes`, `logs`, `doctor`); deploy and rollback of one project per call only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`.
+- Window: the tabs come from the enabled providers (`deploys providers --json`; Vercel and Render with an older script). One provider has no tabs, two or three a segmented control with "All", four and more a menu; ⌘1, ⌘2 … follow the order, "All" takes the next digit (⌘3 with Vercel and Render, as before).
+- Settings → Platforms: a switch per provider. Vercel and Render are on; others say "coming soon" until the script reports them, and switching runs `deploys providers enable|disable`.
+- Calmer window: one summary line ("12 PRs waiting · $41 saved") instead of the waiting banner and sparkline; the cost bar is one number that opens a Costs sheet with the chart and "Share the saving"; "updated hh:mm" is in the reload tooltip; rows show one figure and sit under a small repo header instead of "same as above"; the footer has "More" (select all changed ⌘A, clear, preview deploy, history, messages) next to "Deploy N"; the row menu is Deploy, Build log, Open site, More.
 - `deploys autofix`: a failed build (Vercel `ERROR`, Render `build_failed`) is handed to a Claude Code routine that opens a fix PR; after the merge, the next run deploys that merge commit once. Caps, no duplicates, never merges. See `docs/AUTOFIX.md` and `scripts/autofix.plist.example`.
 - `deploys logs <project> --id <deploy>` reads the log of one deploy; `vercel json` and `render json` carry `latestId` and `latestSha` of the newest attempt.
 
