@@ -56,8 +56,18 @@ extension Store {
         }
         return DeploySnapshot(at: Date(), demo: Demo.on, waitingProjects: w.projects, waitingCommits: w.commits,
                               waitingPRs: w.prs, building: rows.filter { $0.status == .building }.count,
-                              failed: rows.filter { $0.status == .failed }.count, saving: snapshotSaving,
+                              failed: rows.filter { $0.status == .failed }.count, byPlatform: Self.counts(rows), saving: snapshotSaving,
                               projects: Array(rows.prefix(10)), language: isGerman ? "de" : "en")
+    }
+
+    /// Per platform, sorted by name; platforms with nothing to say are left out.
+    nonisolated static func counts(_ rows: [DeploySnapshot.Project]) -> [DeploySnapshot.PlatformCount] {
+        Set(rows.map(\.platform)).sorted().map { p in
+            let mine = rows.filter { $0.platform == p }
+            return .init(platform: p, waiting: mine.filter { $0.status == .waiting }.count,
+                         prs: mine.filter { $0.status == .waiting }.map(\.prs).reduce(0, +),
+                         building: mine.filter { $0.status == .building }.count, failed: mine.filter { $0.status == .failed }.count)
+        }
     }
 
     /// The app's own sum (Costs.saving, with the kept baseline and the same day), so the widget
@@ -80,7 +90,8 @@ extension DeploySnapshot {
     func sameContent(as o: DeploySnapshot) -> Bool {
         func plain(_ s: DeploySnapshot) -> DeploySnapshot {
             DeploySnapshot(at: .distantPast, demo: s.demo, waitingProjects: s.waitingProjects, waitingCommits: s.waitingCommits,
-                           waitingPRs: s.waitingPRs, building: s.building, failed: s.failed, saving: s.saving, projects: s.projects,
+                           waitingPRs: s.waitingPRs, building: s.building, failed: s.failed, byPlatform: s.byPlatform,
+                           saving: s.saving, projects: s.projects,
                            language: s.language)
         }
         return plain(self) == plain(o)
@@ -90,4 +101,13 @@ extension DeploySnapshot {
 extension UserDefaults {
     /// For KVO: the defaults key "demoMode" (Demo.on).
     @objc dynamic var demoMode: Bool { bool(forKey: "demoMode") }
+}
+
+/// Handoff with the iPhone app: the project open in the details, as "Vercel/<id>" (the iPhone's key).
+/// Receiving needs the type in Info.plist (NSUserActivityTypes); it only shows the project, never deploys.
+enum Handoff {
+    static let type = "app.deploycenter.project"
+    static func key(_ i: Item) -> String { i.platform.rawValue + "/" + i.id }
+    /// The project a handed-off key names, if this Mac lists it.
+    static func item(for key: String, in items: [Item]) -> Item? { items.first { Self.key($0) == key } }
 }

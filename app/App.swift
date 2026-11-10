@@ -18,6 +18,9 @@ struct SettingsView: View {
     @State private var language = AppLanguage.chosen
     @AppStorage("maxParallel") private var maxParallel = 3
     @AppStorage("reminderHour") private var reminderHour = 0
+    @AppStorage("quietFrom") private var quietFrom = 0
+    @AppStorage("quietTo") private var quietTo = 0
+    @AppStorage("remindFailures") private var remindFailures = false
     @AppStorage("showMenuBar") private var showMenuBar = true
     @AppStorage("hideDock") private var hideDock = false
     @AppStorage("notifications") private var notifications = true
@@ -63,6 +66,7 @@ struct SettingsView: View {
 
             Form {
                 deploySection
+                DeployWindowSettings()
                 GuardSettings(store: store)
                 costsSection
             }
@@ -236,6 +240,19 @@ struct SettingsView: View {
             .onChange(of: reminderHour) { _, h in if h > 0 { Notify.ask() } }
             .help(L("Only a reminder, and only when something waits. Nothing is deployed by itself.",
                     "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
+            HStack {
+                Text(L("Quiet hours", "Ruhezeit"))
+                Spacer()
+                Picker(L("from", "von"), selection: $quietFrom) { ForEach(0...23, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) } }
+                    .labelsHidden().frame(width: 90)
+                Text(L("to", "bis"))
+                Picker(L("to", "bis"), selection: $quietTo) { ForEach(0...23, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) } }
+                    .labelsHidden().frame(width: 90)
+            }
+            .help(L("Inside these hours only failures notify. The same hour twice: off. macOS Focus applies as well.",
+                    "In diesen Stunden melden sich nur Fehler. Zweimal dieselbe Stunde: aus. Der macOS-Fokus gilt zusätzlich."))
+            Toggle(L("Remind again after 30 minutes when a failure was not looked at", "Nach 30 Minuten noch einmal erinnern, wenn ein Fehler nicht angesehen wurde"),
+                   isOn: $remindFailures)
             if notificationsDenied {
                 HStack {
                     Text(L("Notifications are turned off for Deploy Center in System Settings.",
@@ -397,6 +414,12 @@ struct DeployCenterApp: App {
                     guard url.scheme == "deploycenter",
                           let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "project" })?.value else { return }
                     store.pendingSearch = name
+                }
+                // A project handed off from the iPhone app: shown, never deployed.
+                .onContinueUserActivity(Handoff.type) { a in
+                    guard let key = a.userInfo?["project"] as? String,
+                          let i = Handoff.item(for: key, in: Array(store.items.values.joined())) else { return }
+                    store.pendingSearch = i.name
                 }
         }
             .windowResizability(.contentMinSize)

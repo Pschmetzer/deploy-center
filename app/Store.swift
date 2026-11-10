@@ -361,6 +361,16 @@ final class Store: ObservableObject {
                 w.makeKeyAndOrderFront(nil)
             } else { self.windowRequest += 1 }
         }
+        // "Show log" / "Roll back …" in a failure's notification: the window, then the log or the question.
+        NotifyRouter.shared.onAction = { [weak self] action, key in
+            guard let self else { return }
+            NotifyRouter.shared.onOpen?(nil)
+            if action == NotifyRouter.logAction { self.pendingLog = key } else if !self.observer { self.pendingRollback = key }
+        }
+        // Back in the app: the failures were seen, their second reminders go.
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { Notify.dropEscalations() }
+        }
         // After sleep the lists can be hours old, and the daily reminder may be overdue.
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
@@ -753,12 +763,12 @@ final class Store: ObservableObject {
         }
         switch s {
         case .done:
-            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true, project: items[p]![i].name) }
+            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true, project: items[p]![i].name, key: Self.key(items[p]![i])) }
             else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true, project: items[p]![i].name) }
             else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true, project: items[p]![i].name) }
         case .failed(let m):
             if byPerson { say(L("\(name) cancelled", "\(name) abgebrochen"), p.rawValue, ok: true, project: items[p]![i].name) }
-            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false, project: items[p]![i].name) }
+            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false, project: items[p]![i].name, key: Self.key(items[p]![i])) }
         case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true, project: items[p]![i].name)
         default: break
         }
@@ -804,8 +814,10 @@ final class Store: ObservableObject {
     /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
     struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool }
     @Published var messages: [Message] = []
-    private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil) {
-        Notify.post(title, body, project: project)
+    private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil, key: String? = nil) {
+        // The project ran again: a second reminder of its last failure is no longer true.
+        if let key { Notify.dropEscalations(key) }
+        Notify.post(title, body, project: project, key: key, failed: !ok)
         show(Toast(text: title, ok: ok))
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok))
     }
@@ -865,6 +877,10 @@ final class Store: ObservableObject {
 
     /// Set by the menu bar to show one project in the window.
     @Published var pendingSearch: String?
+    /// A notification's "Show log" / "Roll back …": the key (Store.key) of the project, for the palette host.
+    @Published var pendingLog: String?
+    @Published var pendingRollback: String?
+    func itemNamed(key: String) -> Item? { items.values.joined().first { Self.key($0) == key } }
     /// Counts up when code outside a view wants Settings open (on the tab in "settingsTab"); the
     /// window and the menu bar answer it with SwiftUI's openSettings (OpensSettingsOnRequest).
     @Published var settingsRequest = 0

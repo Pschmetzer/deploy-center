@@ -25,20 +25,26 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         case .de: return "Deutsch"
         }
     }
-    static var chosen: AppLanguage {
-        guard let list = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleLanguages"] as? [String],
+    static var chosen: AppLanguage { chosen(in: .standard, domain: Bundle.main.bundleIdentifier ?? "") }
+    /// The app's own choice only (its persistent domain), not the Mac's list that `standard` also shows.
+    static func chosen(in d: UserDefaults, domain: String) -> AppLanguage {
+        guard let list = d.persistentDomain(forName: domain)?["AppleLanguages"] as? [String],
               let first = list.first else { return .system }
         return first.hasPrefix("de") ? .de : first.hasPrefix("en") ? .en : .system
     }
     /// Takes effect at the next launch (the texts are fixed when the views are built).
-    func save() {
-        if self == .system { UserDefaults.standard.removeObject(forKey: "AppleLanguages") }
-        else { UserDefaults.standard.set([rawValue], forKey: "AppleLanguages") }
+    /// "Same as the Mac" removes the key, so the Mac's list counts again.
+    func save(to d: UserDefaults = .standard) {
+        if self == .system { d.removeObject(forKey: "AppleLanguages") }
+        else { d.set([rawValue], forKey: "AppleLanguages") }
     }
     /// The language this choice shows after a restart.
     var resolved: AppLanguage {
+        resolved(mac: UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?["AppleLanguages"] as? [String])
+    }
+    /// `mac`: the Mac's own language list.
+    func resolved(mac: [String]?) -> AppLanguage {
         guard self == .system else { return self }
-        let mac = UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?["AppleLanguages"] as? [String]
         return (mac?.first ?? "en").hasPrefix("de") ? .de : .en
     }
     /// What the app shows now, which may differ from `chosen` until it restarts.
@@ -72,6 +78,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 enum Tool {
     /// The script ships inside the app, so a download needs nothing but the app.
     static var path: String {
+        if let t = testScript { return t }
         if let bundled = Bundle.main.path(forResource: "deploys", ofType: nil) { return bundled }
         noteFallback()
         return NSHomeDirectory() + "/bin/deploys"
@@ -154,6 +161,9 @@ enum Tool {
     /// Tests only: answers every script call instead of the script, so the queue, following and
     /// cancelling can be run without a network or an account. Never set in the app.
     nonisolated(unsafe) static var testRunner: (@Sendable ([String]) async throws -> Data)?
+    /// Tests only: a stand-in script run by bash instead of `deploys`, for the pipes, the timeout,
+    /// stdin and cancelling. Never set in the app.
+    nonisolated(unsafe) static var testScript: String?
 
     static func run(_ args: [String], stdin: String? = nil, timeout: Double = 120) async throws -> Data {
         if let fake = testRunner { return try await fake(args) }
@@ -249,7 +259,7 @@ enum Tool {
                     let text = json ?? plain
                     Log.write("deploys \(args.joined(separator: " ")): \(json.map { $0 + (msg.isEmpty ? "" : " | " + msg) } ?? plain)")
                     // The whole text is in the log; a toast or a row gets the end, where the cause usually is.
-                    answer(.failure(ToolError(message: shorten(text), exitCode: p.terminationStatus)))
+                    answer(.failure(ToolError(message: shorten(CLIText.shown(text)), exitCode: p.terminationStatus)))
                 }
             }
         }
@@ -327,7 +337,9 @@ struct ToolError: LocalizedError {
 /// Errors go to ~/Library/Logs/DeployCenter.log, so one can be attached to an issue.
 /// Only what the script said and when; no keys ever reach the script's output.
 enum Log {
-    static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/DeployCenter.log")
+    static var url: URL { testURL ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/DeployCenter.log") }
+    /// Tests only: a log of their own, so they never write into the person's log. Never set in the app.
+    nonisolated(unsafe) static var testURL: URL?
     private static let lock = NSLock()
     /// A log from an older version may be readable by others; once per run it is made private.
     private static let privateOnce: Void = { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }()

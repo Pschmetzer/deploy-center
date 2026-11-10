@@ -375,7 +375,13 @@ struct ContentView: View {
         }
         .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item, deployCommit: store.observer ? nil : { sha in store.deployOne(item, preview: false, sha: sha) },
                                                          // After the detail sheet is gone, so the log can take its place.
-                                                         openLog: { DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { logItem = item } }) }
+                                                         openLog: { DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { logItem = item } })
+                // The open project can be continued on the iPhone (Handoff); not in demo mode, which hides names.
+                .userActivity(Handoff.type, isActive: !Demo.on) { a in
+                    a.title = item.name; a.userInfo = ["project": Handoff.key(item)]
+                    a.isEligibleForHandoff = true; a.isEligibleForSearch = false
+                }
+        }
         .onChange(of: store.pendingDeployAll) { _, go in
             guard go else { return }
             store.pendingDeployAll = false
@@ -455,8 +461,8 @@ struct ContentView: View {
                 DispatchQueue.main.async { askingWhy = true }   // one alert after the other
             }
         } message: {
-            Text(L("No deploys now: \(freezeReason ?? "") (deploy window in window.json).",
-                   "Gerade keine Deploys: \(freezeReason ?? "") (Deploy-Fenster in window.json)."))
+            Text(L("No deploys now: \(freezeReason ?? ""). The times are in Settings → Deploy & guard → Deploy window.",
+                   "Gerade keine Deploys: \(freezeReason ?? ""). Die Zeiten stehen unter Einstellungen → Deploy & Wächter → Deploy-Fenster."))
         }
         .alert(L("Why deploy now?", "Warum jetzt deployen?"), isPresented: $askingWhy) {
             TextField(L("e.g. hotfix for the login page", "z. B. Hotfix für die Login-Seite"), text: $forceText)

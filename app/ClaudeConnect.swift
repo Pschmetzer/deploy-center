@@ -629,10 +629,19 @@ enum ClaudeNudge {
         if UserDefaults.standard.bool(forKey: dismissedKey) { return }
         guard ran.first() else { return }
         let desktopData = await Task.detached { ClaudeFiles.read(ClaudeEnv.desktopConfig) }.value
-        let desktop = ClaudeEnv.desktopApp != nil && (try? ClaudeConfig.parse(desktopData)) != nil && ClaudeConfig.entry(desktopData) == nil
         let codeData = await Task.detached { ClaudeFiles.read(ClaudeEnv.codeConfig) }.value
-        let code = ClaudeConfig.entry(codeData) == nil ? (await ClaudeEnv.cli()) != nil : false
-        await MainActor.run { store(wanted: desktop || code) }
+        // The CLI is looked for (a login shell) only when Claude Code is not connected yet.
+        let cli = ClaudeConfig.entry(codeData) == nil ? (await ClaudeEnv.cli()) != nil : false
+        let want = wanted(desktopInstalled: ClaudeEnv.desktopApp != nil, desktopData: desktopData, codeData: codeData, cliFound: cli)
+        await MainActor.run { store(wanted: want) }
+    }
+    /// Whether to offer the connection: Claude Desktop is installed with a config that can be read
+    /// and has no Deploy Center entry, or the Claude Code CLI is there and not connected.
+    /// A config that cannot be read is never offered for writing.
+    static func wanted(desktopInstalled: Bool, desktopData: Data?, codeData: Data?, cliFound: Bool) -> Bool {
+        let desktop = desktopInstalled && (try? ClaudeConfig.parse(desktopData)) != nil && ClaudeConfig.entry(desktopData) == nil
+        let code = cliFound && ClaudeConfig.entry(codeData) == nil
+        return desktop || code
     }
 }
 

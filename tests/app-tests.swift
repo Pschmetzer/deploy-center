@@ -857,5 +857,94 @@ expect("ledger: not on a nearly spent GitHub budget",
 expect("a JSON error on stdout is the message", Tool.jsonError(Data(#"{"error":"No project named x","exit":1}"#.utf8)) ?? "", "No project named x")
 expect("other stdout is no error message", Tool.jsonError(Data(#"[{"name":"a"}]"#.utf8)) == nil, true)
 
+// Mac track (rest): deploy window editor, language, the script runner, Claude nudge, CLI texts, snapshot, phone link, Handoff.
+expect("window rule summary", DeployWindowSettings.summary(.init(days: ["fri", "sat"], from: "15:00")),
+       L("Fri, Sat 15:00–24:00", "Fr, Sa 15:00–24:00"))
+expect("window rule over midnight", DeployWindowSettings.summary(.init(from: "22:00", to: "06:00")),
+       L("every day 22:00–06:00 (over midnight)", "jeden Tag 22:00–06:00 (über Mitternacht)"))
+do {
+    let suite = "dc-test-lang-\(UUID().uuidString)"
+    let d = UserDefaults(suiteName: suite)!
+    expect("language: nothing chosen is the Mac's", AppLanguage.chosen(in: d, domain: suite), AppLanguage.system)
+    AppLanguage.de.save(to: d)
+    expect("language: German saved", AppLanguage.chosen(in: d, domain: suite), AppLanguage.de)
+    AppLanguage.system.save(to: d)
+    expect("language: same as the Mac removes the key", d.persistentDomain(forName: suite)?["AppleLanguages"] == nil, true)
+    expect("language: system follows a German Mac", AppLanguage.system.resolved(mac: ["de-DE", "en"]), AppLanguage.de)
+    expect("language: system follows another Mac as English", AppLanguage.system.resolved(mac: ["fr-FR"]), AppLanguage.en)
+    expect("language: a choice stays", AppLanguage.en.resolved(mac: ["de"]), AppLanguage.en)
+    d.removePersistentDomain(forName: suite)
+}
+do {
+    // A stand-in for `deploys`, and a log of the test's own: nothing real is started or written.
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("dc-tool-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let script = dir.appendingPathComponent("deploys")
+    try? """
+    case "$1" in
+      big) head -c 200000 /dev/zero | tr '\\0' x >&2; printf ok ;;
+      echo) read -r l; printf '%s' "$l" ;;
+      slow) sleep 5 ;;
+      fail) echo "Error: app not found" >&2; exit 3 ;;
+    esac
+    """.write(to: script, atomically: true, encoding: .utf8)
+    Tool.testScript = script.path; Log.testURL = dir.appendingPathComponent("test.log")
+    func run(_ args: [String], stdin: String? = nil, timeout: Double = 10, cancelAfter: Double? = nil) -> Result<String, Error> {
+        let done = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var r: Result<String, Error> = .success("")
+        let t = Task.detached {
+            do { r = .success(String(decoding: try await Tool.run(args, stdin: stdin, timeout: timeout), as: UTF8.self)) }
+            catch { r = .failure(error) }
+            done.signal()
+        }
+        if let c = cancelAfter { Thread.sleep(forTimeInterval: c); t.cancel() }
+        _ = done.wait(timeout: .now() + 15)
+        return r
+    }
+    expect("tool: 200 KB on stderr does not hang", (try? run(["big"]).get()) ?? "error", "ok")
+    expect("tool: stdin reaches the script", (try? run(["echo"], stdin: "hello").get()) ?? "error", "hello")
+    if case .failure(let e as ToolError) = run(["slow"], timeout: 0.5) { expect("tool: timeout", e.timedOut, true) } else { expect("tool: timeout", "no timeout", "timeout") }
+    if case .failure(let e as ToolError) = run(["fail"]) {
+        expect("tool: exit code and message", "\(e.exitCode ?? 0) \(e.message)", "3 " + L("Error: app not found", "Fehler: app nicht gefunden"))
+    } else { expect("tool: failure", "no failure", "failure") }
+    if case .failure(let e) = run(["slow"], cancelAfter: 0.3) { expect("tool: cancel", e is CancellationError, true) } else { expect("tool: cancel", "not cancelled", "cancelled") }
+    Tool.testScript = nil; Log.testURL = nil
+    try? FileManager.default.removeItem(at: dir)
+}
+let ours = Data(#"{"mcpServers":{"deploy-center":{"command":"node"}}}"#.utf8), other = Data(#"{"mcpServers":{"x":{}}}"#.utf8)
+expect("nudge: desktop without our entry", ClaudeNudge.wanted(desktopInstalled: true, desktopData: other, codeData: nil, cliFound: false), true)
+expect("nudge: desktop connected", ClaudeNudge.wanted(desktopInstalled: true, desktopData: ours, codeData: nil, cliFound: false), false)
+expect("nudge: unreadable desktop config is not offered", ClaudeNudge.wanted(desktopInstalled: true, desktopData: Data("{".utf8), codeData: nil, cliFound: false), false)
+expect("nudge: no desktop app", ClaudeNudge.wanted(desktopInstalled: false, desktopData: nil, codeData: nil, cliFound: false), false)
+expect("nudge: Claude Code found, not connected", ClaudeNudge.wanted(desktopInstalled: false, desktopData: nil, codeData: other, cliFound: true), true)
+expect("nudge: Claude Code connected", ClaudeNudge.wanted(desktopInstalled: false, desktopData: nil, codeData: ours, cliFound: true), false)
+expect("cli text: German with the name", CLIText.german("Error: No deploy of web found"), "Fehler: Kein Deploy von web gefunden")
+expect("cli text: the cap", CLIText.german("This month's Claude cap is reached (5 of 9 tokens). Raise it in Settings > Claude in the app, or: deploys ai cap <tokens>"),
+       "Das Claude-Limit dieses Monats ist erreicht (5 von 9 Tokens). Erhöhen unter Einstellungen > Claude in der App oder: deploys ai cap <tokens>")
+expect("cli text: unknown stays", CLIText.german("Something new"), "Something new")
+do {
+    let rows: [DeploySnapshot.Project] = [
+        .init(name: "a", platform: "Vercel", status: .waiting, commits: 1, prs: 2, since: nil, message: nil),
+        .init(name: "b", platform: "Render", status: .failed, commits: 0, prs: 0, since: nil, message: nil),
+        .init(name: "c", platform: "Vercel", status: .building, commits: 0, prs: 0, since: nil, message: nil)]
+    expect("snapshot: counts per platform", Store.counts(rows).map { "\($0.platform) \($0.waiting) \($0.prs) \($0.building) \($0.failed)" },
+           ["Render 0 0 0 1", "Vercel 1 2 1 0"])
+    let f = FileManager.default.temporaryDirectory.appendingPathComponent("dc-snap-\(UUID().uuidString).json")
+    try? Data(#"{"version":2,"at":"2026-11-10T10:00:00Z","demo":false,"waitingProjects":1,"waitingCommits":1,"waitingPRs":0,"building":0,"failed":0,"projects":[],"newField":true}"#.utf8).write(to: f)
+    expect("snapshot: a newer version still reads", DeploySnapshot.read(f)?.waitingProjects ?? -1, 1)
+    try? FileManager.default.removeItem(at: f)
+}
+var k1 = LinkedKeys(); k1.vercel = "v"; var k2 = k1; k2.updated = Date().addingTimeInterval(99); k2.once = "x"
+expect("phone link: only the time changed is the same", k1.sameContent(as: k2), true)
+k2.render = "r"
+expect("phone link: a new key is a change", k1.sameContent(as: k2), false)
+let hand = item(.render)
+expect("handoff key is the iPhone's", Handoff.key(hand), "Render/srv-1")
+expect("handoff finds the project", Handoff.item(for: "Render/srv-1", in: [item(), hand])?.platform.cli ?? "", "render")
+expect("updates: on by default", [Updater.automaticChecks(nil), Updater.automaticChecks(false)], [true, false])
+
+expect("quiet hours", [Notify.quiet(hour: 23, from: 22, to: 7), Notify.quiet(hour: 6, from: 22, to: 7), Notify.quiet(hour: 7, from: 22, to: 7),
+                        Notify.quiet(hour: 13, from: 12, to: 14), Notify.quiet(hour: 3, from: 0, to: 0)], [true, true, false, true, false])
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

@@ -9,4 +9,8 @@ enum Updater {
     static let bundleID = "app.deploycenter.mac"
     static let feed = "https://deploycenter.app/appcast.xml"
     static var runningVersion: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0" }
+    /// The old daily check had its own switch ("checkUpdates"); it still decides, on by default.
+    static func automaticChecks(_ stored: Any?) -> Bool { stored as? Bool ?? true }
+    /// Sparkle's restart waits while deploys are queued or building; a check without them goes on.
+    static func postponeRestart(busy: Bool) -> Bool { busy }
 }

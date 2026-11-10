@@ -455,6 +455,19 @@ struct CommandPaletteHost: ViewModifier {
                        "Laufende Builds werden beim Anbieter abgebrochen, wartende starten nicht."))
             }
             .onChange(of: center.requests) { _, _ in showing = true }
+            // From a failure's notification: the log, or the rollback question (never the rollback itself).
+            .onChange(of: store.pendingLog) { _, k in
+                guard let k else { return }
+                store.pendingLog = nil
+                if let i = store.itemNamed(key: k) { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { sheet = .log(i) } }
+            }
+            .onChange(of: store.pendingRollback) { _, k in
+                guard let k else { return }
+                store.pendingRollback = nil
+                if let i = store.itemNamed(key: k), i.deployable, !i.state.isActive, !store.observer {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { rollbackItem = i }
+                }
+            }
             .onAppear {
                 center.hosts += 1
                 PaletteHotKey.update()

@@ -48,7 +48,7 @@ final class PhoneLinkModel: ObservableObject {
         if s == errSecSuccess { lastPush = Date(); problem = nil }
         else {
             problem = L("Could not write to iCloud Keychain (error \(s)).", "Konnte nicht in den iCloud-Schlüsselbund schreiben (Fehler \(s)).")
-            Log.write("phone link: SecItemAdd \(s)")
+            Log.write("phone link: keychain write \(s)")
         }
     }
 

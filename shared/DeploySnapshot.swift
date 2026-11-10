@@ -21,6 +21,14 @@ struct DeploySnapshot: Codable, Equatable {
         var id: String { platform + "/" + name }
     }
 
+    struct PlatformCount: Codable, Equatable {
+        let platform: String      // "Vercel", "Render", …
+        let waiting: Int          // projects
+        let prs: Int
+        let building: Int
+        let failed: Int
+    }
+
     static let version = 1
     var version = Self.version
     let at: Date
@@ -30,6 +38,9 @@ struct DeploySnapshot: Codable, Equatable {
     let waitingPRs: Int
     let building: Int
     let failed: Int
+    /// The counts of each platform (all rows, not only the ten in `projects`), so a widget can
+    /// show one platform. Nil from older apps.
+    var byPlatform: [PlatformCount]? = nil
     let saving: Saving?
     /// Building and failed first, then waiting by the number of PRs; at most ten.
     let projects: [Project]
@@ -57,10 +68,11 @@ struct DeploySnapshot: Codable, Equatable {
     }()
     static let decoder: JSONDecoder = { let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d }()
 
+    /// Any version that decodes: a newer app may add optional fields, and an older widget still shows
+    /// what it knows instead of "Open the app". A change that breaks this must rename a field.
     static func read(_ url: URL? = groupURL) -> DeploySnapshot? {
-        guard let url, let data = try? Data(contentsOf: url),
-              let s = try? decoder.decode(DeploySnapshot.self, from: data), s.version == version else { return nil }
-        return s
+        guard let url, let data = try? Data(contentsOf: url) else { return nil }
+        return try? decoder.decode(DeploySnapshot.self, from: data)
     }
 
     /// Made-up numbers for the widget gallery, the simulator and screenshots.

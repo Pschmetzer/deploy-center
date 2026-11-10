@@ -382,10 +382,34 @@ enum Notify {
     static func remind(_ title: String, _ body: String) {
         add(title, body, id: "daily-reminder")
     }
-    /// `project`: a click on it shows that project in the window.
-    static func post(_ title: String, _ body: String, project: String? = nil) {
-        guard available, !NSApp.isActive, UserDefaults.standard.object(forKey: "notifications") as? Bool ?? true else { return }
-        add(title, body, id: UUID().uuidString, project: project)
+    /// `project`: a click on it shows that project in the window. `key` (Store.key) with `failed`:
+    /// the notification has "Show log" and "Roll back …", which open the window there; nothing runs by itself.
+    static func post(_ title: String, _ body: String, project: String? = nil, key: String? = nil, failed: Bool = false) {
+        let d = UserDefaults.standard
+        guard available, !NSApp.isActive, d.object(forKey: "notifications") as? Bool ?? true else { return }
+        // Quiet hours (Settings → Notifications): only failures still come.
+        if !failed, quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo")) { return }
+        add(title, body, id: UUID().uuidString, category: failed && key != nil ? NotifyRouter.failedCategory : nil, project: project, key: key)
+        // A failure nobody looked at comes back once, 30 minutes later (Settings), unless the app was opened.
+        if failed, let key, d.bool(forKey: "remindFailures") {
+            add(L("Still failing: ", "Immer noch fehlgeschlagen: ") + title, body, id: escalationPrefix + key,
+                category: NotifyRouter.failedCategory, project: project, key: key, after: 30 * 60)
+        }
+    }
+    static let escalationPrefix = "again|"
+    /// The second reminders that wait: gone once the person is back in the app, or the project ran again.
+    static func dropEscalations(_ key: String? = nil) {
+        guard available else { return }
+        let center = UNUserNotificationCenter.current()
+        if let key { center.removePendingNotificationRequests(withIdentifiers: [escalationPrefix + key]); return }
+        center.getPendingNotificationRequests { reqs in
+            center.removePendingNotificationRequests(withIdentifiers: reqs.map(\.identifier).filter { $0.hasPrefix(escalationPrefix) })
+        }
+    }
+    /// Whether `hour` (0–23) is inside quiet hours from `from` to `to` (both 0: off). 22 to 7 runs over midnight.
+    nonisolated static func quiet(hour: Int, from: Int, to: Int) -> Bool {
+        guard from != to else { return false }
+        return from < to ? (from..<to).contains(hour) : (hour >= from || hour < to)
     }
     /// The countdown before an automatic rollback: shown even with the window in front, with Cancel.
     static func countdown(_ title: String, _ body: String, id: String) {
@@ -397,7 +421,8 @@ enum Notify {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
     }
     /// Asks first only when the person was never asked, so the first alarm of a run is not lost.
-    private static func add(_ title: String, _ body: String, id: String, category: String? = nil, project: String? = nil) {
+    private static func add(_ title: String, _ body: String, id: String, category: String? = nil, project: String? = nil,
+                            key: String? = nil, after: TimeInterval? = nil) {
         guard available else { return }
         Task {
             let center = UNUserNotificationCenter.current()
@@ -410,8 +435,14 @@ enum Notify {
             let c = UNMutableNotificationContent()
             c.title = title; c.body = body; c.sound = .default
             if let category { c.categoryIdentifier = category }
-            if let project { c.userInfo = ["project": project] }
-            try? await center.add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
+            var info: [String: String] = [:]
+            if let project { info["project"] = project }
+            if let key { info["key"] = key }
+            c.userInfo = info
+            // Many deploys ending together are one stack in Notification Center, not a wall.
+            if category != NotifyRouter.rollbackCategory && id != "daily-reminder" { c.threadIdentifier = "deploys" }
+            let trigger = after.map { UNTimeIntervalNotificationTrigger(timeInterval: $0, repeats: false) }
+            try? await center.add(UNNotificationRequest(identifier: id, content: c, trigger: trigger))
         }
     }
 }
@@ -422,6 +453,11 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
     static let shared = NotifyRouter()
     static let rollbackCategory = "rollback-countdown"
     static let cancelAction = "cancel-rollback"
+    static let failedCategory = "deploy-failed"
+    static let logAction = "show-log"
+    static let rollbackAction = "ask-rollback"
+    /// "Show log" / "Roll back …" of a failure, with the project's key: the window opens there.
+    var onAction: (@MainActor (_ action: String, _ key: String) -> Void)?
     /// Gets the notification's id when Cancel is clicked.
     var onCancel: (@MainActor (String) -> Void)?
     /// A click on the notification itself, with the project it names (if any).
@@ -430,7 +466,11 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
     func install() {
         let center = UNUserNotificationCenter.current()
         let cancel = UNNotificationAction(identifier: Self.cancelAction, title: L("Cancel", "Abbrechen"), options: [])
+        let log = UNNotificationAction(identifier: Self.logAction, title: L("Show log", "Log zeigen"), options: [.foreground])
+        let back = UNNotificationAction(identifier: Self.rollbackAction, title: L("Roll back …", "Zurückrollen …"), options: [.foreground])
         center.setNotificationCategories([UNNotificationCategory(identifier: Self.rollbackCategory, actions: [cancel],
+                                                                 intentIdentifiers: [], options: []),
+                                          UNNotificationCategory(identifier: Self.failedCategory, actions: [log, back],
                                                                  intentIdentifiers: [], options: [])])
         center.delegate = self
     }
@@ -444,7 +484,12 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let id = response.notification.request.identifier
+        let info = response.notification.request.content.userInfo
         if response.actionIdentifier == Self.cancelAction { Task { @MainActor in self.onCancel?(id) } }
+        else if [Self.logAction, Self.rollbackAction].contains(response.actionIdentifier), let key = info["key"] as? String {
+            let a = response.actionIdentifier
+            Task { @MainActor in self.onAction?(a, key) }
+        }
         else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
             let project = response.notification.request.content.userInfo["project"] as? String
             Task { @MainActor in self.onOpen?(project) }
