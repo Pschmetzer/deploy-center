@@ -543,5 +543,96 @@ MainActor.assumeIsolated {
     expect("observer: the log is still there", looking.contains("log|vercel/app"), true)
 }
 
+
+// MARK: - Mac logic (improve/mac-logic): failures, autofix fires, site check, savings, waiting rows, journal
+
+// LOG-036/041: a failure is what autofix calls one.
+var vNewestFailed = item(); vNewestFailed.lastState = "READY"; vNewestFailed.latestState = "ERROR"
+expect("vercel: newest attempt ERROR, production READY is failed", vNewestFailed.lastFailed, true)
+var vOld = item(); vOld.lastState = "ERROR"
+expect("vercel: no newest attempt known, last state decides", vOld.lastFailed, true)
+var rRuntime = item(.render); rRuntime.lastState = "update_failed"
+expect("render: update_failed is not a build failure", rRuntime.lastFailed, false)
+var rBuild = item(.render); rBuild.lastState = "build_failed"
+expect("render: build_failed is", rBuild.lastFailed, true)
+let latestJSON = #"[{"name":"web","auto":false,"deployable":true,"lastState":"READY","latestState":"ERROR","latestId":"dpl_2","latestSha":"cccc"}]"#
+expect("vercel list decodes the newest attempt", (try? decodeLossy(VercelProject.self, from: Data(latestJSON.utf8), label: "t"))?.first?.latestState ?? "", "ERROR")
+
+// LOG-037/038/117: which fire speaks for the row.
+var newFail = failedItem(); newFail.latestSha = "ddddddd4"
+expect("old done fire + new failure: nothing, so it can be handed over",
+       RowAutofix.of(newFail, { var f = F(at: 1, project: "app", platform: "vercel", status: "fired", sha: "aaaaaaa1"); f.done = true; return f }(), now: late) == nil, true)
+expect("fire of another failed build: nothing",
+       RowAutofix.of(newFail, F(at: 1, project: "app", platform: "vercel", status: "fired", session: "https://claude.ai/code/s1", sha: "aaaaaaa1"), now: late) == nil, true)
+expect("fire of this failed build: fixing",
+       RowAutofix.of(newFail, F(at: 1, project: "app", platform: "vercel", status: "fired", sha: "ddddddd4ffff"), now: soon) == .fixing(session: nil), true)
+expect("fire sha decodes", fire(#"{"fires":[{"at":1,"project":"a","status":"fired","sha":"abc"}]}"#).fires[0].sha ?? "", "abc")
+var doneOpen = F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, prState: "open"); doneOpen.done = true
+expect("done fire, PR open, fresh: still shown", RowAutofix.of(green, doneOpen, now: soon) == .prOpen(number: 4, url: nil), true)
+expect("done fire, PR open, a day later: gone", RowAutofix.of(green, doneOpen, now: Date(timeIntervalSince1970: 1 + RowAutofix.doneOpenFor + 1)) == nil, true)
+
+// LOG-001/021: the check after going live.
+expect("site: 200 fine", Store.siteVerdict(code: 200, networkUp: true), Store.SiteVerdict.fine)
+expect("site: 429 is bot protection, fine", Store.siteVerdict(code: 429, networkUp: true), Store.SiteVerdict.fine)
+expect("site: 503 broken", Store.siteVerdict(code: 503, networkUp: true), Store.SiteVerdict.broken)
+expect("site: 404 odd, no rollback", Store.siteVerdict(code: 404, networkUp: true), Store.SiteVerdict.odd)
+expect("site: no answer, network up: broken", Store.siteVerdict(code: nil, networkUp: true), Store.SiteVerdict.broken)
+expect("site: no answer, Mac offline: never a rollback", Store.siteVerdict(code: nil, networkUp: false), Store.SiteVerdict.unreachable)
+
+// LOG-022: a health path with a query.
+expect("health path keeps its query", Store.cleanPath("/health?check=1") ?? "nil", "/health?check=1")
+expect("health path with space and query", Store.cleanPath("my health?a=b c") ?? "nil", "/my%20health?a=b%20c")
+
+// LOG-003: the saving after the costs window no longer reaches before offDay.
+var lateCosts = try! JSONDecoder().decode(Costs.self, from: Data("""
+{"days":[{"day":"2026-11-20","total":2,"build":2},{"day":"2026-11-21","total":2,"build":2}],"projects":[],"offDay":"2026-11-03"}
+""".utf8))
+expect("no 'before' in the window and none kept: unknown", lateCosts.saved(today: "2026-11-22") == nil, true)
+lateCosts.baseline = Costs.Baseline(offDay: "2026-11-03", perDay: 10, days: 2)
+expect("kept 'before': saved over all whole days since off", lateCosts.saved(today: "2026-11-22") ?? -1, 144.0)
+lateCosts.baseline = Costs.Baseline(offDay: "2026-10-01", perDay: 10, days: 2)
+expect("kept 'before' of another off day is not used", lateCosts.saved(today: "2026-11-22") == nil, true)
+expect("measured baseline", offCosts.measuredBaseline.map { "\($0.perDay) \($0.days)" } ?? "", "10.0 2")
+expect("days between", Costs.daysBetween("2026-02-27", "2026-03-02") ?? -1, 3)
+
+// LOG-051/055: no "≈ 0 minutes saved".
+let unknownLedger = try! JSONDecoder().decode(LedgerReport.self, from: Data(#"{"since":"2026-01-20","days":3,"projects":[{"name":"web","skipped":3,"savedMinutes":null}],"total":{"skipped":3,"pushes":3,"builds":0,"usd":null,"vercelMinutes":0,"renderMinutes":0}}"#.utf8))
+expect("ledger: skipped, duration unknown", unknownLedger.headline, L("3 builds skipped, duration not known yet", "3 Builds übersprungen, Dauer noch unbekannt"))
+expect("ledger: minutes incomplete", unknownLedger.minutesComplete, false)
+let nothingLedger = try! JSONDecoder().decode(LedgerReport.self, from: Data(#"{"since":"2026-01-20","days":3,"projects":[],"total":{"skipped":0,"usd":0}}"#.utf8))
+expect("ledger: nothing skipped is said, not $0.00", nothingLedger.headline, L("Nothing skipped yet – every push was built", "Noch nichts übersprungen – jeder Push wurde gebaut"))
+let noBuiltPrice = try! JSONDecoder().decode(LedgerReport.self, from: Data(#"{"since":"2026-01-20","days":3,"projects":[],"total":{"skipped":2,"usd":4}}"#.utf8))
+expect("share card: no price of the built ones is not $0", noBuiltPrice.perDay == nil, true)
+
+// LOG-004/UI-002: one rule for what waits.
+MainActor.assumeIsolated {
+    let st = Store()
+    var a = item(changed: true, commits: 1); a.repo = "me/a"
+    var b = Item(id: "b", name: "b", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil); b.changed = true; b.repo = "me/b"
+    var c = Item(id: "c", name: "c", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil); c.changed = true; c.state = .running("x")
+    var r = item(.render, changed: true); r.repo = "me/r"
+    st.items[.vercel] = [a, b, c]; st.items[.render] = [r]
+    st.hidden = ["vercel/b"]
+    expect("changed count leaves out hidden and running rows", st.changedCount(.vercel), 1)
+    expect("tab counts add up to the summary", Platform.allCases.map { st.changedCount($0) }.reduce(0, +), st.waiting.projects)
+    expect("waiting for one tab", st.waiting(for: [.render]).projects, 1)
+    st.selectChanged(.vercel)
+    expect("select changed skips hidden rows", st.selected(.vercel).map(\.id), ["app"])
+    st.clearSelection(.vercel)
+    st.selectChanged(.vercel, among: ["vercel/zzz"])
+    expect("select changed only among the rows shown", st.selected(.vercel).count, 0)
+    st.hidden = []
+}
+
+// The journal: kinds, search and days.
+let jk = [JournalEntry(at: Date(timeIntervalSince1970: 1_800_000_000), platform: "Vercel", name: "shop", result: "preview", seconds: nil, detail: nil),
+          JournalEntry(at: Date(timeIntervalSince1970: 1_800_000_100), platform: "Render", name: "api", result: "failed", seconds: nil, detail: "build exploded"),
+          JournalEntry(at: Date(timeIntervalSince1970: 1_800_200_000), platform: "Render", name: "api", result: "brand-new", seconds: nil, detail: nil)]
+expect("journal: preview is its own kind", jk[0].kind, JournalEntry.Kind.preview)
+expect("journal: an unknown word is other", jk[2].kind, JournalEntry.Kind.other)
+expect("journal: search finds the reason", Journal.filter(jk, text: "exploded", kind: nil).map(\.name), ["api"])
+expect("journal: filter by kind", Journal.filter(jk, text: "", kind: .failed).count, 1)
+expect("journal: newest day first", Journal.byDay(jk).first?.entries.first?.result ?? "", "brand-new")
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

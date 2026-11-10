@@ -56,6 +56,8 @@ struct VercelProject: Decodable {
     let openDrafts: Int?; let openBots: Int?
     let lastMsg: String?
     let risk: Risk?
+    /// The newest attempt (any outcome); `lastState` is what production serves.
+    let latestState: String?; let latestId: String?; let latestSha: String?
 }
 struct RenderService: Decodable {
     let id: String; let name: String; let type: String; let paused: Bool; let auto: Bool; let deployable: Bool
@@ -67,11 +69,17 @@ struct RenderService: Decodable {
     let openDrafts: Int?; let openBots: Int?
     let lastMsg: String?
     let risk: Risk?
+    let latestId: String?; let latestSha: String?
 }
 struct Costs: Decodable {
     struct Day: Decodable, Identifiable { let day: String; let total: Double; let build: Double; var id: String { day } }
     struct Project: Decodable { let name: String; let build: Double; let builds: Int? }
     let days: [Day]; let projects: [Project]; let offDay: String?; let buildsComplete: Bool?
+    /// The cost per day before auto-deploy went off, kept on this Mac (see `Store.loadExtras`):
+    /// two weeks after `offDay` the window of `costs 14` no longer holds a day before it.
+    struct Baseline: Codable, Equatable { let offDay: String; let perDay: Double; let days: Int }
+    var baseline: Baseline? = nil
+    private enum CodingKeys: String, CodingKey { case days, projects, offDay, buildsComplete }
 
     /// What one build of a project cost on average, only when every build of the week was counted.
     func perBuild(_ name: String) -> Double? {
@@ -165,6 +173,11 @@ struct Item: Identifiable {
     var oldestPendingAt: Date? = nil
     var rewritten = false
     var risk: Risk? = nil
+    /// The newest deploy attempt, which may have failed while production still serves an older one
+    /// (Vercel). Autofix decides by it, so the row must too.
+    var latestState: String? = nil
+    var latestId: String? = nil
+    var latestSha: String? = nil
     var selected = false
     var state: RunState = .idle
     var startedAt: Date? = nil
@@ -260,7 +273,10 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
     }
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler(notification.request.content.categoryIdentifier == Self.rollbackCategory ? [.banner, .sound] : [])
+        // The countdown and the person's own daily reminder show with the window in front too.
+        let always = notification.request.content.categoryIdentifier == Self.rollbackCategory
+            || notification.request.identifier == "daily-reminder"
+        completionHandler(always ? [.banner, .sound] : [])
     }
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
@@ -284,10 +300,15 @@ func date(_ secs: Double?) -> Date? { secs.flatMap { $0 > 0 ? Date(timeIntervalS
 // MARK: - Autofix and auto-deploy allowances, as the rows show them
 
 extension Item {
-    /// The last deploy on the platform failed (not cancelled): what autofix would hand to Claude.
+    /// The newest build failed: what autofix would hand to Claude. The same rule as the script's
+    /// AUTOFIX_FAILED: Vercel's newest attempt is ERROR (production may still be READY), Render's
+    /// newest deploy is build_failed. Runtime failures (update_failed, pre_deploy_failed) are not
+    /// build failures; the script leaves them to the person.
     var lastFailed: Bool {
-        let s = (lastState ?? "").lowercased()
-        return s.contains("fail") || s == "error"
+        switch platform {
+        case .vercel: return (latestState ?? lastState ?? "").lowercased() == "error"
+        case .render: return (lastState ?? "").lowercased() == "build_failed"
+        }
     }
 }
 
@@ -305,12 +326,15 @@ struct AutofixReport: Decodable {
         let prUrl: String?
         let mergedSha: String?
         let redeployedSha: String?
+        /// The commit of the failed build that was handed over.
+        let sha: String?
         /// Green again: the script stopped watching it.
         var done = false
         init(at: Double, project: String, platform: String?, status: String, session: String? = nil, prNumber: Int? = nil,
-             prState: String? = nil, prUrl: String? = nil, mergedSha: String? = nil, redeployedSha: String? = nil) {
+             prState: String? = nil, prUrl: String? = nil, mergedSha: String? = nil, redeployedSha: String? = nil, sha: String? = nil) {
             self.at = at; self.project = project; self.platform = platform; self.status = status; self.session = session
             self.prNumber = prNumber; self.prState = prState; self.prUrl = prUrl; self.mergedSha = mergedSha; self.redeployedSha = redeployedSha
+            self.sha = sha
         }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: K.self)
@@ -321,9 +345,10 @@ struct AutofixReport: Decodable {
             status = try c.decode(String.self, forKey: .status)
             platform = s(.platform); session = s(.session); prState = s(.prState)?.lowercased(); prUrl = s(.prUrl)
             prNumber = n(.prNumber) ?? n(.pr); mergedSha = s(.mergedSha); redeployedSha = s(.redeployedSha)
+            sha = s(.sha)
             done = ((try? c.decodeIfPresent(Bool.self, forKey: .done)) ?? nil) ?? false
         }
-        private enum K: String, CodingKey { case at, project, platform, status, session, prNumber, pr, prState, prUrl, mergedSha, redeployedSha, done }
+        private enum K: String, CodingKey { case at, project, platform, status, session, prNumber, pr, prState, prUrl, mergedSha, redeployedSha, sha, done }
     }
     let routine: String?
     let token: Bool
@@ -360,6 +385,10 @@ enum RowAutofix: Equatable {
     /// After this long without a PR a hand-over no longer counts as "fixing".
     static let stalledAfter: TimeInterval = 90 * 60
 
+    /// A `done` fire (green again) with a PR still open shows that PR this long, then nothing:
+    /// the script no longer syncs it, so "open" may be stale.
+    static let doneOpenFor: TimeInterval = 24 * 3600
+
     static func of(_ i: Item, _ f: AutofixReport.Fire?, now: Date = Date()) -> RowAutofix? {
         guard let f else { return nil }
         let pr = f.prUrl.flatMap(URL.init(string:))
@@ -369,8 +398,15 @@ enum RowAutofix: Equatable {
             if let live = i.lastSha, !live.isEmpty, live.hasPrefix(m) || m.hasPrefix(live) { return nil }
             return i.hasNewCommits ? .merged(sha: m, pr: f.prNumber, url: pr) : nil
         }
-        if f.prState == "open", let n = f.prNumber { return .prOpen(number: n, url: pr) }
+        if f.prState == "open", let n = f.prNumber {
+            if f.done && now.timeIntervalSince1970 - f.at > doneOpenFor { return nil }
+            return .prOpen(number: n, url: pr)
+        }
         guard i.lastFailed else { return nil }   // green again: nothing to say
+        // A failure now that is not the one handed over: an old fire (green since, or another
+        // build) says nothing about it, and must not block handing this one over.
+        if f.done { return nil }
+        if let fs = f.sha, !fs.isEmpty, let cur = i.latestSha, !cur.isEmpty, !(fs.hasPrefix(cur) || cur.hasPrefix(fs)) { return nil }
         if f.prState == "closed" || f.prState == "merged" { return .handedBack }
         switch f.status {
         case "fired", "pending", "ratelimited":

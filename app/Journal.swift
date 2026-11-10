@@ -2,6 +2,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct JournalEntry: Codable, Identifiable {
     /// Stable across loads, so a list does not redraw every row when it is read again.
@@ -9,7 +10,7 @@ struct JournalEntry: Codable, Identifiable {
     let at: Date
     let platform: String
     let name: String
-    let result: String        // live, other (preview, rollback), failed, skipped, cancelled
+    let result: String        // see Kind: live, preview, rollback, forced, failed, skipped, cancelled (other: older apps)
     let seconds: Double?
     let detail: String?
     init(at: Date = Date(), platform: String, name: String, result: String, seconds: Double?, detail: String?) {
@@ -39,6 +40,9 @@ enum Journal {
         try? fm.moveItem(at: oldURL, to: url)
     }
 
+    /// Posted after an entry was written, so an open history shows it.
+    static let didAppend = Notification.Name("JournalDidAppend")
+
     static func append(_ e: JournalEntry) {
         lock.lock(); defer { lock.unlock() }
         migrate()
@@ -46,8 +50,21 @@ enum Journal {
         guard let data = try? enc.encode(e) else { return }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let line = data + Data("\n".utf8)
-        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line); try? h.close() }
-        else { try? line.write(to: url) }
+        // The throwing calls: the old seekToEndOfFile/write raise an Objective-C exception on a full
+        // disk, which no catch stops.
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                let h = try FileHandle(forWritingTo: url)
+                defer { try? h.close() }
+                try h.seekToEnd(); try h.write(contentsOf: line)
+            } else {
+                try line.write(to: url)
+                private600(url)
+            }
+        } catch {
+            Log.write("journal: could not write (\(error.localizedDescription))")
+            return
+        }
         let n = (lines ?? countLines()) + (lines == nil ? 0 : 1)
         lines = n
         // Kept small: past 500 lines (and a margin) the oldest go.
@@ -56,6 +73,12 @@ enum Journal {
             rewrite(Array(all.suffix(maxEntries)))
             lines = min(all.count, maxEntries)
         }
+        DispatchQueue.main.async { NotificationCenter.default.post(name: didAppend, object: nil) }
+    }
+
+    /// Project names and error texts: readable by this user only, like the log.
+    private static func private600(_ u: URL) {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: u.path)
     }
 
     private static func countLines() -> Int {
@@ -66,7 +89,8 @@ enum Journal {
     private static func rewrite(_ list: [JournalEntry]) {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         let text = list.compactMap { try? enc.encode($0) }.map { String(decoding: $0, as: UTF8.self) }.joined(separator: "\n") + "\n"
-        try? Data(text.utf8).write(to: url, options: .atomic)
+        do { try Data(text.utf8).write(to: url, options: .atomic); private600(url) }
+        catch { Log.write("journal: could not trim (\(error.localizedDescription))") }
     }
 
     /// Oldest first.
@@ -102,12 +126,78 @@ enum Journal {
         for e in list where ["live", "failed"].contains(e.result) { recent["\(e.platform)/\(e.name)", default: []].append(e.result == "failed") }
         return recent.mapValues { r in let w = r.suffix(window); return (w.filter { $0 }.count, w.count) }
     }
+
+    /// Entries that match a search (project, platform or detail) and a kind; nil kind is all.
+    static func filter(_ list: [JournalEntry], text: String, kind: JournalEntry.Kind?) -> [JournalEntry] {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        return list.filter { e in
+            (kind == nil || e.kind == kind)
+                && (t.isEmpty || e.name.localizedCaseInsensitiveContains(t) || e.platform.localizedCaseInsensitiveContains(t)
+                    || (e.detail?.localizedCaseInsensitiveContains(t) ?? false))
+        }
+    }
+
+    /// Newest day first, each day's entries newest first.
+    static func byDay(_ list: [JournalEntry]) -> [(day: String, entries: [JournalEntry])] {
+        let groups = Dictionary(grouping: list) { localDay($0.at) }
+        return groups.keys.sorted(by: >).map { k in (k, groups[k]!.sorted { $0.at > $1.at }) }
+    }
+}
+
+extension JournalEntry {
+    /// The result as a known kind; a word from a newer script or app is `.other`.
+    enum Kind: String, CaseIterable {
+        case live, preview, rollback, forced, failed, skipped, cancelled, other
+        var title: String {
+            switch self {
+            case .live: return L("Live", "Live")
+            case .preview: return L("Preview", "Vorschau")
+            case .rollback: return L("Rolled back", "Zurückgerollt")
+            case .forced: return L("Forced", "Erzwungen")
+            case .failed: return L("Failed", "Fehlgeschlagen")
+            case .skipped: return L("Skipped", "Übersprungen")
+            case .cancelled: return L("Cancelled", "Abgebrochen")
+            case .other: return L("Other", "Anderes")
+            }
+        }
+        var symbol: String {
+            switch self {
+            case .live: return "checkmark.circle.fill"
+            case .preview: return "eye.circle.fill"
+            case .rollback: return "arrow.uturn.backward.circle.fill"
+            case .forced: return "exclamationmark.shield.fill"
+            case .failed: return "xmark.octagon.fill"
+            case .skipped: return "forward.circle.fill"
+            case .cancelled: return "stop.circle.fill"
+            case .other: return "circle.fill"
+            }
+        }
+        var color: Color {
+            switch self {
+            case .live: return .green
+            case .preview, .rollback: return .blue
+            case .forced: return .orange
+            case .failed: return .red
+            case .skipped, .cancelled, .other: return .secondary
+            }
+        }
+    }
+    var kind: Kind { Kind(rawValue: result) ?? .other }
 }
 
 struct JournalView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var entries: [JournalEntry] = []
     @State private var failed: [String: (failed: Int, total: Int)] = [:]
+    @State private var search = ""
+    @State private var kind: JournalEntry.Kind?
+    @State private var limit = 200
+
+    private var shown: [JournalEntry] { Journal.filter(entries, text: search, kind: kind) }
+    /// Names in the details are scrubbed in demo mode, like everywhere on screen.
+    private var names: [Item] {
+        Set(entries.map(\.name)).map { Item(id: $0, name: $0, detail: "", platform: .vercel, deployable: false, auto: false, note: nil, link: nil) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -115,38 +205,77 @@ struct JournalView: View {
                 Text(L("Deploy history", "Deploy-Verlauf")).font(.headline)
                 Spacer()
                 Button(L("Copy as CSV", "Als CSV kopieren")) {
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Journal.csv(entries), forType: .string)
-                }.disabled(entries.isEmpty)
+                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Journal.csv(shown), forType: .string)
+                }.disabled(shown.isEmpty)
+                Button(L("Save as CSV …", "Als CSV sichern …")) { save() }.disabled(shown.isEmpty)
                 Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(12)
+            HStack {
+                TextField(L("Search project or reason", "Projekt oder Grund suchen"), text: $search).textFieldStyle(.roundedBorder)
+                Picker(L("Result", "Ergebnis"), selection: $kind) {
+                    Text(L("All", "Alle")).tag(JournalEntry.Kind?.none)
+                    ForEach(JournalEntry.Kind.allCases, id: \.self) { k in Text(k.title).tag(JournalEntry.Kind?.some(k)) }
+                }.fixedSize()
+            }.padding(.horizontal, 12).padding(.bottom, 8)
             Divider()
             if entries.isEmpty {
                 Text(L("Nothing yet. Deploys that end are listed here.", "Noch nichts. Beendete Deploys stehen hier."))
                     .foregroundStyle(.secondary).padding(16)
+            } else if shown.isEmpty {
+                Text(L("Nothing matches.", "Nichts gefunden.")).foregroundStyle(.secondary).padding(16)
             } else {
-                List(entries.reversed()) { e in
-                    HStack(spacing: 8) {
-                        // "forced": started inside a closed deploy window, with the reason in the detail.
-                        Image(systemName: e.result == "failed" ? "xmark.octagon.fill"
-                              : (e.result == "skipped" ? "forward.circle.fill" : (e.result == "cancelled" ? "stop.circle.fill"
-                              : (e.result == "forced" ? "exclamationmark.shield.fill" : "checkmark.circle.fill"))))
-                            .foregroundStyle(e.result == "failed" ? .red : (["skipped", "cancelled"].contains(e.result) ? .secondary
-                                             : (e.result == "forced" ? .orange : .green)))
-                        Text(Demo.mask(e.name)).font(.body.weight(.medium))
-                        Text(e.platform).font(.caption).foregroundStyle(.secondary)
-                        if let f = failed["\(e.platform)/\(e.name)"], f.failed > 0 {
-                            Text(L("\(f.failed) of last \(f.total) failed", "\(f.failed) der letzten \(f.total) fehlgeschlagen"))
-                                .font(.caption2).foregroundStyle(.orange)
+                List {
+                    ForEach(Journal.byDay(shown), id: \.day) { group in
+                        Section(SavingsFormat.day(group.day)) {
+                            ForEach(group.entries) { e in row(e) }
                         }
-                        Spacer()
-                        if let s = e.seconds { Text("\(Int(s) / 60):\(String(format: "%02d", Int(s) % 60))").font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
-                        Text(e.at.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
                     }
-                    .help(e.detail ?? "")
+                    if entries.count >= limit {
+                        Button(L("Load older entries", "Ältere Einträge laden")) { limit = .max; reload() }.buttonStyle(.link)
+                    }
                 }
             }
         }
-        .frame(width: 640, height: 460)
-        .task { entries = Journal.load(limit: 200); failed = Journal.failureTable(entries) }
+        .frame(minWidth: 560, idealWidth: 680, minHeight: 360, idealHeight: 520)
+        .task { reload() }
+        .onReceive(NotificationCenter.default.publisher(for: Journal.didAppend)) { _ in reload() }
+    }
+
+    private func row(_ e: JournalEntry) -> some View {
+        let k = e.kind, detail = e.detail.map { Demo.on ? Demo.scrub($0, items: names) : $0 }
+        let took = e.seconds.map { "\(Int($0) / 60):\(String(format: "%02d", Int($0) % 60))" }
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Image(systemName: k.symbol).foregroundStyle(k.color).accessibilityHidden(true)
+                Text(Demo.mask(e.name)).font(.body.weight(.medium))
+                Text(k.title).font(.caption).foregroundStyle(k.color == .secondary ? Color.secondary : k.color)
+                Text(e.platform).font(.caption).foregroundStyle(.secondary)
+                if let f = failed["\(e.platform)/\(e.name)"], f.failed > 0 {
+                    Text(L("\(f.failed) of last \(f.total) failed", "\(f.failed) der letzten \(f.total) fehlgeschlagen"))
+                        .font(.caption2).foregroundStyle(.orange)
+                }
+                Spacer()
+                if let took { Text(took).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
+                Text(e.at.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+            }
+            if let detail, !detail.isEmpty {
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2).padding(.leading, 26)
+            }
+        }
+        .help(detail ?? "")
+        .accessibilityElement(children: .combine)
+    }
+
+    private func reload() {
+        entries = Journal.load(limit: limit); failed = Journal.failureTable(entries)
+    }
+
+    private func save() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "deploy-history.csv"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let u = panel.url else { return }
+        do { try Data(Journal.csv(shown).utf8).write(to: u, options: .atomic) }
+        catch { Log.write("journal: CSV not saved (\(error.localizedDescription))") }
     }
 }
