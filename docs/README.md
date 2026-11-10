@@ -26,6 +26,21 @@
 | [../README-CLI.md](../README-CLI.md) | The CLI on its own (the README in the release tarball) |
 | [../examples/](../examples/) | Deploying without a Mac (CI) |
 
+## The app's Settings
+
+The pages write a setting as *Settings → tab → section*. The Mac app's Settings window has six tabs:
+
+| Tab (Deutsch) | What is on it |
+|---|---|
+| General (Allgemein) | language, demo mode, open at login; notifications and the daily reminder; updates; hidden projects |
+| Platforms (Plattformen) | which platforms are on; the iPhone link (iCloud Keychain or QR code) |
+| Deploy & guard (Deploy & Wächter) | how deploys run; the auto-deploy guard ([GUARD.md](GUARD.md)); costs: a monthly build budget and the savings estimate ([SAVINGS.md](SAVINGS.md)) |
+| Claude | Claude Desktop and Claude Code; Claude in the app ([CLAUDE.md](CLAUDE.md)); Autofix ([AUTOFIX.md](AUTOFIX.md)) |
+| Team | the shared `deploy-center.json` ([TEAM.md](TEAM.md)) |
+| Advanced (Erweitert) | the command palette shortcut; help: open the error log, copy diagnostics |
+
+A link in the app that leads to a setting (for example the Autofix notice) opens the right tab.
+
 ## Language
 
 - English: everything for users. The [README](../README.md), the website (`site/`), this folder's pages listed above, [CHANGELOG.md](../CHANGELOG.md), `examples/`, and code comments.

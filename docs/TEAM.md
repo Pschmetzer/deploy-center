@@ -156,7 +156,7 @@ Error: shop-web needs 1 approval(s) from someone other than you (a-login) before
 
 The same check runs wherever production deploys start: `deploys deploy`, `deploy-changed --yes`,
 `vercel deploy`, `render deploy` and the app's buttons. The app shows the end of the message;
-the whole message is in its log (Settings → Help → Open the error log).
+the whole message is in its log (Settings → Advanced → Open the error log).
 
 ### `--force`
 

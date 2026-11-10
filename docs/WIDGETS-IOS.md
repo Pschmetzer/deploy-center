@@ -159,7 +159,7 @@ QR code. No account and no server of ours.**
 An own account with a server would hold every user's deploy tokens: a large liability, and the end
 of "Data Not Collected".
 
-- **iCloud Keychain** (`shared/PhoneLink.swift`): Mac app → Settings → iPhone → "Connect the iPhone
+- **iCloud Keychain** (`shared/PhoneLink.swift`): Mac app → Settings → Platforms → iPhone → "Connect the iPhone
   app". It writes one synchronizable keychain item in the team's keychain group
   `<TEAMID>.app.deploycenter.shared`: the Vercel token made for the phone, the Vercel team id, the
   Render key and the gh CLI's GitHub token. iCloud Keychain carries it, end-to-end encrypted, to the

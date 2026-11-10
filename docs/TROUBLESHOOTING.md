@@ -4,9 +4,10 @@ Each heading is a message the app or `deploys` shows, word for word. Search this
 
 First steps for any problem:
 
-- `deploys doctor` prints what is connected as JSON (`jq`, `vercelCli`, `vercelApi`, `vercelLoggedIn`, `githubCli`, `githubLoggedIn`, `renderKey`).
-- In the app, **Settings → Copy diagnostics** copies versions and what is connected, without project names or keys. Paste it into an issue.
-- **Settings → Open the error log** opens `~/Library/Logs/DeployCenter.log`: every failed call to `deploys` and what it said.
+- `deploys doctor` prints what is connected as JSON: `jq`, `jqVersion`, `bashVersion`, `githubCli`, `githubLoggedIn`, `gitlabCli`, `gitlabLoggedIn`, `readonly`, and the fields of each platform that is on (Vercel: `vercelCli`, `vercelApi`, `vercelLoggedIn`; Render: `renderKey`, `renderKeySource`; deploy hooks: `hookReady`, `hooks`). For Netlify, Cloudflare, Amplify, DigitalOcean and Coolify ask the platform itself, for example `deploys netlify doctor`: their answers share field names (`provider`, and `key`, `tokenOk`, `error` for three of them), and in the combined answer only the last one of each is left.
+- In the app, **Settings → Advanced → Copy diagnostics** copies versions and what is connected, without project names or keys. Paste it into an issue.
+- **Settings → Advanced → Open the error log** opens `~/Library/Logs/DeployCenter.log`: every failed call to `deploys` and what it said.
+- An environment variable can change what `deploys` does (`DEPLOYS_READONLY`, `DEPLOYS_NO_GITHUB`, `DEPLOYS_CONFIG`, …). [CLI.md](CLI.md) lists them all.
 
 The app runs the `deploys` script inside it (`Deploy Center.app/Contents/Resources/deploys`), so every error below can be reproduced in Terminal with the same command.
 
@@ -98,7 +99,17 @@ Your login belongs to more than one team. The error lists each team id and name.
 deploys vercel team team_abc123
 ```
 
-The choice is saved in `~/.config/deploys/vercel-team`. In CI, set `DEPLOYS_VERCEL_TEAM` instead.
+The choice is saved in `~/.config/deploys/vercel-team`. In CI, set `DEPLOYS_VERCEL_TEAM` instead. The example workflows read it from the repository variable `DEPLOYS_VERCEL_TEAM` (`vars.DEPLOYS_VERCEL_TEAM`). Some older examples read `vars.VERCEL_TEAM`: if you copied one of those, rename the variable under Settings → Secrets and variables → Actions → Variables, or keep the old name in your copy.
+
+### "Vercel could not be loaded" (or "Render could not be loaded")
+
+The last read of the list failed. The banner says when the list on screen is from, and the line under it is what `deploys` reported. Press **Try again** first: a network blip is the usual cause. Vercel reads are asked again by themselves, Render reads up to three times, so a message that stays means the problem is still there.
+
+- `fetch failed`, `ETIMEDOUT`, `ENOTFOUND`, `ECONNRESET`, or `no answer from Render (network or timeout)`: the Mac could not reach the platform. Check the network, a VPN or a proxy.
+- `no answer within … s`: the Vercel CLI hung. Try `vercel whoami` in Terminal: if that hangs too, the problem is the CLI or the network, not Deploy Center.
+- `HTTP 401` / `HTTP 403`: the login or key is wrong or expired. Vercel: `vercel login`. Render: see below.
+
+When only the newest builds could not be read, the list still comes. The row gets a small ⓘ whose tooltip says *The newest builds could not be read: a build under way may not show*. That is a notice, not an error: the next refresh fills it in.
 
 ### "<project> has no remembered repo. Turn its auto-deploy off with this tool, or add it to …/vercel-repos.json"
 
@@ -197,17 +208,17 @@ A run is still going (the scheduled one every 10 minutes, or one you started). W
 
 ### "This month's Claude cap is reached (…)"
 
-Claude in the app stops at the monthly token cap you set. Raise it in Settings → Claude in the app, or with `deploys ai cap <tokens>`. See [CLAUDE.md](CLAUDE.md).
+Claude in the app stops at the monthly token cap you set. Raise it in Settings → Claude → **Claude in the app**, or with `deploys ai cap <tokens>`. See [CLAUDE.md](CLAUDE.md).
 
 ### "The config file is not valid JSON. Nothing was changed."
 
-Settings → Claude → Connect for Claude Desktop edits `~/Library/Application Support/Claude/claude_desktop_config.json` only when it is valid JSON. Fix or remove the broken file, then connect again.
+**Connect** next to Claude Desktop (Settings → Claude) edits `~/Library/Application Support/Claude/claude_desktop_config.json` only when it is valid JSON. Fix or remove the broken file, then connect again.
 
 ## iPhone
 
 ### "This build cannot use iCloud Keychain. Use the QR code."
 
-A self-built (ad hoc signed) app has no keychain group to share with the iPhone. Use **Show a QR code for the iPhone …** in Settings → iPhone, or install a release.
+A self-built (ad hoc signed) app has no keychain group to share with the iPhone. Use **Show a QR code for the iPhone …** in Settings → Platforms → iPhone, or install a release.
 
 ### "Could not write to iCloud Keychain (error …)"
 
@@ -243,7 +254,7 @@ deploys triggers
 
 ### An update does not show up, or does not install
 
-The app updates itself with Sparkle: once a day (Settings → **Check for updates automatically**) and on **Check for Updates …** in the app menu. It reads `https://deploycenter.app/appcast.xml`, downloads the zip from GitHub, and installs it only if the EdDSA signature and the Developer ID match, and only once no deploy is running. If a check fails, the app stays as it was and Sparkle says why. Install by hand from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest), or with `brew upgrade --cask --greedy deploy-center`.
+The app updates itself with Sparkle: once a day (Settings → General → **Check for updates automatically**) and on **Check for Updates …** in the app menu. It reads `https://deploycenter.app/appcast.xml`, downloads the zip from GitHub, and installs it only if the EdDSA signature and the Developer ID match, and only once no deploy is running. If a check fails, the app stays as it was and Sparkle says why. Install by hand from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest), or with `brew upgrade --cask --greedy deploy-center`.
 
 ## Still stuck?
 

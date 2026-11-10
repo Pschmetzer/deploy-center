@@ -69,10 +69,10 @@ A second start of the same project within a minute is refused, from the app and 
 A project left out of `changed` and `deploy-changed`: `deploys ignore my-project`, undone with `deploys ignore my-project --undo`.
 
 ### Hidden project
-A row hidden in the app. Hidden projects are listed in Settings, where **Show** brings them back.
+A row hidden in the app. Hidden projects are listed in Settings → General, where **Show** brings them back.
 
 ### Demo mode
-Settings → Demo mode replaces project names and domains, for screenshots.
+Settings → General → Demo mode replaces project names and domains, for screenshots.
 
 ### GitHub budget
 GitHub's hourly limit of API calls for your login. Under 300 left, Deploy Center reads only the branch heads. `deploys github-budget` shows what is left.

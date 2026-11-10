@@ -174,6 +174,7 @@ Kleine Aufgaben für den Einstieg: [Good first issues](docs/GOOD-FIRST-ISSUES.md
 ./build.sh               # App und Zip in build/
 tests/script-tests.sh    # die Regeln in deploys, ohne Netzwerk
 tests/app-tests.sh       # die Regeln in der App
+tests/all.sh             # alle Suiten aus der CI, mit Zusammenfassung (--quick: ohne App und Integrationen)
 ```
 
 Die vollständige Liste (Team-, Install- und Integrationstests, die Prüfung aufs öffentliche Repo): [CONTRIBUTING.md](CONTRIBUTING.md#tests) (Englisch).

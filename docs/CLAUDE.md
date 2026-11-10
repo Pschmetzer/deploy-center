@@ -15,7 +15,7 @@ under the usual caps. Without Autofix set up, it offers the setup instead.
 
 ## Turning it on
 
-Settings → **Claude in the app** → *Ask Claude with my own API key*. Paste a key from
+Settings → Claude → **Claude in the app** → *Ask Claude with my own API key*. Paste a key from
 [console.anthropic.com](https://console.anthropic.com/settings/keys), **Save**, then **Verify**
 (it looks up the model with the key; that costs nothing). The *Ask Claude* menu shows up only when
 the switch is on and a key is saved.
@@ -29,8 +29,12 @@ the switch is on and a key is saved.
 
 - No server of ours and no telemetry: the app (through `deploys`) talks straight to `api.anthropic.com`.
 - The key lives in the macOS keychain (item `deploy-center-anthropic`), written by `deploys ai set-key`
-  over stdin. It is never printed and never passed as a command argument. `ANTHROPIC_API_KEY` in the
-  environment is used instead when it is set.
+  over stdin. It is never printed and never passed as a command argument.
+- The key is taken in this order: `DEPLOYS_ANTHROPIC_API_KEY`, then `ANTHROPIC_API_KEY`, then the
+  keychain. `ANTHROPIC_API_KEY` is often set for another account (Claude Code, an SDK), and then
+  that account pays. `deploys ai status` says so (`envHidesKeychain: true`), and Settings → Claude →
+  Claude in the app warns. Set `DEPLOYS_ANTHROPIC_API_KEY`, or unset `ANTHROPIC_API_KEY`, to use the
+  key you saved.
 - Everything sent goes through the same masker as Autofix first: API keys and tokens (`sk-…`,
   `ghp_…`, `github_pat_…`, `xox…`, `AKIA…`, `rnd_…`, JWTs), `token=` / `password:` style values,
   passwords in URLs, and email addresses. A help, not a guarantee: read [SECURITY.md](../SECURITY.md).
@@ -41,14 +45,14 @@ the switch is on and a key is saved.
 The app runs these; you can too.
 
 ```bash
-pbpaste | deploys ai set-key          # store the key (or set ANTHROPIC_API_KEY)
+pbpaste | deploys ai set-key          # store the key (or set DEPLOYS_ANTHROPIC_API_KEY)
 deploys ai verify                     # the key works and the model is available
 deploys ai explain my-project         # why the newest build failed, and the likely fix
 deploys ai notes my-project --lang de # plain release notes, English (default) or German
 deploys ai ship my-project            # Risk: low, medium or high, and what to check
 deploys ai model claude-sonnet-5-5    # claude-opus-5-5 (default), claude-sonnet-5-5, claude-haiku-5-5
 deploys ai cap 500000                 # tokens per month
-deploys ai status                     # key set (never the key), model, cap, used this month
+deploys ai status                     # key set (never the key) and from where, model, cap, used this month
 deploys ai forget-key
 ```
 
@@ -66,7 +70,7 @@ your app's repo. On each pull request it:
 1. runs `deploys changed --json` through [the Deploy Center action](../integrations/action/)
    (report only, it never deploys),
 2. lists every project that deploys from this repo with its auto-deploy setting
-   (`deploys vercel json` / `render json`) and what already waits on it,
+   (`deploys list --json`, every platform that is set up) and what already waits on it,
 3. runs Anthropic's [Claude Code GitHub Action](https://github.com/anthropics/claude-code-action)
    (`anthropics/claude-code-action@v1`) with that list in the prompt; Claude reads the PR diff and
    posts one comment, *What this ships*: the projects affected, a risk level, and whether

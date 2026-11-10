@@ -3,7 +3,7 @@
 ## Report a problem
 
 Open a [private security advisory](https://github.com/Pschmetzer/deploy-center/security/advisories/new)
-(Security tab), not a public issue. Please include the version (Settings → "Copy diagnostics")
+(Security tab), not a public issue. Please include the version (Settings → Advanced → "Copy diagnostics")
 and the steps to see the problem. Leave out real project names, domains and keys.
 
 Deploy Center is maintained by one person in their spare time. The aim is a first answer within
@@ -66,7 +66,7 @@ the vendor).
 | Site lists, deploys, logs, starts and rollbacks (opt-in hosts, only after `deploys providers enable <p>`) | `api.netlify.com`, `api.cloudflare.com`, `api.digitalocean.com`, your Coolify server; AWS through the `aws` CLI | `curl` over HTTPS with the token on stdin; Amplify with the `aws` CLI's own credentials |
 | A POST that starts a build | the deploy hook URL you added | `curl`, URL and headers on stdin |
 | Claude in the app (opt-in, your own key): masked log excerpts, commit titles, file names | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after `deploys ai set-key`, with a monthly token cap |
-| Keys for the iPhone app: the Vercel token for the iPhone, the Render key, the `gh` token | iCloud Keychain (end-to-end encrypted by Apple), or a QR code on screen | only when you turn on Settings → iPhone or show the QR code; see [iPhone link](#iphone-link) |
+| Keys for the iPhone app: the Vercel token for the iPhone, the Render key, the `gh` token | iCloud Keychain (end-to-end encrypted by Apple), or a QR code on screen | only when you turn on Settings → Platforms → iPhone or show the QR code; see [iPhone link](#iphone-link) |
 | The `deploy-center` MCP entry: paths to `node`, the server and `deploys`, and `DEPLOYS_MCP_ALLOW_DEPLOY=1` only if you allow deploys; no key | `~/Library/Application Support/Claude/claude_desktop_config.json`, Claude Code's config | only on Connect in Settings → Claude; only that entry is added or removed |
 | The update feed (once a day, can be turned off; no system profile), then the zip | `deploycenter.app/appcast.xml`, `github.com` | HTTPS, see [Updates](#updates) |
 | Project icons | each project's own domain | HTTPS to `https://<domain>/`; icon links in that page are followed |
@@ -109,7 +109,7 @@ merges the fix PR, and a merged fix is only announced, never deployed by itself.
 
 The iPhone app has no login of its own. It gets keys from the Mac in one of two ways:
 
-- **iCloud Keychain** (Settings → iPhone → *Connect the iPhone app*): one synced keychain item
+- **iCloud Keychain** (Settings → Platforms → iPhone → *Connect the iPhone app*): one synced keychain item
   (service `app.deploycenter.link`) holds the Vercel token made for the iPhone, the Render key and
   the GitHub token of the `gh` CLI. It reaches every device signed in with your Apple ID. Turning
   the switch off deletes it there too (`PhoneLink.remove`); deleting the app does not.
@@ -129,7 +129,7 @@ does not make a copied key useless.
   ticks, starts or rolls back anything, whatever the link says.
 - Autofix and the guard run as LaunchAgents (`app.deploycenter.autofix`, `app.deploycenter.guard`)
   only after `deploys autofix schedule on` / `deploys guard schedule on` (or the switch in
-  Settings). The guard only turns auto-deploy off; Autofix opens fix PRs and never merges.
+  Settings → Deploy & guard and Settings → Claude). The guard only turns auto-deploy off; Autofix opens fix PRs and never merges.
 - The GitHub Action deploys only with `deploy: true`. Its inputs reach the scripts through `env:`,
   never as `${{ … }}` inside a `run:` script (a test checks this). It has no
   `pull_request_target` trigger. The examples set `permissions: contents: read` (or none) and
@@ -166,8 +166,6 @@ while deploys are running. A self-built (ad hoc signed) app is still checked aga
   host or address. The request is a plain GET; the answer is only shown if it is an image.
 - `notify.sh` and the GitHub Action write project names into messages, the job summary and
   `$GITHUB_OUTPUT`. Names come from your own Vercel and Render accounts.
-- `pages.yml` (the website) uses action tags, not commit SHAs, and the default checkout
-  credentials. It runs only on pushes to `main`.
 
 ## For new code (providers, plugins, MCP tools)
 

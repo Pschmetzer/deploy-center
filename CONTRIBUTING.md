@@ -6,7 +6,7 @@ open an issue first.
 ## Rules
 
 - No personal project names, team IDs, domains or paths in commits, issues or screenshots (the repo
-  is public). Take screenshots in **demo mode** (Settings → "Demo mode"): it replaces project names,
+  is public). Take screenshots in **demo mode** (Settings → General → "Demo mode"): it replaces project names,
   repos and domains with stand-ins.
 - Texts are English and German: use `L("English", "Deutsch")`.
 - Nothing may start a build without an explicit click or a command with `--yes`.
@@ -37,29 +37,47 @@ fixtures; nothing else changes. See [docs/PROVIDERS.md](docs/PROVIDERS.md). Keep
 
 ## Tests
 
+All suites at once, with a summary at the end (no network, no real projects):
+
+```bash
+bash tests/all.sh            # CLI, team, install, release, app (on macOS) and integration tests
+bash tests/all.sh --quick    # without the app and integration tests (no Swift build, no node)
+```
+
+The integration tests need `npm ci` in `integrations/mcp` and `integrations/vscode` first.
+
 CI (`.github/workflows/ci.yml`) runs these on macOS, and they must pass:
 
 ```bash
 scripts/check-public.sh             # no personal data in tracked files
-actionlint .github/workflows/*.yml docs/deploy-on-label.yml
+actionlint .github/workflows/*.yml docs/deploy-on-label.yml examples/*.yml integrations/*/examples/*.yml
 shellcheck --severity=warning deploys providers/*.sh build.sh release.sh scripts/*.sh tests/*.sh tests/lib/*.sh tests/providers/*.sh lib/*.sh
+shellcheck --severity=warning integrations/*/*.sh integrations/claude-code/scripts/*.sh integrations/hooks/pre-push integrations/tests/*.sh
 shellcheck site/install.sh
+plutil -lint scripts/*.plist.example
+swiftc -typecheck scripts/make-icon.swift
 bash tests/script-tests.sh          # the rules in deploys, and tests/providers/*.sh
 bash tests/team-tests.sh            # team mode
 bash tests/install-tests.sh         # install.sh, the release tarball, the Homebrew formula
-bash tests/app-tests.sh             # the rules in the app
-./build.sh                          # ad hoc signed, universal
+bash tests/release-tests.sh         # release gate, bump.sh, site checks, check-public, Homebrew cask
+bash tests/app-tests.sh             # the rules in the app, in English and German
+./build.sh --widgets                # ad hoc signed, universal, with the widgets
 ```
 
-On Ubuntu it runs `tests/install-tests.sh` (also with `dash` and with bash as `sh`), the VS Code
-extension (`integrations/vscode`: `npm ci`, `npm run typecheck`, `npm test`, `npm run package`),
-and the website: `python3 scripts/build-docs.py` and `python3 scripts/check-links.py site`.
+The other CI jobs:
 
-Not in CI yet, run them by hand when you touch those parts:
+- **ios:** the iPhone app and its widgets, built for the simulator without signing (`xcodebuild … -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO build`).
+- **linux-cli:** `script-tests.sh`, `team-tests.sh` and `release-tests.sh` on Ubuntu (GNU tools, bash 5).
+- **cli-install:** `tests/install-tests.sh` with `dash` and with bash as `sh`.
+- **integrations:** `bash integrations/tests/run.sh` (MCP server, Action, notify, digest, statuspage, badge, hooks, Claude Code plugin). It may fail for now without failing the run.
+- **docker:** the image in `integrations/docker/` builds and finds its providers.
+- **vscode:** `integrations/vscode`: `npm ci`, `npm run typecheck`, `npm test`, `npm run package`.
+- **docs:** `python3 scripts/build-docs.py`, `python3 scripts/check-links.py site`, `python3 scripts/check-site.py` (titles, canonical links, JSON-LD, sitemap), `python3 -I scripts/check-strings.py` (every `L(English, Deutsch)` has both texts), and `python3 -I scripts/check-release.py` (`VERSION`, the home page and the appcast name the same release; a warning for now).
+- **changelog:** on a pull request that changes `deploys` or `app/` but not `CHANGELOG.md`, a warning. The label `no-changelog` silences it.
+
+Not in CI, run it by hand when you touch the app:
 
 ```bash
-bash integrations/tests/run.sh      # MCP server, Action, notify, digest, statuspage, Claude Code plugin
-python3 scripts/check-site.py       # titles, descriptions, canonical links, sitemap of site/
 swiftc -parse-as-library -swift-version 5 -typecheck app/*.swift shared/*.swift
 ```
 
@@ -68,6 +86,18 @@ runs `tests/providers/*.sh`, the provider contract, against the fixtures in `tes
 `app-tests.sh` compiles the app's sources (without `App.swift`) with `tests/app-tests.swift`.
 
 ## Releases (maintainer)
+
+`release.sh` reads `DEVELOPER_ID` and `NOTARY_PROFILE` from the environment, or from `.release.env`
+in the repo root (ignored by git):
+
+```bash
+DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
+NOTARY_PROFILE=deploy-center
+```
+
+The file is sourced, so whatever is in it runs as shell code: keep only these two lines in it,
+and make it yours alone with `chmod 600 .release.env`. It holds no secret itself (the notary
+password stays in the keychain profile), but the team id in it is personal: never commit it.
 
 `release.sh` does this today:
 

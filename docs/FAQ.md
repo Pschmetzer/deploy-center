@@ -29,7 +29,7 @@ GitLab, yes: for a project whose repo is on gitlab.com or your own GitLab, what 
 Settings → General → **Language**: English, Deutsch, or the Mac's language (the default). The app restarts to switch; the widgets follow it. Messages from the `deploys` CLI stay English.
 
 ### How do I update?
-The app checks once a day (Settings → **Check for updates automatically**) and on **Check for Updates …** in the app menu. Sparkle shows what is new and installs once no deploy is running. With Homebrew: `brew upgrade --cask --greedy deploy-center`.
+The app checks once a day (Settings → General → **Check for updates automatically**) and on **Check for Updates …** in the app menu. Sparkle shows what is new and installs once no deploy is running. With Homebrew: `brew upgrade --cask --greedy deploy-center`.
 
 ### Windows or Linux?
 The app needs macOS 15 or newer. The `deploys` script is bash and runs on Linux too; in CI the key comes from `RENDER_API_KEY` instead of the keychain. See [examples/](../examples/).

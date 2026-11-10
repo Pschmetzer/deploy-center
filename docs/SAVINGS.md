@@ -7,7 +7,7 @@ Two commands, two questions:
 - `deploys simulate [--days 30]`: *What would auto-deploy cost me a month, next to deploying once a day?* Works before you turn anything off.
 - `deploys ledger`: *What has turning auto-deploy off saved so far?* Counts from the day you turned it off.
 
-Both need `gh` (logged in), because they count pushes on GitHub. Add `--json` for the machine answer. In the app: the Simulator (a banner before anything is turned off, and Settings → Costs) and the Ledger ("≈ $X saved since …", per project).
+Both need `gh` (logged in), because they count pushes on GitHub. Add `--json` for the machine answer. In the app: the Simulator (a banner before anything is turned off, and Settings → Deploy & guard → Costs) and the Ledger ("≈ $X saved since …", per project).
 
 Every number is an estimate and shows "≈". The JSON says how it was made (`method`).
 
@@ -101,3 +101,13 @@ ledger (`since`, `days` since the first project was turned off, at the top):
 - The commit fallback overcounts when a push carries several commits.
 - A deploy started by a hook or a workflow counts as built; the ledger then does not count that push as saved.
 - Without `gh`, or without a known repo and branch, a project has no numbers (`problem` says why).
+
+## Why does it say ≈ $0?
+
+- **Nothing was skipped.** The ledger counts a push as saved only when its commit was never built after auto-deploy was turned off. If you deployed every push, or a hook or workflow built it, nothing is saved.
+- **The commit was built as a preview.** On Vercel every deployment of the project counts, previews too. With a fast-forward or rebase merge the commit on the deploy branch is the same commit a preview already built, so that push counts as built.
+- **No pushes in the window.** `simulate` counts the last `--days` (30 by default), `ledger` only from the day auto-deploy was turned off here. Projects whose auto-deploy was never turned off with Deploy Center are not in the ledger at all.
+- **Cheap builds.** Dollars are rounded to cents. Vercel billing that shows $0 for the project's builds over the last 7 days gives a price of $0 per build.
+- **"?" is not 0.** Without a known average build (no finished build among the last 100) or without a price (Render without `DEPLOYS_RENDER_USD_PER_MIN`), the number is unknown and shows "?". The total then has `usdComplete: false`.
+
+The other way round: only the last 100 deployments of a project are read. On a busy project an older push that was built can look unbuilt, and then counts as saved.
