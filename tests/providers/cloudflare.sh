@@ -174,6 +174,13 @@ rm -rf "$DEPLOYS_CONFIG/locks"
 routes "GET /pages/projects/site$ project-off.json" "POST /deployments$ deploy-skipped.json,unauthorized.json:403" "PATCH /pages/projects/site$ ok.json"
 out="$(DEPLOYS_CLOUDFLARE_TOGGLE=1 cf deploy-json site 2>&1)"; rc=$?
 expect "toggle: a failed start still switches back" "$rc/$(calls PATCH)" "1/2"
+expect "toggle: switched back, nothing left open" "$(jq -c '.toggling // {}' "$DEPLOYS_CONFIG/cloudflare.json")" "{}"
+rm -rf "$DEPLOYS_CONFIG/locks"
+# The switch back fails: the note stays, and doctor names it.
+routes "GET /pages/projects/site$ project-off.json" "POST /deployments$ deploy-skipped.json,deploy-queued.json" "PATCH /pages/projects/site$ ok.json,unauthorized.json:403"
+DEPLOYS_CLOUDFLARE_TOGGLE=1 cf deploy-json site >/dev/null 2>&1
+expect "toggle: a failed switch back stays written down" "$(jq -c '.toggling | keys' "$DEPLOYS_CONFIG/cloudflare.json")" '["site"]'
+rm -rf "$DEPLOYS_CONFIG/locks"
 expect "toggle: switched back off" "$(grep '^PATCH' "$CALLS" | tail -n 1 | sed 's/^PATCH [^ ]* //' | jq '.source.config.production_deployments_enabled')" false
 
 # --- self-test ---

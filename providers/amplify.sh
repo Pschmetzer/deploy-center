@@ -62,7 +62,8 @@ amp_aws() {
   [ -z "${AWS_REGION:-}" ] || args+=(--region "$AWS_REGION")
   err="$(mktemp)"
   # ${args[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
-  out="$(aws "$@" ${args[@]+"${args[@]}"} --output json 2>"$err")" || rc=$?
+  # Two attempts and a time limit: a hung connection (proxy, SSO) must not hang the app.
+  out="$(AWS_MAX_ATTEMPTS="${AWS_MAX_ATTEMPTS:-2}" aws "$@" ${args[@]+"${args[@]}"} --cli-connect-timeout 10 --cli-read-timeout 60 --output json 2>"$err")" || rc=$?
   if [ "$rc" != 0 ]; then
     local msg hint="" fix="deploys amplify set-key"
     [ -n "${DEPLOYS_AMPLIFY_PROFILE:-}${AWS_PROFILE:-}" ] && fix="check DEPLOYS_AMPLIFY_PROFILE / AWS_PROFILE"
@@ -88,7 +89,7 @@ amp_aws() {
 # A job to one phase: queued|building|ready|failed|canceled. Times to epoch seconds.
 AMP_JQ='def amp_phase: (.status // null) as $s
   | if $s == null then null
-    elif $s == "RUNNING" then "building"
+    elif $s == "RUNNING" or $s == "PROVISIONING" then "building"
     elif $s == "SUCCEED" then "ready"
     elif $s == "FAILED" then "failed"
     elif ($s == "CANCELLING" or $s == "CANCELLED") then "canceled"
@@ -171,10 +172,12 @@ amplify_has() {
 amp_project() {
   local app="$1" id branches jobs="[]" assoc="[]" err="" br
   id="$(echo "$app" | jq -r '.appId')"
-  if ! branches="$( (amp_branches "$id") 2>&1)"; then err="${branches#Error: }"; branches="[]"; fi
+  # RED/PLAIN empty in the subshell: die's colour codes must not end up in fetchError.
+  if ! branches="$( (RED=""; PLAIN=""; amp_branches "$id") 2>&1)"; then err="${branches#Error: }"; branches="[]"; fi
   br="$(echo "$branches" | jq -r --argjson app "$app" "$AMP_JQ"' amp_prod($app) // empty' 2>/dev/null)"
   if [ -n "$br" ] && [ -z "$err" ]; then
-    if ! jobs="$( (amp_jobs "$id" "$br") 2>&1)"; then err="${jobs#Error: }"; jobs="[]"; fi
+    # shellcheck disable=SC2034  # read by die, in the subshell
+    if ! jobs="$( (RED=""; PLAIN=""; amp_jobs "$id" "$br") 2>&1)"; then err="${jobs#Error: }"; jobs="[]"; fi
     assoc="$( (amp_aws amplify list-domain-associations --app-id "$id" | jq -c '.domainAssociations // []') 2>/dev/null)" || assoc="[]"
   fi
   [ -n "$br" ] || [ -n "$err" ] || err="no production branch (and more than one branch)"
@@ -187,7 +190,12 @@ amp_project() {
        # Git-connected and the branch is known: StartJob RELEASE builds whether auto-build is on or not.
        deployable:(((.repository // "") != "") and $b != "" and $err == ""),
        paused:false,
-       repo:((.repository // "") | if . == "" then null else sub("^https?://[^/]+/"; "") | sub("\\.git$"; "") end),
+       # GitHub: owner/name; GitLab, Bitbucket: host/path; CodeCommit and others: none (not a
+       # repo the git-host code can ask).
+       repo:((.repository // null) | (. // "") | sub("\\.git$";"") | sub("/$";"")
+    | if test("^https?://(www\\.)?github\\.com/") then sub("^https?://(www\\.)?github\\.com/";"")
+      elif test("^https?://[^/]*(gitlab|bitbucket)[^/]*/") then sub("^https?://";"")
+      else null end | if . == "" then null else . end),
        ref:(if $b == "" then null else $b end),
        domain:$dom, url:(if $dom then "https://\($dom)" else null end),
        dashboardUrl:(if $b == "" then "https://\(amp_region).console.aws.amazon.com/amplify/apps/\(.appId)/overview" else amp_dash($b) end),

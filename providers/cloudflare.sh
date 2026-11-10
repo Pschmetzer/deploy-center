@@ -185,11 +185,12 @@ cloudflare_json() {
          # passed, or the opt-in toggle fallback is allowed.
          deployable:($c != null and (($c.production_deployments_enabled != false) or $v == "verified" or $tg == "1")),
          paused:false,
-         repo:(if $c then "\($c.owner)/\($c.repo_name)" else null end),
+         # GitHub: owner/name; GitLab with its host (source.type), so heads are asked there.
+         repo:(if $c then (if .source.type == "gitlab" then "gitlab.com/" else "" end) + "\($c.owner)/\($c.repo_name)" else null end),
          ref:($c.production_branch // .production_branch // null),
          domain:$dom, url:(if $dom then "https://\($dom)" else null end),
          dashboardUrl:"https://dash.cloudflare.com/\($a)/pages/view/\(.name)",
-         lastAt:(($new // {}).created_on | cf_t), lastState:(($new // {}).latest_stage.status // null),
+         lastAt:(($new // {}).created_on | cf_t), lastState:(($new // {}).latest_stage | if . and .name then "\(.name):\(.status // "")" else null end),
          lastSha:($live.deployment_trigger.metadata.commit_hash // null),
          lastMsg:($live.deployment_trigger.metadata.commit_message // null | if . then split("\n")[0] else null end),
          fetchError:null,
@@ -263,6 +264,12 @@ cf_lock() {
 # --form-string, not -F: a branch named "@file" or "<file" must not upload that file.
 cf_post_deploy() { cf_call POST "$(cf_proj "$1")/deployments" --form-string "branch=$2"; }
 
+# Push builds back to what they were; the note in the state goes only when that worked.
+cf_toggle_back() {  # <project> <before json> <setting>
+  if ( cf_patch_config "$1" "$2" ); then cf_state_set 'del(.toggling[$p])' --arg p "$1"
+  else echo "Cloudflare: could not turn $3 back off for $1. Run: deploys cloudflare off $1" >&2; fi
+}
+
 # cloudflare_deploy_json <project> [--preview] [--branch <b>] [--toggle]
 # Prints {id, url, state, phase, branch, toggled}. --preview needs a branch other than production.
 cloudflare_deploy_json() {
@@ -304,9 +311,14 @@ cloudflare_deploy_json() {
     # the start fails. A push in between is built too.
     local before; before="$(echo "$cfg" | jq -c --arg s "$sw" '{($s): .[$s]}')"
     echo "Cloudflare: turning $sw on for $p for a moment (race window: a push now would build too)" >&2
-    cf_patch_config "$p" "{\"$sw\":$onval}" || { rm -f "$lock"; exit 1; }
+    # Written down first, and switched back on Ctrl-C too: push builds left on cost builds.
+    # `doctor` names any that stayed open (togglesOpen).
+    cf_state_set '.toggling[$p] = {before:$b, at:(now|floor)}' --arg p "$p" --argjson b "$before"
+    trap 'cf_toggle_back "$p" "$before" "$sw"; rm -f "$lock"; exit 130' INT TERM
+    cf_patch_config "$p" "{\"$sw\":$onval}" || { trap - INT TERM; cf_state_set 'del(.toggling[$p])' --arg p "$p"; rm -f "$lock"; exit 1; }
     local rc=0; out="$(cf_post_deploy "$p" "$branch")" || rc=$?
-    ( cf_patch_config "$p" "$before" ) || echo "Cloudflare: could not turn $sw back off for $p. Run: deploys cloudflare off $p" >&2
+    cf_toggle_back "$p" "$before" "$sw"
+    trap - INT TERM
     [ "$rc" = 0 ] || { rm -f "$lock"; exit 1; }
     toggled=true
     [ "$(echo "$out" | jq "$CF_PHASE"' cf_dep | .skipped')" = true ] && { rm -f "$lock"; die "Cloudflare skipped the build even with $sw on"; }
@@ -385,7 +397,7 @@ cloudflare_doctor() {
     {provider:"cloudflare", tokenSource:$src, tokenValid:$valid,
      account:(if $acct == "" then null else $acct end), accountSource:$asrc,
      deployWhileOff:(.selftest.result // "unverified"), selftest:(.selftest // null),
-     toggleFallback:($tg == "1"),
+     toggleFallback:($tg == "1"), togglesOpen:((.toggling // {}) | keys),
      note:(if (.selftest.result // "unverified") == "verified" then "a deploy builds while push-deploys are off (self-test passed)"
            elif .selftest.result == "failed" then "Cloudflare skipped the self-test build: deploy needs --toggle"
            else "unverified: run deploys cloudflare selftest <project> --yes" end)}'

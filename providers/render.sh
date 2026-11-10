@@ -48,7 +48,7 @@ render_call() {
   if [[ "$code" != 2* ]]; then
     local hint="" fix="deploys render set-key"
     [ -n "${RENDER_API_KEY:-}" ] && fix="check RENDER_API_KEY in the environment"
-    case "$code" in 000) hint=" (no answer: network or timeout)";; 401|403) hint=" (the Render key is wrong or expired: $fix)";; 404) hint=" (not found: renamed or deleted?)";; 429) hint=" (rate limit: try again in a minute)";; 5*) hint=" (Render had a problem: try again later)";; esac
+    case "$code" in 000) hint=" (no answer: network or timeout)";; 401|403) hint=" (the Render key is wrong or expired: $fix)";; 404) hint=" (not found: renamed or deleted?)";; 429) hint=" (rate limit, asked 3 times: try again in a minute)";; 5*) hint=" (Render had a problem${try:+, asked $try times}: try again later)";; esac
     die "Render $method $path -> HTTP $code$hint: $out"
   fi
   printf '%s' "$out"

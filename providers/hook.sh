@@ -181,6 +181,7 @@ hook_record() {
 hook_deploy_json() {
   local n="${1:-}" e u method headers body cfg out code rc=0 h hv miss head sha=null msg=null now rec repo ref
   hook_known "$n" || die "No hook named \"$n\""
+  local _a; for _a in "${@:2}"; do case "$_a" in --preview|--sha) ;; -*) die "Deploy hook: unknown option $_a";; esac; done
   case " ${*:2} " in
     *" --preview "*) die "Deploy hook cannot start a preview: the hook builds what the host is set to build.";;
     *" --sha "*) die "Deploy hook cannot deploy a given commit: the hook builds what the host is set to build.";;
@@ -229,6 +230,8 @@ hook_deploy_json() {
   # A failed trigger keeps the sha of the last good one: what is live has not moved.
   rec="$(hook_state | jq -c --arg n "$n" --argjson at "$now" --arg e "$err" --arg c "${code:-0}" '(.[$n] // {}) + {ok:false, http:($c|tonumber? // 0), at:$at, error:$e}')"
   hook_record "$n" "$rec"
+  # No answer (curl failed, a timeout): the host may have started a build anyway.
+  [ "$rc" = 0 ] || die "Hook $n: $err. Whether a build started is unknown: look at the host before triggering again"
   die "Hook $n did not start a build: $err"
 }
 

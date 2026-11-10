@@ -149,7 +149,7 @@ expect "json: repo and ref" "$(echo "$s" | jq -r '.repo + "@" + .ref')" "me/shop
 expect "json: dashboard" "$(echo "$s" | jq -r .dashboardUrl)" "https://eu-central-1.console.aws.amazon.com/amplify/apps/d1shop0001/branches/main/deployments"
 expect "json: deployable" "$(echo "$s" | jq -c '[.deployable, .paused, .fetchError]')" '[true,false,null]'
 b="$(echo "$out" | jq -c '.[] | select(.name=="blog")')"
-expect "json: production branch by stage" "$(echo "$b" | jq -c '[.id, .auto, .phase, .repo]')" '["d2blog0002/release",false,"canceled","me/blog"]'
+expect "json: production branch by stage" "$(echo "$b" | jq -c '[.id, .auto, .phase, .repo]')" '["d2blog0002/release",false,"canceled","gitlab.com/me/blog"]'
 expect "json: default domain" "$(echo "$b" | jq -r .url)" "https://release.d2blog0002.amplifyapp.com"
 expect "json: no succeeded build, no live commit" "$(echo "$b" | jq -c '[.lastSha, .lastMsg]')" '[null,null]'
 st="$(echo "$out" | jq -c '.[] | select(.name=="static")')"

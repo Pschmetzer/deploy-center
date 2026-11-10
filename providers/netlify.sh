@@ -123,12 +123,18 @@ NETLIFY_JQ='
     elif . == "ready" then "ready"
     elif test("^(error|rejected|failed)$") then "failed"
     elif test("^(canceled|cancelled|skipped)$") then "canceled"
-    else "building" end;
+    elif test("^(building|uploading|uploaded|preparing|prepared|processing|processed|retrying)$") then "building"
+    else null end;
   # A build our ignore rule (or "no content change") skipped: not a deploy anyone paid for.
   def skipped: (.skipped == true) or (.state == "skipped")
-    or ((.error_message // "") | test("no content change|ignore"; "i"));
-  def repo_of: (.build_settings.repo_url // "") | sub("^https?://[^/]+/";"") | sub("\\.git$";"")
-    | if . == "" then null else . end;
+    or ((.error_message // "") | test("no content change|^skipped"; "i"));
+  # GitHub: owner/name. GitLab, Bitbucket: host/path, so the git-host code asks the right host
+  # (cutting the host made gitlab.com/g/n look like the GitHub repo g/n).
+  def host_slug: (. // "") | sub("\\.git$";"") | sub("/$";"")
+    | if test("^https?://(www\\.)?github\\.com/") then sub("^https?://(www\\.)?github\\.com/";"")
+      elif test("^https?://[^/]*(gitlab|bitbucket)[^/]*/") then sub("^https?://";"")
+      else null end | if . == "" then null else . end;
+  def repo_of: (.build_settings.repo_url // null) | host_slug;
   def deploy_out: {id, state, phase:(.state | phase),
     url:(.deploy_ssl_url // .deploy_url // null),
     dashboardUrl:(if .admin_url and .id then "\(.admin_url)/deploys/\(.id)" else null end),
@@ -141,7 +147,7 @@ netlify_rule_in_repo() {
   local repo="$1" ref="$2" base="${3:-}" p raw got=0
   command -v gh >/dev/null 2>&1 || { echo unknown; return; }
   for p in ${base:+"${base%/}/netlify.toml"} netlify.toml; do
-    raw="$(gh api "repos/$repo/contents/$p?ref=$ref" 2>/dev/null)" || continue
+    raw="$(gh api "repos/$repo/contents/$p?ref=$(jq -rn --arg r "$ref" '$r|@uri')" 2>/dev/null)" || continue
     got=1
     if echo "$raw" | jq -r '.content // empty' | tr -d '\n' | netlify_b64d 2>/dev/null \
       | grep -Eq '^[[:space:]]*ignore[[:space:]]*=.*INCOMING_HOOK_TITLE'; then echo yes; return; fi

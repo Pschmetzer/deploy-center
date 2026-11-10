@@ -175,6 +175,9 @@ expect "status" "$(netlify_status_json d-shop-3 | jq -c '[.id, .phase, .sha, .da
 expect "status: site and deploy" "$(netlify_status_json shop d-shop-3 | jq -r .id)" d-shop-3
 expect "latest: skips the skipped build" "$(netlify_latest_json shop | jq -r .id)" d-shop-3
 expect "status: the contract line" "$(netlify_status shop d-shop-3)" "d-shop-3	building	building"
+for u in "https://github.com/me/app.git|me/app" "https://gitlab.com/g/sub/n|gitlab.com/g/sub/n" "https://bitbucket.org/o/r|bitbucket.org/o/r" "|null"; do
+  expect "repo of ${u%%|*}: the git host's form" "$(jq -nr --arg u "${u%%|*}" "$NETLIFY_JQ"'{build_settings:{repo_url:(if $u == "" then null else $u end)}} | repo_of')" "${u#*|}"
+done
 expect "latest: the contract line" "$(netlify_latest shop | cut -f1,2)" "d-shop-3	building"
 expect "has: gives the id" "$(netlify_has blog)" "site-blog"
 out="$(netlify_cancel shop d-shop-3)"

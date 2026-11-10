@@ -140,7 +140,7 @@ gitlab_pending_of() {
   if ! cmp="$(gitlab_api "$host" "projects/$id/repository/compare?from=$(gitlab_enc "$base")&to=$(gitlab_enc "$ref")" 2>"$f.err")"; then
     # As on GitHub, only a 404 (the live commit is gone: branch rewritten) is a record.
     if grep -qE 'HTTP 404|404 Not Found|Ref Not Found' "$f.err"; then
-      printf '{"key":"%s","value":{"rewritten":true}}\n' "$key" > "$f"
+      jq -nc --arg k "$key" '{key:$k, value:{rewritten:true}}' > "$f"
     fi
     rm -f "$f.err"; return 0
   fi

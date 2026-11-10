@@ -213,7 +213,11 @@ digitalocean_json() {
          auto:($s | auto_on),
          paused:$paused,
          deployable:((($s | components | length) > 0) and ($paused | not)),
-         repo:($git.repo // null), ref:($git.branch // null),
+         # GitHub: owner/name; GitLab and Bitbucket with their host, so heads are asked there.
+         repo:(([$s | components[] | first(gits[] as $g | select((.[$g] | type) == "object") | $g)] | .[0]) as $h
+               | ($git.repo // null) | if . == null then null elif $h == "gitlab" then "gitlab.com/\(.)"
+                 elif $h == "bitbucket" then "bitbucket.org/\(.)" else . end),
+         ref:($git.branch // null),
          domain:(.live_domain // ((url_of // "") | sub("^https?://";"") | sub("/.*$";"") | if . == "" then null else . end)),
          url:url_of, dashboardUrl:"'"$DIGITALOCEAN_DASHBOARD"'/\(.id)",
          lastAt:($new.created_at | t), lastState:($new.phase // null),
