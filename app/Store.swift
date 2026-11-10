@@ -141,7 +141,9 @@ final class Store: ObservableObject {
                 await self?.autoRefresh(); self?.remindIfDue()
             }
         }
-        Task { await checkForUpdate() }
+        Task {   // hourly; the daily gate inside keeps it to one request a day, a failed one is tried again
+            while !Task.isCancelled { await checkForUpdate(); try? await Task.sleep(nanoseconds: 3_600_000_000_000) }
+        }
         Task {
             await start()
             while !Task.isCancelled {
@@ -685,78 +687,78 @@ final class Store: ObservableObject {
               "\(name) ist live, aber die Seite antwortet mit \(code.map(String.init) ?? "nichts")"), link, ok: false)
     }
 
-    // MARK: A newer version on GitHub, asked once a day (Settings can turn it off)
+    // MARK: A newer version on GitHub, asked once a day (Settings can turn it off). The work is in Updater.swift.
 
     @Published var newVersion: String?
     @Published var updateStatus: String?
     @Published var updating = false
+    private var savedVersionRead = false
 
-    private struct Release { let version: String; let zip: URL? }
-    private func latestRelease() async -> Release? {
-        guard let url = URL(string: "https://api.github.com/repos/Pschmetzer/deploy-center/releases/latest"),
-              let (data, _) = try? await URLSession.shared.data(from: url),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tag = obj["tag_name"] as? String else { return nil }
-        let assets = obj["assets"] as? [[String: Any]] ?? []
-        let zip = assets.compactMap { $0["browser_download_url"] as? String }.first { $0.hasSuffix(".zip") }.flatMap(URL.init(string:))
-        return Release(version: tag.trimmingCharacters(in: CharacterSet(charactersIn: "v")), zip: zip)
-    }
+    /// Deploys queued or building; the update waits for them instead of quitting in the middle.
+    private var deploysBusy: Bool { !queue.isEmpty || running > 0 || items.values.joined().contains { $0.state.isActive } }
 
     /// Asked once a day on its own; `force` (the button in Settings) asks right now and says what it found.
+    /// Only a successful answer counts as the day's check, so a network error is retried at the next round.
     func checkForUpdate(force: Bool = false) async {
         let d = UserDefaults.standard
+        let mine = Updater.runningVersion
         if !force {
             guard d.object(forKey: "checkUpdates") as? Bool ?? true else { return }
-            let last = d.double(forKey: "lastUpdateCheck")
-            guard Date().timeIntervalSince1970 - last > 86400 else { newVersion = d.string(forKey: "newVersion"); return }
+            guard Date().timeIntervalSince1970 - d.double(forKey: "lastUpdateCheck") > 86400 else {
+                if !savedVersionRead { savedVersionRead = true; newVersion = d.string(forKey: "newVersion") }
+                if let v = newVersion, !Updater.isNewer(v, than: mine) { newVersion = nil; d.removeObject(forKey: "newVersion") }
+                return
+            }
         }
-        d.set(Date().timeIntervalSince1970, forKey: "lastUpdateCheck")
-        guard let rel = await latestRelease() else {
-            if force { updateStatus = L("Could not reach GitHub.", "GitHub nicht erreichbar.") }
-            return
+        switch await Updater.latest() {
+        case .found(let rel):
+            d.set(Date().timeIntervalSince1970, forKey: "lastUpdateCheck")
+            let newer = Updater.isNewer(rel.version, than: mine)
+            newVersion = newer ? rel.version : nil
+            d.set(newVersion, forKey: "newVersion")
+            if force { updateStatus = newer ? L("Version \(rel.version) is out.", "Version \(rel.version) ist da.")
+                                            : L("You have the newest version (\(mine)).", "Du hast die neueste Version (\(mine)).") }
+        case .rateLimited(let until):
+            Log.write("update check: GitHub rate limit")
+            if force { updateStatus = L("GitHub limits requests right now", "GitHub begrenzt gerade die Anfragen")
+                + (until.map { L(", try again after ", ", versuch es nach ") + $0.formatted(date: .omitted, time: .shortened) } ?? "") + "." }
+        case .failed(let why):
+            Log.write("update check failed: \(why)")
+            if force { updateStatus = L("Could not reach GitHub.", "GitHub nicht erreichbar.") + " (\(why))" }
         }
-        let mine = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
-        let newer = rel.version.compare(mine, options: .numeric) == .orderedDescending
-        newVersion = newer ? rel.version : nil
-        d.set(newVersion, forKey: "newVersion")
-        if force { updateStatus = newer ? L("Version \(rel.version) is out.", "Version \(rel.version) ist da.")
-                                        : L("You have the newest version (\(mine)).", "Du hast die neueste Version (\(mine)).") }
     }
 
-    /// Downloads the newest release, checks its signature, swaps the app in place and starts it again.
+    /// Downloads the newest release, checks it, swaps the app in place and starts it again.
     func installUpdate() async {
         guard !updating else { return }
-        updating = true; defer { updating = false }
-        updateStatus = L("Downloading …", "Lade herunter …")
-        guard let rel = await latestRelease(), let zip = rel.zip else {
-            updateStatus = L("No download found in the release.", "Im Release ist kein Download."); return
+        let target = Bundle.main.bundleURL
+        if let problem = Updater.locationProblem(target) { updateStatus = problem; return }
+        guard let team = Updater.ownTeamID() else {
+            updateStatus = L("This build is not signed with a Developer ID; use Download.",
+                             "Dieser Build ist nicht mit einer Developer ID signiert; nutze „Herunterladen“."); return
         }
+        let busyText = L("Deploys are running or waiting; update when they are done.",
+                         "Deploys laufen oder warten; aktualisiere, wenn sie fertig sind.")
+        if deploysBusy { updateStatus = busyText; return }
+        updating = true; defer { updating = false }
         do {
-            let (tmpZip, _) = try await URLSession.shared.download(from: zip)
-            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("deploycenter-update-\(UUID().uuidString)")
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            func run(_ exe: String, _ args: [String]) throws {
-                let p = Process(); p.executableURL = URL(fileURLWithPath: exe); p.arguments = args
-                p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-                try p.run(); p.waitUntilExit()
-                if p.terminationStatus != 0 { throw NSError(domain: "update", code: Int(p.terminationStatus)) }
+            let rel: Updater.Release
+            switch await Updater.latest() {
+            case .found(let r): rel = r
+            case .rateLimited: throw Updater.Failure(message: L("GitHub limits requests right now.", "GitHub begrenzt gerade die Anfragen."))
+            case .failed(let why): throw Updater.Failure(message: L("Could not reach GitHub.", "GitHub nicht erreichbar.") + " (\(why))")
             }
-            try run("/usr/bin/ditto", ["-x", "-k", tmpZip.path, dir.path])
-            let newApp = dir.appendingPathComponent("Deploy Center.app")
-            guard FileManager.default.fileExists(atPath: newApp.path) else { updateStatus = L("Unexpected download.", "Unerwarteter Download."); return }
-            updateStatus = L("Checking the signature …", "Prüfe die Signatur …")
-            try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", newApp.path])
-            try run("/usr/sbin/spctl", ["-a", "-t", "exec", newApp.path])
-            let target = Bundle.main.bundleURL.path
-            let script = "while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.3; done; "
-                + "rm -rf \"\(target)\" && mv \"\(newApp.path)\" \"\(target)\" && open \"\(target)\"; rm -rf \"\(dir.path)\""
-            let sh = Process(); sh.executableURL = URL(fileURLWithPath: "/bin/sh"); sh.arguments = ["-c", script]
-            try sh.run()
+            let ready = try await Updater.prepare(rel, current: Updater.runningVersion, team: team) { s in
+                await MainActor.run { self.updateStatus = s }
+            }
+            // A deploy may have started during the download.
+            if deploysBusy { ready.discard(); updateStatus = busyText; return }
+            do { try ready.launch(target: target) } catch { ready.discard(); throw error }
             updateStatus = L("Restarting …", "Starte neu …")
-            await MainActor.run { NSApplication.shared.terminate(nil) }
+            NSApplication.shared.terminate(nil)
         } catch {
             updateStatus = L("Update failed: ", "Update fehlgeschlagen: ") + error.localizedDescription
-            Log.write("update failed: \(error)")
+            Log.write("update failed: \(error.localizedDescription)")
         }
     }
 
