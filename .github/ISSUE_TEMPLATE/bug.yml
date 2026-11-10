@@ -29,6 +29,13 @@ body:
         - App
         - deploys CLI
         - Menu bar
+        - Widgets
+        - iPhone app
+        - VS Code / Cursor extension
+        - Raycast extension
+        - MCP server
+        - Claude Code plugin
+        - GitHub Action
         - Update / install
     validations:
       required: true
