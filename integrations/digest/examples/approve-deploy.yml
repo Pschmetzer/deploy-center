@@ -1,0 +1,127 @@
+# Example only: copy to .github/workflows/approve-deploy.yml in the repo you set as
+# DEPLOYS_DIGEST_REPO, and adjust.
+#
+# Deploys the projects a person approved, and nothing else. Two ways to approve:
+#   - Run workflow (the digest's button opens this page), projects: the list from the digest.
+#   - Add the label deploy-approved to the digest issue "Deploys waiting – <date>".
+# Only logins in the repository variable DEPLOYS_APPROVERS count. Bots never do.
+# Each project is deployed at its branch head at the moment of approval.
+name: approve deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      projects:
+        description: 'Projects to deploy, comma-separated, as the digest lists them ("all": everything waiting)'
+        required: true
+        type: string
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: approve-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'deploy-approved' && startsWith(github.event.issue.title, 'Deploys waiting – '))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Who approved, and what
+        id: approved
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.triggering_actor }}
+          SENDER_TYPE: ${{ github.event.sender.type }}
+          APPROVERS: ${{ vars.DEPLOYS_APPROVERS }}
+          INPUT: ${{ inputs.projects }}
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          no() { echo "::error::$1"; echo "reason=$1" >> "$GITHUB_OUTPUT"; exit 1; }
+          case "$SENDER_TYPE:$ACTOR" in Bot:*|*"[bot]") no "A bot cannot approve a deploy ($ACTOR)." ;; esac
+          [ -n "$APPROVERS" ] || no "Set the repository variable DEPLOYS_APPROVERS (logins of the people who may approve)."
+          printf '%s\n' "$APPROVERS" | tr ', ' '\n' | grep -qixF -- "$ACTOR" || no "$ACTOR is not in DEPLOYS_APPROVERS."
+          if [ "$EVENT" = issues ]; then
+            list="$(printf '%s\n' "$BODY" | tr -d '\r' | sed -n 's/^<!-- deploys-approve: \(.*\) -->$/\1/p' | tail -n 1)"
+          else
+            list="$INPUT"
+          fi
+          list="$(printf '%s\n' "$list" | tr ', ' '\n' | sed '/^$/d' | sort -u)"
+          [ -n "$list" ] || no "No projects named."
+          if [ "$list" = all ]; then echo "projects=*" >> "$GITHUB_OUTPUT"; echo "Approved by $ACTOR: everything waiting."; exit 0; fi
+          ! printf '%s\n' "$list" | grep -qvE '^[A-Za-z0-9._-]+$' || no "Project names may hold letters, digits, . _ - only."
+          echo "projects=$(printf '%s\n' "$list" | paste -sd, -)" >> "$GITHUB_OUTPUT"
+          echo "Approved by $ACTOR: $(printf '%s\n' "$list" | paste -sd, -)"
+
+      # Pin to a release tag or a full commit SHA, not a branch. This first run only lists.
+      - uses: Pschmetzer/deploy-center/integrations/action@main
+        id: list
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-team: ${{ vars.VERCEL_TEAM }}
+          render-api-key: ${{ secrets.RENDER_API_KEY }}
+          repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
+
+      # Every project not approved is left out (deploys ignore), also one that changed since.
+      - name: Leave out what was not approved
+        id: keep
+        env:
+          PROJECTS: ${{ steps.approved.outputs.projects }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$PROJECTS" = "*" ] && { echo "Everything waiting was approved."; exit 0; }
+          v='[]'; r='[]'
+          if [ -n "$VERCEL_TOKEN" ]; then v="$("$DEPLOYS" vercel list --json </dev/null)"; fi
+          if [ -n "$RENDER_API_KEY" ]; then r="$("$DEPLOYS" render list --json </dev/null)"; fi
+          all="$(jq -n --argjson v "$v" --argjson r "$r" '$v + $r | map(.name) | unique')"
+          want="$(printf '%s' "$PROJECTS" | jq -Rc 'split(",") | map(select(length > 0))')"
+          ign="$DEPLOYS_CONFIG/ignored.json"; [ -f "$ign" ] || echo '[]' > "$ign"
+          jq --argjson all "$all" --argjson want "$want" '. + ($all - $want) | unique' "$ign" > "$ign.t" && mv "$ign.t" "$ign"
+          missing="$(jq -nr --argjson all "$all" --argjson want "$want" '$want - $all | join(", ")')"
+          [ -z "$missing" ] || echo "::warning::Not found, so not deployed: $missing"
+          echo "Deploying only: $(jq -nr --argjson all "$all" --argjson want "$want" '$want - ($want - $all) | join(", ")')"
+
+      - uses: Pschmetzer/deploy-center/integrations/action@main
+        id: dc
+        with:
+          deploy: true
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-team: ${{ vars.VERCEL_TEAM }}
+          render-api-key: ${{ secrets.RENDER_API_KEY }}
+          repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
+
+      - name: Report on the issue
+        id: report
+        if: always() && github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REASON: ${{ steps.approved.outputs.reason }}
+          NAMES: ${{ steps.dc.outputs.names }}
+          STARTED: ${{ steps.dc.outputs.started }}
+          FAILED: ${{ steps.dc.outputs.failed }}
+          DEPLOYED: ${{ steps.dc.outputs.deployed }}
+        run: |
+          set -uo pipefail
+          if [ -n "$REASON" ]; then msg="Not deployed: $REASON"
+          elif [ -z "$STARTED" ]; then msg="Not deployed: the run stopped before deploying."
+          elif [ "$STARTED" = 0 ] && [ "${FAILED:-0}" = 0 ]; then msg="Nothing to deploy: none of the approved projects has changes now."
+          else msg="Started ${STARTED} deploy(s)${NAMES:+ ($NAMES)}, ${FAILED:-0} failed to start."; fi
+          gh issue comment "$ISSUE" -R "$REPO" --body "$msg [Run]($RUN_URL)"
+          # The label is taken off: adding it again is a new approval.
+          gh issue edit "$ISSUE" -R "$REPO" --remove-label deploy-approved
+          [ "$DEPLOYED" = true ] && gh issue close "$ISSUE" -R "$REPO"
+          exit 0

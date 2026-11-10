@@ -187,7 +187,7 @@ case "$*" in
   *rate_limit*) echo '{"limit":5000,"remaining":4000,"reset":0}' ;;
   *"repos/me/app/commits/main"*) echo '{"sha":"bbbb","commit":{"message":"feat: new","committer":{"date":"2026-01-02T00:00:00Z"}}}' ;;
   *"compare/aaaa...main"*) [ -n "${BIG:-}" ] && { cat "$BIG"; exit 0; }
-                           echo '{"status":"ahead","ahead_by":1,"behind_by":0,"commits":[{"sha":"bbbb","commit":{"message":"feat: new","committer":{"date":"2026-01-02T00:00:00Z"}},"author":{"type":"User"}}]}' ;;
+                           echo '{"status":"ahead","ahead_by":1,"behind_by":0,"commits":[{"sha":"bbbb","commit":{"message":"feat: new\n\nCo-Authored-By: Some Agent <agent@example.test>","committer":{"date":"2026-01-02T00:00:00Z"}},"author":{"type":"User"}}]}' ;;
   *"pulls?state=open"*) echo '{"key":"me/app","value":{"all":0,"drafts":0,"bots":0}}' ;;
   # CI of the head commit. CI picks the answer; "slow" runs for two rounds, then passes.
   *"commits/bbbb/status"*)
@@ -322,6 +322,9 @@ unset WSTUB
 fresh
 python3 -c 'import json; print(json.dumps({"status":"ahead","ahead_by":1,"html_url":"x","commits":[],"files":[{"filename":"f%d"%i,"additions":1,"deletions":0,"patch":"x"*40000} for i in range(100)]}))' > "$e2e/big.json"
 expect "details: a 4 MB comparison works" "$(BIG="$e2e/big.json" run "$O" "$E" details me/app aaaa main; jq -r .files "$O")" $'0\n100'
+# details: Co-Authored-By trailers are kept, the message stays its first line.
+fresh
+expect "details: co-authors from the trailers" "$(run "$O" "$E" details me/app aaaa main; jq -c '.commits[0] | [.msg, .coAuthors]' "$O")" $'0\n["feat: new",[{"name":"Some Agent","email":"agent@example.test"}]]'
 unset RENDER_API_KEY
 
 # --- safe deploys: green CI, deploy window, verify with rollback, risk (docs/SAFE-DEPLOY.md) ---
@@ -532,6 +535,9 @@ expect "autofix: dry run fires and saves nothing" "$(afrun dry | grep -c 'would 
 mkdir -p "$DEPLOYS_CONFIG/locks/autofix"
 expect "autofix: a held lock stops a second run" "$(afrun | grep -c 'running already'):$(fired)" "1:0"
 rmdir "$DEPLOYS_CONFIG/locks/autofix"
+
+# Savings (simulate, ledger) have their own file with fixtures.
+bash tests/savings-tests.sh || fails=$((fails+1))
 
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }

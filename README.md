@@ -25,6 +25,16 @@ brew tap pschmetzer/tap && brew trust pschmetzer/tap && brew install --cask depl
 Or [download the zip](https://github.com/Pschmetzer/deploy-center/releases/latest), unzip it and drag
 **Deploy Center** to *Applications*. Free, MIT, signed and notarized by Apple. Website: [deploycenter.app](https://deploycenter.app).
 
+**Only the CLI** (macOS, Linux, WSL, CI; no app): `deploys` on its own, checked against the
+release's SHA-256, into `~/.local/bin` without sudo. Or with Homebrew on macOS and Linux:
+
+```bash
+curl -fsSL https://deploycenter.app/install.sh | sh
+brew install pschmetzer/tap/deploys
+```
+
+Docker, CI keys and first steps: [README-CLI.md](README-CLI.md).
+
 <details>
 <summary>Homebrew notes and requirements</summary>
 
