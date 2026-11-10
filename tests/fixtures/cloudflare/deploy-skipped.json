@@ -1,0 +1,1 @@
+{"success":true,"errors":[],"result":{"id":"d-s","url":"https://d-s.site.pages.dev","environment":"production","created_on":"2026-01-02T00:00:00Z","is_skipped":true,"skip_reason":"production_deployments_disabled","latest_stage":{"name":"queued","status":"skipped"},"deployment_trigger":{"type":"ad_hoc","metadata":{"branch":"main"}}}}
