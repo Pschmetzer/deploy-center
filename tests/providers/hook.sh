@@ -112,12 +112,12 @@ j="$(DEPLOYS_NO_GITHUB=1 hook_json | jq -c '.[0]')"
 expect "json after a trigger: ready, triggered" "$(echo "$j" | jq -r '"\(.phase) \(.lastState) \(.lastSha) \(.domain)"')" "ready triggered aaaa example.com"
 expect "json has every contract field" "$(echo "$j" | jq -c '[has("name","id","auto","deployable","paused","repo","ref","domain","url","dashboardUrl","lastAt","lastState","lastSha","lastMsg","fetchError","phase")] | unique')" "[true]"
 expect "json never has a URL" "$(leaks "$(hook_json)")" "0"
-expect "status after a trigger" "$(hook_status site | jq -r .phase)" "ready"
+expect "status after a trigger" "$(hook_cli_status site | jq -r .phase):$(hook_status site | cut -f2,3)" "ready:ready	triggered"
 
 # --- waiting commits since the last trigger, with repo set ---
-j="$(GH_HEAD=aaaa hook_json | jq -c '.[0]')"
+j="$(GH_HEAD=aaaa provider_json hook | jq -c '.[0]')"
 expect "branch at the triggered commit: nothing waiting" "$(echo "$j" | jq -c '[.changed, .pendingCommits]')" "[false,0]"
-j="$(GH_HEAD=bbbb hook_json | jq -c '.[0]')"
+j="$(GH_HEAD=bbbb provider_json hook | jq -c '.[0]')"
 expect "three commits since the last trigger: changed" "$(echo "$j" | jq -c '[.changed, .pendingCommits, .pendingPRs, .headSha]')" '[true,3,2,"bbbb"]'
 
 # --- trigger: failure ---

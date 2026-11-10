@@ -30,6 +30,10 @@ cat > "$tmp/bin/deploys" <<SH
 case "\$*" in
   "vercel list --json") cat "$tmp/vercel.json" ;;
   "render list --json") cat "$tmp/render.json" ;;
+  # As the real one: every provider that is on and set up. Render only with a key.
+  "list --json") [ -n "\${FAKE_SLEEP:-}" ] && sleep "\$FAKE_SLEEP"
+    if [ -n "\${RENDER_API_KEY:-}" ] || [ "\${FAKE_RENDER_KEY:-false}" = true ]; then r="$tmp/render.json"; else r=/dev/null; fi
+    jq -s '(.[0] | map(. + {platform:"vercel"})) + ((.[1] // []) | map(. + {platform:"render"}))' "$tmp/vercel.json" \$r ;;
   "notes app-web") printf '## app-web\\n- New billing page (#12) – Ana\\n- Faster search – Ben\\n\\nDependency updates:\\n- Bump jq – dependabot\\n' ;;
   "notes "*) exit 1 ;;
   "simulate --days "*" --json") jq --argjson d "\$3" '.days = \$d' "$here/../tests/fixtures/savings/simulate-report.json" ;;
@@ -98,12 +102,13 @@ chmod +x "$tmp/bin/deploys" "$tmp/bin/curl" "$tmp/bin/gh"
 export PATH="$tmp/bin:$PATH" DEPLOYS="$tmp/bin/deploys" DEPLOYS_CONFIG="$tmp/config"
 unset RENDER_API_KEY DEPLOYS_NOTIFY_URL DEPLOYS_NOTIFY_FORMAT DEPLOYS_DIGEST_REPO DEPLOYS_DIGEST_WORKFLOW DEPLOYS_AGENT_AUTHORS DEPLOYS_AGENT_LABELS
 
-# --- lib: Render only with a key; ignored projects left out ---
+# --- lib: every project from `deploys list --json`; ignored projects left out ---
 # shellcheck source=lib/projects.sh
 . lib/projects.sh
 expect "without a Render key only Vercel is read" "$(all_projects | jq -c 'map(.name)')" '["app-web","site"]'
 expect "with a key in the env Render is read too" "$(RENDER_API_KEY=x all_projects | jq -c 'map(.platform)')" '["vercel","vercel","render"]'
 expect "doctor's renderKey counts as a key" "$(FAKE_RENDER_KEY=true all_projects | jq length)" 3
+expect "a CLI that fails is an empty list, not an error" "$(DEPLOYS=/bin/false all_projects)" "[]"
 mkdir -p "$DEPLOYS_CONFIG"; echo '["api"]' > "$DEPLOYS_CONFIG/ignored.json"
 expect "changed leaves out ignored and up-to-date" "$(RENDER_API_KEY=x changed_projects | jq -c 'map(.name)')" '["app-web"]'
 rm -f "$DEPLOYS_CONFIG/ignored.json"

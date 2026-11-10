@@ -1,0 +1,7 @@
+{"projects":[
+ {"name":"alpha","id":"prj_alpha","link":{"org":"example","repo":"alpha","productionBranch":"main"},"targets":{"production":{"id":"dpl_alpha1","createdAt":1767225600000,"readyState":"READY","alias":["alpha.example.test","alpha.vercel.app"],"meta":{"githubCommitSha":"a1a1a1a","githubCommitMessage":"feat: one\n\nbody"}}}},
+ {"name":"beta","id":"prj_beta","link":null,"targets":{"production":{"id":"dpl_beta1","createdAt":1767225600000,"readyState":"READY","alias":["beta.vercel.app"],"meta":{"githubCommitSha":"b1b1b1b"}}}},
+ {"name":"gamma","id":"prj_gamma","link":null,"targets":{"production":{"id":"dpl_gamma1","createdAt":1767225600000,"readyState":"ERROR","meta":{}}}},
+ {"name":"delta","id":"prj_delta","link":null,"targets":{}}
+],"pagination":{"next":null}}
+200

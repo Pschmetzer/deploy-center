@@ -173,9 +173,11 @@ digitalocean_app() { digitalocean_call GET "/v2/apps/$1"; }
 
 # ---------- the contract ----------
 
+# Compact (jq -c): deploys greps it (meta_flag, meta_str, key_of). Contract fields: id, label,
+# noun, defaultOn, keyEnv (an array), keychain, caps (docs/PROVIDERS.md). Off by default.
 digitalocean_meta() {
-  jq -n --arg k "$DIGITALOCEAN_KEYCHAIN" '{id:"digitalocean", label:"DigitalOcean App Platform",
-    keyEnv:"DIGITALOCEAN_TOKEN", keychain:$k,
+  jq -nc --arg k "$DIGITALOCEAN_KEYCHAIN" '{id:"digitalocean", label:"DigitalOcean App Platform", noun:"app", defaultOn:false,
+    keyEnv:["DIGITALOCEAN_TOKEN"], keychain:$k,
     caps:{off:true, sha:false, cancel:true, rollback:true, logs:true, preview:false}}'
 }
 

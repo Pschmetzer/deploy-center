@@ -142,10 +142,12 @@ CF_AUTO='def cf_auto: (.source.config // null) as $c
 
 # ---------- the contract ----------
 
+# Compact (jq -c): deploys greps it (meta_flag, meta_str, key_of). Contract fields: id, label,
+# noun, defaultOn, keyEnv (an array), keychain, caps (docs/PROVIDERS.md). Off by default.
 cloudflare_meta() {
-  jq -n '{name:"cloudflare", label:"Cloudflare Pages", default:false,
+  jq -nc '{id:"cloudflare", name:"cloudflare", label:"Cloudflare Pages", noun:"project", defaultOn:false, default:false,
     caps:{off:true, sha:false, cancel:false, rollback:true, logs:true, preview:true},
-    keyEnv:"CLOUDFLARE_API_TOKEN", keychain:"deploy-center-cloudflare",
+    keyEnv:["CLOUDFLARE_API_TOKEN"], keychain:"deploy-center-cloudflare",
     billing:"build count (Free: 500 per month), not price per build"}'
 }
 

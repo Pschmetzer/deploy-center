@@ -154,8 +154,10 @@ netlify_rule_in_repo() {
 
 # ---------- the contract ----------
 
+# Compact (jq -c): deploys greps it (meta_flag, meta_str, key_of). Contract fields: id, label,
+# noun, defaultOn, keyEnv (an array), keychain, caps (docs/PROVIDERS.md). Off by default.
 netlify_meta() {
-  jq -n --arg k "$NETLIFY_KEYCHAIN" '{id:"netlify", label:"Netlify", keyEnv:"NETLIFY_AUTH_TOKEN", keychain:$k,
+  jq -nc --arg k "$NETLIFY_KEYCHAIN" '{id:"netlify", label:"Netlify", noun:"site", defaultOn:false, keyEnv:["NETLIFY_AUTH_TOKEN"], keychain:$k,
     caps:{off:true, sha:false, cancel:true, rollback:true, logs:false, preview:false}}'
 }
 

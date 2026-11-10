@@ -144,10 +144,13 @@ amp_jobs() { amp_aws amplify list-jobs --app-id "$1" --branch-name "$2" --max-it
 
 # ---------- the contract ----------
 
+# Compact (jq -c): deploys greps it (meta_flag, meta_str, key_of). Contract fields: id, label,
+# noun, defaultOn, keyEnv (an array), keychain, caps (docs/PROVIDERS.md). Off by default.
+# keyEnv is empty: DEPLOYS_AMPLIFY_PROFILE names an aws CLI profile, not a key (profileEnv).
 amplify_meta() {
-  jq -n '{name:"amplify", label:"AWS Amplify Hosting", default:false,
+  jq -nc '{id:"amplify", name:"amplify", label:"AWS Amplify Hosting", noun:"app", defaultOn:false, default:false,
     caps:{off:true, sha:true, cancel:true, rollback:true, logs:true, preview:true},
-    keyEnv:"DEPLOYS_AMPLIFY_PROFILE", keychain:"deploy-center-amplify", needs:"aws CLI",
+    keyEnv:[], profileEnv:"DEPLOYS_AMPLIFY_PROFILE", keychain:"deploy-center-amplify", needs:"aws CLI",
     billing:"build minutes ($0.01 per minute on the standard build instance)"}'
 }
 

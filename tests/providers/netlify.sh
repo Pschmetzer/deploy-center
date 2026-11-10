@@ -75,7 +75,7 @@ done
 ok "contract: all 14 functions defined"
 meta="$(netlify_meta)"
 expect "meta: shape" "$(echo "$meta" | jq -c '[.id, .label, .keyEnv, .keychain, (.caps | keys)]')" \
-  '["netlify","Netlify","NETLIFY_AUTH_TOKEN","deploy-center-netlify",["cancel","logs","off","preview","rollback","sha"]]'
+  '["netlify","Netlify",["NETLIFY_AUTH_TOKEN"],"deploy-center-netlify",["cancel","logs","off","preview","rollback","sha"]]'
 expect "meta: no sha, no logs, no previews" "$(echo "$meta" | jq -c '[.caps.sha, .caps.logs, .caps.preview, .caps.off]')" '[false,false,false,true]'
 netlify_ready && ok "ready: with a token" || fail "ready" "not ready with NETLIFY_AUTH_TOKEN set"
 ( unset NETLIFY_AUTH_TOKEN; netlify_ready ) && fail "ready without token" "said ready" || ok "ready: not without a token"

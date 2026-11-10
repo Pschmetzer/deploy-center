@@ -69,7 +69,9 @@ release "$version" "$tmp/pkg"
 old="$tmp/old"; mkdir -p "$old/src/deploys-cli-0.6.9/providers"
 cp deploys LICENSE README-CLI.md "$old/src/deploys-cli-0.6.9/"
 echo 0.6.9 > "$old/src/deploys-cli-0.6.9/VERSION"
-echo 'echo provider' > "$old/src/deploys-cli-0.6.9/providers/render.sh"
+# deploys sources every providers/*.sh: this one prints nothing, and its name is not in the
+# newer release, so an update that leaves it behind shows.
+echo '# a provider only the old release has' > "$old/src/deploys-cli-0.6.9/providers/oldonly.sh"
 (cd "$old/src" && tar -czf ../deploys-cli-0.6.9.tar.gz deploys-cli-0.6.9)
 (cd "$old" && printf '%s  %s\n' "$(sha256 deploys-cli-0.6.9.tar.gz)" deploys-cli-0.6.9.tar.gz > checksums.txt)
 release 0.6.9 "$old"
@@ -118,10 +120,10 @@ contains "install without jq: warns at the end" "$out" "needs the required tools
 out="$(inst --prefix "$tmp/p3" --version 0.6.9)"; rc=$?
 expect "install --version 0.6.9: exit 0" "$rc" 0
 expect "install --version 0.6.9: that version" "$("$tmp/p3/bin/deploys" --version)" 0.6.9
-[ -f "$tmp/p3/lib/deploys/providers/render.sh" ] && ok "install: providers/ next to deploys" || fail "install: providers/" "missing"
+[ -f "$tmp/p3/lib/deploys/providers/oldonly.sh" ] && ok "install: providers/ next to deploys" || fail "install: providers/" "missing"
 out="$(inst --prefix "$tmp/p3" --version="v$version")"; rc=$?
 expect "install --version=v<x>: exit 0" "$rc" 0
-[ ! -e "$tmp/p3/lib/deploys/providers/render.sh" ] && ok "install: an update leaves no old files behind" || fail "install: old files" "providers/render.sh still there"
+[ ! -e "$tmp/p3/lib/deploys/providers/oldonly.sh" ] && ok "install: an update leaves no old files behind" || fail "install: old files" "providers/oldonly.sh still there"
 
 out="$(inst --prefix "$tmp/p4" --version 9.9.9)"; rc=$?
 expect "install a missing version: fails" "$rc" 1

@@ -1,0 +1,3 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+export RENDER_API_KEY=rnd_fixture
+CONTRACT_ID=srv-a CONTRACT_NAME=web CONTRACT_DEPLOY=dep-a1

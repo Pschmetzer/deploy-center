@@ -95,7 +95,7 @@ done
 ok "contract: all 14 functions defined"
 meta="$(digitalocean_meta)"
 expect "meta: shape" "$(echo "$meta" | jq -c '[.id, .label, .keyEnv, .keychain, (.caps | keys)]')" \
-  '["digitalocean","DigitalOcean App Platform","DIGITALOCEAN_TOKEN","deploy-center-digitalocean",["cancel","logs","off","preview","rollback","sha"]]'
+  '["digitalocean","DigitalOcean App Platform",["DIGITALOCEAN_TOKEN"],"deploy-center-digitalocean",["cancel","logs","off","preview","rollback","sha"]]'
 expect "meta: caps" "$(echo "$meta" | jq -c '[.caps.off, .caps.sha, .caps.cancel, .caps.rollback, .caps.logs, .caps.preview]')" \
   '[true,false,true,true,true,false]'
 digitalocean_ready && ok "ready: with a token" || fail "ready" "not ready with DIGITALOCEAN_TOKEN set"

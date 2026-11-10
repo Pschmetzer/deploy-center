@@ -1,0 +1,3 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+export DEPLOYS_VERCEL_TEAM=team_fixture
+CONTRACT_ID=alpha CONTRACT_NAME=alpha CONTRACT_DEPLOY=dpl_alpha2

@@ -110,14 +110,18 @@ hook_cq() { local s="${1//\\/\\\\}"; printf '"%s"' "${s//\"/\\\"}"; }
 
 # ---------- the contract ----------
 
+# Compact, with printf: deploys greps it (meta_flag, meta_str) and doctor reads it without jq.
+# Off by default (defaultOn false). Each hook's URL is its own secret, so there is no keyEnv and
+# no single keychain item: the URLs live under deploy-center-hook-<name> (see below).
 hook_meta() {
-  jq -nc --argjson caps "$HOOK_CAPS" '{name:"hook", title:"Deploy hook", optIn:true, caps:$caps,
-    note:"No status API: a 2xx answer to the hook counts as ready (lastState \"triggered\")."}'
+  printf '{"id":"hook","name":"hook","label":"Deploy hook","noun":"hook","defaultOn":false,"keyEnv":[],"keychain":null,"caps":%s,"note":"No status API: a 2xx answer to the hook counts as ready (lastState \\"triggered\\")."}\n' "$HOOK_CAPS"
 }
 
 # Set up as soon as one hook is configured.
 hook_ready() { [ "$(hook_list_raw | jq 'length' 2>/dev/null || echo 0)" -gt 0 ]; }
-hook_has() { hook_valid_name "$1" >/dev/null 2>&1 || return 1; [ -n "$(hook_entry "$1")" ]; }
+# hook_known: a silent check for the functions below. hook_has (the contract) prints the id.
+hook_known() { hook_valid_name "$1" >/dev/null 2>&1 || return 1; [ -n "$(hook_entry "$1")" ]; }
+hook_has() { hook_known "${1:-}" && echo "$1"; }
 
 hook_json() {
   local list st stored='{}' n
@@ -140,12 +144,13 @@ hook_json() {
       # No status API: a 2xx answer is as far as anyone can see.
       phase:(if $s.at == null then null elif $s.ok then "ready" else "failed" end)}]
     | sort_by(.name | ascii_downcase)')"
-  if declare -F with_heads >/dev/null; then with_heads "$list"; else echo "$list"; fi
+  # No GitHub calls here: `deploys hook json` adds the branch heads (provider_json).
+  echo "$list"
 }
 
 hook_off() {
-  hook_has "${1:-}" || die "No hook named \"${1:-}\""
-  die "A deploy hook cannot turn off auto-deploy: that is a setting at the host (for example Cloudflare Pages > Settings > Builds > Branch control, Netlify > Build settings > Stop builds, Coolify > Auto Deploy, DigitalOcean > Source > Autodeploy). Turn it off there; the hook keeps working."
+  hook_known "${1:-}" || die "No hook named \"${1:-}\""
+  die "Deploy hook cannot turn off auto-deploy: that is a setting at the host (for example Cloudflare Pages > Settings > Builds > Branch control, Netlify > Build settings > Stop builds, Coolify > Auto Deploy, DigitalOcean > Source > Autodeploy). Turn it off there; the hook keeps working."
 }
 
 # The head of the branch right now, so the trigger can say which commit it asked for.
@@ -165,7 +170,11 @@ hook_record() {
 # Fire the hook once (never again on failure: it may already have started a build).
 hook_deploy_json() {
   local n="${1:-}" e u method headers body cfg out code rc=0 h hv miss head sha=null msg=null now rec repo ref
-  hook_has "$n" || die "No hook named \"$n\""
+  hook_known "$n" || die "No hook named \"$n\""
+  case " ${*:2} " in
+    *" --preview "*) die "Deploy hook cannot start a preview: the hook builds what the host is set to build.";;
+    *" --sha "*) die "Deploy hook cannot deploy a given commit: the hook builds what the host is set to build.";;
+  esac
   e="$(hook_entry "$n")"
   u="$(hook_url_get "$n")" || u=""
   [ -n "$u" ] || die "The URL of hook $n is not stored here. Store it: pbpaste | deploys hook set-key $n"
@@ -195,7 +204,7 @@ hook_deploy_json() {
   if [ "$rc" = 0 ] && [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
     rec="$(jq -nc --argjson sha "$sha" --argjson msg "$msg" --argjson at "$now" --arg c "$code" '{ok:true, http:($c|tonumber), at:$at, sha:$sha, msg:$msg}')"
     hook_record "$n" "$rec"; rm -f "$out.err"
-    jq -nc --arg n "$n" --argjson r "$rec" '{name:$n, id:"\($n)@\($r.at)", phase:"ready", state:"triggered", http:$r.http, sha:$r.sha, at:$r.at,
+    jq -nc --arg n "$n" --argjson r "$rec" --arg site "$(echo "$e" | jq -r '.site // empty')" '{name:$n, id:"\($n)@\($r.at)", url:(if $site == "" then null else $site end), phase:"ready", state:"triggered", http:$r.http, sha:$r.sha, at:$r.at,
       note:"The host accepted the trigger; it reports no build status."}'
     return 0
   fi
@@ -209,20 +218,29 @@ hook_deploy_json() {
   die "Hook $n did not start a build: $err"
 }
 
+# The contract's line: deployId<TAB>phase<TAB>state. The id is name@time of the last trigger,
+# "none" when it was never triggered.
 hook_status() {
-  local n="${1:-}"; hook_has "$n" || die "No hook named \"$n\""
+  local n="${1:-}"; hook_known "$n" || die "No hook named \"$n\""
+  hook_state | jq -r --arg n "$n" '(.[$n] // null) as $s
+    | if $s == null then ["none", "", "never triggered"]
+      else ["\($n)@\($s.at)", (if $s.ok then "ready" else "failed" end), (if $s.ok then "triggered" else "trigger failed" end)] end | @tsv'
+}
+hook_latest() { hook_status "$1"; }
+# deploys hook status <name>: the same as JSON, for people and scripts.
+hook_cli_status() {
+  local n="${1:-}"; hook_known "$n" || die "No hook named \"$n\""
   hook_state | jq -c --arg n "$n" '(.[$n] // null) as $s | {name:$n,
     phase:(if $s == null then null elif $s.ok then "ready" else "failed" end),
     state:(if $s == null then "never triggered" elif $s.ok then "triggered" else "trigger failed" end),
     at:($s.at // null), sha:($s.sha // null)}'
 }
-hook_latest() { hook_status "$@"; }
-hook_cancel() { die "A deploy hook cannot cancel a build: there is no API behind it. Cancel it at the host."; }
-hook_rollback() { die "A deploy hook cannot roll back: there is no API behind it. Roll back at the host."; }
-hook_logs() { die "A deploy hook has no logs: there is no API behind it. The build log is at the host."; }
+hook_cancel() { die "Deploy hook cannot cancel a build: there is no API behind it. Cancel it at the host."; }
+hook_rollback() { die "Deploy hook cannot roll back: there is no API behind it. Roll back at the host."; }
+hook_logs() { die "Deploy hook cannot show logs: there is no API behind it. The build log is at the host."; }
 
 hook_url() {
-  local n="${1:-}" s; hook_has "$n" || die "No hook named \"$n\""
+  local n="${1:-}" s; hook_known "$n" || die "No hook named \"$n\""
   s="$(hook_entry "$n" | jq -r '.site // empty')"
   [ -n "$s" ] || die "Hook $n has no site address (deploys hook add $n - --site https://…)"
   echo "$s"
@@ -230,13 +248,14 @@ hook_url() {
 
 # Replace the stored URL, read from stdin (a new hook URL after rotating it at the host).
 hook_set_key() {
-  local n="${1:-}" u; hook_has "$n" || die "No hook named \"$n\". Add it: deploys hook add $n -"
+  local n="${1:-}" u; hook_known "$n" || die "No hook named \"$n\". Add it: deploys hook add $n -"
   IFS= read -r u || true
   [ -n "$u" ] || die "Pipe the hook URL in: pbpaste | deploys hook set-key $n"
   hook_check_url "$u"; hook_url_save "$n" "$u"
   echo "URL of hook $n saved ($(hook_mask "$u"))."
 }
 
+# Its fields join `deploys doctor`, so each is named for the hook (no bare "ready").
 hook_doctor() {
   local list n u items='[]' ok
   list="$(hook_list_raw)"
@@ -248,7 +267,7 @@ hook_doctor() {
              headers:(($e.headers // {}) | keys), repo:($e.repo // null), site:($e.site // null)}]')"
   done
   jq -nc --arg store "$(hook_store)" --argjson h "$items" --argjson curl "$(command -v curl >/dev/null && echo true || echo false)" \
-    '{provider:"hook", ready:($h | length > 0), store:$store, curl:$curl, hooks:$h}'
+    '{hookReady:($h | length > 0), hookStore:$store, hookCurl:$curl, hooks:$h}'
 }
 
 # ---------- commands ----------
@@ -296,7 +315,7 @@ hook_add() {
 
 hook_remove() {
   local n="${1:-}"; [ -n "$n" ] || die "Usage: deploys hook remove <name>"
-  hook_has "$n" || die "No hook named \"$n\""
+  hook_known "$n" || die "No hook named \"$n\""
   hook_list_raw | jq --arg n "$n" 'map(select(.name != $n))' | hook_write "$(hook_config)"
   hook_state | jq --arg n "$n" 'del(.[$n])' | hook_write "$(hook_state_file)"
   hook_url_forget "$n"
@@ -327,7 +346,7 @@ hook_cli() {
     json) hook_json;;
     deploy) hook_deploy_json "$@" | jq -r '"Triggered \(.name) (HTTP \(.http)). The host reports no build status; watch it there."';;
     deploy-json) hook_deploy_json "$@";;
-    status) hook_status "$@";;
+    status) hook_cli_status "$@";;
     open|url) hook_url "$@";;
     set-key) hook_set_key "$@";;
     autodeploy-off|off) hook_off "$@";;
@@ -338,8 +357,17 @@ hook_cli() {
   esac
 }
 
-# Run directly (until deploys routes `deploys hook …` here itself): load deploys as a library.
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+# Commands people type that are not the contract's: deploys hook add|remove|list|deploy.
+hook_cli_add() { hook_add "$@"; }
+hook_cli_remove() { hook_remove "$@"; }
+hook_cli_rm() { hook_remove "$@"; }
+hook_cli_list() { hook_list; }
+hook_cli_deploy() { hook_cli deploy "$@"; }
+
+# Run directly: load deploys as a library. deploys sources this file again; HOOK_DIRECT keeps
+# that inner load from running the commands a second time.
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ -z "${HOOK_DIRECT:-}" ]; then
+  HOOK_DIRECT=1
   _hook_args=("$@"); set --
   # shellcheck source=../deploys
   DEPLOYS_LIB=1 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/deploys"

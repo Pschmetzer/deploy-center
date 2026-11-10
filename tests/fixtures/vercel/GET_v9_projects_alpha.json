@@ -1,0 +1,2 @@
+{"id":"prj_alpha","name":"alpha","targets":{"production":{"id":"dpl_alpha1","alias":["alpha.example.test","alpha.vercel.app"]}}}
+200

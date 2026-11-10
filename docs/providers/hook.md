@@ -17,6 +17,7 @@ It is opt-in. Nothing shows up until you add a hook.
 ## Commands
 
 ```bash
+deploys providers enable hook
 deploys hook add <name> <url|-> [--repo owner/name] [--ref main] [--site https://…] \
                  [--method POST] [--header 'Name: value'] [--body '{…}']
 deploys hook remove <name>
@@ -26,7 +27,7 @@ deploys hook set-key <name>      # replace the stored URL, read from stdin
 deploys hook doctor              # JSON, URLs masked
 ```
 
-Until the providers-as-files change routes `deploys hook …` to this file, run `providers/hook.sh` in place of `deploys hook`, with the same arguments.
+The hook provider is off by default. Turn it on once with `deploys providers enable hook`; `providers/hook.sh` also runs on its own, with the same arguments.
 
 Pass `-` as the URL to read it from stdin. The URL then stays out of your shell history:
 

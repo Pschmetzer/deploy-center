@@ -212,8 +212,9 @@ out="$(GH_HEAD=bbbb222bbbb222bbbb222bbbb222bbbb222bbbb "${D[@]}" vercel deploy-j
 expect "the app's path (vercel deploy-json) is checked too" "$rc:$(echo "$out" | grep -c 'needs 1 approval')" "1:1"
 
 # A copy of the script without lib/team.sh still deploys, and observer mode still holds.
-cp deploys "$tmp/deploys-alone"
-out="$(DEPLOYS_READONLY=1 bash "$tmp/deploys-alone" vercel deploy web 2>&1)"; rc=$?
+# providers/ comes along (without it deploys stops at once); lib/ does not.
+mkdir -p "$tmp/alone"; cp deploys "$tmp/alone/deploys"; cp -R providers "$tmp/alone/providers"
+out="$(DEPLOYS_READONLY=1 bash "$tmp/alone/deploys" vercel deploy web 2>&1)"; rc=$?
 expect "without lib/team.sh observer mode still refuses" "$rc:$(echo "$out" | grep -c 'Observer mode')" "1:1"
 
 # The fixtures follow the schema (when python3 with jsonschema is there; CI on macOS may lack it).

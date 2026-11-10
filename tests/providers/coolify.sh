@@ -70,7 +70,7 @@ done
 [ "$missing" = 0 ] && ok "contract: all 14 functions defined"
 meta="$(coolify_meta)"
 expect "meta: shape" "$(echo "$meta" | jq -c '[.id, .label, .keyEnv, .keychain, (.caps | keys)]')" \
-  '["coolify","Coolify","COOLIFY_TOKEN","deploy-center-coolify",["cancel","logs","off","preview","rollback","sha"]]'
+  '["coolify","Coolify",["COOLIFY_TOKEN"],"deploy-center-coolify",["cancel","logs","off","preview","rollback","sha"]]'
 expect "meta: caps" "$(echo "$meta" | jq -c '[.caps.off, .caps.sha, .caps.cancel, .caps.rollback, .caps.logs, .caps.preview]')" \
   '[true,true,true,true,true,false]'
 coolify_ready && ok "ready: with a URL and a token" || fail "ready" "not ready"

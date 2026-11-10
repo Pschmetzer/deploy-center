@@ -30,7 +30,10 @@ Without a Developer ID certificate the app is signed ad hoc: it runs, but macOS 
 login item.
 
 The logic lives in one bash script, `deploys`, which the app calls; it also works alone
-(`./deploys` without arguments prints the help).
+(`./deploys` without arguments prints the help). Each platform is one file in `providers/`
+(`vercel.sh`, `render.sh`), sourced by `deploys`. To add a platform, add one file there and its
+fixtures; nothing else changes. See [docs/PROVIDERS.md](docs/PROVIDERS.md). Keep `providers/` next to
+`deploys` (or set `DEPLOYS_DIR`).
 
 ## Tests
 
@@ -45,14 +48,15 @@ bash tests/app-tests.sh
 ```
 
 ```bash
-shellcheck --severity=error deploys build.sh release.sh tests/*.sh
+shellcheck --severity=warning deploys providers/*.sh build.sh release.sh scripts/*.sh tests/*.sh tests/lib/*.sh tests/providers/*.sh
 ```
 
 ```bash
 swiftc -parse-as-library -swift-version 5 -typecheck app/*.swift shared/*.swift
 ```
 
-`script-tests.sh` checks the rules in `deploys` with a stand-in for `gh`, without network.
+`script-tests.sh` checks the rules in `deploys` with a stand-in for `gh`, without network. It also
+runs `tests/providers/*.sh`, the provider contract, against the fixtures in `tests/fixtures/<p>/`.
 `app-tests.sh` compiles the app's sources (without `App.swift`) with `tests/app-tests.swift`.
 
 ## Releases (maintainer)

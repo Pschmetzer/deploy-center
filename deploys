@@ -52,6 +52,11 @@
 #   deploys where                             config folder, version, key source, logins
 #   deploys render forget-key                 remove the Render key from the keychain
 #   deploys completion zsh|bash               tab completion (eval "$(deploys completion zsh)")
+#   deploys list [--json]                     every project on every provider that is on, with its platform
+#   deploys providers [--json]                the platforms (providers/*.sh): on or off, set up or not
+#   deploys providers enable|disable <p>      switch one on or off (Vercel and Render are on by default)
+#   deploys <p> <verb> ...                    any provider: json, deploy-json, status, latest, logs, url, ...
+#                                             (docs/PROVIDERS.md); a name may be written <p>:<name>
 #   deploys deploy <p>|<group> [--preview] [--sha <c>] [--wait] [--force "reason"]
 #                                             deploy one project, or a group in its order (docs/TEAM.md)
 #   deploys config [--json] [--refresh]       the effective config, and where each value came from
@@ -75,6 +80,7 @@
 # Config lives in ${DEPLOYS_CONFIG:-~/.config/deploys}:
 #   vercel-repos.json  which repo/branch each Vercel project deploys from
 #   vercel-team        team id (auto-detected; empty for a personal account)
+#   providers.json     which providers are on, when changed with `deploys providers`
 #   window.json        when deploys are closed: {"deny":[{"days":["fri"],"from":"15:00"}]} (docs/SAFE-DEPLOY.md)
 #   overrides.json     this Mac's overrides of the shared deploy-center.json (docs/TEAM.md)
 #   readonly           present: observer mode (as DEPLOYS_READONLY=1)
@@ -83,10 +89,6 @@ set -euo pipefail
 
 CONFIG_DIR="${DEPLOYS_CONFIG:-$HOME/.config/deploys}"
 REPOS="$CONFIG_DIR/vercel-repos.json"
-RENDER_API="https://api.render.com/v1"
-KEYCHAIN_SERVICE="deploy-center-render"
-LEGACY_KEYCHAIN_SERVICE="render-api-key"
-
 # launchd and cron start without $USER; under set -u the keychain lookups would stop the script.
 USER="${USER:-$(id -un)}"
 # Locks, the remembered repos and (for a moment) the Render key live here: for this user only.
@@ -146,8 +148,31 @@ repos_json() {
   cat "$REPOS"
 }
 
-# --json anywhere asks for the machine answer: `vercel list --json` is `vercel json`,
-# `vercel deploy p --json` is `vercel deploy-json p`. The old spellings keep working.
+
+# ---------- Providers ----------
+# One file per platform in providers/ next to this script (docs/PROVIDERS.md). There is no list
+# to edit: every providers/<p>.sh is a provider. Symlinks are followed (a ~/bin/deploys link
+# keeps working); DEPLOYS_DIR overrides it (the Docker image keeps the files apart).
+script_dir() {
+  local f="$1" d
+  while [ -L "$f" ]; do d="$(cd "$(dirname "$f")" && pwd)"; f="$(readlink "$f")"; case "$f" in /*) ;; *) f="$d/$f";; esac; done
+  cd "$(dirname "$f")" && pwd
+}
+DEPLOYS_DIR="${DEPLOYS_DIR:-$(script_dir "${BASH_SOURCE[0]}")}"
+# A glob, not ls: the folder itself may have spaces in its path.
+PROVIDERS=()
+for _f in "$DEPLOYS_DIR"/providers/*.sh; do [ -f "$_f" ] || continue; _f="${_f##*/}"; PROVIDERS+=("${_f%.sh}"); done
+unset _f
+[ "${#PROVIDERS[@]}" -gt 0 ] || die "No providers in $DEPLOYS_DIR/providers. Keep the providers folder next to deploys (or set DEPLOYS_DIR)."
+for _p in "${PROVIDERS[@]}"; do
+  # shellcheck source=/dev/null
+  . "$DEPLOYS_DIR/providers/$_p.sh"
+done
+unset _p
+
+is_provider() { local p; for p in "${PROVIDERS[@]}"; do [ "$p" = "${1:-}" ] && return 0; done; return 1; }
+# --json anywhere asks for the machine answer: `<p> list --json` is `<p> json`,
+# `<p> deploy x --json` is `<p> deploy-json x`. The old spellings keep working.
 json=0
 args=()
 # --force "reason" anywhere starts a deploy inside a closed deploy window; the reason goes to the journal.
@@ -165,95 +190,85 @@ if [ "$forced" = 1 ] && { [ -z "${force_reason// /}" ] || [ "${force_reason:0:1}
   die '--force needs a reason. Say why with --force: --force "hotfix for the login page"'
 fi
 if [ "$json" = 1 ]; then
-  case "${args[0]:-} ${args[1]:-}" in
-    "vercel list"|"render list") args[1]="json" ;;
-    "vercel deploy"|"render deploy") args[1]="deploy-json" ;;
-  esac
+  if is_provider "${args[0]:-}"; then
+    case "${args[1]:-}" in
+      list) args[1]="json" ;;
+      deploy) args[1]="deploy-json" ;;
+    esac
+  fi
 fi
 set -- ${args[@]+"${args[@]}"}
 
-# Which platform a name belongs to: a Vercel project first, then a Render service.
-platform_of() {
-  if vercel_call "/v9/projects/$1" >/dev/null 2>&1; then echo vercel
-  elif has_render_key && ( render_id_of "$1" ) >/dev/null 2>&1; then echo render
-  else die "No Vercel project or Render service named \"$1\""; fi
-}
-
-# ---------- Vercel ----------
-
-# The team the commands act on. Detected once and remembered; a personal account has none.
-# A team id goes into every API query string: letters, digits, _ and - only.
-valid_team() { case "$1" in *[!A-Za-z0-9_-]*) return 1;; esac; }
-vercel_team() {
-  if [ -n "${DEPLOYS_VERCEL_TEAM:-}" ]; then
-    valid_team "$DEPLOYS_VERCEL_TEAM" || die "DEPLOYS_VERCEL_TEAM is not a team id"
-    echo "$DEPLOYS_VERCEL_TEAM"; return
-  fi
-  # A team is remembered for good. "No team" (a personal account) only for a day: one joined
-  # later is then found without anyone deleting the file.
-  if [ -s "$CONFIG_DIR/vercel-team" ]; then
-    valid_team "$(cat "$CONFIG_DIR/vercel-team")" || die "$CONFIG_DIR/vercel-team does not hold a team id. Set it: deploys vercel team <id>"
-    cat "$CONFIG_DIR/vercel-team"; return
-  fi
-  if [ -f "$CONFIG_DIR/vercel-team" ] && [ $(( $(date +%s) - $(mtime "$CONFIG_DIR/vercel-team") )) -lt 86400 ]; then echo ""; return; fi
-  local teams n
-  teams="$(vercel api /v2/teams 2>/dev/null)" || die "The vercel CLI is not logged in. Run: vercel login"
-  n="$(echo "$teams" | jq '.teams | length')"
-  if [ "$n" = "0" ]; then
-    : > "$CONFIG_DIR/vercel-team"; echo ""
-  elif [ "$n" = "1" ]; then
-    echo "$teams" | jq -r '.teams[0].id' | tr -d '\n' | tee "$CONFIG_DIR/vercel-team"
+# Which providers are switched on. Vercel and Render are on unless turned off; any other provider
+# is off until `deploys providers enable <p>` (its meta says defaultOn). The choice is kept in
+# providers.json as {"enabled":[...]}; without that file, the defaults. In PROVIDERS order.
+PROVIDERS_FILE="$CONFIG_DIR/providers.json"
+meta_flag() { grep -q "\"$2\":true" <<<"$("${1}_meta")"; }
+enabled_providers() {
+  local p on=""
+  if [ -s "$PROVIDERS_FILE" ] && on="$(jq -r '.enabled // empty | .[]' "$PROVIDERS_FILE" 2>/dev/null)"; then
+    for p in "${PROVIDERS[@]}"; do grep -qxF "$p" <<<"$on" && echo "$p"; done
   else
-    echo "$teams" | jq -r '.teams[] | "  \(.id)  \(.slug)"' >&2
-    die "Several Vercel teams. Choose one: deploys vercel team <id>"
+    for p in "${PROVIDERS[@]}"; do meta_flag "$p" defaultOn && echo "$p"; done
   fi
+  return 0
 }
-
-# Query string for the team, empty for a personal account.
-team_q() { local t; t="$(vercel_team)"; [ -n "$t" ] && echo "teamId=$t" || echo ""; }
-with_team() { local q; q="$(team_q)"; case "$1" in *\?*) echo "$1${q:+&$q}";; *) echo "$1${q:+?$q}";; esac; }
-
-# On failure the last line vercel printed goes to stderr: "not found" and "not logged in" differ.
-vercel_call() {
-  local e rc=0; e="$(mktemp)"
-  vercel api "$(with_team "$1")" "${@:2}" 2>"$e" || rc=$?
-  [ "$rc" = 0 ] || grep -v '^[[:space:]]*$' "$e" | tail -n 1 | sed 's/^/vercel: /' >&2
-  rm -f "$e"; return "$rc"
+is_enabled() { grep -qxF "$1" <<<"$(enabled_providers)"; }
+# Set up and switched on: the only providers the shared commands touch. A provider that is off
+# is never asked anything, not even whether it has a key.
+active_providers() {
+  local p; for p in $(enabled_providers); do ( "${p}_ready" ) >/dev/null 2>&1 && echo "$p"; done; return 0
 }
+provider_on() { is_enabled "$1" && ( "${1}_ready" ) >/dev/null 2>&1; }
+# A field of a provider's meta, without jq (doctor runs without it): label, noun.
+meta_str() { "${1}_meta" | grep -o "\"$2\":\"[^\"]*\"" | head -n 1 | sed 's/.*:"//; s/"$//'; }
 
-vercel_projects() {
-  local all="[]" page next="" url
-  while :; do
-    url="/v10/projects?limit=100${next:+&until=$next}"
-    page="$(vercel_call "$url")" || die "Could not list Vercel projects"
-    all="$(jq -s '.[0] + .[1].projects' <(echo "$all") <(echo "$page"))"
-    next="$(echo "$page" | jq -r '.pagination.next // empty')"
-    [ -n "$next" ] || break
+# A provider's key: the variables its meta names in keyEnv, then the keychain entry
+# deploy-center-<p>. Prints nothing and fails when there is none. No key is ever printed elsewhere.
+key_of() {
+  local p="$1" v
+  for v in $("${p}_meta" | grep -o '"keyEnv":\[[^]]*\]' | sed 's/"keyEnv"://' | grep -o '[A-Za-z_][A-Za-z0-9_]*'); do
+    [ -n "${!v:-}" ] && { printf '%s' "${!v}"; return 0; }
   done
-  echo "$all"
+  security find-generic-password -a "$USER" -s "deploy-center-$p" -w 2>/dev/null
 }
 
-# Write down where a project deploys from. The first time auto-deploy was turned off (offAt)
-# is kept: a later run must not move the line costs and triggers measure from.
-remember_repo() {
-  local entry="$1" tmp
-  tmp="$(mktemp)"
-  jq --argjson e "$entry" 'reduce ($e | to_entries[] | select(.value.repo != null)) as $x (.;
-      .[$x.key] = ($x.value + (if .[$x.key].offAt then {offAt:.[$x.key].offAt} else {} end)))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
+# Which provider a name belongs to, and its id there: "p<TAB>id". "p:name" says it outright.
+# Otherwise the names the last list reads saw (names.json), then each active provider is asked.
+lookup() {
+  local n="$1" p id hits nouns=""
+  case "$n" in
+    *:*) p="${n%%:*}"
+      if is_provider "$p"; then
+        n="${n#*:}"; is_enabled "$p" || die "$(meta_str "$p" label) is off. Turn it on: deploys providers enable $p"
+        id="$("${p}_has" "$n" 2>/dev/null)" || die "No $(meta_str "$p" label) $(meta_str "$p" noun) named \"$n\""
+        printf '%s\t%s\n' "$p" "$id"; return 0
+      fi ;;
+  esac
+  if [ -s "$CONFIG_DIR/names.json" ]; then
+    hits="$(jq -r --arg n "$n" '.[]? | select(.name == $n or .id == $n) | "\(.platform)\t\(.id)"' "$CONFIG_DIR/names.json" 2>/dev/null | sort -u \
+      | while IFS=$'\t' read -r p id; do is_enabled "$p" && printf '%s\t%s\n' "$p" "$id"; done)"
+    if [ -n "$hits" ]; then
+      [ "$(wc -l <<<"$hits" | tr -d ' ')" = 1 ] || die "\"$n\" is on $(cut -f1 <<<"$hits" | sort -u | tr '\n' ' ' | sed 's/ $//; s/ / and /g'). Say which: $(cut -f1 <<<"$hits" | head -n 1):$n"
+      echo "$hits"; return 0
+    fi
+  fi
+  for p in $(active_providers); do
+    if id="$( ( "${p}_has" "$n" ) 2>/dev/null)" && [ -n "$id" ]; then printf '%s\t%s\n' "$p" "$id"; return 0; fi
+  done
+  for p in $(enabled_providers); do nouns="${nouns:+$nouns or }$(meta_str "$p" label) $(meta_str "$p" noun)"; done
+  die "No ${nouns:-project} named \"$n\""
 }
-
-vercel_off() {
-  local p="$1" info
-  info="$(vercel_call "/v9/projects/$p")" || die "Vercel project $p not found"
-  # The link is the only place the repo is written down. Keep it before removing it.
-  remember_repo "$(echo "$info" | jq --arg p "$p" '{($p): ((.link // {}) | (if .type == "gitlab"
-      then {type:"gitlab", repo:'"$GITHOST_VERCEL_LINK_JQ"', projectId} else {org, repo, repoId} end)
-      + {ref:(.productionBranch // "main"), offAt:(now | floor)})}')"
-  [ "$(echo "$info" | jq '.link != null')" = "true" ] || { echo "Vercel: $p was already manual"; return; }
-  vercel api "$(with_team "/v9/projects/$p/link")" --method DELETE --dangerously-skip-permissions >/dev/null 2>&1 \
-    || die "Vercel: could not disconnect $p"
-  echo "Vercel: $p no longer deploys on push"
+# Only the provider a name is on (verify, risk, ai). Exits with lookup's message when none has it.
+platform_of() { local r; r="$(lookup "$1")" || exit 1; echo "${r%%$'\t'*}"; }
+# lookup into PLAT, PID and PNAME (the name without a "p:"). Not in a subshell: die ends the command.
+resolve() {
+  local r; r="$(lookup "$1")" || exit 1
+  PLAT="${r%%$'\t'*}"; PID="${r#*$'\t'}"; PNAME="$1"
+  case "$PNAME" in "$PLAT":*) PNAME="${PNAME#"$PLAT":}";; esac
 }
+# A capability a provider does not have: one sentence, the same for every provider.
+need_cap() { meta_flag "$1" "$2" || die "$(meta_str "$1" label) cannot $3"; }
 
 # A second start of the same project within a minute of a successful one is refused, across the
 # app and the terminal: two quick clicks, or the app and a script at once, would pay for two
@@ -264,31 +279,6 @@ start_lock() {
   # noclobber makes creating the file the check: two starts at the same moment cannot both pass.
   ( set -C; : > "$f" ) 2>/dev/null || die "$1 is being started already (wait a minute)"
   echo "$f"
-}
-
-vercel_deploy_json() {
-  local target="$1" preview="${2:-}" sha="${3:-}" body out lock
-  local repos; repos="$(repos_json)"
-  jq -e --arg p "$target" 'has($p)' <<< "$repos" >/dev/null || die "$target has no remembered repo. Turn its auto-deploy off with this tool, add it to $REPOS, or map it in the repo's deploy-center.json"
-  # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
-  if [ -z "$preview" ] && team_on; then
-    sha="$(team_gate vercel "$target" "$(jq -r --arg p "$target" '.[$p] | "\(.org)/\(.repo)"' <<< "$repos")" \
-      "$(jq -r --arg p "$target" '.[$p].ref // "main"' <<< "$repos")" "$sha")" || exit 1
-  fi
-  lock="$(start_lock "vercel-$target")" || exit 1
-  # Removed by hand on every way out: a `trap … RETURN` would stay set and fire on later returns.
-  body="$(mktemp)"
-  jq --arg p "$target" --arg prev "$preview" --arg sha "$sha" '.[$p] as $r | {name:$p, project:$p}
-    + (if $prev == "" then {target:"production"} else {} end)
-    + {gitSource:(if $r.type == "gitlab" then {type:"gitlab", ref:$r.ref, projectId:$r.projectId}
-                  else {type:"github", ref:$r.ref} + (if $r.repoId then {repoId:$r.repoId} else {org:$r.org, repo:$r.repo} end) end
-                  + (if $sha != "" then {sha:$sha} else {} end))}' <<< "$repos" > "$body"
-  local errf; errf="$(mktemp)"
-  out="$(vercel api "$(with_team /v13/deployments)" --method POST --input "$body" 2>"$errf")" \
-    || { local e; e="$(tail -c 400 "$errf")"; rm -f "$errf" "$lock" "$body"; die "Vercel: $e $(echo "$out" | jq -r '.error.message // empty' 2>/dev/null)"; }
-  rm -f "$errf" "$body"
-  echo "$out" | jq -e '.id' >/dev/null 2>&1 || { rm -f "$lock"; die "Vercel: $(echo "$out" | head -c 400)"; }
-  echo "$out" | jq '{id, url:("https://" + .url), state:(.readyState // .status)}'
 }
 
 # ---------- GitHub (optional, for "new changes") ----------
@@ -371,21 +361,22 @@ else
   gitlab_user() { :; }
   # shellcheck disable=SC2016
   GITHOST_SLUG_JQ='(sub("^https://github.com/";"") | sub("^https?://";"") | sub("\\.git$";"") | sub("/$";""))'
-  # shellcheck disable=SC2016
+  # shellcheck disable=SC2016,SC2034  # read by providers/vercel.sh
   GITHOST_VERCEL_LINK_JQ='(if .type == "gitlab" then null else "\(.org)/\(.repo)" end)'
   export -f githost_of githost_head_of githost_pending_of githost_open_prs_of
 fi
 
 # The one rule for "has changes to deploy", read by `changed`, `deploy-changed` and the app.
-# Not deployable, paused, already building, or with no known head: not changed.
-CHANGED_RULE='map(. + {building: ([.lastState, .latestState] | map(. // "" | ascii_downcase)
-    | any(. as $s | ["building","queued","initializing","created","build_in_progress","update_in_progress","pre_deploy_in_progress"] | index($s)))})
+# Not deployable, paused, already building, or with no known head: not changed. It reads only the
+# shared phase (queued, building, ready, failed, canceled), never a platform's own state names.
+CHANGED_RULE='map(. + {building: (.phase == "queued" or .phase == "building")})
   | map(. + {changed: (
   (.deployable // false) and ((.paused // false) | not) and (.headSha != null or .headAt != null)
   and (.building | not) and (.fetchError == null)
   # The branch is behind what is live (live came from newer commits): deploying it would go back.
   and (.compareStatus != "behind")
   and (if .lastSha and .headSha then .lastSha != .headSha else (.headAt // 0) > (.lastAt // 0) end))})'
+
 
 with_heads() {
   local list="$1" tmp heads pend opens
@@ -420,32 +411,44 @@ with_heads() {
     | jq "$CHANGED_RULE"
 }
 
-# Names for tab completion, kept up to date by every list read.
-remember_names() {
-  # Old names stay, new ones join; one file, so nothing grows without end.
-  # `vercel json` and `render json` run at the same time: each writes its own temp file, and a
-  # lost race only costs a name until the next read, never the list itself.
-  local t; t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || { cat >/dev/null; return 0; }
-  { cat "$CONFIG_DIR/names" 2>/dev/null; jq -r '.[].name' 2>/dev/null; } | sort -u > "$t" 2>/dev/null \
+
+# Names for tab completion and lookups, kept up to date by every list read: `names` (one per
+# line, read by the completion scripts already in people's shell profiles, and by `ignore`) and
+# names.json ([{name, platform, id}], read by lookup).
+remember_names() {  # remember_names <p>, the list on stdin
+  # Old names stay, new ones join; one file, so nothing grows without end. In names.json this
+  # provider's entries are replaced by the fresh list.
+  # Two providers' lists are read at the same time: each writes its own temp file, and a lost
+  # race only costs a name until the next read, never the list itself.
+  local p="$1" list t; list="$(cat)"
+  t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
+  { cat "$CONFIG_DIR/names" 2>/dev/null; echo "$list" | jq -r '.[].name' 2>/dev/null; } | sort -u > "$t" 2>/dev/null \
     && mv -f "$t" "$CONFIG_DIR/names" 2>/dev/null; rm -f "$t" "$CONFIG_DIR/names.tmp" "$CONFIG_DIR/names.new"
+  t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
+  { cat "$CONFIG_DIR/names.json" 2>/dev/null || echo '[]'; } \
+    | jq -c --arg p "$p" --argjson l "$(echo "$list" | jq -c 'if type == "array" then . else [] end' 2>/dev/null || echo '[]')" \
+        '(if type == "array" then . else [] end) | map(select(.platform != $p)) + ($l | map({name, platform:$p, id:(.id // .name)}))' \
+        > "$t" 2>/dev/null && mv -f "$t" "$CONFIG_DIR/names.json" 2>/dev/null; rm -f "$t"
   return 0
 }
 
-# Every project on both platforms, each marked with its platform. Both read at once.
-# A platform that is set up here (vercel CLI installed, Render key present) but cannot be read
-# is named on stderr and makes this return 1: an empty list must never stand for "all up to date".
+# `deploys <p> json`: the provider's list, with the branch heads and the rule above.
+provider_json() {
+  local p="$1" list; list="$("${p}_json")" || exit 1
+  echo "$list" | remember_names "$p"
+  with_heads "$list"
+}
+
+# Every project on every active provider, each marked with its platform. All read at once.
+# A provider that is set up here but cannot be read is named on stderr and makes this return 1:
+# an empty list must never stand for "all up to date".
 all_json() {
   local t rc=0 p; t="$(mktemp -d)"
-  # Remembered Vercel projects count as "set up" too: under launchd's PATH the vercel CLI is
-  # often not found, and that must be an error, not a silent "no Vercel projects".
-  if command -v vercel >/dev/null 2>&1 || [ "$(jq 'length' "$REPOS" 2>/dev/null || echo 0)" != 0 ]; then
-    ( "$0" vercel json 2>"$t/vercel.err" | jq 'map(. + {platform:"vercel"})' > "$t/vercel.json" || : > "$t/vercel.failed" ) &
-  fi
-  if has_render_key; then
-    ( "$0" render json 2>"$t/render.err" | jq 'map(. + {platform:"render"})' > "$t/render.json" || : > "$t/render.failed" ) &
-  fi
+  for p in $(active_providers); do
+    ( "$0" "$p" json 2>"$t/$p.err" | jq --arg p "$p" 'map(. + {platform:$p})' > "$t/$p.json" || : > "$t/$p.failed" ) &
+  done
   wait
-  for p in vercel render; do
+  for p in "${PROVIDERS[@]}"; do
     [ -f "$t/$p.failed" ] || continue
     rc=1; rm -f "$t/$p.json"
     echo "Error: could not read $p: $(grep -v '^[[:space:]]*$' "$t/$p.err" | tail -n 1 | sed 's/^Error: //' | cut -c1-300)" >&2
@@ -618,125 +621,17 @@ export RISK_DEF
 site_url_of() {  # site_url_of <project> <platform>
   if [ "$2" = vercel ]; then
     vercel_call "/v9/projects/$1" | jq -r '((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // (.targets.production.alias[0] // empty) | "https://\(.)"'
-  else
+  elif [ "$2" = render ]; then
     render_call GET "/services/$(render_id_of "$1")" | jq -r '.serviceDetails.url // empty'
-  fi
+  else ( "${2}_url" "$1" ) 2>/dev/null || true; fi
 }
 
 # One start, through the same functions (and the same start lock) as the app.
-deploy_one() {  # deploy_one <platform> <name> [<sha>] [<render id>]: the start as JSON
-  if [ "$1" = vercel ]; then ( vercel_deploy_json "$2" "" "${3:-}" )
-  # By its srv- id when known: a name may hold characters an API path cannot (safe_arg refuses them).
-  else local rid="${4:--}"; [ "$rid" != "-" ] || rid="$2"; "$0" render deploy-json "$rid" ${3:+--sha "$3"}; fi
+deploy_one() {  # deploy_one <platform> <name> [<sha>] [<id>]: the start as JSON
+  # By its id when known (Render: srv-…): a name may hold characters an API path cannot (safe_arg refuses them).
+  local id="${4:--}"; [ "$id" != "-" ] || id="$2"
+  ( "${1}_deploy_json" "$id" ${3:+--sha "$3"} )
 }
-
-# ---------- Render ----------
-
-render_key() {
-  # On a server or in CI there is no keychain: the key may come from the environment.
-  if [ -n "${RENDER_API_KEY:-}" ]; then printf '%s' "$RENDER_API_KEY"; return; fi
-  security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w 2>/dev/null \
-    || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" -w 2>/dev/null \
-    || die "No Render API key. Create one at dashboard.render.com > Account Settings > API Keys, then: deploys render set-key"
-}
-export KEYCHAIN_SERVICE LEGACY_KEYCHAIN_SERVICE
-# Whether a key is there. In a subshell: render_key ends with `die` (exit) when there is none,
-# and an exit inside an `if` ends the whole script, not only the test.
-has_render_key() { ( render_key ) >/dev/null 2>&1; }
-
-# The key goes to curl on stdin so it never shows in the process list.
-render_call() {
-  local method="$1" path="$2" body="${3:-}" key out code
-  key="$(render_key)"
-  # A hung connection must not hang the app: 10 s to connect, 60 s in all.
-  local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
-  [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
-  local try err; err="$(mktemp)"
-  for try in 1 2 3; do
-    # A curl failure (no network, timeout) is code 000 here, not a silent stop under set -e.
-    out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$RENDER_API$path" 2>"$err")" || out=$'\n000'
-    code="${out##*$'\n'}"; out="${out%$'\n'*}"
-    # 429 (rate limit), 5xx and network errors: wait and ask again. Only reads are repeated:
-    # a POST that timed out may have started a build already.
-    case "$code" in
-      429) [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; } ;;
-      5*|000) [ "$method" = GET ] && [ "$try" -lt 3 ] && { sleep $((try * 2)); continue; } ;;
-    esac
-    break
-  done
-  [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
-  rm -f "$err"
-  if [[ "$code" != 2* ]]; then
-    local hint="" fix="deploys render set-key"
-    [ -n "${RENDER_API_KEY:-}" ] && fix="check RENDER_API_KEY in the environment"
-    case "$code" in 000) hint=" (no answer: network or timeout)";; 401|403) hint=" (the Render key is wrong or expired: $fix)";; 404) hint=" (not found: renamed or deleted?)";; 429) hint=" (rate limit: try again in a minute)";; 5*) hint=" (Render had a problem: try again later)";; esac
-    die "Render $method $path -> HTTP $code$hint: $out"
-  fi
-  printf '%s' "$out"
-}
-
-render_services() {
-  local cursor="" page all="[]"
-  while :; do
-    # `|| return`: inside $(...) set -e is off, and a failed page used to loop here for ever.
-    page="$(render_call GET "/services?limit=100${cursor:+&cursor=$cursor}")" || return 1
-    all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$page"))"
-    [ "$(echo "$page" | jq 'length')" -lt 100 ] && break
-    cursor="$(echo "$page" | jq -r '.[-1].cursor')"
-  done
-  echo "$all" | jq '[.[].service]'
-}
-
-render_auto() { echo '(.autoDeployTrigger // (if .autoDeploy=="yes" then "commit" else "off" end))'; }
-
-render_id_of() {
-  local name="$1" id
-  case "$name" in srv-*|crn-*) echo "$name"; return;; esac
-  id="$(render_services | jq -r --arg n "$name" '.[] | select(.name==$n) | .id')"
-  [ -n "$id" ] || die "No Render service named \"$name\". See: deploys render list"
-  # Two services may share a name (in different projects): never pick one at random.
-  [ "$(echo "$id" | wc -l | tr -d ' ')" = 1 ] || die "Several Render services are named \"$name\" ($(echo "$id" | tr '\n' ' ')). Use the srv- id."
-  echo "$id"
-}
-
-render_off() {
-  render_call PATCH "/services/$1" '{"autoDeployTrigger":"off"}' >/dev/null
-  # When it was turned off, so a later push-triggered build can be told apart from earlier ones.
-  local f="$CONFIG_DIR/render-off.json" tmp; [ -f "$f" ] || echo '{}' > "$f"; tmp="$(mktemp)"
-  jq --arg id "$1" '.[$id] = (.[$id] // (now|floor))' "$f" > "$tmp" && mv "$tmp" "$f"
-  echo "Render: $2 no longer deploys on push"
-}
-
-# The key comes from a 0600 file the caller wrote once, so twenty services do not mean
-# twenty keychain reads (or twenty permission prompts).
-render_last_of() {
-  local id="$1" out="$2" key
-  # Whatever goes wrong, the service is written down as "not known", never left out: a missing
-  # record would read as "never deployed" and make the service look changed.
-  last_fail() { jq -nc --arg k "$id" --arg e "$1" '{key:$k, value:{fetchError:$e}}' > "$out/$id.json"; }
-  key="$(cat "$3" 2>/dev/null)"; [ -n "$key" ] || { last_fail "no Render key"; return 0; }
-  # Eight of these run at once: this is where Render's rate limit (429) hits. Wait and ask again.
-  local raw code try
-  for try in 1 2 3; do
-    raw="$(printf 'header = "Authorization: Bearer %s"\n' "$key" \
-      | curl -sS -K - -w '\n%{http_code}' -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=10")" || raw=$'\n000'
-    code="${raw##*$'\n'}"
-    [ "$code" = 429 ] && [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; }
-    break
-  done
-  [[ "$code" == 2* ]] || { last_fail "HTTP $code"; return 0; }
-  printf '%s' "${raw%$'\n'*}" \
-    | jq -c --arg id "$id" 'def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) else null end;
-        [.[].deploy] as $d | ($d[0] // {}) as $new | (($d | map(select(.status=="live")) | .[0]) // {}) as $live
-        # The status is the newest attempt (a failure shows), the commit is what is live: a failed
-        # deploy of the newest commit must not make the project look up to date.
-        | {key:$id, value:{lastAt:(($new.finishedAt // $new.createdAt) | t), lastState:$new.status,
-                           lastSha:($live.commit.id // null), lastMsg:($live.commit.message // null | if . then split("\n")[0] else null end), liveAt:(($live.finishedAt // $live.createdAt) | t),
-                           latestId:($new.id // null), latestSha:($new.commit.id // null)}}' \
-    > "$out/$id.json" 2>/dev/null || last_fail "unreadable answer"
-  [ -s "$out/$id.json" ] || last_fail "empty answer"
-}
-export -f render_last_of
 
 # ---------- Costs (Vercel billing, one UTC day per request) ----------
 
@@ -1026,23 +921,7 @@ autofix_run() {  # autofix_run [dry] [<platform> <project>]  (the two: --only, t
 # (`deploys guard`, a launchd job every 30 minutes) turns it off wherever it is on without an
 # allowance that still runs. See docs/GUARD.md.
 
-vercel_on() {
-  local p="$1" r body err e
-  r="$(jq -r --arg p "$p" '.[$p] // {} | if .org and .repo then "\(.org)/\(.repo)" else "" end' "$REPOS")"
-  [ -n "$r" ] || die "Vercel: the repo of $p is not known, so it cannot be connected again. Say where it deploys from: deploys vercel map $p <owner/repo> [branch]"
-  body="$(mktemp)"; err="$(mktemp)"; jq -n --arg r "$r" '{type:"github", repo:$r}' > "$body"
-  if ! vercel api "$(with_team "/v9/projects/$p/link")" --method POST --input "$body" --dangerously-skip-permissions >/dev/null 2>"$err"; then
-    e="$(grep -v '^[[:space:]]*$' "$err" | tail -n 1 | cut -c1-300)"; rm -f "$body" "$err"
-    die "Vercel: could not connect $p to $r again${e:+: $e}"
-  fi
-  rm -f "$body" "$err"
-  echo "Vercel: $p deploys on push again ($r)"
-}
-
-render_on() {
-  render_call PATCH "/services/$1" '{"autoDeployTrigger":"commit"}' >/dev/null
-  echo "Render: $2 deploys on push again"
-}
+# vercel_on_one and render_on_one (auto-deploy back on) are in providers/vercel.sh and render.sh.
 
 ALLOW_FILE="$CONFIG_DIR/autodeploy-allow.json"
 GUARD_STATE="$CONFIG_DIR/guard.json"
@@ -1081,12 +960,14 @@ ad_unlock() { rmdir "$CONFIG_DIR/locks/autodeploy" 2>/dev/null || true; }
 # Seams the tests replace: what each platform has ([{name, id, auto}]) and the switches.
 ad_list_vercel() { vercel_projects | jq '[.[] | {name, id:.name, auto:(.link != null)}]'; }
 ad_list_render() { render_services | jq '[.[] | {name, id, auto:('"$(render_auto)"' != "off")}]'; }
-ad_off() { case "$1" in vercel) vercel_off "$2";; render) render_off "$3" "$2";; esac; }
-ad_on() { case "$1" in vercel) vercel_on "$2";; render) render_on "$3" "$2";; esac; }
+ad_off() { case "$1" in vercel) vercel_off_one "$2";; render) render_off_one "$3" "$2";; esac; }
+ad_on() { case "$1" in vercel) vercel_on_one "$2";; render) render_on_one "$3" "$2";; esac; }
 # Which platforms this Mac can read: a Vercel login (or remembered projects), a Render key.
 ad_platforms() {
-  if command -v vercel >/dev/null 2>&1 || [ "$(jq 'length' "$REPOS" 2>/dev/null || echo 0)" != 0 ]; then echo vercel; fi
-  if has_render_key; then echo render; fi
+  # Only the providers that are switched on (deploys providers) and set up.
+  provider_on vercel && echo vercel
+  provider_on render && echo render
+  return 0
 }
 
 # guard_run <dry> [<platform>|all] [<name>|*]: auto-deploy off wherever it is on and not allowed.
@@ -1167,7 +1048,10 @@ ad_scope() {
   if [ "$target" = --all ]; then
     if [ "$plat" = all ]; then printf '*\tall\t*\n'; else printf '%s:*\t%s\t*\n' "$plat" "$plat"; fi
   else
-    [ "$plat" != all ] || plat="$(platform_of "$target")"
+    if [ "$plat" = all ]; then
+      plat="$(lookup "$target")" || exit 1; plat="${plat%%$'\t'*}"
+      case "$plat" in vercel|render) ;; *) die "Allowances are for Vercel and Render; $target is on $(meta_str "$plat" label)";; esac
+    fi
     printf '%s:%s\t%s\t%s\n' "$plat" "$target" "$plat" "$target"
   fi
 }
@@ -1328,7 +1212,9 @@ ai_run() {  # ai_run <explain|notes|ship> <project> [--json] [--lang en|de]
   [ -n "$p" ] || die "Usage: deploys ai $what <project> [--json]"
   shift 2
   while [ $# -gt 0 ]; do case "$1" in --json) export AI_JSON=1;; --lang) lang="${2:-}"; shift;; *) die "Unknown option $1";; esac; shift; done
-  sys="$(mktemp)"; usr="$(mktemp)"; trap "rm -f '$sys' '$usr'" EXIT
+  sys="$(mktemp)"; usr="$(mktemp)"
+  # shellcheck disable=SC2064  # the two paths are fixed now, on purpose
+  trap "rm -f '$sys' '$usr'" EXIT
   case "$what" in
     explain)
       cat > "$sys" <<'SYS'
@@ -1367,9 +1253,7 @@ if [ "${DEPLOYS_LIB:-}" = 1 ]; then return 0 2>/dev/null || exit 0; fi
 
 # The version: VERSION next to the script (a checkout), or the app's Info.plist around it.
 deploys_version() {
-  local f="$0" d
-  while [ -L "$f" ]; do d="$(cd "$(dirname "$f")" && pwd)"; f="$(readlink "$f")"; case "$f" in /*) ;; *) f="$d/$f";; esac; done
-  d="$(cd "$(dirname "$f")" && pwd)"
+  local d; d="$(script_dir "$0")"
   if [ -f "$d/VERSION" ]; then cat "$d/VERSION"
   elif [ -f "$d/../Info.plist" ]; then
     # The value is on the key's line or the next one: the first <string> after the key.
@@ -1397,11 +1281,6 @@ case "${1:-} ${2:-}" in
   "risk "*)        usage_if_short $# 2 "risk <project> [--json]" ;;
   "ci "*)          usage_if_short $# 2 "ci <owner/repo> [<sha or branch>] [--wait 30m] [--json]" ;;
   "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
-  "vercel map")    usage_if_short $# 4 "vercel map <project> <owner/repo> [branch]" ;;
-  "vercel deploy"|"vercel deploy-json"|"vercel rollback") usage_if_short $# 3 "vercel ${2} <project>" ;;
-  "vercel cancel"|"vercel status") usage_if_short $# 3 "vercel ${2} <deployment id>" ;;
-  "render deploy"|"render deploy-json"|"render rollback") usage_if_short $# 3 "render ${2} <service>" ;;
-  "render cancel"|"render status") usage_if_short $# 4 "render ${2} <service id> <deploy id>" ;;
   "deploy "*)      usage_if_short $# 2 "deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force \"reason\"]" ;;
 esac
 
@@ -1415,6 +1294,12 @@ case "${1:-} ${2:-}" in
   # autofix hands failed builds to a routine that opens pull requests; --dry-run and its settings only read.
   "autofix "|"autofix --dry-run") [ "${2:-}" = "--dry-run" ] || require_write "autofix" ;;
 esac
+# Any other provider (deploys <p> <verb>): the verbs that start, stop or switch something.
+if is_provider "${1:-}"; then
+  case "${2:-}" in
+    deploy|deploy-json|deploy_json|cancel|rollback|off|on|autodeploy-off|autodeploy-on|map) require_write "$1 $2" ;;
+  esac
+fi
 
 # Names and ids go into API paths and query strings (/v9/projects/<p>, ?app=<p>): nothing that
 # changes the path or the query is accepted, wherever the name came from (a person, the app, an agent).
@@ -1430,22 +1315,46 @@ case "${1:-} ${2:-}" in
   |"render deploy"|"render deploy-json"|"render rollback"|"render cancel"|"render status") check_args "${@:3}" ;;
   "vercel map") safe_arg "$3" ;;
   "vercel autodeploy-off"|"render autodeploy-off") [ -z "${3:-}" ] || [ "$3" = --all ] || safe_arg "$3" ;;
+  *) if is_provider "${1:-}"; then
+       case "${2:-}" in
+         deploy|deploy-json|deploy_json|rollback|cancel|status|latest|logs|url|open|has) check_args "${@:3}" ;;
+         off|on|autodeploy-off|autodeploy-on) [ -z "${3:-}" ] || [ "$3" = --all ] || safe_arg "$3" ;;
+       esac
+     fi ;;
 esac
+if is_provider "${1:-}"; then
+  case "${2:-}" in deploy|deploy-json|rollback) usage_if_short $# 3 "$1 ${2} <$(meta_str "$1" noun)>" ;; esac
+  if declare -F "${1}_usage" >/dev/null; then "${1}_usage" $# "${2:-}"; fi
+fi
+
+# `deploys <p> <verb> [args]`: <p>_cli_<verb> where a provider keeps a command's old output for
+# people, else the contract function <p>_<verb> (docs/PROVIDERS.md). autodeploy-off is off.
+CONTRACT_VERBS=" meta ready json has off deploy_json status latest cancel rollback logs url set_key doctor "
+provider_cmd() {
+  local p="$1" verb="${2:-}" fn; shift; [ $# -gt 0 ] && shift
+  verb="${verb//-/_}"; [ "$verb" = autodeploy_off ] && verb=off
+  if [ "$verb" != meta ] && ! is_enabled "$p"; then die "$(meta_str "$p" label) is off. Turn it on: deploys providers enable $p"; fi
+  if [ -n "$verb" ] && declare -F "${p}_cli_$verb" >/dev/null; then fn="${p}_cli_$verb"
+  elif [ "$verb" = json ]; then provider_json "$p"; return
+  elif [ -n "$verb" ] && [[ "$CONTRACT_VERBS" == *" $verb "* ]]; then fn="${p}_$verb"
+  else sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1; fi
+  # Production starts wait for the deploy window (docs/SAFE-DEPLOY.md); a forced one is journaled.
+  case "$verb" in
+    deploy|deploy_json) [[ " $* " == *" --preview "* ]] || freeze_check; journal_forced "$p" "${1:-}" ;;
+  esac
+  "$fn" "$@"
+}
 
 case "${1:-} ${2:-}" in
   "where "*)
     # Where things are and who is logged in, for a person (doctor is the same for the app).
-    src=none
-    if [ -n "${RENDER_API_KEY:-}" ]; then src="environment (RENDER_API_KEY)"
-    elif security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" >/dev/null 2>&1 \
-      || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" >/dev/null 2>&1; then src="keychain"; fi
+    # Each provider that is on adds its own lines (<p>_where).
     ghu="$(gh api user --jq .login 2>/dev/null || echo "not logged in")"
-    vu="$(vercel whoami 2>/dev/null | tail -n 1 || true)"
-    glu="$(gitlab_user || true)"
     atok=none; [ -n "$(af_token)" ] && atok="set"
-    printf 'version      %s\nscript       %s\nconfig       %s\nvercel team  %s\nvercel user  %s\ngithub user  %s\ngitlab user  %s\nrender key   %s\nautofix      routine %s, token %s\n' \
-      "$(deploys_version)" "$0" "$CONFIG_DIR" "$(cat "$CONFIG_DIR/vercel-team" 2>/dev/null || echo "not chosen yet")" \
-      "${vu:-not logged in}" "$ghu" "${glu:-not logged in}" "$src" "$(r="$(af_routine)"; echo "${r:-none}")" "$atok" ;;
+    printf '%-13s%s\n' version "$(deploys_version)" script "$0" config "$CONFIG_DIR" providers "$(enabled_providers | tr '\n' ' ' | sed 's/ $//')"
+    for p in $(enabled_providers); do if declare -F "${p}_where" >/dev/null; then "${p}_where"; fi; done
+    glu="$(gitlab_user || true)"
+    printf '%-13s%s\n' "github user" "$ghu" "gitlab user" "${glu:-not logged in}" autofix "routine $(r="$(af_routine)"; echo "${r:-none}"), token $atok" ;;
 
   "deploy "*)
     # deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force "reason"]
@@ -1475,18 +1384,14 @@ case "${1:-} ${2:-}" in
     # A start that failed has said why on stderr; that stays the last line for one project.
     stop_group() { [ "$2" -le 1 ] || echo "$1 did not start; the rest of the group was not started." >&2; exit 1; }
     for p in $members; do
-      i=$((i + 1)); plat="$(platform_of "$p")"
-      if [ "$plat" = vercel ]; then
-        out="$(DEPLOYS_FORCE_REASON="$force" vercel_deploy_json "$p" "$pv" "$sha")" || stop_group "$p" "$count"
-        if [ "$json" = 1 ]; then echo "$out" | jq -c --arg p vercel '. + {platform:$p}'; else
-          echo "$out" | jq -r --arg p "$p" '"Vercel: \($p) started -> \(.url) (\(.state))"'
-        fi
-      else
-        [ -z "$pv" ] || die "Render has no preview deploys ($p)"
-        out="$(DEPLOYS_FORCE_REASON="$force" "$0" render deploy-json "$p" ${sha:+--sha "$sha"})" || stop_group "$p" "$count"
-        if [ "$json" = 1 ]; then echo "$out" | jq -c --arg p render '. + {platform:$p}'; else
-          echo "$out" | jq -r --arg p "$p" '"Render: \($p) started (\(.id), \(.state))"'
-        fi
+      i=$((i + 1))
+      # Whichever provider has it (lookup: p:name, the names read, then each provider asked).
+      r="$(lookup "$p")" || stop_group "$p" "$count"
+      plat="${r%%$'\t'*}"; pid="${r#*$'\t'}"; label="$(meta_str "$plat" label)"
+      [ -z "$pv" ] || need_cap "$plat" preview "deploy a preview ($p)"
+      out="$(DEPLOYS_FORCE_REASON="$force" "${plat}_deploy_json" "$pid" ${pv:+--preview} ${sha:+--sha "$sha"})" || stop_group "$p" "$count"
+      if [ "$json" = 1 ]; then echo "$out" | jq -c --arg p "$plat" '. + {platform:$p}'; else
+        echo "$out" | jq -r --arg l "$label" --arg p "${p#*:}" '"\($l): \($p) started " + (if .url then "-> \(.url) " else "" end) + "(\(.id), \(.state))"'
       fi
       # The next member of a group starts once this one is live.
       if [ -n "$wait_" ] || [ "$i" -lt "$count" ]; then
@@ -1553,45 +1458,33 @@ case "${1:-} ${2:-}" in
     # The last n deploys of one project: when, how it ended, which commit, what started it.
     p="$2"; n="${3:-10}"
     case "$n" in ''|*[!0-9]*) die "n must be a number";; esac
-    plat="$(platform_of "$p")"
-    if [ "$plat" = vercel ]; then
-      vercel_call "/v6/deployments?app=$p&limit=$n" | jq -r '.deployments[]
-        | [(.created/1000 | strftime("%Y-%m-%d %H:%M")), (.target // "preview"), .state,
-           ((.meta.githubCommitSha // "")[0:7]), (.source // ""),
-           (if .ready and .buildingAt then "\(((.ready - .buildingAt)/1000) | floor)s" else "" end)]
-        # "-" for an empty field: BSD column merges empty fields and would shift the row.
-        | map(if . == "" or . == null then "-" else . end) | @tsv' \
-        | (printf 'WHEN (UTC)\tTARGET\tSTATE\tCOMMIT\tSOURCE\tBUILD\n'; cat) | column -t -s $'\t'
-    else
-      render_call GET "/services/$(render_id_of "$p")/deploys?limit=$n" | jq -r 'def t: sub("\\.[0-9]+Z$";"Z") | fromdateiso8601;
-        .[].deploy | [(.createdAt | t | strftime("%Y-%m-%d %H:%M")), .status, ((.commit.id // "")[0:7]), (.trigger // ""),
-           (if .finishedAt then "\(((.finishedAt | t) - (.createdAt | t)))s" else "" end)]
-        | map(if . == "" or . == null then "-" else . end) | @tsv' \
-        | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | column -t -s $'\t'
-    fi ;;
+    resolve "$p"
+    declare -F "${PLAT}_history" >/dev/null || die "$(meta_str "$PLAT" label) keeps no deploy history here"
+    "${PLAT}_history" "$PID" "$n" ;;
 
   "doctor "*)
     # Written with printf, not jq: this is the command that has to work when jq is missing.
+    # Each provider that is on adds its fields (<p>_doctor prints one JSON object).
     has() { command -v "$1" >/dev/null 2>&1 && echo true || echo false; }
-    vapi=false; vercel api --help >/dev/null 2>&1 && vapi=true
-    vlogin=false; vercel whoami >/dev/null 2>&1 && vlogin=true
-    rkey=false; { [ -n "${RENDER_API_KEY:-}" ] || security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w >/dev/null 2>&1 \
-      || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" -w >/dev/null 2>&1; } && rkey=true
+    pf=""
+    for p in $(enabled_providers); do
+      o="$("${p}_doctor" 2>/dev/null | tr -d '\n')" || o=""
+      o="${o#\{}"; o="${o%\}}"; [ -z "$o" ] || pf="$pf,$o"
+    done
     glogin=false; gh auth status >/dev/null 2>&1 && glogin=true
     gllogin=false; gitlab_logged_in && gllogin=true
-    # Where the key comes from, and the versions that matter (jq 1.6+ for the date functions).
-    ksrc=none; [ "$rkey" = true ] && ksrc=keychain; [ -n "${RENDER_API_KEY:-}" ] && ksrc=environment
+    # The versions that matter (jq 1.6+ for the date functions).
     jqv="$(jq --version 2>/dev/null | sed 's/^jq-//' | tr -d '"\\')"
     ro=false; [ -z "$(readonly_from)" ] || ro=true
-    printf '{"jq":%s,"vercelCli":%s,"vercelApi":%s,"vercelLoggedIn":%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"renderKey":%s,"renderKeySource":"%s","jqVersion":"%s","bashVersion":"%s","readonly":%s}\n' \
-      "$(has jq)" "$(has vercel)" "$vapi" "$vlogin" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$rkey" "$ksrc" "$jqv" "${BASH_VERSION%%(*}" "$ro" ;;
+    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s}\n' \
+      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" ;;
 
   "github-budget "*)
     github_budget ;;
 
   "status "*)
     # status [--watch] [--no-github]
-    # --no-github leaves GitHub out: what is building needs only Vercel and Render. --watch asks
+    # --no-github leaves GitHub out: what is building needs only the platforms. --watch asks
     # GitHub once, then every tenth round (about every 100 s), not every 10 s.
     watch=0; nogh=""
     for a in "${@:2}"; do case "$a" in --watch) watch=1;; --no-github) nogh=1;; *) die "Unknown option $a. Usage: deploys status [--watch] [--no-github] [--json]";; esac; done
@@ -1604,10 +1497,10 @@ case "${1:-} ${2:-}" in
         round=$((round + 1)); sleep 10
       done
     fi
-    # What is building right now, on both platforms, and what the newest attempt said.
+    # What is building right now, on every platform, and what the newest attempt said.
     rc=0; all="$(DEPLOYS_NO_GITHUB="$nogh" all_json)" || rc=$?
     if [ "$json" = 1 ]; then echo "$all" | jq 'map({platform, name, repo:(.repo // null), building, state:(.latestState // .lastState), changed})'; exit "$rc"; fi
-    echo "$all" | jq -r '.[] | select(.building or ((.latestState // .lastState // "") | ascii_downcase | test("error|fail"))) | [.platform, .name, (.latestState // .lastState)] | @tsv' \
+    echo "$all" | jq -r '.[] | select(.building or .phase == "failed") | [.platform, .name, (.latestState // .lastState)] | @tsv' \
       | (printf 'PLATFORM\tPROJECT\tSTATE\n'; cat) | column -t -s $'\t'
     if [ -n "$nogh" ]; then echo "$all" | jq -r '"\(map(select(.building)) | length) building."'
     else echo "$all" | jq -r '"\(map(select(.building)) | length) building, \(map(select(.changed)) | length) with changes."'; fi
@@ -1620,35 +1513,28 @@ case "${1:-} ${2:-}" in
     # Exit 0 live, 1 failed, 3 the platform could not be asked five times in a row.
     p="${2:?Usage: deploys watch <project> [<deploy id>] [--preview]}"; did=""; pv=""
     for a in "${@:3}"; do case "$a" in --preview) pv=1;; -*) die "Unknown option $a";; *) did="$a";; esac; done
-    tgt="&target=production"; [ -n "$pv" ] && tgt=""
-    plat="$(platform_of "$p")"
-    # The service id once, not the whole service list every six seconds.
-    [ "$plat" = render ] && rid="$(render_id_of "$p")"
-    final() { case "$1" in READY|live|succeeded) return 0;; ERROR|CANCELED|build_failed|update_failed|canceled|pre_deploy_failed|deactivated) return 0;; esac; return 1; }
+    resolve "$p"; plat="$PLAT"
+    # Only the shared phase decides; the platform's own word for it is what is printed.
+    final() { case "$1" in ready|failed|canceled) return 0;; esac; return 1; }
     first=1; misses=0
     while :; do
-      if [ "$plat" = vercel ]; then
-        if [ -n "$did" ]; then s="$(vercel_call "/v13/deployments/$did" | jq -r '"\(.id // .uid)\t\(.readyState // .status // "?")"' 2>/dev/null)" || s=""
-        else s="$(vercel_call "/v6/deployments?app=$p&limit=1$tgt" | jq -r '(.deployments[0] // {uid:"none"}) | "\(.uid)\t\(.state // "?")"' 2>/dev/null)" || s=""; fi
-      else
-        if [ -n "$did" ]; then s="$( (render_call GET "/services/$rid/deploys/$did") 2>/dev/null | jq -r '"\(.id)\t\(.status // "?")"' 2>/dev/null)" || s=""
-        else s="$( (render_call GET "/services/$rid/deploys?limit=1") 2>/dev/null | jq -r '(.[0].deploy // {id:"none"}) | "\(.id)\t\(.status // "?")"' 2>/dev/null)" || s=""; fi
-      fi
+      if [ -n "$did" ]; then s="$("${plat}_status" "$PID" "$did" 2>/dev/null)" || s=""
+      else s="$("${plat}_latest" "$PID" ${pv:+--preview} 2>/dev/null)" || s=""; fi
       if [ -z "$s" ]; then
         # A network blip is not a failed deploy: try again, and give up only after five in a row.
         misses=$((misses + 1)); printf '%s  (could not ask %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2
         [ "$misses" -lt 5 ] || { echo "Error: ${RED}could not reach $plat; the deploy itself may be fine${PLAIN}" >&2; exit 3; }
         sleep 6; continue
       fi
-      misses=0; id="${s%%$'\t'*}"; st="${s#*$'\t'}"
+      misses=0; IFS=$'\t' read -r id ph st <<<"$s"
       [ "$id" != "none" ] || die "No deploy of $p found"
-      if [ "$first" = 1 ] && [ -z "$did" ] && final "$st"; then
+      if [ "$first" = 1 ] && [ -z "$did" ] && final "$ph"; then
         echo "Nothing is building for $p. The newest deploy ($id) is $st."
-        case "$st" in READY|live|succeeded) exit 0;; *) exit 1;; esac
+        case "$ph" in ready) exit 0;; *) exit 1;; esac
       fi
       first=0
       printf '%s  %s\n' "$(date +%H:%M:%S)" "$st"
-      case "$st" in READY|live|succeeded) exit 0;; ERROR|CANCELED|build_failed|update_failed|canceled|pre_deploy_failed|deactivated) exit 1;; esac
+      case "$ph" in ready) exit 0;; failed|canceled) exit 1;; esac
       sleep 6
     done ;;
 
@@ -1657,39 +1543,13 @@ case "${1:-} ${2:-}" in
     # (autofix: a build started after the failure must not hand over the wrong log).
     p="${2:?project}"; n=80; did=""; shift 2
     while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>]}"; shift;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
-    plat="$(platform_of "$p")"
-    if [ "$plat" = vercel ]; then
-      d="$did"; [ -n "$d" ] || d="$(vercel_call "/v6/deployments?app=$p&limit=1&target=production" | jq -r '.deployments[0].uid // empty')"
-      [ -n "$d" ] || die "No deployment of $p"
-      vercel_call "/v3/deployments/$d/events?builds=1&direction=backward&limit=2000" \
-        | jq -r --argjson n "$n" 'sort_by(.created) | map(.payload.text // .text // "" | select(test("\\S"))) | .[-$n:][]'
-    else
-      id="$(render_id_of "$p")"; owner="$(render_call GET "/services/$id" | jq -r .ownerId)"
-      # Render's logs have no deploy filter: the deploy's own time window stands in for it.
-      win=""
-      [ -z "$did" ] || win="$(render_call GET "/services/$id/deploys/$did" | jq -r '"&startTime=\(.createdAt | @uri)" + (if .finishedAt then "&endTime=\(.finishedAt | @uri)" else "" end)')"
-      render_call GET "/logs?ownerId=$owner&resource=$id&type=build&limit=$n&direction=backward$win" \
-        | jq -r '.logs | reverse | .[].message' | sed $'s/\x1b\\[[0-9;]*m//g'
-    fi ;;
+    resolve "$p"; need_cap "$PLAT" logs "read build logs"
+    "${PLAT}_logs" "$PID" "$n" "$did" ;;
 
   "open "*)
-    # The site, or with --dashboard the project's page at Vercel or Render.
-    p="${2:?project}"; plat="$(platform_of "$p")"
-    if [ "$plat" = vercel ]; then
-      if [ "${3:-}" = "--dashboard" ]; then
-        # A team's page is under its slug, a personal account's under the user name.
-        if [ -n "$(vercel_team)" ]; then slug="$(vercel_call "/v2/teams/$(vercel_team)" | jq -r '.slug // empty' 2>/dev/null || true)"
-        else slug="$(vercel_call "/v2/user" | jq -r '.user.username // empty' 2>/dev/null || true)"; fi
-        [ -n "$slug" ] || die "Could not read the Vercel team or user name for the dashboard address"
-        url="https://vercel.com/$slug/$p"
-      else
-        url="$(vercel_call "/v9/projects/$p" | jq -r '((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // (.targets.production.alias[0] // empty) | "https://\(.)"')"
-      fi
-    else
-      svc="$(render_call GET "/services/$(render_id_of "$p")")"
-      if [ "${3:-}" = "--dashboard" ]; then url="$(echo "$svc" | jq -r '.dashboardUrl // empty')"
-      else url="$(echo "$svc" | jq -r '.serviceDetails.url // .dashboardUrl // empty')"; fi
-    fi
+    # The site, or with --dashboard the project's page at its platform.
+    p="${2:?project}"; resolve "$p"
+    url="$("${PLAT}_url" "$PID" ${3:+"$3"})"
     [ -n "$url" ] || die "No address known for $p"
     # macOS open, xdg-open on Linux; without either (cron, ssh) the address is printed.
     if command -v open >/dev/null 2>&1 && [ "$(uname)" = Darwin ]; then open "$url" 2>/dev/null || echo "$url"
@@ -1722,8 +1582,8 @@ case "${1:-} ${2:-}" in
 
   "explain "*)
     # One sentence on why a project is, or is not, counted as having changes.
-    p="${2:?project}"; plat="$(platform_of "$p")"
-    j="$("$0" "$plat" json | jq -c --arg p "$p" '.[] | select(.name == $p)')"
+    p="${2:?project}"; resolve "$p"; p="$PNAME"
+    j="$("$0" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     echo "$j" | jq -r 'def s: (. // "?") | tostring | .[0:7];
       if (.deployable // false) | not then "no: not deployable (repo unknown, or the service is suspended)"
@@ -1739,8 +1599,8 @@ case "${1:-} ${2:-}" in
 
   "diff "*|"notes "*)
     # What is merged but not live for one project, from the same data the window shows.
-    p="${2:?project}"; plat="$(platform_of "$p")"
-    j="$("$0" "$plat" json | jq -c --arg p "$p" '.[] | select(.name == $p)')"
+    p="${2:?project}"; resolve "$p"; p="$PNAME"
+    j="$("$0" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
     d="$("$0" details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // "main"')")"
@@ -1753,15 +1613,26 @@ case "${1:-} ${2:-}" in
 
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
-    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix ai autodeploy guard vercel render completion --help --version"
+    # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
+    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
+    verbs_of() {
+      local v="list deploy rollback status cancel autodeploy-off json" x
+      for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
+      grep -q '"keychain":"' <<<"$("${1}_meta")" && v="$v set-key"
+      echo "$v"
+    }
+    zv=""; bv=""
+    for p in "${PROVIDERS[@]}"; do
+      zv="$zv  elif [[ \$words[2] == $p && CURRENT == 3 ]]; then compadd $(verbs_of "$p")"$'\n'
+      bv="$bv  elif [ \$COMP_CWORD -eq 2 ] && [ \"\${COMP_WORDS[1]}\" = $p ]; then COMPREPLY=(\$(compgen -W \"$(verbs_of "$p")\" -- \"\$cur\"))"$'\n'
+    done
     case "${2:-zsh}" in
       zsh) cat <<ZSH
 _deploys() {
   local -a names; names=(\${(f)"\$(cat "$CONFIG_DIR/names" 2>/dev/null)"})
   if (( CURRENT == 2 )); then compadd $cmds
-  elif [[ \$words[2] == vercel && CURRENT == 3 ]]; then compadd list deploy rollback status cancel autodeploy-off autodeploy-on json map team
-  elif [[ \$words[2] == render && CURRENT == 3 ]]; then compadd list deploy rollback status cancel autodeploy-off autodeploy-on json set-key forget-key
-  elif [[ \$words[2] == ai && CURRENT == 3 ]]; then compadd explain notes ship set-key forget-key verify model cap status
+${zv}  elif [[ \$words[2] == ai && CURRENT == 3 ]]; then compadd explain notes ship set-key forget-key verify model cap status
+  elif [[ \$words[2] == providers && CURRENT == 3 ]]; then compadd enable disable
   elif [[ \$words[2] == completion ]]; then compadd zsh bash
   else compadd -a names; fi
 }
@@ -1774,9 +1645,7 @@ ZSH
 _deploys() {
   local cur=\${COMP_WORDS[COMP_CWORD]}
   if [ \$COMP_CWORD -eq 1 ]; then COMPREPLY=(\$(compgen -W "$cmds" -- "\$cur"))
-  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = vercel ]; then COMPREPLY=(\$(compgen -W "list deploy rollback status cancel autodeploy-off autodeploy-on json map team" -- "\$cur"))
-  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = render ]; then COMPREPLY=(\$(compgen -W "list deploy rollback status cancel autodeploy-off autodeploy-on json set-key forget-key" -- "\$cur"))
-  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = ai ]; then COMPREPLY=(\$(compgen -W "explain notes ship set-key forget-key verify model cap status" -- "\$cur"))
+${bv}  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = ai ]; then COMPREPLY=(\$(compgen -W "explain notes ship set-key forget-key verify model cap status" -- "\$cur"))
   else COMPREPLY=(\$(compgen -W "\$(cat "$CONFIG_DIR/names" 2>/dev/null)" -- "\$cur")); fi
 }
 complete -F _deploys deploys
@@ -1858,11 +1727,12 @@ BASH
   "triggers "*)
     # Builds in the last 24 h that nobody started from here, and workflows that deploy by themselves.
     since=$(( ($(date +%s) - 86400) * 1000 )); tmp="$(mktemp -d)"
-    { vercel_call "/v6/deployments?limit=100&since=$since" \
+    # Vercel and Render only: these are their own extras (docs/PROVIDERS.md).
+    { if is_enabled vercel; then vercel_call "/v6/deployments?limit=100&since=$since" \
         | jq -c --slurpfile r "$REPOS" '.deployments[] | select(.source=="git" or .source=="hook" or .source=="deploy-hook" or .source=="import")
             | select(.created/1000 > ($r[0][.name].offAt // 1e12))
-            | {kind:"vercel-build", where:.name, detail:"source \(.source), \(.created/1000|strftime("%Y-%m-%d %H:%M")) UTC"}'
-      if has_render_key; then
+            | {kind:"vercel-build", where:.name, detail:"source \(.source), \(.created/1000|strftime("%Y-%m-%d %H:%M")) UTC"}'; fi
+      if provider_on render; then
         roff="$CONFIG_DIR/render-off.json"; [ -f "$roff" ] || echo '{}' > "$roff"
         # The service list once (the workflow check below reuses it), and eight calls at a time:
         # more at once only meets Render's rate limit.
@@ -2059,12 +1929,12 @@ BASH
     say() {
       local plat="$1" name="$2" act="$3" why="$4" st="${5:-}" P
       [ -n "$st" ] || st="{}"  # not ${5:-{\}}: bash 3.2 keeps the backslash
-      case "$plat" in vercel) P=Vercel;; render) P=Render;; *) P="$plat";; esac
+      P="$(meta_str "$plat" label)"; [ -n "$P" ] || P="$plat"
       jq -nc --arg p "$plat" --arg n "$name" --arg a "$act" --arg w "$why" --argjson s "$st" \
         '{platform:$p, name:$n, action:$a, reason:(if $w == "" then null else $w end), id:($s.id // null), url:($s.url // null)}' >> "$res"
       [ "$json" = 1 ] && return 0
       case "$act" in
-        started) if [ "$plat" = vercel ]; then echo "$P: $name started -> $(echo "$st" | jq -r .url)"; else echo "$P: $name started ($(echo "$st" | jq -r .id))"; fi ;;
+        started) if [ "$(echo "$st" | jq -r '.url // empty')" != "" ]; then echo "$P: $name started -> $(echo "$st" | jq -r .url)"; else echo "$P: $name started ($(echo "$st" | jq -r .id))"; fi ;;
         failed) echo "$P: $name failed to start" >&2 ;;
         skipped) echo "$P: $name skipped: $why" ;;
       esac
@@ -2105,229 +1975,6 @@ BASH
     rm -f "$res"
     [ "$rc" = 0 ] || echo "Some projects could not be read and were left out (see above)." >&2
     [ "$bad" = "0" ] && [ "$rc" = 0 ] ;;
-
-  "vercel map")
-    # Say by hand where a project deploys from, for one disconnected before this tool knew it.
-    p="${3:?project}"; r="${4:?owner/repo}"; ref="${5:-main}"
-    case "$r" in */*) ;; *) die "Give the repo as owner/name";; esac
-    if [ "$(githost_of "$r")" = gitlab ]; then
-      # GitLab: host/group/name (or its URL). Vercel deploys it by project id.
-      read -r glh glp < <(githost_split "$r"); r="$glh/$glp"
-      pid="$(gitlab_project_id "$r" || true)"; [ -n "$pid" ] || die "GitLab project $r not found (is glab logged in, or GITLAB_TOKEN set?)"
-      tmp="$(mktemp)"
-      jq --arg p "$p" --arg r "$r" --arg ref "$ref" --argjson pid "$pid" \
-        '.[$p] = ({type:"gitlab", repo:$r, projectId:$pid, ref:$ref} + (if .[$p].offAt then {offAt:.[$p].offAt} else {} end))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
-      echo "Vercel: $p deploys from $r ($ref)"; exit 0
-    fi
-    rid=""; command -v gh >/dev/null 2>&1 && rid="$(gh api "repos/$r" --jq .id 2>/dev/null || true)"
-    tmp="$(mktemp)"
-    # The whole entry is replaced: an old repoId would win over the new repo name.
-    jq --arg p "$p" --arg o "${r%%/*}" --arg n "${r#*/}" --arg ref "$ref" --arg rid "$rid" \
-      '.[$p] = ({org:$o, repo:$n, ref:$ref} + (if .[$p].offAt then {offAt:.[$p].offAt} else {} end)
-                + (if $rid != "" then {repoId:($rid|tonumber)} else {} end))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
-    echo "Vercel: $p deploys from $r ($ref)" ;;
-
-  "vercel list")
-    vercel_projects | jq -r '.[] | [.name, (if .link then "AUTO (\(.link.org // "")/\(.link.repo // ""))" else "manual" end)] | @tsv' \
-      | column -t -s $'\t' ;;
-  "vercel autodeploy-off")
-    target="${3:-}"; [ -n "$target" ] || die "Give a project name or --all"
-    if [ "$target" = "--all" ]; then
-      # One that fails does not stop the rest; they are counted and the exit code says so.
-      # The list first, on its own line: a failed read must stop here (set -e), not look like "none left".
-      bad=0; names="$(vercel_projects | jq -r '.[] | select(.link) | .name')"
-      for p in $names; do ( vercel_off "$p" ) || bad=$((bad + 1)); done
-      [ "$bad" = 0 ] || die "$bad Vercel projects could not be disconnected (see above); the others are done"
-      echo "Done. No Vercel project deploys on push any more."
-    else
-      vercel_off "$target"
-    fi ;;
-  "vercel autodeploy-on")
-    # Connect Git again from the remembered repo. Every push builds again (and costs again).
-    target="${3:-}"; [ -n "$target" ] || die "Give a project name or --all"
-    if [ "$target" = "--all" ]; then
-      bad=0; skipped=0; names="$(vercel_projects | jq -r '.[] | select(.link | not) | .name')"
-      for p in $names; do
-        if ! jq -e --arg n "$p" '.[$n].repo != null' "$REPOS" >/dev/null; then skipped=$((skipped + 1)); echo "Vercel: $p skipped, its repo is not known (deploys vercel map)"; continue; fi
-        ( vercel_on "$p" ) || bad=$((bad + 1))
-      done
-      [ "$bad" = 0 ] || die "$bad Vercel projects could not be connected (see above); the others are done"
-      echo "Done. Every remembered Vercel project deploys on push again."
-    else
-      vercel_on "$target"
-    fi ;;
-  "vercel deploy")
-    # vercel deploy <project> [--preview] [--sha <commit>] [--wait]
-    target="$3"; pv=""; sha=""; wait_=""; shift 3
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        --preview) pv=1;; --wait) wait_=1;;
-        --sha) [ -n "${2:-}" ] || die "Usage: deploys vercel deploy <project> --sha <commit>"; sha="$2"; shift;;
-        *) die "Unknown option $1. Usage: deploys vercel deploy <project> [--preview] [--sha <commit>] [--wait]";;
-      esac; shift
-    done
-    # The deploy window holds production only; a preview changes nothing anyone sees.
-    [ -n "$pv" ] || freeze_check
-    out="$(vercel_deploy_json "$target" "$pv" "$sha")"
-    journal_forced vercel "$target"
-    echo "$out" | jq -r '"Vercel: deploy started -> \(.url) (\(.state))"'
-    # Follow exactly this deploy, not "the newest one", until it is live or failed.
-    if [ -n "$wait_" ]; then
-      did="$(echo "$out" | jq -r .id)"
-      while :; do
-        st="$(vercel_call "/v13/deployments/$did" | jq -r '.readyState // .status // "?"' 2>/dev/null || echo "?")"
-        printf '%s  %s\n' "$(date +%H:%M:%S)" "$st"
-        case "$st" in READY) exit 0;; ERROR|CANCELED) exit 1;; esac
-        sleep 6
-      done
-    fi ;;
-  "vercel deploy-json")
-    # deploy-json <project> [--preview] [--sha <commit>]
-    p="${3:?project}"; pv=""; sha=""; shift 3 || true
-    while [ $# -gt 0 ]; do case "$1" in --preview) pv=1;; --sha) sha="${2:?commit}"; shift;; esac; shift; done
-    [ -n "$pv" ] || freeze_check
-    out="$(vercel_deploy_json "$p" "$pv" "$sha")"
-    journal_forced vercel "$p"
-    echo "$out" ;;
-  "vercel cancel")
-    vercel api "$(with_team "/v12/deployments/${3:?deployment id}/cancel")" --method PATCH >/dev/null 2>&1 || die "Vercel: could not cancel ${3}"
-    echo '{"state":"CANCELED"}' ;;
-  "vercel status")
-    vercel_call "/v13/deployments/${3:?deployment id}" \
-      | jq '{id, url:("https://" + .url), state:(.readyState // .status), error:(.errorMessage // null)}' ;;
-  "vercel rollback")
-    # Production back to the previous ready production deployment.
-    p="${3:?project}"
-    # "Before" means before the deployment that is live now, which after an earlier rollback or a
-    # promotion is not always the newest one.
-    cur="$(vercel_call "/v9/projects/$p" | jq -r '.targets.production.id // empty')"
-    prev="$(vercel_call "/v6/deployments?projectId=$p&target=production&state=READY&limit=20" \
-      | jq -r --arg cur "$cur" '.deployments as $d | (($d | map(.uid) | index($cur)) // 0) as $i
-          | ($d[$i].meta.githubCommitSha // null) as $sha
-          # An older deploy of the same commit (a redeploy) would change nothing: skip to a different one.
-          | ($d | to_entries | map(select(.key > $i) | .value)
-             | map(select($sha == null or (.meta.githubCommitSha // "") != $sha)) | .[0].uid // empty)')"
-    [ -n "$prev" ] || die "No earlier production deployment of $p to roll back to"
-    # The project's id, not its name: Vercel answers 404 to a name on these endpoints.
-    pid="$(vercel_call "/v9/projects/$p" | jq -r '.id // empty')"
-    vercel api "$(with_team "/v1/projects/${pid:-$p}/rollback/$prev")" --method POST >/dev/null 2>&1 || die "Vercel: rollback of $p failed"
-    echo "{\"id\":\"$prev\",\"state\":\"READY\"}" ;;
-  "vercel team")
-    if [ -n "${3:-}" ]; then valid_team "$3" || die "A team id has letters, digits, _ and - only"; printf '%s' "$3" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $3"; else vercel_team; echo; fi ;;
-  "vercel json")
-    # The newest production attempt per project, from one call: a build started in the dashboard
-    # or the terminal is BUILDING here while targets.production still shows the finished one.
-    recent="$(vercel_call "/v6/deployments?limit=100&target=production" \
-      | jq '[.deployments[]] | group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta.githubCommitSha // null)})}) | from_entries' 2>/dev/null)"
-    list="$(vercel_projects | jq --slurpfile r <(repos_json) --argjson recent "${recent:-{\}}" '[.[] |
-      ((.link // null) | if . then {repo:'"$GITHOST_VERCEL_LINK_JQ"', ref:"main"} else null end) as $live |
-      ($r[0][.name] // null) as $known |
-      {name, auto:(.link != null),
-       repo:(if $known.repo then (if $known.type == "gitlab" then $known.repo else "\($known.org)/\($known.repo)" end) else $live.repo end),
-       ref:($known.ref // (.link.productionBranch // null)),
-       deployable:($known.repo != null),
-       domain:(((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // null),
-       lastAt:((.targets.production.createdAt // 0) / 1000 | floor),
-       lastState:(.targets.production.readyState // null),
-       lastSha:(.targets.production.meta.githubCommitSha // null),
-       lastMsg:(.targets.production.meta.githubCommitMessage // null | if . then split("\n")[0] else null end),
-       latestState:($recent[.name].state // null),
-       latestId:($recent[.name].id // null), latestSha:($recent[.name].sha // null)}] | sort_by(.name | ascii_downcase)')"
-    echo "$list" | remember_names
-    with_heads "$list" ;;
-
-  "render list")
-    render_services | jq -r '.[] | [.name, .type, '"$(render_auto)"', (if .suspended=="suspended" then "suspended" else "active" end)] | @tsv' \
-      | (printf 'NAME\tTYPE\tAUTO-DEPLOY\tSTATE\n'; cat) | column -t -s $'\t' ;;
-  "render autodeploy-off")
-    target="${3:-}"; [ -n "$target" ] || die "Give a service name or --all"
-    if [ "$target" = "--all" ]; then
-      bad=0; todo="$(render_services | jq -r '.[] | select('"$(render_auto)"' != "off") | "\(.id)\t\(.name)"')"
-      while IFS=$'\t' read -r id name; do
-        [ -n "$id" ] || continue; ( render_off "$id" "$name" ) || bad=$((bad + 1))
-      done <<< "$todo"
-      [ "$bad" = 0 ] || die "$bad Render services could not be switched off (see above); the others are done"
-      echo "Done. No Render service deploys on push any more."
-    else
-      render_off "$(render_id_of "$target")" "$target"
-    fi ;;
-  "render autodeploy-on")
-    target="${3:-}"; [ -n "$target" ] || die "Give a service name or --all"
-    if [ "$target" = "--all" ]; then
-      bad=0; todo="$(render_services | jq -r '.[] | select('"$(render_auto)"' == "off") | "\(.id)\t\(.name)"')"
-      while IFS=$'\t' read -r id name; do
-        [ -n "$id" ] || continue; ( render_on "$id" "$name" ) || bad=$((bad + 1))
-      done <<< "$todo"
-      [ "$bad" = 0 ] || die "$bad Render services could not be switched on (see above); the others are done"
-      echo "Done. Every Render service deploys on push again."
-    else
-      render_on "$(render_id_of "$target")" "$target"
-    fi ;;
-  "render deploy")
-    # Through deploy-json, so the same one-minute start lock as the app and deploy-changed applies.
-    freeze_check
-    "$0" render deploy-json "${@:3}" | jq -r '"Render: deploy started (\(.id), \(.state))"'
-    journal_forced render "$3" ;;
-  "render deploy-json")
-    # deploy-json <service> [--sha <commit>] [--clear-cache]
-    freeze_check
-    name="${3:?service}"; id="$(render_id_of "$name")"; sha=""; cc=""; shift 3 || true
-    while [ $# -gt 0 ]; do case "$1" in --sha) sha="${2:?commit}"; shift;; --clear-cache) cc=1;; esac; shift; done
-    # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
-    if team_on; then
-      svc="$(render_call GET "/services/$id")" || exit 1
-      sha="$(team_gate render "$name" "$(echo "$svc" | jq -r '(.repo // "") | sub("^https://github.com/";"") | sub("\\.git$";"")')" \
-        "$(echo "$svc" | jq -r '.branch // "main"')" "$sha")" || exit 1
-    fi
-    lock="$(start_lock "render-$id")" || exit 1
-    body="$(jq -nc --arg sha "$sha" --arg cc "$cc" '(if $sha != "" then {commitId:$sha} else {} end) + (if $cc != "" then {clearCache:"clear"} else {} end)')"
-    out="$(render_call POST "/services/$id/deploys" "$body")" || { rm -f "$lock"; exit 1; }
-    journal_forced render "$name"
-    echo "$out" | jq --arg s "$id" '{id, serviceId:$s, state:.status}' ;;
-  "render cancel")
-    render_call POST "/services/${3:?service id}/deploys/${4:?deploy id}/cancel" '{}' | jq '{id, state:.status}' ;;
-  "render rollback")
-    # Back to the deploy that was live before the current one.
-    id="$(render_id_of "${3:?service}")"
-    prev="$(render_call GET "/services/$id/deploys?limit=20" | jq -r '([.[].deploy | select(.status=="live")][0].commit.id // "") as $cur
-        | [.[].deploy | select(.status=="deactivated" and ((.commit.id // "") != $cur))][0].id // empty')"
-    [ -n "$prev" ] || die "No earlier live deploy to roll back to"
-    render_call POST "/services/$id/rollback" "{\"deployId\":\"$prev\"}" | jq --arg s "$id" '{id, serviceId:$s, state:.status}' ;;
-  "render status")
-    render_call GET "/services/${3:?service id}/deploys/${4:?deploy id}" | jq '{id, state:.status}' ;;
-  "render forget-key")
-    # Both names the key was ever stored under. A key in RENDER_API_KEY is not touched.
-    gone=0
-    for svc in "$KEYCHAIN_SERVICE" "$LEGACY_KEYCHAIN_SERVICE"; do
-      security delete-generic-password -a "$USER" -s "$svc" >/dev/null 2>&1 && gone=$((gone + 1))
-    done
-    if [ "$gone" -gt 0 ]; then echo "Render key removed from the keychain."; else echo "No Render key was in the keychain."; fi
-    [ -z "${RENDER_API_KEY:-}" ] || echo "RENDER_API_KEY is still set in the environment." ;;
-  "render set-key")
-    IFS= read -r key || true
-    [ -n "$key" ] || die "Pipe the key in: pbpaste | deploys render set-key"
-    case "$key" in *\'*|*\"*|*' '*) die "That does not look like a Render API key";; esac
-    # Tried first, saved only when Render takes it: a typo must not replace a working key.
-    ( RENDER_API_KEY="$key" render_call GET "/services?limit=1" >/dev/null ) || die "Render did not accept that key; nothing was saved"
-    # Sent to `security -i` on stdin, so the key is never an argument anyone can see.
-    printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$KEYCHAIN_SERVICE" "$key" | security -i >/dev/null \
-      || die "The key works, but could not be saved in the keychain"
-    echo "Render key saved and working." ;;
-  "render json")
-    list="$(render_services | jq '[.[] | {id, name, type, paused:(.suspended=="suspended"),
-      auto:('"$(render_auto)"' != "off"), deployable:(.suspended!="suspended"),
-      url:(.serviceDetails.url // null),
-      domain:((.serviceDetails.url // "") | sub("^https?://";"") | if . == "" then null else . end),
-      repo:((.repo // "") | '"$GITHOST_SLUG_JQ"' | if . == "" then null else . end),
-      ref:(.branch // null)}] | sort_by(.name | ascii_downcase)')"
-    # Render names too, for tab completion and the `ignore` name check.
-    echo "$list" | remember_names
-    tmp="$(mktemp -d)"; kf="$tmp/key"; (umask 077; render_key > "$kf")
-    echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$2" "$0" "$1"' "$tmp" "$kf"
-    rm -f "$kf"
-    lasts="$(cat_all "$tmp"/*.json | jq -s 'from_entries')"; rm -rf "$tmp"
-    list="$(echo "$list" | jq --argjson l "${lasts:-{\}}" 'map(. + ($l[.id] // {}))')"
-    with_heads "$list" ;;
 
   "autodeploy allow")
     # autodeploy allow <vercel|render|all> <project>|--all <hours>
@@ -2464,6 +2111,39 @@ BASH
     fi
     autofix_run "$dry" "$oplat" "$oname" ;;
 
+  "providers "*)
+    # providers [--json] | enable <p> | disable <p>
+    case "${2:-}" in
+      enable|disable)
+        p="${3:-}"; is_provider "$p" || die "Usage: deploys providers $2 <provider>. Known: ${PROVIDERS[*]}"
+        on="$(enabled_providers)"
+        if [ "$2" = enable ]; then on="$(printf '%s\n%s\n' "$on" "$p")"; else on="$(grep -vxF "$p" <<<"$on" || true)"; fi
+        tmp="$(mktemp "$CONFIG_DIR/providers.XXXXXX")"
+        printf '%s\n' "$on" | jq -R -s --arg order "${PROVIDERS[*]}" '($order | split(" ")) as $o
+          | split("\n") | map(select(. != "")) | unique | {enabled: sort_by(. as $p | $o | index($p))}' > "$tmp" && mv "$tmp" "$PROVIDERS_FILE"
+        if [ "$2" = enable ]; then echo "$(meta_str "$p" label) is on."; else echo "$(meta_str "$p" label) is off: no command reads it any more."; fi ;;
+      "")
+        # A provider that is off is not asked whether it is set up: ready is null for it.
+        on="$(enabled_providers)"
+        list="$(for p in "${PROVIDERS[@]}"; do
+          if grep -qxF "$p" <<<"$on"; then r=false; ( "${p}_ready" ) >/dev/null 2>&1 && r=true
+            "${p}_meta" | jq -c --argjson r "$r" '. + {enabled:true, ready:$r}'
+          else "${p}_meta" | jq -c '. + {enabled:false, ready:null}'; fi
+        done | jq -s '.')"
+        if [ "$json" = 1 ]; then echo "$list"
+        else echo "$list" | jq -r '.[] | [.id, .label, (if .enabled then "on" else "off" end), (if .ready == null then "-" elif .ready then "ready" else "not set up" end)] | @tsv' \
+          | (printf 'ID\tPLATFORM\tSTATE\tACCESS\n'; cat) | column -t -s $'\t'; fi ;;
+      *) die "Usage: deploys providers [--json] | enable <provider> | disable <provider>" ;;
+    esac ;;
+
+  "list "*)
+    # Every project on every provider that is on and set up, each with its platform.
+    rc=0; all="$(all_json)" || rc=$?
+    if [ "$json" = 1 ]; then echo "$all"; exit "$rc"; fi
+    echo "$all" | jq -r '.[] | [.platform, .name, (if .auto then "auto" else "manual" end), (.lastState // "-")] | @tsv' \
+      | (printf 'PLATFORM\tPROJECT\tDEPLOYS\tSTATE\n'; cat) | column -t -s $'\t'
+    exit "$rc" ;;
+
   "simulate "*|"ledger "*)
     # Savings estimates, kept in lib/savings.sh next to this script (or in the app's Resources).
     lib="${DEPLOYS_SAVINGS_LIB:-$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)/lib/savings.sh}"
@@ -2472,5 +2152,6 @@ BASH
     . "$lib"; savings_main "$@" ;;
 
   *)
+    if is_provider "${1:-}"; then provider_cmd "$@"; exit $?; fi
     sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

@@ -1,0 +1,2 @@
+[{"deploy":{"id":"dep-c2","status":"build_failed","commit":{"id":"cccc222","message":"fix: broken"},"createdAt":"2026-01-02T00:00:00.123Z","finishedAt":"2026-01-02T00:02:00Z"}},{"deploy":{"id":"dep-c1","status":"live","commit":{"id":"cccc111","message":"feat: ok"},"createdAt":"2026-01-02T00:00:00.123Z","finishedAt":"2026-01-02T00:02:00Z"}}]
+200

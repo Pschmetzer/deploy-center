@@ -67,6 +67,8 @@ fi
 
 cp deploys "$BUILD/Contents/Resources/deploys"
 chmod +x "$BUILD/Contents/Resources/deploys"
+# The platforms, one file each, next to the script: it finds them as providers/*.sh.
+cp -R providers "$BUILD/Contents/Resources/providers"
 # Team mode (lib/team.sh) and GitLab support (lib/githost.sh) are sourced by the script from next to it.
 mkdir -p "$BUILD/Contents/Resources/lib" && cp lib/*.sh "$BUILD/Contents/Resources/lib/"
 [ -f app/AppIcon.icns ] && cp app/AppIcon.icns "$BUILD/Contents/Resources/AppIcon.icns"
@@ -168,6 +170,7 @@ if [ "$widgets" = 1 ]; then
   fi
 elif [ -n "${DEVELOPER_ID:-}" ]; then
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/deploys"
+  codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/providers/"*.sh
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD"
   codesign --verify --strict "$BUILD"
   if [ -n "${NOTARY_PROFILE:-}" ]; then

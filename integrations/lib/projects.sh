@@ -1,26 +1,19 @@
 #!/bin/bash
-# Sourced by the integrations: every project, both platforms, as one JSON array.
+# Sourced by the integrations: every project, on every provider that is on and set up, as one
+# JSON array.
 #
-# Each entry is what `deploys vercel list --json` / `deploys render list --json` print, plus
-# `platform`. `changed` is the CLI's own rule. Render is read only when a key is there: in
-# the environment (RENDER_API_KEY) or, on a Mac, as `deploys doctor` reports it. (Without one,
-# `deploys render list --json` does not come back; see integrations/README.md.)
+# That is `deploys list --json`: each entry is what `deploys <p> list --json` prints, plus
+# `platform`. `changed` is the CLI's own rule. Which providers are read (and that Render is read
+# only with a key) is decided by the CLI. A provider that cannot be read is left out here: the
+# integrations show what is known, and `deploys changed` is where an unread project is an error.
 #
 # Env: DEPLOYS  the CLI to call (default: deploys on PATH)
 DEPLOYS="${DEPLOYS:-deploys}"
 
-has_render_key() {
-  [ -n "${RENDER_API_KEY:-}" ] && return 0
-  "$DEPLOYS" doctor 2>/dev/null | jq -e '.renderKey == true' >/dev/null 2>&1
-}
-
 all_projects() {
-  local v r='[]'
-  v="$("$DEPLOYS" vercel list --json 2>/dev/null </dev/null)" || v='[]'
-  if has_render_key; then r="$("$DEPLOYS" render list --json 2>/dev/null </dev/null)" || r='[]'; fi
-  jq -n --argjson v "$(jq -c 'if type=="array" then . else [] end' <<<"$v" 2>/dev/null || echo '[]')" \
-        --argjson r "$(jq -c 'if type=="array" then . else [] end' <<<"$r" 2>/dev/null || echo '[]')" \
-    '($v | map(. + {platform:"vercel"})) + ($r | map(. + {platform:"render"}))'
+  local out
+  out="$("$DEPLOYS" list --json 2>/dev/null </dev/null)" || true
+  jq -c 'if type=="array" then . else [] end' <<<"${out:-[]}" 2>/dev/null || echo '[]'
 }
 
 # What `deploys changed --json` lists: changed, and not left out with `deploys ignore`.
