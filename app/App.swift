@@ -91,6 +91,7 @@ struct SettingsView: View {
             ScrollViewReader { proxy in Form {
                 ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
                 ClaudeAISettings().id("claudeAI")
+                PromptTemplateSettings()
                 AutofixSettings(store: store).id("autofix")
             } }
             .formStyle(.grouped)
@@ -643,5 +644,24 @@ struct MenuBarContent: View {
         // The app delegate asks while deploys run, as for ⌘Q and the Dock.
         Button(L("Quit", "Beenden")) { NSApp.terminate(nil) }
         .keyboardShortcut("q")
+    }
+}
+
+/// Settings → Claude: the text of "Copy for Claude" (FEA-028). Empty = the built-in prompt.
+struct PromptTemplateSettings: View {
+    @AppStorage(LogTools.promptTemplateKey) private var template = ""
+
+    var body: some View {
+        Section(L("“Copy for Claude” prompt", "Prompt für „Für Claude kopieren“")) {
+            TextEditor(text: $template).font(.callout.monospaced()).frame(minHeight: 80)
+                .accessibilityLabel(L("Prompt template", "Prompt-Vorlage"))
+            Text(L("Placeholders: {name} {repo} {ref} {sha} {status} {log}. Empty = the built-in prompt. Secrets in the log stay masked.",
+                   "Platzhalter: {name} {repo} {ref} {sha} {status} {log}. Leer = der eingebaute Prompt. Geheimnisse im Log bleiben maskiert."))
+                .font(.caption).foregroundStyle(.secondary)
+            if !template.isEmpty, !template.contains("{log}") {
+                Text(L("Without {log} the prompt has no build log.", "Ohne {log} hat der Prompt kein Build-Log."))
+                    .font(.caption).foregroundStyle(Color.warningText)
+            }
+        }
     }
 }

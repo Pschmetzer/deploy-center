@@ -529,6 +529,7 @@ do {
     expect("failure causes: alike ones together", "\(c.first?.cause ?? "") \(c.first?.count ?? 0) \(c.first?.projects ?? [])", "Build failed: exit code # 2 [\"a\", \"b\"]")
     expect("failure causes: ids become #", JournalStats.cause("Deployment dpl_8f3k2 failed at a1b2c3d") ?? "", "Deployment # failed at #")
 }
+expect("prompt template", LogTools.fill("Fix {name} at {sha}: {log} {other}", ["name": "web", "sha": "abc", "log": "{name}"]), "Fix web at abc: {name} {other}")
 expect("goal share", [SavingsModel.goalShare(saved: 25, goal: 100), SavingsModel.goalShare(saved: 300, goal: 100), SavingsModel.goalShare(saved: 5, goal: 0), SavingsModel.goalShare(saved: nil, goal: 50)].map { $0.map { String($0) } ?? "nil" }, ["0.25", "1.0", "nil", "nil"])
 expect("milestones", [5, 10, 99, 100, 1999, 2500].map { SavingsModel.milestone(saved: $0).map { Int($0) } ?? 0 }, [0, 10, 50, 100, 1000, 2000])
 expect("lenient: an empty object is an empty simulation",
