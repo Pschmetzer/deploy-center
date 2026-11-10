@@ -25,7 +25,7 @@ case "$args" in
   *"commits/c3/pulls"*) echo 13 ;;
   *"compare/dead...main"*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
   *"compare/rate...main"*) echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1 ;;
-  *"pulls?state=open"*) echo '{"key":"me/app","value":{"all":4,"drafts":1,"bots":2}}' ;;
+  *"pulls?state=open"*) echo '[{"draft":true,"user":{"type":"User"}},{"draft":false,"user":{"type":"Bot"}},{"draft":false,"user":{"type":"Bot"}},{"draft":false,"user":{"type":"User"}}]' ;;
   *) exit 1 ;;
 esac
 GH
@@ -185,7 +185,7 @@ case "$*" in
   *"repos/me/app/commits/main"*) echo '{"sha":"bbbb","commit":{"message":"feat: new","committer":{"date":"2026-01-02T00:00:00Z"}}}' ;;
   *"compare/aaaa...main"*) [ -n "${BIG:-}" ] && { cat "$BIG"; exit 0; }
                            echo '{"status":"ahead","ahead_by":1,"behind_by":0,"commits":[{"sha":"bbbb","commit":{"message":"feat: new","committer":{"date":"2026-01-02T00:00:00Z"}},"author":{"type":"User"}}]}' ;;
-  *"pulls?state=open"*) echo '{"key":"me/app","value":{"all":0,"drafts":0,"bots":0}}' ;;
+  *"pulls?state=open"*) echo '[]' ;;
   *) exit 1 ;;
 esac
 GH
@@ -397,6 +397,83 @@ expect "autofix: dry run fires and saves nothing" "$(afrun dry | grep -c 'would 
 mkdir -p "$DEPLOYS_CONFIG/locks/autofix"
 expect "autofix: a held lock stops a second run" "$(afrun | grep -c 'running already'):$(fired)" "1:0"
 rmdir "$DEPLOYS_CONFIG/locks/autofix"
+
+# --- security: masking, no shell or jq code from data, names in API paths, secrets on stdin ---
+# The log handed to the Autofix routine: common token formats are masked, the build output is kept.
+sample="$(cat <<'LOG'
+Authorization: Bearer abcdefSECRET1234567890
+aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYSECRET
+AKIAIOSFODNN7SECRETX ASIAIOSFODNN7SECRETX
+sk_live_51HxxxxxxxxxxSECRET rk_test_51HxxxxxxSECRET whsec_abcdefSECRET123
+SECRET_KEY=djangoSECRETvalue STRIPE_KEY=fooSECRET NEXT_PUBLIC_ANON_KEY=xSECRET
+DATABASE_URL=postgres://u:pwSECRET@db.example.com/db
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktSECRET
+-----END OPENSSH PRIVATE KEY-----
+PEM="-----BEGIN PRIVATE KEY-----\nMIIBSECRET\n-----END PRIVATE KEY-----"
+vercel deploy --token abcdefSECRET123456 --prod
+VERCEL_TOKEN=abcdefSECRET123456
+ghp_abcdefghijklmnopSECRET github_pat_11AAAAAA_bbbbSECRET glpat-abcdefSECRET1234
+eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sigSECRET
+npm_abcdefghijklmnopqrstSECRET AIzaSyA-abcdefghijklmnopqrSECRET sk-ant-api03-abSECRET rnd_abcdefSECRET1
+export API_TOKEN="quoted SECRET with spaces"
+{"password": "jsonSECRET", "client_secret":"jsSECRET"}
+x-api-key: hdrSECRET123
+LOG
+)"
+masked="$(printf '%s\n' "$sample" | af_mask)"
+expect "mask: no secret of any listed format survives" "$(printf '%s\n' "$masked" | sed 's/SECRET_KEY=/S_K=/' | grep -c SECRET)" "0"
+expect "mask: the header name and scheme stay readable" "$(printf '%s\n' "$masked" | grep -c '^Authorization: Bearer \[masked\]$')" "1"
+expect "mask: a private key block becomes one line" "$(printf '%s\n' "$masked" | grep -c 'masked private key')" "2"
+plain='npm ERR! ./src/author.ts:12 Type error: keyboard: 3 tokens: 12 of 40'
+expect "mask: an ordinary build line is left as it is" "$(printf '%s\n' "$plain" | af_mask)" "$plain"
+
+# Values are arguments of `bash -c`, never part of its script: a team id or a temp folder with
+# shell syntax in it runs nothing.
+inj="$tmp/inj"; mkdir -p "$inj/bin" "$inj/cfg"
+cat > "$inj/bin/vercel" <<'VC'
+#!/bin/bash
+case "$*" in *billing*) echo '{"BilledCost":1,"ServiceName":"Build","Tags":{"ProjectName":"web"}}';; *v10/projects*) echo '{"projects":[{"name":"web"}],"pagination":{}}';; *) echo '{"deployments":[],"pagination":{}}';; esac
+VC
+cp "$e2e/bin/gh" "$inj/bin/gh"; chmod +x "$inj/bin"/*
+echo '{"web":{"org":"me","repo":"app","ref":"main"}}' > "$inj/cfg/vercel-repos.json"
+irun() { ( cd "$inj" && env -u DEPLOYS_LIB PATH="$inj/bin:/usr/bin:/bin" E2E="$e2e" DEPLOYS_CONFIG="$inj/cfg" HOME="$inj" NO_COLOR=1 "$@" ) >/dev/null 2>&1 </dev/null; }
+irun env DEPLOYS_VERCEL_TEAM='x"; touch pwned; echo "' /bin/bash "$PWD/deploys" costs 1
+expect "costs: a team id with shell code runs nothing" "$([ -e "$inj/pwned" ] && echo ran || echo safe)" "safe"
+irun /bin/bash "$PWD/deploys" vercel team 'x$(touch pwned)'
+expect "vercel team: an id that is not one is refused" "$([ -e "$inj/pwned" ] || [ -s "$inj/cfg/vercel-team" ] && echo kept || echo refused)" "refused"
+weird="$inj/t\"\$(touch pwned)\""; mkdir -p "$weird"
+irun env TMPDIR="$weird" DEPLOYS_VERCEL_TEAM=team_test /bin/bash "$PWD/deploys" vercel json
+expect "vercel json: a temp folder with shell code in its name runs nothing" "$([ -e "$inj/pwned" ] && echo ran || echo safe)" "safe"
+
+# Names go to jq as --arg, never into a filter; JSON is built by jq, not printf.
+eval "$(sed -n '/^af_prs() {/,/^}/p' ./deploys)"   # the real one; the autofix tests above replaced it
+# Like gh, this one applies --jq itself, so a filter built from a name would be run as jq.
+gh() { local f="." prev=""; for a in "$@"; do [ "$prev" = --jq ] && f="$a"; prev="$a"; done
+       echo '[{"number":5,"merged_at":null,"merge_commit_sha":null,"head":{"ref":"claude/autofix-we\"b-aaaa111"}}]' | jq -c "$f"; }
+expect "af_prs: a name with a quote is matched, not parsed as jq" "$(af_prs me/web 'we"b' open | jq -c 'map(.number)')" "[5]"
+gh() { case "$*" in *"contents/.github/workflows --jq"*) echo '.github/workflows/a"b.yml' ;; *) printf 'run: vercel deploy --prod\n' | base64 ;; esac; }
+mkdir -p "$tmp/wf"; workflow_hits me/app "$tmp/wf"
+expect "workflow_hits: a file name with a quote is still valid JSON" "$(jq -r .detail "$tmp/wf/me_app.jsonl" 2>&1)" '.github/workflows/a"b.yml'
+unset -f gh
+
+# A name or id never changes the API path or query, whoever passed it.
+fresh
+for bad in 'web?x=1' '../v2/teams' 'web&target=preview' 'web#' '..'; do
+  rc="$(run "$O" "$E" logs "$bad")"
+  expect "logs refuses \"$bad\" before any call" "$rc:$(grep -c 'Invalid name' "$E"):$(wc -l < "$e2e/calls.log" | tr -d ' ')" "1:1:0"
+done
+rc="$(run "$O" "$E" vercel deploy 'web/../x')"
+expect "vercel deploy refuses a path in the name, nothing started" "$rc:$(grep -c POST "$e2e/calls.log")" "1:0"
+rc="$(run "$O" "$E" render status srv-1 'dep-1?x')"
+expect "render status refuses a query in the deploy id" "$rc:$(wc -l < "$e2e/calls.log" | tr -d ' ')" "1:0"
+rc="$(run "$O" "$E" logs web 5x)"
+expect "logs: the line count is digits only" "$rc:$(grep -c 'Unknown option' "$E")" "1:1"
+
+# The routine token goes to `security -i` on one line: spaces or quotes would add arguments.
+: > "$CALLS"
+out="$(printf 'sk-ant-oat01-x -T /tmp/other\n' | env -u DEPLOYS_LIB PATH="$tmp/bin:$PATH" DEPLOYS_CONFIG="$tmp/config" /bin/bash ./deploys autofix set-token 2>&1)"; rc=$?
+expect "autofix set-token: a token with a space is refused, nothing saved" "$rc:$(calls 'security')" "1:0"
 
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }

@@ -102,11 +102,19 @@ platform_of() {
 # ---------- Vercel ----------
 
 # The team the commands act on. Detected once and remembered; a personal account has none.
+# A team id goes into every API query string: letters, digits, _ and - only.
+valid_team() { case "$1" in *[!A-Za-z0-9_-]*) return 1;; esac; }
 vercel_team() {
-  if [ -n "${DEPLOYS_VERCEL_TEAM:-}" ]; then echo "$DEPLOYS_VERCEL_TEAM"; return; fi
+  if [ -n "${DEPLOYS_VERCEL_TEAM:-}" ]; then
+    valid_team "$DEPLOYS_VERCEL_TEAM" || die "DEPLOYS_VERCEL_TEAM is not a team id"
+    echo "$DEPLOYS_VERCEL_TEAM"; return
+  fi
   # A team is remembered for good. "No team" (a personal account) only for a day: one joined
   # later is then found without anyone deleting the file.
-  if [ -s "$CONFIG_DIR/vercel-team" ]; then cat "$CONFIG_DIR/vercel-team"; return; fi
+  if [ -s "$CONFIG_DIR/vercel-team" ]; then
+    valid_team "$(cat "$CONFIG_DIR/vercel-team")" || die "$CONFIG_DIR/vercel-team does not hold a team id. Set it: deploys vercel team <id>"
+    cat "$CONFIG_DIR/vercel-team"; return
+  fi
   if [ -f "$CONFIG_DIR/vercel-team" ] && [ $(( $(date +%s) - $(mtime "$CONFIG_DIR/vercel-team") )) -lt 86400 ]; then echo ""; return; fi
   local teams n
   teams="$(vercel api /v2/teams 2>/dev/null)" || die "The vercel CLI is not logged in. Run: vercel login"
@@ -216,7 +224,7 @@ pending_of() {
     # force-push, or has no common ancestor with it). This runs only where the branch head was
     # read, so the repo itself is readable. A rate limit or a network error says nothing: no record.
     if grep -qE 'HTTP 404|No common ancestor' "$f.err"; then
-      printf '{"key":"%s","value":{"rewritten":true}}\n' "$key" > "$f"
+      jq -nc --arg k "$key" '{key:$k, value:{rewritten:true}}' > "$f"
     fi
     rm -f "$f.err"; return 0
   fi
@@ -245,8 +253,9 @@ export -f pending_of
 # Drafts and bots (Dependabot, Renovate) counted apart, since they rarely mean "ship soon".
 open_prs_of() {
   local repo="$1" out="$2"
-  gh api --cache 5m "repos/$repo/pulls?state=open&per_page=100" \
-    --jq "{key:\"$repo\", value:{all:length, drafts:(map(select(.draft)) | length), bots:(map(select(.user.type==\"Bot\")) | length)}}" \
+  # The repo goes to jq as --arg, never into the filter text.
+  gh api --cache 5m "repos/$repo/pulls?state=open&per_page=100" 2>/dev/null \
+    | jq -c --arg k "$repo" '{key:$k, value:{all:length, drafts:(map(select(.draft)) | length), bots:(map(select(.user.type=="Bot")) | length)}}' \
     > "$out/$(echo "$repo" | tr '/' '_').json" 2>/dev/null || true
 }
 export -f open_prs_of
@@ -268,7 +277,7 @@ with_heads() {
   if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! command -v gh >/dev/null 2>&1; then echo "$list" | jq "$CHANGED_RULE"; return; fi
   tmp="$(mktemp -d)"; mkdir "$tmp/h" "$tmp/p" "$tmp/o"
   echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
-    | xargs -P 8 -n 2 bash -c 'head_of "$0" "$1" "'"$tmp/h"'"'
+    | xargs -P 8 -n 2 bash -c 'head_of "$1" "$2" "$0"' "$tmp/h"
   heads="$(cat_all "$tmp/h"/*.json | jq -s 'from_entries')"
   list="$(echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))')"
   # With GitHub's budget nearly spent, keep it for what decides "changed" (the heads above).
@@ -276,8 +285,8 @@ with_heads() {
   if [ "${left:-5000}" -lt 300 ]; then rm -rf "$tmp"; echo "$list" | jq "$CHANGED_RULE"; return; fi
   # Compared only where the branch moved past the live commit.
   echo "$list" | jq -r '.[] | select(.repo and .ref and .lastSha and .headSha and .lastSha != .headSha) | "\(.repo) \(.lastSha) \(.ref)"' \
-    | sort -u | xargs -P 8 -n 3 bash -c 'pending_of "$0" "$1" "$2" "'"$tmp/p"'"'
-  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'open_prs_of "$0" "'"$tmp/o"'"'
+    | sort -u | xargs -P 8 -n 3 bash -c 'pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
+  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'open_prs_of "$1" "$0"' "$tmp/o"
   pend="$(cat_all "$tmp/p"/*.json | jq -s 'from_entries')"
   opens="$(cat_all "$tmp/o"/*.json | jq -s 'from_entries')"
   rm -rf "$tmp"
@@ -433,7 +442,7 @@ render_last_of() {
   local id="$1" out="$2" key
   # Whatever goes wrong, the service is written down as "not known", never left out: a missing
   # record would read as "never deployed" and make the service look changed.
-  last_fail() { printf '{"key":"%s","value":{"fetchError":"%s"}}\n' "$id" "$1" > "$out/$id.json"; }
+  last_fail() { jq -nc --arg k "$id" --arg e "$1" '{key:$k, value:{fetchError:$e}}' > "$out/$id.json"; }
   key="$(cat "$3" 2>/dev/null)"; [ -n "$key" ] || { last_fail "no Render key"; return 0; }
   # Eight of these run at once: this is where Render's rate limit (429) hits. Wait and ask again.
   local raw code try
@@ -482,7 +491,7 @@ workflow_hits() {
     gh api "repos/$repo/contents/$f" --jq '.content' 2>/dev/null | b64d 2>/dev/null \
       | grep -vE '^[[:space:]]*#' \
       | grep -qE 'vercel (deploy|--prod)|vercel-action|api\.render\.com/deploy|render-deploy|deploy[-_]hook|DEPLOY_HOOK' \
-      && printf '{"kind":"workflow","where":"%s","detail":"%s"}\n' "$repo" "$f"
+      && jq -nc --arg w "$repo" --arg d "$f" '{kind:"workflow", where:$w, detail:$d}'
   done > "$out/$(echo "$repo" | tr '/' '_').jsonl" || true
 }
 export -f workflow_hits b64d
@@ -523,17 +532,31 @@ af_notify() {
 af_all() { DEPLOYS_NO_GITHUB=1 all_json; }
 af_logs() { "$0" logs "$1" 200 --id "$2"; }
 
-# Obvious secrets out of a log before it leaves this Mac. A help, not a guarantee.
+# Obvious secrets out of a log before it leaves this Mac. A help, not a guarantee: a token with
+# no known prefix and no telling name (TOKEN=, --token, Authorization:) still goes through.
+# `\[masked]`, not `[masked]`, after a group: perl reads `$1[masked]` as an array element (empty).
 af_mask() {
-  perl -pe 's/\b(sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|AKIA[A-Z0-9]{12,}|rnd_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
-            s/((?i:token|secret|password|passwd|api[_-]?key|authorization)["\x27]?\s*[:=]\s*["\x27]?)[^\s"\x27,;]+/$1[masked]/g;
-            s#(://[^/\s:@]+):[^@\s/]+@#$1:[masked]@#g'
+  perl -pe 'BEGIN { $pem = 0 }
+    # A private key: one line (an escaped \n in an env value), or a block over several lines.
+    s/-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----.*?-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/[masked private key]/g;
+    if ($pem) { $pem = 0 if /-----END [A-Z0-9 ]*PRIVATE KEY/; $_ = ""; next }
+    if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY/) { $pem = 1; $_ = "[masked private key]\n"; next }
+    # Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, JWT.
+    s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
+    # NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret
+    # (VERCEL_TOKEN, SECRET_KEY, aws_secret_access_key, DB_PASSWORD, x-api-key, ...).
+    s/\b((?i:[A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|_key|authorization|auth|credentials?|dsn))["\x27]?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("[^"]*"|\x27[^\x27]*\x27|[^\s"\x27,;]+)/${1}${2}\[masked]/g;
+    # --token x, --token=x (vercel, npm and most CLIs).
+    s/(--(?i:token|password|api-key|secret)(?:=|\s+))[^\s"\x27]+/${1}\[masked]/g;
+    # user:password@ in a URL (database URLs).
+    s#(://[^/\s:@]+):[^@\s/]+@#${1}:\[masked]@#g'
 }
 
 # Open (or merged) autofix PRs of one project: gh REST only, branch claude/autofix-<project>-*.
 af_prs() {  # af_prs <owner/repo> <project> <open|closed>
+  # The project name goes to jq as --arg, never into the filter text.
   gh api "repos/$1/pulls?state=$3&per_page=50&sort=updated&direction=desc" \
-    --jq "[.[] | select(.head.ref | startswith(\"claude/autofix-$2-\")) | {number, merged_at, merge_commit_sha, ref:.head.ref}]"
+    | jq -c --arg b "claude/autofix-$2-" '[.[] | select(.head.ref | startswith($b)) | {number, merged_at, merge_commit_sha, ref:.head.ref}]'
 }
 
 # One fire. The token goes to curl on stdin, never as an argument. Prints "<code>\t<body>".
@@ -724,6 +747,22 @@ case "${1:-} ${2:-}" in
   "render cancel"|"render status") usage_if_short $# 4 "render ${2} <service id> <deploy id>" ;;
 esac
 
+# Names and ids go into API paths and query strings (/v9/projects/<p>, ?app=<p>): nothing that
+# changes the path or the query is accepted, wherever the name came from (a person, the app, an agent).
+safe_arg() {
+  case "$1" in
+    ""|.|..|-*|*[/?#\&%\\]*|*[[:cntrl:]]*) die "Invalid name or id \"$1\": no / ? # & % \\ or control characters" ;;
+  esac
+}
+check_args() { local a; for a in "$@"; do case "$a" in --*) ;; *) safe_arg "$a";; esac; done; }
+case "${1:-} ${2:-}" in
+  "watch "*|"logs "*|"open "*|"explain "*|"diff "*|"notes "*|"history "*) check_args "${@:2}" ;;
+  "vercel deploy"|"vercel deploy-json"|"vercel rollback"|"vercel cancel"|"vercel status" \
+  |"render deploy"|"render deploy-json"|"render rollback"|"render cancel"|"render status") check_args "${@:3}" ;;
+  "vercel map") safe_arg "$3" ;;
+  "vercel autodeploy-off"|"render autodeploy-off") [ -z "${3:-}" ] || [ "$3" = --all ] || safe_arg "$3" ;;
+esac
+
 case "${1:-} ${2:-}" in
   "where "*)
     # Where things are and who is logged in, for a person (doctor is the same for the app).
@@ -843,7 +882,7 @@ case "${1:-} ${2:-}" in
     # The last lines of the newest build log of one project, or with --id of that one deploy
     # (autofix: a build started after the failure must not hand over the wrong log).
     p="${2:?project}"; n=80; did=""; shift 2
-    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>]}"; shift;; [0-9]*) n="$1";; *) die "Unknown option $1";; esac; shift; done
+    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>]}"; shift;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
     plat="$(platform_of "$p")"
     if [ "$plat" = vercel ]; then
       d="$did"; [ -n "$d" ] || d="$(vercel_call "/v6/deployments?app=$p&limit=1&target=production" | jq -r '.deployments[0].uid // empty')"
@@ -1006,7 +1045,7 @@ BASH
     team="$(vercel_team)"; tmp="$(mktemp -d)"
     for i in $(seq "$days" -1 1); do
       echo "$(days_ago "$i") $(days_ago "$((i-1))")"
-    done | xargs -P 4 -n 2 bash -c 'cost_day "$0" "$1" "'"$team"'" "'"$tmp"'"'
+    done | xargs -P 4 -n 2 bash -c 'cost_day "$2" "$3" "$0" "$1"' "$team" "$tmp"
     # Builds per project over the last 7 days, to put a price on one build.
     since=$(( ($(date +%s) - 7*86400) * 1000 ))
     names="" next=""
@@ -1055,7 +1094,7 @@ BASH
       if command -v gh >/dev/null 2>&1; then
         { jq -r '.[] | select(.repo) | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
           echo "${svcs:-[]}" | jq -r '.[] | .repo // empty | sub("^https://github.com/";"") | sub("\\.git$";"")'
-        } | sort -u | xargs -P 8 -n 1 bash -c 'workflow_hits "$0" "'"$tmp"'"'
+        } | sort -u | xargs -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
         cat_all "$tmp"/*.jsonl
       fi
     } | jq -s '.'
@@ -1097,7 +1136,8 @@ BASH
         else echo "Vercel: $name failed to start" >&2; bad=$((bad+1)); fi
       else
         # deploy-json takes the same start lock as the app, so a second start within a minute is refused.
-        if ( "$0" render deploy-json "$name" | jq -r --arg n "$name" '"Render: \($n) started (\(.id))"' ); then ok=$((ok+1))
+        # By its srv- id: a name may hold characters an API path cannot (safe_arg refuses them).
+        if ( "$0" render deploy-json "${id:-$name}" | jq -r --arg n "$name" '"Render: \($n) started (\(.id))"' ); then ok=$((ok+1))
         else echo "Render: $name failed to start" >&2; bad=$((bad+1)); fi
       fi
     done < <(echo "$list" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.id // "")"')
@@ -1183,7 +1223,7 @@ BASH
     vercel api "$(with_team "/v1/projects/${pid:-$p}/rollback/$prev")" --method POST >/dev/null 2>&1 || die "Vercel: rollback of $p failed"
     echo "{\"id\":\"$prev\",\"state\":\"READY\"}" ;;
   "vercel team")
-    if [ -n "${3:-}" ]; then printf '%s' "$3" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $3"; else vercel_team; echo; fi ;;
+    if [ -n "${3:-}" ]; then valid_team "$3" || die "A team id has letters, digits, _ and - only"; printf '%s' "$3" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $3"; else vercel_team; echo; fi ;;
   "vercel json")
     # The newest production attempt per project, from one call: a build started in the dashboard
     # or the terminal is BUILDING here while targets.production still shows the finished one.
@@ -1271,7 +1311,7 @@ BASH
     # Render names too, for tab completion and the `ignore` name check.
     echo "$list" | remember_names
     tmp="$(mktemp -d)"; kf="$tmp/key"; (umask 077; render_key > "$kf")
-    echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$0" "'"$tmp"'" "'"$kf"'"'
+    echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$2" "$0" "$1"' "$tmp" "$kf"
     rm -f "$kf"
     lasts="$(cat_all "$tmp"/*.json | jq -s 'from_entries')"; rm -rf "$tmp"
     list="$(echo "$list" | jq --argjson l "${lasts:-{\}}" 'map(. + ($l[.id] // {}))')"
@@ -1281,7 +1321,7 @@ BASH
     # The routine's API token (claude.ai: routine > Trigger > API > Generate token), from stdin.
     IFS= read -r key || true
     [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys autofix set-token"
-    case "$key" in sk-ant-*) ;; *) die "That does not look like a routine token (sk-ant-...)";; esac
+    case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*) die "That does not look like a routine token (sk-ant-...)";; sk-ant-*) ;; *) die "That does not look like a routine token (sk-ant-...)";; esac
     printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$AUTOFIX_KEYCHAIN" "$key" | security -i >/dev/null \
       || die "Could not save the token in the keychain"
     echo "Routine token saved." ;;

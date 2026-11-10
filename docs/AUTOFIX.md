@@ -75,7 +75,7 @@ If there is no payload (a scheduled or manual run), do nothing and stop.
 
 - A build that passes in the cloud session can still fail on Vercel or Render, because the session does not have the platform's environment variables. Expect some PRs that do not fix the deploy.
 - The session pushes and opens PRs as your GitHub user.
-- Secrets in the log are masked when they are recognized (common token formats, `KEY=value`, URLs with passwords). Masking is a help, not a guarantee. If your build logs may print secrets, do not use autofix.
+- Secrets in the log are masked when they are recognized: known token prefixes (GitHub, GitLab, Stripe, AWS, Slack, Google, npm, Render, Anthropic/OpenAI, JWTs), `Authorization:` headers, `NAME=value` where the name says token, secret, password or key, `--token` arguments, URLs with passwords and private key blocks. The full list is in [SECURITY.md](../SECURITY.md#autofix-log-masking). Masking is a help, not a guarantee. If your build logs may print secrets, do not use autofix.
 - Detection runs only while this Mac is awake.
 - Every hand-over costs one routine run, including the ones that end in "nothing to fix in code".
 - The routines API is a research preview and may change.
