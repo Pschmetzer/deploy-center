@@ -73,6 +73,8 @@ do {
     expect("search finds a note", Journal.filter([n], text: "mail", kind: nil).count, 1)
     expect("summary line", JournalStats.summaryLine([n]) ?? "", L("1 deploys, 0 failed", "1 Deploys, 0 fehlgeschlagen"))
 }
+expect("spoken summary", Speech.summary(waiting: 3, failed: 0, running: 1), L("3 projects wait, 1 running.", "3 Projekte warten, 1 laufen."))
+expect("spoken summary, nothing", Speech.summary(waiting: 0, failed: 0, running: 0), L("Nothing waits, nothing failed.", "Nichts wartet, nichts ist fehlgeschlagen."))
 expect("state unknown word", Row.stateText("some_new_state"), "some new state")
 
 // Demo mode: names in free text become their stand-ins, in one pass.

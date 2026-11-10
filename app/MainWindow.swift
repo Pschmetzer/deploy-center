@@ -29,6 +29,7 @@ struct WindowActions {
     var selectChanged: (() -> Void)? = nil
     var clearSelection: (() -> Void)? = nil
     var reload: (() -> Void)? = nil
+    var speak: (() -> Void)? = nil
 }
 struct WindowActionsKey: FocusedValueKey { typealias Value = WindowActions }
 extension FocusedValues {
@@ -60,6 +61,8 @@ struct WindowCommands: Commands {
             Button(L("Clear the selection", "Auswahl leeren")) { actions?.clearSelection?() }.disabled(actions?.clearSelection == nil)
             Divider()
             Button(L("Reload", "Neu laden")) { actions?.reload?() }.disabled(actions?.reload == nil)
+            Button(L("Read the summary aloud", "Zusammenfassung vorlesen")) { actions?.speak?() }
+                .keyboardShortcut("u", modifiers: [.command, .shift]).disabled(actions?.speak == nil)
         }
     }
 }
@@ -357,7 +360,7 @@ struct ContentView: View {
                                            messages: store.messages.isEmpty ? nil : { showMessages = true },
                                            selectChanged: waitsForFreshList ? nil : { selectAllCommand() },
                                            clearSelection: selectedAll.isEmpty ? nil : { scopes.forEach { store.clearSelection($0) } },
-                                           reload: { reloadNow() }))
+                                           reload: { reloadNow() }, speak: { Speech.say(store.spokenSummary) }))
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: store.toast)
     }
 

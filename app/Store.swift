@@ -776,6 +776,11 @@ final class Store: ObservableObject {
     /// The tab count, "Changed only", "select changed" and the summary all use this one rule.
     func isWaiting(_ i: Item) -> Bool { i.hasNewCommits && i.state == .idle && i.deployable && !isHidden(i) }
     var waiting: Waiting { waiting(for: Platform.allCases) }
+    /// The summary as one sentence, for "Read the summary" (FEA-127).
+    var spokenSummary: String {
+        let all = Platform.allCases.flatMap { (items[$0] ?? []).filter { !isHidden($0) } }
+        return Speech.summary(waiting: waiting.projects, failed: all.filter { $0.lastFailed }.count, running: all.filter { $0.state.isActive }.count)
+    }
     /// What waits on these platforms only (a tab), or on all of them.
     func waiting(for platforms: [Platform]) -> Waiting {
         let cacheKey = platforms.map(\.cli).joined(separator: ",")
@@ -984,6 +989,7 @@ final class Store: ObservableObject {
         if let key { Notify.dropEscalations(key) }
         Notify.post(title, body, project: project, key: key, failed: !ok, rollBack: rollBack)
         show(Toast(text: title, ok: ok))
+        if UserDefaults.standard.bool(forKey: Speech.resultsKey) { Speech.say(title) }
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok))
     }
     /// The last 30 messages, newest first.

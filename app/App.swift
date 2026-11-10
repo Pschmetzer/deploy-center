@@ -20,6 +20,7 @@ struct SettingsView: View {
     @AppStorage("reminderHour") private var reminderHour = 0
     @AppStorage("summaryHour") private var summaryHour = 0
     @AppStorage("weeklySummary") private var weeklySummary = false
+    @AppStorage(Speech.resultsKey) private var speakResults = false
     @AppStorage("quietFrom") private var quietFrom = 0
     @AppStorage("quietTo") private var quietTo = 0
     @AppStorage("remindFailures") private var remindFailures = false
@@ -266,6 +267,8 @@ struct SettingsView: View {
             .onChange(of: summaryHour) { _, h in if h > 0 { Notify.ask() } }
             .help(L("How many deploys ended today and how many failed, from the history. Only when something ended.",
                     "Wie viele Deploys heute fertig wurden und wie viele fehlschlugen, aus dem Verlauf. Nur wenn etwas fertig wurde."))
+            Toggle(L("Say when a deploy ends", "Ansagen, wenn ein Deploy fertig ist"), isOn: $speakResults)
+                .help(L("Spoken by VoiceOver when it is on, else by the Mac's voice.", "Mit VoiceOver von VoiceOver, sonst von der Stimme des Macs."))
             Toggle(L("Week in review on Mondays", "Wochenrückblick am Montag"), isOn: $weeklySummary)
                 .onChange(of: weeklySummary) { _, on in if on { Notify.ask() } }
             HStack {
