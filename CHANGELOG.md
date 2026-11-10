@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Auto-deploy guard (`deploys guard`, Settings → Auto-deploy guard): every 30 minutes it turns auto-deploy off again wherever it is on without an allowance, and notifies. `deploys autodeploy allow <platform> <project>|--all <hours>` allows it for a while (emergencies); `deploys vercel|render autodeploy-on` turns it back on. The first run is a dry run.
+- Window: each row shows what autofix does ("Claude is fixing", fix PR open/merged, "deploy the fix"), a "Fix with Claude" button on failed rows (`deploys autofix --only`), allowance badges, and the count in the menu bar.
+- Self-update moved to `Updater.swift`: checks the folder is writable, swaps with a rollback, accepts only the same Team ID and no downgrade, runs off the main thread, asks before quitting during deploys, cleans up on every path.
+- Fixed: after a deploy, rows return to idle, so new commits count as waiting again; "today" is the local day, not UTC; notifications are asked for at the first one, not only at the first deploy.
+- Fixed: a timeout ends the whole process group; a deploy timeout no longer causes a double deploy; cancel cannot leave a row running forever; a load error keeps the cached list and shows above it.
+- Build log: secrets are masked before "Copy for Claude", fewer false error lines, ANSI codes removed; one broken project no longer fails the whole list.
+- Journal and saved state live in Application Support; CSV export is safe in spreadsheets.
+- UI: demo mode masks names everywhere; one collapsible notice area; settings in sections; Help menu, Dock badge, VoiceOver labels and actions, clearer empty states, raw states like `build_failed` translated, build log selectable across lines.
+- `deploys`: a Render read error no longer marks services changed, an unreachable API is an error instead of "Nothing to deploy", `changed --platform X --json` keeps the filter, only a real missing ancestor counts as rewritten history; `--help`, `--version`, `where`, `history`, `forget-key`, `deploy --wait`; timeouts and retries for Render.
+- Release: `release.sh` passes `--repo` and `--target`, checks the tree, can publish an existing build; the cask depends on jq, quits the app on uninstall and explains `brew trust` and `--appdir`.
 - Security: Autofix log masking keeps `Authorization: Bearer` tokens out (they used to pass, and a `$1[masked]` replacement emptied other matches) and now also masks AWS secret keys, Stripe, GitLab, npm and Google keys, private key blocks, `--token` arguments and `*_KEY=` values.
 - Security: a Vercel team id or a temp folder path can no longer run as shell code in `costs`, `vercel json`, `render json` and `triggers`; team ids are checked. Project and repo names reach `jq` as `--arg`, never inside a filter; JSON from GitHub file names is built by `jq`.
 - Security: project names and deploy ids with `/ ? # & % \` or control characters are refused before any API call; `logs` takes digits only for the line count; `autofix set-token` refuses tokens with spaces or quotes.
@@ -23,7 +33,7 @@
 - `deploys details`: each commit carries its `Co-Authored-By` trailers as `coAuthors`.
 - Savings, all marked as estimates (≈) with the method in the JSON: `deploys simulate [--days 30] --json` counts pushes to each deploy branch (GitHub) times the project's average build and puts "auto-deploy ≈ X a month" next to "once a day ≈ Y"; `deploys ledger --json` counts the pushes since auto-deploy was turned off that never built, in dollars, Vercel build minutes and Render pipeline minutes (logic in `lib/savings.sh`). The app has a Simulator sheet (a banner before anything is turned off, and Settings > Costs) and a Ledger ("≈ $X saved since …", per project, skipped pushes, share card).
 - App: command palette (⌘K). Fuzzy search over the actions (deploy all changed, reload, stop all, journal, settings, costs) and per project deploy, log, open, dashboard, rollback and notes; recent commands first. Deploys and rollbacks ask first, as in the window. Optional global ⌥⌘K under Settings → Advanced (off by default).
-- `deploys autofix`: a failed build (Vercel `ERROR`, Render `build_failed`) is handed to a Claude Code routine that opens a fix PR; after the merge, the next run deploys that merge commit once. Caps, no duplicates, never merges. See `docs/AUTOFIX.md` and `scripts/autofix.plist.example`.
+- `deploys autofix`: a failed build (Vercel `ERROR`, Render `build_failed`) is handed to a Claude Code routine that opens a fix PR; after the merge it only notifies you; deploying stays a click (#51). Caps, no duplicates, never merges. See `docs/AUTOFIX.md` and `scripts/autofix.plist.example`.
 - `deploys status --json` carries each project's `repo` (owner/name), so an editor can match it to the open folder.
 - New: a VS Code / Cursor / Windsurf extension in `integrations/vscode/` (waiting count in the status bar, a project tree, deploy with confirmation, build log and "Copy for AI").
 - `deploys logs <project> --id <deploy>` reads the log of one deploy; `vercel json` and `render json` carry `latestId` and `latestSha` of the newest attempt.
