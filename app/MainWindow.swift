@@ -331,7 +331,7 @@ struct ContentView: View {
                     Task { await store.installUpdate() }
                 }.buttonStyle(.link).disabled(store.updating)
                 Button(L("Download", "Herunterladen")) {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/Pschmetzer/deploy-center/releases/latest")!)
+                    NSWorkspace.shared.open(URL(string: "https://github.com/\(Updater.repo)/releases/latest")!)
                 }.buttonStyle(.link)
                 if let st = store.updateStatus { Text(st).font(.caption).foregroundStyle(.secondary) }
                 Spacer()
