@@ -65,6 +65,29 @@ jobs:
           echo "projects=$(printf '%s\n' "$list" | paste -sd, -)" >> "$GITHUB_OUTPUT"
           echo "Approved by $ACTOR: $(printf '%s\n' "$list" | paste -sd, -)"
 
+      # The list in the issue body must be the digest's own: anyone with triage rights can edit the
+      # body after the approver read it. GitHub records who edited the body last; only the digest's
+      # account (github-actions, or DEPLOYS_DIGEST_BOT when the digest runs with another token) may have.
+      - name: The issue body is the digest's own
+        id: body
+        if: github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          NUMBER: ${{ github.event.issue.number }}
+          BOT: ${{ vars.DEPLOYS_DIGEST_BOT || 'github-actions' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016 # $owner etc. are GraphQL variables, not shell
+          editor="$(gh api graphql -F owner="$OWNER" -F name="$REPO" -F number="$NUMBER" \
+            -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){editor{login}}}}' \
+            --jq '.data.repository.issue.editor.login // ""')"
+          case "$editor" in
+            ""|"$BOT"|"${BOT}[bot]") echo "The body is the digest's (last edited by: ${editor:-nobody})." ;;
+            *) echo "::error::The issue body was edited by $editor after the digest wrote it. Run the digest again, then approve."; exit 1 ;;
+          esac
+
       # Pin to a release tag or a full commit SHA, not a branch. This first run only lists.
       - uses: Pschmetzer/deploy-center/integrations/action@v0.9.1
         id: list

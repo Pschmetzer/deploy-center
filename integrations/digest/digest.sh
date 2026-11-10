@@ -41,6 +41,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+[ "$json" = 1 ] && { [ "$issue" = 1 ] || [ "$post" = 1 ]; } && { echo "--json prints the digest only; use it without --issue and --post" >&2; exit 1; }
 repo="${DEPLOYS_DIGEST_REPO:-}"
 workflow="${DEPLOYS_DIGEST_WORKFLOW:-approve-deploy.yml}"
 url="${DEPLOYS_NOTIFY_URL:-}"
@@ -118,7 +119,11 @@ digest="$(jq -s --arg date "$today" --arg title "$title" --argjson partial "$par
 
 if [ "$json" = 1 ]; then echo "$digest"; [ -n "$out" ] && echo "$digest" > "$out"; exit 0; fi
 
+# PR titles and commit messages are other people's text: an @mention would ping someone from the
+# issue, and an image (![](https://…)) would be fetched by every reader. Both are defused with a
+# zero-width space; at most 20 pull requests per project, the rest behind the compare link.
 markdown="$(jq -r '
+  def safe: tostring | gsub("@"; "@\u200b") | gsub("!\\["; "!\u200b[") | gsub("<"; "&lt;");
   def kindtxt: if .kind == "agent" then "agent" + (if (.why | type) == "array" and (.why | length) > 0 then " (" + (.why | join(", ")) + ")" elif (.why | type) == "string" then " (\(.why))" else "" end) else .kind end;
   "# \(.title)", "",
   (if (.projects | length) == 0 then "Nothing waiting: every project is on its newest commit."
@@ -128,9 +133,10 @@ markdown="$(jq -r '
     "", "## \(.name)" + ([.platform, .repo] | map(select(.)) | if length > 0 then " (\(join(", ")))" else "" end), "",
     (if .known then "\(.agent + .human) commit\(if (.agent + .human) == 1 then "" else "s" end) waiting: \(.agent) agent, \(.human) human"
      else "Changes waiting (\(.pending // "?") commits; the commits could not be read)" end),
-    (if (.prs | length) > 0 then "", "Pull requests:", (.prs[] | "- #\(.number) \(.title) – \(kindtxt)") else empty end),
+    (if (.prs | length) > 0 then "", "Pull requests:", (.prs[0:20][] | "- #\(.number) \(.title | safe) – \(kindtxt)"),
+       (if (.prs | length) > 20 then "- … and \((.prs | length) - 20) more (see all changes below)" else empty end) else empty end),
     (if (.loose | length) > 0 then "", "Commits without a pull request:",
-       (.loose[0:10][] | "- `\(.sha)` \(.msg) – \(.author // "?"), \(.kind)"),
+       (.loose[0:10][] | "- `\(.sha)` \(.msg | safe) – \((.author // "?") | safe), \(.kind)"),
        (if (.loose | length) > 10 then "- … and \((.loose | length) - 10) more" else empty end) else empty end),
     (if (.risk | length) > 0 then "", "Check before shipping:", (.risk[] | "- \(.)") else empty end),
     (if .compareUrl then "", "[All changes](\(.compareUrl))" else empty end))' <<<"$digest")"
@@ -188,11 +194,13 @@ fi
 # --- the message: a short version of the digest, with the button ---
 if [ "$post" = 1 ]; then
   text="$(jq -r '
+    def safe: tostring | gsub("@"; "@\u200b");
     "\(.title)",
+    (if .partial then "(List incomplete: some projects could not be read.)" else empty end),
     (if (.projects | length) == 0 then "Nothing waiting." else
       "\(.agent) agent and \(.human) human commit\(if .human == 1 then "" else "s" end) in \(.projects | length) project\(if (.projects | length) == 1 then "" else "s" end).",
       (.projects[] | "• \(.name): " + (if .known then "\(.agent) agent, \(.human) human" else "changes waiting" end)
-        + (if (.prs | length) > 0 then " – " + (.prs[0:5] | map("#\(.number) \(.title)") | join("; ")) + (if (.prs | length) > 5 then "; …" else "" end) else "" end)
+        + (if (.prs | length) > 0 then " – " + (.prs[0:5] | map("#\(.number) \(.title | safe)") | join("; ")) + (if (.prs | length) > 5 then "; …" else "" end) else "" end)
         + (if (.risk | length) > 0 then " – check: " + (.risk[0:3] | join(", ")) else "" end)) end)' <<<"$digest")"
   link="" label=""
   if [ -n "$names_csv" ]; then

@@ -409,6 +409,14 @@ expect "digest: without gh, commit messages stand in for PR titles" \
 expect "digest: --issue needs a repo" "$(digest/digest.sh --issue >/dev/null 2>&1; echo $?)" 1
 expect "digest: --post needs a URL" "$(digest/digest.sh --post >/dev/null 2>&1; echo $?)" 1
 expect "digest: a bad repo is refused" "$(DEPLOYS_DIGEST_REPO='me/ops;x' digest/digest.sh >/dev/null 2>&1; echo $?)" 1
+expect "digest: --json with --issue is refused" "$(digest/digest.sh --json --issue >/dev/null 2>&1; echo $?)" 1
+cp "$tmp/pr14.json" "$tmp/pr14.bak"
+echo '{"number":14,"title":"Thanks @everyone ![x](https://img.example.test/p.png)","html_url":"u","user":{"login":"dev-two","type":"User"},"labels":[]}' > "$tmp/pr14.json"
+md="$(RENDER_API_KEY=x digest/digest.sh)"
+case "$md" in *"@everyone"*|*"![x]"*) fail "digest: mentions and images in PR titles are defused" "$(grep -F '#14' <<<"$md")" ;; *"#14 Thanks @"*) ok "digest: mentions and images in PR titles are defused" ;; *) fail "digest: mentions and images in PR titles are defused" "PR 14 missing" ;; esac
+mv "$tmp/pr14.bak" "$tmp/pr14.json"
+out="$(FAKE_RC=1 RENDER_API_KEY=x digest/digest.sh --post --dry-run)"
+contains "digest post: an incomplete list says so" "$(sed 1d <<<"$out" | jq -r .text)" "List incomplete"
 
 # post: Slack gets a button to the workflow; the URL goes to curl on stdin
 out="$(RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --post --dry-run)"
@@ -480,7 +488,7 @@ if command -v ruby >/dev/null; then
   case "$out" in *"issue close"*) fail "report: open after a refusal" "closed" ;; *) ok "report: open after a refusal" ;; esac
   expect "approve-deploy: runs only on the deploy-approved label of a digest issue, or by hand" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"]["deploy"]["if"]' digest/examples/approve-deploy.yml | tr -s ' \n' ' ' | sed 's/ $//')" \
     "github.event_name == 'workflow_dispatch' || (github.event.label.name == 'deploy-approved' && startsWith(github.event.issue.title, 'Deploys waiting – '))"
-  expect "approve-deploy: deploy: true only after the approval steps" "$(ruby -ryaml -e 's = YAML.load_file(ARGV[0])["jobs"]["deploy"]["steps"]; puts s.each_with_index.select { |x, _| (x["with"] || {})["deploy"] == true }.map { |_, i| s[0...i].map { |y| y["id"] }.join(",") }' digest/examples/approve-deploy.yml)" "approved,list,keep"
+  expect "approve-deploy: deploy: true only after the approval steps" "$(ruby -ryaml -e 's = YAML.load_file(ARGV[0])["jobs"]["deploy"]["steps"]; puts s.each_with_index.select { |x, _| (x["with"] || {})["deploy"] == true }.map { |_, i| s[0...i].map { |y| y["id"] }.join(",") }' digest/examples/approve-deploy.yml)" "approved,body,list,keep"
   case "$(cat "$tmp/approved.sh" "$tmp/keep.sh" "$tmp/report.sh")" in *'${{'*) fail "approve-deploy: no expressions inside run scripts" "found" ;; *) ok "approve-deploy: no expressions inside run scripts" ;; esac
   ruby -ryaml -e 'YAML.load_file(ARGV[0])' digest/examples/daily-digest.yml && ok "daily-digest.yml is valid YAML" || fail "daily-digest.yml is valid YAML" ruby
 else
