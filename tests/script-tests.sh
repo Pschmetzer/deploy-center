@@ -723,5 +723,70 @@ unset DEPLOYS_LAUNCH_DIR
 # Savings (simulate, ledger) have their own file with fixtures.
 bash tests/savings-tests.sh || fails=$((fails+1))
 
+# --- Claude in the app (deploys ai): masked body, key only on stdin, cap before the call, tally, refusals ---
+# A fake curl: logs argv and stdin, copies the body it was given, answers what AISTUB says. No network.
+ai="$tmp/ai"; mkdir -p "$ai/bin"
+cat > "$ai/bin/curl" <<'CURL'
+#!/bin/bash
+echo "argv $*" >> "$CALLS"; sed 's/^/stdin /' >> "$CALLS"
+prev=""; for a in "$@"; do [ "$prev" = --data ] && cat "${a#@}" > "$AIBODY"; prev="$a"; done
+case "${AISTUB:-ok}" in
+  ok) printf '%s\n200' '{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"Cause: x.\nLikely fix: y."}],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":20}}' ;;
+  refusal) printf '%s\n200' '{"content":[],"stop_reason":"refusal","stop_details":{"category":"cyber"},"usage":{"input_tokens":10,"output_tokens":0}}' ;;
+  401) printf '%s\n401' '{"error":{"message":"invalid x-api-key"}}' ;;
+  models) printf '%s\n200' '{"id":"claude-opus-5-5"}' ;;
+esac
+CURL
+chmod +x "$ai/bin/curl"
+export AIBODY="$tmp/ai-body.json"
+airun() { ( set -e; PATH="$ai/bin:$PATH" ANTHROPIC_API_KEY=sk-ant-api03-TESTKEY "$@" ) 2>&1; }
+ai_row() { echo '{"name":"web","platform":"vercel","repo":"me/web","ref":"main","lastSha":"aaaa","auto":false}'; }
+ai_log() { printf 'step 1\nstep 2\nnpm ERR! build failed for dev@example.com\nGITHUB_TOKEN=ghp_abcdefghijklmnop0123\nusing sk-ant-api03-LEAKED-KEY-1234567890 and AKIAABCDEFGHIJKLMNOP\nconnect postgres://admin:hunter2@db.internal/app\nauthorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig\n'; }
+ai_details() { echo '{"commits":[{"msg":"feat: dark mode (#4) by ops@example.org","bot":false},{"msg":"chore(deps): bump x","bot":true}],"files":3,"additions":40,"deletions":2,"risky":["prisma/migrations/1/migration.sql","package-lock.json"]}'; }
+rm -f "$DEPLOYS_CONFIG/ai-usage.json" "$DEPLOYS_CONFIG/ai-cap" "$DEPLOYS_CONFIG/ai-model"
+
+: > "$CALLS"; out="$(airun ai_run explain web)"
+expect "ai explain: prints the text blocks only" "$out" $'Cause: x.\nLikely fix: y.'
+expect "ai: the key is never in argv" "$(grep '^argv ' "$CALLS" | grep -c TESTKEY)" "0"
+expect "ai: the key goes in on stdin as x-api-key" "$(grep -c '^stdin header = "x-api-key: sk-ant-api03-TESTKEY"' "$CALLS")" "1"
+expect "ai: current API version and model, low effort, fallback on" \
+  "$(grep -c 'anthropic-version: 2026-10-21' "$CALLS"):$(grep -c 'stdin header = "anthropic-beta: server-side-fallback-2026-07-01"' "$CALLS"):$(jq -r '"\(.model) \(.output_config.effort) \(.fallbacks) \(.max_tokens)"' "$AIBODY")" \
+  "1:1:claude-opus-5-5 low default 4000"
+body="$(cat "$AIBODY")"
+expect "ai masking: tokens, keys, passwords, JWTs and emails never reach the body" \
+  "$(echo "$body" | grep -c 'ghp_abcdef\|LEAKED-KEY\|AKIAABCDEF\|hunter2\|eyJhbGci\|dev@example.com')" "0"
+expect "ai masking: the log is still there, with markers" "$(echo "$body" | grep -c 'npm ERR! build failed'):$(echo "$body" | grep -o '\[masked\]' | wc -l | tr -d ' '):$(echo "$body" | grep -c '\[email\]')" "1:6:1"
+expect "ai: the log is framed as untrusted data" "$(jq -r .system "$AIBODY" | grep -c 'untrusted data')" "1"
+expect "ai: usage is tallied per month" "$(jq -r --arg m "$(date -u +%Y-%m)" '.[$m]' "$DEPLOYS_CONFIG/ai-usage.json")" "120"
+
+: > "$CALLS"; airun ai_run notes web --lang de >/dev/null
+expect "ai notes: German, bot commits counted not listed, no emails" \
+  "$(jq -r .system "$AIBODY" | grep -c 'Write in German'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'bump x'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Dependency updates: 1'):$(grep -c 'ops@example.org' "$AIBODY")" "1:0:1:0"
+airun ai_run ship web >/dev/null
+expect "ai ship: diff stats, risky files and auto-deploy go in" \
+  "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Diff: 2 commits, 3 files, +40 -2'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'prisma/migrations'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'auto-deploy: off')" "1:1:1"
+expect "ai --json: text, tokens and the month's total for the app" "$(airun ai_run explain web --json | jq -c '{tokens, used, cap}')" '{"tokens":120,"used":480,"cap":300000}'
+
+printf '480' > "$DEPLOYS_CONFIG/ai-cap"; : > "$CALLS"
+out="$(airun ai_run explain web)"; rc=$?
+expect "ai: over the cap nothing is sent" "$(echo "$out" | grep -c 'cap is reached'):$rc:$(grep -c '^argv ' "$CALLS")" "1:1:0"
+rm -f "$DEPLOYS_CONFIG/ai-cap"
+
+printf 'claude-haiku-5-5' > "$DEPLOYS_CONFIG/ai-model"; : > "$CALLS"; airun ai_run explain web >/dev/null
+expect "ai: Haiku goes without the fallback (it has none)" "$(jq -r '.fallbacks // "none"' "$AIBODY"):$(grep -c 'anthropic-beta' "$CALLS")" "none:0"
+rm -f "$DEPLOYS_CONFIG/ai-model"
+
+out="$(AISTUB=refusal airun ai_run explain web)"; rc=$?
+expect "ai: a refusal is said plainly and fails" "$(echo "$out" | grep -c 'declined this request (cyber)'):$rc" "1:1"
+out="$(AISTUB=401 airun ai_run explain web)"; rc=$?
+expect "ai: a refused key is said plainly" "$(echo "$out" | grep -c 'refused the key'):$rc" "1:1"
+out="$( ( set -e; PATH="$ai/bin:$PATH"; unset ANTHROPIC_API_KEY; security() { :; }; ai_run explain web ) 2>&1)"; rc=$?
+expect "ai: no key, no call" "$(echo "$out" | grep -c 'No Anthropic API key'):$rc" "1:1"
+: > "$CALLS"
+expect "ai verify: a free models lookup" "$(env -u DEPLOYS_LIB AISTUB=models PATH="$ai/bin:$PATH" ANTHROPIC_API_KEY=sk-ant-x NO_COLOR=1 ./deploys ai verify 2>&1; grep -c 'argv .*-X GET .*/models/claude-opus-5-5' "$CALLS")" $'The key works, claude-opus-5-5 is available.\n1'
+expect "ai model: only known models" "$(cli ai model gpt-x | grep -c 'Choose one of'):$(cli ai model claude-sonnet-5-5)" "1:Claude model set to claude-sonnet-5-5"
+rm -f "$DEPLOYS_CONFIG/ai-model"
+expect "ai status: never the key" "$(ANTHROPIC_API_KEY=sk-ant-api03-TESTKEY cli ai status | grep -c TESTKEY):$(ANTHROPIC_API_KEY=sk-ant-api03-TESTKEY cli ai status | jq -r '.key')" "0:true"
+
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }
