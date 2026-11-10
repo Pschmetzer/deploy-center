@@ -14,6 +14,7 @@ enum DemoData {
             x.pendingCommits = commits; x.pendingPRs = prs; x.openPRs = prs + 1
             x.oldestPendingAt = commits > 0 ? now.addingTimeInterval(-age) : nil
             x.compareStatus = commits > 0 ? "ahead" : "identical"
+            x.pendingTitles = commits > 0 ? [msg] + ["Update dependencies", "Tidy the tests", "Fix a typo", "Faster start"].prefix(commits - 1) : []
             return x
         }
         return [

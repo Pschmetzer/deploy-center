@@ -1,0 +1,27 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "CFBundleDisplayName" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Deploy Center" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Deploy Center" } }
+      }
+    },
+    "NSCameraUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Kamera liest den Code, den die Mac-App zeigt, um sich mit ihr zu verbinden." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The camera scans the code that the Mac app shows, to connect to it." } }
+      }
+    },
+    "NSFaceIDUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Face ID bestätigt jeden Deploy, jeden Abbruch und jedes Zurückrollen." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Face ID confirms each deploy, cancel and rollback." } }
+      }
+    }
+  },
+  "version" : "1.0"
+}

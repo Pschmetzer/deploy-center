@@ -1,9 +1,12 @@
 # Widgets and the iOS app: the decisions
 
 Status:
-- **Mac widget:** builds, and is signed locally.
-- **iOS app:** a full app with a list, details, deploy and rollback with Face ID, widgets and background
-  notes. It runs in the simulator.
+- **Mac widget:** builds, and is signed locally. Small, medium and large.
+- **iOS app:** list, details, deploy, cancel and rollback with Face ID, background notes, widgets on the
+  Home Screen (small to extra large) and the Lock Screen. Connects to the Mac app through iCloud
+  Keychain or a QR code. In TestFlight; the QR code was tried on a real iPhone (see "What was verified").
+
+The Mac widget is decision 1; everything after it is about the iOS app.
 
 Steps in the owner's Apple Developer account are listed at the end and in `docs/APP-STORE.md`.
 
@@ -103,7 +106,11 @@ Without a server this is best effort.
 - **Background refresh:** a `BGAppRefreshTask` reads the lists and posts a local notification for
   what newly waits or failed. iOS decides when it runs, usually a few times an hour at most. The
   settings screen says so.
-- **No Live Activity:** one that updates while the app is closed would need push from a server (APNs).
+- **Following a deploy:** the app polls the deploy it started. When it goes to the background, a
+  background task buys about half a minute, and on iOS 26 a continued processing task keeps going with
+  a progress in the system, until the deploy ends or iOS stops it. The end comes as a notification.
+- **Live Activity:** none yet. One started by the app is possible without a server, but it only
+  updates while the app runs; one that updates while the app is closed needs push from a server (APNs).
 
 ### Tokens and Face ID
 
@@ -111,9 +118,14 @@ Without a server this is best effort.
   - never synced, and not in backups;
   - readable by the background refresh after the first unlock.
 - Tokens from the Mac come through iCloud Keychain (decision 4). A token typed on the phone wins.
-- Every deploy and rollback asks twice:
-  1. a confirmation;
+- Every deploy, cancel and rollback asks twice:
+  1. a confirmation that names what goes live (the newest commit, how many commits and PRs);
   2. `LAContext` with `.deviceOwnerAuthentication`: Face ID, Touch ID or the passcode.
+- What Face ID protects, honestly: a deploy started by a slip of the finger, or by someone holding the
+  unlocked phone for a moment. It is a check in the app, not a lock on the keys: whoever controls the
+  unlocked device (or a jailbroken one) can read the app's keychain items without it.
+- The app follows the language iOS picks for it (Settings → Deploy Center → Language), English or
+  German; the widgets follow the app.
 
 ## Decision 3: how the iOS app is built
 
@@ -175,8 +187,34 @@ of "Data Not Collected".
     team have no link. `ios/build.sh --archive` fills in `$(AppIdentifierPrefix)` before its ad hoc
     signature.
 - **QR code**: the Mac shows the same keys as a QR code for 60 seconds, on request. The iPhone app
-  scans it in "Connect to the Mac" (camera inside the app, no URL scheme) and keeps the keys on the
-  phone only.
+  scans it in "Connect to the Mac" (camera inside the app; or "Paste" for the code's text), shows what
+  the code holds, and keeps the keys on the phone only after "Connect".
+
+### The QR code: what it holds and who can read it
+
+- **What is in it:** the Vercel token made for the phone, the Vercel team id, the Render key, the gh
+  CLI's GitHub token, and the time it was made. Base64 JSON behind `deploycenter-link:1:`. Not
+  encrypted: anyone who can read the code has the keys.
+- **Who can read it:** any camera that sees the Mac's screen while it shows (60 seconds): a person
+  behind you, a video call sharing the screen, a screen recording. The Mac says "show it to no one".
+- **How long it works:** the iPhone app refuses a code made more than five minutes ago (to allow for
+  clocks that differ a little). A photo of the screen is useless after that, to this app. The keys
+  in it stay valid as long as the provider keeps them.
+- **How to revoke:** delete the token at Vercel (Account → Tokens), the key at Render (Account
+  Settings → API Keys), or the GitHub token. On the phone, "Delete the keys on this iPhone" removes
+  the copies there.
+- **Not done:** encrypting the code with a short number typed on the phone. It would cost a step for
+  everyone; the five-minute limit covers the photo case.
+
+### When iCloud Keychain brings nothing
+
+| What you see | Usual cause | Fix |
+|---|---|---|
+| "Not available in this build" | the build has no team id (simulator, a build from source) | use the QR code |
+| "Nothing arrived yet" for minutes | iCloud Keychain (Passwords) is off on the Mac or the iPhone | System Settings / Settings → Apple Account → iCloud → Passwords |
+| The same, with Passwords on | the Mac and the iPhone use different Apple Accounts | sign in with the same one, or use the QR code |
+| The Mac says it could not write (error −34018) | the Mac app was built without its Developer ID profile | install the released app, or use the QR code |
+| "The key from the Mac was refused" | the Mac's token was deleted or expired | make a new one in the Mac app (Settings → iPhone) |
 
 ## What was verified, and what not
 
@@ -202,15 +240,34 @@ Verified on this Mac:
 - **QR code:** TestFlight build 2 on the owner's iPhone connected to the Mac app by scanning its
   code.
 
+### Test plan for real deploys (owner, with a throwaway project)
+
+Use one Vercel project and one Render service made for this, with auto-deploy off.
+1. **Deploy:** push a commit, wait for "waiting", deploy from the phone. Expect "is live" and the row
+   back in "Up to date".
+2. **Cancel:** deploy again, tap "Cancel the build" while it builds. Expect "canceled", and the old
+   deploy still live.
+3. **Rollback:** roll back. Expect the previous commit live (Vercel: the domain points to it; Render:
+   a new deploy of the old commit).
+4. **Background:** start a deploy and lock the phone. Expect a notification at the end (iOS 26), or
+   the right state when the app opens again.
+5. **Lost answer:** start a deploy in Airplane Mode right after tapping "Deploy" (hard to time):
+   the app should find the running deploy instead of saying it failed.
+6. **Timeout:** a build longer than 20 minutes ends with "no final state", not silence.
+
 Not verified:
 - **iCloud Keychain between Mac and iPhone:** needs TestFlight build 2 on a real iPhone.
 - **The widget gallery:** the Mac widget was not opened there. That needs the screen, and this
   session had no access to it. To check: right-click the desktop → Edit Widgets → search "Deploy".
-- **Real deploys:** deploy, rollback and the status polling never ran against real accounts.
+- **Real deploys:** deploy, cancel, rollback and the status polling never ran against real accounts
+  (test plan above). The continued processing task (iOS 26) builds but was not tried on a device.
 - **Vercel teams:** with several teams and no team id set, the app reads the personal account.
   The settings screen has a field for the team id.
-- **Simulator:** Face ID, the background refresh, notifications and the iOS widget on the Home
-  Screen were not tried. VoiceOver was not tried either. Large text (accessibility sizes) was
+- **Simulator:** Face ID, the background refresh, notifications, the Lock Screen widgets and the iOS
+  widget on the Home Screen were not tried. To start the background refresh in the debugger: pause
+  the app and run
+  `e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"app.deploycenter.ios.refresh"]`,
+  then continue. VoiceOver was not tried either. Large text (accessibility sizes) was
   checked: the summary switches to two rows.
 - **Device and store:** no device build. Build 1.0 (1) is archived (ad hoc signed, see `ios/build.sh`) and uploaded; the store page is filled in. Status: `docs/APP-STORE.md`.
 
