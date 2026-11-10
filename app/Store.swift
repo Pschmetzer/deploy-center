@@ -257,7 +257,7 @@ final class Store: ObservableObject {
     private func decode(_ p: Platform, _ data: Data) throws -> [Item] {
             switch p {
             case .vercel:
-                let list = try JSONDecoder().decode([VercelProject].self, from: data)
+                let list = try decodeLossy(VercelProject.self, from: data, label: "vercel json")
                 return list.map { v in
                     Item(id: v.name, name: v.name,
                          detail: v.repo.map { "\($0) · \(v.ref ?? "main")" } ?? L("no Git repository", "kein Git-Repo"),
@@ -273,7 +273,7 @@ final class Store: ObservableObject {
                          oldestPendingAt: date(v.oldestPendingAt), rewritten: v.rewritten ?? false)
                 }
             case .render:
-                let list = try JSONDecoder().decode([RenderService].self, from: data)
+                let list = try decodeLossy(RenderService.self, from: data, label: "render json")
                 return list.map { r in
                     Item(id: r.id, name: r.name,
                          detail: Self.typeName(r.type) + (r.repo.map { " · \($0) · \(r.ref ?? "main")" } ?? ""),
@@ -763,6 +763,9 @@ final class Store: ObservableObject {
                  (.render, "canceled"), (.render, "pre_deploy_failed"), (.render, "deactivated"):
                 set(p, item.id, .failed(s.error ?? "Status: \(state)")); return
             default:
+                if !Self.knownStates.contains(state), Self.loggedStates.insert(state).inserted {
+                    Log.write("\(p.cli) status: unknown state \"\(state)\" for \(item.name), shown as it is")
+                }
                 if !cancelled.contains(item.id) { set(p, item.id, .running(Self.stateName(state))) }
             }
         }
@@ -880,6 +883,10 @@ final class Store: ObservableObject {
         }
     }
 
+    /// States the app knows; any other is shown as the platform sent it, and logged once.
+    static let knownStates: Set<String> = ["", "queued", "created", "initializing", "building", "build_in_progress",
+                                           "update_in_progress", "pre_deploy_in_progress"]
+    private static var loggedStates: Set<String> = []
     static func stateName(_ s: String) -> String {
         switch s {
         case "queued", "created", "initializing": return L("queued", "wartet")

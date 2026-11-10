@@ -243,6 +243,43 @@ let t0 = Date()
 Tool.killTree(tree.processIdentifier)
 _ = treeOut.fileHandleForReading.readDataToEndOfFile()   // returns only once every child is gone
 expect("killTree closes the pipe at once", Date().timeIntervalSince(t0) < 3, true)
+// Build logs: what is a failure, what leaves the app.
+expect("cache miss is no error", LogTools.isErrorLine("Build Cache not found, building from scratch"), false)
+expect("ErrorBoundary file is no error", LogTools.isErrorLine("  src/ErrorBoundary.tsx  2.1 kB"), false)
+expect("0 failed is good news", LogTools.isErrorLine("Tests: 0 failed, 12 passed"), false)
+expect("a real error", LogTools.isErrorLine("Type error: Cannot read x"), true)
+expect("npm ERR!", LogTools.isErrorLine("npm ERR! code ELIFECYCLE"), true)
+expect("command failed", LogTools.isErrorLine("Command \"npm run build\" exited with 1"), true)
+expect("GitHub token masked", LogTools.maskSecrets("using ghp_abcdefghijklmnopqrstuvwxyz0123 now"), "using [GITHUB TOKEN] now")
+expect("bearer masked", LogTools.maskSecrets("Authorization: Bearer abc.def-123456"), "Authorization: Bearer [HIDDEN]")
+expect("env value masked", LogTools.maskSecrets("STRIPE_SECRET_KEY=sk_live_1234"), "STRIPE_SECRET_KEY=[HIDDEN]")
+expect("sk- key masked", LogTools.maskSecrets("key sk-proj-ABCDEFGHIJKLMNOPQRST"), "key [API KEY]")
+expect("password in a URL masked", LogTools.maskSecrets("postgres://app:hunter2@db:5432/x"), "postgres://app:[HIDDEN]@db:5432/x")
+expect("plain text untouched", LogTools.maskSecrets("Error: module not found"), "Error: module not found")
+expect("ANSI codes out", LogTools.clean("\u{1B}[31mError\u{1B}[0m: x"), "Error: x")
+expect("long lines cut", LogTools.clean(String(repeating: "a", count: 1000)).count, 402)
+expect("fence outgrows backticks", LogTools.fence(for: "a ```` b"), "`````")
+expect("prompt masks secrets", LogTools.claudePrompt(name: "w", repo: nil, ref: nil, sha: nil, message: nil,
+       log: "Error: token=abc123secret").contains("abc123secret"), false)
+
+let f1 = Details.Commit(sha: "a", full: nil, url: nil, msg: "feat(ui): Dark mode", author: nil, bot: false, at: 0, pr: 3)
+let f2 = Details.Commit(sha: "b", full: nil, url: nil, msg: "fix: Login loop", author: nil, bot: false, at: 0, pr: nil)
+let f3 = Details.Commit(sha: "c", full: nil, url: nil, msg: "Tidy up", author: nil, bot: false, at: 0, pr: nil)
+expect("release notes grouped", LogTools.releaseNotes(name: "web", commits: [f3, f2, f1]),
+       "## web\n\n### Features\n- Dark mode (#3)\n\n### Fixes\n- Login loop\n\n### Other\n- Tidy up")
+
+// Decoding: one broken entry does not take the list with it.
+let mixed = Data(#"[{"name":"ok","auto":false,"deployable":true},{"name":"broken"}]"#.utf8)
+expect("lossy list keeps the good entry", ((try? decodeLossy(VercelProject.self, from: mixed, label: "test")) ?? []).map(\.name), ["ok"])
+let doc = try? JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"renderKey":true}"#.utf8))
+expect("doctor with missing fields", "\(doc?.jq ?? false) \(doc?.vercelLoggedIn ?? true) \(doc?.renderKey ?? false)", "true false true")
+var odd = item(changed: true); odd.ref = "fix/#12 x"
+expect("compare link encodes the branch", odd.compareURL?.absoluteString ?? "nil", "https://github.com/me/app/compare/a...fix/%2312%20x")
+
+// Demo stand-ins rarely collide.
+UserDefaults.standard.set(true, forKey: "demoMode")
+expect("40 projects, 40 stand-ins", Set((0..<40).map { Demo.mask("project-\($0)") }).count >= 39, true)
+UserDefaults.standard.removeObject(forKey: "demoMode")
 
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
