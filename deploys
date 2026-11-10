@@ -1423,7 +1423,8 @@ BASH
     res="$(mktemp)"; ok=0; bad=0; skip=0
     # say <platform> <name> <action> <reason> [<start JSON>]: one line for a person, one record for --json.
     say() {
-      local plat="$1" name="$2" act="$3" why="$4" st="${5:-{\}}" P
+      local plat="$1" name="$2" act="$3" why="$4" st="${5:-}" P
+      [ -n "$st" ] || st="{}"  # not ${5:-{\}}: bash 3.2 keeps the backslash
       case "$plat" in vercel) P=Vercel;; render) P=Render;; *) P="$plat";; esac
       jq -nc --arg p "$plat" --arg n "$name" --arg a "$act" --arg w "$why" --argjson s "$st" \
         '{platform:$p, name:$n, action:$a, reason:(if $w == "" then null else $w end), id:($s.id // null), url:($s.url // null)}' >> "$res"
