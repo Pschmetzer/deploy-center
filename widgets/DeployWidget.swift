@@ -35,15 +35,33 @@ struct SmallView: View {
         VStack(alignment: .leading, spacing: 4) {
             Label("Deploy Center", systemImage: "paperplane.fill").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
             Spacer(minLength: 0)
-            Text("\(snap.waitingPRs)").font(.system(size: 44, weight: .bold, design: .rounded)).monospacedDigit()
-                .foregroundStyle(snap.waitingPRs > 0 ? Color.accentColor : .secondary)
-                .contentTransition(.numericText())
-            Text(snap.waitingPRs == 1 ? L("PR waiting", "PR wartet") : L("PRs waiting", "PRs warten")).font(.caption.weight(.medium))
-            Text(snap.waitingProjects == 1 ? L("1 project", "1 Projekt") : L("\(snap.waitingProjects) projects", "\(snap.waitingProjects) Projekte")).font(.caption2).foregroundStyle(.secondary)
-            StatusLine(snap: snap)
+            VStack(alignment: .leading, spacing: 4) {
+                // Scales with the text size, and shrinks instead of being cut off.
+                Text("\(snap.waitingPRs)").font(.system(.largeTitle, design: .rounded, weight: .bold)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.5)
+                    .foregroundStyle(snap.waitingPRs > 0 ? Color.accentColor : .secondary)
+                    .contentTransition(.numericText())
+                Text(snap.waitingPRs == 1 ? L("PR waiting", "PR wartet") : L("PRs waiting", "PRs warten")).font(.caption.weight(.medium))
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text(snap.waitingProjects == 1 ? L("1 project", "1 Projekt") : L("\(snap.waitingProjects) projects", "\(snap.waitingProjects) Projekte")).font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                StatusLine(snap: snap)
+            }
+            // One element for VoiceOver: "5 PRs waiting, 3 projects, 1 building".
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(summaryLabel(snap))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
+}
+
+/// The numbers of the widget as one sentence for VoiceOver.
+func summaryLabel(_ snap: DeploySnapshot) -> String {
+    var parts = [snap.waitingPRs == 1 ? L("1 PR waiting", "1 PR wartet") : L("\(snap.waitingPRs) PRs waiting", "\(snap.waitingPRs) PRs warten"),
+                 snap.waitingProjects == 1 ? L("1 project", "1 Projekt") : L("\(snap.waitingProjects) projects", "\(snap.waitingProjects) Projekte")]
+    if snap.building > 0 { parts.append(L("\(snap.building) building", snap.building == 1 ? "1 baut" : "\(snap.building) bauen")) }
+    if snap.failed > 0 { parts.append(L("\(snap.failed) failed", "\(snap.failed) fehlgeschlagen")) }
+    return parts.joined(separator: ", ")
 }
 
 struct StatusLine: View {
@@ -59,20 +77,30 @@ struct StatusLine: View {
 
 struct MediumView: View {
     let snap: DeploySnapshot
+    @ScaledMetric(relativeTo: .caption) private var columnWidth = 104.0
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
                 Label("Deploy Center", systemImage: "paperplane.fill").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 0)
-                Text("\(snap.waitingPRs)").font(.system(size: 36, weight: .bold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(snap.waitingPRs > 0 ? Color.accentColor : .secondary)
-                Text(snap.waitingPRs == 1 ? L("PR waiting", "PR wartet") : L("PRs waiting", "PRs warten")).font(.caption.weight(.medium))
-                if let s = snap.saving, s.after < s.before {
-                    Text(L("≈ \(money(s.month))/mo saved", "≈ \(money(s.month))/Monat gespart"))
-                        .font(.caption2.weight(.semibold)).foregroundStyle(.green)
+                Group {
+                    Text("\(snap.waitingPRs)").font(.system(.title, design: .rounded, weight: .bold)).monospacedDigit()
+                        .lineLimit(1).minimumScaleFactor(0.5)
+                        .foregroundStyle(snap.waitingPRs > 0 ? Color.accentColor : .secondary)
+                    Text(snap.waitingPRs == 1 ? L("PR waiting", "PR wartet") : L("PRs waiting", "PRs warten")).font(.caption.weight(.medium))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    if let s = snap.saving, s.after < s.before {
+                        Text(L("≈ \(money(s.month))/mo saved", "≈ \(money(s.month))/Monat gespart"))
+                            .font(.caption2.weight(.semibold)).foregroundStyle(.green)
+                            .lineLimit(2).minimumScaleFactor(0.7)
+                    }
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(summaryLabel(snap) + (snap.saving.map { $0.after < $0.before ? ", " + L("≈ \(money($0.month))/mo saved", "≈ \(money($0.month))/Monat gespart") : "" } ?? ""))
             }
-            .frame(width: 104, alignment: .leading)
+            // Grows with the text size.
+            .frame(minWidth: 0, idealWidth: columnWidth, maxWidth: columnWidth, alignment: .leading)
             VStack(alignment: .leading, spacing: 7) {
                 if snap.projects.isEmpty {
                     Spacer()
@@ -93,12 +121,14 @@ struct ProjectRow: View {
     let p: DeploySnapshot.Project
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).foregroundStyle(tint).font(.caption).frame(width: 14)
+            Image(systemName: icon).foregroundStyle(tint).font(.caption).frame(width: 14).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
-                Text(p.name).font(.caption.weight(.semibold)).lineLimit(1)
+                // Hidden on the Lock Screen and in StandBy while the device is locked.
+                Text(p.name).font(.caption.weight(.semibold)).lineLimit(1).privacySensitive()
                 Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
         }
+        .accessibilityElement(children: .combine)
     }
     private var icon: String {
         switch p.status { case .building: "hammer.fill"; case .failed: "xmark.octagon.fill"; case .waiting: "arrow.up.circle.fill" }
