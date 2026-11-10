@@ -40,7 +40,13 @@ case "$mode" in
 PLIST
     xcodebuild -project ios/DeployCenter.xcodeproj -scheme DeployCenter -configuration Release \
       -destination 'generic/platform=iOS' -archivePath build/DeployCenter-iOS.xcarchive \
-      DEVELOPMENT_TEAM="$team" -allowProvisioningUpdates archive
+      DEVELOPMENT_TEAM="$team" CODE_SIGNING_ALLOWED=NO archive
+    # The archive is unsigned: automatic signing would first need a development profile, and that
+    # needs a registered device. An ad hoc signature carries the entitlements (the App Group) to the
+    # export, which re-signs with App Store profiles; those need no device.
+    built="build/DeployCenter-iOS.xcarchive/Products/Applications/DeployCenter.app"
+    codesign --force -s - --entitlements ios/Config/DeployCenterWidgets.entitlements "$built/PlugIns/DeployCenterWidgets.appex"
+    codesign --force -s - --entitlements ios/Config/DeployCenter.entitlements "$built"
     xcodebuild -exportArchive -archivePath build/DeployCenter-iOS.xcarchive \
       -exportOptionsPlist build/ExportOptions.plist -exportPath build/ios-export -allowProvisioningUpdates
     echo "Exported: build/ios-export (upload it with Transporter or xcrun altool, see docs/APP-STORE.md)" ;;

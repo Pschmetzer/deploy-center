@@ -43,6 +43,12 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 
 ## Steps only the owner can do (ask before each)
 
+0. **Status (2026-11-10):** the App IDs `app.deploycenter.ios` and `app.deploycenter.ios.widgets`
+   exist, with App Store profiles; `ios/build.sh --archive` exports a signed `.ipa`. The App Group
+   capability is **not yet** on the App IDs, so that build has no App Group: enable "App Groups"
+   on both App IDs in Certificates, Identifiers & Profiles, register `group.app.deploycenter`,
+   then archive again. The team has no registered devices, so the archive is unsigned and signed
+   ad hoc with the entitlements before the export (see the comment in `ios/build.sh`).
 1. **App IDs and the App Group.** Register `app.deploycenter.ios` and `app.deploycenter.ios.widgets`,
    with the App Group `group.app.deploycenter` on both. `ios/build.sh --archive` uses
    `-allowProvisioningUpdates` and can create them itself, so the first archive is itself an
