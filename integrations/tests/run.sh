@@ -147,7 +147,11 @@ out="$(RENDER_API_KEY=x notify/notify.sh --dry-run)"
 contains "notify: live today" "$out" 'Live today (1): site'
 contains "notify: waiting with counts" "$out" 'Waiting (2): app-web (4 commits), api'
 contains "notify: Slack-style by default" "$out" 'format: slack'
-expect "notify: Discord by host" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -r 'keys[0]')" content
+contains "notify: failed builds are named" "$out" 'Failed (1): api'
+contains "notify: the day in UTC by default" "$out" "$(date -u +%Y-%m-%d) (UTC)"
+contains "notify: DEPLOYS_NOTIFY_TZ names its day" "$(RENDER_API_KEY=x DEPLOYS_NOTIFY_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "$(TZ=Pacific/Kiritimati date +%Y-%m-%d) (Pacific/Kiritimati)"
+expect "notify: Discord never pings" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -c .allowed_mentions)" '{"parse":[]}'
+expect "notify: Discord by host" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -r 'has("content")')" true
 expect "notify: Telegram by host" "$(DEPLOYS_NOTIFY_URL='https://api.telegram.org/botT/sendMessage?chat_id=1' notify/notify.sh --dry-run | head -1)" "format: telegram"
 contains "notify: ntfy is plain text" "$(DEPLOYS_NOTIFY_URL=https://ntfy.sh/topic notify/notify.sh --dry-run)" $'format: ntfy\nDeploy Center'
 . lib/post.sh

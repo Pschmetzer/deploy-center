@@ -31,14 +31,22 @@ elif [ "$from" = - ]; then list="$(cat)"
 else list="$(cat "$from")"
 fi
 
-text="$(echo "$list" | jq -r --argjson ign "$(ignored_names)" '
-  (now | strftime("%Y-%m-%d")) as $today
+# "Today" is the UTC day, or the day in DEPLOYS_NOTIFY_TZ (for example Europe/Berlin), so a deploy
+# just after local midnight is not counted on the day before.
+tz="${DEPLOYS_NOTIFY_TZ:-}"
+case "$tz" in ''|*[!A-Za-z0-9_/+-]*) tz="" ;; esac
+text="$(echo "$list" | TZ="${tz:-UTC}" jq -r --argjson ign "$(ignored_names)" --arg tz "${tz:-UTC}" '
+  def day: localtime | strftime("%Y-%m-%d");
+  (now | day) as $today
   | map(select(.name)) as $all
-  | ($all | map(select(((.liveAt // .lastAt // 0) | if . > 0 then strftime("%Y-%m-%d") else "" end) == $today)) | map(.name)) as $live
+  | ($all | map(select(((.liveAt // .lastAt // 0) | if . > 0 then day else "" end) == $today)) | map(.name)) as $live
+  # The newest build failed (Render: an older one may still be live).
+  | ($all | map(select(((.lastState // "") | ascii_downcase | test("fail|error")) or (.phase // "") == "failed")) | map(.name)) as $failed
   | ($all | map(select(.changed and ((.name as $n | $ign | index($n)) | not))) | map(.name + (if .pendingCommits then " (\(.pendingCommits) commits)" else "" end))) as $wait
-  | "Deploy Center, \($today) (UTC)",
+  | "Deploy Center, \($today) (\($tz))",
     "Live today (\($live | length)): \(if ($live | length) > 0 then $live | join(", ") else "none" end)",
-    "Waiting (\($wait | length)): \(if ($wait | length) > 0 then $wait | join(", ") else "none" end)"')"
+    "Waiting (\($wait | length)): \(if ($wait | length) > 0 then $wait | join(", ") else "none" end)",
+    (if ($failed | length) > 0 then "Failed (\($failed | length)): \($failed | join(", "))" else empty end)')"
 
 format="$(webhook_format "$url")"
 webhook_body "$format" "$text"

@@ -34,7 +34,7 @@ webhook_body() {
   esac
   case "$format" in
     discord)  WEBHOOK_TYPE="application/json"
-              WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" '{content:($t + (if $u != "" then "\n\($l): <\($u)>" else "" end))}')" ;;
+              WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" '{content:($t + (if $u != "" then "\n\($l): <\($u)>" else "" end)), allowed_mentions:{parse:[]}}')" ;;
     slack)    WEBHOOK_TYPE="application/json"
               # Block Kit for Slack; other Slack-style hooks (Mattermost, …) show text, which has the link too.
               WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" '
