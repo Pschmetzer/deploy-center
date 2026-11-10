@@ -41,11 +41,15 @@ final class PhoneStore: ObservableObject {
     var linkAvailable: Bool { PhoneLink.group != nil }
 
     /// Keys from the Mac's QR code: kept on this phone only, like typed ones.
+    /// An empty field in the code keeps the key already on this phone; the Vercel team goes with the Vercel token.
     func adopt(_ k: LinkedKeys) {
-        Keychain.set(TokenKey.vercel.rawValue, k.vercel)
-        Keychain.set(TokenKey.vercelTeam.rawValue, k.vercelTeam)
-        Keychain.set(TokenKey.render.rawValue, k.render)
-        Keychain.set(TokenKey.github.rawValue, k.github)
+        func given(_ v: String) -> Bool { !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if given(k.vercel) {
+            Keychain.set(TokenKey.vercel.rawValue, k.vercel)
+            Keychain.set(TokenKey.vercelTeam.rawValue, k.vercelTeam)
+        }
+        if given(k.render) { Keychain.set(TokenKey.render.rawValue, k.render) }
+        if given(k.github) { Keychain.set(TokenKey.github.rawValue, k.github) }
         demo = false
         Task { await reload() }
     }
@@ -60,10 +64,21 @@ final class PhoneStore: ObservableObject {
 
     // MARK: Loading
 
+    /// A reload asked for while one runs is not dropped: it runs once more right after.
+    private var reloadAgain = false
+
     func reload() async {
-        guard !loading else { return }
+        guard !loading else { reloadAgain = true; return }
+        loading = true
+        repeat {
+            reloadAgain = false
+            await load()
+        } while reloadAgain
+        loading = false
+    }
+
+    private func load() async {
         refreshLink()
-        loading = true; defer { loading = false }
         if demo {
             projects = DemoData.projects(); loadedAt = Date(); errors = []; writeSnapshot(); return
         }
@@ -122,8 +137,13 @@ final class PhoneStore: ObservableObject {
     }
 
     func deploy(_ p: PhoneProject) async {
-        guard await authenticate(L("Deploy \(p.name)", "\(p.name) deployen")) else { return }
+        // Taken before Face ID, so a second tap cannot start a second (paid) build.
+        guard running[p.key] == nil else { return }
+        running[p.key] = L("starting", "startet")
+        defer { running[p.key] = nil }
+        // The demo deploys nothing: no device code needed (App Review devices may have none).
         if demo { await simulate(p, L("Deploy started (demo).", "Deploy gestartet (Demo).")); return }
+        guard await authenticate(L("Deploy \(p.name)", "\(p.name) deployen")) else { return }
         do {
             let id: String
             switch p.provider {
@@ -146,8 +166,11 @@ final class PhoneStore: ObservableObject {
     }
 
     func rollback(_ p: PhoneProject, to target: String) async {
-        guard await authenticate(L("Roll back \(p.name)", "\(p.name) zurückrollen")) else { return }
+        guard running[p.key] == nil else { return }
+        running[p.key] = L("rolling back", "rollt zurück")
+        defer { running[p.key] = nil }
         if demo { await simulate(p, L("Rolled back (demo).", "Zurückgerollt (Demo).")); return }
+        guard await authenticate(L("Roll back \(p.name)", "\(p.name) zurückrollen")) else { return }
         do {
             switch p.provider {
             case .vercel: try await vercel().rollback(p, to: target)
@@ -171,6 +194,7 @@ final class PhoneStore: ObservableObject {
         running[p.key] = "queued"
         defer { running[p.key] = nil }
         let end = Date().addingTimeInterval(20 * 60)
+        var ended = false, lastError: String?
         while Date() < end {
             try? await Task.sleep(for: .seconds(6))
             let s: String
@@ -179,14 +203,20 @@ final class PhoneStore: ObservableObject {
                 case .vercel: s = try await vercel().status(id)
                 case .render: s = try await Render(key: token(.render) ?? "").status(p, id)
                 }
-            } catch { continue }
+            } catch { lastError = error.localizedDescription; continue }
+            lastError = nil
             running[p.key] = s.lowercased()
             if ["ready", "live", "succeeded"].contains(s.lowercased()) {
-                message = L("\(p.name) is live.", "\(p.name) ist live."); break
+                message = L("\(p.name) is live.", "\(p.name) ist live."); ended = true; break
             }
             if PhoneProject.failedStates.contains(s.lowercased()) || s.lowercased() == "deactivated" {
-                message = L("\(p.name): \(s.lowercased())", "\(p.name): \(s.lowercased())"); break
+                message = L("\(p.name): \(s.lowercased())", "\(p.name): \(s.lowercased())"); ended = true; break
             }
+        }
+        if !ended {
+            message = L("\(p.name): state unknown, please check on \(p.provider.rawValue).",
+                        "\(p.name): Stand unbekannt, bitte bei \(p.provider.rawValue) prüfen.")
+                + (lastError.map { " (\($0))" } ?? "")
         }
         await reload()
     }

@@ -39,7 +39,7 @@ struct SmallView: View {
                 .foregroundStyle(snap.waitingPRs > 0 ? Color.accentColor : .secondary)
                 .contentTransition(.numericText())
             Text(snap.waitingPRs == 1 ? L("PR waiting", "PR wartet") : L("PRs waiting", "PRs warten")).font(.caption.weight(.medium))
-            Text(L("\(snap.waitingProjects) projects", "\(snap.waitingProjects) Projekte")).font(.caption2).foregroundStyle(.secondary)
+            Text(snap.waitingProjects == 1 ? L("1 project", "1 Projekt") : L("\(snap.waitingProjects) projects", "\(snap.waitingProjects) Projekte")).font(.caption2).foregroundStyle(.secondary)
             StatusLine(snap: snap)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -66,7 +66,7 @@ struct MediumView: View {
                 Spacer(minLength: 0)
                 Text("\(snap.waitingPRs)").font(.system(size: 36, weight: .bold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(snap.waitingPRs > 0 ? Color.accentColor : .secondary)
-                Text(L("PRs waiting", "PRs warten")).font(.caption.weight(.medium))
+                Text(snap.waitingPRs == 1 ? L("PR waiting", "PR wartet") : L("PRs waiting", "PRs warten")).font(.caption.weight(.medium))
                 if let s = snap.saving, s.after < s.before {
                     Text(L("≈ \(money(s.month))/mo saved", "≈ \(money(s.month))/Monat gespart"))
                         .font(.caption2.weight(.semibold)).foregroundStyle(.green)
@@ -111,8 +111,9 @@ struct ProjectRow: View {
         case .building: return L("building · \(p.platform)", "baut · \(p.platform)")
         case .failed: return L("failed · \(p.platform)", "fehlgeschlagen · \(p.platform)")
         case .waiting:
-            let prs = p.prs > 0 ? L("\(p.prs) PR · ", "\(p.prs) PR · ") : ""
-            return prs + L("\(p.commits) commits · \(p.platform)", "\(p.commits) Commits · \(p.platform)")
+            let prs = p.prs == 1 ? L("1 PR · ", "1 PR · ") : p.prs > 1 ? L("\(p.prs) PRs · ", "\(p.prs) PRs · ") : ""
+            return prs + (p.commits == 1 ? L("1 commit · \(p.platform)", "1 Commit · \(p.platform)")
+                                         : L("\(p.commits) commits · \(p.platform)", "\(p.commits) Commits · \(p.platform)"))
         }
     }
 }

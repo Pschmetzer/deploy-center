@@ -148,11 +148,16 @@ struct Vercel {
     }
 
     /// The previous READY production deploy of a different commit (redeploys of the same commit are skipped).
+    /// Throws when the live deploy is unknown or not among the recent ones: guessing could roll back to the wrong one.
     func rollbackTarget(_ p: PhoneProject) async throws -> (id: String, sha: String?)? {
-        let cur = (try await http.get(t("/v9/projects/\(p.id)")) as? JSON)?.str("targets.production.id")
-        let list = ((try await http.get(t("/v6/deployments?projectId=\(p.id)&target=production&state=READY&limit=20")) as? JSON)?["deployments"] as? [JSON]) ?? []
-        let i = list.firstIndex { $0.str("uid") == cur } ?? 0
-        guard i < list.count else { return nil }
+        guard let cur = (try await http.get(t("/v9/projects/\(p.id)")) as? JSON)?.str("targets.production.id") else {
+            throw APIError(status: 0, message: L("Vercel names no live deploy for \(p.name).", "Vercel nennt keinen Live-Deploy für \(p.name)."))
+        }
+        let list = ((try await http.get(t("/v6/deployments?projectId=\(p.id)&target=production&state=READY&limit=100")) as? JSON)?["deployments"] as? [JSON]) ?? []
+        guard let i = list.firstIndex(where: { $0.str("uid") == cur }) else {
+            throw APIError(status: 0, message: L("The live deploy of \(p.name) is not among the last \(list.count) ready deploys. Roll back in the Vercel dashboard.",
+                                                 "Der Live-Deploy von \(p.name) ist nicht unter den letzten \(list.count) fertigen Deploys. Bitte im Vercel-Dashboard zurückrollen."))
+        }
         let curSha = list[i].str("meta.githubCommitSha")
         guard let prev = list[(i + 1)...].first(where: { $0.str("meta.githubCommitSha") != curSha }), let id = prev.str("uid") else { return nil }
         return (id, prev.str("meta.githubCommitSha"))
@@ -189,25 +194,36 @@ struct Render {
     private func service(_ s: JSON) async -> PhoneProject? {
         guard let id = s.str("id"), let name = s.str("name") else { return nil }
         var x = PhoneProject(provider: .render, id: id, name: name)
-        x.repo = s.str("repo").map { $0.replacingOccurrences(of: "https://github.com/", with: "").replacingOccurrences(of: ".git", with: "") }
+        x.repo = s.str("repo").flatMap(Self.githubRepo)
         x.branch = s.str("branch")
         x.paused = s.str("suspended") == "suspended"
         x.autoDeploy = (s.str("autoDeployTrigger").map { $0 != "off" }) ?? (s.str("autoDeploy") == "yes")
         x.domain = s.str("serviceDetails.url").map { $0.replacingOccurrences(of: "https://", with: "") }
         x.deployable = !x.paused
         do {
-            let deps = ((try await http.get("/services/\(id)/deploys?limit=10")) as? [JSON] ?? []).compactMap { $0["deploy"] as? JSON }
+            let deps = ((try await http.get("/services/\(id)/deploys?limit=50")) as? [JSON] ?? []).compactMap { $0["deploy"] as? JSON }
             if let n = deps.first {
                 x.latestState = n.str("status"); x.latestId = n.str("id")
-                x.liveAt = isoDate(n.str("finishedAt") ?? n.str("createdAt"))
             }
+            // The time of what is live, not of the newest attempt (that one may have failed).
             if let live = deps.first(where: { $0.str("status") == "live" }) {
                 x.liveId = live.str("id"); x.liveSha = live.str("commit.id")
+                x.liveAt = isoDate(live.str("finishedAt") ?? live.str("createdAt"))
                 x.liveMsg = live.str("commit.message").map { String($0.split(separator: "\n").first ?? "") }
             }
             x.liveState = deps.first?.str("status")
         } catch { x.fetchError = error.localizedDescription }
         return x
+    }
+
+    /// "owner/name" from a GitHub URL; other hosts give nil (only GitHub is compared).
+    static func githubRepo(_ url: String) -> String? {
+        let prefix = "https://github.com/"
+        guard url.hasPrefix(prefix) else { return nil }
+        var r = String(url.dropFirst(prefix.count))
+        if r.hasSuffix("/") { r.removeLast() }
+        if r.hasSuffix(".git") { r.removeLast(4) }
+        return r.isEmpty ? nil : r
     }
 
     func deploy(_ p: PhoneProject) async throws -> String {
@@ -219,9 +235,14 @@ struct Render {
         ((try await http.get("/services/\(p.id)/deploys/\(id)")) as? JSON)?.str("status") ?? "unknown"
     }
     func rollbackTarget(_ p: PhoneProject) async throws -> (id: String, sha: String?)? {
-        let deps = ((try await http.get("/services/\(p.id)/deploys?limit=20")) as? [JSON] ?? []).compactMap { $0["deploy"] as? JSON }
-        let cur = deps.first { $0.str("status") == "live" }?.str("commit.id")
-        guard let prev = deps.first(where: { $0.str("status") == "deactivated" && $0.str("commit.id") != cur }), let id = prev.str("id") else { return nil }
+        let deps = ((try await http.get("/services/\(p.id)/deploys?limit=50")) as? [JSON] ?? []).compactMap { $0["deploy"] as? JSON }
+        guard let i = deps.firstIndex(where: { $0.str("status") == "live" }) else {
+            throw APIError(status: 0, message: L("No live deploy of \(p.name) among the last \(deps.count). Roll back in the Render dashboard.",
+                                                 "Kein Live-Deploy von \(p.name) unter den letzten \(deps.count). Bitte im Render-Dashboard zurückrollen."))
+        }
+        let cur = deps[i].str("commit.id")
+        // Only deploys older than the live one.
+        guard let prev = deps[(i + 1)...].first(where: { $0.str("status") == "deactivated" && $0.str("commit.id") != cur }), let id = prev.str("id") else { return nil }
         return (id, prev.str("commit.id"))
     }
     func rollback(_ p: PhoneProject, to deploy: String) async throws {
@@ -273,7 +294,10 @@ struct GitHub {
             p.pendingPRs = numbers.count + extra.count
         } catch let e as APIError where e.status == 404 || e.message.contains("No common ancestor") {
             p.rewritten = true
-        } catch {}
+        } catch {
+            // Rate limit, 5xx or network: say so instead of showing "0 commits waiting".
+            p.fetchError = error.localizedDescription
+        }
     }
 
     /// "(#12)" from a squash merge, else "Merge pull request #12".

@@ -86,6 +86,13 @@ struct QRScanner: UIViewControllerRepresentable {
         var cancel: ((String?) -> Void)?
         private let session = AVCaptureSession()
         private var done = false
+        private var preview: AVCaptureVideoPreviewLayer?
+
+        // Rotation, Split View and Stage Manager change the size: the camera follows.
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            preview?.frame = view.bounds
+        }
 
         override func viewDidLoad() {
             super.viewDidLoad()
@@ -125,7 +132,7 @@ struct QRScanner: UIViewControllerRepresentable {
             out.metadataObjectTypes = [.qr]
             let layer = AVCaptureVideoPreviewLayer(session: session)
             layer.frame = view.bounds; layer.videoGravity = .resizeAspectFill
-            view.layer.addSublayer(layer)
+            view.layer.addSublayer(layer); preview = layer
             DispatchQueue.global(qos: .userInitiated).async { self.session.startRunning() }
         }
 

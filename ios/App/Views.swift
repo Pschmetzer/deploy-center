@@ -143,9 +143,12 @@ extension PhoneProject {
     var stateText: String {
         if building { return L("building", "baut") }
         if failed { return L("failed", "fehlgeschlagen") }
+        // Before `changed`: after a force push the compare fails and the count is unknown, not 0.
+        if rewritten && changed { return L("history rewritten · count unknown", "Verlauf neu geschrieben · Anzahl unbekannt") }
         if changed {
-            let prs = (pendingPRs ?? 0) > 0 ? "\(pendingPRs!) PR · " : ""
-            let n = pendingCommits ?? 0
+            let pr = pendingPRs ?? 0
+            let prs = pr == 1 ? L("1 PR · ", "1 PR · ") : pr > 1 ? L("\(pr) PRs · ", "\(pr) PRs · ") : ""
+            guard let n = pendingCommits else { return prs + L("waiting, count unknown", "wartet, Anzahl unbekannt") }
             return prs + (n == 1 ? L("1 commit waiting", "1 Commit wartet") : L("\(n) commits waiting", "\(n) Commits warten"))
         }
         if paused { return L("paused", "pausiert") }
@@ -179,6 +182,7 @@ struct ProjectDetail: View {
     @State private var confirmDeploy = false
     @State private var rollbackTo: (id: String, sha: String?)?
     @State private var confirmRollback = false
+    @State private var findingRollback = false
 
     var body: some View {
         let p = project
@@ -191,6 +195,9 @@ struct ProjectDetail: View {
                 if let r = p.repo { LabeledContent(L("Repository", "Repository"), value: r + (p.branch.map { " · \($0)" } ?? "")) }
                 if let d = p.domain { LabeledContent(L("Domain", "Domain"), value: d) }
                 if let n = p.openPRs { LabeledContent(L("Open pull requests", "Offene Pull Requests"), value: "\(n)") }
+                if let e = p.fetchError {
+                    LabeledContent(L("Read error", "Lesefehler")) { Text(e).foregroundStyle(.red) }
+                }
                 if let d = p.oldestPendingAt, p.changed {
                     LabeledContent(L("Waiting since", "Wartet seit"), value: d.formatted(.relative(presentation: .named)))
                 }
@@ -209,12 +216,21 @@ struct ProjectDetail: View {
                 }
                 .disabled(!p.deployable || p.building || store.running[p.key] != nil)
                 Button(role: .destructive) {
-                    Task { rollbackTo = await store.rollbackTarget(p); confirmRollback = rollbackTo != nil
-                           if rollbackTo == nil && store.message == nil { store.message = L("Nothing to roll back to.", "Nichts zum Zurückrollen.") } }
+                    guard !findingRollback else { return }
+                    findingRollback = true
+                    Task {
+                        defer { findingRollback = false }
+                        store.message = nil
+                        rollbackTo = await store.rollbackTarget(p); confirmRollback = rollbackTo != nil
+                        if rollbackTo == nil && store.message == nil { store.message = L("Nothing to roll back to.", "Nichts zum Zurückrollen.") }
+                    }
                 } label: {
-                    Label(L("Roll back …", "Zurückrollen …"), systemImage: "arrow.uturn.backward")
+                    HStack {
+                        Label(L("Roll back …", "Zurückrollen …"), systemImage: "arrow.uturn.backward")
+                        if findingRollback { Spacer(); ProgressView() }
+                    }
                 }
-                .disabled(p.building || store.running[p.key] != nil)
+                .disabled(findingRollback || p.paused || p.building || store.running[p.key] != nil)
             } footer: {
                 Text(L("Each deploy and rollback asks for Face ID. It goes straight from this device to \(p.provider.rawValue).",
                        "Jeder Deploy und jedes Zurückrollen fragt nach Face ID. Es geht direkt von diesem Gerät an \(p.provider.rawValue)."))
@@ -234,8 +250,9 @@ struct ProjectDetail: View {
             }
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
         } message: {
-            Text(L("The previous deploy (\(String((rollbackTo?.sha ?? "").prefix(7)))) goes live again.",
-                   "Der vorige Deploy (\(String((rollbackTo?.sha ?? "").prefix(7)))) geht wieder live."))
+            // Without a commit SHA the deploy id names it.
+            let what = rollbackTo.map { String(($0.sha ?? $0.id).prefix($0.sha == nil ? 24 : 7)) } ?? ""
+            Text(L("The previous deploy (\(what)) goes live again.", "Der vorige Deploy (\(what)) geht wieder live."))
         }
     }
 }
@@ -277,7 +294,12 @@ struct SettingsView: View {
                 Section {
                     Toggle(L("Demo mode (made-up projects)", "Demo-Modus (erfundene Projekte)"), isOn: $store.demo)
                     Toggle(L("Notify when something waits or fails", "Melden, wenn etwas wartet oder fehlschlägt"), isOn: $notify)
-                        .onChange(of: notify) { _, on in if on { Task { await Background.requestPermission() } } }
+                        .onChange(of: notify) { _, on in
+                            // Switched back off when iOS says no; the system settings can change that later.
+                            if on { Task { if !(await Background.requestPermission()) { notify = false
+                                store.message = L("Notifications are off for Deploy Center in the iOS Settings.",
+                                                  "Mitteilungen sind für Deploy Center in den iOS-Einstellungen aus.") } } }
+                        }
                 } footer: {
                     Text(L("Checks run in the background when iOS allows it, usually a few times an hour. There is no server, so a note can come late.",
                            "Geprüft wird im Hintergrund, wenn iOS es erlaubt, meist ein paar Mal pro Stunde. Es gibt keinen Server, ein Hinweis kann also später kommen."))
@@ -296,12 +318,15 @@ struct SettingsView: View {
                     Button(L("Done", "Fertig")) { save(); dismiss() }
                 }
             }
-            .onAppear {
-                vercel = store.ownToken(.vercel) ?? ""; team = store.ownToken(.vercelTeam) ?? ""
-                render = store.ownToken(.render) ?? ""; github = store.ownToken(.github) ?? ""
-            }
-            .sheet(isPresented: $connect) { ConnectMacView(store: store) }
+            .onAppear(perform: loadFields)
+            // A QR code scanned from here writes the keychain: read it again, or "Done" would save the old fields over it.
+            .sheet(isPresented: $connect, onDismiss: loadFields) { ConnectMacView(store: store) }
         }
+    }
+
+    private func loadFields() {
+        vercel = store.ownToken(.vercel) ?? ""; team = store.ownToken(.vercelTeam) ?? ""
+        render = store.ownToken(.render) ?? ""; github = store.ownToken(.github) ?? ""
     }
 
     private func save() {

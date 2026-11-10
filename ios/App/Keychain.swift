@@ -21,12 +21,19 @@ enum Keychain {
     static func set(_ key: String, _ value: String) -> Bool {
         let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                    kSecAttrAccount as String: key]
-        SecItemDelete(base as CFDictionary)
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !v.isEmpty else { return true }
+        guard !v.isEmpty else {
+            let r = SecItemDelete(base as CFDictionary)
+            return r == errSecSuccess || r == errSecItemNotFound
+        }
+        // Update in place, so a failed write never leaves the old key deleted.
+        let attrs: [String: Any] = [kSecValueData as String: Data(v.utf8),
+                                    kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
+        let u = SecItemUpdate(base as CFDictionary, attrs as CFDictionary)
+        if u == errSecSuccess { return true }
+        guard u == errSecItemNotFound else { return false }
         var add = base
-        add[kSecValueData as String] = Data(v.utf8)
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        add.merge(attrs) { $1 }
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 }
