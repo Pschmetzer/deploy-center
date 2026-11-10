@@ -351,6 +351,16 @@ final class Store: ObservableObject {
         // The Cancel of the rollback countdown (see countDownToRollback).
         NotifyRouter.shared.install()
         NotifyRouter.shared.onCancel = { [weak self] id in self?.cancelRollback(String(id.dropFirst(Store.rollbackPrefix.count))) }
+        // A click on "X is live" / "X failed" brings the window up on that project.
+        NotifyRouter.shared.onOpen = { [weak self] project in
+            guard let self else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            if let project { self.pendingSearch = project }
+            // An open window comes to the front; only without one is a new one asked for.
+            if let w = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true && $0.canBecomeMain }) {
+                w.makeKeyAndOrderFront(nil)
+            } else { self.windowRequest += 1 }
+        }
         // After sleep the lists can be hours old, and the daily reminder may be overdue.
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
@@ -743,13 +753,13 @@ final class Store: ObservableObject {
         }
         switch s {
         case .done:
-            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true) }
-            else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true) }
-            else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true) }
+            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true, project: items[p]![i].name) }
+            else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true, project: items[p]![i].name) }
+            else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true, project: items[p]![i].name) }
         case .failed(let m):
-            if byPerson { say(L("\(name) cancelled", "\(name) abgebrochen"), p.rawValue, ok: true) }
-            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false) }
-        case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true)
+            if byPerson { say(L("\(name) cancelled", "\(name) abgebrochen"), p.rawValue, ok: true, project: items[p]![i].name) }
+            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false, project: items[p]![i].name) }
+        case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true, project: items[p]![i].name)
         default: break
         }
     }
@@ -794,8 +804,8 @@ final class Store: ObservableObject {
     /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
     struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool }
     @Published var messages: [Message] = []
-    private func say(_ title: String, _ body: String, ok: Bool) {
-        Notify.post(title, body)
+    private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil) {
+        Notify.post(title, body, project: project)
         show(Toast(text: title, ok: ok))
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok))
     }
@@ -858,6 +868,8 @@ final class Store: ObservableObject {
     /// Counts up when code outside a view wants Settings open (on the tab in "settingsTab"); the
     /// window and the menu bar answer it with SwiftUI's openSettings (OpensSettingsOnRequest).
     @Published var settingsRequest = 0
+    /// Counts up when code outside a view wants the main window in front (a notification click).
+    @Published var windowRequest = 0
     func openSettings(tab: String) {
         UserDefaults.standard.set(tab, forKey: "settingsTab")
         NSApp.activate(ignoringOtherApps: true)

@@ -29,6 +29,8 @@ struct ClaudeAnswer: Decodable {
 
 enum ClaudeAI {
     static let enabledKey = "claudeInApp"
+    /// Posted when Settings saved or forgot the key, so "Ask Claude" shows up without a restart.
+    static let keyChanged = Notification.Name("claudeAIKeyChanged")
     static var enabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
 
     static func status() async -> ClaudeAIStatus? {
@@ -179,7 +181,11 @@ struct ClaudeAISettings: View {
         .task(id: enabled) { if enabled { await reload() } }
     }
 
-    private func reload() async { status = await ClaudeAI.status() }
+    private func reload() async {
+        let had = status?.key
+        status = await ClaudeAI.status()
+        if status?.key != had { NotificationCenter.default.post(name: ClaudeAI.keyChanged, object: nil) }
+    }
 
     private func saveKey() async {
         busy = true; defer { busy = false }
@@ -303,6 +309,13 @@ struct ClaudeMenu: View {
             }
         }
         .task(id: enabled) { if enabled { hasKey = await ClaudeAI.status()?.key ?? false } }
+        // A key saved in Settings, or set in Terminal while the app was in the background.
+        .onReceive(NotificationCenter.default.publisher(for: ClaudeAI.keyChanged)) { _ in
+            Task { if enabled { hasKey = await ClaudeAI.status()?.key ?? false } }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { if enabled && !hasKey { hasKey = await ClaudeAI.status()?.key ?? false } }
+        }
     }
 }
 
@@ -379,7 +392,14 @@ struct ClaudeAnswerSheet: View {
         .task(id: "\(ask.id)|\(attempt)") {
             if preset { return }
             answer = nil; error = nil
-            do { answer = try await ClaudeAI.ask(ask, project: item.id) } catch { self.error = error.localizedDescription }
+            // The same question about the same build is answered from the cache (no tokens);
+            // "Try again" asks anew.
+            let version = item.latestSha ?? item.headSha ?? ""
+            do {
+                answer = attempt == 0 && !version.isEmpty
+                    ? try await ClaudeAI.ask(ask, project: item.id, version: version)
+                    : try await ClaudeAI.ask(ask, project: item.id)
+            } catch { self.error = error.localizedDescription }
         }
     }
 }

@@ -833,6 +833,21 @@ var snapDE = snapEN; snapDE.language = "de"
 expect("a language switch is a change for the widgets", snapEN.sameContent(as: snapDE), false)
 expect("only the time is not", snapEN.sameContent(as: DeploySnapshot(at: .distantPast, demo: false, waitingProjects: 1, waitingCommits: 1, waitingPRs: 0,
                                                                      building: 0, failed: 0, saving: nil, projects: [], language: "en")), true)
+// Settings: a pasted repo address, the hand-over list with PR states.
+expect("team: owner/repo stays", TeamSettings.ownerRepo(" me/app ") ?? "", "me/app")
+expect("team: a github.com address", TeamSettings.ownerRepo("https://github.com/me/app.git") ?? "", "me/app")
+expect("team: a git remote", TeamSettings.ownerRepo("git@github.com:me/app.git") ?? "", "me/app")
+expect("team: a page of the repo", TeamSettings.ownerRepo("github.com/me/app/tree/main") ?? "", "me/app")
+expect("team: no slash is no repo", TeamSettings.ownerRepo("app") == nil, true)
+expect("autofix list: an open PR is said",
+       AutofixSettings.label(F(at: 1, project: "a", platform: "vercel", status: "fired", prNumber: 3, prState: "open")), L("fix PR open", "Fix-PR offen"))
+expect("autofix list: a closed PR is said",
+       AutofixSettings.label(F(at: 1, project: "a", platform: "vercel", status: "fired", prNumber: 3, prState: "closed")), L("fix PR closed unmerged", "Fix-PR ungemergt geschlossen"))
+let now0 = Date()
+expect("ledger: due without a last run", SavingsModel.ledgerDue(at: nil, budget: nil, now: now0), true)
+expect("ledger: not again within a week", SavingsModel.ledgerDue(at: now0.addingTimeInterval(-3 * 86400), budget: nil, now: now0), false)
+expect("ledger: not on a nearly spent GitHub budget",
+       SavingsModel.ledgerDue(at: nil, budget: Store.Budget(remaining: 500, limit: 5000, reset: 0), now: now0), false)
 expect("a JSON error on stdout is the message", Tool.jsonError(Data(#"{"error":"No project named x","exit":1}"#.utf8)) ?? "", "No project named x")
 expect("other stdout is no error message", Tool.jsonError(Data(#"[{"name":"a"}]"#.utf8)) == nil, true)
 

@@ -375,9 +375,10 @@ enum Notify {
     static func remind(_ title: String, _ body: String) {
         add(title, body, id: "daily-reminder")
     }
-    static func post(_ title: String, _ body: String) {
+    /// `project`: a click on it shows that project in the window.
+    static func post(_ title: String, _ body: String, project: String? = nil) {
         guard available, !NSApp.isActive, UserDefaults.standard.object(forKey: "notifications") as? Bool ?? true else { return }
-        add(title, body, id: UUID().uuidString)
+        add(title, body, id: UUID().uuidString, project: project)
     }
     /// The countdown before an automatic rollback: shown even with the window in front, with Cancel.
     static func countdown(_ title: String, _ body: String, id: String) {
@@ -389,7 +390,7 @@ enum Notify {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
     }
     /// Asks first only when the person was never asked, so the first alarm of a run is not lost.
-    private static func add(_ title: String, _ body: String, id: String, category: String? = nil) {
+    private static func add(_ title: String, _ body: String, id: String, category: String? = nil, project: String? = nil) {
         guard available else { return }
         Task {
             let center = UNUserNotificationCenter.current()
@@ -402,6 +403,7 @@ enum Notify {
             let c = UNMutableNotificationContent()
             c.title = title; c.body = body; c.sound = .default
             if let category { c.categoryIdentifier = category }
+            if let project { c.userInfo = ["project": project] }
             try? await center.add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
         }
     }
@@ -415,6 +417,8 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
     static let cancelAction = "cancel-rollback"
     /// Gets the notification's id when Cancel is clicked.
     var onCancel: (@MainActor (String) -> Void)?
+    /// A click on the notification itself, with the project it names (if any).
+    var onOpen: (@MainActor (String?) -> Void)?
 
     func install() {
         let center = UNUserNotificationCenter.current()
@@ -434,6 +438,10 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let id = response.notification.request.identifier
         if response.actionIdentifier == Self.cancelAction { Task { @MainActor in self.onCancel?(id) } }
+        else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            let project = response.notification.request.content.userInfo["project"] as? String
+            Task { @MainActor in self.onOpen?(project) }
+        }
         completionHandler()
     }
 }

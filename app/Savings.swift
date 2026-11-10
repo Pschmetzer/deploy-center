@@ -286,10 +286,17 @@ final class SavingsModel: ObservableObject {
         } catch { ledgerError = error.localizedDescription }
     }
 
-    /// The ledger again when the last one is older than half a day.
-    func refreshLedgerIfOld() async {
-        if let at = ledgerAt, Date().timeIntervalSince(at) < 12 * 3600 { return }
+    /// The ledger by itself once a week (it pages through GitHub and asks each platform per
+    /// project); opening the ledger or "Estimate again" reads it any time. Not with less than a
+    /// fifth of GitHub's hourly budget left.
+    func refreshLedgerIfOld(budget: Store.Budget?) async {
+        if !Self.ledgerDue(at: ledgerAt, budget: budget) { return }
         await loadLedger()
+    }
+    nonisolated static func ledgerDue(at: Date?, budget: Store.Budget?, now: Date = Date()) -> Bool {
+        if let at, now.timeIntervalSince(at) < 7 * 24 * 3600 { return false }
+        if let b = budget, b.limit > 0, Double(b.remaining) < Double(b.limit) * 0.2 { return false }
+        return true
     }
 
     nonisolated static func decode<T: Decodable>(_ type: T.Type, _ data: Data, what: String) throws -> T {
@@ -391,7 +398,7 @@ struct SavingsEntry: View {
             }
         }
         .sheet(item: $sheet) { tab in SavingsSheet(start: tab) }
-        .task(id: everOff) { if everOff { await model.refreshLedgerIfOld() } }
+        .task(id: everOff) { if everOff { await model.refreshLedgerIfOld(budget: store.githubBudget) } }
     }
 
     private func ledgerLine(_ l: LedgerReport) -> some View {
@@ -471,16 +478,31 @@ struct SavingsSheet: View {
 
 /// "How this is estimated", folded away, and the state of the last load.
 private struct EstimateFooter: View {
+    enum Kind { case simulator, ledger }
+    let kind: Kind
     let method: String
     let at: Date?
     let loading: Bool
     let reload: () -> Void
 
+    /// The script's method is English; the German says the same for each tab (the simulator
+    /// counts pushes in a window, the ledger skipped builds since auto-deploy went off).
+    static func germanMethod(_ k: Kind) -> String {
+        let price = "Jeder Build zum Durchschnitt des Projekts: Minuten aus den letzten fertigen Builds (bis zu 20), Dollar aus Vercels Abrechnung pro Build (7 Tage), sonst aus dem Minutenpreis des Teams, sonst aus DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN."
+        switch k {
+        case .simulator:
+            return "Schätzung. Pushes auf den Deploy-Branch im Zeitraum (GitHub-Aktivität; wo Pushes nicht lesbar sind, Commits – eine Obergrenze) zählen je als ein Build. " + price
+                + " „Einmal am Tag“ zählt einen Build je Tag mit Push. Pro Monat = Zeitraum auf 30 Tage hochgerechnet."
+        case .ledger:
+            return "Schätzung. Seit Auto-Deploy aus ist, zählt jeder Push auf den Deploy-Branch, dessen Commit nie gebaut wurde, als übersprungener Build (GitHub-Aktivität; wo Pushes nicht lesbar sind, Commits – eine Obergrenze). " + price
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             DisclosureGroup(L("How this is estimated", "Wie das geschätzt wird")) {
                 Text(L(method.isEmpty ? "Pushes on the deploy branch times the average build of each project." : method,
-                       "Schätzung: Pushes auf den Deploy-Branch mal der durchschnittliche Build jedes Projekts. Minuten aus den letzten fertigen Builds (bis zu 20), Dollar aus Vercels Abrechnung pro Build (7 Tage), sonst aus dem Minutenpreis des Teams, sonst aus DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN. Wo GitHub keine Pushes liefert, werden Commits gezählt (eine Obergrenze)."))
+                       Self.germanMethod(kind)))
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -515,9 +537,10 @@ struct SimulatorView: View {
             }
             if let e = model.simulationError { ErrorText(e) }
             if let s = model.simulation {
-                EstimateFooter(method: s.method, at: model.simulatedAt, loading: model.loadingSimulation) {
+                EstimateFooter(kind: .simulator, method: s.method, at: model.simulatedAt, loading: model.loadingSimulation) {
                     Task { await model.loadSimulation(days: days) }
                 }
+                if model.loadingSimulation { HStack { Spacer(); SimulationProgress(model: model) } }
             }
         }
         .padding(20)
@@ -546,6 +569,7 @@ struct SimulatorView: View {
             ProgressView().controlSize(.small)
             Text(L("Counting pushes and measuring builds … (this takes a minute)", "Zähle Pushes und messe Builds … (das dauert eine Minute)"))
                 .foregroundStyle(.secondary)
+            SimulationProgress(model: model)
         }
     }
 
@@ -628,6 +652,20 @@ struct SimulatorView: View {
     }
 }
 
+/// How long the simulation runs so far, and a way to stop it (the last result stays).
+private struct SimulationProgress: View {
+    @ObservedObject var model: SavingsModel
+    var body: some View {
+        if let start = model.simulationStartedAt {
+            TimelineView(.periodic(from: start, by: 1)) { ctx in
+                Text(L("\(Int(ctx.date.timeIntervalSince(start))) s", "\(Int(ctx.date.timeIntervalSince(start))) s"))
+                    .monospacedDigit().foregroundStyle(.secondary)
+            }
+            Button(L("Cancel", "Abbrechen")) { model.cancelSimulation() }
+        }
+    }
+}
+
 // MARK: - Ledger
 
 struct LedgerView: View {
@@ -657,13 +695,16 @@ struct LedgerView: View {
             }
             if let e = model.ledgerError { ErrorText(e) }
             if let l = model.ledger {
-                EstimateFooter(method: l.method, at: model.ledgerAt, loading: model.loadingLedger) {
+                EstimateFooter(kind: .ledger, method: l.method, at: model.ledgerAt, loading: model.loadingLedger) {
                     Task { await model.loadLedger() }
                 }
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Opening the ledger reads it again when the last answer is older than half a day
+        // (the automatic run is weekly, see refreshLedgerIfOld).
+        .task { if let at = model.ledgerAt, Date().timeIntervalSince(at) > 12 * 3600 { await model.loadLedger() } }
     }
 
     private var notStarted: some View {

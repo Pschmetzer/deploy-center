@@ -323,6 +323,8 @@ struct ContentView: View {
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(Capsule().fill(.regularMaterial))
                     .overlay(Capsule().stroke(t.ok ? Color.green.opacity(0.5) : Color.red.opacity(0.5)))
+                    // The pointer on it holds it, so a long message can be read to the end.
+                    .onHover { store.holdToast($0) }
                     .padding(.bottom, 72)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     // Esc closes it, like any passing message.
@@ -879,6 +881,10 @@ struct ContentView: View {
         if store.costs?.saved(today: CostsSheet.today()) != nil {
             lines.append(L("Saved: build costs on the whole days since auto-deploy was turned off, against the days before",
                            "Gespart: Build-Kosten der ganzen Tage, seit Auto-Deploy aus ist, gegenüber den Tagen davor"))
+        } else if store.costs?.saving(today: CostsSheet.today()) != nil {
+            // Measured, but under 50 cents or more than before: said, not left out.
+            lines.append(L("Since auto-deploy was turned off: no saving in build costs yet",
+                           "Seit Auto-Deploy aus ist: noch keine Ersparnis bei den Build-Kosten"))
         }
         if w.projects > 0 { lines.append(L("Click to show them", "Klicken zeigt sie")) }
         return lines.joined(separator: "\n")

@@ -4,11 +4,15 @@ import SwiftUI
 import AppKit
 
 /// Opens Settings when the store asks (Store.openSettings(tab:)), for code that is not a view.
+/// The main window too, when a notification was clicked (Store.windowRequest).
 struct OpensSettingsOnRequest: ViewModifier {
     @ObservedObject var store: Store
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     func body(content: Content) -> some View {
-        content.onChange(of: store.settingsRequest) { openSettings() }
+        content
+            .onChange(of: store.settingsRequest) { openSettings() }
+            .onChange(of: store.windowRequest) { openWindow(id: "main") }
     }
 }
 
