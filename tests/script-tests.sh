@@ -360,6 +360,17 @@ expect "autofix: the fix failing too is not fired again" "$(fired):$(echo "$out"
 ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"READY","latestId":"d3","latestSha":"ffff999"}]'
 CLOSEDPRS='[]'
 
+# Two projects of one repo and commit (frontend + backend): one session, not two.
+af_reset
+ALL='[{"platform":"render","name":"api","repo":"me/app","lastState":"build_failed","latestId":"r1","latestSha":"same111"},
+      {"platform":"vercel","name":"web","repo":"me/app","latestState":"ERROR","latestId":"d1","latestSha":"same111"}]'
+afrun >/dev/null; : > "$CALLS"; out="$(afrun)"
+expect "autofix: the same repo and commit is handed over once" "$(fired):$(echo "$out" | grep -c 'being fixed already')" "0:1"
+CLOSEDPRS="[{\"number\":9,\"merged_at\":\"$(date -u -v+1M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '+1 min' +%Y-%m-%dT%H:%M:%SZ)\",\"merge_commit_sha\":\"fix9999\",\"ref\":\"claude/autofix-api-same111\"}]"
+: > "$CALLS"; afrun >/dev/null
+expect "autofix: a merged fix deploys both projects of the repo" "$(grep -c '^deploy render api fix9999' "$CALLS"):$(grep -c '^deploy vercel web fix9999' "$CALLS")" "1:1"
+CLOSEDPRS='[]'
+
 # The prompt in the docs is the one the app copies.
 expect "autofix: docs/AUTOFIX.md shows the prompt af_prompt prints" \
   "$(awk '/^```text$/{f=1;next} /^```$/{if(f)exit} f' docs/AUTOFIX.md)" "$(af_prompt)"

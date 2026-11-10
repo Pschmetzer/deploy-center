@@ -526,8 +526,10 @@ af_mask() {
 
 # Open (or merged) autofix PRs of one project: gh REST only, branch claude/autofix-<project>-*.
 af_prs() {  # af_prs <owner/repo> <project> <open|closed>
+  # An empty project means any autofix PR of the repo.
+  local prefix="claude/autofix-${2:+$2-}"
   gh api "repos/$1/pulls?state=$3&per_page=50&sort=updated&direction=desc" \
-    --jq "[.[] | select(.head.ref | startswith(\"claude/autofix-$2-\")) | {number, merged_at, merge_commit_sha, ref:.head.ref}]"
+    --jq "[.[] | select(.head.ref | startswith(\"$prefix\")) | {number, merged_at, merge_commit_sha, ref:.head.ref}]"
 }
 
 # One fire. The token goes to curl on stdin, never as an argument. Prints "<code>\t<body>".
@@ -613,7 +615,7 @@ autofix_run() {  # autofix_run [dry]
 
   # 1. Redeploy: a fire whose PR was merged deploys that merge commit, once, while still failed.
   local open_fires f p plat repo did prs m msha
-  open_fires="$(echo "$st" | jq -c '.fires[] | select(.status == "fired" and (.redeployedSha == null) and (.done != true))')"
+  open_fires="$(echo "$st" | jq -c '.fires[] | select((.status == "fired" or .status == "linked") and (.redeployedSha == null) and (.done != true))')"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     p="$(echo "$f" | jq -r .project)"; plat="$(echo "$f" | jq -r .platform)"; repo="$(echo "$f" | jq -r .repo)"; did="$(echo "$f" | jq -r .deployId)"
@@ -622,7 +624,8 @@ autofix_run() {  # autofix_run [dry]
       st="$(echo "$st" | jq --arg d "$did" '(.fires[] | select(.deployId == $d)).done = true')"
       echo "autofix: $p is no longer failed; nothing to redeploy."; continue
     fi
-    prs="$(af_prs "$repo" "$p" closed 2>/dev/null)" || { echo "autofix: could not ask GitHub about $p" >&2; rc=1; continue; }
+    # Any autofix PR of the repo: a linked project is fixed by its sibling's PR.
+    prs="$(af_prs "$repo" "" closed 2>/dev/null)" || { echo "autofix: could not ask GitHub about $p" >&2; rc=1; continue; }
     m="$(echo "$prs" | jq -c --argjson at "$(echo "$f" | jq .at)" '[.[] | select(.merged_at != null and ((.merged_at | fromdateiso8601) > $at))][0] // empty')"
     [ -n "$m" ] || continue
     msha="$(echo "$m" | jq -r .merge_commit_sha)"
@@ -651,6 +654,13 @@ autofix_run() {  # autofix_run [dry]
     if [ -n "$sha" ] && [ "$(echo "$st" | jq --arg s "$sha" '[.fires[] | select(.redeployedSha == $s)] | length')" != 0 ]; then
       st="$(echo "$st" | jq --arg d "$did" --arg p "$p" --arg pl "$plat" --argjson t "$now" '.fires += [{deployId:$d, project:$p, platform:$pl, at:$t, status:"skipped", reason:"the fix itself failed"}]')"
       af_notify "Autofix: the fix for $p failed to build too. Not trying again; over to you."; continue
+    fi
+    # A frontend and a backend often build from the same repo and commit: one session fixes both.
+    if [ -n "$sha" ] && [ "$(echo "$st" | jq --arg r "$repo" --arg s "$sha" '[.fires[] | select(.repo == $r and .sha == $s and (.status == "fired" or .status == "pending"))] | length')" != 0 ]; then
+      # Written down as linked: when that fix is merged, this project is deployed with it.
+      st="$(echo "$st" | jq --arg d "$did" --arg p "$p" --arg pl "$plat" --arg r "$repo" --arg s "$sha" --argjson t "$now" \
+        '.fires += [{deployId:$d, project:$p, platform:$pl, repo:$r, sha:$s, at:$t, status:"linked"}]')"
+      echo "autofix: $repo at ${sha:0:7} is being fixed already (another project of the same repo); $p is deployed with that fix."; continue
     fi
     proj_count="$(echo "$st" | jq --arg p "$p" --argjson t "$now" '[.fires[] | select(.project == $p and (.status == "fired" or .status == "failed") and .at > ($t - 86400))] | length')"
     if [ "$proj_count" -ge "$AUTOFIX_PER_PROJECT" ]; then echo "autofix: $p already had $proj_count fixes today; skipped."; continue; fi
