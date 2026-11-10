@@ -138,7 +138,7 @@ expect "json: runs" "$rc" 0
 expect "json: sorted by name" "$(echo "$out" | jq -c 'map(.name)')" '["blog","Shop","static"]'
 s="$(echo "$out" | jq -c '.[] | select(.name=="Shop")')"
 expect "json: contract fields" "$(echo "$s" | jq -c 'keys')" \
-  '["auto","dashboardUrl","deployable","domain","fetchError","id","lastAt","lastMsg","lastSha","lastState","name","paused","phase","ref","repo","url"]'
+  '["auto","dashboardUrl","deployable","domain","fetchError","fetchWarn","id","lastAt","lastMsg","lastSha","lastState","name","paused","phase","ref","repo","url"]'
 expect "json: id is app/branch" "$(echo "$s" | jq -r .id)" "d1shop0001/main"
 expect "json: auto is enableAutoBuild" "$(echo "$s" | jq .auto)" true
 expect "json: custom domain of the branch" "$(echo "$s" | jq -r '.domain + " " + .url')" "www.example.com https://www.example.com"
@@ -147,7 +147,17 @@ expect "json: lastAt in seconds" "$(echo "$s" | jq .lastAt)" 1767326645
 expect "json: live commit is the newest succeeded" "$(echo "$s" | jq -r '.lastSha + " " + .lastMsg')" "bbbb222 feat: b"
 expect "json: repo and ref" "$(echo "$s" | jq -r '.repo + "@" + .ref')" "me/shop@main"
 expect "json: dashboard" "$(echo "$s" | jq -r .dashboardUrl)" "https://eu-central-1.console.aws.amazon.com/amplify/apps/d1shop0001/branches/main/deployments"
-expect "json: deployable" "$(echo "$s" | jq -c '[.deployable, .paused, .fetchError]')" '[true,false,null]'
+expect "json: deployable" "$(echo "$s" | jq -c '[.deployable, .paused, .fetchError, .fetchWarn]')" '[true,false,null,null]'
+# PRV-109: the domains cannot be read: the default address, said so, and still deployable.
+routes "amplify list-apps . apps.json" "amplify get-app d1shop0001 get-app-shop.json" "amplify list-branches d1shop0001 branches-shop.json" \
+  "amplify list-branches d2blog0002 branches-blog.json" "amplify list-branches d3static003 branches-none.json" \
+  "amplify list-jobs d1shop0001 jobs-shop.json" "amplify list-jobs d2blog0002 jobs-blog.json" \
+  "amplify list-domain-associations d1shop0001 err-notfound.txt:254" "amplify list-domain-associations . domains-none.json"
+w="$(amp json | jq -c '.[] | select(.name=="Shop")')"
+has "json: unread domains are a fetchWarn" "$(echo "$w" | jq -r .fetchWarn)" "custom domains could not be read"
+expect "json: unread domains are not an error" "$(echo "$w" | jq -c '[.deployable, .fetchError, (.domain | test("example.com$") | not)]')" '[true,null,true]'
+expect "json: read domains, no fetchWarn" "$(amp json | jq -c '[.[] | select(.name=="blog") | .fetchWarn]')" '[null]'
+routes "${STD[@]}"
 b="$(echo "$out" | jq -c '.[] | select(.name=="blog")')"
 expect "json: production branch by stage" "$(echo "$b" | jq -c '[.id, .auto, .phase, .repo]')" '["d2blog0002/release",false,"canceled","gitlab.com/me/blog"]'
 expect "json: default domain" "$(echo "$b" | jq -r .url)" "https://release.d2blog0002.amplifyapp.com"

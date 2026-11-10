@@ -78,5 +78,11 @@ reset
 gitlab_open_prs_of gitlab.com/big/app "$tmp/out"
 expect "open MRs: at most five pages" "$(jq -c .value.all "$tmp/out/gitlab.com_big_app.json"):$(grep -c 'merge_requests?state=opened' "$CALLS")" "500:5"
 
+# --- PRV-129: one file per key ---
+expect "cache name: no _ of its own, as before" "$(githost_cache_name gitlab.com/me/app@main)" "gitlab.com_me_app_main"
+a="$(githost_cache_name gitlab.com/a_b/c@main)"; b="$(githost_cache_name gitlab.com/a/b_c@main)"
+expect "cache name: a_b/c and a/b_c are two files" "$([ "$a" != "$b" ] && echo two || echo one)" "two"
+expect "cache name: deploys' cache_name is used when there" "$(cache_name() { printf 'cn-%s' "$1"; }; githost_cache_name x/y)" "cn-x/y"
+
 echo
 [ "$fails" = 0 ] && echo "All GitLab tests passed." || { echo "$fails GitLab test(s) failed."; exit 1; }

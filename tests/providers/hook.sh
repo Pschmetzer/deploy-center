@@ -126,15 +126,20 @@ expect "the URL went to curl on stdin" "$(grep -c "^url = \"$SECRET\"" "$CURLCFG
 expect "POST is the default method" "$(grep -c '^request = "POST"' "$CURLCFG")" "1"
 expect "the state records sha and time" "$(jq -c '.site | [.ok, .sha, .msg, (.at > 0)]' "$DEPLOYS_CONFIG/hook-state.json")" '[true,"aaaa","head aaaa",true]'
 j="$(DEPLOYS_NO_GITHUB=1 hook_json | jq -c '.[0]')"
-expect "json after a trigger: ready, triggered" "$(echo "$j" | jq -r '"\(.phase) \(.lastState) \(.lastSha) \(.domain)"')" "ready triggered aaaa example.com"
+expect "json after a trigger: queued for a while, triggered" "$(echo "$j" | jq -r '"\(.phase) \(.lastState) \(.lastSha) \(.triggeredSha) \(.domain)"')" "queued triggered aaaa aaaa example.com"
+j="$(HOOK_QUEUED_SECS=0 DEPLOYS_NO_GITHUB=1 hook_json | jq -c '.[0]')"
+expect "json after the queued window: ready" "$(echo "$j" | jq -r .phase)" "ready"
+expect "a bad HOOK_QUEUED_SECS is the default" "$(HOOK_QUEUED_SECS=x hook_queued_secs)" "180"
 expect "json has every contract field" "$(echo "$j" | jq -c '[has("name","id","auto","deployable","paused","repo","ref","domain","url","dashboardUrl","lastAt","lastState","lastSha","lastMsg","fetchError","phase")] | unique')" "[true]"
 expect "json never has a URL" "$(leaks "$(hook_json)")" "0"
-expect "status after a trigger" "$(hook_cli_status site | jq -r .phase):$(hook_status site | cut -f2,3)" "ready:ready	triggered"
+expect "status after a trigger: queued for people, final for watch" "$(hook_cli_status site | jq -r .phase):$(HOOK_QUEUED_SECS=0 hook_cli_status site | jq -r .phase):$(hook_status site | cut -f2,3)" "queued:ready:ready	triggered"
 
 # --- waiting commits since the last trigger, with repo set ---
 j="$(GH_HEAD=aaaa provider_json hook | jq -c '.[0]')"
 expect "branch at the triggered commit: nothing waiting" "$(echo "$j" | jq -c '[.changed, .pendingCommits]')" "[false,0]"
 j="$(GH_HEAD=bbbb provider_json hook | jq -c '.[0]')"
+expect "just triggered (queued): not changed, so deploy-changed does not fire it again" "$(echo "$j" | jq -c '[.changed, .building]')" "[false,true]"
+j="$(HOOK_QUEUED_SECS=0 GH_HEAD=bbbb provider_json hook | jq -c '.[0]')"
 expect "three commits since the last trigger: changed" "$(echo "$j" | jq -c '[.changed, .pendingCommits, .pendingPRs, .headSha]')" '[true,3,2,"bbbb"]'
 
 # A second trigger within a minute is refused (the start lock), and nothing is sent.
@@ -149,7 +154,7 @@ unlock; out="$(HOOKSTUB=500 GH_HEAD=bbbb hook_deploy_json site 2>&1)"
 expect "a 500 is a failed trigger" "$?:$(grep -c 'did not start a build: HTTP 500' <<< "$out")" "1:1"
 expect "the failure message never has the URL" "$(leaks "$out")" "0"
 j="$(DEPLOYS_NO_GITHUB=1 hook_json | jq -c '.[0]')"
-expect "json after a failure: failed, last good sha kept" "$(echo "$j" | jq -r '"\(.phase)|\(.lastState)|\(.lastSha)"')" "failed|trigger failed (HTTP 500)|aaaa"
+expect "json after a failure: failed, last good sha kept" "$(echo "$j" | jq -r '"\(.phase)|\(.lastState)|\(.lastSha)|\(.triggeredSha)"')" "failed|trigger failed (HTTP 500)|aaaa|aaaa"
 unlock; out="$(HOOKSTUB=down hook_deploy_json site 2>&1)"
 expect "no answer is a failed trigger" "$?:$(grep -c 'no answer' <<< "$out")" "1:1"
 expect "curl was asked once per trigger (never retried)" "$(grep -c '^curl' "$CALLS")" "3"

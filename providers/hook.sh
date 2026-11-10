@@ -133,13 +133,19 @@ hook_ready() { [ "$(hook_list_raw | jq 'length' 2>/dev/null || echo 0)" -gt 0 ];
 hook_known() { hook_valid_name "$1" >/dev/null 2>&1 || return 1; [ -n "$(hook_entry "$1")" ]; }
 hook_has() { hook_known "${1:-}" && echo "$1"; }
 
+# How long after a good trigger the list shows "queued" instead of "ready": a build usually
+# takes that long, and green straight away would hide one that fails. HOOK_QUEUED_SECS, else 180.
+hook_queued_secs() {
+  case "${HOOK_QUEUED_SECS:-}" in ''|*[!0-9]*) echo 180 ;; *) echo "$HOOK_QUEUED_SECS" ;; esac
+}
+
 hook_json() {
   local list st stored='{}' n
   list="$(hook_list_raw)"; st="$(hook_state)"
   for n in $(echo "$list" | jq -r '.[].name'); do
     hook_url_stored "$n" && stored="$(echo "$stored" | jq -c --arg n "$n" '.[$n] = true')"
   done
-  list="$(echo "$list" | jq --argjson st "$st" --argjson ok "$stored" '[.[] | ($st[.name] // {}) as $s | {
+  list="$(echo "$list" | jq --argjson st "$st" --argjson ok "$stored" --argjson now "$(date +%s)" --argjson qs "$(hook_queued_secs)" '[.[] | ($st[.name] // {}) as $s | {
       name, id:.name,
       # Whether a push builds by itself is up to the host; this side cannot tell.
       auto:null,
@@ -149,10 +155,14 @@ hook_json() {
       url:(.site // null), dashboardUrl:null,
       lastAt:($s.at // null),
       lastState:(if $s.at == null then null elif $s.ok then "triggered" else "trigger failed (\($s.error // "HTTP \($s.http // "?")"))" end),
-      lastSha:($s.sha // null), lastMsg:($s.msg // null),
+      # The branch head when the hook fired, not a commit seen live: the host may build another
+      # branch or commit. lastSha keeps it for "commits since the last trigger"; triggeredSha
+      # says what it is, so the app need not call it live (PRV-077).
+      lastSha:($s.sha // null), triggeredSha:($s.sha // null), lastMsg:($s.msg // null),
       fetchError:(if $ok[.name] then null else "the hook URL is not stored here (deploys hook set-key \(.name))" end),
-      # No status API: a 2xx answer is as far as anyone can see.
-      phase:(if $s.at == null then null elif $s.ok then "ready" else "failed" end)}]
+      # No status API: a 2xx answer is as far as anyone can see. For a while after it the build
+      # is likely still running, so the list says queued, then ready (PRV-125).
+      phase:(if $s.at == null then null elif $s.ok then (if ($now - $s.at) < $qs then "queued" else "ready" end) else "failed" end)}]
     | sort_by(.name | ascii_downcase)')"
   # No GitHub calls here: `deploys hook json` adds the branch heads (provider_json).
   echo "$list"
@@ -254,7 +264,8 @@ hook_deploy_json() {
 }
 
 # The contract's line: deployId<TAB>phase<TAB>state. The id is name@time of the last trigger,
-# "none" when it was never triggered.
+# "none" when it was never triggered. Always final ("ready" after a 2xx, never "queued"):
+# `deploys watch` waits on this line, and no later answer will ever tell it more.
 hook_status() {
   local n="${1:-}"; hook_known "$n" || die "No hook named \"$n\""
   hook_state | jq -r --arg n "$n" '(.[$n] // null) as $s
@@ -262,11 +273,12 @@ hook_status() {
       else ["\($n)@\($s.at)", (if $s.ok then "ready" else "failed" end), (if $s.ok then "triggered" else "trigger failed" end)] end | @tsv'
 }
 hook_latest() { hook_status "$1"; }
-# deploys hook status <name>: the same as JSON, for people and scripts.
+# deploys hook status <name>: as JSON, for people and scripts, with the phase the list shows
+# (queued for a while after a trigger, see hook_queued_secs).
 hook_cli_status() {
   local n="${1:-}"; hook_known "$n" || die "No hook named \"$n\""
-  hook_state | jq -c --arg n "$n" '(.[$n] // null) as $s | {name:$n,
-    phase:(if $s == null then null elif $s.ok then "ready" else "failed" end),
+  hook_state | jq -c --arg n "$n" --argjson now "$(date +%s)" --argjson qs "$(hook_queued_secs)" '(.[$n] // null) as $s | {name:$n,
+    phase:(if $s == null then null elif $s.ok then (if ($now - $s.at) < $qs then "queued" else "ready" end) else "failed" end),
     state:(if $s == null then "never triggered" elif $s.ok then "triggered" else "trigger failed" end),
     at:($s.at // null), sha:($s.sha // null)}'
 }

@@ -144,12 +144,23 @@ GITLAB_JQ='def gldate: (. // null) | if . == null then null else sub("\\.[0-9]+"
 # shellcheck disable=SC2090
 export GITLAB_JQ
 
+# The file name for a key like group/app@ref, the same as deploys' cache_name (used when it
+# is there): "/" and "@" become "_"; a key with a "_" of its own also gets its checksum, so
+# a_b/c@main and a/b_c@main do not meet in one file (PRV-129). Readers glob the folder and
+# go by the key inside, so only the names change.
+githost_cache_name() {
+  if declare -F cache_name >/dev/null; then cache_name "$1"; return; fi
+  local n; n="$(printf '%s' "$1" | tr '/@' '__')"
+  case "$1" in *_*) n="$n-$(printf '%s' "$1" | cksum | cut -d' ' -f1)" ;; esac
+  printf '%s' "$n"
+}
+
 gitlab_head_of() {
   local repo="$1" ref="$2" out="$3" host id
   read -r host id < <(gitlab_project "$repo")
   gitlab_api "$host" "projects/$id/repository/commits/$(gitlab_enc "$ref")" 2>/dev/null \
     | jq -c --arg k "$repo@$ref" "$GITLAB_JQ"'{key:$k, value:{at:(.committed_date | gldate), msg:(.title // (.message | split("\n")[0])), sha:.id}}' \
-    > "$out/$(echo "$repo@$ref" | tr '/@' '__').json" 2>/dev/null || true
+    > "$out/$(githost_cache_name "$repo@$ref").json" 2>/dev/null || true
 }
 
 # The same record pending_of writes: commits from the live commit to the branch, the merge
@@ -158,7 +169,7 @@ gitlab_head_of() {
 # and only when live is not an ancestor is the other direction compared for behindBy.
 gitlab_pending_of() {
   local repo="$1" base="$2" ref="$3" out="$4" key f host id cmp mb status behind="null" n
-  key="$repo@$base@$ref"; f="$out/$(echo "$key" | tr '/@' '__').json"
+  key="$repo@$base@$ref"; f="$out/$(githost_cache_name "$key").json"
   read -r host id < <(gitlab_project "$repo")
   if ! cmp="$(gitlab_api "$host" "projects/$id/repository/compare?from=$(gitlab_enc "$base")&to=$(gitlab_enc "$ref")" 2>"$f.err")"; then
     # As on GitHub, only a 404 (the live commit is gone: branch rewritten) is a record. GitLab
@@ -230,7 +241,7 @@ gitlab_open_prs_of() {
   printf '%s' "$all" \
     | jq -c --arg k "$repo" "$GITLAB_JQ"'{key:$k, value:{all:length,
         drafts:(map(select(.draft // .work_in_progress // false)) | length), bots:(map(select(.author | glbot)) | length)}}' \
-    > "$out/$(echo "$repo" | tr '/' '_').json" 2>/dev/null || true
+    > "$out/$(githost_cache_name "$repo").json" 2>/dev/null || true
 }
 
 # `deploys details` for a GitLab repo: the same JSON as for GitHub. Checks come from the commit
@@ -286,5 +297,5 @@ gitlab_logged_in() {
 # The GitLab user, for `deploys where`.
 gitlab_user() { gitlab_api "$(gitlab_host)" user 2>/dev/null | jq -r '.username // empty' 2>/dev/null; }
 
-export -f gitlab_host githost_split githost_of githost_head_of githost_pending_of githost_open_prs_of \
+export -f gitlab_host githost_cache_name githost_split githost_of githost_head_of githost_pending_of githost_open_prs_of \
   gitlab_api gitlab_enc gitlab_project gitlab_head_of gitlab_pending_of gitlab_open_prs_of gitlab_mrs_of

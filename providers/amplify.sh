@@ -170,7 +170,7 @@ amplify_has() {
 
 # One app to one project. A failed read of its branches or jobs becomes fetchError, not a stop.
 amp_project() {
-  local app="$1" id branches jobs="[]" assoc="[]" err="" br
+  local app="$1" id branches jobs="[]" assoc="[]" err="" warn="" br
   id="$(echo "$app" | jq -r '.appId')"
   # RED/PLAIN empty in the subshell: die's colour codes must not end up in fetchError.
   if ! branches="$( (RED=""; PLAIN=""; amp_branches "$id") 2>&1)"; then err="${branches#Error: }"; branches="[]"; fi
@@ -185,10 +185,16 @@ amp_project() {
       more="$( (RED=""; PLAIN=""; amp_jobs "$id" "$br" 100) 2>/dev/null)" \
         && echo "$more" | jq -e 'type == "array"' >/dev/null 2>&1 && jobs="$more"
     fi
-    assoc="$( (amp_aws amplify list-domain-associations --app-id "$id" | jq -c '.domainAssociations // []') 2>/dev/null)" || assoc="[]"
+    # A failed read is not "no custom domain": the default address would be shown as if it
+    # were the one, so it says so (fetchWarn, PRV-109). Empty or not a list counts as failed
+    # (without pipefail the pipe's status is jq's).
+    assoc="$( (amp_aws amplify list-domain-associations --app-id "$id" | jq -c '.domainAssociations // []') 2>/dev/null)" || assoc=""
+    if ! printf '%s' "$assoc" | jq -e 'type == "array"' >/dev/null 2>&1; then
+      assoc="[]"; warn="custom domains could not be read; the address shown may be the default one"
+    fi
   fi
   [ -n "$br" ] || [ -n "$err" ] || err="no production branch (and more than one branch)"
-  echo "$app" | jq -c --arg b "$br" --argjson brs "$branches" --argjson jobs "$jobs" --argjson assoc "$assoc" --arg err "$err" "$AMP_JQ"'
+  echo "$app" | jq -c --arg b "$br" --argjson brs "$branches" --argjson jobs "$jobs" --argjson assoc "$assoc" --arg err "$err" --arg warn "$warn" "$AMP_JQ"'
     ($brs | map(select(.branchName == $b)) | .[0] // {}) as $branch
     | ($jobs[0] // null) as $new | ([$jobs[] | select(.status == "SUCCEED")][0] // {}) as $live
     | (if $b == "" then null else amp_domain($b; $assoc) end) as $dom
@@ -209,6 +215,7 @@ amp_project() {
        lastAt:(($new // {}) | (.startTime // .commitTime) | amp_t), lastState:(($new // {}).status // null),
        lastSha:($live.commitId // null), lastMsg:($live.commitMessage | amp_msg),
        fetchError:(if $err == "" then null else $err end),
+       fetchWarn:(if $warn == "" then null else $warn end),
        phase:(if $new then ($new | amp_phase) else null end)}'
 }
 
@@ -431,7 +438,10 @@ amplify_logs() {
 # amp_domain_of <branch>: its custom domain, else <branch>.<default domain>. After amp_resolve.
 amp_domain_of() {
   local assoc
-  assoc="$( (amp_aws amplify list-domain-associations --app-id "$AMP_APP" | jq -c '.domainAssociations // []') 2>/dev/null)" || assoc="[]"
+  assoc="$( (amp_aws amplify list-domain-associations --app-id "$AMP_APP" | jq -c '.domainAssociations // []') 2>/dev/null)" || assoc=""
+  if ! printf '%s' "$assoc" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    assoc="[]"; echo "Warning: the custom domains of $AMP_APP could not be read; the address may be the default one" >&2
+  fi
   echo "$AMP_APPJSON" | jq -r --arg b "$1" --argjson a "${assoc:-[]}" "$AMP_JQ"' amp_domain($b; $a) // empty'
 }
 
