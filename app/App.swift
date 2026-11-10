@@ -143,15 +143,22 @@ struct DeployCenterApp: App {
                 }
         }
             .windowResizability(.contentMinSize)
+        .commands { WindowCommands() }
         Settings { SettingsView(store: store) }
         MenuBarExtra(isInserted: $showMenuBar) {
             MenuBarContent(store: store)
         } label: {
-            let n = store.waiting.prs > 0 ? store.waiting.prs : store.waiting.projects
-            let all = Array(store.items.values.joined())
-            let icon = all.contains { $0.state.isActive } ? "paperplane.fill"
-                : (all.contains { if case .failed = $0.state { return true } else { return false } } ? "exclamationmark.triangle.fill" : "paperplane")
-            Image(systemName: icon).task { store.boot() }
+            let w = store.waiting
+            let n = w.prs > 0 ? w.prs : w.projects
+            // No array of all items: this label is built on every change of the store.
+            let active = store.items.values.contains { $0.contains { $0.state.isActive } }
+            let failed = !active && store.items.values.contains { $0.contains { if case .failed = $0.state { return true } else { return false } } }
+            Image(systemName: active ? "paperplane.fill" : (failed ? "exclamationmark.triangle.fill" : "paperplane"))
+                .task { store.boot() }
+                .accessibilityLabel("Deploy Center")
+                .accessibilityValue(active ? L("deploying", "deployt gerade")
+                    : failed ? L("a deploy failed", "ein Deploy ist fehlgeschlagen")
+                    : n > 0 ? L("\(n) waiting", "\(n) warten") : L("everything is live", "alles ist live"))
             if n > 0 { Text("\(n)") }
         }
     }

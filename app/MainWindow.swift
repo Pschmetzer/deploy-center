@@ -8,6 +8,40 @@ import ServiceManagement
 
 // MARK: - Window
 
+extension Color {
+    /// Orange for small warning text: darker in light mode, so 10-pt text stays readable (≈ 4.5:1).
+    static let warningText = Color(nsColor: NSColor(name: nil) { a in
+        a.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua]) != nil
+            ? .systemOrange : NSColor(red: 0.70, green: 0.33, blue: 0.0, alpha: 1)
+    })
+}
+
+/// Commands of the main window, in the View menu: they show ⌘1–3 and ⌘F where people look for them.
+struct WindowActions {
+    var tab: (Int) -> Void
+    var search: () -> Void
+}
+struct WindowActionsKey: FocusedValueKey { typealias Value = WindowActions }
+extension FocusedValues {
+    var windowActions: WindowActions? {
+        get { self[WindowActionsKey.self] }
+        set { self[WindowActionsKey.self] = newValue }
+    }
+}
+
+struct WindowCommands: Commands {
+    @FocusedValue(\.windowActions) private var actions
+    var body: some Commands {
+        CommandGroup(before: .toolbar) {
+            Button(L("All", "Alle")) { actions?.tab(0) }.keyboardShortcut("3").disabled(actions == nil)
+            Button("Vercel") { actions?.tab(1) }.keyboardShortcut("1").disabled(actions == nil)
+            Button("Render") { actions?.tab(2) }.keyboardShortcut("2").disabled(actions == nil)
+            Button(L("Search", "Suchen")) { actions?.search() }.keyboardShortcut("f").disabled(actions == nil)
+            Divider()
+        }
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var store: Store
     // The tab and the filter are remembered between launches.
@@ -29,6 +63,12 @@ struct ContentView: View {
     @State private var noteItem: Item?
     @State private var noteText = ""
     @State private var logItem: Item?
+    @Environment(\.colorSchemeContrast) private var contrast
+    /// A failed deploy's line stays until it is closed; the store clears every line after 5 s.
+    @State private var stickyError: Store.Toast?
+    /// Banner ground: stronger with "Increase contrast".
+    private func ground(_ c: Color, _ o: Double) -> Color { c.opacity(contrast == .increased ? min(1, o * 2.5) : o) }
+
     /// Read so the window redraws at once when demo mode is switched.
     @AppStorage("demoMode") private var demoMode = false
 
@@ -41,6 +81,11 @@ struct ContentView: View {
     private static func tabCount(_ store: Store, _ p: Platform) -> String {
         let n = store.items[p]?.count ?? 0, c = store.changedCount(p)
         return c > 0 ? "\(n) · \(c)" : "\(n)"
+    }
+
+    private static func tabLabel(_ store: Store, _ p: Platform) -> String {
+        let n = store.items[p]?.count ?? 0, c = store.changedCount(p)
+        return L("\(p.rawValue), \(n) projects, \(c) with changes", "\(p.rawValue), \(n) Projekte, \(c) mit Änderungen")
     }
 
     private var scopes: [Platform] { showAll ? Platform.allCases : [platform] }
@@ -118,12 +163,14 @@ struct ContentView: View {
         }
         .frame(minWidth: 680, minHeight: 540)
         .overlay(alignment: .bottom) {
-            if let t = store.toast {
+            if let t = store.toast ?? stickyError {
                 HStack(spacing: 10) {
                     Label(Demo.scrub(t.text, items: allItems), systemImage: t.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
                     if let label = t.undoLabel, let undo = t.undo {
                         Button(label) { undo(); store.toast = nil }.buttonStyle(.link)
                     }
+                    Button { store.toast = nil; stickyError = nil } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.borderless).help(L("Close", "Schließen")).accessibilityLabel(L("Close", "Schließen"))
                 }
                     .font(.callout.weight(.medium))
                     .padding(.horizontal, 14).padding(.vertical, 8)
@@ -131,9 +178,17 @@ struct ContentView: View {
                     .overlay(Capsule().stroke(t.ok ? Color.green.opacity(0.5) : Color.red.opacity(0.5)))
                     .padding(.bottom, 72)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .accessibilityAddTraits(.updatesFrequently)
             }
         }
+        .onChange(of: store.toast) { _, t in
+            guard let t else { return }
+            // Said out loud once, instead of a region that "updates frequently".
+            AccessibilityNotification.Announcement(Demo.scrub(t.text, items: allItems)).post()
+            stickyError = t.ok ? nil : t
+        }
+        .focusedSceneValue(\.windowActions, WindowActions(
+            tab: { n in showAll = n == 0; if n == 1 { platform = .vercel } else if n == 2 { platform = .render } },
+            search: { searchFocused = true }))
         .animation(.easeOut(duration: 0.2), value: store.toast)
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView() }
@@ -211,26 +266,17 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Picker("", selection: tab) {
+            Picker(L("Platform", "Plattform"), selection: tab) {
                 Text(L("All", "Alle")).tag(Tab.all)
-                Text("Vercel  " + Self.tabCount(store, .vercel)).tag(Tab.vercel)
-                Text("Render  " + Self.tabCount(store, .render)).tag(Tab.render)
+                Text("Vercel  " + Self.tabCount(store, .vercel)).tag(Tab.vercel).accessibilityLabel(Self.tabLabel(store, .vercel))
+                Text("Render  " + Self.tabCount(store, .render)).tag(Tab.render).accessibilityLabel(Self.tabLabel(store, .render))
             }
             .pickerStyle(.segmented).labelsHidden().frame(width: 290)
+            .help(L("Projects · of them with changes waiting (⌘1, ⌘2, ⌘3)", "Projekte · davon mit wartenden Änderungen (⌘1, ⌘2, ⌘3)"))
 
             TextField(L("Search", "Suchen"), text: $search).textFieldStyle(.roundedBorder)
                 .focused($searchFocused)
                 .onExitCommand { search = ""; searchFocused = false }
-                .background {
-                    // Keyboard only: ⌘F to the search, ⌘1 and ⌘2 to the tabs.
-                    Group {
-                        Button("") { searchFocused = true }.keyboardShortcut("f")
-                        Button("") { showAll = false; platform = .vercel }.keyboardShortcut("1")
-                        Button("") { showAll = false; platform = .render }.keyboardShortcut("2")
-                        Button("") { showAll = true }.keyboardShortcut("3")
-                    }
-                    .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
-                }
 
             Toggle(isOn: $onlyChanged) {
                 Text(L("Changed only", "Nur mit Änderungen") + " (\(scopes.map { store.changedCount($0) }.reduce(0, +)))")
@@ -338,7 +384,7 @@ struct ContentView: View {
                 Button { store.newVersion = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
                     .help(L("Not now", "Nicht jetzt")).accessibilityLabel(L("Not now", "Nicht jetzt"))
             }
-            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue.opacity(0.06))
+            .padding(.horizontal, 12).padding(.vertical, 6).background(ground(.blue, 0.06))
         }
     }
 
@@ -357,7 +403,7 @@ struct ContentView: View {
                 }
                 Spacer()
             }
-            .padding(12).background(Color.red.opacity(0.1))
+            .padding(12).background(ground(.red, 0.1))
         }
     }
 
@@ -372,6 +418,11 @@ struct ContentView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
         }
+    }
+
+    static func sparkValue(_ v: [Int]) -> String {
+        guard let last = v.last, let lo = v.min(), let hi = v.max() else { return "" }
+        return L("today \(last), lowest \(lo), highest \(hi)", "heute \(last), niedrigster \(lo), höchster \(hi)")
     }
 
     static func triggerName(_ k: String) -> String {
@@ -453,13 +504,15 @@ struct ContentView: View {
                     .chartXAxis(.hidden).chartYAxis(.hidden)
                     .frame(width: 90, height: 30)
                     .help(L("PRs waiting per day, last 14 days", "Wartende PRs pro Tag, letzte 14 Tage"))
-                    .accessibilityLabel(L("PRs waiting per day", "Wartende PRs pro Tag"))
+                    .accessibilityElement()
+                    .accessibilityLabel(L("PRs waiting per day, last \(days.count) days", "Wartende PRs pro Tag, letzte \(days.count) Tage"))
+                    .accessibilityValue(Self.sparkValue(days.map { store.history[$0] ?? 0 }))
                 }
                 if w.projects > 0 {
                     Button(L("Show them", "Anzeigen")) { onlyChanged = true; showAll = true }
                 }
             }
-            .padding(12).background(Color.blue.opacity(0.08))
+            .padding(12).background(ground(.blue, 0.08))
         }
     }
 
@@ -480,7 +533,7 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent).tint(.orange)
             }
             .padding(12)
-            .background(Color.orange.opacity(0.1))
+            .background(ground(.orange, 0.1))
         }
     }
 
@@ -537,9 +590,13 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             let dupes = sameRepoAsAbove(visible)
+            // One lookup table per render instead of a search through all projects per row.
+            let costRows = Dictionary((store.costs?.projects ?? []).map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+            let complete = store.costs?.buildsComplete == true
             List(visible) { item in
-                Row(item: item, sameRepoAsAbove: dupes.contains(Store.key(item)), cost: item.platform == .vercel ? store.buildCost(item.name) : nil,
-                    perBuild: item.platform == .vercel ? store.costs?.perBuild(item.name) : nil,
+                let c = item.platform == .vercel ? costRows[item.name] : nil
+                Row(item: item, sameRepoAsAbove: dupes.contains(Store.key(item)), cost: c?.build,
+                    perBuild: complete ? c.flatMap { p in p.builds.flatMap { $0 > 0 ? p.build / Double($0) : nil } } : nil,
                     pinned: store.isPinned(item), note: store.note(item),
                     showDetails: item.repo == nil ? nil : { detailItem = item },
                     showLog: { logItem = item },
@@ -644,8 +701,23 @@ struct ContentView: View {
     }
 }
 
+/// What VoiceOver's chart reader (Audio Graphs) gets: one value per day.
+struct CostChartDescriptor: AXChartDescriptorRepresentable {
+    let days: [Costs.Day]
+    func makeChartDescriptor() -> AXChartDescriptor {
+        let x = AXCategoricalDataAxisDescriptor(title: L("Day", "Tag"), categoryOrder: days.map(\.day))
+        let top = max(1, days.map(\.build).max() ?? 1)
+        let y = AXNumericDataAxisDescriptor(title: "USD", range: 0...top, gridlinePositions: []) { $0.formatted(.currency(code: "USD")) }
+        let series = AXDataSeriesDescriptor(name: L("Build costs", "Build-Kosten"), isContinuous: false,
+                                            dataPoints: days.map { .init(x: $0.day, y: $0.build) })
+        return AXChartDescriptor(title: L("Vercel build costs per day", "Vercel-Build-Kosten pro Tag"),
+                                 summary: nil, xAxis: x, yAxis: y, additionalAxes: [], series: [series])
+    }
+}
+
 struct CostBar: View {
     let costs: Costs
+    @State private var hovered: String?
     private static let dayFormat: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); return f
     }()
@@ -695,8 +767,17 @@ struct CostBar: View {
             }
             .chartYAxis { AxisMarks(position: .leading) { _ in AxisValueLabel() } }
             .chartXAxis { AxisMarks { _ in AxisValueLabel() } }
+            .chartXSelection(value: $hovered)
+            .overlay(alignment: .topTrailing) {
+                // The value of the day under the pointer, with its full date.
+                if let h = hovered, let d = costs.days.first(where: { String($0.day.suffix(2)) == h }) {
+                    Text(d.day + ": " + d.build.formatted(.currency(code: "USD")))
+                        .font(.caption2.monospacedDigit()).padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(.regularMaterial))
+                }
+            }
             .frame(height: 64)
-            .accessibilityLabel(L("Build costs per day", "Build-Kosten pro Tag"))
+            .accessibilityChartDescriptor(CostChartDescriptor(days: costs.days))
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color.secondary.opacity(0.06))
@@ -830,6 +911,7 @@ struct Row: View {
     var queueText: String? = nil
     var search = ""
     let toggle: () -> Void
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var noColour
 
     /// The part of the name that matches the search, marked.
     private func highlighted(_ text: String) -> AttributedString {
@@ -854,6 +936,8 @@ struct Row: View {
 
             Logo(domain: Demo.on ? nil : item.domain, name: Demo.mask(item.name))
 
+            // Redrawn once a minute, so "3 minutes ago" does not stand still between two loads.
+            TimelineView(.everyMinute) { _ in
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
@@ -869,7 +953,7 @@ struct Row: View {
                     lastDeploy
                     if let cost, cost >= 0.01 {
                         Text(L("builds 7 days: ", "Builds 7 Tage: ") + cost.formatted(.currency(code: "USD")))
-                            .font(.caption2).foregroundStyle(cost >= 5 ? .orange : .secondary)
+                            .font(.caption2).foregroundStyle(cost >= 5 ? Color.warningText : .secondary)
                             .help(perBuild.map { L("About ", "Etwa ") + $0.formatted(.currency(code: "USD")) + L(" per build", " pro Build") } ?? "")
                     }
                     if item.hasNewCommits && sameRepoAsAbove {
@@ -883,7 +967,7 @@ struct Row: View {
                     }
                     if item.hasNewCommits, !sameRepoAsAbove, let since = item.oldestPendingAt {
                         Text(L("oldest waiting commit ", "ältester wartender Commit ") + Self.ago(since))
-                            .font(.caption2).foregroundStyle(Date().timeIntervalSince(since) > 3 * 86400 ? .orange : .secondary)
+                            .font(.caption2).foregroundStyle(Date().timeIntervalSince(since) > 3 * 86400 ? Color.warningText : .secondary)
                             .help(L("The oldest commit that is not live", "Der älteste Commit, der noch nicht live ist"))
                     }
                     if !sameRepoAsAbove, let o = item.openPRs, o > 0 {
@@ -892,6 +976,8 @@ struct Row: View {
                             .help(L("Pull requests on the repo that are not merged yet", "Pull Requests im Repo, die noch nicht gemergt sind"))
                     }
                 }
+            }
+
             }
 
             Spacer()
@@ -914,6 +1000,41 @@ struct Row: View {
         .contentShape(Rectangle())
         .opacity(item.deployable ? 1 : 0.55)
         .onTapGesture { if !item.state.isActive { toggle() } }
+        // VoiceOver: one stop per project, its buttons as actions (VO-Command-Space).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+        .accessibilityValue(item.deployable ? (item.selected ? L("selected", "ausgewählt") : L("not selected", "nicht ausgewählt")) : L("cannot be deployed here", "hier nicht deploybar"))
+        .accessibilityAddTraits(item.deployable ? .isButton : [])
+        .accessibilityAction { if item.deployable && !item.state.isActive { toggle() } }
+        .accessibilityActions {
+            if let showDetails { Button(L("Details", "Details"), action: showDetails) }
+            if let showLog { Button(L("Build log", "Build-Log"), action: showLog) }
+            if case .failed = item.state, let onRetry { Button(L("Try again", "Erneut versuchen"), action: onRetry) }
+            if item.state.isActive, let onCancel { Button(L("Cancel the deploy", "Deploy abbrechen"), action: onCancel) }
+            if let u = item.link.flatMap(URL.init(string:)) { Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) } }
+        }
+    }
+
+    /// What VoiceOver says for the row: name, what waits, the last deploy and what runs now.
+    private var spoken: String {
+        var parts = [Demo.mask(item.name), Demo.on ? item.platform.rawValue : item.detail]
+        if pinned { parts.append(L("pinned", "angeheftet")) }
+        if item.hasNewCommits { parts.append(sameRepoAsAbove ? L("same changes as above", "gleiche Änderungen wie oben") : Self.waitingText(item)) }
+        if let at = item.lastAt {
+            let s = item.lastState ?? ""
+            parts.append(L("last deploy ", "zuletzt deployt ") + Self.ago(at) + (["ready", "live", "succeeded"].contains(s.lowercased()) ? "" : ", " + Self.stateText(s)))
+        }
+        switch item.state {
+        case .queued: parts.append(queueText ?? L("queued", "in der Schlange"))
+        case .starting: parts.append(L("starting", "startet"))
+        case .running(let s): parts.append(s)
+        case .done: parts.append(item.previewId != nil ? L("preview ready", "Vorschau fertig") : L("live", "live"))
+        case .failed(let m): parts.append(L("failed: ", "fehlgeschlagen: ") + Demo.scrub(m, items: [item]))
+        case .skipped: parts.append(L("skipped", "übersprungen"))
+        case .idle: break
+        }
+        if let note { parts.append(L("note: ", "Notiz: ") + note) }
+        return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
     static func waitingText(_ i: Item) -> String {
@@ -972,7 +1093,11 @@ struct Row: View {
             let ok = ["ready", "live", "succeeded"].contains(s)
             let failed = s.contains("fail") || s == "error" || s == "canceled"
             HStack(spacing: 4) {
-                Circle().fill(ok ? Color.green : (failed ? Color.red : Color.orange)).frame(width: 7, height: 7)
+                if noColour {
+                    Image(systemName: ok ? "checkmark.circle" : (failed ? "xmark.circle" : "clock")).font(.caption2)
+                } else {
+                    Circle().fill(ok ? Color.green : (failed ? Color.red : Color.orange)).frame(width: 7, height: 7)
+                }
                 Text(L("Last deploy ", "Zuletzt deployt ") + Self.ago(at) + (ok ? "" : " · " + Self.stateText(s)))
                     .font(.caption2).foregroundStyle(.secondary)
                 if failed, let showLog {
@@ -1017,7 +1142,7 @@ struct Row: View {
                              + (usualMinutes.map { L(" (usually ~\($0) min)", " (meist ~\($0) Min)") } ?? ""))
                             .font(.caption.monospacedDigit())
                             // Twice as long as usual: something may be stuck.
-                            .foregroundStyle(usualMinutes.map { secs > 120 * $0 } == true ? Color.orange : Color.primary)
+                            .foregroundStyle(usualMinutes.map { secs > 120 * $0 } == true ? Color.warningText : Color.primary)
                     }
                 } else { Text(s).font(.caption) }
                 cancelButton

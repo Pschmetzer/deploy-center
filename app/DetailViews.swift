@@ -292,12 +292,22 @@ struct ProjectDetail: View {
                         Spacer(minLength: 8)
                         Image(systemName: pr.ci == "failed" ? "xmark.circle.fill" : pr.ci == "running" ? "clock" : pr.ci == "passed" ? "checkmark.circle.fill" : "minus.circle")
                             .foregroundStyle(pr.ci == "failed" ? .red : pr.ci == "passed" ? .green : .secondary)
-                            .help("CI: \(pr.ci)")
+                            .help(Self.ciText(pr.ci)).accessibilityLabel(Self.ciText(pr.ci))
                     }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// GitHub's CI word for a pull request, in words a person reads.
+    static func ciText(_ ci: String) -> String {
+        switch ci {
+        case "failed": return L("CI: failed", "CI: rot")
+        case "running": return L("CI: still running", "CI: läuft noch")
+        case "passed": return L("CI: passed", "CI: grün")
+        default: return L("CI: no checks", "CI: keine Checks")
+        }
     }
 
     private func labelled(_ title: String, _ text: String) -> some View {
