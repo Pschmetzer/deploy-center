@@ -139,6 +139,9 @@ struct Logo: View {
     let domain: String?
     let name: String
     @State private var image: NSImage?
+    /// Measured once when the logo arrives, not on every redraw.
+    @State private var lightOnClear = false
+    @Environment(\.colorScheme) private var scheme
     @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
@@ -147,7 +150,8 @@ struct Logo: View {
                 Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
                     .padding(3)
                     // A white logo on a transparent ground disappears on white; it gets a dark one.
-                    .background(RoundedRectangle(cornerRadius: 8).fill(image.isLightOnClear ? Color(white: 0.18) : Color.white))
+                    // In dark mode a soft grey instead of a bright white tile.
+                    .background(RoundedRectangle(cornerRadius: 8).fill(lightOnClear ? Color(white: 0.18) : (scheme == .dark ? Color(white: 0.88) : Color.white)))
             } else {
                 RoundedRectangle(cornerRadius: 8).fill(color.gradient)
                 Text(String(name.prefix(1)).uppercased())
@@ -157,10 +161,14 @@ struct Logo: View {
         }
         .frame(width: 34, height: 34)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        // Decoration: the name next to it is read out already.
+        .accessibilityHidden(true)
         // In demo mode no real logo, also not the one fetched before demo mode was switched on.
         .task(id: demoMode ? nil : domain) {
             guard let domain, !demoMode else { image = nil; return }
-            image = await LogoCache.shared.image(for: domain)
+            let img = await LogoCache.shared.image(for: domain)
+            lightOnClear = img?.isLightOnClear ?? false
+            image = img
         }
     }
 
