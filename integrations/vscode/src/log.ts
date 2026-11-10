@@ -1,3 +1,5 @@
+import { platformLabel } from "./model";
+
 // Reading a build log: the first error block, and a prompt to hand it to an AI. The same rules
 // as the Mac app (app/LogTools.swift), so both copy the same excerpt.
 
@@ -54,7 +56,7 @@ export function firstErrorBlock(log: string): { text: string; found: boolean } {
 /** A ready prompt for Claude Code, Cursor or any chat: what failed and the first error block. */
 export function aiPrompt(p: { name: string; platform: string; repo: string | null; state: string | null }, log: string): string {
   const { text } = firstErrorBlock(log);
-  let head = `The ${p.platform === "vercel" ? "Vercel" : "Render"} deploy of "${p.name}" failed.`;
+  let head = `The ${platformLabel(p.platform)} deploy of "${p.name}" failed.`;
   if (p.repo) head += ` Repo: ${p.repo}.`;
   if (p.state) head += ` Status: ${maskSecrets(p.state)}.`;
   const f = fence(text);

@@ -64,6 +64,26 @@ jobs:
       - name: Install tests (bash as sh)
         run: INSTALL_SH=bash bash tests/install-tests.sh
 
+  vscode:
+    # The VS Code / Cursor extension: type check, unit tests against a stand-in deploys, and a
+    # .vsix that builds. Nothing is published.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: integrations/vscode
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run package
+
   docs:
     # site/docs/ is generated from the Markdown in this repo. Fails when the generator errors
     # (a link to a file that does not exist) or when any link or #anchor in site/ is broken.

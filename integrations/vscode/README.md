@@ -1,6 +1,6 @@
 # Deploy Center for VS Code, Cursor and Windsurf
 
-See what is merged but not live on Vercel and Render, right where you code, and deploy it by hand
+See what is merged but not live on Vercel, Render and every other platform `deploys` knows, right where you code, and deploy it by hand
 in one click. It is the editor side of [Deploy Center](https://deploycenter.app): auto-deploy
 stays off, and nothing builds unless you click **Deploy** and confirm.
 
@@ -52,7 +52,7 @@ Without it, the status bar says `deploys not found` and offers the download and 
 
 Every few minutes it runs `deploys changed --json` (what waits, from GitHub) and
 `deploys status --json --no-github` (building and failed, no GitHub calls), with `execFile`,
-an argument list and a timeout, never a shell. A deploy is `deploys vercel|render deploy-json <name>`,
+an argument list and a timeout, never a shell. A deploy is `deploys <platform> deploy-json <name>`,
 which takes the same one-minute start lock as the app, so a double click cannot start two builds.
 Logs, release notes and the site address come from `deploys logs`, `deploys notes` and `deploys open`.
 

@@ -1,8 +1,8 @@
 {
   "name": "deploy-center",
   "displayName": "Deploy Center",
-  "description": "See what is waiting to go live on Vercel and Render, and deploy it by hand, from VS Code, Cursor or Windsurf.",
-  "version": "0.1.0",
+  "description": "See what is waiting to go live on Vercel, Render and the other Deploy Center platforms, and deploy it by hand, from VS Code, Cursor or Windsurf.",
+  "version": "0.2.0",
   "publisher": "deploycenter",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -113,6 +113,11 @@
         "view": "deployCenter.projects",
         "contents": "Nothing is waiting. Every project is on its newest commit.\n[Refresh](command:deployCenter.refresh)",
         "when": "deployCenter.state == empty"
+      },
+      {
+        "view": "deployCenter.projects",
+        "contents": "No project deploys from this folder's repo. To see every project, set Deploy Center › Scope to all.\n[Open Settings](command:workbench.action.openSettings?%22deployCenter.scope%22)",
+        "when": "deployCenter.state == nomatch"
       },
       {
         "view": "deployCenter.projects",

@@ -1,7 +1,17 @@
 // What the deploys CLI prints, read into one list of projects. No vscode here, so it is tested
 // with plain node.
 
-export type Platform = "vercel" | "render";
+/** A provider id as the CLI spells it: vercel, render, netlify, cloudflare, amplify, hook, … */
+export type Platform = string;
+
+const LABELS: Record<string, string> = {
+  vercel: "Vercel", render: "Render", netlify: "Netlify", cloudflare: "Cloudflare", amplify: "AWS Amplify",
+  digitalocean: "DigitalOcean", coolify: "Coolify", hook: "Deploy hook",
+};
+/** "Vercel", "AWS Amplify"; an unknown provider id as it is, first letter upper case. */
+export function platformLabel(p: string): string {
+  return LABELS[p] ?? p.charAt(0).toUpperCase() + p.slice(1);
+}
 
 export interface Project {
   name: string;
@@ -18,6 +28,8 @@ export interface Project {
   failed: boolean;
   /** The newest attempt's state as the platform spells it (READY, ERROR, build_failed, …). */
   state: string | null;
+  /** The name the CLI is given: "name", or "platform:name" when the name is on two platforms. */
+  ref: string;
 }
 
 /** The newest attempt failed: Vercel ERROR, Render build_failed / update_failed / pre_deploy_failed. */
@@ -31,8 +43,21 @@ function num(v: unknown): number | null {
 function str(v: unknown): string | null {
   return typeof v === "string" && v !== "" ? v : null;
 }
+/** Provider ids are lower-case words (docs/PROVIDERS.md); anything else is not a project row. */
 function platform(v: unknown): Platform | null {
-  return v === "vercel" || v === "render" ? v : null;
+  return typeof v === "string" && /^[a-z][a-z0-9_-]*$/.test(v) ? v : null;
+}
+
+const BUSY = ["queued", "building"];
+/**
+ * Building and failed from the shared `phase` (queued, building, ready, failed, canceled) when the
+ * CLI has it; from the platform's own words otherwise (CLIs before providers).
+ */
+function phaseOf(row: Record<string, unknown>, state: string | null, fallbackBuilding: boolean): { building: boolean; failed: boolean } {
+  const phase = str(row.phase);
+  if (phase) return { building: BUSY.includes(phase), failed: phase === "failed" };
+  const building = row.building === true || fallbackBuilding;
+  return { building, failed: !building && isFailedState(state) };
 }
 
 /**
@@ -66,12 +91,11 @@ export function mergeProjects(
     const name = str(s.name), plat = platform(s.platform);
     if (!name || !plat) continue;
     const state = str(s.state);
-    const building = s.building === true;
     out.set(key({ platform: plat, name }), {
-      name, platform: plat, repo: str(s.repo),
+      name, platform: plat, repo: str(s.repo), ref: name,
       pendingCommits: null, pendingPRs: null, oldestPendingAt: null,
       // Waiting comes only from `changed`: it knows GitHub and leaves ignored projects out.
-      waiting: false, building, failed: !building && isFailedState(state), state,
+      waiting: false, ...phaseOf(s, state, false), state,
     });
   }
   for (const c of changed ?? []) {
@@ -79,16 +103,20 @@ export function mergeProjects(
     if (!name || !plat) continue;
     const prev = out.get(key({ platform: plat, name }));
     const state = prev?.state ?? str(c.latestState) ?? str(c.lastState);
-    const building = prev?.building ?? c.building === true;
     out.set(key({ platform: plat, name }), {
-      name, platform: plat,
+      name, platform: plat, ref: name,
       repo: str(c.repo) ?? prev?.repo ?? null,
       pendingCommits: num(c.pendingCommits), pendingPRs: num(c.pendingPRs),
       oldestPendingAt: num(c.oldestPendingAt),
-      waiting: true, building, failed: !building && isFailedState(state), state,
+      waiting: true, ...(prev ? { building: prev.building, failed: prev.failed } : phaseOf(c, state, false)), state,
     });
   }
-  return [...out.values()].sort((a, b) =>
+  const list = [...out.values()];
+  // A name on two platforms is given as platform:name, which only CLIs with providers read.
+  const seen = new Map<string, number>();
+  for (const p of list) seen.set(p.name, (seen.get(p.name) ?? 0) + 1);
+  for (const p of list) if ((seen.get(p.name) ?? 0) > 1) p.ref = `${p.platform}:${p.name}`;
+  return list.sort((a, b) =>
     rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
 

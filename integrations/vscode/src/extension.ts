@@ -3,9 +3,9 @@
 
 import { execFile } from "node:child_process";
 import * as vscode from "vscode";
-import { deployArgs, errorLine, findCli, loadProjects, makeRunner, parseDeploy, Runner, urlIn } from "./cli";
+import { deployArgs, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, Runner, urlIn } from "./cli";
 import { aiPrompt } from "./log";
-import { describe, plural, Project, statusText, summarize } from "./model";
+import { describe, platformLabel, plural, Project, statusText, summarize } from "./model";
 import { parseRemotes, Scope, scopeProjects } from "./repo";
 
 type ViewState = "loading" | "missing" | "error" | "empty" | "nomatch" | "ok";
@@ -143,7 +143,7 @@ class Controller implements vscode.TreeDataProvider<Project> {
     const item = new vscode.TreeItem(p.name, vscode.TreeItemCollapsibleState.None);
     item.id = `${p.platform}:${p.name}`;
     item.description = describe(p);
-    item.tooltip = `${p.name} (${p.platform})${p.repo ? `\n${p.repo}` : ""}\n${describe(p)}`;
+    item.tooltip = `${p.name} (${platformLabel(p.platform)})${p.repo ? `\n${p.repo}` : ""}\n${describe(p)}`;
     item.iconPath = p.failed ? new vscode.ThemeIcon("error", new vscode.ThemeColor("errorForeground"))
       : p.building ? new vscode.ThemeIcon("sync~spin")
       : p.waiting ? new vscode.ThemeIcon("clock", new vscode.ThemeColor("charts.yellow"))
@@ -198,7 +198,7 @@ class Controller implements vscode.TreeDataProvider<Project> {
       { label: "$(markdown) Copy release notes", id: "notes" },
     ];
     if (p.failed) items.splice(1, 0, { label: "$(copy) Copy for AI", description: "the first error block, ready to paste", id: "ai" });
-    const pick = await vscode.window.showQuickPick(items, { title: `${p.name} (${p.platform})` });
+    const pick = await vscode.window.showQuickPick(items, { title: `${p.name} (${platformLabel(p.platform)})` });
     switch (pick?.id) {
       case "deploy": return this.deploy(p);
       case "open": return this.open(p, false);
@@ -218,7 +218,7 @@ class Controller implements vscode.TreeDataProvider<Project> {
   async deploy(p: Project): Promise<void> {
     const run = this.need(); if (!run) return;
     const what = p.waiting ? describe(p) : "Nothing is known to be waiting; this deploys the newest commit again.";
-    const ok = await vscode.window.showWarningMessage(`Deploy ${p.name} to production on ${p.platform === "vercel" ? "Vercel" : "Render"}?`,
+    const ok = await vscode.window.showWarningMessage(`Deploy ${p.name} to production on ${platformLabel(p.platform)}?`,
       { modal: true, detail: what }, "Deploy");
     if (ok !== "Deploy") return;
     const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Starting ${p.name}…` }, () => this.startOne(run, p));
@@ -256,7 +256,7 @@ class Controller implements vscode.TreeDataProvider<Project> {
 
   private async readLog(run: Runner, p: Project): Promise<string | null> {
     const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: `Reading the log of ${p.name}` },
-      () => run(["logs", p.name, String(cfg().logLines)], 60_000));
+      () => run(projectArgs("logs", p, String(cfg().logLines)), 60_000));
     if (r.code !== 0) { void vscode.window.showErrorMessage(`${p.name}: ${errorLine(r, "deploys logs")}`); return null; }
     return r.stdout;
   }
@@ -283,7 +283,7 @@ class Controller implements vscode.TreeDataProvider<Project> {
 
   async copyNotes(p: Project): Promise<void> {
     const run = this.need(); if (!run) return;
-    const r = await run(["notes", p.name], cfg().timeoutMs);
+    const r = await run(projectArgs("notes", p), cfg().timeoutMs);
     if (r.code !== 0 || !r.stdout.trim()) { void vscode.window.showErrorMessage(`${p.name}: ${errorLine(r, "deploys notes")}`); return; }
     await vscode.env.clipboard.writeText(r.stdout.trim() + "\n");
     void vscode.window.showInformationMessage(`Copied the release notes of ${p.name}.`);
@@ -291,7 +291,7 @@ class Controller implements vscode.TreeDataProvider<Project> {
 
   async open(p: Project, dashboard: boolean): Promise<void> {
     const run = this.need(); if (!run) return;
-    const r = await run(["open", p.name, ...(dashboard ? ["--dashboard"] : [])], 30_000);
+    const r = await run(projectArgs("open", p, ...(dashboard ? ["--dashboard"] : [])), 30_000);
     if (r.code !== 0) { void vscode.window.showErrorMessage(`${p.name}: ${errorLine(r, "deploys open")}`); return; }
     // On a Mac the CLI has opened the browser already; elsewhere it prints the address.
     const url = urlIn(r.stdout);

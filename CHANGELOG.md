@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `deploys status --json` carries the shared `phase` of each project. VS Code extension 0.2.0: every platform, not only Vercel and Render; failed and building from `phase`; a name on two platforms is passed as `platform:name`; a hint when no project matches the folder.
 - Observer mode also refuses `guard` and `autofix --only` (without `--dry-run`); both change something. An approval check on a GitLab-linked Vercel project says that approvals are read from GitHub only.
 - Command palette: in observer mode (Settings → Team) it offers no deploy, rollback or "deploy all changed", like the window.
 - Ask Claude → Explain this failure: its button is now "Fix with Claude", the same as on the row (same caps, setup offer and toast).

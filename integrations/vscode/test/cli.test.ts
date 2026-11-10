@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { APP_CLI, candidates, childEnv, deployArgs, errorLine, findCli, loadProjects, makeRunner, parseDeploy, urlIn } from "../src/cli";
+import { APP_CLI, candidates, childEnv, deployArgs, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, urlIn } from "../src/cli";
 import { summarize } from "../src/model";
 import { scopeProjects } from "../src/repo";
 
@@ -103,4 +103,16 @@ test("urlIn and errorLine", () => {
   assert.equal(urlIn(""), null);
   assert.equal(errorLine({ code: 1, stdout: "", stderr: "\u001b[31mError:\u001b[0m boom\n\n", timedOut: false }, "x"), "boom");
   assert.equal(errorLine({ code: 3, stdout: "", stderr: "", timedOut: false }, "x"), "x failed (exit 3).");
+});
+
+test("projectArgs: logs, notes and open take the ref", () => {
+  assert.deepEqual(projectArgs("logs", { ref: "render:web" }, "200"), ["logs", "render:web", "200"]);
+  assert.deepEqual(projectArgs("open", { ref: "web" }, "--dashboard"), ["open", "web", "--dashboard"]);
+  assert.deepEqual(deployArgs({ platform: "netlify", name: "site" }), ["netlify", "deploy-json", "site"]);
+});
+
+test("an observer-mode refusal reaches the message as one line", async () => {
+  const r = await runner({ FAKE_OBSERVER: "1" })(deployArgs({ platform: "vercel", name: "app-web" }), 5000);
+  assert.equal(r.code, 1);
+  assert.match(errorLine(r, "deploy"), /^Observer mode/);
 });
