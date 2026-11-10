@@ -40,7 +40,7 @@
 #                                             --wait follows it until live or failed
 #   deploys history <project> [n]             the last n deploys (default 10): when, state, commit, source
 #   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>)
-#   deploys autofix [--dry-run] [--only <platform> <p>]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
+#   deploys autofix [--dry-run] [--only <platform> <p> [--again]]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
 #   deploys autofix set-token | routine <id> | list | forget-token | prompt | status | sync | schedule on|off
 #                                             (see docs/AUTOFIX.md)
 #   deploys ai explain|notes|ship <p>         ask Claude (your own Anthropic key): why a build failed,
@@ -212,6 +212,8 @@ args=()
 forced=0; force_reason=""
 while [ $# -gt 0 ]; do
   case "$1" in
+    # "--" ends the options: what follows is taken as it is (a name from an API, for one).
+    --) shift; args+=("$@"); break ;;
     --json) json=1 ;;
     --force) forced=1; force_reason="${2:-}"; [ $# -lt 2 ] || shift ;;
     --force=*) forced=1; force_reason="${1#--force=}" ;;
@@ -679,8 +681,10 @@ freeze_check() {
   export DEPLOYS_WINDOW_CHECKED=1
 }
 # A start inside a window, and why, goes to the journal the app shows.
+# The app writes its own entry for what it starts (DEPLOYS_CALLER=app): one line, not two.
 journal_forced() {  # journal_forced <platform> <name>
   [ -n "$frozen" ] || return 0
+  [ "${DEPLOYS_CALLER:-}" != app ] || return 0
   journal_add "$1" "$2" forced "Deployed in the window \"$frozen\": $force_reason"
 }
 
@@ -694,8 +698,13 @@ journal_add() {  # journal_add <platform> <name> <result> <detail>
   local f p; f="$(journal_file)"
   case "$1" in vercel) p=Vercel;; render) p=Render;; *) p="$1";; esac
   mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
+  # The app shortens the file now and then: both take "<file>.lock" (a folder) for that moment.
+  # Waited for two seconds at most; a line is never lost to a stale lock.
+  local i=0 locked=""
+  while [ "$i" -lt 20 ]; do mkdir "$f.lock" 2>/dev/null && { locked=1; break; }; i=$((i + 1)); sleep 0.1; done
   jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$4" \
     '{at:(now | floor | todate), platform:$p, name:$n, result:$r, seconds:null, detail:$d}' >> "$f" 2>/dev/null || true
+  [ -z "$locked" ] || rmdir "$f.lock" 2>/dev/null || true
 }
 
 # What a pending diff touches, from a GitHub comparison (its .files): migrations are red, lockfiles,
@@ -836,9 +845,11 @@ af_mask() {
 
 # Open (or merged) autofix PRs of one project: gh REST only, branch claude/autofix-<project>-*.
 af_prs() {  # af_prs <owner/repo> <project> <open|closed>
+  # By its branch (claude/autofix-<project>-<sha7>), or by the title the routine is told to use
+  # ("autofix(<project>): …") when the session named its branch differently.
   # The project name goes to jq as --arg, never into the filter text.
   gh api --cache 2m "repos/$1/pulls?state=$3&per_page=100&sort=updated&direction=desc" \
-    | jq -c --arg b "claude/autofix-$2-" '[.[] | select(.head.ref | startswith($b)) | {number, merged_at, closed_at, merge_commit_sha, ref:.head.ref, url:.html_url}]'
+    | jq -c --arg b "claude/autofix-$2-" --arg t "autofix($2):" '[.[] | select((.head.ref | startswith($b)) or ((.title // "") | startswith($t))) | {number, merged_at, closed_at, merge_commit_sha, ref:.head.ref, title:(.title // ""), url:.html_url}]'
 }
 
 # One fire. The token goes to curl on stdin, never as an argument. Prints "<code>\t<body>".
@@ -943,27 +954,34 @@ af_lock() {
   echo "$d"
 }
 
+# The fires whose PR is still followed: handed over and not merged, and for a week those whose
+# build turned green by itself while their PR was still open (so "open" does not stay for ever).
+AF_SYNC_SEL='.status == "fired" and (.mergedSha == null)
+  and ((.done != true) or (.prState == "open" and (.at // 0) > ($t - 604800)))'
+
 # Step 1 of a run, and all of `autofix sync`: each handed-over failure gets the state of its fix PR.
 # Works on the caller's st, all, now, dry and rc (bash scoping), so it never fires anything.
 af_sync_fires() {  # af_sync_fires [<platform> <project>]  (the two: only that one)
   # 1. A merged fix is only announced, never deployed: deploying stays a click in the app (or `deploys … deploy`).
   #    Each fire also gets the state of its PR (prNumber, prState, prUrl) for the app.
-  local open_fires f p plat repo did prs m msha fsha fb
-  open_fires="$(echo "$st" | jq -c --arg pl "${1:-}" --arg n "${2:-}" '.fires[] | select(.status == "fired" and (.mergedSha == null) and (.done != true))
-    | select($n == "" or (.project == $n and .platform == $pl))')"
+  local open_fires f p plat repo did prs m msha fsha fb isdone
+  open_fires="$(echo "$st" | jq -c --arg pl "${1:-}" --arg n "${2:-}" --argjson t "$now" ".fires[] | select($AF_SYNC_SEL)
+    | select(\$n == \"\" or (.project == \$n and .platform == \$pl))")"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     p="$(echo "$f" | jq -r .project)"; plat="$(echo "$f" | jq -r .platform)"; repo="$(echo "$f" | jq -r .repo)"; did="$(echo "$f" | jq -r .deployId)"
     fsha="$(echo "$f" | jq -r '.sha // ""')"
     # The exact fix branch when the commit is known: "web" must not match the PRs of "web-app".
     if [ -n "$fsha" ]; then fb="claude/autofix-$p-${fsha:0:7}"; else fb=""; fi
+    isdone="$(echo "$f" | jq -r '.done // false')"
     local cur; cur="$(echo "$all" | jq -c --arg p "$p" --arg pl "$plat" '.[] | select(.name == $p and .platform == $pl)')"
-    if [ -n "$cur" ] && [ "$(echo "$cur" | jq "$AUTOFIX_FAILED")" != true ]; then
+    if [ "$isdone" != true ] && [ -n "$cur" ] && [ "$(echo "$cur" | jq "$AUTOFIX_FAILED")" != true ]; then
       st="$(echo "$st" | jq --arg d "$did" '(.fires[] | select(.deployId == $d)).done = true')"
       echo "autofix: $p is no longer failed."; continue
     fi
     prs="$(af_prs "$repo" "$p" closed 2>/dev/null)" || { echo "autofix: could not ask GitHub about $p" >&2; rc=1; continue; }
-    prs="$(echo "$prs" | jq -c --arg b "$fb" 'map(select($b == "" or .ref == $b))')"
+    # The exact branch; a PR found by its title on a branch of its own counts too.
+    prs="$(echo "$prs" | jq -c --arg b "$fb" 'map(select($b == "" or .ref == $b or ((.ref | startswith("claude/autofix-")) | not)))')"
     m="$(echo "$prs" | jq -c --argjson at "$(echo "$f" | jq .at)" '[.[] | select(.merged_at != null and ((.merged_at | fromdateiso8601) > $at))][0] // empty')"
     if [ -z "$m" ]; then
       # Not merged: closed without a merge, or still open.
@@ -973,11 +991,16 @@ af_sync_fires() {  # af_sync_fires [<platform> <project>]  (the two: only that o
         st="$(echo "$st" | jq --arg d "$did" --argjson c "$c" '(.fires[] | select(.deployId == $d)) |= . + {prNumber:$c.number, prState:"closed", prUrl:($c.url // null)}')"
         continue
       fi
-      o="$(af_prs "$repo" "$p" open 2>/dev/null | jq -c --arg b "$fb" '[.[] | select($b == "" or .ref == $b)][0] // empty' 2>/dev/null)" || o=""
+      o="$(af_prs "$repo" "$p" open 2>/dev/null | jq -c --arg b "$fb" '[.[] | select($b == "" or .ref == $b or ((.ref | startswith("claude/autofix-")) | not))][0] // empty' 2>/dev/null)" || o=""
       [ -z "$o" ] || st="$(echo "$st" | jq --arg d "$did" --argjson o "$o" '(.fires[] | select(.deployId == $d)) |= . + {prNumber:$o.number, prState:"open", prUrl:($o.url // null)}')"
       continue
     fi
     msha="$(echo "$m" | jq -r .merge_commit_sha)"
+    # The build is green already: the PR state is kept current, nothing is announced.
+    if [ "$isdone" = true ]; then
+      st="$(echo "$st" | jq --arg d "$did" --argjson m "$m" '(.fires[] | select(.deployId == $d)) |= . + {prNumber:$m.number, prState:"merged", prUrl:($m.url // null)}')"
+      continue
+    fi
     if [ -n "$dry" ]; then echo "autofix (dry run): would announce the merged fix for $p ($msha, PR #$(echo "$m" | jq .number))"; continue; fi
     st="$(echo "$st" | jq --arg d "$did" --arg s "$msha" --argjson m "$m" --argjson t "$now" \
       '(.fires[] | select(.deployId == $d)) |= . + {mergedSha:$s, pr:$m.number, prNumber:$m.number, prState:"merged", prUrl:($m.url // null), mergedSeenAt:$t}')"
@@ -988,8 +1011,8 @@ af_sync_fires() {  # af_sync_fires [<platform> <project>]  (the two: only that o
 # Exit codes of `autofix --only` (AF_* below); a normal run only uses 0 and 1.
 AF_NOT_FAILED=2; AF_BUSY=3; AF_CAP=4; AF_NO_ROUTINE=5; AF_LOCKED=6
 
-autofix_run() {  # autofix_run [dry] [<platform> <project>]  (the two: --only, this one failure now)
-  local dry="${1:-}" oplat="${2:-}" oname="${3:-}" lock all now trig st rc=0
+autofix_run() {  # autofix_run [dry] [<platform> <project> [again]]  (the two: --only, this one failure now)
+  local dry="${1:-}" oplat="${2:-}" oname="${3:-}" again="${4:-}" lock all now trig st rc=0
   lock="$(af_lock)" || { [ -n "$oname" ] && return "$AF_LOCKED"; return 1; }
   # Whatever ends the run (set -e, a signal), the lock goes with it: else every run for 30 minutes
   # says "running already".
@@ -1033,8 +1056,13 @@ autofix_run() {  # autofix_run [dry] [<platform> <project>]  (the two: --only, t
           elif [ $(( now - pat )) -ge 900 ]; then echo "autofix: the hand-over of $p never finished. To try again: deploys autofix --only $plat $p"; fi
           continue
         fi ;;
-      *) [ -z "$oname" ] || { echo "autofix: this failed build of $p was handed over already ($prev); not again."; out="$AF_BUSY"; }
-         continue ;;
+      *) # --again (with --only): a session that ended without a fix PR may, 90 minutes on, get the
+         # same build once more. The caps and the open-PR check below still apply.
+         if [ -n "$again" ] && [ "$prev" = fired ] && [ $(( now - pat )) -ge 5400 ]; then echo "autofix: handing $p over again (--again)."
+         else
+           [ -z "$oname" ] || { echo "autofix: this failed build of $p was handed over already ($prev); not again.$([ "$prev" = fired ] && echo " After 90 minutes without a fix PR: --again")"; out="$AF_BUSY"; }
+           continue
+         fi ;;
     esac
     # Fix PRs are opened on GitHub only. Said once (recorded), not every ten minutes.
     if [ "$(githost_of "$repo")" != github ]; then
@@ -2355,7 +2383,7 @@ BASH
     lock="$(af_lock 2>/dev/null)" || { echo "autofix: a run is in progress; it syncs too."; exit 0; }
     trap 'rmdir "$lock" 2>/dev/null || true' EXIT
     st="$(af_state)"; now="$(date +%s)"; dry=""; rc=0; all="[]"
-    if [ -n "$(echo "$st" | jq -c '.fires[] | select(.status == "fired" and (.mergedSha == null) and (.done != true))')" ]; then
+    if [ -n "$(echo "$st" | jq -c --argjson t "$now" ".fires[] | select($AF_SYNC_SEL)")" ]; then
       all="$(af_all)" || rc=1
       af_sync_fires
       echo "$st" | af_save
@@ -2376,14 +2404,15 @@ BASH
   "autofix "*)
     # autofix [--dry-run]: hand a failed build to the routine, deploy a merged fix. For launchd.
     # autofix --only <platform> <project>: this one failure now (exit codes in docs/AUTOFIX.md).
-    dry=""; oplat=""; oname=""; shift
+    dry=""; oplat=""; oname=""; again=""; shift
     while [ $# -gt 0 ]; do
       case "$1" in
         --dry-run) dry=1;;
+        --again) again=1;;
         --only) case "${2:-}" in vercel|render) ;; *) die "Usage: deploys autofix --only <vercel|render> <project>";; esac
                 [ -n "${3:-}" ] || die "Usage: deploys autofix --only <vercel|render> <project>"
                 oplat="$2"; oname="$3"; shift 2;;
-        *) die "Unknown option $1. Usage: deploys autofix [--dry-run] [--only <platform> <project>] | set-token | routine [<id>] | list | status | sync | prompt | schedule on|off";;
+        *) die "Unknown option $1. Usage: deploys autofix [--dry-run] [--only <platform> <project> [--again]] | set-token | routine [<id>] | list | status | sync | prompt | schedule on|off";;
       esac; shift
     done
     if [ -z "$dry" ]; then
@@ -2391,7 +2420,8 @@ BASH
       [ -n "$(af_routine)" ] || { echo "${ERED}Error:${EPLAIN} No routine set. See docs/AUTOFIX.md, then: deploys autofix routine <trig_id>" >&2; exit "$nr"; }
       [ -n "$(af_token)" ] || { echo "${ERED}Error:${EPLAIN} No routine token. Run: pbpaste | deploys autofix set-token" >&2; exit "$nr"; }
     fi
-    autofix_run "$dry" "$oplat" "$oname" ;;
+    [ -z "$again" ] || [ -n "$oname" ] || die "--again is for one failure: deploys autofix --only <platform> <project> --again"
+    autofix_run "$dry" "$oplat" "$oname" "$again" ;;
 
   "providers "*)
     # providers [--json] | enable <p> | disable <p>

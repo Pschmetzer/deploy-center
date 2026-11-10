@@ -1154,6 +1154,35 @@ expect "CLI-067: subscription key, AccountKey, bare Bearer, cookies, signed URLs
 
 # CLI-017: doctor names perl and curl.
 expect "CLI-017: doctor has perl and curl" "$(run "$O" "$E" doctor; jq -c '{perl, curl} | map_values(type)' "$O")" $'0\n{"perl":"boolean","curl":"boolean"}'
+# INT-002: release.sh --check-addons refuses an add-on that changed without a new version.
+ra="$tmp/rel-addons"; mkdir -p "$ra/integrations/mcp"; cp release.sh "$ra/"
+echo '{"version":"0.1.0"}' > "$ra/integrations/mcp/package.json"; echo a > "$ra/integrations/mcp/server.mjs"
+gq() { git -C "$ra" -c user.name=t -c user.email=t@example.invalid "$@" >/dev/null 2>&1; }
+gq init -q; gq add -A; gq commit -qm one; gq tag v0.1.0
+echo b > "$ra/integrations/mcp/server.mjs"; gq commit -qam two
+expect "INT-002: changed add-on with the same version is refused" "$("$ra/release.sh" --check-addons 2>&1 | grep -c 'integrations/mcp (0.1.0)')" "1"
+echo '{"version":"0.1.1"}' > "$ra/integrations/mcp/package.json"; gq commit -qam three
+expect "INT-002: with a new version it passes" "$("$ra/release.sh" --check-addons >/dev/null 2>&1; echo $?)" "0"
+# LOG-034: "--" ends the options, so a name can never become --json or --force.
+expect "LOG-034: after --, --json is an argument" "$(run "$O" "$E" ignore -- --json; grep -c 'Unknown option --json' "$E")" $'1\n1'
+# LOG-082: what the app starts (DEPLOYS_CALLER=app) the app writes to the journal itself.
+fresh; echo '{"deny":[{"reason":"closed"}]}' > "$e2e/config/window.json"; : > "$DEPLOYS_JOURNAL"
+expect "LOG-082: a forced start from the app: no second journal line" \
+  "$(DEPLOYS_CALLER=app run "$O" "$E" deploy web --force "hotfix"; wc -l < "$DEPLOYS_JOURNAL" | tr -d ' ')" $'0\n0'
+rm -f "$e2e/config/window.json"
+# LOG-042, LOG-038, LOG-043: autofix --again, PR state of fires that turned green, PRs by title.
+expect "LOG-042: --again hands a fired build over once more after 90 minutes" "$(
+  af_all() { echo "$ALL"; }; af_prs() { [ "$3" = open ] && echo '[]' || echo '[]'; }
+  af_reset; ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"}]'
+  jq -n --argjson t "$(date +%s)" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",status:"fired",at:($t-6000)}]}' > "$AUTOFIX_STATE"
+  echo "$(afonly vercel web):$(fired):$(afonly vercel web 1):$(fired)")" "3:0:0:1"
+expect "LOG-038: a fire that turned green still learns its PR was merged" "$(
+  af_prs() { [ "$3" = open ] && echo '[]' || jq -nc --arg m "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '[{number:9, merged_at:$m, closed_at:$m, merge_commit_sha:"m9", ref:"claude/autofix-web-aaaa111", url:"u"}]'; }
+  jq -n --argjson t "$(date +%s)" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",sha:"aaaa111",status:"fired",done:true,prState:"open",prNumber:9,at:($t-100)}]}' > "$AUTOFIX_STATE"
+  st="$(af_state)"; all='[]'; now="$(date +%s)"; dry=""; rc=0; DEPLOYS_NOTIFY=0 af_sync_fires >/dev/null; echo "$st" | jq -r '.fires[0].prState')" "merged"
+mkdir -p "$tmp/gh43"; printf '#!/bin/bash\necho %s\n' "'[{\"number\":5,\"title\":\"autofix(web): missing env\",\"head\":{\"ref\":\"fix-web-build\"},\"html_url\":\"u\"},{\"number\":6,\"title\":\"other\",\"head\":{\"ref\":\"x\"}}]'" > "$tmp/gh43/gh"; chmod +x "$tmp/gh43/gh"
+expect "LOG-043: a fix PR is found by its title on another branch" \
+  "$( (unset -f af_prs; PATH="$tmp/gh43:$PATH"; DEPLOYS_LIB=1 . ./deploys; set +e; af_prs me/web web open | jq -c '[.[].number]') )" "[5]"
 unset RENDER_API_KEY DEPLOYS_JOURNAL
 # ===== end CLI track =====
 

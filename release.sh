@@ -5,6 +5,7 @@
 #                                checksums.txt), sign the zip for Sparkle into site/appcast.xml,
 #                                and write the Homebrew cask and formula
 #   ./release.sh --publish-only  publish the zip already in dist/ (after a failed upload; no new build)
+#   ./release.sh --check-addons  only check that every add-on changed since the last release has a new version
 #
 # Needs a "Developer ID Application" certificate and a notarytool profile. Give them as
 # DEVELOPER_ID and NOTARY_PROFILE, or put them in .release.env (not tracked):
@@ -23,7 +24,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-usage() { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "release.sh: $*" >&2; exit 1; }
 
 mode=build
@@ -32,10 +33,31 @@ for arg in "$@"; do
     --publish|--publish-only)
       [ "$mode" = build ] || die "use only one of --publish and --publish-only"
       mode="${arg#--}" ;;
+    --check-addons) mode="check-addons" ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; echo >&2; echo "release.sh: unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
+
+# Add-ons update by their own version (Claude Code reads plugin.json, VS Code and npm package.json):
+# one that changed since the last release tag but kept its version never reaches anyone.
+# Which number comes next stays the maintainer's call; this only refuses to forget it.
+ADDON_VERSION_FILES="integrations/claude-code/.claude-plugin/plugin.json integrations/mcp/package.json integrations/vscode/package.json"
+check_addons() {  # check_addons <commit>
+  local base f dir old new bad=""
+  base="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$1^" 2>/dev/null)" || { echo "release.sh: no earlier release tag; add-on versions not compared"; return 0; }
+  for f in $ADDON_VERSION_FILES; do
+    git cat-file -e "$1:$f" 2>/dev/null || continue
+    dir="${f%/package.json}"; dir="${dir%/.claude-plugin/plugin.json}"
+    [ -n "$(git diff --name-only "$base" "$1" -- "$dir" 2>/dev/null)" ] || continue
+    new="$(git show "$1:$f" | jq -r '.version // empty')"
+    old="$(git show "$base:$f" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
+    [ "$new" != "$old" ] || bad="$bad $dir ($new)"
+  done
+  [ -z "$bad" ] || die "changed since $base but still the same version:$bad. Raise their version first"
+  echo "Add-on versions: fine (compared with $base)."
+}
+if [ "$mode" = "check-addons" ]; then check_addons HEAD; exit 0; fi
 
 [ -f .release.env ] && . ./.release.env
 # A release always trusts the built-in key and feed: the two overrides are for local update tests
@@ -119,6 +141,7 @@ if publishing; then
   [ -z "$tag_sha" ] || [ "$tag_sha" = "$COMMIT" ] || die "$TAG exists already on another commit ($tag_sha): raise VERSION"
   # The CLI tarball is packed from this commit after the slow part; fail now if it cannot be.
   git cat-file -e "$COMMIT:README-CLI.md" 2>/dev/null || die "$COMMIT has no README-CLI.md, which the CLI tarball needs"
+  check_addons "$COMMIT"
 fi
 
 # Before a release goes out: the tests, and the guard against personal data in the public repo

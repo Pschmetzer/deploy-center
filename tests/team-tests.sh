@@ -259,6 +259,10 @@ jq '(.[] | select(.state == "APPROVED")) += {commit_id:"oldhead"}' "$FIX/api/rep
   expect "CLI-040: a review of the final head counts" "$(team_approvals acme/shop aaaa111aaaa111aaaa111aaaa111aaaa111aaaa dev-one | jq -c '[.have[].user]')" '["dev-two"]'
   [ "$fails" = 0 ] || exit 1
 ) || fails=$((fails + 1))
+# LOG-078: where observer mode comes from, as a field (the from text is for people).
+expect "LOG-078: readonly.source env" "$(DEPLOYS_READONLY=1 "${D[@]}" config --json | jq -r .readonly.source)" "env"
+fresh
+expect "LOG-078: readonly.source team" "$(GH_USER=dev-watcher "${D[@]}" config --json | jq -r .readonly.source)" "team"
 # ===== end CLI track =====
 
 echo

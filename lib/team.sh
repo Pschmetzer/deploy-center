@@ -137,9 +137,10 @@ def resolve($n):
      ({}; if .[$o.login] then . else .[$o.login] = $o.from end)) as $obs
 | ($obs | to_entries | map(select((.key | ascii_downcase) == ($me | ascii_downcase))) | .[0].value // null) as $meObs
 | {me:(if $me == "" then null else $me end),
-   readonly:(if $ro != "" then {value:true, from:$ro}
-             elif $meObs then {value:true, from:"observers in \($meObs)"}
-             else {value:false, from:"default"} end),
+   # source: env, file or team, for the app (the from text is for people and may change).
+   readonly:(if $ro != "" then {value:true, from:$ro, source:(if ($ro | startswith("DEPLOYS_READONLY")) then "env" else "file" end)}
+             elif $meObs then {value:true, from:"observers in \($meObs)", source:"team"}
+             else {value:false, from:"default", source:null} end),
    observers:{value:($obs | keys), from:$obs},
    groups:(reduce ((cf[] as $f | ($f.config.groups // {}) | to_entries[] | {k:.key, v:.value, from:($f | src)}),
                    (($ov.groups // {}) | to_entries[] | {k:.key, v:.value, from:"overrides.json"})) as $g
