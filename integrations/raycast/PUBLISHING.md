@@ -25,6 +25,6 @@ This folder is not on the Store yet. Raycast extensions are published as a pull 
    Raycast's reviewers may ask for changes; answer them in that PR.
 6. **Updates.** Later changes: add a line on top of
    `CHANGELOG.md` under `## [Change] - {PR_MERGE_DATE}`, and run `npm run publish` again. If
-   someone else changed the Store copy, `npx @raycast/api@latest pull-contributions` first.
+   someone else changed the Store copy, `npx ray pull-contributions` (the `ray` from package-lock.json, not `@latest`) first.
 
 Keep the two copies in step: changes are made here first, then published.

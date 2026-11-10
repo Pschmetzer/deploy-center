@@ -63,7 +63,8 @@ case "\$*" in
   "ledger --json") cat "$here/../tests/fixtures/savings/ledger-report.json" ;;
   "doctor") echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
   "changed --json") [ -n "\${FAKE_NOTHING:-}" ] && { echo '[]'; exit 0; }
-    jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
+    jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))
+      | if env.FAKE_GITLAB == "1" then map(if .repo == "me/app" then .repo = "gitlab.com/grp/sub/app" else . end) else . end' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
   # Without --yes: what it would start, leaving out ignored.json as the real one does
   # (FAKE_IGNORE_IGNORED=1: a CLI that starts more than the Action asked for).
   "deploy-changed --json") ign="\${DEPLOYS_CONFIG:-/nonexistent}/ignored.json"
@@ -91,7 +92,8 @@ case "\$*" in
   "netlify rollback shop") echo '{"id":"nd-0","state":"ready"}' ;;
   "render deploy-json api") echo '{"id":"dep-1","serviceId":"srv-1","state":"created"}' ;;
   "vercel rollback app-web") echo '{"id":"dpl_0","state":"READY"}' ;;
-  "details me/app aaaa111 main") cat "$tmp/details-web.json" ;;
+  "details me/app aaaa111 main"|"details gitlab.com/grp/sub/app aaaa111 main") cat "$tmp/details-web.json" ;;
+  "details gitlab.com/grp/sub/app bbbb222 main") cat "$tmp/details-api.json" ;;
   "details me/app bbbb222 main") cat "$tmp/details-api.json" ;;
   "--help") echo "deploys changed [--json]"; [ -n "\${FAKE_RISK:-}" ] && echo "  deploys risk <project> [--json]" ;;
   "risk app-web --json") echo '{"hints":[{"hint":"touches the database schema"}]}' ;;
@@ -133,13 +135,23 @@ SH
 echo '{"number":12,"title":"Login page","html_url":"https://github.com/me/app/pull/12","user":{"login":"dev-one","type":"User"},"labels":[]}' > "$tmp/pr12.json"
 echo '{"number":13,"title":"New copy","html_url":"https://github.com/me/app/pull/13","user":{"login":"dev-two","type":"User"},"labels":[{"name":"AI-Generated"}]}' > "$tmp/pr13.json"
 echo '{"number":14,"title":"Pool size","html_url":"https://github.com/me/app/pull/14","user":{"login":"dev-two","type":"User"},"labels":[{"name":"perf"}]}' > "$tmp/pr14.json"
+# glab: merge requests of gitlab.com/grp/sub/app (the path URL-encoded), as GitLab answers them.
+cat > "$tmp/bin/glab" <<SH
+#!/bin/bash
+printf '%s\n' "\$*" >> "$tmp/glab.log"
+case "\$*" in
+  "api --hostname gitlab.com projects/grp%2Fsub%2Fapp/merge_requests/12") echo '{"iid":12,"title":"MR login","web_url":"https://gitlab.com/grp/sub/app/-/merge_requests/12","author":{"username":"dev-one"},"labels":["ai-generated"]}' ;;
+  "api --hostname gitlab.com projects/grp%2Fsub%2Fapp/merge_requests/13") echo '{"iid":13,"title":"MR copy","web_url":"https://gitlab.com/grp/sub/app/-/merge_requests/13","author":{"username":"renovate-bot"},"labels":[]}' ;;
+  *) echo "unexpected glab: \$*" >&2; exit 1 ;;
+esac
+SH
 cat > "$tmp/bin/curl" <<SH
 #!/bin/bash
 # Records the config from stdin (the URL) and the body file, like curl -K - --data-binary @f.
 cat > "$tmp/curl.stdin"; printf '%s\n' "\$@" > "$tmp/curl.args"
 for a in "\$@"; do case "\$a" in @*) cp "\${a#@}" "$tmp/curl.body" ;; esac; done
 SH
-chmod +x "$tmp/bin/deploys" "$tmp/bin/curl" "$tmp/bin/gh"
+chmod +x "$tmp/bin/deploys" "$tmp/bin/curl" "$tmp/bin/gh" "$tmp/bin/glab"
 export PATH="$tmp/bin:$PATH" DEPLOYS="$tmp/bin/deploys" DEPLOYS_CONFIG="$tmp/config"
 unset RENDER_API_KEY DEPLOYS_NOTIFY_URL DEPLOYS_NOTIFY_FORMAT DEPLOYS_DIGEST_REPO DEPLOYS_DIGEST_WORKFLOW DEPLOYS_AGENT_AUTHORS DEPLOYS_AGENT_LABELS
 
@@ -472,6 +484,11 @@ nogh="$tmp/nogh"; mkdir -p "$nogh"; for t in jq bash date sed grep tr cat mktemp
 ln -sf "$tmp/bin/deploys" "$nogh/deploys"
 expect "digest: without gh, commit messages stand in for PR titles" \
   "$(PATH="$nogh" RENDER_API_KEY=x digest/digest.sh --json | jq -c '.projects[0].prs | map(.title)')" '["Add login page (#12)","Update copy (#13)"]'
+j="$(FAKE_GITLAB=1 RENDER_API_KEY=x digest/digest.sh --json)"
+expect "digest: GitLab merge requests through glab" "$(jq -c '.projects[0].prs | map([.number, .title, .url])' <<<"$j")" \
+  '[[12,"MR login","https://gitlab.com/grp/sub/app/-/merge_requests/12"],[13,"MR copy","https://gitlab.com/grp/sub/app/-/merge_requests/13"]]'
+contains "digest: glab asked for the MR" "$(cat "$tmp/glab.log" 2>/dev/null)" "merge_requests/12"
+expect "digest: GitLab repos never go to gh" "$(grep -c 'grp' "$tmp/gh.log" || true)" 0
 expect "digest: --issue needs a repo" "$(digest/digest.sh --issue >/dev/null 2>&1; echo $?)" 1
 expect "digest: --post needs a URL" "$(digest/digest.sh --post >/dev/null 2>&1; echo $?)" 1
 expect "digest: a bad repo is refused" "$(DEPLOYS_DIGEST_REPO='me/ops;x' digest/digest.sh >/dev/null 2>&1; echo $?)" 1

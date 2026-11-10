@@ -109,6 +109,22 @@ jobs:
       - name: Check links
         run: python3 scripts/check-links.py site
 
+  public-commits:
+    # Names and paths often land in commit messages, not in files: the same check as for the
+    # tracked files, on every commit message of the pull request.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: No personal data in commit messages
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: git log --format=%B "$BASE..HEAD" | scripts/check-public.sh --stdin
+
   changelog:
     # A change to the CLI or the app should say so in CHANGELOG.md. A warning, not a failure:
     # the label "no-changelog" silences it.
