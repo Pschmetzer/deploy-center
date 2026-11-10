@@ -3,27 +3,43 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Deploy Center: stop paying for a build on every push</title>
+<title>Deploy Center: manual deploys for Vercel and Render, free Mac app</title>
 <meta name="description" content="Free, open-source Mac app. Turn off auto-deploy on Vercel and Render in one click, then deploy what changed in two. No account, no telemetry.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <link rel="canonical" href="https://deploycenter.app/">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
 <meta property="og:title" content="Deploy Center: stop paying for a build on every push">
 <meta property="og:description" content="Turn off auto-deploy on Vercel and Render in one click. Deploy what changed in two. Free and open source for macOS.">
-<meta property="og:image" content="https://deploycenter.app/img/og.png">
 <meta property="og:url" content="https://deploycenter.app/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="img/icon.png">
+<meta name="twitter:title" content="Deploy Center: stop paying for a build on every push">
+<meta name="twitter:description" content="Turn off auto-deploy on Vercel and Render in one click. Deploy what changed in two. Free and open source for macOS.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<link rel="icon" href="img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Deploy Center","operatingSystem":"macOS 15","applicationCategory":"DeveloperApplication","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://opensource.org/licenses/MIT","url":"https://deploycenter.app/","downloadUrl":"https://github.com/Pschmetzer/deploy-center/releases/latest"}
+[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Deploy Center", "description": "Free, open-source Mac app that turns off auto-deploy on Vercel and Render and deploys what changed when you decide.", "operatingSystem": "macOS 15 or later", "applicationCategory": "DeveloperApplication", "softwareVersion": "0.7.0", "image": "https://deploycenter.app/img/og.png", "screenshot": "https://deploycenter.app/img/app.png", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/licenses/MIT", "url": "https://deploycenter.app/", "downloadUrl": "https://github.com/Pschmetzer/deploy-center/releases/latest", "releaseNotes": "https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md", "codeRepository": "https://github.com/Pschmetzer/deploy-center"}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Is it really free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. MIT license, no paid tier, no account. The code is on GitHub."}}, {"@type": "Question", "name": "Does my data go anywhere?", "acceptedAnswer": {"@type": "Answer", "text": "No server of ours. The app talks to Vercel and Render with your own logins, to GitHub through gh, and once a day to GitHub's release page to look for updates (you can turn that off). No telemetry."}}, {"@type": "Question", "name": "What do I lose without auto-deploy?", "acceptedAnswer": {"@type": "Answer", "text": "Automatic deploys and automatic preview builds per pull request. You have to remember to deploy; the menu bar count and an optional daily reminder help. Preview deploys can still be started by hand."}}, {"@type": "Question", "name": "Can I go back?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Reconnect the repository in the Vercel dashboard, or set auto-deploy to On Commit in Render. Deploy Center remembers each Vercel repo before it disconnects it."}}, {"@type": "Question", "name": "Netlify, Cloudflare Pages, Railway, Fly?", "acceptedAnswer": {"@type": "Answer", "text": "Vercel and Render. Netlify cannot start a build while its builds are stopped, and Cloudflare Pages limits the number of builds instead of charging for each one, so neither is planned. Issues with other ideas are welcome."}}, {"@type": "Question", "name": "Windows or Linux?", "acceptedAnswer": {"@type": "Answer", "text": "The app is macOS only. The deploys script is bash and runs on Linux and in CI."}}]}]
 </script>
 <style>
-:root{
+:root{color-scheme:dark;
   --bg:#0b0d12; --bg2:#11141b; --card:#151924; --line:#232838; --text:#e9ecf3; --muted:#9aa3b5;
   --accent:#4f7cff; --accent2:#8b5cf6; --green:#34c759; --red:#ff5f57; --orange:#ff9f0a;
   --radius:16px; --max:1120px;
 }
 @media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]){--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475}
+  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475}
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -159,8 +175,9 @@ code{font:.9em ui-monospace,Menlo,monospace;background:var(--card);border:1px so
       Star on GitHub</a>
   </div>
   <div><span class="brew" id="brew"><span>$ brew tap pschmetzer/tap &amp;&amp; brew trust pschmetzer/tap &amp;&amp; brew install --cask deploy-center</span><button type="button" data-copy="brew tap pschmetzer/tap &amp;&amp; brew trust pschmetzer/tap &amp;&amp; brew install --cask deploy-center">Copy</button></span></div>
+  <p class="small" id="version">Version 0.7.0 · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">What’s new</a> · <a href="https://github.com/Pschmetzer/deploy-center/releases">All releases</a></p>
   <p class="small">Signed and notarized by Apple · no account · no telemetry · not affiliated with Vercel or Render</p>
-  <figure class="shot"><img src="img/app.png" width="1800" height="1144" alt="Deploy Center window: 149 PRs waiting to deploy, Vercel build costs of the last 7 days, and a list of projects with commits waiting" loading="eager"></figure>
+  <figure class="shot"><img src="img/app.png" width="1800" height="1144" alt="The Deploy Center window: projects on Vercel and Render with the commits and pull requests waiting to go live, and a chart of the last 7 days of build costs" loading="eager"></figure>
   <p class="caption">The real app with the author's real build bill: $99 in a week. Project names are hidden by demo mode.</p>
 </div></header>
 
