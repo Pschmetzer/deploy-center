@@ -58,7 +58,9 @@ GITHOST_SLUG_JQ='(sub("^https://github.com/";"") | sub("^https?://";"") | sub("\
 GITHOST_VERCEL_LINK_JQ='(if .type == "gitlab" then
     (if .projectUrl then (.projectUrl | '"$GITHOST_SLUG_JQ"') elif .projectNamespace and .projectName
      then "gitlab.com/\(.projectNamespace)/\(.projectName)" else null end)
-  else "\(.org)/\(.repo)" end)'
+  elif (.type == "github" or .type == null) and .org and .repo then "\(.org)/\(.repo)"
+  # Bitbucket (owner/slug) and anything else: not a repo the git-host code can ask, so none.
+  else null end)'
 
 # Whether any git host can be asked at all. Without one, `with_heads` adds no heads.
 githost_available() {

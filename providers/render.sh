@@ -143,16 +143,40 @@ render_last_of() {
   last_fail() { jq -nc --arg k "$id" --arg e "$1" '{key:$k, value:{fetchError:$e}}' > "$out/$id.json"; }
   key="$(cat "$3" 2>/dev/null)"; [ -n "$key" ] || { last_fail "no Render key"; return 0; }
   # Eight of these run at once: this is where Render's rate limit (429) hits. Wait and ask again.
-  local raw code try
-  for try in 1 2 3; do
-    raw="$(printf 'header = "Authorization: Bearer %s"\n' "$key" \
-      | curl -sS -K - -w '\n%{http_code}' -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=10")" || raw=$'\n000'
-    code="${raw##*$'\n'}"
-    [ "$code" = 429 ] && [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; }
-    break
-  done
-  [[ "$code" == 2* ]] || { last_fail "HTTP $code"; return 0; }
-  printf '%s' "${raw%$'\n'*}" \
+  # Like render_call: a time limit (a hung service must not hold one of the eight slots, and so
+  # the whole list), and 5xx or no answer asked again too.
+  local raw code try body limit=10
+  fetch_deploys() {
+    for try in 1 2 3; do
+      raw="$(printf 'header = "Authorization: Bearer %s"\n' "$key" \
+        | curl -sS --connect-timeout 10 --max-time 60 -K - -w '\n%{http_code}' -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=$1")" || raw=$'\n000'
+      code="${raw##*$'\n'}"
+      case "$code" in
+        429) [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; } ;;
+        5*|000) [ "$try" -lt 3 ] && { sleep $((try * 2)); continue; } ;;
+      esac
+      break
+    done
+  }
+  fetch_deploys "$limit"
+  if [[ "$code" != 2* ]]; then
+    case "$code" in
+      000) last_fail "no answer from Render (network or timeout), asked 3 times" ;;
+      401|403) last_fail "HTTP $code: the Render key is wrong or expired" ;;
+      429) last_fail "HTTP 429: Render's rate limit, asked 3 times" ;;
+      5*) last_fail "HTTP $code: Render had a problem, asked 3 times" ;;
+      *) last_fail "HTTP $code" ;;
+    esac
+    return 0
+  fi
+  body="${raw%$'\n'*}"
+  # The ten newest all failed or were cancelled: what is live is further back. Without it the
+  # service would look never deployed (and so changed).
+  if printf '%s' "$body" | jq -e 'type == "array" and length >= 10 and ([.[].deploy | select(.status == "live")] | length == 0)' >/dev/null 2>&1; then
+    fetch_deploys 50
+    [[ "$code" != 2* ]] || body="${raw%$'\n'*}"
+  fi
+  printf '%s' "$body" \
     | jq -c --arg id "$id" 'def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) else null end;
         [.[].deploy] as $d | ($d[0] // {}) as $new | (($d | map(select(.status=="live")) | .[0]) // {}) as $live
         # The status is the newest attempt (a failure shows), the commit is what is live: a failed
@@ -174,12 +198,19 @@ render_json() {
     domain:((.serviceDetails.url // "") | sub("^https?://";"") | if . == "" then null else . end),
     repo:((.repo // "") | '"$GITHOST_SLUG_JQ"' | if . == "" then null else . end),
     ref:(.branch // null)}] | sort_by(.name | ascii_downcase)')" || exit 1
-  tmp="$(mktemp -d)"; kf="$tmp/key"; (umask 077; render_key > "$kf")
-  echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$2" "$0" "$1"' "$tmp" "$kf"
+  tmp="$(mktemp -d)"; kf="$tmp/key"
+  # The key file goes on every way out: a failed key read or xargs must not leave it behind.
+  if ! (umask 077; render_key > "$kf"); then rm -rf "$tmp"; exit 1; fi
+  echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$2" "$0" "$1"' "$tmp" "$kf" || true
   rm -f "$kf"
-  lasts="$(cat_all "$tmp"/*.json | jq -s 'from_entries')"; rm -rf "$tmp"
-  echo "$list" | jq --argjson l "${lasts:-{\}}" "$RENDER_PHASE"'map({lastAt:null, lastState:null, lastSha:null, lastMsg:null, fetchError:null}
-    + . + ($l[.id] // {}) | . + {phase:(.lastState | rphase)})'
+  lasts="$(cat_all "$tmp"/*.json | jq -s 'from_entries' 2>/dev/null)" || lasts=""
+  rm -rf "$tmp"
+  # Never an empty --argjson (a `:-` default of {} keeps its backslash under macOS bash 3.2).
+  # Every service then still shows; without its record each one says so in fetchError.
+  local lost=false
+  if [ -z "$lasts" ] || ! printf '%s' "$lasts" | jq -e 'type == "object"' >/dev/null 2>&1; then lasts='{}'; lost=true; fi
+  echo "$list" | jq --argjson l "$lasts" --argjson lost "$lost" "$RENDER_PHASE"'map({lastAt:null, lastState:null, lastSha:null, lastMsg:null, fetchError:null}
+    + . + ($l[.id] // (if $lost then {fetchError:"the deploys could not be read"} else {} end)) | . + {phase:(.lastState | rphase)})'
 }
 
 # render_deploy_json <service> [--sha <commit>] [--clear-cache]

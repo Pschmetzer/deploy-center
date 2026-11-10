@@ -29,8 +29,14 @@ vercel_team() {
     cat "$CONFIG_DIR/vercel-team"; return
   fi
   if [ -f "$CONFIG_DIR/vercel-team" ] && [ $(( $(date +%s) - $(mtime "$CONFIG_DIR/vercel-team") )) -lt 86400 ]; then echo ""; return; fi
-  local teams n
-  teams="$(vercel api /v2/teams 2>/dev/null)" || die "The vercel CLI is not logged in. Run: vercel login"
+  local teams n ef e
+  # The CLI's own words go along: "fetch failed" is not "not logged in", and must not send
+  # people to `vercel login`.
+  ef="$(mktemp)"
+  teams="$(vercel_api_raw /v2/teams 2>"$ef")" || { e="$(cat "$ef")"; rm -f "$ef"; die "Could not ask Vercel for your teams${e:+ ($e)}. If it says you are not logged in: vercel login"; }
+  rm -f "$ef"
+  # Only a real team list is remembered: an error body without .teams is not "no team" for a day.
+  echo "$teams" | jq -e '.teams | type == "array"' >/dev/null 2>&1 || die "Vercel answered without a team list: $(printf '%s' "$teams" | head -c 200)"
   n="$(echo "$teams" | jq '.teams | length')"
   if [ "$n" = "0" ]; then
     : > "$CONFIG_DIR/vercel-team"; echo ""
@@ -42,26 +48,79 @@ vercel_team() {
   fi
 }
 
-# Query string for the team, empty for a personal account.
-team_q() { local t; t="$(vercel_team)"; [ -n "$t" ] && echo "teamId=$t" || echo ""; }
-with_team() { local q; q="$(team_q)"; case "$1" in *\?*) echo "$1${q:+&$q}";; *) echo "$1${q:+?$q}";; esac; }
+# Query string for the team, empty for a personal account. A failure (several teams, not logged
+# in) is the caller's failure: never quietly ask the personal account instead.
+team_q() { local t; t="$(vercel_team)" || return 1; if [ -n "$t" ]; then echo "teamId=$t"; else echo ""; fi; }
+with_team() {
+  local q; q="$(team_q)" || return 1
+  case "$1" in *\?*) echo "$1${q:+&$q}";; *) echo "$1${q:+?$q}";; esac
+}
 
-# On failure the last line vercel printed goes to stderr: "not found" and "not logged in" differ.
-vercel_call() {
-  local e rc=0; e="$(mktemp)"
-  vercel api "$(with_team "$1")" "${@:2}" 2>"$e" || rc=$?
-  [ "$rc" = 0 ] || grep -v '^[[:space:]]*$' "$e" | tail -n 1 | sed 's/^/vercel: /' >&2
+# `vercel` with a time limit: macOS has no `timeout`, and perl's alarm survives the exec. A hung
+# CLI then ends with 142 (SIGALRM). Without perl it runs as it is. Update notices stay off
+# stderr: they would be the line a failure is reported with.
+VERCEL_TIMEOUT="${DEPLOYS_VERCEL_TIMEOUT:-60}"
+vercel_run() {
+  # A `vercel` shell function (a test's stand-in) cannot be exec'd: it is called as it is.
+  if [ "$(type -t vercel)" != function ] && command -v perl >/dev/null 2>&1; then
+    NO_UPDATE_NOTIFIER=1 perl -e 'alarm shift; exec @ARGV or die "vercel: $!\n"' "$VERCEL_TIMEOUT" vercel "$@"
+  else
+    NO_UPDATE_NOTIFIER=1 vercel "$@"
+  fi
+}
+
+# Worth asking again: no answer, a network error, the rate limit or a server error. The words
+# are the vercel CLI's and Node's (inferred, not checked against every CLI version).
+vercel_transient() {  # <rc> <stderr file>
+  [ "$1" = 142 ] && return 0
+  grep -qiE 'fetch failed|ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|socket hang up|network|timed? ?out|too many requests|rate limit|\((429|5[0-9][0-9])\)' "$2"
+}
+
+# The reason of a failed call in one line: the first "error" line, or else the last line.
+vercel_reason() {  # <rc> <stderr file>
+  local r; r="$(grep -m 1 -i 'error' "$2" | cut -c1-300)"
+  [ -n "$r" ] || r="$(grep -v '^[[:space:]]*$' "$2" | tail -n 1 | cut -c1-300)"
+  [ "$1" != 142 ] || r="no answer within ${VERCEL_TIMEOUT} s${r:+ ($r)}"
+  printf '%s' "${r:-failed (exit $1)}"
+}
+
+# vercel_api_raw <path> [args]: `vercel api` without the team. Reads (no --method, or GET) are
+# asked up to three times when the failure looks passing; POST, PATCH and DELETE never: they may
+# have happened already. On failure the reason goes to stderr ("not found" and "not logged in" differ).
+vercel_api_raw() {
+  local path="$1" m=GET prev="" a e rc try; shift
+  for a in "$@"; do [ "$prev" = --method ] && m="$(echo "$a" | tr '[:lower:]' '[:upper:]')"; prev="$a"; done
+  e="$(mktemp)"
+  for try in 1 2 3; do
+    rc=0; vercel_run api "$path" "$@" 2>"$e" || rc=$?
+    [ "$rc" != 0 ] || break
+    { [ "$m" = GET ] && [ "$try" -lt 3 ] && vercel_transient "$rc" "$e"; } || break
+    sleep $((try * 2))
+  done
+  [ "$rc" = 0 ] || echo "vercel: $(vercel_reason "$rc" "$e")" >&2
   rm -f "$e"; return "$rc"
 }
 
+# vercel_call <path> [args]: the same for the chosen team.
+vercel_call() {
+  local u; u="$(with_team "$1")" || return 1
+  shift; vercel_api_raw "$u" "$@"
+}
+
 vercel_projects() {
-  local all="[]" page next="" url
+  local all="[]" page next="" prev="" url pages=0
   while :; do
     url="/v10/projects?limit=100${next:+&until=$next}"
     page="$(vercel_call "$url")" || die "Could not list Vercel projects"
+    # An answer without a project list (a rate-limit body that came with exit 0) is an error,
+    # not "no projects".
+    echo "$page" | jq -e '.projects | type == "array"' >/dev/null 2>&1 \
+      || die "Could not list Vercel projects: the answer has no project list ($(printf '%s' "$page" | head -c 200))"
     all="$(jq -s '.[0] + .[1].projects' <(echo "$all") <(echo "$page"))"
-    next="$(echo "$page" | jq -r '.pagination.next // empty')"
-    [ -n "$next" ] || break
+    prev="$next"; next="$(echo "$page" | jq -r '.pagination.next // empty')"
+    pages=$((pages + 1))
+    # A cursor that does not move, or more than 100 pages (10,000 projects): stop, never loop.
+    [ -n "$next" ] && [ "$next" != "$prev" ] && [ "$pages" -lt 100 ] || break
   done
   echo "$all"
 }
@@ -83,7 +142,12 @@ vercel_off_one() {
       then {type:"gitlab", repo:'"$GITHOST_VERCEL_LINK_JQ"', projectId} else {org, repo, repoId} end)
       + {ref:(.productionBranch // "main"), offAt:(now | floor)})}')"
   [ "$(echo "$info" | jq '.link != null')" = "true" ] || { echo "Vercel: $p was already manual"; return; }
-  vercel api "$(with_team "/v9/projects/$p/link")" --method DELETE --dangerously-skip-permissions >/dev/null 2>&1 \
+  # Without the repo written down, the project could never be connected again (a Bitbucket link
+  # has owner/slug, not org/repo): leave it connected.
+  jq -e --arg p "$p" '.[$p].repo != null' "$REPOS" >/dev/null 2>&1 \
+    || die "Vercel: $p stays connected: its repo could not be written down, so it could not be connected again. Say where it deploys from first: deploys vercel map $p <owner/repo> [branch]"
+  # vercel_call names the reason on stderr.
+  vercel_call "/v9/projects/$p/link" --method DELETE --dangerously-skip-permissions >/dev/null \
     || die "Vercel: could not disconnect $p"
   echo "Vercel: $p no longer deploys on push"
 }
@@ -106,12 +170,20 @@ vercel_off() {
 
 # Auto-deploy back on: Git connected again from the remembered repo. Every push builds (and costs) again.
 vercel_on_one() {
-  local p="$1" r body err e
-  r="$(jq -r --arg p "$p" '.[$p] // {} | if .org and .repo then "\(.org)/\(.repo)" else "" end' "$REPOS")"
+  local p="$1" r t body err e u
+  # GitHub entries have org and repo; GitLab ones type "gitlab" and repo host/group/name, which
+  # Vercel takes as group/name (the namespace path, without the host).
+  t="$(jq -r --arg p "$p" '.[$p].type // "github"' "$REPOS")"
+  if [ "$t" = gitlab ]; then
+    r="$(jq -r --arg p "$p" '.[$p].repo // "" | sub("^[^/]+/"; "")' "$REPOS")"
+  else
+    r="$(jq -r --arg p "$p" '.[$p] // {} | if .org and .repo then "\(.org)/\(.repo)" else "" end' "$REPOS")"
+  fi
   [ -n "$r" ] || die "Vercel: the repo of $p is not known, so it cannot be connected again. Say where it deploys from: deploys vercel map $p <owner/repo> [branch]"
-  body="$(mktemp)"; err="$(mktemp)"; jq -n --arg r "$r" '{type:"github", repo:$r}' > "$body"
-  if ! vercel api "$(with_team "/v9/projects/$p/link")" --method POST --input "$body" --dangerously-skip-permissions >/dev/null 2>"$err"; then
-    e="$(grep -v '^[[:space:]]*$' "$err" | tail -n 1 | cut -c1-300)"; rm -f "$body" "$err"
+  u="$(with_team "/v9/projects/$p/link")" || exit 1
+  body="$(mktemp)"; err="$(mktemp)"; jq -n --arg t "$t" --arg r "$r" '{type:$t, repo:$r}' > "$body"
+  if ! vercel_run api "$u" --method POST --input "$body" --dangerously-skip-permissions >/dev/null 2>"$err"; then
+    e="$(vercel_reason 1 "$err")"; rm -f "$body" "$err"
     die "Vercel: could not connect $p to $r again${e:+: $e}"
   fi
   rm -f "$body" "$err"
@@ -139,6 +211,9 @@ vercel_cli_autodeploy_on() { vercel_on "$@"; }
 VERCEL_PHASE='def vphase: (. // "" | ascii_upcase) as $s
   | if $s == "QUEUED" or $s == "INITIALIZING" then "queued" elif $s == "BUILDING" then "building"
     elif $s == "READY" then "ready" elif $s == "ERROR" then "failed" elif $s == "CANCELED" then "canceled" else null end;'
+# The commit of a deployment's .meta, whichever git host it came from.
+VERCEL_META='def vsha: (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha // null);
+  def vmsg: (.githubCommitMessage // .gitlabCommitMessage // .bitbucketCommitMessage // null);'
 
 # Start a build. Positional, for the commands below: <project> <preview: ""|1> <sha>.
 vercel_start() {
@@ -158,9 +233,15 @@ vercel_start() {
     + {gitSource:(if $r.type == "gitlab" then {type:"gitlab", ref:$r.ref, projectId:$r.projectId}
                   else {type:"github", ref:$r.ref} + (if $r.repoId then {repoId:$r.repoId} else {org:$r.org, repo:$r.repo} end) end
                   + (if $sha != "" then {sha:$sha} else {} end))}' <<< "$repos" > "$body"
-  local errf; errf="$(mktemp)"
-  out="$(vercel api "$(with_team /v13/deployments)" --method POST --input "$body" 2>"$errf")" \
-    || { local e; e="$(tail -c 400 "$errf")"; rm -f "$errf" "$lock" "$body"; die "Vercel: $e $(echo "$out" | jq -r '.error.message // empty' 2>/dev/null)"; }
+  local errf u rc=0; u="$(with_team /v13/deployments)" || { rm -f "$lock" "$body"; exit 1; }
+  errf="$(mktemp)"
+  # Never repeated: a POST without an answer may have started a build already.
+  out="$(vercel_run api "$u" --method POST --input "$body" 2>"$errf")" || rc=$?
+  if [ "$rc" != 0 ]; then
+    local e; e="$(tail -c 400 "$errf")"; rm -f "$errf" "$lock" "$body"
+    [ "$rc" != 142 ] || die "Vercel: no answer within ${VERCEL_TIMEOUT} s. A build may have started anyway: look at the list before starting another"
+    die "Vercel: $e $(echo "$out" | jq -r '.error.message // empty' 2>/dev/null)"
+  fi
   rm -f "$errf" "$body"
   echo "$out" | jq -e '.id' >/dev/null 2>&1 || { rm -f "$lock"; die "Vercel: $(echo "$out" | head -c 400)"; }
   echo "$out" | jq "$VERCEL_PHASE"'{id, url:("https://" + .url), state:(.readyState // .status), phase:((.readyState // .status) | vphase)}'
@@ -176,14 +257,21 @@ vercel_deploy_json() {
 # Every project, the newest production attempt per project from one call: a build started in the
 # dashboard or the terminal is BUILDING here while targets.production still shows the finished one.
 vercel_json() {
-  local recent
-  recent="$(vercel_call "/v6/deployments?limit=100&target=production" \
-    | jq '[.deployments[]] | group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta.githubCommitSha // null)})}) | from_entries' 2>/dev/null)"
-  vercel_projects | jq --slurpfile r <(repos_json) --argjson recent "${recent:-{\}}" "$VERCEL_PHASE"'[.[] |
+  local raw recent="" partial=false
+  # The newest attempts are extra: when they cannot be read (a network blip, an odd answer), the
+  # list still comes, marked partial, and a build under way may not show. Never an empty
+  # --argjson: a `:-` default of {} keeps its backslash under macOS bash 3.2 ({\}).
+  if raw="$(vercel_call "/v6/deployments?limit=100&target=production")"; then
+    recent="$(printf '%s' "$raw" | jq "$VERCEL_META"'[.deployments[]] | group_by(.name)
+      | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta | vsha)})}) | from_entries' 2>/dev/null)" || recent=""
+  fi
+  if [ -z "$recent" ] || ! printf '%s' "$recent" | jq -e 'type == "object"' >/dev/null 2>&1; then recent='{}'; partial=true; fi
+  [ "$partial" = false ] || echo "vercel: the newest builds could not be read; the list shows the live deploys only" >&2
+  vercel_projects | jq --slurpfile r <(repos_json) --argjson recent "$recent" --argjson partial "$partial" "$VERCEL_PHASE$VERCEL_META"'[.[] |
     ((.link // null) | if . then {repo:'"$GITHOST_VERCEL_LINK_JQ"', ref:"main"} else null end) as $live |
     ($r[0][.name] // null) as $known |
     (((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // null) as $domain |
-    {name, id:.name, auto:(.link != null), paused:false,
+    {name, id:.name, auto:(.link != null), paused:(.paused // false),
      repo:(if $known.repo then (if $known.type == "gitlab" then $known.repo else "\($known.org)/\($known.repo)" end) else $live.repo end),
      ref:($known.ref // (.link.productionBranch // null)),
      deployable:($known.repo != null),
@@ -192,18 +280,27 @@ vercel_json() {
      dashboardUrl:null,
      lastAt:((.targets.production.createdAt // 0) / 1000 | floor),
      lastState:(.targets.production.readyState // null),
-     lastSha:(.targets.production.meta.githubCommitSha // null),
-     lastMsg:(.targets.production.meta.githubCommitMessage // null | if . then split("\n")[0] else null end),
+     lastSha:(.targets.production.meta // {} | vsha),
+     lastMsg:(.targets.production.meta // {} | vmsg | if . then split("\n")[0] else null end),
      latestState:($recent[.name].state // null),
      latestId:($recent[.name].id // null), latestSha:($recent[.name].sha // null),
      fetchError:null}
+    + (if $partial then {partial:true} else {} end)
     # A build under way in either the newest attempt or the production target counts.
     | ([.latestState, .lastState] | map(vphase)) as $ph
     | . + {phase:(if ($ph | index("building")) then "building" elif ($ph | index("queued")) then "queued"
                   else ((.latestState // .lastState) | vphase) end)}] | sort_by(.name | ascii_downcase)'
 }
 
-vercel_has() { vercel_call "/v9/projects/$1" >/dev/null 2>&1 && echo "$1"; }
+# Exit 1: no such project. Exit 2: Vercel could not be asked (the reason on stderr), which is not
+# "not found".
+vercel_has() {
+  local e rc=0; e="$(mktemp)"
+  vercel_call "/v9/projects/$1" >/dev/null 2>"$e" || rc=$?
+  if [ "$rc" = 0 ]; then rm -f "$e"; echo "$1"; return 0; fi
+  if grep -qiE 'not found|\(404\)' "$e"; then rm -f "$e"; return 1; fi
+  cat "$e" >&2; rm -f "$e"; return 2
+}
 
 # deployId<TAB>phase<TAB>raw state of one deployment.
 vercel_status() {
@@ -219,7 +316,7 @@ vercel_latest() {
 }
 
 vercel_cancel() {
-  vercel api "$(with_team "/v12/deployments/${2:?deployment id}/cancel")" --method PATCH >/dev/null 2>&1 || die "Vercel: could not cancel ${2}"
+  vercel_call "/v12/deployments/${2:?deployment id}/cancel" --method PATCH >/dev/null || die "Vercel: could not cancel ${2}"
   echo '{"state":"CANCELED"}'
 }
 
@@ -230,15 +327,15 @@ vercel_rollback() {
   # promotion is not always the newest one.
   cur="$(vercel_call "/v9/projects/$p" | jq -r '.targets.production.id // empty')"
   prev="$(vercel_call "/v6/deployments?projectId=$p&target=production&state=READY&limit=20" \
-    | jq -r --arg cur "$cur" '.deployments as $d | (($d | map(.uid) | index($cur)) // 0) as $i
-        | ($d[$i].meta.githubCommitSha // null) as $sha
+    | jq -r --arg cur "$cur" "$VERCEL_META"'.deployments as $d | (($d | map(.uid) | index($cur)) // 0) as $i
+        | ($d[$i].meta // {} | vsha) as $sha
         # An older deploy of the same commit (a redeploy) would change nothing: skip to a different one.
         | ($d | to_entries | map(select(.key > $i) | .value)
-           | map(select($sha == null or (.meta.githubCommitSha // "") != $sha)) | .[0].uid // empty)')"
+           | map(select($sha == null or ((.meta // {} | vsha) // "") != $sha)) | .[0].uid // empty)')"
   [ -n "$prev" ] || die "No earlier production deployment of $p to roll back to"
   # The project's id, not its name: Vercel answers 404 to a name on these endpoints.
   pid="$(vercel_call "/v9/projects/$p" | jq -r '.id // empty')"
-  vercel api "$(with_team "/v1/projects/${pid:-$p}/rollback/$prev")" --method POST >/dev/null 2>&1 || die "Vercel: rollback of $p failed"
+  vercel_call "/v1/projects/${pid:-$p}/rollback/$prev" --method POST >/dev/null || die "Vercel: rollback of $p failed"
   echo "{\"id\":\"$prev\",\"state\":\"READY\"}"
 }
 
@@ -284,9 +381,9 @@ vercel_where() {
 
 # The last n deploys: when, target, state, commit, source, build time.
 vercel_history() {
-  vercel_call "/v6/deployments?app=$1&limit=$2" | jq -r '.deployments[]
+  vercel_call "/v6/deployments?app=$1&limit=$2" | jq -r "$VERCEL_META"'.deployments[]
     | [(.created/1000 | strftime("%Y-%m-%d %H:%M")), (.target // "preview"), .state,
-       ((.meta.githubCommitSha // "")[0:7]), (.source // ""),
+       (((.meta // {} | vsha) // "")[0:7]), (.source // ""),
        (if .ready and .buildingAt then "\(((.ready - .buildingAt)/1000) | floor)s" else "" end)]
     # "-" for an empty field: BSD column merges empty fields and would shift the row.
     | map(if . == "" or . == null then "-" else . end) | @tsv' \
@@ -308,25 +405,35 @@ vercel_cli_list() {
     | column -t -s $'\t'
 }
 
-# vercel deploy <project> [--preview] [--sha <commit>] [--wait]
+# Exit 3, the code `watch` gives when the platform could not be asked.
+vercel_die3() { echo "${RED}Error:${PLAIN} $*" >&2; exit 3; }
+
+# vercel deploy <project> [--preview] [--sha <commit>] [--wait [--timeout <seconds>]]
 vercel_cli_deploy() {
-  local target="$1" pv="" sha="" wait_="" out did s; shift
+  local target="$1" pv="" sha="" wait_="" out did s limit=1800 start misses=0; shift
   while [ $# -gt 0 ]; do
     case "$1" in
       --preview) pv=1;; --wait) wait_=1;;
       --sha) [ -n "${2:-}" ] || die "Usage: deploys vercel deploy <project> --sha <commit>"; sha="$2"; shift;;
-      *) die "Unknown option $1. Usage: deploys vercel deploy <project> [--preview] [--sha <commit>] [--wait]";;
+      --timeout) case "${2:-}" in ''|*[!0-9]*) die "Usage: deploys vercel deploy <project> --wait --timeout <seconds>";; esac; limit="$2"; shift;;
+      *) die "Unknown option $1. Usage: deploys vercel deploy <project> [--preview] [--sha <commit>] [--wait [--timeout <seconds>]]";;
     esac; shift
   done
   out="$(vercel_start "$target" "$pv" "$sha")"
   echo "$out" | jq -r '"Vercel: deploy started -> \(.url) (\(.state))"'
-  # Follow exactly this deploy, not "the newest one", until it is live or failed.
+  # Follow exactly this deploy, not "the newest one", until it is live or failed. Not for ever:
+  # after --timeout (30 minutes) or five unanswered asks in a row it ends with 3, like `watch`.
   if [ -n "$wait_" ]; then
-    did="$(echo "$out" | jq -r .id)"
+    did="$(echo "$out" | jq -r .id)"; start="$(date +%s)"
     while :; do
       s="$(vercel_status "$target" "$did" 2>/dev/null)" || s=""
+      if [ -z "$s" ]; then
+        misses=$((misses + 1))
+        [ "$misses" -lt 5 ] || vercel_die3 "could not reach Vercel five times in a row; the deploy itself may be fine"
+      else misses=0; fi
       printf '%s  %s\n' "$(date +%H:%M:%S)" "$(echo "$s" | cut -f3 | grep . || echo "?")"
       case "$(echo "$s" | cut -f2)" in ready) exit 0;; failed|canceled) exit 1;; esac
+      [ $(( $(date +%s) - start )) -lt "$limit" ] || vercel_die3 "still not finished after $limit s; it goes on at Vercel (deploys watch $target $did)"
       sleep 6
     done
   fi
