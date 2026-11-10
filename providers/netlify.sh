@@ -152,6 +152,14 @@ NETLIFY_JQ='
     createdAt:(.created_at | t), error:(.error_message // null)};
 '
 
+# Our ignore line, exactly (spaces aside), in the [build] section of a netlify.toml on stdin.
+# A reversed test (-n) or one under [context.deploy-preview] does not turn pushes off.
+netlify_rule_in_build() {
+  local want; want="$(printf '%s' "$NETLIFY_IGNORE_LINE" | tr -d '[:space:]')"
+  awk '/^[[:space:]]*\[/ { s = $0; gsub(/[[:space:]]/, "", s); inb = (s == "[build]"); next }
+       inb { l = $0; gsub(/[[:space:]]/, "", l); print l }' | grep -qxF "$want"
+}
+
 # Look for our ignore line in the repo's netlify.toml (base directory first). yes | no | unknown.
 netlify_rule_in_repo() {
   local repo="$1" ref="$2" base="${3:-}" p raw got=0
@@ -160,7 +168,7 @@ netlify_rule_in_repo() {
     raw="$(gh api "repos/$repo/contents/$p?ref=$(jq -rn --arg r "$ref" '$r|@uri')" 2>/dev/null)" || continue
     got=1
     if echo "$raw" | jq -r '.content // empty' | tr -d '\n' | netlify_b64d 2>/dev/null \
-      | grep -Eq '^[[:space:]]*ignore[[:space:]]*=.*INCOMING_HOOK_TITLE'; then echo yes; return; fi
+      | netlify_rule_in_build; then echo yes; return; fi
   done
   # Not found in a readable file is "no"; nothing readable at all may still be a gh problem.
   if [ "$got" = 1 ]; then echo no; else
@@ -201,7 +209,7 @@ netlify_json() {
   fi
   while IFS= read -r s; do
     id="$(echo "$s" | jq -r '.id')"
-    if d="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=10" 2>&1)"; then
+    if d="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=50" 2>&1)"; then
       # A 200 that is not a deploy list (a proxy's login page) is this site's error, not an
       # empty --argjson that breaks the whole list.
       d="$(echo "$d" | jq -c 'if type == "array" then {deploys:.} else error("no list") end' 2>/dev/null)" \

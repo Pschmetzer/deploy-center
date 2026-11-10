@@ -115,6 +115,8 @@ digitalocean_apps() {
 # An app by name (spec.name), id, live domain or one of its domains.
 digitalocean_id_of() {
   local n="$1" id
+  # An app id (a UUID) needs no listing of every app; a wrong one fails at the next call.
+  if [[ "$n" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then echo "$n"; return 0; fi
   id="$(digitalocean_apps | jq -r --arg n "$n" '.[] | select(.id==$n or .spec.name==$n
     or .live_domain==$n or ([.spec.domains[]?.domain] | index($n))) | .id' | head -n 1)" || return 1
   [ -n "$id" ] || { echo "No DigitalOcean app named \"$n\". See: deploys digitalocean list" >&2; return 1; }
@@ -214,7 +216,7 @@ digitalocean_json() {
       | {name:($s.name // .id), id,
          auto:($s | auto_on),
          paused:$paused,
-         deployable:((($s | components | length) > 0) and ($paused | not)),
+         deployable:(([$s | components[] | select(git_of or (.image | type) == "object")] | length > 0) and ($paused | not)),
          # GitHub: owner/name; GitLab and Bitbucket with their host, so heads are asked there.
          repo:(([$s | components[] | first(gits[] as $g | select((.[$g] | type) == "object") | $g)] | .[0]) as $h
                | ($git.repo // null) | if . == null then null elif $h == "gitlab" then "gitlab.com/\(.)"

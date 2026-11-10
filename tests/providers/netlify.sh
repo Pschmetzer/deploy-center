@@ -149,6 +149,11 @@ reset
 ( netlify_off blog --rule-added >/dev/null 2>&1 )
 expect "off --rule-added: recorded" "$(jq '."site-blog".rule' "$hf")" true
 expect "off --rule-added: gh not asked" "$(calls '^gh api repos/me/blog/contents')" 0
+# The rule counts only as our exact line in [build].
+rule() { printf '%b' "$1" | netlify_rule_in_build && echo yes || echo no; }
+expect "rule: our line in [build]" "$(rule '[build]\n  command = "x"\n  ignore = "[ -z \\"$INCOMING_HOOK_TITLE\\" ]"\n')" yes
+expect "rule: the same line under a context does not count" "$(rule '[build]\n  command = "x"\n[context.deploy-preview]\n  ignore = "[ -z \\"$INCOMING_HOOK_TITLE\\" ]"\n')" no
+expect "rule: a reversed test does not count" "$(rule '[build]\n  ignore = "[ -n \\"$INCOMING_HOOK_TITLE\\" ]"\n')" no
 # --all: each site, one failing does not stop the next, and the exit code says so.
 out="$( netlify_sites() { echo '[{"id":"s-a"},{"id":"s-b"}]'; }; netlify_off_one() { echo "off $1"; [ "$1" = s-b ]; }
         netlify_off --all 2>&1 )"; rc=$?
