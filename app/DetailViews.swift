@@ -322,7 +322,7 @@ struct ProjectDetail: View {
             autofixBlock(item)
             // What is live, and what the branch would bring.
             if let live = item.lastMsg {
-                labelled(L("Live now", "Jetzt live"), scrub(live) + (item.lastSha.map { "  (\($0.prefix(7)))" } ?? ""))
+                labelled(item.triggered ? L("Last triggered", "Zuletzt ausgelöst") : L("Live now", "Jetzt live"), scrub(live) + (item.lastSha.map { "  (\($0.prefix(7)))" } ?? ""))
             }
             if let checks = d.checks, checks.total > 0 {
                 HStack(spacing: 6) {

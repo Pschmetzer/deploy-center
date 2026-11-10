@@ -988,6 +988,13 @@ do {
     expect("rules: list", RulesConfig.list(" a, b\n,c "), ["a", "b", "c"])
 }
 
+expect("cli text: need_cap", CLIText.german("Error: Render cannot deploy a preview (api)"), "Fehler: Render kann keine Vorschau deployen (api)")
+expect("cli text: fetchWarn", CLIText.german("custom domains could not be read; the address shown may be the default one"),
+       "Eigene Domains waren nicht lesbar; die gezeigte Adresse ist vielleicht die Standardadresse")
+if let hk = try? JSONDecoder().decode(VercelProject.self, from: Data(#"{"name":"h","auto":false,"deployable":true,"lastState":"triggered","lastSha":"abc","triggeredSha":"abc","phase":"queued"}"#.utf8)) {
+    let hi = hk.item(id: "h", platform: .vercel, detail: "", note: nil, link: nil, latestState: nil)
+    expect("hook: triggered, not live", "\(hi.triggered) \(hi.lastState ?? "")", "true queued")
+} else { expect("hook row decodes", "no", "yes") }
 expect("cli text: a shell's own error stays", CLIText.german("bash: foo: command not found"), "bash: foo: command not found")
 
 print("")

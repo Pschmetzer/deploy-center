@@ -24,6 +24,12 @@ enum CLIText {
         (#"That does not look like a routine token \(sk-ant-\.\.\.\)"#, "Das sieht nicht nach einem Routine-Token aus (sk-ant-…)"),
         (#"Observer mode \((.+?)\): "deploys (.+?)" changes something and is refused\. Observers can look, not deploy\.(.*)"#,
          #"Beobachtermodus ($1): „deploys $2“ ändert etwas und wird abgelehnt. Beobachter können schauen, nicht deployen.$3"#),
+        // need_cap: "<Label> cannot <what>" for a platform without that capability.
+        (#"(.+) cannot deploy a preview \((.+)\)"#, "$1 kann keine Vorschau deployen ($2)"),
+        (#"(.+) cannot read build logs"#, "$1 kann keine Build-Logs lesen"),
+        // fetchWarn of a provider (Amplify).
+        (#"custom domains could not be read; the address shown may be the default one"#,
+         "Eigene Domains waren nicht lesbar; die gezeigte Adresse ist vielleicht die Standardadresse"),
     ]
     private static let compiled: [(NSRegularExpression, String)] = table.compactMap { p, de in
         (try? NSRegularExpression(pattern: "^" + p + "$")).map { ($0, de) }

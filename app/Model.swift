@@ -97,6 +97,9 @@ struct VercelProject: Decodable {
     let openPRsPartial: Bool?; let budgetLow: Bool?; let partial: Bool?
     /// A provider's note that part of the entry could not be read (Amplify: the domains).
     let fetchWarn: String?
+    /// Deploy hooks: the branch head when the hook fired, not a commit seen live; `phase` says
+    /// "queued" for a while after a trigger.
+    let triggeredSha: String?; let phase: String?
 }
 struct RenderService: Decodable {
     let id: String; let name: String; let type: String; let paused: Bool; let auto: Bool; let deployable: Bool
@@ -111,6 +114,7 @@ struct RenderService: Decodable {
     let latestId: String?; let latestSha: String?
     let openPRsPartial: Bool?; let budgetLow: Bool?; let partial: Bool?
     let fetchWarn: String?
+    let triggeredSha: String?; let phase: String?
 }
 /// What every platform's list says of a project the same way; the row is built once from it,
 /// so a new column is added here and in the two field lists only.
@@ -125,6 +129,7 @@ protocol ProjectRow {
     var latestId: String? { get }; var latestSha: String? { get }
     var openPRsPartial: Bool? { get }; var budgetLow: Bool? { get }; var partial: Bool? { get }
     var fetchWarn: String? { get }
+    var triggeredSha: String? { get }; var phase: String? { get }
 }
 extension VercelProject: ProjectRow {}
 extension RenderService: ProjectRow {}
@@ -132,7 +137,7 @@ extension ProjectRow {
     /// The row; what differs per platform comes in as arguments.
     func item(id: String, platform: Platform, detail: String, note: String?, link: String?, latestState: String?) -> Item {
         Item(id: id, name: name, detail: detail, platform: platform, deployable: deployable, auto: auto, note: note, link: link,
-             domain: domain, lastAt: date(lastAt), lastState: lastState,
+             domain: domain, lastAt: date(lastAt), lastState: phase?.lowercased() == "queued" && triggeredSha != nil ? "queued" : lastState,
              headAt: date(headAt), headMsg: headMsg, lastSha: lastSha, headSha: headSha,
              repo: repo, ref: ref, changed: changed, pendingCommits: pendingCommits,
              pendingPRs: pendingPRs, openPRs: openPRs, lastMsg: lastMsg, openDrafts: openDrafts, openBots: openBots,
@@ -140,7 +145,8 @@ extension ProjectRow {
              oldestPendingAt: date(oldestPendingAt), rewritten: rewritten ?? false, risk: risk,
              latestState: latestState, latestId: latestId, latestSha: latestSha,
              openPRsPartial: openPRsPartial ?? false, budgetLow: budgetLow ?? false, partial: partial ?? false,
-             fetchWarn: fetchWarn.flatMap { $0.isEmpty ? nil : $0 })
+             fetchWarn: fetchWarn.flatMap { $0.isEmpty ? nil : $0 },
+             triggered: triggeredSha.map { !$0.isEmpty } ?? false)
     }
 }
 
@@ -354,6 +360,8 @@ struct Item: Identifiable {
     var partial = false
     /// The provider's own note on what it could not read (`fetchWarn`), shown like `partial`.
     var fetchWarn: String? = nil
+    /// A deploy hook: `lastSha`/`lastMsg` are what was asked for when it fired, not what is live.
+    var triggered = false
     var selected = false
     var state: RunState = .idle
     var startedAt: Date? = nil

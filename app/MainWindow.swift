@@ -1928,7 +1928,7 @@ struct Row: View {
             out.append(L("The newest builds could not be read: a build under way may not show",
                          "Die neuesten Builds waren nicht lesbar: ein laufender Build fehlt vielleicht"))
         }
-        if let w = i.fetchWarn { out.append(w) }
+        if let w = i.fetchWarn { out.append(CLIText.shown(w)) }
         if i.budgetLow {
             out.append(L("GitHub's hourly budget was nearly spent: waiting commits were not counted this time",
                          "GitHubs Stundenbudget war fast aufgebraucht: wartende Commits wurden diesmal nicht gezählt"))
@@ -1971,6 +1971,7 @@ struct Row: View {
         case "update_in_progress": return L("updating", "wird aktualisiert")
         case "pre_deploy_in_progress": return L("pre-deploy step running", "Pre-Deploy-Schritt läuft")
         case "queued", "created": return L("queued", "wartet")
+        case "triggered": return L("triggered", "ausgelöst")
         case "initializing": return L("starting", "startet")
         default: return raw.replacingOccurrences(of: "_", with: " ")
         }
@@ -1996,7 +1997,7 @@ struct Row: View {
                         .accessibilityLabel(L("Build log", "Build-Log"))
                 }
             }
-            .help(at.formatted(date: .complete, time: .shortened) + (item.lastMsg.map { "\n" + L("Live now: ", "Jetzt live: ") + (Demo.on ? "…" : $0) } ?? ""))
+            .help(at.formatted(date: .complete, time: .shortened) + (item.lastMsg.map { "\n" + (item.triggered ? L("Last triggered: ", "Zuletzt ausgelöst: ") : L("Live now: ", "Jetzt live: ")) + (Demo.on ? "…" : $0) } ?? ""))
         } else {
             Text(L("Never deployed", "Noch nie deployt")).font(.caption).foregroundStyle(.secondary)
         }
