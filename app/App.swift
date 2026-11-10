@@ -39,26 +39,57 @@ struct SettingsView: View {
 
     private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?" }
 
+    /// The tab on screen, remembered.
+    @AppStorage("settingsTab") private var settingsTab = "general"
+
+    /// Six tabs instead of one long roll of fourteen sections.
     var body: some View {
-        ScrollViewReader { proxy in Form {
-            generalSection
-            platformsSection
-            PhoneLinkSettings()
-            deploySection
-            GuardSettings(store: store)
-            ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
-            ClaudeAISettings().id("claudeAI")
-            costsSection
-            notificationsSection
-            updatesSection
-            hiddenSection
-            TeamSettings(store: store)
-            CommandPaletteSettings()
-            helpSection
-        } }
-        .formStyle(.grouped)
-        .frame(width: 560)
-        .frame(minHeight: 480, idealHeight: 680, maxHeight: 820)
+        TabView(selection: $settingsTab) {
+            Form {
+                generalSection
+                notificationsSection
+                updatesSection
+                hiddenSection
+            }
+            .formStyle(.grouped)
+            .tabItem { Label(L("General", "Allgemein"), systemImage: "gearshape") }.tag("general")
+
+            Form {
+                platformsSection
+                PhoneLinkSettings()
+            }
+            .formStyle(.grouped)
+            .tabItem { Label(L("Platforms", "Plattformen"), systemImage: "server.rack") }.tag("platforms")
+
+            Form {
+                deploySection
+                GuardSettings(store: store)
+                costsSection
+            }
+            .formStyle(.grouped)
+            .tabItem { Label(L("Deploy & guard", "Deploy & Wächter"), systemImage: "paperplane") }.tag("deploy")
+
+            ScrollViewReader { proxy in Form {
+                ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
+                ClaudeAISettings().id("claudeAI")
+                AutofixSettings(items: store.items.values.flatMap { $0 }).id("autofix")
+            } }
+            .formStyle(.grouped)
+            .tabItem { Label("Claude", systemImage: "sparkles") }.tag("claude")
+
+            Form { TeamSettings(store: store) }
+                .formStyle(.grouped)
+                .tabItem { Label(L("Team", "Team"), systemImage: "person.2") }.tag("team")
+
+            Form {
+                CommandPaletteSettings()
+                helpSection
+            }
+            .formStyle(.grouped)
+            .tabItem { Label(L("Advanced", "Erweitert"), systemImage: "wrench.and.screwdriver") }.tag("advanced")
+        }
+        .frame(width: 600)
+        .frame(minHeight: 460, idealHeight: 620, maxHeight: 820)
         .task {
             // Fresh switches; a script without `deploys providers` was asked at start already.
             if store.providersFromScript { await store.loadProviders() }
@@ -279,7 +310,6 @@ struct SettingsView: View {
             Text(L("Version ", "Version ") + version
                  + L(" · no telemetry; GitHub, Vercel and Render are asked with your own logins", " · keine Telemetrie; GitHub, Vercel und Render werden mit deinen eigenen Anmeldungen gefragt"))
                 .font(.caption).foregroundStyle(.secondary)
-            AutofixSettings(items: store.items.values.flatMap { $0 }).id("autofix")
         }
     }
 
