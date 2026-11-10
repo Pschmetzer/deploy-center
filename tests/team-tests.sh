@@ -171,6 +171,10 @@ fresh
   expect "a label on an open issue naming the commit counts" "$(n dddd444dddd444dddd444dddd444dddd444dddd)" "dev-two"
   out="$(team_gate render api acme/shop main aaaa111aaaa111aaaa111aaaa111aaaa111aaaa 2>&1)"; rc=$?
   expect "two needed, one there: refused" "$rc:$(echo "$out" | grep -c 'needs 2 approval')" "1:1"
+  # 290: GitHub not readable is not "no approvals" (there is no fixture for this commit: a 404).
+  expect "290: a GitHub error is an error, not an empty list" "$(team_approvals acme/shop eeee555 dev-one | jq -r '.error')" "gh: Not Found (HTTP 404)"
+  out="$(team_gate render api acme/shop main eeee555 2>&1)"; rc=$?
+  expect "290: team_gate says GitHub could not be read" "$rc:$(echo "$out" | grep -c 'could not be read to check them'):$(echo "$out" | grep -c 'Found none')" "1:1:0"
   [ "$fails" = 0 ] || exit 1
 ) || fails=$((fails + 1))
 

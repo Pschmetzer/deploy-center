@@ -71,8 +71,8 @@
 #   deploys render list                       services and their auto-deploy setting
 #   deploys render autodeploy-off <s>|--all
 #   deploys render autodeploy-on <s>|--all    auto-deploy "On Commit" again
-#   deploys autodeploy allow <vercel|render|all> <p>|--all <hours>   auto-deploy on for a while (1-168 h)
-#   deploys autodeploy allowed [--json] | revoke <vercel|render|all> <p>|--all
+#   deploys autodeploy allow <platform|all> <p>|--all <hours>   auto-deploy on for a while (1-168 h)
+#   deploys autodeploy allowed [--json] | revoke <platform|all> <p>|--all
 #   deploys guard [--dry-run]                 auto-deploy off wherever it is on without an allowance
 #   deploys guard status [--json] | schedule on|off   (every 30 minutes; see docs/GUARD.md)
 #   deploys render deploy <service>           deploy the newest commit
@@ -684,13 +684,54 @@ window_json() {
 # run: what this run starts itself (render deploy -> deploy-json) is not asked again.
 # Sets `frozen` to the window's text when the run goes ahead inside one.
 frozen=""
+# The shared window of deploy-center.json (docs/TEAM.md) is the other way round: when deploys
+# are allowed, {"days":["mon",…], "from":"09:00", "to":"16:00", "tz":"Europe/Berlin"} (or a
+# list of them: any one open is enough). Outside it is closed. A window.json-style {"deny":…}
+# that reaches a project through overrides is the local window, checked by window_json.
+TEAM_WINDOW_RULE='def hm: split(":") | (.[0] | tonumber) * 60 + ((.[1] // "0") | tonumber);
+  def open1: ((.days == null) or (.days | map(ascii_downcase | .[0:3]) | index($day)))
+      and ((.dates == null) or (.dates | index($date)))
+      and (((.from // "00:00") | hm) as $f | ((.to // "24:00") | hm) as $u | ($time | hm) as $t
+           | if $f <= $u then $t >= $f and $t < $u else $t >= $f or $t < $u end);
+  def says: "\((.days // ["every day"]) | join(", ")) \(.from // "00:00")–\(.to // "24:00")\(if .tz then " " + .tz else "" end)";
+  (if type == "array" then . else [.] end) as $w
+  | if any($w[]; open1) then {denied:false} else {denied:true, reason:"outside the shared deploy window (\($w | map(says) | join("; ")))"} end'
+TEAM_EFF_CACHE=""
+team_eff_once() { if [ -z "$TEAM_EFF_CACHE" ]; then TEAM_EFF_CACHE="$(team_effective 2>/dev/null)" || TEAM_EFF_CACHE='{}'; fi; echo "$TEAM_EFF_CACHE"; }
+# team_window_denied <name>: why the shared window of that project is closed now, or nothing.
+team_window_denied() {
+  team_on || return 0
+  local n="${1#*:}" w tz now
+  is_provider "${1%%:*}" || n="$1"
+  w="$(team_eff_once | jq -c --arg n "$n" '.projects[$n].window.value // null | if type == "object" and has("deny") then null else . end' 2>/dev/null)"
+  [ -n "$w" ] && [ "$w" != null ] || return 0
+  tz="$(echo "$w" | jq -r 'if type == "array" then .[0].tz else .tz end // empty')"
+  # An unknown zone would silently read as UTC: refused instead.
+  if [ -n "$tz" ] && [ -z "${DEPLOYS_NOW:-}" ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then
+    echo "the shared deploy window of $n names an unknown time zone \"$tz\""; return 0
+  fi
+  # Now in the window's own zone (DEPLOYS_NOW stands in for tests, as in now_parts).
+  if [ -n "${DEPLOYS_NOW:-}" ] || [ -z "$tz" ]; then now="$(now_parts)"
+  else now="$(TZ="$tz" LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]')"; fi
+  echo "$w" | jq -r --arg day "${now%% *}" --arg time "$(echo "$now" | cut -d' ' -f2)" --arg date "${now##* }" \
+    "$TEAM_WINDOW_RULE"' | if .denied then .reason else empty end' 2>/dev/null || echo "the shared deploy window of $n could not be read"
+}
+# freeze_check [<name>...]: the local window, then the shared window of each project named.
 freeze_check() {
   [ -z "${DEPLOYS_WINDOW_CHECKED:-}" ] || return 0
-  local w; w="$(window_json)" || exit 1
+  local w n why
+  w="$(window_json)" || exit 1
   if [ "$(echo "$w" | jq -r .denied)" = true ]; then
     frozen="$(echo "$w" | jq -r .reason)"
     [ "$forced" = 1 ] || die "No deploys now: the deploy window says \"$frozen\". To deploy anyway: --force \"why\""
   fi
+  for n in "$@"; do
+    [ -n "$n" ] || continue
+    why="$(team_window_denied "$n")"
+    [ -n "$why" ] || continue
+    [ "$forced" = 1 ] || die "No deploys of $n now: $why. To deploy anyway: --force \"why\""
+    frozen="${frozen:+$frozen; }$n: $why"
+  done
   export DEPLOYS_WINDOW_CHECKED=1
 }
 # A start inside a window, and why, goes to the journal the app shows.
@@ -772,13 +813,17 @@ export -f cost_day days_ago
 
 # ---------- Other things that start builds ----------
 
-# A workflow that deploys by itself defeats turning auto-deploy off.
+# A workflow that deploys by itself defeats turning auto-deploy off. The deploy commands of every
+# platform: Vercel, Render, Netlify, Cloudflare (wrangler), DigitalOcean (doctl), Amplify (aws),
+# Coolify (its /deploy API or webhook), and any deploy hook.
+WORKFLOW_DEPLOY_RE='vercel (deploy|--prod)|vercel-action|api\.render\.com/deploy|render-deploy|deploy[-_]hook|DEPLOY_HOOK|netlify (deploy|api createSiteDeploy)|netlify-cli|nwtgck/actions-netlify|wrangler (pages )?deploy|wrangler-action|cloudflare/pages-action|doctl apps (create-deployment|update)|digitalocean/app_action|aws amplify start-job|amplify publish|coolify[^ ]*/api/v1/deploy|/api/v1/deploy\?uuid=|COOLIFY_(WEBHOOK|TOKEN)'
+export WORKFLOW_DEPLOY_RE
 workflow_hits() {
   local repo="$1" out="$2"
   gh api "repos/$repo/contents/.github/workflows" --jq '.[] | select(.type=="file") | .path' 2>/dev/null | while read -r f; do
     gh api "repos/$repo/contents/$f" --jq '.content' 2>/dev/null | b64d 2>/dev/null \
       | grep -vE '^[[:space:]]*#' \
-      | grep -qE 'vercel (deploy|--prod)|vercel-action|api\.render\.com/deploy|render-deploy|deploy[-_]hook|DEPLOY_HOOK' \
+      | grep -qE "$WORKFLOW_DEPLOY_RE" \
       && jq -nc --arg w "$repo" --arg d "$f" '{kind:"workflow", where:$w, detail:$d}'
   done > "$out/$(echo "$repo" | tr '/' '_').jsonl" || true
 }
@@ -1389,13 +1434,39 @@ ad_unlock() { rmdir "$CONFIG_DIR/locks/autodeploy" 2>/dev/null || true; }
 # Seams the tests replace: what each platform has ([{name, id, auto}]) and the switches.
 ad_list_vercel() { vercel_projects | jq '[.[] | {name, id:.name, auto:(.link != null)}]'; }
 ad_list_render() { render_services | jq '[.[] | {name, id, auto:('"$(render_auto)"' != "off")}]'; }
-ad_off() { case "$1" in vercel) vercel_off_one "$2";; render) render_off_one "$3" "$2";; esac; }
-ad_on() { case "$1" in vercel) vercel_on_one "$2";; render) render_on_one "$3" "$2";; esac; }
-# Which platforms this Mac can read: a Vercel login (or remembered projects), a Render key.
+# Every other provider with caps.off: its contract list (`auto` in <p>_json) and its own switches.
+ad_list_any() { ( "${1}_json" ) | jq '[.[] | {name, id:(.id // .name), auto:(.auto == true)}]'; }
+ad_list() { if declare -F "ad_list_$1" >/dev/null; then "ad_list_$1"; else ad_list_any "$1"; fi; }
+# Whether auto-deploy of <p> can be switched on again from here (Netlify has no such switch).
+ad_can_on() { case "$1" in vercel|render) return 0 ;; esac; declare -F "${1}_on" >/dev/null; }
+ad_off() {
+  case "$1" in
+    vercel) vercel_off_one "$2" ;;
+    render) render_off_one "$3" "$2" ;;
+    *) "${1}_off" "$3"
+       # Read back: a provider that needs one more step by hand (Netlify: a line in netlify.toml)
+       # answers 0 with auto-deploy still on. That is not "turned off".
+       if [ "$(ad_list_any "$1" 2>/dev/null | jq -r --arg i "$3" --arg n "$2" '[.[] | select(.id == $i or .name == $n)][0].auto // false')" = true ]; then
+         die "$(meta_str "$1" label): auto-deploy of $2 is still on (see the step above)"
+       fi ;;
+  esac
+}
+ad_on() {
+  case "$1" in
+    vercel) vercel_on_one "$2" ;;
+    render) render_on_one "$3" "$2" ;;
+    *) ad_can_on "$1" || die "$(meta_str "$1" label) cannot turn auto-deploy on again from here"; "${1}_on" "$3" ;;
+  esac
+}
+# Which platforms this Mac can read: a Vercel login (or remembered projects), a Render key, and
+# every other provider that can turn auto-deploy off (caps.off), switched on and set up.
 ad_platforms() {
   # Only the providers that are switched on (deploys providers) and set up.
-  provider_on vercel && echo vercel
-  provider_on render && echo render
+  local p
+  for p in $(enabled_providers); do
+    case "$p" in vercel|render) ;; *) meta_flag "$p" off || continue ;; esac
+    provider_on "$p" && echo "$p"
+  done
   return 0
 }
 
@@ -1415,7 +1486,7 @@ guard_run() {
     [ "$sp" = all ] || [ "$sp" = "$plat" ] || continue
     err="$(mktemp)"
     # One platform that cannot be read is an error, never "nothing is on"; the other still runs.
-    if ! list="$(ad_list_"$plat" 2>"$err")" || ! echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    if ! list="$(ad_list "$plat" 2>"$err")" || ! echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1; then
       out="$(grep -v '^[[:space:]]*$' "$err" | tail -n 1 | sed 's/^Error: //' | cut -c1-300)"; rm -f "$err"
       echo "guard: could not read $plat${out:+: $out}" >&2; act "$plat" "" error "${out:-could not read}"; rc=1; continue
     fi
@@ -1475,17 +1546,19 @@ guard_main() {
   return "$rc"
 }
 
-# allow/revoke take <vercel|render|all> <project>|--all. Prints "<key>\t<platform or all>\t<name or *>".
+# allow/revoke take <platform|all> <project>|--all. Prints "<key>\t<platform or all>\t<name or *>".
 ad_scope() {
   local plat="$1" target="$2"
-  case "$plat" in vercel|render|all) ;; *) die "Platform must be vercel, render or all";; esac
+  # Every platform that can turn auto-deploy off (caps.off) can have an allowance.
+  ad_platform_ok() { case "$1" in vercel|render) return 0 ;; esac; is_provider "$1" && meta_flag "$1" off; }
+  [ "$plat" = all ] || ad_platform_ok "$plat" || die "Platform must be all or one that can turn auto-deploy off: $(for p in "${PROVIDERS[@]}"; do ad_platform_ok "$p" && printf '%s ' "$p"; done | sed 's/ $//; s/ /, /g')"
   [ -n "$target" ] || die "Give a project name or --all"
   if [ "$target" = --all ]; then
     if [ "$plat" = all ]; then printf '*\tall\t*\n'; else printf '%s:*\t%s\t*\n' "$plat" "$plat"; fi
   else
     if [ "$plat" = all ]; then
       plat="$(lookup "$target")" || exit 1; plat="${plat%%$'\t'*}"
-      case "$plat" in vercel|render) ;; *) die "Allowances are for Vercel and Render; $target is on $(meta_str "$plat" label)";; esac
+      ad_platform_ok "$plat" || die "$(meta_str "$plat" label) cannot turn auto-deploy off, so $target needs no allowance"
     fi
     printf '%s:%s\t%s\t%s\n' "$plat" "$target" "$plat" "$target"
   fi
@@ -1498,13 +1571,20 @@ allow_main() {
   [ "$hours" -ge 1 ] && [ "$hours" -le 168 ] || die "Hours must be between 1 and 168"
   scope="$(ad_scope "$1" "${2:-}")" || exit 1
   IFS=$'\t' read -r key plat name <<< "$scope"
+  # Netlify cannot switch auto-deploy on again from here: no allowance that would do nothing.
+  [ "$plat" = all ] || ad_can_on "$plat" || die "$(meta_str "$plat" label) cannot turn auto-deploy on again from here (do it in its dashboard); nothing changed"
   until=$(( $(date +%s) + hours * 3600 ))
   # Written before switching on: a guard run in between must already see it.
   ad_lock || die "Could not take the auto-deploy lock; nothing changed"
   allow_read | jq --arg k "$key" --argjson u "$until" '.[$k] = $u' | allow_write
   ad_unlock
   if [ "$name" != "*" ]; then
-    id="$name"; [ "$plat" = render ] && { id="$( (render_id_of "$name") )" || bad=1; }
+    id="$name"
+    case "$plat" in
+      vercel) ;;
+      render) id="$( (render_id_of "$name") )" || bad=1 ;;
+      *) id="$( ("${plat}_has" "$name") 2>/dev/null)" && [ -n "$id" ] || bad=1 ;;
+    esac
     if [ "$bad" = 0 ] && ( ad_on "$plat" "$name" "$id" ); then :; else
       ad_lock && { allow_read | jq --arg k "$key" 'del(.[$k])' | allow_write; ad_unlock; }
       die "Auto-deploy of $plat $name was not turned on; the allowance is withdrawn"
@@ -1512,7 +1592,8 @@ allow_main() {
   else
     for p in $(ad_platforms); do
       [ "$plat" = all ] || [ "$plat" = "$p" ] || continue
-      list="$(ad_list_"$p")" || { echo "Could not read $p" >&2; bad=$((bad + 1)); continue; }
+      ad_can_on "$p" || { echo "$(meta_str "$p" label) left as it is: it cannot turn auto-deploy on again from here."; continue; }
+      list="$(ad_list "$p")" || { echo "Could not read $p" >&2; bad=$((bad + 1)); continue; }
       while IFS=$'\t' read -r name id; do
         [ -n "$name" ] || continue
         if [ "$p" = vercel ] && ! jq -e --arg n "$name" '.[$n].repo != null' "$REPOS" >/dev/null 2>&1; then
@@ -1787,7 +1868,7 @@ provider_cmd() {
   else sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1; fi
   # Production starts wait for the deploy window (docs/SAFE-DEPLOY.md); a forced one is journaled.
   case "$verb" in
-    deploy|deploy_json) [[ " $* " == *" --preview "* ]] || freeze_check; journal_forced "$p" "${1:-}" ;;
+    deploy|deploy_json) [[ " $* " == *" --preview "* ]] || freeze_check "${1:-}"; journal_forced "$p" "${1:-}" ;;
   esac
   "$fn" "$@"
 }
@@ -1838,7 +1919,7 @@ case "${1:-} ${2:-}" in
     count="$(echo "$members" | grep -c .)"; i=0
     # Production starts wait for the deploy window, as `<p> deploy` and deploy-changed do. Asked once
     # for the whole group, before anything starts: a window must not stop a group halfway.
-    [ -n "$pv" ] || freeze_check
+    [ -n "$pv" ] || freeze_check $members
     # A start that failed has said why on stderr; that stays the last line for one project.
     stop_group() { [ "$2" -le 1 ] || echo "$1 did not start; the rest of the group was not started." >&2; exit 1; }
     for p in $members; do
@@ -2226,7 +2307,8 @@ BASH
   "triggers "*)
     # Builds in the last 24 h that nobody started from here, and workflows that deploy by themselves.
     since=$(( ($(date +%s) - 86400) * 1000 )); tmp="$(mktemp -d)"
-    # Vercel and Render only: these are their own extras (docs/PROVIDERS.md).
+    # The builds are read for Vercel and Render only (their own extras, docs/PROVIDERS.md); the
+    # workflows of every platform's repos are read.
     { if is_enabled vercel; then vercel_call "/v6/deployments?limit=100&since=$since" \
         | jq -c --slurpfile r "$REPOS" '.deployments[] | select(.source=="git" or .source=="hook" or .source=="deploy-hook" or .source=="import")
             | select(.created/1000 > ($r[0][.name].offAt // 1e12))
@@ -2252,6 +2334,12 @@ BASH
       if command -v gh >/dev/null 2>&1; then
         { jq -r '.[] | select(.repo and (.type // "github") == "github") | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
           echo "${svcs:-[]}" | jq -r '.[] | .repo // empty | select(test("^https://github.com/")) | sub("^https://github.com/";"") | sub("\\.git$";"")'
+          # The GitHub repos of every other platform that is on (Netlify, Cloudflare, Coolify, ...).
+          for p in $(active_providers); do
+            case "$p" in vercel|render) continue ;; esac
+            ( "${p}_json" ) 2>/dev/null | jq -r '.[]? | .repo // empty' 2>/dev/null \
+              | while IFS= read -r r; do [ "$(githost_of "$r")" = github ] && echo "$r"; done
+          done
         } | sort -u | xargs -r -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
         cat_all "$tmp"/*.jsonl
       fi
@@ -2335,6 +2423,11 @@ BASH
     "$0" watch "$plat:$p" >&2 || die "The newest deploy of $p is not live; nothing to check"
     [ -n "$url" ] || url="$(site_url_of "$vid" "$plat")"
     [ -n "$url" ] || die "No address known for $p (give one with --url)"
+    # Without --path: the health path of the shared config (deploy-center.json "health"), if any.
+    if [ -z "$path" ] && team_on; then
+      path="$(team_eff_once | jq -r --arg n "$p" '.projects[$n].health.value // empty | strings' 2>/dev/null)" || path=""
+      [ -z "$path" ] || echo "Checking $path (health in the shared config)" >&2
+    fi
     case "$path" in ''|/*) ;; *) path="/$path";; esac
     target="${url%/}$path"; [ -n "$path" ] || target="$url"
     codes=""; bad=0
@@ -2452,7 +2545,13 @@ BASH
       esac
     }
     start() {  # start <platform> <name> <sha or empty> <reason> [<id>]
-      local st sha="$3" why="$4" note
+      local st sha="$3" why="$4" note shut
+      # The shared deploy window of this project (deploy-center.json): closed means skipped, unless --force.
+      shut="$(team_window_denied "$2")"
+      if [ -n "$shut" ]; then
+        if [ "$forced" != 1 ]; then skip=$((skip+1)); say "$1" "$2" skipped "$shut (--force \"why\" to deploy anyway)"; return 0; fi
+        frozen="${frozen:+$frozen; }$2: $shut"
+      fi
       # A provider that cannot deploy a given commit (caps.sha false) builds the newest one of the
       # branch: started without --sha, and said so, since a push after the checked one comes along.
       if [ -n "$sha" ] && ! meta_flag "$1" sha; then
@@ -2491,7 +2590,7 @@ BASH
       done
     fi
     if [ "$json" = 1 ]; then jq -s '.' "$res"
-    else echo "$ok started, $bad failed to start$([ -n "$green" ] && echo ", $skip skipped")."; fi
+    else echo "$ok started, $bad failed to start$({ [ -n "$green" ] || [ "$skip" -gt 0 ]; } && echo ", $skip skipped")."; fi
     rm -f "$res"
     [ "$rc" = 0 ] || echo "Some projects could not be read and were left out (see above)." >&2
     [ "$bad" = "0" ] && [ "$rc" = 0 ] ;;
