@@ -43,7 +43,7 @@ published.
     "render/worker",
     { "name": "api", "platform": "render", "label": "API", "url": "https://api.example.com/health" }
   ],
-  "hideMessages": false,
+  "hideMessages": true,
   "showAuthors": false,
   "timeline": 30
 }
@@ -55,7 +55,7 @@ published.
 | `title` | `Deploys` | Page and feed title. |
 | `description` | empty | A line under the title. |
 | `baseUrl` | empty | Where the page will live. Used for the feed's links and ids. |
-| `hideMessages` | `false` | `true` shows "Updated" instead of every commit message, in the page, the feed and `status.json`. |
+| `hideMessages` | `false` | `true` shows "Updated" instead of every commit message, in the page, the feed and `status.json`. The example config sets it to `true`: commit messages and the titles of waiting commits ("Coming next") are often not meant for the public. Set `false` only for a page you would show anyone. |
 | `showAuthors` | `false` | Keep the author names that `deploys notes` adds. |
 | `timeline` | `30` | How many deploys the timeline keeps. |
 | `journal` | the app's | Path to a `journal.jsonl`. `DEPLOYS_JOURNAL` overrides it. |

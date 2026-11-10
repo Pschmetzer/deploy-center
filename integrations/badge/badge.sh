@@ -34,12 +34,20 @@ lines="$(echo "$list" | jq -r '
   .[] | select(.name)
   # The commit that is live (Render: liveAt), not the newest attempt, which may have failed.
   | ((.liveAt // .lastAt // 0) | if . > 0 then age else "never" end) as $when
-  | (if .changed then
+  # The newest build, as the status page reads it: building, or failed (Render: an older one is
+  # still live). A failed or running build is never shown as a green "up to date".
+  | ((.lastState // "") | ascii_downcase) as $s
+  | (if .building or (.phase // "") == "building" then "building"
+     elif ($s | test("fail|error")) then "failed" else "" end) as $build
+  | (if $build == "building" then "building"
+     elif $build == "failed" then "build failed"
+     elif .changed then
        (if .pendingCommits then "\(.pendingCommits) commit\(if .pendingCommits == 1 then "" else "s" end) waiting"
         else "changes waiting" end)
      else "up to date" end) as $what
   | [.name, "\($when) · \($what)",
-     (if (.liveAt // .lastAt // 0) == 0 then "#9f9f9f" elif .changed then "#dfb317" else "#4c1" end)]
+     (if $build == "failed" then "#e05d44" elif $build == "building" then "#007ec6"
+      elif (.liveAt // .lastAt // 0) == 0 then "#9f9f9f" elif .changed then "#dfb317" else "#4c1" end)]
   | @tsv')"
 
 # XML-safe text; a rough width per character (Verdana 11 averages about 6.5 px).

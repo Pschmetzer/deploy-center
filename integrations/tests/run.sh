@@ -40,7 +40,7 @@ case "\$*" in
   "notes "*) exit 1 ;;
   "simulate --days "*" --json") jq --argjson d "\$3" '.days = \$d' "$here/../tests/fixtures/savings/simulate-report.json" ;;
   "ledger --json") cat "$here/../tests/fixtures/savings/ledger-report.json" ;;
-  "doctor") echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
+  "doctor") [ -n "\${FAKE_DOCTOR_SLEEP:-}" ] && sleep "\$FAKE_DOCTOR_SLEEP"; echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
   "changed --json") jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
   "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"
     if [ -n "\${FAKE_NO_SUMMARY:-}" ]; then :; elif [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
@@ -125,7 +125,10 @@ rm -f "$DEPLOYS_CONFIG/ignored.json"
 RENDER_API_KEY=x badge/badge.sh "$tmp/b" >/dev/null
 expect "one badge per project" "$(cd "$tmp/b" && echo *.svg)" "api.svg app-web.svg site.svg"
 contains "badge: days and commits" "$(cat "$tmp/b/app-web.svg")" "3 d ago · 4 commits waiting"
-contains "badge: Render shows the live commit's age, not the newest attempt" "$(cat "$tmp/b/api.svg")" "1 d ago · changes waiting"
+contains "badge: Render shows the live commit's age, and a failed newest build" "$(cat "$tmp/b/api.svg")" "1 d ago · build failed"
+contains "badge: a failed build is red" "$(cat "$tmp/b/api.svg")" 'fill="#e05d44'
+echo '[{"name":"busy","changed":false,"lastAt":1,"building":true}]' | badge/badge.sh "$tmp/bb" - >/dev/null
+contains "badge: a running build is blue, not up to date" "$(cat "$tmp/bb/busy.svg")" 'building'
 contains "badge: up to date is green" "$(cat "$tmp/b/site.svg")" 'fill="#4c1"'
 echo '[{"name":"a<b>&\"c","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/e" - >/dev/null
 contains "badge: names are XML-escaped" "$(cat "$tmp/e/a_b___c.svg")" 'a&lt;b&gt;&amp;&quot;c: deployed never'
@@ -168,6 +171,11 @@ out="$(FAKE_SLEEP=30.017 DEPLOYS_PREPUSH_TIMEOUT=1 push "refs/heads/main $s1 ref
 contains "pre-push: a CLI that does not answer lets the push go" "$out" $'push not checked.\nexit=0'
 [ $(( $(date +%s) - start )) -lt 6 ] && ok "pre-push: gives up after the timeout" || fail "pre-push: gives up after the timeout" "took too long"
 pgrep -f "sleep 30.017" >/dev/null && fail "pre-push: the stuck CLI is stopped" "still running" || ok "pre-push: the stuck CLI is stopped"
+start=$(date +%s)
+out="$(FAKE_DOCTOR_SLEEP=30.029 DEPLOYS_PREPUSH_TIMEOUT=1 push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
+contains "pre-push: a doctor that hangs lets the push go" "$out" "exit=0"
+[ $(( $(date +%s) - start )) -lt 6 ] && ok "pre-push: a hanging doctor is bounded by the timeout" || fail "pre-push: a hanging doctor is bounded by the timeout" "took too long"
+pgrep -f "sleep 30.029" >/dev/null && fail "pre-push: the hanging doctor is stopped" "still running" || ok "pre-push: the hanging doctor is stopped"
 git -C "$tmp/repo" config deploys.prepush.block true
 out="$(push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
 contains "pre-push: blocks only when configured" "$out" "exit=1"
