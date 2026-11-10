@@ -46,7 +46,7 @@ struct BuildLog: View {
                     Toggle(L("Errors only", "Nur Fehler"), isOn: $onlyErrors).toggleStyle(.button)
                         .disabled(firstError == nil)
                     CopyButton(title: L("Copy", "Kopieren")) { text }
-                    ClaudeMenu(item: live, waiting: false)
+                    ClaudeMenu(store: store, item: live, waiting: false)
                     CopyButton(title: L("Copy for Claude", "Für Claude kopieren")) {
                         var msg: String?
                         if case .failed(let m) = live.state { msg = m }
@@ -169,7 +169,7 @@ struct ProjectDetail: View {
                 }
                 if item.state.isActive { ProgressView().controlSize(.small) }
                 Spacer()
-                ClaudeMenu(item: item, waiting: !(details?.commits.isEmpty ?? true))
+                ClaudeMenu(store: store, item: item, waiting: !(details?.commits.isEmpty ?? true))
                 if let d = details, !d.commits.isEmpty {
                     CopyButton(title: L("Copy release notes", "Release-Notes kopieren")) { LogTools.releaseNotes(name: item.name, commits: d.commits) }
                     .help(L("The waiting commits as a list, ready for a mail or a chat message", "Die wartenden Commits als Liste, fertig für Mail oder Chat"))

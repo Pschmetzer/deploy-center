@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Command palette: in observer mode (Settings → Team) it offers no deploy, rollback or "deploy all changed", like the window.
+- Ask Claude → Explain this failure: its button is now "Fix with Claude", the same as on the row (same caps, setup offer and toast).
 
 ## 0.8.0
 

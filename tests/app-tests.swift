@@ -264,7 +264,6 @@ expect("Claude prompt carries no secrets", ["ghp_abcdefghijklmnopqrstuvwxyz0123"
 expect("ai notes args", ClaudeAI.Ask.notes("de").args(project: "web"), ["ai", "notes", "web", "--json", "--lang", "de"])
 expect("ai explain args", ClaudeAI.Ask.explain.args(project: "srv-1"), ["ai", "explain", "srv-1", "--json"])
 expect("ai failed: platform error", { var i = item(); i.lastState = "build_failed"; return ClaudeAI.isFailed(i) }(), true)
-expect("ai: Autofix is offered only for build failures", { var i = item(); i.lastState = "update_failed"; return "\(ClaudeAI.isFailed(i)) \(ClaudeAI.autofixCanTake(i))" }(), "true false")
 expect("ai failed: a ready build is not", { var i = item(); i.lastState = "READY"; return ClaudeAI.isFailed(i) }(), false)
 expect("ai off by default", UserDefaults(suiteName: "dc-test-\(UUID())")!.bool(forKey: ClaudeAI.enabledKey), false)
 expect("plain text untouched", LogTools.maskSecrets("Error: module not found"), "Error: module not found")

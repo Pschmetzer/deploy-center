@@ -71,9 +71,6 @@ enum ClaudeAI {
         if case .failed = item.state { return true }
         return ["ERROR", "build_failed", "update_failed", "pre_deploy_failed"].contains(item.lastState ?? "")
     }
-
-    /// Only a build that failed can be fixed from its log: Autofix takes Vercel ERROR and Render build_failed.
-    static func autofixCanTake(_ item: Item) -> Bool { ["ERROR", "build_failed"].contains(item.lastState ?? "") }
 }
 
 // MARK: - Settings > Claude in the app
@@ -175,6 +172,7 @@ struct ClaudeAISettings: View {
 
 /// One menu, shown only when Claude in the app is on and a key is there. The answer opens in a sheet.
 struct ClaudeMenu: View {
+    @ObservedObject var store: Store
     let item: Item
     /// Release notes and the ship check need waiting commits (the detail sheet); the build log offers only the failure.
     var waiting = true
@@ -198,7 +196,11 @@ struct ClaudeMenu: View {
                 }
                 .fixedSize()
                 .help(L("Sends masked text to Anthropic with your own key", "Sendet maskierten Text mit deinem eigenen Schlüssel an Anthropic"))
-                .sheet(item: $asking) { a in ClaudeAnswerSheet(item: item, ask: a) }
+                .sheet(item: $asking) { a in
+                    // "Fix with Claude" as in the row: the same caps, setup offer and toast.
+                    ClaudeAnswerSheet(item: item, ask: a,
+                                      onAutofix: store.canFixWithClaude(item) ? { Task { await store.fixWithClaude(item) } } : nil)
+                }
             }
         }
         .task(id: enabled) { if enabled { hasKey = await ClaudeAI.status()?.key ?? false } }
@@ -211,14 +213,14 @@ struct ClaudeAnswerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var answer: ClaudeAnswer?
     @State private var error: String?
-    @State private var autofixReady = false
-    /// `answer` and `autofixReady` are given only by tests and screenshots.
-    init(item: Item, ask: ClaudeAI.Ask, answer: ClaudeAnswer? = nil, autofixReady: Bool = false) {
-        self.item = item; _ask = State(initialValue: ask)
-        _answer = State(initialValue: answer); _autofixReady = State(initialValue: autofixReady); preset = answer != nil
+    /// Hands this failed build to Autofix (`Store.fixWithClaude`); nil when Autofix cannot take it.
+    let onAutofix: (() -> Void)?
+    /// `answer` is given only by tests and screenshots.
+    init(item: Item, ask: ClaudeAI.Ask, onAutofix: (() -> Void)? = nil, answer: ClaudeAnswer? = nil) {
+        self.item = item; self.onAutofix = onAutofix; _ask = State(initialValue: ask)
+        _answer = State(initialValue: answer); preset = answer != nil
     }
     private let preset: Bool
-    @State private var handed: String?
 
     private var lang: String { if case .notes(let l) = ask { return l }; return "en" }
 
@@ -253,15 +255,14 @@ struct ClaudeAnswerSheet: View {
                        "\(ClaudeAI.modelName(answer.model)) · \(answer.tokens.formatted()) Tokens · \(answer.used.formatted()) von \(answer.cap.formatted()) diesen Monat"))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if let handed { Text(handed).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
             HStack {
                 if let answer {
                     CopyButton(title: L("Copy", "Kopieren")) { answer.text }
                     if case .notes = ask {
                         ShareLink(item: answer.text) { Label(L("Share", "Teilen"), systemImage: "square.and.arrow.up") }
                     }
-                    if ask == .explain && autofixReady && ClaudeAI.autofixCanTake(item) {
-                        Button(L("Hand to Autofix", "An Autofix übergeben")) { Task { await handToAutofix() } }
+                    if ask == .explain, let onAutofix {
+                        Button(L("Fix with Claude", "Mit Claude beheben")) { onAutofix(); dismiss() }
                             .help(L("A Claude Code session fixes this build and opens a pull request", "Eine Claude-Code-Sitzung behebt diesen Build und öffnet einen Pull Request"))
                     }
                 }
@@ -275,16 +276,6 @@ struct ClaudeAnswerSheet: View {
             if preset { return }
             answer = nil; error = nil
             do { answer = try await ClaudeAI.ask(ask, project: item.id) } catch { self.error = error.localizedDescription }
-            if ask == .explain, let st = try? await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20) {
-                autofixReady = st.routine != nil && st.token
-            }
         }
-    }
-
-    private func handToAutofix() async {
-        do {
-            let out = try await Tool.run(["autofix", "--only", item.platform.cli, item.name], timeout: 300)
-            handed = String(data: out, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        } catch { handed = error.localizedDescription }
     }
 }
