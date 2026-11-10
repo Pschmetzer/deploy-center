@@ -59,7 +59,8 @@ Git auto-deploy is off on this project's Vercel/Render. A push does not go live;
       "deny": [
         "Bash(deploys deploy-changed*)",
         "Bash(deploys deploy *)",
-        "Bash(deploys * deploy*)",
+        "Bash(deploys * deploy *)",
+        "Bash(deploys * deploy-json*)",
         "Bash(deploys * rollback*)",
         "Bash(deploys * cancel*)",
         "Bash(deploys * autodeploy-on*)",
@@ -70,8 +71,9 @@ Git auto-deploy is off on this project's Vercel/Render. A push does not go live;
   }
   ```
 
-  `deploys * deploy*` also matches `deploy-json`. Claude Code matches Bash rules on the command as
-  written, so a deny rule is a guard rail, not a sandbox.
+  The rules name the subcommands, not `deploy*`, so read-only calls such as `deploys logs deploy-site`
+  stay allowed. Claude Code matches Bash rules on the command as written, so a deny rule is a guard
+  rail, not a sandbox.
 - **The commands are yours.** All four `/deploys-*` commands set `disable-model-invocation: true`,
   so Claude cannot start them on its own.
 - **The hook only reads.** It calls `deploys changed --json`, prints one line, and always exits 0.
