@@ -46,7 +46,8 @@ enum Journal {
         guard let data = try? enc.encode(e) else { return }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let line = data + Data("\n".utf8)
-        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line); try? h.close() }
+        // The throwing calls: the old ones raise an Objective-C exception on a full disk, and the app ends.
+        if let h = try? FileHandle(forWritingTo: url) { _ = try? h.seekToEnd(); try? h.write(contentsOf: line); try? h.close() }
         else { try? line.write(to: url) }
         let n = (lines ?? countLines()) + (lines == nil ? 0 : 1)
         lines = n

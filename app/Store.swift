@@ -31,9 +31,19 @@ final class Store: ObservableObject {
     private var lastExtras = Date.distantPast
     /// When a part last failed to load; the values from before stay and count as out of date.
     @Published var extrasFailedAt: [String: Date] = [:]
+    /// When a part ("costs", "triggers") was last read fine: shown as "as of …" while a newer read fails.
+    @Published var extrasLoadedAt: [String: Date] = [:]
+    /// "As of 09:12" for a part whose last read failed and whose values are older; nil while it is current.
+    func staleNote(_ part: String) -> String? {
+        guard extrasFailedAt[part] != nil else { return nil }
+        guard let at = extrasLoadedAt[part] else { return L("Could not be read", "Ließ sich nicht lesen") }
+        return L("As of ", "Stand ") + at.formatted(Calendar.current.isDateInToday(at) ? .dateTime.hour().minute() : .dateTime.day().month().hour().minute())
+    }
     func loadExtras() async {
         lastExtras = Date()
         Task { await checkProviders() }
+        // Being added to (or taken off) a repo's observers list must not wait for Settings > Team.
+        Task { await readTeamObserver() }
         // All three at once; each can take a minute (many API calls). A failure keeps the old values.
         let vercel = doctor?.vercelLoggedIn == true, github = doctor?.githubLoggedIn == true
         async let c = vercel ? Self.extra(["costs", "14"], Costs.self) : nil
@@ -41,14 +51,41 @@ final class Store: ObservableObject {
         async let b = github ? Self.extra(["github-budget"], Budget.self) : nil
         if let r = await c { if case .success(let v) = r { costs = v; checkBudget(); writeSnapshot() }; note("costs", r) }
         if let r = await t { if case .success(let v) = r { triggers = v }; note("triggers", r) }
-        if let r = await b { if case .success(let v) = r { githubBudget = v }; note("github-budget", r) }
+        if let r = await b { if case .success(let v) = r { githubBudget = v; reloadWhenBudgetResets(v) }; note("github-budget", r) }
+    }
+
+    /// The GitHub budget is (nearly) spent: one reload shortly after it resets, so the counts come
+    /// back without a click. Once per reset time, so a budget still low afterwards cannot loop.
+    private var budgetReloadFor: Double?
+    private func reloadWhenBudgetResets(_ b: Budget, now: Date = Date()) {
+        guard let wait = Self.budgetReloadDelay(b, now: now), budgetReloadFor != b.reset else { return }
+        budgetReloadFor = b.reset
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            guard let self, !self.screensAsleep else { return }
+            // The counts are what is missing: read the budget again, then the lists.
+            self.lastExtras = .distantPast
+            await self.autoRefresh()
+        }
+    }
+    /// Seconds until a reload after the reset (30 s later), or nil: budget not low, or the reset is
+    /// past or more than an hour away (a wrong clock).
+    nonisolated static func budgetReloadDelay(_ b: Budget, now: Date = Date()) -> Double? {
+        guard b.remaining < 300 else { return nil }
+        let wait = b.reset - now.timeIntervalSince1970 + 30
+        return wait > 0 && wait <= 3630 ? wait : nil
+    }
+    /// Only the observer flag of `config --json`, so a field the rest of Settings > Team needs cannot stop it.
+    private struct ReadonlyFlag: Decodable { struct Flag: Decodable { let value: Bool }; let readonly: Flag? }
+    func readTeamObserver() async {
+        if let t = try? await Tool.json(["config", "--json"], as: ReadonlyFlag.self, timeout: 60), let f = t.readonly { teamObserver = f.value }
     }
     nonisolated private static func extra<T: Decodable & Sendable>(_ args: [String], _ type: T.Type) async -> Result<T, Error>? {
         do { return .success(try await Tool.json(args, as: T.self, timeout: 300)) } catch { return .failure(error) }
     }
     private func note<T>(_ name: String, _ r: Result<T, Error>) {
         switch r {
-        case .success: extrasFailedAt[name] = nil
+        case .success: extrasFailedAt[name] = nil; extrasLoadedAt[name] = Date()
         case .failure(let e): extrasFailedAt[name] = Date(); Log.write("\(name): \(e.localizedDescription)")
         }
     }
@@ -60,12 +97,14 @@ final class Store: ObservableObject {
         let today = localDay()
         guard days > 0, d.string(forKey: "lastStaleAlarm") != today else { return }
         let old = items.values.joined().filter { i in
-            i.hasNewCommits && i.state == .idle && !isHidden(i)
+            i.hasNewCommits && i.state == .idle && i.deployable && !isHidden(i)
                 && (i.oldestPendingAt.map { Date().timeIntervalSince($0) > Double(days) * 86400 } ?? false)
         }
         guard !old.isEmpty else { return }
         d.set(today, forKey: "lastStaleAlarm")
-        say(L("\(old.count) projects wait for more than \(days) days", "\(old.count) Projekte warten schon über \(days) Tage"),
+        let n = old.count
+        say(L("\(plural(n, "project waits", "projects wait")) for more than \(days) days",
+              "\(plural(n, "Projekt wartet", "Projekte warten")) schon über \(days) Tage"),
             old.prefix(5).map(\.name).joined(separator: ", "), ok: false)
     }
 
@@ -75,12 +114,19 @@ final class Store: ObservableObject {
         return L("place \(k + 1) of \(queue.count)", "Platz \(k + 1) von \(queue.count)")
     }
 
+    /// Build costs a month at the pace of the last 7 whole days. Today is not over yet: half a day
+    /// of builds would pull the pace down (billing days are UTC, like `today`).
+    nonisolated static func monthPace(_ days: [Costs.Day], today: String) -> Double? {
+        let whole = days.filter { $0.day < today }.suffix(7)
+        guard !whole.isEmpty else { return nil }
+        return whole.map(\.build).reduce(0, +) / Double(whole.count) * 30
+    }
+
     /// Once a day: if the pace of the last 7 days passes 80 % of the monthly budget (Settings), say so.
     private func checkBudget() {
         let d = UserDefaults.standard
         let budget = d.double(forKey: "monthlyBudget")
-        guard budget > 0, let days = costs?.days.suffix(7), !days.isEmpty else { return }
-        let month = days.map(\.build).reduce(0, +) / Double(days.count) * 30
+        guard budget > 0, let days = costs?.days, let month = Self.monthPace(days, today: CostsSheet.today()) else { return }
         let today = localDay()
         guard month > budget * 0.8, d.string(forKey: "lastBudgetAlarm") != today else { return }
         d.set(today, forKey: "lastBudgetAlarm")
@@ -89,12 +135,16 @@ final class Store: ObservableObject {
             L("At this pace ≈ \(m) a month, budget \(b)", "Bei diesem Tempo ≈ \(m) im Monat, Budget \(b)"), ok: false)
     }
 
-    /// Outages at Vercel, Render and GitHub: a failing deploy may not be the project's fault.
+    /// Outages at the platforms that are on and at GitHub: a failing deploy may not be the project's fault.
     @Published var providerIssues: [String] = []
+    /// The status pages the banner links to: one per platform that is on, then GitHub.
+    var statusLinks: [(label: String, url: URL)] {
+        enabledProviders.compactMap { p in p.statusURL.map { (p.label, $0) } }
+            + ProviderInfo.gitHosts.compactMap { g in URL(string: g.page).map { (g.label, $0) } }
+    }
     func checkProviders() async {
-        let feeds = [("Vercel", "https://www.vercel-status.com/api/v2/status.json"),
-                     ("Render", "https://status.render.com/api/v2/status.json"),
-                     ("GitHub", "https://www.githubstatus.com/api/v2/status.json")]
+        let feeds = enabledProviders.compactMap { p in p.statusFeed.map { (p.label, $0.absoluteString) } }
+            + ProviderInfo.gitHosts.map { ($0.label, $0.feed) }
         let found = await withTaskGroup(of: (Int, String?).self) { group -> [(Int, String)] in
             for (k, feed) in feeds.enumerated() {
                 group.addTask {
@@ -216,7 +266,8 @@ final class Store: ObservableObject {
         async let g = Self.extra(["guard", "status", "--json"], AllowanceReport.self)
         // A script without these commands: nothing is shown, nothing is said.
         if case .success(let r)? = await a { autofix = r; preselectMergedFixes() }
-        if case .success(let r)? = await g { allowances = r.allowances } else { allowances = [] }
+        // A failure keeps the last allowances: their badge warns about costs.
+        if case .success(let r)? = await g { allowances = r.allowances }
     }
 
     func autofixState(_ i: Item) -> RowAutofix? { RowAutofix.of(i, autofix?.newest(for: i)) }
@@ -238,18 +289,26 @@ final class Store: ObservableObject {
 
     /// A merged fix ticks its row once, so deploying it is one click; unticking is respected.
     func preselectMergedFixes() {
+        guard !observer else { return }   // nothing to deploy from this Mac
         let d = UserDefaults.standard
         var seen = d.stringArray(forKey: "autofixPreselected") ?? []
+        var current = Set<String>()
         for p in Platform.allCases {
             for k in (items[p] ?? []).indices {
                 let i = items[p]![k]
                 guard case .merged(let sha, _, _)? = autofixState(i), i.deployable, !i.state.isActive, !isHidden(i) else { continue }
                 let key = RowAutofix.preselectKey(i, sha: sha)
+                current.insert(key)
                 if seen.contains(key) { continue }
                 seen.append(key); items[p]![k].selected = true
             }
         }
-        d.set(Array(seen.suffix(100)), forKey: "autofixPreselected")
+        d.set(Self.keepPreselected(seen, current: current), forKey: "autofixPreselected")
+    }
+    /// The last 100 keys, and always those of rows still showing a merged fix, so one is not ticked again.
+    nonisolated static func keepPreselected(_ seen: [String], current: Set<String>) -> [String] {
+        let recent = Set(seen.suffix(100))
+        return seen.filter { recent.contains($0) || current.contains($0) }
     }
 
     /// "Fix with Claude": `deploys autofix --only <platform> <project>`, the answer as a toast.
@@ -265,10 +324,16 @@ final class Store: ObservableObject {
             tell(L("\(name): handed to Claude", "\(name): an Claude übergeben"), last, ok: true, key: key)
         } catch {
             let msg = error.localizedDescription
-            if msg.localizedCaseInsensitiveContains("no routine") { offerAutofixSetup(); return }
+            if Self.autofixNotSetUp(error) { offerAutofixSetup(); return }
             tell(L("\(name): not handed to Claude", "\(name): nicht an Claude übergeben"), msg, ok: false, key: key)
         }
         await loadAgentStatus()
+    }
+
+    /// `autofix --only` exits 5 without a routine or its token; the text is only the fallback of an older script.
+    nonisolated static func autofixNotSetUp(_ error: Error) -> Bool {
+        if let e = error as? ToolError, e.exitCode == 5 { return true }
+        return error.localizedDescription.localizedCaseInsensitiveContains("no routine")
     }
 
     /// A toast and a line in the messages, names scrubbed in demo mode.
@@ -276,18 +341,37 @@ final class Store: ObservableObject {
         let b = Demo.scrub(body, items: Array(items.values.joined()))
         let text = title + (b.isEmpty ? "" : " – " + b)
         show(Toast(text: text, ok: ok))
-        let m = Message(date: Date(), text: text, ok: ok)
+        let m = Message(date: Date(), text: text, ok: ok, project: key)
         messages.insert(m, at: 0); autofixResult[key] = m
         if messages.count > 30 { messages.removeLast() }
     }
 
     private func offerAutofixSetup() {
         show(Toast(text: L("Autofix is not set up: no routine yet", "Autofix ist nicht eingerichtet: noch keine Routine"), ok: false,
-                   undoLabel: L("Open Settings", "Einstellungen öffnen"), undo: {
-            UserDefaults.standard.set("claude", forKey: "settingsTab")
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                   undoLabel: L("Open Settings", "Einstellungen öffnen"), undo: { [weak self] in
+            self?.openSettings(.claude, anchor: "autofix")
         }))
+    }
+
+    /// A tab of Settings (and a part of it) to open; the main window opens it with SwiftUI's
+    /// `openSettings`, see ContentView. No private selector.
+    @Published var settingsRequest: SettingsTab?
+    func openSettings(_ tab: SettingsTab, anchor: String? = nil) {
+        SettingsNav.prepare(tab, anchor: anchor)
+        NSApp.activate(ignoringOtherApps: true)
+        settingsRequest = tab
+        // No main window to take it (menu bar only): the app menu's own Settings item (⌘,) is clicked.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard let self, self.settingsRequest != nil else { return }
+            self.settingsRequest = nil
+            Self.clickSettingsMenuItem()
+        }
+    }
+    private static func clickSettingsMenuItem() {
+        guard let menu = NSApp.mainMenu?.items.first?.submenu,
+              let k = menu.items.firstIndex(where: { $0.keyEquivalent == "," && $0.keyEquivalentModifierMask == .command }) else { return }
+        menu.performActionForItem(at: k)
     }
 
     func buildCost(_ project: String) -> Double? {
@@ -324,7 +408,9 @@ final class Store: ObservableObject {
     private func cacheURL(_ p: Platform) -> URL { Self.cacheDir.appendingPathComponent("\(p.cli)-v2.json") }
 
     private func readCache() {
-        for p in Platform.allCases {
+        // Not the copy of a platform switched off at the last start (the provider list comes later).
+        let off = Set(UserDefaults.standard.stringArray(forKey: "disabledProviders") ?? [])
+        for p in Platform.allCases where !off.contains(p.cli) {
             guard let data = try? Data(contentsOf: cacheURL(p)), let list = try? decode(p, data) else { continue }
             items[p] = list
             fromCache.insert(p)
@@ -354,21 +440,51 @@ final class Store: ObservableObject {
         NotifyRouter.shared.install()
         NotifyRouter.shared.onCancel = { [weak self] id in self?.cancelRollback(String(id.dropFirst(Store.rollbackPrefix.count))) }
         // After sleep the lists can be hours old, and the daily reminder may be overdue.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.screensAsleep = true }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.screensAsleep else { return }
+                self.screensAsleep = false
+                await self.autoRefresh(); self.remindIfDue()
+            }
+        }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 5_000_000_000)   // the network needs a moment
                 await self?.autoRefresh(); self?.remindIfDue()
             }
         }
+        // More builds at once in Settings: start what waits now, not when a running deploy ends.
+        knownParallel = maxParallel
+        NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.maxParallel != self.knownParallel else { return }
+                self.knownParallel = self.maxParallel; self.pump()
+            }
+        }
         Task {
             await start()
+            // Short naps, so a new interval in Settings counts at once and not after the old one ran out.
+            var last = Date()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(refreshMinutes) * 60 * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                // Screens asleep: nobody looks; one round when they wake (below). Low Power Mode: half as often.
+                guard !screensAsleep,
+                      Self.refreshDue(since: last, minutes: refreshMinutes * (ProcessInfo.processInfo.isLowPowerModeEnabled ? 2 : 1)) else { continue }
+                last = Date()
                 await autoRefresh()
                 remindIfDue()
             }
         }
     }
+    nonisolated static func refreshDue(since last: Date, minutes: Int, now: Date = Date()) -> Bool {
+        now.timeIntervalSince(last) >= Double(minutes) * 60
+    }
+
+    private var knownParallel = 0
+    private var screensAsleep = false
 
     /// Minutes between automatic reloads (Settings).
     var refreshMinutes: Int {
@@ -384,16 +500,21 @@ final class Store: ObservableObject {
             doctorError = error.localizedDescription; return
         }
         guard doctor?.jq == true else { return }
-        Task { if let t = try? await Tool.json(["config", "--json"], as: TeamConfig.self, timeout: 60) { teamObserver = t.readonly.value } }
+        Task { await readTeamObserver() }
         await loadProviders()
         // Both at once: each takes several seconds. A platform switched off in Settings is not read.
-        let v = doctor?.vercelLoggedIn == true && doctor?.vercelApi == true && isEnabled(.vercel)
-        let r = doctor?.renderKey == true && isEnabled(.render)
+        let v = canLoad(.vercel), r = canLoad(.render)
         async let a: Void = v ? load(.vercel) : ()
         async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
         await loadAgentStatus()
         await loadExtras()
+    }
+
+    /// The same rule for the start and every reload: logged in, with API access, and switched on.
+    func canLoad(_ p: Platform) -> Bool {
+        guard let d = doctor, isEnabled(p) else { return false }
+        return p == .vercel ? d.vercelLoggedIn && d.vercelApi : d.renderKey
     }
 
     private var emptyOnce: Set<Platform> = []
@@ -499,8 +620,12 @@ final class Store: ObservableObject {
     /// Lists only, both platforms; costs and triggers cost many GitHub calls and stay manual.
     /// Not while something is deploying, so nothing being followed is disturbed.
     private var lastDoctor = Date()
+    /// The wake handler and the loop can both call `autoRefresh`; `loading` is set only after the
+    /// doctor's await, so this flag keeps a second round from starting meanwhile.
+    private var refreshInFlight = false
     func autoRefresh() async {
-        guard loading.isEmpty else { return }
+        guard loading.isEmpty, !refreshInFlight else { return }
+        refreshInFlight = true; defer { refreshInFlight = false }
         if doctor == nil { await start(); return }
         // Something was missing (a login, the Render key): ask again, at most every 30 minutes.
         if let d = doctor, !(d.vercelLoggedIn && d.vercelApi && d.renderKey && d.githubLoggedIn != false),
@@ -509,14 +634,15 @@ final class Store: ObservableObject {
             if let fresh = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { doctor = fresh; doctorError = nil }
         }
         // Only the platform with a deploy under way is left alone; the other one stays current.
-        let v = doctor?.vercelLoggedIn == true && isEnabled(.vercel) && !(items[.vercel] ?? []).contains { $0.state.isActive }
-        let r = doctor?.renderKey == true && isEnabled(.render) && !(items[.render] ?? []).contains { $0.state.isActive }
+        let v = canLoad(.vercel) && !(items[.vercel] ?? []).contains { $0.state.isActive }
+        let r = canLoad(.render) && !(items[.render] ?? []).contains { $0.state.isActive }
         async let a: Void = v ? load(.vercel) : ()
         async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
         await loadAgentStatus()
         // Costs and strays cost many calls: hourly. The status feeds are cheap: every time.
-        if Date().timeIntervalSince(lastExtras) > 3600 { await loadExtras() } else { await checkProviders() }
+        // In Low Power Mode costs and strays wait (many calls); the status feeds stay.
+        if Date().timeIntervalSince(lastExtras) > 3600, !ProcessInfo.processInfo.isLowPowerModeEnabled { await loadExtras() } else { await checkProviders() }
     }
 
     // MARK: What is waiting on GitHub, over both platforms
@@ -526,13 +652,15 @@ final class Store: ObservableObject {
         var w = Waiting()
         let all = Array(items.values.joined())
         // Projects of one repo (frontend + backend) share their commits and PRs: count them once.
+        // Keyed by repo and branch: staging on `develop` and production on `main` wait for different commits.
         var perRepo: [String: (commits: Int, prs: Int)] = [:]
         // What the person hid, or what the app cannot deploy, is not waiting on them.
         for i in all where i.hasNewCommits && i.state == .idle && i.deployable && !isHidden(i) {
             w.projects += 1
             if let r = i.repo {
-                let o = perRepo[r] ?? (0, 0)
-                perRepo[r] = (max(o.commits, i.pendingCommits ?? 0), max(o.prs, i.pendingPRs ?? 0))
+                let key = r + "#" + (i.ref ?? "main")   // no branch named: the default, as the row shows
+                let o = perRepo[key] ?? (0, 0)
+                perRepo[key] = (max(o.commits, i.pendingCommits ?? 0), max(o.prs, i.pendingPRs ?? 0))
             } else {
                 w.commits += i.pendingCommits ?? 0; w.prs += i.pendingPRs ?? 0
             }
@@ -556,7 +684,8 @@ final class Store: ObservableObject {
 
     func selected(_ p: Platform) -> [Item] { (items[p] ?? []).filter { $0.selected } }
     func autoOn(_ p: Platform) -> [Item] { (items[p] ?? []).filter { $0.auto } }
-    func changedCount(_ p: Platform) -> Int { (items[p] ?? []).filter { $0.deployable && $0.hasNewCommits }.count }
+    /// Projects with changes on a platform, without the hidden ones: the list and `waiting` leave them out too.
+    func changedCount(_ p: Platform) -> Int { (items[p] ?? []).filter { $0.deployable && $0.hasNewCommits && !isHidden($0) }.count }
 
     func toggle(_ p: Platform, _ id: String) {
         guard let i = items[p]?.firstIndex(where: { $0.id == id }), items[p]![i].deployable else { return }
@@ -567,8 +696,10 @@ final class Store: ObservableObject {
         for i in (items[p] ?? []).indices { items[p]![i].selected = false }
     }
 
-    func selectChanged(_ p: Platform) {
-        for i in (items[p] ?? []).indices where items[p]![i].deployable && items[p]![i].hasNewCommits && !items[p]![i].state.isActive {
+    /// Ticks what has changes; never a hidden project. `only`: just these rows (`Store.key`), e.g. the ones on screen.
+    func selectChanged(_ p: Platform, only keys: Set<String>? = nil) {
+        for i in (items[p] ?? []).indices where items[p]![i].deployable && items[p]![i].hasNewCommits && !items[p]![i].state.isActive
+            && !isHidden(items[p]![i]) && keys.map({ $0.contains(Self.key(items[p]![i])) }) ?? true {
             items[p]![i].selected = true
         }
     }
@@ -576,15 +707,21 @@ final class Store: ObservableObject {
     func turnOffAutoDeploy(_ p: Platform) async {
         busyMessage = L("Turning off auto-deploy …", "Schalte Auto-Deploy aus …")
         defer { busyMessage = nil }
+        var failure: String?
         do { _ = try await Tool.run([p.cli, "autodeploy-off", "--all"]) }
-        catch { loadError[p] = error.localizedDescription }
+        catch { failure = error.localizedDescription }
         await load(p)
+        // After the reload, which clears `loadError`: otherwise the error would never be seen.
+        if let failure {
+            say(L("Auto-deploy not turned off", "Auto-Deploy nicht ausgeschaltet"), failure, ok: false)
+        }
     }
 
     func saveRenderKey(_ key: String) async -> String? {
         do {
             _ = try await Tool.run(["render", "set-key"], stdin: key.trimmingCharacters(in: .whitespacesAndNewlines))
-            doctor = try? await Tool.json(["doctor"], as: Doctor.self)
+            // A failed check keeps the last answer: nil would mean "not set up" and a fresh start.
+            if let fresh = try? await Tool.json(["doctor"], as: Doctor.self) { doctor = fresh }
             await load(.render)
             return nil
         } catch { return error.localizedDescription }
@@ -596,6 +733,7 @@ final class Store: ObservableObject {
         guard let i = items[p]?.firstIndex(where: { $0.id == id }) else { return }
         let was = items[p]![i].state
         items[p]![i].state = s
+        holdAwake()
         if byPerson { endedByCancel.insert(id) } else if !s.isActive || s == .queued { endedByCancel.remove(id) }
         // A new start: the id of the last deploy must not be the one a cancel goes to.
         if case .starting = s { items[p]![i].startedAt = Date(); items[p]![i].deployId = nil }
@@ -606,7 +744,7 @@ final class Store: ObservableObject {
             items[p]![i].lastAt = Date(); items[p]![i].lastState = p == .vercel ? "READY" : "live"
             items[p]![i].changed = false; items[p]![i].pendingCommits = 0; items[p]![i].pendingPRs = 0
         }
-        let name = items[p]![i].name
+        let name = items[p]![i].name, rowKey = Self.key(items[p]![i])
         // Only a deploy that really started has a duration; a row that never left the queue has none.
         let took = was.isActive && was != .queued ? items[p]![i].startedAt.map { Date().timeIntervalSince($0) } : nil
         switch s {
@@ -617,13 +755,13 @@ final class Store: ObservableObject {
         }
         switch s {
         case .done:
-            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true) }
-            else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true) }
-            else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true) }
+            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true, project: rowKey) }
+            else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true, project: rowKey) }
+            else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true, project: rowKey) }
         case .failed(let m):
-            if byPerson { say(L("\(name) cancelled", "\(name) abgebrochen"), p.rawValue, ok: true) }
-            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false) }
-        case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true)
+            if byPerson { say(L("\(name) cancelled", "\(name) abgebrochen"), p.rawValue, ok: true, project: rowKey) }
+            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false, project: rowKey) }
+        case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true, project: rowKey)
         default: break
         }
     }
@@ -636,25 +774,35 @@ final class Store: ObservableObject {
         static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
     }
     /// One toast at a time. One with "Undo" is not pushed away by the next: those wait until it is gone.
+    /// Another "Undo" waits too, so its button (a rollback's Cancel, say) is never lost.
     @Published var toast: Toast? {
         didSet { if toast == nil, !toastQueue.isEmpty { let next = toastQueue.removeFirst(); DispatchQueue.main.async { self.show(next) } } }
     }
     private var toastQueue: [Toast] = []
+    /// At most two plain toasts wait behind "Undo" (older news is in `messages` anyway); every "Undo" waits.
+    nonisolated static func queued(_ q: [Toast], _ t: Toast) -> [Toast] {
+        var q = q + [t]
+        while q.filter({ $0.undo == nil }).count > 2, let k = q.firstIndex(where: { $0.undo == nil }) { q.remove(at: k) }
+        return q
+    }
     func show(_ t: Toast) {
-        // At most two wait behind "Undo"; older news is in `messages` anyway.
-        if let cur = toast, cur.undo != nil, t.undo == nil { toastQueue = Array((toastQueue + [t]).suffix(2)); return }
+        if let cur = toast, cur.undo != nil { toastQueue = Self.queued(toastQueue, t); return }
         toast = t
         // "Undo" gets longer to be reached.
         let secs: UInt64 = t.undo == nil ? 5 : 10
         Task { try? await Task.sleep(nanoseconds: secs * 1_000_000_000); if toast == t { toast = nil } }
     }
     /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
-    struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool }
+    /// `project` is the row's `Store.key` when the line is about one project: a click opens its log.
+    struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool; var project: String? = nil }
     @Published var messages: [Message] = []
-    private func say(_ title: String, _ body: String, ok: Bool) {
+    /// Names scrubbed in demo mode: a Mac notification shows up in a screen recording too.
+    private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil) {
+        let all = Array(items.values.joined())
+        let title = Demo.scrub(title, items: all), body = Demo.scrub(body, items: all)
         Notify.post(title, body)
         show(Toast(text: title, ok: ok))
-        messages.insert(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok), at: 0)
+        messages.insert(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok, project: project), at: 0)
         if messages.count > 30 { messages.removeLast() }
     }
 
@@ -706,8 +854,23 @@ final class Store: ObservableObject {
         UserDefaults.standard.set(history, forKey: "waitingHistory")
     }
 
-    /// Set by the menu bar to show one project in the window.
-    @Published var pendingSearch: String?
+    /// Set by the menu bar or a `deploycenter://select` link: the window shows exactly this project.
+    @Published var pendingShow: ShowRequest?
+    /// One project to show: `key` (`Store.key`) when it is known, else every project of that name.
+    struct ShowRequest: Equatable { let name: String; let key: String? }
+    /// What a link's `project=` value points at: `platform:name` or a bare name. A bare name on two
+    /// platforms (or one not loaded yet) shows every project of that name. Nothing is ticked or started.
+    nonisolated static func showRequest(_ value: String, items: [Item]) -> ShowRequest? {
+        let v = value.trimmingCharacters(in: .whitespaces)
+        guard !v.isEmpty else { return nil }
+        var name = v, platform: String?
+        if let c = v.firstIndex(of: ":"), Platform.allCases.contains(where: { $0.cli == v[..<c].lowercased() }) {
+            platform = v[..<c].lowercased(); name = String(v[v.index(after: c)...])
+        }
+        let hits = items.filter { $0.name == name && (platform == nil || $0.platform.cli == platform) }
+        return ShowRequest(name: name, key: hits.count == 1 ? "\(hits[0].platform.cli)/\(hits[0].id)" : nil)   // = Store.key
+    }
+    func show(_ i: Item) { pendingShow = ShowRequest(name: i.name, key: Self.key(i)) }
     /// Set by the menu bar: tick everything with changes and ask, in the window.
     @Published var pendingDeployAll = false
 
@@ -726,7 +889,9 @@ final class Store: ObservableObject {
     var maxParallel: Int { let n = UserDefaults.standard.integer(forKey: "maxParallel"); return n >= 1 ? n : 3 }
 
     func deploySelected(_ p: Platform, preview: Bool = false, whenGreen: Bool = false, force: String? = nil) {
-        let chosen = selected(p)
+        let chosen = selected(p).filter { !isHidden($0) }   // a hidden project never goes out with the others
+        // Observer mode refuses in enqueue; the ticks stay, so nothing is lost without a deploy.
+        guard !refusedAsObserver() else { return }
         clearSelection(p)
         enqueue(chosen.map { Job(item: $0, preview: preview, whenGreen: whenGreen, force: force) })
     }
@@ -736,9 +901,11 @@ final class Store: ObservableObject {
         try? await Tool.json(["window", "--json"], as: WindowReply.self, timeout: 30)
     }
 
-    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false) {
-        enqueue([Job(item: item, preview: preview, sha: sha, clearCache: clearCache)])
+    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, whenGreen: Bool = false, force: String? = nil) {
+        enqueue([Job(item: item, preview: preview, sha: sha, clearCache: clearCache, whenGreen: whenGreen, force: force)])
     }
+    /// Set by the palette: one project to deploy; the window asks about the deploy window like for a row.
+    @Published var pendingDeploy: Item?
 
     /// Seconds between the click and the first build; in this time "cancel" in the row still costs nothing.
     var undoSeconds: Int { UserDefaults.standard.object(forKey: "undoSeconds") as? Int ?? 8 }
@@ -748,11 +915,15 @@ final class Store: ObservableObject {
     private var unsureStarts: [String: Date] = [:]
     private static let unsureWait: Double = 600
 
+    /// Observer mode: says so and is true; deploys and rollbacks then start nothing.
+    private func refusedAsObserver() -> Bool {
+        guard observer else { return false }
+        say(L("Observer mode", "Beobachter-Modus"), L("This Mac only looks. Turn it off in Settings → Team.", "Dieser Mac schaut nur zu. Abschalten unter Einstellungen → Team."), ok: false)
+        return true
+    }
+
     func enqueue(_ jobs: [Job]) {
-        if observer {
-            say(L("Observer mode", "Beobachter-Modus"), L("This Mac only looks. Turn it off in Settings → Team.", "Dieser Mac schaut nur zu. Abschalten unter Einstellungen → Team."), ok: false)
-            return
-        }
+        guard !refusedAsObserver() else { return }
         Notify.ask()
         var added = 0
         for j in jobs where !(itemNow(j.item)?.state.isActive ?? false) {
@@ -781,15 +952,25 @@ final class Store: ObservableObject {
     private func summarize() {
         defer { batch = [] }
         guard batch.count >= 2 else { return }
-        var ok = 0, bad = 0, stopped = 0
-        for (p, id) in batch {
-            guard let s = items[p]?.first(where: { $0.id == id })?.state else { continue }
-            if case .done = s { ok += 1 }
-            else if case .failed = s { if endedByCancel.contains(id) { stopped += 1 } else { bad += 1 } }
+        let states = batch.compactMap { (p, id) in items[p]?.first(where: { $0.id == id }).map { ($0.state, endedByCancel.contains(id)) } }
+        let r = Self.summary(states)
+        say(r.title, L("Deploy run finished", "Deploy-Lauf beendet"), ok: r.ok)
+    }
+    /// "5 live, 1 failed, 3 skipped": every way a row of the run ended, so none is left out of the sum.
+    nonisolated static func summary(_ states: [(RunState, cancelled: Bool)]) -> (title: String, ok: Bool) {
+        var ok = 0, bad = 0, stopped = 0, skipped = 0
+        for (s, byPerson) in states {
+            switch s {
+            case .done: ok += 1
+            case .failed: if byPerson { stopped += 1 } else { bad += 1 }
+            case .skipped: skipped += 1
+            default: break
+            }
         }
-        let title = stopped == 0 ? L("\(ok) live, \(bad) failed", "\(ok) live, \(bad) fehlgeschlagen")
-            : L("\(ok) live, \(bad) failed, \(stopped) cancelled", "\(ok) live, \(bad) fehlgeschlagen, \(stopped) abgebrochen")
-        say(title, L("Deploy run finished", "Deploy-Lauf beendet"), ok: bad == 0)
+        var title = L("\(ok) live, \(bad) failed", "\(ok) live, \(bad) fehlgeschlagen")
+        if skipped > 0 { title += L(", \(skipped) skipped", ", \(skipped) übersprungen") }
+        if stopped > 0 { title += L(", \(stopped) cancelled", ", \(stopped) abgebrochen") }
+        return (title, bad == 0)
     }
 
     private func itemNow(_ i: Item) -> Item? { items[i.platform]?.first { $0.id == i.id } }
@@ -798,6 +979,11 @@ final class Store: ObservableObject {
     }
 
     private func pump() {
+        // Waiting for green checks takes no build slot; the job comes back to the queue once they are green.
+        while let k = queue.firstIndex(where: { $0.whenGreen && !$0.preview && $0.readyAt <= Date() && waitsFor($0) == nil }) {
+            let job = queue.remove(at: k)
+            ciWaits[job.item.id] = Task { await waitForChecks(job) }
+        }
         while running < maxParallel, let k = queue.firstIndex(where: { $0.readyAt <= Date() && waitsFor($0) == nil }) {
             let job = queue.remove(at: k)
             running += 1
@@ -810,11 +996,13 @@ final class Store: ObservableObject {
                 queue.removeAll { $0.item.id == job.item.id }
                 // The person stopped the backend: the frontend simply does not go, it did not fail.
                 if let b = backend, endedByCancel.contains(b.id) { set(job.item.platform, job.item.id, .idle); continue }
-                set(job.item.platform, job.item.id, .failed(L("Not started: the backend of the same repo failed",
+                // Never started: skipped, not a failed build in the journal.
+                set(job.item.platform, job.item.id, .skipped(L("Not started: the backend of the same repo failed",
                                                              "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
             }
         }
-        if queue.isEmpty && running == 0 {
+        holdAwake()
+        if queue.isEmpty && running == 0 && ciWaits.isEmpty {
             queueBatch = []
             let hadRun = !batch.isEmpty
             summarize()
@@ -840,6 +1028,9 @@ final class Store: ObservableObject {
         if let k = queue.firstIndex(where: { $0.item.id == item.id }) {
             queue.remove(at: k); set(item.platform, item.id, .idle); return
         }
+        if let t = ciWaits.removeValue(forKey: item.id) {   // still waiting for checks: nothing was started
+            t.cancel(); set(item.platform, item.id, .idle); pump(); return
+        }
         guard let id = itemNow(item)?.deployId else {
             show(Toast(text: L("\(item.name) is still starting – try again in a moment", "\(item.name) startet noch – gleich nochmal versuchen"), ok: false))
             return
@@ -856,7 +1047,7 @@ final class Store: ObservableObject {
             catch {
                 cancelled.remove(item.id)
                 if let before, itemNow(item)?.state == .running(L("cancelling", "wird abgebrochen")) { set(item.platform, item.id, before) }
-                say(L("Could not cancel \(item.name)", "\(item.name) ließ sich nicht abbrechen"), error.localizedDescription, ok: false)
+                say(L("Could not cancel \(item.name)", "\(item.name) ließ sich nicht abbrechen"), error.localizedDescription, ok: false, project: Self.key(item))
             }
         }
     }
@@ -873,8 +1064,16 @@ final class Store: ObservableObject {
         let w = waiting
         guard w.projects > 0 else { return }
         d.set(today, forKey: "lastReminder")
-        Notify.remind(L("Time for the daily deploy", "Zeit für den täglichen Deploy"),
-                      L("\(w.prs) PRs in \(w.projects) projects wait to go live.", "\(w.prs) PRs in \(w.projects) Projekten warten darauf, live zu gehen."))
+        Notify.remind(L("Time for the daily deploy", "Zeit für den täglichen Deploy"), Self.reminderText(w))
+    }
+
+    /// "3 PRs in 2 projects wait to go live."; commits when no PR is counted.
+    nonisolated static func reminderText(_ w: Waiting) -> String {
+        let one = w.prs > 0 ? w.prs == 1 : w.commits == 1
+        let what = w.prs > 0 ? L(plural(w.prs, "PR", "PRs"), plural(w.prs, "PR", "PRs"))
+            : L(plural(w.commits, "commit", "commits"), plural(w.commits, "Commit", "Commits"))
+        return L("\(what) in \(plural(w.projects, "project", "projects")) \(one ? "waits" : "wait") to go live.",
+                 "\(what) in \(plural(w.projects, "Projekt", "Projekten")) \(one ? "wartet" : "warten") darauf, live zu gehen.")
     }
 
     // MARK: How long a build usually takes, per project (the last five)
@@ -913,6 +1112,7 @@ final class Store: ObservableObject {
 
     /// Production back to what was live before.
     func rollback(_ item: Item) {
+        guard !refusedAsObserver() else { return }
         Notify.ask()
         if let at = unsureStarts[Self.key(item)], Date().timeIntervalSince(at) < Self.unsureWait {
             say(L("\(item.name) may be busy already", "\(item.name) ist vielleicht schon beschäftigt"),
@@ -941,6 +1141,40 @@ final class Store: ObservableObject {
         }
     }
 
+    /// Jobs waiting for their checks, by row; outside the queue and the build slots, and cancellable.
+    private var ciWaits: [String: Task<Void, Never>] = [:]
+
+    /// Only once the CI of the commit is green (waits up to 30 minutes for running checks).
+    private func waitForChecks(_ job: Job) async {
+        guard !Task.isCancelled else { return }   // cancelled before it began
+        let item = job.item, p = item.platform
+        if p == .render { queueBatch.insert(item.id) }
+        // Cancelled in the row: cancel() already took it out (a new wait for the row may be there now).
+        defer { if !Task.isCancelled { ciWaits[item.id] = nil; pump() } }
+        // The commit that is checked is the one that goes out: a newer push waits for the next deploy.
+        guard let repo = item.repo, let commit = job.sha ?? item.headSha else {
+            set(p, item.id, .skipped(L("Checks unknown: no commit or repo known", "Checks unbekannt: kein Commit oder Repo bekannt"))); return
+        }
+        set(p, item.id, .running(L("waiting for checks", "wartet auf Checks")))
+        do {
+            let ci = try await Tool.json(["ci", repo, commit, "--wait", "30m", "--json"], as: CIReply.self, timeout: 32 * 60)
+            guard !Task.isCancelled else { return }
+            switch ci.state {
+            case "green", "none":
+                var next = job; next.sha = commit; next.whenGreen = false; next.readyAt = .distantPast
+                set(p, item.id, .queued)
+                queue.append(next)
+            case "red":
+                set(p, item.id, .skipped(L("CI is red: ", "CI ist rot: ") + ci.reason))
+            default:
+                set(p, item.id, .skipped(L("Checks not done after 30 minutes: ", "Checks nach 30 Minuten nicht fertig: ") + ci.reason))
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            set(p, item.id, .failed(error.localizedDescription))
+        }
+    }
+
     private func deploy(_ job: Job) async {
         let item = job.item, p = item.platform
         if p == .render { queueBatch.insert(item.id) }
@@ -948,23 +1182,7 @@ final class Store: ObservableObject {
         cancelled.remove(item.id)
         clearPreview(item)   // an older preview must not be promoted over what this deploy brings
         do {
-            var sha = job.sha
-            if job.whenGreen && !job.preview {
-                // The commit that is checked is the one that goes out: a newer push waits for the next deploy.
-                guard let repo = item.repo, let commit = sha ?? item.headSha else {
-                    set(p, item.id, .skipped(L("Checks unknown: no commit or repo known", "Checks unbekannt: kein Commit oder Repo bekannt"))); return
-                }
-                set(p, item.id, .running(L("waiting for checks", "wartet auf Checks")))
-                let ci = try await Tool.json(["ci", repo, commit, "--wait", "30m", "--json"], as: CIReply.self, timeout: 32 * 60)
-                switch ci.state {
-                case "green", "none": sha = commit
-                case "red":
-                    set(p, item.id, .skipped(L("CI is red: ", "CI ist rot: ") + ci.reason)); return
-                default:
-                    set(p, item.id, .skipped(L("Checks not done after 30 minutes: ", "Checks nach 30 Minuten nicht fertig: ") + ci.reason)); return
-                }
-                set(p, item.id, .starting)
-            }
+            let sha = job.sha   // with "only when green" the checked commit, see waitForChecks
             var args = [p.cli, "deploy-json", item.id]
             if job.preview { args.append("--preview") }
             if let sha { args += ["--sha", sha] }
@@ -992,15 +1210,29 @@ final class Store: ObservableObject {
         // pump() runs once this returns (see pump), not here as well.
     }
 
-    /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
+    /// Shown when a build has no result after 40 minutes: still active, so no second build can start.
+    nonisolated static var overdueState: RunState { .running(L("no result after 40 min – still asking, check the dashboard",
+                                                             "nach 40 Min. kein Ergebnis – fragt weiter, im Dashboard nachsehen")) }
+    /// Asks every 6 seconds until the deploy is live or failed; after 40 minutes every 30 seconds,
+    /// still "running" (a build may take longer, and a free button would pay for a second one), for 12 hours at most.
     private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false, rolledBack: Bool = false) async throws {
         let p = item.platform
         defer { cancelled.remove(item.id) }   // however it ended, a later deploy can be cancelled again
         var misses = 0
         // A deadline, not a count of rounds: slow status answers must not stretch 40 minutes to hours.
-        let deadline = Date().addingTimeInterval(40 * 60)
+        let start = Date(), overdue = start.addingTimeInterval(40 * 60), deadline = start.addingTimeInterval(12 * 3600)
+        var toldOverdue = false
+        let usual = usualMinutes(item)
         while Date() < deadline {
-            try await Task.sleep(nanoseconds: 6_000_000_000)
+            let wait = Date() < overdue ? Self.pollSeconds(elapsed: Date().timeIntervalSince(start), usualMinutes: usual) : 30
+            try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000_000)
+            if !toldOverdue, Date() >= overdue, !cancelled.contains(item.id) {
+                toldOverdue = true
+                set(p, item.id, Self.overdueState)
+                say(L("\(item.name) has no result after 40 minutes", "\(item.name) hat nach 40 Minuten kein Ergebnis"),
+                    L("Still asking. Check the dashboard; the deploy button stays locked until it ends.",
+                      "Fragt weiter. Im Dashboard nachsehen; der Deploy-Knopf bleibt gesperrt, bis er endet."), ok: false)
+            }
             let args = p == .vercel ? ["vercel", "status", deployId] : ["render", "status", item.id, deployId]
             guard let s = try? await Tool.json(args, as: StatusReply.self, timeout: 60) else {
                 // Network or login gone: say so instead of spinning for 40 minutes without a word.
@@ -1029,7 +1261,10 @@ final class Store: ObservableObject {
                 }
                 return
             case (.render, "succeeded"):
-                set(p, item.id, .done(nil), countsAsLive: !rolledBack); return
+                // A cron job or a one-off run ended well: like "live", without a site to ask.
+                if rolledBack { set(p, item.id, .done(nil), countsAsLive: false); markBehind(p, item.id) }
+                else { recordDuration(item); set(p, item.id, .done(nil)) }
+                return
             case (.vercel, "canceled"):
                 // Usually the project's "Ignored Build Step" decided nothing changed.
                 set(p, item.id, .skipped(L("Skipped or canceled by Vercel (Ignored Build Step?)",
@@ -1041,10 +1276,20 @@ final class Store: ObservableObject {
                 if !Self.knownStates.contains(state), Self.loggedStates.insert(state).inserted {
                     Log.write("\(p.cli) status: unknown state \"\(state)\" for \(item.name), shown as it is")
                 }
-                if !cancelled.contains(item.id) { set(p, item.id, .running(Self.stateName(state))) }
+                if !cancelled.contains(item.id) { set(p, item.id, toldOverdue ? Self.overdueState : .running(Self.stateName(state))) }
             }
         }
-        set(p, item.id, .failed(L("No result after 40 minutes – check the dashboard", "Kein Ergebnis nach 40 Minuten – im Dashboard nachsehen")))
+        // Still no end after 12 hours: the button frees, but a start right away is held (see enqueue).
+        unsureStarts[Self.key(item)] = Date()
+        set(p, item.id, .failed(L("No result after 12 hours – check the dashboard", "Kein Ergebnis nach 12 Stunden – im Dashboard nachsehen")))
+    }
+
+    /// Seconds between status questions: every 6 s in the first two minutes and from a minute before
+    /// the usual build time on (when it most likely ends), every 15 s in between. Each one starts bash and node.
+    nonisolated static func pollSeconds(elapsed: TimeInterval, usualMinutes: Int?) -> Int {
+        if elapsed < 120 { return 6 }
+        if let u = usualMinutes, elapsed >= Double(u - 1) * 60 { return 6 }
+        return 15
     }
 
     /// A path to ask after going live instead of the front page (/health), per project. Kept on this Mac.
@@ -1095,6 +1340,19 @@ final class Store: ObservableObject {
         UserDefaults.standard.set(Array(autoRollback), forKey: "autoRollback")
     }
     private var rollbackCountdowns: [String: Task<Void, Never>] = [:]
+
+    var healthPathCount: Int { healthPaths.values.filter { Self.cleanPath($0) != nil }.count }
+    /// Settings → Projects: one kind of mark off for every project (the dialog asked first).
+    func clearMarks(_ m: ProjectMarks) {
+        let d = UserDefaults.standard
+        switch m {
+        case .pinned: pinned = []; d.set([String](), forKey: "pinned")
+        case .notes: notes = [:]; d.set([String: String](), forKey: "notes")
+        case .checkPaths: healthPaths = [:]; d.set([String: String](), forKey: "healthPaths")
+        case .autoRollback: autoRollback = []; d.set([String](), forKey: "autoRollback")
+        case .ignoredTriggers: break   // an @AppStorage string of the window, cleared by Settings itself
+        }
+    }
     static let rollbackSeconds = 10
     nonisolated static let rollbackPrefix = "rollback|"
 
@@ -1102,16 +1360,31 @@ final class Store: ObservableObject {
     private func countDownToRollback(_ item: Item, _ link: String, _ code: Int?) {
         let key = Self.key(item), id = Self.rollbackPrefix + key, n = Self.rollbackSeconds
         guard rollbackCountdowns[key] == nil else { return }
-        let title = L("\(item.name) fails its check – rolling back in \(n) s", "\(item.name) besteht den Check nicht – Zurückrollen in \(n) s")
-        Notify.countdown(title, link + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), id: id)
+        let name = Demo.mask(item.name), shownLink = Demo.scrub(link, items: Array(items.values.joined()))
+        let title = L("\(name) fails its check – rolling back in \(n) s", "\(name) besteht den Check nicht – Zurückrollen in \(n) s")
+        Notify.countdown(title, shownLink + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), id: id)
         show(Toast(text: title, ok: false, undoLabel: L("Cancel", "Abbrechen"), undo: { [weak self] in self?.cancelRollback(key) }))
-        messages.insert(Message(date: Date(), text: title + " – " + link, ok: false), at: 0)
+        messages.insert(Message(date: Date(), text: title + " – " + shownLink, ok: false), at: 0)
+        let checkedId = itemNow(item)?.deployId
         rollbackCountdowns[key] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(n) * 1_000_000_000)
             guard !Task.isCancelled, let self, self.rollbackCountdowns.removeValue(forKey: key) != nil else { return }
             Notify.remove(id)
-            self.rollback(self.itemNow(item) ?? item)
+            let now = self.itemNow(item)
+            // A newer deploy (a fix) is queued, waiting or building, or already went out: it is not rolled back.
+            let newer = self.queue.contains { $0.item.id == item.id } || self.ciWaits[item.id] != nil
+            guard Self.rollbackStillDue(now, checkedId: checkedId, newerQueued: newer) else {
+                self.say(L("Rollback skipped", "Zurückrollen ausgelassen"),
+                         L("A newer deploy of \(item.name) is under way or live.", "Ein neuerer Deploy von \(item.name) läuft oder ist live."), ok: true)
+                return
+            }
+            self.rollback(now ?? item)
         }
+    }
+    /// The countdown's rollback only goes ahead while the deploy it checked is still the newest one.
+    nonisolated static func rollbackStillDue(_ now: Item?, checkedId: String?, newerQueued: Bool) -> Bool {
+        guard let now, !newerQueued, !now.state.isActive else { return false }
+        return now.deployId == checkedId
     }
     func cancelRollback(_ key: String) {
         guard let t = rollbackCountdowns.removeValue(forKey: key) else { return }
@@ -1120,6 +1393,19 @@ final class Store: ObservableObject {
     }
 
     // MARK: Updates come from Sparkle (SoftwareUpdate.swift); it asks this before it restarts the app.
+
+    /// While deploys are queued or building: no App Nap (it stretches the status naps, "live" would come
+    /// minutes late) and no idle sleep (the queue would stop in the middle). Ends with the last deploy.
+    private var awake: NSObjectProtocol?
+    private func holdAwake() {
+        let busy = deploysBusy || !ciWaits.isEmpty
+        if busy, awake == nil {
+            awake = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled],
+                                                          reason: "Deploys are running")
+        } else if !busy, let a = awake {
+            ProcessInfo.processInfo.endActivity(a); awake = nil
+        }
+    }
 
     /// Deploys queued or building; an update waits for them instead of quitting in the middle.
     var deploysBusy: Bool { !queue.isEmpty || running > 0 || items.values.joined().contains { $0.state.isActive } }

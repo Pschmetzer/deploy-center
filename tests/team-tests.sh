@@ -14,6 +14,9 @@ hasnt() { case "$2" in *"$3"*) fail "$1" "[$3] in: $(printf '%s' "$2" | head -c 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 export DEPLOYS_CONFIG="$tmp/config" FIX="$PWD/tests/fixtures/team" CALLS="$tmp/calls.log"
 export DEPLOYS_VERCEL_TEAM=tm1 GH_USER=dev-one GH_HEAD=""
+# The fixture repo has a shared deploy window (mon-thu 09:00-16:00 UTC): a fixed time inside it,
+# or the deploy tests would fail outside office hours.
+export DEPLOYS_TESTING=1 DEPLOYS_NOW="mon 10:00 2026-11-09"
 mkdir -p "$tmp/bin" "$DEPLOYS_CONFIG"; : > "$CALLS"
 
 # gh: `gh api [flags] <path>`. Files in a repo come from fixtures/team/files, everything else
@@ -133,7 +136,9 @@ echo '{"projects":{"web":{"health":"/up"}}}' > "$DEPLOYS_CONFIG/overrides.json"
 fresh; : > "$CALLS"
 for cmd in "deploy web" "vercel deploy web" "vercel rollback web" "vercel autodeploy-off --all" "vercel map web acme/shop" \
            "render deploy api" "render rollback api" "render cancel s1 d1" "hook deploy site" "deploy-changed --yes" "autofix" \
-           "autofix --only vercel web" "guard" "vercel autodeploy-on web" "render autodeploy-on api" "netlify deploy site"; do
+           "autofix --only vercel web" "guard" "vercel autodeploy-on web" "render autodeploy-on api" "netlify deploy site" \
+           "deploy-changed --when-green --yes" "deploy-changed --json --yes" "autodeploy allow vercel web 2" \
+           "autodeploy revoke vercel web" "verify web"; do
   # shellcheck disable=SC2086  # the words of the command
   out="$(DEPLOYS_READONLY=1 "${D[@]}" $cmd 2>&1)"; rc=$?
   expect "DEPLOYS_READONLY=1 refuses: $cmd" "$rc:$(echo "$out" | grep -c 'Observer mode (DEPLOYS_READONLY is set)')" "1:1"
@@ -178,6 +183,10 @@ fresh
   expect "a label on an open issue naming the commit counts" "$(n dddd444dddd444dddd444dddd444dddd444dddd)" "dev-two"
   out="$(team_gate render api acme/shop main aaaa111aaaa111aaaa111aaaa111aaaa111aaaa 2>&1)"; rc=$?
   expect "two needed, one there: refused" "$rc:$(echo "$out" | grep -c 'needs 2 approval')" "1:1"
+  # 290: GitHub not readable is not "no approvals" (there is no fixture for this commit: a 404).
+  expect "290: a GitHub error is an error, not an empty list" "$(team_approvals acme/shop eeee555 dev-one | jq -r '.error')" "gh: Not Found (HTTP 404)"
+  out="$(team_gate render api acme/shop main eeee555 2>&1)"; rc=$?
+  expect "290: team_gate says GitHub could not be read" "$rc:$(echo "$out" | grep -c 'could not be read to check them'):$(echo "$out" | grep -c 'Found none')" "1:1:0"
   [ "$fails" = 0 ] || exit 1
 ) || fails=$((fails + 1))
 
@@ -226,11 +235,23 @@ fresh
 out="$(GH_HEAD=bbbb222bbbb222bbbb222bbbb222bbbb222bbbb "${D[@]}" vercel deploy-json web 2>&1)"; rc=$?
 expect "the app's path (vercel deploy-json) is checked too" "$rc:$(echo "$out" | grep -c 'needs 1 approval')" "1:1"
 
-# A copy of the script without lib/team.sh still deploys, and observer mode still holds.
+# A copy of the script without lib/team.sh: observer mode still holds.
 # providers/ comes along (without it deploys stops at once); lib/ does not.
 mkdir -p "$tmp/alone"; cp deploys "$tmp/alone/deploys"; cp -R providers "$tmp/alone/providers"
 out="$(DEPLOYS_READONLY=1 bash "$tmp/alone/deploys" vercel deploy web 2>&1)"; rc=$?
 expect "without lib/team.sh observer mode still refuses" "$rc:$(echo "$out" | grep -c 'Observer mode')" "1:1"
+# 524: this Mac uses a team file (team-repos, overrides.json or a cached shared file), and lib/ is
+# gone: a deploy stops instead of skipping the two-person rule; reading still works.
+# No real keychain or network: security finds nothing, curl answers nothing, no Render key.
+mkdir -p "$tmp/b524"; printf '#!/bin/bash\ncat >/dev/null; exit 44\n' > "$tmp/b524/security"; printf '#!/bin/bash\nexit 7\n' > "$tmp/b524/curl"
+chmod +x "$tmp/b524"/*; OLDPATH="$PATH"; export PATH="$tmp/b524:$PATH"; unset RENDER_API_KEY
+out="$(bash "$tmp/alone/deploys" vercel deploy web 2>&1)"; rc=$?
+expect "524: without lib/team.sh and a team file, a deploy is refused" "$rc:$(echo "$out" | grep -c 'lib/team.sh is missing')" "1:1"
+out="$(DEPLOYS_TEAM_LIB=/nonexistent bash ./deploys deploy-changed --yes 2>&1)"; rc=$?
+expect "524: deploy-changed --yes too" "$rc:$(echo "$out" | grep -c 'is missing, so its approvals')" "1:1"
+out="$(DEPLOYS_TEAM_LIB=/nonexistent bash ./deploys doctor 2>&1)"; rc=$?
+expect "524: doctor still runs" "$rc" "0"
+export PATH="$OLDPATH"
 
 # The fixtures follow the schema (when python3 with jsonschema is there; CI on macOS may lack it).
 if python3 -c 'import jsonschema' 2>/dev/null; then

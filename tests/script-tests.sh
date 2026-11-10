@@ -222,7 +222,12 @@ cat >/dev/null   # the key comes on stdin
 m=GET; for a in "$@"; do [ "$prev" = -X ] && m="$a"; prev="$a"; done; url="${*: -1}"
 echo "curl $m $url" >> "$E2E/calls.log"
 case "$m $url" in
-  "GET https://api.render.com/v1/services?limit=100"*) printf '%s\n200' '[{"cursor":"c1","service":{"id":"srv-1","name":"api","type":"web_service","suspended":"not_suspended","repo":"https://github.com/me/app","branch":"main","autoDeployTrigger":"off"}}]' ;;
+  "GET https://api.render.com/v1/services?limit=100"*)
+    # RIMAGE adds a service built from an image (no repo) and one from Bitbucket.
+    more=""; [ -n "${RIMAGE:-}" ] && more=',{"cursor":"c2","service":{"id":"srv-2","name":"img","type":"web_service","suspended":"not_suspended","repo":null,"branch":null,"autoDeployTrigger":"off"}},{"cursor":"c3","service":{"id":"srv-3","name":"bb","type":"web_service","suspended":"not_suspended","repo":"https://bitbucket.org/me/bb","branch":"main","autoDeployTrigger":"off"}}'
+    printf '%s\n200' '[{"cursor":"c1","service":{"id":"srv-1","name":"api","type":"web_service","suspended":"not_suspended","repo":"https://github.com/me/app","branch":"main","autoDeployTrigger":"off"}}'"$more"']' ;;
+  "GET https://api.render.com/v1/services/srv-"[23]"/deploys?limit=10")
+    printf '%s\n200' '[{"deploy":{"id":"dep-x","status":"live","commit":{"id":"cccc","message":"old"},"createdAt":"2026-01-01T00:00:00Z","finishedAt":"2026-01-01T00:01:00Z"}}]' ;;
   "GET https://api.render.com/v1/services/srv-1") printf '%s\n200' '{"id":"srv-1","name":"api","repo":"https://github.com/me/app","branch":"main"}' ;;
   "GET https://api.render.com/v1/services/srv-1/deploys?limit=10")
     [ "${RSTUB:-}" = 429 ] && { printf '%s\n429' '{"message":"rate limit"}'; exit 0; }
@@ -239,6 +244,7 @@ case "$m $url" in
     case "${SITE:-ok}" in
       down) printf 503 ;;
       gone) printf 000; exit 28 ;;
+      notfound) printf 404 ;;
       flaky) n=$(( $(cat "$E2E/site" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$E2E/site"; [ "$n" = 1 ] && printf 502 || printf 200 ;;
       pathy) case "${*: -1}" in */bad) printf 503 ;; */moved) printf 301 ;; *) printf 200 ;; esac ;;
       *) printf 200 ;;
@@ -306,6 +312,26 @@ expect "GitHub down: changed exits non-zero, no \"Nothing to deploy\"" "$rc:$(gr
 expect "GitHub down: the project is named" "$(grep -c 'vercel web: branch head unknown' "$E")" "1"
 unset GSTUB
 
+# A service without a git repo (an image) or on a host deploys cannot read (Bitbucket) has no head:
+# it is "no repo", never "state unknown", so changed does not fail on every run because of it.
+fresh
+rc="$(RENDER_API_KEY=rnd_test RIMAGE=1 run "$O" "$E" changed)"
+expect "no repo: changed exits 0 and names nothing unknown" "$rc:$(grep -c 'state unknown' "$E")" "0:0"
+expect "no repo: the real changes are still found" "$(grep -c 'api' "$O"):$(grep -c 'img\|bb ' "$O")" "1:0"
+RENDER_API_KEY=rnd_test RIMAGE=1 run "$O" "$E" render json >/dev/null
+expect "no repo: render json says why" "$(jq -c 'map({(.name): .noRepo}) | add' "$O")" \
+  '{"api":null,"bb":"the git host of bitbucket.org/me/bb is not supported","img":"no git repo"}'
+
+# A locked keychain (launchd, SSH: security exits 36) is not "no Render key": an error, not
+# "Nothing to deploy" with exit 0. Linux (no security at all) and "no such item" (44) stay silent.
+fresh; unset RENDER_API_KEY; printf '#!/bin/bash\nexit 36\n' > "$e2e/bin/security"
+rc="$(run "$O" "$E" changed)"
+expect "keychain locked: changed exits non-zero, no \"Nothing to deploy\"" "$rc:$(grep -c 'Nothing to deploy' "$O")" "1:0"
+expect "keychain locked: the reason is shown" "$(grep -c 'could not read render: Render: the keychain could not be read' "$E")" "1"
+rc="$(run "$O" "$E" deploy-changed --yes)"
+expect "keychain locked: deploy-changed --yes fails, nothing on Render" "$rc:$(grep -c 'POST https://api.render.com' "$e2e/calls.log")" "1:0"
+printf '#!/bin/bash\nexit 44\n' > "$e2e/bin/security"
+
 # status --no-github asks GitHub nothing.
 fresh; export RENDER_API_KEY=rnd_test
 run "$O" "$E" status --no-github >/dev/null
@@ -370,6 +396,26 @@ expect "when-green --json: one record per project" \
   "$(CI=red run "$O" "$E" deploy-changed --yes --when-green --json; jq -c 'map({name, action}) | sort_by(.name)' "$O")" \
   $'0\n[{"name":"api","action":"skipped"},{"name":"web","action":"skipped"}]'
 expect "when-green: a wrong --wait is refused" "$(run "$O" "$E" deploy-changed --yes --when-green --wait soon; grep -c 'takes a time' "$E")" $'1\n1'
+# A provider that cannot deploy a given commit (caps.sha false) is started without --sha, and says
+# so, instead of failing on the flag. Its own folder of providers (DEPLOYS_DIR), switched on.
+nd="$tmp/nosha"; mkdir -p "$nd/providers" "$nd/config"; cp providers/vercel.sh providers/render.sh "$nd/providers/"
+cp "$e2e/config/vercel-repos.json" "$nd/config/"; echo '{"enabled":["nosha","vercel"]}' > "$nd/config/providers.json"
+cat > "$nd/providers/nosha.sh" <<'SH'
+# shellcheck shell=bash
+nosha_meta() { printf '%s\n' '{"id":"nosha","label":"NoSha","noun":"site","defaultOn":false,"keyEnv":[],"keychain":null,"caps":{"off":false,"sha":false,"cancel":false,"rollback":false,"logs":false,"preview":false}}'; }
+nosha_ready() { return 0; }
+nosha_json() { echo '[{"name":"site1","id":"n-1","auto":false,"deployable":true,"paused":false,"repo":"me/app","ref":"main","domain":null,"url":null,"dashboardUrl":null,"lastAt":1,"lastState":"ready","lastSha":"aaaa","lastMsg":null,"fetchError":null,"phase":"ready"}]'; }
+nosha_has() { [ "$1" = site1 ] && echo n-1; }
+nosha_deploy_json() { echo "nosha deploy $*" >> "$E2E/calls.log"; case " $* " in *" --sha "*) die "NoSha cannot deploy a given commit";; esac; echo '{"id":"n-dep","url":null,"state":"queued","phase":"queued"}'; }
+for v in off status latest cancel rollback logs url set_key doctor; do eval "nosha_$v() { die \"NoSha cannot $v\"; }"; done
+SH
+fresh
+out="$(env -u DEPLOYS_LIB PATH="$e2e/bin:/usr/bin:/bin" E2E="$e2e" DEPLOYS_DIR="$nd" DEPLOYS_CONFIG="$nd/config" DEPLOYS_VERCEL_TEAM=team_test \
+  HOME="$e2e" NO_COLOR=1 /bin/bash ./deploys deploy-changed --yes --when-green --json 2>"$E" </dev/null)"; rc=$?
+expect "when-green, no sha capability: started without --sha" "$rc:$(grep -c '^nosha deploy n-1$' "$e2e/calls.log")" "0:1"
+expect "when-green, no sha capability: the record says why" \
+  "$(echo "$out" | jq -r '.[] | select(.platform == "nosha") | "\(.action): \(.reason)"' | grep -c '^started: .*NoSha cannot deploy a given commit: the newest commit of the branch is built')" "1"
+expect "when-green, with sha capability: Vercel still gets the checked commit" "$(grep -c '"sha": *"bbbb"' "$e2e/bodies.log")" "1"
 expect "ci: green, exit 0" "$(run "$O" "$E" ci me/app bbbb --json; jq -c '{state, checks}' "$O")" $'0\n{"state":"green","checks":2}'
 expect "ci: red, exit 1" "$(CI=red run "$O" "$E" ci me/app bbbb; cat "$O")" $'1\nred: failed: test'
 expect "ci: still pending, exit 2 (with --json 0)" "$(CI=pending run "$O" "$E" ci me/app bbbb; CI=pending run "$O" "$E" ci me/app bbbb --json; jq -r .state "$O")" $'2\n0\npending'
@@ -391,6 +437,13 @@ expect "window: so is vercel deploy and the app's deploy-json" \
   "$(run "$O" "$E" vercel deploy web; run "$O" "$E" render deploy-json api; started)" $'1\n1\n0'
 expect "window: a preview still goes" "$(run "$O" "$E" vercel deploy web --preview; started)" $'0\n1'
 fresh
+expect "window: deploys deploy <project> is refused inside it too" \
+  "$(run "$O" "$E" deploy web; started; grep -c 'deploy window says' "$E")" $'1\n0\n1'
+fresh; : > "$DEPLOYS_JOURNAL"
+expect "window: deploys deploy <project> --force \"why\" starts and journals once" \
+  "$(run "$O" "$E" deploy web --force "hotfix"; started; jq -sc 'map([.platform, .name, .result])' "$DEPLOYS_JOURNAL")" \
+  $'0\n1\n[["Vercel","web","forced"]]'
+fresh; : > "$DEPLOYS_JOURNAL"
 expect "window: --force without a reason is refused" "$(run "$O" "$E" deploy-changed --yes --force; started)" $'1\n0'
 expect "window: --force \"why\" starts both and journals each" \
   "$(run "$O" "$E" deploy-changed --yes --force "hotfix for login"; started; jq -sc 'map([.platform, .name, .result]) | sort' "$DEPLOYS_JOURNAL")" \
@@ -452,7 +505,7 @@ echo '{"groups":{"pair":["api","web"]}}' > "$e2e/config/overrides.json"; fresh
 expect "FEA-072: a plain group asks no site" "$(run "$O" "$E" deploy pair >/dev/null; grep -c 'web.example.test' "$e2e/calls.log")" $'0'
 
 rm -f "$e2e/config/overrides.json"
-expect "verify: a wrong --rollback-after is refused" "$(run "$O" "$E" verify web --rollback-after soon; grep -c 'takes seconds' "$E")" $'1\n1'
+expect "verify: a wrong --rollback-after is refused" "$(run "$O" "$E" verify web --rollback-after soon; grep -c 'takes seconds' "$E")" $'3\n1'
 unset DEPLOYS_JOURNAL
 
 # risk: the rule, then the command and the lists.
@@ -645,6 +698,7 @@ expect "autofix status --json: prNumber, prState, prUrl, session, mergedSha (and
 af_reset
 jq -n --argjson t "$((now - 600))" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",sha:"aaaa111",status:"fired",at:$t}]}' > "$AUTOFIX_STATE"
 ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"}]'
+# shellcheck disable=SC2034  # all/dry are read by af_sync_fires (dynamic scope)
 expect "autofix sync: a merged fix PR is recorded, nothing fired" \
   "$( ( st="$(af_state)"; all="$ALL"; dry=""; rc=0; DEPLOYS_NOTIFY=0 af_sync_fires >/dev/null; echo "$st" | jq -c '.fires[0] | [.prState, .mergedSha]' ) ):$(fired)" '["merged","ffff999"]:0'
 expect "autofix --only: syncs that project's PR first (merged, so not handed over again)" \
@@ -1252,10 +1306,10 @@ fresh
 expect "CLI-011: ci refuses a repo with a query" "$(run "$O" "$E" ci 'me/app?x=1' main; grep -c '^gh ' "$e2e/calls.log")" $'1\n0'
 expect "CLI-011: details refuses a ref with .." "$(run "$O" "$E" details me/app aaaa '../x'; grep -c '^gh ' "$e2e/calls.log")" $'1\n0'
 
-# CLI-047: ignore takes --undo before the name and <p>:<name>.
+# CLI-047: ignore takes --undo before the name and <p>:<name> (kept as given: only that platform's).
 fresh; run "$O" "$E" render json >/dev/null
-expect "CLI-047: ignore render:api, then --undo api" \
-  "$(run "$O" "$E" ignore render:api; run "$O" "$E" ignore --undo api; run "$O" "$E" ignore --list; cat "$O")" $'0\n0\n0'
+expect "CLI-047: ignore render:api, then --undo render:api" \
+  "$(run "$O" "$E" ignore render:api; run "$O" "$E" ignore --undo render:api; run "$O" "$E" ignore --list; cat "$O")" $'0\n0\n0'
 # CLI-008, CLI-078: a rule over midnight belongs to the day it starts; window warns about typos.
 fresh; echo '{"deny":[{"days":["fri"],"from":"22:00","to":"06:00"}]}' > "$e2e/config/window.json"
 wn() { DEPLOYS_NOW="$1" run "$O" "$E" window --json >/dev/null; jq -r .denied "$O"; }
@@ -1341,12 +1395,13 @@ expect "PRV-084: a platform that cannot be asked is named, not \"no project\"" \
   "$(l53 'vercel_has() { return 2; }' "" other | grep -c 'could not be asked (network or login)')" "1"
 expect "PRV-084: p:name says so too" "$(l53 'vercel_has() { return 2; }' "" vercel:web | grep -c 'Vercel could not be asked')" "1"
 expect "PRV-084: not found stays not found" "$(l53 'vercel_has() { return 1; }' "" other | grep -c '^Error: No .*named "other"')" "1"
-# PRV-042: a start that names no deploy id is not followed: exit 3, the group stops there.
+# PRV-042 (main's way since round 6): a start that names no deploy id follows the newest deploy;
+# when that cannot be followed either it is exit 3 and says so, and the group stops there.
 mkdir -p "$tmp/p42/providers" "$tmp/p42/cfg"; cp deploys "$tmp/p42/"; cp -R lib "$tmp/p42/"
 printf '%s\n' 'zz_meta() { echo "{\"id\":\"zz\",\"label\":\"Zed\",\"noun\":\"site\",\"defaultOn\":true,\"caps\":{}}"; }' 'zz_ready() { return 0; }' \
   'zz_has() { echo "$1"; }' 'zz_list() { echo "[]"; }' 'zz_deploy_json() { echo "{\"id\":null,\"state\":\"accepted\"}"; }' > "$tmp/p42/providers/zz.sh"
 expect "PRV-042: --wait on a start without an id exits 3 and says so" \
-  "$(env -u DEPLOYS_LIB DEPLOYS_CONFIG="$tmp/p42/cfg" HOME="$tmp/p42" /bin/bash "$tmp/p42/deploys" deploy zz:web --wait 2>&1 >/dev/null | grep -c 'deploy id is unknown'; echo "rc=${PIPESTATUS[0]}")" $'1\nrc=3'
+  "$(env -u DEPLOYS_LIB DEPLOYS_CONFIG="$tmp/p42/cfg" HOME="$tmp/p42" /bin/bash "$tmp/p42/deploys" deploy zz:web --wait 2>&1 >/dev/null | grep -c 'could not follow zz:web'; echo "rc=${PIPESTATUS[0]}")" $'1\nrc=3'
 # INT-071, INT-076: history and notes as data, for the status page without the app's journal.
 export RENDER_API_KEY=rnd_test; fresh
 expect "INT-071: history --json reads any provider's table as rows" \
@@ -1367,13 +1422,11 @@ expect "CLI-056: ai usage adds under a lock and leaves none behind" "$( (DEPLOYS
   AI_USAGE="$tmp/l55/ai-usage.json"; ai_add_usage 5 & ai_add_usage 7 & wait; ai_add_usage 1; ai_used; [ -e "$AI_USAGE.lock" ] && echo left || echo clean) )" $'13\nclean'
 expect "CLI-056: a dead holder's lock does not cost every later call the wait" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
   mkdir "$tmp/l55/x.lock"; touch -t 202001010000 "$tmp/l55/x.lock"; file_lock "$tmp/l55/x" && echo got; file_unlock "$tmp/l55/x"; [ -e "$tmp/l55/x.lock" ] || echo clean) )" $'got\nclean'
-# CLI-062: names no list has shown for 30 days leave the completion list; old ones are kept at first.
-mkdir -p "$tmp/n62"; printf 'gone\nkept\n' > "$tmp/n62/names"
-expect "CLI-062: existing names count as seen now, a failed read removes nothing" "$( (DEPLOYS_CONFIG="$tmp/n62" DEPLOYS_LIB=1 . ./deploys; set +e
-  echo 'not json' | remember_names vercel; cat "$CONFIG_DIR/names" | paste -sd, -) )" "gone,kept"
-expect "CLI-062: a name unseen for 30 days goes, a fresh one stays" "$( (DEPLOYS_CONFIG="$tmp/n62" DEPLOYS_LIB=1 . ./deploys; set +e
-  jq '.gone = 1000' "$CONFIG_DIR/names.seen" > "$CONFIG_DIR/s.tmp" && mv "$CONFIG_DIR/s.tmp" "$CONFIG_DIR/names.seen"
-  echo '[{"name":"web","id":"p1"}]' | remember_names vercel; cat "$CONFIG_DIR/names" | paste -sd, -) )" "kept,web"
+# CLI-062 (with main's names.json): the completion list holds plain names only; a name like
+# $(cmd) from a platform list never reaches it.
+mkdir -p "$tmp/n62"
+expect "CLI-062: only plain names go into the completion list" "$( (DEPLOYS_CONFIG="$tmp/n62" DEPLOYS_LIB=1 . ./deploys; set +e
+  echo '[{"name":"web","id":"p1"},{"name":"$(touch x)","id":"p2"}]' | remember_names vercel; cat "$CONFIG_DIR/names" | paste -sd, -) )" "web"
 # CLI-066: rebase-merged commits are asked in parallel; a PR already named in a message counts once.
 mkdir -p "$tmp/bin66"; printf '#!/bin/bash\ncase "$*" in *"commits/c3/pulls"*) echo 12 ;; *) exec "%s/bin/gh" "$@" ;; esac\n' "$tmp" > "$tmp/bin66/gh"; chmod +x "$tmp/bin66/gh"
 expect "CLI-066: the PR of a rebase-merged commit that a message names already is not counted twice" \
@@ -1438,9 +1491,10 @@ for z in zz1 zz2; do
     "${z}_doctor() { printf '{\\n\"provider\":\"$z\",\\n\"tokenOk\":true}\\n'; }" > "$tmp/pdoc/providers/$z.sh"
 done
 doc="$(env -u DEPLOYS_LIB DEPLOYS_CONFIG="$tmp/pdoc/cfg" HOME="$tmp/pdoc" RENDER_API_KEY=rnd_test /bin/bash "$tmp/pdoc/deploys" doctor 2>/dev/null)"
+# Plain-key objects sit under providers.<p> and, as on main, under <p> at the top: never side by side.
 expect "doctor: no repeated keys, each provider under providers" \
-  "$(echo "$doc" | grep -o '"provider"' | wc -l | tr -d ' '; echo "$doc" | jq -c '[.renderKey, .providers.zz1.provider, .providers.zz2.tokenOk, has("provider"), .providers.render.renderKey]')" \
-  $'2\n[true,"zz1",true,false,true]'
+  "$(echo "$doc" | grep -o '"provider"' | wc -l | tr -d ' '; echo "$doc" | jq -c '[.renderKey, .providers.zz1.provider, .providers.zz2.tokenOk, has("provider"), .providers.render.renderKey, .zz2.provider]')" \
+  $'4\n[true,"zz1",true,false,true,"zz2"]'
 # CLI-022: a hanging CLI is ended after DEPLOYS_TIMEOUT; 0 means no limit.
 expect "CLI-022: with_timeout ends a hanging command" "$(s0=$SECONDS; with_timeout 1 /bin/sleep 5; rc=$?; [ $((SECONDS - s0)) -lt 4 ] && echo "fast rc>0:$([ "$rc" != 0 ] && echo yes)")" "fast rc>0:yes"
 expect "CLI-022: 0 is no limit, the answer passes through" "$(with_timeout 0 /bin/echo hi)" "hi"
@@ -1459,7 +1513,7 @@ rm -f "$e2e/config/window.json"; unset RENDER_API_KEY
 export RENDER_API_KEY=rnd_test; fresh
 expect "CLI-035: a 200 is not the expected 404: failed, not rolled back" "$(run "$O" "$E" verify web --expect 404 --no-rollback; rolled)" $'2\n0'
 expect "CLI-035: 2xx accepts a 200, with --follow" "$(run "$O" "$E" verify web --expect 2xx --follow; rolled)" $'0\n0'
-expect "CLI-035: a bad --expect is refused" "$(run "$O" "$E" verify web --expect ok; grep -c 'takes a status' "$E")" $'1\n1'
+expect "CLI-035: a bad --expect is refused" "$(run "$O" "$E" verify web --expect ok; grep -c 'takes a status' "$E")" $'3\n1'
 unset RENDER_API_KEY
 # CLI-028 follow-up: the job itself turns rotation on (DEPLOYS_LOG_ROTATE in the plist).
 mkdir -p "$tmp/j28/agents"
@@ -1598,6 +1652,26 @@ expect "FEA-110: autodeploy-on --dry-run is refused by a provider without onDryR
 fresh
 expect "logs --runtime: refused where the provider has no runtime log" "$(run "$O" "$E" logs web --runtime; grep -c 'no runtime log' "$E")" $'1\n1'
 # ===== end CLI track =====
+# --- bump.sh: VERSION, changelog, site, and the MCP server and plugin that ship in the app ---
+bp="$tmp/bump"; mkdir -p "$bp/scripts" "$bp/site" "$bp/integrations/mcp" "$bp/integrations/claude-code/.claude-plugin"
+cp scripts/bump.sh "$bp/scripts/"; echo 1.2.3 > "$bp/VERSION"
+printf '# Changes\n\n## Unreleased\n\n- a fix\n\n## 1.2.3\n' > "$bp/CHANGELOG.md"
+printf '<p>Version 1.2.3 · x</p>\n{"softwareVersion": "1.2.3"}\n' > "$bp/site/index.html"
+printf '{\n  "name": "deploys-mcp",\n  "version": "1.2.3",\n  "dependencies": { "x": "1.2.3" }\n}\n' > "$bp/integrations/mcp/package.json"
+printf '{"name":"deploys-mcp","version":"1.2.3","packages":{"":{"version":"1.2.3"},"node_modules/x":{"version":"1.2.3"}}}\n' > "$bp/integrations/mcp/package-lock.json"
+printf 'const VERSION = "1.2.3";\n' > "$bp/integrations/mcp/server.mjs"
+printf '{\n  "name": "deploys",\n  "version": "1.2.3"\n}\n' > "$bp/integrations/claude-code/.claude-plugin/plugin.json"
+bash "$bp/scripts/bump.sh" minor >/dev/null 2>&1
+expect "bump: VERSION, site, MCP and plugin versions" "$(cat "$bp/VERSION") $(grep -c '1.3.0' "$bp/site/index.html") $(jq -r .version "$bp/integrations/mcp/package.json") $(jq -r '.version, .packages[""].version' "$bp/integrations/mcp/package-lock.json" | tr '\n' ' ')$(grep -c '"1.3.0"' "$bp/integrations/mcp/server.mjs") $(jq -r .version "$bp/integrations/claude-code/.claude-plugin/plugin.json")" \
+  "1.3.0 2 1.3.0 1.3.0 1.3.0 1 1.3.0"
+expect "bump: dependency versions stay" "$(jq -r .dependencies.x "$bp/integrations/mcp/package.json") $(jq -r '.packages["node_modules/x"].version' "$bp/integrations/mcp/package-lock.json")" "1.2.3 1.2.3"
+printf '<p>Version 9.9.9 · x</p>\n' > "$bp/site/index.html"
+printf -- '- more\n' >> "$bp/CHANGELOG.md"
+sed -i.bak 's/^## 1.3.0$/## Unreleased/' "$bp/CHANGELOG.md" && rm -f "$bp/CHANGELOG.md.bak"
+bash "$bp/scripts/bump.sh" 1.4.0 >/dev/null 2>&1; expect "bump: a site line that is not found fails" "$?" "1"
+# The CLI and provider fixes of round 6 (docs/IDEEN-6.md, section 3), with the stand-ins above.
+# shellcheck source=cli-tests.sh
+. tests/cli-tests.sh
 
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }

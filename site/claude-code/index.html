@@ -27,6 +27,7 @@
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="stylesheet" href="/css/site.css">
 <script type="application/ld+json">
 [
@@ -121,18 +122,19 @@
 </script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <nav class="top" aria-label="Main"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
-  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
 </div></nav>
 
-<main class="wrap narrow"><article>
+<main id="main" class="wrap narrow"><article>
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Deploy Center + Claude Code: let the agent push, you decide what ships</h1>
 <p class="answer">Claude Code pushes many small commits, and with auto-deploy on, each one is a paid build on Vercel or Render. Deploy Center turns those builds off, ships everything waiting in one deploy when you decide, and hands failed builds back to Claude to fix.</p>
 <p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
-<p><b>Everyone codes with Claude now. Deploy Center is the missing half: it decides what ships, and Claude fixes what breaks.</b> Deploy Center is a free, open-source Mac app that works with Claude Code.</p>
+<p><b>Claude writes and pushes the code. Deploy Center is the other half: you decide what ships, and Claude fixes what breaks.</b> Deploy Center is a free, open-source Mac app that works with Claude Code.</p>
 
 <h2 id="autofix">A failed build fixes itself (almost)</h2>
 <ol class="flowline" aria-label="Autofix flow">
@@ -158,6 +160,12 @@
 
 <h2>Ask Claude what is waiting</h2>
 <p>The MCP server in <a href="https://github.com/Pschmetzer/deploy-center/tree/main/integrations/mcp"><code>integrations/mcp</code></a> lets Claude Code ask Deploy Center what is waiting to go live, read release notes and build logs, and, only if you turn it on, deploy one project after you said yes. It is read-only by default, and there is no “deploy everything” tool.</p>
+<p><b>In one click:</b> in the app, <b>Settings → Claude</b> connects Claude Desktop and Claude Code to the MCP server that comes with the app (it needs Node.js 18 or newer). Deploys stay off unless you allow them there.</p>
+<p><b>The Claude Code plugin</b> brings the MCP server, a skill, four commands and a push hook. In a Claude Code session:</p>
+<pre><code class="language-text">/plugin marketplace add Pschmetzer/deploy-center
+/plugin install deploy-center@deploy-center</code></pre>
+<p>Then run <code>/deploy-center:deploys-waiting</code>, or see <a href="https://github.com/Pschmetzer/deploy-center/tree/main/integrations/claude-code">what the plugin contains</a>.</p>
+<p><b>By hand</b>, from a clone of the repo:</p>
 <pre><code class="language-bash"><span class="c"># needs Node 18+; replace /path/to/deploy-center with your clone of the repo</span>
 cd /path/to/deploy-center/integrations/mcp &amp;&amp; npm ci
 
@@ -168,8 +176,8 @@ claude mcp add deploys -- node /path/to/deploy-center/integrations/mcp/server.mj
 claude mcp add deploys -e DEPLOYS_MCP_ALLOW_DEPLOY=1 -- node /path/to/deploy-center/integrations/mcp/server.mjs</code></pre>
 <p>Then ask Claude “what is waiting to go live?”. Keep the approval prompt on for the deploy and rollback tools.</p>
 
-<h2>One approval a day <span class="tag">Coming soon</span></h2>
-<p>An agent digest will collect what your agents pushed during the day into one summary, so you approve one deploy instead of reacting to every push.</p>
+<h2>One approval a day</h2>
+<p>The <a href="https://github.com/Pschmetzer/deploy-center/tree/main/integrations/digest">agent digest</a> collects what your agents pushed during the day into one summary: per project, commits by agents and by people, the pull requests, and what to check first. You approve one deploy (a button in the message, or a label on the day's issue) instead of reacting to every push.</p>
 
 <h2>Setup</h2>
 <ol>
@@ -232,7 +240,7 @@ deploys autofix schedule on            # check every 10 minutes</code></pre>
       <li><a href="/datenschutz.html">Datenschutz</a></li>
     </ul></div>
   </div>
-  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify. Claude is a trademark of Anthropic. Deploy Center is not affiliated with Anthropic.</p>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
 </div></footer>
 </body>
 </html>

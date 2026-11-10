@@ -72,7 +72,7 @@ team_sources() {
   [ "${DEPLOYS_TEAM_REFRESH:-}" != 1 ] || ttl=0
   list="$(team_repo_list "$@")"
   if [ -n "$list" ]; then
-    printf '%s\n' "$list" | xargs -P 8 -n 1 bash -c 'team_fetch_one "$4" "$1" "$2" "$3"' _ "$TEAM_CACHE" "$ttl" "$only" 2>/dev/null || true
+    printf '%s\n' "$list" | xargs -r -P 8 -n 1 bash -c 'team_fetch_one "$4" "$1" "$2" "$3"' _ "$TEAM_CACHE" "$ttl" "$only" 2>/dev/null || true
   fi
   while IFS= read -r r; do
     [ -n "$r" ] || continue
@@ -239,8 +239,14 @@ team_journal() {  # team_journal <json object>
 # (its first 7 characters), added by <user> themself (read from the issue's events: anyone may
 # add a label with someone else's name, and that does not count).
 team_approvals() {
-  local repo="$1" sha="$2" me="$3" prs issues have='[]' n
-  prs="$(gh api "repos/$repo/commits/$sha/pulls" 2>/dev/null | jq -c '[.[] | {number, url:.html_url, labels:[.labels[]?.name], head:(.head.sha // null)}]' 2>/dev/null)" || prs='[]'
+  local repo="$1" sha="$2" me="$3" prs issues have='[]' n raw e
+  # GitHub not readable is not "no approvals": the answer says so ({error}), and team_gate stops.
+  e="$(mktemp)"
+  if ! raw="$(gh api "repos/$repo/commits/$sha/pulls" 2>"$e")" || ! prs="$(jq -c '[.[] | {number, url:.html_url, labels:[.labels[]?.name], head:(.head.sha // null)}]' <<< "$raw" 2>/dev/null)"; then
+    jq -nc --arg w "$(grep -v '^[[:space:]]*$' "$e" | tail -n 1 | cut -c1-200)" '{error:(if $w == "" then "no readable answer" else $w end), have:[], prs:[]}'
+    rm -f "$e"; return 0
+  fi
+  rm -f "$e"
   [ -n "$prs" ] || prs='[]'
   # Reviews: the newest state of each person who is not the deployer. An approval counts for what
   # it saw: a review of an older head (pushed to after the approval) does not approve the PR's
@@ -299,6 +305,10 @@ team_gate() {
     [ -n "$sha" ] || die "$p needs $need approval(s), but the head of $repo ${ref:-main} could not be read"
   fi
   a="$(team_approvals "$repo" "$sha" "$me")"
+  local gherr; gherr="$(jq -r '.error // empty' <<< "$a")"
+  if [ -n "$gherr" ] && [ -z "${DEPLOYS_FORCE_REASON:-}" ]; then
+    die "$p needs $need approval(s) ($from), but GitHub could not be read to check them ($gherr). Nothing was started. Try again, or deliberately: --force \"reason\""
+  fi
   n="$(jq '.have | length' <<< "$a")"
   if [ "$n" -ge "$need" ]; then
     team_journal "$(jq -c --arg p "$p" --arg pl "$plat" --arg sha "$sha" --arg me "$me" --argjson need "$need" \

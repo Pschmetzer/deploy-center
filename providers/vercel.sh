@@ -83,6 +83,10 @@ vercel_off_one() {
       then {type:"gitlab", repo:'"$GITHOST_VERCEL_LINK_JQ"', projectId} else {org, repo, repoId} end)
       + {ref:(.productionBranch // "main"), offAt:(now | floor)})}')"
   [ "$(echo "$info" | jq '.link != null')" = "true" ] || { echo "Vercel: $p was already manual"; return; }
+  # A link deploys cannot write down (Bitbucket: no org and repo) must stay: removed, the project
+  # could neither be deployed from here nor connected again.
+  jq -e --arg p "$p" '.[$p].repo != null' "$REPOS" >/dev/null 2>&1 \
+    || die "Vercel: the repo of $p ($(echo "$info" | jq -r '.link.type // "unknown"')) could not be written down, so $p stays connected. Say where it deploys from first: deploys vercel map $p <owner/repo> [branch]"
   vercel api "$(with_team "/v9/projects/$p/link")" --method DELETE --dangerously-skip-permissions >/dev/null 2>&1 \
     || die "Vercel: could not disconnect $p"
   echo "Vercel: $p no longer deploys on push"
@@ -107,6 +111,10 @@ vercel_off() {
 # Auto-deploy back on: Git connected again from the remembered repo. Every push builds (and costs) again.
 vercel_on_one() {
   local p="$1" r body err e
+  # A GitLab link is connected again in Vercel's dashboard: the body for it is not known here.
+  if [ "$(jq -r --arg p "$p" '.[$p].type // ""' "$REPOS")" = gitlab ]; then
+    die "Vercel: $p deploys from GitLab ($(jq -r --arg p "$p" '.[$p].repo' "$REPOS")); connect it again in the Vercel dashboard (Settings > Git). Deploys from here keep working without it."
+  fi
   r="$(jq -r --arg p "$p" '.[$p] // {} | if .org and .repo then "\(.org)/\(.repo)" else "" end' "$REPOS")"
   [ -n "$r" ] || die "Vercel: the repo of $p is not known, so it cannot be connected again. Say where it deploys from: deploys vercel map $p <owner/repo> [branch]"
   body="$(mktemp)"; err="$(mktemp)"; jq -n --arg r "$r" '{type:"github", repo:$r}' > "$body"
@@ -169,7 +177,8 @@ vercel_start() {
 # vercel_deploy_json <project> [--preview] [--sha <commit>]
 vercel_deploy_json() {
   local p="${1:?project}" pv="" sha=""; shift || true
-  while [ $# -gt 0 ]; do case "$1" in --preview) pv=1;; --sha) sha="${2:?commit}"; shift;; esac; shift; done
+  # An unknown flag (--sah) is refused: ignored, the newest commit would go live instead.
+  while [ $# -gt 0 ]; do case "$1" in --preview) pv=1;; --sha) sha="${2:?commit}"; shift;; "") ;; *) die "Unknown option $1. Usage: deploy-json <project> [--preview] [--sha <commit>]";; esac; shift; done
   vercel_start "$p" "$pv" "$sha"
 }
 
@@ -178,7 +187,7 @@ vercel_deploy_json() {
 vercel_json() {
   local recent
   recent="$(vercel_call "/v6/deployments?limit=100&target=production" \
-    | jq '[.deployments[]] | group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta.githubCommitSha // null)})}) | from_entries' 2>/dev/null)"
+    | jq '[.deployments[]] | group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // null)})}) | from_entries' 2>/dev/null)"
   vercel_projects | jq --slurpfile r <(repos_json) --argjson recent "${recent:-{\}}" "$VERCEL_PHASE"'[.[] |
     ((.link // null) | if . then {repo:'"$GITHOST_VERCEL_LINK_JQ"', ref:"main"} else null end) as $live |
     ($r[0][.name] // null) as $known |
@@ -192,8 +201,8 @@ vercel_json() {
      dashboardUrl:null,
      lastAt:((.targets.production.createdAt // 0) / 1000 | floor),
      lastState:(.targets.production.readyState // null),
-     lastSha:(.targets.production.meta.githubCommitSha // null),
-     lastMsg:(.targets.production.meta.githubCommitMessage // null | if . then split("\n")[0] else null end),
+     lastSha:(.targets.production.meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // null),
+     lastMsg:(.targets.production.meta | (.githubCommitMessage // .gitlabCommitMessage // .bitbucketCommitMessage) // null | if . then split("\n")[0] else null end),
      latestState:($recent[.name].state // null),
      latestId:($recent[.name].id // null), latestSha:($recent[.name].sha // null),
      fetchError:null}
@@ -231,10 +240,10 @@ vercel_rollback() {
   cur="$(vercel_call "/v9/projects/$p" | jq -r '.targets.production.id // empty')"
   prev="$(vercel_call "/v6/deployments?projectId=$p&target=production&state=READY&limit=20" \
     | jq -r --arg cur "$cur" '.deployments as $d | (($d | map(.uid) | index($cur)) // 0) as $i
-        | ($d[$i].meta.githubCommitSha // null) as $sha
+        | ($d[$i].meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // null) as $sha
         # An older deploy of the same commit (a redeploy) would change nothing: skip to a different one.
         | ($d | to_entries | map(select(.key > $i) | .value)
-           | map(select($sha == null or (.meta.githubCommitSha // "") != $sha)) | .[0].uid // empty)')"
+           | map(select($sha == null or (.meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // "") != $sha)) | .[0].uid // empty)')"
   [ -n "$prev" ] || die "No earlier production deployment of $p to roll back to"
   # The project's id, not its name: Vercel answers 404 to a name on these endpoints.
   pid="$(vercel_call "/v9/projects/$p" | jq -r '.id // empty')"
@@ -244,7 +253,9 @@ vercel_rollback() {
 
 # vercel_logs <project> <lines> [deployId]: the end of a build log (newest production by default).
 vercel_logs() {
-  local p="$1" n="$2" d="${3:-}"
+  local p="$1" n="${2:-80}" d="${3:-}"
+  # jq's .[-0:] is the whole array: 0 lines must not print the whole log.
+  case "$n" in ''|*[!0-9]*|0) die "lines must be a number, 1 or more";; esac
   [ -n "$d" ] || d="$(vercel_call "/v6/deployments?app=$p&limit=1&target=production" | jq -r '.deployments[0].uid // empty')"
   [ -n "$d" ] || die "No deployment of $p"
   vercel_call "/v3/deployments/$d/events?builds=1&direction=backward&limit=2000" \
@@ -286,11 +297,11 @@ vercel_where() {
 vercel_history() {
   vercel_call "/v6/deployments?app=$1&limit=$2" | jq -r '.deployments[]
     | [(.created/1000 | strftime("%Y-%m-%d %H:%M")), (.target // "preview"), .state,
-       ((.meta.githubCommitSha // "")[0:7]), (.source // ""),
+       ((.meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // "")[0:7]), (.source // ""),
        (if .ready and .buildingAt then "\(((.ready - .buildingAt)/1000) | floor)s" else "" end)]
     # "-" for an empty field: BSD column merges empty fields and would shift the row.
     | map(if . == "" or . == null then "-" else . end) | @tsv' \
-    | (printf 'WHEN (UTC)\tTARGET\tSTATE\tCOMMIT\tSOURCE\tBUILD\n'; cat) | column -t -s $'\t'
+    | (printf 'WHEN (UTC)\tTARGET\tSTATE\tCOMMIT\tSOURCE\tBUILD\n'; cat) | table
 }
 
 # Usage lines for the verbs that take more than a project.
@@ -305,12 +316,12 @@ vercel_usage() {  # <argc> <verb>
 
 vercel_cli_list() {
   vercel_projects | jq -r '.[] | [.name, (if .link then "AUTO (\(.link.org // "")/\(.link.repo // ""))" else "manual" end)] | @tsv' \
-    | column -t -s $'\t'
+    | table
 }
 
 # vercel deploy <project> [--preview] [--sha <commit>] [--wait]
 vercel_cli_deploy() {
-  local target="$1" pv="" sha="" wait_="" out did s; shift
+  local target="$1" pv="" sha="" wait_="" out did; shift
   while [ $# -gt 0 ]; do
     case "$1" in
       --preview) pv=1;; --wait) wait_=1;;
@@ -321,14 +332,10 @@ vercel_cli_deploy() {
   out="$(vercel_start "$target" "$pv" "$sha")"
   echo "$out" | jq -r '"Vercel: deploy started -> \(.url) (\(.state))"'
   # Follow exactly this deploy, not "the newest one", until it is live or failed.
+  # `watch` follows it, with its give-up after five failed questions in a row (exit 3).
   if [ -n "$wait_" ]; then
     did="$(echo "$out" | jq -r .id)"
-    while :; do
-      s="$(vercel_status "$target" "$did" 2>/dev/null)" || s=""
-      printf '%s  %s\n' "$(date +%H:%M:%S)" "$(echo "$s" | cut -f3 | grep . || echo "?")"
-      case "$(echo "$s" | cut -f2)" in ready) exit 0;; failed|canceled) exit 1;; esac
-      sleep 6
-    done
+    exec "$0" watch "vercel:$target" "$did" ${pv:+--preview}
   fi
 }
 

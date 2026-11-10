@@ -20,12 +20,5 @@ no real project names in examples, texts in English and German, nothing builds w
    knows Discord, Slack-style, ntfy and Telegram. Add a Teams format and a test in
    [integrations/tests/run.sh](../integrations/tests/run.sh).
 
-6. **Fewer shellcheck warnings.** CI runs `shellcheck --severity=error`. Run it with
-   `--severity=warning` on `deploys`, fix a few warnings without changing behavior, and keep the tests green.
-
-7. **Troubleshooting entry from a real error.** Pick an error message in [`deploys`](../deploys) that
+6. **Troubleshooting entry from a real error.** Pick an error message in [`deploys`](../deploys) that
    is not in [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) yet and add what it means and what to do.
-
-8. **Link check in CI.** Add a step to [.github/workflows/ci.yml](../.github/workflows/ci.yml) that
-   fails when a relative link in `README.md`, `README.de.md` or `docs/*.md` points to a file that
-   does not exist. A small bash or Python script is enough; no network needed.

@@ -2,6 +2,7 @@
 
 > Free, open-source (MIT) Mac app, Mac widgets and bash CLI that turns off Git auto-deploy on Vercel, Render and other hosts, so you stop paying for a build on every push. It shows the commits and pull requests waiting to go live and the build costs, and deploys what changed when you decide. Made for AI coding: the agent pushes as often as it likes, you deploy once; Autofix hands a failed build to a Claude Code routine that opens a fix PR; Claude in the app explains failures, writes release notes and checks if a change is safe to ship; Claude Desktop and Claude Code connect through an MCP server and a Claude Code plugin.
 
+- Version: 0.9.1 (macOS app and `deploys` CLI).
 - Hosts: Vercel and Render on by default; Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and any deploy hook opt-in. Sources: GitHub and GitLab.
 - Safe deploys: only when CI is green, a site check with automatic rollback, deploy windows, a risk score, and a guard that turns auto-deploy off again every 30 minutes.
 - Savings: a simulator before you switch and a ledger afterwards, all marked as estimates.
@@ -40,11 +41,21 @@
 
 ## Optional
 
-- [Turning auto-deploy off, and back on](https://github.com/Pschmetzer/deploy-center/blob/main/docs/AUTO-DEPLOY.md)
-- [Autofix reference](https://github.com/Pschmetzer/deploy-center/blob/main/docs/AUTOFIX.md)
-- [MCP server for AI agents](https://github.com/Pschmetzer/deploy-center/blob/main/integrations/mcp/README.md): Claude Code, Cursor, Codex setup.
-- [FAQ](https://github.com/Pschmetzer/deploy-center/blob/main/docs/FAQ.md)
-- [Claude in the app](https://github.com/Pschmetzer/deploy-center/blob/main/docs/CLAUDE.md): explain a failure, release notes, ship check, with your own key.
-- [Safe deploys](https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAFE-DEPLOY.md)
-- [Team mode](https://github.com/Pschmetzer/deploy-center/blob/main/docs/TEAM.md)
-- [Savings](https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAVINGS.md)
+- [Turning auto-deploy off, and back on](https://deploycenter.app/docs/auto-deploy/)
+- [Autofix reference](https://deploycenter.app/docs/autofix/)
+- [MCP server for AI agents](https://deploycenter.app/docs/integrations/mcp/): Claude Code, Cursor, Codex setup.
+- [FAQ](https://deploycenter.app/docs/faq/)
+- [Claude in the app](https://deploycenter.app/docs/claude/): explain a failure, release notes, ship check, with your own key.
+- [Safe deploys](https://deploycenter.app/docs/safe-deploy/)
+- [Team mode](https://deploycenter.app/docs/team/)
+- [Savings](https://deploycenter.app/docs/savings/)
+- [Auto-deploy guard](https://deploycenter.app/docs/guard/)
+- [GitLab as a source](https://deploycenter.app/docs/gitlab/)
+- [Install the CLI](https://deploycenter.app/docs/install-cli/): install script, Homebrew, Docker, CI variables.
+- [Netlify](https://deploycenter.app/docs/netlify/)
+- [Cloudflare Pages](https://deploycenter.app/docs/cloudflare-pages/)
+- [AWS Amplify](https://deploycenter.app/docs/aws-amplify/)
+- [DigitalOcean App Platform](https://deploycenter.app/docs/digitalocean/)
+- [Coolify](https://deploycenter.app/docs/coolify/)
+- [Deploy hooks (any host)](https://deploycenter.app/docs/deploy-hooks/)
+- [All docs as one text file](https://deploycenter.app/docs/llms-full.txt)

@@ -60,8 +60,10 @@ deploys verify <project> [--path /health] [--rollback-after 10] [--no-rollback] 
 1. Waits until the newest production deploy is live (as `deploys watch` does). If the deploy failed, there is nothing to check.
 2. Requests the site, plus `--path` if given, 3 times, 5 s apart.
 3. The check fails only when **all three** answers are 5xx or nothing at all (a timeout or no
-   connection). A fresh Render service can answer 502 for a few seconds. A 4xx is not a failure:
-   it usually means a protected or missing page, and rolling back would not fix that.
+   connection). A fresh Render service can answer 502 for a few seconds. Redirects are followed.
+   Without `--path` a 4xx is not a failure: it usually means a protected page, and rolling back
+   would not fix that. With `--path` the address must exist: a 4xx there (a missing `/health`)
+   counts as a failure too.
 4. On failure it counts down (`Rolling back web in 10 s – Ctrl-C to stop`), then runs
    `deploys vercel|render rollback`. Ctrl-C stops the rollback. `--no-rollback` only reports.
 
@@ -70,6 +72,7 @@ deploys verify <project> [--path /health] [--rollback-after 10] [--no-rollback] 
 | 0 | healthy |
 | 1 | the check failed and production was rolled back |
 | 2 | the check failed and nothing was rolled back (`--no-rollback`, Ctrl-C, or the rollback failed) |
+| 3 | nothing was checked: unknown project, the newest deploy is not live, no address, a wrong option |
 
 The rollback, or the stopped rollback, goes to the journal.
 

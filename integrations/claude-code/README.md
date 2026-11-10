@@ -47,15 +47,18 @@ with `disable-model-invocation: true`: only you start them.
 
 ## The hook
 
-[`scripts/after-push.sh`](scripts/after-push.sh) runs after Claude's Bash tool runs a command that
-matches `Bash(git push *)`. It finds the pushed remote's `owner/repo`, calls
+[`scripts/after-push.sh`](scripts/after-push.sh) runs after each command of Claude's Bash tool and
+ends at once unless the command was a `git push` (also `cd dir && git push` and `git -C dir push`;
+not `git stash push`, `--dry-run` or a rejected push). An `if: Bash(git push *)` rule would miss
+some of those, so the script filters. It finds the pushed remote's repo (`owner/name` on GitHub,
+`gitlab.com/group/name` on GitLab), calls
 `deploys changed --json`, and prints one line for the projects that deploy from that repository:
 to you as a notice (`systemMessage`), and to Claude as context, with "do not deploy unless the
 user says so".
 
 - **Read-only.** It calls `deploys changed --json` and nothing else.
 - **Fast.** It gives up after 15 seconds (`DEPLOYS_HOOK_TIMEOUT`) and says nothing.
-- **Silent** when `deploys` or `jq` is missing, the remote is not on GitHub, nothing is waiting,
+- **Silent** when `deploys` or `jq` is missing, the remote is not a git URL it knows, nothing is waiting,
   or the CLI does not answer. It always exits 0, so it never gets in the way of a push.
 - **Optional.** Turn it off with the plugin option `push_reminder` (`/plugin` > Installed >
   deploy-center > Configure options) or `DEPLOYS_PUSH_REMINDER=off`.
@@ -67,15 +70,17 @@ user says so".
 The MCP server in `integrations/mcp/` (read-only tools `deploys_changed`, `deploys_status`,
 `deploys_explain`, `deploys_notes`, `deploys_logs`, `deploys_doctor`, and the estimates
 `deploys_simulate` and `deploys_ledger`; deploy and rollback only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`) is not started by the
-plugin: a plugin may only point at files inside its own folder, and the server needs `npm ci`
-first. Add it yourself once:
+plugin: a plugin may only point at files inside its own folder, and the server is not in it.
+The Mac app ships it ready to run (with its packages) in its bundle, so no clone and no `npm ci`
+are needed. Add it yourself once:
 
 ```bash
-claude mcp add deploys -- node /path/to/deploy-center/integrations/mcp/server.mjs
+claude mcp add deploys -- node "/Applications/Deploy Center.app/Contents/Resources/mcp/server.mjs"
 ```
 
-or put [`mcp/deploys.mcp.json`](mcp/deploys.mcp.json) into a project's `.mcp.json`, with the
-path replaced. The skill and commands work without it: they call the CLI.
+(`~/Applications/…` when the app is there), or put [`mcp/deploys.mcp.json`](mcp/deploys.mcp.json)
+into a project's `.mcp.json`. Without the app, use a clone: `node /path/to/deploy-center/integrations/mcp/server.mjs`
+after `npm ci` there. The skill and commands work without it: they call the CLI.
 
 ## Files
 
@@ -86,9 +91,9 @@ integrations/claude-code/
 ├── .claude-plugin/icon.png
 ├── skills/deploy-center/SKILL.md      the skill Claude loads by itself
 ├── skills/deploys-*/SKILL.md          the four commands
-├── hooks/hooks.json                   PostToolUse, matcher Bash, if Bash(git push *)
+├── hooks/hooks.json                   PostToolUse, matcher Bash (the script picks out git push)
 ├── scripts/after-push.sh              the hook
-└── mcp/deploys.mcp.json               optional MCP config, not loaded by the plugin
+└── mcp/deploys.mcp.json               optional MCP config (the app's bundled server), not loaded by the plugin
 ```
 
 ## Tests
