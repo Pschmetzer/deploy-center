@@ -342,24 +342,18 @@ digitalocean_on() {
   echo "DigitalOcean: $app deploys on push again, as before"
 }
 
-# digitalocean_deploy_json <app> [preview] [sha] — a new deployment of the branch's newest commit.
+# digitalocean_deploy_json <app> — a new deployment of the branch's newest commit.
 digitalocean_deploy_json() {
-  local app="${1:-}" preview="" sha="" id info out lock=""
+  local app="$1" id info out lock=""
   shift || true
-  # `deploys` calls <app> [--preview] [--sha <commit>]; the old positional <app> [preview] [sha]
-  # still works. Without this, `--sha` landed in "preview" and was refused for the wrong reason.
-  local _pos=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --preview) preview=1 ;;
-      --sha) [ -n "${2:-}" ] || die "DigitalOcean: --sha needs a commit"; sha="$2"; shift ;;
-      -*) die "DigitalOcean: unknown option $1" ;;
-      *) _pos=$((_pos + 1)); if [ "$_pos" = 1 ]; then preview="$1"; else sha="$1"; fi ;;
-    esac
-    shift
+      --preview) die "DigitalOcean App Platform cannot deploy a preview (it has no preview deploys)" ;;
+      --sha) die "DigitalOcean App Platform cannot deploy a given commit: a deployment always builds the newest commit of the branch" ;;
+      "") ;;
+      *) die "Unknown option $1. Usage: deploy-json <app>" ;;
+    esac; shift
   done
-  [ -z "$preview" ] || die "DigitalOcean App Platform cannot deploy a preview: it has no preview deploys"
-  [ -z "$sha" ] || die "DigitalOcean App Platform cannot deploy a given commit: a deployment always builds the newest commit of the branch (--sha is not supported)"
   id="$(digitalocean_id_of "$app")" || die "DigitalOcean app $app not found"
   info="$(digitalocean_app "$id")" || die "DigitalOcean: could not read $app"
   [ "$(echo "$info" | jq '.app.pinned_deployment != null')" = true ] \
@@ -387,6 +381,14 @@ digitalocean_latest_json() {
   out="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1")" || die "DigitalOcean: could not read the deployments of $1"
   echo "$out" | jq --arg app "$id" "$DIGITALOCEAN_JQ"'.deployments[0] // null | if . then deploy_out(null; $app) else null end'
 }
+
+# The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
+# The JSON stays in digitalocean_status_json/_latest_json, and `deploys digitalocean status|latest` prints it.
+DIGITALOCEAN_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
+digitalocean_status() { local j; j="$(digitalocean_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$DIGITALOCEAN_TSV"; }
+digitalocean_latest() { local j; j="$(digitalocean_latest_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$DIGITALOCEAN_TSV"; }
+digitalocean_cli_status() { digitalocean_status_json "$@"; }
+digitalocean_cli_latest() { digitalocean_latest_json "$@"; }
 
 # digitalocean_cancel <app> <deployment-id>
 digitalocean_cancel() {
@@ -490,10 +492,10 @@ digitalocean_url() {
 digitalocean_set_key() {
   local key=""
   IFS= read -r key || true
-  # A trailing CR, tab or newline from the clipboard is not part of the token.
-  key="$(printf '%s' "$key" | tr -d '[:space:]')"
+  # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+  key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys digitalocean set-key"
-  case "$key" in *\'*|*\"*|*' '*|*\\*) die "That does not look like a DigitalOcean token";; esac
+  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) die "That does not look like a DigitalOcean token";; esac
   ( DIGITALOCEAN_TOKEN="$key"; key_of() { printf '%s' "$DIGITALOCEAN_TOKEN"; }; digitalocean_call GET /v2/account >/dev/null ) \
     || die "DigitalOcean did not accept that token; nothing was saved"
   # On stdin to `security -i`, so the token is never an argument anyone can see.
@@ -518,14 +520,3 @@ digitalocean_doctor() {
     '{provider:"digitalocean", key:$src, tokenOk:$ok, error:(if $err == "" then null else $err end),
       apps:$n, savedSpecs:$s, expiresAt:null, rateLimit:$rl}'
 }
-
-# ---------- the contract's status lines (docs/PROVIDERS.md) ----------
-# `deploys watch`, `deploy --wait` and group deploys read one line: deployId<TAB>phase<TAB>state,
-# and "none" as the id when there is no deploy. The JSON above stays for people:
-# `deploys digitalocean status|latest` prints it (digitalocean_cli_status, digitalocean_cli_latest).
-DIGITALOCEAN_TSV='if . == null then "none\t\tnone"
-  else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage then "\(.stage):\(.status // "")" else .status end) // "?")" end'
-digitalocean_status() { local j; j="$(digitalocean_status_json "$@")" || return 1; printf '%s' "$j" | jq -r "$DIGITALOCEAN_TSV"; }
-digitalocean_latest() { local j; j="$(digitalocean_latest_json "$@")" || return 1; printf '%s' "$j" | jq -r "$DIGITALOCEAN_TSV"; }
-digitalocean_cli_status() { digitalocean_status_json "$@"; }
-digitalocean_cli_latest() { digitalocean_latest_json "$@"; }

@@ -122,8 +122,9 @@ jq '. + {gl:{type:"gitlab", repo:"gitlab.com/grp/gl", projectId:7, ref:"main"}}'
 printf '{}\n200\n' > "$tmp/fx/vercel/POST_v9_projects_gl_link.json"
 # The body the stand-in was sent: the wrapper keeps it.
 sed -i.bak 's|^exec "$(dirname "$0")/vercel-fake" "$@"|for a in "$@"; do [ "${p:-}" = --input ] \&\& cp "$a" "$CALLS.body"; p="$a"; done\nexec "$(dirname "$0")/vercel-fake" "$@"|' "$tmp/bin/vercel"
-out="$(lib 'vercel_on_one gl')"; rc=$?
-expect "on: a GitLab project is linked as GitLab" "$rc:$(jq -c . "$CALLS.body" 2>&1)" '0:{"type":"gitlab","repo":"grp/gl"}'
+# main (#113): a GitLab link is connected again in Vercel's dashboard, nothing is POSTed.
+: > "$CALLS"; out="$(lib 'vercel_on_one gl')"; rc=$?
+expect "on: a GitLab project points to the dashboard" "$rc:$(grep -c 'Vercel dashboard' "$tmp/err"):$(calls 'POST')" "1:1:0"
 
 # --- no `${x:-{\}}` anywhere here: under bash 3.2 that is the text {\} ---
 expect "no \${x:-{\\}} default in providers/ or lib/githost.sh" \
@@ -149,24 +150,14 @@ cp tests/fixtures/vercel/GET_v6_deployments_limit_100_target_production.json "$f
 fresh; lib 'vercel_json' >/dev/null
 expect "one page that is not full: no second one" "$(calls 'until=')" "0"
 
-# --- PRV-027: connected but not written down: deployable from the live link ---
+# --- PRV-027: connected but not written down: shown, not deployable, nothing started ---
 fresh
 jq 'del(.alpha)' tests/fixtures/vercel/config/vercel-repos.json > "$tmp/config/vercel-repos.json"
-expect "a live GitHub link is deployable" "$(lib 'vercel_json' | jq -c '.[] | select(.name == "alpha") | [.deployable, .repo]')" '[true,"example/alpha"]'
+expect "a live link alone is not deployable" "$(lib 'vercel_json' | jq -c '.[] | select(.name == "alpha") | [.deployable, .repoUnknown, .repo]')" '[false,true,"example/alpha"]'
+expect "a written-down repo is not repoUnknown" "$(lib 'vercel_json' | jq -c '[.[] | select(.deployable) | .repoUnknown] | unique')" '[false]'
 printf '%s\n200\n' '{"name":"alpha","link":{"type":"github","org":"example","repo":"alpha","repoId":42,"productionBranch":"trunk"}}' > "$fx/GET_v9_projects_alpha.json"
-# A wrapper in front of the wrapper that keeps the --input body of the call.
-mkdir -p "$tmp/vb"
-cat > "$tmp/vb/vercel" <<SH
-#!/bin/bash
-prev=""; for a in "\$@"; do [ "\$prev" = --input ] && cp "\$a" "\$VBODY"; prev="\$a"; done
-exec "$tmp/bin/vercel" "\$@"
-SH
-chmod +x "$tmp/vb/vercel"
-out="$(VBODY="$tmp/body.json" STUBPATH="$tmp/vb:$STUBPATH" lib 'vercel_start alpha "" ""')"; rc=$?
-expect "deploy from the live link" "$rc:$(jq -c '.gitSource' "$tmp/body.json" 2>/dev/null)" '0:{"type":"github","ref":"trunk","repoId":42}'
-printf '%s\n200\n' '{"name":"alpha","link":null}' > "$fx/GET_v9_projects_alpha.json"
 : > "$CALLS"; out="$(lib 'vercel_start alpha "" ""' 2>&1)"; rc=$?
-expect "no link and nothing written down: refused, nothing started" "$rc:$(grep -c 'no remembered repo' "$tmp/err"):$(calls 'POST')" "1:1:0"
+expect "live link, nothing written down: refused, no POST" "$rc:$(grep -c 'no remembered repo' "$tmp/err"):$(calls 'POST')" "1:1:0"
 cp tests/fixtures/vercel/GET_v9_projects_alpha.json "$fx/"
 
 # --- FEA-110: autodeploy-on --dry-run lists what would be connected again, and writes nothing ---

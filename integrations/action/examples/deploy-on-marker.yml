@@ -11,12 +11,18 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: Deploy everything with changes
+        description: Deploy this repo's projects that have changes
         type: boolean
         default: false
 
 permissions:
   contents: read
+
+# Two quick pushes with [deploy] must not run deploy-changed --yes twice at the same time.
+# Queued, not cancelled: a run that started deploys finishes and reports.
+concurrency:
+  group: deploys-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
   changed:
@@ -32,6 +38,8 @@ jobs:
           vercel-team: ${{ vars.VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}
           repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
+          # Only projects that deploy from this repo are started (the default). "*" = every repo.
+          # repo: ${{ github.repository }}
 
       - name: Report
         env:

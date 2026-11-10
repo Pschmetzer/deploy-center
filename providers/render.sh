@@ -17,7 +17,10 @@ render_key() {
   # On a server or in CI there is no keychain: the key may come from the environment (key_of).
   key_of render \
     || security find-generic-password -a "$USER" -s "$RENDER_LEGACY_KEYCHAIN_SERVICE" -w 2>/dev/null \
-    || die "No Render API key. Create one at dashboard.render.com > Account Settings > API Keys, then: deploys render set-key"
+    || { if declare -F keychain_broken >/dev/null && keychain_broken render; then
+           die "Render: the keychain could not be read (locked, or no access from here: launchd, SSH). Unlock it (security unlock-keychain) or set RENDER_API_KEY"
+         fi
+         die "No Render API key. Create one at dashboard.render.com > Account Settings > API Keys, then: deploys render set-key"; }
 }
 # Whether a key is there. In a subshell: render_key ends with `die` (exit) when there is none,
 # and an exit inside an `if` ends the whole script, not only the test.
@@ -37,7 +40,7 @@ export -f render_wait
 # The key goes to curl on stdin so it never shows in the process list.
 render_call() {
   local method="$1" path="$2" body="${3:-}" key out code
-  key="$(render_key)"
+  key="$(render_key)" || exit 1
   # A hung connection must not hang the app: 10 s to connect, 60 s in all.
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
@@ -284,7 +287,7 @@ render_deploy_json() {
   local id sha="" cc="" lock body out
   local name="${1:?service}" svc
   id="$(render_id_of "$name")"; shift || true
-  while [ $# -gt 0 ]; do case "$1" in --sha) sha="${2:?commit}"; shift;; --clear-cache) cc=1;; --preview) die "Render cannot deploy a preview";; esac; shift; done
+  while [ $# -gt 0 ]; do case "$1" in --sha) sha="${2:?commit}"; shift;; --clear-cache) cc=1;; --preview) die "Render cannot deploy a preview";; "") ;; *) die "Unknown option $1. Usage: deploy-json <service> [--sha <commit>] [--clear-cache]";; esac; shift; done
   # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
   if team_on; then
     svc="$(render_call GET "/services/$id")" || exit 1
@@ -350,10 +353,10 @@ render_url() {
 render_set_key() {
   local key
   IFS= read -r key || true
-  # A trailing CR, tab or newline from the clipboard is not part of the token.
-  key="$(printf '%s' "$key" | tr -d '[:space:]')"
+  # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+  key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || die "Pipe the key in: pbpaste | deploys render set-key"
-  case "$key" in *\'*|*\"*|*' '*) die "That does not look like a Render API key";; esac
+  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) die "That does not look like a Render API key";; esac
   # Tried first, saved only when Render takes it: a typo must not replace a working key.
   ( RENDER_API_KEY="$key" render_call GET "/services?limit=1" >/dev/null ) || die "Render did not accept that key; nothing was saved"
   # Sent to `security -i` on stdin, so the key is never an argument anyone can see.
@@ -385,7 +388,7 @@ render_history() {
     .[].deploy | [(.createdAt | t | strftime("%Y-%m-%d %H:%M")), .status, ((.commit.id // "")[0:7]), (.trigger // ""),
        (if .finishedAt then "\(((.finishedAt | t) - (.createdAt | t)))s" else "" end)]
     | map(if . == "" or . == null then "-" else . end) | @tsv' \
-    | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | column -t -s $'\t'
+    | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | table
 }
 
 render_usage() {  # <argc> <verb>
@@ -396,7 +399,7 @@ render_usage() {  # <argc> <verb>
 
 render_cli_list() {
   render_services | jq -r '.[] | [.name, .type, '"$(render_auto)"', (if .suspended=="suspended" then "suspended" else "active" end)] | @tsv' \
-    | (printf 'NAME\tTYPE\tAUTO-DEPLOY\tSTATE\n'; cat) | column -t -s $'\t'
+    | (printf 'NAME\tTYPE\tAUTO-DEPLOY\tSTATE\n'; cat) | table
 }
 
 # Through deploy-json, so the same one-minute start lock as the app and deploy-changed applies.

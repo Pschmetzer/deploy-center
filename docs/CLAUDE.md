@@ -68,7 +68,7 @@ your app's repo. On each pull request it:
 2. lists every project that deploys from this repo with its auto-deploy setting
    (`deploys vercel json` / `render json`) and what already waits on it,
 3. runs Anthropic's [Claude Code GitHub Action](https://github.com/anthropics/claude-code-action)
-   (`anthropics/claude-code-action@v1`) with that list in the prompt; Claude reads the PR diff and
+   (`anthropics/claude-code-action` v1, pinned to a commit) with that list in the prompt; Claude reads the PR diff and
    posts one comment, *What this ships*: the projects affected, a risk level, and whether
    auto-deploy is off (then nothing ships on merge until someone deploys).
 

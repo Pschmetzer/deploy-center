@@ -176,9 +176,8 @@ expect "json: two branches, none production: no guess" "$(echo "$out" | jq -c '.
 
 # --- resolving names ---
 routes "${STD[@]}"
-# The id deploys keeps for the next calls: <appId>/<branch>, as in json.
-expect "has: by name gives the id" "$(amp has Shop)" "d1shop0001/main"
-expect "has: by app id gives the id" "$(amp has d2blog0002)" "d2blog0002/release"
+expect "has: by name gives <appId>/<branch>" "$(amp has Shop)" d1shop0001/main
+expect "has: by app id" "$(amp has d2blog0002)" d2blog0002/release
 expect "has: unknown" "$(amp has nope && echo y || echo n)" n
 routes "amplify list-apps . apps-dupe.json"
 out="$(amp latest Shop 2>&1)"; rc=$?
@@ -257,7 +256,7 @@ routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branche
 out="$(amp latest Shop 2>&1)"; rc=$?
 expect "latest: none is null (people)" "$rc:$out" "0:null"
 out="$(bash -c '. ./providers/amplify.sh; amplify_latest Shop' 2>&1)"; rc=$?
-expect "latest: none is the contract's none line" "$rc:$out" "0:none		none"
+expect "latest: none is the contract's none line" "$rc:$out" "0:none		?"
 
 # --- cancel ---
 routes "${STD[@]}" "amplify stop-job d1shop0001 stop-job.json"

@@ -50,8 +50,16 @@ Git auto-deploy is off on this project's Vercel/Render. A push does not go live;
 - **Nothing pre-approves a deploy.** The plugin's `allowed-tools` lists only read-only commands
   (`deploys changed`, `status`, `logs`, `explain`, `notes`, `diff`, `history`, `doctor`). A deploy is
   always a normal Bash call, so Claude Code asks for permission unless you allowed it yourself.
-  To make that a hard rule, add a deny rule to your settings:
-  `"permissions": {"deny": ["Bash(deploys deploy-changed *)", "Bash(deploys * rollback *)"]}`.
+  To make that a hard rule, add deny rules to your settings. They cover every command that starts
+  a build, rolls back, turns auto-deploy on or changes what deploys by itself:
+  ```json
+  "permissions": {"deny": [
+    "Bash(deploys deploy *)", "Bash(deploys deploy-changed *)",
+    "Bash(deploys * deploy *)", "Bash(deploys * deploy-json *)", "Bash(deploys * rollback *)",
+    "Bash(deploys * autodeploy-on *)", "Bash(deploys autodeploy *)",
+    "Bash(deploys guard*)", "Bash(deploys autofix*)"
+  ]}
+  ```
 - **The commands are yours.** All four `/deploys-*` commands set `disable-model-invocation: true`,
   so Claude cannot start them on its own.
 - **The hook only reads.** It calls `deploys changed --json`, prints one line, and always exits 0.

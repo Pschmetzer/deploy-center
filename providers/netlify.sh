@@ -387,24 +387,18 @@ EOF
   esac
 }
 
-# netlify_deploy_json <site> [preview] [sha] — post to the hook, then find the deploy it started.
+# netlify_deploy_json <site> [--preview] [--sha <commit>] — post to the hook, then find the deploy it started.
 netlify_deploy_json() {
-  local site="${1:-}" preview="" sha="" id hk before list new lock="" i polls
+  local site="$1" id hk before list new lock="" i polls
   shift || true
-  # `deploys` calls <site> [--preview] [--sha <commit>]; the old positional <site> [preview] [sha]
-  # still works. Without this, `--sha` landed in "preview" and was refused for the wrong reason.
-  local _pos=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --preview) preview=1 ;;
-      --sha) [ -n "${2:-}" ] || die "Netlify: --sha needs a commit"; sha="$2"; shift ;;
-      -*) die "Netlify: unknown option $1" ;;
-      *) _pos=$((_pos + 1)); if [ "$_pos" = 1 ]; then preview="$1"; else sha="$1"; fi ;;
-    esac
-    shift
+      --preview) die "Netlify cannot deploy a preview from here (the build hook deploys the production branch)" ;;
+      --sha) die "Netlify cannot deploy a given commit: a build hook always builds the newest commit of the branch" ;;
+      "") ;;
+      *) die "Unknown option $1. Usage: deploy-json <site>" ;;
+    esac; shift
   done
-  [ -z "$preview" ] || die "Netlify cannot deploy a preview from here: the build hook deploys the production branch"
-  [ -z "$sha" ] || die "Netlify cannot deploy a given commit: a build hook always builds the newest commit of the branch (--sha is not supported)"
   id="$(netlify_id_of "$site")" || die "Netlify site $site not found"
   hk="$(jq -c --arg id "$id" '.[$id] // empty' "$(netlify_hooks_file)")"
   [ -n "$hk" ] && [ "$(echo "$hk" | jq -r '.url // empty')" != "" ] \
@@ -430,6 +424,7 @@ netlify_deploy_json() {
   jq -n '{id:null, url:null, state:"enqueued", phase:"queued"}'
 }
 
+# The deploy as JSON (for people and for logs): {id, state, phase, url, dashboardUrl, sha, msg, ...}.
 # netlify_status_json [<site>] <deploy-id>
 netlify_status_json() {
   local d="${2:-$1}" out
@@ -437,13 +432,21 @@ netlify_status_json() {
   echo "$out" | jq "$NETLIFY_JQ"'deploy_out'
 }
 
-# The newest production deploy that was not skipped by the ignore rule.
+# The newest production deploy that was not skipped by the ignore rule, as JSON (null: none).
 netlify_latest_json() {
   local id out
   id="$(netlify_id_of "$1")" || die "Netlify site $1 not found"
   out="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=20")" || die "Netlify: could not read the deploys of $1"
   echo "$out" | jq "$NETLIFY_JQ"'map(select(skipped | not)) | .[0] // null | if . then deploy_out else null end'
 }
+
+# The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
+NETLIFY_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // "?")" end'
+netlify_status() { netlify_status_json "$@" | jq -r "$NETLIFY_TSV"; }
+netlify_latest() { netlify_latest_json "$@" | jq -r "$NETLIFY_TSV"; }
+# `deploys netlify status|latest` keeps printing the JSON.
+netlify_cli_status() { netlify_status_json "$@"; }
+netlify_cli_latest() { netlify_latest_json "$@"; }
 
 # netlify_cancel [<site>] <deploy-id>
 netlify_cancel() {
@@ -472,9 +475,9 @@ netlify_rollback() {
 }
 
 # Netlify's REST API has no build log (the dashboard streams it), so caps.logs is false. This
-# prints what the API does say about the deploy, and where the full log is.
+# refuses, and says what the API does say about the deploy, and where the full log is.
 netlify_logs() {
-  local site="$1" d="" out
+  local site="$1" d="" out where
   shift
   # `deploys logs` calls <site> <lines> <deployId>, positional; --id <deploy> works too.
   while [ $# -gt 0 ]; do case "$1" in
@@ -483,11 +486,13 @@ netlify_logs() {
     ''|*[!0-9]*) d="$1"; shift ;;
     *) shift ;;
   esac; done
-  if [ -n "$d" ]; then out="$(netlify_status_json "$d")"; else out="$(netlify_latest_json "$site")"; fi
-  [ "$out" != null ] || die "Netlify: $site has no deploys yet"
   # No log through the API (caps.logs is false): refused as the contract says, with the state
   # and where the full log is.
-  die "$(echo "$out" | jq -r '"Netlify cannot show build logs: its API gives none. Deploy \(.id): \(.state)\(if .error then " — " + .error else "" end). The full log: \(.dashboardUrl // "the site dashboard")"')"
+  if [ -n "$d" ]; then out="$(netlify_status_json "$d" 2>/dev/null)" || out=null
+  else out="$(netlify_latest_json "$site" 2>/dev/null)" || out=null; fi
+  [ -n "$out" ] || out=null
+  where="$(echo "$out" | jq -r 'if . == null then "the site dashboard" else "\(.dashboardUrl // "the site dashboard") (deploy \(.id): \(.state)\(if .error then " — " + .error else "" end))" end' 2>/dev/null)"
+  die "Netlify cannot show a build log through its API. The full log: ${where:-the site dashboard}"
 }
 
 # netlify_url <site> [--dashboard]
@@ -503,10 +508,10 @@ netlify_url() {
 netlify_set_key() {
   local key=""
   IFS= read -r key || true
-  # A trailing CR, tab or newline from the clipboard is not part of the token.
-  key="$(printf '%s' "$key" | tr -d '[:space:]')"
+  # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+  key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys netlify set-key"
-  case "$key" in *\'*|*\"*|*' '*) die "That does not look like a Netlify token";; esac
+  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) die "That does not look like a Netlify token";; esac
   ( NETLIFY_AUTH_TOKEN="$key"; key_of() { printf '%s' "$NETLIFY_AUTH_TOKEN"; }; netlify_call GET /user >/dev/null ) \
     || die "Netlify did not accept that token; nothing was saved"
   # On stdin to `security -i`, so the token is never an argument anyone can see.
@@ -532,14 +537,3 @@ netlify_doctor() {
     '{provider:"netlify", key:$src, tokenOk:$ok, error:(if $err == "" then null else $err end),
       sites:$n, hooks:$h, gh:$gh, expiresAt:null, rateLimit:$rl}'
 }
-
-# ---------- the contract's status lines (docs/PROVIDERS.md) ----------
-# `deploys watch`, `deploy --wait` and group deploys read one line: deployId<TAB>phase<TAB>state,
-# and "none" as the id when there is no deploy. The JSON above stays for people:
-# `deploys netlify status|latest` prints it (netlify_cli_status, netlify_cli_latest).
-NETLIFY_TSV='if . == null then "none\t\tnone"
-  else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage then "\(.stage):\(.status // "")" else .status end) // "?")" end'
-netlify_status() { local j; j="$(netlify_status_json "$@")" || return 1; printf '%s' "$j" | jq -r "$NETLIFY_TSV"; }
-netlify_latest() { local j; j="$(netlify_latest_json "$@")" || return 1; printf '%s' "$j" | jq -r "$NETLIFY_TSV"; }
-netlify_cli_status() { netlify_status_json "$@"; }
-netlify_cli_latest() { netlify_latest_json "$@"; }

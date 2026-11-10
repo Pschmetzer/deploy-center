@@ -131,6 +131,8 @@ lastSha, lastMsg, fetchError, phase}`. Every key is present; unknown values are 
 
 - `id`: what the other functions take. For Vercel it is the project name; for Render the `srv-` id.
 - `auto`: a push still deploys it. `deployable`: this tool can start a deploy (the repo is known).
+  Vercel: only a repo written down counts. A project connected to Git without one is `deployable:false`
+  with `repoUnknown:true` and is never built from its live link (`deploys vercel map` writes it down).
 - `repo` is `owner/name` on GitHub, `ref` the branch. Both are needed for "changed".
 - `lastAt` (Unix seconds), `lastSha`, `lastMsg`: what is live. `lastState`: the platform's own
   word for the newest attempt, kept raw for display.
@@ -225,7 +227,9 @@ exports its worker: `export -f render_last_of`.
      `GET_v1_services_limit_100.json`). The file holds the body, a newline and the HTTP status.
 2. `tests/lib/fake-curl.sh` answers from those files and logs `curl METHOD URL` to `$CALLS`.
    `CURLSTUB=401|503|down` simulates errors. A provider that uses a CLI (like Vercel) gets a
-   stand-in like `tests/lib/fake-vercel.sh`.
+   stand-in like `tests/lib/fake-vercel.sh`. The aws CLI (Amplify) is answered by
+   `tests/lib/fake-aws.sh` from `AWS_<service>_<command>[_<app id>[_<job id>]].json` files.
+   A provider without `env` fails the contract; it is not skipped.
 3. `tests/providers/contract.sh` runs for every `providers/*.sh`. It checks the functions, `_meta`,
    the fields and the phases of `_json`, the TSV lines, that a missing capability is refused
    without a call, and the on/off rules. `tests/script-tests.sh` runs every `tests/providers/*.sh`;

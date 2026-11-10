@@ -322,31 +322,28 @@ coolify_on() {
   echo "Coolify: $app is back to auto-deploy $(echo "$rec" | jq -r 'if .auto then "on" else "off" end')."
 }
 
+# Put an application's git_commit_sha back after a pinned deploy; says so when that fails.
+coolify_unpin() {  # coolify_unpin <id> <value before> <pinned sha> [<name>]
+  coolify_call PATCH "/applications/$1" "$(jq -nc --arg s "$2" '{git_commit_sha:$s}')" >/dev/null \
+    || echo "Warning: the Coolify application ${4:-$1} is still pinned to $3. Set its Git commit back to $2 (Configuration > Source)." >&2
+}
+
 # coolify_deploy_json <app> [preview] [sha]
 # A sha: Coolify's /deploy has no commit field, but a deployment takes the application's
 # git_commit_sha when it is queued. So: pin the sha, queue, put the old value back.
 # The commit an app builds put back after a --sha deploy: <uuid> <pinned before> <app> <sha>.
-coolify_unpin() {
-  coolify_call PATCH "/applications/$1" "$(jq -nc --arg s "$2" '{git_commit_sha:$s}')" >/dev/null \
-    || echo "Warning: $3 is still pinned to $4 in Coolify. Set its Git commit back to $2 (Configuration > Source)." >&2
-}
 
 coolify_deploy_json() {
-  local app="${1:-}" preview="" sha="" id info pinned="" out did lock="" one base rc
+  local app="$1" sha="" id info pinned="" out did lock="" one base rc
   shift || true
-  # `deploys` calls <app> [--preview] [--sha <commit>]; the old positional <app> [preview] [sha]
-  # still works. Without this, `--sha` landed in "preview" and was refused for the wrong reason.
-  local _pos=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --preview) preview=1 ;;
-      --sha) [ -n "${2:-}" ] || die "Coolify: --sha needs a commit"; sha="$2"; shift ;;
-      -*) die "Coolify: unknown option $1" ;;
-      *) _pos=$((_pos + 1)); if [ "$_pos" = 1 ]; then preview="$1"; else sha="$1"; fi ;;
-    esac
-    shift
+      --preview) die "Coolify cannot deploy a preview from here (preview deploys need a pull request)" ;;
+      --sha) sha="${2:-}"; [ -n "$sha" ] || die "Usage: deploy-json <application> --sha <commit>"; shift ;;
+      "") ;;
+      *) die "Unknown option $1. Usage: deploy-json <application> [--sha <commit>]" ;;
+    esac; shift
   done
-  [ -z "$preview" ] || die "Coolify cannot deploy a preview from here: preview deploys need a pull request"
   if [ -n "$sha" ]; then
     [[ "$sha" =~ ^[0-9a-fA-F]{7,40}$ ]] || die "Coolify: \"$sha\" is not a commit sha"
   fi
@@ -359,15 +356,23 @@ coolify_deploy_json() {
     pinned="$(echo "$info" | jq -r '.git_commit_sha // "HEAD" | if . == "" then "HEAD" else . end')"
     # Interrupted between pin and unpin: put the commit back before going, or every later push
     # would build the pinned one.
-    trap 'coolify_unpin "$id" "$pinned" "$app" "$sha"; rm -f "$lock"; exit 130' INT TERM
+    trap 'coolify_unpin "$id" "$pinned" "$sha" "$app"; rm -f "$lock"; exit 130' INT TERM
     coolify_call PATCH "/applications/$id" "$(jq -nc --arg s "$sha" '{git_commit_sha:$s}')" >/dev/null \
       || { trap - INT TERM; rm -f "$lock"; die "Coolify: could not pin $app to $sha"; }
+  fi
+  # From the pin to its undoing, Ctrl-C or a kill must not leave the app pinned for good (every
+  # later auto-deploy would build that commit): the trap puts the old value back first. No EXIT
+  # trap: the call below runs in a subshell, so a failure there cannot end this one early, and an
+  # EXIT trap would replace one the caller has.
+  if [ -n "$pinned" ]; then
+    # shellcheck disable=SC2064  # the values now, not when it fires
+    trap "coolify_unpin '$id' '$pinned' '$sha'; rm -f '$lock'; trap - INT TERM HUP; exit 130" INT TERM HUP
   fi
   # `|| rc=$?`, not `; rc=$?`: under set -e a failed POST would end the script before the unpin.
   rc=0; out="$(coolify_call POST "/deploy?uuid=$id" 2>&1)" || rc=$?
   if [ -n "$pinned" ]; then
-    coolify_unpin "$id" "$pinned" "$app" "$sha"
-    trap - INT TERM
+    trap - INT TERM HUP
+    coolify_unpin "$id" "$pinned" "$sha" "$app"
   fi
   [ "$rc" = 0 ] || { rm -f "$lock"; die "Coolify: the deploy of $app was not taken: $out"; }
   did="$(echo "$out" | jq -r '[.deployments[]? | select(.deployment_uuid != null)][0].deployment_uuid // empty')"
@@ -400,6 +405,14 @@ coolify_latest_json() {
   out="$(coolify_call GET "/deployments/applications/$id?take=50")" || die "Coolify: could not read the deployments of $1"
   echo "$out" | jq --arg base "$base" "$COOLIFY_JQ"'(.deployments // []) | prod | .[0] // null | if . then deploy_out else null end'
 }
+
+# The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
+# The JSON stays in coolify_status_json/_latest_json, and `deploys coolify status|latest` prints it.
+COOLIFY_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
+coolify_status() { local j; j="$(coolify_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$COOLIFY_TSV"; }
+coolify_latest() { local j; j="$(coolify_latest_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$COOLIFY_TSV"; }
+coolify_cli_status() { coolify_status_json "$@"; }
+coolify_cli_latest() { coolify_latest_json "$@"; }
 
 # coolify_cancel [<app>] <deployment-uuid>
 coolify_cancel() {
@@ -504,10 +517,10 @@ coolify_set_url() {
 coolify_set_key() {
   local key=""
   IFS= read -r key || true
-  # A trailing CR, tab or newline from the clipboard is not part of the token.
-  key="$(printf '%s' "$key" | tr -d '[:space:]')"
+  # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+  key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys coolify set-key"
-  case "$key" in *\'*|*\"*|*' '*) die "That does not look like a Coolify token";; esac
+  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) die "That does not look like a Coolify token";; esac
   coolify_base >/dev/null || die "Set the instance first: deploys coolify set-url https://coolify.example.com"
   ( COOLIFY_TOKEN="$key"; key_of() { printf '%s' "$COOLIFY_TOKEN"; }; coolify_call GET /applications >/dev/null ) \
     || die "Coolify did not accept that token; nothing was saved"
@@ -538,14 +551,3 @@ coolify_doctor() {
       error:(if $err == "" then null else $err end), version:(if $ver == "" then null else $ver end), apps:$n,
       expiresAt:null, rateLimit:$rl}'
 }
-
-# ---------- the contract's status lines (docs/PROVIDERS.md) ----------
-# `deploys watch`, `deploy --wait` and group deploys read one line: deployId<TAB>phase<TAB>state,
-# and "none" as the id when there is no deploy. The JSON above stays for people:
-# `deploys coolify status|latest` prints it (coolify_cli_status, coolify_cli_latest).
-COOLIFY_TSV='if . == null then "none\t\tnone"
-  else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage then "\(.stage):\(.status // "")" else .status end) // "?")" end'
-coolify_status() { local j; j="$(coolify_status_json "$@")" || return 1; printf '%s' "$j" | jq -r "$COOLIFY_TSV"; }
-coolify_latest() { local j; j="$(coolify_latest_json "$@")" || return 1; printf '%s' "$j" | jq -r "$COOLIFY_TSV"; }
-coolify_cli_status() { coolify_status_json "$@"; }
-coolify_cli_latest() { coolify_latest_json "$@"; }

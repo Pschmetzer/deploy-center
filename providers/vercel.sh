@@ -145,7 +145,7 @@ vercel_off_one() {
   # Without the repo written down, the project could never be connected again (a Bitbucket link
   # has owner/slug, not org/repo): leave it connected.
   jq -e --arg p "$p" '.[$p].repo != null' "$REPOS" >/dev/null 2>&1 \
-    || die "Vercel: $p stays connected: its repo could not be written down, so it could not be connected again. Say where it deploys from first: deploys vercel map $p <owner/repo> [branch]"
+    || die "Vercel: the repo of $p ($(echo "$info" | jq -r '.link.type // "unknown"')) could not be written down, so $p stays connected. Say where it deploys from first: deploys vercel map $p <owner/repo> [branch]"
   # vercel_call names the reason on stderr.
   vercel_call "/v9/projects/$p/link" --method DELETE --dangerously-skip-permissions >/dev/null \
     || die "Vercel: could not disconnect $p"
@@ -170,15 +170,12 @@ vercel_off() {
 
 # Auto-deploy back on: Git connected again from the remembered repo. Every push builds (and costs) again.
 vercel_on_one() {
-  local p="$1" r t body err e u
-  # GitHub entries have org and repo; GitLab ones type "gitlab" and repo host/group/name, which
-  # Vercel takes as group/name (the namespace path, without the host).
-  t="$(jq -r --arg p "$p" '.[$p].type // "github"' "$REPOS")"
-  if [ "$t" = gitlab ]; then
-    r="$(jq -r --arg p "$p" '.[$p].repo // "" | sub("^[^/]+/"; "")' "$REPOS")"
-  else
-    r="$(jq -r --arg p "$p" '.[$p] // {} | if .org and .repo then "\(.org)/\(.repo)" else "" end' "$REPOS")"
+  local p="$1" r t=github body err e u
+  # A GitLab link is connected again in Vercel's dashboard: the body for it is not known here.
+  if [ "$(jq -r --arg p "$p" '.[$p].type // ""' "$REPOS")" = gitlab ]; then
+    die "Vercel: $p deploys from GitLab ($(jq -r --arg p "$p" '.[$p].repo' "$REPOS")); connect it again in the Vercel dashboard (Settings > Git). Deploys from here keep working without it."
   fi
+  r="$(jq -r --arg p "$p" '.[$p] // {} | if .org and .repo then "\(.org)/\(.repo)" else "" end' "$REPOS")"
   [ -n "$r" ] || die "Vercel: the repo of $p is not known, so it cannot be connected again. Say where it deploys from: deploys vercel map $p <owner/repo> [branch]"
   u="$(with_team "/v9/projects/$p/link")" || exit 1
   body="$(mktemp)"; err="$(mktemp)"; jq -n --arg t "$t" --arg r "$r" '{type:$t, repo:$r}' > "$body"
@@ -284,18 +281,11 @@ vercel_sha_on_ref() {
 
 vercel_start() {
   local target="$1" preview="${2:-}" sha="${3:-}" body out lock
-  local repos live entry; repos="$(repos_json)"
-  if ! jq -e --arg p "$target" 'has($p)' <<< "$repos" >/dev/null; then
-    # Not written down, but still connected to Git: the live link says where it deploys from.
-    live="$(vercel_call "/v9/projects/$target")" || exit 1
-    entry="$(printf '%s' "$live" | jq -c '(.link // null) as $l | if $l == null then empty
-      elif $l.type == "gitlab" and $l.projectId then {type:"gitlab", projectId:$l.projectId, ref:($l.productionBranch // "main")}
-      elif ($l.type // "github") == "github" and (($l.org and $l.repo) or $l.repoId) then
-        {org:$l.org, repo:$l.repo, ref:($l.productionBranch // "main")} + (if $l.repoId then {repoId:$l.repoId} else {} end)
-      else empty end' 2>/dev/null)"
-    [ -n "$entry" ] || die "$target has no remembered repo. Turn its auto-deploy off with this tool, add it to $REPOS, or map it in the repo's deploy-center.json"
-    repos="$(jq -c --arg p "$target" --argjson e "$entry" '.[$p] = $e' <<< "$repos")"
-  fi
+  local repos; repos="$(repos_json)"
+  # Only a repo written down is built from, never one read from the live link alone: stop
+  # before anything is asked of Vercel.
+  jq -e --arg p "$target" '.[$p].repo != null' <<< "$repos" >/dev/null \
+    || die "$target has no remembered repo. Turn its auto-deploy off with this tool, add it to $REPOS, or map it: deploys vercel map $target <owner/repo> [branch]"
   # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
   if [ -z "$preview" ] && team_on; then
     sha="$(team_gate vercel "$target" "$(jq -r --arg p "$target" '.[$p] | if .type == "gitlab" or (.org | not) then "" else "\(.org)/\(.repo)" end' <<< "$repos")" \
@@ -329,7 +319,8 @@ vercel_start() {
 # vercel_deploy_json <project> [--preview] [--sha <commit>]
 vercel_deploy_json() {
   local p="${1:?project}" pv="" sha=""; shift || true
-  while [ $# -gt 0 ]; do case "$1" in --preview) pv=1;; --sha) sha="${2:?commit}"; shift;; esac; shift; done
+  # An unknown flag (--sah) is refused: ignored, the newest commit would go live instead.
+  while [ $# -gt 0 ]; do case "$1" in --preview) pv=1;; --sha) sha="${2:?commit}"; shift;; "") ;; *) die "Unknown option $1. Usage: deploy-json <project> [--preview] [--sha <commit>]";; esac; shift; done
   vercel_start "$p" "$pv" "$sha"
 }
 
@@ -368,14 +359,15 @@ vercel_json() {
   [ "$partial" = false ] || echo "vercel: the newest builds could not be read; the list shows the live deploys only" >&2
   printf '%s' "$projects" | jq --slurpfile r <(repos_json) --argjson recent "$recent" --argjson partial "$partial" "$VERCEL_PHASE$VERCEL_META"'[.[] |
     ((.link // null) | if . then {repo:'"$GITHOST_VERCEL_LINK_JQ"', ref:(.productionBranch // "main"),
-      # What vercel_start needs to build from the live link when no repo is written down.
-      startable:(((.type // "github") == "github" and ((.org and .repo) or .repoId)) or (.type == "gitlab" and .projectId))} else null end) as $live |
+      } else null end) as $live |
     ($r[0][.name] // null) as $known |
     (((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // null) as $domain |
     {name, id:.name, auto:(.link != null), paused:(.paused // false),
      repo:(if $known.repo then (if $known.type == "gitlab" then $known.repo else "\($known.org)/\($known.repo)" end) else $live.repo end),
      ref:($known.ref // (.link.productionBranch // null)),
-     deployable:(($known.repo != null) or ($live.startable == true)),
+     # Only a repo written down deploys. A project connected to Git without one is shown, not
+     # built from its live link (repoUnknown): write it down with `deploys vercel map` first.
+     deployable:($known.repo != null), repoUnknown:($known.repo == null and $live != null),
      domain:$domain,
      url:(($domain // .targets.production.alias[0]?) // null | if . then "https://\(.)" else null end),
      dashboardUrl:null,
@@ -442,7 +434,9 @@ vercel_rollback() {
 
 # vercel_logs <project> <lines> [deployId]: the end of a build log (newest production by default).
 vercel_logs() {
-  local p="$1" n="$2" d="${3:-}"
+  local p="$1" n="${2:-80}" d="${3:-}"
+  # jq's .[-0:] is the whole array: 0 lines must not print the whole log.
+  case "$n" in ''|*[!0-9]*|0) die "lines must be a number, 1 or more";; esac
   [ -n "$d" ] || d="$(vercel_call "/v6/deployments?app=$p&limit=1&target=production" | jq -r '.deployments[0].uid // empty')"
   [ -n "$d" ] || die "No deployment of $p"
   vercel_call "/v3/deployments/$d/events?builds=1&direction=backward&limit=2000" \
@@ -488,7 +482,7 @@ vercel_history() {
        (if .ready and .buildingAt then "\(((.ready - .buildingAt)/1000) | floor)s" else "" end)]
     # "-" for an empty field: BSD column merges empty fields and would shift the row.
     | map(if . == "" or . == null then "-" else . end) | @tsv' \
-    | (printf 'WHEN (UTC)\tTARGET\tSTATE\tCOMMIT\tSOURCE\tBUILD\n'; cat) | column -t -s $'\t'
+    | (printf 'WHEN (UTC)\tTARGET\tSTATE\tCOMMIT\tSOURCE\tBUILD\n'; cat) | table
 }
 
 # Usage lines for the verbs that take more than a project.
@@ -503,40 +497,28 @@ vercel_usage() {  # <argc> <verb>
 
 vercel_cli_list() {
   vercel_projects | jq -r '.[] | [.name, (if .link then "AUTO (\(.link.org // "")/\(.link.repo // ""))" else "manual" end)] | @tsv' \
-    | column -t -s $'\t'
+    | table
 }
-
-# Exit 3, the code `watch` gives when the platform could not be asked.
-vercel_die3() { echo "${RED}Error:${PLAIN} $*" >&2; exit 3; }
 
 # vercel deploy <project> [--preview] [--sha <commit>] [--wait [--timeout <seconds>]]
 vercel_cli_deploy() {
-  local target="$1" pv="" sha="" wait_="" out did s limit=1800 start misses=0; shift
+  local target="$1" pv="" sha="" wait_="" tmo="" out did; shift
   while [ $# -gt 0 ]; do
     case "$1" in
       --preview) pv=1;; --wait) wait_=1;;
       --sha) [ -n "${2:-}" ] || die "Usage: deploys vercel deploy <project> --sha <commit>"; sha="$2"; shift;;
-      --timeout) case "${2:-}" in ''|*[!0-9]*) die "Usage: deploys vercel deploy <project> --wait --timeout <seconds>";; esac; limit="$2"; shift;;
+      --timeout) case "${2:-}" in ''|*[!0-9]*) die "Usage: deploys vercel deploy <project> --wait --timeout <seconds>";; esac; tmo="$2"; shift;;
       *) die "Unknown option $1. Usage: deploys vercel deploy <project> [--preview] [--sha <commit>] [--wait [--timeout <seconds>]]";;
     esac; shift
   done
   out="$(vercel_start "$target" "$pv" "$sha")"
   echo "$out" | jq -r '"Vercel: deploy started -> \(.url) (\(.state))"'
-  # Follow exactly this deploy, not "the newest one", until it is live or failed. Not for ever:
-  # after --timeout (30 minutes) or five unanswered asks in a row it ends with 3, like `watch`.
+  # Follow exactly this deploy, not "the newest one", until it is live or failed.
+  # `watch` follows it, with its give-up after five failed questions in a row (exit 3) and, with
+  # --timeout, after that many seconds (exit 4).
   if [ -n "$wait_" ]; then
-    did="$(echo "$out" | jq -r .id)"; start="$(date +%s)"
-    while :; do
-      s="$(vercel_status "$target" "$did" 2>/dev/null)" || s=""
-      if [ -z "$s" ]; then
-        misses=$((misses + 1))
-        [ "$misses" -lt 5 ] || vercel_die3 "could not reach Vercel five times in a row; the deploy itself may be fine"
-      else misses=0; fi
-      printf '%s  %s\n' "$(date +%H:%M:%S)" "$(echo "$s" | cut -f3 | grep . || echo "?")"
-      case "$(echo "$s" | cut -f2)" in ready) exit 0;; failed|canceled) exit 1;; esac
-      [ $(( $(date +%s) - start )) -lt "$limit" ] || vercel_die3 "still not finished after $limit s; it goes on at Vercel (deploys watch $target $did)"
-      sleep 6
-    done
+    did="$(echo "$out" | jq -r .id)"
+    exec "$0" watch "vercel:$target" "$did" ${pv:+--preview} ${tmo:+--timeout "${tmo}s"}
   fi
 }
 

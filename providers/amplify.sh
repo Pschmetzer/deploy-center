@@ -173,7 +173,7 @@ amplify_ready() {
 
 amplify_has() {
   ( amp_resolve "$1" && amp_branches "$AMP_APP" | jq -e --arg b "$AMP_BRANCH" 'any(.[]; .branchName == $b)' >/dev/null \
-      && echo "$AMP_APP/$AMP_BRANCH" ) 2>/dev/null
+      && printf '%s/%s\n' "$AMP_APP" "$AMP_BRANCH" ) 2>/dev/null
 }
 
 # One app to one project. A failed read of its branches or jobs becomes fetchError, not a stop.
@@ -367,6 +367,14 @@ amplify_status_json() {
     | jq --arg b "$AMP_BRANCH" "$AMP_JQ"' .job.summary | amp_job($b)'
 }
 
+# The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
+# The JSON stays in amplify_status_json/_latest_json, and `deploys amplify status|latest` prints it.
+AMPLIFY_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
+amplify_status() { local j; j="$(amplify_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$AMPLIFY_TSV"; }
+amplify_latest() { local j; j="$(amp_resolve "$1"; jobs="$(amp_jobs "$AMP_APP" "$AMP_BRANCH" 1)" || exit 1; echo "$jobs" | jq -c --arg b "$AMP_BRANCH" "$AMP_JQ"' .[0] // null | if . then amp_job($b) else null end')" || return 1; printf '%s\n' "${j:-null}" | jq -r "$AMPLIFY_TSV"; }
+amplify_cli_status() { amplify_status_json "$@"; }
+amplify_cli_latest() { amplify_latest_json "$@"; }
+
 # amplify_cancel <project> [<job id>]: stop the given job, or the newest one still running.
 amplify_cancel() {
   local id="${2:-}" job
@@ -526,14 +534,3 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   set -euo pipefail
   amplify_cmd "$@"
 fi
-
-# ---------- the contract's status lines (docs/PROVIDERS.md) ----------
-# `deploys watch`, `deploy --wait` and group deploys read one line: deployId<TAB>phase<TAB>state,
-# and "none" as the id when there is no deploy. The JSON above stays for people:
-# `deploys amplify status|latest` prints it (amplify_cli_status, amplify_cli_latest).
-AMPLIFY_TSV='if . == null then "none\t\tnone"
-  else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage then "\(.stage):\(.status // "")" else .status end) // "?")" end'
-amplify_status() { local j; j="$(amplify_status_json "$@")" || return 1; printf '%s' "$j" | jq -r "$AMPLIFY_TSV"; }
-amplify_latest() { local j; j="$(amplify_latest_json "$@")" || return 1; printf '%s' "$j" | jq -r "$AMPLIFY_TSV"; }
-amplify_cli_status() { amplify_status_json "$@"; }
-amplify_cli_latest() { amplify_latest_json "$@"; }

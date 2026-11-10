@@ -23,7 +23,7 @@ function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
       ]}
       actions={
         <ActionPanel title={`${p.name} (${platformLabel(p.platform)})`}>
-          <ProjectActions name={p.name} onRefresh={props.onRefresh} />
+          <ProjectActions name={p.name} projectRef={p.projectRef} onRefresh={props.onRefresh} />
         </ActionPanel>
       }
     />

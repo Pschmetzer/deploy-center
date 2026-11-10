@@ -195,7 +195,7 @@ expect "deploy shop: one POST, no forced build" "$(calls 'curl POST .*/v2/apps/a
 expect "deploy shop: body" "$(last_body)" '{"force_build":false}'
 out="$(digitalocean_deploy_json shop --sha abc123 2>&1)"; rc=$?
 expect "deploy --sha: refused" "$rc" 1
-has "deploy --sha: says why" "$out" "not supported"
+has "deploy --sha: says why" "$out" "cannot deploy a given commit"
 out="$(digitalocean_deploy_json shop --preview 2>&1)"; rc=$?
 expect "deploy --preview: refused" "$rc" 1
 out="$(digitalocean_deploy_json Pinned 2>&1)"; rc=$?
@@ -206,13 +206,14 @@ has "deploy pinned: says why" "$out" "pinned to a rollback"
 reset
 expect "status" "$(digitalocean_status_json shop d-shop-3 | jq -c '[.id, .phase, .sha, .progress, .dashboardUrl]')" \
   '["d-shop-3","building","3333333cccc","1/4","https://cloud.digitalocean.com/apps/app-shop/deployments/d-shop-3"]'
+expect "status: the contract line" "$(digitalocean_status shop d-shop-3 | cut -f1,2)" "d-shop-3	building"
 expect "status: the failed step" "$(digitalocean_status_json shop d-shop-x | jq -c '[.phase, .error]')" '["failed","Build failed: npm exited 1"]'
-out="$(digitalocean_status_json d-shop-3 2>&1)"; rc=$?
+out="$(digitalocean_status d-shop-3 2>&1)"; rc=$?
 expect "status: needs the app" "$rc" 1
 expect "latest" "$(digitalocean_latest_json shop | jq -c '[.id, .phase]')" '["d-shop-3","building"]'
+expect "latest: the contract line" "$(digitalocean_latest shop | cut -f1,2)" "d-shop-3	building"
 expect "latest: none" "$(digitalocean_latest_json image)" null
-expect "latest: none is the contract's none line" "$(digitalocean_latest image)" "none		none"
-expect "status: the contract line" "$(digitalocean_status shop d-shop-3 | cut -f1,2)" "d-shop-3	building"
+expect "latest: none, as the contract line" "$(digitalocean_latest image)" "none		?"
 expect "has: gives the id" "$(digitalocean_has shop)" "app-shop"
 out="$(digitalocean_cancel shop d-shop-3)"
 expect "cancel: posted" "$(calls 'curl POST .*/v2/apps/app-shop/deployments/d-shop-3/cancel')" 1
@@ -226,10 +227,10 @@ expect "rollback: validated, then rolled back, unpinned" "$(calls 'rollback/vali
 expect "url" "$(digitalocean_url shop)" https://shop.example.com
 expect "url: default ingress" "$(digitalocean_url blog)" https://blog-xyz.ondigitalocean.app
 expect "url --dashboard" "$(digitalocean_url shop --dashboard)" https://cloud.digitalocean.com/apps/app-shop
-digitalocean_has blog && ok "has: by name" || fail "has: blog" "not found"
-digitalocean_has app-shop && ok "has: by id" || fail "has: by id" "not found"
-digitalocean_has shop.example.com && ok "has: by domain" || fail "has: by domain" "not found"
-digitalocean_has nope && fail "has: nope" "found" || ok "has: unknown app"
+expect "has: by name gives the id" "$(digitalocean_has blog)" app-blog
+digitalocean_has app-shop >/dev/null && ok "has: by id" || fail "has: by id" "not found"
+digitalocean_has shop.example.com >/dev/null && ok "has: by domain" || fail "has: by domain" "not found"
+digitalocean_has nope >/dev/null && fail "has: nope" "found" || ok "has: unknown app"
 
 # --- logs: follow the historic URLs, without the token ---
 reset

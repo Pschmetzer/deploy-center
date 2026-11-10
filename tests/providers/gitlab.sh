@@ -73,7 +73,7 @@ expect "a failed answer is not kept" "$(find "$CONFIG_DIR/cache/gitlab-mrs" -nam
 # --- PRV-128: open MRs past 100 ---
 reset
 gitlab_open_prs_of gitlab.com/me/app "$tmp/out"
-expect "open MRs: a second page is read" "$(jq -c .value "$tmp/out/gitlab.com_me_app.json"):$(grep -c 'merge_requests?state=opened' "$CALLS")" '{"all":130,"drafts":30,"bots":30}:2'
+expect "open MRs: a second page is read" "$(jq -c .value "$tmp/out/gitlab.com_me_app.json"):$(grep -c 'merge_requests?state=opened' "$CALLS")" '{"all":130,"partial":false,"drafts":30,"bots":30}:2'
 reset
 gitlab_open_prs_of gitlab.com/big/app "$tmp/out"
 expect "open MRs: at most five pages" "$(jq -c .value.all "$tmp/out/gitlab.com_big_app.json"):$(grep -c 'merge_requests?state=opened' "$CALLS")" "500:5"

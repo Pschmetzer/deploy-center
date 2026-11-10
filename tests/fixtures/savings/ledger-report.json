@@ -4,6 +4,8 @@
   "currency": "USD",
   "generatedAt": 1769817600,
   "method": "Estimate. Since auto-deploy was turned off, every push to the deploy branch whose commit was never built counts as a skipped build (GitHub activity; commits where pushes cannot be read, an upper bound). Each skipped build is priced at the project's average: minutes from its last finished builds (up to 20), dollars from Vercel billing per build over 7 days, else the team's price per build minute, else DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN.",
+  "methodDe": "Schätzung. Seit Auto-Deploy aus ist, zählt jeder Push auf den Deploy-Branch, dessen Commit nie gebaut wurde, als übersprungener Build (GitHub-Aktivität; wo Pushes nicht lesbar sind, Commits als Obergrenze). Gebaut zählt nur Production. Jeder übersprungene Build kostet den Durchschnitt des Projekts: Minuten aus den letzten fertigen Builds (bis 20), Dollar aus der Vercel-Abrechnung je Build über 7 Tage, sonst der Minutenpreis des Teams, sonst der eingestellte Minutenpreis.",
+  "minutesComplete": true,
   "since": "2026-01-20",
   "days": 11,
   "projects": [

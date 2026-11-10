@@ -206,8 +206,8 @@ cloudflare_meta() {
 # Ready when there is a token. Says nothing, decides by its exit status.
 cloudflare_ready() { [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || ( cloudflare_key ) >/dev/null 2>&1; }
 
-# The project's name is what every call here takes, so that is the id given back.
-cloudflare_has() { ( cf_call GET "$(cf_proj "$1")" ) >/dev/null 2>&1 && echo "$1"; }
+# The project name is its id here: every Pages API path takes the name.
+cloudflare_has() { ( cf_call GET "$(cf_proj "$1")" ) 2>/dev/null | jq -er '.name // empty'; }
 
 cf_projects() {
   local page=1 all="[]" out pages err again=""
@@ -554,9 +554,8 @@ fi
 # `deploys watch`, `deploy --wait` and group deploys read one line: deployId<TAB>phase<TAB>state,
 # and "none" as the id when there is no deploy. The JSON above stays for people:
 # `deploys cloudflare status|latest` prints it (cloudflare_cli_status, cloudflare_cli_latest).
-CLOUDFLARE_TSV='if . == null then "none\t\tnone"
-  else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage then "\(.stage):\(.status // "")" else .status end) // "?")" end'
-cloudflare_status() { local j; j="$(cloudflare_status_json "$@")" || return 1; printf '%s' "$j" | jq -r "$CLOUDFLARE_TSV"; }
-cloudflare_latest() { local j; j="$(cloudflare_latest_json "$@")" || return 1; printf '%s' "$j" | jq -r "$CLOUDFLARE_TSV"; }
+CLOUDFLARE_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
+cloudflare_status() { local j; j="$(cloudflare_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
+cloudflare_latest() { local j; j="$(cloudflare_latest_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
 cloudflare_cli_status() { cloudflare_status_json "$@"; }
 cloudflare_cli_latest() { cloudflare_latest_json "$@"; }

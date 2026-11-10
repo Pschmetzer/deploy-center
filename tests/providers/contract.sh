@@ -14,7 +14,7 @@ expect() { [ "$2" = "$3" ] && ok "$1" || fail "$1" "expected [$3], got [$2]"; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin"
-cp tests/lib/fake-curl.sh "$tmp/bin/curl"; cp tests/lib/fake-vercel.sh "$tmp/bin/vercel"
+cp tests/lib/fake-curl.sh "$tmp/bin/curl"; cp tests/lib/fake-vercel.sh "$tmp/bin/vercel"; cp tests/lib/fake-aws.sh "$tmp/bin/aws"
 printf '#!/bin/bash\nexit 44\n' > "$tmp/bin/security"   # no keychain entry
 printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/sleep"
 # A provider that calls its own CLI (Amplify: aws) brings a stand-in in tests/fixtures/<p>/bin.
@@ -69,8 +69,9 @@ for f in providers/*.sh; do
   [ "$p" = vercel ] || [ "$p" = render ] || expect "$p: off by default" "$(echo "$meta" | jq -c '.defaultOn // false')" "false"
 
   # The checks below need contract fixtures (tests/fixtures/<p>/env, expect.json, one file per
-  # call). A provider without them still has its own tests/providers/<p>.sh; it is named here.
-  if [ ! -f "tests/fixtures/$p/env" ]; then echo "skip $p: no contract fixtures (tests/fixtures/$p/env)"; continue; fi
+  # call; for the aws CLI, AWS_<service>_<command>… files read by tests/lib/fake-aws.sh). A provider
+  # without them fails here: a skipped contract is how five providers once broke watch unnoticed.
+  if [ ! -f "tests/fixtures/$p/env" ]; then fail "$p: contract fixtures" "tests/fixtures/$p/env is missing"; continue; fi
   [ -d "tests/fixtures/$p/config" ] && cp -R "tests/fixtures/$p/config"/. "$tmp/config-$p/"
   # shellcheck source=/dev/null
   . "tests/fixtures/$p/env"

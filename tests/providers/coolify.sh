@@ -180,10 +180,10 @@ out="$(coolify_deploy_json shop --sha abc1234 2>&1)"; rc=$?
 expect "deploy --sha: exit 0" "$rc" 0
 expect "deploy --sha: pin, deploy, restore" "$(grep -oE 'curl (PATCH|POST) [^ ]+|DATA\[[^]]*\]' "$CALLS" | grep -vE 'DATA\[\]' | tr '\n' ' ')" \
   'curl PATCH https://coolify.example.com/api/v1/applications/app-shop DATA[{"git_commit_sha":"abc1234"}] curl POST https://coolify.example.com/api/v1/deploy?uuid=app-shop curl PATCH https://coolify.example.com/api/v1/applications/app-shop DATA[{"git_commit_sha":"HEAD"}] '
-out="$(coolify_deploy_json shop "" 'abc;rm' 2>&1)"; rc=$?
+out="$(coolify_deploy_json shop --sha 'abc;rm' 2>&1)"; rc=$?
 expect "deploy --sha: not a sha refused" "$rc" 1
 reset
-out="$(coolify_deploy_json cache "" abc1234 2>&1)"; rc=$?
+out="$(coolify_deploy_json cache --sha abc1234 2>&1)"; rc=$?
 expect "deploy --sha on an image app: refused" "$rc" 1
 has "deploy --sha on an image app: says why" "$out" "does not build from git"
 expect "deploy --sha on an image app: nothing changed" "$(calls 'curl PATCH')" 0
@@ -197,8 +197,9 @@ expect "deploy --preview: refused" "$rc" 1
 reset
 expect "status" "$(coolify_status_json dep-shop-3 | jq -c '[.id, .phase, .sha[0:7], .msg]')" '["dep-shop-3","building","3333333","feat: checkout"]'
 expect "status: app and deployment" "$(coolify_status_json shop dep-shop-3 | jq -r .id)" dep-shop-3
-expect "latest: skips the PR preview" "$(coolify_latest_json shop | jq -r .id)" dep-shop-3
 expect "status: the contract line" "$(coolify_status shop dep-shop-3 | cut -f1,2)" "dep-shop-3	building"
+expect "latest: skips the PR preview" "$(coolify_latest_json shop | jq -r .id)" dep-shop-3
+expect "latest: the contract line" "$(coolify_latest shop | cut -f1,2)" "dep-shop-3	building"
 expect "has: gives the id" "$(coolify_has shop)" "app-shop"
 expect "latest: HEAD is no sha" "$(coolify_latest_json cache | jq -c '[.id, .phase, .sha]')" '["dep-cache-1","canceled",null]'
 out="$(coolify_cancel shop dep-shop-3)"
@@ -234,9 +235,9 @@ expect "url" "$(coolify_url shop)" https://shop.example.com
 expect "url: no scheme gets https" "$(coolify_url blog)" https://blog.example.com
 expect "url --dashboard" "$(coolify_url shop --dashboard)" https://coolify.example.com/project/p-1/environment/e-1/application/app-shop
 expect "url: image app without domain" "$(coolify_url cache)" ""
-coolify_has blog && ok "has: blog" || fail "has: blog" "not found"
-coolify_has app-shop && ok "has: by uuid" || fail "has: by uuid" "not found"
-coolify_has nope && fail "has: nope" "found" || ok "has: unknown app"
+expect "has: blog gives its uuid" "$(coolify_has blog)" app-blog
+coolify_has app-shop >/dev/null && ok "has: by uuid" || fail "has: by uuid" "not found"
+coolify_has nope >/dev/null && fail "has: nope" "found" || ok "has: unknown app"
 
 # --- 401 / 403: a wrong token is an error with a reason, never an empty list ---
 reset
