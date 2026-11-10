@@ -342,7 +342,11 @@ struct ScanReport: Decodable, Sendable {
 struct CheckDetails: Decodable, Sendable {
     struct Leak: Decodable, Sendable, Hashable { let rule: String; let file: String; let line: Int?; let commit: String? }
     struct Part: Decodable, Sendable { let items: [Leak]? }
+    struct Code: Decodable, Sendable { let secrets: [Leak]? }
     let gitleaks: Part?
+    let semgrep: Code?
+    /// gitleaks and Semgrep's secret rules, together.
+    var leaks: [Leak] { (gitleaks?.items ?? []) + (semgrep?.secrets ?? []) }
 }
 
 /// `deploys autofix status --json`. Older scripts send `pr` and no PR state; newer ones

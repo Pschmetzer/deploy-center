@@ -167,7 +167,7 @@ final class Store: ObservableObject {
     /// The secrets of a check, for the details sheet. Never sent anywhere.
     func loadLeaks(_ c: ScanReport.Check) async {
         guard (c.gitleaks ?? 0) > 0, checkLeaks[c.id] == nil else { return }
-        if case .success(let d)? = await Self.extra(["check", "show", c.id], CheckDetails.self) { checkLeaks[c.id] = d.gitleaks?.items ?? [] }
+        if case .success(let d)? = await Self.extra(["check", "show", c.id], CheckDetails.self) { checkLeaks[c.id] = d.leaks }
     }
     func canScan(_ i: Item) -> Bool {
         guard let r = i.repo, !observer else { return false }

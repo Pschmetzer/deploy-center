@@ -1101,7 +1101,10 @@ expect "check: osv exit 1 is findings, relative path" "$(echo "$o" | jq -c '[.st
 expect "check: osv exit 127 is an error, not clean" "$(CKOSV=9 ckrun ck_osv "$ck/w" | jq -r .status)" "error"
 expect "check: gitleaks exit 2 is findings" "$(echo "$g" | jq -c '[.status, .count, .items[0].rule, .items[0].commit]')" '["found",1,"aws-access-token","abcdef1"]'
 expect "check: no secret value is kept" "$(echo "$g" | grep -c 'AKIATHESECRETVALUE\|REDACTED\|Match')" "0"
-expect "check: semgrep findings without code snippets" "$(echo "$m" | jq -c '[.count, (tostring | contains("SNIPPET"))]')" '[2,false]'
+expect "check: semgrep findings without code snippets" "$(echo "$m" | jq -c '[.count, (tostring | contains("SNIPPET"))]')" '[1,false]'
+expect "check: a semgrep secret rule is a key to rotate, not a code finding" "$(echo "$m" | jq -c '[.items[].rule, .secrets[].rule]')" '["js.eval","generic.secrets.aws-key"]'
+mkdir -p "$tmp/sgb"; printf '#!/bin/bash\nexit 2\n' > "$tmp/sgb/semgrep"; chmod +x "$tmp/sgb/semgrep"
+expect "check: semgrep with no output is an error, not empty" "$(PATH="$tmp/sgb:$PATH" ck_semgrep "$ck/w" | jq -r .status)" "error"
 expect "check: a missing tool is missing, not an error" "$(PATH=/usr/bin:/bin ck_semgrep "$ck/w" | jq -r .status)" "missing"
 mkdir -p "$SCAN_DIR/checks"; jq -n --argjson o "$o" --argjson g "$g" --argjson m "$m" '{osv:$o, gitleaks:$g, semgrep:$m}' > "$SCAN_DIR/checks/c1.json"
 pr="$(ck_findings_prompt c1)"
