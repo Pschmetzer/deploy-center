@@ -1,7 +1,8 @@
 #!/bin/bash
 # Builds a release: signed, notarized, stapled, zipped, with its SHA-256.
 #   ./release.sh                 build and notarize; the zip ends up in dist/
-#   ./release.sh --publish       also create the GitHub release vVERSION and write the Homebrew cask
+#   ./release.sh --publish       also create the GitHub release vVERSION (app zip, CLI tarball,
+#                                checksums.txt) and write the Homebrew cask and formula
 #   ./release.sh --publish-only  publish the zip already in dist/ (after a failed upload; no new build)
 #
 # Needs a "Developer ID Application" certificate and a notarytool profile. Give them as
@@ -18,7 +19,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-usage() { sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "release.sh: $*" >&2; exit 1; }
 
 mode=build
@@ -94,6 +95,8 @@ if publishing; then
   tag_sha="$(gh api "repos/$REPO/commits/$TAG" -q .sha 2>/dev/null || true)"
   [[ "$tag_sha" =~ ^[0-9a-f]{40}$ ]] || tag_sha=""
   [ -z "$tag_sha" ] || [ "$tag_sha" = "$COMMIT" ] || die "$TAG exists already on another commit ($tag_sha): raise VERSION"
+  # The CLI tarball is packed from this commit after the slow part; fail now if it cannot be.
+  git cat-file -e "$COMMIT:README-CLI.md" 2>/dev/null || die "$COMMIT has no README-CLI.md, which the CLI tarball needs"
 fi
 
 # --- build and notarize ------------------------------------------------------------------
@@ -144,15 +147,22 @@ echo "SHA-256: $SHA"
 echo "Commit: $COMMIT"
 publishing || exit 0
 
+# --- the CLI on its own: tarball and checksums.txt, from the same commit as the app --------
+CLI="$DIST/deploys-cli-${VERSION}.tar.gz"
+scripts/package-cli.sh --ref "$COMMIT" --out "$DIST" "$ZIP"
+CLI_SHA="$(shasum -a 256 "$CLI" | cut -d' ' -f1)"
+ASSETS=("$ZIP" "$ZIP.sha256" "$CLI" "$DIST/checksums.txt")
+
 # --- publish -----------------------------------------------------------------------------
 notes="$(mktemp)"
 { notes_of
-  printf '\nNotarized by Apple: opens without a warning.\n\nSHA-256 of the zip: `%s`\n' "$SHA"; } > "$notes"
+  printf '\nNotarized by Apple: opens without a warning.\n\nSHA-256 of the zip: `%s`\n' "$SHA"
+  printf '\nThe CLI on its own (macOS, Linux, CI): `curl -fsSL https://deploycenter.app/install.sh | sh` or `brew install pschmetzer/tap/deploys`. SHA-256 of %s: `%s`\n' "$(basename "$CLI")" "$CLI_SHA"; } > "$notes"
 if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
   echo "Release $TAG exists; replacing its files."
-  gh release upload "$TAG" "$ZIP" "$ZIP.sha256" --repo "$REPO" --clobber
+  gh release upload "$TAG" "${ASSETS[@]}" --repo "$REPO" --clobber
 else
-  gh release create "$TAG" "$ZIP" "$ZIP.sha256" --repo "$REPO" --target "$COMMIT" \
+  gh release create "$TAG" "${ASSETS[@]}" --repo "$REPO" --target "$COMMIT" \
     --title "Deploy Center $VERSION" --notes-file "$notes"
 fi
 rm -f "$notes"
@@ -161,9 +171,12 @@ rm -f "$notes"
 url="https://github.com/$REPO/releases/download/$TAG/$(basename "$ZIP")"
 got="$(curl -fsSL --retry 3 "$url" | shasum -a 256 | cut -d' ' -f1)"
 [ "$got" = "$SHA" ] || die "the published zip has SHA-256 $got, expected $SHA ($url)"
+url="https://github.com/$REPO/releases/download/$TAG/$(basename "$CLI")"
+got="$(curl -fsSL --retry 3 "$url" | shasum -a 256 | cut -d' ' -f1)"
+[ "$got" = "$CLI_SHA" ] || die "the published CLI tarball has SHA-256 $got, expected $CLI_SHA ($url)"
 echo "Published: https://github.com/$REPO/releases/tag/$TAG"
 
-# --- Homebrew: write the cask, print how to propose it (nothing is pushed) ---------------
+# --- Homebrew: write the cask and the formula, print how to propose them (nothing is pushed)
 TAP_REPO="${TAP_REPO:-${REPO%%/*}/homebrew-tap}"
 tap="${TAP_DIR:-$DIST/homebrew-tap}"
 if [ -z "${TAP_DIR:-}" ]; then
@@ -171,14 +184,17 @@ if [ -z "${TAP_DIR:-}" ]; then
   gh repo clone "$TAP_REPO" "$tap" -- --quiet --depth 1
 fi
 scripts/homebrew-cask.sh --write "$tap" "$VERSION" "$SHA"
+scripts/homebrew-formula.sh --write "$tap" "$VERSION" "$CLI_SHA"
 branch="deploy-center-$VERSION"
 cat <<NEXT
 
-Cask written: $tap/Casks/deploy-center.rb. To propose it in $TAP_REPO (review the diff first):
+Written: $tap/Casks/deploy-center.rb and $tap/Formula/deploys.rb. To propose them in $TAP_REPO
+(review the diff first):
   cd "$tap"
-  git diff
+  git add Casks/deploy-center.rb Formula/deploys.rb
+  git diff --cached
   git switch -c $branch
-  git commit -am "deploy-center $VERSION"
+  git commit -m "deploy-center $VERSION, deploys $VERSION"
   git push -u origin $branch
   gh pr create --repo $TAP_REPO --fill
 NEXT

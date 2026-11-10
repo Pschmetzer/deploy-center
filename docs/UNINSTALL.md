@@ -25,6 +25,14 @@ brew uninstall --cask deploy-center
 
 Installed by hand: move **Deploy Center** from Applications (or `~/Applications`) to the Trash.
 
+Only the CLI, installed with the script (use the same `--prefix` as for the install):
+
+```bash
+curl -fsSL https://deploycenter.app/install.sh | sh -s -- --uninstall
+```
+
+Only the CLI, installed with Homebrew: `brew uninstall deploys`.
+
 ## 3. Remove what it kept on your Mac
 
 | What | Where | Remove with |

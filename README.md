@@ -35,6 +35,16 @@ Homebrew 6 asks you to trust a third-party tap once (`brew trust`). Without admi
 **Or by hand:** download the zip from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest),
 unzip it and drag **Deploy Center** to *Applications*. It is signed and notarized by Apple, so it opens without a warning.
 
+**Only the CLI** (macOS, Linux, WSL, CI; no app): `deploys` on its own, checked against the
+release's SHA-256, into `~/.local/bin` without sudo. Or with Homebrew on macOS and Linux:
+
+```bash
+curl -fsSL https://deploycenter.app/install.sh | sh
+brew install pschmetzer/tap/deploys
+```
+
+Docker, CI keys and first steps: [README-CLI.md](README-CLI.md).
+
 Then connect Vercel (`vercel login`), paste a Render API key, and press **Turn off auto-deploy**. [Details below](#connect-your-accounts).
 New to it? [Try it safely](docs/SAFE-START.md): look first, then one project, then all.
 
