@@ -29,10 +29,13 @@ jobs:
       - name: shellcheck
         # deploys stays at errors only until its warnings are cleaned up.
         run: |
-          shellcheck --severity=warning build.sh release.sh scripts/*.sh tests/*.sh
+          shellcheck --severity=warning build.sh release.sh scripts/*.sh tests/*.sh lib/*.sh
           shellcheck --severity=error deploys
+          shellcheck site/install.sh
       - name: Script tests
         run: bash tests/script-tests.sh
+      - name: Install tests (install.sh, release tarball, Homebrew formula)
+        run: bash tests/install-tests.sh
       - name: App tests
         run: bash tests/app-tests.sh
       - name: Build (ad-hoc signed, universal)
@@ -42,6 +45,24 @@ jobs:
           name: DeployCenter-unsigned
           path: build/DeployCenter-*-universal.zip
           retention-days: 7
+
+  cli-install:
+    # The CLI's own install paths on Linux: install.sh under dash (Ubuntu's sh) and bash,
+    # against a fake release folder. No network beyond the checkout.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: shellcheck install.sh (POSIX sh, all severities)
+        run: |
+          shellcheck site/install.sh
+          shellcheck --severity=warning scripts/package-cli.sh scripts/homebrew-formula.sh tests/install-tests.sh
+      - name: Install tests (dash)
+        run: INSTALL_SH=dash bash tests/install-tests.sh
+      - name: Install tests (bash as sh)
+        run: INSTALL_SH=bash bash tests/install-tests.sh
 
   docs:
     # site/docs/ is generated from the Markdown in this repo. Fails when the generator errors
