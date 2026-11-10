@@ -2,6 +2,7 @@
 
 ### What does it cost?
 Nothing. Deploy Center is free and open source (MIT). You pay Vercel and Render for the builds you start, and fewer of them.
+`deploys simulate` estimates what auto-deploy would cost you a month, `deploys ledger` what turning it off saved: [SAVINGS.md](SAVINGS.md).
 
 ### Does it deploy anything by itself?
 No. It deploys when you press **Deploy** or run a `deploys` command. The daily reminder in Settings is only a notification, and only when something waits. If you want a scheduled deploy, set it up yourself: [`scripts/daily-deploy.plist.example`](../scripts/daily-deploy.plist.example) on a Mac, or [examples/](../examples/) for CI.
