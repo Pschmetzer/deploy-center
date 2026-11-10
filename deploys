@@ -2326,23 +2326,29 @@ case "${1:-} ${2:-}" in
       (if (.observers.value | length) > 0 then "observers: \(.observers.value | join(", "))" else empty end)' ;;
 
   "team "*)
+    # FEA-052: owner/name, or a GitHub address as copied from the browser or `git remote`.
+    team_repo_arg() {
+      local r="$1"
+      case "$r" in
+        https://github.com/*|http://github.com/*|git@github.com:*|ssh://git@github.com/*|github.com/*)
+          r="$(printf '%s' "$r" | sed -E 's#^(https?://|ssh://git@)?(git@)?github\.com[:/]##; s#[?\#].*$##; s#/+$##; s#\.git$##' | cut -d/ -f1-2)" ;;
+        *://*|git@*) die "Shared configs are read from GitHub repos only: give it as owner/name or https://github.com/owner/name" ;;
+      esac
+      case "$r" in */*/*|*[!A-Za-z0-9._/-]*|/*|*/) die "Give the repo as owner/name";; */*) ;; *) die "Give the repo as owner/name";; esac
+      printf '%s' "$r"
+    }
     # The repos whose deploy-center.json counts here, beyond those vercel-repos.json names.
     team_on || die "Team mode needs lib/team.sh next to the script ($TEAM_LIB is missing)"
     case "${2:-list}" in
       add)
         r="${3:-}"; [ -n "$r" ] || die "Usage: deploys team add <owner/repo>"
-        # FEA-052: a GitHub address as copied from the browser or `git remote` is fine too.
-        case "$r" in
-          https://github.com/*|http://github.com/*|git@github.com:*|ssh://git@github.com/*|github.com/*)
-            r="$(printf '%s' "$r" | sed -E 's#^(https?://|ssh://git@)?(git@)?github\.com[:/]##; s#[?\#].*$##; s#/+$##; s#\.git$##' | cut -d/ -f1-2)" ;;
-          *://*|git@*) die "Shared configs are read from GitHub repos only: give it as owner/name or https://github.com/owner/name" ;;
-        esac
-        case "$r" in */*/*|*[!A-Za-z0-9._/-]*|/*|*/) die "Give the repo as owner/name";; */*) ;; *) die "Give the repo as owner/name";; esac
+        r="$(team_repo_arg "$r")" || exit 1
         { cat "$TEAM_REPOS" 2>/dev/null; echo "$r"; } | sort -u > "$TEAM_REPOS.tmp" && mv "$TEAM_REPOS.tmp" "$TEAM_REPOS"
         DEPLOYS_TEAM_REFRESH=1 team_sources "$r" | jq -r --arg r "$r" '.[] | select(.repo == $r)
           | if .found // .config then "\($r): \(.path) found" elif .error then "\($r): \(.error)" else "\($r): added; no deploy-center.json there (yet)" end' ;;
       remove)
         r="${3:-}"; [ -n "$r" ] || die "Usage: deploys team remove <owner/repo>"
+        r="$(team_repo_arg "$r")" || exit 1
         grep -vxF "$r" "$TEAM_REPOS" > "$TEAM_REPOS.tmp" 2>/dev/null || true; mv "$TEAM_REPOS.tmp" "$TEAM_REPOS"
         rm -f "$TEAM_CACHE/$(printf '%s' "$r" | sed 's#/#__#').json"*; echo "$r removed" ;;
       list) team_repo_list ;;

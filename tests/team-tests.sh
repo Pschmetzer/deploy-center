@@ -314,6 +314,8 @@ fresh; cp "$DEPLOYS_CONFIG/team-repos" "$tmp/team-repos.keep"
 expect "FEA-052: team add https://github.com/o/r.git and git@github.com:o/r.git are o/r" "$(grep -c '^acme/web$' "$DEPLOYS_CONFIG/team-repos"):$(grep -c '^acme/tools$' "$DEPLOYS_CONFIG/team-repos"):$(grep -c 'github' "$DEPLOYS_CONFIG/team-repos")" "1:1:0"
 out="$("${D[@]}" team add https://gitlab.com/acme/web 2>&1)"; rc=$?
 expect "FEA-052: team add refuses another host" "$rc:$(echo "$out" | grep -c 'GitHub repos only')" "1:1"
+"${D[@]}" team remove https://github.com/acme/web >/dev/null 2>&1
+expect "FEA-052: team remove takes the same address" "$(grep -c '^acme/web$' "$DEPLOYS_CONFIG/team-repos")" "0"
 cp "$tmp/team-repos.keep" "$DEPLOYS_CONFIG/team-repos"
 # ===== end CLI track =====
 
