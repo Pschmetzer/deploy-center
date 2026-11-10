@@ -42,7 +42,10 @@ RENDER_API="https://api.render.com/v1"
 KEYCHAIN_SERVICE="deploy-center-render"
 LEGACY_KEYCHAIN_SERVICE="render-api-key"
 
-mkdir -p "$CONFIG_DIR"
+# launchd and cron start without $USER; under set -u the keychain lookups would stop the script.
+USER="${USER:-$(id -un)}"
+# Locks, the remembered repos and (for a moment) the Render key live here: for this user only.
+mkdir -p "$CONFIG_DIR" && chmod 700 "$CONFIG_DIR" 2>/dev/null || true
 [ -f "$REPOS" ] || echo '{}' > "$REPOS"
 
 # BSD (macOS) and GNU (Linux) spell file times, date maths and base64 differently.
@@ -50,7 +53,7 @@ mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
 days_ago() { date -u -v-"$1"d +%Y-%m-%d 2>/dev/null || date -u -d "$1 days ago" +%Y-%m-%d; }
 b64d() { base64 -D 2>/dev/null || base64 -d; }
 
-die() { echo "Error: ${RED}$*${PLAIN}" >&2; exit 1; }
+die() { echo "${RED}Error:${PLAIN} $*" >&2; exit 1; }
 
 # Colour only for a person at a terminal, never in what the app or a pipe reads.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then RED=$'\033[31m'; GREEN=$'\033[32m'; BOLD=$'\033[1m'; PLAIN=$'\033[0m'
@@ -82,7 +85,10 @@ platform_of() {
 # The team the commands act on. Detected once and remembered; a personal account has none.
 vercel_team() {
   if [ -n "${DEPLOYS_VERCEL_TEAM:-}" ]; then echo "$DEPLOYS_VERCEL_TEAM"; return; fi
-  if [ -f "$CONFIG_DIR/vercel-team" ]; then cat "$CONFIG_DIR/vercel-team"; return; fi
+  # A team is remembered for good. "No team" (a personal account) only for a day: one joined
+  # later is then found without anyone deleting the file.
+  if [ -s "$CONFIG_DIR/vercel-team" ]; then cat "$CONFIG_DIR/vercel-team"; return; fi
+  if [ -f "$CONFIG_DIR/vercel-team" ] && [ $(( $(date +%s) - $(mtime "$CONFIG_DIR/vercel-team") )) -lt 86400 ]; then echo ""; return; fi
   local teams n
   teams="$(vercel api /v2/teams 2>/dev/null)" || die "The vercel CLI is not logged in. Run: vercel login"
   n="$(echo "$teams" | jq '.teams | length')"
@@ -100,7 +106,13 @@ vercel_team() {
 team_q() { local t; t="$(vercel_team)"; [ -n "$t" ] && echo "teamId=$t" || echo ""; }
 with_team() { local q; q="$(team_q)"; case "$1" in *\?*) echo "$1${q:+&$q}";; *) echo "$1${q:+?$q}";; esac; }
 
-vercel_call() { vercel api "$(with_team "$1")" "${@:2}" 2>/dev/null; }
+# On failure the last line vercel printed goes to stderr: "not found" and "not logged in" differ.
+vercel_call() {
+  local e rc=0; e="$(mktemp)"
+  vercel api "$(with_team "$1")" "${@:2}" 2>"$e" || rc=$?
+  [ "$rc" = 0 ] || grep -v '^[[:space:]]*$' "$e" | tail -n 1 | sed 's/^/vercel: /' >&2
+  rm -f "$e"; return "$rc"
+}
 
 vercel_projects() {
   local all="[]" page next="" url
@@ -114,11 +126,13 @@ vercel_projects() {
   echo "$all"
 }
 
-# Write down where a project deploys from. Only ever adds; an entry once known is kept.
+# Write down where a project deploys from. The first time auto-deploy was turned off (offAt)
+# is kept: a later run must not move the line costs and triggers measure from.
 remember_repo() {
   local entry="$1" tmp
   tmp="$(mktemp)"
-  jq --argjson e "$entry" '. + ($e | with_entries(select(.value.repo != null)))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
+  jq --argjson e "$entry" 'reduce ($e | to_entries[] | select(.value.repo != null)) as $x (.;
+      .[$x.key] = ($x.value + (if .[$x.key].offAt then {offAt:.[$x.key].offAt} else {} end)))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
 }
 
 vercel_off() {
@@ -147,15 +161,16 @@ vercel_deploy_json() {
   local target="$1" preview="${2:-}" sha="${3:-}" body out lock
   jq -e --arg p "$target" 'has($p)' "$REPOS" >/dev/null || die "$target has no remembered repo. Turn its auto-deploy off with this tool, or add it to $REPOS"
   lock="$(start_lock "vercel-$target")" || exit 1
-  body="$(mktemp)"; trap 'rm -f "$body"' RETURN
+  # Removed by hand on every way out: a `trap … RETURN` would stay set and fire on later returns.
+  body="$(mktemp)"
   jq --arg p "$target" --arg prev "$preview" --arg sha "$sha" '.[$p] as $r | {name:$p, project:$p}
     + (if $prev == "" then {target:"production"} else {} end)
     + {gitSource:({type:"github", ref:$r.ref} + (if $r.repoId then {repoId:$r.repoId} else {org:$r.org, repo:$r.repo} end)
                   + (if $sha != "" then {sha:$sha} else {} end))}' "$REPOS" > "$body"
   local errf; errf="$(mktemp)"
   out="$(vercel api "$(with_team /v13/deployments)" --method POST --input "$body" 2>"$errf")" \
-    || { local e; e="$(tail -c 400 "$errf")"; rm -f "$errf" "$lock"; die "Vercel: $e $(echo "$out" | jq -r '.error.message // empty' 2>/dev/null)"; }
-  rm -f "$errf"
+    || { local e; e="$(tail -c 400 "$errf")"; rm -f "$errf" "$lock" "$body"; die "Vercel: $e $(echo "$out" | jq -r '.error.message // empty' 2>/dev/null)"; }
+  rm -f "$errf" "$body"
   echo "$out" | jq -e '.id' >/dev/null 2>&1 || { rm -f "$lock"; die "Vercel: $(echo "$out" | head -c 400)"; }
   echo "$out" | jq '{id, url:("https://" + .url), state:(.readyState // .status)}'
 }
@@ -285,19 +300,28 @@ export KEYCHAIN_SERVICE LEGACY_KEYCHAIN_SERVICE
 render_call() {
   local method="$1" path="$2" body="${3:-}" key out code
   key="$(render_key)"
-  local args=(-sS -X "$method" -H "Accept: application/json" -K -)
+  # A hung connection must not hang the app: 10 s to connect, 60 s in all.
+  local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
-  local try
+  local try err; err="$(mktemp)"
   for try in 1 2 3; do
-    out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$RENDER_API$path")"
+    # A curl failure (no network, timeout) is code 000 here, not a silent stop under set -e.
+    out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$RENDER_API$path" 2>"$err")" || out=$'\n000'
     code="${out##*$'\n'}"; out="${out%$'\n'*}"
-    # 429: Render's rate limit. Wait and ask again instead of failing a whole list.
-    [ "$code" = 429 ] && [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; }
+    # 429 (rate limit), 5xx and network errors: wait and ask again. Only reads are repeated:
+    # a POST that timed out may have started a build already.
+    case "$code" in
+      429) [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; } ;;
+      5*|000) [ "$method" = GET ] && [ "$try" -lt 3 ] && { sleep $((try * 2)); continue; } ;;
+    esac
     break
   done
+  [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
+  rm -f "$err"
   if [[ "$code" != 2* ]]; then
-    local hint=""
-    case "$code" in 401|403) hint=" (the Render key is wrong or expired: deploys render set-key)";; 404) hint=" (not found: renamed or deleted?)";; 429) hint=" (rate limit: try again in a minute)";; esac
+    local hint="" fix="deploys render set-key"
+    [ -n "${RENDER_API_KEY:-}" ] && fix="check RENDER_API_KEY in the environment"
+    case "$code" in 000) hint=" (no answer: network or timeout)";; 401|403) hint=" (the Render key is wrong or expired: $fix)";; 404) hint=" (not found: renamed or deleted?)";; 429) hint=" (rate limit: try again in a minute)";; 5*) hint=" (Render had a problem: try again later)";; esac
     die "Render $method $path -> HTTP $code$hint: $out"
   fi
   printf '%s' "$out"
@@ -321,6 +345,8 @@ render_id_of() {
   case "$name" in srv-*|crn-*) echo "$name"; return;; esac
   id="$(render_services | jq -r --arg n "$name" '.[] | select(.name==$n) | .id')"
   [ -n "$id" ] || die "No Render service named \"$name\". See: deploys render list"
+  # Two services may share a name (in different projects): never pick one at random.
+  [ "$(echo "$id" | wc -l | tr -d ' ')" = 1 ] || die "Several Render services are named \"$name\" ($(echo "$id" | tr '\n' ' ')). Use the srv- id."
   echo "$id"
 }
 
@@ -398,11 +424,14 @@ case "${1:-} ${2:-}" in
     has() { command -v "$1" >/dev/null 2>&1 && echo true || echo false; }
     vapi=false; vercel api --help >/dev/null 2>&1 && vapi=true
     vlogin=false; vercel whoami >/dev/null 2>&1 && vlogin=true
-    rkey=false; { security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w >/dev/null 2>&1 \
+    rkey=false; { [ -n "${RENDER_API_KEY:-}" ] || security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w >/dev/null 2>&1 \
       || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" -w >/dev/null 2>&1; } && rkey=true
     glogin=false; gh auth status >/dev/null 2>&1 && glogin=true
-    printf '{"jq":%s,"vercelCli":%s,"vercelApi":%s,"vercelLoggedIn":%s,"githubCli":%s,"githubLoggedIn":%s,"renderKey":%s}\n' \
-      "$(has jq)" "$(has vercel)" "$vapi" "$vlogin" "$(has gh)" "$glogin" "$rkey" ;;
+    # Where the key comes from, and the versions that matter (jq 1.6+ for the date functions).
+    ksrc=none; [ "$rkey" = true ] && ksrc=keychain; [ -n "${RENDER_API_KEY:-}" ] && ksrc=environment
+    jqv="$(jq --version 2>/dev/null | sed 's/^jq-//' | tr -d '"\\')"
+    printf '{"jq":%s,"vercelCli":%s,"vercelApi":%s,"vercelLoggedIn":%s,"githubCli":%s,"githubLoggedIn":%s,"renderKey":%s,"renderKeySource":"%s","jqVersion":"%s","bashVersion":"%s"}\n' \
+      "$(has jq)" "$(has vercel)" "$vapi" "$vlogin" "$(has gh)" "$glogin" "$rkey" "$ksrc" "$jqv" "${BASH_VERSION%%(*}" ;;
 
   "github-budget "*)
     github_budget ;;
@@ -453,8 +482,11 @@ case "${1:-} ${2:-}" in
     p="${2:?project}"; plat="$(platform_of "$p")"
     if [ "$plat" = vercel ]; then
       if [ "${3:-}" = "--dashboard" ]; then
-        slug="$(vercel_call "/v2/teams/$(vercel_team)" | jq -r '.slug // empty' 2>/dev/null)"
-        url="https://vercel.com/${slug:+$slug/}$p"
+        # A team's page is under its slug, a personal account's under the user name.
+        if [ -n "$(vercel_team)" ]; then slug="$(vercel_call "/v2/teams/$(vercel_team)" | jq -r '.slug // empty' 2>/dev/null || true)"
+        else slug="$(vercel_call "/v2/user" | jq -r '.user.username // empty' 2>/dev/null || true)"; fi
+        [ -n "$slug" ] || die "Could not read the Vercel team or user name for the dashboard address"
+        url="https://vercel.com/$slug/$p"
       else
         url="$(vercel_call "/v9/projects/$p" | jq -r '((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // (.targets.production.alias[0] // empty) | "https://\(.)"')"
       fi
@@ -669,7 +701,10 @@ BASH
   "vercel autodeploy-off")
     target="${3:-}"; [ -n "$target" ] || die "Give a project name or --all"
     if [ "$target" = "--all" ]; then
-      for p in $(vercel_projects | jq -r '.[] | select(.link) | .name'); do vercel_off "$p"; done
+      # One that fails does not stop the rest; they are counted and the exit code says so.
+      bad=0
+      for p in $(vercel_projects | jq -r '.[] | select(.link) | .name'); do ( vercel_off "$p" ) || bad=$((bad + 1)); done
+      [ "$bad" = 0 ] || die "$bad Vercel projects could not be disconnected (see above); the others are done"
       echo "Done. No Vercel project deploys on push any more."
     else
       vercel_off "$target"
@@ -735,15 +770,17 @@ BASH
   "render autodeploy-off")
     target="${3:-}"; [ -n "$target" ] || die "Give a service name or --all"
     if [ "$target" = "--all" ]; then
-      render_services | jq -r '.[] | select('"$(render_auto)"' != "off") | "\(.id)\t\(.name)"' \
-        | while IFS=$'\t' read -r id name; do render_off "$id" "$name"; done
+      bad=0
+      while IFS=$'\t' read -r id name; do ( render_off "$id" "$name" ) || bad=$((bad + 1)); done \
+        < <(render_services | jq -r '.[] | select('"$(render_auto)"' != "off") | "\(.id)\t\(.name)"')
+      [ "$bad" = 0 ] || die "$bad Render services could not be switched off (see above); the others are done"
       echo "Done. No Render service deploys on push any more."
     else
       render_off "$(render_id_of "$target")" "$target"
     fi ;;
   "render deploy")
-    id="$(render_id_of "${3:?service}")"
-    render_call POST "/services/$id/deploys" '{}' | jq -r '"Render: deploy started (\(.id), \(.status))"' ;;
+    # Through deploy-json, so the same one-minute start lock as the app and deploy-changed applies.
+    "$0" render deploy-json "${@:3}" | jq -r '"Render: deploy started (\(.id), \(.state))"' ;;
   "render deploy-json")
     # deploy-json <service> [--sha <commit>] [--clear-cache]
     id="$(render_id_of "${3:?service}")"; sha=""; cc=""; shift 3 || true
@@ -767,9 +804,12 @@ BASH
     IFS= read -r key || true
     [ -n "$key" ] || die "Pipe the key in: pbpaste | deploys render set-key"
     case "$key" in *\'*|*\"*|*' '*) die "That does not look like a Render API key";; esac
+    # Tried first, saved only when Render takes it: a typo must not replace a working key.
+    ( RENDER_API_KEY="$key" render_call GET "/services?limit=1" >/dev/null ) || die "Render did not accept that key; nothing was saved"
     # Sent to `security -i` on stdin, so the key is never an argument anyone can see.
-    printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$KEYCHAIN_SERVICE" "$key" | security -i >/dev/null
-    render_call GET "/services?limit=1" >/dev/null && echo "Render key saved and working." ;;
+    printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$KEYCHAIN_SERVICE" "$key" | security -i >/dev/null \
+      || die "The key works, but could not be saved in the keychain"
+    echo "Render key saved and working." ;;
   "render json")
     list="$(render_services | jq '[.[] | {id, name, type, paused:(.suspended=="suspended"),
       auto:('"$(render_auto)"' != "off"), deployable:(.suspended!="suspended"),

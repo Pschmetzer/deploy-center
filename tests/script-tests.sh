@@ -31,6 +31,65 @@ chmod +x "$tmp/bin/gh"; export PATH="$tmp/bin:$PATH"
 # shellcheck source=../deploys
 . ./deploys
 
+# The script turns on set -e; these tests look at failures, so they must not end on one.
+set +e
+
+# --- robustness: Render calls, names, remembered repos, doctor, set-key ---
+# curl and security stand in for Render and the keychain. CURLSTUB picks the answer; every
+# call is logged, so "asked three times" and "saved nothing" can be checked.
+cat > "$tmp/bin/curl" <<'CURL'
+#!/bin/bash
+cat >/dev/null
+m=GET; prev=""; for a in "$@"; do [ "$prev" = -X ] && m="$a"; prev="$a"; done
+echo "curl $m ${*: -1}" >> "$CALLS"
+case "${CURLSTUB:-ok}" in
+  503) printf '%s\n503' '{"message":"unavailable"}' ;;
+  down) echo "curl: (28) Operation timed out" >&2; exit 28 ;;
+  401) printf '%s\n401' '{"message":"unauthorized"}' ;;
+  *) printf '%s\n200' '[]' ;;
+esac
+CURL
+printf '#!/bin/bash\necho "security $*" >> "$CALLS"; cat >/dev/null; exit 0\n' > "$tmp/bin/security"
+printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/sleep"
+chmod +x "$tmp/bin"/*
+export CALLS="$tmp/calls.log"
+calls() { grep -c "$1" "$CALLS" 2>/dev/null || true; }
+
+: > "$CALLS"
+out="$(RENDER_API_KEY=k CURLSTUB=503 render_call GET /services 2>&1)"; rc=$?
+expect "Render 503 on a read is asked three times" "$(calls 'curl GET')" "3"
+expect "Render 503 ends in a clear error" "$rc:$(echo "$out" | grep -c 'HTTP 503 (Render had a problem')" "1:1"
+: > "$CALLS"
+(RENDER_API_KEY=k CURLSTUB=503 render_call POST /services/srv-1/deploys '{}' >/dev/null 2>&1)
+expect "Render 503 on a POST is not repeated (it may have started a build)" "$(calls 'curl POST')" "1"
+: > "$CALLS"
+out="$(RENDER_API_KEY=k CURLSTUB=down render_call GET /services 2>&1)"; rc=$?
+expect "no network: an error naming it, not a silent stop" "$rc:$(echo "$out" | grep -c 'HTTP 000 (no answer')" "1:1"
+out="$(RENDER_API_KEY=k CURLSTUB=401 render_call GET /services 2>&1)"
+expect "401 with the key from the environment points there" "$(echo "$out" | grep -c 'check RENDER_API_KEY')" "1"
+
+render_services() { echo '[{"id":"srv-a","name":"api"},{"id":"srv-b","name":"api"},{"id":"srv-c","name":"web"}]'; }
+out="$(render_id_of api 2>&1)"; rc=$?
+expect "two services with one name: an error, not two ids" "$rc:$(echo "$out" | grep -c 'Several Render services')" "1:1"
+expect "one service with the name: its id" "$(render_id_of web)" "srv-c"
+unset -f render_services
+
+mkdir -p "$DEPLOYS_CONFIG"; echo '{"web":{"org":"me","repo":"app","ref":"main","offAt":100}}' > "$REPOS"
+remember_repo '{"web":{"org":"me","repo":"app2","ref":"main","offAt":999},"new":{"org":"me","repo":"n","ref":"main","offAt":5},"none":{"repo":null}}'
+expect "remember_repo keeps the first offAt, adds new ones, skips empty" \
+  "$(jq -c '{w:.web.offAt, r:.web.repo, n:.new.offAt, none:has("none")}' "$REPOS")" '{"w":100,"r":"app2","n":5,"none":false}'
+
+d="$(env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" RENDER_API_KEY=k /bin/bash ./deploys doctor)"
+expect "doctor: key from the environment counts, versions shown" \
+  "$(echo "$d" | jq -c '{renderKey, renderKeySource, jq:(.jqVersion | length > 0), bash:.bashVersion}')" \
+  "{\"renderKey\":true,\"renderKeySource\":\"environment\",\"jq\":true,\"bash\":\"${BASH_VERSION%%(*}\"}"
+
+: > "$CALLS"
+echo rnd_wrong | env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" CURLSTUB=401 /bin/bash ./deploys render set-key >/dev/null 2>&1; rc=$?
+expect "set-key: a key Render refuses is not saved" "$rc:$(calls security)" "1:0"
+echo rnd_good | env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" /bin/bash ./deploys render set-key >/dev/null 2>&1; rc=$?
+expect "set-key: a working key is saved" "$rc:$(calls 'security -i')" "0:1"
+
 # --- the rule for "changed" ---
 rule() { echo "$1" | jq -c "$CHANGED_RULE | .[0] | {changed, building}"; }
 expect "new commit on GitHub is a change" \
