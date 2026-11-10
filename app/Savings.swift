@@ -115,6 +115,20 @@ struct SimulateReport: Decodable {
         savingMonth = t.obj("savingMonth") ?? SavingsAmount()
         usdComplete = t.bool("usdComplete") ?? true
     }
+
+    /// What if a project went live up to `perDay` times on each day it had pushes (FEA-006)? One a
+    /// day is the script's "once a day"; more never counts more builds than there were pushes. Per
+    /// month, like the rest; the dollars cover the priced projects only (`complete` says whether all).
+    func whatIf(perDay: Int) -> (builds: Double, usd: Double, complete: Bool) {
+        let k = days > 0 ? 30 / days : 1
+        var builds = 0.0, usd = 0.0, complete = true
+        for r in projects where r.pushes > 0 {
+            let b = min(r.pushes, r.activeDays * Double(max(1, perDay))) * k
+            builds += b
+            if let p = r.usdPerBuild { usd += b * p } else { complete = false }
+        }
+        return (builds, usd, complete)
+    }
 }
 
 struct LedgerReport: Decodable {
@@ -525,6 +539,7 @@ private struct EstimateFooter: View {
 struct SimulatorView: View {
     @ObservedObject private var model = SavingsModel.shared
     @AppStorage("savingsDays") private var days = 30
+    @AppStorage("whatIfPerDay") private var perDay = 2
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -564,6 +579,24 @@ struct SimulatorView: View {
         }
     }
 
+    /// A slider: deploying up to N times a day, between once a day and every push.
+    @ViewBuilder private func whatIf(_ s: SimulateReport) -> some View {
+        let w = s.whatIf(perDay: perDay)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(L("What if: up to \(perDay)× a day", "Was wäre, wenn: bis zu \(perDay)× am Tag")).font(.callout)
+                Slider(value: Binding(get: { Double(perDay) }, set: { perDay = Int($0.rounded()) }), in: 1...8, step: 1)
+                    .frame(width: 180)
+                    .accessibilityLabel(L("Deploys a day", "Deploys am Tag")).accessibilityValue("\(perDay)")
+            }
+            Text(L("≈ \(SavingsFormat.usdShort(w.usd)) a month, \(SavingsFormat.count(w.builds.rounded())) builds",
+                   "≈ \(SavingsFormat.usdShort(w.usd)) im Monat, \(SavingsFormat.count(w.builds.rounded())) Builds")
+                 + (w.complete ? "" : L(" (priced projects only)", " (nur Projekte mit Preis)")))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.top, 4)
+    }
+
     private var loading: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
@@ -586,6 +619,7 @@ struct SimulatorView: View {
                 Text(L("\(SavingsFormat.usdShort(d)) a month less", "\(SavingsFormat.usdShort(d)) im Monat weniger"))
                     .font(.title3.weight(.semibold)).foregroundStyle(.green)
             }
+            whatIf(s)
             if !s.usdComplete {
                 Text(L("Some projects have no price yet (Render has no billing API: set DEPLOYS_RENDER_USD_PER_MIN). Their minutes count, their dollars do not.",
                        "Manche Projekte haben noch keinen Preis (Render hat keine Abrechnungs-API: DEPLOYS_RENDER_USD_PER_MIN setzen). Ihre Minuten zählen, ihre Dollar nicht."))

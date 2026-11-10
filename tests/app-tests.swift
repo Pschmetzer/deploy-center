@@ -493,6 +493,10 @@ if let sim = try? JSONDecoder().decode(SimulateReport.self, from: savingsData("s
     expect("simulate: Render without price", sim.projects[2].autoMonth.usd == nil, true)
     expect("simulate: incomplete prices are said", sim.usdComplete, false)
     expect("simulate: a problem is kept", sim.projects[3].problem != nil, true)
+    // web: min(6, 2×2) × $0.20, api: min(3, 3×2) × $0.67; svc min(4, 1×2) builds without a price.
+    let w = sim.whatIf(perDay: 2)
+    expect("what if twice a day", "\((w.usd * 100).rounded() / 100) \(w.builds) \(w.complete)", "2.81 9.0 false")
+    expect("what if: more than the pushes counts the pushes", sim.whatIf(perDay: 8).builds, 13.0)
 } else { expect("simulate fixture decodes", false, true) }
 if let led = try? JSONDecoder().decode(LedgerReport.self, from: savingsData("ledger-report.json")) {
     expect("ledger: since", led.since ?? "", "2026-01-20")
