@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `integrations/mcp/`: an MCP server for AI coding agents. Read-only by default (`changed`, `status`, `explain`, `notes`, `logs`, `doctor`); deploy and rollback of one project per call only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`.
+- Savings, all marked as estimates (≈) with the method in the JSON: `deploys simulate [--days 30] --json` counts pushes to each deploy branch (GitHub) times the project's average build and puts "auto-deploy ≈ X a month" next to "once a day ≈ Y"; `deploys ledger --json` counts the pushes since auto-deploy was turned off that never built, in dollars, Vercel build minutes and Render pipeline minutes (logic in `lib/savings.sh`). The app has a Simulator sheet (a banner before anything is turned off, and Settings > Costs) and a Ledger ("≈ $X saved since …", per project, skipped pushes, share card).
 - `deploys autofix`: a failed build (Vercel `ERROR`, Render `build_failed`) is handed to a Claude Code routine that opens a fix PR; after the merge, the next run deploys that merge commit once. Caps, no duplicates, never merges. See `docs/AUTOFIX.md` and `scripts/autofix.plist.example`.
 - `deploys logs <project> --id <deploy>` reads the log of one deploy; `vercel json` and `render json` carry `latestId` and `latestSha` of the newest attempt.
 

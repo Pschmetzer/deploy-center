@@ -304,5 +304,36 @@ MainActor.assumeIsolated {
     expect("undo toast is not pushed away", st.toast?.text ?? "nil", "hidden")
 }
 
+// Savings: the simulator and the ledger read what lib/savings.sh prints, and odd fields do not break them.
+func savingsData(_ file: String) -> Data { (try? Data(contentsOf: URL(fileURLWithPath: "tests/fixtures/savings/" + file))) ?? Data() }
+if let sim = try? JSONDecoder().decode(SimulateReport.self, from: savingsData("simulate-report.json")) {
+    expect("simulate: rows", sim.projects.map(\.name), ["web", "api", "svc", "lost"])
+    expect("simulate: auto-deploy a month", sim.autoMonth.usd ?? -1, 3.2)
+    expect("simulate: once a day a month", sim.dailyMonth.usd ?? -1, 2.4)
+    expect("simulate: Render minutes", sim.autoMonth.renderMinutes ?? -1, 20.0)
+    expect("simulate: Render without price", sim.projects[2].autoMonth.usd == nil, true)
+    expect("simulate: incomplete prices are said", sim.usdComplete, false)
+    expect("simulate: a problem is kept", sim.projects[3].problem != nil, true)
+} else { expect("simulate fixture decodes", false, true) }
+if let led = try? JSONDecoder().decode(LedgerReport.self, from: savingsData("ledger-report.json")) {
+    expect("ledger: since", led.since ?? "", "2026-01-20")
+    expect("ledger: total", "\(led.usd ?? -1) \(led.skipped) \(led.vercelMinutes) \(led.renderMinutes)", "0.8 6.0 12.0 10.0")
+    expect("ledger: skipped pushes", led.projects[0].skippedPushes.map(\.sha), ["a4", "a3", "a2", "a1"])
+    // (0.8 + 0.2) / 11 days before, 0.2 / 11 since: the share card gets per-day numbers.
+    expect("ledger: per day for the share card", led.perDay.map { "\(($0.before * 11).rounded()) \((($0.after * 11) * 10).rounded())" } ?? "", "1.0 2.0")
+} else { expect("ledger fixture decodes", false, true) }
+let odd = Data(#"{"since":null,"days":"3","projects":[{"name":"ok","skipped":"2","savedUsd":"x"},{"nope":1},7],"total":{"usd":null}}"#.utf8)
+if let led = try? JSONDecoder().decode(LedgerReport.self, from: odd) {
+    expect("lenient: bad rows are dropped, numbers as text read", "\(led.projects.map(\.name)) \(led.projects[0].skipped) \(led.days)", "[\"ok\"] 2.0 3.0")
+    expect("lenient: unreadable dollars are unknown", led.projects[0].savedUsd == nil, true)
+    expect("lenient: no start, no ledger", led.hasStarted, false)
+} else { expect("lenient ledger decodes", false, true) }
+expect("lenient: an empty object is an empty simulation",
+       (try? JSONDecoder().decode(SimulateReport.self, from: Data("{}".utf8)))?.projects.count ?? -1, 0)
+UserDefaults.standard.set(true, forKey: "demoMode")
+expect("savings: names masked in demo mode", SavingsFormat.name("shop-api") != "shop-api", true)
+UserDefaults.standard.removeObject(forKey: "demoMode")
+expect("savings: estimates carry ≈", SavingsFormat.usd(1.5).hasPrefix("≈ "), true)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

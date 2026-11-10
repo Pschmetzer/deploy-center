@@ -1,0 +1,4 @@
+{"deployments": [
+  {"uid": "d3", "state": "READY", "created": 1769400000000, "buildingAt": 1769400001000, "ready": 1769400181000, "meta": {"githubCommitSha": "a5"}},
+  {"uid": "d2", "state": "ERROR", "created": 1769300000000, "buildingAt": 1769300001000, "ready": null, "meta": {"githubCommitSha": "a4"}},
+  {"uid": "d1", "state": "READY", "created": 1768700000000, "buildingAt": 1768700000000, "ready": 1768700060000, "meta": {}}]}
