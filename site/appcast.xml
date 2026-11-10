@@ -6,6 +6,16 @@
     <description>Updates for Deploy Center</description>
     <language>en</language>
     <item>
+      <title>Version 0.9.1</title>
+      <pubDate>Tue, 10 Nov 2026 09:17:27 GMT</pubDate>
+      <sparkle:version>0.9.1</sparkle:version>
+      <sparkle:shortVersionString>0.9.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>https://github.com/Pschmetzer/deploy-center/releases/tag/v0.9.1</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown">- Settings → General → Language: English, Deutsch or the Mac's language (the default). The app restarts to switch; the widgets follow it.</description>
+      <enclosure url="https://github.com/Pschmetzer/deploy-center/releases/download/v0.9.1/DeployCenter-0.9.1-universal.zip" length="13294717" type="application/octet-stream" sparkle:edSignature="T79BCwHpbxrAt8a/JexRXdc/40iGo+mNeFaUq43LgbrlWbIA8n5o/DE6ydv28o3VOp7aYXnLt0Gnnn51rBhjAA==" />
+    </item>
+    <item>
       <title>Version 0.9.0</title>
       <pubDate>Tue, 10 Nov 2026 08:14:58 GMT</pubDate>
       <sparkle:version>0.9.0</sparkle:version>
