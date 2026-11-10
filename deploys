@@ -720,6 +720,8 @@ team_window_denied() {
 freeze_check() {
   [ -z "${DEPLOYS_WINDOW_CHECKED:-}" ] || return 0
   local w n why
+  # Read once here, in this shell: team_window_denied runs in $(…), where a cache would be lost.
+  if team_on; then team_eff_once >/dev/null; fi
   w="$(window_json)" || exit 1
   if [ "$(echo "$w" | jq -r .denied)" = true ]; then
     frozen="$(echo "$w" | jq -r .reason)"
@@ -1533,6 +1535,9 @@ guard_main() {
   local dry="$1" first=false rc=0 names
   if [ -z "$dry" ] && [ "$(guard_state | jq '.firstRunPending == true')" = true ]; then dry=1; first=true; fi
   guard_run "$dry" || rc=1
+  # What failed last time: the same failures again (Netlify waiting for its netlify.toml line)
+  # are not notified every 30 minutes, only a change is.
+  local before; before="$(guard_state | jq -r '[(.lastActions // [])[] | select(.action == "failed" or .action == "error") | "\(.platform)\(if .project then " " + .project else "" end)"] | sort | join(", ")')"
   guard_state | jq --argjson t "$(date +%s)" --argjson a "$GUARD_ACTIONS" --argjson d "$([ -n "$dry" ] && echo true || echo false)" \
     '. + {lastRun:$t, lastDry:$d, lastActions:$a} | del(.firstRunPending)' | guard_save
   names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "off" or .action == "wouldOff") | "\(.platform) \(.project)"] | join(", ")')"
@@ -1541,8 +1546,8 @@ guard_main() {
   elif [ -n "$dry" ]; then [ -n "$names" ] || echo "guard (dry run): nothing to turn off."
   elif [ -n "$names" ]; then af_notify "Auto-deploy guard: turned auto-deploy off for $names."
   fi
-  names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "failed" or .action == "error") | "\(.platform)\(if .project then " " + .project else "" end)"] | join(", ")')"
-  [ -z "$names" ] || af_notify "Auto-deploy guard: could not check or switch $names. See: deploys guard status"
+  names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "failed" or .action == "error") | "\(.platform)\(if .project then " " + .project else "" end)"] | sort | join(", ")')"
+  [ -z "$names" ] || [ "$names" = "$before" ] || af_notify "Auto-deploy guard: could not check or switch $names. See: deploys guard status"
   return "$rc"
 }
 

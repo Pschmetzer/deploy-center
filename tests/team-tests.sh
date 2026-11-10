@@ -230,12 +230,16 @@ out="$(DEPLOYS_READONLY=1 bash "$tmp/alone/deploys" vercel deploy web 2>&1)"; rc
 expect "without lib/team.sh observer mode still refuses" "$rc:$(echo "$out" | grep -c 'Observer mode')" "1:1"
 # 524: this Mac uses a team file (team-repos, overrides.json or a cached shared file), and lib/ is
 # gone: a deploy stops instead of skipping the two-person rule; reading still works.
+# No real keychain or network: security finds nothing, curl answers nothing, no Render key.
+mkdir -p "$tmp/b524"; printf '#!/bin/bash\ncat >/dev/null; exit 44\n' > "$tmp/b524/security"; printf '#!/bin/bash\nexit 7\n' > "$tmp/b524/curl"
+chmod +x "$tmp/b524"/*; OLDPATH="$PATH"; export PATH="$tmp/b524:$PATH"; unset RENDER_API_KEY
 out="$(bash "$tmp/alone/deploys" vercel deploy web 2>&1)"; rc=$?
 expect "524: without lib/team.sh and a team file, a deploy is refused" "$rc:$(echo "$out" | grep -c 'lib/team.sh is missing')" "1:1"
 out="$(DEPLOYS_TEAM_LIB=/nonexistent bash ./deploys deploy-changed --yes 2>&1)"; rc=$?
 expect "524: deploy-changed --yes too" "$rc:$(echo "$out" | grep -c 'is missing, so its approvals')" "1:1"
 out="$(DEPLOYS_TEAM_LIB=/nonexistent bash ./deploys doctor 2>&1)"; rc=$?
 expect "524: doctor still runs" "$rc" "0"
+export PATH="$OLDPATH"
 
 # The fixtures follow the schema (when python3 with jsonschema is there; CI on macOS may lack it).
 if python3 -c 'import jsonschema' 2>/dev/null; then
