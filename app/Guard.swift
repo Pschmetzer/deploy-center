@@ -23,17 +23,7 @@ struct GuardStatus: Decodable {
             let c = try decoder.container(keyedBy: K.self)
             platform = try c.decode(String.self, forKey: .platform)
             project = try c.decode(String.self, forKey: .project)
-            if let n = try? c.decode(Double.self, forKey: .expiresAt) {
-                expiresAt = n > 1e12 ? n / 1000 : n
-            } else {
-                let s = try c.decode(String.self, forKey: .expiresAt)
-                let f = ISO8601DateFormatter(), g = ISO8601DateFormatter()
-                g.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                guard let d = f.date(from: s) ?? g.date(from: s) else {
-                    throw DecodingError.dataCorruptedError(forKey: .expiresAt, in: c, debugDescription: "not a date: \(s)")
-                }
-                expiresAt = d.timeIntervalSince1970
-            }
+            expiresAt = try AutoDeployAllowance.expiry(c, .expiresAt).timeIntervalSince1970
         }
         private enum K: String, CodingKey { case platform, project, expiresAt }
     }

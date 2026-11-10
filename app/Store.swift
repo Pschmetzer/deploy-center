@@ -10,7 +10,9 @@ import ServiceManagement
 
 @MainActor
 final class Store: ObservableObject {
-    @Published var items: [Platform: [Item]] = [.vercel: [], .render: []]
+    @Published var items: [Platform: [Item]] = [.vercel: [], .render: []] { didSet { waitingCache = [:] } }
+    /// `waiting(for:)` per set of platforms, until the rows or the hidden marks change: the window
+    /// asks for it several times per redraw (tabs, filter, footer, subtitle, badge).
     @Published var loading: Set<Platform> = []
     @Published var loadError: [Platform: String] = [:]
     @Published var doctor: Doctor?
@@ -577,6 +579,14 @@ final class Store: ObservableObject {
     var waiting: Waiting { waiting(for: Platform.allCases) }
     /// What waits on these platforms only (a tab), or on all of them.
     func waiting(for platforms: [Platform]) -> Waiting {
+        let cacheKey = platforms.map(\.cli).joined(separator: ",")
+        if let w = waitingCache[cacheKey] { return w }
+        let w = countWaiting(platforms)
+        waitingCache[cacheKey] = w
+        return w
+    }
+    private var waitingCache: [String: Waiting] = [:]
+    private func countWaiting(_ platforms: [Platform]) -> Waiting {
         var w = Waiting()
         let all = platforms.flatMap { items[$0] ?? [] }
         // Projects of one repo (frontend + backend) share their commits and PRs: count them once.
@@ -612,7 +622,7 @@ final class Store: ObservableObject {
 
     func selected(_ p: Platform) -> [Item] { (items[p] ?? []).filter { $0.selected } }
     func autoOn(_ p: Platform) -> [Item] { (items[p] ?? []).filter { $0.auto } }
-    func changedCount(_ p: Platform) -> Int { (items[p] ?? []).filter(isWaiting).count }
+    func changedCount(_ p: Platform) -> Int { waiting(for: [p]).projects }
 
     func toggle(_ p: Platform, _ id: String) {
         guard let i = items[p]?.firstIndex(where: { $0.id == id }), items[p]![i].deployable else { return }
@@ -749,7 +759,7 @@ final class Store: ObservableObject {
     // MARK: The person's own marks: pinned, hidden, a note. Kept in this Mac's preferences.
 
     @Published var pinned: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "pinned") ?? [])
-    @Published var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hidden") ?? [])
+    @Published var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hidden") ?? []) { didSet { waitingCache = [:] } }
     @Published var notes: [String: String] = (UserDefaults.standard.dictionary(forKey: "notes") as? [String: String]) ?? [:]
     static func key(_ i: Item) -> String { "\(i.platform.cli)/\(i.id)" }
     func isPinned(_ i: Item) -> Bool { pinned.contains(Self.key(i)) }

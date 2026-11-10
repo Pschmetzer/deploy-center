@@ -11,7 +11,8 @@ import ServiceManagement
 /// The choice is the app's own `AppleLanguages` (["en"] or ["de"]), which macOS reads at launch,
 /// so `Locale.preferredLanguages` and the system texts follow it. No key: the Mac's language.
 let isGerman = (Locale.preferredLanguages.first ?? "en").hasPrefix("de")
-func L(_ en: String, _ de: String) -> String { isGerman ? de : en }
+/// Only the text of the chosen language is built (each one may interpolate numbers and names).
+func L(_ en: @autoclosure () -> String, _ de: @autoclosure () -> String) -> String { isGerman ? de() : en() }
 
 enum AppLanguage: String, CaseIterable, Identifiable {
     case system, en, de
@@ -253,10 +254,21 @@ enum Tool {
             all.append(pid)
             next += children(of: pid)
         }
+        // The start time of each, so the SIGKILL two seconds later cannot reach a process that
+        // got the same id in between.
+        let started = all.map { startTime($0) }
         for pid in all { kill(pid, SIGTERM) }
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
-            for pid in all where kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+            for (pid, t) in zip(all, started) where kill(pid, 0) == 0 && t != nil && startTime(pid) == t { kill(pid, SIGKILL) }
         }
+    }
+
+    /// When a process started (seconds and microseconds), nil when it is gone.
+    static func startTime(_ pid: pid_t) -> UInt64? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
     }
 
     private static func children(of pid: pid_t) -> [pid_t] {

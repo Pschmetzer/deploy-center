@@ -689,5 +689,24 @@ MainActor.assumeIsolated {
     UserDefaults.standard.removeObject(forKey: "autofixDismissed")
 }
 
+// Second round: model names, one fire type, start times, cached counts.
+expect("model name known", ClaudeAI.modelName("claude-opus-5-5"), "Claude Opus 5.5")
+expect("model name new, with a date", ClaudeAI.modelName("claude-sonnet-6-0-20270101"), "Claude Sonnet 6.0")
+expect("model name foreign stays", ClaudeAI.modelName("gpt-x"), "gpt-x")
+expect("settings fire has error and id", fire(#"{"fires":[{"at":2,"project":"a","status":"failed","error":"HTTP 500"}]}"#).fires.map { "\($0.error ?? "") \($0.id)" }, ["HTTP 500 a-2.0"])
+expect("this process has a start time", Tool.startTime(getpid()) != nil, true)
+var rt = item(.render); rt.lastState = "update_failed"
+expect("runtime failure can be explained, not autofixed", "\(ClaudeAI.isFailed(rt)) \(rt.lastFailed)", "true false")
+MainActor.assumeIsolated {
+    let st = Store()
+    st.items[.vercel] = [item(changed: true)]
+    expect("cached count", st.changedCount(.vercel), 1)
+    st.items[.vercel]![0].changed = false
+    expect("cache follows a change of a row", st.changedCount(.vercel), 0)
+    st.items[.vercel]![0].changed = true; st.hidden = ["vercel/app"]
+    expect("cache follows hiding", st.changedCount(.vercel), 0)
+    st.hidden = []
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

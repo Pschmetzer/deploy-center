@@ -306,6 +306,13 @@ func date(_ secs: Double?) -> Date? { secs.flatMap { $0 > 0 ? Date(timeIntervalS
 // MARK: - Autofix and auto-deploy allowances, as the rows show them
 
 extension Item {
+    /// Any failure the platform reports for the newest deploy: a build failure (`lastFailed`) or one
+    /// at runtime (Render update_failed, pre_deploy_failed). For explaining, not for autofix.
+    var anyFailure: Bool {
+        if lastFailed { return true }
+        return ["error", "build_failed", "update_failed", "pre_deploy_failed"].contains((lastState ?? "").lowercased())
+    }
+
     /// The newest build failed: what autofix would hand to Claude. The same rule as the script's
     /// AUTOFIX_FAILED: Vercel's newest attempt is ERROR (production may still be READY), Render's
     /// newest deploy is build_failed. Runtime failures (update_failed, pre_deploy_failed) are not
@@ -321,7 +328,11 @@ extension Item {
 /// `deploys autofix status --json`. Older scripts send `pr` and no PR state; newer ones
 /// `prNumber`, `prState`, `prUrl`. A missing field is nil, a broken fire is skipped.
 struct AutofixReport: Decodable {
-    struct Fire: Decodable {
+    /// Also Settings > Autofix (`AutofixStatus.Fire`): one reader for one format.
+    struct Fire: Decodable, Identifiable {
+        var id: String { "\(project)-\(at)" }
+        /// Why a start failed or was skipped.
+        var error: String? = nil
         let at: Double
         let project: String
         let platform: String?
@@ -351,10 +362,10 @@ struct AutofixReport: Decodable {
             status = try c.decode(String.self, forKey: .status)
             platform = s(.platform); session = s(.session); prState = s(.prState)?.lowercased(); prUrl = s(.prUrl)
             prNumber = n(.prNumber) ?? n(.pr); mergedSha = s(.mergedSha); redeployedSha = s(.redeployedSha)
-            sha = s(.sha)
+            sha = s(.sha); error = s(.error)
             done = ((try? c.decodeIfPresent(Bool.self, forKey: .done)) ?? nil) ?? false
         }
-        private enum K: String, CodingKey { case at, project, platform, status, session, prNumber, pr, prState, prUrl, mergedSha, redeployedSha, sha, done }
+        private enum K: String, CodingKey { case at, project, platform, status, session, prNumber, pr, prState, prUrl, mergedSha, redeployedSha, sha, error, done }
     }
     let routine: String?
     let token: Bool
@@ -446,19 +457,22 @@ struct AutoDeployAllowance: Decodable, Equatable {
         let c = try decoder.container(keyedBy: K.self)
         platform = try c.decode(String.self, forKey: .platform).lowercased()
         project = try c.decode(String.self, forKey: .project)
-        if let n = try? c.decode(Double.self, forKey: .expiresAt) {
-            expiresAt = Date(timeIntervalSince1970: n > 1e12 ? n / 1000 : n)
-        } else {
-            let s = try c.decode(String.self, forKey: .expiresAt)
-            let f = ISO8601DateFormatter(), g = ISO8601DateFormatter()
-            g.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            guard let d = f.date(from: s) ?? g.date(from: s) else {
-                throw DecodingError.dataCorruptedError(forKey: .expiresAt, in: c, debugDescription: "not a date: \(s)")
-            }
-            expiresAt = d
-        }
+        expiresAt = try Self.expiry(c, .expiresAt)
     }
     private enum K: String, CodingKey { case platform, project, expiresAt }
+
+    /// Epoch seconds, milliseconds or an ISO 8601 date: whichever the script sends. Shared with
+    /// Settings > Guard, so both read the same.
+    static func expiry<Key: CodingKey>(_ c: KeyedDecodingContainer<Key>, _ key: Key) throws -> Date {
+        if let n = try? c.decode(Double.self, forKey: key) { return Date(timeIntervalSince1970: n > 1e12 ? n / 1000 : n) }
+        let s = try c.decode(String.self, forKey: key)
+        let f = ISO8601DateFormatter(), g = ISO8601DateFormatter()
+        g.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let d = f.date(from: s) ?? g.date(from: s) else {
+            throw DecodingError.dataCorruptedError(forKey: key, in: c, debugDescription: "not a date: \(s)")
+        }
+        return d
+    }
 
     /// A Render allowance may name the service by id or by name.
     func covers(_ i: Item) -> Bool { platform == i.platform.cli && (project == i.name || project == i.id) }

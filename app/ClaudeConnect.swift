@@ -380,6 +380,11 @@ final class ClaudeLink: ObservableObject {
         let running = { NSRunningApplication.runningApplications(withBundleIdentifier: ClaudeEnv.desktopBundleId) }
         for r in running() { r.terminate() }
         for _ in 0..<40 where !running().isEmpty { try? await Task.sleep(nanoseconds: 250_000_000) }
+        // Still running (a quit dialog left open, say): the hint stays, nothing is opened twice.
+        guard running().isEmpty else {
+            say(L("Claude Desktop did not quit. Quit it yourself, then open it again.", "Claude Desktop wurde nicht beendet. Selbst beenden und wieder öffnen."), failed: true)
+            return
+        }
         let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = true
         _ = try? await NSWorkspace.shared.openApplication(at: app, configuration: cfg)
         restartHint = false
@@ -392,10 +397,15 @@ final class ClaudeLink: ObservableObject {
         guard let node, let server else { say(missing ?? "", failed: true); return }
         busy = true; defer { busy = false }
         let dirs = [(node as NSString).deletingLastPathComponent, (cli as NSString).deletingLastPathComponent]
-        if code == .connected { _ = await ClaudeRun.run(cli, ClaudeConfig.codeRemoveArgs(), pathDirs: dirs) }
+        let had = code == .connected, hadAllow = codeAllows
+        if had { _ = await ClaudeRun.run(cli, ClaudeConfig.codeRemoveArgs(), pathDirs: dirs) }
         let r = await ClaudeRun.run(cli, ClaudeConfig.codeAddArgs(node: node, server: server, deploys: Tool.path, allowDeploy: allowDeploy), pathDirs: dirs)
         if r.ok { say(L("Connected. New Claude Code sessions see Deploy Center.", "Verbunden. Neue Claude-Code-Sitzungen sehen Deploy Center.")) }
-        else { say(Tool.shorten(r.out.trimmingCharacters(in: .whitespacesAndNewlines)), failed: true) }
+        else {
+            // Removed, then not added: put the connection back as it was instead of leaving none.
+            if had { _ = await ClaudeRun.run(cli, ClaudeConfig.codeAddArgs(node: node, server: server, deploys: Tool.path, allowDeploy: hadAllow), pathDirs: dirs) }
+            say(Tool.shorten(r.out.trimmingCharacters(in: .whitespacesAndNewlines)), failed: true)
+        }
         await refresh()
     }
 
@@ -592,9 +602,17 @@ enum ClaudeNudge {
         if UserDefaults.standard.bool(forKey: wantedKey) != wanted { UserDefaults.standard.set(wanted, forKey: wantedKey) }
     }
 
-    /// Once at launch, off the main thread: Claude found but not connected?
+    /// Once per run, off the main thread: Claude found but not connected? The window calls this
+    /// each time it is built; a login shell (up to 3 s) once is enough.
+    private static let ran = OnceFlag()
+    final class OnceFlag: @unchecked Sendable {
+        private let lock = NSLock(); private var done = false
+        /// True the first time only.
+        func first() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
+    }
     static func refresh() async {
         if UserDefaults.standard.bool(forKey: dismissedKey) { return }
+        guard ran.first() else { return }
         let desktopData = await Task.detached { ClaudeFiles.read(ClaudeEnv.desktopConfig) }.value
         let desktop = ClaudeEnv.desktopApp != nil && (try? ClaudeConfig.parse(desktopData)) != nil && ClaudeConfig.entry(desktopData) == nil
         let codeData = await Task.detached { ClaudeFiles.read(ClaudeEnv.codeConfig) }.value
