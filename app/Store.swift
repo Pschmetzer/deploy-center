@@ -319,6 +319,16 @@ final class Store: ObservableObject {
         NotifyRouter.shared.install()
         NotifyRouter.shared.onCancel = { [weak self] id in self?.cancelRollback(String(id.dropFirst(Store.rollbackPrefix.count))) }
         // After sleep the lists can be hours old, and the daily reminder may be overdue.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.screensAsleep = true }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.screensAsleep else { return }
+                self.screensAsleep = false
+                await self.autoRefresh(); self.remindIfDue()
+            }
+        }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 5_000_000_000)   // the network needs a moment
@@ -339,7 +349,9 @@ final class Store: ObservableObject {
             var last = Date()
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
-                guard Self.refreshDue(since: last, minutes: refreshMinutes) else { continue }
+                // Screens asleep: nobody looks; one round when they wake (below). Low Power Mode: half as often.
+                guard !screensAsleep,
+                      Self.refreshDue(since: last, minutes: refreshMinutes * (ProcessInfo.processInfo.isLowPowerModeEnabled ? 2 : 1)) else { continue }
                 last = Date()
                 await autoRefresh()
                 remindIfDue()
@@ -351,6 +363,7 @@ final class Store: ObservableObject {
     }
 
     private var knownParallel = 0
+    private var screensAsleep = false
 
     /// Minutes between automatic reloads (Settings).
     var refreshMinutes: Int {
@@ -507,7 +520,8 @@ final class Store: ObservableObject {
         _ = await (a, b)
         await loadAgentStatus()
         // Costs and strays cost many calls: hourly. The status feeds are cheap: every time.
-        if Date().timeIntervalSince(lastExtras) > 3600 { await loadExtras() } else { await checkProviders() }
+        // In Low Power Mode costs and strays wait (many calls); the status feeds stay.
+        if Date().timeIntervalSince(lastExtras) > 3600, !ProcessInfo.processInfo.isLowPowerModeEnabled { await loadExtras() } else { await checkProviders() }
     }
 
     // MARK: What is waiting on GitHub, over both platforms
