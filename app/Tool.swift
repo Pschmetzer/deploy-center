@@ -67,40 +67,87 @@ enum Tool {
                     try? inPipe.fileHandleForWriting.close()
                 }
                 do { try p.run() } catch { cont.resume(throwing: error); return }
-                var errData = Data()
-                let errDone = DispatchGroup()
-                errDone.enter()
-                DispatchQueue.global().async { errData = err.fileHandleForReading.readDataToEndOfFile(); errDone.leave() }
-                var timedOut = false
-                let killer = DispatchWorkItem { if p.isRunning { timedOut = true; p.terminate() } }
+                // Pipes, the timeout and the answer meet here from several queues; the lock keeps
+                // them apart, and the answer is given exactly once.
+                let lock = NSLock()
+                var outData = Data(), errData = Data(), timedOut = false, answered = false
+                func answer(_ r: Result<Data, Error>) {
+                    lock.lock(); defer { lock.unlock() }
+                    guard !answered else { return }
+                    answered = true
+                    if case .failure(let e as ToolError) = r, e.timedOut {
+                        Log.write("deploys \(args.joined(separator: " ")): no answer after \(Int(timeout)) s, ended")
+                    }
+                    cont.resume(with: r)
+                }
+                func timeoutError() -> ToolError {
+                    ToolError(message: L("No answer after \(Int(timeout)) seconds – try again.",
+                                                "Keine Antwort nach \(Int(timeout)) Sekunden – nochmal versuchen."), timedOut: true)
+                }
+                let read = DispatchGroup()
+                read.enter(); read.enter()
+                DispatchQueue.global().async { let d = out.fileHandleForReading.readDataToEndOfFile(); lock.lock(); outData = d; lock.unlock(); read.leave() }
+                DispatchQueue.global().async { let d = err.fileHandleForReading.readDataToEndOfFile(); lock.lock(); errData = d; lock.unlock(); read.leave() }
+                // Ending bash alone is not enough: `vercel`, node or curl under it keep the pipes open.
+                // Whatever still holds them three seconds later, the caller gets its answer.
+                let killer = DispatchWorkItem {
+                    guard p.isRunning else { return }
+                    lock.lock(); timedOut = true; lock.unlock()
+                    killTree(p.processIdentifier)
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 3) { answer(.failure(timeoutError())) }
+                }
                 DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
-                let data = out.fileHandleForReading.readDataToEndOfFile()
-                errDone.wait()
+                read.wait()
                 p.waitUntilExit()
                 killer.cancel()
-                if timedOut {
-                    cont.resume(throwing: ToolError(message: L("No answer after \(Int(timeout)) seconds – try again.",
-                                                              "Keine Antwort nach \(Int(timeout)) Sekunden – nochmal versuchen.")))
+                lock.lock(); let late = timedOut, data = outData, errText = errData; lock.unlock()
+                if late {
+                    answer(.failure(timeoutError()))
                 } else if p.terminationStatus == 0 {
-                    cont.resume(returning: data)
+                    answer(.success(data))
                 } else {
-                    let msg = String(data: errData, encoding: .utf8)?
+                    let msg = String(data: errText, encoding: .utf8)?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     let text = msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg
                     Log.write("deploys \(args.joined(separator: " ")): \(text)")
-                    cont.resume(throwing: ToolError(message: text))
+                    answer(.failure(ToolError(message: text)))
                 }
             }
         }
     }
 
-    static func json<T: Decodable>(_ args: [String], as type: T.Type) async throws -> T {
-        try JSONDecoder().decode(T.self, from: try await run(args))
+    /// A process and everything it started: the children first collected, then all asked to end,
+    /// and after two seconds whatever is left is killed.
+    static func killTree(_ root: pid_t) {
+        var all: [pid_t] = [], next = [root]
+        while let pid = next.popLast(), all.count < 256 {
+            all.append(pid)
+            next += children(of: pid)
+        }
+        for pid in all { kill(pid, SIGTERM) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+            for pid in all where kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+        }
+    }
+
+    private static func children(of pid: pid_t) -> [pid_t] {
+        var buf = [pid_t](repeating: 0, count: 256)
+        let bytes = buf.withUnsafeMutableBytes {
+            proc_listpids(UInt32(PROC_PPID_ONLY), UInt32(pid), $0.baseAddress, Int32($0.count))
+        }
+        guard bytes > 0 else { return [] }
+        return buf.prefix(Int(bytes) / MemoryLayout<pid_t>.size).filter { $0 > 0 }
+    }
+
+    static func json<T: Decodable>(_ args: [String], as type: T.Type, timeout: Double = 120) async throws -> T {
+        try JSONDecoder().decode(T.self, from: try await run(args, timeout: timeout))
     }
 }
 
 struct ToolError: LocalizedError {
     let message: String
+    /// The command was ended after its time ran out: it may have done its work anyway.
+    var timedOut = false
     var errorDescription: String? { message }
 }
 
