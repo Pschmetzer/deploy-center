@@ -356,6 +356,8 @@ fi
 # --- VS Code extension: its own unit tests (node), when its dev dependencies are installed ---
 if command -v npm >/dev/null && [ -d vscode/node_modules ]; then
   (cd vscode && npm test --silent >"$tmp/vscode.log" 2>&1) && ok "vscode: unit tests" || { fail "vscode: unit tests" "see below"; cat "$tmp/vscode.log"; }
+  # A timed-out CLI is stopped with its process group: the stand-in's sleep does not outlive the tests.
+  pgrep -f "sleep 20(\.3)?$" >/dev/null && fail "vscode: no sleep left behind" "$(pgrep -fl 'sleep 20')" || ok "vscode: no sleep left behind"
 else
   skip "vscode: run npm ci in integrations/vscode first"
 fi
@@ -438,7 +440,7 @@ expect "claude-code hook: never deploys" "$(cat "$tmp/deploy.log" 2>/dev/null | 
 # --- the MCP server (needs node and `npm ci` in mcp/) ---
 if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
   DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
-  # 20.7: a length no other test sleeps (the VS Code tests leave their own "sleep 20" behind).
+  # 20.7: a length no other test sleeps, so only this test's child can match.
   pgrep -f "sleep 20\.7" >/dev/null && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
 else
   skip "mcp: needs node and (cd integrations/mcp && npm ci)"

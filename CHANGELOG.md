@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- pre-push hook: reads `deploys list --json`, so it warns for every platform that is on, and for GitLab remotes (`gitlab.com/group/sub/app`) too. An older CLI without `list` still gets the Vercel and Render lists.
+- Status page: `platform/name` works for every platform, not only `vercel/` and `render/`.
+- Badges: a name on two platforms gets one badge per platform (`vercel-web.svg`, `netlify-web.svg`); every other name keeps `<name>.svg`.
+- Webhooks (notify, digest, status page): `http://` only to localhost, 127.0.0.1 or [::1]; anything else needs `https://`.
+- Digest: GitLab merge requests get their title, author and labels through `glab`.
+- VS Code: a timeout ends the CLI with everything it started; fuller secret masking; "Show log" opens a read-only document; a settings change during a refresh is not lost; GitLab repos match with host and subgroups.
+- Raycast: every platform, `platform:name` for twins, "Deploy All" as one `deploy-changed` run (only when it matches the confirmed list) and off after a run, a timeout ends the CLI's children, and a "401" in a commit is no login error. Publishing uses the locked `ray`.
+- `scripts/check-public.sh`: also tokens (GitHub, Anthropic, GitLab, AWS, Slack), private key blocks, email addresses, and words from `~/.config/deploys/private-words`; `--stdin` checks commit messages, which CI now does for every pull request.
+- Website workflow and the example workflows pin actions by commit SHA and check out with `persist-credentials: false`. The Docker image pins its node base by digest and installs `gh` from GitHub's apt repo.
+- docs/CLAUDE-CODE.md: the suggested deny rules cover every command that deploys, rolls back or turns automation on.
+
 - `./build.sh --install` builds the widgets too when a signing identity is set, so a local install no longer removes the widgets from ~/Applications.
 - Autofix: "Claude is fixing it" no longer sticks. The app runs `deploys autofix sync` (new: records merged, closed or open fix PRs, never fires) every few minutes while a hand-over is open, so a merged fix shows "Fix merged – deploy now" even when the 10-minute job is not running. `autofix --only` syncs its project first.
 - Autofix: 90 minutes after a hand-over with no PR the row says "No fix PR from Claude – see session" (a cause outside the code, say) and links the session, instead of "fixing" for good.
