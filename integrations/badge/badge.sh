@@ -47,27 +47,36 @@ lines="$(echo "$list" | jq -r '
      else "up to date" end) as $what
   | [.name, "\($when) · \($what)",
      (if $build == "failed" then "#e05d44" elif $build == "building" then "#007ec6"
-      elif (.liveAt // .lastAt // 0) == 0 then "#9f9f9f" elif .changed then "#dfb317" else "#4c1" end)]
+      elif (.liveAt // .lastAt // 0) == 0 then "#9f9f9f" elif .changed then "#dfb317" else "#4c1" end),
+     (.platform // "")]
   | @tsv')"
 
 # XML-safe text; a rough width per character (Verdana 11 averages about 6.5 px).
 esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
-width() { local n; n="$(printf '%s' "$1" | LC_ALL=en_US.UTF-8 wc -m | tr -d ' ')"; echo $(( n * 65 / 10 + 12 )); }
+# Characters, not bytes, whatever the locale (Alpine and CI images often have no UTF-8 one).
+width() { local n; n="$(jq -rn --arg s "$1" '$s | length')"; echo $(( n * 65 / 10 + 12 )); }
 
-n=0
-while IFS=$'\t' read -r name text colour; do
+n=0 written=$'\n'
+while IFS=$'\t' read -r name text colour platform; do
   [ -n "$name" ] || continue
   left="deployed"; lw="$(width "$left")"; rw="$(width "$text")"; w=$((lw + rw))
-  file="$out/$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '_').svg"
+  stem="$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '_')"
+  # Two projects that come out as the same file (a/b and a_b, or one name on two platforms):
+  # the second one gets its platform in front, instead of overwriting the first.
+  case "$written" in *$'\n'"$stem"$'\n'*) stem="$(printf '%s' "${platform:-other}" | tr -c 'A-Za-z0-9._-' '_')_$stem" ;; esac
+  written="$written$stem"$'\n'
+  file="$out/$stem.svg"
+  # IDs per badge: several badges inlined in one HTML page must not share a gradient or clip.
+  id="$(printf '%s' "$stem" | tr -c 'A-Za-z0-9_-' '_')"
   cat > "$file" <<SVG
 <svg xmlns="http://www.w3.org/2000/svg" width="$w" height="20" role="img" aria-label="$(esc "$name"): $left $(esc "$text")">
   <title>$(esc "$name"): $left $(esc "$text")</title>
-  <linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
-  <clipPath id="r"><rect width="$w" height="20" rx="3" fill="#fff"/></clipPath>
-  <g clip-path="url(#r)">
+  <linearGradient id="s-$id" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
+  <clipPath id="r-$id"><rect width="$w" height="20" rx="3" fill="#fff"/></clipPath>
+  <g clip-path="url(#r-$id)">
     <rect width="$lw" height="20" fill="#555"/>
     <rect x="$lw" width="$rw" height="20" fill="$colour"/>
-    <rect width="$w" height="20" fill="url(#s)"/>
+    <rect width="$w" height="20" fill="url(#s-$id)"/>
   </g>
   <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
     <text x="$((lw / 2))" y="14">$left</text>

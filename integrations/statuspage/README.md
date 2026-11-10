@@ -25,7 +25,7 @@ For each project in the config:
 - **Coming next**: what is merged but not live yet, from `deploys notes <project>`. Read only for
   projects with changes. Authors are left out unless `showAuthors` is on.
 - **Site check** (optional): with a `url`, the address is fetched once while the page is made.
-  2xx and 3xx count as up. It is the result at that moment, not uptime over time.
+  2xx and 3xx count as up, and 401/403 too (a login wall answers). At most 5 redirects, http(s) only. It is the result at that moment, not uptime over time.
 
 Below that, **Recent deploys**: the last 30 that went live or failed, newest first, from the
 app's journal. Skipped and cancelled deploys are left out. The journal's error text is never
@@ -54,7 +54,7 @@ published.
 | `projects` | none | **The allowlist.** Only these are shown, in this order. A name, `platform/name`, or an object with `name`, `platform`, `label` (shown instead of the name) and `url` (the site check). Without it the script stops and writes nothing. |
 | `title` | `Deploys` | Page and feed title. |
 | `description` | empty | A line under the title. |
-| `baseUrl` | empty | Where the page will live. Used for the feed's links and ids. |
+| `baseUrl` | empty | Where the page will live. Used for the feed's links and ids. Must be an `http(s)://` address. |
 | `hideMessages` | `false` | `true` shows "Updated" instead of every commit message, in the page, the feed and `status.json`. The example config sets it to `true`: commit messages and the titles of waiting commits ("Coming next") are often not meant for the public. Set `false` only for a page you would show anyone. |
 | `showAuthors` | `false` | Keep the author names that `deploys notes` adds. |
 | `timeline` | `30` | How many deploys the timeline keeps. |

@@ -34,7 +34,8 @@ cfg="$(jq -c '
   if type != "object" then error("the config must be a JSON object") else . end
   | {title: (.title // "Deploys"),
      description: (.description // ""),
-     baseUrl: (.baseUrl // ""),
+     # Only an http(s) address without spaces or quotes: it goes into the links and ids of the feed.
+     baseUrl: ((.baseUrl // "") | if . == "" or test("^https?://[^\\s\"<>]+$") then . else error("baseUrl must be an http(s) address") end),
      hideMessages: (.hideMessages // false),
      showAuthors: (.showAuthors // false),
      timeline: (.timeline // 30),
@@ -73,9 +74,11 @@ notes_of() {
   md="$("$DEPLOYS" notes "$1" 2>/dev/null </dev/null)" || return 0
   printf '%s\n' "$md" | awk '/^Dependency updates:/ {dep=1; next} /^- / {sub(/^- /, ""); print (dep ? "dep\t" : "msg\t") $0}'
 }
-# One site check: HTTP code and seconds. 2xx and 3xx count as up.
+# One site check: HTTP code and seconds. 2xx and 3xx count as up, and 401/403 too (a login
+# wall answers, so the site is up). At most 5 redirects, http and https only.
 check_of() {
-  curl -sS -o /dev/null -L --max-time 10 -w '%{http_code} %{time_total}' -- "$1" 2>/dev/null </dev/null || echo "000 0"
+  curl -sS -o /dev/null -L --max-redirs 5 --proto '=http,https' --proto-redir '=http,https' --max-time 10 \
+    -w '%{http_code} %{time_total}' -- "$1" 2>/dev/null </dev/null || echo "000 0"
 }
 
 extra='{}'
@@ -87,7 +90,7 @@ while IFS=$'\t' read -r i name changed url; do
   if [ "$check" = 1 ] && [ -n "$url" ]; then
     read -r code secs <<<"$(check_of "$url")"
     c="$(jq -n -c --arg code "$code" --arg s "$secs" '($code | tonumber? // 0) as $c
-      | {up: ($c >= 200 and $c < 400), code: $c, ms: (($s | tonumber? // 0) * 1000 | round)}')"
+      | {up: (($c >= 200 and $c < 400) or $c == 401 or $c == 403), code: $c, ms: (($s | tonumber? // 0) * 1000 | round)}')"
   fi
   extra="$(jq -c --arg i "$i" --argjson n "$n" --argjson c "$c" '. + {($i): {notes: $n, check: $c}}' <<<"$extra")"
 done < <(jq -r 'to_entries[] | [.key, .value.name, (.value.changed // false), (.value.url // "")] | @tsv' <<<"$picked")

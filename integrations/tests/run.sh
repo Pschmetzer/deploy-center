@@ -138,6 +138,11 @@ contains "badge: a running build is blue, not up to date" "$(cat "$tmp/bb/busy.s
 contains "badge: up to date is green" "$(cat "$tmp/b/site.svg")" 'fill="#4c1"'
 echo '[{"name":"a<b>&\"c","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/e" - >/dev/null
 contains "badge: names are XML-escaped" "$(cat "$tmp/e/a_b___c.svg")" 'a&lt;b&gt;&amp;&quot;c: deployed never'
+echo '[{"name":"web","platform":"vercel","lastAt":1},{"name":"web","platform":"render","lastAt":1},{"name":"a/b","lastAt":1},{"name":"a_b","lastAt":1}]' | badge/badge.sh "$tmp/c" - >/dev/null
+expect "badge: colliding names do not overwrite each other" "$(cd "$tmp/c" && echo *.svg)" "a_b.svg other_a_b.svg render_web.svg web.svg"
+contains "badge: ids are per badge" "$(cat "$tmp/c/web.svg")" 'clip-path="url(#r-web)"'
+expect "badge: the width counts characters, not bytes" "$(echo '[{"name":"x","changed":false,"lastAt":1}]' | LC_ALL=C badge/badge.sh "$tmp/w" - >/dev/null; sed -n 's/^<svg[^>]* width="\([0-9]*\)".*/\1/p' "$tmp/w/x.svg")" \
+  "$(echo '[{"name":"x","changed":false,"lastAt":1}]' | badge/badge.sh "$tmp/w2" - >/dev/null; sed -n 's/^<svg[^>]* width="\([0-9]*\)".*/\1/p' "$tmp/w2/x.svg")"
 if command -v xmllint >/dev/null; then
   xmllint --noout "$tmp"/b/*.svg "$tmp"/e/*.svg && ok "badges are well-formed XML" || fail "badges are well-formed XML" xmllint
 fi
@@ -255,6 +260,8 @@ case "$all" in *login*|*billing*|*"Faster search"*|*"rate limits"*|*"Bump jq"*) 
 expect "statuspage: --no-check checks nothing" "$(jq -c '.projects[1].check' <<<"$st")" null
 echo '{"title":"x","projects":["app-web"],"showAuthors":true}' > "$tmp/sp-auth.json"
 expect "statuspage: authors only when asked" "$(sp --config "$tmp/sp-auth.json" --out "$tmp/spa" --no-check >/dev/null; jq -r '.projects[0].next[0]' "$tmp/spa/status.json")" "New billing page (#12) – Ana"
+echo '{"title":"x","projects":["app-web"],"baseUrl":"javascript:alert(1)"}' > "$tmp/sp-bad.json"
+sp --config "$tmp/sp-bad.json" --out "$tmp/spb" --no-check >/dev/null 2>&1; expect "statuspage: a baseUrl that is not http(s) is refused" "$?" 1
 echo '{"title":"x"}' > "$tmp/sp-empty.json"
 sp --config "$tmp/sp-empty.json" --out "$tmp/spe" >/dev/null 2>&1; expect "statuspage: no allowlist, no page" "$?" 1
 [ -e "$tmp/spe" ] && fail "statuspage: nothing written without an allowlist" "written" || ok "statuspage: nothing written without an allowlist"
