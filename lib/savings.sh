@@ -57,7 +57,7 @@ sv_builds() {  # sv_builds <platform> <name> <id>
   if [ "$1" = vercel ]; then
     vercel_call "/v6/deployments?app=$2&limit=100" 2>/dev/null | jq -c '[.deployments[]?] |
       {minutes:(map(select(.state == "READY" and .buildingAt and .ready) | (.ready - .buildingAt) / 60000) | .[0:20]),
-       built:map({at:((.buildingAt // .created) / 1000 | floor), sha:(.meta.githubCommitSha // null)})}' 2>/dev/null \
+       built:map({at:((.buildingAt // .created) / 1000 | floor), sha:(.meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // null)})}' 2>/dev/null \
       || echo '{"error":"Vercel deployments could not be read"}'
   else
     render_call GET "/services/$3/deploys?limit=100" 2>/dev/null | jq -c 'def t: sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;

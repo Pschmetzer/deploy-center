@@ -76,3 +76,45 @@ expect "guard: a dropped job is loaded again" "$(grep -c 'launchctl bootstrap' "
 # 277: without `column`, tables still come out (awk), aligned.
 mkdir -p "$tmp/nocol"; ln -sf "$(command -v awk)" "$tmp/nocol/awk"
 expect "table: works without column" "$(printf 'a\tbb\tc\nxxx\ty\tz\n' | PATH="$tmp/nocol" table)" $'a    bb  c\nxxx  y   z'
+
+# 272: "p:name" in ignore leaves out only that platform's project.
+fresh; run "$O" "$E" changed --json >/dev/null
+run "$O" "$E" ignore vercel:web >/dev/null
+expect "ignore vercel:web: web is left out, api stays" "$(run "$O" "$E" changed --json; jq -c 'map(.name)' "$O")" $'0\n["api"]'
+run "$O" "$E" ignore render:web >/dev/null; run "$O" "$E" ignore vercel:web --undo >/dev/null
+expect "ignore render:web does not hide vercel web" "$(run "$O" "$E" changed --json; jq -c 'map(.name) | sort' "$O")" $'0\n["api","web"]'
+run "$O" "$E" ignore render:web --undo >/dev/null
+
+# 291: a name that is a group and a project is refused; group:<name> is the group.
+printf '%s\n' '# shellcheck shell=bash' 'team_gate() { [ -z "${5:-}" ] || echo "$5"; }' \
+  'team_group() { case "$1" in web|shop) echo web ;; esac; }' 'team_observer_from() { :; }' \
+  'team_repos_json() { return 1; }' 'team_ignored() { return 1; }' > "$tmp/team-stub.sh"
+fresh
+expect "deploy: a group and a project of one name is refused" \
+  "$(DEPLOYS_TEAM_LIB="$tmp/team-stub.sh" run "$O" "$E" deploy web; started; grep -c 'deploy group:web' "$E")" $'1\n0\n1'
+expect "deploy group:shop starts the group" "$(DEPLOYS_TEAM_LIB="$tmp/team-stub.sh" run "$O" "$E" deploy group:shop; started; grep -c '^Group shop: web' "$O")" $'0\n1\n1'
+expect "deploy group:nope is an error" "$(DEPLOYS_TEAM_LIB="$tmp/team-stub.sh" run "$O" "$E" deploy group:nope; grep -c 'No group named' "$E")" $'1\n1'
+
+# 267: an unknown flag of deploy-json is refused, nothing starts.
+fresh
+expect "vercel deploy-json --sah: refused" "$(run "$O" "$E" vercel deploy-json web --sah abc; started)" $'1\n0'
+expect "render deploy-json --sah: refused" "$(run "$O" "$E" render deploy-json api --sah abc; started)" $'1\n0'
+# 266: vercel deploy --wait gives up like watch (exit 3) instead of asking for ever.
+fresh
+expect "vercel deploy --wait: gives up after five misses" "$(run "$O" "$E" vercel deploy web --wait; grep -c 'try 5 of 5' "$E")" $'3\n1'
+
+# 263: a Vercel deploy from GitLab or Bitbucket has its commit as lastSha too.
+expect "vercel json: gitlabCommitSha is the live commit" \
+  "$( (vercel_projects() { echo '[{"name":"gl","link":null,"targets":{"production":{"createdAt":1000,"readyState":"READY","meta":{"gitlabCommitSha":"abc1","gitlabCommitMessage":"fix"}}}}]'; }
+       vercel_call() { echo '{"deployments":[{"name":"gl","state":"READY","created":1,"uid":"d1","meta":{"bitbucketCommitSha":"abc1"}}]}'; }
+       repos_json() { echo '{}'; }; vercel_json | jq -c '.[0] | [.lastSha, .lastMsg, .latestSha]') )" '["abc1","fix","abc1"]'
+
+# 264: a link deploys cannot write down (Bitbucket) is not removed.
+echo '{}' > "$tmp/repos264.json"; : > "$CALLS"
+out="$( (REPOS="$tmp/repos264.json"; vercel_call() { echo '{"link":{"type":"bitbucket","productionBranch":"main"}}'; }
+         vercel() { echo "vercel $*" >> "$CALLS"; }; vercel_off_one bb) 2>&1)"; rc=$?
+expect "vercel off: a Bitbucket link stays when its repo is not known" "$rc:$(grep -c DELETE "$CALLS"):$(echo "$out" | grep -c 'stays connected')" "1:0:1"
+# 265: a GitLab mapping says where to connect it again, not "repo is not known".
+echo '{"gl":{"type":"gitlab","repo":"gitlab.com/g/app","projectId":7,"ref":"main"}}' > "$tmp/repos265.json"
+expect "vercel on: a GitLab mapping points to the dashboard" \
+  "$( (REPOS="$tmp/repos265.json"; vercel_on_one gl) 2>&1 | grep -c 'Vercel dashboard')" "1"

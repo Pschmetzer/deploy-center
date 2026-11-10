@@ -534,7 +534,7 @@ changed_json() {
   # With team mode: what the shared files leave out too, unless this Mac counts it again.
   if team_on; then ignl="$(team_ignored 2>/dev/null)" || ignl=""; fi
   [ -n "$ignl" ] || ignl="$(jq -c . "$ign" 2>/dev/null || echo '[]')"
-  all="$(echo "$all" | jq --argjson ign "$ignl" 'map(select((.name as $n | $ign | index($n)) | not))')"
+  all="$(echo "$all" | jq --argjson ign "$ignl" 'map(select(((.name as $n | $ign | index($n)) or ("\(.platform):\(.name)" as $q | $ign | index($q))) | not))')"
   unknown="$(echo "$all" | jq -r "$UNKNOWN_RULE"' | .[] | "\(.platform) \(.name): \(.fetchError // "branch head unknown (is gh installed and logged in?)")"')"
   if [ -n "$unknown" ]; then
     rc=1; echo "Error: state unknown, left out:" >&2; echo "$unknown" | sed 's/^/  /' >&2
@@ -1467,7 +1467,15 @@ case "${1:-} ${2:-}" in
       force="$(printf '%s' "$force" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
       case "$force" in ""|-*) die "--force needs a reason, in quotes: deploys deploy $name --force \"hotfix for the outage\"";; esac
     fi
-    members=""; team_on && members="$(team_group "$name" 2>/dev/null || true)"
+    # "group:<name>" is always the group. A bare name that is a group and a project as well is
+    # refused: the group used to win, and the project could not be deployed alone any more.
+    gname="$name"; isgroup=""; case "$name" in group:*) gname="${name#group:}"; isgroup=1 ;; esac
+    members=""; team_on && members="$(team_group "$gname" 2>/dev/null || true)"
+    [ -z "$isgroup" ] || [ -n "$members" ] || die "No group named \"$gname\" in the shared config"
+    if [ -n "$members" ] && [ -z "$isgroup" ] && ( lookup "$name" ) >/dev/null 2>&1; then
+      die "\"$name\" is a group and a project. Say which: deploys deploy group:$name, or deploys deploy $(lookup "$name" | cut -f1):$name"
+    fi
+    name="$gname"
     if [ -n "$members" ]; then
       [ -z "$sha" ] || die "--sha is for one project, and $name is a group: $(echo "$members" | paste -sd ' ' -)"
       echo "Group $name: $(echo "$members" | paste -sd ' ' -)"
@@ -1671,8 +1679,11 @@ case "${1:-} ${2:-}" in
     f="$CONFIG_DIR/ignored.json"; [ -f "$f" ] || echo '[]' > "$f"
     if [ "${2:-}" = "--list" ] || [ -z "${2:-}" ]; then jq -r '.[]' "$f"; exit 0; fi
     p="$2"; tmp="$(mktemp)"
+    # "p:name" leaves out only that platform's project (vercel:api, not render:api); a bare name
+    # leaves out every project of that name.
+    bare="$p"; case "$p" in *:*) if is_provider "${p%%:*}"; then bare="${p#*:}"; fi ;; esac
     # A typo would be ignored silently for ever: a name never seen in a list read is refused.
-    if [ "${3:-}" != "--undo" ] && [ -s "$CONFIG_DIR/names" ] && ! grep -qxF "$p" "$CONFIG_DIR/names"; then
+    if [ "${3:-}" != "--undo" ] && [ -s "$CONFIG_DIR/names" ] && ! grep -qxF "$bare" "$CONFIG_DIR/names"; then
       rm -f "$tmp"; die "No project or service named \"$p\" was seen yet (deploys changed reads the names)"
     fi
     if [ "${3:-}" = "--undo" ]; then jq --arg p "$p" 'map(select(. != $p))' "$f" > "$tmp"; echo "$p is counted again"

@@ -27,6 +27,8 @@
 - CLI: `verify`, `risk` and `ai` take `p:name`. **Changed:** `verify` exits 3 when nothing was checked (unknown project, not live, no address, a wrong option), so 1 always means "rolled back"; with `--path`, a 4xx fails the check too, and redirects are followed.
 - CLI: `guard schedule`/`guard status` say "on" only when launchd has the job loaded, and load a dropped one again. Two projects of one name on one platform name their ids instead of suggesting `p:name` again. The name cache forgets deleted projects. The journal writes a provider's label ("Netlify"), not its id.
 - CLI: keys piped to `set-key`/`ai set-key` lose a trailing CR and surrounding spaces; spaces, quotes or a backslash inside are refused. `logs <p> 0` is refused (it printed the whole log), `history` takes 1 to 100, `open` only `--dashboard`. Tables work without `column` (an awk fallback).
+- CLI: `ignore vercel:api` leaves out only that platform's project. A name that is a group and a project is refused by `deploys deploy`; `group:<name>` picks the group.
+- Vercel: deploys from GitLab or Bitbucket get their commit (`lastSha`, rollback, history, savings). Turning auto-deploy off keeps a link whose repo cannot be written down (Bitbucket) instead of losing it; turning a GitLab one back on points to the dashboard. `vercel deploy --wait` gives up like `watch` (exit 3) instead of asking for ever. Vercel and Render `deploy-json` refuse unknown options instead of deploying the newest commit.
 
 ## 0.9.1
 

@@ -190,7 +190,7 @@ render_deploy_json() {
   local id sha="" cc="" lock body out
   local name="${1:?service}" svc
   id="$(render_id_of "$name")"; shift || true
-  while [ $# -gt 0 ]; do case "$1" in --sha) sha="${2:?commit}"; shift;; --clear-cache) cc=1;; --preview) die "Render cannot deploy a preview";; esac; shift; done
+  while [ $# -gt 0 ]; do case "$1" in --sha) sha="${2:?commit}"; shift;; --clear-cache) cc=1;; --preview) die "Render cannot deploy a preview";; "") ;; *) die "Unknown option $1. Usage: deploy-json <service> [--sha <commit>] [--clear-cache]";; esac; shift; done
   # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
   if team_on; then
     svc="$(render_call GET "/services/$id")" || exit 1
