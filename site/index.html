@@ -31,11 +31,11 @@
 <link rel="manifest" href="site.webmanifest">
 <link rel="preload" as="image" type="image/webp" href="img/app-dark-1800.webp" imagesrcset="img/app-dark-900.webp 900w, img/app-dark-1800.webp 1800w" imagesizes="(max-width: 1040px) 100vw, 1000px">
 <script type="application/ld+json">
-[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Deploy Center", "description": "Free, open-source Mac app and CLI that turns off auto-deploy on Vercel, Render and other hosts, deploys what changed when you decide, and hands failed builds to Claude for a fix PR.", "operatingSystem": "macOS 15 or later; CLI on macOS, Linux and WSL", "applicationCategory": "DeveloperApplication", "softwareVersion": "0.8.0", "image": "https://deploycenter.app/img/og.png", "screenshot": "https://deploycenter.app/img/app-dark-1800.webp", "featureList": ["Turn off auto-deploy on Vercel and Render in one click", "Opt-in hosts: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, any deploy hook", "Commits and pull requests waiting to go live, from GitHub or GitLab", "Deploy, preview deploy and rollback", "Autofix: a failed build goes to a Claude Code routine that opens a fix PR", "Claude in the app: explain a failure, release notes, is this safe to ship", "Connect Claude Desktop and Claude Code; MCP server and Claude Code plugin", "Deploy only when CI is green, site check with automatic rollback, deploy windows, risk score", "Auto-deploy guard", "Build costs, savings simulator and ledger", "Mac widgets, menu bar and command palette", "Team mode without a server: shared config, observers, two-person rule", "bash CLI for Linux, WSL and CI"], "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/licenses/MIT", "url": "https://deploycenter.app/", "downloadUrl": "https://github.com/Pschmetzer/deploy-center/releases/latest", "releaseNotes": "https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md", "codeRepository": "https://github.com/Pschmetzer/deploy-center", "sameAs": ["https://github.com/Pschmetzer/deploy-center"], "author": {"@type": "Person", "name": "Patrick Schmetzer", "url": "https://github.com/Pschmetzer"}, "isAccessibleForFree": true},
+[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Deploy Center", "description": "Free, open-source Mac app and CLI that turns off auto-deploy on Vercel, Render and other hosts, deploys what changed when you decide, and hands failed builds to Claude for a fix PR.", "operatingSystem": "macOS 15 or later; CLI on macOS, Linux and WSL", "applicationCategory": "DeveloperApplication", "softwareVersion": "0.9.0", "image": "https://deploycenter.app/img/og.png", "screenshot": "https://deploycenter.app/img/app-dark-1800.webp", "featureList": ["Turn off auto-deploy on Vercel and Render in one click", "Opt-in hosts: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, any deploy hook", "Commits and pull requests waiting to go live, from GitHub or GitLab", "Deploy, preview deploy and rollback", "Autofix: a failed build goes to a Claude Code routine that opens a fix PR", "Claude in the app: explain a failure, release notes, is this safe to ship", "Connect Claude Desktop and Claude Code; MCP server and Claude Code plugin", "Deploy only when CI is green, site check with automatic rollback, deploy windows, risk score", "Auto-deploy guard", "Build costs, savings simulator and ledger", "Mac widgets, menu bar and command palette", "Team mode without a server: shared config, observers, two-person rule", "bash CLI for Linux, WSL and CI"], "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/licenses/MIT", "url": "https://deploycenter.app/", "downloadUrl": "https://github.com/Pschmetzer/deploy-center/releases/latest", "releaseNotes": "https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md", "codeRepository": "https://github.com/Pschmetzer/deploy-center", "sameAs": ["https://github.com/Pschmetzer/deploy-center"], "author": {"@type": "Person", "name": "Patrick Schmetzer", "url": "https://github.com/Pschmetzer"}, "isAccessibleForFree": true},
 {"@context": "https://schema.org", "@type": "HowTo", "name": "Turn off auto-deploy and deploy by hand with Deploy Center", "step": [{"@type": "HowToStep", "name": "Connect", "text": "Use your vercel CLI login, a Render API key in the macOS keychain, and gh or glab for GitHub or GitLab."}, {"@type": "HowToStep", "name": "Turn auto-deploy off", "text": "One click for every project. The simulator shows the expected saving first; the guard keeps auto-deploy off."}, {"@type": "HowToStep", "name": "Deploy when you want", "text": "Select all changed, then Deploy. Optionally only when CI is green, with a site check and automatic rollback."}]},
 {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
 {"@type": "Question", "name": "Is it really free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. MIT license, no paid tier, no account. The code is on GitHub."}},
-{"@type": "Question", "name": "Does my data go anywhere?", "acceptedAnswer": {"@type": "Answer", "text": "No server of ours and no telemetry. The app talks to your hosts with your own logins, to GitHub or GitLab, and once a day to GitHub's release page to look for updates (you can turn that off). Only if you turn on Claude in the app does it send masked text to api.anthropic.com, with your own key."}},
+{"@type": "Question", "name": "Does my data go anywhere?", "acceptedAnswer": {"@type": "Answer", "text": "No server of ours and no telemetry. The app talks to your hosts with your own logins, to GitHub or GitLab, and once a day to deploycenter.app/appcast.xml to look for updates (you can turn that off). Only if you turn on Claude in the app does it send masked text to api.anthropic.com, with your own key."}},
 {"@type": "Question", "name": "Does Claude merge or deploy anything on its own?", "acceptedAnswer": {"@type": "Answer", "text": "No. Autofix opens a fix pull request and never merges it; deploying stays a click. The MCP server is read-only unless you switch on Let Claude deploy, and then Claude asks before each deploy or rollback, one project at a time."}},
 {"@type": "Question", "name": "Do I need an Anthropic API key?", "acceptedAnswer": {"@type": "Answer", "text": "Only for Claude in the app (explain a failure, release notes, ship check), which is off by default and has a monthly token cap. Autofix runs as your own Claude Code routine. Everything else works without Claude."}},
 {"@type": "Question", "name": "What do I lose without auto-deploy?", "acceptedAnswer": {"@type": "Answer", "text": "Automatic deploys and automatic preview builds per pull request. You have to remember to deploy; the menu bar count, the widgets and an optional daily summary help. Preview deploys can still be started by hand."}},
@@ -47,18 +47,18 @@
 </script>
 <style>
 :root{color-scheme:dark;
-  --bg:#0b0d12; --bg2:#11141b; --card:#151924; --line:#232838; --text:#e9ecf3; --muted:#a3abbd;
+  --bg:#0b0d12; --bg2:#10131a; --card:#151924; --line:#232838; --text:#e9ecf3; --muted:#a3abbd;
   --accent:#4f7cff; --accent2:#8b5cf6; --green:#34c759; --red:#ff5f57; --orange:#ff9f0a;
-  --radius:16px; --max:1120px;
+  --radius:12px; --max:1080px;
 }
-:root[data-theme="light"]{color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#535a6b;--accent:#2f5fe8;--accent2:#7c3aed;--green:#1f8f3a;--red:#d93025;--orange:#b25e00}
+:root[data-theme="light"]{color-scheme:light;--bg:#fbfbfd;--bg2:#f3f4f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#535a6b;--accent:#2f5fe8;--accent2:#7c3aed;--green:#1f8f3a;--red:#d93025;--orange:#b25e00}
 @media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#535a6b;--accent:#2f5fe8;--accent2:#7c3aed;--green:#1f8f3a;--red:#d93025;--orange:#b25e00}
+  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f3f4f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#535a6b;--accent:#2f5fe8;--accent2:#7c3aed;--green:#1f8f3a;--red:#d93025;--orange:#b25e00}
 }
 *{box-sizing:border-box}
-html{scroll-behavior:smooth;scroll-padding-top:72px}
+html{scroll-behavior:smooth;scroll-padding-top:64px}
 @media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
-body{margin:0;background:var(--bg);color:var(--text);font:17px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
 :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
@@ -68,184 +68,161 @@ a:hover{text-decoration:underline}
 @media (max-width:640px){.wrap{padding:0 16px}}
 /* nav */
 nav{position:sticky;top:0;z-index:20;backdrop-filter:saturate(180%) blur(16px);-webkit-backdrop-filter:saturate(180%) blur(16px);background:color-mix(in srgb,var(--bg) 80%,transparent);border-bottom:1px solid var(--line)}
-nav .wrap{display:flex;align-items:center;gap:16px;height:56px;position:relative}
-nav .brand{display:flex;align-items:center;gap:10px;font-weight:650;color:var(--text);white-space:nowrap}
+nav .wrap{display:flex;align-items:center;gap:16px;height:52px;position:relative}
+nav .brand{display:flex;align-items:center;gap:9px;font-weight:650;color:var(--text);white-space:nowrap}
 nav .brand:hover{text-decoration:none}
-nav .brand img{width:26px;height:26px;border-radius:7px}
-nav .links{margin-left:auto;display:flex;gap:18px;align-items:center;font-size:15px}
+nav .brand img{width:24px;height:24px;border-radius:6px}
+nav .links{margin-left:auto;display:flex;gap:16px;align-items:center;font-size:14px}
 nav .links a{color:var(--muted)}
 nav .links a:hover{color:var(--text);text-decoration:none}
 nav .links a.gh{color:var(--text)}
-nav .links a.dl{color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2));padding:6px 12px;border-radius:9px;font-weight:600}
-.theme{all:unset;cursor:pointer;color:var(--muted);width:32px;height:32px;display:grid;place-items:center;border-radius:8px;flex:none}
+nav .links a.dl{color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2));padding:5px 11px;border-radius:8px;font-weight:600}
+.theme{all:unset;cursor:pointer;color:var(--muted);width:30px;height:30px;display:grid;place-items:center;border-radius:8px;flex:none}
 .theme:hover{color:var(--text);background:var(--card)}
 .theme:focus-visible{outline:2px solid var(--accent)}
-.theme svg{width:18px;height:18px}
+.theme svg{width:17px;height:17px}
 .menu{display:none}
-.menu summary{list-style:none;cursor:pointer;padding:6px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px;color:var(--text)}
+.menu summary{list-style:none;cursor:pointer;padding:5px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;color:var(--text)}
 .menu summary::-webkit-details-marker{display:none}
-.menu .panel{display:flex;flex-direction:column;position:absolute;right:16px;top:52px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;min-width:220px;box-shadow:0 20px 50px -20px rgba(0,0,0,.5)}
-.menu .panel a{padding:10px 12px;border-radius:8px;color:var(--text)}
+.menu .panel{display:flex;flex-direction:column;position:absolute;right:16px;top:48px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:210px;box-shadow:0 20px 50px -20px rgba(0,0,0,.5)}
+.menu .panel a{padding:9px 12px;border-radius:8px;color:var(--text)}
 .menu .panel a:hover{background:var(--bg2);text-decoration:none}
 .mobile-tools{display:none;margin-left:auto;align-items:center;gap:6px}
 @media (max-width:1000px){nav .links .opt{display:none}}
 @media (max-width:700px){nav .links{display:none}.mobile-tools{display:flex}.menu{display:block}}
 /* hero */
-.hero{padding:76px 0 40px;text-align:center;position:relative;overflow:hidden}
-.hero::before{content:"";position:absolute;inset:-30% -10% auto;height:620px;background:radial-gradient(closest-side,color-mix(in srgb,var(--accent) 35%,transparent),transparent),radial-gradient(closest-side at 70% 40%,color-mix(in srgb,var(--accent2) 30%,transparent),transparent);filter:blur(30px);opacity:.55;pointer-events:none}
+.hero{padding:52px 0 28px;text-align:center;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:-30% -10% auto;height:520px;background:radial-gradient(closest-side,color-mix(in srgb,var(--accent) 30%,transparent),transparent),radial-gradient(closest-side at 70% 40%,color-mix(in srgb,var(--accent2) 26%,transparent),transparent);filter:blur(30px);opacity:.5;pointer-events:none}
 .hero > *{position:relative}
-.pill{display:inline-flex;gap:8px;align-items:center;font-size:14px;color:var(--muted);border:1px solid var(--line);background:var(--card);padding:6px 12px;border-radius:999px;max-width:100%}
+.pill{display:inline-flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);border:1px solid var(--line);background:var(--card);padding:4px 11px;border-radius:999px;max-width:100%}
 .pill:hover{text-decoration:none;color:var(--text)}
 .pill b{color:var(--green);font-weight:600}
-h1{font-size:clamp(38px,6.4vw,72px);line-height:1.04;letter-spacing:-.035em;margin:22px auto 14px;max-width:900px}
+h1{font-size:clamp(34px,5.2vw,56px);line-height:1.05;letter-spacing:-.033em;margin:16px auto 10px;max-width:820px}
 h1 .strike{position:relative;color:var(--muted);white-space:nowrap}
 h1 .strike::after{content:"";position:absolute;left:-2%;right:-2%;top:55%;height:.09em;background:var(--red);transform:rotate(-3deg);border-radius:4px}
-.for{font-size:clamp(18px,2.3vw,26px);color:var(--muted);font-weight:600;letter-spacing:-.01em;margin:0 auto 18px;max-width:820px}
-.lead{font-size:clamp(18px,2.2vw,21px);color:var(--muted);max-width:740px;margin:0 auto 30px}
+.lead{font-size:clamp(16px,1.9vw,18px);color:var(--muted);max-width:640px;margin:0 auto 22px}
 .lead b{color:var(--text)}
-.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-.btn{display:inline-flex;align-items:center;gap:10px;padding:13px 22px;border-radius:12px;font-weight:600;font-size:16px;border:1px solid var(--line);color:var(--text);background:var(--card)}
+.cta{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:9px;padding:10px 18px;border-radius:10px;font-weight:600;font-size:15px;border:1px solid var(--line);color:var(--text);background:var(--card)}
 .btn:hover{text-decoration:none;border-color:color-mix(in srgb,var(--accent) 60%,var(--line))}
-.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:0;color:#fff;box-shadow:0 8px 30px -8px color-mix(in srgb,var(--accent) 70%,transparent)}
-.btn svg{width:18px;height:18px;flex:none}
-.small{font-size:14px;color:var(--muted);margin-top:14px}
+.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:0;color:#fff;box-shadow:0 8px 26px -10px color-mix(in srgb,var(--accent) 70%,transparent)}
+.btn svg{width:17px;height:17px;flex:none}
+.small{font-size:13px;color:var(--muted);margin:10px 0 0}
 /* install tabs */
-.install{display:inline-block;margin-top:18px;max-width:100%;text-align:left}
-.tabs{display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-bottom:6px}
-.tabs button{all:unset;cursor:pointer;font-size:13px;color:var(--muted);padding:4px 10px;border-radius:7px;border:1px solid transparent}
+.install{display:inline-block;margin-top:16px;max-width:100%;text-align:left}
+.tabs{display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-bottom:5px}
+.tabs button{all:unset;cursor:pointer;font-size:12px;color:var(--muted);padding:3px 9px;border-radius:7px;border:1px solid transparent}
 .tabs button:focus-visible{outline:2px solid var(--accent)}
 .tabs button[aria-selected="true"]{color:var(--text);background:var(--card);border-color:var(--line)}
-.code{display:flex;align-items:flex-start;gap:12px;font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);border:1px solid var(--line);padding:9px 12px;border-radius:10px;color:var(--text);max-width:100%}
+.code{display:flex;align-items:flex-start;gap:12px;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);border:1px solid var(--line);padding:8px 11px;border-radius:9px;color:var(--text);max-width:100%}
 .code[hidden]{display:none}
 .code pre{margin:0;white-space:pre-wrap;word-break:break-word;font:inherit;flex:1;min-width:0}
-.code button{all:unset;cursor:pointer;color:var(--muted);font:13px -apple-system,sans-serif;padding-top:2px;flex:none}
+.code button{all:unset;cursor:pointer;color:var(--muted);font:12px -apple-system,sans-serif;padding-top:2px;flex:none}
 .code button:hover{color:var(--text)}
 .code button:focus-visible{outline:2px solid var(--accent)}
-.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:26px auto 0;max-width:840px}
-.chips a{font-size:14px;color:var(--muted);border:1px solid var(--line);padding:5px 12px;border-radius:999px;background:color-mix(in srgb,var(--card) 70%,transparent)}
-.chips a:hover{color:var(--text);text-decoration:none;border-color:var(--accent)}
-.shot{margin:44px auto 0;max-width:1000px;border-radius:14px;box-shadow:0 40px 120px -30px rgba(0,0,0,.6),0 0 0 1px var(--line);overflow:hidden}
+.shot{margin:32px auto 0;max-width:920px;border-radius:12px;box-shadow:0 30px 90px -30px rgba(0,0,0,.6),0 0 0 1px var(--line);overflow:hidden}
 .shot img{display:block;width:100%;height:auto}
-.caption{font-size:13px;color:var(--muted);margin-top:14px}
-/* platforms */
-.platforms{display:flex;flex-wrap:wrap;gap:10px 22px;justify-content:center;align-items:center;color:var(--muted);font-size:15px;padding:30px 0 0}
+.caption{font-size:12px;color:var(--muted);margin-top:10px}
+.platforms{font-size:14px;color:var(--muted);margin:18px auto 0;max-width:820px}
 .platforms b{color:var(--text);font-weight:600}
-.platforms .sep{width:1px;height:18px;background:var(--line)}
 /* sections */
-section{padding:84px 0}
+section{padding:52px 0}
+@media (max-width:640px){section{padding:38px 0}}
 section.alt{background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-.eyebrow{display:inline-block;font-size:13px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
-h2{font-size:clamp(28px,4vw,44px);letter-spacing:-.025em;line-height:1.1;margin:0 0 14px}
+.eyebrow{display:block;font-size:12px;font-weight:650;letter-spacing:.07em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+h2{font-size:clamp(24px,3.2vw,32px);letter-spacing:-.022em;line-height:1.15;margin:0 0 8px}
 h3{letter-spacing:-.01em}
-h3.mid{font-size:22px;margin:0 0 14px}
-.sub{color:var(--muted);font-size:19px;max-width:720px;margin:0 0 40px}
-.center{text-align:center}.center .sub{margin-left:auto;margin-right:auto}
-.flow{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-@media (max-width:820px){.flow{grid-template-columns:1fr}}
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px;min-width:0}
-.card h3{margin:12px 0 8px;font-size:19px}
-.card > h3:first-child{margin-top:0}
-.card p{margin:0;color:var(--muted);font-size:16px}
-.card .more{display:inline-block;margin-top:12px;font-size:15px}
-.num{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);font-weight:700;font-size:15px}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.grid.four{grid-template-columns:repeat(4,1fr)}
-@media (max-width:1000px){.grid.four{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:600px){.grid,.grid.four{grid-template-columns:1fr}}
-.ico{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
-.ico svg{width:22px;height:22px}
-.ico.g{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green)}
-.ico.o{background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange)}
-.ico.p{background:color-mix(in srgb,var(--accent2) 16%,transparent);color:var(--accent2)}
-.ico.r{background:color-mix(in srgb,var(--red) 14%,transparent);color:var(--red)}
-.tag{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);vertical-align:middle;margin-left:4px;white-space:nowrap}
+h3.mid{font-size:17px;margin:28px 0 10px}
+.sub{color:var(--muted);font-size:17px;max-width:680px;margin:0 0 22px}
+/* dense list: title + one sentence, no boxes */
+.list{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 28px;margin:0;padding:0;list-style:none}
+.list.four{grid-template-columns:repeat(4,1fr)}
+.list.two{grid-template-columns:repeat(2,1fr)}
+@media (max-width:900px){.list,.list.four{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:560px){.list,.list.four,.list.two{grid-template-columns:1fr;gap:12px}}
+.list li{font-size:15px;color:var(--muted);padding-left:14px;border-left:2px solid var(--line);min-width:0}
+.list li b{display:block;color:var(--text);font-size:15px;font-weight:600;margin-bottom:1px}
+.list li a{white-space:nowrap}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted);vertical-align:1px;margin-left:4px;white-space:nowrap}
 .tag.new{color:var(--green);border-color:color-mix(in srgb,var(--green) 40%,var(--line))}
 .tag.soon{color:var(--orange);border-color:color-mix(in srgb,var(--orange) 40%,var(--line))}
+.more{font-size:14px;margin:16px 0 0;color:var(--muted)}
+/* steps (how it works and autofix) */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;counter-reset:s;margin:0;padding:0;list-style:none}
+.steps.five{grid-template-columns:repeat(5,1fr)}
+@media (max-width:900px){.steps.five{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:640px){.steps,.steps.five{grid-template-columns:1fr}}
+.steps li{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;font-size:14px;color:var(--muted);display:flex;gap:10px;align-items:flex-start}
+.steps li::before{counter-increment:s;content:counter(s);flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);font-weight:700;font-size:12px;margin-top:1px}
+.steps.five li::before{background:color-mix(in srgb,var(--accent2) 20%,transparent);color:var(--accent2)}
+.steps li.you::before{background:color-mix(in srgb,var(--green) 20%,transparent);color:var(--green)}
+.steps li b{display:block;color:var(--text);font-size:15px}
+@media (max-width:640px){.steps{gap:6px}.steps li{padding:8px 12px}.steps li b{display:inline;margin-right:6px}}
 /* push counter */
-.pushes{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media (max-width:820px){.pushes{grid-template-columns:1fr}}
-.lane{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px;min-height:270px;position:relative;overflow:hidden}
-.lane h3{margin:0 0 4px;font-size:18px}
-.lane .meta{color:var(--muted);font-size:14px;margin-bottom:14px}
-.ticks{display:flex;flex-wrap:wrap;gap:6px;min-height:96px;align-content:flex-start;padding-bottom:72px}
-.tick{font:12px ui-monospace,Menlo,monospace;padding:4px 7px;border-radius:6px;background:color-mix(in srgb,var(--red) 16%,transparent);color:var(--red);animation:pop .35s ease}
+.pushes{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:640px){.pushes{grid-template-columns:1fr}}
+.lane{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;min-height:176px;position:relative;overflow:hidden}
+.lane h3{margin:0;font-size:15px}
+.lane .meta{color:var(--muted);font-size:13px;margin-bottom:10px}
+.ticks{display:flex;flex-wrap:wrap;gap:4px;align-content:flex-start;padding-bottom:46px}
+.tick{font:11px ui-monospace,Menlo,monospace;padding:2px 6px;border-radius:5px;background:color-mix(in srgb,var(--red) 16%,transparent);color:var(--red);animation:pop .35s ease}
 .tick.ok{background:color-mix(in srgb,var(--green) 16%,transparent);color:var(--green)}
 .tick.wait{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
 @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
-.bill{position:absolute;right:22px;bottom:18px;font-size:30px;font-weight:700;letter-spacing:-.02em;text-align:right}
-.bill small{display:block;font-size:12px;color:var(--muted);font-weight:500}
+.bill{position:absolute;right:16px;bottom:12px;font-size:22px;font-weight:700;letter-spacing:-.02em;text-align:right;line-height:1.1}
+.bill small{display:block;font-size:11px;color:var(--muted);font-weight:500}
 .bad .bill{color:var(--red)}.good .bill{color:var(--green)}
-.simbar{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between;margin-top:16px;color:var(--muted);font-size:14px}
-.simbar button{all:unset;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--text);padding:6px 12px;border-radius:9px;font-size:14px}
+.simbar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-top:10px;color:var(--muted);font-size:13px}
+.simbar button{all:unset;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--text);padding:4px 10px;border-radius:8px;font-size:13px}
 .simbar button:focus-visible{outline:2px solid var(--accent)}
-/* autofix flow */
-.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;counter-reset:s;margin:0 0 18px;padding:0;list-style:none}
-@media (max-width:900px){.steps{grid-template-columns:1fr}}
-.steps li{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;font-size:15px;color:var(--muted)}
-.steps li b{display:block;color:var(--text);font-size:16px;margin-bottom:4px}
-.steps li::before{counter-increment:s;content:counter(s);display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:color-mix(in srgb,var(--accent2) 20%,transparent);color:var(--accent2);font-weight:700;font-size:13px;margin-bottom:8px}
-.steps li.you::before{background:color-mix(in srgb,var(--green) 20%,transparent);color:var(--green)}
-.promise{display:flex;flex-wrap:wrap;gap:8px 18px;color:var(--muted);font-size:15px;margin:0 0 40px;padding:0;list-style:none}
-.promise li::before{content:"✓ ";color:var(--green);font-weight:700}
 /* two columns */
-.two{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:center}
 .two > *{min-width:0}
-@media (max-width:900px){.two{grid-template-columns:1fr}}
-.figure{border-radius:14px;overflow:hidden;box-shadow:0 30px 80px -30px rgba(0,0,0,.55),0 0 0 1px var(--line);background:var(--card);margin:0}
+.two.wide{grid-template-columns:1.3fr 1fr}
+@media (max-width:860px){.two,.two.wide{grid-template-columns:1fr;gap:22px}}
+.figure{border-radius:12px;overflow:hidden;box-shadow:0 24px 60px -30px rgba(0,0,0,.55),0 0 0 1px var(--line);background:var(--card);margin:0}
 .figure img{display:block;width:100%;height:auto}
-ul.checks{list-style:none;padding:0;margin:0}
-ul.checks li{padding:8px 0 8px 30px;position:relative;color:var(--muted)}
-ul.checks li b{color:var(--text)}
-ul.checks li::before{content:"✓";position:absolute;left:0;top:8px;color:var(--green);font-weight:700}
 /* devices */
-.devices{display:grid;grid-template-columns:1.25fr 1fr;gap:16px}
-@media (max-width:900px){.devices{grid-template-columns:1fr}}
-.widgets{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin:18px 0 6px}
-.widgets img{display:block;height:auto}
-.widgets .w-s{width:150px}.widgets .w-m{width:300px;max-width:100%}
-.phones{display:flex;gap:14px;justify-content:center;margin:18px 0 6px}
-.phones img{width:46%;max-width:200px;height:auto;border-radius:26px;border:6px solid #1b1f2a;box-shadow:0 20px 50px -20px rgba(0,0,0,.6)}
-.menuimg{display:block;width:100%;max-width:260px;height:auto;margin:16px auto 0;border-radius:12px}
+.devices{display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap;justify-content:center}
+.devices img{display:block;height:auto}
+.devices .w-s{width:132px}.devices .w-m{width:264px;max-width:100%}
+.devices .phone{width:128px;border-radius:20px;border:5px solid #1b1f2a;box-shadow:0 16px 40px -20px rgba(0,0,0,.6)}
 /* terminal */
-.term{background:#0a0c10;border:1px solid #232838;border-radius:14px;overflow:hidden;color:#d7dbe6;font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace}
-.term .bar{display:flex;gap:7px;padding:12px 14px;background:#141821;border-bottom:1px solid #232838}
-.term .bar i{width:12px;height:12px;border-radius:50%;background:#ff5f57}.term .bar i:nth-child(2){background:#febc2e}.term .bar i:nth-child(3){background:#28c840}
-.term pre{margin:0;padding:18px 20px;overflow-x:auto;white-space:pre}
-.term .p{color:#7c8db5}.term .c{color:#8a92a5}.term .g{color:#34c759}.term .y{color:#febc2e}.term .b{color:#7aa2ff}.term .r{color:#ff6b62}
-.kbd{font:13px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px;background:var(--card);color:var(--text);white-space:nowrap}
+.term{background:#0a0c10;border:1px solid #232838;border-radius:12px;overflow:hidden;color:#d7dbe6;font:13px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace}
+.term .bar{display:flex;gap:6px;padding:9px 12px;background:#141821;border-bottom:1px solid #232838}
+.term .bar i{width:10px;height:10px;border-radius:50%;background:#ff5f57}.term .bar i:nth-child(2){background:#febc2e}.term .bar i:nth-child(3){background:#28c840}
+.term pre{margin:0;padding:14px 16px;overflow-x:auto;white-space:pre}
+.term .p{color:#7c8db5}.term .c{color:#8a92a5}.term .g{color:#34c759}.term .y{color:#febc2e}.term .b{color:#7aa2ff}
+.kbd{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 5px;background:var(--card);color:var(--text);white-space:nowrap}
 /* compare */
-table{width:100%;border-collapse:collapse;font-size:16px}
-th,td{padding:14px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-thead th{color:var(--muted);font-weight:600;font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+thead th{color:var(--muted);font-weight:600;font-size:13px}
 tbody th{font-weight:500}
 td.y{color:var(--green);font-weight:600}td.n{color:var(--muted)}
 tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}
-.tablewrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:4px 0}
-.tablewrap table{min-width:780px}
-.tablewrap th:first-child{position:sticky;left:0;background:var(--card);z-index:1;padding-left:16px;min-width:170px}
-.scrollhint{display:none;font-size:13px;color:var(--muted);margin:8px 0 0}
-@media (max-width:820px){.scrollhint{display:block}}
+.tablewrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:var(--radius)}
+.tablewrap table{min-width:640px}
+.tablewrap th:first-child{position:sticky;left:0;background:var(--card);z-index:1;padding-left:14px;min-width:150px}
 /* faq */
-details.q{border-bottom:1px solid var(--line);padding:18px 0}
-details.q summary{cursor:pointer;font-weight:600;font-size:18px;list-style:none;display:flex;justify-content:space-between;gap:20px}
+.faq{display:grid;grid-template-columns:1fr 1fr;gap:0 36px}
+@media (max-width:760px){.faq{grid-template-columns:1fr}}
+details.q{border-bottom:1px solid var(--line);padding:12px 0}
+details.q summary{cursor:pointer;font-weight:600;font-size:15px;list-style:none;display:flex;justify-content:space-between;gap:16px}
 details.q summary::-webkit-details-marker{display:none}
-details.q summary::after{content:"+";color:var(--muted);font-weight:400;font-size:24px;line-height:1}
+details.q summary::after{content:"+";color:var(--muted);font-weight:400;font-size:20px;line-height:1}
 details.q[open] summary::after{content:"–"}
-details.q p{color:var(--muted);margin:12px 0 0}
-.story{max-width:760px;margin:0 auto;text-align:center}
-.story p{color:var(--muted);font-size:19px}
-.story .big{font-size:clamp(40px,7vw,64px);font-weight:750;letter-spacing:-.03em;color:var(--text);line-height:1;margin:10px 0 18px}
-.final{text-align:center;padding:100px 0}
-footer{border-top:1px solid var(--line);padding:36px 0 30px;color:var(--muted);font-size:14px}
-footer .cols{display:grid;grid-template-columns:repeat(5,1fr);gap:24px}
-@media (max-width:900px){footer .cols{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:480px){footer .cols{grid-template-columns:1fr}}
-footer .h{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px;font-weight:650}
-footer ul{list-style:none;padding:0;margin:0}footer li{margin:5px 0}
+details.q p{color:var(--muted);margin:8px 0 0;font-size:15px}
+.final{text-align:center;padding:56px 0}
+footer{border-top:1px solid var(--line);padding:28px 0 24px;color:var(--muted);font-size:13px}
+footer .cols{display:grid;grid-template-columns:repeat(5,1fr);gap:20px}
+@media (max-width:900px){footer .cols{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:520px){footer .cols{grid-template-columns:repeat(2,1fr)}}
+footer .h{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 6px;font-weight:650}
+footer ul{list-style:none;padding:0;margin:0}footer li{margin:4px 0}
 footer a{color:var(--muted)}footer a:hover{color:var(--text)}
-footer .fine{margin:28px 0 0}
-code{font:.9em ui-monospace,Menlo,monospace;background:var(--card);border:1px solid var(--line);padding:1px 6px;border-radius:6px;overflow-wrap:anywhere}
+footer .fine{margin:22px 0 0}
+code{font:.88em ui-monospace,Menlo,monospace;background:var(--card);border:1px solid var(--line);padding:0 5px;border-radius:5px;overflow-wrap:anywhere}
 .sticky-dl{display:none}
 @media (max-width:700px){
   .sticky-dl{display:flex;position:fixed;left:12px;right:12px;bottom:12px;z-index:30;transform:translateY(160%);transition:transform .25s}
@@ -258,7 +235,7 @@ code{font:.9em ui-monospace,Menlo,monospace;background:var(--card);border:1px so
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <nav aria-label="Main"><div class="wrap">
-  <a class="brand" href="/"><img src="img/icon.png" alt="" width="26" height="26"><span>Deploy Center</span></a>
+  <a class="brand" href="/"><img src="img/icon.png" alt="" width="24" height="24"><span>Deploy Center</span></a>
   <div class="links">
     <a class="opt" href="#features">Features</a>
     <a href="#ai">Claude</a>
@@ -292,10 +269,9 @@ code{font:.9em ui-monospace,Menlo,monospace;background:var(--card);border:1px so
 
 <main id="main">
 <header class="hero"><div class="wrap">
-  <a class="pill" href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md"><b>●</b> New in 0.8: widgets, Claude in the app, safe deploys, more hosts →</a>
+  <a class="pill" href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md"><b>●</b> New: widgets, Claude in the app, safe deploys, more hosts →</a>
   <h1>Stop paying for a build on <span class="strike">every push</span>.<br>Pay for what you ship.</h1>
-  <p class="for">Manual deploys for Vercel, Render and more. Claude fixes what breaks.</p>
-  <p class="lead">Deploy Center turns off auto-deploy in one click, shows what is waiting to go live, and deploys it when <em>you</em> decide. When a build fails, <b>Claude opens a fix PR</b>. One window, the menu bar and widgets for all your projects.</p>
+  <p class="lead">Turn off auto-deploy on Vercel, Render and more in one click. See what waits, deploy when <em>you</em> decide, and let <b>Claude open a fix PR</b> when a build fails.</p>
   <div class="cta">
     <a class="btn primary" id="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.62c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.77-3.32-1.8-1.41-.14-2.76.83-3.47.83-.72 0-1.82-.81-3-.79-1.54.02-2.96.9-3.76 2.28-1.6 2.78-.41 6.9 1.15 9.16.76 1.1 1.67 2.34 2.86 2.3 1.15-.05 1.58-.74 2.97-.74 1.38 0 1.77.74 2.98.72 1.23-.02 2.01-1.12 2.76-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.39-.92-2.38-3.69zM14.1 5.86c.63-.77 1.06-1.83.94-2.89-.91.04-2.02.61-2.67 1.37-.58.67-1.09 1.76-.96 2.8 1.02.08 2.06-.52 2.69-1.28z"/></svg>
@@ -304,7 +280,7 @@ code{font:.9em ui-monospace,Menlo,monospace;background:var(--card);border:1px so
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg>
       Star on GitHub</a>
   </div>
-  <p class="small">Universal app for Apple silicon and Intel · macOS 15 or later · signed and notarized by Apple · no account · no telemetry</p>
+  <p class="small">Free · MIT · macOS 15+, Apple silicon and Intel · signed and notarized · no account · no telemetry</p>
 
   <div class="install">
     <div class="tabs" role="tablist" aria-label="Install">
@@ -319,347 +295,230 @@ brew install --cask deploy-center</pre><button type="button" data-copy="brew tap
 /plugin install deploy-center@deploy-center</pre><button type="button" data-copy="/plugin marketplace add Pschmetzer/deploy-center
 /plugin install deploy-center@deploy-center">Copy</button></div>
   </div>
-  <p class="small" id="version">Version 0.8.0 · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">What’s new</a> · <a href="https://github.com/Pschmetzer/deploy-center/releases">All releases</a> · <a href="/docs/verify/">Verify a release</a></p>
+  <p class="small" id="version">Version 0.9.0 · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">What’s new</a> · <a href="https://github.com/Pschmetzer/deploy-center/releases">All releases</a> · <a href="/docs/verify/">Verify a release</a></p>
   <span class="sr" aria-live="polite" id="copied"></span>
-
-  <nav class="chips" aria-label="On this page">
-    <a href="#why">Why</a><a href="#how">How it works</a><a href="#ai">Claude &amp; Autofix</a><a href="#safe">Safe deploys</a><a href="#savings">Savings</a><a href="#everywhere">Widgets &amp; iPhone</a><a href="#team">Teams</a><a href="#integrations">Integrations</a><a href="#cli">CLI</a><a href="#faq">FAQ</a>
-  </nav>
 
   <figure class="shot">
     <picture>
-      <source type="image/webp" srcset="img/app-dark-900.webp 900w, img/app-dark-1800.webp 1800w" sizes="(max-width: 1040px) 100vw, 1000px">
+      <source type="image/webp" srcset="img/app-dark-900.webp 900w, img/app-dark-1800.webp 1800w" sizes="(max-width: 960px) 100vw, 920px">
       <img src="img/app-dark-1800.webp" width="1800" height="1144" alt="The Deploy Center window: 38 PRs waiting in 5 projects on Vercel and Render, Vercel build costs of the last 14 days, and a Deploy button" fetchpriority="high">
     </picture>
   </figure>
   <p class="caption">The real app in demo mode: project names are stand-ins.</p>
-
-  <div class="platforms" aria-label="Supported hosts and sources">
-    <b>Vercel</b><b>Render</b><span class="sep" aria-hidden="true"></span>
-    <span>Netlify</span><span>Cloudflare Pages</span><span>AWS Amplify</span><span>DigitalOcean</span><span>Coolify</span><span>any deploy hook</span>
-    <span class="sep" aria-hidden="true"></span><span>GitHub · GitLab</span>
-  </div>
-  <p class="small">Vercel and Render are on by default; the others are opt-in. <a href="#faq-hosts">Which hosts?</a></p>
+  <p class="platforms"><b>Vercel</b> and <b>Render</b> by default · opt-in: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify, any deploy hook · GitHub and GitLab · <a href="#faq-hosts">Which hosts?</a></p>
 </div></header>
 
-<section class="alt" id="why"><div class="wrap">
-  <h2>Every push builds every project.</h2>
-  <p class="sub">Ten small commits in an afternoon are ten builds. A README typo is a build. A monorepo push builds every app connected to it. An AI agent pushes after every step. You only needed the last one live.</p>
-  <div class="pushes">
-    <div class="lane bad">
-      <h3>Auto-deploy</h3>
-      <div class="meta">Every <code>git push</code> builds all 3 connected projects.</div>
-      <div class="ticks" id="laneA" aria-hidden="true"></div>
-      <div class="bill"><span id="billA">0</span> builds<small id="costA">≈ $0.00 today</small></div>
+<section class="alt" id="why"><div class="wrap two wide">
+  <div>
+    <h2>Every push builds every project.</h2>
+    <p class="sub">Typos, dependency bumps, an AI agent pushing after every step: each one is a paid build. You only needed the last one live.</p>
+    <div class="pushes">
+      <div class="lane bad">
+        <h3>Auto-deploy</h3>
+        <div class="meta">Each push builds all 3 projects.</div>
+        <div class="ticks" id="laneA" aria-hidden="true"></div>
+        <div class="bill"><span id="billA">0</span> builds<small id="costA">≈ $0.00 today</small></div>
+      </div>
+      <div class="lane good">
+        <h3>Deploy Center</h3>
+        <div class="meta">Pushes wait; one deploy ships them.</div>
+        <div class="ticks" id="laneB" aria-hidden="true"></div>
+        <div class="bill"><span id="billB">0</span> builds<small id="costB">≈ $0.00 today</small></div>
+      </div>
     </div>
-    <div class="lane good">
-      <h3>Deploy Center</h3>
-      <div class="meta">Pushes wait. One deploy at the end of the day ships them all.</div>
-      <div class="ticks" id="laneB" aria-hidden="true"></div>
-      <div class="bill"><span id="billB">0</span> builds<small id="costB">≈ $0.00 today</small></div>
+    <div class="simbar">
+      <span>Illustration: 14 pushes, 3 projects, ≈ 6 ¢ a build.</span>
+      <button type="button" id="animctl" aria-pressed="false">Pause animation</button>
     </div>
   </div>
-  <div class="simbar">
-    <span>Illustration: 14 pushes, 3 projects, ≈ 6 ¢ a build. <a href="/vercel-build-cost-calculator/">Put in your own numbers →</a></span>
-    <button type="button" id="animctl" aria-pressed="false">Pause animation</button>
+  <div id="savings">
+    <span class="eyebrow">Savings, in numbers</span>
+    <ul class="list two" style="grid-template-columns:1fr">
+      <li><b>Simulator</b>Your last 30 days of pushes: “auto-deploy ≈ $X a month” next to “once a day ≈ $Y”, before you switch.</li>
+      <li><b>Ledger</b>“≈ $X saved since …” per project, in dollars and build minutes.</li>
+      <li><b>Build costs</b>Vercel spend for 7 days, the monthly pace, a budget warning at 80 %.</li>
+      <li><b>Share the saving</b>A picture and a sentence, without project names.</li>
+    </ul>
+    <p class="more"><a href="/vercel-build-cost-calculator/">Build cost calculator →</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAVINGS.md">How it is counted</a></p>
   </div>
 </div></section>
 
 <section id="how"><div class="wrap">
   <h2>Three steps. Then two clicks a day.</h2>
-  <p class="sub">Connect once with the logins you already have. Nothing goes through a server of ours.</p>
-  <div class="flow">
-    <div class="card"><span class="num">1</span><h3>Connect</h3><p>Vercel uses your <code>vercel</code> CLI login. Render takes an API key, stored in your macOS keychain. GitHub through <code>gh</code> or GitLab through <code>glab</code> shows what is waiting.</p></div>
-    <div class="card"><span class="num">2</span><h3>Turn auto-deploy off</h3><p>One click for every project. The <b>simulator</b> shows the expected saving first, and the <b>guard</b> keeps auto-deploy off afterwards.</p></div>
-    <div class="card"><span class="num">3</span><h3>Deploy when you want</h3><p><b>Select all changed</b> (<span class="kbd">⌘A</span>), then <b>Deploy</b>. Optionally only when CI is green, with a site check and automatic rollback.</p></div>
-  </div>
-  <p class="small" style="margin-top:22px">Or zero clicks: a <a href="/docs/ci/">daily deploy from CI</a>, <code>launchd</code> or a GitHub label. Not sure yet? <a href="/docs/safe-start/">Try it safely</a>: look first, then one project, then all.</p>
+  <p class="sub">Your own logins; nothing goes through a server of ours.</p>
+  <ol class="steps">
+    <li><span><b>Connect</b><code>vercel</code> CLI login, a Render key in the keychain, <code>gh</code> or <code>glab</code>.</span></li>
+    <li><span><b>Turn auto-deploy off</b>One click for all projects. The guard keeps it off.</span></li>
+    <li><span><b>Deploy when you want</b>Select all changed (<span class="kbd">⌘A</span>), Deploy. Optionally only when CI is green.</span></li>
+  </ol>
+  <p class="more">Or zero clicks: a <a href="/docs/ci/">daily deploy from CI</a>. New to it? <a href="/docs/safe-start/">Try it safely</a>.</p>
 </div></section>
 
 <section class="alt" id="ai"><div class="wrap">
   <span class="eyebrow">Claude &amp; AI agents</span>
   <h2>Let the agent push. Let Claude fix. You decide what ships.</h2>
-  <p class="sub">Claude Code, Cursor and other agents push after every step. With auto-deploy off those pushes cost nothing, and when a build fails, Claude takes the first shot at the fix.</p>
-
-  <h3 class="mid">Autofix: a failed build fixes itself (almost)</h3>
-  <ol class="steps">
-    <li><b>Build fails</b>Vercel <code>ERROR</code> or Render <code>build_failed</code>.</li>
-    <li><b>Log is masked</b>Tokens, keys, passwords and emails are removed first.</li>
-    <li><b>Claude Code routine</b>Your own routine reads the log and the repo.</li>
-    <li><b>Fix PR opens</b>The row says “Claude is fixing”, then “fix PR open”.</li>
-    <li class="you"><b>You merge and deploy</b>One click. Claude never merges.</li>
+  <p class="sub">With auto-deploy off, agent pushes cost nothing. When a build fails, Claude takes the first shot at the fix.</p>
+  <ol class="steps five">
+    <li><span><b>Build fails</b>on Vercel or Render</span></li>
+    <li><span><b>Log is masked</b>keys, tokens, emails out</span></li>
+    <li><span><b>Claude Code routine</b>reads log and repo</span></li>
+    <li><span><b>Fix PR opens</b>“Claude is fixing” on the row</span></li>
+    <li class="you"><span><b>You merge, deploy</b>Claude never merges</span></li>
   </ol>
-  <ul class="promise"><li>Never merges</li><li>No duplicate PRs</li><li>Caps per project and per day</li><li>“Fix with Claude” on any failed row</li></ul>
-
-  <div class="grid">
-    <div class="card"><div class="ico p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.5v.2M12 16.5h.01"/></svg></div><h3>Claude in the app <span class="tag new">new</span></h3><p><b>Ask Claude</b> why a build failed (with <i>Hand to Autofix</i>), for plain release notes in English or German, or “Is this safe to ship?”. Your own Anthropic key and a monthly token cap; off by default.</p><a class="more" href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/CLAUDE.md">How it works →</a></div>
-    <div class="card"><div class="ico p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7H7a5 5 0 0 0 0 10h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8"/></svg></div><h3>Connect Claude in one click</h3><p>Settings → Claude connects <b>Claude Desktop</b> and <b>Claude Code</b>. Claude can then ask what is waiting, read logs and notes, and deploy only if you allow it, asking you before each one.</p><a class="more" href="https://github.com/Pschmetzer/deploy-center/blob/main/integrations/mcp/README.md">MCP server →</a></div>
-    <div class="card"><div class="ico p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"/></svg></div><h3>Claude Code plugin</h3><p>A skill and four commands for what waits, status, shipping and fixing (<code>/deploy-center:deploys-waiting</code> …), plus a read-only reminder of what waits after each <code>git push</code>.</p><a class="more" href="/claude-code/">Deploy Center + Claude Code →</a></div>
-    <div class="card"><div class="ico p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></div><h3>Agent digest</h3><p>Once a day: what waits per project, with agent and human commits apart, pull requests and risk hints. As Markdown, an issue or a chat message with an <b>approve</b> button.</p><a class="more" href="https://github.com/Pschmetzer/deploy-center/blob/main/integrations/digest/README.md">Digest →</a></div>
-    <div class="card"><div class="ico p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7M18 15.5V10a3 3 0 0 0-3-3h-4"/></svg></div><h3>“What this ships” on every PR</h3><p>A GitHub workflow runs Anthropic's Claude Code action on each pull request and comments the projects it affects, a risk level, and whether anything goes live on merge.</p><a class="more" href="https://github.com/Pschmetzer/deploy-center/blob/main/examples/claude-pr-ship-check.yml">Workflow →</a></div>
-    <div class="card"><div class="ico p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></div><h3>Copy for Claude</h3><p>The build log has failing lines in red, <b>Jump to the first error</b>, <b>Errors only</b>, and a button that copies the error and its context as a ready prompt, with secrets masked.</p><a class="more" href="/guides/auto-fix-failed-vercel-builds-with-claude/">Guide →</a></div>
-  </div>
-
-  <div class="two" style="margin-top:48px">
+  <div class="two wide" style="margin-top:28px;align-items:start">
+    <ul class="list two">
+      <li><b>Claude in the app <span class="tag new">new</span></b>Explain a failure (then <i>Fix with Claude</i>), plain release notes in English or German, “Is this safe to ship?”. Your key, a monthly cap. <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/CLAUDE.md">More</a></li>
+      <li><b>Connect in one click</b>Settings → Claude connects Claude Desktop and Claude Code. Claude deploys only if you allow it, and asks each time. <a href="https://github.com/Pschmetzer/deploy-center/blob/main/integrations/mcp/README.md">MCP server</a></li>
+      <li><b>Claude Code plugin</b>A skill and four commands for what waits, status, shipping and fixing, plus a reminder after each push. <a href="/claude-code/">More</a></li>
+      <li><b>Agent digest</b>Daily: agent and human commits apart, PRs, risk hints, with an approve button. <a href="https://github.com/Pschmetzer/deploy-center/blob/main/integrations/digest/README.md">More</a></li>
+      <li><b>“What this ships” on PRs</b>Claude Code action comments affected projects and a risk level. <a href="https://github.com/Pschmetzer/deploy-center/blob/main/examples/claude-pr-ship-check.yml">Workflow</a></li>
+      <li><b>Copy for Claude</b>The build log copies the first error and its context as a prompt, secrets masked. <a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Guide</a></li>
+    </ul>
     <figure class="figure">
-      <img src="img/log-dark.webp" width="1200" height="763" alt="The build log of a failed Render deploy with errors in red and the buttons Errors only, Copy for Claude and Jump to the first error" loading="lazy">
+      <picture>
+        <source media="(prefers-color-scheme: light)" srcset="img/claude-settings-light.webp">
+        <img src="img/claude-settings-dark.webp" width="1120" height="740" alt="Settings, Claude: Claude Desktop and Claude Code connected, Autofix on, and a switch Let Claude deploy (asks you first)" loading="lazy" data-light="img/claude-settings-light.webp" data-dark="img/claude-settings-dark.webp">
+      </picture>
     </figure>
-    <div>
-      <h3 class="mid">One settings pane for all of it</h3>
-      <ul class="checks">
-        <li><b>Claude Desktop and Claude Code:</b> connected or not, one button each.</li>
-        <li><b>Autofix:</b> on or off, and what it did.</li>
-        <li><b>Let Claude deploy:</b> off by default; when on, Claude asks before every deploy or rollback.</li>
-        <li><b>Your key, your cap:</b> stored in the keychain, never printed, checked before each request.</li>
-      </ul>
-      <figure class="figure" style="margin-top:20px">
-        <picture>
-          <source media="(prefers-color-scheme: light)" srcset="img/claude-settings-light.webp">
-          <img src="img/claude-settings-dark.webp" width="1120" height="740" alt="Settings, Claude: Claude Desktop and Claude Code connected, Autofix on, and a switch Let Claude deploy (asks you first)" loading="lazy" data-light="img/claude-settings-light.webp" data-dark="img/claude-settings-dark.webp">
-        </picture>
-      </figure>
-    </div>
   </div>
+  <p class="more">Autofix never merges, opens no duplicate PRs and has caps per project and per day. <a href="/docs/autofix/">Autofix docs →</a></p>
 </div></section>
 
 <section id="safe"><div class="wrap">
-  <span class="eyebrow">Safe deploys</span>
+  <span class="eyebrow">Safe deploys &amp; teams</span>
   <h2>Ship on purpose. Never by accident.</h2>
-  <p class="sub">Manual does not mean careless. Deploy Center checks before, during and after each deploy.</p>
-  <div class="grid">
-    <div class="card"><div class="ico g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></div><h3>Only when checks are green</h3><p>Deploys only commits whose CI passed, and waits for checks that are still running.</p></div>
-    <div class="card"><div class="ico g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg></div><h3>Site check and rollback</h3><p>After a deploy the app opens your page or <code>/health</code>. If it fails, a countdown notification rolls back unless you cancel.</p></div>
-    <div class="card"><div class="ico o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div><h3>Deploy windows and freeze</h3><p>No deploys on Friday night or during a launch. Inside a closed window you get a warning and <b>Deploy anyway…</b>, journaled with a reason.</p></div>
-    <div class="card"><div class="ico r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg></div><h3>Risk score</h3><p>The waiting diff is scored green, yellow or red: migrations, env files, lockfiles, build config. Risky rows get a red dot.</p></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/></svg></div><h3>Auto-deploy guard <span class="tag new">new</span></h3><p>Every 30 minutes it turns auto-deploy off again wherever it was switched back on, and tells you. Emergencies get a time-limited allowance.</p></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></div><h3>A second to change your mind</h3><p>A short wait before a deploy starts, with cancel. <b>Stop all</b> in the footer. Deploys and rollbacks always ask first.</p></div>
-  </div>
-  <p class="small" style="margin-top:22px"><a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAFE-DEPLOY.md">Safe deploys in detail →</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/GUARD.md">Auto-deploy guard →</a></p>
+  <p class="sub">Checks before, during and after each deploy, and team rules without a server.</p>
+  <ul class="list">
+    <li><b>Only when checks are green</b>Deploys commits whose CI passed; waits for running checks.</li>
+    <li><b>Site check and rollback</b>Opens your page or <code>/health</code> after a deploy; rolls back on a countdown if it fails.</li>
+    <li><b>Deploy windows</b>No deploys on Friday night; “Deploy anyway…” is journaled with a reason.</li>
+    <li><b>Risk score</b>Migrations, env files, lockfiles, build config: green, yellow or red.</li>
+    <li><b>Auto-deploy guard <span class="tag new">new</span></b>Every 30 min it turns auto-deploy off again where it came back. Emergencies get a time limit.</li>
+    <li><b>A second to change your mind</b>A short wait with cancel, <b style="display:inline">Stop all</b>, and every deploy asks first.</li>
+  </ul>
+  <h3 class="mid" id="team">Team mode, without a server</h3>
+  <ul class="list">
+    <li><b>Shared config</b>A <code>deploy-center.json</code> per repo: health paths, windows, groups, ignored projects.</li>
+    <li><b>Observers</b>Read-only for anyone listed; deploy buttons disappear.</li>
+    <li><b>Two-person rule</b>Production needs an approval from someone else on that exact commit. Overrides are journaled.</li>
+  </ul>
+  <p class="more"><a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAFE-DEPLOY.md">Safe deploys</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/GUARD.md">Guard</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/TEAM.md">Team mode</a></p>
 </div></section>
 
-<section class="alt" id="savings"><div class="wrap two">
+<section class="alt" id="everywhere"><div class="wrap two">
   <div>
-    <span class="eyebrow">Savings</span>
-    <h2>See the saving before you switch. Then watch it add up.</h2>
-    <p class="sub" style="margin-bottom:20px">Every number is marked as an estimate and says how it was made.</p>
-    <ul class="checks">
-      <li><b>Simulator:</b> your pushes of the last 30 days times each project's average build: “auto-deploy ≈ $X a month” next to “once a day ≈ $Y”.</li>
-      <li><b>Ledger:</b> “≈ $X saved since …”, per project, in dollars, Vercel build minutes and Render pipeline minutes.</li>
-      <li><b>Build costs:</b> Vercel spend for the last 7 days, the monthly pace, and a budget with a warning at 80 %.</li>
-      <li><b>Share the saving:</b> a picture and a sentence, without project names.</li>
+    <span class="eyebrow">Everywhere you look</span>
+    <h2>What waits, at a glance.</h2>
+    <p class="sub">No need to remember to deploy: the count is on your desktop and soon in your pocket.</p>
+    <ul class="list two">
+      <li><b>Mac widgets <span class="tag new">new</span></b>Small: PRs waiting, building, failed. Medium: top projects and the saving.</li>
+      <li><b>iPhone and iPad <span class="tag soon">soon</span></b>Deploy and roll back with Face ID, Home Screen widgets. Tokens stay on the device.</li>
+      <li><b>Menu bar and Dock</b>PRs waiting, failures, provider outages, a note when a deploy ends.</li>
+      <li><b>Command palette <span class="kbd">⌘K</span></b>Every action by fuzzy search; optional global <span class="kbd">⌥⌘K</span>.</li>
     </ul>
-    <p style="margin:22px 0 0"><a class="btn" href="/vercel-build-cost-calculator/">Open the build cost calculator →</a></p>
-    <p class="small"><a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAVINGS.md">How the saving is counted</a></p>
   </div>
-  <div>
-    <div class="term" role="img" aria-label="Terminal example: deploys simulate and deploys ledger">
-      <div class="bar"><i></i><i></i><i></i></div>
-<pre><span class="p">$</span> deploys simulate --days 30
-<span class="c">pushes to deploy branches, last 30 days</span>
-<span class="b">web-shop</span>   212 pushes · avg build 1 m 40 s
-<span class="b">api</span>         96 pushes · avg build 2 m 05 s
-<span class="r">auto-deploy  ≈ $41 a month</span>
-<span class="g">once a day   ≈ $6 a month</span>
-<span class="p">$</span> deploys ledger
-<span class="g">≈ $118 saved since auto-deploy was turned off</span>
-<span class="c">  1,204 pushes that never built</span></pre>
-    </div>
-    <p class="caption">Shortened illustration with made-up numbers.</p>
-  </div>
-</div></section>
-
-<section id="everywhere"><div class="wrap">
-  <span class="eyebrow">Everywhere you look</span>
-  <h2>What waits, at a glance. On your desktop and soon in your pocket.</h2>
-  <p class="sub">You no longer have to remember to deploy: the count is in the menu bar, on the Dock, in a widget and on your phone.</p>
   <div class="devices">
-    <div class="card">
-      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="7" rx="1.5"/></svg></div>
-      <h3>Mac widgets <span class="tag new">new in 0.8</span></h3>
-      <p>Small: pull requests waiting, with building and failed counts. Medium: your top projects and the saving. They ship with the app; add them from the widget gallery.</p>
-      <div class="widgets">
-        <img class="w-s" src="img/widget-small.webp" width="388" height="388" alt="Small widget: 5 PRs waiting in 3 projects, 1 building, 1 failed" loading="lazy">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="img/widget-medium-dark.webp">
-          <img class="w-m" src="img/widget-medium.webp" width="776" height="388" alt="Medium widget: 5 PRs waiting, about 83 dollars a month saved, and three projects: building on Vercel, failed on Render, 3 PRs and 5 commits waiting on Vercel" loading="lazy" data-light="img/widget-medium.webp" data-dark="img/widget-medium-dark.webp">
-        </picture>
-      </div>
-      <p class="caption">Demo data, with the Mac set to German.</p>
-    </div>
-    <div class="card">
-      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></div>
-      <h3>iPhone and iPad <span class="tag soon">coming to the App Store</span></h3>
-      <p>What waits and what failed, deploy and rollback with <b>Face ID</b>, Home Screen widgets and background notes. Tokens stay in the device keychain; it talks straight to the hosts.</p>
-      <div class="phones">
-        <img src="img/iphone-list.webp" width="660" height="1434" alt="iPhone: the Deploy Center list with 5 PRs waiting and projects building, failed, waiting and up to date (demo data)" loading="lazy">
-        <img src="img/iphone-detail.webp" width="660" height="1434" alt="iPhone: a project's details with status, repository, commits, and the buttons Deploy the newest commit and Roll back (demo data)" loading="lazy">
-      </div>
-    </div>
-  </div>
-  <div class="grid" style="margin-top:16px">
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="5" rx="1.5"/><path d="M6 12h12M8 16h8"/></svg></div><h3>Menu bar and Dock</h3><p>The number of PRs waiting, building and failed states, a Dock badge, provider outages, and a notification when a deploy ends in the background.</p>
-      <img class="menuimg" src="img/menu-dark.webp" width="784" height="802" alt="The menu bar menu: 38 PRs waiting in five projects, Deploy everything with changes, Reload and Settings" loading="lazy"></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></div><h3>Command palette <span class="kbd">⌘K</span></h3><p>Fuzzy search over every action: deploy all changed, a project's log, site, dashboard, rollback or notes, recent commands first. Optional global <span class="kbd">⌥⌘K</span>.</p></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></div><h3>Keyboard first</h3><p><span class="kbd">⌘R</span> <span class="kbd">⌘F</span> <span class="kbd">⌘1</span> <span class="kbd">⌘2</span> <span class="kbd">⌘A</span> <span class="kbd">Esc</span>, and a <code>deploycenter://</code> link to jump to a project. VoiceOver labels and actions on every row.</p></div>
+    <img class="w-s" src="img/widget-small.webp" width="388" height="388" alt="Small widget: 5 PRs waiting in 3 projects, 1 building, 1 failed (demo data)" loading="lazy">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="img/widget-medium-dark.webp">
+      <img class="w-m" src="img/widget-medium.webp" width="776" height="388" alt="Medium widget: 5 PRs waiting, about 83 dollars a month saved, and three projects (demo data)" loading="lazy" data-light="img/widget-medium.webp" data-dark="img/widget-medium-dark.webp">
+    </picture>
+    <img class="phone" src="img/iphone-list.webp" width="660" height="1434" alt="iPhone: the Deploy Center list with 5 PRs waiting and projects building, failed, waiting and up to date (demo data)" loading="lazy">
   </div>
 </div></section>
 
-<section class="alt" id="features"><div class="wrap">
-  <h2>Everything you need around a deploy.</h2>
-  <p class="sub">Built for people with many projects and little patience.</p>
-  <div class="grid">
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><h3>What is waiting</h3><p>Commits and merged PRs on GitHub or GitLab that are not live yet, per project and in total, open PRs too. <a href="/docs/numbers/">How it counts</a></p></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg></div><h3>Preview and rollback</h3><p>Preview deploys and a rollback to the previous live deploy on the hosts that support it, from the row menu or <span class="kbd">⌘K</span>.</p></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg></div><h3>Groups in order</h3><p>Deploy the backend, then the frontend: each waits until the one before is live. Rows of one repo stay together.</p></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></div><h3>Readable build logs</h3><p>Failing lines in red, errors only, selectable across lines, ANSI codes removed, and a log button even for a failed deploy you did not start.</p></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><path d="M3 3l18 18"/></svg></div><h3>Demo mode</h3><p>Replaces project names and domains everywhere, so you can share a screenshot without sharing your clients.</p></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 5-6"/></svg></div><h3>Journal and history</h3><p>Every deploy, rollback and override with time and reason, and a CSV export that is safe in spreadsheets.</p></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></div><h3>Updates you can trust</h3><p>“Update now” checks the signature and the Team ID, refuses a downgrade, swaps with a rollback and waits until deploys are done.</p></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div><h3>English and German</h3><p>The app, Claude's release notes and the README speak both.</p></div>
-    <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M14 6.5h4a2 2 0 0 1 2 2V11M10 17.5H6a2 2 0 0 1-2-2V13"/></svg></div><h3>Hosts as plugins</h3><p>Each host is one script behind one contract. Switch hosts on and off in Settings → Platforms; the tabs follow.</p></div>
-  </div>
+<section id="features"><div class="wrap">
+  <h2>Everything around a deploy.</h2>
+  <p class="sub">For people with many projects and little patience.</p>
+  <ul class="list">
+    <li><b>What is waiting</b>Commits and merged PRs not live yet, per project and in total. <a href="/docs/numbers/">How it counts</a></li>
+    <li><b>Preview and rollback</b>On the hosts that support them, from the row menu or <span class="kbd">⌘K</span>.</li>
+    <li><b>Groups in order</b>Backend first, then frontend; each waits until the one before is live.</li>
+    <li><b>Readable build logs</b>Errors in red, errors only, jump to the first error, ANSI codes removed.</li>
+    <li><b>Demo mode</b>Hides project names and domains for screenshots.</li>
+    <li><b>Journal</b>Every deploy, rollback and override with time and reason; CSV export.</li>
+    <li><b>Updates via Sparkle</b>EdDSA-signed, same Developer ID only, installed when no deploy runs.</li>
+    <li><b>Keyboard and VoiceOver</b><span class="kbd">⌘R</span> <span class="kbd">⌘F</span> <span class="kbd">⌘1</span> <span class="kbd">Esc</span>, a <code>deploycenter://</code> link, labels on every row.</li>
+    <li><b>Private by design</b>Keys in the keychain, masked before anything goes to Claude. <a href="https://github.com/Pschmetzer/deploy-center/blob/main/SECURITY.md">Threat model</a></li>
+  </ul>
 </div></section>
 
-<section id="team"><div class="wrap two">
+<section class="alt" id="integrations"><div class="wrap two wide">
   <div>
-    <span class="eyebrow">Teams</span>
-    <h2>Team mode, without a server.</h2>
-    <p class="sub" style="margin-bottom:20px">A shared <code>deploy-center.json</code> in each repo, read with <code>gh</code>. Nothing to host, nothing to pay.</p>
-    <ul class="checks">
-      <li><b>Shared config:</b> project to repo and branch, health paths, deploy windows, groups, ignored projects.</li>
-      <li><b>Observer mode:</b> read-only for anyone listed. Deploy buttons disappear and the app says “Observer”.</li>
-      <li><b>Two-person rule:</b> a production deploy needs an approving review or label from someone else, on that exact commit.</li>
-      <li><b>Journal:</b> every override with who and why.</li>
+    <span class="eyebrow">Integrations &amp; CLI</span>
+    <h2>Where you already work.</h2>
+    <p class="sub">All on the same <code>deploys</code> script, which runs on macOS, Linux, WSL and CI. Add <code>--json</code> to anything.</p>
+    <ul class="list two">
+      <li><b>VS Code, Cursor, Windsurf</b>Waiting count, project tree, deploy, “Copy for AI”.</li>
+      <li><b>Raycast</b>Waiting deploys, status, deploy all changed.</li>
+      <li><b>GitHub Action</b>Job summary, daily deploy, deploy on a label.</li>
+      <li><b>Daily summary</b>Slack, Discord, Telegram, ntfy, Mattermost.</li>
+      <li><b>Status page</b>“What shipped when”, with an Atom feed.</li>
+      <li><b>Badges, pre-push hook, Docker</b>For the README, before a push, in any CI.</li>
     </ul>
-    <p style="margin:18px 0 0"><a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/TEAM.md">Team mode →</a></p>
+    <p class="more"><a href="/docs/integrations/">All integrations</a> · <a href="/docs/cli/">CLI reference</a></p>
   </div>
-  <div>
-    <div class="term" role="img" aria-label="Terminal example: a deploy refused by the two-person rule">
-      <div class="bar"><i></i><i></i><i></i></div>
-<pre><span class="p">$</span> deploys config
-<span class="b">web-shop</span>  health <span class="y">/health</span>          <span class="c">repo file</span>
-<span class="b">web-shop</span>  approvals <span class="y">two-person</span>    <span class="c">repo file</span>
-<span class="b">window</span>    closed <span class="y">Fri 16:00–Mon</span>  <span class="c">repo file</span>
-<span class="b">readonly</span>  <span class="y">off</span>                     <span class="c">this Mac</span>
-<span class="p">$</span> deploys deploy web-shop
-<span class="r">✗ needs an approval from someone else on a1b2c3d</span></pre>
-    </div>
-    <p class="caption">Shortened illustration; the <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/deploy-center.schema.json">schema</a> has the exact keys.</p>
-  </div>
-</div></section>
-
-<section class="alt" id="integrations"><div class="wrap">
-  <span class="eyebrow">Integrations</span>
-  <h2>Where you already work.</h2>
-  <p class="sub">All of them sit on top of the same <code>deploys</code> script. None of them deploys without asking.</p>
-  <div class="grid four">
-    <div class="card"><h3>VS Code, Cursor, Windsurf</h3><p>Waiting count in the status bar, a project tree, deploy with confirmation, build log and “Copy for AI”.</p></div>
-    <div class="card"><h3>Raycast</h3><p>Waiting Deploys, Deploy Status and Deploy All Changed, with release notes to copy.</p></div>
-    <div class="card"><h3>GitHub Action</h3><p>What waits as a job summary, a daily deploy, or a deploy on a label.</p></div>
-    <div class="card"><h3>Daily summary</h3><p>One message a day to Slack, Discord, Telegram, ntfy or Mattermost.</p></div>
-    <div class="card"><h3>Status page</h3><p>A static “what shipped when” page with an Atom feed and JSON, for customers and teams.</p></div>
-    <div class="card"><h3>Badges</h3><p>“deployed · 3 d ago · 4 commits waiting” as an SVG badge for your README: green, yellow or grey.</p></div>
-    <div class="card"><h3>Pre-push hook</h3><p>Before a push: how many builds it would start where auto-deploy is still on, and optionally stop it.</p></div>
-    <div class="card"><h3>Docker image</h3><p>The CLI for any CI, with <code>--json</code> on every command.</p></div>
-  </div>
-  <p class="small" style="margin-top:22px"><a href="/docs/integrations/">All integrations →</a></p>
-</div></section>
-
-<section id="cli"><div class="wrap two">
-  <div>
-    <span class="eyebrow">Command line</span>
-    <h2>A window over one bash script.</h2>
-    <p class="sub" style="margin-bottom:20px">Everything the app does, <code>deploys</code> does in your terminal, on a server or in CI. Add <code>--json</code> to any command.</p>
-    <ul class="checks">
-      <li><b>Installs anywhere:</b> macOS, Linux, WSL and CI, SHA-256 checked, no sudo by default.</li>
-      <li><b>Your logins:</b> <code>vercel</code> CLI, keys in the keychain, <code>gh</code> or <code>glab</code>.</li>
-      <li><b>Scriptable:</b> a daily deploy from <code>launchd</code>, cron or a GitHub label.</li>
-      <li><b>Tested:</b> script and app tests run without a network.</li>
-    </ul>
-    <p style="margin:18px 0 0"><a href="/docs/cli/">CLI reference →</a></p>
-  </div>
-  <div>
+  <div id="cli">
     <div class="term" role="img" aria-label="Terminal example: deploys changed, risk, deploy-changed and ai notes">
       <div class="bar"><i></i><i></i><i></i></div>
 <pre><span class="p">$</span> deploys changed
-<span class="b">web-shop</span>     <span class="y">12 commits · 9 PRs waiting</span>
-<span class="b">api</span>          <span class="y"> 3 commits · 3 PRs waiting</span>
-<span class="b">docs</span>         <span class="c">up to date</span>
+<span class="b">web-shop</span>  <span class="y">12 commits · 9 PRs waiting</span>
+<span class="b">api</span>       <span class="y"> 3 commits · 3 PRs waiting</span>
 <span class="p">$</span> deploys risk web-shop
-<span class="y">● yellow</span>  <span class="c">lockfile and build config changed</span>
-<span class="p">$</span> deploys deploy-changed --when-green --yes
+<span class="y">● yellow</span>  <span class="c">lockfile changed</span>
+<span class="p">$</span> deploys deploy-changed --when-green
 <span class="g">✓ web-shop  live in 48 s</span>
-<span class="g">✓ api       live in 1 m 12 s</span>
-<span class="p">$</span> deploys ai notes web-shop --lang de
-<span class="c">Neue Preisseite, schnellere Suche …</span></pre>
+<span class="g">✓ api       live in 1 m 12 s</span></pre>
     </div>
-    <p class="caption">Shortened illustration; the real output has a few more columns.</p>
+    <p class="caption">Shortened illustration.</p>
   </div>
-</div></section>
-
-<section class="alt" id="privacy"><div class="wrap">
-  <h2>Your keys stay on your Mac.</h2>
-  <p class="sub">No account, no server of ours, no telemetry. Read the threat model before you trust it.</p>
-  <div class="grid">
-    <div class="card"><h3>Keychain only</h3><p>Keys are stored in the macOS keychain, read over stdin, never printed and never passed as a command argument.</p></div>
-    <div class="card"><h3>Masked before it leaves</h3><p>Anything sent to Claude or copied for it is masked first: API keys and tokens, AWS, Stripe and Google keys, private key blocks, passwords and email addresses.</p></div>
-    <div class="card"><h3>Open and signed</h3><p>MIT source on GitHub, an app signed and notarized by Apple, and release checksums you can <a href="/docs/verify/">verify</a>.</p></div>
-  </div>
-  <p class="small" style="margin-top:22px"><a href="https://github.com/Pschmetzer/deploy-center/blob/main/SECURITY.md">Security and threat model →</a> · This page loads nothing from third parties.</p>
 </div></section>
 
 <section><div class="wrap">
   <h2>Why not just …</h2>
-  <p class="sub">There are good ways to cut builds by hand. Deploy Center is the fast way when you have many projects.</p>
+  <p class="sub">Good ways to cut builds by hand, and where Deploy Center goes further.</p>
   <div class="tablewrap"><table>
     <thead><tr><th scope="col"><span class="sr">Feature</span></th><th scope="col">Ignored Build Step</th><th scope="col">Disconnect Git by hand</th><th scope="col">Status menu bar apps</th><th scope="col">Deploy Center</th></tr></thead>
     <tbody>
-      <tr><th scope="row">Setup for 30 projects</th><td class="n">A script per project</td><td class="n">30 settings pages</td><td class="n">Nothing is turned off</td><td class="y">One click</td></tr>
-      <tr><th scope="row">See what is waiting</th><td class="n">No</td><td class="n">No</td><td class="n">Deploy status only</td><td class="y">Per project and total</td></tr>
-      <tr><th scope="row">Deploy many at once</th><td class="n">Push again</td><td class="n">CLI, one by one</td><td class="n">No</td><td class="y">Select all changed → Deploy</td></tr>
-      <tr><th scope="row">Several hosts</th><td class="n">Vercel only</td><td class="n">A different setting each</td><td class="n">Some</td><td class="y">Same window</td></tr>
-      <tr><th scope="row">A failed build gets a fix PR</th><td class="n">No</td><td class="n">No</td><td class="n">No</td><td class="y">Autofix with Claude</td></tr>
-      <tr><th scope="row">Only when CI is green, rollback on a failed check</th><td class="n">No</td><td class="n">No</td><td class="n">No</td><td class="y">Yes</td></tr>
-      <tr><th scope="row">Stays off</th><td class="n">Yes</td><td class="n">Until someone reconnects</td><td class="n">–</td><td class="y">The guard checks every 30 min</td></tr>
-      <tr><th scope="row">Costs and savings in view</th><td class="n">Dashboard</td><td class="n">Dashboard</td><td class="n">No</td><td class="y">Chart, budget, simulator, ledger</td></tr>
-      <tr><th scope="row">Widgets and phone</th><td class="n">No</td><td class="n">No</td><td class="n">Some</td><td class="y">Mac widgets, iPhone soon</td></tr>
-      <tr><th scope="row">Team approvals</th><td class="n">No</td><td class="n">No</td><td class="n">No</td><td class="y">Two-person rule, observers</td></tr>
+      <tr><th scope="row">Setup for 30 projects</th><td class="n">A script each</td><td class="n">30 settings pages</td><td class="n">Nothing turned off</td><td class="y">One click</td></tr>
+      <tr><th scope="row">See what is waiting</th><td class="n">No</td><td class="n">No</td><td class="n">Status only</td><td class="y">Per project and total</td></tr>
+      <tr><th scope="row">Deploy many at once</th><td class="n">Push again</td><td class="n">One by one</td><td class="n">No</td><td class="y">Select all → Deploy</td></tr>
+      <tr><th scope="row">Several hosts</th><td class="n">Vercel only</td><td class="n">Each differently</td><td class="n">Some</td><td class="y">One window</td></tr>
+      <tr><th scope="row">Fix PR for a failed build</th><td class="n">No</td><td class="n">No</td><td class="n">No</td><td class="y">Autofix with Claude</td></tr>
+      <tr><th scope="row">Green CI, rollback, guard</th><td class="n">No</td><td class="n">No</td><td class="n">No</td><td class="y">Yes</td></tr>
     </tbody>
   </table></div>
-  <p class="scrollhint">Swipe the table sideways to compare.</p>
 </div></section>
 
-<section class="alt"><div class="wrap story">
-  <span class="eyebrow">Why it exists</span>
-  <p class="big">$99 in 7 days.</p>
-  <p>That was the author's real Vercel build bill with auto-deploy on. Deploy Center is what came out of it: made by an indie dev who got a build bill, free and open source for everyone who got one too.</p>
-  <p class="small"><a href="https://github.com/Pschmetzer/deploy-center/issues">Ideas and bugs</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/GOOD-FIRST-ISSUES.md">Good first issues</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/CONTRIBUTING.md">Contributing</a></p>
-</div></section>
-
-<section id="faq"><div class="wrap" style="max-width:820px">
+<section class="alt" id="faq"><div class="wrap">
   <h2>Questions</h2>
-  <details class="q"><summary>Is it really free?</summary><p>Yes. MIT license, no paid tier, no account. The code is on GitHub.</p></details>
-  <details class="q"><summary>Does my data go anywhere?</summary><p>No server of ours and no telemetry. The app talks to your hosts with your own logins, to GitHub through <code>gh</code> or to GitLab, and once a day to GitHub's release page to look for updates (you can turn that off). Only if you turn on Claude in the app does it send masked text to <code>api.anthropic.com</code>, with your own key.</p></details>
-  <details class="q"><summary>Does Claude merge or deploy anything on its own?</summary><p>No. Autofix opens a fix pull request and never merges it; deploying stays a click. The MCP server is read-only unless you switch on “Let Claude deploy”, and then Claude asks before each deploy or rollback, one project at a time.</p></details>
-  <details class="q"><summary>Do I need an Anthropic API key?</summary><p>Only for Claude in the app (explain a failure, release notes, ship check), which is off by default and has a monthly token cap. <a href="/docs/autofix/">Autofix</a> runs as your own Claude Code routine. Everything else works without Claude.</p></details>
-  <details class="q"><summary>What do I lose without auto-deploy?</summary><p>Automatic deploys and automatic preview builds per pull request. You have to remember to deploy; the menu bar count, the widgets and an optional daily summary help. Preview deploys can still be started by hand.</p></details>
-  <details class="q"><summary>Can I go back?</summary><p>Yes. <code>deploys vercel autodeploy-on</code> and <code>deploys render autodeploy-on</code> turn it back on, or use the Vercel and Render dashboards. Deploy Center remembers each Vercel repo before it disconnects it. <a href="/docs/auto-deploy/">Auto-deploy off and on</a> · <a href="/docs/uninstall/">Uninstall</a></p></details>
-  <details class="q" id="faq-hosts"><summary>Which hosts are supported?</summary><p>Vercel and Render are on by default. Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and a <a href="/docs/deploy-hooks/">generic deploy hook</a> are opt-in: <code>deploys providers enable netlify</code>, or Settings → Platforms. On Cloudflare Pages it saves build quota rather than money. Waiting commits come from GitHub or GitLab.</p></details>
-  <details class="q"><summary>Is there an iPhone app?</summary><p>It is built and on its way to the App Store: what waits, deploy and rollback with Face ID, and Home Screen widgets. The Mac app and its widgets are available now. <a href="https://github.com/Pschmetzer/deploy-center">Watch the repo</a> to hear when it is out.</p></details>
-  <details class="q"><summary>Can my team use it?</summary><p>Yes, without a server: a shared <code>deploy-center.json</code> in each repo, observer mode, and an optional two-person rule for production deploys.</p></details>
-  <details class="q"><summary>I need push deploys back for a while, but the guard turns them off.</summary><p>Usually a deploy by hand is enough. If you really need push deploys for a while, <code>deploys autodeploy allow &lt;platform&gt; &lt;project&gt; &lt;hours&gt;</code> lets the guard leave that project alone until the time runs out.</p></details>
-  <details class="q"><summary>Windows or Linux?</summary><p>The app is macOS only. The <code>deploys</code> CLI is bash and installs on Linux, WSL and in CI: <code>curl -fsSL https://deploycenter.app/install.sh | sh</code>.</p></details>
-  <p class="small" style="margin-top:20px"><a href="/docs/faq/">More questions</a> · <a href="/docs/troubleshooting/">Troubleshooting</a></p>
+  <div class="faq">
+    <div>
+      <details class="q"><summary>Is it really free?</summary><p>Yes. MIT license, no paid tier, no account. The code is on GitHub.</p></details>
+      <details class="q"><summary>Does my data go anywhere?</summary><p>No server of ours and no telemetry. The app talks to your hosts with your own logins, to GitHub through <code>gh</code> or to GitLab, and once a day to <code>deploycenter.app/appcast.xml</code> to look for updates (you can turn that off). Only if you turn on Claude in the app does it send masked text to <code>api.anthropic.com</code>, with your own key.</p></details>
+      <details class="q"><summary>Does Claude merge or deploy on its own?</summary><p>No. Autofix opens a fix pull request and never merges it; deploying stays a click. The MCP server is read-only unless you switch on “Let Claude deploy”, and then Claude asks before each deploy or rollback, one project at a time.</p></details>
+      <details class="q"><summary>Do I need an Anthropic API key?</summary><p>Only for Claude in the app (explain a failure, release notes, ship check), which is off by default and has a monthly token cap. <a href="/docs/autofix/">Autofix</a> runs as your own Claude Code routine. Everything else works without Claude.</p></details>
+      <details class="q"><summary>What do I lose without auto-deploy?</summary><p>Automatic deploys and automatic preview builds per pull request. You have to remember to deploy; the menu bar count, the widgets and an optional daily summary help. Preview deploys can still be started by hand.</p></details>
+    </div>
+    <div>
+      <details class="q"><summary>Can I go back?</summary><p>Yes. <code>deploys vercel autodeploy-on</code> and <code>deploys render autodeploy-on</code> turn it back on, or use the dashboards. Deploy Center remembers each Vercel repo before it disconnects it. <a href="/docs/auto-deploy/">Auto-deploy off and on</a> · <a href="/docs/uninstall/">Uninstall</a></p></details>
+      <details class="q" id="faq-hosts"><summary>Which hosts are supported?</summary><p>Vercel and Render are on by default. Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and a <a href="/docs/deploy-hooks/">generic deploy hook</a> are opt-in: <code>deploys providers enable netlify</code>, or Settings → Platforms. On Cloudflare Pages it saves build quota rather than money. Waiting commits come from GitHub or GitLab.</p></details>
+      <details class="q"><summary>Is there an iPhone app?</summary><p>It is built and on its way to the App Store: what waits, deploy and rollback with Face ID, and Home Screen widgets. The Mac app and its widgets are available now. <a href="https://github.com/Pschmetzer/deploy-center">Watch the repo</a> to hear when it is out.</p></details>
+      <details class="q"><summary>Can my team use it?</summary><p>Yes, without a server: a shared <code>deploy-center.json</code> in each repo, observer mode, and an optional two-person rule for production deploys.</p></details>
+      <details class="q"><summary>Windows or Linux?</summary><p>The app is macOS only. The <code>deploys</code> CLI is bash and installs on Linux, WSL and in CI: <code>curl -fsSL https://deploycenter.app/install.sh | sh</code>.</p></details>
+    </div>
+  </div>
+  <p class="more"><a href="/docs/faq/">More questions</a> · <a href="/docs/troubleshooting/">Troubleshooting</a></p>
 </div></section>
 
-<section class="final alt"><div class="wrap">
+<section class="final"><div class="wrap">
   <h2>Ship when you decide.</h2>
-  <p class="sub" style="margin:0 auto 28px">Free for macOS 15 and newer, Apple silicon and Intel.</p>
+  <p class="sub" style="margin:0 auto 20px">Made by an indie dev whose Vercel bill hit $99 in 7 days. Free for macOS 15 and newer.</p>
   <div class="cta">
     <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a>
     <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
   </div>
-  <p class="small" style="margin-top:18px">Not on a Mac? <a href="/docs/cli/">Use the CLI</a> on Linux, WSL or in CI. Using Claude Code? <a href="/claude-code/">Add the plugin</a>.</p>
+  <p class="small" style="margin-top:14px">Not on a Mac? <a href="/docs/cli/">Use the CLI</a>. Using Claude Code? <a href="/claude-code/">Add the plugin</a>. Ideas? <a href="https://github.com/Pschmetzer/deploy-center/issues">Open an issue</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/GOOD-FIRST-ISSUES.md">Good first issues</a></p>
 </div></section>
 </main>
 
@@ -708,7 +567,7 @@ brew install --cask deploy-center</pre><button type="button" data-copy="brew tap
       <li><a href="/datenschutz.html">Datenschutz</a></li>
     </ul></div>
   </div>
-  <p class="fine">Deploy Center · made by an indie dev who got a build bill · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
 </div></footer>
 
 <script>
