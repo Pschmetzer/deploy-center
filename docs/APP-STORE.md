@@ -43,12 +43,17 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 
 ## Steps only the owner can do (ask before each)
 
-0. **Status (2026-11-10):** the App IDs `app.deploycenter.ios` and `app.deploycenter.ios.widgets`
-   exist, with App Store profiles; `ios/build.sh --archive` exports a signed `.ipa`. The App Group
-   capability is **not yet** on the App IDs, so that build has no App Group: enable "App Groups"
-   on both App IDs in Certificates, Identifiers & Profiles, register `group.app.deploycenter`,
-   then archive again. The team has no registered devices, so the archive is unsigned and signed
-   ad hoc with the entitlements before the export (see the comment in `ios/build.sh`).
+0. **Status (2026-11-10):** done:
+   - The App IDs `app.deploycenter.ios` and `app.deploycenter.ios.widgets` exist, with App Groups on and
+     `group.app.deploycenter`, and App Store profiles.
+   - The App Store Connect record exists: **"Deploy Center: Hand Deploys"**, because "Deploy Center" is
+     already taken on the store. SKU `deploycenter-ios`, English (U.S.). The name can be changed
+     before review. The name under the icon stays "Deploy Center".
+   - Build 1.0 (1) is uploaded (`ios/build.sh --archive`, then `--upload`).
+
+   Still open: the texts, the screenshots, the privacy answers, the price, the age rating, TestFlight,
+   then submitting. The team has no registered devices, so the archive is unsigned and signed ad hoc
+   with the entitlements before the export (see the comment in `ios/build.sh`).
 1. **App IDs and the App Group.** Register `app.deploycenter.ios` and `app.deploycenter.ios.widgets`,
    with the App Group `group.app.deploycenter` on both. `ios/build.sh --archive` uses
    `-allowProvisioningUpdates` and can create them itself, so the first archive is itself an
@@ -73,7 +78,13 @@ behind the app are in `docs/WIDGETS-IOS.md`.
    ios/build.sh --archive
    ```
 
-   Upload `build/ios-export/DeployCenter.ipa` with the Transporter app, or with an App Store
+   Upload with the Apple ID signed in to Xcode:
+
+   ```bash
+   ios/build.sh --upload
+   ```
+
+   Or upload `build/ios-export/DeployCenter.ipa` with the Transporter app, or with an App Store
    Connect API key:
 
    ```bash

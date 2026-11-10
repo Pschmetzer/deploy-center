@@ -3,6 +3,7 @@
 #   ios/build.sh               build for the simulator into build/ios-dd
 #   ios/build.sh --run         also install and start it in the booted simulator, in demo mode
 #   ios/build.sh --archive     archive for the App Store and export an .ipa into build/ios-export (no upload)
+#   ios/build.sh --upload      upload that archive to App Store Connect, with the Apple ID signed in to Xcode
 # The team id comes from the signing identity (~/.config/deploys/signing-identity or DEVELOPER_ID),
 # never from the repo. Uploading is a separate, manual step: see docs/APP-STORE.md.
 set -euo pipefail
@@ -21,7 +22,7 @@ case "$mode" in
       xcrun simctl install booted "$APP"
       xcrun simctl launch booted app.deploycenter.ios -demo
     fi ;;
-  --archive)
+  --archive|--upload)
     id="${DEVELOPER_ID:-}"
     if [ -z "$id" ] && [ -s "$HOME/.config/deploys/signing-identity" ]; then id="$(head -n1 "$HOME/.config/deploys/signing-identity")"; fi
     team="$(sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p' <<<"$id")"
@@ -32,12 +33,19 @@ case "$mode" in
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>method</key><string>app-store-connect</string>
-  <key>destination</key><string>export</string>
+  <key>destination</key><string>$([ "$mode" = --upload ] && echo upload || echo export)</string>
   <key>teamID</key><string>${team}</string>
   <key>signingStyle</key><string>automatic</string>
   <key>uploadSymbols</key><true/>
 </dict></plist>
 PLIST
+    if [ "$mode" = --upload ]; then
+      [ -d build/DeployCenter-iOS.xcarchive ] || die "no archive: run ios/build.sh --archive first"
+      xcodebuild -exportArchive -archivePath build/DeployCenter-iOS.xcarchive \
+        -exportOptionsPlist build/ExportOptions.plist -exportPath build/ios-upload -allowProvisioningUpdates
+      echo "Uploaded. The build shows in App Store Connect → TestFlight after processing."
+      exit 0
+    fi
     xcodebuild -project ios/DeployCenter.xcodeproj -scheme DeployCenter -configuration Release \
       -destination 'generic/platform=iOS' -archivePath build/DeployCenter-iOS.xcarchive \
       DEVELOPMENT_TEAM="$team" CODE_SIGNING_ALLOWED=NO archive
@@ -50,6 +58,6 @@ PLIST
     xcodebuild -exportArchive -archivePath build/DeployCenter-iOS.xcarchive \
       -exportOptionsPlist build/ExportOptions.plist -exportPath build/ios-export -allowProvisioningUpdates
     echo "Exported: build/ios-export (upload it with Transporter or xcrun altool, see docs/APP-STORE.md)" ;;
-  -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) die "unknown argument: $mode" ;;
 esac
