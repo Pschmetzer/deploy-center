@@ -1,5 +1,5 @@
 // Bundles the extension into dist/extension.js (vscode stays external), and with --tests the
-// unit tests into out/test/. No runtime dependencies: everything ships in the one file.
+// unit tests into out/test/ (with test/fake-vscode.ts in place of vscode). No runtime dependencies: everything ships in the one file.
 import * as esbuild from "esbuild";
 import { readdirSync } from "node:fs";
 
@@ -14,7 +14,8 @@ if (args.includes("--tests")) {
     platform: "node",
     format: "cjs",
     target: "node18",
-    external: ["vscode"],
+    // The controller tests run without an editor: `vscode` is a small stand-in.
+    alias: { vscode: "./test/fake-vscode.ts" },
     logLevel: "warning",
   });
 } else {

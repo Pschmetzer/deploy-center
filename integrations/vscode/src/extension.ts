@@ -34,7 +34,7 @@ function workspaceRemotes(): Promise<string[]> {
   }))).then((all) => [...new Set(all.flat())]);
 }
 
-class Controller implements vscode.TreeDataProvider<Project> {
+export class Controller implements vscode.TreeDataProvider<Project> {
   private readonly changed = new vscode.EventEmitter<Project | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
   readonly output = vscode.window.createOutputChannel("Deploy Center");
@@ -53,7 +53,12 @@ class Controller implements vscode.TreeDataProvider<Project> {
   private inFlight: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | undefined;
 
-  constructor() {
+  /** Timers of follow-ups (refresh later, follow a deploy); dispose clears them. */
+  private readonly pending = new Set<ReturnType<typeof setTimeout>>();
+  private disposed = false;
+
+  /** followMs: the pause between two looks at a started deploy (tests make it short). */
+  constructor(private readonly followMs = 15_000) {
     this.status.name = "Deploy Center";
     this.status.command = "deployCenter.menu";
     this.status.text = "$(sync~spin) Deploy Center";
@@ -76,7 +81,23 @@ class Controller implements vscode.TreeDataProvider<Project> {
     if (Date.now() - this.lastRefresh > FOCUS_STALE_MS) void this.refresh();
   }
 
+  /** A pause that ends early (false) when the controller is disposed. */
+  private sleep(ms: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (this.disposed) return resolve(false);
+      const t = setTimeout(() => { this.pending.delete(t); resolve(!this.disposed); }, ms);
+      this.pending.add(t);
+    });
+  }
+
+  private refreshLater(ms = 10_000): void {
+    void this.sleep(ms).then((go) => { if (go) void this.refresh(); });
+  }
+
   dispose(): void {
+    this.disposed = true;
+    for (const t of this.pending) clearTimeout(t);
+    this.pending.clear();
     if (this.timer) clearInterval(this.timer);
     this.status.dispose(); this.output.dispose(); this.logs.dispose(); this.changed.dispose();
   }
@@ -239,14 +260,14 @@ class Controller implements vscode.TreeDataProvider<Project> {
       const btn = await (res.url ? vscode.window.showInformationMessage(res.text, "Open deploy") : vscode.window.showInformationMessage(res.text));
       if (btn === "Open deploy" && res.url) void vscode.env.openExternal(vscode.Uri.parse(res.url));
     } else void vscode.window.showErrorMessage(res.text);
-    if (res.ok) void this.follow(p); else setTimeout(() => void this.refresh(), 10_000);
+    if (res.ok) void this.follow(p); else this.refreshLater();
   }
 
-  /** After a start: look every 15 s (at most 15 min) until the build is live or failed, then say so. */
+  /** After a start: look every 15 s (at most 60 looks) until the build is live or failed, then say so. */
   private async follow(p: Project): Promise<void> {
     let seen = false;
     for (let looks = 1; looks <= 60; looks++) {
-      await new Promise((r) => setTimeout(r, 15_000));
+      if (!await this.sleep(this.followMs)) return;
       await this.refresh();
       const now = this.all.find((x) => x.platform === p.platform && x.name === p.name);
       if (now?.building) seen = true;
@@ -283,7 +304,7 @@ class Controller implements vscode.TreeDataProvider<Project> {
     const msg = `${results.length - bad.length} started, ${bad.length} failed to start.`;
     if (bad.length) void vscode.window.showErrorMessage(`${msg} ${bad.map((b) => b.text).join("; ")}`, "Show output").then((b) => { if (b) this.output.show(); });
     else void vscode.window.showInformationMessage(msg);
-    setTimeout(() => void this.refresh(), 10_000);
+    this.refreshLater();
   }
 
   private async readLog(run: Runner, p: Project): Promise<string | null> {
