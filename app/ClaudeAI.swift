@@ -78,7 +78,9 @@ enum ClaudeAI {
 struct ClaudeAISettings: View {
     @AppStorage(ClaudeAI.enabledKey) private var enabled = false
     @State private var status: ClaudeAIStatus?
-    init(status: ClaudeAIStatus? = nil) { _status = State(initialValue: status) }
+    /// The projects, so the script's output shows stand-ins in demo mode.
+    let items: [Item]
+    init(status: ClaudeAIStatus? = nil, items: [Item] = []) { _status = State(initialValue: status); self.items = items }
     @State private var key = ""
     @State private var cap = ""
     @State private var busy = false
@@ -133,7 +135,7 @@ struct ClaudeAISettings: View {
                     }
                 }
                 if let message {
-                    Text(message).font(.caption).textSelection(.enabled).foregroundStyle(failed ? .red : .secondary)
+                    Text(Demo.scrub(message, items: items)).font(.caption).textSelection(.enabled).foregroundStyle(failed ? .red : .secondary)
                 }
             }
         } header: {

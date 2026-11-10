@@ -395,6 +395,8 @@ struct CommandPaletteHost: ViewModifier {
     @ObservedObject var store: Store
     @ObservedObject private var center = PaletteCenter.shared
     @Environment(\.openSettings) private var openSettings
+    /// Settings → Deploy: ask before one project goes live (on by default).
+    @AppStorage("confirmSingleDeploy") private var confirmSingle = true
     @State private var showing = false
     @State private var chosen: PaletteCommand?
     @State private var sheet: PaletteSheet?
@@ -468,7 +470,8 @@ struct CommandPaletteHost: ViewModifier {
             switch v {
             case .deploy:
                 guard i.deployable && !i.state.isActive && !store.observer else { return }
-                if i.hasNewCommits || i.headSha == nil { deployItem = i } else { unchangedItem = i }
+                if i.hasNewCommits || i.headSha == nil { if confirmSingle { deployItem = i } else { store.pendingDeploy = i } }
+                else { unchangedItem = i }
             case .rollback:
                 guard i.deployable && !i.state.isActive && !store.observer else { return }
                 rollbackItem = i
@@ -535,7 +538,7 @@ private struct PaletteQuestions: ViewModifier {
     }
 }
 
-// MARK: - Global hot key (Settings → Advanced, off by default)
+// MARK: - Global hot key (Settings → General, off by default)
 
 /// ⌥⌘K from any app brings Deploy Center forward with the palette open. A Carbon hot key:
 /// it needs no accessibility permission and sees only this one key combination.
@@ -580,7 +583,7 @@ struct CommandPaletteSettings: View {
     @State private var failed = PaletteHotKey.failed
 
     var body: some View {
-        Section(L("Advanced", "Erweitert")) {
+        Section(L("Command palette", "Befehlspalette")) {
             Toggle(L("⌥⌘K opens the command palette from any app", "⌥⌘K öffnet die Befehlspalette aus jeder App"), isOn: $hotKey)
                 .onChange(of: hotKey) { _, on in
                     // Taken by another app: the switch goes back, and the reason stays below it.

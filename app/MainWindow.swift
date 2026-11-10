@@ -101,13 +101,17 @@ struct ContentView: View {
     @State private var noteItem: Item?
     @State private var noteText = ""
     @State private var logItem: Item?
+    @Environment(\.openSettings) private var openSettings
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A single deploy from the row menu, asked first like from the palette.
     @State private var askDeployItem: Item?
+    @AppStorage("confirmSingleDeploy") private var confirmSingle = true
     @State private var confirmingStop = false
-    /// The project a menu-bar click or a link asked for: the list shows exactly that one.
+    /// The project a menu-bar click or a link asked for: the list shows exactly that one (by its
+    /// `Store.key`, so "app" on Vercel is not shown with "app" on Render), or every one of that name.
     @State private var exactName: String?
+    @State private var exactKey: String?
     /// Load errors shown in full (the banner shows two lines first).
     @State private var expandedErrors: Set<Platform> = []
     /// Triggers the person chose to ignore (kept), provider problems closed until they change,
@@ -132,6 +136,12 @@ struct ContentView: View {
     /// A project name as the screen may show it.
     private func shown(_ name: String?) -> String { Demo.mask(name ?? "") }
     private var allItems: [Item] { Platform.allCases.flatMap { store.items[$0] ?? [] } }
+    /// The project a message is about, while it is still in the list and has a build log.
+    private func messageItem(_ m: Store.Message) -> Item? {
+        guard let k = m.project, let i = allItems.first(where: { Store.key($0) == k }),
+              store.provider(i.platform)?.caps.logs != false else { return nil }
+        return i
+    }
 
     // MARK: Tabs, from the enabled providers
 
@@ -162,9 +172,7 @@ struct ContentView: View {
     private var currentLabel: String { providers.first { $0.id == currentId }?.label ?? currentId }
 
     /// Projects with changes on a platform, without the hidden ones: the list leaves them out too.
-    static func changedShown(_ store: Store, _ p: Platform) -> Int {
-        (store.items[p] ?? []).filter { $0.deployable && $0.hasNewCommits && !store.isHidden($0) }.count
-    }
+    static func changedShown(_ store: Store, _ p: Platform) -> Int { store.changedCount(p) }
 
     /// Under a repo header: "3 projects · 12 commits waiting". The commits are the branch's, so the
     /// largest count of one project, not the sum (they share the commits).
@@ -225,7 +233,9 @@ struct ContentView: View {
     private var visible: [Item] {
         var all = scopes.flatMap { store.items[$0] ?? [] }.filter { !store.isHidden($0) }
         if onlyChanged { all = all.filter { $0.hasNewCommits } }
-        if let exact = exactName {
+        if let key = exactKey {
+            all = all.filter { Store.key($0) == key }
+        } else if let exact = exactName {
             all = all.filter { $0.name == exact }
         } else if !search.isEmpty {
             // In demo mode only the stand-in counts: typing a real name must not find the project.
@@ -388,12 +398,18 @@ struct ContentView: View {
         } message: {
             Text(L("Shown under \(shown(noteItem?.name)). Kept on this Mac only.", "Steht unter \(shown(noteItem?.name)). Bleibt nur auf diesem Mac."))
         }
-        .onChange(of: store.pendingSearch) { _, name in
-            guard let name else { return }
+        .onChange(of: store.pendingShow) { _, req in
+            guard let req else { return }
             // Exactly this project: "app" as a plain search would also show "app-backend".
-            showAll = true; onlyChanged = false; search = Demo.mask(name); exactName = name; store.pendingSearch = nil
+            showAll = true; onlyChanged = false; search = Demo.mask(req.name); exactName = req.name; exactKey = req.key
+            store.pendingShow = nil
         }
-        .onChange(of: search) { _, s in if let n = exactName, s != Demo.mask(n) { exactName = nil } }
+        .onChange(of: search) { _, s in if let n = exactName, s != Demo.mask(n) { exactName = nil; exactKey = nil } }
+        .onChange(of: store.settingsRequest) { _, tab in
+            guard tab != nil else { return }
+            store.settingsRequest = nil
+            NSApp.activate(ignoringOtherApps: true); openSettings()
+        }
         .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"),
                isPresented: Binding(get: { unchangedItem != nil }, set: { if !$0 { unchangedItem = nil } })) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
@@ -475,6 +491,14 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 12) {
             tabPicker
+
+            // Demo mode is easy to forget (⇧⌘D): say so where the names are.
+            if demoMode {
+                Text("DEMO").font(.caption.weight(.bold)).foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(Color.purple))
+                    .help(L("Demo mode: names are stand-ins. ⇧⌘D turns it off.", "Demo-Modus: Namen sind Platzhalter. ⇧⌘D schaltet ihn aus."))
+                    .accessibilityLabel(L("Demo mode is on", "Demo-Modus ist an"))
+            }
 
             TextField(L("Search", "Suchen"), text: $search).textFieldStyle(.roundedBorder)
                 .frame(minWidth: 110)
@@ -657,6 +681,8 @@ struct ContentView: View {
                     if triggers.count > 6 {
                         Text(L("and \(triggers.count - 6) more", "und \(triggers.count - 6) weitere")).font(.caption).foregroundStyle(.secondary)
                     }
+                    // The last read failed: this list is an older one.
+                    if let s = store.staleNote("triggers") { Text(s).font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer()
             }
@@ -672,8 +698,8 @@ struct ContentView: View {
                 Text(L("Problem at the provider: ", "Störung beim Anbieter: ") + store.providerIssues.joined(separator: " · "))
                     .font(.caption).textSelection(.enabled)
                 Spacer()
-                ForEach(Self.statusPages.filter { p in store.providerIssues.contains { $0.hasPrefix(p.0) } }, id: \.0) { p in
-                    Button(L("\(p.0) status", "Status \(p.0)")) { NSWorkspace.shared.open(URL(string: p.1)!) }.buttonStyle(.link).font(.caption)
+                ForEach(store.statusLinks.filter { p in store.providerIssues.contains { $0.hasPrefix(p.label + ":") } }, id: \.label) { p in
+                    Button(L("\(p.label) status", "Status \(p.label)")) { NSWorkspace.shared.open(p.url) }.buttonStyle(.link).font(.caption)
                 }
                 Button { closedIssuesRaw = Self.issuesKey(store.providerIssues) } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless).help(L("Close until it changes", "Schließen, bis sich etwas ändert"))
@@ -682,9 +708,6 @@ struct ContentView: View {
             .padding(.horizontal, 12).padding(.vertical, 6).background(ground(.orange, 0.08))
         }
     }
-
-    static let statusPages = [("Vercel", "https://www.vercel-status.com"), ("Render", "https://status.render.com"),
-                              ("GitHub", "https://www.githubstatus.com")]
 
     static func triggerName(_ k: String) -> String {
         switch k {
@@ -790,6 +813,8 @@ struct ContentView: View {
                         HStack(spacing: 4) {
                             Text(L("Builds, 7 days", "Builds, 7 Tage")).foregroundStyle(.secondary)
                             Text(c.week, format: .currency(code: "USD")).monospacedDigit()
+                            // The last read failed: an older number, said as such.
+                            if let s = store.staleNote("costs") { Text("· " + s).font(.caption).foregroundStyle(Color.warningText) }
                             Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
                         }
                         .contentShape(Rectangle())
@@ -964,8 +989,8 @@ struct ContentView: View {
                 Text(search.isEmpty ? L("Everything is live", "Alles ist live") : L("Nothing matches “\(search)”", "Nichts passt zu „\(search)“"))
                     .font(.headline)
                 if hiddenHits > 0 {
-                    Text(L("\(hiddenHits) hidden \(hiddenHits == 1 ? "project matches" : "projects match") (Settings → Hidden projects)",
-                           "\(hiddenHits) \(hiddenHits == 1 ? "ausgeblendetes Projekt passt" : "ausgeblendete Projekte passen") (Einstellungen → Ausgeblendete Projekte)"))
+                    Text(L("\(hiddenHits) hidden \(hiddenHits == 1 ? "project matches" : "projects match") (Settings → Projects)",
+                           "\(hiddenHits) \(hiddenHits == 1 ? "ausgeblendetes Projekt passt" : "ausgeblendete Projekte passen") (Einstellungen → Projekte)"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
@@ -981,10 +1006,10 @@ struct ContentView: View {
                 Text(hiddenHere > 0 ? L("All projects here are hidden", "Alle Projekte hier sind ausgeblendet") : L("No projects here", "Keine Projekte hier"))
                     .font(.headline)
                 Text(hiddenHere > 0
-                     ? L("\(hiddenHere) hidden. Show them again in Settings → Hidden projects.", "\(hiddenHere) ausgeblendet. Wieder zeigen unter Einstellungen → Ausgeblendete Projekte.")
+                     ? L("\(hiddenHere) hidden. Show them again in Settings → Projects.", "\(hiddenHere) ausgeblendet. Wieder zeigen unter Einstellungen → Projekte.")
                      : L("This account has no projects on \(scopes.map(\.rawValue).joined(separator: " or ")).", "Dieses Konto hat keine Projekte bei \(scopes.map(\.rawValue).joined(separator: " oder "))."))
                     .font(.caption).foregroundStyle(.secondary)
-                if hiddenHere > 0 { SettingsLink { Text(L("Open Settings", "Einstellungen öffnen")) } }
+                if hiddenHere > 0 { Button(L("Open Settings", "Einstellungen öffnen")) { store.openSettings(.projects) } }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -1053,8 +1078,9 @@ struct ContentView: View {
         }
         if canDeploy {
             // Asks first, like the palette: with no wait set, a slip of the mouse would start a paid build.
-            Button(L("Deploy to production …", "Live deployen …")) {
-                if item.hasNewCommits || item.headSha == nil { askDeployItem = item }
+            // Settings → Deploy can turn that off for single deploys (both ways at once).
+            Button(confirmSingle ? L("Deploy to production …", "Live deployen …") : L("Deploy to production", "Live deployen")) {
+                if item.hasNewCommits || item.headSha == nil { if confirmSingle { askDeployItem = item } else { deployOne(item) } }
                 else { unchangedItem = item }
             }
         }
@@ -1080,7 +1106,7 @@ struct ContentView: View {
                     Button(L("Roll back production …", "Live zurückrollen …")) { rollbackItem = item }
                 }
             }
-            if let u = GitHost.compareURL(item) {
+            if let u = item.compareURL {
                 let host = GitHost(item).name
                 Button(L("Show the waiting commits on \(host)", "Wartende Commits auf \(host) ansehen")) { NSWorkspace.shared.open(u) }
             }
@@ -1199,10 +1225,20 @@ struct ContentView: View {
                         Image(systemName: m.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(m.ok ? .green : .red)
                         Text(m.date.formatted(date: .omitted, time: .shortened)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         Text(Demo.scrub(m.text, items: allItems)).font(.caption).textSelection(.enabled)
+                        Spacer(minLength: 0)
+                        // A line about one project opens its build log (failed ones first of all).
+                        if let item = messageItem(m) {
+                            Button(L("Log", "Log")) { showMessages = false; logItem = item }
+                                .buttonStyle(.link).font(.caption)
+                                .accessibilityLabel(L("Open the build log of \(Demo.mask(item.name))", "Build-Log von \(Demo.mask(item.name)) öffnen"))
+                        }
                     }
                 }
+                Divider()
+                Button(L("Clear", "Leeren")) { store.messages.removeAll(); showMessages = false }
+                    .buttonStyle(.link).font(.caption)
             }
-            .padding(12).frame(width: 420, alignment: .leading)
+            .padding(12).frame(width: 460, alignment: .leading)
         }
     }
 }

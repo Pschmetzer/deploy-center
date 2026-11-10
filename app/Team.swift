@@ -99,7 +99,7 @@ struct TeamSettings: View {
                 if busy { ProgressView().controlSize(.small) }
             }
             if let message {
-                Text(message).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(failed ? .red : .secondary)
+                Text(Demo.scrub(message, items: Array(store.items.values.joined()))).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(failed ? .red : .secondary)
             }
         } header: {
             Text(L("Team", "Team"))

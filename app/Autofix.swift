@@ -26,6 +26,8 @@ struct AutofixStatus: Decodable {
 }
 
 struct AutofixSettings: View {
+    /// The projects, so the script's output shows stand-ins in demo mode.
+    var items: [Item] = []
     @State private var status: AutofixStatus?
     @State private var routineId = ""
     @State private var token = ""
@@ -81,7 +83,7 @@ struct AutofixSettings: View {
                 if busy { ProgressView().controlSize(.small) }
             }
             if let message {
-                Text(message).font(.caption.monospaced()).textSelection(.enabled)
+                Text(Demo.scrub(message, items: items)).font(.caption.monospaced()).textSelection(.enabled)
                     .foregroundStyle(failed ? .red : .secondary)
             }
 
@@ -130,7 +132,15 @@ struct AutofixSettings: View {
     }
 
     private func copyPrompt() async {
-        guard let data = try? await Tool.run(["autofix", "prompt"], timeout: 10), let text = String(data: data, encoding: .utf8) else { return }
+        let text: String
+        do {
+            guard let t = String(data: try await Tool.run(["autofix", "prompt"], timeout: 10), encoding: .utf8), !t.isEmpty else {
+                message = L("The prompt came back empty.", "Der Prompt kam leer zurück."); failed = true; return
+            }
+            text = t
+        } catch {
+            message = L("Could not copy the prompt: ", "Prompt ließ sich nicht kopieren: ") + error.localizedDescription; failed = true; return
+        }
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
         message = L("Prompt copied. Paste it into the new routine.", "Prompt kopiert. Füge ihn in die neue Routine ein."); failed = false
     }

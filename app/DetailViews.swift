@@ -39,14 +39,7 @@ enum GitHost: Equatable {
     }
     /// "#12" on GitHub, "!12" on GitLab, as each site writes it.
     static func prLabel(_ repo: String?, _ n: Int) -> String { GitHost(repo: repo) == .github ? "#\(n)" : "!\(n)" }
-    /// The commits between what is live and the branch, on the repo's own site.
-    static func compareURL(_ item: Item) -> URL? {
-        guard case .gitlab = GitHost(item), let repo = item.repo else { return item.compareURL }
-        guard let live = item.lastSha, !live.isEmpty, item.hasNewCommits else { return nil }
-        let branch = item.ref ?? item.headSha ?? "main"
-        let safe = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "#?"))) ?? branch
-        return URL(string: web(repo) + "/-/compare/\(live)...\(safe)")
-    }
+    // The compare link (GitHub or GitLab) is `Item.compareURL`, one place for both hosts.
 }
 
 // MARK: - Build log

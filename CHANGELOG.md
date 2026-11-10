@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Settings: new tabs Projects (hidden projects plus pinned, notes, check paths, roll back on failure and ignored build triggers, each with a reset), Costs (budget as a currency field with a stepper and a line saying when the warning comes) and iPhone; the ⌥⌘K hot key moved to General. Each tab has its own height, the window keeps its place, and tabs with options get "Reset to defaults …" (asks first, never touches keys or project data).
+- Settings: links into Settings open the right tab ("Open Settings" for hidden projects, the Claude nudge, the Autofix toast, which also scrolls to Autofix, without the private `showSettingsWindow:` selector). New link `deploycenter://settings/<tab>`.
+- Settings fixes: notification and login-item hints are read again when the app becomes active; "Open at login" no longer registers twice after an error; a stored value a picker does not offer becomes the nearest one; "Copy diagnostics" has a line per platform, GitLab and Autofix; the Help text names GitLab and every platform; Help lists the keyboard shortcuts.
+- Settings → Platforms: platforms the window cannot show yet say "command line only" and cannot be switched on; planned ones sit in a folded "Planned" list without a switch; the locked last switch says why; after a switch "Vercel: on, 35 projects loaded", a failure offers "Try again"; Vercel and Render show whether they are connected.
+- Settings → Deploy: "Ask before a single deploy" (on by default) for the row menu and the palette alike.
+- Demo mode: View → Demo Mode (⇧⌘D) and a DEMO badge in the window. The output of Autofix, Claude, Team and the guard shows stand-ins; the iPhone QR code cannot be shown in demo mode and closes when it is turned on, and its window is left out of screenshots and screen sharing.
+- The menu bar and `deploycenter://select?project=` show exactly that project (by platform when one name is on two; `platform:name` works in the link). A link only shows: it never ticks or starts anything.
+- "Changed" counts leave hidden projects out everywhere. One compare link for GitHub and GitLab (`Item.compareURL`).
+- Status banner: the status pages come from the provider data (Netlify, Cloudflare Pages, DigitalOcean and others, plus a `statusPage` the script may report), only for platforms that are on.
+- Latest messages: a line about a project opens its build log; "Clear" empties the list.
+- GitHub budget spent: the app reloads by itself shortly after it resets.
+- Costs and build triggers say "As of …" when the last read failed and the values are older.
+- The guard's "Run now" reloads only the platforms that are on, in parallel; platform names come from the provider labels ("DigitalOcean App Platform", not "Digitalocean").
+- Autofix: "Copy prompt" says why when it fails.
+
 - `./build.sh --install` builds the widgets too when a signing identity is set, so a local install no longer removes the widgets from ~/Applications.
 - Autofix: "Claude is fixing it" no longer sticks. The app runs `deploys autofix sync` (new: records merged, closed or open fix PRs, never fires) every few minutes while a hand-over is open, so a merged fix shows "Fix merged – deploy now" even when the 10-minute job is not running. `autofix --only` syncs its project first.
 - Autofix: 90 minutes after a hand-over with no PR the row says "No fix PR from Claude – see session" (a cause outside the code, say) and links the session, instead of "fixing" for good.
