@@ -366,6 +366,11 @@ struct ContentView: View {
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView(costs: store.costs) }
         .sheet(isPresented: $showFirstStart) { FirstStartView(store: store) }
+        // Someone who used the app before this version has a history: no first start for them.
+        .onAppear { if !firstStartDone, UserDefaults.standard.object(forKey: "firstStartChecked") == nil {
+            UserDefaults.standard.set(true, forKey: "firstStartChecked")
+            if !Journal.load(limit: 1).isEmpty || UserDefaults.standard.object(forKey: "lastPlatform") != nil { firstStartDone = true }
+        } }
         .onChange(of: Platform.allCases.map { store.autoOn($0).count }.reduce(0, +) + (firstStartDone ? 0 : 1_000_000)) { _, _ in
             if FirstStart.due(done: firstStartDone, autoOn: Platform.allCases.map { store.autoOn($0).count }.reduce(0, +)), !Demo.on { showFirstStart = true }
         }

@@ -64,6 +64,12 @@ do {
     let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
     expect("journal note round trip", (try? dec.decode(JournalEntry.self, from: enc.encode(n)))?.note ?? "", "release mail")
     expect("journal without note decodes", (try? dec.decode(JournalEntry.self, from: Data(#"{"at":"2026-01-01T00:00:00Z","platform":"vercel","name":"a","result":"live"}"#.utf8)))?.name ?? "", "a")
+    let file = #"{"at":"2026-01-01T00:00:00.5Z","platform":"Vercel","name":"x","result":"live","extra":1}"# + "\n"
+        + #"{"at":"2026-01-01T00:00:00Z","platform":"Vercel","name":"a","result":"live","seconds":null,"detail":"d","by":"script"}"# + "\n"
+    let aId = (try? dec.decode(JournalEntry.self, from: Data(file.split(separator: "\n")[1].utf8)))?.id ?? ""
+    let noted = Journal.withNote(file, id: aId, note: "hi") ?? ""
+    expect("note: other lines stay byte for byte", noted.hasPrefix(String(file.split(separator: "\n")[0]) + "\n"), true)
+    expect("note: unknown keys stay", noted.contains(#""by":"script""#) && noted.contains(#""note":"hi""#), true)
     expect("search finds a note", Journal.filter([n], text: "mail", kind: nil).count, 1)
     expect("summary line", JournalStats.summaryLine([n]) ?? "", L("1 deploys, 0 failed", "1 Deploys, 0 fehlgeschlagen"))
 }

@@ -126,14 +126,31 @@ enum Journal {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         writer.async {
             lock.lock(); defer { lock.unlock() }
-            withFileLock {
-                var all = load(limit: .max)
-                guard let i = all.firstIndex(where: { $0.id == id }) else { return }
-                all[i].note = t.isEmpty ? nil : String(t.prefix(500))
-                rewrite(all)
-            }
+            withFileLock { setNoteLocked(id, t) }
             DispatchQueue.main.async { NotificationCenter.default.post(name: didAppend, object: nil) }
         }
+    }
+
+    /// Only the one line changes; every other line stays byte for byte (the script's lines, keys
+    /// this app does not know, lines it cannot read).
+    static func setNoteLocked(_ id: String, _ t: String) {
+        guard let text = try? String(contentsOf: url, encoding: .utf8), let out = withNote(text, id: id, note: t) else { return }
+        do { try Data(out.utf8).write(to: url, options: .atomic); private600(url) }
+        catch { Log.write("journal: comment not saved (\(error.localizedDescription))") }
+    }
+    /// The file's text with the comment set on the one entry; nil when it is not there.
+    static func withNote(_ text: String, id: String, note t: String) -> String? {
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        var lines = text.components(separatedBy: "\n")
+        for (n, line) in lines.enumerated().reversed() where !line.isEmpty {
+            guard let e = try? dec.decode(JournalEntry.self, from: Data(line.utf8)), e.id == id,
+                  var obj = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any] else { continue }
+            if t.isEmpty { obj.removeValue(forKey: "note") } else { obj["note"] = String(t.prefix(500)) }
+            guard let out = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys, .withoutEscapingSlashes]) else { return nil }
+            lines[n] = String(decoding: out, as: UTF8.self)
+            return lines.joined(separator: "\n")
+        }
+        return nil
     }
 
     /// Oldest first.
