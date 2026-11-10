@@ -100,8 +100,8 @@ printf '%s\n' "\$*" >> "$tmp/gh.log"
 case "\$1 \$2" in
   "api repos/me/app/pulls/"*) n="\${2##*/}"; f="$tmp/pr\$n.json"; [ -f "\$f" ] || exit 1
     q=""; prev=""; for a in "\$@"; do [ "\$prev" = --jq ] && q="\$a"; prev="\$a"; done; jq -c "\$q" "\$f" ;;
-  "issue list") cat "$tmp/issues.json" 2>/dev/null || echo '[]' ;;
-  "issue create") echo "https://github.com/me/ops/issues/7" ;;
+  "issue list") [ -n "\${FAKE_GH_FAIL:-}" ] && { echo "HTTP 401: Bad credentials" >&2; exit 1; }; cat "$tmp/issues.json" 2>/dev/null || echo '[]' ;;
+  "issue create") [ -n "\${FAKE_GH_CREATE_FAIL:-}" ] && { echo "HTTP 410: Issues are disabled" >&2; exit 1; }; echo "https://github.com/me/ops/issues/7" ;;
   "label create"|"issue edit"|"issue close"|"issue comment") ;;
   *) echo "unexpected gh: \$*" >&2; exit 1 ;;
 esac
@@ -547,6 +547,17 @@ contains "digest issue: an older day's is closed" "$(cat "$tmp/gh.log")" "issue 
 out="$(RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue --dry-run)"
 contains "digest issue: the body carries the approve list" "$out" '<!-- deploys-approve: app-web,api -->'
 rm -f "$tmp/issues.json"
+# A body over GitHub's limit is cut; the approval part stays. gh failing stops the run, no post.
+out="$(RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops DEPLOYS_DIGEST_MAX_BODY=200 digest/digest.sh --issue --dry-run)"
+contains "digest issue: a long body is cut with a note" "$out" "(cut: the list is longer than an issue can hold"
+contains "digest issue: the approve marker survives the cut" "$out" '<!-- deploys-approve: app-web,api -->'
+expect "digest issue: the cut body stays under the limit" "$(printf '%s' "$out" | sed -n '/^## Approve/q;p' | sed 1d | wc -c | awk '{print ($1 < 400)}')" 1
+: > "$tmp/curl.body"
+FAKE_GH_FAIL=1 RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops DEPLOYS_NOTIFY_URL=https://hooks.example.test/x digest/digest.sh --issue --post >/dev/null 2>"$tmp/err"
+expect "digest issue: gh failing fails the run, and nothing is posted" "$?:$(wc -c < "$tmp/curl.body" | tr -d ' ')" "1:0"
+contains "digest issue: gh's own error is shown" "$(cat "$tmp/err")" "Bad credentials"
+FAKE_GH_CREATE_FAIL=1 RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue >/dev/null 2>&1
+expect "digest issue: an issue that cannot be opened fails the run" "$?" 1
 
 # --- approve-deploy.yml: its steps, run as GitHub would (needs ruby for the YAML) ---
 if command -v ruby >/dev/null; then

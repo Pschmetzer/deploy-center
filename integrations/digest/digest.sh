@@ -178,6 +178,10 @@ $howto}" > "$out"
 # --- the issue: one per day, updated in place; older open digests are closed ---
 issue_url=""
 if [ "$issue" = 1 ] && [ -n "$names_csv" ]; then
+  # GitHub takes 65,536 characters in an issue body: a longer list is cut, the approval part and
+  # its marker always stay (DEPLOYS_DIGEST_MAX_BODY, for tests).
+  max="${DEPLOYS_DIGEST_MAX_BODY:-60000}"; case "$max" in ''|*[!0-9]*) max=60000 ;; esac
+  markdown="$(jq -rn --arg t "$markdown" --argjson n "$max" '$t | if length > $n then .[0:$n] + "\n\n… (cut: the list is longer than an issue can hold; see `deploys changed`)" else . end')"
   body="$markdown
 
 ## Approve
