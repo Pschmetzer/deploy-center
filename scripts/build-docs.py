@@ -35,12 +35,14 @@ PAGES = [
      "Install Deploy Center with Homebrew or by hand, what it needs, and how to connect Vercel, Render and GitHub."),
     ("safe-start", "Try it safely", "Start", "docs/SAFE-START.md",
      "Try Deploy Center without risk: only look first, then turn off auto-deploy for one project, then for all."),
-    ("cli", "CLI reference", "Start", "deploys",
-     "Every command of the deploys CLI: changed, deploy-changed, status, watch, logs, Vercel, Render, autofix, exit codes and config."),
+    ("cli", "CLI reference", "Start", "docs/CLI.md",
+     "Every command of the deploys CLI: changed, deploy-changed, status, watch, logs, Vercel, Render, autofix, CI variables, exit codes and settings."),
     ("auto-deploy", "Auto-deploy off and on", "Using it", "docs/AUTO-DEPLOY.md",
      "What turning off auto-deploy changes on Vercel and Render, and how to turn it back on."),
     ("autofix", "Autofix", "Using it", "docs/AUTOFIX.md",
      "deploys autofix hands a failed Vercel or Render build to a Claude Code routine that opens a fix pull request. It never deploys."),
+    ("deploy-hooks", "Deploy hooks (any host)", "Using it", "docs/providers/hook.md",
+     "Deploy any host with a build-trigger URL by hand: Cloudflare Pages, Netlify, DigitalOcean, Coolify, Dokploy, Amplify."),
     ("ci", "Deploy from CI", "Using it", "examples/README.md",
      "Run the deploys CLI without a Mac: a daily deploy from GitHub Actions, the environment variables it needs."),
     ("uninstall", "Uninstall", "Using it", "docs/UNINSTALL.md",
@@ -64,11 +66,12 @@ INTEGRATIONS = {
     "action": ("GitHub Action", "A GitHub Action that lists what has changes with deploys changed --json, and deploys only with deploy: true."),
     "badge": ("Status badges", "SVG status badges per project, such as deployed 3 d ago, 4 commits waiting. No server needed."),
     "notify": ("Daily summary", "A daily live today / waiting summary to Discord, Slack, ntfy or Telegram."),
+    "statuspage": ("Status page", "A static what-shipped-when page with an Atom feed and status.json, for any static host."),
     "hooks": ("pre-push hook", "A git pre-push hook that warns how many Vercel and Render builds a push would start."),
     "mcp": ("MCP server", "An MCP server for Claude Code, Claude Desktop, Cursor and VS Code: what is waiting, release notes, logs, and opt-in deploys."),
     "docker": ("Docker image", "A Linux image with the deploys CLI and its tools, for CI."),
 }
-INTEGRATION_ORDER = ["action", "badge", "notify", "hooks", "mcp", "docker"]
+INTEGRATION_ORDER = ["action", "badge", "statuspage", "notify", "hooks", "mcp", "docker"]
 GROUPS = ["Start", "Using it", "Reference", "Integrations"]
 # CLI help lines without a description of their own.
 MISSING = {
@@ -76,7 +79,9 @@ MISSING = {
     "deploys render autodeploy-off <s>|--all": "set auto-deploy to Off for one service, or all",
 }
 # README sections that make up Getting started.
-README_SECTIONS = ["Install in 30 seconds", "Requirements", "Connect your accounts", "Good to know"]
+# The first one must exist; the others are taken when they are there.
+README_SECTIONS = ["Install", "How it works", "What it changes, and how to undo it",
+                   "Requirements", "Connect your accounts", "Good to know"]
 
 
 class BuildError(Exception):
@@ -255,7 +260,8 @@ class Converter:
         body = [[c.replace("\\|", "|") for c in r] for r in body]
         h = "".join(f"<th>{self.inline(c)}</th>" for c in head)
         b = "".join("<tr>" + "".join(f"<td>{self.inline(c)}</td>" for c in r) + "</tr>" for r in body)
-        return f'<div class="tablewrap"><table><thead><tr>{h}</tr></thead><tbody>{b}</tbody></table></div>'
+        thead = f"<thead><tr>{h}</tr></thead>" if any(head) else ""  # | | | has no header to show
+        return f'<div class="tablewrap"><table>{thead}<tbody>{b}</tbody></table></div>'
 
     def list_(self, lines, i):
         m = LIST_RE.match(lines[i])
@@ -354,7 +360,7 @@ def link_rewriter(source, by_source, anchors_of):
 
 
 def readme_part(text):
-    """The README sections that make up Getting started, plus its one-line pitch."""
+    """Getting started: the README's pitch and its install / setup sections."""
     parts, cur = {}, None
     for line in text.split("\n"):
         m = re.match(r"^## (.*)$", line)
@@ -362,103 +368,69 @@ def readme_part(text):
             cur = m.group(1).strip()
             parts[cur] = []
         elif cur:
+            # <details><summary>X</summary> folds text on GitHub; on the site it is a sub-heading
+            if re.match(r"^\s*</?details>\s*$", line):
+                continue
+            line = re.sub(r"^\s*<summary>(.*?)</summary>\s*$", r"### \1", line)
             parts[cur].append(line)
-    missing = [s for s in README_SECTIONS if s not in parts]
-    if missing:
-        raise BuildError(f"README.md: section(s) not found for Getting started: {missing}")
-    pitch = re.search(r"<b>(.*?)</b><br>\s*(.*?)</p>", text, re.S)
-    lead = f"**{pitch.group(1).strip()}** {pitch.group(2).strip()}\n\n" if pitch else ""
+    sections = [s for s in README_SECTIONS if s in parts]
+    if README_SECTIONS[0] not in parts:
+        raise BuildError(f"README.md: no '## {README_SECTIONS[0]}' section for Getting started "
+                         f"(update README_SECTIONS in scripts/build-docs.py)")
+    pitch = re.search(r"<p[^>]*>\s*<b>([^<]*)</b>\s*<br>(.*?)</p>", text, re.S)
+    lead = ""
+    if pitch:
+        rest = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", pitch.group(2))).strip()
+        lead = f"**{pitch.group(1).strip()}** {rest}\n\n"
     md = "# Getting started\n\n" + lead
-    for s in README_SECTIONS:
+    for s in sections:
         md += f"## {s}\n" + "\n".join(parts[s]) + "\n"
     md += ("## Next steps\n\n- [Try it safely](docs/SAFE-START.md): look first, then one project, then all\n"
-           "- [CLI reference](deploys): every `deploys` command\n"
+           "- [CLI reference](docs/CLI.md): every `deploys` command\n"
            "- [Troubleshooting](docs/TROUBLESHOOTING.md) when a message is unclear\n")
-    return md
+    return md, ["Next steps"] + sections
 
 
-def cli_markdown():
-    """CLI reference from `deploys --help` (the comment block at the top of deploys)."""
+def help_commands():
+    """The command list of `deploys --help`, as Markdown tables per platform."""
     try:
         out = subprocess.run(["bash", os.path.join(ROOT, "deploys"), "--help"], cwd=ROOT,
                              capture_output=True, text=True, timeout=30, check=True).stdout
     except (OSError, subprocess.SubprocessError) as e:
         raise BuildError(f"deploys --help failed: {e}")
-    lines = out.rstrip("\n").split("\n")
-    if not lines or "Commands:" not in out:
+    m = re.search(r"^Commands:\n(.*?)(?=^\S|\Z)", out, re.S | re.M)
+    if not m:
         raise BuildError("deploys --help: no Commands: section")
-    title = lines[0]
-    sections, cur = [("", [])], None
-    for line in lines[1:]:
-        if re.match(r"^\S.*:\s*$", line) or re.match(r"^(Exit codes|Config lives in)", line):
-            sections.append((line.strip(), []))
-        else:
-            sections[-1][1].append(line)
-    md = ["# CLI reference", "",
-          f"`deploys` is the bash script behind the app: {plain(title.split('—', 1)[-1].strip()).rstrip('.')}. "
-          "It is inside the app at `Deploy Center.app/Contents/Resources/deploys` and runs on Linux and in CI too. "
-          "This page is generated from `deploys --help`.", ""]
-    groups = {"General": [], "Vercel": [], "Render": [], "Autofix": []}
-    for head, body in sections:
-        if head == "Commands:":
-            rows = []
-            # the column where descriptions start; a line whose command runs up to it has one space only
-            starts = [m.end(1) + len(m.group(2)) for m in (re.match(r"^(  deploys \S.*?)( {2,})\S", l) for l in body) if m]
-            col = max(set(starts), key=starts.count) if starts else 0
-            for line in body:
-                if not line.strip():
-                    continue
-                m = re.match(r"^  (deploys \S.*?)(?: {2,}(\S.*))?$", line)
-                if m and not m.group(2) and col and len(line) > col and line[col - 1] == " " and line[col] != " ":
-                    m = re.match(r"^  (.*)$", line[:col].rstrip()), line[col:]
-                    rows.append([m[0].group(1).strip(), m[1].strip()])
-                elif m and not line.startswith("   "):
-                    rows.append([m.group(1).strip(), (m.group(2) or "").strip() or MISSING.get(m.group(1).strip(), "")])
-                elif rows:
-                    rows[-1][1] = (rows[-1][1] + " " + line.strip()).strip()
-            for cmd, desc in rows:
-                word = cmd.split()[1]
-                g = {"vercel": "Vercel", "render": "Render", "autofix": "Autofix"}.get(word, "General")
-                groups[g].append((cmd, desc))
-        elif head == "" :
-            text = " ".join(l.strip() for l in body if l.strip())
-            if text:
-                md += [text, ""]
-        elif head.startswith("Access"):
-            md += ["## Access", ""]
-            for l in body:
-                m = re.match(r"^\s+(\S+)\s+(.*)$", l)
-                if m:
-                    md.append(f"- **{m.group(1)}**: {m.group(2)}")
-                elif l.strip():
-                    md += ["", l.strip()]
-            md.append("")
-        elif head.startswith("Exit codes"):
-            text = " ".join([head.split(":", 1)[1].strip()] + [l.strip() for l in body if l.strip()])
-            md += ["## Exit codes", "", text, ""]
-        elif head.startswith("Config lives in"):
-            md += ["## Config", "", head.rstrip(":").replace("${DEPLOYS_CONFIG:-~/.config/deploys}",
-                                                                "`$DEPLOYS_CONFIG` (default `~/.config/deploys`)") + ":", ""]
-            for l in body:
-                m = re.match(r"^\s+(\S+)\s+(.*)$", l)
-                if m:
-                    md.append(f"- `{m.group(1)}`: {m.group(2)}")
-            md.append("")
-    cmd_md = ["## Commands", "", "Add `--json` to any command for the machine answer.", ""]
-    for g, rows in groups.items():
-        if not rows:
+    body = m.group(1).split("\n")
+    # the column where descriptions start; a command that runs up to it has one space only
+    starts = [m.end(1) + len(m.group(2)) for m in (re.match(r"^(  deploys \S.*?)( {2,})\S", l) for l in body) if m]
+    col = max(set(starts), key=starts.count) if starts else 0
+    rows = []
+    for line in body:
+        if not line.strip():
             continue
-        cmd_md += [f"### {g}", "", "| Command | What it does |", "|---|---|"]
-        for cmd, desc in rows:
-            desc = desc.replace("docs/AUTOFIX.md", "[Autofix](docs/AUTOFIX.md)")
-            cmd_md.append(f"| `{cmd.replace('|', chr(92) + '|')}` | {desc.replace('|', chr(92) + '|')} |")
-        cmd_md.append("")
-    # The commands go right after the intro, before Access / Exit codes / Config.
-    intro_end = next(k for k, l in enumerate(md) if l.startswith("## "))
-    md = md[:intro_end] + cmd_md + md[intro_end:]
-    md += ["## Environment", "",
-           "On a server or in CI, `RENDER_API_KEY` takes the place of the keychain and `VERCEL_TOKEN` is read "
-           "by the Vercel CLI. See [Deploy from CI](examples/README.md) for the full list.", ""]
+        m = re.match(r"^  (deploys \S.*?)(?: {2,}(\S.*))?$", line)
+        if m and not m.group(2) and col and len(line) > col and line[col - 1] == " " and line[col] != " ":
+            rows.append([line[:col].strip(), line[col:].strip()])
+        elif m and not line.startswith("   "):
+            rows.append([m.group(1).strip(), (m.group(2) or "").strip() or MISSING.get(m.group(1).strip(), "")])
+        elif rows:
+            rows[-1][1] = (rows[-1][1] + " " + line.strip()).strip()
+    if not rows:
+        raise BuildError("deploys --help: no commands found")
+    groups = {"General": [], "Vercel": [], "Render": [], "Autofix": []}
+    for cmd, desc in rows:
+        groups[{"vercel": "Vercel", "render": "Render", "autofix": "Autofix"}.get(cmd.split()[1], "General")].append((cmd, desc))
+    md = ["## All commands", "",
+          "Generated from `deploys --help`, so it always matches the script.", ""]
+    for g, items in groups.items():
+        if not items:
+            continue
+        md += [f"### {g} commands", "", "| Command | What it does |", "|---|---|"]
+        for cmd, desc in items:
+            desc = desc.replace("docs/AUTOFIX.md", "[Autofix](AUTOFIX.md)")  # relative to docs/CLI.md
+            md.append(f"| `{cmd.replace('|', chr(92) + '|')}` | {desc.replace('|', chr(92) + '|')} |")
+        md.append("")
     return "\n".join(md)
 
 
@@ -468,16 +440,20 @@ PAGE_LABELS = {}
 def build_pages(pages):
     by_source = {p.source: p for p in pages}
     PAGE_LABELS.update({p.url: p.label for p in pages})
-    # Getting started has only some README sections; other README anchors go to GitHub.
-    gs_ids = {slugify(s, set()) for s in README_SECTIONS + ["Next steps"]}
-    anchors = lambda src: gs_ids if src == "README.md" else set()
+    # Getting started has only some README sections; links to the others go to GitHub.
+    gs_ids = set()
+    anchors = lambda src: gs_ids if src == "README.md" else None
     for p in pages:
-        if p.slug == "cli":
-            md, src_for_links = cli_markdown(), "README.md"
-        elif p.source == "README.md":
-            md, src_for_links = readme_part(open(os.path.join(ROOT, p.source), encoding="utf-8").read()), "README.md"
+        src_for_links = p.source
+        text = open(os.path.join(ROOT, p.source), encoding="utf-8").read()
+        if p.source == "README.md":
+            md, kept = readme_part(text)
+            gs_ids.update(slugify(plain(k), set()) for k in kept)
+        elif p.slug == "cli":
+            md = text.rstrip("\n") + "\n\n" + help_commands() + "\n"
+            p.dates_from = [p.source, "deploys"]
         else:
-            md, src_for_links = open(os.path.join(ROOT, p.source), encoding="utf-8").read(), p.source
+            md = text
         conv = Converter(link_rewriter(src_for_links, by_source, anchors))
         p.body = conv.convert(md)
         p.headings = conv.headings
@@ -489,8 +465,9 @@ def build_pages(pages):
             for q, a in re.findall(r'<h3 id="[^"]*">(.*?)<a class="anchor".*?</h3>\s*(.*?)(?=<h[23] |\Z)', p.body, re.S):
                 text = lambda s: re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", s))).strip()
                 p.faq.append((text(q), text(a)))
-        p.updated = last_updated(p.source)
-        p.published = first_published(p.source)
+        srcs = getattr(p, "dates_from", [p.source])
+        p.updated = max(last_updated(x) for x in srcs)
+        p.published = min(first_published(x) for x in srcs)
 
 
 # ---------------------------------------------------------------- html
