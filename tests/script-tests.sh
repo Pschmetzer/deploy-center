@@ -176,6 +176,12 @@ rc="$(run "$O" "$E" deploy-changed --yes)"
 expect "Vercel down: deploy-changed --yes starts nothing" "$rc:$(grep -c POST "$e2e/calls.log")" "1:0"
 unset VSTUB
 
+# The vercel CLI not on PATH (launchd) while projects are remembered: an error, not silence.
+fresh; mv "$e2e/bin/vercel" "$e2e/vercel.off"
+rc="$(run "$O" "$E" changed)"
+expect "vercel CLI missing: changed exits non-zero and says why" "$rc:$(grep -c 'could not read vercel' "$E")" "1:1"
+mv "$e2e/vercel.off" "$e2e/bin/vercel"
+
 # gh not logged in: every head is unknown, so nothing is known to be current.
 fresh; export GSTUB=down
 rc="$(run "$O" "$E" changed)"
