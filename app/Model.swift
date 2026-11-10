@@ -213,3 +213,133 @@ func localDay(_ d: Date = Date(), timeZone: TimeZone = .current) -> String {
 }
 
 func date(_ secs: Double?) -> Date? { secs.flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0) : nil } }
+
+// MARK: - Autofix and auto-deploy allowances, as the rows show them
+
+extension Item {
+    /// The last deploy on the platform failed (not cancelled): what autofix would hand to Claude.
+    var lastFailed: Bool {
+        let s = (lastState ?? "").lowercased()
+        return s.contains("fail") || s == "error"
+    }
+}
+
+/// `deploys autofix status --json`. Older scripts send `pr` and no PR state; newer ones
+/// `prNumber`, `prState`, `prUrl`. A missing field is nil, a broken fire is skipped.
+struct AutofixReport: Decodable {
+    struct Fire: Decodable {
+        let at: Double
+        let project: String
+        let platform: String?
+        let status: String
+        let session: String?
+        let prNumber: Int?
+        let prState: String?
+        let prUrl: String?
+        let mergedSha: String?
+        let redeployedSha: String?
+        init(at: Double, project: String, platform: String?, status: String, session: String? = nil, prNumber: Int? = nil,
+             prState: String? = nil, prUrl: String? = nil, mergedSha: String? = nil, redeployedSha: String? = nil) {
+            self.at = at; self.project = project; self.platform = platform; self.status = status; self.session = session
+            self.prNumber = prNumber; self.prState = prState; self.prUrl = prUrl; self.mergedSha = mergedSha; self.redeployedSha = redeployedSha
+        }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: K.self)
+            func s(_ k: K) -> String? { ((try? c.decodeIfPresent(String.self, forKey: k)) ?? nil).flatMap { $0.isEmpty ? nil : $0 } }
+            func n(_ k: K) -> Int? { (try? c.decodeIfPresent(Int.self, forKey: k)) ?? nil }
+            at = try c.decode(Double.self, forKey: .at)
+            project = try c.decode(String.self, forKey: .project)
+            status = try c.decode(String.self, forKey: .status)
+            platform = s(.platform); session = s(.session); prState = s(.prState)?.lowercased(); prUrl = s(.prUrl)
+            prNumber = n(.prNumber) ?? n(.pr); mergedSha = s(.mergedSha); redeployedSha = s(.redeployedSha)
+        }
+        private enum K: String, CodingKey { case at, project, platform, status, session, prNumber, pr, prState, prUrl, mergedSha, redeployedSha }
+    }
+    let routine: String?
+    let token: Bool
+    let fires: [Fire]
+    /// A routine and its token are set: `deploys autofix --only` can hand a build over.
+    var ready: Bool { routine != nil && token }
+    init(routine: String?, token: Bool, fires: [Fire]) { self.routine = routine; self.token = token; self.fires = fires }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        routine = ((try? c.decodeIfPresent(String.self, forKey: .routine)) ?? nil).flatMap { $0.isEmpty ? nil : $0 }
+        token = ((try? c.decodeIfPresent(Bool.self, forKey: .token)) ?? nil) ?? false
+        fires = (((try? c.decodeIfPresent([Lossy<Fire>].self, forKey: .fires)) ?? nil) ?? []).compactMap(\.value)
+    }
+    private enum K: String, CodingKey { case routine, token, fires }
+
+    /// The newest hand-over of this row. Fires name the project (a Render service by its name, not its id).
+    func newest(for i: Item) -> Fire? {
+        fires.filter { $0.project == i.name && ($0.platform?.lowercased() ?? i.platform.cli) == i.platform.cli }
+            .max { $0.at < $1.at }
+    }
+}
+
+/// What a row says about autofix. The status has no "done" flag, so each case ends by itself
+/// when the row moves on (the build is green again, the merged fix is live).
+enum RowAutofix: Equatable {
+    case fixing(session: URL?)
+    case prOpen(number: Int, url: URL?)
+    case merged(sha: String, pr: Int?, url: URL?)
+    case handedBack
+
+    static func of(_ i: Item, _ f: AutofixReport.Fire?) -> RowAutofix? {
+        guard let f else { return nil }
+        let pr = f.prUrl.flatMap(URL.init(string:))
+        if let m = f.mergedSha {
+            if f.redeployedSha != nil { return nil }
+            // Live already, or nothing on the branch left to deploy.
+            if let live = i.lastSha, !live.isEmpty, live.hasPrefix(m) || m.hasPrefix(live) { return nil }
+            return i.hasNewCommits ? .merged(sha: m, pr: f.prNumber, url: pr) : nil
+        }
+        if f.prState == "open", let n = f.prNumber { return .prOpen(number: n, url: pr) }
+        guard i.lastFailed else { return nil }   // green again: nothing to say
+        if f.prState == "closed" || f.prState == "merged" { return .handedBack }
+        switch f.status {
+        case "fired", "pending", "ratelimited": return .fixing(session: f.session.flatMap(URL.init(string:)))
+        case "skipped", "failed": return .handedBack
+        default: return nil
+        }
+    }
+
+    /// Key for "preselected once": a person who unticks the row is not overruled by the next load.
+    static func preselectKey(_ i: Item, sha: String) -> String { "\(i.platform.cli)/\(i.id)@\(sha)" }
+}
+
+/// A temporary auto-deploy allowance (`deploys guard status --json`). `expiresAt` is epoch
+/// seconds or an ISO 8601 date, whichever the script sends.
+struct AutoDeployAllowance: Decodable, Equatable {
+    let platform: String
+    let project: String
+    let expiresAt: Date
+    init(platform: String, project: String, expiresAt: Date) { self.platform = platform; self.project = project; self.expiresAt = expiresAt }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        platform = try c.decode(String.self, forKey: .platform).lowercased()
+        project = try c.decode(String.self, forKey: .project)
+        if let n = try? c.decode(Double.self, forKey: .expiresAt) {
+            expiresAt = Date(timeIntervalSince1970: n > 1e12 ? n / 1000 : n)
+        } else {
+            let s = try c.decode(String.self, forKey: .expiresAt)
+            let f = ISO8601DateFormatter(), g = ISO8601DateFormatter()
+            g.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let d = f.date(from: s) ?? g.date(from: s) else {
+                throw DecodingError.dataCorruptedError(forKey: .expiresAt, in: c, debugDescription: "not a date: \(s)")
+            }
+            expiresAt = d
+        }
+    }
+    private enum K: String, CodingKey { case platform, project, expiresAt }
+
+    /// A Render allowance may name the service by id or by name.
+    func covers(_ i: Item) -> Bool { platform == i.platform.cli && (project == i.name || project == i.id) }
+}
+struct AllowanceReport: Decodable {
+    let allowances: [AutoDeployAllowance]
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        allowances = (((try? c.decodeIfPresent([Lossy<AutoDeployAllowance>].self, forKey: .allowances)) ?? nil) ?? []).compactMap(\.value)
+    }
+    private enum K: String, CodingKey { case allowances }
+}

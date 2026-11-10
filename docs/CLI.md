@@ -22,6 +22,7 @@ deploys ignore my-project               # leave it out of changed / deploy-chang
 ```bash
 deploys vercel list                     # which projects still deploy on push
 deploys vercel autodeploy-off --all     # or one project by name
+deploys vercel autodeploy-on my-project # connect Git again (or --all)
 deploys vercel deploy my-project        # newest commit to production
 deploys vercel deploy my-project --preview
 deploys vercel rollback my-project
@@ -34,6 +35,7 @@ deploys vercel team [<id>]              # show or set the Vercel team
 ```bash
 deploys render list
 deploys render autodeploy-off --all     # or one service by name
+deploys render autodeploy-on my-service # auto-deploy "On Commit" again (or --all)
 deploys render deploy my-service
 deploys render rollback my-service
 deploys render set-key                  # store the API key in the keychain (reads stdin)
@@ -51,6 +53,10 @@ deploys costs [days]                    # Vercel charges per day
 deploys triggers                        # builds nobody started from here, deploying workflows, Blueprints
 deploys where                           # config folder, version, key source, logins
 deploys autofix [--dry-run]             # see AUTOFIX.md
+deploys autofix --only vercel my-project  # this one failure now
+deploys autodeploy allow vercel my-project 4   # auto-deploy on for 4 hours (see GUARD.md)
+deploys autodeploy allowed | revoke vercel my-project
+deploys guard [--dry-run] | status | schedule on|off   # auto-deploy off where it came back on
 eval "$(deploys completion zsh)"        # tab completion (also: bash)
 ```
 

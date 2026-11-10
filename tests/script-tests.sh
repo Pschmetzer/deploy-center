@@ -3,6 +3,8 @@
 # No network: `gh` is a stand-in that answers from the cases below. Run: tests/script-tests.sh
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
+# Stubs read stdin (the security stand-in does): never wait on a terminal or a pipe.
+exec </dev/null
 fails=0
 ok()   { echo "ok   $1"; }
 fail() { echo "FAIL $1: $2"; fails=$((fails+1)); }
@@ -401,6 +403,171 @@ mkdir -p "$DEPLOYS_CONFIG/locks/autofix"
 expect "autofix: a held lock stops a second run" "$(afrun | grep -c 'running already'):$(fired)" "1:0"
 rmdir "$DEPLOYS_CONFIG/locks/autofix"
 
+# --- autofix --only and the PR fields of autofix status ---
+afonly() { ( set -e; PATH="$af/bin:$PATH" DEPLOYS_ROUTINE_TOKEN=sk-ant-oat01-SECRET DEPLOYS_NOTIFY=0 autofix_run "" "$@" ) >/dev/null 2>&1; echo $?; }
+af_reset; OPENPRS='[]'; CLOSEDPRS='[]'
+ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"},
+      {"platform":"render","name":"api","repo":"me/api","lastState":"build_failed","latestId":"r1","latestSha":"bbbb222"},
+      {"platform":"vercel","name":"ok","repo":"me/ok","latestState":"READY","latestId":"d9","latestSha":"cccc"}]'
+expect "autofix --only: hands over exactly the named one" "$(afonly render api):$(fired):$(jq -r '.fires[0].project' "$AUTOFIX_STATE")" "0:1:api"
+: > "$CALLS"
+expect "autofix --only: the same failure again is 3 (already fixing)" "$(afonly render api):$(fired)" "3:0"
+expect "autofix --only: a project that did not fail is 2" "$(afonly vercel ok)" "2"
+expect "autofix --only: an unknown project is 2" "$(afonly vercel nope)" "2"
+af_reset; OPENPRS='[{"number":7,"ref":"claude/autofix-web-aaaa111"}]'
+expect "autofix --only: an open autofix PR is 3" "$(afonly vercel web):$(fired)" "3:0"
+OPENPRS='[]'; af_reset
+jq -n --argjson t "$now" '{fires:[{deployId:"o1",project:"web",status:"fired",at:($t-100)},{deployId:"o2",project:"web",status:"failed",at:($t-200)}]}' > "$AUTOFIX_STATE"
+expect "autofix --only: the per-project cap is 4" "$(afonly vercel web):$(fired)" "4:0"
+af_reset; mkdir -p "$DEPLOYS_CONFIG/locks/autofix"
+expect "autofix --only: a held lock is 6" "$(afonly vercel web)" "6"
+rmdir "$DEPLOYS_CONFIG/locks/autofix"
+af_reset; mv "$DEPLOYS_CONFIG/autofix-routine" "$af/routine.off"
+out="$(env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" DEPLOYS_ROUTINE_TOKEN=sk-ant-x /bin/bash ./deploys autofix --only vercel web 2>&1 </dev/null)"; rc=$?
+expect "autofix --only: no routine is 5" "$rc:$(echo "$out" | grep -c 'No routine set')" "5:1"
+mv "$af/routine.off" "$DEPLOYS_CONFIG/autofix-routine"
+out="$(env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" /bin/bash ./deploys autofix --only heroku web 2>&1 </dev/null)"; rc=$?
+expect "autofix --only: a wrong platform is a usage error" "$rc:$(echo "$out" | grep -c 'Usage: deploys autofix --only')" "1:1"
+
+# PR state per fire: open, then merged; only the exact fix branch counts.
+af_reset
+jq -n --argjson t "$((now - 600))" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",sha:"aaaa111",status:"fired",at:$t,session:"https://claude.ai/code/s1"}]}' > "$AUTOFIX_STATE"
+ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"}]'
+OPENPRS='[{"number":5,"ref":"claude/autofix-web-app-aaaa111","url":"https://github.com/me/web/pull/5"},{"number":9,"ref":"claude/autofix-web-aaaa111","url":"https://github.com/me/web/pull/9"}]'
+afrun >/dev/null
+expect "autofix: an open fix PR is recorded (the exact branch, not web-app's)" "$(jq -c '.fires[0] | [.prNumber, .prState, .prUrl]' "$AUTOFIX_STATE")" '[9,"open","https://github.com/me/web/pull/9"]'
+OPENPRS='[]'
+CLOSEDPRS="[{\"number\":9,\"merged_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"closed_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"merge_commit_sha\":\"ffff999\",\"ref\":\"claude/autofix-web-aaaa111\",\"url\":\"https://github.com/me/web/pull/9\"}]"
+afrun >/dev/null
+st="$(env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" /bin/bash ./deploys autofix status --json </dev/null)"
+expect "autofix status --json: prNumber, prState, prUrl, session, mergedSha (and pr kept)" \
+  "$(echo "$st" | jq -c '.fires[0] | [.prNumber, .prState, .prUrl, .session, .mergedSha, .pr]')" '[9,"merged","https://github.com/me/web/pull/9","https://claude.ai/code/s1","ffff999",9]'
+CLOSEDPRS='[]'; ALL='[]'
+
+# --- auto-deploy on again, allowances, the guard ---
+gd="$tmp/gd"; mkdir -p "$gd"
+export DEPLOYS_NOTIFY=0
+# The platforms: VLIST/RLIST are what is there; switches are logged; GFAIL names one that fails.
+VLIST='[]'; RLIST='[]'; GFAIL=""
+ad_platforms() { printf 'vercel\nrender\n'; }
+ad_list_vercel() { [ "$VLIST" = down ] && { echo "Error: vercel: not logged in" >&2; return 1; }; echo "$VLIST"; }
+ad_list_render() { echo "$RLIST"; }
+ad_off() { [ "$2" = "$GFAIL" ] && { echo "Error: Vercel: could not disconnect $2" >&2; exit 1; }; echo "off $1 $2 $3" >> "$CALLS"; echo "$1: $2 no longer deploys on push"; }
+ad_on() { [ "$2" = "$GFAIL" ] && { echo "Error: no" >&2; exit 1; }; echo "on $1 $2 $3 allowed=$(jq -c 'keys' "$ALLOW_FILE" 2>/dev/null)" >> "$CALLS"; }
+# guard_run in $(…) runs in a subshell: its GUARD_ACTIONS come back through a file.
+gr() { : > "$CALLS"; guard_run "$@" >/dev/null 2>&1; local r=$?; echo "$GUARD_ACTIONS" > "$gd/actions"; echo "$r"; }
+gacts() { cat "$gd/actions"; }
+offs() { grep '^off ' "$CALLS" | cut -d' ' -f2,3 | tr '\n' ',' ; }
+locked() { [ -d "$DEPLOYS_CONFIG/locks/autodeploy" ] && echo locked || echo free; }
+now="$(date +%s)"
+
+rm -f "$ALLOW_FILE" "$GUARD_STATE"
+VLIST='[{"name":"web","id":"web","auto":true},{"name":"blog","id":"blog","auto":true},{"name":"docs","id":"docs","auto":false}]'
+RLIST='[{"name":"api","id":"srv-1","auto":true}]'
+jq -n --argjson t "$now" '{"vercel:blog":($t+3600), "render:*":($t+3600), "vercel:old":($t-10)}' > "$ALLOW_FILE"
+expect "guard: on without an allowance goes off; allowed ones stay on" "$(gr ""):$(offs)" "0:vercel web,"
+expect "guard: an expired allowance is removed" "$(jq -c 'keys' "$ALLOW_FILE")" '["render:*","vercel:blog"]'
+expect "guard: the lock is released" "$(locked)" "free"
+
+jq -n --argjson t "$now" '{"vercel:web":($t-10)}' > "$ALLOW_FILE"; cp "$ALLOW_FILE" "$gd/before"
+expect "guard --dry-run: switches nothing, removes nothing" "$(gr 1):$(offs):$(cmp -s "$ALLOW_FILE" "$gd/before" && echo same)" "0::same"
+expect "guard --dry-run: says what it would do" "$(gacts | jq -c '[.[] | "\(.action) \(.platform) \(.project)"]')" '["wouldOff vercel web","wouldOff vercel blog","wouldOff render api"]'
+
+# An allowance given between the listing and the switch wins (read again under the lock).
+rm -f "$ALLOW_FILE"; RLIST='[]'; VLIST='[{"name":"web","id":"web","auto":true}]'
+eval "$(declare -f ad_lock | sed '1s/ad_lock/ad_lock_real/')"
+# The first lock is the expiry sweep, the second the switch: the allowance arrives in between.
+ad_lock() { n=$(cat "$gd/race" 2>/dev/null); n=$((${n:-0} + 1)); echo "$n" > "$gd/race"
+            [ "$n" = 2 ] && jq -n --argjson t "$now" '{"vercel:web":($t+600)}' > "$ALLOW_FILE"; ad_lock_real; }
+rm -f "$gd/race" "$ALLOW_FILE"
+expect "guard: an allowance given a moment before the switch wins" "$(gr ""):$(offs)" "0:"
+rm -f "$gd/race"; unset -f ad_lock; eval "$(declare -f ad_lock_real | sed '1s/ad_lock_real/ad_lock/')"
+
+# One failing switch: the rest is done, the lock is free, the run says so.
+rm -f "$ALLOW_FILE"; GFAIL=web
+VLIST='[{"name":"web","id":"web","auto":true},{"name":"blog","id":"blog","auto":true}]'; RLIST='[{"name":"api","id":"srv-1","auto":true}]'
+expect "guard: one failing switch does not stop the others" "$(gr ""):$(offs):$(locked)" "1:vercel blog,render api,:free"
+expect "guard: the failure is recorded" "$(gacts | jq -r '.[] | select(.action == "failed") | "\(.project): \(.error)"')" "web: Vercel: could not disconnect web"
+GFAIL=""
+
+# A platform that cannot be read is an error, never "nothing is on"; the other one still runs.
+VLIST=down
+expect "guard: an unreadable platform is an error, the other is still checked" "$(gr ""):$(offs)" "1:render api,"
+expect "guard: the unreadable platform is in the actions" "$(gacts | jq -c '[.[] | select(.action == "error") | .platform]')" '["vercel"]'
+VLIST='[]'
+
+# First run after turning it on: only a dry run. The next one acts.
+printf '#!/bin/bash\necho "launchctl $*" >> "$CALLS"\n' > "$tmp/bin/launchctl"; chmod +x "$tmp/bin/launchctl"
+export DEPLOYS_LAUNCH_DIR="$gd/agents"; rm -f "$GUARD_STATE" "$ALLOW_FILE"
+: > "$CALLS"; guard_schedule_on
+expect "guard schedule on: writes and loads a job that runs guard every 30 minutes" \
+  "$(grep -c '<string>guard</string>' "$gd/agents/app.deploycenter.guard.plist"):$(grep -c '<integer>1800</integer>' "$gd/agents/app.deploycenter.guard.plist"):$(grep -c 'launchctl bootstrap' "$CALLS")" "1:1:1"
+expect "guard: the job is valid XML" "$(plutil -lint "$gd/agents/app.deploycenter.guard.plist" >/dev/null 2>&1 && echo ok || (command -v plutil >/dev/null && echo bad || echo ok))" "ok"
+RLIST='[{"name":"api","id":"srv-1","auto":true}]'
+: > "$CALLS"; guard_main "" >/dev/null 2>&1
+expect "guard: the first run after turning it on changes nothing" "$(offs):$(jq -r '.lastDry' "$GUARD_STATE")" ":true"
+: > "$CALLS"; guard_main "" >/dev/null 2>&1
+expect "guard: the second run turns it off" "$(offs):$(jq -r '.lastDry' "$GUARD_STATE")" "render api,:false"
+st="$(env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" /bin/bash ./deploys guard status --json </dev/null)"
+expect "guard status --json: the shape the app reads" \
+  "$(echo "$st" | jq -c '[.enabled, (.lastRun | type), (.lastActions[0] | [.platform, .project, .action, (.at | type), .error]), .allowances]')" \
+  '[true,"number",["render","api","off","number",null],[]]'
+guard_schedule_off
+expect "guard schedule off: removes the job" "$([ -f "$gd/agents/app.deploycenter.guard.plist" ] && echo there || echo gone)" "gone"
+
+# allow: written before the switch (a guard run in between sees it); a failed switch withdraws it.
+rm -f "$ALLOW_FILE"; VLIST='[]'; RLIST='[]'
+: > "$CALLS"; ( allow_main vercel web 4 ) >/dev/null 2>&1; rc=$?
+expect "autodeploy allow: the allowance exists before auto-deploy is turned on" "$rc:$(grep '^on ' "$CALLS")" '0:on vercel web web allowed=["vercel:web"]'
+exp="$(jq '."vercel:web"' "$ALLOW_FILE")"
+expect "autodeploy allow: expires after the hours given" "$(( (exp - now + 30) / 3600 ))" "4"
+GFAIL=blog; out="$( ( allow_main vercel blog 1 ) 2>&1)"; rc=$?
+expect "autodeploy allow: a failed switch withdraws the allowance" "$rc:$(jq -c 'keys' "$ALLOW_FILE"):$(echo "$out" | grep -c withdrawn)" '1:["vercel:web"]:1'
+GFAIL=""
+out="$( ( allow_main vercel web 0 ) 2>&1)"; rc=$?
+expect "autodeploy allow: hours outside 1-168 are refused" "$rc:$(echo "$out" | grep -c 'between 1 and 168')" "1:1"
+out="$( ( allow_main heroku web 2 ) 2>&1)"; rc=$?
+expect "autodeploy allow: a wrong platform is refused" "$rc" "1"
+# --all: only Vercel projects whose repo is remembered are connected again.
+echo '{"web":{"org":"me","repo":"web","ref":"main"}}' > "$REPOS"
+VLIST='[{"name":"web","id":"web","auto":false},{"name":"lost","id":"lost","auto":false},{"name":"on","id":"on","auto":true}]'
+RLIST='[{"name":"api","id":"srv-1","auto":false}]'
+: > "$CALLS"; out="$( ( allow_main all --all 1 ) 2>&1)"; rc=$?
+expect "autodeploy allow all --all: the * allowance, remembered ones on, unknown repos skipped" \
+  "$rc:$(jq -c 'has("*")' "$ALLOW_FILE"):$(grep '^on ' "$CALLS" | cut -d' ' -f2,3 | tr '\n' ','):$(echo "$out" | grep -c '1 Vercel projects left manual')" "0:true:vercel web,render api,:1"
+expect "autodeploy allowed --json: platform all, project * for everything" \
+  "$(allow_list | jq -c '[.[] | [.platform, .project, (.expiresAt | type)]]')" '[["all","*","number"],["vercel","web","number"]]'
+
+# revoke: the allowance goes; only what nothing else allows is turned off.
+VLIST='[{"name":"web","id":"web","auto":true}]'; RLIST='[{"name":"api","id":"srv-1","auto":true}]'
+: > "$CALLS"; ( revoke_main vercel web ) >/dev/null 2>&1
+expect "autodeploy revoke: with * still running, the project stays on" "$(jq -c 'keys' "$ALLOW_FILE"):$(offs)" '["*"]:'
+: > "$CALLS"; ( revoke_main all --all ) >/dev/null 2>&1
+expect "autodeploy revoke all --all: everything withdrawn and off" "$(jq -c 'keys' "$ALLOW_FILE"):$(offs)" '[]:vercel web,render api,'
+jq -n --argjson t "$now" '{"vercel:web":($t+600), "render:api":($t+600)}' > "$ALLOW_FILE"
+: > "$CALLS"; ( revoke_main render --all ) >/dev/null 2>&1
+expect "autodeploy revoke render --all: only that platform" "$(jq -c 'keys' "$ALLOW_FILE"):$(offs)" '["vercel:web"]:render api,'
+echo '{}' > "$REPOS"
+
+# Turning auto-deploy on: Vercel from the remembered repo (body on --input), Render "commit".
+unset -f ad_on ad_off ad_list_vercel ad_list_render ad_platforms
+cat > "$gd/vercel" <<'VC'
+#!/bin/bash
+echo "vercel $*" >> "$CALLS"; prev=""; for a in "$@"; do [ "$prev" = --input ] && sed 's/^/body /' "$a" >> "$CALLS"; prev="$a"; done; exit 0
+VC
+chmod +x "$gd/vercel"
+out="$( (PATH="$gd:$PATH" DEPLOYS_VERCEL_TEAM=team_x vercel_on lost) 2>&1)"; rc=$?
+expect "autodeploy-on: a Vercel project with an unknown repo stops with what to do" "$rc:$(echo "$out" | grep -c 'deploys vercel map lost')" "1:1"
+echo '{"web":{"org":"me","repo":"web","ref":"main"}}' > "$REPOS"
+: > "$CALLS"; (PATH="$gd:$PATH" DEPLOYS_VERCEL_TEAM=team_x vercel_on web) >/dev/null 2>&1
+expect "autodeploy-on: Vercel gets POST /link with the remembered repo" \
+  "$(grep -c '^vercel api /v9/projects/web/link?teamId=team_x --method POST' "$CALLS"):$(grep '^body ' "$CALLS" | cut -c6- | jq -c .)" '1:{"type":"github","repo":"me/web"}'
+echo '{}' > "$REPOS"
+render_call() { echo "render_call $*" >> "$CALLS"; echo '{}'; }
+: > "$CALLS"; render_on srv-1 api >/dev/null
+expect "autodeploy-on: Render is set to On Commit" "$(cat "$CALLS")" 'render_call PATCH /services/srv-1 {"autoDeployTrigger":"commit"}'
+unset -f render_call
+unset DEPLOYS_LAUNCH_DIR
 # Savings (simulate, ledger) have their own file with fixtures.
 bash tests/savings-tests.sh || fails=$((fails+1))
 
