@@ -64,6 +64,7 @@ Neu dabei? [Sicher ausprobieren](docs/SAFE-START.md) (Englisch): erst schauen, d
 - Deployt den neuesten Commit, für ein Projekt oder viele, und verfolgt jedes Deploy, bis es live oder fehlgeschlagen ist
 - Zeigt, was wartet: Commits und gemergte PRs, die noch nicht live sind, pro Projekt und insgesamt. [Wie gezählt wird](docs/ZAHLEN.md)
 - Zeigt deine Vercel-Buildkosten
+- Schätzt, was Auto-Deploy im Monat kosten würde und was das Abschalten seitdem gespart hat. [Wie geschätzt wird](docs/ERSPARNIS.md)
 - Menüleisten-Symbol mit der Zahl wartender PRs und eine Mitteilung, wenn ein Deploy fertig ist
 - Preview-Deploys (Vercel) und Rollback auf das vorige Live-Deploy
 - Eine Bash-CLI, `deploys`, die all das ohne die App kann, auch unter Linux und in CI. [CLI-Referenz](docs/CLI.md)
@@ -100,6 +101,8 @@ Details (Englisch): [Auto-Deploy aus und wieder an](docs/AUTO-DEPLOY.md) · [Dei
 ```bash
 deploys changed               # was auf GitHub gemergt und nicht live ist
 deploys deploy-changed --yes  # alles davon deployen
+deploys simulate              # Schätzung: Auto-Deploy im Monat vs. einmal am Tag
+deploys ledger                # Schätzung: gespart, seit Auto-Deploy aus ist
 ```
 
 Liegt in der App unter `Deploy Center.app/Contents/Resources/deploys`. Alle Befehle, CI-Variablen und

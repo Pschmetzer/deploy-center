@@ -48,6 +48,8 @@ deploys diff my-project                 # commits and files between what is live
 deploys notes my-project                # the same as release notes (Markdown)
 deploys history my-project [n]          # the last n deploys
 deploys costs [days]                    # Vercel charges per day
+deploys simulate [--days 30]            # estimate: auto-deploy a month vs. once a day, see SAVINGS.md
+deploys ledger                          # estimate: builds and money saved since auto-deploy was off
 deploys triggers                        # builds nobody started from here, deploying workflows, Blueprints
 deploys where                           # config folder, version, key source, logins
 deploys autofix [--dry-run]             # see AUTOFIX.md
@@ -69,6 +71,7 @@ project could not be read (it is named and left out, never counted as current).
 - `GH_TOKEN` for `gh`. Without it no branch head is known, and nothing counts as changed.
 - `DEPLOYS_CONFIG`: a folder with your `vercel-repos.json`.
 - `DEPLOYS_VERCEL_TEAM`: the team id, if the token sees several teams.
+- `DEPLOYS_VERCEL_USD_PER_MIN`, `DEPLOYS_RENDER_USD_PER_MIN`: the price of one build minute for `simulate` and `ledger`, where no billing says it. See [SAVINGS.md](SAVINGS.md).
 
 See [examples/](../examples/) for a daily deploy from GitHub Actions.
 
