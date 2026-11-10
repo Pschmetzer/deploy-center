@@ -216,8 +216,14 @@ enabled_providers() {
 is_enabled() { grep -qxF "$1" <<<"$(enabled_providers)"; }
 # Set up and switched on: the only providers the shared commands touch. A provider that is off
 # is never asked anything, not even whether it has a key.
+# One whose keychain cannot be read (locked under launchd) counts too: reading it then fails with
+# that reason, so `changed` ends in an error instead of a silent "Nothing to deploy".
 active_providers() {
-  local p; for p in $(enabled_providers); do ( "${p}_ready" ) >/dev/null 2>&1 && echo "$p"; done; return 0
+  local p
+  for p in $(enabled_providers); do
+    if ( "${p}_ready" ) >/dev/null 2>&1 || keychain_broken "$p"; then echo "$p"; fi
+  done
+  return 0
 }
 provider_on() { is_enabled "$1" && ( "${1}_ready" ) >/dev/null 2>&1; }
 # A field of a provider's meta, without jq (doctor runs without it): label, noun.
@@ -231,6 +237,24 @@ key_of() {
     [ -n "${!v:-}" ] && { printf '%s' "${!v}"; return 0; }
   done
   security find-generic-password -a "$USER" -s "deploy-center-$p" -w 2>/dev/null
+}
+# Whether the keychain could not be read at all (locked under launchd or SSH, access denied), as
+# opposed to "no such item": 0 is found, 44 not found, 127 no `security` (Linux). Anything else
+# is an error: such a provider is not "not set up", and must not drop out of the lists silently.
+keychain_broken() {  # keychain_broken <p>: true when its key is not in the environment and the keychain fails
+  local p="$1" rc=0
+  "${p}_meta" | grep -q '"keychain":"' || return 1
+  key_of_env "$p" && return 1
+  security find-generic-password -a "$USER" -s "deploy-center-$p" -w >/dev/null 2>&1 || rc=$?
+  case "$rc" in 0|44|127) return 1 ;; esac
+  return 0
+}
+key_of_env() {
+  local v
+  for v in $("${1}_meta" | grep -o '"keyEnv":\[[^]]*\]' | sed 's/"keyEnv"://' | grep -o '[A-Za-z_][A-Za-z0-9_]*'); do
+    [ -n "${!v:-}" ] && return 0
+  done
+  return 1
 }
 
 # Which provider a name belongs to, and its id there: "p<TAB>id". "p:name" says it outright.
@@ -378,8 +402,25 @@ CHANGED_RULE='map(. + {building: (.phase == "queued" or .phase == "building")})
   and (if .lastSha and .headSha then .lastSha != .headSha else (.headAt // 0) > (.lastAt // 0) end))})'
 
 
+# Projects without a git repo to compare with: a service built from an image, or a repo on a host
+# deploys cannot read (Bitbucket). noRepo says why; null for every other project. Such a project
+# has no branch head, so it is never "changed", and it is not "state unknown" either (UNKNOWN_RULE).
+with_norepo() {
+  local bad="[]" r
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    [ "$(githost_of "$r")" != unknown ] || bad="$(jq -c --arg r "$r" '. + [$r]' <<<"$bad")"
+  done < <(echo "$1" | jq -r '.[] | .repo // empty' | sort -u)
+  echo "$1" | jq --argjson bad "$bad" 'map(. + {noRepo:(
+      if (.repo // null) == null then "no git repo"
+      elif (.repo as $r | $bad | index($r)) then "the git host of \(.repo) is not supported"
+      elif (.ref // null) == null then "no branch"
+      else null end)})'
+}
+
 with_heads() {
-  local list="$1" tmp heads pend opens
+  local list tmp heads pend opens
+  list="$(with_norepo "$1")" || list="$1"
   # Without gh (or glab / GITLAB_TOKEN), or when asked to leave the git hosts out (status --watch),
   # no heads: nothing counts as changed.
   if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! githost_available; then echo "$list" | jq "$CHANGED_RULE"; return; fi
@@ -460,7 +501,7 @@ all_json() {
 
 # Deployable projects whose state could not be read: their live deploy (fetchError) or the
 # branch head on GitHub is unknown. They are never counted as changed, and never as up to date.
-UNKNOWN_RULE='map(select((.deployable // false) and ((.paused // false) | not)
+UNKNOWN_RULE='map(select((.deployable // false) and ((.paused // false) | not) and (.noRepo == null)
   and (.fetchError != null or (.headSha == null and .headAt == null))))'
 
 # Every project with changes, both platforms. Projects of unknown state are named on stderr and
@@ -1303,7 +1344,12 @@ case "${1:-} ${2:-}" in
   "deploy "*|"vercel map"|"vercel autodeploy-off"|"vercel deploy"|"vercel deploy-json"|"vercel cancel"|"vercel rollback"\
   |"render autodeploy-off"|"render deploy"|"render deploy-json"|"render cancel"|"render rollback"|"hook deploy")
     require_write "$1 $2" ;;
-  "deploy-changed "*) [ "${2:-}" != "--yes" ] || require_write "deploy-changed --yes" ;;
+  # --yes wherever it stands: `deploy-changed --when-green --yes` starts deploys as well.
+  "deploy-changed "*) case " ${*:2} " in *" --yes "*) require_write "deploy-changed --yes" ;; esac ;;
+  # allow turns auto-deploy on for a while, revoke turns it off again: both switch the platform.
+  "autodeploy allow"|"autodeploy revoke") require_write "$1 $2" ;;
+  # verify rolls production back when the check fails, unless --no-rollback.
+  "verify "*) case " ${*:3} " in *" --no-rollback "*) ;; *) require_write "verify (it may roll back; add --no-rollback to only check)" ;; esac ;;
   # autofix hands failed builds to a routine that opens pull requests, and guard turns auto-deploy
   # off: both change something unless --dry-run (also after --only). Their settings and status only read.
   "autofix "|"autofix --"*|"guard "|"guard --"*)
@@ -1352,6 +1398,8 @@ provider_cmd() {
   if [ -n "$verb" ] && declare -F "${p}_cli_$verb" >/dev/null; then fn="${p}_cli_$verb"
   elif [ "$verb" = json ]; then provider_json "$p"; return
   elif [ -n "$verb" ] && [[ "$CONTRACT_VERBS" == *" $verb "* ]]; then fn="${p}_$verb"
+  # `deploys <p> deploy <name>` without a provider's own wording: the contract start (JSON).
+  elif [ "$verb" = deploy ]; then fn="${p}_deploy_json"
   else sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1; fi
   # Production starts wait for the deploy window (docs/SAFE-DEPLOY.md); a forced one is journaled.
   case "$verb" in
@@ -1396,6 +1444,9 @@ case "${1:-} ${2:-}" in
       echo "Group $name: $(echo "$members" | paste -sd ' ' -)"
     else members="$name"; fi
     count="$(echo "$members" | grep -c .)"; i=0
+    # Production starts wait for the deploy window, as `<p> deploy` and deploy-changed do. Asked once
+    # for the whole group, before anything starts: a window must not stop a group halfway.
+    [ -n "$pv" ] || freeze_check
     # A start that failed has said why on stderr; that stays the last line for one project.
     stop_group() { [ "$2" -le 1 ] || echo "$1 did not start; the rest of the group was not started." >&2; exit 1; }
     for p in $members; do
@@ -1405,6 +1456,7 @@ case "${1:-} ${2:-}" in
       plat="${r%%$'\t'*}"; pid="${r#*$'\t'}"; label="$(meta_str "$plat" label)"
       [ -z "$pv" ] || need_cap "$plat" preview "deploy a preview ($p)"
       out="$(DEPLOYS_FORCE_REASON="$force" "${plat}_deploy_json" "$pid" ${pv:+--preview} ${sha:+--sha "$sha"})" || stop_group "$p" "$count"
+      journal_forced "$plat" "${p#*:}"
       if [ "$json" = 1 ]; then echo "$out" | jq -c --arg p "$plat" '. + {platform:$p}'; else
         echo "$out" | jq -r --arg l "$label" --arg p "${p#*:}" '"\($l): \($p) started " + (if .url then "-> \(.url) " else "" end) + "(\(.id), \(.state))"'
       fi
@@ -1954,10 +2006,17 @@ BASH
         skipped) echo "$P: $name skipped: $why" ;;
       esac
     }
-    start() {  # start <platform> <name> <sha or empty> <reason>
-      local st
-      if st="$(deploy_one "$1" "$2" "$3" "${5:-}" </dev/null)"; then ok=$((ok+1)); say "$1" "$2" started "$4" "$(echo "$st" | jq -c .)"; journal_forced "$1" "$2"
-      else bad=$((bad+1)); say "$1" "$2" failed "$4"; fi
+    start() {  # start <platform> <name> <sha or empty> <reason> [<id>]
+      local st sha="$3" why="$4" note
+      # A provider that cannot deploy a given commit (caps.sha false) builds the newest one of the
+      # branch: started without --sha, and said so, since a push after the checked one comes along.
+      if [ -n "$sha" ] && ! meta_flag "$1" sha; then
+        note="$(meta_str "$1" label) cannot deploy a given commit: the newest commit of the branch is built, not only ${sha:0:7}"
+        why="${why:+$why; }$note"; sha=""
+        [ "$json" = 1 ] || echo "Note: $2: $note." >&2
+      fi
+      if st="$(deploy_one "$1" "$2" "$sha" "${5:-}" </dev/null)"; then ok=$((ok+1)); say "$1" "$2" started "$why" "$(echo "$st" | jq -c .)"; journal_forced "$1" "$2"
+      else bad=$((bad+1)); say "$1" "$2" failed "$why"; fi
     }
     todo="$(echo "$list" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.id // "-")\t\(.repo // "")\t\(.headSha // "")"')"
     if [ -z "$green" ]; then

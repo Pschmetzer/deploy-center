@@ -124,7 +124,9 @@ echo '{"projects":{"web":{"health":"/up"}}}' > "$DEPLOYS_CONFIG/overrides.json"
 fresh; : > "$CALLS"
 for cmd in "deploy web" "vercel deploy web" "vercel rollback web" "vercel autodeploy-off --all" "vercel map web acme/shop" \
            "render deploy api" "render rollback api" "render cancel s1 d1" "hook deploy site" "deploy-changed --yes" "autofix" \
-           "autofix --only vercel web" "guard" "vercel autodeploy-on web" "render autodeploy-on api" "netlify deploy site"; do
+           "autofix --only vercel web" "guard" "vercel autodeploy-on web" "render autodeploy-on api" "netlify deploy site" \
+           "deploy-changed --when-green --yes" "deploy-changed --json --yes" "autodeploy allow vercel web 2" \
+           "autodeploy revoke vercel web" "verify web"; do
   # shellcheck disable=SC2086  # the words of the command
   out="$(DEPLOYS_READONLY=1 "${D[@]}" $cmd 2>&1)"; rc=$?
   expect "DEPLOYS_READONLY=1 refuses: $cmd" "$rc:$(echo "$out" | grep -c 'Observer mode (DEPLOYS_READONLY is set)')" "1:1"

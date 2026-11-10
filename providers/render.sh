@@ -17,7 +17,10 @@ render_key() {
   # On a server or in CI there is no keychain: the key may come from the environment (key_of).
   key_of render \
     || security find-generic-password -a "$USER" -s "$RENDER_LEGACY_KEYCHAIN_SERVICE" -w 2>/dev/null \
-    || die "No Render API key. Create one at dashboard.render.com > Account Settings > API Keys, then: deploys render set-key"
+    || { if declare -F keychain_broken >/dev/null && keychain_broken render; then
+           die "Render: the keychain could not be read (locked, or no access from here: launchd, SSH). Unlock it (security unlock-keychain) or set RENDER_API_KEY"
+         fi
+         die "No Render API key. Create one at dashboard.render.com > Account Settings > API Keys, then: deploys render set-key"; }
 }
 # Whether a key is there. In a subshell: render_key ends with `die` (exit) when there is none,
 # and an exit inside an `if` ends the whole script, not only the test.
@@ -26,7 +29,7 @@ render_ready() { ( render_key ) >/dev/null 2>&1; }
 # The key goes to curl on stdin so it never shows in the process list.
 render_call() {
   local method="$1" path="$2" body="${3:-}" key out code
-  key="$(render_key)"
+  key="$(render_key)" || exit 1
   # A hung connection must not hang the app: 10 s to connect, 60 s in all.
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
@@ -146,7 +149,7 @@ render_last_of() {
   local raw code try
   for try in 1 2 3; do
     raw="$(printf 'header = "Authorization: Bearer %s"\n' "$key" \
-      | curl -sS -K - -w '\n%{http_code}' -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=10")" || raw=$'\n000'
+      | curl -sS --connect-timeout 10 --max-time 60 -K - -w '\n%{http_code}' -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=10")" || raw=$'\n000'
     code="${raw##*$'\n'}"
     [ "$code" = 429 ] && [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; }
     break
