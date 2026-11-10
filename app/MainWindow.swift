@@ -22,6 +22,29 @@ struct WindowActions {
     struct TabCommand { let title: String; let digit: Int; let run: () -> Void }
     var tabs: [TabCommand]
     var search: () -> Void
+    /// ⌘K: the command palette in this window.
+    var palette: () -> Void = {}
+}
+
+/// What "Put this live now?" says, the same from the footer, a row and the palette.
+enum DeployConfirm {
+    /// The branch's newest commit, wherever the repo lives.
+    static var newest: String { L("The newest commit of the branch goes live.", "Der neueste Stand des Branches geht live.") }
+
+    /// Name, what waits, the platform when two can carry the same name, and a mark when it is risky.
+    static func line(_ i: Item, platform: Bool) -> String {
+        Demo.mask(i.name)
+            + (platform ? " (\(i.platform.rawValue))" : "")
+            + ((i.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText(i) : "")
+            + (i.hasNewCommits && i.risk?.isRed == true ? "  ⚠︎ " + L("risky", "riskant") : "")
+    }
+
+    /// At most 12 lines, so the dialog does not grow past the screen.
+    static func message(_ items: [Item], platforms: Bool) -> String {
+        items.prefix(12).map { line($0, platform: platforms) }.joined(separator: "\n")
+            + (items.count > 12 ? "\n" + L("and \(items.count - 12) more", "und \(items.count - 12) weitere") : "")
+            + "\n\n" + newest
+    }
 }
 struct WindowActionsKey: FocusedValueKey { typealias Value = WindowActions }
 extension FocusedValues {
@@ -40,6 +63,7 @@ struct WindowCommands: Commands {
                 Button(t.title, action: t.run).keyboardShortcut(KeyEquivalent(Character(String(t.digit))))
             }
             Button(L("Search", "Suchen")) { actions?.search() }.keyboardShortcut("f").disabled(actions == nil)
+            Button(L("Command Palette …", "Befehlspalette …")) { actions?.palette() }.keyboardShortcut("k").disabled(actions == nil)
             Divider()
         }
     }
@@ -78,6 +102,12 @@ struct ContentView: View {
     @State private var noteText = ""
     @State private var logItem: Item?
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// A single deploy from the row menu, asked first like from the palette.
+    @State private var askDeployItem: Item?
+    @State private var confirmingStop = false
+    /// The project a menu-bar click or a link asked for: the list shows exactly that one.
+    @State private var exactName: String?
     /// Triggers the person chose to ignore (kept), provider problems closed until they change,
     /// and an update skipped until the next version.
     @AppStorage("ignoredTriggers") private var ignoredTriggers = ""
@@ -126,9 +156,14 @@ struct ContentView: View {
     private var platform: Platform? { Platform.allCases.first { $0.cli == currentId } }
     private var currentLabel: String { providers.first { $0.id == currentId }?.label ?? currentId }
 
+    /// Projects with changes on a platform, without the hidden ones: the list leaves them out too.
+    static func changedShown(_ store: Store, _ p: Platform) -> Int {
+        (store.items[p] ?? []).filter { $0.deployable && $0.hasNewCommits && !store.isHidden($0) }.count
+    }
+
     /// "35" projects, or "35 · 9" when 9 of them have changes waiting.
     private static func tabCount(_ store: Store, _ p: Platform) -> String {
-        let n = store.items[p]?.count ?? 0, c = store.changedCount(p)
+        let n = store.items[p]?.count ?? 0, c = Self.changedShown(store, p)
         return c > 0 ? "\(n) · \(c)" : "\(n)"
     }
 
@@ -164,7 +199,7 @@ struct ContentView: View {
     }
 
     private static func tabLabel(_ store: Store, _ p: Platform) -> String {
-        let n = store.items[p]?.count ?? 0, c = store.changedCount(p)
+        let n = store.items[p]?.count ?? 0, c = Self.changedShown(store, p)
         return L("\(p.rawValue), \(n) projects, \(c) with changes", "\(p.rawValue), \(n) Projekte, \(c) mit Änderungen")
     }
 
@@ -174,11 +209,12 @@ struct ContentView: View {
     private var visible: [Item] {
         var all = scopes.flatMap { store.items[$0] ?? [] }.filter { !store.isHidden($0) }
         if onlyChanged { all = all.filter { $0.hasNewCommits } }
-        if !search.isEmpty {
+        if let exact = exactName {
+            all = all.filter { $0.name == exact }
+        } else if !search.isEmpty {
             // In demo mode only the stand-in counts: typing a real name must not find the project.
-            all = all.filter { Demo.on ? Demo.mask($0.name).localizedCaseInsensitiveContains(search)
-                : $0.name.localizedCaseInsensitiveContains(search) || $0.detail.localizedCaseInsensitiveContains(search)
-                || ($0.domain ?? "").localizedCaseInsensitiveContains(search) }
+            all = all.filter { Demo.on ? Row.matches(Demo.mask($0.name), search)
+                : Row.matches($0.name, search) || Row.matches($0.detail, search) || Row.matches($0.domain ?? "", search) }
         }
         // Pinned first, then what waits to go live (most commits first), then the rest by name.
         let pins = all.filter { store.isPinned($0) }
@@ -253,7 +289,8 @@ struct ContentView: View {
                     .background(Capsule().fill(.regularMaterial))
                     .overlay(Capsule().stroke(t.ok ? Color.green.opacity(0.5) : Color.red.opacity(0.5)))
                     .padding(.bottom, 72)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    // With "Reduce motion" it only fades.
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
         }
         .onChange(of: store.toast) { _, t in
@@ -267,7 +304,8 @@ struct ContentView: View {
         .onChange(of: store.waiting.projects, initial: true) { _, n in NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil }
         // Not while a sheet is open: there ⌘F belongs to the build log's find bar.
         .focusedSceneValue(\.windowActions, logItem != nil || detailItem != nil || showJournal || showCosts ? nil
-                           : WindowActions(tabs: tabCommands, search: { searchFocused = true }))
+                           : WindowActions(tabs: tabCommands, search: { searchFocused = true },
+                                           palette: { PaletteCenter.shared.open(in: NSApp.keyWindow) }))
         .animation(.easeOut(duration: 0.2), value: store.toast)
     }
 
@@ -286,9 +324,35 @@ struct ContentView: View {
             guard go else { return }
             store.pendingDeployAll = false
             showAll = true; onlyChanged = true
-            Platform.allCases.forEach { store.selectChanged($0) }
+            // Only platforms with a tab: a ticked project on a switched-off one would deploy unseen.
+            providers.compactMap(\.platform).forEach { store.selectChanged($0) }
             if !selectedAll.isEmpty { confirming = true }
         }
+        // Each on a view of its own: one long chain of alerts is too much for the type checker.
+        .background {
+            Color.clear.alert(L("Put this live now?", "Jetzt live schalten?"),
+                              isPresented: Binding(get: { askDeployItem != nil }, set: { if !$0 { askDeployItem = nil } })) {
+                Button(L("Cancel", "Abbrechen"), role: .cancel) { askDeployItem = nil }
+                Button(L("Deploy", "Deployen")) { if let i = askDeployItem { deployOne(i) }; askDeployItem = nil }
+            } message: {
+                Text(DeployConfirm.message(askDeployItem.map { [$0] } ?? [], platforms: false))
+            }
+        }
+        .background {
+            Color.clear.alert(L("Stop every deploy?", "Alle Deploys abbrechen?"), isPresented: $confirmingStop) {
+                Button(L("Keep running", "Weiterlaufen lassen"), role: .cancel) {}
+                Button(L("Stop all", "Alles abbrechen"), role: .destructive) { store.cancelAll() }
+            } message: {
+                Text(stopAllText)
+            }
+        }
+    }
+
+    /// How many deploys "Stop all" ends (it ends them on every platform).
+    private var stopAllText: String {
+        let n = allItems.filter { $0.state.isActive }.count
+        return L("\(n) running or waiting \(n == 1 ? "deploy is" : "deploys are") cancelled.",
+                 "\(n) \(n == 1 ? "laufender oder wartender Deploy wird" : "laufende oder wartende Deploys werden") abgebrochen.")
     }
 
     private var dialogs: some View {
@@ -310,8 +374,10 @@ struct ContentView: View {
         }
         .onChange(of: store.pendingSearch) { _, name in
             guard let name else { return }
-            showAll = true; onlyChanged = false; search = Demo.mask(name); store.pendingSearch = nil
+            // Exactly this project: "app" as a plain search would also show "app-backend".
+            showAll = true; onlyChanged = false; search = Demo.mask(name); exactName = name; store.pendingSearch = nil
         }
+        .onChange(of: search) { _, s in if let n = exactName, s != Demo.mask(n) { exactName = nil } }
         .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"),
                isPresented: Binding(get: { unchangedItem != nil }, set: { if !$0 { unchangedItem = nil } })) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
@@ -333,13 +399,8 @@ struct ContentView: View {
                     Button(L("Cancel", "Abbrechen"), role: .cancel) {}
                     Button(L("Deploy", "Deployen")) { startDeploy() }
                 } message: {
-                    // At most 12 lines, so the dialog does not grow past the screen.
-                    Text(selectedAll.prefix(12).map { i in
-                            Demo.mask(i.name) + ((i.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText(i) : "") }.joined(separator: "\n")
-                         + (selectedAll.count > 12 ? "\n" + L("and \(selectedAll.count - 12) more", "und \(selectedAll.count - 12) weitere") : "")
-                         + "\n\n" + L("The newest commit on GitHub goes live.",
-                                       "Der neueste Stand von GitHub geht live.")
-                         + unchangedNote)
+                    // Under "All" with the platform: the same name can be on Vercel and on Render.
+                    Text(DeployConfirm.message(selectedAll, platforms: showsAll) + unchangedNote)
                 }
                 .dialogSuppressionToggle(LocalizedStringKey(L("Only when checks are green", "Nur wenn die Checks grün sind")), isSuppressed: $onlyGreen)
         }
@@ -360,7 +421,13 @@ struct ContentView: View {
             Button(L("Deploy", "Deployen")) {
                 // The script takes a reason starting with "-" for an option.
                 let why = String(forceText.trimmingCharacters(in: .whitespacesAndNewlines).drop { $0 == "-" || $0 == " " })
-                guard !why.isEmpty else { return }
+                guard !why.isEmpty else {
+                    // The dialog closes anyway; say why nothing started instead of doing nothing.
+                    frozenRun = nil
+                    store.show(Store.Toast(text: L("Nothing deployed: a reason is needed while the deploy window is closed.",
+                                                   "Nichts deployt: Bei geschlossenem Deploy-Fenster braucht es einen Grund."), ok: false))
+                    return
+                }
                 frozenRun?(why); frozenRun = nil
             }
         } message: {
@@ -400,7 +467,7 @@ struct ContentView: View {
                 .onExitCommand { search = ""; searchFocused = false }
 
             Toggle(isOn: $onlyChanged) {
-                Text(L("Changed only", "Nur mit Änderungen") + " (\(scopes.map { store.changedCount($0) }.reduce(0, +)))")
+                Text(L("Changed only", "Nur mit Änderungen") + " (\(scopes.map { Self.changedShown(store, $0) }.reduce(0, +)))")
             }
             .toggleStyle(.button)
             .fixedSize()
@@ -692,8 +759,8 @@ struct ContentView: View {
         if w.projects > 0 {
             lines.append(L("\(w.commits) \(w.commits == 1 ? "commit" : "commits") in \(w.projects) \(w.projects == 1 ? "project" : "projects"), merged on GitHub and not live",
                            "\(w.commits) \(w.commits == 1 ? "Commit" : "Commits") in \(w.projects) \(w.projects == 1 ? "Projekt" : "Projekten"), auf GitHub gemergt und nicht live"))
-            if !showsAll, let p = platform, store.changedCount(p) != w.projects {
-                lines.append(L("\(store.changedCount(p)) of them on \(p.rawValue)", "davon \(store.changedCount(p)) auf \(p.rawValue)"))
+            if !showsAll, let p = platform, Self.changedShown(store, p) != w.projects {
+                lines.append(L("\(Self.changedShown(store, p)) of them on \(p.rawValue)", "davon \(Self.changedShown(store, p)) auf \(p.rawValue)"))
             }
         }
         if w.openPRs > 0 {
@@ -828,7 +895,7 @@ struct ContentView: View {
         } else if visible.isEmpty && (onlyChanged || !search.isEmpty) {
             let inScope = scopes.flatMap { store.items[$0] ?? [] }
             let hiddenHits = search.isEmpty ? 0 : inScope.filter { store.isHidden($0)
-                && (Demo.on ? Demo.mask($0.name) : $0.name).localizedCaseInsensitiveContains(search) }.count
+                && Row.matches(Demo.on ? Demo.mask($0.name) : $0.name, search) }.count
             VStack(spacing: 8) {
                 Image(systemName: search.isEmpty ? "checkmark.seal.fill" : "magnifyingglass").font(.system(size: 34))
                     .foregroundStyle(search.isEmpty ? .green : .secondary)
@@ -887,7 +954,8 @@ struct ContentView: View {
             perBuild: complete ? c.flatMap { p in p.builds.flatMap { $0 > 0 ? p.build / Double($0) : nil } } : nil,
             pinned: store.isPinned(item), note: store.note(item),
             showDetails: item.repo == nil ? nil : { detailItem = item },
-            showLog: { logItem = item },
+            // No log button where the platform has no build logs (Netlify, say): it would only fail.
+            showLog: store.provider(item.platform)?.caps.logs == false ? nil : { logItem = item },
             onCancel: { store.cancel(item) },
             onRetry: item.deployable && !store.observer ? { deployOne(item) } : nil,
             usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: search,
@@ -909,12 +977,15 @@ struct ContentView: View {
                 .disabled(store.autofixRunning.contains(Store.key(item)))
         }
         if canDeploy {
-            Button(L("Deploy to production", "Live deployen")) {
-                if item.hasNewCommits || item.headSha == nil { deployOne(item) }
+            // Asks first, like the palette: with no wait set, a slip of the mouse would start a paid build.
+            Button(L("Deploy to production …", "Live deployen …")) {
+                if item.hasNewCommits || item.headSha == nil { askDeployItem = item }
                 else { unchangedItem = item }
             }
         }
-        Button(L("Build log …", "Build-Log …")) { logItem = item }
+        if store.provider(item.platform)?.caps.logs ?? true {   // unknown: offered, as before
+            Button(L("Build log …", "Build-Log …")) { logItem = item }
+        }
         if let l = item.link, let u = URL(string: l) {
             Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) }
         }
@@ -930,13 +1001,24 @@ struct ContentView: View {
                 if item.platform == .render {
                     Button(L("Deploy with a cleared build cache", "Mit geleertem Build-Cache deployen")) { deployOne(item, clearCache: true) }
                 }
-                Button(L("Roll back production …", "Live zurückrollen …")) { rollbackItem = item }
+                if store.provider(item.platform)?.caps.rollback ?? true {
+                    Button(L("Roll back production …", "Live zurückrollen …")) { rollbackItem = item }
+                }
             }
-            if let u = item.compareURL {
-                Button(L("Show the waiting commits on GitHub", "Wartende Commits auf GitHub ansehen")) { NSWorkspace.shared.open(u) }
+            if let u = GitHost.compareURL(item) {
+                let host = GitHost(item).name
+                Button(L("Show the waiting commits on \(host)", "Wartende Commits auf \(host) ansehen")) { NSWorkspace.shared.open(u) }
             }
             if let u = item.dashboardURL {
                 Button(L("Open in the Render dashboard", "Im Render-Dashboard öffnen")) { NSWorkspace.shared.open(u) }
+            } else if item.platform == .vercel {
+                // Vercel's address needs the team's slug; the script knows it, as in the palette.
+                Button(L("Open in the Vercel dashboard", "Im Vercel-Dashboard öffnen")) {
+                    Task {
+                        do { _ = try await Tool.run(["open", item.id, "--dashboard"], timeout: 30) }
+                        catch { store.show(Store.Toast(text: Tool.shorten(error.localizedDescription), ok: false)) }
+                    }
+                }
             }
             Divider()
             Button(store.isPinned(item) ? L("Unpin", "Nicht mehr anheften") : L("Pin to the top", "Oben anheften")) { store.togglePin(item) }
@@ -969,14 +1051,14 @@ struct ContentView: View {
 
     private var footer: some View {
         let count = selectedAll.count
-        let changedHere = scopes.map { store.changedCount($0) }.reduce(0, +)
+        let changedHere = scopes.map { Self.changedShown(store, $0) }.reduce(0, +)
         return HStack {
             Text(count == 0 ? L("Tick the projects that should go live", "Projekte anhaken, die live gehen sollen")
                             : L("\(count) selected", "\(count) ausgewählt"))
                 .foregroundStyle(.secondary)
                 .help(L("Shift-click ticks everything between the last tick and this one", "Mit ⇧-Klick wird alles zwischen dem letzten Haken und diesem angehakt"))
             // Ticks on another tab still count there: say they exist.
-            let elsewhere = Platform.allCases.filter { !scopes.contains($0) }.map { p in (p, store.selected(p).count) }.filter { $0.1 > 0 }
+            let elsewhere = providers.compactMap(\.platform).filter { !scopes.contains($0) }.map { p in (p, store.selected(p).count) }.filter { $0.1 > 0 }
             ForEach(elsewhere, id: \.0) { p, n in
                 Button(L("+\(n) on \(p.rawValue)", "+\(n) auf \(p.rawValue)")) { select(.provider(p.cli)) }
                     .buttonStyle(.link).font(.caption)
@@ -984,7 +1066,7 @@ struct ContentView: View {
             }
             Spacer()
             if scopes.contains(where: { p in (store.items[p] ?? []).contains { $0.state.isActive } }) {
-                Button(L("Stop all", "Alles abbrechen"), role: .destructive) { store.cancelAll() }
+                Button(L("Stop all", "Alles abbrechen"), role: .destructive) { confirmingStop = true }
             }
             moreMenu(count: count, changedHere: changedHere)
             if store.observer {
@@ -1013,9 +1095,10 @@ struct ContentView: View {
 
     private func moreMenu(count: Int, changedHere: Int) -> some View {
         Menu {
+            // ⌘A belongs to the hidden button below the footer only: two items with one shortcut could
+            // both fire. The title names the key instead.
             Button(waitsForFreshList ? L("Select all changed (waits for the fresh list)", "Alle mit Änderungen anhaken (wartet auf die frische Liste)")
-                                     : L("Select all changed", "Alle mit Änderungen anhaken")) { selectAllCommand() }
-                .keyboardShortcut("a")
+                                     : L("Select all changed (⌘A)", "Alle mit Änderungen anhaken (⌘A)")) { selectAllCommand() }
                 .disabled(changedHere == 0 || waitsForFreshList)
             if count > 0 {
                 Button(L("Clear the selection", "Auswahl leeren")) { scopes.forEach { store.clearSelection($0) } }
@@ -1322,10 +1405,17 @@ struct Row: View {
     let toggle: () -> Void
     @Environment(\.accessibilityDifferentiateWithoutColor) private var noColour
 
-    /// The part of the name that matches the search, marked.
+    /// How the search finds a text and how the row marks it: one rule for both, so a row the list
+    /// keeps always shows why (any case, and "uber" finds "Über").
+    static let matchOptions: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+    static func matches(_ text: String, _ search: String) -> Bool {
+        !search.isEmpty && text.range(of: search, options: matchOptions) != nil
+    }
+
+    /// The part of a text that matches the search, marked.
     private func highlighted(_ text: String) -> AttributedString {
         var a = AttributedString(text)
-        guard !search.isEmpty, let r = a.range(of: search, options: .caseInsensitive) else { return a }
+        guard !search.isEmpty, let r = a.range(of: search, options: Self.matchOptions) else { return a }
         a[r].backgroundColor = .yellow.opacity(0.35)
         return a
     }
@@ -1363,9 +1453,14 @@ struct Row: View {
                             .accessibilityHidden(true)   // said in `spoken`
                     }
                     if let d = item.domain, let u = item.link.flatMap(URL.init(string:)) {
-                        Button { NSWorkspace.shared.open(u) } label: { Text(Demo.mask(d)).font(.caption) }
+                        Button { NSWorkspace.shared.open(u) } label: { Text(Demo.on ? AttributedString(Demo.mask(d)) : highlighted(d)).font(.caption) }
                             .buttonStyle(.link).help(L("Open site", "Seite öffnen"))
                     }
+                }
+                // Found by its source only (repo, service type): show that line, so the hit has a reason.
+                if !Demo.on, !search.isEmpty, !Self.matches(item.name, search), !Self.matches(item.domain ?? "", search),
+                   Self.matches(item.detail, search) {
+                    Text(highlighted(item.detail)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
                 if let note { Label(note, systemImage: "note.text").font(.caption.italic()).foregroundStyle(.secondary) }
                 // One figure per row; the rest is in the tooltip and for VoiceOver.
