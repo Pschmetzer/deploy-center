@@ -308,6 +308,48 @@ final class PhoneStore: ObservableObject {
         } catch { say(describe(error, p.provider), error: true) }
     }
 
+    // MARK: History and build logs (read only)
+
+    func history(_ p: PhoneProject) async -> [DeployRecord]? {
+        if demo { return DemoData.history(p) }
+        do {
+            switch p.provider {
+            case .vercel: return try await vercel().history(p)
+            case .render: return try await Render(key: token(.render) ?? "").history(p)
+            }
+        } catch { say(describe(error, p.provider), error: true); return nil }
+    }
+
+    /// The log of one deploy (else the newest attempt), masked before it is kept, shown or copied.
+    /// Not masked means not shown: the raw text is never returned.
+    func buildLog(_ p: PhoneProject, _ d: DeployRecord?) async -> BuildLog {
+        let raw: [String]
+        do {
+            if demo { raw = DemoData.log(p) } else {
+                switch p.provider {
+                case .vercel:
+                    guard let id = d?.id ?? p.latestId else { return .init(problem: L("No deploy to read.", "Kein Deploy zum Lesen.")) }
+                    raw = try await vercel().buildLog(id)
+                case .render:
+                    let r = Render(key: token(.render) ?? "")
+                    var pick = d
+                    if pick == nil { pick = try await r.history(p, limit: 1).first }
+                    guard let d = pick else {
+                        return .init(problem: L("No deploy to read.", "Kein Deploy zum Lesen."))
+                    }
+                    raw = try await r.buildLog(p, d)
+                }
+            }
+        } catch { return .init(problem: describe(error, p.provider)) }
+        guard let masked = LogMask.mask(raw) else {
+            return .init(problem: L("The log cannot be masked on this device, so it is not shown.",
+                                    "Das Log kann auf diesem Gerät nicht maskiert werden, daher wird es nicht gezeigt."))
+        }
+        if masked.isEmpty { return .init(problem: L("\(p.provider.rawValue) has no log lines for this deploy.", "\(p.provider.rawValue) hat keine Log-Zeilen zu diesem Deploy.")) }
+        let ex = LogMask.excerpt(masked)
+        return .init(lines: ex.lines, errorAt: ex.errorAt, full: String(masked.joined(separator: "\n").suffix(60_000)))
+    }
+
     private func vercel() async throws -> Vercel {
         let v = token(.vercel) ?? ""
         if let team = token(.vercelTeam) { return Vercel(token: v, team: team) }

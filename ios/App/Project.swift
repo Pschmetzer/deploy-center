@@ -39,6 +39,8 @@ struct PhoneProject: Identifiable, Equatable, Codable {
     var pendingCapped = false
     /// The repo is on a host this app does not read (GitLab, Bitbucket): no "waiting" for it.
     var otherHost: String? = nil
+    /// Render: the workspace (owner) id, for reading build logs.
+    var owner: String? = nil
 
     var key: String { provider.rawValue + "/" + id }
 

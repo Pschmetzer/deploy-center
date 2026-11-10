@@ -32,4 +32,28 @@ enum DemoData {
               msg: "Update the readme", liveMsg: "Update the readme", domain: "willow.example.com"),
         ]
     }
+
+    /// A made-up deploy history: the newest attempt as the project shows it, then older live ones.
+    static func history(_ p: PhoneProject, now: Date = Date()) -> [DeployRecord] {
+        let live = p.provider == .vercel ? "READY" : "live", old = p.provider == .vercel ? "READY" : "deactivated"
+        var out: [DeployRecord] = []
+        if let s = p.latestState, s.lowercased() != live.lowercased() {
+            out.append(DeployRecord(id: "demo-new", state: s, at: p.headAt ?? now, sha: p.headSha, title: p.headMsg))
+        }
+        let titles = [p.liveMsg ?? "Live", "Update dependencies", "Faster start", "Fix a typo", "First version"]
+        for (i, t) in titles.enumerated() {
+            out.append(DeployRecord(id: "demo-\(i)", state: i == 0 ? live : old, at: (p.liveAt ?? now).addingTimeInterval(-Double(i) * 86400),
+                                    sha: "c0ffee\(i)", title: t, current: i == 0))
+        }
+        return out
+    }
+
+    /// A made-up build log with a failure and a secret that the masking hides.
+    static func log(_ p: PhoneProject) -> [String] {
+        ["Cloning github.com/\(p.repo ?? "example/app") (branch main)", "Installing dependencies …", "added 812 packages in 14s",
+         "Using DATABASE_URL=postgres://app:demoPassword@db.example.com/app", "Running \"npm run build\"",
+         "> next build", "Creating an optimized production build …",
+         p.failed ? "Type error: Property 'total' does not exist on type 'Cart'." : "Compiled successfully",
+         p.failed ? "Error: Command \"npm run build\" exited with 1" : "Build completed in 41s"]
+    }
 }

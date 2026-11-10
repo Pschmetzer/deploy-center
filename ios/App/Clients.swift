@@ -157,6 +157,22 @@ struct RollbackTarget {
     let at: Date?
 }
 
+/// One deploy in a project's history (newest first in lists).
+struct DeployRecord: Identifiable, Equatable {
+    let id: String
+    let state: String
+    let at: Date?
+    var finishedAt: Date? = nil
+    var sha: String? = nil
+    var title: String? = nil
+    /// What is live now: not offered as "make live again".
+    var current = false
+    var failed: Bool { PhoneProject.failedStates.contains(state.lowercased()) && state.lowercased() != "canceled" }
+    /// Built and once live: can go live again (a rollback to it).
+    var reusable: Bool { ["ready", "live", "deactivated"].contains(state.lowercased()) && !current }
+    var target: RollbackTarget { RollbackTarget(id: id, sha: sha, title: title, at: at) }
+}
+
 // MARK: - Vercel
 
 struct Vercel {
@@ -274,6 +290,21 @@ struct Vercel {
         return RollbackTarget(id: id, sha: prev.str("meta.githubCommitSha"), title: firstLine(prev.str("meta.githubCommitMessage")),
                               at: prev.int("created").map { Date(timeIntervalSince1970: Double($0) / 1000) })
     }
+    /// The newest production deploys, newest first.
+    func history(_ p: PhoneProject, limit: Int = 15) async throws -> [DeployRecord] {
+        let cur = try? await productionId(p)
+        let list = ((try await http.get(t("/v6/deployments?projectId=\(p.id)&target=production&limit=\(limit)")) as? JSON)?["deployments"] as? [JSON]) ?? []
+        return list.compactMap { d in
+            guard let id = d.str("uid") else { return nil }
+            func ms(_ k: String) -> Date? { d.int(k).map { Date(timeIntervalSince1970: Double($0) / 1000) } }
+            return DeployRecord(id: id, state: d.str("state") ?? d.str("readyState") ?? "UNKNOWN", at: ms("created"), finishedAt: ms("ready"),
+                                sha: d.str("meta.githubCommitSha"), title: firstLine(d.str("meta.githubCommitMessage")), current: id == cur)
+        }
+    }
+    /// The build output of one deploy, oldest line first (the same call as `deploys logs`). Not masked yet.
+    func buildLog(_ id: String) async throws -> [String] {
+        LogMask.vercelLines(try await http.get(t("/v3/deployments/\(id)/events?builds=1&direction=backward&limit=2000")))
+    }
     func productionId(_ p: PhoneProject) async throws -> String? {
         (try await http.get(t("/v9/projects/\(p.id)")) as? JSON)?.str("targets.production.id")
     }
@@ -322,6 +353,7 @@ struct Render {
         var x = PhoneProject(provider: .render, id: id, name: name)
         if let r = s.str("repo") { let ref = RepoRef.parse(r); x.repo = ref.github; x.otherHost = ref.otherHost }
         x.branch = s.str("branch")
+        x.owner = s.str("ownerId")
         x.paused = s.str("suspended") == "suspended"
         x.autoDeploy = (s.str("autoDeployTrigger").map { $0 != "off" }) ?? (s.str("autoDeploy") == "yes")
         x.domain = s.str("serviceDetails.url").map { $0.replacingOccurrences(of: "https://", with: "") }
@@ -363,6 +395,28 @@ struct Render {
         guard let prev = deps.first(where: { $0.str("status") == "deactivated" && $0.str("commit.id") != cur }), let id = prev.str("id") else { return nil }
         return RollbackTarget(id: id, sha: prev.str("commit.id"), title: firstLine(prev.str("commit.message")),
                               at: isoDate(prev.str("finishedAt") ?? prev.str("createdAt")))
+    }
+    func history(_ p: PhoneProject, limit: Int = 15) async throws -> [DeployRecord] {
+        let deps = ((try await http.get("/services/\(p.id)/deploys?limit=\(limit)")) as? [JSON] ?? []).compactMap { $0["deploy"] as? JSON }
+        return deps.compactMap { d in
+            guard let id = d.str("id") else { return nil }
+            let state = d.str("status") ?? "unknown"
+            return DeployRecord(id: id, state: state, at: isoDate(d.str("createdAt")), finishedAt: isoDate(d.str("finishedAt")),
+                                sha: d.str("commit.id"), title: firstLine(d.str("commit.message")), current: state == "live")
+        }
+    }
+    /// The build output of one deploy, oldest line first. Render's logs have no deploy filter: the deploy's
+    /// own time window stands in for it (as in `deploys logs`). Not masked yet.
+    func buildLog(_ p: PhoneProject, _ d: DeployRecord) async throws -> [String] {
+        var owner = p.owner
+        if owner == nil { owner = (try await http.get("/services/\(p.id)") as? JSON)?.str("ownerId") }
+        guard let owner else { throw APIError(status: 0, message: L("Render did not name the workspace of \(p.name).", "Render hat den Workspace von \(p.name) nicht genannt.")) }
+        func q(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? s }
+        var path = "/logs?ownerId=\(q(owner))&resource=\(q(p.id))&type=build&limit=200&direction=backward"
+        let iso = ISO8601DateFormatter()
+        if let a = d.at { path += "&startTime=" + q(iso.string(from: a.addingTimeInterval(-5))) }
+        if let b = d.finishedAt { path += "&endTime=" + q(iso.string(from: b.addingTimeInterval(5))) }
+        return LogMask.renderLines(try await http.get(path))
     }
     /// The rollback is a new deploy on Render: its id, to follow it.
     func rollback(_ p: PhoneProject, to deploy: String) async throws -> String? {
@@ -442,4 +496,13 @@ struct GitHub {
         }
         return nil
     }
+}
+
+/// What the log screen shows: masked lines around the first error, or why there are none.
+struct BuildLog {
+    var lines: [String] = []
+    var errorAt: Int? = nil
+    /// The whole masked log (at most the last 60 000 characters), for "Copy".
+    var full = ""
+    var problem: String? = nil
 }

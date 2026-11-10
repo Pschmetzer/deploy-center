@@ -2,6 +2,7 @@
 // Dynamic Type, dark mode and VoiceOver come with them.
 
 import SwiftUI
+import UniformTypeIdentifiers
 import UserNotifications
 
 struct RootView: View {
@@ -373,6 +374,16 @@ struct ProjectDetail: View {
                     }
                 }
             }
+            Section(L("Deploys", "Deploys")) {
+                if p.failed {
+                    NavigationLink { BuildLogView(store: store, project: p, record: nil) } label: {
+                        Label(L("Why it failed (log)", "Warum es fehlschlug (Log)"), systemImage: "exclamationmark.bubble")
+                    }
+                }
+                NavigationLink { DeployHistoryView(store: store, project: p) } label: {
+                    Label(L("History", "Verlauf"), systemImage: "clock.arrow.circlepath")
+                }
+            }
             if !store.demo, let links = links(p), !links.isEmpty {
                 Section(L("Open", "Öffnen")) { ForEach(links, id: \.1) { Link($0.0, destination: $0.1) } }
             }
@@ -452,6 +463,112 @@ struct ProjectDetail: View {
             }
         }
         return out
+    }
+}
+
+/// The last deploys of one project: state, time, commit; a built one can go live again.
+struct DeployHistoryView: View {
+    @ObservedObject var store: PhoneStore
+    let project: PhoneProject
+    @State private var records: [DeployRecord]?
+    @State private var again: DeployRecord?
+
+    var body: some View {
+        List {
+            if let records {
+                if records.isEmpty { Text(L("No deploys yet.", "Noch keine Deploys.")).foregroundStyle(.secondary) }
+                ForEach(records) { r in
+                    NavigationLink { BuildLogView(store: store, project: project, record: r) } label: { row(r) }
+                        .swipeActions {
+                            if r.reusable {
+                                Button(L("Live again", "Wieder live")) { again = r }.tint(.orange)
+                            }
+                        }
+                        .contextMenu {
+                            if r.reusable { Button(L("Make live again …", "Wieder live schalten …"), systemImage: "arrow.uturn.backward") { again = r } }
+                        }
+                }
+            } else { HStack { Spacer(); ProgressView(); Spacer() } }
+        }
+        .navigationTitle(L("History", "Verlauf"))
+        .task { records = await store.history(project) ?? [] }
+        .refreshable { records = await store.history(project) ?? records }
+        .confirmationDialog(L("Make this deploy live again?", "Diesen Deploy wieder live schalten?"),
+                            isPresented: Binding(get: { again != nil }, set: { if !$0 { again = nil } }), titleVisibility: .visible) {
+            Button(L("Make live again", "Wieder live schalten"), role: .destructive) {
+                if let r = again { Task { await store.rollback(project, to: r.target) } }
+            }
+            Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+        } message: {
+            Text((again?.title.map { L("\"\($0)\"", "„\($0)“") } ?? L("This deploy", "Dieser Deploy")) + L(" goes live again. Asks for Face ID.", " geht wieder live. Fragt nach Face ID."))
+        }
+    }
+
+    private func row(_ r: DeployRecord) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(PhoneProject.stateWord(r.state)).foregroundStyle(r.failed ? .red : r.current ? .green : .secondary)
+                if r.current { Text(L("live now", "jetzt live")).font(.caption).foregroundStyle(.green) }
+                Spacer()
+                if let a = r.at { Text(a.formatted(.relative(presentation: .named))).font(.caption).foregroundStyle(.secondary) }
+            }
+            HStack(spacing: 6) {
+                if let s = r.sha { Text(s.prefix(7)).monospaced().font(.caption) }
+                if let t = r.title { Text(t).font(.caption).lineLimit(1) }
+            }.foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Build output around the first error, with secrets masked. Copy takes the whole masked log.
+struct BuildLogView: View {
+    @ObservedObject var store: PhoneStore
+    let project: PhoneProject
+    let record: DeployRecord?
+    @State private var log: BuildLog?
+    @State private var copied = false
+
+    var body: some View {
+        Group {
+            if let log {
+                if let problem = log.problem {
+                    ContentUnavailableView(L("No log", "Kein Log"), systemImage: "doc.text.magnifyingglass", description: Text(problem))
+                } else {
+                    ScrollView([.vertical, .horizontal]) {
+                        LazyVStack(alignment: .leading, spacing: 1) {
+                            ForEach(Array(log.lines.enumerated()), id: \.offset) { i, l in
+                                Text(l.isEmpty ? " " : l).font(.caption.monospaced())
+                                    .foregroundStyle(i == log.errorAt ? .red : .primary)
+                                    .fontWeight(i == log.errorAt ? .bold : .regular)
+                            }
+                        }
+                        .textSelection(.enabled)
+                        .padding()
+                    }
+                    .safeAreaInset(edge: .bottom) {
+                        Text(log.errorAt != nil ? L("From shortly before the first error line. Secrets are masked as well as known, check before sharing.",
+                                                    "Ab kurz vor der ersten Fehlerzeile. Geheimnisse sind nach bestem Wissen maskiert, vor dem Teilen prüfen.")
+                                                  : L("The last lines. Secrets are masked as well as known, check before sharing.",
+                                                      "Die letzten Zeilen. Geheimnisse sind nach bestem Wissen maskiert, vor dem Teilen prüfen."))
+                            .font(.footnote).foregroundStyle(.secondary).padding(8).frame(maxWidth: .infinity).background(.bar)
+                    }
+                }
+            } else { ProgressView() }
+        }
+        .navigationTitle(L("Build log", "Build-Log"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let full = log?.full, !full.isEmpty {
+                Button {
+                    // Only on this device, gone after ten minutes: a log is no thing for Universal Clipboard.
+                    UIPasteboard.general.setItems([[UTType.plainText.identifier: full]],
+                                                  options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(600)])
+                    copied = true
+                } label: { Label(copied ? L("Copied", "Kopiert") : L("Copy", "Kopieren"), systemImage: copied ? "checkmark" : "doc.on.doc") }
+            }
+        }
+        .task { log = await store.buildLog(project, record) }
     }
 }
 
