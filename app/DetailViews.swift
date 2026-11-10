@@ -20,6 +20,7 @@ struct BuildLog: View {
     @State private var error: String?
     @State private var onlyErrors = false
     @State private var jump = 0
+    @State private var attempt = 0
     /// The last lines first; "Load more" asks for ten times as many.
     @State private var lineCount = 200
 
@@ -28,7 +29,7 @@ struct BuildLog: View {
     private func copy(_ s: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string) }
 
     /// Changes when a deploy starts or ends, so the log is read again then and not on every poll.
-    private var reloadKey: String { "\(lineCount)|\(live.state.isActive)|\(live.lastAt?.timeIntervalSince1970 ?? 0)|\(live.state == .idle)" }
+    private var reloadKey: String { "\(attempt)|\(lineCount)|\(live.state.isActive)|\(live.lastAt?.timeIntervalSince1970 ?? 0)|\(live.state == .idle)" }
 
     var body: some View {
         let live = self.live
@@ -56,7 +57,13 @@ struct BuildLog: View {
             }
             .padding(12)
             Divider()
-            if let error { Text(error).foregroundStyle(.secondary).padding(16).textSelection(.enabled) }
+            if let error {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(Demo.scrub(error, items: [live])).foregroundStyle(.secondary).textSelection(.enabled)
+                    Button(L("Try again", "Nochmal versuchen")) { self.error = nil; attempt += 1 }
+                }
+                .padding(16)
+            }
             else if text != nil {
                 LogText(lines: demoMode ? lines.map { Demo.scrub($0, items: [live]) } : lines,
                         onlyErrors: onlyErrors, firstError: firstError, jump: jump)
@@ -75,7 +82,7 @@ struct BuildLog: View {
                 let t = String(data: data, encoding: .utf8).map { $0.isEmpty ? L("(empty)", "(leer)") : $0 } ?? ""
                 // Split and searched once per load, not on every redraw.
                 lines = t.components(separatedBy: "\n"); firstError = LogTools.firstErrorLine(lines)
-                text = t; error = nil
+                text = t; self.error = nil
             } catch { if text == nil { self.error = error.localizedDescription } }
         }
     }
@@ -145,6 +152,7 @@ struct ProjectDetail: View {
     @State private var error: String?
     @AppStorage("demoMode") private var demoMode = false
     @AppStorage("hideBotCommits") private var hideBots = false
+    @State private var attempt = 0
 
     private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
     private func scrub(_ s: String) -> String { Demo.scrub(s, items: Platform.allCases.flatMap { store.items[$0] ?? [] }) }
@@ -169,7 +177,11 @@ struct ProjectDetail: View {
             .padding(16)
             Divider()
             if let error {
-                Text(error).foregroundStyle(.secondary).padding(20).textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(scrub(error)).foregroundStyle(.secondary).textSelection(.enabled)
+                    Button(L("Try again", "Nochmal versuchen")) { self.error = nil; attempt += 1 }
+                }
+                .padding(20)
             } else if let d = details {
                 ScrollView { content(d).padding(16) }
             } else {
@@ -189,7 +201,7 @@ struct ProjectDetail: View {
                    "\(Demo.mask(item.name)) geht mit \(commitToDeploy?.sha ?? "") live – \(scrub(commitToDeploy?.msg ?? "")). Neuere Commits warten weiter."))
         }
         // Asked again when what is live or the branch moves (a deploy ended, a new commit came in).
-        .task(id: "\(item.lastSha ?? "")|\(item.headSha ?? "")") {
+        .task(id: "\(attempt)|\(item.lastSha ?? "")|\(item.headSha ?? "")") {
             guard let repo = item.repo else { return }
             do {
                 details = try await Tool.json(["details", repo, item.lastSha ?? "", item.ref ?? "main"], as: Details.self)
@@ -217,59 +229,7 @@ struct ProjectDetail: View {
                         .font(.callout)
                 }
             }
-            if !d.commits.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(L("Waiting to go live", "Wartet darauf, live zu gehen")).font(.headline)
-                        if d.onlyBots {
-                            Text(L("dependency updates only", "nur Abhängigkeits-Updates"))
-                                .font(.caption).padding(.horizontal, 6).padding(.vertical, 1)
-                                .background(Capsule().fill(Color.secondary.opacity(0.15)))
-                        }
-                        Spacer()
-                        if let u = d.compareUrl.flatMap(URL.init(string:)) {
-                            Button(L("On GitHub", "Auf GitHub")) { NSWorkspace.shared.open(u) }.buttonStyle(.link)
-                        }
-                    }
-                    Text(L("\(d.files) files, +\(d.additions) −\(d.deletions) lines", "\(d.files) Dateien, +\(d.additions) −\(d.deletions) Zeilen"))
-                        .font(.caption).foregroundStyle(.secondary)
-                    if !d.risky.isEmpty {
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                            Text(L("Worth a look before it goes live: ", "Vor dem Live-Gang ansehen: ") + d.risky.prefix(8).joined(separator: ", ")
-                                 + (d.risky.count > 8 ? " …" : ""))
-                                .font(.caption).textSelection(.enabled)
-                        }
-                    }
-                    if d.commits.contains(where: { $0.bot == true }) && !d.onlyBots {
-                        Toggle(L("Hide dependency updates", "Abhängigkeits-Updates ausblenden"), isOn: $hideBots)
-                            .toggleStyle(.checkbox).font(.caption)
-                    }
-                    ForEach(d.commits.filter { !(hideBots && !d.onlyBots && $0.bot == true) }) { c in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            if let pr = c.pr, let repo = item.repo, let u = URL(string: "https://github.com/\(repo)/pull/\(pr)") {
-                                Button("#\(pr)") { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospacedDigit())
-                            } else if let u = c.url.flatMap(URL.init(string:)) {
-                                Button(c.sha) { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospaced())
-                            }
-                            Text(scrub(c.msg)).font(.callout).lineLimit(2).help(scrub(c.msg))
-                            Spacer(minLength: 8)
-                            Text((Demo.person(c.author) ?? "") + " · " + Row.ago(Date(timeIntervalSince1970: c.at)))
-                                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                            if deployCommit != nil, item.deployable, c.full != nil {
-                                Button { commitToDeploy = c } label: { Image(systemName: "paperplane") }
-                                    .buttonStyle(.borderless).accessibilityLabel(L("Deploy up to this commit", "Bis zu diesem Commit deployen")).help(L("Deploy up to this commit", "Bis zu diesem Commit deployen"))
-                            }
-                        }
-                    }
-                }
-            } else if item.hasNewCommits {
-                Text(L("GitHub could not compare what is live with the branch (rewritten branch, or the live commit is unknown).",
-                       "GitHub konnte Live-Stand und Branch nicht vergleichen (Branch umgeschrieben oder Live-Commit unbekannt)."))
-                    .font(.callout).foregroundStyle(.secondary)
-            } else {
-                Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-            }
+            waiting(d)
             if item.platform == .vercel, let repo = item.repo,
                Platform.allCases.flatMap({ store.items[$0] ?? [] }).filter({ $0.repo == repo }).count > 1 {
                 VStack(alignment: .leading, spacing: 4) {
@@ -285,27 +245,88 @@ struct ProjectDetail: View {
                     .padding(6).background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.1)))
                 }
             }
+            openPRs(d)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private func waiting(_ d: Details) -> some View {
+        let item = self.live
+        if !d.commits.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text(L("Open pull requests (not merged)", "Offene Pull Requests (nicht gemergt)")).font(.headline)
-                if d.open.isEmpty {
-                    Text(L("None", "Keine")).font(.callout).foregroundStyle(.secondary)
+                HStack {
+                    Text(L("Waiting to go live", "Wartet darauf, live zu gehen")).font(.headline)
+                    if d.onlyBots {
+                        Text(L("dependency updates only", "nur Abhängigkeits-Updates"))
+                            .font(.caption).padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                    }
+                    Spacer()
+                    if let u = d.compareUrl.flatMap(URL.init(string:)) {
+                        Button(L("On GitHub", "Auf GitHub")) { NSWorkspace.shared.open(u) }.buttonStyle(.link)
+                    }
                 }
-                ForEach(d.open) { pr in
+                Text(L("\(d.files) files, +\(d.additions) −\(d.deletions) lines", "\(d.files) Dateien, +\(d.additions) −\(d.deletions) Zeilen"))
+                    .font(.caption).foregroundStyle(.secondary)
+                if !d.risky.isEmpty {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text(L("Worth a look before it goes live: ", "Vor dem Live-Gang ansehen: ") + d.risky.prefix(8).joined(separator: ", ")
+                             + (d.risky.count > 8 ? " …" : ""))
+                            .font(.caption).textSelection(.enabled)
+                    }
+                }
+                if d.commits.contains(where: { $0.bot == true }) && !d.onlyBots {
+                    Toggle(L("Hide dependency updates", "Abhängigkeits-Updates ausblenden"), isOn: $hideBots)
+                        .toggleStyle(.checkbox).font(.caption)
+                }
+                ForEach(d.commits.filter { !(hideBots && !d.onlyBots && $0.bot == true) }) { c in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Button("#\(pr.number)") { if let u = URL(string: pr.url) { NSWorkspace.shared.open(u) } }
-                            .buttonStyle(.link).font(.caption.monospacedDigit())
-                        Text(scrub(pr.title)).font(.callout).lineLimit(2)
-                        if pr.draft { tag(L("draft", "Entwurf")) }
-                        if pr.bot == true { tag("bot") }
+                        if let pr = c.pr, let repo = item.repo, let u = URL(string: "https://github.com/\(repo)/pull/\(pr)") {
+                            Button("#\(pr)") { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospacedDigit())
+                        } else if let u = c.url.flatMap(URL.init(string:)) {
+                            Button(c.sha) { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospaced())
+                        }
+                        Text(scrub(c.msg)).font(.callout).lineLimit(2).help(scrub(c.msg))
                         Spacer(minLength: 8)
-                        Image(systemName: pr.ci == "failed" ? "xmark.circle.fill" : pr.ci == "running" ? "clock" : pr.ci == "passed" ? "checkmark.circle.fill" : "minus.circle")
-                            .foregroundStyle(pr.ci == "failed" ? .red : pr.ci == "passed" ? .green : .secondary)
-                            .help(Self.ciText(pr.ci)).accessibilityLabel(Self.ciText(pr.ci))
+                        Text([Demo.person(c.author), Row.ago(Date(timeIntervalSince1970: c.at))].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        if deployCommit != nil, item.deployable, c.full != nil {
+                            Button { commitToDeploy = c } label: { Image(systemName: "paperplane") }
+                                .buttonStyle(.borderless).accessibilityLabel(L("Deploy up to this commit", "Bis zu diesem Commit deployen")).help(L("Deploy up to this commit", "Bis zu diesem Commit deployen"))
+                        }
                     }
                 }
             }
+        } else if item.hasNewCommits {
+            Text(L("GitHub could not compare what is live with the branch (rewritten branch, or the live commit is unknown).",
+                   "GitHub konnte Live-Stand und Branch nicht vergleichen (Branch umgeschrieben oder Live-Commit unbekannt)."))
+                .font(.callout).foregroundStyle(.secondary)
+        } else {
+            Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func openPRs(_ d: Details) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("Open pull requests (not merged)", "Offene Pull Requests (nicht gemergt)")).font(.headline)
+            if d.open.isEmpty {
+                Text(L("None", "Keine")).font(.callout).foregroundStyle(.secondary)
+            }
+            ForEach(d.open) { pr in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Button("#\(pr.number)") { if let u = URL(string: pr.url) { NSWorkspace.shared.open(u) } }
+                        .buttonStyle(.link).font(.caption.monospacedDigit())
+                    Text(scrub(pr.title)).font(.callout).lineLimit(2)
+                    if pr.draft { tag(L("draft", "Entwurf")) }
+                    if pr.bot == true { tag("bot") }
+                    Spacer(minLength: 8)
+                    Image(systemName: pr.ci == "failed" ? "xmark.circle.fill" : pr.ci == "running" ? "clock" : pr.ci == "passed" ? "checkmark.circle.fill" : "minus.circle")
+                        .foregroundStyle(pr.ci == "failed" ? .red : pr.ci == "passed" ? .green : .secondary)
+                        .help(Self.ciText(pr.ci)).accessibilityLabel(Self.ciText(pr.ci))
+                }
+            }
+        }
     }
 
     /// GitHub's CI word for a pull request, in words a person reads.
