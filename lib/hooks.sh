@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # lib/hooks.sh — `deploys hooks install|uninstall|status`: the pre-push check of
 # integrations/hooks/pre-push in a git repo, next to a pre-push hook that is already there.
 #

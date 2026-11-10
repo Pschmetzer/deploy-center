@@ -14,7 +14,9 @@
 #   deploys doctor                            check tools and access (JSON)
 #   deploys changed [--json]                  what has commits on GitHub that are not live
 #   deploys deploy-changed [--yes]            deploy all of those (shows the list without --yes)
+#     [--by-rules]                            only what a "deploy" rule matches; "hold" rules always count
 #     [--when-green [--wait 30m] [--strict]]  only commits whose CI passed; waits for running checks
+#   deploys rules check [--json]              which rule of rules.json matches which waiting project, and why not
 #   deploys plan [--when-green] [--json]      what deploy-changed --yes would start, and an estimate of its cost
 #   deploys deploy <project> [--sha <c>]      deploy one project to production (Vercel or Render)
 #   deploys verify <p> [--path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
@@ -100,6 +102,7 @@
 #   vercel-team        team id (auto-detected; empty for a personal account)
 #   providers.json     which providers are on, when changed with `deploys providers`
 #   prices.json        your price of one build minute, where no billing says it (deploys price)
+#   rules.json         "when … then …" for the daily deploy (the app's rule editor; docs/CLI.md)
 #   budget.json        {"monthlyUsd":50,"strict":false}: the budget brake (deploys budget)
 #   window.json        when deploys are closed: {"deny":[{"days":["fri"],"from":"15:00"}]} (docs/SAFE-DEPLOY.md)
 #   overrides.json     this Mac's overrides of the shared deploy-center.json (docs/TEAM.md)
@@ -229,6 +232,9 @@ team_on() { declare -F team_gate >/dev/null; }
 # deploys hooks install|uninstall|status: the pre-push check in a repo (lib/hooks.sh).
 # shellcheck source=lib/hooks.sh
 if [ -f "$LIB_DIR/hooks.sh" ]; then . "$LIB_DIR/hooks.sh"; fi
+# rules.json ("when … then …" for the daily deploy): lib/rules.sh. Without it no rule counts.
+# shellcheck source=lib/rules.sh
+if [ -f "$LIB_DIR/rules.sh" ]; then . "$LIB_DIR/rules.sh"; else rules_on() { return 1; }; fi
 
 # Every command that changes something on Vercel, Render or GitHub goes through here first.
 WRITING=""
@@ -884,7 +890,45 @@ with_ci_preview() {  # with_ci_preview <changed list JSON>
 }
 # The rows of the deploy-changed preview (its --json), from the list with or without wouldDo.
 PREVIEW_ROWS='[.[] | {platform, name, sha:(.headSha // null), action:(.wouldDo // "would-deploy"), commits:(.pendingCommits // null), risk:(.risk.level // null)}
-  + (if .ci then {ci:{state:.ci.state, reason:(.ci.reason // null)}} else {} end)]'
+  + (if .ci then {ci:{state:.ci.state, reason:(.ci.reason // null)}} else {} end)
+  + (if .rule then {rule:.rule} else {} end)]'
+
+# rules.json on the list of deploy-changed and plan: a "hold" rule leaves the project out (sets
+# `held` to those, as preview rows), and with --by-rules only what a "deploy" rule matched stays.
+# Works on the variable `list` itself (a $(…) would lose `held`).
+held="[]"
+apply_rules() {  # apply_rules <by-rules: 1 or empty>
+  local l="$list"
+  if rules_on; then
+    l="$(with_rules "$l")"
+    held="$(echo "$l" | jq -c '[.[] | select(.rule.then == "hold")]' | jq -c "$PREVIEW_ROWS"' | map(.action = "held-by-rule")')"
+    l="$(echo "$l" | jq -c '[.[] | select(.rule.then != "hold")]')"
+  fi
+  [ -z "${1:-}" ] || l="$(echo "$l" | jq -c '[.[] | select(.rule.then == "deploy")]')"
+  list="$l"
+}
+
+# What looks like a secret in the added lines of a GitHub comparison (.files[].patch), as
+# .secrets [{file, line, kind}]: the line number in the new file, never the value. A rough net:
+# known key shapes, and NAME=long-value assignments to names like *_SECRET, *_TOKEN, PASSWORD.
+SECRETS_JQ='def kinds: [
+    {k:"aws-access-key", r:"AKIA[0-9A-Z]{16}"},
+    {k:"github-token", r:"gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}"},
+    {k:"slack-token", r:"xox[abprs]-[A-Za-z0-9-]{10,}"},
+    {k:"stripe-key", r:"[sr]k_live_[A-Za-z0-9]{16,}"},
+    {k:"anthropic-key", r:"sk-ant-[A-Za-z0-9_-]{20,}"},
+    {k:"openai-key", r:"sk-(proj-)?[A-Za-z0-9]{32,}"},
+    {k:"google-api-key", r:"AIza[0-9A-Za-z_-]{35}"},
+    {k:"private-key", r:"-----BEGIN [A-Z ]*PRIVATE KEY-----"},
+    {k:"assignment", r:"(?i)(secret|token|passw(or)?d|api[_-]?key|private[_-]?key)[A-Za-z0-9_]*[\"'"'"']?[ \t]*[:=][ \t]*[\"'"'"']?[A-Za-z0-9/+_=.-]{16,}"}];
+  def scan_patch($file):
+    (split("\n") | reduce .[] as $l ({n:0, out:[]};
+      if ($l | startswith("@@")) then .n = (($l | capture("\\+(?<s>[0-9]+)").s | tonumber) - 1)
+      elif ($l | startswith("+")) then .n += 1
+        | . as $st | .out += [kinds[] | . as $k | select($l[1:] | test($k.r)) | {file:$file, line:$st.n, kind:$k.k}]
+      elif ($l | startswith("-")) then .
+      else .n += 1 end) | .out);
+  .secrets = ([(.files // [])[] | select(.patch) | . as $f | .patch | scan_patch($f.filename)[]] | unique_by([.file, .line]) | .[0:50])'
 
 # ---------- Costs (Vercel billing, one UTC day per request) ----------
 
@@ -2106,7 +2150,7 @@ case "${1:-} ${2:-}" in
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
     # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    cmds="doctor where changed plan deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore hooks explain diff notes costs triggers simulate ledger price budget details autofix autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
+    cmds="doctor where changed plan deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore hooks rules explain diff notes costs triggers simulate ledger price budget details autofix autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
     verbs_of() {
       local v="list deploy rollback status cancel autodeploy-off json" x
       for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
@@ -2171,7 +2215,10 @@ BASH
     # more than one argument may hold ("Argument list too long"). The patches are not needed.
     dt="$(mktemp -d)"; echo null > "$dt/cmp"
     if [ -n "$base" ] && [ "$base" != "null" ]; then
-      gh api --cache 5m "repos/$repo/compare/$base...$ref" 2>/dev/null | jq 'del(.files[]?.patch)' > "$dt/cmp.t" 2>/dev/null \
+      # Before the patches go: what looks like a secret in an added line (file, line, kind; never
+      # the value), and how much each lockfile changed.
+      gh api --cache 5m "repos/$repo/compare/$base...$ref" 2>/dev/null \
+        | jq "$SECRETS_JQ"' | del(.files[]?.patch)' > "$dt/cmp.t" 2>/dev/null \
         && [ -s "$dt/cmp.t" ] && mv "$dt/cmp.t" "$dt/cmp"
     fi
     checks="$(gh api --cache 2m "repos/$repo/commits/$ref/check-runs?per_page=100" 2>/dev/null \
@@ -2191,6 +2238,7 @@ BASH
       {commits:[($c.commits // [])[] | {sha:.sha[0:7], full:.sha, url:.html_url,
                  msg:(.commit.message | split("\n")[0]), author:(.author.login // .commit.author.name),
                  bot:((.author.type // "") == "Bot"),
+                 verified:.commit.verification.verified, verification:(.commit.verification.reason // null),
                  coAuthors:[.commit.message | scan("(?im)^co-authored-by:[ \\t]*([^<\\n]*?)[ \\t]*<([^>\\n]*)>") | {name:.[0], email:.[1]}],
                  at:(.commit.committer.date | fromdateiso8601),
                  pr:((.commit.message | (capture("\\(#(?<n>[0-9]+)\\)") // capture("Merge pull request #(?<n>[0-9]+)")) | .n | tonumber) // null)}] | reverse,
@@ -2199,6 +2247,13 @@ BASH
        # Files that change how the thing runs, not only what it shows: worth a look before going live.
        risky:[($c.files // [])[] | .filename
               | select(test("(^|/)(migrations?|prisma)/|schema\\.(prisma|sql|rb)$|(^|/)\\.env|(^|/)(package\\.json|package-lock\\.json|pnpm-lock\\.yaml|yarn\\.lock|requirements\\.txt|Pipfile\\.lock|poetry\\.lock|go\\.mod|Gemfile\\.lock|Cargo\\.lock)$|Dockerfile|render\\.yaml$|vercel\\.json$|\\.github/workflows/"))],
+       # FEA-032: lines that look like a secret, added in this diff: {file, line, kind}. No values.
+       secrets:($c.secrets // []),
+       # FEA-029: each lockfile the diff touches, with its added and removed lines.
+       lockfiles:[($c.files // [])[] | select(.filename | test("(^|/)(package-lock\\.json|npm-shrinkwrap\\.json|pnpm-lock\\.yaml|yarn\\.lock|bun\\.lockb?|Pipfile\\.lock|poetry\\.lock|uv\\.lock|Gemfile\\.lock|Cargo\\.lock|go\\.sum|composer\\.lock)$"))
+                  | {file:.filename, additions:(.additions // 0), deletions:(.deletions // 0)}],
+       # FEA-039: commits whose signature GitHub could not verify (unsigned counts too).
+       unverified:([($c.commits // [])[] | select((.commit.verification.verified // false) | not)] | length),
        onlyBots:(($c.commits // []) | length > 0 and all((.author.type // "") == "Bot" or ((.author.login // "") | test("\\[bot\\]")))),
        compareUrl:($c.html_url // null),
        checks:$checks, open:$open}'
@@ -2441,9 +2496,11 @@ BASH
     load_savings
     rc=0; list="$(changed_json)" || rc=$?
     [ "$rc" = 0 ] || [ "$(echo "$list" | jq length)" != 0 ] || die "Could not tell what has changes (see above)."
+    apply_rules ""
     [ -z "$green" ] || [ "$(echo "$list" | jq length)" = 0 ] || list="$(with_ci_preview "$list")"
     rows="$(echo "$list" | jq -c "$PREVIEW_ROWS"' as $r | [., $r] | transpose | map(.[1] + {id:(.[0].id // null)})' 2>/dev/null \
       || echo "$list" | jq -c "$PREVIEW_ROWS")"
+    rows="$(echo "$rows" | jq -c --argjson h "$held" '. + $h')"
     out="$(plan_from "$rows" "$(plan_facts "$rows")")"
     out="$(echo "$out" | jq -c --argjson w "$(window_json)" --argjson b "$(budget_json "$(echo "$out" | jq .total.usd)")" \
       '. + {window:{denied:($w.denied // false), reason:($w.reason // null)}, budget:$b}')"
@@ -2456,27 +2513,33 @@ BASH
     # The daily deploy: everything with changes. Without --yes it only shows what it would do.
     # Only what is known to have changes is started; what could not be read is named and left out.
     # --when-green: only commits whose CI passed; pending checks are waited for (--wait, default 30m).
-    yes=""; green=""; maxw=1800; strict=""
+    yes=""; green=""; maxw=1800; strict=""; byrules=""
     shift
     while [ $# -gt 0 ]; do
       case "$1" in
         --yes) yes=1 ;;
         --when-green) green=1 ;;
         --strict) strict=1 ;;   # exit 2 when anything was skipped (cron and CI see it)
+        --by-rules) byrules=1 ;;  # only what a "deploy" rule in rules.json matches
         --wait) maxw="$(duration_s "${2:-}")" || die "--wait takes a time like 30m, 90s or 1h"; shift ;;
-        *) die "Unknown option $1. Usage: deploys deploy-changed [--yes] [--when-green [--wait 30m] [--strict]] [--force \"why\"] [--json]" ;;
+        *) die "Unknown option $1. Usage: deploys deploy-changed [--yes] [--when-green [--wait 30m] [--strict]] [--by-rules] [--force \"why\"] [--json]" ;;
       esac
       shift
     done
-    rc=0; list="$(changed_json)" || rc=$?; n="$(echo "$list" | jq length)"
+    [ -z "$byrules" ] || rules_on || die "--by-rules needs rules.json with a rule that is on (see docs/CLI.md, Rules)."
+    rc=0; list="$(changed_json)" || rc=$?
+    apply_rules "$byrules"; n="$(echo "$list" | jq length)"
+    if [ "$held" != "[]" ] && [ "$json" != 1 ]; then
+      echo "$held" | jq -r '.[] | "  \(.platform)  \(.name)  held by the rule \"\(.rule.name)\""'
+    fi
     if [ "$n" = "0" ]; then
       [ "$rc" = 0 ] || die "Could not tell what has changes (see above). Nothing was started."
-      if [ "$json" = 1 ]; then echo '[]'; else echo "Nothing to deploy."; fi; exit 0
+      if [ "$json" = 1 ]; then echo "$held" | jq '.'; else echo "Nothing to deploy."; fi; exit 0
     fi
     if [ -z "$yes" ]; then
       [ -z "$green" ] || list="$(with_ci_preview "$list")"
       if [ "$json" = 1 ]; then
-        echo "$list" | jq "$PREVIEW_ROWS"
+        echo "$list" | jq --argjson h "$held" "$PREVIEW_ROWS"' + $h'
         exit "$rc"
       fi
       echo "$list" | jq -r --argjson w "$maxw" '.[] | "  \(.platform)  \(.name)  (\(.pendingCommits // "?") commits)\(if .ci then
@@ -2512,6 +2575,10 @@ BASH
         if [ -n "${budget_over:-}" ] && [ "${DEPLOYS_CALLER:-}" != app ]; then journal_add "$1" "$2" forced "Deployed $budget_over: $force_reason"; fi
       else bad=$((bad+1)); say "$1" "$2" failed "$4"; fi
     }
+    # Held by a rule: named and counted as skipped, never started.
+    while IFS=$'\t' read -r plat name why; do
+      [ -n "$plat" ] || continue; skip=$((skip+1)); say "$plat" "$name" skipped "held by the rule \"$why\""
+    done <<< "$(echo "$held" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.rule.name)"')"
     todo="$(echo "$list" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.id // "-")\t\(.repo // "")\t\(.headSha // "")"')"
     if [ -z "$green" ]; then
       while IFS=$'\t' read -r plat name id _ _; do start "$plat" "$name" "" "" "$id"; done <<< "$todo"
@@ -2677,6 +2744,11 @@ BASH
     sch=false; af_scheduled && sch=true
     af_state | jq --arg r "$(af_routine)" --argjson tok "$tok" --argjson sch "$sch" --arg miss "$(job_missing "$AUTOFIX_LABEL")" \
       '{routine:(if $r == "" then null else $r end), token:$tok, scheduled:$sch, pathMissing:($miss | split(" ") | map(select(. != ""))),
+        # FEA-018: how hand-overs ended, over all fires kept: a PR opened, merged, the fix deployed.
+        summary:{handedOver:([.fires[] | select(.status == "fired")] | length),
+                 opened:([.fires[] | select(.pr // .prNumber)] | length),
+                 merged:([.fires[] | select(.mergedSha or .prState == "merged")] | length),
+                 redeployed:([.fires[] | select(.redeployedSha)] | length)},
         fires:(.fires | sort_by(-.at) | .[0:20] | map({at, project, platform, status, sha:(.sha // null),
           session:(.session // null), error:(.error // .reason // null), redeployedSha:(.redeployedSha // null), mergedSha:(.mergedSha // null), pr:(.pr // .prNumber // null),
           prNumber:(.prNumber // .pr // null), prState:(.prState // (if .mergedSha then "merged" else null end)), prUrl:(.prUrl // null), done:(.done // false)}))}' ;;
@@ -2741,6 +2813,7 @@ BASH
   "simulate "*|"ledger "*)
     load_savings; savings_main "$@" ;;
 
+  "rules "*) declare -F rules_main >/dev/null || die "lib/rules.sh is not next to deploys."; rules_main "${@:2}" ;;
   "price "*) load_savings; price_main "${@:2}" ;;
   "budget "*) load_savings; budget_main "${@:2}" ;;
 

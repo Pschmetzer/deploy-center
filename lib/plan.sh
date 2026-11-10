@@ -70,7 +70,7 @@ plan_from() {  # plan_from <preview rows JSON> <facts JSON>  (rows as deploy-cha
     | [ $rows[] | . as $r | (($f.projects // []) | map(select(.platform == $r.platform and .name == $r.name)) | .[0] // {platform:$r.platform}) as $p
         | price($f; $p; $team) as $pr
         | $r + {minutes:(mins($p) | r1), usd:($pr.usd | r2), priceSource:$pr.source} ] as $out
-    | ($out | map(select(.action != "would-skip" and .action != "skipped-by-rule"))) as $go
+    | ($out | map(select(.action != "would-skip" and .action != "held-by-rule"))) as $go
     | {estimate:true, kind:"plan", currency:"USD", method:$method, methodDe:$methodDe,
        projects:$out,
        total:{builds:($go | length), usd:([ $go[].usd | numbers ] | add // 0 | r2),
@@ -132,7 +132,9 @@ budget_main() {  # budget_main [set <usd> [--strict] | off]
 
 # The brake of deploy-changed --yes: over budget (or unknown, with strict) needs --force "why".
 # Sets budget_over to the text the journal gets when the run goes ahead with --force.
+# shellcheck disable=SC2034  # budget_over is read by deploy-changed in deploys
 budget_over=""
+# shellcheck disable=SC2034
 budget_check() {  # budget_check <preview rows JSON>
   [ -f "$BUDGET" ] || return 0
   local add b; add="$(plan_from "$1" "$(plan_facts "$1")" | jq '.total.usd')"

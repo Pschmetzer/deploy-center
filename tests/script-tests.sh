@@ -1352,7 +1352,7 @@ expect "INT-082: install moves the old hook aside" "$(run "$O" "$E" hooks instal
 expect "INT-082: install twice does not chain itself" "$(run "$O" "$E" hooks install "$hk"; grep -c 'got' "$hk/.git/hooks/pre-push.local"; run "$O" "$E" hooks status "$hk" --json; jq -c '[.installed, .chained]' "$O")" $'0\n1\n0\n[true,true]'
 push() { printf 'refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000\n' | DEPLOYS=true "$hk/.git/hooks/pre-push" origin git@github.com:me/app.git; echo $?; }
 expect "INT-082: the old hook gets the refs and its no stops the push" "$(push; cut -c1-15 "$hk/got"; LOCAL_RC=3 push)" $'0\nrefs/heads/main\n3'
-expect "INT-082: uninstall puts the old hook back" "$(run "$O" "$E" hooks uninstall "$hk"; grep -c got "$hk/.git/hooks/pre-push"; ls "$hk/.git/hooks" | grep -cE 'pre-push[.](local|deploys)')" $'0\n1\n0'
+expect "INT-082: uninstall puts the old hook back" "$(run "$O" "$E" hooks uninstall "$hk"; grep -c got "$hk/.git/hooks/pre-push"; find "$hk/.git/hooks" -name 'pre-push.local' -o -name 'pre-push.deploys' | wc -l | tr -d ' ')" $'0\n1\n0'
 git -C "$hk" config core.hooksPath .githooks
 expect "INT-082: core.hooksPath is where it goes" "$(run "$O" "$E" hooks install "$hk"; [ -f "$hk/.githooks/pre-push" ] && echo there)" $'0\nthere'
 git -C "$hk" config --unset core.hooksPath; mkdir -p "$hk/.husky"
@@ -1389,6 +1389,35 @@ expect "FEA-002: unknown spending warns and goes ahead" "$(run "$O" "$E" deploy-
 fresh; run "$O" "$E" budget set 1 --strict >/dev/null
 expect "FEA-002: strict: unknown spending stops it" "$(run "$O" "$E" deploy-changed --yes; started; grep -c 'budget is strict' "$E")" $'1\n0\n1'
 run "$O" "$E" budget off >/dev/null; fresh
+# FEA-066/067/074: rules.json (the app's rule editor) in deploy-changed, plan and rules check.
+cmpf="$tmp/cmp-docs.json"
+echo '{"status":"ahead","ahead_by":1,"behind_by":0,"commits":[{"sha":"bbbb","commit":{"message":"docs","committer":{"date":"2026-01-02T00:00:00Z"}},"author":{"type":"User"}}],"files":[{"filename":"docs/guide.md","additions":1,"deletions":0},{"filename":"README.md","additions":1,"deletions":0}]}' > "$cmpf"
+fresh
+echo '{"rules":[{"name":"hold web","enabled":true,"when":{"projects":["vercel/web"]},"then":"hold"}]}' > "$e2e/config/rules.json"
+expect "FEA-066: a hold rule leaves the project out of the preview, named" \
+  "$(run "$O" "$E" deploy-changed --json; jq -c 'map(select(.name == "web")) | map([.action, .rule.name])' "$O")" $'0\n[["held-by-rule","hold web"]]'
+expect "FEA-066: and out of --yes, as skipped" \
+  "$(run "$O" "$E" deploy-changed --yes --json; jq -c 'map(select(.name == "web")) | map([.action, .reason])' "$O"; grep -c 'vercel api /v13/deployments' "$e2e/calls.log")" $'0\n[["skipped","held by the rule \\"hold web\\""]]\n0'
+expect "FEA-066: plan does not count it" "$(run "$O" "$E" plan --json; jq -c '[(.projects | map(select(.name == "web")) | .[0].action), (.projects | map(select(.action == "held-by-rule")) | length)]' "$O")" $'0\n["held-by-rule",1]'
+echo '{"rules":[{"name":"docs ship","when":{"projects":["vercel/*"],"paths":["docs/**","*.md"],"onlyPaths":true,"minAgeHours":1},"then":"deploy"},{"name":"all","when":{},"then":"deploy"}]}' > "$e2e/config/rules.json"
+fresh
+expect "FEA-067: only docs changed: --by-rules starts it (and nothing else)" \
+  "$(BIG="$cmpf" run "$O" "$E" deploy-changed --by-rules --yes --json; jq -c 'map([.name, .action])' "$O")" $'0\n[["web","started"]]'
+expect "FEA-066: rules check says why not, and ignores a rule without a condition" \
+  "$(run "$O" "$E" rules check --json; jq -c 'map(select(.project == "vercel/web")) | map([.rule, .matched, .unmet[0]])' "$O")" \
+  $'0\n[["docs ship",false,"the changed files are not known"],["all",false,"a deploy rule without a condition is ignored"]]'
+echo '{"rules":[{"name":"young","when":{"minAgeHours":999999},"then":"deploy"}]}' > "$e2e/config/rules.json"
+expect "FEA-074: minAgeHours: too young does not match" "$(run "$O" "$E" deploy-changed --by-rules --json; jq length "$O")" $'0\n0'
+rm -f "$e2e/config/rules.json"
+expect "FEA-066: --by-rules without rules is refused" "$(run "$O" "$E" deploy-changed --by-rules; grep -c 'needs rules.json' "$E")" $'1\n1'
+fresh
+# FEA-032/029/039: details names lines that look like secrets (never the value), lockfiles, signatures.
+sec="$tmp/cmp-secret.json"
+printf '%s' '{"status":"ahead","commits":[{"sha":"bbbb","commit":{"message":"x","committer":{"date":"2026-01-02T00:00:00Z"},"verification":{"verified":false,"reason":"unsigned"}},"author":{"type":"User"}}],"files":[{"filename":"src/a.js","additions":2,"deletions":1,"patch":"@@ -1,2 +10,3 @@\n ctx\n+const k = \"AKIAABCDEFGHIJKLMNOP\"\n-old\n+fine"},{"filename":"web/package-lock.json","additions":30,"deletions":4}]}' > "$sec"
+expect "FEA-032: a key shape in an added line: file, line and kind, no value" \
+  "$(BIG="$sec" run "$O" "$E" details me/app aaaa main; jq -c .secrets "$O"; grep -c AKIAABCD "$O")" $'0\n[{"file":"src/a.js","line":11,"kind":"aws-access-key"}]\n0'
+expect "FEA-029/039: lockfiles with their lines, unsigned commits counted" \
+  "$(BIG="$sec" run "$O" "$E" details me/app aaaa main; jq -c '[.lockfiles, .unverified, .commits[0].verified]' "$O")" $'0\n[[{"file":"web/package-lock.json","additions":30,"deletions":4}],1,false]'
 # ===== end CLI track =====
 
 echo

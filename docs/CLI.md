@@ -126,6 +126,39 @@ to add to `.husky/pre-push` instead. The check itself reads GitHub remotes only.
 about keys and times it does not understand. A rule over midnight (`"from":"22:00","to":"06:00"`)
 belongs to the day it starts.
 
+## Rules
+
+`rules.json` in the config folder (the app's rule editor writes it) says "when … then …" for the
+daily deploy:
+
+```json
+{"rules":[{"name":"docs ship by themselves","enabled":true,
+           "when":{"projects":["vercel/*"],"paths":["docs/**","*.md"],"onlyPaths":true,"ciGreen":true},
+           "then":"deploy"},
+          {"name":"api waits a day","when":{"projects":["render/api"],"minAgeHours":24},"then":"hold"}]}
+```
+
+Every condition given must hold. `projects` are `<platform>/<name>` (`*` matches any part).
+`paths` are globs (`**` any folders, `*` within one; without `/` the file name anywhere);
+`onlyPaths: true` means every changed file matches, otherwise one is enough (GitHub only, up to
+300 files). `labels`: a pull request of the head commit has one. `minAgeHours`: the oldest
+waiting commit is that old. `ciGreen`: CI of the head is green or has no checks.
+
+The first enabled rule that matches a project decides: `hold` leaves it out of `deploy-changed`
+and `plan` (named, counted as skipped); `deploy` is what `deploy-changed --by-rules` starts (the
+deploy window and the budget still count); `notify` only shows in `rules check`. A `deploy` rule
+without a condition is ignored. `deploys rules check [--json]` shows each rule against each
+waiting project: `[{rule, index, project, matched, action, unmet}]`.
+
+## New JSON fields
+
+- `deploys details <owner/repo> <live sha> [<branch>]`: `secrets` (`[{file, line, kind}]`, lines
+  added in the diff that look like a key or a password assignment; the value is never printed),
+  `lockfiles` (`[{file, additions, deletions}]`), `unverified` (commits without a verified
+  signature) and per commit `verified` / `verification`.
+- `deploys autofix status --json`: `summary` `{handedOver, opened, merged, redeployed}`.
+- `deploys costs --json`: `missingDays`, `months`.
+
 ## On a server or in CI
 
 - `RENDER_API_KEY` takes the place of the keychain.
