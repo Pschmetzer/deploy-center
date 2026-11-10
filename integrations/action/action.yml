@@ -129,7 +129,8 @@ runs:
         # Exits 1 when a start failed or a state could not be read; the outputs are written first.
         rc=0; out="$("$DEPLOYS" deploy-changed --yes </dev/null)" || rc=$?
         echo "$out"
-        line="$(echo "$out" | grep -E '^[0-9]+ started, [0-9]+ failed to start' | tail -n 1)"
+        # No summary line (an older CLI, or it stopped early): the outputs still get written.
+        line="$(echo "$out" | grep -E '^[0-9]+ started, [0-9]+ failed to start' | tail -n 1 || true)"
         started="$(echo "$line" | sed -E 's/^([0-9]+) started.*/\1/')"; failed="$(echo "$line" | sed -E 's/.*, ([0-9]+) failed.*/\1/')"
         {
           echo "started=${started:-0}"; echo "failed=${failed:-0}"

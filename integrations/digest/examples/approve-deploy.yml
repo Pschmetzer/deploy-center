@@ -62,7 +62,7 @@ jobs:
           echo "Approved by $ACTOR: $(printf '%s\n' "$list" | paste -sd, -)"
 
       # Pin to a release tag or a full commit SHA, not a branch. This first run only lists.
-      - uses: Pschmetzer/deploy-center/integrations/action@main
+      - uses: Pschmetzer/deploy-center/integrations/action@v0.9.1
         id: list
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -92,7 +92,7 @@ jobs:
           [ -z "$missing" ] || echo "::warning::Not found, so not deployed: $missing"
           echo "Deploying only: $(jq -nr --argjson all "$all" --argjson want "$want" '$want - ($want - $all) | join(", ")')"
 
-      - uses: Pschmetzer/deploy-center/integrations/action@main
+      - uses: Pschmetzer/deploy-center/integrations/action@v0.9.1
         id: dc
         with:
           deploy: true

@@ -43,7 +43,7 @@ case "\$*" in
   "doctor") echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
   "changed --json") jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
   "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"
-    if [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
+    if [ -n "\${FAKE_NO_SUMMARY:-}" ]; then :; elif [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
     exit "\${FAKE_RC:-0}" ;;
   "status --json"|"status --json --no-github")
     jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
@@ -250,6 +250,7 @@ if command -v ruby >/dev/null; then
   expect "action: outputs after starting" "$(tr '\n' ' ' < "$tmp/out")" "started=2 failed=0 deployed=true "
   FAKE_RC=1 run_step deploy.sh; expect "action: a failed start fails the step" "$?" 1
   expect "action: outputs are written before failing" "$(tr '\n' ' ' < "$tmp/out")" "started=1 failed=1 deployed=false "
+  FAKE_NO_SUMMARY=1 run_step deploy.sh; expect "action: no summary line, the step still ends with outputs" "$?:$(tr '\n' ' ' < "$tmp/out")" "0:started=0 failed=0 deployed=true "
   expect "action: deploy step only with deploy: true" "$(step deploy if)" "inputs.deploy == 'true' && steps.changed.outputs.count != '0'"
   case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
 else

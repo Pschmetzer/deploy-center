@@ -20,13 +20,13 @@ jobs:
     timeout-minutes: 15
     steps:
       # Pin both to a release tag or a full commit SHA, not a branch.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: Pschmetzer/deploy-center
           ref: main
           path: deploy-center
       # Only lists (no deploy: true); it also sets up `deploys` for the next step.
-      - uses: Pschmetzer/deploy-center/integrations/action@main
+      - uses: Pschmetzer/deploy-center/integrations/action@v0.9.1
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-team: ${{ vars.VERCEL_TEAM }}

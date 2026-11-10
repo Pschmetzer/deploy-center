@@ -11,10 +11,15 @@ only when the workflow sets `deploy: true`, and then it runs `deploys deploy-cha
     render-api-key: ${{ secrets.RENDER_API_KEY }}
     repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}   # your ~/.config/deploys/vercel-repos.json
     # deploy: true                               # only where a person asked for it
-- run: echo "${{ steps.dc.outputs.count }} waiting: ${{ steps.dc.outputs.names }}"
+- env:   # outputs through env, never inside run: (a project name must not become shell code)
+    COUNT: ${{ steps.dc.outputs.count }}
+    NAMES: ${{ steps.dc.outputs.names }}
+  run: echo "$COUNT waiting: $NAMES"
 ```
 
-Pin the action to a release tag or a full commit SHA, not to `main`. Give the job a `timeout-minutes`: with a wrong Render key the CLI currently does not come back.
+Pin the action to a release tag (`@v0.9.1`) or a full commit SHA, not to `main`: the action gets
+your Vercel and Render tokens, and a branch runs whatever is pushed to it next. Dependabot or
+Renovate can keep the tag current. Give the job a `timeout-minutes`: with a wrong Render key the CLI currently does not come back.
 
 | Input | Default | |
 |---|---|---|

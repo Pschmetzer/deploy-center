@@ -1,6 +1,6 @@
 # Example: the daily deploy from GitHub Actions, without a Mac.
 # Copy to .github/workflows/daily-deploy.yml in a repo of your own (a private "ops" repo is a good place).
-# Not tested by the Deploy Center project yet: run it once by hand (workflow_dispatch) and check the log.
+# Run it once by hand (workflow_dispatch, dry run on) and read the log before the schedule takes over.
 #
 # Secrets to add in that repo (Settings → Secrets and variables → Actions):
 #   VERCEL_TOKEN     a Vercel access token (vercel.com/account/tokens)
@@ -12,6 +12,9 @@
 #
 # Commit deploys-config/vercel-repos.json to this repo: copy it from ~/.config/deploys/ on the Mac
 # where you turned auto-deploy off. It says which repo and branch each Vercel project deploys from.
+#
+# deploys comes from a release: the CLI tarball (deploys, VERSION and providers/), checked against
+# the release's checksums.txt before it runs. To update, change DEPLOYS_VERSION.
 name: Daily deploy
 on:
   schedule:
@@ -22,31 +25,48 @@ on:
         description: "Only show what would be deployed"
         type: boolean
         default: true
+permissions:
+  contents: read
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    concurrency: daily-deploy
+    timeout-minutes: 30
+    concurrency:
+      group: daily-deploy
+      cancel-in-progress: false
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
       GH_TOKEN: ${{ secrets.GH_READ_TOKEN }}
       DEPLOYS_VERCEL_TEAM: ${{ vars.DEPLOYS_VERCEL_TEAM }}
       DEPLOYS_CONFIG: ${{ github.workspace }}/deploys-config
-      DEPLOYS_VERSION: v0.7.0   # pin a release; update it by hand
+      DEPLOYS_VERSION: "0.9.1"          # a release of Deploy Center; update it by hand
+      VERCEL_CLI_VERSION: "65.12.1"     # the same pin as the Deploy Center action
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Install the Vercel CLI
-        run: npm i -g vercel@latest
-      - name: Get deploys
+        run: npm install -g --no-fund --no-audit "vercel@${VERCEL_CLI_VERSION}"
+      - name: Get deploys (checked against checksums.txt)
         run: |
-          curl -fsSL "https://raw.githubusercontent.com/Pschmetzer/deploy-center/${DEPLOYS_VERSION}/deploys" -o deploys
-          chmod +x deploys
+          base="https://github.com/Pschmetzer/deploy-center/releases/download/v${DEPLOYS_VERSION}"
+          tarball="deploys-cli-${DEPLOYS_VERSION}.tar.gz"
+          curl -fsSL --retry 3 -o "$tarball" "$base/$tarball"
+          curl -fsSL --retry 3 -o checksums.txt "$base/checksums.txt"
+          sha256sum -c checksums.txt --ignore-missing --strict
+          grep -q " ${tarball}\$" checksums.txt || { echo "::error::$tarball is not in checksums.txt"; exit 1; }
+          tar -xzf "$tarball"
+          echo "$PWD/deploys-cli-${DEPLOYS_VERSION}" >> "$GITHUB_PATH"
       - name: What is connected
-        run: ./deploys doctor
+        run: deploys doctor
       - name: Deploy what changed
+        env:
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
-            ./deploys deploy-changed
+          if [ "$EVENT" = "workflow_dispatch" ] && [ "$DRY_RUN" = "true" ]; then
+            deploys deploy-changed
           else
-            ./deploys deploy-changed --yes
+            deploys deploy-changed --yes
           fi
