@@ -1,0 +1,1 @@
+{"job":{"summary":{"jobId":"12","status":"FAILED"},"steps":[{"stepName":"BUILD","status":"FAILED","logUrl":"https://logs.example/expired?X-Amz-Signature=secret3"}]}}

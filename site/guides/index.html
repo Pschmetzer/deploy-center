@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guides: stop paying for builds on Vercel, Render, Netlify · Deploy Center</title>
+<meta name="description" content="Step-by-step guides to turn off auto-deploy, skip builds you do not need and cut build costs on Vercel, Render and Netlify.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Deploy Center guides">
+<meta property="og:description" content="Step-by-step guides to turn off auto-deploy, skip builds you do not need and cut build costs on Vercel, Render and Netlify.">
+<meta property="og:url" content="https://deploycenter.app/guides/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Deploy Center guides">
+<meta name="twitter:description" content="Step-by-step guides to turn off auto-deploy, skip builds you do not need and cut build costs on Vercel, Render and Netlify.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "CollectionPage",
+  "name": "Deploy Center guides",
+  "description": "Guides to turn off auto-deploy and cut build costs on Vercel, Render and Netlify.",
+  "url": "https://deploycenter.app/guides/",
+  "dateModified": "2026-11-10",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "mainEntity": {
+   "@type": "ItemList",
+   "itemListElement": [
+    {
+     "@type": "ListItem",
+     "position": 1,
+     "url": "https://deploycenter.app/guides/disable-vercel-auto-deploy/",
+     "name": "Disable Vercel auto-deploy"
+    },
+    {
+     "@type": "ListItem",
+     "position": 2,
+     "url": "https://deploycenter.app/guides/stop-vercel-building-every-push/",
+     "name": "Stop Vercel building every push"
+    },
+    {
+     "@type": "ListItem",
+     "position": 3,
+     "url": "https://deploycenter.app/guides/vercel-ignored-build-step/",
+     "name": "Vercel Ignored Build Step"
+    },
+    {
+     "@type": "ListItem",
+     "position": 4,
+     "url": "https://deploycenter.app/guides/render-auto-deploy-off/",
+     "name": "Turn off Render auto-deploy"
+    },
+    {
+     "@type": "ListItem",
+     "position": 5,
+     "url": "https://deploycenter.app/guides/netlify-stop-builds/",
+     "name": "Stop Netlify builds"
+    },
+    {
+     "@type": "ListItem",
+     "position": 6,
+     "url": "https://deploycenter.app/guides/reduce-vercel-costs/",
+     "name": "Reduce Vercel costs"
+    },
+    {
+     "@type": "ListItem",
+     "position": 7,
+     "url": "https://deploycenter.app/guides/auto-fix-failed-vercel-builds-with-claude/",
+     "name": "Auto-fix failed builds with Claude"
+    },
+    {
+     "@type": "ListItem",
+     "position": 8,
+     "url": "https://deploycenter.app/claude-code/",
+     "name": "Deploy Center + Claude Code"
+    },
+    {
+     "@type": "ListItem",
+     "position": 9,
+     "url": "https://deploycenter.app/vercel-build-cost-calculator/",
+     "name": "Build cost calculator"
+    },
+    {
+     "@type": "ListItem",
+     "position": 10,
+     "url": "https://deploycenter.app/blog/ai-coding-agents-build-bill/",
+     "name": "AI coding agents and your build bill"
+    }
+   ]
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/guides/" aria-current="page">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+</div></nav>
+
+<main class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a></p>
+<h1>Guides</h1>
+<p class="answer">How to turn off auto-deploy, skip the builds you do not need and see what they cost, on Vercel, Render and Netlify. Each guide starts with the answer, then the steps and the trade-offs.</p>
+<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time></p>
+<div class="cards">
+  <a href="/guides/disable-vercel-auto-deploy/"><b>Disable Vercel auto-deploy</b><span>Three ways to stop Vercel deploying on every push, and how to undo each.</span></a>
+  <a href="/guides/stop-vercel-building-every-push/"><b>Stop Vercel building every push</b><span>Build less without turning Git off: previews, bots, monorepos, batching.</span></a>
+  <a href="/guides/vercel-ignored-build-step/"><b>Vercel Ignored Build Step</b><span>Script examples for the ignore command, and the pitfalls that make it build anyway.</span></a>
+  <a href="/guides/render-auto-deploy-off/"><b>Turn off Render auto-deploy</b><span>Dashboard, render.yaml autoDeployTrigger: off, and the Render API.</span></a>
+  <a href="/guides/netlify-stop-builds/"><b>Stop Netlify builds</b><span>stop_builds versus an ignore command that only lets build hooks through.</span></a>
+  <a href="/guides/reduce-vercel-costs/"><b>Reduce Vercel costs</b><span>A checklist: builds first, then functions, images and bandwidth.</span></a>
+  <a href="/guides/auto-fix-failed-vercel-builds-with-claude/"><b>Auto-fix failed builds with Claude</b><span>A failed Vercel or Render build goes to a Claude Code routine, which opens a fix PR.</span></a>
+</div>
+<h2>Tools and reading</h2>
+<div class="cards">
+  <a href="/claude-code/"><b>Deploy Center + Claude Code</b><span>Let the agent push, you decide what ships.</span></a>
+  <a href="/vercel-build-cost-calculator/"><b>Build cost calculator</b><span>What auto-deploy costs a month, and what deploying by hand would cost.</span></a>
+  <a href="/blog/ai-coding-agents-build-bill/"><b>AI coding agents and your build bill</b><span>Your agent pushes 40 times. You deploy once.</span></a>
+</div>
+<div class="ctabox">
+  <h2>Do it for every project in one click.</h2>
+  <p>Deploy Center is a free, open-source Mac app. It turns off auto-deploy on Vercel and Render, shows the commits and PRs waiting to go live, and deploys what changed when you decide.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify.</p>
+</div></footer>
+</body>
+</html>
