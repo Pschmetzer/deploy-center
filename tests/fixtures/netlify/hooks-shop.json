@@ -1,0 +1,1 @@
+[{"id":"hook-shop","title":"deploy-center","branch":"main","url":"https://api.netlify.com/build_hooks/hook-shop"},{"id":"hook-other","title":"cms","url":"https://api.netlify.com/build_hooks/hook-other"}]

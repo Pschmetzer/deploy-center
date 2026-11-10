@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your agent pushes 40 times. You deploy once. · Deploy Center</title>
+<meta name="description" content="AI coding agents like Claude Code, Cursor, Lovable and v0 push after every step, and with auto-deploy each push is a paid Vercel or Render build. How to keep the agent and lose the bill.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/blog/ai-coding-agents-build-bill/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Your agent pushes 40 times. You deploy once. · Deploy Center">
+<meta property="og:description" content="AI coding agents like Claude Code, Cursor, Lovable and v0 push after every step, and with auto-deploy each push is a paid Vercel or Render build. How to keep the agent and lose the bill.">
+<meta property="og:url" content="https://deploycenter.app/blog/ai-coding-agents-build-bill/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Your agent pushes 40 times. You deploy once. · Deploy Center">
+<meta name="twitter:description" content="AI coding agents like Claude Code, Cursor, Lovable and v0 push after every step, and with auto-deploy each push is a paid Vercel or Render build. How to keep the agent and lose the bill.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Your agent pushes 40 times. You deploy once.",
+  "description": "AI coding agents like Claude Code, Cursor, Lovable and v0 push after every step, and with auto-deploy each push is a paid Vercel or Render build. How to keep the agent and lose the bill.",
+  "url": "https://deploycenter.app/blog/ai-coding-agents-build-bill/",
+  "mainEntityOfPage": "https://deploycenter.app/blog/ai-coding-agents-build-bill/",
+  "datePublished": "2026-11-10",
+  "dateModified": "2026-11-10",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Do AI coding agents cause more Vercel builds?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes, when they push often and auto-deploy is on. Each push builds every project connected to the repository, whether a person or an agent pushed it."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Should I stop the agent from pushing?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. Pushing keeps the work safe and visible. Turn off the builds instead, and deploy once when the work is done."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Will I lose preview deployments?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Only where you turn them off. You can skip previews for agent branches and keep them for pull requests you review."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Which agents does this apply to?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Any tool that pushes to a connected repository: Claude Code, Cursor, Codex, Lovable, v0 and others. The fix is on the build platform, not in the agent."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Your agent pushes 40 times",
+    "item": "https://deploycenter.app/blog/ai-coding-agents-build-bill/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+</div></nav>
+
+<main class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>Your agent pushes 40 times. You deploy once.</h1>
+<p class="answer">AI coding agents such as Claude Code, Cursor, Lovable and v0 commit and push after almost every step, and with auto-deploy on, every one of those pushes is a paid build on Vercel or Render. Let the agent push as often as it likes, but turn off auto-deploy and ship once, when you have looked at the result.</p>
+<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<h2>Why agents push so often</h2>
+<p>An agent works in small steps: change a file, run the tests, fix the lint error, try again. Many tools push after each step so that nothing is lost and you can follow along. Some write straight to your main branch; others work on a branch such as <code>claude/…</code> or <code>cursor/…</code> and open a pull request.</p>
+<p>A person might push a few times a day. An agent can push dozens of times on one task. Your build platform does not know the difference: each push to a connected repository starts a build, for every project connected to it.</p>
+
+<h2>What that costs</h2>
+<p>Take your own numbers: if an agent pushes 40 times in a day to a repository with 3 connected projects, that is 120 builds. Multiply by your cost per build. One deploy at the end of the day would have been 3.</p>
+<pre><code>builds per day = pushes × projects connected to the repo
+40 pushes × 3 projects = 120 builds      (auto-deploy)
+ 1 deploy  × 3 projects =   3 builds      (deploying by hand)</code></pre>
+<p>The <a href="/vercel-build-cost-calculator/">build cost calculator</a> does this per month with your numbers. The author's own bill, before Deploy Center, was $99 in builds in a week.</p>
+
+<h2>Keep the agent, lose the bill</h2>
+<ol>
+  <li><b>Let the agent push.</b> Pushing is cheap and keeps the work safe. The cost is in the build, not the push.</li>
+  <li><b>Skip builds for agent branches.</b> An Ignored Build Step on Vercel cancels them; <a href="/guides/stop-vercel-building-every-push/">this guide</a> has the one-liner.</li>
+  <li><b>Turn off auto-deploy for production</b> on <a href="/guides/disable-vercel-auto-deploy/">Vercel</a> and <a href="/guides/render-auto-deploy-off/">Render</a>.</li>
+  <li><b>Review, then deploy once.</b> <a href="/">Deploy Center</a> lists the commits and PRs waiting per project. <b>Select all changed → Deploy</b> ships the newest commit of each.</li>
+  <li><b>Hand failed builds back to the agent.</b> <b>Copy for Claude</b> in the build log copies the error lines for a fix request, and <a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Autofix</a> does it for you.</li>
+</ol>
+
+<h2>The trade-offs</h2>
+<ul>
+  <li>No preview per push. If you review agent work through preview links, keep previews for the pull requests you open, and skip them for every intermediate push.</li>
+  <li>Nothing goes live by itself. That is the point, but it means you have to deploy. Deploy Center's menu bar shows how much is waiting.</li>
+  <li>Tools that sync to your main branch (several app builders do) build production on every change. Turning off auto-deploy matters most there.</li>
+</ul>
+<p>More on using Deploy Center with an agent: <a href="/claude-code/">Deploy Center + Claude Code</a>.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Do AI coding agents cause more Vercel builds?</summary><p>Yes, when they push often and auto-deploy is on. Each push builds every project connected to the repository, whether a person or an agent pushed it.</p></details>
+  <details><summary>Should I stop the agent from pushing?</summary><p>No. Pushing keeps the work safe and visible. Turn off the builds instead, and deploy once when the work is done.</p></details>
+  <details><summary>Will I lose preview deployments?</summary><p>Only where you turn them off. You can skip previews for agent branches and keep them for pull requests you review.</p></details>
+  <details><summary>Which agents does this apply to?</summary><p>Any tool that pushes to a connected repository: Claude Code, Cursor, Codex, Lovable, v0 and others. The fix is on the build platform, not in the agent.</p></details>
+
+<div class="ctabox">
+  <h2>Let the agent push. You decide what ships.</h2>
+  <p>Deploy Center is a free, open-source Mac app that turns off auto-deploy on Vercel and Render and deploys what changed with one click.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify.</p>
+</div></footer>
+</body>
+</html>
