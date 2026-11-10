@@ -4,6 +4,7 @@
 
 import Foundation
 import LocalAuthentication
+import AppKit
 
 enum OwnerCheck {
     static let key = "ownerCheck"
@@ -26,4 +27,37 @@ enum OwnerCheck {
 
     /// When several projects go live at once, it asks; one project alone does not.
     nonisolated static func needed(projects: Int) -> Bool { projects > 1 }
+}
+
+/// Projects marked critical (row menu) go live only after their name is typed (FEA-030).
+/// An NSAlert of its own, so every way to a live deploy (row, palette, details, Dock, footer)
+/// passes the same check without a view to present it.
+enum NameCheck {
+    /// Whether what was typed is the name as shown (masked in the demo), case and spaces aside.
+    nonisolated static func matches(_ typed: String, _ name: String) -> Bool {
+        let t = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !t.isEmpty && t.caseInsensitiveCompare(name.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+    }
+
+    /// True once the name was typed; false on Cancel. Asks again with a hint on a wrong name.
+    @MainActor static func confirm(_ name: String) -> Bool {
+        var wrong = false
+        while true {
+            let a = NSAlert()
+            a.messageText = L("Type the name to go live", "Zum Live-Schalten den Namen tippen")
+            a.informativeText = (wrong ? L("That was not the name. ", "Das war nicht der Name. ") : "")
+                + L("\(name) is marked critical. Type its name to put it live.",
+                    "\(name) ist als kritisch markiert. Zum Live-Schalten den Namen tippen.")
+            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+            field.placeholderString = name
+            a.accessoryView = field
+            a.addButton(withTitle: L("Deploy", "Deployen"))
+            a.addButton(withTitle: L("Cancel", "Abbrechen"))
+            a.window.initialFirstResponder = field
+            NSApp.activate(ignoringOtherApps: true)
+            guard a.runModal() == .alertFirstButtonReturn else { return false }
+            if matches(field.stringValue, name) { return true }
+            wrong = true
+        }
+    }
 }

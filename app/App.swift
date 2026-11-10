@@ -61,6 +61,7 @@ struct SettingsView: View {
 
             Form {
                 platformsSection
+                HealthCard(store: store)
                 PhoneLinkSettings()
             }
             .formStyle(.grouped)

@@ -139,6 +139,19 @@ final class Store: ObservableObject {
         UserDefaults.standard.set(projectBudgets, forKey: "projectBudgets")
         objectWillChange.send()
     }
+    /// Projects that go live only after their name is typed (FEA-030), by `Store.key`.
+    private(set) var critical: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "criticalProjects") ?? [])
+    func isCritical(_ i: Item) -> Bool { critical.contains(Self.key(i)) }
+    func toggleCritical(_ i: Item) {
+        if critical.remove(Self.key(i)) == nil { critical.insert(Self.key(i)) }
+        UserDefaults.standard.set(Array(critical).sorted(), forKey: "criticalProjects")
+        objectWillChange.send()
+    }
+    /// A live deploy of a critical project asks for its name; previews and observers do not.
+    private func namesTyped(_ items: [Item], preview: Bool) -> Bool {
+        guard !preview, !observer else { return true }
+        return items.filter(isCritical).allSatisfy { NameCheck.confirm(Demo.mask($0.name)) }
+    }
     /// One project's builds at the week's pace, a month long. Nil when its costs are not known.
     nonisolated static func projectMonth(build: Double, days: Int) -> Double? { days > 0 ? build / Double(days) * 30 : nil }
     /// Once a day per project: its pace past its own budget.
@@ -970,6 +983,8 @@ final class Store: ObservableObject {
 
     func deploySelected(_ p: Platform, preview: Bool = false, whenGreen: Bool = false, force: String? = nil) {
         let chosen = selected(p)
+        // A refusal keeps the ticks: nothing went out.
+        guard namesTyped(chosen, preview: preview) else { return }
         let queued = enqueue(chosen.map { Job(item: $0, preview: preview, whenGreen: whenGreen, force: force) })
         // A refused start (observer mode, "may be building already") keeps its tick, so nothing is lost.
         // Rows already under way untick too: they are running, nothing is lost.
@@ -985,6 +1000,7 @@ final class Store: ObservableObject {
     /// `force` (a reason) goes out inside a closed deploy window, as the footer's dialog does.
     func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, whenGreen: Bool = false, force: String? = nil) {
         let job = Job(item: item, preview: preview, sha: sha, clearCache: clearCache, whenGreen: whenGreen, force: force)
+        guard namesTyped([item], preview: preview) else { return }
         // A preview is never held by the deploy window. A live deploy from a row, the details or the
         // palette is: the script would refuse it anyway, so say why here instead of a failed row.
         guard !preview, !observer, force == nil else { enqueue([job]); return }

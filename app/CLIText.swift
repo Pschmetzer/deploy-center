@@ -27,6 +27,7 @@ enum CLIText {
         // need_cap: "<Label> cannot <what>" for a platform without that capability.
         (#"(.+) cannot deploy a preview \((.+)\)"#, "$1 kann keine Vorschau deployen ($2)"),
         (#"(.+) cannot read build logs"#, "$1 kann keine Build-Logs lesen"),
+        (#"(\S+) cannot deploy a preview"#, "$1 kann keine Vorschau deployen"),
         // fetchWarn of a provider (Amplify).
         (#"custom domains could not be read; the address shown may be the default one"#,
          "Eigene Domains waren nicht lesbar; die gezeigte Adresse ist vielleicht die Standardadresse"),

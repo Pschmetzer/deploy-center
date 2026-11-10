@@ -675,7 +675,7 @@ enum RowAutofix: Equatable {
         if let m = f.mergedSha {
             if f.redeployedSha != nil { return nil }
             // Live already, or nothing on the branch left to deploy.
-            if let live = i.lastSha, !live.isEmpty, live.hasPrefix(m) || m.hasPrefix(live) { return nil }
+            if !i.triggered, let live = i.lastSha, !live.isEmpty, live.hasPrefix(m) || m.hasPrefix(live) { return nil }
             return i.hasNewCommits ? .merged(sha: m, pr: f.prNumber, url: pr) : nil
         }
         if f.prState == "open", let n = f.prNumber {

@@ -34,6 +34,15 @@ expect("rewritten branch", Row.waitingText(item(changed: true, rewritten: true))
 // Deploy states in words, not raw API values.
 expect("state build_failed", Row.stateText("build_failed"), L("build failed", "Build fehlgeschlagen"))
 expect("state ERROR", Row.stateText("ERROR"), L("failed", "fehlgeschlagen"))
+expect("state trigger failed", Row.stateText("trigger failed (HTTP 500)"), L("trigger failed", "Auslösen fehlgeschlagen") + " (HTTP 500)")
+expect("name check: case and spaces aside", "\(NameCheck.matches(" Shop-API ", "shop-api")) \(NameCheck.matches("", "")) \(NameCheck.matches("shop", "shop-api"))", "true false false")
+do {
+    let d = try! JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"githubCli":true,"githubLoggedIn":false,"renderKey":false,"perl":true,"curl":true}"#.utf8))
+    let c = Health.checks(d, budget: Store.Budget(remaining: 50, limit: 5000, reset: 600), on: ["render"], now: Date(timeIntervalSince1970: 0))
+    expect("health: what is wrong", c.filter { !$0.ok }.map(\.id), ["ghlogin", "ghbudget", "renderkey"])
+    expect("health: vercel only when on", c.contains { $0.group == "Vercel" }, false)
+    expect("health: no doctor", Health.checks(nil, budget: nil, on: []).map(\.id), ["script"])
+}
 expect("state unknown word", Row.stateText("some_new_state"), "some new state")
 
 // Demo mode: names in free text become their stand-ins, in one pass.

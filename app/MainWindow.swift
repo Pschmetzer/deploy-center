@@ -1249,6 +1249,8 @@ struct ContentView: View {
                     budgetText = store.projectBudget(item).map { String(format: "%.0f", $0) } ?? ""; budgetItem = item
                 }
             }
+            Toggle(L("Critical: type the name to go live", "Kritisch: zum Live-Schalten Namen tippen"),
+                   isOn: Binding(get: { store.isCritical(item) }, set: { _ in store.toggleCritical(item) }))
             Button(L("Hide", "Ausblenden")) {
                 // A hidden project must not go out with the next deploy.
                 if item.selected { store.toggle(item.platform, item.id) }
@@ -1973,6 +1975,8 @@ struct Row: View {
         case "queued", "created": return L("queued", "wartet")
         case "triggered": return L("triggered", "ausgelöst")
         case "initializing": return L("starting", "startet")
+        case let s where s.hasPrefix("trigger failed"):
+            return L("trigger failed", "Auslösen fehlgeschlagen") + String(raw.dropFirst("trigger failed".count))
         default: return raw.replacingOccurrences(of: "_", with: " ")
         }
     }
