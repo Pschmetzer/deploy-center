@@ -1076,7 +1076,7 @@ case "${1:-} ${2:-}" in
     fi
     # What is building right now, on both platforms, and what the newest attempt said.
     rc=0; all="$(DEPLOYS_NO_GITHUB="$nogh" all_json)" || rc=$?
-    if [ "$json" = 1 ]; then echo "$all" | jq 'map({platform, name, building, state:(.latestState // .lastState), changed})'; exit "$rc"; fi
+    if [ "$json" = 1 ]; then echo "$all" | jq 'map({platform, name, repo:(.repo // null), building, state:(.latestState // .lastState), changed})'; exit "$rc"; fi
     echo "$all" | jq -r '.[] | select(.building or ((.latestState // .lastState // "") | ascii_downcase | test("error|fail"))) | [.platform, .name, (.latestState // .lastState)] | @tsv' \
       | (printf 'PLATFORM\tPROJECT\tSTATE\n'; cat) | column -t -s $'\t'
     if [ -n "$nogh" ]; then echo "$all" | jq -r '"\(map(select(.building)) | length) building."'

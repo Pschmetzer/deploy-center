@@ -14,6 +14,7 @@ stays off: nothing here deploys unless a person asks for it.
 | [claude-code/](claude-code/) | A Claude Code plugin: a skill, `/deploys-*` commands, and a read-only reminder after `git push`. It deploys only after you say yes. Install: `/plugin marketplace add Pschmetzer/deploy-center`, then `/plugin install deploy-center@deploy-center`. See [docs/CLAUDE-CODE.md](../docs/CLAUDE-CODE.md). |
 | [mcp/](mcp/) | An MCP server for AI coding agents (Claude Code, Claude Desktop, Cursor, VS Code). Read-only tools for what is waiting, building, release notes and logs; deploy and rollback of one project only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. |
 | [raycast/](raycast/) | A Raycast extension: Waiting Deploys, Deploy Status and Deploy All Changed. It deploys only after a confirmation. Not on the Raycast Store yet ([PUBLISHING.md](raycast/PUBLISHING.md)). |
+| [vscode/](vscode/) | A VS Code extension, also for Cursor and Windsurf (Open VSX): `⏳ 3 waiting` in the status bar for this folder's repo, a project tree, deploy with confirmation, the build log and "Copy for AI". Deploys only after a click and a confirmation. |
 | [digest/](digest/) | A daily digest of what waits, agent and human commits apart, as Markdown, an issue and a webhook message. A person approves with a button or the `deploy-approved` label; an example workflow then deploys only the approved projects. |
 | [docker/](docker/) | A Linux image with `deploys` and its tools, for CI. |
 | [VERIFY.md](VERIFY.md) | How to check a release: SHA-256, `codesign`, `spctl`. |
