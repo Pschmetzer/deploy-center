@@ -68,6 +68,10 @@ Optional: `<p>_where` (lines for `deploys where`), `<p>_history <id> <n>` (a tab
 `vercel_cli_status` keeps the JSON that `deploys vercel status <id>` always printed, and
 `<p>_cli_status` / `<p>_cli_latest` do the same for Netlify, Cloudflare, Amplify, DigitalOcean
 and Coolify (their `_status_json` / `_latest_json`).
+`vercel_on` and `render_on` (`deploys vercel|render autodeploy-on <p>|--all`) take `--dry-run`:
+they only read and print what they would switch back on, one line each, or with `--json`
+`{provider, dryRun:true, items:[{name, id, action:"on"|"skip"|"already", reason}], on, skipped}`
+(FEA-110, for "turn everything back on" in docs/UNINSTALL.md).
 Platform extras that are not part of the contract stay where they are: `vercel map`,
 `vercel team`, `costs`, `triggers`.
 

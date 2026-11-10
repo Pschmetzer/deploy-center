@@ -190,7 +190,29 @@ vercel_on_one() {
   echo "Vercel: $p deploys on push again ($r)"
 }
 
+# FEA-110: what `autodeploy-on` would do, without changing anything (reads only). Items are
+# "name<TAB>id<TAB>action<TAB>reason" on stdin (action on|skip|already); --json prints
+# {provider, dryRun:true, items:[{name, id, action, reason}], on, skipped}, otherwise one line each.
+vercel_on_plan() {  # [--json]
+  local items; items="$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t")
+    | {name:.[0], id:.[1], action:.[2], reason:(if (.[3] // "") == "" then null else .[3] end)})')" || return 1
+  if [ "${1:-}" = --json ]; then
+    jq -nc --argjson i "$items" '{provider:"vercel", dryRun:true, items:$i,
+      on:($i | map(select(.action == "on")) | length), skipped:($i | map(select(.action != "on")) | length)}'
+  else
+    echo "$items" | jq -r '.[] | if .action == "on" then "Vercel: would turn on \(.name) (pushes build again)"
+      else "Vercel: \(.name) \(.action)\(if .reason then ": \(.reason)" else "" end)" end'
+    echo "Dry run: nothing changed."
+  fi
+}
+
 vercel_on() {
+  local dry="" j="" a args=()
+  for a in "$@"; do case "$a" in --dry-run) dry=1 ;; --json) j=--json ;; *) args+=("$a") ;; esac; done
+  # `deploys <p> autodeploy-on … --json` takes --json off the line and sets its json=1.
+  [ "${json:-0}" != 1 ] || j=--json
+  if [ -n "$dry" ]; then vercel_on_dry "${args[0]:-}" $j; return; fi
+  set -- "${args[@]+"${args[@]}"}"
   local target="${1:-}" bad=0 skipped=0 names p
   [ -n "$target" ] || die "Give a project name or --all"
   if [ "$target" = "--all" ]; then
@@ -206,6 +228,27 @@ vercel_on() {
   fi
 }
 vercel_cli_autodeploy_on() { vercel_on "$@"; }
+
+# The repo vercel_on_one would connect, or nothing.
+vercel_on_repo() {
+  jq -r --arg p "$1" '.[$p] // {} | if .type == "gitlab" then (.repo // "" | sub("^[^/]+/"; ""))
+    elif .org and .repo then "\(.org)/\(.repo)" else "" end' "$REPOS"
+}
+vercel_on_dry() {  # <project>|--all [--json]
+  local target="$1" list p
+  [ -n "$target" ] || die "Give a project name or --all"
+  if [ "$target" = --all ]; then
+    list="$(vercel_projects | jq -c '[.[] | {name, link:(.link != null)}]')" || exit 1
+  else
+    list="$(vercel_call "/v9/projects/$target" | jq -c '[{name, link:(.link != null)}]')" || die "Vercel project $target not found"
+  fi
+  while IFS=$'\t' read -r p linked; do
+    [ -n "$p" ] || continue
+    if [ "$linked" = true ]; then [ "$target" = --all ] || printf '%s\t%s\talready\tGit is connected\n' "$p" "$p"
+    elif [ -n "$(vercel_on_repo "$p")" ]; then printf '%s\t%s\ton\tconnect %s\n' "$p" "$p" "$(vercel_on_repo "$p")"
+    else printf '%s\t%s\tskip\tthe repo is not known (deploys vercel map %s <owner/repo>)\n' "$p" "$p" "$p"; fi
+  done < <(echo "$list" | jq -r '.[] | "\(.name)\t\(.link)"') | vercel_on_plan "${2:-}"
+}
 
 # Raw Vercel states to the shared phase (docs/PROVIDERS.md). Unknown or none: null.
 VERCEL_PHASE='def vphase: (. // "" | ascii_upcase) as $s

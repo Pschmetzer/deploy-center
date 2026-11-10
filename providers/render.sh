@@ -126,7 +126,29 @@ render_on_one() {
   render_call PATCH "/services/$1" '{"autoDeployTrigger":"commit"}' >/dev/null
   echo "Render: $2 deploys on push again"
 }
+# FEA-110: what `autodeploy-on` would do, without changing anything (reads only). Items are
+# "name<TAB>id<TAB>action<TAB>reason" on stdin (action on|skip|already); --json prints
+# {provider, dryRun:true, items:[{name, id, action, reason}], on, skipped}, otherwise one line each.
+render_on_plan() {  # [--json]
+  local items; items="$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t")
+    | {name:.[0], id:.[1], action:.[2], reason:(if (.[3] // "") == "" then null else .[3] end)})')" || return 1
+  if [ "${1:-}" = --json ]; then
+    jq -nc --argjson i "$items" '{provider:"render", dryRun:true, items:$i,
+      on:($i | map(select(.action == "on")) | length), skipped:($i | map(select(.action != "on")) | length)}'
+  else
+    echo "$items" | jq -r '.[] | if .action == "on" then "Render: would turn on \(.name) (pushes build again)"
+      else "Render: \(.name) \(.action)\(if .reason then ": \(.reason)" else "" end)" end'
+    echo "Dry run: nothing changed."
+  fi
+}
+
 render_on() {
+  local dry="" j="" a args=()
+  for a in "$@"; do case "$a" in --dry-run) dry=1 ;; --json) j=--json ;; *) args+=("$a") ;; esac; done
+  # `deploys <p> autodeploy-on … --json` takes --json off the line and sets its json=1.
+  [ "${json:-0}" != 1 ] || j=--json
+  if [ -n "$dry" ]; then render_on_dry "${args[0]:-}" $j; return; fi
+  set -- "${args[@]+"${args[@]}"}"
   local target="${1:-}" bad=0 todo id name
   [ -n "$target" ] || die "Give a service name or --all"
   if [ "$target" = "--all" ]; then
@@ -141,6 +163,17 @@ render_on() {
   fi
 }
 render_cli_autodeploy_on() { render_on "$@"; }
+
+render_on_dry() {  # <service>|--all [--json]
+  local target="$1" list
+  [ -n "$target" ] || die "Give a service name or --all"
+  if [ "$target" = --all ]; then list="$(render_services)" || exit 1
+  else list="$(render_call GET "/services/$(render_id_of "$target")" | jq -c '[.]')" || exit 1; fi
+  echo "$list" | jq -r --arg all "$target" '.[] | ('"$(render_auto)"') as $a
+    | if $a == "off" then [.name, .id, "on", "auto-deploy On Commit"]
+      elif $all == "--all" then empty else [.name, .id, "already", "auto-deploy is \($a)"] end | @tsv' \
+    | render_on_plan "${2:-}"
+}
 
 render_off() {
   local target="${1:-}" bad todo id name

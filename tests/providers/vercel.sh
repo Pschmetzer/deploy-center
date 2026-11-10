@@ -169,5 +169,14 @@ printf '%s\n200\n' '{"name":"alpha","link":null}' > "$fx/GET_v9_projects_alpha.j
 expect "no link and nothing written down: refused, nothing started" "$rc:$(grep -c 'no remembered repo' "$tmp/err"):$(calls 'POST')" "1:1:0"
 cp tests/fixtures/vercel/GET_v9_projects_alpha.json "$fx/"
 
+# --- FEA-110: autodeploy-on --dry-run lists what would be connected again, and writes nothing ---
+fresh
+out="$(lib 'vercel_on --all --dry-run --json')"; rc=$?
+expect "FEA-110: --all --dry-run --json is a plan" "$rc:$(echo "$out" | jq -c '[.provider, .dryRun, (.items | type), (.on + .skipped == (.items | length))]')" '0:["vercel",true,"array",true]'
+expect "FEA-110: only reads" "$(grep -cE -- '--method (POST|PATCH|PUT|DELETE)' "$CALLS")" 0
+expect "FEA-110: each item says on, skip or already" "$(echo "$out" | jq -c '[.items[].action] | all(. == "on" or . == "skip" or . == "already")')" true
+out="$(lib 'vercel_on --all --dry-run')"
+expect "FEA-110: the text form ends with nothing changed" "$(echo "$out" | tail -n 1)" "Dry run: nothing changed."
+
 : "$root"
 echo; [ "$fails" = 0 ] && echo "All vercel tests passed." || { echo "$fails vercel tests failed."; exit 1; }

@@ -61,5 +61,14 @@ expect "DEPLOYS_RENDER_NAME_TTL=0 never keeps it" "$(DEPLOYS_RENDER_NAME_TTL=0 l
 lib 'render_json' >/dev/null
 expect "the list itself always asks Render" "$(grep -c 'services?limit=100' "$CALLS")" "1"
 
+# --- FEA-110: autodeploy-on --dry-run lists the services that would build on push again ---
+out="$(lib 'render_on --all --dry-run --json')"; rc=$?
+expect "FEA-110: --all --dry-run --json: the services that are off" "$rc:$(echo "$out" | jq -c '[.provider, .dryRun, [.items[].id], .on]')" '0:["render",true,["srv-a","crn-c","srv-d"],3]'
+expect "FEA-110: only reads" "$(grep -c '^curl \(POST\|PATCH\|PUT\|DELETE\)' "$CALLS")" 0
+out="$(lib 'render_on srv-a --dry-run --json')"
+expect "FEA-110: one service" "$(echo "$out" | jq -c '[.items[] | [.name, .action]]')" '[["web","on"]]'
+out="$(PATH="$STUBPATH" DEPLOYS_CONFIG="$tmp/config" HOME="$tmp" NO_COLOR=1 /bin/bash ./deploys render autodeploy-on --all --dry-run --json 2>"$tmp/err" </dev/null)"
+expect "FEA-110: through deploys render autodeploy-on" "$(echo "$out" | jq -c .on 2>&1)" 3
+
 echo
 [ "$fails" = 0 ] && echo "All Render tests passed." || { echo "$fails Render test(s) failed."; exit 1; }
