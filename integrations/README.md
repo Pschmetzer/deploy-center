@@ -18,7 +18,7 @@ network and no accounts.
 ## Reading every project
 
 The badge, notify and the hook need every project, including the ones that are up to date. That
-is `deploys vercel list --json` plus `deploys render list --json` (see [lib/projects.sh](lib/projects.sh)).
+is `deploys list --json`: every provider that is on and set up (see [lib/projects.sh](lib/projects.sh)).
 Render is read only when a key is there, in `RENDER_API_KEY` or the Mac keychain. With a Render
 key that is wrong or expired, `deploys render list --json` currently does not come back. Set a
 working key, or remove the wrong one.

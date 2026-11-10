@@ -10,6 +10,7 @@
 | [NUMBERS.md](NUMBERS.md) | How commits and PRs waiting are counted |
 | [AUTOFIX.md](AUTOFIX.md) | A failed build handed to a Claude Code routine, the fix deployed after you merge |
 | [UNINSTALL.md](UNINSTALL.md) | Removing the app, the key and everything it kept |
+| [PROVIDERS.md](PROVIDERS.md) | Adding a platform: one file in `providers/`, the contract, the tests |
 | [../examples/](../examples/) | Deploying without a Mac (CI) |
 
 ## Language

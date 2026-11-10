@@ -100,12 +100,16 @@ expect "new commit on GitHub is a change" \
   "$(rule '[{"deployable":true,"lastSha":"a","headSha":"b"}]')" '{"changed":true,"building":false}'
 expect "same commit is not" \
   "$(rule '[{"deployable":true,"lastSha":"a","headSha":"a"}]')" '{"changed":false,"building":false}'
-expect "building on Vercel (newest attempt) is not ticked" \
-  "$(rule '[{"deployable":true,"lastSha":"a","headSha":"b","lastState":"READY","latestState":"BUILDING"}]')" '{"changed":false,"building":true}'
-expect "building on Render is not ticked" \
-  "$(rule '[{"deployable":true,"lastSha":"a","headSha":"b","lastState":"build_in_progress"}]')" '{"changed":false,"building":true}'
+# The rule reads only the shared phase; how each platform's states map to it is checked in
+# tests/providers/contract.sh (from fixtures).
+expect "building is not ticked" \
+  "$(rule '[{"deployable":true,"lastSha":"a","headSha":"b","lastState":"READY","latestState":"BUILDING","phase":"building"}]')" '{"changed":false,"building":true}'
+expect "queued is not ticked" \
+  "$(rule '[{"deployable":true,"lastSha":"a","headSha":"b","lastState":"created","phase":"queued"}]')" '{"changed":false,"building":true}'
+expect "a raw state alone does not count as building" \
+  "$(rule '[{"deployable":true,"lastSha":"a","headSha":"b","lastState":"build_in_progress"}]')" '{"changed":true,"building":false}'
 expect "a failed newest attempt still counts the change" \
-  "$(rule '[{"deployable":true,"lastSha":"a","headSha":"b","lastState":"build_failed"}]')" '{"changed":true,"building":false}'
+  "$(rule '[{"deployable":true,"lastSha":"a","headSha":"b","lastState":"build_failed","phase":"failed"}]')" '{"changed":true,"building":false}'
 expect "paused is not" \
   "$(rule '[{"deployable":true,"paused":true,"lastSha":"a","headSha":"b"}]')" '{"changed":false,"building":false}'
 expect "not deployable is not" \
@@ -276,8 +280,9 @@ fresh
 expect "watch: nothing running" "$(run "$O" "$E" watch web; cat "$O")" $'0\nNothing is building for web. The newest deploy (dpl_old) is READY.'
 rm -f "$e2e/polls"
 expect "watch: follows a Render build to live" "$(run "$O" "$E" watch api; tail -n 1 "$O" | cut -c11-)" $'0\nlive'
-# Once to find the platform, once for the id; not once per poll.
-expect "watch: Render service list not read per poll" "$(grep -c 'services?limit=100' "$e2e/calls.log")" "2"
+# The names the last list read saw give platform and id: the service list is not read at all,
+# and never once per poll (before the provider files: once for the platform, once for the id).
+expect "watch: Render service list not read per poll" "$(grep -c 'services?limit=100' "$e2e/calls.log")" "0"
 
 # history: empty fields show as "-", so the columns stay in place.
 fresh
@@ -397,6 +402,12 @@ expect "autofix: dry run fires and saves nothing" "$(afrun dry | grep -c 'would 
 mkdir -p "$DEPLOYS_CONFIG/locks/autofix"
 expect "autofix: a held lock stops a second run" "$(afrun | grep -c 'running already'):$(fired)" "1:0"
 rmdir "$DEPLOYS_CONFIG/locks/autofix"
+
+# --- every provider: the contract (tests/providers/*.sh, each a test of its own) ---
+for t in tests/providers/*.sh; do
+  echo; echo "== $t"
+  env -u DEPLOYS_LIB -u DEPLOYS_CONFIG bash "$t" || fails=$((fails+1))
+done
 
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `deploys`: each platform is one file, `providers/vercel.sh` and `providers/render.sh`, behind one contract (`docs/PROVIDERS.md`). Nothing changes for Vercel and Render users. New: `deploys list --json` (every project on every platform), `deploys providers [--json]`, `deploys providers enable|disable <p>` (Vercel and Render are on by default, any later platform is off until turned on), and names as `render:web`. Every `json` entry has a `phase` (queued, building, ready, failed, canceled). `render deploy-json --preview` is refused instead of deploying production.
 - `deploys autofix`: a failed build (Vercel `ERROR`, Render `build_failed`) is handed to a Claude Code routine that opens a fix PR; after the merge, the next run deploys that merge commit once. Caps, no duplicates, never merges. See `docs/AUTOFIX.md` and `scripts/autofix.plist.example`.
 - `deploys logs <project> --id <deploy>` reads the log of one deploy; `vercel json` and `render json` carry `latestId` and `latestSha` of the newest attempt.
 

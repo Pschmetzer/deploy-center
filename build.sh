@@ -51,6 +51,8 @@ rm -f "${slices[@]}"
 
 cp deploys "$BUILD/Contents/Resources/deploys"
 chmod +x "$BUILD/Contents/Resources/deploys"
+# The platforms, one file each, next to the script: it finds them as providers/*.sh.
+cp -R providers "$BUILD/Contents/Resources/providers"
 [ -f app/AppIcon.icns ] && cp app/AppIcon.icns "$BUILD/Contents/Resources/AppIcon.icns"
 
 cat > "$BUILD/Contents/Info.plist" <<PLIST
@@ -84,6 +86,7 @@ if [ -z "${DEVELOPER_ID:-}" ] && [ -s "$HOME/.config/deploys/signing-identity" ]
 fi
 if [ -n "${DEVELOPER_ID:-}" ]; then
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/deploys"
+  codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/providers/"*.sh
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD"
   codesign --verify --strict "$BUILD"
   if [ -n "${NOTARY_PROFILE:-}" ]; then
