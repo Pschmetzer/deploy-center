@@ -3,6 +3,7 @@
 | Page | For |
 |---|---|
 | [SAFE-START.md](SAFE-START.md) | Trying it safely: look first, then one project, then all |
+| [SAFE-DEPLOY.md](SAFE-DEPLOY.md) | Deploys that are safe to batch: green CI, health check with rollback, deploy windows, risk light |
 | [AUTO-DEPLOY.md](AUTO-DEPLOY.md) | What turning auto-deploy off changes, and how to turn it back on |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | The app's error messages and what to do about them |
 | [CLI.md](CLI.md) | Every `deploys` command, CI variables and settings |
@@ -11,6 +12,7 @@
 | [NUMBERS.md](NUMBERS.md) | How commits and PRs waiting are counted |
 | [TEAM.md](TEAM.md) | Team mode: a shared `deploy-center.json`, observers, the two-person rule |
 | [GUARD.md](GUARD.md) | The guard that turns auto-deploy off again, and allowing it for a few hours |
+| [CLAUDE.md](CLAUDE.md) | Claude in the app with your own key: explain a failure, plain release notes, ship check; the PR workflow |
 | [AUTOFIX.md](AUTOFIX.md) | A failed build handed to a Claude Code routine, the fix deployed after you merge |
 | [CLAUDE-CODE.md](CLAUDE-CODE.md) | Using Deploy Center with Claude Code: the plugin, a CLAUDE.md block, the safety model |
 | [UNINSTALL.md](UNINSTALL.md) | Removing the app, the key and everything it kept |

@@ -67,6 +67,8 @@ and nothing ships by accident. Try the [cost calculator](https://deploycenter.ap
 
 New to it? [Try it safely](docs/SAFE-START.md): look first, then one project, then all.
 
+Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only green CI, a health check with rollback, deploy windows and a risk light.
+
 ## Features
 
 - Turns off auto-deploy for all Vercel projects and Render services at once. [What changes](docs/AUTO-DEPLOY.md)
