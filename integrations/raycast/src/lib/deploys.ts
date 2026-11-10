@@ -253,6 +253,10 @@ export function status(): Promise<JsonResult<StatusProject[]>> {
 
 export async function deploy(p: { name: string; platform: string }): Promise<DeployStarted> {
   const { data } = await runJson<DeployStarted>([p.platform, "deploy-json", p.name], TIMEOUT.deploy);
+  // A start is a deploy id. Anything else ({} or a list) is not "started", whatever the exit code.
+  if (!data || typeof data !== "object" || Array.isArray(data) || typeof (data as { id?: unknown }).id !== "string") {
+    throw new Error(`deploys ${p.platform} deploy-json ${p.name} gave no deploy id`);
+  }
   return data;
 }
 

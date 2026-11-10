@@ -155,7 +155,7 @@ export async function confirmAndDeploy(p: { name: string; platform: string }, de
     title: `Deploy ${p.name}?`,
     message: `${platformLabel(p.platform)} builds the newest commit to production.${detail ? `\n\n${detail}` : ""}`,
     icon: { source: "extension-icon.png" },
-    primaryAction: { title: "Deploy", style: Alert.ActionStyle.Default },
+    primaryAction: { title: "Deploy", style: Alert.ActionStyle.Destructive },
   });
   if (ok) await deployOne(p, onDone);
 }
