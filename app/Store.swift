@@ -284,6 +284,7 @@ final class Store: ObservableObject {
     private func offerAutofixSetup() {
         show(Toast(text: L("Autofix is not set up: no routine yet", "Autofix ist nicht eingerichtet: noch keine Routine"), ok: false,
                    undoLabel: L("Open Settings", "Einstellungen öffnen"), undo: {
+            UserDefaults.standard.set("claude", forKey: "settingsTab")
             NSApp.activate(ignoringOtherApps: true)
             NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         }))
