@@ -67,7 +67,17 @@ struct ProviderInfo: Decodable, Identifiable, Equatable, Sendable {
         guard let data, let all = try? JSONDecoder().decode([Lossy<ProviderInfo>].self, from: data) else { return (builtIn, false) }
         var seen = Set<String>()
         let list = all.compactMap(\.value).filter { !$0.id.isEmpty && seen.insert($0.id).inserted }
-        return list.isEmpty ? (builtIn, false) : (list, true)
+        return list.isEmpty ? (builtIn, false) : (ordered(list), true)
+    }
+
+    /// Vercel and Render first, as the window always had them (⌘1 Vercel, ⌘2 Render); the others
+    /// after them in the script's order (it lists them alphabetically).
+    static func ordered(_ list: [ProviderInfo]) -> [ProviderInfo] {
+        let first = builtIn.map(\.id)
+        func rank(_ p: ProviderInfo) -> Int { first.firstIndex(of: p.id) ?? first.count }
+        return list.enumerated().sorted { a, b in
+            rank(a.element) != rank(b.element) ? rank(a.element) < rank(b.element) : a.offset < b.offset
+        }.map(\.element)
     }
 
     /// The providers the window shows. None switched on would leave an empty window: then the built-in two.

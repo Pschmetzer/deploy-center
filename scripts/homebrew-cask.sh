@@ -55,6 +55,10 @@ cask "deploy-center" do
   depends_on formula: "jq"
   depends_on macos: :sequoia
 
+  # The app updates itself (Sparkle, signed appcast on deploycenter.app), so "brew upgrade"
+  # leaves it alone unless --greedy is given; brew still sees the new version via livecheck.
+  auto_updates true
+
   app "Deploy Center.app"
 
   uninstall quit: "app.deploycenter.mac"

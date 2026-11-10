@@ -1028,5 +1028,17 @@ expect "without lib/githost.sh: GitHub counted, GitLab left unknown" \
   "$( (unset -f githost_of githost_available githost_head_of githost_pending_of githost_open_prs_of; DEPLOYS_LIB=1 . "$tmp/nolib/deploys"; set +e
        with_heads '[{"name":"gh","repo":"me/app","ref":"main","deployable":true,"lastSha":"aaaa"},{"name":"gl","repo":"gitlab.com/me/app","ref":"main","deployable":true,"lastSha":"aaaa"}]' \
        | jq -c 'map([.name, .pendingCommits, .headSha])') )" '[["gh",3,"bbbb"],["gl",null,null]]'
+# --- appcast.py: newest first, same version replaced, bad input refused ---
+ac="$tmp/appcast.xml"; printf -- '- one & <two>\n' > "$tmp/notes.md"; sig="$(printf 'A%.0s' $(seq 86))=="
+acadd() { python3 -I scripts/appcast.py --appcast "$ac" --version "$1" --url "https://github.com/me/app/releases/download/v$1/a.zip" \
+  --length 10 --signature "${2:-$sig}" --notes "$tmp/notes.md" >/dev/null 2>&1; }
+acadd 0.8.0; acadd 0.9.0; acadd 0.9.0
+expect "appcast: newest first, no duplicate" "$(grep -o '<sparkle:version>[^<]*' "$ac" | cut -d'>' -f2 | tr '\n' ' ')" "0.9.0 0.8.0 "
+expect "appcast: notes escaped, marked as markdown" "$(grep -c 'sparkle:format="markdown">- one &amp; &lt;two&gt;' "$ac")" "2"
+expect "appcast: valid XML" "$(python3 -I -c 'import sys,xml.dom.minidom as m; m.parse(sys.argv[1]); print("ok")' "$ac")" "ok"
+acadd 1.0; expect "appcast: a bad version is refused" "$?" "1"
+acadd 1.0.0 nonsense; expect "appcast: a bad signature is refused" "$?" "1"
+expect "appcast: refused input changes nothing" "$(grep -c '<item>' "$ac")" "2"
+
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }

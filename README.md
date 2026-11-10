@@ -16,6 +16,18 @@ Works great with Claude Code: let the agent push, you decide what ships.</p>
 <p align="center"><img src="docs/images/app.png" width="900" alt="Deploy Center: 149 PRs waiting to deploy, Vercel build costs of the last 7 days and the projects with commits waiting"></p>
 <p align="center"><sub>The author's real build bill: $99 in 7 days. Project names hidden by demo mode.</sub></p>
 
+<details>
+<summary><b>More screenshots</b></summary>
+
+| | |
+|---|---|
+| <img src="docs/images/main-dark.png" width="430" alt="Main window in dark mode: projects with commits waiting to go live and the build costs of the last 14 days"><br><sub>What waits to go live, and what builds cost</sub> | <img src="docs/images/details-dark.png" width="430" alt="Details sheet of a project: the commit that is live, CI status and the three commits waiting"><br><sub>Details: what is live, what waits, CI status</sub> |
+| <img src="docs/images/log-dark.png" width="430" alt="Build log with the first error highlighted, and the Jump to the first error and Copy for Claude buttons"><br><sub>Build log: jump to the first error, copy it for Claude</sub> | <img src="docs/images/settings-dark.png" width="430" alt="Settings, Autofix section: routine, API token, check every 10 minutes, test without sending"><br><sub>Autofix: a failed build becomes a fix PR</sub> |
+| <img src="docs/images/menu-dark.png" width="300" alt="Menu bar menu: commits waiting per project, Open Deploy Center, Deploy everything with changes"><br><sub>The menu bar: what waits, at a glance</sub> | |
+
+<sub>Demo mode: project names are stand-ins.</sub>
+</details>
+
 ## Install
 
 ```bash
@@ -39,7 +51,7 @@ Docker, CI keys and first steps: [README-CLI.md](README-CLI.md).
 <summary>Homebrew notes and requirements</summary>
 
 Homebrew 6 asks you to trust a third-party tap once (`brew trust`). Without admin rights, add
-`--appdir="$HOME/Applications"`. Updates: `brew upgrade --cask deploy-center` or **Update now** in Settings.
+`--appdir="$HOME/Applications"`. Updates: the app updates itself (**Check for Updates …** in the app menu); `brew upgrade --cask --greedy deploy-center` also works.
 
 | What | Needed for | Install |
 |---|---|---|
@@ -75,6 +87,7 @@ Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only gree
 - Deploys the newest commit, for one project or many, and follows each deploy until live or failed
 - Shows what is waiting: commits and merged PRs not live yet, per project and in total. [How it counts](docs/NUMBERS.md)
 - Shows your Vercel build costs
+- Estimates what auto-deploy would cost a month, and what turning it off saved since. [How it estimates](docs/SAVINGS.md)
 - Menu bar icon with the number of PRs waiting, and a notification when a deploy ends
 - Preview deploys (Vercel) and rollback to the previous live deploy
 - A bash CLI, `deploys`, that does all of this without the app, also on Linux and in CI. [CLI reference](docs/CLI.md)
@@ -110,6 +123,8 @@ Blueprint with auto-sync can turn auto-deploy on again: add `autoDeployTrigger: 
 ```bash
 deploys changed               # what is merged on GitHub and not live
 deploys deploy-changed --yes  # deploy all of it
+deploys simulate              # estimate: auto-deploy a month vs. once a day
+deploys ledger                # estimate: saved since auto-deploy was turned off
 ```
 
 Inside the app at `Deploy Center.app/Contents/Resources/deploys`. All commands, CI variables and
@@ -155,7 +170,7 @@ access to your Render account.
 
 **Does the app send data anywhere?** No telemetry, no account, no server of ours. It talks to Vercel,
 Render and GitHub with your own logins, to your sites for logos and the check after a deploy, and once a
-day to GitHub's release page for updates (Settings can turn that off). Errors go to `~/Library/Logs/DeployCenter.log` on your Mac.
+day to deploycenter.app/appcast.xml for updates, downloaded from GitHub (Settings can turn that off). Errors go to `~/Library/Logs/DeployCenter.log` on your Mac.
 
 **GitLab or Bitbucket?** Not yet. Deploys start from GitHub.
 
