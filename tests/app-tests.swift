@@ -186,6 +186,12 @@ expect("health path gets a slash", Store.cleanPath("health") ?? "nil", "/health"
 expect("health path with a space", Store.cleanPath("/my health") ?? "nil", "/my%20health")
 expect("health path already encoded", Store.cleanPath("/my%20health") ?? "nil", "/my%20health")
 expect("empty health path", Store.cleanPath("  ") ?? "nil", "nil")
+expect("several health paths", Store.cleanPaths(" /health, api/ping ,,/health"), ["/health", "/api/ping"])
+expect("check links: front page without paths", Store.checkLinks("https://a.app/", []), ["https://a.app/"])
+expect("check links: each path", Store.checkLinks("https://a.app/", ["/health", "/api"]), ["https://a.app/health", "https://a.app/api"])
+expect("page text: case and spaces aside", Store.pageHas("<h1>Welcome  to\nShop</h1>", "welcome to shop"), true)
+expect("page text: missing", Store.pageHas("<h1>Error</h1>", "Welcome"), false)
+expect("page text: none asked", Store.pageHas("", "  "), true)
 
 // A reload keeps how a deploy ended only while the branch has not moved.
 var was = item(head: "h1"); was.state = .done(nil)

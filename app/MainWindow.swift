@@ -114,6 +114,7 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(FirstStart.key) private var firstStartDone = false
     @State private var pathText = ""
+    @State private var siteText = ""
     @State private var noteItem: Item?
     @State private var noteText = ""
     @State private var logItem: Item?
@@ -414,12 +415,13 @@ struct ContentView: View {
     private var dialogs: some View {
         withSheets
         .alert(L("Check after deploy", "Prüfung nach dem Deploy"), isPresented: Binding(get: { pathItem != nil }, set: { if !$0 { pathItem = nil } })) {
-            TextField("/health", text: $pathText)
+            TextField("/health, /api/ping", text: $pathText)
+            TextField(L("Text the page must show (optional)", "Text, den die Seite zeigen muss (optional)"), text: $siteText)
             Button(L("Cancel", "Abbrechen"), role: .cancel) { pathItem = nil }
-            Button(L("Save", "Speichern")) { if let i = pathItem { store.setHealthPath(i, pathText) }; pathItem = nil }
+            Button(L("Save", "Speichern")) { if let i = pathItem { store.setHealthPath(i, pathText); store.setSiteText(i, siteText) }; pathItem = nil }
         } message: {
-            Text(L("This path is asked once \(shown(pathItem?.name)) is live, instead of the front page. Empty = front page.",
-                   "Dieser Pfad wird abgefragt, sobald \(shown(pathItem?.name)) live ist, statt der Startseite. Leer = Startseite."))
+            Text(L("These paths (comma-separated, up to five) are asked once \(shown(pathItem?.name)) is live, instead of the front page. Empty = front page. A missing text only warns.",
+                   "Diese Pfade (mit Komma getrennt, bis zu fünf) werden abgefragt, sobald \(shown(pathItem?.name)) live ist, statt der Startseite. Leer = Startseite. Fehlt der Text, gibt es nur eine Warnung."))
         }
         .alert(L("Monthly budget", "Monatsbudget"), isPresented: Binding(get: { budgetItem != nil }, set: { if !$0 { budgetItem = nil } })) {
             TextField("USD", text: $budgetText)
@@ -1270,8 +1272,8 @@ struct ContentView: View {
             Button(store.note(item) == nil ? L("Add a note …", "Notiz hinzufügen …") : L("Edit the note …", "Notiz ändern …")) {
                 noteText = store.note(item) ?? ""; noteItem = item
             }
-            Button(L("Page to check after deploy …", "Seite für die Prüfung nach dem Deploy …")) {
-                pathText = store.healthPath(item); pathItem = item
+            Button(L("Pages to check after deploy …", "Seiten für die Prüfung nach dem Deploy …")) {
+                pathText = store.healthPath(item); siteText = store.siteText(item); pathItem = item
             }
             if item.platform == .vercel {
                 Button(L("Monthly budget …", "Monatsbudget …")) {

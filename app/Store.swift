@@ -1492,7 +1492,7 @@ final class Store: ObservableObject {
                     if !resumed { recordDuration(item) }
                     set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link), deployedSha: sha)
                 }
-                if let l = item.link { Task { await checkSite(item, l.hasSuffix("/") ? String(l.dropLast()) + healthPath(item) : l + healthPath(item), mayRollBack: !rolledBack && !resumed) } }
+                if let l = item.link { Task { await checkSite(item, Self.checkLinks(l, healthPaths(item)), mayRollBack: !rolledBack && !resumed) } }
             }
             return true
         case (.render, "succeeded"):
@@ -1513,12 +1513,52 @@ final class Store: ObservableObject {
         }
     }
 
-    /// A path to ask after going live instead of the front page (/health), per project. Kept on this Mac.
-    private lazy var healthPaths: [String: String] = (UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:]
-    func healthPath(_ i: Item) -> String { healthPaths[Self.key(i)].flatMap(Self.cleanPath) ?? "" }
+    /// Paths to ask after going live instead of the front page (/health), per project, comma-separated
+    /// (FEA-090; one path as before). Kept on this Mac.
+    private lazy var healthPathTexts: [String: String] = (UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:]
+    /// As typed back into the field: "/health, /api/ping".
+    func healthPath(_ i: Item) -> String { healthPaths(i).joined(separator: ", ") }
+    func healthPaths(_ i: Item) -> [String] { Self.cleanPaths(healthPathTexts[Self.key(i)] ?? "") }
     func setHealthPath(_ i: Item, _ path: String) {
-        healthPaths[Self.key(i)] = Self.cleanPath(path)
-        UserDefaults.standard.set(healthPaths, forKey: "healthPaths")
+        let paths = Self.cleanPaths(path)
+        healthPathTexts[Self.key(i)] = paths.isEmpty ? nil : paths.joined(separator: ",")
+        UserDefaults.standard.set(healthPathTexts, forKey: "healthPaths")
+    }
+    /// "/health, api/ping" → ["/health", "/api/ping"]; empty parts and repeats dropped, at most five.
+    nonisolated static func cleanPaths(_ text: String) -> [String] {
+        var seen: Set<String> = []
+        return Array(text.split(separator: ",").compactMap { cleanPath(String($0)) }.filter { seen.insert($0).inserted }.prefix(5))
+    }
+    /// The addresses to ask: the site itself when no path is set, else each path on it.
+    nonisolated static func checkLinks(_ link: String, _ paths: [String]) -> [String] {
+        let base = link.hasSuffix("/") ? String(link.dropLast()) : link
+        return paths.isEmpty ? [link] : paths.map { base + $0 }
+    }
+
+    /// A text the page must contain after going live (FEA-091), per project; checked on the first
+    /// address. Missing text warns, it never rolls back: a changed wording is not an outage.
+    private lazy var siteTexts: [String: String] = (UserDefaults.standard.dictionary(forKey: "siteTexts") as? [String: String]) ?? [:]
+    func siteText(_ i: Item) -> String { siteTexts[Self.key(i)] ?? "" }
+    func setSiteText(_ i: Item, _ text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        siteTexts[Self.key(i)] = t.isEmpty ? nil : t
+        UserDefaults.standard.set(siteTexts, forKey: "siteTexts")
+    }
+    /// Case and runs of spaces aside, as a person reads the page.
+    nonisolated static func pageHas(_ body: String, _ text: String) -> Bool {
+        func fold(_ s: String) -> String { s.split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased() }
+        let t = fold(text)
+        return t.isEmpty || fold(body).contains(t)
+    }
+    /// The page's first 512 KB as text, nil when nothing answered.
+    nonisolated private static func pageText(_ url: URL) async -> String? {
+        var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
+        guard let (bytes, _) = try? await probeSession.bytes(for: req) else { return nil }
+        var data = Data()
+        do { for try await b in bytes { data.append(b); if data.count >= 512 * 1024 { break } } } catch { return nil }
+        bytes.task.cancel()
+        return String(decoding: data, as: UTF8.self)
     }
     /// "/health", with a leading slash; spaces and other characters a URL cannot hold are encoded,
     /// so the check after going live is not silently skipped.
@@ -1566,19 +1606,35 @@ final class Store: ObservableObject {
         return (resp as? HTTPURLResponse)?.statusCode
     }
 
-    /// After going live: does the site answer? A deploy can be "ready" and the page still broken.
-    private func checkSite(_ item: Item, _ link: String, mayRollBack: Bool) async {
+    /// After going live: every address in turn; the first is timed and watched, and holds the text.
+    private func checkSite(_ item: Item, _ links: [String], mayRollBack: Bool) async {
+        var first: URL?
+        for link in links {
+            guard let url = URL(string: link) else { continue }
+            guard await checkSite(item, link, url, mayRollBack: mayRollBack, timed: first == nil) else { return }
+            if first == nil { first = url }
+        }
+        guard let url = first else { return }
+        watch(item, url, mayRollBack: mayRollBack)
+        let want = siteText(item)
+        guard !want.isEmpty, let body = await Self.pageText(url), !Self.pageHas(body, want) else { return }
+        say(L("\(item.name) is live, but the page lacks its text", "\(item.name) ist live, aber der Seite fehlt ihr Text"),
+            L("Not found: ", "Nicht gefunden: ") + "\u{201C}\(want)\u{201D} – " + url.absoluteString, ok: false,
+            project: item.name, key: Self.key(item), rollBack: true)
+    }
+
+    /// One address: does it answer? A deploy can be "ready" and the page still broken. False when it
+    /// warned or rolls back.
+    private func checkSite(_ item: Item, _ link: String, _ url: URL, mayRollBack: Bool, timed: Bool) async -> Bool {
         let name = item.name
-        guard let url = URL(string: link) else { return }
         var code: Int?
         // A fresh Render service can answer 502/503 for a few seconds: ask up to three times.
         for attempt in 0..<3 {
             let t0 = Date()
             code = await Self.probe(url, timeout: 20)
             if Self.siteVerdict(code: code, networkUp: true) == .fine {
-                noteResponseTime(item, Date().timeIntervalSince(t0))
-                watch(item, url, mayRollBack: mayRollBack)
-                return
+                if timed { noteResponseTime(item, Date().timeIntervalSince(t0)) }
+                return true
             }
             if attempt < 2 { try? await Task.sleep(nanoseconds: 6_000_000_000) }
         }
@@ -1589,17 +1645,18 @@ final class Store: ObservableObject {
             networkUp = await Self.probe(other, timeout: 10) != nil
         }
         let verdict = Self.siteVerdict(code: code, networkUp: networkUp)
-        if verdict == .fine { return }
+        if verdict == .fine { return true }
         // A 404 may only be a wrong path, so it is not rolled back.
-        if verdict == .broken, mayRollBack, rollsBack(item) { countDownToRollback(item, link, code); return }
+        if verdict == .broken, mayRollBack, rollsBack(item) { countDownToRollback(item, link, code); return false }
         if verdict == .unreachable {
             say(L("\(name) is live, but this Mac cannot reach it", "\(name) ist live, aber dieser Mac erreicht die Seite nicht"),
                 L("The network seems down here; nothing was rolled back. ", "Hier scheint das Netz weg; es wurde nichts zurückgerollt. ") + link, ok: false)
-            return
+            return false
         }
         say(L("\(name) is live, but the site answers \(code.map(String.init) ?? "nothing")",
               "\(name) ist live, aber die Seite antwortet mit \(code.map(String.init) ?? "nichts")"), link, ok: false,
             project: name, key: Self.key(item), rollBack: true)
+        return false
     }
 
     // MARK: After the first check: the answer time against the last deploy's, and a watch for a while
