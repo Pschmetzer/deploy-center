@@ -27,6 +27,10 @@ tarball="$tmp/pkg/deploys-cli-$version.tar.gz"
 listing="$(tar -tzf "$tarball" | LC_ALL=C sort | tr '\n' ' ')"
 # providers/ goes in when the repo has it (its files, sorted, after deploys).
 want="deploys-cli-$version/ deploys-cli-$version/LICENSE deploys-cli-$version/README-CLI.md deploys-cli-$version/VERSION deploys-cli-$version/deploys "
+# The pre-push for `deploys hooks install` (INT-082), sorted before lib/.
+if [ -f integrations/hooks/pre-push ]; then
+  want+="deploys-cli-$version/integrations/ deploys-cli-$version/integrations/hooks/ deploys-cli-$version/integrations/hooks/pre-push "
+fi
 # lib/ too (team mode, GitLab, savings), sorted before providers/.
 if [ -d lib ]; then
   want+="deploys-cli-$version/lib/ "

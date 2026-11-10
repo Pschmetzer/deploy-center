@@ -60,6 +60,8 @@ deploys autodeploy allow vercel my-project 4   # auto-deploy on for 4 hours (see
 deploys autodeploy allowed | revoke vercel my-project
 deploys guard [--dry-run] | status | schedule on|off   # auto-deploy off where it came back on
 deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE.md
+deploys hooks install [<repo>]          # before each push: which builds it would start (integrations/hooks)
+deploys hooks uninstall | status [<repo>]
 eval "$(deploys completion zsh)"        # tab completion (also: bash; fish: deploys completion fish | source)
 deploys deploy --help                   # the help lines of one command
 ```
@@ -100,6 +102,13 @@ project could not be read (it is named and left out, never counted as current). 
 | `DEPLOYS_TIMEOUT` | seconds one `gh` or `glab` call may take (default 120, `0` = no limit; needs perl) |
 | `DEPLOYS_LOG_MAX_BYTES` | size past which a launchd job log is renamed to `.1` (default 1 MB) |
 | `NO_COLOR` | no colour |
+
+`DEPLOYS_NOW` (the time the window rules read) counts only with `DEPLOYS_TESTING=1`: it is for tests.
+
+`deploys hooks install` puts a small `pre-push` into the repo's hooks folder (git's own, or
+`core.hooksPath`). A `pre-push` that was there is kept as `pre-push.local` and runs first; its
+"no" still stops the push. `deploys hooks uninstall` puts it back. With Husky it prints the line
+to add to `.husky/pre-push` instead. The check itself reads GitHub remotes only.
 
 `window.json` may name a time zone: `{"tz":"Europe/Berlin","deny":[…]}`. `deploys window` warns
 about keys and times it does not understand. A rule over midnight (`"from":"22:00","to":"06:00"`)

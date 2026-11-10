@@ -11,7 +11,7 @@ fail() { echo "FAIL $1: $2"; fails=$((fails+1)); }
 expect() { [ "$2" = "$3" ] && ok "$1" || fail "$1" "expected [$3], got [$2]"; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-export DEPLOYS_CONFIG="$tmp/config" DEPLOYS_LIB=1
+export DEPLOYS_CONFIG="$tmp/config" DEPLOYS_LIB=1 DEPLOYS_TESTING=1
 # A stand-in for gh: commits, a comparison, open PRs, the rate limit.
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/gh" <<'GH'
@@ -396,6 +396,11 @@ expect "window: the reason is in the journal" "$(grep -c 'Deployed in the window
 fresh; : > "$DEPLOYS_JOURNAL"
 expect "window: render deploy --force journals once, not twice" "$(run "$O" "$E" render deploy api --force "db fix"; wc -l < "$DEPLOYS_JOURNAL" | tr -d ' ')" $'0\n1'
 expect "window: deploy <project> --force=… works too" "$(run "$O" "$E" deploy web --force="urgent" --json; jq -r .platform "$O")" $'0\nvercel'
+fresh
+expect "window: DEPLOYS_WINDOW_CHECKED from outside skips nothing (CLI-006)" \
+  "$(DEPLOYS_WINDOW_CHECKED=1 run "$O" "$E" deploy-changed --yes; started)" $'1\n0'
+expect "window: DEPLOYS_NOW counts only with DEPLOYS_TESTING=1 (CLI-006)" \
+  "$(DEPLOYS_TESTING=0 DEPLOYS_NOW='fri 14:00 2026-11-13' run "$O" "$E" window --json >/dev/null; jq -r .now "$O" | grep -c '^fri 14:00 2026-11-13$')" "0"
 echo '{"deny":' > "$e2e/config/window.json"; fresh
 expect "window: a broken window.json stops deploys" "$(run "$O" "$E" deploy-changed --yes; started)" $'1\n0'
 rm -f "$e2e/config/window.json"; unset DEPLOYS_NOW
@@ -1338,6 +1343,19 @@ expect "CLI-028: the job carries DEPLOYS_LOG_ROTATE=1" "$(grep -c '<key>DEPLOYS_
 mkdir -p "$tmp/nolc"; for b in sed dirname basename; do ln -sf "$(command -v "$b")" "$tmp/nolc/$b"; done
 # shellcheck disable=SC2123  # a PATH without launchctl is the point
 expect "CLI-030: no launchd: a cron line, no job file" "$( (PATH="$tmp/nolc"; DEPLOYS_LAUNCH_DIR="$tmp/j30"; job_on app.deploycenter.autofix 600 DeployCenter-autofix autofix) | grep -c "^\*/10 \* \* \* \* PATH=.* /bin/bash '.*deploys' 'autofix' >>"; [ -e "$tmp/j30" ] && echo file || echo none)" $'1\nnone'
+# ===== CLI features track =====
+# INT-082: deploys hooks install chains an existing pre-push, uninstall puts it back.
+hk="$tmp/hk"; mkdir -p "$hk"; git -C "$hk" init -q
+printf '#!/bin/bash\ncat > "%s/got"; exit "${LOCAL_RC:-0}"\n' "$hk" > "$hk/.git/hooks/pre-push"; chmod +x "$hk/.git/hooks/pre-push"
+expect "INT-082: install moves the old hook aside" "$(run "$O" "$E" hooks install "$hk"; [ -x "$hk/.git/hooks/pre-push.local" ] && [ -x "$hk/.git/hooks/pre-push.deploys" ] && echo both)" $'0\nboth'
+expect "INT-082: install twice does not chain itself" "$(run "$O" "$E" hooks install "$hk"; grep -c 'got' "$hk/.git/hooks/pre-push.local"; run "$O" "$E" hooks status "$hk" --json; jq -c '[.installed, .chained]' "$O")" $'0\n1\n0\n[true,true]'
+push() { printf 'refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000\n' | DEPLOYS=true "$hk/.git/hooks/pre-push" origin git@github.com:me/app.git; echo $?; }
+expect "INT-082: the old hook gets the refs and its no stops the push" "$(push; cut -c1-15 "$hk/got"; LOCAL_RC=3 push)" $'0\nrefs/heads/main\n3'
+expect "INT-082: uninstall puts the old hook back" "$(run "$O" "$E" hooks uninstall "$hk"; grep -c got "$hk/.git/hooks/pre-push"; ls "$hk/.git/hooks" | grep -cE 'pre-push[.](local|deploys)')" $'0\n1\n0'
+git -C "$hk" config core.hooksPath .githooks
+expect "INT-082: core.hooksPath is where it goes" "$(run "$O" "$E" hooks install "$hk"; [ -f "$hk/.githooks/pre-push" ] && echo there)" $'0\nthere'
+git -C "$hk" config --unset core.hooksPath; mkdir -p "$hk/.husky"
+expect "INT-082: with Husky only the line to add" "$(run "$O" "$E" hooks install "$hk"; grep -c 'Add this line to .husky/pre-push' "$O"; grep -c deploy-center "$hk/.git/hooks/pre-push")" $'0\n1\n0'
 # ===== end CLI track =====
 
 echo

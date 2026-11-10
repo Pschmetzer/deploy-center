@@ -66,6 +66,8 @@
 #                                             deploy one project, or a group in its order (docs/TEAM.md)
 #   deploys config [--json] [--refresh]       the effective config, and where each value came from
 #   deploys team add|remove <owner/repo> | list | refresh | journal   repos whose deploy-center.json counts
+#   deploys hooks install|uninstall|status [<repo>]  the pre-push check (integrations/hooks) in a repo,
+#                                             after a pre-push that is there already (core.hooksPath counts)
 #   deploys readonly [on|off]                 observer mode: commands that change something are refused
 #                                             (a guard against slips, not access control: docs/TEAM.md)
 #   deploys --help | --version
@@ -219,6 +221,9 @@ TEAM_LIB="${DEPLOYS_TEAM_LIB:-$LIB_DIR/team.sh}"
 # shellcheck source=lib/team.sh
 if [ -f "$TEAM_LIB" ]; then . "$TEAM_LIB"; fi
 team_on() { declare -F team_gate >/dev/null; }
+# deploys hooks install|uninstall|status: the pre-push check in a repo (lib/hooks.sh).
+# shellcheck source=lib/hooks.sh
+if [ -f "$LIB_DIR/hooks.sh" ]; then . "$LIB_DIR/hooks.sh"; fi
 
 # Every command that changes something on Vercel, Render or GitHub goes through here first.
 WRITING=""
@@ -730,9 +735,10 @@ WINDOW_RULE='def hm: split(":") | (.[0] | tonumber) * 60 + ((.[1] // "0") | tonu
   | if ($hit | length) > 0 then {denied:true, reason:($hit[0] | says), rule:$hit[0]} else {denied:false} end
   | . + {configured:true, now:"\($day) \($time) \($date)"}'
 
-# Now as the rules read it, local time: "fri 15:30 2026-11-13". DEPLOYS_NOW stands in for tests.
+# Now as the rules read it, local time: "fri 15:30 2026-11-13". DEPLOYS_NOW stands in for tests,
+# and only with DEPLOYS_TESTING=1: a stray DEPLOYS_NOW in a shell must not open a closed window.
 now_parts() {  # now_parts [<tz>]
-  if [ -n "${DEPLOYS_NOW:-}" ]; then echo "$DEPLOYS_NOW"
+  if [ -n "${DEPLOYS_NOW:-}" ] && [ "${DEPLOYS_TESTING:-}" = 1 ]; then echo "$DEPLOYS_NOW"
   elif [ -n "${1:-}" ]; then TZ="$1" LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]'
   else LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]'; fi
 }
@@ -761,15 +767,16 @@ window_json() {
 # Inside a denied window a start is refused, unless --force "reason" was given. Asked once per
 # run: what this run starts itself (render deploy -> deploy-json) is not asked again.
 # Sets `frozen` to the window's text when the run goes ahead inside one.
-frozen=""
+# A shell variable, not the environment: nothing set from outside can skip the check.
+frozen=""; window_checked=""
 freeze_check() {
-  [ -z "${DEPLOYS_WINDOW_CHECKED:-}" ] || return 0
+  [ -z "$window_checked" ] || return 0
   local w; w="$(window_json)" || exit 1
   if [ "$(echo "$w" | jq -r .denied)" = true ]; then
     frozen="$(echo "$w" | jq -r .reason)"
     [ "$forced" = 1 ] || die "No deploys now: the deploy window says \"$frozen\". To deploy anyway: --force \"why\""
   fi
-  export DEPLOYS_WINDOW_CHECKED=1
+  window_checked=1
 }
 # A start inside a window, and why, goes to the journal the app shows.
 # The app writes its own entry for what it starts (DEPLOYS_CALLER=app): one line, not two.
@@ -1819,6 +1826,19 @@ case "${1:-} ${2:-}" in
       *) die "Usage: deploys team add|remove <owner/repo> | list | refresh | journal" ;;
     esac ;;
 
+  "hooks "*)
+    # The pre-push check of integrations/hooks/ in a git repo (default: this folder), next to its own hook.
+    declare -F hooks_install >/dev/null || die "lib/hooks.sh is not next to deploys."
+    r="${3:-.}"; [ -d "$r" ] || die "No folder $r."
+    case "${2:-}" in
+      install) hooks_install "$r" ;;
+      uninstall) hooks_uninstall "$r" ;;
+      status) st="$(hooks_status_json "$r")"
+              if [ "$json" = 1 ]; then echo "$st"
+              else echo "$st" | jq -r '"\(if .installed then "installed" else "not installed" end)\(if .chained then ", after the pre-push that was there (pre-push.local)" else "" end)\(if .husky then ", Husky manages the hooks here" else "" end): \(.hooksDir)"'; fi ;;
+      *) die "Usage: deploys hooks install|uninstall|status [<repo folder>] [--json]" ;;
+    esac ;;
+
   "readonly "*)
     # Observer mode on this Mac (the app's switch in Settings > Team does the same).
     case "${2:-}" in
@@ -2044,7 +2064,7 @@ case "${1:-} ${2:-}" in
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
     # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
+    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore hooks explain diff notes costs triggers simulate ledger details autofix autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
     verbs_of() {
       local v="list deploy rollback status cancel autodeploy-off json" x
       for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
