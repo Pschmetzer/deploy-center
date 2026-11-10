@@ -8,7 +8,8 @@
 // Logs, notes and explain are masked (known token shapes, NAME=secret) before the model sees them.
 //
 // Env:
-//   DEPLOYS_BIN                path to `deploys` (else PATH, else the app bundle)
+//   DEPLOYS_BIN                path to `deploys` (else the app bundle, else PATH: the same order
+//                              as the VS Code and Raycast add-ons and the Claude Code hook)
 //   DEPLOYS_MCP_ALLOW_DEPLOY   1 = also offer deploys_deploy and deploys_rollback;
 //                              preview = only deploys_deploy, and only preview deploys
 //   DEPLOYS_MCP_PROJECTS       comma-separated names: the only projects a write may touch
@@ -62,16 +63,16 @@ function isExecutable(p) {
   }
 }
 
+// The app's copy before PATH: an older `deploys` left on PATH must not win over the app's.
+let found = null;
 function findDeploys(env = process.env) {
   if (env.DEPLOYS_BIN) return isExecutable(env.DEPLOYS_BIN) ? env.DEPLOYS_BIN : null;
-  for (const dir of (env.PATH ?? "").split(delimiter)) {
-    if (dir && isExecutable(join(dir, "deploys"))) return join(dir, "deploys");
-  }
+  if (found && isExecutable(found)) return found;
   const bundle = join("Deploy Center.app", "Contents", "Resources", "deploys");
-  for (const p of [join("/Applications", bundle), join(env.HOME || homedir(), "Applications", bundle)]) {
-    if (isExecutable(p)) return p;
-  }
-  return null;
+  const list = [join("/Applications", bundle), join(env.HOME || homedir(), "Applications", bundle)];
+  for (const dir of (env.PATH ?? "").split(delimiter)) if (dir) list.push(join(dir, "deploys"));
+  found = list.find(isExecutable) ?? null;
+  return found;
 }
 
 class ToolError extends Error {}

@@ -19,9 +19,10 @@ cd integrations/mcp
 npm ci
 ```
 
-The server finds `deploys` in this order: `DEPLOYS_BIN`, then `PATH`, then
+The server finds `deploys` in this order: `DEPLOYS_BIN`, then
 `/Applications/Deploy Center.app/Contents/Resources/deploys`, then the same under
-`~/Applications`. Replace `/path/to/deploy-center` below with where you cloned this repo.
+`~/Applications`, then `PATH`. The VS Code and Raycast add-ons and the Claude Code hook use the
+same order, so an older `deploys` on `PATH` never wins over the app's. Replace `/path/to/deploy-center` below with where you cloned this repo.
 
 **Why Node:** the official TypeScript SDK runs as one plain `.mjs` file with no build step, and the
 lockfile pins it (`@modelcontextprotocol/sdk` 1.32.2). Every agent host that speaks MCP already

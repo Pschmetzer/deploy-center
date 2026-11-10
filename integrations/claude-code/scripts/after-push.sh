@@ -11,7 +11,7 @@
 #
 # Input: the hook JSON on stdin (tool_input.command, cwd).
 # Output: JSON with systemMessage (shown to the user) and additionalContext (for Claude).
-# Env: DEPLOYS                 the CLI to call (default: deploys on PATH, then the app bundle)
+# Env: DEPLOYS                 the CLI to call (default: the app bundle, then deploys on PATH)
 #      DEPLOYS_HOOK_TIMEOUT    seconds to wait for the CLI (default 15)
 
 input="$(cat)"   # read all of stdin first, so Claude Code never writes into a closed pipe
@@ -66,15 +66,16 @@ done
 [ "$found" = 1 ] || exit 0
 [ -d "$dir" ] && cwd="$dir"
 
-# The CLI: DEPLOYS if set (and nothing else), then PATH, then the app bundle.
+# The CLI: DEPLOYS if set (and nothing else), then the app bundle, then PATH (the order of the
+# MCP server and the editor add-ons: an older deploys on PATH does not win over the app's).
 if [ -n "${DEPLOYS:-}" ]; then bin="$DEPLOYS"
 else
-  bin="$(command -v deploys 2>/dev/null)"
+  bin=""
   for c in "/Applications/Deploy Center.app/Contents/Resources/deploys" \
            "$HOME/Applications/Deploy Center.app/Contents/Resources/deploys"; do
-    [ -n "$bin" ] && break
-    [ -x "$c" ] && bin="$c"
+    [ -x "$c" ] && { bin="$c"; break; }
   done
+  [ -n "$bin" ] || bin="$(command -v deploys 2>/dev/null)"
 fi
 [ -n "$bin" ] && command -v "$bin" >/dev/null 2>&1 || exit 0
 
