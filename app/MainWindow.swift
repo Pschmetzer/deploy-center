@@ -1559,20 +1559,27 @@ struct SavingShare: View {
     /// Rendered once when the popover opens, not on every redraw ("Copied ✓").
     @State private var image: NSImage?
     @State private var saveError: String?
+    @AppStorage("savingCardTheme") private var theme = 0
 
     private func render() -> NSImage? {
-        let r = ImageRenderer(content: SavingCard(before: before, after: after)); r.scale = 2
+        let r = ImageRenderer(content: SavingCard(before: before, after: after, theme: theme)); r.scale = 2
         return r.nsImage
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SavingCard(before: before, after: after).scaleEffect(0.7).frame(width: 364, height: 200)
+            SavingCard(before: before, after: after, theme: theme).scaleEffect(0.7).frame(width: 364, height: 200)
+            Picker(L("Look", "Aussehen"), selection: $theme) {
+                ForEach(SavingCard.themes.indices, id: \.self) { Text(SavingCard.themes[$0].name).tag($0) }
+            }
+            .pickerStyle(.segmented).frame(width: 364)
+            // A new look is a new picture for the share menu and the file.
+            .onChange(of: theme) { _, _ in image = render() }
             Text(SavingCard.text(before: before, after: after)).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true).frame(width: 364, alignment: .leading)
             HStack {
                 Button(copied ? L("Copied ✓", "Kopiert ✓") : L("Copy picture and text", "Bild und Text kopieren")) {
-                    SavingCard.copy(before: before, after: after); copied = true
+                    SavingCard.copy(before: before, after: after, theme: theme); copied = true
                 }
                 Button(L("Save as PNG …", "Als PNG sichern …")) { save() }
                 if let img = image {
@@ -1605,6 +1612,15 @@ struct SavingShare: View {
 /// A picture of the saving to post somewhere: two numbers and the app's name, nothing about the projects.
 struct SavingCard: View {
     let before: Double, after: Double
+    var theme = 0
+    /// The card's looks (FEA-105): the text stays white on each.
+    static let themes: [(name: String, colors: [Color])] = [
+        (L("Night", "Nacht"), [Color(red: 0.07, green: 0.09, blue: 0.16), Color(red: 0.18, green: 0.11, blue: 0.32)]),
+        (L("Ocean", "Ozean"), [Color(red: 0.02, green: 0.16, blue: 0.27), Color(red: 0.0, green: 0.33, blue: 0.42)]),
+        (L("Forest", "Wald"), [Color(red: 0.05, green: 0.16, blue: 0.10), Color(red: 0.12, green: 0.30, blue: 0.20)]),
+        (L("Graphite", "Graphit"), [Color(red: 0.12, green: 0.12, blue: 0.13), Color(red: 0.26, green: 0.26, blue: 0.28)]),
+    ]
+    private var colors: [Color] { Self.themes[Self.themes.indices.contains(theme) ? theme : 0].colors }
     private var month: Double { max(0, before - after) * 30 }
 
     var body: some View {
@@ -1634,8 +1650,7 @@ struct SavingCard: View {
             Text("github.com/\(Updater.repo)").font(.caption).foregroundStyle(.white.opacity(0.6))
         }
         .padding(28).frame(width: 520, alignment: .leading)
-        .background(LinearGradient(colors: [Color(red: 0.07, green: 0.09, blue: 0.16), Color(red: 0.18, green: 0.11, blue: 0.32)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+        .background(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
     }
 
     /// The sentence that goes with the picture.
@@ -1646,8 +1661,8 @@ struct SavingCard: View {
     }
 
     /// Picture and sentence on the clipboard at once; a chat or post takes whichever it can.
-    @MainActor static func copy(before: Double, after: Double) {
-        let r = ImageRenderer(content: SavingCard(before: before, after: after)); r.scale = 2
+    @MainActor static func copy(before: Double, after: Double, theme: Int = 0) {
+        let r = ImageRenderer(content: SavingCard(before: before, after: after, theme: theme)); r.scale = 2
         let pb = NSPasteboard.general; pb.clearContents()
         var items: [NSPasteboardWriting] = [text(before: before, after: after) as NSString]
         if let img = r.nsImage { items.insert(img, at: 0) }
@@ -1743,6 +1758,8 @@ struct Row: View {
     var onDismissAutofix: (() -> Void)? = nil
     var colorTag: String? = nil
     let toggle: () -> Void
+    /// Settings → General: less space between rows (FEA-130).
+    @AppStorage("compactRows") private var compact = false
     @Environment(\.accessibilityDifferentiateWithoutColor) private var noColour
 
     /// The colours of the row menu's "Colour" (Store.projectColorNames).
@@ -1859,7 +1876,7 @@ struct Row: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, compact ? 1 : 4)
         .contentShape(Rectangle())
         // Not dimmed as a whole (the text would fall under 3:1): the tick is faint and a line says why.
         .onTapGesture { if !item.state.isActive { toggle() } }
