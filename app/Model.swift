@@ -416,19 +416,26 @@ enum Notify {
     /// the notification has "Show log" (and with `rollBack`, a live site that is broken, "Roll back …"),
     /// which open the window there; nothing runs by itself.
     /// `autoOn` with `key`: auto-deploy came back on; the notification offers "Turn off".
-    static func post(_ title: String, _ body: String, project: String? = nil, key: String? = nil, failed: Bool = false, rollBack: Bool = false, autoOn: Bool = false) {
+    static func post(_ title: String, _ body: String, project: String? = nil, key: String? = nil, failed: Bool = false, rollBack: Bool = false, autoOn: Bool = false, silent: Bool = false) {
         let d = UserDefaults.standard
         guard available, !NSApp.isActive, d.object(forKey: "notifications") as? Bool ?? true else { return }
         // Quiet hours (Settings → Notifications): only failures still come.
         if !failed, quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo")) { return }
         let category = autoOn && key != nil ? NotifyRouter.autoOnCategory
             : failed && key != nil ? (rollBack ? NotifyRouter.brokenCategory : NotifyRouter.failedCategory) : nil
-        add(title, body, id: UUID().uuidString, category: category, project: project, key: key)
+        add(title, body, id: UUID().uuidString, category: category, project: project, key: key, silent: silent)
         // A failure nobody looked at comes back once, 30 minutes later (Settings), unless the app was opened.
         if failed, let key, d.bool(forKey: "remindFailures") {
             add(L("Still failing: ", "Immer noch fehlgeschlagen: ") + title, body, id: escalationPrefix + key,
                 category: category, project: project, key: key, after: 30 * 60)
         }
+    }
+    /// Whether a `post` that is not a failure would show now (the window in the background, the
+    /// switch on, outside quiet hours).
+    static var wouldShow: Bool {
+        let d = UserDefaults.standard
+        return available && !NSApp.isActive && d.object(forKey: "notifications") as? Bool ?? true
+            && !quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo"))
     }
     static let escalationPrefix = "again|"
     static let soundsKey = "resultSounds"
@@ -457,7 +464,7 @@ enum Notify {
     }
     /// Asks first only when the person was never asked, so the first alarm of a run is not lost.
     private static func add(_ title: String, _ body: String, id: String, category: String? = nil, project: String? = nil,
-                            key: String? = nil, after: TimeInterval? = nil) {
+                            key: String? = nil, after: TimeInterval? = nil, silent: Bool = false) {
         guard available else { return }
         Task {
             let center = UNUserNotificationCenter.current()
@@ -469,10 +476,8 @@ enum Notify {
             }
             let c = UNMutableNotificationContent()
             c.title = title; c.body = body
-            // With the result sounds on, a deploy's end already rang once; the countdown and the
-            // person's own reminder keep theirs.
-            let ownSound = UserDefaults.standard.bool(forKey: soundsKey) && category != NotifyRouter.rollbackCategory && id != "daily-reminder"
-            c.sound = ownSound ? nil : .default
+            // A deploy's end with the result sounds on already rang once.
+            c.sound = silent ? nil : .default
             if let category { c.categoryIdentifier = category }
             var info: [String: String] = [:]
             if let project { info["project"] = project }

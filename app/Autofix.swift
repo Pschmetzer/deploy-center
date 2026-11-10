@@ -132,7 +132,7 @@ struct AutofixSettings: View {
     }
 
     private func check(_ ok: Bool) -> some View {
-        Image(systemName: ok ? "checkmark.circle.fill" : "circle").foregroundStyle(ok ? .green : .secondary)
+        Image(systemName: ok ? "checkmark.circle.fill" : "circle").foregroundStyle(ok ? Color.good : .secondary)
     }
 
     static func label(_ f: AutofixStatus.Fire) -> String {

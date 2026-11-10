@@ -64,7 +64,7 @@ struct FirstStartView: View {
         Text(L("\(autoOn.count) projects still build on every push.", "\(autoOn.count) Projekte bauen noch bei jedem Push."))
         let bad = Health.checks(store.doctor, budget: store.githubBudget, on: Set(store.enabledProviders.map(\.id))).filter { !$0.ok }
         if bad.isEmpty {
-            Label(L("Everything needed is connected.", "Alles Nötige ist verbunden."), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            Label(L("Everything needed is connected.", "Alles Nötige ist verbunden."), systemImage: "checkmark.circle.fill").foregroundStyle(Color.good)
         } else {
             ForEach(bad) { c in
                 Label(c.text + (c.fix.map { " → " + $0 } ?? ""), systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
@@ -79,7 +79,7 @@ struct FirstStartView: View {
         Text(L("Pick one you can afford to have wait a little. Auto-deploy goes off for it alone; the rest stays as it is.",
                "Nimm eins, das ruhig etwas warten darf. Auto-Deploy geht nur dort aus; der Rest bleibt, wie er ist."))
         if autoOn.isEmpty {
-            Label(L("No project builds on every push any more.", "Kein Projekt baut mehr bei jedem Push."), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            Label(L("No project builds on every push any more.", "Kein Projekt baut mehr bei jedem Push."), systemImage: "checkmark.circle.fill").foregroundStyle(Color.good)
         } else {
             Picker(L("Project", "Projekt"), selection: $pick) {
                 Text(L("Choose …", "Wählen …")).tag(String?.none)

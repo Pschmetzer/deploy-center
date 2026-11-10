@@ -332,7 +332,7 @@ struct ProjectDetail: View {
                     if let c, c.status == "done" {
                         Text(L("\(c.osv ?? 0) vulnerable packages · \(c.gitleaks ?? 0) secrets · \(c.semgrep ?? 0) code findings",
                                "\(c.osv ?? 0) unsichere Pakete · \(c.gitleaks ?? 0) Secrets · \(c.semgrep ?? 0) Code-Funde"))
-                            .font(.caption).foregroundStyle(c.fixable + (c.gitleaks ?? 0) == 0 ? Color.green : Color.orange)
+                            .font(.caption).foregroundStyle(c.fixable + (c.gitleaks ?? 0) == 0 ? Color.good : Color.orange)
                         if c.fixable > 0, !store.observer {
                             Button(L("Fix with Claude", "Mit Claude beheben")) { Task { await store.scanForBugs(item, findings: true) } }
                                 .disabled(!store.canScan(item))
@@ -369,7 +369,7 @@ struct ProjectDetail: View {
                 if let run {
                     switch run.status {
                     case "running": Text(L("Claude is looking for bugs …", "Claude sucht nach Bugs …")).font(.caption).foregroundStyle(.secondary)
-                    case "clean": Text(L("Last scan: nothing to fix", "Letzter Scan: nichts zu beheben")).font(.caption).foregroundStyle(.green)
+                    case "clean": Text(L("Last scan: nothing to fix", "Letzter Scan: nichts zu beheben")).font(.caption).foregroundStyle(Color.good)
                     case "pr":
                         if let u = run.prUrl.flatMap(URL.init(string:)) {
                             Link(L("Fix PR with \(run.fixes ?? 0) fix(es)", "Fix-PR mit \(run.fixes ?? 0) Fix(es)"), destination: u).font(.caption)
@@ -394,7 +394,7 @@ struct ProjectDetail: View {
             if let checks = d.checks, checks.total > 0 {
                 HStack(spacing: 6) {
                     Image(systemName: checks.failed > 0 ? "xmark.octagon.fill" : (checks.running > 0 ? "clock.fill" : "checkmark.seal.fill"))
-                        .foregroundStyle(checks.failed > 0 ? .red : (checks.running > 0 ? .orange : .green))
+                        .foregroundStyle(checks.failed > 0 ? .red : (checks.running > 0 ? .orange : Color.good))
                     Text(checks.failed > 0
                          ? L("CI on the branch: \(checks.failed) of \(checks.total) checks failed", "CI auf dem Branch: \(checks.failed) von \(checks.total) Checks rot")
                          : checks.running > 0
@@ -438,7 +438,7 @@ struct ProjectDetail: View {
         if item.hasNewCommits, let r = item.risk, !r.reasons.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Circle().fill(r.isRed ? Color.red : (r.level == "yellow" ? Color.orange : Color.green)).frame(width: 9, height: 9)
+                    Circle().fill(r.isRed ? Color.red : (r.level == "yellow" ? Color.orange : Color.good)).frame(width: 9, height: 9)
                     Text(r.isRed ? L("Risk: high", "Risiko: hoch") : L("Risk: medium", "Risiko: mittel")).font(.headline)
                 }
                 ForEach(Array(r.reasons.enumerated()), id: \.offset) { _, reason in
@@ -509,7 +509,7 @@ struct ProjectDetail: View {
                    "GitHub konnte Live-Stand und Branch nicht vergleichen (Branch umgeschrieben oder Live-Commit unbekannt)."))
                 .font(.callout).foregroundStyle(.secondary)
         } else {
-            Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle.fill").foregroundStyle(Color.good)
         }
     }
 
@@ -539,7 +539,7 @@ struct ProjectDetail: View {
                     if pr.bot == true { tag(L("bot", "Bot")) }
                     Spacer(minLength: 8)
                     Image(systemName: pr.ci == "failed" ? "xmark.circle.fill" : pr.ci == "running" ? "clock" : pr.ci == "passed" ? "checkmark.circle.fill" : "minus.circle")
-                        .foregroundStyle(pr.ci == "failed" ? .red : pr.ci == "passed" ? .green : .secondary)
+                        .foregroundStyle(pr.ci == "failed" ? .red : pr.ci == "passed" ? Color.good : .secondary)
                         .help(Self.ciText(pr.ci)).accessibilityLabel(Self.ciText(pr.ci))
                 }
             }

@@ -130,7 +130,7 @@ struct ClaudeAISettings: View {
                     Button(L("Save", "Speichern")) { Task { await saveKey() } }
                         .disabled(!key.hasPrefix("sk-ant-") || busy)
                     Image(systemName: status?.key == true ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(status?.key == true ? .green : .secondary)
+                        .foregroundStyle(status?.key == true ? Color.good : .secondary)
                         .accessibilityLabel(status?.key == true ? L("Key saved", "Schlüssel gespeichert") : L("No key", "Kein Schlüssel"))
                 }
                 if status?.envHidesKeychain == true {

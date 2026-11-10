@@ -960,7 +960,8 @@ final class Store: ObservableObject {
         default: break
         }
         // Settings → Notifications: a sound of its own per result (FEA-063), opt-in.
-        if UserDefaults.standard.bool(forKey: Notify.soundsKey) {
+        let rang = UserDefaults.standard.bool(forKey: Notify.soundsKey)
+        if rang {
             switch s {
             case .done: NSSound(named: "Glass")?.play()
             case .failed: NSSound(named: byPerson ? "Pop" : "Basso")?.play()
@@ -969,12 +970,12 @@ final class Store: ObservableObject {
         }
         switch s {
         case .done:
-            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true, project: items[p]![i].name, key: Self.key(items[p]![i])) }
-            else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true, project: items[p]![i].name) }
-            else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true, project: items[p]![i].name) }
+            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true, project: items[p]![i].name, key: Self.key(items[p]![i]), silent: rang) }
+            else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true, project: items[p]![i].name, silent: rang) }
+            else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true, project: items[p]![i].name, silent: rang) }
         case .failed(let m):
-            if byPerson { say(L("\(name) cancelled", "\(name) abgebrochen"), p.rawValue, ok: true, project: items[p]![i].name) }
-            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false, project: items[p]![i].name, key: Self.key(items[p]![i])) }
+            if byPerson { say(L("\(name) cancelled", "\(name) abgebrochen"), p.rawValue, ok: true, project: items[p]![i].name, silent: rang) }
+            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false, project: items[p]![i].name, key: Self.key(items[p]![i]), silent: rang) }
         case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true, project: items[p]![i].name)
         default: break
         }
@@ -1022,10 +1023,10 @@ final class Store: ObservableObject {
     @Published var messages: [Message] = []
     /// `rollBack`: production is live and broken, so the notification offers "Roll back …" (a failed
     /// build never replaced production: there it offers only the log).
-    private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil, key: String? = nil, rollBack: Bool = false) {
+    private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil, key: String? = nil, rollBack: Bool = false, silent: Bool = false) {
         // The project ran again: a second reminder of its last failure is no longer true.
         if let key { Notify.dropEscalations(key) }
-        Notify.post(title, body, project: project, key: key, failed: !ok, rollBack: rollBack)
+        Notify.post(title, body, project: project, key: key, failed: !ok, rollBack: rollBack, silent: silent)
         show(Toast(text: title, ok: ok))
         if UserDefaults.standard.bool(forKey: Speech.resultsKey) { Speech.say(title) }
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok))
@@ -1570,8 +1571,8 @@ final class Store: ObservableObject {
         return paths.isEmpty ? [link] : paths.map { base + $0 }
     }
 
-    /// A text the page must contain after going live (FEA-091), per project; checked on the first
-    /// address. Missing text warns, it never rolls back: a changed wording is not an outage.
+    /// A text the page must contain after going live (FEA-091), per project; checked on the front
+    /// page once every path answered. Missing text warns, it never rolls back: a changed wording is not an outage.
     private lazy var siteTexts: [String: String] = (UserDefaults.standard.dictionary(forKey: "siteTexts") as? [String: String]) ?? [:]
     func siteText(_ i: Item) -> String { siteTexts[Self.key(i)] ?? "" }
     func setSiteText(_ i: Item, _ text: String) {
@@ -1641,7 +1642,7 @@ final class Store: ObservableObject {
         return (resp as? HTTPURLResponse)?.statusCode
     }
 
-    /// After going live: every address in turn; the first is timed and watched, and holds the text.
+    /// After going live: every address in turn; the first is timed and watched.
     private func checkSite(_ item: Item, _ links: [String], mayRollBack: Bool) async {
         var first: URL?
         for link in links {
@@ -1651,10 +1652,12 @@ final class Store: ObservableObject {
         }
         guard let url = first else { return }
         watch(item, url, mayRollBack: mayRollBack)
+        // The text is a person's words on the front page, not in /health's JSON.
         let want = siteText(item)
-        guard !want.isEmpty, let body = await Self.pageText(url), !Self.pageHas(body, want) else { return }
+        guard !want.isEmpty, let page = item.link.flatMap(URL.init(string:)),
+              let body = await Self.pageText(page), !Self.pageHas(body, want) else { return }
         say(L("\(item.name) is live, but the page lacks its text", "\(item.name) ist live, aber der Seite fehlt ihr Text"),
-            L("Not found: ", "Nicht gefunden: ") + "\u{201C}\(want)\u{201D} – " + url.absoluteString, ok: false,
+            L("Not found: ", "Nicht gefunden: ") + "\u{201C}\(want)\u{201D} – " + page.absoluteString, ok: false,
             project: item.name, key: Self.key(item), rollBack: true)
     }
 

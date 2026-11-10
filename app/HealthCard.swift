@@ -99,7 +99,7 @@ struct HealthCard: View {
             ForEach(checks) { c in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: c.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(c.ok ? Color.green : Color.orange)
+                        .foregroundStyle(c.ok ? Color.good : Color.orange)
                         .accessibilityLabel(c.ok ? L("fine", "in Ordnung") : L("problem", "Problem"))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(c.text)

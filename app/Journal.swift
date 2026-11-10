@@ -234,7 +234,7 @@ extension JournalEntry {
         }
         var color: Color {
             switch self {
-            case .live: return .green
+            case .live: return Color.good
             case .preview, .rollback: return .blue
             case .forced: return .orange
             case .failed: return .red

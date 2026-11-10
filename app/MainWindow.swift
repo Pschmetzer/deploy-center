@@ -427,8 +427,8 @@ struct ContentView: View {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { pathItem = nil }
             Button(L("Save", "Speichern")) { if let i = pathItem { store.setHealthPath(i, pathText); store.setSiteText(i, siteText) }; pathItem = nil }
         } message: {
-            Text(L("These paths (comma-separated, up to five) are asked once \(shown(pathItem?.name)) is live, instead of the front page. Empty = front page. A missing text only warns.",
-                   "Diese Pfade (mit Komma getrennt, bis zu fünf) werden abgefragt, sobald \(shown(pathItem?.name)) live ist, statt der Startseite. Leer = Startseite. Fehlt der Text, gibt es nur eine Warnung."))
+            Text(L("These paths (comma-separated, up to five) are asked once \(shown(pathItem?.name)) is live, instead of the front page. Empty = front page. The text is looked for on the front page; missing, it only warns.",
+                   "Diese Pfade (mit Komma getrennt, bis zu fünf) werden abgefragt, sobald \(shown(pathItem?.name)) live ist, statt der Startseite. Leer = Startseite. Der Text wird auf der Startseite gesucht; fehlt er, gibt es nur eine Warnung."))
         }
         .alert(L("Monthly budget", "Monatsbudget"), isPresented: Binding(get: { budgetItem != nil }, set: { if !$0 { budgetItem = nil } })) {
             TextField("USD", text: $budgetText)
@@ -1108,7 +1108,7 @@ struct ContentView: View {
                 && (Demo.on ? Demo.mask($0.name) : $0.name).localizedCaseInsensitiveContains(search) }.count
             VStack(spacing: 8) {
                 Image(systemName: !search.isEmpty ? "magnifyingglass" : elsewhere.isEmpty ? "checkmark.seal.fill" : "checkmark.circle").font(.system(size: 34))
-                    .foregroundStyle(search.isEmpty && elsewhere.isEmpty ? .green : .secondary)
+                    .foregroundStyle(search.isEmpty && elsewhere.isEmpty ? Color.good : .secondary)
                 Text(!search.isEmpty ? L("Nothing matches “\(search)”", "Nichts passt zu „\(search)“")
                      : elsewhere.isEmpty ? L("Everything is live", "Alles ist live")
                      : L("Nothing waits on \(currentLabel)", "Bei \(currentLabel) wartet nichts"))
@@ -1485,7 +1485,7 @@ struct CostsSheet: View {
             if let s = costs.saving(today: Self.today()) {
                 Text(L("per day: ", "pro Tag: ") + s.before.formatted(.currency(code: "USD")) + L(" before, ", " vorher, ")
                      + s.after.formatted(.currency(code: "USD")) + L(" since", " seitdem"))
-                    .font(.caption.weight(.medium)).foregroundStyle(s.after < s.before ? .green : .orange)
+                    .font(.caption.weight(.medium)).foregroundStyle(s.after < s.before ? Color.good : .orange)
                 if s.after < s.before {
                     Button(L("Share the saving …", "Ersparnis teilen …")) { sharing = true }
                         .buttonStyle(.link).font(.caption)

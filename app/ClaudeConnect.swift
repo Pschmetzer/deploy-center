@@ -509,7 +509,7 @@ struct ClaudeSettings: View {
     private func status(_ s: ClaudeLink.Status) -> some View {
         let (text, color): (String, Color) = {
             switch s {
-            case .connected: return (L("connected", "verbunden"), .green)
+            case .connected: return (L("connected", "verbunden"), Color.good)
             case .notConnected: return (L("not connected", "nicht verbunden"), .secondary)
             case .notFound: return (L("not found", "nicht gefunden"), .secondary)
             case .problem: return (L("problem", "Problem"), .orange)
@@ -597,7 +597,7 @@ struct ClaudeSettings: View {
                     Text(ready ? (a?.scheduled == true ? L("on", "an") : L("set up, not scheduled", "eingerichtet, nicht geplant"))
                          : L("not set up", "nicht eingerichtet"))
                 }
-                .font(.caption).foregroundStyle(ready ? .green : .secondary)
+                .font(.caption).foregroundStyle(ready ? Color.good : .secondary)
                 Button(ready ? L("Show", "Zeigen") : L("Set up …", "Einrichten …"), action: showAutofix)
             }
         } label: {

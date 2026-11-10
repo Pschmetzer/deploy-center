@@ -314,6 +314,8 @@ final class SavingsModel: ObservableObject {
         guard !demoMode, let usd = l.usd, usd > 0, let m = Self.milestone(saved: usd) else { return }
         let first = defaults.object(forKey: key) == nil
         guard first || m > defaults.double(forKey: key) else { return }
+        // A mark is spent only when it can be seen; with the window in front it waits for later.
+        guard first || Notify.wouldShow else { return }
         defaults.set(m, forKey: key)
         guard !first else { return }
         let since = SavingsFormat.day(l.since)
@@ -445,7 +447,7 @@ struct SavingsEntry: View {
 
     private func bar(icon: String, text: String, button: String, neutral: Bool = false, close: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: icon).foregroundStyle(neutral ? Color.secondary : Color.green)
+            Image(systemName: icon).foregroundStyle(neutral ? Color.secondary : Color.good)
             Text(text).font(.callout)
             Spacer()
             Button(button, action: action).buttonStyle(.link)
@@ -455,7 +457,7 @@ struct SavingsEntry: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 6)
-        .background((neutral ? Color.secondary : Color.green).opacity(contrast == .increased ? 0.2 : 0.08))
+        .background((neutral ? Color.secondary : Color.good).opacity(contrast == .increased ? 0.2 : 0.08))
     }
 }
 
@@ -636,11 +638,11 @@ struct SimulatorView: View {
             HStack(alignment: .firstTextBaseline, spacing: 28) {
                 headline(L("Auto-deploy would cost", "Auto-Deploy würde kosten"), s.autoMonth, color: .red)
                 Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                headline(L("Deploying once a day", "Einmal am Tag deployen"), s.dailyMonth, color: .green)
+                headline(L("Deploying once a day", "Einmal am Tag deployen"), s.dailyMonth, color: Color.good)
             }
             if let d = s.savingMonth.usd, d > 0 {
                 Text(L("\(SavingsFormat.usdShort(d)) a month less", "\(SavingsFormat.usdShort(d)) im Monat weniger"))
-                    .font(.title3.weight(.semibold)).foregroundStyle(.green)
+                    .font(.title3.weight(.semibold)).foregroundStyle(Color.good)
             }
             whatIf(s)
             if !s.usdComplete {
@@ -662,7 +664,7 @@ struct SimulatorView: View {
                         HStack(spacing: 4) {
                             Text(SavingsFormat.name(r.name)).lineLimit(1)
                             Text(providerLabel(r.platform)).font(.caption2).foregroundStyle(.secondary)
-                            if !r.auto { Text(L("off", "aus")).font(.caption2).foregroundStyle(.green) }
+                            if !r.auto { Text(L("off", "aus")).font(.caption2).foregroundStyle(Color.good) }
                         }
                         if let p = r.problem { Text(SavingsFormat.problem(p)).font(.caption2).foregroundStyle(Color.warningText) }
                         else if let b = SavingsFormat.basis(r.basis) { Text(b).font(.caption2).foregroundStyle(.secondary) }
@@ -787,7 +789,7 @@ struct LedgerView: View {
                 Text(bigNumber(l)).font(.title2.weight(.semibold))
             } else {
                 Text(bigNumber(l))
-                    .font(.system(size: 40, weight: .bold).monospacedDigit()).foregroundStyle(.green)
+                    .font(.system(size: 40, weight: .bold).monospacedDigit()).foregroundStyle(Color.good)
             }
             Text(L("since \(SavingsFormat.day(l.since))", "seit \(SavingsFormat.day(l.since))")).font(.title3).foregroundStyle(.secondary)
             Text(totalsLine(l)).font(.callout).foregroundStyle(.secondary)
