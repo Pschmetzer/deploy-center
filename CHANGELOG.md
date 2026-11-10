@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `deploys autofix`: a failed build (Vercel `ERROR`, Render `build_failed`) is handed to a Claude Code routine that opens a fix PR; after the merge, the next run deploys that merge commit once. Caps, no duplicates, never merges. See `docs/AUTOFIX.md` and `scripts/autofix.plist.example`.
+- `deploys logs <project> --id <deploy>` reads the log of one deploy; `vercel json` and `render json` carry `latestId` and `latestSha` of the newest attempt.
+
 ## 0.7.0
 
 - Build log: a failed last deploy ("Last deploy … build_failed") has its own log button, not only a deploy started from the app.

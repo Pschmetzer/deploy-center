@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Example: every 10 minutes hand a failed build to the autofix routine, and deploy a merged fix.
+       cp scripts/autofix.plist.example ~/Library/LaunchAgents/app.deploycenter.autofix.plist
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.deploycenter.autofix.plist
+     Run it once now: launchctl kickstart gui/$(id -u)/app.deploycenter.autofix
+     Remove it:       launchctl bootout gui/$(id -u)/app.deploycenter.autofix
+     Set it up first: docs/AUTOFIX.md (routine, token, `deploys autofix --dry-run`).
+     launchd starts jobs with a bare PATH, so it is set here: deploys needs jq, gh, perl and the vercel CLI.
+     The log goes to ~/Library/Logs/DeployCenter-autofix.log; autofix shows its own notifications. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>app.deploycenter.autofix</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>ProgramArguments</key><array>
+    <string>/bin/sh</string><string>-c</string>
+    <string>log="$HOME/Library/Logs/DeployCenter-autofix.log"; d="$(command -v deploys || ls "$HOME/bin/deploys" "$HOME/Applications/Deploy Center.app/Contents/Resources/deploys" "/Applications/Deploy Center.app/Contents/Resources/deploys" 2&gt;/dev/null | head -n1)"; { date; /bin/bash "$d" autofix; } &gt;&gt;"$log" 2&gt;&amp;1</string>
+  </array>
+  <key>StartInterval</key><integer>600</integer>
+</dict></plist>
