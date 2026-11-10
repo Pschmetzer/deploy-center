@@ -154,7 +154,8 @@ cloudflare_meta() {
 # Ready when there is a token. Says nothing, decides by its exit status.
 cloudflare_ready() { [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || ( cloudflare_key ) >/dev/null 2>&1; }
 
-cloudflare_has() { ( cf_call GET "$(cf_proj "$1")" ) >/dev/null 2>&1; }
+# The project name is its id here: every Pages API path takes the name.
+cloudflare_has() { ( cf_call GET "$(cf_proj "$1")" ) 2>/dev/null | jq -er '.name // empty'; }
 
 cf_projects() {
   local page=1 all="[]" out pages
@@ -177,7 +178,7 @@ cloudflare_json() {
     [.[] | (.source.config // null) as $c | (.canonical_deployment // {}) as $live | (.latest_deployment // null) as $new
       | ((.domains // []) | map(select(endswith(".pages.dev") | not)) | .[0]) as $custom
       | ($custom // .subdomain // null) as $dom
-      | {name, id, auto:cf_auto,
+      | {name, id:.name, auto:cf_auto,
          # Git-connected, and a POST is known to build: push-deploys still on, the self-test
          # passed, or the opt-in toggle fallback is allowed.
          deployable:($c != null and (($c.production_deployments_enabled != false) or $v == "verified" or $tg == "1")),
@@ -293,17 +294,25 @@ cloudflare_deploy_json() {
   echo "$out" | jq --argjson tg "$toggled" --arg b "$branch" "$CF_PHASE"' cf_dep | {id, url, state:.phase, phase, branch:$b, toggled:$tg}'
 }
 
-cloudflare_latest() {
+cloudflare_latest_json() {
   cf_call GET "$(cf_proj "$1")/deployments?per_page=1" | jq -e "$CF_PHASE"' .[0] // empty | cf_dep' \
     || die "Cloudflare: $1 has no deployments"
 }
-# cloudflare_status <project> [<id>]: one deployment (the newest without an id).
-cloudflare_status() {
-  [ -n "${2:-}" ] || { cloudflare_latest "$1"; return; }
+# cloudflare_status_json <project> [<id>]: one deployment (the newest without an id).
+cloudflare_status_json() {
+  [ -n "${2:-}" ] || { cloudflare_latest_json "$1"; return; }
   cf_call GET "$(cf_proj "$1")/deployments/$2" | jq "$CF_PHASE"' cf_dep'
 }
 
-cloudflare_cancel() { die "Cloudflare Pages has no documented way to cancel a deployment. Stop it in the dashboard: $(cloudflare_url "$1" --dashboard)"; }
+# The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
+# The JSON stays in cloudflare_status_json/_latest_json, and `deploys cloudflare status|latest` prints it.
+CLOUDFLARE_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
+cloudflare_status() { local j; j="$(cloudflare_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
+cloudflare_latest() { local j; j="$(cf_call GET "$(cf_proj "$1")/deployments?per_page=1")" || return 1; j="$(echo "$j" | jq -c "$CF_PHASE"' .[0] // null | if . then cf_dep else null end')" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
+cloudflare_cli_status() { cloudflare_status_json "$@"; }
+cloudflare_cli_latest() { cloudflare_latest_json "$@"; }
+
+cloudflare_cancel() { die "Cloudflare Pages cannot cancel a deployment (there is no documented way). Stop it in the dashboard: $(cloudflare_url "$1" --dashboard)"; }
 
 # cloudflare_rollback <project> [<id>]: production back to <id>, or to the newest good one before live.
 cloudflare_rollback() {
@@ -320,7 +329,7 @@ cloudflare_rollback() {
 # cloudflare_logs <project> [lines] [<id>]
 cloudflare_logs() {
   local p="$1" n="${2:-60}" id="${3:-}"
-  [ -n "$id" ] || id="$(cloudflare_latest "$p" | jq -r '.id')" || exit 1
+  [ -n "$id" ] || id="$(cloudflare_latest_json "$p" | jq -r '.id')" || exit 1
   cf_call GET "$(cf_proj "$p")/deployments/$id/history/logs" | jq -r '.data[]? | "\(.ts // "")  \(.line // "")"' | tail -n "$n"
 }
 
@@ -404,7 +413,7 @@ cloudflare_selftest() {
         return 1 ;;
     esac
     sleep 5
-    st="$(cloudflare_status "$p" "$id" | jq -c .)" || exit 1
+    st="$(cloudflare_status_json "$p" "$id" | jq -c .)" || exit 1
   done
   echo "Self-test inconclusive: deployment $id did not reach the build stage in time (stage $(echo "$st" | jq -r '.stage')). Run it again later."
   return 1
@@ -421,8 +430,8 @@ cloudflare_cmd() {
     off|autodeploy-off) cloudflare_off "${1:?project}" ;;
     on|autodeploy-on) cloudflare_on "${1:?project}" ;;
     deploy-json|deploy) cloudflare_deploy_json "${1:?project}" "${@:2}" ;;
-    status) cloudflare_status "${1:?project}" "${2:-}" ;;
-    latest) cloudflare_latest "${1:?project}" ;;
+    status) cloudflare_status_json "${1:?project}" "${2:-}" ;;
+    latest) cloudflare_latest_json "${1:?project}" ;;
     cancel) cloudflare_cancel "${1:?project}" ;;
     rollback) cloudflare_rollback "${1:?project}" "${2:-}" ;;
     logs) cloudflare_logs "${1:?project}" "${2:-60}" "${3:-}" ;;

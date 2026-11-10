@@ -1,0 +1,4 @@
+{"branches":[
+ {"branchName":"main","stage":"PRODUCTION","enableAutoBuild":true,"enablePullRequestPreview":false,"activeJobId":"12"},
+ {"branchName":"dev","stage":"DEVELOPMENT","enableAutoBuild":true,"enablePullRequestPreview":false}
+]}

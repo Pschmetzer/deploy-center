@@ -1,0 +1,3 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+export DIGITALOCEAN_TOKEN=dop_fixture
+CONTRACT_ID=app-shop CONTRACT_NAME=shop CONTRACT_DEPLOY=d-shop-3

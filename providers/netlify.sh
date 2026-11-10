@@ -166,7 +166,7 @@ netlify_ready() {
   command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && netlify_key >/dev/null 2>&1
 }
 
-netlify_has() { netlify_id_of "$1" >/dev/null 2>&1; }
+netlify_has() { netlify_id_of "$1" 2>/dev/null; }
 
 netlify_json() {
   local sites hooks out="[]" s id d repo ref base rule
@@ -260,11 +260,18 @@ EOF
   esac
 }
 
-# netlify_deploy_json <site> [preview] [sha] — post to the hook, then find the deploy it started.
+# netlify_deploy_json <site> [--preview] [--sha <commit>] — post to the hook, then find the deploy it started.
 netlify_deploy_json() {
-  local site="$1" preview="${2:-}" sha="${3:-}" id hk before list new lock="" i polls
-  [ -z "$preview" ] || netlify_die "Netlify: preview deploys are not supported from here (the build hook deploys the production branch)"
-  [ -z "$sha" ] || netlify_die "Netlify: a build hook always builds the newest commit of the branch; --sha is not supported"
+  local site="$1" id hk before list new lock="" i polls
+  shift || true
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --preview) netlify_die "Netlify cannot deploy a preview from here (the build hook deploys the production branch)" ;;
+      --sha) netlify_die "Netlify cannot deploy a given commit: a build hook always builds the newest commit of the branch" ;;
+      "") ;;
+      *) netlify_die "Unknown option $1. Usage: deploy-json <site>" ;;
+    esac; shift
+  done
   id="$(netlify_id_of "$site")" || netlify_die "Netlify site $site not found"
   hk="$(jq -c --arg id "$id" '.[$id] // empty' "$(netlify_hooks_file)")"
   [ -n "$hk" ] && [ "$(echo "$hk" | jq -r '.url // empty')" != "" ] \
@@ -290,20 +297,29 @@ netlify_deploy_json() {
   jq -n '{id:null, url:null, state:"enqueued", phase:"queued"}'
 }
 
-# netlify_status [<site>] <deploy-id>
-netlify_status() {
+# The deploy as JSON (for people and for logs): {id, state, phase, url, dashboardUrl, sha, msg, ...}.
+# netlify_status_json [<site>] <deploy-id>
+netlify_status_json() {
   local d="${2:-$1}" out
   out="$(netlify_call GET "/deploys/$d")" || netlify_die "Netlify: could not read deploy $d"
   echo "$out" | jq "$NETLIFY_JQ"'deploy_out'
 }
 
-# The newest production deploy that was not skipped by the ignore rule.
-netlify_latest() {
+# The newest production deploy that was not skipped by the ignore rule, as JSON (null: none).
+netlify_latest_json() {
   local id out
   id="$(netlify_id_of "$1")" || netlify_die "Netlify site $1 not found"
   out="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=20")" || netlify_die "Netlify: could not read the deploys of $1"
   echo "$out" | jq "$NETLIFY_JQ"'map(select(skipped | not)) | .[0] // null | if . then deploy_out else null end'
 }
+
+# The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
+NETLIFY_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // "?")" end'
+netlify_status() { netlify_status_json "$@" | jq -r "$NETLIFY_TSV"; }
+netlify_latest() { netlify_latest_json "$@" | jq -r "$NETLIFY_TSV"; }
+# `deploys netlify status|latest` keeps printing the JSON.
+netlify_cli_status() { netlify_status_json "$@"; }
+netlify_cli_latest() { netlify_latest_json "$@"; }
 
 # netlify_cancel [<site>] <deploy-id>
 netlify_cancel() {
@@ -331,15 +347,16 @@ netlify_rollback() {
 }
 
 # Netlify's REST API has no build log (the dashboard streams it), so caps.logs is false. This
-# prints what the API does say about the deploy, and where the full log is.
+# refuses, and says what the API does say about the deploy, and where the full log is.
 netlify_logs() {
-  local site="$1" d="" out
+  local site="$1" d="" out where
   shift
   while [ $# -gt 0 ]; do case "$1" in --id) d="${2:-}"; shift 2 ;; *) shift ;; esac; done
-  if [ -n "$d" ]; then out="$(netlify_status "$d")"; else out="$(netlify_latest "$site")"; fi
-  [ "$out" != null ] || netlify_die "Netlify: $site has no deploys yet"
-  echo "$out" | jq -r '"Deploy \(.id): \(.state)\(if .error then " — " + .error else "" end)",
-    "Netlify gives no build log through its API. The full log: \(.dashboardUrl // "the site dashboard")"'
+  if [ -n "$d" ]; then out="$(netlify_status_json "$d" 2>/dev/null)" || out=null
+  else out="$(netlify_latest_json "$site" 2>/dev/null)" || out=null; fi
+  [ -n "$out" ] || out=null
+  where="$(echo "$out" | jq -r 'if . == null then "the site dashboard" else "\(.dashboardUrl // "the site dashboard") (deploy \(.id): \(.state)\(if .error then " — " + .error else "" end))" end' 2>/dev/null)"
+  netlify_die "Netlify cannot show a build log through its API. The full log: ${where:-the site dashboard}"
 }
 
 # netlify_url <site> [--dashboard]

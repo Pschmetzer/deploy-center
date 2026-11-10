@@ -158,33 +158,36 @@ out="$(netlify_deploy_json shop 2>&1)"; rc=$?
 expect "deploy shop: exit 0" "$rc" 0
 expect "deploy shop: the new deploy" "$(echo "$out" | jq -c '[.id, .phase, .url]')" '["d-shop-new","queued","https://d-shop-new--shop.netlify.app"]'
 expect "deploy shop: one hook call" "$(calls 'curl POST https://api.netlify.com/build_hooks/hook-shop')" 1
-out="$(netlify_deploy_json shop "" abc123 2>&1)"; rc=$?
+out="$(netlify_deploy_json shop --sha abc123 2>&1)"; rc=$?
 expect "deploy --sha: refused" "$rc" 1
-has "deploy --sha: says why" "$out" "not supported"
-out="$(netlify_deploy_json shop preview 2>&1)"; rc=$?
+has "deploy --sha: says why" "$out" "Netlify cannot deploy a given commit"
+out="$(netlify_deploy_json shop --preview 2>&1)"; rc=$?
 expect "deploy --preview: refused" "$rc" 1
 
 # --- status, latest, cancel, rollback, logs, url, has ---
 reset
-expect "status" "$(netlify_status d-shop-3 | jq -c '[.id, .phase, .sha, .dashboardUrl]')" \
+expect "status" "$(netlify_status_json d-shop-3 | jq -c '[.id, .phase, .sha, .dashboardUrl]')" \
   '["d-shop-3","building","3333333","https://app.netlify.com/sites/shop/deploys/d-shop-3"]'
-expect "status: site and deploy" "$(netlify_status shop d-shop-3 | jq -r .id)" d-shop-3
-expect "latest: skips the skipped build" "$(netlify_latest shop | jq -r .id)" d-shop-3
+expect "status: site and deploy" "$(netlify_status_json shop d-shop-3 | jq -r .id)" d-shop-3
+expect "status: the contract line" "$(netlify_status shop d-shop-3 | cut -f1,2)" "d-shop-3	building"
+expect "latest: skips the skipped build" "$(netlify_latest_json shop | jq -r .id)" d-shop-3
+expect "latest: the contract line" "$(netlify_latest shop | cut -f1,2)" "d-shop-3	building"
 out="$(netlify_cancel shop d-shop-3)"
 expect "cancel: posted" "$(calls 'curl POST .*/deploys/d-shop-3/cancel')" 1
 has "cancel: said" "$out" "canceled"
 out="$(netlify_rollback shop)"; rc=$?
 expect "rollback: exit 0" "$rc" 0
 expect "rollback: restores the ready deploy before the live one" "$(calls 'curl POST .*/sites/site-shop/deploys/d-shop-1/restore')" 1
-out="$(netlify_logs shop 2>&1)"
+out="$(netlify_logs shop 2>&1)"; rc=$?
+expect "logs: refused (the API has no build log)" "$rc:$(echo "$out" | grep -c 'Netlify cannot')" "1:1"
 has "logs: points to the dashboard" "$out" "https://app.netlify.com/sites/shop/deploys/d-shop-3"
 out="$(netlify_logs blog --id d-shop-3 2>&1)"
-has "logs --id" "$out" "Deploy d-shop-3: building"
+has "logs --id" "$out" "deploy d-shop-3: building"
 expect "url" "$(netlify_url shop)" https://shop.example.com
 expect "url --dashboard" "$(netlify_url shop --dashboard)" https://app.netlify.com/sites/shop
-netlify_has blog && ok "has: blog" || fail "has: blog" "not found"
-netlify_has site-shop && ok "has: by id" || fail "has: by id" "not found"
-netlify_has nope && fail "has: nope" "found" || ok "has: unknown site"
+expect "has: blog gives its id" "$(netlify_has blog)" site-blog
+netlify_has site-shop >/dev/null && ok "has: by id" || fail "has: by id" "not found"
+netlify_has nope >/dev/null && fail "has: nope" "found" || ok "has: unknown site"
 
 # --- 401: a wrong token is an error with a reason, never an empty list ---
 reset

@@ -1,0 +1,2 @@
+{"site-shop":{"hookId":"hook-shop","url":"https://api.netlify.com/build_hooks/hook-shop","repo":"me/shop","ref":"main","base":"","rule":true},
+ "site-blog":{"hookId":"hook-blog","url":"https://api.netlify.com/build_hooks/hook-blog","repo":"me/blog","ref":"trunk","base":"site","rule":true}}
