@@ -56,13 +56,14 @@ behind the app are in `docs/WIDGETS-IOS.md`.
      6.3" iPhone and the 13" iPad (`ios/AppStore/screenshots/`; the German page uses the English ones).
      Category Developer Tools, secondary Productivity. Age rating 4+ (all "None"). Price free, in all
      175 countries. "Sign-in required" is off.
-   - App Privacy: privacy policy URL set, answer "Data Not Collected" saved but **not published**.
+   - App Privacy: privacy policy URL set, "Data Not Collected" published.
+   - Content Rights: "Yes, it accesses third-party content, and I have the necessary rights" (the
+     person's own Vercel, Render and GitHub data, read with their own tokens).
+   - Review notes and contact name and email are entered on the version page.
 
    Still open, for the owner:
-   - App Privacy → **Publish** (it is your statement that the answers are correct).
-   - App Information → **Content Rights** (a legal statement about third-party content).
-   - Version page → App Review: your contact (name, phone, email), then paste the review notes from
-     `ios/AppStore/en.md`. The notes cannot be saved without the contact.
+   - Version page → App Review: the contact phone number, then **Save**. The page saves nothing
+     without it.
    - TestFlight: the internal group "Owner" has build 1.0 (1), and the account holder is invited.
      Accept the invite in the TestFlight app, add a real token, then submit.
 
