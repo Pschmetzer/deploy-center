@@ -1720,16 +1720,21 @@ struct AgentChips: View {
 struct AllowanceBanner: View {
     @ObservedObject var store: Store
     let allItems: [Item]
+
+    /// Its own function: as one expression in the body it was too long for the type checker on CI.
+    static func text(_ on: [AutoDeployAllowance], until last: Date) -> String {
+        let names: String = on.prefix(4).map { Demo.mask($0.project) }.joined(separator: ", ")
+        let more: String = on.count > 4 ? L(" and \(on.count - 4) more", " und \(on.count - 4) weitere") : ""
+        let style: Date.FormatStyle.DateStyle = Calendar.current.isDateInToday(last) ? .omitted : .abbreviated
+        let when: String = last.formatted(date: style, time: .shortened)
+        return L("Auto-deploy is allowed for a while: ", "Auto-Deploy ist vorübergehend erlaubt: ") + names + more + " · " + L("until ", "bis ") + when
+    }
     var body: some View {
         let on = store.activeAllowances
         if let last = on.map(\.expiresAt).max() {
             HStack(spacing: 10) {
                 Image(systemName: "bolt.badge.clock.fill").foregroundStyle(.orange)
-                Text(L("Auto-deploy is allowed for a while: ", "Auto-Deploy ist vorübergehend erlaubt: ")
-                     + on.prefix(4).map { Demo.mask($0.project) }.joined(separator: ", ")
-                     + (on.count > 4 ? L(" and \(on.count - 4) more", " und \(on.count - 4) weitere") : "")
-                     + " · " + L("until ", "bis ") + last.formatted(date: Calendar.current.isDateInToday(last) ? .omitted : .abbreviated, time: .shortened))
-                    .font(.caption)
+                Text(Self.text(on, until: last)).font(.caption)
                 Spacer()
             }
             .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
