@@ -35,6 +35,7 @@ struct SettingsView: View {
         Form {
             generalSection
             deploySection
+            GuardSettings(store: store)
             costsSection
             notificationsSection
             updatesSection
