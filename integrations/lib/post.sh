@@ -21,9 +21,17 @@ webhook_format() {
   esac
 }
 
+# Discord takes 2000 characters, Telegram 4096: a longer text is cut, with a note, instead of
+# the whole message being refused (HTTP 400).
+cut_text() { jq -rn --arg t "$1" --argjson n "$2" '$t | if length > $n then .[0:$n] + "\n… (cut, see the full list in the issue or with deploys changed)" else . end'; }
+
 webhook_body() {
   local format="$1" text="$2" link="${3:-}" label="${4:-Open}"
   WEBHOOK_LINK="$link"; WEBHOOK_LABEL="$label"
+  case "$format" in
+    discord)  text="$(cut_text "$text" 1800)" ;;
+    telegram) text="$(cut_text "$text" 3900)" ;;
+  esac
   case "$format" in
     discord)  WEBHOOK_TYPE="application/json"
               WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" '{content:($t + (if $u != "" then "\n\($l): <\($u)>" else "" end))}')" ;;

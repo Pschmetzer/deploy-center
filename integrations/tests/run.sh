@@ -144,6 +144,9 @@ contains "notify: Slack-style by default" "$out" 'format: slack'
 expect "notify: Discord by host" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -r 'keys[0]')" content
 expect "notify: Telegram by host" "$(DEPLOYS_NOTIFY_URL='https://api.telegram.org/botT/sendMessage?chat_id=1' notify/notify.sh --dry-run | head -1)" "format: telegram"
 contains "notify: ntfy is plain text" "$(DEPLOYS_NOTIFY_URL=https://ntfy.sh/topic notify/notify.sh --dry-run)" $'format: ntfy\nDeploy Center'
+. lib/post.sh
+webhook_body discord "$(printf 'x%.0s' $(seq 1 2500))"
+expect "post: a long Discord message is cut below 2000" "$(jq -r '.content | length < 2000 and test("cut")' <<<"$WEBHOOK_BODY")" true
 expect "notify: plain http is refused" "$(RENDER_API_KEY=x DEPLOYS_NOTIFY_URL=http://hooks.example.test/x notify/notify.sh 2>&1; echo "rc=$?")" $'DEPLOYS_NOTIFY_URL must start with https://\nrc=1'
 DEPLOYS_NOTIFY_URL='https://hooks.example.test/T/secret' notify/notify.sh >/dev/null
 expect "notify: the URL goes to curl on stdin" "$(cat "$tmp/curl.stdin")" 'url = "https://hooks.example.test/T/secret"'
@@ -418,7 +421,7 @@ if command -v ruby >/dev/null; then
   wstep() { ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"]["deploy"]["steps"].find { |s| s["id"] == ARGV[1] }[ARGV[2]]' digest/examples/approve-deploy.yml "$1" "${2:-run}"; }
   wstep approved > "$tmp/approved.sh"; wstep keep > "$tmp/keep.sh"; wstep report > "$tmp/report.sh"
   approve() { : > "$tmp/out"; env GITHUB_OUTPUT="$tmp/out" EVENT="${EVENT:-workflow_dispatch}" ACTOR="${ACTOR:-dev-one}" SENDER_TYPE="${SENDER_TYPE:-User}" \
-      APPROVERS="${APPROVERS-dev-one, Dev-Two}" INPUT="${INPUT:-}" BODY="${BODY:-}" bash "$tmp/approved.sh" >/dev/null 2>&1; echo "$?:$(grep '^projects=' "$tmp/out")"; }
+      APPROVERS="${APPROVERS-dev-one, Dev-Two}" INPUT="${INPUT:-}" BODY="${BODY:-}" TITLE="${TITLE-Deploys waiting – $(date -u +%Y-%m-%d)}" bash "$tmp/approved.sh" >/dev/null 2>&1; echo "$?:$(grep '^projects=' "$tmp/out")"; }
   expect "approve: an approver's list" "$(INPUT='api, app-web' approve)" "0:projects=api,app-web"
   expect "approve: logins match without case" "$(ACTOR=dev-two INPUT=api approve)" "0:projects=api"
   expect "approve: all means everything waiting" "$(INPUT=all approve)" "0:projects=*"
@@ -429,6 +432,7 @@ if command -v ruby >/dev/null; then
   expect "approve: odd names are refused" "$(INPUT='api,$(x)' approve)" "1:"
   expect "approve: nothing named, nothing deployed" "$(INPUT=' , ' approve)" "1:"
   expect "approve: the issue route reads the list from the body" "$(EVENT=issues BODY=$'# Deploys\r\n<!-- deploys-approve: app-web,api -->\r\n' approve)" "0:projects=api,app-web"
+  expect "approve: an older day's issue is refused" "$(EVENT=issues TITLE='Deploys waiting – 2000-01-01' BODY=$'<!-- deploys-approve: app-web -->' approve)" "1:"
   expect "approve: an issue without the list deploys nothing" "$(EVENT=issues BODY='hello' approve)" "1:"
   expect "approve: a refusal says why" "$(ACTOR=dev-three INPUT=api approve >/dev/null; sed -n 's/^reason=//p' "$tmp/out")" "dev-three is not in DEPLOYS_APPROVERS."
   # keep: every known project not approved goes into ignored.json (the config the action set up)
