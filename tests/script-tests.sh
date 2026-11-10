@@ -57,6 +57,21 @@ out="$(with_heads '[{"name":"app","repo":"me/app","ref":"main","deployable":true
 expect "with_heads counts commits and PRs, open PRs split" \
   "$out" '{"changed":true,"pendingCommits":3,"pendingPRs":3,"openPRs":4,"openDrafts":1,"openBots":2,"pendingPartial":false}'
 
+# --- commands for a person: usage lines, help, version, ignore, costs, completion ---
+cli() { env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" HOME="$tmp" NO_COLOR=1 /bin/bash ./deploys "$@" 2>&1; }
+expect "a missing name is a usage line" "$(cli logs; echo "rc=$?")" $'Error: Usage: deploys logs <project> [lines]\nrc=1'
+expect "--help lists history and exits 0" "$(cli --help | grep -c 'deploys history'; cli --help >/dev/null; echo $?)" $'1\n0'
+expect "--version is the VERSION file" "$(cli --version)" "$(cat VERSION)"
+expect "costs refuses a word" "$(cli costs abc | grep -c 'days a number')" "1"
+mkdir -p "$DEPLOYS_CONFIG"; printf 'api\nweb\n' > "$DEPLOYS_CONFIG/names"
+expect "ignore refuses a name never seen" "$(cli ignore wbe | grep -c 'was seen yet')" "1"
+cli ignore web >/dev/null
+expect "ignore --list shows it" "$(cli ignore --list)" "web"
+cli ignore web --undo >/dev/null
+expect "ignore --undo removes it" "$(cli ignore --list)" ""
+expect "zsh completion loads compinit when needed" "$(cli completion zsh | grep -c 'autoload -Uz compinit')" "1"
+expect "unknown deploy option is refused" "$(cli vercel deploy web --prod | grep -c 'Unknown option --prod')" "1"
+
 # --- the Render live commit comes from the last live deploy, not a failed newer one ---
 live="$(echo '[{"deploy":{"status":"build_failed","commit":{"id":"new"},"createdAt":"2026-01-02T00:00:00Z"}},
                {"deploy":{"status":"live","commit":{"id":"old"},"createdAt":"2026-01-01T00:00:00Z"}}]' \
