@@ -22,6 +22,13 @@ struct WindowActions {
     struct TabCommand { let title: String; let digit: Int; let run: () -> Void }
     var tabs: [TabCommand]
     var search: () -> Void
+    /// The Deploy menu: what otherwise hides under "More" in the footer. Nil = not possible now.
+    var history: (() -> Void)? = nil
+    var costs: (() -> Void)? = nil
+    var messages: (() -> Void)? = nil
+    var selectChanged: (() -> Void)? = nil
+    var clearSelection: (() -> Void)? = nil
+    var reload: (() -> Void)? = nil
 }
 struct WindowActionsKey: FocusedValueKey { typealias Value = WindowActions }
 extension FocusedValues {
@@ -41,6 +48,18 @@ struct WindowCommands: Commands {
             }
             Button(L("Search", "Suchen")) { actions?.search() }.keyboardShortcut("f").disabled(actions == nil)
             Divider()
+        }
+        CommandMenu(L("Deploy", "Deploy")) {
+            Button(L("Deploy history …", "Deploy-Verlauf …")) { actions?.history?() }
+                .keyboardShortcut("y").disabled(actions?.history == nil)
+            Button(L("Costs …", "Kosten …")) { actions?.costs?() }.disabled(actions?.costs == nil)
+            Button(L("Latest messages …", "Letzte Meldungen …")) { actions?.messages?() }.disabled(actions?.messages == nil)
+            Divider()
+            // ⌘A and ⌘R stay with the window (⌘A selects text in the search field); here without a key.
+            Button(L("Select all changed", "Alle mit Änderungen anhaken")) { actions?.selectChanged?() }.disabled(actions?.selectChanged == nil)
+            Button(L("Clear the selection", "Auswahl leeren")) { actions?.clearSelection?() }.disabled(actions?.clearSelection == nil)
+            Divider()
+            Button(L("Reload", "Neu laden")) { actions?.reload?() }.disabled(actions?.reload == nil)
         }
     }
 }
@@ -196,6 +215,20 @@ struct ContentView: View {
         // Pinned first, then what waits to go live (most commits first), then the rest by name.
         let pins = all.filter { store.isPinned($0) }
         let rest = all.filter { !store.isPinned($0) }
+        let byName: (Item, Item) -> Bool = { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        switch sortOrder {
+        case "name": return pins + rest.sorted(by: byName)
+        case "recent":
+            return pins + rest.sorted { a, b in
+                if a.lastAt != b.lastAt { return (a.lastAt ?? .distantPast) > (b.lastAt ?? .distantPast) }
+                return byName(a, b)
+            }
+        case "cost":
+            let cost = Dictionary((store.costs?.projects ?? []).map { ($0.name, $0.build) }, uniquingKeysWith: { a, _ in a })
+            let c: (Item) -> Double = { $0.platform == .vercel ? (cost[$0.name] ?? 0) : 0 }
+            return pins + rest.sorted { a, b in c(a) != c(b) ? c(a) > c(b) : byName(a, b) }
+        default: break
+        }
         let changed = rest.filter { $0.hasNewCommits && $0.deployable }
             .sorted {
                 let a = $0.pendingCommits ?? 0, b = $1.pendingCommits ?? 0
@@ -205,8 +238,30 @@ struct ContentView: View {
             }
         let others = rest.filter { !($0.hasNewCommits && $0.deployable) }
         // Projects of one repo stay together, so they can sit under one repo header.
-        return pins + RepoGroup.cluster(changed)
-            + RepoGroup.cluster(showsAll ? others.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } : others)
+        let usual = pins + RepoGroup.cluster(changed)
+            + RepoGroup.cluster(showsAll ? others.sorted(by: byName) : others)
+        guard sortOrder == "failed" else { return usual }
+        // Failed last deploys first, otherwise as usual.
+        let failed = usual.filter { Row.keyFigure($0) == .failed }
+        return failed + usual.filter { Row.keyFigure($0) != .failed }
+    }
+
+    /// How the list is sorted, remembered. "waiting" is the usual order.
+    @AppStorage("sortOrder") private var sortOrder = "waiting"
+
+    private var sortMenu: some View {
+        Picker(selection: $sortOrder) {
+            Text(L("Waiting first", "Wartende zuerst")).tag("waiting")
+            Text(L("Failed first", "Fehler zuerst")).tag("failed")
+            Text(L("Last deployed", "Zuletzt deployt")).tag("recent")
+            Text(L("Build costs (Vercel)", "Build-Kosten (Vercel)")).tag("cost")
+            Text(L("Name", "Name")).tag("name")
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+        }
+        .pickerStyle(.menu).fixedSize()
+        .help(L("Sort the list (pinned stay on top)", "Liste sortieren (Angeheftete bleiben oben)"))
+        .accessibilityLabel(L("Sort", "Sortieren"))
     }
 
     private var selectedAll: [Item] { scopes.flatMap { store.selected($0) } }
@@ -267,6 +322,12 @@ struct ContentView: View {
                     .overlay(Capsule().stroke(t.ok ? Color.green.opacity(0.5) : Color.red.opacity(0.5)))
                     .padding(.bottom, 72)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                    // Esc closes it, like any passing message.
+                    .background {
+                        Button("") { store.toast = nil; stickyError = nil }
+                            .keyboardShortcut(.cancelAction)
+                            .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+                    }
             }
         }
         .onChange(of: store.toast) { _, t in
@@ -280,7 +341,13 @@ struct ContentView: View {
         .navigationSubtitle(waitingSubtitle)
         // Not while a sheet is open: there ⌘F belongs to the build log's find bar.
         .focusedSceneValue(\.windowActions, logItem != nil || detailItem != nil || showJournal || showCosts ? nil
-                           : WindowActions(tabs: tabCommands, search: { searchFocused = true }))
+                           : WindowActions(tabs: tabCommands, search: { searchFocused = true },
+                                           history: { showJournal = true },
+                                           costs: store.costs == nil ? nil : { showCosts = true },
+                                           messages: store.messages.isEmpty ? nil : { showMessages = true },
+                                           selectChanged: waitsForFreshList ? nil : { selectAllCommand() },
+                                           clearSelection: selectedAll.isEmpty ? nil : { scopes.forEach { store.clearSelection($0) } },
+                                           reload: { reloadNow() }))
         .animation(.easeOut(duration: 0.2), value: store.toast)
     }
 
@@ -288,7 +355,19 @@ struct ContentView: View {
         chrome
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView() }
-        .sheet(isPresented: $showCosts) { if let c = store.costs { CostsSheet(costs: c) } }
+        .sheet(isPresented: $showCosts) {
+            if let c = store.costs { CostsSheet(costs: c) }
+            else {
+                // The costs went away while the sheet opened (a reload failed): say so, never an empty sheet.
+                VStack(spacing: 12) {
+                    Text(L("No cost data right now", "Gerade keine Kostendaten")).font(.headline)
+                    Text(L("Vercel's billing could not be read. Reload and try again.", "Vercels Abrechnung war nicht lesbar. Neu laden und nochmal versuchen."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button(L("Done", "Fertig")) { showCosts = false }.keyboardShortcut(.defaultAction)
+                }
+                .padding(24).frame(width: 360)
+            }
+        }
         .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item, deployCommit: store.observer ? nil : { sha in store.deployOne(item, preview: false, sha: sha) }) }
         .onChange(of: store.pendingDeployAll) { _, go in
             guard go else { return }
@@ -345,8 +424,10 @@ struct ContentView: View {
                     Button(L("Deploy", "Deployen")) { startDeploy() }
                 } message: {
                     // At most 12 lines, so the dialog does not grow past the screen.
+                    // Under "All" the same name can be on two platforms: say which.
                     Text(selectedAll.prefix(12).map { i in
-                            Demo.mask(i.name) + ((i.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText(i) : "") }.joined(separator: "\n")
+                            Demo.mask(i.name) + (showsAll ? " (\(i.platform.rawValue))" : "")
+                            + ((i.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText(i) : "") }.joined(separator: "\n")
                          + (selectedAll.count > 12 ? "\n" + L("and \(selectedAll.count - 12) more", "und \(selectedAll.count - 12) weitere") : "")
                          + "\n\n" + L("The newest commit on GitHub goes live.",
                                        "Der neueste Stand von GitHub geht live.")
@@ -414,6 +495,17 @@ struct ContentView: View {
         HStack(spacing: 12) {
             tabPicker
 
+            if demoMode {
+                // Stand-in names look real: the badge says they are not, and a click ends it.
+                Button { demoMode = false } label: {
+                    Text("Demo").font(.caption.weight(.bold)).padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.purple.opacity(0.2)))
+                }
+                .buttonStyle(.plain)
+                .help(L("Demo mode: names are stand-ins. Click to turn it off.", "Demo-Modus: Namen sind Platzhalter. Klick schaltet ihn aus."))
+                .accessibilityLabel(L("Demo mode on, turn off", "Demo-Modus an, ausschalten"))
+            }
+
             TextField(L("Search", "Suchen"), text: $search).textFieldStyle(.roundedBorder)
                 .frame(minWidth: 110)
                 .layoutPriority(1)
@@ -428,8 +520,10 @@ struct ContentView: View {
             .help(L("Only projects with a commit on GitHub that is not live yet",
                     "Nur Projekte mit einem Commit auf GitHub, der noch nicht live ist"))
 
+            sortMenu
+
             let busy = scopes.contains { store.loading.contains($0) }
-            Button { Task { for p in scopes { await store.load(p) }; await store.loadExtras() } } label: {
+            Button { reloadNow() } label: {
                 if busy { ProgressView().controlSize(.small) }
                 else { Image(systemName: "arrow.clockwise") }
             }
@@ -441,6 +535,16 @@ struct ContentView: View {
             .disabled(busy)
         }
         .padding(12)
+    }
+
+    /// The platforms at the same time, not one after the other; then the extras.
+    private func reloadNow() {
+        let chosen = scopes
+        guard !chosen.contains(where: { store.loading.contains($0) }) else { return }
+        Task {
+            await withTaskGroup(of: Void.self) { g in for p in chosen { g.addTask { await store.load(p) } } }
+            await store.loadExtras()
+        }
     }
 
     /// "Updated 14:05", per platform under "All", and whether it is a saved copy.
@@ -497,6 +601,15 @@ struct ContentView: View {
         return out
     }
 
+    /// 2 = an alarm, 1 = a warning, 0 = information.
+    private func noticeWeight(_ n: Notice) -> Int {
+        switch n {
+        case .trigger: return 2
+        case .loadFailed, .auto, .github, .provider, .allowance: return 1
+        case .setup, .claude: return 0
+        }
+    }
+
     private func noticeTitle(_ n: Notice) -> String {
         switch n {
         case .trigger: return L("other build triggers", "andere Build-Auslöser")
@@ -536,6 +649,16 @@ struct ContentView: View {
                     Button { withAnimation(.easeOut(duration: 0.15)) { noticesExpanded.toggle() } } label: {
                         HStack(spacing: 6) {
                             Image(systemName: noticesExpanded ? "chevron.up" : "chevron.down")
+                            // Folded away, an alarm still looks like one: the worst hidden notice sets the symbol.
+                            if !noticesExpanded {
+                                let worst = all.dropFirst().map(noticeWeight).max() ?? 0
+                                if worst > 0 {
+                                    Image(systemName: worst > 1 ? "exclamationmark.triangle.fill" : "exclamationmark.circle.fill")
+                                        .foregroundStyle(worst > 1 ? Color.red : Color.orange)
+                                }
+                                Text("\(all.count - 1)").font(.caption2.weight(.bold).monospacedDigit())
+                                    .padding(.horizontal, 5).background(Capsule().fill(Color.secondary.opacity(0.2)))
+                            }
                             Text(noticesExpanded ? L("Show fewer notices", "Weniger Hinweise zeigen")
                                  : L("\(all.count - 1) more: ", "\(all.count - 1) weitere: ") + all.dropFirst().map(noticeTitle).joined(separator: " · "))
                                 .lineLimit(1)
@@ -591,7 +714,7 @@ struct ContentView: View {
                     .buttonStyle(.borderless).help(L("Close until it changes", "Schließen, bis sich etwas ändert"))
                     .accessibilityLabel(L("Close", "Schließen"))
             }
-            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
+            .padding(.horizontal, 12).padding(.vertical, 6).background(ground(.orange, 0.08))
         }
     }
 
@@ -642,7 +765,7 @@ struct ContentView: View {
                 Spacer()
                 CopyButton(title: L("Copy gh auth login", "gh auth login kopieren")) { "gh auth login" }.controlSize(.small)
             }
-            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
+            .padding(.horizontal, 12).padding(.vertical, 6).background(ground(.orange, 0.08))
         } else if let b = store.githubBudget, b.remaining < 300 {
             HStack(spacing: 10) {
                 Image(systemName: "gauge.with.dots.needle.0percent").foregroundStyle(.orange)
@@ -652,7 +775,7 @@ struct ContentView: View {
                     .font(.caption)
                 Spacer()
             }
-            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
+            .padding(.horizontal, 12).padding(.vertical, 6).background(ground(.orange, 0.08))
         }
     }
 
@@ -746,15 +869,56 @@ struct ContentView: View {
         !showsAll && p == platform && (store.items[p] ?? []).isEmpty
     }
 
+    /// A script error in words a person can act on; nil when it is not a known kind.
+    static func friendlyError(_ raw: String, _ platform: String) -> String? {
+        let m = raw.lowercased()
+        if m.contains("invalid json") || m.contains("jq: error") || m.contains("parse error") {
+            return L("\(platform)'s answer could not be read. Try again in a moment.", "Die Antwort von \(platform) war nicht lesbar. Gleich nochmal versuchen.")
+        }
+        if m.contains("timed out") || m.contains("timeout") {
+            return L("\(platform) did not answer in time.", "\(platform) hat nicht rechtzeitig geantwortet.")
+        }
+        if m.contains("could not resolve host") || m.contains("network is unreachable") || m.contains("offline") || m.contains("connection refused") {
+            return L("No connection to \(platform). Is the Mac online?", "Keine Verbindung zu \(platform). Ist der Mac online?")
+        }
+        if m.contains("401") || m.contains("403") || m.contains("unauthorized") || m.contains("forbidden") || m.contains("not logged in") {
+            return L("\(platform) refused the login. Connect it again.", "\(platform) lehnt die Anmeldung ab. Bitte neu verbinden.")
+        }
+        if m.contains("429") || m.contains("rate limit") {
+            return L("\(platform) asks to slow down (rate limit). Try again later.", "\(platform) bremst (Rate-Limit). Später nochmal versuchen.")
+        }
+        return nil
+    }
+
     @ViewBuilder private func loadFailedBanner(_ p: Platform) -> some View {
         if let f = store.lastLoadError[p] {
-            HStack(spacing: 10) {
+            let raw = Demo.scrub(f.message, items: allItems)
+            HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L("\(p.rawValue) could not be loaded", "\(p.rawValue) konnte nicht geladen werden")
+                         + " (" + f.at.formatted(date: .omitted, time: .shortened) + ")"
                          + (store.loadedAt[p].map { L(" – showing the list from ", " – zu sehen ist der Stand von ") + $0.formatted(date: .omitted, time: .shortened) } ?? ""))
                         .font(.callout.weight(.medium))
-                    Text(Demo.scrub(f.message, items: allItems)).font(.caption).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
+                    if let nice = Self.friendlyError(f.message, p.rawValue) {
+                        Text(nice).font(.caption).foregroundStyle(.secondary)
+                    }
+                    // The script's own words, for a bug report: folded away, copyable, next to the log.
+                    DisclosureGroup(L("Details", "Details")) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(raw).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                            HStack {
+                                CopyButton(title: L("Copy the error", "Fehler kopieren")) { f.message }
+                                Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
+                                    if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
+                                    NSWorkspace.shared.open(Log.url)
+                                }
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                    .font(.caption)
                 }
                 Spacer()
                 if store.loading.contains(p) { ProgressView().controlSize(.small) }
@@ -846,13 +1010,24 @@ struct ContentView: View {
             ProgressView(L("Loading \(scopes.map(\.rawValue).joined(separator: ", ")) …", "Lade \(scopes.map(\.rawValue).joined(separator: ", ")) …")).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if visible.isEmpty && (onlyChanged || !search.isEmpty) {
             let inScope = scopes.flatMap { store.items[$0] ?? [] }
+            // Nothing waits here, but maybe on another tab: say where, instead of "everything is live".
+            let elsewhere = search.isEmpty ? providers.compactMap(\.platform).filter { !scopes.contains($0) && store.changedCount($0) > 0 } : []
             let hiddenHits = search.isEmpty ? 0 : inScope.filter { store.isHidden($0)
                 && (Demo.on ? Demo.mask($0.name) : $0.name).localizedCaseInsensitiveContains(search) }.count
             VStack(spacing: 8) {
-                Image(systemName: search.isEmpty ? "checkmark.seal.fill" : "magnifyingglass").font(.system(size: 34))
-                    .foregroundStyle(search.isEmpty ? .green : .secondary)
-                Text(search.isEmpty ? L("Everything is live", "Alles ist live") : L("Nothing matches “\(search)”", "Nichts passt zu „\(search)“"))
+                Image(systemName: !search.isEmpty ? "magnifyingglass" : elsewhere.isEmpty ? "checkmark.seal.fill" : "checkmark.circle").font(.system(size: 34))
+                    .foregroundStyle(search.isEmpty && elsewhere.isEmpty ? .green : .secondary)
+                Text(!search.isEmpty ? L("Nothing matches “\(search)”", "Nichts passt zu „\(search)“")
+                     : elsewhere.isEmpty ? L("Everything is live", "Alles ist live")
+                     : L("Nothing waits on \(currentLabel)", "Bei \(currentLabel) wartet nichts"))
                     .font(.headline)
+                ForEach(elsewhere, id: \.self) { p in
+                    let n = store.changedCount(p)
+                    Button(L("\(plural(n, "project waits", "projects wait")) on \(p.rawValue)", "Bei \(p.rawValue) \(n == 1 ? "wartet" : "warten") \(plural(n, "Projekt", "Projekte"))")) {
+                        select(.provider(p.cli))
+                    }
+                    .buttonStyle(.link)
+                }
                 if hiddenHits > 0 {
                     Text(L("\(hiddenHits) hidden \(hiddenHits == 1 ? "project matches" : "projects match") (Settings → Hidden projects)",
                            "\(hiddenHits) \(hiddenHits == 1 ? "ausgeblendetes Projekt passt" : "ausgeblendete Projekte passen") (Einstellungen → Ausgeblendete Projekte)"))
@@ -1049,12 +1224,14 @@ struct ContentView: View {
                     .help(L("This Mac only looks. Turn it off in Settings → Team.", "Dieser Mac schaut nur zu. Abschalten unter Einstellungen → Team."))
             } else {
                 Button { confirming = true } label: {
-                    Label(count > 1 ? L("Deploy \(count)", "\(count) deployen") : L("Deploy", "Deployen"),
+                    Label(count > 1 ? L("Deploy \(count) live", "\(count) live deployen") : L("Deploy live", "Live deployen"),
                           systemImage: "paperplane.fill").padding(.horizontal, 6)
                 }
                 .buttonStyle(.borderedProminent).controlSize(.large)
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(count == 0)
+                .help(count == 0 ? L("Tick the projects first", "Zuerst Projekte anhaken")
+                                 : L("Puts the ticked projects live, after a confirmation (⌘↩)", "Schaltet die angehakten Projekte live, nach einer Rückfrage (⌘↩)"))
             }
         }
         .padding(12)
@@ -1129,6 +1306,18 @@ struct CostsSheet: View {
     /// Today as the billing data names days (UTC).
     static func today() -> String { dayFormat.string(from: Date()) }
     private var last7: [Costs.Day] { Array(costs.days.suffix(7)) }
+
+    /// "2026-11-01" → "Nov 1" on a month's first day (and for the first bar), else "2".
+    static func axisLabel(_ day: String, first: Bool) -> String {
+        guard let d = dayFormat.date(from: day) else { return String(day.suffix(2)) }
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        let n = cal.component(.day, from: d)
+        guard first || n == 1 else { return "\(n)" }
+        var style = Date.FormatStyle(date: .omitted, time: .omitted).month(.abbreviated).day()
+        style.timeZone = cal.timeZone
+        style.locale = Locale(identifier: isGerman ? "de_DE" : "en_US")
+        return d.formatted(style)
+    }
     private var average: Double { last7.isEmpty ? 0 : costs.week / Double(last7.count) }
 
     var body: some View {
@@ -1136,6 +1325,7 @@ struct CostsSheet: View {
             Text(L("Costs", "Kosten")).font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
             summary
             chart
+            topProjects
             Text(L("From Vercel's billing data. Total incl. other usage, 7 days: ", "Aus Vercels Abrechnung. Gesamt inkl. sonstiger Nutzung, 7 Tage: ")
                  + last7.map(\.total).reduce(0, +).formatted(.currency(code: "USD")))
                 .font(.caption).foregroundStyle(.secondary)
@@ -1146,6 +1336,26 @@ struct CostsSheet: View {
         }
         .padding(20)
         .frame(width: 520)
+    }
+
+    /// Where the money goes: the dearest projects of the 7 days.
+    @ViewBuilder private var topProjects: some View {
+        let top = costs.projects.filter { $0.build >= 0.01 }.sorted { $0.build > $1.build }.prefix(8)
+        if !top.isEmpty {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(L("Most expensive projects, 7 days", "Teuerste Projekte, 7 Tage")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(Array(top), id: \.name) { p in
+                    HStack {
+                        Text(Demo.mask(p.name)).lineLimit(1)
+                        Spacer()
+                        if let n = p.builds { Text(L(plural(n, "build", "builds"), plural(n, "Build", "Builds"))).foregroundStyle(.secondary) }
+                        Text(p.build, format: .currency(code: "USD")).monospacedDigit().frame(minWidth: 64, alignment: .trailing)
+                    }
+                    .font(.callout)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
     }
 
     private var summary: some View {
@@ -1176,18 +1386,29 @@ struct CostsSheet: View {
         VStack(alignment: .leading, spacing: 4) {
             Chart(costs.days) { d in
                 // A day over twice the average stands out.
-                BarMark(x: .value("Day", String(d.day.suffix(2))), y: .value("USD", d.build))
+                BarMark(x: .value("Day", d.day), y: .value("USD", d.build))
                     .foregroundStyle(d.build > 2 * average && average > 0 ? Color.orange.gradient : Color.accentColor.gradient)
+                    // The dearest day carries its value, without hovering.
+                    .annotation(position: .top) {
+                        if d.day == costs.days.max(by: { $0.build < $1.build })?.day, d.build > 0 {
+                            Text(usd0(d.build)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                    }
                 if let off = costs.offDay, d.day == off {
-                    RuleMark(x: .value("Day", String(d.day.suffix(2)))).foregroundStyle(.green).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
+                    RuleMark(x: .value("Day", d.day)).foregroundStyle(.green).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
                 }
             }
             .chartYAxis { AxisMarks(position: .leading) { _ in AxisValueLabel() } }
-            .chartXAxis { AxisMarks { _ in AxisValueLabel() } }
+            // "Nov 1" on the first day of a month and the first bar, else the day: the month change is seen.
+            .chartXAxis {
+                AxisMarks { v in
+                    AxisValueLabel { Text(v.as(String.self).map { Self.axisLabel($0, first: $0 == costs.days.first?.day) } ?? "") }
+                }
+            }
             .chartXSelection(value: $hovered)
             .overlay(alignment: .topTrailing) {
                 // The value of the day under the pointer, with its full date.
-                if let h = hovered, let d = costs.days.first(where: { String($0.day.suffix(2)) == h }) {
+                if let h = hovered, let d = costs.days.first(where: { $0.day == h }) {
                     Text(d.day + ": " + d.build.formatted(.currency(code: "USD")))
                         .font(.caption2.monospacedDigit()).padding(.horizontal, 5).padding(.vertical, 2)
                         .background(RoundedRectangle(cornerRadius: 4).fill(.regularMaterial))
@@ -1834,6 +2055,7 @@ struct AgentChips: View {
 struct AllowanceBanner: View {
     @ObservedObject var store: Store
     let allItems: [Item]
+    @Environment(\.colorSchemeContrast) private var contrast
 
     /// Its own function: as one expression in the body it was too long for the type checker on CI.
     static func text(_ on: [AutoDeployAllowance], until last: Date) -> String {
@@ -1851,7 +2073,7 @@ struct AllowanceBanner: View {
                 Text(Self.text(on, until: last)).font(.caption)
                 Spacer()
             }
-            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
+            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(contrast == .increased ? 0.2 : 0.08))
         }
     }
 }
