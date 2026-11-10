@@ -37,7 +37,7 @@
 #   deploys vercel team [<id>]                show or set the Vercel team
 #   deploys vercel deploy <p> [--preview] [--sha <c>] [--wait]   --wait follows it until live or failed
 #   deploys history <project> [n]             the last n deploys (default 10): when, state, commit, source
-#   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>)
+#   deploys logs <project> [lines] [--id <d>] [--masked]   the end of the newest build log (or of deploy <d>); --masked hides keys
 #   deploys autofix [--dry-run] [--only <platform> <p>]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
 #   deploys autofix set-token | routine <id> | list | forget-token | prompt | status | sync | schedule on|off
 #   deploys scan start <owner/repo> [branch]  Claude Code on this Mac looks for bugs and opens one fix PR (never merges)
@@ -77,6 +77,7 @@
 #   deploys guard status [--json] | schedule on|off   (every 30 minutes; see docs/GUARD.md)
 #   deploys render deploy <service>           deploy the newest commit
 #   deploys render set-key                    store the Render API key (read from stdin)
+#   deploys gitlab set-token | forget-token   a GitLab token in the keychain (read from stdin; docs/GITLAB.md)
 #
 # Exit codes: 0 done (also "nothing to deploy"), 1 an error, something failed to start, or the
 # state of some project could not be read (it is named and left out, never counted as current);
@@ -146,12 +147,24 @@ TEAM_LIB="${DEPLOYS_TEAM_LIB:-$(deploys_dir)/lib/team.sh}"
 # shellcheck source=lib/team.sh
 if [ -f "$TEAM_LIB" ]; then . "$TEAM_LIB"; fi
 team_on() { declare -F team_gate >/dev/null; }
+# Signs on this Mac that a team file counts here: read without lib/team.sh, from local files only.
+team_traces() {
+  [ -s "$CONFIG_DIR/team-repos" ] && grep -q '/' "$CONFIG_DIR/team-repos" 2>/dev/null && return 0
+  [ -s "$CONFIG_DIR/overrides.json" ] && return 0
+  grep -lq '"config":' "$CONFIG_DIR"/team-cache/*.json 2>/dev/null
+}
 
 # Every command that changes something on Vercel, Render or GitHub goes through here first.
 require_write() {
   local why; why="$(readonly_from)"
   if [ -z "$why" ] && team_on; then why="$(team_observer_from)"; fi
   [ -z "$why" ] || die "Observer mode ($why): \"deploys $1\" changes something and is refused. Observers can look, not deploy. To deploy from here: $(if [ -n "${DEPLOYS_READONLY:-}" ]; then echo "unset DEPLOYS_READONLY"; elif [ -e "$CONFIG_DIR/readonly" ]; then echo "deploys readonly off"; else echo "ask to be taken off the observers list"; fi)."
+  # Without lib/team.sh the two-person rule and the observers list are not read at all. When this
+  # Mac has seen a team file (repos added with `deploys team add`, overrides.json, a cached shared
+  # file), going on would skip them without a word: refused instead (an install without lib/).
+  if ! team_on && team_traces; then
+    die "\"deploys $1\" is refused: this Mac uses a shared deploy-center.json, but $TEAM_LIB is missing, so its approvals and observers would be skipped. Install deploys with its lib/ folder (brew upgrade, or install.sh again)."
+  fi
 }
 
 # vercel-repos.json as the commands read it: with the projects a shared file maps below it.
@@ -1924,7 +1937,13 @@ case "${1:-} ${2:-}" in
     pf=""
     for p in $(enabled_providers); do
       o="$("${p}_doctor" 2>/dev/null | tr -d '\n')" || o=""
-      o="${o#\{}"; o="${o%\}}"; [ -z "$o" ] || pf="$pf,$o"
+      # Objects with plain keys (provider, key, tokenOk, error: Netlify, Coolify and others) go under
+      # the provider's name: side by side, the last one would win. Vercel, Render and hook keep
+      # their prefixed keys at the top, where the app reads them.
+      case "$o" in
+        *'"provider":'*) pf="$pf,\"$p\":$o" ;;
+        *) o="${o#\{}"; o="${o%\}}"; [ -z "$o" ] || pf="$pf,$o" ;;
+      esac
     done
     glogin=false; gh auth status >/dev/null 2>&1 && glogin=true
     gllogin=false; gitlab_logged_in && gllogin=true
@@ -1996,12 +2015,19 @@ case "${1:-} ${2:-}" in
   "logs "*)
     # The last lines of the newest build log of one project, or with --id of that one deploy
     # (autofix: a build started after the failure must not hand over the wrong log).
-    p="${2:?project}"; n=80; did=""; shift 2
-    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>]}"; shift;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
+    # --masked: keys, tokens, passwords and email addresses replaced (as autofix and the app do),
+    # for a log that goes on to an agent or a language model.
+    p="${2:?project}"; n=80; did=""; masked=""; shift 2
+    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>] [--masked]}"; shift;; --masked) masked=1;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
     # 0 lines is no log at all, not the whole one (jq's .[-0:] is the whole array).
     [ "$n" -ge 1 ] || die "lines must be 1 or more"
     resolve "$p"; need_cap "$PLAT" logs "read build logs"
-    "${PLAT}_logs" "$PID" "$n" "$did" ;;
+    if [ -z "$masked" ]; then "${PLAT}_logs" "$PID" "$n" "$did"
+    else
+      # The exit code of the read, not of the mask: a log that could not be read stays an error.
+      lt="$(mktemp)"; lrc=0; ( "${PLAT}_logs" "$PID" "$n" "$did" ) > "$lt" || lrc=$?
+      af_mask < "$lt"; rm -f "$lt"; exit "$lrc"
+    fi ;;
 
   "open "*)
     # The site, or with --dashboard the project's page at its platform.
@@ -2077,7 +2103,7 @@ case "${1:-} ${2:-}" in
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
     # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix scan check autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
+    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix scan check autodeploy guard providers list ${PROVIDERS[*]} ai gitlab completion --help --version"
     verbs_of() {
       local v="list deploy rollback status cancel autodeploy-off json" x
       for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
@@ -2096,6 +2122,7 @@ _deploys() {
   if (( CURRENT == 2 )); then compadd $cmds
 ${zv}  elif [[ \$words[2] == ai && CURRENT == 3 ]]; then compadd explain notes ship set-key forget-key verify model cap status
   elif [[ \$words[2] == providers && CURRENT == 3 ]]; then compadd enable disable
+  elif [[ \$words[2] == gitlab && CURRENT == 3 ]]; then compadd set-token forget-token
   elif [[ \$words[2] == completion ]]; then compadd zsh bash
   else compadd -a names; fi
 }
@@ -2109,6 +2136,7 @@ _deploys() {
   local cur=\${COMP_WORDS[COMP_CWORD]}
   if [ \$COMP_CWORD -eq 1 ]; then COMPREPLY=(\$(compgen -W "$cmds" -- "\$cur"))
 ${bv}  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = ai ]; then COMPREPLY=(\$(compgen -W "explain notes ship set-key forget-key verify model cap status" -- "\$cur"))
+  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = gitlab ]; then COMPREPLY=(\$(compgen -W "set-token forget-token" -- "\$cur"))
   else COMPREPLY=(\$(compgen -W "\$(cat "$CONFIG_DIR/names" 2>/dev/null)" -- "\$cur")); fi
 }
 complete -F _deploys deploys
@@ -2692,6 +2720,30 @@ BASH
     [ -f "$lib" ] || die "lib/savings.sh is missing next to deploys ($lib)"
     # shellcheck source=lib/savings.sh
     . "$lib"; savings_main "$@" ;;
+
+  "gitlab "*)
+    # gitlab set-token: a GitLab token (read_api) from stdin into the keychain, instead of a
+    # GITLAB_TOKEN in the shell profile. Tried on $(gitlab_host) first: a typo replaces nothing.
+    # GITLAB_TOKEN, when set, still wins (docs/GITLAB.md).
+    declare -F gitlab_token >/dev/null || die "GitLab needs lib/githost.sh next to deploys"
+    case "${2:-}" in
+      set-token)
+        IFS= read -r key || true
+        # A token copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+        key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
+        [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys gitlab set-token"
+        case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) die "That does not look like a GitLab token (glpat-...)";; esac
+        ( GITLAB_TOKEN="$key" DEPLOYS_GITLAB_CURL=1 gitlab_api "$(gitlab_host)" user >/dev/null 2>&1 ) \
+          || die "$(gitlab_host) did not accept that token; nothing was saved"
+        # On stdin to `security -i`: the token is never an argument anyone can see.
+        printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$GITLAB_KEYCHAIN" "$key" | security -i >/dev/null \
+          || die "The token works, but could not be saved in the keychain"
+        echo "GitLab token for $(gitlab_host) saved and working."
+        [ -z "${GITLAB_TOKEN:-}" ] || echo "Note: GITLAB_TOKEN is set in this shell and wins over the keychain. Remove it from your shell profile." ;;
+      forget-token)
+        security delete-generic-password -a "$USER" -s "$GITLAB_KEYCHAIN" >/dev/null 2>&1 && echo "GitLab token removed." || echo "No GitLab token was saved." ;;
+      *) die "Usage: pbpaste | deploys gitlab set-token | deploys gitlab forget-token" ;;
+    esac ;;
 
   *)
     if is_provider "${1:-}"; then provider_cmd "$@"; exit $?; fi

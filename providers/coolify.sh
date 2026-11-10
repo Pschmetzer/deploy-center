@@ -244,6 +244,12 @@ coolify_on() {
   echo "Coolify: $app is back to auto-deploy $(echo "$rec" | jq -r 'if .auto then "on" else "off" end')."
 }
 
+# Put an application's git_commit_sha back after a pinned deploy; says so when that fails.
+coolify_unpin() {  # coolify_unpin <id> <value before> <pinned sha> [<name>]
+  coolify_call PATCH "/applications/$1" "$(jq -nc --arg s "$2" '{git_commit_sha:$s}')" >/dev/null \
+    || echo "Warning: the Coolify application ${4:-$1} is still pinned to $3. Set its Git commit back to $2 (Configuration > Source)." >&2
+}
+
 # coolify_deploy_json <app> [preview] [sha]
 # A sha: Coolify's /deploy has no commit field, but a deployment takes the application's
 # git_commit_sha when it is queued. So: pin the sha, queue, put the old value back.
@@ -271,10 +277,18 @@ coolify_deploy_json() {
     coolify_call PATCH "/applications/$id" "$(jq -nc --arg s "$sha" '{git_commit_sha:$s}')" >/dev/null \
       || { rm -f "$lock"; coolify_die "Coolify: could not pin $app to $sha"; }
   fi
+  # From the pin to its undoing, Ctrl-C or a kill must not leave the app pinned for good (every
+  # later auto-deploy would build that commit): the trap puts the old value back first. No EXIT
+  # trap: the call below runs in a subshell, so a failure there cannot end this one early, and an
+  # EXIT trap would replace one the caller has.
+  if [ -n "$pinned" ]; then
+    # shellcheck disable=SC2064  # the values now, not when it fires
+    trap "coolify_unpin '$id' '$pinned' '$sha'; rm -f '$lock'; trap - INT TERM HUP; exit 130" INT TERM HUP
+  fi
   out="$(coolify_call POST "/deploy?uuid=$id" 2>&1)"; rc=$?
   if [ -n "$pinned" ]; then
-    coolify_call PATCH "/applications/$id" "$(jq -nc --arg s "$pinned" '{git_commit_sha:$s}')" >/dev/null \
-      || echo "Warning: $app is still pinned to $sha in Coolify. Set its Git commit back to $pinned (Configuration > Source)." >&2
+    trap - INT TERM HUP
+    coolify_unpin "$id" "$pinned" "$sha" "$app"
   fi
   [ "$rc" = 0 ] || { rm -f "$lock"; coolify_die "Coolify: the deploy of $app was not taken: $out"; }
   did="$(echo "$out" | jq -r '[.deployments[]? | select(.deployment_uuid != null)][0].deployment_uuid // empty')"

@@ -219,11 +219,19 @@ fresh
 out="$(GH_HEAD=bbbb222bbbb222bbbb222bbbb222bbbb222bbbb "${D[@]}" vercel deploy-json web 2>&1)"; rc=$?
 expect "the app's path (vercel deploy-json) is checked too" "$rc:$(echo "$out" | grep -c 'needs 1 approval')" "1:1"
 
-# A copy of the script without lib/team.sh still deploys, and observer mode still holds.
+# A copy of the script without lib/team.sh: observer mode still holds.
 # providers/ comes along (without it deploys stops at once); lib/ does not.
 mkdir -p "$tmp/alone"; cp deploys "$tmp/alone/deploys"; cp -R providers "$tmp/alone/providers"
 out="$(DEPLOYS_READONLY=1 bash "$tmp/alone/deploys" vercel deploy web 2>&1)"; rc=$?
 expect "without lib/team.sh observer mode still refuses" "$rc:$(echo "$out" | grep -c 'Observer mode')" "1:1"
+# 524: this Mac uses a team file (team-repos, overrides.json or a cached shared file), and lib/ is
+# gone: a deploy stops instead of skipping the two-person rule; reading still works.
+out="$(bash "$tmp/alone/deploys" vercel deploy web 2>&1)"; rc=$?
+expect "524: without lib/team.sh and a team file, a deploy is refused" "$rc:$(echo "$out" | grep -c 'lib/team.sh is missing')" "1:1"
+out="$(DEPLOYS_TEAM_LIB=/nonexistent bash ./deploys deploy-changed --yes 2>&1)"; rc=$?
+expect "524: deploy-changed --yes too" "$rc:$(echo "$out" | grep -c 'is missing, so its approvals')" "1:1"
+out="$(DEPLOYS_TEAM_LIB=/nonexistent bash ./deploys doctor 2>&1)"; rc=$?
+expect "524: doctor still runs" "$rc" "0"
 
 # The fixtures follow the schema (when python3 with jsonschema is there; CI on macOS may lack it).
 if python3 -c 'import jsonschema' 2>/dev/null; then
