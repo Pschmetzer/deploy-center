@@ -307,6 +307,16 @@ struct ProjectDetail: View {
         }
     }
 
+    /// GitHub's CI word for a pull request, in words a person reads.
+    static func ciText(_ ci: String) -> String {
+        switch ci {
+        case "failed": return L("CI: failed", "CI: rot")
+        case "running": return L("CI: still running", "CI: läuft noch")
+        case "passed": return L("CI: passed", "CI: grün")
+        default: return L("CI: no checks", "CI: keine Checks")
+        }
+    }
+
     private func openPRs(_ d: Details) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(L("Open pull requests (not merged)", "Offene Pull Requests (nicht gemergt)")).font(.headline)
@@ -326,16 +336,6 @@ struct ProjectDetail: View {
                         .help(Self.ciText(pr.ci)).accessibilityLabel(Self.ciText(pr.ci))
                 }
             }
-        }
-    }
-
-    /// GitHub's CI word for a pull request, in words a person reads.
-    static func ciText(_ ci: String) -> String {
-        switch ci {
-        case "failed": return L("CI: failed", "CI: rot")
-        case "running": return L("CI: still running", "CI: läuft noch")
-        case "passed": return L("CI: passed", "CI: grün")
-        default: return L("CI: no checks", "CI: keine Checks")
         }
     }
 
