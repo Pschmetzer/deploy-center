@@ -1,7 +1,7 @@
 # App-Store-Texte: Deutsch (de-DE)
 
 ## Name (30)
-Deploy Center
+Deploy Center: Hand Deploys
 
 ## Untertitel (30)
 Deployen und zurückrollen

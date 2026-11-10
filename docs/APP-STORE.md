@@ -21,7 +21,7 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 | Demo mode for review (Guideline 2.1) | "Try the demo" on the first screen, or Settings → Demo mode |
 | Store texts, English and German | `ios/AppStore/en.md`, `ios/AppStore/de.md` |
 | Review notes | `ios/AppStore/en.md`, section "Notes for App Review" |
-| Screenshots, 6.9" iPhone and 13" iPad | `ios/AppStore/screenshots/` (demo data, native size) |
+| Screenshots, 6.9" and 6.3" iPhone, 13" iPad | `ios/AppStore/screenshots/` (demo data, native size) |
 | Privacy policy with an iOS section | `site/datenschutz.html`, URL https://deploycenter.app/datenschutz.html |
 
 ### Review risks and how they are handled
@@ -43,6 +43,30 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 
 ## Steps only the owner can do (ask before each)
 
+0. **Status (2026-11-10):** done:
+   - The App IDs `app.deploycenter.ios` and `app.deploycenter.ios.widgets` exist, with App Groups on and
+     `group.app.deploycenter`, and App Store profiles.
+   - The App Store Connect record exists: **"Deploy Center: Hand Deploys"**, because "Deploy Center" is
+     already taken on the store. SKU `deploycenter-ios`, English (U.S.). The name can be changed
+     before review. The name under the icon stays "Deploy Center".
+   - Build 1.0 (1) is uploaded (`ios/build.sh --archive`, then `--upload`).
+
+   - The store page is filled in, in English (U.S.) and German: subtitle, promotional text,
+     description, keywords, support and marketing URL, copyright, and 3 screenshots each for the
+     6.3" iPhone and the 13" iPad (`ios/AppStore/screenshots/`; the German page uses the English ones).
+     Category Developer Tools, secondary Productivity. Age rating 4+ (all "None"). Price free, in all
+     175 countries. "Sign-in required" is off.
+   - App Privacy: privacy policy URL set, answer "Data Not Collected" saved but **not published**.
+
+   Still open, for the owner:
+   - App Privacy → **Publish** (it is your statement that the answers are correct).
+   - App Information → **Content Rights** (a legal statement about third-party content).
+   - Version page → App Review: your contact (name, phone, email), then paste the review notes from
+     `ios/AppStore/en.md`. The notes cannot be saved without the contact.
+   - TestFlight with a real token, then submitting.
+
+   The team has no registered devices, so the archive is unsigned and signed ad hoc with the
+   entitlements before the export (see the comment in `ios/build.sh`).
 1. **App IDs and the App Group.** Register `app.deploycenter.ios` and `app.deploycenter.ios.widgets`,
    with the App Group `group.app.deploycenter` on both. `ios/build.sh --archive` uses
    `-allowProvisioningUpdates` and can create them itself, so the first archive is itself an
@@ -67,7 +91,13 @@ behind the app are in `docs/WIDGETS-IOS.md`.
    ios/build.sh --archive
    ```
 
-   Upload `build/ios-export/DeployCenter.ipa` with the Transporter app, or with an App Store
+   Upload with the Apple ID signed in to Xcode:
+
+   ```bash
+   ios/build.sh --upload
+   ```
+
+   Or upload `build/ios-export/DeployCenter.ipa` with the Transporter app, or with an App Store
    Connect API key:
 
    ```bash
