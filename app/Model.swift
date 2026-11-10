@@ -418,8 +418,10 @@ struct AutoDeployAllowance: Decodable, Equatable {
     }
     private enum K: String, CodingKey { case platform, project, expiresAt }
 
-    /// A Render allowance may name the service by id or by name.
-    func covers(_ i: Item) -> Bool { platform == i.platform.cli && (project == i.name || project == i.id) }
+    /// A Render allowance may name the service by id or by name; "all" and "*" are the script's wildcards.
+    func covers(_ i: Item) -> Bool {
+        (platform == "all" || platform == i.platform.cli) && (project == "*" || project == i.name || project == i.id)
+    }
 }
 struct AllowanceReport: Decodable {
     let allowances: [AutoDeployAllowance]

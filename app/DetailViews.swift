@@ -45,7 +45,9 @@ struct BuildLog: View {
                     }
                     Toggle(L("Errors only", "Nur Fehler"), isOn: $onlyErrors).toggleStyle(.button)
                         .disabled(firstError == nil)
-                    CopyButton(title: L("Copy", "Kopieren")) { text }
+                    // Tokens masked like "Copy for Claude"; with ⌥ held the raw log.
+                    CopyButton(title: L("Copy", "Kopieren")) { NSEvent.modifierFlags.contains(.option) ? text : LogTools.maskSecrets(text) }
+                        .help(L("Copies the log with tokens hidden; hold ⌥ for the raw log", "Kopiert das Log mit verdeckten Tokens; mit ⌥ das Roh-Log"))
                     ClaudeMenu(store: store, item: live, waiting: false)
                     CopyButton(title: L("Copy for Claude", "Für Claude kopieren")) {
                         var msg: String?
@@ -162,7 +164,7 @@ struct ProjectDetail: View {
         let item = self.live
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                Logo(domain: item.domain, name: Demo.mask(item.name))
+                Logo(domain: Demo.on ? nil : item.domain, name: Demo.mask(item.name))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Demo.mask(item.name)).font(.title3.weight(.semibold))
                     Text(demoMode ? item.platform.rawValue : item.detail).font(.caption).foregroundStyle(.secondary)
