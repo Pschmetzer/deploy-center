@@ -357,7 +357,10 @@ fi
 if command -v npm >/dev/null && [ -d vscode/node_modules ]; then
   (cd vscode && npm test --silent >"$tmp/vscode.log" 2>&1) && ok "vscode: unit tests" || { fail "vscode: unit tests" "see below"; cat "$tmp/vscode.log"; }
   # A timed-out CLI is stopped with its process group: the stand-in's sleep does not outlive the tests.
-  pgrep -f "sleep 20(\.3)?$" >/dev/null && fail "vscode: no sleep left behind" "$(pgrep -fl 'sleep 20')" || ok "vscode: no sleep left behind"
+  # Only an orphaned sleep counts (parent gone, so launchd's pid 1): a shell elsewhere on this Mac
+  # may run its own "sleep 20".
+  left="$(ps -axo pid=,ppid=,command= | awk '$2 == 1 && $3 ~ /(^|\/)sleep$/ && ($4 == "20" || $4 == "20.3") && NF == 4')"
+  [ -n "$left" ] && fail "vscode: no sleep left behind" "$left" || ok "vscode: no sleep left behind"
 else
   skip "vscode: run npm ci in integrations/vscode first"
 fi
