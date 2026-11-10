@@ -1,0 +1,324 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		DC0000000000000000000301 /* DeployCenterWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DC0000000000000000000202 /* DeployCenterWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		DC0000000000000000000401 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DC0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DC0000000000000000000602;
+			remoteInfo = DeployCenterWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		DC0000000000000000000501 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				DC0000000000000000000301 /* DeployCenterWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		DC0000000000000000000201 /* DeployCenter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DeployCenter.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DC0000000000000000000202 /* DeployCenterWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DeployCenterWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		DC0000000000000000000101 /* App */ = {isa = PBXFileSystemSynchronizedRootGroup; path = App; sourceTree = "<group>"; };
+		DC0000000000000000000102 /* widgets */ = {isa = PBXFileSystemSynchronizedRootGroup; name = widgets; path = ../widgets; sourceTree = "<group>"; };
+		DC0000000000000000000103 /* shared */ = {isa = PBXFileSystemSynchronizedRootGroup; name = shared; path = ../shared; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		DC0000000000000000000701 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		DC0000000000000000000702 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		DC0000000000000000000010 = {
+			isa = PBXGroup;
+			children = (
+				DC0000000000000000000101 /* App */,
+				DC0000000000000000000102 /* widgets */,
+				DC0000000000000000000103 /* shared */,
+				DC0000000000000000000011 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DC0000000000000000000011 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				DC0000000000000000000201 /* DeployCenter.app */,
+				DC0000000000000000000202 /* DeployCenterWidgets.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DC0000000000000000000601 /* DeployCenter */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DC0000000000000000000901 /* Build configuration list for PBXNativeTarget "DeployCenter" */;
+			buildPhases = (
+				DC0000000000000000000801 /* Sources */,
+				DC0000000000000000000701 /* Frameworks */,
+				DC0000000000000000000811 /* Resources */,
+				DC0000000000000000000501 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DC0000000000000000000A01 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DC0000000000000000000101 /* App */,
+				DC0000000000000000000103 /* shared */,
+			);
+			name = DeployCenter;
+			productName = DeployCenter;
+			productReference = DC0000000000000000000201 /* DeployCenter.app */;
+			productType = "com.apple.product-type.application";
+		};
+		DC0000000000000000000602 /* DeployCenterWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DC0000000000000000000902 /* Build configuration list for PBXNativeTarget "DeployCenterWidgets" */;
+			buildPhases = (
+				DC0000000000000000000802 /* Sources */,
+				DC0000000000000000000702 /* Frameworks */,
+				DC0000000000000000000812 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				DC0000000000000000000102 /* widgets */,
+				DC0000000000000000000103 /* shared */,
+			);
+			name = DeployCenterWidgets;
+			productName = DeployCenterWidgets;
+			productReference = DC0000000000000000000202 /* DeployCenterWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DC0000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+			};
+			buildConfigurationList = DC0000000000000000000900 /* Build configuration list for PBXProject "DeployCenter" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				de,
+				Base,
+			);
+			mainGroup = DC0000000000000000000010;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = DC0000000000000000000011 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DC0000000000000000000601 /* DeployCenter */,
+				DC0000000000000000000602 /* DeployCenterWidgets */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DC0000000000000000000811 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		DC0000000000000000000812 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		DC0000000000000000000801 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		DC0000000000000000000802 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DC0000000000000000000A01 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DC0000000000000000000602 /* DeployCenterWidgets */;
+			targetProxy = DC0000000000000000000401 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		DC0000000000000000000B01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		DC0000000000000000000B02 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		DC0000000000000000000B11 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/DeployCenter.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Deploy Center";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID confirms each deploy and rollback.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_FILE = Config/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				PRODUCT_BUNDLE_IDENTIFIER = app.deploycenter.ios;
+				PRODUCT_NAME = DeployCenter;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		DC0000000000000000000B12 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/DeployCenter.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Deploy Center";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID confirms each deploy and rollback.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_FILE = Config/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				PRODUCT_BUNDLE_IDENTIFIER = app.deploycenter.ios;
+				PRODUCT_NAME = DeployCenter;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		DC0000000000000000000B21 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/DeployCenterWidgets.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Deploy Center";
+				INFOPLIST_FILE = "Config/Widgets-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks");
+				PRODUCT_BUNDLE_IDENTIFIER = app.deploycenter.ios.widgets;
+				PRODUCT_NAME = DeployCenterWidgets;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		DC0000000000000000000B22 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/DeployCenterWidgets.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Deploy Center";
+				INFOPLIST_FILE = "Config/Widgets-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks");
+				PRODUCT_BUNDLE_IDENTIFIER = app.deploycenter.ios.widgets;
+				PRODUCT_NAME = DeployCenterWidgets;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		DC0000000000000000000900 /* Build configuration list for PBXProject "DeployCenter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DC0000000000000000000B01 /* Debug */,
+				DC0000000000000000000B02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DC0000000000000000000901 /* Build configuration list for PBXNativeTarget "DeployCenter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DC0000000000000000000B11 /* Debug */,
+				DC0000000000000000000B12 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DC0000000000000000000902 /* Build configuration list for PBXNativeTarget "DeployCenterWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DC0000000000000000000B21 /* Debug */,
+				DC0000000000000000000B22 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = DC0000000000000000000001 /* Project object */;
+}

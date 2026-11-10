@@ -38,7 +38,12 @@ struct DeploySnapshot: Codable, Equatable {
     /// The App Group shared by the Mac app and its widget. It is set at build time
     /// (`DCAppGroup` in Info.plist) so no team id lives in the source.
     static var appGroup: String? {
-        (Bundle.main.object(forInfoDictionaryKey: "DCAppGroup") as? String).flatMap { $0.isEmpty ? nil : $0 }
+        #if os(iOS)
+        // iOS groups carry no team id: the same name works for every developer account.
+        return "group.app.deploycenter"
+        #else
+        return (Bundle.main.object(forInfoDictionaryKey: "DCAppGroup") as? String).flatMap { $0.isEmpty ? nil : $0 }
+        #endif
     }
     static var groupURL: URL? {
         guard let g = appGroup else { return nil }

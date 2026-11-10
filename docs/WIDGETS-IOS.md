@@ -1,141 +1,186 @@
-# Widgets and the iOS companion: the decision
+# Widgets and the iOS app: the decisions
 
-Status: draft. The widget and the iOS app build on any Mac with Xcode. Real data on the widget
-and on the phone needs steps in the owner's Apple Developer account first (listed at the end).
+Status:
+- **Mac widget:** builds, and is signed locally.
+- **iOS app:** a full app with a list, details, deploy and rollback with Face ID, widgets and background
+  notes. It runs in the simulator.
 
-## What was checked
+Steps in the owner's Apple Developer account are listed at the end and in `docs/APP-STORE.md`.
 
-- Xcode 27.2 is installed; XcodeGen and Tuist are not. Nothing was installed for this work.
-- A WidgetKit extension builds with plain `swiftc`, like the app: `-application-extension`, a
-  normal `@main` entry (`LC_MAIN`, the same as Apple's own widget extensions), a bundle with
-  `CFBundlePackageType = XPC!` and `NSExtensionPointIdentifier = com.apple.widgetkit-extension`,
-  and the sandbox entitlement. An ad hoc build registers with `pluginkit`.
-- The iOS app also builds with `swiftc` for the simulator, installs with `simctl` and runs.
-
-## Decision 1: how the widget gets into the app
+## Decision 1: how the Mac widget gets into the app
 
 **Chosen: build the extension with `swiftc` in `build.sh`, opt-in with `--widgets`.**
 
-| | swiftc in build.sh (chosen) | XcodeGen `project.yml` for the extension | Whole build as an Xcode project |
+| | swiftc in build.sh (chosen) | XcodeGen for the extension | Whole Mac build as an Xcode project |
 |---|---|---|---|
-| New tools | none | XcodeGen on every build Mac | none, but a `.xcodeproj` in the repo |
+| New tools | none | XcodeGen on every build Mac | none, but a `.xcodeproj` |
 | Plain build | unchanged, no Xcode needed | unchanged | needs Xcode; everything changes |
 | Signing | in our script, visible | Xcode's automatic signing | Xcode's |
-| Risk | Xcode-only steps later (App Intents metadata for configurable or interactive widgets) | a second build system next to build.sh | the biggest change, merge pain with parallel work |
+| Risk | Xcode-only steps later (App Intents metadata for configurable or interactive widgets) | a second build system | the biggest change |
 
-- `./build.sh` without the flag builds what it built before; there is no `PlugIns` folder.
-- `./build.sh --widgets` compiles `widgets/*.swift` + `shared/*.swift` into
-  `Contents/PlugIns/DeployCenterWidgets.appex`, signs the extension first with its entitlements,
-  then the app without `--deep` (which would drop them).
-- If a later widget needs App Intents, a small XcodeGen project for the extension alone is the
-  fallback; the app keeps its swiftc build.
+- `./build.sh` without the flag builds what it built before. There is no `PlugIns` folder.
+- `./build.sh --widgets` compiles `widgets/*.swift` and `shared/*.swift` into
+  `Contents/PlugIns/DeployCenterWidgets.appex`. It signs in this order:
+  1. the extension, with the sandbox and the App Group;
+  2. the app, with the App Group, without `--deep`.
+- A WidgetKit extension needs nothing Xcode-only:
+  - `-application-extension`;
+  - a normal `@main` (`LC_MAIN`, like Apple's own widgets);
+  - `CFBundlePackageType = XPC!`;
+  - `NSExtensionPointIdentifier = com.apple.widgetkit-extension`.
 
-## How the widget gets its data
+### How the Mac widget gets its data
 
-After each list or cost reload the app writes `snapshot.json` (a few KB; the format is
-`shared/DeploySnapshot.swift`) into the App Group container and asks WidgetKit to reload, only
-when something changed. The widget never calls a network and never reads the app's settings.
+After each reload of the lists or the costs, the app writes `snapshot.json` into the App Group
+container. The file is a few KB; its format is `shared/DeploySnapshot.swift`. The app then asks
+WidgetKit to reload, and only when something changed.
 
-- App Group: `<TEAMID>.app.deploycenter`. On macOS a group prefixed with the team id needs no
-  provisioning profile (a `group.` one would). `build.sh` takes the team id from the signing
-  identity and writes it into the entitlements and an Info.plist key (`DCAppGroup`); the Swift
-  code reads the key. No team id lives in the repo.
-- No identity (ad hoc build, or `DEVELOPER_ID=-`): no group, nothing is written; the widget
-  should say "Open Deploy Center once", and the gallery preview should show made-up sample
-  numbers (`context.isPreview`; not yet seen in the gallery, see "What was verified").
-- Demo mode: names and commit messages are masked when the snapshot is written; turning demo
-  mode on or off rewrites it.
-- A tap opens `deploycenter://` (the app; a masked name could not select a project).
-- Small: waiting PRs, waiting projects, building and failed counts.
-  Medium: the same, the top 3 projects (building and failed first) and the saving a month.
-- The hook in `Store.swift` is two calls to `writeSnapshot()`; everything else is in
-  `app/Snapshot.swift`.
+- **App Group:** `<TEAMID>.app.deploycenter`. On macOS a group prefixed with the team id needs no
+  provisioning profile.
+  - `build.sh` takes the team id from the signing identity.
+  - It writes the team id into the entitlements and into an Info.plist key (`DCAppGroup`).
+  - No team id lives in the repo.
+- **Ad hoc build** (`DEVELOPER_ID=-`): there is no group, so nothing is written. The gallery preview
+  shows sample numbers.
+- **Demo mode** masks names and commit messages in the snapshot.
+- **A tap** opens `deploycenter://`.
+- **Small widget:** waiting PRs, projects, building and failed. **Medium:** the same, plus the top 3
+  projects and the saving a month.
 
-## Decision 2: where the iOS app gets its data
+## Decision 2: where the iOS app gets its data, and how it deploys
 
-There is no server of ours, by design. Two real options:
+The goal: see what waits, deploy, roll back and get notes on the go, also while the Mac sleeps.
+There is no server of ours.
 
-| | iCloud key-value store (chosen) | A file in the owner's private GitHub repo |
+| | **A: the phone talks to the APIs (chosen)** | B: a command queue in iCloud, the Mac runs it |
 |---|---|---|
-| Where the data lives | the owner's iCloud | GitHub |
-| Phone setup | none, same Apple ID | a GitHub token on the phone |
-| Apple account steps | iCloud container, Developer ID provisioning profile for the Mac app, embedded by `release.sh` | none |
-| Updates | pushed by iCloud, seconds to minutes | the phone polls |
-| Size | 1 MB in all; ours is a few KB | fine |
-| Write back (phone asks the Mac) | a second key | a second file |
+| Works with the Mac asleep or off | yes | no, waits for the Mac |
+| Tokens on the phone | yes, in the keychain, this device only | no |
+| Apple account steps | none beyond the App ID | iCloud container + Developer ID profile for the Mac app |
+| Same "waiting" rule as the Mac | ported from `deploys` | the Mac's own |
+| Deploy safety | Face ID on the phone, then the provider's API | the Mac would have to confirm (remote execution) |
 
-**Chosen: `NSUbiquitousKeyValueStore`**, the smallest iCloud piece: one JSON blob under one key,
-no CloudKit schema. CloudKit's private database would also work but is more than one blob needs.
-A secret gist was ruled out: anyone with its URL can read it.
+**Chosen: A.** The app calls `api.vercel.com`, `api.render.com` and `api.github.com` with the
+person's own tokens. These are the endpoints the `deploys` CLI uses:
 
-The iOS app reads through a small `SnapshotSource` protocol (`ICloudSource`, or `SampleSource`
-when started with `-sample`), so the choice blocks nothing: without the entitlement it says "No
-data yet"; with it, it shows the Mac's snapshot. The Mac side (writing the key) is not built yet; it needs the entitlement and profile
-first, and is then a few lines in `app/Snapshot.swift`.
+- **Vercel**
+  - Lists: `/v10/projects`, and `/v6/deployments?target=production` for the newest attempt.
+  - Deploy: `POST /v13/deployments` with `gitSource {type: github, ref, repoId}`.
+  - Status: `GET /v13/deployments/{id}`.
+  - Rollback: `POST /v1/projects/{id}/rollback/{deployment}`. The target is the previous READY
+    production deploy of a different commit.
+  - Turning auto-deploy off removes the Git link. The repo then comes from the live deploy's
+    `meta.githubCommit*`.
+- **Render**
+  - Lists: `/services` and `/services/{id}/deploys`.
+  - Deploy: `POST /services/{id}/deploys`.
+  - Rollback: `POST /services/{id}/rollback`. The target is the newest deactivated deploy of
+    another commit.
+  - POSTs are never retried.
+- **GitHub**
+  - The branch head, and `compare/{live}...{branch}` for the commits that wait.
+  - PR numbers from the commit messages: `(#12)` or `Merge pull request #12`.
+  - For up to ten commits without a number: `commits/{sha}/pulls`.
+- **"Waiting"** uses the rule from `deploys`. A project waits when all of these hold:
+  - it is deployable and not paused;
+  - it is not building;
+  - its head is known and there was no read error;
+  - it is not behind;
+  - the live commit differs from the head.
 
-## Kept out of this draft, on purpose
+Also considered, and not chosen: a GitHub workflow (`integrations/action` with `deploy: true`),
+started by `workflow_dispatch`.
+- It needs a workflow file in each repo.
+- It needs a token with `actions:write`.
+- It deploys every changed project, not the one tapped.
 
-- **Deploy from the phone.** A phone request that makes the Mac start a build is remote execution.
-  The app already refuses to start builds from a URL for that reason (the `onOpenURL` comment in
-  `App.swift`). The detail screen has the button and the confirmation, then says it only reads.
-  Phase 2, if wanted: the phone writes a request key, the Mac shows it and the person confirms on
-  the Mac (or a "trust my phone" setting the owner turns on).
-- **Live Activity.** Updating one while the phone app is closed needs push from a server (APNs).
-  Without a server it can only update while the app is open. Not built.
-- **iOS widgets.** The widget views compile for iOS too, but an iOS widget needs an App Group and
-  a provisioning profile on the iOS side, so it waits for the account steps.
-- **A device or TestFlight build** is where a real Xcode project (or XcodeGen) becomes
-  unavoidable for the iOS app: provisioning profiles and the App Store upload.
+**B stays optional** and is not built. It only helps people who do not want tokens on the phone,
+and it needs the iCloud account steps.
 
-## Build and try
+### Notes while the app is closed
 
-```bash
-DEVELOPER_ID=- ./build.sh --fast --widgets
-```
+Without a server this is best effort.
+- **Background refresh:** a `BGAppRefreshTask` reads the lists and posts a local notification for
+  what newly waits or failed. iOS decides when it runs, usually a few times an hour at most. The
+  settings screen says so.
+- **No Live Activity:** one that updates while the app is closed would need push from a server (APNs).
+
+### Tokens and Face ID
+
+- Tokens are stored with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`:
+  - never synced, and not in backups;
+  - readable by the background refresh after the first unlock.
+- Every deploy and rollback asks twice:
+  1. a confirmation;
+  2. `LAContext` with `.deviceOwnerAuthentication`: Face ID, Touch ID or the passcode.
+
+## Decision 3: how the iOS app is built
+
+**Chosen: a small hand-written Xcode project, `ios/DeployCenter.xcodeproj`. No XcodeGen.**
+
+- It uses Xcode 16+ folder-synchronized groups. The project file names three folders and no
+  single file:
+  - `ios/App`;
+  - `widgets` (the same widget code as the Mac);
+  - `shared`.
+- An App Store build needs a project anyway: archive, export, provisioning.
+- The earlier `swiftc` script for the simulator is gone. `ios/build.sh` now wraps `xcodebuild`.
+- Two Info.plist entries cannot be generated from build settings. They live in `ios/Config/`:
+  - the background refresh keys, in `Info.plist`;
+  - the widget's `NSExtension`, in `Widgets-Info.plist`.
 
 ```bash
 ios/build.sh --run
 ```
 
-`ios/build.sh --run` installs into the booted simulator and starts with sample data.
+```bash
+ios/build.sh --archive
+```
+
+What `--archive` does:
+- it takes the team id from the signing identity at build time;
+- it exports an `.ipa` and uploads nothing;
+- it uses `-allowProvisioningUpdates`, which may register the App IDs and profiles in the account.
+  So it only runs after the owner agrees.
+
+More about the iOS build:
+- **iOS App Group:** `group.app.deploycenter`. There is no team id in the name. It has to be
+  registered once.
+- **iOS widget:** the Mac widget's code, built for iOS. The app writes the snapshot after each
+  reload. In the simulator the widget installs with the app; on a device it needs the App Group
+  registered.
 
 ## What was verified, and what not
 
 Verified on this Mac:
-- `./build.sh --fast` (plain) still builds, without a `PlugIns` folder; app tests pass; shellcheck clean.
-- `DEVELOPER_ID=- ./build.sh --fast --widgets` builds; the extension carries the sandbox
-  entitlement and registers with `pluginkit`.
-- The widget views, rendered with `ImageRenderer` (the pictures below).
-- The iOS app built with `ios/build.sh`, run in the iPhone 17 Pro simulator with `-sample`
-  (list and details captured from the simulator).
+- **Plain build:** `./build.sh --fast` builds without `PlugIns`. App tests pass; shellcheck is clean.
+- **Widget build:** `./build.sh --fast --widgets` with the Developer ID.
+  - The app carries the App Group.
+  - The extension carries the sandbox and the App Group.
+  - `codesign --verify --strict --deep` passes.
+  - `pluginkit` lists the extension.
+- **iOS:** the app and its widget extension build with `xcodebuild` for the simulator. They run in
+  demo mode on an iPhone 17 Pro Max and an iPad Pro 13" simulator. The screenshots are in
+  `ios/AppStore/screenshots/`.
 
 Not verified:
-- No build signed with the team identity; the App Group was never used.
-- `writeSnapshot()` never ran against real data, and the widget was not seen in the gallery.
-- iCloud: not set up, so `ICloudSource` never returned data.
+- **The widget gallery:** the Mac widget was not opened there. That needs the screen, and this
+  session had no access to it. To check: right-click the desktop → Edit Widgets → search "Deploy".
+- **Real accounts:** no real Vercel, Render or GitHub token was used. The API code follows
+  `deploys` but has not run against real accounts.
+- **Simulator:** Face ID, the background refresh, notifications and the iOS widget on the Home
+  Screen were not tried.
+- **Device and store:** no device build, no archive, nothing uploaded.
 
 ## Steps only the owner can do (Apple Developer account)
 
-1. Decide whether a release may carry the App Group entitlement (`<TEAMID>.app.deploycenter`,
-   `build.sh --widgets` with the Developer ID). It changes the signed app; one notarized test
-   build should confirm that notarization accepts it without a profile.
-2. For iCloud: create an iCloud container (for example `iCloud.app.deploycenter`) and register
-   the bundle ids `app.deploycenter.mac` and `app.deploycenter.ios` with iCloud key-value storage.
-3. Create a Developer ID provisioning profile for `app.deploycenter.mac` with iCloud and keep it
-   outside the repo (for example in `~/.config/deploys/`), so `release.sh` can embed it.
-4. For the iPhone app on a device: an iOS App ID, a development profile, later App Store Connect
-   and TestFlight.
-
-## Screenshots (sample data)
-
-| Small | Medium | Medium, dark |
-|---|---|---|
-| ![](images/widget-small.png) | ![](images/widget-medium.png) | ![](images/widget-medium-dark.png) |
-
-| iPhone: list | iPhone: details |
-|---|---|
-| ![](images/ios-list.png) | ![](images/ios-detail.png) |
-
-The widget pictures are the widget's views rendered with `ImageRenderer`, not a capture of the
-gallery: the ad hoc build registers with `pluginkit`, but showing it in the gallery with data
-needs the signed build with the App Group.
+1. **Mac App Group.** Decide whether a Mac release may carry the App Group
+   (`<TEAMID>.app.deploycenter`). Then run one notarized test build with `--widgets`.
+2. **iOS App IDs.** Register the App IDs `app.deploycenter.ios` and `app.deploycenter.ios.widgets`,
+   and the App Group `group.app.deploycenter`. `ios/build.sh --archive` can also do this, through
+   `-allowProvisioningUpdates`.
+3. **App Store Connect.** Create the record (free, Developer Tools). Fill in:
+   - the texts from `ios/AppStore/`;
+   - the privacy answers ("Data Not Collected");
+   - the review notes.
+4. **Release.** Upload the build, test it in TestFlight, then submit. Details: `docs/APP-STORE.md`.
