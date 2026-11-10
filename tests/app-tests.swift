@@ -966,5 +966,10 @@ expect("cost note: nothing known, budget fine", Store.costNote(perBuild: [nil], 
 expect("cost note: budget used up", Store.costNote(perBuild: [], month: 30, budget: 20).contains("20"), true)
 expect("project month", Store.projectMonth(build: 7, days: 7) ?? 0, 30.0)
 
+expect("watch: one bad answer is a blip", Store.watchFails([.fine, .broken]), false)
+expect("watch: two in a row count", Store.watchFails([.fine, .broken, .broken]), true)
+expect("watch: offline is never a failure", Store.watchFails([.unreachable, .unreachable]), false)
+expect("slower: twice and half a second more", [Store.slower(before: 0.2, after: 0.5), Store.slower(before: 0.4, after: 1.2)], [false, true])
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

@@ -1436,8 +1436,13 @@ final class Store: ObservableObject {
         var code: Int?
         // A fresh Render service can answer 502/503 for a few seconds: ask up to three times.
         for attempt in 0..<3 {
+            let t0 = Date()
             code = await Self.probe(url, timeout: 20)
-            if Self.siteVerdict(code: code, networkUp: true) == .fine { return }
+            if Self.siteVerdict(code: code, networkUp: true) == .fine {
+                noteResponseTime(item, Date().timeIntervalSince(t0))
+                watch(item, url, mayRollBack: mayRollBack)
+                return
+            }
             if attempt < 2 { try? await Task.sleep(nanoseconds: 6_000_000_000) }
         }
         // No answer at all: is it the site, or this Mac (offline, DNS, a VPN switching)? A second,
@@ -1457,6 +1462,58 @@ final class Store: ObservableObject {
         }
         say(L("\(name) is live, but the site answers \(code.map(String.init) ?? "nothing")",
               "\(name) ist live, aber die Seite antwortet mit \(code.map(String.init) ?? "nichts")"), link, ok: false)
+    }
+
+    // MARK: After the first check: the answer time against the last deploy's, and a watch for a while
+
+    /// Seconds the site took to answer after the last two deploys, per project (this run only).
+    @Published private(set) var responseTimes: [String: [TimeInterval]] = [:]
+    private func noteResponseTime(_ item: Item, _ t: TimeInterval) {
+        let k = Self.key(item)
+        let before = responseTimes[k]?.last
+        responseTimes[k] = Array(((responseTimes[k] ?? []) + [t]).suffix(2))
+        if let b = before, Self.slower(before: b, after: t) {
+            say(L("\(item.name) answers slower since this deploy", "\(item.name) antwortet seit diesem Deploy langsamer"),
+                L("\(Int(b * 1000)) ms before, \(Int(t * 1000)) ms now", "vorher \(Int(b * 1000)) ms, jetzt \(Int(t * 1000)) ms"), ok: false)
+        }
+    }
+    /// Twice as slow and at least half a second more: worth a word, not every jitter.
+    nonisolated static func slower(before: TimeInterval, after: TimeInterval) -> Bool { after > before * 2 && after - before > 0.5 }
+
+    /// Settings → Deploy: ask the site again every minute for this long after it went live (0 = once).
+    static var watchMinutes: Int { UserDefaults.standard.integer(forKey: "watchMinutes") }
+    private var watches: [String: Task<Void, Never>] = [:]
+    /// Two failed answers in a row count, one alone may be a blip.
+    nonisolated static func watchFails(_ verdicts: [SiteVerdict]) -> Bool {
+        verdicts.count >= 2 && verdicts.suffix(2).allSatisfy { $0 == .broken }
+    }
+    private func watch(_ item: Item, _ url: URL, mayRollBack: Bool) {
+        let minutes = Self.watchMinutes, key = Self.key(item)
+        guard minutes > 0 else { return }
+        watches[key]?.cancel()
+        watches[key] = Task { [weak self] in
+            var seen: [SiteVerdict] = []
+            for _ in 0..<minutes {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                // A new deploy of the row is checked on its own.
+                if self.itemNow(item)?.state.isActive == true { return }
+                let code = await Self.probe(url, timeout: 20)
+                let up = code != nil ? true : await Self.networkUp()
+                seen.append(Self.siteVerdict(code: code, networkUp: up))
+                guard Self.watchFails(seen) else { continue }
+                self.watches[key] = nil
+                if mayRollBack, self.rollsBack(item) { self.countDownToRollback(item, url.absoluteString, code); return }
+                self.say(L("\(item.name) stopped answering after the deploy", "\(item.name) antwortet nach dem Deploy nicht mehr richtig"),
+                         url.absoluteString + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), ok: false)
+                return
+            }
+            self?.watches[key] = nil
+        }
+    }
+    nonisolated private static func networkUp() async -> Bool {
+        guard let other = URL(string: "https://www.githubstatus.com/api/v2/status.json") else { return true }
+        return await probe(other, timeout: 10) != nil
     }
 
     // MARK: Roll back by itself when the check after going live fails (opt-in per project, in the details)

@@ -34,6 +34,7 @@ struct SettingsView: View {
     /// The checkbox of the deploy confirmation, here too, so the remembered state can be seen.
     @AppStorage("onlyWhenGreen") private var onlyWhenGreen = false
     @AppStorage(OwnerCheck.key) private var ownerCheck = false
+    @AppStorage("watchMinutes") private var watchMinutes = 0
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
     @State private var loginError: String?
@@ -214,6 +215,12 @@ struct SettingsView: View {
             Toggle(L("Deploy only when the checks are green", "Nur deployen, wenn die Checks grün sind"), isOn: $onlyWhenGreen)
                 .help(L("The same switch as in the deploy confirmation: commits whose CI did not pass stay back.",
                         "Derselbe Schalter wie in der Deploy-Rückfrage: Commits, deren CI nicht durchlief, bleiben zurück."))
+            Picker(L("Watch the site after going live", "Seite nach dem Live-Gang beobachten"), selection: $watchMinutes) {
+                Text(L("Check once", "Einmal prüfen")).tag(0)
+                ForEach([5, 15, 30], id: \.self) { Text(L("\($0) minutes, every minute", "\($0) Minuten, jede Minute")).tag($0) }
+            }
+            .help(L("Two failed answers in a row warn, or roll back where the project rolls back by itself (its details).",
+                    "Zwei fehlgeschlagene Antworten hintereinander warnen, oder rollen zurück, wo das Projekt selbst zurückrollt (seine Details)."))
             Toggle(L("Ask for Touch ID or the password before risky steps", "Vor riskanten Schritten nach Touch ID oder dem Passwort fragen"), isOn: $ownerCheck)
                 .help(L("Deploying several projects at once, a rollback by hand, and allowing auto-deploy. The automatic rollback after a failed check does not wait.",
                         "Mehrere Projekte auf einmal deployen, ein Rollback von Hand und Auto-Deploy erlauben. Das automatische Zurückrollen nach einem fehlgeschlagenen Check wartet nicht."))
