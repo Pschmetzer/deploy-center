@@ -325,8 +325,8 @@ digitalocean_deploy_json() {
     esac
     shift
   done
-  [ -z "$preview" ] || digitalocean_die "DigitalOcean: App Platform has no preview deploys"
-  [ -z "$sha" ] || digitalocean_die "DigitalOcean: a deployment always builds the newest commit of the branch; --sha is not supported"
+  [ -z "$preview" ] || digitalocean_die "DigitalOcean App Platform cannot deploy a preview: it has no preview deploys"
+  [ -z "$sha" ] || digitalocean_die "DigitalOcean App Platform cannot deploy a given commit: a deployment always builds the newest commit of the branch (--sha is not supported)"
   id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
   info="$(digitalocean_app "$id")" || digitalocean_die "DigitalOcean: could not read $app"
   [ "$(echo "$info" | jq '.app.pinned_deployment != null')" = true ] \

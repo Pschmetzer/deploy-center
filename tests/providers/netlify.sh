@@ -191,7 +191,7 @@ expect "hooks edit: a crashed run's old lock is taken over" "$(jq -r '.x' "$hf")
 jq 'del(.x)' "$hf" > "$tmp/h" && mv "$tmp/h" "$hf"
 
 # --- PRV-048: a hook made for another branch is moved (PUT, same URL), and not deployable until then ---
-mkdir -p "$tmp/fx48"; cp "$FIX"/* "$tmp/fx48/"
+mkdir -p "$tmp/fx48"; cp -R "$FIX"/. "$tmp/fx48/"
 jq -c '.[0].branch = "old"' "$FIX/hooks-shop.json" > "$tmp/fx48/hooks-shop.json"
 printf 'PUT   */api/v1/sites/site-shop/build_hooks/hook-shop   empty.json  204\n' | cat - "$FIX/routes" > "$tmp/fx48/routes"
 jq '."site-shop".ref = "old"' "$hf" > "$tmp/h" && mv "$tmp/h" "$hf"

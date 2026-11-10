@@ -375,7 +375,7 @@ cloudflare_status_json() {
   cf_call GET "$(cf_proj "$1")/deployments/$2" | jq "$CF_PHASE"' cf_dep'
 }
 
-cloudflare_cancel() { die "Cloudflare Pages has no documented way to cancel a deployment. Stop it in the dashboard: $(cloudflare_url "$1" --dashboard)"; }
+cloudflare_cancel() { die "Cloudflare Pages cannot cancel a deployment from here: it has no documented way. Stop it in the dashboard: $(cloudflare_url "$1" --dashboard)"; }
 
 # cloudflare_rollback <project> [<id>]: production back to <id>, or to the newest good one before live.
 cloudflare_rollback() {

@@ -328,7 +328,7 @@ out="$(PATH="$tmp/rb:$PATH" amp logs Shop)"
 expect "logs: an empty step log is not an expired link" "$(echo "$out" | grep -c 'could not be read'):$(grep -c '^curl ' "$CALLS")" "0:4"
 
 # PRV-106: twenty jobs without a success: a hundred are asked for, the live commit is found.
-mkdir -p "$tmp/fx106"; cp "$FIX"/* "$tmp/fx106/"
+mkdir -p "$tmp/fx106"; cp -R "$FIX"/. "$tmp/fx106/"
 jq -n '{jobSummaries: [range(20) | {jobId: "\(100 - .)", status: "FAILED", commitId: "ffff\(.)", startTime: "2026-01-02T03:04:05Z"}]}' > "$tmp/fx106/jobs-20.json"
 jq '.jobSummaries += [{jobId: "60", status: "SUCCEED", commitId: "good123", commitMessage: "fix: ok", startTime: "2026-01-01T03:04:05Z"}]' "$tmp/fx106/jobs-20.json" > "$tmp/fx106/jobs-100.json"
 routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branches-shop.json" "amplify list-branches d2blog0002 branches-blog.json" \

@@ -1,0 +1,7 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+# The contract answers are the <METHOD>_<path>.json files (tests/lib/fake-curl.sh); the
+# provider's own tests use routes and the other files.
+export NETLIFY_AUTH_TOKEN=nfp_fixture
+CONTRACT_ID=site-shop CONTRACT_NAME=shop CONTRACT_DEPLOY=d-shop-3
+# What turns the deploy's files into a finished one for the `deploys watch` check (a sed script).
+CONTRACT_DONE='s/"state": "building"/"state": "ready"/g'

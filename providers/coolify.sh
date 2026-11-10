@@ -315,7 +315,7 @@ coolify_deploy_json() {
     esac
     shift
   done
-  [ -z "$preview" ] || coolify_die "Coolify: preview deploys need a pull request; not supported from here"
+  [ -z "$preview" ] || coolify_die "Coolify cannot deploy a preview from here: preview deploys need a pull request"
   if [ -n "$sha" ]; then
     [[ "$sha" =~ ^[0-9a-fA-F]{7,40}$ ]] || coolify_die "Coolify: \"$sha\" is not a commit sha"
   fi

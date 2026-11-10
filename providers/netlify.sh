@@ -391,8 +391,8 @@ netlify_deploy_json() {
     esac
     shift
   done
-  [ -z "$preview" ] || netlify_die "Netlify: preview deploys are not supported from here (the build hook deploys the production branch)"
-  [ -z "$sha" ] || netlify_die "Netlify: a build hook always builds the newest commit of the branch; --sha is not supported"
+  [ -z "$preview" ] || netlify_die "Netlify cannot deploy a preview from here: the build hook deploys the production branch"
+  [ -z "$sha" ] || netlify_die "Netlify cannot deploy a given commit: a build hook always builds the newest commit of the branch (--sha is not supported)"
   id="$(netlify_id_of "$site")" || netlify_die "Netlify site $site not found"
   hk="$(jq -c --arg id "$id" '.[$id] // empty' "$(netlify_hooks_file)")"
   [ -n "$hk" ] && [ "$(echo "$hk" | jq -r '.url // empty')" != "" ] \
@@ -473,8 +473,9 @@ netlify_logs() {
   esac; done
   if [ -n "$d" ]; then out="$(netlify_status_json "$d")"; else out="$(netlify_latest_json "$site")"; fi
   [ "$out" != null ] || netlify_die "Netlify: $site has no deploys yet"
-  echo "$out" | jq -r '"Deploy \(.id): \(.state)\(if .error then " — " + .error else "" end)",
-    "Netlify gives no build log through its API. The full log: \(.dashboardUrl // "the site dashboard")"'
+  # No log through the API (caps.logs is false): refused as the contract says, with the state
+  # and where the full log is.
+  netlify_die "$(echo "$out" | jq -r '"Netlify cannot show build logs: its API gives none. Deploy \(.id): \(.state)\(if .error then " — " + .error else "" end). The full log: \(.dashboardUrl // "the site dashboard")"')"
 }
 
 # netlify_url <site> [--dashboard]

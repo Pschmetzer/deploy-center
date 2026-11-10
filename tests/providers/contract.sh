@@ -17,6 +17,8 @@ mkdir -p "$tmp/bin"
 cp tests/lib/fake-curl.sh "$tmp/bin/curl"; cp tests/lib/fake-vercel.sh "$tmp/bin/vercel"
 printf '#!/bin/bash\nexit 44\n' > "$tmp/bin/security"   # no keychain entry
 printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/sleep"
+# A provider that calls its own CLI (Amplify: aws) brings a stand-in in tests/fixtures/<p>/bin.
+for f in tests/fixtures/*/bin/*; do [ -f "$f" ] && cp "$f" "$tmp/bin/"; done
 chmod +x "$tmp/bin"/*
 export FIXTURES="$root/tests/fixtures" CALLS="$tmp/calls.log"
 STUBPATH="$tmp/bin:/usr/bin:/bin"
@@ -52,7 +54,7 @@ lib() {  # lib <p> <shell code>: the code with deploys sourced (DEPLOYS_LIB=1)
 for f in providers/*.sh; do
   p="$(basename "$f" .sh)"
   rm -rf "$tmp/config-$p"; mkdir -p "$tmp/config-$p"
-  CONTRACT_ID="" CONTRACT_NAME="" CONTRACT_DEPLOY=""
+  CONTRACT_ID="" CONTRACT_NAME="" CONTRACT_DEPLOY="" CONTRACT_DONE=""
 
   missing="$(lib "$p" 'for v in '"$FUNCS"'; do declare -F "'"$p"'_$v" >/dev/null || echo "$v"; done' | tr '\n' ' ')"
   expect "$p: every contract function exists" "$missing" ""
@@ -77,7 +79,7 @@ for f in providers/*.sh; do
   out="$(cli "$p" "$p" json)"; rc=$?
   expect "$p: json from the fixtures" "$rc:$(echo "$out" | jq -r 'type' 2>&1)" "0:array"
   expect "$p: json has every field" "$(echo "$out" | jq -c --argjson f "$FIELDS" '[.[] | . as $e | $f[] | . as $k | select($e | has($k) | not)] | unique' 2>&1)" "[]"
-  expect "$p: phase is in the enum" "$(echo "$out" | jq -c --argjson ph "$PHASES" '[.[] | select(.phase as $x | $ph | index($x) | not) | .name]' 2>&1)" "[]"
+  expect "$p: phase is in the enum" "$(echo "$out" | jq -c --argjson ph "$PHASES" '[.[] | select(.phase != null and (.phase as $x | $ph | index($x) | not)) | .name]' 2>&1)" "[]"
   expect "$p: each phase is the expected one" "$(echo "$out" | jq -cS 'map({(.name): .phase}) | add' 2>&1)" "$(jq -cS . "tests/fixtures/$p/expect.json")"
   expect "$p: building follows the phase" "$(echo "$out" | jq -c '[.[] | select(.building != (.phase == "queued" or .phase == "building")) | .name]')" "[]"
   expect "$p: names are remembered with platform and id" \
@@ -92,11 +94,12 @@ for f in providers/*.sh; do
   # PRV-138: `deploys watch` ends on this provider's status line (a final phase, or "none"):
   # it once looped for ever on one that printed JSON. A time limit, so a regression fails here
   # instead of hanging the run (sleep is a stand-in, so 20 s is many rounds).
-  # The fixtures' deploy is still building: in a copy it has finished (Render live, Vercel READY).
+  # The fixtures' deploy is still building: in a copy it has finished (Render live, Vercel READY;
+  # another provider's env names its own sed script in CONTRACT_DONE).
   rm -rf "$tmp/fxw"; cp -R "$FIXTURES" "$tmp/fxw"
-  for wf in "$tmp/fxw/$p"/*"$CONTRACT_DEPLOY"*; do
-    [ -f "$wf" ] && sed -i.bak 's/build_in_progress/live/g; s/"BUILDING"/"READY"/g' "$wf" && rm -f "$wf.bak"
-  done
+  while IFS= read -r wf; do
+    sed -i.bak "${CONTRACT_DONE:-s/build_in_progress/live/g; s/\"BUILDING\"/\"READY\"/g}" "$wf" && rm -f "$wf.bak"
+  done < <(find "$tmp/fxw/$p" -type f -name "*$CONTRACT_DEPLOY*")
   # shellcheck source=/dev/null
   ( [ ! -f "tests/fixtures/$p/env" ] || . "tests/fixtures/$p/env"
     env -u DEPLOYS_LIB FIXTURES="$tmp/fxw" PATH="$STUBPATH" DEPLOYS_CONFIG="$tmp/config-$p" HOME="$tmp" NO_COLOR=1 \
