@@ -99,6 +99,7 @@ a different one needs `DEPLOYS_BIN`.
 | Tool | Runs | |
 |---|---|---|
 | `deploys_changed` | `deploys changed --json` | Projects with commits or PRs that are not live yet. |
+| `deploys_plan` | `deploys deploy-changed --json` (no `--yes`) | What a daily deploy would start: project, commit, commits waiting, risk. Starts nothing. No cost estimate (see `deploys_simulate`). |
 | `deploys_status(project?)` | `deploys status --json` | What is building, and the newest state of each project (failed ones too). With `project`: only that one, via `--no-github` (no GitHub calls), to follow a deploy. |
 | `deploys_list` | `deploys list --json` | Every project with its platform, repo, branch and auto-deploy flag. No GitHub calls. |
 | `deploys_risk(project)` | `deploys risk <p> --json` | Green, yellow or red for what waits: migrations, lockfiles, config, size. |
@@ -120,7 +121,15 @@ descriptions tell the agent to quote them as estimates. They read GitHub and the
 every project, so they can take a minute or two, and have their own timeout
 (`DEPLOYS_MCP_SLOW_TIMEOUT`, default 300 s).
 
-Tools that answer JSON (changed, status, list, risk, doctor, simulate, ledger, deploy, rollback)
+## Prompt and resources
+
+- Prompt **`ship-check`** (optional argument `project`): asks the agent to call `deploys_plan`, then
+  `deploys_notes` and `deploys_risk` per project, and to answer "ship now / check first / wait" in a
+  few lines. It deploys nothing. In Claude Code it shows up as `/mcp__deploys__ship-check`.
+- Resources **`deploys://changed`** and **`deploys://status`**: the JSON of `deploys changed --json`
+  and `deploys status --json`, for clients that attach resources without a tool call.
+
+Tools that answer JSON (changed, plan, status, list, risk, doctor, simulate, ledger, deploy, rollback)
 also return it as `structuredContent` (an array under `result`), so a client need not parse text.
 
 To find out whether a name is on Vercel or Render, deploy and rollback use `deploys list --json`

@@ -66,13 +66,31 @@ function start(env = {}, { elicit = null } = {}) {
 }
 
 const READ = ["deploys_changed", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_history", "deploys_ledger", "deploys_list", "deploys_logs",
-  "deploys_notes", "deploys_risk", "deploys_simulate", "deploys_status"];
+  "deploys_notes", "deploys_plan", "deploys_risk", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
 const info = await s.init();
 check("initialize names the server", info?.serverInfo?.name === "deploys", JSON.stringify(info?.serverInfo));
 check("instructions say read-only", /read-only/.test(info?.instructions ?? ""), info?.instructions);
+check("prompts and resources are offered", info?.capabilities?.prompts && info?.capabilities?.resources, JSON.stringify(info?.capabilities));
+{
+  const pl = await s.call("deploys_plan");
+  check("plan: deploy-changed without --yes, as JSON", !pl.error && pl.structured?.result?.[0]?.action === "would-deploy" && /deploy-changed --json\n/.test(callLog()) && !/deploy-changed --yes/.test(callLog()), pl.text);
+  const pr = (await s.request("prompts/list")).result?.prompts ?? [];
+  check("prompt ship-check is listed", pr.some((p) => p.name === "ship-check"), JSON.stringify(pr));
+  const g = (await s.request("prompts/get", { name: "ship-check", arguments: { project: "app-web" } })).result;
+  const gt = g?.messages?.[0]?.content?.text ?? "";
+  check("ship-check names the project, the tools, and deploys nothing", /app-web/.test(gt) && /deploys_plan/.test(gt) && /deploys_notes/.test(gt) && /Deploy nothing/.test(gt), gt);
+  const bad = await s.request("prompts/get", { name: "ship-check", arguments: { project: "a;b" } });
+  check("ship-check refuses a name that is not one", !!bad.error, JSON.stringify(bad));
+  const rl = (await s.request("resources/list")).result?.resources ?? [];
+  check("resources: changed and status", rl.map((r) => r.uri).join() === "deploys://changed,deploys://status", JSON.stringify(rl));
+  const rr = (await s.request("resources/read", { uri: "deploys://changed" })).result;
+  check("resource changed is changed --json", JSON.parse(rr?.contents?.[0]?.text ?? "null")?.map?.((p) => p.name).join() === "app-web,api", JSON.stringify(rr));
+  const ru = await s.request("resources/read", { uri: "deploys://nope" });
+  check("an unknown resource is an error", !!ru.error, JSON.stringify(ru));
+}
 const names = await s.names();
 check("lists the read tools", JSON.stringify(names) === JSON.stringify(READ), JSON.stringify(names));
 check("no write tool without DEPLOYS_MCP_ALLOW_DEPLOY", !names.includes("deploys_deploy") && !names.includes("deploys_rollback"), JSON.stringify(names));

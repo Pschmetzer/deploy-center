@@ -47,6 +47,7 @@ case "\$*" in
   "changed --json") jq -s --arg lv "\${FAKE_LEVEL:-}" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))
       | if \$lv != "" then map(if .name == "app-web" then . + {risk:{level:\$lv, reasons:[{level:\$lv, text:"touches a migration"}]}} else . + {risk:{level:"green", reasons:[]}} end) else . end' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
   "deploy-changed") echo "Would deploy: app-web, api (run with --yes)" ;;
+  "deploy-changed --json") echo '[{"platform":"vercel","name":"app-web","sha":"c4","action":"would-deploy","commits":4,"risk":"red"}]' ;;
   "deploy-changed --yes --json") echo "\$*" >> "$tmp/deploy.log"
     echo '[{"platform":"vercel","name":"app-web","action":"started","reason":null,"id":"dpl_1"},{"platform":"render","name":"api","action":"started","reason":null,"id":"dep-1"}]' ;;
   "watch vercel:app-web dpl_1") [ -n "\${FAKE_WATCH_SLOW:-}" ] && sleep 5; exit "\${FAKE_WATCH_WEB:-0}" ;;
