@@ -238,8 +238,19 @@ final class Store: ObservableObject {
         show(Toast(text: L("Autofix is not set up: no routine yet", "Autofix ist nicht eingerichtet: noch keine Routine"), ok: false,
                    undoLabel: L("Open Settings", "Einstellungen öffnen"), undo: {
             NSApp.activate(ignoringOtherApps: true)
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            Store.openSettingsWindow()
         }))
+    }
+
+    /// Settings from code: since macOS 14 the `showSettingsWindow:` action is ignored, so the app
+    /// menu's own Settings item (⌘,) is clicked; the old action stays as the fallback.
+    static func openSettingsWindow() {
+        if let menu = NSApp.mainMenu?.items.first?.submenu,
+           let k = menu.items.firstIndex(where: { $0.keyEquivalent == "," && $0.keyEquivalentModifierMask == .command }) {
+            menu.performActionForItem(at: k)
+        } else {
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
     }
 
     func buildCost(_ project: String) -> Double? {
