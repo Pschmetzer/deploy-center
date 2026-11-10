@@ -1,0 +1,16 @@
+[
+  {"id":"site-shop","name":"shop","url":"http://shop.example.com","ssl_url":"https://shop.example.com","custom_domain":"shop.example.com",
+   "admin_url":"https://app.netlify.com/sites/shop",
+   "build_settings":{"provider":"github","repo_url":"https://github.com/me/shop","repo_branch":"main","base":"","stop_builds":false},
+   "published_deploy":{"id":"d-shop-2","state":"ready","commit_ref":"2222222","title":"feat: cart\n\nlong body","published_at":"2026-11-02T10:00:00.000Z"}},
+  {"id":"site-blog","name":"blog","url":"http://blog-123.netlify.app","ssl_url":"https://blog-123.netlify.app","custom_domain":null,
+   "admin_url":"https://app.netlify.com/sites/blog",
+   "build_settings":{"provider":"github","repo_url":"https://github.com/me/blog","repo_branch":"trunk","base":"site","stop_builds":false},
+   "published_deploy":{"id":"d-blog-0","state":"ready","commit_ref":"b000000","title":"first post"}},
+  {"id":"site-paused","name":"Paused","url":"http://paused.netlify.app","ssl_url":"https://paused.netlify.app",
+   "admin_url":"https://app.netlify.com/sites/paused",
+   "build_settings":{"provider":"github","repo_url":"https://github.com/me/paused.git","repo_branch":"main","stop_builds":true},
+   "published_deploy":null},
+  {"id":"site-static","name":"static","url":"http://static.netlify.app","ssl_url":"https://static.netlify.app",
+   "admin_url":"https://app.netlify.com/sites/static","build_settings":{},"published_deploy":null}
+]
