@@ -51,7 +51,7 @@ Docker, CI keys and first steps: [README-CLI.md](README-CLI.md).
 <summary>Homebrew notes and requirements</summary>
 
 Homebrew 6 asks you to trust a third-party tap once (`brew trust`). Without admin rights, add
-`--appdir="$HOME/Applications"`. Updates: `brew upgrade --cask deploy-center` or **Update now** in Settings.
+`--appdir="$HOME/Applications"`. Updates: the app updates itself (**Check for Updates …** in the app menu); `brew upgrade --cask --greedy deploy-center` also works.
 
 | What | Needed for | Install |
 |---|---|---|
@@ -170,7 +170,7 @@ access to your Render account.
 
 **Does the app send data anywhere?** No telemetry, no account, no server of ours. It talks to Vercel,
 Render and GitHub with your own logins, to your sites for logos and the check after a deploy, and once a
-day to GitHub's release page for updates (Settings can turn that off). Errors go to `~/Library/Logs/DeployCenter.log` on your Mac.
+day to deploycenter.app/appcast.xml for updates, downloaded from GitHub (Settings can turn that off). Errors go to `~/Library/Logs/DeployCenter.log` on your Mac.
 
 **GitLab or Bitbucket?** Not yet. Deploys start from GitHub.
 
