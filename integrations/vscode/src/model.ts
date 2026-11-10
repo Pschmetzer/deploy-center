@@ -1,3 +1,4 @@
+import { count, t } from "./i18n";
 // What the deploys CLI prints, read into one list of projects. No vscode here, so it is tested
 // with plain node.
 
@@ -148,10 +149,10 @@ export function summarize(projects: Project[]): Summary {
 /** The status bar text: "⏳ 3 waiting", and building / failed when there are any. */
 export function statusText(s: Summary): string {
   const parts: string[] = [];
-  if (s.failed) parts.push(`$(error) ${s.failed} failed`);
-  if (s.building) parts.push(`$(sync~spin) ${s.building} building`);
-  if (s.waiting) parts.push(`⏳ ${s.waiting} waiting`);
-  return parts.length ? parts.join("  ") : "$(check) up to date";
+  if (s.failed) parts.push(t("$(error) {0} failed", s.failed));
+  if (s.building) parts.push(t("$(sync~spin) {0} building", s.building));
+  if (s.waiting) parts.push(t("⏳ {0} waiting", s.waiting));
+  return parts.length ? parts.join("  ") : t("$(check) up to date");
 }
 
 export function plural(n: number, word: string): string {
@@ -161,24 +162,25 @@ export function plural(n: number, word: string): string {
 /** One line per project, for the tree and the quick pick: "4 commits, 1 PR waiting · vercel". */
 export function describe(p: Project, now = Date.now() / 1000): string {
   const bits: string[] = [];
-  if (p.failed) bits.push(`failed (${p.state})`);
-  if (p.building) bits.push("building");
+  if (p.failed) bits.push(t("failed ({0})", p.state ?? ""));
+  if (p.building) bits.push(t("building"));
   if (p.waiting) {
-    let w = p.pendingCommits === null ? "changes" : plural(p.pendingCommits, "commit");
-    if (p.pendingPRs) w += `, ${plural(p.pendingPRs, "PR")}`;
-    w += " waiting";
+    const c = p.pendingCommits === null ? null : count(p.pendingCommits, "{0} commit", "{0} commits");
+    const prs = p.pendingPRs ? count(p.pendingPRs, "{0} PR", "{0} PRs") : null;
+    let w = c === null ? (prs ? t("changes, {0} waiting", prs) : t("changes waiting"))
+      : prs ? t("{0}, {1} waiting", c, prs) : t("{0} waiting", c);
     if (p.oldestPendingAt) w += ` (${age(now - p.oldestPendingAt)})`;
     bits.push(w);
   }
-  if (!bits.length) bits.push("up to date");
+  if (!bits.length) bits.push(t("up to date"));
   bits.push(p.platform);
   return bits.join(" · ");
 }
 
 export function age(seconds: number): string {
-  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))} min`;
-  if (seconds < 86400) return `${Math.round(seconds / 3600)} h`;
-  return `${Math.round(seconds / 86400)} d`;
+  if (seconds < 3600) return t("{0} min", Math.max(1, Math.round(seconds / 60)));
+  if (seconds < 86400) return t("{0} h", Math.round(seconds / 3600));
+  return t("{0} d", Math.round(seconds / 86400));
 }
 
 export type FollowState = "wait" | "live" | "failed" | "gone";

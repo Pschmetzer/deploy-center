@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- German: every text, command and setting follows the editor's language (English and Deutsch). "Copy for AI" stays English, it is written for the AI.
 - **Deploy Preview** (Vercel) and **Roll Back Production** (Vercel, Render), each after a confirmation, in the project menu and the tree.
 - A folder's remote matches a project only on the same host: `gitlab.com:me/app` is not GitHub's `me/app`.
 - After a deploy starts, the extension follows it (every 15 s, at most 15 min) and says when it is live or failed, with "Copy for AI" and "Show log".

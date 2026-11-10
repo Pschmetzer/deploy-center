@@ -4,9 +4,13 @@
 import { execFile } from "node:child_process";
 import * as vscode from "vscode";
 import { canPreview, canRollback, deployArgs, deployFailure, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, rollbackArgs, Runner, urlIn } from "./cli";
+import { count, setTranslator, t } from "./i18n";
 import { aiPrompt } from "./log";
-import { describe, platformLabel, plural, Project, statusText, summarize, followStep } from "./model";
+import { describe, platformLabel, Project, statusText, summarize, followStep } from "./model";
 import { parseRemotes, Scope, scopeProjects } from "./repo";
+
+// Every text for people in the editor's language (l10n/bundle.l10n.<lang>.json), English otherwise.
+setTranslator((m, ...a) => vscode.l10n.t(m, ...a));
 
 type ViewState = "loading" | "missing" | "error" | "empty" | "nomatch" | "ok";
 
@@ -39,7 +43,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   readonly onDidChangeTreeData = this.changed.event;
   readonly output = vscode.window.createOutputChannel("Deploy Center");
   /** Build logs get their own channel: showing one does not wipe the warnings in "Deploy Center". */
-  readonly logs = vscode.window.createOutputChannel("Deploy Center: Build log");
+  readonly logs = vscode.window.createOutputChannel(t("Deploy Center: Build log"));
   readonly status = vscode.window.createStatusBarItem("deployCenter.status", vscode.StatusBarAlignment.Left, 50);
 
   private cli: string | null = null;
@@ -85,8 +89,8 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   private sleep(ms: number): Promise<boolean> {
     return new Promise((resolve) => {
       if (this.disposed) return resolve(false);
-      const t = setTimeout(() => { this.pending.delete(t); resolve(!this.disposed); }, ms);
-      this.pending.add(t);
+      const id = setTimeout(() => { this.pending.delete(id); resolve(!this.disposed); }, ms);
+      this.pending.add(id);
     });
   }
 
@@ -133,14 +137,14 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     const s = this.status;
     s.backgroundColor = undefined;
     if (state === "missing") {
-      s.text = "$(warning) deploys not found";
-      s.tooltip = "Deploy Center: the deploys command was not found. Click for options.";
+      s.text = t("$(warning) deploys not found");
+      s.tooltip = t("Deploy Center: the deploys command was not found. Click for options.");
       return;
     }
-    if (state === "loading") { s.text = "$(sync~spin) Deploy Center"; s.tooltip = "Reading projects…"; return; }
+    if (state === "loading") { s.text = "$(sync~spin) Deploy Center"; s.tooltip = t("Reading projects…"); return; }
     if (state === "error") {
       s.text = "$(warning) Deploy Center";
-      s.tooltip = `Could not read the projects: ${this.warning ?? "unknown error"}`;
+      s.tooltip = t("Could not read the projects: {0}", this.warning ?? t("unknown error"));
       s.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
       return;
     }
@@ -148,10 +152,10 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     s.text = statusText(sum);
     if (sum.failed) s.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
     const md = new vscode.MarkdownString(undefined, true);
-    md.appendMarkdown(`**Deploy Center** · ${this.matched ? "this repo" : "all projects"}\n\n`);
-    if (!this.shown.length) md.appendMarkdown(state === "nomatch" ? "No project deploys from this folder's repo.\n\n" : "Nothing is waiting.\n\n");
+    md.appendMarkdown(`**Deploy Center** · ${this.matched ? t("this repo") : t("all projects")}\n\n`);
+    if (!this.shown.length) md.appendMarkdown((state === "nomatch" ? t("No project deploys from this folder's repo.") : t("Nothing is waiting.")) + "\n\n");
     for (const p of this.shown.slice(0, 15)) md.appendText(`${p.name}: ${describe(p)}\n`).appendMarkdown("\n");
-    if (this.shown.length > 15) md.appendText(`… and ${this.shown.length - 15} more\n`);
+    if (this.shown.length > 15) md.appendText(t("… and {0} more", this.shown.length - 15) + "\n");
     if (this.warning) md.appendMarkdown("\n").appendText(`⚠ ${this.warning}`);
     s.tooltip = md;
   }
@@ -187,10 +191,10 @@ export class Controller implements vscode.TreeDataProvider<Project> {
 
   async missingMenu(): Promise<void> {
     const pick = await vscode.window.showQuickPick([
-      { label: "$(globe) Get Deploy Center", detail: `The free Mac app includes the deploys command. ${SITE}`, id: "site" },
-      { label: "$(gear) Set the path to deploys", detail: "Settings: Deploy Center › Cli Path", id: "settings" },
-      { label: "$(refresh) Look again", id: "again" },
-    ], { title: "Deploy Center: the deploys command was not found" });
+      { label: t("$(globe) Get Deploy Center"), detail: t("The free Mac app includes the deploys command. {0}", SITE), id: "site" },
+      { label: t("$(gear) Set the path to deploys"), detail: t("Settings: Deploy Center › Cli Path"), id: "settings" },
+      { label: t("$(refresh) Look again"), id: "again" },
+    ], { title: t("Deploy Center: the deploys command was not found") });
     if (pick?.id === "site") void vscode.env.openExternal(vscode.Uri.parse(SITE));
     if (pick?.id === "settings") void vscode.commands.executeCommand("workbench.action.openSettings", "deployCenter.cliPath");
     if (pick?.id === "again") { this.locate(); void this.refresh(); }
@@ -204,10 +208,10 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     type Item = vscode.QuickPickItem & { project?: Project; id?: string };
     const items: Item[] = [];
     const waiting = this.shown.filter((p) => p.waiting);
-    if (this.matched && waiting.length) items.push({ label: `$(rocket) Deploy ${plural(waiting.length, "waiting project")} of this repo…`, id: "repo" });
+    if (this.matched && waiting.length) items.push({ label: count(waiting.length, "$(rocket) Deploy {0} waiting project of this repo…", "$(rocket) Deploy {0} waiting projects of this repo…"), id: "repo" });
     for (const p of this.shown) items.push({ label: p.name, description: describe(p), project: p });
-    items.push({ label: "$(refresh) Refresh", id: "refresh" });
-    const pick = await vscode.window.showQuickPick(items, { title: "Deploy Center", placeHolder: this.shown.length ? "Pick a project" : "Nothing to show" });
+    items.push({ label: t("$(refresh) Refresh"), id: "refresh" });
+    const pick = await vscode.window.showQuickPick(items, { title: "Deploy Center", placeHolder: this.shown.length ? t("Pick a project") : t("Nothing to show") });
     if (pick?.id === "repo") return this.deployRepo();
     if (pick?.id === "refresh") return this.refresh();
     if (pick?.project) return this.projectMenu(pick.project);
@@ -216,14 +220,14 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   async projectMenu(p: Project): Promise<void> {
     type Item = vscode.QuickPickItem & { id: string };
     const items: Item[] = [
-      { label: "$(rocket) Deploy…", description: p.waiting ? describe(p) : "nothing waiting", id: "deploy" },
-      { label: "$(link-external) Open site", id: "open" },
-      { label: "$(output) Show log", description: p.failed ? "the newest build failed" : undefined, id: "log" },
-      { label: "$(markdown) Copy release notes", id: "notes" },
+      { label: t("$(rocket) Deploy…"), description: p.waiting ? describe(p) : t("nothing waiting"), id: "deploy" },
+      { label: t("$(link-external) Open site"), id: "open" },
+      { label: t("$(output) Show log"), description: p.failed ? t("the newest build failed") : undefined, id: "log" },
+      { label: t("$(markdown) Copy release notes"), id: "notes" },
     ];
-    if (canPreview(p)) items.splice(1, 0, { label: "$(eye) Deploy preview…", description: "production stays as it is", id: "preview" });
-    if (canRollback(p)) items.push({ label: "$(history) Roll back…", description: "production to the deploy before", id: "rollback" });
-    if (p.failed) items.splice(1, 0, { label: "$(copy) Copy for AI", description: "the first error block, ready to paste", id: "ai" });
+    if (canPreview(p)) items.splice(1, 0, { label: t("$(eye) Deploy preview…"), description: t("production stays as it is"), id: "preview" });
+    if (canRollback(p)) items.push({ label: t("$(history) Roll back…"), description: t("production to the deploy before"), id: "rollback" });
+    if (p.failed) items.splice(1, 0, { label: t("$(copy) Copy for AI"), description: t("the first error block, ready to paste"), id: "ai" });
     const pick = await vscode.window.showQuickPick(items, { title: `${p.name} (${platformLabel(p.platform)})` });
     switch (pick?.id) {
       case "deploy": return this.deploy(p);
@@ -239,7 +243,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   private async startOne(run: Runner, p: Project): Promise<{ ok: boolean; text: string; url: string | null }> {
     const r = await run(deployArgs(p), 90_000);
     const d = parseDeploy(r.stdout);
-    if (r.code === 0 && d) return { ok: true, text: `${p.name}: started (${d.state ?? "queued"})`, url: d.url };
+    if (r.code === 0 && d) return { ok: true, text: t("{0}: started ({1})", p.name, d.state ?? t("queued")), url: d.url };
     return { ok: false, text: `${p.name}: ${deployFailure(r)}`, url: null };
   }
 
@@ -249,21 +253,23 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   async deploy(p: Project): Promise<void> {
     const run = this.need(); if (!run) return;
     const key = `${p.platform}:${p.name}`;
-    if (this.starting.has(key)) { void vscode.window.showInformationMessage(`${p.name} is being started already.`); return; }
+    if (this.starting.has(key)) { void vscode.window.showInformationMessage(t("{0} is being started already.", p.name)); return; }
     this.starting.add(key);
     try { await this.deployOne(run, p); } finally { this.starting.delete(key); }
   }
 
   private async deployOne(run: Runner, p: Project): Promise<void> {
-    const what = p.waiting ? describe(p) : "Nothing is known to be waiting; this deploys the newest commit again.";
-    const ok = await vscode.window.showWarningMessage(`Deploy ${p.name} to production on ${platformLabel(p.platform)}?`,
-      { modal: true, detail: what }, "Deploy");
-    if (ok !== "Deploy") return;
-    const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Starting ${p.name}…` }, () => this.startOne(run, p));
+    const what = p.waiting ? describe(p) : t("Nothing is known to be waiting; this deploys the newest commit again.");
+    const go = t("Deploy");
+    const ok = await vscode.window.showWarningMessage(t("Deploy {0} to production on {1}?", p.name, platformLabel(p.platform)),
+      { modal: true, detail: what }, go);
+    if (ok !== go) return;
+    const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t("Starting {0}…", p.name) }, () => this.startOne(run, p));
     this.output.appendLine(res.text);
     if (res.ok) {
-      const btn = await (res.url ? vscode.window.showInformationMessage(res.text, "Open deploy") : vscode.window.showInformationMessage(res.text));
-      if (btn === "Open deploy" && res.url) void vscode.env.openExternal(vscode.Uri.parse(res.url));
+      const openIt = t("Open deploy");
+      const btn = await (res.url ? vscode.window.showInformationMessage(res.text, openIt) : vscode.window.showInformationMessage(res.text));
+      if (btn === openIt && res.url) void vscode.env.openExternal(vscode.Uri.parse(res.url));
     } else void vscode.window.showErrorMessage(res.text);
     if (res.ok) void this.follow(p); else this.refreshLater();
   }
@@ -278,11 +284,12 @@ export class Controller implements vscode.TreeDataProvider<Project> {
       if (now?.building) seen = true;
       const step = followStep(now, seen, looks);
       if (step === "wait") continue;
-      if (step === "live") void vscode.window.showInformationMessage(`${p.name} is live.`);
+      if (step === "live") void vscode.window.showInformationMessage(t("{0} is live.", p.name));
       if (step === "failed" && now) {
-        const btn = await vscode.window.showErrorMessage(`${p.name}: the build failed.`, "Copy for AI", "Show log");
-        if (btn === "Copy for AI") await this.copyForAi(now);
-        if (btn === "Show log") await this.showLog(now);
+        const ai = t("Copy for AI"), logBtn = t("Show log");
+        const btn = await vscode.window.showErrorMessage(t("{0}: the build failed.", p.name), ai, logBtn);
+        if (btn === ai) await this.copyForAi(now);
+        if (btn === logBtn) await this.showLog(now);
       }
       return;
     }
@@ -291,32 +298,35 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   /** A preview deploy (Vercel): asked first, not followed (the tree shows production). */
   async deployPreview(p: Project): Promise<void> {
     const run = this.need(); if (!run) return;
-    if (!canPreview(p)) { void vscode.window.showInformationMessage(`${p.name} has no preview deploys here (Vercel only).`); return; }
-    const ok = await vscode.window.showWarningMessage(`Deploy a preview of ${p.name}?`,
-      { modal: true, detail: "Builds the newest commit at a preview address. Production stays as it is." }, "Deploy preview");
-    if (ok !== "Deploy preview") return;
-    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Starting a preview of ${p.name}…` },
+    if (!canPreview(p)) { void vscode.window.showInformationMessage(t("{0} has no preview deploys here (Vercel only).", p.name)); return; }
+    const go = t("Deploy preview");
+    const ok = await vscode.window.showWarningMessage(t("Deploy a preview of {0}?", p.name),
+      { modal: true, detail: t("Builds the newest commit at a preview address. Production stays as it is.") }, go);
+    if (ok !== go) return;
+    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t("Starting a preview of {0}…", p.name) },
       () => run(deployArgs(p, true), 90_000));
     const d = parseDeploy(r.stdout);
-    if (r.code !== 0 || !d) { const t = `${p.name}: ${deployFailure(r)}`; this.output.appendLine(t); void vscode.window.showErrorMessage(t); return; }
-    const text = `${p.name}: preview started (${d.state ?? "queued"})`;
+    if (r.code !== 0 || !d) { const msg = `${p.name}: ${deployFailure(r)}`; this.output.appendLine(msg); void vscode.window.showErrorMessage(msg); return; }
+    const text = t("{0}: preview started ({1})", p.name, d.state ?? t("queued"));
     this.output.appendLine(text);
-    const btn = await (d.url ? vscode.window.showInformationMessage(text, "Open preview") : vscode.window.showInformationMessage(text));
-    if (btn === "Open preview" && d.url) void vscode.env.openExternal(vscode.Uri.parse(d.url));
+    const openIt = t("Open preview");
+    const btn = await (d.url ? vscode.window.showInformationMessage(text, openIt) : vscode.window.showInformationMessage(text));
+    if (btn === openIt && d.url) void vscode.env.openExternal(vscode.Uri.parse(d.url));
   }
 
   /** Production back to the deploy before the current one: a live site changes, so asked first. */
   async rollback(p: Project): Promise<void> {
     const run = this.need(); if (!run) return;
-    if (!canRollback(p)) { void vscode.window.showInformationMessage(`${p.name} cannot be rolled back from here (Vercel and Render only).`); return; }
-    const ok = await vscode.window.showWarningMessage(`Roll back ${p.name} on ${platformLabel(p.platform)}?`,
-      { modal: true, detail: "Production goes back to the deploy before the current one. The site changes at once." }, "Roll back");
-    if (ok !== "Roll back") return;
-    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Rolling back ${p.name}…` },
+    if (!canRollback(p)) { void vscode.window.showInformationMessage(t("{0} cannot be rolled back from here (Vercel and Render only).", p.name)); return; }
+    const go = t("Roll back");
+    const ok = await vscode.window.showWarningMessage(t("Roll back {0} on {1}?", p.name, platformLabel(p.platform)),
+      { modal: true, detail: t("Production goes back to the deploy before the current one. The site changes at once.") }, go);
+    if (ok !== go) return;
+    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t("Rolling back {0}…", p.name) },
       () => run(rollbackArgs(p), 90_000));
     const d = parseDeploy(r.stdout);
-    if (r.code !== 0 || !d) { const t = `${p.name}: ${r.timedOut ? "the rollback did not answer in time. Check its state (Refresh) before you try again." : errorLine(r, "rollback")}`; this.output.appendLine(t); void vscode.window.showErrorMessage(t); return; }
-    const text = `${p.name}: rolled back to ${d.id}${d.state ? ` (${d.state})` : ""}`;
+    if (r.code !== 0 || !d) { const msg = `${p.name}: ${r.timedOut ? t("the rollback did not answer in time. Check its state (Refresh) before you try again.") : errorLine(r, "rollback")}`; this.output.appendLine(msg); void vscode.window.showErrorMessage(msg); return; }
+    const text = d.state ? t("{0}: rolled back to {1} ({2})", p.name, d.id, d.state) : t("{0}: rolled back to {1}", p.name, d.id);
     this.output.appendLine(text);
     void vscode.window.showInformationMessage(text);
     this.refreshLater(3_000);
@@ -327,27 +337,28 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     if (this.state === "loading") await this.refresh();
     const waiting = this.matched ? this.shown.filter((p) => p.waiting) : [];
     if (!waiting.length) {
-      void vscode.window.showInformationMessage(this.matched ? "Nothing of this repo is waiting." : "No project deploys from this folder's repo.");
+      void vscode.window.showInformationMessage(this.matched ? t("Nothing of this repo is waiting.") : t("No project deploys from this folder's repo."));
       return;
     }
-    const ok = await vscode.window.showWarningMessage(`Deploy ${plural(waiting.length, "project")} of this repo to production?`,
-      { modal: true, detail: waiting.map((p) => `• ${p.name} (${p.platform}): ${describe(p)}`).join("\n") }, "Deploy");
-    if (ok !== "Deploy") return;
-    const results = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Starting deploys…" }, async (prog) => {
+    const go = t("Deploy");
+    const ok = await vscode.window.showWarningMessage(count(waiting.length, "Deploy {0} project of this repo to production?", "Deploy {0} projects of this repo to production?"),
+      { modal: true, detail: waiting.map((p) => `• ${p.name} (${p.platform}): ${describe(p)}`).join("\n") }, go);
+    if (ok !== go) return;
+    const results = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t("Starting deploys…") }, async (prog) => {
       const out = [];
       for (const p of waiting) { prog.report({ message: p.name }); out.push(await this.startOne(run, p)); }
       return out;
     });
     for (const r of results) this.output.appendLine(r.text);
     const bad = results.filter((r) => !r.ok);
-    const msg = `${results.length - bad.length} started, ${bad.length} failed to start.`;
-    if (bad.length) void vscode.window.showErrorMessage(`${msg} ${bad.map((b) => b.text).join("; ")}`, "Show output").then((b) => { if (b) this.output.show(); });
+    const msg = t("{0} started, {1} failed to start.", results.length - bad.length, bad.length);
+    if (bad.length) void vscode.window.showErrorMessage(`${msg} ${bad.map((b) => b.text).join("; ")}`, t("Show output")).then((b) => { if (b) this.output.show(); });
     else void vscode.window.showInformationMessage(msg);
     this.refreshLater();
   }
 
   private async readLog(run: Runner, p: Project): Promise<string | null> {
-    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: `Reading the log of ${p.name}` },
+    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: t("Reading the log of {0}", p.name) },
       () => run(projectArgs("logs", p, String(cfg().logLines)), 60_000));
     if (r.code !== 0) { void vscode.window.showErrorMessage(`${p.name}: ${errorLine(r, "deploys logs")}`); return null; }
     return r.stdout;
@@ -357,11 +368,11 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     const run = this.need(); if (!run) return;
     const log = await this.readLog(run, p); if (log === null) return;
     this.logs.clear();
-    this.logs.appendLine(`── ${p.name} (${p.platform}) · newest build log${p.state ? ` · ${p.state}` : ""} ──`);
+    this.logs.appendLine(`── ${p.name} (${p.platform}) · ${t("newest build log")}${p.state ? ` · ${p.state}` : ""} ──`);
     this.logs.append(log.endsWith("\n") ? log : log + "\n");
     this.logs.show(true);
     if (p.failed) {
-      const b = await vscode.window.showWarningMessage(`The newest build of ${p.name} failed.`, "Copy for AI");
+      const b = await vscode.window.showWarningMessage(t("The newest build of {0} failed.", p.name), t("Copy for AI"));
       if (b) await this.copyForAi(p, log);
     }
   }
@@ -370,7 +381,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     const run = this.need(); if (!run) return;
     const text = log ?? await this.readLog(run, p); if (text === null) return;
     await vscode.env.clipboard.writeText(aiPrompt(p, text));
-    void vscode.window.showInformationMessage(`Copied the first error of ${p.name}, ready to paste into Claude Code, Cursor or a chat.`);
+    void vscode.window.showInformationMessage(t("Copied the first error of {0}, ready to paste into Claude Code, Cursor or a chat.", p.name));
   }
 
   async copyNotes(p: Project): Promise<void> {
@@ -378,7 +389,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     const r = await run(projectArgs("notes", p), cfg().timeoutMs);
     if (r.code !== 0 || !r.stdout.trim()) { void vscode.window.showErrorMessage(`${p.name}: ${errorLine(r, "deploys notes")}`); return; }
     await vscode.env.clipboard.writeText(r.stdout.trim() + "\n");
-    void vscode.window.showInformationMessage(`Copied the release notes of ${p.name}.`);
+    void vscode.window.showInformationMessage(t("Copied the release notes of {0}.", p.name));
   }
 
   async open(p: Project, dashboard: boolean): Promise<void> {
@@ -395,7 +406,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     if (arg && typeof arg === "object" && "name" in arg && "platform" in arg) return arg as Project;
     const list = this.shown.filter(filter);
     if (list.length === 1) return list[0];
-    const pick = await vscode.window.showQuickPick(list.map((p) => ({ label: p.name, description: describe(p), p })), { placeHolder: "Pick a project" });
+    const pick = await vscode.window.showQuickPick(list.map((p) => ({ label: p.name, description: describe(p), p })), { placeHolder: t("Pick a project") });
     return pick?.p;
   }
 }

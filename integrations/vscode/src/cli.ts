@@ -7,6 +7,7 @@ import { accessSync, constants, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { mergeProjects, parseArray, Project } from "./model";
+import { t } from "./i18n";
 
 export const APP_CLI = "/Applications/Deploy Center.app/Contents/Resources/deploys";
 
@@ -103,15 +104,15 @@ export function makeRunner(cli: string, env: NodeJS.ProcessEnv = childEnv()): Ru
  * platform, so it says so: deploying again at once could start a second build.
  */
 export function deployFailure(r: RunResult): string {
-  if (r.timedOut) return "did not answer in time. It may have started anyway: check its state (Refresh) before you deploy again.";
+  if (r.timedOut) return t("did not answer in time. It may have started anyway: check its state (Refresh) before you deploy again.");
   return errorLine(r, "deploy");
 }
 
 /** The last useful line of stderr, for a message: "Error: " and colour codes gone. */
 export function errorLine(r: RunResult, what: string): string {
-  if (r.timedOut) return `${what} did not answer in time.`;
+  if (r.timedOut) return t("{0} did not answer in time.", what);
   const line = r.stderr.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "";
-  return line.replace(/\u001B\[[0-9;]*m/g, "").replace(/^Error:\s*/, "") || `${what} failed (exit ${r.code}).`;
+  return line.replace(/\u001B\[[0-9;]*m/g, "").replace(/^Error:\s*/, "") || t("{0} failed (exit {1}).", what, r.code);
 }
 
 export interface Loaded {

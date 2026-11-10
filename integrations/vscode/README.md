@@ -29,6 +29,11 @@ ready to paste back into the agent.
 | Deploy Center: Deploy Preview | Vercel: the newest commit at a preview address, after a confirmation; production stays |
 | Deploy Center: Roll Back Production | Vercel and Render: production back to the deploy before, after a confirmation |
 
+## Languages
+
+English and German, following the editor's display language (`Configure Display Language`).
+The text that **Copy for AI** puts on the clipboard stays English.
+
 ## Needs
 
 The `deploys` CLI, which comes with the free Mac app. It is looked for in this order:
