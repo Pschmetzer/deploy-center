@@ -25,6 +25,16 @@
 #   deploys vercel rollback <p>               production back to the previous deployment
 #   deploys render rollback <service>          back to the deploy that was live before
 #   deploys vercel team [<id>]                show or set the Vercel team
+#   deploys vercel deploy <p> [--preview] [--sha <c>] [--wait]   --wait follows it until live or failed
+#   deploys history <project> [n]             the last n deploys (default 10): when, state, commit, source
+#   deploys logs <project> [lines]            the end of the newest build log
+#   deploys open <project> [--dashboard]      the site, or its page at Vercel or Render
+#   deploys ignore <p> [--undo] | --list      leave a project out of changed and deploy-changed
+#   deploys costs [days] | triggers           Vercel charges per day; builds nobody started from here
+#   deploys where                             config folder, version, key source, logins
+#   deploys render forget-key                 remove the Render key from the keychain
+#   deploys completion zsh|bash               tab completion (eval "$(deploys completion zsh)")
+#   deploys --help | --version
 #   deploys render list                       services and their auto-deploy setting
 #   deploys render autodeploy-off <s>|--all
 #   deploys render deploy <service>           deploy the newest commit
@@ -471,7 +481,72 @@ export -f workflow_hits b64d
 # Sourced by tests/script-tests.sh: the functions above, no command.
 if [ "${DEPLOYS_LIB:-}" = 1 ]; then return 0 2>/dev/null || exit 0; fi
 
+# The version: VERSION next to the script (a checkout), or the app's Info.plist around it.
+deploys_version() {
+  local f="$0" d
+  while [ -L "$f" ]; do d="$(cd "$(dirname "$f")" && pwd)"; f="$(readlink "$f")"; case "$f" in /*) ;; *) f="$d/$f";; esac; done
+  d="$(cd "$(dirname "$f")" && pwd)"
+  if [ -f "$d/VERSION" ]; then cat "$d/VERSION"
+  elif [ -f "$d/../Info.plist" ]; then
+    # The value is on the key's line or the next one: the first <string> after the key.
+    grep -A1 CFBundleShortVersionString "$d/../Info.plist" | grep -o '<string>[^<]*' | head -n 1 | sed 's/<string>//'
+  else echo unknown; fi
+}
+
+case "${1:-}" in
+  -h|--help|help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -v|--version|version) deploys_version; exit 0 ;;
+esac
+
+# A missing name is a usage line, not bash's "line 425: 2: project".
+usage_if_short() { [ "$1" -ge "$2" ] || die "Usage: deploys $3"; }
 case "${1:-} ${2:-}" in
+  "watch "*)       usage_if_short $# 2 "watch <project>" ;;
+  "logs "*)        usage_if_short $# 2 "logs <project> [lines]" ;;
+  "open "*)        usage_if_short $# 2 "open <project> [--dashboard]" ;;
+  "explain "*)     usage_if_short $# 2 "explain <project>" ;;
+  "diff "*)        usage_if_short $# 2 "diff <project>" ;;
+  "notes "*)       usage_if_short $# 2 "notes <project>" ;;
+  "history "*)     usage_if_short $# 2 "history <project> [n]" ;;
+  "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
+  "vercel map")    usage_if_short $# 4 "vercel map <project> <owner/repo> [branch]" ;;
+  "vercel deploy"|"vercel deploy-json"|"vercel rollback") usage_if_short $# 3 "vercel ${2} <project>" ;;
+  "vercel cancel"|"vercel status") usage_if_short $# 3 "vercel ${2} <deployment id>" ;;
+  "render deploy"|"render deploy-json"|"render rollback") usage_if_short $# 3 "render ${2} <service>" ;;
+  "render cancel"|"render status") usage_if_short $# 4 "render ${2} <service id> <deploy id>" ;;
+esac
+
+case "${1:-} ${2:-}" in
+  "where "*)
+    # Where things are and who is logged in, for a person (doctor is the same for the app).
+    src=none
+    if [ -n "${RENDER_API_KEY:-}" ]; then src="environment (RENDER_API_KEY)"
+    elif security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" >/dev/null 2>&1 \
+      || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" >/dev/null 2>&1; then src="keychain"; fi
+    ghu="$(gh api user --jq .login 2>/dev/null || echo "not logged in")"
+    vu="$(vercel whoami 2>/dev/null | tail -n 1 || true)"
+    printf 'version      %s\nscript       %s\nconfig       %s\nvercel team  %s\nvercel user  %s\ngithub user  %s\nrender key   %s\n' \
+      "$(deploys_version)" "$0" "$CONFIG_DIR" "$(cat "$CONFIG_DIR/vercel-team" 2>/dev/null || echo "not chosen yet")" \
+      "${vu:-not logged in}" "$ghu" "$src" ;;
+
+  "history "*)
+    # The last n deploys of one project: when, how it ended, which commit, what started it.
+    p="$2"; n="${3:-10}"
+    case "$n" in ''|*[!0-9]*) die "n must be a number";; esac
+    plat="$(platform_of "$p")"
+    if [ "$plat" = vercel ]; then
+      vercel_call "/v6/deployments?app=$p&limit=$n" | jq -r '.deployments[]
+        | [(.created/1000 | strftime("%Y-%m-%d %H:%M")), (.target // "preview"), .state,
+           ((.meta.githubCommitSha // "")[0:7]), (.source // ""),
+           (if .ready and .buildingAt then "\(((.ready - .buildingAt)/1000) | floor)s" else "" end)] | @tsv' \
+        | (printf 'WHEN (UTC)\tTARGET\tSTATE\tCOMMIT\tSOURCE\tBUILD\n'; cat) | column -t -s $'\t'
+    else
+      render_call GET "/services/$(render_id_of "$p")/deploys?limit=$n" | jq -r 'def t: sub("\\.[0-9]+Z$";"Z") | fromdateiso8601;
+        .[].deploy | [(.createdAt | t | strftime("%Y-%m-%d %H:%M")), .status, ((.commit.id // "")[0:7]), (.trigger // ""),
+           (if .finishedAt then "\(((.finishedAt | t) - (.createdAt | t)))s" else "" end)] | @tsv' \
+        | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | column -t -s $'\t'
+    fi ;;
+
   "doctor "*)
     # Written with printf, not jq: this is the command that has to work when jq is missing.
     has() { command -v "$1" >/dev/null 2>&1 && echo true || echo false; }
@@ -585,11 +660,20 @@ case "${1:-} ${2:-}" in
       else url="$(echo "$svc" | jq -r '.serviceDetails.url // .dashboardUrl // empty')"; fi
     fi
     [ -n "$url" ] || die "No address known for $p"
-    open "$url" 2>/dev/null || echo "$url" ;;
+    # macOS open, xdg-open on Linux; without either (cron, ssh) the address is printed.
+    if command -v open >/dev/null 2>&1 && [ "$(uname)" = Darwin ]; then open "$url" 2>/dev/null || echo "$url"
+    elif command -v xdg-open >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then xdg-open "$url" >/dev/null 2>&1 || echo "$url"
+    else echo "$url"; fi ;;
 
   "ignore "*)
     # Leave a project out of `changed` and `deploy-changed` (again with: ignore <p> --undo).
-    p="${2:?project}"; f="$CONFIG_DIR/ignored.json"; [ -f "$f" ] || echo '[]' > "$f"; tmp="$(mktemp)"
+    f="$CONFIG_DIR/ignored.json"; [ -f "$f" ] || echo '[]' > "$f"
+    if [ "${2:-}" = "--list" ] || [ -z "${2:-}" ]; then jq -r '.[]' "$f"; exit 0; fi
+    p="$2"; tmp="$(mktemp)"
+    # A typo would be ignored silently for ever: a name never seen in a list read is refused.
+    if [ "${3:-}" != "--undo" ] && [ -s "$CONFIG_DIR/names" ] && ! grep -qxF "$p" "$CONFIG_DIR/names"; then
+      rm -f "$tmp"; die "No project or service named \"$p\" was seen yet (deploys changed reads the names)"
+    fi
     if [ "${3:-}" = "--undo" ]; then jq --arg p "$p" 'map(select(. != $p))' "$f" > "$tmp"; echo "$p is counted again"
     else jq --arg p "$p" '. + [$p] | unique' "$f" > "$tmp"; echo "$p is left out of changed and deploy-changed"; fi
     mv "$tmp" "$f" ;;
@@ -627,15 +711,19 @@ case "${1:-} ${2:-}" in
 
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
-    cmds="doctor changed deploy-changed status watch logs open ignore explain diff notes costs triggers details vercel render completion"
+    cmds="doctor where changed deploy-changed status watch history logs open ignore explain diff notes costs triggers details vercel render completion --help --version"
     case "${2:-zsh}" in
       zsh) cat <<ZSH
 _deploys() {
   local -a names; names=(\${(f)"\$(cat "$CONFIG_DIR/names" 2>/dev/null)"})
   if (( CURRENT == 2 )); then compadd $cmds
-  elif [[ \$words[2] == (vercel|render) && CURRENT == 3 ]]; then compadd list deploy rollback status autodeploy-off json map
+  elif [[ \$words[2] == vercel && CURRENT == 3 ]]; then compadd list deploy rollback status cancel autodeploy-off json map team
+  elif [[ \$words[2] == render && CURRENT == 3 ]]; then compadd list deploy rollback status cancel autodeploy-off json set-key forget-key
+  elif [[ \$words[2] == completion ]]; then compadd zsh bash
   else compadd -a names; fi
 }
+# compdef exists only after compinit; load it if ~/.zshrc has not.
+(( \$+functions[compdef] )) || { autoload -Uz compinit && compinit; }
 compdef _deploys deploys
 ZSH
       ;;
@@ -643,6 +731,8 @@ ZSH
 _deploys() {
   local cur=\${COMP_WORDS[COMP_CWORD]}
   if [ \$COMP_CWORD -eq 1 ]; then COMPREPLY=(\$(compgen -W "$cmds" -- "\$cur"))
+  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = vercel ]; then COMPREPLY=(\$(compgen -W "list deploy rollback status cancel autodeploy-off json map team" -- "\$cur"))
+  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = render ]; then COMPREPLY=(\$(compgen -W "list deploy rollback status cancel autodeploy-off json set-key forget-key" -- "\$cur"))
   else COMPREPLY=(\$(compgen -W "\$(cat "$CONFIG_DIR/names" 2>/dev/null)" -- "\$cur")); fi
 }
 complete -F _deploys deploys
@@ -692,7 +782,10 @@ BASH
 
   "costs "*)
     # Vercel charges for the last N days (default 7), per day and builds per project.
-    days="${2:-7}"; team="$(vercel_team)"; tmp="$(mktemp -d)"
+    days="${2:-7}"
+    case "$days" in ''|*[!0-9]*) die "Usage: deploys costs [days], days a number from 1 to 90";; esac
+    [ "$days" -ge 1 ] && [ "$days" -le 90 ] || die "days must be from 1 to 90"
+    team="$(vercel_team)"; tmp="$(mktemp -d)"
     for i in $(seq "$days" -1 1); do
       echo "$(days_ago "$i") $(days_ago "$((i-1))")"
     done | xargs -P 4 -n 2 bash -c 'cost_day "$0" "$1" "'"$team"'" "'"$tmp"'"'
@@ -725,8 +818,11 @@ BASH
             | {kind:"vercel-build", where:.name, detail:"source \(.source), \(.created/1000|strftime("%Y-%m-%d %H:%M")) UTC"}'
       if has_render_key; then
         roff="$CONFIG_DIR/render-off.json"; [ -f "$roff" ] || echo '{}' > "$roff"
-        # All services at once: twenty calls one after another take a while.
-        for id in $(render_services | jq -r '.[] | select(.suspended!="suspended") | .id'); do
+        # The service list once (the workflow check below reuses it), and eight calls at a time:
+        # more at once only meets Render's rate limit.
+        svcs="$(render_services 2>/dev/null || echo '[]')"; running=0
+        for id in $(echo "$svcs" | jq -r '.[] | select(.suspended!="suspended") | .id'); do
+          if [ "$running" -ge 8 ]; then wait; running=0; fi; running=$((running + 1))
           ( render_call GET "/services/$id/deploys?limit=5" 2>/dev/null \
             | jq -c --arg id "$id" --argjson since "$((since/1000))" --slurpfile o "$roff" '.[].deploy
                 | select(.trigger as $t | ["new_commit","deploy_hook","blueprint_sync"] | index($t))
@@ -740,7 +836,7 @@ BASH
       fi
       if command -v gh >/dev/null 2>&1; then
         { jq -r '.[] | select(.repo) | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
-          render_services 2>/dev/null | jq -r '.[] | .repo // empty | sub("^https://github.com/";"") | sub("\\.git$";"")'
+          echo "${svcs:-[]}" | jq -r '.[] | .repo // empty | sub("^https://github.com/";"") | sub("\\.git$";"")'
         } | sort -u | xargs -P 8 -n 1 bash -c 'workflow_hits "$0" "'"$tmp"'"'
         cat_all "$tmp"/*.jsonl
       fi
@@ -818,9 +914,27 @@ BASH
       vercel_off "$target"
     fi ;;
   "vercel deploy")
-    target="${3:-}"; [ -n "$target" ] || die "Give a project name"
-    vercel_deploy_json "$target" "$([ "${4:-}" = "--preview" ] && echo 1)" \
-      | jq -r '"Vercel: deploy started -> \(.url) (\(.state))"' ;;
+    # vercel deploy <project> [--preview] [--sha <commit>] [--wait]
+    target="$3"; pv=""; sha=""; wait_=""; shift 3
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --preview) pv=1;; --wait) wait_=1;;
+        --sha) [ -n "${2:-}" ] || die "Usage: deploys vercel deploy <project> --sha <commit>"; sha="$2"; shift;;
+        *) die "Unknown option $1. Usage: deploys vercel deploy <project> [--preview] [--sha <commit>] [--wait]";;
+      esac; shift
+    done
+    out="$(vercel_deploy_json "$target" "$pv" "$sha")"
+    echo "$out" | jq -r '"Vercel: deploy started -> \(.url) (\(.state))"'
+    # Follow exactly this deploy, not "the newest one", until it is live or failed.
+    if [ -n "$wait_" ]; then
+      did="$(echo "$out" | jq -r .id)"
+      while :; do
+        st="$(vercel_call "/v13/deployments/$did" | jq -r '.readyState // .status // "?"' 2>/dev/null || echo "?")"
+        printf '%s  %s\n' "$(date +%H:%M:%S)" "$st"
+        case "$st" in READY) exit 0;; ERROR|CANCELED) exit 1;; esac
+        sleep 6
+      done
+    fi ;;
   "vercel deploy-json")
     # deploy-json <project> [--preview] [--sha <commit>]
     p="${3:?project}"; pv=""; sha=""; shift 3 || true
@@ -908,6 +1022,14 @@ BASH
     render_call POST "/services/$id/rollback" "{\"deployId\":\"$prev\"}" | jq --arg s "$id" '{id, serviceId:$s, state:.status}' ;;
   "render status")
     render_call GET "/services/${3:?service id}/deploys/${4:?deploy id}" | jq '{id, state:.status}' ;;
+  "render forget-key")
+    # Both names the key was ever stored under. A key in RENDER_API_KEY is not touched.
+    gone=0
+    for svc in "$KEYCHAIN_SERVICE" "$LEGACY_KEYCHAIN_SERVICE"; do
+      security delete-generic-password -a "$USER" -s "$svc" >/dev/null 2>&1 && gone=$((gone + 1))
+    done
+    if [ "$gone" -gt 0 ]; then echo "Render key removed from the keychain."; else echo "No Render key was in the keychain."; fi
+    [ -z "${RENDER_API_KEY:-}" ] || echo "RENDER_API_KEY is still set in the environment." ;;
   "render set-key")
     IFS= read -r key || true
     [ -n "$key" ] || die "Pipe the key in: pbpaste | deploys render set-key"
