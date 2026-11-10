@@ -2,7 +2,7 @@
 
 <h1 align="center">Deploy Center</h1>
 
-<p align="center"><b>Turn off auto-deploy on Vercel and Render. Deploy what changed with one click.</b><br>
+<p align="center"><b>Turn off auto-deploy on Vercel, Render and more. Deploy what changed with one click.</b><br>
 Your agent pushes 40 times. You deploy once.<br>
 Works great with Claude Code: let the agent push, you decide what ships.</p>
 
@@ -69,7 +69,7 @@ See [Troubleshooting](docs/TROUBLESHOOTING.md#vercel-is-installed-nvm-volta-fnm-
 
 Every push builds every connected project, and build minutes cost money. AI coding agents push
 many times a day, so the builds add up. Deploying once a day with a click costs a fraction,
-and nothing ships by accident. Try the [cost calculator](https://deploycenter.app/#calc).
+and nothing ships by accident. Try the [cost calculator](https://deploycenter.app/vercel-build-cost-calculator/).
 
 ## How it works
 
@@ -84,15 +84,19 @@ Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only gree
 ## Features
 
 - Turns off auto-deploy for all Vercel projects and Render services at once. [What changes](docs/AUTO-DEPLOY.md)
+- More hosts, opt-in: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and any deploy hook (`deploys providers enable <name>`). [Providers](docs/PROVIDERS.md)
+- Reads what is waiting from GitHub or GitLab (gitlab.com or your own). [GitLab](docs/GITLAB.md)
 - Deploys the newest commit, for one project or many, and follows each deploy until live or failed
 - Shows what is waiting: commits and merged PRs not live yet, per project and in total. [How it counts](docs/NUMBERS.md)
 - Shows your Vercel build costs
 - Estimates what auto-deploy would cost a month, and what turning it off saved since. [How it estimates](docs/SAVINGS.md)
 - Menu bar icon with the number of PRs waiting, and a notification when a deploy ends
-- Preview deploys (Vercel) and rollback to the previous live deploy
+- Preview deploys and rollback to the previous live deploy, on the hosts that support them
 - A bash CLI, `deploys`, that does all of this without the app, also on Linux and in CI. [CLI reference](docs/CLI.md)
-- Add-ons: a GitHub Action, badges, a daily summary to a webhook, a pre-push hook, a Docker image. [Integrations](integrations/)
+- Add-ons: a GitHub Action, badges, a daily summary to a webhook, a pre-push hook, a Docker image, an MCP server, a Raycast extension, an agent digest. [Integrations](integrations/)
 - Autofix: a failed build goes to a Claude Code routine that opens a fix PR. [Autofix](docs/AUTOFIX.md)
+- Ask Claude, with your own Anthropic key: why a build failed, release notes, is it safe to ship. [Claude in the app](docs/CLAUDE.md)
+- Safe deploys (only green CI, health check with rollback, deploy windows), a guard that turns auto-deploy off again, and a team mode without a server. [Safe deploys](docs/SAFE-DEPLOY.md) · [Guard](docs/GUARD.md) · [Team](docs/TEAM.md)
 - English and German
 
 ## Deploy Center + Claude Code
@@ -102,7 +106,8 @@ Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only gree
   It never merges by itself. [Autofix](docs/AUTOFIX.md)
 - **One deploy for many pushes.** Let the agent push as often as it likes; nothing builds until you deploy what changed.
 - **Copy for Claude.** The build log of a failed deploy has a button that copies the error and the log around it as a prompt, ready to paste.
-- *Coming:* an MCP server, so Claude can ask what is waiting and deploy only with your OK, and a digest of what the agent pushed for you to approve.
+- **MCP server.** Claude can ask what is waiting and deploy only with your OK. [MCP server](integrations/mcp/) · [Claude Code plugin](integrations/claude-code/)
+- **Agent digest.** Once a day, what the agent pushed, for you to approve. [Digest](integrations/digest/)
 
 More: [deploycenter.app/claude-code](https://deploycenter.app/claude-code/)
 
@@ -113,7 +118,7 @@ More: [deploycenter.app/claude-code](https://deploycenter.app/claude-code/)
 | **Vercel** | Removes the project's Git connection. It writes down the repo and branch in `~/.config/deploys/vercel-repos.json` first. | Project → Settings → Git → connect the repository again. |
 | **Render** | Sets the service's auto-deploy to *Off*. The service stays connected to its repo. | Service → Settings → Build & Deploy → Auto-Deploy → *On Commit*. |
 
-There is no undo command: you turn auto-deploy back on in each dashboard. Uninstalling does not turn it back on.
+To turn auto-deploy back on: `deploys vercel autodeploy-on <project>|--all` and `deploys render autodeploy-on <service>|--all`, or in each dashboard. Uninstalling does not turn it back on.
 Deploy hooks and GitHub workflows that deploy keep working; `deploys triggers` lists them. On Render, a
 Blueprint with auto-sync can turn auto-deploy on again: add `autoDeployTrigger: off` to your services in
 `render.yaml`. Details: [Auto-deploy off and back on](docs/AUTO-DEPLOY.md) · [Uninstall](docs/UNINSTALL.md).
@@ -137,14 +142,14 @@ settings: [docs/CLI.md](docs/CLI.md).
 - [x] Menu bar, notifications, English and German
 - [x] `deploys` CLI, GitHub Action, badges, daily webhook summary, pre-push hook, Docker image
 - [x] Autofix for failed builds
-- [ ] Netlify
-- [ ] Cloudflare Pages
-- [ ] AWS Amplify
-- [ ] Generic deploy hook (any platform with a deploy URL)
-- [ ] MCP server for AI agents
-- [ ] Raycast extension
-- [ ] Linux CLI packaging
-- [ ] Team sync
+- [x] Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify (opt-in)
+- [x] Generic deploy hook (any platform with a deploy URL)
+- [x] GitLab as a source next to GitHub
+- [x] MCP server for AI agents, Claude Code plugin, agent digest
+- [x] Raycast extension
+- [x] Linux CLI packaging (`install.sh`, Homebrew formula)
+- [x] Team mode (a shared `deploy-center.json`, no server)
+- [ ] Bitbucket and Gitea as a source
 
 Which platform should come next? [Vote with an issue](https://github.com/Pschmetzer/deploy-center/issues/new?template=platform-request.yml).
 
@@ -160,7 +165,7 @@ Which platform should come next? [Vote with an issue](https://github.com/Pschmet
 
 ## FAQ
 
-**What does it cost?** Nothing. You pay Vercel and Render for the builds you start, and fewer of them.
+**What does it cost?** Nothing. You pay your hosts (Vercel, Render, …) for the builds you start, and fewer of them.
 
 **Does it deploy anything by itself?** No. It deploys when you press **Deploy** or run a `deploys`
 command with `--yes`. A scheduled deploy is yours to set up: [examples/](examples/).
@@ -172,16 +177,16 @@ access to your Render account.
 Render and GitHub with your own logins, to your sites for logos and the check after a deploy, and once a
 day to deploycenter.app/appcast.xml for updates, downloaded from GitHub (Settings can turn that off). Errors go to `~/Library/Logs/DeployCenter.log` on your Mac.
 
-**GitLab or Bitbucket?** Not yet. Deploys start from GitHub.
+**GitLab or Bitbucket?** GitLab, yes: gitlab.com and self-managed, through `glab` or `GITLAB_TOKEN` ([GitLab](docs/GITLAB.md)). Bitbucket not yet.
 
-**Windows or Linux?** The app needs macOS 15. The `deploys` CLI is bash and runs on Linux and in CI.
+**Windows or Linux?** The app needs macOS 15. The `deploys` CLI is bash and runs on Linux, in WSL and in CI: `curl -fsSL https://deploycenter.app/install.sh | sh`.
 
 More: [FAQ](docs/FAQ.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Glossary](docs/GLOSSARY.md) · [All docs](docs/README.md)
 
 ## Contributing
 
 Ideas and bug reports are welcome in [Issues](https://github.com/Pschmetzer/deploy-center/issues).
-Most wanted: GitLab next to GitHub, and reports when a number in the app looks wrong.
+Most wanted: Bitbucket or Gitea next to GitHub and GitLab, tests for the provider files, and reports when a number in the app looks wrong.
 Small tasks to start with: [Good first issues](docs/GOOD-FIRST-ISSUES.md). How to build and test:
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -193,7 +198,7 @@ tests/app-tests.sh       # the rules in the app
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Not affiliated with Vercel or Render.
+MIT, see [LICENSE](LICENSE). Not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub or GitLab.
 Claude is a trademark of Anthropic; not affiliated.
 
 [Legal notice (Impressum)](https://deploycenter.app/impressum.html) · [Privacy policy (Datenschutz)](https://deploycenter.app/datenschutz.html)

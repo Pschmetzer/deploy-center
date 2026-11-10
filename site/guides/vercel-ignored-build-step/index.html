@@ -155,6 +155,7 @@
 <pre><code class="language-bash">bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*) exit 0;; *) exit 1;; esac'</code></pre>
 <h3>Skip when the commit message says so</h3>
 <pre><code class="language-bash">bash -c 'echo "$VERCEL_GIT_COMMIT_MESSAGE" | grep -qiF "[skip deploy]" &amp;&amp; exit 0 || exit 1'</code></pre>
+<p>Only the newest commit of a push is checked.</p>
 <h3>Turborepo</h3>
 <pre><code class="language-bash">npx turbo-ignore</code></pre>
 <h3>A script that compares with the last deployment</h3>
