@@ -543,5 +543,19 @@ MainActor.assumeIsolated {
     expect("observer: the log is still there", looking.contains("log|vercel/app"), true)
 }
 
+// Bug scan status: the newest run per repo, running, a PR link.
+do {
+    let r = try! JSONDecoder().decode(ScanReport.self, from: Data(#"{"installed":true,"loggedIn":true,"perDay":4,"runs":[{"id":"b","repo":"me/web","base":"main","at":20,"status":"pr","step":"done","branch":"claude/scan-web-abc","prUrl":"https://github.com/me/web/pull/7","fixes":2,"error":null},{"id":"a","repo":"me/web","at":10,"status":"clean"},{"id":"c","repo":"me/api","at":30,"status":"running","step":"claude"}]}"#.utf8))
+    expect("scan: newest run of a repo", r.newest(repo: "Me/Web")?.id ?? "", "b")
+    expect("scan: PR and fixes", "\(r.newest(repo: "me/web")?.prUrl ?? "") \(r.newest(repo: "me/web")?.fixes ?? 0)", "https://github.com/me/web/pull/7 2")
+    expect("scan: a running scan is seen", r.anyRunning, true)
+    expect("scan: no repo, no run", r.newest(repo: nil) == nil, true)
+    expect("scan: an old script without checks still decodes", r.checks == nil && r.tools == nil, true)
+    let c = try! JSONDecoder().decode(ScanReport.self, from: Data(#"{"installed":true,"loggedIn":false,"runs":[],"tools":{"osv":true,"gitleaks":false,"semgrep":true},"checks":[{"id":"k1","repo":"me/web","at":5,"status":"done","osv":2,"gitleaks":1,"semgrep":3,"tools":{"osv":"found"},"error":null},{"id":"k2","repo":"me/api","at":6,"status":"running"}]}"#.utf8))
+    expect("check: newest check of a repo, fixable without secrets", "\(c.newestCheck(repo: "me/web")?.id ?? "") \(c.newestCheck(repo: "me/web")?.fixable ?? 0)", "k1 5")
+    expect("check: a running check keeps polling", c.anyRunning, true)
+    expect("check: tools", c.tools?.any ?? false, true)
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
