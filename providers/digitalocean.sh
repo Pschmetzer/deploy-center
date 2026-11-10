@@ -39,6 +39,8 @@ digitalocean_specs_dir() {
 # The token: environment first, then the keychain. Uses the shared key_of when A1 provides it.
 digitalocean_key() {
   local k=""
+  # Read once per list (digitalocean_json): its parallel reads must not each ask the keychain.
+  if [ -n "${_DIGITALOCEAN_KEY:-}" ]; then printf '%s' "$_DIGITALOCEAN_KEY"; return 0; fi
   if declare -F key_of >/dev/null; then k="$(key_of digitalocean 2>/dev/null)" || k=""
   elif [ -n "${DIGITALOCEAN_TOKEN:-}" ]; then k="$DIGITALOCEAN_TOKEN"
   else k="$(security find-generic-password -a "${USER:-$(id -un)}" -s "$DIGITALOCEAN_KEYCHAIN" -w 2>/dev/null)" || k=""
@@ -192,21 +194,37 @@ digitalocean_ready() {
 
 digitalocean_has() { digitalocean_id_of "$1" 2>/dev/null; }
 
+# One app with its newest deployment as {..app, _d:{last} | {fetchError}}, for digitalocean_json.
+digitalocean_app_last() {
+  local a="$1" id d
+  id="$(echo "$a" | jq -r '.id')"
+  if d="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1" 2>&1)"; then
+    # A 200 that is not JSON (a proxy's page) is this app's error, not an empty --argjson.
+    d="$(echo "$d" | jq -c 'if type == "object" then {last:(.deployments[0] // null)} else error("no list") end' 2>/dev/null)" \
+      || d="$(jq -nc '{fetchError:"DigitalOcean answered without a deployment list"}')"
+  else
+    d="$(jq -nc --arg e "$d" '{fetchError:$e}')"
+  fi
+  jq -nc --argjson a "$a" --argjson d "$d" '$a + {_d:$d}'
+}
+
 digitalocean_json() {
-  local apps out="[]" a id d
+  local apps out a tmpd n=0 _DIGITALOCEAN_KEY
   apps="$(digitalocean_apps)" || digitalocean_die "Could not list DigitalOcean apps"
-  # The app list has the active and the in-progress deployment, not a failed one: ask for the newest.
+  # The token once, for the reads below (they run eight at a time).
+  _DIGITALOCEAN_KEY="$(digitalocean_key)" || digitalocean_die "Could not list DigitalOcean apps"
+  # The app list has the active and the in-progress deployment, not a failed one: ask for the
+  # newest, eight apps at a time (one after another took seconds for many apps), a file each.
+  tmpd="$(mktemp -d)"
   while IFS= read -r a; do
-    id="$(echo "$a" | jq -r '.id')"
-    if d="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1" 2>&1)"; then
-      # A 200 that is not JSON (a proxy's page) is this app's error, not an empty --argjson.
-      d="$(echo "$d" | jq -c 'if type == "object" then {last:(.deployments[0] // null)} else error("no list") end' 2>/dev/null)" \
-        || d="$(jq -nc '{fetchError:"DigitalOcean answered without a deployment list"}')"
-    else
-      d="$(jq -nc --arg e "$d" '{fetchError:$e}')"
-    fi
-    out="$(jq -c --argjson a "$a" --argjson d "$d" '. + [$a + {_d:$d}]' <<<"$out")"
+    [ -n "$a" ] || continue
+    n=$((n + 1))
+    ( digitalocean_app_last "$a" > "$tmpd/$n.json" ) &
+    [ $((n % 8)) -ne 0 ] || wait
   done < <(echo "$apps" | jq -c '.[]')
+  wait
+  out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s '.')" || out="[]"
+  rm -rf "$tmpd"
   echo "$out" | jq "$DIGITALOCEAN_JQ"'
     [ .[] | (.spec // {}) as $s
       | ([$s | components[] | git_of] | .[0]) as $git

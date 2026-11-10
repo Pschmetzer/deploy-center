@@ -164,6 +164,53 @@ reset
 out="$(netlify_json | jq -c '.[] | select(.name=="blog") | .auto')"
 expect "json: re-checks an unconfirmed site" "$(calls 'gh api repos/me/blog/contents/site/netlify.toml')" 1
 expect "json: still auto after the re-check" "$out" true
+# PRV-044: the re-check is remembered for ten minutes; a PR that is never merged costs nothing.
+expect "json: the re-check is written down" "$(jq '."site-blog".ruleCheckedAt | type' "$hf")" '"number"'
+reset; netlify_json >/dev/null
+expect "json: no second GitHub check within ten minutes" "$(calls 'gh api repos/me/blog/contents')" 0
+reset; DEPLOYS_NETLIFY_RULE_TTL=0 netlify_json >/dev/null
+expect "json: DEPLOYS_NETLIFY_RULE_TTL=0 checks every time" "$(calls 'gh api repos/me/blog/contents/site/netlify.toml')" 1
+# PRV-043: the deploys of all four sites are read (in parallel), each one once, every site listed.
+reset; out="$(netlify_json)"
+expect "json: every site's deploys read once" "$(calls '/deploys?production=true'):$(echo "$out" | jq -c '[.[].name]')" '4:["blog","Paused","shop","static"]'
+
+# --- PRV-047: a broken hooks file is kept as .bak and started again; edits are locked ---
+cp "$hf" "$tmp/hooks.good"
+echo '{"site-shop": {"url": ' > "$hf"
+out="$(netlify_hooks_file 2>&1 >/dev/null)"
+expect "hooks file: broken one kept as .bak, 0600" "$(head -c 13 "$hf.bak"):$(stat -f %Lp "$hf.bak" 2>/dev/null || stat -c %a "$hf.bak")" '{"site-shop"::600'
+expect "hooks file: started again as {}" "$(cat "$hf")" '{}'
+has "hooks file: says so" "$out" "kept as"
+cp "$tmp/hooks.good" "$hf"; rm -f "$hf.bak"
+mkdir "$hf.lock"
+out="$(netlify_hooks_edit '.x = 1' 2>&1)"; rc=$?
+expect "hooks edit: a held lock is waited for, then refused" "$rc:$(jq -r '.x // "unchanged"' "$hf")" "1:unchanged"
+touch -t 202001010000 "$hf.lock"
+netlify_hooks_edit '.x = 1' 2>/dev/null
+expect "hooks edit: a crashed run's old lock is taken over" "$(jq -r '.x' "$hf"):$([ -d "$hf.lock" ] && echo held || echo free)" "1:free"
+jq 'del(.x)' "$hf" > "$tmp/h" && mv "$tmp/h" "$hf"
+
+# --- PRV-048: a hook made for another branch is moved (PUT, same URL), and not deployable until then ---
+mkdir -p "$tmp/fx48"; cp "$FIX"/* "$tmp/fx48/"
+jq -c '.[0].branch = "old"' "$FIX/hooks-shop.json" > "$tmp/fx48/hooks-shop.json"
+printf 'PUT   */api/v1/sites/site-shop/build_hooks/hook-shop   empty.json  204\n' | cat - "$FIX/routes" > "$tmp/fx48/routes"
+jq '."site-shop".ref = "old"' "$hf" > "$tmp/h" && mv "$tmp/h" "$hf"
+expect "json: a hook for another branch is not deployable" "$(netlify_json | jq -c '.[] | select(.name=="shop") | .deployable')" false
+reset; out="$(FIX="$tmp/fx48" netlify_off shop 2>&1)"
+expect "off: the hook is moved to the branch" "$(calls 'curl PUT .*/build_hooks/hook-shop ')" 1
+has "off: says so" "$out" "now builds main"
+expect "off: stored for the new branch, same URL" "$(jq -c '."site-shop" | [.ref, .url]' "$hf")" '["main","https://api.netlify.com/build_hooks/hook-shop"]'
+reset; netlify_off shop >/dev/null 2>&1
+expect "off: a hook on the right branch is not touched" "$(calls 'curl PUT ')" 0
+
+# --- PRV-096: how long a 429 waits ---
+printf 'HTTP/2 429\r\nRetry-After: 12\r\n\r\n' > "$tmp/h1"
+printf 'HTTP/2 429\r\nX-RateLimit-Reset: %s\r\n\r\n' "$(( $(date +%s) + 20 ))" > "$tmp/h2"
+printf 'HTTP/2 429\r\nretry-after: 900\r\n\r\n' > "$tmp/h3"
+: > "$tmp/h4"
+w2="$(netlify_wait 1 "$tmp/h2")"
+expect "429: Retry-After, the reset time, at most 30 s, else 3 s then 6 s" \
+  "$(netlify_wait 1 "$tmp/h1"):$([ "$w2" -ge 19 ] && [ "$w2" -le 20 ] && echo reset):$(netlify_wait 1 "$tmp/h3"):$(netlify_wait 1 "$tmp/h4"):$(netlify_wait 2 "$tmp/h4")" "12:reset:30:3:6"
 
 # --- deploy: post to the hook, find the new deploy by id ---
 reset

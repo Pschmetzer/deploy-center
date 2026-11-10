@@ -120,6 +120,10 @@ For tests and unusual setups; none is needed in normal use.
 | `DEPLOYS_CLOUDFLARE_SELFTEST_TRIES` | Rounds of the Cloudflare self-test (5 s each) |
 | `DEPLOYS_CLOUDFLARE_TOGGLE` | Cloudflare: switch push builds on just for a start |
 | `DEPLOYS_GITLAB_CURL` | Ask GitLab with curl even when `glab` is there |
+| `DEPLOYS_RENDER_NAME_TTL` | Seconds Render keeps service names for lookups (60; 0 = never) |
+| `DEPLOYS_NETLIFY_RULE_TTL` | Seconds between GitHub checks of an unconfirmed Netlify rule (600) |
+| `DEPLOYS_AMPLIFY_PARALLEL` | Amplify apps read at once in a list (4) |
+| `DEPLOYS_AMPLIFY_LOG_BYTES` | Bytes read from the end of each Amplify log step (262144) |
 | `DEPLOYS_HOOK_STORE` | `keychain` or `file`: where hook URLs are kept (file: tests, Linux) |
 
 ## Keys

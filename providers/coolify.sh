@@ -56,6 +56,8 @@ coolify_base() {
 # The token: environment first, then the keychain. Uses the shared key_of when A1 provides it.
 coolify_key() {
   local k=""
+  # Read once per list (coolify_json): its parallel reads must not each ask the keychain.
+  if [ -n "${_COOLIFY_KEY:-}" ]; then printf '%s' "$_COOLIFY_KEY"; return 0; fi
   if declare -F key_of >/dev/null; then k="$(key_of coolify 2>/dev/null)" || k=""
   elif [ -n "${COOLIFY_TOKEN:-}" ]; then k="$COOLIFY_TOKEN"
   else k="$(security find-generic-password -a "${USER:-$(id -un)}" -s "$COOLIFY_KEYCHAIN" -w 2>/dev/null)" || k=""
@@ -169,31 +171,46 @@ coolify_ready() {
 
 coolify_has() { coolify_id_of "$1" 2>/dev/null; }
 
+# One app read in full with its deployments as {..app, _d:{deployments} | {fetchError}}, for
+# coolify_json. <apps> is the list, for the app's name when it cannot be read.
+coolify_app_full() {
+  local uuid="$1" apps="$2" one d
+  if one="$(coolify_call GET "/applications/$uuid" 2>&1)"; then
+    if d="$(coolify_call GET "/deployments/applications/$uuid?take=50" 2>&1)"; then
+      # A 200 that is not JSON is this app's error, not an empty --argjson.
+      d="$(echo "$d" | jq -c 'if type == "object" then {deployments:(.deployments // [])} else error("no list") end' 2>/dev/null)" \
+        || d="$(jq -nc '{fetchError:"Coolify answered without a deployment list"}')"
+    else
+      d="$(jq -nc --arg e "$d" '{fetchError:$e}')"
+    fi
+    one="$(echo "$one" | jq -c --argjson d "$d" 'if type == "object" then . + {_d:$d} else error("no app") end' 2>/dev/null)" \
+      || one="$(echo "$apps" | jq -c --arg u "$uuid" '.[] | select(.uuid==$u) | . + {_d:{fetchError:"Coolify answered without the application"}}')"
+  else
+    one="$(echo "$apps" | jq -c --arg u "$uuid" --arg e "$one" '.[] | select(.uuid==$u) | . + {_d:{fetchError:$e}}')"
+  fi
+  printf '%s\n' "$one"
+}
+
 coolify_json() {
-  local apps base out="[]" uuid one d
+  local apps base out uuid tmpd n=0 _COOLIFY_KEY
   base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
   apps="$(coolify_apps)" || coolify_die "Could not list Coolify applications"
   # Checked here: a jq error inside the < <(...) below is swallowed and would read as "no apps".
   echo "$apps" | jq -e 'type == "array"' >/dev/null 2>&1 \
     || coolify_die "Coolify answered without an application list: $(printf '%s' "$apps" | head -c 200)"
-  # The list has no settings (auto-deploy lives there), so each app is read once more.
+  # The list has no settings (auto-deploy lives there), so each app is read once more: eight at
+  # a time (one after another took seconds for many apps), a file each, read once at the end.
+  _COOLIFY_KEY="$(coolify_key)" || coolify_die "Could not list Coolify applications"
+  tmpd="$(mktemp -d)"
   while IFS= read -r uuid; do
     [ -n "$uuid" ] || continue
-    if one="$(coolify_call GET "/applications/$uuid" 2>&1)"; then
-      if d="$(coolify_call GET "/deployments/applications/$uuid?take=50" 2>&1)"; then
-        # A 200 that is not JSON is this app's error, not an empty --argjson.
-        d="$(echo "$d" | jq -c 'if type == "object" then {deployments:(.deployments // [])} else error("no list") end' 2>/dev/null)" \
-          || d="$(jq -nc '{fetchError:"Coolify answered without a deployment list"}')"
-      else
-        d="$(jq -nc --arg e "$d" '{fetchError:$e}')"
-      fi
-      one="$(echo "$one" | jq -c --argjson d "$d" 'if type == "object" then . + {_d:$d} else error("no app") end' 2>/dev/null)" \
-        || one="$(echo "$apps" | jq -c --arg u "$uuid" '.[] | select(.uuid==$u) | . + {_d:{fetchError:"Coolify answered without the application"}}')"
-    else
-      one="$(echo "$apps" | jq -c --arg u "$uuid" --arg e "$one" '.[] | select(.uuid==$u) | . + {_d:{fetchError:$e}}')"
-    fi
-    out="$(jq -c --argjson a "$one" '. + [$a]' <<<"$out")"
+    n=$((n + 1))
+    ( coolify_app_full "$uuid" "$apps" > "$tmpd/$n.json" ) &
+    [ $((n % 8)) -ne 0 ] || wait
   done < <(echo "$apps" | jq -r '.[].uuid')
+  wait
+  out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s '.')" || out="[]"
+  rm -rf "$tmpd"
   echo "$out" | jq --arg base "$base" "$COOLIFY_JQ"'
     [ .[] | ((._d.deployments // []) | prod) as $ds
       | ($ds[0] // {}) as $new
@@ -238,8 +255,6 @@ coolify_off_one() {
   info="$(coolify_call GET "/applications/$id")" || coolify_die "Coolify: could not read $app"
   auto="$(echo "$info" | jq '.settings.is_auto_deploy_enabled != false')"
   prev="$(echo "$info" | jq '.settings.is_preview_deployments_enabled // false')"
-  coolify_off_edit --arg id "$id" --argjson a "$auto" --argjson p "$prev" \
-    '.[$id] = ({auto:$a, previews:$p, offAt:(now|floor)} + (.[$id] // {}))'
   body='{"is_auto_deploy_enabled":false}'
   [ "$previews" = --previews ] && body='{"is_auto_deploy_enabled":false,"is_preview_deployments_enabled":false}'
   if [ "$auto" = false ] && { [ "$previews" != --previews ] || [ "$prev" = false ]; }; then
@@ -252,6 +267,10 @@ coolify_off_one() {
       || coolify_die "Coolify accepted the change but $app still has Auto Deploy on (Coolify too old?)"
     echo "Coolify: $app no longer deploys on push. Deploy with: deploys coolify deploy $app"
   fi
+  # Written down only now, after the read-back: a failed PATCH must not leave a record that makes
+  # coolify_on later "put back" a change that never happened.
+  coolify_off_edit --arg id "$id" --argjson a "$auto" --argjson p "$prev" \
+    '.[$id] = ({auto:$a, previews:$p, offAt:(now|floor)} + (.[$id] // {}))'
   if [ "$previews" != --previews ] && [ "$prev" = true ]; then
     echo "Note: PR preview deployments are on for $app and still build on every push to a pull request. To stop them too: deploys coolify autodeploy-off $app --previews"
   fi

@@ -157,6 +157,8 @@ reset
 out="$(coolify_off api 2>&1)"; rc=$?
 expect "off api: not applied -> exit 1" "$rc" 1
 has "off api: says so" "$out" "still has Auto Deploy on"
+# PRV-117: and leaves no record behind that a later `on` would "put back".
+expect "off api: nothing written down" "$(jq 'has("app-api")' "$of" 2>/dev/null || echo false)" false
 # on: back to what it was.
 reset
 coolify_off shop >/dev/null 2>&1

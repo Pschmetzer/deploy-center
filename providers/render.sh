@@ -23,6 +23,17 @@ render_key() {
 # and an exit inside an `if` ends the whole script, not only the test.
 render_ready() { ( render_key ) >/dev/null 2>&1; }
 
+# How long to wait after a 429 (try 1 or 2): Render's Retry-After in seconds from the header
+# file curl wrote (-D), at most 30 s; without one 3 s, then 6 s.
+render_wait() {
+  local s
+  s="$(tr -d '\r' < "$2" 2>/dev/null | awk -F': *' 'tolower($1) == "retry-after" && $2 ~ /^[0-9]+$/ { print $2; exit }')"
+  [ -n "$s" ] || s=$(( $1 * 3 ))
+  [ "$s" -le 30 ] || s=30
+  echo "$s"
+}
+export -f render_wait
+
 # The key goes to curl on stdin so it never shows in the process list.
 render_call() {
   local method="$1" path="$2" body="${3:-}" key out code
@@ -30,21 +41,23 @@ render_call() {
   # A hung connection must not hang the app: 10 s to connect, 60 s in all.
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
-  local try err; err="$(mktemp)"
+  local try err hdr; err="$(mktemp)"; hdr="$(mktemp)"
+  args+=(-D "$hdr")
   for try in 1 2 3; do
+    : > "$hdr"
     # A curl failure (no network, timeout) is code 000 here, not a silent stop under set -e.
     out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$RENDER_API$path" 2>"$err")" || out=$'\n000'
     code="${out##*$'\n'}"; out="${out%$'\n'*}"
     # 429 (rate limit), 5xx and network errors: wait and ask again. Only reads are repeated:
     # a POST that timed out may have started a build already.
     case "$code" in
-      429) [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; } ;;
+      429) [ "$try" -lt 3 ] && { sleep "$(render_wait "$try" "$hdr")"; continue; } ;;
       5*|000) [ "$method" = GET ] && [ "$try" -lt 3 ] && { sleep $((try * 2)); continue; } ;;
     esac
     break
   done
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
-  rm -f "$err"
+  rm -f "$err" "$hdr"
   if [[ "$code" != 2* ]]; then
     local hint="" fix="deploys render set-key"
     [ -n "${RENDER_API_KEY:-}" ] && fix="check RENDER_API_KEY in the environment"
@@ -66,12 +79,31 @@ render_services() {
   echo "$all" | jq '[.[].service]'
 }
 
+# The services' ids and names for render_id_of, kept DEPLOYS_RENDER_NAME_TTL seconds (default 60,
+# 0 = never kept): deploy, logs, url and watch (every 6 s) then do not page through every service
+# each time. Lists (render_json) always ask Render. A name not in the kept list is asked for again.
+render_names() {
+  local f="$CONFIG_DIR/render-names.json" ttl="${DEPLOYS_RENDER_NAME_TTL:-60}" now m list
+  now="$(date +%s)"
+  if [ "${1:-}" != --fresh ] && [ "$ttl" -gt 0 ] 2>/dev/null && [ -s "$f" ]; then
+    m="$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null)" || m=0
+    if [ $(( now - ${m:-0} )) -lt "$ttl" ] && jq -e 'type == "array"' "$f" >/dev/null 2>&1; then cat "$f"; return 0; fi
+  fi
+  list="$(render_services | jq -c '[.[] | {id, name}]')" || return 1
+  if [ "$ttl" -gt 0 ] 2>/dev/null && [ -d "$CONFIG_DIR" ]; then
+    (umask 077; printf '%s\n' "$list" > "$f.$$" && mv "$f.$$" "$f") 2>/dev/null || rm -f "$f.$$"
+  fi
+  printf '%s\n' "$list"
+}
+
 render_auto() { echo '(.autoDeployTrigger // (if .autoDeploy=="yes" then "commit" else "off" end))'; }
 
 render_id_of() {
   local name="$1" id
   case "$name" in srv-*|crn-*) echo "$name"; return;; esac
-  id="$(render_services | jq -r --arg n "$name" '.[] | select(.name==$n) | .id')"
+  id="$(render_names | jq -r --arg n "$name" '.[] | select(.name==$n) | .id')" || exit 1
+  # Not in the kept list: it may be new or renamed a moment ago.
+  [ -n "$id" ] || id="$(render_names --fresh | jq -r --arg n "$name" '.[] | select(.name==$n) | .id')" || exit 1
   [ -n "$id" ] || die "No Render service named \"$name\". See: deploys render list"
   # Two services may share a name (in different projects): never pick one at random.
   [ "$(echo "$id" | wc -l | tr -d ' ')" = 1 ] || die "Several Render services are named \"$name\" ($(echo "$id" | tr '\n' ' ')). Use the srv- id."
@@ -145,14 +177,15 @@ render_last_of() {
   # Eight of these run at once: this is where Render's rate limit (429) hits. Wait and ask again.
   # Like render_call: a time limit (a hung service must not hold one of the eight slots, and so
   # the whole list), and 5xx or no answer asked again too.
-  local raw code try body limit=10
+  local raw code try body limit=10 hdr="$out/$id.hdr"
   fetch_deploys() {
     for try in 1 2 3; do
+      : > "$hdr"
       raw="$(printf 'header = "Authorization: Bearer %s"\n' "$key" \
-        | curl -sS --connect-timeout 10 --max-time 60 -K - -w '\n%{http_code}' -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=$1")" || raw=$'\n000'
+        | curl -sS --connect-timeout 10 --max-time 60 -K - -D "$hdr" -w '\n%{http_code}' -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=$1")" || raw=$'\n000'
       code="${raw##*$'\n'}"
       case "$code" in
-        429) [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; } ;;
+        429) [ "$try" -lt 3 ] && { sleep "$(render_wait "$try" "$hdr")"; continue; } ;;
         5*|000) [ "$try" -lt 3 ] && { sleep $((try * 2)); continue; } ;;
       esac
       break

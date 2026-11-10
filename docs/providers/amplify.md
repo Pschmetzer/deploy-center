@@ -111,7 +111,9 @@ too, and the app's setting that auto-builds branches Amplify creates later
 deploys amplify off <project> --all
 ```
 
-`deploys amplify on <project>` turns auto-build on again for the production branch.
+`deploys amplify on <project>` turns auto-build on again for the production branch. What
+`off --all` turned off is kept in `~/.config/deploys/amplify-off.json`; `on` turns those branches
+and the new-branch setting back on too, then forgets them.
 
 Pull-request previews (`enablePullRequestPreview`) are not changed; they build only when a PR is
 opened or updated, and you can switch them off in the console.
@@ -141,7 +143,8 @@ Apps without a Git connection (manual deploys by upload) have nothing to build; 
   still queued or building.
 - `deploys amplify logs <project> [lines] [<job id>]`: reads every step's log from its `logUrl`
   (a short-lived signed S3 link from `get-job`), prefixes each line with its step (`BUILD`,
-  `DEPLOY`, ...) and prints the last lines. The link itself is never printed; if it has expired, run
+  `DEPLOY`, ...) and prints the last lines. Only the end of each step's log is read (256 KB,
+  `DEPLOYS_AMPLIFY_LOG_BYTES`). The link itself is never printed; if it has expired, run
   `logs` again for a fresh one.
 
 ## Rollback

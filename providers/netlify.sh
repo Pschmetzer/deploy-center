@@ -35,25 +35,59 @@ netlify_config_dir() { echo "${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deplo
 netlify_hooks_file() {
   local d f; d="$(netlify_config_dir)"; f="$d/netlify-hooks.json"
   mkdir -p "$d" && chmod 700 "$d" 2>/dev/null
+  # Not a JSON object (cut off, edited by hand): every jq on it would fail with a riddle. Kept
+  # as .bak (0600, it holds the hook URLs) and started again; autodeploy-off finds the hooks again.
+  if [ -s "$f" ] && ! jq -e 'type == "object"' "$f" >/dev/null 2>&1; then
+    mv -f "$f" "$f.bak" && chmod 600 "$f.bak"
+    echo "Netlify: $f was not readable; kept as $f.bak and started again. Run deploys netlify autodeploy-off <site> for each site that was off." >&2
+  fi
   [ -s "$f" ] || (umask 077; echo '{}' > "$f")
   echo "$f"
 }
 # Change the hooks file with a jq filter; it stays 0600 because the hook URLs are secrets.
+# A mkdir lock: two runs at once (a list refresh and an autodeploy-off) must not lose each
+# other's change. A lock older than a minute is a crashed run's.
 netlify_hooks_edit() {
-  local f tmp; f="$(netlify_hooks_file)"; tmp="$(umask 077; mktemp)"
-  jq "$@" "$f" > "$tmp" && mv "$tmp" "$f" && chmod 600 "$f"
+  local f tmp lock i=0 m rc=0; f="$(netlify_hooks_file)"; lock="$f.lock"
+  while ! mkdir "$lock" 2>/dev/null; do
+    m="$(stat -f %m "$lock" 2>/dev/null || stat -c %Y "$lock" 2>/dev/null)" || m=""
+    [ -z "$m" ] || [ $(( $(date +%s) - m )) -lt 60 ] || { rmdir "$lock" 2>/dev/null; continue; }
+    i=$((i + 1)); [ "$i" -lt 50 ] || { echo "Netlify: $f is locked by another run" >&2; return 1; }
+    sleep 0.1
+  done
+  tmp="$(umask 077; mktemp)"
+  if jq "$@" "$f" > "$tmp"; then mv "$tmp" "$f" && chmod 600 "$f" || rc=1; else rm -f "$tmp"; rc=1; fi
+  rmdir "$lock" 2>/dev/null || true
+  return "$rc"
 }
 netlify_b64d() { base64 -D 2>/dev/null || base64 -d; }
 
 # The token: environment first, then the keychain. Uses the shared key_of when A1 provides it.
 netlify_key() {
   local k=""
+  # Read once per list (netlify_json): its parallel reads must not each ask the keychain.
+  if [ -n "${_NETLIFY_KEY:-}" ]; then printf '%s' "$_NETLIFY_KEY"; return 0; fi
   if declare -F key_of >/dev/null; then k="$(key_of netlify 2>/dev/null)" || k=""
   elif [ -n "${NETLIFY_AUTH_TOKEN:-}" ]; then k="$NETLIFY_AUTH_TOKEN"
   else k="$(security find-generic-password -a "${USER:-$(id -un)}" -s "$NETLIFY_KEYCHAIN" -w 2>/dev/null)" || k=""
   fi
   [ -n "$k" ] || { echo "No Netlify token. Create one at app.netlify.com > User settings > Applications > Personal access tokens, then: pbpaste | deploys netlify set-key" >&2; return 1; }
   printf '%s' "$k"
+}
+
+# How long to wait after a 429 (try 1 or 2), from the header file curl wrote (-D): Retry-After
+# in seconds, else X-RateLimit-Reset (a Unix time) minus now; at most 30 s. Without either 3 s, 6 s.
+netlify_wait() {
+  local s r
+  s="$(tr -d '\r' < "$2" 2>/dev/null | awk -F': *' 'tolower($1) == "retry-after" && $2 ~ /^[0-9]+$/ { print $2; exit }')"
+  if [ -z "$s" ]; then
+    r="$(tr -d '\r' < "$2" 2>/dev/null | awk -F': *' 'tolower($1) == "x-ratelimit-reset" && $2 ~ /^[0-9]+$/ { print $2; exit }')"
+    [ -z "$r" ] || s=$(( r - $(date +%s) ))
+    [ -z "$s" ] || [ "$s" -ge 1 ] || s=1
+  fi
+  [ -n "$s" ] || s=$(( $1 * 3 ))
+  [ "$s" -le 30 ] || s=30
+  echo "$s"
 }
 
 # netlify_call METHOD PATH|URL [BODY] — the answer on stdout; on failure a reason on stderr, rc 1.
@@ -69,19 +103,21 @@ netlify_call() {
   esac
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
-  err="$(mktemp)"
+  local hdr; err="$(mktemp)"; hdr="$(mktemp)"
+  args+=(-D "$hdr")
   for try in 1 2 3; do
+    : > "$hdr"
     out="$( { [ -z "$auth" ] || printf 'header = "Authorization: Bearer %s"\n' "$key"; } | curl "${args[@]}" -w '\n%{http_code}' "$url" 2>"$err")" || out=$'\n000'
     code="${out##*$'\n'}"; out="${out%$'\n'*}"
     # Only reads are repeated: a POST that timed out may have started a build already.
     case "$code" in
-      429) [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; } ;;
+      429) [ "$try" -lt 3 ] && { sleep "$(netlify_wait "$try" "$hdr")"; continue; } ;;
       5*|000) [ "$method" = GET ] && [ "$try" -lt 3 ] && { sleep $((try * 2)); continue; } ;;
     esac
     break
   done
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
-  rm -f "$err"
+  rm -f "$err" "$hdr"
   if [[ "$code" != 2* ]]; then
     local hint="" fix="deploys netlify set-key" msg
     [ -n "${NETLIFY_AUTH_TOKEN:-}" ] && fix="check NETLIFY_AUTH_TOKEN in the environment"
@@ -192,33 +228,54 @@ netlify_ready() {
 
 netlify_has() { netlify_id_of "$1" 2>/dev/null; }
 
+# One site with its production deploys as {..site, _d:{deploys} | {fetchError}}, for netlify_json.
+netlify_site_deploys() {
+  local s="$1" id d
+  id="$(echo "$s" | jq -r '.id')"
+  if d="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=50" 2>&1)"; then
+    # A 200 that is not a deploy list (a proxy's login page) is this site's error, not an
+    # empty --argjson that breaks the whole list.
+    d="$(echo "$d" | jq -c 'if type == "array" then {deploys:.} else error("no list") end' 2>/dev/null)" \
+      || d="$(jq -nc '{fetchError:"Netlify answered without a deploy list"}')"
+  else
+    d="$(jq -nc --arg e "$d" '{fetchError:$e}')"
+  fi
+  jq -c --argjson s "$s" --argjson d "$d" -n '$s + {_d:$d}'
+}
+
 netlify_json() {
-  local sites hooks out="[]" s id d repo ref base rule
+  local sites hooks out s id repo ref base rule tmpd n=0 ttl _NETLIFY_KEY
   sites="$(netlify_sites)" || netlify_die "Could not list Netlify sites"
+  # The token once, for the reads below (they run eight at a time).
+  _NETLIFY_KEY="$(netlify_key)" || netlify_die "Could not list Netlify sites"
   hooks="$(cat "$(netlify_hooks_file)")"
-  # A site turned off here whose rule is not confirmed yet: look again (the PR may be merged now).
+  # A site turned off here whose rule is not confirmed yet: look again (the PR may be merged now),
+  # at most every DEPLOYS_NETLIFY_RULE_TTL seconds (default 600) per site: a PR that is never
+  # merged must not cost 1-3 GitHub calls on every refresh.
+  ttl="${DEPLOYS_NETLIFY_RULE_TTL:-600}"
   if [ -z "${DEPLOYS_NO_GITHUB:-}" ]; then
     while IFS=$'\t' read -r id repo ref base; do
       [ -n "$id" ] && [ "$repo" != null ] || continue
       rule="$(netlify_rule_in_repo "$repo" "$ref" "$base")"
-      [ "$rule" = yes ] && netlify_hooks_edit --arg id "$id" '.[$id].rule = true | .[$id].ruleAt = (now|floor)'
-    done < <(echo "$sites" | jq -r --argjson h "$hooks" "$NETLIFY_JQ"'
-      .[] | select($h[.id] and ($h[.id].rule != true))
+      if [ "$rule" = yes ]; then netlify_hooks_edit --arg id "$id" '.[$id].rule = true | .[$id].ruleAt = (now|floor)'
+      else netlify_hooks_edit --arg id "$id" '.[$id].ruleCheckedAt = (now|floor)'; fi || true
+    done < <(echo "$sites" | jq -r --argjson h "$hooks" --argjson ttl "$ttl" "$NETLIFY_JQ"'
+      .[] | select($h[.id] and ($h[.id].rule != true) and ((now - ($h[.id].ruleCheckedAt // 0)) >= $ttl))
       | [.id, (repo_of // "null"), (.build_settings.repo_branch // "main"), (.build_settings.base // "")] | @tsv')
     hooks="$(cat "$(netlify_hooks_file)")"
   fi
+  # The deploys of every site, eight at a time (one after another took seconds to minutes for
+  # 40 sites), one file each, read once at the end.
+  tmpd="$(mktemp -d)"
   while IFS= read -r s; do
-    id="$(echo "$s" | jq -r '.id')"
-    if d="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=50" 2>&1)"; then
-      # A 200 that is not a deploy list (a proxy's login page) is this site's error, not an
-      # empty --argjson that breaks the whole list.
-      d="$(echo "$d" | jq -c 'if type == "array" then {deploys:.} else error("no list") end' 2>/dev/null)" \
-        || d="$(jq -nc '{fetchError:"Netlify answered without a deploy list"}')"
-    else
-      d="$(jq -nc --arg e "$d" '{fetchError:$e}')"
-    fi
-    out="$(jq -c --argjson s "$s" --argjson d "$d" '. + [$s + {_d:$d}]' <<<"$out")"
+    [ -n "$s" ] || continue
+    n=$((n + 1))
+    ( netlify_site_deploys "$s" > "$tmpd/$n.json" ) &
+    [ $((n % 8)) -ne 0 ] || wait
   done < <(echo "$sites" | jq -c '.[]')
+  wait
+  out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s '.')" || out="[]"
+  rm -rf "$tmpd"
   echo "$out" | jq --argjson h "$hooks" "$NETLIFY_JQ"'
     [ .[] | ($h[.id] // {}) as $hk | (.build_settings // {}) as $b
       | ((._d.deploys // []) | map(select(skipped | not))) as $ds
@@ -226,7 +283,10 @@ netlify_json() {
       | {name, id,
          auto:((repo_of != null) and ($hk.rule != true)),
          paused:($b.stop_builds == true),
-         deployable:((repo_of != null) and ($hk.url != null) and ($hk.rule == true) and ($b.stop_builds != true)),
+         # A hook made for another branch (the production branch changed since) builds the old
+         # one: not deployable until autodeploy-off moves it.
+         deployable:((repo_of != null) and ($hk.url != null) and ($hk.rule == true) and ($b.stop_builds != true)
+           and (($hk.ref // null) == null or $hk.ref == ($b.repo_branch // "main"))),
          repo:repo_of, ref:($b.repo_branch // null),
          domain:(.custom_domain // ((.ssl_url // .url // "") | sub("^https?://";"") | if . == "" then null else . end)),
          url:(.ssl_url // .url // null), dashboardUrl:(.admin_url // null),
@@ -273,6 +333,14 @@ netlify_off_one() {
     hook="$(netlify_call POST "/sites/$id/build_hooks" "$(jq -nc --arg t "$NETLIFY_HOOK_TITLE" --arg b "$ref" '{title:$t, branch:$b}')")" \
       || netlify_die "Netlify: could not create a build hook for $site"
     echo "Netlify: created the build hook \"$NETLIFY_HOOK_TITLE\" for $site"
+  fi
+  # Made for another branch (the production branch changed since): it would build the old one.
+  # Moved to the branch in place (PUT), so its URL stays.
+  if [ "$(echo "$hook" | jq -r --arg b "$ref" '(.branch // $b) != $b')" = true ]; then
+    netlify_call PUT "/sites/$id/build_hooks/$(echo "$hook" | jq -r '.id')" "$(jq -nc --arg t "$NETLIFY_HOOK_TITLE" --arg b "$ref" '{title:$t, branch:$b}')" >/dev/null \
+      || netlify_die "Netlify: could not move the build hook of $site to $ref"
+    hook="$(echo "$hook" | jq -c --arg b "$ref" '.branch = $b')"
+    echo "Netlify: the build hook of $site now builds $ref"
   fi
   url="$(echo "$hook" | jq -r '.url // empty')"
   [ -n "$url" ] || netlify_die "Netlify: the build hook of $site has no URL"

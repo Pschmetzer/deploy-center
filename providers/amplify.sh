@@ -178,6 +178,13 @@ amp_project() {
   if [ -n "$br" ] && [ -z "$err" ]; then
     # shellcheck disable=SC2034  # read by die, in the subshell
     if ! jobs="$( (RED=""; PLAIN=""; amp_jobs "$id" "$br") 2>&1)"; then err="${jobs#Error: }"; jobs="[]"; fi
+    # The 20 newest all failed or were cancelled: what is live is further back. Without it the
+    # app would look never deployed (and so changed). Asked once more, for 100.
+    if [ -z "$err" ] && echo "$jobs" | jq -e 'length >= 20 and ([.[] | select(.status == "SUCCEED")] | length == 0)' >/dev/null 2>&1; then
+      local more
+      more="$( (RED=""; PLAIN=""; amp_jobs "$id" "$br" 100) 2>/dev/null)" \
+        && echo "$more" | jq -e 'type == "array"' >/dev/null 2>&1 && jobs="$more"
+    fi
     assoc="$( (amp_aws amplify list-domain-associations --app-id "$id" | jq -c '.domainAssociations // []') 2>/dev/null)" || assoc="[]"
   fi
   [ -n "$br" ] || [ -n "$err" ] || err="no production branch (and more than one branch)"
@@ -206,14 +213,22 @@ amp_project() {
 }
 
 amplify_json() {
-  local apps app out=()
+  local apps app tmpd n=0 out
   apps="$(amp_apps)" || exit 1
+  # Three aws calls per app, each starting Python (about a second): four apps at a time, a file
+  # each, read once at the end (one after another, ten apps took half a minute).
+  tmpd="$(mktemp -d)"
   while IFS= read -r app; do
     [ -n "$app" ] || continue
-    out+=("$(amp_project "$app")") || exit 1
+    n=$((n + 1))
+    ( amp_project "$app" > "$tmpd/$n.json" ) &
+    [ $((n % ${DEPLOYS_AMPLIFY_PARALLEL:-4})) -ne 0 ] || wait
   done < <(echo "$apps" | jq -c '.[]')
-  [ "${#out[@]}" -gt 0 ] || { echo '[]'; return; }
-  printf '%s\n' "${out[@]}" | jq -s 'sort_by(.name | ascii_downcase)'
+  wait
+  out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s 'sort_by(.name | ascii_downcase)')" || out=""
+  rm -rf "$tmpd"
+  [ -n "$out" ] || die "Amplify: the apps could not be read"
+  printf '%s\n' "$out"
 }
 
 amp_set_auto() {
@@ -236,6 +251,11 @@ amplify_off() {
   fi
   others="$(echo "$branches" | jq -r --arg b "$AMP_BRANCH" '.[] | select(.branchName != $b and .enableAutoBuild == true) | .branchName')"
   if [ "$all" = --all ]; then
+    # What --all changes is written down first (added to what an earlier --all wrote), so
+    # amplify_on can turn exactly that back on.
+    amp_off_edit --arg a "$AMP_APP" --arg o "$others" --argjson nb "$(echo "$AMP_APPJSON" | jq '.enableBranchAutoBuild == true')" \
+      '.[$a] = {branches: (((.[$a].branches // []) + ($o | split("\n") | map(select(. != "")))) | unique),
+                newBranches: ((.[$a].newBranches // false) or $nb)}' || exit 1
     while IFS= read -r b; do
       [ -n "$b" ] || continue
       got="$(amp_set_auto "$AMP_APP" "$b" --no-enable-auto-build)" || exit 1
@@ -250,12 +270,33 @@ amplify_off() {
   fi
 }
 
+# The branches and the new-branch setting `off --all` turned off, per app id: amplify-off.json.
+AMP_OFF_FILE="$CONFIG_DIR/amplify-off.json"
+amp_off_edit() {
+  local tmp; mkdir -p "$CONFIG_DIR"; [ -s "$AMP_OFF_FILE" ] || echo '{}' > "$AMP_OFF_FILE"
+  tmp="$(mktemp)"
+  jq "$@" "$AMP_OFF_FILE" > "$tmp" && mv "$tmp" "$AMP_OFF_FILE" || { rm -f "$tmp"; die "Could not write $AMP_OFF_FILE"; }
+}
+
 amplify_on() {
-  local got
+  local got prev b
   amp_resolve "$1"
   got="$(amp_set_auto "$AMP_APP" "$AMP_BRANCH" --enable-auto-build)" || exit 1
   [ "$got" = true ] || die "Amplify: asked to turn auto-build on for $AMP_BRANCH, but it still shows it off"
   echo "Amplify: $AMP_BRANCH of $1 builds on push again"
+  # Undo what `off --all` did, as it was written down; forgotten once it is all back on.
+  prev="$(jq -c --arg a "$AMP_APP" '.[$a] // empty' "$AMP_OFF_FILE" 2>/dev/null)" || prev=""
+  [ -n "$prev" ] || return 0
+  while IFS= read -r b; do
+    [ -n "$b" ] && [ "$b" != "$AMP_BRANCH" ] || continue
+    got="$(amp_set_auto "$AMP_APP" "$b" --enable-auto-build)" || exit 1
+    echo "Amplify: $b of $1 builds on push again"
+  done < <(echo "$prev" | jq -r '.branches[]?')
+  if [ "$(echo "$prev" | jq '.newBranches == true')" = true ]; then
+    amp_aws amplify update-app --app-id "$AMP_APP" --enable-branch-auto-build >/dev/null || exit 1
+    echo "Amplify: new branches of $1 build on push again"
+  fi
+  amp_off_edit --arg a "$AMP_APP" 'del(.[$a])'
 }
 
 amp_lock() {
@@ -364,16 +405,22 @@ amplify_logs() {
   [ -n "$id" ] || id="$(amp_jobs "$AMP_APP" "$AMP_BRANCH" 1 | jq -r '.[0].jobId // empty')" || exit 1
   [ -n "$id" ] || die "Amplify: $p has no builds yet"
   job="$(amp_aws amplify get-job --app-id "$AMP_APP" --branch-name "$AMP_BRANCH" --job-id "$id")" || exit 1
+  # Only the end of each step's log is read (DEPLOYS_AMPLIFY_LOG_BYTES, default 256 KB): a big
+  # build log is not loaded whole to show its last lines. A cut-off first line is left out.
+  local cap="${DEPLOYS_AMPLIFY_LOG_BYTES:-262144}" hdr; hdr="$(mktemp)"
   {
     while IFS=$'\t' read -r step url; do
       [ -n "$url" ] || continue
-      if out="$(curl -sSf --connect-timeout 10 --max-time 60 "$url" 2>/dev/null)"; then
+      : > "$hdr"
+      if out="$(curl -sSf --connect-timeout 10 --max-time 60 -H "Range: bytes=-$cap" -D "$hdr" "$url" 2>/dev/null)"; then
+        if tr -d '\r' < "$hdr" | grep -qiE '^content-range: bytes [1-9][0-9]*-'; then out="$(printf '%s\n' "$out" | sed '1d')"; fi
         printf '%s\n' "$out" | awk -v s="$step" '{print s "  " $0}'
       else
         echo "$step  (log could not be read; the link may have expired: run logs again)"
       fi
     done < <(echo "$job" | jq -r '.job.steps[]? | [(.stepName // "STEP"), (.logUrl // "")] | @tsv')
   } | tail -n "$n"
+  rm -f "$hdr"
 }
 
 # amp_domain_of <branch>: its custom domain, else <branch>.<default domain>. After amp_resolve.

@@ -194,9 +194,15 @@ routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branche
 out="$(amp off Shop 2>&1)"; rc=$?
 expect "off: still on after the call: stops" "$rc" 1
 has "off: and says so" "$out" "still shows it on"
-routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branches-shop-off.json" "amplify update-branch d1shop0001 update-on.json"
+routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branches-shop-off.json" "amplify update-branch d1shop0001 update-on.json" "amplify update-app d1shop0001 update-app.json"
 out="$(amp on Shop)"
-has "on: --enable-auto-build" "$(grep update-branch "$CALLS")" "--branch-name main --enable-auto-build"
+has "on: --enable-auto-build" "$(grep update-branch "$CALLS" | head -n 1)" "--branch-name main --enable-auto-build"
+# PRV-062: the off --all above wrote down dev and the new-branch setting; on turns both back on.
+has "on: undoes off --all for dev" "$(grep update-branch "$CALLS" | tail -n 1)" "--branch-name dev --enable-auto-build"
+has "on: and for new branches" "$(grep update-app "$CALLS")" "--enable-branch-auto-build"
+expect "on: then forgets it" "$(jq -c '.d1shop0001 // "gone"' "$DEPLOYS_CONFIG/amplify-off.json")" '"gone"'
+: > "$CALLS"; out="$(amp on Shop)"
+expect "on: without an earlier off --all only the production branch" "$(calls update-branch):$(calls update-app)" "1:0"
 
 # --- deploy ---
 routes "${STD[@]}" "amplify start-job d1shop0001 start-job.json"
@@ -290,6 +296,31 @@ routes "${STD[@]}" "amplify get-job --job-id.7 get-job-expired.json"
 out="$(amp logs Shop 60 7)"
 has "logs: an expired link says so" "$out" "could not be read"
 hasnt "logs: and keeps it secret" "$out" "secret3"
+
+# PRV-110: only the end of a step's log is asked for; a cut-off first line is left out.
+cat > "$tmp/bin/curl-range" <<'CURL'
+#!/bin/bash
+hdr=""; prev=""; for a in "$@"; do [ "$prev" = -D ] && hdr="$a"; prev="$a"; done
+echo "curl $*" >> "$CALLS"
+printf 'HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 4000-4099/4100\r\n\r\n' > "$hdr"
+printf 'tial line\nwhole line\n'
+CURL
+chmod +x "$tmp/bin/curl-range"
+routes "${STD[@]}" "amplify get-job --job-id.12 get-job.json"
+out="$(mkdir -p "$tmp/rb"; cp "$tmp/bin/curl-range" "$tmp/rb/curl"; PATH="$tmp/rb:$PATH" DEPLOYS_AMPLIFY_LOG_BYTES=100 amp logs Shop)"
+has "logs: only the end is asked for" "$(grep -m 1 '^curl ' "$CALLS")" "Range: bytes=-100"
+expect "logs: the cut-off first line is left out" "$(echo "$out" | grep -c 'tial line'):$(echo "$out" | grep -c 'whole line')" "0:2"
+
+# PRV-106: twenty jobs without a success: a hundred are asked for, the live commit is found.
+mkdir -p "$tmp/fx106"; cp "$FIX"/* "$tmp/fx106/"
+jq -n '{jobSummaries: [range(20) | {jobId: "\(100 - .)", status: "FAILED", commitId: "ffff\(.)", startTime: "2026-01-02T03:04:05Z"}]}' > "$tmp/fx106/jobs-20.json"
+jq '.jobSummaries += [{jobId: "60", status: "SUCCEED", commitId: "good123", commitMessage: "fix: ok", startTime: "2026-01-01T03:04:05Z"}]' "$tmp/fx106/jobs-20.json" > "$tmp/fx106/jobs-100.json"
+routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branches-shop.json" "amplify list-branches d2blog0002 branches-blog.json" \
+  "amplify list-branches d3static003 branches-none.json" "amplify list-jobs d1shop0001.*--max-items.100 jobs-100.json" \
+  "amplify list-jobs d1shop0001 jobs-20.json" "amplify list-jobs d2blog0002 jobs-blog.json" "amplify list-domain-associations . domains-none.json"
+out="$(FIX="$tmp/fx106" amp json | jq -c '.[] | select(.name=="Shop") | [.lastSha, .phase]')"
+expect "json: no success in 20 jobs: 100 are asked for" "$out:$(calls 'list-jobs --app-id d1shop0001 --branch-name main --max-items 100')" '["good123","failed"]:1'
+expect "json: blog (a success in its few jobs) is not asked again" "$(calls 'list-jobs --app-id d2blog0002 --branch-name release --max-items 100')" 0
 
 # --- url ---
 routes "${STD[@]}"
