@@ -15,7 +15,7 @@ Jede Zahl ist eine Schätzung und trägt „≈“. Das JSON sagt, wie sie entst
 
 **Pushes auf den Deploy-Branch × durchschnittlicher Build des Projekts**
 
-1. **Pushes**: aus GitHubs Aktivitätsliste des Deploy-Branches (`repos/{repo}/activity`, `activity_type=push`). Ist die nicht lesbar, stehen die Commits auf dem Branch dafür. Ein Push kann mehrere Commits tragen, die Zahl ist dann eine obere Grenze. `basis` sagt, was genommen wurde.
+1. **Pushes**: aus GitHubs Aktivitätsliste des Deploy-Branches (`repos/{repo}/activity`: `push`, `force_push`, `pr_merge`, `merge_queue_merge`). Ist die nicht lesbar, stehen die Commits auf dem Branch dafür. Ein Push kann mehrere Commits tragen, die Zahl ist dann eine obere Grenze. `basis` sagt, was genommen wurde.
 2. **Durchschnittlicher Build**: die mittlere Dauer der letzten 20 fertigen Builds (Vercel: `READY`; Render: `live` oder `deactivated`). Fehlgeschlagene und abgebrochene Builds werden nicht gemessen.
 3. **Preis pro Build**, der erste bekannte:
    1. Vercel-Abrechnung (`deploys costs`, letzte 7 Tage): abgerechnete Build-Dollar / Builds des Projekts (`vercel-billing`).
