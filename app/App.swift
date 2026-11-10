@@ -69,6 +69,7 @@ struct SettingsView: View {
             Form {
                 deploySection
                 DeployWindowSettings()
+                RulesSettings()
                 GuardSettings(store: store)
                 costsSection
             }

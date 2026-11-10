@@ -971,5 +971,22 @@ expect("watch: two in a row count", Store.watchFails([.fine, .broken, .broken]),
 expect("watch: offline is never a failure", Store.watchFails([.unreachable, .unreachable]), false)
 expect("slower: twice and half a second more", [Store.slower(before: 0.2, after: 0.5), Store.slower(before: 0.4, after: 1.2)], [false, true])
 
+do {
+    let old = Data(#"{"rules":[{"name":"Docs","when":{"ciGreen":true,"paths":["docs/**"],"onlyPaths":true,"branch":"main"},"then":"deploy","color":"red"}],"version":2}"#.utf8)
+    let rc = RulesConfig.parse(old)
+    expect("rules: read", "\(rc.rules.count) \(rc.rules.first?.then.rawValue ?? "") \(rc.rules.first?.onlyPaths ?? false)", "1 deploy true")
+    let back = (try? rc.encoded(over: old)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    let r0 = (back?["rules"] as? [[String: Any]])?.first
+    expect("rules: unknown keys stay", "\(back?["version"] as? Int ?? 0) \(r0?["color"] as? String ?? "") \((r0?["when"] as? [String: Any])?["branch"] as? String ?? "")", "2 red main")
+    expect("rules: unchanged reads back the same", RulesConfig.parse(try? rc.encoded(over: old)) == rc, true)
+    var bare = RulesConfig(); bare.rules = [.init(name: "all", then: .deploy)]
+    expect("rules: deploying everything is refused", bare.problem != nil, true)
+    bare.rules[0].labels = ["ship"]
+    expect("rules: with a condition it may", bare.problem == nil, true)
+    expect("rules: summary", RulesConfig.summary(rc.rules[0]),
+           L("When CI is green and only docs/** changed: deploy it", "Wenn CI grün ist und nur docs/** geändert: deployen"))
+    expect("rules: list", RulesConfig.list(" a, b\n,c "), ["a", "b", "c"])
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
