@@ -121,6 +121,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: No personal data in commit messages
+        # bash: -eo pipefail, so a failing git log fails the step instead of checking nothing.
+        shell: bash
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: git log --format=%B "$BASE..HEAD" | scripts/check-public.sh --stdin

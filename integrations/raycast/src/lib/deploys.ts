@@ -295,11 +295,19 @@ export async function runText(args: string[], timeout = TIMEOUT.quick): Promise<
 
 // notes, open and logs take the name, or platform:name when the name is on two platforms (as the
 // VS Code extension does), so a twin never opens or reads the other platform's project.
+// `all` is every project (from status), since a list of waiting ones may hold only one twin.
 export function withRefs<T extends { name: string; platform: string }>(
   list: Omit<T, "projectRef">[],
+  all: { name: string; platform: string }[] = list,
 ): (T & { projectRef: string })[] {
   const count = new Map<string, number>();
-  for (const p of list) count.set(p.name, (count.get(p.name) ?? 0) + 1);
+  const seen = new Set<string>();
+  for (const p of [...all, ...list]) {
+    const k = `${p.platform}/${p.name}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    count.set(p.name, (count.get(p.name) ?? 0) + 1);
+  }
   return list.map(
     (p) =>
       ({ ...p, projectRef: (count.get(p.name) ?? 0) > 1 ? `${p.platform}:${p.name}` : p.name }) as T & {
@@ -309,8 +317,16 @@ export function withRefs<T extends { name: string; platform: string }>(
 }
 
 export async function changed(): Promise<JsonResult<ChangedProject[]>> {
-  const r = await runJson<Omit<ChangedProject, "projectRef">[]>(["changed", "--json"]);
-  return { ...r, data: withRefs<ChangedProject>(r.data) };
+  // Every project's name and platform too (no GitHub calls), to know which names are on two
+  // platforms. Without it, only the waiting list itself is counted.
+  const [r, all] = await Promise.all([
+    runJson<Omit<ChangedProject, "projectRef">[]>(["changed", "--json"]),
+    runJson<{ name: string; platform: string }[]>(["status", "--json", "--no-github"]).then(
+      (s) => (Array.isArray(s.data) ? s.data : []),
+      () => [],
+    ),
+  ]);
+  return { ...r, data: withRefs<ChangedProject>(r.data, all) };
 }
 
 export async function status(): Promise<JsonResult<StatusProject[]>> {

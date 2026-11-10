@@ -19,8 +19,11 @@ it reads what is waiting and starts a deploy only when you confirm one.
 | **Deploy Status** | Projects building right now, and projects whose newest deploy failed (`deploys status --json`). | Open Site, Open Dashboard, Copy Release Notes, Show in Deploy Center |
 | **Deploy All Changed** | The same list as Waiting Deploys. Nothing starts until you press ↵ and confirm. | Deploy All (asks first, with every project named) |
 
-Deploy All starts exactly the projects in the list you confirmed, one after the other, with
-`deploys <vercel|render> deploy-json <name>`. Each row then shows "started" or "not started".
+Deploy All starts exactly the projects in the list you confirmed, in one
+`deploys deploy-changed --yes --json` (the CLI's rules: freeze, deploy window, start lock). It
+first asks the CLI what it would start; if that is not the confirmed list (a push came in), nothing
+starts. Each row then shows "started" or "not started", the list is read again, and Deploy All
+stays off until you open the command again.
 
 ## Requirements
 
