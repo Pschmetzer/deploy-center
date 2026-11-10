@@ -297,8 +297,28 @@ struct MenuBarContent: View {
         let w = store.waiting
         let changed = Array(store.items.values.joined()).filter { $0.hasNewCommits && $0.deployable && $0.state == .idle }
             .sorted { ($0.pendingCommits ?? 0) > ($1.pendingCommits ?? 0) }
+        let connected = Platform.allCases.filter { p in
+            guard let d = store.doctor else { return false }
+            return p == .vercel ? d.vercelLoggedIn : d.renderKey
+        }
+        let failed = connected.filter { store.lastLoadError[$0] != nil }
+        let unread = connected.filter { store.listState($0) == .notLoaded }
+        if store.doctor == nil {
+            Text(L("Checking access …", "Prüfe Zugang …"))
+        } else if connected.isEmpty {
+            Text(L("Nothing connected yet", "Noch nichts verbunden"))
+        }
+        ForEach(failed, id: \.self) { p in
+            Label(L("\(p.rawValue) could not be loaded", "\(p.rawValue) konnte nicht geladen werden"), systemImage: "exclamationmark.triangle")
+        }
+        if !unread.isEmpty && failed.isEmpty {
+            Text(L("Not loaded yet: ", "Noch nicht geladen: ") + unread.map(\.rawValue).joined(separator: ", "))
+        }
         if w.projects == 0 {
-            Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle")
+            // Only said when it is known: every connected list was read and none failed.
+            if !connected.isEmpty && failed.isEmpty && unread.isEmpty {
+                Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle")
+            }
         } else {
             Text(L("\(w.prs) PRs, \(w.commits) commits waiting", "\(w.prs) PRs, \(w.commits) Commits warten"))
             Divider()
