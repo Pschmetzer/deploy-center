@@ -1,0 +1,22 @@
+{
+ "count": 1,
+ "deployments": [
+  {
+   "id": 1,
+   "application_id": "1",
+   "deployment_uuid": "dep-cache-1",
+   "pull_request_id": 0,
+   "commit": "HEAD",
+   "commit_message": null,
+   "status": "cancelled-by-user",
+   "rollback": false,
+   "is_webhook": false,
+   "is_api": true,
+   "created_at": "2026-11-04T08:00:00.000000Z",
+   "updated_at": "2026-11-04T08:00:00.000000Z",
+   "application_name": "cache",
+   "server_name": "vps",
+   "deployment_url": "/project/p-1/environment/e-1/application/app-cache/deployment/dep-cache-1"
+  }
+ ]
+}

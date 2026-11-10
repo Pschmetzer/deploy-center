@@ -210,6 +210,55 @@ if command -v ruby >/dev/null; then
   case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
 fi
 
+# --- Claude Code plugin: manifest checks, shellcheck, and the after-push hook ---
+if integrations_cc="$(tests/claude-code.sh --quiet 2>&1)"; then ok "claude-code: plugin and marketplace files are valid"
+else fail "claude-code: plugin and marketplace files are valid" "$(grep FAIL <<<"$integrations_cc" | head -5)"; fi
+hook="$here/claude-code/scripts/after-push.sh"
+if command -v shellcheck >/dev/null; then
+  shellcheck --severity=style "$hook" && ok "claude-code: shellcheck after-push.sh" || fail "claude-code: shellcheck after-push.sh" "see above"
+  shellcheck --severity=warning tests/claude-code.sh && ok "claude-code: shellcheck claude-code.sh" || fail "claude-code: shellcheck claude-code.sh" "see above"
+fi
+git init -q "$tmp/cc" && git -C "$tmp/cc" remote add origin git@github.com:me/app.git
+git init -q "$tmp/cc-other" && git -C "$tmp/cc-other" remote add origin https://github.com/someone/else.git
+git -C "$tmp/cc" remote add mirror https://github.com/me/site.git
+hk() { jq -nc --arg c "$1" --arg d "${2:-$tmp/cc}" '{hook_event_name:"PostToolUse",tool_name:"Bash",cwd:$d,tool_input:{command:$c},tool_response:{stdout:"",stderr:"",interrupted:false}}' | "$hook"; echo "exit=$?"; }
+out="$(hk "git push")"
+expect "claude-code hook: one line for the pushed repo" "$(head -1 <<<"$out" | jq -r .systemMessage)" \
+  "4 commits waiting on app-web, changes waiting on api: deploy when ready (deploys changed)"
+contains "claude-code hook: tells Claude not to deploy" "$(head -1 <<<"$out" | jq -r .hookSpecificOutput.additionalContext)" "Do not deploy unless the user explicitly says so"
+expect "claude-code hook: event name" "$(head -1 <<<"$out" | jq -r .hookSpecificOutput.hookEventName)" PostToolUse
+contains "claude-code hook: always exit 0" "$out" "exit=0"
+contains "claude-code hook: git push origin main -u" "$(hk "git push -u origin main" | head -1)" "app-web"
+expect "claude-code hook: another remote, nothing waiting there" "$(hk "git push mirror main")" "exit=0"
+expect "claude-code hook: a repo with no projects is silent" "$(hk "git push" "$tmp/cc-other")" "exit=0"
+expect "claude-code hook: not a push, silent" "$(hk "git status")" "exit=0"
+expect "claude-code hook: silent without deploys" "$(DEPLOYS=/nonexistent hk "git push")" "exit=0"
+if [ ! -e "/Applications/Deploy Center.app" ] && [ ! -e "$HOME/Applications/Deploy Center.app" ]; then
+  nodeploys="$tmp/nodeploys"; mkdir -p "$nodeploys"
+  for t in jq git sed mktemp rm cat sleep pgrep kill dirname; do p="$(command -v "$t")" && ln -sf "$p" "$nodeploys/$t"; done
+  expect "claude-code hook: silent with no deploys on PATH" "$(env -u DEPLOYS PATH="$nodeploys" HOME="$tmp" "$BASH" -c "$(declare -f hk); tmp='$tmp' hook='$hook'; hk 'git push'")" "exit=0"
+fi
+expect "claude-code hook: off with the plugin option" "$(CLAUDE_PLUGIN_OPTION_PUSH_REMINDER=false hk "git push")" "exit=0"
+expect "claude-code hook: off with DEPLOYS_PUSH_REMINDER=off" "$(DEPLOYS_PUSH_REMINDER=off hk "git push")" "exit=0"
+expect "claude-code hook: silent on bad input" "$(echo 'not json' | "$hook"; echo "exit=$?")" "exit=0"
+start=$(date +%s)
+cat > "$tmp/bin/slow-deploys" <<SH
+#!/bin/bash
+sleep 30
+SH
+chmod +x "$tmp/bin/slow-deploys"
+expect "claude-code hook: a CLI that does not answer is silent" "$(DEPLOYS="$tmp/bin/slow-deploys" DEPLOYS_HOOK_TIMEOUT=1 hk "git push")" "exit=0"
+[ $(( $(date +%s) - start )) -lt 6 ] && ok "claude-code hook: gives up after the timeout" || fail "claude-code hook: gives up after the timeout" "took too long"
+cat > "$tmp/bin/one-deploys" <<SH
+#!/bin/bash
+echo '[{"name":"web","repo":"Me/App","platform":"vercel","pendingCommits":1}]'; exit 1
+SH
+chmod +x "$tmp/bin/one-deploys"
+expect "claude-code hook: singular, repo case ignored, exit 1 list still used" \
+  "$(DEPLOYS="$tmp/bin/one-deploys" hk "git push" | head -1 | jq -r .systemMessage)" "1 commit waiting on web: deploy when ready (deploys changed)"
+deploy_calls_before="$(cat "$tmp/deploy.log" 2>/dev/null | wc -l)"
+hk "git push" >/dev/null
+expect "claude-code hook: never deploys" "$(cat "$tmp/deploy.log" 2>/dev/null | wc -l)" "$deploy_calls_before"
 # --- the MCP server (needs node and `npm ci` in mcp/) ---
 if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
   DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))

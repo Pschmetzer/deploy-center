@@ -51,6 +51,8 @@ lib() {  # lib <p> <shell code>: the code with deploys sourced (DEPLOYS_LIB=1)
 
 for f in providers/*.sh; do
   p="$(basename "$f" .sh)"
+  # A provider with its own test file (tests/providers/<p>.sh) and no contract fixtures is covered there.
+  [ -f "tests/fixtures/$p/env" ] || { [ -f "tests/providers/$p.sh" ] && continue; }
   [ -d "tests/fixtures/$p" ] || { fail "$p: fixtures" "tests/fixtures/$p is missing"; continue; }
   rm -rf "$tmp/config-$p"; mkdir -p "$tmp/config-$p"
   [ -d "tests/fixtures/$p/config" ] && cp -R "tests/fixtures/$p/config"/. "$tmp/config-$p/"

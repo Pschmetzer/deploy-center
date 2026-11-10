@@ -1,0 +1,5 @@
+# Starting phase: preBuild
+npm ci
+# Starting phase: build
+npm run build
+Build ok

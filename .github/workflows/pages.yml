@@ -1,9 +1,21 @@
 name: Website
 # Publishes site/ to GitHub Pages. Only the website; the app is never deployed from here.
+# site/docs/ is not in git: it is built here from the repo's Markdown and deploys --help, so it never drifts.
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+      # sources of site/docs/
+      - "README.md"
+      - "deploys"
+      - "docs/**/*.md"
+      - "examples/README.md"
+      - "integrations/**/*.md"
+      - "scripts/build-docs.py"
+      - "scripts/check-links.py"
+      - "scripts/docs-assets/**"
   workflow_dispatch:
 
 permissions:
@@ -23,9 +35,29 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # "Last updated" on each docs page comes from git log
+      - name: Build docs
+        run: python3 scripts/build-docs.py
+      - name: Check links
+        run: python3 scripts/check-links.py site
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v5
+      # Tell search engines (Bing, Yandex, Seznam, Naver …) which URLs changed. Best effort only:
+      # this step can fail or time out without failing the deploy.
+      - name: Ping IndexNow
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          INDEXNOW_KEY: 4747785d1fcf908f9504c58a9a66de5a
+        run: |
+          urls=$(grep -o '<loc>[^<]*</loc>' site/sitemap.xml | sed 's/<[^>]*>//g' | jq -R . | jq -sc .)
+          body=$(jq -nc --arg key "$INDEXNOW_KEY" --argjson urls "$urls" \
+            '{host: "deploycenter.app", key: $key, keyLocation: "https://deploycenter.app/\($key).txt", urlList: $urls}')
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST https://api.indexnow.org/indexnow \
+            -H 'Content-Type: application/json; charset=utf-8' -d "$body" || true)
+          echo "IndexNow answered HTTP $code (200/202 = accepted)"

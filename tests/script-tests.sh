@@ -409,5 +409,8 @@ for t in tests/providers/*.sh; do
   env -u DEPLOYS_LIB -u DEPLOYS_CONFIG bash "$t" || fails=$((fails+1))
 done
 
+# Savings (simulate, ledger) have their own file with fixtures.
+bash tests/savings-tests.sh || fails=$((fails+1))
+
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }

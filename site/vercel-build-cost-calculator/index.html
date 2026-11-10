@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vercel build cost calculator: what auto-deploy costs · Deploy Center</title>
+<meta name="description" content="Estimate what auto-deploy costs a month on Vercel or Render: projects × pushes × cost per build, compared with deploying by hand. Free, runs in your browser.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/vercel-build-cost-calculator/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Vercel build cost calculator: what auto-deploy costs · Deploy Center">
+<meta property="og:description" content="Estimate what auto-deploy costs a month on Vercel or Render: projects × pushes × cost per build, compared with deploying by hand. Free, runs in your browser.">
+<meta property="og:url" content="https://deploycenter.app/vercel-build-cost-calculator/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Vercel build cost calculator: what auto-deploy costs · Deploy Center">
+<meta name="twitter:description" content="Estimate what auto-deploy costs a month on Vercel or Render: projects × pushes × cost per build, compared with deploying by hand. Free, runs in your browser.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "headline": "Vercel build cost calculator",
+  "description": "Estimate what auto-deploy costs a month on Vercel or Render: projects × pushes × cost per build, compared with deploying by hand. Free, runs in your browser.",
+  "url": "https://deploycenter.app/vercel-build-cost-calculator/",
+  "mainEntityOfPage": "https://deploycenter.app/vercel-build-cost-calculator/",
+  "datePublished": "2026-11-10",
+  "dateModified": "2026-11-10",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "How much does a Vercel build cost?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "It depends on your plan, the build machine and how long the build runs. Divide last month's build cost on your usage page by the number of builds to get your own number."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Why compare with deploying by hand?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Most pushes do not need to go live on their own. If one deploy at the end of the day ships all of them, you pay for one build instead of one per push."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does this work for Render?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes. The formula is the same; use Render's build minutes and price for the cost per build."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Is anything sent to a server?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. The calculator runs in your browser. The share button opens a post with your numbers only if you click it."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Calculator",
+    "item": "https://deploycenter.app/vercel-build-cost-calculator/"
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Vercel build cost calculator",
+  "url": "https://deploycenter.app/vercel-build-cost-calculator/",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Any (web browser)",
+  "offers": {
+   "@type": "Offer",
+   "price": "0",
+   "priceCurrency": "USD"
+  },
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  }
+ }
+]
+</script>
+</head>
+<body>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/" aria-current="page">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+</div></nav>
+
+<main class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a></p>
+<h1>Vercel build cost calculator</h1>
+<p class="answer">Auto-deploy costs roughly <b>projects × pushes per day × cost per build × working days</b> a month. Deploying by hand costs the same formula with your number of deploys instead of your number of pushes; move the sliders to see both with your numbers.</p>
+<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<div class="calc">
+  <div class="card">
+    <div class="field"><label for="p">Projects connected to Git <output id="po"></output></label><input id="p" type="range" min="1" max="80" value="20"></div>
+    <div class="field"><label for="u">Pushes per project per working day <output id="uo"></output></label><input id="u" type="range" min="1" max="60" value="8"><div class="hint">Count each push, not each commit. AI coding agents often push after every step.</div></div>
+    <div class="field"><label for="c">Average cost per build <output id="co"></output></label><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In cents. Your real number: last month's build cost divided by the number of builds, on your Vercel or Render usage page.</div></div>
+    <div class="field"><label for="d">Deploys by hand per project per day <output id="do"></output></label><input id="d" type="range" min="1" max="5" value="1"></div>
+  </div>
+  <div class="card result" aria-live="polite">
+    <div class="hint">You would save about</div>
+    <div class="big" id="save">$0</div>
+    <div class="hint">a month (22 working days)</div>
+    <div class="row"><span>With auto-deploy</span><b id="now">$0</b></div>
+    <div class="row"><span>Deploying by hand</span><b id="after">$0</b></div>
+    <div class="share"><a class="btn" id="tweet" target="_blank" rel="noopener">Share your number</a></div>
+  </div>
+</div>
+
+<h2>How it is calculated</h2>
+<pre><code>with auto-deploy   = projects × pushes per day × cost per build × 22
+deploying by hand  = projects × min(deploys, pushes) × cost per build × 22
+saving             = with auto-deploy − deploying by hand</code></pre>
+<ul>
+  <li><b>22 working days</b> a month. Weekend pushes add to the first line.</li>
+  <li><b>One build per project per push.</b> If several projects are connected to one repository, a push builds each of them; count them as separate projects.</li>
+  <li><b>Previews count.</b> Pushes to any branch build a preview on Vercel. Include them, or set the sliders for production only.</li>
+  <li><b>Nothing leaves your browser.</b> The numbers stay on this page; the share link only contains the four slider values.</li>
+</ul>
+
+<h2>Find your cost per build</h2>
+<ol>
+  <li>On Vercel, open the team's <b>Usage</b> page and read the build cost for the last month. On Render, read the build minutes on the <b>Billing</b> page.</li>
+  <li>Count the builds in the same period in the Deployments list.</li>
+  <li>Divide the cost by the number of builds.</li>
+</ol>
+<p><a href="/">Deploy Center</a> shows the Vercel build spend of the last 7 days and the monthly pace in its window, so you can check the estimate against real numbers.</p>
+
+<div class="note"><p><b>What this does not include.</b> Function, image and bandwidth costs do not change when you deploy less often. Plans that include some build time make the first builds of a month free. The result is an estimate, not a quote.</p></div>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>How much does a Vercel build cost?</summary><p>It depends on your plan, the build machine and how long the build runs. Divide last month's build cost on your usage page by the number of builds to get your own number.</p></details>
+  <details><summary>Why compare with deploying by hand?</summary><p>Most pushes do not need to go live on their own. If one deploy at the end of the day ships all of them, you pay for one build instead of one per push.</p></details>
+  <details><summary>Does this work for Render?</summary><p>Yes. The formula is the same; use Render's build minutes and price for the cost per build.</p></details>
+  <details><summary>Is anything sent to a server?</summary><p>No. The calculator runs in your browser. The share button opens a post with your numbers only if you click it.</p></details>
+
+<div class="ctabox">
+  <h2>Pay for one build a day, not one per push.</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, shows what is waiting, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify.</p>
+</div></footer>
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const ids=['p','u','c','d'];
+  // prefill from the link, e.g. ?p=12&u=30&c=8&d=1
+  const q=new URLSearchParams(location.search);
+  ids.forEach(id=>{const v=+q.get(id),el=$(id); if(v>=+el.min&&v<=+el.max) el.value=v;});
+  const fmt=v=>'$'+Math.round(v).toLocaleString('en-US');
+  function calc(){
+    const p=+$('p').value,u=+$('u').value,c=+$('c').value/100,d=+$('d').value;
+    $('po').textContent=p;$('uo').textContent=u;$('co').textContent='$'+c.toFixed(2);$('do').textContent=d;
+    const days=22, now=p*u*c*days, after=p*Math.min(d,u)*c*days, save=Math.max(0,now-after);
+    $('now').textContent=fmt(now);$('after').textContent=fmt(after);$('save').textContent=fmt(save);
+    const link='https://deploycenter.app/vercel-build-cost-calculator/?'+ids.map(id=>id+'='+$(id).value).join('&');
+    const t=`Auto-deploy would cost me about ${fmt(now)}/month in builds. Deploying by hand: ${fmt(after)}. Calculated with Deploy Center`;
+    $('tweet').href='https://x.com/intent/post?text='+encodeURIComponent(t)+'&url='+encodeURIComponent(link);
+  }
+  ids.forEach(id=>$(id).addEventListener('input',calc));calc();
+})();
+</script>
+</body>
+</html>
