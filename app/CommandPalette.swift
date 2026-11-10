@@ -394,7 +394,7 @@ struct CommandPaletteHost: ViewModifier {
                 switch s {
                 case .log(let i): BuildLog(store: store, item: i)
                 case .journal: JournalView()
-                case .costs: PaletteCosts(store: store)
+                case .costs: if let c = store.costs { CostsSheet(costs: c) } else { PaletteCosts(store: store) }
                 }
             }
             .modifier(PaletteQuestions(store: store, deployItem: $deployItem, unchangedItem: $unchangedItem,

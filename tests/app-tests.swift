@@ -316,6 +316,22 @@ MainActor.assumeIsolated {
     expect("undo toast is not pushed away", st.toast?.text ?? "nil", "hidden")
 }
 
+// Safe deploys: the risk from the script, in the app's words; the window and CI answers.
+do {
+    let json = #"{"level":"red","files":120,"lines":4000,"reasons":[{"kind":"migrations","level":"red","files":["prisma/migrations/1/migration.sql"],"text":"x"},{"kind":"size","level":"red","files":[],"text":"x"},{"kind":"new","level":"yellow","text":"from a newer script"}]}"#
+    let r = try JSONDecoder().decode(Risk.self, from: Data(json.utf8))
+    expect("risk decodes, red", r.isRed, true)
+    expect("risk: migrations named", r.text(r.reasons[0]), L("Database migrations: ", "Datenbank-Migrationen: ") + "prisma/migrations/1/migration.sql")
+    expect("risk: size with numbers", r.text(r.reasons[1]), L("A very large diff: 120 files, 4000 lines", "Ein sehr großer Diff: 120 Dateien, 4000 Zeilen"))
+    expect("risk: an unknown kind keeps the script's text", r.text(r.reasons[2]), "from a newer script")
+    let v = try JSONDecoder().decode(VercelProject.self, from: Data(#"{"name":"a","auto":false,"deployable":true}"#.utf8))
+    expect("a list entry without risk still decodes", v.risk == nil, true)
+    let w = try JSONDecoder().decode(WindowReply.self, from: Data(#"{"denied":true,"reason":"fri 15:00–24:00","configured":true}"#.utf8))
+    expect("window reply", "\(w.denied) \(w.reason ?? "")", "true fri 15:00–24:00")
+    let ci = try JSONDecoder().decode(CIReply.self, from: Data(#"{"repo":"me/app","state":"red","reason":"failed: test","checks":2}"#.utf8))
+    expect("ci reply", ci.state, "red")
+} catch { expect("safe-deploy answers decode", error, "no error") }
+
 // Tabs from the enabled providers. No `deploys providers` (older script): Vercel and Render.
 func ids(_ l: [ProviderInfo]) -> [String] { l.map(\.id) }
 expect("no answer: Vercel and Render", ids(ProviderInfo.parse(nil).list), ["vercel", "render"])

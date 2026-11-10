@@ -3,6 +3,7 @@
 | Page | For |
 |---|---|
 | [SAFE-START.md](SAFE-START.md) | Trying it safely: look first, then one project, then all |
+| [SAFE-DEPLOY.md](SAFE-DEPLOY.md) | Deploys that are safe to batch: green CI, health check with rollback, deploy windows, risk light |
 | [AUTO-DEPLOY.md](AUTO-DEPLOY.md) | What turning auto-deploy off changes, and how to turn it back on |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | The app's error messages and what to do about them |
 | [CLI.md](CLI.md) | Every `deploys` command, CI variables and settings |
