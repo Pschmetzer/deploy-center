@@ -38,6 +38,7 @@ struct SettingsView: View {
         ScrollViewReader { proxy in Form {
             generalSection
             platformsSection
+            PhoneLinkSettings()
             deploySection
             GuardSettings(store: store)
             ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
@@ -317,7 +318,7 @@ struct DeployCenterApp: App {
             let active = store.items.values.contains { $0.contains { $0.state.isActive } }
             let failed = !active && store.items.values.contains { $0.contains { if case .failed = $0.state { return true } else { return false } } }
             Image(systemName: active ? "paperplane.fill" : (failed ? "exclamationmark.triangle.fill" : "paperplane"))
-                .task { store.boot() }
+                .task { store.boot(); await PhoneLinkModel.shared.pushIfOn() }
                 .accessibilityLabel("Deploy Center")
                 .accessibilityValue(active ? L("deploying", "deployt gerade")
                     : failed ? L("a deploy failed", "ein Deploy ist fehlgeschlagen")
