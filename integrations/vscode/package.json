@@ -69,6 +69,18 @@
         "icon": "$(rocket)"
       },
       {
+        "command": "deployCenter.deployPreview",
+        "title": "Deploy Preview",
+        "category": "Deploy Center",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "deployCenter.rollback",
+        "title": "Roll Back Production",
+        "category": "Deploy Center",
+        "icon": "$(history)"
+      },
+      {
         "command": "deployCenter.openSite",
         "title": "Open Site",
         "category": "Deploy Center",
@@ -162,6 +174,16 @@
           "command": "deployCenter.deployProject",
           "when": "view == deployCenter.projects && viewItem =~ /project/",
           "group": "1_deploy"
+        },
+        {
+          "command": "deployCenter.deployPreview",
+          "when": "view == deployCenter.projects && viewItem =~ /can-preview/",
+          "group": "1_deploy@2"
+        },
+        {
+          "command": "deployCenter.rollback",
+          "when": "view == deployCenter.projects && viewItem =~ /can-rollback/",
+          "group": "1_deploy@3"
         },
         {
           "command": "deployCenter.openSite",

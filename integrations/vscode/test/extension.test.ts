@@ -130,3 +130,35 @@ test("dispose stops a deploy that is being followed", async () => {
   // Nothing is left to keep the test process alive: the 60 s pause was cleared (node --test
   // would otherwise wait for it).
 });
+
+test("preview: Vercel only, asked first, production not followed", async () => {
+  const c = await ready();
+  vs.answers.warning.push("Deploy preview");
+  await c.deployPreview(project(c, "app-web"));
+  assert.match(cliCalls(), /deploy-json\napp-web\n--preview/);
+  assert.deepEqual(said("info"), ["app-web: preview started (QUEUED)"]);
+  await c.deployPreview(project(c, "api"));
+  assert.match(said("info")[1], /no preview deploys here/);
+});
+
+test("rollback: asked first; the CLI's reason when it cannot", async () => {
+  const c = await ready();
+  vs.answers.warning.push(undefined);
+  await c.rollback(project(c, "app-web"));
+  assert.doesNotMatch(cliCalls(), /rollback/);
+  vs.answers.warning.push("Roll back");
+  await c.rollback(project(c, "app-web"));
+  assert.match(said("warning")[1], /Roll back app-web on Vercel\?/);
+  assert.deepEqual(said("info"), ["app-web: rolled back to dpl_0 (READY)"]);
+  vs.answers.warning.push("Roll back");
+  await c.rollback(project(c, "api"));
+  assert.deepEqual(said("error"), ["api: no earlier deploy of api"]);
+});
+
+test("the project menu offers preview and rollback where the platform has them", async () => {
+  const c = await ready();
+  vs.answers.pick.push(undefined);
+  await c.projectMenu(project(c, "app-web"));
+  const labels = vs.calls.find((x) => x.kind === "pick")!.args[0] as string[];
+  assert.ok(labels.some((l) => l.includes("Deploy preview")) && labels.some((l) => l.includes("Roll back")));
+});

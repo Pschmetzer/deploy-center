@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Deploy Preview** (Vercel) and **Roll Back Production** (Vercel, Render), each after a confirmation, in the project menu and the tree.
+- A folder's remote matches a project only on the same host: `gitlab.com:me/app` is not GitHub's `me/app`.
 - After a deploy starts, the extension follows it (every 15 s, at most 15 min) and says when it is live or failed, with "Copy for AI" and "Show log".
 - Runs on your own machine in remote windows (SSH, WSL, Dev Containers), where `deploys` and its logins are.
 - Build logs open in their own output channel ("Deploy Center: Build log"), so CLI warnings stay.

@@ -26,6 +26,8 @@ ready to paste back into the agent.
 | Deploy Center: Refresh | Read the projects again |
 | Deploy Center: Show Actions | The status bar's quick pick |
 | Deploy Center: Show Build Log / Copy Build Error for AI / Copy Release Notes / Open Site / Open Dashboard | For one project |
+| Deploy Center: Deploy Preview | Vercel: the newest commit at a preview address, after a confirmation; production stays |
+| Deploy Center: Roll Back Production | Vercel and Render: production back to the deploy before, after a confirmation |
 
 ## Needs
 

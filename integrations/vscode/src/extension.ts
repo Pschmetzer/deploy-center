@@ -3,7 +3,7 @@
 
 import { execFile } from "node:child_process";
 import * as vscode from "vscode";
-import { deployArgs, deployFailure, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, Runner, urlIn } from "./cli";
+import { canPreview, canRollback, deployArgs, deployFailure, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, rollbackArgs, Runner, urlIn } from "./cli";
 import { aiPrompt } from "./log";
 import { describe, platformLabel, plural, Project, statusText, summarize, followStep } from "./model";
 import { parseRemotes, Scope, scopeProjects } from "./repo";
@@ -171,7 +171,8 @@ export class Controller implements vscode.TreeDataProvider<Project> {
       : p.building ? new vscode.ThemeIcon("sync~spin")
       : p.waiting ? new vscode.ThemeIcon("clock", new vscode.ThemeColor("charts.yellow"))
       : new vscode.ThemeIcon("check", new vscode.ThemeColor("charts.green"));
-    item.contextValue = ["project", p.waiting && "waiting", p.failed && "failed", p.building && "building"].filter(Boolean).join(" ");
+    item.contextValue = ["project", p.waiting && "waiting", p.failed && "failed", p.building && "building",
+      canPreview(p) && "can-preview", canRollback(p) && "can-rollback"].filter(Boolean).join(" ");
     item.command = { command: "deployCenter.menu", title: "Actions", arguments: [p] };
     return item;
   }
@@ -220,6 +221,8 @@ export class Controller implements vscode.TreeDataProvider<Project> {
       { label: "$(output) Show log", description: p.failed ? "the newest build failed" : undefined, id: "log" },
       { label: "$(markdown) Copy release notes", id: "notes" },
     ];
+    if (canPreview(p)) items.splice(1, 0, { label: "$(eye) Deploy preview…", description: "production stays as it is", id: "preview" });
+    if (canRollback(p)) items.push({ label: "$(history) Roll back…", description: "production to the deploy before", id: "rollback" });
     if (p.failed) items.splice(1, 0, { label: "$(copy) Copy for AI", description: "the first error block, ready to paste", id: "ai" });
     const pick = await vscode.window.showQuickPick(items, { title: `${p.name} (${platformLabel(p.platform)})` });
     switch (pick?.id) {
@@ -228,6 +231,8 @@ export class Controller implements vscode.TreeDataProvider<Project> {
       case "log": return this.showLog(p);
       case "ai": return this.copyForAi(p);
       case "notes": return this.copyNotes(p);
+      case "preview": return this.deployPreview(p);
+      case "rollback": return this.rollback(p);
     }
   }
 
@@ -281,6 +286,40 @@ export class Controller implements vscode.TreeDataProvider<Project> {
       }
       return;
     }
+  }
+
+  /** A preview deploy (Vercel): asked first, not followed (the tree shows production). */
+  async deployPreview(p: Project): Promise<void> {
+    const run = this.need(); if (!run) return;
+    if (!canPreview(p)) { void vscode.window.showInformationMessage(`${p.name} has no preview deploys here (Vercel only).`); return; }
+    const ok = await vscode.window.showWarningMessage(`Deploy a preview of ${p.name}?`,
+      { modal: true, detail: "Builds the newest commit at a preview address. Production stays as it is." }, "Deploy preview");
+    if (ok !== "Deploy preview") return;
+    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Starting a preview of ${p.name}…` },
+      () => run(deployArgs(p, true), 90_000));
+    const d = parseDeploy(r.stdout);
+    if (r.code !== 0 || !d) { const t = `${p.name}: ${deployFailure(r)}`; this.output.appendLine(t); void vscode.window.showErrorMessage(t); return; }
+    const text = `${p.name}: preview started (${d.state ?? "queued"})`;
+    this.output.appendLine(text);
+    const btn = await (d.url ? vscode.window.showInformationMessage(text, "Open preview") : vscode.window.showInformationMessage(text));
+    if (btn === "Open preview" && d.url) void vscode.env.openExternal(vscode.Uri.parse(d.url));
+  }
+
+  /** Production back to the deploy before the current one: a live site changes, so asked first. */
+  async rollback(p: Project): Promise<void> {
+    const run = this.need(); if (!run) return;
+    if (!canRollback(p)) { void vscode.window.showInformationMessage(`${p.name} cannot be rolled back from here (Vercel and Render only).`); return; }
+    const ok = await vscode.window.showWarningMessage(`Roll back ${p.name} on ${platformLabel(p.platform)}?`,
+      { modal: true, detail: "Production goes back to the deploy before the current one. The site changes at once." }, "Roll back");
+    if (ok !== "Roll back") return;
+    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Rolling back ${p.name}…` },
+      () => run(rollbackArgs(p), 90_000));
+    const d = parseDeploy(r.stdout);
+    if (r.code !== 0 || !d) { const t = `${p.name}: ${r.timedOut ? "the rollback did not answer in time. Check its state (Refresh) before you try again." : errorLine(r, "rollback")}`; this.output.appendLine(t); void vscode.window.showErrorMessage(t); return; }
+    const text = `${p.name}: rolled back to ${d.id}${d.state ? ` (${d.state})` : ""}`;
+    this.output.appendLine(text);
+    void vscode.window.showInformationMessage(text);
+    this.refreshLater(3_000);
   }
 
   async deployRepo(): Promise<void> {
@@ -368,6 +407,8 @@ export function activate(context: vscode.ExtensionContext): void {
   reg("deployCenter.menu", (p) => c.menu(p as Project | undefined));
   reg("deployCenter.deployRepo", () => c.deployRepo());
   reg("deployCenter.deployProject", async (a) => { const p = await c.pick(a); if (p) await c.deploy(p); });
+  reg("deployCenter.deployPreview", async (a) => { const p = await c.pick(a, canPreview); if (p) await c.deployPreview(p); });
+  reg("deployCenter.rollback", async (a) => { const p = await c.pick(a, canRollback); if (p) await c.rollback(p); });
   reg("deployCenter.openSite", async (a) => { const p = await c.pick(a); if (p) await c.open(p, false); });
   reg("deployCenter.openDashboard", async (a) => { const p = await c.pick(a); if (p) await c.open(p, true); });
   reg("deployCenter.showLog", async (a) => { const p = await c.pick(a, (x) => x.failed || !c.shown.some((y) => y.failed)); if (p) await c.showLog(p); });

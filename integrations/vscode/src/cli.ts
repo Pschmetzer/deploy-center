@@ -142,9 +142,23 @@ export async function loadProjects(run: Runner, timeoutMs: number): Promise<Load
   };
 }
 
-/** The arguments that start one deploy: `deploys <provider> deploy-json <name>`. */
-export function deployArgs(p: { platform: string; name: string }): string[] {
-  return [p.platform, "deploy-json", p.name];
+/** The arguments that start one deploy: `deploys <provider> deploy-json <name> [--preview]`. */
+export function deployArgs(p: { platform: string; name: string }, preview = false): string[] {
+  return [p.platform, "deploy-json", p.name, ...(preview ? ["--preview"] : [])];
+}
+
+/** Preview deploys: Vercel only (as the MCP server); a Render service has none here. */
+export function canPreview(p: { platform: string }): boolean {
+  return p.platform === "vercel";
+}
+
+/** Rollback back to the deploy before the current one: Vercel and Render. */
+export function canRollback(p: { platform: string }): boolean {
+  return p.platform === "vercel" || p.platform === "render";
+}
+
+export function rollbackArgs(p: { platform: string; name: string }): string[] {
+  return [p.platform, "rollback", p.name];
 }
 
 /** logs, notes and open take the name, or platform:name when it is on two platforms. */
