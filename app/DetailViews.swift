@@ -210,9 +210,38 @@ struct ProjectDetail: View {
         }
     }
 
+    /// Autofix for this project: what Claude is doing, or the button to hand the failed build over.
+    @ViewBuilder private func autofixBlock(_ item: Item) -> some View {
+        let state = store.autofixState(item), can = store.canFixWithClaude(item)
+        let busy = store.autofixRunning.contains(Store.key(item)), result = store.autofixResult[Store.key(item)]
+        if state != nil || can || result != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    AgentChips(autofix: state, allowedUntil: nil)
+                    if can {
+                        Button { Task { await store.fixWithClaude(item) } } label: {
+                            HStack(spacing: 4) {
+                                if busy { ProgressView().controlSize(.small) }
+                                Text(L("Fix with Claude", "Mit Claude beheben"))
+                            }
+                        }
+                        .disabled(busy)
+                    }
+                }
+                if let result {
+                    Text(scrub(result.text)).font(.caption).foregroundStyle(result.ok ? Color.secondary : Color.red).textSelection(.enabled)
+                }
+            }
+        }
+        if let until = store.allowance(item)?.expiresAt {
+            Label(AgentChips.allowedText(until), systemImage: "bolt.badge.clock").font(.callout).foregroundStyle(.orange)
+        }
+    }
+
     @ViewBuilder private func content(_ d: Details) -> some View {
         let item = self.live
         VStack(alignment: .leading, spacing: 18) {
+            autofixBlock(item)
             // What is live, and what the branch would bring.
             if let live = item.lastMsg {
                 labelled(L("Live now", "Jetzt live"), scrub(live) + (item.lastSha.map { "  (\($0.prefix(7)))" } ?? ""))

@@ -19,6 +19,9 @@ final class Store: ObservableObject {
     @Published var doctorError: String?
     @Published var costs: Costs?
     @Published var triggers: [Trigger] = []
+    /// The platforms `deploys providers --json` reports (Vercel and Render without it), see Providers.swift.
+    @Published var providers: [ProviderInfo] = ProviderInfo.builtIn
+    @Published var providersFromScript = false
 
     /// Costs and stray build triggers load after the lists; neither blocks deploying.
     private var lastExtras = Date.distantPast
@@ -104,6 +107,92 @@ final class Store: ObservableObject {
         }
         let issues = found.sorted { $0.0 < $1.0 }.map(\.1)
         providerIssues = issues
+    }
+
+    // MARK: Autofix and auto-deploy allowances, read with the lists (both are local and cheap)
+
+    @Published var autofix: AutofixReport?
+    @Published var allowances: [AutoDeployAllowance] = []
+    /// Rows being handed to Claude right now (`Store.key`), for disabling the button.
+    @Published var autofixRunning: Set<String> = []
+    /// The last answer of "Fix with Claude" per row, for the details sheet.
+    @Published var autofixResult: [String: Message] = [:]
+
+    func loadAgentStatus() async {
+        async let a = Self.extra(["autofix", "status", "--json"], AutofixReport.self)
+        async let g = Self.extra(["guard", "status", "--json"], AllowanceReport.self)
+        // A script without these commands: nothing is shown, nothing is said.
+        if case .success(let r)? = await a { autofix = r; preselectMergedFixes() }
+        if case .success(let r)? = await g { allowances = r.allowances } else { allowances = [] }
+    }
+
+    func autofixState(_ i: Item) -> RowAutofix? { RowAutofix.of(i, autofix?.newest(for: i)) }
+    func allowance(_ i: Item, now: Date = Date()) -> AutoDeployAllowance? {
+        allowances.first { $0.covers(i) && $0.expiresAt > now }
+    }
+    var activeAllowances: [AutoDeployAllowance] { allowances.filter { $0.expiresAt > Date() } }
+    /// Failed builds a Claude session is working on, over both platforms (the menu bar).
+    var fixingCount: Int {
+        guard autofix != nil else { return 0 }
+        return items.values.joined().filter { if case .fixing? = autofixState($0) { return true } else { return false } }.count
+    }
+    /// The button: the last deploy failed and no session or fix PR is on it already.
+    func canFixWithClaude(_ i: Item) -> Bool {
+        guard i.lastFailed, i.repo != nil, !i.state.isActive else { return false }
+        switch autofixState(i) { case .fixing?, .prOpen?, .merged?: return false; default: return true }
+    }
+
+    /// A merged fix ticks its row once, so deploying it is one click; unticking is respected.
+    func preselectMergedFixes() {
+        let d = UserDefaults.standard
+        var seen = d.stringArray(forKey: "autofixPreselected") ?? []
+        for p in Platform.allCases {
+            for k in (items[p] ?? []).indices {
+                let i = items[p]![k]
+                guard case .merged(let sha, _, _)? = autofixState(i), i.deployable, !i.state.isActive, !isHidden(i) else { continue }
+                let key = RowAutofix.preselectKey(i, sha: sha)
+                if seen.contains(key) { continue }
+                seen.append(key); items[p]![k].selected = true
+            }
+        }
+        d.set(Array(seen.suffix(100)), forKey: "autofixPreselected")
+    }
+
+    /// "Fix with Claude": `deploys autofix --only <platform> <project>`, the answer as a toast.
+    func fixWithClaude(_ i: Item) async {
+        let key = Self.key(i)
+        guard !autofixRunning.contains(key) else { return }
+        if let r = autofix, !r.ready { offerAutofixSetup(); return }
+        autofixRunning.insert(key); defer { autofixRunning.remove(key) }
+        let name = Demo.mask(i.name)
+        do {
+            let out = String(data: try await Tool.run(["autofix", "--only", i.platform.cli, i.name], timeout: 300), encoding: .utf8) ?? ""
+            let last = out.split(separator: "\n").last.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? ""
+            tell(L("\(name): handed to Claude", "\(name): an Claude übergeben"), last, ok: true, key: key)
+        } catch {
+            let msg = error.localizedDescription
+            if msg.localizedCaseInsensitiveContains("no routine") { offerAutofixSetup(); return }
+            tell(L("\(name): not handed to Claude", "\(name): nicht an Claude übergeben"), msg, ok: false, key: key)
+        }
+        await loadAgentStatus()
+    }
+
+    /// A toast and a line in the messages, names scrubbed in demo mode.
+    private func tell(_ title: String, _ body: String, ok: Bool, key: String) {
+        let b = Demo.scrub(body, items: Array(items.values.joined()))
+        let text = title + (b.isEmpty ? "" : " – " + b)
+        show(Toast(text: text, ok: ok))
+        let m = Message(date: Date(), text: text, ok: ok)
+        messages.insert(m, at: 0); autofixResult[key] = m
+        if messages.count > 30 { messages.removeLast() }
+    }
+
+    private func offerAutofixSetup() {
+        show(Toast(text: L("Autofix is not set up: no routine yet", "Autofix ist nicht eingerichtet: noch keine Routine"), ok: false,
+                   undoLabel: L("Open Settings", "Einstellungen öffnen"), undo: {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }))
     }
 
     func buildCost(_ project: String) -> Double? {
@@ -203,12 +292,14 @@ final class Store: ObservableObject {
             doctorError = error.localizedDescription; return
         }
         guard doctor?.jq == true else { return }
-        // Both at once: each takes several seconds.
-        let v = doctor?.vercelLoggedIn == true && doctor?.vercelApi == true
-        let r = doctor?.renderKey == true
+        await loadProviders()
+        // Both at once: each takes several seconds. A platform switched off in Settings is not read.
+        let v = doctor?.vercelLoggedIn == true && doctor?.vercelApi == true && isEnabled(.vercel)
+        let r = doctor?.renderKey == true && isEnabled(.render)
         async let a: Void = v ? load(.vercel) : ()
         async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
+        await loadAgentStatus()
         await loadExtras()
     }
 
@@ -324,11 +415,12 @@ final class Store: ObservableObject {
             if let fresh = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { doctor = fresh; doctorError = nil }
         }
         // Only the platform with a deploy under way is left alone; the other one stays current.
-        let v = doctor?.vercelLoggedIn == true && !(items[.vercel] ?? []).contains { $0.state.isActive }
-        let r = doctor?.renderKey == true && !(items[.render] ?? []).contains { $0.state.isActive }
+        let v = doctor?.vercelLoggedIn == true && isEnabled(.vercel) && !(items[.vercel] ?? []).contains { $0.state.isActive }
+        let r = doctor?.renderKey == true && isEnabled(.render) && !(items[.render] ?? []).contains { $0.state.isActive }
         async let a: Void = v ? load(.vercel) : ()
         async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
+        await loadAgentStatus()
         // Costs and strays cost many calls: hourly. The status feeds are cheap: every time.
         if Date().timeIntervalSince(lastExtras) > 3600 { await loadExtras() } else { await checkProviders() }
     }

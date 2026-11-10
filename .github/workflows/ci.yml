@@ -28,8 +28,8 @@ jobs:
         run: actionlint .github/workflows/*.yml docs/deploy-on-label.yml
       - name: shellcheck
         run: |
-          shellcheck --severity=warning build.sh release.sh scripts/*.sh tests/*.sh
-          shellcheck --severity=warning deploys
+          shellcheck --severity=warning build.sh release.sh scripts/*.sh tests/*.sh lib/*.sh
+          shellcheck --severity=error deploys
           shellcheck site/install.sh
       - name: Script tests
         run: bash tests/script-tests.sh

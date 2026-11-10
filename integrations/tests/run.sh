@@ -243,6 +243,14 @@ if command -v ruby >/dev/null; then
   case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
 fi
 
+# --- VS Code extension: its own unit tests (node), when its dev dependencies are installed ---
+if command -v npm >/dev/null && [ -d vscode/node_modules ]; then
+  (cd vscode && npm test --silent >"$tmp/vscode.log" 2>&1) && ok "vscode: unit tests" || { fail "vscode: unit tests" "see below"; cat "$tmp/vscode.log"; }
+else
+  echo "skip vscode: run npm ci in integrations/vscode first"
+fi
+
+
 # --- Claude Code plugin: manifest checks, shellcheck, and the after-push hook ---
 if integrations_cc="$(tests/claude-code.sh --quiet 2>&1)"; then ok "claude-code: plugin and marketplace files are valid"
 else fail "claude-code: plugin and marketplace files are valid" "$(grep FAIL <<<"$integrations_cc" | head -5)"; fi
