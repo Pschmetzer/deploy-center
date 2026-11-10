@@ -446,6 +446,7 @@ final class PhoneStore: ObservableObject {
 
     func writeSnapshot() {
         QuickActions.update(projects)
+        Spotlight.index(projects, demo: demo)
         guard let url = DeploySnapshot.groupURL else { return }
         let snap = makeSnapshot()
         let old = DeploySnapshot.read(url)

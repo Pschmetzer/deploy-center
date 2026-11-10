@@ -1,0 +1,91 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "What waits to deploy": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Was auf einen Deploy wartet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What waits to deploy"
+          }
+        }
+      }
+    },
+    "Waiting pull requests and failed deploys, from the state Deploy Center read last.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wartende Pull Requests und fehlgeschlagene Deploys, aus dem zuletzt gelesenen Stand von Deploy Center."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting pull requests and failed deploys, from the state Deploy Center read last."
+          }
+        }
+      }
+    },
+    "Failed deploys": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fehlgeschlagene Deploys"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed deploys"
+          }
+        }
+      }
+    },
+    "Which projects failed, from the state Deploy Center read last.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Welche Projekte fehlschlugen, aus dem zuletzt gelesenen Stand von Deploy Center."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Which projects failed, from the state Deploy Center read last."
+          }
+        }
+      }
+    },
+    "What waits": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Was wartet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What waits"
+          }
+        }
+      }
+    }
+  }
+}

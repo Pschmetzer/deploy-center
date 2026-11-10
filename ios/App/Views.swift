@@ -1,6 +1,7 @@
 // Deploy Center for iPhone and iPad — List, details, settings. System fonts and colours only:
 // Dynamic Type, dark mode and VoiceOver come with them.
 
+import CoreSpotlight
 import SwiftUI
 import UniformTypeIdentifiers
 import UserNotifications
@@ -48,6 +49,8 @@ struct RootView: View {
                 if store.linked != had || old { await store.reload() }
             }
         }
+        .onContinueUserActivity(CSSearchableItemActionType) { a in if let k = Spotlight.key(a) { selection = k } }
+        .onContinueUserActivity(Spotlight.activity) { a in if let k = Spotlight.key(a) { selection = k } }
         .onChange(of: store.openKey) { _, k in if let k { selection = k; store.openKey = nil } }
         .onChange(of: store.projects) { _, _ in if let w = pendingOpen { open(name: w[0], platform: w.count > 1 ? w[1] : nil) } }
         // deploycenter://select?project=<name>&platform=<Vercel|Render>, from the widget. It only shows the project.
@@ -429,6 +432,10 @@ struct ProjectDetail: View {
         }
         .navigationTitle(p.name)
         .refreshable { await store.reload() }
+        .userActivity(Spotlight.activity, isActive: !store.demo) { a in
+            a.title = p.name; a.userInfo = ["project": p.key]
+            a.isEligibleForHandoff = true; a.isEligibleForSearch = false
+        }
         .confirmationDialog(L("Deploy \(p.name)?", "\(p.name) deployen?"), isPresented: $confirmDeploy, titleVisibility: .visible) {
             Button(L("Deploy", "Deployen")) { Task { await store.deploy(p) } }
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}

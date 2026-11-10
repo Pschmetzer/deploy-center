@@ -27,6 +27,10 @@
 	</array>
 	<key>DCKeychainGroup</key>
 	<string>$(DEVELOPMENT_TEAM).app.deploycenter.shared</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>app.deploycenter.project</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
