@@ -93,7 +93,7 @@ jobs:
         id: list
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-team: ${{ vars.VERCEL_TEAM }}
+          vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}
           repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
 
@@ -124,7 +124,7 @@ jobs:
         with:
           deploy: true
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-team: ${{ vars.VERCEL_TEAM }}
+          vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}
           repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
 

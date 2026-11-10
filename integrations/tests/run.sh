@@ -268,6 +268,15 @@ sp --config "$tmp/sp-empty.json" --out "$tmp/spe" >/dev/null 2>&1; expect "statu
 SP_CURL_LOG=/dev/null DEPLOYS_JOURNAL=/nonexistent RENDER_API_KEY=x statuspage/statuspage.sh --config "$tmp/sp-auth.json" --out "$tmp/spn" --no-check >/dev/null
 expect "statuspage: no journal, empty timeline" "$(jq '.timeline | length' "$tmp/spn/status.json")" 0
 
+# --- one Vercel CLI version everywhere (the action's default is the source) ---
+pin="$(sed -n '/vercel-cli-version:/,/default:/s/^ *default: "\([0-9.]*\)"/\1/p' action/action.yml)"
+for f in docker/Dockerfile statuspage/examples/statuspage-daily.yml ../examples/daily-deploy.yml; do
+  others="$(grep -oE '(vercel@|VERCEL_CLI_VERSION[=:] *"?)[0-9]+\.[0-9]+\.[0-9]+' "$f" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u | tr '\n' ' ')"
+  expect "vercel CLI pin in $f is the action's ($pin)" "$others" "$pin "
+done
+# --- one name for the team variable in the examples ---
+grep -rn 'vars\.VERCEL_TEAM\b' action/examples digest/examples statuspage/examples ../examples >/dev/null && fail "examples use vars.DEPLOYS_VERCEL_TEAM" "vars.VERCEL_TEAM found" || ok "examples use vars.DEPLOYS_VERCEL_TEAM"
+
 # --- the Action's steps, run as GitHub would (needs ruby for the YAML) ---
 if command -v ruby >/dev/null; then
   step() { ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["runs"]["steps"].find { |s| s["id"] == ARGV[1] }[ARGV[2]]' action/action.yml "$1" "${2:-run}"; }

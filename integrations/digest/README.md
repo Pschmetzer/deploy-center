@@ -50,7 +50,7 @@ every project not approved (`deploys ignore`), then runs the [Action](../action/
 2. **Add secrets**: `VERCEL_TOKEN`, `RENDER_API_KEY` (leave out what you don't use) and
    `DEPLOYS_NOTIFY_URL` (your Slack, Discord, ntfy or Telegram webhook, as for
    [notify](../notify/)). **Add variables**: `DEPLOYS_REPOS_JSON` (your
-   `~/.config/deploys/vercel-repos.json`) and `VERCEL_TEAM` if you use a team.
+   `~/.config/deploys/vercel-repos.json`) and `DEPLOYS_VERCEL_TEAM` if you use a team.
 3. **Say who may approve**: the variable `DEPLOYS_APPROVERS`, GitHub logins separated by commas.
    Without it, nothing deploys. Don't list a login whose token an agent uses.
 4. **Say who counts as an agent** (optional): the variables `DEPLOYS_AGENT_AUTHORS` and
