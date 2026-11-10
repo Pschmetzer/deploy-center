@@ -450,3 +450,43 @@ struct AllowanceReport: Decodable {
     }
     private enum K: String, CodingKey { case allowances }
 }
+
+// MARK: - Tolerant reading of the Settings parts: an older or newer script may leave a field out.
+
+private struct AnyKey: CodingKey {
+    var stringValue: String; var intValue: Int? { nil }
+    init(_ s: String) { stringValue = s }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
+}
+private extension KeyedDecodingContainer where K == AnyKey {
+    func opt<T: Decodable>(_ key: String, _ type: T.Type = T.self) -> T? { (try? decodeIfPresent(T.self, forKey: AnyKey(key))) ?? nil }
+}
+
+extension AutofixStatus {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        routine = c.opt("routine")
+        token = c.opt("token") ?? false
+        scheduled = c.opt("scheduled") ?? false
+        fires = (c.opt("fires", [Lossy<Fire>].self) ?? []).compactMap(\.value)
+    }
+}
+extension GuardStatus {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        enabled = c.opt("enabled") ?? false
+        lastRun = c.opt("lastRun"); lastDry = c.opt("lastDry")
+        lastActions = (c.opt("lastActions", [Lossy<Action>].self) ?? []).compactMap(\.value)
+        allowances = (c.opt("allowances", [Lossy<Allowance>].self) ?? []).compactMap(\.value)
+    }
+}
+extension TeamConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        me = c.opt("me")
+        readonly = c.opt("readonly") ?? Flag(value: false, from: "")
+        sources = (c.opt("sources", [Lossy<Source>].self) ?? []).compactMap(\.value)
+        projects = c.opt("projects"); groups = c.opt("groups"); observers = c.opt("observers")
+    }
+}

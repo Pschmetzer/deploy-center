@@ -704,6 +704,11 @@ expect("unknown platform label", ProviderInfo.label(for: "railway"), "Railway")
 expect("German method for the ledger", SavingsFormat.methodGerman("Estimate. Since auto-deploy was turned off, every push …").hasPrefix("Schätzung. Seit Auto-Deploy aus ist"), true)
 expect("an unknown method is shown as written", SavingsFormat.methodGerman("New way of counting."), "New way of counting.")
 
+// Settings parts read an answer with fields missing instead of showing "not set up".
+expect("autofix status without scheduled", (try? JSONDecoder().decode(AutofixStatus.self, from: Data(#"{"routine":"trig_1","token":true,"fires":[]}"#.utf8)))?.routine ?? "nil", "trig_1")
+expect("guard status without lastActions", (try? JSONDecoder().decode(GuardStatus.self, from: Data(#"{"enabled":true}"#.utf8)))?.enabled ?? false, true)
+expect("team config without sources", (try? JSONDecoder().decode(TeamConfig.self, from: Data(#"{"readonly":{"value":true,"from":"repo"}}"#.utf8)))?.readonly.value ?? false, true)
+
 // The app's masker knows what the script's masker knows.
 expect("mask Stripe", LogTools.maskSecrets("key sk_live_abcdefgh12345678"), "key [STRIPE KEY]")
 expect("mask GitLab", LogTools.maskSecrets("glpat-abcdefghij1234567890"), "[GITLAB TOKEN]")
