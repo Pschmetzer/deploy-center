@@ -7,6 +7,7 @@
 - "Show log" opens a read-only document; the output channel keeps its earlier warnings and deploy results.
 - A change of a setting while a refresh runs is no longer lost: one more refresh follows.
 - GitLab repos match with host and subgroups (`gitlab.com/group/sub/app`), so the same owner/name on GitHub and GitLab are two repos.
+- With nothing waiting, "Deploy…" moves to the end of the project menu as "Deploy again…", so a quick Enter does not start a paid rebuild.
 
 ## 0.2.0
 

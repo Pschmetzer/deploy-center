@@ -198,12 +198,15 @@ class Controller implements vscode.TreeDataProvider<Project> {
   async projectMenu(p: Project): Promise<void> {
     type Item = vscode.QuickPickItem & { id: string };
     const items: Item[] = [
-      { label: "$(rocket) Deploy…", description: p.waiting ? describe(p) : "nothing waiting", id: "deploy" },
       { label: "$(link-external) Open site", id: "open" },
       { label: "$(output) Show log", description: p.failed ? "the newest build failed" : undefined, id: "log" },
       { label: "$(markdown) Copy release notes", id: "notes" },
     ];
-    if (p.failed) items.splice(1, 0, { label: "$(copy) Copy for AI", description: "the first error block, ready to paste", id: "ai" });
+    if (p.failed) items.unshift({ label: "$(copy) Copy for AI", description: "the first error block, ready to paste", id: "ai" });
+    // With something waiting, deploying is what the menu is for: first. With nothing waiting it
+    // only rebuilds the same commit (a paid build), so it goes last, where a quick Enter misses it.
+    if (p.waiting) items.unshift({ label: "$(rocket) Deploy…", description: describe(p), id: "deploy" });
+    else items.push({ label: "$(rocket) Deploy again…", description: "nothing waiting: rebuilds the newest commit", id: "deploy" });
     const pick = await vscode.window.showQuickPick(items, { title: `${p.name} (${platformLabel(p.platform)})` });
     switch (pick?.id) {
       case "deploy": return this.deploy(p);
