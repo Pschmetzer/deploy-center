@@ -105,7 +105,8 @@ if [ "$mode" != publish-only ]; then
   command -v npm >/dev/null || die "npm is missing (needed for the MCP server in the app): brew install node"
   (cd integrations/mcp && npm ci --omit=dev --no-audit --no-fund)
   # Signed by build.sh; notarized here, so the wait can be resumed.
-  DEVELOPER_ID="$DEVELOPER_ID" NOTARY_PROFILE="" ./build.sh
+  # The widgets ship with every release (App Group <TEAMID>.app.deploycenter, no profile needed on macOS).
+  DEVELOPER_ID="$DEVELOPER_ID" NOTARY_PROFILE="" ./build.sh --widgets
 
   (cd build && ditto -c -k --keepParent "Deploy Center.app" notarize.zip)
   id="$(xcrun notarytool submit build/notarize.zip --keychain-profile "$NOTARY_PROFILE" --output-format json | jq -r .id)"
