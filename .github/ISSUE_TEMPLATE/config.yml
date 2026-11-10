@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Website and cost calculator
+    url: https://deploycenter.app
+    about: What the app does and how much auto-deploy costs you

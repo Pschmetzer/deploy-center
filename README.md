@@ -1,10 +1,41 @@
-# Deploy Center
+<h1 align="center">Deploy Center</h1>
 
-**Stop paying for a build on every push.** Deploy Center turns off auto-deploy on Vercel and Render
-and gives you one Mac window to deploy by hand, when you decide.
+<p align="center"><b>Stop paying for a build on every push.</b><br>
+Turn off auto-deploy on Vercel and Render in one click. Deploy what changed in two.</p>
+
+<p align="center">
+  <a href="https://github.com/Pschmetzer/deploy-center/releases/latest"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS%2015%2B-4f7cff?style=for-the-badge&logo=apple&logoColor=white"></a>
+  <a href="https://deploycenter.app"><img alt="Website" src="https://img.shields.io/badge/Website-deploycenter.app-8b5cf6?style=for-the-badge"></a>
+</p>
+<p align="center">
+  <a href="https://github.com/Pschmetzer/deploy-center/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Pschmetzer/deploy-center?label=release"></a>
+  <a href="https://github.com/Pschmetzer/deploy-center/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Pschmetzer/deploy-center/total"></a>
+  <a href="https://github.com/Pschmetzer/deploy-center/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Pschmetzer/deploy-center/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+</p>
+
+<p align="center"><img src="docs/images/app.png" width="900" alt="Deploy Center: 149 PRs waiting to deploy, Vercel build costs of the last 7 days and the projects with commits waiting"></p>
+<p align="center"><sub>The author's real build bill: $99 in 7 days. Project names hidden by demo mode.</sub></p>
+
+## Install in 30 seconds
+
+**Homebrew**
+
+```bash
+brew install --cask pschmetzer/tap/deploy-center
+```
+
+**Or by hand:** download the zip from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest),
+unzip it and drag **Deploy Center** to *Applications*. It is signed and notarized by Apple, so it opens without a warning.
+Requirements: macOS 15 or newer, Apple silicon or Intel.
+
+Then connect Vercel (`vercel login`), paste a Render API key, and press **Turn off auto-deploy**. [Details below](#connect-your-accounts).
+
+## Why
 
 If you push dozens of times a day, every push builds every connected project. Build minutes add up
 fast. Deploying once a day with a click costs a fraction, and nothing ships by accident.
+Try the [cost calculator](https://deploycenter.app/#calc).
 
 ## What it does
 
@@ -21,13 +52,6 @@ fast. Deploying once a day with a click costs a fraction, and nothing ships by a
   deploy ends while the window is in the background; ⌘R, ⌘F, ⌘1/⌘2, Esc.
 - **Preview deploys** (Vercel) and **rollback** to the previous live deploy, from the right-click menu.
 - Site logos, domains to click, search, English and German.
-
-## Install
-
-Download the zip from [Releases](../../releases), unzip, and move **Deploy Center** to *Applications*.
-It is signed and notarized by Apple, so it opens without a warning.
-
-Requirements: macOS 15 or newer (Apple silicon or Intel).
 
 ## Connect your accounts
 
@@ -108,6 +132,11 @@ tests/script-tests.sh   # the rules in deploys (a stand-in answers for gh)
 tests/app-tests.sh      # the rules in the app
 ```
 `./release.sh` signs, notarizes and zips a release (it needs a Developer ID; see the file).
+
+## Help wanted
+
+Ideas and bug reports are welcome in [Issues](../../issues). Most wanted: GitLab next to GitHub,
+and reports when a number in the app looks wrong.
 
 ## License
 
