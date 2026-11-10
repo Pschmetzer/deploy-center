@@ -9,7 +9,7 @@ struct JournalEntry: Codable, Identifiable {
     let at: Date
     let platform: String
     let name: String
-    let result: String        // live, other (preview, rollback), failed, skipped
+    let result: String        // live, other (preview, rollback), failed, skipped, cancelled
     let seconds: Double?
     let detail: String?
     init(at: Date = Date(), platform: String, name: String, result: String, seconds: Double?, detail: String?) {
@@ -126,8 +126,9 @@ struct JournalView: View {
             } else {
                 List(entries.reversed()) { e in
                     HStack(spacing: 8) {
-                        Image(systemName: e.result == "failed" ? "xmark.octagon.fill" : (e.result == "skipped" ? "forward.circle.fill" : "checkmark.circle.fill"))
-                            .foregroundStyle(e.result == "failed" ? .red : (e.result == "skipped" ? .secondary : .green))
+                        Image(systemName: e.result == "failed" ? "xmark.octagon.fill"
+                              : (e.result == "skipped" ? "forward.circle.fill" : (e.result == "cancelled" ? "stop.circle.fill" : "checkmark.circle.fill")))
+                            .foregroundStyle(e.result == "failed" ? .red : (["skipped", "cancelled"].contains(e.result) ? .secondary : .green))
                         Text(Demo.mask(e.name)).font(.body.weight(.medium))
                         Text(e.platform).font(.caption).foregroundStyle(.secondary)
                         if let f = failed["\(e.platform)/\(e.name)"], f.failed > 0 {
