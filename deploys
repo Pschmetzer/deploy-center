@@ -1291,8 +1291,10 @@ case "${1:-} ${2:-}" in
   |"render autodeploy-off"|"render deploy"|"render deploy-json"|"render cancel"|"render rollback"|"hook deploy")
     require_write "$1 $2" ;;
   "deploy-changed "*) [ "${2:-}" != "--yes" ] || require_write "deploy-changed --yes" ;;
-  # autofix hands failed builds to a routine that opens pull requests; --dry-run and its settings only read.
-  "autofix "|"autofix --dry-run") [ "${2:-}" = "--dry-run" ] || require_write "autofix" ;;
+  # autofix hands failed builds to a routine that opens pull requests, and guard turns auto-deploy
+  # off: both change something unless --dry-run (also after --only). Their settings and status only read.
+  "autofix "|"autofix --"*|"guard "|"guard --"*)
+    case " ${*:2} " in *" --dry-run "*) ;; *) require_write "$1" ;; esac ;;
 esac
 # Any other provider (deploys <p> <verb>): the verbs that start, stop or switch something.
 if is_provider "${1:-}"; then

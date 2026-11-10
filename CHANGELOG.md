@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Observer mode also refuses `guard` and `autofix --only` (without `--dry-run`); both change something. An approval check on a GitLab-linked Vercel project says that approvals are read from GitHub only.
+
 ## 0.8.0
 
 - Mac widgets ship with the app (small: PRs waiting; medium: top projects and the saving). Add them from the widget gallery.
