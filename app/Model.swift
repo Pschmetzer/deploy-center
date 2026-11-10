@@ -37,9 +37,18 @@ struct Lossy<T: Decodable>: Decodable {
         do { value = try T(from: decoder); error = nil } catch { value = nil; self.error = "\(error)" }
     }
 }
+/// What the script prints instead of a list when a command fails with `--json`.
+struct ScriptFailure: Decodable { let error: String }
 /// A list where a broken element is skipped and named, not the reason the whole list is gone.
 func decodeLossy<T: Decodable>(_ type: T.Type, from data: Data, label: String) throws -> [T] {
-    let all = try JSONDecoder().decode([Lossy<T>].self, from: data)
+    let all: [Lossy<T>]
+    do { all = try JSONDecoder().decode([Lossy<T>].self, from: data) }
+    catch {
+        // `{"error": "…"}` instead of a list: the script's own words, not "the data couldn't be read".
+        if let f = try? JSONDecoder().decode(ScriptFailure.self, from: data), !f.error.isEmpty { throw ToolError(message: Tool.shorten(f.error)) }
+        Log.write("\(label): not a list (\(error)); it began: \(String(decoding: data.prefix(300), as: UTF8.self))")
+        throw ToolError(message: L("Unexpected answer from \(label) – details in the log.", "Unerwartete Antwort von \(label) – Details im Log."))
+    }
     let bad = all.enumerated().filter { $0.element.value == nil }
     if let first = bad.first {
         Log.write("\(label): skipped \(bad.count) of \(all.count) entries; first at \(first.offset): \(first.element.error ?? "")")
@@ -177,7 +186,12 @@ struct Item: Identifiable {
         // A branch may hold characters a URL cannot (#, %, spaces); "/" stays as GitHub expects it.
         let branch = ref ?? headSha ?? "main"
         let safe = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "#?"))) ?? branch
-        return URL(string: "https://github.com/\(repo)/compare/\(live)...\(safe)")
+        // A GitHub repo is "owner/name"; any other host comes with it ("gitlab.com/group/name").
+        let first = repo.split(separator: "/").first.map(String.init) ?? ""
+        guard first.contains(".") else { return URL(string: "https://github.com/\(repo)/compare/\(live)...\(safe)") }
+        if first == "github.com" { return URL(string: "https://\(repo)/compare/\(live)...\(safe)") }
+        // GitLab (gitlab.com or a self-hosted one); the script only reads those two kinds of host.
+        return URL(string: "https://\(repo)/-/compare/\(live)...\(safe)")
     }
 
     /// The service's page on Render; Vercel's address needs the team's slug, which the list does not carry.

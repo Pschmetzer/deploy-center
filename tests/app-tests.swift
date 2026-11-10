@@ -674,6 +674,31 @@ expect("exec: a child holding the pipe is not waited for", execFake(["daemon"], 
 Tool.testPath = nil
 try? FileManager.default.removeItem(at: fakeDir)
 
+var gl = item(changed: true); gl.repo = "gitlab.com/group/app"
+expect("GitLab compare link", gl.compareURL?.absoluteString ?? "nil", "https://gitlab.com/group/app/-/compare/a...main")
+func lossyError(_ json: String) -> String {
+    do { _ = try decodeLossy(VercelProject.self, from: Data(json.utf8), label: "vercel json"); return "no error" }
+    catch { return error.localizedDescription }
+}
+expect("an error object shows its text", lossyError(#"{"error":"Vercel login expired"}"#), "Vercel login expired")
+expect("other junk says where to look", lossyError("<html>"), L("Unexpected answer from vercel json – details in the log.", "Unerwartete Antwort von vercel json – Details im Log."))
+
+// Claude connection: an entry into a moved app is out of date; a failed re-add can bring the old one back.
+let mcpEntry: [String: Any] = ["command": "/opt/node", "args": ["/Apps/DC.app/mcp/server.mjs"], "env": ["DEPLOYS_BIN": "/Apps/DC.app/deploys", "DEPLOYS_MCP_ALLOW_DEPLOY": "1"]]
+expect("entry with every path there", ClaudeConfig.stale(mcpEntry, exists: { _ in true }), false)
+expect("entry into a moved app", ClaudeConfig.stale(mcpEntry, exists: { !$0.contains("DC.app") }), true)
+expect("restore args keep the switch", ClaudeConfig.codeAddArgs(restoring: mcpEntry)?.contains("DEPLOYS_MCP_ALLOW_DEPLOY=1") ?? false, true)
+expect("no restore without a server", ClaudeConfig.codeAddArgs(restoring: ["command": "/opt/node"]) == nil, true)
+let bakDir = FileManager.default.temporaryDirectory.appendingPathComponent("dc-bak-\(UUID().uuidString)")
+try! FileManager.default.createDirectory(at: bakDir, withIntermediateDirectories: true)
+let cfgPath = bakDir.appendingPathComponent("cfg.json").path
+for k in 0..<5 { FileManager.default.createFile(atPath: cfgPath + ".bak-20261110-10000\(k)", contents: Data()) }
+FileManager.default.createFile(atPath: bakDir.appendingPathComponent("other.bak-1").path, contents: Data())
+ClaudeFiles.pruneBackups(of: cfgPath, keep: 3)
+expect("only the newest three backups stay", (try! FileManager.default.contentsOfDirectory(atPath: bakDir.path)).sorted(),
+       ["cfg.json.bak-20261110-100002", "cfg.json.bak-20261110-100003", "cfg.json.bak-20261110-100004", "other.bak-1"])
+try? FileManager.default.removeItem(at: bakDir)
+
 // The app's masker knows what the script's masker knows.
 expect("mask Stripe", LogTools.maskSecrets("key sk_live_abcdefgh12345678"), "key [STRIPE KEY]")
 expect("mask GitLab", LogTools.maskSecrets("glpat-abcdefghij1234567890"), "[GITLAB TOKEN]")
