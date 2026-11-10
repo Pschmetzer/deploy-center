@@ -205,7 +205,6 @@ if command -v ruby >/dev/null; then
   case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
 fi
 
-<<<<<<< HEAD
 # --- VS Code extension: its own unit tests (node), when its dev dependencies are installed ---
 if command -v npm >/dev/null && [ -d vscode/node_modules ]; then
   (cd vscode && npm test --silent >"$tmp/vscode.log" 2>&1) && ok "vscode: unit tests" || { fail "vscode: unit tests" "see below"; cat "$tmp/vscode.log"; }
@@ -213,7 +212,7 @@ else
   echo "skip vscode: run npm ci in integrations/vscode first"
 fi
 
-=======
+
 # --- Claude Code plugin: manifest checks, shellcheck, and the after-push hook ---
 if integrations_cc="$(tests/claude-code.sh --quiet 2>&1)"; then ok "claude-code: plugin and marketplace files are valid"
 else fail "claude-code: plugin and marketplace files are valid" "$(grep FAIL <<<"$integrations_cc" | head -5)"; fi
@@ -263,7 +262,6 @@ expect "claude-code hook: singular, repo case ignored, exit 1 list still used" \
 deploy_calls_before="$(cat "$tmp/deploy.log" 2>/dev/null | wc -l)"
 hk "git push" >/dev/null
 expect "claude-code hook: never deploys" "$(cat "$tmp/deploy.log" 2>/dev/null | wc -l)" "$deploy_calls_before"
->>>>>>> origin/main
 # --- the MCP server (needs node and `npm ci` in mcp/) ---
 if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
   DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
