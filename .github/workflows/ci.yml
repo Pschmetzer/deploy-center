@@ -43,6 +43,21 @@ jobs:
           path: build/DeployCenter-*-universal.zip
           retention-days: 7
 
+  docs:
+    # site/docs/ is generated from the Markdown in this repo. Fails when the generator errors
+    # (a link to a file that does not exist) or when any link or #anchor in site/ is broken.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build docs
+        run: python3 scripts/build-docs.py
+      - name: Check links
+        run: python3 scripts/check-links.py site
+
   changelog:
     # A change to the CLI or the app should say so in CHANGELOG.md. A warning, not a failure:
     # the label "no-changelog" silences it.
