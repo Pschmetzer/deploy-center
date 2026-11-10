@@ -137,3 +137,13 @@ behind the app are in `docs/WIDGETS-IOS.md`.
    ```
 
    It must print nothing.
+
+## Submissions
+
+| Date | Version (build) | Status |
+|---|---|---|
+| 2026-11-10 | 1.0 (2), with the Mac connection | Submitted for review; released automatically after approval |
+
+Checked before submitting: the QR connection on a real iPhone (TestFlight build 2). Not yet checked
+on a device: the iCloud Keychain connection. Each localization needs its own privacy policy URL
+(App Privacy → language menu); German had none at first and blocked "Add for Review".
