@@ -357,7 +357,7 @@ struct MenuBarContent: View {
 
     var body: some View {
         let w = store.waiting
-        let changed = Array(store.items.values.joined()).filter { $0.hasNewCommits && $0.deployable && $0.state == .idle }
+        let changed = Array(store.items.values.joined()).filter { $0.hasNewCommits && $0.deployable && $0.state == .idle && !store.isHidden($0) }
             .sorted { ($0.pendingCommits ?? 0) > ($1.pendingCommits ?? 0) }
         let connected = Platform.allCases.filter { p in
             guard let d = store.doctor else { return false }
@@ -382,7 +382,8 @@ struct MenuBarContent: View {
                 Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle")
             }
         } else {
-            Text(L("\(w.prs) PRs, \(w.commits) commits waiting", "\(w.prs) PRs, \(w.commits) Commits warten"))
+            Text(L("\(plural(w.prs, "PR", "PRs")), \(plural(w.commits, "commit", "commits")) waiting",
+                   "\(plural(w.prs, "PR", "PRs")), \(plural(w.commits, "Commit", "Commits")) warten"))
             Divider()
             ForEach(changed.prefix(12)) { i in
                 Button("\(Demo.mask(i.name))  –  \(Row.waitingText(i))") {
@@ -398,7 +399,7 @@ struct MenuBarContent: View {
             }
         }
         if w.openPRs > 0 {
-            Text(L("\(w.openPRs) PRs still open", "\(w.openPRs) PRs noch offen"))
+            Text(L("\(plural(w.openPRs, "PR", "PRs")) still open", "\(plural(w.openPRs, "PR", "PRs")) noch offen"))
         }
         let auto = Platform.allCases.reduce(0) { $0 + store.autoOn($1).count }
         if auto > 0 {

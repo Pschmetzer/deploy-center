@@ -199,6 +199,9 @@ extension Costs {
     var week: Double { days.suffix(7).map(\.build).reduce(0, +) }
 }
 
+/// "1 project", "3 projects": the number with the word that fits it.
+func plural(_ n: Int, _ one: String, _ many: String) -> String { "\(n) \(n == 1 ? one : many)" }
+
 /// "12 PRs waiting · $41 saved": what waits, and the saving when it is known.
 func summaryLine(_ w: Store.Waiting, saved: Double?) -> String {
     let waiting: String

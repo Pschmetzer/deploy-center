@@ -100,6 +100,16 @@ MainActor.assumeIsolated {
     store.items[.vercel] = [a]; store.items[.render] = [b]
     expect("two projects of one repo count the PR once", store.waiting.prs, 1)
     expect("but both projects are listed", store.waiting.projects, 2)
+    // Staging on another branch of the same repo waits for its own commits.
+    var c = Item(id: "staging", name: "staging", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil)
+    c.changed = true; c.pendingCommits = 4; c.pendingPRs = 2; c.repo = "me/app"; c.ref = "develop"
+    store.items[.vercel] = [a, c]
+    expect("another branch of one repo counts on its own", store.waiting.prs, 3)
+    // Not deployable: no stale alarm, no count.
+    var nd = Item(id: "nd", name: "nd", detail: "", platform: .vercel, deployable: false, auto: false, note: nil, link: nil)
+    nd.changed = true; nd.repo = "me/other"
+    store.items[.vercel] = [a, nd]
+    expect("a project that cannot deploy does not wait", store.waiting.projects, 2)
 }
 MainActor.assumeIsolated { moreTests() }
 
@@ -579,6 +589,29 @@ expect("allowance for every project", AutoDeployAllowance(platform: "vercel", pr
 expect("allowance for everything", AutoDeployAllowance(platform: "all", project: "*", expiresAt: later).covers(item(.render)), true)
 expect("wildcard project, other platform", AutoDeployAllowance(platform: "render", project: "*", expiresAt: later).covers(item()), false)
 expect("named project still exact", AutoDeployAllowance(platform: "vercel", project: "other", expiresAt: later).covers(item()), false)
+
+// Wave 2: logic fixes.
+expect("plural one", plural(1, "project", "projects"), "1 project")
+expect("plural many", plural(3, "project", "projects"), "3 projects")
+var rw = Store.Waiting(); rw.projects = 1; rw.prs = 1
+expect("reminder, one PR", Store.reminderText(rw), L("1 PR in 1 project waits to go live.", "1 PR in 1 Projekt wartet darauf, live zu gehen."))
+rw.projects = 2; rw.prs = 0; rw.commits = 3
+expect("reminder, commits only", Store.reminderText(rw), L("3 commits in 2 projects wait to go live.", "3 Commits in 2 Projekten warten darauf, live zu gehen."))
+let paceDays = try! JSONDecoder().decode([Costs.Day].self, from: Data("""
+[{"day":"2026-11-08","total":1,"build":10},{"day":"2026-11-09","total":1,"build":10},{"day":"2026-11-10","total":0,"build":0}]
+""".utf8))
+expect("budget pace leaves out today", Store.monthPace(paceDays, today: "2026-11-10") ?? -1, 300.0)
+expect("budget pace with only today", Store.monthPace(Array(paceDays.suffix(1)), today: "2026-11-10") == nil, true)
+let sum = Store.summary([(.done(nil), false), (.failed("x"), false), (.skipped("red"), false), (.skipped("red"), false), (.failed("c"), true)])
+expect("summary counts skipped rows", sum.title, L("1 live, 1 failed, 2 skipped, 1 cancelled", "1 live, 1 fehlgeschlagen, 2 übersprungen, 1 abgebrochen"))
+expect("summary ok only without failures", sum.ok, false)
+expect("summary without skips", Store.summary([(.done(nil), false), (.done(nil), false)]).title, L("2 live, 0 failed", "2 live, 0 fehlgeschlagen"))
+let undoA = Store.Toast(text: "a", ok: false, undoLabel: "Cancel", undo: {}), undoB = Store.Toast(text: "b", ok: false, undoLabel: "Cancel", undo: {})
+let plain = (1...3).map { Store.Toast(text: "p\($0)", ok: true) }
+let tq = plain.reduce(Store.queued([], undoA)) { Store.queued($0, $1) }
+expect("an undo toast is never dropped from the queue", Store.queued(tq, undoB).map(\.text), ["a", "p2", "p3", "b"])
+expect("preselect keys of shown rows stay", Store.keepPreselected((0..<150).map { "k\($0)" }, current: ["k3"]).contains("k3"), true)
+expect("preselect keeps the last 100", Store.keepPreselected((0..<150).map { "k\($0)" }, current: []).count, 100)
 
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
