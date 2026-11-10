@@ -1,0 +1,9 @@
+{
+ "deployments": [
+  {
+   "message": "Unauthorized to deploy this application.",
+   "resource_uuid": "app-cache",
+   "deployment_uuid": null
+  }
+ ]
+}

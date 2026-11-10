@@ -398,6 +398,7 @@ mkdir -p "$DEPLOYS_CONFIG/locks/autofix"
 expect "autofix: a held lock stops a second run" "$(afrun | grep -c 'running already'):$(fired)" "1:0"
 rmdir "$DEPLOYS_CONFIG/locks/autofix"
 
+<<<<<<< HEAD
 # --- security: masking, no shell or jq code from data, names in API paths, secrets on stdin ---
 # The log handed to the Autofix routine: common token formats are masked, the build output is kept.
 sample="$(cat <<'LOG'
@@ -474,6 +475,10 @@ expect "logs: the line count is digits only" "$rc:$(grep -c 'Unknown option' "$E
 : > "$CALLS"
 out="$(printf 'sk-ant-oat01-x -T /tmp/other\n' | env -u DEPLOYS_LIB PATH="$tmp/bin:$PATH" DEPLOYS_CONFIG="$tmp/config" /bin/bash ./deploys autofix set-token 2>&1)"; rc=$?
 expect "autofix set-token: a token with a space is refused, nothing saved" "$rc:$(calls 'security')" "1:0"
+=======
+# Savings (simulate, ledger) have their own file with fixtures.
+bash tests/savings-tests.sh || fails=$((fails+1))
+>>>>>>> origin/main
 
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }

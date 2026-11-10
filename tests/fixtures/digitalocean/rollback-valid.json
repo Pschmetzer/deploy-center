@@ -1,0 +1,1 @@
+{"valid":true,"warnings":[{"code":"image_source_missing_digest","components":["queue"],"message":"one or more components are missing an image digest"}]}
