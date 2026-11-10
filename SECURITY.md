@@ -14,7 +14,7 @@ Deploy Center is maintained by one person in their spare time. The aim is a firs
 Only the newest release gets fixes. Update with **Check for Updates …** in the app menu or
 `brew upgrade --cask --greedy deploy-center`. The `deploys` CLI, the Docker image and the
 integrations in `integrations/` (MCP server, VS Code and Raycast extensions, GitHub Action) are
-fixed in the same repo: use the newest release or `main`. The iPhone app gets fixes in its newest
+fixed in the same repo: use the newest release. The iPhone app gets fixes in its newest
 build.
 
 | Version | Fixes |
@@ -67,7 +67,7 @@ the vendor).
 | A POST that starts a build | the deploy hook URL you added | `curl`, URL and headers on stdin |
 | Claude in the app (opt-in, your own key): masked log excerpts, commit titles, file names | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after `deploys ai set-key`, with a monthly token cap |
 | Keys for the iPhone app: the Vercel token for the iPhone, the Render key, the `gh` token | iCloud Keychain (end-to-end encrypted by Apple), or a QR code on screen | only when you turn on Settings → iPhone or show the QR code; see [iPhone link](#iphone-link) |
-| The `deploy-center` MCP entry (a path and arguments, no key) | `~/Library/Application Support/Claude/claude_desktop_config.json`, Claude Code's config | only on Connect in Settings → Claude; only that entry is added or removed |
+| The `deploy-center` MCP entry: paths to `node`, the server and `deploys`, and `DEPLOYS_MCP_ALLOW_DEPLOY=1` only if you allow deploys; no key | `~/Library/Application Support/Claude/claude_desktop_config.json`, Claude Code's config | only on Connect in Settings → Claude; only that entry is added or removed |
 | The update feed (once a day, can be turned off; no system profile), then the zip | `deploycenter.app/appcast.xml`, `github.com` | HTTPS, see [Updates](#updates) |
 | Project icons | each project's own domain | HTTPS to `https://<domain>/`; icon links in that page are followed |
 | Autofix: project, repo, branch, commit, deploy id and the last 60 KB of the build log, masked | `api.anthropic.com` (your routine) | `curl` over HTTPS; the token on stdin; only after you set up a routine and a token |
@@ -87,7 +87,9 @@ Nothing else leaves the Mac: no telemetry, no crash reports.
 - While `render json` reads many services at once, the key sits in a `0600` file inside a `0700`
   `mktemp -d` folder and is removed right after.
 - `~/.config/deploys` is set to `0700` on every run. It holds the remembered repos, the team id,
-  the ignore list, locks and the Autofix state, but no key.
+  the ignore list, locks and the Autofix state, but no API key. Deploy hook URLs (Netlify's in
+  `netlify-hooks.json`, and `hook-urls/` when there is no keychain) are secrets too: anyone with
+  one can start a build. They are `0600` files and never printed.
 
 ### Autofix log masking
 

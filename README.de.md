@@ -81,8 +81,8 @@ Neu dabei? [Sicher ausprobieren](docs/SAFE-START.md) (Englisch): erst schauen, d
 ## Deploy Center + Claude Code
 
 - **Autofix: Ein fehlgeschlagener Build repariert sich (fast) selbst.** Deploy Center gibt das maskierte Build-Log
-  an eine Claude-Code-Routine, und Claude öffnet einen PR mit dem Fix. Nach deinem Merge deployt der nächste Lauf
-  genau diesen Merge-Commit, einmal. Gemergt wird nie von selbst. [Autofix](docs/AUTOFIX.md) (Englisch)
+  an eine Claude-Code-Routine, und Claude öffnet einen PR mit dem Fix. Nach deinem Merge sagt dir der nächste Lauf
+  Bescheid; du deployst den Fix mit einem Klick. Gemergt und deployt wird nie von selbst. [Autofix](docs/AUTOFIX.md) (Englisch)
 - **Ein Deploy für viele Pushes.** Der Agent darf pushen, so oft er will; gebaut wird erst, wenn du deployst, was sich geändert hat.
 - **Für Claude kopieren.** Im Build-Log eines fehlgeschlagenen Deploys kopiert ein Knopf den Fehler und das Log drumherum als Prompt, fertig zum Einfügen.
 - **MCP-Server und Claude-Code-Plugin.** Claude kann fragen, was wartet, und deployt nur mit deinem OK (nur lesend, solange du es nicht erlaubst). [Claude Code](docs/CLAUDE-CODE.md) · [MCP-Server](integrations/mcp/) (Englisch)
@@ -130,7 +130,6 @@ Einstellungen: [docs/CLI.md](docs/CLI.md) (Englisch).
 - [x] Mac-Widgets, Befehlspalette, Claude in der App
 - [ ] Raycast-Erweiterung im Raycast Store (die Erweiterung liegt in `integrations/raycast/`)
 - [ ] iPhone-App im App Store
-- [ ] Bitbucket
 
 Welche Plattform soll als Nächstes kommen? [Stimm per Issue ab](https://github.com/Pschmetzer/deploy-center/issues/new?template=platform-request.yml).
 
@@ -167,7 +166,7 @@ Mehr (Englisch): [FAQ](docs/FAQ.md) · [Troubleshooting](docs/TROUBLESHOOTING.md
 ## Mitmachen
 
 Ideen und Fehlerberichte gern in den [Issues](https://github.com/Pschmetzer/deploy-center/issues).
-Am meisten gesucht: Bitbucket, und Hinweise, wenn eine Zahl in der App falsch aussieht.
+Am meisten gesucht: Hinweise, wenn eine Zahl in der App falsch aussieht.
 Kleine Aufgaben für den Einstieg: [Good first issues](docs/GOOD-FIRST-ISSUES.md). Bauen und testen:
 [CONTRIBUTING.md](CONTRIBUTING.md).
 

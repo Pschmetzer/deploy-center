@@ -104,8 +104,8 @@ Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only gree
 ## Deploy Center + Claude Code
 
 - **Autofix: a failed build fixes itself (almost).** Deploy Center hands the masked build log to a Claude Code
-  routine, and Claude opens a PR with the fix. After you merge, the next run deploys that merge commit, once.
-  It never merges by itself. [Autofix](docs/AUTOFIX.md)
+  routine, and Claude opens a PR with the fix. After you merge, the next run tells you; you deploy the fix with a click.
+  It never merges or deploys by itself. [Autofix](docs/AUTOFIX.md)
 - **One deploy for many pushes.** Let the agent push as often as it likes; nothing builds until you deploy what changed.
 - **Copy for Claude.** The build log of a failed deploy has a button that copies the error and the log around it as a prompt, ready to paste.
 - **MCP server and Claude Code plugin.** Claude can ask what is waiting, and deploys only with your OK (read-only unless you allow it). [Claude Code](docs/CLAUDE-CODE.md) · [MCP server](integrations/mcp/)
@@ -152,7 +152,6 @@ settings: [docs/CLI.md](docs/CLI.md).
 - [x] Mac widgets, command palette, Claude in the app
 - [ ] Raycast extension in the Raycast Store (the extension is in `integrations/raycast/`)
 - [ ] iPhone app in the App Store
-- [ ] Bitbucket
 
 Which platform should come next? [Vote with an issue](https://github.com/Pschmetzer/deploy-center/issues/new?template=platform-request.yml).
 
@@ -189,7 +188,7 @@ More: [FAQ](docs/FAQ.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Gloss
 ## Contributing
 
 Ideas and bug reports are welcome in [Issues](https://github.com/Pschmetzer/deploy-center/issues).
-Most wanted: Bitbucket, and reports when a number in the app looks wrong.
+Most wanted: reports when a number in the app looks wrong.
 Small tasks to start with: [Good first issues](docs/GOOD-FIRST-ISSUES.md). How to build and test:
 [CONTRIBUTING.md](CONTRIBUTING.md).
 

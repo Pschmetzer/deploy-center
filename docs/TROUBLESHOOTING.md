@@ -211,7 +211,7 @@ A self-built (ad hoc signed) app has no keychain group to share with the iPhone.
 
 ### "Could not write to iCloud Keychain (error …)"
 
-iCloud Keychain is off on this Mac (System Settings → your name → iCloud → Passwords), or the Mac is signed in with another Apple ID than the iPhone. The number is the keychain's error code; it is also in the error log.
+The Mac's keychain refused the item. The number is the keychain's error code (`security error <number>` in Terminal explains it); the same line is in the error log. Check that iCloud Keychain is on (System Settings → your name → iCloud → Passwords), or use the QR code instead.
 
 ## Deploying
 

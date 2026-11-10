@@ -251,7 +251,7 @@ saving             = with auto-deploy − deploying by hand</code></pre>
   ids.forEach(id=>{const v=+q.get(id),el=$(id); if(v>=+el.min&&v<=+el.max) el.value=v;});
   const fmt=v=>'$'+Math.round(v).toLocaleString('en-US');
   let sayTimer=null;
-  function calc(){
+  function calc(first){
     const p=+$('p').value,u=+$('u').value,c=+$('c').value/100,d=+$('d').value;
     $('po').textContent=p;$('uo').textContent=u;$('co').textContent='$'+c.toFixed(2);$('do').textContent=d;
     const days=22, now=p*u*c*days, after=p*Math.min(d,u)*c*days, save=Math.max(0,now-after);
@@ -261,9 +261,9 @@ saving             = with auto-deploy − deploying by hand</code></pre>
     $('tweet').href='https://x.com/intent/post?text='+encodeURIComponent(t)+'&url='+encodeURIComponent(link);
     // one short sentence for screen readers, once the slider rests, not on every step
     clearTimeout(sayTimer);
-    sayTimer=setTimeout(()=>{$('said').textContent=`You would save about ${fmt(save)} a month: ${fmt(now)} with auto-deploy, ${fmt(after)} by hand.`},700);
+    if(!first) sayTimer=setTimeout(()=>{$('said').textContent=`You would save about ${fmt(save)} a month: ${fmt(now)} with auto-deploy, ${fmt(after)} by hand.`},700);
   }
-  ids.forEach(id=>$(id).addEventListener('input',calc));calc();
+  ids.forEach(id=>$(id).addEventListener('input',()=>calc()));calc(true);
 })();
 </script>
 </body>
