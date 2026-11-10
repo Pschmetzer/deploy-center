@@ -398,7 +398,8 @@ struct ProjectDetail: View {
                         Button(L("On GitHub", "Auf GitHub")) { NSWorkspace.shared.open(u) }.buttonStyle(.link)
                     }
                 }
-                Text(L("\(d.files) files, +\(d.additions) −\(d.deletions) lines", "\(d.files) Dateien, +\(d.additions) −\(d.deletions) Zeilen"))
+                Text(L(plural(d.files, "file", "files") + ", +\(d.additions) −\(d.deletions) lines",
+                       plural(d.files, "Datei", "Dateien") + ", +\(d.additions) −\(d.deletions) Zeilen"))
                     .font(.caption).foregroundStyle(.secondary)
                 if !d.risky.isEmpty {
                     HStack(alignment: .top, spacing: 6) {

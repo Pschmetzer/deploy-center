@@ -242,6 +242,8 @@ struct CommandPalette: View {
                             if hidden > 0 {
                                 Button(L("\(plural(hidden, "hidden project matches", "hidden projects match")) – open Settings",
                                          "\(hidden) \(hidden == 1 ? "ausgeblendetes Projekt passt" : "ausgeblendete Projekte passen") – Einstellungen öffnen")) {
+                                    // Hidden projects are on the General tab.
+                                    UserDefaults.standard.set("general", forKey: "settingsTab")
                                     dismiss(); NSApp.activate(ignoringOtherApps: true); openSettings()
                                 }
                                 .buttonStyle(.link).padding(.horizontal, 12).padding(.vertical, 4)
@@ -370,6 +372,8 @@ extension View {
 final class PaletteCenter: ObservableObject {
     static let shared = PaletteCenter()
     @Published var requests = 0
+    /// Bumped by the palette's "Changed only (on/off)": the window flips its filter.
+    @Published var filterToggles = 0
     /// Main windows on screen that can show the palette.
     var hosts = 0
     /// Set when there was no window: the next one to appear opens the palette.
@@ -484,9 +488,7 @@ struct CommandPaletteHost: ViewModifier {
                     store.toggle(i.platform, i.id)
                 }
             case .clearSelection: Platform.allCases.forEach { store.clearSelection($0) }
-            case .toggleFilter:
-                let d = UserDefaults.standard
-                d.set(!d.bool(forKey: "onlyChanged"), forKey: "onlyChanged")
+            case .toggleFilter: PaletteCenter.shared.filterToggles += 1
             case .showAll: UserDefaults.standard.set(true, forKey: "showAll")
             case .demoMode:
                 let d = UserDefaults.standard

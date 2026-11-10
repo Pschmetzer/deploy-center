@@ -573,13 +573,19 @@ enum ClaudeNudge {
 
 struct ClaudeNudgeLine: View {
     @AppStorage(ClaudeNudge.dismissedKey) private var dismissed = false
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         HStack {
             Image(systemName: "sparkles").foregroundStyle(.purple)
             Text(L("Claude found. Connect it so Claude can see what's waiting.", "Claude gefunden. Verbinde es, damit Claude sieht, was wartet."))
                 .font(.callout)
-            SettingsLink { Text(L("Connect …", "Verbinden …")) }.buttonStyle(.link)
+            // Settings opens on the Claude tab, whatever tab was last.
+            Button(L("Connect …", "Verbinden …")) {
+                UserDefaults.standard.set("claude", forKey: "settingsTab")
+                NSApp.activate(ignoringOtherApps: true); openSettings()
+            }
+            .buttonStyle(.link)
             Spacer()
             Button { dismissed = true } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
                 .help(L("Don't show again", "Nicht mehr zeigen")).accessibilityLabel(L("Don't show again", "Nicht mehr zeigen"))

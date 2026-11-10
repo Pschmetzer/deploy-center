@@ -110,6 +110,9 @@ struct ContentView: View {
     @State private var noteText = ""
     @State private var logItem: Item?
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.openSettings) private var openSettings
+    /// The palette flips the filter that is on screen (through this counter), not only the stored one.
+    @ObservedObject private var palette = PaletteCenter.shared
     /// Triggers the person chose to ignore (kept), provider problems closed until they change,
     /// and an update skipped until the next version.
     @AppStorage("ignoredTriggers") private var ignoredTriggers = ""
@@ -400,6 +403,11 @@ struct ContentView: View {
         } message: {
             Text(L("Shown under \(shown(noteItem?.name)). Kept on this Mac only.", "Steht unter \(shown(noteItem?.name)). Bleibt nur auf diesem Mac."))
         }
+        // A write to the remembered filter or tab from elsewhere (the menu bar) wins over a
+        // session-only setting; the palette's toggle flips what is shown.
+        .onChange(of: savedOnlyChanged) { _, _ in onlyChangedNow = nil }
+        .onChange(of: savedShowAll) { _, _ in showAllNow = nil }
+        .onChange(of: palette.filterToggles) { _, _ in onlyChanged.toggle() }
         .onChange(of: store.pendingSearch) { _, name in
             guard let name else { return }
             showAllNow = true; onlyChangedNow = false; search = Demo.mask(name); store.pendingSearch = nil
@@ -729,7 +737,7 @@ struct ContentView: View {
         case "vercel-build": return L("Vercel build from Git", "Vercel-Build von Git")
         case "render-build": return L("Render build from push", "Render-Build durch Push")
         case "render-blueprint": return L("Render Blueprint auto-sync", "Render-Blueprint Auto-Sync")
-        default: return k
+        default: return unknownCode(k, L("build trigger", "Build-Auslöser"))
         }
     }
 
@@ -883,10 +891,12 @@ struct ContentView: View {
         if m.contains("could not resolve host") || m.contains("network is unreachable") || m.contains("offline") || m.contains("connection refused") {
             return L("No connection to \(platform). Is the Mac online?", "Keine Verbindung zu \(platform). Ist der Mac online?")
         }
-        if m.contains("401") || m.contains("403") || m.contains("unauthorized") || m.contains("forbidden") || m.contains("not logged in") {
+        // Status codes as words around them, so "4013" in some id is not taken for a 401.
+        let code = { (n: String) in m.contains("http \(n)") || m.contains("status \(n)") || m.contains("code \(n)") || m.contains(" \(n) ") || m.hasPrefix("\(n) ") }
+        if code("401") || code("403") || m.contains("unauthorized") || m.contains("forbidden") || m.contains("not logged in") {
             return L("\(platform) refused the login. Connect it again.", "\(platform) lehnt die Anmeldung ab. Bitte neu verbinden.")
         }
-        if m.contains("429") || m.contains("rate limit") {
+        if code("429") || m.contains("rate limit") {
             return L("\(platform) asks to slow down (rate limit). Try again later.", "\(platform) bremst (Rate-Limit). Später nochmal versuchen.")
         }
         return nil
@@ -1051,7 +1061,12 @@ struct ContentView: View {
                      ? L("\(hiddenHere) hidden. Show them again in Settings → Hidden projects.", "\(hiddenHere) ausgeblendet. Wieder zeigen unter Einstellungen → Ausgeblendete Projekte.")
                      : L("This account has no projects on \(scopes.map(\.rawValue).joined(separator: " or ")).", "Dieses Konto hat keine Projekte bei \(scopes.map(\.rawValue).joined(separator: " oder "))."))
                     .font(.caption).foregroundStyle(.secondary)
-                if hiddenHere > 0 { SettingsLink { Text(L("Open Settings", "Einstellungen öffnen")) } }
+                if hiddenHere > 0 {
+                    // The hidden projects are on the General tab; open Settings there, whatever tab was last.
+                    Button(L("Open Settings", "Einstellungen öffnen")) {
+                        UserDefaults.standard.set("general", forKey: "settingsTab"); openSettings()
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -1828,7 +1843,7 @@ struct Row: View {
         guard let c = i.pendingCommits, c > 0 else { return L("New changes", "Neue Änderungen") }
         let prs = i.pendingPRs ?? 0
         if i.pendingPartial {
-            return L("\(c) commits, at least \(prs) PRs waiting", "\(c) Commits, mindestens \(prs) PRs warten")
+            return L("\(c) commits, at least \(prs) \(prs == 1 ? "PR" : "PRs") waiting", "\(c) Commits, mindestens \(prs) \(prs == 1 ? "PR wartet" : "PRs warten")")
         }
         let commits = L("\(c) \(c == 1 ? "commit" : "commits")", "\(c) \(c == 1 ? "Commit" : "Commits")")
         return prs > 0 ? commits + " · " + L("\(prs) \(prs == 1 ? "PR" : "PRs") waiting", "\(prs) \(prs == 1 ? "PR wartet" : "PRs warten")")

@@ -388,7 +388,7 @@ struct SavingsSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker("", selection: $tab) {
+                Picker(L("Savings view", "Ersparnis-Ansicht"), selection: $tab) {
                     Text(L("Simulator", "Simulator")).tag(Tab.simulator)
                     Text(L("Ledger", "Bilanz")).tag(Tab.ledger)
                 }
