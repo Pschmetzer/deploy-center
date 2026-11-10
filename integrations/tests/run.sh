@@ -62,15 +62,18 @@ case "\$*" in
   "simulate --days "*" --json") jq --argjson d "\$3" '.days = \$d' "$here/../tests/fixtures/savings/simulate-report.json" ;;
   "ledger --json") cat "$here/../tests/fixtures/savings/ledger-report.json" ;;
   "doctor") echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
-  "changed --json") jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
+  "changed --json") [ -n "\${FAKE_NOTHING:-}" ] && { echo '[]'; exit 0; }
+    jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
   # Without --yes: what it would start, leaving out ignored.json as the real one does
   # (FAKE_IGNORE_IGNORED=1: a CLI that starts more than the Action asked for).
   "deploy-changed --json") ign="\${DEPLOYS_CONFIG:-/nonexistent}/ignored.json"
     if [ -s "\$ign" ] && [ -z "\${FAKE_IGNORE_IGNORED:-}" ]; then ig="\$(cat "\$ign")"; else ig='[]'; fi
     jq -s --argjson ig "\$ig" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
       | map(select(.changed and ((.name as \$n | \$ig | index(\$n)) | not)) | {platform, name, action:"would-deploy"})' "$tmp/vercel.json" "$tmp/render.json" ;;
-  "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"
-    if [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
+  "deploy-changed --yes --json") echo "\$*" >> "$tmp/deploy.log"
+    [ -n "\${FAKE_TEXT:-}" ] && { echo "2 started, 0 failed to start."; exit 0; }
+    if [ "\${FAKE_RC:-0}" = 0 ]; then echo '[{"platform":"vercel","name":"app-web","action":"started","reason":null,"id":"dpl_1","url":"https://x"},{"platform":"render","name":"api","action":"started","reason":null,"id":"dep-1","url":null}]'
+    else echo '[{"platform":"vercel","name":"app-web","action":"started","reason":null,"id":"dpl_1","url":null},{"platform":"render","name":"api","action":"failed","reason":"HTTP 500","id":null,"url":null}]'; fi
     exit "\${FAKE_RC:-0}" ;;
   "status --json"|"status --json --no-github")
     jq -s --arg b "\${FAKE_BUILDING:-}" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
@@ -121,6 +124,7 @@ case "\$1 \$2" in
   "api repos/me/app/pulls/"*) n="\${2##*/}"; f="$tmp/pr\$n.json"; [ -f "\$f" ] || exit 1
     q=""; prev=""; for a in "\$@"; do [ "\$prev" = --jq ] && q="\$a"; prev="\$a"; done; jq -c "\$q" "\$f" ;;
   "issue list") cat "$tmp/issues.json" 2>/dev/null || echo '[]' ;;
+  "api repos/me/ops/issues/5/comments") cat "$tmp/comments.json" 2>/dev/null || echo '[]' ;;
   "issue create") echo "https://github.com/me/ops/issues/7" ;;
   "label create"|"issue edit"|"issue close"|"issue comment") ;;
   *) echo "unexpected gh: \$*" >&2; exit 1 ;;
@@ -283,16 +287,18 @@ if command -v ruby >/dev/null; then
   expect "action: projects is the JSON list" "$(sed -n '/^projects<</,$p' "$tmp/out" | sed -n 2p | jq -c 'map(.name)')" '["app-web","api"]'
   FAKE_RC=1 run_step changed.sh; expect "action: an unread project warns, does not fail" "$?" 0
   # repo: "*" is the whole account, as before.
-  REPO='*' run_step deploy.sh; expect "action: deploy step calls deploy-changed --yes" "$(cat "$tmp/deploy.log")" "deploy-changed --yes"
+  REPO='*' run_step deploy.sh; expect "action: deploy step calls deploy-changed --yes" "$(cat "$tmp/deploy.log")" "deploy-changed --yes --json"
   expect "action: outputs after starting" "$(tr '\n' ' ' < "$tmp/out")" "started=2 failed=0 deployed=true "
   REPO='*' FAKE_RC=1 run_step deploy.sh; expect "action: a failed start fails the step" "$?" 1
   expect "action: outputs are written before failing" "$(tr '\n' ' ' < "$tmp/out")" "started=1 failed=1 deployed=false "
+  REPO='*' FAKE_TEXT=1 run_step deploy.sh; expect "action: an answer that is not JSON fails the step" "$?" 1
+  expect "action: and says the counts are unknown" "$(tr '\n' ' ' < "$tmp/out")" "started=0 failed=0 deployed=false "
   expect "action: repo defaults to the workflow's repository" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["inputs"]["repo"]["default"]' action/action.yml)" '${{ github.repository }}'
   # Only this repo: the other repos' projects go into this run's ignored.json, then deploy-changed.
   mkdir -p "$DEPLOYS_CONFIG"; : > "$tmp/deploy.log"; rm -f "$DEPLOYS_CONFIG/ignored.json"
   REPO=me/app FAKE_RENDER_KEY=true run_step deploy.sh; expect "action: repo: the step passes" "$?" 0
   expect "action: repo: other repos' projects are left out" "$(jq -c . "$DEPLOYS_CONFIG/ignored.json")" '["site"]'
-  expect "action: repo: then deploy-changed --yes" "$(cat "$tmp/deploy.log")" "deploy-changed --yes"
+  expect "action: repo: then deploy-changed --yes" "$(cat "$tmp/deploy.log")" "deploy-changed --yes --json"
   : > "$tmp/deploy.log"; rm -f "$DEPLOYS_CONFIG/ignored.json"
   REPO=GitHub.com/Me/Site FAKE_RENDER_KEY=true run_step deploy.sh; expect "action: repo: case and github.com/ do not matter" "$?" 0
   expect "action: repo: me/site leaves out me/app's projects" "$(jq -c . "$DEPLOYS_CONFIG/ignored.json")" '["api","app-web"]'
@@ -478,6 +484,11 @@ case "$(cat "$tmp/gh.log")" in *"issue create"*) fail "digest issue: no second i
 contains "digest issue: an older day's is closed" "$(cat "$tmp/gh.log")" "issue close 3 -R me/ops --comment Replaced by #5."
 out="$(RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue --dry-run)"
 contains "digest issue: the body carries the approve list" "$out" '<!-- deploys-approve: app-web,api -->'
+: > "$tmp/gh.log"; RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue >/dev/null
+contains "digest issue: the list goes into a comment of the digest" "$(cat "$tmp/gh.log")" "issue comment 5 -R me/ops --body-file"
+: > "$tmp/gh.log"; FAKE_NOTHING=1 RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue >/dev/null
+contains "digest issue: nothing waiting closes today's open digest" "$(cat "$tmp/gh.log")" "issue close 5 -R me/ops --comment Nothing is waiting any more"
+case "$(cat "$tmp/gh.log")" in *"issue edit"*|*"issue create"*) fail "digest issue: nothing waiting, nothing written" "$(cat "$tmp/gh.log")" ;; *) ok "digest issue: nothing waiting, nothing written" ;; esac
 rm -f "$tmp/issues.json"
 
 # --- approve-deploy.yml: its steps, run as GitHub would (needs ruby for the YAML) ---
@@ -485,7 +496,7 @@ if command -v ruby >/dev/null; then
   wstep() { ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"]["deploy"]["steps"].find { |s| s["id"] == ARGV[1] }[ARGV[2]]' digest/examples/approve-deploy.yml "$1" "${2:-run}"; }
   wstep approved > "$tmp/approved.sh"; wstep keep > "$tmp/keep.sh"; wstep report > "$tmp/report.sh"
   approve() { : > "$tmp/out"; env GITHUB_OUTPUT="$tmp/out" EVENT="${EVENT:-workflow_dispatch}" ACTOR="${ACTOR:-dev-one}" SENDER_TYPE="${SENDER_TYPE:-User}" \
-      APPROVERS="${APPROVERS-dev-one, Dev-Two}" INPUT="${INPUT:-}" BODY="${BODY:-}" bash "$tmp/approved.sh" >/dev/null 2>&1; echo "$?:$(grep '^projects=' "$tmp/out")"; }
+      APPROVERS="${APPROVERS-dev-one, Dev-Two}" INPUT="${INPUT:-}" ISSUE=5 REPO=me/ops DIGEST_BOT='github-actions[bot]' bash "$tmp/approved.sh" >/dev/null 2>&1; echo "$?:$(grep '^projects=' "$tmp/out")"; }
   expect "approve: an approver's list" "$(INPUT='api, app-web' approve)" "0:projects=api,app-web"
   expect "approve: logins match without case" "$(ACTOR=dev-two INPUT=api approve)" "0:projects=api"
   expect "approve: all means everything waiting" "$(INPUT=all approve)" "0:projects=*"
@@ -495,8 +506,17 @@ if command -v ruby >/dev/null; then
   expect "approve: no DEPLOYS_APPROVERS, no deploy" "$(APPROVERS='' INPUT=api approve)" "1:"
   expect "approve: odd names are refused" "$(INPUT='api,$(x)' approve)" "1:"
   expect "approve: nothing named, nothing deployed" "$(INPUT=' , ' approve)" "1:"
-  expect "approve: the issue route reads the list from the body" "$(EVENT=issues BODY=$'# Deploys\r\n<!-- deploys-approve: app-web,api -->\r\n' approve)" "0:projects=api,app-web"
-  expect "approve: an issue without the list deploys nothing" "$(EVENT=issues BODY='hello' approve)" "1:"
+  cmt() { jq -nc --arg u "$1" --arg b "$2" --arg c "${3:-2026-01-01T00:00:00Z}" --arg e "${4:-2026-01-01T00:00:00Z}" '{user:{login:$u}, body:$b, created_at:$c, updated_at:$e}'; }
+  { echo '['; cmt 'github-actions[bot]' $'list\r\n<!-- deploys-approve: site -->'; echo ','; cmt 'github-actions[bot]' $'newer\n<!-- deploys-approve: app-web,api -->'
+    echo ','; cmt dev-two '<!-- deploys-approve: all -->'; echo ']'; } > "$tmp/comments.json"
+  expect "approve: the issue route reads the digest's newest comment" "$(EVENT=issues approve)" "0:projects=api,app-web"
+  { echo '['; cmt 'github-actions[bot]' '<!-- deploys-approve: app-web -->' 2026-01-01T00:00:00Z 2026-01-01T00:05:00Z; echo ']'; } > "$tmp/comments.json"
+  expect "approve: an edited list deploys nothing" "$(EVENT=issues approve)" "1:"
+  { echo '['; cmt dev-two '<!-- deploys-approve: all -->'; echo ']'; } > "$tmp/comments.json"
+  expect "approve: a list from someone else deploys nothing" "$(EVENT=issues approve)" "1:"
+  echo '[]' > "$tmp/comments.json"
+  expect "approve: an issue without the list deploys nothing" "$(EVENT=issues approve)" "1:"
+  expect "approve: platform:name is a valid name" "$(INPUT='vercel:app-web' approve)" "0:projects=vercel:app-web"
   expect "approve: a refusal says why" "$(ACTOR=dev-three INPUT=api approve >/dev/null; sed -n 's/^reason=//p' "$tmp/out")" "dev-three is not in DEPLOYS_APPROVERS."
   # keep: every known project not approved goes into ignored.json (the config the action set up)
   keep() { mkdir -p "$tmp/kc"; rm -f "$tmp/kc/ignored.json"; DEPLOYS_CONFIG="$tmp/kc" PROJECTS="$1" VERCEL_TOKEN=t RENDER_API_KEY="${2-k}" bash "$tmp/keep.sh" 2>&1; echo "rc=$?"; }
@@ -506,6 +526,9 @@ if command -v ruby >/dev/null; then
   out="$(keep app-web,gone)"
   contains "keep: an unknown name is named" "$out" "Not found, so not deployed: gone"
   keep site,api >/dev/null; expect "keep: two approved" "$(jq -c . "$tmp/kc/ignored.json")" '["app-web"]'
+  keep render:api >/dev/null; expect "keep: platform:name" "$(jq -c . "$tmp/kc/ignored.json")" '["app-web","site"]'
+  out="$(keep vercel:api)"; contains "keep: platform:name on the wrong platform is named" "$out" "Not found on that platform, so not deployed: vercel:api"
+  out="$(FAKE_MORE=1 keep vercel:twin)"; contains "keep: one platform of a name on two is refused" "$out" "rc=1"
   keep app-web '' >/dev/null; expect "keep: without a Render key only Vercel is listed" "$(jq -c . "$tmp/kc/ignored.json")" '["site"]'
   out="$(keep '*')"; expect "keep: all leaves nothing out" "$([ -f "$tmp/kc/ignored.json" ] && echo file || echo none)" none
   expect "keep: a listing that fails stops the deploy" "$(FAKE_RC=0 DEPLOYS=/nonexistent keep app-web | tail -1)" "rc=127"

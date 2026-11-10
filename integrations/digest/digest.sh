@@ -150,8 +150,23 @@ fi
 $howto}" > "$out"
 
 # --- the issue: one per day, updated in place; older open digests are closed ---
+# The list to approve is also posted as a comment by this token's account: approve-deploy.yml
+# reads it from there (an unedited comment of that account), never from the issue body, which
+# anyone with write access could change between the digest and the label.
 issue_url=""
-if [ "$issue" = 1 ] && [ -n "$names_csv" ]; then
+if [ "$issue" = 1 ] && [ -z "$names_csv" ]; then
+  # Nothing waits now: an open digest of today (or earlier) must not approve this morning's list later.
+  if [ "$dry" = 1 ]; then
+    echo "issue: nothing waiting; open digests in $repo would be closed"
+  else
+    command -v gh >/dev/null 2>&1 || { echo "--issue needs gh (GitHub CLI)" >&2; exit 1; }
+    open="$(gh issue list -R "$repo" --state open --label deploys-digest --limit 50 --json number,title,url)"
+    for old in $(jq -r '.[] | select(.title | startswith("Deploys waiting – ")) | .number' <<<"$open"); do
+      gh issue close "$old" -R "$repo" --comment "Nothing is waiting any more; closed so its label cannot approve an old list." >/dev/null 2>&1 || true
+      echo "Closed issue #$old (nothing waiting)."
+    done
+  fi
+elif [ "$issue" = 1 ]; then
   body="$markdown
 
 ## Approve
@@ -178,6 +193,9 @@ Or run [approve-deploy]($approve_url) with these projects. Nothing is deployed b
       num="${issue_url##*/}"
       echo "Opened issue $issue_url"
     fi
+    # The list approve-deploy.yml deploys: the newest unedited comment of this account.
+    printf 'The list a `deploy-approved` label deploys now: `%s`\n\n<!-- deploys-approve: %s -->\n' "$names_csv" "$names_csv" > "$tmp/approve.md"
+    gh issue comment "$num" -R "$repo" --body-file "$tmp/approve.md" >/dev/null
     # A digest of an earlier day lists what waited then: close it, so its label cannot approve.
     for old in $(jq -r --arg t "$title" '.[] | select(.title != $t and (.title | startswith("Deploys waiting – "))) | .number' <<<"$open"); do
       gh issue close "$old" -R "$repo" --comment "Replaced by #$num." >/dev/null 2>&1 || true

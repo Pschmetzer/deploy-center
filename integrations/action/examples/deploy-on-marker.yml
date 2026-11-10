@@ -18,6 +18,12 @@ on:
 permissions:
   contents: read
 
+# Two quick pushes with [deploy] must not run deploy-changed --yes twice at the same time.
+# Queued, not cancelled: a run that started deploys finishes and reports.
+concurrency:
+  group: deploys-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   changed:
     runs-on: ubuntu-latest
