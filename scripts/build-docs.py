@@ -185,6 +185,11 @@ class Converter:
             if not line.strip():
                 i += 1
                 continue
+            if line.lstrip().startswith("<!--"):  # HTML comment: not rendered, links not checked
+                while i < n and "-->" not in lines[i]:
+                    i += 1
+                i += 1
+                continue
             m = FENCE_RE.match(line)
             if m:
                 ind, fence, lang = len(m.group(1)), m.group(2), m.group(3)
