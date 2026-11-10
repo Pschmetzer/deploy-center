@@ -9,6 +9,7 @@
 | [FAQ.md](FAQ.md) | Short answers |
 | [GLOSSARY.md](GLOSSARY.md) | Ignored Build Step, preview, Blueprint and other words |
 | [NUMBERS.md](NUMBERS.md) | How commits and PRs waiting are counted |
+| [TEAM.md](TEAM.md) | Team mode: a shared `deploy-center.json`, observers, the two-person rule |
 | [AUTOFIX.md](AUTOFIX.md) | A failed build handed to a Claude Code routine, the fix deployed after you merge |
 | [UNINSTALL.md](UNINSTALL.md) | Removing the app, the key and everything it kept |
 | [GOOD-FIRST-ISSUES.md](GOOD-FIRST-ISSUES.md) | Small tasks for a first pull request |

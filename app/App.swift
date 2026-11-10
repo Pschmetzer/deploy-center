@@ -39,6 +39,7 @@ struct SettingsView: View {
             notificationsSection
             updatesSection
             hiddenSection
+            TeamSettings(store: store)
             helpSection
         }
         .formStyle(.grouped)
@@ -351,7 +352,7 @@ struct MenuBarContent: View {
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
         }
         .keyboardShortcut("o")
-        if w.projects > 0 {
+        if w.projects > 0 && !store.observer {
             Button(L("Deploy everything with changes …", "Alles mit Änderungen deployen …")) {
                 openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
                 store.pendingDeployAll = true

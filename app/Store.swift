@@ -14,6 +14,10 @@ final class Store: ObservableObject {
     @Published var loading: Set<Platform> = []
     @Published var loadError: [Platform: String] = [:]
     @Published var doctor: Doctor?
+    /// An observer by a shared list (deploy-center.json), as Settings > Team last read it.
+    @Published var teamObserver = false
+    /// Observer mode: the window shows no deploy buttons, and the script would refuse anyway.
+    var observer: Bool { doctor?.readonly == true || teamObserver }
     @Published var busyMessage: String?
 
     @Published var doctorError: String?
@@ -200,6 +204,7 @@ final class Store: ObservableObject {
             doctorError = error.localizedDescription; return
         }
         guard doctor?.jq == true else { return }
+        Task { if let t = try? await Tool.json(["config", "--json"], as: TeamConfig.self, timeout: 60) { teamObserver = t.readonly.value } }
         // Both at once: each takes several seconds.
         let v = doctor?.vercelLoggedIn == true && doctor?.vercelApi == true
         let r = doctor?.renderKey == true
@@ -549,6 +554,10 @@ final class Store: ObservableObject {
     private static let unsureWait: Double = 600
 
     func enqueue(_ jobs: [Job]) {
+        if observer {
+            say(L("Observer mode", "Beobachter-Modus"), L("This Mac only looks. Turn it off in Settings → Team.", "Dieser Mac schaut nur zu. Abschalten unter Einstellungen → Team."), ok: false)
+            return
+        }
         Notify.ask()
         var added = 0
         for j in jobs where !(itemNow(j.item)?.state.isActive ?? false) {

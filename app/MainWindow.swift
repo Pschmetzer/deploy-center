@@ -226,7 +226,7 @@ struct ContentView: View {
         chrome
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView() }
-        .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item) { sha in store.deployOne(item, preview: false, sha: sha) } }
+        .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item, deployCommit: store.observer ? nil : { sha in store.deployOne(item, preview: false, sha: sha) }) }
         .onChange(of: store.pendingDeployAll) { _, go in
             guard go else { return }
             store.pendingDeployAll = false
@@ -747,14 +747,14 @@ struct ContentView: View {
                     showDetails: item.repo == nil ? nil : { detailItem = item },
                     showLog: { logItem = item },
                     onCancel: { store.cancel(item) },
-                    onRetry: item.deployable ? { store.deployOne(item, preview: false) } : nil,
+                    onRetry: item.deployable && !store.observer ? { store.deployOne(item, preview: false) } : nil,
                     usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: search) { tick(item) }
                     .contextMenu {
                         if item.repo != nil {
                             Button(L("Details …", "Details …")) { detailItem = item }
                             Divider()
                         }
-                        if item.deployable && !item.state.isActive {
+                        if item.deployable && !item.state.isActive && !store.observer {
                             Button(L("Deploy to production", "Live deployen")) {
                                 if item.hasNewCommits || item.headSha == nil { store.deployOne(item, preview: false) }
                                 else { unchangedItem = item }
@@ -841,18 +841,25 @@ struct ContentView: View {
                           ? L("Waits for the fresh list: the saved copy may be hours old", "Wartet auf die frische Liste: die gespeicherte Kopie kann Stunden alt sein")
                           : L("Ticks every project with commits that are not live", "Hakt jedes Projekt mit Commits an, die nicht live sind"))
             }
-            if !showAll && platform == .vercel {
-                Button(L("Preview", "Vorschau")) { store.deploySelected(platform, preview: true) }
-                    .disabled(count == 0)
-                    .help(L("Build a preview deployment. Production stays as it is.", "Baut einen Vorschau-Deploy. Live bleibt unverändert."))
+            if store.observer {
+                // Observer mode (Settings → Team): the deploy buttons are gone, and the script refuses anyway.
+                Label(L("Observer", "Beobachter"), systemImage: "eye")
+                    .foregroundStyle(.secondary).padding(.horizontal, 6)
+                    .help(L("This Mac only looks. Turn it off in Settings → Team.", "Dieser Mac schaut nur zu. Abschalten unter Einstellungen → Team."))
+            } else {
+                if !showAll && platform == .vercel {
+                    Button(L("Preview", "Vorschau")) { store.deploySelected(platform, preview: true) }
+                        .disabled(count == 0)
+                        .help(L("Build a preview deployment. Production stays as it is.", "Baut einen Vorschau-Deploy. Live bleibt unverändert."))
+                }
+                Button { confirming = true } label: {
+                    Label(count > 1 ? L("Deploy \(count)", "\(count) deployen") : L("Deploy", "Deployen"),
+                          systemImage: "paperplane.fill").padding(.horizontal, 6)
+                }
+                .buttonStyle(.borderedProminent).controlSize(.large)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(count == 0)
             }
-            Button { confirming = true } label: {
-                Label(count > 1 ? L("Deploy \(count)", "\(count) deployen") : L("Deploy", "Deployen"),
-                      systemImage: "paperplane.fill").padding(.horizontal, 6)
-            }
-            .buttonStyle(.borderedProminent).controlSize(.large)
-            .keyboardShortcut(.return, modifiers: .command)
-            .disabled(count == 0)
         }
         .padding(12)
     }

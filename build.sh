@@ -51,6 +51,8 @@ rm -f "${slices[@]}"
 
 cp deploys "$BUILD/Contents/Resources/deploys"
 chmod +x "$BUILD/Contents/Resources/deploys"
+# Team mode (lib/team.sh) is sourced by the script from next to it.
+mkdir -p "$BUILD/Contents/Resources/lib" && cp lib/*.sh "$BUILD/Contents/Resources/lib/"
 [ -f app/AppIcon.icns ] && cp app/AppIcon.icns "$BUILD/Contents/Resources/AppIcon.icns"
 
 cat > "$BUILD/Contents/Info.plist" <<PLIST

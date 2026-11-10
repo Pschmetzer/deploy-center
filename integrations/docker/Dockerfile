@@ -15,6 +15,7 @@ RUN apt-get update \
  && npm cache clean --force
 
 COPY deploys /usr/local/bin/deploys
+COPY lib /usr/local/bin/lib
 RUN chmod 0755 /usr/local/bin/deploys
 
 # Config (vercel-repos.json, vercel-team, ignored.json) lives in a volume, not in the image.

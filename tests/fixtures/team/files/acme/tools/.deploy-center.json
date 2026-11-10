@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "projects": { "cli": { "platform": "vercel", "branch": "stable" } },
+  "observers": ["dev-five"]
+}

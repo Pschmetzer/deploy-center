@@ -27,12 +27,12 @@ jobs:
       - name: actionlint
         run: actionlint .github/workflows/*.yml docs/deploy-on-label.yml
       - name: shellcheck
-        # deploys stays at errors only until its warnings are cleaned up.
         run: |
-          shellcheck --severity=warning build.sh release.sh scripts/*.sh tests/*.sh
-          shellcheck --severity=error deploys
+          shellcheck --severity=warning build.sh release.sh scripts/*.sh tests/*.sh lib/*.sh deploys
       - name: Script tests
         run: bash tests/script-tests.sh
+      - name: Team mode tests
+        run: bash tests/team-tests.sh
       - name: App tests
         run: bash tests/app-tests.sh
       - name: Build (ad-hoc signed, universal)
