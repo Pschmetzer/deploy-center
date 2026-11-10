@@ -105,8 +105,60 @@ final class Store: ObservableObject {
         return L("place \(k + 1) of \(queue.count)", "Platz \(k + 1) von \(queue.count)")
     }
 
+    /// The month at the pace of the last 7 days of builds, nil without costs.
+    var monthPace: Double? {
+        guard let days = costs?.days.suffix(7), !days.isEmpty else { return nil }
+        return days.map(\.build).reduce(0, +) / Double(days.count) * 30
+    }
+    /// The line under the deploy confirmation: what the chosen builds cost, about (an average build
+    /// of the week each, where known), and a warning once the month's pace is past the budget.
+    nonisolated static func costNote(perBuild: [Double?], month: Double?, budget: Double) -> String {
+        var parts: [String] = []
+        let known = perBuild.compactMap { $0 }
+        if !known.isEmpty {
+            let sum = known.reduce(0, +).formatted(.currency(code: "USD"))
+            parts.append(known.count == perBuild.count
+                         ? L("These builds cost about \(sum).", "Diese Builds kosten etwa \(sum).")
+                         : L("About \(sum) for \(known.count) of \(perBuild.count) builds (the others unknown).",
+                             "Etwa \(sum) für \(known.count) von \(perBuild.count) Builds (die anderen unbekannt)."))
+        }
+        if budget > 0, let m = month, m > budget {
+            parts.append(L("The monthly budget of \(budget.formatted(.currency(code: "USD"))) is used up at this pace (≈ \(m.formatted(.currency(code: "USD")))).",
+                           "Das Monatsbudget von \(budget.formatted(.currency(code: "USD"))) ist bei diesem Tempo aufgebraucht (≈ \(m.formatted(.currency(code: "USD"))))."))
+        }
+        return parts.isEmpty ? "" : "\n\n" + parts.joined(separator: " ")
+    }
+
     /// Once a day: if the pace of the last 7 days passes 80 % of the monthly budget (Settings), say so.
+    // MARK: A budget per project (Vercel builds, from the week's costs), next to the monthly one
+
+    private(set) var projectBudgets: [String: Double] = (UserDefaults.standard.dictionary(forKey: "projectBudgets") as? [String: Double]) ?? [:]
+    func projectBudget(_ i: Item) -> Double? { projectBudgets[Self.key(i)] }
+    func setProjectBudget(_ i: Item, _ v: Double?) {
+        projectBudgets[Self.key(i)] = v.flatMap { $0 > 0 && $0.isFinite ? $0 : nil }
+        UserDefaults.standard.set(projectBudgets, forKey: "projectBudgets")
+        objectWillChange.send()
+    }
+    /// One project's builds at the week's pace, a month long. Nil when its costs are not known.
+    nonisolated static func projectMonth(build: Double, days: Int) -> Double? { days > 0 ? build / Double(days) * 30 : nil }
+    /// Once a day per project: its pace past its own budget.
+    private func checkProjectBudgets() {
+        guard let c = costs, !projectBudgets.isEmpty else { return }
+        let d = UserDefaults.standard, today = localDay()
+        for i in items[.vercel] ?? [] {
+            guard let b = projectBudget(i), let p = c.projects.first(where: { $0.name == i.name }),
+                  let m = Self.projectMonth(build: p.build, days: min(c.days.count, 14)), m > b * 0.8 else { continue }
+            let k = "budgetAlarm|" + Self.key(i)
+            guard d.string(forKey: k) != today else { continue }
+            d.set(today, forKey: k)
+            say(m > b ? L("\(i.name) over its budget", "\(i.name) über seinem Budget") : L("\(i.name) near its budget", "\(i.name) nahe an seinem Budget"),
+                L("At this pace ≈ \(m.formatted(.currency(code: "USD"))) a month, budget \(b.formatted(.currency(code: "USD")))",
+                  "Bei diesem Tempo ≈ \(m.formatted(.currency(code: "USD"))) im Monat, Budget \(b.formatted(.currency(code: "USD")))"), ok: false)
+        }
+    }
+
     private func checkBudget() {
+        checkProjectBudgets()
         let d = UserDefaults.standard
         let budget = d.double(forKey: "monthlyBudget")
         guard budget > 0, let days = costs?.days.suffix(7), !days.isEmpty else { return }

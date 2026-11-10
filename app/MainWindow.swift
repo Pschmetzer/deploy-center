@@ -103,6 +103,8 @@ struct ContentView: View {
     @AppStorage("showAll") private var savedShowAll = false
     @State private var showCosts = false
     @State private var pathItem: Item?
+    @State private var budgetItem: Item?
+    @State private var budgetText = ""
     @State private var showMessages = false
     @State private var showJournal = false
     @State private var pathText = ""
@@ -404,6 +406,17 @@ struct ContentView: View {
             Text(L("This path is asked once \(shown(pathItem?.name)) is live, instead of the front page. Empty = front page.",
                    "Dieser Pfad wird abgefragt, sobald \(shown(pathItem?.name)) live ist, statt der Startseite. Leer = Startseite."))
         }
+        .alert(L("Monthly budget", "Monatsbudget"), isPresented: Binding(get: { budgetItem != nil }, set: { if !$0 { budgetItem = nil } })) {
+            TextField("USD", text: $budgetText)
+            Button(L("Cancel", "Abbrechen"), role: .cancel) { budgetItem = nil }
+            Button(L("Save", "Speichern")) {
+                if let i = budgetItem { store.setProjectBudget(i, Double(budgetText.replacingOccurrences(of: ",", with: "."))) }
+                budgetItem = nil
+            }
+        } message: {
+            Text(L("USD a month for the builds of \(shown(budgetItem?.name)); a warning comes at 80 % of it, at the week's pace. Empty = none.",
+                   "USD im Monat für die Builds von \(shown(budgetItem?.name)); eine Warnung kommt bei 80 % davon, beim Tempo der Woche. Leer = keins."))
+        }
         .alert(L("Note", "Notiz"), isPresented: Binding(get: { noteItem != nil }, set: { if !$0 { noteItem = nil } })) {
             TextField(L("e.g. only after the release mail", "z. B. erst nach der Release-Mail"), text: $noteText)
             Button(L("Cancel", "Abbrechen"), role: .cancel) { noteItem = nil }
@@ -449,7 +462,9 @@ struct ContentView: View {
                          + (selectedAll.count > 12 ? "\n" + L("and \(selectedAll.count - 12) more", "und \(selectedAll.count - 12) weitere") : "")
                          + "\n\n" + L("The newest commit on GitHub goes live.",
                                        "Der neueste Stand von GitHub geht live.")
-                         + unchangedNote)
+                         + unchangedNote
+                         + Store.costNote(perBuild: selectedAll.map { $0.platform == .vercel ? store.costs?.perBuild($0.name) : nil },
+                                          month: store.monthPace, budget: UserDefaults.standard.double(forKey: "monthlyBudget")))
                 }
                 .dialogSuppressionToggle(LocalizedStringKey(L("Only when checks are green", "Nur wenn die Checks grün sind")), isSuppressed: $onlyGreen)
         }
@@ -1228,6 +1243,11 @@ struct ContentView: View {
             }
             Button(L("Page to check after deploy …", "Seite für die Prüfung nach dem Deploy …")) {
                 pathText = store.healthPath(item); pathItem = item
+            }
+            if item.platform == .vercel {
+                Button(L("Monthly budget …", "Monatsbudget …")) {
+                    budgetText = store.projectBudget(item).map { String(format: "%.0f", $0) } ?? ""; budgetItem = item
+                }
             }
             Button(L("Hide", "Ausblenden")) {
                 // A hidden project must not go out with the next deploy.

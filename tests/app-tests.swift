@@ -960,5 +960,11 @@ do {
     expect("autofix: older script, nothing missing", a?.pathMissing ?? ["?"], [String]())
 }
 
+expect("cost note: all builds known", Store.costNote(perBuild: [1.5, 0.5], month: nil, budget: 0),
+       "\n\n" + L("These builds cost about \(2.0.formatted(.currency(code: "USD"))).", "Diese Builds kosten etwa \(2.0.formatted(.currency(code: "USD")))."))
+expect("cost note: nothing known, budget fine", Store.costNote(perBuild: [nil], month: 10, budget: 20), "")
+expect("cost note: budget used up", Store.costNote(perBuild: [], month: 30, budget: 20).contains("20"), true)
+expect("project month", Store.projectMonth(build: 7, days: 7) ?? 0, 30.0)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
