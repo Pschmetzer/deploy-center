@@ -9,21 +9,31 @@ import ServiceManagement
 // MARK: - Build log
 
 struct BuildLog: View {
+    @ObservedObject var store: Store
+    /// The row as it was when the sheet opened; `live` follows the store.
     let item: Item
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("demoMode") private var demoMode = false
     @State private var text: String?
+    @State private var lines: [String] = []
+    @State private var firstError: Int?
     @State private var error: String?
     @State private var onlyErrors = false
+    @State private var jump = 0
 
-    private var lines: [String] { (text ?? "").components(separatedBy: "\n") }
-    private var firstError: Int? { LogTools.firstErrorLine(lines) }
+    private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
 
     private func copy(_ s: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string) }
 
+    /// Changes when a deploy starts or ends, so the log is read again then and not on every poll.
+    private var reloadKey: String { "\(live.state.isActive)|\(live.lastAt?.timeIntervalSince1970 ?? 0)|\(live.state == .idle)" }
+
     var body: some View {
+        let live = self.live
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(L("Build log: ", "Build-Log: ") + item.name).font(.headline)
+                Text(L("Build log: ", "Build-Log: ") + Demo.mask(live.name)).font(.headline)
+                if live.state.isActive { ProgressView().controlSize(.small) }
                 Spacer()
                 if let text {
                     Toggle(L("Errors only", "Nur Fehler"), isOn: $onlyErrors).toggleStyle(.button)
@@ -31,8 +41,8 @@ struct BuildLog: View {
                     Button(L("Copy", "Kopieren")) { copy(text) }
                     Button(L("Copy for Claude", "Für Claude kopieren")) {
                         var msg: String?
-                        if case .failed(let m) = item.state { msg = m }
-                        copy(LogTools.claudePrompt(name: item.name, repo: item.repo, ref: item.ref, sha: item.headSha, message: msg, log: text))
+                        if case .failed(let m) = live.state { msg = m }
+                        copy(LogTools.claudePrompt(name: live.name, repo: live.repo, ref: live.ref, sha: live.headSha, message: msg, log: text))
                     }
                     .help(L("A prompt with the error and the log around it, ready to paste", "Ein Prompt mit Fehler und Log drumherum, zum Einfügen"))
                 }
@@ -42,39 +52,76 @@ struct BuildLog: View {
             Divider()
             if let error { Text(error).foregroundStyle(.secondary).padding(16).textSelection(.enabled) }
             else if text != nil {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(Array(lines.enumerated()), id: \.offset) { n, line in
-                                let bad = LogTools.isErrorLine(line)
-                                if !onlyErrors || bad {
-                                    Text(line.isEmpty ? " " : line)
-                                        .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                                        .foregroundStyle(bad ? Color.red : Color.primary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(n == firstError ? Color.red.opacity(0.12) : Color.clear)
-                                        .id(n)
-                                }
-                            }
-                        }
-                        .padding(12)
-                    }
-                    .defaultScrollAnchor(.bottom)
+                LogText(lines: demoMode ? lines.map { Demo.scrub($0, items: [live]) } : lines,
+                        onlyErrors: onlyErrors, firstError: firstError, jump: jump)
                     .overlay(alignment: .bottomTrailing) {
-                        if let e = firstError {
-                            Button(L("Jump to the first error", "Zum ersten Fehler")) { withAnimation { proxy.scrollTo(e, anchor: .center) } }
+                        if firstError != nil {
+                            Button(L("Jump to the first error", "Zum ersten Fehler")) { jump += 1 }
                                 .buttonStyle(.borderedProminent).padding(12)
                         }
                     }
-                }
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
         .frame(width: 760, height: 520)
-        .task {
+        .task(id: reloadKey) {
             do {
                 let data = try await Tool.run(["logs", item.id, "200"])
-                text = String(data: data, encoding: .utf8).map { $0.isEmpty ? L("(empty)", "(leer)") : $0 }
-            } catch { self.error = error.localizedDescription }
+                let t = String(data: data, encoding: .utf8).map { $0.isEmpty ? L("(empty)", "(leer)") : $0 } ?? ""
+                // Split and searched once per load, not on every redraw.
+                lines = t.components(separatedBy: "\n"); firstError = LogTools.firstErrorLine(lines)
+                text = t; error = nil
+            } catch { if text == nil { self.error = error.localizedDescription } }
+        }
+    }
+}
+
+/// The log as one text view: several lines can be marked and copied at once, which a list of
+/// separate lines does not allow. Set again only when the lines or the filter change, so a poll
+/// in the background keeps the selection and the scroll position.
+struct LogText: NSViewRepresentable {
+    let lines: [String]
+    let onlyErrors: Bool
+    let firstError: Int?
+    let jump: Int
+
+    final class Coordinator { var shown: [String]?; var filter = false; var jump = 0; var errorRange: NSRange? }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let sv = NSTextView.scrollableTextView()
+        if let tv = sv.documentView as? NSTextView {
+            tv.isEditable = false; tv.isSelectable = true; tv.drawsBackground = false
+            tv.textContainerInset = NSSize(width: 8, height: 8)
+            tv.isAutomaticLinkDetectionEnabled = false
+            tv.usesFindBar = true; tv.isIncrementalSearchingEnabled = true
+        }
+        sv.drawsBackground = false
+        return sv
+    }
+
+    func updateNSView(_ sv: NSScrollView, context: Context) {
+        guard let tv = sv.documentView as? NSTextView else { return }
+        let c = context.coordinator
+        if c.shown != lines || c.filter != onlyErrors {
+            c.shown = lines; c.filter = onlyErrors
+            let font = NSFont.monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+            let out = NSMutableAttributedString()
+            c.errorRange = nil
+            for (n, line) in lines.enumerated() {
+                let bad = LogTools.isErrorLine(line)
+                if onlyErrors && !bad { continue }
+                var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: bad ? NSColor.systemRed : NSColor.textColor]
+                if n == firstError { attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.12) }
+                let start = out.length
+                out.append(NSAttributedString(string: line + "\n", attributes: attrs))
+                if n == firstError { c.errorRange = NSRange(location: start, length: (line as NSString).length) }
+            }
+            tv.textStorage?.setAttributedString(out)
+            tv.scrollToEndOfDocument(nil)
+        }
+        if c.jump != jump {
+            c.jump = jump
+            if let r = c.errorRange { tv.scrollRangeToVisible(r); tv.showFindIndicator(for: r) }
         }
     }
 }
@@ -82,21 +129,29 @@ struct BuildLog: View {
 // MARK: - One project in detail
 
 struct ProjectDetail: View {
+    @ObservedObject var store: Store
+    /// The row as it was when the sheet opened; `live` follows the store.
     let item: Item
     var deployCommit: ((String) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var commitToDeploy: Details.Commit?
     @State private var details: Details?
     @State private var error: String?
+    @AppStorage("demoMode") private var demoMode = false
+
+    private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
+    private func scrub(_ s: String) -> String { Demo.scrub(s, items: Platform.allCases.flatMap { store.items[$0] ?? [] }) }
 
     var body: some View {
+        let item = self.live
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                Logo(domain: item.domain, name: item.name)
+                Logo(domain: item.domain, name: Demo.mask(item.name))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name).font(.title3.weight(.semibold))
-                    Text(item.detail).font(.caption).foregroundStyle(.secondary)
+                    Text(Demo.mask(item.name)).font(.title3.weight(.semibold))
+                    Text(demoMode ? item.platform.rawValue : item.detail).font(.caption).foregroundStyle(.secondary)
                 }
+                if item.state.isActive { ProgressView().controlSize(.small) }
                 Spacer()
                 if let d = details, !d.commits.isEmpty {
                     Button(L("Copy release notes", "Release-Notes kopieren")) {
@@ -126,22 +181,25 @@ struct ProjectDetail: View {
                 commitToDeploy = nil
             }
         } message: {
-            Text(L("\(item.name) goes live at \(commitToDeploy?.sha ?? "") – \(commitToDeploy?.msg ?? ""). Newer commits stay waiting.",
-                   "\(item.name) geht mit \(commitToDeploy?.sha ?? "") live – \(commitToDeploy?.msg ?? ""). Neuere Commits warten weiter."))
+            Text(L("\(Demo.mask(item.name)) goes live at \(commitToDeploy?.sha ?? "") – \(scrub(commitToDeploy?.msg ?? "")). Newer commits stay waiting.",
+                   "\(Demo.mask(item.name)) geht mit \(commitToDeploy?.sha ?? "") live – \(scrub(commitToDeploy?.msg ?? "")). Neuere Commits warten weiter."))
         }
-        .task {
+        // Asked again when what is live or the branch moves (a deploy ended, a new commit came in).
+        .task(id: "\(item.lastSha ?? "")|\(item.headSha ?? "")") {
             guard let repo = item.repo else { return }
             do {
                 details = try await Tool.json(["details", repo, item.lastSha ?? "", item.ref ?? "main"], as: Details.self)
-            } catch { self.error = error.localizedDescription }
+                error = nil
+            } catch { if details == nil { self.error = error.localizedDescription } }
         }
     }
 
     @ViewBuilder private func content(_ d: Details) -> some View {
+        let item = self.live
         VStack(alignment: .leading, spacing: 18) {
             // What is live, and what the branch would bring.
             if let live = item.lastMsg {
-                labelled(L("Live now", "Jetzt live"), live + (item.lastSha.map { "  (\($0.prefix(7)))" } ?? ""))
+                labelled(L("Live now", "Jetzt live"), scrub(live) + (item.lastSha.map { "  (\($0.prefix(7)))" } ?? ""))
             }
             if let checks = d.checks, checks.total > 0 {
                 HStack(spacing: 6) {
@@ -186,13 +244,13 @@ struct ProjectDetail: View {
                             } else if let u = c.url.flatMap(URL.init(string:)) {
                                 Button(c.sha) { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospaced())
                             }
-                            Text(c.msg).font(.callout).lineLimit(2)
+                            Text(scrub(c.msg)).font(.callout).lineLimit(2)
                             Spacer(minLength: 8)
-                            Text((c.author ?? "") + " · " + Row.ago(Date(timeIntervalSince1970: c.at)))
+                            Text((Demo.person(c.author) ?? "") + " · " + Row.ago(Date(timeIntervalSince1970: c.at)))
                                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                             if deployCommit != nil, item.deployable, c.full != nil {
                                 Button { commitToDeploy = c } label: { Image(systemName: "paperplane") }
-                                    .buttonStyle(.borderless).help(L("Deploy up to this commit", "Bis zu diesem Commit deployen"))
+                                    .buttonStyle(.borderless).accessibilityLabel(L("Deploy up to this commit", "Bis zu diesem Commit deployen")).help(L("Deploy up to this commit", "Bis zu diesem Commit deployen"))
                             }
                         }
                     }
@@ -214,6 +272,7 @@ struct ProjectDetail: View {
                         Text("git diff --quiet HEAD^ HEAD -- .").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                         Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString("git diff --quiet HEAD^ HEAD -- .", forType: .string) }
                             label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless)
+                            .accessibilityLabel(L("Copy the command", "Befehl kopieren")).help(L("Copy the command", "Befehl kopieren"))
                     }
                     .padding(6).background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.1)))
                 }
@@ -227,7 +286,7 @@ struct ProjectDetail: View {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Button("#\(pr.number)") { if let u = URL(string: pr.url) { NSWorkspace.shared.open(u) } }
                             .buttonStyle(.link).font(.caption.monospacedDigit())
-                        Text(pr.title).font(.callout).lineLimit(2)
+                        Text(scrub(pr.title)).font(.callout).lineLimit(2)
                         if pr.draft { tag(L("draft", "Entwurf")) }
                         if pr.bot == true { tag("bot") }
                         Spacer(minLength: 8)

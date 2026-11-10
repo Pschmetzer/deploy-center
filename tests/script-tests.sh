@@ -32,9 +32,6 @@ GH
 chmod +x "$tmp/bin/gh"; export PATH="$tmp/bin:$PATH"
 # shellcheck source=../deploys
 . ./deploys
-# deploys turns on set -e; here a failing check must count as FAIL, not end the run.
-set +e
-
 # The script turns on set -e; these tests look at failures, so they must not end on one.
 set +e
 
@@ -128,7 +125,7 @@ pd="$tmp/pend"; mkdir -p "$pd"
 pending_of me/app dead main "$pd"
 expect "compare 404 is a rewritten branch" "$(cat "$pd"/me_app_dead_main.json 2>/dev/null | jq -c .value)" '{"rewritten":true}'
 pending_of me/app rate main "$pd"
-expect "compare rate limit is not" "$(ls "$pd" | grep -c rate)" "0"
+expect "compare rate limit is not" "$(find "$pd" -name '*rate*' | wc -l | tr -d ' ')" "0"
 pending_of me/app aaaa main "$pd"
 expect "compare status is kept" "$(jq -r .value.status "$pd"/me_app_aaaa_main.json)" "ahead"
 
