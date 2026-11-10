@@ -197,6 +197,10 @@ deploys triggers
 
 **Update now** downloads the newest release, checks its signature with `codesign` and Gatekeeper, and only then replaces the app. If any check fails, the app stays as it was and the reason is in the error log. Install by hand from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest), or with `brew upgrade --cask deploy-center`.
 
+## The widget is not in the widget gallery
+
+Check the app list on the left of the gallery (search finds nothing there). If no app from outside Apple is listed at all, macOS has not loaded third-party widgets yet: restart the Mac, then look for **Deploy Center**. If only Deploy Center is missing, the installed copy may have no widget: `ls ~/Applications/"Deploy Center.app"/Contents/PlugIns` must show `DeployCenterWidgets.appex`. Reinstall from the release, or build with `./build.sh --widgets --install`.
+
 ## Still stuck?
 
 Open an [issue](https://github.com/Pschmetzer/deploy-center/issues) with the output of **Copy diagnostics** and the relevant lines of the error log. Issues are public: remove project names and domains first. Never paste a key.
