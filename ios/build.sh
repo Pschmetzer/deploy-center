@@ -54,7 +54,9 @@ PLIST
     # export, which re-signs with App Store profiles; those need no device.
     built="build/DeployCenter-iOS.xcarchive/Products/Applications/DeployCenter.app"
     codesign --force -s - --entitlements ios/Config/DeployCenterWidgets.entitlements "$built/PlugIns/DeployCenterWidgets.appex"
-    codesign --force -s - --entitlements ios/Config/DeployCenter.entitlements "$built"
+    # The keychain group of the Mac link is "$(AppIdentifierPrefix)…": Xcode fills it in, codesign does not.
+    sed "s/\$(AppIdentifierPrefix)/$team./" ios/Config/DeployCenter.entitlements > build/DeployCenter-ios.entitlements
+    codesign --force -s - --entitlements build/DeployCenter-ios.entitlements "$built"
     xcodebuild -exportArchive -archivePath build/DeployCenter-iOS.xcarchive \
       -exportOptionsPlist build/ExportOptions.plist -exportPath build/ios-export -allowProvisioningUpdates
     echo "Exported: build/ios-export (upload it with Transporter or xcrun altool, see docs/APP-STORE.md)" ;;

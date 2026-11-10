@@ -9,7 +9,7 @@ Deploy Center: Hand Deploys
 Deploy and roll back anywhere
 
 ## Promotional text (170)
-See what waits to go live on Vercel and Render, deploy with Face ID, and roll back in two taps. Your tokens stay on your device. No account, no tracking.
+See what waits to go live on Vercel and Render, deploy with Face ID, roll back in two taps. Connects to the Mac app. No account of ours, no tracking.
 
 ## Description (4000)
 Deploy Center shows which of your Vercel projects and Render services have commits that are not live yet, and lets you deploy them by hand, from your iPhone or iPad.
@@ -27,7 +27,8 @@ WHAT IT DOES
 
 PRIVATE BY DESIGN
 • No account and no server of ours: the app talks directly to api.vercel.com, api.render.com and api.github.com
-• Your tokens stay in this device's keychain and are never synced
+• Connect to Deploy Center on your Mac: it hands over its keys through your iCloud Keychain (end-to-end encrypted) or a QR code. Your Apple ID is the account
+• Keys you type in stay in this device's keychain only
 • No analytics, no tracking, no ads
 
 TRY IT WITHOUT AN ACCOUNT
@@ -78,5 +79,6 @@ Deploy Center needs a Vercel access token or a Render API key to show real proje
 3. Open a waiting project and tap "Deploy the newest commit …": a confirmation, then Face ID (or the passcode), then the deploy is simulated.
 4. "Roll back …" works the same way in the demo.
 5. Settings → "Notify when something waits or fails" asks for notification permission.
+6. "Connect to the Mac" gets the keys from the companion Mac app, through iCloud Keychain or a QR code shown on the Mac. It needs the Mac app; the demo covers every other screen.
 
 In demo mode nothing is sent anywhere. With a real token the app talks only to api.vercel.com, api.render.com and api.github.com. There is no server of ours and no login.

@@ -113,6 +113,22 @@ if [ "$widgets" = 1 ] && [ -n "${DEVELOPER_ID:-}" ]; then
 fi
 GROUP_KEY=""
 [ "$widgets" = 1 ] && GROUP_KEY="<key>DCAppGroup</key><string>${APP_GROUP}</string>"
+# The iPhone link (Settings → iPhone) shares one iCloud Keychain item with the iOS app, in the team's
+# keychain group "<TEAMID>.app.deploycenter.shared". macOS allows that group only with the Developer
+# ID provisioning profile of app.deploycenter.mac, kept outside the repo: DC_MAC_PROFILE, or
+# ~/.config/deploys/mac-developer-id.provisionprofile. Without it the app is built without the link
+# (the QR code still works).
+LINK_GROUP=""; LINK_ENT=""
+PROFILE="${DC_MAC_PROFILE:-$HOME/.config/deploys/mac-developer-id.provisionprofile}"
+if [ -n "${DEVELOPER_ID:-}" ] && [ -s "$PROFILE" ]; then
+  lteam="$(sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p' <<<"$DEVELOPER_ID")"
+  [ -n "$lteam" ] || die "no team id in the signing identity \"$DEVELOPER_ID\""
+  security cms -D -i "$PROFILE" 2>/dev/null | grep -q "<string>$lteam.app.deploycenter.mac</string>" \
+    || die "$PROFILE is not the Developer ID profile of app.deploycenter.mac for this team"
+  LINK_GROUP="$lteam.app.deploycenter.shared"
+  LINK_ENT="<key>com.apple.application-identifier</key><string>$lteam.app.deploycenter.mac</string><key>com.apple.developer.team-identifier</key><string>$lteam</string><key>keychain-access-groups</key><array><string>$LINK_GROUP</string></array>"
+  GROUP_KEY="$GROUP_KEY<key>DCKeychainGroup</key><string>${LINK_GROUP}</string>"
+fi
 
 cat > "$BUILD/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -163,7 +179,14 @@ PLIST
   printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
     "<plist version=\"1.0\"><dict><key>com.apple.security.app-sandbox</key><true/>${groups}</dict></plist>" > build/widgets.entitlements
   printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
-    "<plist version=\"1.0\"><dict>${groups}</dict></plist>" > build/app.entitlements
+    "<plist version=\"1.0\"><dict>${groups}${LINK_ENT}</dict></plist>" > build/app.entitlements
+fi
+if [ -n "$LINK_ENT" ]; then
+  cp "$PROFILE" "$BUILD/Contents/embedded.provisionprofile"
+  if [ "$widgets" != 1 ]; then
+    printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+      "<plist version=\"1.0\"><dict>${LINK_ENT}</dict></plist>" > build/app.entitlements
+  fi
 fi
 
 # Signing. With a "Developer ID Application" certificate in the keychain and a notarytool
@@ -197,7 +220,8 @@ elif [ -n "${DEVELOPER_ID:-}" ]; then
   sign_sparkle "$DEVELOPER_ID" --options runtime --timestamp
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/deploys"
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/providers/"*.sh
-  codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD"
+  ent=(); [ -n "$LINK_ENT" ] && ent=(--entitlements build/app.entitlements)
+  codesign --force --options runtime --timestamp ${ent[@]+"${ent[@]}"} -s "$DEVELOPER_ID" "$BUILD"
   codesign --verify --deep --strict "$BUILD"
   if [ -n "${NOTARY_PROFILE:-}" ]; then
     (cd build && ditto -c -k --keepParent "Deploy Center.app" notarize.zip)

@@ -23,8 +23,32 @@ final class PhoneStore: ObservableObject {
         demo = args.contains("-demo") || UserDefaults.standard.bool(forKey: "demo")
     }
 
+    /// The keys the Mac app handed over through iCloud Keychain (shared/PhoneLink.swift), if any.
+    @Published var linked: LinkedKeys? = PhoneLink.read()
+
     var hasAccount: Bool { token(.vercel) != nil || token(.render) != nil }
-    func token(_ k: TokenKey) -> String? { Keychain.get(k.rawValue).flatMap { $0.isEmpty ? nil : $0 } }
+    /// A key typed (or scanned) on this phone wins; otherwise the one from the Mac.
+    func token(_ k: TokenKey) -> String? { ownToken(k) ?? linkedToken(k) }
+    func ownToken(_ k: TokenKey) -> String? { Keychain.get(k.rawValue).flatMap { $0.isEmpty ? nil : $0 } }
+    func linkedToken(_ k: TokenKey) -> String? {
+        guard let l = linked else { return nil }
+        let v: String
+        switch k { case .vercel: v = l.vercel; case .vercelTeam: v = l.vercelTeam; case .render: v = l.render; case .github: v = l.github }
+        return v.isEmpty ? nil : v
+    }
+    /// iCloud Keychain can take a minute after the Mac wrote: read again when the app comes back.
+    func refreshLink() { let l = PhoneLink.read(); if l != linked { linked = l } }
+    var linkAvailable: Bool { PhoneLink.group != nil }
+
+    /// Keys from the Mac's QR code: kept on this phone only, like typed ones.
+    func adopt(_ k: LinkedKeys) {
+        Keychain.set(TokenKey.vercel.rawValue, k.vercel)
+        Keychain.set(TokenKey.vercelTeam.rawValue, k.vercelTeam)
+        Keychain.set(TokenKey.render.rawValue, k.render)
+        Keychain.set(TokenKey.github.rawValue, k.github)
+        demo = false
+        Task { await reload() }
+    }
 
     var waiting: [PhoneProject] { projects.filter { $0.group == .waiting } }
     var waitingPRs: Int {
@@ -38,6 +62,7 @@ final class PhoneStore: ObservableObject {
 
     func reload() async {
         guard !loading else { return }
+        refreshLink()
         loading = true; defer { loading = false }
         if demo {
             projects = DemoData.projects(); loadedAt = Date(); errors = []; writeSnapshot(); return

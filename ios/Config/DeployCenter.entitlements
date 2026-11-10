@@ -6,5 +6,9 @@
 	<array>
 		<string>group.app.deploycenter</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)app.deploycenter.shared</string>
+	</array>
 </dict>
 </plist>

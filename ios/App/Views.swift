@@ -5,13 +5,15 @@ import SwiftUI
 
 struct RootView: View {
     @ObservedObject var store: PhoneStore
+    @Environment(\.scenePhase) private var phase
     @State private var selection: String?
     @State private var settings = false
+    @State private var connect = false
 
     var body: some View {
         NavigationSplitView {
             Group {
-                if !store.demo && !store.hasAccount { Welcome(store: store, settings: $settings) }
+                if !store.demo && !store.hasAccount { Welcome(store: store, settings: $settings, connect: $connect) }
                 else { ProjectList(store: store, selection: $selection) }
             }
             .navigationTitle("Deploy Center")
@@ -29,6 +31,10 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $settings) { SettingsView(store: store) }
+        .sheet(isPresented: $connect) { ConnectMacView(store: store) }
+        .onChange(of: phase) { _, p in
+            if p == .active && !store.demo { let had = store.linked; store.refreshLink(); if store.linked != had { Task { await store.reload() } } }
+        }
         .task {
             await store.reload()
             // For screenshots: -open <name> selects a project, -settings shows the settings.
@@ -53,14 +59,16 @@ struct RootView: View {
 struct Welcome: View {
     @ObservedObject var store: PhoneStore
     @Binding var settings: Bool
+    @Binding var connect: Bool
     var body: some View {
         ContentUnavailableView {
             Label(L("Your deploys, on the go", "Deine Deploys, unterwegs"), systemImage: "paperplane.fill")
         } description: {
-            Text(L("Add a Vercel token or a Render API key. They stay in this device's keychain and go only to Vercel, Render and GitHub.",
-                   "Füge ein Vercel-Token oder einen Render-API-Key hinzu. Sie bleiben im Schlüsselbund dieses Geräts und gehen nur an Vercel, Render und GitHub."))
+            Text(L("Connect to Deploy Center on your Mac, or add a Vercel token or a Render API key. Keys go only to Vercel, Render and GitHub.",
+                   "Verbinde dich mit Deploy Center auf deinem Mac, oder füge ein Vercel-Token oder einen Render-API-Key hinzu. Schlüssel gehen nur an Vercel, Render und GitHub."))
         } actions: {
-            Button(L("Add an account", "Konto hinzufügen")) { settings = true }.buttonStyle(.borderedProminent)
+            Button(L("Connect to the Mac", "Mit dem Mac verbinden")) { connect = true }.buttonStyle(.borderedProminent)
+            Button(L("Enter a token", "Token eingeben")) { settings = true }
             Button(L("Try the demo", "Demo ausprobieren")) { store.demo = true }
         }
     }
@@ -240,10 +248,21 @@ struct SettingsView: View {
     @State private var render = ""
     @State private var github = ""
     @AppStorage("notify") private var notify = false
+    @State private var connect = false
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    if store.linked != nil {
+                        Label(L("Connected to the Mac (iCloud Keychain)", "Mit dem Mac verbunden (iCloud-Schlüsselbund)"), systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                    Button(store.linked == nil ? L("Connect to the Mac …", "Mit dem Mac verbinden …") : L("Connection details …", "Verbindung …")) { connect = true }
+                } header: { Text("Mac") } footer: {
+                    Text(L("Keys from the Mac are used when a field below is empty. A key typed here wins.",
+                           "Schlüssel vom Mac gelten, wenn ein Feld unten leer ist. Ein hier eingetragener Schlüssel hat Vorrang."))
+                }
                 Section {
                     SecureField(L("Vercel token", "Vercel-Token"), text: $vercel).textContentType(.password)
                     TextField(L("Vercel team id (optional)", "Vercel-Team-ID (optional)"), text: $team)
@@ -252,8 +271,8 @@ struct SettingsView: View {
                     SecureField(L("GitHub token (optional, for private repos)", "GitHub-Token (optional, für private Repos)"), text: $github)
                         .textContentType(.password)
                 } header: { Text(L("Accounts", "Konten")) } footer: {
-                    Text(L("Stored in this device's keychain only, never synced. Sent only to api.vercel.com, api.render.com and api.github.com.",
-                           "Nur im Schlüsselbund dieses Geräts gespeichert, nie synchronisiert. Gesendet nur an api.vercel.com, api.render.com und api.github.com."))
+                    Text(L("Keys typed here stay in this device's keychain, never synced. Sent only to api.vercel.com, api.render.com and api.github.com.",
+                           "Hier eingetragene Schlüssel bleiben im Schlüsselbund dieses Geräts, nie synchronisiert. Gesendet nur an api.vercel.com, api.render.com und api.github.com."))
                 }
                 Section {
                     Toggle(L("Demo mode (made-up projects)", "Demo-Modus (erfundene Projekte)"), isOn: $store.demo)
@@ -278,9 +297,10 @@ struct SettingsView: View {
                 }
             }
             .onAppear {
-                vercel = store.token(.vercel) ?? ""; team = store.token(.vercelTeam) ?? ""
-                render = store.token(.render) ?? ""; github = store.token(.github) ?? ""
+                vercel = store.ownToken(.vercel) ?? ""; team = store.ownToken(.vercelTeam) ?? ""
+                render = store.ownToken(.render) ?? ""; github = store.ownToken(.github) ?? ""
             }
+            .sheet(isPresented: $connect) { ConnectMacView(store: store) }
         }
     }
 

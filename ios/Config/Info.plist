@@ -13,6 +13,8 @@
 	<array>
 		<string>app.deploycenter.ios.refresh</string>
 	</array>
+	<key>DCKeychainGroup</key>
+	<string>$(DEVELOPMENT_TEAM).app.deploycenter.shared</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

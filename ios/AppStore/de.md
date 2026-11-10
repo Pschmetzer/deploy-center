@@ -7,7 +7,7 @@ Deploy Center: Hand Deploys
 Deployen und zurückrollen
 
 ## Werbetext (170)
-Sieh, was auf Vercel und Render live gehen will, deploye mit Face ID und rolle mit zwei Tipps zurück. Deine Tokens bleiben auf dem Gerät. Kein Konto, kein Tracking.
+Sieh, was auf Vercel und Render live gehen will, deploye mit Face ID, rolle mit zwei Tipps zurück. Verbindet sich mit der Mac-App. Kein Konto bei uns, kein Tracking.
 
 ## Beschreibung (4000)
 Deploy Center zeigt, welche deiner Vercel-Projekte und Render-Services Commits haben, die noch nicht live sind, und lässt dich sie von Hand deployen, vom iPhone oder iPad.
@@ -25,7 +25,8 @@ WAS ES KANN
 
 PRIVAT VON ANFANG AN
 • Kein Konto und kein Server von uns: Die App spricht direkt mit api.vercel.com, api.render.com und api.github.com
-• Deine Tokens bleiben im Schlüsselbund dieses Geräts und werden nie synchronisiert
+• Verbinde dich mit Deploy Center auf deinem Mac: Er übergibt seine Schlüssel über deinen iCloud-Schlüsselbund (Ende-zu-Ende-verschlüsselt) oder einen QR-Code. Deine Apple-ID ist das Konto
+• Selbst eingetragene Schlüssel bleiben nur im Schlüsselbund dieses Geräts
 • Keine Analyse, kein Tracking, keine Werbung
 
 OHNE KONTO AUSPROBIEREN
