@@ -6,7 +6,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const server = join(dirname(fileURLToPath(import.meta.url)), "..", "mcp", "server.mjs");
+const here = dirname(fileURLToPath(import.meta.url));
+const server = join(here, "..", "mcp", "server.mjs");
+const fixture = (f) => JSON.parse(readFileSync(join(here, "..", "..", "tests", "fixtures", "savings", f), "utf8"));
 const calls = process.env.MCP_CALLS;
 let fails = 0;
 const ok = (name) => console.log(`ok   mcp: ${name}`);
@@ -53,7 +55,7 @@ function start(env = {}) {
   return s;
 }
 
-const READ = ["deploys_changed", "deploys_doctor", "deploys_explain", "deploys_logs", "deploys_notes", "deploys_status"];
+const READ = ["deploys_changed", "deploys_doctor", "deploys_explain", "deploys_ledger", "deploys_logs", "deploys_notes", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -61,7 +63,7 @@ const info = await s.init();
 check("initialize names the server", info?.serverInfo?.name === "deploys", JSON.stringify(info?.serverInfo));
 check("instructions say read-only", /read-only/.test(info?.instructions ?? ""), info?.instructions);
 const names = await s.names();
-check("lists the six read tools", JSON.stringify(names) === JSON.stringify(READ), JSON.stringify(names));
+check("lists the eight read tools", JSON.stringify(names) === JSON.stringify(READ), JSON.stringify(names));
 check("no write tool without DEPLOYS_MCP_ALLOW_DEPLOY", !names.includes("deploys_deploy") && !names.includes("deploys_rollback"), JSON.stringify(names));
 check("read tools are marked read-only", (await s.tools()).every((t) => t.annotations?.readOnlyHint === true));
 
@@ -69,14 +71,49 @@ let r = await s.call("deploys_changed");
 check("changed returns the JSON list", !r.error && JSON.stringify(JSON.parse(r.text).map((p) => p.name)) === '["app-web","api"]', r.text);
 r = await s.call("deploys_explain", { project: "app-web" });
 check("explain passes the name", !r.error && r.text.includes("explain: app-web"), r.text);
-r = await s.call("deploys_notes", { project: "api" });
-check("notes", !r.error && r.text.includes("## Notes for api"), r.text);
+r = await s.call("deploys_notes", { project: "app-web" });
+check("notes", !r.error && r.text.includes("## app-web"), r.text);
 r = await s.call("deploys_logs", { project: "app-web", lines: 5 });
 check("logs passes lines", !r.error && r.text.trim().split("\n").length === 5, r.text);
 r = await s.call("deploys_logs", { project: "app-web", lines: 0 });
 check("logs refuses 0 lines", r.error, r.text);
 r = await s.call("deploys_doctor");
 check("doctor", !r.error && JSON.parse(r.text).renderKey === false, r.text);
+const listed = await s.tools();
+for (const name of ["deploys_simulate", "deploys_ledger"]) {
+  const t = listed.find((x) => x.name === name);
+  check(`${name} says the numbers are estimates and points to method`, /estimate/i.test(t?.description ?? "") && /`method`/.test(t?.description ?? ""), t?.description);
+}
+check("simulate takes days 1–90, default 30", JSON.stringify(listed.find((t) => t.name === "deploys_simulate")?.inputSchema?.properties?.days) ===
+  JSON.stringify({ type: "integer", minimum: 1, maximum: 90, default: 30, description: "How many past days to count pushes over (1–90, default 30)." }));
+check("instructions mention the estimates", /deploys_simulate/.test(info?.instructions ?? "") && /estimate/.test(info?.instructions ?? ""), info?.instructions);
+
+writeFileSync(calls, "");
+r = await s.call("deploys_simulate");
+let rep = r.error ? {} : JSON.parse(r.text);
+const sim = fixture("simulate-report.json");
+check("simulate returns the report", rep.kind === "simulate" && rep.estimate === true && rep.method === sim.method &&
+  JSON.stringify(rep.projects) === JSON.stringify(sim.projects), r.text.slice(0, 300));
+check("simulate defaults to 30 days", callLog().trim() === "simulate --days 30 --json" && rep.days === 30, callLog());
+writeFileSync(calls, "");
+r = await s.call("deploys_simulate", { days: 7 });
+check("simulate passes days", !r.error && JSON.parse(r.text).days === 7 && callLog().trim() === "simulate --days 7 --json", callLog());
+writeFileSync(calls, "");
+for (const bad of [0, 91, 2.5, "7", "--json", -1]) {
+  r = await s.call("deploys_simulate", { days: bad });
+  check(`simulate refuses days ${JSON.stringify(bad)}`, r.error && /days/.test(r.text), r.text);
+}
+check("refused days never reach deploys", callLog() === "", callLog());
+r = await s.call("deploys_ledger");
+rep = r.error ? {} : JSON.parse(r.text);
+const led = fixture("ledger-report.json");
+check("ledger returns the report", rep.kind === "ledger" && rep.estimate === true && rep.method === led.method &&
+  JSON.stringify(rep.projects) === JSON.stringify(led.projects), r.text.slice(0, 300));
+check("ledger runs ledger --json", callLog().trim() === "ledger --json", callLog());
+writeFileSync(calls, "");
+r = await s.call("deploys_ledger", { days: 7 });
+check("ledger passes no arguments on", !callLog().includes("--days"), callLog());
+
 r = await s.call("deploys_deploy", { project: "app-web" });
 check("a write tool call is refused without the flag", r.error && r.text.includes("DEPLOYS_MCP_ALLOW_DEPLOY"), r.text);
 
@@ -102,6 +139,20 @@ await s.init();
 const t0 = Date.now();
 r = await s.call("deploys_doctor");
 check("a CLI that does not answer times out", r.error && r.text.includes("did not finish") && Date.now() - t0 < 8000, r.text);
+s.stop();
+
+// simulate and ledger get their own, longer timeout.
+s = start({ DEPLOYS_MCP_TIMEOUT: "1", FAKE_SLEEP_ALL: "2" });
+await s.init();
+r = await s.call("deploys_ledger");
+check("ledger is not held to the short timeout", !r.error && JSON.parse(r.text).kind === "ledger", r.text.slice(0, 200));
+s.stop();
+
+s = start({ DEPLOYS_MCP_SLOW_TIMEOUT: "1", FAKE_SLEEP_ALL: "20" });
+await s.init();
+const t1 = Date.now();
+r = await s.call("deploys_simulate");
+check("simulate still times out (DEPLOYS_MCP_SLOW_TIMEOUT)", r.error && r.text.includes("within 1 s") && Date.now() - t1 < 8000, r.text);
 s.stop();
 
 s = start({ DEPLOYS_BIN: "/nonexistent/deploys" });
