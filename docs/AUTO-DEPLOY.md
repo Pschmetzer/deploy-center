@@ -16,18 +16,26 @@ Render: if your services come from a Blueprint with auto-sync, add `autoDeployTr
 
 ## Back to auto-deploy
 
-There is no command for this. Deploy Center only turns auto-deploy off. Turn it back on in each dashboard.
-
-**Vercel:** Project → Settings → Git → connect the repository again. The repo and branch the project used are in the file Deploy Center wrote:
+For good, per project or for all:
 
 ```bash
-jq . ~/.config/deploys/vercel-repos.json
+deploys vercel autodeploy-on my-project   # or --all: connects Git again from vercel-repos.json
+deploys render autodeploy-on my-service   # or --all: auto-deploy "On Commit"
 ```
 
-Each entry has `org`, `repo` and `ref` (the production branch).
+For a few hours (the [guard](GUARD.md) turns it off again afterwards):
 
-**Render:** Service → Settings → Build & Deploy → Auto-Deploy → *On Commit*.
+```bash
+deploys autodeploy allow vercel my-project 4
+```
 
-The app then shows the row as **deploys on every push** again, and the menu bar counts it in "Auto-deploy is still on for … projects".
+Vercel needs the repo in `~/.config/deploys/vercel-repos.json` (each entry has `org`, `repo` and
+`ref`, the production branch). Afterwards, check that Project → Settings → Git → Production Branch
+matches `ref`. In the dashboard it is
+Project → Settings → Git → connect the repository again.
+
+**Render** in the dashboard: Service → Settings → Build & Deploy → Auto-Deploy → *On Commit*.
+
+The app then shows the row as **deploys on every push** again, and the menu bar counts it in "Auto-deploy is still on for … projects". If the [guard](GUARD.md) is on, it turns it off again within 30 minutes unless an allowance covers it.
 
 Before you uninstall Deploy Center, keep `~/.config/deploys/vercel-repos.json` until every Vercel project is connected again. For a project you disconnected with Deploy Center, it is the only record of where it deployed from.
