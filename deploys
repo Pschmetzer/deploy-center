@@ -401,7 +401,7 @@ else
   githost_open_prs_of() { [ "$(githost_of "$1")" != github ] || open_prs_of "$@"; }
   gitlab_logged_in() { return 1; }
   gitlab_user() { :; }
-  # shellcheck disable=SC2016
+  # shellcheck disable=SC2016,SC2034  # read by providers and lib/savings.sh
   GITHOST_SLUG_JQ='(sub("^https://github.com/";"") | sub("^https?://";"") | sub("\\.git$";"") | sub("/$";""))'
   # shellcheck disable=SC2016,SC2034  # read by providers/vercel.sh
   GITHOST_VERCEL_LINK_JQ='(if .type == "gitlab" then null else "\(.org)/\(.repo)" end)'
@@ -647,7 +647,8 @@ now_parts() {  # now_parts [<tz>]
 # What in window.json would silently not do what it says: unknown keys ("day", "form"), times
 # that are no HH:MM, day names that are none. One line each, for `deploys window`.
 WINDOW_LINT='def time_ok: type == "string" and (test("^([01][0-9]|2[0-3]):[0-5][0-9]$") or . == "24:00");
-  (keys - ["deny", "tz"] | .[] | "unknown key \"\(.)\" at the top (only deny and tz)"),
+  (if has("deny") then (keys - ["deny", "tz"] | .[] | "unknown key \"\(.)\" at the top (only deny and tz)")
+   else "no \"deny\" list: the deploy window reads only deny (the team-mode shape days/from/to belongs in deploy-center.json)" end),
   ((.deny // []) | to_entries[] | .key as $i | .value
    | ((keys - ["days", "dates", "from", "to", "reason"])[] | "rule \($i + 1): unknown key \"\(.)\""),
      (.from, .to | select(. != null and (time_ok | not)) | "rule \($i + 1): \"\(.)\" is no time (HH:MM)"),
