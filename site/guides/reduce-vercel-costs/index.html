@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to reduce Vercel costs: a checklist · Deploy Center</title>
+<meta name="description" content="A checklist to cut your Vercel bill: find what you pay for, build less, pick the right build machine, then functions, images and bandwidth. With honest trade-offs.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/reduce-vercel-costs/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="How to reduce Vercel costs: a checklist · Deploy Center">
+<meta property="og:description" content="A checklist to cut your Vercel bill: find what you pay for, build less, pick the right build machine, then functions, images and bandwidth. With honest trade-offs.">
+<meta property="og:url" content="https://deploycenter.app/guides/reduce-vercel-costs/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How to reduce Vercel costs: a checklist · Deploy Center">
+<meta name="twitter:description" content="A checklist to cut your Vercel bill: find what you pay for, build less, pick the right build machine, then functions, images and bandwidth. With honest trade-offs.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How to reduce Vercel costs: a checklist",
+  "description": "A checklist to cut your Vercel bill: find what you pay for, build less, pick the right build machine, then functions, images and bandwidth. With honest trade-offs.",
+  "url": "https://deploycenter.app/guides/reduce-vercel-costs/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/reduce-vercel-costs/",
+  "datePublished": "2026-11-10",
+  "dateModified": "2026-11-10",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "What is usually the biggest Vercel cost?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "It differs per team, so check the usage page. With many projects or frequent pushes, builds are often the largest line, and they are also the easiest to cut."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Will turning off auto-deploy break anything?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. Deployments, domains and environment variables stay. You deploy by hand, and you lose automatic previews unless you keep them for some branches."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Can I cap my Vercel bill?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Spend Management lets you set an amount, get notified, and pause projects when it is reached."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does Deploy Center replace Vercel?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. It is a free Mac app that controls when your Vercel and Render projects deploy. Your projects stay where they are."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Reduce Vercel costs",
+    "item": "https://deploycenter.app/guides/reduce-vercel-costs/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+</div></nav>
+
+<main class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>How to reduce Vercel costs: a checklist</h1>
+<p class="answer">Start on your Vercel usage page to see which line costs the most, then fix that line first. For most teams with many projects or many pushes it is builds, so the biggest lever is to build less: skip previews nobody opens, skip unchanged projects, and deploy production on your schedule instead of on every push.</p>
+<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<h2>Find out what you pay for</h2>
+<ul class="checklist">
+  <li><b>Open the usage page</b> (team Settings → Usage) and sort by cost. Note builds, functions, image optimization and data transfer separately.</li>
+  <li><b>Set a budget.</b> Spend Management sends a notification when you reach an amount you choose, and can pause projects at that amount.</li>
+  <li><b>Count builds per project</b> for a week in the Deployments tab. Compare with how often you actually needed something live.</li>
+</ul>
+
+<h2>Build less</h2>
+<ul class="checklist">
+  <li><b>Turn off auto-deploy for production</b> and deploy once when the work is done. <a href="/guides/disable-vercel-auto-deploy/">Three ways</a>.</li>
+  <li><b>Skip previews for bots and AI agents</b>: Dependabot, Renovate, agent branches. <a href="/guides/stop-vercel-building-every-push/">How</a>.</li>
+  <li><b>Skip unchanged projects in a monorepo</b> with the skip setting, <code>turbo-ignore</code> or an <a href="/guides/vercel-ignored-build-step/">Ignored Build Step</a>.</li>
+  <li><b>Disconnect projects you no longer deploy.</b> A forgotten project connected to a busy repository builds on every push.</li>
+  <li><b>Push less often.</b> Commit freely, push when a piece of work is done.</li>
+</ul>
+
+<h2>Make each build cheaper</h2>
+<ul class="checklist">
+  <li><b>Check the build machine.</b> Larger machines finish faster but cost more per minute. Use them where waiting costs more than the machine.</li>
+  <li><b>Keep the build cache on.</b> Redeploying “without cache” rebuilds everything.</li>
+  <li><b>Trim the build.</b> Do not run tests, linting or type checks twice if CI already ran them; skip generating pages nobody visits.</li>
+  <li><b>Build elsewhere if it is cheaper for you</b>: <code>vercel build</code> in CI, then <code>vercel deploy --prebuilt</code>. You pay for CI minutes instead.</li>
+</ul>
+
+<h2>Beyond builds</h2>
+<ul class="checklist">
+  <li><b>Functions:</b> look at duration and memory per function on the usage page. Cache responses that do not change per request.</li>
+  <li><b>Image optimization:</b> limit image sizes and formats in your framework config, and serve already-small static images as they are.</li>
+  <li><b>Data transfer:</b> set cache headers on static assets, and check for large files served from the project.</li>
+</ul>
+
+<div class="note"><p><b>Honest trade-offs.</b> Fewer previews means fewer review links. Manual production deploys mean a fix waits for you. A smaller build machine means slower builds. Pick the ones that match how your team works.</p></div>
+
+<h2>Put a number on it</h2>
+<p>The <a href="/vercel-build-cost-calculator/">build cost calculator</a> estimates what auto-deploy costs a month with your projects, pushes and cost per build, and what deploying by hand would cost. <a href="/">Deploy Center</a> shows the real build spend of the last 7 days next to what is waiting to deploy.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>What is usually the biggest Vercel cost?</summary><p>It differs per team, so check the usage page. With many projects or frequent pushes, builds are often the largest line, and they are also the easiest to cut.</p></details>
+  <details><summary>Will turning off auto-deploy break anything?</summary><p>No. Deployments, domains and environment variables stay. You deploy by hand, and you lose automatic previews unless you keep them for some branches.</p></details>
+  <details><summary>Can I cap my Vercel bill?</summary><p>Spend Management lets you set an amount, get notified, and pause projects when it is reached.</p></details>
+  <details><summary>Does Deploy Center replace Vercel?</summary><p>No. It is a free Mac app that controls when your Vercel and Render projects deploy. Your projects stay where they are.</p></details>
+
+<div class="ctabox">
+  <h2>Do it for every project in one click.</h2>
+  <p>Deploy Center is a free, open-source Mac app. It turns off auto-deploy on Vercel and Render, shows the commits and PRs waiting to go live, and deploys what changed when you decide.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify.</p>
+</div></footer>
+</body>
+</html>

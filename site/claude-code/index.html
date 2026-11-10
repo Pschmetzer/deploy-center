@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deploy Center + Claude Code: let the agent push, you decide what ships</title>
+<meta name="description" content="Works with Claude Code: Claude pushes many small commits, Deploy Center batches them into one Vercel or Render deploy, and Autofix hands failed builds back to Claude.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/claude-code/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Deploy Center + Claude Code: let the agent push, you decide what ships">
+<meta property="og:description" content="Works with Claude Code: Claude pushes many small commits, Deploy Center batches them into one Vercel or Render deploy, and Autofix hands failed builds back to Claude.">
+<meta property="og:url" content="https://deploycenter.app/claude-code/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Deploy Center + Claude Code: let the agent push, you decide what ships">
+<meta name="twitter:description" content="Works with Claude Code: Claude pushes many small commits, Deploy Center batches them into one Vercel or Render deploy, and Autofix hands failed builds back to Claude.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "headline": "Deploy Center + Claude Code: let the agent push, you decide what ships",
+  "description": "Works with Claude Code: Claude pushes many small commits, Deploy Center batches them into one Vercel or Render deploy, and Autofix hands failed builds back to Claude.",
+  "url": "https://deploycenter.app/claude-code/",
+  "mainEntityOfPage": "https://deploycenter.app/claude-code/",
+  "datePublished": "2026-11-10",
+  "dateModified": "2026-11-10",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Does Deploy Center work with Claude Code?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes. Claude Code pushes to GitHub as usual; Deploy Center turns off the automatic Vercel and Render builds, shows what is waiting, and deploys it when you decide. Autofix hands failed builds to a Claude Code routine."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "How do I stop Claude Code from triggering a Vercel build on every push?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Turn off auto-deploy for the project, either in Vercel's Git settings or for all projects at once in Deploy Center. Claude keeps pushing; nothing builds until you deploy."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Can Claude deploy by itself?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. Autofix opens pull requests and never merges or deploys. The coming MCP server will only start a deploy after you confirm."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Is Deploy Center made by Anthropic?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. Deploy Center is an independent open-source project. Claude is a trademark of Anthropic; Deploy Center is not affiliated with Anthropic."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Claude Code",
+    "item": "https://deploycenter.app/claude-code/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+</div></nav>
+
+<main class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a></p>
+<h1>Deploy Center + Claude Code: let the agent push, you decide what ships</h1>
+<p class="answer">Claude Code pushes many small commits, and with auto-deploy on, each one is a paid build on Vercel or Render. Deploy Center turns those builds off, ships everything waiting in one deploy when you decide, and hands failed builds back to Claude to fix.</p>
+<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<p><b>Everyone codes with Claude now. Deploy Center is the missing half: it decides what ships, and Claude fixes what breaks.</b> Deploy Center is a free, open-source Mac app that works with Claude Code.</p>
+
+<h2 id="autofix">A failed build fixes itself (almost)</h2>
+<ol class="flowline" aria-label="Autofix flow">
+  <li class="fail"><span>Build fails</span></li>
+  <li><span>Claude Code routine</span></li>
+  <li><span>Fix PR</span></li>
+  <li class="you"><span>You merge</span></li>
+  <li class="live"><span>One-click deploy</span></li>
+</ol>
+<p>Every 10 minutes Deploy Center looks for failed Vercel and Render builds. It hands each one, with the end of the build log and secrets masked, to a Claude Code routine in the cloud. Claude finds the cause, fixes it on its own branch, runs the build and opens a pull request. You review and merge; Deploy Center tells you, and you deploy the fix with one click.</p>
+<ul>
+  <li><b>It never merges and never deploys by itself.</b> A person merges, and you start the deploy.</li>
+  <li><b>Rate limits:</b> at most 2 hand-overs per project and 6 per account in 24 hours. The same failure is never handed over twice.</li>
+  <li><b>Not every PR will fix the deploy.</b> The cloud session does not have your platform's environment variables, and a missing secret cannot be fixed in code; Claude reports that instead.</li>
+</ul>
+<p>Setup and details: <a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a>.</p>
+
+<h2>Many pushes, one deploy</h2>
+<p>Claude Code commits and pushes in small steps. On Vercel and Render each push builds every project connected to the repository. Turn auto-deploy off once, and the pushes wait in Deploy Center: the commits and PRs not yet live, per project and in total. <b>Select all changed → Deploy</b> ships the newest commit of each project. See <a href="/blog/ai-coding-agents-build-bill/">Your agent pushes 40 times. You deploy once.</a></p>
+
+<h2>Copy for Claude</h2>
+<p>When a build fails, open its log in Deploy Center. The failing lines are red, <b>Jump to first error</b> takes you there, and <b>Copy for Claude</b> copies the project, commit and error lines as a ready fix request. Paste it into Claude Code.</p>
+
+<h2>Ask Claude what is waiting <span class="tag">Coming soon</span></h2>
+<p>An MCP server (<code>integrations/mcp</code>) will let Claude Code ask Deploy Center what is waiting to go live and start a deploy, only after you say OK. It is not released yet; the setup will be one line:</p>
+<pre><code class="language-bash"><span class="c"># coming soon: the exact command ships with integrations/mcp</span>
+claude mcp add deploy-center -- &lt;command from integrations/mcp&gt;</code></pre>
+
+<h2>One approval a day <span class="tag">Coming soon</span></h2>
+<p>An agent digest will collect what your agents pushed during the day into one summary, so you approve one deploy instead of reacting to every push.</p>
+
+<h2>Setup</h2>
+<ol>
+  <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center</a> and connect Vercel (your <code>vercel</code> CLI login) and Render (an API key in the keychain).</li>
+  <li>Click <b>Turn off auto-deploy</b>. Claude's pushes now wait instead of building.</li>
+  <li>Optional: set up Autofix in <b>Settings → Autofix</b>, or in the terminal:</li>
+</ol>
+<pre><code class="language-bash">pbpaste | deploys autofix set-token     # the routine's API token
+deploys autofix routine trig_XXXXXXXX  # the routine's trigger id
+deploys autofix --dry-run              # see what would be handed over
+deploys autofix schedule on            # check every 10 minutes</code></pre>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Does Deploy Center work with Claude Code?</summary><p>Yes. Claude Code pushes to GitHub as usual; Deploy Center turns off the automatic Vercel and Render builds, shows what is waiting, and deploys it when you decide. Autofix hands failed builds to a Claude Code routine.</p></details>
+  <details><summary>How do I stop Claude Code from triggering a Vercel build on every push?</summary><p>Turn off auto-deploy for the project, either in Vercel's Git settings or for all projects at once in Deploy Center. Claude keeps pushing; nothing builds until you deploy.</p></details>
+  <details><summary>Can Claude deploy by itself?</summary><p>No. Autofix opens pull requests and never merges or deploys. The coming MCP server will only start a deploy after you confirm.</p></details>
+  <details><summary>Is Deploy Center made by Anthropic?</summary><p>No. Deploy Center is an independent open-source project. Claude is a trademark of Anthropic; Deploy Center is not affiliated with Anthropic.</p></details>
+
+<div class="ctabox">
+  <h2>Works with Claude Code.</h2>
+  <p>Let the agent push. Deploy Center decides what ships, and Claude fixes what breaks. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify. Claude is a trademark of Anthropic. Deploy Center is not affiliated with Anthropic.</p>
+</div></footer>
+</body>
+</html>
