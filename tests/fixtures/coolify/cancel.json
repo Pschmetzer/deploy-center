@@ -1,0 +1,5 @@
+{
+ "message": "Deployment cancelled successfully.",
+ "deployment_uuid": "dep-shop-3",
+ "status": "cancelled-by-user"
+}

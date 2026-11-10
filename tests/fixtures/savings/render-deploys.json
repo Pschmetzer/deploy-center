@@ -1,0 +1,2 @@
+[{"deploy": {"id": "dep-2", "status": "live", "createdAt": "2026-01-30T10:00:00.123Z", "finishedAt": "2026-01-30T10:04:00.456Z", "commit": {"id": "r3"}}},
+ {"deploy": {"id": "dep-1", "status": "build_failed", "createdAt": "2026-01-29T10:00:00Z", "finishedAt": "2026-01-29T10:01:00Z", "commit": {"id": "r2"}}}]

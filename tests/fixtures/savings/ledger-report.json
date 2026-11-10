@@ -1,0 +1,87 @@
+{
+  "estimate": true,
+  "kind": "ledger",
+  "currency": "USD",
+  "generatedAt": 1769817600,
+  "method": "Estimate. Since auto-deploy was turned off, every push to the deploy branch whose commit was never built counts as a skipped build (GitHub activity; commits where pushes cannot be read, an upper bound). Each skipped build is priced at the project's average: minutes from its last finished builds (up to 20), dollars from Vercel billing per build over 7 days, else the team's price per build minute, else DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN.",
+  "since": "2026-01-20",
+  "days": 11,
+  "projects": [
+    {
+      "platform": "vercel",
+      "name": "web",
+      "unit": "build minutes",
+      "offAt": 1768867200,
+      "offDay": "2026-01-20",
+      "basis": "pushes",
+      "problem": null,
+      "pushes": 5,
+      "builds": 1,
+      "skipped": 4,
+      "avgBuildMinutes": 3,
+      "buildsMeasured": 2,
+      "usdPerBuild": 0.2,
+      "priceSource": "vercel-billing",
+      "savedMinutes": 12,
+      "savedUsd": 0.8,
+      "builtUsd": 0.2,
+      "skippedPushes": [
+        {
+          "day": "2026-01-23",
+          "sha": "a4"
+        },
+        {
+          "day": "2026-01-22",
+          "sha": "a3"
+        },
+        {
+          "day": "2026-01-21",
+          "sha": "a2"
+        },
+        {
+          "day": "2026-01-20",
+          "sha": "a1"
+        }
+      ]
+    },
+    {
+      "platform": "render",
+      "name": "svc",
+      "unit": "pipeline minutes",
+      "offAt": 1769299200,
+      "offDay": "2026-01-25",
+      "basis": "pushes",
+      "problem": null,
+      "pushes": 3,
+      "builds": 1,
+      "skipped": 2,
+      "avgBuildMinutes": 5,
+      "buildsMeasured": 2,
+      "usdPerBuild": null,
+      "priceSource": null,
+      "savedMinutes": 10,
+      "savedUsd": null,
+      "builtUsd": null,
+      "skippedPushes": [
+        {
+          "day": "2026-01-26",
+          "sha": "r2"
+        },
+        {
+          "day": "2026-01-25",
+          "sha": "r1"
+        }
+      ]
+    }
+  ],
+  "total": {
+    "skipped": 6,
+    "pushes": 8,
+    "builds": 2,
+    "usd": 0.8,
+    "builtUsd": 0.2,
+    "vercelMinutes": 12,
+    "renderMinutes": 10,
+    "usdComplete": false
+  }
+}
