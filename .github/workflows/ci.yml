@@ -16,19 +16,29 @@ jobs:
   test:
     runs-on: macos-15
     timeout-minutes: 30
+    env:
+      # macOS minutes count tenfold: no brew self-update and no cleanup on every run.
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Xcode 16.4
+        # The image's default today, named so a new default does not change warnings or
+        # type-checker timeouts without a commit here.
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
       - name: Tools
         run: brew install jq shellcheck actionlint
       - name: No personal data in the public repo
         run: scripts/check-public.sh
       - name: actionlint
-        run: actionlint .github/workflows/*.yml docs/deploy-on-label.yml
+        # The examples too: those are the files people copy into their own repos.
+        run: actionlint .github/workflows/*.yml docs/deploy-on-label.yml examples/*.yml integrations/*/examples/*.yml
       - name: shellcheck
         run: |
           shellcheck --severity=warning deploys providers/*.sh build.sh release.sh scripts/*.sh tests/*.sh tests/lib/*.sh tests/providers/*.sh lib/*.sh
+          shellcheck --severity=warning integrations/*/*.sh integrations/lib/*.sh integrations/hooks/pre-push integrations/claude-code/scripts/*.sh integrations/tests/*.sh
           shellcheck site/install.sh
       - name: Script tests
         run: bash tests/script-tests.sh
@@ -41,15 +51,22 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            integrations/mcp/package-lock.json
+            integrations/vscode/package-lock.json
       - name: Integration dependencies (MCP server, VS Code extension)
         run: |
           (cd integrations/mcp && npm ci --no-audit --no-fund)
           (cd integrations/vscode && npm ci --no-audit --no-fund)
+      - name: npm audit (MCP server, bundled into the app)
+        working-directory: integrations/mcp
+        run: npm audit --omit=dev --audit-level=high
       - name: Integration tests (MCP, Action, Claude Code plugin, digest, hooks)
         # REQUIRE_ALL=1: a part that cannot run here fails the job instead of being skipped.
         run: REQUIRE_ALL=1 bash integrations/tests/run.sh
-      - name: Build (ad-hoc signed, universal)
-        run: ./build.sh
+      - name: Build (ad-hoc signed, universal, with the widgets like a release)
+        run: ./build.sh --widgets
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: DeployCenter-unsigned
@@ -74,6 +91,20 @@ jobs:
       - name: Install tests (bash as sh)
         run: INSTALL_SH=bash bash tests/install-tests.sh
 
+  docker:
+    # The Linux image of the CLI (integrations/docker): it builds, and deploys starts in it.
+    # Nothing is pushed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: docker build
+        run: docker build -f integrations/docker/Dockerfile -t deploys-ci .
+      - name: deploys starts in the image
+        run: docker run --rm deploys-ci --version
+
   vscode:
     # The VS Code / Cursor extension: type check, unit tests against a stand-in deploys, and a
     # .vsix that builds. Nothing is published.
@@ -89,10 +120,35 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: integrations/vscode/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
       - run: npm run package
+
+  raycast:
+    # The Raycast extension: types, ESLint and Prettier, as `ray lint` runs them. `ray lint` itself
+    # also asks raycast.com for the author, and `ray build` is macOS-only; both stay with the
+    # Store submission (integrations/raycast/PUBLISHING.md). Nothing is published.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: integrations/raycast
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: integrations/raycast/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npx eslint src
+      - run: npx prettier --check src
 
   docs:
     # site/docs/ is generated from the Markdown in this repo. Fails when the generator errors
@@ -108,6 +164,10 @@ jobs:
         run: python3 scripts/build-docs.py
       - name: Check links
         run: python3 scripts/check-links.py site
+      - name: Check the site (JSON-LD, meta tags, sitemap)
+        run: python3 scripts/check-site.py
+      - name: ruff (syntax errors and pyflakes in scripts/*.py)
+        run: pipx run ruff==0.16.7 check --isolated --select E9,F scripts/*.py
 
   public-commits:
     # Names and paths often land in commit messages, not in files: the same check as for the
@@ -128,7 +188,7 @@ jobs:
         run: git log --format=%B "$BASE..HEAD" | scripts/check-public.sh --stdin
 
   changelog:
-    # A change to the CLI or the app should say so in CHANGELOG.md. A warning, not a failure:
+    # A change to the CLI, its providers and lib/, the integrations or the app should say so in CHANGELOG.md. A warning, not a failure:
     # the label "no-changelog" silences it.
     if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no-changelog')
     runs-on: ubuntu-latest
@@ -143,6 +203,6 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           files="$(git diff --name-only "$BASE"...HEAD)"
-          if grep -qE '^(deploys|app/)' <<<"$files" && ! grep -qx CHANGELOG.md <<<"$files"; then
-            echo "::warning file=CHANGELOG.md::This PR changes deploys or app/ but not CHANGELOG.md. Add a line under Unreleased, or the label no-changelog."
+          if grep -qE '^(deploys|app/|providers/|lib/|integrations/)' <<<"$files" && ! grep -qx CHANGELOG.md <<<"$files"; then
+            echo "::warning file=CHANGELOG.md::This PR changes deploys, providers/, lib/, integrations/ or app/ but not CHANGELOG.md. Add a line under Unreleased, or the label no-changelog."
           fi
