@@ -117,8 +117,10 @@ else RED=""; GREEN=""; BOLD=""; PLAIN=""; fi
 # Observer mode, from the environment or a file. Prints where it comes from, or nothing.
 # Plain bash, no jq and no network: doctor and the write guard below must work without either.
 readonly_from() {
+  # Any value but an explicit no turns it on: a typo ("enabled", "y") must not switch it off silently.
   case "$(printf '%s' "${DEPLOYS_READONLY:-}" | tr '[:upper:]' '[:lower:]')" in
-    1|true|yes|on) echo "DEPLOYS_READONLY is set"; return ;;
+    ""|0|false|no|off) ;;
+    *) echo "DEPLOYS_READONLY is set"; return ;;
   esac
   if [ -e "$CONFIG_DIR/readonly" ]; then echo "$CONFIG_DIR/readonly exists"; fi
 }
@@ -139,7 +141,7 @@ team_on() { declare -F team_gate >/dev/null; }
 require_write() {
   local why; why="$(readonly_from)"
   if [ -z "$why" ] && team_on; then why="$(team_observer_from)"; fi
-  [ -z "$why" ] || die "Observer mode ($why): \"deploys $1\" changes something and is refused. Observers can look, not deploy. To deploy from here: $(if [ -n "${DEPLOYS_READONLY:-}" ]; then echo "unset DEPLOYS_READONLY"; elif [ -e "$CONFIG_DIR/readonly" ]; then echo "deploys readonly off"; else echo "ask to be taken off the observers list"; fi)."
+  [ -z "$why" ] || die "Observer mode ($why): \"deploys $1\" changes something and is refused. Observers can look, not deploy. To deploy from here: $(if [ "$why" = "DEPLOYS_READONLY is set" ]; then echo "unset DEPLOYS_READONLY"; elif [ -e "$CONFIG_DIR/readonly" ]; then echo "deploys readonly off"; else echo "ask to be taken off the observers list"; fi)."
 }
 
 # vercel-repos.json as the commands read it: with the projects a shared file maps below it.
@@ -259,8 +261,6 @@ lookup() {
   for p in $(enabled_providers); do nouns="${nouns:+$nouns or }$(meta_str "$p" label) $(meta_str "$p" noun)"; done
   die "No ${nouns:-project} named \"$n\""
 }
-# Only the provider a name is on (verify, risk, ai). Exits with lookup's message when none has it.
-platform_of() { local r; r="$(lookup "$1")" || exit 1; echo "${r%%$'\t'*}"; }
 # lookup into PLAT, PID and PNAME (the name without a "p:"). Not in a subshell: die ends the command.
 resolve() {
   local r; r="$(lookup "$1")" || exit 1
@@ -387,7 +387,9 @@ with_heads() {
   echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
     | xargs -P 8 -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
   heads="$(cat_all "$tmp/h"/*.json | jq -s 'from_entries')"
-  list="$(echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))')"
+  # An empty answer becomes {} on its own line: bash 3.2 keeps the backslash of an escaped {} default (invalid JSON).
+  [ -n "$heads" ] || heads='{}'
+  list="$(echo "$list" | jq --argjson h "$heads" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))')"
   # With GitHub's budget nearly spent, keep it for what decides "changed" (the heads above).
   local left; left="$(github_budget | jq -r '.remaining // 5000' 2>/dev/null || echo 5000)"
   if [ "${left:-5000}" -lt 300 ]; then rm -rf "$tmp"; echo "$list" | jq "$CHANGED_RULE"; return; fi
@@ -398,7 +400,8 @@ with_heads() {
   pend="$(cat_all "$tmp/p"/*.json | jq -s 'from_entries')"
   opens="$(cat_all "$tmp/o"/*.json | jq -s 'from_entries')"
   rm -rf "$tmp"
-  echo "$list" | jq --argjson p "${pend:-{\}}" --argjson o "${opens:-{\}}" 'map(
+  [ -n "$pend" ] || pend='{}'; [ -n "$opens" ] || opens='{}'
+  echo "$list" | jq --argjson p "$pend" --argjson o "$opens" 'map(
       (if .lastSha and .headSha and .lastSha == .headSha then {commits:0, prs:0} else ($p["\(.repo)@\(.lastSha)@\(.ref)"] // {}) end) as $x
       | ($o[.repo // ""] // {}) as $op
       | . + {pendingCommits:($x.commits // null), pendingPRs:($x.prs // null), pendingPartial:($x.partial // false),
@@ -422,7 +425,10 @@ remember_names() {  # remember_names <p>, the list on stdin
   # race only costs a name until the next read, never the list itself.
   local p="$1" list t; list="$(cat)"
   t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
-  { cat "$CONFIG_DIR/names" 2>/dev/null; echo "$list" | jq -r '.[].name' 2>/dev/null; } | sort -u > "$t" 2>/dev/null \
+  # Only plain names: the completion scripts read this file, and a name like $(cmd) from a
+  # platform list must never reach a shell. Old entries are filtered too, so a planted one goes.
+  { cat "$CONFIG_DIR/names" 2>/dev/null; echo "$list" | jq -r '.[].name' 2>/dev/null; } \
+    | { grep -E '^[[:alnum:]._:@ +,=-]+$' || true; } | sort -u > "$t" 2>/dev/null \
     && mv -f "$t" "$CONFIG_DIR/names" 2>/dev/null; rm -f "$t" "$CONFIG_DIR/names.tmp" "$CONFIG_DIR/names.new"
   t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
   { cat "$CONFIG_DIR/names.json" 2>/dev/null || echo '[]'; } \
@@ -490,6 +496,26 @@ github_budget() { gh api rate_limit --jq '.resources.core | {remaining, limit, r
 duration_s() {
   [[ "${1:-}" =~ ^([0-9]+)([smh]?)$ ]] || return 1
   case "${BASH_REMATCH[2]}" in h) echo $(( BASH_REMATCH[1] * 3600 ));; m) echo $(( BASH_REMATCH[1] * 60 ));; *) echo "${BASH_REMATCH[1]}";; esac
+}
+
+# One answer of <p>_status or <p>_latest as "id<TAB>phase<TAB>state" (docs/PROVIDERS.md), or
+# nothing when it cannot be read. The contract line is taken as it is; a provider that answers
+# with JSON ({id, phase, state|status}, or null for "no deploy") is read too. Only a known phase
+# counts: an answer without one must not keep `watch` waiting for ever.
+watch_line() {
+  local s="$1" id ph st
+  case "$s" in
+    "") return 0 ;;
+    "{"*|"null"|[[:space:]]*)
+      s="$(printf '%s' "$s" | jq -r 'if . == null then "none\t\tnone"
+        else "\(.id // .deployId // "")\t\(.phase // "")\t\(.state // .status // .phase // "")" end' 2>/dev/null)" || return 0 ;;
+  esac
+  IFS=$'\t' read -r id ph st <<<"$s"
+  [ -n "$id" ] || return 0
+  if [ "$id" != none ]; then
+    case "$ph" in queued|building|ready|failed|canceled) ;; *) return 0 ;; esac
+  fi
+  printf '%s\t%s\t%s\n' "$id" "$ph" "${st:-$ph}"
 }
 
 # The CI verdict of one commit from GitHub's combined status ($s) and its check runs ($r):
@@ -682,7 +708,7 @@ AUTOFIX_FAILED='((.platform == "vercel" and ((.latestState // .lastState) == "ER
 AUTOFIX_REPORT_ONLY='(.platform == "render" and ((.lastState == "update_failed") or (.lastState == "pre_deploy_failed")))'
 
 af_state() { [ -s "$AUTOFIX_STATE" ] && cat "$AUTOFIX_STATE" || echo '{"fires":[]}'; }
-af_save() { local t; t="$(mktemp)"; cat > "$t" && mv "$t" "$AUTOFIX_STATE"; }
+af_save() { local t; t="$(mktemp "$CONFIG_DIR/.autofix.XXXXXX")"; cat > "$t" && mv "$t" "$AUTOFIX_STATE"; }
 af_token() {
   if [ -n "${DEPLOYS_ROUTINE_TOKEN:-}" ]; then printf '%s' "$DEPLOYS_ROUTINE_TOKEN"; return; fi
   security find-generic-password -a "$USER" -s "$AUTOFIX_KEYCHAIN" -w 2>/dev/null || true
@@ -702,6 +728,8 @@ af_logs() { "$0" logs "$1" 200 --id "$2"; }
 # no known prefix and no telling name (TOKEN=, --token, Authorization:) still goes through.
 # `\[masked]`, not `[masked]`, after a group: perl reads `$1[masked]` as an array element (empty).
 af_mask() {
+  # Without perl nothing is masked, so nothing goes out: a clear stop, not an empty log.
+  command -v perl >/dev/null 2>&1 || { echo "Error: perl is missing, so secrets in logs cannot be masked; nothing is sent" >&2; return 1; }
   perl -pe 'BEGIN { $pem = 0 }
     # A private key: one line (an escaped \n in an env value), or a block over several lines.
     s/-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----.*?-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/[masked private key]/g;
@@ -730,6 +758,8 @@ af_prs() {  # af_prs <owner/repo> <project> <open|closed>
 # One fire. The token goes to curl on stdin, never as an argument. Prints "<code>\t<body>".
 af_fire() {  # af_fire <trigger id> <text file>
   local tok body out code; tok="$(af_token)"; [ -n "$tok" ] || { printf '000\tno routine token'; return; }
+  # The token goes into a curl config line: a quote or a line break in it could add directives.
+  case "$tok" in *[!A-Za-z0-9._-]*) printf '000\tthe routine token holds characters a token never has'; return;; esac
   body="$(mktemp)"; jq -Rs '{text:.}' < "$2" > "$body"
   out="$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | curl -sS -K - --connect-timeout 10 --max-time 60 -X POST \
     -H "anthropic-version: 2023-06-01" -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
@@ -858,6 +888,9 @@ AF_NOT_FAILED=2; AF_BUSY=3; AF_CAP=4; AF_NO_ROUTINE=5; AF_LOCKED=6
 autofix_run() {  # autofix_run [dry] [<platform> <project>]  (the two: --only, this one failure now)
   local dry="${1:-}" oplat="${2:-}" oname="${3:-}" lock all now trig st rc=0
   lock="$(af_lock)" || { [ -n "$oname" ] && return "$AF_LOCKED"; return 1; }
+  # Whatever ends the run (set -e, a signal), the lock goes with it: else every run for 30 minutes
+  # says "running already".
+  AF_RUN_LOCK="$lock"; trap 'rmdir "$AF_RUN_LOCK" 2>/dev/null || true' EXIT
   now="$(date +%s)"; trig="$(af_routine)"
   all="$(af_all)" || rc=1
   st="$(af_state)"
@@ -903,7 +936,7 @@ autofix_run() {  # autofix_run [dry] [<platform> <project>]  (the two: --only, t
     {
       printf 'project: %s\nplatform: %s\nrepo: %s\nbranch: %s\ncommit: %s\ndeploy: %s\nfix branch: claude/autofix-%s-%s\n\nBuild log (last lines, secrets masked where recognised):\n```\n' \
         "$p" "$plat" "$repo" "$(echo "$c" | jq -r '.ref // "main"')" "$sha" "$did" "$p" "${sha:0:7}"
-      af_logs "$p" "$did" 2>/dev/null | af_mask | tail -c 60000
+      af_logs "$p" "$did" 2>/dev/null </dev/null | af_mask | tail -c 60000
       printf '\n```\n'
     } > "$text"
     # Recorded before the call: the API has no idempotency, a crash must not fire twice.
@@ -1013,7 +1046,7 @@ guard_run() {
       # Read again under the lock: an allowance given a moment ago wins.
       if allow_covers "$plat" "$name"; then ad_unlock; continue; fi
       # In a subshell: the switches end in `die` (exit), which must not end the whole run.
-      if out="$( (ad_off "$plat" "$name" "$id") 2>&1 )"; then
+      if out="$( (ad_off "$plat" "$name" "$id" </dev/null) 2>&1 )"; then
         echo "guard: $out"; act "$plat" "$name" off
       else
         out="$(echo "$out" | grep -v '^[[:space:]]*$' | tail -n 1 | sed 's/^Error: //' | cut -c1-300)"
@@ -1073,6 +1106,7 @@ ad_scope() {
 allow_main() {
   local scope key plat name hours until bad=0 skipped=0 list p id
   hours="${3:-}"; case "$hours" in ''|*[!0-9]*) die "Hours must be a whole number (1 to 168)";; esac
+  hours="$((10#$hours))"
   [ "$hours" -ge 1 ] && [ "$hours" -le 168 ] || die "Hours must be between 1 and 168"
   scope="$(ad_scope "$1" "${2:-}")" || exit 1
   IFS=$'\t' read -r key plat name <<< "$scope"
@@ -1096,7 +1130,7 @@ allow_main() {
         if [ "$p" = vercel ] && ! jq -e --arg n "$name" '.[$n].repo != null' "$REPOS" >/dev/null 2>&1; then
           skipped=$((skipped + 1)); continue
         fi
-        ( ad_on "$p" "$name" "$id" ) || bad=$((bad + 1))
+        ( ad_on "$p" "$name" "$id" </dev/null ) || bad=$((bad + 1))
       done < <(echo "$list" | jq -r '.[] | select(.auto | not) | "\(.name)\t\(.id // .name)"')
     done
     [ "$skipped" = 0 ] || echo "$skipped Vercel projects left manual: their repo is not known (deploys vercel map)."
@@ -1147,13 +1181,15 @@ ai_cap() { local c; c="$(cat "$CONFIG_DIR/ai-cap" 2>/dev/null || true)"; case "$
 ai_month() { date -u +%Y-%m; }
 ai_used() { local u; u="$(jq -r --arg m "$(ai_month)" '.[$m] // 0' "$AI_USAGE" 2>/dev/null || true)"; echo "${u:-0}"; }
 ai_add_usage() {  # ai_add_usage <tokens>
-  local t; t="$(mktemp)"
+  local t; t="$(mktemp "$CONFIG_DIR/.ai-usage.XXXXXX")"
   { [ -s "$AI_USAGE" ] && cat "$AI_USAGE" || echo '{}'; } | jq --arg m "$(ai_month)" --argjson n "$1" '.[$m] = ((.[$m] // 0) + $n)' > "$t" && mv "$t" "$AI_USAGE"
 }
 
 # One HTTP call. The key goes to curl on stdin (-K -), never as an argument. Prints "<code>\t<body>".
 ai_http() {  # ai_http <GET|POST> <path> [body file]
   local key out; key="$(ai_key)"; [ -n "$key" ] || { printf '000\t{}'; return; }
+  # The key goes into a curl config line: a quote or a line break in it could add directives.
+  case "$key" in *[!A-Za-z0-9._-]*) die "The Anthropic API key holds characters a key never has (check ANTHROPIC_API_KEY or: deploys ai set-key)";; esac
   local extra=(-X "$1"); [ -n "${3:-}" ] && extra+=(-H "Content-Type: application/json" --data @"$3")
   out="$( { printf 'header = "x-api-key: %s"\n' "$key"
             [ -n "${AI_BETA:-}" ] && printf 'header = "anthropic-beta: %s"\n' "$AI_BETA"; true; } \
@@ -1207,8 +1243,9 @@ ai_excerpt() {
 
 # Seams the tests replace: one project row, its build log, the waiting commits.
 ai_row() {
-  local plat; plat="$(platform_of "$1")"
-  "$0" "$plat" json | jq -c --arg p "$1" --arg pl "$plat" '[.[] | select(.name == $p or .id == $p)][0] // empty | .platform //= $pl'
+  # "<p>:<name>" too: the platform from it, the bare name (or the id) to find the row.
+  safe_arg "$1"; resolve "$1"
+  "$0" "$PLAT" json | jq -c --arg p "$PNAME" --arg id "$PID" --arg pl "$PLAT" '[.[] | select(.name == $p or .id == $p or .id == $id)][0] // empty | .platform //= $pl'
 }
 ai_log() { "$0" logs "$1" 300; }
 ai_details() { "$0" details "$1" "$2" "$3"; }
@@ -1224,7 +1261,7 @@ ai_run() {  # ai_run <explain|notes|ship> <project> [--json] [--lang en|de]
   local what="${1:-}" p="${2:-}" lang=en sys usr
   [ -n "$p" ] || die "Usage: deploys ai $what <project> [--json]"
   shift 2
-  while [ $# -gt 0 ]; do case "$1" in --json) export AI_JSON=1;; --lang) lang="${2:-}"; shift;; *) die "Unknown option $1";; esac; shift; done
+  while [ $# -gt 0 ]; do case "$1" in --json) export AI_JSON=1;; --lang) [ $# -ge 2 ] || die "--lang needs en or de: deploys ai notes <project> --lang de"; lang="$2"; shift;; *) die "Unknown option $1";; esac; shift; done
   sys="$(mktemp)"; usr="$(mktemp)"
   # shellcheck disable=SC2064  # the two paths are fixed now, on purpose
   trap "rm -f '$sys' '$usr'" EXIT
@@ -1301,9 +1338,11 @@ esac
 # Reading, and this Mac's own settings (ignore, keys, team repos, readonly), stay allowed.
 case "${1:-} ${2:-}" in
   "deploy "*|"vercel map"|"vercel autodeploy-off"|"vercel deploy"|"vercel deploy-json"|"vercel cancel"|"vercel rollback"\
-  |"render autodeploy-off"|"render deploy"|"render deploy-json"|"render cancel"|"render rollback"|"hook deploy")
+  |"render autodeploy-off"|"render deploy"|"render deploy-json"|"render cancel"|"render rollback"|"hook deploy" \
+  |"autodeploy allow"|"autodeploy revoke")
     require_write "$1 $2" ;;
-  "deploy-changed "*) [ "${2:-}" != "--yes" ] || require_write "deploy-changed --yes" ;;
+  # --yes anywhere (after --when-green or --wait 5m too) starts builds.
+  "deploy-changed "*) case " ${*:2} " in *" --yes "*) require_write "deploy-changed --yes" ;; esac ;;
   # autofix hands failed builds to a routine that opens pull requests, and guard turns auto-deploy
   # off: both change something unless --dry-run (also after --only). Their settings and status only read.
   "autofix "|"autofix --"*|"guard "|"guard --"*)
@@ -1324,6 +1363,13 @@ safe_arg() {
   esac
 }
 check_args() { local a; for a in "$@"; do case "$a" in --*) ;; *) safe_arg "$a";; esac; done; }
+# A repo (owner/name, gitlab.com/group/name) and a ref go into gh api paths: no ? # & % or "..".
+safe_repo() {
+  [[ "$1" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$ ]] && [[ "$1" != *..* ]] || die "Invalid repo \"$1\": give it as owner/name"
+}
+safe_ref() {
+  [[ "$1" =~ ^[A-Za-z0-9._/-]+$ ]] && [[ "$1" != *..* ]] && [[ "$1" != -* ]] || die "Invalid commit or branch \"$1\""
+}
 case "${1:-} ${2:-}" in
   "watch "*|"logs "*|"open "*|"explain "*|"diff "*|"notes "*|"history "*) check_args "${@:2}" ;;
   "vercel deploy"|"vercel deploy-json"|"vercel rollback"|"vercel cancel"|"vercel status" \
@@ -1375,25 +1421,25 @@ case "${1:-} ${2:-}" in
     # deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force "reason"]
     # One project on whichever platform it is on, or a group from deploy-center.json in its order:
     # each member waits until the one before it is live, and a failure stops the rest.
-    name="$2"; shift 2; pv=""; sha=""; wait_=""; force=""; hasforce=""
-    # --force "reason" was already taken out of the arguments at the top (it also opens a closed window).
-    [ "$forced" = 1 ] && { hasforce=1; force="$force_reason"; }
+    name="$2"; shift 2; pv=""; sha=""; wait_=""; force=""
+    # --force "reason" was already taken out of the arguments at the top (it also opens a closed
+    # window) and checked there: it is never among the arguments here.
+    [ "$forced" = 1 ] && force="$(printf '%s' "$force_reason" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
     while [ $# -gt 0 ]; do
       case "$1" in
         --preview) pv=1;; --wait) wait_=1;;
         --sha) [ -n "${2:-}" ] || die "Usage: deploys deploy <project> --sha <commit>"; sha="$2"; shift;;
-        --force) hasforce=1; force="${2:-}"; [ $# -ge 2 ] && shift;;
         *) die "Unknown option $1. Usage: deploys deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force \"reason\"]";;
       esac; shift
     done
-    if [ -n "$hasforce" ]; then
-      force="$(printf '%s' "$force" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-      case "$force" in ""|-*) die "--force needs a reason, in quotes: deploys deploy $name --force \"hotfix for the outage\"";; esac
-    fi
+    # A production start waits for the deploy window, as `deploys <p> deploy` and deploy-changed do.
+    [ -n "$pv" ] || freeze_check
     members=""; team_on && members="$(team_group "$name" 2>/dev/null || true)"
     if [ -n "$members" ]; then
       [ -z "$sha" ] || die "--sha is for one project, and $name is a group: $(echo "$members" | paste -sd ' ' -)"
-      echo "Group $name: $(echo "$members" | paste -sd ' ' -)"
+      # With --json, stdout is only the JSON lines: the words go to stderr.
+      if [ "$json" = 1 ]; then echo "Group $name: $(echo "$members" | paste -sd ' ' -)" >&2
+      else echo "Group $name: $(echo "$members" | paste -sd ' ' -)"; fi
     else members="$name"; fi
     count="$(echo "$members" | grep -c .)"; i=0
     # A start that failed has said why on stderr; that stays the last line for one project.
@@ -1405,12 +1451,14 @@ case "${1:-} ${2:-}" in
       plat="${r%%$'\t'*}"; pid="${r#*$'\t'}"; label="$(meta_str "$plat" label)"
       [ -z "$pv" ] || need_cap "$plat" preview "deploy a preview ($p)"
       out="$(DEPLOYS_FORCE_REASON="$force" "${plat}_deploy_json" "$pid" ${pv:+--preview} ${sha:+--sha "$sha"})" || stop_group "$p" "$count"
+      journal_forced "$plat" "${p#*:}"
       if [ "$json" = 1 ]; then echo "$out" | jq -c --arg p "$plat" '. + {platform:$p}'; else
         echo "$out" | jq -r --arg l "$label" --arg p "${p#*:}" '"\($l): \($p) started " + (if .url then "-> \(.url) " else "" end) + "(\(.id), \(.state))"'
       fi
       # The next member of a group starts once this one is live.
       if [ -n "$wait_" ] || [ "$i" -lt "$count" ]; then
-        "$0" watch "$p" "$(echo "$out" | jq -r .id)" ${pv:+--preview} \
+        if [ "$json" = 1 ]; then wout=2; else wout=1; fi
+        "$0" watch "$p" "$(echo "$out" | jq -r .id)" ${pv:+--preview} >&"$wout" \
           || die "$p did not go live$([ "$i" -lt "$count" ] && echo "; the rest of the group was not started")"
       fi
     done ;;
@@ -1525,19 +1573,31 @@ case "${1:-} ${2:-}" in
     # watch <project> [<deploy id>] [--preview]
     # Follow one deploy until it is live or failed: the given one, or the newest (production, or
     # any target with --preview). If the newest is already finished, say so instead of "done".
-    # Exit 0 live, 1 failed, 3 the platform could not be asked five times in a row.
-    p="${2:?Usage: deploys watch <project> [<deploy id>] [--preview]}"; did=""; pv=""
-    for a in "${@:3}"; do case "$a" in --preview) pv=1;; -*) die "Unknown option $a";; *) did="$a";; esac; done
+    # Exit 0 live, 1 failed, 3 the platform could not be asked (or its answer not read) five times
+    # in a row, 4 still not finished after --timeout (e.g. 30m; default: no limit).
+    p="${2:?Usage: deploys watch <project> [<deploy id>] [--preview] [--timeout 30m]}"; did=""; pv=""; tmax=""; shift 2
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --preview) pv=1 ;;
+        --timeout) tmax="$(duration_s "${2:-}")" || die "--timeout takes a time like 30m, 90s or 1h"; shift ;;
+        -*) die "Unknown option $1. Usage: deploys watch <project> [<deploy id>] [--preview] [--timeout 30m]" ;;
+        *) did="$1" ;;
+      esac; shift
+    done
     resolve "$p"; plat="$PLAT"
     # Only the shared phase decides; the platform's own word for it is what is printed.
     final() { case "$1" in ready|failed|canceled) return 0;; esac; return 1; }
-    first=1; misses=0
+    first=1; misses=0; t0="$(date +%s)"
     while :; do
-      if [ -n "$did" ]; then s="$("${plat}_status" "$PID" "$did" 2>/dev/null)" || s=""
-      else s="$("${plat}_latest" "$PID" ${pv:+--preview} 2>/dev/null)" || s=""; fi
+      if [ -n "$did" ]; then raw="$("${plat}_status" "$PID" "$did" 2>/dev/null)" || raw=""
+      else raw="$("${plat}_latest" "$PID" ${pv:+--preview} 2>/dev/null)" || raw=""; fi
+      s="$(watch_line "$raw")"
       if [ -z "$s" ]; then
         # A network blip is not a failed deploy: try again, and give up only after five in a row.
-        misses=$((misses + 1)); printf '%s  (could not ask %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2
+        # An answer whose phase cannot be read counts the same: it must never mean "wait for ever".
+        misses=$((misses + 1))
+        if [ -n "$raw" ]; then printf '%s  (could not read the answer of %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2
+        else printf '%s  (could not ask %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2; fi
         [ "$misses" -lt 5 ] || { echo "Error: ${RED}could not reach $plat; the deploy itself may be fine${PLAIN}" >&2; exit 3; }
         sleep 6; continue
       fi
@@ -1550,6 +1610,9 @@ case "${1:-} ${2:-}" in
       first=0
       printf '%s  %s\n' "$(date +%H:%M:%S)" "$st"
       case "$ph" in ready) exit 0;; failed|canceled) exit 1;; esac
+      if [ -n "$tmax" ] && [ $(( $(date +%s) - t0 )) -ge "$tmax" ]; then
+        echo "Error: $p is still $st after $(( tmax / 60 ))m $(( tmax % 60 ))s (--timeout); it keeps going on $(meta_str "$plat" label)." >&2; exit 4
+      fi
       sleep 6
     done ;;
 
@@ -1559,13 +1622,17 @@ case "${1:-} ${2:-}" in
     p="${2:?project}"; n=80; did=""; shift 2
     while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>]}"; shift;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
     resolve "$p"; need_cap "$PLAT" logs "read build logs"
-    "${PLAT}_logs" "$PID" "$n" "$did" ;;
+    # Masked like everything that leaves through autofix and ai: the log goes to terminals, the app,
+    # the MCP server and from there to models. Under pipefail the provider's failure still counts.
+    "${PLAT}_logs" "$PID" "$n" "$did" | af_mask ;;
 
   "open "*)
     # The site, or with --dashboard the project's page at its platform.
     p="${2:?project}"; resolve "$p"
     url="$("${PLAT}_url" "$PID" ${3:+"$3"})"
     [ -n "$url" ] || die "No address known for $p"
+    # Only a web address: `open` would also start file:// and other schemes a platform answer might hold.
+    case "$url" in http://*|https://*) ;; *) die "Not a web address for $p: $url" ;; esac
     # macOS open, xdg-open on Linux; without either (cron, ssh) the address is printed.
     if command -v open >/dev/null 2>&1 && [ "$(uname)" = Darwin ]; then open "$url" 2>/dev/null || echo "$url"
     elif command -v xdg-open >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then xdg-open "$url" >/dev/null 2>&1 || echo "$url"
@@ -1575,9 +1642,17 @@ case "${1:-} ${2:-}" in
     # Leave a project out of `changed` and `deploy-changed` (again with: ignore <p> --undo).
     f="$CONFIG_DIR/ignored.json"; [ -f "$f" ] || echo '[]' > "$f"
     if [ "${2:-}" = "--list" ] || [ -z "${2:-}" ]; then jq -r '.[]' "$f"; exit 0; fi
-    p="$2"; tmp="$(mktemp)"
+    # ignore <p> [--undo], --undo before or after the name; <provider>:<name> is the name.
+    p=""; undo=""
+    for a in "${@:2}"; do
+      case "$a" in --undo) undo="--undo" ;; -*) die "Unknown option $a. Usage: deploys ignore <project> [--undo] | --list" ;; *) [ -z "$p" ] || die "Usage: deploys ignore <project> [--undo] | --list"; p="$a" ;; esac
+    done
+    [ -n "$p" ] || die "Usage: deploys ignore <project> [--undo] | --list"
+    case "$p" in *:*) if is_provider "${p%%:*}"; then p="${p#*:}"; fi ;; esac
+    set -- ignore "$p" $undo
+    tmp="$(mktemp "$CONFIG_DIR/.ignore.XXXXXX")"
     # A typo would be ignored silently for ever: a name never seen in a list read is refused.
-    if [ "${3:-}" != "--undo" ] && [ -s "$CONFIG_DIR/names" ] && ! grep -qxF "$p" "$CONFIG_DIR/names"; then
+    if [ "${3:-}" != "--undo" ] && [ -s "$CONFIG_DIR/names" ] && ! grep -qxF -- "$p" "$CONFIG_DIR/names"; then
       rm -f "$tmp"; die "No project or service named \"$p\" was seen yet (deploys changed reads the names)"
     fi
     if [ "${3:-}" = "--undo" ]; then jq --arg p "$p" 'map(select(. != $p))' "$f" > "$tmp"; echo "$p is counted again"
@@ -1661,7 +1736,11 @@ _deploys() {
   local cur=\${COMP_WORDS[COMP_CWORD]}
   if [ \$COMP_CWORD -eq 1 ]; then COMPREPLY=(\$(compgen -W "$cmds" -- "\$cur"))
 ${bv}  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = ai ]; then COMPREPLY=(\$(compgen -W "explain notes ship set-key forget-key verify model cap status" -- "\$cur"))
-  else COMPREPLY=(\$(compgen -W "\$(cat "$CONFIG_DIR/names" 2>/dev/null)" -- "\$cur")); fi
+  else
+    # Matched by hand, not with compgen -W: that expands each word, and a name is data.
+    local n; COMPREPLY=()
+    while IFS= read -r n; do [[ \$n == "\$cur"* ]] && COMPREPLY+=("\$n"); done 2>/dev/null < "$CONFIG_DIR/names"
+  fi
 }
 complete -F _deploys deploys
 BASH
@@ -1674,6 +1753,7 @@ BASH
     # the branch (with their PRs), the files they touch and which of them are risky to ship
     # unread, the CI result of the branch head, and the pull requests still open.
     repo="${2:?owner/repo}"; base="${3:-}"; ref="${4:-main}"
+    safe_repo "$repo"; [ -z "$base" ] || [ "$base" = null ] || safe_ref "$base"; safe_ref "$ref"
     if [ "$(githost_of "$repo")" = gitlab ]; then gitlab_details "$repo" "$base" "$ref"; exit 0; fi
     # The comparison goes through a file, not an argument: with its patches it can be megabytes,
     # more than one argument may hold ("Argument list too long"). The patches are not needed.
@@ -1733,7 +1813,8 @@ BASH
     # The day auto-deploy was first turned off here: the line between "before" and "since".
     offday="$( { jq '[.[] | .offAt? // empty]' "$REPOS"; jq '[.[]]' "$CONFIG_DIR/render-off.json" 2>/dev/null || echo '[]'; } \
       | jq -rs 'add | map(select(type=="number")) | min // empty | strftime("%Y-%m-%d")' 2>/dev/null)"
-    cat_all "$tmp"/*.json | jq -s --argjson b "${builds:-{\}}" --arg off "$offday" --argjson complete "$complete" 'sort_by(.day) | {currency:"USD", offDay:(if $off == "" then null else $off end), buildsComplete:$complete,
+    [ -n "$builds" ] || builds='{}'
+    cat_all "$tmp"/*.json | jq -s --argjson b "$builds" --arg off "$offday" --argjson complete "$complete" 'sort_by(.day) | {currency:"USD", offDay:(if $off == "" then null else $off end), buildsComplete:$complete,
       days:map({day, total, build}),
       projects:(.[-7:] | map(.projects[]) | group_by(.name)
         | map({name:.[0].name, build:(map(.build)|add), builds:($b[.[0].name] // null)}) | sort_by(-.build))}'
@@ -1805,6 +1886,7 @@ BASH
       esac
       shift
     done
+    safe_repo "$repo"; safe_ref "$ref"
     v="$(ci_wait "$repo" "$ref" "$maxw")"
     if [ "$json" = 1 ]; then echo "$v" | jq --arg r "$repo" --arg ref "$ref" '{repo:$r, ref:$ref} + .'; exit 0; fi
     echo "$v" | jq -r '"\(.state): \(.reason)"'
@@ -1837,10 +1919,13 @@ BASH
       shift
     done
     case "$after" in ''|*[!0-9]*) die "--rollback-after takes seconds, a number";; esac
-    plat="$(platform_of "$p")"
+    after="$((10#$after))"   # 08 is eight: bash would read it as a bad octal number mid-countdown
+    # "<p>:<name>" works too: the platform from it, the bare name for its API.
+    safe_arg "$p"; resolve "$p"; plat="$PLAT"; pq="$p"; p="$PNAME"
     # A check while the build still runs would test what was live before.
-    "$0" watch "$p" >&2 || die "The newest deploy of $p is not live; nothing to check"
-    [ -n "$url" ] || url="$(site_url_of "$p" "$plat")"
+    "$0" watch "$pq" >&2 || die "The newest deploy of $p is not live; nothing to check"
+    # A failed lookup is "no address known", with the hint below, not a silent stop.
+    [ -n "$url" ] || url="$(site_url_of "$p" "$plat")" || url=""
     [ -n "$url" ] || die "No address known for $p (give one with --url)"
     case "$path" in ''|/*) ;; *) path="/$path";; esac
     target="${url%/}$path"; [ -n "$path" ] || target="$url"
@@ -1890,8 +1975,8 @@ BASH
 
   "risk "*)
     # risk <project>: green, yellow or red for what waits to go live, and why (see RISK_DEF).
-    p="$2"; plat="$(platform_of "$p")"
-    j="$("$0" "$plat" json | jq -c --arg p "$p" '.[] | select(.name == $p)')"
+    safe_arg "$2"; resolve "$2"; plat="$PLAT"; p="$PNAME"
+    j="$("$0" "$plat" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
     base="$(echo "$j" | jq -r '.lastSha // empty')"; ref="$(echo "$j" | jq -r '.ref // "main"')"
@@ -1943,7 +2028,7 @@ BASH
     # say <platform> <name> <action> <reason> [<start JSON>]: one line for a person, one record for --json.
     say() {
       local plat="$1" name="$2" act="$3" why="$4" st="${5:-}" P
-      [ -n "$st" ] || st="{}"  # not ${5:-{\}}: bash 3.2 keeps the backslash
+      [ -n "$st" ] || st="{}"  # on its own line: bash 3.2 keeps the backslash of an escaped {} default
       P="$(meta_str "$plat" label)"; [ -n "$P" ] || P="$plat"
       jq -nc --arg p "$plat" --arg n "$name" --arg a "$act" --arg w "$why" --argjson s "$st" \
         '{platform:$p, name:$n, action:$a, reason:(if $w == "" then null else $w end), id:($s.id // null), url:($s.url // null)}' >> "$res"
@@ -2033,8 +2118,11 @@ BASH
   "ai set-key")
     # The user's own Anthropic API key (console.anthropic.com), from stdin, into the keychain.
     IFS= read -r key || true
+    # A pasted key often brings a CR or spaces along; anything else that is no key character is refused
+    # (it would go into the keychain command line below).
+    key="$(printf '%s' "$key" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
     [ -n "$key" ] || die "Pipe the key in: pbpaste | deploys ai set-key"
-    case "$key" in sk-ant-*) ;; *) die "That does not look like an Anthropic API key (sk-ant-...)";; esac
+    case "$key" in *[!A-Za-z0-9._-]*) die "That does not look like an Anthropic API key (sk-ant-...)";; sk-ant-*) ;; *) die "That does not look like an Anthropic API key (sk-ant-...)";; esac
     printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$AI_KEYCHAIN" "$key" | security -i >/dev/null \
       || die "Could not save the key in the keychain"
     echo "Anthropic key saved." ;;

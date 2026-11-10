@@ -236,8 +236,14 @@ team_gate() {
     die "Observer mode ($(jq -r '.readonly.from' <<< "$eff")): $me may look, not deploy. Deploying $p is refused."
   fi
   need="$(jq -r --arg p "$p" '.projects[$p].approvals.value // 0' <<< "$eff")"
-  [ "$need" -ge 1 ] 2>/dev/null || { [ -z "$sha" ] || echo "$sha"; return 0; }
   local from; from="$(jq -r --arg p "$p" '.projects[$p].approvals.from' <<< "$eff")"
+  # Only a whole number counts. "two", true or 1.5 must not read as "no approval needed": the rule
+  # stays shut until the file says what it means (--force does not get past a broken file either).
+  case "$need" in
+    ''|*[!0-9]*) die "\"approvals\" for $p is \"$need\" ($from): it must be a whole number (0, 1, 2 …). Fix the file; until then $p is not deployed." ;;
+  esac
+  [ "$((10#$need))" -ge 1 ] || { [ -z "$sha" ] || echo "$sha"; return 0; }
+  need="$((10#$need))"
   command -v gh >/dev/null 2>&1 || die "$p needs $need approval(s) ($from), and checking them needs the gh CLI. Install it, or: --force \"reason\""
   [ -n "$repo" ] || die "$p needs $need approval(s) ($from), but no GitHub repo is known for it (approvals are read from GitHub; a GitLab repo cannot have them yet)"
   [ -n "$me" ] || die "$p needs $need approval(s) ($from), but gh cannot tell who you are. Run: gh auth login"

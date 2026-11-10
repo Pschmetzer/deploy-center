@@ -209,17 +209,20 @@ sv_print() {  # stdin: simulate or ledger JSON
 }
 
 savings_main() {  # savings_main simulate|ledger [--days N]
-  local mode="$1" days=30 out
+  local mode="$1" days=30 out gotdays=""
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --days) days="${2:-}"; shift ;;
+      --days) days="${2:-}"; gotdays=1; shift ;;
       *) die "Unknown option $1. Usage: deploys simulate [--days N] [--json] | deploys ledger [--json]" ;;
     esac
     shift
   done
   case "$days" in ''|*[!0-9]*) die "--days must be a number from 1 to 90";; esac
+  days="$((10#$days))"   # 08 is eight, not a bad octal number
   [ "$days" -ge 1 ] && [ "$days" -le 90 ] || die "--days must be a number from 1 to 90"
+  # The ledger counts from the day auto-deploy went off; a --days there would be ignored in silence.
+  [ "$mode" != ledger ] || [ -z "$gotdays" ] || die "--days is for simulate; the ledger counts from the day auto-deploy went off"
   command -v gh >/dev/null 2>&1 || die "simulate and ledger count pushes on GitHub: install gh and run gh auth login"
   if [ "$mode" = simulate ]; then out="$(sv_facts simulate "$days" | sv_simulate_from)"
   else out="$(sv_facts ledger "$days" | sv_ledger_from)"; fi

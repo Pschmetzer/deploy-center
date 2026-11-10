@@ -1053,5 +1053,83 @@ acadd 1.0; expect "appcast: a bad version is refused" "$?" "1"
 acadd 1.0.0 nonsense; expect "appcast: a bad signature is refused" "$?" "1"
 expect "appcast: refused input changes nothing" "$(grep -c '<item>' "$ac")" "2"
 
+# ===== CLI track (improve/cli): additions, kept together; whole commands only (run) =====
+export DEPLOYS_JOURNAL="$e2e/journal.jsonl" RENDER_API_KEY=rnd_test
+# CLI-057: bash 3.2 reads an escaped {} default as the text {\} (invalid JSON for --argjson).
+expect "CLI-057: no escaped {} defaults in deploys and lib/" "$(cat deploys lib/*.sh | grep -c ':-{\\}')" "0"
+
+# CLI-001: deploys deploy waits for the deploy window like every other start.
+fresh; echo '{"deny":[{"from":"00:00","to":"24:00","reason":"always closed"}]}' > "$e2e/config/window.json"
+expect "CLI-001: deploy in a closed window is refused, nothing starts" \
+  "$(run "$O" "$E" deploy web; started; grep -c 'No deploys now' "$E")" $'1\n0\n1'
+fresh
+expect "CLI-001: --force starts it and the journal says why" \
+  "$(run "$O" "$E" deploy web --force "hotfix"; started; tail -n 1 "$DEPLOYS_JOURNAL" | jq -r '"\(.result) \(.name)"')" $'0\n1\nforced web'
+rm -f "$e2e/config/window.json"
+
+# CLI-002, CLI-005, CLI-007: observer mode.
+fresh
+expect "CLI-002: observer mode refuses autodeploy revoke" \
+  "$(DEPLOYS_READONLY=1 run "$O" "$E" autodeploy revoke vercel --all; grep -c 'Observer mode' "$E")" $'1\n1'
+expect "CLI-002: observer mode refuses autodeploy allow" \
+  "$(DEPLOYS_READONLY=1 run "$O" "$E" autodeploy allow vercel web 2; grep -c 'Observer mode' "$E")" $'1\n1'
+expect "CLI-005: --yes after --when-green is refused too" \
+  "$(DEPLOYS_READONLY=1 run "$O" "$E" deploy-changed --when-green --yes; grep -c 'Observer mode' "$E"; started)" $'1\n1\n0'
+expect "CLI-005: the preview without --yes stays allowed" \
+  "$(DEPLOYS_READONLY=1 run "$O" "$E" deploy-changed --when-green; grep -c 'Observer mode' "$E")" $'0\n0'
+expect "CLI-007: any value but an explicit no turns observer mode on" \
+  "$(DEPLOYS_READONLY=enabled run "$O" "$E" readonly; cat "$O")" $'0\non (DEPLOYS_READONLY is set)'
+expect "CLI-007: DEPLOYS_READONLY=off is off" "$(DEPLOYS_READONLY=off run "$O" "$E" readonly; cat "$O")" $'0\noff'
+
+# CLI-003: tab completion never runs a name; remember_names drops what is no plain name.
+fresh; printf '%s\n' web 'w$(touch '"$e2e"'/pwned)' > "$e2e/config/names"
+run "$O" "$E" completion bash >/dev/null
+expect "CLI-003: bash completion matches names without running them" \
+  "$(bash -c '. "$1"; COMP_WORDS=(deploys logs w); COMP_CWORD=2; _deploys; printf "%s\n" "${COMPREPLY[@]}" | grep -c .' _ "$O"; [ -e "$e2e/pwned" ] && echo ran || echo safe)" $'2\nsafe'
+run "$O" "$E" vercel json >/dev/null
+expect "CLI-003: a list read drops names that are no plain name" "$(grep -c touch "$e2e/config/names"):$(grep -cx web "$e2e/config/names")" "0:1"
+
+# CLI-012: a leading zero is a decimal number, not a bash octal error.
+expect "CLI-012: --rollback-after 08 is taken as 8" \
+  "$(SITE=down run "$O" "$E" verify web --rollback-after 08; grep -c 'value too great' "$E")" $'1\n0'
+
+# PRV-004 (watch side): every answer shape is read, an unreadable one ends (exit 3), never loops.
+expect "watch_line: the contract line" "$(watch_line $'d1\tbuilding\tBUILDING')" $'d1\tbuilding\tBUILDING'
+expect "watch_line: multi-line JSON (Netlify and others)" "$(watch_line $'{\n  "id": "d2",\n  "phase": "ready",\n  "state": "ready"\n}')" $'d2\tready\tready'
+expect "watch_line: JSON with status instead of state" "$(watch_line '{"id":"d3","phase":"failed","status":"failure"}')" $'d3\tfailed\tfailure'
+expect "watch_line: null is no deploy" "$(watch_line null | cut -f1)" "none"
+expect "watch_line: no known phase is no answer" "$(watch_line $'d4\t\tweird'):$(watch_line '{"id":"d5"}'):$(watch_line '{')" "::"
+# CLI-023: watch --timeout ends a deploy that does not finish (exit 4).
+fresh; rm -f "$e2e/polls"
+expect "CLI-023: watch --timeout ends with exit 4" "$(run "$O" "$E" watch api --timeout 0s; grep -c -- '--timeout' "$E")" $'4\n1'
+expect "CLI-023: a bad --timeout is refused" "$(run "$O" "$E" watch api --timeout soon; grep -c 'takes a time' "$E")" $'1\n1'
+
+# INT-014: deploys logs masks secrets like autofix and ai do.
+fresh; mv "$e2e/bin/vercel" "$e2e/bin/vercel.orig"
+cat > "$e2e/bin/vercel" <<'VC'
+#!/bin/bash
+case "$*" in
+  "api /v3/deployments/dpl_x/events"*) echo '[{"created":1,"payload":{"text":"VERCEL_TOKEN=abc123secret"}},{"created":2,"payload":{"text":"push ghp_abcdefghijklmnop1234"}}]' ;;
+  *) exec "$E2E/bin/vercel.orig" "$@" ;;
+esac
+VC
+chmod +x "$e2e/bin/vercel"
+expect "INT-014: logs masks tokens" "$(run "$O" "$E" logs web 10 --id dpl_x; cat "$O")" $'0\nVERCEL_TOKEN=[masked]\npush [masked]'
+mv "$e2e/bin/vercel.orig" "$e2e/bin/vercel"
+
+# CLI-010, CLI-011: <p>:<name> for risk; repo and ref of ci/details are checked before any call.
+fresh
+expect "CLI-010: risk takes vercel:web" "$(run "$O" "$E" risk vercel:web --json; jq -r '"\(.project) \(.platform)"' "$O")" $'0\nweb vercel'
+fresh
+expect "CLI-011: ci refuses a repo with a query" "$(run "$O" "$E" ci 'me/app?x=1' main; grep -c '^gh ' "$e2e/calls.log")" $'1\n0'
+expect "CLI-011: details refuses a ref with .." "$(run "$O" "$E" details me/app aaaa '../x'; grep -c '^gh ' "$e2e/calls.log")" $'1\n0'
+
+# CLI-047: ignore takes --undo before the name and <p>:<name>.
+fresh; run "$O" "$E" render json >/dev/null
+expect "CLI-047: ignore render:api, then --undo api" \
+  "$(run "$O" "$E" ignore render:api; run "$O" "$E" ignore --undo api; run "$O" "$E" ignore --list; cat "$O")" $'0\n0\n0'
+unset RENDER_API_KEY DEPLOYS_JOURNAL
+# ===== end CLI track =====
+
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }

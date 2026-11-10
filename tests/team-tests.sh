@@ -235,5 +235,17 @@ PY
   expect "the schema is valid and the fixtures follow it" "$out" "valid"
 else echo "skip schema check (no python3 jsonschema)"; fi
 
+# ===== CLI track (improve/cli): additions, kept together =====
+# CLI-004: an approvals value that is no whole number keeps the rule shut, also with --force.
+for bad in '"two"' '"2x"' '1.5'; do
+  fresh; : > "$CALLS"
+  echo "{\"projects\":{\"web\":{\"approvals\":$bad}}}" > "$DEPLOYS_CONFIG/overrides.json"
+  out="$(GH_HEAD=bbbb222bbbb222bbbb222bbbb222bbbb222bbbb "${D[@]}" deploy web --force "why" 2>&1)"; rc=$?
+  expect "approvals $bad: refused, nothing sent" "$rc:$(echo "$out" | grep -c 'must be a whole number'):$(grep -c 'vercel POST' "$CALLS")" "1:1:0"
+done
+echo '{"projects":{"web":{"health":"/up","approvals":0},"playground":{"ignored":false}}}' > "$DEPLOYS_CONFIG/overrides.json"
+fresh
+# ===== end CLI track =====
+
 echo
 [ "$fails" = 0 ] && echo "All passed." || { echo "$fails failed."; exit 1; }
