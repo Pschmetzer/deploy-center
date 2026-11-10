@@ -621,7 +621,7 @@ def render(page, pages, assets):
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="stylesheet" href="/docs/assets/docs.css?v={assets["docs.css"]}">
-<script>document.documentElement.classList.add('js')</script>
+<script>document.documentElement.classList.add('js');try{{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}}catch(e){{}}</script>
 <script type="application/ld+json">{jsonld(page, crumbs)}</script>
 </head>
 <body>
