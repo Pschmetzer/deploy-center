@@ -489,10 +489,11 @@ struct AutofixReport: Decodable {
             status = try c.decode(String.self, forKey: .status)
             platform = s(.platform); session = s(.session); prState = s(.prState)?.lowercased(); prUrl = s(.prUrl)
             prNumber = n(.prNumber) ?? n(.pr); mergedSha = s(.mergedSha); redeployedSha = s(.redeployedSha)
-            sha = s(.sha); error = s(.error)
+            // "unsupported" fires say why in `reason` (a GitLab repo, say).
+            sha = s(.sha); error = s(.error) ?? s(.reason)
             done = ((try? c.decodeIfPresent(Bool.self, forKey: .done)) ?? nil) ?? false
         }
-        private enum K: String, CodingKey { case at, project, platform, status, session, prNumber, pr, prState, prUrl, mergedSha, redeployedSha, sha, error, done }
+        private enum K: String, CodingKey { case at, project, platform, status, session, prNumber, pr, prState, prUrl, mergedSha, redeployedSha, sha, error, reason, done }
     }
     let routine: String?
     let token: Bool
@@ -521,10 +522,31 @@ enum RowAutofix: Equatable {
     case fixing(session: URL?)
     case prOpen(number: Int, url: URL?)
     case merged(sha: String, pr: Int?, url: URL?)
-    case handedBack
+    /// A hand-over that is not running: waiting for a rate limit, or a start not confirmed yet.
+    case waiting(Wait)
+    case handedBack(HandBack)
+    /// Autofix cannot work on this project (GitHub repos only); the reason comes from the script.
+    case unsupported(reason: String?)
     /// Handed over long ago and still no PR: the session most likely ended without one (a cause
     /// outside the code, say). Its report is in the session, so the chip links there.
     case noPR(session: URL?)
+
+    enum Wait: Equatable {
+        case rateLimit
+        /// "pending": the start is under way.
+        case starting
+        /// "pending" for longer than `unclearAfter`: the run most likely died; `autofix --only` tries again.
+        case unclear
+    }
+    enum HandBack: Equatable {
+        /// The session could not start (token, API): worth another try.
+        case startFailed
+        /// The fix itself did not build, or the PR was closed: over to the person.
+        case fixFailed
+    }
+
+    /// A "pending" fire older than this most likely lost its run (the script retries it then).
+    static let unclearAfter: TimeInterval = 15 * 60
 
     /// After this long without a PR a hand-over no longer counts as "fixing".
     static let stalledAfter: TimeInterval = 90 * 60
@@ -551,13 +573,17 @@ enum RowAutofix: Equatable {
         // build) says nothing about it, and must not block handing this one over.
         if f.done { return nil }
         if let fs = f.sha, !fs.isEmpty, let cur = i.latestSha, !cur.isEmpty, !(fs.hasPrefix(cur) || cur.hasPrefix(fs)) { return nil }
-        if f.prState == "closed" || f.prState == "merged" { return .handedBack }
+        if f.prState == "closed" || f.prState == "merged" { return .handedBack(.fixFailed) }
         switch f.status {
-        case "fired", "pending", "ratelimited":
+        case "fired":
             let session = f.session.flatMap(URL.init(string:))
-            if f.status == "fired", f.prState == nil, now.timeIntervalSince1970 - f.at > stalledAfter { return .noPR(session: session) }
+            if f.prState == nil, now.timeIntervalSince1970 - f.at > stalledAfter { return .noPR(session: session) }
             return .fixing(session: session)
-        case "skipped", "failed": return .handedBack
+        case "ratelimited": return .waiting(.rateLimit)
+        case "pending": return .waiting(now.timeIntervalSince1970 - f.at > unclearAfter ? .unclear : .starting)
+        case "failed": return .handedBack(.startFailed)
+        case "skipped": return .handedBack(.fixFailed)
+        case "unsupported": return .unsupported(reason: f.error)
         default: return nil
         }
     }

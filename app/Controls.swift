@@ -3,6 +3,15 @@
 import SwiftUI
 import AppKit
 
+/// Opens Settings when the store asks (Store.openSettings(tab:)), for code that is not a view.
+struct OpensSettingsOnRequest: ViewModifier {
+    @ObservedObject var store: Store
+    @Environment(\.openSettings) private var openSettings
+    func body(content: Content) -> some View {
+        content.onChange(of: store.settingsRequest) { openSettings() }
+    }
+}
+
 /// Puts text on the clipboard and says so for a moment ("Copied ✓"), so a click is not a guess.
 struct CopyButton: View {
     let title: String

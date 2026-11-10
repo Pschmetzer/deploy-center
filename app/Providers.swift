@@ -226,22 +226,8 @@ extension Costs {
     var week: Double { days.suffix(7).map(\.build).reduce(0, +) }
 }
 
-/// "12 PRs waiting · $41 saved": what waits, and the saving when it is known.
-func summaryLine(_ w: Store.Waiting, saved: Double?) -> String {
-    let waiting: String
-    if w.projects == 0 {
-        waiting = L("Everything merged is live", "Alles Gemergte ist live")
-    } else if w.prs > 0 {
-        waiting = L("\(w.prs) \(w.prs == 1 ? "PR" : "PRs") waiting", "\(w.prs) \(w.prs == 1 ? "PR wartet" : "PRs warten")")
-    } else {
-        waiting = L("\(w.projects) \(w.projects == 1 ? "project" : "projects") waiting", "\(w.projects) \(w.projects == 1 ? "Projekt wartet" : "Projekte warten")")
-    }
-    guard let saved else { return waiting }
-    return waiting + " · " + L("\(usd0(saved)) saved", "\(usd0(saved)) gespart")
-}
-
-/// "7 projects · 44 PRs waiting · $41 saved": projects and PRs in one line, as the menu bar,
-/// the badge and the window now count them (summaryLine stays for its callers).
+/// "7 projects · 44 PRs waiting · $41 saved": projects and PRs in one line, in the units of the
+/// menu bar and the Dock badge (projects), so the three never disagree.
 func waitingSummary(_ w: Store.Waiting, saved: Double?) -> String {
     let waiting: String
     if w.projects == 0 {

@@ -203,10 +203,9 @@ final class Store: ObservableObject {
         guard i.lastFailed, i.repo != nil, !i.state.isActive else { return false }
         // .noPR too: the script does not hand the same failed build over twice.
         switch autofixState(i) {
-        case .fixing(let session)?:
-            // Waiting for a rate limit or not started: no session works on it, so a try by hand is fine.
-            return session == nil && ["ratelimited", "pending"].contains(fireIndex[i.name]?.max { $0.at < $1.at }?.status ?? "")
-        case .prOpen?, .merged?, .noPR?: return false
+        // A session or a PR is on it, or autofix cannot work on this repo.
+        case .fixing?, .prOpen?, .merged?, .noPR?, .unsupported?: return false
+        // Waiting for a rate limit or not started, or handed back: no session works on it, so a try by hand is fine.
         default: return true
         }
     }
@@ -272,11 +271,10 @@ final class Store: ObservableObject {
 
     private func offerAutofixSetup() {
         show(Toast(text: L("Autofix is not set up: no routine yet", "Autofix ist nicht eingerichtet: noch keine Routine"), ok: false,
-                   undoLabel: L("Open Settings", "Einstellungen öffnen"), undo: {
-            // Settings opens on its Claude tab, where autofix is set up (key of the settings window).
-            UserDefaults.standard.set("claude", forKey: "settingsTab")
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                   undoLabel: L("Open Settings", "Einstellungen öffnen"), undo: { [weak self] in
+            // Settings opens on its Claude tab (tag "claude" in SettingsView), where autofix is set up.
+            // Not showSettingsWindow: macOS 14 and later ignore it for a SwiftUI Settings scene.
+            self?.openSettings(tab: "claude")
         }))
     }
 
@@ -843,6 +841,14 @@ final class Store: ObservableObject {
 
     /// Set by the menu bar to show one project in the window.
     @Published var pendingSearch: String?
+    /// Counts up when code outside a view wants Settings open (on the tab in "settingsTab"); the
+    /// window and the menu bar answer it with SwiftUI's openSettings (OpensSettingsOnRequest).
+    @Published var settingsRequest = 0
+    func openSettings(tab: String) {
+        UserDefaults.standard.set(tab, forKey: "settingsTab")
+        NSApp.activate(ignoringOtherApps: true)
+        settingsRequest += 1
+    }
     /// Set by the menu bar: tick everything with changes and ask, in the window.
     @Published var pendingDeployAll = false
 

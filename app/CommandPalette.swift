@@ -482,11 +482,8 @@ struct CommandPaletteHost: ViewModifier {
             case .costs: sheet = .costs
             case .selectChanged:
                 guard !store.observer else { return }
-                // Like ⌘A in the window: hidden projects stay out.
-                for i in Platform.allCases.flatMap({ store.items[$0] ?? [] })
-                where i.deployable && i.hasNewCommits && !i.state.isActive && !i.selected && !store.isHidden(i) {
-                    store.toggle(i.platform, i.id)
-                }
+                // Like ⌘A in the window: hidden projects stay out (Store.isWaiting).
+                Platform.allCases.forEach { store.selectChanged($0) }
             case .clearSelection: Platform.allCases.forEach { store.clearSelection($0) }
             case .toggleFilter: PaletteCenter.shared.filterToggles += 1
             case .showAll: UserDefaults.standard.set(true, forKey: "showAll")

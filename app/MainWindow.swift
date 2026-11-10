@@ -792,7 +792,8 @@ struct ContentView: View {
     /// One line over the list: what waits to go live (and the saving, when known), and the build costs
     /// as one number that opens the chart.
     @ViewBuilder private var summaryBar: some View {
-        let w = store.waiting
+        // The tab's own count; under "All" the sum of its platforms.
+        let w = store.waiting(for: scopes)
         let costs = scopes.contains(.vercel) ? store.costs : nil
         let saved = costs?.saved(today: CostsSheet.today())
         if w.projects > 0 || w.openPRs > 0 || costs != nil {
@@ -805,7 +806,7 @@ struct ContentView: View {
                     } label: {
                         // The chevron says it is a button, like the costs on the right.
                         HStack(spacing: 4) {
-                            Text(summaryLine(w, saved: saved)).font(.callout.weight(.medium))
+                            Text(waitingSummary(w, saved: saved)).font(.callout.weight(.medium))
                             Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
                         }
                         .contentShape(Rectangle())
@@ -814,7 +815,7 @@ struct ContentView: View {
                     .help(summaryHelp(w))
                     .accessibilityHint(L("Shows the projects with changes", "Zeigt die Projekte mit Änderungen"))
                 } else {
-                    Text(summaryLine(w, saved: saved)).font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                    Text(waitingSummary(w, saved: saved)).font(.callout.weight(.medium)).foregroundStyle(.secondary)
                         .help(summaryHelp(w))
                 }
                 Spacer()
@@ -844,8 +845,9 @@ struct ContentView: View {
         if w.projects > 0 {
             lines.append(L("\(w.commits) \(w.commits == 1 ? "commit" : "commits") in \(w.projects) \(w.projects == 1 ? "project" : "projects"), merged on GitHub and not live",
                            "\(w.commits) \(w.commits == 1 ? "Commit" : "Commits") in \(w.projects) \(w.projects == 1 ? "Projekt" : "Projekten"), auf GitHub gemergt und nicht live"))
-            if !showsAll, let p = platform, store.changedCount(p) != w.projects {
-                lines.append(L("\(store.changedCount(p)) of them on \(p.rawValue)", "davon \(store.changedCount(p)) auf \(p.rawValue)"))
+            let all = store.waiting.projects
+            if !showsAll, let p = platform, all != w.projects {
+                lines.append(L("On \(p.rawValue); \(all) over all platforms", "Auf \(p.rawValue); \(all) über alle Plattformen"))
             }
         }
         if w.openPRs > 0 {
@@ -1132,7 +1134,8 @@ struct ContentView: View {
             onDeployMerged: item.deployable && !store.observer && !item.state.isActive ? {
                 if !item.selected { store.toggle(item.platform, item.id) }
                 confirming = true
-            } : nil) { tick(item) }
+            } : nil,
+            onDismissAutofix: AgentChips.dismissable(fix) ? { store.dismissAutofix(item) } : nil) { tick(item) }
             // A merged fix waits for a click: the row stands out until it is live.
             .listRowBackground(isMerged(fix) ? ground(.green, 0.12) : nil)
             .contextMenu { rowMenu(item) }
@@ -1203,10 +1206,9 @@ struct ContentView: View {
     private func selectAllCommand() {
         if searchFocused { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil); return }
         guard !waitsForFreshList else { return }
-        // Only what the list shows: not hidden, not filtered away by the search.
-        for i in visible where i.deployable && i.hasNewCommits && !i.state.isActive && !i.selected {
-            store.toggle(i.platform, i.id)
-        }
+        // Only what the list shows: not hidden, not filtered away by the search (one rule, Store.isWaiting).
+        let keys = Set(visible.map(Store.key))
+        for p in scopes { store.selectChanged(p, among: keys) }
     }
 
     /// Ticked projects on platforms that can build a preview.
@@ -1634,6 +1636,7 @@ struct Row: View {
     var autofixBusy = false
     var onAutofix: (() -> Void)? = nil
     var onDeployMerged: (() -> Void)? = nil
+    var onDismissAutofix: (() -> Void)? = nil
     let toggle: () -> Void
     @Environment(\.accessibilityDifferentiateWithoutColor) private var noColour
 
@@ -1689,7 +1692,8 @@ struct Row: View {
                 // One figure per row; the rest is in the tooltip and for VoiceOver.
                 HStack(spacing: 6) {
                     keyFigure
-                    AgentChips(autofix: autofix, allowedUntil: allowedUntil, busy: autofixBusy, onFix: onAutofix, onDeployMerged: onDeployMerged)
+                    AgentChips(autofix: autofix, allowedUntil: allowedUntil, busy: autofixBusy, onFix: onAutofix, onDeployMerged: onDeployMerged,
+                               onDismiss: onDismissAutofix)
                     if showPlatform {
                         Text("· " + item.platform.rawValue).font(.caption2).foregroundStyle(.secondary)
                     }
@@ -2000,14 +2004,41 @@ struct AgentChips: View {
     var onFix: (() -> Void)? = nil
     /// A merged fix: the chip ticks the row and asks to put it live (the PR is in the row's menu).
     var onDeployMerged: (() -> Void)? = nil
+    /// "Dismiss": the chip goes until a newer hand-over (Store.dismissAutofix).
+    var onDismiss: (() -> Void)? = nil
 
     static func text(_ a: RowAutofix) -> String {
         switch a {
         case .fixing: return L("Claude is fixing it", "Claude behebt gerade")
+        case .waiting(.rateLimit): return L("Autofix waits for the rate limit", "Autofix wartet auf das Rate-Limit")
+        case .waiting(.starting): return L("Handing over to Claude …", "Übergabe an Claude …")
+        case .waiting(.unclear): return L("Hand-over not confirmed", "Übergabe nicht bestätigt")
         case .prOpen(let n, _): return L("Fix PR #\(n) open", "Fix-PR #\(n) offen")
         case .merged: return L("Fix merged – deploy now", "Fix gemergt – jetzt deployen")
-        case .handedBack: return L("Fix failed – over to you", "Fix fehlgeschlagen – an dich übergeben")
+        case .handedBack(.startFailed): return L("Claude could not start", "Claude konnte nicht starten")
+        case .handedBack(.fixFailed): return L("Fix failed – over to you", "Fix fehlgeschlagen – an dich übergeben")
         case .noPR: return L("Claude opened no PR", "Claude hat keinen PR geöffnet")
+        case .unsupported: return L("Autofix: GitHub repos only", "Autofix: nur GitHub-Repos")
+        }
+    }
+    /// The longer reason, for the tooltip.
+    static func help(_ a: RowAutofix) -> String? {
+        switch a {
+        case .waiting(.rateLimit): return L("Nothing runs yet. The next hand-over comes after the rate limit; you can try by hand.",
+                                            "Noch läuft nichts. Die nächste Übergabe kommt nach dem Rate-Limit; du kannst es von Hand versuchen.")
+        case .waiting(.unclear): return L("The start was never confirmed. Fix with Claude tries again.",
+                                          "Der Start wurde nie bestätigt. „Mit Claude beheben“ versucht es erneut.")
+        case .handedBack(.startFailed): return L("The session did not start (token or API). Fix with Claude tries again.",
+                                                 "Die Sitzung startete nicht (Token oder API). „Mit Claude beheben“ versucht es erneut.")
+        case .unsupported(let r): return r
+        default: return nil
+        }
+    }
+    /// Chips that only report: they can be waved away.
+    static func dismissable(_ a: RowAutofix?) -> Bool {
+        switch a {
+        case .noPR?, .handedBack?, .unsupported?, .waiting(.unclear)?: return true
+        default: return false
         }
     }
     static func allowedText(_ until: Date) -> String {
@@ -2019,7 +2050,7 @@ struct AgentChips: View {
         switch a {
         case .fixing(let u), .noPR(let u): return u
         case .prOpen(_, let u), .merged(_, _, let u): return u
-        case .handedBack: return nil
+        case .handedBack, .waiting, .unsupported: return nil
         }
     }
 
@@ -2048,6 +2079,8 @@ struct AgentChips: View {
         let (icon, colour): (String, Color) = {
             switch a {
             case .fixing: return ("sparkles", .purple)
+            case .waiting: return ("hourglass", .secondary)
+            case .unsupported: return ("nosign", .secondary)
             case .prOpen: return ("arrow.triangle.pull", .blue)
             case .merged: return ("checkmark.seal.fill", .green)
             case .handedBack: return ("person.fill.questionmark", Color.warningText)
@@ -2064,6 +2097,13 @@ struct AgentChips: View {
                 .help(u.absoluteString)
         } else {
             Label(Self.text(a), systemImage: icon).font(.caption2.weight(.semibold)).foregroundStyle(colour)
+                .help(Self.help(a) ?? "")
+        }
+        if let onDismiss {
+            Button(action: onDismiss) { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.plain).font(.caption2).foregroundStyle(.secondary)
+                .help(L("Dismiss until the next hand-over", "Ausblenden bis zur nächsten Übergabe"))
+                .accessibilityLabel(L("Dismiss", "Verwerfen"))
         }
     }
 }

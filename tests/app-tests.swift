@@ -328,11 +328,11 @@ expect("never deployed", Row.keyFigure(item(changed: false)), Row.KeyFigure.neve
 
 // The summary line and the saving.
 var wait = Store.Waiting(); wait.projects = 3; wait.prs = 12
-expect("summary with saving", summaryLine(wait, saved: 41), L("12 PRs waiting · \(usd0(41)) saved", "12 PRs warten · \(usd0(41)) gespart"))
-expect("summary without saving", summaryLine(wait, saved: nil), L("12 PRs waiting", "12 PRs warten"))
+expect("summary with saving", waitingSummary(wait, saved: 41), L("3 projects · 12 PRs waiting · \(usd0(41)) saved", "3 Projekte · 12 PRs warten · \(usd0(41)) gespart"))
+expect("summary without saving", waitingSummary(wait, saved: nil), L("3 projects · 12 PRs waiting", "3 Projekte · 12 PRs warten"))
 wait.prs = 0
-expect("summary without PRs", summaryLine(wait, saved: nil), L("3 projects waiting", "3 Projekte warten"))
-expect("summary when all is live", summaryLine(Store.Waiting(), saved: nil), L("Everything merged is live", "Alles Gemergte ist live"))
+expect("summary without PRs", waitingSummary(wait, saved: nil), L("3 projects waiting", "3 Projekte warten"))
+expect("summary when all is live", waitingSummary(Store.Waiting(), saved: nil), L("Everything merged is live", "Alles Gemergte ist live"))
 let offCosts = try! JSONDecoder().decode(Costs.self, from: Data("""
 {"days":[{"day":"2026-11-01","total":10,"build":10},{"day":"2026-11-02","total":10,"build":10},{"day":"2026-11-03","total":4,"build":4},
          {"day":"2026-11-04","total":1,"build":1},{"day":"2026-11-05","total":3,"build":3},{"day":"2026-11-06","total":9,"build":9}],
@@ -361,7 +361,17 @@ expect("sync for an open PR, however old", RowAutofix.needsSync(F(at: 1, project
 var doneFire = F(at: 1, project: "app", platform: "vercel", status: "fired"); doneFire.done = true
 expect("no sync for a fire that is green again", RowAutofix.needsSync(doneFire, now: soon), false)
 expect("done decodes", fire(#"{"fires":[{"at":1,"project":"a","status":"fired","done":true}]}"#).fires[0].done, true)
-expect("rate limited is not 'no PR'", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "ratelimited"), now: late) == .fixing(session: nil), true)
+expect("rate limited is not 'no PR'", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "ratelimited"), now: late) == .waiting(.rateLimit), true)
+expect("pending, fresh: starting", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "pending"), now: soon) == .waiting(.starting), true)
+expect("pending for long: unclear", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "pending"),
+                                                   now: Date(timeIntervalSince1970: 1 + RowAutofix.unclearAfter + 1)) == .waiting(.unclear), true)
+expect("a start that failed is its own case", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "failed")) == .handedBack(.startFailed), true)
+expect("unsupported carries the reason",
+       RowAutofix.of(failedItem(), fire(#"{"fires":[{"at":1,"project":"app","platform":"vercel","status":"unsupported","reason":"autofix works with GitHub repos only"}]}"#).fires[0])
+         == .unsupported(reason: "autofix works with GitHub repos only"), true)
+expect("start failed and fix failed read differently", AgentChips.text(.handedBack(.startFailed)) != AgentChips.text(.handedBack(.fixFailed)), true)
+expect("an unsupported chip can be dismissed", AgentChips.dismissable(.unsupported(reason: nil)), true)
+expect("a running fix cannot be dismissed", AgentChips.dismissable(.fixing(session: nil)), false)
 expect("no PR chip links the session", AgentChips.link(.noPR(session: URL(string: "https://claude.ai/code/s1")))?.absoluteString ?? "", "https://claude.ai/code/s1")
 var green = failedItem(); green.lastState = "READY"
 expect("fixing ends when green again", RowAutofix.of(green, F(at: 1, project: "app", platform: "vercel", status: "fired")) == nil, true)
@@ -370,8 +380,8 @@ var waiting = failedItem(); waiting.changed = true; waiting.headSha = "bbbbbbb2"
 expect("merged, not live", RowAutofix.of(waiting, F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, mergedSha: "bbbbbbb2ffff")) == .merged(sha: "bbbbbbb2ffff", pr: 4, url: nil), true)
 var shipped = waiting; shipped.lastSha = "bbbbbbb2"; shipped.changed = false
 expect("merged ends once live", RowAutofix.of(shipped, F(at: 1, project: "app", platform: "vercel", status: "fired", mergedSha: "bbbbbbb2ffff")) == nil, true)
-expect("fix failed too", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "skipped")) == .handedBack, true)
-expect("PR closed unmerged", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, prState: "closed")) == .handedBack, true)
+expect("fix failed too", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "skipped")) == .handedBack(.fixFailed), true)
+expect("PR closed unmerged", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, prState: "closed")) == .handedBack(.fixFailed), true)
 expect("chip words", AgentChips.text(.prOpen(number: 12, url: nil)), L("Fix PR #12 open", "Fix-PR #12 offen"))
 
 // Fires name a Render service by its name, not its id; the newest one counts; the platform must match.
@@ -665,7 +675,8 @@ MainActor.assumeIsolated {
     var f = failedItem(); f.repo = "me/app"
     st.items[.vercel] = [f]
     st.autofix = AutofixReport(routine: "r", token: true, fires: [F(at: Date().timeIntervalSince1970, project: "app", platform: "vercel", status: "ratelimited")])
-    expect("rate limited: still 'fixing' in the row", st.autofixState(f) == .fixing(session: nil), true)
+    expect("rate limited: waiting in the row, not 'fixing'", st.autofixState(f) == .waiting(.rateLimit), true)
+    expect("rate limited does not count as fixing", st.fixingCount, 0)
     expect("rate limited: the button stays free", st.canFixWithClaude(f), true)
     st.autofix = AutofixReport(routine: "r", token: true, fires: [F(at: Date().timeIntervalSince1970, project: "app", platform: "vercel", status: "fired", session: "https://claude.ai/code/s")])
     expect("a running session locks the button", st.canFixWithClaude(f), false)

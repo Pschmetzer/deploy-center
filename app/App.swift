@@ -388,6 +388,7 @@ struct DeployCenterApp: App {
     var body: some Scene {
         WindowGroup("Deploy Center", id: "main") {
             ContentView(store: store)
+                .modifier(OpensSettingsOnRequest(store: store))
                 .task { appDelegate.attach(store); await ClaudeNudge.refresh() }
                 // deploycenter://select?project=name shows and ticks a project. It never starts a build:
                 // any web page could open such a link.
@@ -429,6 +430,7 @@ struct DeployCenterApp: App {
             let failed = !active && store.items.values.contains { $0.contains { if case .failed = $0.state { return true } else { return false } } }
             Image(systemName: active ? "paperplane.fill" : (failed ? "exclamationmark.triangle.fill" : "paperplane"))
                 .task { appDelegate.attach(store); store.boot(); await PhoneLinkModel.shared.pushIfOn() }
+                .modifier(OpensSettingsOnRequest(store: store))
                 .accessibilityLabel("Deploy Center")
                 .accessibilityValue(active ? L("deploying", "deployt gerade")
                     : failed ? L("a deploy failed", "ein Deploy ist fehlgeschlagen")
@@ -452,7 +454,8 @@ struct MenuBarContent: View {
 
     var body: some View {
         let w = store.waiting
-        let changed = Array(store.items.values.joined()).filter { $0.hasNewCommits && $0.deployable && $0.state == .idle }
+        // The same rule as the count (Store.isWaiting): hidden projects stay out.
+        let changed = Array(store.items.values.joined()).filter { store.isWaiting($0) }
             .sorted { ($0.pendingCommits ?? 0) > ($1.pendingCommits ?? 0) }
         let connected = Platform.allCases.filter { p in
             guard let d = store.doctor else { return false }
