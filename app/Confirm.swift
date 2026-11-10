@@ -61,3 +61,43 @@ enum NameCheck {
         }
     }
 }
+
+/// What waits brings database migrations (`deploys risk`): going live asks for a tick that they
+/// were looked at (FEA-036). On by default; Settings → Deploy turns it off.
+enum MigrationCheck {
+    static let key = "migrationCheck"
+    static var on: Bool { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
+
+    /// Whether this live deploy brings migrations: only new commits do; a redeploy of a given
+    /// commit (a rollback, say) brings nothing new.
+    nonisolated static func needed(_ i: Item, sha: String?) -> Bool {
+        sha == nil && i.hasNewCommits && (i.risk?.reasons.contains { $0.kind == "migrations" } ?? false)
+    }
+
+    /// True once the box was ticked; false on Cancel. Asks again with a hint when Deploy is
+    /// clicked without the tick.
+    @MainActor static func confirm(_ items: [Item]) -> Bool {
+        let names = items.map { Demo.mask($0.name) }.joined(separator: ", ")
+        let files = items.compactMap { i -> String? in
+            guard let r = i.risk, let m = r.reasons.first(where: { $0.kind == "migrations" }) else { return nil }
+            return r.text(m)
+        }.prefix(3).joined(separator: "\n")
+        var unticked = false
+        while true {
+            let a = NSAlert()
+            a.messageText = L("Database migrations are about to go live", "Datenbank-Migrationen gehen gleich live")
+            a.informativeText = (unticked ? L("Tick the box first. ", "Erst das Häkchen setzen. ") : "")
+                + L("\(names) brings migrations. Make sure they are safe for the data that is live now.",
+                    "\(names) bringt Migrationen mit. Prüfe, ob sie für die Daten sicher sind, die jetzt live sind.")
+                + (files.isEmpty ? "" : "\n\n" + Demo.scrub(files, items: items))
+            let box = NSButton(checkboxWithTitle: L("I checked the migrations", "Ich habe die Migrationen geprüft"), target: nil, action: nil)
+            a.accessoryView = box
+            a.addButton(withTitle: L("Deploy", "Deployen"))
+            a.addButton(withTitle: L("Cancel", "Abbrechen"))
+            NSApp.activate(ignoringOtherApps: true)
+            guard a.runModal() == .alertFirstButtonReturn else { return false }
+            if box.state == .on { return true }
+            unticked = true
+        }
+    }
+}

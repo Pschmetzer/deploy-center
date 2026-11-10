@@ -38,6 +38,7 @@ struct SettingsView: View {
     @AppStorage("onlyWhenGreen") private var onlyWhenGreen = false
     @AppStorage(OwnerCheck.key) private var ownerCheck = false
     @AppStorage("watchMinutes") private var watchMinutes = 0
+    @AppStorage(MigrationCheck.key) private var migrationCheck = true
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
     @State private var loginError: String?
@@ -230,6 +231,9 @@ struct SettingsView: View {
             }
             .help(L("Two failed answers in a row warn, or roll back where the project rolls back by itself (its details).",
                     "Zwei fehlgeschlagene Antworten hintereinander warnen, oder rollen zurück, wo das Projekt selbst zurückrollt (seine Details)."))
+            Toggle(L("Ask for a tick before database migrations go live", "Vor dem Live-Gang von Datenbank-Migrationen ein Häkchen verlangen"), isOn: $migrationCheck)
+                .help(L("When the waiting commits change migration files, every live deploy of them asks first.",
+                        "Ändern die wartenden Commits Migrationsdateien, fragt jeder Live-Deploy davon erst nach."))
             Toggle(L("Ask for Touch ID or the password before risky steps", "Vor riskanten Schritten nach Touch ID oder dem Passwort fragen"), isOn: $ownerCheck)
                 .help(L("Deploying several projects at once, a rollback by hand, and allowing auto-deploy. The automatic rollback after a failed check does not wait.",
                         "Mehrere Projekte auf einmal deployen, ein Rollback von Hand und Auto-Deploy erlauben. Das automatische Zurückrollen nach einem fehlgeschlagenen Check wartet nicht."))
@@ -592,6 +596,17 @@ struct MenuBarContent: View {
                    "Claude behebt \(store.fixingCount) \(store.fixingCount == 1 ? "fehlgeschlagenen Build" : "fehlgeschlagene Builds")"))
         }
         ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
+        // Stopping needs no confirmation in the window either; it is the same cancel as the row's.
+        let active = Array(store.items.values.joined()).filter { $0.state.isActive }.sorted { $0.name < $1.name }
+        if !active.isEmpty {
+            Divider()
+            ForEach(active.prefix(8)) { i in
+                Button(L("Cancel \(Demo.mask(i.name))", "\(Demo.mask(i.name)) abbrechen")) { store.cancel(i) }
+            }
+            if active.count > 1 {
+                Button(L("Cancel all \(active.count) deploys", "Alle \(active.count) Deploys abbrechen")) { store.cancelAll() }
+            }
+        }
         Divider()
         Button(L("Open Deploy Center", "Deploy Center öffnen")) {
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)

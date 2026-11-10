@@ -292,6 +292,12 @@ do {
     expect("risk: migrations named", r.text(r.reasons[0]), L("Database migrations: ", "Datenbank-Migrationen: ") + "prisma/migrations/1/migration.sql")
     expect("risk: size with numbers", r.text(r.reasons[1]), L("A very large diff: 120 files, 4000 lines", "Ein sehr großer Diff: 120 Dateien, 4000 Zeilen"))
     expect("risk: an unknown kind keeps the script's text", r.text(r.reasons[2]), "from a newer script")
+    var m = item(changed: true); m.risk = r
+    expect("migrations: new commits ask", MigrationCheck.needed(m, sha: nil), true)
+    expect("migrations: a given commit (rollback) does not", MigrationCheck.needed(m, sha: "abc"), false)
+    m.changed = false
+    expect("migrations: nothing waits, nothing asked", MigrationCheck.needed(m, sha: nil), false)
+    expect("migrations: no migration reason", MigrationCheck.needed(item(changed: true), sha: nil), false)
     let v = try JSONDecoder().decode(VercelProject.self, from: Data(#"{"name":"a","auto":false,"deployable":true}"#.utf8))
     expect("a list entry without risk still decodes", v.risk == nil, true)
     let w = try JSONDecoder().decode(WindowReply.self, from: Data(#"{"denied":true,"reason":"fri 15:00–24:00","configured":true}"#.utf8))

@@ -148,8 +148,11 @@ final class Store: ObservableObject {
         objectWillChange.send()
     }
     /// A live deploy of a critical project asks for its name; previews and observers do not.
-    private func namesTyped(_ items: [Item], preview: Bool) -> Bool {
+    /// Migrations in what waits ask for a tick first (FEA-036), in the same places.
+    private func namesTyped(_ items: [Item], preview: Bool, sha: String? = nil) -> Bool {
         guard !preview, !observer else { return true }
+        let migrating = MigrationCheck.on ? items.filter { MigrationCheck.needed($0, sha: sha) } : []
+        if !migrating.isEmpty, !MigrationCheck.confirm(migrating) { return false }
         return items.filter(isCritical).allSatisfy { NameCheck.confirm(Demo.mask($0.name)) }
     }
     /// One project's builds at the week's pace, a month long. Nil when its costs are not known.
@@ -1098,7 +1101,7 @@ final class Store: ObservableObject {
     /// `force` (a reason) goes out inside a closed deploy window, as the footer's dialog does.
     func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, whenGreen: Bool = false, force: String? = nil) {
         let job = Job(item: item, preview: preview, sha: sha, clearCache: clearCache, whenGreen: whenGreen, force: force)
-        guard namesTyped([item], preview: preview) else { return }
+        guard namesTyped([item], preview: preview, sha: sha) else { return }
         // A preview is never held by the deploy window. A live deploy from a row, the details or the
         // palette is: the script would refuse it anyway, so say why here instead of a failed row.
         guard !preview, !observer, force == nil else { enqueue([job]); return }
