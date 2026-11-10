@@ -31,27 +31,35 @@ login item.
 
 The logic lives in one bash script, `deploys`, which the app calls; it also works alone
 (`./deploys` without arguments prints the help). Each platform is one file in `providers/`
-(`vercel.sh`, `render.sh`), sourced by `deploys`. To add a platform, add one file there and its
+(`vercel.sh`, `render.sh`, `netlify.sh`, …), sourced by `deploys`. To add a platform, add one file there and its
 fixtures; nothing else changes. See [docs/PROVIDERS.md](docs/PROVIDERS.md). Keep `providers/` next to
 `deploys` (or set `DEPLOYS_DIR`).
 
 ## Tests
 
-All of these run in CI (`.github/workflows/ci.yml`) and must pass:
+CI (`.github/workflows/ci.yml`) runs these on macOS, and they must pass:
 
 ```bash
-bash tests/script-tests.sh
+scripts/check-public.sh             # no personal data in tracked files
+actionlint .github/workflows/*.yml docs/deploy-on-label.yml
+shellcheck --severity=warning deploys providers/*.sh build.sh release.sh scripts/*.sh tests/*.sh tests/lib/*.sh tests/providers/*.sh lib/*.sh
+shellcheck site/install.sh
+bash tests/script-tests.sh          # the rules in deploys, and tests/providers/*.sh
+bash tests/team-tests.sh            # team mode
+bash tests/install-tests.sh         # install.sh, the release tarball, the Homebrew formula
+bash tests/app-tests.sh             # the rules in the app
+./build.sh                          # ad hoc signed, universal
 ```
 
-```bash
-bash tests/app-tests.sh
-```
+On Ubuntu it runs `tests/install-tests.sh` (also with `dash` and with bash as `sh`), the VS Code
+extension (`integrations/vscode`: `npm ci`, `npm run typecheck`, `npm test`, `npm run package`),
+and the website: `python3 scripts/build-docs.py` and `python3 scripts/check-links.py site`.
+
+Not in CI yet, run them by hand when you touch those parts:
 
 ```bash
-shellcheck --severity=warning deploys providers/*.sh build.sh release.sh scripts/*.sh tests/*.sh tests/lib/*.sh tests/providers/*.sh
-```
-
-```bash
+bash integrations/tests/run.sh      # MCP server, Action, notify, digest, statuspage, Claude Code plugin
+python3 scripts/check-site.py       # titles, descriptions, canonical links, sitemap of site/
 swiftc -parse-as-library -swift-version 5 -typecheck app/*.swift shared/*.swift
 ```
 
@@ -74,5 +82,14 @@ runs `tests/providers/*.sh`, the provider contract, against the fixtures in `tes
 5. With `--publish`: creates the GitHub release `vVERSION` with the zip. The notes are that
    version's section of `CHANGELOG.md` plus the SHA-256.
 
-Raising `VERSION` and moving the changelog lines from Unreleased to the new version are done by
-hand before that.
+6. With `--publish`: also uploads the CLI tarball and `checksums.txt`, signs the zip with the
+   Sparkle EdDSA key (in the release Mac's keychain) into `site/appcast.xml`, and writes the
+   Homebrew cask and formula into a clone of the tap. Nothing is pushed.
+
+Before that, `scripts/bump.sh patch|minor|major` (or a version) sets `VERSION`, turns
+`## Unreleased` into the new version and updates the version on `site/index.html`. Commit that.
+
+After `--publish`: open a pull request with `site/appcast.xml` (`appcast-VERSION`, the script
+prints the commands). Installed apps see the update only once it is on `main` and the website is
+published. Then propose the cask and formula in the tap. Check that `VERSION`, the newest appcast
+entry and the version on `site/index.html` agree.

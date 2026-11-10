@@ -10,8 +10,9 @@ no real project names in examples, texts in English and German, nothing builds w
 2. **`--json` examples in the CLI reference.** Add a short sample output of `deploys changed --json`
    and `deploys status --json` to [docs/CLI.md](CLI.md), with made-up project names.
 
-3. **Try the CI example and report.** [examples/daily-deploy.yml](../examples/daily-deploy.yml) has not
-   been tested by the project yet. Run it in a test repo, then fix what breaks or note what you found.
+3. **Fix and test the CI example.** [examples/daily-deploy.yml](../examples/daily-deploy.yml) downloads only
+   the single file `deploys`, which needs `providers/` next to it since 0.8.0. Switch it to
+   `install.sh --version` (SHA-256 checked) and run it in a test repo.
 
 4. **More screenshots.** Take a screenshot of the menu bar and of Settings in demo mode, add them to
    `docs/images/`, and use them with a one-line caption in [docs/SAFE-START.md](SAFE-START.md).
@@ -20,12 +21,10 @@ no real project names in examples, texts in English and German, nothing builds w
    knows Discord, Slack-style, ntfy and Telegram. Add a Teams format and a test in
    [integrations/tests/run.sh](../integrations/tests/run.sh).
 
-6. **Fewer shellcheck warnings.** CI runs `shellcheck --severity=error`. Run it with
-   `--severity=warning` on `deploys`, fix a few warnings without changing behavior, and keep the tests green.
+6. **Troubleshooting entry from a real error.** Pick an error message in [`deploys`](../deploys) or
+   [`providers/`](../providers/) that is not in [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) yet and
+   add what it means and what to do.
 
-7. **Troubleshooting entry from a real error.** Pick an error message in [`deploys`](../deploys) that
-   is not in [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) yet and add what it means and what to do.
-
-8. **Link check in CI.** Add a step to [.github/workflows/ci.yml](../.github/workflows/ci.yml) that
-   fails when a relative link in `README.md`, `README.de.md` or `docs/*.md` points to a file that
-   does not exist. A small bash or Python script is enough; no network needed.
+7. **A negative test for a check script.** `scripts/check-links.py` and `scripts/check-site.py` have
+   no test that they catch a broken link. Add a small fixture folder with one broken link and a
+   test that expects the script to fail.

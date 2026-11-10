@@ -28,7 +28,7 @@ brew tap pschmetzer/tap && brew trust pschmetzer/tap && brew install --cask depl
 brew install --cask deploy-center --appdir="$HOME/Applications"
 ```
 
-By hand: unzip the release and drag **Deploy Center** into `~/Applications`. **Update now** in Settings replaces the app where it is, so updates need no admin rights either.
+By hand: unzip the release and drag **Deploy Center** into `~/Applications`. The built-in updater (Sparkle) replaces the app where it is, so updates need no admin rights either.
 
 ### macOS says the app cannot be opened (Gatekeeper)
 
@@ -165,6 +165,54 @@ The service was renamed or deleted on Render. Reload the list.
 
 A Render **Blueprint** with auto-sync can apply `render.yaml` again on a push. Add `autoDeployTrigger: off` to the services in `render.yaml`. `deploys triggers` lists Blueprints with auto-sync on.
 
+## GitLab
+
+### "gitlab: HTTP 401: …"
+
+The GitLab token is missing, wrong or expired. Log in with `glab auth login` (for your own GitLab: `--hostname`), or set `GITLAB_TOKEN` (scope `read_api`). With both, `glab` is used. See [GITLAB.md](GITLAB.md).
+
+### A GitLab project shows "branch head unknown"
+
+Neither `glab` nor `GITLAB_TOKEN` is set up, or the repo is on another host (Bitbucket, Gitea): those are not read. For your own GitLab set `GITLAB_HOST`.
+
+## Other hosts
+
+Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and deploy hooks are off until `deploys providers enable <p>`. Each has its own page with its errors: [Netlify](providers/netlify.md), [Cloudflare](providers/cloudflare.md), [Amplify](providers/amplify.md), [DigitalOcean](providers/digitalocean.md), [Coolify](providers/coolify.md), [deploy hook](providers/hook.md).
+
+## Team mode
+
+### "Observer mode (…): "deploys …" changes something and is refused."
+
+This Mac is an observer: you are on the `observers` list of the repo's `deploy-center.json`, or observer mode is on here. Observers can look, not deploy. The message ends with what to do: `deploys readonly off`, unset `DEPLOYS_READONLY`, or ask to be taken off the list. See [TEAM.md](TEAM.md).
+
+## Claude and Autofix
+
+### "That does not look like a routine token (sk-ant-...)"
+
+`deploys autofix set-token` takes the routine's token on stdin: `pbpaste | deploys autofix set-token`. See [AUTOFIX.md](AUTOFIX.md).
+
+### "autofix is running already"
+
+A run is still going (the scheduled one every 10 minutes, or one you started). Wait for it; its log is `~/Library/Logs/DeployCenter-autofix.log`.
+
+### "This month's Claude cap is reached (…)"
+
+Claude in the app stops at the monthly token cap you set. Raise it in Settings → Claude in the app, or with `deploys ai cap <tokens>`. See [CLAUDE.md](CLAUDE.md).
+
+### "The config file is not valid JSON. Nothing was changed."
+
+Settings → Claude → Connect for Claude Desktop edits `~/Library/Application Support/Claude/claude_desktop_config.json` only when it is valid JSON. Fix or remove the broken file, then connect again.
+
+## iPhone
+
+### "This build cannot use iCloud Keychain. Use the QR code."
+
+A self-built (ad hoc signed) app has no keychain group to share with the iPhone. Use **Show a QR code for the iPhone …** in Settings → iPhone, or install a release.
+
+### "Could not write to iCloud Keychain (error …)"
+
+iCloud Keychain is off on this Mac (System Settings → your name → iCloud → Passwords), or the Mac is signed in with another Apple ID than the iPhone. The number is the keychain's error code; it is also in the error log.
+
 ## Deploying
 
 ### "<project> is being started already (wait a minute)"
@@ -193,9 +241,9 @@ deploys triggers
 
 ## Updating
 
-### "Update failed: …"
+### An update does not show up, or does not install
 
-**Update now** downloads the newest release, checks its signature with `codesign` and Gatekeeper, and only then replaces the app. If any check fails, the app stays as it was and the reason is in the error log. Install by hand from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest), or with `brew upgrade --cask deploy-center`.
+The app updates itself with Sparkle: once a day (Settings → **Check for updates automatically**) and on **Check for Updates …** in the app menu. It reads `https://deploycenter.app/appcast.xml`, downloads the zip from GitHub, and installs it only if the EdDSA signature and the Developer ID match, and only once no deploy is running. If a check fails, the app stays as it was and Sparkle says why. Install by hand from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest), or with `brew upgrade --cask --greedy deploy-center`.
 
 ## Still stuck?
 

@@ -12,7 +12,10 @@ Deploy Center is maintained by one person in their spare time. The aim is a firs
 ## Supported versions
 
 Only the newest release gets fixes. Update with **Check for Updates …** in the app menu or
-`brew upgrade --cask --greedy deploy-center`.
+`brew upgrade --cask --greedy deploy-center`. The `deploys` CLI, the Docker image and the
+integrations in `integrations/` (MCP server, VS Code and Raycast extensions, GitHub Action) are
+fixed in the same repo: use the newest release or `main`. The iPhone app gets fixes in its newest
+build.
 
 | Version | Fixes |
 |---|---|
@@ -24,15 +27,20 @@ Only the newest release gets fixes. Update with **Check for Updates …** in the
 Deploy Center runs as you, on your Mac (or in your CI job), with your Vercel, Render and GitHub
 logins. It has no server of its own. What it protects:
 
-1. **Your keys**: the Render API key, the Claude routine token, the Vercel and GitHub CLI logins.
+1. **Your keys**: the Render API key, the Claude routine token, the Anthropic API key, the tokens
+   of the opt-in hosts (Netlify, Cloudflare, DigitalOcean, Coolify; an AWS profile name for
+   Amplify), deploy hook URLs, the Vercel, GitHub and GitLab CLI logins, and the keys handed to
+   the iPhone app.
 2. **Your build minutes and live sites**: nothing may start a build, a rollback or a cancel unless
    you asked for it.
 3. **Your Mac**: text that comes from somewhere else must never run as code.
 
 Text from somewhere else is everything the tool did not get from you directly: project and service
-names, repo names, commit messages, build logs and workflow file names from the Vercel, Render and
-GitHub APIs; a `deploycenter://` link any web page can open; arguments an AI agent passes through
-the MCP server; and the build log a Claude routine reads. It is handled as data:
+names, repo names, commit messages, build logs and workflow file names from the APIs of the hosts
+and of GitHub and GitLab; a `deploy-center.json` in a repo (team mode: anyone with push rights
+writes it); a `deploycenter://` link any web page can open; arguments an AI agent passes through
+the MCP server; Claude's answers in the app; and the build log a Claude routine reads. It is
+handled as data:
 
 - `deploys` passes it to `jq` as `--arg`, never inside a filter; builds JSON with `jq`, never with
   `printf`; passes it to `bash -c` as an argument, never as part of the script.
@@ -54,6 +62,12 @@ the vendor).
 | Project lists, deploys, build logs, starts and rollbacks | Vercel | the `vercel` CLI, with its own login |
 | Service lists, deploys, build logs, starts and rollbacks | `api.render.com` | `curl` over HTTPS; the key on stdin (`curl -K -`) |
 | Commits, compares, pull requests, check runs, workflow files | `api.github.com` | the `gh` CLI, with its own login |
+| Commits, compares, merge requests (only for repos on GitLab) | `GITLAB_HOST` (`gitlab.com` when unset) | the `glab` CLI with its login, or `curl` with `GITLAB_TOKEN` on stdin; never to another host a repo URL names |
+| Site lists, deploys, logs, starts and rollbacks (opt-in hosts, only after `deploys providers enable <p>`) | `api.netlify.com`, `api.cloudflare.com`, `api.digitalocean.com`, your Coolify server; AWS through the `aws` CLI | `curl` over HTTPS with the token on stdin; Amplify with the `aws` CLI's own credentials |
+| A POST that starts a build | the deploy hook URL you added | `curl`, URL and headers on stdin |
+| Claude in the app (opt-in, your own key): masked log excerpts, commit titles, file names | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after `deploys ai set-key`, with a monthly token cap |
+| Keys for the iPhone app: the Vercel token for the iPhone, the Render key, the `gh` token | iCloud Keychain (end-to-end encrypted by Apple), or a QR code on screen | only when you turn on Settings → iPhone or show the QR code; see [iPhone link](#iphone-link) |
+| The `deploy-center` MCP entry (a path and arguments, no key) | `~/Library/Application Support/Claude/claude_desktop_config.json`, Claude Code's config | only on Connect in Settings → Claude; only that entry is added or removed |
 | The update feed (once a day, can be turned off; no system profile), then the zip | `deploycenter.app/appcast.xml`, `github.com` | HTTPS, see [Updates](#updates) |
 | Project icons | each project's own domain | HTTPS to `https://<domain>/`; icon links in that page are followed |
 | Autofix: project, repo, branch, commit, deploy id and the last 60 KB of the build log, masked | `api.anthropic.com` (your routine) | `curl` over HTTPS; the token on stdin; only after you set up a routine and a token |
@@ -89,12 +103,31 @@ help, not a guarantee. If a build can print secrets in another shape, do not tur
 The routine's prompt tells it that the payload is untrusted data and never to merge; a person
 merges the fix PR, and a merged fix is only announced, never deployed by itself.
 
+## iPhone link
+
+The iPhone app has no login of its own. It gets keys from the Mac in one of two ways:
+
+- **iCloud Keychain** (Settings → iPhone → *Connect the iPhone app*): one synced keychain item
+  (service `app.deploycenter.link`) holds the Vercel token made for the iPhone, the Render key and
+  the GitHub token of the `gh` CLI. It reaches every device signed in with your Apple ID. Turning
+  the switch off deletes it there too (`PhoneLink.remove`); deleting the app does not.
+- **QR code** (*Show a QR code for the iPhone …*): the same keys, as base64 JSON behind
+  `deploycenter-link:1:`. They are not encrypted: anyone who sees or photographs the code has the
+  keys. The window closes after 60 seconds, but the keys in it do not expire.
+
+Use a Vercel token made only for the phone, and a Render key you can revoke. If a code may have
+been seen, or a device is lost, revoke the keys at Vercel, Render and GitHub; removing the link
+does not make a copied key useless.
+
 ## Nothing starts a build by itself
 
 - Every start, rollback and cancel is a click in the app or a command (`deploy-changed` only with
   `--yes`). A second start of the same project within a minute is refused.
 - `deploycenter://select?project=<name>` only fills the search field of the main window. It never
   ticks, starts or rolls back anything, whatever the link says.
+- Autofix and the guard run as LaunchAgents (`app.deploycenter.autofix`, `app.deploycenter.guard`)
+  only after `deploys autofix schedule on` / `deploys guard schedule on` (or the switch in
+  Settings). The guard only turns auto-deploy off; Autofix opens fix PRs and never merges.
 - The GitHub Action deploys only with `deploy: true`. Its inputs reach the scripts through `env:`,
   never as `${{ … }}` inside a `run:` script (a test checks this). It has no
   `pull_request_target` trigger. The examples set `permissions: contents: read` (or none) and

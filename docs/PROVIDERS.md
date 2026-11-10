@@ -1,7 +1,10 @@
 # Providers: adding a platform
 
 Each platform `deploys` can deploy to is one file: `providers/<p>.sh`. Today these are
-`vercel.sh`, `render.sh` and `hook.sh` (a generic deploy hook, off by default). `deploys` sources every `providers/*.sh` at start. There is no
+`vercel.sh` and `render.sh` (on by default), and `netlify.sh`, `cloudflare.sh`, `amplify.sh`,
+`digitalocean.sh`, `coolify.sh` and `hook.sh` (a generic deploy hook), off until `deploys providers enable <p>`;
+each has a page: [netlify](providers/netlify.md), [cloudflare](providers/cloudflare.md),
+[amplify](providers/amplify.md), [digitalocean](providers/digitalocean.md), [coolify](providers/coolify.md), [hook](providers/hook.md). `deploys` sources every `providers/*.sh` at start. There is no
 list to edit: adding the file adds the provider, and its id is the file name without `.sh`.
 The shared commands (`changed`, `deploy-changed`, `status`, `watch`, `logs`, `open`, `explain`,
 `doctor`, `where`, `list`) call only the functions below. A new provider changes nothing outside
