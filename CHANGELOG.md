@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.6.0
+
+Includes everything listed under 0.5.0, which was not published as its own release.
+
 - Rollback skips an older deploy of the same commit (Vercel and Render), so it really changes what is live.
 - Menu bar: a line when auto-deploy is still on somewhere, and the current provider outages.
 - "Share the saving" under the cost bar: copies a picture and a sentence with your build cost before and since auto-deploy was turned off, without project names.
