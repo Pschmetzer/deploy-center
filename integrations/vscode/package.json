@@ -1,0 +1,251 @@
+{
+  "name": "deploy-center",
+  "displayName": "Deploy Center",
+  "description": "See what is waiting to go live on Vercel and Render, and deploy it by hand, from VS Code, Cursor or Windsurf.",
+  "version": "0.1.0",
+  "publisher": "deploycenter",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "homepage": "https://deploycenter.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Pschmetzer/deploy-center",
+    "directory": "integrations/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/Pschmetzer/deploy-center/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "deploy",
+    "vercel",
+    "render",
+    "cursor",
+    "claude code"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Deploy Center runs git in the open folder to match it to your projects."
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "deployCenter.refresh",
+        "title": "Refresh",
+        "category": "Deploy Center",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "deployCenter.menu",
+        "title": "Show Actions",
+        "category": "Deploy Center"
+      },
+      {
+        "command": "deployCenter.deployRepo",
+        "title": "Deploy Waiting for This Repo",
+        "category": "Deploy Center",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "deployCenter.deployProject",
+        "title": "Deploy",
+        "category": "Deploy Center",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "deployCenter.openSite",
+        "title": "Open Site",
+        "category": "Deploy Center",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "deployCenter.openDashboard",
+        "title": "Open Dashboard",
+        "category": "Deploy Center"
+      },
+      {
+        "command": "deployCenter.showLog",
+        "title": "Show Build Log",
+        "category": "Deploy Center",
+        "icon": "$(output)"
+      },
+      {
+        "command": "deployCenter.copyForAi",
+        "title": "Copy Build Error for AI",
+        "category": "Deploy Center",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "deployCenter.copyNotes",
+        "title": "Copy Release Notes",
+        "category": "Deploy Center"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "deployCenter.projects",
+          "name": "Deploy Center",
+          "icon": "$(rocket)",
+          "contextualTitle": "Deploy Center"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "deployCenter.projects",
+        "contents": "The deploys command was not found.\n[Get Deploy Center](https://deploycenter.app)\nOr set its path in [Settings](command:workbench.action.openSettings?%22deployCenter.cliPath%22).",
+        "when": "deployCenter.state == missing"
+      },
+      {
+        "view": "deployCenter.projects",
+        "contents": "Nothing is waiting. Every project is on its newest commit.\n[Refresh](command:deployCenter.refresh)",
+        "when": "deployCenter.state == empty"
+      },
+      {
+        "view": "deployCenter.projects",
+        "contents": "Could not read the projects. See the Deploy Center output for the reason.\n[Refresh](command:deployCenter.refresh)",
+        "when": "deployCenter.state == error"
+      },
+      {
+        "view": "deployCenter.projects",
+        "contents": "Reading projects…",
+        "when": "!deployCenter.state || deployCenter.state == loading"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "deployCenter.refresh",
+          "when": "view == deployCenter.projects",
+          "group": "navigation"
+        },
+        {
+          "command": "deployCenter.deployRepo",
+          "when": "view == deployCenter.projects && deployCenter.repoWaiting",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "deployCenter.deployProject",
+          "when": "view == deployCenter.projects && viewItem =~ /waiting/",
+          "group": "inline"
+        },
+        {
+          "command": "deployCenter.copyForAi",
+          "when": "view == deployCenter.projects && viewItem =~ /failed/",
+          "group": "inline"
+        },
+        {
+          "command": "deployCenter.deployProject",
+          "when": "view == deployCenter.projects && viewItem =~ /project/",
+          "group": "1_deploy"
+        },
+        {
+          "command": "deployCenter.openSite",
+          "when": "view == deployCenter.projects && viewItem =~ /project/",
+          "group": "2_open@1"
+        },
+        {
+          "command": "deployCenter.openDashboard",
+          "when": "view == deployCenter.projects && viewItem =~ /project/",
+          "group": "2_open@2"
+        },
+        {
+          "command": "deployCenter.showLog",
+          "when": "view == deployCenter.projects && viewItem =~ /project/",
+          "group": "3_log@1"
+        },
+        {
+          "command": "deployCenter.copyForAi",
+          "when": "view == deployCenter.projects && viewItem =~ /project/",
+          "group": "3_log@2"
+        },
+        {
+          "command": "deployCenter.copyNotes",
+          "when": "view == deployCenter.projects && viewItem =~ /project/",
+          "group": "4_notes"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "deployCenter.deployProject",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Deploy Center",
+      "properties": {
+        "deployCenter.cliPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Full path to the `deploys` command. Empty: the one inside `/Applications/Deploy Center.app`, then `~/Applications`, then `PATH`."
+        },
+        "deployCenter.scope": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "repo",
+            "all"
+          ],
+          "enumDescriptions": [
+            "The projects whose repo matches this folder's git remote; all projects when none match.",
+            "Only the projects whose repo matches this folder's git remote.",
+            "All projects."
+          ],
+          "default": "auto",
+          "description": "Which projects the status bar and the tree show."
+        },
+        "deployCenter.pollMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "How often to check, in minutes, while the window has focus. It also checks when the window gets focus again."
+        },
+        "deployCenter.timeoutSeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 10,
+          "description": "How long one call of the deploys command may take before it is stopped."
+        },
+        "deployCenter.logLines": {
+          "type": "number",
+          "default": 200,
+          "minimum": 20,
+          "description": "How many lines of the build log to show."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node esbuild.mjs --tests && node --test \"out/test/*.test.js\"",
+    "package": "vsce package --no-dependencies",
+    "vscode:prepublish": "npm run typecheck && node esbuild.mjs --production"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/vscode": "1.85.0",
+    "@vscode/vsce": "3.9.2",
+    "esbuild": "0.28.2",
+    "ovsx": "1.2.0",
+    "typescript": "6.0.3"
+  }
+}
