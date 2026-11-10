@@ -116,8 +116,9 @@ merges the fix PR, and a merged fix is only announced, never deployed by itself.
 
 - Every start, rollback and cancel is a click in the app or a command (`deploy-changed` only with
   `--yes`). A second start of the same project within a minute is refused.
-- `deploycenter://select?project=<name>` only fills the search field of the main window. It never
-  ticks, starts or rolls back anything, whatever the link says.
+- `deploycenter://select?project=<name>` (or `platform:name`) only shows that project in the main
+  window, and `deploycenter://settings/<tab>` only opens a settings tab. Neither ticks, starts or
+  rolls back anything, whatever the link says.
 - The GitHub Action deploys only with `deploy: true`. Its inputs reach the scripts through `env:`,
   never as `${{ … }}` inside a `run:` script (a test checks this). It has no
   `pull_request_target` trigger. The examples set `permissions: contents: read` (or none) and
