@@ -491,6 +491,7 @@ expect "autofix: one fire per run" "$(fired)" "1"
 expect "autofix: the token is never in argv" "$(grep '^argv ' "$CALLS" | grep -c SECRET)" "0"
 expect "autofix: the token goes in on stdin" "$(grep -c '^stdin header = "Authorization: Bearer sk-ant-oat01-SECRET"' "$CALLS")" "1"
 expect "autofix: fired is recorded with the session" "$(jq -r '.fires[0] | "\(.status) \(.session)"' "$AUTOFIX_STATE")" "fired https://claude.ai/code/session_x"
+expect "autofix: the fire notes the kind of failure (FEA-017)" "$(jq -r '.fires[0] | "\(.class) \(.classReason)"' "$AUTOFIX_STATE")" "unknown null"
 : > "$CALLS"; afrun >/dev/null
 expect "autofix: the same failed deploy does not fire twice; the next project does" "$(fired):$(jq -c '[.fires[].deployId]' "$AUTOFIX_STATE")" '1:["d1","r1"]'
 : > "$CALLS"; afrun >/dev/null
@@ -500,6 +501,21 @@ expect "autofix: nothing new, nothing fired" "$(fired)" "0"
 af_reset; ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"}]'
 masked="$(af_logs | af_mask)"
 expect "autofix: secrets in the log are masked" "$(echo "$masked" | grep -c 'abc123\|ghp_abcdef')" "0"
+
+# FEA-016: --preview shows what a fire would send, masked, and sends or notes nothing.
+pv="$( ( set -e; json=1; PATH="$af/bin:$PATH"; af_fire() { echo "FIRED" >> "$CALLS"; exit 99; }; af_preview vercel web ) 2>&1)"
+expect "autofix --preview: masked log, prompt, routine id; nothing fired or saved" \
+  "$(echo "$pv" | jq -r '"\(.routine) \(.deployId) \(.masked_log | test("npm ERR")) \(.masked_log | test("abc123|ghp_abcdef")) \(.prompt | test("You fix failed deploy builds"))"'):$(grep -c 'FIRED\|^argv ' "$CALLS"):$([ -f "$AUTOFIX_STATE" ] && echo saved || echo none)" \
+  "trig_test d1 true false true:0:none"
+expect "autofix --preview: never the routine token" "$(echo "$pv" | grep -c 'sk-ant-oat01')" "0"
+pv="$( ( json=1; af_preview vercel nope ) 2>&1)"; rc=$?
+expect "autofix --preview: no failed build is exit 2" "$rc:$(echo "$pv" | grep -c 'no failed build')" "2:1"
+# FEA-017: a class for the kind of failure, from the masked log.
+cls() { printf '%s\n' "$1" | af_classify | cut -f1; }
+expect "autofix classify: env, auth, quota, outage, dependency, code, unknown" \
+  "$(cls 'Error: environment variable DATABASE_URL is missing') $(cls 'Error: 401 Unauthorized') $(cls 'Build minutes quota exceeded') $(cls 'npm ERR! network ETIMEDOUT') $(cls 'npm ERR! code ERESOLVE') $(cls 'src/a.ts(3,1): error TS2322: x') $(cls 'something odd')" \
+  "env auth quota outage dependency code unknown"
+expect "autofix classify: the line that says so goes along" "$(printf 'a\n  Error: 401 Unauthorized  \n' | af_classify | cut -f2)" "Error: 401 Unauthorized"
 
 # 429 is retried next run; any other error is recorded and not retried.
 af_reset; AFCODE=429 afrun >/dev/null
@@ -785,6 +801,17 @@ expect "ai notes: German, bot commits counted not listed, no emails" \
 airun ai_run ship web >/dev/null
 expect "ai ship: diff stats, risky files and auto-deploy go in" \
   "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Diff: 2 commits, 3 files, +40 -2'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'prisma/migrations'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'auto-deploy: off')" "1:1:1"
+cp "$DEPLOYS_CONFIG/ai-usage.json" "$tmp/ai-usage.keep"
+airun ai_run ask web --question "will the migration run?" >/dev/null
+expect "ai ask: the question, the commits and the masked log go in" \
+  "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Question: will the migration run?'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'dark mode'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'npm ERR! build failed'):$(grep -c 'ghp_abcdef' "$AIBODY")" "1:1:1:0"
+out="$(airun ai_run ask web)"; rc=$?
+expect "ai ask: without a question, a usage line and no call" "$rc:$(echo "$out" | grep -c 'ai ask <project> --question')" "1:1"
+ai_history() { printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n2026-01-01 10:00\tlive\taaaa\tapi\t9m\n'; }
+airun ai_run slow web >/dev/null
+expect "ai slow: the deploy times and the log go in" \
+  "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'TOOK'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'npm ERR! build failed'):$(jq -r .system "$AIBODY" | grep -c 'Slowest steps')" "1:1:1"
+cp "$tmp/ai-usage.keep" "$DEPLOYS_CONFIG/ai-usage.json"
 expect "ai --json: text, tokens and the month's total for the app" "$(airun ai_run explain web --json | jq -c '{tokens, used, cap}')" '{"tokens":120,"used":480,"cap":300000}'
 
 printf '480' > "$DEPLOYS_CONFIG/ai-cap"; : > "$CALLS"
@@ -1529,6 +1556,11 @@ expect "PRV-130: a 503 read is asked three times, a POST once" "$(hcall down GET
 expect "PRV-130: a 401 says what to do" "$(hcall auth GET)" 'Error: X GET /v1/things -> HTTP 401 (the key is wrong or expired: deploys x set-key): no'$'\n''|rc=1'
 # FEA-078: doctor says GitHub's budget (null when not logged in).
 expect "FEA-078: doctor has githubRateLimit" "$(run "$O" "$E" doctor; jq -c 'has("githubRateLimit")' "$O")" $'0\ntrue'
+# FEA-007: a build nobody started from here has its minutes, and dollars where a rate is set.
+echo '{"web":{"org":"me","repo":"web","offAt":1}}' > "$REPOS"
+tv='{"deployments":[{"name":"web","source":"git","created":1767000000000,"buildingAt":1767000000000,"ready":1767000090000},{"name":"web","source":"git","created":1767000000000}]}'
+expect "FEA-007: triggers: minutes and usd per build, null when unknown" \
+  "$(echo "$tv" | trig_vercel_rows 0.1 | jq -sc 'map([.minutes, .usd])'):$(echo "$tv" | trig_vercel_rows "" | jq -sc 'map(.usd)')" '[[1.5,0.15],[null,null]]:[null,null]'
 # ===== end CLI track =====
 
 echo

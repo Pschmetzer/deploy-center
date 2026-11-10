@@ -78,6 +78,15 @@ expect "health: overrides.json wins over the project entry" "$(q '.projects.web.
 expect "health: the file's default fills a project without one" "$(q '.projects.docs.health | "\(.value) \(.from)"')" "/api/health acme/shop:deploy-center.json"
 expect "approvals: the file default applies to its projects" "$(q '.projects.web.approvals | "\(.value) \(.from)"')" "1 acme/shop:deploy-center.json"
 expect "approvals: a project entry in the file may lower it" "$(q '.projects.docs.approvals.value')" "0"
+# FEA-112: team init prints a deploy-center.json from these settings and writes nothing.
+before="$(find "$DEPLOYS_CONFIG" -type f ! -path '*/team-cache/*' ! -path '*/locks/*' | sort | xargs cat 2>/dev/null | cksum)"
+init="$("${D[@]}" team init acme/shop 2>/dev/null)"; rc=$?
+expect "FEA-112: team init: this repo's projects with branch and health, the schema" \
+  "$rc:$(echo "$init" | jq -c '[.version, (.projects | keys), .projects.web.branch, .projects.web.health, .projects.web.platform, (."$schema" | test("schema.json"))]')" \
+  '0:[1,["api","docs","web"],"main","/up","vercel",true]'
+expect "FEA-112: team init writes nothing" "$(find "$DEPLOYS_CONFIG" -type f ! -path '*/team-cache/*' ! -path '*/locks/*' | sort | xargs cat 2>/dev/null | cksum)" "$before"
+out="$("${D[@]}" team init 2>&1)"; rc=$?
+expect "FEA-112: team init without a repo is a usage line" "$rc:$(echo "$out" | grep -c 'team init <owner/repo>')" "1:1"
 expect "approvals: the project entry wins over the file default" "$(q '.projects.api.approvals.value')" "2"
 expect "a project named only in a file deploys from that repo" "$(q '.projects.api.repo | "\(.value) \(.from)"')" "acme/shop acme/shop:deploy-center.json"
 expect "a project in another repo's file takes that repo" "$(q '.projects.cli | "\(.repo.value) \(.branch.value)"')" "acme/tools stable"
@@ -292,6 +301,14 @@ fresh
   expect "CLI-090: an old eff.<pid> file is not taken" "$(team_effective 2>/dev/null | jq -r '.planted // false')" "false"
   [ "$fails" = 0 ] || exit 1
 ) || fails=$((fails + 1))
+# FEA-052: team add takes a GitHub address as copied, and refuses other hosts.
+fresh; cp "$DEPLOYS_CONFIG/team-repos" "$tmp/team-repos.keep"
+"${D[@]}" team add https://github.com/acme/web.git >/dev/null 2>&1
+"${D[@]}" team add git@github.com:acme/tools.git >/dev/null 2>&1
+expect "FEA-052: team add https://github.com/o/r.git and git@github.com:o/r.git are o/r" "$(grep -c '^acme/web$' "$DEPLOYS_CONFIG/team-repos"):$(grep -c '^acme/tools$' "$DEPLOYS_CONFIG/team-repos"):$(grep -c 'github' "$DEPLOYS_CONFIG/team-repos")" "1:1:0"
+out="$("${D[@]}" team add https://gitlab.com/acme/web 2>&1)"; rc=$?
+expect "FEA-052: team add refuses another host" "$rc:$(echo "$out" | grep -c 'GitHub repos only')" "1:1"
+cp "$tmp/team-repos.keep" "$DEPLOYS_CONFIG/team-repos"
 # ===== end CLI track =====
 
 echo

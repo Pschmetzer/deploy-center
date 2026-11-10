@@ -63,6 +63,10 @@ deploys autodeploy allow vercel my-project 4   # auto-deploy on for 4 hours (see
 deploys autodeploy allowed | revoke vercel my-project
 deploys guard [--dry-run] | status | schedule on|off   # auto-deploy off where it came back on
 deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE.md
+deploys ai ask my-project --question "will this run a migration?"   # your own question; its commits and log go along
+deploys ai slow my-project              # why its builds take long (ai risk = ai ship)
+deploys autofix --preview --only vercel my-project --json   # what a hand-over would send; sends nothing
+deploys team init me/my-repo > deploy-center.json   # a shared config from this Mac's settings (writes nothing itself)
 deploys schedule daily 09:00 [--when-green] [--by-rules]   # deploy-changed --yes once a day (launchd, or the cron line)
 deploys schedule off | status [--json]
 deploys hooks install [<repo>]          # before each push: which builds it would start (integrations/hooks)
@@ -163,6 +167,14 @@ waiting project: `[{rule, index, project, matched, action, unmet}]`.
 - `deploys doctor`: `githubRateLimit` `{remaining, limit, resetAt}` (null without a GitHub login).
 - The journal: lines the CLI writes carry `prevHash`, the SHA-256 of the line before.
 - `deploys schedule status --json`: `{at, args, scheduled, pathMissing}`.
+- `deploys autofix --preview --only <platform> <project> --json`: `{project, platform, repo, deployId,
+  sha, routine, prompt, payload, masked_log, class, reason}`. The routine id only, never its token;
+  nothing is sent or recorded. Without perl (no masking) it stops.
+- `deploys autofix status --json`: per fire `class` (`env`, `auth`, `quota`, `outage`, `dependency`,
+  `code`, `unknown`) and `reason` (the masked log line that says so); `null` for older fires.
+- `deploys triggers --json`: build entries carry `minutes` and `usd` (minutes × your price per minute
+  from `deploys price`; `null` when either is unknown).
+- `deploys team add` takes `https://github.com/owner/repo(.git)` and `git@github.com:owner/repo.git` too.
 
 ## On a server or in CI
 
