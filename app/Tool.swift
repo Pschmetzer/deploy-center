@@ -227,7 +227,7 @@ enum Tool {
                     let text = msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg
                     Log.write("deploys \(args.joined(separator: " ")): \(text)")
                     // The whole text is in the log; a toast or a row gets the end, where the cause usually is.
-                    answer(.failure(ToolError(message: shorten(text))))
+                    answer(.failure(ToolError(message: shorten(text), exitCode: p.terminationStatus)))
                 }
             }
         }
@@ -278,6 +278,8 @@ struct ToolError: LocalizedError {
     let message: String
     /// The command was ended after its time ran out: it may have done its work anyway.
     var timedOut = false
+    /// The script's exit code when it ended with one (not after a timeout).
+    var exitCode: Int32? = nil
     var errorDescription: String? { message }
 }
 

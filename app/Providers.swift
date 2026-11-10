@@ -231,7 +231,12 @@ extension Store {
     /// command: then it is Vercel and Render, as before.
     func loadProviders() async {
         let data = try? await Tool.run(["providers", "--json"], timeout: 20)
+        // A slow or failed answer after a good one keeps that list: falling back to Vercel and
+        // Render would switch a platform the person turned off back on.
+        if data == nil, providersFromScript { return }
         let r = ProviderInfo.parse(data)
+        // Remembered for the next start, so the saved lists of a switched-off platform are not shown first.
+        UserDefaults.standard.set(r.list.filter { !$0.enabled }.map(\.id), forKey: "disabledProviders")
         if providers != r.list { providers = r.list }
         providersFromScript = r.fromScript
         // A platform switched off keeps no rows: it would still count as waiting.

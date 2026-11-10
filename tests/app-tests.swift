@@ -612,6 +612,16 @@ let tq = plain.reduce(Store.queued([], undoA)) { Store.queued($0, $1) }
 expect("an undo toast is never dropped from the queue", Store.queued(tq, undoB).map(\.text), ["a", "p2", "p3", "b"])
 expect("preselect keys of shown rows stay", Store.keepPreselected((0..<150).map { "k\($0)" }, current: ["k3"]).contains("k3"), true)
 expect("preselect keeps the last 100", Store.keepPreselected((0..<150).map { "k\($0)" }, current: []).count, 100)
+expect("poll often at first", Store.pollSeconds(elapsed: 30, usualMinutes: 20), 6)
+expect("poll less in the middle of a long build", Store.pollSeconds(elapsed: 600, usualMinutes: 20), 15)
+expect("poll often near the usual end", Store.pollSeconds(elapsed: 19 * 60, usualMinutes: 20), 6)
+expect("poll less without a usual time", Store.pollSeconds(elapsed: 600, usualMinutes: nil), 15)
+let refT = Date(timeIntervalSince1970: 0)
+expect("refresh not due yet", Store.refreshDue(since: refT, minutes: 15, now: refT.addingTimeInterval(14 * 60)), false)
+expect("refresh due with a shorter interval", Store.refreshDue(since: refT, minutes: 5, now: refT.addingTimeInterval(5 * 60)), true)
+expect("autofix not set up by exit code", Store.autofixNotSetUp(ToolError(message: "Fehler", exitCode: 5)), true)
+expect("autofix other error", Store.autofixNotSetUp(ToolError(message: "busy", exitCode: 3)), false)
+expect("autofix older script text", Store.autofixNotSetUp(ToolError(message: "autofix: no routine set")), true)
 
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

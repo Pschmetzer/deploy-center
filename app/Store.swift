@@ -212,10 +212,16 @@ final class Store: ObservableObject {
             tell(L("\(name): handed to Claude", "\(name): an Claude übergeben"), last, ok: true, key: key)
         } catch {
             let msg = error.localizedDescription
-            if msg.localizedCaseInsensitiveContains("no routine") { offerAutofixSetup(); return }
+            if Self.autofixNotSetUp(error) { offerAutofixSetup(); return }
             tell(L("\(name): not handed to Claude", "\(name): nicht an Claude übergeben"), msg, ok: false, key: key)
         }
         await loadAgentStatus()
+    }
+
+    /// `autofix --only` exits 5 without a routine or its token; the text is only the fallback of an older script.
+    nonisolated static func autofixNotSetUp(_ error: Error) -> Bool {
+        if let e = error as? ToolError, e.exitCode == 5 { return true }
+        return error.localizedDescription.localizedCaseInsensitiveContains("no routine")
     }
 
     /// A toast and a line in the messages, names scrubbed in demo mode.
@@ -270,7 +276,9 @@ final class Store: ObservableObject {
     private func cacheURL(_ p: Platform) -> URL { Self.cacheDir.appendingPathComponent("\(p.cli)-v2.json") }
 
     private func readCache() {
-        for p in Platform.allCases {
+        // Not the copy of a platform switched off at the last start (the provider list comes later).
+        let off = Set(UserDefaults.standard.stringArray(forKey: "disabledProviders") ?? [])
+        for p in Platform.allCases where !off.contains(p.cli) {
             guard let data = try? Data(contentsOf: cacheURL(p)), let list = try? decode(p, data) else { continue }
             items[p] = list
             fromCache.insert(p)
@@ -306,15 +314,32 @@ final class Store: ObservableObject {
                 await self?.autoRefresh(); self?.remindIfDue()
             }
         }
+        // More builds at once in Settings: start what waits now, not when a running deploy ends.
+        knownParallel = maxParallel
+        NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.maxParallel != self.knownParallel else { return }
+                self.knownParallel = self.maxParallel; self.pump()
+            }
+        }
         Task {
             await start()
+            // Short naps, so a new interval in Settings counts at once and not after the old one ran out.
+            var last = Date()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(refreshMinutes) * 60 * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard Self.refreshDue(since: last, minutes: refreshMinutes) else { continue }
+                last = Date()
                 await autoRefresh()
                 remindIfDue()
             }
         }
     }
+    nonisolated static func refreshDue(since last: Date, minutes: Int, now: Date = Date()) -> Bool {
+        now.timeIntervalSince(last) >= Double(minutes) * 60
+    }
+
+    private var knownParallel = 0
 
     /// Minutes between automatic reloads (Settings).
     var refreshMinutes: Int {
@@ -450,8 +475,12 @@ final class Store: ObservableObject {
     /// Lists only, both platforms; costs and triggers cost many GitHub calls and stay manual.
     /// Not while something is deploying, so nothing being followed is disturbed.
     private var lastDoctor = Date()
+    /// The wake handler and the loop can both call `autoRefresh`; `loading` is set only after the
+    /// doctor's await, so this flag keeps a second round from starting meanwhile.
+    private var refreshInFlight = false
     func autoRefresh() async {
-        guard loading.isEmpty else { return }
+        guard loading.isEmpty, !refreshInFlight else { return }
+        refreshInFlight = true; defer { refreshInFlight = false }
         if doctor == nil { await start(); return }
         // Something was missing (a login, the Render key): ask again, at most every 30 minutes.
         if let d = doctor, !(d.vercelLoggedIn && d.vercelApi && d.renderKey && d.githubLoggedIn != false),
@@ -557,6 +586,7 @@ final class Store: ObservableObject {
         guard let i = items[p]?.firstIndex(where: { $0.id == id }) else { return }
         let was = items[p]![i].state
         items[p]![i].state = s
+        holdAwake()
         if byPerson { endedByCancel.insert(id) } else if !s.isActive || s == .queued { endedByCancel.remove(id) }
         // A new start: the id of the last deploy must not be the one a cancel goes to.
         if case .starting = s { items[p]![i].startedAt = Date(); items[p]![i].deployId = nil }
@@ -618,7 +648,10 @@ final class Store: ObservableObject {
     /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
     struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool }
     @Published var messages: [Message] = []
+    /// Names scrubbed in demo mode: a Mac notification shows up in a screen recording too.
     private func say(_ title: String, _ body: String, ok: Bool) {
+        let all = Array(items.values.joined())
+        let title = Demo.scrub(title, items: all), body = Demo.scrub(body, items: all)
         Notify.post(title, body)
         show(Toast(text: title, ok: ok))
         messages.insert(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok), at: 0)
@@ -805,6 +838,7 @@ final class Store: ObservableObject {
                                                              "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
             }
         }
+        holdAwake()
         if queue.isEmpty && running == 0 && ciWaits.isEmpty {
             queueBatch = []
             let hadRun = !batch.isEmpty
@@ -1025,8 +1059,10 @@ final class Store: ObservableObject {
         // A deadline, not a count of rounds: slow status answers must not stretch 40 minutes to hours.
         let start = Date(), overdue = start.addingTimeInterval(40 * 60), deadline = start.addingTimeInterval(12 * 3600)
         var toldOverdue = false
+        let usual = usualMinutes(item)
         while Date() < deadline {
-            try await Task.sleep(nanoseconds: Date() < overdue ? 6_000_000_000 : 30_000_000_000)
+            let wait = Date() < overdue ? Self.pollSeconds(elapsed: Date().timeIntervalSince(start), usualMinutes: usual) : 30
+            try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000_000)
             if !toldOverdue, Date() >= overdue, !cancelled.contains(item.id) {
                 toldOverdue = true
                 set(p, item.id, Self.overdueState)
@@ -1085,6 +1121,14 @@ final class Store: ObservableObject {
         set(p, item.id, .failed(L("No result after 12 hours – check the dashboard", "Kein Ergebnis nach 12 Stunden – im Dashboard nachsehen")))
     }
 
+    /// Seconds between status questions: every 6 s in the first two minutes and from a minute before
+    /// the usual build time on (when it most likely ends), every 15 s in between. Each one starts bash and node.
+    nonisolated static func pollSeconds(elapsed: TimeInterval, usualMinutes: Int?) -> Int {
+        if elapsed < 120 { return 6 }
+        if let u = usualMinutes, elapsed >= Double(u - 1) * 60 { return 6 }
+        return 15
+    }
+
     /// A path to ask after going live instead of the front page (/health), per project. Kept on this Mac.
     private lazy var healthPaths: [String: String] = (UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:]
     func healthPath(_ i: Item) -> String { healthPaths[Self.key(i)].flatMap(Self.cleanPath) ?? "" }
@@ -1140,10 +1184,11 @@ final class Store: ObservableObject {
     private func countDownToRollback(_ item: Item, _ link: String, _ code: Int?) {
         let key = Self.key(item), id = Self.rollbackPrefix + key, n = Self.rollbackSeconds
         guard rollbackCountdowns[key] == nil else { return }
-        let title = L("\(item.name) fails its check – rolling back in \(n) s", "\(item.name) besteht den Check nicht – Zurückrollen in \(n) s")
-        Notify.countdown(title, link + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), id: id)
+        let name = Demo.mask(item.name), shownLink = Demo.scrub(link, items: Array(items.values.joined()))
+        let title = L("\(name) fails its check – rolling back in \(n) s", "\(name) besteht den Check nicht – Zurückrollen in \(n) s")
+        Notify.countdown(title, shownLink + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), id: id)
         show(Toast(text: title, ok: false, undoLabel: L("Cancel", "Abbrechen"), undo: { [weak self] in self?.cancelRollback(key) }))
-        messages.insert(Message(date: Date(), text: title + " – " + link, ok: false), at: 0)
+        messages.insert(Message(date: Date(), text: title + " – " + shownLink, ok: false), at: 0)
         let checkedId = itemNow(item)?.deployId
         rollbackCountdowns[key] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(n) * 1_000_000_000)
@@ -1172,6 +1217,19 @@ final class Store: ObservableObject {
     }
 
     // MARK: Updates come from Sparkle (SoftwareUpdate.swift); it asks this before it restarts the app.
+
+    /// While deploys are queued or building: no App Nap (it stretches the status naps, "live" would come
+    /// minutes late) and no idle sleep (the queue would stop in the middle). Ends with the last deploy.
+    private var awake: NSObjectProtocol?
+    private func holdAwake() {
+        let busy = deploysBusy || !ciWaits.isEmpty
+        if busy, awake == nil {
+            awake = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled],
+                                                          reason: "Deploys are running")
+        } else if !busy, let a = awake {
+            ProcessInfo.processInfo.endActivity(a); awake = nil
+        }
+    }
 
     /// Deploys queued or building; an update waits for them instead of quitting in the middle.
     var deploysBusy: Bool { !queue.isEmpty || running > 0 || items.values.joined().contains { $0.state.isActive } }

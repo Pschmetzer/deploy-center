@@ -210,7 +210,7 @@ enum Notify {
     }
     /// A reminder the person set up themselves: shown whether or not the window is in front.
     static func remind(_ title: String, _ body: String) {
-        add(title, body, id: "daily-reminder")
+        add(title, body, id: NotifyRouter.reminderId)
     }
     static func post(_ title: String, _ body: String) {
         guard !NSApp.isActive, UserDefaults.standard.object(forKey: "notifications") as? Bool ?? true else { return }
@@ -247,6 +247,11 @@ enum Notify {
 final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     static let shared = NotifyRouter()
     static let rollbackCategory = "rollback-countdown"
+    /// The daily reminder: the person asked for it, so it shows with the app in front too.
+    static let reminderId = "daily-reminder"
+    static func showsInFront(_ n: UNNotificationRequest) -> Bool {
+        n.content.categoryIdentifier == rollbackCategory || n.identifier == reminderId
+    }
     static let cancelAction = "cancel-rollback"
     /// Gets the notification's id when Cancel is clicked.
     var onCancel: (@MainActor (String) -> Void)?
@@ -260,7 +265,7 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
     }
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler(notification.request.content.categoryIdentifier == Self.rollbackCategory ? [.banner, .sound] : [])
+        completionHandler(Self.showsInFront(notification.request) ? [.banner, .sound] : [])
     }
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
