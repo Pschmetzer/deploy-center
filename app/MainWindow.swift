@@ -575,7 +575,10 @@ struct CostBar: View {
     /// Average build cost per day before auto-deploy was turned off and since, whole days only.
     private var saving: (before: Double, after: Double)? {
         guard let off = costs.offDay else { return nil }
-        let before = costs.days.filter { $0.day < off }, after = costs.days.filter { $0.day > off }
+        // Today is not over yet: a half day would make "since" look cheaper than it is.
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC")
+        let today = f.string(from: Date())
+        let before = costs.days.filter { $0.day < off }, after = costs.days.filter { $0.day > off && $0.day < today }
         guard !before.isEmpty, !after.isEmpty else { return nil }
         return (before.map(\.build).reduce(0, +) / Double(before.count), after.map(\.build).reduce(0, +) / Double(after.count))
     }
@@ -591,6 +594,12 @@ struct CostBar: View {
                     Text(L("per day: ", "pro Tag: ") + s.before.formatted(.currency(code: "USD")) + L(" before, ", " vorher, ")
                          + s.after.formatted(.currency(code: "USD")) + L(" since", " seitdem"))
                         .font(.caption2.weight(.medium)).foregroundStyle(s.after < s.before ? .green : .orange)
+                    if s.after < s.before {
+                        Button(L("Share the saving", "Ersparnis teilen")) { SavingCard.copy(before: s.before, after: s.after) }
+                            .buttonStyle(.link).font(.caption2)
+                            .help(L("Copies a picture and a sentence with your saving, without project names",
+                                    "Kopiert ein Bild und einen Satz mit deiner Ersparnis, ohne Projektnamen"))
+                    }
                 } else if let off = costs.offDay {
                     Text(L("Auto-deploy off since \(off); the saving shows after a full day", "Auto-Deploy aus seit \(off); die Ersparnis zeigt sich nach einem ganzen Tag"))
                         .font(.caption2).foregroundStyle(.secondary)
@@ -614,6 +623,59 @@ struct CostBar: View {
         .help(L("Build costs from Vercel's billing data; orange: over twice the average; green line: auto-deploy turned off. Total incl. other usage: ",
                 "Build-Kosten aus Vercels Abrechnung; orange: mehr als doppelt so viel wie im Schnitt; grüne Linie: Auto-Deploy ausgeschaltet. Gesamt inkl. sonstiger Nutzung: ")
               + last7.map(\.total).reduce(0, +).formatted(.currency(code: "USD")))
+    }
+}
+
+/// A picture of the saving to post somewhere: two numbers and the app's name, nothing about the projects.
+struct SavingCard: View {
+    let before: Double, after: Double
+    private var month: Double { max(0, before - after) * 30 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "paperplane.fill").foregroundStyle(.white)
+                    .padding(7).background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor))
+                Text("Deploy Center").font(.headline).foregroundStyle(.white)
+            }
+            Text(L("My build bill since I turned off auto-deploy", "Meine Build-Kosten, seit Auto-Deploy aus ist"))
+                .font(.title3.weight(.semibold)).foregroundStyle(.white)
+            HStack(alignment: .firstTextBaseline, spacing: 24) {
+                VStack(alignment: .leading) {
+                    Text(L("before", "vorher")).font(.caption).foregroundStyle(.white.opacity(0.6))
+                    Text(before, format: .currency(code: "USD")).font(.title.weight(.bold).monospacedDigit()).foregroundStyle(.red.opacity(0.9))
+                    Text(L("a day", "pro Tag")).font(.caption).foregroundStyle(.white.opacity(0.6))
+                }
+                Image(systemName: "arrow.right").foregroundStyle(.white.opacity(0.5))
+                VStack(alignment: .leading) {
+                    Text(L("now", "jetzt")).font(.caption).foregroundStyle(.white.opacity(0.6))
+                    Text(after, format: .currency(code: "USD")).font(.title.weight(.bold).monospacedDigit()).foregroundStyle(.green)
+                    Text(L("a day", "pro Tag")).font(.caption).foregroundStyle(.white.opacity(0.6))
+                }
+            }
+            Text(L("≈ ", "≈ ") + month.formatted(.currency(code: "USD").precision(.fractionLength(0))) + L(" a month saved", " im Monat gespart"))
+                .font(.title2.weight(.bold)).foregroundStyle(.white)
+            Text("github.com/Pschmetzer/deploy-center").font(.caption).foregroundStyle(.white.opacity(0.6))
+        }
+        .padding(28).frame(width: 520, alignment: .leading)
+        .background(LinearGradient(colors: [Color(red: 0.07, green: 0.09, blue: 0.16), Color(red: 0.18, green: 0.11, blue: 0.32)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+    }
+
+    /// The sentence that goes with the picture.
+    static func text(before: Double, after: Double) -> String {
+        let m = (max(0, before - after) * 30).formatted(.currency(code: "USD").precision(.fractionLength(0)))
+        return L("I turned off auto-deploy and now deploy by hand: builds went from \(before.formatted(.currency(code: "USD"))) to \(after.formatted(.currency(code: "USD"))) a day, about \(m) a month saved. https://github.com/Pschmetzer/deploy-center",
+                 "Ich habe Auto-Deploy ausgeschaltet und deploye jetzt von Hand: Builds von \(before.formatted(.currency(code: "USD"))) auf \(after.formatted(.currency(code: "USD"))) am Tag, etwa \(m) im Monat gespart. https://github.com/Pschmetzer/deploy-center")
+    }
+
+    /// Picture and sentence on the clipboard at once; a chat or post takes whichever it can.
+    @MainActor static func copy(before: Double, after: Double) {
+        let r = ImageRenderer(content: SavingCard(before: before, after: after)); r.scale = 2
+        let pb = NSPasteboard.general; pb.clearContents()
+        var items: [NSPasteboardWriting] = [text(before: before, after: after) as NSString]
+        if let img = r.nsImage { items.insert(img, at: 0) }
+        pb.writeObjects(items)
     }
 }
 
