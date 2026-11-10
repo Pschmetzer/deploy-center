@@ -1,0 +1,3 @@
+[{"s":"CREATED","want":"queued"},{"s":"PENDING","want":"queued"},{"s":"PROVISIONING","want":"queued"},
+ {"s":"RUNNING","want":"building"},{"s":"SUCCEED","want":"ready"},{"s":"FAILED","want":"failed"},
+ {"s":"CANCELLING","want":"canceled"},{"s":"CANCELLED","want":"canceled"}]
