@@ -1,0 +1,61 @@
+#!/bin/bash
+# pre-push — before a push, say how many builds it would start on projects that still deploy
+# by themselves (auto-deploy on). Warns only; never stops a push unless you ask for that:
+#   git config deploys.prepush.block true    stop the push when it would start builds
+#   git config deploys.prepush.skip true     do not check at all (or DEPLOYS_PREPUSH=off)
+#
+# Vercel with Git connected builds every branch pushed (a preview, or production for the
+# production branch). Render builds only its own branch. Any error in here lets the push go.
+#
+# Install: cp integrations/hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+# Env: DEPLOYS  the CLI to call (default: deploys on PATH)
+DEPLOYS="${DEPLOYS:-deploys}"
+remote_url="${2:-}"
+
+# Git hands the refs on stdin: <local ref> <local sha> <remote ref> <remote sha>.
+branches=()
+while read -r _lref lsha rref _rsha; do
+  case "$lsha" in *[!0]*) ;; *) continue ;; esac   # a deleted branch builds nothing
+  case "$rref" in refs/heads/*) branches+=("${rref#refs/heads/}") ;; esac
+done
+[ "${#branches[@]}" -gt 0 ] || exit 0
+[ "${DEPLOYS_PREPUSH:-}" = off ] && exit 0
+[ "$(git config --bool deploys.prepush.skip 2>/dev/null)" = true ] && exit 0
+command -v "$DEPLOYS" >/dev/null 2>&1 || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
+# owner/repo from git@github.com:o/r.git, ssh://git@github.com/o/r, https://github.com/o/r.git
+repo="$(printf '%s' "$remote_url" | sed -E 's#^(git@|ssh://git@|https?://([^@/]*@)?)github\.com[:/]##; s#\.git$##; s#/$##')"
+case "$repo" in */*) ;; *) exit 0 ;; esac
+case "$repo" in */*/*|*:*) exit 0 ;; esac
+
+v="$("$DEPLOYS" vercel list --json 2>/dev/null </dev/null)" || v='[]'
+# Render only with a key: without one `deploys render list --json` does not come back.
+r='[]'
+if [ -n "${RENDER_API_KEY:-}" ] || "$DEPLOYS" doctor 2>/dev/null | jq -e '.renderKey == true' >/dev/null 2>&1; then
+  r="$("$DEPLOYS" render list --json 2>/dev/null </dev/null)" || r='[]'
+fi
+jq -e 'type=="array"' >/dev/null 2>&1 <<<"$v" || v='[]'
+jq -e 'type=="array"' >/dev/null 2>&1 <<<"$r" || r='[]'
+hits="$(jq -rn --argjson v "$v" --argjson r "$r" --arg repo "$repo" --args '
+  ($ARGS.positional) as $br
+  | (($v | if type=="array" then . else [] end) | map(. + {platform:"vercel"}))
+    + (($r | if type=="array" then . else [] end) | map(. + {platform:"render"}))
+  | map(select(.auto and ((.repo // "") | ascii_downcase) == ($repo | ascii_downcase)))
+  | .[] as $p | $br[] as $b
+  | select($p.platform == "vercel" or $p.ref == $b)
+  | "\($p.platform)  \($p.name)  (\(if $p.ref == $b then "production" else "preview" end), branch \($b))"
+' "${branches[@]}" 2>/dev/null)" || exit 0
+[ -n "$hits" ] || exit 0
+
+n="$(printf '%s\n' "$hits" | wc -l | tr -d ' ')"
+{
+  echo "deploys: this push starts $n build(s), auto-deploy is still on for:"
+  printf '%s\n' "$hits" | sed 's/^/  /'
+  echo "  Turn it off: deploys vercel autodeploy-off <p> / deploys render autodeploy-off <s>"
+} >&2
+if [ "$(git config --bool deploys.prepush.block 2>/dev/null)" = true ]; then
+  echo "  Push stopped (deploys.prepush.block). Push anyway: git push --no-verify" >&2
+  exit 1
+fi
+exit 0

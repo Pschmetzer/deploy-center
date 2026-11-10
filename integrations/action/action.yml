@@ -1,0 +1,125 @@
+name: deploy-center changed
+description: >-
+  Lists the Vercel and Render projects with commits that are not live yet (deploys changed --json).
+  Deploys them only when the workflow says so with deploy: true.
+author: Deploy Center
+branding:
+  icon: upload-cloud
+  color: gray-dark
+
+inputs:
+  deploy:
+    description: >-
+      "true" starts a deploy of every project with changes (deploys deploy-changed --yes).
+      Anything else only reports. Default: only report.
+    required: false
+    default: "false"
+  vercel-token:
+    description: A Vercel access token (pass a secret). Empty skips Vercel (when no vercel CLI is on the runner).
+    required: false
+    default: ""
+  vercel-team:
+    description: The Vercel team id, if the projects belong to a team.
+    required: false
+    default: ""
+  render-api-key:
+    description: A Render API key (pass a secret). Empty skips Render.
+    required: false
+    default: ""
+  github-token:
+    description: Reads commits and pull requests of the projects' repos. Private repos need a token that can read them.
+    required: false
+    default: ${{ github.token }}
+  repos-json:
+    description: >-
+      The content of vercel-repos.json (which repo and branch each Vercel project deploys from).
+      Needed for Vercel projects whose Git connection was turned off: without it they never count as changed.
+    required: false
+    default: ""
+  vercel-cli-version:
+    description: The vercel CLI version to install when none is on the runner.
+    required: false
+    default: "65.12.1"
+
+outputs:
+  count:
+    description: How many projects have changes.
+    value: ${{ steps.changed.outputs.count }}
+  names:
+    description: Their names, comma-separated.
+    value: ${{ steps.changed.outputs.names }}
+  projects:
+    description: The full JSON array, from deploys changed --json.
+    value: ${{ steps.changed.outputs.projects }}
+  deployed:
+    description: '"true" when every deploy was started in this run (a failed start fails the step).'
+    value: ${{ steps.deploy.outputs.deployed || 'false' }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up deploys
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        VERCEL_TOKEN: ${{ inputs.vercel-token }}
+        VERCEL_TEAM: ${{ inputs.vercel-team }}
+        REPOS_JSON: ${{ inputs.repos-json }}
+        CLI_VERSION: ${{ inputs.vercel-cli-version }}
+      run: |
+        set -euo pipefail
+        cfg="$RUNNER_TEMP/deploys-config"; mkdir -p "$cfg"
+        echo "DEPLOYS_CONFIG=$cfg" >> "$GITHUB_ENV"
+        echo "DEPLOYS=$ACTION_PATH/../../deploys" >> "$GITHUB_ENV"
+        echo "USER=${USER:-$(id -un)}" >> "$GITHUB_ENV"
+        if [ -n "$REPOS_JSON" ]; then
+          printf '%s' "$REPOS_JSON" | jq -e 'type == "object"' >/dev/null || { echo "::error::repos-json is not a JSON object"; exit 1; }
+          printf '%s' "$REPOS_JSON" > "$cfg/vercel-repos.json"
+        fi
+        if [ -n "$VERCEL_TEAM" ]; then
+          case "$VERCEL_TEAM" in *[!A-Za-z0-9_-]*) echo "::error::vercel-team must be a team id"; exit 1 ;; esac
+          echo "DEPLOYS_VERCEL_TEAM=$VERCEL_TEAM" >> "$GITHUB_ENV"
+        fi
+        if [ -n "$VERCEL_TOKEN" ] && ! command -v vercel >/dev/null 2>&1; then
+          case "$CLI_VERSION" in *[!0-9.]*|"") echo "::error::vercel-cli-version must be a version like 65.12.1"; exit 1 ;; esac
+          npm install -g --no-fund --no-audit "vercel@$CLI_VERSION" >/dev/null
+        fi
+
+    - name: deploys changed --json
+      id: changed
+      shell: bash
+      env:
+        VERCEL_TOKEN: ${{ inputs.vercel-token }}
+        RENDER_API_KEY: ${{ inputs.render-api-key }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        # Exit 1 with a list: some project's state could not be read (named above, left out).
+        rc=0; list="$("$DEPLOYS" changed --json </dev/null)" || rc=$?
+        echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "::error::deploys changed --json did not answer a list"; exit 1; }
+        [ "$rc" = 0 ] || echo "::warning::deploys could not read every project; those are left out (see the log above)."
+        count="$(echo "$list" | jq length)"
+        {
+          echo "count=$count"
+          echo "names=$(echo "$list" | jq -r 'map(.name) | join(",")')"
+          d="EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+          echo "projects<<$d"; echo "$list" | jq -c .; echo "$d"
+        } >> "$GITHUB_OUTPUT"
+        {
+          echo "### Projects with changes: $count"
+          echo "$list" | jq -r '.[] | "- \(.platform) **\(.name)**: \(.pendingCommits // "?") commit(s) waiting"'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: deploys deploy-changed --yes
+      id: deploy
+      if: inputs.deploy == 'true' && steps.changed.outputs.count != '0'
+      shell: bash
+      env:
+        VERCEL_TOKEN: ${{ inputs.vercel-token }}
+        RENDER_API_KEY: ${{ inputs.render-api-key }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        # Exits 1 when a start failed (or a state could not be read): the step fails then.
+        "$DEPLOYS" deploy-changed --yes </dev/null
+        echo "deployed=true" >> "$GITHUB_OUTPUT"
