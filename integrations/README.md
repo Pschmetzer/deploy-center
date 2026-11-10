@@ -14,6 +14,7 @@ stays off: nothing here deploys unless a person asks for it.
 | [claude-code/](claude-code/) | A Claude Code plugin: a skill, `/deploys-*` commands, and a read-only reminder after `git push`. It deploys only after you say yes. Install: `/plugin marketplace add Pschmetzer/deploy-center`, then `/plugin install deploy-center@deploy-center`. See [docs/CLAUDE-CODE.md](../docs/CLAUDE-CODE.md). |
 | [mcp/](mcp/) | An MCP server for AI coding agents (Claude Code, Claude Desktop, Cursor, VS Code). Read-only tools for what is waiting, building, release notes and logs; deploy and rollback of one project only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. |
 | [raycast/](raycast/) | A Raycast extension: Waiting Deploys, Deploy Status, Deploy All Changed, Deploy Project and a menu-bar count. It deploys only after a confirmation. Not on the Raycast Store yet ([PUBLISHING.md](raycast/PUBLISHING.md)). |
+| [alfred/](alfred/) | An Alfred Script Filter: building, failed and waiting projects; ↵ shows one in Deploy Center, ⌘↵ opens its site. Read-only. |
 | [vscode/](vscode/) | A VS Code extension, also for Cursor and Windsurf (Open VSX): `⏳ 3 waiting` in the status bar for this folder's repo, a project tree, deploy with confirmation, the build log and "Copy for AI". Deploys only after a click and a confirmation. |
 | [digest/](digest/) | A daily digest of what waits, agent and human commits apart, as Markdown, an issue and a webhook message. A person approves with a button or the `deploy-approved` label; an example workflow then deploys only the approved projects. |
 | [docker/](docker/) | A Linux image with `deploys` and its tools, for CI. |
@@ -36,6 +37,7 @@ approve-workflow tests need `ruby`, and the VS Code tests `npm ci` in `vscode/`;
 | pre-push hook | which pushes start builds, the timeouts | — |
 | VS Code extension | the CLI runner, the model, the masker, scoping; the controller against a stand-in `vscode` (confirmation, double start, deploy a repo, failures, Copy for AI) | inside a real editor (no `@vscode/test-electron` run) |
 | Raycast extension | type check, lint; the log rules are the same as VS Code's | the commands in Raycast |
+| Alfred filter | the JSON items, sorting, the query, a CLI that fails, the name check | inside Alfred |
 | Docker image | builds and runs `doctor` (by hand) | a run against real accounts |
 
 ## Reading every project

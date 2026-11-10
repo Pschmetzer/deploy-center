@@ -191,6 +191,16 @@ expect "notify: the ntfy token goes on stdin, not in the arguments" "$(sed -n 2p
 DEPLOYS_NOTIFY_PRIORITY=loud DEPLOYS_NOTIFY_URL='https://ntfy.sh/topic' notify/notify.sh >/dev/null 2>&1; expect "notify: an unknown ntfy priority is refused" "$?" 1
 DEPLOYS_NOTIFY_TOKEN='a"b' DEPLOYS_NOTIFY_URL='https://ntfy.sh/topic' notify/notify.sh >/dev/null 2>&1; expect "notify: a token with quotes is refused" "$?" 1
 
+# --- Alfred script filter ---
+af="$(alfred/deploys-filter.sh)"
+expect "alfred: every project, as Alfred items" "$(jq -r '.items | length' <<<"$af")" 3
+expect "alfred: ↵ shows it in Deploy Center, ⌘ opens the site" "$(jq -r '.items[] | select(.title == "app-web") | .arg + " " + .mods.cmd.arg' <<<"$af")" "deploycenter://select?project=app-web open app-web"
+expect "alfred: waiting before up to date" "$(jq -c '[.items[].title]' <<<"$af")" '["api","app-web","site"]'
+expect "alfred: the query filters by name" "$(alfred/deploys-filter.sh WEB | jq -c '[.items[].title]')" '["app-web"]'
+expect "alfred: no match is one item" "$(alfred/deploys-filter.sh zzz | jq -r '.items[0].title')" "No project matches"
+expect "alfred: a CLI that gives no list says so" "$(DEPLOYS=/usr/bin/false alfred/deploys-filter.sh | jq -r '.items[0].title')" "Could not read the projects"
+expect "alfred open: only a project name" "$(alfred/deploys-open.sh 'open a;b' 2>&1; echo "rc=$?")" $'Not a project: open a;b\nrc=1'
+
 # --- pre-push ---
 z=0000000000000000000000000000000000000000; s1=1111111111111111111111111111111111111111
 git init -q "$tmp/repo"
