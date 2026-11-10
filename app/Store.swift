@@ -1579,6 +1579,24 @@ final class Store: ObservableObject {
         return paths.isEmpty ? [link] : paths.map { base + $0 }
     }
 
+    /// The site's certificate after going live (FEA-085): a word when it ends within two weeks,
+    /// once a day per project. Platforms renew their own certificates; a custom one may not be.
+    private func checkCertificate(_ item: Item, _ url: URL) async {
+        guard url.scheme == "https", let end = await CertificateProbe.expiry(url) else { return }
+        guard let days = Self.certificateWarning(expires: end) else { return }
+        let d = UserDefaults.standard, k = "certWarned." + Self.key(item), today = localDay()
+        guard d.string(forKey: k) != today else { return }
+        d.set(today, forKey: k)
+        say(days <= 0 ? L("\(item.name): the certificate has expired", "\(item.name): das Zertifikat ist abgelaufen")
+                      : L("\(item.name): the certificate ends in \(days) \(days == 1 ? "day" : "days")", "\(item.name): das Zertifikat endet in \(days) \(days == 1 ? "Tag" : "Tagen")"),
+            (url.host ?? "") + " – " + end.formatted(date: .abbreviated, time: .omitted), ok: false)
+    }
+    /// Days left when they are 14 or fewer (0 or less: expired); nil otherwise.
+    nonisolated static func certificateWarning(expires: Date, now: Date = Date()) -> Int? {
+        let days = Int((expires.timeIntervalSince(now) / 86_400).rounded(.down))
+        return days <= 14 ? days : nil
+    }
+
     /// A text the page must contain after going live (FEA-091), per project; checked on the front
     /// page once every path answered. Missing text warns, it never rolls back: a changed wording is not an outage.
     private lazy var siteTexts: [String: String] = (UserDefaults.standard.dictionary(forKey: "siteTexts") as? [String: String]) ?? [:]
@@ -1660,6 +1678,7 @@ final class Store: ObservableObject {
         }
         guard let url = first else { return }
         watch(item, url, mayRollBack: mayRollBack)
+        await checkCertificate(item, url)
         // The text is a person's words on the front page, not in /health's JSON.
         let want = siteText(item)
         guard !want.isEmpty, let page = item.link.flatMap(URL.init(string:)),

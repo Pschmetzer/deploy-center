@@ -83,6 +83,26 @@ enum JournalStats {
         return n.compactMap { name, c in perBuild(name).map { (name, c, Double(c) * $0) } }.sorted { $0.usd > $1.usd }
     }
 
+    /// The failures' reasons, alike ones together (FEA-174): the first line of the detail with numbers
+    /// and ids as "#", most often first. Shown with the projects they hit.
+    nonisolated static func failureCauses(_ list: [JournalEntry]) -> [(cause: String, count: Int, projects: [String])] {
+        var n: [String: (count: Int, projects: [String])] = [:]
+        for e in list where e.kind == .failed {
+            guard let c = cause(e.detail) else { continue }
+            var v = n[c] ?? (0, [])
+            v.count += 1; if !v.projects.contains(e.name) { v.projects.append(e.name) }
+            n[c] = v
+        }
+        return n.map { ($0.key, $0.value.count, $0.value.projects) }.sorted { $0.count != $1.count ? $0.count > $1.count : $0.cause < $1.cause }
+    }
+    nonisolated static func cause(_ detail: String?) -> String? {
+        guard let line = detail?.split(whereSeparator: \.isNewline).first.map(String.init) else { return nil }
+        // "dpl_8f3k2…", "a1b2c3d", "42": what differs from one failure to the next.
+        let t = line.replacingOccurrences(of: #"\b(?=[0-9a-zA-Z_-]*[0-9])[0-9a-zA-Z_-]{2,}\b|\b[0-9]\b"#, with: "#", options: .regularExpression)
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return t.isEmpty ? nil : String(t.prefix(120))
+    }
+
     /// Entries in [now - days, now) and the same span before it.
     nonisolated static func periods(_ list: [JournalEntry], days: Int, now: Date = Date()) -> (recent: [JournalEntry], before: [JournalEntry]) {
         let span = Double(days) * 86400
@@ -179,6 +199,14 @@ struct JournalStatsView: View {
                     Text(L("Builds getting slower", "Builds werden langsamer")).font(.headline)
                     ForEach(Array(t), id: \.key) { r in
                         Text("\(Demo.mask(r.name)): \(dur(r.before)) → \(dur(r.recent))").font(.callout)
+                    }
+                }
+                let causes = JournalStats.failureCauses(p.recent).prefix(5)
+                if !causes.isEmpty {
+                    Text(L("Why builds failed", "Warum Builds fehlschlugen")).font(.headline)
+                    ForEach(Array(causes), id: \.cause) { r in
+                        Text("\(r.count)× " + Demo.scrub(r.cause, items: Set(entries.map(\.name)).map { Item(id: $0, name: $0, detail: "", platform: .vercel, deployable: false, auto: false, note: nil, link: nil) }) + " – " + r.projects.prefix(3).map(Demo.mask).joined(separator: ", ")
+                             + (r.projects.count > 3 ? " …" : "")).font(.callout).lineLimit(2).textSelection(.enabled)
                     }
                 }
                 if let c = costs {

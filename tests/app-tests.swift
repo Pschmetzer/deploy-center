@@ -514,6 +514,21 @@ if let led = try? JSONDecoder().decode(LedgerReport.self, from: oddLedger) {
     expect("lenient: unreadable dollars are unknown", led.projects[0].savedUsd == nil, true)
     expect("lenient: no start, no ledger", led.hasStarted, false)
 } else { expect("lenient ledger decodes", false, true) }
+do {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    expect("certificate: 30 days left says nothing", Store.certificateWarning(expires: now.addingTimeInterval(30 * 86_400), now: now) == nil, true)
+    expect("certificate: 10 days left", Store.certificateWarning(expires: now.addingTimeInterval(10.5 * 86_400), now: now) ?? -99, 10)
+    expect("certificate: expired", (Store.certificateWarning(expires: now.addingTimeInterval(-86_400), now: now) ?? 99) <= 0, true)
+}
+do {
+    let f = [JournalEntry(platform: "Vercel", name: "a", result: "failed", seconds: nil, detail: "Build failed: exit code 1\nmore"),
+             JournalEntry(platform: "Vercel", name: "b", result: "failed", seconds: nil, detail: "Build failed: exit code 2"),
+             JournalEntry(platform: "Vercel", name: "a", result: "failed", seconds: nil, detail: "Timeout after 600 s"),
+             JournalEntry(platform: "Vercel", name: "a", result: "live", seconds: nil, detail: "Build failed: exit code 1")]
+    let c = JournalStats.failureCauses(f)
+    expect("failure causes: alike ones together", "\(c.first?.cause ?? "") \(c.first?.count ?? 0) \(c.first?.projects ?? [])", "Build failed: exit code # 2 [\"a\", \"b\"]")
+    expect("failure causes: ids become #", JournalStats.cause("Deployment dpl_8f3k2 failed at a1b2c3d") ?? "", "Deployment # failed at #")
+}
 expect("goal share", [SavingsModel.goalShare(saved: 25, goal: 100), SavingsModel.goalShare(saved: 300, goal: 100), SavingsModel.goalShare(saved: 5, goal: 0), SavingsModel.goalShare(saved: nil, goal: 50)].map { $0.map { String($0) } ?? "nil" }, ["0.25", "1.0", "nil", "nil"])
 expect("milestones", [5, 10, 99, 100, 1999, 2500].map { SavingsModel.milestone(saved: $0).map { Int($0) } ?? 0 }, [0, 10, 50, 100, 1000, 2000])
 expect("lenient: an empty object is an empty simulation",
