@@ -52,15 +52,18 @@ sv_pushes() {  # sv_pushes <owner/repo> <branch> <since epoch>
 # Recent builds of one project: the minutes of finished builds, and which commits were built when.
 sv_builds() {  # sv_builds <platform> <name> <id>
   if [ "$1" = vercel ]; then
-    vercel_call "/v6/deployments?app=$2&limit=100" 2>/dev/null | jq -c '[.deployments[]?] |
+    # Production only: a preview of the same commit is no proof the push was built for production.
+    vercel_call "/v6/deployments?app=$2&limit=100&target=production" 2>/dev/null | jq -c '[.deployments[]?] |
       {minutes:(map(select(.state == "READY" and .buildingAt and .ready) | (.ready - .buildingAt) / 60000) | .[0:20]),
-       built:map({at:((.buildingAt // .created) / 1000 | floor), sha:(.meta.githubCommitSha // null)})}' 2>/dev/null \
+       built:map({at:((.buildingAt // .created) / 1000 | floor), sha:(.meta.githubCommitSha // null)}),
+       full:(length < 100), oldestAt:(map((.buildingAt // .created) / 1000 | floor) | min)}' 2>/dev/null \
       || echo '{"error":"Vercel deployments could not be read"}'
   else
     render_call GET "/services/$3/deploys?limit=100" 2>/dev/null | jq -c 'def t: sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;
       [.[]?.deploy] | {minutes:(map(select(.status == "live" or .status == "deactivated") | select(.createdAt and .finishedAt)
                                  | ((.finishedAt | t) - (.createdAt | t)) / 60) | .[0:20]),
-                       built:map(select(.createdAt) | {at:(.createdAt | t), sha:(.commit.id // null)})}' 2>/dev/null \
+                       built:map(select(.createdAt) | {at:(.createdAt | t), sha:(.commit.id // null)}),
+                       full:(length < 100), oldestAt:(map(select(.createdAt) | .createdAt | t) | min)}' 2>/dev/null \
       || echo '{"error":"Render deploys could not be read"}'
   fi
 }
@@ -133,9 +136,13 @@ def problem($p): if $p.pushes == null then null
 SV_METHOD_SIM='Estimate. Pushes to the deploy branch in the window (GitHub activity; commits where pushes cannot be read, an upper bound) are each counted as one build. Each build is priced at the project'"'"'s average: minutes from its last finished builds (up to 20), dollars from Vercel billing per build over 7 days, else the team'"'"'s price per build minute, else DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN. "Once a day" counts one build on each day that had a push. Per month = window scaled to 30 days.'
 SV_METHOD_LEDGER='Estimate. Since auto-deploy was turned off, every push to the deploy branch whose commit was never built counts as a skipped build (GitHub activity; commits where pushes cannot be read, an upper bound). Each skipped build is priced at the project'"'"'s average: minutes from its last finished builds (up to 20), dollars from Vercel billing per build over 7 days, else the team'"'"'s price per build minute, else DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN.'
 
+# The same in German, for the app's German texts (methodDe in the JSON).
+SV_METHOD_SIM_DE='Schätzung. Jeder Push auf den Deploy-Branch im Zeitraum (GitHub-Aktivität; wo Pushes nicht lesbar sind, Commits als Obergrenze) zählt als ein Build. Jeder Build kostet den Durchschnitt des Projekts: Minuten aus den letzten fertigen Builds (bis 20), Dollar aus der Vercel-Abrechnung je Build über 7 Tage, sonst der Minutenpreis des Teams, sonst der eingestellte Minutenpreis. „Einmal am Tag“ zählt einen Build an jedem Tag mit Push. Pro Monat = Zeitraum auf 30 Tage hochgerechnet.'
+SV_METHOD_LEDGER_DE='Schätzung. Seit Auto-Deploy aus ist, zählt jeder Push auf den Deploy-Branch, dessen Commit nie gebaut wurde, als übersprungener Build (GitHub-Aktivität; wo Pushes nicht lesbar sind, Commits als Obergrenze). Gebaut zählt nur Production. Jeder übersprungene Build kostet den Durchschnitt des Projekts: Minuten aus den letzten fertigen Builds (bis 20), Dollar aus der Vercel-Abrechnung je Build über 7 Tage, sonst der Minutenpreis des Teams, sonst der eingestellte Minutenpreis.'
+
 # What auto-deploy would cost per month, next to deploying once a day.
 sv_simulate_from() {  # stdin: facts
-  jq -c --arg method "$SV_METHOD_SIM" "$SV_JQ_LIB"'
+  jq -c --arg method "$SV_METHOD_SIM" --arg methodDe "$SV_METHOD_SIM_DE" "$SV_JQ_LIB"'
   . as $f | teamrate($f) as $team | ($f.now - $f.days * 86400) as $from | (30 / $f.days) as $k
   | [ $f.projects[] | . as $p | problem($p) as $why | price($f; $p; $team) as $pr | mins($p) as $m
       | (($p.pushes.list // []) | map(select(.at >= $from))) as $pu
@@ -156,7 +163,7 @@ sv_simulate_from() {  # stdin: facts
   | def sum($k1; $k2; $plat): [ $rows[] | select($plat == null or .platform == $plat) | .[$k1][$k2] | numbers ] | add // 0;
     def tot($k): {usd:(sum($k; "usd"; null) | r2), vercelMinutes:sum($k; "minutes"; "vercel"),
                   renderMinutes:sum($k; "minutes"; "render"), builds:(sum($k; "builds"; null) | r1)};
-  {estimate:true, kind:"simulate", currency:"USD", days:$f.days, generatedAt:$f.now, method:$method,
+  {estimate:true, kind:"simulate", currency:"USD", days:$f.days, generatedAt:$f.now, method:$method, methodDe:$methodDe,
    teamUsdPerBuildMinute:($team | if . then (. * 1000 | round) / 1000 else null end),
    projects:$rows,
    total:{autoMonth:tot("autoMonth"), dailyMonth:tot("dailyMonth"), savingMonth:tot("savingMonth"),
@@ -165,14 +172,18 @@ sv_simulate_from() {  # stdin: facts
 
 # What turning auto-deploy off saved: pushes that did not build, priced at the average build.
 sv_ledger_from() {  # stdin: facts
-  jq -c --arg method "$SV_METHOD_LEDGER" "$SV_JQ_LIB"'
+  jq -c --arg method "$SV_METHOD_LEDGER" --arg methodDe "$SV_METHOD_LEDGER_DE" "$SV_JQ_LIB"'
   . as $f | teamrate($f) as $team
   | [ $f.projects[] | select(.offAt != null) | . as $p | price($f; $p; $team) as $pr | mins($p) as $m
       | (($p.pushes.list // []) | map(select(.at >= $p.offAt))) as $pu
       | (($p.builds.built // []) | map(select(.at >= $p.offAt))) as $bu
       | ($bu | map(.sha) | map(select(. != null))) as $shas
       | ($pu | map(select(.sha as $s | $shas | index($s) | not))) as $sk
-      | {platform, name, unit:unit($p), offAt, offDay:($p.offAt | day), basis:($p.pushes.basis // null), problem:problem($p),
+      | {platform, name, unit:unit($p), offAt, offDay:($p.offAt | day), basis:($p.pushes.basis // null),
+         # Only the newest 100 builds are read: when they do not reach back to the day it went off,
+         # older pushes would count as skipped although they were built.
+         problem:(problem($p) // (if ($p.builds.full == false) and (($p.builds.oldestAt // 0) > $p.offAt)
+                    then "only the newest 100 builds were read; skipped may be too high" else null end)),
          pushes:($pu | length), builds:($bu | length), skipped:($sk | length),
          avgBuildMinutes:($m | r1), buildsMeasured:(($p.builds.minutes // []) | length),
          usdPerBuild:($pr.usd | r2), priceSource:$pr.source,
@@ -182,13 +193,17 @@ sv_ledger_from() {  # stdin: facts
          skippedPushes:($sk | sort_by(-.at) | .[0:20] | map({day:(.at | day), sha:((.sha // "")[0:7])}))} ] as $rows
   | ([ $rows[].offAt ] | min) as $first
   | def sum($k; $plat): [ $rows[] | select($plat == null or .platform == $plat) | .[$k] | numbers ] | add // 0;
-  {estimate:true, kind:"ledger", currency:"USD", generatedAt:$f.now, method:$method,
+    # Unknown, not 0, when a project skipped builds whose length is not known yet.
+    def msum($plat): if any($rows[]; .platform == $plat and .skipped > 0 and .savedMinutes == null) then null
+      else sum("savedMinutes"; $plat) end;
+  {estimate:true, kind:"ledger", currency:"USD", generatedAt:$f.now, method:$method, methodDe:$methodDe,
+   minutesComplete:([ $rows[] | select(.skipped > 0) | .savedMinutes ] | all(. != null)),
    since:(if $first then $first | day else null end),
    days:(if $first then (($f.now - $first) / 86400 | r1) else 0 end),
    projects:($rows | sort_by(-(.savedUsd // 0), -.skipped)),
    total:{skipped:sum("skipped"; null), pushes:sum("pushes"; null), builds:sum("builds"; null),
           usd:(sum("savedUsd"; null) | r2), builtUsd:(sum("builtUsd"; null) | r2),
-          vercelMinutes:sum("savedMinutes"; "vercel"), renderMinutes:sum("savedMinutes"; "render"),
+          vercelMinutes:msum("vercel"), renderMinutes:msum("render"),
           usdComplete:([ $rows[] | select(.skipped > 0) | .usdPerBuild ] | all(. != null))}}'
 }
 

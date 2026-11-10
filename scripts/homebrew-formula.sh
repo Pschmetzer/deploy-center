@@ -59,6 +59,7 @@ class Deploys < Formula
   def install
     libexec.install "deploys", "VERSION"
     libexec.install "providers" if File.directory?("providers")
+    libexec.install "lib" if File.directory?("lib")
     (bin/"deploys").write_env_script libexec/"deploys", {}
     doc.install "README-CLI.md"
   end

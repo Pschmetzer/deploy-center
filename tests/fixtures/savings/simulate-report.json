@@ -5,6 +5,7 @@
   "days": 30,
   "generatedAt": 1769817600,
   "method": "Estimate. Pushes to the deploy branch in the window (GitHub activity; commits where pushes cannot be read, an upper bound) are each counted as one build. Each build is priced at the project's average: minutes from its last finished builds (up to 20), dollars from Vercel billing per build over 7 days, else the team's price per build minute, else DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN. \"Once a day\" counts one build on each day that had a push. Per month = window scaled to 30 days.",
+  "methodDe": "Schätzung. Jeder Push auf den Deploy-Branch im Zeitraum (GitHub-Aktivität; wo Pushes nicht lesbar sind, Commits als Obergrenze) zählt als ein Build. Jeder Build kostet den Durchschnitt des Projekts: Minuten aus den letzten fertigen Builds (bis 20), Dollar aus der Vercel-Abrechnung je Build über 7 Tage, sonst der Minutenpreis des Teams, sonst der eingestellte Minutenpreis. „Einmal am Tag“ zählt einen Build an jedem Tag mit Push. Pro Monat = Zeitraum auf 30 Tage hochgerechnet.",
   "teamUsdPerBuildMinute": 0.067,
   "projects": [
     {
