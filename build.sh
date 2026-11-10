@@ -51,7 +51,7 @@ rm -f "${slices[@]}"
 
 cp deploys "$BUILD/Contents/Resources/deploys"
 chmod +x "$BUILD/Contents/Resources/deploys"
-# deploys sources lib/githost.sh from next to itself (GitLab); without it, GitHub only.
+# Team mode (lib/team.sh) and GitLab support (lib/githost.sh) are sourced by the script from next to it.
 mkdir -p "$BUILD/Contents/Resources/lib" && cp lib/*.sh "$BUILD/Contents/Resources/lib/"
 [ -f app/AppIcon.icns ] && cp app/AppIcon.icns "$BUILD/Contents/Resources/AppIcon.icns"
 # The MCP server for Settings > Claude, only when its packages are installed (cd integrations/mcp && npm ci).

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Pschmetzer/deploy-center/main/docs/deploy-center.schema.json",
+  "version": 1,
+  "approvals": 1,
+  "health": "/api/health",
+  "window": { "days": ["mon", "tue", "wed", "thu"], "from": "09:00", "to": "16:00", "tz": "UTC" },
+  "projects": {
+    "web": { "platform": "vercel", "branch": "release", "health": "/healthz" },
+    "api": { "platform": "render", "approvals": 2 },
+    "docs": { "platform": "vercel", "approvals": 0 }
+  },
+  "ignored": ["playground"],
+  "groups": { "shop": ["api", "web"] },
+  "observers": ["dev-watcher"]
+}

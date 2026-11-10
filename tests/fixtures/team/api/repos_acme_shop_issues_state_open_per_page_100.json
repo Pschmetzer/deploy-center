@@ -1,0 +1,2 @@
+[{"number":20,"html_url":"https://github.com/acme/shop/issues/20","title":"Deploy dddd444 to production","body":"Checked on staging.","labels":[{"name":"deploy-approved-by:dev-two"}]},
+ {"number":21,"html_url":"https://github.com/acme/shop/issues/21","title":"Unrelated","body":"aaaa111 is fine","labels":[{"name":"deploy-approved-by:dev-two"}]}]
