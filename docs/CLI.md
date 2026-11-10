@@ -60,16 +60,47 @@ deploys autodeploy allow vercel my-project 4   # auto-deploy on for 4 hours (see
 deploys autodeploy allowed | revoke vercel my-project
 deploys guard [--dry-run] | status | schedule on|off   # auto-deploy off where it came back on
 deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE.md
-eval "$(deploys completion zsh)"        # tab completion (also: bash)
+eval "$(deploys completion zsh)"        # tab completion (also: bash; fish: deploys completion fish | source)
+deploys deploy --help                   # the help lines of one command
 ```
 
-Add `--json` to any command for the machine answer.
+Add `--json` to any command for the machine answer. A name may be written `<provider>:<name>`
+(`vercel:web`) wherever a project is asked for.
 
 ## Exit codes
 
 `0` done (also "nothing to deploy"). `1` an error, something failed to start, or the state of some
-project could not be read (it is named and left out, never counted as current).
-`watch`: `3` the platform could not be reached.
+project could not be read (it is named and left out, never counted as current). Per command:
+
+| Command | Codes |
+| --- | --- |
+| `watch` | `0` live, `1` failed or canceled, `3` the platform could not be asked (or its answer read) five times in a row, `4` still running after `--timeout` |
+| `verify` | `0` healthy, `1` failed and rolled back, `2` failed and not rolled back |
+| `ci` | `0` green or no checks, `1` red, `2` still pending or GitHub not reachable (`--json`: always `0`) |
+| `window` | `0` open, `1` closed (`--json`: always `0`) |
+| `deploy-changed --strict` | also `2` when a project was skipped (red or pending CI) |
+| `autofix --only` | `2` not failed, `3` handed over already or busy, `4` a cap, `5` no routine, `6` locked |
+
+## Environment variables
+
+| Variable | What |
+| --- | --- |
+| `DEPLOYS_CONFIG` | the config folder (default `~/.config/deploys`) |
+| `DEPLOYS_DIR` | where `providers/` (and, without one next to the script, `lib/`) are |
+| `DEPLOYS_READONLY` | observer mode: any value but `0`, `false`, `no`, `off` turns it on |
+| `DEPLOYS_NO_GITHUB` | ask no git host (as `status --no-github`) |
+| `DEPLOYS_JOURNAL` | the deploy journal file (default: the app's, on Linux in the config folder) |
+| `DEPLOYS_NOTIFY` | `0`: no macOS notifications from autofix and guard |
+| `DEPLOYS_TEAM_TTL` | seconds a shared `deploy-center.json` is cached (default 600) |
+| `DEPLOYS_AUTOFIX_PER_DAY`, `DEPLOYS_AUTOFIX_PER_PROJECT` | autofix caps per 24 h (default 6 and 2) |
+| `DEPLOYS_GITLAB_HOSTS` | self-managed GitLab hosts (docs/GITLAB.md) |
+| `DEPLOYS_ANTHROPIC_API_KEY` | the key for `deploys ai`, before `ANTHROPIC_API_KEY` and the keychain |
+| `DEPLOYS_VERCEL_USD_PER_MIN`, `DEPLOYS_RENDER_USD_PER_MIN` | build-minute prices for `simulate` and `ledger` |
+| `NO_COLOR` | no colour |
+
+`window.json` may name a time zone: `{"tz":"Europe/Berlin","deny":[…]}`. `deploys window` warns
+about keys and times it does not understand. A rule over midnight (`"from":"22:00","to":"06:00"`)
+belongs to the day it starts.
 
 ## On a server or in CI
 

@@ -95,6 +95,12 @@ ours() { [ -f "$1" ] && grep -qF "$MARKER" "$1" 2>/dev/null; }
 # --- uninstall ------------------------------------------------------------------------------
 if [ "$action" = uninstall ]; then
   removed=0
+  # Jobs of this deploys keep running from launchd and fail every few minutes once it is gone.
+  for job in guard autofix; do
+    if [ -f "$HOME/Library/LaunchAgents/app.deploycenter.$job.plist" ]; then
+      warn "a scheduled deploys $job job is set up; turn it off first: deploys $job schedule off"
+    fi
+  done
   if ours "$bindir/deploys"; then run rm -f "$bindir/deploys"; say "Removed $bindir/deploys"; removed=1
   elif [ -e "$bindir/deploys" ] || [ -L "$bindir/deploys" ]; then
     warn "$bindir/deploys was not installed by this script (Homebrew or by hand?); left alone"
@@ -115,10 +121,14 @@ sha256() {
   elif has openssl; then openssl dgst -sha256 "$1" | awk '{print $NF}'
   else die "no sha256sum, shasum or openssl to check the download with"; fi
 }
-fetch() { curl -fsSL --proto '=https,file' --retry 3 -o "$2" "$1"; }
+# A redirect may lead to https only: the checksum comes from the same place as the archive.
+fetch() { curl -fsSL --proto '=https,file' --proto-redir '=https' --retry 3 -o "$2" "$1"; }
 
 tmp="$(mktemp -d 2>/dev/null || mktemp -d -t deploys)"
-trap 'rm -rf "$tmp"' EXIT INT TERM
+# Ctrl-C ends the install (a signal trap alone would carry on with $tmp gone); EXIT cleans up.
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [ -n "$version" ]; then
   sums_url="$BASE/download/v$version/checksums.txt"
@@ -167,8 +177,12 @@ run rm -rf "$libdir.new"
 run cp -R "$src" "$libdir.new"
 run chmod -R u=rwX,go=rX "$libdir.new"
 run chmod 0755 "$libdir.new/deploys"
-run rm -rf "$libdir"
+# Swapped, not removed first: a deploys started in between (a launchd job) finds either the old
+# files or the new ones, never none.
+run rm -rf "$libdir.old"
+if [ -e "$libdir" ]; then run mv "$libdir" "$libdir.old"; fi
 run mv "$libdir.new" "$libdir"
+run rm -rf "$libdir.old"
 run cp "$tmp/launcher" "$bindir/deploys.new"
 run chmod 0755 "$bindir/deploys.new"
 run mv -f "$bindir/deploys.new" "$bindir/deploys"
@@ -250,12 +264,13 @@ out="$(
   report bash required "deploys is a bash script"
   report jq required "everything"
   report curl required "Render and the GitHub API"
+  report perl required "masking secrets in build logs (logs, autofix, ai)"
   report vercel optional "Vercel projects"
   report gh optional "what is waiting to deploy: commits and PRs; then: gh auth login (or GH_TOKEN in CI)"
   report column optional "the tables of status, history and changed"
 )"
 if [ -z "$out" ]; then
-  say "  all there (bash, jq, curl, vercel, gh, column)."
+  say "  all there (bash, jq, curl, perl, vercel, gh, column)."
 else
   say "$out"
 fi
@@ -266,5 +281,9 @@ say ""
 say "Next: deploys doctor   (checks tools and access)."
 say "Keys: vercel login or VERCEL_TOKEN; RENDER_API_KEY for Render (on a Mac also: deploys render set-key)."
 say "Docs: https://github.com/$REPO/blob/main/README-CLI.md"
-{ has bash && has jq && has curl; } || warn "deploys is installed, but needs the required tools above before it can run."
+if ! { has bash && has jq && has curl && has perl; }; then
+  warn "deploys is installed, but needs the required tools above before it can run."
+  # In CI, DEPLOYS_REQUIRE_DEPS=1 makes that a failure (exit 3) instead of a warning.
+  [ "${DEPLOYS_REQUIRE_DEPS:-}" != 1 ] || exit 3
+fi
 exit 0

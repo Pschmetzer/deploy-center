@@ -245,6 +245,20 @@ for bad in '"two"' '"2x"' '1.5'; do
 done
 echo '{"projects":{"web":{"health":"/up","approvals":0},"playground":{"ignored":false}}}' > "$DEPLOYS_CONFIG/overrides.json"
 fresh
+# CLI-040: an approving review of an older head does not approve what was pushed after it.
+mkdir -p "$tmp/fix40"; cp -R "$FIX/." "$tmp/fix40/"
+echo '[{"number":12,"html_url":"https://github.com/acme/shop/pull/12","labels":[],"head":{"sha":"newhead"}}]' \
+  > "$tmp/fix40/api/repos_acme_shop_commits_aaaa111aaaa111aaaa111aaaa111aaaa111aaaa_pulls.json"
+jq '(.[] | select(.state == "APPROVED")) += {commit_id:"oldhead"}' "$FIX/api/repos_acme_shop_pulls_12_reviews.json" > "$tmp/fix40/api/repos_acme_shop_pulls_12_reviews.json"
+(
+  export DEPLOYS_LIB=1 FIX="$tmp/fix40"
+  # shellcheck source=../deploys
+  . ./deploys; set +e
+  expect "CLI-040: a review of an older head does not count" "$(team_approvals acme/shop aaaa111aaaa111aaaa111aaaa111aaaa111aaaa dev-one | jq -c '[.have[].user]')" "[]"
+  jq '(.[] | select(.state == "APPROVED")) += {commit_id:"newhead"}' "$FIX/api/repos_acme_shop_pulls_12_reviews.json" > "$tmp/r.json" && mv "$tmp/r.json" "$FIX/api/repos_acme_shop_pulls_12_reviews.json"
+  expect "CLI-040: a review of the final head counts" "$(team_approvals acme/shop aaaa111aaaa111aaaa111aaaa111aaaa111aaaa dev-one | jq -c '[.have[].user]')" '["dev-two"]'
+  [ "$fails" = 0 ] || exit 1
+) || fails=$((fails + 1))
 # ===== end CLI track =====
 
 echo

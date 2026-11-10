@@ -1128,6 +1128,32 @@ expect "CLI-011: details refuses a ref with .." "$(run "$O" "$E" details me/app 
 fresh; run "$O" "$E" render json >/dev/null
 expect "CLI-047: ignore render:api, then --undo api" \
   "$(run "$O" "$E" ignore render:api; run "$O" "$E" ignore --undo api; run "$O" "$E" ignore --list; cat "$O")" $'0\n0\n0'
+# CLI-008, CLI-078: a rule over midnight belongs to the day it starts; window warns about typos.
+fresh; echo '{"deny":[{"days":["fri"],"from":"22:00","to":"06:00"}]}' > "$e2e/config/window.json"
+wn() { DEPLOYS_NOW="$1" run "$O" "$E" window --json >/dev/null; jq -r .denied "$O"; }
+expect "CLI-008: fri 22-06 closes Sat 03:00, not Fri 03:00" "$(wn 'sat 03:00 2026-11-14') $(wn 'fri 03:00 2026-11-13') $(wn 'fri 23:00 2026-11-13')" "true false true"
+echo '{"deny":[{"day":["fri"],"from":"25:99"}]}' > "$e2e/config/window.json"
+expect "CLI-078: window names an unknown key and a bad time" "$(run "$O" "$E" window --json; grep -c 'unknown key "day"' "$E"; grep -c '"25:99" is no time' "$E")" $'0\n1\n1'
+rm -f "$e2e/config/window.json"
+
+# CLI-032, CLI-033, CLI-034, CLI-048, CLI-050: arguments.
+expect "CLI-032: deploy --help shows its lines" "$(run "$O" "$E" deploy --help; grep -c '^  deploys deploy ' "$O")" $'0\n2'
+expect "CLI-033: an unknown command is named" "$(run "$O" "$E" deplyo; grep -c 'unknown command "deplyo"' "$E")" $'1\n1'
+expect "CLI-034: vercel map without arguments is a usage line" "$(run "$O" "$E" vercel map; grep -c 'Usage: deploys vercel map' "$E"; grep -c 'unbound' "$E")" $'1\n1\n0'
+fresh
+expect "CLI-048: changed --platform with a typo is refused, nothing read" "$(run "$O" "$E" changed --platform verzel; grep -c 'takes one of' "$E"; wc -l < "$e2e/calls.log" | tr -d ' ')" $'1\n1\n0'
+expect "CLI-050: status --watch --json is refused" "$(run "$O" "$E" status --watch --json; grep -c 'watch draws a table' "$E")" $'1\n1'
+
+# CLI-076: deploy-changed --when-green --strict says so when something was skipped.
+fresh
+expect "CLI-076: --strict: red CI skipped is exit 2" "$(CI=red run "$O" "$E" deploy-changed --yes --when-green --strict)" "2"
+
+# CLI-067: more secrets masked.
+expect "CLI-067: subscription key, AccountKey, bare Bearer, cookies, signed URLs" \
+  "$(printf '%s\n' 'Ocp-Apim-Subscription-Key: abc123' 'x;AccountKey=zz==;y' 'got Bearer abcdefghijklmnop' 'Set-Cookie: s=1' 'u?a=1&X-Amz-Signature=dead&b=2' | af_mask | grep -c masked)" "5"
+
+# CLI-017: doctor names perl and curl.
+expect "CLI-017: doctor has perl and curl" "$(run "$O" "$E" doctor; jq -c '{perl, curl} | map_values(type)' "$O")" $'0\n{"perl":"boolean","curl":"boolean"}'
 unset RENDER_API_KEY DEPLOYS_JOURNAL
 # ===== end CLI track =====
 

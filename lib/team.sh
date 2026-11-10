@@ -26,7 +26,7 @@ team_fetch_one() {
   local repo="$1" dir="$2" ttl="$3" only="${4:-}" f now age p out err
   f="$dir/$(printf '%s' "$repo" | sed 's#/#__#').json"; now="$(date +%s)"
   if [ -f "$f" ]; then
-    age=$(( now - $(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f") ))
+    age=$(( now - $(mtime "$f") ))
     [ "$age" -lt "$ttl" ] && return 0
   fi
   [ -z "$only" ] || return 0
@@ -86,7 +86,13 @@ team_sources() {
 # The GitHub login of whoever runs this, kept for an hour. Empty when gh cannot tell.
 team_me() {
   local f="$TEAM_CACHE/me"; mkdir -p "$TEAM_CACHE"
-  if [ -s "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -lt 3600 ]; then cat "$f"; return; fi
+  # Per gh login: after `gh auth switch` (which rewrites gh's hosts.yml) or with another GH_TOKEN,
+  # the old name must not count. Without asking gh: a hash of the token variables (never the
+  # token itself), and the age of hosts.yml.
+  local key hosts; key="$(printf '%s' "${GH_TOKEN:-}${GITHUB_TOKEN:-}" | shasum 2>/dev/null | cut -c1-12)" || key=""
+  [ -z "$key" ] || f="$TEAM_CACHE/me-$key"
+  hosts="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}/hosts.yml"
+  if [ -s "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -lt 3600 ] && ! [ "$hosts" -nt "$f" ]; then cat "$f"; return; fi
   if [ -z "${DEPLOYS_NO_GITHUB:-}" ] && command -v gh >/dev/null 2>&1; then
     local me; me="$(gh api user --jq .login 2>/dev/null | head -n 1)"
     if [ -n "$me" ]; then printf '%s' "$me" > "$f"; echo "$me"; return; fi
@@ -198,18 +204,23 @@ team_journal() {  # team_journal <json object>
 # add a label with someone else's name, and that does not count).
 team_approvals() {
   local repo="$1" sha="$2" me="$3" prs issues have='[]' n
-  prs="$(gh api "repos/$repo/commits/$sha/pulls" 2>/dev/null | jq -c '[.[] | {number, url:.html_url, labels:[.labels[]?.name]}]' 2>/dev/null)" || prs='[]'
+  prs="$(gh api "repos/$repo/commits/$sha/pulls" 2>/dev/null | jq -c '[.[] | {number, url:.html_url, labels:[.labels[]?.name], head:(.head.sha // null)}]' 2>/dev/null)" || prs='[]'
   [ -n "$prs" ] || prs='[]'
-  # Reviews: the newest state of each person who is not the deployer.
+  # Reviews: the newest state of each person who is not the deployer. An approval counts for what
+  # it saw: a review of an older head (pushed to after the approval) does not approve the PR's
+  # final content. (Checked when GitHub names both commits.)
+  local head
   for n in $(jq -r '.[].number' <<< "$prs"); do
-    have="$(gh api --paginate "repos/$repo/pulls/$n/reviews" 2>/dev/null | jq -s -c --argjson have "$have" --arg me "$me" --argjson n "$n" \
+    head="$(jq -r --argjson n "$n" '[.[] | select(.number == $n)][0].head // ""' <<< "$prs")"
+    have="$(gh api --paginate "repos/$repo/pulls/$n/reviews" 2>/dev/null | jq -s -c --argjson have "$have" --arg me "$me" --argjson n "$n" --arg head "$head" \
       '[.[][]? | select(.user.login and ((.user.login | ascii_downcase) != ($me | ascii_downcase)) and (.state != "COMMENTED"))]
        | group_by(.user.login) | map(max_by(.submitted_at // "")) | map(select(.state == "APPROVED"))
+       | map(select($head == "" or .commit_id == null or .commit_id == $head))
        | $have + map({user:.user.login, via:"review on PR #\($n)", url:(.html_url // null)})' 2>/dev/null || echo "$have")"
   done
   # Labels: on those PRs, and on open issues that name the commit.
-  issues="$(gh api "repos/$repo/issues?state=open&per_page=100" 2>/dev/null | jq -c --arg s "${sha:0:7}" \
-    '[.[] | select(((.title // "") + " " + (.body // "")) | contains($s)) | {number, url:.html_url, labels:[.labels[]?.name]}]' 2>/dev/null)" || issues='[]'
+  issues="$(gh api --paginate "repos/$repo/issues?state=open&per_page=100" 2>/dev/null | jq -s -c --arg s "${sha:0:7}" \
+    '[add // [] | .[] | select(((.title // "") + " " + (.body // "")) | contains($s)) | {number, url:.html_url, labels:[.labels[]?.name]}]' 2>/dev/null)" || issues='[]'
   [ -n "$issues" ] || issues='[]'
   local item num lbl who by
   while IFS=$'\t' read -r num item lbl; do

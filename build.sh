@@ -5,10 +5,19 @@
 #   ./build.sh --install  also copy the app to ~/Applications (quits a running copy first)
 #   ./build.sh --widgets  also build the widget extension (widgets/) into the app, see docs/WIDGETS-IOS.md
 # Only the app and its zip in build/ are replaced; other files there stay.
+#
+# Environment (all optional):
+#   DEVELOPER_ID         signing identity "Developer ID Application: … (TEAMID)"; "-" forces ad hoc
+#                        (default: ~/.config/deploys/signing-identity, else ad hoc)
+#   NOTARY_PROFILE       a notarytool keychain profile: notarize and staple too (release.sh does it itself)
+#   DC_MAC_PROFILE       the Developer ID provisioning profile for the iPhone link
+#                        (default: ~/.config/deploys/mac-developer-id.provisionprofile)
+#   SPARKLE_FEED_URL     update feed, and SPARKLE_PUBLIC_KEY its key: for local update tests only
+#                        (release.sh ignores both)
 set -euo pipefail
 cd "$(dirname "$0")"
 
-usage() { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }
 fast=0 install=0 widgets=0
 for arg in "$@"; do
   case "$arg" in
@@ -21,9 +30,14 @@ for arg in "$@"; do
 done
 
 die() { echo "build.sh: $*" >&2; exit 1; }
-for tool in swiftc lipo ditto codesign; do
+for tool in swiftc lipo ditto codesign plutil; do
   command -v "$tool" >/dev/null || die "$tool is missing; install Xcode or run: xcode-select --install"
 done
+# Only for what was asked: notarizing needs xcrun, --install quits a running copy with pgrep and osascript.
+[ -z "${NOTARY_PROFILE:-}" ] || command -v xcrun >/dev/null || die "xcrun is missing (needed to notarize); run: xcode-select --install"
+if [ "$install" = 1 ]; then
+  for tool in pgrep osascript; do command -v "$tool" >/dev/null || die "$tool is missing (needed by --install)"; done
+fi
 # An Xcode whose license was never accepted makes swiftc fail with a confusing message.
 if ! swiftc -version >/dev/null 2>&1; then
   die "swiftc does not run. If Xcode is new: sudo xcodebuild -license accept"
@@ -123,7 +137,10 @@ PROFILE="${DC_MAC_PROFILE:-$HOME/.config/deploys/mac-developer-id.provisionprofi
 if [ -n "${DEVELOPER_ID:-}" ] && [ -s "$PROFILE" ]; then
   lteam="$(sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p' <<<"$DEVELOPER_ID")"
   [ -n "$lteam" ] || die "no team id in the signing identity \"$DEVELOPER_ID\""
-  security cms -D -i "$PROFILE" 2>/dev/null | grep -q "<string>$lteam.app.deploycenter.mac</string>" \
+  # Read into a variable first: grep -q stops early, and under pipefail the SIGPIPE of security
+  # would read as "not the profile".
+  prof="$(security cms -D -i "$PROFILE" 2>/dev/null || true)"
+  grep -qF "<string>$lteam.app.deploycenter.mac</string>" <<<"$prof" \
     || die "$PROFILE is not the Developer ID profile of app.deploycenter.mac for this team"
   LINK_GROUP="$lteam.app.deploycenter.shared"
   LINK_ENT="<key>com.apple.application-identifier</key><string>$lteam.app.deploycenter.mac</string><key>com.apple.developer.team-identifier</key><string>$lteam</string><key>keychain-access-groups</key><array><string>$LINK_GROUP</string></array>"
@@ -246,8 +263,13 @@ if [ "$install" = 1 ]; then
     pgrep -xq DeployCenter && die "Deploy Center is still running; quit it and run again"
   fi
   mkdir -p "$HOME/Applications"
-  rm -rf "$dest"
-  cp -R "$BUILD" "$dest"
+  # Copied next to it first (ditto keeps attributes and signatures), then swapped: a copy that
+  # breaks off leaves the old app in place, not none.
+  rm -rf "$dest.new" "$dest.old"
+  ditto "$BUILD" "$dest.new"
+  [ ! -e "$dest" ] || mv "$dest" "$dest.old"
+  mv "$dest.new" "$dest"
+  rm -rf "$dest.old"
   echo "Installed: $dest"
   [ "$was_running" = 0 ] || open "$dest"
 fi

@@ -1,5 +1,6 @@
 #!/bin/bash
-# deploys — turn off auto-deploy on Vercel and Render, then deploy by hand.
+# deploys — turn off auto-deploy on Vercel, Render and the other platforms in providers/
+# (deploys providers), then deploy by hand.
 #
 # Why: every git push builds every project. Build minutes cost money.
 # Deploying once a day by hand costs a fraction.
@@ -13,7 +14,7 @@
 #   deploys doctor                            check tools and access (JSON)
 #   deploys changed [--json]                  what has commits on GitHub that are not live
 #   deploys deploy-changed [--yes]            deploy all of those (shows the list without --yes)
-#     [--when-green [--wait 30m]]             only commits whose CI passed; waits for running checks
+#     [--when-green [--wait 30m] [--strict]]  only commits whose CI passed; waits for running checks
 #   deploys deploy <project> [--sha <c>]      deploy one project to production (Vercel or Render)
 #   deploys verify <p> [--path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
 #     [--rollback-after 10] [--no-rollback]   count down, then roll back (Ctrl-C stops it)
@@ -23,6 +24,7 @@
 #   --force "why"                             deploy inside a closed window; the reason goes to the journal
 #   deploys status [--watch] [--no-github]    what is building or failed (--no-github: no GitHub calls)
 #   deploys watch <p> [<id>] [--preview]      follow a deploy until it is live or failed
+#     [--timeout 30m]                         give up after that long (exit 4; the deploy goes on)
 #   deploys explain <project>                 why a project is (not) counted as changed
 #   deploys diff <project>                    commits and files between what is live and the branch
 #   deploys notes <project>                   the same as release notes (Markdown)
@@ -31,11 +33,11 @@
 #   deploys vercel list                       projects and whether a push still deploys them
 #   deploys vercel autodeploy-off <p>|--all   disconnect Git (remembers the repo first)
 #   deploys vercel autodeploy-on <p>|--all    connect Git again from the remembered repo (pushes build again)
-#   deploys vercel deploy <p> [--preview]     deploy the newest commit of the remembered repo
 #   deploys vercel rollback <p>               production back to the previous deployment
 #   deploys render rollback <service>          back to the deploy that was live before
 #   deploys vercel team [<id>]                show or set the Vercel team
-#   deploys vercel deploy <p> [--preview] [--sha <c>] [--wait]   --wait follows it until live or failed
+#   deploys vercel deploy <p> [--preview] [--sha <c>] [--wait]   the newest commit of the remembered repo;
+#                                             --wait follows it until live or failed
 #   deploys history <project> [n]             the last n deploys (default 10): when, state, commit, source
 #   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>)
 #   deploys autofix [--dry-run] [--only <platform> <p>]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
@@ -51,7 +53,9 @@
 #   deploys ledger [--json]                   estimate: builds skipped and money saved since auto-deploy was off
 #   deploys where                             config folder, version, key source, logins
 #   deploys render forget-key                 remove the Render key from the keychain
-#   deploys completion zsh|bash               tab completion (eval "$(deploys completion zsh)")
+#   deploys completion zsh|bash|fish          tab completion (eval "$(deploys completion zsh)";
+#                                             fish: deploys completion fish | source)
+#   deploys <command> --help                  the help lines of one command
 #   deploys list [--json]                     every project on every provider that is on, with its platform
 #   deploys providers [--json]                the platforms (providers/*.sh): on or off, set up or not
 #   deploys providers enable|disable <p>      switch one on or off (Vercel and Render are on by default)
@@ -61,7 +65,8 @@
 #                                             deploy one project, or a group in its order (docs/TEAM.md)
 #   deploys config [--json] [--refresh]       the effective config, and where each value came from
 #   deploys team add|remove <owner/repo> | list | refresh | journal   repos whose deploy-center.json counts
-#   deploys readonly [on|off]                 observer mode: every command that changes something is refused
+#   deploys readonly [on|off]                 observer mode: commands that change something are refused
+#                                             (a guard against slips, not access control: docs/TEAM.md)
 #   deploys --help | --version
 #   deploys render list                       services and their auto-deploy setting
 #   deploys render autodeploy-off <s>|--all
@@ -74,8 +79,14 @@
 #   deploys render set-key                    store the Render API key (read from stdin)
 #
 # Exit codes: 0 done (also "nothing to deploy"), 1 an error, something failed to start, or the
-# state of some project could not be read (it is named and left out, never counted as current);
-# watch: 3 the platform could not be reached.
+# state of some project could not be read (it is named and left out, never counted as current).
+# Per command (docs/CLI.md has the table):
+#   watch            0 live, 1 failed or canceled, 3 the platform could not be asked, 4 --timeout
+#   verify           0 healthy, 1 failed and rolled back, 2 failed and not rolled back
+#   ci               0 green or no checks, 1 red, 2 still pending or GitHub not reachable
+#   window           0 open, 1 closed
+#   deploy-changed   with --strict also 2 when something was skipped (red or pending CI)
+#   autofix --only   2 not failed, 3 handed over already or busy, 4 a cap, 5 no routine, 6 locked
 #
 # Config lives in ${DEPLOYS_CONFIG:-~/.config/deploys}:
 #   vercel-repos.json  which repo/branch each Vercel project deploys from
@@ -92,16 +103,20 @@ REPOS="$CONFIG_DIR/vercel-repos.json"
 # launchd and cron start without $USER; under set -u the keychain lookups would stop the script.
 USER="${USER:-$(id -un)}"
 # Locks, the remembered repos and (for a moment) the Render key live here: for this user only.
-mkdir -p "$CONFIG_DIR" && chmod 700 "$CONFIG_DIR" 2>/dev/null || true
-[ -f "$REPOS" ] || echo '{}' > "$REPOS"
+# Only a folder made here is closed to others: a DEPLOYS_CONFIG someone set keeps its rights. A
+# config that cannot be written (a container, a CI cache) still lets reading commands run.
+if [ ! -d "$CONFIG_DIR" ]; then mkdir -p "$CONFIG_DIR" 2>/dev/null && chmod 700 "$CONFIG_DIR" 2>/dev/null || true
+elif [ -z "${DEPLOYS_CONFIG:-}" ]; then chmod 700 "$CONFIG_DIR" 2>/dev/null || true; fi
+[ -f "$REPOS" ] || { echo '{}' > "$REPOS"; } 2>/dev/null || true
 
 # BSD (macOS) and GNU (Linux) spell file times, date maths and base64 differently.
 # GNU first: GNU `stat -f` is the file system's status, and answers something that is no time.
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+export -f mtime   # team_fetch_one runs under xargs
 days_ago() { date -u -v-"$1"d +%Y-%m-%d 2>/dev/null || date -u -d "$1 days ago" +%Y-%m-%d; }
 b64d() { base64 -D 2>/dev/null || base64 -d; }
 
-die() { echo "${RED}Error:${PLAIN} $*" >&2; exit 1; }
+die() { echo "${ERED:-}Error:${EPLAIN:-} $*" >&2; exit 1; }
 # The files a glob names, or nothing when it names none: a bare `cat dir/*.json` fails then, and
 # under pipefail that ended a whole `vercel json` that simply had nothing to compare.
 cat_all() { cat "$@" 2>/dev/null || true; }
@@ -109,6 +124,8 @@ cat_all() { cat "$@" 2>/dev/null || true; }
 # Colour only for a person at a terminal, never in what the app or a pipe reads.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then RED=$'\033[31m'; GREEN=$'\033[32m'; BOLD=$'\033[1m'; PLAIN=$'\033[0m'
 else RED=""; GREEN=""; BOLD=""; PLAIN=""; fi
+# The same for messages on stderr, which may go to a terminal while stdout goes to a file (or back).
+if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then ERED=$'\033[31m'; EPLAIN=$'\033[0m'; else ERED=""; EPLAIN=""; fi
 # shellcheck disable=SC2034  # kept for messages that want them
 : "$GREEN$BOLD"
 
@@ -125,14 +142,25 @@ readonly_from() {
   if [ -e "$CONFIG_DIR/readonly" ]; then echo "$CONFIG_DIR/readonly exists"; fi
 }
 
-# The shared config, observers by list and the two-person rule live in lib/team.sh next to the
-# script (the app bundles it too). A copy of the script without it still deploys, and says so.
-deploys_dir() {
-  local f="${BASH_SOURCE[0]}" d
-  while [ -L "$f" ]; do d="$(cd "$(dirname "$f")" && pwd)"; f="$(readlink "$f")"; case "$f" in /*) ;; *) f="$d/$f";; esac; done
-  cd "$(dirname "$f")" && pwd
+# Where this script really is: symlinks followed (a ~/bin/deploys link keeps working). The one
+# place that works it out; providers/ and lib/ are found from here.
+script_dir() {
+  local f="$1" d
+  while [ -L "$f" ]; do d="$(cd -P "$(dirname "$f")" && pwd)"; f="$(readlink "$f")"; case "$f" in /*) ;; *) f="$d/$f";; esac; done
+  cd -P "$(dirname "$f")" && pwd
 }
-TEAM_LIB="${DEPLOYS_TEAM_LIB:-$(deploys_dir)/lib/team.sh}"
+# This script as it was called (a symlink stays a symlink), for the commands that run it again and
+# for launchd jobs. Not $0: that is the caller's name when the file is sourced (tests, bash -c).
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+# lib/ (team.sh, githost.sh, savings.sh) next to the script, as in a checkout and the app. Without
+# one there, the lib/ under a DEPLOYS_DIR from the environment (the Docker image keeps the files
+# apart). A copy of the script without either still deploys, and says so where it matters.
+LIB_DIR="$(script_dir "${BASH_SOURCE[0]}")/lib"
+if [ ! -d "$LIB_DIR" ] && [ -n "${DEPLOYS_DIR:-}" ] && [[ "$(declare -p DEPLOYS_DIR 2>/dev/null)" == "declare -x"* ]]; then
+  LIB_DIR="$DEPLOYS_DIR/lib"
+fi
+# The shared config, observers by list and the two-person rule live in lib/team.sh.
+TEAM_LIB="${DEPLOYS_TEAM_LIB:-$LIB_DIR/team.sh}"
 # shellcheck source=lib/team.sh
 if [ -f "$TEAM_LIB" ]; then . "$TEAM_LIB"; fi
 team_on() { declare -F team_gate >/dev/null; }
@@ -155,22 +183,25 @@ repos_json() {
 # One file per platform in providers/ next to this script (docs/PROVIDERS.md). There is no list
 # to edit: every providers/<p>.sh is a provider. Symlinks are followed (a ~/bin/deploys link
 # keeps working); DEPLOYS_DIR overrides it (the Docker image keeps the files apart).
-script_dir() {
-  local f="$1" d
-  while [ -L "$f" ]; do d="$(cd "$(dirname "$f")" && pwd)"; f="$(readlink "$f")"; case "$f" in /*) ;; *) f="$d/$f";; esac; done
-  cd "$(dirname "$f")" && pwd
-}
 DEPLOYS_DIR="${DEPLOYS_DIR:-$(script_dir "${BASH_SOURCE[0]}")}"
 # A glob, not ls: the folder itself may have spaces in its path.
 PROVIDERS=()
 for _f in "$DEPLOYS_DIR"/providers/*.sh; do [ -f "$_f" ] || continue; _f="${_f##*/}"; PROVIDERS+=("${_f%.sh}"); done
 unset _f
 [ "${#PROVIDERS[@]}" -gt 0 ] || die "No providers in $DEPLOYS_DIR/providers. Keep the providers folder next to deploys (or set DEPLOYS_DIR)."
+_ok=()
 for _p in "${PROVIDERS[@]}"; do
+  # A draft must not take every command down with it (doctor included): a file that fails while
+  # loading or does not say what it is (<p>_meta) is skipped, and said so. (A syntax error still
+  # stops bash itself.)
   # shellcheck source=/dev/null
-  . "$DEPLOYS_DIR/providers/$_p.sh"
+  . "$DEPLOYS_DIR/providers/$_p.sh" || true
+  if declare -F "${_p}_meta" >/dev/null; then _ok+=("$_p")
+  else echo "Warning: providers/$_p.sh did not load (or has no ${_p}_meta); left out." >&2; fi
 done
-unset _p
+# (When none says what it is, the list stays as it was: --version and --help still answer.)
+[ "${#_ok[@]}" -eq 0 ] || PROVIDERS=("${_ok[@]}")
+unset _p _ok
 
 is_provider() { local p; for p in "${PROVIDERS[@]}"; do [ "$p" = "${1:-}" ] && return 0; done; return 1; }
 # --json anywhere asks for the machine answer: `<p> list --json` is `<p> json`,
@@ -205,12 +236,21 @@ set -- ${args[@]+"${args[@]}"}
 # is off until `deploys providers enable <p>` (its meta says defaultOn). The choice is kept in
 # providers.json as {"enabled":[...]}; without that file, the defaults. In PROVIDERS order.
 PROVIDERS_FILE="$CONFIG_DIR/providers.json"
-meta_flag() { grep -q "\"$2\":true" <<<"$("${1}_meta")"; }
+# A flag anywhere in a provider's meta (defaultOn, or a capability under caps) is true. With jq,
+# read as JSON ("defaultOn": true with a space counts); without it (doctor must work), by text.
+meta_flag() {
+  if command -v jq >/dev/null 2>&1; then
+    "${1}_meta" | jq -e --arg k "$2" '[.. | objects | .[$k]? | select(. == true)] | length > 0' >/dev/null 2>&1
+  else grep -q "\"$2\": *true" <<<"$("${1}_meta")"; fi
+}
 enabled_providers() {
   local p on=""
   if [ -s "$PROVIDERS_FILE" ] && on="$(jq -r '.enabled // empty | .[]' "$PROVIDERS_FILE" 2>/dev/null)"; then
     for p in "${PROVIDERS[@]}"; do grep -qxF "$p" <<<"$on" && echo "$p"; done
   else
+    # A broken file means the defaults (as without one), but never in silence: a provider that was
+    # turned off may be read again.
+    [ ! -s "$PROVIDERS_FILE" ] || echo "Warning: $PROVIDERS_FILE cannot be read; the default providers are on until it is fixed (deploys providers enable|disable rewrites it)." >&2
     for p in "${PROVIDERS[@]}"; do meta_flag "$p" defaultOn && echo "$p"; done
   fi
   return 0
@@ -255,9 +295,16 @@ lookup() {
       echo "$hits"; return 0
     fi
   fi
+  # Every active provider is asked: the same name on two of them must not go to whichever came first.
+  hits=""
   for p in $(active_providers); do
-    if id="$( ( "${p}_has" "$n" ) 2>/dev/null)" && [ -n "$id" ]; then printf '%s\t%s\n' "$p" "$id"; return 0; fi
+    if id="$( ( "${p}_has" "$n" ) 2>/dev/null)" && [ -n "$id" ]; then hits="$hits$p"$'\t'"$id"$'\n'; fi
   done
+  hits="${hits%$'\n'}"
+  if [ -n "$hits" ]; then
+    [ "$(wc -l <<<"$hits" | tr -d ' ')" = 1 ] || die "\"$n\" is on $(cut -f1 <<<"$hits" | tr '\n' ' ' | sed 's/ $//; s/ / and /g'). Say which: $(cut -f1 <<<"$hits" | head -n 1):$n"
+    echo "$hits"; return 0
+  fi
   for p in $(enabled_providers); do nouns="${nouns:+$nouns or }$(meta_str "$p" label) $(meta_str "$p" noun)"; done
   die "No ${nouns:-project} named \"$n\""
 }
@@ -335,7 +382,7 @@ open_prs_of() {
   local repo="$1" out="$2"
   # The repo goes to jq as --arg, never into the filter text.
   gh api --cache 5m "repos/$repo/pulls?state=open&per_page=100" 2>/dev/null \
-    | jq -c --arg k "$repo" '{key:$k, value:{all:length, drafts:(map(select(.draft)) | length), bots:(map(select(.user.type=="Bot")) | length)}}' \
+    | jq -c --arg k "$repo" '{key:$k, value:{all:length, partial:(length >= 100), drafts:(map(select(.draft)) | length), bots:(map(select(.user.type=="Bot")) | length)}}' \
     > "$out/$(echo "$repo" | tr '/' '_').json" 2>/dev/null || true
 }
 export -f open_prs_of
@@ -343,14 +390,9 @@ export -f open_prs_of
 # ---------- git hosts: GitHub above, GitLab in lib/githost.sh ----------
 # githost_of decides per repo; the githost_* dispatchers hand GitHub repos to the functions above.
 # The lib sits next to this script (also inside the app). Without it, GitHub works as before.
-deploys_dir() {
-  local s="${BASH_SOURCE[0]}" d
-  while [ -L "$s" ]; do d="$(cd -P "$(dirname "$s")" && pwd)"; s="$(readlink "$s")"; [[ "$s" == /* ]] || s="$d/$s"; done
-  cd -P "$(dirname "$s")" && pwd
-}
-if [ -f "$(deploys_dir)/lib/githost.sh" ]; then
+if [ -f "$LIB_DIR/githost.sh" ]; then
   # shellcheck source=lib/githost.sh
-  . "$(deploys_dir)/lib/githost.sh"
+  . "$LIB_DIR/githost.sh"
 else
   githost_of() { case "${1:-}" in *:*|*/*/*) echo unknown ;; */*) echo github ;; *) echo unknown ;; esac; }
   githost_available() { command -v gh >/dev/null 2>&1; }
@@ -385,18 +427,21 @@ with_heads() {
   if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! githost_available; then echo "$list" | jq "$CHANGED_RULE"; return; fi
   tmp="$(mktemp -d)"; mkdir "$tmp/h" "$tmp/p" "$tmp/o"
   echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
-    | xargs -P 8 -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
+    | xargs -r -P 8 -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
   heads="$(cat_all "$tmp/h"/*.json | jq -s 'from_entries')"
   # An empty answer becomes {} on its own line: bash 3.2 keeps the backslash of an escaped {} default (invalid JSON).
   [ -n "$heads" ] || heads='{}'
   list="$(echo "$list" | jq --argjson h "$heads" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))')"
   # With GitHub's budget nearly spent, keep it for what decides "changed" (the heads above).
   local left; left="$(github_budget | jq -r '.remaining // 5000' 2>/dev/null || echo 5000)"
-  if [ "${left:-5000}" -lt 300 ]; then rm -rf "$tmp"; echo "$list" | jq "$CHANGED_RULE"; return; fi
+  if [ "${left:-5000}" -lt 300 ]; then
+    echo "Note: GitHub's hourly budget is nearly spent ($left left): waiting commits, PRs and open PRs are not counted this time." >&2
+    rm -rf "$tmp"; echo "$list" | jq "$CHANGED_RULE"' | map(. + {budgetLow:true})'; return
+  fi
   # Compared only where the branch moved past the live commit.
   echo "$list" | jq -r '.[] | select(.repo and .ref and .lastSha and .headSha and .lastSha != .headSha) | "\(.repo) \(.lastSha) \(.ref)"' \
-    | sort -u | xargs -P 8 -n 3 bash -c 'githost_pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
-  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'githost_open_prs_of "$1" "$0"' "$tmp/o"
+    | sort -u | xargs -r -P 8 -n 3 bash -c 'githost_pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
+  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -r -P 8 -n 1 bash -c 'githost_open_prs_of "$1" "$0"' "$tmp/o"
   pend="$(cat_all "$tmp/p"/*.json | jq -s 'from_entries')"
   opens="$(cat_all "$tmp/o"/*.json | jq -s 'from_entries')"
   rm -rf "$tmp"
@@ -410,7 +455,7 @@ with_heads() {
              compareStatus:($x.status // null), behindBy:($x.behindBy // null),
              # green, yellow or red, and why (see RISK_DEF). Null when nothing was compared.
              risk:($x.risk // null),
-             openPRs:($op.all // null), openDrafts:($op.drafts // null), openBots:($op.bots // null)})' \
+             openPRs:($op.all // null), openPRsPartial:($op.partial // false), openDrafts:($op.drafts // null), openBots:($op.bots // null)})' \
     | jq "$CHANGED_RULE"
 }
 
@@ -451,7 +496,7 @@ provider_json() {
 all_json() {
   local t rc=0 p; t="$(mktemp -d)"
   for p in $(active_providers); do
-    ( "$0" "$p" json 2>"$t/$p.err" | jq --arg p "$p" 'map(. + {platform:$p})' > "$t/$p.json" || : > "$t/$p.failed" ) &
+    ( "$SELF" "$p" json 2>"$t/$p.err" | jq --arg p "$p" 'map(. + {platform:$p})' > "$t/$p.json" || : > "$t/$p.failed" ) &
   done
   wait
   for p in "${PROVIDERS[@]}"; do
@@ -479,7 +524,7 @@ changed_json() {
   if team_on; then ignl="$(team_ignored 2>/dev/null)" || ignl=""; fi
   [ -n "$ignl" ] || ignl="$(jq -c . "$ign" 2>/dev/null || echo '[]')"
   all="$(echo "$all" | jq --argjson ign "$ignl" 'map(select((.name as $n | $ign | index($n)) | not))')"
-  unknown="$(echo "$all" | jq -r "$UNKNOWN_RULE"' | .[] | "\(.platform) \(.name): \(.fetchError // "branch head unknown (is gh installed and logged in?)")"')"
+  unknown="$(echo "$all" | jq -r "$UNKNOWN_RULE"' | .[] | "\(.platform) \(.name): \(.fetchError // (if ((.repo // "") | split("/") | length) > 2 then "branch head unknown (is glab installed and logged in, or GITLAB_TOKEN set?)" else "branch head unknown (is gh installed and logged in?)" end))"')"
   if [ -n "$unknown" ]; then
     rc=1; echo "Error: state unknown, left out:" >&2; echo "$unknown" | sed 's/^/  /' >&2
   fi
@@ -533,6 +578,15 @@ CI_RULE='($s[0] // {}) as $s | ($r[0] // {}) as $r
   else {state:"green", reason:"\($all | length) checks passed"} end
   | . + {checks:($all | length), failed:($bad | length), running:($wait | length)}'
 
+# The branch a repo calls its default (master, develop …), when no branch is given; main when GitHub
+# cannot say (or for GitLab, which answers elsewhere).
+default_branch() {  # default_branch <owner/repo>
+  local b=""
+  [ "$(githost_of "$1")" != github ] || b="$(gh api --cache 1h "repos/$1" --jq .default_branch 2>/dev/null | head -n 1)" || b=""
+  [[ "$b" =~ ^[A-Za-z0-9._/-]+$ ]] || b=main
+  echo "$b"
+}
+
 ci_of() {  # ci_of <owner/repo> <sha or branch>: the verdict as one line of JSON
   local t rc=0; t="$(mktemp -d)"
   gh api "repos/$1/commits/$2/status" > "$t/s" 2>/dev/null || rc=$((rc + 1))
@@ -547,11 +601,15 @@ ci_of() {  # ci_of <owner/repo> <sha or branch>: the verdict as one line of JSON
 }
 
 # Ask again while the checks run: after 10 s, 20 s, 40 s … at most 2 minutes apart, `max` seconds in all.
-# The time slept is counted, not the clock, so a test with a stand-in `sleep` ends too.
+# The time slept is counted, plus the time the questions took (SECONDS), not the wall clock alone:
+# a test with a stand-in `sleep` still ends, and slow answers do not stretch --wait.
 ci_wait() {  # ci_wait <owner/repo> <ref> <max seconds>
-  local waited=0 delay=10 v s
+  local waited=0 delay=10 v s t0
   while :; do
+    t0=$SECONDS
     v="$(ci_of "$1" "$2")"; s="$(echo "$v" | jq -r .state)"
+    # Slow answers only: a second of rounding is no wait (and keeps the steps 10, 20, 40 s).
+    [ $(( SECONDS - t0 )) -lt 5 ] || waited=$(( waited + SECONDS - t0 ))
     case "$s" in pending|unknown) ;; *) echo "$v"; return 0;; esac
     if [ "$waited" -ge "$3" ]; then echo "$v" | jq -c --argjson w "$3" '. + {timedOut:true, waited:$w}'; return 0; fi
     [ $((waited + delay)) -le "$3" ] || delay=$(( $3 - waited ))
@@ -562,25 +620,46 @@ ci_wait() {  # ci_wait <owner/repo> <ref> <max seconds>
 
 # Deploy windows: ~/.config/deploys/window.json, e.g. {"deny":[{"days":["fri"],"from":"15:00"}]}.
 # A rule matches on its days (all when left out), its dates ("2026-12-24"), and from–to local time
-# (00:00–24:00 when left out; a "from" after "to" runs over midnight).
+# (00:00–24:00 when left out; a "from" after "to" runs over midnight, and the hours after midnight
+# belong to the day it started: {"days":["fri"],"from":"22:00","to":"06:00"} is Fri 22:00 to Sat 06:00).
+# An optional "tz" (e.g. "Europe/Berlin") reads the clock there instead of in this machine's zone.
 WINDOW="$CONFIG_DIR/window.json"
 WINDOW_RULE='def hm: split(":") | (.[0] | tonumber) * 60 + ((.[1] // "0") | tonumber);
   def says: (.reason // ("\((.days // .dates // ["every day"]) | join(", ")) \(.from // "00:00")–\(.to // "24:00")"));
+  def on($d; $dt): ((.days == null) or (.days | map(ascii_downcase | .[0:3]) | index($d)))
+    and ((.dates == null) or (.dates | index($dt)));
   ($time | hm) as $t
-  | [(.deny // [])[] | select(
-      ((.days == null) or (.days | map(ascii_downcase | .[0:3]) | index($day)))
-      and ((.dates == null) or (.dates | index($date)))
-      and (((.from // "00:00") | hm) as $f | ((.to // "24:00") | hm) as $u
-           | if $f <= $u then $t >= $f and $t < $u else $t >= $f or $t < $u end))] as $hit
+  | (($date + "T00:00:00Z") | fromdateiso8601 - 86400) as $y
+  | ($y | strftime("%Y-%m-%d")) as $pdate | ($y | strftime("%a") | ascii_downcase) as $pday
+  | [(.deny // [])[] | select(((.from // "00:00") | hm) as $f | ((.to // "24:00") | hm) as $u
+      | if $f <= $u then on($day; $date) and $t >= $f and $t < $u
+        else (on($day; $date) and $t >= $f) or (on($pday; $pdate) and $t < $u) end)] as $hit
   | if ($hit | length) > 0 then {denied:true, reason:($hit[0] | says), rule:$hit[0]} else {denied:false} end
   | . + {configured:true, now:"\($day) \($time) \($date)"}'
 
 # Now as the rules read it, local time: "fri 15:30 2026-11-13". DEPLOYS_NOW stands in for tests.
-now_parts() { if [ -n "${DEPLOYS_NOW:-}" ]; then echo "$DEPLOYS_NOW"; else LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]'; fi; }
+now_parts() {  # now_parts [<tz>]
+  if [ -n "${DEPLOYS_NOW:-}" ]; then echo "$DEPLOYS_NOW"
+  elif [ -n "${1:-}" ]; then TZ="$1" LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]'
+  else LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]'; fi
+}
+
+# What in window.json would silently not do what it says: unknown keys ("day", "form"), times
+# that are no HH:MM, day names that are none. One line each, for `deploys window`.
+WINDOW_LINT='def time_ok: type == "string" and (test("^([01][0-9]|2[0-3]):[0-5][0-9]$") or . == "24:00");
+  (keys - ["deny", "tz"] | .[] | "unknown key \"\(.)\" at the top (only deny and tz)"),
+  ((.deny // []) | to_entries[] | .key as $i | .value
+   | ((keys - ["days", "dates", "from", "to", "reason"])[] | "rule \($i + 1): unknown key \"\(.)\""),
+     (.from, .to | select(. != null and (time_ok | not)) | "rule \($i + 1): \"\(.)\" is no time (HH:MM)"),
+     ((.days // [])[] | select((ascii_downcase | .[0:3]) as $d | ["mon","tue","wed","thu","fri","sat","sun"] | index($d) | not)
+      | "rule \($i + 1): \"\(.)\" is no day"),
+     ((.dates // [])[] | select(test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not) | "rule \($i + 1): \"\(.)\" is no date (YYYY-MM-DD)"))'
 
 window_json() {
   [ -f "$WINDOW" ] || { echo '{"denied":false,"configured":false}'; return 0; }
-  local n; n="$(now_parts)"
+  local n tz; tz="$(jq -r '.tz // empty' "$WINDOW" 2>/dev/null || true)"
+  [[ -z "$tz" || "$tz" =~ ^[A-Za-z0-9_+/-]+$ ]] || die "$WINDOW: \"tz\" must be a time zone like Europe/Berlin"
+  n="$(now_parts "$tz")"
   jq -c --arg day "${n%% *}" --arg time "$(echo "$n" | cut -d' ' -f2)" --arg date "${n##* }" "$WINDOW_RULE" "$WINDOW" 2>/dev/null \
     || die "$WINDOW could not be read (see docs/SAFE-DEPLOY.md for the format)"
 }
@@ -722,7 +801,7 @@ af_notify() {
 }
 # Seams the tests replace: what is live, a build log, a deploy.
 af_all() { DEPLOYS_NO_GITHUB=1 all_json; }
-af_logs() { "$0" logs "$1" 200 --id "$2"; }
+af_logs() { "$SELF" logs "$1" 200 --id "$2"; }
 
 # Obvious secrets out of a log before it leaves this Mac. A help, not a guarantee: a token with
 # no known prefix and no telling name (TOKEN=, --token, Authorization:) still goes through.
@@ -738,8 +817,14 @@ af_mask() {
     # Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, JWT.
     s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
     # NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret
-    # (VERCEL_TOKEN, SECRET_KEY, aws_secret_access_key, DB_PASSWORD, x-api-key, ...).
-    s/\b((?i:[A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|_key|authorization|auth|credentials?|dsn))["\x27]?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("[^"]*"|\x27[^\x27]*\x27|[^\s"\x27,;]+)/${1}${2}\[masked]/g;
+    # (VERCEL_TOKEN, SECRET_KEY, aws_secret_access_key, DB_PASSWORD, x-api-key, Ocp-Apim-Subscription-Key,
+    # AccountKey=, ...).
+    s/\b((?i:[A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn))["\x27]?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("[^"]*"|\x27[^\x27]*\x27|[^\s"\x27,;]+)/${1}${2}\[masked]/g;
+    # Bearer/Basic with no name before it, and whole cookies.
+    s/\b((?i:bearer|basic)\s+)[A-Za-z0-9._~+\/=-]{12,}/${1}\[masked]/g;
+    s/\b((?i:set-cookie|cookie)\s*:\s*).+/${1}\[masked]/g;
+    # Signed URLs: the signature and credential parts of a query (S3, Azure SAS, GCS).
+    s/([?&](?i:sig|signature|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&\s"\x27]+/${1}\[masked]/g;
     # --token x, --token=x (vercel, npm and most CLIs).
     s/(--(?i:token|password|api-key|secret)(?:=|\s+))[^\s"\x27]+/${1}\[masked]/g;
     # user:password@ in a URL (database URLs).
@@ -751,7 +836,7 @@ af_mask() {
 # Open (or merged) autofix PRs of one project: gh REST only, branch claude/autofix-<project>-*.
 af_prs() {  # af_prs <owner/repo> <project> <open|closed>
   # The project name goes to jq as --arg, never into the filter text.
-  gh api "repos/$1/pulls?state=$3&per_page=100&sort=updated&direction=desc" \
+  gh api --cache 2m "repos/$1/pulls?state=$3&per_page=100&sort=updated&direction=desc" \
     | jq -c --arg b "claude/autofix-$2-" '[.[] | select(.head.ref | startswith($b)) | {number, merged_at, closed_at, merge_commit_sha, ref:.head.ref, url:.html_url}]'
 }
 
@@ -794,27 +879,44 @@ PROMPT
 AUTOFIX_LABEL="app.deploycenter.autofix"
 # A launchd job that runs this script every few seconds/minutes: job_on <label> <seconds> <log name> <args...>.
 job_plist() { echo "${DEPLOYS_LAUNCH_DIR:-$HOME/Library/LaunchAgents}/$1.plist"; }
+# Text for a plist <string>: & < > and quotes as entities (a path or PATH may hold any of them).
+xml_text() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
 job_on() {
-  local label="$1" every="$2" log="$HOME/Library/Logs/$3.log" self plist a pargs=""; shift 3
+  local label="$1" every="$2" log="$HOME/Library/Logs/$3.log" self plist a pargs="" new; shift 3
   plist="$(job_plist "$label")"; mkdir -p "$(dirname "$plist")"
-  self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-  for a in "$@"; do pargs="$pargs<string>$a</string>"; done
+  self="$(cd "$(dirname "$SELF")" && pwd)/$(basename "$SELF")"
+  for a in "$@"; do pargs="$pargs<string>$(xml_text "$a")</string>"; done
   # Written with the PATH of whoever turns it on (the app passes the login shell's): launchd
   # starts jobs with a bare one, and autofix needs jq, gh, perl and the vercel CLI.
-  cat > "$plist" <<PLIST
+  # Background priority: a check every few minutes must not compete with the person's work.
+  new="$plist.new"
+  cat > "$new" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>$label</string>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(printf '%s' "$PATH" | sed 's/&/\&amp;/g; s/</\&lt;/g')</string></dict>
-  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$self</string>$pargs</array>
-  <key>StandardOutPath</key><string>$log</string>
-  <key>StandardErrorPath</key><string>$log</string>
+  <key>Label</key><string>$(xml_text "$label")</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(xml_text "$PATH")</string></dict>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$(xml_text "$self")</string>$pargs</array>
+  <key>StandardOutPath</key><string>$(xml_text "$log")</string>
+  <key>StandardErrorPath</key><string>$(xml_text "$log")</string>
   <key>StartInterval</key><integer>$every</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
 </dict></plist>
 PLIST
+  # Checked before the running job is touched: a file launchd refuses must not cost the old job.
+  if command -v plutil >/dev/null 2>&1 && ! plutil -lint "$new" >/dev/null 2>&1; then
+    rm -f "$new"; die "The job file for $label came out invalid; the old job is unchanged"
+  fi
   launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
-  launchctl bootstrap "gui/$(id -u)" "$plist" || die "launchd did not take the job ($plist)"
+  [ ! -f "$plist" ] || mv -f "$plist" "$plist.old"
+  mv -f "$new" "$plist"
+  if ! launchctl bootstrap "gui/$(id -u)" "$plist"; then
+    # The new one was refused: the old one comes back, if there was one.
+    if [ -f "$plist.old" ]; then mv -f "$plist.old" "$plist"; launchctl bootstrap "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true; fi
+    die "launchd did not take the job ($plist)"
+  fi
+  rm -f "$plist.old"
 }
 job_off() {
   launchctl bootout "gui/$(id -u)/$1" >/dev/null 2>&1 || true
@@ -910,15 +1012,35 @@ autofix_run() {  # autofix_run [dry] [<platform> <project>]  (the two: --only, t
     else echo "autofix: $oplat $oname has no failed build to fix."; out="$AF_NOT_FAILED"; fi
     rmdir "$lock" 2>/dev/null || true; return "$out"
   fi
-  day_count="$(echo "$st" | jq --argjson t "$now" '[.fires[] | select(.status != "ratelimited" and .at > ($t - 86400))] | length')"
+  day_count="$(echo "$st" | jq --argjson t "$now" '[.fires[] | select(.status != "ratelimited" and .status != "unsupported" and .at > ($t - 86400))] | length')"
+  local pat
   while IFS= read -r c; do
     [ -n "$c" ] || continue
     p="$(echo "$c" | jq -r .name)"; plat="$(echo "$c" | jq -r .platform)"; repo="$(echo "$c" | jq -r .repo)"
     did="$(echo "$c" | jq -r .latestId)"; sha="$(echo "$c" | jq -r '.latestSha // ""')"
     prev="$(echo "$st" | jq -r --arg d "$did" '[.fires[] | select(.deployId == $d)][0].status // ""')"
-    if [ -n "$prev" ] && [ "$prev" != ratelimited ]; then
-      [ -z "$oname" ] || { echo "autofix: this failed build of $p was handed over already ($prev); not again."; out="$AF_BUSY"; }
-      continue
+    pat="$(echo "$st" | jq -r --arg d "$did" '[.fires[] | select(.deployId == $d)][0].at // 0')"
+    # Tried again: a rate limit, and with --only a hand-over that never finished (the run died
+    # after "pending") once it is 15 minutes old. A 5xx or no answer is not: the API has no
+    # idempotency, so the session may have started.
+    case "$prev" in
+      ""|ratelimited) ;;
+      pending)
+        if [ -n "$oname" ] && [ $(( now - pat )) -ge 900 ]; then echo "autofix: the hand-over of $p from $(( (now - pat) / 60 )) min ago never finished; trying again."
+        else
+          if [ -n "$oname" ]; then echo "autofix: this failed build of $p is being handed over right now; not again."; out="$AF_BUSY"
+          elif [ $(( now - pat )) -ge 900 ]; then echo "autofix: the hand-over of $p never finished. To try again: deploys autofix --only $plat $p"; fi
+          continue
+        fi ;;
+      *) [ -z "$oname" ] || { echo "autofix: this failed build of $p was handed over already ($prev); not again."; out="$AF_BUSY"; }
+         continue ;;
+    esac
+    # Fix PRs are opened on GitHub only. Said once (recorded), not every ten minutes.
+    if [ "$(githost_of "$repo")" != github ]; then
+      echo "autofix: $p deploys from $repo; autofix opens fixes on GitHub repos only. Left to you."
+      [ -n "$dry" ] || st="$(echo "$st" | jq --arg d "$did" --arg p "$p" --arg pl "$plat" --argjson t "$now" \
+        '.fires += [{deployId:$d, project:$p, platform:$pl, at:$t, status:"unsupported", reason:"autofix works with GitHub repos only"}]')"
+      [ -z "$oname" ] || out="$AF_NOT_FAILED"; continue
     fi
     if [ -n "$sha" ] && [ "$(echo "$st" | jq --arg s "$sha" '[.fires[] | select(.mergedSha == $s or .redeployedSha == $s)] | length')" != 0 ]; then
       st="$(echo "$st" | jq --arg d "$did" --arg p "$p" --arg pl "$plat" --argjson t "$now" '.fires += [{deployId:$d, project:$p, platform:$pl, at:$t, status:"skipped", reason:"the fix itself failed"}]')"
@@ -1135,7 +1257,7 @@ allow_main() {
     done
     [ "$skipped" = 0 ] || echo "$skipped Vercel projects left manual: their repo is not known (deploys vercel map)."
   fi
-  echo "Auto-deploy allowed for $( [ "$key" = "*" ] && echo everything || echo "$key") until $(date -r "$until" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$until" '+%Y-%m-%d %H:%M')."
+  echo "Auto-deploy allowed for $( [ "$key" = "*" ] && echo everything || echo "$key") until $(date -u -r "$until" '+%Y-%m-%d %H:%M UTC' 2>/dev/null || date -u -d "@$until" '+%Y-%m-%d %H:%M UTC')."
   echo "Every push (and every merged fix PR) now builds and costs money. Undo: deploys autodeploy revoke $1 ${2}"
   [ "$bad" = 0 ] || die "$bad could not be turned on (see above)"
 }
@@ -1168,12 +1290,16 @@ AI_MODELS="claude-opus-5-5 claude-sonnet-5-5 claude-haiku-5-5"
 AI_DEFAULT_CAP=300000
 AI_USAGE="$CONFIG_DIR/ai-usage.json"
 
+# DEPLOYS_ANTHROPIC_API_KEY first: it is meant for this tool alone. ANTHROPIC_API_KEY is often set
+# for another account (Claude Code, an SDK); `ai status` says when it hides a key in the keychain.
 ai_key() {
+  if [ -n "${DEPLOYS_ANTHROPIC_API_KEY:-}" ]; then printf '%s' "$DEPLOYS_ANTHROPIC_API_KEY"; return; fi
   if [ -n "${ANTHROPIC_API_KEY:-}" ]; then printf '%s' "$ANTHROPIC_API_KEY"; return; fi
   security find-generic-password -a "$USER" -s "$AI_KEYCHAIN" -w 2>/dev/null || true
 }
 ai_key_source() {
-  if [ -n "${ANTHROPIC_API_KEY:-}" ]; then echo env
+  if [ -n "${DEPLOYS_ANTHROPIC_API_KEY:-}" ]; then echo env
+  elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then echo env
   elif [ -n "$(ai_key)" ]; then echo keychain; else echo none; fi
 }
 ai_model() { local m; m="$(cat "$CONFIG_DIR/ai-model" 2>/dev/null || true)"; echo "${m:-$AI_DEFAULT_MODEL}"; }
@@ -1245,10 +1371,10 @@ ai_excerpt() {
 ai_row() {
   # "<p>:<name>" too: the platform from it, the bare name (or the id) to find the row.
   safe_arg "$1"; resolve "$1"
-  "$0" "$PLAT" json | jq -c --arg p "$PNAME" --arg id "$PID" --arg pl "$PLAT" '[.[] | select(.name == $p or .id == $p or .id == $id)][0] // empty | .platform //= $pl'
+  "$SELF" "$PLAT" json | jq -c --arg p "$PNAME" --arg id "$PID" --arg pl "$PLAT" '[.[] | select(.name == $p or .id == $p or .id == $id)][0] // empty | .platform //= $pl'
 }
-ai_log() { "$0" logs "$1" 300; }
-ai_details() { "$0" details "$1" "$2" "$3"; }
+ai_log() { "$SELF" logs "$1" 300; }
+ai_details() { "$SELF" details "$1" "$2" "$3"; }
 
 ai_project() {  # ai_project <project>: {row, d}
   local j repo d; j="$(ai_row "$1")"; [ -n "$j" ] || die "$1 not found"
@@ -1303,7 +1429,7 @@ if [ "${DEPLOYS_LIB:-}" = 1 ]; then return 0 2>/dev/null || exit 0; fi
 
 # The version: VERSION next to the script (a checkout), or the app's Info.plist around it.
 deploys_version() {
-  local d; d="$(script_dir "$0")"
+  local d; d="$(script_dir "$SELF")"
   if [ -f "$d/VERSION" ]; then cat "$d/VERSION"
   elif [ -f "$d/../Info.plist" ]; then
     # The value is on the key's line or the next one: the first <string> after the key.
@@ -1314,6 +1440,14 @@ deploys_version() {
 case "${1:-}" in
   -h|--help|help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   -v|--version|version) deploys_version; exit 0 ;;
+esac
+# deploys <command> --help (or -h): the help lines about that command, not a project named --help.
+case " ${*:2} " in
+  *" --help "*|*" -h "*)
+    h="$(sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//' | grep -E "^  deploys $1( |$)" || true)"
+    if [ -z "$h" ] && is_provider "$1"; then h="$(sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//' | grep -E '^  deploys <p> ' || true)"; fi
+    [ -n "$h" ] || die "No help for \"$1\". All commands: deploys --help"
+    echo "$h"; exit 0 ;;
 esac
 
 # A missing name is a usage line, not bash's "line 425: 2: project".
@@ -1332,6 +1466,7 @@ case "${1:-} ${2:-}" in
   "ci "*)          usage_if_short $# 2 "ci <owner/repo> [<sha or branch>] [--wait 30m] [--json]" ;;
   "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
   "deploy "*)      usage_if_short $# 2 "deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force \"reason\"]" ;;
+  "vercel map")    usage_if_short $# 4 "vercel map <project> <owner/repo> [branch]" ;;
 esac
 
 # Observer mode: what changes something on Vercel, Render or GitHub is refused before it starts.
@@ -1398,7 +1533,7 @@ provider_cmd() {
   if [ -n "$verb" ] && declare -F "${p}_cli_$verb" >/dev/null; then fn="${p}_cli_$verb"
   elif [ "$verb" = json ]; then provider_json "$p"; return
   elif [ -n "$verb" ] && [[ "$CONTRACT_VERBS" == *" $verb "* ]]; then fn="${p}_$verb"
-  else sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1; fi
+  else [ -z "$verb" ] || echo "Error: $(meta_str "$p" label) has no command \"${verb//_/-}\" (deploys $p --help)" >&2; sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1; fi
   # Production starts wait for the deploy window (docs/SAFE-DEPLOY.md); a forced one is journaled.
   case "$verb" in
     deploy|deploy_json) [[ " $* " == *" --preview "* ]] || freeze_check; journal_forced "$p" "${1:-}" ;;
@@ -1412,7 +1547,7 @@ case "${1:-} ${2:-}" in
     # Each provider that is on adds its own lines (<p>_where).
     ghu="$(gh api user --jq .login 2>/dev/null || echo "not logged in")"
     atok=none; [ -n "$(af_token)" ] && atok="set"
-    printf '%-13s%s\n' version "$(deploys_version)" script "$0" config "$CONFIG_DIR" providers "$(enabled_providers | tr '\n' ' ' | sed 's/ $//')"
+    printf '%-13s%s\n' version "$(deploys_version)" script "$SELF" config "$CONFIG_DIR" providers "$(enabled_providers | tr '\n' ' ' | sed 's/ $//')"
     for p in $(enabled_providers); do if declare -F "${p}_where" >/dev/null; then "${p}_where"; fi; done
     glu="$(gitlab_user || true)"
     printf '%-13s%s\n' "github user" "$ghu" "gitlab user" "${glu:-not logged in}" autofix "routine $(r="$(af_routine)"; echo "${r:-none}"), token $atok" ;;
@@ -1458,7 +1593,7 @@ case "${1:-} ${2:-}" in
       # The next member of a group starts once this one is live.
       if [ -n "$wait_" ] || [ "$i" -lt "$count" ]; then
         if [ "$json" = 1 ]; then wout=2; else wout=1; fi
-        "$0" watch "$p" "$(echo "$out" | jq -r .id)" ${pv:+--preview} >&"$wout" \
+        "$SELF" watch "$p" "$(echo "$out" | jq -r .id)" ${pv:+--preview} >&"$wout" \
           || die "$p did not go live$([ "$i" -lt "$count" ] && echo "; the rest of the group was not started")"
       fi
     done ;;
@@ -1488,13 +1623,13 @@ case "${1:-} ${2:-}" in
     team_on || die "Team mode needs lib/team.sh next to the script ($TEAM_LIB is missing)"
     case "${2:-list}" in
       add)
-        r="${3:?Usage: deploys team add <owner/repo>}"
+        r="${3:-}"; [ -n "$r" ] || die "Usage: deploys team add <owner/repo>"
         case "$r" in */*) ;; *) die "Give the repo as owner/name";; esac
         { cat "$TEAM_REPOS" 2>/dev/null; echo "$r"; } | sort -u > "$TEAM_REPOS.tmp" && mv "$TEAM_REPOS.tmp" "$TEAM_REPOS"
         DEPLOYS_TEAM_REFRESH=1 team_sources "$r" | jq -r --arg r "$r" '.[] | select(.repo == $r)
           | if .found // .config then "\($r): \(.path) found" elif .error then "\($r): \(.error)" else "\($r): added; no deploy-center.json there (yet)" end' ;;
       remove)
-        r="${3:?Usage: deploys team remove <owner/repo>}"
+        r="${3:-}"; [ -n "$r" ] || die "Usage: deploys team remove <owner/repo>"
         grep -vxF "$r" "$TEAM_REPOS" > "$TEAM_REPOS.tmp" 2>/dev/null || true; mv "$TEAM_REPOS.tmp" "$TEAM_REPOS"
         rm -f "$TEAM_CACHE/$(printf '%s' "$r" | sed 's#/#__#').json"*; echo "$r removed" ;;
       list) team_repo_list ;;
@@ -1539,8 +1674,8 @@ case "${1:-} ${2:-}" in
     # The versions that matter (jq 1.6+ for the date functions).
     jqv="$(jq --version 2>/dev/null | sed 's/^jq-//' | tr -d '"\\')"
     ro=false; [ -z "$(readonly_from)" ] || ro=true
-    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s}\n' \
-      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" ;;
+    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s,"perl":%s,"curl":%s}\n' \
+      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" ;;
 
   "github-budget "*)
     github_budget ;;
@@ -1552,11 +1687,13 @@ case "${1:-} ${2:-}" in
     watch=0; nogh=""
     for a in "${@:2}"; do case "$a" in --watch) watch=1;; --no-github) nogh=1;; *) die "Unknown option $a. Usage: deploys status [--watch] [--no-github] [--json]";; esac; done
     if [ "$watch" = 1 ]; then
+      # A screen that refreshes is for a person; for a program, ask status --json in a loop.
+      [ "$json" = 0 ] || die "--watch draws a table for a person; for JSON, call deploys status --json again each time"
       round=0
       while :; do
         g="$nogh"; [ $((round % 10)) = 0 ] || g=1
         clear 2>/dev/null || true
-        if [ -n "$g" ]; then "$0" status --no-github || true; else "$0" status || true; fi
+        if [ -n "$g" ]; then "$SELF" status --no-github || true; else "$SELF" status || true; fi
         round=$((round + 1)); sleep 10
       done
     fi
@@ -1598,7 +1735,7 @@ case "${1:-} ${2:-}" in
         misses=$((misses + 1))
         if [ -n "$raw" ]; then printf '%s  (could not read the answer of %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2
         else printf '%s  (could not ask %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2; fi
-        [ "$misses" -lt 5 ] || { echo "Error: ${RED}could not reach $plat; the deploy itself may be fine${PLAIN}" >&2; exit 3; }
+        [ "$misses" -lt 5 ] || { echo "Error: ${ERED}could not reach $plat; the deploy itself may be fine${EPLAIN}" >&2; exit 3; }
         sleep 6; continue
       fi
       misses=0; IFS=$'\t' read -r id ph st <<<"$s"
@@ -1673,7 +1810,7 @@ case "${1:-} ${2:-}" in
   "explain "*)
     # One sentence on why a project is, or is not, counted as having changes.
     p="${2:?project}"; resolve "$p"; p="$PNAME"
-    j="$("$0" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
+    j="$("$SELF" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     echo "$j" | jq -r 'def s: (. // "?") | tostring | .[0:7];
       if (.deployable // false) | not then "no: not deployable (repo unknown, or the service is suspended)"
@@ -1690,10 +1827,10 @@ case "${1:-} ${2:-}" in
   "diff "*|"notes "*)
     # What is merged but not live for one project, from the same data the window shows.
     p="${2:?project}"; resolve "$p"; p="$PNAME"
-    j="$("$0" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
+    j="$("$SELF" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
-    d="$("$0" details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // "main"')")"
+    d="$("$SELF" details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // "main"')")"
     if [ "${1:-}" = "notes" ]; then
       echo "$d" | jq -r --arg p "$p" '"## \($p)", (.commits | map(select(.bot | not)) | .[] | "- \(.msg)\(if .pr then " (#\(.pr))" else "" end) – \(.author // "?")"),
         (if (.commits | map(select(.bot)) | length) > 0 then "", "Dependency updates:", (.commits | map(select(.bot)) | .[] | "- \(.msg) – \(.author // "?")") else empty end)'
@@ -1723,7 +1860,7 @@ _deploys() {
   if (( CURRENT == 2 )); then compadd $cmds
 ${zv}  elif [[ \$words[2] == ai && CURRENT == 3 ]]; then compadd explain notes ship set-key forget-key verify model cap status
   elif [[ \$words[2] == providers && CURRENT == 3 ]]; then compadd enable disable
-  elif [[ \$words[2] == completion ]]; then compadd zsh bash
+  elif [[ \$words[2] == completion ]]; then compadd zsh bash fish
   else compadd -a names; fi
 }
 # compdef exists only after compinit; load it if ~/.zshrc has not.
@@ -1745,15 +1882,25 @@ ${bv}  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = ai ]; then COMPREP
 complete -F _deploys deploys
 BASH
       ;;
-      *) die "zsh or bash" ;;
+      fish)
+        # deploys completion fish | source  (or save it as ~/.config/fish/completions/deploys.fish).
+        # Names are read line by line by fish itself: nothing in them is run.
+        echo "complete -c deploys -f"
+        echo "complete -c deploys -n __fish_use_subcommand -a '$cmds'"
+        for p in "${PROVIDERS[@]}"; do echo "complete -c deploys -n '__fish_seen_subcommand_from $p' -a '$(verbs_of "$p")'"; done
+        echo "complete -c deploys -n '__fish_seen_subcommand_from ai' -a 'explain notes ship set-key forget-key verify model cap status'"
+        echo "complete -c deploys -n '__fish_seen_subcommand_from providers' -a 'enable disable'"
+        echo "complete -c deploys -n '__fish_seen_subcommand_from completion' -a 'zsh bash fish'"
+        printf "complete -c deploys -n 'not __fish_use_subcommand' -a '(cat %s 2>/dev/null)'\n" "$(printf '%q' "$CONFIG_DIR/names")" ;;
+      *) die "zsh, bash or fish" ;;
     esac ;;
 
   "details "*)
     # Everything about one repo the window shows on demand: the commits between what is live and
     # the branch (with their PRs), the files they touch and which of them are risky to ship
     # unread, the CI result of the branch head, and the pull requests still open.
-    repo="${2:?owner/repo}"; base="${3:-}"; ref="${4:-main}"
-    safe_repo "$repo"; [ -z "$base" ] || [ "$base" = null ] || safe_ref "$base"; safe_ref "$ref"
+    repo="${2:?owner/repo}"; base="${3:-}"; ref="${4:-}"
+    safe_repo "$repo"; [ -z "$base" ] || [ "$base" = null ] || safe_ref "$base"; [ -n "$ref" ] || ref="$(default_branch "$repo")"; safe_ref "$ref"
     if [ "$(githost_of "$repo")" = gitlab ]; then gitlab_details "$repo" "$base" "$ref"; exit 0; fi
     # The comparison goes through a file, not an argument: with its patches it can be megabytes,
     # more than one argument may hold ("Argument list too long"). The patches are not needed.
@@ -1763,7 +1910,9 @@ BASH
         && [ -s "$dt/cmp.t" ] && mv "$dt/cmp.t" "$dt/cmp"
     fi
     checks="$(gh api --cache 2m "repos/$repo/commits/$ref/check-runs?per_page=100" 2>/dev/null \
-      | jq '{total:.total_count, failed:([.check_runs[] | select(.conclusion=="failure" or .conclusion=="timed_out" or .conclusion=="cancelled")] | length),
+      | jq '{total:.total_count,
+             # Failed as CI_RULE says (ci, deploy-changed --when-green): finished and not success/neutral/skipped.
+             failed:([.check_runs[] | select(.status == "completed" and (((.conclusion // "") | IN("success", "neutral", "skipped")) | not))] | length),
              running:([.check_runs[] | select(.status!="completed")] | length)}' 2>/dev/null || echo null)"
     open="$(gh pr list -R "$repo" --state open --limit 50 --json number,title,author,isDraft,updatedAt,url,statusCheckRollup 2>/dev/null \
       | jq '[.[] | {number, title, author:.author.login, bot:(.author.is_bot // (.author.login | test("\\[bot\\]|dependabot|renovate"))),
@@ -1849,7 +1998,7 @@ BASH
       if command -v gh >/dev/null 2>&1; then
         { jq -r '.[] | select(.repo and (.type // "github") == "github") | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
           echo "${svcs:-[]}" | jq -r '.[] | .repo // empty | select(test("^https://github.com/")) | sub("^https://github.com/";"") | sub("\\.git$";"")'
-        } | sort -u | xargs -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
+        } | sort -u | xargs -r -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
         cat_all "$tmp"/*.jsonl
       fi
     } | jq -s '.'
@@ -1857,11 +2006,18 @@ BASH
 
   "changed "*)
     # Everything with commits on GitHub that are not live, and how many of them.
-    rc=0; list="$(changed_json)" || rc=$?
-    # changed [--json] [--platform vercel|render]
-    for ((i=2; i<=$#; i++)); do
-      if [ "${!i}" = "--platform" ]; then j=$((i+1)); list="$(echo "$list" | jq --arg p "${!j:?vercel or render}" 'map(select(.platform == $p))')"; fi
+    # changed [--json] [--platform <provider>]. Checked before anything is read: a typo in the
+    # platform must not read as "nothing to deploy".
+    only=""; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --platform) is_provider "${2:-}" || die "--platform takes one of: ${PROVIDERS[*]}"; only="$2"; shift ;;
+        *) die "Unknown option $1. Usage: deploys changed [--platform <provider>] [--json]" ;;
+      esac; shift
     done
+    [ "$forced" = 0 ] || die "--force is for starting a deploy; changed only looks"
+    rc=0; list="$(changed_json)" || rc=$?
+    [ -z "$only" ] || list="$(echo "$list" | jq --arg p "$only" 'map(select(.platform == $p))')"
     if [ "$json" = 1 ]; then echo "$list"; exit "$rc"; fi
     if [ "$(echo "$list" | jq length)" = "0" ]; then
       [ "$rc" = 0 ] || die "Could not tell what has changes (see above). Nothing is known to be up to date."
@@ -1876,7 +2032,7 @@ BASH
     # ci <owner/repo> [<sha or branch>] [--wait 30m]: green, pending, red or none, and why.
     # Exit 0 green (or no checks), 1 red, 2 still pending or GitHub not reachable; with --json
     # always 0, the verdict is in the answer (the app reads it).
-    repo="$2"; ref="main"; maxw=0; shift 2
+    repo="$2"; ref=""; maxw=0; shift 2
     case "$repo" in */*) ;; *) die "Give the repo as owner/name";; esac
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -1886,7 +2042,7 @@ BASH
       esac
       shift
     done
-    safe_repo "$repo"; safe_ref "$ref"
+    safe_repo "$repo"; [ -n "$ref" ] || ref="$(default_branch "$repo")"; safe_ref "$ref"
     v="$(ci_wait "$repo" "$ref" "$maxw")"
     if [ "$json" = 1 ]; then echo "$v" | jq --arg r "$repo" --arg ref "$ref" '{repo:$r, ref:$ref} + .'; exit 0; fi
     echo "$v" | jq -r '"\(.state): \(.reason)"'
@@ -1895,6 +2051,7 @@ BASH
   "window "*)
     # Whether the deploy window is open now (window.json); exit 0 open, 1 closed (--json: always 0).
     w="$(window_json)"
+    [ ! -f "$WINDOW" ] || jq -r "$WINDOW_LINT" "$WINDOW" 2>/dev/null | sed "s|^|Warning: $WINDOW: |" >&2 || true
     if [ "$json" = 1 ]; then echo "$w" | jq '. + {file:$f}' --arg f "$WINDOW"; exit 0
     elif [ "$(echo "$w" | jq -r .configured)" != true ]; then echo "No deploy window set ($WINDOW). Deploys are allowed at any time."
     elif [ "$(echo "$w" | jq -r .denied)" = true ]; then echo "${RED}Closed${PLAIN}: $(echo "$w" | jq -r .reason). Deploys need --force \"why\"."
@@ -1923,7 +2080,7 @@ BASH
     # "<p>:<name>" works too: the platform from it, the bare name for its API.
     safe_arg "$p"; resolve "$p"; plat="$PLAT"; pq="$p"; p="$PNAME"
     # A check while the build still runs would test what was live before.
-    "$0" watch "$pq" >&2 || die "The newest deploy of $p is not live; nothing to check"
+    "$SELF" watch "$pq" >&2 || die "The newest deploy of $p is not live; nothing to check"
     # A failed lookup is "no address known", with the hint below, not a silent stop.
     [ -n "$url" ] || url="$(site_url_of "$p" "$plat")" || url=""
     [ -n "$url" ] || die "No address known for $p (give one with --url)"
@@ -1964,7 +2121,7 @@ BASH
       journal_add "$plat" "$p" skipped "Check failed ($codes), rollback stopped by hand"
       report false false true 2
     fi
-    if out="$("$0" "$plat" rollback "$p" 2>&1)"; then
+    if out="$("$SELF" "$plat" rollback "$p" 2>&1)"; then
       journal_add "$plat" "$p" other "Rolled back: $target answered $codes"
       [ "$json" = 1 ] || echo "Rolled back $p to the deploy before."
       report false true false 1
@@ -1976,7 +2133,7 @@ BASH
   "risk "*)
     # risk <project>: green, yellow or red for what waits to go live, and why (see RISK_DEF).
     safe_arg "$2"; resolve "$2"; plat="$PLAT"; p="$PNAME"
-    j="$("$0" "$plat" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
+    j="$("$SELF" "$plat" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
     base="$(echo "$j" | jq -r '.lastSha // empty')"; ref="$(echo "$j" | jq -r '.ref // "main"')"
@@ -1998,14 +2155,15 @@ BASH
     # The daily deploy: everything with changes. Without --yes it only shows what it would do.
     # Only what is known to have changes is started; what could not be read is named and left out.
     # --when-green: only commits whose CI passed; pending checks are waited for (--wait, default 30m).
-    yes=""; green=""; maxw=1800
+    yes=""; green=""; maxw=1800; strict=""
     shift
     while [ $# -gt 0 ]; do
       case "$1" in
         --yes) yes=1 ;;
         --when-green) green=1 ;;
+        --strict) strict=1 ;;   # exit 2 when anything was skipped (cron and CI see it)
         --wait) maxw="$(duration_s "${2:-}")" || die "--wait takes a time like 30m, 90s or 1h"; shift ;;
-        *) die "Unknown option $1. Usage: deploys deploy-changed [--yes] [--when-green [--wait 30m]] [--force \"why\"] [--json]" ;;
+        *) die "Unknown option $1. Usage: deploys deploy-changed [--yes] [--when-green [--wait 30m] [--strict]] [--force \"why\"] [--json]" ;;
       esac
       shift
     done
@@ -2052,6 +2210,7 @@ BASH
       # as soon as its own commit is green, at exactly that commit (a newer push waits for the next run).
       waited=0; delay=10
       while [ -n "$todo" ]; do
+        t0=$SECONDS   # the asking (and starting) counts toward --wait too
         next=""
         while IFS=$'\t' read -r plat name id repo sha; do
           if [ -z "$repo" ] || [ -z "$sha" ]; then skip=$((skip+1)); say "$plat" "$name" skipped "the commit or repo is unknown, so its checks are too"; continue; fi
@@ -2065,7 +2224,8 @@ BASH
         done <<< "$todo"
         todo="${next%$'\n'}"
         [ -n "$todo" ] || break
-        [ $((waited + delay)) -le "$maxw" ] || delay=$(( maxw - waited ))
+        el=$(( SECONDS - t0 )); [ "$el" -lt 5 ] || waited=$(( waited + el ))   # slow answers only: a second of rounding is no wait
+        [ $((waited + delay)) -le "$maxw" ] || delay=$(( maxw - waited )); [ "$delay" -ge 0 ] || delay=0
         [ "$json" = 1 ] || echo "Waiting for checks on $(echo "$todo" | cut -f2 | paste -sd, - | sed 's/,/, /g'); next look in ${delay}s." >&2
         sleep "$delay"; waited=$((waited + delay)); delay=$(( delay * 2 > 120 ? 120 : delay * 2 ))
       done
@@ -2074,7 +2234,8 @@ BASH
     else echo "$ok started, $bad failed to start$([ -n "$green" ] && echo ", $skip skipped")."; fi
     rm -f "$res"
     [ "$rc" = 0 ] || echo "Some projects could not be read and were left out (see above)." >&2
-    [ "$bad" = "0" ] && [ "$rc" = 0 ] ;;
+    [ "$bad" = "0" ] && [ "$rc" = 0 ] || exit 1
+    [ -z "$strict" ] || [ "$skip" = 0 ] || exit 2 ;;
 
   "autodeploy allow")
     # autodeploy allow <vercel|render|all> <project>|--all <hours>
@@ -2151,8 +2312,12 @@ BASH
     else ai_cap; fi ;;
   "ai status")
     # For the app: is a key there (never the key), which model, the cap and this month's use.
-    jq -n --arg s "$(ai_key_source)" --arg m "$(ai_model)" --argjson c "$(ai_cap)" --argjson u "$(ai_used)" --arg mo "$(ai_month)" --arg ms "$AI_MODELS" \
-      '{key:($s != "none"), source:$s, model:$m, models:($ms | split(" ")), cap:$c, used:$u, month:$mo}' ;;
+    # envHidesKeychain: ANTHROPIC_API_KEY (often another account's) is used while a key waits in the keychain.
+    hides=false
+    if [ -z "${DEPLOYS_ANTHROPIC_API_KEY:-}" ] && [ -n "${ANTHROPIC_API_KEY:-}" ] \
+      && [ -n "$(security find-generic-password -a "$USER" -s "$AI_KEYCHAIN" -w 2>/dev/null || true)" ]; then hides=true; fi
+    jq -n --arg s "$(ai_key_source)" --arg m "$(ai_model)" --argjson c "$(ai_cap)" --argjson u "$(ai_used)" --arg mo "$(ai_month)" --arg ms "$AI_MODELS" --argjson h "$hides" \
+      '{key:($s != "none"), source:$s, model:$m, models:($ms | split(" ")), cap:$c, used:$u, month:$mo, envHidesKeychain:$h}' ;;
   "ai explain"|"ai notes"|"ai ship")
     # --json is taken off the arguments above for every command; ai_run reads it as AI_JSON.
     [ "${json:-0}" != 1 ] || export AI_JSON=1
@@ -2222,8 +2387,8 @@ BASH
     done
     if [ -z "$dry" ]; then
       nr=1; [ -z "$oname" ] || nr="$AF_NO_ROUTINE"
-      [ -n "$(af_routine)" ] || { echo "${RED}Error:${PLAIN} No routine set. See docs/AUTOFIX.md, then: deploys autofix routine <trig_id>" >&2; exit "$nr"; }
-      [ -n "$(af_token)" ] || { echo "${RED}Error:${PLAIN} No routine token. Run: pbpaste | deploys autofix set-token" >&2; exit "$nr"; }
+      [ -n "$(af_routine)" ] || { echo "${ERED}Error:${EPLAIN} No routine set. See docs/AUTOFIX.md, then: deploys autofix routine <trig_id>" >&2; exit "$nr"; }
+      [ -n "$(af_token)" ] || { echo "${ERED}Error:${EPLAIN} No routine token. Run: pbpaste | deploys autofix set-token" >&2; exit "$nr"; }
     fi
     autofix_run "$dry" "$oplat" "$oname" ;;
 
@@ -2262,12 +2427,13 @@ BASH
 
   "simulate "*|"ledger "*)
     # Savings estimates, kept in lib/savings.sh next to this script (or in the app's Resources).
-    lib="${DEPLOYS_SAVINGS_LIB:-$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)/lib/savings.sh}"
+    lib="${DEPLOYS_SAVINGS_LIB:-$LIB_DIR/savings.sh}"
     [ -f "$lib" ] || die "lib/savings.sh is missing next to deploys ($lib)"
     # shellcheck source=lib/savings.sh
     . "$lib"; savings_main "$@" ;;
 
   *)
     if is_provider "${1:-}"; then provider_cmd "$@"; exit $?; fi
+    [ -z "${1:-}" ] || echo "Error: unknown command \"$1\". The commands:" >&2
     sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

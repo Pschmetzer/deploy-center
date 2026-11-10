@@ -67,7 +67,7 @@ sv_builds() {  # sv_builds <platform> <name> <id>
 
 # Vercel billing per project (7 days); null without Vercel or when it cannot be read.
 sv_costs() {
-  local c; c="$("${DEPLOYS_SELF:-$0}" costs 7 2>/dev/null)" || c=""
+  local c; c="$("${DEPLOYS_SELF:-${SELF:-$0}}" costs 7 2>/dev/null)" || c=""
   echo "$c" | jq -c '{buildsComplete, projects:[.projects[]? | {name, build, builds}]}' 2>/dev/null || echo null
 }
 
