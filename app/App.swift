@@ -20,6 +20,7 @@ struct SettingsView: View {
     @AppStorage("hideDock") private var hideDock = false
     @AppStorage("notifications") private var notifications = true
     @AppStorage("checkUpdates") private var checkUpdates = true
+    @ObservedObject private var updates = SoftwareUpdate.shared
     @AppStorage("demoMode") private var demoMode = false
     @AppStorage("undoSeconds") private var undoSeconds = 8
     @AppStorage("staleDays") private var staleDays = 0
@@ -190,25 +191,17 @@ struct SettingsView: View {
 
     @ViewBuilder private var updatesSection: some View {
         Section(L("Updates", "Updates")) {
-            Toggle(L("Check for updates daily", "Täglich nach Updates suchen"), isOn: $checkUpdates)
+            Toggle(L("Check for updates automatically", "Automatisch nach Updates suchen"), isOn: $checkUpdates)
+                .onChange(of: checkUpdates) { _, on in SoftwareUpdate.shared.setAutomatic(on) }
             HStack {
-                Button(L("Check now", "Jetzt suchen")) { Task { await store.checkForUpdate(force: true) } }
-                if store.newVersion != nil {
-                    Button(store.updating ? L("Updating …", "Aktualisiere …") : L("Update now", "Jetzt aktualisieren")) { Task { await store.installUpdate() } }
-                        .disabled(store.updating)
-                    Button(L("Download", "Herunterladen")) {
-                        NSWorkspace.shared.open(URL(string: "https://github.com/\(Updater.repo)/releases/latest")!)
-                    }
-                }
+                Button(L("Check now …", "Jetzt suchen …")) { SoftwareUpdate.shared.check() }
+                    .disabled(!updates.canCheck)
                 Spacer()
-                // The result next to the button, with the versions it is about.
-                Group {
-                    if let v = store.newVersion { Text(L("Version \(v) is out (you have \(version))", "Version \(v) ist da (du hast \(version))")) }
-                    else if let st = store.updateStatus { Text(st) }
-                    else { Text(L("You have \(version)", "Du hast \(version)")) }
-                }
-                .font(.caption).foregroundStyle(.secondary)
+                Text(L("You have \(version)", "Du hast \(version)")).font(.caption).foregroundStyle(.secondary)
             }
+            Text(L("Updates come from deploycenter.app and GitHub, signed (EdDSA) and notarized; they install when no deploy is running.",
+                   "Updates kommen von deploycenter.app und GitHub, signiert (EdDSA) und notarisiert; sie werden installiert, wenn kein Deploy läuft."))
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -269,10 +262,14 @@ private func open(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.
 @main
 struct DeployCenterApp: App {
     /// One store for the window and the menu bar, so both show the same counts.
-    @StateObject private var store = Store()
+    @StateObject private var store: Store
+    @ObservedObject private var updates = SoftwareUpdate.shared
     @AppStorage("showMenuBar") private var showMenuBar = true
 
     init() {
+        let store = Store()
+        _store = StateObject(wrappedValue: store)
+        SoftwareUpdate.shared.isBusy = { [weak store] in store?.deploysBusy ?? false }
         // No menu bar and no Dock icon would leave the app without any way in.
         let d = UserDefaults.standard
         if d.object(forKey: "showMenuBar") as? Bool == false && d.bool(forKey: "hideDock") { d.set(false, forKey: "hideDock") }
@@ -296,7 +293,8 @@ struct DeployCenterApp: App {
             // Edit → Find (⌘F): the build log's find bar. In the main window ⌘F still goes to the search.
             TextEditingCommands()
             CommandGroup(after: .appInfo) {
-                Button(L("Check for Updates …", "Nach Updates suchen …")) { Task { await store.checkForUpdate(force: true) } }
+                Button(L("Check for Updates …", "Nach Updates suchen …")) { SoftwareUpdate.shared.check() }
+                    .disabled(!updates.canCheck)
             }
             CommandGroup(replacing: .help) {
                 Button(L("Deploy Center on GitHub", "Deploy Center auf GitHub")) { open("https://github.com/\(Updater.repo)#readme") }

@@ -2,13 +2,17 @@
 # Builds a release: signed, notarized, stapled, zipped, with its SHA-256.
 #   ./release.sh                 build and notarize; the zip ends up in dist/
 #   ./release.sh --publish       also create the GitHub release vVERSION (app zip, CLI tarball,
-#                                checksums.txt) and write the Homebrew cask and formula
+#                                checksums.txt), sign the zip for Sparkle into site/appcast.xml,
+#                                and write the Homebrew cask and formula
 #   ./release.sh --publish-only  publish the zip already in dist/ (after a failed upload; no new build)
 #
 # Needs a "Developer ID Application" certificate and a notarytool profile. Give them as
 # DEVELOPER_ID and NOTARY_PROFILE, or put them in .release.env (not tracked):
 #   DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
 #   NOTARY_PROFILE=deploy-center
+# The Sparkle signing key (EdDSA) lives in the login keychain; scripts/sparkle.sh fetches the tools.
+#   SPARKLE_ACCOUNT=<keychain account of the key> (default: deploy-center; create once with
+#   "$(scripts/sparkle.sh)/bin/generate_keys --account deploy-center").
 # Optional: RELEASE_REPO=owner/name (default: the repo of the remote "origin"),
 #           TAP_DIR=<a local clone of the Homebrew tap> (default: a fresh clone in dist/).
 #
@@ -19,7 +23,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-usage() { sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "release.sh: $*" >&2; exit 1; }
 
 mode=build
@@ -63,6 +67,14 @@ if publishing; then
   [ -n "$REPO" ] || die "could not tell the GitHub repo; set RELEASE_REPO=owner/name"
   grep -q '^- ' <<<"$(notes_of)" \
     || die "CHANGELOG.md has no entries under \"## $VERSION\"; rename Unreleased first (scripts/bump.sh)"
+  # The key in the keychain must be the one the app trusts, or no installed copy accepts the update.
+  SPARKLE="$(scripts/sparkle.sh)"
+  SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-deploy-center}"
+  have="$("$SPARKLE/bin/generate_keys" --account "$SPARKLE_ACCOUNT" -p 2>/dev/null)" \
+    || die "no Sparkle key \"$SPARKLE_ACCOUNT\" in the keychain (see the top of this file)"
+  want="$(sed -n 's/^PUBLIC_ED_KEY="\${SPARKLE_PUBLIC_KEY:-\(.*\)}"$/\1/p' build.sh)"
+  [ -n "$want" ] && [ "$have" = "$want" ] || die "the Sparkle key in the keychain ($have) is not the one in build.sh ($want)"
+  command -v python3 >/dev/null || die "python3 is missing (xcode-select --install)"
 fi
 if [ "$mode" = build ]; then
   awk '/^## Unreleased/{f=1;next} /^## /{f=0} f&&/^- /{n++} END{exit n?0:1}' CHANGELOG.md \
@@ -180,6 +192,17 @@ got="$(curl -fsSL --retry 3 "$url" | shasum -a 256 | cut -d' ' -f1)"
 [ "$got" = "$CLI_SHA" ] || die "the published CLI tarball has SHA-256 $got, expected $CLI_SHA ($url)"
 echo "Published: https://github.com/$REPO/releases/tag/$TAG"
 
+# --- Sparkle: sign the published zip, add it to the appcast (served by the website) --------
+sig="$("$SPARKLE/bin/sign_update" --account "$SPARKLE_ACCOUNT" -p "$ZIP")" || die "sign_update failed"
+"$SPARKLE/bin/sign_update" --account "$SPARKLE_ACCOUNT" --verify "$ZIP" "$sig" >/dev/null || die "the EdDSA signature does not verify"
+notes="$(mktemp)"
+notes_of > "$notes"
+python3 -I scripts/appcast.py --appcast site/appcast.xml --version "$VERSION" \
+  --url "https://github.com/$REPO/releases/download/$TAG/$(basename "$ZIP")" \
+  --length "$(stat -f%z "$ZIP")" --signature "$sig" --notes "$notes" \
+  --release-page "https://github.com/$REPO/releases/tag/$TAG"
+rm -f "$notes"
+
 # --- Homebrew: write the cask and the formula, print how to propose them (nothing is pushed)
 TAP_REPO="${TAP_REPO:-${REPO%%/*}/homebrew-tap}"
 tap="${TAP_DIR:-$DIST/homebrew-tap}"
@@ -191,6 +214,13 @@ scripts/homebrew-cask.sh --write "$tap" "$VERSION" "$SHA"
 scripts/homebrew-formula.sh --write "$tap" "$VERSION" "$CLI_SHA"
 branch="deploy-center-$VERSION"
 cat <<NEXT
+
+Appcast updated: site/appcast.xml. Installed copies see the update once it is on main
+(the Website workflow publishes site/ to https://deploycenter.app/appcast.xml):
+  git switch -c appcast-$VERSION
+  git commit -m "appcast: $VERSION" site/appcast.xml
+  git push -u origin appcast-$VERSION
+  gh pr create --fill
 
 Written: $tap/Casks/deploy-center.rb and $tap/Formula/deploys.rb. To propose them in $TAP_REPO
 (review the diff first):
