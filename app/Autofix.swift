@@ -1,6 +1,6 @@
 // Deploy Center — Settings > Autofix: set up and watch `deploys autofix` without a terminal.
 // A failed build is handed to a Claude Code routine that opens a fix PR; after the merge the
-// next run deploys that merge commit. All the work is in the script; this view only calls it.
+// fix is announced; deploying it stays a click. All the work is in the script; this view only calls it.
 
 import SwiftUI
 import AppKit
@@ -15,6 +15,7 @@ struct AutofixStatus: Decodable {
         let session: String?
         let error: String?
         let redeployedSha: String?
+        let mergedSha: String?
         let pr: Int?
         var id: String { "\(project)-\(at)" }
     }
@@ -36,8 +37,8 @@ struct AutofixSettings: View {
 
     var body: some View {
         Section {
-            Text(L("When a build fails, a Claude Code session in the cloud fixes it and opens a pull request. After you merge it, the fix is deployed. Nothing is merged by itself.",
-                   "Schlägt ein Build fehl, behebt eine Claude-Code-Sitzung in der Cloud den Fehler und öffnet einen Pull Request. Nach deinem Merge wird der Fix deployt. Es wird nichts von selbst gemergt."))
+            Text(L("When a build fails, a Claude Code session in the cloud fixes it and opens a pull request. Nothing is merged or deployed by itself: after you merge, deploy the fix here as usual.",
+                   "Schlägt ein Build fehl, behebt eine Claude-Code-Sitzung in der Cloud den Fehler und öffnet einen Pull Request. Es wird nichts von selbst gemergt oder deployt: Nach deinem Merge deployst du den Fix hier wie gewohnt."))
                 .font(.caption).foregroundStyle(.secondary)
 
             // 1. The routine: created on claude.ai, with the prompt copied from here.
@@ -112,6 +113,7 @@ struct AutofixSettings: View {
     }
 
     private func label(_ f: AutofixStatus.Fire) -> String {
+        if let r = f.mergedSha { return L("fix merged, ready to deploy", "Fix gemergt, bereit zum Deployen") + " (\(r.prefix(7)))" }
         if let r = f.redeployedSha { return L("fix deployed", "Fix deployt") + " (\(r.prefix(7)))" }
         switch f.status {
         case "fired": return L("session started", "Sitzung gestartet")

@@ -1,12 +1,12 @@
 # Autofix: a failed build fixes itself (almost)
 
-`deploys autofix` watches for builds that failed. It hands each one to a Claude Code routine in the cloud. The routine fixes the build and opens a pull request. After you merge it, the next run deploys exactly that merge commit, once.
+`deploys autofix` watches for builds that failed. It hands each one to a Claude Code routine in the cloud. The routine fixes the build and opens a pull request. After you merge it, the next run sends a notification; you deploy the fix yourself, in the app or with `deploys`. Autofix never deploys: that would bring back the automatic builds Deploy Center turns off.
 
 ```
 build fails ──> deploys autofix (this Mac, every 10 min)
                   └─ POST /fire with project, repo, commit, build log (secrets masked)
                        └─ Claude Code routine: fix on claude/autofix-<project>-<sha>, build, open PR
-you merge ──> deploys autofix: deploys the merge commit, once
+you merge ──> deploys autofix: notifies you; you deploy with a click
 ```
 
 ## What it does and does not do
@@ -15,8 +15,8 @@ you merge ──> deploys autofix: deploys the merge commit, once
 - **It only reports** Render `update_failed` and `pre_deploy_failed`. These are runtime or health-check failures, and the build log does not show their cause. Cancelled deploys never count.
 - **One fire per run.** Each project gets at most 2 fires in 24 hours (`DEPLOYS_AUTOFIX_PER_PROJECT`), and the account gets at most 6 (`DEPLOYS_AUTOFIX_PER_DAY`).
 - **No duplicates.** The same failed deploy is never handed over twice. While an autofix PR for a project is still open, that project is not handed over again.
-- **One attempt per fix.** If the deployed fix fails to build too, it is not handed over again. You get a notification instead.
-- **It never merges.** A person merges, or the repo's own GitHub auto-merge does. The redeploy happens only after a merge, and only while the project is still failed.
+- **One attempt per fix.** If the fix, once you deploy it, fails to build too, it is not handed over again. You get a notification instead.
+- **It never merges.** A person merges, or the repo's own GitHub auto-merge does. It never deploys either; the merge is only announced.
 - **Retries.** A 429 from the routines API is tried again on the next run. Any other error is recorded and not retried.
 
 ## Setup (once)
@@ -43,7 +43,7 @@ In the app: Settings > Autofix walks through these steps. In the terminal:
    ```
    This installs a launchd job. `deploys autofix schedule off` removes it. [`scripts/autofix.plist.example`](../scripts/autofix.plist.example) shows the same job written by hand.
 
-`deploys autofix list` shows every hand-over with its session link and redeploy; `deploys autofix status` gives the same as JSON. `deploys where` shows whether a routine and a token are set.
+`deploys autofix list` shows every hand-over with its session link and the merged fix; `deploys autofix status` gives the same as JSON. `deploys where` shows whether a routine and a token are set.
 
 The token is kept in the keychain under `deploy-center-routine`. It goes to curl on stdin and never appears as an argument. `DEPLOYS_ROUTINE_TOKEN` can replace it on a machine without a keychain. `deploys autofix forget-token` removes it.
 

@@ -20,6 +20,7 @@ struct BuildLog: View {
     @State private var error: String?
     @State private var onlyErrors = false
     @State private var jump = 0
+    @State private var attempt = 0
     /// The last lines first; "Load more" asks for ten times as many.
     @State private var lineCount = 200
 
@@ -28,7 +29,7 @@ struct BuildLog: View {
     private func copy(_ s: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string) }
 
     /// Changes when a deploy starts or ends, so the log is read again then and not on every poll.
-    private var reloadKey: String { "\(lineCount)|\(live.state.isActive)|\(live.lastAt?.timeIntervalSince1970 ?? 0)|\(live.state == .idle)" }
+    private var reloadKey: String { "\(attempt)|\(lineCount)|\(live.state.isActive)|\(live.lastAt?.timeIntervalSince1970 ?? 0)|\(live.state == .idle)" }
 
     var body: some View {
         let live = self.live
@@ -56,7 +57,13 @@ struct BuildLog: View {
             }
             .padding(12)
             Divider()
-            if let error { Text(error).foregroundStyle(.secondary).padding(16).textSelection(.enabled) }
+            if let error {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(Demo.scrub(error, items: [live])).foregroundStyle(.secondary).textSelection(.enabled)
+                    Button(L("Try again", "Nochmal versuchen")) { self.error = nil; attempt += 1 }
+                }
+                .padding(16)
+            }
             else if text != nil {
                 LogText(lines: demoMode ? lines.map { Demo.scrub($0, items: [live]) } : lines,
                         onlyErrors: onlyErrors, firstError: firstError, jump: jump)
@@ -68,14 +75,14 @@ struct BuildLog: View {
                     }
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
-        .frame(minWidth: 560, idealWidth: 760, maxWidth: .infinity, minHeight: 320, idealHeight: 520, maxHeight: .infinity)
+        .frame(minWidth: 760, maxWidth: .infinity, minHeight: 420, idealHeight: 520, maxHeight: .infinity)
         .task(id: reloadKey) {
             do {
                 let data = try await Tool.run(["logs", item.id, "\(lineCount)"])
                 let t = String(data: data, encoding: .utf8).map { $0.isEmpty ? L("(empty)", "(leer)") : $0 } ?? ""
                 // Split and searched once per load, not on every redraw.
                 lines = t.components(separatedBy: "\n"); firstError = LogTools.firstErrorLine(lines)
-                text = t; error = nil
+                text = t; self.error = nil
             } catch { if text == nil { self.error = error.localizedDescription } }
         }
     }
@@ -145,6 +152,7 @@ struct ProjectDetail: View {
     @State private var error: String?
     @AppStorage("demoMode") private var demoMode = false
     @AppStorage("hideBotCommits") private var hideBots = false
+    @State private var attempt = 0
 
     private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
     private func scrub(_ s: String) -> String { Demo.scrub(s, items: Platform.allCases.flatMap { store.items[$0] ?? [] }) }
@@ -169,14 +177,18 @@ struct ProjectDetail: View {
             .padding(16)
             Divider()
             if let error {
-                Text(error).foregroundStyle(.secondary).padding(20).textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(scrub(error)).foregroundStyle(.secondary).textSelection(.enabled)
+                    Button(L("Try again", "Nochmal versuchen")) { self.error = nil; attempt += 1 }
+                }
+                .padding(20)
             } else if let d = details {
                 ScrollView { content(d).padding(16) }
             } else {
                 ProgressView(L("Asking GitHub …", "Frage GitHub …")).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(minWidth: 520, idealWidth: 620, maxWidth: .infinity, minHeight: 360, idealHeight: 560, maxHeight: .infinity)
+        .frame(minWidth: 620, maxWidth: .infinity, minHeight: 420, idealHeight: 560, maxHeight: .infinity)
         .alert(L("Deploy this commit?", "Diesen Commit deployen?"),
                isPresented: Binding(get: { commitToDeploy != nil }, set: { if !$0 { commitToDeploy = nil } })) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { commitToDeploy = nil }
@@ -189,7 +201,7 @@ struct ProjectDetail: View {
                    "\(Demo.mask(item.name)) geht mit \(commitToDeploy?.sha ?? "") live – \(scrub(commitToDeploy?.msg ?? "")). Neuere Commits warten weiter."))
         }
         // Asked again when what is live or the branch moves (a deploy ended, a new commit came in).
-        .task(id: "\(item.lastSha ?? "")|\(item.headSha ?? "")") {
+        .task(id: "\(attempt)|\(item.lastSha ?? "")|\(item.headSha ?? "")") {
             guard let repo = item.repo else { return }
             do {
                 details = try await Tool.json(["details", repo, item.lastSha ?? "", item.ref ?? "main"], as: Details.self)
@@ -238,16 +250,6 @@ struct ProjectDetail: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// GitHub's CI word for a pull request, in words a person reads.
-    static func ciText(_ ci: String) -> String {
-        switch ci {
-        case "failed": return L("CI: failed", "CI: rot")
-        case "running": return L("CI: still running", "CI: läuft noch")
-        case "passed": return L("CI: passed", "CI: grün")
-        default: return L("CI: no checks", "CI: keine Checks")
-        }
-    }
-
     @ViewBuilder private func waiting(_ d: Details) -> some View {
         let item = self.live
         if !d.commits.isEmpty {
@@ -287,7 +289,7 @@ struct ProjectDetail: View {
                         }
                         Text(scrub(c.msg)).font(.callout).lineLimit(2).help(scrub(c.msg))
                         Spacer(minLength: 8)
-                        Text((Demo.person(c.author) ?? "") + " · " + Row.ago(Date(timeIntervalSince1970: c.at)))
+                        Text([Demo.person(c.author), Row.ago(Date(timeIntervalSince1970: c.at))].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                             .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                         if deployCommit != nil, item.deployable, c.full != nil {
                             Button { commitToDeploy = c } label: { Image(systemName: "paperplane") }
@@ -302,6 +304,16 @@ struct ProjectDetail: View {
                 .font(.callout).foregroundStyle(.secondary)
         } else {
             Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        }
+    }
+
+    /// GitHub's CI word for a pull request, in words a person reads.
+    static func ciText(_ ci: String) -> String {
+        switch ci {
+        case "failed": return L("CI: failed", "CI: rot")
+        case "running": return L("CI: still running", "CI: läuft noch")
+        case "passed": return L("CI: passed", "CI: grün")
+        default: return L("CI: no checks", "CI: keine Checks")
         }
     }
 

@@ -53,7 +53,20 @@ actor LogoCache {
     private static let retryAfter: TimeInterval = 10 * 60
     private var failedAt: [String: Date] = [:]
 
+    /// Frontend and backend of one site ask for the same logo at once: the second waits for the first.
+    private var inFlight: [String: Task<NSImage?, Never>] = [:]
+
     func image(for domain: String) async -> NSImage? {
+        if let hit = cache[domain] { return hit }
+        if let running = inFlight[domain] { return await running.value }
+        let task = Task { await self.load(domain) }
+        inFlight[domain] = task
+        let img = await task.value
+        inFlight[domain] = nil
+        return img
+    }
+
+    private func load(_ domain: String) async -> NSImage? {
         if let hit = cache[domain] { return hit }
         if let at = failedAt[domain], Date().timeIntervalSince(at) < Self.retryAfter { return stale(domain) }
         let file = Self.file(domain)
