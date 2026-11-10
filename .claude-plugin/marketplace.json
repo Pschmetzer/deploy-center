@@ -1,0 +1,17 @@
+{
+  "name": "deploy-center",
+  "description": "Deploy Center for Claude Code: see what is waiting to go live, fix failed builds, deploy only when you say so.",
+  "owner": {
+    "name": "Deploy Center",
+    "url": "https://deploycenter.app"
+  },
+  "plugins": [
+    {
+      "name": "deploy-center",
+      "source": "./integrations/claude-code",
+      "description": "Skill, slash commands, a git push reminder and MCP notes for the deploys CLI (Vercel and Render, auto-deploy off).",
+      "category": "deployment",
+      "tags": ["vercel", "render", "deploy", "ci"]
+    }
+  ]
+}
