@@ -62,13 +62,13 @@ cf_key_source() {
   else echo none; fi
 }
 
-# cf_call METHOD PATH [json body | -F field=value ...]: the API, `result` on success.
+# cf_call METHOD PATH [json body | -F|--form-string field=value ...]: the API, `result` on success.
 # The token goes to curl on stdin, never into the process list. Reads are retried on 429/5xx.
 cf_call() {
   local method="$1" path="$2" key out code try err; shift 2
   key="$(cloudflare_key)" || exit 1
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
-  if [ "${1:-}" = -F ]; then args+=("$@")
+  if [ "${1:-}" = -F ] || [ "${1:-}" = --form-string ]; then args+=("$@")
   elif [ -n "${1:-}" ]; then args+=(-H "Content-Type: application/json" --data "$1"); fi
   err="$(mktemp)"
   for try in 1 2 3; do
@@ -82,7 +82,9 @@ cf_call() {
   done
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
   rm -f "$err"
-  local ok; ok="$(printf '%s' "$out" | jq -r '.success // false' 2>/dev/null)"
+  # `|| ok=""`: an answer that is not JSON (an HTML 502, a curl error) must reach the message
+  # below, not end the script without a word under set -e.
+  local ok; ok="$(printf '%s' "$out" | jq -r '.success // false' 2>/dev/null)" || ok=""
   if [[ "$code" != 2* ]] || [ "$ok" != true ]; then
     local hint="" fix="deploys cloudflare set-key" msg
     [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && fix="check CLOUDFLARE_API_TOKEN in the environment"
@@ -240,7 +242,8 @@ cf_lock() {
   echo "$f"
 }
 
-cf_post_deploy() { cf_call POST "$(cf_proj "$1")/deployments" -F "branch=$2"; }
+# --form-string, not -F: a branch named "@file" or "<file" must not upload that file.
+cf_post_deploy() { cf_call POST "$(cf_proj "$1")/deployments" --form-string "branch=$2"; }
 
 # cloudflare_deploy_json <project> [--preview] [--branch <b>] [--toggle]
 # Prints {id, url, state, phase, branch, toggled}. --preview needs a branch other than production.
@@ -330,7 +333,7 @@ cloudflare_url() {
   acct="$(cloudflare_account)" || exit 1
   if [ "${2:-}" = --dashboard ]; then echo "https://dash.cloudflare.com/$acct/pages/view/$p"; return; fi
   info="$(cf_call GET "$(cf_proj "$p")")" || exit 1
-  echo "$info" | jq -r '((.domains // []) | map(select(endswith(".pages.dev") | not)) | .[0]) // .subdomain | "https://\(.)"'
+  echo "$info" | jq -r '((.domains // []) | map(select(endswith(".pages.dev") | not)) | .[0]) // .subdomain // empty | "https://\(.)"'
 }
 
 # Read from stdin, tried first, saved only when Cloudflare says it is active.

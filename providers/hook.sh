@@ -61,8 +61,12 @@ hook_mask() {
 
 hook_check_url() {
   local u="$1"
-  case "$u" in https://*) ;; http://localhost*|http://127.0.0.1*) ;;
-    http://*) die "Use the https:// address of the hook: over http the secret URL travels in the clear";;
+  local host="${u#*://}"; host="${host%%[/?#]*}"
+  case "$u" in https://*) ;;
+    # Plain http only to this Mac: the host exactly, with or without a port. Not
+    # http://localhost.example.com, http://127.0.0.1.example.com or a user@ in front.
+    http://*) case "$host" in localhost|localhost:[0-9]*|127.0.0.1|127.0.0.1:[0-9]*|\[::1\]|\[::1\]:[0-9]*) ;;
+        *) die "Use the https:// address of the hook: over http the secret URL travels in the clear";; esac ;;
     *) die "That is not a hook URL (it should start with https://)";; esac
   case "$u" in *[[:space:]\"\'\\]*) die "The hook URL contains spaces, quotes or backslashes";; esac
   [ "${#u}" -le 2048 ] || die "The hook URL is longer than 2048 characters"
@@ -106,7 +110,13 @@ hook_expand() {
   printf '%s' "$out$s"
 }
 # A value for curl's config file: backslashes and quotes escaped.
-hook_cq() { local s="${1//\\/\\\\}"; printf '"%s"' "${s//\"/\\\"}"; }
+# Newlines, returns and tabs as \n, \r, \t (curl reads those escapes): a body over several lines
+# would otherwise end the option and leave the rest as garbage.
+hook_cq() {
+  local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"
+  printf '"%s"' "$s"
+}
 
 # ---------- the contract ----------
 
@@ -197,6 +207,10 @@ hook_deploy_json() {
   done <<< "$headers"
   if [ -n "$repo" ]; then head="$(hook_head "$repo" "$ref")"
     [ -z "$head" ] || { sha="$(echo "$head" | jq -c .sha)"; msg="$(echo "$head" | jq -c .msg)"; }
+  fi
+  # Two clicks or two runs must not build twice: the same one-minute lock as the other providers.
+  if declare -F start_lock >/dev/null; then
+    start_lock "hook-$n" >/dev/null || { rm -f "$cfg" "$out"; exit 1; }
   fi
   code="$(curl -K - < "$cfg" 2>"$out.err")" || rc=$?
   rm -f "$cfg" "$out"

@@ -58,7 +58,7 @@ render_services() {
   local cursor="" page all="[]"
   while :; do
     # `|| return`: inside $(...) set -e is off, and a failed page used to loop here for ever.
-    page="$(render_call GET "/services?limit=100${cursor:+&cursor=$cursor}")" || return 1
+    page="$(render_call GET "/services?limit=100${cursor:+&cursor=$(jq -rn --arg c "$cursor" '$c|@uri')}")" || return 1
     all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$page"))"
     [ "$(echo "$page" | jq 'length')" -lt 100 ] && break
     cursor="$(echo "$page" | jq -r '.[-1].cursor')"
@@ -262,7 +262,8 @@ render_rollback() {
 # render_logs <service> <lines> [deployId]
 render_logs() {
   local id n="$2" did="${3:-}" owner win=""
-  id="$(render_id_of "$1")"; owner="$(render_call GET "/services/$id" | jq -r .ownerId)"
+  id="$(render_id_of "$1")"; owner="$(render_call GET "/services/$id" | jq -r '.ownerId // empty')"
+  [ -n "$owner" ] || die "Render: could not read the owner of $1 (needed for its logs)"
   # Render's logs have no deploy filter: the deploy's own time window stands in for it.
   [ -z "$did" ] || win="$(render_call GET "/services/$id/deploys/$did" | jq -r '"&startTime=\(.createdAt | @uri)" + (if .finishedAt then "&endTime=\(.finishedAt | @uri)" else "" end)')"
   render_call GET "/logs?ownerId=$owner&resource=$id&type=build&limit=$n&direction=backward$win" \
@@ -278,6 +279,8 @@ render_url() {
 render_set_key() {
   local key
   IFS= read -r key || true
+  # A trailing CR, tab or newline from the clipboard is not part of the token.
+  key="$(printf '%s' "$key" | tr -d '[:space:]')"
   [ -n "$key" ] || die "Pipe the key in: pbpaste | deploys render set-key"
   case "$key" in *\'*|*\"*|*' '*) die "That does not look like a Render API key";; esac
   # Tried first, saved only when Render takes it: a typo must not replace a working key.

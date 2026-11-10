@@ -22,7 +22,7 @@ cat > "$tmp/bin/curl" <<'CURL'
 cfg="$(cat)"
 m=GET; prev=""; body=""; form=""
 for a in "$@"; do
-  case "$prev" in -X) m="$a";; --data) body="$a";; -F) form="$form $a";; esac; prev="$a"
+  case "$prev" in -X) m="$a";; --data) body="$a";; -F|--form-string) form="$form $a";; esac; prev="$a"
 done
 url="${*: -1}"; path="${url#*client/v4}"
 echo "$m $path${body:+ $body}${form:+ form:$form}" >> "$CALLS"

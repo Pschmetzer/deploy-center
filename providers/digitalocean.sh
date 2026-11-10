@@ -94,7 +94,7 @@ digitalocean_call() {
 # A pre-signed log URL: https only, and without the token (it would leak to another host).
 digitalocean_fetch() {
   case "$1" in https://*) ;; *) echo "DigitalOcean: skipped a log URL that is not https" >&2; return 1 ;; esac
-  curl -sSfL --connect-timeout 10 --max-time 120 "$1"
+  curl -sSfL --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 "$1"
 }
 
 # Every app, all pages (links.pages.next is set while there are more).
@@ -195,7 +195,9 @@ digitalocean_json() {
   while IFS= read -r a; do
     id="$(echo "$a" | jq -r '.id')"
     if d="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1" 2>&1)"; then
-      d="$(echo "$d" | jq -c '{last:(.deployments[0] // null)}')"
+      # A 200 that is not JSON (a proxy's page) is this app's error, not an empty --argjson.
+      d="$(echo "$d" | jq -c 'if type == "object" then {last:(.deployments[0] // null)} else error("no list") end' 2>/dev/null)" \
+        || d="$(jq -nc '{fetchError:"DigitalOcean answered without a deployment list"}')"
     else
       d="$(jq -nc --arg e "$d" '{fetchError:$e}')"
     fi
@@ -336,12 +338,16 @@ digitalocean_rollback() {
 # digitalocean_logs <app> [--id <deployment>] [--component <name>]: the build log of each
 # component, read from the historic URLs App Platform returns (pre-signed, no token sent there).
 digitalocean_logs() {
-  local app="$1" d="" only="" id dep comps c res urls u
+  local app="$1" d="" only="" n="" id dep comps c res urls u
   shift
+  # `deploys logs` calls <app> <lines> <deployId>, positional; the flags work too.
   while [ $# -gt 0 ]; do case "$1" in
     --id) d="${2:-}"; shift 2 ;;
     --component) only="${2:-}"; shift 2 ;;
-    *) shift ;;
+    -*) digitalocean_die "Unknown option $1. Usage: digitalocean_logs <app> [lines] [deployId | --id <deployment>] [--component <name>]" ;;
+    '') shift ;;
+    *[!0-9]*) d="$1"; shift ;;
+    *) n="$1"; shift ;;
   esac; done
   id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
   if [ -n "$d" ]; then
@@ -366,7 +372,11 @@ digitalocean_logs() {
       echo "(no build log archived yet; the build may still be running: $DIGITALOCEAN_DASHBOARD/$id/deployments/$d)"
       continue
     fi
-    for u in $urls; do digitalocean_fetch "$u" || echo "(could not read $c's log: $DIGITALOCEAN_DASHBOARD/$id/deployments/$d)"; done
+    # The end of each log, like the other providers: a build log can be megabytes.
+    for u in $urls; do
+      if [ -n "$n" ]; then digitalocean_fetch "$u" | tail -n "$n" || echo "(could not read $c's log: $DIGITALOCEAN_DASHBOARD/$id/deployments/$d)"
+      else digitalocean_fetch "$u" || echo "(could not read $c's log: $DIGITALOCEAN_DASHBOARD/$id/deployments/$d)"; fi
+    done
   done
 }
 
@@ -383,6 +393,8 @@ digitalocean_url() {
 digitalocean_set_key() {
   local key=""
   IFS= read -r key || true
+  # A trailing CR, tab or newline from the clipboard is not part of the token.
+  key="$(printf '%s' "$key" | tr -d '[:space:]')"
   [ -n "$key" ] || digitalocean_die "Pipe the token in: pbpaste | deploys digitalocean set-key"
   case "$key" in *\'*|*\"*|*' '*|*\\*) digitalocean_die "That does not look like a DigitalOcean token";; esac
   ( DIGITALOCEAN_TOKEN="$key"; key_of() { printf '%s' "$DIGITALOCEAN_TOKEN"; }; digitalocean_call GET /v2/account >/dev/null ) \

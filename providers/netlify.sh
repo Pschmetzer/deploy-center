@@ -186,7 +186,10 @@ netlify_json() {
   while IFS= read -r s; do
     id="$(echo "$s" | jq -r '.id')"
     if d="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=10" 2>&1)"; then
-      d="$(echo "$d" | jq -c '{deploys:.}')"
+      # A 200 that is not a deploy list (a proxy's login page) is this site's error, not an
+      # empty --argjson that breaks the whole list.
+      d="$(echo "$d" | jq -c 'if type == "array" then {deploys:.} else error("no list") end' 2>/dev/null)" \
+        || d="$(jq -nc '{fetchError:"Netlify answered without a deploy list"}')"
     else
       d="$(jq -nc --arg e "$d" '{fetchError:$e}')"
     fi
@@ -335,7 +338,13 @@ netlify_rollback() {
 netlify_logs() {
   local site="$1" d="" out
   shift
-  while [ $# -gt 0 ]; do case "$1" in --id) d="${2:-}"; shift 2 ;; *) shift ;; esac; done
+  # `deploys logs` calls <site> <lines> <deployId>, positional; --id <deploy> works too.
+  while [ $# -gt 0 ]; do case "$1" in
+    --id) d="${2:-}"; shift 2 ;;
+    -*) netlify_die "Unknown option $1. Usage: netlify_logs <site> [lines] [deployId | --id <deploy>]" ;;
+    ''|*[!0-9]*) d="$1"; shift ;;
+    *) shift ;;
+  esac; done
   if [ -n "$d" ]; then out="$(netlify_status "$d")"; else out="$(netlify_latest "$site")"; fi
   [ "$out" != null ] || netlify_die "Netlify: $site has no deploys yet"
   echo "$out" | jq -r '"Deploy \(.id): \(.state)\(if .error then " — " + .error else "" end)",
@@ -355,6 +364,8 @@ netlify_url() {
 netlify_set_key() {
   local key=""
   IFS= read -r key || true
+  # A trailing CR, tab or newline from the clipboard is not part of the token.
+  key="$(printf '%s' "$key" | tr -d '[:space:]')"
   [ -n "$key" ] || netlify_die "Pipe the token in: pbpaste | deploys netlify set-key"
   case "$key" in *\'*|*\"*|*' '*) netlify_die "That does not look like a Netlify token";; esac
   ( NETLIFY_AUTH_TOKEN="$key"; key_of() { printf '%s' "$NETLIFY_AUTH_TOKEN"; }; netlify_call GET /user >/dev/null ) \

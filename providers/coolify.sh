@@ -171,16 +171,22 @@ coolify_json() {
   local apps base out="[]" uuid one d
   base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
   apps="$(coolify_apps)" || coolify_die "Could not list Coolify applications"
+  # Checked here: a jq error inside the < <(...) below is swallowed and would read as "no apps".
+  echo "$apps" | jq -e 'type == "array"' >/dev/null 2>&1 \
+    || coolify_die "Coolify answered without an application list: $(printf '%s' "$apps" | head -c 200)"
   # The list has no settings (auto-deploy lives there), so each app is read once more.
   while IFS= read -r uuid; do
     [ -n "$uuid" ] || continue
     if one="$(coolify_call GET "/applications/$uuid" 2>&1)"; then
       if d="$(coolify_call GET "/deployments/applications/$uuid?take=20" 2>&1)"; then
-        d="$(echo "$d" | jq -c '{deployments:(.deployments // [])}')"
+        # A 200 that is not JSON is this app's error, not an empty --argjson.
+        d="$(echo "$d" | jq -c 'if type == "object" then {deployments:(.deployments // [])} else error("no list") end' 2>/dev/null)" \
+          || d="$(jq -nc '{fetchError:"Coolify answered without a deployment list"}')"
       else
         d="$(jq -nc --arg e "$d" '{fetchError:$e}')"
       fi
-      one="$(echo "$one" | jq -c --argjson d "$d" '. + {_d:$d}')"
+      one="$(echo "$one" | jq -c --argjson d "$d" 'if type == "object" then . + {_d:$d} else error("no app") end' 2>/dev/null)" \
+        || one="$(echo "$apps" | jq -c --arg u "$uuid" '.[] | select(.uuid==$u) | . + {_d:{fetchError:"Coolify answered without the application"}}')"
     else
       one="$(echo "$apps" | jq -c --arg u "$uuid" --arg e "$one" '.[] | select(.uuid==$u) | . + {_d:{fetchError:$e}}')"
     fi
@@ -247,6 +253,12 @@ coolify_on() {
 # coolify_deploy_json <app> [preview] [sha]
 # A sha: Coolify's /deploy has no commit field, but a deployment takes the application's
 # git_commit_sha when it is queued. So: pin the sha, queue, put the old value back.
+# The commit an app builds put back after a --sha deploy: <uuid> <pinned before> <app> <sha>.
+coolify_unpin() {
+  coolify_call PATCH "/applications/$1" "$(jq -nc --arg s "$2" '{git_commit_sha:$s}')" >/dev/null \
+    || echo "Warning: $3 is still pinned to $4 in Coolify. Set its Git commit back to $2 (Configuration > Source)." >&2
+}
+
 coolify_deploy_json() {
   local app="$1" preview="${2:-}" sha="${3:-}" id info pinned="" out did lock="" one base rc
   [ -z "$preview" ] || coolify_die "Coolify: preview deploys need a pull request; not supported from here"
@@ -260,13 +272,17 @@ coolify_deploy_json() {
     [ "$(echo "$info" | jq -r '.build_pack // ""')" != dockerimage ] && [ "$(echo "$info" | jq -r '.git_repository // ""')" != "" ] \
       || { rm -f "$lock"; coolify_die "Coolify: $app does not build from git; --sha does not apply"; }
     pinned="$(echo "$info" | jq -r '.git_commit_sha // "HEAD" | if . == "" then "HEAD" else . end')"
+    # Interrupted between pin and unpin: put the commit back before going, or every later push
+    # would build the pinned one.
+    trap 'coolify_unpin "$id" "$pinned" "$app" "$sha"; rm -f "$lock"; exit 130' INT TERM
     coolify_call PATCH "/applications/$id" "$(jq -nc --arg s "$sha" '{git_commit_sha:$s}')" >/dev/null \
-      || { rm -f "$lock"; coolify_die "Coolify: could not pin $app to $sha"; }
+      || { trap - INT TERM; rm -f "$lock"; coolify_die "Coolify: could not pin $app to $sha"; }
   fi
-  out="$(coolify_call POST "/deploy?uuid=$id" 2>&1)"; rc=$?
+  # `|| rc=$?`, not `; rc=$?`: under set -e a failed POST would end the script before the unpin.
+  rc=0; out="$(coolify_call POST "/deploy?uuid=$id" 2>&1)" || rc=$?
   if [ -n "$pinned" ]; then
-    coolify_call PATCH "/applications/$id" "$(jq -nc --arg s "$pinned" '{git_commit_sha:$s}')" >/dev/null \
-      || echo "Warning: $app is still pinned to $sha in Coolify. Set its Git commit back to $pinned (Configuration > Source)." >&2
+    coolify_unpin "$id" "$pinned" "$app" "$sha"
+    trap - INT TERM
   fi
   [ "$rc" = 0 ] || { rm -f "$lock"; coolify_die "Coolify: the deploy of $app was not taken: $out"; }
   did="$(echo "$out" | jq -r '[.deployments[]? | select(.deployment_uuid != null)][0].deployment_uuid // empty')"
@@ -337,7 +353,11 @@ coolify_logs() {
     case "$1" in
       --id) d="${2:-}"; shift 2 ;;
       --runtime) runtime=1; shift ;;
-      ''|*[!0-9]*) shift ;;
+      # `deploys logs` calls <app> <lines> <deployId>, positional. A typo (--runtme) is an error,
+      # not quietly the newest deploy's log.
+      -*) coolify_die "Unknown option $1. Usage: coolify_logs <app> [lines] [deployId | --id <deploy>] [--runtime]" ;;
+      '') shift ;;
+      *[!0-9]*) d="$1"; shift ;;
       *) lines="$1"; shift ;;
     esac
   done
@@ -391,6 +411,8 @@ coolify_set_url() {
 coolify_set_key() {
   local key=""
   IFS= read -r key || true
+  # A trailing CR, tab or newline from the clipboard is not part of the token.
+  key="$(printf '%s' "$key" | tr -d '[:space:]')"
   [ -n "$key" ] || coolify_die "Pipe the token in: pbpaste | deploys coolify set-key"
   case "$key" in *\'*|*\"*|*' '*) coolify_die "That does not look like a Coolify token";; esac
   coolify_base >/dev/null || coolify_die "Set the instance first: deploys coolify set-url https://coolify.example.com"

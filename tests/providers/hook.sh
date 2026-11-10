@@ -94,6 +94,13 @@ out="$(hook_cli remove nope 2>&1)"; expect "remove of an unknown hook fails" "$?
 
 # --- refusals ---
 out="$(hook_cli add bad "http://hooks.example.com/x" 2>&1)"; expect "plain http is refused" "$?" "1"
+for u in http://localhost.evil.example/x http://127.0.0.1.evil.example/x http://user@localhost/x; do
+  ( hook_check_url "$u" ) >/dev/null 2>&1; expect "plain http to $u is refused (not this Mac)" "$?" "1"
+done
+for u in http://localhost:3000/x http://127.0.0.1/x "http://[::1]:8080/x"; do
+  ( hook_check_url "$u" ) >/dev/null 2>&1; expect "plain http to $u is allowed (this Mac)" "$?" "0"
+done
+expect "a body over several lines stays one config value" "$(hook_cq "$(printf '{\n  "ref": "main"\n}')")" '"{\n  \"ref\": \"main\"\n}"'
 out="$(hook_cli add bad "not a url" 2>&1)"; expect "a non-URL is refused" "$?" "1"
 out="$(hook_cli add 'bad name' "$SECRET" 2>&1)"; expect "a bad name is refused" "$?" "1"
 out="$(hook_cli add bad "$SECRET" --header 'Authorization: Bearer abc123' 2>&1)"
@@ -120,13 +127,18 @@ expect "branch at the triggered commit: nothing waiting" "$(echo "$j" | jq -c '[
 j="$(GH_HEAD=bbbb provider_json hook | jq -c '.[0]')"
 expect "three commits since the last trigger: changed" "$(echo "$j" | jq -c '[.changed, .pendingCommits, .pendingPRs, .headSha]')" '[true,3,2,"bbbb"]'
 
+# A second trigger within a minute is refused (the start lock), and nothing is sent.
+out="$(hook_deploy_json site 2>&1)"
+expect "a second trigger within a minute is refused" "$?:$(grep -c 'being started already' <<< "$out"):$(grep -c '^curl' "$CALLS")" "1:1:1"
+unlock() { rm -rf "$DEPLOYS_CONFIG/locks"; }
+
 # --- trigger: failure ---
-out="$(HOOKSTUB=500 GH_HEAD=bbbb hook_deploy_json site 2>&1)"
+unlock; out="$(HOOKSTUB=500 GH_HEAD=bbbb hook_deploy_json site 2>&1)"
 expect "a 500 is a failed trigger" "$?:$(grep -c 'did not start a build: HTTP 500' <<< "$out")" "1:1"
 expect "the failure message never has the URL" "$(leaks "$out")" "0"
 j="$(DEPLOYS_NO_GITHUB=1 hook_json | jq -c '.[0]')"
 expect "json after a failure: failed, last good sha kept" "$(echo "$j" | jq -r '"\(.phase)|\(.lastState)|\(.lastSha)"')" "failed|trigger failed (HTTP 500)|aaaa"
-out="$(HOOKSTUB=down hook_deploy_json site 2>&1)"
+unlock; out="$(HOOKSTUB=down hook_deploy_json site 2>&1)"
 expect "no answer is a failed trigger" "$?:$(grep -c 'no answer' <<< "$out")" "1:1"
 expect "curl was asked once per trigger (never retried)" "$(grep -c '^curl' "$CALLS")" "3"
 
@@ -135,7 +147,7 @@ hook_cli add ci "https://api.github.com/repos/me/app/actions/workflows/deploy.ym
   --header 'Authorization: Bearer $GH_DISPATCH' --header 'Accept: application/vnd.github+json' --body '{"ref":"main"}' >/dev/null
 out="$(env -u GH_DISPATCH bash -c '. ./deploys; . ./providers/hook.sh; hook_deploy_json ci' 2>&1)"
 expect "an unset header variable stops the trigger" "$?:$(grep -c 'needs $GH_DISPATCH' <<< "$out")" "1:1"
-out="$(GH_DISPATCH=tok-s3cr3t hook_deploy_json ci 2>&1)"
+unlock; out="$(GH_DISPATCH=tok-s3cr3t hook_deploy_json ci 2>&1)"
 expect "a header variable is expanded" "$?:$(grep -c '^header = "Authorization: Bearer tok-s3cr3t"' "$CURLCFG")" "0:1"
 expect "the body is sent as JSON" "$(grep -c '^data = "{\\"ref\\":\\"main\\"}"' "$CURLCFG")" "1"
 expect "the token is not in hooks.json" "$(leaks "$(cat "$DEPLOYS_CONFIG/hooks.json")")" "0"
@@ -166,7 +178,7 @@ export DEPLOYS_HOOK_STORE=keychain
 echo "$SECRET" | hook_cli add kc - >/dev/null
 expect "keychain: stored under deploy-center-hook-<name>" "$(cat "$KCDIR/deploy-center-hook-kc" 2>/dev/null)" "$SECRET"
 expect "keychain: the URL was not on security's command line" "$(leaks "$(cat "$CALLS")")" "0"
-out="$(hook_deploy_json kc 2>&1)"; expect "keychain: trigger reads it" "$?" "0"
+unlock; out="$(hook_deploy_json kc 2>&1)"; expect "keychain: trigger reads it" "$?" "0"
 hook_cli remove kc >/dev/null
 expect "keychain: remove deletes it" "$([ -e "$KCDIR/deploy-center-hook-kc" ] && echo kept || echo gone)" "gone"
 
