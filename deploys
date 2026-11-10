@@ -389,7 +389,8 @@ render_call() {
 render_services() {
   local cursor="" page all="[]"
   while :; do
-    page="$(render_call GET "/services?limit=100${cursor:+&cursor=$cursor}")"
+    # `|| return`: inside $(...) set -e is off, and a failed page used to loop here for ever.
+    page="$(render_call GET "/services?limit=100${cursor:+&cursor=$cursor}")" || return 1
     all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$page"))"
     [ "$(echo "$page" | jq 'length')" -lt 100 ] && break
     cursor="$(echo "$page" | jq -r '.[-1].cursor')"
@@ -906,8 +907,9 @@ BASH
     target="${3:-}"; [ -n "$target" ] || die "Give a project name or --all"
     if [ "$target" = "--all" ]; then
       # One that fails does not stop the rest; they are counted and the exit code says so.
-      bad=0
-      for p in $(vercel_projects | jq -r '.[] | select(.link) | .name'); do ( vercel_off "$p" ) || bad=$((bad + 1)); done
+      # The list first, on its own line: a failed read must stop here (set -e), not look like "none left".
+      bad=0; names="$(vercel_projects | jq -r '.[] | select(.link) | .name')"
+      for p in $names; do ( vercel_off "$p" ) || bad=$((bad + 1)); done
       [ "$bad" = 0 ] || die "$bad Vercel projects could not be disconnected (see above); the others are done"
       echo "Done. No Vercel project deploys on push any more."
     else
@@ -992,9 +994,10 @@ BASH
   "render autodeploy-off")
     target="${3:-}"; [ -n "$target" ] || die "Give a service name or --all"
     if [ "$target" = "--all" ]; then
-      bad=0
-      while IFS=$'\t' read -r id name; do ( render_off "$id" "$name" ) || bad=$((bad + 1)); done \
-        < <(render_services | jq -r '.[] | select('"$(render_auto)"' != "off") | "\(.id)\t\(.name)"')
+      bad=0; todo="$(render_services | jq -r '.[] | select('"$(render_auto)"' != "off") | "\(.id)\t\(.name)"')"
+      while IFS=$'\t' read -r id name; do
+        [ -n "$id" ] || continue; ( render_off "$id" "$name" ) || bad=$((bad + 1))
+      done <<< "$todo"
       [ "$bad" = 0 ] || die "$bad Render services could not be switched off (see above); the others are done"
       echo "Done. No Render service deploys on push any more."
     else
