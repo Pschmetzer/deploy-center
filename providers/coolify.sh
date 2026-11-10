@@ -372,7 +372,7 @@ coolify_rollback() {
   fi
   jq -nc --argjson o "$(printf '%s' "$out" | jq -c 'if type == "object" then . else {} end' 2>/dev/null || echo '{}')" \
     --arg t "$target" --arg a "$1" --arg img "$local_img" \
-    '{id:($o.deployment_uuid // null), state:"queued", phase:"queued", commit:$t, imageReused:($img != ""),
+    '{id:($o.deployment_uuid // $t), state:"queued", phase:"queued", commit:$t, imageReused:($img != ""),
       message:"Coolify: \($a) is going back to \($t[0:7])\(if $img != "" then " (image still on the server: no build)" else "" end)"}'
 }
 

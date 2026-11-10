@@ -211,7 +211,9 @@ hook_deploy_json() {
   fi
   # Two clicks or two runs must not build twice: the same one-minute lock as the other providers.
   if declare -F start_lock >/dev/null; then
-    start_lock "hook-$n" >/dev/null || { rm -f "$cfg" "$out"; exit 1; }
+    # In a subshell: start_lock's die would end the script here and leave the config, which
+    # holds the secret URL, in the temp folder.
+    ( start_lock "hook-$n" ) >/dev/null || { rm -f "$cfg" "$out"; exit 1; }
   fi
   code="$(curl -K - < "$cfg" 2>"$out.err")" || rc=$?
   rm -f "$cfg" "$out"

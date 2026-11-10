@@ -128,8 +128,10 @@ j="$(GH_HEAD=bbbb provider_json hook | jq -c '.[0]')"
 expect "three commits since the last trigger: changed" "$(echo "$j" | jq -c '[.changed, .pendingCommits, .pendingPRs, .headSha]')" '[true,3,2,"bbbb"]'
 
 # A second trigger within a minute is refused (the start lock), and nothing is sent.
-out="$(hook_deploy_json site 2>&1)"
+mkdir -p "$tmp/t"
+out="$(TMPDIR="$tmp/t" hook_deploy_json site 2>&1)"
 expect "a second trigger within a minute is refused" "$?:$(grep -c 'being started already' <<< "$out"):$(grep -c '^curl' "$CALLS")" "1:1:1"
+expect "a refused trigger leaves no config (it holds the URL)" "$(find "$tmp/t" -type f | wc -l | tr -d ' ')" "0"
 unlock() { rm -rf "$DEPLOYS_CONFIG/locks"; }
 
 # --- trigger: failure ---
