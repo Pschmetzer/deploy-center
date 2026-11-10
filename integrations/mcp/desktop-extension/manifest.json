@@ -1,0 +1,68 @@
+{
+  "manifest_version": "0.3",
+  "name": "deploy-center",
+  "display_name": "Deploy Center",
+  "version": "0.1.0",
+  "description": "What is waiting to go live on Vercel and Render, what is building or failed, release notes and build logs. Deploys only when you allow it.",
+  "long_description": "Deploy Center turns off Git auto-deploy on Vercel and Render, so you deploy by hand. This extension lets Claude read its state through the `deploys` CLI that comes with the Mac app: which projects have commits or PRs that are not live, what is building or failed, why a project counts as changed, release notes and build logs.\n\nIt is read-only by default. With **Allow deploys** on, Claude also gets a deploy and a rollback tool. They act on one project per call, and Claude is told to ask you before each one.\n\nNeeds Deploy Center (or the `deploys` CLI) on this Mac. It uses the same Vercel, GitHub and Render logins as `deploys` in your terminal.",
+  "author": {
+    "name": "Deploy Center contributors",
+    "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Pschmetzer/deploy-center.git"
+  },
+  "homepage": "https://deploycenter.app",
+  "documentation": "https://github.com/Pschmetzer/deploy-center/tree/main/integrations/mcp",
+  "support": "https://github.com/Pschmetzer/deploy-center/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/server.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/server.js"],
+      "env": {
+        "DEPLOYS_BIN": "${user_config.deploys_bin}",
+        "DEPLOYS_MCP_ALLOW_DEPLOY": "${user_config.allow_deploy}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "deploys_changed", "description": "Projects with commits or PRs that are not live yet." },
+    { "name": "deploys_status", "description": "What is building, and the newest state of each project." },
+    { "name": "deploys_explain", "description": "Why one project is, or is not, counted as changed." },
+    { "name": "deploys_notes", "description": "Release notes for one project (Markdown)." },
+    { "name": "deploys_logs", "description": "The end of the newest build log of one project." },
+    { "name": "deploys_doctor", "description": "Check the tools and logins deploys needs." },
+    { "name": "deploys_deploy", "description": "Only with Allow deploys: deploy one project, after you said yes." },
+    { "name": "deploys_rollback", "description": "Only with Allow deploys: roll one project back, after you said yes." }
+  ],
+  "keywords": ["deploy", "vercel", "render", "release notes", "build logs"],
+  "license": "MIT",
+  "privacy_policies": [
+    "https://vercel.com/legal/privacy-policy",
+    "https://render.com/privacy",
+    "https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement"
+  ],
+  "compatibility": {
+    "platforms": ["darwin"],
+    "runtimes": { "node": ">=18.0.0" }
+  },
+  "user_config": {
+    "allow_deploy": {
+      "type": "boolean",
+      "title": "Allow deploys",
+      "description": "Off: read-only. On: Claude also gets deploy and rollback tools, one project per call, and is told to ask you first.",
+      "default": false,
+      "required": false
+    },
+    "deploys_bin": {
+      "type": "file",
+      "title": "deploys CLI (optional)",
+      "description": "Leave empty to use the one in Deploy Center.app (in /Applications or ~/Applications) or on your PATH.",
+      "required": false
+    }
+  }
+}

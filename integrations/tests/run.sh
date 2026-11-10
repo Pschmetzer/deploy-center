@@ -142,6 +142,11 @@ fi
 
 # --- the MCP server (needs node and `npm ci` in mcp/) ---
 if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
+  mcp/build.sh >/dev/null || fail "mcp: the bundle builds" "mcp/build.sh failed"
+  if mcp/desktop-extension/build.sh "$tmp/deploys.mcpb" >/dev/null; then
+    expect "mcp: the .mcpb holds manifest, server and icon" \
+      "$(unzip -Z1 "$tmp/deploys.mcpb" | sort | tr '\n' ' ')" "LICENSE icon.png manifest.json server/server.js "
+  else fail "mcp: the .mcpb packs and validates" "desktop-extension/build.sh failed"; fi
   DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
   pgrep -f "sleep 20" >/dev/null && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
 else

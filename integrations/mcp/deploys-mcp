@@ -1,0 +1,67 @@
+#!/bin/bash
+# deploys-mcp: starts the Deploy Center MCP server (server.js next to this file) with Node.
+# The Mac app ships both as Contents/Resources/mcp/, and the config it writes for Claude Code
+# and Claude Desktop points here, because a GUI app does not get the shell's PATH to find node.
+#
+# Env: DEPLOYS_MCP_NODE  the node to use (else PATH, Homebrew, Volta, nvm, fnm, the login shell)
+#      everything server.js reads (DEPLOYS_BIN, DEPLOYS_MCP_ALLOW_DEPLOY, ...), see README.md.
+# Without Node 18 or newer it says so on stderr (hosts show it in their MCP log) and exits 1.
+set -uo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+min=18
+
+say() { echo "deploys-mcp: $*" >&2; }
+
+major() { "$1" --version 2>/dev/null | sed -n 's/^v\([0-9][0-9]*\).*/\1/p' | head -n 1; }
+
+node=""; old=""
+# Takes the first node of version $min or newer; remembers an older one for the message.
+try() {
+  local c="$1" v
+  [ -n "$c" ] && [ -x "$c" ] || return 1
+  v="$(major "$c")"
+  if [ -n "$v" ] && [ "$v" -ge "$min" ]; then node="$c"; return 0; fi
+  [ -z "$v" ] || old="$c (v$v)"
+  return 1
+}
+# The login shell's node (zsh -i reads ~/.zshrc, where nvm is usually set up), at most 3 s.
+login_node() {
+  local sh="${SHELL:-/bin/zsh}" flag=-lc out pid
+  case "$sh" in *zsh) flag=-ilc ;; esac
+  out="$(mktemp)"
+  "$sh" "$flag" 'command -v node' </dev/null >"$out" 2>/dev/null & pid=$!
+  for _ in 1 2 3 4 5 6; do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+  kill -9 "$pid" 2>/dev/null
+  tail -n 1 "$out"; rm -f "$out"
+}
+find_node() {
+  if [ -n "${DEPLOYS_MCP_NODE:-}" ]; then try "$DEPLOYS_MCP_NODE"; return; fi
+  local c
+  for c in "$(command -v node 2>/dev/null)" /opt/homebrew/bin/node /usr/local/bin/node "$HOME/.volta/bin/node"; do
+    try "$c" && return 0
+  done
+  # The newest nvm and fnm installs first.
+  while IFS= read -r c; do try "$c" && return 0; done < <(
+    { ls -1d "$HOME"/.nvm/versions/node/v*/bin/node \
+             "$HOME"/.local/share/fnm/node-versions/v*/installation/bin/node \
+             "$HOME"/Library/Application\ Support/fnm/node-versions/v*/installation/bin/node 2>/dev/null || true; } | sort -V -r)
+  try "$(login_node)"
+}
+find_node
+
+if [ -z "$node" ]; then
+  if [ -n "$old" ]; then say "Node.js $min or newer is needed; found only $old."
+  elif [ -n "${DEPLOYS_MCP_NODE:-}" ]; then say "Node.js $min or newer is needed: DEPLOYS_MCP_NODE=$DEPLOYS_MCP_NODE is not a working node."
+  else say "Node.js $min or newer is needed and was not found."; fi
+  say "Install it (https://nodejs.org or: brew install node) and restart the app that started this server."
+  say "Or use the Claude Desktop extension (deploys.mcpb): Claude Desktop brings its own Node."
+  exit 1
+fi
+
+# Inside the app: the deploys next to this folder, unless one was chosen.
+if [ -z "${DEPLOYS_BIN:-}" ] && [ -x "$here/../deploys" ] && [ -f "$here/../deploys" ]; then
+  export DEPLOYS_BIN="$here/../deploys"
+fi
+
+exec "$node" "$here/server.js" "$@"

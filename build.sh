@@ -53,6 +53,20 @@ cp deploys "$BUILD/Contents/Resources/deploys"
 chmod +x "$BUILD/Contents/Resources/deploys"
 [ -f app/AppIcon.icns ] && cp app/AppIcon.icns "$BUILD/Contents/Resources/AppIcon.icns"
 
+# The MCP server for AI agents: one bundled file without node_modules and its launcher, which
+# finds Node at run time (integrations/mcp/README.md). Building it needs npm; DEPLOYS_NO_MCP=1 skips it.
+if [ "${DEPLOYS_NO_MCP:-}" = 1 ]; then
+  echo "build.sh: the MCP server is left out (DEPLOYS_NO_MCP=1)"
+else
+  command -v npm >/dev/null || die "npm is missing for the MCP server; brew install node, or build without it: DEPLOYS_NO_MCP=1 ./build.sh"
+  integrations/mcp/build.sh >/dev/null
+  mkdir -p "$BUILD/Contents/Resources/mcp"
+  cp integrations/mcp/dist/server.js integrations/mcp/deploys-mcp "$BUILD/Contents/Resources/mcp/"
+  chmod +x "$BUILD/Contents/Resources/mcp/deploys-mcp"
+  # The Claude Desktop extension, next to the zip (not inside the app).
+  integrations/mcp/desktop-extension/build.sh build/deploys.mcpb
+fi
+
 cat > "$BUILD/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -84,6 +98,7 @@ if [ -z "${DEVELOPER_ID:-}" ] && [ -s "$HOME/.config/deploys/signing-identity" ]
 fi
 if [ -n "${DEVELOPER_ID:-}" ]; then
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/deploys"
+  [ ! -f "$BUILD/Contents/Resources/mcp/deploys-mcp" ] || codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/mcp/deploys-mcp"
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD"
   codesign --verify --strict "$BUILD"
   if [ -n "${NOTARY_PROFILE:-}" ]; then

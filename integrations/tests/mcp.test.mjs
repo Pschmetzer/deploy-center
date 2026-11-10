@@ -1,12 +1,14 @@
-// Tests for integrations/mcp/server.mjs, run from integrations/tests/run.sh.
+// Tests for integrations/mcp/server.js, run from integrations/tests/run.sh.
 // A plain JSON-RPC client over stdio talks to the server; the server runs the stand-in
 // `deploys` from run.sh (DEPLOYS_BIN), which logs each call to $MCP_CALLS. No network.
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const server = join(dirname(fileURLToPath(import.meta.url)), "..", "mcp", "server.mjs");
+const mcpDir = join(dirname(fileURLToPath(import.meta.url)), "..", "mcp");
+const server = join(mcpDir, "server.js");
 const calls = process.env.MCP_CALLS;
 let fails = 0;
 const ok = (name) => console.log(`ok   mcp: ${name}`);
@@ -15,8 +17,8 @@ const check = (name, cond, why = "") => (cond ? ok(name) : fail(name, why));
 const callLog = () => { try { return readFileSync(calls, "utf8"); } catch { return ""; } };
 
 // One server process; requests in, answers matched by id.
-function start(env = {}) {
-  const child = spawn(process.execPath, [server], { env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
+function start(env = {}, cmd = [process.execPath, server]) {
+  const child = spawn(cmd[0], cmd.slice(1), { env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
   let buf = "", next = 1;
   const waiting = new Map();
   child.stdout.on("data", (d) => {
@@ -143,5 +145,70 @@ r = await s.call("deploys_rollback", { project: "app-web" });
 d = r.error ? {} : JSON.parse(r.text);
 check("rollback returns the id", d.id === "dpl_0" && d.platform === "vercel", r.text);
 s.stop();
+
+// --- what a Claude Desktop extension passes ---
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "true" });
+await s.init();
+check("the extension's toggle on (true) adds the write tools", (await s.names()).includes("deploys_deploy"));
+s.stop();
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "false" });
+await s.init();
+check("the extension's toggle off (false) is read-only", !(await s.names()).includes("deploys_deploy"));
+s.stop();
+for (const empty of ["", "${user_config.deploys_bin}"]) {
+  s = start({ DEPLOYS_BIN: empty });
+  await s.init();
+  r = await s.call("deploys_changed");
+  check(`DEPLOYS_BIN ${JSON.stringify(empty)} falls back to PATH`, !r.error && r.text.includes("app-web"), r.text);
+  s.stop();
+}
+
+// --- the launcher ---
+const launcher = join(mcpDir, "deploys-mcp");
+s = start({}, [launcher]);
+await s.init();
+r = await s.call("deploys_changed");
+check("the launcher starts the server", !r.error && r.text.includes("app-web"), r.text);
+s.stop();
+
+const tmp = mkdtempSync(join(tmpdir(), "mcp-test-"));
+const runLauncher = (env) => new Promise((resolve) => {
+  const c = spawn(launcher, [], { env: { ...process.env, ...env }, stdio: ["ignore", "ignore", "pipe"] });
+  let err = ""; c.stderr.on("data", (d) => (err += d));
+  c.on("close", (code) => resolve({ code, err }));
+});
+let l = await runLauncher({ DEPLOYS_MCP_NODE: join(tmp, "no-node") });
+check("no Node: the launcher says so and exits 1", l.code === 1 && /Node\.js 18 or newer/.test(l.err) && /not a working node/.test(l.err), l.err);
+writeFileSync(join(tmp, "node16"), "#!/bin/sh\necho v16.20.2\n"); chmodSync(join(tmp, "node16"), 0o755);
+l = await runLauncher({ DEPLOYS_MCP_NODE: join(tmp, "node16") });
+check("an old Node is named", l.code === 1 && /found only .*node16 \(v16\)/.test(l.err), l.err);
+
+// --- the bundle, alone, laid out as in the app: Contents/Resources/{deploys,mcp/} ---
+const bundle = join(mcpDir, "dist", "server.js");
+if (existsSync(bundle)) {
+  const res = join(tmp, "Deploy Center.app", "Contents", "Resources");
+  mkdirSync(join(res, "mcp"), { recursive: true });
+  copyFileSync(bundle, join(res, "mcp", "server.js"));
+  copyFileSync(launcher, join(res, "mcp", "deploys-mcp")); chmodSync(join(res, "mcp", "deploys-mcp"), 0o755);
+  copyFileSync(process.env.DEPLOYS_BIN, join(res, "deploys")); chmodSync(join(res, "deploys"), 0o755);
+  // No deploys on PATH and no node_modules: the launcher must use ../deploys, the bundle its own SDK.
+  s = start({ DEPLOYS_BIN: "", PATH: `${dirname(process.execPath)}:/usr/bin:/bin` }, [join(res, "mcp", "deploys-mcp")]);
+  await s.init();
+  check("the bundle runs alone, without node_modules", JSON.stringify(await s.names()) === JSON.stringify(READ));
+  r = await s.call("deploys_changed");
+  check("inside the app the launcher uses the bundled deploys", !r.error && r.text.includes("app-web"), r.text);
+  s.stop();
+} else fail("the bundle was built", `${bundle} is missing`);
+
+// --- the desktop extension's manifest matches the server ---
+const manifest = JSON.parse(readFileSync(join(mcpDir, "desktop-extension", "manifest.json"), "utf8"));
+const pkg = JSON.parse(readFileSync(join(mcpDir, "package.json"), "utf8"));
+check("manifest version is the server's", manifest.version === pkg.version && readFileSync(server, "utf8").includes(`VERSION = "${pkg.version}"`));
+check("manifest lists every tool", JSON.stringify(manifest.tools.map((t) => t.name).sort()) === JSON.stringify(all.map((t) => t.name).sort()));
+check("manifest env uses its user_config", Object.values(manifest.server.mcp_config.env).every((v) => {
+  const k = /^\$\{user_config\.(\w+)\}$/.exec(v)?.[1]; return k && manifest.user_config[k];
+}));
+check("deploys are off by default in the extension", manifest.user_config.allow_deploy.type === "boolean" && manifest.user_config.allow_deploy.default === false);
+rmSync(tmp, { recursive: true, force: true });
 
 process.exit(fails ? 1 : 0);

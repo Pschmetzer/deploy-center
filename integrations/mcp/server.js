@@ -5,13 +5,17 @@
 // DEPLOYS_MCP_ALLOW_DEPLOY=1, and each call acts on exactly one project.
 // `deploys` is run with an argument array (never a shell), a timeout, and trimmed output.
 //
+// This file is the stable entry point: `node integrations/mcp/server.js`. The Mac app ships a
+// bundled copy (no node_modules) as Contents/Resources/mcp/server.js, started by deploys-mcp.
+//
 // Env:
 //   DEPLOYS_BIN               path to `deploys` (else PATH, else the app bundle)
-//   DEPLOYS_MCP_ALLOW_DEPLOY  1 = also offer deploys_deploy and deploys_rollback
+//   DEPLOYS_MCP_ALLOW_DEPLOY  1 (or true) = also offer deploys_deploy and deploys_rollback
 //   DEPLOYS_MCP_TIMEOUT       seconds per command (default 90)
 //   DEPLOYS_MCP_MAX_OUTPUT    characters returned per call (default 20000)
+//   DEPLOYS_MCP_LOGIN_PATH    0 = on macOS, do not read the login shell's PATH (default: read it)
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -21,7 +25,8 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 
 const VERSION = "0.1.0";
 const NAME_RE = /^[A-Za-z0-9._:-]+$/;
-const ALLOW_DEPLOY = process.env.DEPLOYS_MCP_ALLOW_DEPLOY === "1";
+// "true" too: a Claude Desktop extension's checkbox arrives as "true" or "false".
+const ALLOW_DEPLOY = ["1", "true"].includes(String(process.env.DEPLOYS_MCP_ALLOW_DEPLOY ?? "").toLowerCase());
 const TIMEOUT_MS = posInt(process.env.DEPLOYS_MCP_TIMEOUT, 90) * 1000;
 const MAX_OUTPUT = posInt(process.env.DEPLOYS_MCP_MAX_OUTPUT, 20000);
 
@@ -42,13 +47,39 @@ function isExecutable(p) {
   }
 }
 
+// A host that leaves an optional setting empty may pass "" or the unreplaced "${user_config.x}".
+function setting(v) {
+  return v && !v.startsWith("${") ? v : "";
+}
+
+// Claude Desktop and other GUI apps start servers without the shell's PATH, so `deploys` would
+// not find jq, vercel or gh. The usual places come first, then (macOS) the login shell's PATH,
+// read once with a 3 s limit, like the Mac app does.
+function loginShellPath() {
+  if (process.platform !== "darwin" || process.env.DEPLOYS_MCP_LOGIN_PATH === "0") return "";
+  const shell = process.env.SHELL || "/bin/zsh";
+  const r = spawnSync(shell, [shell.endsWith("zsh") ? "-ilc" : "-lc", 'printf "__DC_PATH__%s__DC_END__" "$PATH"'], {
+    encoding: "utf8", timeout: 3000, killSignal: "SIGKILL", stdio: ["ignore", "pipe", "ignore"],
+  });
+  const m = /__DC_PATH__(.*?)__DC_END__/s.exec(r.stdout ?? "");
+  return m ? m[1].trim() : "";
+}
+
+const HOME = process.env.HOME || homedir();
+const SEARCH_PATH = [
+  process.env.PATH ?? "",
+  "/opt/homebrew/bin", "/usr/local/bin", join(HOME, ".local", "bin"), "/usr/bin", "/bin", "/usr/sbin", "/sbin",
+  loginShellPath(),
+].flatMap((p) => p.split(delimiter)).filter((d, i, all) => d && all.indexOf(d) === i).join(delimiter);
+
 function findDeploys(env = process.env) {
-  if (env.DEPLOYS_BIN) return isExecutable(env.DEPLOYS_BIN) ? env.DEPLOYS_BIN : null;
-  for (const dir of (env.PATH ?? "").split(delimiter)) {
+  const given = setting(env.DEPLOYS_BIN);
+  if (given) return isExecutable(given) ? given : null;
+  for (const dir of SEARCH_PATH.split(delimiter)) {
     if (dir && isExecutable(join(dir, "deploys"))) return join(dir, "deploys");
   }
   const bundle = join("Deploy Center.app", "Contents", "Resources", "deploys");
-  for (const p of [join("/Applications", bundle), join(env.HOME || homedir(), "Applications", bundle)]) {
+  for (const p of [join("/Applications", bundle), join(HOME, "Applications", bundle)]) {
     if (isExecutable(p)) return p;
   }
   return null;
@@ -68,7 +99,7 @@ function runDeploys(args, { timeoutMs = TIMEOUT_MS } = {}) {
   return new Promise((resolve) => {
     // An argument array, no shell. Its own process group, so a timeout also stops the vercel,
     // gh or curl it started, which would otherwise keep the pipes open.
-    const child = spawn(bin, args, { detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1" } });
+    const child = spawn(bin, args, { detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PATH: SEARCH_PATH, NO_COLOR: "1" } });
     const cap = 4 * MAX_OUTPUT + 65536;
     let stdout = "", stderr = "", timedOut = false, done = false;
     child.stdout.on("data", (d) => { if (stdout.length < cap) stdout += d; });
@@ -295,7 +326,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const tool = tools.find((t) => t.name === req.params.name);
   if (!tool) {
     const why = /^deploys_(deploy|rollback)$/.test(req.params.name)
-      ? " Deploying is off: the server was started without DEPLOYS_MCP_ALLOW_DEPLOY=1."
+      ? " Deploying is off: the server was started without DEPLOYS_MCP_ALLOW_DEPLOY=1 (in the Claude Desktop extension: Allow deploys)."
       : "";
     return { isError: true, content: [{ type: "text", text: `Unknown tool ${req.params.name}.${why}` }] };
   }
@@ -308,4 +339,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   }
 });
 
-await server.connect(new StdioServerTransport());
+// No top-level await: the bundled copy is CommonJS.
+server.connect(new StdioServerTransport()).catch((e) => {
+  console.error(`deploys-mcp: ${e?.message ?? e}`);
+  process.exit(1);
+});

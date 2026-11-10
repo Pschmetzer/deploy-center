@@ -5,11 +5,22 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "main": "server.mjs",
-  "bin": { "deploys-mcp": "server.mjs" },
-  "engines": { "node": ">=18" },
-  "scripts": { "test": "node ../tests/mcp.test.mjs" },
+  "main": "server.js",
+  "bin": {
+    "deploys-mcp": "server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "./build.sh",
+    "test": "bash ../tests/run.sh"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2"
+  },
+  "devDependencies": {
+    "@anthropic-ai/mcpb": "2.1.2",
+    "esbuild": "0.28.2"
   }
 }
