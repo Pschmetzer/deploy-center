@@ -1,9 +1,23 @@
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
   <channel>
     <title>Deploy Center</title>
     <link>https://deploycenter.app/</link>
     <description>Updates for Deploy Center</description>
     <language>en</language>
+    <item>
+      <title>Version 0.9.0</title>
+      <pubDate>Tue, 10 Nov 2026 08:14:58 GMT</pubDate>
+      <sparkle:version>0.9.0</sparkle:version>
+      <sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>https://github.com/Pschmetzer/deploy-center/releases/tag/v0.9.0</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown">- `deploys status --json` carries the shared `phase` of each project. VS Code extension 0.2.0: every platform, not only Vercel and Render; failed and building from `phase`; a name on two platforms is passed as `platform:name`; a hint when no project matches the folder.
+- Observer mode also refuses `guard` and `autofix --only` (without `--dry-run`); both change something. An approval check on a GitLab-linked Vercel project says that approvals are read from GitHub only.
+- Command palette: in observer mode (Settings → Team) it offers no deploy, rollback or "deploy all changed", like the window.
+- Ask Claude → Explain this failure: its button is now "Fix with Claude", the same as on the row (same caps, setup offer and toast).
+- Updates via Sparkle 2: the app reads https://deploycenter.app/appcast.xml once a day (Settings can turn it off) and on "Check for Updates …", accepts a download only with a valid EdDSA signature and the same Developer ID, and installs once no deploy is running. Replaces the old GitHub release check and "Update now". The Homebrew cask says `auto_updates true`.</description>
+      <enclosure url="https://github.com/Pschmetzer/deploy-center/releases/download/v0.9.0/DeployCenter-0.9.0-universal.zip" length="13164204" type="application/octet-stream" sparkle:edSignature="joElfiUlxnrRF7g2au6dtOgrboVH0QFZ4+fxdVwdVouU7oOJOyx2SDlNinye8AiwX5Bg83pH+7d1wg+cS0AnDw==" />
+    </item>
   </channel>
 </rss>
