@@ -1,0 +1,7 @@
+{"jobSummaries":[
+ {"jobArn":"x/12","jobId":"12","commitId":"cccc333","commitMessage":"feat: c\n\nbody","commitTime":"2026-01-02T04:00:00+00:00","startTime":"2026-01-02T05:04:05.123000+01:00","status":"RUNNING","jobType":"WEB_HOOK"},
+ {"jobArn":"x/11","jobId":"11","commitId":"bbbb222","commitMessage":"feat: b","startTime":"2026-01-01T10:00:00Z","endTime":"2026-01-01T10:05:00Z","status":"SUCCEED","jobType":"RELEASE"},
+ {"jobArn":"x/10","jobId":"10","commitId":"bbbb222","commitMessage":"feat: b","startTime":"2026-01-01T09:00:00Z","status":"SUCCEED","jobType":"WEB_HOOK"},
+ {"jobArn":"x/9","jobId":"9","commitId":"dddd444","commitMessage":"broken","startTime":"2025-12-31T09:00:00Z","status":"FAILED","jobType":"WEB_HOOK"},
+ {"jobArn":"x/8","jobId":"8","commitId":"aaaa111","commitMessage":"fix: a","startTime":"2025-12-30T09:00:00Z","status":"SUCCEED","jobType":"WEB_HOOK"}
+]}
