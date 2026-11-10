@@ -87,6 +87,7 @@ Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only gree
 - Deploys the newest commit, for one project or many, and follows each deploy until live or failed
 - Shows what is waiting: commits and merged PRs not live yet, per project and in total. [How it counts](docs/NUMBERS.md)
 - Shows your Vercel build costs
+- Estimates what auto-deploy would cost a month, and what turning it off saved since. [How it estimates](docs/SAVINGS.md)
 - Menu bar icon with the number of PRs waiting, and a notification when a deploy ends
 - Preview deploys (Vercel) and rollback to the previous live deploy
 - A bash CLI, `deploys`, that does all of this without the app, also on Linux and in CI. [CLI reference](docs/CLI.md)
@@ -122,6 +123,8 @@ Blueprint with auto-sync can turn auto-deploy on again: add `autoDeployTrigger: 
 ```bash
 deploys changed               # what is merged on GitHub and not live
 deploys deploy-changed --yes  # deploy all of it
+deploys simulate              # estimate: auto-deploy a month vs. once a day
+deploys ledger                # estimate: saved since auto-deploy was turned off
 ```
 
 Inside the app at `Deploy Center.app/Contents/Resources/deploys`. All commands, CI variables and
