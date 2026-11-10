@@ -188,7 +188,8 @@ vercel_json() {
   local recent
   recent="$(vercel_call "/v6/deployments?limit=100&target=production" \
     | jq '[.deployments[]] | group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // null)})}) | from_entries' 2>/dev/null)"
-  vercel_projects | jq --slurpfile r <(repos_json) --argjson recent "${recent:-{\}}" "$VERCEL_PHASE"'[.[] |
+  [ -n "$recent" ] || recent='{}'   # an escaped {} default keeps its backslash in bash 3.2
+  vercel_projects | jq --slurpfile r <(repos_json) --argjson recent "$recent" "$VERCEL_PHASE"'[.[] |
     ((.link // null) | if . then {repo:'"$GITHOST_VERCEL_LINK_JQ"', ref:"main"} else null end) as $live |
     ($r[0][.name] // null) as $known |
     (((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // null) as $domain |

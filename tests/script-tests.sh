@@ -1238,7 +1238,7 @@ expect "appcast: refused input changes nothing" "$(grep -c '<item>' "$ac")" "2"
 # ===== CLI track (improve/cli): additions, kept together; whole commands only (run) =====
 export DEPLOYS_JOURNAL="$e2e/journal.jsonl" RENDER_API_KEY=rnd_test
 # CLI-057: bash 3.2 reads an escaped {} default as the text {\} (invalid JSON for --argjson).
-expect "CLI-057: no escaped {} defaults in deploys and lib/" "$(cat deploys lib/*.sh | grep -c ':-{\\}')" "0"
+expect "CLI-057: no escaped {} defaults in deploys, lib/ and providers/" "$(cat deploys lib/*.sh providers/*.sh | grep -c ':-{\\}')" "0"
 
 # CLI-001: deploys deploy waits for the deploy window like every other start.
 fresh; echo '{"deny":[{"from":"00:00","to":"24:00","reason":"always closed"}]}' > "$e2e/config/window.json"
@@ -1444,6 +1444,9 @@ expect "CLI-107: --publish --dry-run prints the plan and exits 0" \
   "$(cd "$rd/repo" && PATH="$rd/bin:$PATH" ./release.sh --publish --dry-run 2>&1 | grep -c -e '^Dry run' -e 'is new: created' -e 'would upload' -e 'not checked'; echo "rc=${PIPESTATUS[0]}")" $'4\nrc=0'
 expect "CLI-107: only reads were made: no release, tag, build, notarization or upload" \
   "$(grep -v -e '^gh repo view' -e '^gh api' "$rd/calls" | wc -l | tr -d ' '; git -C "$rd/repo" tag | wc -l | tr -d ' '; [ -e "$rd/repo/dist" ] && echo dist || echo no-dist)" $'0\n0\nno-dist'
+# A release never takes the Sparkle feed or key from the environment (local update tests only).
+expect "release: SPARKLE_FEED_URL and SPARKLE_PUBLIC_KEY from the environment are ignored" \
+  "$(cd "$rd/repo" && PATH="$rd/bin:$PATH" SPARKLE_FEED_URL=https://evil.test/appcast.xml SPARKLE_PUBLIC_KEY=AAAA ./release.sh --publish --dry-run 2>&1 | grep -c -e 'ignoring SPARKLE_FEED_URL' -e 'ignoring SPARKLE_PUBLIC_KEY')" "2"
 # CLI-039: the guard matrix. Every command that changes something, in observer mode: refused, nothing
 # sent that writes (POST, PATCH, PUT, DELETE). Every production start with the window closed: refused.
 export RENDER_API_KEY=rnd_test

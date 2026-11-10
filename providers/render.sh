@@ -181,7 +181,9 @@ render_json() {
   echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$2" "$0" "$1"' "$tmp" "$kf"
   rm -f "$kf"
   lasts="$(cat_all "$tmp"/*.json | jq -s 'from_entries')"; rm -rf "$tmp"
-  echo "$list" | jq --argjson l "${lasts:-{\}}" "$RENDER_PHASE"'map({lastAt:null, lastState:null, lastSha:null, lastMsg:null, fetchError:null}
+  # bash 3.2 keeps the backslash of an escaped {} default (invalid JSON): an empty answer becomes {} here.
+  [ -n "$lasts" ] || lasts='{}'
+  echo "$list" | jq --argjson l "$lasts" "$RENDER_PHASE"'map({lastAt:null, lastState:null, lastSha:null, lastMsg:null, fetchError:null}
     + . + ($l[.id] // {}) | . + {phase:(.lastState | rphase)})'
 }
 
