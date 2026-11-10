@@ -215,7 +215,8 @@ struct ContentView: View {
         // Mission Control and the window title say what waits; the Dock icon carries the number.
         .navigationSubtitle(waitingSubtitle)
         .onChange(of: store.waiting.projects, initial: true) { _, n in NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil }
-        .focusedSceneValue(\.windowActions, WindowActions(
+        // Not while a sheet is open: there ⌘F belongs to the build log's find bar.
+        .focusedSceneValue(\.windowActions, logItem != nil || detailItem != nil || showJournal ? nil : WindowActions(
             tab: { n in showAll = n == 0; if n == 1 { platform = .vercel } else if n == 2 { platform = .render } },
             search: { searchFocused = true }))
         .animation(.easeOut(duration: 0.2), value: store.toast)
@@ -1189,7 +1190,7 @@ struct Row: View {
                     }
                 }
                 Text(Demo.on ? item.platform.rawValue : item.detail).font(.caption).foregroundStyle(.secondary)
-                if let note { Text(note).font(.caption.italic()).foregroundStyle(.orange) }
+                if let note { Label(note, systemImage: "note.text").font(.caption.italic()).foregroundStyle(.secondary) }
                 // One line when there is room, otherwise one chip under the other.
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { chips }
