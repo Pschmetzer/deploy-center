@@ -469,6 +469,8 @@ fi
 # shellcheck source=digest/classify.sh
 . digest/classify.sh
 kinds() { classify | jq -c 'map(.why)'; }
+expect "classify: an agent branch prefix of the pull request" "$(echo '[{"sha":"a","author":"dev","prBranch":"Claude/fix-x"},{"sha":"b","author":"dev","prBranch":"feature/claude/x"}]' | kinds)" '["branch Claude/fix-x","no agent sign"]'
+expect "classify: DEPLOYS_AGENT_BRANCHES replaces the prefixes" "$(echo '[{"sha":"a","author":"dev","prBranch":"claude/x"},{"sha":"b","author":"dev","prBranch":"bot/y"}]' | DEPLOYS_AGENT_BRANCHES='bot/' kinds)" '["no agent sign","branch bot/y"]'
 expect "classify: bot flag, author, co-author, label, PR author, else human" "$(echo '[
   {"author":"someone","bot":true},{"author":"renovate[bot]"},{"author":"Codex"},
   {"author":"dev-one","coAuthors":[{"name":"Claude Opus","email":"noreply@anthropic.com"}]},
@@ -577,7 +579,7 @@ if command -v ruby >/dev/null; then
   out="$(keep '*')"; expect "keep: all leaves nothing out" "$([ -f "$tmp/kc/ignored.json" ] && echo file || echo none)" none
   expect "keep: a listing that fails stops the deploy" "$(FAKE_RC=0 DEPLOYS=/nonexistent keep app-web | tail -1)" "rc=127"
   # the result goes on the issue; the label comes off; a full deploy closes it
-  report() { : > "$tmp/gh.log"; env REPO=me/ops ISSUE=5 RUN_URL=https://example.test/run REASON="${REASON:-}" NAMES="${NAMES:-}" STARTED="${STARTED-}" FAILED="${FAILED:-}" DEPLOYED="${DEPLOYED:-}" bash "$tmp/report.sh" >/dev/null 2>&1; cat "$tmp/gh.log"; }
+  report() { : > "$tmp/gh.log"; env EVENT="${EVENT:-issues}" GITHUB_STEP_SUMMARY="$tmp/rsum" REPO=me/ops ISSUE=5 RUN_URL=https://example.test/run REASON="${REASON:-}" NAMES="${NAMES:-}" STARTED="${STARTED-}" FAILED="${FAILED:-}" DEPLOYED="${DEPLOYED:-}" bash "$tmp/report.sh" >/dev/null 2>&1; cat "$tmp/gh.log"; }
   out="$(NAMES=app-web STARTED=1 FAILED=0 DEPLOYED=true report)"
   contains "report: started, on the issue" "$out" "issue comment 5 -R me/ops --body Started 1 deploy(s) (app-web), 0 failed to start."
   contains "report: label off" "$out" "issue edit 5 -R me/ops --remove-label deploy-approved"
@@ -585,6 +587,13 @@ if command -v ruby >/dev/null; then
   out="$(REASON='dev-three is not in DEPLOYS_APPROVERS.' report)"
   contains "report: a refusal is said" "$out" "Not deployed: dev-three is not in DEPLOYS_APPROVERS."
   case "$out" in *"issue close"*) fail "report: open after a refusal" "closed" ;; *) ok "report: open after a refusal" ;; esac
+  : > "$tmp/rsum"; out="$(EVENT=workflow_dispatch NAMES=api STARTED=1 FAILED=0 DEPLOYED=true report)"
+  expect "report: by hand, nothing goes to an issue" "$out" ""
+  contains "report: by hand, the result is on the run's page" "$(cat "$tmp/rsum")" "Started 1 deploy(s) (api), 0 failed to start."
+  expect "approve-deploy: the first action run only sets up" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"]["deploy"]["steps"].find { |s| s["id"] == "list" }["with"]["deploy"]' digest/examples/approve-deploy.yml)" "setup"
+  if command -v ruby >/dev/null; then
+    expect "action: deploy: setup asks nothing" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["runs"]["steps"].find { |s| s["id"] == "changed" }["if"]' action/action.yml)" "inputs.deploy != 'setup'"
+  fi
   expect "approve-deploy: runs only on the deploy-approved label of a digest issue, or by hand" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"]["deploy"]["if"]' digest/examples/approve-deploy.yml | tr -s ' \n' ' ' | sed 's/ $//')" \
     "github.event_name == 'workflow_dispatch' || (github.event.label.name == 'deploy-approved' && startsWith(github.event.issue.title, 'Deploys waiting – '))"
   expect "approve-deploy: deploy: true only after the approval steps" "$(ruby -ryaml -e 's = YAML.load_file(ARGV[0])["jobs"]["deploy"]["steps"]; puts s.each_with_index.select { |x, _| (x["with"] || {})["deploy"] == true }.map { |_, i| s[0...i].map { |y| y["id"] }.join(",") }' digest/examples/approve-deploy.yml)" "approved,body,list,keep"

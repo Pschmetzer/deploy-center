@@ -69,7 +69,7 @@ pr_facts() {
   local r="$1" n="$2" f
   f="$tmp/pr_${1////_}_$2.json"
   if [ ! -f "$f" ]; then
-    { [ "$has_gh" = 1 ] && gh api "repos/$r/pulls/$n" --jq '{number, title, url:.html_url, prAuthor:.user.login, prBot:(.user.type == "Bot"), prLabels:[.labels[].name]}' 2>/dev/null; } > "$f" \
+    { [ "$has_gh" = 1 ] && gh api "repos/$r/pulls/$n" --jq '{number, title, url:.html_url, prAuthor:.user.login, prBot:(.user.type == "Bot"), prLabels:[.labels[].name], prBranch:.head.ref}' 2>/dev/null; } > "$f" \
       && jq -e 'type == "object"' "$f" >/dev/null 2>&1 || echo "{\"number\":$n}" > "$f"
   fi
   cat "$f"
@@ -86,8 +86,9 @@ risk_hints() {
     || printf '%s' "$raw" | jq -Rsc 'split("\n") | map(select(test("\\S")))'
 }
 
-: > "$tmp/projects.jsonl"
-while IFS= read -r p; do
+# One project: its commits, their pull requests and kinds, its risk. Writes one JSON line to $2.
+one_project() {
+  local p="$1" outf="$2" name prepo live ref d n commits prs
   name="$(jq -r '.name' <<<"$p")"; prepo="$(jq -r '.repo // empty' <<<"$p")"
   live="$(jq -r '.lastSha // empty' <<<"$p")"; ref="$(jq -r '.ref // "main"' <<<"$p")"
   d='null'
@@ -96,11 +97,11 @@ while IFS= read -r p; do
     jq -e 'type == "object"' >/dev/null 2>&1 <<<"$d" || d='null'
   fi
   # Each commit gets its pull request's facts, then a kind.
-  : > "$tmp/prs.jsonl"
-  for n in $(jq -r '.commits // [] | map(.pr // empty) | unique | .[]' <<<"$d"); do pr_facts "$prepo" "$n" >> "$tmp/prs.jsonl"; done
-  commits="$(jq -c --slurpfile prs "$tmp/prs.jsonl" '
+  prs="$outf.prs"; : > "$prs"
+  for n in $(jq -r '.commits // [] | map(.pr // empty) | unique | .[]' <<<"$d"); do pr_facts "$prepo" "$n" >> "$prs"; done
+  commits="$(jq -c --slurpfile prs "$prs" '
     ($prs | map({key:(.number | tostring), value:.}) | from_entries) as $by
-    | (.commits // []) | map(. + (if .pr then ($by[.pr | tostring] // {} | {prAuthor, prBot, prLabels, prTitle:.title, prUrl:.url} | with_entries(select(.value != null))) else {} end))' <<<"$d" | classify)"
+    | (.commits // []) | map(. + (if .pr then ($by[.pr | tostring] // {} | {prAuthor, prBot, prLabels, prBranch, prTitle:.title, prUrl:.url} | with_entries(select(.value != null))) else {} end))' <<<"$d" | classify)"
   jq -c --argjson d "$d" --argjson c "$commits" --argjson risk "$(risk_hints "$name")" '
     {name, platform:(.platform // null), repo:(.repo // null), ref:(.ref // null), pending:(.pendingCommits // null),
      known:($d != null), compareUrl:($d.compareUrl // null),
@@ -109,8 +110,27 @@ while IFS= read -r p; do
             kind:(if all(.kind == "agent") then "agent" elif all(.kind == "human") then "human" else "mixed" end),
             why:(map(select(.kind == "agent") | .why) | unique)})),
      loose:($c | map(select(.pr | not)) | map({sha, msg, author, kind, why})),
-     risk:($risk + (($d.risky // []) | map("changes \(.)")) + (if ($d.checks.failed // 0) > 0 then ["CI failed on the branch head"] else [] end) | unique)}' <<<"$p" >> "$tmp/projects.jsonl"
+     risk:($risk + (($d.risky // []) | map("changes \(.)")) + (if ($d.checks.failed // 0) > 0 then ["CI failed on the branch head"] else [] end) | unique)}' <<<"$p" > "$outf"
+}
+
+# A few projects at a time (DEPLOYS_DIGEST_JOBS, default 4): each is a `deploys details` and a
+# GitHub call per pull request, so 30 projects one by one take minutes. The lines keep the order.
+jobs="${DEPLOYS_DIGEST_JOBS:-4}"; case "$jobs" in ''|*[!0-9]*|0) jobs=4 ;; esac
+i=0; running=0
+while IFS= read -r p; do
+  i=$((i + 1)); one_project "$p" "$tmp/project_$(printf '%05d' "$i").json" &
+  running=$((running + 1))
+  if [ "$running" -ge "$jobs" ]; then wait; running=0; fi
 done < <(jq -c '.[]' <<<"$list")
+wait
+: > "$tmp/projects.jsonl"
+lost=0
+for ((n = 1; n <= i; n++)); do
+  f="$tmp/project_$(printf '%05d' "$n").json"
+  if [ -s "$f" ]; then cat "$f" >> "$tmp/projects.jsonl"; else lost=$((lost + 1)); fi
+done
+# A project that could not be put together is left out and counted, like an unread one.
+[ "$lost" = 0 ] || { echo "$lost project(s) could not be read for the digest and are left out" >&2; partial=true; }
 
 digest="$(jq -s --arg date "$today" --arg title "$title" --argjson partial "$partial" '
   {date:$date, title:$title, partial:$partial, projects:.,

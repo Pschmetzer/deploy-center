@@ -12,6 +12,8 @@ inputs:
     description: >-
       "true" starts a deploy of every project with changes (deploys deploy-changed --yes).
       "dry-run" writes the plan (what would be deployed) to the job summary and starts nothing.
+      "setup" only sets up deploys for later steps of the job ($DEPLOYS, its config, the vercel CLI)
+      and asks nothing.
       Anything else only reports. Default: only report.
     required: false
     default: "false"
@@ -147,6 +149,7 @@ runs:
 
     - name: deploys changed --json
       id: changed
+      if: inputs.deploy != 'setup'
       shell: bash
       env:
         VERCEL_TOKEN: ${{ inputs.vercel-token }}
@@ -262,17 +265,19 @@ runs:
         f="$RUNNER_TEMP/deploys-started.json"
         [ -s "$f" ] || { echo "::warning::no started deploy to follow"; echo "live=false" >> "$GITHUB_OUTPUT"; exit 0; }
         # One deadline for all: the builds run side by side, so following them one after the other
-        # costs no extra time. No timeout(1) (not on every runner): a sleeper stops a watch that is late.
+        # costs no extra time. No timeout(1): it is not on every runner.
         end=$((SECONDS + ${DEPLOYS_WAIT_S:-1200})); states='{}'
         while IFS=$'\t' read -r plat name id; do
           left=$((end - SECONDS))
           if [ "$left" -le 0 ]; then st=timeout
           else
             "$DEPLOYS" watch "$plat:$name" ${id:+"$id"} </dev/null & pid=$!
-            # The sleeper ends its own sleep when it is stopped, so nothing outlives the step.
-            ( trap 'kill "$s" 2>/dev/null; exit 0' TERM; sleep "$left" & s=$!; wait "$s"; kill "$pid" ) >/dev/null 2>&1 & killer=$!
+            # Looked at once a second; past the deadline the watch is stopped.
+            while kill -0 "$pid" 2>/dev/null; do
+              [ "$SECONDS" -lt "$end" ] || { kill "$pid" 2>/dev/null; break; }
+              sleep 1
+            done
             wait "$pid"; rc=$?
-            kill "$killer" 2>/dev/null; wait "$killer" 2>/dev/null
             case "$rc" in 0) st=ready ;; 1) st=failed ;; 3) st=unknown ;; *) st=timeout ;; esac
           fi
           echo "$plat $name: $st"

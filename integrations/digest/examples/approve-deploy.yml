@@ -88,10 +88,12 @@ jobs:
             *) echo "::error::The issue body was edited by $editor after the digest wrote it. Run the digest again, then approve."; exit 1 ;;
           esac
 
-      # Pin to a release tag or a full commit SHA, not a branch. This first run only lists.
+      # Pin to a release tag or a full commit SHA, not a branch. This first run only sets up
+      # deploys (and the vercel CLI) for the next step; it asks nothing.
       - uses: Pschmetzer/deploy-center/integrations/action@v0.9.1
         id: list
         with:
+          deploy: setup
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}
@@ -128,10 +130,12 @@ jobs:
           render-api-key: ${{ secrets.RENDER_API_KEY }}
           repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
 
-      - name: Report on the issue
+      # What happened, on the run's page (both routes), and on the issue when it came from one.
+      - name: Report
         id: report
-        if: always() && github.event_name == 'issues'
+        if: always()
         env:
+          EVENT: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
@@ -147,6 +151,8 @@ jobs:
           elif [ -z "$STARTED" ]; then msg="Not deployed: the run stopped before deploying."
           elif [ "$STARTED" = 0 ] && [ "${FAILED:-0}" = 0 ]; then msg="Nothing to deploy: none of the approved projects has changes now."
           else msg="Started ${STARTED} deploy(s)${NAMES:+ ($NAMES)}, ${FAILED:-0} failed to start."; fi
+          [ -z "${GITHUB_STEP_SUMMARY:-}" ] || { echo "### Approved deploy"; echo; echo "$msg"; } >> "$GITHUB_STEP_SUMMARY"
+          [ "${EVENT:-}" = issues ] || exit 0
           gh issue comment "$ISSUE" -R "$REPO" --body "$msg [Run]($RUN_URL)"
           # The label is taken off: adding it again is a new approval.
           gh issue edit "$ISSUE" -R "$REPO" --remove-label deploy-approved

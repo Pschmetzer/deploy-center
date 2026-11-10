@@ -23,7 +23,7 @@ Renovate can keep the tag current. Give the job a `timeout-minutes`: with a wron
 
 | Input | Default | |
 |---|---|---|
-| `deploy` | `false` | `true` starts the deploys. `dry-run` writes what would be deployed to the job summary and starts nothing. Any other value only reports. |
+| `deploy` | `false` | `true` starts the deploys. `dry-run` writes what would be deployed to the job summary and starts nothing. `setup` only sets up `$DEPLOYS` (and the vercel CLI) for later steps and asks nothing. Any other value only reports. |
 | `only` | none | Comma-separated names: only these projects count and deploy. |
 | `exclude` | none | Comma-separated names to leave out, also of the deploy. |
 | `vercel-token` | none | Read by the Vercel CLI (`VERCEL_TOKEN`). Leave it empty if you have no Vercel projects. |

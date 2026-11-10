@@ -75,8 +75,10 @@ digest step a token that can read them and write issues in the ops repo.
 | A `Co-Authored-By:` trailer matches it | `Co-Authored-By: Claude <noreply@anthropic.com>` |
 | The pull request has a label in `DEPLOYS_AGENT_LABELS` | `ai-generated` |
 | The pull request was opened by a matching login | an agent's PR, merged by a person |
+| The pull request's branch starts with a prefix in `DEPLOYS_AGENT_BRANCHES` (default `claude/ cursor/ codex/ copilot/ devin/`) | `claude/fix-login` |
 
-Everything else is human. Patterns are globs (`*`, `?`), matched without case against the whole
+Everything else is human. A "Generated with …" line in a commit body is not read (the digest gets
+commit titles only); the branch and the co-author trailer are the reliable signs. Patterns are globs (`*`, `?`), matched without case against the whole
 login; for a co-author also against the first word of the name, and a pattern with `@` against
 the email (`*@cursor.com`). Setting a variable replaces its default list:
 
@@ -115,3 +117,7 @@ Without `gh`, commit messages stand in for PR titles and labels are not read.
 Not tested yet: runs on GitHub's runners and real posts. The scripts and the workflow's steps are
 tested locally with a stand-in `deploys`, `curl` and `gh` (`integrations/tests/run.sh`).
 All add-ons at a glance: [what is tested](../README.md#what-is-tested-and-what-is-not).
+
+The projects are read four at a time (`DEPLOYS_DIGEST_JOBS`, default `4`), each with one
+`deploys details` and one GitHub call per pull request. A project that cannot be put together is
+left out and the digest says that some projects could not be read.
