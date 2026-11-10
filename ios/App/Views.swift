@@ -36,7 +36,7 @@ struct RootView: View {
             if let i = args.firstIndex(of: "-open"), i + 1 < args.count {
                 selection = store.projects.first { $0.name == args[i + 1] }?.key
             }
-            if args.contains("-settings") { settings = true }
+            if args.contains("-settings") { try? await Task.sleep(for: .seconds(1)); settings = true }
         }
         .overlay(alignment: .bottom) {
             if let m = store.message {
@@ -97,12 +97,19 @@ struct ProjectList: View {
 
 struct Summary: View {
     @ObservedObject var store: PhoneStore
+    @Environment(\.dynamicTypeSize) private var size
     var body: some View {
-        HStack(spacing: 0) {
-            Stat(value: store.waitingPRs, label: L("PRs waiting", "PRs warten"), tint: .accentColor)
-            Stat(value: store.waiting.count, label: L("projects", "Projekte"), tint: .primary)
-            Stat(value: store.projects.filter(\.building).count, label: L("building", "bauen"), tint: .blue)
-            Stat(value: store.projects.filter(\.failed).count, label: L("failed", "Fehler"), tint: .red)
+        let prs = Stat(value: store.waitingPRs, label: L("PRs waiting", "PRs warten"), tint: .accentColor)
+        let projects = Stat(value: store.waiting.count, label: L("projects", "Projekte"), tint: .primary)
+        let building = Stat(value: store.projects.filter(\.building).count, label: L("building", "bauen"), tint: .blue)
+        let failed = Stat(value: store.projects.filter(\.failed).count, label: L("failed", "Fehler"), tint: .red)
+        Group {
+            // Four in a row get too tight with the largest text sizes: two rows of two then.
+            if size.isAccessibilitySize {
+                Grid(verticalSpacing: 12) { GridRow { prs; projects }; GridRow { building; failed } }
+            } else {
+                HStack(spacing: 0) { prs; projects; building; failed }
+            }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -143,10 +150,11 @@ extension PhoneProject {
 struct Row: View {
     let p: PhoneProject
     let running: String?
+    @ScaledMetric(relativeTo: .title3) private var iconWidth = 24.0
     var body: some View {
         HStack(spacing: 12) {
-            if running != nil { ProgressView().frame(width: 24) }
-            else { Image(systemName: p.icon).foregroundStyle(p.tint).font(.title3).frame(width: 24).accessibilityHidden(true) }
+            if running != nil { ProgressView().frame(width: iconWidth) }
+            else { Image(systemName: p.icon).foregroundStyle(p.tint).font(.title3).frame(width: iconWidth).accessibilityHidden(true) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(p.name).font(.body.weight(.semibold))
                 Text((running.map { L("deploying: ", "deployt: ") + $0 } ?? p.stateText) + " · " + p.provider.rawValue)

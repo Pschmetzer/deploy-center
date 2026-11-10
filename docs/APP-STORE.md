@@ -16,8 +16,8 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 | Export compliance | `ITSAppUsesNonExemptEncryption = NO` (only HTTPS through the system) |
 | App icon | `ios/App/Assets.xcassets/AppIcon.appiconset`, 1024 px, no alpha, made from the Mac icon |
 | Launch screen | generated (`UILaunchScreen`), system background |
-| iPhone and iPad layout, dark mode | `NavigationSplitView`, system colours; checked in the simulator (`ipad-13-4-dark-de.png`) |
-| Dynamic Type, VoiceOver | system text styles, combined accessibility elements; **not yet checked** with large text or VoiceOver |
+| iPhone and iPad layout, dark mode | `NavigationSplitView`, system colours; checked in the simulator (`ipad-13-4-dark.png`) |
+| Dynamic Type, VoiceOver | system text styles, scaled icons, the summary in two rows at accessibility sizes (checked); combined accessibility elements, **VoiceOver not yet checked** |
 | Demo mode for review (Guideline 2.1) | "Try the demo" on the first screen, or Settings → Demo mode |
 | Store texts, English and German | `ios/AppStore/en.md`, `ios/AppStore/de.md` |
 | Review notes | `ios/AppStore/en.md`, section "Notes for App Review" |

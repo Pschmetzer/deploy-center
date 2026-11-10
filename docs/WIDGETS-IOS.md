@@ -159,6 +159,12 @@ Verified on this Mac:
   - The extension carries the sandbox and the App Group.
   - `codesign --verify --strict --deep` passes.
   - `pluginkit` lists the extension.
+- **Real accounts, read-only:** the app's API code (`ios/App/Clients.swift`, `Project.swift`),
+  compiled for macOS, read the owner's Vercel, Render and GitHub accounts with GET requests only:
+  - it found the same waiting projects as `deploys changed --json`;
+  - it found the same commit and PR counts for each of them;
+  - it had no read errors.
+  Deploy and rollback were not tried against real accounts.
 - **iOS:** the app and its widget extension build with `xcodebuild` for the simulator. They run in
   demo mode on an iPhone 17 Pro Max and an iPad Pro 13" simulator. The screenshots are in
   `ios/AppStore/screenshots/`.
@@ -166,10 +172,12 @@ Verified on this Mac:
 Not verified:
 - **The widget gallery:** the Mac widget was not opened there. That needs the screen, and this
   session had no access to it. To check: right-click the desktop → Edit Widgets → search "Deploy".
-- **Real accounts:** no real Vercel, Render or GitHub token was used. The API code follows
-  `deploys` but has not run against real accounts.
+- **Real deploys:** deploy, rollback and the status polling never ran against real accounts.
+- **Vercel teams:** with several teams and no team id set, the app reads the personal account.
+  The settings screen has a field for the team id.
 - **Simulator:** Face ID, the background refresh, notifications and the iOS widget on the Home
-  Screen were not tried.
+  Screen were not tried. VoiceOver was not tried either. Large text (accessibility sizes) was
+  checked: the summary switches to two rows.
 - **Device and store:** no device build, no archive, nothing uploaded.
 
 ## Steps only the owner can do (Apple Developer account)
