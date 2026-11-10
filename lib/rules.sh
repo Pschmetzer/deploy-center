@@ -22,7 +22,14 @@
 
 RULES="$CONFIG_DIR/rules.json"
 
-rules_on() { [ -f "$RULES" ] && jq -e '[.rules[]? | select(.enabled != false)] | length > 0' "$RULES" >/dev/null 2>&1; }
+# A rules.json that cannot be read stops the run (as a broken window.json does): a hold rule the
+# app wrote must never be skipped because the file is half written.
+rules_on() {
+  [ -f "$RULES" ] || return 1
+  jq -e '(.rules | type) == "array"' "$RULES" >/dev/null 2>&1 \
+    || die "$RULES could not be read: it holds {\"rules\":[…]} (see docs/CLI.md, Rules). Nothing was started."
+  jq -e '[.rules[] | select(.enabled != false)] | length > 0' "$RULES" >/dev/null 2>&1
+}
 
 # The enabled rules, numbered, with what each needs asked: [{index, name, when, then, needs, problem}].
 rules_list() {

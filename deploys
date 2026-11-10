@@ -234,7 +234,9 @@ team_on() { declare -F team_gate >/dev/null; }
 if [ -f "$LIB_DIR/hooks.sh" ]; then . "$LIB_DIR/hooks.sh"; fi
 # rules.json ("when … then …" for the daily deploy): lib/rules.sh. Without it no rule counts.
 # shellcheck source=lib/rules.sh
-if [ -f "$LIB_DIR/rules.sh" ]; then . "$LIB_DIR/rules.sh"; else rules_on() { return 1; }; fi
+# A rules.json without lib/rules.sh to read it stops the run rather than ignore its hold rules.
+if [ -f "$LIB_DIR/rules.sh" ]; then . "$LIB_DIR/rules.sh"
+else rules_on() { [ ! -f "$CONFIG_DIR/rules.json" ] || die "rules.json is there, but lib/rules.sh is not next to deploys to read it."; return 1; }; fi
 
 # Every command that changes something on Vercel, Render or GitHub goes through here first.
 WRITING=""
@@ -810,8 +812,14 @@ journal_add() {  # journal_add <platform> <name> <result> <detail>
   # The app shortens the file now and then: both take "<file>.lock" (a folder) for that moment.
   # Waited for two seconds at most; a line is never lost to a stale lock.
   local locked=""; file_lock "$f" 0 && locked=1
-  jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$4" \
-    '{at:(now | floor | todate), platform:$p, name:$n, result:$r, seconds:null, detail:$d}' >> "$f" 2>/dev/null || true
+  # FEA-041: prevHash is the SHA-256 of the line before (as written), so a changed or removed
+  # line shows; null for the first line or without shasum/sha256sum.
+  local prev=""
+  if [ -s "$f" ]; then
+    prev="$(tail -n 1 "$f" | { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; } | cut -d' ' -f1)" || prev=""
+  fi
+  jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$4" --arg h "$prev" \
+    '{at:(now | floor | todate), platform:$p, name:$n, result:$r, seconds:null, detail:$d, prevHash:(if $h == "" then null else $h end)}' >> "$f" 2>/dev/null || true
   [ -z "$locked" ] || file_unlock "$f"
 }
 

@@ -1182,6 +1182,7 @@ expect "LOG-042: --again hands a fired build over once more after 90 minutes" "$
   af_reset; ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"}]'
   jq -n --argjson t "$(date +%s)" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",status:"fired",at:($t-6000)}]}' > "$AUTOFIX_STATE"
   echo "$(afonly vercel web):$(fired):$(afonly vercel web 1):$(fired)")" "3:0:0:1"
+# shellcheck disable=SC2034  # read by the sourced script
 expect "LOG-038: a fire that turned green still learns its PR was merged" "$(
   af_prs() { [ "$3" = open ] && echo '[]' || jq -nc --arg m "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '[{number:9, merged_at:$m, closed_at:$m, merge_commit_sha:"m9", ref:"claude/autofix-web-aaaa111", url:"u"}]'; }
   jq -n --argjson t "$(date +%s)" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",sha:"aaaa111",status:"fired",done:true,prState:"open",prNumber:9,at:($t-100)}]}' > "$AUTOFIX_STATE"
@@ -1209,6 +1210,7 @@ expect "CLI-036: pending checks are shown as waited for, not as passing" \
 unset RENDER_API_KEY
 # CLI-053, PRV-084: a remembered id is checked before a change; "could not ask" is not "not found".
 mkdir -p "$tmp/c53"; echo '[{"name":"web","platform":"vercel","id":"prj_old"}]' > "$tmp/c53/names.json"
+# shellcheck disable=SC2034  # read by the sourced script
 l53() { (DEPLOYS_CONFIG="$tmp/c53" DEPLOYS_LIB=1 . ./deploys; set +e; active_providers() { echo vercel; }; is_enabled() { [ "$1" = vercel ]; }; eval "$1"; WRITING="$2"; lookup "${3:-web}" 2>&1; echo "rc=$?"); }
 expect "CLI-053: a read uses the remembered id" "$(l53 'vercel_has() { echo prj_new; }' "")" $'vercel\tprj_old\nrc=0'
 expect "CLI-053: a change checks it and takes the new one" "$(l53 'vercel_has() { echo prj_new; }' 1)" $'vercel\tprj_new\nrc=0'
@@ -1304,6 +1306,7 @@ expect "CLI-027: DEPLOYS_ONLY keeps one row (by name or id)" \
 expect "CLI-027: no match keeps the whole list" "$(DEPLOYS_ONLY=nope with_heads "$l27" | jq length)" "2"
 # CLI-028: a job log past its limit is renamed to .1 (never emptied in place); a small one stays.
 mkdir -p "$tmp/h28/Library/Logs"; head -c 2000 /dev/zero | tr '\0' x > "$tmp/h28/Library/Logs/DeployCenter-guard.log"; echo small > "$tmp/h28/Library/Logs/DeployCenter-autofix.log"
+# shellcheck disable=SC2034  # read by the sourced script
 expect "CLI-028: the big log moves to .1, the small one stays" "$( (HOME="$tmp/h28" DEPLOYS_LOG_MAX_BYTES=1000 DEPLOYS_LOG_ROTATE=1; log_rotate DeployCenter-guard; log_rotate DeployCenter-autofix
   cd "$tmp/h28/Library/Logs" && ls | paste -sd' ' -; wc -c < DeployCenter-guard.log.1 | tr -d ' ') )" $'DeployCenter-autofix.log DeployCenter-guard.log.1\n2000'
 # Doctor: provider objects that share key names are nested, never merged into repeated keys.
@@ -1408,6 +1411,8 @@ expect "FEA-066: rules check says why not, and ignores a rule without a conditio
   $'0\n[["docs ship",false,"the changed files are not known"],["all",false,"a deploy rule without a condition is ignored"]]'
 echo '{"rules":[{"name":"young","when":{"minAgeHours":999999},"then":"deploy"}]}' > "$e2e/config/rules.json"
 expect "FEA-074: minAgeHours: too young does not match" "$(run "$O" "$E" deploy-changed --by-rules --json; jq length "$O")" $'0\n0'
+echo '{"rules":' > "$e2e/config/rules.json"; fresh
+expect "FEA-066: a broken rules.json stops deploys" "$(run "$O" "$E" deploy-changed --yes; started; grep -c 'rules.json could not be read' "$E")" $'1\n0\n1'
 rm -f "$e2e/config/rules.json"
 expect "FEA-066: --by-rules without rules is refused" "$(run "$O" "$E" deploy-changed --by-rules; grep -c 'needs rules.json' "$E")" $'1\n1'
 fresh
@@ -1418,6 +1423,16 @@ expect "FEA-032: a key shape in an added line: file, line and kind, no value" \
   "$(BIG="$sec" run "$O" "$E" details me/app aaaa main; jq -c .secrets "$O"; grep -c AKIAABCD "$O")" $'0\n[{"file":"src/a.js","line":11,"kind":"aws-access-key"}]\n0'
 expect "FEA-029/039: lockfiles with their lines, unsigned commits counted" \
   "$(BIG="$sec" run "$O" "$E" details me/app aaaa main; jq -c '[.lockfiles, .unverified, .commits[0].verified]' "$O")" $'0\n[[{"file":"web/package-lock.json","additions":30,"deletions":4}],1,false]'
+# FEA-041: each journal line carries the SHA-256 of the line before.
+: > "$DEPLOYS_JOURNAL"; fresh
+run "$O" "$E" deploy-changed --yes --force "x" >/dev/null 2>&1
+DEPLOYS_NOW="fri 16:00 2026-11-13" run "$O" "$E" deploy-changed --yes --force "x" >/dev/null 2>&1
+echo '{"deny":[{"days":["fri"],"from":"15:00"}]}' > "$e2e/config/window.json"; : > "$DEPLOYS_JOURNAL"; fresh
+DEPLOYS_NOW="fri 16:00 2026-11-13" run "$O" "$E" deploy-changed --yes --force "two" >/dev/null
+first="$(head -n 1 "$DEPLOYS_JOURNAL" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)"
+expect "FEA-041: prevHash: null first, then the hash of the line before" \
+  "$(jq -sc '[.[0].prevHash, (.[1].prevHash | length)]' "$DEPLOYS_JOURNAL"; sed -n 2p "$DEPLOYS_JOURNAL" | jq -r .prevHash | grep -c "^$first$")" $'[null,64]\n1'
+rm -f "$e2e/config/window.json"; fresh
 # ===== end CLI track =====
 
 echo
