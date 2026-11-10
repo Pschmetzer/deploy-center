@@ -187,9 +187,14 @@ struct DeployWindowConfig: Equatable {
     var deny: [Rule] = []
 
     static var url: URL {
-        let dir = ProcessInfo.processInfo.environment["DEPLOYS_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
+        let dir = ProcessInfo.processInfo.environment["DEPLOYS_CONFIG"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/deploys")
         return dir.appendingPathComponent("window.json")
+    }
+    /// The file exists but is not a JSON object (a typo by hand): the app does not write over it.
+    static func unreadable(_ data: Data?) -> Bool {
+        guard let data, !data.isEmpty else { return false }
+        return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]) == nil
     }
     static let weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
@@ -237,17 +242,20 @@ struct DeployWindowConfig: Equatable {
     }
 
     static func load() -> DeployWindowConfig { parse(try? Data(contentsOf: url)) }
-    /// Writes the rules (no rules: the file goes, so nothing is ever closed). An error text when it failed.
+    /// Writes the rules (none: `"deny": []`, other keys stay). An error text when it failed.
     func save() -> String? {
         if let p = problem { return p }
         let u = Self.url
+        let old = try? Data(contentsOf: u)
+        if Self.unreadable(old) {
+            return L("window.json is not valid JSON; nothing was changed. Fix it by hand first.",
+                     "window.json ist kein gültiges JSON; es wurde nichts geändert. Erst von Hand korrigieren.")
+        }
+        // No file and no rules: nothing to write.
+        if deny.isEmpty && old == nil { return nil }
         do {
-            if deny.isEmpty {
-                if FileManager.default.fileExists(atPath: u.path) { try FileManager.default.removeItem(at: u) }
-                return nil
-            }
             try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try encoded(over: try? Data(contentsOf: u)).write(to: u, options: .atomic)
+            try encoded(over: old).write(to: u, options: .atomic)
             return nil
         } catch { return error.localizedDescription }
     }

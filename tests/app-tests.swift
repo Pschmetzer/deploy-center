@@ -772,5 +772,22 @@ MainActor.assumeIsolated {
     UserDefaults.standard.removeObject(forKey: "followedDeploys")
 }
 
+// Review fixes: one summary line, window.json never overwritten unread, hover hold per toast.
+expect("waiting summary: projects and PRs", waitingSummary(Store.Waiting(projects: 7, commits: 9, prs: 44, openPRs: 0), saved: 41),
+       L("7 projects · 44 PRs waiting · \(usd0(41)) saved", "7 Projekte · 44 PRs warten · \(usd0(41)) gespart"))
+expect("waiting summary: one project, no PRs", waitingSummary(Store.Waiting(projects: 1, commits: 2, prs: 0, openPRs: 0), saved: nil),
+       L("1 project waiting", "1 Projekt wartet"))
+expect("window.json with a typo is not written over", DeployWindowConfig.unreadable(Data("{\"deny\": [".utf8)), true)
+expect("missing window.json may be written", DeployWindowConfig.unreadable(nil), false)
+let emptyWin = (try? DeployWindowConfig().encoded(over: Data(#"{"deny":[{"days":["fri"]}],"note":"x"}"#.utf8)))
+    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+expect("no rules keep the other keys", "\((emptyWin?["deny"] as? [Any])?.count ?? -1) \(emptyWin?["note"] as? String ?? "")", "0 x")
+MainActor.assumeIsolated {
+    let st = Store()
+    st.show(Store.Toast(text: "a", ok: true)); st.holdToast(true)
+    st.show(Store.Toast(text: "b", ok: true))
+    expect("a new toast is not held by the old hover", st.toastHeld, false)
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

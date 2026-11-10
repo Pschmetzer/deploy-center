@@ -448,7 +448,7 @@ final class Store: ObservableObject {
             items[p]![k].startedAt = Date(timeIntervalSince1970: f.startedAt)
             items[p]![k].state = .running(L("followed again after a restart", "nach dem Neustart weiter verfolgt"))
             let item = items[p]![k]
-            Task { try? await follow(item, deployId: f.deployId, url: item.link, preview: f.preview, rolledBack: f.rolledBack, sha: f.sha) }
+            Task { try? await follow(item, deployId: f.deployId, url: item.link, preview: f.preview, rolledBack: f.rolledBack, sha: f.sha, resumed: true) }
         }
         writeFollowed(all)
         holdAwake()
@@ -751,7 +751,11 @@ final class Store: ObservableObject {
     }
     /// One toast at a time. One with "Undo" is not pushed away by the next: those wait until it is gone.
     @Published var toast: Toast? {
-        didSet { if toast == nil, !toastQueue.isEmpty { let next = toastQueue.removeFirst(); DispatchQueue.main.async { self.show(next) } } }
+        didSet {
+            // A hover hold belongs to the toast it was on; SwiftUI may never say the pointer left.
+            if toast != oldValue { toastHeld = false; toastReleasedAt = nil }
+            if toast == nil, !toastQueue.isEmpty { let next = toastQueue.removeFirst(); DispatchQueue.main.async { self.show(next) } }
+        }
     }
     private var toastQueue: [Toast] = []
     func show(_ t: Toast) {
@@ -1180,7 +1184,9 @@ final class Store: ObservableObject {
     nonisolated(unsafe) static var pollNanos: UInt64 = 6_000_000_000
 
     /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
-    private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false, rolledBack: Bool = false, sha: String? = nil) async throws {
+    /// `resumed`: picked up after a restart. It may have gone live long ago and something else may
+    /// be live now, so it never rolls back and its time is not a build time.
+    private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false, rolledBack: Bool = false, sha: String? = nil, resumed: Bool = false) async throws {
         let p = item.platform
         remember(Followed(platform: p.cli, id: item.id, deployId: deployId,
                           startedAt: (itemNow(item)?.startedAt ?? Date()).timeIntervalSince1970, preview: preview, rolledBack: rolledBack, sha: sha))
@@ -1200,10 +1206,10 @@ final class Store: ObservableObject {
                 continue
             }
             misses = 0
-            if ended(item, s, deployId: deployId, url: url, preview: preview, rolledBack: rolledBack, sha: sha) { return }
+            if ended(item, s, deployId: deployId, url: url, preview: preview, rolledBack: rolledBack, sha: sha, resumed: resumed) { return }
         }
         // One last question before giving up: the last round may have been long ago.
-        if let s = await status(item, deployId), ended(item, s, deployId: deployId, url: url, preview: preview, rolledBack: rolledBack, sha: sha) { return }
+        if let s = await status(item, deployId), ended(item, s, deployId: deployId, url: url, preview: preview, rolledBack: rolledBack, sha: sha, resumed: resumed) { return }
         set(p, item.id, .failed(L("No result after 40 minutes – check the dashboard", "Kein Ergebnis nach 40 Minuten – im Dashboard nachsehen")))
     }
 
@@ -1214,7 +1220,7 @@ final class Store: ObservableObject {
     }
 
     /// One status answer applied to the row; true when the deploy ended.
-    private func ended(_ item: Item, _ s: StatusReply, deployId: String, url: String?, preview: Bool, rolledBack: Bool, sha: String?) -> Bool {
+    private func ended(_ item: Item, _ s: StatusReply, deployId: String, url: String?, preview: Bool, rolledBack: Bool, sha: String?, resumed: Bool = false) -> Bool {
         let p = item.platform
         let state = (s.state ?? "").lowercased()
         if state == "canceled", cancelled.remove(item.id) != nil {
@@ -1229,10 +1235,10 @@ final class Store: ObservableObject {
                 if rolledBack {
                     set(p, item.id, .done(item.link), countsAsLive: false); markBehind(p, item.id)
                 } else {
-                    recordDuration(item)
+                    if !resumed { recordDuration(item) }
                     set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link), deployedSha: sha)
                 }
-                if let l = item.link { Task { await checkSite(item, l.hasSuffix("/") ? String(l.dropLast()) + healthPath(item) : l + healthPath(item), mayRollBack: !rolledBack) } }
+                if let l = item.link { Task { await checkSite(item, l.hasSuffix("/") ? String(l.dropLast()) + healthPath(item) : l + healthPath(item), mayRollBack: !rolledBack && !resumed) } }
             }
             return true
         case (.render, "succeeded"):

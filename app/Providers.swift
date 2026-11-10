@@ -240,6 +240,22 @@ func summaryLine(_ w: Store.Waiting, saved: Double?) -> String {
     return waiting + " · " + L("\(usd0(saved)) saved", "\(usd0(saved)) gespart")
 }
 
+/// "7 projects · 44 PRs waiting · $41 saved": projects and PRs in one line, as the menu bar,
+/// the badge and the window now count them (summaryLine stays for its callers).
+func waitingSummary(_ w: Store.Waiting, saved: Double?) -> String {
+    let waiting: String
+    if w.projects == 0 {
+        waiting = L("Everything merged is live", "Alles Gemergte ist live")
+    } else {
+        let p = L("\(w.projects) \(w.projects == 1 ? "project" : "projects")", "\(w.projects) \(w.projects == 1 ? "Projekt" : "Projekte")")
+        waiting = w.prs > 0
+            ? p + " · " + L("\(w.prs) \(w.prs == 1 ? "PR waiting" : "PRs waiting")", "\(w.prs) \(w.prs == 1 ? "PR wartet" : "PRs warten")")
+            : p + " " + L("waiting", w.projects == 1 ? "wartet" : "warten")
+    }
+    guard let saved else { return waiting }
+    return waiting + " · " + L("\(usd0(saved)) saved", "\(usd0(saved)) gespart")
+}
+
 /// Whole dollars, as a person says it: "$41".
 func usd0(_ v: Double) -> String { v.formatted(.currency(code: "USD").precision(.fractionLength(0))) }
 

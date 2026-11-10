@@ -66,8 +66,14 @@ enum ClaudeAI {
         func set(_ k: String, _ a: ClaudeAnswer) { lock.lock(); kept[k] = (Date(), a); lock.unlock() }
     }
 
+    /// Always asks anew: without the build it is about, a kept answer could be about another one.
     static func ask(_ what: Ask, project: String) async throws -> ClaudeAnswer {
-        let key = what.id + "|" + project
+        try await askNow(what, project: project)
+    }
+    /// Kept per question, project and `version` (the commit of the failed build, or the branch
+    /// head for release notes): asking again about the same thing costs no tokens.
+    static func ask(_ what: Ask, project: String, version: String) async throws -> ClaudeAnswer {
+        let key = what.id + "|" + project + "@" + version
         if let a = answers.get(key) { return a }
         let a = try await askNow(what, project: project)
         answers.set(key, a)
