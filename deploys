@@ -187,7 +187,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 if [ "$forced" = 1 ] && { [ -z "${force_reason// /}" ] || [ "${force_reason:0:1}" = - ]; }; then
-  die '--force needs a reason, in quotes: --force "hotfix for the login page"'
+  die '--force needs a reason. Say why with --force: --force "hotfix for the login page"'
 fi
 if [ "$json" = 1 ]; then
   if is_provider "${args[0]:-}"; then
@@ -1358,8 +1358,8 @@ case "${1:-} ${2:-}" in
     # One project on whichever platform it is on, or a group from deploy-center.json in its order:
     # each member waits until the one before it is live, and a failure stops the rest.
     name="$2"; shift 2; pv=""; sha=""; wait_=""; force=""; hasforce=""
-    # --force "reason" was taken out of the arguments above (it also opens a closed deploy window).
-    if [ "$forced" = 1 ]; then hasforce=1; force="$force_reason"; fi
+    # --force "reason" was already taken out of the arguments at the top (it also opens a closed window).
+    [ "$forced" = 1 ] && { hasforce=1; force="$force_reason"; }
     while [ $# -gt 0 ]; do
       case "$1" in
         --preview) pv=1;; --wait) wait_=1;;
