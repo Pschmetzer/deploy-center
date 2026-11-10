@@ -14,6 +14,11 @@ extension Color {
         a.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua]) != nil
             ? .systemOrange : NSColor(red: 0.70, green: 0.33, blue: 0.0, alpha: 1)
     })
+    /// "Live", "merged", a clean deploy: green, or blue in Settings → General → "Colour-blind
+    /// friendly" (FEA-128), so it never hangs on telling red from green. Red stays red; the
+    /// symbols (checkmark, octagon) differ as well.
+    static var good: Color { UserDefaults.standard.bool(forKey: colorBlindKey) ? Color(red: 0.0, green: 0.45, blue: 0.70) : .green }
+    static let colorBlindKey = "colorBlind"
 }
 
 /// Commands of the main window, in the View menu: they show ⌘1, ⌘2 … and ⌘F where people look for them.
@@ -72,6 +77,8 @@ struct ContentView: View {
     // The tab and the filter are remembered between launches. The tab is a provider id ("vercel");
     // older versions kept "Vercel", which reads the same lowercased.
     @AppStorage("lastPlatform") private var platformRaw = "vercel"
+    // Read by Color.good; here so the list draws again when it is switched.
+    @AppStorage(Color.colorBlindKey) private var colorBlind = false
     @State private var search = ""
     @State private var confirming = false
     @State private var confirmingOff = false
@@ -331,7 +338,7 @@ struct ContentView: View {
                     .font(.callout.weight(.medium))
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(Capsule().fill(.regularMaterial))
-                    .overlay(Capsule().stroke(t.ok ? Color.green.opacity(0.5) : Color.red.opacity(0.5)))
+                    .overlay(Capsule().stroke(t.ok ? Color.good.opacity(0.5) : Color.red.opacity(0.5)))
                     // The pointer on it holds it, so a long message can be read to the end.
                     .onHover { store.holdToast($0) }
                     .padding(.bottom, 72)
@@ -1208,7 +1215,7 @@ struct ContentView: View {
             } : nil,
             onDismissAutofix: AgentChips.dismissable(fix) ? { store.dismissAutofix(item) } : nil) { tick(item) }
             // A merged fix waits for a click: the row stands out until it is live.
-            .listRowBackground(isMerged(fix) ? ground(.green, 0.12) : nil)
+            .listRowBackground(isMerged(fix) ? ground(Color.good, 0.12) : nil)
             .contextMenu { rowMenu(item) }
     }
 
@@ -1381,7 +1388,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(store.messages.prefix(15)) { m in
                     HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: m.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(m.ok ? .green : .red)
+                        Image(systemName: m.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(m.ok ? Color.good : .red)
                         Text(m.date.formatted(date: .omitted, time: .shortened)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         Text(Demo.scrub(m.text, items: allItems)).font(.caption).textSelection(.enabled)
                     }
@@ -2022,7 +2029,7 @@ struct Row: View {
                 if noColour {
                     Image(systemName: ok ? "checkmark.circle" : failed ? "xmark.circle" : phase == .cancelled ? "slash.circle" : "clock").font(.caption2)
                 } else {
-                    Circle().fill(ok ? Color.green : failed ? Color.red : phase == .cancelled ? Color.secondary : Color.orange).frame(width: 7, height: 7)
+                    Circle().fill(ok ? Color.good : failed ? Color.red : phase == .cancelled ? Color.secondary : Color.orange).frame(width: 7, height: 7)
                 }
                 Text(L("Last deploy ", "Zuletzt deployt ") + Self.ago(at) + (ok ? "" : " · " + Self.stateText(s)))
                     .font(.caption).foregroundStyle(.secondary)
@@ -2080,7 +2087,7 @@ struct Row: View {
                 if item.previewId != nil {
                     Label(L("Preview ready", "Vorschau fertig"), systemImage: "eye.circle.fill").foregroundStyle(.blue).font(.caption.weight(.semibold))
                 } else {
-                    Label("Live", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.caption.weight(.semibold))
+                    Label("Live", systemImage: "checkmark.circle.fill").foregroundStyle(Color.good).font(.caption.weight(.semibold))
                 }
                 if let url, let u = URL(string: url) {
                     Button { NSWorkspace.shared.open(u) } label: { Image(systemName: "arrow.up.right.square") }
@@ -2202,7 +2209,7 @@ struct AgentChips: View {
             case .waiting: return ("hourglass", .secondary)
             case .unsupported: return ("nosign", .secondary)
             case .prOpen: return ("arrow.triangle.pull", .blue)
-            case .merged: return ("checkmark.seal.fill", .green)
+            case .merged: return ("checkmark.seal.fill", Color.good)
             case .handedBack: return ("person.fill.questionmark", Color.warningText)
             case .noPR: return ("exclamationmark.bubble", Color.warningText)
             }

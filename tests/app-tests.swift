@@ -511,6 +511,7 @@ if let led = try? JSONDecoder().decode(LedgerReport.self, from: oddLedger) {
     expect("lenient: unreadable dollars are unknown", led.projects[0].savedUsd == nil, true)
     expect("lenient: no start, no ledger", led.hasStarted, false)
 } else { expect("lenient ledger decodes", false, true) }
+expect("milestones", [5, 10, 99, 100, 1999, 2500].map { SavingsModel.milestone(saved: $0).map { Int($0) } ?? 0 }, [0, 10, 50, 100, 1000, 2000])
 expect("lenient: an empty object is an empty simulation",
        (try? JSONDecoder().decode(SimulateReport.self, from: Data("{}".utf8)))?.projects.count ?? -1, 0)
 UserDefaults.standard.set(true, forKey: "demoMode")

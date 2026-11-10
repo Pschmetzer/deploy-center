@@ -295,10 +295,33 @@ final class SavingsModel: ObservableObject {
             let data = try await Tool.run(["ledger", "--json"], timeout: 300)
             ledger = try Self.decode(LedgerReport.self, data, what: "ledger")
             ledgerError = nil; ledgerAt = Date()
+            if let l = ledger { noteMilestone(l) }
             saveReport(data, "ledger"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsLedgerAt")
         } catch is CancellationError {
         } catch { ledgerError = error.localizedDescription }
     }
+
+    /// Dollar marks worth a word (FEA-099): $10, 25, 50, 100, 250, 500, 1000, then every 1000.
+    nonisolated static func milestone(saved: Double) -> Double? {
+        let marks: [Double] = [10, 25, 50, 100, 250, 500, 1000]
+        if saved >= 2000 { return (saved / 1000).rounded(.down) * 1000 }
+        return marks.last { saved >= $0 }
+    }
+    /// The highest mark said so far is kept; the first read only notes where it stands, so an
+    /// old ledger does not announce itself.
+    private func noteMilestone(_ l: LedgerReport) {
+        let key = "savingsMilestone"
+        guard !demoMode, let usd = l.usd, usd > 0, let m = Self.milestone(saved: usd) else { return }
+        let first = defaults.object(forKey: key) == nil
+        guard first || m > defaults.double(forKey: key) else { return }
+        defaults.set(m, forKey: key)
+        guard !first else { return }
+        let since = SavingsFormat.day(l.since)
+        Notify.post(L("\(SavingsFormat.usdShort(m)) saved", "\(SavingsFormat.usdShort(m)) gespart"),
+                    L("Since auto-deploy went off on \(since): \(SavingsFormat.usdShort(usd)) in builds that did not run.",
+                      "Seit Auto-Deploy am \(since) aus ist: \(SavingsFormat.usdShort(usd)) an Builds, die nicht liefen."))
+    }
+    private var demoMode: Bool { defaults.bool(forKey: "demoMode") }
 
     /// The ledger by itself once a week (it pages through GitHub and asks each platform per
     /// project); opening the ledger or "Estimate again" reads it any time. Not with less than a

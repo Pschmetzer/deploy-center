@@ -30,6 +30,7 @@ struct SettingsView: View {
     @AppStorage("checkUpdates") private var checkUpdates = true
     @ObservedObject private var updates = SoftwareUpdate.shared
     @AppStorage("demoMode") private var demoMode = false
+    @AppStorage(Color.colorBlindKey) private var colorBlind = false
     @AppStorage("loadLogos") private var loadLogos = true
     @AppStorage("undoSeconds") private var undoSeconds = 8
     @AppStorage("staleDays") private var staleDays = 0
@@ -152,6 +153,9 @@ struct SettingsView: View {
             }
             if let loginError { ErrorText(loginError) }
             Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
+            Toggle(L("Colour-blind friendly (blue instead of green)", "Farbenblind-freundlich (Blau statt Grün)"), isOn: $colorBlind)
+                .help(L("Live and merged show in blue, failures stay red; the symbols differ as well.",
+                        "Live und Gemergt erscheinen blau, Fehler bleiben rot; die Symbole unterscheiden sich ebenfalls."))
             Toggle(L("Load logos from the project sites", "Logos von den Projektseiten laden"), isOn: $loadLogos)
                 .help(L("Off: no request goes to your sites; a letter stands in for the logo.",
                         "Aus: keine Anfrage geht an deine Seiten; ein Buchstabe ersetzt das Logo."))
