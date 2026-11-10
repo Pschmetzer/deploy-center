@@ -7,7 +7,7 @@ import { delimiter, join } from "node:path";
 // What `deploys changed --json` returns per project (only the fields used here).
 export interface ChangedProject {
   name: string;
-  platform: "vercel" | "render";
+  platform: string; // vercel, render, netlify, cloudflare, amplify, digitalocean, coolify, hook, …
   repo?: string | null;
   ref?: string | null;
   pendingCommits?: number | null;
@@ -24,7 +24,7 @@ export interface ChangedProject {
 // What `deploys status --json` returns per project.
 export interface StatusProject {
   name: string;
-  platform: "vercel" | "render";
+  platform: string; // vercel, render, netlify, cloudflare, amplify, digitalocean, coolify, hook, …
   building: boolean;
   state: string | null;
   changed: boolean;
@@ -279,8 +279,13 @@ export function isFailedState(state: string | null | undefined): boolean {
   return /error|fail/i.test(state ?? "");
 }
 
+// The same labels as the VS Code extension (integrations/vscode/src/model.ts).
+const LABELS: Record<string, string> = {
+  vercel: "Vercel", render: "Render", netlify: "Netlify", cloudflare: "Cloudflare", amplify: "AWS Amplify",
+  digitalocean: "DigitalOcean", coolify: "Coolify", hook: "Deploy hook",
+};
 export function platformLabel(p: string): string {
-  return p === "vercel" ? "Vercel" : p === "render" ? "Render" : p;
+  return LABELS[p] ?? p.charAt(0).toUpperCase() + p.slice(1);
 }
 
 export function plural(n: number, word: string): string {

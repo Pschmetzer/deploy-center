@@ -1,11 +1,11 @@
 import { Action, ActionPanel, Icon, List } from "@raycast/api";
-import { usePromise } from "@raycast/utils";
+import { useCachedPromise } from "@raycast/utils";
 import { changed, plural } from "./lib/deploys";
 import { changedItemProps, sortByAge, waitingSentence } from "./lib/changed";
 import { ErrorView, ProjectActions, WarningItem, confirmAndDeploy } from "./lib/ui";
 
 export default function WaitingDeploys() {
-  const { data, error, isLoading, revalidate } = usePromise(changed, [], {
+  const { data, error, isLoading, revalidate } = useCachedPromise(changed, [], {
     // Errors are shown in the list itself, not as an extra toast.
     onError: () => undefined,
   });

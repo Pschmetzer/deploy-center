@@ -1,6 +1,6 @@
 # Deploy Center for Raycast
 
-See which Vercel and Render projects have commits waiting, and deploy them by hand, from Raycast.
+See which projects have commits waiting (Vercel, Render, Netlify, Cloudflare, AWS Amplify, DigitalOcean, Coolify and deploy hooks), and deploy them by hand, from Raycast.
 
 [Deploy Center](https://github.com/Pschmetzer/deploy-center) turns off Git auto-deploy on Vercel and
 Render, so a push no longer starts a build. This extension is a front end for its `deploys` CLI:

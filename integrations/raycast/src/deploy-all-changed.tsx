@@ -1,5 +1,5 @@
 import { Action, ActionPanel, Alert, Color, Icon, List, Toast, confirmAlert, showToast } from "@raycast/api";
-import { usePromise } from "@raycast/utils";
+import { useCachedPromise } from "@raycast/utils";
 import { useState } from "react";
 import { ChangedProject, changed, deploy, platformLabel, plural } from "./lib/deploys";
 import { changedItemProps, commitsText, sortByAge } from "./lib/changed";
@@ -30,7 +30,7 @@ async function deployAll(list: ChangedProject[], onEach: (key: string, o: Outcom
 }
 
 export default function DeployAllChanged() {
-  const { data, error, isLoading, revalidate } = usePromise(changed, [], { onError: () => undefined });
+  const { data, error, isLoading, revalidate } = useCachedPromise(changed, [], { onError: () => undefined });
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
   const [running, setRunning] = useState(false);
   const list = sortByAge(data?.data ?? []);

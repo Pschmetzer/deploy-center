@@ -85,13 +85,18 @@ export function WarningItem(props: { warning?: string; onRetry: () => void }) {
 }
 
 export function platformIcon(platform: string): Image.ImageLike {
-  return platform === "vercel" ? { source: Icon.Globe } : { source: Icon.Cloud };
+  if (platform === "vercel") return { source: Icon.Globe };
+  if (platform === "hook") return { source: Icon.Link };
+  return { source: Icon.Cloud };
 }
 
+const TAG_COLORS: Record<string, Color> = {
+  vercel: Color.PrimaryText, render: Color.Purple, netlify: Color.Green, cloudflare: Color.Orange,
+  amplify: Color.Yellow, digitalocean: Color.Blue, coolify: Color.Magenta, hook: Color.SecondaryText,
+};
+
 export function platformTag(platform: string): List.Item.Accessory {
-  return {
-    tag: { value: platformLabel(platform), color: platform === "vercel" ? Color.PrimaryText : Color.Purple },
-  };
+  return { tag: { value: platformLabel(platform), color: TAG_COLORS[platform] ?? Color.SecondaryText } };
 }
 
 async function openWithToast(name: string, dashboard: boolean) {

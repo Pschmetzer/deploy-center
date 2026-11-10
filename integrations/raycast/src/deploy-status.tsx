@@ -1,5 +1,5 @@
 import { Action, ActionPanel, Color, Icon, List } from "@raycast/api";
-import { usePromise } from "@raycast/utils";
+import { useCachedPromise } from "@raycast/utils";
 import { StatusProject, isFailedState, platformLabel, status } from "./lib/deploys";
 import { ErrorView, ProjectActions, WarningItem, platformTag } from "./lib/ui";
 
@@ -31,7 +31,7 @@ function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
 }
 
 export default function DeployStatus() {
-  const { data, error, isLoading, revalidate } = usePromise(status, [], { onError: () => undefined });
+  const { data, error, isLoading, revalidate } = useCachedPromise(status, [], { onError: () => undefined });
   const all = data?.data ?? [];
   const building = all.filter((p) => p.building);
   const failed = all.filter((p) => !p.building && isFailedState(p.state));
