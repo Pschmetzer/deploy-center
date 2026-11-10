@@ -1,38 +1,49 @@
 #!/bin/bash
-# Builds the iOS companion for the simulator with swiftc, without an Xcode project.
-#   ios/build.sh           build build/ios/DeployCenter.app (simulator, this Mac's architecture)
-#   ios/build.sh --run     also install and start it in the booted simulator (with sample data)
-# A device or TestFlight build needs signing and provisioning: see docs/WIDGETS-IOS.md.
+# Builds the iOS app (ios/DeployCenter.xcodeproj). Needs Xcode.
+#   ios/build.sh               build for the simulator into build/ios-dd
+#   ios/build.sh --run         also install and start it in the booted simulator, in demo mode
+#   ios/build.sh --archive     archive for the App Store and export an .ipa into build/ios-export (no upload)
+# The team id comes from the signing identity (~/.config/deploys/signing-identity or DEVELOPER_ID),
+# never from the repo. Uploading is a separate, manual step: see docs/APP-STORE.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-run=0; [ "${1:-}" = "--run" ] && run=1
-VERSION="$(cat VERSION)"
-APP="build/ios/DeployCenter.app"
-rm -rf "$APP"; mkdir -p "$APP"
-arch="$(uname -m)"
-xcrun --sdk iphonesimulator swiftc -O -parse-as-library -swift-version 5 \
-  -target "$arch-apple-ios18.0-simulator" -o "$APP/DeployCenter" ios/*.swift shared/*.swift
-cat > "$APP/Info.plist" <<PLIST
+mode="${1:-build}"
+DD=build/ios-dd
+die() { echo "ios/build.sh: $*" >&2; exit 1; }
+
+case "$mode" in
+  build|--run)
+    xcodebuild -project ios/DeployCenter.xcodeproj -scheme DeployCenter -sdk iphonesimulator \
+      -configuration Debug -derivedDataPath "$DD" CODE_SIGN_IDENTITY=- build -quiet
+    APP="$DD/Build/Products/Debug-iphonesimulator/DeployCenter.app"
+    echo "Built: $APP"
+    if [ "$mode" = --run ]; then
+      xcrun simctl install booted "$APP"
+      xcrun simctl launch booted app.deploycenter.ios -demo
+    fi ;;
+  --archive)
+    id="${DEVELOPER_ID:-}"
+    if [ -z "$id" ] && [ -s "$HOME/.config/deploys/signing-identity" ]; then id="$(head -n1 "$HOME/.config/deploys/signing-identity")"; fi
+    team="$(sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p' <<<"$id")"
+    [ -n "$team" ] || die "no team id: set DEVELOPER_ID or ~/.config/deploys/signing-identity"
+    mkdir -p build
+    cat > build/ExportOptions.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>Deploy Center</string>
-  <key>CFBundleDisplayName</key><string>Deploy Center</string>
-  <key>CFBundleIdentifier</key><string>app.deploycenter.ios</string>
-  <key>CFBundleExecutable</key><string>DeployCenter</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>${VERSION}</string>
-  <key>MinimumOSVersion</key><string>18.0</string>
-  <key>UIDeviceFamily</key><array><integer>1</integer></array>
-  <key>UILaunchScreen</key><dict/>
-  <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
-  <key>CFBundleSupportedPlatforms</key><array><string>iPhoneSimulator</string></array>
+  <key>method</key><string>app-store-connect</string>
+  <key>destination</key><string>export</string>
+  <key>teamID</key><string>${team}</string>
+  <key>signingStyle</key><string>automatic</string>
+  <key>uploadSymbols</key><true/>
 </dict></plist>
 PLIST
-codesign --force -s - "$APP"
-echo "Built: $APP"
-if [ "$run" = 1 ]; then
-  xcrun simctl install booted "$APP"
-  xcrun simctl launch booted app.deploycenter.ios -sample
-fi
+    xcodebuild -project ios/DeployCenter.xcodeproj -scheme DeployCenter -configuration Release \
+      -destination 'generic/platform=iOS' -archivePath build/DeployCenter-iOS.xcarchive \
+      DEVELOPMENT_TEAM="$team" -allowProvisioningUpdates archive
+    xcodebuild -exportArchive -archivePath build/DeployCenter-iOS.xcarchive \
+      -exportOptionsPlist build/ExportOptions.plist -exportPath build/ios-export -allowProvisioningUpdates
+    echo "Exported: build/ios-export (upload it with Transporter or xcrun altool, see docs/APP-STORE.md)" ;;
+  -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown argument: $mode" ;;
+esac
