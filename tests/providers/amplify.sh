@@ -311,6 +311,12 @@ out="$(mkdir -p "$tmp/rb"; cp "$tmp/bin/curl-range" "$tmp/rb/curl"; PATH="$tmp/r
 has "logs: only the end is asked for" "$(grep -m 1 '^curl ' "$CALLS")" "Range: bytes=-100"
 expect "logs: the cut-off first line is left out" "$(echo "$out" | grep -c 'tial line'):$(echo "$out" | grep -c 'whole line')" "0:2"
 
+# An empty log answers the range with 416: asked again without one, not "expired".
+printf '#!/bin/bash\necho "curl $*" >> "$CALLS"\ncase "$*" in *Range*) exit 22;; esac\nexit 0\n' > "$tmp/rb/curl"
+routes "${STD[@]}" "amplify get-job --job-id.12 get-job.json"
+out="$(PATH="$tmp/rb:$PATH" amp logs Shop)"
+expect "logs: an empty step log is not an expired link" "$(echo "$out" | grep -c 'could not be read'):$(grep -c '^curl ' "$CALLS")" "0:4"
+
 # PRV-106: twenty jobs without a success: a hundred are asked for, the live commit is found.
 mkdir -p "$tmp/fx106"; cp "$FIX"/* "$tmp/fx106/"
 jq -n '{jobSummaries: [range(20) | {jobId: "\(100 - .)", status: "FAILED", commitId: "ffff\(.)", startTime: "2026-01-02T03:04:05Z"}]}' > "$tmp/fx106/jobs-20.json"

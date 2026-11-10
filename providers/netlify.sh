@@ -244,7 +244,7 @@ netlify_site_deploys() {
 }
 
 netlify_json() {
-  local sites hooks out s id repo ref base rule tmpd n=0 ttl _NETLIFY_KEY
+  local sites hooks out s id repo ref base rule tmpd n=0 ttl _NETLIFY_KEY pids=()
   sites="$(netlify_sites)" || netlify_die "Could not list Netlify sites"
   # The token once, for the reads below (they run eight at a time).
   _NETLIFY_KEY="$(netlify_key)" || netlify_die "Could not list Netlify sites"
@@ -271,9 +271,12 @@ netlify_json() {
     [ -n "$s" ] || continue
     n=$((n + 1))
     ( netlify_site_deploys "$s" > "$tmpd/$n.json" ) &
-    [ $((n % 8)) -ne 0 ] || wait
+    pids+=("$!")
+    # Only these jobs are waited for (not others of the calling shell).
+    [ $((n % 8)) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
   done < <(echo "$sites" | jq -c '.[]')
-  wait
+  # ${pids[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
+  wait ${pids[@]+"${pids[@]}"}
   out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s '.')" || out="[]"
   rm -rf "$tmpd"
   echo "$out" | jq --argjson h "$hooks" "$NETLIFY_JQ"'

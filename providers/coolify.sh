@@ -192,7 +192,7 @@ coolify_app_full() {
 }
 
 coolify_json() {
-  local apps base out uuid tmpd n=0 _COOLIFY_KEY
+  local apps base out uuid tmpd n=0 _COOLIFY_KEY pids=()
   base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
   apps="$(coolify_apps)" || coolify_die "Could not list Coolify applications"
   # Checked here: a jq error inside the < <(...) below is swallowed and would read as "no apps".
@@ -206,9 +206,12 @@ coolify_json() {
     [ -n "$uuid" ] || continue
     n=$((n + 1))
     ( coolify_app_full "$uuid" "$apps" > "$tmpd/$n.json" ) &
-    [ $((n % 8)) -ne 0 ] || wait
+    pids+=("$!")
+    # Only these jobs are waited for (not others of the calling shell).
+    [ $((n % 8)) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
   done < <(echo "$apps" | jq -r '.[].uuid')
-  wait
+  # ${pids[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
+  wait ${pids[@]+"${pids[@]}"}
   out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s '.')" || out="[]"
   rm -rf "$tmpd"
   echo "$out" | jq --arg base "$base" "$COOLIFY_JQ"'

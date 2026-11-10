@@ -209,7 +209,7 @@ digitalocean_app_last() {
 }
 
 digitalocean_json() {
-  local apps out a tmpd n=0 _DIGITALOCEAN_KEY
+  local apps out a tmpd n=0 _DIGITALOCEAN_KEY pids=()
   apps="$(digitalocean_apps)" || digitalocean_die "Could not list DigitalOcean apps"
   # The token once, for the reads below (they run eight at a time).
   _DIGITALOCEAN_KEY="$(digitalocean_key)" || digitalocean_die "Could not list DigitalOcean apps"
@@ -220,9 +220,12 @@ digitalocean_json() {
     [ -n "$a" ] || continue
     n=$((n + 1))
     ( digitalocean_app_last "$a" > "$tmpd/$n.json" ) &
-    [ $((n % 8)) -ne 0 ] || wait
+    pids+=("$!")
+    # Only these jobs are waited for (not others of the calling shell).
+    [ $((n % 8)) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
   done < <(echo "$apps" | jq -c '.[]')
-  wait
+  # ${pids[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
+  wait ${pids[@]+"${pids[@]}"}
   out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s '.')" || out="[]"
   rm -rf "$tmpd"
   echo "$out" | jq "$DIGITALOCEAN_JQ"'

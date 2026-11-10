@@ -282,10 +282,14 @@ vercel_json() {
       [ -n "$next" ] && [ "$(printf '%s' "$all" | jq 'length')" -ge $((page * 100)) ] || break
       missing="$(jq -n --argjson p "$projects" --argjson d "$all" '[$p[] | select(.targets.production) | .name] - [$d[].name] | length')"
       [ "$missing" -gt 0 ] || break
+      # Into a variable of its own: a page that is not a list must not wipe the pages before it.
+      local more
       if ! raw="$(vercel_call "/v6/deployments?limit=100&target=production&until=$next")" \
-        || ! all="$(jq -c -s '.[0] + (.[1].deployments | if type == "array" then . else error("no list") end)' <(printf '%s' "$all") <(printf '%s' "$raw") 2>/dev/null)"; then
-        partial=true; all="${all:-[]}"; break
+        || ! more="$(jq -c -s '.[0] + (.[1].deployments | if type == "array" then . else error("no list") end)' <(printf '%s' "$all") <(printf '%s' "$raw") 2>/dev/null)" \
+        || [ -z "$more" ]; then
+        partial=true; break
       fi
+      all="$more"
       page=$((page + 1))
     done
     recent="$(printf '%s' "$all" | jq "$VERCEL_META"'group_by(.name)

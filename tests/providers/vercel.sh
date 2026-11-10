@@ -139,6 +139,9 @@ printf '%s\n200\n' '{"deployments":[{"uid":"dpl_alpha9","name":"alpha","state":"
 out="$(lib 'vercel_json')"
 expect "a second page is read while a deployed project is missing" \
   "$(echo "$out" | jq -c '[.[] | select(.name == "alpha" or .name == "gamma") | [.name, .phase]]'):$(calls 'until=1767000000000')" '[["alpha","building"],["gamma","ready"]]:1'
+printf '<html>sign in</html>\n200\n' > "$fx/GET_v6_deployments_limit_100_target_production_until_1767000000000.json"
+fresh; out="$(lib 'vercel_json')"
+expect "a follow page that is not a list: page one stays, partial" "$(echo "$out" | jq -c '[(.[] | select(.name == "beta") | .latestId), ([.[].partial] | unique)]')" '["dpl_b0",[true]]'
 rm -f "$fx/GET_v6_deployments_limit_100_target_production_until_1767000000000.json"
 fresh; out="$(lib 'vercel_json')"
 expect "a follow page that fails: the list still comes, partial" "$(echo "$out" | jq -c '[length, ([.[].partial] | unique)]')" '[4,[true]]'

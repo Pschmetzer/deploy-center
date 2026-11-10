@@ -225,7 +225,11 @@ routes "GET /accounts/accOLD/pages/projects unauthorized.json:403" "GET /account
 echo '{"accountId":"accOLD"}' > "$DEPLOYS_CONFIG/cloudflare.json"
 out="$(CLOUDFLARE_ACCOUNT_ID='' cf list 2>"$tmp/err")"; rc=$?
 expect "account: a stale one is found again" "$rc:$(echo "$out" | jq length):$(jq -r .accountId "$DEPLOYS_CONFIG/cloudflare.json")" "0:3:$A"
-grep -q "looking for it again" "$tmp/err" && ok "account: and says so" || fail "account: and says so" "$(cat "$tmp/err")"
+grep -q "using the token's account" "$tmp/err" && ok "account: and says so" || fail "account: and says so" "$(cat "$tmp/err")"
+routes "GET /accounts/accOLD/pages/projects unauthorized.json:403" "GET /accounts\\? accounts-two.json"
+echo '{"accountId":"accOLD"}' > "$DEPLOYS_CONFIG/cloudflare.json"
+out="$(CLOUDFLARE_ACCOUNT_ID='' cf list 2>&1)"; rc=$?
+expect "account: several accounts: the choice stays, the error shows" "$rc:$(jq -r .accountId "$DEPLOYS_CONFIG/cloudflare.json")" "1:accOLD"
 routes "GET /pages/projects\\? unauthorized.json:403"
 out="$(cf list 2>&1)"; rc=$?
 expect "account: from the environment it is never forgotten" "$rc:$(calls '^GET /accounts?')" "1:0"

@@ -183,11 +183,18 @@ cf_projects() {
   while :; do
     if ! out="$( (cf_call GET "$(cf_proj)?page=$page&per_page=10") 2>"$err")"; then
       # A remembered account the token no longer reaches (a token for another account) answers
-      # 404 or 403 on the list: forgotten and looked for again, once, instead of failing for ever.
-      if [ "$page" = 1 ] && [ -z "$again" ] && [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ] \
-        && [ -n "$(cf_state | jq -r '.accountId // empty')" ] && grep -qE 'HTTP (404|403)' "$err"; then
-        echo "Cloudflare: the remembered account does not answer with this token; looking for it again." >&2
-        cf_state_set 'del(.accountId)'; again=1; continue
+      # 404 or 403 on the list. When the token sees exactly one other account, that one is taken,
+      # once, instead of failing for ever. Otherwise (several accounts, or a token without Pages
+      # rights) the choice stays and the error shows.
+      if [ "$page" = 1 ] && [ -z "$again" ] && [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ] && grep -qE 'HTTP (404|403)' "$err"; then
+        local old new accts; again=1
+        old="$(cf_state | jq -r '.accountId // empty')"
+        accts="$( (cf_call GET "/accounts?per_page=50") 2>/dev/null)" || accts="[]"
+        new="$(printf '%s' "$accts" | jq -r 'if type == "array" and length == 1 then .[0].id else empty end' 2>/dev/null)"
+        if [ -n "$old" ] && [ -n "$new" ] && [ "$new" != "$old" ]; then
+          echo "Cloudflare: the remembered account does not answer with this token; using the token's account $new." >&2
+          cf_state_set '.accountId = $a' --arg a "$new"; continue
+        fi
       fi
       cat "$err" >&2; rm -f "$err"; return 1
     fi

@@ -213,7 +213,7 @@ amp_project() {
 }
 
 amplify_json() {
-  local apps app tmpd n=0 out
+  local apps app tmpd n=0 out pids=()
   apps="$(amp_apps)" || exit 1
   # Three aws calls per app, each starting Python (about a second): four apps at a time, a file
   # each, read once at the end (one after another, ten apps took half a minute).
@@ -222,9 +222,12 @@ amplify_json() {
     [ -n "$app" ] || continue
     n=$((n + 1))
     ( amp_project "$app" > "$tmpd/$n.json" ) &
-    [ $((n % ${DEPLOYS_AMPLIFY_PARALLEL:-4})) -ne 0 ] || wait
+    pids+=("$!")
+    # Only these jobs are waited for (not others of the calling shell).
+    [ $((n % ${DEPLOYS_AMPLIFY_PARALLEL:-4})) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
   done < <(echo "$apps" | jq -c '.[]')
-  wait
+  # ${pids[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
+  wait ${pids[@]+"${pids[@]}"}
   out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s 'sort_by(.name | ascii_downcase)')" || out=""
   rm -rf "$tmpd"
   [ -n "$out" ] || die "Amplify: the apps could not be read"
@@ -412,7 +415,9 @@ amplify_logs() {
     while IFS=$'\t' read -r step url; do
       [ -n "$url" ] || continue
       : > "$hdr"
-      if out="$(curl -sSf --connect-timeout 10 --max-time 60 -H "Range: bytes=-$cap" -D "$hdr" "$url" 2>/dev/null)"; then
+      # An empty log answers a range with 416: asked once more without one.
+      if out="$(curl -sSf --connect-timeout 10 --max-time 60 -H "Range: bytes=-$cap" -D "$hdr" "$url" 2>/dev/null)" \
+        || { : > "$hdr"; out="$(curl -sSf --connect-timeout 10 --max-time 60 "$url" 2>/dev/null)"; }; then
         if tr -d '\r' < "$hdr" | grep -qiE '^content-range: bytes [1-9][0-9]*-'; then out="$(printf '%s\n' "$out" | sed '1d')"; fi
         printf '%s\n' "$out" | awk -v s="$step" '{print s "  " $0}'
       else
