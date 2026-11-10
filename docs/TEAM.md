@@ -109,9 +109,10 @@ Any one of these makes a Mac (or a CI job) an observer:
 An observer can use every command that only reads. Commands that change something on Vercel,
 Render or GitHub stop before they call anything:
 
-`deploy`, `deploy-changed --yes`, `vercel deploy|deploy-json|rollback|cancel|map|autodeploy-off`,
-`render deploy|deploy-json|rollback|cancel|autodeploy-off`, `hook deploy`, and `autofix` (except
-`--dry-run`).
+`deploy`, `deploy-changed --yes`, the verbs of every provider that start, stop or switch something
+(`deploy`, `deploy-json`, `rollback`, `cancel`, `map`, `autodeploy-off`, `autodeploy-on`, e.g.
+`vercel deploy` or `netlify rollback`), `hook deploy`, and `autofix` and `guard` (both also with
+`--only`; each is allowed with `--dry-run`).
 
 ```
 Error: Observer mode (DEPLOYS_READONLY is set): "deploys vercel deploy" changes something and is refused. Observers can look, not deploy. To deploy from here: unset DEPLOYS_READONLY.

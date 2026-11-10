@@ -239,7 +239,7 @@ team_gate() {
   [ "$need" -ge 1 ] 2>/dev/null || { [ -z "$sha" ] || echo "$sha"; return 0; }
   local from; from="$(jq -r --arg p "$p" '.projects[$p].approvals.from' <<< "$eff")"
   command -v gh >/dev/null 2>&1 || die "$p needs $need approval(s) ($from), and checking them needs the gh CLI. Install it, or: --force \"reason\""
-  [ -n "$repo" ] || die "$p needs $need approval(s) ($from), but its repo is not known here"
+  [ -n "$repo" ] || die "$p needs $need approval(s) ($from), but no GitHub repo is known for it (approvals are read from GitHub; a GitLab repo cannot have them yet)"
   [ -n "$me" ] || die "$p needs $need approval(s) ($from), but gh cannot tell who you are. Run: gh auth login"
   if [ -z "$sha" ]; then
     sha="$(gh api "repos/$repo/commits/${ref:-main}" --jq .sha 2>/dev/null | head -n 1)"

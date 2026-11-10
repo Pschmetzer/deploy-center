@@ -123,12 +123,18 @@ echo '{"projects":{"web":{"health":"/up"}}}' > "$DEPLOYS_CONFIG/overrides.json"
 # --- observer mode ---
 fresh; : > "$CALLS"
 for cmd in "deploy web" "vercel deploy web" "vercel rollback web" "vercel autodeploy-off --all" "vercel map web acme/shop" \
-           "render deploy api" "render rollback api" "render cancel s1 d1" "hook deploy site" "deploy-changed --yes" "autofix"; do
+           "render deploy api" "render rollback api" "render cancel s1 d1" "hook deploy site" "deploy-changed --yes" "autofix" \
+           "autofix --only vercel web" "guard" "vercel autodeploy-on web" "render autodeploy-on api" "netlify deploy site"; do
   # shellcheck disable=SC2086  # the words of the command
   out="$(DEPLOYS_READONLY=1 "${D[@]}" $cmd 2>&1)"; rc=$?
   expect "DEPLOYS_READONLY=1 refuses: $cmd" "$rc:$(echo "$out" | grep -c 'Observer mode (DEPLOYS_READONLY is set)')" "1:1"
 done
 expect "observer mode made no call to Vercel, Render or GitHub" "$(grep -c . "$CALLS")" "0"
+for cmd in "guard --dry-run" "autofix --dry-run" "autofix --only vercel web --dry-run" "guard status"; do
+  # shellcheck disable=SC2086  # the words of the command
+  out="$(DEPLOYS_READONLY=1 "${D[@]}" $cmd 2>&1)"
+  hasnt "DEPLOYS_READONLY=1 lets a read through: $cmd" "$out" "Observer mode"
+done
 out="$(DEPLOYS_READONLY=1 "${D[@]}" deploy-changed 2>&1)"
 hasnt "deploy-changed without --yes only shows, and is not refused" "$out" "Observer mode"
 out="$(DEPLOYS_READONLY=0 "${D[@]}" readonly 2>&1)"

@@ -147,7 +147,7 @@ vercel_start() {
   jq -e --arg p "$target" 'has($p)' <<< "$repos" >/dev/null || die "$target has no remembered repo. Turn its auto-deploy off with this tool, add it to $REPOS, or map it in the repo's deploy-center.json"
   # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
   if [ -z "$preview" ] && team_on; then
-    sha="$(team_gate vercel "$target" "$(jq -r --arg p "$target" '.[$p] | "\(.org)/\(.repo)"' <<< "$repos")" \
+    sha="$(team_gate vercel "$target" "$(jq -r --arg p "$target" '.[$p] | if .type == "gitlab" or (.org | not) then "" else "\(.org)/\(.repo)" end' <<< "$repos")" \
       "$(jq -r --arg p "$target" '.[$p].ref // "main"' <<< "$repos")" "$sha")" || exit 1
   fi
   lock="$(start_lock "vercel-$target")" || exit 1
