@@ -64,8 +64,12 @@ final class PhoneLinkModel: ObservableObject {
         p.environment = env
         let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
         do { try p.run() } catch { return nil }
+        // gh or security can wait for a dialog or the network: after 10 s the key counts as missing.
+        let killer = DispatchWorkItem { if p.isRunning { Tool.killTree(p.processIdentifier) } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: killer)
         let d = out.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
+        killer.cancel()
         guard p.terminationStatus == 0 else { return nil }
         let s = String(decoding: d, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         return s.isEmpty ? nil : s
@@ -84,12 +88,20 @@ enum MacSecret {
         let s = String(decoding: d, as: UTF8.self)
         return s.isEmpty ? nil : s
     }
-    static func set(_ service: String, _ value: String) {
-        SecItemDelete(base(service) as CFDictionary)
+    /// Updates in place (the old token stays if writing fails); an empty value deletes.
+    /// True when the keychain took it.
+    @discardableResult
+    static func set(_ service: String, _ value: String) -> Bool {
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !v.isEmpty else { return }
-        var add = base(service); add[kSecValueData as String] = Data(v.utf8)
-        SecItemAdd(add as CFDictionary, nil)
+        guard !v.isEmpty else { SecItemDelete(base(service) as CFDictionary); return true }
+        let data = Data(v.utf8)
+        var status = SecItemUpdate(base(service) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var add = base(service); add[kSecValueData as String] = data
+            status = SecItemAdd(add as CFDictionary, nil)
+        }
+        if status != errSecSuccess { Log.write("keychain: \(service) not saved (status \(status))") }
+        return status == errSecSuccess
     }
 }
 

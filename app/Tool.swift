@@ -11,7 +11,8 @@ import ServiceManagement
 /// The choice is the app's own `AppleLanguages` (["en"] or ["de"]), which macOS reads at launch,
 /// so `Locale.preferredLanguages` and the system texts follow it. No key: the Mac's language.
 let isGerman = (Locale.preferredLanguages.first ?? "en").hasPrefix("de")
-func L(_ en: String, _ de: String) -> String { isGerman ? de : en }
+/// Only the text of the chosen language is built (each one may interpolate numbers and names).
+func L(_ en: @autoclosure () -> String, _ de: @autoclosure () -> String) -> String { isGerman ? de() : en() }
 
 enum AppLanguage: String, CaseIterable, Identifiable {
     case system, en, de
@@ -90,11 +91,21 @@ enum Tool {
         // Reading it starts a login shell (up to 3 s); once a day is enough. A shell that did not
         // answer in time is not saved, so the next start tries again instead of a day without it.
         let d = UserDefaults.standard
-        if let saved = d.string(forKey: "searchPath"), Date().timeIntervalSince1970 - d.double(forKey: "searchPathAt") < 86400 { return saved }
+        // A saved PATH with a folder that is gone (nvm, fnm or volta moved to another node) is read anew.
+        if let saved = d.string(forKey: "searchPath"), Date().timeIntervalSince1970 - d.double(forKey: "searchPathAt") < 86400,
+           pathFoldersExist(saved) { return saved }
         let (result, complete) = computeSearchPath()
         if complete { d.set(result, forKey: "searchPath"); d.set(Date().timeIntervalSince1970, forKey: "searchPathAt") }
         return result
     }()
+
+    /// Every node-manager folder of a PATH (nvm, fnm, volta: they move with each node version)
+    /// still exists. Fixed places such as ~/.local/bin may be missing for good and are not checked.
+    static func pathFoldersExist(_ path: String) -> Bool {
+        let managers = ["/.nvm/versions/", "/fnm", "/.fnm/", "/.volta/", "/.asdf/installs/"]
+        return path.split(separator: ":").map(String.init).filter { p in managers.contains { p.contains($0) } }
+            .allSatisfy { FileManager.default.fileExists(atPath: $0) }
+    }
 
     /// The fixed places plus the shell's PATH. zsh is started interactive as well (`-i`), because
     /// nvm and fnm are usually set up in ~/.zshrc, which a login shell alone does not read.
@@ -140,7 +151,12 @@ enum Tool {
     /// Runs off the main thread. A GUI app does not get the shell's PATH, and `vercel` needs node.
     /// stdout and stderr are read at the same time (reading one to the end first can deadlock
     /// once the other fills its pipe), and a command that hangs is ended after `timeout` seconds.
+    /// Tests only: answers every script call instead of the script, so the queue, following and
+    /// cancelling can be run without a network or an account. Never set in the app.
+    nonisolated(unsafe) static var testRunner: (@Sendable ([String]) async throws -> Data)?
+
     static func run(_ args: [String], stdin: String? = nil, timeout: Double = 120) async throws -> Data {
+        if let fake = testRunner { return try await fake(args) }
         // A cancelled Swift task ends the process too, instead of letting it run to its timeout.
         let running = Running()
         return try await withTaskCancellationHandler {
@@ -179,6 +195,8 @@ enum Tool {
                     inPipe.fileHandleForWriting.write(Data((stdin + "\n").utf8))
                     try? inPipe.fileHandleForWriting.close()
                 }
+                // Cancelled before it started: nothing is started at all.
+                if running.isCancelled { cont.resume(throwing: CancellationError()); return }
                 do { try p.run() } catch { cont.resume(throwing: error); return }
                 if !running.started(p.processIdentifier) { killTree(p.processIdentifier) }
                 // Pipes, the timeout and the answer meet here from several queues; the lock keeps
@@ -227,7 +245,7 @@ enum Tool {
                     let text = msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg
                     Log.write("deploys \(args.joined(separator: " ")): \(text)")
                     // The whole text is in the log; a toast or a row gets the end, where the cause usually is.
-                    answer(.failure(ToolError(message: shorten(text))))
+                    answer(.failure(ToolError(message: shorten(text), exitCode: p.terminationStatus)))
                 }
             }
         }
@@ -241,10 +259,21 @@ enum Tool {
             all.append(pid)
             next += children(of: pid)
         }
+        // The start time of each, so the SIGKILL two seconds later cannot reach a process that
+        // got the same id in between.
+        let started = all.map { startTime($0) }
         for pid in all { kill(pid, SIGTERM) }
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
-            for pid in all where kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+            for (pid, t) in zip(all, started) where kill(pid, 0) == 0 && t != nil && startTime(pid) == t { kill(pid, SIGKILL) }
         }
+    }
+
+    /// When a process started (seconds and microseconds), nil when it is gone.
+    static func startTime(_ pid: pid_t) -> UInt64? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
     }
 
     private static func children(of pid: pid_t) -> [pid_t] {
@@ -278,6 +307,8 @@ struct ToolError: LocalizedError {
     let message: String
     /// The command was ended after its time ran out: it may have done its work anyway.
     var timedOut = false
+    /// The script's exit code, when it ended by itself with one other than 0.
+    var exitCode: Int32? = nil
     var errorDescription: String? { message }
 }
 
@@ -293,9 +324,14 @@ enum Log {
     static func write(_ line: String) {
         lock.lock(); defer { lock.unlock() }
         _ = privateOnce
-        let text = "\(Date().formatted(.iso8601))  \(line)\n"
+        // Further lines of a message are indented, so each entry still starts with its time.
+        let text = "\(Date().formatted(.iso8601))  \(line.replacingOccurrences(of: "\n", with: "\n    "))\n"
         let fm = FileManager.default
-        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(text.utf8)); try? h.close() }
+        // The throwing calls: the old seekToEndOfFile/write raise an exception on a full disk.
+        if let h = try? FileHandle(forWritingTo: url) {
+            do { try h.seekToEnd(); try h.write(contentsOf: Data(text.utf8)) } catch {}
+            try? h.close()
+        }
         else { fm.createFile(atPath: url.path, contents: Data(text.utf8), attributes: [.posixPermissions: 0o600]) }
         if let size = try? fm.attributesOfItem(atPath: url.path)[.size] as? Int, size > 1_000_000,
            let data = try? Data(contentsOf: url) {

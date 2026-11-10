@@ -166,9 +166,43 @@ struct LedgerReport: Decodable {
     /// Per day for the share card: what builds would have cost (skipped + built) and what the
     /// builds that ran cost. Only after a whole day and with a price.
     var perDay: (before: Double, after: Double)? {
-        guard days >= 1, let usd, usd > 0 else { return nil }
-        let built = builtUsd ?? 0
+        // A missing price of the built ones is not $0: "after" would look free and the saving 100 %.
+        // Both sums cover the priced projects only, so a partial price list still compares like with like.
+        guard days >= 1, let usd, usd > 0, let built = builtUsd else { return nil }
         return ((usd + built) / days, built / days)
+    }
+
+    /// Every skipped build has a known duration; otherwise the minutes are a floor, not a total
+    /// (a project without a measured build yet counts 0 in the script's sum).
+    var minutesComplete: Bool { projects.allSatisfy { $0.skipped == 0 || $0.savedMinutes != nil } }
+    private var minutesTotal: Double { vercelMinutes + renderMinutes }
+
+    /// What was saved in a few words: dollars when priced, else minutes; nil when nothing is known
+    /// yet (nothing skipped, or skipped builds of unknown duration), never "≈ 0 minutes".
+    var savedAmount: String? {
+        guard skipped > 0 else { return nil }
+        if let usd, usd > 0 { return SavingsFormat.usdShort(usd) }
+        guard minutesTotal > 0 else { return nil }
+        return SavingsFormat.minutes(minutesTotal) + " " + L("minutes", "Minuten")
+    }
+
+    /// The headline of the ledger.
+    var headline: String {
+        if skipped == 0 { return L("Nothing skipped yet – every push was built", "Noch nichts übersprungen – jeder Push wurde gebaut") }
+        if let a = savedAmount { return L("\(a) saved", "\(a) gespart") }
+        let n = SavingsFormat.count(skipped)
+        return L("\(n) builds skipped, duration not known yet", "\(n) Builds übersprungen, Dauer noch unbekannt")
+    }
+
+    /// The banner line in the main window.
+    var bannerText: String {
+        let since = SavingsFormat.day(self.since), n = SavingsFormat.count(skipped)
+        guard let a = savedAmount else {
+            return skipped == 0
+                ? L("Auto-deploy off since \(since) · nothing skipped yet", "Auto-Deploy aus seit \(since) · noch nichts übersprungen")
+                : L("\(n) builds skipped since \(since) · duration not known yet", "\(n) Builds übersprungen seit \(since) · Dauer noch unbekannt")
+        }
+        return L("\(a) saved since \(since) · \(n) builds skipped", "\(a) gespart seit \(since) · \(n) Builds übersprungen")
     }
 }
 
@@ -189,23 +223,53 @@ final class SavingsModel: ObservableObject {
 
     private let defaults = UserDefaults.standard
 
+    /// The last answers, in Application Support (0600): they name projects, so not in the plist.
+    nonisolated static func reportURL(_ name: String) -> URL { Journal.dir.appendingPathComponent("savings-\(name).json") }
+    private func readReport(_ name: String, oldKey: String) -> Data? {
+        if let d = try? Data(contentsOf: Self.reportURL(name)) { return d }
+        // Moved once out of the preferences of older versions.
+        guard let d = defaults.data(forKey: oldKey) else { return nil }
+        saveReport(d, name); defaults.removeObject(forKey: oldKey)
+        return d
+    }
+    private func saveReport(_ d: Data, _ name: String) {
+        let u = Self.reportURL(name)
+        try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+        do { try d.write(to: u, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: u.path) }
+        catch { Log.write("savings: report not saved (\(error.localizedDescription))") }
+    }
+
     private init() {
         // The last answers stay for the next start: both take many API calls.
-        if let d = defaults.data(forKey: "savingsSimulation") { simulation = try? JSONDecoder().decode(SimulateReport.self, from: d) }
-        if let d = defaults.data(forKey: "savingsLedger") { ledger = try? JSONDecoder().decode(LedgerReport.self, from: d) }
+        if let d = readReport("simulation", oldKey: "savingsSimulation") { simulation = try? JSONDecoder().decode(SimulateReport.self, from: d) }
+        if let d = readReport("ledger", oldKey: "savingsLedger") { ledger = try? JSONDecoder().decode(LedgerReport.self, from: d) }
         let s = defaults.double(forKey: "savingsSimulationAt"), g = defaults.double(forKey: "savingsLedgerAt")
         simulatedAt = s > 0 ? Date(timeIntervalSince1970: s) : nil
         ledgerAt = g > 0 ? Date(timeIntervalSince1970: g) : nil
     }
 
+    /// When the running simulation started (for "running for 40 s"); nil when none runs.
+    @Published var simulationStartedAt: Date?
+    private var simulationTask: Task<Void, Never>?
+    /// Stops a running simulation; the last result stays.
+    func cancelSimulation() { simulationTask?.cancel() }
+
     func loadSimulation(days: Int = 30) async {
         guard !loadingSimulation else { return }
-        loadingSimulation = true; defer { loadingSimulation = false }
+        let t = Task { await runSimulation(days: days) }
+        simulationTask = t
+        await t.value
+        simulationTask = nil
+    }
+
+    private func runSimulation(days: Int) async {
+        loadingSimulation = true; simulationStartedAt = Date()
+        defer { loadingSimulation = false; simulationStartedAt = nil }
         do {
             let data = try await Tool.run(["simulate", "--json", "--days", "\(days)"], timeout: 300)
             simulation = try Self.decode(SimulateReport.self, data, what: "simulate")
             simulationError = nil; simulatedAt = Date()
-            defaults.set(data, forKey: "savingsSimulation"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsSimulationAt")
+            saveReport(data, "simulation"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsSimulationAt")
         } catch is CancellationError {
         } catch { simulationError = error.localizedDescription }
     }
@@ -217,7 +281,7 @@ final class SavingsModel: ObservableObject {
             let data = try await Tool.run(["ledger", "--json"], timeout: 300)
             ledger = try Self.decode(LedgerReport.self, data, what: "ledger")
             ledgerError = nil; ledgerAt = Date()
-            defaults.set(data, forKey: "savingsLedger"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsLedgerAt")
+            saveReport(data, "ledger"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsLedgerAt")
         } catch is CancellationError {
         } catch { ledgerError = error.localizedDescription }
     }
@@ -265,12 +329,19 @@ enum SavingsFormat {
         u.hasPrefix("pipeline") ? L("pipeline minutes", "Pipeline-Minuten") : L("build minutes", "Build-Minuten")
     }
     /// "2026-01-20" as a date for the reader.
+    /// "2026-01-20" as a date in words, the same day everywhere: read and written in UTC, so a Mac
+    /// west of UTC does not show the 19th.
     static func day(_ s: String?) -> String {
         guard let s else { return "–" }
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); f.locale = Locale(identifier: "en_US_POSIX")
-        guard let d = f.date(from: s) else { return s }
-        return d.formatted(date: .abbreviated, time: .omitted)
+        guard let d = dayParser.date(from: s) else { return s }
+        var style = Date.FormatStyle(date: .abbreviated, time: .omitted)
+        style.timeZone = TimeZone(identifier: "UTC")!
+        return d.formatted(style)
     }
+    private static let dayParser: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
     static func name(_ n: String) -> String { Demo.mask(n) }
     static func problem(_ p: String) -> String {
         if p.hasPrefix("GitHub") { return L("GitHub could not be read (is gh logged in?)", "GitHub nicht lesbar (ist gh angemeldet?)") }
@@ -316,11 +387,7 @@ struct SavingsEntry: View {
     }
 
     private func ledgerLine(_ l: LedgerReport) -> some View {
-        let minutes = SavingsFormat.minutes(l.vercelMinutes + l.renderMinutes) + " " + L("minutes", "Minuten")
-        let amount = (l.usd ?? 0) > 0 ? SavingsFormat.usdShort(l.usd) : minutes
-        return bar(icon: "leaf", text: L("\(amount) saved since \(SavingsFormat.day(l.since)) · \(SavingsFormat.count(l.skipped)) builds skipped",
-                                         "\(amount) gespart seit \(SavingsFormat.day(l.since)) · \(SavingsFormat.count(l.skipped)) Builds übersprungen"),
-                   button: L("Ledger …", "Bilanz …")) { sheet = .ledger }
+        bar(icon: "leaf", text: l.bannerText, button: L("Ledger …", "Bilanz …")) { sheet = .ledger }
     }
 
     private func bar(icon: String, text: String, button: String, close: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
@@ -621,13 +688,7 @@ struct LedgerView: View {
     }
 
     /// "≈ $12.40 saved", or the minutes when no build has a price.
-    private func bigNumber(_ l: LedgerReport) -> String {
-        if let usd = l.usd, l.usdComplete || usd > 0 {
-            return L("\(SavingsFormat.usdShort(usd)) saved", "\(SavingsFormat.usdShort(usd)) gespart")
-        }
-        let m = SavingsFormat.minutes(l.vercelMinutes + l.renderMinutes)
-        return L("\(m) minutes saved", "\(m) Minuten gespart")
-    }
+    private func bigNumber(_ l: LedgerReport) -> String { l.headline }
 
     private func totalsLine(_ l: LedgerReport) -> String {
         var parts = [L("≈ \(SavingsFormat.count(l.skipped)) builds skipped of \(SavingsFormat.count(l.pushes)) pushes",

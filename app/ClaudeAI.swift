@@ -53,23 +53,52 @@ enum ClaudeAI {
         }
     }
 
+    /// Answers of the last 30 minutes, so switching the language back or opening the sheet again
+    /// costs no tokens. Keyed by question (with its language) and project.
+    private static let answers = AnswerCache()
+    final class AnswerCache: @unchecked Sendable {
+        private let lock = NSLock(); private var kept: [String: (at: Date, answer: ClaudeAnswer)] = [:]
+        func get(_ k: String) -> ClaudeAnswer? {
+            lock.lock(); defer { lock.unlock() }
+            guard let e = kept[k], Date().timeIntervalSince(e.at) < 1800 else { return nil }
+            return e.answer
+        }
+        func set(_ k: String, _ a: ClaudeAnswer) { lock.lock(); kept[k] = (Date(), a); lock.unlock() }
+    }
+
+    /// Always asks anew: without the build it is about, a kept answer could be about another one.
     static func ask(_ what: Ask, project: String) async throws -> ClaudeAnswer {
+        try await askNow(what, project: project)
+    }
+    /// Kept per question, project and `version` (the commit of the failed build, or the branch
+    /// head for release notes): asking again about the same thing costs no tokens.
+    static func ask(_ what: Ask, project: String, version: String) async throws -> ClaudeAnswer {
+        let key = what.id + "|" + project + "@" + version
+        if let a = answers.get(key) { return a }
+        let a = try await askNow(what, project: project)
+        answers.set(key, a)
+        return a
+    }
+
+    private static func askNow(_ what: Ask, project: String) async throws -> ClaudeAnswer {
         try await Tool.json(what.args(project: project), as: ClaudeAnswer.self, timeout: 180)
     }
 
+    /// "claude-opus-5-5" → "Claude Opus 5.5", also for models this app does not know yet
+    /// ("claude-sonnet-6-0-20270101" → "Claude Sonnet 6.0"). Anything else stays as it came.
     static func modelName(_ id: String) -> String {
-        switch id {
-        case "claude-opus-5-5": return "Claude Opus 5.5"
-        case "claude-sonnet-5-5": return "Claude Sonnet 5.5"
-        case "claude-haiku-5-5": return "Claude Haiku 5.5"
-        default: return id
-        }
+        let parts = id.split(separator: "-").map(String.init)
+        guard parts.count >= 3, parts[0] == "claude", parts[1].allSatisfy(\.isLetter) else { return id }
+        let nums = parts.dropFirst(2).prefix { $0.count <= 2 && $0.allSatisfy(\.isNumber) }
+        guard !nums.isEmpty else { return id }
+        return "Claude " + parts[1].prefix(1).uppercased() + parts[1].dropFirst() + " " + nums.joined(separator: ".")
     }
 
     /// A build that ended in an error on the platform, or a deploy started here that failed.
+    /// Broader than `Item.lastFailed` (what autofix can fix): runtime failures can be explained too.
     static func isFailed(_ item: Item) -> Bool {
         if case .failed = item.state { return true }
-        return ["ERROR", "build_failed", "update_failed", "pre_deploy_failed"].contains(item.lastState ?? "")
+        return item.anyFailure
     }
 }
 

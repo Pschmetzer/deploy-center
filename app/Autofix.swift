@@ -6,23 +6,21 @@ import SwiftUI
 import AppKit
 
 struct AutofixStatus: Decodable {
-    struct Fire: Decodable, Identifiable {
-        let at: Double
-        let project: String
-        let platform: String?
-        let status: String
-        let sha: String?
-        let session: String?
-        let error: String?
-        let redeployedSha: String?
-        let mergedSha: String?
-        let pr: Int?
-        var id: String { "\(project)-\(at)" }
-    }
+    /// The same fire as the rows read (Model.swift), with its PR state.
+    typealias Fire = AutofixReport.Fire
     let routine: String?
     let token: Bool
     let scheduled: Bool
     let fires: [Fire]
+    /// A broken fire is skipped, not the reason Settings shows nothing.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        routine = (try? c.decodeIfPresent(String.self, forKey: .routine)) ?? nil
+        token = ((try? c.decodeIfPresent(Bool.self, forKey: .token)) ?? nil) ?? false
+        scheduled = ((try? c.decodeIfPresent(Bool.self, forKey: .scheduled)) ?? nil) ?? false
+        fires = (((try? c.decodeIfPresent([Lossy<Fire>].self, forKey: .fires)) ?? nil) ?? []).compactMap(\.value)
+    }
+    private enum K: String, CodingKey { case routine, token, scheduled, fires }
 }
 
 struct AutofixSettings: View {

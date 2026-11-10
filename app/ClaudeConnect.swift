@@ -32,7 +32,8 @@ enum ClaudeConfig {
     }
 
     static func encode(_ root: [String: Any]) throws -> Data {
-        var d = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .withoutEscapingSlashes])
+        // Sorted: the same file gives the same text, so connecting twice does not reshuffle it.
+        var d = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys])
         d.append(0x0A)
         return d
     }
@@ -99,6 +100,18 @@ enum ClaudeFiles {
         return f.string(from: date)
     }
 
+    /// Only the newest `keep` backups of a file stay: each may hold other servers and their keys.
+    static func pruneBackups(of real: String, keep: Int) {
+        let fm = FileManager.default
+        let dir = (real as NSString).deletingLastPathComponent, prefix = (real as NSString).lastPathComponent + ".bak-"
+        guard let names = try? fm.contentsOfDirectory(atPath: dir) else { return }
+        let baks = names.filter { $0.hasPrefix(prefix) }.map { (dir as NSString).appendingPathComponent($0) }
+        func made(_ p: String) -> Date { ((try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date) ?? .distantPast }
+        // Newest first by time, then by name (the stamp), for backups within one second.
+        let sorted = baks.sorted { let a = made($0), b = made($1); return a != b ? a > b : $0 > $1 }
+        for old in sorted.dropFirst(keep) { try? fm.removeItem(atPath: old) }
+    }
+
     /// Writes through a temp file in the same folder and a rename, so the file is never half
     /// written. A symlink is followed (the link stays), the mode is kept (600 for a new file), and
     /// an existing file is first copied to `<file>.bak-<time>`. Returns the backup's path.
@@ -117,6 +130,7 @@ enum ClaudeFiles {
             try fm.copyItem(atPath: real, toPath: bak)
             try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: bak)
             backup = bak
+            pruneBackups(of: real, keep: 5)
         } else {
             try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
         }
@@ -177,11 +191,17 @@ enum ClaudeEnv {
                                 "/usr/local/bin/claude", home + "/.npm-global/bin/claude"])
     }
 
-    /// Folders the app may sit in during development: next to it, and up to four levels up.
+    /// Folders the app may sit in during development: next to it, and up to four levels up, but
+    /// only a checkout of this repo (.git and VERSION). A stray integrations/ folder in Downloads
+    /// must not end up in Claude's config or be installed as an extension.
     private static var nearBundle: [String] {
         var out: [String] = []
         var dir = (Bundle.main.bundlePath as NSString).deletingLastPathComponent
-        for _ in 0..<4 where dir.count > 1 { out.append(dir); dir = (dir as NSString).deletingLastPathComponent }
+        let fm = FileManager.default
+        for _ in 0..<4 where dir.count > 1 {
+            if fm.fileExists(atPath: dir + "/.git"), fm.fileExists(atPath: dir + "/VERSION") { out.append(dir) }
+            dir = (dir as NSString).deletingLastPathComponent
+        }
         return out
     }
 
@@ -231,7 +251,9 @@ enum ClaudeRun {
                 let pipe = Pipe()
                 p.standardOutput = pipe; p.standardError = pipe; p.standardInput = FileHandle.nullDevice
                 do { try p.run() } catch { cont.resume(returning: (false, error.localizedDescription)); return }
-                let timer = DispatchWorkItem { if p.isRunning { p.terminate() } }
+                // The whole tree: a grandchild (shell start files, claude) holding the pipe would
+                // keep the read below waiting after the parent ended.
+                let timer = DispatchWorkItem { if p.isRunning { Tool.killTree(p.processIdentifier) } }
                 DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
@@ -263,11 +285,20 @@ final class ClaudeLink: ObservableObject {
     @Published var restartHint = false
     @Published var extensionURL: URL?
 
-    var canConnect: Bool { node != nil && server != nil }
+    /// The major version of `node`, when it could be read.
+    @Published var nodeMajor: Int?
+    var canConnect: Bool { node != nil && server != nil && (nodeMajor ?? 18) >= 18 }
     var missing: String? {
         if let serverProblem { return serverProblem }
         if node == nil { return L("Node.js 18 or newer is needed (brew install node).", "Node.js 18 oder neuer wird gebraucht (brew install node).") }
+        if let m = nodeMajor, m < 18 {
+            return L("Node.js \(m) is too old: 18 or newer is needed (brew upgrade node).", "Node.js \(m) ist zu alt: 18 oder neuer wird gebraucht (brew upgrade node).")
+        }
         return nil
+    }
+    /// "v20.11.1" → 20.
+    nonisolated static func majorVersion(_ version: String) -> Int? {
+        Int(version.trimmingCharacters(in: .whitespacesAndNewlines).drop { $0 == "v" }.split(separator: ".").first ?? "")
     }
 
     /// Always from the files: Claude Desktop may rewrite its config while it runs.
@@ -278,6 +309,7 @@ final class ClaudeLink: ObservableObject {
         async let n = ClaudeEnv.node()
         async let c = ClaudeEnv.cli()
         node = await n; cli = await c
+        if let node { nodeMajor = Self.majorVersion(await ClaudeRun.run(node, ["--version"], timeout: 5).out) } else { nodeMajor = nil }
 
         let dData = ClaudeFiles.read(ClaudeEnv.desktopConfig)
         let dFound = ClaudeEnv.desktopApp != nil || dData != nil
@@ -291,6 +323,21 @@ final class ClaudeLink: ObservableObject {
         let cData = await Task.detached { ClaudeFiles.read(ClaudeEnv.codeConfig) }.value
         if let e = ClaudeConfig.entry(cData) { code = .connected; codeAllows = ClaudeConfig.allowsDeploy(e) }
         else { code = cli == nil ? .notFound : .notConnected; codeAllows = false }
+        // The switch shows what Claude's files say, not a preference that may be older (a reset,
+        // or a connection made by the plugin or the CLI).
+        // Both connected: "on" only when both allow, so a later reconnect never widens what one of them may do.
+        // A node that moved (nvm, volta update): the entry still points at the old path, and
+        // Claude fails to start the server without a word here. Connecting again writes the new one.
+        let gone = [dData, cData].compactMap { ClaudeConfig.entry($0)?["command"] as? String }
+            .filter { $0.hasPrefix("/") && !FileManager.default.isExecutableFile(atPath: $0) }
+        if let g = gone.first {
+            say(L("Claude's config points at \(g), which is gone (Node was updated?). Connect again.",
+                  "Claudes Konfiguration zeigt auf \(g), das es nicht mehr gibt (Node aktualisiert?). Neu verbinden."), failed: true)
+        }
+        if desktop == .connected || code == .connected {
+            let allows = (desktop != .connected || desktopAllows) && (code != .connected || codeAllows)
+            UserDefaults.standard.set(allows, forKey: "claudeAllowDeploy")
+        }
 
         autofix = try? await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20)
         ClaudeNudge.store(wanted: desktop == .notConnected || code == .notConnected)
@@ -341,6 +388,11 @@ final class ClaudeLink: ObservableObject {
         let running = { NSRunningApplication.runningApplications(withBundleIdentifier: ClaudeEnv.desktopBundleId) }
         for r in running() { r.terminate() }
         for _ in 0..<40 where !running().isEmpty { try? await Task.sleep(nanoseconds: 250_000_000) }
+        // Still running (a quit dialog left open, say): the hint stays, nothing is opened twice.
+        guard running().isEmpty else {
+            say(L("Claude Desktop did not quit. Quit it yourself, then open it again.", "Claude Desktop wurde nicht beendet. Selbst beenden und wieder öffnen."), failed: true)
+            return
+        }
         let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = true
         _ = try? await NSWorkspace.shared.openApplication(at: app, configuration: cfg)
         restartHint = false
@@ -353,10 +405,15 @@ final class ClaudeLink: ObservableObject {
         guard let node, let server else { say(missing ?? "", failed: true); return }
         busy = true; defer { busy = false }
         let dirs = [(node as NSString).deletingLastPathComponent, (cli as NSString).deletingLastPathComponent]
-        if code == .connected { _ = await ClaudeRun.run(cli, ClaudeConfig.codeRemoveArgs(), pathDirs: dirs) }
+        let had = code == .connected, hadAllow = codeAllows
+        if had { _ = await ClaudeRun.run(cli, ClaudeConfig.codeRemoveArgs(), pathDirs: dirs) }
         let r = await ClaudeRun.run(cli, ClaudeConfig.codeAddArgs(node: node, server: server, deploys: Tool.path, allowDeploy: allowDeploy), pathDirs: dirs)
         if r.ok { say(L("Connected. New Claude Code sessions see Deploy Center.", "Verbunden. Neue Claude-Code-Sitzungen sehen Deploy Center.")) }
-        else { say(Tool.shorten(r.out.trimmingCharacters(in: .whitespacesAndNewlines)), failed: true) }
+        else {
+            // Removed, then not added: put the connection back as it was instead of leaving none.
+            if had { _ = await ClaudeRun.run(cli, ClaudeConfig.codeAddArgs(node: node, server: server, deploys: Tool.path, allowDeploy: hadAllow), pathDirs: dirs) }
+            say(Tool.shorten(r.out.trimmingCharacters(in: .whitespacesAndNewlines)), failed: true)
+        }
         await refresh()
     }
 
@@ -553,9 +610,17 @@ enum ClaudeNudge {
         if UserDefaults.standard.bool(forKey: wantedKey) != wanted { UserDefaults.standard.set(wanted, forKey: wantedKey) }
     }
 
-    /// Once at launch, off the main thread: Claude found but not connected?
+    /// Once per run, off the main thread: Claude found but not connected? The window calls this
+    /// each time it is built; a login shell (up to 3 s) once is enough.
+    private static let ran = OnceFlag()
+    final class OnceFlag: @unchecked Sendable {
+        private let lock = NSLock(); private var done = false
+        /// True the first time only.
+        func first() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
+    }
     static func refresh() async {
         if UserDefaults.standard.bool(forKey: dismissedKey) { return }
+        guard ran.first() else { return }
         let desktopData = await Task.detached { ClaudeFiles.read(ClaudeEnv.desktopConfig) }.value
         let desktop = ClaudeEnv.desktopApp != nil && (try? ClaudeConfig.parse(desktopData)) != nil && ClaudeConfig.entry(desktopData) == nil
         let codeData = await Task.detached { ClaudeFiles.read(ClaudeEnv.codeConfig) }.value
