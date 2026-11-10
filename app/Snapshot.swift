@@ -6,20 +6,16 @@ import WidgetKit
 
 extension Store {
     private static var lastSnapshot: DeploySnapshot?
-    private static var watchingDemo = false
+    /// Watches only the demo switch (KVO on its key), not every write to the defaults.
+    private static var demoWatch: NSKeyValueObservation?
 
     /// Called after every reload of a list and of the costs. Cheap: a few KB, only when something changed.
     func writeSnapshot() {
         guard let url = DeploySnapshot.groupURL else { return }
-        if !Self.watchingDemo {
-            Self.watchingDemo = true
+        if Self.demoWatch == nil {
             // Demo mode masks names in the snapshot too: the widget cannot read the app's settings.
-            var demo = Demo.on
-            NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated {
-                    guard Demo.on != demo else { return }
-                    demo = Demo.on; self.writeSnapshot()
-                }
+            Self.demoWatch = UserDefaults.standard.observe(\.demoMode, options: [.new]) { [weak self] _, _ in
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.writeSnapshot() } }
             }
         }
         let snap = makeSnapshot()
@@ -64,26 +60,34 @@ extension Store {
                               projects: Array(rows.prefix(10)), language: isGerman ? "de" : "en")
     }
 
-    /// The same sum as the costs panel (kept private there; copied, not moved).
+    /// The app's own sum (Costs.saving, with the kept baseline and the same day), so the widget
+    /// and the window never disagree.
     private var snapshotSaving: DeploySnapshot.Saving? {
-        guard let costs, let off = costs.offDay else { return nil }
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC")
-        let today = f.string(from: Date())
-        let before = costs.days.filter { $0.day < off }, after = costs.days.filter { $0.day > off && $0.day < today }
-        guard !before.isEmpty, !after.isEmpty else { return nil }
-        let sumBefore: Double = before.reduce(0) { $0 + $1.build }
-        let sumAfter: Double = after.reduce(0) { $0 + $1.build }
-        return DeploySnapshot.Saving(before: sumBefore / Double(before.count), after: sumAfter / Double(after.count))
+        guard let s = costs?.saving(today: CostsSheet.today()) else { return nil }
+        return DeploySnapshot.Saving(before: s.before, after: s.after)
+    }
+
+    /// The saving a month for the iPhone (LinkedKeys.savingPerMonth): whole dollars, nil under one.
+    var savingPerMonth: Double? {
+        guard let s = costs?.saving(today: CostsSheet.today()) else { return nil }
+        let v = ((s.before - s.after) * 30).rounded()
+        return v >= 1 ? v : nil
     }
 }
 
 extension DeploySnapshot {
+    /// Everything but the time it was made; the language too, so switching it reaches the widgets.
     func sameContent(as o: DeploySnapshot) -> Bool {
-        var a = self; var b = o
-        a = DeploySnapshot(at: .distantPast, demo: a.demo, waitingProjects: a.waitingProjects, waitingCommits: a.waitingCommits,
-                           waitingPRs: a.waitingPRs, building: a.building, failed: a.failed, saving: a.saving, projects: a.projects)
-        b = DeploySnapshot(at: .distantPast, demo: b.demo, waitingProjects: b.waitingProjects, waitingCommits: b.waitingCommits,
-                           waitingPRs: b.waitingPRs, building: b.building, failed: b.failed, saving: b.saving, projects: b.projects)
-        return a == b
+        func plain(_ s: DeploySnapshot) -> DeploySnapshot {
+            DeploySnapshot(at: .distantPast, demo: s.demo, waitingProjects: s.waitingProjects, waitingCommits: s.waitingCommits,
+                           waitingPRs: s.waitingPRs, building: s.building, failed: s.failed, saving: s.saving, projects: s.projects,
+                           language: s.language)
+        }
+        return plain(self) == plain(o)
     }
+}
+
+extension UserDefaults {
+    /// For KVO: the defaults key "demoMode" (Demo.on).
+    @objc dynamic var demoMode: Bool { bool(forKey: "demoMode") }
 }

@@ -819,6 +819,20 @@ do {
     let ai0 = try JSONDecoder().decode(ClaudeAIStatus.self, from: Data(#"{"key":true,"source":"env","model":"m","models":["m"],"cap":1,"used":0,"month":"2026-11"}"#.utf8))
     expect("ai status from an older script", ai0.envHidesKeychain == nil, true)
 } catch { expect("newer script values decode", "\(error)", "no error") }
+// The phone link: new fields are optional both ways.
+do {
+    var k = LinkedKeys(); k.vercel = "v"; k.savingPerMonth = 42; k.once = "id1"
+    let back = try JSONDecoder().decode(LinkedKeys.self, from: try JSONEncoder().encode(k))
+    expect("saving and once id travel", "\(back.savingPerMonth ?? 0) \(back.once ?? "")", "42.0 id1")
+    let older = try JSONDecoder().decode(LinkedKeys.self, from: Data(#"{"vercel":"v","vercelTeam":"","render":"","github":"","updated":0}"#.utf8))
+    expect("keys from an older Mac app still read", older.savingPerMonth == nil && older.once == nil && older.vercel == "v", true)
+} catch { expect("linked keys decode", "\(error)", "no error") }
+let snapEN = DeploySnapshot(at: Date(), demo: false, waitingProjects: 1, waitingCommits: 1, waitingPRs: 0, building: 0, failed: 0,
+                            saving: nil, projects: [], language: "en")
+var snapDE = snapEN; snapDE.language = "de"
+expect("a language switch is a change for the widgets", snapEN.sameContent(as: snapDE), false)
+expect("only the time is not", snapEN.sameContent(as: DeploySnapshot(at: .distantPast, demo: false, waitingProjects: 1, waitingCommits: 1, waitingPRs: 0,
+                                                                     building: 0, failed: 0, saving: nil, projects: [], language: "en")), true)
 expect("a JSON error on stdout is the message", Tool.jsonError(Data(#"{"error":"No project named x","exit":1}"#.utf8)) ?? "", "No project named x")
 expect("other stdout is no error message", Tool.jsonError(Data(#"[{"name":"a"}]"#.utf8)) == nil, true)
 

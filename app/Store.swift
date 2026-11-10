@@ -46,7 +46,13 @@ final class Store: ObservableObject {
         async let c = vercel ? Self.extra(["costs", "14"], Costs.self) : nil
         async let t = Self.extra(["triggers"], [Trigger].self)
         async let b = github ? Self.extra(["github-budget"], Budget.self) : nil
-        if let r = await c { if case .success(let v) = r { costs = withBaseline(v); checkBudget(); writeSnapshot() }; note("costs", r) }
+        if let r = await c {
+            if case .success(let v) = r {
+                costs = withBaseline(v); checkBudget(); writeSnapshot()
+                PhoneLinkModel.shared.update(savingPerMonth: savingPerMonth)
+            }
+            note("costs", r)
+        }
         if let r = await t { if case .success(let v) = r { triggers = v }; note("triggers", r) }
         if let r = await b { if case .success(let v) = r { githubBudget = v }; note("github-budget", r) }
     }
@@ -362,6 +368,9 @@ final class Store: ObservableObject {
         }
         Task {
             await start()
+            // The phone's keys at launch, with or without a window, and again once a day below
+            // (a new Render key or `gh auth refresh` reaches the phone without opening Settings).
+            await PhoneLinkModel.shared.pushIfStale()
             while !Task.isCancelled {
                 // In minutes, reading the interval each time: a change in Settings counts from the
                 // next minute, not after the old interval. A loose timer lets macOS bundle wake-ups.
@@ -372,6 +381,7 @@ final class Store: ObservableObject {
                 }
                 if screensAsleep { continue }
                 await autoRefresh()
+                await PhoneLinkModel.shared.pushIfStale()
                 remindIfDue()
             }
         }

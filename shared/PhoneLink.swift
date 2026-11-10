@@ -15,6 +15,11 @@ struct LinkedKeys: Codable, Equatable {
     var render = ""
     var github = ""
     var updated = Date()
+    /// What turning auto-deploy off saves a month, in USD, as the Mac app works it out; nil when
+    /// not known. Older apps on either side leave it out.
+    var savingPerMonth: Double? = nil
+    /// QR code only: a fresh id per code, so a phone can refuse a code it has used before.
+    var once: String? = nil
 
     var isEmpty: Bool { vercel.isEmpty && render.isEmpty }
 }
