@@ -1,0 +1,5 @@
+{"job":{"summary":{"jobId":"12","commitId":"cccc333","commitMessage":"feat: c","startTime":"2026-01-02T04:04:05Z","status":"FAILED","jobType":"WEB_HOOK"},
+ "steps":[
+  {"stepName":"BUILD","status":"SUCCEED","logUrl":"https://logs.example/build?X-Amz-Signature=secret1"},
+  {"stepName":"DEPLOY","status":"FAILED","logUrl":"https://logs.example/deploy?X-Amz-Signature=secret2"},
+  {"stepName":"VERIFY","status":"CANCELLED"}]}}
