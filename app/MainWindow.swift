@@ -45,6 +45,13 @@ enum DeployConfirm {
             + (items.count > 12 ? "\n" + L("and \(items.count - 12) more", "und \(items.count - 12) weitere") : "")
             + "\n\n" + newest
     }
+
+    /// The ticked ones already on their newest commit: building them costs and changes nothing.
+    static func unchangedNote(_ items: [Item]) -> String {
+        let same = items.filter { !$0.hasNewCommits && $0.headSha != nil }.map { Demo.mask($0.name) }
+        guard !same.isEmpty else { return "" }
+        return "\n\n" + L("Already up to date, builds anyway: ", "Schon aktuell, baut trotzdem: ") + same.joined(separator: ", ")
+    }
 }
 struct WindowActionsKey: FocusedValueKey { typealias Value = WindowActions }
 extension FocusedValues {
@@ -106,6 +113,9 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A single deploy from the row menu, asked first like from the palette.
     @State private var askDeployItem: Item?
+    /// Deploy was clicked in the question: started once its sheet is gone.
+    @State private var confirmedItem: Item?
+    @State private var confirmedAll = false
     @AppStorage("confirmSingleDeploy") private var confirmSingle = true
     @State private var confirmingStop = false
     /// The project a menu-bar click or a link asked for: the list shows exactly that one (by its
@@ -354,16 +364,14 @@ struct ContentView: View {
             providers.compactMap(\.platform).forEach { store.selectChanged($0) }
             if !selectedAll.isEmpty { confirming = true }
         }
+        // One question for the footer, a row and the palette; the deploy starts once the sheet is gone.
+        .sheet(item: $askDeployItem, onDismiss: {
+            if let i = confirmedItem { confirmedItem = nil; deployOne(i) }
+        }) { i in DeployConfirmSheet(items: [i], platforms: false) { confirmedItem = i } }
+        .sheet(isPresented: $confirming, onDismiss: {
+            if confirmedAll { confirmedAll = false; startDeploy() }
+        }) { DeployConfirmSheet(items: selectedAll, platforms: showsAll) { confirmedAll = true } }
         // Each on a view of its own: one long chain of alerts is too much for the type checker.
-        .background {
-            Color.clear.alert(L("Put this live now?", "Jetzt live schalten?"),
-                              isPresented: Binding(get: { askDeployItem != nil }, set: { if !$0 { askDeployItem = nil } })) {
-                Button(L("Cancel", "Abbrechen"), role: .cancel) { askDeployItem = nil }
-                Button(L("Deploy", "Deployen")) { if let i = askDeployItem { deployOne(i) }; askDeployItem = nil }
-            } message: {
-                Text(DeployConfirm.message(askDeployItem.map { [$0] } ?? [], platforms: false))
-            }
-        }
         .background {
             Color.clear.alert(L("Stop every deploy?", "Alle Deploys abbrechen?"), isPresented: $confirmingStop) {
                 Button(L("Keep running", "Weiterlaufen lassen"), role: .cancel) {}
@@ -423,18 +431,6 @@ struct ContentView: View {
             // The search field would take the keyboard (and the space bar) at once; ⌘F still gets there.
             try? await Task.sleep(nanoseconds: 200_000_000)
             if search.isEmpty { NSApp.keyWindow?.makeFirstResponder(nil) }
-        }
-        // On a view of its own: the checkbox below belongs to this alert only, not to the others here.
-        .background {
-            Color.clear
-                .alert(L("Put this live now?", "Jetzt live schalten?"), isPresented: $confirming) {
-                    Button(L("Cancel", "Abbrechen"), role: .cancel) {}
-                    Button(L("Deploy", "Deployen")) { startDeploy() }
-                } message: {
-                    // Under "All" with the platform: the same name can be on Vercel and on Render.
-                    Text(DeployConfirm.message(selectedAll, platforms: showsAll) + unchangedNote)
-                }
-                .dialogSuppressionToggle(LocalizedStringKey(L("Only when checks are green", "Nur wenn die Checks grün sind")), isSuppressed: $onlyGreen)
         }
         .alert(L("The deploy window is closed", "Das Deploy-Fenster ist zu"),
                isPresented: Binding(get: { freezeReason != nil }, set: { if !$0 { freezeReason = nil } })) {
@@ -719,7 +715,6 @@ struct ContentView: View {
         }
     }
 
-    /// Ticked projects that are already on their newest commit: building them costs and changes nothing.
     /// What the confirmation's Deploy does: inside a closed deploy window it asks first.
     private func startDeploy() {
         let chosen = scopes, green = onlyGreen
@@ -745,12 +740,6 @@ struct ContentView: View {
             }
             store.deployOne(item, preview: false, sha: sha, clearCache: clearCache, whenGreen: green)
         }
-    }
-
-    private var unchangedNote: String {
-        let same = selectedAll.filter { !$0.hasNewCommits && $0.headSha != nil }.map { Demo.mask($0.name) }
-        guard !same.isEmpty else { return "" }
-        return "\n\n" + L("Already up to date, builds anyway: ", "Schon aktuell, baut trotzdem: ") + same.joined(separator: ", ")
     }
 
     /// Without a GitHub login, or with its hourly budget spent, the counts are missing. Say why.

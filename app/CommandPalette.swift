@@ -154,7 +154,10 @@ enum PaletteCommands {
 // MARK: - The panel
 
 struct CommandPalette: View {
-    @ObservedObject var store: Store
+    /// Not observed: a store poll while the palette is open must not rebuild every line. The lines are
+    /// read once on opening (and again when demo mode switches); `runChosen` reads the row as it is
+    /// then and checks again whether it may deploy.
+    let store: Store
     let choose: (PaletteCommand) -> Void
     @Environment(\.dismiss) private var dismiss
     @AppStorage("demoMode") private var demoMode = false
@@ -162,30 +165,38 @@ struct CommandPalette: View {
     @State private var selection: String?
     @State private var monitor: Any?
     @FocusState private var focused: Bool
+    /// Every line, built once; and what the query makes of it, built once per query.
+    @State private var commands: [PaletteCommand] = []
+    @State private var ordered: (shown: [PaletteCommand], total: Int, recent: Int) = ([], 0, 0)
 
     /// The window the palette sits in: its arrow keys and Esc are taken there only.
     @State private var home = WindowBox()
     /// Lines shown at most; the rest is found by typing more.
     static let limit = 60
 
-    private var ordered: (shown: [PaletteCommand], total: Int) {
-        let all = PaletteCommands.all(store)
+    /// The lines for a query, and how many of them are recent ones (only without a query).
+    static func order(_ all: [PaletteCommand], query: String, recent: [String]) -> (shown: [PaletteCommand], total: Int, recent: Int) {
         let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let order = paletteOrder(query: query, entries: all.map { ($0.id, $0.texts) }, recent: PaletteCommands.recent)
-        return (order.prefix(Self.limit).compactMap { byId[$0] }, order.count)
+        let order = paletteOrder(query: query, entries: all.map { ($0.id, $0.texts) }, recent: recent)
+        var recentCount = 0
+        if query.trimmingCharacters(in: .whitespaces).isEmpty {
+            recentCount = Set(recent.filter { byId[$0] != nil }).count
+        }
+        return (order.prefix(limit).compactMap { byId[$0] }, order.count, recentCount)
     }
     private var results: [PaletteCommand] { ordered.shown }
-    private var recentCount: Int {
-        guard query.trimmingCharacters(in: .whitespaces).isEmpty else { return 0 }
-        let ids = Set(PaletteCommands.all(store).map(\.id))
-        return Set(PaletteCommands.recent.filter { ids.contains($0) }).count
+
+    private func rebuild() {
+        commands = PaletteCommands.all(store)
+        reorder()
     }
+    private func reorder() { ordered = Self.order(commands, query: query, recent: PaletteCommands.recent) }
 
     var body: some View {
         let o = ordered
         let shown = o.shown, more = o.total - o.shown.count
         let current = shown.first { $0.id == selection } ?? shown.first
-        let recent = recentCount
+        let recent = o.recent
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
@@ -202,7 +213,8 @@ struct CommandPalette: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        if shown.isEmpty {
+                        // Not before the lines are read (the first frame): there is always something.
+                        if shown.isEmpty && !commands.isEmpty {
                             Text(L("Nothing found", "Nichts gefunden")).foregroundStyle(.secondary).padding(12)
                         }
                         ForEach(Array(shown.enumerated()), id: \.element.id) { n, cmd in
@@ -231,6 +243,7 @@ struct CommandPalette: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("Command palette", "Befehlspalette"))
         .onAppear {
+            rebuild()
             focused = true
             let home = self.home
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
@@ -242,7 +255,9 @@ struct CommandPalette: View {
             }
         }
         .onDisappear { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil }
-        .onChange(of: query) { _, _ in selection = results.first?.id }
+        .onChange(of: query) { _, _ in reorder(); selection = results.first?.id }
+        // Demo mode switched while open (⇧⌘D): real names must not stay on screen or be searchable.
+        .onChange(of: demoMode) { _, _ in rebuild() }
     }
 
     private func header(_ s: String) -> some View {
@@ -502,18 +517,18 @@ private struct PaletteQuestions: ViewModifier {
     @Binding var rollbackItem: Item?
     @Binding var noteItem: Item?
     @Binding var noteText: String
+    /// Deploy was clicked: handed to the window once the question is gone.
+    @State private var confirmed: Item?
 
     private func shown(_ i: Item?) -> String { Demo.mask(i?.name ?? "") }
     private func binding(_ b: Binding<Item?>) -> Binding<Bool> { Binding(get: { b.wrappedValue != nil }, set: { if !$0 { b.wrappedValue = nil } }) }
 
     func body(content: Content) -> some View {
         content
-            .alert(L("Put this live now?", "Jetzt live schalten?"), isPresented: binding($deployItem)) {
-                Button(L("Cancel", "Abbrechen"), role: .cancel) { deployItem = nil }
-                Button(L("Deploy", "Deployen")) { if let i = deployItem { store.pendingDeploy = i }; deployItem = nil }
-            } message: {
-                Text(DeployConfirm.message(deployItem.map { [$0] } ?? [], platforms: false))
-            }
+            // The window's own question, checkbox included; the window deploys once the sheet is gone.
+            .sheet(item: $deployItem, onDismiss: {
+                if let i = confirmed { confirmed = nil; store.pendingDeploy = i }
+            }) { i in DeployConfirmSheet(items: [i], platforms: false) { confirmed = i } }
             .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"), isPresented: binding($unchangedItem)) {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
                 Button(L("Build anyway", "Trotzdem bauen")) { if let i = unchangedItem { store.pendingDeploy = i }; unchangedItem = nil }
