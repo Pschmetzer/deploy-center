@@ -1,16 +1,23 @@
 # Deploy Center
 
-> Free, open-source (MIT) Mac app and bash CLI that turns off Git auto-deploy on Vercel and Render, so you stop paying for a build on every push. It shows the commits and pull requests waiting to go live and the build costs, and deploys what changed with one click. Works with Claude Code and other AI coding agents: the agent pushes as often as it likes, you deploy once, and Autofix hands failed builds to a Claude Code routine that opens a fix PR, and an MCP server lets the agent ask what is waiting to go live.
+> Free, open-source (MIT) Mac app, Mac widgets and bash CLI that turns off Git auto-deploy on Vercel, Render and other hosts, so you stop paying for a build on every push. It shows the commits and pull requests waiting to go live and the build costs, and deploys what changed when you decide. Made for AI coding: the agent pushes as often as it likes, you deploy once; Autofix hands a failed build to a Claude Code routine that opens a fix PR; Claude in the app explains failures, writes release notes and checks if a change is safe to ship; Claude Desktop and Claude Code connect through an MCP server and a Claude Code plugin.
 
-- Platforms: Vercel and Render today; Netlify support is coming.
-- Requirements: macOS 15 or later (app); the `deploys` CLI is bash and also runs on Linux and in CI.
-- Privacy: no account, no telemetry, no server of its own. It uses your own Vercel CLI login, a Render API key in the macOS keychain, and GitHub through `gh`.
-- Not affiliated with Vercel, Render, Netlify or Anthropic. Claude is a trademark of Anthropic.
+- Version: 0.8.0.
+- Hosts: Vercel and Render on by default; Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and any deploy hook opt-in. Sources: GitHub and GitLab.
+- Safe deploys: only when CI is green, a site check with automatic rollback, deploy windows, a risk score, and a guard that turns auto-deploy off again every 30 minutes.
+- Savings: a simulator before you switch and a ledger afterwards, all marked as estimates.
+- Everywhere: window, menu bar, Dock badge, Mac widgets, command palette (Cmd-K); an iPhone and iPad app with Face ID is on its way to the App Store.
+- Teams: a shared deploy-center.json per repo, observer mode, and an optional two-person rule, without a server.
+- Integrations: VS Code/Cursor/Windsurf extension, Raycast, GitHub Action, badges, daily summary to Slack/Discord/Telegram/ntfy, status page, pre-push hook, Docker image.
+- Requirements: macOS 15 or later (app, universal); the `deploys` CLI is bash and installs on macOS, Linux, WSL and CI (`curl -fsSL https://deploycenter.app/install.sh | sh`).
+- Privacy: no account, no telemetry, no server of its own. Your own logins and keys in the macOS keychain. Claude features are opt-in, use your own Anthropic key and send only masked text.
+- Not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.
 - Topics: disable Vercel auto-deploy, Render auto-deploy off, Vercel Ignored Build Step, Vercel build cost, Claude Code Vercel, Claude Code deploy, Claude Code Vercel build cost, AI agent Vercel builds, fix failed Vercel build, auto fix build errors with AI.
 
 ## Product
 
-- [Home](https://deploycenter.app/): What Deploy Center does, screenshots, FAQ.
+- [Home](https://deploycenter.app/): What Deploy Center does, Claude and Autofix, safe deploys, widgets and iPhone, teams, integrations, FAQ.
+- [Docs](https://deploycenter.app/docs/getting-started/): Getting started, CLI reference, Autofix, FAQ, troubleshooting.
 - [Download (GitHub releases)](https://github.com/Pschmetzer/deploy-center/releases/latest): Signed and notarized Mac app.
 - [Source code](https://github.com/Pschmetzer/deploy-center): MIT-licensed repository with README and docs.
 - [Changelog](https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md)
@@ -38,3 +45,7 @@
 - [Autofix reference](https://github.com/Pschmetzer/deploy-center/blob/main/docs/AUTOFIX.md)
 - [MCP server for AI agents](https://github.com/Pschmetzer/deploy-center/blob/main/integrations/mcp/README.md): Claude Code, Cursor, Codex setup.
 - [FAQ](https://github.com/Pschmetzer/deploy-center/blob/main/docs/FAQ.md)
+- [Claude in the app](https://github.com/Pschmetzer/deploy-center/blob/main/docs/CLAUDE.md): explain a failure, release notes, ship check, with your own key.
+- [Safe deploys](https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAFE-DEPLOY.md)
+- [Team mode](https://github.com/Pschmetzer/deploy-center/blob/main/docs/TEAM.md)
+- [Savings](https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAVINGS.md)

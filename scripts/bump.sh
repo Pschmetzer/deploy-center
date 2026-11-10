@@ -28,4 +28,9 @@ tmp="$(mktemp)"
 awk -v v="$new" '!done && /^## Unreleased/ { print; print ""; print "## " v; done=1; next } { print }' CHANGELOG.md > "$tmp"
 mv "$tmp" CHANGELOG.md
 echo "$new" > VERSION
-echo "VERSION $cur -> $new; CHANGELOG.md has \"## $new\" now. Check: git diff"
+# The site's home page names the version twice (the line under the download button and the JSON-LD).
+if [ -f site/index.html ]; then
+  sed -i.bak -e "s/Version $cur ·/Version $new ·/" -e "s/\"softwareVersion\": \"$cur\"/\"softwareVersion\": \"$new\"/" site/index.html
+  rm -f site/index.html.bak
+fi
+echo "VERSION $cur -> $new; CHANGELOG.md has \"## $new\" now, site/index.html too. Check: git diff"
