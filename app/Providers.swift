@@ -26,9 +26,11 @@ struct ProviderInfo: Decodable, Identifiable, Equatable, Sendable {
     let label: String       // what the tab says: "Vercel"
     var enabled: Bool
     var caps: ProviderCaps
+    /// The provider's status page as the script reports it (`statusPage`); see `statusURL`.
+    var statusPage: String?
 
-    init(id: String, label: String, enabled: Bool, caps: ProviderCaps = ProviderCaps()) {
-        self.id = id; self.label = label; self.enabled = enabled; self.caps = caps
+    init(id: String, label: String, enabled: Bool, caps: ProviderCaps = ProviderCaps(), statusPage: String? = nil) {
+        self.id = id; self.label = label; self.enabled = enabled; self.caps = caps; self.statusPage = statusPage
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -39,8 +41,24 @@ struct ProviderInfo: Decodable, Identifiable, Equatable, Sendable {
         label = l.isEmpty ? fromId : l
         enabled = ((try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? nil) ?? false
         caps = ((try? c.decodeIfPresent(ProviderCaps.self, forKey: .caps)) ?? nil) ?? ProviderCaps()
+        let page = ((try? c.decodeIfPresent(String.self, forKey: .statusPage)) ?? nil) ?? ""
+        statusPage = page.hasPrefix("https://") ? page : nil
     }
-    private enum CodingKeys: String, CodingKey { case id, label, enabled, caps }
+    private enum CodingKeys: String, CodingKey { case id, label, enabled, caps, statusPage }
+
+    /// The status page: the script's (https only), else the one the app knows for this provider.
+    var statusURL: URL? { (statusPage ?? Self.knownStatusPages[id]).flatMap(URL.init(string:)) }
+    /// The machine-readable status (Atlassian Statuspage, `/api/v2/status.json`); only for the known
+    /// pages that have one, so a page of the script is linked but never fetched.
+    var statusFeed: URL? { Self.statuspageHosted.contains(id) ? Self.knownStatusPages[id].flatMap { URL(string: $0 + "/api/v2/status.json") } : nil }
+    static let knownStatusPages = ["vercel": "https://www.vercel-status.com", "render": "https://status.render.com",
+                                   "netlify": "https://www.netlifystatus.com", "cloudflare": "https://www.cloudflarestatus.com",
+                                   "digitalocean": "https://status.digitalocean.com", "amplify": "https://health.aws.amazon.com/health/status",
+                                   "railway": "https://status.railway.com", "fly": "https://status.flyio.net"]
+    private static let statuspageHosted: Set<String> = ["vercel", "render", "netlify", "cloudflare", "digitalocean"]
+    /// The source hosts the status banner also watches, next to the platforms.
+    static let gitHosts: [(label: String, page: String, feed: String)] = [
+        ("GitHub", "https://www.githubstatus.com", "https://www.githubstatus.com/api/v2/status.json")]
 
     /// The app's own loader for this provider, if it has one.
     var platform: Platform? { Platform.allCases.first { $0.cli == id } }

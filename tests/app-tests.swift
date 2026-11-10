@@ -617,9 +617,11 @@ expect("GitHub PR link", GitHost.prURL("me/app", 12)?.absoluteString ?? "", "htt
 expect("GitLab MR link", GitHost.prURL("gitlab.com/group/app", 12)?.absoluteString ?? "", "https://gitlab.com/group/app/-/merge_requests/12")
 expect("PR labels", GitHost.prLabel("me/app", 3) + " " + GitHost.prLabel("gitlab.com/g/app", 3), "#3 !3")
 var labItem = item(changed: true, last: "aaa", head: "bbb", repo: "gitlab.com/group/app")
-expect("GitLab compare link", GitHost.compareURL(labItem)?.absoluteString ?? "", "https://gitlab.com/group/app/-/compare/aaa...main")
+expect("GitLab compare link", labItem.compareURL?.absoluteString ?? "", "https://gitlab.com/group/app/-/compare/aaa...main")
+labItem.repo = "git.example.org/team/sub/app"
+expect("self-managed GitLab compare link", labItem.compareURL?.absoluteString ?? "", "https://git.example.org/team/sub/app/-/compare/aaa...main")
 labItem.repo = "me/app"
-expect("GitHub compare link unchanged", GitHost.compareURL(labItem)?.absoluteString ?? "", "https://github.com/me/app/compare/aaa...main")
+expect("GitHub compare link unchanged", labItem.compareURL?.absoluteString ?? "", "https://github.com/me/app/compare/aaa...main")
 
 // The month at this pace: whole days only.
 let paceDays = (1...8).map { Costs.Day(day: "2026-11-0\($0)", total: 2, build: 2) } + [Costs.Day(day: "2026-11-09", total: 0, build: 0)]
@@ -788,6 +790,92 @@ do {
     expect("check: a running check keeps polling", c.anyRunning, true)
     expect("check: tools", c.tools?.any ?? false, true)
 }
+
+// Settings: tabs, links into them, pickers, diagnostics, budget text, connection.
+expect("settings tab: an old stored tab still opens", SettingsTab.resolve("team"), SettingsTab.team)
+expect("settings tab: an unknown one opens General", SettingsTab.resolve("advanced"), SettingsTab.general)
+expect("settings tab: none opens General", SettingsTab.resolve(nil), SettingsTab.general)
+expect("settings link: path", SettingsNav.tab(from: URL(string: "deploycenter://settings/claude")!) ?? .help, SettingsTab.claude)
+expect("settings link: query", SettingsNav.tab(from: URL(string: "deploycenter://settings?tab=Costs")!) ?? .help, SettingsTab.costs)
+expect("settings link: unknown tab opens General", SettingsNav.tab(from: URL(string: "deploycenter://settings/nope")!) ?? .help, SettingsTab.general)
+expect("settings link: a select link is not one", SettingsNav.tab(from: URL(string: "deploycenter://select?project=app")!) == nil, true)
+expect("settings link: another scheme is not one", SettingsNav.tab(from: URL(string: "https://settings/claude")!) == nil, true)
+do {
+    let d = UserDefaults(suiteName: "dc-tests-settings")!
+    d.removePersistentDomain(forName: "dc-tests-settings")
+    SettingsNav.prepare(.claude, anchor: "autofix", defaults: d)
+    expect("settings: tab and anchor stored", "\(d.string(forKey: "settingsTab") ?? "") \(d.string(forKey: "settingsAnchor") ?? "")", "claude autofix")
+    d.set(4, forKey: "maxParallel"); d.set(10, forKey: "refreshMinutes"); d.set(99, forKey: "undoSeconds"); d.set(5, forKey: "staleDays")
+    SettingsChoice.snapAll(d)
+    expect("snap: unknown values become the nearest offered", "\(d.integer(forKey: "maxParallel")) \(d.integer(forKey: "refreshMinutes")) \(d.integer(forKey: "undoSeconds")) \(d.integer(forKey: "staleDays"))", "3 5 15 5")
+    expect("snap: an unset value stays unset", d.object(forKey: "reminderHour") == nil, true)
+    d.removePersistentDomain(forName: "dc-tests-settings")
+}
+expect("snap: a tie takes the smaller", SettingsChoice.snap(45, to: [5, 15, 30, 60]), 30)
+expect("snap: below the list", SettingsChoice.snap(-3, to: SettingsChoice.undoSeconds), 0)
+expect("snap: an allowed value stays", SettingsChoice.snap(8, to: SettingsChoice.undoSeconds), 8)
+expect("reset: General keeps the language and keys", SettingsTab.general.defaultsKeys.contains("AppleLanguages") || SettingsTab.general.defaultsKeys.contains { $0.lowercased().contains("key") && $0 != "paletteHotKey" }, false)
+expect("reset: project data is not a tab default", SettingsTab.allCases.flatMap(\.defaultsKeys).filter { ["pinned", "hidden", "notes", "healthPaths", "autoRollback"].contains($0) }, [String]())
+do {
+    let doc = try! JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"vercelCli":true,"vercelApi":true,"vercelLoggedIn":true,"githubCli":true,"githubLoggedIn":true,"renderKey":false}"#.utf8))
+    let prov = ProviderInfo.builtIn + [ProviderInfo(id: "netlify", label: "Netlify", enabled: true)]
+    let text = SettingsText.diagnostics(version: "1.0", os: "macOS", doctor: doc, providers: prov, counts: ["vercel": 3, "render": 0],
+                                        gitlabRepos: 2, autofix: nil)
+    expect("diagnostics: every platform has a line", text.contains("Netlify: on") && text.contains("Render: on, key false, 0 projects") && text.contains("Vercel: on, cli true/api true/login true, 3 projects"), true)
+    expect("diagnostics: GitLab and Autofix", text.contains("GitLab: 2 repos") && text.contains("Autofix: unknown"), true)
+    expect("connection: Render without key", SettingsText.connection("render", doctor: doc)?.ok ?? true, false)
+    expect("connection: Vercel signed in", SettingsText.connection("vercel", doctor: doc)?.ok ?? false, true)
+    expect("connection: unknown for others", SettingsText.connection("netlify", doctor: doc) == nil, true)
+}
+expect("budget hint: off", SettingsText.budgetHint(budget: 0, pace: 10).contains("0"), true)
+expect("budget hint: 80 % of 100", SettingsText.budgetHint(budget: 100, pace: nil).contains("80"), true)
+expect("shortcuts: no system ⌥⌘D", SettingsText.shortcuts.contains { $0.keys == "⌥⌘D" }, false)
+
+// A link or a menu-bar click shows exactly one project, by platform when a name is on two.
+do {
+    let both = [item(.vercel), item(.render)]
+    expect("show: a name on two platforms shows both", Store.showRequest("app", items: both)!, Store.ShowRequest(name: "app", key: nil))
+    expect("show: platform:name picks one", Store.showRequest("render:app", items: both)!, Store.ShowRequest(name: "app", key: "render/srv-1"))
+    expect("show: a unique name gets its key", Store.showRequest("app", items: [item(.vercel)])!, Store.ShowRequest(name: "app", key: "vercel/app"))
+    expect("show: a colon that is no platform is part of the name", Store.showRequest("a:b", items: both)?.name ?? "", "a:b")
+    expect("show: empty is nothing", Store.showRequest("  ", items: both) == nil, true)
+}
+MainActor.assumeIsolated {
+    let st = Store()
+    var a = Item(id: "a1", name: "one", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil); a.changed = true
+    var b = Item(id: "b1", name: "two", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil); b.changed = true
+    st.items[.vercel] = [a, b]
+    let before = st.hidden
+    expect("changed count: both", st.changedCount(.vercel), 2)
+    st.toggleHidden(b)
+    expect("changed count: without the hidden one", st.changedCount(.vercel), 1)
+    st.toggleHidden(b)
+    expect("changed count: hidden state restored", st.hidden, before)
+}
+
+// Status pages: from the provider, https only; a feed only for the known Statuspage sites.
+do {
+    let p = try! JSONDecoder().decode([ProviderInfo].self, from: Data(#"[{"id":"netlify","statusPage":"https://example.org/status"},{"id":"cloudflare","statusPage":"http://x"},{"id":"amplify"},{"id":"newhost"}]"#.utf8))
+    expect("status: the script's page", p[0].statusURL?.absoluteString ?? "", "https://example.org/status")
+    expect("status: the known feed is still used", p[0].statusFeed?.absoluteString ?? "", "https://www.netlifystatus.com/api/v2/status.json")
+    expect("status: http is not taken, the known page is", p[1].statusURL?.absoluteString ?? "", "https://www.cloudflarestatus.com")
+    expect("status: a page without a feed", "\(p[2].statusURL != nil) \(p[2].statusFeed == nil)", "true true")
+    expect("status: unknown provider has none", p[3].statusURL == nil, true)
+}
+
+// The GitHub budget: one reload after it resets, only when it is low and the reset is near.
+do {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let low = try! JSONDecoder().decode(Store.Budget.self, from: Data(#"{"remaining":10,"limit":5000,"reset":1000600}"#.utf8))
+    expect("budget reload: 30 s after the reset", Store.budgetReloadDelay(low, now: now) ?? -1, 630.0)
+    let fine = try! JSONDecoder().decode(Store.Budget.self, from: Data(#"{"remaining":4000,"limit":5000,"reset":1000600}"#.utf8))
+    expect("budget reload: not when there is budget", Store.budgetReloadDelay(fine, now: now) == nil, true)
+    let past = try! JSONDecoder().decode(Store.Budget.self, from: Data(#"{"remaining":10,"limit":5000,"reset":999000}"#.utf8))
+    expect("budget reload: not for a reset in the past", Store.budgetReloadDelay(past, now: now) == nil, true)
+}
+
+// Messages carry the project they are about.
+expect("message: project key kept", Store.Message(date: Date(), text: "x", ok: false, project: "vercel/app").project ?? "", "vercel/app")
 
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

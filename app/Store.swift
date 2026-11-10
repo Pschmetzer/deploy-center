@@ -31,6 +31,14 @@ final class Store: ObservableObject {
     private var lastExtras = Date.distantPast
     /// When a part last failed to load; the values from before stay and count as out of date.
     @Published var extrasFailedAt: [String: Date] = [:]
+    /// When a part ("costs", "triggers") was last read fine: shown as "as of …" while a newer read fails.
+    @Published var extrasLoadedAt: [String: Date] = [:]
+    /// "As of 09:12" for a part whose last read failed and whose values are older; nil while it is current.
+    func staleNote(_ part: String) -> String? {
+        guard extrasFailedAt[part] != nil else { return nil }
+        guard let at = extrasLoadedAt[part] else { return L("Could not be read", "Ließ sich nicht lesen") }
+        return L("As of ", "Stand ") + at.formatted(Calendar.current.isDateInToday(at) ? .dateTime.hour().minute() : .dateTime.day().month().hour().minute())
+    }
     func loadExtras() async {
         lastExtras = Date()
         Task { await checkProviders() }
@@ -43,7 +51,29 @@ final class Store: ObservableObject {
         async let b = github ? Self.extra(["github-budget"], Budget.self) : nil
         if let r = await c { if case .success(let v) = r { costs = v; checkBudget(); writeSnapshot() }; note("costs", r) }
         if let r = await t { if case .success(let v) = r { triggers = v }; note("triggers", r) }
-        if let r = await b { if case .success(let v) = r { githubBudget = v }; note("github-budget", r) }
+        if let r = await b { if case .success(let v) = r { githubBudget = v; reloadWhenBudgetResets(v) }; note("github-budget", r) }
+    }
+
+    /// The GitHub budget is (nearly) spent: one reload shortly after it resets, so the counts come
+    /// back without a click. Once per reset time, so a budget still low afterwards cannot loop.
+    private var budgetReloadFor: Double?
+    private func reloadWhenBudgetResets(_ b: Budget, now: Date = Date()) {
+        guard let wait = Self.budgetReloadDelay(b, now: now), budgetReloadFor != b.reset else { return }
+        budgetReloadFor = b.reset
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            guard let self, !self.screensAsleep else { return }
+            // The counts are what is missing: read the budget again, then the lists.
+            self.lastExtras = .distantPast
+            await self.autoRefresh()
+        }
+    }
+    /// Seconds until a reload after the reset (30 s later), or nil: budget not low, or the reset is
+    /// past or more than an hour away (a wrong clock).
+    nonisolated static func budgetReloadDelay(_ b: Budget, now: Date = Date()) -> Double? {
+        guard b.remaining < 300 else { return nil }
+        let wait = b.reset - now.timeIntervalSince1970 + 30
+        return wait > 0 && wait <= 3630 ? wait : nil
     }
     /// Only the observer flag of `config --json`, so a field the rest of Settings > Team needs cannot stop it.
     private struct ReadonlyFlag: Decodable { struct Flag: Decodable { let value: Bool }; let readonly: Flag? }
@@ -55,7 +85,7 @@ final class Store: ObservableObject {
     }
     private func note<T>(_ name: String, _ r: Result<T, Error>) {
         switch r {
-        case .success: extrasFailedAt[name] = nil
+        case .success: extrasFailedAt[name] = nil; extrasLoadedAt[name] = Date()
         case .failure(let e): extrasFailedAt[name] = Date(); Log.write("\(name): \(e.localizedDescription)")
         }
     }
@@ -105,12 +135,16 @@ final class Store: ObservableObject {
             L("At this pace ≈ \(m) a month, budget \(b)", "Bei diesem Tempo ≈ \(m) im Monat, Budget \(b)"), ok: false)
     }
 
-    /// Outages at Vercel, Render and GitHub: a failing deploy may not be the project's fault.
+    /// Outages at the platforms that are on and at GitHub: a failing deploy may not be the project's fault.
     @Published var providerIssues: [String] = []
+    /// The status pages the banner links to: one per platform that is on, then GitHub.
+    var statusLinks: [(label: String, url: URL)] {
+        enabledProviders.compactMap { p in p.statusURL.map { (p.label, $0) } }
+            + ProviderInfo.gitHosts.compactMap { g in URL(string: g.page).map { (g.label, $0) } }
+    }
     func checkProviders() async {
-        let feeds = [("Vercel", "https://www.vercel-status.com/api/v2/status.json"),
-                     ("Render", "https://status.render.com/api/v2/status.json"),
-                     ("GitHub", "https://www.githubstatus.com/api/v2/status.json")]
+        let feeds = enabledProviders.compactMap { p in p.statusFeed.map { (p.label, $0.absoluteString) } }
+            + ProviderInfo.gitHosts.map { ($0.label, $0.feed) }
         let found = await withTaskGroup(of: (Int, String?).self) { group -> [(Int, String)] in
             for (k, feed) in feeds.enumerated() {
                 group.addTask {
@@ -307,29 +341,37 @@ final class Store: ObservableObject {
         let b = Demo.scrub(body, items: Array(items.values.joined()))
         let text = title + (b.isEmpty ? "" : " – " + b)
         show(Toast(text: text, ok: ok))
-        let m = Message(date: Date(), text: text, ok: ok)
+        let m = Message(date: Date(), text: text, ok: ok, project: key)
         messages.insert(m, at: 0); autofixResult[key] = m
         if messages.count > 30 { messages.removeLast() }
     }
 
     private func offerAutofixSetup() {
         show(Toast(text: L("Autofix is not set up: no routine yet", "Autofix ist nicht eingerichtet: noch keine Routine"), ok: false,
-                   undoLabel: L("Open Settings", "Einstellungen öffnen"), undo: {
-            UserDefaults.standard.set("claude", forKey: "settingsTab")
-            NSApp.activate(ignoringOtherApps: true)
-            Store.openSettingsWindow()
+                   undoLabel: L("Open Settings", "Einstellungen öffnen"), undo: { [weak self] in
+            self?.openSettings(.claude, anchor: "autofix")
         }))
     }
 
-    /// Settings from code: since macOS 14 the `showSettingsWindow:` action is ignored, so the app
-    /// menu's own Settings item (⌘,) is clicked; the old action stays as the fallback.
-    static func openSettingsWindow() {
-        if let menu = NSApp.mainMenu?.items.first?.submenu,
-           let k = menu.items.firstIndex(where: { $0.keyEquivalent == "," && $0.keyEquivalentModifierMask == .command }) {
-            menu.performActionForItem(at: k)
-        } else {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    /// A tab of Settings (and a part of it) to open; the main window opens it with SwiftUI's
+    /// `openSettings`, see ContentView. No private selector.
+    @Published var settingsRequest: SettingsTab?
+    func openSettings(_ tab: SettingsTab, anchor: String? = nil) {
+        SettingsNav.prepare(tab, anchor: anchor)
+        NSApp.activate(ignoringOtherApps: true)
+        settingsRequest = tab
+        // No main window to take it (menu bar only): the app menu's own Settings item (⌘,) is clicked.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard let self, self.settingsRequest != nil else { return }
+            self.settingsRequest = nil
+            Self.clickSettingsMenuItem()
         }
+    }
+    private static func clickSettingsMenuItem() {
+        guard let menu = NSApp.mainMenu?.items.first?.submenu,
+              let k = menu.items.firstIndex(where: { $0.keyEquivalent == "," && $0.keyEquivalentModifierMask == .command }) else { return }
+        menu.performActionForItem(at: k)
     }
 
     func buildCost(_ project: String) -> Double? {
@@ -642,7 +684,8 @@ final class Store: ObservableObject {
 
     func selected(_ p: Platform) -> [Item] { (items[p] ?? []).filter { $0.selected } }
     func autoOn(_ p: Platform) -> [Item] { (items[p] ?? []).filter { $0.auto } }
-    func changedCount(_ p: Platform) -> Int { (items[p] ?? []).filter { $0.deployable && $0.hasNewCommits }.count }
+    /// Projects with changes on a platform, without the hidden ones: the list and `waiting` leave them out too.
+    func changedCount(_ p: Platform) -> Int { (items[p] ?? []).filter { $0.deployable && $0.hasNewCommits && !isHidden($0) }.count }
 
     func toggle(_ p: Platform, _ id: String) {
         guard let i = items[p]?.firstIndex(where: { $0.id == id }), items[p]![i].deployable else { return }
@@ -701,7 +744,7 @@ final class Store: ObservableObject {
             items[p]![i].lastAt = Date(); items[p]![i].lastState = p == .vercel ? "READY" : "live"
             items[p]![i].changed = false; items[p]![i].pendingCommits = 0; items[p]![i].pendingPRs = 0
         }
-        let name = items[p]![i].name
+        let name = items[p]![i].name, rowKey = Self.key(items[p]![i])
         // Only a deploy that really started has a duration; a row that never left the queue has none.
         let took = was.isActive && was != .queued ? items[p]![i].startedAt.map { Date().timeIntervalSince($0) } : nil
         switch s {
@@ -712,13 +755,13 @@ final class Store: ObservableObject {
         }
         switch s {
         case .done:
-            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true) }
-            else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true) }
-            else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true) }
+            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true, project: rowKey) }
+            else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true, project: rowKey) }
+            else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true, project: rowKey) }
         case .failed(let m):
-            if byPerson { say(L("\(name) cancelled", "\(name) abgebrochen"), p.rawValue, ok: true) }
-            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false) }
-        case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true)
+            if byPerson { say(L("\(name) cancelled", "\(name) abgebrochen"), p.rawValue, ok: true, project: rowKey) }
+            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false, project: rowKey) }
+        case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true, project: rowKey)
         default: break
         }
     }
@@ -750,15 +793,16 @@ final class Store: ObservableObject {
         Task { try? await Task.sleep(nanoseconds: secs * 1_000_000_000); if toast == t { toast = nil } }
     }
     /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
-    struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool }
+    /// `project` is the row's `Store.key` when the line is about one project: a click opens its log.
+    struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool; var project: String? = nil }
     @Published var messages: [Message] = []
     /// Names scrubbed in demo mode: a Mac notification shows up in a screen recording too.
-    private func say(_ title: String, _ body: String, ok: Bool) {
+    private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil) {
         let all = Array(items.values.joined())
         let title = Demo.scrub(title, items: all), body = Demo.scrub(body, items: all)
         Notify.post(title, body)
         show(Toast(text: title, ok: ok))
-        messages.insert(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok), at: 0)
+        messages.insert(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok, project: project), at: 0)
         if messages.count > 30 { messages.removeLast() }
     }
 
@@ -810,8 +854,23 @@ final class Store: ObservableObject {
         UserDefaults.standard.set(history, forKey: "waitingHistory")
     }
 
-    /// Set by the menu bar to show one project in the window.
-    @Published var pendingSearch: String?
+    /// Set by the menu bar or a `deploycenter://select` link: the window shows exactly this project.
+    @Published var pendingShow: ShowRequest?
+    /// One project to show: `key` (`Store.key`) when it is known, else every project of that name.
+    struct ShowRequest: Equatable { let name: String; let key: String? }
+    /// What a link's `project=` value points at: `platform:name` or a bare name. A bare name on two
+    /// platforms (or one not loaded yet) shows every project of that name. Nothing is ticked or started.
+    nonisolated static func showRequest(_ value: String, items: [Item]) -> ShowRequest? {
+        let v = value.trimmingCharacters(in: .whitespaces)
+        guard !v.isEmpty else { return nil }
+        var name = v, platform: String?
+        if let c = v.firstIndex(of: ":"), Platform.allCases.contains(where: { $0.cli == v[..<c].lowercased() }) {
+            platform = v[..<c].lowercased(); name = String(v[v.index(after: c)...])
+        }
+        let hits = items.filter { $0.name == name && (platform == nil || $0.platform.cli == platform) }
+        return ShowRequest(name: name, key: hits.count == 1 ? "\(hits[0].platform.cli)/\(hits[0].id)" : nil)   // = Store.key
+    }
+    func show(_ i: Item) { pendingShow = ShowRequest(name: i.name, key: Self.key(i)) }
     /// Set by the menu bar: tick everything with changes and ask, in the window.
     @Published var pendingDeployAll = false
 
@@ -988,7 +1047,7 @@ final class Store: ObservableObject {
             catch {
                 cancelled.remove(item.id)
                 if let before, itemNow(item)?.state == .running(L("cancelling", "wird abgebrochen")) { set(item.platform, item.id, before) }
-                say(L("Could not cancel \(item.name)", "\(item.name) ließ sich nicht abbrechen"), error.localizedDescription, ok: false)
+                say(L("Could not cancel \(item.name)", "\(item.name) ließ sich nicht abbrechen"), error.localizedDescription, ok: false, project: Self.key(item))
             }
         }
     }
@@ -1281,6 +1340,19 @@ final class Store: ObservableObject {
         UserDefaults.standard.set(Array(autoRollback), forKey: "autoRollback")
     }
     private var rollbackCountdowns: [String: Task<Void, Never>] = [:]
+
+    var healthPathCount: Int { healthPaths.values.filter { Self.cleanPath($0) != nil }.count }
+    /// Settings → Projects: one kind of mark off for every project (the dialog asked first).
+    func clearMarks(_ m: ProjectMarks) {
+        let d = UserDefaults.standard
+        switch m {
+        case .pinned: pinned = []; d.set([String](), forKey: "pinned")
+        case .notes: notes = [:]; d.set([String: String](), forKey: "notes")
+        case .checkPaths: healthPaths = [:]; d.set([String: String](), forKey: "healthPaths")
+        case .autoRollback: autoRollback = []; d.set([String](), forKey: "autoRollback")
+        case .ignoredTriggers: break   // an @AppStorage string of the window, cleared by Settings itself
+        }
+    }
     static let rollbackSeconds = 10
     nonisolated static let rollbackPrefix = "rollback|"
 

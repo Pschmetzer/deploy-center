@@ -5,7 +5,8 @@ import Foundation
 extension Demo {
     /// Every project name, repo and domain in `text` replaced by its stand-in, longest first so
     /// "shop-api" is not cut into "shop" + "-api". Without demo mode the text stays as it is.
-    /// Only for the screen: what goes to the clipboard stays real.
+    /// For the screen and, in demo mode, for what is copied too (release notes, the build log for
+    /// Claude): a recording or a pasted text then shows the same stand-ins as the window.
     static func scrub(_ text: String, items: [Item]) -> String {
         guard on, !text.isEmpty else { return text }
         var words = Set<String>()

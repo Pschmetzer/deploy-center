@@ -106,6 +106,7 @@ struct PhoneLinkSettings: View {
     @State private var vercel = ""
     @State private var hasVercel = MacSecret.get("deploy-center-phone-vercel") != nil
     @State private var qr = false
+    @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
         Section {
@@ -128,6 +129,9 @@ struct PhoneLinkSettings: View {
             Link(L("Create a Vercel token (vercel.com → Account → Tokens)", "Vercel-Token erstellen (vercel.com → Account → Tokens)"),
                  destination: URL(string: "https://vercel.com/account/tokens")!)
             Button(L("Show a QR code for the iPhone …", "QR-Code fürs iPhone zeigen …")) { qr = true }
+                // Demo mode is for recordings, and the code holds every key.
+                .disabled(demoMode)
+                .help(demoMode ? L("Not in demo mode: the code holds your keys.", "Nicht im Demo-Modus: Der Code enthält deine Schlüssel.") : "")
             if let p = link.problem { Text(p).foregroundStyle(.red) }
             else if on, let t = link.lastPush {
                 Text(L("Handed over ", "Übergeben ") + t.formatted(.relative(presentation: .named))).foregroundStyle(.secondary)
@@ -146,6 +150,7 @@ struct PhoneQRSheet: View {
     @State private var image: NSImage?
     @State private var empty = false
     @State private var left = 60
+    @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
         VStack(spacing: 14) {
@@ -163,7 +168,12 @@ struct PhoneQRSheet: View {
             Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.defaultAction)
         }
         .padding(24)
+        // Left out of screenshots, recordings and screen sharing (as far as macOS honours it).
+        .background(WindowAccessor { $0.sharingType = .none })
+        // Demo mode switched on while it is open: it closes.
+        .onChange(of: demoMode) { _, on in if on { dismiss() } }
         .task {
+            if demoMode { dismiss(); return }
             let keys = await PhoneLinkModel.collect()
             if keys.isEmpty { empty = true; return }
             image = PhoneQRSheet.make(PhoneLink.qrText(keys) ?? "")
