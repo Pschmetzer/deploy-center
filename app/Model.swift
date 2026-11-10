@@ -350,8 +350,14 @@ enum RowAutofix: Equatable {
     case prOpen(number: Int, url: URL?)
     case merged(sha: String, pr: Int?, url: URL?)
     case handedBack
+    /// Handed over long ago and still no PR: the session most likely ended without one (a cause
+    /// outside the code, say). Its report is in the session, so the chip links there.
+    case noPR(session: URL?)
 
-    static func of(_ i: Item, _ f: AutofixReport.Fire?) -> RowAutofix? {
+    /// After this long without a PR a hand-over no longer counts as "fixing".
+    static let stalledAfter: TimeInterval = 90 * 60
+
+    static func of(_ i: Item, _ f: AutofixReport.Fire?, now: Date = Date()) -> RowAutofix? {
         guard let f else { return nil }
         let pr = f.prUrl.flatMap(URL.init(string:))
         if let m = f.mergedSha {
@@ -364,7 +370,10 @@ enum RowAutofix: Equatable {
         guard i.lastFailed else { return nil }   // green again: nothing to say
         if f.prState == "closed" || f.prState == "merged" { return .handedBack }
         switch f.status {
-        case "fired", "pending", "ratelimited": return .fixing(session: f.session.flatMap(URL.init(string:)))
+        case "fired", "pending", "ratelimited":
+            let session = f.session.flatMap(URL.init(string:))
+            if f.prState == nil, now.timeIntervalSince1970 - f.at > stalledAfter { return .noPR(session: session) }
+            return .fixing(session: session)
         case "skipped", "failed": return .handedBack
         default: return nil
         }

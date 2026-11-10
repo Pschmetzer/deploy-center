@@ -43,7 +43,7 @@ In the app: Settings > Autofix walks through these steps. In the terminal:
    ```
    This installs a launchd job. `deploys autofix schedule off` removes it. [`scripts/autofix.plist.example`](../scripts/autofix.plist.example) shows the same job written by hand.
 
-`deploys autofix list` shows every hand-over with its session link and the merged fix; `deploys autofix status` gives the same as JSON. `deploys where` shows whether a routine and a token are set.
+`deploys autofix sync` brings the hand-overs up to date with their PRs (merged, closed, open) without firing anything; the app runs it every few minutes while one is open, and it loads the schedule again if launchd dropped it. `deploys autofix list` shows every hand-over with its session link and the merged fix; `deploys autofix status` gives the same as JSON. `deploys where` shows whether a routine and a token are set.
 
 The token is kept in the keychain under `deploy-center-routine`. It goes to curl on stdin and never appears as an argument. `DEPLOYS_ROUTINE_TOKEN` can replace it on a machine without a keychain. `deploys autofix forget-token` removes it.
 

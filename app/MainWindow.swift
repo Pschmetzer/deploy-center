@@ -1632,6 +1632,7 @@ struct AgentChips: View {
         case .prOpen(let n, _): return L("Fix PR #\(n) open", "Fix-PR #\(n) offen")
         case .merged: return L("Fix merged – deploy now", "Fix gemergt – jetzt deployen")
         case .handedBack: return L("Fix failed – over to you", "Fix fehlgeschlagen – an dich übergeben")
+        case .noPR: return L("No fix PR from Claude – see session", "Kein Fix-PR von Claude – Sitzung ansehen")
         }
     }
     static func allowedText(_ until: Date) -> String {
@@ -1641,7 +1642,7 @@ struct AgentChips: View {
     /// The page a chip opens; none in demo mode, where a URL would show the repo.
     static func link(_ a: RowAutofix) -> URL? {
         switch a {
-        case .fixing(let u): return u
+        case .fixing(let u), .noPR(let u): return u
         case .prOpen(_, let u), .merged(_, _, let u): return u
         case .handedBack: return nil
         }
@@ -1675,6 +1676,7 @@ struct AgentChips: View {
             case .prOpen: return ("arrow.triangle.pull", .blue)
             case .merged: return ("checkmark.seal.fill", .green)
             case .handedBack: return ("person.fill.questionmark", Color.warningText)
+            case .noPR: return ("exclamationmark.bubble", Color.warningText)
             }
         }()
         if let u = Self.link(a), !Demo.on {

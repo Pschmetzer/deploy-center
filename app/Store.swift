@@ -122,7 +122,17 @@ final class Store: ObservableObject {
     /// The last answer of "Fix with Claude" per row, for the details sheet.
     @Published var autofixResult: [String: Message] = [:]
 
+    /// When `autofix sync` last ran, so a refresh every few seconds does not ask GitHub every time.
+    private var lastAutofixSync = Date.distantPast
+
     func loadAgentStatus() async {
+        // A hand-over still marked "fixing": bring it up to date with its PR first. The 10-minute
+        // job does this too, but it may not be running, and then a merged fix said "fixing" for hours.
+        if autofix?.fires.contains(where: { $0.status == "fired" && $0.mergedSha == nil && $0.prState != "closed" }) ?? true,
+           Date().timeIntervalSince(lastAutofixSync) > 180 {
+            lastAutofixSync = Date()
+            _ = try? await Tool.run(["autofix", "sync"], timeout: 90)
+        }
         async let a = Self.extra(["autofix", "status", "--json"], AutofixReport.self)
         async let g = Self.extra(["guard", "status", "--json"], AllowanceReport.self)
         // A script without these commands: nothing is shown, nothing is said.
@@ -143,7 +153,8 @@ final class Store: ObservableObject {
     /// The button: the last deploy failed and no session or fix PR is on it already.
     func canFixWithClaude(_ i: Item) -> Bool {
         guard i.lastFailed, i.repo != nil, !i.state.isActive else { return false }
-        switch autofixState(i) { case .fixing?, .prOpen?, .merged?: return false; default: return true }
+        // .noPR too: the script does not hand the same failed build over twice.
+        switch autofixState(i) { case .fixing?, .prOpen?, .merged?, .noPR?: return false; default: return true }
     }
 
     /// A merged fix ticks its row once, so deploying it is one click; unticking is respected.
