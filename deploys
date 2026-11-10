@@ -46,6 +46,7 @@
 #                                             --wait follows it until live or failed
 #   deploys history <project> [n] [--json]    the last n deploys (default 10): when, state, commit, source
 #   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>)
+#     [--runtime]                             the running service's log instead (providers with runtimeLogs)
 #   deploys autofix [--dry-run] [--only <platform> <p> [--again]]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
 #   deploys autofix --preview --only <platform> <p> [--json]   what a fire would send (masked log, prompt, routine id); sends nothing
 #   deploys autofix set-token | routine <id> | list | forget-token | prompt | status | sync | schedule on|off
@@ -2155,6 +2156,18 @@ case "${1:-} ${2:-}" in
   "autofix "|"autofix --"*|"guard "|"guard --"*)
     case " ${*:2} " in *" --dry-run "*|*" --preview "*) ;; *) require_write "$1" ;; esac ;;
 esac
+# FEA-110: "--dry-run" for turning auto-deploy on goes only to a provider that says it knows it
+# ("onDryRun": true in its meta). An older provider file ignores the flag and really turns it on,
+# so every push builds again (and costs).
+if is_provider "${1:-}"; then
+  case "${2:-}" in
+    on|autodeploy-on)
+      case " ${*:3} " in
+        *" --dry-run "*|*" --dry-run="*) meta_flag "$1" onDryRun \
+          || die "$(meta_str "$1" label) here has no dry run for autodeploy-on (its provider file is older); nothing was changed. Update deploys, or leave out --dry-run only if you mean it" ;;
+      esac ;;
+  esac
+fi
 # Any other provider (deploys <p> <verb>): the verbs that start, stop or switch something.
 if is_provider "${1:-}"; then
   case "${2:-}" in
@@ -2510,9 +2523,15 @@ case "${1:-} ${2:-}" in
   "logs "*)
     # The last lines of the newest build log of one project, or with --id of that one deploy
     # (autofix: a build started after the failure must not hand over the wrong log).
-    p="${2:?project}"; n=80; did=""; shift 2
-    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>]}"; shift;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
+    # --runtime: the running service's log, from a provider that has one ("runtimeLogs": true).
+    p="${2:?project}"; n=80; did=""; rt=""; shift 2
+    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>] [--runtime]}"; shift;; --runtime) rt=1;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
     resolve "$p"; need_cap "$PLAT" logs "read build logs"
+    if [ -n "$rt" ]; then
+      [ -z "$did" ] || die "--runtime is the running service's log; --id is for a build log"
+      meta_flag "$PLAT" runtimeLogs || die "$(meta_str "$PLAT" label) has no runtime log here"
+      did=--runtime
+    fi
     # Masked like everything that leaves through autofix and ai: the log goes to terminals, the app,
     # the MCP server and from there to models. Under pipefail the provider's failure still counts.
     "${PLAT}_logs" "$PID" "$n" "$did" | af_mask ;;

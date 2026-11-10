@@ -1585,6 +1585,18 @@ echo '{"web":{"org":"me","repo":"web","offAt":1}}' > "$REPOS"
 tv='{"deployments":[{"name":"web","source":"git","created":1767000000000,"buildingAt":1767000000000,"ready":1767000090000},{"name":"web","source":"git","created":1767000000000}]}'
 expect "FEA-007: triggers: minutes and usd per build, null when unknown" \
   "$(echo "$tv" | trig_vercel_rows 0.1 | jq -sc 'map([.minutes, .usd])'):$(echo "$tv" | trig_vercel_rows "" | jq -sc 'map(.usd)')" '[[1.5,0.15],[null,null]]:[null,null]'
+# lib/http.sh: a body from a file, and the response headers kept where asked.
+echo '{"big":1}' > "$tmp/http/body.json"
+out="$( ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE=ok; : > "$HTTP_LOG"; . ./lib/http.sh; HTTP_HEADERS="$tmp/http/h.txt"; http_call X POST https://api.x.test/v1/things "@$tmp/http/body.json" ) 2>&1)"
+expect "http_call: @file is sent as the body, -D keeps the headers" "$out:$(grep -c -- "--data-binary @$tmp/http/body.json" "$tmp/http/log"):$(grep -c -- "-D $tmp/http/h.txt" "$tmp/http/log")" '{"ok":true}:1:1'
+out="$( ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE=ok; : > "$HTTP_LOG"; . ./lib/http.sh; http_call X POST https://api.x.test/v1/things "@$tmp/http/none.json" ) 2>&1)"; rc=$?
+expect "http_call: a body file that is not there is an error, no call" "$rc:$(echo "$out" | grep -c 'cannot be read'):$(grep -c . "$tmp/http/log")" "1:1:0"
+# FEA-110: --dry-run for autodeploy-on only goes to a provider whose meta says onDryRun.
+fresh
+expect "FEA-110: autodeploy-on --dry-run is refused by a provider without onDryRun, nothing called" \
+  "$(run "$O" "$E" vercel autodeploy-on web --dry-run; grep -c 'no dry run' "$E"; grep -c . "$e2e/calls.log")" $'1\n1\n0'
+fresh
+expect "logs --runtime: refused where the provider has no runtime log" "$(run "$O" "$E" logs web --runtime; grep -c 'no runtime log' "$E")" $'1\n1'
 # ===== end CLI track =====
 
 echo

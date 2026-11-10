@@ -178,6 +178,13 @@ waiting project: `[{rule, index, project, matched, action, unmet}]`.
 - `deploys verify <p> --json`: `checks` `[{url, codes, healthy}]`, one per check asked. `url` and
   `codes` stay those of the first failing check (else the first).
 
+- `deploys <p> autodeploy-on … --dry-run` is passed on only to a provider whose meta says
+  `"onDryRun": true`; an older provider file would ignore the flag and really turn auto-deploy on,
+  so `deploys` stops with an error instead.
+- `deploys logs <p> --runtime`: the running service's log, for providers with `"runtimeLogs": true`
+  (masked like build logs); others say so.
+- `lib/http.sh`: `HTTP_HEADERS=<file>` keeps the response headers; a body `@<file>` is read from it.
+
 ## Checks, groups and observers in deploy-center.json
 
 - `projects.<name>.checks`: `["/health", {"path": "/api/ping", "expect": "2xx"}]`. Without `--path`,
