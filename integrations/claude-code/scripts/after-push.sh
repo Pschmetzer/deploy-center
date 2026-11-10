@@ -9,19 +9,29 @@
 # the repository is not on GitHub, nothing is waiting, the CLI does not answer in time, or the
 # reminder is turned off (plugin option push_reminder, or DEPLOYS_PUSH_REMINDER=off).
 #
+# With --session-start (SessionStart hook, opt-in: plugin option session_hint): the same line at the
+# start of a session, for the repository of the session's folder, every branch. No push needed.
+#
 # Input: the hook JSON on stdin (tool_input.command, cwd).
 # Output: JSON with systemMessage (shown to the user) and additionalContext (for Claude).
 # Env: DEPLOYS                 the CLI to call (default: the app bundle, then deploys on PATH)
 #      DEPLOYS_HOOK_TIMEOUT    seconds to wait for the CLI (default 15)
 
 input="$(cat)"   # read all of stdin first, so Claude Code never writes into a closed pipe
-for v in "${DEPLOYS_PUSH_REMINDER:-}" "${CLAUDE_PLUGIN_OPTION_PUSH_REMINDER:-}"; do
-  case "$v" in off|false|0|no) exit 0 ;; esac
-done
+mode=push; [ "${1:-}" = --session-start ] && mode=session
+if [ "$mode" = push ]; then
+  for v in "${DEPLOYS_PUSH_REMINDER:-}" "${CLAUDE_PLUGIN_OPTION_PUSH_REMINDER:-}"; do
+    case "$v" in off|false|0|no) exit 0 ;; esac
+  done
+else
+  # Off unless turned on: it asks GitHub at every session start.
+  case "${DEPLOYS_SESSION_HINT:-${CLAUDE_PLUGIN_OPTION_SESSION_HINT:-}}" in on|true|1|yes) ;; *) exit 0 ;; esac
+fi
 command -v jq >/dev/null 2>&1 || exit 0
 
 cmd="$(jq -r '.tool_input.command // empty' <<<"$input" 2>/dev/null)"
 cwd="$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null)"
+[ "$mode" = session ] && cmd="git push --all"   # every branch of origin counts
 # A cheap first look; the word-by-word check below decides.
 case "$cmd" in *git*push*) ;; *) exit 0 ;; esac
 [ "$(jq -r '.tool_response.interrupted // false' <<<"$input" 2>/dev/null)" = true ] && exit 0
@@ -128,6 +138,16 @@ msg="$(jq -r --arg repo "$repo" --arg br "$branch" '
   end' "$tmp/out" 2>/dev/null)"
 [ -n "$msg" ] || exit 0
 
+if [ "$mode" = session ]; then
+  jq -cn --arg m "$msg" '{
+    systemMessage: ("Deploy Center: " + $m),
+    hookSpecificOutput: {
+      hookEventName: "SessionStart",
+      additionalContext: ("Deploy Center: " + $m + ". Auto-deploy is off. Mention it only if the user asks about deploys or before they ship. Do not deploy unless the user explicitly says so.")
+    }
+  }'
+  exit 0
+fi
 jq -cn --arg m "$msg" '{
   systemMessage: $m,
   hookSpecificOutput: {

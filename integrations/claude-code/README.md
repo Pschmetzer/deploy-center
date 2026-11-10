@@ -38,6 +38,9 @@ shows what it loaded. More in [docs/CLAUDE-CODE.md](../../docs/CLAUDE-CODE.md).
 | Command | `/deploy-center:deploys-status` | What is building, live or failed (`deploys status --json`). Read-only. |
 | Command | `/deploy-center:deploys-fix <project>` | Reads the build log and fixes the cause in the current repository. Never deploys. |
 | Command | `/deploy-center:deploys-ship <project>` | Shows what would go live, asks "Deploy … now? (yes/no)", and deploys only on yes. |
+| Command | `/deploy-center:deploys-notes <project>` | The release notes of what waits, and one or two sentences on what changes for users. |
+| Command | `/deploy-center:deploys-rollback <project>` | Shows the last deploys, asks "Roll back … ? (yes/no)", and rolls back only on yes. |
+| Subagent | `ship-reviewer` | Read-only: plan, notes and risk per project, then ship now / check first / wait. Never deploys. |
 | Hook | PostToolUse on `git push` | One line after Claude pushes, for example `3 commits waiting on app-web: deploy when ready (deploys changed)`. |
 | MCP | optional, not loaded | See [MCP server](#mcp-server). |
 
@@ -61,13 +64,17 @@ user says so".
   or the CLI does not answer. It always exits 0, so it never gets in the way of a push.
 - **Optional.** Turn it off with the plugin option `push_reminder` (`/plugin` > Installed >
   deploy-center > Configure options) or `DEPLOYS_PUSH_REMINDER=off`.
+- **At session start too, if you want.** The plugin option `session_hint` (off by default, since it
+  asks GitHub at every start) prints the same line when a session opens in a repository with
+  waiting commits. `DEPLOYS_SESSION_HINT=off` turns it off for one shell.
 - It finds `deploys` in `DEPLOYS`, then on `PATH`, then in `/Applications/Deploy Center.app` and
   `~/Applications/Deploy Center.app`.
 
 ## MCP server
 
 The MCP server in `integrations/mcp/` (read-only tools `deploys_changed`, `deploys_status`,
-`deploys_explain`, `deploys_notes`, `deploys_logs`, `deploys_doctor`, and the estimates
+`deploys_plan`, `deploys_explain`, `deploys_notes`, `deploys_logs`, `deploys_doctor`, the prompt
+`ship-check`, and the estimates
 `deploys_simulate` and `deploys_ledger`; deploy and rollback only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`) is not started by the
 plugin: a plugin may only point at files inside its own folder, and the server needs `npm ci`
 first. Add it yourself once:
@@ -84,12 +91,13 @@ path replaced. The skill and commands work without it: they call the CLI.
 ```text
 .claude-plugin/marketplace.json        (repo root) the marketplace: deploy-center
 integrations/claude-code/
-├── .claude-plugin/plugin.json         the manifest (name, version, the push_reminder option)
+├── .claude-plugin/plugin.json         the manifest (name, version, push_reminder and session_hint)
 ├── .claude-plugin/icon.png
 ├── skills/deploy-center/SKILL.md      the skill Claude loads by itself
-├── skills/deploys-*/SKILL.md          the four commands
-├── hooks/hooks.json                   PostToolUse, matcher Bash (the script finds the git push)
-├── scripts/after-push.sh              the hook
+├── skills/deploys-*/SKILL.md          the six commands
+├── agents/ship-reviewer.md            the read-only review subagent
+├── hooks/hooks.json                   PostToolUse, matcher Bash (the script finds the git push); SessionStart
+├── scripts/after-push.sh              the hook (--session-start for the session hint)
 └── mcp/deploys.mcp.json               optional MCP config, not loaded by the plugin
 ```
 

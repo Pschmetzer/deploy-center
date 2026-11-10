@@ -439,6 +439,14 @@ if [ ! -e "/Applications/Deploy Center.app" ] && [ ! -e "$HOME/Applications/Depl
 fi
 expect "claude-code hook: off with the plugin option" "$(CLAUDE_PLUGIN_OPTION_PUSH_REMINDER=false hk "git push")" "exit=0"
 expect "claude-code hook: off with DEPLOYS_PUSH_REMINDER=off" "$(DEPLOYS_PUSH_REMINDER=off hk "git push")" "exit=0"
+# --session-start: opt-in, the folder's repo, every branch, its own event name.
+ss() { jq -nc --arg d "${1:-$tmp/cc}" '{hook_event_name:"SessionStart",source:"startup",cwd:$d}' | "$hook" --session-start; echo "exit=$?"; }
+expect "claude-code session hint: off by default" "$(ss)" "exit=0"
+out="$(CLAUDE_PLUGIN_OPTION_SESSION_HINT=true ss)"
+expect "claude-code session hint: the folder's repo" "$(head -1 <<<"$out" | jq -r .systemMessage)" "Deploy Center: 4 commits waiting on app-web, changes waiting on api: deploy when ready (deploys changed)"
+expect "claude-code session hint: event name" "$(head -1 <<<"$out" | jq -r .hookSpecificOutput.hookEventName)" SessionStart
+expect "claude-code session hint: quiet for another repo" "$(CLAUDE_PLUGIN_OPTION_SESSION_HINT=true ss "$tmp/cc-other")" "exit=0"
+expect "claude-code session hint: DEPLOYS_SESSION_HINT=off wins" "$(DEPLOYS_SESSION_HINT=off CLAUDE_PLUGIN_OPTION_SESSION_HINT=true ss)" "exit=0"
 expect "claude-code hook: silent on bad input" "$(echo 'not json' | "$hook"; echo "exit=$?")" "exit=0"
 start=$(date +%s)
 cat > "$tmp/bin/slow-deploys" <<SH

@@ -46,7 +46,8 @@ Git auto-deploy is off on this project's Vercel/Render. A push does not go live;
 
 - **Deploying needs you.** The skill and the CLAUDE.md block say it in plain words. The
   `/deploy-center:deploys-ship` command shows what would go live and then stops to ask; running the
-  command is not the yes, your next message is.
+  command is not the yes, your next message is. `/deploy-center:deploys-rollback` works the same
+  way, and the `ship-reviewer` subagent only reads (it never runs `deploy-changed --yes`).
 - **Nothing pre-approves a deploy.** The plugin's `allowed-tools` lists only read-only commands
   (`deploys changed`, `status`, `logs`, `explain`, `notes`, `diff`, `history`, `doctor`). A deploy is
   always a normal Bash call, so Claude Code asks for permission unless you allowed it yourself.
