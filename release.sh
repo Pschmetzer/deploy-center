@@ -90,7 +90,9 @@ if publishing; then
   cmp="$(gh api "repos/$REPO/compare/main...$COMMIT" -q .status 2>/dev/null)" || die "$COMMIT is not on GitHub ($REPO); push first"
   case "$cmp" in identical|behind) ;; *) die "$COMMIT is not on $REPO main ($cmp); push it first" ;; esac
   # An existing tag must point at this commit; then the release is resumed, not refused.
+  # gh prints the error body on stdout when the tag is missing, so only a SHA counts.
   tag_sha="$(gh api "repos/$REPO/commits/$TAG" -q .sha 2>/dev/null || true)"
+  [[ "$tag_sha" =~ ^[0-9a-f]{40}$ ]] || tag_sha=""
   [ -z "$tag_sha" ] || [ "$tag_sha" = "$COMMIT" ] || die "$TAG exists already on another commit ($tag_sha): raise VERSION"
 fi
 
