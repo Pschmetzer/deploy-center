@@ -47,9 +47,11 @@ with `disable-model-invocation: true`: only you start them.
 
 ## The hook
 
-[`scripts/after-push.sh`](scripts/after-push.sh) runs after Claude's Bash tool runs a command that
-matches `Bash(git push *)`. It finds the pushed remote's `owner/repo`, calls
-`deploys changed --json`, and prints one line for the projects that deploy from that repository:
+[`scripts/after-push.sh`](scripts/after-push.sh) runs after each command of Claude's Bash tool and
+is silent unless the command contains a `git push` where a command starts (also `cd dir && git push`
+and `git -C dir push`; not `echo "git push"`). It finds the pushed remote's `owner/repo` and branch,
+calls `deploys changed --json`, and prints one line for the projects that deploy that branch of
+that repository (a push to a feature branch says nothing):
 to you as a notice (`systemMessage`), and to Claude as context, with "do not deploy unless the
 user says so".
 
@@ -86,7 +88,7 @@ integrations/claude-code/
 ├── .claude-plugin/icon.png
 ├── skills/deploy-center/SKILL.md      the skill Claude loads by itself
 ├── skills/deploys-*/SKILL.md          the four commands
-├── hooks/hooks.json                   PostToolUse, matcher Bash, if Bash(git push *)
+├── hooks/hooks.json                   PostToolUse, matcher Bash (the script finds the git push)
 ├── scripts/after-push.sh              the hook
 └── mcp/deploys.mcp.json               optional MCP config, not loaded by the plugin
 ```
@@ -108,8 +110,8 @@ To try local changes: `claude --plugin-dir integrations/claude-code`.
 - Marketplaces: https://code.claude.com/docs/en/plugin-marketplaces and https://code.claude.com/docs/en/plugins/marketplace-reference
 - Installing: https://code.claude.com/docs/en/plugins/install
 - Skills and slash commands (`SKILL.md`, `$ARGUMENTS`, `disable-model-invocation`): https://code.claude.com/docs/en/skills
-- Hooks (PostToolUse, `if`, `systemMessage`, `additionalContext`): https://code.claude.com/docs/en/hooks
-- Permission rule syntax used in `if` and `allowed-tools`: https://code.claude.com/docs/en/permissions
+- Hooks (PostToolUse, `systemMessage`, `additionalContext`): https://code.claude.com/docs/en/hooks
+- Permission rule syntax used in `allowed-tools`: https://code.claude.com/docs/en/permissions
 - MCP servers in Claude Code: https://code.claude.com/docs/en/mcp
 
 Claude and Claude Code are trademarks of Anthropic. Deploy Center is not affiliated with Anthropic.

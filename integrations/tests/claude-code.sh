@@ -81,7 +81,9 @@ check "hooks: known events only" jq -e '.hooks | keys - ["PreToolUse","PostToolU
 check "hooks: each group has a hooks array of command handlers" jq -e '[.hooks[][]] | all(
   (.hooks|type=="array" and length>0) and (.hooks|all(.type=="command" and (.command|type=="string"))))' "$hooks"
 check "hooks: timeouts are numbers" jq -e '[.hooks[][].hooks[] | .timeout // 1] | all(type=="number" and . > 0)' "$hooks"
-check "hooks: PostToolUse on Bash, only for git push" jq -e '.hooks.PostToolUse[0] | .matcher=="Bash" and .hooks[0].if=="Bash(git push *)"' "$hooks"
+# No `if` filter: a permission-style rule misses `cd x && git push` and `git -C x push`; the
+# script itself finds the push (and is silent otherwise).
+check "hooks: PostToolUse on Bash, the script filters for git push" jq -e '.hooks.PostToolUse[0] | .matcher=="Bash" and (.hooks[0] | has("if") | not)' "$hooks"
 check "hooks: \${CLAUDE_PLUGIN_ROOT} is quoted in shell form" \
   jq -e '[.hooks[][].hooks[] | select(.args == null) | .command] | all(test("\"\\$\\{CLAUDE_PLUGIN_ROOT\\}[^\"]*\""))' "$hooks"
 while IFS= read -r p; do

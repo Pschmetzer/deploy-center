@@ -5,6 +5,10 @@ disable-model-invocation: true
 allowed-tools: Bash(deploys logs *) Bash(deploys status *) Bash(deploys explain *)
 ---
 
+If a project was given, check it first: it must be one project name, a single word of letters, digits and
+`. _ : -` only (no spaces, no `;`, `&`, `|`, `$`, quotes or slashes). If it is anything else, say
+"That is not one project name." and stop. Never put it into a command otherwise.
+
 Fix the failed build of the project **$ARGUMENTS** in the current repository.
 
 If no project was given, run `deploys status --json`, list the failed builds, and ask which one.

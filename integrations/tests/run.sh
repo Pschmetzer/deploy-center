@@ -277,7 +277,7 @@ if command -v shellcheck >/dev/null; then
   shellcheck --severity=style "$hook" && ok "claude-code: shellcheck after-push.sh" || fail "claude-code: shellcheck after-push.sh" "see above"
   shellcheck --severity=warning tests/claude-code.sh && ok "claude-code: shellcheck claude-code.sh" || fail "claude-code: shellcheck claude-code.sh" "see above"
 fi
-git init -q "$tmp/cc" && git -C "$tmp/cc" remote add origin git@github.com:me/app.git
+git init -q -b main "$tmp/cc" && git -C "$tmp/cc" remote add origin git@github.com:me/app.git
 git init -q "$tmp/cc-other" && git -C "$tmp/cc-other" remote add origin https://github.com/someone/else.git
 git -C "$tmp/cc" remote add mirror https://github.com/me/site.git
 hk() { jq -nc --arg c "$1" --arg d "${2:-$tmp/cc}" '{hook_event_name:"PostToolUse",tool_name:"Bash",cwd:$d,tool_input:{command:$c},tool_response:{stdout:"",stderr:"",interrupted:false}}' | "$hook"; echo "exit=$?"; }
@@ -291,6 +291,12 @@ contains "claude-code hook: git push origin main -u" "$(hk "git push -u origin m
 expect "claude-code hook: another remote, nothing waiting there" "$(hk "git push mirror main")" "exit=0"
 expect "claude-code hook: a repo with no projects is silent" "$(hk "git push" "$tmp/cc-other")" "exit=0"
 expect "claude-code hook: not a push, silent" "$(hk "git status")" "exit=0"
+expect "claude-code hook: git push inside an echo is no push" "$(hk 'echo git push')" "exit=0"
+expect "claude-code hook: a commit message about git push is no push" "$(hk 'git commit -m fix-git-push-docs')" "exit=0"
+contains "claude-code hook: cd dir && git push" "$(hk "cd $tmp/cc && git push" "$tmp/cc-other" | head -1)" "app-web"
+contains "claude-code hook: git -C dir push" "$(hk "git -C $tmp/cc push" "$tmp/cc-other" | head -1)" "app-web"
+contains "claude-code hook: HEAD:main counts" "$(hk "git push origin HEAD:main" | head -1)" "app-web"
+expect "claude-code hook: a feature branch is not what the projects deploy" "$(hk "git push -u origin feature/x")" "exit=0"
 expect "claude-code hook: silent without deploys" "$(DEPLOYS=/nonexistent hk "git push")" "exit=0"
 if [ ! -e "/Applications/Deploy Center.app" ] && [ ! -e "$HOME/Applications/Deploy Center.app" ]; then
   nodeploys="$tmp/nodeploys"; mkdir -p "$nodeploys"

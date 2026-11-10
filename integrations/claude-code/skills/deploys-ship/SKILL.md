@@ -7,6 +7,10 @@ allowed-tools: Bash(deploys changed *) Bash(deploys notes *)
 
 Deploy the project **$ARGUMENTS** to production, but only after the user confirms.
 
+If a project was given, check it first: it must be one project name, a single word of letters, digits and
+`. _ : -` only (no spaces, no `;`, `&`, `|`, `$`, quotes or slashes). If it is anything else, say
+"That is not one project name." and stop. Never put it into a command otherwise.
+
 If no project was given, run `deploys changed --json`, list what is waiting, and ask which one. Stop.
 
 1. Run `deploys changed --json` and find the entry named `$ARGUMENTS`. If it is not in the list,
