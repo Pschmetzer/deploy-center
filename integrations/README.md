@@ -1,7 +1,8 @@
 # Integrations
 
 Small add-ons that call the `deploys` CLI. Each one only reads, except the GitHub Action when a
-workflow sets `deploy: true`. Auto-deploy stays off: nothing here deploys unless a person asks for it.
+workflow sets `deploy: true`, and the Raycast extension after you confirm a deploy. Auto-deploy
+stays off: nothing here deploys unless a person asks for it.
 
 | Folder | What it does |
 |---|---|
@@ -9,6 +10,7 @@ workflow sets `deploy: true`. Auto-deploy stays off: nothing here deploys unless
 | [hooks/](hooks/) | A git `pre-push` hook. It warns how many builds a push would start on projects that still deploy on push. |
 | [badge/](badge/) | An SVG badge per project, for example `deployed · 3 d ago · 4 commits waiting`. No server needed. |
 | [notify/](notify/) | A daily summary ("live today / waiting") sent to one webhook: Discord, Slack-compatible, ntfy or Telegram. |
+| [raycast/](raycast/) | A Raycast extension: Waiting Deploys, Deploy Status and Deploy All Changed. It deploys only after a confirmation. Not on the Raycast Store yet ([PUBLISHING.md](raycast/PUBLISHING.md)). |
 | [docker/](docker/) | A Linux image with `deploys` and its tools, for CI. |
 | [VERIFY.md](VERIFY.md) | How to check a release: SHA-256, `codesign`, `spctl`. |
 
