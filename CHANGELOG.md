@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The CLI installs on its own (macOS, Linux, WSL, CI): `curl -fsSL https://deploycenter.app/install.sh | sh` (SHA-256 checked, `~/.local/bin`, sudo only for a prefix that needs it; `--prefix`, `--version`, `--uninstall`) or `brew install pschmetzer/tap/deploys`. Releases carry `deploys-cli-<version>.tar.gz` and `checksums.txt` next to the app zip. See `README-CLI.md`.
 - Claude Code plugin in `integrations/claude-code/`: a skill, `/deploys-*` commands and a read-only reminder after `git push`; install with `/plugin marketplace add Pschmetzer/deploy-center`. See `docs/CLAUDE-CODE.md`.
 - `providers/amplify.sh`: AWS Amplify Hosting, opt-in. Auto-build off per branch, deploy (`start-job RELEASE`, with `--sha`), cancel, logs, and rollback by rebuilding an earlier commit, through the `aws` CLI. See `docs/providers/amplify.md`.
 - `integrations/mcp/`: an MCP server for AI coding agents. Read-only by default (`changed`, `status`, `explain`, `notes`, `logs`, `doctor`); deploy and rollback of one project per call only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`.
