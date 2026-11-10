@@ -113,9 +113,12 @@ unset RENDER_API_KEY DEPLOYS_NOTIFY_URL DEPLOYS_NOTIFY_FORMAT DEPLOYS_DIGEST_REP
 expect "without a Render key only Vercel is read" "$(all_projects | jq -c 'map(.name)')" '["app-web","site"]'
 expect "with a key in the env Render is read too" "$(RENDER_API_KEY=x all_projects | jq -c 'map(.platform)')" '["vercel","vercel","render"]'
 expect "doctor's renderKey counts as a key" "$(FAKE_RENDER_KEY=true all_projects | jq length)" 3
-expect "a CLI that fails is an empty list, not an error" "$(DEPLOYS=/bin/false all_projects)" "[]"
+expect "a CLI that fails is an empty list and an error" "$(DEPLOYS=/bin/false all_projects 2>/dev/null; echo "rc=$?")" $'[]\nrc=1'
+expect "notify: a CLI that fails posts nothing" "$(DEPLOYS=/bin/false notify/notify.sh --dry-run 2>/dev/null; echo "rc=$?")" "rc=1"
+expect "badge: a CLI that fails writes no badge" "$(DEPLOYS=/bin/false badge/badge.sh "$tmp/bfail" 2>/dev/null; echo "rc=$?"; ls "$tmp/bfail" 2>/dev/null | wc -l | tr -d ' ')" $'rc=1\n0'
 mkdir -p "$DEPLOYS_CONFIG"; echo '["api"]' > "$DEPLOYS_CONFIG/ignored.json"
 expect "changed leaves out ignored and up-to-date" "$(RENDER_API_KEY=x changed_projects | jq -c 'map(.name)')" '["app-web"]'
+contains "notify: ignored projects are not waiting" "$(RENDER_API_KEY=x notify/notify.sh --dry-run)" 'Waiting (1): app-web (4 commits)'
 rm -f "$DEPLOYS_CONFIG/ignored.json"
 
 # --- badge ---
@@ -138,6 +141,7 @@ contains "notify: Slack-style by default" "$out" 'format: slack'
 expect "notify: Discord by host" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -r 'keys[0]')" content
 expect "notify: Telegram by host" "$(DEPLOYS_NOTIFY_URL='https://api.telegram.org/botT/sendMessage?chat_id=1' notify/notify.sh --dry-run | head -1)" "format: telegram"
 contains "notify: ntfy is plain text" "$(DEPLOYS_NOTIFY_URL=https://ntfy.sh/topic notify/notify.sh --dry-run)" $'format: ntfy\nDeploy Center'
+expect "notify: plain http is refused" "$(RENDER_API_KEY=x DEPLOYS_NOTIFY_URL=http://hooks.example.test/x notify/notify.sh 2>&1; echo "rc=$?")" $'DEPLOYS_NOTIFY_URL must start with https://\nrc=1'
 DEPLOYS_NOTIFY_URL='https://hooks.example.test/T/secret' notify/notify.sh >/dev/null
 expect "notify: the URL goes to curl on stdin" "$(cat "$tmp/curl.stdin")" 'url = "https://hooks.example.test/T/secret"'
 case "$(cat "$tmp/curl.args")" in *secret*) fail "notify: URL not in curl's arguments" "found" ;; *) ok "notify: URL not in curl's arguments" ;; esac

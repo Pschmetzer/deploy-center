@@ -45,16 +45,27 @@ webhook_body() {
 
 webhook_send() {
   local url="$1" format="$2" f extra=()
-  case "$url" in https://*|http://*) ;; *) echo "DEPLOYS_NOTIFY_URL must start with https://" >&2; return 1 ;; esac
+  # https only: a Telegram URL carries the bot token, a webhook URL is a secret. Plain http only
+  # for a local test server, with DEPLOYS_NOTIFY_ALLOW_HTTP=1.
+  case "$url" in
+    https://*) ;;
+    http://localhost[:/]*|http://127.0.0.1[:/]*)
+      [ "${DEPLOYS_NOTIFY_ALLOW_HTTP:-}" = 1 ] || { echo "DEPLOYS_NOTIFY_URL must start with https:// (http://localhost needs DEPLOYS_NOTIFY_ALLOW_HTTP=1)" >&2; return 1; } ;;
+    *) echo "DEPLOYS_NOTIFY_URL must start with https://" >&2; return 1 ;;
+  esac
   case "$url" in *'"'*|*'\'*|*$'\n'*) echo "DEPLOYS_NOTIFY_URL has characters a URL cannot have" >&2; return 1 ;; esac
-  f="$(mktemp)"
+  f="$(mktemp)" || return 1
   printf '%s' "$WEBHOOK_BODY" > "$f"
   if [ "$format" = ntfy ]; then
     extra=(-H "Title: Deploy Center")
     [ -n "${WEBHOOK_LINK:-}" ] && extra+=(-H "Actions: view, ${WEBHOOK_LABEL//,/ }, ${WEBHOOK_LINK}")
   fi
   # curl reads the URL from its config on stdin (-K -), so the token is not in the process list.
+  # Bounded: a hanging webhook must not hold a cron job or workflow until its limit; 429 and 5xx
+  # are retried a few times. `|| rc=$?` so a caller's set -e still reaches the rm.
+  local rc=0
   printf 'url = "%s"\n' "$url" \
-    | curl -fsS -K - -X POST -H "Content-Type: $WEBHOOK_TYPE" ${extra[@]+"${extra[@]}"} --data-binary "@$f" -o /dev/null
-  local rc=$?; rm -f "$f"; return "$rc"
+    | curl -fsS -K - --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors \
+        -X POST -H "Content-Type: $WEBHOOK_TYPE" ${extra[@]+"${extra[@]}"} --data-binary "@$f" -o /dev/null || rc=$?
+  rm -f "$f"; return "$rc"
 }

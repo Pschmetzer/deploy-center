@@ -31,11 +31,11 @@ elif [ "$from" = - ]; then list="$(cat)"
 else list="$(cat "$from")"
 fi
 
-text="$(echo "$list" | jq -r '
+text="$(echo "$list" | jq -r --argjson ign "$(ignored_names)" '
   (now | strftime("%Y-%m-%d")) as $today
   | map(select(.name)) as $all
   | ($all | map(select(((.liveAt // .lastAt // 0) | if . > 0 then strftime("%Y-%m-%d") else "" end) == $today)) | map(.name)) as $live
-  | ($all | map(select(.changed)) | map(.name + (if .pendingCommits then " (\(.pendingCommits) commits)" else "" end))) as $wait
+  | ($all | map(select(.changed and ((.name as $n | $ign | index($n)) | not))) | map(.name + (if .pendingCommits then " (\(.pendingCommits) commits)" else "" end))) as $wait
   | "Deploy Center, \($today) (UTC)",
     "Live today (\($live | length)): \(if ($live | length) > 0 then $live | join(", ") else "none" end)",
     "Waiting (\($wait | length)): \(if ($wait | length) > 0 then $wait | join(", ") else "none" end)"')"
