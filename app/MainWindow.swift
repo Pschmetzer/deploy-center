@@ -64,6 +64,15 @@ struct ContentView: View {
     @State private var noteText = ""
     @State private var logItem: Item?
     @Environment(\.colorSchemeContrast) private var contrast
+    /// Triggers the person chose to ignore (kept), provider problems closed until they change,
+    /// and an update skipped until the next version.
+    @AppStorage("ignoredTriggers") private var ignoredTriggers = ""
+    @State private var closedIssues: [String] = []
+    @AppStorage("skippedVersion") private var skippedVersion = ""
+    private var activeTriggers: [Trigger] {
+        let ignored = Set(ignoredTriggers.split(separator: "\n").map(String.init))
+        return store.triggers.filter { !ignored.contains($0.id) }
+    }
     /// A failed deploy's line stays until it is closed; the store clears every line after 5 s.
     @State private var stickyError: Store.Toast?
     /// Banner ground: stronger with "Increase contrast".
@@ -350,11 +359,11 @@ struct ContentView: View {
 
     private var notices: [Notice] {
         var out: [Notice] = []
-        if !store.triggers.isEmpty { out.append(.trigger) }
+        if !activeTriggers.isEmpty { out.append(.trigger) }
         if !store.autoOn(platform).isEmpty { out.append(.auto(platform)) }
         if store.doctor.map({ $0.githubCli && $0.githubLoggedIn == false }) == true || (store.githubBudget?.remaining ?? .max) < 300 { out.append(.github) }
-        if !store.providerIssues.isEmpty { out.append(.provider) }
-        if store.newVersion != nil { out.append(.update) }
+        if !store.providerIssues.isEmpty && store.providerIssues != closedIssues { out.append(.provider) }
+        if let v = store.newVersion, v != skippedVersion { out.append(.update) }
         return out
     }
 
@@ -411,6 +420,9 @@ struct ContentView: View {
             HStack {
                 Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
                 Text(L("Version \(v) is out.", "Version \(v) ist da.")).font(.callout)
+                Button(L("What's new", "Was ist neu")) {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/\(Updater.repo)/releases/latest")!)
+                }.buttonStyle(.link)
                 Button(store.updating ? L("Updating …", "Aktualisiere …") : L("Update now", "Jetzt aktualisieren")) {
                     Task { await store.installUpdate() }
                 }.buttonStyle(.link).disabled(store.updating)
@@ -419,6 +431,8 @@ struct ContentView: View {
                 }.buttonStyle(.link)
                 if let st = store.updateStatus { Text(st).font(.caption).foregroundStyle(.secondary) }
                 Spacer()
+                // Remembered for this version: the next one is shown again.
+                Button(L("Skip this version", "Diese Version überspringen")) { skippedVersion = v }.buttonStyle(.link).font(.caption)
                 Button { store.newVersion = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
                     .help(L("Not now", "Nicht jetzt")).accessibilityLabel(L("Not now", "Nicht jetzt"))
             }
@@ -427,16 +441,22 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var triggerBanner: some View {
-        if !store.triggers.isEmpty {
+        let triggers = activeTriggers
+        if !triggers.isEmpty {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundStyle(.red)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L("Something else still starts builds", "Etwas anderes startet noch Builds")).font(.headline)
-                    ForEach(store.triggers.prefix(6)) { tr in
-                        Text("• \(Self.triggerName(tr.kind)): " + Demo.scrub("\(tr.where) – \(tr.detail)", items: allItems)).font(.caption).textSelection(.enabled)
+                    ForEach(triggers.prefix(6)) { tr in
+                        HStack(spacing: 6) {
+                            Text("• \(Self.triggerName(tr.kind)): " + Demo.scrub("\(tr.where) – \(tr.detail)", items: allItems)).font(.caption).textSelection(.enabled)
+                            // Known and wanted (a nightly workflow, say): it stops being an alarm.
+                            Button(L("Ignore", "Ignorieren")) { ignoredTriggers += (ignoredTriggers.isEmpty ? "" : "\n") + tr.id }
+                                .buttonStyle(.link).font(.caption)
+                        }
                     }
-                    if store.triggers.count > 6 {
-                        Text(L("and \(store.triggers.count - 6) more", "und \(store.triggers.count - 6) weitere")).font(.caption).foregroundStyle(.secondary)
+                    if triggers.count > 6 {
+                        Text(L("and \(triggers.count - 6) more", "und \(triggers.count - 6) weitere")).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
@@ -453,10 +473,19 @@ struct ContentView: View {
                 Text(L("Problem at the provider: ", "Störung beim Anbieter: ") + store.providerIssues.joined(separator: " · "))
                     .font(.caption).textSelection(.enabled)
                 Spacer()
+                ForEach(Self.statusPages.filter { p in store.providerIssues.contains { $0.hasPrefix(p.0) } }, id: \.0) { p in
+                    Button(L("\(p.0) status", "Status \(p.0)")) { NSWorkspace.shared.open(URL(string: p.1)!) }.buttonStyle(.link).font(.caption)
+                }
+                Button { closedIssues = store.providerIssues } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless).help(L("Close until it changes", "Schließen, bis sich etwas ändert"))
+                    .accessibilityLabel(L("Close", "Schließen"))
             }
             .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
         }
     }
+
+    static let statusPages = [("Vercel", "https://www.vercel-status.com"), ("Render", "https://status.render.com"),
+                              ("GitHub", "https://www.githubstatus.com")]
 
     static func sparkValue(_ v: [Int]) -> String {
         guard let last = v.last, let lo = v.min(), let hi = v.max() else { return "" }
@@ -489,6 +518,7 @@ struct ContentView: View {
                        "Die GitHub-CLI ist nicht angemeldet, darum fehlen die Zahlen wartender Commits und PRs. Im Terminal: gh auth login"))
                     .font(.caption).textSelection(.enabled)
                 Spacer()
+                CopyButton(title: L("Copy gh auth login", "gh auth login kopieren")) { "gh auth login" }.controlSize(.small)
             }
             .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
         } else if let b = store.githubBudget, b.remaining < 300 {
@@ -547,7 +577,7 @@ struct ContentView: View {
                     .accessibilityValue(Self.sparkValue(days.map { store.history[$0] ?? 0 }))
                 }
                 if w.projects > 0 {
-                    Button(L("Show them", "Anzeigen")) { onlyChanged = true; showAll = true }
+                    Button(L("Show them", "Anzeigen")) { onlyChanged = true; showAll = true; search = "" }
                 }
             }
             .padding(12).background(ground(.blue, 0.08))
@@ -709,6 +739,14 @@ struct ContentView: View {
             Text(count == 0 ? L("Tick the projects that should go live", "Projekte anhaken, die live gehen sollen")
                             : L("\(count) selected", "\(count) ausgewählt"))
                 .foregroundStyle(.secondary)
+                .help(L("Shift-click ticks everything between the last tick and this one", "Mit ⇧-Klick wird alles zwischen dem letzten Haken und diesem angehakt"))
+            // Ticks on the other tab still count there: say they exist.
+            let elsewhere = Platform.allCases.filter { !scopes.contains($0) }.map { p in (p, store.selected(p).count) }.filter { $0.1 > 0 }
+            ForEach(elsewhere, id: \.0) { p, n in
+                Button(L("+\(n) on \(p.rawValue)", "+\(n) auf \(p.rawValue)")) { showAll = false; platform = p }
+                    .buttonStyle(.link).font(.caption)
+                    .help(L("Ticked on the other tab", "Auf dem anderen Tab angehakt"))
+            }
             Spacer()
             Button { showJournal = true } label: { Image(systemName: "clock.arrow.circlepath") }
                 .buttonStyle(.borderless).help(L("Deploy history", "Deploy-Verlauf")).accessibilityLabel(L("Deploy history", "Deploy-Verlauf"))
@@ -738,6 +776,9 @@ struct ContentView: View {
                     // The saved copy may be hours old; tick from what is true now. If reading it
                     // again failed, the error is on screen and the copy is all there is.
                     .disabled(scopes.contains { store.fromCache.contains($0) && store.loadError[$0] == nil })
+                    .help(scopes.contains { store.fromCache.contains($0) && store.loadError[$0] == nil }
+                          ? L("Waits for the fresh list: the saved copy may be hours old", "Wartet auf die frische Liste: die gespeicherte Kopie kann Stunden alt sein")
+                          : L("Ticks every project with commits that are not live", "Hakt jedes Projekt mit Commits an, die nicht live sind"))
             }
             if !showAll && platform == .vercel {
                 Button(L("Preview", "Vorschau")) { store.deploySelected(platform, preview: true) }
@@ -773,6 +814,7 @@ struct CostChartDescriptor: AXChartDescriptorRepresentable {
 struct CostBar: View {
     let costs: Costs
     @State private var hovered: String?
+    @AppStorage("costBarCollapsed") private var collapsed = false
     @State private var sharing = false
     private static let dayFormat: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); return f
@@ -794,7 +836,11 @@ struct CostBar: View {
     /// The numbers left of the chart (own property: one body was too long for older type checkers).
     private var summary: some View {
 VStack(alignment: .leading, spacing: 2) {
-        Text(L("Vercel builds, last 7 days", "Vercel-Builds, letzte 7 Tage")).font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 4) {
+            Text(L("Vercel builds, last 7 days", "Vercel-Builds, letzte 7 Tage")).font(.caption).foregroundStyle(.secondary)
+            Button { collapsed = true } label: { Image(systemName: "chevron.up").font(.caption2) }
+                .buttonStyle(.borderless).help(L("Fold away", "Einklappen")).accessibilityLabel(L("Fold away the costs", "Kosten einklappen"))
+        }
         Text(week, format: .currency(code: "USD")).font(.title3.weight(.semibold).monospacedDigit())
         Text(L("≈ ", "≈ ") + (average * 30).formatted(.currency(code: "USD")) + L(" a month at this pace", " im Monat bei diesem Tempo"))
             .font(.caption2).foregroundStyle(.secondary)
@@ -817,8 +863,28 @@ VStack(alignment: .leading, spacing: 2) {
     }
 
     var body: some View {
+        if collapsed {
+            Button { collapsed = false } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.down")
+                    Text(L("Vercel builds, last 7 days: ", "Vercel-Builds, letzte 7 Tage: ") + week.formatted(.currency(code: "USD")))
+                    Spacer()
+                }
+                .font(.caption).foregroundStyle(.secondary)
+                .padding(.horizontal, 12).padding(.vertical, 5).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(Color.secondary.opacity(0.06))
+            .accessibilityHint(L("Shows the cost chart", "Zeigt das Kostendiagramm"))
+        } else {
+            expanded
+        }
+    }
+
+    private var expanded: some View {
         HStack(spacing: 16) {
             summary
+            VStack(alignment: .leading, spacing: 2) {
             Chart(costs.days) { d in
                 // A day over twice the average stands out.
                 BarMark(x: .value("Day", String(d.day.suffix(2))), y: .value("USD", d.build))
@@ -840,6 +906,16 @@ VStack(alignment: .leading, spacing: 2) {
             }
             .frame(height: 64)
             .accessibilityChartDescriptor(CostChartDescriptor(days: costs.days))
+                // What the chart spans (14 days, the total above is 7), and what its colours mean.
+                HStack(spacing: 10) {
+                    Text(L("last \(costs.days.count) days", "letzte \(costs.days.count) Tage"))
+                    HStack(spacing: 3) { RoundedRectangle(cornerRadius: 1).fill(Color.orange).frame(width: 7, height: 7); Text(L("over 2× the average", "über 2× Schnitt")) }
+                    if costs.offDay != nil {
+                        HStack(spacing: 3) { Rectangle().fill(Color.green).frame(width: 7, height: 1.5); Text(L("auto-deploy off", "Auto-Deploy aus")) }
+                    }
+                }
+                .font(.caption2).foregroundStyle(.secondary)
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Color.secondary.opacity(0.06))
@@ -1033,6 +1109,9 @@ struct Row: View {
             }
             .buttonStyle(.plain)
             .disabled(!item.deployable || item.state.isActive)
+            .help(!item.deployable ? L("Deploy Center cannot deploy this project (no Git source it can build from)",
+                                       "Deploy Center kann dieses Projekt nicht deployen (keine Git-Quelle, aus der es bauen kann)")
+                  : item.state.isActive ? L("A deploy is running", "Ein Deploy läuft gerade") : "")
             .accessibilityLabel(Demo.mask(item.name))
             .accessibilityValue(item.selected ? L("selected", "ausgewählt") : L("not selected", "nicht ausgewählt"))
 
@@ -1074,6 +1153,10 @@ struct Row: View {
                     .buttonStyle(.borderless)
                     .help(L("Details: waiting commits, files, CI, open PRs", "Details: wartende Commits, Dateien, CI, offene PRs"))
                     .accessibilityLabel(L("Details for \(Demo.mask(item.name))", "Details zu \(Demo.mask(item.name))"))
+            } else {
+                Image(systemName: "info.circle").foregroundStyle(.tertiary)
+                    .help(L("No details: no GitHub repo is linked to this project", "Keine Details: mit diesem Projekt ist kein GitHub-Repo verknüpft"))
+                    .accessibilityHidden(true)
             }
         }
         .padding(.vertical, 4)
