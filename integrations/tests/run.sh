@@ -37,6 +37,11 @@ case "\$*" in
     if [ -n "\${RENDER_API_KEY:-}" ] || [ "\${FAKE_RENDER_KEY:-false}" = true ]; then r="$tmp/render.json"; else r=/dev/null; fi
     jq -s --arg dup "\${FAKE_DUP:-}" '(.[0] | map(. + {platform:"vercel"})) + ((.[1] // []) | map(. + {platform:"render"}))
       + (if \$dup != "" then [{name:"app-web", platform:"render"}] else [] end)' "$tmp/vercel.json" \$r ;;
+  # A CLI with notes --json and history --json (FAKE_NEW_CLI); without it, they are unknown.
+  "notes app-web --json") [ -n "\${FAKE_NEW_CLI:-}" ] || exit 1
+    echo '{"project":"app-web","commits":[{"sha":"c1","message":"Pay – now faster","pr":12,"author":"Ana","bot":false},{"sha":"c2","message":"Bump jq","pr":null,"author":"dependabot[bot]","bot":true}]}' ;;
+  "history vercel:app-web 10 --json") [ -n "\${FAKE_NEW_CLI:-}" ] || exit 1
+    echo "[{\"when\":\"x\",\"state\":\"READY\",\"at\":$((now - 7200))},{\"when\":\"y\",\"state\":\"ERROR\",\"at\":$((now - 3600))},{\"when\":\"z\",\"state\":\"BUILDING\",\"at\":$((now - 60))}]" ;;
   "notes app-web") printf '## app-web\\n- New billing page (#12) – Ana\\n- Faster search – Ben\\n\\nDependency updates:\\n- Bump jq – dependabot\\n' ;;
   "notes broken") printf '\033[31mpartial notes\033[0m\n'; echo "Error: GitHub rate limit" >&2; exit 1 ;;
   "notes "*) exit 1 ;;
@@ -325,6 +330,14 @@ sp --config "$tmp/sp-empty.json" --out "$tmp/spe" >/dev/null 2>&1; expect "statu
 [ -e "$tmp/spe" ] && fail "statuspage: nothing written without an allowlist" "written" || ok "statuspage: nothing written without an allowlist"
 SP_CURL_LOG=/dev/null DEPLOYS_JOURNAL=/nonexistent RENDER_API_KEY=x statuspage/statuspage.sh --config "$tmp/sp-auth.json" --out "$tmp/spn" --no-check >/dev/null
 expect "statuspage: no journal, empty timeline" "$(jq '.timeline | length' "$tmp/spn/status.json")" 0
+# A newer CLI: notes with the author as a field (a " – " in a message stays), history as JSON
+# when there is no journal.
+FAKE_NEW_CLI=1 SP_CURL_LOG=/dev/null DEPLOYS_JOURNAL=/nonexistent RENDER_API_KEY=x statuspage/statuspage.sh --config "$tmp/sp-auth.json" --out "$tmp/spj" --no-check >/dev/null
+expect "statuspage: notes --json keeps a dash in the message" "$(jq -c '.projects[0].next' "$tmp/spj/status.json")" '["Pay – now faster (#12) – Ana","Dependency update: Bump jq – dependabot[bot]"]'
+expect "statuspage: no journal, the history of the platform" "$(jq -c '[.timeline[] | .result]' "$tmp/spj/status.json")" '["failed","live"]'
+jq '. + {showAuthors: false}' "$tmp/sp-auth.json" > "$tmp/sp-noauth.json"
+FAKE_NEW_CLI=1 SP_CURL_LOG=/dev/null DEPLOYS_JOURNAL=/nonexistent RENDER_API_KEY=x statuspage/statuspage.sh --config "$tmp/sp-noauth.json" --out "$tmp/spk" --no-check >/dev/null
+expect "statuspage: notes --json without authors" "$(jq -c '.projects[0].next' "$tmp/spk/status.json")" '["Pay – now faster (#12)","Dependency update: Bump jq"]'
 # lang: the page, the feed and status.json in German; the stale warning is in the page, hidden until old.
 jq '. + {lang: "de", hideMessages: true, staleHours: 24}' "$tmp/sp.json" > "$tmp/sp-de.json"
 sp --config "$tmp/sp-de.json" --out "$tmp/spd" --no-check >/dev/null; expect "statuspage de: runs" "$?" 0

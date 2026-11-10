@@ -85,11 +85,18 @@ check_of() {
     -w '%{http_code} %{time_total}' -- "$1" 2>/dev/null </dev/null || echo "000 0"
 }
 
+tmp_hist="$(mktemp)"; trap 'rm -f "$tmp_hist"' EXIT
 extra='{}'
 while IFS=$'\t' read -r i name changed url; do
   n='[]'; c='null'
   if [ "$notes" = 1 ] && [ "$changed" = true ]; then
-    n="$(notes_of "$name" | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {kind: .[0], text: (.[1:] | join("\t"))})')"
+    # A CLI with `notes --json` gives the author as a field; an older one only Markdown lines.
+    if nj="$("$DEPLOYS" notes "$name" --json 2>/dev/null </dev/null)" && jq -e '.commits | type == "array"' >/dev/null 2>&1 <<<"$nj"; then
+      n="$(jq -c '[.commits[] | {kind: (if .bot then "dep" else "msg" end),
+            text: ((.message // "") + (if .pr and .bot != true then " (#\(.pr))" else "" end)), author: (.author // null)}]' <<<"$nj")"
+    else
+      n="$(notes_of "$name" | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {kind: .[0], text: (.[1:] | join("\t")), author: false})')"
+    fi
   fi
   if [ "$check" = 1 ] && [ -n "$url" ]; then
     read -r code secs <<<"$(check_of "$url")"
@@ -102,7 +109,19 @@ done < <(jq -r 'to_entries[] | [.key, .value.name, (.value.changed // false), (.
 # The journal: one JSON object per line, oldest first (app/Journal.swift). Lines that do not
 # read are skipped. Only live and failed deploys of listed projects; never the `detail` text.
 timeline='[]'
-if [ -f "$journal" ]; then
+if [ ! -f "$journal" ]; then
+  # No journal (CI, another machine): the platforms' own history, from a CLI with history --json.
+  # live and failed only; a provider without a history, or an older CLI, adds nothing.
+  : > "$tmp_hist"
+  while IFS=$'\t' read -r name plat label; do
+    h="$("$DEPLOYS" history "$plat:$name" 10 --json 2>/dev/null </dev/null)" || continue
+    jq -c --arg n "$name" --arg p "$plat" --arg l "$label" '.[]? | select(type == "object" and (.at | type) == "number")
+      | ((.state // "") | ascii_downcase) as $s
+      | (if ($s | test("fail|error")) then "failed" elif ($s | test("^(ready|live|success|succeeded|deployed|active)$")) then "live" else empty end) as $r
+      | {at, name: $n, platform: $p, result: $r, seconds: null, label: $l}' <<<"$h" >> "$tmp_hist" 2>/dev/null || true
+  done < <(jq -r '.[] | select(.found) | [.name, .platform, .label] | @tsv' <<<"$picked")
+  timeline="$(jq -s -c --argjson cfg "$cfg" 'sort_by(.at) | reverse | .[0:$cfg.timeline]' "$tmp_hist")"
+elif [ -f "$journal" ]; then
   timeline="$(jq -R -c 'fromjson? // empty' "$journal" | jq -s -c --argjson cfg "$cfg" '
     map(select(type == "object" and (.result == "live" or .result == "failed")) | . as $e
         | select(any($cfg.projects[]; .name == $e.name and (.platform == null or .platform == $e.platform)))
@@ -135,7 +154,9 @@ mkdir -p "$out"
 # status.json is the source for the page and the feed.
 jq -n --argjson cfg "$cfg" --argjson p "$picked" --argjson x "$extra" --argjson t "$timeline" --argjson L "$L" '
   def updated: $L.updated;
-  def strip_author: if $cfg.showAuthors then . else sub(" – [^–]*$"; "") end;
+  # author false: a Markdown line "msg – author" (an older CLI), cut at the last " – ".
+  def strip_author($a): if $a == false then (if $cfg.showAuthors then . else sub(" – [^–]*$"; "") end)
+                        elif $cfg.showAuthors and $a != null then . + " – " + $a else . end;
   {title: $cfg.title, description: $cfg.description, generatedAt: (now | floor), lang: $cfg.lang, staleHours: $cfg.staleHours,
    url: ($cfg.baseUrl | if . != "" and (endswith("/") | not) then . + "/" else . end),
    projects: [$p | to_entries[] | .value as $v | ($x[.key | tostring] // {notes: [], check: null}) as $e
@@ -144,7 +165,7 @@ jq -n --argjson cfg "$cfg" --argjson p "$picked" --argjson x "$extra" --argjson 
         message: (if $v.found | not then null elif $cfg.hideMessages then (if $v.at then updated else null end) else $v.message end),
         waiting: ($v.changed // false),
         next: (if $cfg.hideMessages then (if ($e.notes | length) > 0 then [updated] else [] end)
-               else ($e.notes | map(if .kind == "dep" then $L.depUpdate + (.text | strip_author) else (.text | strip_author) end)) end),
+               else ($e.notes | map(if .kind == "dep" then $L.depUpdate + (.author as $a | .text | strip_author($a)) else (.author as $a | .text | strip_author($a)) end)) end),
         check: $e.check}],
    timeline: [$t[] | {name: .label, platform, result, at, seconds}]}' > "$out/status.json"
 

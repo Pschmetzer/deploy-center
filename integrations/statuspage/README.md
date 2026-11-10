@@ -60,7 +60,7 @@ published.
 | `timeline` | `30` | How many deploys the timeline keeps. |
 | `lang` | `en` | `en` or `de`: the page's texts, the feed's titles and "Updated" in `status.json`. |
 | `staleHours` | `48` | When the page is older than this (the job that makes it may have stopped), a red line on the page says how old it is. Needs scripts in the browser. |
-| `journal` | the app's | Path to a `journal.jsonl`. `DEPLOYS_JOURNAL` overrides it. |
+| `journal` | the app's | Path to a `journal.jsonl`. `DEPLOYS_JOURNAL` overrides it. Without a journal (in CI, on another machine) the timeline comes from each platform's history, when the CLI has `deploys history --json`. |
 
 What never leaves the script: projects not in the list, repos, commit SHAs, error texts, the
 URLs of site checks. A project in the list that cannot be read shows as "Unknown".
