@@ -30,7 +30,7 @@ team_fetch_one() {
     [ "$age" -lt "$ttl" ] && return 0
   fi
   [ -z "$only" ] || return 0
-  command -v gh >/dev/null 2>&1 || return 0
+  type -P gh >/dev/null 2>&1 || return 0
   err="$(mktemp)"
   for p in deploy-center.json .deploy-center.json; do
     if out="$(gh api "repos/$repo/contents/$p" 2>"$err")"; then
@@ -87,7 +87,7 @@ team_sources() {
 team_me() {
   local f="$TEAM_CACHE/me"; mkdir -p "$TEAM_CACHE"
   if [ -s "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -lt 3600 ]; then cat "$f"; return; fi
-  if [ -z "${DEPLOYS_NO_GITHUB:-}" ] && command -v gh >/dev/null 2>&1; then
+  if [ -z "${DEPLOYS_NO_GITHUB:-}" ] && type -P gh >/dev/null 2>&1; then
     local me; me="$(gh api user --jq .login 2>/dev/null | head -n 1)"
     if [ -n "$me" ]; then printf '%s' "$me" > "$f"; echo "$me"; return; fi
   fi
@@ -133,6 +133,8 @@ def resolve($n):
 | {me:(if $me == "" then null else $me end),
    readonly:(if $ro != "" then {value:true, from:$ro}
              elif $meObs then {value:true, from:"observers in \($meObs)"}
+             # Fail closed: with an observers list and no login, nobody can tell whether you are on it.
+             elif $me == "" and ($obs | length) > 0 then {value:true, from:"observers listed, and gh cannot tell who you are (gh auth login)"}
              else {value:false, from:"default"} end),
    observers:{value:($obs | keys), from:$obs},
    groups:(reduce ((cf[] as $f | ($f.config.groups // {}) | to_entries[] | {k:.key, v:.value, from:($f | src)}),
@@ -177,8 +179,15 @@ team_repos_json() {
 team_ignored() { team_effective | jq -c '[.projects | to_entries[] | select(.value.ignored.value == true) | .key]'; }
 
 # Observer by the shared lists (cache only, no network): prints where it comes from, or nothing.
+# With an observers list and no login known yet, gh is asked once who you are (team_me keeps it).
 team_observer_from() {
-  DEPLOYS_NO_GITHUB=1 team_effective 2>/dev/null | jq -r 'select(.readonly.value and (.readonly.from | startswith("observers"))) | .readonly.from' 2>/dev/null || true
+  local r f='select(.readonly.value and (.readonly.from | startswith("observers"))) | .readonly.from'
+  r="$(DEPLOYS_NO_GITHUB=1 team_effective 2>/dev/null | jq -r "$f" 2>/dev/null || true)"
+  case "$r" in *"cannot tell who you are"*)
+    team_me >/dev/null 2>&1 || true
+    r="$(DEPLOYS_NO_GITHUB=1 team_effective 2>/dev/null | jq -r "$f" 2>/dev/null || true)" ;;
+  esac
+  printf '%s' "$r"
 }
 
 # A group's members in deploy order, or nothing when the name is no group.
@@ -200,17 +209,22 @@ team_approvals() {
   local repo="$1" sha="$2" me="$3" prs issues have='[]' n raw e
   # GitHub not readable is not "no approvals": the answer says so ({error}), and team_gate stops.
   e="$(mktemp)"
-  if ! raw="$(gh api "repos/$repo/commits/$sha/pulls" 2>"$e")" || ! prs="$(jq -c '[.[] | {number, url:.html_url, labels:[.labels[]?.name]}]' <<< "$raw" 2>/dev/null)"; then
+  if ! raw="$(gh api "repos/$repo/commits/$sha/pulls" 2>"$e")" || ! prs="$(jq -c '[.[] | {number, url:.html_url, head:(.head.sha // null), labels:[.labels[]?.name]}]' <<< "$raw" 2>/dev/null)"; then
     jq -nc --arg w "$(grep -v '^[[:space:]]*$' "$e" | tail -n 1 | cut -c1-200)" '{error:(if $w == "" then "no readable answer" else $w end), have:[], prs:[]}'
     rm -f "$e"; return 0
   fi
   rm -f "$e"
   [ -n "$prs" ] || prs='[]'
-  # Reviews: the newest state of each person who is not the deployer.
+  # Reviews: the newest state of each person who is not the deployer. An approval of an older head
+  # of the PR does not count: commits pushed after it were never reviewed (without "dismiss stale
+  # reviews" GitHub keeps it APPROVED). The head is the PR's last commit before the merge.
+  local head
   for n in $(jq -r '.[].number' <<< "$prs"); do
-    have="$(gh api --paginate "repos/$repo/pulls/$n/reviews" 2>/dev/null | jq -s -c --argjson have "$have" --arg me "$me" --argjson n "$n" \
+    head="$(jq -r --argjson n "$n" '.[] | select(.number == $n) | .head // empty' <<< "$prs" | head -n 1)"
+    have="$(gh api --paginate "repos/$repo/pulls/$n/reviews" 2>/dev/null | jq -s -c --argjson have "$have" --arg me "$me" --argjson n "$n" --arg head "$head" \
       '[.[][]? | select(.user.login and ((.user.login | ascii_downcase) != ($me | ascii_downcase)) and (.state != "COMMENTED"))]
        | group_by(.user.login) | map(max_by(.submitted_at // "")) | map(select(.state == "APPROVED"))
+       | map(select($head == "" or .commit_id == null or .commit_id == $head))
        | $have + map({user:.user.login, via:"review on PR #\($n)", url:(.html_url // null)})' 2>/dev/null || echo "$have")"
   done
   # Labels: on those PRs, and on open issues that name the commit.
@@ -244,7 +258,7 @@ team_gate() {
   need="$(jq -r --arg p "$p" '.projects[$p].approvals.value // 0' <<< "$eff")"
   [ "$need" -ge 1 ] 2>/dev/null || { [ -z "$sha" ] || echo "$sha"; return 0; }
   local from; from="$(jq -r --arg p "$p" '.projects[$p].approvals.from' <<< "$eff")"
-  command -v gh >/dev/null 2>&1 || die "$p needs $need approval(s) ($from), and checking them needs the gh CLI. Install it, or: --force \"reason\""
+  type -P gh >/dev/null 2>&1 || die "$p needs $need approval(s) ($from), and checking them needs the gh CLI. Install it, or: --force \"reason\""
   [ -n "$repo" ] || die "$p needs $need approval(s) ($from), but no GitHub repo is known for it (approvals are read from GitHub; a GitLab repo cannot have them yet)"
   [ -n "$me" ] || die "$p needs $need approval(s) ($from), but gh cannot tell who you are. Run: gh auth login"
   if [ -z "$sha" ]; then

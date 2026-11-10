@@ -147,11 +147,9 @@ amp_jobs() { amp_aws amplify list-jobs --app-id "$1" --branch-name "$2" --max-it
 # Compact (jq -c): deploys greps it (meta_flag, meta_str, key_of). Contract fields: id, label,
 # noun, defaultOn, keyEnv (an array), keychain, caps (docs/PROVIDERS.md). Off by default.
 # keyEnv is empty: DEPLOYS_AMPLIFY_PROFILE names an aws CLI profile, not a key (profileEnv).
+# printf, not jq: deploys reads it without jq (doctor, meta_str, key_of).
 amplify_meta() {
-  jq -nc '{id:"amplify", name:"amplify", label:"AWS Amplify Hosting", noun:"app", defaultOn:false, default:false,
-    caps:{off:true, sha:true, cancel:true, rollback:true, logs:true, preview:true},
-    keyEnv:[], profileEnv:"DEPLOYS_AMPLIFY_PROFILE", keychain:"deploy-center-amplify", needs:"aws CLI",
-    billing:"build minutes ($0.01 per minute on the standard build instance)"}'
+  printf '%s\n' '{"id":"amplify","name":"amplify","label":"AWS Amplify Hosting","noun":"app","defaultOn":false,"default":false,"caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":true},"keyEnv":[],"profileEnv":"DEPLOYS_AMPLIFY_PROFILE","keychain":"deploy-center-amplify","needs":"aws CLI","billing":"build minutes ($0.01 per minute on the standard build instance)"}'
 }
 
 # Ready when the aws CLI is there and Amplify was chosen: a profile in DEPLOYS_AMPLIFY_PROFILE or
@@ -160,6 +158,11 @@ amplify_ready() {
   command -v aws >/dev/null 2>&1 || return 1
   [ -n "${DEPLOYS_AMPLIFY_PROFILE:-}" ] && return 0
   security find-generic-password -a "$USER" -s "$AMPLIFY_KEYCHAIN" -w >/dev/null 2>&1
+}
+# What `deploys providers enable amplify` says comes next while it is not set up.
+amplify_setup_hint() {
+  if ! command -v aws >/dev/null 2>&1; then echo "brew install awscli, then: echo <aws profile> | deploys amplify set-key"
+  else echo "echo <aws profile> | deploys amplify set-key   (or set DEPLOYS_AMPLIFY_PROFILE)"; fi
 }
 
 amplify_has() {

@@ -401,20 +401,20 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 242. ✅ [Bug] **`_status`/`_latest` liefern JSON statt `id<TAB>phase<TAB>state`.** `watch` liest die erste Zeile („{“) als ID, die Phase bleibt leer, und die Schleife läuft endlos weiter; davon hängen auch `deploy --wait`, Gruppen-Deploys und `verify`. TSV ausgeben wie im Vertrag, das JSON nur in `_cli_status`. (providers/netlify.sh:294/301, cloudflare.sh:296, coolify.sh:287/295, digitalocean.sh:282/290, amplify.sh:293/301; deploys:1544)
 243. ✅ [Bug] **`_deploy_json` mit Positionsargumenten statt `--sha/--preview`.** Netlify, Coolify und DigitalOcean lesen `$2` als „preview“; `deploys deploy x --sha abc` stirbt deshalb mit der Preview-Meldung, und bei Coolify ist `--sha` über `deploys` nie erreichbar. Flags parsen wie bei Vercel. (providers/netlify.sh:264, coolify.sh:250, digitalocean.sh:265)
 244. ✅ [Bug] **`deploy-changed --when-green` scheitert bei jedem Provider ohne `sha`-Fähigkeit.** `deploy_one` gibt immer `--sha` mit; Cloudflare stirbt damit („cannot deploy a given commit“), Netlify und DigitalOcean ebenso. Vorher `caps.sha` prüfen und dann ohne SHA starten (mit einer Warnung, dass ein neuerer Push mitkommen kann) oder sauber überspringen. (deploys:633, deploys:1975; providers/cloudflare.sh:255)
-245. [Test] **Vertragstests laufen für fünf Provider gar nicht.** `tests/fixtures/<p>/env` fehlt bei netlify, cloudflare, coolify, digitalocean und amplify; `contract.sh` überspringt sie, deshalb sind die drei Fehler oben unbemerkt. `env` anlegen und fehlende Fixtures im CI als Fehler werten statt als „skip“. (tests/providers/contract.sh:71)
+245. ✅ [Test] **Vertragstests laufen für fünf Provider gar nicht.** `tests/fixtures/<p>/env` fehlt bei netlify, cloudflare, coolify, digitalocean und amplify; `contract.sh` überspringt sie, deshalb sind die drei Fehler oben unbemerkt. `env` anlegen und fehlende Fixtures im CI als Fehler werten statt als „skip“. (tests/providers/contract.sh:71)
 246. ✅ [Bug] **`doctor` erzeugt doppelte JSON-Schlüssel.** Netlify, Coolify und DigitalOcean liefern alle `provider`, `key`, `tokenOk` und `error`; `doctor` klebt die Objekte zusammen, also gewinnt still der letzte Provider. Schlüssel mit Präfix versehen (`netlifyTokenOk`) wie bei Vercel und Render, oder je Provider ein verschachteltes Objekt. (deploys:1485–1495; providers/netlify.sh:380, coolify.sh:405, digitalocean.sh:396)
-247. [Code] **`_meta`/`_doctor` brauchen jq, obwohl der Vertrag printf verlangt.** Netlify, Cloudflare, Amplify und Coolify bauen beides mit `jq -n`; ohne jq ist der Provider dann still „aus“, und `doctor` verliert genau dort seine Felder. (providers/netlify.sh:159/368, cloudflare.sh:147, amplify.sh:153; docs/PROVIDERS.md:48/61)
-248. [Code] **Übrige Standalone-Teile in den neuen Providern.** Kommentare zu „A1 provider PR“ und „while the dispatcher does not route here yet“, eigene `die`/`mtime`/`CONFIG_DIR`/`USER`-Ersatzdefinitionen und `*_cmd`-Dispatcher sind jetzt toter Code; entfernen spart Abweichungen. (providers/cloudflare.sh:4–9/27–34, amplify.sh:4–9/26–33, netlify.sh:10/28–34)
+247. ◐ [Code] **`_meta`/`_doctor` brauchen jq, obwohl der Vertrag printf verlangt.** Netlify, Cloudflare, Amplify und Coolify bauen beides mit `jq -n`; ohne jq ist der Provider dann still „aus“, und `doctor` verliert genau dort seine Felder. (providers/netlify.sh:159/368, cloudflare.sh:147, amplify.sh:153; docs/PROVIDERS.md:48/61)
+248. ◐ [Code] **Übrige Standalone-Teile in den neuen Providern.** Kommentare zu „A1 provider PR“ und „while the dispatcher does not route here yet“, eigene `die`/`mtime`/`CONFIG_DIR`/`USER`-Ersatzdefinitionen und `*_cmd`-Dispatcher sind jetzt toter Code; entfernen spart Abweichungen. (providers/cloudflare.sh:4–9/27–34, amplify.sh:4–9/26–33, netlify.sh:10/28–34)
 249. [Code] **Fünf Kopien desselben HTTP-Clients.** `render_call`, `netlify_call`, `cf_call`, `coolify_call` und `digitalocean_call` wiederholen Retry, Timeout, `-K -` und Fehlerhinweise; eine `lib/http.sh` mit `http_call <label> <keyfn> …` macht Korrekturen (z. B. `Retry-After`) an einer Stelle möglich. (providers/render.sh:27, netlify.sh:61, cloudflare.sh:67, coolify.sh:66)
-250. [Code] **`meta_flag`/`meta_str` lesen `_meta` mit grep.** `"defaultOn": true` mit Leerzeichen wird schon nicht mehr erkannt; der Test prüft nur „eine Zeile“. Den Test auf genau `"key":value` ohne Leerzeichen erweitern oder mit jq lesen, wenn es da ist. (deploys:206/224/230)
+250. ✅ [Code] **`meta_flag`/`meta_str` lesen `_meta` mit grep.** `"defaultOn": true` mit Leerzeichen wird schon nicht mehr erkannt; der Test prüft nur „eine Zeile“. Den Test auf genau `"key":value` ohne Leerzeichen erweitern oder mit jq lesen, wenn es da ist. (deploys:206/224/230)
 
 
 ### Kern `deploys`: Bugs
 
 251. ✅ [Bug] **`deploys deploy <p>` umgeht das Deploy-Fenster.** Der Befehl ruft `${plat}_deploy_json` direkt auf, ohne `freeze_check` und `journal_forced`; nur `<p> deploy` und `deploy-changed` prüfen `window.json`. Dasselbe gilt für Gruppen. (deploys:1374–1416, vgl. deploys:1358)
-252. [Security] **Observer-Modus durch die Reihenfolge der Flags umgehbar.** `require_write` greift bei `deploy-changed` nur, wenn `--yes` das erste Argument ist; `deploy-changed --when-green --yes` startet Deploys bei allen Providern ohne `team_gate`, also überall außer Vercel/Render bzw. überall ohne lib/team.sh. `--yes` an beliebiger Stelle prüfen. (deploys:1306, deploys:1918)
-253. [Security] **`autodeploy allow` und `revoke` sind im Observer-Modus erlaubt.** Beide schalten Auto-Deploy über `ad_on`/`guard_run` an oder aus und stehen nicht in der `require_write`-Liste. (deploys:1302–1311, deploys:1994–1998)
-254. [Security] **`safe_arg` fehlt bei `deploy`, `verify`, `risk`, `ai` und `autofix --only`.** Ein Name mit `?teamId=…` geht so ungeprüft über `lookup` → `vercel_has` in einen API-Pfad; SECURITY.md verspricht, dass solche Namen vor jedem Aufruf abgelehnt werden. (deploys:1327–1339)
+252. ✅ [Security] **Observer-Modus durch die Reihenfolge der Flags umgehbar.** `require_write` greift bei `deploy-changed` nur, wenn `--yes` das erste Argument ist; `deploy-changed --when-green --yes` startet Deploys bei allen Providern ohne `team_gate`, also überall außer Vercel/Render bzw. überall ohne lib/team.sh. `--yes` an beliebiger Stelle prüfen. (deploys:1306, deploys:1918)
+253. ✅ [Security] **`autodeploy allow` und `revoke` sind im Observer-Modus erlaubt.** Beide schalten Auto-Deploy über `ad_on`/`guard_run` an oder aus und stehen nicht in der `require_write`-Liste. (deploys:1302–1311, deploys:1994–1998)
+254. ✅ [Security] **`safe_arg` fehlt bei `deploy`, `verify`, `risk`, `ai` und `autofix --only`.** Ein Name mit `?teamId=…` geht so ungeprüft über `lookup` → `vercel_has` in einen API-Pfad; SECURITY.md verspricht, dass solche Namen vor jedem Aufruf abgelehnt werden. (deploys:1327–1339)
 255. ✅ [Bug] **Das gemeinsame `window` und `health` aus deploy-center.json wirken in der CLI nicht.** `freeze_check` liest nur das lokale `window.json` (eine Deny-Liste); das Team-Format ist ein Erlaubt-Fenster mit `tz`, und `verify` liest `health` nicht. TEAM.md sagt aber, die Safe-Deploy-Prüfungen nutzen beides. (deploys:555–574, deploys:1828; lib/team.sh:110; docs/TEAM.md:50)
 256. ✅ [Bug] **Projekte ohne Git-Repo zählen immer als „state unknown“.** Render-Dienste aus einem Image (Repo null, aber `deployable`) und Bitbucket-Repos (`githost_of` → unknown) bekommen nie einen Head; `UNKNOWN_RULE` meldet sie bei jedem Lauf, und `changed`/`deploy-changed` enden immer mit Exit 1, was einen Cron dauerhaft rot macht. Ohne Repo `deployable` mit dem Grund „kein Repo“ führen und nicht als unbekannt zählen. (deploys:463, providers/render.sh:171, lib/githost.sh:48)
 257. ✅ [Bug] **`verify`, `risk` und `ai` brechen bei `p:name`.** `risk` filtert mit `.name == "vercel:web"` und findet nichts; `verify` gibt den Namen mit Präfix an `"$0" "$plat" rollback` und `site_url_of`. Wie `explain` erst `resolve` aufrufen und `PNAME`/`PID` nutzen. (deploys:1840/1843/1882, deploys:1893–1894, deploys:1211)
@@ -443,7 +443,7 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 280. ✅ [Bug] **`job_on` maskiert Pfade nicht für XML.** `$self` und `$log` kommen roh in die plist; ein `&` oder `<` im Pfad (z. B. ein Ordner „R&D“) bricht `launchctl bootstrap`. Wie PATH escapen. (deploys:770–782)
 281. ✅ [Bug] **`vercel logs <p> 0` gibt das ganze Log aus.** `.[-0:]` ist in jq das ganze Array. `n` ab 1 verlangen. (providers/vercel.sh:251, deploys:1560)
 282. ✅ [Bug] **`history n` ohne Obergrenze.** Vercel und Render erlauben höchstens 100 pro Seite; `history web 500` endet in einem API-Fehler. Begrenzen oder Seiten holen. (deploys:1474–1478; providers/vercel.sh:287, render.sh:279)
-283. [Bug] **Render-Logs mit mehr als 100 Zeilen.** autofix fordert 200, `ai explain` 300 Zeilen an; die Logs-API von Render begrenzt `limit` vermutlich auf 100, dann kommt ein Fehler oder ein abgeschnittenes Log. Über `nextStartTime` paginieren. (Vermutung) (providers/render.sh:237; deploys:699/1213)
+283. ✅ [Bug] **Render-Logs mit mehr als 100 Zeilen.** autofix fordert 200, `ai explain` 300 Zeilen an; die Logs-API von Render begrenzt `limit` vermutlich auf 100, dann kommt ein Fehler oder ein abgeschnittenes Log. Über `nextStartTime` paginieren. (Vermutung) (providers/render.sh:237; deploys:699/1213)
 284. ✅ [Bug] **Bei `changed --platform` wird der Wert nicht geprüft.** `--platform vercle` liefert eine leere Liste und „Nothing to deploy“. Gegen `PROVIDERS` prüfen. (deploys:1781–1783)
 285. ✅ [Bug] **`verify` zählt 404 auf einem expliziten `--path` als gesund.** Nur 000 und 5xx gelten als Fehler, und Weiterleitungen werden nicht verfolgt; ein fehlender `/health`-Endpunkt besteht so den Check. Bei gesetztem `--path` 404 als Fehler werten und `-L` nutzen (die Domain bleibt dabei im Log). (deploys:1849–1852)
 286. ✅ [Bug] **`netlify deploy` gibt `id:null` an `watch` weiter.** Taucht der Build nicht in 30 s auf, liefert `netlify_deploy_json` `id:null`; `deploy --wait` ruft dann `watch p null` auf und endet nach fünf Fehlversuchen mit „unreachable“. Ohne ID auf `latest` zurückfallen. (providers/netlify.sh:290; deploys:1413)
@@ -454,80 +454,80 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 291. ✅ [Bug] **Projekt- und Gruppenname kollidieren.** Heißt eine Gruppe wie ein Projekt, gewinnt in `deploys deploy` immer die Gruppe; das einzelne Projekt ist nicht mehr allein deploybar. Ein Präfix `group:` oder eine Warnung. (deploys:1393–1397; lib/team.sh:185)
 292. ✅ [Bug] **GitLab mit Port wird falsch angesprochen.** `githost_split` schneidet `:8443` vom Host ab, also gehen die Aufrufe an `https://host/api/v4` auf Port 443. Den Port behalten. (lib/githost.sh:31)
 293. ✅ [Bug] **`open` reicht ein drittes Argument ungeprüft weiter.** `deploys open web foo` übergibt „foo“ an `<p>_url`; nur `--dashboard` erlauben. (deploys:1567)
-294. [Bug] **`vercel_json.recent` sieht nur die 100 neuesten Production-Deploys.** Bei vielen Projekten fehlen bei älteren `latestState`/`latestId`, und autofix übersieht deren Fehlschläge. Fehlende Projekte einzeln nachfragen oder seitenweise holen. (providers/vercel.sh:180–181)
+294. ✅ [Bug] **`vercel_json.recent` sieht nur die 100 neuesten Production-Deploys.** Bei vielen Projekten fehlen bei älteren `latestState`/`latestId`, und autofix übersieht deren Fehlschläge. Fehlende Projekte einzeln nachfragen oder seitenweise holen. (providers/vercel.sh:180–181)
 295. ✅ [Bug] **`open_prs_of` zählt höchstens 100 offene PRs.** Danach ist die Zahl eine Untergrenze ohne Kennzeichnung (wie es bei `partial` gelöst ist). `total_count` aus der Search-API nehmen oder `partial` setzen. (deploys:337; lib/githost.sh:177)
 
 
 ### Kern: Fehlerbehandlung, Timeouts, Rate-Limits
 
-296. [UX] **`vercel_call` ohne Retry.** Render, Netlify, Cloudflare und Coolify wiederholen GETs bei 429/5xx; `vercel api` wird nur einmal versucht, und ein 429 bricht `vercel json` ganz ab. Dieselbe Schleife für GETs ergänzen. (providers/vercel.sh:50–55)
-297. [UX] **gh, glab und die vercel-CLI ohne Zeitlimit.** Ein hängendes `gh api` (Proxy, VPN) blockiert `changed` und die App ohne Ende. Einen portablen Timeout-Wrapper (`timeout`/`gtimeout`, sonst Hintergrundprozess mit kill) um alle CLI-Aufrufe legen. (deploys:288/301/337; lib/githost.sh:90; providers/vercel.sh:52)
-298. [UX] **`vercel_team` hält jeden Fehler für „nicht eingeloggt“.** Netzfehler und 5xx heißen „Run: vercel login“. Die stderr-Zeile wie bei `vercel_call` zeigen. (providers/vercel.sh:33)
-299. [UX] **Ein GitHub-Rate-Limit klar benennen.** `with_heads` spart Budget unter 300, sagt das aber nicht; `changed` sollte „GitHub-Limit erreicht, Reset um 14:05“ ausgeben (aus `github_budget.reset`). (deploys:391–393)
-300. [UX] **Anthropic 429/529 ohne Wiederholung.** `ai_ask` stirbt sofort; ein bis zwei Wiederholungen mit `retry-after` ersparen dem Nutzer den zweiten Klick. (deploys:1183–1184)
-301. [UX] **`costs` ohne Vercel.** Ist Vercel aus oder nicht eingeloggt, endet `costs` mit „vercel CLI is not logged in“. Vorher `provider_on vercel` prüfen und „costs gibt es nur für Vercel“ sagen. (deploys:1718)
+296. ✅ [UX] **`vercel_call` ohne Retry.** Render, Netlify, Cloudflare und Coolify wiederholen GETs bei 429/5xx; `vercel api` wird nur einmal versucht, und ein 429 bricht `vercel json` ganz ab. Dieselbe Schleife für GETs ergänzen. (providers/vercel.sh:50–55)
+297. ✅ [UX] **gh, glab und die vercel-CLI ohne Zeitlimit.** Ein hängendes `gh api` (Proxy, VPN) blockiert `changed` und die App ohne Ende. Einen portablen Timeout-Wrapper (`timeout`/`gtimeout`, sonst Hintergrundprozess mit kill) um alle CLI-Aufrufe legen. (deploys:288/301/337; lib/githost.sh:90; providers/vercel.sh:52)
+298. ✅ [UX] **`vercel_team` hält jeden Fehler für „nicht eingeloggt“.** Netzfehler und 5xx heißen „Run: vercel login“. Die stderr-Zeile wie bei `vercel_call` zeigen. (providers/vercel.sh:33)
+299. ✅ [UX] **Ein GitHub-Rate-Limit klar benennen.** `with_heads` spart Budget unter 300, sagt das aber nicht; `changed` sollte „GitHub-Limit erreicht, Reset um 14:05“ ausgeben (aus `github_budget.reset`). (deploys:391–393)
+300. ✅ [UX] **Anthropic 429/529 ohne Wiederholung.** `ai_ask` stirbt sofort; ein bis zwei Wiederholungen mit `retry-after` ersparen dem Nutzer den zweiten Klick. (deploys:1183–1184)
+301. ✅ [UX] **`costs` ohne Vercel.** Ist Vercel aus oder nicht eingeloggt, endet `costs` mit „vercel CLI is not logged in“. Vorher `provider_on vercel` prüfen und „costs gibt es nur für Vercel“ sagen. (deploys:1718)
 
 
 ### Kern: Exit-Codes und JSON-Ausgabe
 
-302. [UX] **`deploy --json` für Gruppen gibt NDJSON aus.** Alle anderen Befehle liefern ein Array oder ein Objekt; bei Gruppen kommt eine Zeile je Mitglied. Ein Array (oder ausdrücklich dokumentiertes NDJSON) ausgeben. (deploys:1408)
+302. ✅ [UX] **`deploy --json` für Gruppen gibt NDJSON aus.** Alle anderen Befehle liefern ein Array oder ein Objekt; bei Gruppen kommt eine Zeile je Mitglied. Ein Array (oder ausdrücklich dokumentiertes NDJSON) ausgeben. (deploys:1408)
 303. [UX] **Fehler mit `--json` als JSON.** Heute kommt dann Klartext auf stderr und nichts auf stdout; `{"error":{"code":"auth","message":…}}` würde App, MCP und Skripte vereinfachen. (deploys:104)
 304. [Feature] **`--json` für `history`, `watch`, `costs`-Tabelle, `logs`.** `history` ist nur eine Tabelle, `watch` nur Text; `watch --json` als NDJSON-Strom (eine Zeile je Statuswechsel) eignet sich für Editor-Integrationen. (providers/vercel.sh:286, render.sh:278; deploys:1524)
 305. [UX] **`costs`, `triggers`, `details` und `github-budget` drucken immer JSON.** Für Menschen fehlt eine Tabelle; mit `--json` das JSON, sonst eine kurze Übersicht wie bei `changed`. (deploys:1713–1775)
 306. [Feature] **JSON-Schemas für `changed`, `status`, `list` und `deploy`.** docs/deploy-center.schema.json gibt es nur für die Team-Datei; ein `schemaVersion` im JSON und Schemas in docs/ schützen App, VS-Code-Erweiterung und MCP vor stillen Feldänderungen.
-307. [UX] **`window` endet bei kaputter Datei mit 1, wie „geschlossen“.** `die` und „geschlossen“ teilen sich Exit 1. Für Lesefehler einen anderen Code. (deploys:1813–1820)
-308. [UX] **Die Exit-Codes sind unvollständig dokumentiert.** docs/CLI.md und der Hilfekopf nennen nur 0/1/3; `ci` (2), `verify` (1/2), `autofix --only` (2–6) und `window` (1) fehlen. Eine Tabelle je Befehl. (docs/CLI.md:72–76; deploys:76–78)
+307. ✅ [UX] **`window` endet bei kaputter Datei mit 1, wie „geschlossen“.** `die` und „geschlossen“ teilen sich Exit 1. Für Lesefehler einen anderen Code. (deploys:1813–1820)
+308. ✅ [UX] **Die Exit-Codes sind unvollständig dokumentiert.** docs/CLI.md und der Hilfekopf nennen nur 0/1/3; `ci` (2), `verify` (1/2), `autofix --only` (2–6) und `window` (1) fehlen. Eine Tabelle je Befehl. (docs/CLI.md:72–76; deploys:76–78)
 
 
 ### Kern: Hilfe, UX, Vervollständigung
 
-309. [UX] **Unbekannter Befehl ohne Hinweis.** Bei einem Tippfehler (`deploys chaged`) kommt die ganze Hilfe mit Exit 1, aber keine Zeile „Unknown command chaged; did you mean changed?“. (deploys:2184, deploys:1355)
-310. [UX] **Doppelte und ungeordnete Hilfe.** `vercel deploy` steht zweimal (Zeile 34 und 38), `deploy` auch (17 und 60), `render list`/`render deploy` stehen hinter `--help`. Nach Themen gruppieren (Alltag, Plattformen, Sicherheit, Team, Claude). (deploys:12–74)
+309. ✅ [UX] **Unbekannter Befehl ohne Hinweis.** Bei einem Tippfehler (`deploys chaged`) kommt die ganze Hilfe mit Exit 1, aber keine Zeile „Unknown command chaged; did you mean changed?“. (deploys:2184, deploys:1355)
+310. ✅ [UX] **Doppelte und ungeordnete Hilfe.** `vercel deploy` steht zweimal (Zeile 34 und 38), `deploy` auch (17 und 60), `render list`/`render deploy` stehen hinter `--help`. Nach Themen gruppieren (Alltag, Plattformen, Sicherheit, Team, Claude). (deploys:12–74)
 311. [Feature] **`deploys help <befehl>` und `<befehl> --help`.** `deploys deploy --help` endet heute mit „Unknown option --help“. Pro Befehl die Usage-Zeile aus `usage_if_short` wiederverwenden. (deploys:1386)
-312. [UX] **Die Hilfe kennt die neuen Provider nicht.** Eigene Verben wie `cloudflare selftest/account`, `coolify set-url`, `netlify autodeploy-off --rule-added` und `amplify on` stehen nirgends; aus `declare -F <p>_cli_*` die Hilfe der eingeschalteten Provider erzeugen.
-313. [UX] **`watch` ohne Gesamt-Timeout, Dauer und Adresse.** Ein Deploy, der ewig „queued“ ist, lässt `watch` endlos laufen; `--timeout 30m`, eine Laufzeitanzeige und am Ende die URL. (deploys:1535–1554)
-314. [UX] **`deploy` ohne `--wait` sagt nicht, wie man folgt.** Nach „started“ die Zeile `deploys watch <p> <id>` ausgeben. (deploys:1409)
-315. [UX] **`providers enable` ohne nächsten Schritt.** Nach dem Einschalten `<p>_ready` prüfen und „Jetzt: pbpaste | deploys netlify set-key“ ausgeben. (deploys:2145–2152)
-316. [UX] **`vercel team <id>` und `vercel map` prüfen nichts.** Ein Tippfehler bei der Team-ID oder dem Projektnamen wird gespeichert; mit `/v2/teams/<id>` bzw. `/v9/projects/<p>` prüfen (und offline mit `--no-check` speichern). (providers/vercel.sh:342–366)
-317. [UX] **`render status` verlangt die srv-ID.** Andere Befehle nehmen den Namen; `render_cli_status` sollte `render_id_of` nutzen. (providers/render.sh:300)
-318. [UX] **Amplify-IDs mit `/` werden von `safe_arg` abgelehnt.** Die Doku sagt „commands take the id“ (`<appId>/<branch>`), aber `deploys amplify deploy app/main` scheitert an „no /“. Für amplify `/` genau einmal erlauben. (providers/amplify.sh:21; deploys:1323)
+312. ✅ [UX] **Die Hilfe kennt die neuen Provider nicht.** Eigene Verben wie `cloudflare selftest/account`, `coolify set-url`, `netlify autodeploy-off --rule-added` und `amplify on` stehen nirgends; aus `declare -F <p>_cli_*` die Hilfe der eingeschalteten Provider erzeugen.
+313. ✅ [UX] **`watch` ohne Gesamt-Timeout, Dauer und Adresse.** Ein Deploy, der ewig „queued“ ist, lässt `watch` endlos laufen; `--timeout 30m`, eine Laufzeitanzeige und am Ende die URL. (deploys:1535–1554)
+314. ✅ [UX] **`deploy` ohne `--wait` sagt nicht, wie man folgt.** Nach „started“ die Zeile `deploys watch <p> <id>` ausgeben. (deploys:1409)
+315. ✅ [UX] **`providers enable` ohne nächsten Schritt.** Nach dem Einschalten `<p>_ready` prüfen und „Jetzt: pbpaste | deploys netlify set-key“ ausgeben. (deploys:2145–2152)
+316. ✅ [UX] **`vercel team <id>` und `vercel map` prüfen nichts.** Ein Tippfehler bei der Team-ID oder dem Projektnamen wird gespeichert; mit `/v2/teams/<id>` bzw. `/v9/projects/<p>` prüfen (und offline mit `--no-check` speichern). (providers/vercel.sh:342–366)
+317. ✅ [UX] **`render status` verlangt die srv-ID.** Andere Befehle nehmen den Namen; `render_cli_status` sollte `render_id_of` nutzen. (providers/render.sh:300)
+318. ✅ [UX] **Amplify-IDs mit `/` werden von `safe_arg` abgelehnt.** Die Doku sagt „commands take the id“ (`<appId>/<branch>`), aber `deploys amplify deploy app/main` scheitert an „no /“. Für amplify `/` genau einmal erlauben. (providers/amplify.sh:21; deploys:1323)
 319. [Feature] **Vervollständigung für Flags und `p:name`.** `--preview`, `--sha`, `--wait`, `--json`, `--platform <p>` und Namen mit Plattformpräfix (aus names.json) fehlen; außerdem fish. (deploys:1629–1670)
-320. [UX] **`deploy-changed` beachtet die Reihenfolge Backend vor Frontend nicht.** Die App startet das Backend eines Repos zuerst; die CLI startet in Namensreihenfolge. Dieselbe Regel (oder Team-`groups`) anwenden. (deploys:1962–1964)
+320. ◐ [UX] **`deploy-changed` beachtet die Reihenfolge Backend vor Frontend nicht.** Die App startet das Backend eines Repos zuerst; die CLI startet in Namensreihenfolge. Dieselbe Regel (oder Team-`groups`) anwenden. (deploys:1962–1964)
 
 
 ### Kern: Performance
 
 321. [Perf] **`team_effective` läuft mehrmals pro Befehl.** `repos_json`, `team_ignored`, `team_observer_from`, `team_group` und `team_gate` rechnen jeweils `team_sources` plus die große jq-Zusammenführung neu. Das Ergebnis pro Prozess in einer Variablen merken. (lib/team.sh:148–185)
-322. [Perf] **`is_enabled` startet jq bei jedem Aufruf.** In `lookup` passiert das je Treffer, in `completion` je Provider; `enabled_providers` einmal pro Prozess cachen. (deploys:207–216)
+322. ✅ [Perf] **`is_enabled` startet jq bei jedem Aufruf.** In `lookup` passiert das je Treffer, in `completion` je Provider; `enabled_providers` einmal pro Prozess cachen. (deploys:207–216)
 323. [Perf] **Netlify, DigitalOcean und Coolify lesen die Deploys je Site nacheinander.** Bei 30 Sites sind das 30 serielle Aufrufe plus O(n²) `jq '. + [$s]'`. Parallel wie `render_last_of` (xargs -P) und am Ende einmal `jq -s`. (providers/netlify.sh:186–194, digitalocean.sh:195–203, coolify.sh:170)
-324. [Perf] **`*_id_of` liest bei jedem Aufruf die ganze Liste.** `netlify_latest`, `coolify_latest` und `digitalocean_status` lösen den Namen jedes Mal über alle Sites auf, auch wenn schon eine ID kommt; `watch` macht das alle 6 s. Eine ID direkt durchlassen (Muster erkennen wie `srv-`). (providers/netlify.sh:110/303, coolify.sh:119, digitalocean.sh:285)
+324. ◐ [Perf] **`*_id_of` liest bei jedem Aufruf die ganze Liste.** `netlify_latest`, `coolify_latest` und `digitalocean_status` lösen den Namen jedes Mal über alle Sites auf, auch wenn schon eine ID kommt; `watch` macht das alle 6 s. Eine ID direkt durchlassen (Muster erkennen wie `srv-`). (providers/netlify.sh:110/303, coolify.sh:119, digitalocean.sh:285)
 325. [Perf] **Amplify löst Projekte bei jedem Aufruf auf.** `amp_resolve` ruft `list-apps` und `list-branches` auf (je ein Start der Python-CLI, etwa 1 s); `watch` zahlt das alle 6 s. Die Auflösung in names.json bzw. im Prozess merken. (providers/amplify.sh:136–160)
-326. [Perf] **`vercel_rollback` liest das Projekt zweimal.** `/v9/projects/$p` für `targets.production.id` und dann für `.id`; ein Aufruf reicht. (providers/vercel.sh:231/240)
-327. [Perf] **`vercel_doctor` startet die vercel-CLI dreimal.** `command -v`, `vercel api --help` und `vercel whoami` sind jeweils ein Node-Start; `whoami` allein beantwortet beides. (providers/vercel.sh:271–276)
+326. ✅ [Perf] **`vercel_rollback` liest das Projekt zweimal.** `/v9/projects/$p` für `targets.production.id` und dann für `.id`; ein Aufruf reicht. (providers/vercel.sh:231/240)
+327. ◐ [Perf] **`vercel_doctor` startet die vercel-CLI dreimal.** `command -v`, `vercel api --help` und `vercel whoami` sind jeweils ein Node-Start; `whoami` allein beantwortet beides. (providers/vercel.sh:271–276)
 328. [Perf] **`all_json` startet sich selbst je Provider neu.** `"$0" "$p" json` lädt alle Provider und lib/team.sh erneut und bricht bei `bash ./deploys` ohne x-Bit; eine Subshell mit `provider_json` reicht. (deploys:448)
 329. [Perf] **Autofix fragt jq je Feld einzeln.** In `af_sync_fires`/`autofix_run` laufen pro Eintrag 5–8 Aufrufe `echo | jq -r`; einmal `jq -r '[…] | @tsv'` und `read` sind deutlich schneller. (deploys:823–827, 883–885)
-330. [Perf] **`render_logs` liest den Dienst für `ownerId` bei jedem Aufruf.** Die Owner-ID ändert sich nie und lässt sich in render-off.json oder names.json merken. (providers/render.sh:234)
+330. ✅ [Perf] **`render_logs` liest den Dienst für `ownerId` bei jedem Aufruf.** Die Owner-ID ändert sich nie und lässt sich in render-off.json oder names.json merken. (providers/render.sh:234)
 
 
 ### Kern: Sicherheit
 
-331. [Security] **Observer-Erkennung ist „fail open“.** Ist `gh` nicht eingeloggt (oder ein anderes GH_TOKEN gesetzt), ist `me` leer und die Observer-Liste greift nie; mit nicht leerer `observers`-Liste und unbekanntem Nutzer sollte das als Observer gelten (oder eine deutliche Warnung). (lib/team.sh:132, lib/team.sh:87–95)
-332. [Security] **Freigaben auf veralteten Reviews.** `team_approvals` zählt ein APPROVED-Review, auch wenn danach neue Commits in den PR kamen (ohne „dismiss stale reviews“). `review.commit_id` gegen den letzten Head des PRs vor dem Merge prüfen. (lib/team.sh:205–208)
-333. [Security] **Der Coolify-Token geht auch über http://.** `coolify_base` nimmt `http://`, und der Bearer-Token geht dann im Klartext; wie bei hook nur localhost erlauben oder ausdrücklich bestätigen lassen. (providers/coolify.sh:43–52)
-334. [Security] **`hook_check_url` erlaubt `http://localhost.example.com`.** Der Präfixtest `http://localhost*` lässt jede Domain durch, die mit „localhost“ beginnt; den Host genau vergleichen. (providers/hook.sh:72)
-335. [Security] **Der Netlify-Token geht mit an die Build-Hook-URL.** `netlify_call POST <hook-url>` setzt den Bearer-Header, obwohl der Hook keinen braucht; stammt die URL aus einer manipulierten netlify-hooks.json, geht der Token mit. Ohne Authorization posten und den Host api.netlify.com prüfen. (providers/netlify.sh:279)
-336. [Security] **`open` öffnet jede URL, die eine API liefert.** Ein `file://`- oder Custom-Scheme-Wert aus einem Platform-Feld würde mit `open` gestartet; nur `https://` zulassen. (deploys:1570)
+331. ✅ [Security] **Observer-Erkennung ist „fail open“.** Ist `gh` nicht eingeloggt (oder ein anderes GH_TOKEN gesetzt), ist `me` leer und die Observer-Liste greift nie; mit nicht leerer `observers`-Liste und unbekanntem Nutzer sollte das als Observer gelten (oder eine deutliche Warnung). (lib/team.sh:132, lib/team.sh:87–95)
+332. ✅ [Security] **Freigaben auf veralteten Reviews.** `team_approvals` zählt ein APPROVED-Review, auch wenn danach neue Commits in den PR kamen (ohne „dismiss stale reviews“). `review.commit_id` gegen den letzten Head des PRs vor dem Merge prüfen. (lib/team.sh:205–208)
+333. ✅ [Security] **Der Coolify-Token geht auch über http://.** `coolify_base` nimmt `http://`, und der Bearer-Token geht dann im Klartext; wie bei hook nur localhost erlauben oder ausdrücklich bestätigen lassen. (providers/coolify.sh:43–52)
+334. ✅ [Security] **`hook_check_url` erlaubt `http://localhost.example.com`.** Der Präfixtest `http://localhost*` lässt jede Domain durch, die mit „localhost“ beginnt; den Host genau vergleichen. (providers/hook.sh:72)
+335. ✅ [Security] **Der Netlify-Token geht mit an die Build-Hook-URL.** `netlify_call POST <hook-url>` setzt den Bearer-Header, obwohl der Hook keinen braucht; stammt die URL aus einer manipulierten netlify-hooks.json, geht der Token mit. Ohne Authorization posten und den Host api.netlify.com prüfen. (providers/netlify.sh:279)
+336. ✅ [Security] **`open` öffnet jede URL, die eine API liefert.** Ein `file://`- oder Custom-Scheme-Wert aus einem Platform-Feld würde mit `open` gestartet; nur `https://` zulassen. (deploys:1570)
 
 
 ### Kern: Code-Qualität
 
-337. [Code] **`deploys_dir` ist zweimal definiert, dazu `script_dir` und `readlink -f`.** Drei Wege, den eigenen Ordner zu finden (deploys:128, :346, :156, :2177); `readlink -f` fehlt auf macOS vor 12.3, und dann findet `simulate` lib/savings.sh über einen Symlink nicht. Eine Funktion, einmal berechnet.
-338. [Code] **Toter `--force`-Zweig in `deploy`.** `--force` wird schon oben global entfernt; die Schleife in `deploy` erreicht ihn nie. (deploys:1385)
-339. [Code] **`act()` und `stop_group()` sind Funktionen in Funktionen.** Sie werden global definiert und überschreiben sich bei weiteren Aufrufen; als normale Hilfsfunktionen anlegen. (deploys:992, deploys:1400)
+337. ✅ [Code] **`deploys_dir` ist zweimal definiert, dazu `script_dir` und `readlink -f`.** Drei Wege, den eigenen Ordner zu finden (deploys:128, :346, :156, :2177); `readlink -f` fehlt auf macOS vor 12.3, und dann findet `simulate` lib/savings.sh über einen Symlink nicht. Eine Funktion, einmal berechnet.
+338. ✅ [Code] **Toter `--force`-Zweig in `deploy`.** `--force` wird schon oben global entfernt; die Schleife in `deploy` erreicht ihn nie. (deploys:1385)
+339. ✅ [Code] **`act()` und `stop_group()` sind Funktionen in Funktionen.** Sie werden global definiert und überschreiben sich bei weiteren Aufrufen; als normale Hilfsfunktionen anlegen. (deploys:992, deploys:1400)
 340. [Code] **Das Skript hat 2184 Zeilen.** Autofix, ai, guard/allow und Savings in `lib/autofix.sh`, `lib/ai.sh`, `lib/guard.sh` auslagern (wie team/githost), damit Reviews und shellcheck-Ausnahmen kleiner werden.
 341. [Code] **Drei Regeln für „fehlgeschlagener Check“.** `CI_RULE` (deploys:497), `details.checks` (deploys:1686, ohne `action_required`/`startup_failure`) und die PR-`statusCheckRollup`-Auswertung (deploys:1691) urteilen verschieden; einmal als jq-def ablegen.
 342. [Code] **Zwei Listen für riskante Dateien.** `RISK_DEF` (deploys:603–606) und `details.risky`/`gitlab_details.risky` (deploys:1707, lib/githost.sh:218) weichen ab (z. B. `bun.lockb`, `uv.lock`, `.gitlab-ci.yml`); eine gemeinsame Regex.
-343. [Code] **Die `--json`/`--force`-Erkennung schluckt auch Werte.** `deploys hook add x - --body --json` verliert `--json` als Wert; das globale Parsen nach `--` beenden und Werte von Optionen auslassen. (deploys:180–188)
+343. ◐ [Code] **Die `--json`/`--force`-Erkennung schluckt auch Werte.** `deploys hook add x - --body --json` verliert `--json` als Wert; das globale Parsen nach `--` beenden und Werte von Optionen auslassen. (deploys:180–188)
 
 
 ### Guard, Autofix, Trigger: Abdeckung neuer Provider
@@ -555,13 +555,13 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 ### Netlify
 
 354. [Feature] **Prüfung der ignore-Regel auch für GitLab.** `netlify_rule_in_repo` liest nur über `gh`; GitLab-Repos brauchen immer `--rule-added`. Über `gitlab_api …/repository/files` lesen. (providers/netlify.sh:140–153)
-355. [UX] **Die Regel wird nur auf dem Hauptbranch geprüft.** Ein `[context.production]`, das `ignore` überschreibt, oder ein falscher `base` wird nicht erkannt; die Doku-Zeile sollte das nennen.
+355. ✅ [UX] **Die Regel wird nur auf dem Hauptbranch geprüft.** Ein `[context.production]`, das `ignore` überschreibt, oder ein falscher `base` wird nicht erkannt; die Doku-Zeile sollte das nennen.
 356. [Feature] **Netlify-Deploy-Previews ehrlich zählen.** Die ignore-Regel überspringt Previews ebenfalls; ein Hinweis bei `autodeploy-off`, wie man Previews für bestimmte Branches zulässt.
 
 
 ### Cloudflare, Coolify, DigitalOcean, Amplify, Hook
 
-357. [UX] **`cloudflare_deploy_json` meldet `state:` die Phase.** Der Vertrag will dort den rohen Zustand (`latest_stage.status`); die App zeigt sonst „building“ statt „initialize/build“. (providers/cloudflare.sh:293)
+357. ✅ [UX] **`cloudflare_deploy_json` meldet `state:` die Phase.** Der Vertrag will dort den rohen Zustand (`latest_stage.status`); die App zeigt sonst „building“ statt „initialize/build“. (providers/cloudflare.sh:293)
 358. [Feature] **Mehrere Coolify-Instanzen.** Heute geht nur eine pro Setup (`coolify.json url`); viele betreiben getrennte Server für Staging und Produktion. Eine Liste `instances[]` mit Namenspräfix. (providers/coolify.sh:14)
 359. [Feature] **Hook mit Status-URL.** `hook add … --status-url <url> --status-jq '.state'` würde aus „triggered“ einen echten Status machen (viele CI-Dispatches liefern eine Run-ID).
 360. [UX] **Ein Hook bleibt nach 2xx für immer „ready“.** Für `changed` heißt das, er gilt als live, auch wenn der Build danach scheitert. Phase `queued` mit Hinweis „Status unbekannt“ wäre ehrlicher (der Vermerk steht nur in `meta.note`). (providers/hook.sh:223–229)
@@ -597,24 +597,24 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 
 ### Doku (README-CLI.md, docs/CLI.md, docs/PROVIDERS.md)
 
-381. [UX] **Das CI-Beispiel deployt für Vercel vermutlich nichts.** Es setzt kein `DEPLOYS_CONFIG` und speichert keine vercel-repos.json zwischen den Läufen; ohne Zuordnung ist kein Vercel-Projekt `deployable`, und ohne vercel-CLI im Runner ist Vercel nicht „ready“ und fällt still weg. Den Cache-Schritt, `npm i -g vercel` und `DEPLOYS_CONFIG` ins Beispiel aufnehmen. (README-CLI.md:84–92)
-382. [UX] **Die Anforderungstabelle ist unvollständig.** perl (autofix/ai), `security` (macOS) bzw. Env-Variablen unter Linux, glab/GITLAB_TOKEN, aws-CLI (Amplify) und column als „ohne: keine Tabellen“ (heute ein Absturz) fehlen. (README-CLI.md:55–63)
-383. [UX] **„Add --json to any command“ stimmt nicht.** `watch`, `logs`, `history`, `explain`, `diff` und `notes` haben kein JSON; die Liste der Befehle mit JSON nennen. (docs/CLI.md:70)
-384. [UX] **docs/CLI.md kennt nur Vercel und Render.** `deploy`, `verify`, `risk`, `ci`, `window`, `team`, `readonly`, `providers`, `list` und die fünf neuen Provider fehlen; auch README-CLI.md beginnt mit „on Vercel and Render“. (docs/CLI.md, README-CLI.md:3)
-385. [UX] **PROVIDERS.md ist veraltet.** Zeile 3–4 nennt nur vercel, render und hook; der printf-Zwang für `_meta`/`_doctor` wird von vier Providern verletzt, und die Pflicht, dass `_has` die ID druckt bzw. `_status` TSV liefert, sollte mit einem Beispiel und dem Hinweis auf `contract.sh` hervorgehoben werden. (docs/PROVIDERS.md:3–4, 48–61)
-386. [UX] **Umgebungsvariablen sammeln.** `DEPLOYS_NO_GITHUB`, `DEPLOYS_READONLY`, `NO_COLOR`, `DEPLOYS_NOTIFY`, `DEPLOYS_JOURNAL`, `DEPLOYS_TEAM_TTL`, `DEPLOYS_GITLAB_HOSTS`, `DEPLOYS_CLOUDFLARE_TOGGLE`, `DEPLOYS_NETLIFY_POLLS` und `DEPLOYS_AUTOFIX_PER_*` stehen verstreut im Code; eine Tabelle in docs/CLI.md.
+381. ✅ [UX] **Das CI-Beispiel deployt für Vercel vermutlich nichts.** Es setzt kein `DEPLOYS_CONFIG` und speichert keine vercel-repos.json zwischen den Läufen; ohne Zuordnung ist kein Vercel-Projekt `deployable`, und ohne vercel-CLI im Runner ist Vercel nicht „ready“ und fällt still weg. Den Cache-Schritt, `npm i -g vercel` und `DEPLOYS_CONFIG` ins Beispiel aufnehmen. (README-CLI.md:84–92)
+382. ✅ [UX] **Die Anforderungstabelle ist unvollständig.** perl (autofix/ai), `security` (macOS) bzw. Env-Variablen unter Linux, glab/GITLAB_TOKEN, aws-CLI (Amplify) und column als „ohne: keine Tabellen“ (heute ein Absturz) fehlen. (README-CLI.md:55–63)
+383. ✅ [UX] **„Add --json to any command“ stimmt nicht.** `watch`, `logs`, `history`, `explain`, `diff` und `notes` haben kein JSON; die Liste der Befehle mit JSON nennen. (docs/CLI.md:70)
+384. ✅ [UX] **docs/CLI.md kennt nur Vercel und Render.** `deploy`, `verify`, `risk`, `ci`, `window`, `team`, `readonly`, `providers`, `list` und die fünf neuen Provider fehlen; auch README-CLI.md beginnt mit „on Vercel and Render“. (docs/CLI.md, README-CLI.md:3)
+385. ✅ [UX] **PROVIDERS.md ist veraltet.** Zeile 3–4 nennt nur vercel, render und hook; der printf-Zwang für `_meta`/`_doctor` wird von vier Providern verletzt, und die Pflicht, dass `_has` die ID druckt bzw. `_status` TSV liefert, sollte mit einem Beispiel und dem Hinweis auf `contract.sh` hervorgehoben werden. (docs/PROVIDERS.md:3–4, 48–61)
+386. ✅ [UX] **Umgebungsvariablen sammeln.** `DEPLOYS_NO_GITHUB`, `DEPLOYS_READONLY`, `NO_COLOR`, `DEPLOYS_NOTIFY`, `DEPLOYS_JOURNAL`, `DEPLOYS_TEAM_TTL`, `DEPLOYS_GITLAB_HOSTS`, `DEPLOYS_CLOUDFLARE_TOGGLE`, `DEPLOYS_NETLIFY_POLLS` und `DEPLOYS_AUTOFIX_PER_*` stehen verstreut im Code; eine Tabelle in docs/CLI.md.
 
 
 ### Tests
 
-387. [Test] **Tabellentest für den Observer-Modus.** Für jeden schreibenden Befehl in jeder Flag-Reihenfolge prüfen, dass `DEPLOYS_READONLY=1` ihn ablehnt; das hätte `deploy-changed --when-green --yes` und `autodeploy allow` gefunden.
-388. [Test] **Tabellentest für `safe_arg`.** Jeder Befehl, der einen Namen nimmt, bekommt `a/b`, `a?x` und `a%2F` und darf keinen API-Aufruf in `$CALLS` hinterlassen.
-389. [Test] **Deploy-Fenster für alle Startwege.** `deploy`, `deploy <gruppe>`, `<p> deploy`, `deploy-changed --yes` und autofix-Redeploys mit `DEPLOYS_NOW` in einem geschlossenen Fenster.
-390. [Test] **`doctor` auf eindeutige Schlüssel prüfen.** `jq` sieht doppelte Schlüssel nicht; mit `jq --stream` oder python `object_pairs_hook` testen, dass kein Schlüssel doppelt ist.
+387. ✅ [Test] **Tabellentest für den Observer-Modus.** Für jeden schreibenden Befehl in jeder Flag-Reihenfolge prüfen, dass `DEPLOYS_READONLY=1` ihn ablehnt; das hätte `deploy-changed --when-green --yes` und `autodeploy allow` gefunden.
+388. ✅ [Test] **Tabellentest für `safe_arg`.** Jeder Befehl, der einen Namen nimmt, bekommt `a/b`, `a?x` und `a%2F` und darf keinen API-Aufruf in `$CALLS` hinterlassen.
+389. ✅ [Test] **Deploy-Fenster für alle Startwege.** `deploy`, `deploy <gruppe>`, `<p> deploy`, `deploy-changed --yes` und autofix-Redeploys mit `DEPLOYS_NOW` in einem geschlossenen Fenster.
+390. ✅ [Test] **`doctor` auf eindeutige Schlüssel prüfen.** `jq` sieht doppelte Schlüssel nicht; mit `jq --stream` oder python `object_pairs_hook` testen, dass kein Schlüssel doppelt ist.
 391. [Test] **Linux-Lauf ohne `column`, `security` und mit GNU-xargs.** Ein CI-Job in einem schlanken Container (debian-slim) mit nur bash, curl, jq und gh fängt die Portabilitätsfehler oben.
-392. [Test] **Hilfe gegen die case-Zweige prüfen.** Ein Test, der jeden `case`-Befehl in deploys sucht und verlangt, dass er in `--help` und in der Vervollständigung steht.
-393. [Test] **`--when-green` mit einem Provider ohne `caps.sha`.** Erwartung: kein `--sha` an `_deploy_json`, eine verständliche Meldung, kein Abbruch der anderen.
-394. [Test] **Projekte ohne Repo.** Ein Render-Image-Dienst und ein Bitbucket-Vercel-Projekt in den Fixtures dürfen `changed` nicht auf Exit 1 setzen.
+392. ✅ [Test] **Hilfe gegen die case-Zweige prüfen.** Ein Test, der jeden `case`-Befehl in deploys sucht und verlangt, dass er in `--help` und in der Vervollständigung steht.
+393. ✅ [Test] **`--when-green` mit einem Provider ohne `caps.sha`.** Erwartung: kein `--sha` an `_deploy_json`, eine verständliche Meldung, kein Abbruch der anderen.
+394. ◐ [Test] **Projekte ohne Repo.** Ein Render-Image-Dienst und ein Bitbucket-Vercel-Projekt in den Fixtures dürfen `changed` nicht auf Exit 1 setzen.
 
 ## 4. iOS-App, Widgets, shared (128)
 ### Bugs: Deploy, Rollback, Status

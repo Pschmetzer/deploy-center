@@ -233,7 +233,7 @@ savings_main() {  # savings_main simulate|ledger [--days N]
   done
   case "$days" in ''|*[!0-9]*) die "--days must be a number from 1 to 90";; esac
   [ "$days" -ge 1 ] && [ "$days" -le 90 ] || die "--days must be a number from 1 to 90"
-  command -v gh >/dev/null 2>&1 || die "simulate and ledger count pushes on GitHub: install gh and run gh auth login"
+  type -P gh >/dev/null 2>&1 || die "simulate and ledger count pushes on GitHub: install gh and run gh auth login"
   if [ "$mode" = simulate ]; then out="$(sv_facts simulate "$days" | sv_simulate_from)"
   else out="$(sv_facts ledger "$days" | sv_ledger_from)"; fi
   if [ "${json:-0}" = 1 ]; then echo "$out"; else echo "$out" | sv_print; fi

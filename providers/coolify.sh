@@ -5,7 +5,7 @@
 # while your apps run on the same box. This provider turns off Coolify's per-application
 # "Auto Deploy" and starts deploys by hand.
 #
-# Contract (see the A1 provider PR): coolify_meta, _ready, _json, _has, _off, _deploy_json,
+# Contract (docs/PROVIDERS.md): coolify_meta, _ready, _json, _has, _off, _deploy_json,
 # _status, _latest, _cancel, _rollback, _logs, _url, _set_key, _doctor.
 # Phases: queued | building | ready | failed | canceled.
 #
@@ -53,6 +53,18 @@ coolify_base() {
   printf '%s' "$u"
 }
 
+# Whether the token may go to <base>: https, this machine, or plain http allowed on purpose
+# (DEPLOYS_COOLIFY_ALLOW_HTTP=1, or `deploys coolify set-url <url> --allow-http` for that url).
+coolify_http_ok() {
+  local b="$1" h f
+  case "$b" in http://*) ;; *) return 0 ;; esac
+  h="${b#http://}"; h="${h%%[/?#]*}"; h="${h##*@}"; case "$h" in \[*\]*) h="${h%%]*}]" ;; *) h="${h%%:*}" ;; esac
+  case "$h" in localhost|127.0.0.1|\[::1\]) return 0 ;; esac
+  [ "${DEPLOYS_COOLIFY_ALLOW_HTTP:-}" = 1 ] && return 0
+  f="$(coolify_config_dir)/coolify.json"
+  [ -f "$f" ] && jq -e --arg b "$b" '.allowHttp == true and ((.url // "") | rtrimstr("/") | rtrimstr("/api/v1") | rtrimstr("/")) == $b' "$f" >/dev/null 2>&1
+}
+
 # The token: environment first, then the keychain. Uses the shared key_of when A1 provides it.
 coolify_key() {
   local k=""
@@ -69,6 +81,7 @@ coolify_key() {
 coolify_call() {
   local method="$1" path="$2" body="${3:-}" key base out code try err
   base="$(coolify_base)" || return 1
+  coolify_http_ok "$base" || { echo "Coolify: $base is plain http, so the token would cross the network unencrypted. Use https, or allow it on purpose: deploys coolify set-url $base --allow-http (or DEPLOYS_COOLIFY_ALLOW_HTTP=1)" >&2; return 1; }
   key="$(coolify_key)" || return 1
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
@@ -155,8 +168,8 @@ COOLIFY_JQ='
 # Compact (jq -c): deploys greps it (meta_flag, meta_str, key_of). Contract fields: id, label,
 # noun, defaultOn, keyEnv (an array), keychain, caps (docs/PROVIDERS.md). Off by default.
 coolify_meta() {
-  jq -nc --arg k "$COOLIFY_KEYCHAIN" '{id:"coolify", label:"Coolify", noun:"application", defaultOn:false, keyEnv:["COOLIFY_TOKEN"], urlEnv:"COOLIFY_URL", keychain:$k,
-    caps:{off:true, sha:true, cancel:true, rollback:true, logs:true, preview:false}}'
+  # printf, not jq: deploys reads it without jq (doctor, meta_str, key_of).
+  printf '{"id":"coolify","label":"Coolify","noun":"application","defaultOn":false,"keyEnv":["COOLIFY_TOKEN"],"urlEnv":"COOLIFY_URL","keychain":"%s","caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":false}}\n' "$COOLIFY_KEYCHAIN"
 }
 
 # Usable without asking anyone: tools there, an instance and a token found (not checked against Coolify).
@@ -404,18 +417,33 @@ coolify_url() {
   fi
 }
 
-# coolify_set_url <url>: write the instance to coolify.json, after Coolify answered /health there.
+# coolify_set_url <url> [--allow-http]: write the instance to coolify.json, after Coolify answered
+# /health there. Plain http to another machine is kept only with --allow-http (the token would
+# travel unencrypted); localhost needs no flag.
 coolify_set_url() {
-  local u="${1:-}" f d tmp
-  [ -n "$u" ] || coolify_die "Usage: deploys coolify set-url https://coolify.example.com"
+  local u="${1:-}" f d tmp allow=false
+  [ "${2:-}" != --allow-http ] || allow=true
+  [ -n "$u" ] || coolify_die "Usage: deploys coolify set-url https://coolify.example.com [--allow-http]"
   u="$(COOLIFY_URL="$u" coolify_base)" || coolify_die "That is not a URL"
+  if [ "$allow" = false ] && ! coolify_http_ok "$u"; then
+    coolify_die "$u is plain http: the token would cross the network unencrypted. Use https, or on purpose: deploys coolify set-url $u --allow-http"
+  fi
   curl -sSf --connect-timeout 10 --max-time 20 "$u/api/health" >/dev/null 2>&1 \
     || coolify_die "No Coolify answered at $u/api/health; nothing was saved"
   d="$(coolify_config_dir)"; f="$d/coolify.json"; mkdir -p "$d"
   [ -s "$f" ] || echo '{}' > "$f"
-  tmp="$(mktemp)"; jq --arg u "$u" '.url = $u' "$f" > "$tmp" && mv "$tmp" "$f"
-  echo "Coolify instance set to $u"
+  # The allowance belongs to one address: a new one starts without it.
+  tmp="$(mktemp)"; jq --arg u "$u" --argjson a "$allow" \
+    '(if $a then .allowHttp = true elif ((.url // "") != $u) then del(.allowHttp) else . end) | .url = $u' "$f" > "$tmp" && mv "$tmp" "$f"
+  if [ "$allow" = true ]; then echo "Coolify instance set to $u (plain http allowed)"; else echo "Coolify instance set to $u"; fi
 }
+# What `deploys providers enable coolify` says comes next while it is not set up.
+coolify_setup_hint() {
+  if coolify_base >/dev/null 2>&1; then echo "pbpaste | deploys coolify set-key   (or set COOLIFY_TOKEN)"
+  else echo "deploys coolify set-url https://coolify.example.com, then: pbpaste | deploys coolify set-key"; fi
+}
+# `deploys coolify set-url <url> [--allow-http]` (deploys finds <p>_cli_*).
+coolify_cli_set_url() { coolify_set_url "$@"; }
 
 # The token on stdin. Tried against the instance first, saved only when Coolify takes it.
 coolify_set_key() {

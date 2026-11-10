@@ -118,6 +118,14 @@ digitalocean_id_of() {
   [ -n "$id" ] || { echo "No DigitalOcean app named \"$n\". See: deploys digitalocean list" >&2; return 1; }
   echo "$id"
 }
+# An app id (a UUID, what watch passes every 6 s) as it is, without listing every app again.
+# Not for _has: there "exists" must be asked, and a UUID could be another provider's.
+digitalocean_id_fast() {
+  case "$1" in
+    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-*-*-*) echo "$1" ;;
+    *) digitalocean_id_of "$1" ;;
+  esac
+}
 
 # jq definitions shared by the readers below.
 # shellcheck disable=SC2016
@@ -173,12 +181,11 @@ digitalocean_app() { digitalocean_call GET "/v2/apps/$1"; }
 
 # ---------- the contract ----------
 
-# Compact (jq -c): deploys greps it (meta_flag, meta_str, key_of). Contract fields: id, label,
-# noun, defaultOn, keyEnv (an array), keychain, caps (docs/PROVIDERS.md). Off by default.
+# One line, with printf (not jq): deploys greps it without jq (meta_flag, meta_str, key_of,
+# doctor). Contract fields: id, label, noun, defaultOn, keyEnv (an array), keychain, caps
+# (docs/PROVIDERS.md). Off by default.
 digitalocean_meta() {
-  jq -nc --arg k "$DIGITALOCEAN_KEYCHAIN" '{id:"digitalocean", label:"DigitalOcean App Platform", noun:"app", defaultOn:false,
-    keyEnv:["DIGITALOCEAN_TOKEN"], keychain:$k,
-    caps:{off:true, sha:false, cancel:true, rollback:true, logs:true, preview:false}}'
+  printf '{"id":"digitalocean","label":"DigitalOcean App Platform","noun":"app","defaultOn":false,"keyEnv":["DIGITALOCEAN_TOKEN"],"keychain":"%s","caps":{"off":true,"sha":false,"cancel":true,"rollback":true,"logs":true,"preview":false}}\n' "$DIGITALOCEAN_KEYCHAIN"
 }
 
 # Usable without asking anyone: tools there and a token found (not checked against DigitalOcean).
@@ -289,14 +296,14 @@ digitalocean_deploy_json() {
 digitalocean_status_json() {
   local app="${1:-}" d="${2:-}" id out
   [ -n "$d" ] || digitalocean_die "DigitalOcean: status needs the app and the deployment id"
-  id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
+  id="$(digitalocean_id_fast "$app")" || digitalocean_die "DigitalOcean app $app not found"
   out="$(digitalocean_call GET "/v2/apps/$id/deployments/$d")" || digitalocean_die "DigitalOcean: could not read deployment $d"
   echo "$out" | jq --arg app "$id" "$DIGITALOCEAN_JQ"'.deployment | deploy_out(null; $app)'
 }
 
 digitalocean_latest_json() {
   local id out
-  id="$(digitalocean_id_of "$1")" || digitalocean_die "DigitalOcean app $1 not found"
+  id="$(digitalocean_id_fast "$1")" || digitalocean_die "DigitalOcean app $1 not found"
   out="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1")" || digitalocean_die "DigitalOcean: could not read the deployments of $1"
   echo "$out" | jq --arg app "$id" "$DIGITALOCEAN_JQ"'.deployments[0] // null | if . then deploy_out(null; $app) else null end'
 }

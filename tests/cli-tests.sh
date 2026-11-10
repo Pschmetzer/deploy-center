@@ -267,3 +267,163 @@ expect "289: changed names the reason a head is unknown" \
 fresh
 expect "details: no branch and no default branch is an error, not main" \
   "$(run "$O" "$E" details me/app aaaa; grep -c 'default branch of me/app could not be read' "$E"; grep -c 'compare/aaaa...main' "$e2e/calls.log")" $'1\n1\n0'
+
+# ---------- wave 3 (docs/IDEEN-6.md, section 3) ----------
+
+# 387: every command that changes something is refused in observer mode, in every flag order.
+fresh; bad=""
+for c in "deploy web" "deploy web --wait" "deploy-changed --yes" "deploy-changed --when-green --yes" "deploy-changed --yes --when-green" \
+         "vercel deploy web" "vercel deploy-json web" "vercel rollback web" "vercel cancel web x" "vercel map web me/app" \
+         "vercel autodeploy-off web" "vercel autodeploy-on web" "render deploy api" "render rollback api" "render autodeploy-off --all" \
+         "render autodeploy-on api" "autodeploy allow vercel web 2" "autodeploy revoke vercel web" "verify web" "guard" "autofix" \
+         "autofix --only vercel web" "scan start me/app" "cloudflare selftest x --yes" "hook deploy x" "amplify on a"; do
+  # shellcheck disable=SC2086  # the words of the command
+  rc="$(DEPLOYS_READONLY=1 run "$O" "$E" $c)"
+  [ "$rc:$(grep -c 'Observer mode' "$E")" = "1:1" ] || bad="$bad [$c: rc $rc]"
+done
+expect "387: observer mode refuses every write, in any flag order" "$bad" ""
+expect "387: and nothing reached a platform" "$(grep -c 'POST\|--method' "$e2e/calls.log")" "0"
+
+# 388/254: a name that would change an API path is refused by every command that takes one,
+# before anything is asked.
+fresh; bad=""
+for c in "deploy" "verify" "risk" "watch" "logs" "open" "explain" "diff" "notes" "history" "ai explain" \
+         "vercel deploy" "vercel status" "render deploy" "render status" "autofix --only vercel"; do
+  for n in 'a/b' 'a?x' 'a%2F' 'vercel:a/b'; do
+    # shellcheck disable=SC2086
+    rc="$(run "$O" "$E" $c "$n")"
+    [ "$rc:$(grep -c 'Invalid name or id' "$E")" = "1:1" ] || bad="$bad [$c $n: rc $rc]"
+  done
+done
+expect "388: every command refuses / ? % in a name" "$bad" ""
+expect "388: and asked no platform" "$(grep -c . "$e2e/calls.log")" "0"
+
+# 318: Amplify ids are <appId>/<branch>: one / is taken for amplify, nowhere else.
+expect "318: amplify takes <appId>/<branch>" \
+  "$( (safe_name d1shop0001/main amplify) 2>/dev/null; echo $?; (safe_name amplify:d1shop0001/main) 2>/dev/null; echo $?)" $'0\n0'
+expect "318: but not two / or one for another platform" \
+  "$( (safe_name a/b/c amplify) 2>/dev/null; echo $?; (safe_name a/b) 2>/dev/null; echo $?; (safe_name render:a/b) 2>/dev/null; echo $?; (safe_name /main amplify) 2>/dev/null; echo $?)" $'1\n1\n1\n1'
+
+# 309: a typo gets the nearest command, not the whole help.
+expect "309: unknown command names the nearest" "$(run "$O" "$E" chaged; grep -c 'Unknown command "chaged". Did you mean: changed' "$E"; grep -c . "$O")" $'1\n1\n0'
+# 312: the help lists each provider's commands, its own ones too.
+expect "312: --help lists the provider commands" "$(run "$O" "$E" --help; grep -c '^Provider commands' "$O"; grep -Ec '^  vercel +list .* map' "$O")" $'0\n1\n1'
+# A verb a provider does not have: refused with its commands (it used to print the help, exit 1).
+expect "312: an unknown provider verb lists the provider's commands" "$(run "$O" "$E" render frob; grep -c 'Render has no command "frob". Its commands: list deploy' "$E")" $'1\n1'
+
+# 392: every top-level command in the case labels is in --help (details and github-budget are
+# the app's, not a person's).
+run "$O" "$E" --help >/dev/null
+missing="$(sed -n 's/^  "\([a-z][a-z-]*\)[ "].*/\1/p' ./deploys | sort -u | grep -vxE 'details|github-budget' \
+  | while read -r c; do grep -qE "deploys $c([^a-z-]|\$)" "$O" || echo "$c"; done | paste -sd' ' -)"
+expect "392: every command is in --help" "$missing" ""
+
+# 315: enabling a provider that is not set up says the next step.
+pe="$tmp/pe"; mkdir -p "$pe"; cp -R "$e2e/config" "$pe/config"
+out="$(env -u DEPLOYS_LIB -u NETLIFY_AUTH_TOKEN PATH="$e2e/bin:/usr/bin:/bin" DEPLOYS_CONFIG="$pe/config" HOME="$e2e" NO_COLOR=1 /bin/bash ./deploys providers enable netlify 2>&1)"
+expect "315: providers enable says what comes next" "$(echo "$out" | grep -c 'Next: pbpaste | deploys netlify set-key')" "1"
+
+# 313: watch --timeout ends with its own code (4), never 1 (failed) or 3 (unreachable).
+fresh; rm -f "$e2e/polls"
+expect "313: watch --timeout stops with 4 and says so" "$(run "$O" "$E" watch api --timeout 6s; grep -c 'has not finished after 6s' "$E")" $'4\n1'
+expect "313: --timeout takes a time" "$(run "$O" "$E" watch api --timeout soon; grep -c 'takes a time' "$E")" $'1\n1'
+rm -f "$e2e/polls"
+expect "313: watch shows how long it ran" "$(run "$O" "$E" watch api; grep -c '(6s)\|(12s)' "$O")" $'0\n2'
+
+# 314: deploy without --wait says how to follow it.
+fresh
+expect "314: deploy says how to follow" "$(run "$O" "$E" deploy web; grep -c 'Follow it: deploys watch web dpl_new' "$O")" $'0\n1'
+# 302: one project with --json is still one object.
+fresh
+expect "302: deploy --json of one project is one object" "$(run "$O" "$E" deploy web --json; jq -r 'type' "$O")" $'0\nobject'
+
+# 336: open opens only web addresses.
+p336="$tmp/p336"; mkdir -p "$p336/providers" "$p336/config"
+printf '%s\n' '# shellcheck shell=bash' \
+  'odd_meta() { echo '"'"'{"id":"odd","label":"Odd","noun":"app","defaultOn":true,"keyEnv":[],"keychain":null,"caps":{"off":false}}'"'"'; }' \
+  'odd_ready() { return 0; }' 'odd_has() { echo "id-$1"; }' 'odd_json() { echo "[]"; }' 'odd_url() { echo "file:///etc/hosts"; }' > "$p336/providers/odd.sh"
+out="$(env -u DEPLOYS_LIB PATH="$e2e/bin:/usr/bin:/bin" DEPLOYS_DIR="$p336" DEPLOYS_CONFIG="$p336/config" HOME="$e2e" /bin/bash ./deploys open odd:web 2>&1)"; rc=$?
+expect "336: open refuses a file:// address" "$rc:$(echo "$out" | grep -c 'no web address')" "1:1"
+
+# 334: a hook over http only to this machine, by its exact host.
+bad=""
+for u in http://localhost.example.com/h http://127.0.0.1.example.test/h http://localhostx/h http://user@evil.test/h; do
+  ( hook_check_url "$u" ) >/dev/null 2>&1 && bad="$bad $u"
+done
+for u in http://localhost/h http://localhost:8080/h http://127.0.0.1:9000/h 'http://[::1]:8080/h' https://hooks.example.test/h; do
+  ( hook_check_url "$u" ) >/dev/null 2>&1 || bad="$bad !$u"
+done
+expect "334: http only for localhost, 127.0.0.1 and ::1 exactly" "$bad" ""
+
+# 333: the Coolify token goes over plain http only to this machine, or when allowed on purpose.
+expect "333: http to another machine is refused, localhost and https are not" \
+  "$( (CONFIG_DIR="$tmp/c333"; coolify_http_ok http://10.0.0.5:8000; echo $?; coolify_http_ok http://localhost:8000; echo $?; coolify_http_ok https://c.example.test; echo $?) )" $'1\n0\n0'
+mkdir -p "$tmp/c333"; echo '{"url":"http://10.0.0.5:8000","allowHttp":true}' > "$tmp/c333/coolify.json"
+expect "333: allowed for that address in coolify.json, or with the variable" \
+  "$( (CONFIG_DIR="$tmp/c333"; coolify_http_ok http://10.0.0.5:8000; echo $?; coolify_http_ok http://10.0.0.6; echo $?; DEPLOYS_COOLIFY_ALLOW_HTTP=1 coolify_http_ok http://10.0.0.6; echo $?) )" $'0\n1\n0'
+expect "333: the refusal names the way to allow it, before any request" \
+  "$( (CONFIG_DIR="$tmp/c333b"; COOLIFY_URL=http://10.0.0.7 COOLIFY_TOKEN=t coolify_call GET /applications) 2>&1 | grep -c 'set-url http://10.0.0.7 --allow-http')" "1"
+
+# 331: with an observers list and no known login, writes are refused (fail closed).
+expect "331: observers listed and no login: observer" \
+  "$( (CONFIG_DIR="$tmp/t331"; mkdir -p "$CONFIG_DIR"; TEAM_CACHE="$CONFIG_DIR/team-cache"; TEAM_REPOS="$CONFIG_DIR/team-repos"
+       TEAM_OVERRIDES="$CONFIG_DIR/overrides.json"; echo '{"observers":["someone"]}' > "$TEAM_OVERRIDES"
+       DEPLOYS_NO_GITHUB=1 team_effective | jq -r '.readonly | "\(.value) \(.from)"') )" "true observers listed, and gh cannot tell who you are (gh auth login)"
+expect "331: without an observers list nothing changes" \
+  "$( (CONFIG_DIR="$tmp/t331b"; mkdir -p "$CONFIG_DIR"; TEAM_CACHE="$CONFIG_DIR/team-cache"; TEAM_REPOS="$CONFIG_DIR/team-repos"
+       TEAM_OVERRIDES="$CONFIG_DIR/overrides.json"; DEPLOYS_NO_GITHUB=1 team_effective | jq -r '.readonly.value') )" "false"
+
+# 332: an approval of an older head of the PR does not count.
+t332() {  # t332 <commit the review approved>
+  ( c332="$1"; gh() { case "$*" in
+           *commits/s1/pulls*) echo '[{"number":5,"html_url":"https://x/5","head":{"sha":"h2"},"labels":[]}]' ;;
+           *pulls/5/reviews*) echo '[{"user":{"login":"rev"},"state":"APPROVED","submitted_at":"2026-01-01T00:00:00Z","commit_id":"'"$c332"'"}]' ;;
+           *issues*) echo '[]' ;;
+           *) return 1 ;;
+         esac; }
+    team_approvals me/app s1 dev | jq '.have | length' )
+}
+expect "332: a review of the PR's last commit counts, one of an older commit does not" "$(t332 h2; t332 h1)" $'1\n0'
+
+# 390: doctor has no key twice (jq would keep the last one without a word).
+fresh
+run "$O" "$E" doctor >/dev/null
+expect "390: doctor's keys are unique" "$(jq -c --stream 'select(length == 2) | .[0]' "$O" | sort | uniq -d | head -n 3)" ""
+
+# 343: after --, --json is a value.
+expect "343: after -- nothing is an option" "$(run "$O" "$E" window -- --json; grep -c 'No deploy window set' "$O")" $'0\n1'
+
+# 296: a Vercel read that met a 5xx is asked again; a write is not.
+# The stand-in counts its runs in a file: vercel_call runs it in a $( ) subshell.
+vn="$tmp/vercel-runs"
+expect "296: vercel_call asks a GET again after a 503" \
+  "$( (: > "$vn"; vercel() { echo x >> "$vn"; if [ "$(wc -l < "$vn")" -lt 2 ]; then echo "Error: 503 Service Unavailable" >&2; return 1; fi; echo '{"ok":true}'; }
+       sleep() { :; }; vercel_team() { echo ""; }; vercel_call /v9/projects/web | jq -r .ok; wc -l < "$vn" | tr -d ' ') )" $'true\n2'
+expect "296: but not a POST" \
+  "$( (: > "$vn"; vercel() { echo x >> "$vn"; echo "Error: 503" >&2; return 1; }; sleep() { :; }; vercel_team() { echo ""; }
+       vercel_call /v13/deployments --method POST 2>/dev/null; wc -l < "$vn" | tr -d ' ') )" "1"
+
+# 297: a CLI call that hangs ends after DEPLOYS_CLI_TIMEOUT with 124 and a line.
+printf '#!/bin/bash\nexec /bin/sleep 5\n' > "$tmp/hang"; chmod +x "$tmp/hang"
+expect "297: cli_limit stops a hanging call" "$( (DEPLOYS_CLI_TIMEOUT=1 cli_limit "$tmp/hang" 2>&1; echo "rc=$?") | tr '\n' ' ')" "$tmp/hang: no answer after 1s (DEPLOYS_CLI_TIMEOUT) rc=124 "
+
+# 307: a window.json that cannot be read is exit 2, not 1 ("closed").
+fresh; echo '{"deny":' > "$e2e/config/window.json"
+expect "307: window with a broken window.json is 2" "$(run "$O" "$E" window)" "2"
+rm -f "$e2e/config/window.json"
+
+# 301: costs without Vercel says that costs is Vercel's.
+cv="$tmp/cv"; mkdir -p "$cv"; cp -R "$e2e/config" "$cv/config"; echo '{"enabled":["render"]}' > "$cv/config/providers.json"
+out="$(env -u DEPLOYS_LIB PATH="$e2e/bin:/usr/bin:/bin" DEPLOYS_CONFIG="$cv/config" HOME="$e2e" NO_COLOR=1 /bin/bash ./deploys costs 2>&1)"; rc=$?
+expect "301: costs without Vercel" "$rc:$(echo "$out" | grep -c "costs reads Vercel's charges")" "1:1"
+
+# 250: meta is read with or without spaces after the colon.
+expect "250: meta_flag and meta_str take spaces" \
+  "$( (spaced_meta() { echo '{"id": "spaced", "label": "Spaced", "defaultOn": true, "keyEnv": ["SPACED_KEY"]}'; }
+       meta_flag spaced defaultOn && echo on; meta_str spaced label; key_env_names spaced) )" $'on\nSpaced\nSPACED_KEY'
+
+# 320: deploy-changed starts a backend before the Vercel frontend of the same repo.
+fresh
+run "$O" "$E" deploy-changed --yes >/dev/null
+expect "320: Render (backend) before Vercel (frontend) of one repo" \
+  "$(grep -E '^vercel api /v13/deployments|^curl POST https://api.render.com/v1/services/srv-1/deploys' "$e2e/calls.log" | cut -c1-4 | paste -sd, -)" "curl,verc"
