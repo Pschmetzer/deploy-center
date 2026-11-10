@@ -10,7 +10,7 @@ on:
       # sources of site/docs/
       - "README.md"
       - "deploys"
-      - "docs/*.md"
+      - "docs/**/*.md"
       - "examples/README.md"
       - "integrations/**/*.md"
       - "scripts/build-docs.py"
