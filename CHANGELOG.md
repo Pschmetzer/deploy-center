@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
 - `deploys status --json` carries the shared `phase` of each project. VS Code extension 0.2.0: every platform, not only Vercel and Render; failed and building from `phase`; a name on two platforms is passed as `platform:name`; a hint when no project matches the folder.
 - Observer mode also refuses `guard` and `autofix --only` (without `--dry-run`); both change something. An approval check on a GitLab-linked Vercel project says that approvals are read from GitHub only.
