@@ -15,11 +15,19 @@ vercel_ready() {
 }
 
 # The team the commands act on. Detected once and remembered; a personal account has none.
+# A team id goes into every API query string: letters, digits, _ and - only.
+valid_team() { case "$1" in *[!A-Za-z0-9_-]*) return 1;; esac; }
 vercel_team() {
-  if [ -n "${DEPLOYS_VERCEL_TEAM:-}" ]; then echo "$DEPLOYS_VERCEL_TEAM"; return; fi
+  if [ -n "${DEPLOYS_VERCEL_TEAM:-}" ]; then
+    valid_team "$DEPLOYS_VERCEL_TEAM" || die "DEPLOYS_VERCEL_TEAM is not a team id"
+    echo "$DEPLOYS_VERCEL_TEAM"; return
+  fi
   # A team is remembered for good. "No team" (a personal account) only for a day: one joined
   # later is then found without anyone deleting the file.
-  if [ -s "$CONFIG_DIR/vercel-team" ]; then cat "$CONFIG_DIR/vercel-team"; return; fi
+  if [ -s "$CONFIG_DIR/vercel-team" ]; then
+    valid_team "$(cat "$CONFIG_DIR/vercel-team")" || die "$CONFIG_DIR/vercel-team does not hold a team id. Set it: deploys vercel team <id>"
+    cat "$CONFIG_DIR/vercel-team"; return
+  fi
   if [ -f "$CONFIG_DIR/vercel-team" ] && [ $(( $(date +%s) - $(mtime "$CONFIG_DIR/vercel-team") )) -lt 86400 ]; then echo ""; return; fi
   local teams n
   teams="$(vercel api /v2/teams 2>/dev/null)" || die "The vercel CLI is not logged in. Run: vercel login"
@@ -135,7 +143,13 @@ VERCEL_PHASE='def vphase: (. // "" | ascii_upcase) as $s
 # Start a build. Positional, for the commands below: <project> <preview: ""|1> <sha>.
 vercel_start() {
   local target="$1" preview="${2:-}" sha="${3:-}" body out lock
-  jq -e --arg p "$target" 'has($p)' "$REPOS" >/dev/null || die "$target has no remembered repo. Turn its auto-deploy off with this tool, or add it to $REPOS"
+  local repos; repos="$(repos_json)"
+  jq -e --arg p "$target" 'has($p)' <<< "$repos" >/dev/null || die "$target has no remembered repo. Turn its auto-deploy off with this tool, add it to $REPOS, or map it in the repo's deploy-center.json"
+  # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
+  if [ -z "$preview" ] && team_on; then
+    sha="$(team_gate vercel "$target" "$(jq -r --arg p "$target" '.[$p] | "\(.org)/\(.repo)"' <<< "$repos")" \
+      "$(jq -r --arg p "$target" '.[$p].ref // "main"' <<< "$repos")" "$sha")" || exit 1
+  fi
   lock="$(start_lock "vercel-$target")" || exit 1
   # Removed by hand on every way out: a `trap … RETURN` would stay set and fire on later returns.
   body="$(mktemp)"
@@ -143,7 +157,7 @@ vercel_start() {
     + (if $prev == "" then {target:"production"} else {} end)
     + {gitSource:(if $r.type == "gitlab" then {type:"gitlab", ref:$r.ref, projectId:$r.projectId}
                   else {type:"github", ref:$r.ref} + (if $r.repoId then {repoId:$r.repoId} else {org:$r.org, repo:$r.repo} end) end
-                  + (if $sha != "" then {sha:$sha} else {} end))}' "$REPOS" > "$body"
+                  + (if $sha != "" then {sha:$sha} else {} end))}' <<< "$repos" > "$body"
   local errf; errf="$(mktemp)"
   out="$(vercel api "$(with_team /v13/deployments)" --method POST --input "$body" 2>"$errf")" \
     || { local e; e="$(tail -c 400 "$errf")"; rm -f "$errf" "$lock" "$body"; die "Vercel: $e $(echo "$out" | jq -r '.error.message // empty' 2>/dev/null)"; }
@@ -165,7 +179,7 @@ vercel_json() {
   local recent
   recent="$(vercel_call "/v6/deployments?limit=100&target=production" \
     | jq '[.deployments[]] | group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta.githubCommitSha // null)})}) | from_entries' 2>/dev/null)"
-  vercel_projects | jq --slurpfile r "$REPOS" --argjson recent "${recent:-{\}}" "$VERCEL_PHASE"'[.[] |
+  vercel_projects | jq --slurpfile r <(repos_json) --argjson recent "${recent:-{\}}" "$VERCEL_PHASE"'[.[] |
     ((.link // null) | if . then {repo:'"$GITHOST_VERCEL_LINK_JQ"', ref:"main"} else null end) as $live |
     ($r[0][.name] // null) as $known |
     (((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // null) as $domain |
@@ -326,7 +340,7 @@ vercel_cli_status() {
 vercel_cli_cancel() { vercel_cancel "" "${1:?deployment id}"; }
 
 vercel_cli_team() {
-  if [ -n "${1:-}" ]; then printf '%s' "$1" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $1"; else vercel_team; echo; fi
+  if [ -n "${1:-}" ]; then valid_team "$1" || die "A team id has letters, digits, _ and - only"; printf '%s' "$1" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $1"; else vercel_team; echo; fi
 }
 
 # Say by hand where a project deploys from, for one disconnected before this tool knew it.

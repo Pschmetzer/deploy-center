@@ -17,6 +17,8 @@ RUN apt-get update \
 COPY deploys /usr/local/bin/deploys
 # The platforms, one file each. DEPLOYS_DIR says where they are (not next to the script here).
 COPY providers /usr/local/lib/deploys/providers
+# lib/ (team mode, GitLab) is found next to the script itself.
+COPY lib /usr/local/bin/lib
 RUN chmod 0755 /usr/local/bin/deploys && chmod 0644 /usr/local/lib/deploys/providers/*.sh
 ENV DEPLOYS_DIR=/usr/local/lib/deploys
 

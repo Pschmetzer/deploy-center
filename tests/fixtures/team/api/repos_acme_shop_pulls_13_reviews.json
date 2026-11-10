@@ -1,0 +1,3 @@
+[{"user":{"login":"dev-one"},"state":"APPROVED","submitted_at":"2026-11-01T10:00:00Z"},
+ {"user":{"login":"dev-two"},"state":"APPROVED","submitted_at":"2026-11-01T10:00:00Z"},
+ {"user":{"login":"dev-two"},"state":"CHANGES_REQUESTED","submitted_at":"2026-11-01T11:00:00Z"}]

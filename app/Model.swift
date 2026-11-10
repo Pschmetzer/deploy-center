@@ -16,16 +16,18 @@ enum Platform: String, CaseIterable, Identifiable {
 
 struct Doctor: Decodable {
     let jq: Bool; let vercelCli: Bool; let vercelApi: Bool; let vercelLoggedIn: Bool; let githubCli: Bool; let githubLoggedIn: Bool?; let renderKey: Bool
+    /// Observer mode (DEPLOYS_READONLY or ~/.config/deploys/readonly): the script refuses every deploy.
+    let readonly: Bool
     /// A field the script does not send (older or newer script) counts as "no", instead of the
     /// whole answer failing and the app showing nothing.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         func flag(_ k: CodingKeys) -> Bool { ((try? c.decodeIfPresent(Bool.self, forKey: k)) ?? nil) ?? false }
         jq = flag(.jq); vercelCli = flag(.vercelCli); vercelApi = flag(.vercelApi); vercelLoggedIn = flag(.vercelLoggedIn)
-        githubCli = flag(.githubCli); renderKey = flag(.renderKey)
+        githubCli = flag(.githubCli); renderKey = flag(.renderKey); readonly = flag(.readonly)
         githubLoggedIn = (try? c.decodeIfPresent(Bool.self, forKey: .githubLoggedIn)) ?? nil
     }
-    private enum CodingKeys: String, CodingKey { case jq, vercelCli, vercelApi, vercelLoggedIn, githubCli, githubLoggedIn, renderKey }
+    private enum CodingKeys: String, CodingKey { case jq, vercelCli, vercelApi, vercelLoggedIn, githubCli, githubLoggedIn, renderKey, readonly }
 }
 
 /// One element of a list that may not decode; the rest of the list still does.

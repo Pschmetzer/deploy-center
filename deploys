@@ -46,6 +46,11 @@
 #   deploys providers enable|disable <p>      switch one on or off (Vercel and Render are on by default)
 #   deploys <p> <verb> ...                    any provider: json, deploy-json, status, latest, logs, url, ...
 #                                             (docs/PROVIDERS.md); a name may be written <p>:<name>
+#   deploys deploy <p>|<group> [--preview] [--sha <c>] [--wait] [--force "reason"]
+#                                             deploy one project, or a group in its order (docs/TEAM.md)
+#   deploys config [--json] [--refresh]       the effective config, and where each value came from
+#   deploys team add|remove <owner/repo> | list | refresh | journal   repos whose deploy-center.json counts
+#   deploys readonly [on|off]                 observer mode: every command that changes something is refused
 #   deploys --help | --version
 #   deploys render list                       services and their auto-deploy setting
 #   deploys render autodeploy-off <s>|--all
@@ -65,6 +70,8 @@
 #   vercel-repos.json  which repo/branch each Vercel project deploys from
 #   vercel-team        team id (auto-detected; empty for a personal account)
 #   providers.json     which providers are on, when changed with `deploys providers`
+#   overrides.json     this Mac's overrides of the shared deploy-center.json (docs/TEAM.md)
+#   readonly           present: observer mode (as DEPLOYS_READONLY=1)
 
 set -euo pipefail
 
@@ -77,7 +84,8 @@ mkdir -p "$CONFIG_DIR" && chmod 700 "$CONFIG_DIR" 2>/dev/null || true
 [ -f "$REPOS" ] || echo '{}' > "$REPOS"
 
 # BSD (macOS) and GNU (Linux) spell file times, date maths and base64 differently.
-mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
+# GNU first: GNU `stat -f` is the file system's status, and answers something that is no time.
+mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 days_ago() { date -u -v-"$1"d +%Y-%m-%d 2>/dev/null || date -u -d "$1 days ago" +%Y-%m-%d; }
 b64d() { base64 -D 2>/dev/null || base64 -d; }
 
@@ -87,8 +95,46 @@ die() { echo "${RED}Error:${PLAIN} $*" >&2; exit 1; }
 cat_all() { cat "$@" 2>/dev/null || true; }
 
 # Colour only for a person at a terminal, never in what the app or a pipe reads.
-if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then RED=$'\033[31m'; PLAIN=$'\033[0m'
-else RED=""; PLAIN=""; fi
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then RED=$'\033[31m'; GREEN=$'\033[32m'; BOLD=$'\033[1m'; PLAIN=$'\033[0m'
+else RED=""; GREEN=""; BOLD=""; PLAIN=""; fi
+# shellcheck disable=SC2034  # kept for messages that want them
+: "$GREEN$BOLD"
+
+# ---------- Team mode: observers, the shared config, approvals ----------
+
+# Observer mode, from the environment or a file. Prints where it comes from, or nothing.
+# Plain bash, no jq and no network: doctor and the write guard below must work without either.
+readonly_from() {
+  case "$(printf '%s' "${DEPLOYS_READONLY:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) echo "DEPLOYS_READONLY is set"; return ;;
+  esac
+  if [ -e "$CONFIG_DIR/readonly" ]; then echo "$CONFIG_DIR/readonly exists"; fi
+}
+
+# The shared config, observers by list and the two-person rule live in lib/team.sh next to the
+# script (the app bundles it too). A copy of the script without it still deploys, and says so.
+deploys_dir() {
+  local f="${BASH_SOURCE[0]}" d
+  while [ -L "$f" ]; do d="$(cd "$(dirname "$f")" && pwd)"; f="$(readlink "$f")"; case "$f" in /*) ;; *) f="$d/$f";; esac; done
+  cd "$(dirname "$f")" && pwd
+}
+TEAM_LIB="${DEPLOYS_TEAM_LIB:-$(deploys_dir)/lib/team.sh}"
+# shellcheck source=lib/team.sh
+if [ -f "$TEAM_LIB" ]; then . "$TEAM_LIB"; fi
+team_on() { declare -F team_gate >/dev/null; }
+
+# Every command that changes something on Vercel, Render or GitHub goes through here first.
+require_write() {
+  local why; why="$(readonly_from)"
+  if [ -z "$why" ] && team_on; then why="$(team_observer_from)"; fi
+  [ -z "$why" ] || die "Observer mode ($why): \"deploys $1\" changes something and is refused. Observers can look, not deploy. To deploy from here: $(if [ -n "${DEPLOYS_READONLY:-}" ]; then echo "unset DEPLOYS_READONLY"; elif [ -e "$CONFIG_DIR/readonly" ]; then echo "deploys readonly off"; else echo "ask to be taken off the observers list"; fi)."
+}
+
+# vercel-repos.json as the commands read it: with the projects a shared file maps below it.
+repos_json() {
+  if team_on; then team_repos_json 2>/dev/null && return; fi
+  cat "$REPOS"
+}
 
 
 # ---------- Providers ----------
@@ -230,7 +276,7 @@ pending_of() {
     # force-push, or has no common ancestor with it). This runs only where the branch head was
     # read, so the repo itself is readable. A rate limit or a network error says nothing: no record.
     if grep -qE 'HTTP 404|No common ancestor' "$f.err"; then
-      printf '{"key":"%s","value":{"rewritten":true}}\n' "$key" > "$f"
+      jq -nc --arg k "$key" '{key:$k, value:{rewritten:true}}' > "$f"
     fi
     rm -f "$f.err"; return 0
   fi
@@ -259,8 +305,9 @@ export -f pending_of
 # Drafts and bots (Dependabot, Renovate) counted apart, since they rarely mean "ship soon".
 open_prs_of() {
   local repo="$1" out="$2"
-  gh api --cache 5m "repos/$repo/pulls?state=open&per_page=100" \
-    --jq "{key:\"$repo\", value:{all:length, drafts:(map(select(.draft)) | length), bots:(map(select(.user.type==\"Bot\")) | length)}}" \
+  # The repo goes to jq as --arg, never into the filter text.
+  gh api --cache 5m "repos/$repo/pulls?state=open&per_page=100" 2>/dev/null \
+    | jq -c --arg k "$repo" '{key:$k, value:{all:length, drafts:(map(select(.draft)) | length), bots:(map(select(.user.type=="Bot")) | length)}}' \
     > "$out/$(echo "$repo" | tr '/' '_').json" 2>/dev/null || true
 }
 export -f open_prs_of
@@ -310,7 +357,7 @@ with_heads() {
   if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! githost_available; then echo "$list" | jq "$CHANGED_RULE"; return; fi
   tmp="$(mktemp -d)"; mkdir "$tmp/h" "$tmp/p" "$tmp/o"
   echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
-    | xargs -P 8 -n 2 bash -c 'githost_head_of "$0" "$1" "'"$tmp/h"'"'
+    | xargs -P 8 -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
   heads="$(cat_all "$tmp/h"/*.json | jq -s 'from_entries')"
   list="$(echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))')"
   # With GitHub's budget nearly spent, keep it for what decides "changed" (the heads above).
@@ -318,8 +365,8 @@ with_heads() {
   if [ "${left:-5000}" -lt 300 ]; then rm -rf "$tmp"; echo "$list" | jq "$CHANGED_RULE"; return; fi
   # Compared only where the branch moved past the live commit.
   echo "$list" | jq -r '.[] | select(.repo and .ref and .lastSha and .headSha and .lastSha != .headSha) | "\(.repo) \(.lastSha) \(.ref)"' \
-    | sort -u | xargs -P 8 -n 3 bash -c 'githost_pending_of "$0" "$1" "$2" "'"$tmp/p"'"'
-  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'githost_open_prs_of "$0" "'"$tmp/o"'"'
+    | sort -u | xargs -P 8 -n 3 bash -c 'githost_pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
+  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'githost_open_prs_of "$1" "$0"' "$tmp/o"
   pend="$(cat_all "$tmp/p"/*.json | jq -s 'from_entries')"
   opens="$(cat_all "$tmp/o"/*.json | jq -s 'from_entries')"
   rm -rf "$tmp"
@@ -391,8 +438,11 @@ UNKNOWN_RULE='map(select((.deployable // false) and ((.paused // false) | not)
 changed_json() {
   local all rc=0 unknown
   all="$(all_json)" || rc=1
-  local ign="$CONFIG_DIR/ignored.json"; [ -f "$ign" ] || echo '[]' > "$ign"
-  all="$(echo "$all" | jq --slurpfile ign "$ign" 'map(select((.name as $n | $ign[0] | index($n)) | not))')"
+  local ign="$CONFIG_DIR/ignored.json" ignl=""; [ -f "$ign" ] || echo '[]' > "$ign"
+  # With team mode: what the shared files leave out too, unless this Mac counts it again.
+  if team_on; then ignl="$(team_ignored 2>/dev/null)" || ignl=""; fi
+  [ -n "$ignl" ] || ignl="$(jq -c . "$ign" 2>/dev/null || echo '[]')"
+  all="$(echo "$all" | jq --argjson ign "$ignl" 'map(select((.name as $n | $ign | index($n)) | not))')"
   unknown="$(echo "$all" | jq -r "$UNKNOWN_RULE"' | .[] | "\(.platform) \(.name): \(.fetchError // "branch head unknown (is gh installed and logged in?)")"')"
   if [ -n "$unknown" ]; then
     rc=1; echo "Error: state unknown, left out:" >&2; echo "$unknown" | sed 's/^/  /' >&2
@@ -428,7 +478,7 @@ workflow_hits() {
     gh api "repos/$repo/contents/$f" --jq '.content' 2>/dev/null | b64d 2>/dev/null \
       | grep -vE '^[[:space:]]*#' \
       | grep -qE 'vercel (deploy|--prod)|vercel-action|api\.render\.com/deploy|render-deploy|deploy[-_]hook|DEPLOY_HOOK' \
-      && printf '{"kind":"workflow","where":"%s","detail":"%s"}\n' "$repo" "$f"
+      && jq -nc --arg w "$repo" --arg d "$f" '{kind:"workflow", where:$w, detail:$d}'
   done > "$out/$(echo "$repo" | tr '/' '_').jsonl" || true
 }
 export -f workflow_hits b64d
@@ -469,17 +519,31 @@ af_notify() {
 af_all() { DEPLOYS_NO_GITHUB=1 all_json; }
 af_logs() { "$0" logs "$1" 200 --id "$2"; }
 
-# Obvious secrets out of a log before it leaves this Mac. A help, not a guarantee.
+# Obvious secrets out of a log before it leaves this Mac. A help, not a guarantee: a token with
+# no known prefix and no telling name (TOKEN=, --token, Authorization:) still goes through.
+# `\[masked]`, not `[masked]`, after a group: perl reads `$1[masked]` as an array element (empty).
 af_mask() {
-  perl -pe 's/\b(sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|AKIA[A-Z0-9]{12,}|rnd_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
-            s/((?i:token|secret|password|passwd|api[_-]?key|authorization)["\x27]?\s*[:=]\s*["\x27]?)[^\s"\x27,;]+/$1[masked]/g;
-            s#(://[^/\s:@]+):[^@\s/]+@#$1:[masked]@#g'
+  perl -pe 'BEGIN { $pem = 0 }
+    # A private key: one line (an escaped \n in an env value), or a block over several lines.
+    s/-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----.*?-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/[masked private key]/g;
+    if ($pem) { $pem = 0 if /-----END [A-Z0-9 ]*PRIVATE KEY/; $_ = ""; next }
+    if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY/) { $pem = 1; $_ = "[masked private key]\n"; next }
+    # Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, JWT.
+    s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
+    # NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret
+    # (VERCEL_TOKEN, SECRET_KEY, aws_secret_access_key, DB_PASSWORD, x-api-key, ...).
+    s/\b((?i:[A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|_key|authorization|auth|credentials?|dsn))["\x27]?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("[^"]*"|\x27[^\x27]*\x27|[^\s"\x27,;]+)/${1}${2}\[masked]/g;
+    # --token x, --token=x (vercel, npm and most CLIs).
+    s/(--(?i:token|password|api-key|secret)(?:=|\s+))[^\s"\x27]+/${1}\[masked]/g;
+    # user:password@ in a URL (database URLs).
+    s#(://[^/\s:@]+):[^@\s/]+@#${1}:\[masked]@#g'
 }
 
 # Open (or merged) autofix PRs of one project: gh REST only, branch claude/autofix-<project>-*.
 af_prs() {  # af_prs <owner/repo> <project> <open|closed>
+  # The project name goes to jq as --arg, never into the filter text.
   gh api "repos/$1/pulls?state=$3&per_page=50&sort=updated&direction=desc" \
-    --jq "[.[] | select(.head.ref | startswith(\"claude/autofix-$2-\")) | {number, merged_at, closed_at, merge_commit_sha, ref:.head.ref, url:.html_url}]"
+    | jq -c --arg b "claude/autofix-$2-" '[.[] | select(.head.ref | startswith($b)) | {number, merged_at, closed_at, merge_commit_sha, ref:.head.ref, url:.html_url}]'
 }
 
 # One fire. The token goes to curl on stdin, never as an argument. Prints "<code>\t<body>".
@@ -803,7 +867,10 @@ ad_scope() {
   if [ "$target" = --all ]; then
     if [ "$plat" = all ]; then printf '*\tall\t*\n'; else printf '%s:*\t%s\t*\n' "$plat" "$plat"; fi
   else
-    [ "$plat" != all ] || plat="$(platform_of "$target")"
+    if [ "$plat" = all ]; then
+      plat="$(lookup "$target")" || exit 1; plat="${plat%%$'\t'*}"
+      case "$plat" in vercel|render) ;; *) die "Allowances are for Vercel and Render; $target is on $(meta_str "$plat" label)";; esac
+    fi
     printf '%s:%s\t%s\t%s\n' "$plat" "$target" "$plat" "$target"
   fi
 }
@@ -889,6 +956,46 @@ case "${1:-} ${2:-}" in
   "notes "*)       usage_if_short $# 2 "notes <project>" ;;
   "history "*)     usage_if_short $# 2 "history <project> [n]" ;;
   "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
+  "deploy "*)      usage_if_short $# 2 "deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force \"reason\"]" ;;
+esac
+
+# Observer mode: what changes something on Vercel, Render or GitHub is refused before it starts.
+# Reading, and this Mac's own settings (ignore, keys, team repos, readonly), stay allowed.
+case "${1:-} ${2:-}" in
+  "deploy "*|"vercel map"|"vercel autodeploy-off"|"vercel deploy"|"vercel deploy-json"|"vercel cancel"|"vercel rollback"\
+  |"render autodeploy-off"|"render deploy"|"render deploy-json"|"render cancel"|"render rollback"|"hook deploy")
+    require_write "$1 $2" ;;
+  "deploy-changed "*) [ "${2:-}" != "--yes" ] || require_write "deploy-changed --yes" ;;
+  # autofix hands failed builds to a routine that opens pull requests; --dry-run and its settings only read.
+  "autofix "|"autofix --dry-run") [ "${2:-}" = "--dry-run" ] || require_write "autofix" ;;
+esac
+# Any other provider (deploys <p> <verb>): the verbs that start, stop or switch something.
+if is_provider "${1:-}"; then
+  case "${2:-}" in
+    deploy|deploy-json|deploy_json|cancel|rollback|off|on|autodeploy-off|autodeploy-on|map) require_write "$1 $2" ;;
+  esac
+fi
+
+# Names and ids go into API paths and query strings (/v9/projects/<p>, ?app=<p>): nothing that
+# changes the path or the query is accepted, wherever the name came from (a person, the app, an agent).
+safe_arg() {
+  case "$1" in
+    ""|.|..|-*|*[/?#\&%\\]*|*[[:cntrl:]]*) die "Invalid name or id \"$1\": no / ? # & % \\ or control characters" ;;
+  esac
+}
+check_args() { local a; for a in "$@"; do case "$a" in --*) ;; *) safe_arg "$a";; esac; done; }
+case "${1:-} ${2:-}" in
+  "watch "*|"logs "*|"open "*|"explain "*|"diff "*|"notes "*|"history "*) check_args "${@:2}" ;;
+  "vercel deploy"|"vercel deploy-json"|"vercel rollback"|"vercel cancel"|"vercel status" \
+  |"render deploy"|"render deploy-json"|"render rollback"|"render cancel"|"render status") check_args "${@:3}" ;;
+  "vercel map") safe_arg "$3" ;;
+  "vercel autodeploy-off"|"render autodeploy-off") [ -z "${3:-}" ] || [ "$3" = --all ] || safe_arg "$3" ;;
+  *) if is_provider "${1:-}"; then
+       case "${2:-}" in
+         deploy|deploy-json|deploy_json|rollback|cancel|status|latest|logs|url|open|has) check_args "${@:3}" ;;
+         off|on|autodeploy-off|autodeploy-on) [ -z "${3:-}" ] || [ "$3" = --all ] || safe_arg "$3" ;;
+       esac
+     fi ;;
 esac
 if is_provider "${1:-}"; then
   case "${2:-}" in deploy|deploy-json|rollback) usage_if_short $# 3 "$1 ${2} <$(meta_str "$1" noun)>" ;; esac
@@ -920,6 +1027,100 @@ case "${1:-} ${2:-}" in
     glu="$(gitlab_user || true)"
     printf '%-13s%s\n' "github user" "$ghu" "gitlab user" "${glu:-not logged in}" autofix "routine $(r="$(af_routine)"; echo "${r:-none}"), token $atok" ;;
 
+  "deploy "*)
+    # deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force "reason"]
+    # One project on whichever platform it is on, or a group from deploy-center.json in its order:
+    # each member waits until the one before it is live, and a failure stops the rest.
+    name="$2"; shift 2; pv=""; sha=""; wait_=""; force=""; hasforce=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --preview) pv=1;; --wait) wait_=1;;
+        --sha) [ -n "${2:-}" ] || die "Usage: deploys deploy <project> --sha <commit>"; sha="$2"; shift;;
+        --force) hasforce=1; force="${2:-}"; [ $# -ge 2 ] && shift;;
+        *) die "Unknown option $1. Usage: deploys deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force \"reason\"]";;
+      esac; shift
+    done
+    if [ -n "$hasforce" ]; then
+      force="$(printf '%s' "$force" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+      case "$force" in ""|-*) die "--force needs a reason, in quotes: deploys deploy $name --force \"hotfix for the outage\"";; esac
+    fi
+    members=""; team_on && members="$(team_group "$name" 2>/dev/null || true)"
+    if [ -n "$members" ]; then
+      [ -z "$sha" ] || die "--sha is for one project, and $name is a group: $(echo "$members" | paste -sd ' ' -)"
+      echo "Group $name: $(echo "$members" | paste -sd ' ' -)"
+    else members="$name"; fi
+    count="$(echo "$members" | grep -c .)"; i=0
+    # A start that failed has said why on stderr; that stays the last line for one project.
+    stop_group() { [ "$2" -le 1 ] || echo "$1 did not start; the rest of the group was not started." >&2; exit 1; }
+    for p in $members; do
+      i=$((i + 1))
+      # Whichever provider has it (lookup: p:name, the names read, then each provider asked).
+      r="$(lookup "$p")" || stop_group "$p" "$count"
+      plat="${r%%$'\t'*}"; pid="${r#*$'\t'}"; label="$(meta_str "$plat" label)"
+      [ -z "$pv" ] || need_cap "$plat" preview "deploy a preview ($p)"
+      out="$(DEPLOYS_FORCE_REASON="$force" "${plat}_deploy_json" "$pid" ${pv:+--preview} ${sha:+--sha "$sha"})" || stop_group "$p" "$count"
+      echo "$out" | jq -r --arg l "$label" --arg p "${p#*:}" '"\($l): \($p) started " + (if .url then "-> \(.url) " else "" end) + "(\(.id), \(.state))"'
+      # The next member of a group starts once this one is live.
+      if [ -n "$wait_" ] || [ "$i" -lt "$count" ]; then
+        "$0" watch "$p" "$(echo "$out" | jq -r .id)" ${pv:+--preview} \
+          || die "$p did not go live$([ "$i" -lt "$count" ] && echo "; the rest of the group was not started")"
+      fi
+    done ;;
+
+  "config "*)
+    # config [--json] [--refresh]: every value in effect here, and where it came from.
+    team_on || die "Team mode needs lib/team.sh next to the script ($TEAM_LIB is missing)"
+    [ "${2:-}" != "--refresh" ] || export DEPLOYS_TEAM_REFRESH=1
+    eff="$(team_effective)"
+    if [ "$json" = 1 ]; then echo "$eff"; exit 0; fi
+    echo "$eff" | jq -r '
+      "observer  \(if .readonly.value then "yes (\(.readonly.from))" else "no" end)",
+      "you       \(.me // "unknown (gh not logged in?)")",
+      "",
+      "Shared files (deploy-center.json; lowest first: platform < repo file < this Mac):",
+      (if (.sources | map(select(.found)) | length) == 0 then "  none found (deploys team add <owner/repo>)" else empty end),
+      (.sources[] | select(.found or .error) | "  \(.repo):\(.path // "-")\(if .stale then "  (stale copy)" else "" end)\(if .error then "  error: \(.error)" else "" end)"),
+      ""' 
+    echo "$eff" | jq -r '.projects | to_entries[] | .key as $p | .value | to_entries[]
+        | [$p, .key, (.value.value | if type == "string" then . else tojson end), .value.from] | @tsv' \
+      | (printf 'PROJECT\tKEY\tVALUE\tFROM\n'; cat) | column -t -s $'\t'
+    echo "$eff" | jq -r '(.groups | to_entries[] | "group \(.key): \(.value.value | if type == "array" then join(" ") else tojson end)  (\(.value.from))"),
+      (if (.observers.value | length) > 0 then "observers: \(.observers.value | join(", "))" else empty end)' ;;
+
+  "team "*)
+    # The repos whose deploy-center.json counts here, beyond those vercel-repos.json names.
+    team_on || die "Team mode needs lib/team.sh next to the script ($TEAM_LIB is missing)"
+    case "${2:-list}" in
+      add)
+        r="${3:?Usage: deploys team add <owner/repo>}"
+        case "$r" in */*) ;; *) die "Give the repo as owner/name";; esac
+        { cat "$TEAM_REPOS" 2>/dev/null; echo "$r"; } | sort -u > "$TEAM_REPOS.tmp" && mv "$TEAM_REPOS.tmp" "$TEAM_REPOS"
+        DEPLOYS_TEAM_REFRESH=1 team_sources "$r" | jq -r --arg r "$r" '.[] | select(.repo == $r)
+          | if .found // .config then "\($r): \(.path) found" elif .error then "\($r): \(.error)" else "\($r): added; no deploy-center.json there (yet)" end' ;;
+      remove)
+        r="${3:?Usage: deploys team remove <owner/repo>}"
+        grep -vxF "$r" "$TEAM_REPOS" > "$TEAM_REPOS.tmp" 2>/dev/null || true; mv "$TEAM_REPOS.tmp" "$TEAM_REPOS"
+        rm -f "$TEAM_CACHE/$(printf '%s' "$r" | sed 's#/#__#').json"*; echo "$r removed" ;;
+      list) team_repo_list ;;
+      refresh) DEPLOYS_TEAM_REFRESH=1 team_sources | jq -r '.[] | "\(.repo): \(if .config then .path elif .error then .error else "no file" end)"' ;;
+      journal) if [ "$json" = 1 ]; then jq -s . "$TEAM_JOURNAL" 2>/dev/null || echo '[]'
+               else jq -r '[(.at | strftime("%Y-%m-%d %H:%M")), .kind, .project, (.sha[0:7]), .by, ([.approvals[]?.user] | join(",") | if . == "" then "-" else . end), (.reason // "-")] | @tsv' "$TEAM_JOURNAL" 2>/dev/null \
+                 | (printf 'WHEN (UTC)\tKIND\tPROJECT\tCOMMIT\tBY\tAPPROVED BY\tREASON\n'; cat) | column -t -s $'\t'; fi ;;
+      *) die "Usage: deploys team add|remove <owner/repo> | list | refresh | journal" ;;
+    esac ;;
+
+  "readonly "*)
+    # Observer mode on this Mac (the app's switch in Settings > Team does the same).
+    case "${2:-}" in
+      on) : > "$CONFIG_DIR/readonly"; echo "Observer mode on: deploys only looks." ;;
+      off) rm -f "$CONFIG_DIR/readonly"
+           if [ -n "$(readonly_from)" ]; then echo "The file is gone, but $(readonly_from): still an observer."
+           else echo "Observer mode off."; fi ;;
+      "") w="$(readonly_from)"; if [ -z "$w" ] && team_on; then w="$(team_observer_from)"; fi
+          if [ -n "$w" ]; then echo "on ($w)"; else echo off; fi ;;
+      *) die "Usage: deploys readonly [on|off]" ;;
+    esac ;;
+
   "history "*)
     # The last n deploys of one project: when, how it ended, which commit, what started it.
     p="$2"; n="${3:-10}"
@@ -941,8 +1142,9 @@ case "${1:-} ${2:-}" in
     gllogin=false; gitlab_logged_in && gllogin=true
     # The versions that matter (jq 1.6+ for the date functions).
     jqv="$(jq --version 2>/dev/null | sed 's/^jq-//' | tr -d '"\\')"
-    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s"}\n' \
-      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" ;;
+    ro=false; [ -z "$(readonly_from)" ] || ro=true
+    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s}\n' \
+      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" ;;
 
   "github-budget "*)
     github_budget ;;
@@ -1007,7 +1209,7 @@ case "${1:-} ${2:-}" in
     # The last lines of the newest build log of one project, or with --id of that one deploy
     # (autofix: a build started after the failure must not hand over the wrong log).
     p="${2:?project}"; n=80; did=""; shift 2
-    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>]}"; shift;; [0-9]*) n="$1";; *) die "Unknown option $1";; esac; shift; done
+    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>]}"; shift;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
     resolve "$p"; need_cap "$PLAT" logs "read build logs"
     "${PLAT}_logs" "$PID" "$n" "$did" ;;
 
@@ -1032,7 +1234,18 @@ case "${1:-} ${2:-}" in
     fi
     if [ "${3:-}" = "--undo" ]; then jq --arg p "$p" 'map(select(. != $p))' "$f" > "$tmp"; echo "$p is counted again"
     else jq --arg p "$p" '. + [$p] | unique' "$f" > "$tmp"; echo "$p is left out of changed and deploy-changed"; fi
-    mv "$tmp" "$f" ;;
+    mv "$tmp" "$f"
+    # A shared file may leave it out too: this Mac's word goes into overrides.json, which wins.
+    if team_on; then
+      o="$TEAM_OVERRIDES"; [ -s "$o" ] || echo '{}' > "$o"
+      if [ "${3:-}" = "--undo" ]; then
+        if DEPLOYS_NO_GITHUB=1 team_ignored | jq -e --arg p "$p" 'index($p)' >/dev/null; then
+          jq --arg p "$p" '.projects[$p].ignored = false' "$o" > "$tmp" && mv "$tmp" "$o"
+        fi
+      else
+        jq --arg p "$p" 'if .projects[$p].ignored == false then del(.projects[$p].ignored) else . end' "$o" > "$tmp" && mv "$tmp" "$o"
+      fi
+    fi ;;
 
   "explain "*)
     # One sentence on why a project is, or is not, counted as having changes.
@@ -1068,7 +1281,7 @@ case "${1:-} ${2:-}" in
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
     # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    cmds="doctor where changed deploy-changed status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix autodeploy guard providers list ${PROVIDERS[*]} completion --help --version"
+    cmds="doctor where changed deploy deploy-changed config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix autodeploy guard providers list ${PROVIDERS[*]} completion --help --version"
     verbs_of() {
       local v="list deploy rollback status cancel autodeploy-off json" x
       for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
@@ -1155,7 +1368,7 @@ BASH
     team="$(vercel_team)"; tmp="$(mktemp -d)"
     for i in $(seq "$days" -1 1); do
       echo "$(days_ago "$i") $(days_ago "$((i-1))")"
-    done | xargs -P 4 -n 2 bash -c 'cost_day "$0" "$1" "'"$team"'" "'"$tmp"'"'
+    done | xargs -P 4 -n 2 bash -c 'cost_day "$2" "$3" "$0" "$1"' "$team" "$tmp"
     # Builds per project over the last 7 days, to put a price on one build.
     since=$(( ($(date +%s) - 7*86400) * 1000 ))
     names="" next=""
@@ -1205,7 +1418,7 @@ BASH
       if command -v gh >/dev/null 2>&1; then
         { jq -r '.[] | select(.repo and (.type // "github") == "github") | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
           echo "${svcs:-[]}" | jq -r '.[] | .repo // empty | select(test("^https://github.com/")) | sub("^https://github.com/";"") | sub("\\.git$";"")'
-        } | sort -u | xargs -P 8 -n 1 bash -c 'workflow_hits "$0" "'"$tmp"'"'
+        } | sort -u | xargs -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
         cat_all "$tmp"/*.jsonl
       fi
     } | jq -s '.'
@@ -1294,7 +1507,7 @@ BASH
     # The routine's API token (claude.ai: routine > Trigger > API > Generate token), from stdin.
     IFS= read -r key || true
     [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys autofix set-token"
-    case "$key" in sk-ant-*) ;; *) die "That does not look like a routine token (sk-ant-...)";; esac
+    case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*) die "That does not look like a routine token (sk-ant-...)";; sk-ant-*) ;; *) die "That does not look like a routine token (sk-ant-...)";; esac
     printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$AUTOFIX_KEYCHAIN" "$key" | security -i >/dev/null \
       || die "Could not save the token in the keychain"
     echo "Routine token saved." ;;

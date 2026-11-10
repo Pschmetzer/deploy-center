@@ -140,7 +140,7 @@ render_last_of() {
   local id="$1" out="$2" key
   # Whatever goes wrong, the service is written down as "not known", never left out: a missing
   # record would read as "never deployed" and make the service look changed.
-  last_fail() { printf '{"key":"%s","value":{"fetchError":"%s"}}\n' "$id" "$1" > "$out/$id.json"; }
+  last_fail() { jq -nc --arg k "$id" --arg e "$1" '{key:$k, value:{fetchError:$e}}' > "$out/$id.json"; }
   key="$(cat "$3" 2>/dev/null)"; [ -n "$key" ] || { last_fail "no Render key"; return 0; }
   # Eight of these run at once: this is where Render's rate limit (429) hits. Wait and ask again.
   local raw code try
@@ -175,7 +175,7 @@ render_json() {
     repo:((.repo // "") | '"$GITHOST_SLUG_JQ"' | if . == "" then null else . end),
     ref:(.branch // null)}] | sort_by(.name | ascii_downcase)')" || exit 1
   tmp="$(mktemp -d)"; kf="$tmp/key"; (umask 077; render_key > "$kf")
-  echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$0" "'"$tmp"'" "'"$kf"'"'
+  echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$2" "$0" "$1"' "$tmp" "$kf"
   rm -f "$kf"
   lasts="$(cat_all "$tmp"/*.json | jq -s 'from_entries')"; rm -rf "$tmp"
   echo "$list" | jq --argjson l "${lasts:-{\}}" "$RENDER_PHASE"'map({lastAt:null, lastState:null, lastSha:null, lastMsg:null, fetchError:null}
@@ -185,8 +185,17 @@ render_json() {
 # render_deploy_json <service> [--sha <commit>] [--clear-cache]
 render_deploy_json() {
   local id sha="" cc="" lock body out
-  id="$(render_id_of "${1:?service}")"; shift || true
+  local name="${1:?service}" svc
+  id="$(render_id_of "$name")"; shift || true
   while [ $# -gt 0 ]; do case "$1" in --sha) sha="${2:?commit}"; shift;; --clear-cache) cc=1;; --preview) die "Render cannot deploy a preview";; esac; shift; done
+  # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
+  if team_on; then
+    svc="$(render_call GET "/services/$id")" || exit 1
+    # By its name, as the shared config knows it, also when it was given by its srv- id.
+    name="$(echo "$svc" | jq -r --arg n "$name" '.name // $n')"
+    sha="$(team_gate render "$name" "$(echo "$svc" | jq -r '(.repo // "") | sub("^https://github.com/";"") | sub("\\.git$";"")')" \
+      "$(echo "$svc" | jq -r '.branch // "main"')" "$sha")" || exit 1
+  fi
   lock="$(start_lock "render-$id")" || exit 1
   body="$(jq -nc --arg sha "$sha" --arg cc "$cc" '(if $sha != "" then {commitId:$sha} else {} end) + (if $cc != "" then {clearCache:"clear"} else {} end)')"
   out="$(render_call POST "/services/$id/deploys" "$body")" || { rm -f "$lock"; exit 1; }

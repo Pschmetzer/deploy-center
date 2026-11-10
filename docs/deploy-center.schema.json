@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Pschmetzer/deploy-center/main/docs/deploy-center.schema.json",
+  "title": "deploy-center.json",
+  "description": "The shared Deploy Center config at the root of a repo (also read as .deploy-center.json), from its default branch. Each Mac merges it below its own files: repo file < ~/.config/deploys. See docs/TEAM.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1, "description": "The format of this file. Only 1 exists." },
+    "approvals": { "$ref": "#/$defs/approvals", "description": "Default for every project that deploys from this repo." },
+    "health": { "$ref": "#/$defs/health", "description": "Default health path for every project that deploys from this repo." },
+    "window": { "$ref": "#/$defs/window", "description": "Default deploy window for every project that deploys from this repo." },
+    "projects": {
+      "type": "object",
+      "description": "Per project (the Vercel project or Render service name). A project named here deploys from this repo unless it says otherwise.",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/project" }
+    },
+    "ignored": {
+      "type": "array",
+      "description": "Projects left out of `deploys changed` and `deploy-changed` (a Mac can count one again: deploys ignore <p> --undo).",
+      "items": { "$ref": "#/$defs/name" },
+      "uniqueItems": true
+    },
+    "groups": {
+      "type": "object",
+      "description": "Projects deployed together, in order: `deploys deploy <group>` starts each one when the one before is live (backend before frontend).",
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "array", "items": { "$ref": "#/$defs/name" }, "minItems": 1 },
+          {
+            "type": "object",
+            "required": ["order"],
+            "additionalProperties": false,
+            "properties": { "order": { "type": "array", "items": { "$ref": "#/$defs/name" }, "minItems": 1 } }
+          }
+        ]
+      }
+    },
+    "observers": {
+      "type": "array",
+      "description": "GitHub logins that may look but not deploy. Joined across all files and this Mac's overrides; a Mac cannot take a name off.",
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$" },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "approvals": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10,
+      "description": "Two-person rule: how many people other than the deployer must approve the commit (a PR review, or the label deploy-approved-by:<login>). 0 is off. A Mac can raise it, not lower it."
+    },
+    "health": {
+      "type": "string",
+      "pattern": "^/",
+      "description": "Path checked after a deploy, e.g. /api/health."
+    },
+    "window": {
+      "type": "object",
+      "description": "When production deploys are allowed. ~/.config/deploys/window.json on a Mac replaces it.",
+      "properties": {
+        "days": {
+          "type": "array",
+          "items": { "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
+          "uniqueItems": true
+        },
+        "from": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+        "to": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+        "tz": { "type": "string", "description": "An IANA time zone, e.g. Europe/Berlin. Default UTC." }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "platform": { "enum": ["vercel", "render"] },
+        "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "description": "owner/name; default: the repo this file is in." },
+        "branch": { "type": "string", "minLength": 1, "description": "The production branch." },
+        "health": { "$ref": "#/$defs/health" },
+        "window": { "$ref": "#/$defs/window" },
+        "approvals": { "$ref": "#/$defs/approvals" },
+        "ignored": { "type": "boolean" }
+      }
+    }
+  }
+}

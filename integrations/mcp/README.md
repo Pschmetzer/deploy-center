@@ -103,8 +103,17 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_notes(project)` | `deploys notes <p>` | Release notes (Markdown) between what is live and the branch. |
 | `deploys_logs(project, lines)` | `deploys logs <p> <lines>` | The end of the newest build log. `lines` 1–2000, default 80. |
 | `deploys_doctor` | `deploys doctor` | Tools and logins, as JSON. No key is printed. |
+| `deploys_simulate(days?)` | `deploys simulate --days <n> --json` | Estimate: what auto-deploy would cost per month (builds, minutes, USD) vs. deploying once a day. `days` 1–90, default 30. |
+| `deploys_ledger` | `deploys ledger --json` | Estimate: builds skipped and minutes and USD saved since auto-deploy was turned off. |
 | `deploys_deploy(project, preview?)` | `deploys vercel\|render deploy-json <p> [--preview]` | Only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. Returns `id`, `url`, `state`. Preview is Vercel only. |
 | `deploys_rollback(project)` | `deploys vercel\|render rollback <p>` | Only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. Production back to the deploy that was live before. |
+
+`deploys_simulate` and `deploys_ledger` answer "what does auto-deploy cost us?" and "what did
+turning it off save?". Their numbers are estimates from pushes on GitHub and each project's average
+build; the `method` field in the result says how they were counted and priced, and the tool
+descriptions tell the agent to quote them as estimates. They read GitHub and the build history of
+every project, so they can take a minute or two, and have their own timeout
+(`DEPLOYS_MCP_SLOW_TIMEOUT`, default 300 s).
 
 To find out whether a name is on Vercel or Render, deploy and rollback use `deploys list --json`
 when the CLI has it, and otherwise `deploys status --json --no-github`, which needs no GitHub calls.
@@ -147,7 +156,8 @@ and tells you to deploy in Deploy Center or with `deploys vercel deploy app-web`
 - **No shell.** `deploys` is started with an argument array. Names must match
   `^[A-Za-z0-9._:-]+$`, at most 100 characters, and must not start with `-` (so a name cannot
   become an option). A rejected name never reaches `deploys`.
-- **Bounded.** Each command has a timeout (`DEPLOYS_MCP_TIMEOUT`, default 90 s); then it is
+- **Bounded.** Each command has a timeout (`DEPLOYS_MCP_TIMEOUT`, default 90 s; simulate and
+  ledger `DEPLOYS_MCP_SLOW_TIMEOUT`, default 300 s); then it is
   stopped together with the `vercel`, `gh` or `curl` it started. Output is trimmed to
   `DEPLOYS_MCP_MAX_OUTPUT` characters (default 20000; logs keep the end).
 - **Your logins.** The server uses the same Vercel CLI login, GitHub CLI login and Render key as
@@ -159,6 +169,7 @@ and tells you to deploy in Deploy Center or with `deploys vercel deploy app-web`
 | `DEPLOYS_MCP_ALLOW_DEPLOY` | off | `1` adds `deploys_deploy` and `deploys_rollback`. |
 | `DEPLOYS_BIN` | search | The `deploys` to run. |
 | `DEPLOYS_MCP_TIMEOUT` | `90` | Seconds per command. |
+| `DEPLOYS_MCP_SLOW_TIMEOUT` | `300` | Seconds for `deploys_simulate` and `deploys_ledger`. |
 | `DEPLOYS_MCP_MAX_OUTPUT` | `20000` | Characters per answer. |
 
 ## Tests
@@ -168,7 +179,8 @@ integrations/tests/run.sh
 ```
 
 The MCP part runs when `node` is installed and `npm ci` was run here; otherwise it says `skip mcp`.
-It lists the tools, calls the read tools, checks that the write tools are missing without the flag,
+It lists the tools, calls the read tools (simulate and ledger answer from the fixture reports in
+`tests/fixtures/savings/`), checks that the write tools are missing without the flag,
 rejects bad names, and deploys through a stand-in `deploys`.
 
 Not tested yet: a real deploy through each host (Claude Code, Claude Desktop, Cursor, VS Code).

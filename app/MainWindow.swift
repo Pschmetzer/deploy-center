@@ -269,7 +269,7 @@ struct ContentView: View {
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView() }
         .sheet(isPresented: $showCosts) { if let c = store.costs { CostsSheet(costs: c) } }
-        .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item) { sha in store.deployOne(item, preview: false, sha: sha) } }
+        .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item, deployCommit: store.observer ? nil : { sha in store.deployOne(item, preview: false, sha: sha) }) }
         .onChange(of: store.pendingDeployAll) { _, go in
             guard go else { return }
             store.pendingDeployAll = false
@@ -850,7 +850,7 @@ struct ContentView: View {
             showDetails: item.repo == nil ? nil : { detailItem = item },
             showLog: { logItem = item },
             onCancel: { store.cancel(item) },
-            onRetry: item.deployable ? { store.deployOne(item, preview: false) } : nil,
+            onRetry: item.deployable && !store.observer ? { store.deployOne(item, preview: false) } : nil,
             usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: search,
             autofix: store.autofixState(item), allowedUntil: store.allowance(item)?.expiresAt,
             autofixBusy: store.autofixRunning.contains(Store.key(item)),
@@ -863,7 +863,7 @@ struct ContentView: View {
 
     /// Deploy, Log, Open site; the rest under More.
     @ViewBuilder private func rowMenu(_ item: Item) -> some View {
-        let canDeploy = item.deployable && !item.state.isActive
+        let canDeploy = item.deployable && !item.state.isActive && !store.observer
         let caps = store.provider(item.platform)?.caps ?? ProviderCaps()
         if store.canFixWithClaude(item) {
             Button(L("Fix with Claude", "Mit Claude beheben")) { Task { await store.fixWithClaude(item) } }
@@ -947,13 +947,20 @@ struct ContentView: View {
                 Button(L("Stop all", "Alles abbrechen"), role: .destructive) { store.cancelAll() }
             }
             moreMenu(count: count, changedHere: changedHere)
-            Button { confirming = true } label: {
-                Label(count > 1 ? L("Deploy \(count)", "\(count) deployen") : L("Deploy", "Deployen"),
-                      systemImage: "paperplane.fill").padding(.horizontal, 6)
+            if store.observer {
+                // Observer mode (Settings → Team): the deploy buttons are gone, and the script refuses anyway.
+                Label(L("Observer", "Beobachter"), systemImage: "eye")
+                    .foregroundStyle(.secondary).padding(.horizontal, 6)
+                    .help(L("This Mac only looks. Turn it off in Settings → Team.", "Dieser Mac schaut nur zu. Abschalten unter Einstellungen → Team."))
+            } else {
+                Button { confirming = true } label: {
+                    Label(count > 1 ? L("Deploy \(count)", "\(count) deployen") : L("Deploy", "Deployen"),
+                          systemImage: "paperplane.fill").padding(.horizontal, 6)
+                }
+                .buttonStyle(.borderedProminent).controlSize(.large)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(count == 0)
             }
-            .buttonStyle(.borderedProminent).controlSize(.large)
-            .keyboardShortcut(.return, modifiers: .command)
-            .disabled(count == 0)
         }
         .padding(12)
         // ⌘A works with the menu closed too; the menu item shows the shortcut.
@@ -976,7 +983,7 @@ struct ContentView: View {
             Button(L("Preview deploy of the selection (not live)", "Vorschau-Deploy der Auswahl (nicht live)")) {
                 previewScopes.forEach { store.deploySelected($0, preview: true) }
             }
-            .disabled(previewScopes.isEmpty)
+            .disabled(previewScopes.isEmpty || store.observer)
             Divider()
             Button(L("Deploy history …", "Deploy-Verlauf …")) { showJournal = true }
             Button(L("Latest messages …", "Letzte Meldungen …")) { showMessages = true }
