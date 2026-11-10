@@ -1,7 +1,8 @@
-// Finding the deploys CLI and running it: execFile with an argument array (no shell), a timeout,
-// and stdin closed so nothing can wait for input.
+// Finding the deploys CLI and running it: spawn with an argument array (no shell), a timeout that
+// stops the whole process group (deploys and the vercel, gh or curl it started), and stdin closed
+// so nothing can wait for input.
 
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -66,18 +67,44 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEn
   return { ...env, PATH: parts.join(path.delimiter), NO_COLOR: "1" };
 }
 
+const MAX_BUFFER = 32 * 1024 * 1024;
+
 export function makeRunner(cli: string, env: NodeJS.ProcessEnv = childEnv()): Runner {
   return (args, timeoutMs) =>
     new Promise((resolve) => {
-      const child = execFile(cli, args, { timeout: timeoutMs, killSignal: "SIGTERM", maxBuffer: 32 * 1024 * 1024, env, windowsHide: true },
-        (err, stdout, stderr) => {
-          const e = err as (NodeJS.ErrnoException & { killed?: boolean; signal?: string; code?: number | string }) | null;
-          const timedOut = !!e && e.killed === true && e.signal === "SIGTERM";
-          const code = !e ? 0 : typeof e.code === "number" ? e.code : 1;
-          resolve({ code, stdout: String(stdout), stderr: String(stderr || (e && !timedOut && typeof e.code === "string" ? e.message : "")), timedOut });
-        });
-      child.stdin?.end();
+      // Its own process group (not on Windows), so a timeout also stops what deploys started.
+      const group = process.platform !== "win32";
+      let stdout = "", stderr = "", timedOut = false, done = false;
+      const child = spawn(cli, args, { env, windowsHide: true, detached: group, stdio: ["ignore", "pipe", "pipe"] });
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (d: string) => { if (stdout.length < MAX_BUFFER) stdout += d; });
+      child.stderr.on("data", (d: string) => { if (stderr.length < MAX_BUFFER) stderr += d; });
+      const kill = () => {
+        try {
+          if (group && child.pid) process.kill(-child.pid, "SIGTERM"); else child.kill("SIGTERM");
+        } catch {
+          try { child.kill("SIGTERM"); } catch { /* gone already */ }
+        }
+      };
+      const finish = (code: number) => {
+        if (done) return;
+        done = true; clearTimeout(timer);
+        resolve({ code, stdout, stderr, timedOut });
+      };
+      const timer = setTimeout(() => { timedOut = true; kill(); finish(1); }, timeoutMs);
+      child.on("error", (e) => { stderr += e.message; finish(127); });
+      child.on("close", (code) => finish(code ?? 1));
     });
+}
+
+/**
+ * What a deploy start that failed says. A start that timed out may still have reached the
+ * platform, so it says so: deploying again at once could start a second build.
+ */
+export function deployFailure(r: RunResult): string {
+  if (r.timedOut) return "did not answer in time. It may have started anyway: check its state (Refresh) before you deploy again.";
+  return errorLine(r, "deploy");
 }
 
 /** The last useful line of stderr, for a message: "Error: " and colour codes gone. */

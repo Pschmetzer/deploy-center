@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- A deploy start that times out says it may have started anyway, so you check before deploying again.
+- A timeout stops `deploys` together with the `vercel`, `gh` or `curl` it started.
+- A second click on Deploy while the dialog or the start of that project is open does not open a second one.
+- "Copy for AI" masks the same key shapes as the CLI: GitLab, Stripe, Google, npm, AWS session keys, private keys.
+
 ## 0.2.0
 
 - Every platform `deploys` knows (Netlify, Cloudflare, AWS Amplify, DigitalOcean, Coolify, deploy hooks), not only Vercel and Render.

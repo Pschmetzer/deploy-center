@@ -3,7 +3,7 @@
 
 import { execFile } from "node:child_process";
 import * as vscode from "vscode";
-import { deployArgs, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, Runner, urlIn } from "./cli";
+import { deployArgs, deployFailure, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, Runner, urlIn } from "./cli";
 import { aiPrompt } from "./log";
 import { describe, platformLabel, plural, Project, statusText, summarize } from "./model";
 import { parseRemotes, Scope, scopeProjects } from "./repo";
@@ -212,11 +212,21 @@ class Controller implements vscode.TreeDataProvider<Project> {
     const r = await run(deployArgs(p), 90_000);
     const d = parseDeploy(r.stdout);
     if (r.code === 0 && d) return { ok: true, text: `${p.name}: started (${d.state ?? "queued"})`, url: d.url };
-    return { ok: false, text: `${p.name}: ${errorLine(r, "deploy")}`, url: null };
+    return { ok: false, text: `${p.name}: ${deployFailure(r)}`, url: null };
   }
+
+  /** Projects whose deploy dialog or start is open: a second click does not open a second one. */
+  private readonly starting = new Set<string>();
 
   async deploy(p: Project): Promise<void> {
     const run = this.need(); if (!run) return;
+    const key = `${p.platform}:${p.name}`;
+    if (this.starting.has(key)) { void vscode.window.showInformationMessage(`${p.name} is being started already.`); return; }
+    this.starting.add(key);
+    try { await this.deployOne(run, p); } finally { this.starting.delete(key); }
+  }
+
+  private async deployOne(run: Runner, p: Project): Promise<void> {
     const what = p.waiting ? describe(p) : "Nothing is known to be waiting; this deploys the newest commit again.";
     const ok = await vscode.window.showWarningMessage(`Deploy ${p.name} to production on ${platformLabel(p.platform)}?`,
       { modal: true, detail: what }, "Deploy");

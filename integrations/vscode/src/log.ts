@@ -18,8 +18,15 @@ export function clean(line: string, max = 400): string {
   return l.length > max ? l.slice(0, max) + " …" : l;
 }
 
+// The shapes of af_mask in `deploys`, so a log copied from here is masked like one from the app.
 const secrets: [RegExp, string][] = [
+  [/-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----[\s\S]*?(-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----|$)/g, "[PRIVATE KEY]"],
   [/\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, "[GITHUB TOKEN]"],
+  [/\bglpat-[A-Za-z0-9_-]{8,}/g, "[GITLAB TOKEN]"],
+  [/\b((?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,})/g, "[STRIPE KEY]"],
+  [/\bAIza[A-Za-z0-9_-]{20,}/g, "[GOOGLE KEY]"],
+  [/\bnpm_[A-Za-z0-9]{20,}/g, "[NPM TOKEN]"],
+  [/\bASIA[0-9A-Z]{12,}\b/g, "[AWS KEY]"],
   [/\bsk-[A-Za-z0-9_-]{16,}/g, "[API KEY]"],
   [/\brnd_[A-Za-z0-9]{16,}/g, "[RENDER KEY]"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "[AWS KEY]"],
