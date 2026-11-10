@@ -23,7 +23,7 @@ The format is guessed from the host. To choose it yourself, set `DEPLOYS_NOTIFY_
 | `ntfy` | ntfy.sh, ntfy.* | plain text |
 | `slack` | anything else | `{"text": …}`. Slack, Mattermost, Rocket.Chat and other compatible hooks. |
 
-The URL goes to curl on stdin, so it never appears in the process list. "Today" is the UTC day.
+The URL goes to curl on stdin, so it never appears in the process list. "Today" is the UTC day, or the day in `DEPLOYS_TZ` (for example `Europe/Berlin`).
 To send it every day, schedule the script with launchd or cron, or in CI with the Docker image.
 
 Not tested yet: a real post to each service. The payloads are checked with `--dry-run` and with a

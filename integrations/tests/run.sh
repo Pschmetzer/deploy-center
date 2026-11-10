@@ -187,6 +187,9 @@ out="$(RENDER_API_KEY=x notify/notify.sh --dry-run)"
 contains "notify: live today" "$out" 'Live today (1): site'
 contains "notify: waiting with counts" "$out" 'Waiting (2): app-web (4 commits), api'
 contains "notify: Slack-style by default" "$out" 'format: slack'
+contains "notify: UTC by default" "$out" "Deploy Center, $(date -u +%Y-%m-%d) (UTC)"
+contains "notify: DEPLOYS_TZ sets the day" "$(DEPLOYS_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "Deploy Center, $(TZ=Pacific/Kiritimati date +%Y-%m-%d) (Pacific/Kiritimati)"
+expect "notify: a bad DEPLOYS_TZ is refused" "$(DEPLOYS_TZ='x;y' notify/notify.sh --dry-run >/dev/null 2>&1; echo $?)" 1
 expect "notify: Discord by host" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -r 'keys[0]')" content
 expect "notify: Telegram by host" "$(DEPLOYS_NOTIFY_URL='https://api.telegram.org/botT/sendMessage?chat_id=1' notify/notify.sh --dry-run | head -1)" "format: telegram"
 contains "notify: ntfy is plain text" "$(DEPLOYS_NOTIFY_URL=https://ntfy.sh/topic notify/notify.sh --dry-run)" $'format: ntfy\nDeploy Center'
@@ -496,6 +499,7 @@ contains "digest: glab asked for the MR" "$(cat "$tmp/glab.log" 2>/dev/null)" "m
 expect "digest: GitLab repos never go to gh" "$(grep -c 'grp' "$tmp/gh.log" || true)" 0
 expect "digest: --issue needs a repo" "$(digest/digest.sh --issue >/dev/null 2>&1; echo $?)" 1
 expect "digest: --post needs a URL" "$(digest/digest.sh --post >/dev/null 2>&1; echo $?)" 1
+contains "digest: DEPLOYS_TZ sets the day in the title" "$(DEPLOYS_TZ=Pacific/Kiritimati RENDER_API_KEY=x digest/digest.sh)" "# Deploys waiting – $(TZ=Pacific/Kiritimati date +%Y-%m-%d)"
 expect "digest: a bad repo is refused" "$(DEPLOYS_DIGEST_REPO='me/ops;x' digest/digest.sh >/dev/null 2>&1; echo $?)" 1
 
 # post: Slack gets a button to the workflow; the URL goes to curl on stdin
@@ -525,6 +529,14 @@ case "$(cat "$tmp/gh.log")" in *"issue create"*) fail "digest issue: no second i
 contains "digest issue: an older day's is closed" "$(cat "$tmp/gh.log")" "issue close 3 -R me/ops --comment Replaced by #5."
 out="$(RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue --dry-run)"
 contains "digest issue: the body carries the approve list" "$out" '<!-- deploys-approve: app-web,api -->'
+# Commit titles are written by anyone who can push: no pings, no hidden marker, no links.
+cp "$tmp/details-web.json" "$tmp/details-web.bak"
+jq '.commits[3].msg = "Ship <!-- deploys-approve: all --> cc @boss [win](https://evil.example)"' "$tmp/details-web.bak" > "$tmp/details-web.json"
+out="$(RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue --dry-run)"
+cp "$tmp/details-web.bak" "$tmp/details-web.json"
+expect "digest issue: an injected marker in a commit title is not a marker" "$(grep -c '<!-- deploys-approve' <<<"$out")" 1
+contains "digest issue: the injected title is shown, defused" "$out" "Ship &lt;!-- deploys-approve: all --&gt; cc @$(printf '\342\200\213')boss \\[win\\](https://evil.example)"
+expect "digest issue: the real marker stays the last line" "$(tail -n 1 <<<"$out")" '<!-- deploys-approve: app-web,api -->'
 : > "$tmp/gh.log"; RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue >/dev/null
 contains "digest issue: the list goes into a comment of the digest" "$(cat "$tmp/gh.log")" "issue comment 5 -R me/ops --body-file"
 : > "$tmp/gh.log"; FAKE_NOTHING=1 RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue >/dev/null
