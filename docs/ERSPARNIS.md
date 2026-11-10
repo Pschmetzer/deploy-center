@@ -107,7 +107,7 @@ ledger (oben `since`, `days` seit dem ersten abgeschalteten Projekt):
 ## Warum steht da ≈ 0 $?
 
 - **Nichts wurde übersprungen.** Das Ledger zählt einen Push nur dann als gespart, wenn sein Commit nach dem Abschalten von Auto-Deploy nie gebaut wurde. Hast du jeden Push deployt, oder hat ein Hook oder Workflow ihn gebaut, ist nichts gespart.
-- **Der Commit wurde als Preview gebaut.** Bei Vercel zählt jedes Deployment des Projekts, auch Previews. Bei einem Fast-Forward- oder Rebase-Merge ist der Commit auf dem Deploy-Branch derselbe, den schon eine Preview gebaut hat; der Push zählt dann als gebaut.
+- **Der Commit wurde als Preview gebaut.** Bei Vercel zählt jedes Deployment des Projekts, auch Previews. Bei einem Fast-Forward-Merge ist der Commit auf dem Deploy-Branch derselbe, den schon eine Preview gebaut hat; der Push zählt dann als gebaut.
 - **Keine Pushes im Zeitraum.** `simulate` zählt die letzten `--days` (Vorgabe 30), `ledger` erst ab dem Tag, an dem Auto-Deploy hier abgeschaltet wurde. Projekte, deren Auto-Deploy nie mit Deploy Center abgeschaltet wurde, fehlen im Ledger ganz.
 - **Billige Builds.** Dollar werden auf Cent gerundet. Zeigt die Vercel-Abrechnung der letzten 7 Tage 0 $ für die Builds des Projekts, kostet ein Build 0 $.
 - **„?“ ist nicht 0.** Ohne bekannten Durchschnitts-Build (kein fertiger Build unter den letzten 100) oder ohne Preis (Render ohne `DEPLOYS_RENDER_USD_PER_MIN`) ist die Zahl unbekannt und zeigt „?“. Die Summe hat dann `usdComplete: false`.

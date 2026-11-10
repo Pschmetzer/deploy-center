@@ -105,7 +105,7 @@ ledger (`since`, `days` since the first project was turned off, at the top):
 ## Why does it say ≈ $0?
 
 - **Nothing was skipped.** The ledger counts a push as saved only when its commit was never built after auto-deploy was turned off. If you deployed every push, or a hook or workflow built it, nothing is saved.
-- **The commit was built as a preview.** On Vercel every deployment of the project counts, previews too. With a fast-forward or rebase merge the commit on the deploy branch is the same commit a preview already built, so that push counts as built.
+- **The commit was built as a preview.** On Vercel every deployment of the project counts, previews too. With a fast-forward merge the commit on the deploy branch is the same commit a preview already built, so that push counts as built.
 - **No pushes in the window.** `simulate` counts the last `--days` (30 by default), `ledger` only from the day auto-deploy was turned off here. Projects whose auto-deploy was never turned off with Deploy Center are not in the ledger at all.
 - **Cheap builds.** Dollars are rounded to cents. Vercel billing that shows $0 for the project's builds over the last 7 days gives a price of $0 per build.
 - **"?" is not 0.** Without a known average build (no finished build among the last 100) or without a price (Render without `DEPLOYS_RENDER_USD_PER_MIN`), the number is unknown and shows "?". The total then has `usdComplete: false`.

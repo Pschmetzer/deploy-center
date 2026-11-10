@@ -76,7 +76,7 @@ second app.
 
    | Field | Value |
    |---|---|
-   | Name | Deploy Center |
+   | Name | Deploy Center: Hand Deploys ("Deploy Center" alone is taken) |
    | Primary language | English (U.S.) |
    | Bundle id | `app.deploycenter.ios` |
    | SKU | your choice |

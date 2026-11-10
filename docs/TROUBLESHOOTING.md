@@ -107,7 +107,7 @@ The last read of the list failed. The banner says when the list on screen is fro
 
 - `fetch failed`, `ETIMEDOUT`, `ENOTFOUND`, `ECONNRESET`, or `no answer from Render (network or timeout)`: the Mac could not reach the platform. Check the network, a VPN or a proxy.
 - `no answer within … s`: the Vercel CLI hung. Try `vercel whoami` in Terminal: if that hangs too, the problem is the CLI or the network, not Deploy Center.
-- `HTTP 401` / `HTTP 403`: the login or key is wrong or expired. Vercel: `vercel login`. Render: see below.
+- A 401 or 403 in the message: the login or key is wrong or expired. Vercel: `vercel login`. Render: see below.
 
 When only the newest builds could not be read, the list still comes. The row gets a small ⓘ whose tooltip says *The newest builds could not be read: a build under way may not show*. That is a notice, not an error: the next refresh fills it in.
 
