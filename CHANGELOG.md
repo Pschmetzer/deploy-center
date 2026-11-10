@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.8.0
+
+- Mac widgets ship with the app (small: PRs waiting; medium: top projects and the saving). Add them from the widget gallery.
 - `deploys`: each platform is one file, `providers/vercel.sh` and `providers/render.sh`, behind one contract (`docs/PROVIDERS.md`). Nothing changes for Vercel and Render users. New: `deploys list --json` (every project on every platform), `deploys providers [--json]`, `deploys providers enable|disable <p>` (Vercel and Render are on by default, any later platform is off until turned on), and names as `render:web`. Every `json` entry has a `phase` (queued, building, ready, failed, canceled). `render deploy-json --preview` is refused instead of deploying production.
 - `providers/hook.sh` (generic deploy hook) follows the same contract: off until `deploys providers enable hook`, then `deploys hook add|remove|list|deploy` route through `deploys`. `deploys hook status <name>` keeps its JSON; its doctor fields are `hookReady`, `hookStore`, `hookCurl` and `hooks`.
 - Auto-deploy guard (`deploys guard`, Settings → Auto-deploy guard): every 30 minutes it turns auto-deploy off again wherever it is on without an allowance, and notifies. `deploys autodeploy allow <platform> <project>|--all <hours>` allows it for a while (emergencies); `deploys vercel|render autodeploy-on` turns it back on. The first run is a dry run.
