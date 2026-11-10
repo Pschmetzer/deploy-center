@@ -85,6 +85,8 @@ digitalocean_call() {
       5*) hint=" (DigitalOcean had a problem: try again later)";;
     esac
     msg="$(printf '%s' "$out" | jq -r '.message // .id // empty' 2>/dev/null)" || msg=""
+    # Not JSON (curl's own error, a proxy's HTML page): its first 200 characters, on one line.
+    [ -n "$msg" ] || msg="$(printf '%s' "$out" | tr '\n\r\t' '   ' | cut -c1-200)"
     echo "DigitalOcean $method ${path%%\?*} -> HTTP $code$hint${msg:+: $msg}" >&2
     return 1
   fi

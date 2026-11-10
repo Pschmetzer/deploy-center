@@ -180,7 +180,9 @@ cloudflare_json() {
     [.[] | (.source.config // null) as $c | (.canonical_deployment // {}) as $live | (.latest_deployment // null) as $new
       | ((.domains // []) | map(select(endswith(".pages.dev") | not)) | .[0]) as $custom
       | ($custom // .subdomain // null) as $dom
-      | {name, id, auto:cf_auto,
+      # id is the name: every call here puts it in the URL path (projects/<name>), where the
+      # project UUID would 404. The UUID stays as projectId.
+      | {name, id:.name, projectId:.id, auto:cf_auto,
          # Git-connected, and a POST is known to build: push-deploys still on, the self-test
          # passed, or the opt-in toggle fallback is allowed.
          deployable:($c != null and (($c.production_deployments_enabled != false) or $v == "verified" or $tg == "1")),
@@ -438,9 +440,11 @@ cloudflare_selftest() {
         echo "Self-test inconclusive: deployment $id ended $(echo "$st" | jq -r '.phase') at stage $(echo "$st" | jq -r '.stage') before building. Fix the project and run it again."
         return 1 ;;
     esac
+    printf '.' >&2
     sleep 5
     st="$(cloudflare_status_json "$p" "$id" | jq -c .)" || exit 1
   done
+  echo >&2
   echo "Self-test inconclusive: deployment $id did not reach the build stage in time (stage $(echo "$st" | jq -r '.stage')). Run it again later."
   return 1
 }

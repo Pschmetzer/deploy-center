@@ -105,6 +105,8 @@ out="$(hook_cli add bad "not a url" 2>&1)"; expect "a non-URL is refused" "$?" "
 out="$(hook_cli add 'bad name' "$SECRET" 2>&1)"; expect "a bad name is refused" "$?" "1"
 out="$(hook_cli add bad "$SECRET" --header 'Authorization: Bearer abc123' 2>&1)"
 expect "a literal secret in a header is refused" "$?:$(grep -c 'looks like a secret' <<< "$out")" "1:1"
+out="$(hook_cli add bad "$SECRET" --header 'Authorization: Bearer abc123$x' 2>&1)"
+expect "a secret with a \$ somewhere in it is still refused" "$?:$(grep -c 'looks like a secret' <<< "$out")" "1:1"
 expect "nothing was saved by the refusals" "$(hook_list_raw | jq length)" "1"
 
 # --- trigger: success ---

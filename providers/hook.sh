@@ -172,9 +172,23 @@ hook_head() {
 }
 
 hook_record() {
-  local n="$1" rec="$2" st
-  st="$(hook_state | jq -c --arg n "$n" --argjson r "$rec" '.[$n] = $r')" || return 0
-  echo "$st" | hook_write "$(hook_state_file)"
+  local n="$1" rec="$2" st f lock i=0
+  f="$(hook_state_file)"; lock="$f.lock"
+  # Two triggers at once (a group deploy) must not overwrite each other: a mkdir lock, given up
+  # after five seconds (a crashed run's lock older than a minute is taken over).
+  while ! mkdir "$lock" 2>/dev/null; do
+    if [ -d "$lock" ] && [ $(( $(date +%s) - $(stat -f %m "$lock" 2>/dev/null || stat -c %Y "$lock" 2>/dev/null || date +%s) )) -ge 60 ]; then rmdir "$lock" 2>/dev/null; continue; fi
+    i=$((i + 1)); [ "$i" -lt 50 ] || { echo "Warning: hook state is locked; the trigger of $n is not recorded" >&2; return 0; }
+    sleep 0.1
+  done
+  # A broken state file is kept aside and started anew, with a warning: the trigger did happen.
+  if ! st="$(hook_state | jq -c --arg n "$n" --argjson r "$rec" '.[$n] = $r' 2>/dev/null)"; then
+    cp "$f" "$f.bak" 2>/dev/null || true
+    echo "Warning: $f was not readable; kept as $f.bak and started anew" >&2
+    st="$(jq -nc --arg n "$n" --argjson r "$rec" '{($n): $r}')"
+  fi
+  echo "$st" | hook_write "$f"
+  rmdir "$lock" 2>/dev/null || true
 }
 
 # Fire the hook once (never again on failure: it may already have started a build).
@@ -216,6 +230,7 @@ hook_deploy_json() {
     ( start_lock "hook-$n" ) >/dev/null || { rm -f "$cfg" "$out"; exit 1; }
   fi
   code="$(curl -K - < "$cfg" 2>"$out.err")" || rc=$?
+  local said=""; said="$(head -c 200 "$out" 2>/dev/null | tr '\n\r\t' '   ')" || said=""
   rm -f "$cfg" "$out"
   now="$(date +%s)"
   if [ "$rc" = 0 ] && [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
@@ -228,7 +243,8 @@ hook_deploy_json() {
   # curl's own error, with the URL masked in case it names it.
   local err; err="$(tail -n 1 "$out.err" 2>/dev/null | cut -c1-200)"; rm -f "$out.err"
   err="${err//"$u"/$(hook_mask "$u")}"
-  if [ "$rc" != 0 ]; then err="no answer (${err:-curl exit $rc})"; else err="HTTP ${code:-000}"; fi
+  said="${said//"$u"/$(hook_mask "$u")}"
+  if [ "$rc" != 0 ]; then err="no answer (${err:-curl exit $rc})"; else err="HTTP ${code:-000}${said:+: $said}"; fi
   # A failed trigger keeps the sha of the last good one: what is live has not moved.
   rec="$(hook_state | jq -c --arg n "$n" --argjson at "$now" --arg e "$err" --arg c "${code:-0}" '(.[$n] // {}) + {ok:false, http:($c|tonumber? // 0), at:$at, error:$e}')"
   hook_record "$n" "$rec"
@@ -306,7 +322,9 @@ hook_add() {
         k="${h%%:*}"; v="${h#*:}"; v="${v# }"
         [ "$k" != "$h" ] && [[ "$k" =~ ^[A-Za-z0-9-]+$ ]] || die "A header is 'Name: value'"
         # Secrets stay out of the file: a credential-looking header must name a variable.
-        if [[ "$k" =~ [Aa]uthorization|[Tt]oken|[Kk]ey|[Ss]ecret|[Pp]assword|[Cc]ookie ]] && [[ "$v" != *'$'* ]]; then
+        # A reference is the whole secret part: "$TOKEN", "${TOKEN}" or "<scheme> $TOKEN".
+        local ref_re='^([A-Za-z]+ )?\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)$'
+        if [[ "$k" =~ [Aa]uthorization|[Tt]oken|[Kk]ey|[Ss]ecret|[Pp]assword|[Cc]ookie ]] && ! [[ "$v" =~ $ref_re ]]; then
           die "The $k header looks like a secret. Put it in the environment and write a reference: --header '$k: Bearer \$TOKEN'"
         fi
         headers="$(echo "$headers" | jq -c --arg k "$k" --arg v "$v" '.[$k] = $v')";;

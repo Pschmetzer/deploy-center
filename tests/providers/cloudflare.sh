@@ -95,7 +95,9 @@ out="$(cf json)"
 expect "json: sorted by name" "$(echo "$out" | jq -c 'map(.name)')" '["Blog","site","upload"]'
 s="$(echo "$out" | jq -c '.[] | select(.name=="site")')"
 expect "json: contract fields" "$(echo "$s" | jq -c 'keys')" \
-  '["auto","dashboardUrl","deployable","domain","fetchError","id","lastAt","lastMsg","lastSha","lastState","name","paused","phase","ref","repo","url"]'
+  '["auto","dashboardUrl","deployable","domain","fetchError","id","lastAt","lastMsg","lastSha","lastState","name","paused","phase","projectId","ref","repo","url"]'
+# The id is the name (cf_proj puts it in the URL path); the UUID would 404 there.
+expect "json: id is the project name, the UUID is projectId" "$(echo "$s" | jq -c '[.id, .projectId]')" '["site","p1"]'
 expect "json: off project is not auto" "$(echo "$s" | jq .auto)" false
 expect "json: custom domain over pages.dev" "$(echo "$s" | jq -r .url)" "https://www.example.com"
 expect "json: live commit" "$(echo "$s" | jq -r '.lastSha + " " + .lastMsg')" "aaaa111 fix: live"

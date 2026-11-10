@@ -126,7 +126,9 @@ Runs `aws amplify start-job --job-type RELEASE` on the production branch: Amplif
 commit of that branch. Unlike some other platforms, this works the same with auto-build off; no
 toggling is needed.
 
-- `--sha <commit>` builds that commit (`--commit-id`).
+- `--sha <commit>` passes that commit as `--commit-id`. Not yet checked against a real account:
+  AWS describes a RELEASE job as building the newest change of the branch, so look at the job's
+  commit in the console the first time you use it.
 - `--preview --branch <b>` builds another branch that is connected in Amplify.
 - A second start of the same branch within a minute is refused.
 

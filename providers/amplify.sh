@@ -322,7 +322,10 @@ amplify_cancel() {
   if [ -z "$id" ]; then
     job="$(amp_jobs "$AMP_APP" "$AMP_BRANCH" 5 | jq -c --arg b "$AMP_BRANCH" "$AMP_JQ"'
       [.[] | amp_job($b) | select(.phase == "queued" or .phase == "building")][0] // empty')" || exit 1
-    [ -n "$job" ] || die "Amplify: no build of $1 is running"
+    if [ -z "$job" ]; then
+      local last; last="$(amp_jobs "$AMP_APP" "$AMP_BRANCH" 1 2>/dev/null | jq -r '.[0] | if . then "the newest, job \(.jobId), is \(.status)" else "there are no builds" end' 2>/dev/null)" || last=""
+      die "Amplify: no build of $1 is running${last:+ ($last)}"
+    fi
     id="$(echo "$job" | jq -r '.id')"
   fi
   amp_aws amplify stop-job --app-id "$AMP_APP" --branch-name "$AMP_BRANCH" --job-id "$id" \
@@ -399,8 +402,11 @@ amplify_set_key() {
   [ -n "$prof" ] || die "Pipe in an AWS CLI profile name: echo my-profile | deploys amplify set-key (or \"default\")"
   [[ "$prof" =~ ^[A-Za-z0-9._@+=,-]+$ ]] || die "That does not look like a profile name. AWS keys go into aws configure, not here"
   [[ "$prof" =~ ^(AKIA|ASIA)[A-Z0-9]{12,}$ ]] && die "That is an access key, not a profile name. Run aws configure --profile <name>, then set-key <name>"
-  who="$(DEPLOYS_AMPLIFY_PROFILE="$prof" amp_aws sts get-caller-identity 2>&1 | jq -r '.Arn // empty' 2>/dev/null)" || who=""
-  [ -n "$who" ] || die "The aws CLI could not sign in with profile $prof; nothing was saved"
+  local ans
+  # shellcheck disable=SC2034  # read by die, in the subshell (no colour codes in the message)
+  ans="$( (RED=""; PLAIN=""; DEPLOYS_AMPLIFY_PROFILE="$prof" amp_aws sts get-caller-identity) 2>&1)" || true
+  who="$(printf '%s' "$ans" | jq -r '.Arn // empty' 2>/dev/null)" || who=""
+  [ -n "$who" ] || die "The aws CLI could not sign in with profile $prof; nothing was saved ($(printf '%s' "$ans" | sed 's/^Error: //' | tr '\n' ' ' | cut -c1-300))"
   printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$AMPLIFY_KEYCHAIN" "$prof" | security -i >/dev/null \
     || die "The profile works, but could not be saved in the keychain"
   echo "Amplify: profile $prof saved and working ($who)."

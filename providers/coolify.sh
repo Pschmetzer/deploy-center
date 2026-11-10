@@ -89,6 +89,8 @@ coolify_call() {
     local hint="" fix="deploys coolify set-key" msg
     [ -n "${COOLIFY_TOKEN:-}" ] && fix="check COOLIFY_TOKEN in the environment"
     msg="$(printf '%s' "$out" | jq -r '.message // .error // empty' 2>/dev/null)" || msg=""
+    # Not JSON (curl's own error, a proxy's HTML page): its first 200 characters, on one line.
+    [ -n "$msg" ] || msg="$(printf '%s' "$out" | tr '\n\r\t' '   ' | cut -c1-200)"
     case "$code" in
       000) hint=" (no answer from $base: network, timeout or certificate)";;
       401) hint=" (the Coolify token is wrong or expired: $fix)";;
@@ -198,7 +200,7 @@ coolify_json() {
       | ([$ds[] | select(.status == "finished")][0] // {}) as $live
       | {name, id:.uuid,
          auto:(git_based and (.settings.is_auto_deploy_enabled != false)),
-         paused:false,
+         paused:((.status // "") | test("^exited")),
          deployable:(repo_of != null),
          repo:repo_of, ref:(if (.build_pack // "") == "dockerimage" then null else (.git_branch // null) end),
          domain:((domains[0] // null) | if . then sub("^https?://";"") | sub("/.*$";"") else null end),
@@ -438,6 +440,11 @@ coolify_set_url() {
   [ -s "$f" ] || echo '{}' > "$f"
   tmp="$(mktemp)"; jq --arg u "$u" '.url = $u' "$f" > "$tmp" && mv "$tmp" "$f"
   echo "Coolify instance set to $u"
+  # Plain http to another machine: the API token would travel in the clear.
+  case "$u" in
+    http://localhost|http://localhost:*|http://127.0.0.1|http://127.0.0.1:*|http://\[::1\]*) ;;
+    http://*) echo "Warning: $u is plain http. The API token goes there in the clear; use https:// if the instance has it." >&2 ;;
+  esac
 }
 
 # The token on stdin. Tried against the instance first, saved only when Coolify takes it.

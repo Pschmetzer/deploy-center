@@ -94,7 +94,10 @@ netlify_call() {
       5*) hint=" (Netlify had a problem: try again later)";;
     esac
     msg="$(printf '%s' "$out" | jq -r '.message // .error // empty' 2>/dev/null)" || msg=""
-    echo "Netlify $method ${path%%\?*} -> HTTP $code$hint${msg:+: $msg}" >&2
+    # Not JSON (curl's own error, a proxy's HTML page): its first 200 characters, on one line.
+    [ -n "$msg" ] || msg="$(printf '%s' "$out" | tr '\n\r\t' '   ' | cut -c1-200)"
+    local shown="${path%%\?*}"; case "$shown" in http*) shown="(build hook)";; esac
+    echo "Netlify $method $shown -> HTTP $code$hint${msg:+: $msg}" >&2
     return 1
   fi
   printf '%s' "$out"
@@ -114,6 +117,8 @@ netlify_sites() {
 # A site by name, custom domain or id. Two sites never share a name on Netlify.
 netlify_id_of() {
   local n="$1" id
+  # A site id (a UUID) needs no listing of every site; a wrong one fails at the next call.
+  if [[ "$n" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then echo "$n"; return 0; fi
   id="$(netlify_sites | jq -r --arg n "$n" '.[] | select(.id==$n or .site_id==$n or .name==$n or .custom_domain==$n) | .id' | head -n 1)" || return 1
   [ -n "$id" ] || { echo "No Netlify site named \"$n\". See: deploys netlify list" >&2; return 1; }
   echo "$id"
@@ -325,7 +330,7 @@ netlify_deploy_json() {
   polls="${DEPLOYS_NETLIFY_POLLS:-15}"
   for ((i = 0; i < polls; i++)); do
     list="$(netlify_call GET "/sites/$id/deploys?per_page=5" 2>/dev/null)" || list="[]"
-    new="$(echo "$list" | jq -c --argjson b "$before" "$NETLIFY_JQ"'[.[] | select(.id as $x | $b | index($x) | not)] | last // empty | deploy_out')"
+    new="$(echo "$list" | jq -c --argjson b "$before" "$NETLIFY_JQ"'[.[] | select((.id as $x | $b | index($x) | not) and (skipped | not))] | first // empty | deploy_out')"
     [ -n "$new" ] && { echo "$new" | jq '{id, url, state, phase}'; return 0; }
     sleep 2
   done
