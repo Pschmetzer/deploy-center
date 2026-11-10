@@ -5,6 +5,6 @@ cd "$(dirname "$0")/.."
 out="$(mktemp -d)"; trap 'rm -rf "$out"' EXIT
 cp tests/app-tests.swift "$out/main.swift"
 srcs=()
-for f in app/*.swift; do [ "$f" = app/App.swift ] || srcs+=("$f"); done
+for f in app/*.swift shared/*.swift; do [ "$f" = app/App.swift ] || srcs+=("$f"); done
 swiftc -swift-version 5 -o "$out/tests" "${srcs[@]}" "$out/main.swift"
 "$out/tests"
