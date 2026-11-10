@@ -89,6 +89,27 @@ render_off_one() {
 }
 
 # render_off <service>|--all
+# Auto-deploy "On Commit" again.
+render_on_one() {
+  render_call PATCH "/services/$1" '{"autoDeployTrigger":"commit"}' >/dev/null
+  echo "Render: $2 deploys on push again"
+}
+render_on() {
+  local target="${1:-}" bad=0 todo id name
+  [ -n "$target" ] || die "Give a service name or --all"
+  if [ "$target" = "--all" ]; then
+    todo="$(render_services | jq -r '.[] | select('"$(render_auto)"' == "off") | "\(.id)\t\(.name)"')"
+    while IFS=$'\t' read -r id name; do
+      [ -n "$id" ] || continue; ( render_on_one "$id" "$name" ) || bad=$((bad + 1))
+    done <<< "$todo"
+    [ "$bad" = 0 ] || die "$bad Render services could not be switched on (see above); the others are done"
+    echo "Done. Every Render service deploys on push again."
+  else
+    render_on_one "$(render_id_of "$target")" "$target"
+  fi
+}
+render_cli_autodeploy_on() { render_on "$@"; }
+
 render_off() {
   local target="${1:-}" bad todo id name
   [ -n "$target" ] || die "Give a service name or --all"
@@ -151,7 +172,7 @@ render_json() {
     url:(.serviceDetails.url // null),
     dashboardUrl:(.dashboardUrl // null),
     domain:((.serviceDetails.url // "") | sub("^https?://";"") | if . == "" then null else . end),
-    repo:((.repo // "") | sub("^https://github.com/";"") | sub("\\.git$";"") | if . == "" then null else . end),
+    repo:((.repo // "") | '"$GITHOST_SLUG_JQ"' | if . == "" then null else . end),
     ref:(.branch // null)}] | sort_by(.name | ascii_downcase)')" || exit 1
   tmp="$(mktemp -d)"; kf="$tmp/key"; (umask 077; render_key > "$kf")
   echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$0" "'"$tmp"'" "'"$kf"'"'

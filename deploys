@@ -19,8 +19,10 @@
 #   deploys diff <project>                    commits and files between what is live and the branch
 #   deploys notes <project>                   the same as release notes (Markdown)
 #   deploys vercel map <p> <owner/repo> [br]  say where a project deploys from
+#                                             (GitLab: gitlab.com/group/name, see docs/GITLAB.md)
 #   deploys vercel list                       projects and whether a push still deploys them
 #   deploys vercel autodeploy-off <p>|--all   disconnect Git (remembers the repo first)
+#   deploys vercel autodeploy-on <p>|--all    connect Git again from the remembered repo (pushes build again)
 #   deploys vercel deploy <p> [--preview]     deploy the newest commit of the remembered repo
 #   deploys vercel rollback <p>               production back to the previous deployment
 #   deploys render rollback <service>          back to the deploy that was live before
@@ -28,7 +30,7 @@
 #   deploys vercel deploy <p> [--preview] [--sha <c>] [--wait]   --wait follows it until live or failed
 #   deploys history <project> [n]             the last n deploys (default 10): when, state, commit, source
 #   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>)
-#   deploys autofix [--dry-run]               a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
+#   deploys autofix [--dry-run] [--only <platform> <p>]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
 #   deploys autofix set-token | routine <id> | list | forget-token | prompt | status | schedule on|off
 #                                             (see docs/AUTOFIX.md)
 #   deploys open <project> [--dashboard]      the site, or its page at Vercel or Render
@@ -47,6 +49,11 @@
 #   deploys --help | --version
 #   deploys render list                       services and their auto-deploy setting
 #   deploys render autodeploy-off <s>|--all
+#   deploys render autodeploy-on <s>|--all    auto-deploy "On Commit" again
+#   deploys autodeploy allow <vercel|render|all> <p>|--all <hours>   auto-deploy on for a while (1-168 h)
+#   deploys autodeploy allowed [--json] | revoke <vercel|render|all> <p>|--all
+#   deploys guard [--dry-run]                 auto-deploy off wherever it is on without an allowance
+#   deploys guard status [--json] | schedule on|off   (every 30 minutes; see docs/GUARD.md)
 #   deploys render deploy <service>           deploy the newest commit
 #   deploys render set-key                    store the Render API key (read from stdin)
 #
@@ -94,8 +101,10 @@ script_dir() {
   cd "$(dirname "$f")" && pwd
 }
 DEPLOYS_DIR="${DEPLOYS_DIR:-$(script_dir "${BASH_SOURCE[0]}")}"
-# shellcheck disable=SC2207,SC2011  # provider ids are plain file names, without spaces
-PROVIDERS=($(ls "$DEPLOYS_DIR"/providers/*.sh 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.sh$//' || true))
+# A glob, not ls: the folder itself may have spaces in its path.
+PROVIDERS=()
+for _f in "$DEPLOYS_DIR"/providers/*.sh; do [ -f "$_f" ] || continue; _f="${_f##*/}"; PROVIDERS+=("${_f%.sh}"); done
+unset _f
 [ "${#PROVIDERS[@]}" -gt 0 ] || die "No providers in $DEPLOYS_DIR/providers. Keep the providers folder next to deploys (or set DEPLOYS_DIR)."
 for _p in "${PROVIDERS[@]}"; do
   # shellcheck source=/dev/null
@@ -256,6 +265,32 @@ open_prs_of() {
 }
 export -f open_prs_of
 
+# ---------- git hosts: GitHub above, GitLab in lib/githost.sh ----------
+# githost_of decides per repo; the githost_* dispatchers hand GitHub repos to the functions above.
+# The lib sits next to this script (also inside the app). Without it, GitHub works as before.
+deploys_dir() {
+  local s="${BASH_SOURCE[0]}" d
+  while [ -L "$s" ]; do d="$(cd -P "$(dirname "$s")" && pwd)"; s="$(readlink "$s")"; [[ "$s" == /* ]] || s="$d/$s"; done
+  cd -P "$(dirname "$s")" && pwd
+}
+if [ -f "$(deploys_dir)/lib/githost.sh" ]; then
+  # shellcheck source=lib/githost.sh
+  . "$(deploys_dir)/lib/githost.sh"
+else
+  githost_of() { case "${1:-}" in *:*|*/*/*) echo unknown ;; */*) echo github ;; *) echo unknown ;; esac; }
+  githost_available() { command -v gh >/dev/null 2>&1; }
+  githost_head_of() { [ "$(githost_of "$1")" != github ] || head_of "$@"; }
+  githost_pending_of() { [ "$(githost_of "$1")" != github ] || pending_of "$@"; }
+  githost_open_prs_of() { [ "$(githost_of "$1")" != github ] || open_prs_of "$@"; }
+  gitlab_logged_in() { return 1; }
+  gitlab_user() { :; }
+  # shellcheck disable=SC2016
+  GITHOST_SLUG_JQ='(sub("^https://github.com/";"") | sub("^https?://";"") | sub("\\.git$";"") | sub("/$";""))'
+  # shellcheck disable=SC2016,SC2034  # read by providers/vercel.sh
+  GITHOST_VERCEL_LINK_JQ='(if .type == "gitlab" then null else "\(.org)/\(.repo)" end)'
+  export -f githost_of githost_head_of githost_pending_of githost_open_prs_of
+fi
+
 # The one rule for "has changes to deploy", read by `changed`, `deploy-changed` and the app.
 # Not deployable, paused, already building, or with no known head: not changed. It reads only the
 # shared phase (queued, building, ready, failed, canceled), never a platform's own state names.
@@ -270,11 +305,12 @@ CHANGED_RULE='map(. + {building: (.phase == "queued" or .phase == "building")})
 
 with_heads() {
   local list="$1" tmp heads pend opens
-  # Without gh, or when asked to leave GitHub out (status --watch), no heads: nothing counts as changed.
-  if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! command -v gh >/dev/null 2>&1; then echo "$list" | jq "$CHANGED_RULE"; return; fi
+  # Without gh (or glab / GITLAB_TOKEN), or when asked to leave the git hosts out (status --watch),
+  # no heads: nothing counts as changed.
+  if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! githost_available; then echo "$list" | jq "$CHANGED_RULE"; return; fi
   tmp="$(mktemp -d)"; mkdir "$tmp/h" "$tmp/p" "$tmp/o"
   echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
-    | xargs -P 8 -n 2 bash -c 'head_of "$0" "$1" "'"$tmp/h"'"'
+    | xargs -P 8 -n 2 bash -c 'githost_head_of "$0" "$1" "'"$tmp/h"'"'
   heads="$(cat_all "$tmp/h"/*.json | jq -s 'from_entries')"
   list="$(echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))')"
   # With GitHub's budget nearly spent, keep it for what decides "changed" (the heads above).
@@ -282,8 +318,8 @@ with_heads() {
   if [ "${left:-5000}" -lt 300 ]; then rm -rf "$tmp"; echo "$list" | jq "$CHANGED_RULE"; return; fi
   # Compared only where the branch moved past the live commit.
   echo "$list" | jq -r '.[] | select(.repo and .ref and .lastSha and .headSha and .lastSha != .headSha) | "\(.repo) \(.lastSha) \(.ref)"' \
-    | sort -u | xargs -P 8 -n 3 bash -c 'pending_of "$0" "$1" "$2" "'"$tmp/p"'"'
-  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'open_prs_of "$0" "'"$tmp/o"'"'
+    | sort -u | xargs -P 8 -n 3 bash -c 'githost_pending_of "$0" "$1" "$2" "'"$tmp/p"'"'
+  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'githost_open_prs_of "$0" "'"$tmp/o"'"'
   pend="$(cat_all "$tmp/p"/*.json | jq -s 'from_entries')"
   opens="$(cat_all "$tmp/o"/*.json | jq -s 'from_entries')"
   rm -rf "$tmp"
@@ -443,7 +479,7 @@ af_mask() {
 # Open (or merged) autofix PRs of one project: gh REST only, branch claude/autofix-<project>-*.
 af_prs() {  # af_prs <owner/repo> <project> <open|closed>
   gh api "repos/$1/pulls?state=$3&per_page=50&sort=updated&direction=desc" \
-    --jq "[.[] | select(.head.ref | startswith(\"claude/autofix-$2-\")) | {number, merged_at, merge_commit_sha, ref:.head.ref}]"
+    --jq "[.[] | select(.head.ref | startswith(\"claude/autofix-$2-\")) | {number, merged_at, closed_at, merge_commit_sha, ref:.head.ref, url:.html_url}]"
 }
 
 # One fire. The token goes to curl on stdin, never as an argument. Prints "<code>\t<body>".
@@ -481,32 +517,38 @@ PROMPT
 
 # The launchd job that runs `autofix` every 10 minutes while this Mac is awake.
 AUTOFIX_LABEL="app.deploycenter.autofix"
-af_plist() { echo "${DEPLOYS_LAUNCH_DIR:-$HOME/Library/LaunchAgents}/$AUTOFIX_LABEL.plist"; }
-af_scheduled() { [ -f "$(af_plist)" ]; }
-af_schedule_on() {
-  local self plist; plist="$(af_plist)"; mkdir -p "$(dirname "$plist")"
+# A launchd job that runs this script every few seconds/minutes: job_on <label> <seconds> <log name> <args...>.
+job_plist() { echo "${DEPLOYS_LAUNCH_DIR:-$HOME/Library/LaunchAgents}/$1.plist"; }
+job_on() {
+  local label="$1" every="$2" log="$HOME/Library/Logs/$3.log" self plist a pargs=""; shift 3
+  plist="$(job_plist "$label")"; mkdir -p "$(dirname "$plist")"
   self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+  for a in "$@"; do pargs="$pargs<string>$a</string>"; done
   # Written with the PATH of whoever turns it on (the app passes the login shell's): launchd
   # starts jobs with a bare one, and autofix needs jq, gh, perl and the vercel CLI.
   cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>$AUTOFIX_LABEL</string>
+  <key>Label</key><string>$label</string>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(printf '%s' "$PATH" | sed 's/&/\&amp;/g; s/</\&lt;/g')</string></dict>
-  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$self</string><string>autofix</string></array>
-  <key>StandardOutPath</key><string>$HOME/Library/Logs/DeployCenter-autofix.log</string>
-  <key>StandardErrorPath</key><string>$HOME/Library/Logs/DeployCenter-autofix.log</string>
-  <key>StartInterval</key><integer>600</integer>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$self</string>$pargs</array>
+  <key>StandardOutPath</key><string>$log</string>
+  <key>StandardErrorPath</key><string>$log</string>
+  <key>StartInterval</key><integer>$every</integer>
 </dict></plist>
 PLIST
-  launchctl bootout "gui/$(id -u)/$AUTOFIX_LABEL" >/dev/null 2>&1 || true
+  launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$(id -u)" "$plist" || die "launchd did not take the job ($plist)"
 }
-af_schedule_off() {
-  launchctl bootout "gui/$(id -u)/$AUTOFIX_LABEL" >/dev/null 2>&1 || true
-  rm -f "$(af_plist)"
+job_off() {
+  launchctl bootout "gui/$(id -u)/$1" >/dev/null 2>&1 || true
+  rm -f "$(job_plist "$1")"
 }
+af_plist() { job_plist "$AUTOFIX_LABEL"; }
+af_scheduled() { [ -f "$(af_plist)" ]; }
+af_schedule_on() { job_on "$AUTOFIX_LABEL" 600 DeployCenter-autofix autofix; }
+af_schedule_off() { job_off "$AUTOFIX_LABEL"; }
 
 af_lock() {
   local d="$CONFIG_DIR/locks/autofix"; mkdir -p "$CONFIG_DIR/locks"
@@ -516,58 +558,89 @@ af_lock() {
   echo "$d"
 }
 
-autofix_run() {  # autofix_run [dry]
-  local dry="${1:-}" lock all now trig st rc=0
-  lock="$(af_lock)" || return 1
+# Exit codes of `autofix --only` (AF_* below); a normal run only uses 0 and 1.
+AF_NOT_FAILED=2; AF_BUSY=3; AF_CAP=4; AF_NO_ROUTINE=5; AF_LOCKED=6
+
+autofix_run() {  # autofix_run [dry] [<platform> <project>]  (the two: --only, this one failure now)
+  local dry="${1:-}" oplat="${2:-}" oname="${3:-}" lock all now trig st rc=0
+  lock="$(af_lock)" || { [ -n "$oname" ] && return "$AF_LOCKED"; return 1; }
   now="$(date +%s)"; trig="$(af_routine)"
   all="$(af_all)" || rc=1
   st="$(af_state)"
 
   # 1. A merged fix is only announced, never deployed: deploying stays a click in the app (or `deploys … deploy`).
-  local open_fires f p plat repo did prs m msha
-  open_fires="$(echo "$st" | jq -c '.fires[] | select(.status == "fired" and (.mergedSha == null) and (.done != true))')"
+  #    Each fire also gets the state of its PR (prNumber, prState, prUrl) for the app.
+  local open_fires f p plat repo did prs m msha fsha fb
+  open_fires=""
+  [ -n "$oname" ] || open_fires="$(echo "$st" | jq -c '.fires[] | select(.status == "fired" and (.mergedSha == null) and (.done != true))')"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     p="$(echo "$f" | jq -r .project)"; plat="$(echo "$f" | jq -r .platform)"; repo="$(echo "$f" | jq -r .repo)"; did="$(echo "$f" | jq -r .deployId)"
+    fsha="$(echo "$f" | jq -r '.sha // ""')"
+    # The exact fix branch when the commit is known: "web" must not match the PRs of "web-app".
+    if [ -n "$fsha" ]; then fb="claude/autofix-$p-${fsha:0:7}"; else fb=""; fi
     local cur; cur="$(echo "$all" | jq -c --arg p "$p" --arg pl "$plat" '.[] | select(.name == $p and .platform == $pl)')"
     if [ -n "$cur" ] && [ "$(echo "$cur" | jq "$AUTOFIX_FAILED")" != true ]; then
       st="$(echo "$st" | jq --arg d "$did" '(.fires[] | select(.deployId == $d)).done = true')"
       echo "autofix: $p is no longer failed."; continue
     fi
     prs="$(af_prs "$repo" "$p" closed 2>/dev/null)" || { echo "autofix: could not ask GitHub about $p" >&2; rc=1; continue; }
+    prs="$(echo "$prs" | jq -c --arg b "$fb" 'map(select($b == "" or .ref == $b))')"
     m="$(echo "$prs" | jq -c --argjson at "$(echo "$f" | jq .at)" '[.[] | select(.merged_at != null and ((.merged_at | fromdateiso8601) > $at))][0] // empty')"
-    [ -n "$m" ] || continue
+    if [ -z "$m" ]; then
+      # Not merged: closed without a merge, or still open.
+      local c o
+      c="$(echo "$prs" | jq -c --argjson at "$(echo "$f" | jq .at)" '[.[] | select(.merged_at == null and .closed_at != null and ((.closed_at | fromdateiso8601) > $at))][0] // empty')"
+      if [ -n "$c" ]; then
+        st="$(echo "$st" | jq --arg d "$did" --argjson c "$c" '(.fires[] | select(.deployId == $d)) |= . + {prNumber:$c.number, prState:"closed", prUrl:($c.url // null)}')"
+        continue
+      fi
+      o="$(af_prs "$repo" "$p" open 2>/dev/null | jq -c --arg b "$fb" '[.[] | select($b == "" or .ref == $b)][0] // empty' 2>/dev/null)" || o=""
+      [ -z "$o" ] || st="$(echo "$st" | jq --arg d "$did" --argjson o "$o" '(.fires[] | select(.deployId == $d)) |= . + {prNumber:$o.number, prState:"open", prUrl:($o.url // null)}')"
+      continue
+    fi
     msha="$(echo "$m" | jq -r .merge_commit_sha)"
     if [ -n "$dry" ]; then echo "autofix (dry run): would announce the merged fix for $p ($msha, PR #$(echo "$m" | jq .number))"; continue; fi
-    st="$(echo "$st" | jq --arg d "$did" --arg s "$msha" --argjson n "$(echo "$m" | jq .number)" --argjson t "$now" \
-      '(.fires[] | select(.deployId == $d)) |= . + {mergedSha:$s, pr:$n, mergedSeenAt:$t}')"
+    st="$(echo "$st" | jq --arg d "$did" --arg s "$msha" --argjson m "$m" --argjson t "$now" \
+      '(.fires[] | select(.deployId == $d)) |= . + {mergedSha:$s, pr:$m.number, prNumber:$m.number, prState:"merged", prUrl:($m.url // null), mergedSeenAt:$t}')"
     af_notify "Autofix: the fix for $p (PR #$(echo "$m" | jq .number)) is merged. Deploy it in Deploy Center when you want it live."
   done <<< "$open_fires"
 
   # 2. Report what a build log cannot fix.
-  echo "$all" | jq -r ".[] | select($AUTOFIX_REPORT_ONLY) | \"autofix: \(.platform) \(.name) is \(.lastState): not a build failure, left to you.\""
+  [ -n "$oname" ] || echo "$all" | jq -r ".[] | select($AUTOFIX_REPORT_ONLY) | \"autofix: \(.platform) \(.name) is \(.lastState): not a build failure, left to you.\""
 
-  # 3. Fire: at most one per run, within the caps.
-  local cands c sha day_count proj_count text code resp prev
-  cands="$(echo "$all" | jq -c ".[] | select($AUTOFIX_FAILED and .latestId != null and .repo != null)")"
+  # 3. Fire: at most one per run, within the caps. With --only: that one project, now, same rules.
+  local cands c sha day_count proj_count text code resp prev out=0
+  cands="$(echo "$all" | jq -c --arg pl "$oplat" --arg n "$oname" ".[] | select(\$n == \"\" or (.name == \$n and .platform == \$pl)) | select($AUTOFIX_FAILED and .latestId != null and .repo != null)")"
+  if [ -n "$oname" ] && [ -z "$cands" ]; then
+    if [ "$(echo "$all" | jq --arg pl "$oplat" --arg n "$oname" '[.[] | select(.name == $n and .platform == $pl)] | length')" = 0 ]; then
+      if [ "$rc" != 0 ]; then echo "autofix: $oplat could not be read; $oname is unknown for now." >&2; out=1
+      else echo "autofix: no $oplat project named $oname." >&2; out="$AF_NOT_FAILED"; fi
+    else echo "autofix: $oplat $oname has no failed build to fix."; out="$AF_NOT_FAILED"; fi
+    rmdir "$lock" 2>/dev/null || true; return "$out"
+  fi
   day_count="$(echo "$st" | jq --argjson t "$now" '[.fires[] | select(.status != "ratelimited" and .at > ($t - 86400))] | length')"
   while IFS= read -r c; do
     [ -n "$c" ] || continue
     p="$(echo "$c" | jq -r .name)"; plat="$(echo "$c" | jq -r .platform)"; repo="$(echo "$c" | jq -r .repo)"
     did="$(echo "$c" | jq -r .latestId)"; sha="$(echo "$c" | jq -r '.latestSha // ""')"
     prev="$(echo "$st" | jq -r --arg d "$did" '[.fires[] | select(.deployId == $d)][0].status // ""')"
-    [ -n "$prev" ] && [ "$prev" != ratelimited ] && continue
+    if [ -n "$prev" ] && [ "$prev" != ratelimited ]; then
+      [ -z "$oname" ] || { echo "autofix: this failed build of $p was handed over already ($prev); not again."; out="$AF_BUSY"; }
+      continue
+    fi
     if [ -n "$sha" ] && [ "$(echo "$st" | jq --arg s "$sha" '[.fires[] | select(.mergedSha == $s or .redeployedSha == $s)] | length')" != 0 ]; then
       st="$(echo "$st" | jq --arg d "$did" --arg p "$p" --arg pl "$plat" --argjson t "$now" '.fires += [{deployId:$d, project:$p, platform:$pl, at:$t, status:"skipped", reason:"the fix itself failed"}]')"
-      af_notify "Autofix: the fix for $p failed to build too. Not trying again; over to you."; continue
+      af_notify "Autofix: the fix for $p failed to build too. Not trying again; over to you."
+      [ -z "$oname" ] || out="$AF_BUSY"; continue
     fi
     proj_count="$(echo "$st" | jq --arg p "$p" --argjson t "$now" '[.fires[] | select(.project == $p and (.status == "fired" or .status == "failed") and .at > ($t - 86400))] | length')"
-    if [ "$proj_count" -ge "$AUTOFIX_PER_PROJECT" ]; then echo "autofix: $p already had $proj_count fixes today; skipped."; continue; fi
-    if [ "$day_count" -ge "$AUTOFIX_PER_DAY" ]; then echo "autofix: the daily cap ($AUTOFIX_PER_DAY) is reached."; break; fi
+    if [ "$proj_count" -ge "$AUTOFIX_PER_PROJECT" ]; then echo "autofix: $p already had $proj_count fixes today; skipped."; [ -z "$oname" ] || out="$AF_CAP"; continue; fi
+    if [ "$day_count" -ge "$AUTOFIX_PER_DAY" ]; then echo "autofix: the daily cap ($AUTOFIX_PER_DAY) is reached."; [ -z "$oname" ] || out="$AF_CAP"; break; fi
     local open; open="$(af_prs "$repo" "$p" open 2>/dev/null)" || { echo "autofix: could not ask GitHub about $p; not firing" >&2; rc=1; continue; }
-    if [ "$(echo "$open" | jq length)" != 0 ]; then echo "autofix: $p has an open autofix PR (#$(echo "$open" | jq '.[0].number')); waiting for it."; continue; fi
+    if [ "$(echo "$open" | jq length)" != 0 ]; then echo "autofix: $p has an open autofix PR (#$(echo "$open" | jq '.[0].number')); waiting for it."; [ -z "$oname" ] || out="$AF_BUSY"; continue; fi
     if [ -n "$dry" ]; then echo "autofix (dry run): would hand $plat $p (deploy $did, ${sha:0:7}) to the routine"; break; fi
-    [ -n "$trig" ] || { echo "autofix: no routine set. Run: deploys autofix routine <trig_id>" >&2; rc=1; break; }
+    [ -n "$trig" ] || { echo "autofix: no routine set. Run: deploys autofix routine <trig_id>" >&2; rc=1; [ -z "$oname" ] || out="$AF_NO_ROUTINE"; break; }
     text="$(mktemp)"
     {
       printf 'project: %s\nplatform: %s\nrepo: %s\nbranch: %s\ncommit: %s\ndeploy: %s\nfix branch: claude/autofix-%s-%s\n\nBuild log (last lines, secrets masked where recognised):\n```\n' \
@@ -586,7 +659,7 @@ autofix_run() {  # autofix_run [dry]
           st="$(echo "$st" | jq --arg d "$did" --arg u "$url" '(.fires[] | select(.deployId == $d)) |= . + {status:"fired", session:$u}')"
           af_notify "Autofix: $p failed to build; a Claude session is fixing it. ${url}" ;;
       429) st="$(echo "$st" | jq --arg d "$did" '(.fires[] | select(.deployId == $d)).status = "ratelimited"')"
-          echo "autofix: rate limited; $p is tried again on the next run." ;;
+          echo "autofix: rate limited; $p is tried again on the next run."; [ -z "$oname" ] || out=1 ;;
       *)  st="$(echo "$st" | jq --arg d "$did" --arg e "HTTP $code: $resp" '(.fires[] | select(.deployId == $d)) |= . + {status:"failed", error:$e}')"
           af_notify "Autofix: could not start a session for $p (HTTP $code)."; rc=1 ;;
     esac
@@ -594,6 +667,197 @@ autofix_run() {  # autofix_run [dry]
   done <<< "$cands"
   [ -n "$dry" ] || echo "$st" | af_save
   rmdir "$lock" 2>/dev/null || true
+  if [ -n "$oname" ] && [ "$out" != 0 ]; then return "$out"; fi
+  return "$rc"
+}
+
+# ---------- Auto-deploy back on, allowances, and the guard ----------
+# Auto-deploy can be turned on again, for good or for a few hours (an allowance). The guard
+# (`deploys guard`, a launchd job every 30 minutes) turns it off wherever it is on without an
+# allowance that still runs. See docs/GUARD.md.
+
+# vercel_on_one and render_on_one (auto-deploy back on) are in providers/vercel.sh and render.sh.
+
+ALLOW_FILE="$CONFIG_DIR/autodeploy-allow.json"
+GUARD_STATE="$CONFIG_DIR/guard.json"
+GUARD_LABEL="app.deploycenter.guard"
+
+# {"vercel:web": <expiry epoch>, "render:*": …, "*": …}. A broken file counts as "no allowance".
+allow_read() {
+  if [ -s "$ALLOW_FILE" ] && jq -e 'type == "object"' "$ALLOW_FILE" >/dev/null 2>&1; then cat "$ALLOW_FILE"; else echo '{}'; fi
+}
+allow_write() { local t; t="$(mktemp "$CONFIG_DIR/.allow.XXXXXX")"; cat > "$t" && mv "$t" "$ALLOW_FILE"; }
+# allow_covers <platform> <name> [now]: an allowance for the project, its platform, or everything is still running.
+allow_covers() {
+  allow_read | jq -e --arg k "$1:$2" --arg pk "$1:*" --argjson t "${3:-$(date +%s)}" \
+    '[.[$k], .[$pk], .["*"]] | map(select(. != null and . > $t)) | length > 0' >/dev/null
+}
+# The running allowances for people and the app: [{platform, project, expiresAt}], "all"/"*" for wildcards.
+allow_list() {
+  allow_read | jq --argjson t "$(date +%s)" '[to_entries[] | select(.value > $t)
+    | (if .key == "*" then {platform:"all", project:"*"} else {platform:(.key | split(":")[0]), project:(.key | split(":")[1:] | join(":"))} end)
+      + {expiresAt:.value}] | sort_by(.expiresAt)'
+}
+
+# One lock for every switch of auto-deploy (allow, revoke, guard): waited for, never stolen while
+# fresh. A holder that died is taken over after 5 minutes.
+ad_lock() {
+  local d="$CONFIG_DIR/locks/autodeploy" i=0; mkdir -p "$CONFIG_DIR/locks"
+  while [ "$i" -lt 30 ]; do
+    if [ -d "$d" ] && [ $(( $(date +%s) - $(mtime "$d") )) -ge 300 ]; then rmdir "$d" 2>/dev/null || true; fi
+    mkdir "$d" 2>/dev/null && return 0
+    i=$((i + 1)); sleep 1
+  done
+  echo "Another auto-deploy change is running (lock $d)" >&2; return 1
+}
+ad_unlock() { rmdir "$CONFIG_DIR/locks/autodeploy" 2>/dev/null || true; }
+
+# Seams the tests replace: what each platform has ([{name, id, auto}]) and the switches.
+ad_list_vercel() { vercel_projects | jq '[.[] | {name, id:.name, auto:(.link != null)}]'; }
+ad_list_render() { render_services | jq '[.[] | {name, id, auto:('"$(render_auto)"' != "off")}]'; }
+ad_off() { case "$1" in vercel) vercel_off_one "$2";; render) render_off_one "$3" "$2";; esac; }
+ad_on() { case "$1" in vercel) vercel_on_one "$2";; render) render_on_one "$3" "$2";; esac; }
+# Which platforms this Mac can read: a Vercel login (or remembered projects), a Render key.
+ad_platforms() {
+  # Only the providers that are switched on (deploys providers) and set up.
+  provider_on vercel && echo vercel
+  provider_on render && echo render
+  return 0
+}
+
+# guard_run <dry> [<platform>|all] [<name>|*]: auto-deploy off wherever it is on and not allowed.
+# Sets GUARD_ACTIONS (JSON). Returns 1 when a platform could not be read or a switch failed.
+GUARD_ACTIONS='[]'
+guard_run() {
+  local dry="$1" sp="${2:-all}" sn="${3:-*}" now rc=0 plat list name id err out
+  now="$(date +%s)"; GUARD_ACTIONS='[]'
+  act() { GUARD_ACTIONS="$(echo "$GUARD_ACTIONS" | jq -c --argjson t "$now" --arg pl "$1" --arg p "$2" --arg a "$3" --arg e "${4:-}" \
+    '. + [{at:$t, platform:$pl, project:(if $p == "" then null else $p end), action:$a, error:(if $e == "" then null else $e end)}]')"; }
+  # Expired allowances go first, under the lock.
+  if [ -z "$dry" ] && ad_lock; then
+    allow_read | jq --argjson t "$now" 'with_entries(select(.value > $t))' | allow_write; ad_unlock
+  fi
+  for plat in $(ad_platforms); do
+    [ "$sp" = all ] || [ "$sp" = "$plat" ] || continue
+    err="$(mktemp)"
+    # One platform that cannot be read is an error, never "nothing is on"; the other still runs.
+    if ! list="$(ad_list_"$plat" 2>"$err")" || ! echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1; then
+      out="$(grep -v '^[[:space:]]*$' "$err" | tail -n 1 | sed 's/^Error: //' | cut -c1-300)"; rm -f "$err"
+      echo "guard: could not read $plat${out:+: $out}" >&2; act "$plat" "" error "${out:-could not read}"; rc=1; continue
+    fi
+    rm -f "$err"
+    while IFS=$'\t' read -r name id; do
+      [ -n "$name" ] || continue
+      [ "$sn" = "*" ] || [ "$sn" = "$name" ] || continue
+      allow_covers "$plat" "$name" "$now" && continue
+      if [ -n "$dry" ]; then echo "guard (dry run): would turn off auto-deploy of $plat $name"; act "$plat" "$name" wouldOff; continue; fi
+      ad_lock || { act "$plat" "$name" failed "lock busy"; rc=1; continue; }
+      # Read again under the lock: an allowance given a moment ago wins.
+      if allow_covers "$plat" "$name"; then ad_unlock; continue; fi
+      # In a subshell: the switches end in `die` (exit), which must not end the whole run.
+      if out="$( (ad_off "$plat" "$name" "$id") 2>&1 )"; then
+        echo "guard: $out"; act "$plat" "$name" off
+      else
+        out="$(echo "$out" | grep -v '^[[:space:]]*$' | tail -n 1 | sed 's/^Error: //' | cut -c1-300)"
+        echo "guard: could not turn off $plat $name: $out" >&2; act "$plat" "$name" failed "$out"; rc=1
+      fi
+      ad_unlock
+    done < <(echo "$list" | jq -r '.[] | select(.auto) | "\(.name)\t\(.id // .name)"')
+  done
+  return "$rc"
+}
+
+guard_state() { if [ -s "$GUARD_STATE" ] && jq -e 'type == "object"' "$GUARD_STATE" >/dev/null 2>&1; then cat "$GUARD_STATE"; else echo '{}'; fi; }
+guard_save() { local t; t="$(mktemp "$CONFIG_DIR/.guard.XXXXXX")"; cat > "$t" && mv "$t" "$GUARD_STATE"; }
+guard_scheduled() { [ -f "$(job_plist "$GUARD_LABEL")" ]; }
+guard_schedule_on() {
+  job_on "$GUARD_LABEL" 1800 DeployCenter-guard guard
+  # The first run after turning it on only says what it would do.
+  guard_state | jq '.firstRunPending = true' | guard_save
+}
+guard_schedule_off() { job_off "$GUARD_LABEL"; }
+
+# The guard command: one run, its result kept for `guard status`, a notification when it acted.
+guard_main() {
+  local dry="$1" first=false rc=0 names
+  if [ -z "$dry" ] && [ "$(guard_state | jq '.firstRunPending == true')" = true ]; then dry=1; first=true; fi
+  guard_run "$dry" || rc=1
+  guard_state | jq --argjson t "$(date +%s)" --argjson a "$GUARD_ACTIONS" --argjson d "$([ -n "$dry" ] && echo true || echo false)" \
+    '. + {lastRun:$t, lastDry:$d, lastActions:$a} | del(.firstRunPending)' | guard_save
+  names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "off" or .action == "wouldOff") | "\(.platform) \(.project)"] | join(", ")')"
+  if [ "$first" = true ]; then
+    af_notify "Auto-deploy guard is on. First run, nothing changed. ${names:+From the next run it turns off: $names}"
+  elif [ -n "$dry" ]; then [ -n "$names" ] || echo "guard (dry run): nothing to turn off."
+  elif [ -n "$names" ]; then af_notify "Auto-deploy guard: turned auto-deploy off for $names."
+  fi
+  names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "failed" or .action == "error") | "\(.platform)\(if .project then " " + .project else "" end)"] | join(", ")')"
+  [ -z "$names" ] || af_notify "Auto-deploy guard: could not check or switch $names. See: deploys guard status"
+  return "$rc"
+}
+
+# allow/revoke take <vercel|render|all> <project>|--all. Prints "<key>\t<platform or all>\t<name or *>".
+ad_scope() {
+  local plat="$1" target="$2"
+  case "$plat" in vercel|render|all) ;; *) die "Platform must be vercel, render or all";; esac
+  [ -n "$target" ] || die "Give a project name or --all"
+  if [ "$target" = --all ]; then
+    if [ "$plat" = all ]; then printf '*\tall\t*\n'; else printf '%s:*\t%s\t*\n' "$plat" "$plat"; fi
+  else
+    [ "$plat" != all ] || plat="$(platform_of "$target")"
+    printf '%s:%s\t%s\t%s\n' "$plat" "$target" "$plat" "$target"
+  fi
+}
+
+# allow_main <vercel|render|all> <project>|--all <hours>
+allow_main() {
+  local scope key plat name hours until bad=0 skipped=0 list p id
+  hours="${3:-}"; case "$hours" in ''|*[!0-9]*) die "Hours must be a whole number (1 to 168)";; esac
+  [ "$hours" -ge 1 ] && [ "$hours" -le 168 ] || die "Hours must be between 1 and 168"
+  scope="$(ad_scope "$1" "${2:-}")" || exit 1
+  IFS=$'\t' read -r key plat name <<< "$scope"
+  until=$(( $(date +%s) + hours * 3600 ))
+  # Written before switching on: a guard run in between must already see it.
+  ad_lock || die "Could not take the auto-deploy lock; nothing changed"
+  allow_read | jq --arg k "$key" --argjson u "$until" '.[$k] = $u' | allow_write
+  ad_unlock
+  if [ "$name" != "*" ]; then
+    id="$name"; [ "$plat" = render ] && { id="$( (render_id_of "$name") )" || bad=1; }
+    if [ "$bad" = 0 ] && ( ad_on "$plat" "$name" "$id" ); then :; else
+      ad_lock && { allow_read | jq --arg k "$key" 'del(.[$k])' | allow_write; ad_unlock; }
+      die "Auto-deploy of $plat $name was not turned on; the allowance is withdrawn"
+    fi
+  else
+    for p in $(ad_platforms); do
+      [ "$plat" = all ] || [ "$plat" = "$p" ] || continue
+      list="$(ad_list_"$p")" || { echo "Could not read $p" >&2; bad=$((bad + 1)); continue; }
+      while IFS=$'\t' read -r name id; do
+        [ -n "$name" ] || continue
+        if [ "$p" = vercel ] && ! jq -e --arg n "$name" '.[$n].repo != null' "$REPOS" >/dev/null 2>&1; then
+          skipped=$((skipped + 1)); continue
+        fi
+        ( ad_on "$p" "$name" "$id" ) || bad=$((bad + 1))
+      done < <(echo "$list" | jq -r '.[] | select(.auto | not) | "\(.name)\t\(.id // .name)"')
+    done
+    [ "$skipped" = 0 ] || echo "$skipped Vercel projects left manual: their repo is not known (deploys vercel map)."
+  fi
+  echo "Auto-deploy allowed for $( [ "$key" = "*" ] && echo everything || echo "$key") until $(date -r "$until" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$until" '+%Y-%m-%d %H:%M')."
+  echo "Every push (and every merged fix PR) now builds and costs money. Undo: deploys autodeploy revoke $1 ${2}"
+  [ "$bad" = 0 ] || die "$bad could not be turned on (see above)"
+}
+
+# revoke_main <vercel|render|all> <project>|--all: the allowance goes, and what it alone kept on goes off.
+revoke_main() {
+  local scope key plat name rc=0
+  scope="$(ad_scope "$1" "${2:-}")" || exit 1
+  IFS=$'\t' read -r key plat name <<< "$scope"
+  ad_lock || die "Could not take the auto-deploy lock; nothing changed"
+  if [ "$key" = "*" ]; then allow_read | jq '{}' | allow_write
+  elif [ "$name" = "*" ]; then allow_read | jq --arg p "$plat:" 'with_entries(select(.key | startswith($p) | not))' | allow_write
+  else allow_read | jq --arg k "$key" 'del(.[$k])' | allow_write; fi
+  ad_unlock
+  echo "Allowance withdrawn: $( [ "$key" = "*" ] && echo everything || echo "$key")."
+  # Only what nothing else allows any more (guard_run checks every allowance).
+  guard_run "" "$plat" "$name" || rc=1
   return "$rc"
 }
 
@@ -653,7 +917,8 @@ case "${1:-} ${2:-}" in
     atok=none; [ -n "$(af_token)" ] && atok="set"
     printf '%-13s%s\n' version "$(deploys_version)" script "$0" config "$CONFIG_DIR" providers "$(enabled_providers | tr '\n' ' ' | sed 's/ $//')"
     for p in $(enabled_providers); do if declare -F "${p}_where" >/dev/null; then "${p}_where"; fi; done
-    printf '%-13s%s\n' "github user" "$ghu" autofix "routine $(r="$(af_routine)"; echo "${r:-none}"), token $atok" ;;
+    glu="$(gitlab_user || true)"
+    printf '%-13s%s\n' "github user" "$ghu" "gitlab user" "${glu:-not logged in}" autofix "routine $(r="$(af_routine)"; echo "${r:-none}"), token $atok" ;;
 
   "history "*)
     # The last n deploys of one project: when, how it ended, which commit, what started it.
@@ -673,10 +938,11 @@ case "${1:-} ${2:-}" in
       o="${o#\{}"; o="${o%\}}"; [ -z "$o" ] || pf="$pf,$o"
     done
     glogin=false; gh auth status >/dev/null 2>&1 && glogin=true
+    gllogin=false; gitlab_logged_in && gllogin=true
     # The versions that matter (jq 1.6+ for the date functions).
     jqv="$(jq --version 2>/dev/null | sed 's/^jq-//' | tr -d '"\\')"
-    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s"}\n' \
-      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$jqv" "${BASH_VERSION%%(*}" ;;
+    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s"}\n' \
+      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" ;;
 
   "github-budget "*)
     github_budget ;;
@@ -698,7 +964,7 @@ case "${1:-} ${2:-}" in
     fi
     # What is building right now, on every platform, and what the newest attempt said.
     rc=0; all="$(DEPLOYS_NO_GITHUB="$nogh" all_json)" || rc=$?
-    if [ "$json" = 1 ]; then echo "$all" | jq 'map({platform, name, building, state:(.latestState // .lastState), changed})'; exit "$rc"; fi
+    if [ "$json" = 1 ]; then echo "$all" | jq 'map({platform, name, repo:(.repo // null), building, state:(.latestState // .lastState), changed})'; exit "$rc"; fi
     echo "$all" | jq -r '.[] | select(.building or .phase == "failed") | [.platform, .name, (.latestState // .lastState)] | @tsv' \
       | (printf 'PLATFORM\tPROJECT\tSTATE\n'; cat) | column -t -s $'\t'
     if [ -n "$nogh" ]; then echo "$all" | jq -r '"\(map(select(.building)) | length) building."'
@@ -802,7 +1068,7 @@ case "${1:-} ${2:-}" in
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
     # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    cmds="doctor where changed deploy-changed status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix providers list ${PROVIDERS[*]} completion --help --version"
+    cmds="doctor where changed deploy-changed status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix autodeploy guard providers list ${PROVIDERS[*]} completion --help --version"
     verbs_of() {
       local v="list deploy rollback status cancel autodeploy-off json" x
       for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
@@ -845,6 +1111,7 @@ BASH
     # the branch (with their PRs), the files they touch and which of them are risky to ship
     # unread, the CI result of the branch head, and the pull requests still open.
     repo="${2:?owner/repo}"; base="${3:-}"; ref="${4:-main}"
+    if [ "$(githost_of "$repo")" = gitlab ]; then gitlab_details "$repo" "$base" "$ref"; exit 0; fi
     # The comparison goes through a file, not an argument: with its patches it can be megabytes,
     # more than one argument may hold ("Argument list too long"). The patches are not needed.
     dt="$(mktemp -d)"; echo null > "$dt/cmp"
@@ -867,6 +1134,7 @@ BASH
       {commits:[($c.commits // [])[] | {sha:.sha[0:7], full:.sha, url:.html_url,
                  msg:(.commit.message | split("\n")[0]), author:(.author.login // .commit.author.name),
                  bot:((.author.type // "") == "Bot"),
+                 coAuthors:[.commit.message | scan("(?im)^co-authored-by:[ \\t]*([^<\\n]*?)[ \\t]*<([^>\\n]*)>") | {name:.[0], email:.[1]}],
                  at:(.commit.committer.date | fromdateiso8601),
                  pr:((.commit.message | (capture("\\(#(?<n>[0-9]+)\\)") // capture("Merge pull request #(?<n>[0-9]+)")) | .n | tonumber) // null)}] | reverse,
        files:(($c.files // []) | length), additions:(($c.files // []) | map(.additions) | add // 0),
@@ -935,8 +1203,8 @@ BASH
           | jq -c '.[].blueprint | select(.autoSync==true) | {kind:"render-blueprint", where:.name, detail:"auto-sync on"}' || true
       fi
       if command -v gh >/dev/null 2>&1; then
-        { jq -r '.[] | select(.repo) | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
-          echo "${svcs:-[]}" | jq -r '.[] | .repo // empty | sub("^https://github.com/";"") | sub("\\.git$";"")'
+        { jq -r '.[] | select(.repo and (.type // "github") == "github") | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
+          echo "${svcs:-[]}" | jq -r '.[] | .repo // empty | select(test("^https://github.com/")) | sub("^https://github.com/";"") | sub("\\.git$";"")'
         } | sort -u | xargs -P 8 -n 1 bash -c 'workflow_hits "$0" "'"$tmp"'"'
         cat_all "$tmp"/*.jsonl
       fi
@@ -983,6 +1251,45 @@ BASH
     [ "$rc" = 0 ] || echo "Some projects could not be read and were left out (see above)." >&2
     [ "$bad" = "0" ] && [ "$rc" = 0 ] ;;
 
+  "autodeploy allow")
+    # autodeploy allow <vercel|render|all> <project>|--all <hours>
+    allow_main "${3:-}" "${4:-}" "${5:-}" ;;
+  "autodeploy revoke")
+    revoke_main "${3:-}" "${4:-}" ;;
+  "autodeploy allowed")
+    if [ "$json" = 1 ]; then allow_list
+    else
+      allow_list | jq -r '.[] | [.platform, .project, (.expiresAt | strftime("%Y-%m-%d %H:%M UTC")), "\(((.expiresAt - now) / 60) | floor) min left"] | @tsv' \
+        | (printf 'PLATFORM\tPROJECT\tUNTIL\tLEFT\n'; cat) | column -t -s $'\t'
+    fi ;;
+  "autodeploy "*)
+    die "Usage: deploys autodeploy allow <vercel|render|all> <project>|--all <hours> | allowed [--json] | revoke <vercel|render|all> <project>|--all" ;;
+
+  "guard schedule")
+    case "${3:-}" in
+      on) guard_schedule_on; echo "The guard runs every 30 minutes (log: ~/Library/Logs/DeployCenter-guard.log). Its first run only reports." ;;
+      off) guard_schedule_off; echo "The guard no longer runs by itself." ;;
+      *) if guard_scheduled; then echo on; else echo off; fi ;;
+    esac ;;
+  "guard status")
+    en=false; guard_scheduled && en=true
+    s="$(guard_state | jq --argjson en "$en" --argjson al "$(allow_list)" \
+      '{enabled:$en, lastRun:(.lastRun // null), lastDry:(.lastDry // null), firstRunPending:(.firstRunPending // false),
+        lastActions:(.lastActions // []), allowances:$al}')"
+    if [ "$json" = 1 ]; then echo "$s"
+    else
+      echo "$s" | jq -r '"guard        \(if .enabled then "on (every 30 minutes)" else "off" end)",
+        "last run     \(if .lastRun then (.lastRun | strftime("%Y-%m-%d %H:%M UTC")) + (if .lastDry then " (dry run)" else "" end) else "never" end)",
+        (.lastActions[] | "  \(.action)  \(.platform) \(.project // "")\(if .error then ": " + .error else "" end)"),
+        "allowances   \(.allowances | length)",
+        (.allowances[] | "  \(.platform) \(.project) until \(.expiresAt | strftime("%Y-%m-%d %H:%M UTC"))")'
+    fi ;;
+  "guard "*)
+    # guard [--dry-run]: auto-deploy off wherever it is on without a running allowance. For launchd.
+    dry=""
+    for a in "${@:2}"; do case "$a" in --dry-run) dry=1;; *) die "Usage: deploys guard [--dry-run] | status [--json] | schedule on|off";; esac; done
+    guard_main "$dry" ;;
+
   "autofix set-token")
     # The routine's API token (claude.ai: routine > Trigger > API > Generate token), from stdin.
     IFS= read -r key || true
@@ -1013,19 +1320,30 @@ BASH
     af_state | jq --arg r "$(af_routine)" --argjson tok "$tok" --argjson sch "$sch" \
       '{routine:(if $r == "" then null else $r end), token:$tok, scheduled:$sch,
         fires:(.fires | sort_by(-.at) | .[0:20] | map({at, project, platform, status, sha:(.sha // null),
-          session:(.session // null), error:(.error // .reason // null), redeployedSha:(.redeployedSha // null), mergedSha:(.mergedSha // null), pr:(.pr // null)}))}' ;;
+          session:(.session // null), error:(.error // .reason // null), redeployedSha:(.redeployedSha // null), mergedSha:(.mergedSha // null), pr:(.pr // .prNumber // null),
+          prNumber:(.prNumber // .pr // null), prState:(.prState // (if .mergedSha then "merged" else null end)), prUrl:(.prUrl // null)}))}' ;;
   "autofix list")
     af_state | jq -r '.fires[] | [(.at | strftime("%Y-%m-%d %H:%M")), .project, .status, ((.sha // "")[0:7]), (.session // .error // .reason // ""), (if .mergedSha then "merged \(.mergedSha[0:7]) (PR #\(.pr)), deploy by hand" elif .redeployedSha then "redeployed \(.redeployedSha[0:7]) (PR #\(.pr))" else "" end)] | @tsv' \
       | (printf 'WHEN\tPROJECT\tSTATUS\tCOMMIT\tSESSION\tREDEPLOY\n'; cat) | column -t -s $'\t' ;;
   "autofix "*)
     # autofix [--dry-run]: hand a failed build to the routine, deploy a merged fix. For launchd.
-    dry=""
-    for a in "${@:2}"; do case "$a" in --dry-run) dry=1;; *) die "Unknown option $a. Usage: deploys autofix [--dry-run] | set-token | routine [<id>] | list | status | prompt | schedule on|off";; esac; done
+    # autofix --only <platform> <project>: this one failure now (exit codes in docs/AUTOFIX.md).
+    dry=""; oplat=""; oname=""; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --dry-run) dry=1;;
+        --only) case "${2:-}" in vercel|render) ;; *) die "Usage: deploys autofix --only <vercel|render> <project>";; esac
+                [ -n "${3:-}" ] || die "Usage: deploys autofix --only <vercel|render> <project>"
+                oplat="$2"; oname="$3"; shift 2;;
+        *) die "Unknown option $1. Usage: deploys autofix [--dry-run] [--only <platform> <project>] | set-token | routine [<id>] | list | status | prompt | schedule on|off";;
+      esac; shift
+    done
     if [ -z "$dry" ]; then
-      [ -n "$(af_routine)" ] || die "No routine set. See docs/AUTOFIX.md, then: deploys autofix routine <trig_id>"
-      [ -n "$(af_token)" ] || die "No routine token. Run: pbpaste | deploys autofix set-token"
+      nr=1; [ -z "$oname" ] || nr="$AF_NO_ROUTINE"
+      [ -n "$(af_routine)" ] || { echo "${RED}Error:${PLAIN} No routine set. See docs/AUTOFIX.md, then: deploys autofix routine <trig_id>" >&2; exit "$nr"; }
+      [ -n "$(af_token)" ] || { echo "${RED}Error:${PLAIN} No routine token. Run: pbpaste | deploys autofix set-token" >&2; exit "$nr"; }
     fi
-    autofix_run "$dry" ;;
+    autofix_run "$dry" "$oplat" "$oname" ;;
 
   "providers "*)
     # providers [--json] | enable <p> | disable <p>

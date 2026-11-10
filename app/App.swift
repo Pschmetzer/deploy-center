@@ -28,24 +28,31 @@ struct SettingsView: View {
     @State private var loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
     @State private var loginError: String?
     @State private var notificationsDenied = false
+    @State private var providerError: String?
+    @State private var switching: String?
 
     private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?" }
 
     var body: some View {
-        Form {
+        ScrollViewReader { proxy in Form {
             generalSection
+            platformsSection
             deploySection
+            GuardSettings(store: store)
+            ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
             costsSection
             notificationsSection
             updatesSection
             hiddenSection
             CommandPaletteSettings()
             helpSection
-        }
+        } }
         .formStyle(.grouped)
         .frame(width: 560)
         .frame(minHeight: 480, idealHeight: 680, maxHeight: 820)
         .task {
+            // Fresh switches; a script without `deploys providers` was asked at start already.
+            if store.providersFromScript { await store.loadProviders() }
             let st = await UNUserNotificationCenter.current().notificationSettings()
             notificationsDenied = notifications && st.authorizationStatus == .denied
         }
@@ -89,6 +96,40 @@ struct SettingsView: View {
             }
             if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
             Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
+        }
+    }
+
+    /// Which platforms the main window shows. Vercel and Render are on; others are switched on here,
+    /// once the `deploys` script knows them.
+    @ViewBuilder private var platformsSection: some View {
+        Section(L("Platforms", "Plattformen")) {
+            let on = store.enabledProviders.count
+            ForEach(ProviderInfo.settingsRows(store.providers)) { row in
+                let info = row.info
+                let isOn = row.available && store.enabledProviders.contains { $0.id == info.id }
+                Toggle(isOn: Binding(get: { isOn }, set: { want in
+                    switching = info.id; providerError = nil
+                    Task { providerError = await store.setProvider(info.id, on: want); switching = nil }
+                })) {
+                    HStack(spacing: 6) {
+                        Text(info.label)
+                        if !row.available {
+                            Text(L("coming soon", "kommt bald")).font(.caption).foregroundStyle(.secondary)
+                        } else if switching == info.id {
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                }
+                // Switches need `deploys providers`; the last platform that is on stays on.
+                .disabled(!row.available || !store.providersFromScript || switching != nil || (isOn && on <= 1))
+                .accessibilityHint(row.available ? "" : L("Not available yet", "Noch nicht verfügbar"))
+            }
+            if !store.providersFromScript {
+                Text(L("This version of the deploys script always shows Vercel and Render.",
+                       "Diese Version des deploys-Skripts zeigt immer Vercel und Render."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let providerError { Text(providerError).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
         }
     }
 
@@ -206,7 +247,7 @@ struct SettingsView: View {
             Text(L("Version ", "Version ") + version
                  + L(" · no telemetry; GitHub, Vercel and Render are asked with your own logins", " · keine Telemetrie; GitHub, Vercel und Render werden mit deinen eigenen Anmeldungen gefragt"))
                 .font(.caption).foregroundStyle(.secondary)
-            AutofixSettings()
+            AutofixSettings().id("autofix")
         }
     }
 
@@ -238,6 +279,7 @@ struct DeployCenterApp: App {
     var body: some Scene {
         WindowGroup("Deploy Center", id: "main") {
             ContentView(store: store)
+                .task { await ClaudeNudge.refresh() }
                 // deploycenter://select?project=name shows and ticks a project. It never starts a build:
                 // any web page could open such a link.
                 .onOpenURL { url in
@@ -346,6 +388,10 @@ struct MenuBarContent: View {
         if auto > 0 {
             Text(L("Auto-deploy is still on for \(auto) \(auto == 1 ? "project" : "projects") (costs build minutes)",
                    "Auto-Deploy ist noch an bei \(auto) \(auto == 1 ? "Projekt" : "Projekten") (kostet Build-Minuten)"))
+        }
+        if store.fixingCount > 0 {
+            Text(L("Claude is fixing \(store.fixingCount) failed \(store.fixingCount == 1 ? "build" : "builds")",
+                   "Claude behebt \(store.fixingCount) \(store.fixingCount == 1 ? "fehlgeschlagenen Build" : "fehlgeschlagene Builds")"))
         }
         ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
         Divider()

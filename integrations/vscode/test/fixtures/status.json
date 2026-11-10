@@ -1,0 +1,8 @@
+[
+  {"platform":"vercel","name":"app-web","repo":"me/app","building":false,"state":"READY","changed":true},
+  {"platform":"render","name":"api","repo":"me/app","building":false,"state":"live","changed":true},
+  {"platform":"vercel","name":"blog","repo":"me/blog","building":false,"state":"READY","changed":true},
+  {"platform":"render","name":"worker","repo":"me/app","building":false,"state":"build_failed","changed":false},
+  {"platform":"vercel","name":"docs","repo":"other/docs","building":true,"state":"BUILDING","changed":false},
+  {"platform":"vercel","name":"site","repo":"me/site","building":false,"state":"READY","changed":false}
+]

@@ -304,6 +304,142 @@ MainActor.assumeIsolated {
     expect("undo toast is not pushed away", st.toast?.text ?? "nil", "hidden")
 }
 
+// Tabs from the enabled providers. No `deploys providers` (older script): Vercel and Render.
+func ids(_ l: [ProviderInfo]) -> [String] { l.map(\.id) }
+expect("no answer: Vercel and Render", ids(ProviderInfo.parse(nil).list), ["vercel", "render"])
+expect("no answer: not from the script", ProviderInfo.parse(nil).fromScript, false)
+expect("usage text instead of JSON: fallback", ids(ProviderInfo.parse(Data("Usage: deploys …".utf8)).list), ["vercel", "render"])
+expect("empty list: fallback", ids(ProviderInfo.parse(Data("[]".utf8)).list), ["vercel", "render"])
+let reported = ProviderInfo.parse(Data(#"""
+[{"id":"vercel","label":"Vercel","enabled":true,"caps":{"off":true,"preview":true}},
+ {"id":"render","label":"Render","enabled":true,"caps":{"off":true}},
+ {"id":"netlify","label":"Netlify","enabled":false,"caps":{}},
+ {"label":"broken"},
+ {"id":"vercel","enabled":false}]
+"""#.utf8))
+expect("script list is read, broken and doubled entries skipped", ids(reported.list), ["vercel", "render", "netlify"])
+expect("script list is from the script", reported.fromScript, true)
+expect("only enabled ones are tabs", ids(ProviderInfo.enabled(reported.list)), ["vercel", "render"])
+expect("caps: missing means no", "\(reported.list[0].caps.preview) \(reported.list[1].caps.preview)", "true false")
+let noneOn = ProviderInfo.parse(Data(#"[{"id":"vercel","enabled":false}]"#.utf8)).list
+expect("nothing enabled: still Vercel and Render", ids(ProviderInfo.enabled(noneOn)), ["vercel", "render"])
+expect("label from the id when missing", ProviderInfo.parse(Data(#"[{"id":"fly","enabled":true}]"#.utf8)).list.first?.label ?? "", "Fly")
+expect("settings: reported first, then coming soon", ProviderInfo.settingsRows(reported.list).map { "\($0.info.id):\($0.available)" }.prefix(4).joined(separator: " "),
+       "vercel:true render:true netlify:true cloudflare:false")
+expect("settings: no double of a reported one", ProviderInfo.settingsRows(reported.list).filter { $0.info.id == "netlify" }.count, 1)
+
+// Layout: 1 provider no tabs, 2–3 segmented with All, 4 and more a menu.
+expect("layout 1", TabLayout.decide(1), TabLayout.hidden)
+expect("layout 2", TabLayout.decide(2), TabLayout.segmented)
+expect("layout 3", TabLayout.decide(3), TabLayout.segmented)
+expect("layout 4", TabLayout.decide(4), TabLayout.menu)
+expect("layout 7", TabLayout.decide(7), TabLayout.menu)
+func prov(_ n: Int) -> [ProviderInfo] { (0..<n).map { ProviderInfo(id: "p\($0)", label: "P\($0)", enabled: true) } }
+expect("one provider: one tab, no All", ProviderTab.tabs(prov(1)), [ProviderTab.provider("p0")])
+expect("two providers: All first", ProviderTab.tabs(prov(2)), [ProviderTab.all, .provider("p0"), .provider("p1")])
+expect("four providers: All and four", ProviderTab.tabs(prov(4)).count, 5)
+let two = ProviderTab.tabs(ProviderInfo.builtIn)
+expect("shortcuts as before: ⌘1 Vercel, ⌘2 Render, ⌘3 All",
+       "\(ProviderTab.shortcuts(two)[.provider("vercel")] ?? 0) \(ProviderTab.shortcuts(two)[.provider("render")] ?? 0) \(ProviderTab.shortcuts(two)[.all] ?? 0)", "1 2 3")
+expect("shortcuts stop at 9", ProviderTab.shortcuts(ProviderTab.tabs(prov(12))).values.max() ?? 0, 9)
+expect("remembered tab kept", ProviderTab.resolve(.provider("render"), in: two), ProviderTab.provider("render"))
+expect("gone tab: first provider", ProviderTab.resolve(.provider("netlify"), in: two), ProviderTab.provider("vercel"))
+expect("All with one provider: that provider", ProviderTab.resolve(.all, in: ProviderTab.tabs(prov(1))), ProviderTab.provider("p0"))
+
+// Rows of one repo sit together under one header; a single row gets none.
+func named(_ n: String, _ repo: String?) -> Item {
+    var i = Item(id: n, name: n, detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil); i.repo = repo; return i
+}
+let mixedRows = [named("a", "me/x"), named("b", "me/y"), named("c", "me/x"), named("d", nil), named("e", nil)]
+let clustered = RepoGroup.cluster(mixedRows)
+expect("cluster keeps first appearance", clustered.map(\.name), ["a", "c", "b", "d", "e"])
+let groups = RepoGroup.groups(clustered)
+expect("groups", groups.map { $0.items.map(\.name).joined() }, ["ac", "b", "d", "e"])
+expect("header only for several rows", groups.map(\.showsHeader), [true, false, false, false])
+
+// One key figure per row.
+var failedRow = item(changed: true); failedRow.lastAt = Date(); failedRow.lastState = "ERROR"
+expect("failed deploy first", Row.keyFigure(failedRow), Row.KeyFigure.failed)
+var waitingRow = item(changed: true); waitingRow.lastAt = Date(); waitingRow.lastState = "READY"
+expect("then what waits", Row.keyFigure(waitingRow), Row.KeyFigure.waiting)
+var liveRow = item(changed: false); liveRow.lastAt = Date(); liveRow.lastState = "READY"
+expect("then the last deploy", Row.keyFigure(liveRow), Row.KeyFigure.lastDeploy)
+expect("never deployed", Row.keyFigure(item(changed: false)), Row.KeyFigure.never)
+
+// The summary line and the saving.
+var wait = Store.Waiting(); wait.projects = 3; wait.prs = 12
+expect("summary with saving", summaryLine(wait, saved: 41), L("12 PRs waiting · \(usd0(41)) saved", "12 PRs warten · \(usd0(41)) gespart"))
+expect("summary without saving", summaryLine(wait, saved: nil), L("12 PRs waiting", "12 PRs warten"))
+wait.prs = 0
+expect("summary without PRs", summaryLine(wait, saved: nil), L("3 projects waiting", "3 Projekte warten"))
+expect("summary when all is live", summaryLine(Store.Waiting(), saved: nil), L("Everything merged is live", "Alles Gemergte ist live"))
+let offCosts = try! JSONDecoder().decode(Costs.self, from: Data("""
+{"days":[{"day":"2026-11-01","total":10,"build":10},{"day":"2026-11-02","total":10,"build":10},{"day":"2026-11-03","total":4,"build":4},
+         {"day":"2026-11-04","total":1,"build":1},{"day":"2026-11-05","total":3,"build":3},{"day":"2026-11-06","total":9,"build":9}],
+ "projects":[],"offDay":"2026-11-03","buildsComplete":true}
+""".utf8))
+expect("saved over whole days since off", offCosts.saved(today: "2026-11-06") ?? -1, 16.0)
+expect("no saving before a whole day", offCosts.saved(today: "2026-11-04") == nil, true)
+
+// Autofix in the rows: old and new status shapes, each state and when it ends by itself.
+func fire(_ json: String) -> AutofixReport { try! JSONDecoder().decode(AutofixReport.self, from: Data(json.utf8)) }
+let oldShape = fire(#"{"routine":"trig_1","token":true,"scheduled":false,"fires":[{"at":100,"project":"app","platform":"vercel","status":"fired","session":"https://claude.ai/code/s1","pr":7,"mergedSha":null},{"broken":true}]}"#)
+expect("old status decodes, broken fire skipped", "\(oldShape.fires.count) \(oldShape.fires[0].prNumber ?? 0) \(oldShape.ready)", "1 7 true")
+let newShape = fire(#"{"routine":null,"token":false,"fires":[{"at":100,"project":"app","platform":"vercel","status":"fired","prNumber":9,"prState":"OPEN","prUrl":"https://github.com/me/app/pull/9"}]}"#)
+expect("new status decodes", "\(newShape.fires[0].prNumber ?? 0) \(newShape.fires[0].prState ?? "") \(newShape.ready)", "9 open false")
+expect("empty status decodes", fire("{}").fires.count, 0)
+
+func failedItem(_ p: Platform = .vercel) -> Item { var i = item(p, changed: false, last: "aaaaaaa1", head: "aaaaaaa1"); i.lastState = p == .vercel ? "ERROR" : "build_failed"; return i }
+typealias F = AutofixReport.Fire
+expect("fixing while failed", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "fired", session: "https://claude.ai/code/s1")) == .fixing(session: URL(string: "https://claude.ai/code/s1")), true)
+var green = failedItem(); green.lastState = "READY"
+expect("fixing ends when green again", RowAutofix.of(green, F(at: 1, project: "app", platform: "vercel", status: "fired")) == nil, true)
+expect("PR open", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, prState: "open")) == .prOpen(number: 4, url: nil), true)
+var waiting = failedItem(); waiting.changed = true; waiting.headSha = "bbbbbbb2"
+expect("merged, not live", RowAutofix.of(waiting, F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, mergedSha: "bbbbbbb2ffff")) == .merged(sha: "bbbbbbb2ffff", pr: 4, url: nil), true)
+var shipped = waiting; shipped.lastSha = "bbbbbbb2"; shipped.changed = false
+expect("merged ends once live", RowAutofix.of(shipped, F(at: 1, project: "app", platform: "vercel", status: "fired", mergedSha: "bbbbbbb2ffff")) == nil, true)
+expect("fix failed too", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "skipped")) == .handedBack, true)
+expect("PR closed unmerged", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, prState: "closed")) == .handedBack, true)
+expect("chip words", AgentChips.text(.prOpen(number: 12, url: nil)), L("Fix PR #12 open", "Fix-PR #12 offen"))
+
+// Fires name a Render service by its name, not its id; the newest one counts; the platform must match.
+let many = AutofixReport(routine: "trig_1", token: true, fires: [
+    F(at: 1, project: "app", platform: "render", status: "skipped"),
+    F(at: 5, project: "app", platform: "render", status: "fired"),
+    F(at: 9, project: "app", platform: "vercel", status: "skipped"),
+    F(at: 9, project: "srv-1", platform: "render", status: "skipped")])
+expect("render matched by name, newest", many.newest(for: failedItem(.render))?.at ?? 0, 5.0)
+
+// Allowances: epoch or ISO date; a Render one by id or name.
+let allow = try! JSONDecoder().decode(AllowanceReport.self, from: Data(#"{"allowances":[{"platform":"vercel","project":"app","expiresAt":2000000000},{"platform":"Render","project":"srv-1","expiresAt":"2033-05-18T03:33:20Z"},{"platform":"vercel","project":"x","expiresAt":"soon"}]}"#.utf8))
+expect("allowances decode, bad date skipped", allow.allowances.count, 2)
+expect("both date forms", allow.allowances[0].expiresAt == allow.allowances[1].expiresAt, true)
+expect("render allowance by id", allow.allowances[1].covers(item(.render)), true)
+expect("no guard answer decodes empty", (try? JSONDecoder().decode(AllowanceReport.self, from: Data("{}".utf8)))?.allowances.count ?? -1, 0)
+
+// A merged fix ticks its row once; unticked, the next load leaves it.
+MainActor.assumeIsolated {
+    UserDefaults.standard.removeObject(forKey: "autofixPreselected")
+    let st = Store()
+    st.items[.vercel] = [waiting]
+    st.autofix = AutofixReport(routine: "trig_1", token: true, fires: [F(at: 1, project: "app", platform: "vercel", status: "fired", mergedSha: "bbbbbbb2ffff")])
+    st.preselectMergedFixes()
+    expect("merged fix preselected", st.items[.vercel]![0].selected, true)
+    st.items[.vercel]![0].selected = false
+    st.preselectMergedFixes()
+    expect("preselected only once", st.items[.vercel]![0].selected, false)
+    expect("no button while a fix waits", st.canFixWithClaude(st.items[.vercel]![0]), false)
+    st.autofix = AutofixReport(routine: "trig_1", token: true, fires: [F(at: 1, project: "app", platform: "vercel", status: "fired")])
+    st.items[.vercel] = [failedItem()]
+    expect("menu bar count", st.fixingCount, 1)
+    st.autofix = AutofixReport(routine: "trig_1", token: true, fires: [])
+    expect("button on a failed row", st.canFixWithClaude(st.items[.vercel]![0]), true)
+    st.allowances = [AutoDeployAllowance(platform: "vercel", project: "app", expiresAt: Date().addingTimeInterval(-60))]
+    expect("expired allowance ignored", st.allowance(st.items[.vercel]![0]) == nil && st.activeAllowances.isEmpty, true)
+    UserDefaults.standard.removeObject(forKey: "autofixPreselected")
+}
+
 // Savings: the simulator and the ledger read what lib/savings.sh prints, and odd fields do not break them.
 func savingsData(_ file: String) -> Data { (try? Data(contentsOf: URL(fileURLWithPath: "tests/fixtures/savings/" + file))) ?? Data() }
 if let sim = try? JSONDecoder().decode(SimulateReport.self, from: savingsData("simulate-report.json")) {
@@ -355,6 +491,69 @@ expect("palette: the other language", paletteOrder(query: "neu", entries: palett
 expect("palette: a recent one ahead of an equal match",
        paletteOrder(query: "deploy", entries: paletteEntries, recent: ["deploy|b"]).prefix(2).joined(separator: ","), "deploy|b,deploy|a")
 expect("palette: best match first", paletteOrder(query: "log", entries: paletteEntries, recent: []).first ?? "", "log|a")
+
+// Settings > Claude: config merge and unmerge never touch other entries.
+do {
+    func js(_ s: String) -> Data { Data(s.utf8) }
+    func obj(_ d: Data?) -> NSDictionary { (try? JSONSerialization.jsonObject(with: d ?? Data())) as? NSDictionary ?? [:] }
+    let entry = ClaudeConfig.desktopEntry(node: "/opt/n/node", server: "/A B/server.mjs", deploys: "/A B/deploys", allowDeploy: false)
+    let fixture = js(#"{"mcpServers":{"other":{"command":"x","args":["a/b"],"env":{"K":"v"}}},"preferences":{"on":true,"off":false,"n":null,"f":1.5,"i":3,"u":"Grüße ✓","url":"https://a/b"}}"#)
+
+    let merged = try ClaudeConfig.merge(fixture, entry: entry)
+    let m = obj(merged)
+    expect("merge keeps other entry", (m["mcpServers"] as? NSDictionary)?["other"] as? NSDictionary == (obj(fixture)["mcpServers"] as? NSDictionary)?["other"] as? NSDictionary, true)
+    expect("merge keeps other keys", m["preferences"] as? NSDictionary == obj(fixture)["preferences"] as? NSDictionary, true)
+    expect("merge adds entry", ClaudeConfig.entry(merged)?["command"] as? String ?? "", "/opt/n/node")
+    expect("merge sets DEPLOYS_BIN", (ClaudeConfig.entry(merged)?["env"] as? [String: Any])?["DEPLOYS_BIN"] as? String ?? "", "/A B/deploys")
+    expect("deploy off by default", ClaudeConfig.allowsDeploy(ClaudeConfig.entry(merged)), false)
+    expect("slashes not escaped", String(decoding: merged, as: UTF8.self).contains(#"https://a/b"#), true)
+    let again = try ClaudeConfig.merge(merged, entry: ClaudeConfig.desktopEntry(node: "/n", server: "/s", deploys: "/d", allowDeploy: true))
+    expect("merge replaces, not duplicates", ((obj(again)["mcpServers"] as? NSDictionary)?.count ?? 0), 2)
+    expect("allow deploy written", ClaudeConfig.allowsDeploy(ClaudeConfig.entry(again)), true)
+
+    let back = try ClaudeConfig.unmerge(merged)
+    expect("unmerge restores the original", obj(back) == obj(fixture), true)
+    let alone = try ClaudeConfig.merge(js(#"{"a":[1,true]}"#), entry: entry)
+    expect("unmerge of the only entry leaves no empty mcpServers", obj(try ClaudeConfig.unmerge(alone)) == obj(js(#"{"a":[1,true]}"#)), true)
+    expect("unmerge of absent entry writes nothing", try ClaudeConfig.unmerge(fixture) == nil, true)
+    expect("unmerge of missing file writes nothing", try ClaudeConfig.unmerge(nil) == nil, true)
+
+    expect("missing file gets mcpServers", (obj(try ClaudeConfig.merge(nil, entry: entry))["mcpServers"] as? NSDictionary)?.allKeys.count ?? 0, 1)
+    expect("empty file gets mcpServers", ClaudeConfig.entry(try ClaudeConfig.merge(js("  \n"), entry: entry)) != nil, true)
+    expect("file without mcpServers", ClaudeConfig.entry(try ClaudeConfig.merge(js(#"{"a":1}"#), entry: entry)) != nil, true)
+    func refuses(_ s: String) -> String {
+        do { _ = try ClaudeConfig.merge(js(s), entry: entry); return "wrote" } catch { return "\(error)" }
+    }
+    expect("invalid JSON is refused", refuses(#"{"mcpServers": {"#), "invalidJSON")
+    expect("array top level is refused", refuses("[1,2]"), "notAnObject")
+    expect("mcpServers not an object is refused", refuses(#"{"mcpServers":[1]}"#), "serversNotAnObject")
+    expect("unmerge refuses invalid JSON", (try? ClaudeConfig.unmerge(js("{nope"))) == nil, true)
+
+    expect("claude mcp add", ClaudeConfig.codeAddArgs(node: "/n", server: "/s", deploys: "/d", allowDeploy: false).joined(separator: " "),
+           "mcp add -e DEPLOYS_BIN=/d --transport stdio --scope user deploy-center -- /n /s")
+    expect("claude mcp add with deploy", ClaudeConfig.codeAddArgs(node: "/n", server: "/s", deploys: "/d", allowDeploy: true).joined(separator: " "),
+           "mcp add -e DEPLOYS_BIN=/d -e DEPLOYS_MCP_ALLOW_DEPLOY=1 --transport stdio --scope user deploy-center -- /n /s")
+    expect("claude mcp remove", ClaudeConfig.codeRemoveArgs().joined(separator: " "), "mcp remove deploy-center --scope user")
+
+    // Files: backup, same mode, symlink kept, new file 600.
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("dc-claude-\(UUID().uuidString)").path
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: dir) }
+    let file = dir + "/c.json", link = dir + "/link.json"
+    FileManager.default.createFile(atPath: file, contents: fixture, attributes: [.posixPermissions: 0o640])
+    try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: file)
+    let bak = try ClaudeFiles.write(merged, to: link)
+    func mode(_ p: String) -> Int { ((try? FileManager.default.attributesOfItem(atPath: p))?[.posixPermissions] as? NSNumber)?.intValue ?? -1 }
+    expect("write keeps the mode", mode(file), 0o640)
+    expect("backup has the old content", bak.map { FileManager.default.contents(atPath: $0) == fixture } ?? false, true)
+    expect("backup has the same mode", bak.map(mode) ?? -1, 0o640)
+    expect("symlink stays a symlink", (try? FileManager.default.destinationOfSymbolicLink(atPath: link)) == file, true)
+    expect("written through the link", FileManager.default.contents(atPath: file) == merged, true)
+    expect("no temp file left", (try FileManager.default.contentsOfDirectory(atPath: dir)).filter { $0.hasSuffix(".tmp") }.count, 0)
+    let fresh = dir + "/new/c.json"
+    expect("new file has no backup", try ClaudeFiles.write(merged, to: fresh) == nil, true)
+    expect("new file is 600", mode(fresh), 0o600)
+} catch { expect("claude config tests ran", "\(error)", "no error") }
 
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

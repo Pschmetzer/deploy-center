@@ -71,7 +71,9 @@ vercel_off_one() {
   local p="$1" info
   info="$(vercel_call "/v9/projects/$p")" || die "Vercel project $p not found"
   # The link is the only place the repo is written down. Keep it before removing it.
-  remember_repo "$(echo "$info" | jq --arg p "$p" '{($p): (.link // {}) | {org, repo, repoId, ref:(.productionBranch // "main"), offAt:now|floor}}')"
+  remember_repo "$(echo "$info" | jq --arg p "$p" '{($p): ((.link // {}) | (if .type == "gitlab"
+      then {type:"gitlab", repo:'"$GITHOST_VERCEL_LINK_JQ"', projectId} else {org, repo, repoId} end)
+      + {ref:(.productionBranch // "main"), offAt:(now | floor)})}')"
   [ "$(echo "$info" | jq '.link != null')" = "true" ] || { echo "Vercel: $p was already manual"; return; }
   vercel api "$(with_team "/v9/projects/$p/link")" --method DELETE --dangerously-skip-permissions >/dev/null 2>&1 \
     || die "Vercel: could not disconnect $p"
@@ -94,6 +96,37 @@ vercel_off() {
   fi
 }
 
+# Auto-deploy back on: Git connected again from the remembered repo. Every push builds (and costs) again.
+vercel_on_one() {
+  local p="$1" r body err e
+  r="$(jq -r --arg p "$p" '.[$p] // {} | if .org and .repo then "\(.org)/\(.repo)" else "" end' "$REPOS")"
+  [ -n "$r" ] || die "Vercel: the repo of $p is not known, so it cannot be connected again. Say where it deploys from: deploys vercel map $p <owner/repo> [branch]"
+  body="$(mktemp)"; err="$(mktemp)"; jq -n --arg r "$r" '{type:"github", repo:$r}' > "$body"
+  if ! vercel api "$(with_team "/v9/projects/$p/link")" --method POST --input "$body" --dangerously-skip-permissions >/dev/null 2>"$err"; then
+    e="$(grep -v '^[[:space:]]*$' "$err" | tail -n 1 | cut -c1-300)"; rm -f "$body" "$err"
+    die "Vercel: could not connect $p to $r again${e:+: $e}"
+  fi
+  rm -f "$body" "$err"
+  echo "Vercel: $p deploys on push again ($r)"
+}
+
+vercel_on() {
+  local target="${1:-}" bad=0 skipped=0 names p
+  [ -n "$target" ] || die "Give a project name or --all"
+  if [ "$target" = "--all" ]; then
+    names="$(vercel_projects | jq -r '.[] | select(.link | not) | .name')"
+    for p in $names; do
+      if ! jq -e --arg n "$p" '.[$n].repo != null' "$REPOS" >/dev/null; then skipped=$((skipped + 1)); echo "Vercel: $p skipped, its repo is not known (deploys vercel map)"; continue; fi
+      ( vercel_on_one "$p" ) || bad=$((bad + 1))
+    done
+    [ "$bad" = 0 ] || die "$bad Vercel projects could not be connected (see above); the others are done"
+    echo "Done. Every remembered Vercel project deploys on push again."
+  else
+    vercel_on_one "$target"
+  fi
+}
+vercel_cli_autodeploy_on() { vercel_on "$@"; }
+
 # Raw Vercel states to the shared phase (docs/PROVIDERS.md). Unknown or none: null.
 VERCEL_PHASE='def vphase: (. // "" | ascii_upcase) as $s
   | if $s == "QUEUED" or $s == "INITIALIZING" then "queued" elif $s == "BUILDING" then "building"
@@ -108,7 +141,8 @@ vercel_start() {
   body="$(mktemp)"
   jq --arg p "$target" --arg prev "$preview" --arg sha "$sha" '.[$p] as $r | {name:$p, project:$p}
     + (if $prev == "" then {target:"production"} else {} end)
-    + {gitSource:({type:"github", ref:$r.ref} + (if $r.repoId then {repoId:$r.repoId} else {org:$r.org, repo:$r.repo} end)
+    + {gitSource:(if $r.type == "gitlab" then {type:"gitlab", ref:$r.ref, projectId:$r.projectId}
+                  else {type:"github", ref:$r.ref} + (if $r.repoId then {repoId:$r.repoId} else {org:$r.org, repo:$r.repo} end) end
                   + (if $sha != "" then {sha:$sha} else {} end))}' "$REPOS" > "$body"
   local errf; errf="$(mktemp)"
   out="$(vercel api "$(with_team /v13/deployments)" --method POST --input "$body" 2>"$errf")" \
@@ -132,11 +166,11 @@ vercel_json() {
   recent="$(vercel_call "/v6/deployments?limit=100&target=production" \
     | jq '[.deployments[]] | group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta.githubCommitSha // null)})}) | from_entries' 2>/dev/null)"
   vercel_projects | jq --slurpfile r "$REPOS" --argjson recent "${recent:-{\}}" "$VERCEL_PHASE"'[.[] |
-    ((.link // null) | if . then {repo:"\(.org)/\(.repo)", ref:"main"} else null end) as $live |
+    ((.link // null) | if . then {repo:'"$GITHOST_VERCEL_LINK_JQ"', ref:"main"} else null end) as $live |
     ($r[0][.name] // null) as $known |
     (((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // null) as $domain |
     {name, id:.name, auto:(.link != null), paused:false,
-     repo:(if $known.repo then "\($known.org)/\($known.repo)" else $live.repo end),
+     repo:(if $known.repo then (if $known.type == "gitlab" then $known.repo else "\($known.org)/\($known.repo)" end) else $live.repo end),
      ref:($known.ref // (.link.productionBranch // null)),
      deployable:($known.repo != null),
      domain:$domain,
@@ -299,6 +333,16 @@ vercel_cli_team() {
 vercel_cli_map() {
   local p="${1:?project}" r="${2:?owner/repo}" ref="${3:-main}" rid="" tmp
   case "$r" in */*) ;; *) die "Give the repo as owner/name";; esac
+  if [ "$(githost_of "$r")" = gitlab ]; then
+    # GitLab: host/group/name (or its URL). Vercel deploys it by project id.
+    local glh glp pid
+    read -r glh glp < <(githost_split "$r"); r="$glh/$glp"
+    pid="$(gitlab_project_id "$r" || true)"; [ -n "$pid" ] || die "GitLab project $r not found (is glab logged in, or GITLAB_TOKEN set?)"
+    tmp="$(mktemp)"
+    jq --arg p "$p" --arg r "$r" --arg ref "$ref" --argjson pid "$pid" \
+      '.[$p] = ({type:"gitlab", repo:$r, projectId:$pid, ref:$ref} + (if .[$p].offAt then {offAt:.[$p].offAt} else {} end))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
+    echo "Vercel: $p deploys from $r ($ref)"; return 0
+  fi
   command -v gh >/dev/null 2>&1 && rid="$(gh api "repos/$r" --jq .id 2>/dev/null || true)"
   tmp="$(mktemp)"
   # The whole entry is replaced: an old repoId would win over the new repo name.
