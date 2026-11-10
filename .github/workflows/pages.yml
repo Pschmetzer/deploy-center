@@ -1,9 +1,21 @@
 name: Website
 # Publishes site/ to GitHub Pages. Only the website; the app is never deployed from here.
+# site/docs/ is not in git: it is built here from the repo's Markdown and deploys --help, so it never drifts.
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+      # sources of site/docs/
+      - "README.md"
+      - "deploys"
+      - "docs/**/*.md"
+      - "examples/README.md"
+      - "integrations/**/*.md"
+      - "scripts/build-docs.py"
+      - "scripts/check-links.py"
+      - "scripts/docs-assets/**"
   workflow_dispatch:
 
 permissions:
@@ -23,6 +35,12 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # "Last updated" on each docs page comes from git log
+      - name: Build docs
+        run: python3 scripts/build-docs.py
+      - name: Check links
+        run: python3 scripts/check-links.py site
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

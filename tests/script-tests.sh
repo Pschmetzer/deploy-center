@@ -548,6 +548,8 @@ expect "without lib/githost.sh: GitHub counted, GitLab left unknown" \
   "$( (unset -f githost_of githost_available githost_head_of githost_pending_of githost_open_prs_of; DEPLOYS_LIB=1 . "$tmp/nolib/deploys"; set +e
        with_heads '[{"name":"gh","repo":"me/app","ref":"main","deployable":true,"lastSha":"aaaa"},{"name":"gl","repo":"gitlab.com/me/app","ref":"main","deployable":true,"lastSha":"aaaa"}]' \
        | jq -c 'map([.name, .pendingCommits, .headSha])') )" '[["gh",3,"bbbb"],["gl",null,null]]'
+# Savings (simulate, ledger) have their own file with fixtures.
+bash tests/savings-tests.sh || fails=$((fails+1))
 
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }

@@ -1,0 +1,18 @@
+{
+  "description": "After a git push, one read-only line: what is waiting to go live (deploys changed).",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git push *)",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/after-push.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
