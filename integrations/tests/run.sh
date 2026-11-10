@@ -204,6 +204,15 @@ expect "bot-only --only: every other project is left out" "$(jq -c . "$tmp/bo/ig
 mv "$tmp/details-api.keep" "$tmp/details-api.json"
 expect "bot-only: an unknown option is refused" "$(../examples/bot-only.sh --all >/dev/null 2>&1; echo $?)" 1
 
+# --- examples/telegram-waiting-bot.sh: only listed chats, read-only answers ---
+tg() { DEPLOYS_BOT_CHATS="${CHATS-42, -100}" ../examples/telegram-waiting-bot.sh --reply "$(jq -nc --argjson c "$1" --arg t "$2" '{update_id:1, message:{chat:{id:$c}, text:$t}}')"; }
+expect "telegram bot: /waiting lists what waits" "$(tg 42 /waiting)" $'Waiting to go live (2):\n• app-web (vercel): 4 commit(s)\n• api (render): changes'
+expect "telegram bot: /waiting@bot works in groups" "$(tg -100 /waiting@deploys_bot | head -1)" "Waiting to go live (2):"
+expect "telegram bot: a chat not listed gets nothing" "$(tg 7 /waiting)" ""
+expect "telegram bot: no list, no answers" "$(CHATS='' tg 42 /waiting)" ""
+expect "telegram bot: other text is ignored" "$(tg 42 'deploy app-web')" ""
+expect "telegram bot: /failed" "$(tg 42 /failed)" "No newest build failed."
+
 # --- Alfred script filter ---
 af="$(alfred/deploys-filter.sh)"
 expect "alfred: every project, as Alfred items" "$(jq -r '.items | length' <<<"$af")" 3
