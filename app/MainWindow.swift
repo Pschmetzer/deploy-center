@@ -164,7 +164,7 @@ struct ContentView: View {
     }
 
     // Split in three: one long chain of modifiers is too much for the type checker of older Xcodes.
-    var body: some View { dialogs }
+    var body: some View { dialogs.commandPalette(store: store) }
 
     private var chrome: some View {
         VStack(spacing: 0) {
@@ -173,6 +173,7 @@ struct ContentView: View {
             noticeArea
             waitingBar
             if showAll || platform == .vercel, let c = store.costs { CostBar(costs: c) }
+            SavingsEntry(store: store)
             content
                 // Over the list, not above it: the list does not jump when the line comes and goes.
                 .overlay(alignment: .top) {

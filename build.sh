@@ -53,6 +53,7 @@ cp deploys "$BUILD/Contents/Resources/deploys"
 chmod +x "$BUILD/Contents/Resources/deploys"
 # The platforms, one file each, next to the script: it finds them as providers/*.sh.
 cp -R providers "$BUILD/Contents/Resources/providers"
+mkdir -p "$BUILD/Contents/Resources/lib" && cp lib/savings.sh "$BUILD/Contents/Resources/lib/savings.sh"
 [ -f app/AppIcon.icns ] && cp app/AppIcon.icns "$BUILD/Contents/Resources/AppIcon.icns"
 
 cat > "$BUILD/Contents/Info.plist" <<PLIST

@@ -1,0 +1,4 @@
+{"jobSummaries":[
+ {"jobId":"11","commitId":"bbbb222","commitMessage":"feat: b","startTime":"2026-01-01T10:00:00Z","status":"SUCCEED","jobType":"RELEASE"},
+ {"jobId":"10","commitId":"bbbb222","commitMessage":"feat: b","startTime":"2026-01-01T09:00:00Z","status":"SUCCEED","jobType":"WEB_HOOK"}
+]}

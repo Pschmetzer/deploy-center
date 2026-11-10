@@ -1,0 +1,152 @@
+{
+  "estimate": true,
+  "kind": "simulate",
+  "currency": "USD",
+  "days": 30,
+  "generatedAt": 1769817600,
+  "method": "Estimate. Pushes to the deploy branch in the window (GitHub activity; commits where pushes cannot be read, an upper bound) are each counted as one build. Each build is priced at the project's average: minutes from its last finished builds (up to 20), dollars from Vercel billing per build over 7 days, else the team's price per build minute, else DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN. \"Once a day\" counts one build on each day that had a push. Per month = window scaled to 30 days.",
+  "teamUsdPerBuildMinute": 0.067,
+  "projects": [
+    {
+      "platform": "vercel",
+      "name": "web",
+      "auto": true,
+      "unit": "build minutes",
+      "basis": "pushes",
+      "problem": null,
+      "pushes": 6,
+      "activeDays": 2,
+      "pushesPerDay": 0.2,
+      "avgBuildMinutes": 3,
+      "buildsMeasured": 2,
+      "usdPerBuild": 0.2,
+      "priceSource": "vercel-billing",
+      "autoMonth": {
+        "builds": 6,
+        "minutes": 18,
+        "usd": 1.2
+      },
+      "dailyMonth": {
+        "builds": 2,
+        "minutes": 6,
+        "usd": 0.4
+      },
+      "savingMonth": {
+        "builds": 4,
+        "minutes": 12,
+        "usd": 0.8
+      }
+    },
+    {
+      "platform": "vercel",
+      "name": "api",
+      "auto": true,
+      "unit": "build minutes",
+      "basis": "commits",
+      "problem": null,
+      "pushes": 3,
+      "activeDays": 3,
+      "pushesPerDay": 0.1,
+      "avgBuildMinutes": 10,
+      "buildsMeasured": 1,
+      "usdPerBuild": 0.67,
+      "priceSource": "vercel-team-rate",
+      "autoMonth": {
+        "builds": 3,
+        "minutes": 30,
+        "usd": 2
+      },
+      "dailyMonth": {
+        "builds": 3,
+        "minutes": 30,
+        "usd": 2
+      },
+      "savingMonth": {
+        "builds": 0,
+        "minutes": 0,
+        "usd": 0
+      }
+    },
+    {
+      "platform": "render",
+      "name": "svc",
+      "auto": true,
+      "unit": "pipeline minutes",
+      "basis": "pushes",
+      "problem": null,
+      "pushes": 4,
+      "activeDays": 1,
+      "pushesPerDay": 0.1,
+      "avgBuildMinutes": 5,
+      "buildsMeasured": 2,
+      "usdPerBuild": null,
+      "priceSource": null,
+      "autoMonth": {
+        "builds": 4,
+        "minutes": 20,
+        "usd": null
+      },
+      "dailyMonth": {
+        "builds": 1,
+        "minutes": 5,
+        "usd": null
+      },
+      "savingMonth": {
+        "builds": 3,
+        "minutes": 15,
+        "usd": null
+      }
+    },
+    {
+      "platform": "vercel",
+      "name": "lost",
+      "auto": false,
+      "unit": "build minutes",
+      "basis": null,
+      "problem": "GitHub could not be read (is gh logged in?)",
+      "pushes": 0,
+      "activeDays": 0,
+      "pushesPerDay": 0,
+      "avgBuildMinutes": null,
+      "buildsMeasured": 0,
+      "usdPerBuild": null,
+      "priceSource": null,
+      "autoMonth": {
+        "builds": 0,
+        "minutes": null,
+        "usd": null
+      },
+      "dailyMonth": {
+        "builds": 0,
+        "minutes": null,
+        "usd": null
+      },
+      "savingMonth": {
+        "builds": 0,
+        "minutes": null,
+        "usd": null
+      }
+    }
+  ],
+  "total": {
+    "autoMonth": {
+      "usd": 3.2,
+      "vercelMinutes": 48,
+      "renderMinutes": 20,
+      "builds": 13
+    },
+    "dailyMonth": {
+      "usd": 2.4,
+      "vercelMinutes": 36,
+      "renderMinutes": 5,
+      "builds": 6
+    },
+    "savingMonth": {
+      "usd": 0.8,
+      "vercelMinutes": 12,
+      "renderMinutes": 15,
+      "builds": 7
+    },
+    "usdComplete": false
+  }
+}

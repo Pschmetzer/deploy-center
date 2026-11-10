@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to stop Netlify builds on every push · Deploy Center</title>
+<meta name="description" content="Two ways to stop Netlify building on every push: Stop builds, or an ignore command that only lets build hook builds through. Code, steps and trade-offs.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/netlify-stop-builds/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="How to stop Netlify builds on every push · Deploy Center">
+<meta property="og:description" content="Two ways to stop Netlify building on every push: Stop builds, or an ignore command that only lets build hook builds through. Code, steps and trade-offs.">
+<meta property="og:url" content="https://deploycenter.app/guides/netlify-stop-builds/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How to stop Netlify builds on every push · Deploy Center">
+<meta name="twitter:description" content="Two ways to stop Netlify building on every push: Stop builds, or an ignore command that only lets build hook builds through. Code, steps and trade-offs.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How to stop Netlify building on every push",
+  "description": "Two ways to stop Netlify building on every push: Stop builds, or an ignore command that only lets build hook builds through. Code, steps and trade-offs.",
+  "url": "https://deploycenter.app/guides/netlify-stop-builds/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/netlify-stop-builds/",
+  "datePublished": "2026-11-10",
+  "dateModified": "2026-11-10",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "What is the difference between Stop builds and the ignore command?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Stop builds stops every build, build hooks included; you deploy by uploading a build with the CLI. The ignore command cancels the builds it rejects, so you can still let build hook builds through."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Which exit code skips a Netlify build?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Exit code 0 cancels the build. Exit code 1 lets it run."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "How do I know a build came from a build hook?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Netlify sets INCOMING_HOOK_TITLE, INCOMING_HOOK_URL and INCOMING_HOOK_BODY for builds triggered by a build hook. For a push they are empty."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does Deploy Center support Netlify?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Not yet. Vercel and Render are supported today; Netlify support is coming."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Stop Netlify builds",
+    "item": "https://deploycenter.app/guides/netlify-stop-builds/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+</div></nav>
+
+<main class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>How to stop Netlify building on every push</h1>
+<p class="answer">Netlify has two ways: turn on <b>Stop builds</b>, which stops every build including build hooks, or add an <code>ignore</code> command to <code>netlify.toml</code> that skips every build not started by a build hook. Stop builds is simplest if you deploy from your machine; the ignore command keeps Netlify building, but only when you call the hook.</p>
+<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<div class="tablewrap"><table>
+  <thead><tr><th></th><th>Stop builds</th><th><code>ignore</code> + build hook</th></tr></thead>
+  <tbody>
+    <tr><td>Git pushes</td><td>No build</td><td>Cancelled by the ignore command</td></tr>
+    <tr><td>Build hook</td><td>No build</td><td>Builds</td></tr>
+    <tr><td>How you deploy</td><td><code>netlify deploy --prod</code> from your machine or CI</td><td>One POST to the hook URL; Netlify builds</td></tr>
+    <tr><td>Where it is set</td><td>Site settings (or API)</td><td><code>netlify.toml</code> in the repository</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="stop-builds">1. Stop builds</h2>
+<ol>
+  <li>Open the site, then <b>Site configuration → Build &amp; deploy → Continuous deployment</b>.</li>
+  <li>Under <b>Build settings</b>, choose <b>Configure</b>, then <b>Stop builds</b>, and save.</li>
+  <li>Build locally or in CI and upload the result:</li>
+</ol>
+<pre><code class="language-bash">netlify build
+netlify deploy --prod</code></pre>
+<p>The same switch is the <code>stop_builds</code> field in the site's build settings in the Netlify API:</p>
+<pre><code class="language-bash">curl -s -X PATCH "https://api.netlify.com/api/v1/sites/$SITE_ID" \
+  -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"build_settings":{"stop_builds":true}}'</code></pre>
+<div class="note"><p><b>Trade-offs.</b> Netlify will not build anything, not even from a build hook, so deploy previews stop too. You build on your own machine or in CI.</p></div>
+
+<h2 id="ignore">2. An ignore command that only lets build hooks through</h2>
+<p>Netlify runs the <code>ignore</code> command before each build: <b>exit 0 cancels</b>, <b>exit 1 builds</b>. For builds started by a build hook, Netlify sets <code>INCOMING_HOOK_TITLE</code> (and <code>INCOMING_HOOK_URL</code>, <code>INCOMING_HOOK_BODY</code>); for pushes it is empty. So this skips everything except hook builds:</p>
+<pre><code class="language-toml"><span class="c"># netlify.toml</span>
+[build]
+  ignore = 'test -z "$INCOMING_HOOK_TITLE"'</code></pre>
+<p><code>test -z</code> exits 0 when the variable is empty (a push: skip) and 1 when it is set (a hook: build). Single quotes make it a literal TOML string, so the double quotes reach the shell unchanged.</p>
+<ol>
+  <li>Create a hook: <b>Site configuration → Build &amp; deploy → Continuous deployment → Build hooks → Add build hook</b>. Pick the branch to build.</li>
+  <li>Commit the <code>netlify.toml</code> above. That push is the last one that builds by itself.</li>
+  <li>Deploy when you want:</li>
+</ol>
+<pre><code class="language-bash">curl -s -X POST -d '{}' "https://api.netlify.com/build_hooks/$HOOK_ID"</code></pre>
+<div class="note"><p><b>Trade-offs.</b> Each push still shows up as a cancelled deploy. A deploy started with <b>Trigger deploy</b> in the Netlify UI has no hook title, so this rule cancels it too; use the hook. Deploy previews for pull requests are skipped as well. The hook URL is a secret: anyone with it can start a build.</p></div>
+
+<h2>Only some branches</h2>
+<p>To keep deploy previews and only stop production builds from pushes, check the context Netlify sets in <code>CONTEXT</code>:</p>
+<pre><code class="language-toml">[build]
+  ignore = '[ "$CONTEXT" = production ] &amp;&amp; [ -z "$INCOMING_HOOK_TITLE" ]'</code></pre>
+
+<h2>Netlify in Deploy Center</h2>
+<p><a href="/">Deploy Center</a> supports Vercel and Render today. Netlify support is coming, built on the build hook approach above, so the app can show what is waiting and deploy it with one click. Follow the <a href="https://github.com/Pschmetzer/deploy-center">repository</a> for the release.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>What is the difference between Stop builds and the ignore command?</summary><p>Stop builds stops every build, build hooks included; you deploy by uploading a build with the CLI. The ignore command cancels the builds it rejects, so you can still let build hook builds through.</p></details>
+  <details><summary>Which exit code skips a Netlify build?</summary><p>Exit code 0 cancels the build. Exit code 1 lets it run.</p></details>
+  <details><summary>How do I know a build came from a build hook?</summary><p>Netlify sets <code>INCOMING_HOOK_TITLE</code>, <code>INCOMING_HOOK_URL</code> and <code>INCOMING_HOOK_BODY</code> for builds triggered by a build hook. For a push they are empty.</p></details>
+  <details><summary>Does Deploy Center support Netlify?</summary><p>Not yet. Vercel and Render are supported today; Netlify support is coming.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click and deploys what changed when you decide. Free and open source for macOS; Netlify support is coming.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify.</p>
+</div></footer>
+</body>
+</html>

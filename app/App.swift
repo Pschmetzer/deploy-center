@@ -39,6 +39,7 @@ struct SettingsView: View {
             notificationsSection
             updatesSection
             hiddenSection
+            CommandPaletteSettings()
             helpSection
         }
         .formStyle(.grouped)
@@ -116,6 +117,7 @@ struct SettingsView: View {
                     // A budget below zero means nothing; it becomes "off".
                     .onChange(of: monthlyBudget) { _, v in if v < 0 || !v.isFinite { monthlyBudget = 0 } }
             }
+            SavingsLink()
         }
     }
 

@@ -40,23 +40,19 @@ cap_call() {  # cap_call <p> <cap>
 cli() {  # cli <p> deploys-args... (stdout only)
   local p="$1"; shift
   # shellcheck source=/dev/null
-  ( . "tests/fixtures/$p/env"; env -u DEPLOYS_LIB PATH="$STUBPATH" DEPLOYS_CONFIG="$tmp/config-$p" HOME="$tmp" NO_COLOR=1 /bin/bash ./deploys "$@" 2>"$tmp/err" </dev/null )
+  ( [ ! -f "tests/fixtures/$p/env" ] || . "tests/fixtures/$p/env"; env -u DEPLOYS_LIB PATH="$STUBPATH" DEPLOYS_CONFIG="$tmp/config-$p" HOME="$tmp" NO_COLOR=1 /bin/bash ./deploys "$@" 2>"$tmp/err" </dev/null )
 }
 lib() {  # lib <p> <shell code>: the code with deploys sourced (DEPLOYS_LIB=1)
   local p="$1"; shift
   # shellcheck source=/dev/null
-  ( . "tests/fixtures/$p/env"; PATH="$STUBPATH" DEPLOYS_CONFIG="$tmp/config-$p" HOME="$tmp" NO_COLOR=1 DEPLOYS_LIB=1 \
+  ( [ ! -f "tests/fixtures/$p/env" ] || . "tests/fixtures/$p/env"; PATH="$STUBPATH" DEPLOYS_CONFIG="$tmp/config-$p" HOME="$tmp" NO_COLOR=1 DEPLOYS_LIB=1 \
       /bin/bash -c '. ./deploys; set +e; '"$1" 2>"$tmp/err" </dev/null )
 }
 
 for f in providers/*.sh; do
   p="$(basename "$f" .sh)"
-  [ -d "tests/fixtures/$p" ] || { fail "$p: fixtures" "tests/fixtures/$p is missing"; continue; }
   rm -rf "$tmp/config-$p"; mkdir -p "$tmp/config-$p"
-  [ -d "tests/fixtures/$p/config" ] && cp -R "tests/fixtures/$p/config"/. "$tmp/config-$p/"
   CONTRACT_ID="" CONTRACT_NAME="" CONTRACT_DEPLOY=""
-  # shellcheck source=/dev/null
-  . "tests/fixtures/$p/env"
 
   missing="$(lib "$p" 'for v in '"$FUNCS"'; do declare -F "'"$p"'_$v" >/dev/null || echo "$v"; done' | tr '\n' ' ')"
   expect "$p: every contract function exists" "$missing" ""
@@ -67,6 +63,15 @@ for f in providers/*.sh; do
        (.keyEnv | type == "array" and all(type == "string")), (.keychain == null or (.keychain | type == "string")),
        ((.defaultOn // false) | type == "boolean"),
        (.caps | type == "object" and ([.off, .sha, .cancel, .rollback, .logs, .preview] | all(type == "boolean")))] | all' 2>&1)" "true"
+  expect "$p: _meta is one line (deploys greps it)" "$(printf '%s\n' "$meta" | grep -c .)" "1"
+  [ "$p" = vercel ] || [ "$p" = render ] || expect "$p: off by default" "$(echo "$meta" | jq -c '.defaultOn // false')" "false"
+
+  # The checks below need contract fixtures (tests/fixtures/<p>/env, expect.json, one file per
+  # call). A provider without them still has its own tests/providers/<p>.sh; it is named here.
+  if [ ! -f "tests/fixtures/$p/env" ]; then echo "skip $p: no contract fixtures (tests/fixtures/$p/env)"; continue; fi
+  [ -d "tests/fixtures/$p/config" ] && cp -R "tests/fixtures/$p/config"/. "$tmp/config-$p/"
+  # shellcheck source=/dev/null
+  . "tests/fixtures/$p/env"
 
   : > "$CALLS"
   out="$(cli "$p" "$p" json)"; rc=$?

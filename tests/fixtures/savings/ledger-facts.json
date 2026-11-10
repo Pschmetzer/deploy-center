@@ -1,0 +1,20 @@
+{
+  "now": 1769817600,
+  "days": 30,
+  "costs": {"buildsComplete": true, "projects": [{"name": "web", "build": 1.4, "builds": 7}]},
+  "rates": {"vercelUsdPerMinute": null, "renderUsdPerMinute": null},
+  "projects": [
+    {"platform": "vercel", "name": "web", "id": "web", "repo": "me/web", "ref": "main", "auto": false, "offAt": 1768867200,
+     "pushes": {"basis": "pushes", "list": [
+       {"at": 1768800000, "sha": "b0"},
+       {"at": 1768900000, "sha": "a1"}, {"at": 1769000000, "sha": "a2"}, {"at": 1769100000, "sha": "a3"},
+       {"at": 1769200000, "sha": "a4"}, {"at": 1769300000, "sha": "a5"}]},
+     "builds": {"minutes": [2, 4], "built": [{"at": 1768700000, "sha": "b0"}, {"at": 1769400000, "sha": "a5"}]}},
+    {"platform": "render", "name": "svc", "id": "srv-x", "repo": "me/svc", "ref": "prod", "auto": false, "offAt": 1769299200,
+     "pushes": {"basis": "pushes", "list": [
+       {"at": 1769300000, "sha": "r1"}, {"at": 1769400000, "sha": "r2"}, {"at": 1769500000, "sha": "r3"}]},
+     "builds": {"minutes": [5, 5], "built": [{"at": 1769600000, "sha": "r3"}]}},
+    {"platform": "vercel", "name": "api", "id": "api", "repo": "me/api", "ref": "main", "auto": true, "offAt": null,
+     "pushes": null, "builds": null}
+  ]
+}
