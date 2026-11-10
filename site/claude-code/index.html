@@ -121,12 +121,13 @@
 </script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <nav class="top" aria-label="Main"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
   <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
 </div></nav>
 
-<main class="wrap narrow"><article>
+<main id="main" class="wrap narrow"><article>
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Deploy Center + Claude Code: let the agent push, you decide what ships</h1>
 <p class="answer">Claude Code pushes many small commits, and with auto-deploy on, each one is a paid build on Vercel or Render. Deploy Center turns those builds off, ships everything waiting in one deploy when you decide, and hands failed builds back to Claude to fix.</p>

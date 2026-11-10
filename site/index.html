@@ -31,7 +31,7 @@
 <link rel="manifest" href="site.webmanifest">
 <link rel="preload" as="image" type="image/webp" href="img/app-dark-1800.webp" imagesrcset="img/app-dark-900.webp 900w, img/app-dark-1800.webp 1800w" imagesizes="(max-width: 1040px) 100vw, 1000px">
 <script type="application/ld+json">
-[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Deploy Center", "description": "Free, open-source Mac app and CLI that turns off auto-deploy on Vercel, Render and other hosts, deploys what changed when you decide, and hands failed builds to Claude for a fix PR.", "operatingSystem": "macOS 15 or later; CLI on macOS, Linux and WSL", "applicationCategory": "DeveloperApplication", "softwareVersion": "0.9.0", "image": "https://deploycenter.app/img/og.png", "screenshot": "https://deploycenter.app/img/app-dark-1800.webp", "featureList": ["Turn off auto-deploy on Vercel and Render in one click", "Opt-in hosts: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, any deploy hook", "Commits and pull requests waiting to go live, from GitHub or GitLab", "Deploy, preview deploy and rollback", "Autofix: a failed build goes to a Claude Code routine that opens a fix PR", "Claude in the app: explain a failure, release notes, is this safe to ship", "Connect Claude Desktop and Claude Code; MCP server and Claude Code plugin", "Deploy only when CI is green, site check with automatic rollback, deploy windows, risk score", "Auto-deploy guard", "Build costs, savings simulator and ledger", "Mac widgets, menu bar and command palette", "Team mode without a server: shared config, observers, two-person rule", "bash CLI for Linux, WSL and CI"], "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/licenses/MIT", "url": "https://deploycenter.app/", "downloadUrl": "https://github.com/Pschmetzer/deploy-center/releases/latest", "releaseNotes": "https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md", "codeRepository": "https://github.com/Pschmetzer/deploy-center", "sameAs": ["https://github.com/Pschmetzer/deploy-center"], "author": {"@type": "Person", "name": "Patrick Schmetzer", "url": "https://github.com/Pschmetzer"}, "isAccessibleForFree": true},
+[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Deploy Center", "description": "Free, open-source Mac app and CLI that turns off auto-deploy on Vercel, Render and other hosts, deploys what changed when you decide, and hands failed builds to Claude for a fix PR.", "operatingSystem": "macOS 15 or later; CLI on macOS, Linux and WSL", "applicationCategory": "DeveloperApplication", "softwareVersion": "0.9.1", "image": "https://deploycenter.app/img/og.png", "screenshot": "https://deploycenter.app/img/app-dark-1800.webp", "featureList": ["Turn off auto-deploy on Vercel and Render in one click", "Opt-in hosts: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, any deploy hook", "Commits and pull requests waiting to go live, from GitHub or GitLab", "Deploy, preview deploy and rollback", "Autofix: a failed build goes to a Claude Code routine that opens a fix PR", "Claude in the app: explain a failure, release notes, is this safe to ship", "Connect Claude Desktop and Claude Code; MCP server and Claude Code plugin", "Deploy only when CI is green, site check with automatic rollback, deploy windows, risk score", "Auto-deploy guard", "Build costs, savings simulator and ledger", "Mac widgets, menu bar and command palette", "Team mode without a server: shared config, observers, two-person rule", "bash CLI for Linux, WSL and CI"], "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/licenses/MIT", "url": "https://deploycenter.app/", "downloadUrl": "https://github.com/Pschmetzer/deploy-center/releases/latest", "releaseNotes": "https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md", "codeRepository": "https://github.com/Pschmetzer/deploy-center", "sameAs": ["https://github.com/Pschmetzer/deploy-center"], "author": {"@type": "Person", "name": "Patrick Schmetzer", "url": "https://github.com/Pschmetzer"}, "isAccessibleForFree": true},
 {"@context": "https://schema.org", "@type": "HowTo", "name": "Turn off auto-deploy and deploy by hand with Deploy Center", "step": [{"@type": "HowToStep", "name": "Connect", "text": "Use your vercel CLI login, a Render API key in the macOS keychain, and gh or glab for GitHub or GitLab."}, {"@type": "HowToStep", "name": "Turn auto-deploy off", "text": "One click for every project. The simulator shows the expected saving first; the guard keeps auto-deploy off."}, {"@type": "HowToStep", "name": "Deploy when you want", "text": "Select all changed, then Deploy. Optionally only when CI is green, with a site check and automatic rollback."}]},
 {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
 {"@type": "Question", "name": "Is it really free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. MIT license, no paid tier, no account. The code is on GitHub."}},
@@ -45,6 +45,7 @@
 {"@type": "Question", "name": "Can my team use it?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, without a server: a shared deploy-center.json in each repo, observer mode, and an optional two-person rule for production deploys."}},
 {"@type": "Question", "name": "Windows or Linux?", "acceptedAnswer": {"@type": "Answer", "text": "The app is macOS only. The deploys CLI is bash and installs on Linux, WSL and in CI with curl -fsSL https://deploycenter.app/install.sh | sh."}}]}]
 </script>
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <style>
 :root{color-scheme:dark;
   --bg:#0b0d12; --bg2:#10131a; --card:#151924; --line:#232838; --text:#e9ecf3; --muted:#a3abbd;
@@ -287,15 +288,19 @@ code{font:.88em ui-monospace,Menlo,monospace;background:var(--card);border:1px s
       <button type="button" role="tab" id="t-app" aria-controls="p-app" aria-selected="true">Mac app (Homebrew)</button>
       <button type="button" role="tab" id="t-cli" aria-controls="p-cli" aria-selected="false" tabindex="-1">CLI (Linux, WSL, CI)</button>
       <button type="button" role="tab" id="t-claude" aria-controls="p-claude" aria-selected="false" tabindex="-1">Claude Code plugin</button>
+      <button type="button" role="tab" id="t-zip" aria-controls="p-zip" aria-selected="false" tabindex="-1">Download (zip)</button>
     </div>
     <div class="code" role="tabpanel" id="p-app" aria-labelledby="t-app"><pre>brew tap pschmetzer/tap &amp;&amp; brew trust pschmetzer/tap
-brew install --cask deploy-center</pre><button type="button" data-copy="brew tap pschmetzer/tap &amp;&amp; brew trust pschmetzer/tap &amp;&amp; brew install --cask deploy-center">Copy</button></div>
-    <div class="code" role="tabpanel" id="p-cli" aria-labelledby="t-cli" hidden><pre>curl -fsSL https://deploycenter.app/install.sh | sh</pre><button type="button" data-copy="curl -fsSL https://deploycenter.app/install.sh | sh">Copy</button></div>
+brew install --cask deploy-center</pre><button type="button" data-copy="brew tap pschmetzer/tap &amp;&amp; brew trust pschmetzer/tap &amp;&amp; brew install --cask deploy-center" aria-label="Copy the Homebrew command">Copy</button></div>
+    <div class="code" role="tabpanel" id="p-cli" aria-labelledby="t-cli" hidden><pre>curl -fsSL https://deploycenter.app/install.sh | sh</pre><button type="button" data-copy="curl -fsSL https://deploycenter.app/install.sh | sh" aria-label="Copy the CLI install command">Copy</button></div>
     <div class="code" role="tabpanel" id="p-claude" aria-labelledby="t-claude" hidden><pre>/plugin marketplace add Pschmetzer/deploy-center
 /plugin install deploy-center@deploy-center</pre><button type="button" data-copy="/plugin marketplace add Pschmetzer/deploy-center
-/plugin install deploy-center@deploy-center">Copy</button></div>
+/plugin install deploy-center@deploy-center" aria-label="Copy the Claude Code plugin commands">Copy</button></div>
+    <div class="code" role="tabpanel" id="p-zip" aria-labelledby="t-zip" hidden><pre># the zip from GitHub releases, unzip, drag to Applications
+# then compare with the SHA-256 in the release notes:
+shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip</pre><button type="button" data-copy="shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip" aria-label="Copy the checksum command">Copy</button></div>
   </div>
-  <p class="small" id="version">Version 0.9.0 · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">What’s new</a> · <a href="https://github.com/Pschmetzer/deploy-center/releases">All releases</a> · <a href="/docs/verify/">Verify a release</a></p>
+  <p class="small" id="version">Version 0.9.1 · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">What’s new</a> · <a href="https://github.com/Pschmetzer/deploy-center/releases">All releases</a> · <a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download the zip</a> · <a href="/docs/verify/">Verify a release</a></p>
   <span class="sr" aria-live="polite" id="copied"></span>
 
   <figure class="shot">
@@ -611,7 +616,7 @@ brew install --cask deploy-center</pre><button type="button" data-copy="brew tap
   function select(t){tabs.forEach(x=>{const on=x===t;x.setAttribute('aria-selected',on);x.tabIndex=on?0:-1;document.getElementById(x.getAttribute('aria-controls')).hidden=!on})}
   tabs.forEach((t,i)=>{
     t.addEventListener('click',()=>select(t));
-    t.addEventListener('keydown',e=>{const d=e.key==='ArrowRight'?1:e.key==='ArrowLeft'?-1:0;if(d){const n=tabs[(i+d+tabs.length)%tabs.length];select(n);n.focus();e.preventDefault()}});
+    t.addEventListener('keydown',e=>{const d=e.key==='ArrowRight'?1:e.key==='ArrowLeft'?-1:0;const n=d?tabs[(i+d+tabs.length)%tabs.length]:e.key==='Home'?tabs[0]:e.key==='End'?tabs[tabs.length-1]:null;if(n){select(n);n.focus();e.preventDefault()}});
   });
 })();
 // mobile menu: close after a link is chosen
@@ -653,6 +658,11 @@ document.querySelectorAll('.menu .panel a').forEach(a=>a.addEventListener('click
     if(!paused&&started){clearTimeout(timer);if(n>=PUSHES)reset();step()}
   });
   if(reduce){still();ctl.hidden=true;return}
+  // a hidden tab pauses the loop; it goes on when the tab is visible again (unless paused by hand)
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden){clearTimeout(timer);timer=null}
+    else if(started&&!paused&&!timer){if(n>=PUSHES)reset();step()}
+  });
   const io=new IntersectionObserver(es=>{if(es[0].isIntersecting){io.disconnect();started=true;step()}},{threshold:.3});
   io.observe(A);
 })();

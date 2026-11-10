@@ -139,12 +139,13 @@
 </script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <nav class="top" aria-label="Main"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
   <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/" aria-current="page">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
 </div></nav>
 
-<main class="wrap narrow"><article>
+<main id="main" class="wrap narrow"><article>
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Vercel build cost calculator</h1>
 <p class="answer">Auto-deploy costs roughly <b>projects × pushes per day × cost per build × working days</b> a month. Deploying by hand costs the same formula with your number of deploys instead of your number of pushes; move the sliders to see both with your numbers.</p>
@@ -152,18 +153,19 @@
 
 <div class="calc">
   <div class="card">
-    <div class="field"><label for="p">Projects connected to Git <output id="po"></output></label><input id="p" type="range" min="1" max="80" value="20"></div>
-    <div class="field"><label for="u">Pushes per project per working day <output id="uo"></output></label><input id="u" type="range" min="1" max="60" value="8"><div class="hint">Count each push, not each commit. AI coding agents often push after every step.</div></div>
+    <div class="field"><label for="p">Projects connected to Git <output id="po"></output></label><input id="p" type="range" min="1" max="200" value="20"></div>
+    <div class="field"><label for="u">Pushes per project per working day <output id="uo"></output></label><input id="u" type="range" min="1" max="100" value="8"><div class="hint">Count each push, not each commit. AI coding agents often push after every step.</div></div>
     <div class="field"><label for="c">Average cost per build <output id="co"></output></label><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In cents. Your real number: last month's build cost divided by the number of builds, on your Vercel or Render usage page.</div></div>
     <div class="field"><label for="d">Deploys by hand per project per day <output id="do"></output></label><input id="d" type="range" min="1" max="5" value="1"></div>
   </div>
-  <div class="card result" aria-live="polite">
+  <div class="card result">
     <div class="hint">You would save about</div>
     <div class="big" id="save">$0</div>
     <div class="hint">a month (22 working days)</div>
     <div class="row"><span>With auto-deploy</span><b id="now">$0</b></div>
     <div class="row"><span>Deploying by hand</span><b id="after">$0</b></div>
     <div class="share"><a class="btn" id="tweet" target="_blank" rel="noopener">Share your number</a></div>
+    <span class="sr" role="status" id="said"></span>
   </div>
 </div>
 
@@ -248,6 +250,7 @@ saving             = with auto-deploy − deploying by hand</code></pre>
   const q=new URLSearchParams(location.search);
   ids.forEach(id=>{const v=+q.get(id),el=$(id); if(v>=+el.min&&v<=+el.max) el.value=v;});
   const fmt=v=>'$'+Math.round(v).toLocaleString('en-US');
+  let sayTimer=null;
   function calc(){
     const p=+$('p').value,u=+$('u').value,c=+$('c').value/100,d=+$('d').value;
     $('po').textContent=p;$('uo').textContent=u;$('co').textContent='$'+c.toFixed(2);$('do').textContent=d;
@@ -256,6 +259,9 @@ saving             = with auto-deploy − deploying by hand</code></pre>
     const link='https://deploycenter.app/vercel-build-cost-calculator/?'+ids.map(id=>id+'='+$(id).value).join('&');
     const t=`Auto-deploy would cost me about ${fmt(now)}/month in builds. Deploying by hand: ${fmt(after)}. Calculated with Deploy Center`;
     $('tweet').href='https://x.com/intent/post?text='+encodeURIComponent(t)+'&url='+encodeURIComponent(link);
+    // one short sentence for screen readers, once the slider rests, not on every step
+    clearTimeout(sayTimer);
+    sayTimer=setTimeout(()=>{$('said').textContent=`You would save about ${fmt(save)} a month: ${fmt(now)} with auto-deploy, ${fmt(after)} by hand.`},700);
   }
   ids.forEach(id=>$(id).addEventListener('input',calc));calc();
 })();

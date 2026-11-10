@@ -127,12 +127,13 @@
 </script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <nav class="top" aria-label="Main"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
   <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
 </div></nav>
 
-<main class="wrap narrow"><article>
+<main id="main" class="wrap narrow"><article>
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Vercel Ignored Build Step: script examples and pitfalls</h1>
 <p class="answer">The Ignored Build Step is a command Vercel runs before each Git build: <b>exit code 0 skips</b> the build, <b>exit code 1 builds</b>. Set it under Project → Settings → Git → Ignored Build Step, or as <code>ignoreCommand</code> in <code>vercel.json</code>.</p>

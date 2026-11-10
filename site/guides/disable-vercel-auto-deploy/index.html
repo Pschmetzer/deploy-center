@@ -135,12 +135,13 @@
 </script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <nav class="top" aria-label="Main"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
   <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
 </div></nav>
 
-<main class="wrap narrow"><article>
+<main id="main" class="wrap narrow"><article>
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>How to disable Vercel auto-deploy</h1>
 <p class="answer">To stop Vercel from deploying on every push, disconnect the Git repository in Project → Settings → Git, set <code>git.deploymentEnabled</code> to <code>false</code> in <code>vercel.json</code>, or add an Ignored Build Step that cancels the builds you do not want. Disconnecting stops every Git build; the other two keep the repository connected and skip builds by rule.</p>

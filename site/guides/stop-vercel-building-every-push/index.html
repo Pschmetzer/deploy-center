@@ -127,12 +127,13 @@
 </script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <nav class="top" aria-label="Main"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
   <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
 </div></nav>
 
-<main class="wrap narrow"><article>
+<main id="main" class="wrap narrow"><article>
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>How to stop Vercel building on every push</h1>
 <p class="answer">Vercel builds every connected project for every commit you push, on every branch: production on the production branch, a preview everywhere else. To build less, skip previews nobody looks at, skip projects a commit did not touch, and let one deploy cover many commits instead of one build per push.</p>

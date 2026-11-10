@@ -40,11 +40,15 @@
 
 ## Optional
 
-- [Turning auto-deploy off, and back on](https://github.com/Pschmetzer/deploy-center/blob/main/docs/AUTO-DEPLOY.md)
-- [Autofix reference](https://github.com/Pschmetzer/deploy-center/blob/main/docs/AUTOFIX.md)
+- [Turning auto-deploy off, and back on](https://deploycenter.app/docs/auto-deploy/)
+- [Autofix reference](https://deploycenter.app/docs/autofix/)
 - [MCP server for AI agents](https://github.com/Pschmetzer/deploy-center/blob/main/integrations/mcp/README.md): Claude Code, Cursor, Codex setup.
-- [FAQ](https://github.com/Pschmetzer/deploy-center/blob/main/docs/FAQ.md)
+- [FAQ](https://deploycenter.app/docs/faq/)
 - [Claude in the app](https://github.com/Pschmetzer/deploy-center/blob/main/docs/CLAUDE.md): explain a failure, release notes, ship check, with your own key.
 - [Safe deploys](https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAFE-DEPLOY.md)
 - [Team mode](https://github.com/Pschmetzer/deploy-center/blob/main/docs/TEAM.md)
 - [Savings](https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAVINGS.md)
+- [GitLab as a source](https://github.com/Pschmetzer/deploy-center/blob/main/docs/GITLAB.md)
+- [Troubleshooting](https://deploycenter.app/docs/troubleshooting/)
+- [CLI reference](https://deploycenter.app/docs/cli/)
+- [Uninstall](https://deploycenter.app/docs/uninstall/)
