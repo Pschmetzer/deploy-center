@@ -51,8 +51,14 @@ outputs:
   projects:
     description: The full JSON array, from deploys changed --json.
     value: ${{ steps.changed.outputs.projects }}
+  started:
+    description: How many deploys were started in this run.
+    value: ${{ steps.deploy.outputs.started || '0' }}
+  failed:
+    description: How many failed to start (the step fails then).
+    value: ${{ steps.deploy.outputs.failed || '0' }}
   deployed:
-    description: '"true" when every deploy was started in this run (a failed start fails the step).'
+    description: '"true" when every deploy was started and every state could be read.'
     value: ${{ steps.deploy.outputs.deployed || 'false' }}
 
 runs:
@@ -120,6 +126,13 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
         set -euo pipefail
-        # Exits 1 when a start failed (or a state could not be read): the step fails then.
-        "$DEPLOYS" deploy-changed --yes </dev/null
-        echo "deployed=true" >> "$GITHUB_OUTPUT"
+        # Exits 1 when a start failed or a state could not be read; the outputs are written first.
+        rc=0; out="$("$DEPLOYS" deploy-changed --yes </dev/null)" || rc=$?
+        echo "$out"
+        line="$(echo "$out" | grep -E '^[0-9]+ started, [0-9]+ failed to start' | tail -n 1)"
+        started="$(echo "$line" | sed -E 's/^([0-9]+) started.*/\1/')"; failed="$(echo "$line" | sed -E 's/.*, ([0-9]+) failed.*/\1/')"
+        {
+          echo "started=${started:-0}"; echo "failed=${failed:-0}"
+          if [ "$rc" = 0 ]; then echo "deployed=true"; else echo "deployed=false"; fi
+        } >> "$GITHUB_OUTPUT"
+        exit "$rc"

@@ -24,12 +24,15 @@ JSON
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/deploys" <<SH
 #!/bin/bash
+[ -n "\${FAKE_SLEEP:-}" ] && [ "\$1" = vercel ] && sleep "\$FAKE_SLEEP"
 case "\$*" in
   "vercel list --json") cat "$tmp/vercel.json" ;;
   "render list --json") cat "$tmp/render.json" ;;
   "doctor") echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
   "changed --json") jq -s 'add | map(select(.changed))' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
-  "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"; exit "\${FAKE_RC:-0}" ;;
+  "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"
+    if [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
+    exit "\${FAKE_RC:-0}" ;;
   *) echo "unexpected: \$*" >&2; exit 1 ;;
 esac
 SH
@@ -94,6 +97,11 @@ out="$(push "refs/heads/feature $s1 refs/heads/feature $z" git@github.com:me/app
 expect "pre-push: Render ignores other branches" "$out" "exit=0"
 out="$(push "(delete) $z refs/heads/main $s1" git@github.com:me/site.git)"
 expect "pre-push: a deleted branch builds nothing" "$out" "exit=0"
+start=$(date +%s)
+out="$(FAKE_SLEEP=30 DEPLOYS_PREPUSH_TIMEOUT=1 push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
+contains "pre-push: a CLI that does not answer lets the push go" "$out" $'push not checked.\nexit=0'
+[ $(( $(date +%s) - start )) -lt 6 ] && ok "pre-push: gives up after the timeout" || fail "pre-push: gives up after the timeout" "took too long"
+pgrep -f "sleep 30" >/dev/null && fail "pre-push: the stuck CLI is stopped" "still running" || ok "pre-push: the stuck CLI is stopped"
 git -C "$tmp/repo" config deploys.prepush.block true
 out="$(push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
 contains "pre-push: blocks only when configured" "$out" "exit=1"
@@ -114,9 +122,9 @@ if command -v ruby >/dev/null; then
   expect "action: projects is the JSON list" "$(sed -n '/^projects<</,$p' "$tmp/out" | sed -n 2p | jq -c 'map(.name)')" '["app-web","api"]'
   FAKE_RC=1 run_step changed.sh; expect "action: an unread project warns, does not fail" "$?" 0
   run_step deploy.sh; expect "action: deploy step calls deploy-changed --yes" "$(cat "$tmp/deploy.log")" "deploy-changed --yes"
-  expect "action: deployed=true after starting" "$(cat "$tmp/out")" "deployed=true"
+  expect "action: outputs after starting" "$(tr '\n' ' ' < "$tmp/out")" "started=2 failed=0 deployed=true "
   FAKE_RC=1 run_step deploy.sh; expect "action: a failed start fails the step" "$?" 1
-  expect "action: no deployed=true after a failure" "$(cat "$tmp/out")" ""
+  expect "action: outputs are written before failing" "$(tr '\n' ' ' < "$tmp/out")" "started=1 failed=1 deployed=false "
   expect "action: deploy step only with deploy: true" "$(step deploy if)" "inputs.deploy == 'true' && steps.changed.outputs.count != '0'"
   case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
 fi

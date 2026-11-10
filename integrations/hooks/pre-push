@@ -3,6 +3,7 @@
 # by themselves (auto-deploy on). Warns only; never stops a push unless you ask for that:
 #   git config deploys.prepush.block true    stop the push when it would start builds
 #   git config deploys.prepush.skip true     do not check at all (or DEPLOYS_PREPUSH=off)
+#   DEPLOYS_PREPUSH_TIMEOUT=20               give up after this many seconds, and let the push go
 #
 # Vercel with Git connected builds every branch pushed (a preview, or production for the
 # production branch). Render builds only its own branch. Any error in here lets the push go.
@@ -29,12 +30,28 @@ repo="$(printf '%s' "$remote_url" | sed -E 's#^(git@|ssh://git@|https?://([^@/]*
 case "$repo" in */*) ;; *) exit 0 ;; esac
 case "$repo" in */*/*|*:*) exit 0 ;; esac
 
-v="$("$DEPLOYS" vercel list --json 2>/dev/null </dev/null)" || v='[]'
-# Render only with a key: without one `deploys render list --json` does not come back.
-r='[]'
-if [ -n "${RENDER_API_KEY:-}" ] || "$DEPLOYS" doctor 2>/dev/null | jq -e '.renderKey == true' >/dev/null 2>&1; then
-  r="$("$DEPLOYS" render list --json 2>/dev/null </dev/null)" || r='[]'
+# Both lists at once, without GitHub calls (only auto, repo and ref matter here), and never
+# longer than DEPLOYS_PREPUSH_TIMEOUT seconds (default 20): then the push goes unchecked.
+tmp="$(mktemp -d 2>/dev/null)" || exit 0
+trap 'rm -rf "$tmp"' EXIT
+export DEPLOYS_NO_GITHUB=1
+killtree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do killtree "$c"; done; kill "$1" 2>/dev/null; }
+( exec "$DEPLOYS" vercel list --json >"$tmp/v" 2>/dev/null </dev/null ) & vp=$!; disown "$vp" 2>/dev/null
+rp=""
+# Render only with a key: without one there is nothing to read.
+if [ -n "${RENDER_API_KEY:-}" ] || "$DEPLOYS" doctor 2>/dev/null </dev/null | jq -e '.renderKey == true' >/dev/null 2>&1; then
+  ( exec "$DEPLOYS" render list --json >"$tmp/r" 2>/dev/null </dev/null ) & rp=$!; disown "$rp" 2>/dev/null
 fi
+limit="${DEPLOYS_PREPUSH_TIMEOUT:-20}"; case "$limit" in ''|*[!0-9]*) limit=20 ;; esac
+waited=0
+while kill -0 "$vp" 2>/dev/null || { [ -n "$rp" ] && kill -0 "$rp" 2>/dev/null; }; do
+  if [ "$waited" -ge $((limit * 5)) ]; then
+    killtree "$vp"; [ -n "$rp" ] && killtree "$rp"
+    echo "deploys: no answer within ${limit}s, push not checked." >&2; exit 0
+  fi
+  sleep 0.2; waited=$((waited + 1))
+done
+v="$(cat "$tmp/v" 2>/dev/null)"; r="$(cat "$tmp/r" 2>/dev/null)"
 jq -e 'type=="array"' >/dev/null 2>&1 <<<"$v" || v='[]'
 jq -e 'type=="array"' >/dev/null 2>&1 <<<"$r" || r='[]'
 hits="$(jq -rn --argjson v "$v" --argjson r "$r" --arg repo "$repo" --args '

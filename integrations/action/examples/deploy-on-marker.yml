@@ -21,6 +21,7 @@ permissions:
 jobs:
   changed:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       # Pin to a release tag or a full commit SHA, not a branch.
       - uses: Pschmetzer/deploy-center/integrations/action@main

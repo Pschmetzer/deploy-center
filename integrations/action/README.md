@@ -14,7 +14,7 @@ only when the workflow sets `deploy: true`, and then it runs `deploys deploy-cha
 - run: echo "${{ steps.dc.outputs.count }} waiting: ${{ steps.dc.outputs.names }}"
 ```
 
-Pin the action to a release tag or a full commit SHA, not to `main`.
+Pin the action to a release tag or a full commit SHA, not to `main`. Give the job a `timeout-minutes`: with a wrong Render key the CLI currently does not come back.
 
 | Input | Default | |
 |---|---|---|
@@ -31,7 +31,8 @@ Pin the action to a release tag or a full commit SHA, not to `main`.
 | `count` | How many projects have changes. |
 | `names` | Their names, comma-separated. |
 | `projects` | The JSON array from `deploys changed --json`. |
-| `deployed` | `true` when every start succeeded. A failed start fails the step. |
+| `started`, `failed` | How many deploys were started, and how many failed to start. |
+| `deployed` | `true` when every start succeeded and every state could be read. Otherwise the step fails, after writing the outputs. |
 
 Each step also writes a short summary to the job page. When some project's state cannot be read,
 the step warns and leaves that project out. It is never counted as up to date.

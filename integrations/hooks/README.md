@@ -24,4 +24,5 @@ cp integrations/hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-pu
 | `git config deploys.prepush.skip true` or `DEPLOYS_PREPUSH=off` | Do not check. |
 
 If `deploys` or `jq` is missing, the remote is not on GitHub, or something fails, the push goes
-ahead without a word. The check reads both platforms and GitHub, so expect a few seconds.
+ahead without a word. The check reads both platforms (no GitHub calls), so expect a few
+seconds. After `DEPLOYS_PREPUSH_TIMEOUT` seconds (default 20) it gives up and lets the push go.
