@@ -11,6 +11,7 @@ struct DeployCenterApp: App {
 
     var body: some Scene {
         WindowGroup { RootView(store: store) }
+            .commands { DeployCommands() }
             .backgroundTask(.appRefresh(Background.id)) {
                 await Background.run()
             }
@@ -29,16 +30,27 @@ enum Background {
         try? BGTaskScheduler.shared.submit(r)
     }
 
+    /// iOS gives a refresh about 30 seconds; the load gets this much of it, the notes the rest.
+    static let budget: Duration = .seconds(22)
+
     /// Reads the lists, updates the widget, and notes what newly waits or failed. No server: iOS decides when.
-    /// The app's own store, so the list is fresh on return. iOS gives this about 30 seconds and then cancels
-    /// the task: a cut-off load replaces nothing and notes nothing.
+    /// The app's own store, so the list is fresh on return. A load that runs out of its time budget (or that
+    /// iOS cancels) replaces nothing and notes nothing. Calls wait less for retries in here (HTTP.inBackground).
     @MainActor static func run() async {
         schedule()
         let store = PhoneStore.shared
+        store.forgetKeptTokens()
         guard !store.demo, store.hasAccount else { return }
         // Nothing seen yet (first run, or the file is gone): nothing counts as new, no flood of notes.
         let before = readLast()
-        guard await store.reload(), !Task.isCancelled else { return }
+        let complete = await withTaskGroup(of: Bool?.self) { g in
+            g.addTask { await HTTP.$inBackground.withValue(true) { await store.reload() } }
+            g.addTask { try? await Task.sleep(for: budget); return nil }
+            let first = await g.next() ?? nil
+            g.cancelAll()
+            return first ?? false
+        }
+        guard complete, !Task.isCancelled else { return }
         if let before { await store.notifyChanges(from: before) }
     }
 
