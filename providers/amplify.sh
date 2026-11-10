@@ -28,10 +28,18 @@ CONFIG_DIR="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}"
 USER="${USER:-$(id -un)}"
 export AWS_PAGER=""
 
-# What `deploys` itself defines, for when this file runs on its own.
+# What `deploys` defines (PRV-131). These stand in only when this file is sourced on its own
+# (the provider tests do that); under `deploys` its own die, mtime and start_lock are used.
 declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
 # GNU first: on Linux `stat -f` means the file system and "succeeds" with the wrong answer.
-amp_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+declare -F mtime >/dev/null || mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+# A second start of the same project within a minute is refused (as in `deploys`).
+declare -F start_lock >/dev/null || start_lock() {
+  local d="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
+  if [ -f "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -ge 60 ]; then rm -f "$f"; fi
+  ( set -C; : > "$f" ) 2>/dev/null || die "$1 is being started already (wait a minute)"
+  echo "$f"
+}
 
 # ---------- access ----------
 
@@ -309,13 +317,6 @@ amplify_on() {
   amp_off_edit --arg a "$AMP_APP" 'del(.[$a])'
 }
 
-amp_lock() {
-  if declare -F start_lock >/dev/null; then start_lock "$1"; return; fi
-  local d="$CONFIG_DIR/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
-  if [ -f "$f" ] && [ $(( $(date +%s) - $(amp_mtime "$f") )) -ge 60 ]; then rm -f "$f"; fi
-  ( set -C; : > "$f" ) 2>/dev/null || die "$1 is being started already (wait a minute)"
-  echo "$f"
-}
 
 # amplify_deploy_json <project> [--sha <commit>] [--preview --branch <b>] [--message <m>]
 # Prints {id, url, state, phase, branch, sha}. --preview builds another Amplify branch of the app.
@@ -343,7 +344,7 @@ amplify_deploy_json() {
   if [ -n "$sha" ]; then [[ "$sha" =~ ^[0-9a-fA-F]{7,40}$ ]] || die "--sha wants a commit hash, got $sha"; fi
   local args=(--app-id "$AMP_APP" --branch-name "$branch" --job-type RELEASE --job-reason "Deploy Center")
   [ -z "$sha" ] || args+=(--commit-id "$sha" --commit-message "${msg:-Deploy $sha}")
-  lock="$(amp_lock "amplify-$AMP_APP-$branch")" || exit 1
+  lock="$(start_lock "amplify-$AMP_APP-$branch")" || exit 1
   out="$(amp_aws amplify start-job "${args[@]}")" || { rm -f "$lock"; exit 1; }
   url="$(amp_domain_of "$branch")"
   echo "$out" | jq --arg b "$branch" --arg u "$url" "$AMP_JQ"' .jobSummary | amp_job($b)

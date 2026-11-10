@@ -25,12 +25,13 @@ NETLIFY_HOOK_TITLE="deploy-center"
 # shellcheck disable=SC2016  # the $ is for Netlify's shell, not this one
 NETLIFY_IGNORE_LINE='ignore = "[ -z \"$INCOMING_HOOK_TITLE\" ]"'
 
-# ---------- small helpers (the main script has its own; these stand in when sourced alone) ----------
+# ---------- small helpers ----------
 
-netlify_die() {
-  if declare -F die >/dev/null; then die "$@"; fi
-  echo "Error: $*" >&2; exit 1
-}
+# What `deploys` defines (PRV-131). These stand in only when this file is sourced on its own
+# (the provider tests do that); under `deploys` its own die, mtime and start_lock are used.
+declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
+# GNU first: on Linux `stat -f` means the file system and "succeeds" with the wrong answer.
+declare -F mtime >/dev/null || mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 netlify_config_dir() { echo "${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}"; }
 netlify_hooks_file() {
   local d f; d="$(netlify_config_dir)"; f="$d/netlify-hooks.json"
@@ -50,7 +51,7 @@ netlify_hooks_file() {
 netlify_hooks_edit() {
   local f tmp lock i=0 m rc=0; f="$(netlify_hooks_file)"; lock="$f.lock"
   while ! mkdir "$lock" 2>/dev/null; do
-    m="$(stat -f %m "$lock" 2>/dev/null || stat -c %Y "$lock" 2>/dev/null)" || m=""
+    m="$(mtime "$lock" 2>/dev/null)" || m=""
     [ -z "$m" ] || [ $(( $(date +%s) - m )) -lt 60 ] || { rmdir "$lock" 2>/dev/null; continue; }
     i=$((i + 1)); [ "$i" -lt 50 ] || { echo "Netlify: $f is locked by another run" >&2; return 1; }
     sleep 0.1
@@ -60,7 +61,7 @@ netlify_hooks_edit() {
   rmdir "$lock" 2>/dev/null || true
   return "$rc"
 }
-netlify_b64d() { base64 -D 2>/dev/null || base64 -d; }
+declare -F b64d >/dev/null || b64d() { base64 -D 2>/dev/null || base64 -d; }
 
 # The token: environment first, then the keychain. Uses the shared key_of when A1 provides it.
 netlify_key() {
@@ -98,7 +99,7 @@ netlify_call() {
   local auth=1
   case "$path" in
     https://api.netlify.com/build_hooks/*) url="$path"; auth="" ;;
-    http*) netlify_die "Netlify: not calling $path (only https://api.netlify.com/build_hooks/... is called by address)" ;;
+    http*) die "Netlify: not calling $path (only https://api.netlify.com/build_hooks/... is called by address)" ;;
     *) url="$NETLIFY_API$path" ;;
   esac
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
@@ -203,7 +204,7 @@ netlify_rule_in_repo() {
   for p in ${base:+"${base%/}/netlify.toml"} netlify.toml; do
     raw="$(gh api "repos/$repo/contents/$p?ref=$(jq -rn --arg r "$ref" '$r|@uri')" 2>/dev/null)" || continue
     got=1
-    if echo "$raw" | jq -r '.content // empty' | tr -d '\n' | netlify_b64d 2>/dev/null \
+    if echo "$raw" | jq -r '.content // empty' | tr -d '\n' | b64d 2>/dev/null \
       | netlify_rule_in_build; then echo yes; return; fi
   done
   # Not found in a readable file is "no"; nothing readable at all may still be a gh problem.
@@ -245,9 +246,9 @@ netlify_site_deploys() {
 
 netlify_json() {
   local sites hooks out s id repo ref base rule tmpd n=0 ttl _NETLIFY_KEY pids=()
-  sites="$(netlify_sites)" || netlify_die "Could not list Netlify sites"
+  sites="$(netlify_sites)" || die "Could not list Netlify sites"
   # The token once, for the reads below (they run eight at a time).
-  _NETLIFY_KEY="$(netlify_key)" || netlify_die "Could not list Netlify sites"
+  _NETLIFY_KEY="$(netlify_key)" || die "Could not list Netlify sites"
   hooks="$(cat "$(netlify_hooks_file)")"
   # A site turned off here whose rule is not confirmed yet: look again (the PR may be merged now),
   # at most every DEPLOYS_NETLIFY_RULE_TTL seconds (default 600) per site: a PR that is never
@@ -307,12 +308,12 @@ netlify_off() {
   # they are counted and the exit code says so. The list first, on its own: a failed read stops here.
   if [ "${1:-}" = --all ]; then
     local _names _n _bad=0
-    _names="$(netlify_sites | jq -r '.[] | .id // empty')" || netlify_die "Netlify: could not list the sites"
+    _names="$(netlify_sites | jq -r '.[] | .id // empty')" || die "Netlify: could not list the sites"
     while IFS= read -r _n; do
       [ -n "$_n" ] || continue
       ( netlify_off_one "$_n" ) || _bad=$((_bad + 1))
     done <<< "$_names"
-    [ "$_bad" = 0 ] || netlify_die "$_bad Netlify sites could not be switched off (see above); the others are done"
+    [ "$_bad" = 0 ] || die "$_bad Netlify sites could not be switched off (see above); the others are done"
     echo "Done. No Netlify site deploys on push any more."
     return 0
   fi
@@ -321,8 +322,8 @@ netlify_off() {
 
 netlify_off_one() {
   local site="$1" by_hand="${2:-}" id info hooks hook url repo ref base rule
-  id="$(netlify_id_of "$site")" || netlify_die "Netlify site $site not found"
-  info="$(netlify_call GET "/sites/$id")" || netlify_die "Netlify: could not read $site"
+  id="$(netlify_id_of "$site")" || die "Netlify site $site not found"
+  info="$(netlify_call GET "/sites/$id")" || die "Netlify: could not read $site"
   repo="$(echo "$info" | jq -r "$NETLIFY_JQ"'repo_of // empty')"
   ref="$(echo "$info" | jq -r '.build_settings.repo_branch // "main"')"
   base="$(echo "$info" | jq -r '.build_settings.base // empty')"
@@ -330,23 +331,23 @@ netlify_off_one() {
   [ "$(echo "$info" | jq '.build_settings.stop_builds == true')" = true ] \
     && echo "Netlify: builds are stopped for $site (Site configuration > Build & deploy). That also stops our build hook: turn \"Stop builds\" off again."
 
-  hooks="$(netlify_call GET "/sites/$id/build_hooks")" || netlify_die "Netlify: could not read the build hooks of $site"
+  hooks="$(netlify_call GET "/sites/$id/build_hooks")" || die "Netlify: could not read the build hooks of $site"
   hook="$(echo "$hooks" | jq -c --arg t "$NETLIFY_HOOK_TITLE" '[.[] | select(.title==$t)][0] // empty')"
   if [ -z "$hook" ]; then
     hook="$(netlify_call POST "/sites/$id/build_hooks" "$(jq -nc --arg t "$NETLIFY_HOOK_TITLE" --arg b "$ref" '{title:$t, branch:$b}')")" \
-      || netlify_die "Netlify: could not create a build hook for $site"
+      || die "Netlify: could not create a build hook for $site"
     echo "Netlify: created the build hook \"$NETLIFY_HOOK_TITLE\" for $site"
   fi
   # Made for another branch (the production branch changed since): it would build the old one.
   # Moved to the branch in place (PUT), so its URL stays.
   if [ "$(echo "$hook" | jq -r --arg b "$ref" '(.branch // $b) != $b')" = true ]; then
     netlify_call PUT "/sites/$id/build_hooks/$(echo "$hook" | jq -r '.id')" "$(jq -nc --arg t "$NETLIFY_HOOK_TITLE" --arg b "$ref" '{title:$t, branch:$b}')" >/dev/null \
-      || netlify_die "Netlify: could not move the build hook of $site to $ref"
+      || die "Netlify: could not move the build hook of $site to $ref"
     hook="$(echo "$hook" | jq -c --arg b "$ref" '.branch = $b')"
     echo "Netlify: the build hook of $site now builds $ref"
   fi
   url="$(echo "$hook" | jq -r '.url // empty')"
-  [ -n "$url" ] || netlify_die "Netlify: the build hook of $site has no URL"
+  [ -n "$url" ] || die "Netlify: the build hook of $site has no URL"
 
   if [ "$by_hand" = --rule-added ]; then rule=yes; else rule="$(netlify_rule_in_repo "$repo" "$ref" "$base")"; fi
   netlify_hooks_edit --arg id "$id" --argjson hk "$hook" --arg r "$repo" --arg ref "$ref" --arg base "$base" --arg rule "$rule" \
@@ -385,27 +386,27 @@ netlify_deploy_json() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --preview) preview=1 ;;
-      --sha) [ -n "${2:-}" ] || netlify_die "Netlify: --sha needs a commit"; sha="$2"; shift ;;
-      -*) netlify_die "Netlify: unknown option $1" ;;
+      --sha) [ -n "${2:-}" ] || die "Netlify: --sha needs a commit"; sha="$2"; shift ;;
+      -*) die "Netlify: unknown option $1" ;;
       *) _pos=$((_pos + 1)); if [ "$_pos" = 1 ]; then preview="$1"; else sha="$1"; fi ;;
     esac
     shift
   done
-  [ -z "$preview" ] || netlify_die "Netlify cannot deploy a preview from here: the build hook deploys the production branch"
-  [ -z "$sha" ] || netlify_die "Netlify cannot deploy a given commit: a build hook always builds the newest commit of the branch (--sha is not supported)"
-  id="$(netlify_id_of "$site")" || netlify_die "Netlify site $site not found"
+  [ -z "$preview" ] || die "Netlify cannot deploy a preview from here: the build hook deploys the production branch"
+  [ -z "$sha" ] || die "Netlify cannot deploy a given commit: a build hook always builds the newest commit of the branch (--sha is not supported)"
+  id="$(netlify_id_of "$site")" || die "Netlify site $site not found"
   hk="$(jq -c --arg id "$id" '.[$id] // empty' "$(netlify_hooks_file)")"
   [ -n "$hk" ] && [ "$(echo "$hk" | jq -r '.url // empty')" != "" ] \
-    || netlify_die "$site has no build hook yet. Run: deploys netlify autodeploy-off $site"
+    || die "$site has no build hook yet. Run: deploys netlify autodeploy-off $site"
   [ "$(echo "$hk" | jq '.rule == true')" = true ] \
-    || netlify_die "$site is not deployable yet: the netlify.toml ignore rule was not found. Run: deploys netlify autodeploy-off $site"
+    || die "$site is not deployable yet: the netlify.toml ignore rule was not found. Run: deploys netlify autodeploy-off $site"
   if declare -F start_lock >/dev/null; then lock="$(start_lock "netlify-$id")" || exit 1; fi
   # The deploys that exist before the call: the new one is the first id not among them. Ids, not
   # times, so a clock that is off by a minute cannot pick an old deploy.
-  before="$(netlify_call GET "/sites/$id/deploys?per_page=20")" || { rm -f "$lock"; netlify_die "Netlify: could not read the deploys of $site"; }
+  before="$(netlify_call GET "/sites/$id/deploys?per_page=20")" || { rm -f "$lock"; die "Netlify: could not read the deploys of $site"; }
   before="$(echo "$before" | jq -c '[.[].id]')"
   netlify_call POST "$(echo "$hk" | jq -r '.url')" '{"source":"deploy-center"}' >/dev/null \
-    || { rm -f "$lock"; netlify_die "Netlify: the build hook of $site did not take the deploy"; }
+    || { rm -f "$lock"; die "Netlify: the build hook of $site did not take the deploy"; }
   polls="${DEPLOYS_NETLIFY_POLLS:-15}"
   for ((i = 0; i < polls; i++)); do
     list="$(netlify_call GET "/sites/$id/deploys?per_page=5" 2>/dev/null)" || list="[]"
@@ -421,22 +422,22 @@ netlify_deploy_json() {
 # netlify_status_json [<site>] <deploy-id>
 netlify_status_json() {
   local d="${2:-$1}" out
-  out="$(netlify_call GET "/deploys/$d")" || netlify_die "Netlify: could not read deploy $d"
+  out="$(netlify_call GET "/deploys/$d")" || die "Netlify: could not read deploy $d"
   echo "$out" | jq "$NETLIFY_JQ"'deploy_out'
 }
 
 # The newest production deploy that was not skipped by the ignore rule.
 netlify_latest_json() {
   local id out
-  id="$(netlify_id_of "$1")" || netlify_die "Netlify site $1 not found"
-  out="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=20")" || netlify_die "Netlify: could not read the deploys of $1"
+  id="$(netlify_id_of "$1")" || die "Netlify site $1 not found"
+  out="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=20")" || die "Netlify: could not read the deploys of $1"
   echo "$out" | jq "$NETLIFY_JQ"'map(select(skipped | not)) | .[0] // null | if . then deploy_out else null end'
 }
 
 # netlify_cancel [<site>] <deploy-id>
 netlify_cancel() {
   local d="${2:-$1}"
-  netlify_call POST "/deploys/$d/cancel" >/dev/null || netlify_die "Netlify: could not cancel $d"
+  netlify_call POST "/deploys/$d/cancel" >/dev/null || die "Netlify: could not cancel $d"
   jq -nc --arg d "$d" '{id:$d, state:"canceled", phase:"canceled", message:"Netlify: deploy \($d) canceled"}'
 }
 
@@ -444,17 +445,17 @@ netlify_cancel() {
 # Netlify already has: no build, no credits.
 netlify_rollback() {
   local id info live list prev
-  id="$(netlify_id_of "$1")" || netlify_die "Netlify site $1 not found"
-  info="$(netlify_call GET "/sites/$id")" || netlify_die "Netlify: could not read $1"
+  id="$(netlify_id_of "$1")" || die "Netlify site $1 not found"
+  info="$(netlify_call GET "/sites/$id")" || die "Netlify: could not read $1"
   live="$(echo "$info" | jq -r '.published_deploy.id // empty')"
-  list="$(netlify_call GET "/sites/$id/deploys?production=true&state=ready&per_page=20")" || netlify_die "Netlify: could not read the deploys of $1"
+  list="$(netlify_call GET "/sites/$id/deploys?production=true&state=ready&per_page=20")" || die "Netlify: could not read the deploys of $1"
   # The list is newest first. Only deploys older than the live one count: a newer ready one is
   # what an earlier rollback went back from.
   prev="$(echo "$list" | jq -r --arg live "$live" '(map(.id) | index($live)) as $i
     | (if $i == null then . else .[($i + 1):] end)
     | [.[] | select(.state=="ready" and .id != $live)][0].id // empty')"
-  [ -n "$prev" ] || netlify_die "Netlify: $1 has no earlier ready production deploy to go back to"
-  netlify_call POST "/sites/$id/deploys/$prev/restore" >/dev/null || netlify_die "Netlify: could not restore $prev"
+  [ -n "$prev" ] || die "Netlify: $1 has no earlier ready production deploy to go back to"
+  netlify_call POST "/sites/$id/deploys/$prev/restore" >/dev/null || die "Netlify: could not restore $prev"
   # A restore publishes files Netlify has: live at once, nothing builds.
   jq -nc --arg d "$prev" --arg s "$1" '{id:$d, state:"ready", phase:"ready", message:"Netlify: \($s) is back on deploy \($d)"}'
 }
@@ -467,22 +468,22 @@ netlify_logs() {
   # `deploys logs` calls <site> <lines> <deployId>, positional; --id <deploy> works too.
   while [ $# -gt 0 ]; do case "$1" in
     --id) d="${2:-}"; shift 2 ;;
-    -*) netlify_die "Unknown option $1. Usage: netlify_logs <site> [lines] [deployId | --id <deploy>]" ;;
+    -*) die "Unknown option $1. Usage: netlify_logs <site> [lines] [deployId | --id <deploy>]" ;;
     ''|*[!0-9]*) d="$1"; shift ;;
     *) shift ;;
   esac; done
   if [ -n "$d" ]; then out="$(netlify_status_json "$d")"; else out="$(netlify_latest_json "$site")"; fi
-  [ "$out" != null ] || netlify_die "Netlify: $site has no deploys yet"
+  [ "$out" != null ] || die "Netlify: $site has no deploys yet"
   # No log through the API (caps.logs is false): refused as the contract says, with the state
   # and where the full log is.
-  netlify_die "$(echo "$out" | jq -r '"Netlify cannot show build logs: its API gives none. Deploy \(.id): \(.state)\(if .error then " — " + .error else "" end). The full log: \(.dashboardUrl // "the site dashboard")"')"
+  die "$(echo "$out" | jq -r '"Netlify cannot show build logs: its API gives none. Deploy \(.id): \(.state)\(if .error then " — " + .error else "" end). The full log: \(.dashboardUrl // "the site dashboard")"')"
 }
 
 # netlify_url <site> [--dashboard]
 netlify_url() {
   local id info
-  id="$(netlify_id_of "$1")" || netlify_die "Netlify site $1 not found"
-  info="$(netlify_call GET "/sites/$id")" || netlify_die "Netlify: could not read $1"
+  id="$(netlify_id_of "$1")" || die "Netlify site $1 not found"
+  info="$(netlify_call GET "/sites/$id")" || die "Netlify: could not read $1"
   if [ "${2:-}" = --dashboard ]; then echo "$info" | jq -r '.admin_url // empty'
   else echo "$info" | jq -r '.ssl_url // .url // empty'; fi
 }
@@ -493,13 +494,13 @@ netlify_set_key() {
   IFS= read -r key || true
   # A trailing CR, tab or newline from the clipboard is not part of the token.
   key="$(printf '%s' "$key" | tr -d '[:space:]')"
-  [ -n "$key" ] || netlify_die "Pipe the token in: pbpaste | deploys netlify set-key"
-  case "$key" in *\'*|*\"*|*' '*) netlify_die "That does not look like a Netlify token";; esac
+  [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys netlify set-key"
+  case "$key" in *\'*|*\"*|*' '*) die "That does not look like a Netlify token";; esac
   ( NETLIFY_AUTH_TOKEN="$key"; key_of() { printf '%s' "$NETLIFY_AUTH_TOKEN"; }; netlify_call GET /user >/dev/null ) \
-    || netlify_die "Netlify did not accept that token; nothing was saved"
+    || die "Netlify did not accept that token; nothing was saved"
   # On stdin to `security -i`, so the token is never an argument anyone can see.
   printf 'add-generic-password -U -a %s -s %s -w %s\n' "${USER:-$(id -un)}" "$NETLIFY_KEYCHAIN" "$key" | security -i >/dev/null \
-    || netlify_die "The token works, but could not be saved in the keychain"
+    || die "The token works, but could not be saved in the keychain"
   echo "Netlify token saved and working."
 }
 

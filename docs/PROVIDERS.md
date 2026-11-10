@@ -71,6 +71,13 @@ and Coolify (their `_status_json` / `_latest_json`).
 Platform extras that are not part of the contract stay where they are: `vercel map`,
 `vercel team`, `costs`, `triggers`.
 
+### Shared helpers
+
+`deploys` defines `die`, `mtime`, `b64d`, `start_lock`, `key_of` and `CONFIG_DIR` before it
+sources the providers, and they use those. A provider that its own tests source alone defines
+a stand-in behind `declare -F die >/dev/null || die() { … }`, so the one in `deploys` always wins
+(`tests/providers/contract.sh` fails on a `<p>_die`, `<p>_mtime` or `<p>_lock` copy).
+
 ### Dispatch
 
 `deploys <p> <verb> [args]` runs `<p>_cli_<verb>` if it exists, else `<p>_<verb>` for a contract

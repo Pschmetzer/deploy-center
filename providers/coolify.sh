@@ -22,12 +22,13 @@
 
 COOLIFY_KEYCHAIN="deploy-center-coolify"
 
-# ---------- small helpers (the main script has its own; these stand in when sourced alone) ----------
+# ---------- small helpers ----------
 
-coolify_die() {
-  if declare -F die >/dev/null; then die "$@"; fi
-  echo "Error: $*" >&2; exit 1
-}
+# What `deploys` defines (PRV-131). These stand in only when this file is sourced on its own
+# (the provider tests do that); under `deploys` its own die, mtime and start_lock are used.
+declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
+# GNU first: on Linux `stat -f` means the file system and "succeeds" with the wrong answer.
+declare -F mtime >/dev/null || mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 coolify_config_dir() { echo "${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}"; }
 coolify_off_file() {
   local d f; d="$(coolify_config_dir)"; f="$d/coolify-off.json"
@@ -193,14 +194,14 @@ coolify_app_full() {
 
 coolify_json() {
   local apps base out uuid tmpd n=0 _COOLIFY_KEY pids=()
-  base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
-  apps="$(coolify_apps)" || coolify_die "Could not list Coolify applications"
+  base="$(coolify_base)" || die "Coolify: no instance configured"
+  apps="$(coolify_apps)" || die "Could not list Coolify applications"
   # Checked here: a jq error inside the < <(...) below is swallowed and would read as "no apps".
   echo "$apps" | jq -e 'type == "array"' >/dev/null 2>&1 \
-    || coolify_die "Coolify answered without an application list: $(printf '%s' "$apps" | head -c 200)"
+    || die "Coolify answered without an application list: $(printf '%s' "$apps" | head -c 200)"
   # The list has no settings (auto-deploy lives there), so each app is read once more: eight at
   # a time (one after another took seconds for many apps), a file each, read once at the end.
-  _COOLIFY_KEY="$(coolify_key)" || coolify_die "Could not list Coolify applications"
+  _COOLIFY_KEY="$(coolify_key)" || die "Could not list Coolify applications"
   tmpd="$(mktemp -d)"
   while IFS= read -r uuid; do
     [ -n "$uuid" ] || continue
@@ -240,12 +241,12 @@ coolify_off() {
   # they are counted and the exit code says so. The list first, on its own: a failed read stops here.
   if [ "${1:-}" = --all ]; then
     local _names _n _bad=0
-    _names="$(coolify_apps | jq -r '.[] | .uuid // empty')" || coolify_die "Coolify: could not list the applications"
+    _names="$(coolify_apps | jq -r '.[] | .uuid // empty')" || die "Coolify: could not list the applications"
     while IFS= read -r _n; do
       [ -n "$_n" ] || continue
       ( coolify_off_one "$_n" ) || _bad=$((_bad + 1))
     done <<< "$_names"
-    [ "$_bad" = 0 ] || coolify_die "$_bad Coolify applications could not be switched off (see above); the others are done"
+    [ "$_bad" = 0 ] || die "$_bad Coolify applications could not be switched off (see above); the others are done"
     echo "Done. No Coolify application deploys on push any more."
     return 0
   fi
@@ -254,8 +255,8 @@ coolify_off() {
 
 coolify_off_one() {
   local app="$1" previews="${2:-}" id info auto prev body after
-  id="$(coolify_id_of "$app")" || coolify_die "Coolify application $app not found"
-  info="$(coolify_call GET "/applications/$id")" || coolify_die "Coolify: could not read $app"
+  id="$(coolify_id_of "$app")" || die "Coolify application $app not found"
+  info="$(coolify_call GET "/applications/$id")" || die "Coolify: could not read $app"
   auto="$(echo "$info" | jq '.settings.is_auto_deploy_enabled != false')"
   prev="$(echo "$info" | jq '.settings.is_preview_deployments_enabled // false')"
   body='{"is_auto_deploy_enabled":false}'
@@ -263,11 +264,11 @@ coolify_off_one() {
   if [ "$auto" = false ] && { [ "$previews" != --previews ] || [ "$prev" = false ]; }; then
     echo "Coolify: $app already does not deploy on push."
   else
-    coolify_call PATCH "/applications/$id" "$body" >/dev/null || coolify_die "Coolify: could not turn off auto-deploy for $app"
+    coolify_call PATCH "/applications/$id" "$body" >/dev/null || die "Coolify: could not turn off auto-deploy for $app"
     # Read back: an older Coolify that ignores the field must not look like a success.
-    after="$(coolify_call GET "/applications/$id")" || coolify_die "Coolify: could not read $app back"
+    after="$(coolify_call GET "/applications/$id")" || die "Coolify: could not read $app back"
     [ "$(echo "$after" | jq '.settings.is_auto_deploy_enabled != false')" = false ] \
-      || coolify_die "Coolify accepted the change but $app still has Auto Deploy on (Coolify too old?)"
+      || die "Coolify accepted the change but $app still has Auto Deploy on (Coolify too old?)"
     echo "Coolify: $app no longer deploys on push. Deploy with: deploys coolify deploy $app"
   fi
   # Written down only now, after the read-back: a failed PATCH must not leave a record that makes
@@ -282,11 +283,11 @@ coolify_off_one() {
 # coolify_on <app>: put back what coolify_off found (not part of the contract).
 coolify_on() {
   local app="$1" id rec body
-  id="$(coolify_id_of "$app")" || coolify_die "Coolify application $app not found"
+  id="$(coolify_id_of "$app")" || die "Coolify application $app not found"
   rec="$(jq -c --arg id "$id" '.[$id] // empty' "$(coolify_off_file)")"
   [ -n "$rec" ] || rec='{"auto":true,"previews":null}'
   body="$(echo "$rec" | jq -c '{is_auto_deploy_enabled:.auto} + (if .previews == true then {is_preview_deployments_enabled:true} else {} end)')"
-  coolify_call PATCH "/applications/$id" "$body" >/dev/null || coolify_die "Coolify: could not change $app"
+  coolify_call PATCH "/applications/$id" "$body" >/dev/null || die "Coolify: could not change $app"
   coolify_off_edit --arg id "$id" 'del(.[$id])'
   echo "Coolify: $app is back to auto-deploy $(echo "$rec" | jq -r 'if .auto then "on" else "off" end')."
 }
@@ -309,28 +310,28 @@ coolify_deploy_json() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --preview) preview=1 ;;
-      --sha) [ -n "${2:-}" ] || coolify_die "Coolify: --sha needs a commit"; sha="$2"; shift ;;
-      -*) coolify_die "Coolify: unknown option $1" ;;
+      --sha) [ -n "${2:-}" ] || die "Coolify: --sha needs a commit"; sha="$2"; shift ;;
+      -*) die "Coolify: unknown option $1" ;;
       *) _pos=$((_pos + 1)); if [ "$_pos" = 1 ]; then preview="$1"; else sha="$1"; fi ;;
     esac
     shift
   done
-  [ -z "$preview" ] || coolify_die "Coolify cannot deploy a preview from here: preview deploys need a pull request"
+  [ -z "$preview" ] || die "Coolify cannot deploy a preview from here: preview deploys need a pull request"
   if [ -n "$sha" ]; then
-    [[ "$sha" =~ ^[0-9a-fA-F]{7,40}$ ]] || coolify_die "Coolify: \"$sha\" is not a commit sha"
+    [[ "$sha" =~ ^[0-9a-fA-F]{7,40}$ ]] || die "Coolify: \"$sha\" is not a commit sha"
   fi
-  id="$(coolify_id_of "$app")" || coolify_die "Coolify application $app not found"
+  id="$(coolify_id_of "$app")" || die "Coolify application $app not found"
   if declare -F start_lock >/dev/null; then lock="$(start_lock "coolify-$id")" || exit 1; fi
   if [ -n "$sha" ]; then
-    info="$(coolify_call GET "/applications/$id")" || { rm -f "$lock"; coolify_die "Coolify: could not read $app"; }
+    info="$(coolify_call GET "/applications/$id")" || { rm -f "$lock"; die "Coolify: could not read $app"; }
     [ "$(echo "$info" | jq -r '.build_pack // ""')" != dockerimage ] && [ "$(echo "$info" | jq -r '.git_repository // ""')" != "" ] \
-      || { rm -f "$lock"; coolify_die "Coolify: $app does not build from git; --sha does not apply"; }
+      || { rm -f "$lock"; die "Coolify: $app does not build from git; --sha does not apply"; }
     pinned="$(echo "$info" | jq -r '.git_commit_sha // "HEAD" | if . == "" then "HEAD" else . end')"
     # Interrupted between pin and unpin: put the commit back before going, or every later push
     # would build the pinned one.
     trap 'coolify_unpin "$id" "$pinned" "$app" "$sha"; rm -f "$lock"; exit 130' INT TERM
     coolify_call PATCH "/applications/$id" "$(jq -nc --arg s "$sha" '{git_commit_sha:$s}')" >/dev/null \
-      || { trap - INT TERM; rm -f "$lock"; coolify_die "Coolify: could not pin $app to $sha"; }
+      || { trap - INT TERM; rm -f "$lock"; die "Coolify: could not pin $app to $sha"; }
   fi
   # `|| rc=$?`, not `; rc=$?`: under set -e a failed POST would end the script before the unpin.
   rc=0; out="$(coolify_call POST "/deploy?uuid=$id" 2>&1)" || rc=$?
@@ -338,11 +339,11 @@ coolify_deploy_json() {
     coolify_unpin "$id" "$pinned" "$app" "$sha"
     trap - INT TERM
   fi
-  [ "$rc" = 0 ] || { rm -f "$lock"; coolify_die "Coolify: the deploy of $app was not taken: $out"; }
+  [ "$rc" = 0 ] || { rm -f "$lock"; die "Coolify: the deploy of $app was not taken: $out"; }
   did="$(echo "$out" | jq -r '[.deployments[]? | select(.deployment_uuid != null)][0].deployment_uuid // empty')"
   if [ -z "$did" ]; then
     rm -f "$lock"
-    coolify_die "Coolify did not queue $app: $(echo "$out" | jq -r '[.deployments[]?.message, .message] | map(select(. != null)) | first // "no reason given"')"
+    die "Coolify did not queue $app: $(echo "$out" | jq -r '[.deployments[]?.message, .message] | map(select(. != null)) | first // "no reason given"')"
   fi
   base="$(coolify_base)"
   one="$(coolify_call GET "/deployments/$did" 2>/dev/null)" || one=""
@@ -356,24 +357,24 @@ coolify_deploy_json() {
 # coolify_status_json [<app>] <deployment-uuid>
 coolify_status_json() {
   local d="${2:-$1}" out base
-  base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
-  out="$(coolify_call GET "/deployments/$d")" || coolify_die "Coolify: could not read deployment $d"
+  base="$(coolify_base)" || die "Coolify: no instance configured"
+  out="$(coolify_call GET "/deployments/$d")" || die "Coolify: could not read deployment $d"
   echo "$out" | jq --arg base "$base" "$COOLIFY_JQ"'deploy_out'
 }
 
 # The newest production deployment (not a PR preview).
 coolify_latest_json() {
   local id out base
-  base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
-  id="$(coolify_id_of "$1")" || coolify_die "Coolify application $1 not found"
-  out="$(coolify_call GET "/deployments/applications/$id?take=50")" || coolify_die "Coolify: could not read the deployments of $1"
+  base="$(coolify_base)" || die "Coolify: no instance configured"
+  id="$(coolify_id_of "$1")" || die "Coolify application $1 not found"
+  out="$(coolify_call GET "/deployments/applications/$id?take=50")" || die "Coolify: could not read the deployments of $1"
   echo "$out" | jq --arg base "$base" "$COOLIFY_JQ"'(.deployments // []) | prod | .[0] // null | if . then deploy_out else null end'
 }
 
 # coolify_cancel [<app>] <deployment-uuid>
 coolify_cancel() {
   local d="${2:-$1}"
-  coolify_call POST "/deployments/$d/cancel" >/dev/null || coolify_die "Coolify: could not cancel $d"
+  coolify_call POST "/deployments/$d/cancel" >/dev/null || die "Coolify: could not cancel $d"
   jq -nc --arg d "$d" '{id:$d, state:"cancelled-by-user", phase:"canceled", message:"Coolify: deployment \($d) canceled"}'
 }
 
@@ -382,17 +383,17 @@ coolify_cancel() {
 # still on the server), and reuses the image when it is still there: then nothing is built.
 coolify_rollback() {
   local id list target images local_img="" out
-  id="$(coolify_id_of "$1")" || coolify_die "Coolify application $1 not found"
-  list="$(coolify_call GET "/deployments/applications/$id?take=50")" || coolify_die "Coolify: could not read the deployments of $1"
+  id="$(coolify_id_of "$1")" || die "Coolify application $1 not found"
+  list="$(coolify_call GET "/deployments/applications/$id?take=50")" || die "Coolify: could not read the deployments of $1"
   target="$(echo "$list" | jq -r "$COOLIFY_JQ"'[(.deployments // []) | prod | .[] | select(.status == "finished")] as $f
     | ($f[0].commit // null) as $live
     | [$f[1:][] | select(.rollback != true and .commit != $live and .commit != "HEAD" and (.commit // "") != "")][0].commit // empty')"
-  [ -n "$target" ] || coolify_die "Coolify: $1 has no earlier finished deployment of another commit to go back to"
+  [ -n "$target" ] || die "Coolify: $1 has no earlier finished deployment of another commit to go back to"
   images="$(coolify_call GET "/applications/$id/rollback-images" 2>/dev/null)" || images=""
   [ -n "$images" ] && echo "$images" | jq -e --arg t "$target" '.images[]? | select(.tag == $t)' >/dev/null 2>&1 && local_img=1
   if ! out="$(coolify_call POST "/applications/$id/rollback" "$(jq -nc --arg c "$target" '{commit:$c}')" 2>&1)"; then
-    case "$out" in *"HTTP 404"*) coolify_die "Coolify: rollback needs Coolify v4.3 or newer ($out)";; esac
-    coolify_die "Coolify: could not roll $1 back: $out"
+    case "$out" in *"HTTP 404"*) die "Coolify: rollback needs Coolify v4.3 or newer ($out)";; esac
+    die "Coolify: could not roll $1 back: $out"
   fi
   jq -nc --argjson o "$(printf '%s' "$out" | jq -c 'if type == "object" then . else {} end' 2>/dev/null || echo '{}')" \
     --arg t "$target" --arg a "$1" --arg img "$local_img" \
@@ -412,25 +413,25 @@ coolify_logs() {
       --runtime) runtime=1; shift ;;
       # `deploys logs` calls <app> <lines> <deployId>, positional. A typo (--runtme) is an error,
       # not quietly the newest deploy's log.
-      -*) coolify_die "Unknown option $1. Usage: coolify_logs <app> [lines] [deployId | --id <deploy>] [--runtime]" ;;
+      -*) die "Unknown option $1. Usage: coolify_logs <app> [lines] [deployId | --id <deploy>] [--runtime]" ;;
       '') shift ;;
       *[!0-9]*) d="$1"; shift ;;
       *) lines="$1"; shift ;;
     esac
   done
   if [ -n "$runtime" ]; then
-    id="$(coolify_id_of "$app")" || coolify_die "Coolify application $app not found"
-    out="$(coolify_call GET "/applications/$id/logs?lines=$lines")" || coolify_die "Coolify: could not read the logs of $app"
+    id="$(coolify_id_of "$app")" || die "Coolify application $app not found"
+    out="$(coolify_call GET "/applications/$id/logs?lines=$lines")" || die "Coolify: could not read the logs of $app"
     echo "$out" | jq -r '.logs // ""'
     return 0
   fi
   if [ -z "$d" ]; then
     d="$(coolify_latest_json "$app" | jq -r '.id // empty')"
-    [ -n "$d" ] || coolify_die "Coolify: $app has no deployments yet"
+    [ -n "$d" ] || die "Coolify: $app has no deployments yet"
   fi
-  out="$(coolify_call GET "/deployments/$d")" || coolify_die "Coolify: could not read deployment $d"
+  out="$(coolify_call GET "/deployments/$d")" || die "Coolify: could not read deployment $d"
   echo "$out" | jq -e 'has("logs") and .logs != null' >/dev/null \
-    || coolify_die "Coolify sent no build log for $d: give the token the read:sensitive permission"
+    || die "Coolify sent no build log for $d: give the token the read:sensitive permission"
   echo "$out" | jq -r --argjson n "$lines" '.logs | (try fromjson catch [{output:.}])
     | map(select(.hidden != true)) | sort_by(.order // 0)
     | map((if .command then "$ " + .command + "\n" else "" end) + (.output // "")) | join("\n")
@@ -440,8 +441,8 @@ coolify_logs() {
 # coolify_url <app> [--dashboard]
 coolify_url() {
   local id info base
-  base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
-  id="$(coolify_id_of "$1")" || coolify_die "Coolify application $1 not found"
+  base="$(coolify_base)" || die "Coolify: no instance configured"
+  id="$(coolify_id_of "$1")" || die "Coolify application $1 not found"
   if [ "${2:-}" = --dashboard ]; then
     info="$(coolify_call GET "/deployments/applications/$id?take=1" 2>/dev/null)" || info='{}'
     info="$(echo "$info" | jq -r --arg base "$base" "$COOLIFY_JQ"'(.deployments // [])[0] // {} | app_dash // empty')"
@@ -454,10 +455,10 @@ coolify_url() {
 # coolify_set_url <url>: write the instance to coolify.json, after Coolify answered /health there.
 coolify_set_url() {
   local u="${1:-}" f d tmp
-  [ -n "$u" ] || coolify_die "Usage: deploys coolify set-url https://coolify.example.com"
-  u="$(COOLIFY_URL="$u" coolify_base)" || coolify_die "That is not a URL"
+  [ -n "$u" ] || die "Usage: deploys coolify set-url https://coolify.example.com"
+  u="$(COOLIFY_URL="$u" coolify_base)" || die "That is not a URL"
   curl -sSf --connect-timeout 10 --max-time 20 "$u/api/health" >/dev/null 2>&1 \
-    || coolify_die "No Coolify answered at $u/api/health; nothing was saved"
+    || die "No Coolify answered at $u/api/health; nothing was saved"
   d="$(coolify_config_dir)"; f="$d/coolify.json"; mkdir -p "$d"
   [ -s "$f" ] || echo '{}' > "$f"
   tmp="$(mktemp)"; jq --arg u "$u" '.url = $u' "$f" > "$tmp" && mv "$tmp" "$f"
@@ -475,14 +476,14 @@ coolify_set_key() {
   IFS= read -r key || true
   # A trailing CR, tab or newline from the clipboard is not part of the token.
   key="$(printf '%s' "$key" | tr -d '[:space:]')"
-  [ -n "$key" ] || coolify_die "Pipe the token in: pbpaste | deploys coolify set-key"
-  case "$key" in *\'*|*\"*|*' '*) coolify_die "That does not look like a Coolify token";; esac
-  coolify_base >/dev/null || coolify_die "Set the instance first: deploys coolify set-url https://coolify.example.com"
+  [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys coolify set-key"
+  case "$key" in *\'*|*\"*|*' '*) die "That does not look like a Coolify token";; esac
+  coolify_base >/dev/null || die "Set the instance first: deploys coolify set-url https://coolify.example.com"
   ( COOLIFY_TOKEN="$key"; key_of() { printf '%s' "$COOLIFY_TOKEN"; }; coolify_call GET /applications >/dev/null ) \
-    || coolify_die "Coolify did not accept that token; nothing was saved"
+    || die "Coolify did not accept that token; nothing was saved"
   # On stdin to `security -i`, so the token is never an argument anyone can see.
   printf 'add-generic-password -U -a %s -s %s -w %s\n' "${USER:-$(id -un)}" "$COOLIFY_KEYCHAIN" "$key" | security -i >/dev/null \
-    || coolify_die "The token works, but could not be saved in the keychain"
+    || die "The token works, but could not be saved in the keychain"
   echo "Coolify token saved and working."
 }
 

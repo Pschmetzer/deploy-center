@@ -187,7 +187,7 @@ hook_record() {
   # Two triggers at once (a group deploy) must not overwrite each other: a mkdir lock, given up
   # after five seconds (a crashed run's lock older than a minute is taken over).
   while ! mkdir "$lock" 2>/dev/null; do
-    if [ -d "$lock" ] && [ $(( $(date +%s) - $(stat -f %m "$lock" 2>/dev/null || stat -c %Y "$lock" 2>/dev/null || date +%s) )) -ge 60 ]; then rmdir "$lock" 2>/dev/null; continue; fi
+    if [ -d "$lock" ] && [ $(( $(date +%s) - $(mtime "$lock" 2>/dev/null || date +%s) )) -ge 60 ]; then rmdir "$lock" 2>/dev/null; continue; fi
     i=$((i + 1)); [ "$i" -lt 50 ] || { echo "Warning: hook state is locked; the trigger of $n is not recorded" >&2; return 0; }
     sleep 0.1
   done

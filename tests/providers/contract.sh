@@ -189,6 +189,20 @@ both explain same >/dev/null; rc=$?
 expect "a name on two platforms asks which" "$rc:$(grep -c 'Say which: render:same' "$tmp/err")" "1:1"
 expect "the provider prefix picks one" "$(both explain render:web >/dev/null; echo $?)" "0"
 
+# --- PRV-131: the helpers deploys has (die, mtime, start_lock) are not copied per provider ---
+# Each provider uses the shared names; a file that runs on its own (the provider tests) brings
+# a stand-in behind `declare -F`, so deploys' own definition always wins.
+copies="$(grep -nE '^[a-z]+_(die|mtime|lock|b64d)\(\)' providers/*.sh | tr '\n' ' ')"
+expect "PRV-131: no provider keeps its own die/mtime/lock copy" "$copies" ""
+expect "PRV-131: no stat -f before stat -c (GNU stat -f is the file system)" "$(grep -c 'stat -f %m "[^"]*" 2>/dev/null || stat -c' providers/*.sh | grep -vc ':0$')" "0"
+# Netlify, Coolify and DigitalOcean take the start lock only under deploys; Cloudflare and Amplify always.
+for p in netlify:2 coolify:2 digitalocean:2 cloudflare:3 amplify:3; do
+  expect "PRV-131: ${p%:*} alone has die and mtime$([ "${p#*:}" = 3 ] && echo " and start_lock")" \
+    "$(env -i PATH="$STUBPATH" HOME="$tmp" /bin/bash -c ". providers/${p%:*}.sh >/dev/null 2>&1; declare -F die mtime start_lock | wc -l | tr -d ' '")" "${p#*:}"
+done
+out="$(lib cloudflare 'type die | sed -n 4p')"
+case "$out" in *RED*) ok "PRV-131: under deploys, deploys' own die is used" ;; *) fail "PRV-131: under deploys, deploys' own die is used" "$out" ;; esac
+
 # --- the script finds its providers through a symlink, and says so when they are missing ---
 # Every providers/*.sh, in the order deploys reads them; only vercel and render are on by default.
 ids_all() { for f in providers/*.sh; do basename "$f" .sh; done | jq -Rnc '[inputs]'; }

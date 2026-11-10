@@ -86,7 +86,7 @@ render_names() {
   local f="$CONFIG_DIR/render-names.json" ttl="${DEPLOYS_RENDER_NAME_TTL:-60}" now m list
   now="$(date +%s)"
   if [ "${1:-}" != --fresh ] && [ "$ttl" -gt 0 ] 2>/dev/null && [ -s "$f" ]; then
-    m="$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null)" || m=0
+    m="$(mtime "$f" 2>/dev/null)" || m=0
     if [ $(( now - ${m:-0} )) -lt "$ttl" ] && jq -e 'type == "array"' "$f" >/dev/null 2>&1; then cat "$f"; return 0; fi
   fi
   list="$(render_services | jq -c '[.[] | {id, name}]')" || return 1
