@@ -97,8 +97,11 @@ No login, no keychain: keys come from the environment and are never printed.
 
 The opt-in hosts are off until `deploys providers enable <name>`; see [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
+In CI, pin the release you tested with `--version`: runs stay reproducible, and a new release
+(good or bad) reaches your pipeline only when you raise the number.
+
 ```yaml
-- run: curl -fsSL https://deploycenter.app/install.sh | sh
+- run: curl -fsSL https://deploycenter.app/install.sh | sh -s -- --version 0.9.1
 - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 - run: deploys deploy-changed --yes
   env:
