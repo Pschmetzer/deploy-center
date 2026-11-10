@@ -151,13 +151,20 @@ struct ContentView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if let msg = store.busyMessage {
-                HStack { ProgressView().controlSize(.small); Text(msg) }.padding(8)
-            }
             noticeArea
             waitingBar
             if showAll || platform == .vercel, let c = store.costs { CostBar(costs: c) }
             content
+                // Over the list, not above it: the list does not jump when the line comes and goes.
+                .overlay(alignment: .top) {
+                    if let msg = store.busyMessage {
+                        HStack { ProgressView().controlSize(.small); Text(msg).font(.callout) }
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Capsule().fill(.regularMaterial))
+                            .padding(.top, 8)
+                            .transition(.opacity)
+                    }
+                }
             Divider()
             footer
         }
@@ -237,8 +244,10 @@ struct ContentView: View {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             Button(L("Deploy", "Deployen")) { scopes.forEach { store.deploySelected($0) } }
         } message: {
-            Text(selectedAll.map { i in
+            // At most 12 lines, so the dialog does not grow past the screen.
+            Text(selectedAll.prefix(12).map { i in
                     Demo.mask(i.name) + ((i.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText(i) : "") }.joined(separator: "\n")
+                 + (selectedAll.count > 12 ? "\n" + L("and \(selectedAll.count - 12) more", "und \(selectedAll.count - 12) weitere") : "")
                  + "\n\n" + L("The newest commit on GitHub goes live.",
                                "Der neueste Stand von GitHub geht live.")
                  + unchangedNote)
@@ -255,7 +264,9 @@ struct ContentView: View {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             Button(L("Turn off", "Ausschalten")) { Task { await store.turnOffAutoDeploy(platform) } }
         } message: {
-            Text(store.autoOn(platform).map { Demo.mask($0.name) }.joined(separator: "\n") + "\n\n"
+            Text(store.autoOn(platform).prefix(12).map { Demo.mask($0.name) }.joined(separator: "\n")
+                 + (store.autoOn(platform).count > 12 ? "\n" + L("and \(store.autoOn(platform).count - 12) more", "und \(store.autoOn(platform).count - 12) weitere") : "")
+                 + "\n\n"
                  + (platform == .vercel
                     ? L("The Git connection is removed (the repo is remembered here). A push will no longer build. Reconnect any time in the Vercel dashboard.",
                         "Die Git-Verbindung wird getrennt (das Repo merkt sich die App). Ein Push baut nichts mehr. Wieder verbinden geht jederzeit im Vercel-Dashboard.")
@@ -275,6 +286,8 @@ struct ContentView: View {
             .help(L("Projects · of them with changes waiting (⌘1, ⌘2, ⌘3)", "Projekte · davon mit wartenden Änderungen (⌘1, ⌘2, ⌘3)"))
 
             TextField(L("Search", "Suchen"), text: $search).textFieldStyle(.roundedBorder)
+                .frame(minWidth: 110)
+                .layoutPriority(1)
                 .focused($searchFocused)
                 .onExitCommand { search = ""; searchFocused = false }
 
@@ -282,14 +295,19 @@ struct ContentView: View {
                 Text(L("Changed only", "Nur mit Änderungen") + " (\(scopes.map { store.changedCount($0) }.reduce(0, +)))")
             }
             .toggleStyle(.button)
+            .fixedSize()
             .help(L("Only projects with a commit on GitHub that is not live yet",
                     "Nur Projekte mit einem Commit auf GitHub, der noch nicht live ist"))
 
             let stamps = scopes.compactMap { p in store.loadedAt[p].map { (showAll ? p.rawValue + " " : "") + $0.formatted(date: .omitted, time: .shortened) } }
             if !stamps.isEmpty {
-                Text((scopes.contains { store.fromCache.contains($0) } ? L("saved ", "gespeichert ") : L("updated ", "Aktualisiert "))
-                     + stamps.joined(separator: " · "))
-                    .font(.caption2).foregroundStyle(.secondary).fixedSize()
+                // Dropped first when the window is narrow; the reload button's tooltip still has it.
+                ViewThatFits(in: .horizontal) {
+                    Text((scopes.contains { store.fromCache.contains($0) } ? L("saved ", "gespeichert ") : L("updated ", "Aktualisiert "))
+                         + stamps.joined(separator: " · "))
+                        .font(.caption2).foregroundStyle(.secondary).fixedSize()
+                    Color.clear.frame(width: 0, height: 0)
+                }
             }
             Button { Task { for p in scopes { await store.load(p) }; await store.loadExtras() } } label: {
                 if store.loading.contains(platform) { ProgressView().controlSize(.small) }
@@ -718,6 +736,7 @@ struct CostChartDescriptor: AXChartDescriptorRepresentable {
 struct CostBar: View {
     let costs: Costs
     @State private var hovered: String?
+    @State private var sharing = false
     private static let dayFormat: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); return f
     }()
@@ -747,8 +766,9 @@ struct CostBar: View {
                          + s.after.formatted(.currency(code: "USD")) + L(" since", " seitdem"))
                         .font(.caption2.weight(.medium)).foregroundStyle(s.after < s.before ? .green : .orange)
                     if s.after < s.before {
-                        Button(L("Share the saving", "Ersparnis teilen")) { SavingCard.copy(before: s.before, after: s.after) }
+                        Button(L("Share the saving …", "Ersparnis teilen …")) { sharing = true }
                             .buttonStyle(.link).font(.caption2)
+                            .popover(isPresented: $sharing) { SavingShare(before: s.before, after: s.after) }
                             .help(L("Copies a picture and a sentence with your saving, without project names",
                                     "Kopiert ein Bild und einen Satz mit deiner Ersparnis, ohne Projektnamen"))
                     }
@@ -784,6 +804,46 @@ struct CostBar: View {
         .help(L("Build costs from Vercel's billing data; orange: over twice the average; green line: auto-deploy turned off. Total incl. other usage: ",
                 "Build-Kosten aus Vercels Abrechnung; orange: mehr als doppelt so viel wie im Schnitt; grüne Linie: Auto-Deploy ausgeschaltet. Gesamt inkl. sonstiger Nutzung: ")
               + last7.map(\.total).reduce(0, +).formatted(.currency(code: "USD")))
+    }
+}
+
+/// The picture before it goes anywhere: copy it, save it as PNG, or hand it to the share menu.
+struct SavingShare: View {
+    let before: Double, after: Double
+    @State private var copied = false
+
+    private var image: NSImage? {
+        let r = ImageRenderer(content: SavingCard(before: before, after: after)); r.scale = 2
+        return r.nsImage
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SavingCard(before: before, after: after).scaleEffect(0.7).frame(width: 364, height: 200)
+            Text(SavingCard.text(before: before, after: after)).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true).frame(width: 364, alignment: .leading)
+            HStack {
+                Button(copied ? L("Copied ✓", "Kopiert ✓") : L("Copy picture and text", "Bild und Text kopieren")) {
+                    SavingCard.copy(before: before, after: after); copied = true
+                }
+                Button(L("Save as PNG …", "Als PNG sichern …")) { save() }
+                if let img = image {
+                    ShareLink(item: Image(nsImage: img), subject: Text("Deploy Center"),
+                              message: Text(SavingCard.text(before: before, after: after)),
+                              preview: SharePreview(L("Build cost saving", "Build-Ersparnis"), image: Image(nsImage: img)))
+                }
+            }
+        }
+        .padding(16)
+    }
+
+    private func save() {
+        guard let img = image, let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = L("deploy-center-saving.png", "deploy-center-ersparnis.png")
+        if panel.runModal() == .OK, let url = panel.url { try? png.write(to: url) }
     }
 }
 
@@ -854,9 +914,7 @@ struct Setup: View {
             ForEach(commands, id: \.self) { c in
                 HStack {
                     Text(c).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                    Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c, forType: .string) }
-                        label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).help(L("Copy", "Kopieren"))
-                        .accessibilityLabel(L("Copy \(c)", "\(c) kopieren"))
+                    CopyButton(title: L("Copy \(c)", "\(c) kopieren"), systemImage: "doc.on.doc") { c }.buttonStyle(.borderless)
                 }
                 .padding(8).background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
             }
@@ -949,32 +1007,10 @@ struct Row: View {
                 }
                 Text(Demo.on ? item.platform.rawValue : item.detail).font(.caption).foregroundStyle(.secondary)
                 if let note { Text(note).font(.caption.italic()).foregroundStyle(.orange) }
-                HStack(spacing: 8) {
-                    lastDeploy
-                    if let cost, cost >= 0.01 {
-                        Text(L("builds 7 days: ", "Builds 7 Tage: ") + cost.formatted(.currency(code: "USD")))
-                            .font(.caption2).foregroundStyle(cost >= 5 ? Color.warningText : .secondary)
-                            .help(perBuild.map { L("About ", "Etwa ") + $0.formatted(.currency(code: "USD")) + L(" per build", " pro Build") } ?? "")
-                    }
-                    if item.hasNewCommits && sameRepoAsAbove {
-                        Label(L("same changes as the row above (same repo)", "gleiche Änderungen wie die Zeile darüber (gleiches Repo)"), systemImage: "arrow.up.circle")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    } else if item.hasNewCommits {
-                        Label(Self.waitingText(item), systemImage: "arrow.up.circle.fill")
-                            .font(.caption2.weight(.semibold)).foregroundStyle(.blue)
-                            .help(item.headMsg.map { L("Newest commit: ", "Neuester Commit: ") + (Demo.on ? "…" : $0)
-                                + (item.headAt.map { " (\(Self.ago($0)))" } ?? "") } ?? "")
-                    }
-                    if item.hasNewCommits, !sameRepoAsAbove, let since = item.oldestPendingAt {
-                        Text(L("oldest waiting commit ", "ältester wartender Commit ") + Self.ago(since))
-                            .font(.caption2).foregroundStyle(Date().timeIntervalSince(since) > 3 * 86400 ? Color.warningText : .secondary)
-                            .help(L("The oldest commit that is not live", "Der älteste Commit, der noch nicht live ist"))
-                    }
-                    if !sameRepoAsAbove, let o = item.openPRs, o > 0 {
-                        Text(Self.openText(item, o))
-                            .font(.caption2).foregroundStyle(.secondary)
-                            .help(L("Pull requests on the repo that are not merged yet", "Pull Requests im Repo, die noch nicht gemergt sind"))
-                    }
+                // One line when there is room, otherwise one chip under the other.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { chips }
+                    VStack(alignment: .leading, spacing: 2) { chips }
                 }
             }
 
@@ -1013,6 +1049,34 @@ struct Row: View {
             if item.state.isActive, let onCancel { Button(L("Cancel the deploy", "Deploy abbrechen"), action: onCancel) }
             if let u = item.link.flatMap(URL.init(string:)) { Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) } }
         }
+    }
+
+    @ViewBuilder private var chips: some View {
+                lastDeploy
+                if let cost, cost >= 0.01 {
+                    Text(L("builds 7 days: ", "Builds 7 Tage: ") + cost.formatted(.currency(code: "USD")))
+                        .font(.caption2).foregroundStyle(cost >= 5 ? Color.warningText : .secondary)
+                        .help(perBuild.map { L("About ", "Etwa ") + $0.formatted(.currency(code: "USD")) + L(" per build", " pro Build") } ?? "")
+                }
+                if item.hasNewCommits && sameRepoAsAbove {
+                    Label(L("same changes as the row above (same repo)", "gleiche Änderungen wie die Zeile darüber (gleiches Repo)"), systemImage: "arrow.up.circle")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else if item.hasNewCommits {
+                    Label(Self.waitingText(item), systemImage: "arrow.up.circle.fill")
+                        .font(.caption2.weight(.semibold)).foregroundStyle(.blue)
+                        .help(item.headMsg.map { L("Newest commit: ", "Neuester Commit: ") + (Demo.on ? "…" : $0)
+                            + (item.headAt.map { " (\(Self.ago($0)))" } ?? "") } ?? "")
+                }
+                if item.hasNewCommits, !sameRepoAsAbove, let since = item.oldestPendingAt {
+                    Text(L("oldest waiting commit ", "ältester wartender Commit ") + Self.ago(since))
+                        .font(.caption2).foregroundStyle(Date().timeIntervalSince(since) > 3 * 86400 ? Color.warningText : .secondary)
+                        .help(L("The oldest commit that is not live", "Der älteste Commit, der noch nicht live ist"))
+                }
+                if !sameRepoAsAbove, let o = item.openPRs, o > 0 {
+                    Text(Self.openText(item, o))
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .help(L("Pull requests on the repo that are not merged yet", "Pull Requests im Repo, die noch nicht gemergt sind"))
+                }
     }
 
     /// What VoiceOver says for the row: name, what waits, the last deploy and what runs now.
@@ -1154,10 +1218,8 @@ struct Row: View {
                     Button { NSWorkspace.shared.open(u) } label: { Image(systemName: "arrow.up.right.square") }
                         .buttonStyle(.borderless).help(url).accessibilityLabel(L("Open the deployed site", "Deployte Seite öffnen"))
                     if item.previewId != nil {
-                        Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url, forType: .string) }
-                            label: { Image(systemName: "link") }
-                            .buttonStyle(.borderless).help(L("Copy the preview link", "Vorschau-Link kopieren"))
-                            .accessibilityLabel(L("Copy the preview link", "Vorschau-Link kopieren"))
+                        CopyButton(title: L("Copy the preview link", "Vorschau-Link kopieren"), systemImage: "link") { url }
+                            .buttonStyle(.borderless)
                     }
                 }
             }
@@ -1170,9 +1232,8 @@ struct Row: View {
                 Label(L("Failed", "Fehler"), systemImage: "xmark.octagon.fill")
                     .foregroundStyle(.red).font(.caption.weight(.semibold))
                     .help(Demo.scrub(msg, items: [item]))
-                Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString("\(item.name): \(msg)", forType: .string) }
-                    label: { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(.borderless).help(L("Copy the error", "Fehler kopieren")).accessibilityLabel(L("Copy the error", "Fehler kopieren"))
+                CopyButton(title: L("Copy the error", "Fehler kopieren"), systemImage: "doc.on.doc") { "\(item.name): \(msg)" }
+                    .buttonStyle(.borderless)
                 if let showLog {
                     Button(action: showLog) { Image(systemName: "text.alignleft") }
                         .buttonStyle(.borderless).help(L("Build log", "Build-Log")).accessibilityLabel(L("Build log", "Build-Log"))

@@ -38,11 +38,11 @@ struct BuildLog: View {
                 if let text {
                     Toggle(L("Errors only", "Nur Fehler"), isOn: $onlyErrors).toggleStyle(.button)
                         .disabled(firstError == nil)
-                    Button(L("Copy", "Kopieren")) { copy(text) }
-                    Button(L("Copy for Claude", "Für Claude kopieren")) {
+                    CopyButton(title: L("Copy", "Kopieren")) { text }
+                    CopyButton(title: L("Copy for Claude", "Für Claude kopieren")) {
                         var msg: String?
                         if case .failed(let m) = live.state { msg = m }
-                        copy(LogTools.claudePrompt(name: live.name, repo: live.repo, ref: live.ref, sha: live.headSha, message: msg, log: text))
+                        return LogTools.claudePrompt(name: live.name, repo: live.repo, ref: live.ref, sha: live.headSha, message: msg, log: text)
                     }
                     .help(L("A prompt with the error and the log around it, ready to paste", "Ein Prompt mit Fehler und Log drumherum, zum Einfügen"))
                 }
@@ -62,7 +62,7 @@ struct BuildLog: View {
                     }
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
-        .frame(width: 760, height: 520)
+        .frame(minWidth: 560, idealWidth: 760, maxWidth: .infinity, minHeight: 320, idealHeight: 520, maxHeight: .infinity)
         .task(id: reloadKey) {
             do {
                 let data = try await Tool.run(["logs", item.id, "200"])
@@ -154,10 +154,7 @@ struct ProjectDetail: View {
                 if item.state.isActive { ProgressView().controlSize(.small) }
                 Spacer()
                 if let d = details, !d.commits.isEmpty {
-                    Button(L("Copy release notes", "Release-Notes kopieren")) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(LogTools.releaseNotes(name: item.name, commits: d.commits), forType: .string)
-                    }
+                    CopyButton(title: L("Copy release notes", "Release-Notes kopieren")) { LogTools.releaseNotes(name: item.name, commits: d.commits) }
                     .help(L("The waiting commits as a list, ready for a mail or a chat message", "Die wartenden Commits als Liste, fertig für Mail oder Chat"))
                 }
                 Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
@@ -172,7 +169,7 @@ struct ProjectDetail: View {
                 ProgressView(L("Asking GitHub …", "Frage GitHub …")).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(width: 620, height: 560)
+        .frame(minWidth: 520, idealWidth: 620, maxWidth: .infinity, minHeight: 360, idealHeight: 560, maxHeight: .infinity)
         .alert(L("Deploy this commit?", "Diesen Commit deployen?"),
                isPresented: Binding(get: { commitToDeploy != nil }, set: { if !$0 { commitToDeploy = nil } })) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { commitToDeploy = nil }
@@ -270,9 +267,8 @@ struct ProjectDetail: View {
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Text("git diff --quiet HEAD^ HEAD -- .").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                        Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString("git diff --quiet HEAD^ HEAD -- .", forType: .string) }
-                            label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless)
-                            .accessibilityLabel(L("Copy the command", "Befehl kopieren")).help(L("Copy the command", "Befehl kopieren"))
+                        CopyButton(title: L("Copy the command", "Befehl kopieren"), systemImage: "doc.on.doc") { "git diff --quiet HEAD^ HEAD -- ." }
+                            .buttonStyle(.borderless)
                     }
                     .padding(6).background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.1)))
                 }

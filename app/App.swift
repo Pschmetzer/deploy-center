@@ -25,97 +25,174 @@ struct SettingsView: View {
     @AppStorage("staleDays") private var staleDays = 0
     @AppStorage("monthlyBudget") private var monthlyBudget = 0.0
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
     @State private var loginError: String?
+    @State private var notificationsDenied = false
+
+    private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?" }
 
     var body: some View {
         Form {
-            Picker(L("Reload the lists every", "Listen neu laden alle"), selection: $refreshMinutes) {
-                ForEach([5, 15, 30, 60], id: \.self) { Text(L("\($0) minutes", "\($0) Minuten")).tag($0) }
-            }
-            Picker(L("Builds at the same time", "Builds gleichzeitig"), selection: $maxParallel) {
-                ForEach([1, 2, 3, 5, 10], id: \.self) { Text("\($0)").tag($0) }
-            }
-            Toggle(L("Show in the menu bar", "In der Menüleiste zeigen"), isOn: $showMenuBar)
-                // Without the menu bar the Dock icon is the only way back in: it comes back.
-                .onChange(of: showMenuBar) { _, on in
-                    if !on && hideDock { hideDock = false }
+            Section(L("General", "Allgemein")) {
+                Picker(L("Reload the lists every", "Listen neu laden alle"), selection: $refreshMinutes) {
+                    ForEach([5, 15, 30, 60], id: \.self) { Text(L("\($0) minutes", "\($0) Minuten")).tag($0) }
                 }
-            Toggle(L("No Dock icon (menu bar only)", "Kein Dock-Symbol (nur Menüleiste)"), isOn: $hideDock)
-                .disabled(!showMenuBar)
-                .onChange(of: hideDock) { _, on in
-                    NSApp.setActivationPolicy(on ? .accessory : .regular)
-                    if !on { NSApp.activate(ignoringOtherApps: true) }
-                }
-            Toggle(L("Open at login", "Beim Anmelden öffnen"), isOn: $openAtLogin)
-                .onChange(of: openAtLogin) { _, on in
-                    do { if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }; loginError = nil }
-                    catch { loginError = error.localizedDescription; openAtLogin = SMAppService.mainApp.status == .enabled }
-                }
-            if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
-            Picker(L("Wait before a deploy starts", "Warten, bevor ein Deploy startet"), selection: $undoSeconds) {
-                Text(L("No wait", "Nicht warten")).tag(0)
-                ForEach([5, 8, 15], id: \.self) { Text(L("\($0) seconds (cancel possible)", "\($0) Sekunden (Abbrechen möglich)")).tag($0) }
-            }
-            HStack {
-                Text(L("Monthly build budget (USD, 0 = off)", "Monatliches Build-Budget (USD, 0 = aus)"))
-                TextField("0", value: $monthlyBudget, format: .number).frame(width: 70).multilineTextAlignment(.trailing)
-            }
-            Picker(L("Warn when commits wait longer than", "Warnen, wenn Commits länger warten als"), selection: $staleDays) {
-                Text(L("Off", "Aus")).tag(0)
-                ForEach([2, 3, 5, 7], id: \.self) { Text(L("\($0) days", "\($0) Tage")).tag($0) }
-            }
-            Toggle(L("Notify when a deploy ends", "Mitteilung, wenn ein Deploy fertig ist"), isOn: $notifications)
-            Picker(L("Daily reminder to deploy", "Tägliche Erinnerung zum Deployen"), selection: $reminderHour) {
-                Text(L("Off", "Aus")).tag(0)
-                ForEach(7...20, id: \.self) { Text(L("at \($0):00", "um \($0):00 Uhr")).tag($0) }
-            }
-            .onChange(of: reminderHour) { _, h in if h > 0 { Notify.ask() } }
-            .help(L("Only a reminder, and only when something waits. Nothing is deployed by itself.",
-                    "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
-            Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
-            Toggle(L("Look for a new version once a day", "Einmal am Tag nach einer neuen Version sehen"), isOn: $checkUpdates)
-            HStack {
-                Button(L("Check for updates now", "Jetzt nach Update suchen")) { Task { await store.checkForUpdate(force: true) } }
-                if store.newVersion != nil {
-                    Button(store.updating ? L("Updating …", "Aktualisiere …") : L("Update now", "Jetzt aktualisieren")) { Task { await store.installUpdate() } }
-                        .disabled(store.updating)
-                    Button(L("Download", "Herunterladen")) {
-                        NSWorkspace.shared.open(URL(string: "https://github.com/\(Updater.repo)/releases/latest")!)
+                Toggle(L("Show in the menu bar", "In der Menüleiste zeigen"), isOn: $showMenuBar)
+                    // Without the menu bar the Dock icon is the only way back in: it comes back.
+                    .onChange(of: showMenuBar) { _, on in
+                        if !on && hideDock { hideDock = false }
+                    }
+                Toggle(L("No Dock icon (menu bar only)", "Kein Dock-Symbol (nur Menüleiste)"), isOn: $hideDock)
+                    .disabled(!showMenuBar)
+                    .onChange(of: hideDock) { _, on in
+                        NSApp.setActivationPolicy(on ? .accessory : .regular)
+                        if !on { NSApp.activate(ignoringOtherApps: true) }
+                    }
+                Toggle(L("Open at login", "Beim Anmelden öffnen"), isOn: $openAtLogin)
+                    .onChange(of: openAtLogin) { _, on in
+                        do { if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }; loginError = nil }
+                        catch { loginError = error.localizedDescription; openAtLogin = SMAppService.mainApp.status == .enabled }
+                        loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
+                    }
+                if loginNeedsApproval {
+                    HStack {
+                        Text(L("macOS still has to allow this under Login Items.", "macOS muss das unter Anmeldeobjekte noch erlauben."))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button(L("Open Login Items", "Anmeldeobjekte öffnen")) { SMAppService.openSystemSettingsLoginItems() }
                     }
                 }
-                if let st = store.updateStatus { Text(st).font(.caption).foregroundStyle(.secondary) }
+                if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
+                Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
             }
-            Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
-                if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
-                NSWorkspace.shared.open(Log.url)
+
+            Section(L("Deploy", "Deploy")) {
+                Picker(L("Builds at the same time", "Builds gleichzeitig"), selection: $maxParallel) {
+                    ForEach([1, 2, 3, 5, 10], id: \.self) { Text("\($0)").tag($0) }
+                }
+                Picker(L("Wait before a deploy starts", "Warten, bevor ein Deploy startet"), selection: $undoSeconds) {
+                    Text(L("No wait", "Nicht warten")).tag(0)
+                    ForEach([5, 8, 15], id: \.self) { Text(L("\($0) seconds (cancel possible)", "\($0) Sekunden (Abbrechen möglich)")).tag($0) }
+                }
+                Picker(L("Warn when commits wait longer than", "Warnen, wenn Commits länger warten als"), selection: $staleDays) {
+                    Text(L("Off", "Aus")).tag(0)
+                    ForEach([2, 3, 5, 7], id: \.self) { Text(L("\($0) days", "\($0) Tage")).tag($0) }
+                }
             }
-            if !store.hidden.isEmpty {
-                DisclosureGroup(L("\(store.hidden.count) hidden projects", "\(store.hidden.count) ausgeblendete Projekte")) {
-                    ForEach(store.hidden.sorted(), id: \.self) { k in
-                        HStack {
-                            Text(Demo.mask(String(k.split(separator: "/", maxSplits: 1).last ?? Substring(k))))
-                            Spacer()
-                            Button(L("Show", "Zeigen")) { store.unhide(k) }
+
+            Section(L("Costs", "Kosten")) {
+                HStack {
+                    Text(L("Monthly build budget (USD, 0 = off)", "Monatliches Build-Budget (USD, 0 = aus)"))
+                    Spacer()
+                    TextField("0", value: $monthlyBudget, format: .number).frame(width: 80).multilineTextAlignment(.trailing)
+                        // A budget below zero means nothing; it becomes "off".
+                        .onChange(of: monthlyBudget) { _, v in if v < 0 || !v.isFinite { monthlyBudget = 0 } }
+                }
+            }
+
+            Section(L("Notifications", "Mitteilungen")) {
+                Toggle(L("Notify when a deploy ends", "Mitteilung, wenn ein Deploy fertig ist"), isOn: $notifications)
+                Picker(L("Daily reminder to deploy", "Tägliche Erinnerung zum Deployen"), selection: $reminderHour) {
+                    Text(L("Off", "Aus")).tag(0)
+                    ForEach(1...23, id: \.self) { Text(L("from \($0):00", "ab \($0):00 Uhr")).tag($0) }
+                }
+                .onChange(of: reminderHour) { _, h in if h > 0 { Notify.ask() } }
+                .help(L("Only a reminder, and only when something waits. Nothing is deployed by itself.",
+                        "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
+                if notificationsDenied {
+                    HStack {
+                        Text(L("Notifications are turned off for Deploy Center in System Settings.",
+                               "Mitteilungen sind für Deploy Center in den Systemeinstellungen aus."))
+                            .font(.caption).foregroundStyle(Color.warningText)
+                        Spacer()
+                        Button(L("Open System Settings", "Systemeinstellungen öffnen")) {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
                         }
                     }
                 }
             }
-            Button(L("Copy diagnostics", "Diagnose kopieren")) {
-                let d = store.doctor
-                let info = ["Deploy Center \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")",
+
+            Section(L("Updates", "Updates")) {
+                Toggle(L("Check for updates daily", "Täglich nach Updates suchen"), isOn: $checkUpdates)
+                HStack {
+                    Button(L("Check now", "Jetzt suchen")) { Task { await store.checkForUpdate(force: true) } }
+                    if store.newVersion != nil {
+                        Button(store.updating ? L("Updating …", "Aktualisiere …") : L("Update now", "Jetzt aktualisieren")) { Task { await store.installUpdate() } }
+                            .disabled(store.updating)
+                        Button(L("Download", "Herunterladen")) {
+                            NSWorkspace.shared.open(URL(string: "https://github.com/\(Updater.repo)/releases/latest")!)
+                        }
+                    }
+                    Spacer()
+                    // The result next to the button, with the versions it is about.
+                    Group {
+                        if let v = store.newVersion { Text(L("Version \(v) is out (you have \(version))", "Version \(v) ist da (du hast \(version))")) }
+                        else if let st = store.updateStatus { Text(st) }
+                        else { Text(L("You have \(version)", "Du hast \(version)")) }
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            if !store.hidden.isEmpty {
+                Section(L("Hidden projects", "Ausgeblendete Projekte")) {
+                    DisclosureGroup(L("\(store.hidden.count) hidden", "\(store.hidden.count) ausgeblendet")) {
+                        ForEach(store.hidden.sorted(), id: \.self) { k in
+                            HStack {
+                                Text(Demo.mask(hiddenName(k)))
+                                Text(hiddenPlatform(k)).font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Button(L("Show", "Zeigen")) { store.unhide(k) }
+                            }
+                        }
+                    }
+                    Button(L("Show all", "Alle zeigen")) { store.hidden.sorted().forEach { store.unhide($0) } }
+                }
+            }
+
+            Section(L("Help", "Hilfe")) {
+                Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
+                    if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
+                    NSWorkspace.shared.open(Log.url)
+                }
+                CopyButton(title: L("Copy diagnostics", "Diagnose kopieren")) {
+                    let d = store.doctor
+                    return ["Deploy Center \(version)",
                             ProcessInfo.processInfo.operatingSystemVersionString,
                             "jq \(d?.jq ?? false), vercel \(d?.vercelCli ?? false)/api \(d?.vercelApi ?? false)/login \(d?.vercelLoggedIn ?? false)",
                             "gh \(d?.githubCli ?? false)/login \(d?.githubLoggedIn ?? false), render key \(d?.renderKey ?? false)",
-                            "Vercel \(store.items[.vercel]?.count ?? 0), Render \(store.items[.render]?.count ?? 0) projects"]
-                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(info.joined(separator: "\n"), forType: .string)
+                            "Vercel \(store.items[.vercel]?.count ?? 0), Render \(store.items[.render]?.count ?? 0) projects"].joined(separator: "\n")
+                }
+                Text(L("Diagnostics: versions and what is connected; no names, no keys.", "Diagnose: Versionen und was verbunden ist; keine Namen, keine Schlüssel."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(L("Version ", "Version ") + version
+                     + L(" · no telemetry; GitHub, Vercel and Render are asked with your own logins", " · keine Telemetrie; GitHub, Vercel und Render werden mit deinen eigenen Anmeldungen gefragt"))
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            .help(L("Versions and what is connected; no names, no keys", "Versionen und was verbunden ist; keine Namen, keine Schlüssel"))
-            Text(L("Version ", "Version ") + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")
-                 + L(" · no telemetry; GitHub, Vercel and Render are asked with your own logins", " · keine Telemetrie; GitHub, Vercel und Render werden mit deinen eigenen Anmeldungen gefragt"))
-                .font(.caption).foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
-        .frame(width: 460)
+        .frame(width: 560)
+        .frame(minHeight: 480, idealHeight: 680, maxHeight: 820)
+        .task {
+            let st = await UNUserNotificationCenter.current().notificationSettings()
+            notificationsDenied = notifications && st.authorizationStatus == .denied
+        }
+        .onChange(of: notifications) { _, on in
+            Task {
+                let st = await UNUserNotificationCenter.current().notificationSettings()
+                notificationsDenied = on && st.authorizationStatus == .denied
+            }
+        }
+    }
+
+    /// The name of a hidden project: from the list when it is there (Render keys hold the service id).
+    private func hiddenName(_ k: String) -> String {
+        if let i = Platform.allCases.flatMap({ store.items[$0] ?? [] }).first(where: { Store.key($0) == k }) { return i.name }
+        return String(k.split(separator: "/", maxSplits: 1).last ?? Substring(k))
+    }
+    private func hiddenPlatform(_ k: String) -> String {
+        let cli = String(k.split(separator: "/").first ?? "")
+        return Platform.allCases.first { $0.cli == cli }?.rawValue ?? cli
     }
 }
 
