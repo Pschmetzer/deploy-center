@@ -71,7 +71,10 @@ and Coolify (their `_status_json` / `_latest_json`).
 `vercel_on` and `render_on` (`deploys vercel|render autodeploy-on <p>|--all`) take `--dry-run`:
 they only read and print what they would switch back on, one line each, or with `--json`
 `{provider, dryRun:true, items:[{name, id, action:"on"|"skip"|"already", reason}], on, skipped}`
-(FEA-110, for "turn everything back on" in docs/UNINSTALL.md).
+(FEA-110, for "turn everything back on" in docs/UNINSTALL.md). The flag goes after the target
+(`autodeploy-on --all --dry-run`: `deploys` checks the third word as a name). Their `_meta` says
+`"onDryRun":true`; a caller checks that first, because an older provider ignores `--dry-run` and
+really switches everything on.
 Platform extras that are not part of the contract stay where they are: `vercel map`,
 `vercel team`, `costs`, `triggers`.
 

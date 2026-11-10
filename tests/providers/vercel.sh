@@ -175,6 +175,7 @@ out="$(lib 'vercel_on --all --dry-run --json')"; rc=$?
 expect "FEA-110: --all --dry-run --json is a plan" "$rc:$(echo "$out" | jq -c '[.provider, .dryRun, (.items | type), (.on + .skipped == (.items | length))]')" '0:["vercel",true,"array",true]'
 expect "FEA-110: only reads" "$(grep -cE -- '--method (POST|PATCH|PUT|DELETE)' "$CALLS")" 0
 expect "FEA-110: each item says on, skip or already" "$(echo "$out" | jq -c '[.items[].action] | all(. == "on" or . == "skip" or . == "already")')" true
+expect "FEA-110: _meta says onDryRun (older copies would really switch on)" "$(lib vercel_meta | jq .onDryRun)" true
 out="$(lib 'vercel_on --all --dry-run')"
 expect "FEA-110: the text form ends with nothing changed" "$(echo "$out" | tail -n 1)" "Dry run: nothing changed."
 
@@ -184,6 +185,7 @@ cat > "$tmp/bin/gh" <<'SH'
 #!/bin/bash
 echo "gh $*" >> "${CALLS:-/dev/null}"
 [ "${GHCMP:-}" != down ] || exit 1
+[ "${GHCMP:-}" != 404 ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
 case "$*" in *"/compare/"*) echo "${GHCMP:-behind}" ;; esac
 SH
 chmod +x "$tmp/bin/gh"
@@ -199,6 +201,9 @@ expect "FEA-042: DEPLOYS_VERCEL_ANY_SHA=1 allows it, without asking" "$out:$(cal
 fresh
 out="$(GHCMP=down lib 'vercel_deploy_json alpha --sha abc1234def' | jq -r .id)"
 expect "FEA-042: GitHub not reachable: a warning, deployed" "$out:$(grep -c 'could not check' "$tmp/err")" "dpl_alpha3:1"
+fresh
+GHCMP=404 lib 'vercel_deploy_json alpha --sha abc1234def' >/dev/null; rc=$?
+expect "FEA-042: a commit GitHub does not know there is refused" "$rc:$(calls -- '--method POST'):$(grep -c 'does not know abc1234' "$tmp/err")" "1:0:1"
 fresh
 GHCMP=diverged lib 'vercel_deploy_json alpha --preview --sha abc1234def' >/dev/null
 expect "FEA-042: a preview is not checked" "$(calls '/compare/')" 0

@@ -10,7 +10,7 @@ RENDER_LEGACY_KEYCHAIN_SERVICE="render-api-key"
 export RENDER_KEYCHAIN_SERVICE RENDER_LEGACY_KEYCHAIN_SERVICE
 
 render_meta() {
-  printf '%s\n' '{"id":"render","label":"Render","noun":"service","defaultOn":true,"keyEnv":["RENDER_API_KEY"],"keychain":"deploy-center-render","auth":"API key","runtimeLogs":true,"caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":false}}'
+  printf '%s\n' '{"id":"render","label":"Render","noun":"service","defaultOn":true,"keyEnv":["RENDER_API_KEY"],"keychain":"deploy-center-render","auth":"API key","runtimeLogs":true,"onDryRun":true,"caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":false}}'
 }
 
 render_key() {

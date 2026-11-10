@@ -115,7 +115,8 @@ GitHub answers `204 No Content`, which counts as triggered. The run shows up in 
 
 GitHub Pages and Surge have no deploy hook of their own; a workflow builds and uploads the
 site, so the dispatch above is the hook. Give the workflow only `on: workflow_dispatch` (no
-`push:`), so a push builds nothing:
+`push:`), so a push builds nothing. For GitHub Pages this holds only with Settings → Pages →
+Source set to **GitHub Actions**; with "Deploy from a branch", Pages builds every push anyway:
 
 ```yaml
 on: workflow_dispatch

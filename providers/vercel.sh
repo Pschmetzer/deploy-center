@@ -5,7 +5,7 @@
 # name: the API takes either, and every command people type uses the name.
 
 vercel_meta() {
-  printf '%s\n' '{"id":"vercel","label":"Vercel","noun":"project","defaultOn":true,"keyEnv":["VERCEL_TOKEN"],"keychain":null,"auth":"vercel CLI login","caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":true}}'
+  printf '%s\n' '{"id":"vercel","label":"Vercel","noun":"project","defaultOn":true,"keyEnv":["VERCEL_TOKEN"],"keychain":null,"auth":"vercel CLI login","onDryRun":true,"caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":true}}'
 }
 
 # Set up here: the CLI is installed, or projects are remembered. Under launchd's PATH the vercel
@@ -264,14 +264,18 @@ VERCEL_META='def vsha: (.githubCommitSha // .gitlabCommitSha // .bitbucketCommit
 # fork). Not checked (a warning, and on): no gh, GitLab, or GitHub could not be asked.
 # DEPLOYS_VERCEL_ANY_SHA=1 allows it on purpose.
 vercel_sha_on_ref() {
-  local repo ref st
+  local repo ref st e
   repo="$(jq -r --arg p "$1" '.[$p] | if .type == "gitlab" or (.org | not) then "" else "\(.org)/\(.repo)" end' <<< "$2")"
   ref="$(jq -r --arg p "$1" '.[$p].ref // "main"' <<< "$2")"
   [ -n "$repo" ] && [ "${DEPLOYS_VERCEL_ANY_SHA:-}" != 1 ] || return 0
-  if ! command -v gh >/dev/null 2>&1 \
-    || ! st="$(gh api "repos/$repo/compare/$ref...$3" --jq .status 2>/dev/null)" || [ -z "$st" ]; then
-    echo "Vercel: could not check that ${3:0:7} is on $repo $ref (GitHub not reachable); deploying it" >&2; return 0
+  command -v gh >/dev/null 2>&1 || { echo "Vercel: could not check that ${3:0:7} is on $repo $ref (no gh); deploying it" >&2; return 0; }
+  e="$(mktemp)"
+  if ! st="$(gh api "repos/$repo/compare/$ref...$3" --jq .status 2>"$e")" || [ -z "$st" ]; then
+    # GitHub answered that it does not know the commit there (404/422): refused, not waved through.
+    if grep -qE 'HTTP (404|422)' "$e"; then rm -f "$e"; die "Vercel: GitHub does not know ${3:0:7} in $repo $ref: a fork's commit or a typo. Deploy without --sha, or set DEPLOYS_VERCEL_ANY_SHA=1 if this is meant"; fi
+    rm -f "$e"; echo "Vercel: could not check that ${3:0:7} is on $repo $ref (GitHub not reachable); deploying it" >&2; return 0
   fi
+  rm -f "$e"
   case "$st" in
     identical|behind) return 0 ;;
     *) die "Vercel: ${3:0:7} is not on $repo $ref ($st): a fork or another branch would go live as $1. Deploy without --sha, or set DEPLOYS_VERCEL_ANY_SHA=1 if this is meant" ;;

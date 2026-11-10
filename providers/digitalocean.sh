@@ -69,7 +69,7 @@ digitalocean_http() {  # <method> <url> <body> <key> <fix>
   local HTTP_AUTH="Authorization: Bearer $4" HTTP_FIX="$5"
   e="$(mktemp)"
   ( http_call DigitalOcean "$1" "$2" "$3" ) 2>"$e" || rc=$?
-  [ "$rc" = 0 ] || sed 's/^.*Error:[^ ]* //' "$e" >&2
+  [ "$rc" = 0 ] || sed '1s/^[^ ]*Error:[^ ]* //' "$e" >&2
   rm -f "$e"; return "$rc"
 }
 
