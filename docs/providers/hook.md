@@ -111,6 +111,31 @@ deploys hook add app "https://api.github.com/repos/me/app/actions/workflows/depl
 
 GitHub answers `204 No Content`, which counts as triggered. The run shows up in the repo's Actions tab.
 
+### GitHub Pages and Surge (static sites)
+
+GitHub Pages and Surge have no deploy hook of their own; a workflow builds and uploads the
+site, so the dispatch above is the hook. Give the workflow only `on: workflow_dispatch` (no
+`push:`), so a push builds nothing:
+
+```yaml
+on: workflow_dispatch
+permissions: { contents: read, pages: write, id-token: write }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci && npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: dist }
+      - uses: actions/deploy-pages@v4
+```
+
+For Surge, the last two steps are `npx surge dist my-site.surge.sh` with `SURGE_TOKEN` from the
+repo's secrets. Then add it as above, with `--site https://me.github.io/app` (or the surge.sh
+address) so `deploys open` and the site check know where it lives.
+
 ### Netlify, Dokploy, Amplify, others
 
 The pattern is the same: copy the hook URL, then `pbpaste | deploys hook add <name> - --repo … --site …`. Netlify's build hooks are under Site configuration, then Build & deploy, then **Build hooks**. Netlify stops building on push with **Stop builds**, under Build settings.
