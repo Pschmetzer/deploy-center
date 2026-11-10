@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Command palette: in observer mode (Settings → Team) it offers no deploy, rollback or "deploy all changed", like the window.
+- Updates via Sparkle 2: the app reads https://deploycenter.app/appcast.xml once a day (Settings can turn it off) and on "Check for Updates …", accepts a download only with a valid EdDSA signature and the same Developer ID, and installs once no deploy is running. Replaces the old GitHub release check and "Update now". The Homebrew cask says `auto_updates true`.
 
 ## 0.8.0
 
