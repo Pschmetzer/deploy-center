@@ -152,7 +152,10 @@ struct ContentView: View {
         lastTicked = key
     }
 
-    var body: some View {
+    // Split in three: one long chain of modifiers is too much for the type checker of older Xcodes.
+    var body: some View { dialogs }
+
+    private var chrome: some View {
         VStack(spacing: 0) {
             header
             Divider()
@@ -205,6 +208,10 @@ struct ContentView: View {
             tab: { n in showAll = n == 0; if n == 1 { platform = .vercel } else if n == 2 { platform = .render } },
             search: { searchFocused = true }))
         .animation(.easeOut(duration: 0.2), value: store.toast)
+    }
+
+    private var withSheets: some View {
+        chrome
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView() }
         .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item) { sha in store.deployOne(item, preview: false, sha: sha) } }
@@ -215,6 +222,10 @@ struct ContentView: View {
             Platform.allCases.forEach { store.selectChanged($0) }
             if !selectedAll.isEmpty { confirming = true }
         }
+    }
+
+    private var dialogs: some View {
+        withSheets
         .alert(L("Check after deploy", "Prüfung nach dem Deploy"), isPresented: Binding(get: { pathItem != nil }, set: { if !$0 { pathItem = nil } })) {
             TextField("/health", text: $pathText)
             Button(L("Cancel", "Abbrechen"), role: .cancel) { pathItem = nil }
@@ -1005,7 +1016,9 @@ struct Row: View {
         return a
     }
 
-    var body: some View {
+    var body: some View { forVoiceOver(layout) }
+
+    private var layout: some View {
         HStack(spacing: 12) {
             Button(action: toggle) {
                 Image(systemName: item.selected ? "checkmark.circle.fill" : "circle")
@@ -1062,6 +1075,10 @@ struct Row: View {
         .contentShape(Rectangle())
         .opacity(item.deployable ? 1 : 0.55)
         .onTapGesture { if !item.state.isActive { toggle() } }
+    }
+
+    private func forVoiceOver(_ v: some View) -> some View {
+        v
         // VoiceOver: one stop per project, its buttons as actions (VO-Command-Space).
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
