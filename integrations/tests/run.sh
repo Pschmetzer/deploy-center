@@ -129,5 +129,12 @@ if command -v ruby >/dev/null; then
   case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
 fi
 
+# --- VS Code extension: its own unit tests (node), when its dev dependencies are installed ---
+if command -v npm >/dev/null && [ -d vscode/node_modules ]; then
+  (cd vscode && npm test --silent >"$tmp/vscode.log" 2>&1) && ok "vscode: unit tests" || { fail "vscode: unit tests" "see below"; cat "$tmp/vscode.log"; }
+else
+  echo "skip vscode: run npm ci in integrations/vscode first"
+fi
+
 echo
 [ "$fails" = 0 ] && echo "All passed." || { echo "$fails failed."; exit 1; }

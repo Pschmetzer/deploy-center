@@ -270,6 +270,8 @@ fresh; export RENDER_API_KEY=rnd_test
 run "$O" "$E" status --no-github >/dev/null
 expect "status --no-github makes no GitHub call" "$(grep -c '^gh ' "$e2e/calls.log")" "0"
 expect "status --no-github prints no change count" "$(tail -n 1 "$O")" "0 building."
+run "$O" "$E" status --no-github --json >/dev/null
+expect "status --json carries the repo" "$(jq -r 'map(.repo) | join(",")' "$O")" "me/app,me/app"
 
 # watch: a finished newest deploy is reported as such; a network failure is exit 3, not "failed".
 fresh
