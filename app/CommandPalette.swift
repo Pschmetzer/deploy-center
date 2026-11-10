@@ -300,7 +300,6 @@ struct PaletteCosts: View {
             }.padding(12)
             Divider()
             if let c = store.costs {
-                CostBar(costs: c)
                 let top = c.projects.filter { $0.build > 0 }.sorted { $0.build > $1.build }.prefix(12)
                 if !top.isEmpty {
                     List(Array(top), id: \.name) { p in
@@ -393,7 +392,7 @@ struct CommandPaletteHost: ViewModifier {
                 switch s {
                 case .log(let i): BuildLog(store: store, item: i)
                 case .journal: JournalView()
-                case .costs: PaletteCosts(store: store)
+                case .costs: if let c = store.costs { CostsSheet(costs: c) } else { PaletteCosts(store: store) }
                 }
             }
             .modifier(PaletteQuestions(store: store, deployItem: $deployItem, unchangedItem: $unchangedItem,
