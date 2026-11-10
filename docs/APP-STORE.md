@@ -110,7 +110,14 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 4. **TestFlight.** Install the build on your own iPhone and add a real token. Then check:
    - deploy one project and roll it back;
    - a widget;
-   - a background note.
+   - a background note. To run the background refresh at once, pause the app in Xcode's debugger
+     and type:
+
+     ```
+     e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"app.deploycenter.ios.refresh"]
+     ```
+
+     then continue. This works on a device or simulator run from Xcode, not in a TestFlight build.
 5. **Submit.** Paste the texts and the review notes, add the screenshots, then submit for review.
 
 ## Before each release
@@ -137,6 +144,9 @@ behind the app are in `docs/WIDGETS-IOS.md`.
    ```
 
    It must print nothing.
+
+5. In App Store Connect → App Privacy, check that every language of the store page has its own
+   privacy policy URL. Without one, "Add for Review" is blocked.
 
 ## Submissions
 

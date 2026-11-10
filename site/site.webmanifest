@@ -1,13 +1,17 @@
 {
+  "id": "/",
   "name": "Deploy Center",
   "short_name": "Deploy Center",
-  "description": "Free Mac app: turn off auto-deploy on Vercel and Render and deploy what changed when you decide.",
+  "description": "Free Mac app and CLI: turn off auto-deploy on Vercel, Render and other hosts, and deploy what changed when you decide.",
+  "lang": "en",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "browser",
   "background_color": "#0b0d12",
   "theme_color": "#0b0d12",
   "icons": [
-    {"src": "/img/icon-192.png", "sizes": "192x192", "type": "image/png"},
-    {"src": "/img/icon-512.png", "sizes": "512x512", "type": "image/png"}
+    {"src": "/img/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
   ]
 }
