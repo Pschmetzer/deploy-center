@@ -50,6 +50,13 @@ struct ContentView: View {
     @State private var search = ""
     @State private var confirming = false
     @State private var confirmingOff = false
+    /// The checkbox in the deploy confirmation: only commits whose CI passed go out. Remembered.
+    @AppStorage("onlyWhenGreen") private var onlyGreen = false
+    /// The deploy window's rule while it is closed, the platforms waiting for "Deploy anyway…", and why.
+    @State private var freezeReason: String?
+    @State private var frozenScopes: [Platform] = []
+    @State private var askingWhy = false
+    @State private var forceText = ""
     /// The platform whose auto-deploy banner was clicked (on "All" both can have one).
     @State private var offPlatform = Platform.vercel
     @AppStorage("onlyChanged") private var onlyChanged = false
@@ -271,17 +278,45 @@ struct ContentView: View {
             try? await Task.sleep(nanoseconds: 200_000_000)
             if search.isEmpty { NSApp.keyWindow?.makeFirstResponder(nil) }
         }
-        .alert(L("Put this live now?", "Jetzt live schalten?"), isPresented: $confirming) {
-            Button(L("Cancel", "Abbrechen"), role: .cancel) {}
-            Button(L("Deploy", "Deployen")) { scopes.forEach { store.deploySelected($0) } }
+        // On a view of its own: the checkbox below belongs to this alert only, not to the others here.
+        .background {
+            Color.clear
+                .alert(L("Put this live now?", "Jetzt live schalten?"), isPresented: $confirming) {
+                    Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+                    Button(L("Deploy", "Deployen")) { startDeploy() }
+                } message: {
+                    // At most 12 lines, so the dialog does not grow past the screen.
+                    Text(selectedAll.prefix(12).map { i in
+                            Demo.mask(i.name) + ((i.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText(i) : "") }.joined(separator: "\n")
+                         + (selectedAll.count > 12 ? "\n" + L("and \(selectedAll.count - 12) more", "und \(selectedAll.count - 12) weitere") : "")
+                         + "\n\n" + L("The newest commit on GitHub goes live.",
+                                       "Der neueste Stand von GitHub geht live.")
+                         + unchangedNote)
+                }
+                .dialogSuppressionToggle(LocalizedStringKey(L("Only when checks are green", "Nur wenn die Checks grün sind")), isSuppressed: $onlyGreen)
+        }
+        .alert(L("The deploy window is closed", "Das Deploy-Fenster ist zu"),
+               isPresented: Binding(get: { freezeReason != nil }, set: { if !$0 { freezeReason = nil } })) {
+            Button(L("Cancel", "Abbrechen"), role: .cancel) { freezeReason = nil }
+            Button(L("Deploy anyway…", "Trotzdem deployen …")) {
+                freezeReason = nil; forceText = ""
+                DispatchQueue.main.async { askingWhy = true }   // one alert after the other
+            }
         } message: {
-            // At most 12 lines, so the dialog does not grow past the screen.
-            Text(selectedAll.prefix(12).map { i in
-                    Demo.mask(i.name) + ((i.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText(i) : "") }.joined(separator: "\n")
-                 + (selectedAll.count > 12 ? "\n" + L("and \(selectedAll.count - 12) more", "und \(selectedAll.count - 12) weitere") : "")
-                 + "\n\n" + L("The newest commit on GitHub goes live.",
-                               "Der neueste Stand von GitHub geht live.")
-                 + unchangedNote)
+            Text(L("No deploys now: \(freezeReason ?? "") (deploy window in window.json).",
+                   "Gerade keine Deploys: \(freezeReason ?? "") (Deploy-Fenster in window.json)."))
+        }
+        .alert(L("Why deploy now?", "Warum jetzt deployen?"), isPresented: $askingWhy) {
+            TextField(L("e.g. hotfix for the login page", "z. B. Hotfix für die Login-Seite"), text: $forceText)
+            Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+            Button(L("Deploy", "Deployen")) {
+                // The script takes a reason starting with "-" for an option.
+                let why = String(forceText.trimmingCharacters(in: .whitespacesAndNewlines).drop { $0 == "-" || $0 == " " })
+                guard !why.isEmpty else { return }
+                frozenScopes.forEach { store.deploySelected($0, whenGreen: onlyGreen, force: why) }
+            }
+        } message: {
+            Text(L("The reason is written to the deploy history.", "Der Grund steht danach im Deploy-Verlauf."))
         }
         .alert(L("Roll back production?", "Live zurückrollen?"),
                isPresented: Binding(get: { rollbackItem != nil }, set: { if !$0 { rollbackItem = nil } })) {
@@ -513,6 +548,17 @@ struct ContentView: View {
     }
 
     /// Ticked projects that are already on their newest commit: building them costs and changes nothing.
+    /// What the confirmation's Deploy does: inside a closed deploy window it asks first.
+    private func startDeploy() {
+        let chosen = scopes, green = onlyGreen
+        Task {
+            if let w = await store.deployWindow(), w.denied {
+                frozenScopes = chosen; freezeReason = w.reason ?? ""; return
+            }
+            chosen.forEach { store.deploySelected($0, whenGreen: green) }
+        }
+    }
+
     private var unchangedNote: String {
         let same = selectedAll.filter { !$0.hasNewCommits && $0.headSha != nil }.map { Demo.mask($0.name) }
         guard !same.isEmpty else { return "" }
@@ -1184,6 +1230,12 @@ struct Row: View {
                 HStack(spacing: 6) {
                     if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
                     Text(Demo.on ? AttributedString(Demo.mask(item.name)) : highlighted(item.name)).font(.body.weight(.medium))
+                    // Only red is shown in the row; yellow and the reasons are in the details.
+                    if item.hasNewCommits, let r = item.risk, r.isRed {
+                        Circle().fill(Color.red).frame(width: 7, height: 7)
+                            .help(L("Risky to ship: ", "Riskant zum Ausliefern: ") + r.reasons.filter { $0.level == "red" }.map(r.text).joined(separator: "; "))
+                            .accessibilityHidden(true)   // said in `spoken`
+                    }
                     if let d = item.domain, let u = item.link.flatMap(URL.init(string:)) {
                         Button { NSWorkspace.shared.open(u) } label: { Text(Demo.mask(d)).font(.caption) }
                             .buttonStyle(.link).help(L("Open site", "Seite öffnen"))
@@ -1276,6 +1328,7 @@ struct Row: View {
         var parts = [Demo.mask(item.name), Demo.on ? item.platform.rawValue : item.detail]
         if pinned { parts.append(L("pinned", "angeheftet")) }
         if item.hasNewCommits { parts.append(sameRepoAsAbove ? L("same changes as above", "gleiche Änderungen wie oben") : Self.waitingText(item)) }
+        if item.hasNewCommits, item.risk?.isRed == true { parts.append(L("risky to ship", "riskant zum Ausliefern")) }
         if let at = item.lastAt {
             let s = item.lastState ?? ""
             parts.append(L("last deploy ", "zuletzt deployt ") + Self.ago(at) + (["ready", "live", "succeeded"].contains(s.lowercased()) ? "" : ", " + Self.stateText(s)))

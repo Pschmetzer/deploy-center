@@ -229,7 +229,13 @@ struct ProjectDetail: View {
                         .font(.callout)
                 }
             }
+            risk(item)
             waiting(d)
+            Toggle(L("Roll back if the check fails", "Zurückrollen, wenn der Check fehlschlägt"),
+                   isOn: Binding(get: { store.rollsBack(item) }, set: { store.setRollsBack(item, $0) }))
+                .toggleStyle(.checkbox)
+                .help(L("After going live the site (or the page to check) is asked three times. If it answers 5xx or not at all, a notification counts down \(Store.rollbackSeconds) seconds – with Cancel – and production goes back to the deploy before.",
+                        "Nach dem Live-Gang wird die Seite (oder die Prüfseite) dreimal abgefragt. Antwortet sie mit 5xx oder gar nicht, zählt eine Mitteilung \(Store.rollbackSeconds) Sekunden herunter – mit Abbrechen – und Live geht auf den Deploy davor zurück."))
             if item.platform == .vercel, let repo = item.repo,
                Platform.allCases.flatMap({ store.items[$0] ?? [] }).filter({ $0.repo == repo }).count > 1 {
                 VStack(alignment: .leading, spacing: 4) {
@@ -248,6 +254,22 @@ struct ProjectDetail: View {
             openPRs(d)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// How risky what waits is (`deploys risk`): the level and every reason, from the list read.
+    @ViewBuilder private func risk(_ item: Item) -> some View {
+        if item.hasNewCommits, let r = item.risk, !r.reasons.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Circle().fill(r.isRed ? Color.red : (r.level == "yellow" ? Color.orange : Color.green)).frame(width: 9, height: 9)
+                    Text(r.isRed ? L("Risk: high", "Risiko: hoch") : L("Risk: medium", "Risiko: mittel")).font(.headline)
+                }
+                ForEach(Array(r.reasons.enumerated()), id: \.offset) { _, reason in
+                    Label(r.text(reason), systemImage: reason.level == "red" ? "exclamationmark.octagon.fill" : "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(reason.level == "red" ? Color.red : Color.secondary).textSelection(.enabled)
+                }
+            }
+        }
     }
 
     @ViewBuilder private func waiting(_ d: Details) -> some View {

@@ -3,6 +3,8 @@
 ## Unreleased
 
 - `integrations/mcp/`: an MCP server for AI coding agents. Read-only by default (`changed`, `status`, `explain`, `notes`, `logs`, `doctor`); deploy and rollback of one project per call only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`.
+- Safe deploys (see `docs/SAFE-DEPLOY.md`): `deploy-changed --when-green [--wait 30m]` deploys only commits whose CI passed (and waits for running checks); `deploys verify <project>` checks the site after a deploy and rolls back after a countdown; `window.json` closes deploy windows (`--force "why"` goes to the journal); `deploys risk <project>` scores the waiting diff green/yellow/red. New: `deploys deploy <project>`, `deploys ci`, `deploys window`.
+- App: "Only when checks are green" in the deploy confirmation, "Roll back if the check fails" per project in the details (a countdown notification with Cancel), a warning with "Deploy anyway…" inside a closed deploy window, and a red dot for risky changes.
 - `deploys autofix`: a failed build (Vercel `ERROR`, Render `build_failed`) is handed to a Claude Code routine that opens a fix PR; after the merge, the next run deploys that merge commit once. Caps, no duplicates, never merges. See `docs/AUTOFIX.md` and `scripts/autofix.plist.example`.
 - `deploys logs <project> --id <deploy>` reads the log of one deploy; `vercel json` and `render json` carry `latestId` and `latestSha` of the newest attempt.
 

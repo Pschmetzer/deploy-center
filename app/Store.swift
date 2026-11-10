@@ -166,6 +166,9 @@ final class Store: ObservableObject {
             UserDefaults.standard.set(true, forKey: "migratedCacheV2")
         }
         Journal.migrate()
+        // The Cancel of the rollback countdown (see countDownToRollback).
+        NotifyRouter.shared.install()
+        NotifyRouter.shared.onCancel = { [weak self] id in self?.cancelRollback(String(id.dropFirst(Store.rollbackPrefix.count))) }
         // After sleep the lists can be hours old, and the daily reminder may be overdue.
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
@@ -288,7 +291,7 @@ final class Store: ObservableObject {
                          repo: v.repo, ref: v.ref, changed: v.changed, pendingCommits: v.pendingCommits,
                          pendingPRs: v.pendingPRs, openPRs: v.openPRs, lastMsg: v.lastMsg, openDrafts: v.openDrafts, openBots: v.openBots,
                          building: v.building ?? false, pendingPartial: v.pendingPartial ?? false,
-                         oldestPendingAt: date(v.oldestPendingAt), rewritten: v.rewritten ?? false)
+                         oldestPendingAt: date(v.oldestPendingAt), rewritten: v.rewritten ?? false, risk: v.risk)
                 }
             case .render:
                 let list = try decodeLossy(RenderService.self, from: data, label: "render json")
@@ -303,7 +306,7 @@ final class Store: ObservableObject {
                          repo: r.repo, ref: r.ref, kind: r.type, changed: r.changed, pendingCommits: r.pendingCommits,
                          pendingPRs: r.pendingPRs, openPRs: r.openPRs, lastMsg: r.lastMsg, openDrafts: r.openDrafts, openBots: r.openBots,
                          building: r.building ?? false, pendingPartial: r.pendingPartial ?? false,
-                         oldestPendingAt: date(r.oldestPendingAt), rewritten: r.rewritten ?? false)
+                         oldestPendingAt: date(r.oldestPendingAt), rewritten: r.rewritten ?? false, risk: r.risk)
                 }
             }
     }
@@ -524,16 +527,27 @@ final class Store: ObservableObject {
 
     // MARK: The queue: at most N builds at once, a frontend after the backend of its repo
 
-    struct Job { let item: Item; var preview = false; var sha: String? = nil; var clearCache = false; var readyAt = Date.distantPast }
+    struct Job {
+        let item: Item; var preview = false; var sha: String? = nil; var clearCache = false; var readyAt = Date.distantPast
+        /// Only once the CI of the commit is green (waits up to 30 minutes for running checks).
+        var whenGreen = false
+        /// Why it goes out inside a closed deploy window; the script writes it to the journal.
+        var force: String? = nil
+    }
     private var queue: [Job] = []
     private var running = 0
     private var cancelled: Set<String> = []
     var maxParallel: Int { let n = UserDefaults.standard.integer(forKey: "maxParallel"); return n >= 1 ? n : 3 }
 
-    func deploySelected(_ p: Platform, preview: Bool = false) {
+    func deploySelected(_ p: Platform, preview: Bool = false, whenGreen: Bool = false, force: String? = nil) {
         let chosen = selected(p)
         clearSelection(p)
-        enqueue(chosen.map { Job(item: $0, preview: preview) })
+        enqueue(chosen.map { Job(item: $0, preview: preview, whenGreen: whenGreen, force: force) })
+    }
+
+    /// Whether the deploy window (window.json) is closed now. Nil when the script could not say.
+    func deployWindow() async -> WindowReply? {
+        try? await Tool.json(["window", "--json"], as: WindowReply.self, timeout: 30)
     }
 
     func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false) {
@@ -744,10 +758,28 @@ final class Store: ObservableObject {
         cancelled.remove(item.id)
         clearPreview(item)   // an older preview must not be promoted over what this deploy brings
         do {
+            var sha = job.sha
+            if job.whenGreen && !job.preview {
+                // The commit that is checked is the one that goes out: a newer push waits for the next deploy.
+                guard let repo = item.repo, let commit = sha ?? item.headSha else {
+                    set(p, item.id, .skipped(L("Checks unknown: no commit or repo known", "Checks unbekannt: kein Commit oder Repo bekannt"))); return
+                }
+                set(p, item.id, .running(L("waiting for checks", "wartet auf Checks")))
+                let ci = try await Tool.json(["ci", repo, commit, "--wait", "30m", "--json"], as: CIReply.self, timeout: 32 * 60)
+                switch ci.state {
+                case "green", "none": sha = commit
+                case "red":
+                    set(p, item.id, .skipped(L("CI is red: ", "CI ist rot: ") + ci.reason)); return
+                default:
+                    set(p, item.id, .skipped(L("Checks not done after 30 minutes: ", "Checks nach 30 Minuten nicht fertig: ") + ci.reason)); return
+                }
+                set(p, item.id, .starting)
+            }
             var args = [p.cli, "deploy-json", item.id]
             if job.preview { args.append("--preview") }
-            if let sha = job.sha { args += ["--sha", sha] }
+            if let sha { args += ["--sha", sha] }
             if job.clearCache { args.append("--clear-cache") }
+            if let why = job.force { args += ["--force", why] }
             // Longer than a list read: a start that times out may have started anyway.
             let started = try await Tool.json(args, as: Started.self, timeout: 300)
             unsureStarts[Self.key(item)] = nil
@@ -803,7 +835,7 @@ final class Store: ObservableObject {
                         recordDuration(item)
                         set(p, item.id, .done(p == .vercel ? (item.link ?? s.url ?? url) : item.link))
                     }
-                    if let l = item.link { Task { await checkSite(item.name, l.hasSuffix("/") ? String(l.dropLast()) + healthPath(item) : l + healthPath(item)) } }
+                    if let l = item.link { Task { await checkSite(item, l.hasSuffix("/") ? String(l.dropLast()) + healthPath(item) : l + healthPath(item), mayRollBack: !rolledBack) } }
                 }
                 return
             case (.render, "succeeded"):
@@ -842,7 +874,8 @@ final class Store: ObservableObject {
     }
 
     /// After going live: does the site answer? A deploy can be "ready" and the page still broken.
-    private func checkSite(_ name: String, _ link: String) async {
+    private func checkSite(_ item: Item, _ link: String, mayRollBack: Bool) async {
+        let name = item.name
         guard let url = URL(string: link) else { return }
         var code: Int?
         // A fresh Render service can answer 502/503 for a few seconds: ask up to three times.
@@ -857,8 +890,43 @@ final class Store: ObservableObject {
             if let c = code, c < 400 || c == 401 || c == 403 { return }
             if attempt < 2 { try? await Task.sleep(nanoseconds: 6_000_000_000) }
         }
+        // A 5xx or no answer at all is broken; a 404 may only be a wrong path, so it is not rolled back.
+        if mayRollBack, rollsBack(item), code.map({ $0 >= 500 }) ?? true { countDownToRollback(item, link, code); return }
         say(L("\(name) is live, but the site answers \(code.map(String.init) ?? "nothing")",
               "\(name) ist live, aber die Seite antwortet mit \(code.map(String.init) ?? "nichts")"), link, ok: false)
+    }
+
+    // MARK: Roll back by itself when the check after going live fails (opt-in per project, in the details)
+
+    @Published private(set) var autoRollback: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "autoRollback") ?? [])
+    func rollsBack(_ i: Item) -> Bool { autoRollback.contains(Self.key(i)) }
+    func setRollsBack(_ i: Item, _ on: Bool) {
+        if on { autoRollback.insert(Self.key(i)) } else { autoRollback.remove(Self.key(i)) }
+        UserDefaults.standard.set(Array(autoRollback), forKey: "autoRollback")
+    }
+    private var rollbackCountdowns: [String: Task<Void, Never>] = [:]
+    static let rollbackSeconds = 10
+    nonisolated static let rollbackPrefix = "rollback|"
+
+    /// Ten seconds to say no, in a notification and a toast, then production goes back.
+    private func countDownToRollback(_ item: Item, _ link: String, _ code: Int?) {
+        let key = Self.key(item), id = Self.rollbackPrefix + key, n = Self.rollbackSeconds
+        guard rollbackCountdowns[key] == nil else { return }
+        let title = L("\(item.name) fails its check – rolling back in \(n) s", "\(item.name) besteht den Check nicht – Zurückrollen in \(n) s")
+        Notify.countdown(title, link + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), id: id)
+        show(Toast(text: title, ok: false, undoLabel: L("Cancel", "Abbrechen"), undo: { [weak self] in self?.cancelRollback(key) }))
+        messages.insert(Message(date: Date(), text: title + " – " + link, ok: false), at: 0)
+        rollbackCountdowns[key] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(n) * 1_000_000_000)
+            guard !Task.isCancelled, let self, self.rollbackCountdowns.removeValue(forKey: key) != nil else { return }
+            Notify.remove(id)
+            self.rollback(self.itemNow(item) ?? item)
+        }
+    }
+    func cancelRollback(_ key: String) {
+        guard let t = rollbackCountdowns.removeValue(forKey: key) else { return }
+        t.cancel(); Notify.remove(Self.rollbackPrefix + key)
+        say(L("Rollback cancelled", "Zurückrollen abgebrochen"), L("The new deploy stays live.", "Der neue Deploy bleibt live."), ok: true)
     }
 
     // MARK: A newer version on GitHub, asked once a day (Settings can turn it off). The work is in Updater.swift.
