@@ -160,6 +160,8 @@ expect "one badge per project" "$(cd "$tmp/b" && echo *.svg)" "api.svg app-web.s
 contains "badge: days and commits" "$(cat "$tmp/b/app-web.svg")" "3 d ago · 4 commits waiting"
 contains "badge: Render shows the live commit's age, not the newest attempt" "$(cat "$tmp/b/api.svg")" "1 d ago · changes waiting"
 contains "badge: up to date is green" "$(cat "$tmp/b/site.svg")" 'fill="#4c1"'
+echo '[{"name":"web","platform":"vercel","changed":false,"lastAt":0},{"name":"web","platform":"netlify","changed":false,"lastAt":0},{"name":"solo","platform":"render","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/tw" - >/dev/null
+expect "badge: a name on two platforms gets one badge each" "$(cd "$tmp/tw" && echo *.svg)" "netlify-web.svg solo.svg vercel-web.svg"
 echo '[{"name":"a<b>&\"c","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/e" - >/dev/null
 contains "badge: names are XML-escaped" "$(cat "$tmp/e/a_b___c.svg")" 'a&lt;b&gt;&amp;&quot;c: deployed never'
 if command -v xmllint >/dev/null; then
@@ -181,6 +183,8 @@ expect "notify: the URL goes to curl on stdin" "$(cat "$tmp/curl.stdin")" 'url =
 case "$(cat "$tmp/curl.args")" in *secret*) fail "notify: URL not in curl's arguments" "found" ;; *) ok "notify: URL not in curl's arguments" ;; esac
 expect "notify: posts the summary" "$(jq -r '.text' "$tmp/curl.body" | sed -n 2p)" 'Live today (1): site'
 DEPLOYS_NOTIFY_URL='ftp://x' notify/notify.sh >/dev/null 2>&1; expect "notify: refuses a non-http URL" "$?" 1
+DEPLOYS_NOTIFY_URL='http://api.telegram.org/botT/sendMessage' notify/notify.sh >/dev/null 2>&1; expect "notify: refuses http:// to another host" "$?" 1
+DEPLOYS_NOTIFY_URL='http://localhost:8080/topic' notify/notify.sh >/dev/null 2>&1; expect "notify: http:// to localhost is fine" "$?" 0
 
 # --- pre-push ---
 z=0000000000000000000000000000000000000000; s1=1111111111111111111111111111111111111111
@@ -210,6 +214,18 @@ expect "pre-push: no CLI, no check, push goes" "$out" "exit=0"
 git -C "$tmp/repo" config deploys.prepush.skip true
 out="$(push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
 expect "pre-push: skip turns it off" "$out" "exit=0"
+git -C "$tmp/repo" config deploys.prepush.skip false; git -C "$tmp/repo" config deploys.prepush.block false
+cat > "$tmp/bin/pp-deploys" <<SH
+#!/bin/bash
+[ "\$*" = "list --json" ] && echo '[{"name":"shop","platform":"netlify","auto":true,"repo":"gitlab.com/grp/sub/app","ref":"main"},{"name":"cf","platform":"cloudflare","auto":true,"repo":"github.com/me/app","ref":"main"}]'
+SH
+chmod +x "$tmp/bin/pp-deploys"
+out="$(DEPLOYS="$tmp/bin/pp-deploys" push "refs/heads/main $s1 refs/heads/main $z" git@gitlab.com:grp/sub/app.git)"
+contains "pre-push: a GitLab remote and Netlify are checked" "$out" "netlify  shop  (production, branch main)"
+out="$(DEPLOYS="$tmp/bin/pp-deploys" push "refs/heads/main $s1 refs/heads/main $z" https://github.com/me/app.git)"
+contains "pre-push: every platform from list --json (cloudflare)" "$out" "cloudflare  cf  (production, branch main)"
+out="$(FAKE_NO_LIST=1 push "refs/heads/main $s1 refs/heads/main $z" https://github.com/me/site.git)"
+contains "pre-push: a CLI without list falls back to vercel and render" "$out" "vercel  site  (production, branch main)"
 
 # --- status page ---
 # A stand-in curl for the site check: up for *.up.test, a 503 otherwise. The journal mixes kinds
@@ -240,6 +256,9 @@ st="$(cat "$tmp/sp/status.json")"; page="$(cat "$tmp/sp/index.html")"; feed="$(c
 expect "statuspage: only allowlisted projects, in config order" "$(jq -c '[.projects[].name]' <<<"$st")" '["app-web","API","missing"]'
 case "$page$st$feed" in *site*|*"Secret launch"*) fail "statuspage: a project not listed does not leak" "found" ;; *) ok "statuspage: a project not listed does not leak" ;; esac
 expect "statuspage: a listed project that is not found is unknown" "$(jq -r '.projects[2].state' <<<"$st")" unknown
+echo '{"projects":["netlify/shop"]}' > "$tmp/sp-nl.json"
+sp --config "$tmp/sp-nl.json" --out "$tmp/sp-nl" >/dev/null
+expect "statuspage: platform/name works for any platform" "$(jq -c '.projects[0] | [.name, .platform]' "$tmp/sp-nl/status.json")" '["shop","netlify"]'
 expect "statuspage: live message" "$(jq -r '.projects[0].message' <<<"$st")" 'Fix <b>login</b> & signup'
 contains "statuspage: HTML-escaped" "$page" 'Fix &lt;b&gt;login&lt;/b&gt; &amp; signup'
 contains "statuspage: title escaped" "$page" '<title>Acme &lt;deploys&gt;</title>'
