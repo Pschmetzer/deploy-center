@@ -19,10 +19,8 @@ extension Demo {
             if let d = i.domain { words.insert(d) }
         }
         // One pass, so a stand-in is never replaced again.
-        let list = words.filter { $0.count >= 3 }.sorted { $0.count > $1.count }
-        guard !list.isEmpty,
-              let re = try? NSRegularExpression(pattern: list.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|"),
-                                                options: .caseInsensitive) else { return text }
+        let list = words.filter { $0.count >= 3 }.sorted { $0.count > $1.count || ($0.count == $1.count && $0 < $1) }
+        guard !list.isEmpty, let re = regex(for: list) else { return text }
         let ns = text as NSString
         var out = "", last = 0
         for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
@@ -33,6 +31,19 @@ extension Demo {
         }
         return out + ns.substring(from: last)
     }
+
+    /// The pattern for a set of names, built once per set: a build log scrubs up to 2000 lines.
+    private static func regex(for list: [String]) -> NSRegularExpression? {
+        let key = list.joined(separator: "\u{1}")
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        if let c = cache, c.key == key { return c.re }
+        guard let re = try? NSRegularExpression(pattern: list.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|"),
+                                                options: .caseInsensitive) else { return nil }
+        cache = (key, re)
+        return re
+    }
+    nonisolated(unsafe) private static var cache: (key: String, re: NSRegularExpression)?
+    private static let cacheLock = NSLock()
 
     /// A person's name in demo mode: a stand-in, like project names.
     static func person(_ s: String?) -> String? { s.map { on ? mask($0) : $0 } }

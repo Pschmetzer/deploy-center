@@ -8,6 +8,7 @@ import AppKit
 import Charts
 import UserNotifications
 import ServiceManagement
+import Combine
 
 // MARK: - Settings (⌘,)
 
@@ -23,9 +24,12 @@ struct SettingsView: View {
     @AppStorage("checkUpdates") private var checkUpdates = true
     @ObservedObject private var updates = SoftwareUpdate.shared
     @AppStorage("demoMode") private var demoMode = false
+    @AppStorage("loadLogos") private var loadLogos = true
     @AppStorage("undoSeconds") private var undoSeconds = 8
     @AppStorage("staleDays") private var staleDays = 0
     @AppStorage("monthlyBudget") private var monthlyBudget = 0.0
+    /// The checkbox of the deploy confirmation, here too, so the remembered state can be seen.
+    @AppStorage("onlyWhenGreen") private var onlyWhenGreen = false
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
     @State private var loginError: String?
@@ -35,26 +39,57 @@ struct SettingsView: View {
 
     private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?" }
 
+    /// The tab on screen, remembered.
+    @AppStorage("settingsTab") private var settingsTab = "general"
+
+    /// Six tabs instead of one long roll of fourteen sections.
     var body: some View {
-        ScrollViewReader { proxy in Form {
-            generalSection
-            platformsSection
-            PhoneLinkSettings()
-            deploySection
-            GuardSettings(store: store)
-            ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
-            ClaudeAISettings().id("claudeAI")
-            costsSection
-            notificationsSection
-            updatesSection
-            hiddenSection
-            TeamSettings(store: store)
-            CommandPaletteSettings()
-            helpSection
-        } }
-        .formStyle(.grouped)
-        .frame(width: 560)
-        .frame(minHeight: 480, idealHeight: 680, maxHeight: 820)
+        TabView(selection: $settingsTab) {
+            Form {
+                generalSection
+                notificationsSection
+                updatesSection
+                hiddenSection
+            }
+            .formStyle(.grouped)
+            .tabItem { Label(L("General", "Allgemein"), systemImage: "gearshape") }.tag("general")
+
+            Form {
+                platformsSection
+                PhoneLinkSettings()
+            }
+            .formStyle(.grouped)
+            .tabItem { Label(L("Platforms", "Plattformen"), systemImage: "server.rack") }.tag("platforms")
+
+            Form {
+                deploySection
+                GuardSettings(store: store)
+                costsSection
+            }
+            .formStyle(.grouped)
+            .tabItem { Label(L("Deploy & guard", "Deploy & Wächter"), systemImage: "paperplane") }.tag("deploy")
+
+            ScrollViewReader { proxy in Form {
+                ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
+                ClaudeAISettings().id("claudeAI")
+                AutofixSettings(items: store.items.values.flatMap { $0 }).id("autofix")
+            } }
+            .formStyle(.grouped)
+            .tabItem { Label("Claude", systemImage: "sparkles") }.tag("claude")
+
+            Form { TeamSettings(store: store) }
+                .formStyle(.grouped)
+                .tabItem { Label(L("Team", "Team"), systemImage: "person.2") }.tag("team")
+
+            Form {
+                CommandPaletteSettings()
+                helpSection
+            }
+            .formStyle(.grouped)
+            .tabItem { Label(L("Advanced", "Erweitert"), systemImage: "wrench.and.screwdriver") }.tag("advanced")
+        }
+        .frame(width: 600)
+        .frame(minHeight: 460, idealHeight: 620, maxHeight: 820)
         .task {
             // Fresh switches; a script without `deploys providers` was asked at start already.
             if store.providersFromScript { await store.loadProviders() }
@@ -99,8 +134,11 @@ struct SettingsView: View {
                     Button(L("Open Login Items", "Anmeldeobjekte öffnen")) { SMAppService.openSystemSettingsLoginItems() }
                 }
             }
-            if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
+            if let loginError { ErrorText(loginError) }
             Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
+            Toggle(L("Load logos from the project sites", "Logos von den Projektseiten laden"), isOn: $loadLogos)
+                .help(L("Off: no request goes to your sites; a letter stands in for the logo.",
+                        "Aus: keine Anfrage geht an deine Seiten; ein Buchstabe ersetzt das Logo."))
             Picker(L("Language", "Sprache") + (isGerman ? " · Language" : " · Sprache"), selection: $language) {
                 ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
             }
@@ -111,7 +149,10 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button(L("Restart now", "Jetzt neu starten")) {
+                        // relaunchApp asks itself; the quit check must not ask a second time.
+                        AppDelegate.confirmed = true
                         relaunchApp(running: store.items.values.joined().filter { $0.state.isActive }.count)
+                        AppDelegate.confirmed = false
                     }
                 }
             }
@@ -148,7 +189,7 @@ struct SettingsView: View {
                        "Diese Version des deploys-Skripts zeigt immer Vercel und Render."))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if let providerError { Text(providerError).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let providerError { ErrorText(providerError) }
         }
     }
 
@@ -165,6 +206,9 @@ struct SettingsView: View {
                 Text(L("Off", "Aus")).tag(0)
                 ForEach([2, 3, 5, 7], id: \.self) { Text(L("\($0) days", "\($0) Tage")).tag($0) }
             }
+            Toggle(L("Deploy only when the checks are green", "Nur deployen, wenn die Checks grün sind"), isOn: $onlyWhenGreen)
+                .help(L("The same switch as in the deploy confirmation: commits whose CI did not pass stay back.",
+                        "Derselbe Schalter wie in der Deploy-Rückfrage: Commits, deren CI nicht durchlief, bleiben zurück."))
         }
     }
 
@@ -173,7 +217,8 @@ struct SettingsView: View {
             HStack {
                 Text(L("Monthly build budget (USD, 0 = off)", "Monatliches Build-Budget (USD, 0 = aus)"))
                 Spacer()
-                TextField("0", value: $monthlyBudget, format: .number).frame(width: 80).multilineTextAlignment(.trailing)
+                TextField(L("Monthly build budget", "Monatliches Build-Budget"), value: $monthlyBudget, format: .number, prompt: Text("0"))
+                    .labelsHidden().frame(width: 80).multilineTextAlignment(.trailing)
                     // A budget below zero means nothing; it becomes "off".
                     .onChange(of: monthlyBudget) { _, v in if v < 0 || !v.isFinite { monthlyBudget = 0 } }
             }
@@ -247,18 +292,24 @@ struct SettingsView: View {
             }
             CopyButton(title: L("Copy diagnostics", "Diagnose kopieren")) {
                 let d = store.doctor
-                return ["Deploy Center \(version)",
+                let on = store.enabledProviders
+                // Counts and times only: no project names, no error texts (they can hold names).
+                let failures = Platform.allCases.compactMap { p in
+                    store.lastLoadError[p].map { "\(p.cli) failed \($0.at.formatted(date: .numeric, time: .shortened))" }
+                }
+                return ["Deploy Center \(version), language \(AppLanguage.running.rawValue)",
                         ProcessInfo.processInfo.operatingSystemVersionString,
                         "jq \(d?.jq ?? false), vercel \(d?.vercelCli ?? false)/api \(d?.vercelApi ?? false)/login \(d?.vercelLoggedIn ?? false)",
-                        "gh \(d?.githubCli ?? false)/login \(d?.githubLoggedIn ?? false), render key \(d?.renderKey ?? false)",
-                        "Vercel \(store.items[.vercel]?.count ?? 0), Render \(store.items[.render]?.count ?? 0) projects"].joined(separator: "\n")
+                        "gh \(d?.githubCli ?? false)/login \(d?.githubLoggedIn ?? false), render key \(d?.renderKey ?? false), observer \(store.observer)",
+                        "providers on: " + on.map(\.id).joined(separator: ", "),
+                        on.compactMap(\.platform).map { "\($0.cli) \(store.items[$0]?.count ?? 0)" }.joined(separator: ", ") + " projects",
+                        "last load error: " + (failures.isEmpty ? "none" : failures.joined(separator: "; "))].joined(separator: "\n")
             }
             Text(L("Diagnostics: versions and what is connected; no names, no keys.", "Diagnose: Versionen und was verbunden ist; keine Namen, keine Schlüssel."))
                 .font(.caption).foregroundStyle(.secondary)
             Text(L("Version ", "Version ") + version
                  + L(" · no telemetry; GitHub, Vercel and Render are asked with your own logins", " · keine Telemetrie; GitHub, Vercel und Render werden mit deinen eigenen Anmeldungen gefragt"))
                 .font(.caption).foregroundStyle(.secondary)
-            AutofixSettings().id("autofix")
         }
     }
 
@@ -275,10 +326,53 @@ struct SettingsView: View {
 
 private func open(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.open(u) } }
 
+/// Every way out (⌘Q, the Dock's Quit, the menu bar, logging out) asks first while deploys run,
+/// and the Dock badge follows the store even with the window closed.
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+    weak var store: Store?
+    /// Set once the person already said yes (the restart in Settings asks itself).
+    static var confirmed = false
+    private var badge: AnyCancellable?
+
+    func attach(_ s: Store) {
+        guard store !== s else { return }
+        store = s
+        // After the change, not before it (objectWillChange fires first).
+        badge = s.objectWillChange.receive(on: RunLoop.main).sink { [weak s] _ in
+            guard let s else { return }
+            let n = s.waiting.projects
+            let label = n > 0 ? "\(n)" : nil
+            if NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
+        }
+    }
+
+    private var running: Int { store.map { $0.items.values.joined().filter { $0.state.isActive }.count } ?? 0 }
+
+    /// Asks while deploys run; true when it may go on.
+    func confirmLeaving(restart: Bool = false) -> Bool {
+        let n = running
+        guard n > 0 else { return true }
+        NSApp.activate(ignoringOtherApps: true)
+        let a = NSAlert()
+        a.messageText = L("\(n) \(n == 1 ? "deploy is" : "deploys are") still running", "\(n) \(n == 1 ? "Deploy läuft" : "Deploys laufen") noch")
+        a.informativeText = L("Builds that already started go on at Vercel or Render, but Deploy Center stops following them and queued ones do not start.",
+                              "Gestartete Builds laufen bei Vercel oder Render weiter, aber Deploy Center verfolgt sie nicht mehr, und wartende starten nicht.")
+        a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
+        a.addButton(withTitle: restart ? L("Restart anyway", "Trotzdem neu starten") : L("Quit anyway", "Trotzdem beenden"))
+        return a.runModal() == .alertSecondButtonReturn
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if Self.confirmed { return .terminateNow }
+        return confirmLeaving() ? .terminateNow : .terminateCancel
+    }
+}
+
 @main
 struct DeployCenterApp: App {
     /// One store for the window and the menu bar, so both show the same counts.
     @StateObject private var store: Store
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @ObservedObject private var updates = SoftwareUpdate.shared
     @AppStorage("showMenuBar") private var showMenuBar = true
 
@@ -294,7 +388,7 @@ struct DeployCenterApp: App {
     var body: some Scene {
         WindowGroup("Deploy Center", id: "main") {
             ContentView(store: store)
-                .task { await ClaudeNudge.refresh() }
+                .task { appDelegate.attach(store); await ClaudeNudge.refresh() }
                 // deploycenter://select?project=name shows and ticks a project. It never starts a build:
                 // any web page could open such a link.
                 .onOpenURL { url in
@@ -328,12 +422,13 @@ struct DeployCenterApp: App {
             MenuBarContent(store: store)
         } label: {
             let w = store.waiting
-            let n = w.prs > 0 ? w.prs : w.projects
+            // Projects, as on the Dock badge and in the window's title.
+            let n = w.projects
             // No array of all items: this label is built on every change of the store.
             let active = store.items.values.contains { $0.contains { $0.state.isActive } }
             let failed = !active && store.items.values.contains { $0.contains { if case .failed = $0.state { return true } else { return false } } }
             Image(systemName: active ? "paperplane.fill" : (failed ? "exclamationmark.triangle.fill" : "paperplane"))
-                .task { store.boot(); await PhoneLinkModel.shared.pushIfOn() }
+                .task { appDelegate.attach(store); store.boot(); await PhoneLinkModel.shared.pushIfOn() }
                 .accessibilityLabel("Deploy Center")
                 .accessibilityValue(active ? L("deploying", "deployt gerade")
                     : failed ? L("a deploy failed", "ein Deploy ist fehlgeschlagen")
@@ -370,8 +465,13 @@ struct MenuBarContent: View {
         } else if connected.isEmpty {
             Text(L("Nothing connected yet", "Noch nichts verbunden"))
         }
+        // The reason is in the window, with "Try again": the item opens it there.
         ForEach(failed, id: \.self) { p in
-            Label(L("\(p.rawValue) could not be loaded", "\(p.rawValue) konnte nicht geladen werden"), systemImage: "exclamationmark.triangle")
+            Button {
+                showAll = false; UserDefaults.standard.set(p.cli, forKey: "lastPlatform"); openMain()
+            } label: {
+                Label(L("\(p.rawValue) could not be loaded – show why …", "\(p.rawValue) konnte nicht geladen werden – Grund zeigen …"), systemImage: "exclamationmark.triangle")
+            }
         }
         if !unread.isEmpty && failed.isEmpty {
             Text(L("Not loaded yet: ", "Noch nicht geladen: ") + unread.map(\.rawValue).joined(separator: ", "))
@@ -382,7 +482,8 @@ struct MenuBarContent: View {
                 Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle")
             }
         } else {
-            Text(L("\(w.prs) PRs, \(w.commits) commits waiting", "\(w.prs) PRs, \(w.commits) Commits warten"))
+            Text(L(plural(w.projects, "project", "projects") + " · " + plural(w.prs, "PR", "PRs") + " waiting",
+                   plural(w.projects, "Projekt", "Projekte") + " · " + plural(w.prs, "PR", "PRs") + (w.projects == 1 ? " wartet" : " warten")))
             Divider()
             ForEach(changed.prefix(12)) { i in
                 Button("\(Demo.mask(i.name))  –  \(Row.waitingText(i))") {
@@ -398,7 +499,7 @@ struct MenuBarContent: View {
             }
         }
         if w.openPRs > 0 {
-            Text(L("\(w.openPRs) PRs still open", "\(w.openPRs) PRs noch offen"))
+            Text(L(plural(w.openPRs, "PR", "PRs") + " still open", plural(w.openPRs, "PR", "PRs") + " noch offen"))
         }
         let auto = Platform.allCases.reduce(0) { $0 + store.autoOn($1).count }
         if auto > 0 {
@@ -433,18 +534,8 @@ struct MenuBarContent: View {
         }
         .keyboardShortcut(",")
         Divider()
-        Button(L("Quit", "Beenden")) {
-            let running = store.items.values.joined().filter { $0.state.isActive }.count
-            guard running > 0 else { NSApp.terminate(nil); return }
-            NSApp.activate(ignoringOtherApps: true)
-            let a = NSAlert()
-            a.messageText = L("\(running) \(running == 1 ? "deploy is" : "deploys are") still running", "\(running) \(running == 1 ? "Deploy läuft" : "Deploys laufen") noch")
-            a.informativeText = L("Builds that already started go on at Vercel or Render, but Deploy Center stops following them and queued ones do not start.",
-                                  "Gestartete Builds laufen bei Vercel oder Render weiter, aber Deploy Center verfolgt sie nicht mehr, und wartende starten nicht.")
-            a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
-            a.addButton(withTitle: L("Quit anyway", "Trotzdem beenden"))
-            if a.runModal() == .alertSecondButtonReturn { NSApp.terminate(nil) }
-        }
+        // The app delegate asks while deploys run, as for ⌘Q and the Dock.
+        Button(L("Quit", "Beenden")) { NSApp.terminate(nil) }
         .keyboardShortcut("q")
     }
 }

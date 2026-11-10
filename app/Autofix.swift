@@ -24,6 +24,8 @@ struct AutofixStatus: Decodable {
 }
 
 struct AutofixSettings: View {
+    /// The projects, so demo mode can replace their names in the script's output.
+    var items: [Item] = []
     @State private var status: AutofixStatus?
     @State private var routineId = ""
     @State private var token = ""
@@ -48,8 +50,13 @@ struct AutofixSettings: View {
                     }
                 }
             }
-            .help(L("New routine: attach your repos, paste the prompt. Then Trigger > + > API > Generate token.",
-                    "Neue Routine: Repos anhängen, Prompt einfügen. Dann Trigger > + > API > Generate token."))
+            // The steps on claude.ai, on screen and not only in a tooltip.
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("a. New routine: attach your repos, paste the prompt.", "a. Neue Routine: Repos anhängen, Prompt einfügen."))
+                Text(L("b. Trigger › + › API › Generate token.", "b. Trigger › + › API › Generate token."))
+                Text(L("c. Copy the routine ID and the token into the fields below.", "c. Routinen-ID und Token unten eintragen."))
+            }
+            .font(.caption).foregroundStyle(.secondary)
 
             // 2. Its id and API token. The token goes to the keychain through the script's stdin.
             HStack {
@@ -79,8 +86,8 @@ struct AutofixSettings: View {
                 if busy { ProgressView().controlSize(.small) }
             }
             if let message {
-                Text(message).font(.caption.monospaced()).textSelection(.enabled)
-                    .foregroundStyle(failed ? .red : .secondary)
+                if failed { ErrorText(Demo.scrub(message, items: items)) }
+                else { Text(Demo.scrub(message, items: items)).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(.secondary) }
             }
 
             if let fires = status?.fires, !fires.isEmpty {
@@ -91,6 +98,7 @@ struct AutofixSettings: View {
                                 .foregroundStyle(.secondary)
                             Text(Demo.mask(f.project))
                             Spacer()
+                            if f.status == "failed" { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).accessibilityHidden(true) }
                             Text(label(f)).foregroundStyle(f.status == "failed" ? .red : .secondary)
                             if let s = f.session, let url = URL(string: s) {
                                 Button(L("Session", "Sitzung")) { NSWorkspace.shared.open(url) }.buttonStyle(.link)
@@ -118,7 +126,7 @@ struct AutofixSettings: View {
         case "ratelimited": return L("waiting (rate limit)", "wartet (Rate-Limit)")
         case "skipped": return L("fix failed too", "Fix ebenfalls fehlgeschlagen")
         case "failed": return L("could not start", "Start fehlgeschlagen")
-        default: return f.status
+        default: return unknownCode(f.status, L("status", "Status"))
         }
     }
 

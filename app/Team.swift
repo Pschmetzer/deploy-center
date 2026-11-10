@@ -75,7 +75,7 @@ struct TeamSettings: View {
                     }
                 }
                 ForEach(c.sources.filter { $0.error != nil }) { s in
-                    Text("⚠︎ " + Demo.mask(s.repo) + ": " + (s.error ?? "")).font(.caption).foregroundStyle(.orange)
+                    Text("⚠︎ " + Demo.mask(s.repo) + ": " + Demo.scrub(s.error ?? "", items: allItems)).font(.caption).foregroundStyle(Color.warningText)
                 }
                 if !c.guarded.isEmpty {
                     LabeledContent(L("Two-person rule", "Vier-Augen-Prinzip")) {
@@ -93,18 +93,31 @@ struct TeamSettings: View {
 
             HStack {
                 TextField(L("Another repo", "Weiteres Repo"), text: $repo, prompt: Text("owner/repo"))
-                Button(L("Add", "Hinzufügen")) { Task { await run(["team", "add", repo.trimmingCharacters(in: .whitespaces)], show: true); repo = "" } }
-                    .disabled(!repo.contains("/") || busy)
+                    .onSubmit { if canAdd { add() } }
+                Button(L("Add", "Hinzufügen")) { add() }
+                    .disabled(!canAdd)
                 Button(L("Read again", "Neu lesen")) { Task { await run(["team", "refresh"]) } }.disabled(busy)
                 if busy { ProgressView().controlSize(.small) }
             }
             if let message {
-                Text(message).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(failed ? .red : .secondary)
+                if failed { ErrorText(Demo.scrub(message, items: allItems)) }
+                else { Text(Demo.scrub(message, items: allItems)).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(.secondary) }
             }
         } header: {
             Text(L("Team", "Team"))
         }
         .task { await reload() }
+    }
+
+    private var allItems: [Item] { store.items.values.flatMap { $0 } }
+    private var canAdd: Bool { repo.contains("/") && !busy }
+
+    /// The field empties only when the repo was added, so a typo can be fixed.
+    private func add() {
+        Task {
+            await run(["team", "add", repo.trimmingCharacters(in: .whitespaces)], show: true)
+            if !failed { repo = "" }
+        }
     }
 
     private func reload() async {

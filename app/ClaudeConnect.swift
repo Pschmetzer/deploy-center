@@ -445,6 +445,7 @@ final class ClaudeLink: ObservableObject {
 // MARK: - Settings > Claude
 
 struct ClaudeSettings: View {
+    @AppStorage(ClaudeNudge.dismissedKey) private var nudgeDismissed = false
     /// Scrolls the Settings form to the Autofix section.
     var showAutofix: () -> Void = {}
     @StateObject private var link = ClaudeLink()
@@ -470,11 +471,17 @@ struct ClaudeSettings: View {
                 Label(L("Claude can start a production deploy or a rollback of one project. It asks you before each one; a deploy uses build minutes and changes what is live.",
                         "Claude kann ein Produktions-Deploy oder einen Rollback eines Projekts starten. Es fragt vor jedem; ein Deploy kostet Build-Minuten und ändert, was live ist."),
                       systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption).foregroundStyle(.orange)
+                    .font(.caption).foregroundStyle(Color.warningText)
             }
 
             if let m = link.message {
-                Text(m).font(.caption).textSelection(.enabled).foregroundStyle(link.failed ? .red : .secondary)
+                if link.failed { ErrorText(m) }
+                else { Text(m).font(.caption).textSelection(.enabled).foregroundStyle(.secondary) }
+            }
+            // "Don't show again" on the hint in the window can be undone here.
+            if nudgeDismissed {
+                Button(L("Show the Claude hint in the window again", "Claude-Hinweis im Fenster wieder zeigen")) { nudgeDismissed = false }
+                    .buttonStyle(.link).font(.caption)
             }
         } header: {
             HStack {
@@ -631,13 +638,19 @@ enum ClaudeNudge {
 
 struct ClaudeNudgeLine: View {
     @AppStorage(ClaudeNudge.dismissedKey) private var dismissed = false
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         HStack {
             Image(systemName: "sparkles").foregroundStyle(.purple)
             Text(L("Claude found. Connect it so Claude can see what's waiting.", "Claude gefunden. Verbinde es, damit Claude sieht, was wartet."))
                 .font(.callout)
-            SettingsLink { Text(L("Connect …", "Verbinden …")) }.buttonStyle(.link)
+            // Settings opens on the Claude tab, whatever tab was last.
+            Button(L("Connect …", "Verbinden …")) {
+                UserDefaults.standard.set("claude", forKey: "settingsTab")
+                NSApp.activate(ignoringOtherApps: true); openSettings()
+            }
+            .buttonStyle(.link)
             Spacer()
             Button { dismissed = true } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
                 .help(L("Don't show again", "Nicht mehr zeigen")).accessibilityLabel(L("Don't show again", "Nicht mehr zeigen"))

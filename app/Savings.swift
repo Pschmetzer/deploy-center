@@ -191,7 +191,7 @@ struct LedgerReport: Decodable {
         if skipped == 0 { return L("Nothing skipped yet – every push was built", "Noch nichts übersprungen – jeder Push wurde gebaut") }
         if let a = savedAmount { return L("\(a) saved", "\(a) gespart") }
         let n = SavingsFormat.count(skipped)
-        return L("\(n) builds skipped, duration not known yet", "\(n) Builds übersprungen, Dauer noch unbekannt")
+        return L("\(counted(n, "build", "builds")) skipped, duration not known yet", "\(counted(n, "Build", "Builds")) übersprungen, Dauer noch unbekannt")
     }
 
     /// The banner line in the main window.
@@ -200,9 +200,9 @@ struct LedgerReport: Decodable {
         guard let a = savedAmount else {
             return skipped == 0
                 ? L("Auto-deploy off since \(since) · nothing skipped yet", "Auto-Deploy aus seit \(since) · noch nichts übersprungen")
-                : L("\(n) builds skipped since \(since) · duration not known yet", "\(n) Builds übersprungen seit \(since) · Dauer noch unbekannt")
+                : L("\(counted(n, "build", "builds")) skipped since \(since) · duration not known yet", "\(counted(n, "Build", "Builds")) übersprungen seit \(since) · Dauer noch unbekannt")
         }
-        return L("\(a) saved since \(since) · \(n) builds skipped", "\(a) gespart seit \(since) · \(n) Builds übersprungen")
+        return L("\(a) saved since \(since) · \(counted(n, "build", "builds")) skipped", "\(a) gespart seit \(since) · \(counted(n, "Build", "Builds")) übersprungen")
     }
 }
 
@@ -358,11 +358,18 @@ enum SavingsFormat {
 // MARK: - The two hooks
 
 /// Under the cost bar: before anything was turned off an offer to simulate, afterwards the ledger total.
+/// "1 build", "≈ 3 builds": the word that fits a formatted count ("1" is the only singular).
+private func counted(_ formatted: String, _ one: String, _ other: String) -> String { formatted + " " + (formatted == "1" ? one : other) }
+
+/// Nothing saved yet: under a minute and no skipped build. Then the app says so plainly.
+private func nothingSaved(_ l: LedgerReport) -> Bool { l.vercelMinutes + l.renderMinutes < 1 && l.skipped < 1 && (l.usd ?? 0) < 0.01 }
+
 struct SavingsEntry: View {
     @ObservedObject var store: Store
     @ObservedObject private var model = SavingsModel.shared
     @AppStorage("savingsBannerDismissed") private var dismissed = false
     @State private var sheet: SavingsSheet.Tab?
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private var items: [Item] { Platform.allCases.flatMap { store.items[$0] ?? [] } }
     /// Auto-deploy was turned off here at least once.
@@ -372,7 +379,8 @@ struct SavingsEntry: View {
         Group {
             if let l = model.ledger, l.hasStarted {
                 ledgerLine(l)
-            } else if everOff || (!items.isEmpty && !items.contains(where: { $0.auto })) {
+            } else if everOff {
+                // Only after it was turned off here: someone who never had it on has nothing to see.
                 bar(icon: "chart.line.downtrend.xyaxis", text: L("Auto-deploy is off. See what it saved so far.",
                                                                 "Auto-Deploy ist aus. Sieh nach, was es bisher gespart hat."),
                     button: L("Ledger …", "Bilanz …")) { sheet = .ledger }
@@ -387,12 +395,13 @@ struct SavingsEntry: View {
     }
 
     private func ledgerLine(_ l: LedgerReport) -> some View {
-        bar(icon: "leaf", text: l.bannerText, button: L("Ledger …", "Bilanz …")) { sheet = .ledger }
+        // No green bar while nothing is saved (or its size is not known yet).
+        bar(icon: "leaf", text: l.bannerText, button: L("Ledger …", "Bilanz …"), neutral: l.savedAmount == nil) { sheet = .ledger }
     }
 
-    private func bar(icon: String, text: String, button: String, close: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
+    private func bar(icon: String, text: String, button: String, neutral: Bool = false, close: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: icon).foregroundStyle(.green)
+            Image(systemName: icon).foregroundStyle(neutral ? Color.secondary : Color.green)
             Text(text).font(.callout)
             Spacer()
             Button(button, action: action).buttonStyle(.link)
@@ -402,7 +411,7 @@ struct SavingsEntry: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 6)
-        .background(Color.green.opacity(0.08))
+        .background((neutral ? Color.secondary : Color.green).opacity(contrast == .increased ? 0.2 : 0.08))
     }
 }
 
@@ -439,7 +448,7 @@ struct SavingsSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker("", selection: $tab) {
+                Picker(L("Savings view", "Ersparnis-Ansicht"), selection: $tab) {
                     Text(L("Simulator", "Simulator")).tag(Tab.simulator)
                     Text(L("Ledger", "Bilanz")).tag(Tab.ledger)
                 }
@@ -504,9 +513,7 @@ struct SimulatorView: View {
             } else {
                 start
             }
-            if let e = model.simulationError {
-                Text(e).font(.caption).foregroundStyle(.red).textSelection(.enabled)
-            }
+            if let e = model.simulationError { ErrorText(e) }
             if let s = model.simulation {
                 EstimateFooter(method: s.method, at: model.simulatedAt, loading: model.loadingSimulation) {
                     Task { await model.loadSimulation(days: days) }
@@ -558,7 +565,7 @@ struct SimulatorView: View {
             if !s.usdComplete {
                 Text(L("Some projects have no price yet (Render has no billing API: set DEPLOYS_RENDER_USD_PER_MIN). Their minutes count, their dollars do not.",
                        "Manche Projekte haben noch keinen Preis (Render hat keine Abrechnungs-API: DEPLOYS_RENDER_USD_PER_MIN setzen). Ihre Minuten zählen, ihre Dollar nicht."))
-                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption).foregroundStyle(Color.warningText).fixedSize(horizontal: false, vertical: true)
             }
         }
         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
@@ -573,20 +580,28 @@ struct SimulatorView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 4) {
                             Text(SavingsFormat.name(r.name)).lineLimit(1)
-                            Text(r.platform.capitalized).font(.caption2).foregroundStyle(.secondary)
+                            Text(providerLabel(r.platform)).font(.caption2).foregroundStyle(.secondary)
                             if !r.auto { Text(L("off", "aus")).font(.caption2).foregroundStyle(.green) }
                         }
-                        if let p = r.problem { Text(SavingsFormat.problem(p)).font(.caption2).foregroundStyle(.orange) }
+                        if let p = r.problem { Text(SavingsFormat.problem(p)).font(.caption2).foregroundStyle(Color.warningText) }
                         else if let b = SavingsFormat.basis(r.basis) { Text(b).font(.caption2).foregroundStyle(.secondary) }
                     }
-                    Text(SavingsFormat.approx(r.pushesPerDay)).monospacedDigit()
-                    Text(SavingsFormat.approx(r.avgBuildMinutes, suffix: " min")).monospacedDigit()
-                    amount(r.autoMonth, unit: r.unit)
-                    amount(r.dailyMonth, unit: r.unit)
+                    // VoiceOver reads the row as one sentence, not five loose cells.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(rowSentence(r))
+                    Text(SavingsFormat.approx(r.pushesPerDay)).monospacedDigit().accessibilityHidden(true)
+                    Text(SavingsFormat.approx(r.avgBuildMinutes, suffix: " min")).monospacedDigit().accessibilityHidden(true)
+                    amount(r.autoMonth, unit: r.unit).accessibilityHidden(true)
+                    amount(r.dailyMonth, unit: r.unit).accessibilityHidden(true)
                 }
             }
         }
         .font(.callout)
+    }
+
+    private func rowSentence(_ r: SimulateReport.Row) -> String {
+        L("\(SavingsFormat.name(r.name)), \(providerLabel(r.platform))\(r.auto ? "" : ", auto-deploy off"): \(SavingsFormat.approx(r.pushesPerDay)) pushes a day, builds of \(SavingsFormat.approx(r.avgBuildMinutes, suffix: " min")); auto-deploy \(SavingsFormat.usd(r.autoMonth.usd)) a month, once a day \(SavingsFormat.usd(r.dailyMonth.usd))",
+          "\(SavingsFormat.name(r.name)), \(providerLabel(r.platform))\(r.auto ? "" : ", Auto-Deploy aus"): \(SavingsFormat.approx(r.pushesPerDay)) Pushes am Tag, Builds von \(SavingsFormat.approx(r.avgBuildMinutes, suffix: " min")); Auto-Deploy \(SavingsFormat.usd(r.autoMonth.usd)) im Monat, einmal am Tag \(SavingsFormat.usd(r.dailyMonth.usd))")
     }
 
     private func headline(_ title: String, _ a: SavingsAmount, color: Color) -> some View {
@@ -601,7 +616,7 @@ struct SimulatorView: View {
         var parts: [String] = []
         if let v = a.vercelMinutes, v > 0 { parts.append(SavingsFormat.minutes(v) + " " + L("Vercel build minutes", "Vercel-Build-Minuten")) }
         if let r = a.renderMinutes, r > 0 { parts.append(SavingsFormat.minutes(r) + " " + L("Render pipeline minutes", "Render-Pipeline-Minuten")) }
-        if let b = a.builds { parts.append(L("≈ \(SavingsFormat.count(b)) builds", "≈ \(SavingsFormat.count(b)) Builds")) }
+        if let b = a.builds { let c = SavingsFormat.count(b); parts.append("≈ " + L(counted(c, "build", "builds"), counted(c, "Build", "Builds"))) }
         return parts.joined(separator: " · ")
     }
 
@@ -640,9 +655,7 @@ struct LedgerView: View {
                     Button(L("Show the ledger", "Bilanz zeigen")) { Task { await model.loadLedger() } }.buttonStyle(.borderedProminent)
                 }
             }
-            if let e = model.ledgerError {
-                Text(e).font(.caption).foregroundStyle(.red).textSelection(.enabled)
-            }
+            if let e = model.ledgerError { ErrorText(e) }
             if let l = model.ledger {
                 EstimateFooter(method: l.method, at: model.ledgerAt, loading: model.loadingLedger) {
                     Task { await model.loadLedger() }
@@ -665,14 +678,25 @@ struct LedgerView: View {
 
     @ViewBuilder private func report(_ l: LedgerReport) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(bigNumber(l))
-                .font(.system(size: 40, weight: .bold).monospacedDigit()).foregroundStyle(.green)
+            if nothingSaved(l) {
+                // A zero is not celebrated in 40 pt green.
+                Text(L("Nothing saved yet", "Noch nichts gespart")).font(.title2.weight(.semibold))
+                Text(L("It takes a push to a project with auto-deploy off: that build is then skipped and counted here.",
+                       "Es braucht einen Push auf ein Projekt mit ausgeschaltetem Auto-Deploy: dieser Build wird dann übersprungen und hier gezählt."))
+                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else if l.savedAmount == nil {
+                // Skipped builds of unknown duration: a sentence, not a 40 pt number.
+                Text(bigNumber(l)).font(.title2.weight(.semibold))
+            } else {
+                Text(bigNumber(l))
+                    .font(.system(size: 40, weight: .bold).monospacedDigit()).foregroundStyle(.green)
+            }
             Text(L("since \(SavingsFormat.day(l.since))", "seit \(SavingsFormat.day(l.since))")).font(.title3).foregroundStyle(.secondary)
             Text(totalsLine(l)).font(.callout).foregroundStyle(.secondary)
             if !l.usdComplete {
                 Text(L("Some skipped builds have no price (Render: set DEPLOYS_RENDER_USD_PER_MIN); their minutes count, their dollars do not.",
                        "Manche übersprungenen Builds haben keinen Preis (Render: DEPLOYS_RENDER_USD_PER_MIN setzen); ihre Minuten zählen, ihre Dollar nicht."))
-                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption).foregroundStyle(Color.warningText).fixedSize(horizontal: false, vertical: true)
             }
             if let d = l.perDay, d.before > d.after {
                 Button(L("Share the saving …", "Ersparnis teilen …")) { sharing = true }
@@ -691,8 +715,9 @@ struct LedgerView: View {
     private func bigNumber(_ l: LedgerReport) -> String { l.headline }
 
     private func totalsLine(_ l: LedgerReport) -> String {
-        var parts = [L("≈ \(SavingsFormat.count(l.skipped)) builds skipped of \(SavingsFormat.count(l.pushes)) pushes",
-                       "≈ \(SavingsFormat.count(l.skipped)) Builds übersprungen von \(SavingsFormat.count(l.pushes)) Pushes")]
+        let s = SavingsFormat.count(l.skipped), p = SavingsFormat.count(l.pushes)
+        var parts = [L("≈ \(counted(s, "build", "builds")) skipped of \(counted(p, "push", "pushes"))",
+                       "≈ \(counted(s, "Build", "Builds")) übersprungen von \(counted(p, "Push", "Pushes"))")]
         if l.vercelMinutes > 0 { parts.append(SavingsFormat.minutes(l.vercelMinutes) + " " + L("Vercel build minutes", "Vercel-Build-Minuten")) }
         if l.renderMinutes > 0 { parts.append(SavingsFormat.minutes(l.renderMinutes) + " " + L("Render pipeline minutes", "Render-Pipeline-Minuten")) }
         return parts.joined(separator: " · ")
@@ -728,12 +753,12 @@ private struct LedgerRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 4) {
                         Text(SavingsFormat.name(row.name)).lineLimit(1)
-                        Text(row.platform.capitalized).font(.caption2).foregroundStyle(.secondary)
+                        Text(providerLabel(row.platform)).font(.caption2).foregroundStyle(.secondary)
                     }
                     Text(L("off since \(SavingsFormat.day(row.offDay)) · \(SavingsFormat.count(row.skipped)) of \(SavingsFormat.count(row.pushes)) pushes not built",
                            "aus seit \(SavingsFormat.day(row.offDay)) · \(SavingsFormat.count(row.skipped)) von \(SavingsFormat.count(row.pushes)) Pushes nicht gebaut"))
                         .font(.caption).foregroundStyle(.secondary)
-                    if let p = row.problem { Text(SavingsFormat.problem(p)).font(.caption2).foregroundStyle(.orange) }
+                    if let p = row.problem { Text(SavingsFormat.problem(p)).font(.caption2).foregroundStyle(Color.warningText) }
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 1) {

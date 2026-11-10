@@ -162,7 +162,8 @@ struct ClaudeAISettings: View {
                     }
                 }
                 if let message {
-                    Text(message).font(.caption).textSelection(.enabled).foregroundStyle(failed ? .red : .secondary)
+                    if failed { ErrorText(message) }
+                    else { Text(message).font(.caption).textSelection(.enabled).foregroundStyle(.secondary) }
                 }
             }
         } header: {
@@ -197,6 +198,54 @@ struct ClaudeAISettings: View {
     }
 }
 
+/// Claude's Markdown, shown as such: paragraphs and list lines with bold, italics, links and
+/// `code`, and fenced code blocks in a monospaced box.
+struct MarkdownText: View {
+    let text: String
+
+    private struct Block: Identifiable { let id: Int; let code: Bool; let text: String }
+
+    private var blocks: [Block] {
+        var out: [Block] = [], buf: [String] = [], inCode = false
+        func flush() {
+            let t = buf.joined(separator: "\n")
+            if !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { out.append(Block(id: out.count, code: inCode, text: t)) }
+            buf = []
+        }
+        for line in text.components(separatedBy: "\n") {
+            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") { flush(); inCode.toggle(); continue }
+            buf.append(line)
+        }
+        flush()
+        return out
+    }
+
+    private func inline(_ s: String) -> AttributedString {
+        // Headings and bullets read as plain lines; the rest is Markdown inside a line.
+        let lines = s.components(separatedBy: "\n").map { l -> String in
+            var t = l
+            while t.hasPrefix("#") { t.removeFirst() }
+            if t.hasPrefix("- ") || t.hasPrefix("* ") { t = "• " + t.dropFirst(2) }
+            return t == l ? l : t.trimmingCharacters(in: .whitespaces)
+        }.joined(separator: "\n")
+        return (try? AttributedString(markdown: lines, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(blocks) { b in
+                if b.code {
+                    Text(b.text).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                        .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
+                } else {
+                    Text(inline(b.text)).textSelection(.enabled)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - "Ask Claude" in the detail sheet and the build log
 
 /// One menu, shown only when Claude in the app is on and a key is there. The answer opens in a sheet.
@@ -210,21 +259,35 @@ struct ClaudeMenu: View {
     @State private var asking: ClaudeAI.Ask?
 
     var body: some View {
+        // Asking (your API key, an answer here) and fixing (Autofix, a pull request) in one menu,
+        // each item saying what it does.
+        let canAsk = enabled && hasKey && (waiting || ClaudeAI.isFailed(item))
+        let canFix = store.canFixWithClaude(item)
         Group {
-            if enabled && hasKey && (waiting || ClaudeAI.isFailed(item)) {
+            if canAsk || canFix {
                 Menu {
-                    if ClaudeAI.isFailed(item) {
-                        Button(ClaudeAI.Ask.explain.title) { asking = .explain }
+                    if canAsk {
+                        if ClaudeAI.isFailed(item) {
+                            Button(ClaudeAI.Ask.explain.title + L(" – answer here", " – Antwort hier")) { asking = .explain }
+                        }
+                        if waiting {
+                            Button(ClaudeAI.Ask.notes(isGerman ? "de" : "en").title) { asking = .notes(isGerman ? "de" : "en") }
+                            Button(ClaudeAI.Ask.ship.title) { asking = .ship }
+                        }
                     }
-                    if waiting {
-                        Button(ClaudeAI.Ask.notes(isGerman ? "de" : "en").title) { asking = .notes(isGerman ? "de" : "en") }
-                        Button(ClaudeAI.Ask.ship.title) { asking = .ship }
+                    if canFix {
+                        if canAsk { Divider() }
+                        Button(L("Fix with Claude – opens a pull request", "Mit Claude beheben – öffnet einen Pull Request")) {
+                            Task { await store.fixWithClaude(item) }
+                        }
+                        .disabled(store.autofixRunning.contains(Store.key(item)))
                     }
                 } label: {
-                    Label(L("Ask Claude", "Claude fragen"), systemImage: "sparkles")
+                    Label("Claude", systemImage: "sparkles")
                 }
                 .fixedSize()
-                .help(L("Sends masked text to Anthropic with your own key", "Sendet maskierten Text mit deinem eigenen Schlüssel an Anthropic"))
+                .help(L("Ask Claude (masked text, your own key) or hand the failed build to your Autofix routine",
+                        "Claude fragen (maskierter Text, eigener Schlüssel) oder den fehlgeschlagenen Build an deine Autofix-Routine geben"))
                 .sheet(item: $asking) { a in
                     // "Fix with Claude" as in the row: the same caps, setup offer and toast.
                     ClaudeAnswerSheet(item: item, ask: a,
@@ -242,6 +305,7 @@ struct ClaudeAnswerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var answer: ClaudeAnswer?
     @State private var error: String?
+    @State private var attempt = 0
     /// Hands this failed build to Autofix (`Store.fixWithClaude`); nil when Autofix cannot take it.
     let onAutofix: (() -> Void)?
     /// `answer` is given only by tests and screenshots.
@@ -269,11 +333,15 @@ struct ClaudeAnswerSheet: View {
             }
             Group {
                 if let answer {
+                    // Markdown as it is meant (lists, bold, code); "Copy" still copies the raw text.
                     ScrollView {
-                        Text(answer.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        MarkdownText(text: Demo.scrub(answer.text, items: [item])).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 } else if let error {
-                    Text(error).foregroundStyle(.red).textSelection(.enabled)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ErrorText(Demo.scrub(error, items: [item]))
+                        Button(L("Try again", "Nochmal versuchen")) { attempt += 1 }
+                    }
                 } else {
                     ProgressView(L("Asking Claude …", "Frage Claude …")).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -301,7 +369,7 @@ struct ClaudeAnswerSheet: View {
         }
         .padding(16)
         .frame(minWidth: 460, idealWidth: 540, minHeight: 260, idealHeight: 340)
-        .task(id: ask.id) {
+        .task(id: "\(ask.id)|\(attempt)") {
             if preset { return }
             answer = nil; error = nil
             do { answer = try await ClaudeAI.ask(ask, project: item.id) } catch { self.error = error.localizedDescription }
