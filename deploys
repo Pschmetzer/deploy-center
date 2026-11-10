@@ -27,7 +27,7 @@
 #     [--timeout 30m]                         give up after that long (exit 4; the deploy goes on)
 #   deploys explain <project>                 why a project is (not) counted as changed
 #   deploys diff <project>                    commits and files between what is live and the branch
-#   deploys notes <project>                   the same as release notes (Markdown)
+#   deploys notes <project> [--json]          the same as release notes (Markdown; --json: author as a field)
 #   deploys vercel map <p> <owner/repo> [br]  say where a project deploys from
 #                                             (GitLab: gitlab.com/group/name, see docs/GITLAB.md)
 #   deploys vercel list                       projects and whether a push still deploys them
@@ -38,7 +38,7 @@
 #   deploys vercel team [<id>]                show or set the Vercel team
 #   deploys vercel deploy <p> [--preview] [--sha <c>] [--wait]   the newest commit of the remembered repo;
 #                                             --wait follows it until live or failed
-#   deploys history <project> [n]             the last n deploys (default 10): when, state, commit, source
+#   deploys history <project> [n] [--json]    the last n deploys (default 10): when, state, commit, source
 #   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>)
 #   deploys autofix [--dry-run] [--only <platform> <p> [--again]]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
 #   deploys autofix set-token | routine <id> | list | forget-token | prompt | status | sync | schedule on|off
@@ -87,6 +87,7 @@
 #   window           0 open, 1 closed
 #   deploy-changed   with --strict also 2 when something was skipped (red or pending CI)
 #   autofix --only   2 not failed, 3 handed over already or busy, 4 a cap, 5 no routine, 6 locked
+#   deploy           with --wait or a group, 3 started but its deploy id is unknown (not followed)
 #
 # Config lives in ${DEPLOYS_CONFIG:-~/.config/deploys}:
 #   vercel-repos.json  which repo/branch each Vercel project deploys from
@@ -166,7 +167,9 @@ if [ -f "$TEAM_LIB" ]; then . "$TEAM_LIB"; fi
 team_on() { declare -F team_gate >/dev/null; }
 
 # Every command that changes something on Vercel, Render or GitHub goes through here first.
+WRITING=""
 require_write() {
+  WRITING=1   # lookup then checks remembered ids (CLI-053)
   local why; why="$(readonly_from)"
   if [ -z "$why" ] && team_on; then why="$(team_observer_from)"; fi
   [ -z "$why" ] || die "Observer mode ($why): \"deploys $1\" changes something and is refused. Observers can look, not deploy. To deploy from here: $(if [ "$why" = "DEPLOYS_READONLY is set" ]; then echo "unset DEPLOYS_READONLY"; elif [ -e "$CONFIG_DIR/readonly" ]; then echo "deploys readonly off"; else echo "ask to be taken off the observers list"; fi)."
@@ -279,13 +282,17 @@ key_of() {
 
 # Which provider a name belongs to, and its id there: "p<TAB>id". "p:name" says it outright.
 # Otherwise the names the last list reads saw (names.json), then each active provider is asked.
+# A provider's <p>_has: 0 and the id, 1 not there, 2 the platform could not be asked (network,
+# login): that is never reported as "no project named".
 lookup() {
-  local n="$1" p id hits nouns=""
+  local n="$1" p id hits nouns="" rc unasked=""
   case "$n" in
     *:*) p="${n%%:*}"
       if is_provider "$p"; then
         n="${n#*:}"; is_enabled "$p" || die "$(meta_str "$p" label) is off. Turn it on: deploys providers enable $p"
-        id="$("${p}_has" "$n" 2>/dev/null)" || die "No $(meta_str "$p" label) $(meta_str "$p" noun) named \"$n\""
+        rc=0; id="$("${p}_has" "$n" 2>/dev/null)" || rc=$?
+        [ "$rc" != 2 ] || die "$(meta_str "$p" label) could not be asked about \"$n\" (network or login); try again"
+        [ "$rc" = 0 ] && [ -n "$id" ] || die "No $(meta_str "$p" label) $(meta_str "$p" noun) named \"$n\""
         printf '%s\t%s\n' "$p" "$id"; return 0
       fi ;;
   esac
@@ -294,19 +301,27 @@ lookup() {
       | while IFS=$'\t' read -r p id; do is_enabled "$p" && printf '%s\t%s\n' "$p" "$id"; done)"
     if [ -n "$hits" ]; then
       [ "$(wc -l <<<"$hits" | tr -d ' ')" = 1 ] || die "\"$n\" is on $(cut -f1 <<<"$hits" | sort -u | tr '\n' ' ' | sed 's/ $//; s/ / and /g'). Say which: $(cut -f1 <<<"$hits" | head -n 1):$n"
-      echo "$hits"; return 0
+      # Before a change, the remembered id is checked: a project deleted and made again under the
+      # same name has a new one. Gone: every provider is asked below. Not answerable: the old id.
+      if [ -z "$WRITING" ]; then echo "$hits"; return 0; fi
+      p="${hits%%$'\t'*}"; rc=0; id="$( ( "${p}_has" "$n" ) 2>/dev/null)" || rc=$?
+      if [ "$rc" = 0 ] && [ -n "$id" ]; then printf '%s\t%s\n' "$p" "$id"; return 0; fi
+      [ "$rc" = 1 ] || { echo "$hits"; return 0; }
     fi
   fi
   # Every active provider is asked: the same name on two of them must not go to whichever came first.
   hits=""
   for p in $(active_providers); do
-    if id="$( ( "${p}_has" "$n" ) 2>/dev/null)" && [ -n "$id" ]; then hits="$hits$p"$'\t'"$id"$'\n'; fi
+    rc=0; id="$( ( "${p}_has" "$n" ) 2>/dev/null)" || rc=$?
+    if [ "$rc" = 0 ] && [ -n "$id" ]; then hits="$hits$p"$'\t'"$id"$'\n'
+    elif [ "$rc" = 2 ]; then unasked="${unasked:+$unasked, }$(meta_str "$p" label)"; fi
   done
   hits="${hits%$'\n'}"
   if [ -n "$hits" ]; then
     [ "$(wc -l <<<"$hits" | tr -d ' ')" = 1 ] || die "\"$n\" is on $(cut -f1 <<<"$hits" | tr '\n' ' ' | sed 's/ $//; s/ / and /g'). Say which: $(cut -f1 <<<"$hits" | head -n 1):$n"
     echo "$hits"; return 0
   fi
+  [ -z "$unasked" ] || die "\"$n\" was not found, and $unasked could not be asked (network or login); try again"
   for p in $(enabled_providers); do nouns="${nouns:+$nouns or }$(meta_str "$p" label) $(meta_str "$p" noun)"; done
   die "No ${nouns:-project} named \"$n\""
 }
@@ -929,6 +944,29 @@ PLIST
     die "launchd did not take the job ($plist)"
   fi
   rm -f "$plist.old"
+}
+# The PATH written into a job, and the tools this shell finds but that PATH no longer does
+# (nvm or Homebrew moved): the job then fails quietly in its log. Only tools found here count,
+# so a CLI that is not installed at all is not reported. Nothing is changed: `schedule on` renews it.
+job_path() {
+  [ -f "$1" ] || return 0
+  if [ -x /usr/libexec/PlistBuddy ]; then /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PATH' "$1" 2>/dev/null || true
+  else sed -n 's:.*<key>PATH</key><string>\([^<]*\)</string>.*:\1:p' "$1" | head -1 | sed 's/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g; s/&amp;/\&/g'; fi
+}
+job_missing() {  # job_missing <label>: space-separated tool names
+  local jp t out=""; jp="$(job_path "$(job_plist "$1")")"; [ -n "$jp" ] || return 0
+  for t in jq gh glab perl curl vercel; do
+    command -v "$t" >/dev/null 2>&1 || continue
+    ( PATH="$jp"; command -v "$t" >/dev/null 2>&1 ) || out="$out $t"
+  done
+  echo "${out# }"
+}
+job_missing_json() {  # ["autofix:gh", "guard:vercel"], without jq (doctor)
+  local l t out=""
+  for l in "autofix:$AUTOFIX_LABEL" "guard:$GUARD_LABEL"; do
+    for t in $(job_missing "${l#*:}"); do out="$out,\"${l%%:*}:$t\""; done
+  done
+  echo "[${out#,}]"
 }
 job_off() {
   launchctl bootout "gui/$(id -u)/$1" >/dev/null 2>&1 || true
@@ -1622,6 +1660,12 @@ case "${1:-} ${2:-}" in
       # The next member of a group starts once this one is live.
       if [ -n "$wait_" ] || [ "$i" -lt "$count" ]; then
         if [ "$json" = 1 ]; then wout=2; else wout=1; fi
+        # The platform took the start but named no deploy (Netlify can, after its 30 s): watching
+        # "null" would follow some other deploy. Exit 3 says "started, not followed".
+        if [ -z "$(echo "$out" | jq -r '.id // empty')" ]; then
+          echo "$label: $p was accepted, but its deploy id is unknown, so it is not followed$([ "$i" -lt "$count" ] && echo " and the rest of the group was not started"). See: deploys watch $p" >&2
+          exit 3
+        fi
         "$SELF" watch "$p" "$(echo "$out" | jq -r .id)" ${pv:+--preview} >&"$wout" \
           || die "$p did not go live$([ "$i" -lt "$count" ] && echo "; the rest of the group was not started")"
       fi
@@ -1687,6 +1731,16 @@ case "${1:-} ${2:-}" in
     case "$n" in ''|*[!0-9]*) die "n must be a number";; esac
     resolve "$p"
     declare -F "${PLAT}_history" >/dev/null || die "$(meta_str "$PLAT" label) keeps no deploy history here"
+    if [ "$json" = 1 ]; then
+      # Each provider draws its table with `column`; without it the rows stay TSV under their
+      # header, so every provider's history reads as data: [{when, at, state, commit, ...}], "-" = null.
+      column() { cat; }
+      "${PLAT}_history" "$PID" "$n" | jq -R -s -c --arg pl "$PLAT" 'split("\n") | map(select(length > 0) | split("\t"))
+        | (.[0] | map(ascii_downcase | sub(" *\\(utc\\)$"; "") | gsub("[^a-z0-9]+"; "_"))) as $h
+        | .[1:] | map([$h, .] | transpose | map({(.[0]): (if .[1] == "-" then null else .[1] end)}) | add
+          | . + {platform:$pl, at:(try ((.when | sub(" "; "T")) + ":00Z" | fromdateiso8601) catch null)})'
+      unset -f column; exit 0
+    fi
     "${PLAT}_history" "$PID" "$n" ;;
 
   "doctor "*)
@@ -1703,8 +1757,9 @@ case "${1:-} ${2:-}" in
     # The versions that matter (jq 1.6+ for the date functions).
     jqv="$(jq --version 2>/dev/null | sed 's/^jq-//' | tr -d '"\\')"
     ro=false; [ -z "$(readonly_from)" ] || ro=true
-    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s,"perl":%s,"curl":%s}\n' \
-      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" ;;
+    # jobsMissing: "autofix:gh" = the autofix job's PATH no longer finds gh; deploys <job> schedule on renews it.
+    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s,"perl":%s,"curl":%s,"jobsMissing":%s}\n' \
+      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" "$(job_missing_json)" ;;
 
   "github-budget "*)
     github_budget ;;
@@ -1860,7 +1915,10 @@ case "${1:-} ${2:-}" in
     [ -n "$j" ] || die "$p not found"
     repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
     d="$("$SELF" details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // "main"')")"
-    if [ "${1:-}" = "notes" ]; then
+    if [ "${1:-}" = "notes" ] && [ "$json" = 1 ]; then
+      # The author as its own field: a line "- msg – author" cannot be split safely (a message may hold " – ").
+      echo "$d" | jq --arg p "$p" '{project:$p, commits:(.commits | map({sha:(.sha // null), message:.msg, pr:(.pr // null), author:(.author // null), bot:(.bot // false)}))}'
+    elif [ "${1:-}" = "notes" ]; then
       echo "$d" | jq -r --arg p "$p" '"## \($p)", (.commits | map(select(.bot | not)) | .[] | "- \(.msg)\(if .pr then " (#\(.pr))" else "" end) – \(.author // "?")"),
         (if (.commits | map(select(.bot)) | length) > 0 then "", "Dependency updates:", (.commits | map(select(.bot)) | .[] | "- \(.msg) – \(.author // "?")") else empty end)'
     else
@@ -2202,13 +2260,35 @@ BASH
       if [ "$json" = 1 ]; then echo '[]'; else echo "Nothing to deploy."; fi; exit 0
     fi
     if [ -z "$yes" ]; then
+      # --when-green: the preview asks the same ci_of as the real run (four at a time), so what it
+      # promises is what --yes does: green starts, red is skipped, pending would be waited for.
+      if [ -n "$green" ]; then
+        cid="$(mktemp -d)"; i=0
+        while IFS=$'\t' read -r k repo sha; do
+          if [ -z "$repo" ] || [ -z "$sha" ]; then echo '{"state":"unknown","reason":"the commit or repo is unknown, so its checks are too","noRepo":true}' > "$cid/$k"; continue; fi
+          ( ci_of "$repo" "$sha" </dev/null > "$cid/$k" 2>/dev/null || true ) &
+          i=$((i + 1)); [ $((i % 4)) != 0 ] || wait
+        done <<< "$(echo "$list" | jq -r 'to_entries[] | "\(.key)\t\(.value.repo // "")\t\(.value.headSha // "")"')"
+        wait
+        cis="$(for k in $(echo "$list" | jq -r 'keys[]'); do jq -c . "$cid/$k" 2>/dev/null || echo '{"state":"unknown","reason":"no answer"}'; done | jq -sc .)"
+        rm -rf "$cid"
+        list="$(echo "$list" | jq -c --argjson c "$cis" 'to_entries | map(.value + {ci:$c[.key],
+          wouldDo:(if ($c[.key].state == "green" or $c[.key].state == "none") then "would-deploy"
+                   elif $c[.key].state == "red" or $c[.key].noRepo == true then "would-skip" else "would-wait" end)})')"
+      fi
       if [ "$json" = 1 ]; then
-        echo "$list" | jq '[.[] | {platform, name, sha:(.headSha // null), action:"would-deploy", commits:(.pendingCommits // null), risk:(.risk.level // null)}]'
+        echo "$list" | jq '[.[] | {platform, name, sha:(.headSha // null), action:(.wouldDo // "would-deploy"), commits:(.pendingCommits // null), risk:(.risk.level // null)}
+          + (if .ci then {ci:{state:.ci.state, reason:(.ci.reason // null)}} else {} end)]'
         exit "$rc"
       fi
-      echo "$list" | jq -r '.[] | "  \(.platform)  \(.name)  (\(.pendingCommits // "?") commits)\(if .risk.level == "red" then "  risk: \(.risk.reasons | map(select(.level == "red") | .text) | join("; "))" else "" end)"'
+      echo "$list" | jq -r --argjson w "$maxw" '.[] | "  \(.platform)  \(.name)  (\(.pendingCommits // "?") commits)\(if .ci then
+          "  checks: \(.ci.state)\(if .wouldDo == "would-wait" then ", would wait up to \($w / 60 | floor)m" elif .wouldDo == "would-skip" then ", would be skipped" else "" end)\(if .ci.reason then " (\(.ci.reason))" else "" end)" else "" end)\(if .risk.level == "red" then "  risk: \(.risk.reasons | map(select(.level == "red") | .text) | join("; "))" else "" end)"'
       w="$(window_json)"; [ "$(echo "$w" | jq -r .denied)" = true ] && echo "The deploy window is closed now ($(echo "$w" | jq -r .reason)): --yes needs --force \"why\"."
-      echo "Would deploy these $n$([ -n "$green" ] && echo " whose checks pass"). Run again with --yes to start them."; exit "$rc"
+      if [ -n "$green" ]; then
+        echo "$list" | jq -r 'def c($a): map(select(.wouldDo == $a)) | length;
+          "Would start \(c("would-deploy")) now, wait for \(c("would-wait")), skip \(c("would-skip")). Run again with --yes to start them."'
+      else echo "Would deploy these $n. Run again with --yes to start them."; fi
+      exit "$rc"
     fi
     freeze_check
     res="$(mktemp)"; ok=0; bad=0; skip=0
@@ -2288,16 +2368,17 @@ BASH
     esac ;;
   "guard status")
     en=false; guard_scheduled && en=true
-    s="$(guard_state | jq --argjson en "$en" --argjson al "$(allow_list)" \
+    s="$(guard_state | jq --argjson en "$en" --argjson al "$(allow_list)" --arg miss "$(job_missing "$GUARD_LABEL")" \
       '{enabled:$en, lastRun:(.lastRun // null), lastDry:(.lastDry // null), firstRunPending:(.firstRunPending // false),
-        lastActions:(.lastActions // []), allowances:$al}')"
+        lastActions:(.lastActions // []), allowances:$al, pathMissing:($miss | split(" ") | map(select(. != "")))}')"
     if [ "$json" = 1 ]; then echo "$s"
     else
       echo "$s" | jq -r '"guard        \(if .enabled then "on (every 30 minutes)" else "off" end)",
         "last run     \(if .lastRun then (.lastRun | strftime("%Y-%m-%d %H:%M UTC")) + (if .lastDry then " (dry run)" else "" end) else "never" end)",
         (.lastActions[] | "  \(.action)  \(.platform) \(.project // "")\(if .error then ": " + .error else "" end)"),
         "allowances   \(.allowances | length)",
-        (.allowances[] | "  \(.platform) \(.project) until \(.expiresAt | strftime("%Y-%m-%d %H:%M UTC"))")'
+        (.allowances[] | "  \(.platform) \(.project) until \(.expiresAt | strftime("%Y-%m-%d %H:%M UTC"))"),
+        (if (.pathMissing | length) > 0 then "warning      the job no longer finds \(.pathMissing | join(", ")) on its PATH; run: deploys guard schedule on" else empty end)'
     fi ;;
   "guard "*)
     # guard [--dry-run]: auto-deploy off wherever it is on without a running allowance. For launchd.
@@ -2393,8 +2474,8 @@ BASH
     # For the app: what is set up, and the newest hand-overs. Never the token itself.
     tok=false; [ -n "$(af_token)" ] && tok=true
     sch=false; af_scheduled && sch=true
-    af_state | jq --arg r "$(af_routine)" --argjson tok "$tok" --argjson sch "$sch" \
-      '{routine:(if $r == "" then null else $r end), token:$tok, scheduled:$sch,
+    af_state | jq --arg r "$(af_routine)" --argjson tok "$tok" --argjson sch "$sch" --arg miss "$(job_missing "$AUTOFIX_LABEL")" \
+      '{routine:(if $r == "" then null else $r end), token:$tok, scheduled:$sch, pathMissing:($miss | split(" ") | map(select(. != ""))),
         fires:(.fires | sort_by(-.at) | .[0:20] | map({at, project, platform, status, sha:(.sha // null),
           session:(.session // null), error:(.error // .reason // null), redeployedSha:(.redeployedSha // null), mergedSha:(.mergedSha // null), pr:(.pr // .prNumber // null),
           prNumber:(.prNumber // .pr // null), prState:(.prState // (if .mergedSha then "merged" else null end)), prUrl:(.prUrl // null), done:(.done // false)}))}' ;;

@@ -1184,6 +1184,46 @@ mkdir -p "$tmp/gh43"; printf '#!/bin/bash\necho %s\n' "'[{\"number\":5,\"title\"
 expect "LOG-043: a fix PR is found by its title on another branch" \
   "$( (unset -f af_prs; PATH="$tmp/gh43:$PATH"; DEPLOYS_LIB=1 . ./deploys; set +e; af_prs me/web web open | jq -c '[.[].number]') )" "[5]"
 unset RENDER_API_KEY DEPLOYS_JOURNAL
+# CLI-029: a job whose PATH no longer finds a CLI this shell finds is reported, nothing is changed.
+mkdir -p "$tmp/j29/agents" "$tmp/j29/bin" "$tmp/j29/old"; printf '#!/bin/bash\n' > "$tmp/j29/bin/vercel"; chmod +x "$tmp/j29/bin/vercel"
+printf '<?xml version="1.0"?><plist version="1.0"><dict><key>EnvironmentVariables</key><dict><key>PATH</key><string>%s</string></dict></dict></plist>\n' "$tmp/j29/old:/usr/bin:/bin" > "$tmp/j29/agents/app.deploycenter.autofix.plist"
+expect "CLI-029: the autofix job's stale PATH is named" \
+  "$( (DEPLOYS_LIB=1 . ./deploys; set +e; PATH="$tmp/j29/bin:$PATH"; DEPLOYS_LAUNCH_DIR="$tmp/j29/agents"; job_missing "$AUTOFIX_LABEL" | tr ' ' '\n' | grep -x vercel; job_missing_json | grep -o '"autofix:vercel"') )" $'vercel\n"autofix:vercel"'
+expect "CLI-029: a job PATH that finds it is fine" \
+  "$( (DEPLOYS_LIB=1 . ./deploys; set +e; PATH="$tmp/j29/bin:$PATH"; DEPLOYS_LAUNCH_DIR="$tmp/j29/agents"; sed -i '' "s:$tmp/j29/old:$tmp/j29/bin:" "$DEPLOYS_LAUNCH_DIR/app.deploycenter.autofix.plist"; job_missing "$AUTOFIX_LABEL" | tr ' ' '\n' | grep -c -x vercel) )" "0"
+# CLI-036: the --when-green preview asks CI like the real run and says what --yes would do.
+export RENDER_API_KEY=rnd_test
+fresh
+expect "CLI-036: preview with red CI starts nothing and says it would skip" \
+  "$(CI=red run "$O" "$E" deploy-changed --when-green; started; grep -c 'checks: red, would be skipped' "$O"; tail -n 1 "$O")" $'0\n0\n2\nWould start 0 now, wait for 0, skip 2. Run again with --yes to start them.'
+expect "CLI-036: preview with green CI, as JSON" \
+  "$(run "$O" "$E" deploy-changed --when-green --json; jq -r '[.[] | .action + ":" + .ci.state] | join(",")' "$O")" $'0\nwould-deploy:green,would-deploy:green'
+expect "CLI-036: pending checks are shown as waited for, not as passing" \
+  "$(CI=pending run "$O" "$E" deploy-changed --when-green --wait 1m; grep -c 'would wait up to 1m' "$O")" $'0\n2'
+unset RENDER_API_KEY
+# CLI-053, PRV-084: a remembered id is checked before a change; "could not ask" is not "not found".
+mkdir -p "$tmp/c53"; echo '[{"name":"web","platform":"vercel","id":"prj_old"}]' > "$tmp/c53/names.json"
+l53() { (DEPLOYS_CONFIG="$tmp/c53" DEPLOYS_LIB=1 . ./deploys; set +e; active_providers() { echo vercel; }; is_enabled() { [ "$1" = vercel ]; }; eval "$1"; WRITING="$2"; lookup "${3:-web}" 2>&1; echo "rc=$?"); }
+expect "CLI-053: a read uses the remembered id" "$(l53 'vercel_has() { echo prj_new; }' "")" $'vercel\tprj_old\nrc=0'
+expect "CLI-053: a change checks it and takes the new one" "$(l53 'vercel_has() { echo prj_new; }' 1)" $'vercel\tprj_new\nrc=0'
+expect "CLI-053: a change keeps the remembered id when the platform cannot answer" "$(l53 'vercel_has() { return 2; }' 1)" $'vercel\tprj_old\nrc=0'
+expect "PRV-084: a platform that cannot be asked is named, not \"no project\"" \
+  "$(l53 'vercel_has() { return 2; }' "" other | grep -c 'could not be asked (network or login)')" "1"
+expect "PRV-084: p:name says so too" "$(l53 'vercel_has() { return 2; }' "" vercel:web | grep -c 'Vercel could not be asked')" "1"
+expect "PRV-084: not found stays not found" "$(l53 'vercel_has() { return 1; }' "" other | grep -c '^Error: No .*named "other"')" "1"
+# PRV-042: a start that names no deploy id is not followed: exit 3, the group stops there.
+mkdir -p "$tmp/p42/providers" "$tmp/p42/cfg"; cp deploys "$tmp/p42/"; cp -R lib "$tmp/p42/"
+printf '%s\n' 'zz_meta() { echo "{\"id\":\"zz\",\"label\":\"Zed\",\"noun\":\"site\",\"defaultOn\":true,\"caps\":{}}"; }' 'zz_ready() { return 0; }' \
+  'zz_has() { echo "$1"; }' 'zz_list() { echo "[]"; }' 'zz_deploy_json() { echo "{\"id\":null,\"state\":\"accepted\"}"; }' > "$tmp/p42/providers/zz.sh"
+expect "PRV-042: --wait on a start without an id exits 3 and says so" \
+  "$(env -u DEPLOYS_LIB DEPLOYS_CONFIG="$tmp/p42/cfg" HOME="$tmp/p42" /bin/bash "$tmp/p42/deploys" deploy zz:web --wait 2>&1 >/dev/null | grep -c 'deploy id is unknown'; echo "rc=${PIPESTATUS[0]}")" $'1\nrc=3'
+# INT-071, INT-076: history and notes as data, for the status page without the app's journal.
+export RENDER_API_KEY=rnd_test; fresh
+expect "INT-071: history --json reads any provider's table as rows" \
+  "$(run "$O" "$E" history api 10 --json; jq -c '.[0] | [.state, .commit, .platform, (.at | type)]' "$O")" $'0\n["live","aaaa","render","number"]'
+expect "INT-076: notes --json keeps the author apart" \
+  "$(run "$O" "$E" notes api --json; jq -c '[.project, (.commits[0] | has("author")), (.commits[0].message | type)]' "$O")" $'0\n["api",true,"string"]'
+unset RENDER_API_KEY
 # ===== end CLI track =====
 
 echo

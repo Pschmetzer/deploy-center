@@ -80,6 +80,7 @@ project could not be read (it is named and left out, never counted as current). 
 | `window` | `0` open, `1` closed (`--json`: always `0`) |
 | `deploy-changed --strict` | also `2` when a project was skipped (red or pending CI) |
 | `autofix --only` | `2` not failed, `3` handed over already or busy, `4` a cap, `5` no routine, `6` locked |
+| `deploy --wait`, groups | `3` the platform accepted the start but named no deploy id, so it was not followed (a group stops there) |
 
 ## Environment variables
 
