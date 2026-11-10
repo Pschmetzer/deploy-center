@@ -305,6 +305,8 @@ struct AutofixReport: Decodable {
         let prUrl: String?
         let mergedSha: String?
         let redeployedSha: String?
+        /// Green again: the script stopped watching it.
+        var done = false
         init(at: Double, project: String, platform: String?, status: String, session: String? = nil, prNumber: Int? = nil,
              prState: String? = nil, prUrl: String? = nil, mergedSha: String? = nil, redeployedSha: String? = nil) {
             self.at = at; self.project = project; self.platform = platform; self.status = status; self.session = session
@@ -319,8 +321,9 @@ struct AutofixReport: Decodable {
             status = try c.decode(String.self, forKey: .status)
             platform = s(.platform); session = s(.session); prState = s(.prState)?.lowercased(); prUrl = s(.prUrl)
             prNumber = n(.prNumber) ?? n(.pr); mergedSha = s(.mergedSha); redeployedSha = s(.redeployedSha)
+            done = ((try? c.decodeIfPresent(Bool.self, forKey: .done)) ?? nil) ?? false
         }
-        private enum K: String, CodingKey { case at, project, platform, status, session, prNumber, pr, prState, prUrl, mergedSha, redeployedSha }
+        private enum K: String, CodingKey { case at, project, platform, status, session, prNumber, pr, prState, prUrl, mergedSha, redeployedSha, done }
     }
     let routine: String?
     let token: Bool
@@ -350,8 +353,14 @@ enum RowAutofix: Equatable {
     case prOpen(number: Int, url: URL?)
     case merged(sha: String, pr: Int?, url: URL?)
     case handedBack
+    /// Handed over long ago and still no PR: the session most likely ended without one (a cause
+    /// outside the code, say). Its report is in the session, so the chip links there.
+    case noPR(session: URL?)
 
-    static func of(_ i: Item, _ f: AutofixReport.Fire?) -> RowAutofix? {
+    /// After this long without a PR a hand-over no longer counts as "fixing".
+    static let stalledAfter: TimeInterval = 90 * 60
+
+    static func of(_ i: Item, _ f: AutofixReport.Fire?, now: Date = Date()) -> RowAutofix? {
         guard let f else { return nil }
         let pr = f.prUrl.flatMap(URL.init(string:))
         if let m = f.mergedSha {
@@ -364,10 +373,20 @@ enum RowAutofix: Equatable {
         guard i.lastFailed else { return nil }   // green again: nothing to say
         if f.prState == "closed" || f.prState == "merged" { return .handedBack }
         switch f.status {
-        case "fired", "pending", "ratelimited": return .fixing(session: f.session.flatMap(URL.init(string:)))
+        case "fired", "pending", "ratelimited":
+            let session = f.session.flatMap(URL.init(string:))
+            if f.status == "fired", f.prState == nil, now.timeIntervalSince1970 - f.at > stalledAfter { return .noPR(session: session) }
+            return .fixing(session: session)
         case "skipped", "failed": return .handedBack
         default: return nil
         }
+    }
+
+    /// Worth an `autofix sync`: a hand-over whose PR can still appear, be merged or be closed.
+    /// A stalled one (no PR long after) is left to the 10-minute job, so the app does not ask every few minutes forever.
+    static func needsSync(_ f: AutofixReport.Fire, now: Date = Date()) -> Bool {
+        guard f.status == "fired", !f.done, f.mergedSha == nil, f.prState != "closed" else { return false }
+        return f.prState == "open" || now.timeIntervalSince1970 - f.at <= stalledAfter
     }
 
     /// Key for "preselected once": a person who unticks the row is not overruled by the next load.

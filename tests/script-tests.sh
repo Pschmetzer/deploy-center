@@ -595,6 +595,19 @@ afrun >/dev/null
 st="$(env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" /bin/bash ./deploys autofix status --json </dev/null)"
 expect "autofix status --json: prNumber, prState, prUrl, session, mergedSha (and pr kept)" \
   "$(echo "$st" | jq -c '.fires[0] | [.prNumber, .prState, .prUrl, .session, .mergedSha, .pr]')" '[9,"merged","https://github.com/me/web/pull/9","https://claude.ai/code/s1","ffff999",9]'
+# autofix sync (af_sync_fires): records the merged PR without firing anything; --only syncs its project first.
+af_reset
+jq -n --argjson t "$((now - 600))" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",sha:"aaaa111",status:"fired",at:$t}]}' > "$AUTOFIX_STATE"
+ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"}]'
+expect "autofix sync: a merged fix PR is recorded, nothing fired" \
+  "$( ( st="$(af_state)"; all="$ALL"; dry=""; rc=0; DEPLOYS_NOTIFY=0 af_sync_fires >/dev/null; echo "$st" | jq -c '.fires[0] | [.prState, .mergedSha]' ) ):$(fired)" '["merged","ffff999"]:0'
+expect "autofix --only: syncs that project's PR first (merged, so not handed over again)" \
+  "$(afonly vercel web):$(fired):$(jq -c '.fires[0].prState' "$AUTOFIX_STATE")" '3:0:"merged"'
+# On means loaded: a job file launchd dropped is not "scheduled".
+mkdir -p "$af/agents2"; touch "$af/agents2/app.deploycenter.autofix.plist"
+printf '#!/bin/bash\nexit 113\n' > "$af/bin2-launchctl"; mkdir -p "$af/bin2"; mv "$af/bin2-launchctl" "$af/bin2/launchctl"; chmod +x "$af/bin2/launchctl"
+expect "autofix: a job file launchd does not have is not scheduled" \
+  "$( (PATH="$af/bin2:$PATH" DEPLOYS_LAUNCH_DIR="$af/agents2"; af_scheduled && echo on || echo off) )" "off"
 CLOSEDPRS='[]'; ALL='[]'
 
 # --- auto-deploy on again, allowances, the guard ---

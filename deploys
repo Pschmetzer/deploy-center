@@ -39,7 +39,7 @@
 #   deploys history <project> [n]             the last n deploys (default 10): when, state, commit, source
 #   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>)
 #   deploys autofix [--dry-run] [--only <platform> <p>]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
-#   deploys autofix set-token | routine <id> | list | forget-token | prompt | status | schedule on|off
+#   deploys autofix set-token | routine <id> | list | forget-token | prompt | status | sync | schedule on|off
 #                                             (see docs/AUTOFIX.md)
 #   deploys ai explain|notes|ship <p>         ask Claude (your own Anthropic key): why a build failed,
 #                                             plain release notes (--lang en|de), is it safe to ship
@@ -723,7 +723,7 @@ af_mask() {
 # Open (or merged) autofix PRs of one project: gh REST only, branch claude/autofix-<project>-*.
 af_prs() {  # af_prs <owner/repo> <project> <open|closed>
   # The project name goes to jq as --arg, never into the filter text.
-  gh api "repos/$1/pulls?state=$3&per_page=50&sort=updated&direction=desc" \
+  gh api "repos/$1/pulls?state=$3&per_page=100&sort=updated&direction=desc" \
     | jq -c --arg b "claude/autofix-$2-" '[.[] | select(.head.ref | startswith($b)) | {number, merged_at, closed_at, merge_commit_sha, ref:.head.ref, url:.html_url}]'
 }
 
@@ -791,7 +791,14 @@ job_off() {
   rm -f "$(job_plist "$1")"
 }
 af_plist() { job_plist "$AUTOFIX_LABEL"; }
-af_scheduled() { [ -f "$(af_plist)" ]; }
+# On: the job file is there and launchd has it loaded. A file launchd dropped (a login item turned
+# off, a failed bootstrap) used to count as on, and nothing reconciled the fires any more.
+af_scheduled() { [ -f "$(af_plist)" ] && launchctl print "gui/$(id -u)/$AUTOFIX_LABEL" >/dev/null 2>&1; }
+# The job file is there but launchd lost it: load it again (the person turned the schedule on).
+af_reload() {
+  [ -f "$(af_plist)" ] && ! af_scheduled || return 0
+  launchctl bootstrap "gui/$(id -u)" "$(af_plist)" >/dev/null 2>&1 && echo "autofix: the schedule was not loaded; loaded it again." || true
+}
 af_schedule_on() { job_on "$AUTOFIX_LABEL" 600 DeployCenter-autofix autofix; }
 af_schedule_off() { job_off "$AUTOFIX_LABEL"; }
 
@@ -803,21 +810,14 @@ af_lock() {
   echo "$d"
 }
 
-# Exit codes of `autofix --only` (AF_* below); a normal run only uses 0 and 1.
-AF_NOT_FAILED=2; AF_BUSY=3; AF_CAP=4; AF_NO_ROUTINE=5; AF_LOCKED=6
-
-autofix_run() {  # autofix_run [dry] [<platform> <project>]  (the two: --only, this one failure now)
-  local dry="${1:-}" oplat="${2:-}" oname="${3:-}" lock all now trig st rc=0
-  lock="$(af_lock)" || { [ -n "$oname" ] && return "$AF_LOCKED"; return 1; }
-  now="$(date +%s)"; trig="$(af_routine)"
-  all="$(af_all)" || rc=1
-  st="$(af_state)"
-
+# Step 1 of a run, and all of `autofix sync`: each handed-over failure gets the state of its fix PR.
+# Works on the caller's st, all, now, dry and rc (bash scoping), so it never fires anything.
+af_sync_fires() {  # af_sync_fires [<platform> <project>]  (the two: only that one)
   # 1. A merged fix is only announced, never deployed: deploying stays a click in the app (or `deploys … deploy`).
   #    Each fire also gets the state of its PR (prNumber, prState, prUrl) for the app.
   local open_fires f p plat repo did prs m msha fsha fb
-  open_fires=""
-  [ -n "$oname" ] || open_fires="$(echo "$st" | jq -c '.fires[] | select(.status == "fired" and (.mergedSha == null) and (.done != true))')"
+  open_fires="$(echo "$st" | jq -c --arg pl "${1:-}" --arg n "${2:-}" '.fires[] | select(.status == "fired" and (.mergedSha == null) and (.done != true))
+    | select($n == "" or (.project == $n and .platform == $pl))')"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     p="$(echo "$f" | jq -r .project)"; plat="$(echo "$f" | jq -r .platform)"; repo="$(echo "$f" | jq -r .repo)"; did="$(echo "$f" | jq -r .deployId)"
@@ -850,6 +850,19 @@ autofix_run() {  # autofix_run [dry] [<platform> <project>]  (the two: --only, t
       '(.fires[] | select(.deployId == $d)) |= . + {mergedSha:$s, pr:$m.number, prNumber:$m.number, prState:"merged", prUrl:($m.url // null), mergedSeenAt:$t}')"
     af_notify "Autofix: the fix for $p (PR #$(echo "$m" | jq .number)) is merged. Deploy it in Deploy Center when you want it live."
   done <<< "$open_fires"
+}
+
+# Exit codes of `autofix --only` (AF_* below); a normal run only uses 0 and 1.
+AF_NOT_FAILED=2; AF_BUSY=3; AF_CAP=4; AF_NO_ROUTINE=5; AF_LOCKED=6
+
+autofix_run() {  # autofix_run [dry] [<platform> <project>]  (the two: --only, this one failure now)
+  local dry="${1:-}" oplat="${2:-}" oname="${3:-}" lock all now trig st rc=0
+  lock="$(af_lock)" || { [ -n "$oname" ] && return "$AF_LOCKED"; return 1; }
+  now="$(date +%s)"; trig="$(af_routine)"
+  all="$(af_all)" || rc=1
+  st="$(af_state)"
+
+  af_sync_fires "$oplat" "$oname"
 
   # 2. Report what a build log cannot fix.
   [ -n "$oname" ] || echo "$all" | jq -r ".[] | select($AUTOFIX_REPORT_ONLY) | \"autofix: \(.platform) \(.name) is \(.lastState): not a build failure, left to you.\""
@@ -2081,6 +2094,19 @@ BASH
       off) af_schedule_off; echo "Autofix no longer runs by itself." ;;
       *) if af_scheduled; then echo on; else echo off; fi ;;
     esac ;;
+  "autofix sync")
+    # For the app: bring the fires up to date with their PRs (merged, closed, open) without firing,
+    # so a row never says "fixing" for a PR that was merged hours ago. A run in progress does it already.
+    af_reload
+    lock="$(af_lock 2>/dev/null)" || { echo "autofix: a run is in progress; it syncs too."; exit 0; }
+    trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+    st="$(af_state)"; now="$(date +%s)"; dry=""; rc=0; all="[]"
+    if [ -n "$(echo "$st" | jq -c '.fires[] | select(.status == "fired" and (.mergedSha == null) and (.done != true))')" ]; then
+      all="$(af_all)" || rc=1
+      af_sync_fires
+      echo "$st" | af_save
+    fi
+    exit "$rc" ;;
   "autofix status")
     # For the app: what is set up, and the newest hand-overs. Never the token itself.
     tok=false; [ -n "$(af_token)" ] && tok=true
@@ -2089,7 +2115,7 @@ BASH
       '{routine:(if $r == "" then null else $r end), token:$tok, scheduled:$sch,
         fires:(.fires | sort_by(-.at) | .[0:20] | map({at, project, platform, status, sha:(.sha // null),
           session:(.session // null), error:(.error // .reason // null), redeployedSha:(.redeployedSha // null), mergedSha:(.mergedSha // null), pr:(.pr // .prNumber // null),
-          prNumber:(.prNumber // .pr // null), prState:(.prState // (if .mergedSha then "merged" else null end)), prUrl:(.prUrl // null)}))}' ;;
+          prNumber:(.prNumber // .pr // null), prState:(.prState // (if .mergedSha then "merged" else null end)), prUrl:(.prUrl // null), done:(.done // false)}))}' ;;
   "autofix list")
     af_state | jq -r '.fires[] | [(.at | strftime("%Y-%m-%d %H:%M")), .project, .status, ((.sha // "")[0:7]), (.session // .error // .reason // ""), (if .mergedSha then "merged \(.mergedSha[0:7]) (PR #\(.pr)), deploy by hand" elif .redeployedSha then "redeployed \(.redeployedSha[0:7]) (PR #\(.pr))" else "" end)] | @tsv' \
       | (printf 'WHEN\tPROJECT\tSTATUS\tCOMMIT\tSESSION\tREDEPLOY\n'; cat) | column -t -s $'\t' ;;
@@ -2103,7 +2129,7 @@ BASH
         --only) case "${2:-}" in vercel|render) ;; *) die "Usage: deploys autofix --only <vercel|render> <project>";; esac
                 [ -n "${3:-}" ] || die "Usage: deploys autofix --only <vercel|render> <project>"
                 oplat="$2"; oname="$3"; shift 2;;
-        *) die "Unknown option $1. Usage: deploys autofix [--dry-run] [--only <platform> <project>] | set-token | routine [<id>] | list | status | prompt | schedule on|off";;
+        *) die "Unknown option $1. Usage: deploys autofix [--dry-run] [--only <platform> <project>] | set-token | routine [<id>] | list | status | sync | prompt | schedule on|off";;
       esac; shift
     done
     if [ -z "$dry" ]; then
