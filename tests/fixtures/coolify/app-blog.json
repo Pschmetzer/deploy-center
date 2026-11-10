@@ -1,0 +1,16 @@
+{
+ "uuid": "app-blog",
+ "name": "blog",
+ "fqdn": "blog.example.com",
+ "git_repository": "https://github.com/me/blog.git",
+ "git_branch": "trunk",
+ "git_commit_sha": "HEAD",
+ "build_pack": "nixpacks",
+ "status": "running:healthy",
+ "created_at": "2026-10-01T09:00:00.000000Z",
+ "updated_at": "2026-11-01T09:00:00.000000Z",
+ "settings": {
+  "is_auto_deploy_enabled": false,
+  "is_preview_deployments_enabled": false
+ }
+}

@@ -101,6 +101,9 @@ fi
 
 # --- build and notarize ------------------------------------------------------------------
 if [ "$mode" != publish-only ]; then
+  # The MCP server for Settings > Claude ships inside the app; build.sh copies it only with its packages.
+  command -v npm >/dev/null || die "npm is missing (needed for the MCP server in the app): brew install node"
+  (cd integrations/mcp && npm ci --omit=dev --no-audit --no-fund)
   # Signed by build.sh; notarized here, so the wait can be resumed.
   DEVELOPER_ID="$DEVELOPER_ID" NOTARY_PROFILE="" ./build.sh
 
