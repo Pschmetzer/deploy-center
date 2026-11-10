@@ -35,6 +35,13 @@ BUILD="build/Deploy Center.app"
 ZIP="build/DeployCenter-${VERSION}-universal.zip"
 YEAR="$(date +%Y)"
 
+# Sparkle (in-app updates): the pinned, checksum-verified release from scripts/sparkle.sh.
+# SPARKLE_FEED_URL and SPARKLE_PUBLIC_KEY override the feed and key only for local update tests.
+SPARKLE="$(scripts/sparkle.sh)"
+FEED_URL="${SPARKLE_FEED_URL:-https://deploycenter.app/appcast.xml}"
+# The public half of the EdDSA key (the private half is in the release Mac's keychain, account "deploy-center").
+PUBLIC_ED_KEY="${SPARKLE_PUBLIC_KEY:-E9FOsb2DUpGj2c6VBR+/8/v4/diczdqTaVJ6RvCkOXQ=}"
+
 mkdir -p build
 rm -rf "$BUILD" "$ZIP" build/notarize.zip build/DeployCenter-arm64 build/DeployCenter-x86_64
 mkdir -p "$BUILD/Contents/MacOS" "$BUILD/Contents/Resources"
@@ -45,11 +52,20 @@ slices=()
 for arch in $archs; do
   swiftc -O -parse-as-library -swift-version 5 \
     -target "$arch-apple-macosx15.0" \
+    -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "build/DeployCenter-$arch" app/*.swift shared/*.swift
   slices+=("build/DeployCenter-$arch")
 done
 lipo -create "${slices[@]}" -output "$BUILD/Contents/MacOS/DeployCenter"
 rm -f "${slices[@]}"
+
+# Sparkle.framework without what a non-sandboxed app does not need: the XPC services (only for
+# sandboxed apps) and the headers.
+FW="$BUILD/Contents/Frameworks/Sparkle.framework"
+mkdir -p "$BUILD/Contents/Frameworks"
+ditto "$SPARKLE/Sparkle.framework" "$FW"
+rm -rf "$FW/XPCServices" "$FW/Versions/B/XPCServices" "$FW/Headers" "$FW/Versions/B/Headers" \
+       "$FW/PrivateHeaders" "$FW/Versions/B/PrivateHeaders" "$FW/Modules" "$FW/Versions/B/Modules"
 
 # Widgets (opt-in): a WidgetKit extension in Contents/PlugIns, built with swiftc like the app.
 if [ "$widgets" = 1 ]; then
@@ -114,6 +130,9 @@ cat > "$BUILD/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHumanReadableCopyright</key><string>© ${YEAR} Deploy Center contributors. MIT License.</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>SUFeedURL</key><string>${FEED_URL}</string>
+  <key>SUPublicEDKey</key><string>${PUBLIC_ED_KEY}</string>
+  <key>SUVerifyUpdateBeforeExtraction</key><true/>
   <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>app.deploycenter.mac</string><key>CFBundleURLSchemes</key><array><string>deploycenter</string></array></dict></array>
   ${GROUP_KEY}
 </dict></plist>
@@ -155,9 +174,15 @@ fi
 # (The identity was read above, before the Info.plist.)
 # With widgets the extension is signed first, with its entitlements, and the app without --deep,
 # which would sign the extension again and drop them.
+# Sparkle's helpers and its framework are signed first (inside out) with the app's identity.
+sign_sparkle() {
+  local id="$1"; shift
+  for p in "$FW/Versions/B/Autoupdate" "$FW/Versions/B/Updater.app" "$FW"; do codesign --force "$@" -s "$id" "$p"; done
+}
 if [ "$widgets" = 1 ]; then
   sid="${DEVELOPER_ID:--}"
   rt=(); [ -n "${DEVELOPER_ID:-}" ] && rt=(--options runtime --timestamp)
+  sign_sparkle "$sid" ${rt[@]+"${rt[@]}"}
   codesign --force ${rt[@]+"${rt[@]}"} -s "$sid" "$BUILD/Contents/Resources/deploys"
   codesign --force ${rt[@]+"${rt[@]}"} -s "$sid" --entitlements build/widgets.entitlements "$APPEX"
   codesign --force ${rt[@]+"${rt[@]}"} -s "$sid" --entitlements build/app.entitlements "$BUILD"
@@ -169,10 +194,11 @@ if [ "$widgets" = 1 ]; then
     rm build/notarize.zip
   fi
 elif [ -n "${DEVELOPER_ID:-}" ]; then
+  sign_sparkle "$DEVELOPER_ID" --options runtime --timestamp
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/deploys"
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/providers/"*.sh
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD"
-  codesign --verify --strict "$BUILD"
+  codesign --verify --deep --strict "$BUILD"
   if [ -n "${NOTARY_PROFILE:-}" ]; then
     (cd build && ditto -c -k --keepParent "Deploy Center.app" notarize.zip)
     xcrun notarytool submit build/notarize.zip --keychain-profile "$NOTARY_PROFILE" --wait
