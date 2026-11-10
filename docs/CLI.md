@@ -63,6 +63,8 @@ deploys autodeploy allow vercel my-project 4   # auto-deploy on for 4 hours (see
 deploys autodeploy allowed | revoke vercel my-project
 deploys guard [--dry-run] | status | schedule on|off   # auto-deploy off where it came back on
 deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE.md
+deploys schedule daily 09:00 [--when-green] [--by-rules]   # deploy-changed --yes once a day (launchd, or the cron line)
+deploys schedule off | status [--json]
 deploys hooks install [<repo>]          # before each push: which builds it would start (integrations/hooks)
 deploys hooks uninstall | status [<repo>]
 eval "$(deploys completion zsh)"        # tab completion (also: bash; fish: deploys completion fish | source)
@@ -158,6 +160,9 @@ waiting project: `[{rule, index, project, matched, action, unmet}]`.
   signature) and per commit `verified` / `verification`.
 - `deploys autofix status --json`: `summary` `{handedOver, opened, merged, redeployed}`.
 - `deploys costs --json`: `missingDays`, `months`.
+- `deploys doctor`: `githubRateLimit` `{remaining, limit, resetAt}` (null without a GitHub login).
+- The journal: lines the CLI writes carry `prevHash`, the SHA-256 of the line before.
+- `deploys schedule status --json`: `{at, args, scheduled, pathMissing}`.
 
 ## On a server or in CI
 

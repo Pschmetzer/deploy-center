@@ -1504,6 +1504,31 @@ first="$(head -n 1 "$DEPLOYS_JOURNAL" | { sha256sum 2>/dev/null || shasum -a 256
 expect "FEA-041: prevHash: null first, then the hash of the line before" \
   "$(jq -sc '[.[0].prevHash, (.[1].prevHash | length)]' "$DEPLOYS_JOURNAL"; sed -n 2p "$DEPLOYS_JOURNAL" | jq -r .prevHash | grep -c "^$first$")" $'[null,64]\n1'
 rm -f "$e2e/config/window.json"; fresh
+# FEA-068: the daily deploy as a job at a time of day (launchd stand-in), or the cron line.
+mkdir -p "$tmp/j68"
+( PATH="$af/bin:$PATH" DEPLOYS_LAUNCH_DIR="$tmp/j68" job_on app.deploycenter.daily @07:30 DeployCenter-daily deploy-changed --yes --when-green >/dev/null )
+expect "FEA-068: the job starts at 07:30, with the flags" \
+  "$(grep -c '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>' "$tmp/j68/app.deploycenter.daily.plist"; grep -c '<string>deploy-changed</string><string>--yes</string><string>--when-green</string>' "$tmp/j68/app.deploycenter.daily.plist")" $'1\n1'
+# shellcheck disable=SC2123  # a PATH without launchctl is the point
+expect "FEA-068: without launchd the cron line runs at 07:30" "$( (PATH="$tmp/nolc"; job_on app.deploycenter.daily @07:30 DeployCenter-daily deploy-changed --yes) | grep -c "^30 7 \* \* \* PATH=.* 'deploy-changed' '--yes' >>")" "1"
+expect "FEA-068: a time that is none is refused, nothing written" "$(run "$O" "$E" schedule daily 25:00; grep -c 'HH:MM' "$E"; [ -e "$e2e/config/schedule.json" ] && echo file || echo none)" $'1\n1\nnone'
+expect "FEA-068: status without a schedule" "$(run "$O" "$E" schedule status --json; jq -c '[.at, .scheduled]' "$O")" $'0\n[null,false]'
+expect "FEA-068: observers cannot schedule deploys" "$(DEPLOYS_READONLY=1 run "$O" "$E" schedule daily 08:00; grep -c 'Observer mode' "$E")" $'1\n1'
+# PRV-130: lib/http.sh, the call the providers share: key on stdin, reads asked again, POST not.
+hb="$tmp/http/bin"; mkdir -p "$hb"
+cat > "$hb/curl" <<'C'
+#!/bin/bash
+k="$(cat)"; echo "$*|$k" >> "$HTTP_LOG"
+case "$HTTP_MODE" in ok) printf '%s\n200' '{"ok":true}' ;; down) printf '%s\n503' 'busy' ;; auth) printf '%s\n401' 'no' ;; esac
+C
+printf '#!/bin/bash\nexit 0\n' > "$hb/sleep"; chmod +x "$hb/curl" "$hb/sleep"
+hcall() { ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE="$1"; : > "$HTTP_LOG"; . ./lib/http.sh; HTTP_AUTH="Authorization: Bearer sekret"; HTTP_FIX="deploys x set-key"; ( http_call X "$2" "https://api.x.test/v1/things" ) 2>&1; echo "|rc=$?"; ) }
+expect "PRV-130: a 2xx gives the body" "$(hcall ok GET)" '{"ok":true}|rc=0'
+expect "PRV-130: the key goes on stdin, not in the arguments" "$(hcall ok GET >/dev/null; grep -c '|header = "Authorization: Bearer sekret"' "$tmp/http/log"; cut -d'|' -f1 "$tmp/http/log" | grep -c sekret)" $'1\n0'
+expect "PRV-130: a 503 read is asked three times, a POST once" "$(hcall down GET >/dev/null; wc -l < "$tmp/http/log" | tr -d ' '; hcall down POST >/dev/null; wc -l < "$tmp/http/log" | tr -d ' ')" $'3\n1'
+expect "PRV-130: a 401 says what to do" "$(hcall auth GET)" 'Error: X GET /v1/things -> HTTP 401 (the key is wrong or expired: deploys x set-key): no'$'\n''|rc=1'
+# FEA-078: doctor says GitHub's budget (null when not logged in).
+expect "FEA-078: doctor has githubRateLimit" "$(run "$O" "$E" doctor; jq -c 'has("githubRateLimit")' "$O")" $'0\ntrue'
 # ===== end CLI track =====
 
 echo

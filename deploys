@@ -16,6 +16,8 @@
 #   deploys deploy-changed [--yes]            deploy all of those (shows the list without --yes)
 #     [--by-rules]                            only what a "deploy" rule matches; "hold" rules always count
 #     [--when-green [--wait 30m] [--strict]]  only commits whose CI passed; waits for running checks
+#   deploys schedule daily [HH:MM] [--when-green] [--by-rules] [--strict] | off | status [--json]
+#                                             deploy-changed --yes once a day (launchd; else the cron line)
 #   deploys rules check [--json]              which rule of rules.json matches which waiting project, and why not
 #   deploys plan [--when-green] [--json]      what deploy-changed --yes would start, and an estimate of its cost
 #   deploys deploy <project> [--sha <c>]      deploy one project to production (Vercel or Render)
@@ -237,6 +239,9 @@ team_on() { declare -F team_gate >/dev/null; }
 # deploys hooks install|uninstall|status: the pre-push check in a repo (lib/hooks.sh).
 # shellcheck source=lib/hooks.sh
 if [ -f "$LIB_DIR/hooks.sh" ]; then . "$LIB_DIR/hooks.sh"; fi
+# One HTTP call with retries and hints, shared by the providers (lib/http.sh, PRV-130).
+# shellcheck source=lib/http.sh
+if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 # rules.json ("when … then …" for the daily deploy): lib/rules.sh. Without it no rule counts.
 # shellcheck source=lib/rules.sh
 # A rules.json without lib/rules.sh to read it stops the run rather than ignore its hold rules.
@@ -1086,6 +1091,7 @@ PROMPT
 # The launchd job that runs `autofix` every 10 minutes while this Mac is awake.
 AUTOFIX_LABEL="app.deploycenter.autofix"
 # A launchd job that runs this script every few seconds/minutes: job_on <label> <seconds> <log name> <args...>.
+# <seconds> may be @HH:MM instead: once a day at that local time (deploys schedule daily).
 job_plist() { echo "${DEPLOYS_LAUNCH_DIR:-$HOME/Library/LaunchAgents}/$1.plist"; }
 # Text for a plist <string>: & < > and quotes as entities (a path or PATH may hold any of them).
 xml_text() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
@@ -1094,14 +1100,22 @@ job_on() {
   self="$(cd "$(dirname "$SELF")" && pwd)/$(basename "$SELF")"
   # No launchd (Linux, a server): nothing is written; the cron line that does the same is printed.
   if ! command -v launchctl >/dev/null 2>&1; then
-    local q="" m=$(( every / 60 )); [ "$m" -ge 1 ] || m=1
+    local q="" m when
     for a in "$@"; do q="$q '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'"; done
-    echo "No launchd here, so nothing was installed. To run it every $m minutes, add this line with crontab -e:"
-    echo "*/$m * * * * PATH='$(printf '%s' "$PATH" | sed "s/'/'\\\\''/g")' DEPLOYS_LOG_ROTATE=1 /bin/bash '$self'$q >> \"\$HOME/.local/state/deploys-$(basename "$log" .log).log\" 2>&1"
+    case "$every" in
+      @*) m="${every#@}"; when="$((10#${m#*:})) $((10#${m%%:*})) * * *"
+          echo "No launchd here, so nothing was installed. To run it every day at ${every#@}, add this line with crontab -e:" ;;
+      *) m=$(( every / 60 )); [ "$m" -ge 1 ] || m=1; when="*/$m * * * *"
+         echo "No launchd here, so nothing was installed. To run it every $m minutes, add this line with crontab -e:" ;;
+    esac
+    echo "$when PATH='$(printf '%s' "$PATH" | sed "s/'/'\\\\''/g")' DEPLOYS_LOG_ROTATE=1 /bin/bash '$self'$q >> \"\$HOME/.local/state/deploys-$(basename "$log" .log).log\" 2>&1"
     return 0
   fi
   plist="$(job_plist "$label")"; mkdir -p "$(dirname "$plist")"
   for a in "$@"; do pargs="$pargs<string>$(xml_text "$a")</string>"; done
+  local start="<key>StartInterval</key><integer>$every</integer>"
+  case "$every" in @*) local hm="${every#@}"
+    start="<key>StartCalendarInterval</key><dict><key>Hour</key><integer>$((10#${hm%%:*}))</integer><key>Minute</key><integer>$((10#${hm#*:}))</integer></dict>" ;; esac
   # Written with the PATH of whoever turns it on (the app passes the login shell's): launchd
   # starts jobs with a bare one, and autofix needs jq, gh, perl and the vercel CLI.
   # Background priority: a check every few minutes must not compete with the person's work.
@@ -1115,7 +1129,7 @@ job_on() {
   <key>ProgramArguments</key><array><string>/bin/bash</string><string>$(xml_text "$self")</string>$pargs</array>
   <key>StandardOutPath</key><string>$(xml_text "$log")</string>
   <key>StandardErrorPath</key><string>$(xml_text "$log")</string>
-  <key>StartInterval</key><integer>$every</integer>
+  $start
   <key>ProcessType</key><string>Background</string>
   <key>LowPriorityIO</key><true/>
 </dict></plist>
@@ -2280,13 +2294,16 @@ case "${1:-} ${2:-}" in
     done
     pf="$pf,\"providers\":{${pn#,}}"
     glogin=false; gh auth status >/dev/null 2>&1 && glogin=true
+    # FEA-078: GitHub's hourly budget (gh shapes it, so no jq is needed here); null when not logged in.
+    grl=null; [ "$glogin" = false ] || grl="$(gh api rate_limit --jq '.resources.core | {remaining, limit, resetAt:.reset}' 2>/dev/null | tr -d '\n')"
+    case "$grl" in '{'*'}') ;; *) grl=null ;; esac
     gllogin=false; gitlab_logged_in && gllogin=true
     # The versions that matter (jq 1.6+ for the date functions).
     jqv="$(jq --version 2>/dev/null | sed 's/^jq-//' | tr -d '"\\')"
     ro=false; [ -z "$(readonly_from)" ] || ro=true
     # jobsMissing: "autofix:gh" = the autofix job's PATH no longer finds gh; deploys <job> schedule on renews it.
-    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s,"perl":%s,"curl":%s,"jobsMissing":%s}\n' \
-      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" "$(job_missing_json)" ;;
+    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s,"perl":%s,"curl":%s,"jobsMissing":%s,"githubRateLimit":%s}\n' \
+      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" "$(job_missing_json)" "$grl" ;;
 
   "github-budget "*)
     github_budget ;;
@@ -2457,7 +2474,7 @@ case "${1:-} ${2:-}" in
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
     # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    cmds="doctor where changed plan deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore hooks rules explain diff notes costs triggers simulate ledger price budget details autofix scan check autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
+    cmds="doctor where changed plan deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore hooks rules schedule explain diff notes costs triggers simulate ledger price budget details autofix scan check autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
     verbs_of() {
       local v="list deploy rollback status cancel autodeploy-off json" x
       for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
@@ -3151,6 +3168,33 @@ BASH
 
   "simulate "*|"ledger "*)
     load_savings; savings_main "$@" ;;
+
+  "schedule "*)
+    # FEA-068: the daily deploy as a launchd job (or the cron line): deploy-changed --yes at a time.
+    sf="$CONFIG_DIR/schedule.json"; DAILY_LABEL="app.deploycenter.daily"
+    case "${2:-}" in
+      daily)
+        at="09:00"; extra=()
+        for a in "${@:3}"; do
+          case "$a" in
+            [0-2][0-9]:[0-5][0-9]) [ "$((10#${a%%:*}))" -le 23 ] || die "The time is HH:MM, 00:00 to 23:59."; at="$a" ;;
+            --when-green|--by-rules|--strict) extra+=("$a") ;;
+            *) die "Usage: deploys schedule daily [HH:MM] [--when-green] [--by-rules] [--strict]" ;;
+          esac
+        done
+        require_write "schedule daily"
+        job_on "$DAILY_LABEL" "@$at" DeployCenter-daily deploy-changed --yes ${extra[@]+"${extra[@]}"}
+        jq -n --arg at "$at" --args '{daily:{at:$at, args:$ARGS.positional}}' -- ${extra[@]+"${extra[@]}"} > "$sf"
+        command -v launchctl >/dev/null 2>&1 && echo "deploy-changed --yes${extra[*]:+ ${extra[*]}} runs every day at $at (log: ~/Library/Logs/DeployCenter-daily.log)." ;;
+      off) job_off "$DAILY_LABEL"; rm -f "$sf"; echo "The daily deploy no longer runs by itself." ;;
+      ""|status)
+        on=false; [ -f "$(job_plist "$DAILY_LABEL")" ] && command -v launchctl >/dev/null 2>&1 && launchctl print "gui/$(id -u)/$DAILY_LABEL" >/dev/null 2>&1 && on=true
+        st="$(jq -c --argjson on "$on" --arg miss "$(job_missing "$DAILY_LABEL")" '.daily + {scheduled:$on, pathMissing:($miss | split(" ") | map(select(. != "")))}' "$sf" 2>/dev/null \
+          || echo '{"at":null,"args":[],"scheduled":false,"pathMissing":[]}')"
+        if [ "$json" = 1 ]; then echo "$st"
+        else echo "$st" | jq -r 'if .at then "daily at \(.at)\(if (.args | length) > 0 then " (\(.args | join(" ")))" else "" end): \(if .scheduled then "on" else "set, but launchd has no job (deploys schedule daily again)" end)" else "off" end'; fi ;;
+      *) die "Usage: deploys schedule daily [HH:MM] [--when-green] [--by-rules] [--strict] | off | status [--json]" ;;
+    esac ;;
 
   "rules "*) declare -F rules_main >/dev/null || die "lib/rules.sh is not next to deploys."; rules_main "${@:2}" ;;
   "price "*) load_savings; price_main "${@:2}" ;;
