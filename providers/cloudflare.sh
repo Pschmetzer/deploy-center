@@ -156,7 +156,8 @@ cloudflare_meta() {
 # Ready when there is a token. Says nothing, decides by its exit status.
 cloudflare_ready() { [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || ( cloudflare_key ) >/dev/null 2>&1; }
 
-cloudflare_has() { ( cf_call GET "$(cf_proj "$1")" ) >/dev/null 2>&1; }
+# The project's name is what every call here takes, so that is the id given back.
+cloudflare_has() { ( cf_call GET "$(cf_proj "$1")" ) >/dev/null 2>&1 && echo "$1"; }
 
 cf_projects() {
   local page=1 all="[]" out pages
@@ -209,6 +210,23 @@ cf_config() { cf_call GET "$(cf_proj "$1")" | jq -c '.source.config // null'; }
 
 # Both push switches off. What they were is kept (only the first time), so `on` can restore it.
 cloudflare_off() {
+  # --all (docs/PROVIDERS.md): every project, one by one. One that fails does not stop the rest;
+  # they are counted and the exit code says so. The list first, on its own: a failed read stops here.
+  if [ "${1:-}" = --all ]; then
+    local _names _n _bad=0
+    _names="$(cf_projects | jq -r '.[] | .name // empty')" || die "Cloudflare: could not list the projects"
+    while IFS= read -r _n; do
+      [ -n "$_n" ] || continue
+      ( cloudflare_off_one "$_n" ) || _bad=$((_bad + 1))
+    done <<< "$_names"
+    [ "$_bad" = 0 ] || die "$_bad Cloudflare projects could not be switched off (see above); the others are done"
+    echo "Done. No Cloudflare project deploys on push any more."
+    return 0
+  fi
+  cloudflare_off_one "$@"
+}
+
+cloudflare_off_one() {
   local p="$1" cfg
   cfg="$(cf_config "$p")" || exit 1
   [ "$cfg" != null ] || die "Cloudflare: $p is not connected to Git (direct upload): pushes do not build it"
@@ -296,13 +314,14 @@ cloudflare_deploy_json() {
   echo "$out" | jq --argjson tg "$toggled" --arg b "$branch" "$CF_PHASE"' cf_dep | {id, url, state:.phase, phase, branch:$b, toggled:$tg}'
 }
 
-cloudflare_latest() {
-  cf_call GET "$(cf_proj "$1")/deployments?per_page=1" | jq -e "$CF_PHASE"' .[0] // empty | cf_dep' \
-    || die "Cloudflare: $1 has no deployments"
+cloudflare_latest_json() {
+  # A failed call is that failure (cf_call says why); no deployment is null, not an error.
+  local out; out="$(cf_call GET "$(cf_proj "$1")/deployments?per_page=1")" || exit 1
+  printf '%s' "$out" | jq "$CF_PHASE"' .[0] // null | if . then cf_dep else null end'
 }
-# cloudflare_status <project> [<id>]: one deployment (the newest without an id).
-cloudflare_status() {
-  [ -n "${2:-}" ] || { cloudflare_latest "$1"; return; }
+# cloudflare_status_json <project> [<id>]: one deployment (the newest without an id).
+cloudflare_status_json() {
+  [ -n "${2:-}" ] || { cloudflare_latest_json "$1"; return; }
   cf_call GET "$(cf_proj "$1")/deployments/$2" | jq "$CF_PHASE"' cf_dep'
 }
 
@@ -323,7 +342,8 @@ cloudflare_rollback() {
 # cloudflare_logs <project> [lines] [<id>]
 cloudflare_logs() {
   local p="$1" n="${2:-60}" id="${3:-}"
-  [ -n "$id" ] || id="$(cloudflare_latest "$p" | jq -r '.id')" || exit 1
+  [ -n "$id" ] || id="$(cloudflare_latest_json "$p" | jq -r '.id // empty')" || exit 1
+  [ -n "$id" ] || die "Cloudflare: $p has no deployments"
   cf_call GET "$(cf_proj "$p")/deployments/$id/history/logs" | jq -r '.data[]? | "\(.ts // "")  \(.line // "")"' | tail -n "$n"
 }
 
@@ -407,7 +427,7 @@ cloudflare_selftest() {
         return 1 ;;
     esac
     sleep 5
-    st="$(cloudflare_status "$p" "$id" | jq -c .)" || exit 1
+    st="$(cloudflare_status_json "$p" "$id" | jq -c .)" || exit 1
   done
   echo "Self-test inconclusive: deployment $id did not reach the build stage in time (stage $(echo "$st" | jq -r '.stage')). Run it again later."
   return 1
@@ -424,8 +444,8 @@ cloudflare_cmd() {
     off|autodeploy-off) cloudflare_off "${1:?project}" ;;
     on|autodeploy-on) cloudflare_on "${1:?project}" ;;
     deploy-json|deploy) cloudflare_deploy_json "${1:?project}" "${@:2}" ;;
-    status) cloudflare_status "${1:?project}" "${2:-}" ;;
-    latest) cloudflare_latest "${1:?project}" ;;
+    status) cloudflare_status_json "${1:?project}" "${2:-}" ;;
+    latest) cloudflare_latest_json "${1:?project}" ;;
     cancel) cloudflare_cancel "${1:?project}" ;;
     rollback) cloudflare_rollback "${1:?project}" "${2:-}" ;;
     logs) cloudflare_logs "${1:?project}" "${2:-60}" "${3:-}" ;;
@@ -444,3 +464,14 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   set -euo pipefail
   cloudflare_cmd "$@"
 fi
+
+# ---------- the contract's status lines (docs/PROVIDERS.md) ----------
+# `deploys watch`, `deploy --wait` and group deploys read one line: deployId<TAB>phase<TAB>state,
+# and "none" as the id when there is no deploy. The JSON above stays for people:
+# `deploys cloudflare status|latest` prints it (cloudflare_cli_status, cloudflare_cli_latest).
+CLOUDFLARE_TSV='if . == null then "none\t\tnone"
+  else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage then "\(.stage):\(.status // "")" else .status end) // "?")" end'
+cloudflare_status() { local j; j="$(cloudflare_status_json "$@")" || return 1; printf '%s' "$j" | jq -r "$CLOUDFLARE_TSV"; }
+cloudflare_latest() { local j; j="$(cloudflare_latest_json "$@")" || return 1; printf '%s' "$j" | jq -r "$CLOUDFLARE_TSV"; }
+cloudflare_cli_status() { cloudflare_status_json "$@"; }
+cloudflare_cli_latest() { cloudflare_latest_json "$@"; }

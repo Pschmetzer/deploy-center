@@ -165,7 +165,7 @@ coolify_ready() {
     && coolify_base >/dev/null 2>&1 && coolify_key >/dev/null 2>&1
 }
 
-coolify_has() { coolify_id_of "$1" >/dev/null 2>&1; }
+coolify_has() { coolify_id_of "$1" 2>/dev/null; }
 
 coolify_json() {
   local apps base out="[]" uuid one d
@@ -214,6 +214,23 @@ coolify_json() {
 # coolify_off <app> [--previews]: Auto Deploy off. --previews also stops PR preview builds.
 # The values before are remembered (the first time only), for coolify_on.
 coolify_off() {
+  # --all (docs/PROVIDERS.md): every application, one by one. One that fails does not stop the rest;
+  # they are counted and the exit code says so. The list first, on its own: a failed read stops here.
+  if [ "${1:-}" = --all ]; then
+    local _names _n _bad=0
+    _names="$(coolify_apps | jq -r '.[] | .uuid // empty')" || coolify_die "Coolify: could not list the applications"
+    while IFS= read -r _n; do
+      [ -n "$_n" ] || continue
+      ( coolify_off_one "$_n" ) || _bad=$((_bad + 1))
+    done <<< "$_names"
+    [ "$_bad" = 0 ] || coolify_die "$_bad Coolify applications could not be switched off (see above); the others are done"
+    echo "Done. No Coolify application deploys on push any more."
+    return 0
+  fi
+  coolify_off_one "$@"
+}
+
+coolify_off_one() {
   local app="$1" previews="${2:-}" id info auto prev body after
   id="$(coolify_id_of "$app")" || coolify_die "Coolify application $app not found"
   info="$(coolify_call GET "/applications/$id")" || coolify_die "Coolify: could not read $app"
@@ -260,7 +277,20 @@ coolify_unpin() {
 }
 
 coolify_deploy_json() {
-  local app="$1" preview="${2:-}" sha="${3:-}" id info pinned="" out did lock="" one base rc
+  local app="${1:-}" preview="" sha="" id info pinned="" out did lock="" one base rc
+  shift || true
+  # `deploys` calls <app> [--preview] [--sha <commit>]; the old positional <app> [preview] [sha]
+  # still works. Without this, `--sha` landed in "preview" and was refused for the wrong reason.
+  local _pos=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --preview) preview=1 ;;
+      --sha) [ -n "${2:-}" ] || coolify_die "Coolify: --sha needs a commit"; sha="$2"; shift ;;
+      -*) coolify_die "Coolify: unknown option $1" ;;
+      *) _pos=$((_pos + 1)); if [ "$_pos" = 1 ]; then preview="$1"; else sha="$1"; fi ;;
+    esac
+    shift
+  done
   [ -z "$preview" ] || coolify_die "Coolify: preview deploys need a pull request; not supported from here"
   if [ -n "$sha" ]; then
     [[ "$sha" =~ ^[0-9a-fA-F]{7,40}$ ]] || coolify_die "Coolify: \"$sha\" is not a commit sha"
@@ -299,8 +329,8 @@ coolify_deploy_json() {
   fi
 }
 
-# coolify_status [<app>] <deployment-uuid>
-coolify_status() {
+# coolify_status_json [<app>] <deployment-uuid>
+coolify_status_json() {
   local d="${2:-$1}" out base
   base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
   out="$(coolify_call GET "/deployments/$d")" || coolify_die "Coolify: could not read deployment $d"
@@ -308,7 +338,7 @@ coolify_status() {
 }
 
 # The newest production deployment (not a PR preview).
-coolify_latest() {
+coolify_latest_json() {
   local id out base
   base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
   id="$(coolify_id_of "$1")" || coolify_die "Coolify application $1 not found"
@@ -320,7 +350,7 @@ coolify_latest() {
 coolify_cancel() {
   local d="${2:-$1}"
   coolify_call POST "/deployments/$d/cancel" >/dev/null || coolify_die "Coolify: could not cancel $d"
-  echo "Coolify: deployment $d canceled"
+  jq -nc --arg d "$d" '{id:$d, state:"cancelled-by-user", phase:"canceled", message:"Coolify: deployment \($d) canceled"}'
 }
 
 # Back to the commit before the one that is live: the newest finished production deployment
@@ -340,7 +370,10 @@ coolify_rollback() {
     case "$out" in *"HTTP 404"*) coolify_die "Coolify: rollback needs Coolify v4.3 or newer ($out)";; esac
     coolify_die "Coolify: could not roll $1 back: $out"
   fi
-  echo "Coolify: $1 is going back to ${target:0:7}$( [ -n "$local_img" ] && echo " (image still on the server: no build)") — deployment $(echo "$out" | jq -r '.deployment_uuid // "queued"')"
+  jq -nc --argjson o "$(printf '%s' "$out" | jq -c 'if type == "object" then . else {} end' 2>/dev/null || echo '{}')" \
+    --arg t "$target" --arg a "$1" --arg img "$local_img" \
+    '{id:($o.deployment_uuid // null), state:"queued", phase:"queued", commit:$t, imageReused:($img != ""),
+      message:"Coolify: \($a) is going back to \($t[0:7])\(if $img != "" then " (image still on the server: no build)" else "" end)"}'
 }
 
 # coolify_logs <app> [lines] [--id <deployment>] [--runtime]
@@ -368,7 +401,7 @@ coolify_logs() {
     return 0
   fi
   if [ -z "$d" ]; then
-    d="$(coolify_latest "$app" | jq -r '.id // empty')"
+    d="$(coolify_latest_json "$app" | jq -r '.id // empty')"
     [ -n "$d" ] || coolify_die "Coolify: $app has no deployments yet"
   fi
   out="$(coolify_call GET "/deployments/$d")" || coolify_die "Coolify: could not read deployment $d"
@@ -444,3 +477,14 @@ coolify_doctor() {
       https:($base | startswith("https://")), key:$src, tokenOk:$ok,
       error:(if $err == "" then null else $err end), version:(if $ver == "" then null else $ver end), apps:$n}'
 }
+
+# ---------- the contract's status lines (docs/PROVIDERS.md) ----------
+# `deploys watch`, `deploy --wait` and group deploys read one line: deployId<TAB>phase<TAB>state,
+# and "none" as the id when there is no deploy. The JSON above stays for people:
+# `deploys coolify status|latest` prints it (coolify_cli_status, coolify_cli_latest).
+COOLIFY_TSV='if . == null then "none\t\tnone"
+  else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage then "\(.stage):\(.status // "")" else .status end) // "?")" end'
+coolify_status() { local j; j="$(coolify_status_json "$@")" || return 1; printf '%s' "$j" | jq -r "$COOLIFY_TSV"; }
+coolify_latest() { local j; j="$(coolify_latest_json "$@")" || return 1; printf '%s' "$j" | jq -r "$COOLIFY_TSV"; }
+coolify_cli_status() { coolify_status_json "$@"; }
+coolify_cli_latest() { coolify_latest_json "$@"; }

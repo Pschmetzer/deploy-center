@@ -145,6 +145,10 @@ reset
 ( netlify_off blog --rule-added >/dev/null 2>&1 )
 expect "off --rule-added: recorded" "$(jq '."site-blog".rule' "$hf")" true
 expect "off --rule-added: gh not asked" "$(calls '^gh api repos/me/blog/contents')" 0
+# --all: each site, one failing does not stop the next, and the exit code says so.
+out="$( netlify_sites() { echo '[{"id":"s-a"},{"id":"s-b"}]'; }; netlify_off_one() { echo "off $1"; [ "$1" = s-b ]; }
+        netlify_off --all 2>&1 )"; rc=$?
+expect "off --all: every site, the failure counted" "$rc:$(grep -c '^off s-' <<< "$out"):$(grep -c '1 Netlify sites could not' <<< "$out")" "1:2:1"
 jq '."site-blog".rule = false' "$hf" > "$tmp/h" && mv "$tmp/h" "$hf"
 # json re-checks unconfirmed sites on GitHub; blog still has no rule there.
 reset
@@ -158,18 +162,21 @@ out="$(netlify_deploy_json shop 2>&1)"; rc=$?
 expect "deploy shop: exit 0" "$rc" 0
 expect "deploy shop: the new deploy" "$(echo "$out" | jq -c '[.id, .phase, .url]')" '["d-shop-new","queued","https://d-shop-new--shop.netlify.app"]'
 expect "deploy shop: one hook call" "$(calls 'curl POST https://api.netlify.com/build_hooks/hook-shop')" 1
-out="$(netlify_deploy_json shop "" abc123 2>&1)"; rc=$?
+out="$(netlify_deploy_json shop --sha abc123 2>&1)"; rc=$?
 expect "deploy --sha: refused" "$rc" 1
 has "deploy --sha: says why" "$out" "not supported"
-out="$(netlify_deploy_json shop preview 2>&1)"; rc=$?
+out="$(netlify_deploy_json shop --preview 2>&1)"; rc=$?
 expect "deploy --preview: refused" "$rc" 1
 
 # --- status, latest, cancel, rollback, logs, url, has ---
 reset
-expect "status" "$(netlify_status d-shop-3 | jq -c '[.id, .phase, .sha, .dashboardUrl]')" \
+expect "status" "$(netlify_status_json d-shop-3 | jq -c '[.id, .phase, .sha, .dashboardUrl]')" \
   '["d-shop-3","building","3333333","https://app.netlify.com/sites/shop/deploys/d-shop-3"]'
-expect "status: site and deploy" "$(netlify_status shop d-shop-3 | jq -r .id)" d-shop-3
-expect "latest: skips the skipped build" "$(netlify_latest shop | jq -r .id)" d-shop-3
+expect "status: site and deploy" "$(netlify_status_json shop d-shop-3 | jq -r .id)" d-shop-3
+expect "latest: skips the skipped build" "$(netlify_latest_json shop | jq -r .id)" d-shop-3
+expect "status: the contract line" "$(netlify_status shop d-shop-3)" "d-shop-3	building	building"
+expect "latest: the contract line" "$(netlify_latest shop | cut -f1,2)" "d-shop-3	building"
+expect "has: gives the id" "$(netlify_has blog)" "site-blog"
 out="$(netlify_cancel shop d-shop-3)"
 expect "cancel: posted" "$(calls 'curl POST .*/deploys/d-shop-3/cancel')" 1
 has "cancel: said" "$out" "canceled"

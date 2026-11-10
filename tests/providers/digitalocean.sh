@@ -193,10 +193,10 @@ expect "deploy shop: exit 0" "$rc" 0
 expect "deploy shop: the new deployment" "$(echo "$out" | jq -c '[.id, .phase, .state, .url]')" '["d-shop-new","queued","PENDING_BUILD","https://shop.example.com"]'
 expect "deploy shop: one POST, no forced build" "$(calls 'curl POST .*/v2/apps/app-shop/deployments ')" 1
 expect "deploy shop: body" "$(last_body)" '{"force_build":false}'
-out="$(digitalocean_deploy_json shop "" abc123 2>&1)"; rc=$?
+out="$(digitalocean_deploy_json shop --sha abc123 2>&1)"; rc=$?
 expect "deploy --sha: refused" "$rc" 1
 has "deploy --sha: says why" "$out" "not supported"
-out="$(digitalocean_deploy_json shop preview 2>&1)"; rc=$?
+out="$(digitalocean_deploy_json shop --preview 2>&1)"; rc=$?
 expect "deploy --preview: refused" "$rc" 1
 out="$(digitalocean_deploy_json Pinned 2>&1)"; rc=$?
 expect "deploy pinned: refused" "$rc" 1
@@ -204,13 +204,16 @@ has "deploy pinned: says why" "$out" "pinned to a rollback"
 
 # --- status, latest, cancel, rollback, url, has ---
 reset
-expect "status" "$(digitalocean_status shop d-shop-3 | jq -c '[.id, .phase, .sha, .progress, .dashboardUrl]')" \
+expect "status" "$(digitalocean_status_json shop d-shop-3 | jq -c '[.id, .phase, .sha, .progress, .dashboardUrl]')" \
   '["d-shop-3","building","3333333cccc","1/4","https://cloud.digitalocean.com/apps/app-shop/deployments/d-shop-3"]'
-expect "status: the failed step" "$(digitalocean_status shop d-shop-x | jq -c '[.phase, .error]')" '["failed","Build failed: npm exited 1"]'
-out="$(digitalocean_status d-shop-3 2>&1)"; rc=$?
+expect "status: the failed step" "$(digitalocean_status_json shop d-shop-x | jq -c '[.phase, .error]')" '["failed","Build failed: npm exited 1"]'
+out="$(digitalocean_status_json d-shop-3 2>&1)"; rc=$?
 expect "status: needs the app" "$rc" 1
-expect "latest" "$(digitalocean_latest shop | jq -c '[.id, .phase]')" '["d-shop-3","building"]'
-expect "latest: none" "$(digitalocean_latest image)" null
+expect "latest" "$(digitalocean_latest_json shop | jq -c '[.id, .phase]')" '["d-shop-3","building"]'
+expect "latest: none" "$(digitalocean_latest_json image)" null
+expect "latest: none is the contract's none line" "$(digitalocean_latest image)" "none		none"
+expect "status: the contract line" "$(digitalocean_status shop d-shop-3 | cut -f1,2)" "d-shop-3	building"
+expect "has: gives the id" "$(digitalocean_has shop)" "app-shop"
 out="$(digitalocean_cancel shop d-shop-3)"
 expect "cancel: posted" "$(calls 'curl POST .*/v2/apps/app-shop/deployments/d-shop-3/cancel')" 1
 has "cancel: said" "$out" "canceled"

@@ -163,7 +163,8 @@ amplify_ready() {
 }
 
 amplify_has() {
-  ( amp_resolve "$1" && amp_branches "$AMP_APP" | jq -e --arg b "$AMP_BRANCH" 'any(.[]; .branchName == $b)' ) >/dev/null 2>&1
+  ( amp_resolve "$1" && amp_branches "$AMP_APP" | jq -e --arg b "$AMP_BRANCH" 'any(.[]; .branchName == $b)' >/dev/null \
+      && echo "$AMP_APP/$AMP_BRANCH" ) 2>/dev/null
 }
 
 # One app to one project. A failed read of its branches or jobs becomes fetchError, not a stop.
@@ -290,16 +291,17 @@ amplify_deploy_json() {
     | {id, url:(if $u == "" then null else "https://\($u)" end), state:.phase, phase, branch, sha}'
 }
 
-amplify_latest() {
+amplify_latest_json() {
   local jobs
   amp_resolve "$1"
   jobs="$(amp_jobs "$AMP_APP" "$AMP_BRANCH" 1)" || exit 1
-  echo "$jobs" | jq -e --arg b "$AMP_BRANCH" "$AMP_JQ"' .[0] // empty | amp_job($b)' || die "Amplify: $1 has no builds yet"
+  # No build yet is null (the contract's "none"), not an error.
+  echo "$jobs" | jq --arg b "$AMP_BRANCH" "$AMP_JQ"' .[0] // null | if . then amp_job($b) else null end'
 }
 
-# amplify_status <project> [<job id>]: one job (the newest without an id).
-amplify_status() {
-  [ -n "${2:-}" ] || { amplify_latest "$1"; return; }
+# amplify_status_json <project> [<job id>]: one job (the newest without an id).
+amplify_status_json() {
+  [ -n "${2:-}" ] || { amplify_latest_json "$1"; return; }
   amp_resolve "$1"
   amp_aws amplify get-job --app-id "$AMP_APP" --branch-name "$AMP_BRANCH" --job-id "$2" \
     | jq --arg b "$AMP_BRANCH" "$AMP_JQ"' .job.summary | amp_job($b)'
@@ -428,8 +430,8 @@ amplify_cmd() {
     off|autodeploy-off) amplify_off "${1:?project}" "${2:-}" ;;
     on|autodeploy-on) amplify_on "${1:?project}" ;;
     deploy-json|deploy) amplify_deploy_json "${1:?project}" "${@:2}" ;;
-    status) amplify_status "${1:?project}" "${2:-}" ;;
-    latest) amplify_latest "${1:?project}" ;;
+    status) amplify_status_json "${1:?project}" "${2:-}" ;;
+    latest) amplify_latest_json "${1:?project}" ;;
     cancel) amplify_cancel "${1:?project}" "${2:-}" ;;
     rollback) amplify_rollback "${1:?project}" "${2:-}" ;;
     logs) amplify_logs "${1:?project}" "${2:-60}" "${3:-}" ;;
@@ -445,3 +447,14 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   set -euo pipefail
   amplify_cmd "$@"
 fi
+
+# ---------- the contract's status lines (docs/PROVIDERS.md) ----------
+# `deploys watch`, `deploy --wait` and group deploys read one line: deployId<TAB>phase<TAB>state,
+# and "none" as the id when there is no deploy. The JSON above stays for people:
+# `deploys amplify status|latest` prints it (amplify_cli_status, amplify_cli_latest).
+AMPLIFY_TSV='if . == null then "none\t\tnone"
+  else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage then "\(.stage):\(.status // "")" else .status end) // "?")" end'
+amplify_status() { local j; j="$(amplify_status_json "$@")" || return 1; printf '%s' "$j" | jq -r "$AMPLIFY_TSV"; }
+amplify_latest() { local j; j="$(amplify_latest_json "$@")" || return 1; printf '%s' "$j" | jq -r "$AMPLIFY_TSV"; }
+amplify_cli_status() { amplify_status_json "$@"; }
+amplify_cli_latest() { amplify_latest_json "$@"; }

@@ -186,7 +186,7 @@ digitalocean_ready() {
   command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && digitalocean_key >/dev/null 2>&1
 }
 
-digitalocean_has() { digitalocean_id_of "$1" >/dev/null 2>&1; }
+digitalocean_has() { digitalocean_id_of "$1" 2>/dev/null; }
 
 digitalocean_json() {
   local apps out="[]" a id d
@@ -226,6 +226,23 @@ digitalocean_json() {
 # digitalocean_off <app>: deploy_on_push=false on every component. GET the spec, change only the
 # flags, PUT the whole spec back. The spec before the change goes to do-specs/<id>.json.
 digitalocean_off() {
+  # --all (docs/PROVIDERS.md): every app, one by one. One that fails does not stop the rest;
+  # they are counted and the exit code says so. The list first, on its own: a failed read stops here.
+  if [ "${1:-}" = --all ]; then
+    local _names _n _bad=0
+    _names="$(digitalocean_apps | jq -r '.[] | .id // empty')" || digitalocean_die "DigitalOcean: could not list the apps"
+    while IFS= read -r _n; do
+      [ -n "$_n" ] || continue
+      ( digitalocean_off_one "$_n" ) || _bad=$((_bad + 1))
+    done <<< "$_names"
+    [ "$_bad" = 0 ] || digitalocean_die "$_bad DigitalOcean apps could not be switched off (see above); the others are done"
+    echo "Done. No DigitalOcean app deploys on push any more."
+    return 0
+  fi
+  digitalocean_off_one "$@"
+}
+
+digitalocean_off_one() {
   local app="$1" id info spec new back res left
   id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
   info="$(digitalocean_app "$id")" || digitalocean_die "DigitalOcean: could not read $app"
@@ -265,7 +282,20 @@ digitalocean_on() {
 
 # digitalocean_deploy_json <app> [preview] [sha] — a new deployment of the branch's newest commit.
 digitalocean_deploy_json() {
-  local app="$1" preview="${2:-}" sha="${3:-}" id info out lock=""
+  local app="${1:-}" preview="" sha="" id info out lock=""
+  shift || true
+  # `deploys` calls <app> [--preview] [--sha <commit>]; the old positional <app> [preview] [sha]
+  # still works. Without this, `--sha` landed in "preview" and was refused for the wrong reason.
+  local _pos=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --preview) preview=1 ;;
+      --sha) [ -n "${2:-}" ] || digitalocean_die "DigitalOcean: --sha needs a commit"; sha="$2"; shift ;;
+      -*) digitalocean_die "DigitalOcean: unknown option $1" ;;
+      *) _pos=$((_pos + 1)); if [ "$_pos" = 1 ]; then preview="$1"; else sha="$1"; fi ;;
+    esac
+    shift
+  done
   [ -z "$preview" ] || digitalocean_die "DigitalOcean: App Platform has no preview deploys"
   [ -z "$sha" ] || digitalocean_die "DigitalOcean: a deployment always builds the newest commit of the branch; --sha is not supported"
   id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
@@ -280,8 +310,8 @@ digitalocean_deploy_json() {
     .deployment | {id, url:($a | url_of), state:(.phase // null), phase:(.phase | phase)}'
 }
 
-# digitalocean_status <app> <deployment-id> — App Platform needs the app to find a deployment.
-digitalocean_status() {
+# digitalocean_status_json <app> <deployment-id> — App Platform needs the app to find a deployment.
+digitalocean_status_json() {
   local app="${1:-}" d="${2:-}" id out
   [ -n "$d" ] || digitalocean_die "DigitalOcean: status needs the app and the deployment id"
   id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
@@ -289,7 +319,7 @@ digitalocean_status() {
   echo "$out" | jq --arg app "$id" "$DIGITALOCEAN_JQ"'.deployment | deploy_out(null; $app)'
 }
 
-digitalocean_latest() {
+digitalocean_latest_json() {
   local id out
   id="$(digitalocean_id_of "$1")" || digitalocean_die "DigitalOcean app $1 not found"
   out="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1")" || digitalocean_die "DigitalOcean: could not read the deployments of $1"
@@ -302,7 +332,7 @@ digitalocean_cancel() {
   [ -n "$d" ] || digitalocean_die "DigitalOcean: cancel needs the app and the deployment id"
   id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
   digitalocean_call POST "/v2/apps/$id/deployments/$d/cancel" >/dev/null || digitalocean_die "DigitalOcean: could not cancel $d"
-  echo "DigitalOcean: deployment $d canceled"
+  jq -nc --arg d "$d" '{id:$d, state:"CANCELED", phase:"canceled", message:"DigitalOcean: deployment \($d) canceled"}'
 }
 
 # digitalocean_rollback <app> [deployment-id]: back to the deployment that was live before the
@@ -330,9 +360,14 @@ digitalocean_rollback() {
     [ -n "$want" ] && digitalocean_die "DigitalOcean: cannot roll $app back to $c: $(echo "$v" | jq -r '.error.message // "not valid"')"
   done
   [ -n "$target" ] || digitalocean_die "DigitalOcean: $app has no earlier deployment that can be rolled back to"
-  digitalocean_call POST "/v2/apps/$id/rollback" "$(jq -nc --arg d "$target" '{deployment_id:$d, skip_pin:true}')" >/dev/null \
+  local out
+  out="$(digitalocean_call POST "/v2/apps/$id/rollback" "$(jq -nc --arg d "$target" '{deployment_id:$d, skip_pin:true}')")" \
     || digitalocean_die "DigitalOcean: could not roll back to $target"
-  echo "DigitalOcean: $app is rolling back to deployment $target"
+  # The rollback is a deployment of its own when App Platform names one; else the target.
+  printf '%s' "$out" | jq -c --arg t "$target" --arg a "$app" "$DIGITALOCEAN_JQ"'(try .deployment catch null) as $d
+    | {id:($d.id // $t), state:($d.phase // "PENDING_DEPLOY"), phase:(($d.phase // "PENDING_DEPLOY") | phase), target:$t,
+       message:"DigitalOcean: \($a) is rolling back to deployment \($t)"}' 2>/dev/null \
+    || jq -nc --arg t "$target" --arg a "$app" '{id:$t, state:"PENDING_DEPLOY", phase:"queued", target:$t, message:"DigitalOcean: \($a) is rolling back to deployment \($t)"}'
 }
 
 # digitalocean_logs <app> [--id <deployment>] [--component <name>]: the build log of each
@@ -419,3 +454,14 @@ digitalocean_doctor() {
     '{provider:"digitalocean", key:$src, tokenOk:$ok, error:(if $err == "" then null else $err end),
       apps:$n, savedSpecs:$s}'
 }
+
+# ---------- the contract's status lines (docs/PROVIDERS.md) ----------
+# `deploys watch`, `deploy --wait` and group deploys read one line: deployId<TAB>phase<TAB>state,
+# and "none" as the id when there is no deploy. The JSON above stays for people:
+# `deploys digitalocean status|latest` prints it (digitalocean_cli_status, digitalocean_cli_latest).
+DIGITALOCEAN_TSV='if . == null then "none\t\tnone"
+  else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage then "\(.stage):\(.status // "")" else .status end) // "?")" end'
+digitalocean_status() { local j; j="$(digitalocean_status_json "$@")" || return 1; printf '%s' "$j" | jq -r "$DIGITALOCEAN_TSV"; }
+digitalocean_latest() { local j; j="$(digitalocean_latest_json "$@")" || return 1; printf '%s' "$j" | jq -r "$DIGITALOCEAN_TSV"; }
+digitalocean_cli_status() { digitalocean_status_json "$@"; }
+digitalocean_cli_latest() { digitalocean_latest_json "$@"; }

@@ -166,7 +166,7 @@ netlify_ready() {
   command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && netlify_key >/dev/null 2>&1
 }
 
-netlify_has() { netlify_id_of "$1" >/dev/null 2>&1; }
+netlify_has() { netlify_id_of "$1" 2>/dev/null; }
 
 netlify_json() {
   local sites hooks out="[]" s id d repo ref base rule
@@ -216,6 +216,23 @@ netlify_json() {
 # netlify_off <site> [--rule-added]: build hook + the netlify.toml step. --rule-added records the
 # rule by hand for repos gh cannot read (GitLab, Bitbucket, a private repo without access).
 netlify_off() {
+  # --all (docs/PROVIDERS.md): every site, one by one. One that fails does not stop the rest;
+  # they are counted and the exit code says so. The list first, on its own: a failed read stops here.
+  if [ "${1:-}" = --all ]; then
+    local _names _n _bad=0
+    _names="$(netlify_sites | jq -r '.[] | .id // empty')" || netlify_die "Netlify: could not list the sites"
+    while IFS= read -r _n; do
+      [ -n "$_n" ] || continue
+      ( netlify_off_one "$_n" ) || _bad=$((_bad + 1))
+    done <<< "$_names"
+    [ "$_bad" = 0 ] || netlify_die "$_bad Netlify sites could not be switched off (see above); the others are done"
+    echo "Done. No Netlify site deploys on push any more."
+    return 0
+  fi
+  netlify_off_one "$@"
+}
+
+netlify_off_one() {
   local site="$1" by_hand="${2:-}" id info hooks hook url repo ref base rule
   id="$(netlify_id_of "$site")" || netlify_die "Netlify site $site not found"
   info="$(netlify_call GET "/sites/$id")" || netlify_die "Netlify: could not read $site"
@@ -265,7 +282,20 @@ EOF
 
 # netlify_deploy_json <site> [preview] [sha] — post to the hook, then find the deploy it started.
 netlify_deploy_json() {
-  local site="$1" preview="${2:-}" sha="${3:-}" id hk before list new lock="" i polls
+  local site="${1:-}" preview="" sha="" id hk before list new lock="" i polls
+  shift || true
+  # `deploys` calls <site> [--preview] [--sha <commit>]; the old positional <site> [preview] [sha]
+  # still works. Without this, `--sha` landed in "preview" and was refused for the wrong reason.
+  local _pos=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --preview) preview=1 ;;
+      --sha) [ -n "${2:-}" ] || netlify_die "Netlify: --sha needs a commit"; sha="$2"; shift ;;
+      -*) netlify_die "Netlify: unknown option $1" ;;
+      *) _pos=$((_pos + 1)); if [ "$_pos" = 1 ]; then preview="$1"; else sha="$1"; fi ;;
+    esac
+    shift
+  done
   [ -z "$preview" ] || netlify_die "Netlify: preview deploys are not supported from here (the build hook deploys the production branch)"
   [ -z "$sha" ] || netlify_die "Netlify: a build hook always builds the newest commit of the branch; --sha is not supported"
   id="$(netlify_id_of "$site")" || netlify_die "Netlify site $site not found"
@@ -293,15 +323,15 @@ netlify_deploy_json() {
   jq -n '{id:null, url:null, state:"enqueued", phase:"queued"}'
 }
 
-# netlify_status [<site>] <deploy-id>
-netlify_status() {
+# netlify_status_json [<site>] <deploy-id>
+netlify_status_json() {
   local d="${2:-$1}" out
   out="$(netlify_call GET "/deploys/$d")" || netlify_die "Netlify: could not read deploy $d"
   echo "$out" | jq "$NETLIFY_JQ"'deploy_out'
 }
 
 # The newest production deploy that was not skipped by the ignore rule.
-netlify_latest() {
+netlify_latest_json() {
   local id out
   id="$(netlify_id_of "$1")" || netlify_die "Netlify site $1 not found"
   out="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=20")" || netlify_die "Netlify: could not read the deploys of $1"
@@ -312,7 +342,7 @@ netlify_latest() {
 netlify_cancel() {
   local d="${2:-$1}"
   netlify_call POST "/deploys/$d/cancel" >/dev/null || netlify_die "Netlify: could not cancel $d"
-  echo "Netlify: deploy $d canceled"
+  jq -nc --arg d "$d" '{id:$d, state:"canceled", phase:"canceled", message:"Netlify: deploy \($d) canceled"}'
 }
 
 # Back to the ready production deploy before the one that is live. A restore publishes files
@@ -330,7 +360,8 @@ netlify_rollback() {
     | [.[] | select(.state=="ready" and .id != $live)][0].id // empty')"
   [ -n "$prev" ] || netlify_die "Netlify: $1 has no earlier ready production deploy to go back to"
   netlify_call POST "/sites/$id/deploys/$prev/restore" >/dev/null || netlify_die "Netlify: could not restore $prev"
-  echo "Netlify: $1 is back on deploy $prev"
+  # A restore publishes files Netlify has: live at once, nothing builds.
+  jq -nc --arg d "$prev" --arg s "$1" '{id:$d, state:"ready", phase:"ready", message:"Netlify: \($s) is back on deploy \($d)"}'
 }
 
 # Netlify's REST API has no build log (the dashboard streams it), so caps.logs is false. This
@@ -345,7 +376,7 @@ netlify_logs() {
     ''|*[!0-9]*) d="$1"; shift ;;
     *) shift ;;
   esac; done
-  if [ -n "$d" ]; then out="$(netlify_status "$d")"; else out="$(netlify_latest "$site")"; fi
+  if [ -n "$d" ]; then out="$(netlify_status_json "$d")"; else out="$(netlify_latest_json "$site")"; fi
   [ "$out" != null ] || netlify_die "Netlify: $site has no deploys yet"
   echo "$out" | jq -r '"Deploy \(.id): \(.state)\(if .error then " — " + .error else "" end)",
     "Netlify gives no build log through its API. The full log: \(.dashboardUrl // "the site dashboard")"'
@@ -391,3 +422,14 @@ netlify_doctor() {
     '{provider:"netlify", key:$src, tokenOk:$ok, error:(if $err == "" then null else $err end),
       sites:$n, hooks:$h, gh:$gh}'
 }
+
+# ---------- the contract's status lines (docs/PROVIDERS.md) ----------
+# `deploys watch`, `deploy --wait` and group deploys read one line: deployId<TAB>phase<TAB>state,
+# and "none" as the id when there is no deploy. The JSON above stays for people:
+# `deploys netlify status|latest` prints it (netlify_cli_status, netlify_cli_latest).
+NETLIFY_TSV='if . == null then "none\t\tnone"
+  else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage then "\(.stage):\(.status // "")" else .status end) // "?")" end'
+netlify_status() { local j; j="$(netlify_status_json "$@")" || return 1; printf '%s' "$j" | jq -r "$NETLIFY_TSV"; }
+netlify_latest() { local j; j="$(netlify_latest_json "$@")" || return 1; printf '%s' "$j" | jq -r "$NETLIFY_TSV"; }
+netlify_cli_status() { netlify_status_json "$@"; }
+netlify_cli_latest() { netlify_latest_json "$@"; }

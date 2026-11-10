@@ -166,8 +166,9 @@ expect "json: two branches, none production: no guess" "$(echo "$out" | jq -c '.
 
 # --- resolving names ---
 routes "${STD[@]}"
-expect "has: by name" "$(amp has Shop && echo y)" y
-expect "has: by app id" "$(amp has d2blog0002 && echo y)" y
+# The id deploys keeps for the next calls: <appId>/<branch>, as in json.
+expect "has: by name gives the id" "$(amp has Shop)" "d1shop0001/main"
+expect "has: by app id gives the id" "$(amp has d2blog0002)" "d2blog0002/release"
 expect "has: unknown" "$(amp has nope && echo y || echo n)" n
 routes "amplify list-apps . apps-dupe.json"
 out="$(amp latest Shop 2>&1)"; rc=$?
@@ -233,12 +234,14 @@ expect "deploy: no Git, refused before any start" "$rc/$(calls start-job)" "1/0"
 routes "${STD[@]}" "amplify get-job --job-id.12 get-job.json"
 expect "latest: newest job" "$(amp latest Shop | jq -c '[.id, .phase, .sha, .msg, .createdAt]')" '["12","building","cccc333","feat: c",1767326645]'
 has "latest: one job asked for" "$(grep list-jobs "$CALLS")" "--max-items 1"
+expect "latest: the contract line (deploys watch reads it)" "$(bash -c '. ./providers/amplify.sh; amplify_latest Shop' 2>&1)" "12	building	RUNNING"
 expect "status: by id" "$(amp status Shop 12 | jq -c '[.id, .phase, .status]')" '["12","failed","FAILED"]'
 routes "${STD[@]}" "amplify list-jobs d1shop0001 jobs-none.json"
 routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branches-shop.json" "amplify list-jobs . jobs-none.json"
 out="$(amp latest Shop 2>&1)"; rc=$?
-expect "latest: none" "$rc" 1
-has "latest: says so" "$out" "no builds yet"
+expect "latest: none is null (people)" "$rc:$out" "0:null"
+out="$(bash -c '. ./providers/amplify.sh; amplify_latest Shop' 2>&1)"; rc=$?
+expect "latest: none is the contract's none line" "$rc:$out" "0:none		none"
 
 # --- cancel ---
 routes "${STD[@]}" "amplify stop-job d1shop0001 stop-job.json"
