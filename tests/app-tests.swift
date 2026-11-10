@@ -168,6 +168,9 @@ MainActor.assumeIsolated {
 let je = [JournalEntry(platform: "Vercel", name: "a\"b", result: "failed", seconds: 61, detail: "x"),
           JournalEntry(platform: "Vercel", name: "a\"b", result: "live", seconds: 30, detail: nil)]
 expect("csv quotes names", Journal.csv(je).contains("\"a\"\"b\""), true)
+expect("csv: a price per build in the last column", Journal.csv(je, perBuild: { _ in 0.126 }).split(separator: "\n").map { $0.split(separator: ",", omittingEmptySubsequences: false).last.map(String.init) ?? "" },
+       ["usd_estimate", "0.13", "0.13"])
+expect("csv: no price, empty", Journal.csv(je).hasSuffix(","), true)
 expect("failures of the last deploys", "\(Journal.failures(of: "a\"b", in: je))", "(failed: 1, total: 2)")
 
 // The journal: formulas, platforms, stable ids.
@@ -511,6 +514,7 @@ if let led = try? JSONDecoder().decode(LedgerReport.self, from: oddLedger) {
     expect("lenient: unreadable dollars are unknown", led.projects[0].savedUsd == nil, true)
     expect("lenient: no start, no ledger", led.hasStarted, false)
 } else { expect("lenient ledger decodes", false, true) }
+expect("goal share", [SavingsModel.goalShare(saved: 25, goal: 100), SavingsModel.goalShare(saved: 300, goal: 100), SavingsModel.goalShare(saved: 5, goal: 0), SavingsModel.goalShare(saved: nil, goal: 50)].map { $0.map { String($0) } ?? "nil" }, ["0.25", "1.0", "nil", "nil"])
 expect("milestones", [5, 10, 99, 100, 1999, 2500].map { SavingsModel.milestone(saved: $0).map { Int($0) } ?? 0 }, [0, 10, 50, 100, 1000, 2000])
 expect("lenient: an empty object is an empty simulation",
        (try? JSONDecoder().decode(SimulateReport.self, from: Data("{}".utf8)))?.projects.count ?? -1, 0)

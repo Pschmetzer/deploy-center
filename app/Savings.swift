@@ -301,6 +301,11 @@ final class SavingsModel: ObservableObject {
         } catch { ledgerError = error.localizedDescription }
     }
 
+    /// The part of a goal the saved dollars reach, 0…1; nil without a goal or a price.
+    nonisolated static func goalShare(saved: Double?, goal: Double) -> Double? {
+        guard goal > 0, goal.isFinite, let s = saved else { return nil }
+        return min(1, max(0, s / goal))
+    }
     /// Dollar marks worth a word (FEA-099): $10, 25, 50, 100, 250, 500, 1000, then every 1000.
     nonisolated static func milestone(saved: Double) -> Double? {
         let marks: [Double] = [10, 25, 50, 100, 250, 500, 1000]
@@ -731,6 +736,7 @@ struct LedgerView: View {
     let showSimulator: () -> Void
     @ObservedObject private var model = SavingsModel.shared
     @State private var sharing = false
+    @AppStorage("savingsGoal") private var savingsGoal = 0.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -766,6 +772,22 @@ struct LedgerView: View {
         .task { if let at = model.ledgerAt, Date().timeIntervalSince(at) > 12 * 3600 { await model.loadLedger() } }
     }
 
+    /// A goal of the person's own (FEA-013): how far the dollars saved since the start have come.
+    @ViewBuilder private func goal(_ l: LedgerReport) -> some View {
+        HStack(spacing: 8) {
+            Text(L("Goal (USD)", "Ziel (USD)")).font(.callout)
+            TextField(L("Goal", "Ziel"), value: $savingsGoal, format: .number, prompt: Text("0"))
+                .labelsHidden().frame(width: 70).multilineTextAlignment(.trailing)
+                .onChange(of: savingsGoal) { _, v in if v < 0 || !v.isFinite { savingsGoal = 0 } }
+            if let share = SavingsModel.goalShare(saved: l.usd, goal: savingsGoal) {
+                ProgressView(value: share).frame(width: 140)
+                    .accessibilityLabel(L("Goal reached to", "Ziel erreicht zu")).accessibilityValue("\(Int(share * 100)) %")
+                Text(share >= 1 ? L("reached", "erreicht") : "\(Int(share * 100)) %").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 4)
+    }
+
     private var notStarted: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L("Nothing turned off yet", "Noch nichts ausgeschaltet")).font(.title2.weight(.semibold))
@@ -793,6 +815,7 @@ struct LedgerView: View {
             }
             Text(L("since \(SavingsFormat.day(l.since))", "seit \(SavingsFormat.day(l.since))")).font(.title3).foregroundStyle(.secondary)
             Text(totalsLine(l)).font(.callout).foregroundStyle(.secondary)
+            goal(l)
             if !l.usdComplete {
                 Text(L("Some skipped builds have no price (Render: set DEPLOYS_RENDER_USD_PER_MIN); their minutes count, their dollars do not.",
                        "Manche übersprungenen Builds haben keinen Preis (Render: DEPLOYS_RENDER_USD_PER_MIN setzen); ihre Minuten zählen, ihre Dollar nicht."))

@@ -1050,6 +1050,14 @@ final class Store: ObservableObject {
     func isPinned(_ i: Item) -> Bool { pinned.contains(Self.key(i)) }
     func isHidden(_ i: Item) -> Bool { hidden.contains(Self.key(i)) }
     func note(_ i: Item) -> String? { notes[Self.key(i)] }
+    /// A colour of the person's choice per project (FEA-171), as a dot before the name. Kept on this Mac.
+    nonisolated static let projectColorNames = ["red", "orange", "yellow", "green", "blue", "purple", "gray"]
+    @Published private(set) var projectColors: [String: String] = (UserDefaults.standard.dictionary(forKey: "projectColors") as? [String: String]) ?? [:]
+    func projectColor(_ i: Item) -> String? { projectColors[Self.key(i)].flatMap { Self.projectColorNames.contains($0) ? $0 : nil } }
+    func setProjectColor(_ i: Item, _ name: String?) {
+        projectColors[Self.key(i)] = name.flatMap { Self.projectColorNames.contains($0) ? $0 : nil }
+        UserDefaults.standard.set(projectColors, forKey: "projectColors")
+    }
     func togglePin(_ i: Item) {
         if pinned.remove(Self.key(i)) == nil { pinned.insert(Self.key(i)) }
         UserDefaults.standard.set(Array(pinned), forKey: "pinned")

@@ -162,14 +162,21 @@ enum Journal {
         return limit == .max ? all : Array(all.suffix(limit))
     }
 
-    static func csv(_ list: [JournalEntry]) -> String {
+    /// `perBuild`: an average Vercel build's price by project (Costs); a build that ran (live,
+    /// failed, forced, preview, rollback) gets it in the last column as an estimate (FEA-014).
+    static func csv(_ list: [JournalEntry], perBuild: ((String) -> Double?)? = nil) -> String {
         // Quoted, and a cell that a spreadsheet would read as a formula starts with ' instead.
         func q(_ s: String) -> String {
             let safe = s.first.map { "=+-@\t\r".contains($0) } == true ? "'" + s : s
             return "\"" + safe.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
-        return (["time,platform,project,result,seconds,detail,note"] + list.map {
-            [$0.at.formatted(.iso8601), $0.platform, q($0.name), $0.result, $0.seconds.map { String(Int($0)) } ?? "", q($0.detail ?? ""), q($0.note ?? "")].joined(separator: ",")
+        func usd(_ e: JournalEntry) -> String {
+            guard e.platform == "Vercel", ["live", "failed", "forced", "preview", "rollback"].contains(e.result),
+                  let p = perBuild?(e.name) else { return "" }
+            return String(format: "%.2f", p)
+        }
+        return (["time,platform,project,result,seconds,detail,note,usd_estimate"] + list.map {
+            [$0.at.formatted(.iso8601), $0.platform, q($0.name), $0.result, $0.seconds.map { String(Int($0)) } ?? "", q($0.detail ?? ""), q($0.note ?? ""), usd($0)].joined(separator: ",")
         }).joined(separator: "\n")
     }
 
@@ -270,7 +277,7 @@ struct JournalView: View {
                 Text(L("Deploy history", "Deploy-Verlauf")).font(.headline)
                 Spacer()
                 Button(L("Copy as CSV", "Als CSV kopieren")) {
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Journal.csv(shown), forType: .string)
+                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Journal.csv(shown, perBuild: costs?.perBuild), forType: .string)
                 }.disabled(shown.isEmpty)
                 Button(L("Save as CSV …", "Als CSV sichern …")) { save() }.disabled(shown.isEmpty)
                 Menu(L("Markdown", "Markdown")) {
@@ -368,7 +375,7 @@ struct JournalView: View {
         panel.nameFieldStringValue = "deploy-history.csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         guard panel.runModal() == .OK, let u = panel.url else { return }
-        do { try Data(Journal.csv(shown).utf8).write(to: u, options: .atomic) }
+        do { try Data(Journal.csv(shown, perBuild: costs?.perBuild).utf8).write(to: u, options: .atomic) }
         catch { Log.write("journal: CSV not saved (\(error.localizedDescription))") }
     }
 }

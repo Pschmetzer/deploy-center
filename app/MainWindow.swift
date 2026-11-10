@@ -1213,7 +1213,8 @@ struct ContentView: View {
                 if !item.selected { store.toggle(item.platform, item.id) }
                 confirming = true
             } : nil,
-            onDismissAutofix: AgentChips.dismissable(fix) ? { store.dismissAutofix(item) } : nil) { tick(item) }
+            onDismissAutofix: AgentChips.dismissable(fix) ? { store.dismissAutofix(item) } : nil,
+            colorTag: store.projectColor(item)) { tick(item) }
             // A merged fix waits for a click: the row stands out until it is live.
             .listRowBackground(isMerged(fix) ? ground(Color.good, 0.12) : nil)
             .contextMenu { rowMenu(item) }
@@ -1276,6 +1277,10 @@ struct ContentView: View {
             }
             Divider()
             Button(store.isPinned(item) ? L("Unpin", "Nicht mehr anheften") : L("Pin to the top", "Oben anheften")) { store.togglePin(item) }
+            Picker(L("Colour", "Farbe"), selection: Binding(get: { store.projectColor(item) ?? "" }, set: { store.setProjectColor(item, $0.isEmpty ? nil : $0) })) {
+                Text(L("None", "Keine")).tag("")
+                ForEach(Store.projectColorNames, id: \.self) { Text(Row.tagName($0)).tag($0) }
+            }
             Button(store.note(item) == nil ? L("Add a note …", "Notiz hinzufügen …") : L("Edit the note …", "Notiz ändern …")) {
                 noteText = store.note(item) ?? ""; noteItem = item
             }
@@ -1736,8 +1741,33 @@ struct Row: View {
     var onAutofix: (() -> Void)? = nil
     var onDeployMerged: (() -> Void)? = nil
     var onDismissAutofix: (() -> Void)? = nil
+    var colorTag: String? = nil
     let toggle: () -> Void
     @Environment(\.accessibilityDifferentiateWithoutColor) private var noColour
+
+    /// The colours of the row menu's "Colour" (Store.projectColorNames).
+    static func tagColor(_ name: String) -> Color {
+        switch name {
+        case "red": return .red
+        case "orange": return .orange
+        case "yellow": return .yellow
+        case "green": return .green
+        case "blue": return .blue
+        case "purple": return .purple
+        default: return .gray
+        }
+    }
+    static func tagName(_ name: String) -> String {
+        switch name {
+        case "red": return L("Red", "Rot")
+        case "orange": return L("Orange", "Orange")
+        case "yellow": return L("Yellow", "Gelb")
+        case "green": return L("Green", "Grün")
+        case "blue": return L("Blue", "Blau")
+        case "purple": return L("Purple", "Lila")
+        default: return L("Gray", "Grau")
+        }
+    }
 
     /// The part of the name that matches the search, marked.
     private func highlighted(_ text: String) -> AttributedString {
@@ -1771,6 +1801,7 @@ struct Row: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
+                    if let c = colorTag { Circle().fill(Self.tagColor(c)).frame(width: 8, height: 8).accessibilityHidden(true) }
                     Text(Demo.on ? AttributedString(Demo.mask(item.name)) : highlighted(item.name)).font(.body.weight(.medium))
                     // Only red is shown in the row; yellow and the reasons are in the details.
                     if item.hasNewCommits, let r = item.risk, r.isRed {
