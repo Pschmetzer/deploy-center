@@ -784,7 +784,7 @@ esac
 # Reading, and this Mac's own settings (ignore, keys, team repos, readonly), stay allowed.
 case "${1:-} ${2:-}" in
   "deploy "*|"vercel map"|"vercel autodeploy-off"|"vercel deploy"|"vercel deploy-json"|"vercel cancel"|"vercel rollback"\
-  |"render autodeploy-off"|"render deploy"|"render deploy-json"|"render cancel"|"render rollback")
+  |"render autodeploy-off"|"render deploy"|"render deploy-json"|"render cancel"|"render rollback"|"hook deploy")
     require_write "$1 $2" ;;
   "deploy-changed "*) [ "${2:-}" != "--yes" ] || require_write "deploy-changed --yes" ;;
   # autofix hands failed builds to a routine that opens pull requests; --dry-run and its settings only read.

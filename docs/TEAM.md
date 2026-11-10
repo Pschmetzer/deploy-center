@@ -110,7 +110,8 @@ An observer can use every command that only reads. Commands that change somethin
 Render or GitHub stop before they call anything:
 
 `deploy`, `deploy-changed --yes`, `vercel deploy|deploy-json|rollback|cancel|map|autodeploy-off`,
-`render deploy|deploy-json|rollback|cancel|autodeploy-off`, and `autofix` (except `--dry-run`).
+`render deploy|deploy-json|rollback|cancel|autodeploy-off`, `hook deploy`, and `autofix` (except
+`--dry-run`).
 
 ```
 Error: Observer mode (DEPLOYS_READONLY is set): "deploys vercel deploy" changes something and is refused. Observers can look, not deploy. To deploy from here: unset DEPLOYS_READONLY.
