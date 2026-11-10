@@ -22,8 +22,11 @@ Turn off auto-deploy on Vercel and Render in one click. Deploy what changed in t
 **Homebrew**
 
 ```bash
-brew install --cask pschmetzer/tap/deploy-center
+brew tap pschmetzer/tap && brew trust pschmetzer/tap && brew install --cask deploy-center
 ```
+
+Homebrew 6 asks you to trust a third-party tap once (`brew trust`). Without admin rights, add
+`--appdir="$HOME/Applications"` to the install. Updates: `brew upgrade --cask deploy-center` or **Update now** in Settings.
 
 **Or by hand:** download the zip from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest),
 unzip it and drag **Deploy Center** to *Applications*. It is signed and notarized by Apple, so it opens without a warning.
