@@ -3,6 +3,11 @@ import { ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
+import { DeploysErrorKind, classify, clean, lastLines } from "./text";
+
+// Pure helpers (no Raycast API) live in ./text, so they can be tested with node --test.
+export { isFailedState, platformLabel, plural } from "./text";
+export type { DeploysErrorKind } from "./text";
 
 // A provider id as the CLI spells it: vercel, render, netlify, cloudflare, amplify, hook, …
 export type Platform = string;
@@ -43,8 +48,6 @@ export interface DeployStarted {
   serviceId?: string;
   state?: string;
 }
-
-export type DeploysErrorKind = "missing" | "auth" | "timeout" | "failed";
 
 export class DeploysError extends Error {
   constructor(
@@ -138,36 +141,6 @@ export function findDeploys(): string {
 }
 
 // The CLI colours "Error:" on a terminal; strip any escape codes that slip through.
-function clean(s: string): string {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/\x1b\[[0-9;]*m/g, "").trim();
-}
-
-function lastLines(s: string, n = 3): string {
-  return clean(s)
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .slice(-n)
-    .join("\n");
-}
-
-const AUTH_PATTERNS = [
-  /not logged in/i,
-  /vercel login/i,
-  /No Render API key/i,
-  /Render did not accept/i,
-  /gh auth login/i,
-  // An HTTP status, not any 401 (a commit "Fix #401" or a project named api-403 is no login error).
-  /\bHTTP\s*(401|403)\b/i,
-  /unauthori[sz]ed/i,
-  /invalid token/i,
-];
-
-// Only stderr: stdout carries commit messages and project names, which can say anything.
-function classify(stderr: string): DeploysErrorKind {
-  return AUTH_PATTERNS.some((re) => re.test(stderr)) ? "auth" : "failed";
-}
 
 export interface RunResult {
   stdout: string;
@@ -370,6 +343,11 @@ export async function deployChanged(
   return runJson<DeployChangedRow[]>(["deploy-changed", "--yes", "--json"], TIMEOUT.many);
 }
 
+// The last lines of the newest build log (deploys logs). Raw: mask it before it leaves Raycast.
+export function buildLog(ref: string, lines = 200): Promise<string> {
+  return runText(["logs", ref, String(lines)], TIMEOUT.read);
+}
+
 export function releaseNotes(ref: string): Promise<string> {
   return runText(["notes", ref], TIMEOUT.read);
 }
@@ -383,28 +361,4 @@ export async function openProject(ref: string, dashboard: boolean): Promise<stri
 
 export function deployCenterURL(name: string): string {
   return `deploycenter://select?project=${encodeURIComponent(name)}`;
-}
-
-export function isFailedState(state: string | null | undefined): boolean {
-  return /error|fail/i.test(state ?? "");
-}
-
-const LABELS: Record<string, string> = {
-  vercel: "Vercel",
-  render: "Render",
-  netlify: "Netlify",
-  cloudflare: "Cloudflare",
-  amplify: "AWS Amplify",
-  digitalocean: "DigitalOcean",
-  coolify: "Coolify",
-  hook: "Deploy hook",
-};
-
-// "Vercel", "AWS Amplify"; an unknown provider id as it is, first letter upper case.
-export function platformLabel(p: string): string {
-  return LABELS[p] ?? p.charAt(0).toUpperCase() + p.slice(1);
-}
-
-export function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
 }

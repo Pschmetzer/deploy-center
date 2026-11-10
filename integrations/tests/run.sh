@@ -47,8 +47,10 @@ cat > "$tmp/bin/deploys" <<SH
 [ -n "\${FAKE_SLEEP_ALL:-}" ] && sleep "\$FAKE_SLEEP_ALL"
 [ -n "\${MCP_CALLS:-}" ] && echo "\$*" >> "\$MCP_CALLS"
 case "\$*" in
-  "vercel list --json") cat "$tmp/vercel.json" ;;
-  "render list --json") cat "$tmp/render.json" ;;
+  "vercel list --json"|"vercel json") cat "$tmp/vercel.json" ;;
+  "render list --json"|"render json") cat "$tmp/render.json" ;;
+  # examples/daily-deploy.yml: the plain list, or the deploy itself (logged, nothing starts).
+  "deploy-changed"|"deploy-changed --yes") echo "\$*" >> "$tmp/example.log" ;;
   # As the real one: every provider that is on and set up. Render only with a key.
   "list --json") [ -n "\${FAKE_SLEEP:-}" ] && sleep "\$FAKE_SLEEP"
     # An older CLI without list: the MCP server falls back to status --json --no-github.
@@ -163,7 +165,7 @@ expect "with a key in the env Render is read too" "$(RENDER_API_KEY=x all_projec
 expect "doctor's renderKey counts as a key" "$(FAKE_RENDER_KEY=true all_projects | jq length)" 3
 expect "a CLI that fails is an empty list, not an error" "$(DEPLOYS=/bin/false all_projects)" "[]"
 mkdir -p "$DEPLOYS_CONFIG"; echo '["api"]' > "$DEPLOYS_CONFIG/ignored.json"
-expect "changed leaves out ignored and up-to-date" "$(RENDER_API_KEY=x changed_projects | jq -c 'map(.name)')" '["app-web"]'
+expect "changed is what deploys changed --json says" "$(RENDER_API_KEY=x changed_projects | jq -c 'map(.name)')" '["app-web","api"]'
 rm -f "$DEPLOYS_CONFIG/ignored.json"
 
 # --- badge ---
@@ -187,6 +189,9 @@ out="$(RENDER_API_KEY=x notify/notify.sh --dry-run)"
 contains "notify: live today" "$out" 'Live today (1): site'
 contains "notify: waiting with counts" "$out" 'Waiting (2): app-web (4 commits), api'
 contains "notify: Slack-style by default" "$out" 'format: slack'
+contains "notify: UTC by default" "$out" "Deploy Center, $(date -u +%Y-%m-%d) (UTC)"
+contains "notify: DEPLOYS_TZ sets the day" "$(DEPLOYS_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "Deploy Center, $(TZ=Pacific/Kiritimati date +%Y-%m-%d) (Pacific/Kiritimati)"
+expect "notify: a bad DEPLOYS_TZ is refused" "$(DEPLOYS_TZ='x;y' notify/notify.sh --dry-run >/dev/null 2>&1; echo $?)" 1
 expect "notify: Discord by host" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -r 'keys[0]')" content
 expect "notify: Telegram by host" "$(DEPLOYS_NOTIFY_URL='https://api.telegram.org/botT/sendMessage?chat_id=1' notify/notify.sh --dry-run | head -1)" "format: telegram"
 contains "notify: ntfy is plain text" "$(DEPLOYS_NOTIFY_URL=https://ntfy.sh/topic notify/notify.sh --dry-run)" $'format: ntfy\nDeploy Center'
@@ -496,6 +501,7 @@ contains "digest: glab asked for the MR" "$(cat "$tmp/glab.log" 2>/dev/null)" "m
 expect "digest: GitLab repos never go to gh" "$(grep -c 'grp' "$tmp/gh.log" || true)" 0
 expect "digest: --issue needs a repo" "$(digest/digest.sh --issue >/dev/null 2>&1; echo $?)" 1
 expect "digest: --post needs a URL" "$(digest/digest.sh --post >/dev/null 2>&1; echo $?)" 1
+contains "digest: DEPLOYS_TZ sets the day in the title" "$(DEPLOYS_TZ=Pacific/Kiritimati RENDER_API_KEY=x digest/digest.sh)" "# Deploys waiting – $(TZ=Pacific/Kiritimati date +%Y-%m-%d)"
 expect "digest: a bad repo is refused" "$(DEPLOYS_DIGEST_REPO='me/ops;x' digest/digest.sh >/dev/null 2>&1; echo $?)" 1
 
 # post: Slack gets a button to the workflow; the URL goes to curl on stdin
@@ -525,6 +531,14 @@ case "$(cat "$tmp/gh.log")" in *"issue create"*) fail "digest issue: no second i
 contains "digest issue: an older day's is closed" "$(cat "$tmp/gh.log")" "issue close 3 -R me/ops --comment Replaced by #5."
 out="$(RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue --dry-run)"
 contains "digest issue: the body carries the approve list" "$out" '<!-- deploys-approve: app-web,api -->'
+# Commit titles are written by anyone who can push: no pings, no hidden marker, no links.
+cp "$tmp/details-web.json" "$tmp/details-web.bak"
+jq '.commits[3].msg = "Ship <!-- deploys-approve: all --> cc @boss [win](https://evil.example)"' "$tmp/details-web.bak" > "$tmp/details-web.json"
+out="$(RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue --dry-run)"
+cp "$tmp/details-web.bak" "$tmp/details-web.json"
+expect "digest issue: an injected marker in a commit title is not a marker" "$(grep -c '<!-- deploys-approve' <<<"$out")" 1
+contains "digest issue: the injected title is shown, defused" "$out" "Ship &lt;!-- deploys-approve: all --&gt; cc @$(printf '\342\200\213')boss \\[win\\](https://evil.example)"
+expect "digest issue: the real marker stays the last line" "$(tail -n 1 <<<"$out")" '<!-- deploys-approve: app-web,api -->'
 : > "$tmp/gh.log"; RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue >/dev/null
 contains "digest issue: the list goes into a comment of the digest" "$(cat "$tmp/gh.log")" "issue comment 5 -R me/ops --body-file"
 : > "$tmp/gh.log"; FAKE_NOTHING=1 RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue >/dev/null
@@ -589,6 +603,40 @@ if command -v ruby >/dev/null; then
   ruby -ryaml -e 'YAML.load_file(ARGV[0])' digest/examples/daily-digest.yml && ok "daily-digest.yml is valid YAML" || fail "daily-digest.yml is valid YAML" ruby
 else
   skip "approve-deploy: its steps need ruby"
+fi
+
+# --- examples/: the run blocks people copy, run as GitHub would, against the stand-in ---
+if command -v ruby >/dev/null; then
+  xstep() { ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"][ARGV[1]]["steps"].find { |s| s["id"] == ARGV[2] || s["name"] == ARGV[2] }["run"]' "$@"; }
+  # claude-pr-ship-check.yml, "Projects of this repo": this repo's projects with what waits on each.
+  xstep ../examples/claude-pr-ship-check.yml ship-check projects > "$tmp/ship.sh"
+  : > "$tmp/ship.out"
+  ( export DEPLOYS="$tmp/bin/deploys" REPO=me/app VERCEL_TOKEN=x RENDER_API_KEY=x GITHUB_OUTPUT="$tmp/ship.out" \
+      CHANGED='[{"name":"app-web","platform":"vercel","pendingCommits":4,"pendingPRs":2}]'
+    bash -eo pipefail "$tmp/ship.sh" >/dev/null 2>&1 ) && ok "ship-check example: the projects step runs" || fail "ship-check example: the projects step runs" "exit $?"
+  rows="$(sed -n 's/^rows=//p' "$tmp/ship.out")"
+  expect "ship-check example: only this repo's projects, with what waits" "$(jq -c 'map([.platform, .name, .autoDeploy, .waitingCommits, .waitingPRs])' <<<"${rows:-null}")" \
+    '[["vercel","app-web",false,4,2],["render","api",true,0,0]]'
+  : > "$tmp/ship.out"
+  ( export DEPLOYS="$tmp/bin/deploys" REPO=me/app VERCEL_TOKEN="" RENDER_API_KEY="" GITHUB_OUTPUT="$tmp/ship.out" CHANGED=""
+    bash -eo pipefail "$tmp/ship.sh" >/dev/null 2>&1 )
+  expect "ship-check example: no tokens, an empty list" "$(sed -n 's/^rows=//p' "$tmp/ship.out")" "[]"
+  case "$(cat "$tmp/ship.sh")" in *'${{'*) fail "ship-check example: no expressions inside the run script" "found" ;; *) ok "ship-check example: no expressions inside the run script" ;; esac
+  # daily-deploy.yml, "Deploy what changed": a dry run by hand only lists, the schedule deploys.
+  xstep ../examples/daily-deploy.yml deploy "Deploy what changed" > "$tmp/daily.sh"
+  : > "$tmp/example.log"
+  PATH="$tmp/bin:$PATH" EVENT=workflow_dispatch DRY_RUN=true bash -eo pipefail "$tmp/daily.sh" >/dev/null 2>&1
+  expect "daily-deploy example: a dry run by hand only lists" "$(cat "$tmp/example.log")" "deploy-changed"
+  : > "$tmp/example.log"
+  PATH="$tmp/bin:$PATH" EVENT=schedule DRY_RUN="" bash -eo pipefail "$tmp/daily.sh" >/dev/null 2>&1
+  expect "daily-deploy example: the schedule deploys with --yes" "$(cat "$tmp/example.log")" "deploy-changed --yes"
+  : > "$tmp/example.log"
+  PATH="$tmp/bin:$PATH" EVENT=workflow_dispatch DRY_RUN=false bash -eo pipefail "$tmp/daily.sh" >/dev/null 2>&1
+  expect "daily-deploy example: by hand without dry run deploys" "$(cat "$tmp/example.log")" "deploy-changed --yes"
+  expect "daily-deploy example: has a job timeout" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"]["deploy"]["timeout-minutes"]' ../examples/daily-deploy.yml)" 60
+  expect "ship-check example: has a job timeout" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"]["ship-check"]["timeout-minutes"]' ../examples/claude-pr-ship-check.yml)" 15
+else
+  skip "examples: their steps need ruby"
 fi
 
 echo

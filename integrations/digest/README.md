@@ -50,7 +50,7 @@ every project not approved (`deploys ignore`), then runs the [Action](../action/
 2. **Add secrets**: `VERCEL_TOKEN`, `RENDER_API_KEY` (leave out what you don't use) and
    `DEPLOYS_NOTIFY_URL` (your Slack, Discord, ntfy or Telegram webhook, as for
    [notify](../notify/)). **Add variables**: `DEPLOYS_REPOS_JSON` (your
-   `~/.config/deploys/vercel-repos.json`) and `VERCEL_TEAM` if you use a team.
+   `~/.config/deploys/vercel-repos.json`) and `DEPLOYS_VERCEL_TEAM` if you use a team.
 3. **Say who may approve**: the variable `DEPLOYS_APPROVERS`, GitHub logins separated by commas.
    Without it, nothing deploys. Don't list a login whose token an agent uses.
 4. **Say who counts as an agent** (optional): the variables `DEPLOYS_AGENT_AUTHORS` and
@@ -101,7 +101,7 @@ GitLab repo (`gitlab.com/group/name`) it asks `glab api` for each merge request 
 needs a login there (`glab auth login`, or `GITLAB_TOKEN`). "Check
 before shipping" lists the files `deploys details` marks as risky, a failed CI run on the branch
 head and, when the CLI has it, what `deploys risk <project> --json` says. `DEPLOYS_DIGEST_WORKFLOW`
-names another workflow file. "Today" is the UTC day.
+names another workflow file. "Today" is the UTC day, or the day in `DEPLOYS_TZ` (for example `Europe/Berlin`).
 
 Without `gh` (or `glab` for GitLab), commit messages stand in for PR titles and labels are not read.
 

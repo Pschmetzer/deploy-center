@@ -78,7 +78,7 @@ or in CI.
 **GitHub Pages.** Copy [examples/statuspage-daily.yml](examples/statuspage-daily.yml) to
 `.github/workflows/` in a repo with your `statuspage.json`, and set Settings > Pages > Source to
 "GitHub Actions". It regenerates the page every day and on demand. It needs the same secrets as
-the [Action](../action/): `VERCEL_TOKEN`, `RENDER_API_KEY`, and the variables `VERCEL_TEAM` and
+the [Action](../action/): `VERCEL_TOKEN`, `RENDER_API_KEY`, and the variables `DEPLOYS_VERCEL_TEAM` and
 `DEPLOYS_REPOS_JSON` (the content of `~/.config/deploys/vercel-repos.json`). For "Coming next"
 from private repos, add a `DEPLOYS_GH_TOKEN` that can read them. CI has no journal: to get the
 timeline there, commit a copy as `status/journal.jsonl`. From the Mac you can also push the

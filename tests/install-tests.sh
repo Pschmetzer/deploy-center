@@ -39,6 +39,15 @@ if [ -d lib ]; then
 fi
 expect "package: contents" "$listing" "$want"
 contains "package: lib/team.sh goes in" "$listing" "deploys-cli-$version/lib/team.sh"
+# Every file deploys sources from next to itself (lib/*.sh by name, providers/*.sh by glob) is in
+# the tarball: a new lib/ file the packaging forgets fails here, not on a user's machine.
+sourced="$(grep -oE '(lib|providers)/[a-z0-9_-]+\.sh' deploys | LC_ALL=C sort -u)"
+[ -n "$sourced" ] && ok "package: deploys names files it sources" || fail "package: deploys names files it sources" "none found"
+for f in $sourced; do
+  [ -f "$f" ] || continue   # an example in a comment or a message, not a file of the repo
+  contains "package: $f (sourced by deploys) goes in" "$listing" "deploys-cli-$version/$f"
+done
+for f in providers/*.sh; do contains "package: $f goes in" "$listing" "deploys-cli-$version/$f"; done
 expect "package: checksums.txt" "$(cat "$tmp/pkg/checksums.txt")" "$(sha256 "$tarball")  deploys-cli-$version.tar.gz
 $(sha256 LICENSE)  LICENSE"
 cp LICENSE "$tmp/pkg/"
@@ -191,6 +200,10 @@ expect "formula: exit 0" "$rc" 0
 contains "formula: url" "$f" "releases/download/v$version/deploys-cli-$version.tar.gz"
 contains "formula: depends on jq" "$f" 'depends_on "jq"'
 contains "formula: installs lib/" "$f" 'libexec.install "lib" if File.directory?("lib")'
+# Each folder deploys sources from goes into libexec next to it.
+for d in $(printf '%s\n' $sourced providers/x.sh | cut -d/ -f1 | LC_ALL=C sort -u); do
+  contains "formula: installs $d/ (deploys sources from it)" "$f" "libexec.install \"$d\""
+done
 contains "formula: test runs --version" "$f" 'deploys --version'
 if command -v ruby >/dev/null; then
   ruby -c <<<"$f" >/dev/null 2>&1 && ok "formula: valid Ruby" || fail "formula: valid Ruby" "ruby -c failed"
