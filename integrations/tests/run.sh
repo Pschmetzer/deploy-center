@@ -25,6 +25,8 @@ mkdir -p "$tmp/bin"
 cat > "$tmp/bin/deploys" <<SH
 #!/bin/bash
 [ -n "\${FAKE_SLEEP:-}" ] && [ "\$1" = vercel ] && sleep "\$FAKE_SLEEP"
+[ -n "\${FAKE_SLEEP_ALL:-}" ] && sleep "\$FAKE_SLEEP_ALL"
+[ -n "\${MCP_CALLS:-}" ] && echo "\$*" >> "\$MCP_CALLS"
 case "\$*" in
   "vercel list --json") cat "$tmp/vercel.json" ;;
   "render list --json") cat "$tmp/render.json" ;;
@@ -33,6 +35,15 @@ case "\$*" in
   "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"
     if [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
     exit "\${FAKE_RC:-0}" ;;
+  "status --json"|"status --json --no-github")
+    jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
+      | map({platform, name, building:false, state:"READY", changed})' "$tmp/vercel.json" "$tmp/render.json" ;;
+  "explain "*) echo "explain: \$2" ;;
+  "notes "*) echo "## Notes for \$2" ;;
+  "logs "*) seq 1 "\${3:-80}" ;;
+  "vercel deploy-json app-web"|"vercel deploy-json app-web --preview") echo '{"id":"dpl_1","url":"https://app-web-x.vercel.app","state":"QUEUED"}' ;;
+  "render deploy-json api") echo '{"id":"dep-1","serviceId":"srv-1","state":"created"}' ;;
+  "vercel rollback app-web") echo '{"id":"dpl_0","state":"READY"}' ;;
   *) echo "unexpected: \$*" >&2; exit 1 ;;
 esac
 SH
@@ -127,6 +138,14 @@ if command -v ruby >/dev/null; then
   expect "action: outputs are written before failing" "$(tr '\n' ' ' < "$tmp/out")" "started=1 failed=1 deployed=false "
   expect "action: deploy step only with deploy: true" "$(step deploy if)" "inputs.deploy == 'true' && steps.changed.outputs.count != '0'"
   case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
+fi
+
+# --- the MCP server (needs node and `npm ci` in mcp/) ---
+if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
+  DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
+  pgrep -f "sleep 20" >/dev/null && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
+else
+  echo "skip mcp: needs node and (cd integrations/mcp && npm ci)"
 fi
 
 echo

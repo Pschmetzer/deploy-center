@@ -1,7 +1,7 @@
 # Integrations
 
 Small add-ons that call the `deploys` CLI. Each one only reads, except the GitHub Action when a
-workflow sets `deploy: true`. Auto-deploy stays off: nothing here deploys unless a person asks for it.
+workflow sets `deploy: true` and the MCP server when it is started with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. Auto-deploy stays off: nothing here deploys unless a person asks for it.
 
 | Folder | What it does |
 |---|---|
@@ -9,11 +9,13 @@ workflow sets `deploy: true`. Auto-deploy stays off: nothing here deploys unless
 | [hooks/](hooks/) | A git `pre-push` hook. It warns how many builds a push would start on projects that still deploy on push. |
 | [badge/](badge/) | An SVG badge per project, for example `deployed · 3 d ago · 4 commits waiting`. No server needed. |
 | [notify/](notify/) | A daily summary ("live today / waiting") sent to one webhook: Discord, Slack-compatible, ntfy or Telegram. |
+| [mcp/](mcp/) | An MCP server for AI coding agents (Claude Code, Claude Desktop, Cursor, VS Code). Read-only tools for what is waiting, building, release notes and logs; deploy and rollback of one project only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. |
 | [docker/](docker/) | A Linux image with `deploys` and its tools, for CI. |
 | [VERIFY.md](VERIFY.md) | How to check a release: SHA-256, `codesign`, `spctl`. |
 
 Tests: `integrations/tests/run.sh`. They use a stand-in `deploys` and `curl`, so they need no
-network and no accounts.
+network and no accounts. The MCP tests also need `node` and `npm ci` in `mcp/`, and are skipped
+without them.
 
 ## Reading every project
 
