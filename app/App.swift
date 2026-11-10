@@ -32,9 +32,10 @@ struct SettingsView: View {
     private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?" }
 
     var body: some View {
-        Form {
+        ScrollViewReader { proxy in Form {
             generalSection
             deploySection
+            ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
             costsSection
             notificationsSection
             updatesSection
@@ -42,7 +43,7 @@ struct SettingsView: View {
             TeamSettings(store: store)
             CommandPaletteSettings()
             helpSection
-        }
+        } }
         .formStyle(.grouped)
         .frame(width: 560)
         .frame(minHeight: 480, idealHeight: 680, maxHeight: 820)
@@ -118,6 +119,7 @@ struct SettingsView: View {
                     // A budget below zero means nothing; it becomes "off".
                     .onChange(of: monthlyBudget) { _, v in if v < 0 || !v.isFinite { monthlyBudget = 0 } }
             }
+            SavingsLink()
         }
     }
 
@@ -206,7 +208,7 @@ struct SettingsView: View {
             Text(L("Version ", "Version ") + version
                  + L(" · no telemetry; GitHub, Vercel and Render are asked with your own logins", " · keine Telemetrie; GitHub, Vercel und Render werden mit deinen eigenen Anmeldungen gefragt"))
                 .font(.caption).foregroundStyle(.secondary)
-            AutofixSettings()
+            AutofixSettings().id("autofix")
         }
     }
 
@@ -238,6 +240,7 @@ struct DeployCenterApp: App {
     var body: some Scene {
         WindowGroup("Deploy Center", id: "main") {
             ContentView(store: store)
+                .task { await ClaudeNudge.refresh() }
                 // deploycenter://select?project=name shows and ticks a project. It never starts a build:
                 // any web page could open such a link.
                 .onOpenURL { url in

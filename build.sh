@@ -54,6 +54,16 @@ chmod +x "$BUILD/Contents/Resources/deploys"
 # Team mode (lib/team.sh) is sourced by the script from next to it.
 mkdir -p "$BUILD/Contents/Resources/lib" && cp lib/*.sh "$BUILD/Contents/Resources/lib/"
 [ -f app/AppIcon.icns ] && cp app/AppIcon.icns "$BUILD/Contents/Resources/AppIcon.icns"
+# The MCP server for Settings > Claude, only when its packages are installed (cd integrations/mcp && npm ci).
+# Without them the app points to the repo's copy, or says what is missing.
+if [ -f integrations/mcp/server.mjs ] && [ -d integrations/mcp/node_modules/@modelcontextprotocol ]; then
+  mkdir -p "$BUILD/Contents/Resources/mcp"
+  cp integrations/mcp/server.mjs integrations/mcp/package.json "$BUILD/Contents/Resources/mcp/"
+  ditto integrations/mcp/node_modules "$BUILD/Contents/Resources/mcp/node_modules"
+fi
+for f in integrations/mcp/deploy-center.mcpb integrations/claude-desktop/deploy-center.mcpb; do
+  if [ -f "$f" ]; then cp "$f" "$BUILD/Contents/Resources/deploy-center.mcpb"; break; fi
+done
 
 cat > "$BUILD/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

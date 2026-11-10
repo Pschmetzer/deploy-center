@@ -34,6 +34,8 @@
 #   deploys open <project> [--dashboard]      the site, or its page at Vercel or Render
 #   deploys ignore <p> [--undo] | --list      leave a project out of changed and deploy-changed
 #   deploys costs [days] | triggers           Vercel charges per day; builds nobody started from here
+#   deploys simulate [--days 30] [--json]     estimate: what auto-deploy costs a month vs. once a day
+#   deploys ledger [--json]                   estimate: builds skipped and money saved since auto-deploy was off
 #   deploys where                             config folder, version, key source, logins
 #   deploys render forget-key                 remove the Render key from the keychain
 #   deploys completion zsh|bash               tab completion (eval "$(deploys completion zsh)")
@@ -1104,7 +1106,7 @@ case "${1:-} ${2:-}" in
 
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
-    cmds="doctor where changed deploy deploy-changed config team readonly status watch history logs open ignore explain diff notes costs triggers details autofix vercel render completion --help --version"
+    cmds="doctor where changed deploy deploy-changed config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix vercel render completion --help --version"
     case "${2:-zsh}" in
       zsh) cat <<ZSH
 _deploys() {
@@ -1501,6 +1503,13 @@ BASH
       [ -n "$(af_token)" ] || die "No routine token. Run: pbpaste | deploys autofix set-token"
     fi
     autofix_run "$dry" ;;
+
+  "simulate "*|"ledger "*)
+    # Savings estimates, kept in lib/savings.sh next to this script (or in the app's Resources).
+    lib="${DEPLOYS_SAVINGS_LIB:-$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)/lib/savings.sh}"
+    [ -f "$lib" ] || die "lib/savings.sh is missing next to deploys ($lib)"
+    # shellcheck source=lib/savings.sh
+    . "$lib"; savings_main "$@" ;;
 
   *)
     sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
