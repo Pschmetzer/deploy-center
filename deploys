@@ -986,6 +986,7 @@ BASH
       {commits:[($c.commits // [])[] | {sha:.sha[0:7], full:.sha, url:.html_url,
                  msg:(.commit.message | split("\n")[0]), author:(.author.login // .commit.author.name),
                  bot:((.author.type // "") == "Bot"),
+                 coAuthors:[.commit.message | scan("(?im)^co-authored-by:[ \\t]*([^<\\n]*?)[ \\t]*<([^>\\n]*)>") | {name:.[0], email:.[1]}],
                  at:(.commit.committer.date | fromdateiso8601),
                  pr:((.commit.message | (capture("\\(#(?<n>[0-9]+)\\)") // capture("Merge pull request #(?<n>[0-9]+)")) | .n | tonumber) // null)}] | reverse,
        files:(($c.files // []) | length), additions:(($c.files // []) | map(.additions) | add // 0),
