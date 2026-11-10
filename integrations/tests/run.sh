@@ -99,7 +99,7 @@ cat > "$tmp/bin/gh" <<SH
 #!/bin/bash
 printf '%s\n' "\$*" >> "$tmp/gh.log"
 case "\$1 \$2" in
-  "api repos/me/app/pulls/"*) n="\${2##*/}"; f="$tmp/pr\$n.json"; [ -f "\$f" ] || exit 1
+  "api repos/me/app/pulls/"*) [ -n "\${FAKE_GH_SLEEP:-}" ] && sleep "\$FAKE_GH_SLEEP"; n="\${2##*/}"; f="$tmp/pr\$n.json"; [ -f "\$f" ] || exit 1
     q=""; prev=""; for a in "\$@"; do [ "\$prev" = --jq ] && q="\$a"; prev="\$a"; done; jq -c "\$q" "\$f" ;;
   "issue list") [ -n "\${FAKE_GH_FAIL:-}" ] && { echo "HTTP 401: Bad credentials" >&2; exit 1; }; cat "$tmp/issues.json" 2>/dev/null || echo '[]' ;;
   "issue create") [ -n "\${FAKE_GH_CREATE_FAIL:-}" ] && { echo "HTTP 410: Issues are disabled" >&2; exit 1; }; echo "https://github.com/me/ops/issues/7" ;;
@@ -183,7 +183,11 @@ webhook_body googlechat "hi" "https://example.test/x" "Approve"; expect "post: G
 webhook_body matrix "hi"; expect "post: Matrix hookshot text" "$(jq -c . <<<"$WEBHOOK_BODY")" '{"text":"hi","username":"Deploy Center"}'
 expect "post: Pushover needs its keys" "$(webhook_body pushover hi 2>&1; echo "rc=$?")" $'Pushover needs DEPLOYS_PUSHOVER_TOKEN and DEPLOYS_PUSHOVER_USER\nrc=1'
 DEPLOYS_PUSHOVER_TOKEN=apptok DEPLOYS_PUSHOVER_USER=usr webhook_body pushover "hi" "https://example.test/x" "Open"
-expect "post: Pushover message" "$(jq -c '{user, title, message, url}' <<<"$WEBHOOK_BODY")" '{"user":"usr","title":"Deploy Center","message":"hi","url":"https://example.test/x"}'
+expect "post: Pushover message, without the keys" "$(jq -c . <<<"$WEBHOOK_BODY")" '{"title":"Deploy Center","message":"hi","url":"https://example.test/x","url_title":"Open"}'
+case "$(DEPLOYS_PUSHOVER_TOKEN=apptok123 DEPLOYS_PUSHOVER_USER=usr456 DEPLOYS_NOTIFY_URL=https://api.pushover.net/1/messages.json notify/notify.sh --dry-run)" in
+  *apptok123*|*usr456*) fail "notify: a dry run never prints the Pushover keys" "printed" ;; *) ok "notify: a dry run never prints the Pushover keys" ;; esac
+DEPLOYS_PUSHOVER_TOKEN=apptok123 DEPLOYS_PUSHOVER_USER=usr456 DEPLOYS_NOTIFY_URL=https://api.pushover.net/1/messages.json notify/notify.sh >/dev/null
+expect "notify: the sent Pushover body has the keys" "$(jq -c '[.token, .user]' "$tmp/curl.body")" '["apptok123","usr456"]'
 expect "notify: Pushover by host" "$(DEPLOYS_PUSHOVER_TOKEN=a DEPLOYS_PUSHOVER_USER=b DEPLOYS_NOTIFY_URL=https://api.pushover.net/1/messages.json notify/notify.sh --dry-run | head -1)" "format: pushover"
 DEPLOYS_NOTIFY_PRIORITY=high DEPLOYS_NOTIFY_TAGS=rocket,warning DEPLOYS_NOTIFY_TOKEN=tk_secret123 DEPLOYS_NOTIFY_URL='https://ntfy.sh/topic' notify/notify.sh >/dev/null
 contains "notify: ntfy priority and tags" "$(cat "$tmp/curl.args")" $'Priority: high\n-H\nTags: rocket,warning'
@@ -544,8 +548,13 @@ contains "digest: title with the day" "$md" "# Deploys waiting – $(date -u +%Y
 contains "digest: counts" "$md" $'## app-web (vercel, me/app)\n\n4 commits waiting: 3 agent, 1 human'
 contains "digest: PR lines say why" "$md" '- #12 Login page – agent (author claude, co-author Claude)'
 contains "digest: how to approve" "$md" 'projects: `app-web,api`'
-nogh="$tmp/nogh"; mkdir -p "$nogh"; for t in jq bash date sed grep tr cat mktemp rm dirname tail head sort; do ln -sf "$(command -v $t)" "$nogh/$t"; done
+nogh="$tmp/nogh"; mkdir -p "$nogh"; for t in jq bash date sed grep tr cat mktemp mv rm dirname tail head sort; do ln -sf "$(command -v $t)" "$nogh/$t"; done
 ln -sf "$tmp/bin/deploys" "$nogh/deploys"
+# Two projects of one repo share a pull request and are read side by side: both get its facts.
+cp "$tmp/details-api.json" "$tmp/details-api.keep"
+echo '{"commits":[{"sha":"c1","msg":"Add login page (#12)","author":"dev-one","bot":false,"coAuthors":[],"pr":12}],"risky":[],"checks":{"total":0,"failed":0,"running":0},"compareUrl":null}' > "$tmp/details-api.json"
+expect "digest: a pull request shared by two projects read at once" "$(FAKE_GH_SLEEP=1 RENDER_API_KEY=x digest/digest.sh --json | jq -c '[.projects[] | .prs[] | select(.number == 12) | .title]')" '["Login page","Login page"]'
+mv "$tmp/details-api.keep" "$tmp/details-api.json"
 expect "digest: without gh, commit messages stand in for PR titles" \
   "$(PATH="$nogh" RENDER_API_KEY=x digest/digest.sh --json | jq -c '.projects[0].prs | map(.title)')" '["Add login page (#12)","Update copy (#13)"]'
 expect "digest: --issue needs a repo" "$(digest/digest.sh --issue >/dev/null 2>&1; echo $?)" 1

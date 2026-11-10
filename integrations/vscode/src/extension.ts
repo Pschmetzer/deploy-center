@@ -325,6 +325,12 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t("Rolling back {0}…", p.name) },
       () => run(rollbackArgs(p), 90_000));
     const d = parseDeploy(r.stdout);
+    // Exit 0 without an answer it can read: it most likely rolled back. Saying "failed" would
+    // invite a second rollback, which goes back one more deploy.
+    if (r.code === 0 && !d) {
+      const msg = t("{0}: the rollback ran, but its answer could not be read. Check its state (Refresh) before you roll back again.", p.name);
+      this.output.appendLine(msg); void vscode.window.showWarningMessage(msg); this.refreshLater(3_000); return;
+    }
     if (r.code !== 0 || !d) { const msg = `${p.name}: ${r.timedOut ? t("the rollback did not answer in time. Check its state (Refresh) before you try again.") : errorLine(r, "rollback")}`; this.output.appendLine(msg); void vscode.window.showErrorMessage(msg); return; }
     const text = d.state ? t("{0}: rolled back to {1} ({2})", p.name, d.id, d.state) : t("{0}: rolled back to {1}", p.name, d.id);
     this.output.appendLine(text);

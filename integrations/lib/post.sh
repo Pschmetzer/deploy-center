@@ -74,8 +74,9 @@ webhook_body() {
     pushover) WEBHOOK_TYPE="application/json"
               [ -n "${DEPLOYS_PUSHOVER_TOKEN:-}" ] && [ -n "${DEPLOYS_PUSHOVER_USER:-}" ] \
                 || { echo "Pushover needs DEPLOYS_PUSHOVER_TOKEN and DEPLOYS_PUSHOVER_USER" >&2; return 1; }
-              WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" --arg k "$DEPLOYS_PUSHOVER_TOKEN" --arg us "$DEPLOYS_PUSHOVER_USER" \
-                '{token:$k, user:$us, title:"Deploy Center", message:$t} + (if $u != "" then {url:$u, url_title:$l} else {} end)')" ;;
+              # The keys are added in webhook_send, so a dry run never prints them.
+              WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" \
+                '{title:"Deploy Center", message:$t} + (if $u != "" then {url:$u, url_title:$l} else {} end)')" ;;
     *) echo "Unknown DEPLOYS_NOTIFY_FORMAT: $format (discord, slack, ntfy, telegram, teams, googlechat, matrix, pushover)" >&2; return 1 ;;
   esac
 }
@@ -92,7 +93,9 @@ webhook_send() {
   esac
   case "$url" in *'"'*|*'\'*|*$'\n'*) echo "DEPLOYS_NOTIFY_URL has characters a URL cannot have" >&2; return 1 ;; esac
   f="$(mktemp)" || return 1
-  printf '%s' "$WEBHOOK_BODY" > "$f"
+  if [ "$format" = pushover ]; then
+    jq -c --arg k "${DEPLOYS_PUSHOVER_TOKEN:-}" --arg us "${DEPLOYS_PUSHOVER_USER:-}" '{token:$k, user:$us} + .' <<<"$WEBHOOK_BODY" > "$f"
+  else printf '%s' "$WEBHOOK_BODY" > "$f"; fi
   local secret_header=""
   if [ "$format" = ntfy ]; then
     extra=(-H "Title: Deploy Center")

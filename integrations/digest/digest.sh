@@ -68,9 +68,13 @@ has_risk=0; "$DEPLOYS" --help 2>/dev/null | grep -qE '^[[:space:]]*deploys risk'
 pr_facts() {
   local r="$1" n="$2" f
   f="$tmp/pr_${1////_}_$2.json"
-  if [ ! -f "$f" ]; then
-    { [ "$has_gh" = 1 ] && gh api "repos/$r/pulls/$n" --jq '{number, title, url:.html_url, prAuthor:.user.login, prBot:(.user.type == "Bot"), prLabels:[.labels[].name], prBranch:.head.ref}' 2>/dev/null; } > "$f" \
-      && jq -e 'type == "object"' "$f" >/dev/null 2>&1 || echo "{\"number\":$n}" > "$f"
+  # Projects run side by side and may share a pull request: the answer is written to a temp
+  # file and moved into place, so no one reads a cache file that is still being written.
+  if [ ! -s "$f" ]; then
+    local t; t="$(mktemp "$f.XXXXXX")"
+    { [ "$has_gh" = 1 ] && gh api "repos/$r/pulls/$n" --jq '{number, title, url:.html_url, prAuthor:.user.login, prBot:(.user.type == "Bot"), prLabels:[.labels[].name], prBranch:.head.ref}' 2>/dev/null; } > "$t" \
+      && jq -e 'type == "object"' "$t" >/dev/null 2>&1 || echo "{\"number\":$n}" > "$t"
+    mv -f "$t" "$f"
   fi
   cat "$f"
 }

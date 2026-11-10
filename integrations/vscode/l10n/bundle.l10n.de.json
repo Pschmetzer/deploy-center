@@ -91,5 +91,6 @@
   "{0} PRs": "{0} PRs",
   "{0} min": "{0} Min.",
   "{0} h": "{0} Std.",
-  "{0} d": "{0} T."
+  "{0} d": "{0} T.",
+  "{0}: the rollback ran, but its answer could not be read. Check its state (Refresh) before you roll back again.": "{0}: Das Zurückrollen lief, aber seine Antwort ließ sich nicht lesen. Prüfe den Stand (Aktualisieren), bevor du noch einmal zurückrollst."
 }

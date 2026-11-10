@@ -162,3 +162,15 @@ test("the project menu offers preview and rollback where the platform has them",
   const labels = vs.calls.find((x) => x.kind === "pick")!.args[0] as string[];
   assert.ok(labels.some((l) => l.includes("Deploy preview")) && labels.some((l) => l.includes("Roll back")));
 });
+
+test("rollback: exit 0 without a readable answer is not called a failure", async () => {
+  const c = await ready();
+  process.env.FAKE_ROLLBACK_EMPTY = "1";
+  try {
+    c.locate(); // the runner takes the environment when it is made
+    vs.answers.warning.push("Roll back");
+    await c.rollback(project(c, "app-web"));
+    assert.deepEqual(said("error"), []);
+    assert.match(said("warning")[1], /the rollback ran, but its answer could not be read/);
+  } finally { delete process.env.FAKE_ROLLBACK_EMPTY; }
+});
