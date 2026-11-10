@@ -248,6 +248,8 @@ struct DeployCenterApp: App {
             .windowResizability(.contentMinSize)
         .commands {
             WindowCommands()
+            // Edit → Find (⌘F): the build log's find bar. In the main window ⌘F still goes to the search.
+            TextEditingCommands()
             CommandGroup(after: .appInfo) {
                 Button(L("Check for Updates …", "Nach Updates suchen …")) { Task { await store.checkForUpdate(force: true) } }
             }
@@ -368,6 +370,18 @@ struct MenuBarContent: View {
         }
         .keyboardShortcut(",")
         Divider()
-        Button(L("Quit", "Beenden")) { NSApp.terminate(nil) }.keyboardShortcut("q")
+        Button(L("Quit", "Beenden")) {
+            let running = store.items.values.joined().filter { $0.state.isActive }.count
+            guard running > 0 else { NSApp.terminate(nil); return }
+            NSApp.activate(ignoringOtherApps: true)
+            let a = NSAlert()
+            a.messageText = L("\(running) \(running == 1 ? "deploy is" : "deploys are") still running", "\(running) \(running == 1 ? "Deploy läuft" : "Deploys laufen") noch")
+            a.informativeText = L("Builds that already started go on at Vercel or Render, but Deploy Center stops following them and queued ones do not start.",
+                                  "Gestartete Builds laufen bei Vercel oder Render weiter, aber Deploy Center verfolgt sie nicht mehr, und wartende starten nicht.")
+            a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
+            a.addButton(withTitle: L("Quit anyway", "Trotzdem beenden"))
+            if a.runModal() == .alertSecondButtonReturn { NSApp.terminate(nil) }
+        }
+        .keyboardShortcut("q")
     }
 }

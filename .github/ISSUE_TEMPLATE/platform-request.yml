@@ -1,0 +1,47 @@
+name: Platform request
+description: Which platform should Deploy Center support next?
+title: "Platform: "
+labels: [platform-request]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Today Deploy Center supports Vercel and Render. Tell us which platform you want next.
+        If an issue for your platform exists already, add a 👍 to it instead.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Which platform should Deploy Center support next?
+      options:
+        - Netlify
+        - Cloudflare Pages
+        - AWS Amplify
+        - Fly.io
+        - Railway
+        - Generic deploy hook (any platform with a deploy URL)
+        - Other (say which below)
+    validations:
+      required: true
+  - type: input
+    id: other
+    attributes:
+      label: Other platform
+      description: Only if you picked "Other".
+  - type: textarea
+    id: use
+    attributes:
+      label: How do you deploy there today?
+      description: For example auto-deploy on every push, a deploy hook, or a CLI.
+    validations:
+      required: true
+  - type: textarea
+    id: size
+    attributes:
+      label: How many projects or services do you have there? (optional)
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Can you help?
+      options:
+        - label: I can test a first version on my account.
+        - label: I can help write the code.
