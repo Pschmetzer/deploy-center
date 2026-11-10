@@ -1,0 +1,19 @@
+# The fake curl's answers: METHOD  URL glob  fixture  [status]
+# First match wins. GET /v2/apps/<id> and PUT /v2/apps/<id> are answered by the fake itself
+# (from the app pages, and from the last spec PUT), so `off` and `on` round-trip for real.
+GET   */v2/account                                               account.json
+GET   */v2/apps?page=1&*                                         apps-page1.json
+GET   */v2/apps?page=2&*                                         apps-page2.json
+GET   */v2/apps/app-shop/deployments?page=1&per_page=1           deploys-shop-1.json
+GET   */v2/apps/app-shop/deployments?page=1&per_page=20          deploys-shop.json
+GET   */v2/apps/app-blog/deployments?page=1&per_page=1           deploys-blog-1.json
+GET   */v2/apps/app-pinned/deployments?*                         deploys-pinned-1.json
+GET   */v2/apps/app-image/deployments?*                          empty-deploys.json
+GET   */v2/apps/app-shop/deployments/d-shop-3/components/web/logs?type=BUILD&follow=false   logs-web.json
+GET   */v2/apps/app-shop/deployments/d-shop-3/components/*/logs?type=BUILD&follow=false     logs-pending.json
+GET   */v2/apps/app-shop/deployments/d-shop-3                    deployment-d-shop-3.json
+GET   */v2/apps/app-shop/deployments/d-shop-x                    deployment-d-shop-x.json
+POST  */v2/apps/app-shop/deployments                             deployment-created.json
+POST  */v2/apps/app-shop/deployments/d-shop-3/cancel             deployment-canceled.json
+POST  */v2/apps/app-shop/rollback/validate                       rollback-valid.json
+POST  */v2/apps/app-shop/rollback                                deployment-rollback.json
