@@ -114,3 +114,4 @@ Without `gh`, commit messages stand in for PR titles and labels are not read.
 
 Not tested yet: runs on GitHub's runners and real posts. The scripts and the workflow's steps are
 tested locally with a stand-in `deploys`, `curl` and `gh` (`integrations/tests/run.sh`).
+All add-ons at a glance: [what is tested](../README.md#what-is-tested-and-what-is-not).

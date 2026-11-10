@@ -44,8 +44,13 @@ case "\$*" in
   "ledger --json") cat "$here/../tests/fixtures/savings/ledger-report.json" ;;
   "doctor") [ -n "\${FAKE_ENV_DUMP:-}" ] && { env | cut -d= -f1; exit 0; }
     [ -n "\${FAKE_DOCTOR_SLEEP:-}" ] && sleep "\$FAKE_DOCTOR_SLEEP"; echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
-  "changed --json") jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
+  "changed --json") jq -s --arg lv "\${FAKE_LEVEL:-}" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))
+      | if \$lv != "" then map(if .name == "app-web" then . + {risk:{level:\$lv, reasons:[{level:\$lv, text:"touches a migration"}]}} else . + {risk:{level:"green", reasons:[]}} end) else . end' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
   "deploy-changed") echo "Would deploy: app-web, api (run with --yes)" ;;
+  "deploy-changed --yes --json") echo "\$*" >> "$tmp/deploy.log"
+    echo '[{"platform":"vercel","name":"app-web","action":"started","reason":null,"id":"dpl_1"},{"platform":"render","name":"api","action":"started","reason":null,"id":"dep-1"}]' ;;
+  "watch vercel:app-web dpl_1") [ -n "\${FAKE_WATCH_SLOW:-}" ] && sleep 5; exit "\${FAKE_WATCH_WEB:-0}" ;;
+  "watch render:api dep-1") exit "\${FAKE_WATCH_API:-0}" ;;
   "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"
     if [ -n "\${FAKE_NO_SUMMARY:-}" ]; then :; elif [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
     exit "\${FAKE_RC:-0}" ;;
@@ -281,7 +286,7 @@ grep -rn 'vars\.VERCEL_TEAM\b' action/examples digest/examples statuspage/exampl
 # --- the Action's steps, run as GitHub would (needs ruby for the YAML) ---
 if command -v ruby >/dev/null; then
   step() { ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["runs"]["steps"].find { |s| s["id"] == ARGV[1] }[ARGV[2]]' action/action.yml "$1" "${2:-run}"; }
-  step changed > "$tmp/changed.sh"; step deploy > "$tmp/deploy.sh"; step setup > "$tmp/setup.sh"; step plan > "$tmp/plan.sh"
+  step changed > "$tmp/changed.sh"; step deploy > "$tmp/deploy.sh"; step setup > "$tmp/setup.sh"; step plan > "$tmp/plan.sh"; step wait > "$tmp/wait.sh"
   run_step() { : > "$tmp/out"; : > "$tmp/sum"; GITHUB_OUTPUT="$tmp/out" GITHUB_STEP_SUMMARY="$tmp/sum" bash "$tmp/$1" >/dev/null 2>&1; }
   run_step changed.sh; expect "action: the step passes" "$?" 0
   expect "action: count" "$(grep '^count=' "$tmp/out")" "count=2"
@@ -301,9 +306,38 @@ if command -v ruby >/dev/null; then
   rm -f "$DEPLOYS_CONFIG/ignored.json"
   run_step plan.sh; expect "action: dry-run shows the plan, starts nothing" "$?:$(grep -c 'Would deploy: app-web' "$tmp/sum")" "0:1"
   expect "action: plan step only with deploy: dry-run" "$(step plan if)" "inputs.deploy == 'dry-run' && steps.changed.outputs.count != '0'"
-  setup() { : > "$tmp/out"; env GITHUB_ENV="$tmp/genv" GITHUB_PATH="$tmp/gpath" RUNNER_TEMP="$tmp/rt" ACTION_PATH="$here/action" \
-      VERCEL_TOKEN="${VT:-}" VERCEL_TEAM="${TEAM:-}" REPOS_JSON="${RJ:-}" CLI_VERSION="${CV:-65.12.1}" PATH="$PATH" bash "$tmp/setup.sh" >/dev/null 2>&1; echo $?; }
+  # wait: the JSON answer gives the ids; each build is followed to live or failed, under one deadline.
+  mkdir -p "$tmp/rt"; : > "$tmp/deploy.log"
+  DEPLOYS_WAIT_S=60 RUNNER_TEMP="$tmp/rt" run_step deploy.sh
+  expect "action wait: deploy asks for JSON" "$?:$(cat "$tmp/deploy.log")" "0:deploy-changed --yes --json"
+  expect "action wait: outputs from the JSON answer" "$(tr '\n' ' ' < "$tmp/out")" "started=2 failed=0 deployed=true "
+  expect "action wait: the started ids are kept for the wait step" "$(jq -c 'map(.id)' "$tmp/rt/deploys-started.json")" '["dpl_1","dep-1"]'
+  DEPLOYS_WAIT_S=60 RUNNER_TEMP="$tmp/rt" run_step wait.sh
+  expect "action wait: both live" "$?:$(tr '\n' ' ' < "$tmp/out")" '0:states={"app-web":"ready","api":"ready"} failed-builds= live=true '
+  FAKE_WATCH_API=1 DEPLOYS_WAIT_S=60 RUNNER_TEMP="$tmp/rt" run_step wait.sh
+  expect "action wait: a failed build fails the step and is named" "$?:$(grep '^failed-builds=' "$tmp/out")" "1:failed-builds=api"
+  FAKE_WATCH_API=3 DEPLOYS_WAIT_S=60 RUNNER_TEMP="$tmp/rt" run_step wait.sh
+  expect "action wait: a platform that cannot be asked is unknown, not failed" "$?:$(grep -c '"api":"unknown"' "$tmp/out")" "0:1"
+  t0=$SECONDS; FAKE_WATCH_SLOW=1 DEPLOYS_WAIT_S=1 RUNNER_TEMP="$tmp/rt" run_step wait.sh; rc=$?
+  expect "action wait: the deadline stops a slow watch" "$rc:$(grep '^live=' "$tmp/out"):$(grep -c '"app-web":"timeout"' "$tmp/out"):$(( SECONDS - t0 < 4 ))" "0:live=false:1:1"
+  expect "action wait: only after deploy: true with a wait" "$(step wait if)" "\${{ !cancelled() && inputs.deploy == 'true' && inputs.wait != '' && inputs.wait != '0' && steps.deploy.outputs.started != '' && steps.deploy.outputs.started != '0' }}"
+  # fail-on-risk: the risk of what waits, and a gate before anything starts.
+  FAKE_LEVEL=red run_step changed.sh
+  expect "action risk: highest risk and who has it" "$(grep -E '^risk(y)?=' "$tmp/out" | tr '\n' ' ')" "risk=red risky=app-web "
+  expect "action risk: in the summary" "$(grep -c 'app-web\*\*: 4 commit(s) waiting, risk red: touches a migration' "$tmp/sum")" 1
+  FAKE_LEVEL=red FAIL_ON_RISK=red run_step changed.sh; expect "action risk: red fails fail-on-risk: red" "$?" 1
+  FAKE_LEVEL=yellow FAIL_ON_RISK=red run_step changed.sh; expect "action risk: yellow passes fail-on-risk: red" "$?" 0
+  FAKE_LEVEL=yellow FAIL_ON_RISK=yellow run_step changed.sh; expect "action risk: yellow fails fail-on-risk: yellow" "$?" 1
+  FAIL_ON_RISK=red run_step changed.sh; expect "action risk: no risk known passes" "$?:$(grep '^risk=' "$tmp/out")" "0:risk="
+  FAIL_ON_RISK=orange run_step changed.sh; expect "action risk: an unknown level is refused" "$?" 1
+  setup() { : > "$tmp/out"; : > "$tmp/genv"; env GITHUB_ENV="$tmp/genv" GITHUB_PATH="$tmp/gpath" RUNNER_TEMP="$tmp/rt" ACTION_PATH="$here/action" \
+      VERCEL_TOKEN="${VT:-}" VERCEL_TEAM="${TEAM:-}" REPOS_JSON="${RJ:-}" CLI_VERSION="${CV:-65.12.1}" WAIT="${WT:-}" PATH="$PATH" bash "$tmp/setup.sh" >/dev/null 2>&1; echo $?; }
   mkdir -p "$tmp/rt"
+  expect "action setup: wait 20m is 1200 s" "$(WT=20m setup):$(grep DEPLOYS_WAIT_S "$tmp/genv")" "0:DEPLOYS_WAIT_S=1200"
+  expect "action setup: a plain wait is minutes" "$(WT=5 setup):$(grep DEPLOYS_WAIT_S "$tmp/genv")" "0:DEPLOYS_WAIT_S=300"
+  expect "action setup: wait 0 does not wait" "$(WT=0 setup):$(grep -c DEPLOYS_WAIT_S "$tmp/genv")" "0:0"
+  expect "action setup: a wait that is not a time fails" "$(WT='5m; ls' setup)" 1
+  expect "action setup: a wait over 6h fails" "$(WT=7h setup)" 1
   expect "action setup: a team id passes" "$(TEAM=team_abc-1 setup)" 0
   expect "action setup: a team id with odd characters fails" "$(TEAM='x;y' setup)" 1
   expect "action setup: repos-json must be an object" "$(RJ='[1]' setup)" 1
@@ -311,7 +345,7 @@ if command -v ruby >/dev/null; then
   if ! command -v vercel >/dev/null; then
     expect "action setup: a vercel-cli-version that is not a version fails" "$(VT=x CV='1.0; rm -rf /' setup)" 1
   fi
-  case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh" "$tmp/setup.sh" "$tmp/plan.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
+  case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh" "$tmp/setup.sh" "$tmp/plan.sh" "$tmp/wait.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
 else
   echo "skip action: needs ruby"
 fi

@@ -46,6 +46,20 @@ inputs:
       Needed for Vercel projects whose Git connection was turned off: without it they never count as changed.
     required: false
     default: ""
+  wait:
+    description: >-
+      With deploy: true, follow every started build until it is live or failed, at most this long
+      (like 20m, 90s or 1h; a plain number is minutes; at most 6h). Empty: do not wait, deployed
+      then only means "started". A failed build fails the step.
+    required: false
+    default: ""
+  fail-on-risk:
+    description: >-
+      "red" (or "yellow") fails the action, before anything is deployed, when a project with
+      changes has that risk or a higher one (migrations, lockfiles, config, size: deploys risk).
+      Empty: the risk is only reported.
+    required: false
+    default: ""
   vercel-cli-version:
     description: The vercel CLI version to install when none is on the runner.
     required: false
@@ -70,6 +84,21 @@ outputs:
   deployed:
     description: '"true" when every deploy was started and every state could be read.'
     value: ${{ steps.deploy.outputs.deployed || 'false' }}
+  risk:
+    description: The highest risk of the projects with changes, green, yellow or red (empty when none was compared).
+    value: ${{ steps.changed.outputs.risk }}
+  risky:
+    description: The projects whose risk is yellow or red, comma-separated.
+    value: ${{ steps.changed.outputs.risky }}
+  states:
+    description: 'With wait: a JSON object, project name to ready, failed, timeout or unknown (could not be asked).'
+    value: ${{ steps.wait.outputs.states || '{}' }}
+  failed-builds:
+    description: 'With wait: the projects whose build failed, comma-separated.'
+    value: ${{ steps.wait.outputs.failed-builds }}
+  live:
+    description: 'With wait: "true" when every started build went live in time.'
+    value: ${{ steps.wait.outputs.live || 'false' }}
 
 runs:
   using: composite
@@ -83,9 +112,17 @@ runs:
         VERCEL_TEAM: ${{ inputs.vercel-team }}
         REPOS_JSON: ${{ inputs.repos-json }}
         CLI_VERSION: ${{ inputs.vercel-cli-version }}
+        WAIT: ${{ inputs.wait }}
       run: |
         set -euo pipefail
         cfg="$RUNNER_TEMP/deploys-config"; mkdir -p "$cfg"
+        # wait: checked here, before anything starts. Seconds go to the deploy and wait steps.
+        if [ -n "${WAIT:-}" ] && [ "$WAIT" != 0 ]; then
+          [[ "$WAIT" =~ ^([0-9]+)([smh]?)$ ]] || { echo "::error::wait must be a time like 20m, 90s or 1h"; exit 1; }
+          n="${BASH_REMATCH[1]}"; case "${BASH_REMATCH[2]}" in s) w=$((10#$n));; h) w=$((10#$n * 3600));; *) w=$((10#$n * 60));; esac
+          [ "$w" -ge 1 ] && [ "$w" -le 21600 ] || { echo "::error::wait must be between 1s and 6h"; exit 1; }
+          echo "DEPLOYS_WAIT_S=$w" >> "$GITHUB_ENV"
+        fi
         echo "DEPLOYS_CONFIG=$cfg" >> "$GITHUB_ENV"
         echo "DEPLOYS=$ACTION_PATH/../../deploys" >> "$GITHUB_ENV"
         echo "USER=${USER:-$(id -un)}" >> "$GITHUB_ENV"
@@ -117,6 +154,7 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         ONLY: ${{ inputs.only }}
         EXCLUDE: ${{ inputs.exclude }}
+        FAIL_ON_RISK: ${{ inputs.fail-on-risk }}
       run: |
         set -euo pipefail
         # Exit 1 with a list: some project's state could not be read (named above, left out).
@@ -137,16 +175,31 @@ runs:
           list="$(echo "$list" | jq -c --argjson ign "$out" 'map(select(.name as $n | $ign | index($n) | not))')"
         fi
         count="$(echo "$list" | jq length)"
+        # The risk of what waits (deploys changed --json carries it): the highest one, and who has it.
+        rank='{"green":1,"yellow":2,"red":3}'
+        risk="$(echo "$list" | jq -r --argjson r "$rank" '[.[].risk.level // empty | select($r[.])] | max_by($r[.]) // ""')"
         {
           echo "count=$count"
           echo "names=$(echo "$list" | jq -r 'map(.name) | join(",")')"
+          echo "risk=$risk"
+          echo "risky=$(echo "$list" | jq -r 'map(select(.risk.level == "red" or .risk.level == "yellow") | .name) | join(",")')"
           d="EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
           echo "projects<<$d"; echo "$list" | jq -c .; echo "$d"
         } >> "$GITHUB_OUTPUT"
         {
           echo "### Projects with changes: $count"
-          echo "$list" | jq -r '.[] | "- \(.platform) **\(.name)**: \(.pendingCommits // "?") commit(s) waiting"'
+          echo "$list" | jq -r '.[] | "- \(.platform) **\(.name)**: \(.pendingCommits // "?") commit(s) waiting\(if .risk.level then ", risk \(.risk.level)\(if (.risk.reasons // []) | map(select(.level != "green")) | length > 0 then ": " + ((.risk.reasons | map(select(.level != "green") | .text)) | join("; ")) else "" end)" else "" end)"'
         } >> "$GITHUB_STEP_SUMMARY"
+        # fail-on-risk: the gate. Fails before the deploy step, so nothing starts.
+        case "${FAIL_ON_RISK:-}" in
+          "") ;;
+          red|yellow)
+            if [ -n "$risk" ] && [ "$(echo "$rank" | jq --arg a "$risk" '.[$a]')" -ge "$(echo "$rank" | jq --arg a "$FAIL_ON_RISK" '.[$a]')" ]; then
+              echo "::error::risk $risk is at or above fail-on-risk ($FAIL_ON_RISK): $(echo "$list" | jq -r --arg l "$FAIL_ON_RISK" 'map(select(.risk.level == "red" or ($l == "yellow" and .risk.level == "yellow")) | .name) | join(", ")'). Nothing was deployed."
+              exit 1
+            fi ;;
+          *) echo "::error::fail-on-risk must be red, yellow or empty"; exit 1 ;;
+        esac
 
     - name: Plan (dry run)
       id: plan
@@ -174,13 +227,60 @@ runs:
       run: |
         set -euo pipefail
         # Exits 1 when a start failed or a state could not be read; the outputs are written first.
-        rc=0; out="$("$DEPLOYS" deploy-changed --yes </dev/null)" || rc=$?
-        echo "$out"
-        # No summary line (an older CLI, or it stopped early): the outputs still get written.
-        line="$(echo "$out" | grep -E '^[0-9]+ started, [0-9]+ failed to start' | tail -n 1 || true)"
-        started="$(echo "$line" | sed -E 's/^([0-9]+) started.*/\1/')"; failed="$(echo "$line" | sed -E 's/.*, ([0-9]+) failed.*/\1/')"
+        rc=0
+        if [ -n "${DEPLOYS_WAIT_S:-}" ]; then
+          # wait: the JSON answer names the deploy id of each start, for deploys watch.
+          res="$("$DEPLOYS" deploy-changed --yes --json </dev/null)" || rc=$?
+          if echo "$res" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            echo "$res" | jq -r '.[] | "\(.platform): \(.name) \(.action)\(if .reason then ": \(.reason)" else "" end)"'
+            echo "$res" | jq -c 'map(select(.action == "started"))' > "$RUNNER_TEMP/deploys-started.json"
+            started="$(echo "$res" | jq '[.[] | select(.action == "started")] | length')"; failed="$(echo "$res" | jq '[.[] | select(.action == "failed")] | length')"
+          else echo "$res"; started=""; failed=""; fi
+        else
+          out="$("$DEPLOYS" deploy-changed --yes </dev/null)" || rc=$?
+          echo "$out"
+          # No summary line (an older CLI, or it stopped early): the outputs still get written.
+          line="$(echo "$out" | grep -E '^[0-9]+ started, [0-9]+ failed to start' | tail -n 1 || true)"
+          started="$(echo "$line" | sed -E 's/^([0-9]+) started.*/\1/')"; failed="$(echo "$line" | sed -E 's/.*, ([0-9]+) failed.*/\1/')"
+        fi
         {
           echo "started=${started:-0}"; echo "failed=${failed:-0}"
           if [ "$rc" = 0 ]; then echo "deployed=true"; else echo "deployed=false"; fi
         } >> "$GITHUB_OUTPUT"
         exit "$rc"
+
+    - name: Wait for the builds
+      id: wait
+      if: ${{ !cancelled() && inputs.deploy == 'true' && inputs.wait != '' && inputs.wait != '0' && steps.deploy.outputs.started != '' && steps.deploy.outputs.started != '0' }}
+      shell: bash
+      env:
+        VERCEL_TOKEN: ${{ inputs.vercel-token }}
+        RENDER_API_KEY: ${{ inputs.render-api-key }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -uo pipefail
+        f="$RUNNER_TEMP/deploys-started.json"
+        [ -s "$f" ] || { echo "::warning::no started deploy to follow"; echo "live=false" >> "$GITHUB_OUTPUT"; exit 0; }
+        # One deadline for all: the builds run side by side, so following them one after the other
+        # costs no extra time. No timeout(1) (not on every runner): a sleeper stops a watch that is late.
+        end=$((SECONDS + ${DEPLOYS_WAIT_S:-1200})); states='{}'
+        while IFS=$'\t' read -r plat name id; do
+          left=$((end - SECONDS))
+          if [ "$left" -le 0 ]; then st=timeout
+          else
+            "$DEPLOYS" watch "$plat:$name" ${id:+"$id"} </dev/null & pid=$!
+            # The sleeper ends its own sleep when it is stopped, so nothing outlives the step.
+            ( trap 'kill "$s" 2>/dev/null; exit 0' TERM; sleep "$left" & s=$!; wait "$s"; kill "$pid" ) >/dev/null 2>&1 & killer=$!
+            wait "$pid"; rc=$?
+            kill "$killer" 2>/dev/null; wait "$killer" 2>/dev/null
+            case "$rc" in 0) st=ready ;; 1) st=failed ;; 3) st=unknown ;; *) st=timeout ;; esac
+          fi
+          echo "$plat $name: $st"
+          states="$(echo "$states" | jq -c --arg k "$name" --arg v "$st" '. + {($k): $v}')"
+        done < <(jq -r '.[] | [.platform, .name, (.id // "")] | @tsv' "$f")
+        bad="$(echo "$states" | jq -r 'to_entries | map(select(.value == "failed") | .key) | join(",")')"
+        live="$(echo "$states" | jq -r 'if (to_entries | all(.value == "ready")) then "true" else "false" end')"
+        { echo "states=$states"; echo "failed-builds=$bad"; echo "live=$live"; } >> "$GITHUB_OUTPUT"
+        { echo "### Builds"; echo "$states" | jq -r 'to_entries[] | "- **\(.key)**: \(.value)"'; } >> "$GITHUB_STEP_SUMMARY"
+        [ -z "$bad" ] || { echo "::error::build failed: $bad"; exit 1; }
+        [ "$live" = true ] || echo "::warning::not every build was live in time: $(echo "$states" | jq -r 'to_entries | map(select(.value != "ready") | "\(.key) \(.value)") | join(", ")')"

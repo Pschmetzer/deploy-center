@@ -29,7 +29,7 @@ approve-workflow tests need `ruby`, and the VS Code tests `npm ci` in `vscode/`;
 | Add-on | Tested here (stand-ins, no network) | Not tested by the project |
 |---|---|---|
 | MCP server | every tool, the server's own confirmation (yes, no, cancel, no tick, no elicitation), limits, timeouts, masking | a real deploy through each host (Claude Code, Claude Desktop, Cursor, VS Code) |
-| Action | the steps' scripts (changed, only/exclude, dry-run, deploy, setup checks) | a run on GitHub's runners against real accounts |
+| Action | the steps' scripts (changed, only/exclude, dry-run, deploy, wait for builds, risk gate, setup checks) | a run on GitHub's runners against real accounts |
 | Digest and approve workflow | the scripts, the issue and message texts, the approval checks | a run on GitHub and a real post |
 | Notify, badge, status page | the texts, payloads, files and failure cases | a real post, a published page |
 | Claude Code plugin | the hook (which commands count), the files with `claude plugin validate` when installed | a session against real accounts |

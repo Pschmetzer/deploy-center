@@ -104,3 +104,4 @@ journal fixture, with no network. It checks the allowlist (nothing else leaks), 
 (no commit text anywhere), the timeline limit and order, escaping, and that no journal detail,
 SHA or repo is published. Not tested yet: a run against real accounts, and the example workflow on
 GitHub.
+All add-ons at a glance: [what is tested](../README.md#what-is-tested-and-what-is-not).

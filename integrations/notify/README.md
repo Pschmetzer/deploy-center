@@ -36,3 +36,4 @@ To send it every day, schedule the script with launchd or cron, or in CI with th
 
 Not tested yet: a real post to each service. The payloads are checked with `--dry-run` and with a
 stand-in curl.
+All add-ons at a glance: [what is tested](../README.md#what-is-tested-and-what-is-not).

@@ -222,3 +222,4 @@ answers yes, no, cancel and no tick, a client without elicitation, the limit per
 once, a timed-out start, and masked logs.
 
 Not tested yet: a real deploy through each host (Claude Code, Claude Desktop, Cursor, VS Code).
+All add-ons at a glance: [what is tested](../README.md#what-is-tested-and-what-is-not).
