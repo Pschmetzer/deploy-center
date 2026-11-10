@@ -675,5 +675,18 @@ let mostlyBroken = Data(#"[{"name":"a","auto":false,"deployable":true},{"x":1},{
 expect("mostly broken list is an error", (try? decodeLossy(VercelProject.self, from: mostlyBroken, label: "t", maxBadShare: 0.3)) == nil, true)
 expect("without a limit the rest is kept", (try? decodeLossy(VercelProject.self, from: mostlyBroken, label: "t"))?.count ?? -1, 1)
 
+// UI-036: an unknown Render type in words; UI-011: a chip can be waved away.
+expect("unknown service type readable", Store.typeName("key_value_store"), "Key Value Store")
+MainActor.assumeIsolated {
+    let st = Store()
+    let f = failedItem()
+    st.items[.vercel] = [f]
+    st.autofix = AutofixReport(routine: "r", token: true, fires: [F(at: 1, project: "app", platform: "vercel", status: "fired", session: "https://claude.ai/code/s")])
+    let had = st.autofixState(f) != nil
+    st.dismissAutofix(f)
+    expect("dismissed chip is gone", "\(had) \(st.autofixState(f) == nil)", "true true")
+    UserDefaults.standard.removeObject(forKey: "autofixDismissed")
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

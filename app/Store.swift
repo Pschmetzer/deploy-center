@@ -174,7 +174,18 @@ final class Store: ObservableObject {
     func autofixState(_ i: Item) -> RowAutofix? {
         guard autofix != nil else { return nil }
         let newest = (fireIndex[i.name] ?? []).filter { ($0.platform?.lowercased() ?? i.platform.cli) == i.platform.cli }.max { $0.at < $1.at }
+        if let f = newest, dismissedFires.contains(Self.fireKey(i, f)) { return nil }
         return RowAutofix.of(i, newest)
+    }
+
+    /// Hand-overs the person waved away ("No fix PR" read and done with), kept on this Mac.
+    @Published private(set) var dismissedFires: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "autofixDismissed") ?? [])
+    nonisolated static func fireKey(_ i: Item, _ f: AutofixReport.Fire) -> String { "\(i.platform.cli)/\(i.name)@\(Int(f.at))" }
+    /// Hides the row's autofix chip until a newer hand-over; the button is free again.
+    func dismissAutofix(_ i: Item) {
+        guard let f = (fireIndex[i.name] ?? []).filter({ ($0.platform?.lowercased() ?? i.platform.cli) == i.platform.cli }).max(by: { $0.at < $1.at }) else { return }
+        dismissedFires.insert(Self.fireKey(i, f))
+        UserDefaults.standard.set(Array(Array(dismissedFires).suffix(100)), forKey: "autofixDismissed")
     }
     func allowance(_ i: Item, now: Date = Date()) -> AutoDeployAllowance? {
         allowances.first { $0.covers(i) && $0.expiresAt > now }
@@ -585,13 +596,15 @@ final class Store: ObservableObject {
         return w
     }
 
-    static func typeName(_ t: String) -> String {
+    nonisolated static func typeName(_ t: String) -> String {
         switch t {
         case "web_service": return "Web Service"
         case "static_site": return "Static Site"
         case "cron_job": return "Cron Job"
         case "background_worker": return "Worker"
-        default: return t
+        case "private_service": return "Private Service"
+        // A type Render added later: readable words instead of the raw code.
+        default: return t.split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
         }
     }
 
