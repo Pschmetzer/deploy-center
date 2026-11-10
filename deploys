@@ -1309,7 +1309,10 @@ ai_excerpt() {
 }
 
 # Seams the tests replace: one project row, its build log, the waiting commits.
-ai_row() { "$0" "$(platform_of "$1")" json | jq -c --arg p "$1" '[.[] | select(.name == $p or .id == $p)][0] // empty'; }
+ai_row() {
+  local plat; plat="$(platform_of "$1")"
+  "$0" "$plat" json | jq -c --arg p "$1" --arg pl "$plat" '[.[] | select(.name == $p or .id == $p)][0] // empty | .platform //= $pl'
+}
 ai_log() { "$0" logs "$1" 300; }
 ai_details() { "$0" details "$1" "$2" "$3"; }
 
@@ -2399,6 +2402,8 @@ BASH
     jq -n --arg s "$(ai_key_source)" --arg m "$(ai_model)" --argjson c "$(ai_cap)" --argjson u "$(ai_used)" --arg mo "$(ai_month)" --arg ms "$AI_MODELS" \
       '{key:($s != "none"), source:$s, model:$m, models:($ms | split(" ")), cap:$c, used:$u, month:$mo}' ;;
   "ai explain"|"ai notes"|"ai ship")
+    # --json is taken off the arguments above for every command; ai_run reads it as AI_JSON.
+    [ "${json:-0}" != 1 ] || export AI_JSON=1
     ai_run "${@:2}" ;;
   "ai "*)
     die "Usage: deploys ai explain|notes|ship <project> [--json] [--lang en|de] | set-key | forget-key | verify | model [<id>] | cap [<tokens>] | status" ;;
