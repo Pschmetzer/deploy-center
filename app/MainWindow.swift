@@ -893,6 +893,35 @@ struct CostBar: View {
         return (before.map(\.build).reduce(0, +) / Double(before.count), after.map(\.build).reduce(0, +) / Double(after.count))
     }
 
+    /// The numbers left of the chart (own property: one body was too long for older type checkers).
+    private var summary: some View {
+VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 4) {
+            Text(L("Vercel builds, last 7 days", "Vercel-Builds, letzte 7 Tage")).font(.caption).foregroundStyle(.secondary)
+            Button { collapsed = true } label: { Image(systemName: "chevron.up").font(.caption2) }
+                .buttonStyle(.borderless).help(L("Fold away", "Einklappen")).accessibilityLabel(L("Fold away the costs", "Kosten einklappen"))
+        }
+        Text(week, format: .currency(code: "USD")).font(.title3.weight(.semibold).monospacedDigit())
+        Text(L("≈ ", "≈ ") + (average * 30).formatted(.currency(code: "USD")) + L(" a month at this pace", " im Monat bei diesem Tempo"))
+            .font(.caption2).foregroundStyle(.secondary)
+        if let s = saving {
+            Text(L("per day: ", "pro Tag: ") + s.before.formatted(.currency(code: "USD")) + L(" before, ", " vorher, ")
+                 + s.after.formatted(.currency(code: "USD")) + L(" since", " seitdem"))
+                .font(.caption2.weight(.medium)).foregroundStyle(s.after < s.before ? .green : .orange)
+            if s.after < s.before {
+                Button(L("Share the saving …", "Ersparnis teilen …")) { sharing = true }
+                    .buttonStyle(.link).font(.caption2)
+                    .popover(isPresented: $sharing) { SavingShare(before: s.before, after: s.after) }
+                    .help(L("Copies a picture and a sentence with your saving, without project names",
+                            "Kopiert ein Bild und einen Satz mit deiner Ersparnis, ohne Projektnamen"))
+            }
+        } else if let off = costs.offDay {
+            Text(L("Auto-deploy off since \(off); the saving shows after a full day", "Auto-Deploy aus seit \(off); die Ersparnis zeigt sich nach einem ganzen Tag"))
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+    }
+
     var body: some View {
         if collapsed {
             Button { collapsed = false } label: {
@@ -914,31 +943,7 @@ struct CostBar: View {
 
     private var expanded: some View {
         HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(L("Vercel builds, last 7 days", "Vercel-Builds, letzte 7 Tage")).font(.caption).foregroundStyle(.secondary)
-                    Button { collapsed = true } label: { Image(systemName: "chevron.up").font(.caption2) }
-                        .buttonStyle(.borderless).help(L("Fold away", "Einklappen")).accessibilityLabel(L("Fold away the costs", "Kosten einklappen"))
-                }
-                Text(week, format: .currency(code: "USD")).font(.title3.weight(.semibold).monospacedDigit())
-                Text(L("≈ ", "≈ ") + (average * 30).formatted(.currency(code: "USD")) + L(" a month at this pace", " im Monat bei diesem Tempo"))
-                    .font(.caption2).foregroundStyle(.secondary)
-                if let s = saving {
-                    Text(L("per day: ", "pro Tag: ") + s.before.formatted(.currency(code: "USD")) + L(" before, ", " vorher, ")
-                         + s.after.formatted(.currency(code: "USD")) + L(" since", " seitdem"))
-                        .font(.caption2.weight(.medium)).foregroundStyle(s.after < s.before ? .green : .orange)
-                    if s.after < s.before {
-                        Button(L("Share the saving …", "Ersparnis teilen …")) { sharing = true }
-                            .buttonStyle(.link).font(.caption2)
-                            .popover(isPresented: $sharing) { SavingShare(before: s.before, after: s.after) }
-                            .help(L("Copies a picture and a sentence with your saving, without project names",
-                                    "Kopiert ein Bild und einen Satz mit deiner Ersparnis, ohne Projektnamen"))
-                    }
-                } else if let off = costs.offDay {
-                    Text(L("Auto-deploy off since \(off); the saving shows after a full day", "Auto-Deploy aus seit \(off); die Ersparnis zeigt sich nach einem ganzen Tag"))
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            }
+            summary
             VStack(alignment: .leading, spacing: 2) {
             Chart(costs.days) { d in
                 // A day over twice the average stands out.
