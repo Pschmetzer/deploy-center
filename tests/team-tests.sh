@@ -282,6 +282,16 @@ fresh
   : "$b$c$d"
   [ "$fails" = 0 ] || exit 1
 ) || fails=$((fails + 1))
+# CLI-090 follow-up: a file left by an earlier run with the same pid is never read.
+fresh
+(
+  export DEPLOYS_LIB=1
+  # shellcheck source=../deploys
+  . ./deploys; set +e
+  mkdir -p "$TEAM_CACHE"; printf '%s\n%s\n' "$(team_eff_key)" '{"planted":true}' > "$TEAM_CACHE/eff.$$"
+  expect "CLI-090: an old eff.<pid> file is not taken" "$(team_effective 2>/dev/null | jq -r '.planted // false')" "false"
+  [ "$fails" = 0 ] || exit 1
+) || fails=$((fails + 1))
 # ===== end CLI track =====
 
 echo

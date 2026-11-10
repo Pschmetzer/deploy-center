@@ -18,6 +18,7 @@
 #   deploys deploy <project> [--sha <c>]      deploy one project to production (Vercel or Render)
 #   deploys verify <p> [--path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
 #     [--rollback-after 10] [--no-rollback]   count down, then roll back (Ctrl-C stops it)
+#     [--expect 200|2xx] [--follow]          only that status is healthy; follow up to 3 redirects
 #   deploys risk <project> [--json]           green/yellow/red for what waits: migrations, lockfiles, config, size
 #   deploys ci <owner/repo> [<ref>] [--wait 30m]  the CI verdict of a commit: green, pending, red, none
 #   deploys window [--json]                   is the deploy window (window.json) open now?
@@ -551,13 +552,16 @@ remember_names() {  # remember_names <p>, the list on stdin
   # race only costs a name until the next read, never the list itself.
   local p="$1" list t; list="$(cat)"
   t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
-  local seen="$CONFIG_DIR/names.seen"
+  local seen="$CONFIG_DIR/names.seen" sl=""
+  # Providers' lists are read in parallel: the read-modify-write of names.seen is locked.
+  file_lock "$seen" && sl=1
   { [ -s "$seen" ] && jq -e 'type == "object"' "$seen" >/dev/null 2>&1 && cat "$seen" || echo '{}'; } \
     | jq -c --argjson now "$(date +%s)" --rawfile old <(cat "$CONFIG_DIR/names" 2>/dev/null || true) \
         --argjson l "$(echo "$list" | jq -c '[if type == "array" then .[] else empty end | .name | strings]' 2>/dev/null || echo '[]')" \
         'reduce ($old | split("\n")[] | select(length > 0)) as $n (.; if has($n) then . else .[$n] = $now end)
          | reduce $l[] as $n (.; .[$n] = $now)
          | with_entries(select(.value > $now - 2592000))' > "$t" 2>/dev/null && mv -f "$t" "$seen" 2>/dev/null
+  [ -z "$sl" ] || file_unlock "$seen"
   t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
   # Only plain names: the completion scripts read this file, and a name like $(cmd) from a
   # platform list must never reach a shell. Old entries are filtered too, so a planted one goes.
@@ -981,8 +985,16 @@ job_plist() { echo "${DEPLOYS_LAUNCH_DIR:-$HOME/Library/LaunchAgents}/$1.plist";
 xml_text() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
 job_on() {
   local label="$1" every="$2" log="$HOME/Library/Logs/$3.log" self plist a pargs="" new; shift 3
-  plist="$(job_plist "$label")"; mkdir -p "$(dirname "$plist")"
   self="$(cd "$(dirname "$SELF")" && pwd)/$(basename "$SELF")"
+  # No launchd (Linux, a server): nothing is written; the cron line that does the same is printed.
+  if ! command -v launchctl >/dev/null 2>&1; then
+    local q="" m=$(( every / 60 )); [ "$m" -ge 1 ] || m=1
+    for a in "$@"; do q="$q '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'"; done
+    echo "No launchd here, so nothing was installed. To run it every $m minutes, add this line with crontab -e:"
+    echo "*/$m * * * * PATH='$(printf '%s' "$PATH" | sed "s/'/'\\\\''/g")' DEPLOYS_LOG_ROTATE=1 /bin/bash '$self'$q >> \"\$HOME/.local/state/deploys-$(basename "$log" .log).log\" 2>&1"
+    return 0
+  fi
+  plist="$(job_plist "$label")"; mkdir -p "$(dirname "$plist")"
   for a in "$@"; do pargs="$pargs<string>$(xml_text "$a")</string>"; done
   # Written with the PATH of whoever turns it on (the app passes the login shell's): launchd
   # starts jobs with a bare one, and autofix needs jq, gh, perl and the vercel CLI.
@@ -993,7 +1005,7 @@ job_on() {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$(xml_text "$label")</string>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(xml_text "$PATH")</string></dict>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(xml_text "$PATH")</string><key>DEPLOYS_LOG_ROTATE</key><string>1</string></dict>
   <key>ProgramArguments</key><array><string>/bin/bash</string><string>$(xml_text "$self")</string>$pargs</array>
   <key>StandardOutPath</key><string>$(xml_text "$log")</string>
   <key>StandardErrorPath</key><string>$(xml_text "$log")</string>
@@ -1054,6 +1066,7 @@ log_rotate() {  # log_rotate <log name, e.g. DeployCenter-guard>
   mv -f "$f" "$f.1" 2>/dev/null || true
 }
 job_off() {
+  command -v launchctl >/dev/null 2>&1 || { echo "No launchd here: remove the deploys line with crontab -e, if you added one."; return 0; }
   launchctl bootout "gui/$(id -u)/$1" >/dev/null 2>&1 || true
   rm -f "$(job_plist "$1")"
 }
@@ -1618,7 +1631,7 @@ case "${1:-} ${2:-}" in
   "notes "*)       usage_if_short $# 2 "notes <project>" ;;
   "history "*)     usage_if_short $# 2 "history <project> [n]" ;;
   "ai explain"|"ai notes"|"ai ship") usage_if_short $# 3 "ai ${2} <project> [--json]" ;;
-  "verify "*)      usage_if_short $# 2 "verify <project> [--path /health] [--rollback-after 10] [--no-rollback]" ;;
+  "verify "*)      usage_if_short $# 2 "verify <project> [--path /health] [--expect 200|2xx] [--follow] [--rollback-after 10] [--no-rollback]" ;;
   "risk "*)        usage_if_short $# 2 "risk <project> [--json]" ;;
   "ci "*)          usage_if_short $# 2 "ci <owner/repo> [<sha or branch>] [--wait 30m] [--json]" ;;
   "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
@@ -2254,14 +2267,19 @@ BASH
     # 5xx or none (a timeout), the check failed (as in the app: a fresh service may answer 502 for a
     # moment); then a countdown, and production goes back unless --no-rollback or Ctrl-C.
     # Exit 0 healthy, 1 failed and rolled back, 2 failed and not rolled back.
-    p="$2"; path=""; after=10; norb=""; url=""; shift 2
+    # --expect 200 (or 2xx): only that answer is healthy, so a 404 from a mistyped --path or a 401
+    # from deployment protection fails too. --follow follows up to three redirects first.
+    p="$2"; path=""; after=10; norb=""; url=""; expect=""; follow=(); shift 2
     while [ $# -gt 0 ]; do
       case "$1" in
         --path) path="${2:?Usage: deploys verify <project> --path /health}"; shift ;;
         --rollback-after) after="${2:-}"; shift ;;
         --no-rollback) norb=1 ;;
         --url) url="${2:?Usage: deploys verify <project> --url https://…}"; shift ;;
-        *) die "Unknown option $1. Usage: deploys verify <project> [--path /health] [--rollback-after 10] [--no-rollback] [--url <address>] [--json]" ;;
+        --expect) expect="${2:-}"; shift
+          case "$expect" in [1-5][0-9][0-9]|[1-5]xx) ;; *) die "--expect takes a status like 200 or 2xx" ;; esac ;;
+        --follow) follow=(-L --max-redirs 3) ;;
+        *) die "Unknown option $1. Usage: deploys verify <project> [--path /health] [--expect 200|2xx] [--follow] [--rollback-after 10] [--no-rollback] [--url <address>] [--json]" ;;
       esac
       shift
     done
@@ -2278,10 +2296,12 @@ BASH
     target="${url%/}$path"; [ -n "$path" ] || target="$url"
     codes=""; bad=0
     for i in 1 2 3; do
-      c="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 -A "DeployCenter (verify)" "$target" 2>/dev/null)" || true
+      c="$(curl -sS -o /dev/null -w '%{http_code}' ${follow[@]+"${follow[@]}"} --connect-timeout 10 --max-time 20 -A "DeployCenter (verify)" "$target" 2>/dev/null)" || true
       [ -n "$c" ] || c=000
       codes="$codes${codes:+ }$c"
-      case "$c" in 000|5*) bad=$((bad + 1));; esac
+      if [ -n "$expect" ]; then
+        case "$expect" in *xx) [ "${c:0:1}" = "${expect:0:1}" ] || bad=$((bad + 1)) ;; *) [ "$c" = "$expect" ] || bad=$((bad + 1)) ;; esac
+      else case "$c" in 000|5*) bad=$((bad + 1));; esac; fi
       echo "$(date +%H:%M:%S)  $c  $target" >&2
       [ "$i" = 3 ] || sleep 5
     done

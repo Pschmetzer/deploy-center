@@ -158,7 +158,10 @@ def resolve($n):
 # subshell, a child process has its own), with the environment it was made in as the first line;
 # a call in another environment merges anew. Writing team or readonly config calls
 # team_eff_forget; deploys removes the file on exit, and leftovers go after an hour.
-team_eff_file() { echo "$TEAM_CACHE/eff.$$"; }
+# The pid alone is not enough: a later run may get the same pid and find an old file. The token
+# is made once per process (subshells share it, a child process makes its own).
+TEAM_EFF_TOKEN="$$.$RANDOM.$(date +%s)"
+team_eff_file() { echo "$TEAM_CACHE/eff.$TEAM_EFF_TOKEN"; }
 team_eff_key() { printf '%s|%s|%s|%s' "${DEPLOYS_NO_GITHUB:-}" "${DEPLOYS_TEAM_REFRESH:-}" "${DEPLOYS_READONLY-unset}" "$CONFIG_DIR"; }
 team_eff_forget() { rm -f "$(team_eff_file)"; }
 team_effective() {

@@ -1264,7 +1264,8 @@ expect "CLI-107: only reads were made: no release, tag, build, notarization or u
 # CLI-039: the guard matrix. Every command that changes something, in observer mode: refused, nothing
 # sent that writes (POST, PATCH, PUT, DELETE). Every production start with the window closed: refused.
 export RENDER_API_KEY=rnd_test
-writes() { grep -c -E '^(curl )?(POST|PATCH|PUT|DELETE) |^vercel (deploy|redeploy|rollback|remove|promote)|^gh api .*(-X|--method) *(POST|PATCH|PUT|DELETE)' "$e2e/calls.log"; }
+# curl stand-in lines are "curl POST <url>"; vercel and gh say "--method POST" or "-X POST".
+writes() { grep -c -E '^curl (POST|PATCH|PUT|DELETE) |(-X|--method)[ =]*(POST|PATCH|PUT|DELETE)|^vercel (deploy|redeploy|rollback|remove|promote)( |$)' "$e2e/calls.log"; }
 m39=""
 for c in "deploy web" "deploy api --preview" "vercel deploy web" "vercel deploy-json web" "vercel rollback web" "vercel cancel dpl_1" \
          "vercel autodeploy-off web" "vercel map web me/app" "render deploy api" "render deploy-json api" "render rollback api" \
@@ -1312,6 +1313,31 @@ expect "doctor: no repeated keys, each provider under providers" \
 # CLI-022: a hanging CLI is ended after DEPLOYS_TIMEOUT; 0 means no limit.
 expect "CLI-022: with_timeout ends a hanging command" "$(s0=$SECONDS; with_timeout 1 /bin/sleep 5; rc=$?; [ $((SECONDS - s0)) -lt 4 ] && echo "fast rc>0:$([ "$rc" != 0 ] && echo yes)")" "fast rc>0:yes"
 expect "CLI-022: 0 is no limit, the answer passes through" "$(with_timeout 0 /bin/echo hi)" "hi"
+# CLI-039 control: the matrix's "writes" does see a real start, so its zeros mean something.
+export RENDER_API_KEY=rnd_test; fresh
+expect "CLI-039: a real start is counted as a write" "$(run "$O" "$E" deploy web >/dev/null; [ "$(writes)" -gt 0 ] && echo seen)" "seen"
+m39=""; echo '{"deny":[{"from":"00:00","to":"24:00","reason":"closed for the matrix"}]}' > "$e2e/config/window.json"
+for c in "deploy web" "vercel deploy web" "render deploy api" "deploy-changed --yes"; do
+  fresh
+  # shellcheck disable=SC2086
+  run "$O" "$E" $c >/dev/null; grep -q 'closed for the matrix' "$E" || m39="$m39 [$c]"
+done
+expect "CLI-039: each closed-window refusal names the window" "${m39:-none}" "none"
+rm -f "$e2e/config/window.json"; unset RENDER_API_KEY
+# CLI-035: --expect makes only that answer healthy; --follow is accepted.
+export RENDER_API_KEY=rnd_test; fresh
+expect "CLI-035: a 200 is not the expected 404: failed, not rolled back" "$(run "$O" "$E" verify web --expect 404 --no-rollback; rolled)" $'2\n0'
+expect "CLI-035: 2xx accepts a 200, with --follow" "$(run "$O" "$E" verify web --expect 2xx --follow; rolled)" $'0\n0'
+expect "CLI-035: a bad --expect is refused" "$(run "$O" "$E" verify web --expect ok; grep -c 'takes a status' "$E")" $'1\n1'
+unset RENDER_API_KEY
+# CLI-028 follow-up: the job itself turns rotation on (DEPLOYS_LOG_ROTATE in the plist).
+mkdir -p "$tmp/j28/agents"
+( PATH="$af/bin:$PATH" DEPLOYS_LAUNCH_DIR="$tmp/j28/agents" af_schedule_on >/dev/null )
+expect "CLI-028: the job carries DEPLOYS_LOG_ROTATE=1" "$(grep -c '<key>DEPLOYS_LOG_ROTATE</key><string>1</string>' "$tmp/j28/agents/app.deploycenter.autofix.plist")" "1"
+# CLI-030: without launchd, schedule on writes nothing and prints the cron line.
+mkdir -p "$tmp/nolc"; for b in sed dirname basename; do ln -sf "$(command -v "$b")" "$tmp/nolc/$b"; done
+# shellcheck disable=SC2123  # a PATH without launchctl is the point
+expect "CLI-030: no launchd: a cron line, no job file" "$( (PATH="$tmp/nolc"; DEPLOYS_LAUNCH_DIR="$tmp/j30"; job_on app.deploycenter.autofix 600 DeployCenter-autofix autofix) | grep -c "^\*/10 \* \* \* \* PATH=.* /bin/bash '.*deploys' 'autofix' >>"; [ -e "$tmp/j30" ] && echo file || echo none)" $'1\nnone'
 # ===== end CLI track =====
 
 echo

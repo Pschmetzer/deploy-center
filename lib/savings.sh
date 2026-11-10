@@ -31,6 +31,11 @@ sv_projects() {
 # Pushes to <branch> since <epoch>, as {basis, list:[{at, sha}]}; {error} when GitHub cannot be read.
 sv_pushes() {  # sv_pushes <owner/repo> <branch> <since epoch>
   local repo="$1" ref="$2" since="$3" age period raw basis=pushes
+  # GitLab pushes are not read yet: said as such, not as "GitHub could not be read".
+  if declare -F githost_of >/dev/null && [ "$(githost_of "$repo")" = gitlab ]; then
+    echo '{"error":"a GitLab project: its pushes are not counted yet (GitHub only)"}'; return 0
+  fi
+  command -v gh >/dev/null 2>&1 || { echo '{"error":"counting pushes on GitHub needs gh: install it and run gh auth login"}'; return 0; }
   age=$(( ($(date +%s) - since) / 86400 ))
   if [ "$age" -lt 1 ]; then period=day; elif [ "$age" -lt 7 ]; then period=week
   elif [ "$age" -lt 30 ]; then period=month; elif [ "$age" -lt 90 ]; then period=quarter; else period=year; fi
@@ -238,7 +243,7 @@ savings_main() {  # savings_main simulate|ledger [--days N]
   [ "$days" -ge 1 ] && [ "$days" -le 90 ] || die "--days must be a number from 1 to 90"
   # The ledger counts from the day auto-deploy went off; a --days there would be ignored in silence.
   [ "$mode" != ledger ] || [ -z "$gotdays" ] || die "--days is for simulate; the ledger counts from the day auto-deploy went off"
-  command -v gh >/dev/null 2>&1 || die "simulate and ledger count pushes on GitHub: install gh and run gh auth login"
+  # gh is asked for per GitHub project (sv_pushes): projects on GitLab alone need none.
   if [ "$mode" = simulate ]; then out="$(sv_facts simulate "$days" | sv_simulate_from)"
   else out="$(sv_facts ledger "$days" | sv_ledger_from)"; fi
   if [ "${json:-0}" = 1 ]; then echo "$out"; else echo "$out" | sv_print; fi
