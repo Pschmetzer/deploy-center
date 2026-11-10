@@ -138,11 +138,11 @@ In den Abschnitten 1–7: ✅ = gebaut, ◐ = teilweise (Branch `fix/welle-2`). 
 
 ### Hauptfenster: Bestätigungen und Hinweise
 
-68. ◐ [UX] **Eine Bestätigung für alle Wege.** Fenster und Palette haben getrennte Dialoge mit unterschiedlichem Inhalt (die Palette ohne „schon aktuell“, ohne „Nur wenn grün“); eine gemeinsame Komponente nehmen. (MainWindow.swift:326–338; CommandPalette.swift:473–479)
+68. ✅ [UX] **Eine Bestätigung für alle Wege.** Fenster und Palette haben getrennte Dialoge mit unterschiedlichem Inhalt (die Palette ohne „schon aktuell“, ohne „Nur wenn grün“); eine gemeinsame Komponente nehmen. (MainWindow.swift:326–338; CommandPalette.swift:473–479)
 69. ✅ [UX] **„Live deployen“ im Zeilenmenü fragt nicht.** Die Palette fragt beim selben Befehl; bei 0 s Wartezeit startet ein Fehlklick sofort einen bezahlten Build. (MainWindow.swift:890–893)
 70. ✅ [UX] **Riskante Projekte in der Bestätigung kennzeichnen.** Ein „⚠︎ riskant (Migration, Env)“ hinter dem Namen, wenn `risk.isRed`, denn der Dialog ist der letzte Moment vor dem Live-Gang. (MainWindow.swift:331–332)
 71. ✅ [UX] **Plattform in der Sammelbestätigung nennen.** Unter „Alle“ ist ein Name auf Vercel und Render sonst nicht zu unterscheiden. (MainWindow.swift:331)
-72. [Code] **„Nur wenn grün“ hängt am Unterdrücken-Schalter des Dialogs.** `dialogSuppressionToggle` meint „nicht mehr fragen“, und VoiceOver bzw. künftige macOS-Versionen können ihn so behandeln (Vermutung); ein Sheet mit echter Checkbox nehmen. (MainWindow.swift:338)
+72. ✅ [Code] **„Nur wenn grün“ hängt am Unterdrücken-Schalter des Dialogs.** `dialogSuppressionToggle` meint „nicht mehr fragen“, und VoiceOver bzw. künftige macOS-Versionen können ihn so behandeln (Vermutung); ein Sheet mit echter Checkbox nehmen. (MainWindow.swift:338)
 73. ✅ [UX] **„Alles abbrechen“ fragt nicht.** Ein Klick bricht alle laufenden und wartenden Deploys ab; kurze Rückfrage mit Anzahl, oder Rückgängig während der Wartezeit. (MainWindow.swift:964)
 74. ✅ [UX] **„Ignorieren“ bei Build-Auslösern ist endgültig.** Ohne Rückgängig-Toast und ohne Liste in den Einstellungen bleibt ein versehentlich ignorierter Workflow für immer unsichtbar. (MainWindow.swift:82, 538)
 75. ✅ [UX] **Die eingeklappte Hinweiszeile sagt zu wenig.** „1 weitere: Clau…“ (Screenshot) zeigt nur Wörter; ein Symbol und eine Farbe je Hinweis (rot, orange, grau) zeigen die Dringlichkeit ohne Aufklappen. (MainWindow.swift:509–519)
@@ -172,22 +172,22 @@ In den Abschnitten 1–7: ✅ = gebaut, ◐ = teilweise (Branch `fix/welle-2`). 
 
 ### Leistung
 
-94. [Perf] **Die Palette rechnet pro Tastendruck mehrfach alles neu.** `PaletteCommands.all` (6 Einträge je Projekt) und die Fuzzy-Sortierung laufen in `results`, `recentCount`, `move` und `onChange` getrennt; einmal pro Abfrage berechnen und zwischenspeichern. (CommandPalette.swift:162–172, 226, 276)
-95. [Perf] **Die Palette rechnet bei jedem Store-Poll neu.** Solange sie offen ist, baut jede Store-Änderung die Liste neu; den Projekt-Index beim Öffnen einfrieren und nur den Status nachziehen. (CommandPalette.swift:153, 175)
-96. [Perf] **Details: `scrub` baut pro Zeile die Liste aller Projekte.** Jeder Commit-Text ruft `Platform.allCases.flatMap` auf; die Liste einmal pro Render bilden. (DetailViews.swift:159, 343)
-97. [Perf] **Build-Log maskiert im Demo-Modus bei jedem Render 2000 Zeilen.** Das Ergebnis pro Laden zwischenspeichern. (DetailViews.swift:69)
-98. [Perf] **Der Neu-laden-Knopf lädt Plattformen nacheinander.** Unter „Alle“ wartet Render auf Vercel; mit `TaskGroup` parallel laden. (MainWindow.swift:405)
-99. [Perf] **`ImageRenderer` bei jedem Body.** `SavingShare.image` ist berechnet und rendert die Karte bei jedem Neuzeichnen; einmal in `onAppear` erzeugen. (MainWindow.swift:1138–1141, 1153)
+94. ✅ [Perf] **Die Palette rechnet pro Tastendruck mehrfach alles neu.** `PaletteCommands.all` (6 Einträge je Projekt) und die Fuzzy-Sortierung laufen in `results`, `recentCount`, `move` und `onChange` getrennt; einmal pro Abfrage berechnen und zwischenspeichern. (CommandPalette.swift:162–172, 226, 276)
+95. ✅ [Perf] **Die Palette rechnet bei jedem Store-Poll neu.** Solange sie offen ist, baut jede Store-Änderung die Liste neu; den Projekt-Index beim Öffnen einfrieren und nur den Status nachziehen. (CommandPalette.swift:153, 175)
+96. ✅ [Perf] **Details: `scrub` baut pro Zeile die Liste aller Projekte.** Jeder Commit-Text ruft `Platform.allCases.flatMap` auf; die Liste einmal pro Render bilden. (DetailViews.swift:159, 343)
+97. ✅ [Perf] **Build-Log maskiert im Demo-Modus bei jedem Render 2000 Zeilen.** Das Ergebnis pro Laden zwischenspeichern. (DetailViews.swift:69)
+98. ✅ [Perf] **Der Neu-laden-Knopf lädt Plattformen nacheinander.** Unter „Alle“ wartet Render auf Vercel; mit `TaskGroup` parallel laden. (MainWindow.swift:405)
+99. ✅ [Perf] **`ImageRenderer` bei jedem Body.** `SavingShare.image` ist berechnet und rendert die Karte bei jedem Neuzeichnen; einmal in `onAppear` erzeugen. (MainWindow.swift:1138–1141, 1153)
 100. [Perf] **`autofixState` zweimal pro Zeile.** Für Zeile und Hintergrund getrennt abgefragt; einmal lesen und weiterreichen. (MainWindow.swift:872, 876)
 
 
 ### Code
 
-101. [Code] **MainWindow.swift ist zu groß (1716 Zeilen).** `CostsSheet`/`SavingShare`/`SavingCard`, `Row`/`AgentChips`, `Setup`/`RenderKeySetup` und die Hinweise in eigene Dateien; der Typprüfer braucht heute Tricks („in drei Teile geteilt“). (MainWindow.swift:215, 1043–1716)
+101. ◐ [Code] **MainWindow.swift ist zu groß (1716 Zeilen).** `CostsSheet`/`SavingShare`/`SavingCard`, `Row`/`AgentChips`, `Setup`/`RenderKeySetup` und die Hinweise in eigene Dateien; der Typprüfer braucht heute Tricks („in drei Teile geteilt“). (MainWindow.swift:215, 1043–1716)
 102. [Code] **Die Einrichtung ist fest auf Vercel und Render verdrahtet.** `setupNeeded` und die Einrichtungs-Bildschirme kennen nur zwei Plattformen; die Prüfung sollte aus `deploys doctor` je Provider kommen, damit neue Provider ohne App-Änderung erscheinen. (MainWindow.swift:690–700, 781–794)
 103. [Code] **`Platform` mit zwei Fällen blockiert neue Provider.** Das Fenster nutzt zugleich Provider-IDs (Strings) und `Platform`; solange `Platform` nur Vercel und Render kennt, bleibt jeder weitere Provider „kommt bald“. (Model.swift:11–15; MainWindow.swift:125)
-104. [Code] **Pfade zu den Einstellungen stehen als freier Text.** „Einstellungen → Team“ und „→ Ausgeblendete Projekte“ sind an fünf Stellen verteilt; aus dem Tab-Enum erzeugen, dann bleiben sie beim Umbau richtig. (MainWindow.swift:816, 833, 968–971; Store.swift:675)
-105. [Code] **Test für die Verweise auf Tabs.** Ein kleiner Test prüft, dass jeder `settingsTab`-Wert, der irgendwo gesetzt wird, ein existierender Tab ist. (App.swift:37; Store.swift:209)
+104. ◐ [Code] **Pfade zu den Einstellungen stehen als freier Text.** „Einstellungen → Team“ und „→ Ausgeblendete Projekte“ sind an fünf Stellen verteilt; aus dem Tab-Enum erzeugen, dann bleiben sie beim Umbau richtig. (MainWindow.swift:816, 833, 968–971; Store.swift:675)
+105. ✅ [Code] **Test für die Verweise auf Tabs.** Ein kleiner Test prüft, dass jeder `settingsTab`-Wert, der irgendwo gesetzt wird, ein existierender Tab ist. (App.swift:37; Store.swift:209)
 106. [Code] **„Fokus weg“ per `makeFirstResponder(nil)` nach 200 ms.** Mit `.defaultFocus` bzw. `@FocusState` beim Start ohne Wartezeit lösen. (MainWindow.swift:319–321)
 
 
@@ -217,7 +217,7 @@ In den Abschnitten 1–7: ✅ = gebaut, ◐ = teilweise (Branch `fix/welle-2`). 
 
 ### Kosten-Sheet
 
-123. [UX] **Kosten-Sheet mit „Budget“.** Ist ein Monatsbudget gesetzt, eine Linie im Diagramm und „noch … $ bis Monatsende“. (MainWindow.swift:1097–1130)
+123. ✅ [UX] **Kosten-Sheet mit „Budget“.** Ist ein Monatsbudget gesetzt, eine Linie im Diagramm und „noch … $ bis Monatsende“. (MainWindow.swift:1097–1130)
 124. ✅ [UX] **Den angebrochenen Tag im Diagramm kennzeichnen.** Den heutigen Balken heller und als „bisher“ markieren, damit er nicht wie ein billiger Tag aussieht. (MainWindow.swift:1099–1102)
 
 

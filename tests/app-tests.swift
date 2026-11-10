@@ -877,5 +877,56 @@ do {
 // Messages carry the project they are about.
 expect("message: project key kept", Store.Message(date: Date(), text: "x", ok: false, project: "vercel/app").project ?? "", "vercel/app")
 
+// Settings paths in texts come from the tab, so a renamed tab changes them too.
+expect("settings path: names the tab", SettingsTab.team.path.hasSuffix("→ " + SettingsTab.team.title), true)
+expect("settings path: every tab has one", SettingsTab.allCases.allSatisfy { $0.path.contains(" → ") && !$0.title.isEmpty }, true)
+expect("settings tab: every tab survives its stored value", SettingsTab.allCases.allSatisfy { SettingsTab.resolve($0.rawValue) == $0 }, true)
+// Every settings link written anywhere in the sources names a tab that exists (a typo would open General).
+do {
+    let re = try! NSRegularExpression(pattern: #"deploycenter://settings(?:/|\?tab=)([A-Za-z]+)"#)
+    var bad: [String] = [], found = 0
+    let fm = FileManager.default
+    for dir in ["app", "shared", "ios", "widgets", "lib", "integrations", "scripts"] {
+        guard let e = fm.enumerator(atPath: dir) else { continue }
+        for case let f as String in e where [".swift", ".sh", ".js", ".ts", ".py", ".md"].contains(where: { f.hasSuffix($0) }) {
+            guard let text = try? String(contentsOfFile: dir + "/" + f, encoding: .utf8) else { continue }
+            for m in re.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let r = Range(m.range(at: 1), in: text) else { continue }
+                found += 1
+                let name = text[r].lowercased()
+                if SettingsTab(rawValue: name) == nil { bad.append("\(dir)/\(f): \(name)") }
+            }
+        }
+    }
+    for f in ["deploys"] {
+        guard let text = try? String(contentsOfFile: f, encoding: .utf8) else { continue }
+        for m in re.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let r = Range(m.range(at: 1), in: text) else { continue }
+            found += 1
+            if SettingsTab(rawValue: text[r].lowercased()) == nil { bad.append("\(f): \(text[r])") }
+        }
+    }
+    expect("settings links: some are found", found > 0, true)
+    expect("settings links: each names a tab", bad, [String]())
+}
+
+// The costs sheet's budget sentence and the days of a month (UTC, like the billing data).
+expect("costs: days in November", CostsSheet.daysInMonth("2026-11-10"), 30)
+expect("costs: days in a leap February", CostsSheet.daysInMonth("2028-02-03"), 29)
+expect("costs: unreadable day counts 30", CostsSheet.daysInMonth("soon"), 30)
+let monthDays = (1...10).map { Costs.Day(day: String(format: "2026-11-%02d", $0), total: 2, build: 2) }
+expect("budget line: none without a budget", CostsSheet.budgetLine(budget: 0, days: monthDays, today: "2026-11-10") == nil, true)
+expect("budget line: left until month end", CostsSheet.budgetLine(budget: 50, days: monthDays, today: "2026-11-10")?.over == false, true)
+expect("budget line: left names the rest", CostsSheet.budgetLine(budget: 50, days: monthDays, today: "2026-11-10")?.text.contains("30") ?? false, true)
+expect("budget line: over this month", CostsSheet.budgetLine(budget: 10, days: monthDays, today: "2026-11-10")?.over == true, true)
+let lateDays = (15...28).map { Costs.Day(day: "2026-11-\($0)", total: 4, build: 4) }
+expect("budget line: without the 1st the pace counts", CostsSheet.budgetLine(budget: 100, days: lateDays, today: "2026-11-28")?.over == true, true)
+expect("budget line: pace under the budget", CostsSheet.budgetLine(budget: 500, days: lateDays, today: "2026-11-28")?.over == false, true)
+expect("budget line: nothing without whole days", CostsSheet.budgetLine(budget: 100, days: [], today: "2026-11-28") == nil, true)
+
+// The deploy question lists the ones that are already up to date.
+expect("confirm: up-to-date ones named", DeployConfirm.unchangedNote([item(changed: false, last: "a", head: "a")]).isEmpty, false)
+expect("confirm: nothing when all wait", DeployConfirm.unchangedNote([item(changed: true)]), "")
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
