@@ -244,5 +244,28 @@ Tool.killTree(tree.processIdentifier)
 _ = treeOut.fileHandleForReading.readDataToEndOfFile()   // returns only once every child is gone
 expect("killTree closes the pipe at once", Date().timeIntervalSince(t0) < 3, true)
 
+// Processes and the queue.
+expect("short errors stay", Tool.shorten("no key"), "no key")
+expect("long errors keep the end", Tool.shorten(String(repeating: "x", count: 500) + "CAUSE").hasSuffix("CAUSE"), true)
+expect("long errors are cut", Tool.shorten(String(repeating: "x", count: 500)).count, 302)
+MainActor.assumeIsolated {
+    let st = Store()
+    let a = item(changed: true, commits: 2, prs: 1, repo: "me/a")
+    var b = Item(id: "b", name: "b", detail: "", platform: .vercel, deployable: false, auto: false, note: nil, link: nil)
+    b.changed = true; b.pendingPRs = 5; b.repo = "me/b"
+    var c = Item(id: "c", name: "c", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil)
+    c.changed = true; c.pendingPRs = 7; c.repo = "me/c"
+    st.items[.vercel] = [a, b, c]
+    st.togglePin(c); st.togglePin(c)   // pins untouched
+    st.toggleHidden(c)
+    expect("waiting skips hidden and undeployable", "\(st.waiting.projects) \(st.waiting.prs)", "1 1")
+    st.toggleHidden(c); UserDefaults.standard.removeObject(forKey: "hidden"); UserDefaults.standard.removeObject(forKey: "pinned")
+
+    let undo = Store.Toast(text: "hidden", ok: true, undoLabel: "Undo", undo: {})
+    st.show(undo)
+    st.show(Store.Toast(text: "other", ok: true))
+    expect("undo toast is not pushed away", st.toast?.text ?? "nil", "hidden")
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
