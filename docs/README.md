@@ -9,6 +9,7 @@
 | [GLOSSARY.md](GLOSSARY.md) | Ignored Build Step, preview, Blueprint and other words |
 | [NUMBERS.md](NUMBERS.md) | How commits and PRs waiting are counted |
 | [AUTOFIX.md](AUTOFIX.md) | A failed build handed to a Claude Code routine, the fix deployed after you merge |
+| [CLAUDE-CODE.md](CLAUDE-CODE.md) | Using Deploy Center with Claude Code: the plugin, a CLAUDE.md block, the safety model |
 | [UNINSTALL.md](UNINSTALL.md) | Removing the app, the key and everything it kept |
 | [../examples/](../examples/) | Deploying without a Mac (CI) |
 

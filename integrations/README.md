@@ -9,6 +9,7 @@ workflow sets `deploy: true`. Auto-deploy stays off: nothing here deploys unless
 | [hooks/](hooks/) | A git `pre-push` hook. It warns how many builds a push would start on projects that still deploy on push. |
 | [badge/](badge/) | An SVG badge per project, for example `deployed · 3 d ago · 4 commits waiting`. No server needed. |
 | [notify/](notify/) | A daily summary ("live today / waiting") sent to one webhook: Discord, Slack-compatible, ntfy or Telegram. |
+| [claude-code/](claude-code/) | A Claude Code plugin: a skill, `/deploys-*` commands, and a read-only reminder after `git push`. It deploys only after you say yes. Install: `/plugin marketplace add Pschmetzer/deploy-center`, then `/plugin install deploy-center@deploy-center`. See [docs/CLAUDE-CODE.md](../docs/CLAUDE-CODE.md). |
 | [docker/](docker/) | A Linux image with `deploys` and its tools, for CI. |
 | [VERIFY.md](VERIFY.md) | How to check a release: SHA-256, `codesign`, `spctl`. |
 
