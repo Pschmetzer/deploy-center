@@ -51,8 +51,5 @@ if [ -f integrations/mcp/package-lock.json ]; then
   jq --arg v "$new" '.version = $v | .packages[""].version = $v' integrations/mcp/package-lock.json > integrations/mcp/package-lock.json.new \
     && mv integrations/mcp/package-lock.json.new integrations/mcp/package-lock.json
 fi
-if [ -f integrations/mcp/server.mjs ]; then
-  grep -q '^const VERSION = "[0-9.]*";' integrations/mcp/server.mjs || die "integrations/mcp/server.mjs has no VERSION line"
-  sed -i.bak -e "s/^const VERSION = \"[0-9.]*\";/const VERSION = \"$new\";/" integrations/mcp/server.mjs && rm -f integrations/mcp/server.mjs.bak
-fi
+# server.mjs reads its version from package.json; nothing to set there.
 echo "VERSION $cur -> $new; CHANGELOG.md has \"## $new\" now, site/index.html, the MCP server and the Claude Code plugin too. Check: git diff"

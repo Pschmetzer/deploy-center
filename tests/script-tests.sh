@@ -1196,11 +1196,11 @@ printf '# Changes\n\n## Unreleased\n\n- a fix\n\n## 1.2.3\n' > "$bp/CHANGELOG.md
 printf '<p>Version 1.2.3 · x</p>\n{"softwareVersion": "1.2.3"}\n' > "$bp/site/index.html"
 printf '{\n  "name": "deploys-mcp",\n  "version": "1.2.3",\n  "dependencies": { "x": "1.2.3" }\n}\n' > "$bp/integrations/mcp/package.json"
 printf '{"name":"deploys-mcp","version":"1.2.3","packages":{"":{"version":"1.2.3"},"node_modules/x":{"version":"1.2.3"}}}\n' > "$bp/integrations/mcp/package-lock.json"
-printf 'const VERSION = "1.2.3";\n' > "$bp/integrations/mcp/server.mjs"
+printf 'const VERSION = JSON.parse(readFileSync(new URL("./package.json", import.meta.url))).version;\n' > "$bp/integrations/mcp/server.mjs"
 printf '{\n  "name": "deploys",\n  "version": "1.2.3"\n}\n' > "$bp/integrations/claude-code/.claude-plugin/plugin.json"
 bash "$bp/scripts/bump.sh" minor >/dev/null 2>&1
-expect "bump: VERSION, site, MCP and plugin versions" "$(cat "$bp/VERSION") $(grep -c '1.3.0' "$bp/site/index.html") $(jq -r .version "$bp/integrations/mcp/package.json") $(jq -r '.version, .packages[""].version' "$bp/integrations/mcp/package-lock.json" | tr '\n' ' ')$(grep -c '"1.3.0"' "$bp/integrations/mcp/server.mjs") $(jq -r .version "$bp/integrations/claude-code/.claude-plugin/plugin.json")" \
-  "1.3.0 2 1.3.0 1.3.0 1.3.0 1 1.3.0"
+expect "bump: VERSION, site, MCP and plugin versions" "$(cat "$bp/VERSION") $(grep -c '1.3.0' "$bp/site/index.html") $(jq -r .version "$bp/integrations/mcp/package.json") $(jq -r '.version, .packages[""].version' "$bp/integrations/mcp/package-lock.json" | tr '\n' ' ')$(jq -r .version "$bp/integrations/claude-code/.claude-plugin/plugin.json")" \
+  "1.3.0 2 1.3.0 1.3.0 1.3.0 1.3.0"
 expect "bump: dependency versions stay" "$(jq -r .dependencies.x "$bp/integrations/mcp/package.json") $(jq -r '.packages["node_modules/x"].version' "$bp/integrations/mcp/package-lock.json")" "1.2.3 1.2.3"
 printf '<p>Version 9.9.9 · x</p>\n' > "$bp/site/index.html"
 printf -- '- more\n' >> "$bp/CHANGELOG.md"
