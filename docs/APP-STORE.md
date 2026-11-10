@@ -59,11 +59,9 @@ behind the app are in `docs/WIDGETS-IOS.md`.
    - App Privacy: privacy policy URL set, "Data Not Collected" published.
    - Content Rights: "Yes, it accesses third-party content, and I have the necessary rights" (the
      person's own Vercel, Render and GitHub data, read with their own tokens).
-   - Review notes and contact name and email are entered on the version page.
+   - Review notes and the review contact are saved. Nothing blocks "Add for Review" any more.
 
    Still open, for the owner:
-   - Version page → App Review: the contact phone number, then **Save**. The page saves nothing
-     without it.
    - TestFlight: the internal group "Owner" has build 1.0 (1), and the account holder is invited.
      Accept the invite in the TestFlight app, add a real token, then submit.
 
