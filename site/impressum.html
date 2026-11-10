@@ -6,19 +6,18 @@
 <title>Impressum · Deploy Center</title>
 <meta name="robots" content="noindex">
 <link rel="canonical" href="https://deploycenter.app/impressum.html">
-<link rel="icon" href="img/icon.png">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="stylesheet" href="site.css">
 <style>
-:root{--bg:#0b0d12;--card:#151924;--line:#232838;--text:#e9ecf3;--muted:#9aa3b5;--accent:#4f7cff}
-@media (prefers-color-scheme: light){:root{--bg:#fbfbfd;--card:#fff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:17px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
-a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+body{line-height:1.6}
 .wrap{max-width:760px;margin:0 auto;padding:0 20px}
 nav{border-bottom:1px solid var(--line)}
 nav .wrap{display:flex;align-items:center;gap:10px;height:56px}
 nav img{width:26px;height:26px;border-radius:7px}
 nav a{color:var(--text);font-weight:650;display:flex;align-items:center;gap:10px}
-h1{font-size:40px;letter-spacing:-.02em;margin:56px 0 6px}
+h1{font-size:clamp(30px,8vw,40px);letter-spacing:-.02em;margin:56px 0 6px;hyphens:auto;overflow-wrap:break-word}
 .lead{color:var(--muted);margin:0 0 36px}
 section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:14px}
 h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px}
@@ -27,8 +26,9 @@ footer{color:var(--muted);font-size:14px;padding:40px 0 60px}
 </style>
 </head>
 <body>
-<nav><div class="wrap"><a href="./"><img src="img/icon.png" alt="">Deploy Center</a></div></nav>
-<main class="wrap">
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav><div class="wrap"><a href="./"><img src="img/icon-64.png" width="26" height="26" alt="">Deploy Center</a></div></nav>
+<main class="wrap" id="main" tabindex="-1">
   <h1>Impressum</h1>
   <p class="lead">Anbieterkennzeichnung: Angaben gemäß § 5 Digitale-Dienste-Gesetz (DDG)</p>
 

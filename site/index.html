@@ -15,37 +15,26 @@
 <meta property="og:title" content="Deploy Center: stop paying for a build on every push">
 <meta property="og:description" content="Turn off auto-deploy on Vercel and Render in one click. Deploy what changed in two. Free and open source for macOS.">
 <meta property="og:url" content="https://deploycenter.app/">
-<meta property="og:image" content="https://deploycenter.app/img/og.png">
-<meta property="og:image:type" content="image/png">
+<meta property="og:image" content="https://deploycenter.app/img/og.jpg">
+<meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Deploy Center: stop paying for a build on every push">
 <meta name="twitter:description" content="Turn off auto-deploy on Vercel and Render in one click. Deploy what changed in two. Free and open source for macOS.">
-<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.jpg">
 <meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="manifest" href="site.webmanifest">
+<link rel="stylesheet" href="site.css">
 <script type="application/ld+json">
-[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Deploy Center", "description": "Free, open-source Mac app that turns off auto-deploy on Vercel and Render and deploys what changed when you decide.", "operatingSystem": "macOS 15 or later", "applicationCategory": "DeveloperApplication", "softwareVersion": "0.7.0", "image": "https://deploycenter.app/img/og.png", "screenshot": "https://deploycenter.app/img/app.png", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/licenses/MIT", "url": "https://deploycenter.app/", "downloadUrl": "https://github.com/Pschmetzer/deploy-center/releases/latest", "releaseNotes": "https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md", "codeRepository": "https://github.com/Pschmetzer/deploy-center"}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Is it really free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. MIT license, no paid tier, no account. The code is on GitHub."}}, {"@type": "Question", "name": "Does my data go anywhere?", "acceptedAnswer": {"@type": "Answer", "text": "No server of ours. The app talks to Vercel and Render with your own logins, to GitHub through gh, and once a day to GitHub's release page to look for updates (you can turn that off). No telemetry."}}, {"@type": "Question", "name": "What do I lose without auto-deploy?", "acceptedAnswer": {"@type": "Answer", "text": "Automatic deploys and automatic preview builds per pull request. You have to remember to deploy; the menu bar count and an optional daily reminder help. Preview deploys can still be started by hand."}}, {"@type": "Question", "name": "Can I go back?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Reconnect the repository in the Vercel dashboard, or set auto-deploy to On Commit in Render. Deploy Center remembers each Vercel repo before it disconnects it."}}, {"@type": "Question", "name": "Netlify, Cloudflare Pages, Railway, Fly?", "acceptedAnswer": {"@type": "Answer", "text": "Vercel and Render. Netlify cannot start a build while its builds are stopped, and Cloudflare Pages limits the number of builds instead of charging for each one, so neither is planned. Issues with other ideas are welcome."}}, {"@type": "Question", "name": "Windows or Linux?", "acceptedAnswer": {"@type": "Answer", "text": "The app is macOS only. The deploys script is bash and runs on Linux and in CI."}}]}]
+[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Deploy Center", "description": "Free, open-source Mac app that turns off auto-deploy on Vercel and Render and deploys what changed when you decide.", "operatingSystem": "macOS 15 or later", "applicationCategory": "DeveloperApplication", "softwareVersion": "0.7.0", "image": "https://deploycenter.app/img/og.jpg", "screenshot": "https://deploycenter.app/img/app.png", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/licenses/MIT", "url": "https://deploycenter.app/", "downloadUrl": "https://github.com/Pschmetzer/deploy-center/releases/latest", "releaseNotes": "https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md", "codeRepository": "https://github.com/Pschmetzer/deploy-center"}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Is it really free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. MIT license, no paid tier, no account. The code is on GitHub."}}, {"@type": "Question", "name": "Does my data go anywhere?", "acceptedAnswer": {"@type": "Answer", "text": "No server of ours. The app talks to Vercel and Render with your own logins, to GitHub through gh, and once a day to GitHub's release page to look for updates (you can turn that off). When you install an update, the app downloads it from GitHub. No telemetry."}}, {"@type": "Question", "name": "What do I lose without auto-deploy?", "acceptedAnswer": {"@type": "Answer", "text": "Automatic deploys and automatic preview builds per pull request. You have to remember to deploy; the menu bar count and an optional daily reminder help. Preview deploys can still be started by hand."}}, {"@type": "Question", "name": "Can I go back?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Reconnect the repository in the Vercel dashboard, or set auto-deploy to On Commit in Render. Deploy Center remembers each Vercel repo before it disconnects it. Turning auto-deploy off does not touch your domains, environment variables or existing deployments, and preview deploys can still be started by hand."}}, {"@type": "Question", "name": "Netlify, Cloudflare Pages, Railway, Fly?", "acceptedAnswer": {"@type": "Answer", "text": "Vercel and Render. Netlify cannot start a build while its builds are stopped, and Cloudflare Pages limits the number of builds instead of charging for each one, so neither is planned. Issues with other ideas are welcome."}}, {"@type": "Question", "name": "Windows or Linux?", "acceptedAnswer": {"@type": "Answer", "text": "The app is macOS only. The deploys script is bash and runs on Linux and in CI."}}]}]
 </script>
 <style>
-:root{color-scheme:dark;
-  --bg:#0b0d12; --bg2:#11141b; --card:#151924; --line:#232838; --text:#e9ecf3; --muted:#9aa3b5;
-  --accent:#4f7cff; --accent2:#8b5cf6; --green:#34c759; --red:#ff5f57; --orange:#ff9f0a;
-  --radius:16px; --max:1120px;
-}
-@media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475;--accent:#2f5fe0;--green:#1a7f37;--red:#c9302c}
-}
-*{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--text);font:17px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
-a{color:var(--accent);text-decoration:none}
-a:hover{text-decoration:underline}
 .wrap{max-width:var(--max);margin:0 auto;padding:0 20px}
 nav{position:sticky;top:0;z-index:10;backdrop-filter:saturate(180%) blur(16px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--line)}
 nav .wrap{display:flex;align-items:center;gap:20px;height:56px}
@@ -118,7 +107,10 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .result .big{font-size:clamp(44px,7vw,68px);font-weight:750;letter-spacing:-.03em;color:var(--green);font-variant-numeric:tabular-nums;line-height:1}
 .result .row{display:flex;justify-content:space-between;font-size:15px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;margin-top:10px}
 .result .row b{color:var(--text);font-variant-numeric:tabular-nums}
-.share{margin-top:18px}
+.result p.hint{font-size:13px;margin:14px 0 0}
+.share{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center}
+.share .hint{width:100%;margin:0}
+.btn.sm{padding:8px 14px;font-size:14px;border-radius:10px;cursor:pointer;font-family:inherit}
 /* terminal */
 .term{background:#0a0c10;border:1px solid #232838;border-radius:14px;overflow:hidden;color:#d7dbe6;font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace}
 .term .bar{display:flex;gap:7px;padding:12px 14px;background:#141821;border-bottom:1px solid #232838}
@@ -147,13 +139,8 @@ details p{color:var(--muted);margin:12px 0 0}
 .final{text-align:center;padding:100px 0}
 footer{border-top:1px solid var(--line);padding:30px 0;color:var(--muted);font-size:14px}
 footer .wrap{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between}
-code{font:.9em ui-monospace,Menlo,monospace;background:var(--card);border:1px solid var(--line);padding:1px 6px;border-radius:6px}
 /* accessibility */
-.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.skip{position:absolute;left:12px;top:-60px;z-index:20;background:var(--card);color:var(--text);border:1px solid var(--line);padding:10px 14px;border-radius:10px;font-weight:600}
-.skip:focus{top:10px}
-a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,.btn:focus-visible{outline:3px solid var(--accent);outline-offset:3px;border-radius:8px}
-input[type=range]:focus-visible{outline-offset:6px}
+.btn:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
 .anim-ctl{all:unset;cursor:pointer;font-size:14px;color:var(--muted);border:1px solid var(--line);background:var(--card);padding:6px 12px;border-radius:999px;margin-bottom:16px;display:inline-block}
 .anim-ctl:hover{color:var(--text)}
 nav .links a.dl{color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2));padding:6px 12px;border-radius:999px;font-weight:600}
@@ -170,7 +157,7 @@ td .mk{font-weight:700;margin-right:6px}
 
 <a class="skip" href="#main">Skip to content</a>
 <nav aria-label="Main"><div class="wrap">
-  <a class="brand" href="#top" aria-label="Deploy Center, back to top"><img src="img/icon.png" alt="">Deploy Center</a>
+  <a class="brand" href="#top" aria-label="Deploy Center, back to top"><img src="img/icon-64.png" width="26" height="26" alt="">Deploy Center</a>
   <div class="links">
     <a href="#how">How it works</a>
     <a href="#calc">Calculator</a>
@@ -183,7 +170,7 @@ td .mk{font-weight:700;margin-right:6px}
 
 <main id="main" tabindex="-1">
 <header class="hero" id="top"><div class="wrap">
-  <span class="pill"><b>●</b> Free · open source · MIT · for macOS 15+</span>
+  <span class="pill"><b>●</b> Free · open source · macOS 15+ · Universal</span>
   <h1>Stop paying for a build on <span class="strike">every push</span>.<br>Pay for what you ship.</h1>
   <p class="lead">Deploy Center turns off auto-deploy on <b>Vercel</b> and <b>Render</b> in one click, shows what is waiting to go live, and deploys it when <i>you</i> decide. One window for all your projects.</p>
   <div class="cta">
@@ -198,8 +185,11 @@ td .mk{font-weight:700;margin-right:6px}
   <p class="small mailme">On your phone? <a href="mailto:?subject=Deploy%20Center%20for%20Mac&amp;body=Download%20later%20on%20the%20Mac%3A%20https%3A%2F%2Fdeploycenter.app%2F">Email yourself the link</a> for later on your Mac.</p>
   <p class="small" id="version">Version 0.7.0 · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">What’s new</a> · <a href="https://github.com/Pschmetzer/deploy-center/releases">All releases</a></p>
   <p class="small">Signed and notarized by Apple · no account · no telemetry · not affiliated with Vercel or Render</p>
-  <figure class="shot"><img src="img/app.png" width="1800" height="1144" alt="The Deploy Center window: projects on Vercel and Render with the commits and pull requests waiting to go live, and a chart of the last 7 days of build costs" loading="eager"></figure>
-  <p class="caption">The real app with the author's real build bill: $99 in a week. Project names are hidden by demo mode.</p>
+  <figure class="shot"><picture>
+    <source type="image/avif" srcset="img/app-900.avif 900w, img/app-1800.avif 1800w" sizes="(max-width:1040px) calc(100vw - 40px), 1000px">
+    <source type="image/webp" srcset="img/app-900.webp 900w, img/app-1800.webp 1800w" sizes="(max-width:1040px) calc(100vw - 40px), 1000px">
+    <img src="img/app.png" width="1800" height="1144" fetchpriority="high" decoding="async" alt="The Deploy Center window: projects on Vercel and Render with the commits and pull requests waiting to go live, and a chart of the last 7 days of build costs" loading="eager"></picture></figure>
+  <p class="caption">The real app with the author's real Vercel build bill: $99 in one week (Render is billed differently and not in that number). Project names are hidden by demo mode.</p>
 </div></header>
 
 <section class="alt" id="why"><div class="wrap">
@@ -255,9 +245,10 @@ td .mk{font-weight:700;margin-right:6px}
   <div class="calc">
     <div class="card">
       <div class="field"><label for="p">Projects connected to Git <output id="po"></output></label><input id="p" type="range" min="1" max="80" value="20"></div>
-      <div class="field"><label for="u">Pushes per project per working day <output id="uo"></output></label><input id="u" type="range" min="1" max="40" value="8"></div>
+      <div class="field"><label for="s">Share of projects pushed to on a working day <output id="so"></output></label><input id="s" type="range" min="5" max="100" step="5" value="50"><div class="hint">Not every project gets commits every day.</div></div>
+      <div class="field"><label for="u">Pushes per active project per day <output id="uo"></output></label><input id="u" type="range" min="1" max="40" value="8"></div>
       <div class="field"><label for="c">Average cost per build <output id="co"></output></label><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In cents. A few cents is typical for a small site; heavy builds cost more.</div></div>
-      <div class="field"><label for="d">Deploys by hand per project per day <output id="do"></output></label><input id="d" type="range" min="1" max="5" value="1"></div>
+      <div class="field"><label for="d">Deploys by hand per active project per day <output id="do"></output></label><input id="d" type="range" min="1" max="5" value="1"></div>
     </div>
     <div class="card result" aria-live="polite">
       <div class="hint">You would save about</div>
@@ -265,8 +256,17 @@ td .mk{font-weight:700;margin-right:6px}
       <div class="hint">a month (22 working days)</div>
       <div class="row"><span>With auto-deploy</span><b id="now">$0</b></div>
       <div class="row"><span>Deploying by hand</span><b id="after">$0</b></div>
-      <noscript><p class="hint">The calculator needs JavaScript. Rule of thumb: projects × pushes per day × cost per build × 22 working days is your monthly bill with auto-deploy; with one deploy a day per project, divide by your pushes per day.</p></noscript>
-      <div class="share"><a class="btn" id="tweet" target="_blank" rel="noopener">Share your number <span aria-hidden="true">↗</span><span class="sr-only">(opens in a new tab)</span></a></div>
+      <p class="hint" id="assume">Assumes every push builds and every build costs the same. Free build minutes in your plan are ignored, so treat it as an upper bound.</p>
+      <noscript><p class="hint">The calculator needs JavaScript. Rule of thumb: active projects × pushes per day × cost per build × 22 working days is your monthly bill with auto-deploy; with one deploy a day per project, divide by your pushes per day.</p></noscript>
+      <div class="share" role="group" aria-label="Share your number">
+        <span class="hint">Share your number:</span>
+        <a class="btn sm" id="sh-x" target="_blank" rel="noopener">X <span aria-hidden="true">↗</span><span class="sr-only">(opens in a new tab)</span></a>
+        <a class="btn sm" id="sh-bsky" target="_blank" rel="noopener">Bluesky <span aria-hidden="true">↗</span><span class="sr-only">(opens in a new tab)</span></a>
+        <a class="btn sm" id="sh-li" target="_blank" rel="noopener">LinkedIn <span aria-hidden="true">↗</span><span class="sr-only">(opens in a new tab)</span></a>
+        <button type="button" class="btn sm" id="sh-copy">Copy text</button>
+        <button type="button" class="btn sm" id="sh-native" hidden>More …</button>
+        <span class="sr-only" role="status" id="sh-status"></span>
+      </div>
     </div>
   </div>
 </div></section>
@@ -320,16 +320,16 @@ td .mk{font-weight:700;margin-right:6px}
 <section class="alt" id="faq"><div class="wrap" style="max-width:820px">
   <h2>Questions</h2>
   <details><summary>Is it really free?</summary><p>Yes. MIT license, no paid tier, no account. The code is on GitHub.</p></details>
-  <details><summary>Does my data go anywhere?</summary><p>No server of ours. The app talks to Vercel and Render with your own logins, to GitHub through <code>gh</code>, and once a day to GitHub's release page to look for updates (you can turn that off). No telemetry.</p></details>
+  <details><summary>Does my data go anywhere?</summary><p>No server of ours. The app talks to Vercel and Render with your own logins, to GitHub through <code>gh</code>, and once a day to GitHub's release page to look for updates (you can turn that off). When you install an update, the app downloads it from GitHub. No telemetry.</p></details>
   <details><summary>What do I lose without auto-deploy?</summary><p>Automatic deploys and automatic preview builds per pull request. You have to remember to deploy; the menu bar count and an optional daily reminder help. Preview deploys can still be started by hand.</p></details>
-  <details><summary>Can I go back?</summary><p>Yes. Reconnect the repository in the Vercel dashboard, or set auto-deploy to On Commit in Render. Deploy Center remembers each Vercel repo before it disconnects it.</p></details>
+  <details><summary>Can I go back?</summary><p>Yes. Reconnect the repository in the Vercel dashboard, or set auto-deploy to On Commit in Render. Deploy Center remembers each Vercel repo before it disconnects it. Turning auto-deploy off does not touch your domains, environment variables or existing deployments, and preview deploys can still be started by hand.</p></details>
   <details><summary>Netlify, Cloudflare Pages, Railway, Fly?</summary><p>Vercel and Render. Netlify cannot start a build while its builds are stopped, and Cloudflare Pages limits the number of builds instead of charging for each one, so neither is planned. Issues with other ideas are welcome.</p></details>
   <details><summary>Windows or Linux?</summary><p>The app is macOS only. The <code>deploys</code> script is bash and runs on Linux and in CI.</p></details>
 </div></section>
 
 <section class="final"><div class="wrap">
   <h2>Ship when you decide.</h2>
-  <p class="sub" style="margin:0 auto 28px">Free for macOS 15 and newer, Apple silicon and Intel.</p>
+  <p class="sub" style="margin:0 auto 28px">Free for macOS 15 and newer. Universal: runs natively on Apple silicon and Intel.</p>
   <div class="cta">
     <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a>
     <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
@@ -387,16 +387,25 @@ document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',(
   const $=id=>document.getElementById(id);
   const fmt=v=>'$'+Math.round(v).toLocaleString('en-US');
   function calc(){
-    const p=+$('p').value,u=+$('u').value,c=+$('c').value/100,d=+$('d').value;
-    $('po').textContent=p;$('uo').textContent=u;$('co').textContent='$'+c.toFixed(2);$('do').textContent=d;
-    $('p').setAttribute('aria-valuetext',p+(p==1?' project':' projects'));$('u').setAttribute('aria-valuetext',u+(u==1?' push':' pushes')+' per day');
+    const sh=+$('s').value/100,p=+$('p').value*sh,u=+$('u').value,c=+$('c').value/100,d=+$('d').value;
+    $('po').textContent=+$('p').value;$('so').textContent=Math.round(sh*100)+' %';$('s').setAttribute('aria-valuetext',Math.round(sh*100)+' percent');$('uo').textContent=u;$('co').textContent='$'+c.toFixed(2);$('do').textContent=d;
+    $('p').setAttribute('aria-valuetext',$('p').value+($('p').value==1?' project':' projects'));$('u').setAttribute('aria-valuetext',u+(u==1?' push':' pushes')+' per day');
     $('c').setAttribute('aria-valuetext','$'+c.toFixed(2)+' per build');$('d').setAttribute('aria-valuetext',d+(d==1?' deploy':' deploys')+' per day');
     const days=22, now=p*u*c*days, after=p*Math.min(d,u)*c*days, save=Math.max(0,now-after);
     $('now').textContent=fmt(now);$('after').textContent=fmt(after);$('save').textContent=fmt(save);
     const t=`Auto-deploy would cost me about ${fmt(now)}/month in builds. Deploying by hand: ${fmt(after)}. Calculated with Deploy Center`;
-    $('tweet').href='https://x.com/intent/post?text='+encodeURIComponent(t)+'&url='+encodeURIComponent('https://deploycenter.app/#calc');
+    const url='https://deploycenter.app/#calc';shareText=t+' '+url;
+    $('sh-x').href='https://x.com/intent/post?text='+encodeURIComponent(t)+'&url='+encodeURIComponent(url);
+    $('sh-bsky').href='https://bsky.app/intent/compose?text='+encodeURIComponent(shareText);
+    $('sh-li').href='https://www.linkedin.com/sharing/share-offsite/?url='+encodeURIComponent(url);
   }
-  ['p','u','c','d'].forEach(id=>$(id).addEventListener('input',calc));calc();
+  let shareText='';
+  const say=m=>{$('sh-status').textContent=m;setTimeout(()=>$('sh-status').textContent='',2500)};
+  $('sh-copy').addEventListener('click',()=>{const b=$('sh-copy');
+    const ok=()=>{b.textContent='Copied';say('Text copied to the clipboard.');setTimeout(()=>b.textContent='Copy text',1500)};
+    if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(shareText).then(ok,()=>say('Copying failed.'));else say('Copying needs a secure connection.')});
+  if(navigator.share){$('sh-native').hidden=false;$('sh-native').addEventListener('click',()=>navigator.share({text:shareText}).catch(()=>{}))}
+  ['s','p','u','c','d'].forEach(id=>$(id).addEventListener('input',calc));calc();
 })();
 </script>
 </body>

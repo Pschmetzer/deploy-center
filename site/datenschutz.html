@@ -6,19 +6,18 @@
 <title>Datenschutz · Deploy Center</title>
 <meta name="robots" content="noindex">
 <link rel="canonical" href="https://deploycenter.app/datenschutz.html">
-<link rel="icon" href="img/icon.png">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="stylesheet" href="site.css">
 <style>
-:root{--bg:#0b0d12;--card:#151924;--line:#232838;--text:#e9ecf3;--muted:#9aa3b5;--accent:#4f7cff}
-@media (prefers-color-scheme: light){:root{--bg:#fbfbfd;--card:#fff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:17px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
-a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+body{line-height:1.6}
 .wrap{max-width:760px;margin:0 auto;padding:0 20px}
 nav{border-bottom:1px solid var(--line)}
 nav .wrap{display:flex;align-items:center;gap:10px;height:56px}
 nav img{width:26px;height:26px;border-radius:7px}
 nav a{color:var(--text);font-weight:650;display:flex;align-items:center;gap:10px}
-h1{font-size:40px;letter-spacing:-.02em;margin:56px 0 6px}
+h1{font-size:clamp(30px,8vw,40px);letter-spacing:-.02em;margin:56px 0 6px;hyphens:auto;overflow-wrap:break-word}
 .lead{color:var(--muted);margin:0 0 36px}
 section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:14px}
 h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px}
@@ -27,8 +26,9 @@ code{font:.9em ui-monospace,Menlo,monospace}footer{color:var(--muted);font-size:
 </style>
 </head>
 <body>
-<nav><div class="wrap"><a href="./"><img src="img/icon.png" alt="">Deploy Center</a></div></nav>
-<main class="wrap">
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav><div class="wrap"><a href="./"><img src="img/icon-64.png" width="26" height="26" alt="">Deploy Center</a></div></nav>
+<main class="wrap" id="main" tabindex="-1">
   <h1>Datenschutzerklärung</h1>
   <p class="lead">Stand: 10. November 2026. Diese Erklärung gilt für die Website deploycenter.app und für die App Deploy Center.</p>
 
@@ -45,11 +45,11 @@ code{font:.9em ui-monospace,Menlo,monospace}footer{color:var(--muted);font-size:
     <p>Das ist nötig, um die Seite sicher und stabil auszuliefern und Angriffe abzuwehren. Rechtsgrundlage ist unser berechtigtes Interesse nach Art. 6 Abs. 1 lit. f DSGVO. Wir selbst sehen diese Daten nicht und werten sie nicht aus.</p>
     <p>Dabei können Daten in die USA übertragen werden. GitHub stützt solche Übermittlungen nach eigenen Angaben auf das EU-US Data Privacy Framework und auf Standardvertragsklauseln. Näheres: <a href="https://docs.github.com/de/site-policy/privacy-policies/github-general-privacy-statement">Datenschutzerklärung von GitHub</a>.</p></section>
 
-  <section><h2>Links zu GitHub und X</h2>
-    <p>Die Seite verlinkt auf GitHub (Download, Quellcode, Issues). Der Knopf „Share your number“ im Kostenrechner öffnet X (x.com) mit einem vorbereiteten Text. Erst wenn Sie einen solchen Link anklicken, werden Daten an den jeweiligen Anbieter übertragen; dort gilt dessen Datenschutzerklärung. Die Werte im Kostenrechner werden nur in Ihrem Browser berechnet und nirgendwohin gesendet, außer Sie teilen sie selbst.</p></section>
+  <section><h2>Links zu GitHub, X, Bluesky und LinkedIn</h2>
+    <p>Die Seite verlinkt auf GitHub (Download, Quellcode, Issues). Die Teilen-Knöpfe im Kostenrechner öffnen X (x.com), Bluesky (bsky.app) oder LinkedIn (linkedin.com) mit einem vorbereiteten Text bzw. Link; „Copy text“ kopiert den Text nur in Ihre Zwischenablage. Erst wenn Sie einen solchen Link anklicken, werden Daten an den jeweiligen Anbieter übertragen; dort gilt dessen Datenschutzerklärung. Die Werte im Kostenrechner werden nur in Ihrem Browser berechnet und nirgendwohin gesendet, außer Sie teilen sie selbst.</p></section>
 
   <section><h2>Die App Deploy Center</h2>
-    <p>Die App sendet keine Telemetrie und hat kein Konto bei uns; es gibt keinen Server von uns. Sie spricht mit Ihren eigenen Zugängen direkt mit Vercel, Render und GitHub, ruft für Logos und die Prüfung nach einem Deploy Ihre eigenen Websites auf und fragt einmal am Tag die Release-Seite auf GitHub ab, ob es eine neue Version gibt (in den Einstellungen abschaltbar). Ihr Render-API-Key liegt nur im Schlüsselbund Ihres Macs. Fehler werden nur lokal in <code>~/Library/Logs/DeployCenter.log</code> gespeichert.</p></section>
+    <p>Die App sendet keine Telemetrie und hat kein Konto bei uns; es gibt keinen Server von uns. Sie spricht mit Ihren eigenen Zugängen direkt mit Vercel, Render und GitHub, ruft für Logos und die Prüfung nach einem Deploy Ihre eigenen Websites auf und fragt einmal am Tag die Release-Seite auf GitHub ab, ob es eine neue Version gibt (in den Einstellungen abschaltbar). Wenn Sie ein Update installieren, lädt die App es von GitHub herunter. Ihr Render-API-Key liegt nur im Schlüsselbund Ihres Macs. Fehler werden nur lokal in <code>~/Library/Logs/DeployCenter.log</code> gespeichert.</p></section>
 
   <section><h2>Kontakt per E-Mail</h2>
     <p>Wenn Sie uns schreiben, verarbeiten wir Ihre Angaben, um Ihre Anfrage zu beantworten (Art. 6 Abs. 1 lit. b oder f DSGVO), und löschen sie, wenn sie dafür nicht mehr nötig sind und keine Aufbewahrungspflicht besteht. Für Fehlermeldungen und Ideen können Sie auch die öffentlichen Issues auf GitHub nutzen; dort gilt die Datenschutzerklärung von GitHub.</p></section>
