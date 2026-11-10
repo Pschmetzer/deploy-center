@@ -11,7 +11,7 @@ fail() { echo "FAIL $1: $2"; fails=$((fails+1)); }
 expect() { [ "$2" = "$3" ] && ok "$1" || fail "$1" "expected [$3], got [$2]"; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-export DEPLOYS_CONFIG="$tmp/config" DEPLOYS_LIB=1
+export DEPLOYS_CONFIG="$tmp/config" DEPLOYS_LIB=1 DEPLOYS_TESTING=1
 # A stand-in for gh: commits, a comparison, open PRs, the rate limit.
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/gh" <<'GH'
@@ -182,6 +182,7 @@ case "$*" in
   "api /v1/projects/prj_web/rollback/dpl_prev"*POST*) echo '{}' ;;
   "api /v6/deployments?app=web"*) [ "${WSTUB:-}" = down ] && exit 1; echo '{"deployments":[{"uid":"dpl_old","state":"READY","created":1767225600000,"target":"production"}]}' ;;
   "api /v6/deployments"*) echo '{"deployments":[]}' ;;
+  "api /v1/billing"*) [ -n "${BILL:-}" ] || exit 1; echo "$BILL" ;;
   *) exit 1 ;;
 esac
 VC
@@ -237,6 +238,7 @@ case "$m $url" in
     if [ "$n" -le 2 ]; then printf '%s\n200' '[{"deploy":{"id":"dep-2","status":"build_in_progress"}}]'
     else printf '%s\n200' '[{"deploy":{"id":"dep-2","status":"live"}}]'; fi ;;
   "POST https://api.render.com/v1/services/srv-1/deploys") printf '%s\n201' '{"id":"dep-2","status":"created"}' ;;
+  "GET https://api.render.com/v1/services/srv-1/deploys/dep-2") printf '%s\n200' '{"id":"dep-2","status":"live"}' ;;
   # The site, as verify asks it (-o /dev/null -w '%{http_code}': only the status). SITE picks the answer.
   "GET https://web.example.test"*)
     case "${SITE:-ok}" in
@@ -244,6 +246,7 @@ case "$m $url" in
       gone) printf 000; exit 28 ;;
       notfound) printf 404 ;;
       flaky) n=$(( $(cat "$E2E/site" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$E2E/site"; [ "$n" = 1 ] && printf 502 || printf 200 ;;
+      pathy) case "${*: -1}" in */bad) printf 503 ;; */moved) printf 301 ;; *) printf 200 ;; esac ;;
       *) printf 200 ;;
     esac ;;
   "POST http://ai.test/v1/messages")   # deploys ai: keep the body it was given
@@ -449,6 +452,11 @@ expect "window: the reason is in the journal" "$(grep -c 'Deployed in the window
 fresh; : > "$DEPLOYS_JOURNAL"
 expect "window: render deploy --force journals once, not twice" "$(run "$O" "$E" render deploy api --force "db fix"; wc -l < "$DEPLOYS_JOURNAL" | tr -d ' ')" $'0\n1'
 expect "window: deploy <project> --force=… works too" "$(run "$O" "$E" deploy web --force="urgent" --json; jq -r .platform "$O")" $'0\nvercel'
+fresh
+expect "window: DEPLOYS_WINDOW_CHECKED from outside skips nothing (CLI-006)" \
+  "$(DEPLOYS_WINDOW_CHECKED=1 run "$O" "$E" deploy-changed --yes; started)" $'1\n0'
+expect "window: DEPLOYS_NOW counts only with DEPLOYS_TESTING=1 (CLI-006)" \
+  "$(DEPLOYS_TESTING=0 DEPLOYS_NOW='fri 14:00 2026-11-13' run "$O" "$E" window --json >/dev/null; jq -r .now "$O" | grep -c '^fri 14:00 2026-11-13$')" "0"
 echo '{"deny":' > "$e2e/config/window.json"; fresh
 expect "window: a broken window.json stops deploys" "$(run "$O" "$E" deploy-changed --yes; started)" $'1\n0'
 rm -f "$e2e/config/window.json"; unset DEPLOYS_NOW
@@ -475,6 +483,28 @@ expect "verify: --no-rollback only reports (exit 2)" "$(SITE=down run "$O" "$E" 
 fresh
 expect "verify: Ctrl-C in the countdown stops the rollback" \
   "$(SITE=down CANCEL=1 run "$O" "$E" verify web --json; jq -c '{rolledBack, cancelled}' "$O"; rolled)" $'2\n{"rolledBack":false,"cancelled":true}\n0'
+# FEA-033: the project's checks (overrides.json here, deploy-center.json in a repo) are each asked.
+echo '{"projects":{"web":{"checks":["/ok",{"path":"/moved","expect":"3xx"}]}}}' > "$e2e/config/overrides.json"; fresh
+expect "FEA-033: verify asks every check of the project" \
+  "$(SITE=pathy run "$O" "$E" verify web --json; jq -c '[.healthy, (.checks | map([.url, .healthy]))]' "$O"; rolled)" \
+  $'0\n[true,[["https://web.example.test/ok",true],["https://web.example.test/moved",true]]]\n0'
+echo '{"projects":{"web":{"checks":["/ok","/bad"]}}}' > "$e2e/config/overrides.json"; fresh
+expect "FEA-033: one failing check fails verify and names it" \
+  "$(SITE=pathy run "$O" "$E" verify web --no-rollback --json; jq -c '[.healthy, .url]' "$O"; rolled)" $'2\n[false,"https://web.example.test/bad"]\n0'
+fresh
+expect "FEA-033: --path wins over the checks" "$(SITE=pathy run "$O" "$E" verify web --path /ok --json; jq -c '.checks | length' "$O")" $'0\n1'
+# FEA-072: a group with checks asks each member once live; stopOnFail stops the rest.
+# api has no address here, so its check fails; web comes after it.
+echo '{"groups":{"pair":{"order":["api","web"],"checks":true,"stopOnFail":true}}}' > "$e2e/config/overrides.json"; fresh
+expect "FEA-072: a member failing its check stops the rest (stopOnFail)" \
+  "$(run "$O" "$E" deploy pair; started; grep -c 'stopOnFail' "$E"; rolled)" $'1\n1\n1\n0'
+echo '{"groups":{"pair":{"order":["api","web"],"checks":true}}}' > "$e2e/config/overrides.json"; fresh
+expect "FEA-072: without stopOnFail the group goes on" \
+  "$(run "$O" "$E" deploy pair >/dev/null; [ "$(started)" -ge 2 ] && echo both; grep -c 'the group goes on' "$E"; rolled)" $'both\n1\n0'
+echo '{"groups":{"pair":["api","web"]}}' > "$e2e/config/overrides.json"; fresh
+expect "FEA-072: a plain group asks no site" "$(run "$O" "$E" deploy pair >/dev/null; grep -c 'web.example.test' "$e2e/calls.log")" $'0'
+
+rm -f "$e2e/config/overrides.json"
 expect "verify: a wrong --rollback-after is refused" "$(run "$O" "$E" verify web --rollback-after soon; grep -c 'takes seconds' "$E")" $'3\n1'
 unset DEPLOYS_JOURNAL
 
@@ -538,6 +568,7 @@ expect "autofix: one fire per run" "$(fired)" "1"
 expect "autofix: the token is never in argv" "$(grep '^argv ' "$CALLS" | grep -c SECRET)" "0"
 expect "autofix: the token goes in on stdin" "$(grep -c '^stdin header = "Authorization: Bearer sk-ant-oat01-SECRET"' "$CALLS")" "1"
 expect "autofix: fired is recorded with the session" "$(jq -r '.fires[0] | "\(.status) \(.session)"' "$AUTOFIX_STATE")" "fired https://claude.ai/code/session_x"
+expect "autofix: the fire notes the kind of failure (FEA-017)" "$(jq -r '.fires[0] | "\(.class) \(.classReason)"' "$AUTOFIX_STATE")" "unknown null"
 : > "$CALLS"; afrun >/dev/null
 expect "autofix: the same failed deploy does not fire twice; the next project does" "$(fired):$(jq -c '[.fires[].deployId]' "$AUTOFIX_STATE")" '1:["d1","r1"]'
 : > "$CALLS"; afrun >/dev/null
@@ -547,6 +578,21 @@ expect "autofix: nothing new, nothing fired" "$(fired)" "0"
 af_reset; ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"}]'
 masked="$(af_logs | af_mask)"
 expect "autofix: secrets in the log are masked" "$(echo "$masked" | grep -c 'abc123\|ghp_abcdef')" "0"
+
+# FEA-016: --preview shows what a fire would send, masked, and sends or notes nothing.
+pv="$( ( set -e; json=1; PATH="$af/bin:$PATH"; af_fire() { echo "FIRED" >> "$CALLS"; exit 99; }; af_preview vercel web ) 2>&1)"
+expect "autofix --preview: masked log, prompt, routine id; nothing fired or saved" \
+  "$(echo "$pv" | jq -r '"\(.routine) \(.deployId) \(.masked_log | test("npm ERR")) \(.masked_log | test("abc123|ghp_abcdef")) \(.prompt | test("You fix failed deploy builds"))"'):$(grep -c 'FIRED\|^argv ' "$CALLS"):$([ -f "$AUTOFIX_STATE" ] && echo saved || echo none)" \
+  "trig_test d1 true false true:0:none"
+expect "autofix --preview: never the routine token" "$(echo "$pv" | grep -c 'sk-ant-oat01')" "0"
+pv="$( ( json=1; af_preview vercel nope ) 2>&1)"; rc=$?
+expect "autofix --preview: no failed build is exit 2" "$rc:$(echo "$pv" | grep -c 'no failed build')" "2:1"
+# FEA-017: a class for the kind of failure, from the masked log.
+cls() { printf '%s\n' "$1" | af_classify | cut -f1; }
+expect "autofix classify: env, auth, quota, outage, dependency, code, unknown" \
+  "$(cls 'Error: environment variable DATABASE_URL is missing') $(cls 'Error: 401 Unauthorized') $(cls 'Build minutes quota exceeded') $(cls 'npm ERR! network ETIMEDOUT') $(cls 'npm ERR! code ERESOLVE') $(cls 'src/a.ts(3,1): error TS2322: x') $(cls 'something odd')" \
+  "env auth quota outage dependency code unknown"
+expect "autofix classify: the line that says so goes along" "$(printf 'a\n  Error: 401 Unauthorized  \n' | af_classify | cut -f2)" "Error: 401 Unauthorized"
 
 # 429 is retried next run; any other error is recorded and not retried.
 af_reset; AFCODE=429 afrun >/dev/null
@@ -833,6 +879,17 @@ expect "ai notes: German, bot commits counted not listed, no emails" \
 airun ai_run ship web >/dev/null
 expect "ai ship: diff stats, risky files and auto-deploy go in" \
   "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Diff: 2 commits, 3 files, +40 -2'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'prisma/migrations'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'auto-deploy: off')" "1:1:1"
+cp "$DEPLOYS_CONFIG/ai-usage.json" "$tmp/ai-usage.keep"
+airun ai_run ask web --question "will the migration run?" >/dev/null
+expect "ai ask: the question, the commits and the masked log go in" \
+  "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Question: will the migration run?'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'dark mode'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'npm ERR! build failed'):$(grep -c 'ghp_abcdef' "$AIBODY")" "1:1:1:0"
+out="$(airun ai_run ask web)"; rc=$?
+expect "ai ask: without a question, a usage line and no call" "$rc:$(echo "$out" | grep -c 'ai ask <project> --question')" "1:1"
+ai_history() { printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n2026-01-01 10:00\tlive\taaaa\tapi\t9m\n'; }
+airun ai_run slow web >/dev/null
+expect "ai slow: the deploy times and the log go in" \
+  "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'TOOK'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'npm ERR! build failed'):$(jq -r .system "$AIBODY" | grep -c 'Slowest steps')" "1:1:1"
+cp "$tmp/ai-usage.keep" "$DEPLOYS_CONFIG/ai-usage.json"
 expect "ai --json: text, tokens and the month's total for the app" "$(airun ai_run explain web --json | jq -c '{tokens, used, cap}')" '{"tokens":120,"used":480,"cap":300000}'
 
 printf '480' > "$DEPLOYS_CONFIG/ai-cap"; : > "$CALLS"
@@ -1178,6 +1235,426 @@ acadd 1.0; expect "appcast: a bad version is refused" "$?" "1"
 acadd 1.0.0 nonsense; expect "appcast: a bad signature is refused" "$?" "1"
 expect "appcast: refused input changes nothing" "$(grep -c '<item>' "$ac")" "2"
 
+# ===== CLI track (improve/cli): additions, kept together; whole commands only (run) =====
+export DEPLOYS_JOURNAL="$e2e/journal.jsonl" RENDER_API_KEY=rnd_test
+# CLI-057: bash 3.2 reads an escaped {} default as the text {\} (invalid JSON for --argjson).
+expect "CLI-057: no escaped {} defaults in deploys, lib/ and providers/" "$(cat deploys lib/*.sh providers/*.sh | grep -c ':-{\\}')" "0"
+
+# CLI-001: deploys deploy waits for the deploy window like every other start.
+fresh; echo '{"deny":[{"from":"00:00","to":"24:00","reason":"always closed"}]}' > "$e2e/config/window.json"
+expect "CLI-001: deploy in a closed window is refused, nothing starts" \
+  "$(run "$O" "$E" deploy web; started; grep -c 'No deploys now' "$E")" $'1\n0\n1'
+fresh
+expect "CLI-001: --force starts it and the journal says why" \
+  "$(run "$O" "$E" deploy web --force "hotfix"; started; tail -n 1 "$DEPLOYS_JOURNAL" | jq -r '"\(.result) \(.name)"')" $'0\n1\nforced web'
+rm -f "$e2e/config/window.json"
+
+# CLI-002, CLI-005, CLI-007: observer mode.
+fresh
+expect "CLI-002: observer mode refuses autodeploy revoke" \
+  "$(DEPLOYS_READONLY=1 run "$O" "$E" autodeploy revoke vercel --all; grep -c 'Observer mode' "$E")" $'1\n1'
+expect "CLI-002: observer mode refuses autodeploy allow" \
+  "$(DEPLOYS_READONLY=1 run "$O" "$E" autodeploy allow vercel web 2; grep -c 'Observer mode' "$E")" $'1\n1'
+expect "CLI-005: --yes after --when-green is refused too" \
+  "$(DEPLOYS_READONLY=1 run "$O" "$E" deploy-changed --when-green --yes; grep -c 'Observer mode' "$E"; started)" $'1\n1\n0'
+expect "CLI-005: the preview without --yes stays allowed" \
+  "$(DEPLOYS_READONLY=1 run "$O" "$E" deploy-changed --when-green; grep -c 'Observer mode' "$E")" $'0\n0'
+expect "CLI-007: any value but an explicit no turns observer mode on" \
+  "$(DEPLOYS_READONLY=enabled run "$O" "$E" readonly; cat "$O")" $'0\non (DEPLOYS_READONLY is set)'
+expect "CLI-007: DEPLOYS_READONLY=off is off" "$(DEPLOYS_READONLY=off run "$O" "$E" readonly; cat "$O")" $'0\noff'
+
+# CLI-003: tab completion never runs a name; remember_names drops what is no plain name.
+fresh; printf '%s\n' web 'w$(touch '"$e2e"'/pwned)' > "$e2e/config/names"
+run "$O" "$E" completion bash >/dev/null
+expect "CLI-003: bash completion matches names without running them" \
+  "$(bash -c '. "$1"; COMP_WORDS=(deploys logs w); COMP_CWORD=2; _deploys; printf "%s\n" "${COMPREPLY[@]}" | grep -c .' _ "$O"; [ -e "$e2e/pwned" ] && echo ran || echo safe)" $'2\nsafe'
+run "$O" "$E" vercel json >/dev/null
+expect "CLI-003: a list read drops names that are no plain name" "$(grep -c touch "$e2e/config/names"):$(grep -cx web "$e2e/config/names")" "0:1"
+
+# CLI-012: a leading zero is a decimal number, not a bash octal error.
+expect "CLI-012: --rollback-after 08 is taken as 8" \
+  "$(SITE=down run "$O" "$E" verify web --rollback-after 08; grep -c 'value too great' "$E")" $'1\n0'
+
+# PRV-004 (watch side): every answer shape is read, an unreadable one ends (exit 3), never loops.
+expect "watch_line: the contract line" "$(watch_line $'d1\tbuilding\tBUILDING')" $'d1\tbuilding\tBUILDING'
+expect "watch_line: multi-line JSON (Netlify and others)" "$(watch_line $'{\n  "id": "d2",\n  "phase": "ready",\n  "state": "ready"\n}')" $'d2\tready\tready'
+expect "watch_line: JSON with status instead of state" "$(watch_line '{"id":"d3","phase":"failed","status":"failure"}')" $'d3\tfailed\tfailure'
+expect "watch_line: null is no deploy" "$(watch_line null | cut -f1)" "none"
+expect "watch_line: no known phase is no answer" "$(watch_line $'d4\t\tweird'):$(watch_line '{"id":"d5"}'):$(watch_line '{')" "::"
+# CLI-023: watch --timeout ends a deploy that does not finish (exit 4).
+fresh; rm -f "$e2e/polls"
+expect "CLI-023: watch --timeout ends with exit 4" "$(run "$O" "$E" watch api --timeout 0s; grep -c -- '--timeout' "$E")" $'4\n1'
+expect "CLI-023: a bad --timeout is refused" "$(run "$O" "$E" watch api --timeout soon; grep -c 'takes a time' "$E")" $'1\n1'
+
+# INT-014: deploys logs masks secrets like autofix and ai do.
+fresh; mv "$e2e/bin/vercel" "$e2e/bin/vercel.orig"
+cat > "$e2e/bin/vercel" <<'VC'
+#!/bin/bash
+case "$*" in
+  "api /v3/deployments/dpl_x/events"*) echo '[{"created":1,"payload":{"text":"VERCEL_TOKEN=abc123secret"}},{"created":2,"payload":{"text":"push ghp_abcdefghijklmnop1234"}}]' ;;
+  *) exec "$E2E/bin/vercel.orig" "$@" ;;
+esac
+VC
+chmod +x "$e2e/bin/vercel"
+expect "INT-014: logs masks tokens" "$(run "$O" "$E" logs web 10 --id dpl_x; cat "$O")" $'0\nVERCEL_TOKEN=[masked]\npush [masked]'
+mv "$e2e/bin/vercel.orig" "$e2e/bin/vercel"
+
+# CLI-010, CLI-011: <p>:<name> for risk; repo and ref of ci/details are checked before any call.
+fresh
+expect "CLI-010: risk takes vercel:web" "$(run "$O" "$E" risk vercel:web --json; jq -r '"\(.project) \(.platform)"' "$O")" $'0\nweb vercel'
+fresh
+expect "CLI-011: ci refuses a repo with a query" "$(run "$O" "$E" ci 'me/app?x=1' main; grep -c '^gh ' "$e2e/calls.log")" $'1\n0'
+expect "CLI-011: details refuses a ref with .." "$(run "$O" "$E" details me/app aaaa '../x'; grep -c '^gh ' "$e2e/calls.log")" $'1\n0'
+
+# CLI-047: ignore takes --undo before the name and <p>:<name> (kept as given: only that platform's).
+fresh; run "$O" "$E" render json >/dev/null
+expect "CLI-047: ignore render:api, then --undo render:api" \
+  "$(run "$O" "$E" ignore render:api; run "$O" "$E" ignore --undo render:api; run "$O" "$E" ignore --list; cat "$O")" $'0\n0\n0'
+# CLI-008, CLI-078: a rule over midnight belongs to the day it starts; window warns about typos.
+fresh; echo '{"deny":[{"days":["fri"],"from":"22:00","to":"06:00"}]}' > "$e2e/config/window.json"
+wn() { DEPLOYS_NOW="$1" run "$O" "$E" window --json >/dev/null; jq -r .denied "$O"; }
+expect "CLI-008: fri 22-06 closes Sat 03:00, not Fri 03:00" "$(wn 'sat 03:00 2026-11-14') $(wn 'fri 03:00 2026-11-13') $(wn 'fri 23:00 2026-11-13')" "true false true"
+echo '{"deny":[{"day":["fri"],"from":"25:99"}]}' > "$e2e/config/window.json"
+expect "CLI-078: window names an unknown key and a bad time" "$(run "$O" "$E" window --json; grep -c 'unknown key "day"' "$E"; grep -c '"25:99" is no time' "$E")" $'0\n1\n1'
+rm -f "$e2e/config/window.json"
+
+# CLI-032, CLI-033, CLI-034, CLI-048, CLI-050: arguments.
+expect "CLI-032: deploy --help shows its lines" "$(run "$O" "$E" deploy --help; grep -c '^  deploys deploy ' "$O")" $'0\n2'
+expect "CLI-033: an unknown command is named" "$(run "$O" "$E" deplyo; grep -c 'unknown command "deplyo"' "$E")" $'1\n1'
+expect "CLI-034: vercel map without arguments is a usage line" "$(run "$O" "$E" vercel map; grep -c 'Usage: deploys vercel map' "$E"; grep -c 'unbound' "$E")" $'1\n1\n0'
+fresh
+expect "CLI-048: changed --platform with a typo is refused, nothing read" "$(run "$O" "$E" changed --platform verzel; grep -c 'takes one of' "$E"; wc -l < "$e2e/calls.log" | tr -d ' ')" $'1\n1\n0'
+expect "CLI-050: status --watch --json is refused" "$(run "$O" "$E" status --watch --json; grep -c 'watch draws a table' "$E")" $'1\n1'
+
+# CLI-076: deploy-changed --when-green --strict says so when something was skipped.
+fresh
+expect "CLI-076: --strict: red CI skipped is exit 2" "$(CI=red run "$O" "$E" deploy-changed --yes --when-green --strict)" "2"
+
+# CLI-067: more secrets masked.
+expect "CLI-067: subscription key, AccountKey, bare Bearer, cookies, signed URLs" \
+  "$(printf '%s\n' 'Ocp-Apim-Subscription-Key: abc123' 'x;AccountKey=zz==;y' 'got Bearer abcdefghijklmnop' 'Set-Cookie: s=1' 'u?a=1&X-Amz-Signature=dead&b=2' | af_mask | grep -c masked)" "5"
+
+# CLI-017: doctor names perl and curl.
+expect "CLI-017: doctor has perl and curl" "$(run "$O" "$E" doctor; jq -c '{perl, curl} | map_values(type)' "$O")" $'0\n{"perl":"boolean","curl":"boolean"}'
+# INT-002: release.sh --check-addons refuses an add-on that changed without a new version.
+ra="$tmp/rel-addons"; mkdir -p "$ra/integrations/mcp"; cp release.sh "$ra/"
+echo '{"version":"0.1.0"}' > "$ra/integrations/mcp/package.json"; echo a > "$ra/integrations/mcp/server.mjs"
+gq() { git -C "$ra" -c user.name=t -c user.email=t@example.invalid "$@" >/dev/null 2>&1; }
+gq init -q; gq add -A; gq commit -qm one; gq tag v0.1.0
+echo b > "$ra/integrations/mcp/server.mjs"; gq commit -qam two
+expect "INT-002: changed add-on with the same version is refused" "$("$ra/release.sh" --check-addons 2>&1 | grep -c 'integrations/mcp (0.1.0)')" "1"
+echo '{"version":"0.1.1"}' > "$ra/integrations/mcp/package.json"; gq commit -qam three
+expect "INT-002: with a new version it passes" "$("$ra/release.sh" --check-addons >/dev/null 2>&1; echo $?)" "0"
+# LOG-034: "--" ends the options, so a name can never become --json or --force.
+expect "LOG-034: after --, --json is an argument" "$(run "$O" "$E" ignore -- --json; grep -c 'Unknown option --json' "$E")" $'1\n1'
+# LOG-082: what the app starts (DEPLOYS_CALLER=app) the app writes to the journal itself.
+fresh; echo '{"deny":[{"reason":"closed"}]}' > "$e2e/config/window.json"; : > "$DEPLOYS_JOURNAL"
+expect "LOG-082: a forced start from the app: no second journal line" \
+  "$(DEPLOYS_CALLER=app run "$O" "$E" deploy web --force "hotfix"; wc -l < "$DEPLOYS_JOURNAL" | tr -d ' ')" $'0\n0'
+rm -f "$e2e/config/window.json"
+# LOG-042, LOG-038, LOG-043: autofix --again, PR state of fires that turned green, PRs by title.
+expect "LOG-042: --again hands a fired build over once more after 90 minutes" "$(
+  af_all() { echo "$ALL"; }; af_prs() { [ "$3" = open ] && echo '[]' || echo '[]'; }
+  af_reset; ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"}]'
+  jq -n --argjson t "$(date +%s)" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",status:"fired",at:($t-6000)}]}' > "$AUTOFIX_STATE"
+  echo "$(afonly vercel web):$(fired):$(afonly vercel web 1):$(fired)")" "3:0:0:1"
+# shellcheck disable=SC2034  # read by the sourced script
+expect "LOG-038: a fire that turned green still learns its PR was merged" "$(
+  af_prs() { [ "$3" = open ] && echo '[]' || jq -nc --arg m "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '[{number:9, merged_at:$m, closed_at:$m, merge_commit_sha:"m9", ref:"claude/autofix-web-aaaa111", url:"u"}]'; }
+  jq -n --argjson t "$(date +%s)" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",sha:"aaaa111",status:"fired",done:true,prState:"open",prNumber:9,at:($t-100)}]}' > "$AUTOFIX_STATE"
+  st="$(af_state)"; all='[]'; now="$(date +%s)"; dry=""; rc=0; DEPLOYS_NOTIFY=0 af_sync_fires >/dev/null; echo "$st" | jq -r '.fires[0].prState')" "merged"
+mkdir -p "$tmp/gh43"; printf '#!/bin/bash\necho %s\n' "'[{\"number\":5,\"title\":\"autofix(web): missing env\",\"head\":{\"ref\":\"fix-web-build\"},\"html_url\":\"u\"},{\"number\":6,\"title\":\"other\",\"head\":{\"ref\":\"x\"}}]'" > "$tmp/gh43/gh"; chmod +x "$tmp/gh43/gh"
+expect "LOG-043: a fix PR is found by its title on another branch" \
+  "$( (unset -f af_prs; PATH="$tmp/gh43:$PATH"; DEPLOYS_LIB=1 . ./deploys; set +e; af_prs me/web web open | jq -c '[.[].number]') )" "[5]"
+unset RENDER_API_KEY DEPLOYS_JOURNAL
+# CLI-029: a job whose PATH no longer finds a CLI this shell finds is reported, nothing is changed.
+mkdir -p "$tmp/j29/agents" "$tmp/j29/bin" "$tmp/j29/old"; printf '#!/bin/bash\n' > "$tmp/j29/bin/vercel"; chmod +x "$tmp/j29/bin/vercel"
+printf '<?xml version="1.0"?><plist version="1.0"><dict><key>EnvironmentVariables</key><dict><key>PATH</key><string>%s</string></dict></dict></plist>\n' "$tmp/j29/old:/usr/bin:/bin" > "$tmp/j29/agents/app.deploycenter.autofix.plist"
+expect "CLI-029: the autofix job's stale PATH is named" \
+  "$( (DEPLOYS_LIB=1 . ./deploys; set +e; PATH="$tmp/j29/bin:$PATH"; DEPLOYS_LAUNCH_DIR="$tmp/j29/agents"; job_missing "$AUTOFIX_LABEL" | tr ' ' '\n' | grep -x vercel; job_missing_json | grep -o '"autofix:vercel"') )" $'vercel\n"autofix:vercel"'
+expect "CLI-029: a job PATH that finds it is fine" \
+  "$( (DEPLOYS_LIB=1 . ./deploys; set +e; PATH="$tmp/j29/bin:$PATH"; DEPLOYS_LAUNCH_DIR="$tmp/j29/agents"; sed -i '' "s:$tmp/j29/old:$tmp/j29/bin:" "$DEPLOYS_LAUNCH_DIR/app.deploycenter.autofix.plist"; job_missing "$AUTOFIX_LABEL" | tr ' ' '\n' | grep -c -x vercel) )" "0"
+# CLI-036: the --when-green preview asks CI like the real run and says what --yes would do.
+export RENDER_API_KEY=rnd_test
+fresh
+expect "CLI-036: preview with red CI starts nothing and says it would skip" \
+  "$(CI=red run "$O" "$E" deploy-changed --when-green; started; grep -c 'checks: red, would be skipped' "$O"; tail -n 1 "$O")" $'0\n0\n2\nWould start 0 now, wait for 0, skip 2. Run again with --yes to start them.'
+expect "CLI-036: preview with green CI, as JSON" \
+  "$(run "$O" "$E" deploy-changed --when-green --json; jq -r '[.[] | .action + ":" + .ci.state] | join(",")' "$O")" $'0\nwould-deploy:green,would-deploy:green'
+expect "CLI-036: pending checks are shown as waited for, not as passing" \
+  "$(CI=pending run "$O" "$E" deploy-changed --when-green --wait 1m; grep -c 'would wait up to 1m' "$O")" $'0\n2'
+unset RENDER_API_KEY
+# CLI-053, PRV-084: a remembered id is checked before a change; "could not ask" is not "not found".
+mkdir -p "$tmp/c53"; echo '[{"name":"web","platform":"vercel","id":"prj_old"}]' > "$tmp/c53/names.json"
+# shellcheck disable=SC2034  # read by the sourced script
+l53() { (DEPLOYS_CONFIG="$tmp/c53" DEPLOYS_LIB=1 . ./deploys; set +e; active_providers() { echo vercel; }; is_enabled() { [ "$1" = vercel ]; }; eval "$1"; WRITING="$2"; lookup "${3:-web}" 2>&1; echo "rc=$?"); }
+expect "CLI-053: a read uses the remembered id" "$(l53 'vercel_has() { echo prj_new; }' "")" $'vercel\tprj_old\nrc=0'
+expect "CLI-053: a change checks it and takes the new one" "$(l53 'vercel_has() { echo prj_new; }' 1)" $'vercel\tprj_new\nrc=0'
+expect "CLI-053: a change keeps the remembered id when the platform cannot answer" "$(l53 'vercel_has() { return 2; }' 1)" $'vercel\tprj_old\nrc=0'
+expect "PRV-084: a platform that cannot be asked is named, not \"no project\"" \
+  "$(l53 'vercel_has() { return 2; }' "" other | grep -c 'could not be asked (network or login)')" "1"
+expect "PRV-084: p:name says so too" "$(l53 'vercel_has() { return 2; }' "" vercel:web | grep -c 'Vercel could not be asked')" "1"
+expect "PRV-084: not found stays not found" "$(l53 'vercel_has() { return 1; }' "" other | grep -c '^Error: No .*named "other"')" "1"
+# PRV-042 (main's way since round 6): a start that names no deploy id follows the newest deploy;
+# when that cannot be followed either it is exit 3 and says so, and the group stops there.
+mkdir -p "$tmp/p42/providers" "$tmp/p42/cfg"; cp deploys "$tmp/p42/"; cp -R lib "$tmp/p42/"
+printf '%s\n' 'zz_meta() { echo "{\"id\":\"zz\",\"label\":\"Zed\",\"noun\":\"site\",\"defaultOn\":true,\"caps\":{}}"; }' 'zz_ready() { return 0; }' \
+  'zz_has() { echo "$1"; }' 'zz_list() { echo "[]"; }' 'zz_deploy_json() { echo "{\"id\":null,\"state\":\"accepted\"}"; }' > "$tmp/p42/providers/zz.sh"
+expect "PRV-042: --wait on a start without an id exits 3 and says so" \
+  "$(env -u DEPLOYS_LIB DEPLOYS_CONFIG="$tmp/p42/cfg" HOME="$tmp/p42" /bin/bash "$tmp/p42/deploys" deploy zz:web --wait 2>&1 >/dev/null | grep -c 'could not follow zz:web'; echo "rc=${PIPESTATUS[0]}")" $'1\nrc=3'
+# INT-071, INT-076: history and notes as data, for the status page without the app's journal.
+export RENDER_API_KEY=rnd_test; fresh
+expect "INT-071: history --json reads any provider's table as rows" \
+  "$(run "$O" "$E" history api 10 --json; jq -c '.[0] | [.state, .commit, .platform, (.at | type)]' "$O")" $'0\n["live","aaaa","render","number"]'
+expect "INT-076: notes --json keeps the author apart" \
+  "$(run "$O" "$E" notes api --json; jq -c '[.project, (.commits[0] | has("author")), (.commits[0].message | type)]' "$O")" $'0\n["api",true,"string"]'
+unset RENDER_API_KEY
+# CLI-055, CLI-056: a stale lock is taken over by one rename, a fresh one never; small files under a lock.
+mkdir -p "$tmp/l55"
+expect "CLI-055: a stale lock folder is cleared, a fresh one kept, a stale lock file cleared" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+  mkdir "$tmp/l55/old" "$tmp/l55/new"; touch -t 202001010000 "$tmp/l55/old"; : > "$tmp/l55/oldf"; touch -t 202001010000 "$tmp/l55/oldf"
+  lock_clear_stale "$tmp/l55/old" 300; lock_clear_stale "$tmp/l55/new" 300; lock_clear_stale "$tmp/l55/oldf" 60
+  [ -e "$tmp/l55/old" ] && echo old-kept || echo old-gone; [ -d "$tmp/l55/new" ] && echo new-kept; [ -e "$tmp/l55/oldf" ] && echo oldf-kept || echo oldf-gone
+  find "$tmp/l55" -name "*stale*" | grep -c .) )" $'old-gone\nnew-kept\noldf-gone\n0'
+expect "CLI-055: start_lock takes over a stale start, refuses a fresh one" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+  f="$(start_lock vercel/web)"; touch -t 202001010000 "$f"; (start_lock vercel/web >/dev/null 2>&1) && echo taken; (start_lock vercel/web >/dev/null 2>&1) || echo refused) )" $'taken\nrefused'
+expect "CLI-056: ai usage adds under a lock and leaves none behind" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+  AI_USAGE="$tmp/l55/ai-usage.json"; ai_add_usage 5 & ai_add_usage 7 & wait; ai_add_usage 1; ai_used; [ -e "$AI_USAGE.lock" ] && echo left || echo clean) )" $'13\nclean'
+expect "CLI-056: a dead holder's lock does not cost every later call the wait" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+  mkdir "$tmp/l55/x.lock"; touch -t 202001010000 "$tmp/l55/x.lock"; file_lock "$tmp/l55/x" && echo got; file_unlock "$tmp/l55/x"; [ -e "$tmp/l55/x.lock" ] || echo clean) )" $'got\nclean'
+# CLI-062 (with main's names.json): the completion list holds plain names only; a name like
+# $(cmd) from a platform list never reaches it.
+mkdir -p "$tmp/n62"
+expect "CLI-062: only plain names go into the completion list" "$( (DEPLOYS_CONFIG="$tmp/n62" DEPLOYS_LIB=1 . ./deploys; set +e
+  echo '[{"name":"web","id":"p1"},{"name":"$(touch x)","id":"p2"}]' | remember_names vercel; cat "$CONFIG_DIR/names" | paste -sd, -) )" "web"
+# CLI-066: rebase-merged commits are asked in parallel; a PR already named in a message counts once.
+mkdir -p "$tmp/bin66"; printf '#!/bin/bash\ncase "$*" in *"commits/c3/pulls"*) echo 12 ;; *) exec "%s/bin/gh" "$@" ;; esac\n' "$tmp" > "$tmp/bin66/gh"; chmod +x "$tmp/bin66/gh"
+expect "CLI-066: the PR of a rebase-merged commit that a message names already is not counted twice" \
+  "$( (PATH="$tmp/bin66:$PATH"; with_heads '[{"name":"app","repo":"me/app","ref":"main","deployable":true,"lastSha":"aaaa"}]' | jq -c '.[0].pendingPRs') )" "2"
+# CLI-107: release.sh --publish --dry-run checks and prints the plan; nothing is built, tagged or sent.
+rd="$tmp/rel-dry"; mkdir -p "$rd/repo/scripts" "$rd/bin"; cp release.sh build.sh VERSION README-CLI.md "$rd/repo/"
+printf '#!/bin/bash\necho "should not run" >&2; exit 1\n' > "$rd/repo/scripts/sparkle.sh"; chmod +x "$rd/repo/scripts/sparkle.sh"
+printf '# Changelog\n\n## %s\n- a change\n' "$(cat VERSION)" > "$rd/repo/CHANGELOG.md"
+# gh answers the reads; every call is logged. xcrun, ditto, npm and git push would show up in the log too.
+printf '#!/bin/bash\necho "gh $*" >> "%s/calls"\ncase "$*" in "repo view"*) echo me/dc ;; *compare*) echo identical ;; *"commits/v"*) exit 1 ;; esac\n' "$rd" > "$rd/bin/gh"
+for c in xcrun npm ditto codesign; do printf '#!/bin/bash\necho "%s $*" >> "%s/calls"\n' "$c" "$rd" > "$rd/bin/$c"; done
+chmod +x "$rd/bin"/*
+( cd "$rd/repo" && git init -q -b main && git add -A && git -c user.email=t@t -c user.name=t commit -qm one )
+expect "CLI-107: --publish --dry-run prints the plan and exits 0" \
+  "$(cd "$rd/repo" && PATH="$rd/bin:$PATH" ./release.sh --publish --dry-run 2>&1 | grep -c -e '^Dry run' -e 'is new: created' -e 'would upload' -e 'not checked'; echo "rc=${PIPESTATUS[0]}")" $'4\nrc=0'
+expect "CLI-107: only reads were made: no release, tag, build, notarization or upload" \
+  "$(grep -v -e '^gh repo view' -e '^gh api' "$rd/calls" | wc -l | tr -d ' '; git -C "$rd/repo" tag | wc -l | tr -d ' '; [ -e "$rd/repo/dist" ] && echo dist || echo no-dist)" $'0\n0\nno-dist'
+# A release never takes the Sparkle feed or key from the environment (local update tests only).
+expect "release: SPARKLE_FEED_URL and SPARKLE_PUBLIC_KEY from the environment are ignored" \
+  "$(cd "$rd/repo" && PATH="$rd/bin:$PATH" SPARKLE_FEED_URL=https://evil.test/appcast.xml SPARKLE_PUBLIC_KEY=AAAA ./release.sh --publish --dry-run 2>&1 | grep -c -e 'ignoring SPARKLE_FEED_URL' -e 'ignoring SPARKLE_PUBLIC_KEY')" "2"
+# CLI-039: the guard matrix. Every command that changes something, in observer mode: refused, nothing
+# sent that writes (POST, PATCH, PUT, DELETE). Every production start with the window closed: refused.
+export RENDER_API_KEY=rnd_test
+# curl stand-in lines are "curl POST <url>"; vercel and gh say "--method POST" or "-X POST".
+writes() { grep -c -E '^curl (POST|PATCH|PUT|DELETE) |(-X|--method)[ =]*(POST|PATCH|PUT|DELETE)|^vercel (deploy|redeploy|rollback|remove|promote)( |$)' "$e2e/calls.log"; }
+m39=""
+for c in "deploy web" "deploy api --preview" "vercel deploy web" "vercel deploy-json web" "vercel rollback web" "vercel cancel dpl_1" \
+         "vercel autodeploy-off web" "vercel map web me/app" "render deploy api" "render deploy-json api" "render rollback api" \
+         "render cancel srv-1 dep-2" "render autodeploy-off api" "deploy-changed --yes" "deploy-changed --when-green --yes" \
+         "autodeploy allow vercel web 2" "autodeploy revoke all --all" "autofix" "autofix --only vercel web" "guard" "hook deploy web"; do
+  fresh
+  # shellcheck disable=SC2086  # the command is words on purpose
+  rc="$(DEPLOYS_READONLY=1 run "$O" "$E" $c)"
+  if [ "$rc" = 0 ] || ! grep -q 'Observer mode' "$E" || [ "$(writes)" != 0 ]; then m39="$m39 [$c: rc=$rc writes=$(writes)]"; fi
+done
+expect "CLI-039: observer mode refuses every write command, nothing written" "${m39:-none}" "none"
+m39=""; echo '{"deny":[{"from":"00:00","to":"24:00","reason":"closed for the matrix"}]}' > "$e2e/config/window.json"
+for c in "deploy web" "vercel deploy web" "vercel deploy-json web" "render deploy api" "render deploy-json api" "deploy-changed --yes"; do
+  fresh
+  # shellcheck disable=SC2086
+  rc="$(run "$O" "$E" $c)"
+  if [ "$rc" = 0 ] || [ "$(writes)" != 0 ]; then m39="$m39 [$c: rc=$rc writes=$(writes)]"; fi
+done
+expect "CLI-039: a closed window refuses every production start" "${m39:-none}" "none"
+fresh
+expect "CLI-039: a preview is not held by the window" "$(run "$O" "$E" vercel deploy web --preview >/dev/null; grep -c 'closed for the matrix' "$E")" "0"
+rm -f "$e2e/config/window.json"; unset RENDER_API_KEY
+# PRV-129: cache file names are one per key (a_b/c and a/b_c used to share one file).
+expect "PRV-129: two repos that tr would merge get two names" \
+  "$( (DEPLOYS_LIB=1 . ./deploys; set +e; [ "$(cache_name 'a_b/c@main')" != "$(cache_name 'a/b_c@main')" ] && echo two; cache_name 'me/app@main') )" $'two\nme_app_main'
+# CLI-027: a command about one project asks GitHub about that one only.
+l27='[{"name":"app","repo":"me/app","ref":"main","deployable":true,"lastSha":"aaaa"},{"name":"other","id":"prj_o","repo":"me/other","ref":"main","deployable":true,"lastSha":"aaaa"}]'
+expect "CLI-027: DEPLOYS_ONLY keeps one row (by name or id)" \
+  "$(DEPLOYS_ONLY=app with_heads "$l27" | jq -c 'map(.name)'; DEPLOYS_ONLY=x DEPLOYS_ONLY_ID=prj_o with_heads "$l27" | jq -c 'map(.name)')" $'["app"]\n["other"]'
+expect "CLI-027: no match keeps the whole list" "$(DEPLOYS_ONLY=nope with_heads "$l27" | jq length)" "2"
+# CLI-028: a job log past its limit is renamed to .1 (never emptied in place); a small one stays.
+mkdir -p "$tmp/h28/Library/Logs"; head -c 2000 /dev/zero | tr '\0' x > "$tmp/h28/Library/Logs/DeployCenter-guard.log"; echo small > "$tmp/h28/Library/Logs/DeployCenter-autofix.log"
+# shellcheck disable=SC2034  # read by the sourced script
+expect "CLI-028: the big log moves to .1, the small one stays" "$( (HOME="$tmp/h28" DEPLOYS_LOG_MAX_BYTES=1000 DEPLOYS_LOG_ROTATE=1; log_rotate DeployCenter-guard; log_rotate DeployCenter-autofix
+  cd "$tmp/h28/Library/Logs" && ls | paste -sd' ' -; wc -c < DeployCenter-guard.log.1 | tr -d ' ') )" $'DeployCenter-autofix.log DeployCenter-guard.log.1\n2000'
+# Doctor: provider objects that share key names are nested, never merged into repeated keys.
+mkdir -p "$tmp/pdoc/providers" "$tmp/pdoc/cfg"; cp deploys "$tmp/pdoc/"; cp -R lib "$tmp/pdoc/"; cp providers/render.sh "$tmp/pdoc/providers/"
+for z in zz1 zz2; do
+  printf '%s\n' "${z}_meta() { echo '{\"id\":\"$z\",\"label\":\"$z\",\"noun\":\"site\",\"defaultOn\":true,\"caps\":{}}'; }" "${z}_ready() { return 0; }" \
+    "${z}_doctor() { printf '{\\n\"provider\":\"$z\",\\n\"tokenOk\":true}\\n'; }" > "$tmp/pdoc/providers/$z.sh"
+done
+doc="$(env -u DEPLOYS_LIB DEPLOYS_CONFIG="$tmp/pdoc/cfg" HOME="$tmp/pdoc" RENDER_API_KEY=rnd_test /bin/bash "$tmp/pdoc/deploys" doctor 2>/dev/null)"
+# Plain-key objects sit under providers.<p> and, as on main, under <p> at the top: never side by side.
+expect "doctor: no repeated keys, each provider under providers" \
+  "$(echo "$doc" | grep -o '"provider"' | wc -l | tr -d ' '; echo "$doc" | jq -c '[.renderKey, .providers.zz1.provider, .providers.zz2.tokenOk, has("provider"), .providers.render.renderKey, .zz2.provider]')" \
+  $'4\n[true,"zz1",true,false,true,"zz2"]'
+# CLI-022: a hanging CLI is ended after DEPLOYS_TIMEOUT; 0 means no limit.
+expect "CLI-022: with_timeout ends a hanging command" "$(s0=$SECONDS; with_timeout 1 /bin/sleep 5; rc=$?; [ $((SECONDS - s0)) -lt 4 ] && echo "fast rc>0:$([ "$rc" != 0 ] && echo yes)")" "fast rc>0:yes"
+expect "CLI-022: 0 is no limit, the answer passes through" "$(with_timeout 0 /bin/echo hi)" "hi"
+# CLI-039 control: the matrix's "writes" does see a real start, so its zeros mean something.
+export RENDER_API_KEY=rnd_test; fresh
+expect "CLI-039: a real start is counted as a write" "$(run "$O" "$E" deploy web >/dev/null; [ "$(writes)" -gt 0 ] && echo seen)" "seen"
+m39=""; echo '{"deny":[{"from":"00:00","to":"24:00","reason":"closed for the matrix"}]}' > "$e2e/config/window.json"
+for c in "deploy web" "vercel deploy web" "render deploy api" "deploy-changed --yes"; do
+  fresh
+  # shellcheck disable=SC2086
+  run "$O" "$E" $c >/dev/null; grep -q 'closed for the matrix' "$E" || m39="$m39 [$c]"
+done
+expect "CLI-039: each closed-window refusal names the window" "${m39:-none}" "none"
+rm -f "$e2e/config/window.json"; unset RENDER_API_KEY
+# CLI-035: --expect makes only that answer healthy; --follow is accepted.
+export RENDER_API_KEY=rnd_test; fresh
+expect "CLI-035: a 200 is not the expected 404: failed, not rolled back" "$(run "$O" "$E" verify web --expect 404 --no-rollback; rolled)" $'2\n0'
+expect "CLI-035: 2xx accepts a 200, with --follow" "$(run "$O" "$E" verify web --expect 2xx --follow; rolled)" $'0\n0'
+expect "CLI-035: a bad --expect is refused" "$(run "$O" "$E" verify web --expect ok; grep -c 'takes a status' "$E")" $'3\n1'
+unset RENDER_API_KEY
+# CLI-028 follow-up: the job itself turns rotation on (DEPLOYS_LOG_ROTATE in the plist).
+mkdir -p "$tmp/j28/agents"
+( PATH="$af/bin:$PATH" DEPLOYS_LAUNCH_DIR="$tmp/j28/agents" af_schedule_on >/dev/null )
+expect "CLI-028: the job carries DEPLOYS_LOG_ROTATE=1" "$(grep -c '<key>DEPLOYS_LOG_ROTATE</key><string>1</string>' "$tmp/j28/agents/app.deploycenter.autofix.plist")" "1"
+# CLI-030: without launchd, schedule on writes nothing and prints the cron line.
+mkdir -p "$tmp/nolc"; for b in sed dirname basename; do ln -sf "$(command -v "$b")" "$tmp/nolc/$b"; done
+# shellcheck disable=SC2123  # a PATH without launchctl is the point
+expect "CLI-030: no launchd: a cron line, no job file" "$( (PATH="$tmp/nolc"; DEPLOYS_LAUNCH_DIR="$tmp/j30"; job_on app.deploycenter.autofix 600 DeployCenter-autofix autofix) | grep -c "^\*/10 \* \* \* \* PATH=.* /bin/bash '.*deploys' 'autofix' >>"; [ -e "$tmp/j30" ] && echo file || echo none)" $'1\nnone'
+# ===== CLI features track =====
+# INT-082: deploys hooks install chains an existing pre-push, uninstall puts it back.
+hk="$tmp/hk"; mkdir -p "$hk"; git -C "$hk" init -q
+printf '#!/bin/bash\ncat > "%s/got"; exit "${LOCAL_RC:-0}"\n' "$hk" > "$hk/.git/hooks/pre-push"; chmod +x "$hk/.git/hooks/pre-push"
+expect "INT-082: install moves the old hook aside" "$(run "$O" "$E" hooks install "$hk"; [ -x "$hk/.git/hooks/pre-push.local" ] && [ -x "$hk/.git/hooks/pre-push.deploys" ] && echo both)" $'0\nboth'
+expect "INT-082: install twice does not chain itself" "$(run "$O" "$E" hooks install "$hk"; grep -c 'got' "$hk/.git/hooks/pre-push.local"; run "$O" "$E" hooks status "$hk" --json; jq -c '[.installed, .chained]' "$O")" $'0\n1\n0\n[true,true]'
+push() { printf 'refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000\n' | DEPLOYS=true "$hk/.git/hooks/pre-push" origin git@github.com:me/app.git; echo $?; }
+expect "INT-082: the old hook gets the refs and its no stops the push" "$(push; cut -c1-15 "$hk/got"; LOCAL_RC=3 push)" $'0\nrefs/heads/main\n3'
+expect "INT-082: uninstall puts the old hook back" "$(run "$O" "$E" hooks uninstall "$hk"; grep -c got "$hk/.git/hooks/pre-push"; find "$hk/.git/hooks" -name 'pre-push.local' -o -name 'pre-push.deploys' | wc -l | tr -d ' ')" $'0\n1\n0'
+git -C "$hk" config core.hooksPath .githooks
+expect "INT-082: core.hooksPath is where it goes" "$(run "$O" "$E" hooks install "$hk"; [ -f "$hk/.githooks/pre-push" ] && echo there)" $'0\nthere'
+git -C "$hk" config --unset core.hooksPath; mkdir -p "$hk/.husky"
+expect "INT-082: with Husky only the line to add" "$(run "$O" "$E" hooks install "$hk"; grep -c 'Add this line to .husky/pre-push' "$O"; grep -c deploy-center "$hk/.git/hooks/pre-push")" $'0\n1\n0'
+# FEA-114: plan is the deploy-changed preview with a price, and starts nothing.
+fresh
+run "$O" "$E" deploy-changed --json >/dev/null; dc="$(jq -c 'map([.platform, .name, .action])' "$O")"
+expect "FEA-114: plan --json lists what deploy-changed would start, each with a price field" \
+  "$(run "$O" "$E" plan --json; jq -c '[.kind, .estimate, (.projects | map([.platform, .name, .action])), (.projects | all(has("usd") and has("priceSource"))), .total.builds]' "$O"; grep -c POST "$e2e/calls.log")" \
+  $'0\n["plan",true,'"$dc"',true,'"$(echo "$dc" | jq length)"']'$'\n0'
+expect "FEA-114: deploy-changed --json is unchanged (no price fields)" "$(run "$O" "$E" deploy-changed --json; jq -c '.[0] | keys' "$O")" $'0\n["action","commits","name","platform","risk","sha"]'
+expect "FEA-010: price set is read by plan (a rate, not billing)" \
+  "$(run "$O" "$E" price set render 0.5; run "$O" "$E" price --json; jq -c '[.renderUsdPerMinute, .source.render]' "$O")" $'0\n0\n[0.5,"file"]'
+expect "FEA-010: the env variable wins over prices.json" "$(DEPLOYS_RENDER_USD_PER_MIN=0.25 run "$O" "$E" price --json; jq -c '[.renderUsdPerMinute, .source.render]' "$O")" $'0\n[0.25,"env"]'
+expect "FEA-010: a price that is no number is refused" "$(run "$O" "$E" price set vercel cheap; grep -c 'a number like' "$E")" $'1\n1'
+run "$O" "$E" price unset render >/dev/null
+# FEA-009: costs says which days it could not read, and sums per month.
+expect "FEA-009: costs counts unread days as missing, not as \$0" "$(run "$O" "$E" costs 3; jq -c '[.missingDays, (.days | length)]' "$O")" $'0\n[3,0]'
+expect "FEA-009: costs sums per month" \
+  "$(BILL='{"BilledCost":2,"ServiceName":"Build","Tags":{"ProjectName":"web"}}' run "$O" "$E" costs 2; jq -c '[.missingDays, (.months | map(.build) | add)]' "$O")" $'0\n[0,4]'
+# FEA-002: the budget brake of deploy-changed --yes.
+export DEPLOYS_JOURNAL="$e2e/journal.jsonl" RENDER_API_KEY=rnd_test
+fresh; : > "$DEPLOYS_JOURNAL"; run "$O" "$E" budget set 1 >/dev/null
+bill='{"BilledCost":5,"ServiceName":"Build","Tags":{"ProjectName":"web"}}'
+if [ "$(date -u +%d)" != 01 ]; then
+  expect "FEA-002: over budget, deploy-changed --yes starts nothing" \
+    "$(BILL="$bill" run "$O" "$E" deploy-changed --yes; started; grep -c 'Over budget' "$E")" $'1\n0\n1'
+  expect "FEA-002: --force \"why\" goes ahead and journals it" \
+    "$(BILL="$bill" run "$O" "$E" deploy-changed --yes --force "release day"; started; grep -c 'over budget.*release day' "$DEPLOYS_JOURNAL")" $'0\n2\n2'
+  expect "FEA-002: plan says it would go over" "$(BILL="$bill" run "$O" "$E" plan --json; jq -c '.budget | [.monthlyUsd, .over]' "$O")" $'0\n[1,true]'
+fi
+fresh
+expect "FEA-002: unknown spending warns and goes ahead" "$(run "$O" "$E" deploy-changed --yes; started; grep -c 'budget is not checked' "$E")" $'0\n2\n1'
+fresh; run "$O" "$E" budget set 1 --strict >/dev/null
+expect "FEA-002: strict: unknown spending stops it" "$(run "$O" "$E" deploy-changed --yes; started; grep -c 'budget is strict' "$E")" $'1\n0\n1'
+run "$O" "$E" budget off >/dev/null; fresh
+# FEA-066/067/074: rules.json (the app's rule editor) in deploy-changed, plan and rules check.
+cmpf="$tmp/cmp-docs.json"
+echo '{"status":"ahead","ahead_by":1,"behind_by":0,"commits":[{"sha":"bbbb","commit":{"message":"docs","committer":{"date":"2026-01-02T00:00:00Z"}},"author":{"type":"User"}}],"files":[{"filename":"docs/guide.md","additions":1,"deletions":0},{"filename":"README.md","additions":1,"deletions":0}]}' > "$cmpf"
+fresh
+echo '{"rules":[{"name":"hold web","enabled":true,"when":{"projects":["vercel/web"]},"then":"hold"}]}' > "$e2e/config/rules.json"
+expect "FEA-066: a hold rule leaves the project out of the preview, named" \
+  "$(run "$O" "$E" deploy-changed --json; jq -c 'map(select(.name == "web")) | map([.action, .rule.name])' "$O")" $'0\n[["held-by-rule","hold web"]]'
+expect "FEA-066: and out of --yes, as skipped" \
+  "$(run "$O" "$E" deploy-changed --yes --json; jq -c 'map(select(.name == "web")) | map([.action, .reason])' "$O"; grep -c 'vercel api /v13/deployments' "$e2e/calls.log")" $'0\n[["skipped","held by the rule \\"hold web\\""]]\n0'
+expect "FEA-066: plan does not count it" "$(run "$O" "$E" plan --json; jq -c '[(.projects | map(select(.name == "web")) | .[0].action), (.projects | map(select(.action == "held-by-rule")) | length)]' "$O")" $'0\n["held-by-rule",1]'
+echo '{"rules":[{"name":"docs ship","when":{"projects":["vercel/*"],"paths":["docs/**","*.md"],"onlyPaths":true,"minAgeHours":1},"then":"deploy"},{"name":"all","when":{},"then":"deploy"}]}' > "$e2e/config/rules.json"
+fresh
+expect "FEA-067: only docs changed: --by-rules starts it (and nothing else)" \
+  "$(BIG="$cmpf" run "$O" "$E" deploy-changed --by-rules --yes --json; jq -c 'map([.name, .action])' "$O")" $'0\n[["web","started"]]'
+expect "FEA-066: rules check says why not, and ignores a rule without a condition" \
+  "$(run "$O" "$E" rules check --json; jq -c 'map(select(.project == "vercel/web")) | map([.rule, .matched, .unmet[0]])' "$O")" \
+  $'0\n[["docs ship",false,"the changed files are not known"],["all",false,"a deploy rule without a condition is ignored"]]'
+echo '{"rules":[{"name":"young","when":{"minAgeHours":999999},"then":"deploy"}]}' > "$e2e/config/rules.json"
+expect "FEA-074: minAgeHours: too young does not match" "$(run "$O" "$E" deploy-changed --by-rules --json; jq length "$O")" $'0\n0'
+echo '{"rules":' > "$e2e/config/rules.json"; fresh
+expect "FEA-066: a broken rules.json stops deploys" "$(run "$O" "$E" deploy-changed --yes; started; grep -c 'rules.json could not be read' "$E")" $'1\n0\n1'
+rm -f "$e2e/config/rules.json"
+expect "FEA-066: --by-rules without rules is refused" "$(run "$O" "$E" deploy-changed --by-rules; grep -c 'needs rules.json' "$E")" $'1\n1'
+fresh
+# FEA-032/029/039: details names lines that look like secrets (never the value), lockfiles, signatures.
+sec="$tmp/cmp-secret.json"
+printf '%s' '{"status":"ahead","commits":[{"sha":"bbbb","commit":{"message":"x","committer":{"date":"2026-01-02T00:00:00Z"},"verification":{"verified":false,"reason":"unsigned"}},"author":{"type":"User"}}],"files":[{"filename":"src/a.js","additions":2,"deletions":1,"patch":"@@ -1,2 +10,3 @@\n ctx\n+const k = \"AKIAABCDEFGHIJKLMNOP\"\n-old\n+fine"},{"filename":"web/package-lock.json","additions":30,"deletions":4}]}' > "$sec"
+expect "FEA-032: a key shape in an added line: file, line and kind, no value" \
+  "$(BIG="$sec" run "$O" "$E" details me/app aaaa main; jq -c .secrets "$O"; grep -c AKIAABCD "$O")" $'0\n[{"file":"src/a.js","line":11,"kind":"aws-access-key"}]\n0'
+expect "FEA-029/039: lockfiles with their lines, unsigned commits counted" \
+  "$(BIG="$sec" run "$O" "$E" details me/app aaaa main; jq -c '[.lockfiles, .unverified, .commits[0].verified]' "$O")" $'0\n[[{"file":"web/package-lock.json","additions":30,"deletions":4}],1,false]'
+# FEA-041: each journal line carries the SHA-256 of the line before.
+: > "$DEPLOYS_JOURNAL"; fresh
+run "$O" "$E" deploy-changed --yes --force "x" >/dev/null 2>&1
+DEPLOYS_NOW="fri 16:00 2026-11-13" run "$O" "$E" deploy-changed --yes --force "x" >/dev/null 2>&1
+echo '{"deny":[{"days":["fri"],"from":"15:00"}]}' > "$e2e/config/window.json"; : > "$DEPLOYS_JOURNAL"; fresh
+DEPLOYS_NOW="fri 16:00 2026-11-13" run "$O" "$E" deploy-changed --yes --force "two" >/dev/null
+first="$(head -n 1 "$DEPLOYS_JOURNAL" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)"
+expect "FEA-041: prevHash: null first, then the hash of the line before" \
+  "$(jq -sc '[.[0].prevHash, (.[1].prevHash | length)]' "$DEPLOYS_JOURNAL"; sed -n 2p "$DEPLOYS_JOURNAL" | jq -r .prevHash | grep -c "^$first$")" $'[null,64]\n1'
+rm -f "$e2e/config/window.json"; fresh
+# FEA-068: the daily deploy as a job at a time of day (launchd stand-in), or the cron line.
+mkdir -p "$tmp/j68"
+( PATH="$af/bin:$PATH" DEPLOYS_LAUNCH_DIR="$tmp/j68" job_on app.deploycenter.daily @07:30 DeployCenter-daily deploy-changed --yes --when-green >/dev/null )
+expect "FEA-068: the job starts at 07:30, with the flags" \
+  "$(grep -c '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>' "$tmp/j68/app.deploycenter.daily.plist"; grep -c '<string>deploy-changed</string><string>--yes</string><string>--when-green</string>' "$tmp/j68/app.deploycenter.daily.plist")" $'1\n1'
+# shellcheck disable=SC2123  # a PATH without launchctl is the point
+expect "FEA-068: without launchd the cron line runs at 07:30" "$( (PATH="$tmp/nolc"; job_on app.deploycenter.daily @07:30 DeployCenter-daily deploy-changed --yes) | grep -c "^30 7 \* \* \* PATH=.* 'deploy-changed' '--yes' >>")" "1"
+expect "FEA-068: a time that is none is refused, nothing written" "$(run "$O" "$E" schedule daily 25:00; grep -c 'HH:MM' "$E"; [ -e "$e2e/config/schedule.json" ] && echo file || echo none)" $'1\n1\nnone'
+expect "FEA-068: status without a schedule" "$(run "$O" "$E" schedule status --json; jq -c '[.at, .scheduled]' "$O")" $'0\n[null,false]'
+expect "FEA-068: observers cannot schedule deploys" "$(DEPLOYS_READONLY=1 run "$O" "$E" schedule daily 08:00; grep -c 'Observer mode' "$E")" $'1\n1'
+# PRV-130: lib/http.sh, the call the providers share: key on stdin, reads asked again, POST not.
+hb="$tmp/http/bin"; mkdir -p "$hb"
+cat > "$hb/curl" <<'C'
+#!/bin/bash
+k="$(cat)"; echo "$*|$k" >> "$HTTP_LOG"
+case "$HTTP_MODE" in ok) printf '%s\n200' '{"ok":true}' ;; down) printf '%s\n503' 'busy' ;; auth) printf '%s\n401' 'no' ;; esac
+C
+printf '#!/bin/bash\nexit 0\n' > "$hb/sleep"; chmod +x "$hb/curl" "$hb/sleep"
+hcall() { ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE="$1"; : > "$HTTP_LOG"; . ./lib/http.sh; HTTP_AUTH="Authorization: Bearer sekret"; HTTP_FIX="deploys x set-key"; ( http_call X "$2" "https://api.x.test/v1/things" ) 2>&1; echo "|rc=$?"; ) }
+expect "PRV-130: a 2xx gives the body" "$(hcall ok GET)" '{"ok":true}|rc=0'
+expect "PRV-130: the key goes on stdin, not in the arguments" "$(hcall ok GET >/dev/null; grep -c '|header = "Authorization: Bearer sekret"' "$tmp/http/log"; cut -d'|' -f1 "$tmp/http/log" | grep -c sekret)" $'1\n0'
+expect "PRV-130: a 503 read is asked three times, a POST once" "$(hcall down GET >/dev/null; wc -l < "$tmp/http/log" | tr -d ' '; hcall down POST >/dev/null; wc -l < "$tmp/http/log" | tr -d ' ')" $'3\n1'
+expect "PRV-130: a 401 says what to do" "$(hcall auth GET)" 'Error: X GET /v1/things -> HTTP 401 (the key is wrong or expired: deploys x set-key): no'$'\n''|rc=1'
+# FEA-078: doctor says GitHub's budget (null when not logged in).
+expect "FEA-078: doctor has githubRateLimit" "$(run "$O" "$E" doctor; jq -c 'has("githubRateLimit")' "$O")" $'0\ntrue'
+# FEA-007: a build nobody started from here has its minutes, and dollars where a rate is set.
+echo '{"web":{"org":"me","repo":"web","offAt":1}}' > "$REPOS"
+tv='{"deployments":[{"name":"web","source":"git","created":1767000000000,"buildingAt":1767000000000,"ready":1767000090000},{"name":"web","source":"git","created":1767000000000}]}'
+expect "FEA-007: triggers: minutes and usd per build, null when unknown" \
+  "$(echo "$tv" | trig_vercel_rows 0.1 | jq -sc 'map([.minutes, .usd])'):$(echo "$tv" | trig_vercel_rows "" | jq -sc 'map(.usd)')" '[[1.5,0.15],[null,null]]:[null,null]'
+# lib/http.sh: a body from a file, and the response headers kept where asked.
+echo '{"big":1}' > "$tmp/http/body.json"
+out="$( ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE=ok; : > "$HTTP_LOG"; . ./lib/http.sh; HTTP_HEADERS="$tmp/http/h.txt"; http_call X POST https://api.x.test/v1/things "@$tmp/http/body.json" ) 2>&1)"
+expect "http_call: @file is sent as the body, -D keeps the headers" "$out:$(grep -c -- "--data-binary @$tmp/http/body.json" "$tmp/http/log"):$(grep -c -- "-D $tmp/http/h.txt" "$tmp/http/log")" '{"ok":true}:1:1'
+out="$( ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE=ok; : > "$HTTP_LOG"; . ./lib/http.sh; http_call X POST https://api.x.test/v1/things "@$tmp/http/none.json" ) 2>&1)"; rc=$?
+expect "http_call: a body file that is not there is an error, no call" "$rc:$(echo "$out" | grep -c 'cannot be read'):$(grep -c . "$tmp/http/log")" "1:1:0"
+# FEA-110: --dry-run for autodeploy-on only goes to a provider whose meta says onDryRun.
+fresh
+expect "FEA-110: autodeploy-on --dry-run is refused by a provider without onDryRun, nothing called" \
+  "$(run "$O" "$E" vercel autodeploy-on web --dry-run; grep -c 'no dry run' "$E"; grep -c . "$e2e/calls.log")" $'1\n1\n0'
+fresh
+expect "logs --runtime: refused where the provider has no runtime log" "$(run "$O" "$E" logs web --runtime; grep -c 'no runtime log' "$E")" $'1\n1'
+# ===== end CLI track =====
 # --- bump.sh: VERSION, changelog, site, and the MCP server and plugin that ship in the app ---
 bp="$tmp/bump"; mkdir -p "$bp/scripts" "$bp/site" "$bp/integrations/mcp" "$bp/integrations/claude-code/.claude-plugin"
 cp scripts/bump.sh "$bp/scripts/"; echo 1.2.3 > "$bp/VERSION"

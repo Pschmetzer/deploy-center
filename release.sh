@@ -5,6 +5,8 @@
 #                                checksums.txt), sign the zip for Sparkle into site/appcast.xml,
 #                                and write the Homebrew cask and formula
 #   ./release.sh --publish-only  publish the zip already in dist/ (after a failed upload; no new build)
+#   ./release.sh --check-addons  only check that every add-on changed since the last release has a new version
+#   ./release.sh ... --dry-run   run the checks, then only print what would be built, tagged and uploaded
 #
 # Needs a "Developer ID Application" certificate and a notarytool profile. Give them as
 # DEVELOPER_ID and NOTARY_PROFILE, or put them in .release.env (not tracked):
@@ -23,22 +25,50 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-usage() { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "release.sh: $*" >&2; exit 1; }
 
-mode=build
+mode=build; dry=""
 for arg in "$@"; do
   case "$arg" in
+    --dry-run) dry=1 ;;
     --publish|--publish-only)
       [ "$mode" = build ] || die "use only one of --publish and --publish-only"
       mode="${arg#--}" ;;
+    --check-addons) mode="check-addons" ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; echo >&2; echo "release.sh: unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
 
+# Add-ons update by their own version (Claude Code reads plugin.json, VS Code and npm package.json):
+# one that changed since the last release tag but kept its version never reaches anyone.
+# Which number comes next stays the maintainer's call; this only refuses to forget it.
+ADDON_VERSION_FILES="integrations/claude-code/.claude-plugin/plugin.json integrations/mcp/package.json integrations/vscode/package.json"
+check_addons() {  # check_addons <commit>
+  local base f dir old new bad=""
+  base="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$1^" 2>/dev/null)" || { echo "release.sh: no earlier release tag; add-on versions not compared"; return 0; }
+  for f in $ADDON_VERSION_FILES; do
+    git cat-file -e "$1:$f" 2>/dev/null || continue
+    dir="${f%/package.json}"; dir="${dir%/.claude-plugin/plugin.json}"
+    [ -n "$(git diff --name-only "$base" "$1" -- "$dir" 2>/dev/null)" ] || continue
+    new="$(git show "$1:$f" | jq -r '.version // empty')"
+    old="$(git show "$base:$f" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
+    [ "$new" != "$old" ] || bad="$bad $dir ($new)"
+  done
+  [ -z "$bad" ] || die "changed since $base but still the same version:$bad. Raise their version first"
+  echo "Add-on versions: fine (compared with $base)."
+}
+if [ "$mode" = "check-addons" ]; then check_addons HEAD; exit 0; fi
+
 [ -f .release.env ] && . ./.release.env
-if [ "$mode" != publish-only ]; then
+# A release always trusts the built-in key and feed: the two overrides are for local update tests
+# only. Set in a shell (or in .release.env), they would ship an app whose updates break or go elsewhere.
+for v in SPARKLE_PUBLIC_KEY SPARKLE_FEED_URL; do
+  [ -z "${!v:-}" ] || echo "release.sh: ignoring $v (only for local update tests)" >&2
+  unset "$v"
+done
+if [ "$mode" != publish-only ] && [ -z "$dry" ]; then
   : "${DEVELOPER_ID:?Set DEVELOPER_ID (see the top of this file)}"
   : "${NOTARY_PROFILE:?Set NOTARY_PROFILE (see the top of this file)}"
 fi
@@ -60,6 +90,11 @@ notes_of() {
 
 publishing() { [ "$mode" != build ]; }
 
+# The Sparkle key and feed the app is built with: the defaults in build.sh.
+want_key="$(sed -n 's/^PUBLIC_ED_KEY="\${SPARKLE_PUBLIC_KEY:-\(.*\)}"$/\1/p' build.sh)"
+want_feed="$(sed -n 's/^FEED_URL="\${SPARKLE_FEED_URL:-\(.*\)}"$/\1/p' build.sh)"
+[ -n "$want_key" ] && [ -n "$want_feed" ] || die "could not read the Sparkle key and feed from build.sh"
+
 # --- checks before anything slow ---------------------------------------------------------
 if publishing; then
   command -v gh >/dev/null || die "gh is missing (brew install gh)"
@@ -68,12 +103,15 @@ if publishing; then
   grep -q '^- ' <<<"$(notes_of)" \
     || die "CHANGELOG.md has no entries under \"## $VERSION\"; rename Unreleased first (scripts/bump.sh)"
   # The key in the keychain must be the one the app trusts, or no installed copy accepts the update.
-  SPARKLE="$(scripts/sparkle.sh)"
-  SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-deploy-center}"
-  have="$("$SPARKLE/bin/generate_keys" --account "$SPARKLE_ACCOUNT" -p 2>/dev/null)" \
-    || die "no Sparkle key \"$SPARKLE_ACCOUNT\" in the keychain (see the top of this file)"
-  want="$(sed -n 's/^PUBLIC_ED_KEY="\${SPARKLE_PUBLIC_KEY:-\(.*\)}"$/\1/p' build.sh)"
-  [ -n "$want" ] && [ "$have" = "$want" ] || die "the Sparkle key in the keychain ($have) is not the one in build.sh ($want)"
+  # A dry run downloads nothing: it checks the key only when the Sparkle tools are here already.
+  SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-deploy-center}"; key_note="matches build.sh"
+  if [ -n "$dry" ]; then SPARKLE="$(ls -d vendor/Sparkle-*/ 2>/dev/null | tail -n 1 || true)"; SPARKLE="${SPARKLE%/}"
+  else SPARKLE="$(scripts/sparkle.sh)"; fi
+  if [ -n "$SPARKLE" ] && [ -x "$SPARKLE/bin/generate_keys" ]; then
+    have="$("$SPARKLE/bin/generate_keys" --account "$SPARKLE_ACCOUNT" -p 2>/dev/null)" \
+      || die "no Sparkle key \"$SPARKLE_ACCOUNT\" in the keychain (see the top of this file)"
+    [ "$have" = "$want_key" ] || die "the Sparkle key in the keychain ($have) is not the one in build.sh ($want_key)"
+  else key_note="not checked (the Sparkle tools are not fetched in a dry run)"; fi
   command -v python3 >/dev/null || die "python3 is missing (xcode-select --install)"
 fi
 if [ "$mode" = build ]; then
@@ -111,6 +149,42 @@ if publishing; then
   [ -z "$tag_sha" ] || [ "$tag_sha" = "$COMMIT" ] || die "$TAG exists already on another commit ($tag_sha): raise VERSION"
   # The CLI tarball is packed from this commit after the slow part; fail now if it cannot be.
   git cat-file -e "$COMMIT:README-CLI.md" 2>/dev/null || die "$COMMIT has no README-CLI.md, which the CLI tarball needs"
+  check_addons "$COMMIT"
+fi
+
+# --dry-run: the checks above passed (they only read); this is what a real run would do next.
+if [ -n "$dry" ]; then
+  if [ "$mode" = build ] || [ "$mode" = publish ]; then built="built from $COMMIT"; else built="the one in $ZIP"; fi
+  echo "Dry run: nothing was built, notarized, tagged, uploaded or written."
+  echo "  version     $VERSION (tag $TAG)"
+  echo "  commit      $COMMIT"
+  if publishing; then
+    echo "  repo        $REPO"
+    if [ -n "${tag_sha:-}" ]; then echo "  release     $TAG exists on this commit: resumed (assets replaced, notes updated)"
+    else echo "  release     $TAG is new: created at $COMMIT"; fi
+    echo "  Sparkle key ${key_note:-}"
+  fi
+  [ "$mode" != publish ] || echo "would run   scripts/check-public.sh and the four test suites"
+  if [ "$mode" != publish-only ]; then
+    echo "would build ./build.sh --widgets, signed as ${DEVELOPER_ID:-<DEVELOPER_ID is not set>}"
+    echo "would send  build/notarize.zip to Apple (profile ${NOTARY_PROFILE:-<NOTARY_PROFILE is not set>}), staple, zip to $ZIP"
+  fi
+  if publishing; then
+    echo "would pack  the CLI tarball and checksums.txt from $COMMIT"
+    echo "would upload $ZIP ($built), the CLI tarball and checksums.txt to the GitHub release $TAG"
+    echo "would sign  the zip for Sparkle and add $VERSION to site/appcast.xml"
+    echo "would write the Homebrew cask and formula in ${TAP_DIR:-a fresh clone in $DIST} (nothing pushed)"
+  fi
+  exit 0
+fi
+
+# Before a release goes out: the tests, and the guard against personal data in the public repo
+# (CI runs both too, but a release can be built from a commit CI never saw).
+if [ "$mode" = publish ]; then
+  scripts/check-public.sh || die "scripts/check-public.sh found personal data; nothing was built"
+  for t in tests/script-tests.sh tests/team-tests.sh tests/savings-tests.sh tests/install-tests.sh; do
+    bash "$t" >/dev/null 2>&1 || die "$t fails; run it to see why. Nothing was built"
+  done
 fi
 
 # --- build and notarize ------------------------------------------------------------------
@@ -121,9 +195,16 @@ if [ "$mode" != publish-only ]; then
   # Signed by build.sh; notarized here, so the wait can be resumed.
   # The widgets ship with every release (App Group <TEAMID>.app.deploycenter, no profile needed on macOS).
   DEVELOPER_ID="$DEVELOPER_ID" NOTARY_PROFILE="" DEPLOYS_REQUIRE_MCP=1 ./build.sh --widgets
+  # What the built app trusts for updates must be the built-in key and feed (see above).
+  plist="$APP/Contents/Info.plist"
+  [ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$plist" 2>/dev/null)" = "$want_key" ] \
+    || die "the built app does not carry the Sparkle key from build.sh ($want_key)"
+  [ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$plist" 2>/dev/null)" = "$want_feed" ] \
+    || die "the built app does not carry the update feed from build.sh ($want_feed)"
 
   (cd build && ditto -c -k --keepParent "Deploy Center.app" notarize.zip)
-  id="$(xcrun notarytool submit build/notarize.zip --keychain-profile "$NOTARY_PROFILE" --output-format json | jq -r .id)"
+  id="$(xcrun notarytool submit build/notarize.zip --keychain-profile "$NOTARY_PROFILE" --output-format json | jq -r .id)" \
+    || die "submitting to Apple failed (xcrun notarytool history --keychain-profile $NOTARY_PROFILE shows what arrived)"
   [ -n "$id" ] && [ "$id" != null ] || die "submitting to Apple failed"
   echo "Submitted to Apple: $id"
 
@@ -142,7 +223,8 @@ if [ "$mode" != publish-only ]; then
   done
 
   # "wait" also ends without an error when Apple says Invalid, so look again.
-  status="$(xcrun notarytool info "$id" --keychain-profile "$NOTARY_PROFILE" --output-format json | jq -r .status)"
+  status="$(xcrun notarytool info "$id" --keychain-profile "$NOTARY_PROFILE" --output-format json | jq -r .status)" \
+    || die "could not ask Apple about submission $id. Look again later: xcrun notarytool info $id --keychain-profile $NOTARY_PROFILE"
   case "$status" in
     Accepted) ;;
     Invalid|Rejected) refused "$status" ;;
@@ -180,6 +262,8 @@ notes="$(mktemp)"
 if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
   echo "Release $TAG exists; replacing its files."
   gh release upload "$TAG" "${ASSETS[@]}" --repo "$REPO" --clobber
+  # The notes too: a resumed release must not keep those of the failed attempt.
+  gh release edit "$TAG" --repo "$REPO" --notes-file "$notes" >/dev/null
 else
   gh release create "$TAG" "${ASSETS[@]}" --repo "$REPO" --target "$COMMIT" --draft \
     --title "Deploy Center $VERSION" --notes-file "$notes"
