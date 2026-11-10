@@ -66,9 +66,9 @@ user says so".
 
 The MCP server in `integrations/mcp/` (read-only tools `deploys_changed`, `deploys_status`,
 `deploys_explain`, `deploys_notes`, `deploys_logs`, `deploys_doctor`, and the estimates
-`deploys_simulate` and `deploys_ledger`; deploy and rollback only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`) is not on `main` yet. When it is, the plugin does not start it for
-you: a plugin may only point at files inside its own folder, and the server needs `npm ci` first.
-Add it yourself once:
+`deploys_simulate` and `deploys_ledger`; deploy and rollback only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`) is not started by the
+plugin: a plugin may only point at files inside its own folder, and the server needs `npm ci`
+first. Add it yourself once:
 
 ```bash
 claude mcp add deploys -- node /path/to/deploy-center/integrations/mcp/server.mjs
