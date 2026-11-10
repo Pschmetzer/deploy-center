@@ -111,9 +111,9 @@ enum SettingsText {
     /// The diagnostics to paste into an issue: versions and what is connected, per platform the
     /// script reports, without project names and without keys.
     static func diagnostics(version: String, os: String, doctor: Doctor?, providers: [ProviderInfo],
-                            counts: [String: Int], gitlabRepos: Int, autofix: AutofixReport?) -> String {
+                            counts: [String: Int], gitlabRepos: Int, autofix: AutofixReport?, script: String? = nil) -> String {
         let d = doctor
-        var lines = ["Deploy Center \(version)", os,
+        var lines = ["Deploy Center \(version)" + (script.map { ", deploys \($0)" } ?? ""), os,
                      "jq \(d?.jq ?? false), gh \(d?.githubCli ?? false)/login \(d.map { $0.githubLoggedIn.map(String.init) ?? "?" } ?? "false")"]
         for p in providers {
             var line = "\(p.label): " + (p.enabled ? "on" : "off")

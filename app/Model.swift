@@ -2,9 +2,7 @@
 
 import SwiftUI
 import AppKit
-import Charts
 import UserNotifications
-import ServiceManagement
 
 // MARK: - Data
 
@@ -77,6 +75,34 @@ struct RenderService: Decodable {
     let lastMsg: String?
     let risk: Risk?
 }
+/// The fields `vercel json` and `render json` share: one mapping to a row for both (`Store.decode`).
+protocol ScriptProject {
+    var name: String { get }; var auto: Bool { get }; var deployable: Bool { get }
+    var domain: String? { get }; var repo: String? { get }; var ref: String? { get }
+    var lastAt: Double? { get }; var lastState: String? { get }; var headAt: Double? { get }; var headMsg: String? { get }
+    var lastSha: String? { get }; var headSha: String? { get }
+    var changed: Bool? { get }; var pendingCommits: Int? { get }; var pendingPRs: Int? { get }; var openPRs: Int? { get }
+    var building: Bool? { get }; var pendingPartial: Bool? { get }; var oldestPendingAt: Double? { get }; var rewritten: Bool? { get }
+    var openDrafts: Int? { get }; var openBots: Int? { get }
+    var lastMsg: String? { get }
+    var risk: Risk? { get }
+}
+extension VercelProject: ScriptProject {}
+extension RenderService: ScriptProject {}
+
+extension Item {
+    /// A row from the script's JSON; only what differs per platform is passed in.
+    init(_ s: some ScriptProject, id: String, detail: String, platform: Platform, note: String?, link: String?, kind: String? = nil) {
+        self.init(id: id, name: s.name, detail: detail, platform: platform, deployable: s.deployable, auto: s.auto,
+                  note: note, link: link, domain: s.domain, lastAt: date(s.lastAt), lastState: s.lastState,
+                  headAt: date(s.headAt), headMsg: s.headMsg, lastSha: s.lastSha, headSha: s.headSha,
+                  repo: s.repo, ref: s.ref, kind: kind, changed: s.changed, pendingCommits: s.pendingCommits,
+                  pendingPRs: s.pendingPRs, openPRs: s.openPRs, lastMsg: s.lastMsg, openDrafts: s.openDrafts, openBots: s.openBots,
+                  building: s.building ?? false, pendingPartial: s.pendingPartial ?? false,
+                  oldestPendingAt: date(s.oldestPendingAt), rewritten: s.rewritten ?? false, risk: s.risk)
+    }
+}
+
 struct Costs: Decodable {
     struct Day: Decodable, Identifiable { let day: String; let total: Double; let build: Double; var id: String { day } }
     struct Project: Decodable { let name: String; let build: Double; let builds: Int? }
@@ -307,6 +333,12 @@ extension Item {
     var lastFailed: Bool {
         let s = (lastState ?? "").lowercased()
         return s.contains("fail") || s == "error"
+    }
+    /// Failed, by either source: a deploy started here that failed, or the platform's last build.
+    /// The one rule for the widget, the menu bar and Claude's "why did it fail".
+    var failed: Bool {
+        if case .failed = state { return true }
+        return lastFailed
     }
 }
 

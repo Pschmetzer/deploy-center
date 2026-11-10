@@ -2,9 +2,6 @@
 
 import SwiftUI
 import AppKit
-import Charts
-import UserNotifications
-import ServiceManagement
 
 // MARK: - Language (Settings → General → Language; by default German if the Mac prefers it)
 
@@ -44,19 +41,24 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     static var running: AppLanguage { isGerman ? .de : .en }
 }
 
+/// Asks before quitting (or restarting) while deploys run; true when the app may go. No question
+/// when nothing runs. The menu bar's Quit and `relaunchApp` share it.
+@MainActor func confirmQuit(running: Int, restart: Bool = false) -> Bool {
+    guard running > 0 else { return true }
+    NSApp.activate(ignoringOtherApps: true)
+    let a = NSAlert()
+    a.messageText = L("\(running) \(running == 1 ? "deploy is" : "deploys are") still running", "\(running) \(running == 1 ? "Deploy läuft" : "Deploys laufen") noch")
+    a.informativeText = L("Builds that already started go on at Vercel or Render, but Deploy Center stops following them and queued ones do not start.",
+                          "Gestartete Builds laufen bei Vercel oder Render weiter, aber Deploy Center verfolgt sie nicht mehr, und wartende starten nicht.")
+    a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
+    a.addButton(withTitle: restart ? L("Restart anyway", "Trotzdem neu starten") : L("Quit anyway", "Trotzdem beenden"))
+    return a.runModal() == .alertSecondButtonReturn
+}
+
 /// Quits after asking when deploys run, and opens the app again. No `open -n`: if the quit is
 /// cancelled, `open` only brings the running copy forward, so there are never two.
 @MainActor func relaunchApp(running deploys: Int) {
-    if deploys > 0 {
-        NSApp.activate(ignoringOtherApps: true)
-        let a = NSAlert()
-        a.messageText = L("\(deploys) \(deploys == 1 ? "deploy is" : "deploys are") still running", "\(deploys) \(deploys == 1 ? "Deploy läuft" : "Deploys laufen") noch")
-        a.informativeText = L("Builds that already started go on at Vercel or Render, but Deploy Center stops following them and queued ones do not start.",
-                              "Gestartete Builds laufen bei Vercel oder Render weiter, aber Deploy Center verfolgt sie nicht mehr, und wartende starten nicht.")
-        a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
-        a.addButton(withTitle: L("Restart anyway", "Trotzdem neu starten"))
-        guard a.runModal() == .alertSecondButtonReturn else { return }
-    }
+    guard confirmQuit(running: deploys, restart: true) else { return }
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/bin/sh")
     // Waits until this copy is gone (at most 10 s), then opens the bundle again.
@@ -358,10 +360,34 @@ struct ToolError: LocalizedError {
     var errorDescription: String? { message }
 }
 
+/// Where the app keeps its files. `DEPLOYCENTER_DATA_DIR` moves all of them to one folder; a binary
+/// that is no app bundle (the test runner) gets a temporary folder, so a test never writes into
+/// the person's journal, caches or log.
+enum AppDirs {
+    static let override: URL? = {
+        if let p = ProcessInfo.processInfo.environment["DEPLOYCENTER_DATA_DIR"], !p.isEmpty { return URL(fileURLWithPath: p, isDirectory: true) }
+        guard Bundle.main.bundleIdentifier == nil else { return nil }
+        return FileManager.default.temporaryDirectory.appendingPathComponent("dc-data-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+    }()
+    /// Application Support: kept (macOS may empty the Caches folder at any time).
+    static var support: URL {
+        override?.appendingPathComponent("support", isDirectory: true)
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("app.deploycenter.mac", isDirectory: true)
+    }
+    static var caches: URL {
+        override?.appendingPathComponent("caches", isDirectory: true)
+            ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("app.deploycenter.mac", isDirectory: true)
+    }
+    static var log: URL {
+        override?.appendingPathComponent("DeployCenter.log")
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/DeployCenter.log")
+    }
+}
+
 /// Errors go to ~/Library/Logs/DeployCenter.log, so one can be attached to an issue.
 /// What the script said and when, with keys and tokens masked: a CLI's error can quote one.
 enum Log {
-    static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/DeployCenter.log")
+    static let url = AppDirs.log
     /// Written in order on its own queue, never on the main thread.
     private static let queue = DispatchQueue(label: "app.deploycenter.log", qos: .utility)
     /// A log from an older version may be readable by others; once per run it is made private.
@@ -379,7 +405,8 @@ enum Log {
         let fm = FileManager.default
         // The throwing calls: the old ones raise an Objective-C exception on a full disk, and the app ends.
         if let h = try? FileHandle(forWritingTo: url) { _ = try? h.seekToEnd(); try? h.write(contentsOf: Data(text.utf8)); try? h.close() }
-        else { fm.createFile(atPath: url.path, contents: Data(text.utf8), attributes: [.posixPermissions: 0o600]) }
+        else { if AppDirs.override != nil { try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true) }
+               fm.createFile(atPath: url.path, contents: Data(text.utf8), attributes: [.posixPermissions: 0o600]) }
         if let size = try? fm.attributesOfItem(atPath: url.path)[.size] as? Int, size > 1_000_000,
            let data = try? Data(contentsOf: url) {
             var tail = data.suffix(500_000)

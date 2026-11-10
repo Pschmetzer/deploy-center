@@ -189,13 +189,41 @@ final class SavingsModel: ObservableObject {
 
     private let defaults = UserDefaults.standard
 
+    /// The last answers, as files in Application Support: with every skipped push they grow too big
+    /// for the preferences, which are read whole on the main thread.
+    nonisolated static var simulationURL: URL { AppDirs.support.appendingPathComponent("savings-simulation.json") }
+    nonisolated static var ledgerURL: URL { AppDirs.support.appendingPathComponent("savings-ledger.json") }
+
     private init() {
-        // The last answers stay for the next start: both take many API calls.
-        if let d = defaults.data(forKey: "savingsSimulation") { simulation = try? JSONDecoder().decode(SimulateReport.self, from: d) }
-        if let d = defaults.data(forKey: "savingsLedger") { ledger = try? JSONDecoder().decode(LedgerReport.self, from: d) }
+        // The last answers stay for the next start: both take many API calls. The times are small
+        // and read at once (`refreshLedgerIfOld` needs them); the reports are decoded off the main thread.
         let s = defaults.double(forKey: "savingsSimulationAt"), g = defaults.double(forKey: "savingsLedgerAt")
         simulatedAt = s > 0 ? Date(timeIntervalSince1970: s) : nil
         ledgerAt = g > 0 ? Date(timeIntervalSince1970: g) : nil
+        Self.moveOutOfDefaults(defaults)
+        Task.detached(priority: .utility) {
+            let sim = (try? Data(contentsOf: Self.simulationURL)).flatMap { try? JSONDecoder().decode(SimulateReport.self, from: $0) }
+            let led = (try? Data(contentsOf: Self.ledgerURL)).flatMap { try? JSONDecoder().decode(LedgerReport.self, from: $0) }
+            await MainActor.run {
+                // A load that finished meanwhile is newer.
+                let m = SavingsModel.shared
+                if m.simulation == nil { m.simulation = sim }
+                if m.ledger == nil { m.ledger = led }
+            }
+        }
+    }
+
+    /// Older versions kept both reports in the preferences: moved once into the files.
+    nonisolated static func moveOutOfDefaults(_ d: UserDefaults) {
+        for (key, url) in [("savingsSimulation", simulationURL), ("savingsLedger", ledgerURL)] {
+            guard let data = d.data(forKey: key) else { continue }
+            if !FileManager.default.fileExists(atPath: url.path) { save(data, to: url) }
+            if FileManager.default.fileExists(atPath: url.path) { d.removeObject(forKey: key) }
+        }
+    }
+    nonisolated static func save(_ data: Data, to url: URL) {
+        try? FileManager.default.createDirectory(at: AppDirs.support, withIntermediateDirectories: true)
+        try? data.write(to: url, options: .atomic)
     }
 
     func loadSimulation(days: Int = 30) async {
@@ -205,7 +233,7 @@ final class SavingsModel: ObservableObject {
             let data = try await Tool.run(["simulate", "--json", "--days", "\(days)"], timeout: 300)
             simulation = try Self.decode(SimulateReport.self, data, what: "simulate")
             simulationError = nil; simulatedAt = Date()
-            defaults.set(data, forKey: "savingsSimulation"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsSimulationAt")
+            Self.save(data, to: Self.simulationURL); defaults.set(Date().timeIntervalSince1970, forKey: "savingsSimulationAt")
         } catch is CancellationError {
         } catch { simulationError = error.localizedDescription }
     }
@@ -217,7 +245,7 @@ final class SavingsModel: ObservableObject {
             let data = try await Tool.run(["ledger", "--json"], timeout: 300)
             ledger = try Self.decode(LedgerReport.self, data, what: "ledger")
             ledgerError = nil; ledgerAt = Date()
-            defaults.set(data, forKey: "savingsLedger"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsLedgerAt")
+            Self.save(data, to: Self.ledgerURL); defaults.set(Date().timeIntervalSince1970, forKey: "savingsLedgerAt")
         } catch is CancellationError {
         } catch { ledgerError = error.localizedDescription }
     }
