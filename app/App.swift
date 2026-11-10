@@ -246,6 +246,8 @@ struct DeployCenterApp: App {
             .windowResizability(.contentMinSize)
         .commands {
             WindowCommands()
+            // Edit → Find (⌘F): the build log's find bar. In the main window ⌘F still goes to the search.
+            TextEditingCommands()
             CommandGroup(after: .appInfo) {
                 Button(L("Check for Updates …", "Nach Updates suchen …")) { Task { await store.checkForUpdate(force: true) } }
             }

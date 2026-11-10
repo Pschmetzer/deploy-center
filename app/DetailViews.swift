@@ -75,7 +75,7 @@ struct BuildLog: View {
                     }
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
-        .frame(minWidth: 560, idealWidth: 760, maxWidth: .infinity, minHeight: 320, idealHeight: 520, maxHeight: .infinity)
+        .frame(minWidth: 760, maxWidth: .infinity, minHeight: 420, idealHeight: 520, maxHeight: .infinity)
         .task(id: reloadKey) {
             do {
                 let data = try await Tool.run(["logs", item.id, "\(lineCount)"])
@@ -188,7 +188,7 @@ struct ProjectDetail: View {
                 ProgressView(L("Asking GitHub …", "Frage GitHub …")).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(minWidth: 520, idealWidth: 620, maxWidth: .infinity, minHeight: 360, idealHeight: 560, maxHeight: .infinity)
+        .frame(minWidth: 620, maxWidth: .infinity, minHeight: 420, idealHeight: 560, maxHeight: .infinity)
         .alert(L("Deploy this commit?", "Diesen Commit deployen?"),
                isPresented: Binding(get: { commitToDeploy != nil }, set: { if !$0 { commitToDeploy = nil } })) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { commitToDeploy = nil }
