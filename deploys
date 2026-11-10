@@ -9,7 +9,7 @@
 #   Render  an API key in the macOS keychain (`deploys render set-key`, reads stdin).
 # No key is ever printed.
 #
-# Every day:
+# Commands:
 #   deploys doctor                            check tools and access (JSON)
 #   deploys changed [--json]                  what has commits on GitHub that are not live
 #   deploys deploy-changed [--yes]            deploy all of those (shows the list without --yes)
@@ -27,7 +27,6 @@
 #   deploys ignore <p> [--undo] | --list      leave a project out of changed and deploy-changed
 #   deploys list [--json]                     every project on every provider that is on, with its platform
 #
-# Safe deploys (docs/SAFE-DEPLOY.md):
 #   deploys verify <p> [--path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
 #     [--rollback-after 10] [--no-rollback]   count down, then roll back (Ctrl-C stops it)
 #   deploys risk <project> [--json]           green/yellow/red for what waits: migrations, lockfiles, config, size
@@ -35,7 +34,6 @@
 #   deploys window [--json]                   is the deploy window (window.json) open now?
 #   --force "why"                             deploy inside a closed window; the reason goes to the journal
 #
-# Platforms (docs/PROVIDERS.md; their commands are listed at the end):
 #   deploys providers [--json]                the platforms (providers/*.sh): on or off, set up or not
 #   deploys providers enable|disable <p>      switch one on or off (Vercel and Render are on by default)
 #   deploys <p> <verb> ...                    any provider: list, deploy, status, latest, logs, url, on, off, ...
@@ -56,18 +54,15 @@
 #   deploys render set-key | forget-key       the Render API key in the keychain (set-key reads stdin)
 #   deploys gitlab set-token | forget-token   a GitLab token in the keychain (read from stdin; docs/GITLAB.md)
 #
-# Auto-deploy for a while, and the guard (docs/GUARD.md):
 #   deploys autodeploy allow <platform|all> <p>|--all <hours>   auto-deploy on for a while (1-168 h)
 #   deploys autodeploy allowed [--json] | revoke <platform|all> <p>|--all
 #   deploys guard [--dry-run]                 auto-deploy off wherever it is on without an allowance
 #   deploys guard status [--json] | schedule on|off   (every 30 minutes)
 #
-# Team (docs/TEAM.md):
 #   deploys config [--json] [--refresh]       the effective config, and where each value came from
 #   deploys team add|remove <owner/repo> | list | refresh | journal   repos whose deploy-center.json counts
 #   deploys readonly [on|off]                 observer mode: every command that changes something is refused
 #
-# Claude (docs/AUTOFIX.md, docs/SCAN.md, docs/CLAUDE.md):
 #   deploys autofix [--dry-run] [--only <platform> <p>]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
 #   deploys autofix set-token | routine <id> | list | forget-token | prompt | status | sync | schedule on|off
 #   deploys scan start <owner/repo> [branch] [--findings <check id>]   Claude Code on this Mac looks for bugs and opens one fix PR (never merges)
@@ -78,13 +73,11 @@
 #                                             plain release notes (--lang en|de), is it safe to ship
 #   deploys ai set-key | verify | model [<id>] | cap [<n>] | status | forget-key
 #
-# Money:
 #   deploys costs [days]                      Vercel charges per day (Vercel only)
 #   deploys triggers                          builds nobody started from here, deploying workflows, Blueprints
 #   deploys simulate [--days 30] [--json]     estimate: what auto-deploy costs a month vs. once a day
 #   deploys ledger [--json]                   estimate: builds skipped and money saved since auto-deploy was off
 #
-# This Mac:
 #   deploys where                             config folder, version, key source, logins
 #   deploys completion zsh|bash               tab completion (eval "$(deploys completion zsh)")
 #   deploys --help | --version

@@ -212,7 +212,7 @@ vercel_json() {
   need="$(jq -c '[.[] | select(.targets.production != null) | .name]' <<< "$projects")"
   for _ in 1 2 3; do
     page="$(vercel_call "/v6/deployments?limit=100&target=production${next:+&until=$next}" 2>/dev/null)" || break
-    deps="$(jq -c --argjson p "$page" '. + ($p.deployments // [])' <<< "$deps" 2>/dev/null)" || break
+    deps="$(jq -cs '.[0] + (.[1].deployments // [])' <(printf '%s' "$deps") <(printf '%s' "$page") 2>/dev/null)" || break
     next="$(jq -r '.pagination.next // empty' <<< "$page" 2>/dev/null)"
     [ -n "$next" ] || break
     [ "$(jq --argjson n "$need" '[.[].name] as $have | [$n[] | select(. as $x | $have | index($x) | not)] | length' <<< "$deps")" -gt 0 ] || break

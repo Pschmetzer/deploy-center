@@ -256,7 +256,7 @@ render_logs() {
   while [ "$got" -lt "$n" ]; do
     lim=$((n - got)); [ "$lim" -le 100 ] || lim=100
     page="$(render_call GET "/logs?ownerId=$owner&resource=$id&type=build&limit=$lim&direction=backward$win")" || { [ "$got" -gt 0 ] && break; return 1; }
-    all="$(jq -c --argjson p "$page" '. + ($p.logs // [])' <<< "$all")"
+    all="$(jq -cs '.[0] + (.[1].logs // [])' <(printf '%s' "$all") <(printf '%s' "$page"))" || return 1
     got="$(jq 'length' <<< "$all")"
     more="$(jq -r '.hasMore // false' <<< "$page")"
     next="$(jq -r 'if .nextStartTime and .nextEndTime then "&startTime=\(.nextStartTime | @uri)&endTime=\(.nextEndTime | @uri)" else empty end' <<< "$page")"
