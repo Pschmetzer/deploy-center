@@ -8,3 +8,11 @@
 - **Force-Push**: ist der Live-Commit nicht mehr im Repo, steht „Branch wurde umgeschrieben“ statt einer Zahl.
 - **Nach einem Rollback**: der Stand ist älter als der Branch, die Zeile hat wieder Änderungen.
 - **GitHub-Limit**: unter 300 verbleibenden Aufrufen werden nur noch die Köpfe gelesen (kein Vergleich, keine offenen PRs).
+
+## Repos auf GitLab
+
+Dieselben Regeln gelten für GitLab, mit drei Unterschieden ([GITLAB.md](GITLAB.md#differences-from-github), Englisch):
+
+- **Keine Untergrenze.** GitLab liefert alle Commits eines Vergleichs, eine Zahl über 250 ist also exakt, nie „mindestens“.
+- **Kein eigenes Budget.** GitLab begrenzt Aufrufe pro Minute, nicht pro Stunde. Nur das GitHub-Limit oben schaltet ein Neuladen auf die Köpfe um, auch für GitLab-Repos.
+- **Offene MRs** werden wie offene PRs gezählt, aber ohne CI-Status: GitLabs Liste der Merge Requests enthält keine Pipelines.
