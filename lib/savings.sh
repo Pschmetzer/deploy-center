@@ -29,12 +29,14 @@ sv_projects() {
 }
 
 # Pushes to <branch> since <epoch>, as {basis, list:[{at, sha}]}; {error} when GitHub cannot be read.
+# A "push" is anything that moves the branch: a push, a force push, a PR merge or a merge-queue merge.
+# Most changes reach main through PR merges, which GitHub lists as pr_merge, not push.
 sv_pushes() {  # sv_pushes <owner/repo> <branch> <since epoch>
   local repo="$1" ref="$2" since="$3" age period raw basis=pushes
   age=$(( ($(date +%s) - since) / 86400 ))
   if [ "$age" -lt 1 ]; then period=day; elif [ "$age" -lt 7 ]; then period=week
   elif [ "$age" -lt 30 ]; then period=month; elif [ "$age" -lt 90 ]; then period=quarter; else period=year; fi
-  if ! raw="$(gh api --paginate "repos/$repo/activity?ref=refs/heads/$ref&activity_type=push&time_period=$period&per_page=100" 2>/dev/null)" \
+  if ! raw="$(gh api --paginate "repos/$repo/activity?ref=refs/heads/$ref&time_period=$period&per_page=100" 2>/dev/null)" \
      || ! echo "$raw" | jq -e 'type == "array"' >/dev/null 2>&1; then
     basis=commits
     raw="$(gh api --paginate "repos/$repo/commits?sha=$ref&since=$(jq -rn --argjson s "$since" '$s | todate')&per_page=100" 2>/dev/null \
@@ -44,6 +46,7 @@ sv_pushes() {  # sv_pushes <owner/repo> <branch> <since epoch>
   fi
   # --paginate prints one array per page: jq reads them as a stream.
   echo "$raw" | jq -sc --arg b "$basis" --argjson since "$since" '[.[][] | select(.timestamp and .after)
+      | select((.activity_type // "push") | IN("push", "force_push", "pr_merge", "merge_queue_merge"))
       | {at:(.timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601), sha:.after}]
       | map(select(.at >= $since)) | unique_by(.sha) | sort_by(.at) | {basis:$b, list:.}' 2>/dev/null \
     || echo '{"error":"unreadable answer from GitHub"}'

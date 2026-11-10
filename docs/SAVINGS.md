@@ -15,7 +15,7 @@ Every number is an estimate and shows "≈". The JSON says how it was made (`met
 
 **pushes to the deploy branch × the project's average build**
 
-1. **Pushes.** From GitHub's activity list for the deploy branch (`repos/{repo}/activity`, `activity_type=push`). Where that cannot be read, commits on the branch stand in. One push can carry several commits, so that count is an upper bound. `basis` says which one was used.
+1. **Pushes.** From GitHub's activity list for the deploy branch (`repos/{repo}/activity`: `push`, `force_push`, `pr_merge`, `merge_queue_merge`). Where that cannot be read, commits on the branch stand in. One push can carry several commits, so that count is an upper bound. `basis` says which one was used.
 2. **Average build.** The mean duration of the project's last 20 finished builds (Vercel: `READY`; Render: `live` or `deactivated`). Failed and canceled builds are not measured.
 3. **Price per build**, the first one that is known:
    1. Vercel billing (`deploys costs`, last 7 days): billed build dollars / builds of that project (`vercel-billing`).
