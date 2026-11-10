@@ -1,0 +1,1 @@
+{"success":true,"errors":[],"result":{"total":3,"data":[{"ts":"2026-01-02T00:00:01Z","line":"Cloning repository..."},{"ts":"2026-01-02T00:00:02Z","line":"Building"},{"ts":"2026-01-02T00:00:03Z","line":"Success: Assets published!"}]}}

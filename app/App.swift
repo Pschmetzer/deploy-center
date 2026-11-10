@@ -40,6 +40,7 @@ struct SettingsView: View {
             updatesSection
             hiddenSection
             TeamSettings(store: store)
+            CommandPaletteSettings()
             helpSection
         }
         .formStyle(.grouped)

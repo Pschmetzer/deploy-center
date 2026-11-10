@@ -1,0 +1,18 @@
+# The fake curl's answers: METHOD  URL glob  fixture  [status]  [hooked]
+# First match wins. A line marked "hooked" only matches after a POST to a build hook.
+GET   */api/v1/user                                  user.json
+GET   */api/v1/sites?filter=all*                     sites.json
+GET   */api/v1/sites/site-shop/deploys?per_page=*    deploys-shop-after.json   200  hooked
+GET   */api/v1/sites/site-shop/deploys?*             deploys-shop.json
+GET   */api/v1/sites/site-blog/deploys?*             deploys-blog.json
+GET   */api/v1/sites/site-paused/deploys?*           deploys-paused.json
+GET   */api/v1/sites/site-static/deploys?*           deploys-static.json
+GET   */api/v1/sites/site-shop/build_hooks           hooks-shop.json
+GET   */api/v1/sites/site-blog/build_hooks           hooks-blog.json
+POST  */api/v1/sites/site-blog/build_hooks           hook-created-blog.json    201
+GET   */api/v1/sites/site-shop                       site-shop.json
+GET   */api/v1/sites/site-blog                       site-blog.json
+GET   */api/v1/deploys/d-shop-3                      deploy-d-shop-3.json
+POST  */api/v1/deploys/d-shop-3/cancel               deploy-d-shop-3.json
+POST  */api/v1/sites/site-shop/deploys/*/restore     empty.json
+POST  https://api.netlify.com/build_hooks/*          empty.json

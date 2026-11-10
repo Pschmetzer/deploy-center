@@ -2,12 +2,14 @@
 
 ## Unreleased
 
+- `providers/amplify.sh`: AWS Amplify Hosting, opt-in. Auto-build off per branch, deploy (`start-job RELEASE`, with `--sha`), cancel, logs, and rollback by rebuilding an earlier commit, through the `aws` CLI. See `docs/providers/amplify.md`.
 - `integrations/mcp/`: an MCP server for AI coding agents. Read-only by default (`changed`, `status`, `explain`, `notes`, `logs`, `doctor`); deploy and rollback of one project per call only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`.
 - Team mode, without a server (`docs/TEAM.md`): a shared `deploy-center.json` in each repo (project → repo/branch, health paths, deploy window, ignored projects, groups, approvals, observers), read with `gh` and cached, merged below this Mac's own files. `deploys config [--json]` shows each value and where it came from; schema in `docs/deploy-center.schema.json`.
 - Observer mode: `DEPLOYS_READONLY=1`, `~/.config/deploys/readonly` (`deploys readonly on|off`, Settings → Team), or a login in `observers`. Every command that changes something is refused; the app hides its deploy buttons and shows "Observer".
 - Two-person rule (optional per project): a production deploy needs an approving PR review or a `deploy-approved-by:<login>` label from someone else, on the exact commit, which is then pinned. `--force "reason"` overrides and is journaled (`deploys team journal`).
 - `deploys deploy <project>|<group>`: one project on either platform, or a group in order, each waiting for the one before to be live.
 - Fixed: file ages on Linux (`stat`), which the start lock and the Vercel team cache depend on.
+- App: command palette (⌘K). Fuzzy search over the actions (deploy all changed, reload, stop all, journal, settings, costs) and per project deploy, log, open, dashboard, rollback and notes; recent commands first. Deploys and rollbacks ask first, as in the window. Optional global ⌥⌘K under Settings → Advanced (off by default).
 - `deploys autofix`: a failed build (Vercel `ERROR`, Render `build_failed`) is handed to a Claude Code routine that opens a fix PR; after the merge, the next run deploys that merge commit once. Caps, no duplicates, never merges. See `docs/AUTOFIX.md` and `scripts/autofix.plist.example`.
 - `deploys logs <project> --id <deploy>` reads the log of one deploy; `vercel json` and `render json` carry `latestId` and `latestSha` of the newest attempt.
 

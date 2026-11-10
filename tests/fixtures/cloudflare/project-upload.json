@@ -1,0 +1,25 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "name": "site",
+    "id": "p1",
+    "subdomain": "site.pages.dev",
+    "domains": [
+      "site.pages.dev",
+      "www.example.com"
+    ],
+    "production_branch": "main",
+    "source": null,
+    "canonical_deployment": {
+      "id": "d-live",
+      "deployment_trigger": {
+        "metadata": {
+          "branch": "main",
+          "commit_hash": "aaaa111",
+          "commit_message": "fix: live\n\nbody"
+        }
+      }
+    }
+  }
+}
