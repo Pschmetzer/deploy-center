@@ -755,8 +755,10 @@ struct ContentView: View {
     /// Ticked projects that are already on their newest commit: building them costs and changes nothing.
     /// What the confirmation's Deploy does: inside a closed deploy window it asks first.
     private func startDeploy() {
-        let chosen = scopes, green = onlyGreen
+        let chosen = scopes, green = onlyGreen, count = selectedAll.count
         Task {
+            if OwnerCheck.needed(projects: count),
+               !(await OwnerCheck.confirm(L("put \(count) projects live", "\(count) Projekte live schalten"))) { return }
             if let w = await store.deployWindow(), w.denied {
                 frozenScopes = chosen; freezeReason = w.reason ?? ""; return
             }

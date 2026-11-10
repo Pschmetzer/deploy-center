@@ -84,7 +84,10 @@ struct GuardSettings: View {
             }
 
             GuardAllowForm(store: store, busy: busy) { platform, project, hours in
-                Task { await run(["autodeploy", "allow", platform, project, String(hours)], show: true) }
+                Task {
+                    guard await OwnerCheck.confirm(L("allow auto-deploy for \(hours) h", "Auto-Deploy für \(hours) h erlauben")) else { return }
+                    await run(["autodeploy", "allow", platform, project, String(hours)], show: true)
+                }
             }
         } header: {
             Text(L("Auto-deploy guard", "Auto-Deploy-Wächter"))

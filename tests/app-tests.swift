@@ -946,5 +946,8 @@ expect("updates: on by default", [Updater.automaticChecks(nil), Updater.automati
 expect("quiet hours", [Notify.quiet(hour: 23, from: 22, to: 7), Notify.quiet(hour: 6, from: 22, to: 7), Notify.quiet(hour: 7, from: 22, to: 7),
                         Notify.quiet(hour: 13, from: 12, to: 14), Notify.quiet(hour: 3, from: 0, to: 0)], [true, true, false, true, false])
 
+expect("owner check: several projects ask, one does not", [OwnerCheck.needed(projects: 1), OwnerCheck.needed(projects: 2)], [false, true])
+expect("owner check is off by default", OwnerCheck.on, false)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

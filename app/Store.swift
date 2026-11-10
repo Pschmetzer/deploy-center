@@ -1158,7 +1158,16 @@ final class Store: ObservableObject {
     }
 
     /// Production back to what was live before.
+    /// A rollback by hand: with the owner check on (Settings), Touch ID or the password first.
     func rollback(_ item: Item) {
+        guard OwnerCheck.on else { rollbackNow(item); return }
+        Task {
+            guard await OwnerCheck.confirm(L("roll back \(item.name)", "\(item.name) zurückrollen")) else { return }
+            rollbackNow(item)
+        }
+    }
+    /// The rollback itself; the automatic one after a failed check does not wait for a person.
+    func rollbackNow(_ item: Item) {
         if observer {
             say(L("Observer mode", "Beobachter-Modus"), L("This Mac only looks. Turn it off in Settings → Team.", "Dieser Mac schaut nur zu. Abschalten unter Einstellungen → Team."), ok: false)
             return
@@ -1419,7 +1428,7 @@ final class Store: ObservableObject {
             // A new deploy started meanwhile (a fix, say): it is not rolled back from under itself.
             let now = self.itemNow(item) ?? item
             guard !now.state.isActive else { return }
-            self.rollback(now)
+            self.rollbackNow(now)
         }
     }
     /// A new deploy of the row ends its countdown without a word: what goes out next is checked anew.
