@@ -23,9 +23,31 @@ struct Doctor: Decodable {
     let perl: Bool?; let curl: Bool?
     /// A field the script does not send (older or newer script) counts as "no", instead of the
     /// whole answer failing and the app showing nothing.
+    /// Scheduled jobs whose PATH no longer finds a tool ("autofix:gh"); newer scripts only.
+    let jobsMissing: [String]
+    /// The flags of a provider, under "providers":{"vercel":{…}} in newer scripts.
+    private struct Flags: Decodable {
+        let values: [String: Bool]
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: AnyKey.self)
+            var v: [String: Bool] = [:]
+            for k in c.allKeys { if let b = (try? c.decodeIfPresent(Bool.self, forKey: k)) ?? nil { v[k.stringValue] = b } }
+            values = v
+        }
+    }
+    private struct AnyKey: CodingKey {
+        var stringValue: String; var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        func flag(_ k: CodingKeys) -> Bool { ((try? c.decodeIfPresent(Bool.self, forKey: k)) ?? nil) ?? false }
+        // A provider's field at the top (older scripts) or under its provider (newer ones): either counts.
+        let nested = ((try? c.decodeIfPresent([String: Flags].self, forKey: .providers)) ?? nil) ?? [:]
+        func flag(_ k: CodingKeys) -> Bool {
+            ((try? c.decodeIfPresent(Bool.self, forKey: k)) ?? nil) ?? nested.values.lazy.compactMap { $0.values[k.stringValue] }.first ?? false
+        }
+        jobsMissing = ((try? c.decodeIfPresent([String].self, forKey: .jobsMissing)) ?? nil) ?? []
         jq = flag(.jq); vercelCli = flag(.vercelCli); vercelApi = flag(.vercelApi); vercelLoggedIn = flag(.vercelLoggedIn)
         githubCli = flag(.githubCli); renderKey = flag(.renderKey); readonly = flag(.readonly)
         githubLoggedIn = (try? c.decodeIfPresent(Bool.self, forKey: .githubLoggedIn)) ?? nil
@@ -34,7 +56,7 @@ struct Doctor: Decodable {
     }
     /// Tools the script needs that this Mac lacks (only what the script reported as missing).
     var missingTools: [String] { [perl == false ? "perl" : nil, curl == false ? "curl" : nil].compactMap { $0 } }
-    private enum CodingKeys: String, CodingKey { case jq, vercelCli, vercelApi, vercelLoggedIn, githubCli, githubLoggedIn, renderKey, readonly, perl, curl }
+    private enum CodingKeys: String, CodingKey { case jq, vercelCli, vercelApi, vercelLoggedIn, githubCli, githubLoggedIn, renderKey, readonly, perl, curl, jobsMissing, providers }
 }
 
 /// One element of a list that may not decode; the rest of the list still does.

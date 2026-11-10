@@ -195,6 +195,8 @@ enum Tool {
                 p.arguments = [path] + args
                 var env = ProcessInfo.processInfo.environment
                 env["PATH"] = searchPath
+                // The app journals what it starts itself; the script then writes no second line.
+                env["DEPLOYS_CALLER"] = "app"
                 p.environment = env
                 let out = Pipe(), err = Pipe()
                 p.standardOutput = out

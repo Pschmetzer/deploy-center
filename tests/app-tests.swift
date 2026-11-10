@@ -949,5 +949,16 @@ expect("quiet hours", [Notify.quiet(hour: 23, from: 22, to: 7), Notify.quiet(hou
 expect("owner check: several projects ask, one does not", [OwnerCheck.needed(projects: 1), OwnerCheck.needed(projects: 2)], [false, true])
 expect("owner check is off by default", OwnerCheck.on, false)
 
+do {
+    let nested = try? JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"providers":{"vercel":{"vercelCli":true,"vercelLoggedIn":true},"render":{"renderKey":true}},"jobsMissing":["autofix:gh"]}"#.utf8))
+    expect("doctor: provider flags under providers", "\(nested?.vercelLoggedIn ?? false) \(nested?.renderKey ?? false) \(nested?.jobsMissing ?? [])", "true true [\"autofix:gh\"]")
+    let flat = try? JSONDecoder().decode(Doctor.self, from: Data(#"{"renderKey":true,"providers":{"render":{"renderKey":false}}}"#.utf8))
+    expect("doctor: the top level wins", flat?.renderKey ?? false, true)
+    let g = try? JSONDecoder().decode(GuardStatus.self, from: Data(#"{"enabled":true,"lastActions":[],"allowances":[],"pathMissing":["vercel"]}"#.utf8))
+    expect("guard: a tool the job no longer finds", g?.pathMissing ?? [], ["vercel"])
+    let a = try? JSONDecoder().decode(AutofixStatus.self, from: Data(#"{"token":true,"scheduled":true,"fires":[]}"#.utf8))
+    expect("autofix: older script, nothing missing", a?.pathMissing ?? ["?"], [String]())
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

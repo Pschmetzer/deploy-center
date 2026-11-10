@@ -32,6 +32,8 @@ struct GuardStatus: Decodable {
     let lastDry: Bool?
     let lastActions: [Action]
     let allowances: [Allowance]
+    /// Tools the scheduled job no longer finds on its PATH (newer scripts); `guard schedule on` renews it.
+    let pathMissing: [String]
     /// A broken entry is skipped; the rest of the section still shows.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: K.self)
@@ -40,8 +42,9 @@ struct GuardStatus: Decodable {
         lastDry = (try? c.decodeIfPresent(Bool.self, forKey: .lastDry)) ?? nil
         lastActions = (((try? c.decodeIfPresent([Lossy<Action>].self, forKey: .lastActions)) ?? nil) ?? []).compactMap(\.value)
         allowances = (((try? c.decodeIfPresent([Lossy<Allowance>].self, forKey: .allowances)) ?? nil) ?? []).compactMap(\.value)
+        pathMissing = ((try? c.decodeIfPresent([String].self, forKey: .pathMissing)) ?? nil) ?? []
     }
-    private enum K: String, CodingKey { case enabled, lastRun, lastDry, lastActions, allowances }
+    private enum K: String, CodingKey { case enabled, lastRun, lastDry, lastActions, allowances, pathMissing }
 }
 
 struct GuardSettings: View {
@@ -65,6 +68,9 @@ struct GuardSettings: View {
                 .disabled(busy || status == nil)
 
             GuardLastRun(status: status)
+            if let s = status, s.enabled, !s.pathMissing.isEmpty {
+                PathMissingLine(missing: s.pathMissing, busy: busy) { Task { await run(["guard", "schedule", "on"]) } }
+            }
 
             HStack {
                 Button(L("Test (changes nothing)", "Testen (ändert nichts)")) { Task { await run(["guard", "--dry-run"], show: true) } }
@@ -285,5 +291,21 @@ private struct GuardAllowForm: View {
         let parts = target.split(separator: "\t", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return }
         allow(parts[0], parts[1], hours)
+    }
+}
+
+/// The scheduled job (launchd) runs with the PATH it got when it was set up; a tool that moved
+/// since (a node or gh upgrade) is no longer found. Setting the schedule up again renews it.
+struct PathMissingLine: View {
+    let missing: [String]
+    let busy: Bool
+    let renew: () -> Void
+    var body: some View {
+        HStack {
+            Text(L("The scheduled run no longer finds \(missing.joined(separator: ", ")).", "Der geplante Lauf findet \(missing.joined(separator: ", ")) nicht mehr."))
+                .font(.caption).foregroundStyle(Color.warningText)
+            Spacer()
+            Button(L("Set up again", "Neu einrichten"), action: renew).disabled(busy)
+        }
     }
 }

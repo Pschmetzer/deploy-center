@@ -52,8 +52,25 @@ enum Journal {
     /// Waits for entries still being written (tests, and before reading right after a write).
     static func flush() { writer.sync {} }
 
+    /// "<journal>.lock", a folder, as the script takes it (deploys journal_add): waited for two
+    /// seconds at most, and a stale lock never costs a line.
+    static func withFileLock<T>(_ body: () -> T) -> T {
+        let l = url.path + ".lock"
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var locked = false
+        for _ in 0..<20 {
+            if mkdir(l, 0o700) == 0 { locked = true; break }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        defer { if locked { rmdir(l) } }
+        return body()
+    }
+
     private static func appendNow(_ e: JournalEntry) {
         lock.lock(); defer { lock.unlock() }
+        withFileLock { appendLocked(e) }
+    }
+    private static func appendLocked(_ e: JournalEntry) {
         migrate()
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         guard let data = try? enc.encode(e) else { return }

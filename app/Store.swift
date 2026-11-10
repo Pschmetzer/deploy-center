@@ -726,6 +726,8 @@ final class Store: ObservableObject {
 
     /// Rows whose last deploy was cancelled by the person: not a failure in the journal or the summary.
     private var endedByCancel: Set<String> = []
+    /// Started inside a closed deploy window, with the reason given: journaled as "forced".
+    private var forcedReasons: [String: String] = [:]
     private func set(_ p: Platform, _ id: String, _ s: RunState, countsAsLive: Bool = true, cancelled byPerson: Bool = false, deployedSha: String? = nil) {
         guard let i = items[p]?.firstIndex(where: { $0.id == id }) else { return }
         defer { holdAwake() }
@@ -756,8 +758,12 @@ final class Store: ObservableObject {
         case .done:
             // Not live: a finished preview keeps its id, a rollback does not.
             let r = countsAsLive ? "live" : (items[p]![i].previewId != nil ? "preview" : "rollback")
-            Journal.append(JournalEntry(platform: p.rawValue, name: name, result: r, seconds: took, detail: nil))
-        case .failed(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: byPerson ? "cancelled" : "failed", seconds: took, detail: m))
+            let why = countsAsLive ? forcedReasons.removeValue(forKey: Self.key(items[p]![i])) : nil
+            Journal.append(JournalEntry(platform: p.rawValue, name: name, result: why == nil ? r : "forced", seconds: took,
+                                        detail: why.map { L("Deployed inside the deploy window: ", "Im Deploy-Fenster deployt: ") + $0 }))
+        case .failed(let m):
+            forcedReasons[Self.key(items[p]![i])] = nil
+            Journal.append(JournalEntry(platform: p.rawValue, name: name, result: byPerson ? "cancelled" : "failed", seconds: took, detail: m))
         case .skipped(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "skipped", seconds: took, detail: m))
         default: break
         }
@@ -1215,6 +1221,8 @@ final class Store: ObservableObject {
             if let sha { args += ["--sha", sha] }
             if job.clearCache { args.append("--clear-cache") }
             if let why = job.force { args += ["--force", why] }
+            // The script leaves the journal to the app (DEPLOYS_CALLER=app): the end is written "forced".
+            forcedReasons[Self.key(item)] = job.preview ? nil : job.force
             // Longer than a list read: a start that times out may have started anyway.
             let started = try await Tool.json(args, as: Started.self, timeout: 300)
             unsureStarts[Self.key(item)] = nil

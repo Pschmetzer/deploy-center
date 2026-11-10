@@ -12,6 +12,8 @@ struct AutofixStatus: Decodable {
     let token: Bool
     let scheduled: Bool
     let fires: [Fire]
+    /// Tools the scheduled job no longer finds on its PATH (newer scripts).
+    let pathMissing: [String]
     /// A broken fire is skipped, not the reason Settings shows nothing.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: K.self)
@@ -19,8 +21,9 @@ struct AutofixStatus: Decodable {
         token = ((try? c.decodeIfPresent(Bool.self, forKey: .token)) ?? nil) ?? false
         scheduled = ((try? c.decodeIfPresent(Bool.self, forKey: .scheduled)) ?? nil) ?? false
         fires = (((try? c.decodeIfPresent([Lossy<Fire>].self, forKey: .fires)) ?? nil) ?? []).compactMap(\.value)
+        pathMissing = ((try? c.decodeIfPresent([String].self, forKey: .pathMissing)) ?? nil) ?? []
     }
-    private enum K: String, CodingKey { case routine, token, scheduled, fires }
+    private enum K: String, CodingKey { case routine, token, scheduled, fires, pathMissing }
 }
 
 struct AutofixSettings: View {
@@ -81,6 +84,9 @@ struct AutofixSettings: View {
                 get: { status?.scheduled ?? false },
                 set: { on in Task { await run(["autofix", "schedule", on ? "on" : "off"]) } }))
                 .disabled(!ready || busy)
+            if let s = status, s.scheduled, !s.pathMissing.isEmpty {
+                PathMissingLine(missing: s.pathMissing, busy: busy) { Task { await run(["autofix", "schedule", "on"]) } }
+            }
 
             HStack {
                 Button(L("Test (sends nothing)", "Testen (sendet nichts)")) { Task { await run(["autofix", "--dry-run"], show: true) } }

@@ -315,6 +315,8 @@ struct SettingsView: View {
                 let d = store.doctor
                 let on = store.enabledProviders
                 // Counts and times only: no project names, no error texts (they can hold names).
+                let jobs: [String] = d?.jobsMissing ?? []
+                let jobsLine: String = "jobs missing tools: " + (jobs.isEmpty ? "none" : jobs.joined(separator: ", "))
                 let failures = Platform.allCases.compactMap { p in
                     store.lastLoadError[p].map { "\(p.cli) failed \($0.at.formatted(date: .numeric, time: .shortened))" }
                 }
@@ -325,7 +327,8 @@ struct SettingsView: View {
                         "perl \(d?.perl.map(String.init) ?? "?"), curl \(d?.curl.map(String.init) ?? "?")",
                         "providers on: " + on.map(\.id).joined(separator: ", "),
                         on.compactMap(\.platform).map { "\($0.cli) \(store.items[$0]?.count ?? 0)" }.joined(separator: ", ") + " projects",
-                        "last load error: " + (failures.isEmpty ? "none" : failures.joined(separator: "; "))].joined(separator: "\n")
+                        "last load error: " + (failures.isEmpty ? "none" : failures.joined(separator: "; ")),
+                        jobsLine].joined(separator: "\n")
             }
             Text(L("Diagnostics: versions and what is connected; no names, no keys.", "Diagnose: Versionen und was verbunden ist; keine Namen, keine Schlüssel."))
                 .font(.caption).foregroundStyle(.secondary)
