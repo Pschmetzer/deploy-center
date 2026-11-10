@@ -72,7 +72,7 @@ struct SettingsView: View {
             ScrollViewReader { proxy in Form {
                 ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
                 ClaudeAISettings().id("claudeAI")
-                AutofixSettings(items: store.items.values.flatMap { $0 }).id("autofix")
+                AutofixSettings(store: store).id("autofix")
             } }
             .formStyle(.grouped)
             .tabItem { Label("Claude", systemImage: "sparkles") }.tag("claude")

@@ -1151,7 +1151,7 @@ struct ContentView: View {
             onRetry: item.deployable && !store.observer ? { store.deployOne(item, preview: false) } : nil,
             usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: search,
             autofix: fix, allowedUntil: store.allowance(item)?.expiresAt,
-            autofixBusy: store.autofixRunning.contains(Store.key(item)),
+            autofixBusy: store.autofixBusy(item),
             onAutofix: store.canFixWithClaude(item) ? { Task { await store.fixWithClaude(item) } } : nil,
             onDeployMerged: item.deployable && !store.observer && !item.state.isActive ? {
                 if !item.selected { store.toggle(item.platform, item.id) }
@@ -1169,7 +1169,7 @@ struct ContentView: View {
         let caps = store.provider(item.platform)?.caps ?? ProviderCaps()
         if store.canFixWithClaude(item) {
             Button(L("Fix with Claude", "Mit Claude beheben")) { Task { await store.fixWithClaude(item) } }
-                .disabled(store.autofixRunning.contains(Store.key(item)))
+                .disabled(store.autofixBusy(item))
         }
         if canDeploy {
             Button(L("Deploy to production", "Live deployen")) {

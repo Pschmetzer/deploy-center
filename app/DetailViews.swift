@@ -291,7 +291,7 @@ struct ProjectDetail: View {
     /// Autofix for this project: what Claude is doing, or the button to hand the failed build over.
     @ViewBuilder private func autofixBlock(_ item: Item) -> some View {
         let state = store.autofixState(item), can = store.canFixWithClaude(item)
-        let busy = store.autofixRunning.contains(Store.key(item)), result = store.autofixResult[Store.key(item)]
+        let busy = store.autofixBusy(item), result = store.autofixResult[Store.key(item)]
         if state != nil || can || result != nil {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) {

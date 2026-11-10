@@ -47,6 +47,8 @@ struct GuardStatus: Decodable {
 struct GuardSettings: View {
     @ObservedObject var store: Store
     @State private var status: GuardStatus?
+    /// A failed read keeps the last good status, with this under it.
+    @State private var readError: String?
     @State private var busy = false
     @State private var message: String?
     @State private var failed = false
@@ -69,12 +71,15 @@ struct GuardSettings: View {
                     .disabled(busy)
                 if busy { ProgressView().controlSize(.small) }
             }
+            if let readError {
+                ErrorText(L("Could not read the guard status: ", "Wächter-Status nicht lesbar: ") + readError)
+            }
             if let message {
                 if failed { ErrorText(message) }
                 else { Text(message).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(.secondary) }
             }
 
-            GuardAllowances(allowances: status?.allowances ?? [], busy: busy) { a in
+            GuardAllowances(allowances: status?.allowances ?? [], busy: busy, expired: { Task { await reload(); await store.loadAgentStatus() } }) { a in
                 Task { await run(["autodeploy", "revoke", a.platform, a.project == "*" ? "--all" : a.project], show: true) }
             }
 
@@ -88,7 +93,10 @@ struct GuardSettings: View {
     }
 
     private func reload() async {
-        status = try? await Tool.json(["guard", "status", "--json"], as: GuardStatus.self, timeout: 20)
+        do {
+            status = try await Tool.json(["guard", "status", "--json"], as: GuardStatus.self, timeout: 20)
+            readError = nil
+        } catch { readError = error.localizedDescription }
     }
 
     /// A script call; with `show` its output is shown under the buttons. Auto-deploy may have
@@ -104,7 +112,13 @@ struct GuardSettings: View {
             failed = false
         } catch { message = error.localizedDescription; failed = true }
         await reload()
-        for p in store.enabledProviders.compactMap(\.platform) { await store.load(p) }
+        // A test run changes nothing; allow, revoke and the schedule do.
+        guard !args.contains("--dry-run") else { return }
+        // The window's "allowed until" badges at once, not at the next refresh.
+        await store.loadAgentStatus()
+        await withTaskGroup(of: Void.self) { g in
+            for p in store.enabledProviders.compactMap(\.platform) { g.addTask { await store.load(p) } }
+        }
     }
 }
 
@@ -158,17 +172,21 @@ private struct GuardLastRun: View {
 private struct GuardAllowances: View {
     let allowances: [GuardStatus.Allowance]
     let busy: Bool
+    /// One ran out: the lists are read again (the guard turns it off at its next run).
+    var expired: () -> Void = {}
     let revoke: (GuardStatus.Allowance) -> Void
 
     var body: some View {
         if !allowances.isEmpty {
             TimelineView(.periodic(from: .now, by: 60)) { ctx in
+                let live = allowances.filter { $0.expiresAt > ctx.date.timeIntervalSince1970 }
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(L("Allowed right now", "Gerade erlaubt")).font(.caption.bold())
-                    ForEach(allowances) { a in
+                    if !live.isEmpty { Text(L("Allowed right now", "Gerade erlaubt")).font(.caption.bold()) }
+                    ForEach(live) { a in
                         row(a, now: ctx.date)
                     }
                 }
+                .onChange(of: live.count) { _, n in if n < allowances.count { expired() } }
             }
         }
     }
@@ -218,6 +236,10 @@ private struct GuardAllowForm: View {
                 Text("\(Demo.mask(i.name)) (\(i.platform.rawValue))").tag("\(i.platform.cli)\t\(i.name)")
             }
         }
+        // A project that left the list (reloaded, platform off) is no choice any more.
+        .onChange(of: projects.map { "\($0.platform.cli)\t\($0.name)" }) { _, keys in
+            if target != "all" && !keys.contains(target) { target = "all" }
+        }
         Picker(L("For", "Für"), selection: $hours) {
             Text("1 h").tag(1)
             Text("4 h").tag(4)
@@ -238,8 +260,21 @@ private struct GuardAllowForm: View {
     }
 
     private var warning: String {
-        L("Until then every push, and every merged fix PR, builds on Vercel or Render and costs money. When the allowance ends, the guard turns auto-deploy off again.",
-          "Bis dahin baut jeder Push und jeder gemergte Fix-PR auf Vercel oder Render und kostet Geld. Wenn die Erlaubnis endet, schaltet der Wächter Auto-Deploy wieder ab.")
+        let base = L("Until then every push, and every merged fix PR, builds on Vercel or Render and costs money. When the allowance ends, the guard turns auto-deploy off again.",
+                     "Bis dahin baut jeder Push und jeder gemergte Fix-PR auf Vercel oder Render und kostet Geld. Wenn die Erlaubnis endet, schaltet der Wächter Auto-Deploy wieder ab.")
+        guard target == "all" else { return base }
+        // "All" in numbers and names, so one click is not a surprise.
+        let names = projects.filter(\.deployable).map { Demo.mask($0.name) }
+        let shown = names.prefix(8).joined(separator: ", ") + (names.count > 8 ? L(" and \(names.count - 8) more", " und \(names.count - 8) weitere") : "")
+        var head = L("\(plural(names.count, "project", "projects")) will build on every push: ", "\(plural(names.count, "Projekt", "Projekte")) bauen bei jedem Push: ") + shown + "."
+        if let c = store.costs, c.days.count > 0 {
+            let perHour = c.days.suffix(7).map(\.build).reduce(0, +) / Double(min(7, c.days.count)) / 24
+            if perHour >= 0.01 {
+                head += " " + L("Vercel builds cost ≈ \(perHour.formatted(.currency(code: "USD"))) an hour on average lately.",
+                                "Vercel-Builds kosteten zuletzt im Schnitt ≈ \(perHour.formatted(.currency(code: "USD"))) pro Stunde.")
+            }
+        }
+        return head + "\n\n" + base
     }
 
     private func submit() {

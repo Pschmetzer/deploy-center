@@ -287,7 +287,7 @@ struct ClaudeMenu: View {
                         Button(L("Fix with Claude – opens a pull request", "Mit Claude beheben – öffnet einen Pull Request")) {
                             Task { await store.fixWithClaude(item) }
                         }
-                        .disabled(store.autofixRunning.contains(Store.key(item)))
+                        .disabled(store.autofixBusy(item))
                     }
                 } label: {
                     Label("Claude", systemImage: "sparkles")

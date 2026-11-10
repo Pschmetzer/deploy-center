@@ -110,18 +110,41 @@ struct TeamSettings: View {
     }
 
     private var allItems: [Item] { store.items.values.flatMap { $0 } }
-    private var canAdd: Bool { repo.contains("/") && !busy }
+    private var canAdd: Bool { Self.ownerRepo(repo) != nil && !busy }
+
+    /// "owner/repo" from what people paste: the name itself, a github.com address or a git remote.
+    static func ownerRepo(_ text: String) -> String? {
+        var s = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        for p in ["https://", "http://", "ssh://", "git@", "www."] where s.lowercased().hasPrefix(p) { s.removeFirst(p.count) }
+        if s.lowercased().hasPrefix("github.com") { s.removeFirst("github.com".count); s = String(s.drop { $0 == "/" || $0 == ":" }) }
+        if s.hasSuffix("/") { s.removeLast() }
+        if s.hasSuffix(".git") { s.removeLast(4) }
+        let parts = s.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count >= 2 else { return nil }
+        let owner = parts[0], name = parts[1]
+        let ok = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        guard !owner.isEmpty, !name.isEmpty, !owner.hasPrefix("-"),
+              owner.unicodeScalars.allSatisfy(ok.contains), name.unicodeScalars.allSatisfy(ok.contains) else { return nil }
+        // A deeper path is a page of the repo (…/tree/main): the repo is the first two parts.
+        return "\(owner)/\(name)"
+    }
 
     /// The field empties only when the repo was added, so a typo can be fixed.
     private func add() {
+        guard let r = Self.ownerRepo(repo) else { return }
         Task {
-            await run(["team", "add", repo.trimmingCharacters(in: .whitespaces)], show: true)
+            await run(["team", "add", r], show: true)
             if !failed { repo = "" }
         }
     }
 
     private func reload() async {
-        config = try? await Tool.json(["config", "--json"], as: TeamConfig.self, timeout: 60)
+        // A failed read keeps the last good config; the reason goes under the buttons.
+        do {
+            config = try await Tool.json(["config", "--json"], as: TeamConfig.self, timeout: 60)
+        } catch {
+            if message == nil { message = L("Could not read the team config: ", "Team-Konfiguration nicht lesbar: ") + error.localizedDescription; failed = true }
+        }
         if let c = config { store.teamObserver = c.readonly.value }
     }
 

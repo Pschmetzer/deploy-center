@@ -154,6 +154,10 @@ final class Store: ObservableObject {
     @Published var allowances: [AutoDeployAllowance] = []
     /// Rows being handed to Claude right now (`Store.key`), for disabling the button.
     @Published var autofixRunning: Set<String> = []
+    /// In `autofixRunning` while Settings runs `deploys autofix` for every failed build.
+    static let autofixAllKey = "*"
+    /// A row's hand-over runs, or one for all of them: either way the script's lock is taken.
+    func autofixBusy(_ i: Item) -> Bool { autofixRunning.contains(Self.key(i)) || autofixRunning.contains(Self.autofixAllKey) }
     /// The last answer of "Fix with Claude" per row, for the details sheet.
     @Published var autofixResult: [String: Message] = [:]
 
@@ -236,7 +240,7 @@ final class Store: ObservableObject {
     /// "Fix with Claude": `deploys autofix --only <platform> <project>`, the answer as a toast.
     func fixWithClaude(_ i: Item) async {
         let key = Self.key(i)
-        guard !autofixRunning.contains(key) else { return }
+        guard !autofixBusy(i) else { return }
         if let r = autofix, !r.ready { offerAutofixSetup(); return }
         let name = Demo.mask(i.name)
         guard Self.safeArg(i.name) else { tell(L("\(name): not handed to Claude", "\(name): nicht an Claude übergeben"), L("The name starts with \"-\".", "Der Name beginnt mit \"-\"."), ok: false, key: key); return }

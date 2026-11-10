@@ -24,9 +24,13 @@ struct AutofixStatus: Decodable {
 }
 
 struct AutofixSettings: View {
+    /// The rows read the same status: after a run here they are brought up to date at once.
+    @ObservedObject var store: Store
     /// The projects, so demo mode can replace their names in the script's output.
-    var items: [Item] = []
+    private var items: [Item] { store.items.values.flatMap { $0 } }
     @State private var status: AutofixStatus?
+    /// A failed read keeps the last good status on screen, with this under it.
+    @State private var readError: String?
     @State private var routineId = ""
     @State private var token = ""
     @State private var busy = false
@@ -81,9 +85,13 @@ struct AutofixSettings: View {
             HStack {
                 Button(L("Test (sends nothing)", "Testen (sendet nichts)")) { Task { await run(["autofix", "--dry-run"], show: true) } }
                     .disabled(busy)
+                // One hand-over at a time: a row's "Fix with Claude" holds the script's lock too.
                 Button(L("Run now", "Jetzt ausführen")) { Task { await run(["autofix"], show: true) } }
-                    .disabled(!ready || busy)
+                    .disabled(!ready || busy || !store.autofixRunning.isEmpty)
                 if busy { ProgressView().controlSize(.small) }
+            }
+            if let readError {
+                ErrorText(L("Could not read the autofix status: ", "Autofix-Status nicht lesbar: ") + Demo.scrub(readError, items: items))
             }
             if let message {
                 if failed { ErrorText(Demo.scrub(message, items: items)) }
@@ -99,7 +107,10 @@ struct AutofixSettings: View {
                             Text(Demo.mask(f.project))
                             Spacer()
                             if f.status == "failed" { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).accessibilityHidden(true) }
-                            Text(label(f)).foregroundStyle(f.status == "failed" ? .red : .secondary)
+                            Text(Self.label(f)).foregroundStyle(f.status == "failed" ? .red : .secondary)
+                            if let n = f.prNumber, let s = f.prUrl, let url = URL(string: s), !Demo.on {
+                                Button("PR #\(n)") { NSWorkspace.shared.open(url) }.buttonStyle(.link)
+                            }
                             if let s = f.session, let url = URL(string: s) {
                                 Button(L("Session", "Sitzung")) { NSWorkspace.shared.open(url) }.buttonStyle(.link)
                             }
@@ -118,11 +129,20 @@ struct AutofixSettings: View {
         Image(systemName: ok ? "checkmark.circle.fill" : "circle").foregroundStyle(ok ? .green : .secondary)
     }
 
-    private func label(_ f: AutofixStatus.Fire) -> String {
-        if let r = f.mergedSha { return L("fix merged, ready to deploy", "Fix gemergt, bereit zum Deployen") + " (\(r.prefix(7)))" }
+    static func label(_ f: AutofixStatus.Fire) -> String {
         if let r = f.redeployedSha { return L("fix deployed", "Fix deployt") + " (\(r.prefix(7)))" }
+        if let r = f.mergedSha { return L("fix merged, ready to deploy", "Fix gemergt, bereit zum Deployen") + " (\(r.prefix(7)))" }
+        // The PR's state says more than "session started".
+        switch f.prState {
+        case "open": return f.done ? L("green again, fix PR still open", "wieder grün, Fix-PR noch offen") : L("fix PR open", "Fix-PR offen")
+        case "closed": return L("fix PR closed unmerged", "Fix-PR ungemergt geschlossen")
+        default: break
+        }
+        if f.done { return L("green again", "wieder grün") }
         switch f.status {
         case "fired": return L("session started", "Sitzung gestartet")
+        case "pending": return L("starting", "startet")
+        case "unsupported": return L("not supported (GitHub only)", "nicht unterstützt (nur GitHub)")
         case "ratelimited": return L("waiting (rate limit)", "wartet (Rate-Limit)")
         case "skipped": return L("fix failed too", "Fix ebenfalls fehlgeschlagen")
         case "failed": return L("could not start", "Start fehlgeschlagen")
@@ -131,14 +151,25 @@ struct AutofixSettings: View {
     }
 
     private func reload() async {
-        status = try? await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20)
+        do {
+            status = try await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20)
+            readError = nil
+        } catch { readError = error.localizedDescription }
         if routineId.isEmpty, let r = status?.routine { routineId = r }
     }
 
     private func copyPrompt() async {
-        guard let data = try? await Tool.run(["autofix", "prompt"], timeout: 10), let text = String(data: data, encoding: .utf8) else { return }
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
-        message = L("Prompt copied. Paste it into the new routine.", "Prompt kopiert. Füge ihn in die neue Routine ein."); failed = false
+        do {
+            let data = try await Tool.run(["autofix", "prompt"], timeout: 10)
+            let text = String(decoding: data, as: UTF8.self)
+            guard !text.isEmpty else {
+                message = L("The script gave no prompt.", "Das Skript lieferte keinen Prompt."); failed = true; return
+            }
+            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+            message = L("Prompt copied. Paste it into the new routine.", "Prompt kopiert. Füge ihn in die neue Routine ein."); failed = false
+        } catch {
+            message = L("Could not copy the prompt: ", "Prompt nicht kopiert: ") + error.localizedDescription; failed = true
+        }
     }
 
     private func saveRoutine() async { await run(["autofix", "routine", routineId.trimmingCharacters(in: .whitespaces)]) }
@@ -155,6 +186,10 @@ struct AutofixSettings: View {
     /// A script call; with `show` its output is shown under the buttons.
     private func run(_ args: [String], show: Bool = false) async {
         busy = true; defer { busy = false }
+        // A real hand-over takes the script's lock: the rows wait for it (Store.autofixBusy).
+        let handsOver = args == ["autofix"]
+        if handsOver { store.autofixRunning.insert(Store.autofixAllKey) }
+        defer { if handsOver { store.autofixRunning.remove(Store.autofixAllKey) } }
         do {
             let out = String(data: try await Tool.run(args, timeout: 300), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -162,5 +197,7 @@ struct AutofixSettings: View {
             failed = false
         } catch { message = error.localizedDescription; failed = true }
         await reload()
+        // The rows show the new hand-over now, not at the next refresh (a dry run changes nothing).
+        if !args.contains("--dry-run") { await store.loadAgentStatus() }
     }
 }
