@@ -699,6 +699,11 @@ expect("only the newest three backups stay", (try! FileManager.default.contentsO
        ["cfg.json.bak-20261110-100002", "cfg.json.bak-20261110-100003", "cfg.json.bak-20261110-100004", "other.bak-1"])
 try? FileManager.default.removeItem(at: bakDir)
 
+expect("platform label", ProviderInfo.label(for: "digitalocean"), "DigitalOcean App Platform")
+expect("unknown platform label", ProviderInfo.label(for: "railway"), "Railway")
+expect("German method for the ledger", SavingsFormat.methodGerman("Estimate. Since auto-deploy was turned off, every push …").hasPrefix("Schätzung. Seit Auto-Deploy aus ist"), true)
+expect("an unknown method is shown as written", SavingsFormat.methodGerman("New way of counting."), "New way of counting.")
+
 // The app's masker knows what the script's masker knows.
 expect("mask Stripe", LogTools.maskSecrets("key sk_live_abcdefgh12345678"), "key [STRIPE KEY]")
 expect("mask GitLab", LogTools.maskSecrets("glpat-abcdefghij1234567890"), "[GITLAB TOKEN]")

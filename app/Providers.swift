@@ -53,6 +53,23 @@ struct ProviderInfo: Decodable, Identifiable, Equatable, Sendable {
                      caps: ProviderCaps(off: true, sha: true, cancel: true, rollback: true, logs: true, preview: false)),
     ]
 
+    /// What a platform is called ("DigitalOcean App Platform", not "Digitalocean"): the script's label
+    /// when it reported one, then the providers it ships with, then the id with a capital.
+    static func label(for id: String) -> String {
+        let key = id.lowercased()
+        labelLock.lock(); let seen = seenLabels[key]; labelLock.unlock()
+        if let seen { return seen }
+        if let k = known[key] { return k }
+        return key.prefix(1).uppercased() + String(key.dropFirst())
+    }
+    static func remember(_ list: [ProviderInfo]) {
+        labelLock.lock(); for p in list { seenLabels[p.id] = p.label }; labelLock.unlock()
+    }
+    private static let known = ["vercel": "Vercel", "render": "Render", "netlify": "Netlify", "cloudflare": "Cloudflare Pages",
+                                "coolify": "Coolify", "digitalocean": "DigitalOcean App Platform", "amplify": "AWS Amplify Hosting"]
+    private static let labelLock = NSLock()
+    nonisolated(unsafe) private static var seenLabels: [String: String] = [:]
+
     /// Shown in Settings as "coming soon" until the script reports them.
     static let comingSoon: [ProviderInfo] = [
         ProviderInfo(id: "netlify", label: "Netlify", enabled: false),
@@ -235,6 +252,7 @@ extension Store {
         // Render would switch a platform the person turned off back on.
         if data == nil, providersFromScript { return }
         let r = ProviderInfo.parse(data)
+        ProviderInfo.remember(r.list)
         // Remembered for the next start, so the saved lists of a switched-off platform are not shown first.
         UserDefaults.standard.set(r.list.filter { !$0.enabled }.map(\.id), forKey: "disabledProviders")
         if providers != r.list { providers = r.list }
