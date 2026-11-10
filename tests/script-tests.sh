@@ -1224,6 +1224,94 @@ expect "INT-071: history --json reads any provider's table as rows" \
 expect "INT-076: notes --json keeps the author apart" \
   "$(run "$O" "$E" notes api --json; jq -c '[.project, (.commits[0] | has("author")), (.commits[0].message | type)]' "$O")" $'0\n["api",true,"string"]'
 unset RENDER_API_KEY
+# CLI-055, CLI-056: a stale lock is taken over by one rename, a fresh one never; small files under a lock.
+mkdir -p "$tmp/l55"
+expect "CLI-055: a stale lock folder is cleared, a fresh one kept, a stale lock file cleared" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+  mkdir "$tmp/l55/old" "$tmp/l55/new"; touch -t 202001010000 "$tmp/l55/old"; : > "$tmp/l55/oldf"; touch -t 202001010000 "$tmp/l55/oldf"
+  lock_clear_stale "$tmp/l55/old" 300; lock_clear_stale "$tmp/l55/new" 300; lock_clear_stale "$tmp/l55/oldf" 60
+  [ -e "$tmp/l55/old" ] && echo old-kept || echo old-gone; [ -d "$tmp/l55/new" ] && echo new-kept; [ -e "$tmp/l55/oldf" ] && echo oldf-kept || echo oldf-gone
+  find "$tmp/l55" -name "*stale*" | grep -c .) )" $'old-gone\nnew-kept\noldf-gone\n0'
+expect "CLI-055: start_lock takes over a stale start, refuses a fresh one" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+  f="$(start_lock vercel/web)"; touch -t 202001010000 "$f"; (start_lock vercel/web >/dev/null 2>&1) && echo taken; (start_lock vercel/web >/dev/null 2>&1) || echo refused) )" $'taken\nrefused'
+expect "CLI-056: ai usage adds under a lock and leaves none behind" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+  AI_USAGE="$tmp/l55/ai-usage.json"; ai_add_usage 5 & ai_add_usage 7 & wait; ai_add_usage 1; ai_used; [ -e "$AI_USAGE.lock" ] && echo left || echo clean) )" $'13\nclean'
+expect "CLI-056: a dead holder's lock does not cost every later call the wait" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+  mkdir "$tmp/l55/x.lock"; touch -t 202001010000 "$tmp/l55/x.lock"; file_lock "$tmp/l55/x" && echo got; file_unlock "$tmp/l55/x"; [ -e "$tmp/l55/x.lock" ] || echo clean) )" $'got\nclean'
+# CLI-062: names no list has shown for 30 days leave the completion list; old ones are kept at first.
+mkdir -p "$tmp/n62"; printf 'gone\nkept\n' > "$tmp/n62/names"
+expect "CLI-062: existing names count as seen now, a failed read removes nothing" "$( (DEPLOYS_CONFIG="$tmp/n62" DEPLOYS_LIB=1 . ./deploys; set +e
+  echo 'not json' | remember_names vercel; cat "$CONFIG_DIR/names" | paste -sd, -) )" "gone,kept"
+expect "CLI-062: a name unseen for 30 days goes, a fresh one stays" "$( (DEPLOYS_CONFIG="$tmp/n62" DEPLOYS_LIB=1 . ./deploys; set +e
+  jq '.gone = 1000' "$CONFIG_DIR/names.seen" > "$CONFIG_DIR/s.tmp" && mv "$CONFIG_DIR/s.tmp" "$CONFIG_DIR/names.seen"
+  echo '[{"name":"web","id":"p1"}]' | remember_names vercel; cat "$CONFIG_DIR/names" | paste -sd, -) )" "kept,web"
+# CLI-066: rebase-merged commits are asked in parallel; a PR already named in a message counts once.
+mkdir -p "$tmp/bin66"; printf '#!/bin/bash\ncase "$*" in *"commits/c3/pulls"*) echo 12 ;; *) exec "%s/bin/gh" "$@" ;; esac\n' "$tmp" > "$tmp/bin66/gh"; chmod +x "$tmp/bin66/gh"
+expect "CLI-066: the PR of a rebase-merged commit that a message names already is not counted twice" \
+  "$( (PATH="$tmp/bin66:$PATH"; with_heads '[{"name":"app","repo":"me/app","ref":"main","deployable":true,"lastSha":"aaaa"}]' | jq -c '.[0].pendingPRs') )" "2"
+# CLI-107: release.sh --publish --dry-run checks and prints the plan; nothing is built, tagged or sent.
+rd="$tmp/rel-dry"; mkdir -p "$rd/repo/scripts" "$rd/bin"; cp release.sh build.sh VERSION README-CLI.md "$rd/repo/"
+printf '#!/bin/bash\necho "should not run" >&2; exit 1\n' > "$rd/repo/scripts/sparkle.sh"; chmod +x "$rd/repo/scripts/sparkle.sh"
+printf '# Changelog\n\n## %s\n- a change\n' "$(cat VERSION)" > "$rd/repo/CHANGELOG.md"
+# gh answers the reads; every call is logged. xcrun, ditto, npm and git push would show up in the log too.
+printf '#!/bin/bash\necho "gh $*" >> "%s/calls"\ncase "$*" in "repo view"*) echo me/dc ;; *compare*) echo identical ;; *"commits/v"*) exit 1 ;; esac\n' "$rd" > "$rd/bin/gh"
+for c in xcrun npm ditto codesign; do printf '#!/bin/bash\necho "%s $*" >> "%s/calls"\n' "$c" "$rd" > "$rd/bin/$c"; done
+chmod +x "$rd/bin"/*
+( cd "$rd/repo" && git init -q -b main && git add -A && git -c user.email=t@t -c user.name=t commit -qm one )
+expect "CLI-107: --publish --dry-run prints the plan and exits 0" \
+  "$(cd "$rd/repo" && PATH="$rd/bin:$PATH" ./release.sh --publish --dry-run 2>&1 | grep -c -e '^Dry run' -e 'is new: created' -e 'would upload' -e 'not checked'; echo "rc=${PIPESTATUS[0]}")" $'4\nrc=0'
+expect "CLI-107: only reads were made: no release, tag, build, notarization or upload" \
+  "$(grep -v -e '^gh repo view' -e '^gh api' "$rd/calls" | wc -l | tr -d ' '; git -C "$rd/repo" tag | wc -l | tr -d ' '; [ -e "$rd/repo/dist" ] && echo dist || echo no-dist)" $'0\n0\nno-dist'
+# CLI-039: the guard matrix. Every command that changes something, in observer mode: refused, nothing
+# sent that writes (POST, PATCH, PUT, DELETE). Every production start with the window closed: refused.
+export RENDER_API_KEY=rnd_test
+writes() { grep -c -E '^(curl )?(POST|PATCH|PUT|DELETE) |^vercel (deploy|redeploy|rollback|remove|promote)|^gh api .*(-X|--method) *(POST|PATCH|PUT|DELETE)' "$e2e/calls.log"; }
+m39=""
+for c in "deploy web" "deploy api --preview" "vercel deploy web" "vercel deploy-json web" "vercel rollback web" "vercel cancel dpl_1" \
+         "vercel autodeploy-off web" "vercel map web me/app" "render deploy api" "render deploy-json api" "render rollback api" \
+         "render cancel srv-1 dep-2" "render autodeploy-off api" "deploy-changed --yes" "deploy-changed --when-green --yes" \
+         "autodeploy allow vercel web 2" "autodeploy revoke all --all" "autofix" "autofix --only vercel web" "guard" "hook deploy web"; do
+  fresh
+  # shellcheck disable=SC2086  # the command is words on purpose
+  rc="$(DEPLOYS_READONLY=1 run "$O" "$E" $c)"
+  if [ "$rc" = 0 ] || ! grep -q 'Observer mode' "$E" || [ "$(writes)" != 0 ]; then m39="$m39 [$c: rc=$rc writes=$(writes)]"; fi
+done
+expect "CLI-039: observer mode refuses every write command, nothing written" "${m39:-none}" "none"
+m39=""; echo '{"deny":[{"from":"00:00","to":"24:00","reason":"closed for the matrix"}]}' > "$e2e/config/window.json"
+for c in "deploy web" "vercel deploy web" "vercel deploy-json web" "render deploy api" "render deploy-json api" "deploy-changed --yes"; do
+  fresh
+  # shellcheck disable=SC2086
+  rc="$(run "$O" "$E" $c)"
+  if [ "$rc" = 0 ] || [ "$(writes)" != 0 ]; then m39="$m39 [$c: rc=$rc writes=$(writes)]"; fi
+done
+expect "CLI-039: a closed window refuses every production start" "${m39:-none}" "none"
+fresh
+expect "CLI-039: a preview is not held by the window" "$(run "$O" "$E" vercel deploy web --preview >/dev/null; grep -c 'closed for the matrix' "$E")" "0"
+rm -f "$e2e/config/window.json"; unset RENDER_API_KEY
+# PRV-129: cache file names are one per key (a_b/c and a/b_c used to share one file).
+expect "PRV-129: two repos that tr would merge get two names" \
+  "$( (DEPLOYS_LIB=1 . ./deploys; set +e; [ "$(cache_name 'a_b/c@main')" != "$(cache_name 'a/b_c@main')" ] && echo two; cache_name 'me/app@main') )" $'two\nme_app_main'
+# CLI-027: a command about one project asks GitHub about that one only.
+l27='[{"name":"app","repo":"me/app","ref":"main","deployable":true,"lastSha":"aaaa"},{"name":"other","id":"prj_o","repo":"me/other","ref":"main","deployable":true,"lastSha":"aaaa"}]'
+expect "CLI-027: DEPLOYS_ONLY keeps one row (by name or id)" \
+  "$(DEPLOYS_ONLY=app with_heads "$l27" | jq -c 'map(.name)'; DEPLOYS_ONLY=x DEPLOYS_ONLY_ID=prj_o with_heads "$l27" | jq -c 'map(.name)')" $'["app"]\n["other"]'
+expect "CLI-027: no match keeps the whole list" "$(DEPLOYS_ONLY=nope with_heads "$l27" | jq length)" "2"
+# CLI-028: a job log past its limit is renamed to .1 (never emptied in place); a small one stays.
+mkdir -p "$tmp/h28/Library/Logs"; head -c 2000 /dev/zero | tr '\0' x > "$tmp/h28/Library/Logs/DeployCenter-guard.log"; echo small > "$tmp/h28/Library/Logs/DeployCenter-autofix.log"
+expect "CLI-028: the big log moves to .1, the small one stays" "$( (HOME="$tmp/h28" DEPLOYS_LOG_MAX_BYTES=1000 DEPLOYS_LOG_ROTATE=1; log_rotate DeployCenter-guard; log_rotate DeployCenter-autofix
+  cd "$tmp/h28/Library/Logs" && ls | paste -sd' ' -; wc -c < DeployCenter-guard.log.1 | tr -d ' ') )" $'DeployCenter-autofix.log DeployCenter-guard.log.1\n2000'
+# Doctor: provider objects that share key names are nested, never merged into repeated keys.
+mkdir -p "$tmp/pdoc/providers" "$tmp/pdoc/cfg"; cp deploys "$tmp/pdoc/"; cp -R lib "$tmp/pdoc/"; cp providers/render.sh "$tmp/pdoc/providers/"
+for z in zz1 zz2; do
+  printf '%s\n' "${z}_meta() { echo '{\"id\":\"$z\",\"label\":\"$z\",\"noun\":\"site\",\"defaultOn\":true,\"caps\":{}}'; }" "${z}_ready() { return 0; }" \
+    "${z}_doctor() { printf '{\\n\"provider\":\"$z\",\\n\"tokenOk\":true}\\n'; }" > "$tmp/pdoc/providers/$z.sh"
+done
+doc="$(env -u DEPLOYS_LIB DEPLOYS_CONFIG="$tmp/pdoc/cfg" HOME="$tmp/pdoc" RENDER_API_KEY=rnd_test /bin/bash "$tmp/pdoc/deploys" doctor 2>/dev/null)"
+expect "doctor: no repeated keys, each provider under providers" \
+  "$(echo "$doc" | grep -o '"provider"' | wc -l | tr -d ' '; echo "$doc" | jq -c '[.renderKey, .providers.zz1.provider, .providers.zz2.tokenOk, has("provider"), .providers.render.renderKey]')" \
+  $'2\n[true,"zz1",true,false,true]'
+# CLI-022: a hanging CLI is ended after DEPLOYS_TIMEOUT; 0 means no limit.
+expect "CLI-022: with_timeout ends a hanging command" "$(s0=$SECONDS; with_timeout 1 /bin/sleep 5; rc=$?; [ $((SECONDS - s0)) -lt 4 ] && echo "fast rc>0:$([ "$rc" != 0 ] && echo yes)")" "fast rc>0:yes"
+expect "CLI-022: 0 is no limit, the answer passes through" "$(with_timeout 0 /bin/echo hi)" "hi"
 # ===== end CLI track =====
 
 echo

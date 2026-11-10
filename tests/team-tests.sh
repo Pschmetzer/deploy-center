@@ -263,6 +263,25 @@ jq '(.[] | select(.state == "APPROVED")) += {commit_id:"oldhead"}' "$FIX/api/rep
 expect "LOG-078: readonly.source env" "$(DEPLOYS_READONLY=1 "${D[@]}" config --json | jq -r .readonly.source)" "env"
 fresh
 expect "LOG-078: readonly.source team" "$(GH_USER=dev-watcher "${D[@]}" config --json | jq -r .readonly.source)" "team"
+# CLI-090: one team merge per command; the subshells read it, a write or another environment does not.
+fresh
+(
+  export DEPLOYS_LIB=1
+  # shellcheck source=../deploys
+  . ./deploys; set +e
+  n90="$tmp/n90"; : > "$n90"
+  eval "orig_sources() $(declare -f team_sources | tail -n +2)"
+  team_sources() { echo x >> "$n90"; orig_sources "$@"; }
+  team_eff_forget; a="$(team_ignored)"; b="$(team_group nope)"; c="$(repos_json)"
+  expect "CLI-090: three readers in subshells, one merge" "$(wc -l < "$n90" | tr -d ' ')" "1"
+  d="$(DEPLOYS_NO_GITHUB=1 team_ignored)"
+  expect "CLI-090: another environment merges again" "$(wc -l < "$n90" | tr -d ' ')" "2"
+  team_eff_forget; e="$(team_ignored)"
+  expect "CLI-090: after a write it merges again" "$(wc -l < "$n90" | tr -d ' ')" "3"
+  expect "CLI-090: the same answer from the memo" "$a" "$e"
+  : "$b$c$d"
+  [ "$fails" = 0 ] || exit 1
+) || fails=$((fails + 1))
 # ===== end CLI track =====
 
 echo

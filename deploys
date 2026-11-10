@@ -113,7 +113,60 @@ elif [ -z "${DEPLOYS_CONFIG:-}" ]; then chmod 700 "$CONFIG_DIR" 2>/dev/null || t
 # BSD (macOS) and GNU (Linux) spell file times, date maths and base64 differently.
 # GNU first: GNU `stat -f` is the file system's status, and answers something that is no time.
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+
+# A lock (file or folder) older than <seconds> is taken away, and only that one: it is renamed
+# to a name of its own first (one rename wins), and if what was moved is not the stale lock that
+# was judged (a new holder made it in between), it is given back without ever overwriting one.
+lock_clear_stale() {  # lock_clear_stale <path> <seconds>
+  local f="$1" m t; [ -e "$f" ] || return 0
+  m="$(mtime "$f" 2>/dev/null)" || return 0
+  [ $(( $(date +%s) - m )) -ge "$2" ] || return 0
+  t="$f.stale.$$.$RANDOM"
+  mv "$f" "$t" 2>/dev/null || return 0
+  if [ "$(mtime "$t" 2>/dev/null)" = "$m" ]; then rm -rf "$t"; return 0; fi
+  if [ -d "$t" ]; then mkdir "$f" 2>/dev/null; rmdir "$t" 2>/dev/null || true
+  else ln "$t" "$f" 2>/dev/null; rm -f "$t"; fi
+  return 0
+}
+# A short lock for a small file that two runs may rewrite at once (counts, lists): waited for two
+# seconds at most, taken over after <stale> seconds (0: never), and without it the write still
+# happens (as before). No trap: callers unlock themselves, so AF_RUN_LOCK's trap stays theirs.
+file_lock() {  # file_lock <file> [stale seconds, default 10]; then file_unlock <file>
+  local i=0
+  [ "${2:-10}" = 0 ] || lock_clear_stale "$1.lock" "${2:-10}"
+  while [ "$i" -lt 20 ]; do mkdir "$1.lock" 2>/dev/null && return 0; i=$((i + 1)); sleep 0.1; done
+  return 1
+}
+file_unlock() { rmdir "$1.lock" 2>/dev/null || true; }
 export -f mtime   # team_fetch_one runs under xargs
+# A file name for a key like owner/repo@ref: "/" and "@" become "_", as always. A key that has
+# a "_" of its own also gets its checksum, so a_b/c and a/b_c no longer meet in one file (one
+# answer was lost when they did).
+cache_name() {
+  local n; n="$(printf '%s' "$1" | tr '/@' '__')"
+  case "$1" in *_*) n="$n-$(printf '%s' "$1" | cksum | cut -d' ' -f1)" ;; esac
+  printf '%s' "$n"
+}
+export -f cache_name
+
+# gh and glab without a time limit could hang status, changed and the launchd guard for ever
+# (a dead network, a login prompt). Each call ends after DEPLOYS_TIMEOUT seconds (default 120;
+# 0 = none): perl's alarm survives the exec, so the CLI itself gets the signal. Without perl,
+# as before. Only defined where the CLI is installed, so `command -v gh` still means "installed".
+with_timeout() {  # with_timeout <seconds> <command...>
+  local s="$1"; shift
+  case "$s" in ''|*[!0-9]*) s=0 ;; esac
+  if [ "$s" -gt 0 ] && command -v perl >/dev/null 2>&1; then perl -e 'alarm shift @ARGV; exec { $ARGV[0] } @ARGV or exit 127' "$s" "$@"
+  else command "$@"; fi
+}
+export -f with_timeout
+# Exported for the xargs workers; a wrapper inherited where the CLI is missing is dropped.
+for _c in gh glab; do
+  if type -P "$_c" >/dev/null 2>&1; then
+    eval "$_c() { if type -P $_c >/dev/null 2>&1; then with_timeout \"\${DEPLOYS_TIMEOUT:-120}\" $_c \"\$@\"; else command $_c \"\$@\"; fi; }"
+    export -f "${_c?}"
+  else unset -f "$_c" 2>/dev/null || true; fi
+done
 days_ago() { date -u -v-"$1"d +%Y-%m-%d 2>/dev/null || date -u -d "$1 days ago" +%Y-%m-%d; }
 b64d() { base64 -D 2>/dev/null || base64 -d; }
 
@@ -339,7 +392,7 @@ need_cap() { meta_flag "$1" "$2" || die "$(meta_str "$1" label) cannot $3"; }
 # builds. The lock ages out after a minute; a start that failed removes it at once.
 start_lock() {
   local d="$CONFIG_DIR/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
-  if [ -f "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -ge 60 ]; then rm -f "$f"; fi
+  lock_clear_stale "$f" 60
   # noclobber makes creating the file the check: two starts at the same moment cannot both pass.
   ( set -C; : > "$f" ) 2>/dev/null || die "$1 is being started already (wait a minute)"
   echo "$f"
@@ -351,7 +404,7 @@ head_of() {
   local repo="$1" ref="$2" out="$3"
   gh api "repos/$repo/commits/$ref" 2>/dev/null \
     | jq -c --arg k "$repo@$ref" '{key:$k, value:{at:(.commit.committer.date|fromdateiso8601), msg:(.commit.message|split("\n")[0]), sha:.sha}}' \
-    > "$out/$(echo "$repo@$ref" | tr '/@' '__').json" 2>/dev/null || true
+    > "$out/$(cache_name "$repo@$ref").json" 2>/dev/null || true
 }
 export -f head_of
 
@@ -360,7 +413,7 @@ export -f head_of
 # the PR count reads at most the 250 commits GitHub lists.
 pending_of() {
   local repo="$1" base="$2" ref="$3" out="$4" key f cmp
-  key="$repo@$base@$ref"; f="$out/$(echo "$key" | tr '/@' '__').json"
+  key="$repo@$base@$ref"; f="$out/$(cache_name "$key").json"
   # Cached for five minutes: a reload every quarter hour should not eat GitHub's hourly budget.
   if ! cmp="$(gh api --cache 5m "repos/$repo/compare/$base...$ref" 2>"$f.err")"; then
     # Only a 404 means the live commit is gone from the repo (the branch was rewritten by a
@@ -376,19 +429,21 @@ pending_of() {
   echo "$cmp" | jq -c --arg k "$key" "$RISK_DEF"' risk as $risk |
       [.commits[] | {sha, n:(first(.commit.message | (capture("\\(#(?<n>[0-9]+)\\)") // capture("Merge pull request #(?<n>[0-9]+)")) | .n) // null)}] as $c
       | {key:$k, value:{commits:.ahead_by, status:(.status // null), behindBy:(.behind_by // null),
-          prs:([$c[] | .n // empty] | unique | length),
+          prs:([$c[] | .n // empty] | unique | length), nums:([$c[] | .n // empty] | unique),
           # GitHub lists 250 commits at most; past that the PR count is a floor.
           partial:(.ahead_by > (.commits | length)),
           oldestAt:(.commits[0].commit.committer.date // null | if . then fromdateiso8601 else null end),
           bare:([$c[] | select(.n == null) | .sha]), risk:$risk}}' > "$f" 2>/dev/null || return 0
-  # A rebase merge leaves no number in the message. For a few such commits, ask which PR they came from.
+  # A rebase merge leaves no number in the message. For a few such commits, ask which PR they came
+  # from, four at a time; a PR already named in another message is counted once.
   local bare n
   bare="$(jq -r '.value.bare | if length <= 10 then .[] else empty end' "$f")"
   if [ -n "$bare" ]; then
-    n="$(for s in $bare; do gh api --cache 24h "repos/$repo/commits/$s/pulls" --jq '.[].number' 2>/dev/null; done | sort -u | wc -l | tr -d ' ')"
-    jq -c --argjson n "$n" '.value.prs += $n | del(.value.bare)' "$f" > "$f.t" && mv "$f.t" "$f"
+    n="$(printf '%s\n' $bare | xargs -P 4 -I{} gh api --cache 24h "repos/$repo/commits/{}/pulls" --jq '.[].number' 2>/dev/null \
+      | jq -R -s -c 'split("\n") | map(select(length > 0))')" || n='[]'
+    jq -c --argjson n "${n:-[]}" '.value.prs = ((.value.nums + $n) | unique | length) | del(.value.bare, .value.nums)' "$f" > "$f.t" && mv "$f.t" "$f"
   else
-    jq -c 'del(.value.bare)' "$f" > "$f.t" && mv "$f.t" "$f"
+    jq -c 'del(.value.bare, .value.nums)' "$f" > "$f.t" && mv "$f.t" "$f"
   fi
 }
 export -f pending_of
@@ -400,7 +455,7 @@ open_prs_of() {
   # The repo goes to jq as --arg, never into the filter text.
   gh api --cache 5m "repos/$repo/pulls?state=open&per_page=100" 2>/dev/null \
     | jq -c --arg k "$repo" '{key:$k, value:{all:length, partial:(length >= 100), drafts:(map(select(.draft)) | length), bots:(map(select(.user.type=="Bot")) | length)}}' \
-    > "$out/$(echo "$repo" | tr '/' '_').json" 2>/dev/null || true
+    > "$out/$(cache_name "$repo").json" 2>/dev/null || true
 }
 export -f open_prs_of
 
@@ -438,7 +493,14 @@ CHANGED_RULE='map(. + {building: (.phase == "queued" or .phase == "building")})
 
 
 with_heads() {
-  local list="$1" tmp heads pend opens
+  local list="$1" tmp heads pend opens one
+  # A command about one project (explain, diff, notes, risk, ai) asks GitHub about that one only:
+  # DEPLOYS_ONLY (its name) and DEPLOYS_ONLY_ID. No match keeps the whole list, as before.
+  if [ -n "${DEPLOYS_ONLY:-}" ]; then
+    one="$(echo "$list" | jq -c --arg n "$DEPLOYS_ONLY" --arg i "${DEPLOYS_ONLY_ID:-}" \
+      'map(select(.name == $n or .id == $n or ($i != "" and .id == $i)))' 2>/dev/null)" || one=""
+    [ -z "$one" ] || [ "$one" = "[]" ] || list="$one"
+  fi
   # Without gh (or glab / GITLAB_TOKEN), or when asked to leave the git hosts out (status --watch),
   # no heads: nothing counts as changed.
   if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! githost_available; then echo "$list" | jq "$CHANGED_RULE"; return; fi
@@ -481,15 +543,25 @@ with_heads() {
 # line, read by the completion scripts already in people's shell profiles, and by `ignore`) and
 # names.json ([{name, platform, id}], read by lookup).
 remember_names() {  # remember_names <p>, the list on stdin
-  # Old names stay, new ones join; one file, so nothing grows without end. In names.json this
-  # provider's entries are replaced by the fresh list.
+  # Old names stay, new ones join; a name no list has shown for 30 days goes (names.seen keeps
+  # when each was last seen; one that was there before it existed counts as seen now). A list
+  # that could not be read refreshes nothing and removes nothing. In names.json this provider's
+  # entries are replaced by the fresh list.
   # Two providers' lists are read at the same time: each writes its own temp file, and a lost
   # race only costs a name until the next read, never the list itself.
   local p="$1" list t; list="$(cat)"
   t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
+  local seen="$CONFIG_DIR/names.seen"
+  { [ -s "$seen" ] && jq -e 'type == "object"' "$seen" >/dev/null 2>&1 && cat "$seen" || echo '{}'; } \
+    | jq -c --argjson now "$(date +%s)" --rawfile old <(cat "$CONFIG_DIR/names" 2>/dev/null || true) \
+        --argjson l "$(echo "$list" | jq -c '[if type == "array" then .[] else empty end | .name | strings]' 2>/dev/null || echo '[]')" \
+        'reduce ($old | split("\n")[] | select(length > 0)) as $n (.; if has($n) then . else .[$n] = $now end)
+         | reduce $l[] as $n (.; .[$n] = $now)
+         | with_entries(select(.value > $now - 2592000))' > "$t" 2>/dev/null && mv -f "$t" "$seen" 2>/dev/null
+  t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
   # Only plain names: the completion scripts read this file, and a name like $(cmd) from a
   # platform list must never reach a shell. Old entries are filtered too, so a planted one goes.
-  { cat "$CONFIG_DIR/names" 2>/dev/null; echo "$list" | jq -r '.[].name' 2>/dev/null; } \
+  { if [ -s "$seen" ]; then jq -r 'keys[]' "$seen" 2>/dev/null; else cat "$CONFIG_DIR/names" 2>/dev/null; echo "$list" | jq -r '.[].name' 2>/dev/null; fi; } \
     | { grep -E '^[[:alnum:]._:@ +,=-]+$' || true; } | sort -u > "$t" 2>/dev/null \
     && mv -f "$t" "$CONFIG_DIR/names" 2>/dev/null; rm -f "$t" "$CONFIG_DIR/names.tmp" "$CONFIG_DIR/names.new"
   t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
@@ -715,11 +787,10 @@ journal_add() {  # journal_add <platform> <name> <result> <detail>
   mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
   # The app shortens the file now and then: both take "<file>.lock" (a folder) for that moment.
   # Waited for two seconds at most; a line is never lost to a stale lock.
-  local i=0 locked=""
-  while [ "$i" -lt 20 ]; do mkdir "$f.lock" 2>/dev/null && { locked=1; break; }; i=$((i + 1)); sleep 0.1; done
+  local locked=""; file_lock "$f" 0 && locked=1
   jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$4" \
     '{at:(now | floor | todate), platform:$p, name:$n, result:$r, seconds:null, detail:$d}' >> "$f" 2>/dev/null || true
-  [ -z "$locked" ] || rmdir "$f.lock" 2>/dev/null || true
+  [ -z "$locked" ] || file_unlock "$f"
 }
 
 # What a pending diff touches, from a GitHub comparison (its .files): migrations are red, lockfiles,
@@ -788,7 +859,7 @@ workflow_hits() {
       | grep -vE '^[[:space:]]*#' \
       | grep -qE 'vercel (deploy|--prod)|vercel-action|api\.render\.com/deploy|render-deploy|deploy[-_]hook|DEPLOY_HOOK' \
       && jq -nc --arg w "$repo" --arg d "$f" '{kind:"workflow", where:$w, detail:$d}'
-  done > "$out/$(echo "$repo" | tr '/' '_').jsonl" || true
+  done > "$out/$(cache_name "$repo").jsonl" || true
 }
 export -f workflow_hits b64d
 
@@ -968,6 +1039,20 @@ job_missing_json() {  # ["autofix:gh", "guard:vercel"], without jq (doctor)
   done
   echo "[${out#,}]"
 }
+# The job logs only grow (launchd appends each run). Past 1 MB the log is renamed to .1 (one old
+# copy kept): renamed, not emptied, because the running job may write without O_APPEND and an
+# emptied file would fill with zeros up to its old length. This run's lines go to the .1 copy,
+# the next run's to a new file.
+log_rotate() {  # log_rotate <log name, e.g. DeployCenter-guard>
+  local f="$HOME/Library/Logs/$1.log" max="${DEPLOYS_LOG_MAX_BYTES:-1048576}" n
+  # Only in a run launchd started (it names the job in XPC_SERVICE_NAME): a run by hand or a
+  # test leaves the person's logs alone.
+  case "${XPC_SERVICE_NAME:-}" in app.deploycenter.*) ;; *) [ -n "${DEPLOYS_LOG_ROTATE:-}" ] || return 0 ;; esac
+  [ -f "$f" ] || return 0
+  n="$(wc -c < "$f" 2>/dev/null | tr -d ' ')" || return 0
+  [ "${n:-0}" -gt "$max" ] || return 0
+  mv -f "$f" "$f.1" 2>/dev/null || true
+}
 job_off() {
   launchctl bootout "gui/$(id -u)/$1" >/dev/null 2>&1 || true
   rm -f "$(job_plist "$1")"
@@ -987,7 +1072,7 @@ af_schedule_off() { job_off "$AUTOFIX_LABEL"; }
 af_lock() {
   local d="$CONFIG_DIR/locks/autofix"; mkdir -p "$CONFIG_DIR/locks"
   # A run that died leaves the lock; after 30 minutes it is taken over.
-  if [ -d "$d" ] && [ $(( $(date +%s) - $(mtime "$d") )) -ge 1800 ]; then rmdir "$d" 2>/dev/null || true; fi
+  lock_clear_stale "$d" 1800
   mkdir "$d" 2>/dev/null || die "autofix is running already"
   echo "$d"
 }
@@ -1052,6 +1137,7 @@ AF_NOT_FAILED=2; AF_BUSY=3; AF_CAP=4; AF_NO_ROUTINE=5; AF_LOCKED=6
 autofix_run() {  # autofix_run [dry] [<platform> <project> [again]]  (the two: --only, this one failure now)
   local dry="${1:-}" oplat="${2:-}" oname="${3:-}" again="${4:-}" lock all now trig st rc=0
   lock="$(af_lock)" || { [ -n "$oname" ] && return "$AF_LOCKED"; return 1; }
+  log_rotate DeployCenter-autofix
   # Whatever ends the run (set -e, a signal), the lock goes with it: else every run for 30 minutes
   # says "running already".
   AF_RUN_LOCK="$lock"; trap 'rmdir "$AF_RUN_LOCK" 2>/dev/null || true' EXIT
@@ -1184,7 +1270,7 @@ allow_list() {
 ad_lock() {
   local d="$CONFIG_DIR/locks/autodeploy" i=0; mkdir -p "$CONFIG_DIR/locks"
   while [ "$i" -lt 30 ]; do
-    if [ -d "$d" ] && [ $(( $(date +%s) - $(mtime "$d") )) -ge 300 ]; then rmdir "$d" 2>/dev/null || true; fi
+    lock_clear_stale "$d" 300
     mkdir "$d" 2>/dev/null && return 0
     i=$((i + 1)); sleep 1
   done
@@ -1260,6 +1346,7 @@ guard_schedule_off() { job_off "$GUARD_LABEL"; }
 # The guard command: one run, its result kept for `guard status`, a notification when it acted.
 guard_main() {
   local dry="$1" first=false rc=0 names
+  log_rotate DeployCenter-guard
   if [ -z "$dry" ] && [ "$(guard_state | jq '.firstRunPending == true')" = true ]; then dry=1; first=true; fi
   guard_run "$dry" || rc=1
   guard_state | jq --argjson t "$(date +%s)" --argjson a "$GUARD_ACTIONS" --argjson d "$([ -n "$dry" ] && echo true || echo false)" \
@@ -1374,8 +1461,11 @@ ai_cap() { local c; c="$(cat "$CONFIG_DIR/ai-cap" 2>/dev/null || true)"; case "$
 ai_month() { date -u +%Y-%m; }
 ai_used() { local u; u="$(jq -r --arg m "$(ai_month)" '.[$m] // 0' "$AI_USAGE" 2>/dev/null || true)"; echo "${u:-0}"; }
 ai_add_usage() {  # ai_add_usage <tokens>
-  local t; t="$(mktemp "$CONFIG_DIR/.ai-usage.XXXXXX")"
+  local t l=""; t="$(mktemp "$CONFIG_DIR/.ai-usage.XXXXXX")"
+  # Two runs at once would both read the old count, and one would be lost.
+  file_lock "$AI_USAGE" && l=1
   { [ -s "$AI_USAGE" ] && cat "$AI_USAGE" || echo '{}'; } | jq --arg m "$(ai_month)" --argjson n "$1" '.[$m] = ((.[$m] // 0) + $n)' > "$t" && mv "$t" "$AI_USAGE"
+  [ -z "$l" ] || file_unlock "$AI_USAGE"
 }
 
 # One HTTP call. The key goes to curl on stdin (-K -), never as an argument. Prints "<code>\t<body>".
@@ -1438,7 +1528,7 @@ ai_excerpt() {
 ai_row() {
   # "<p>:<name>" too: the platform from it, the bare name (or the id) to find the row.
   safe_arg "$1"; resolve "$1"
-  "$SELF" "$PLAT" json | jq -c --arg p "$PNAME" --arg id "$PID" --arg pl "$PLAT" '[.[] | select(.name == $p or .id == $p or .id == $id)][0] // empty | .platform //= $pl'
+  DEPLOYS_ONLY="$PNAME" DEPLOYS_ONLY_ID="$PID" "$SELF" "$PLAT" json | jq -c --arg p "$PNAME" --arg id "$PID" --arg pl "$PLAT" '[.[] | select(.name == $p or .id == $p or .id == $id)][0] // empty | .platform //= $pl'
 }
 ai_log() { "$SELF" logs "$1" 300; }
 ai_details() { "$SELF" details "$1" "$2" "$3"; }
@@ -1589,6 +1679,9 @@ if is_provider "${1:-}"; then
   case "${2:-}" in deploy|deploy-json|rollback) usage_if_short $# 3 "$1 ${2} <$(meta_str "$1" noun)>" ;; esac
   if declare -F "${1}_usage" >/dev/null; then "${1}_usage" $# "${2:-}"; fi
 fi
+
+# The team merge of this process (lib/team.sh keeps it once per process) goes with it.
+if team_on && [ -z "${DEPLOYS_LIB:-}" ]; then trap 'team_eff_forget' EXIT; fi
 
 # `deploys <p> <verb> [args]`: <p>_cli_<verb> where a provider keeps a command's old output for
 # people, else the contract function <p>_<verb> (docs/PROVIDERS.md). autodeploy-off is off.
@@ -1747,11 +1840,19 @@ case "${1:-} ${2:-}" in
     # Written with printf, not jq: this is the command that has to work when jq is missing.
     # Each provider that is on adds its fields (<p>_doctor prints one JSON object).
     has() { command -v "$1" >/dev/null 2>&1 && echo true || echo false; }
-    pf=""
+    # Each provider's object also goes under "providers":{"<p>":{...}}. Only the old flat ones
+    # (vercelCli, renderKey: names of their own) are merged into the top level as well: the newer
+    # ones share names like "provider" and "tokenOk", and merged they would repeat a key, so a
+    # reader kept only the last one.
+    pf=""; pn=""
     for p in $(enabled_providers); do
       o="$("${p}_doctor" 2>/dev/null | tr -d '\n')" || o=""
+      case "$o" in '{'*'}') ;; *) continue ;; esac
+      pn="$pn,\"$p\":$o"
+      case "$o" in *'"provider"'*) continue ;; esac
       o="${o#\{}"; o="${o%\}}"; [ -z "$o" ] || pf="$pf,$o"
     done
+    pf="$pf,\"providers\":{${pn#,}}"
     glogin=false; gh auth status >/dev/null 2>&1 && glogin=true
     gllogin=false; gitlab_logged_in && gllogin=true
     # The versions that matter (jq 1.6+ for the date functions).
@@ -1876,9 +1977,11 @@ case "${1:-} ${2:-}" in
     if [ "${3:-}" != "--undo" ] && [ -s "$CONFIG_DIR/names" ] && ! grep -qxF -- "$p" "$CONFIG_DIR/names"; then
       rm -f "$tmp"; die "No project or service named \"$p\" was seen yet (deploys changed reads the names)"
     fi
+    # Under a lock: two ignores at once must not lose one of the names.
+    il=""; file_lock "$f" && il=1
     if [ "${3:-}" = "--undo" ]; then jq --arg p "$p" 'map(select(. != $p))' "$f" > "$tmp"; echo "$p is counted again"
     else jq --arg p "$p" '. + [$p] | unique' "$f" > "$tmp"; echo "$p is left out of changed and deploy-changed"; fi
-    mv "$tmp" "$f"
+    mv "$tmp" "$f"; [ -z "$il" ] || file_unlock "$f"; ! team_on || team_eff_forget
     # A shared file may leave it out too: this Mac's word goes into overrides.json, which wins.
     if team_on; then
       o="$TEAM_OVERRIDES"; [ -s "$o" ] || echo '{}' > "$o"
@@ -1894,7 +1997,7 @@ case "${1:-} ${2:-}" in
   "explain "*)
     # One sentence on why a project is, or is not, counted as having changes.
     p="${2:?project}"; resolve "$p"; p="$PNAME"
-    j="$("$SELF" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
+    j="$(DEPLOYS_ONLY="$p" DEPLOYS_ONLY_ID="$PID" "$SELF" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     echo "$j" | jq -r 'def s: (. // "?") | tostring | .[0:7];
       if (.deployable // false) | not then "no: not deployable (repo unknown, or the service is suspended)"
@@ -1911,7 +2014,7 @@ case "${1:-} ${2:-}" in
   "diff "*|"notes "*)
     # What is merged but not live for one project, from the same data the window shows.
     p="${2:?project}"; resolve "$p"; p="$PNAME"
-    j="$("$SELF" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
+    j="$(DEPLOYS_ONLY="$p" DEPLOYS_ONLY_ID="$PID" "$SELF" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
     d="$("$SELF" details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // "main"')")"

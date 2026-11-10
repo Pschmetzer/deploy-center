@@ -6,6 +6,7 @@
 #                                and write the Homebrew cask and formula
 #   ./release.sh --publish-only  publish the zip already in dist/ (after a failed upload; no new build)
 #   ./release.sh --check-addons  only check that every add-on changed since the last release has a new version
+#   ./release.sh ... --dry-run   run the checks, then only print what would be built, tagged and uploaded
 #
 # Needs a "Developer ID Application" certificate and a notarytool profile. Give them as
 # DEVELOPER_ID and NOTARY_PROFILE, or put them in .release.env (not tracked):
@@ -24,12 +25,13 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "release.sh: $*" >&2; exit 1; }
 
-mode=build
+mode=build; dry=""
 for arg in "$@"; do
   case "$arg" in
+    --dry-run) dry=1 ;;
     --publish|--publish-only)
       [ "$mode" = build ] || die "use only one of --publish and --publish-only"
       mode="${arg#--}" ;;
@@ -66,7 +68,7 @@ for v in SPARKLE_PUBLIC_KEY SPARKLE_FEED_URL; do
   [ -z "${!v:-}" ] || echo "release.sh: ignoring $v (only for local update tests)" >&2
   unset "$v"
 done
-if [ "$mode" != publish-only ]; then
+if [ "$mode" != publish-only ] && [ -z "$dry" ]; then
   : "${DEVELOPER_ID:?Set DEVELOPER_ID (see the top of this file)}"
   : "${NOTARY_PROFILE:?Set NOTARY_PROFILE (see the top of this file)}"
 fi
@@ -101,11 +103,15 @@ if publishing; then
   grep -q '^- ' <<<"$(notes_of)" \
     || die "CHANGELOG.md has no entries under \"## $VERSION\"; rename Unreleased first (scripts/bump.sh)"
   # The key in the keychain must be the one the app trusts, or no installed copy accepts the update.
-  SPARKLE="$(scripts/sparkle.sh)"
-  SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-deploy-center}"
-  have="$("$SPARKLE/bin/generate_keys" --account "$SPARKLE_ACCOUNT" -p 2>/dev/null)" \
-    || die "no Sparkle key \"$SPARKLE_ACCOUNT\" in the keychain (see the top of this file)"
-  [ "$have" = "$want_key" ] || die "the Sparkle key in the keychain ($have) is not the one in build.sh ($want_key)"
+  # A dry run downloads nothing: it checks the key only when the Sparkle tools are here already.
+  SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-deploy-center}"; key_note="matches build.sh"
+  if [ -n "$dry" ]; then SPARKLE="$(ls -d vendor/Sparkle-*/ 2>/dev/null | tail -n 1 || true)"; SPARKLE="${SPARKLE%/}"
+  else SPARKLE="$(scripts/sparkle.sh)"; fi
+  if [ -n "$SPARKLE" ] && [ -x "$SPARKLE/bin/generate_keys" ]; then
+    have="$("$SPARKLE/bin/generate_keys" --account "$SPARKLE_ACCOUNT" -p 2>/dev/null)" \
+      || die "no Sparkle key \"$SPARKLE_ACCOUNT\" in the keychain (see the top of this file)"
+    [ "$have" = "$want_key" ] || die "the Sparkle key in the keychain ($have) is not the one in build.sh ($want_key)"
+  else key_note="not checked (the Sparkle tools are not fetched in a dry run)"; fi
   command -v python3 >/dev/null || die "python3 is missing (xcode-select --install)"
 fi
 if [ "$mode" = build ]; then
@@ -142,6 +148,32 @@ if publishing; then
   # The CLI tarball is packed from this commit after the slow part; fail now if it cannot be.
   git cat-file -e "$COMMIT:README-CLI.md" 2>/dev/null || die "$COMMIT has no README-CLI.md, which the CLI tarball needs"
   check_addons "$COMMIT"
+fi
+
+# --dry-run: the checks above passed (they only read); this is what a real run would do next.
+if [ -n "$dry" ]; then
+  if [ "$mode" = build ] || [ "$mode" = publish ]; then built="built from $COMMIT"; else built="the one in $ZIP"; fi
+  echo "Dry run: nothing was built, notarized, tagged, uploaded or written."
+  echo "  version     $VERSION (tag $TAG)"
+  echo "  commit      $COMMIT"
+  if publishing; then
+    echo "  repo        $REPO"
+    if [ -n "${tag_sha:-}" ]; then echo "  release     $TAG exists on this commit: resumed (assets replaced, notes updated)"
+    else echo "  release     $TAG is new: created at $COMMIT"; fi
+    echo "  Sparkle key ${key_note:-}"
+  fi
+  [ "$mode" != publish ] || echo "would run   scripts/check-public.sh and the four test suites"
+  if [ "$mode" != publish-only ]; then
+    echo "would build ./build.sh --widgets, signed as ${DEVELOPER_ID:-<DEVELOPER_ID is not set>}"
+    echo "would send  build/notarize.zip to Apple (profile ${NOTARY_PROFILE:-<NOTARY_PROFILE is not set>}), staple, zip to $ZIP"
+  fi
+  if publishing; then
+    echo "would pack  the CLI tarball and checksums.txt from $COMMIT"
+    echo "would upload $ZIP ($built), the CLI tarball and checksums.txt to the GitHub release $TAG"
+    echo "would sign  the zip for Sparkle and add $VERSION to site/appcast.xml"
+    echo "would write the Homebrew cask and formula in ${TAP_DIR:-a fresh clone in $DIST} (nothing pushed)"
+  fi
+  exit 0
 fi
 
 # Before a release goes out: the tests, and the guard against personal data in the public repo

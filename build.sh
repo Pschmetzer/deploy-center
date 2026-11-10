@@ -62,14 +62,26 @@ mkdir -p "$BUILD/Contents/MacOS" "$BUILD/Contents/Resources"
 
 # Universal binary: Apple silicon and Intel. macOS 15 is the floor; the app checks for jq itself.
 if [ "$fast" = 1 ]; then archs="$(uname -m)"; else archs="arm64 x86_64"; fi
+# One swiftc per architecture at the same time, each with its own module cache; each pid is
+# waited for on its own (a bare `wait` returns 0 and would hide a failed slice). The output of
+# each comes after, in order, so warnings do not interleave.
 slices=()
-for arch in $archs; do
-  swiftc -O -parse-as-library -swift-version 5 \
-    -target "$arch-apple-macosx15.0" \
-    -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
-    -o "build/DeployCenter-$arch" app/*.swift shared/*.swift
-  slices+=("build/DeployCenter-$arch")
-done
+build_slices() {  # build_slices <name> <swiftc args...>: build/<name>-<arch> for every arch, into slices
+  local name="$1" arch pids=() i=0 bad=""; shift; slices=()
+  for arch in $archs; do
+    swiftc "$@" -target "$arch-apple-macosx15.0" -module-cache-path "build/ModuleCache-$arch" \
+      -o "build/$name-$arch" > "build/$name-$arch.log" 2>&1 &
+    pids+=("$!"); slices+=("build/$name-$arch")
+  done
+  for arch in $archs; do
+    wait "${pids[$i]}" || bad="$bad $arch"; i=$((i + 1))
+    cat "build/$name-$arch.log" >&2; rm -f "build/$name-$arch.log"
+  done
+  [ -z "$bad" ] || die "swiftc failed for $name:$bad (see above)"
+}
+build_slices DeployCenter -O -parse-as-library -swift-version 5 \
+  -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
+  app/*.swift shared/*.swift
 lipo -create "${slices[@]}" -output "$BUILD/Contents/MacOS/DeployCenter"
 rm -f "${slices[@]}"
 
@@ -85,14 +97,10 @@ rm -rf "$FW/XPCServices" "$FW/Versions/B/XPCServices" "$FW/Headers" "$FW/Version
 if [ "$widgets" = 1 ]; then
   APPEX="$BUILD/Contents/PlugIns/DeployCenterWidgets.appex"
   mkdir -p "$APPEX/Contents/MacOS"
-  wslices=()
-  for arch in $archs; do
-    swiftc -O -parse-as-library -application-extension -swift-version 5 -module-name DeployCenterWidgets \
-      -target "$arch-apple-macosx15.0" -o "build/DeployCenterWidgets-$arch" widgets/*.swift shared/*.swift
-    wslices+=("build/DeployCenterWidgets-$arch")
-  done
-  lipo -create "${wslices[@]}" -output "$APPEX/Contents/MacOS/DeployCenterWidgets"
-  rm -f "${wslices[@]}"
+  build_slices DeployCenterWidgets -O -parse-as-library -application-extension -swift-version 5 -module-name DeployCenterWidgets \
+    widgets/*.swift shared/*.swift
+  lipo -create "${slices[@]}" -output "$APPEX/Contents/MacOS/DeployCenterWidgets"
+  rm -f "${slices[@]}"
 fi
 
 cp deploys "$BUILD/Contents/Resources/deploys"
@@ -219,11 +227,20 @@ sign_sparkle() {
   local id="$1"; shift
   for p in "$FW/Versions/B/Autoupdate" "$FW/Versions/B/Updater.app" "$FW"; do codesign --force "$@" -s "$id" "$p"; done
 }
+# The script and every file it sources, the same way in both branches (the widgets branch, which
+# release.sh takes, once signed only deploys; the other one left lib/ out).
+sign_resources() {  # sign_resources <identity> [codesign options...]
+  local id="$1" f; shift
+  for f in "$BUILD/Contents/Resources/deploys" "$BUILD/Contents/Resources/providers/"*.sh "$BUILD/Contents/Resources/lib/"*.sh; do
+    [ -f "$f" ] || continue
+    codesign --force "$@" -s "$id" "$f"
+  done
+}
 if [ "$widgets" = 1 ]; then
   sid="${DEVELOPER_ID:--}"
   rt=(); [ -n "${DEVELOPER_ID:-}" ] && rt=(--options runtime --timestamp)
   sign_sparkle "$sid" ${rt[@]+"${rt[@]}"}
-  codesign --force ${rt[@]+"${rt[@]}"} -s "$sid" "$BUILD/Contents/Resources/deploys"
+  sign_resources "$sid" ${rt[@]+"${rt[@]}"}
   codesign --force ${rt[@]+"${rt[@]}"} -s "$sid" --entitlements build/widgets.entitlements "$APPEX"
   codesign --force ${rt[@]+"${rt[@]}"} -s "$sid" --entitlements build/app.entitlements "$BUILD"
   codesign --verify --strict --deep "$BUILD"
@@ -235,8 +252,7 @@ if [ "$widgets" = 1 ]; then
   fi
 elif [ -n "${DEVELOPER_ID:-}" ]; then
   sign_sparkle "$DEVELOPER_ID" --options runtime --timestamp
-  codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/deploys"
-  codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/providers/"*.sh
+  sign_resources "$DEVELOPER_ID" --options runtime --timestamp
   ent=(); [ -n "$LINK_ENT" ] && ent=(--entitlements build/app.entitlements)
   codesign --force --options runtime --timestamp ${ent[@]+"${ent[@]}"} -s "$DEVELOPER_ID" "$BUILD"
   codesign --verify --deep --strict "$BUILD"

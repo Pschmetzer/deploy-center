@@ -152,7 +152,31 @@ def resolve($n):
 
 # The effective config as JSON. Arguments: extra "name=owner/repo@branch@platform" entries for
 # projects this Mac knows only from the platform (a Render service), for one deploy.
+# One merge per process: repos_json, team_ignored, team_group and the rest each asked for the
+# whole merge again. Most of them run in $(...), where a variable set inside is lost, so the
+# first plain call (no extra projects) writes it to team-cache/eff.<pid> ($$ is the same in every
+# subshell, a child process has its own), with the environment it was made in as the first line;
+# a call in another environment merges anew. Writing team or readonly config calls
+# team_eff_forget; deploys removes the file on exit, and leftovers go after an hour.
+team_eff_file() { echo "$TEAM_CACHE/eff.$$"; }
+team_eff_key() { printf '%s|%s|%s|%s' "${DEPLOYS_NO_GITHUB:-}" "${DEPLOYS_TEAM_REFRESH:-}" "${DEPLOYS_READONLY-unset}" "$CONFIG_DIR"; }
+team_eff_forget() { rm -f "$(team_eff_file)"; }
 team_effective() {
+  local f k out rc=0
+  if [ $# = 0 ]; then
+    f="$(team_eff_file)"; k="$(team_eff_key)"
+    if [ -s "$f" ] && [ "$(head -n 1 "$f")" = "$k" ]; then tail -n +2 "$f"; return 0; fi
+    out="$(team_merge)" || rc=$?
+    if [ "$rc" = 0 ] && [ -n "$out" ] && mkdir -p "$TEAM_CACHE" 2>/dev/null; then
+      find "$TEAM_CACHE" -name 'eff.*' -mmin +60 -exec rm -f {} + 2>/dev/null || true
+      local t="$f.$RANDOM.t"; printf '%s\n%s\n' "$k" "$out" > "$t" 2>/dev/null && mv -f "$t" "$f" 2>/dev/null || rm -f "$t"
+    fi
+    [ -z "$out" ] || printf '%s\n' "$out"
+    return "$rc"
+  fi
+  team_merge "$@"
+}
+team_merge() {
   local extra='{}' e n rest repos=()
   for e in "$@"; do
     n="${e%%=*}"; rest="${e#*=}"

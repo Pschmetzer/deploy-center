@@ -97,6 +97,8 @@ project could not be read (it is named and left out, never counted as current). 
 | `DEPLOYS_GITLAB_HOSTS` | self-managed GitLab hosts (docs/GITLAB.md) |
 | `DEPLOYS_ANTHROPIC_API_KEY` | the key for `deploys ai`, before `ANTHROPIC_API_KEY` and the keychain |
 | `DEPLOYS_VERCEL_USD_PER_MIN`, `DEPLOYS_RENDER_USD_PER_MIN` | build-minute prices for `simulate` and `ledger` |
+| `DEPLOYS_TIMEOUT` | seconds one `gh` or `glab` call may take (default 120, `0` = no limit; needs perl) |
+| `DEPLOYS_LOG_MAX_BYTES` | size past which a launchd job log is renamed to `.1` (default 1 MB) |
 | `NO_COLOR` | no colour |
 
 `window.json` may name a time zone: `{"tz":"Europe/Berlin","deny":[…]}`. `deploys window` warns
