@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+- Claude Code plugin in `integrations/claude-code/`: a skill, `/deploys-*` commands and a read-only reminder after `git push`; install with `/plugin marketplace add Pschmetzer/deploy-center`. See `docs/CLAUDE-CODE.md`.
+- `providers/amplify.sh`: AWS Amplify Hosting, opt-in. Auto-build off per branch, deploy (`start-job RELEASE`, with `--sha`), cancel, logs, and rollback by rebuilding an earlier commit, through the `aws` CLI. See `docs/providers/amplify.md`.
 - `integrations/mcp/`: an MCP server for AI coding agents. Read-only by default (`changed`, `status`, `explain`, `notes`, `logs`, `doctor`); deploy and rollback of one project per call only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`.
 - Savings, all marked as estimates (≈) with the method in the JSON: `deploys simulate [--days 30] --json` counts pushes to each deploy branch (GitHub) times the project's average build and puts "auto-deploy ≈ X a month" next to "once a day ≈ Y"; `deploys ledger --json` counts the pushes since auto-deploy was turned off that never built, in dollars, Vercel build minutes and Render pipeline minutes (logic in `lib/savings.sh`). The app has a Simulator sheet (a banner before anything is turned off, and Settings > Costs) and a Ledger ("≈ $X saved since …", per project, skipped pushes, share card).
+- App: command palette (⌘K). Fuzzy search over the actions (deploy all changed, reload, stop all, journal, settings, costs) and per project deploy, log, open, dashboard, rollback and notes; recent commands first. Deploys and rollbacks ask first, as in the window. Optional global ⌥⌘K under Settings → Advanced (off by default).
 - `deploys autofix`: a failed build (Vercel `ERROR`, Render `build_failed`) is handed to a Claude Code routine that opens a fix PR; after the merge, the next run deploys that merge commit once. Caps, no duplicates, never merges. See `docs/AUTOFIX.md` and `scripts/autofix.plist.example`.
 - `deploys logs <project> --id <deploy>` reads the log of one deploy; `vercel json` and `render json` carry `latestId` and `latestSha` of the newest attempt.
 

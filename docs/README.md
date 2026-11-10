@@ -11,6 +11,7 @@
 | [NUMBERS.md](NUMBERS.md) | How commits and PRs waiting are counted |
 | [SAVINGS.md](SAVINGS.md) | `deploys simulate` and `deploys ledger`: what auto-deploy costs, what turning it off saved (estimates) |
 | [AUTOFIX.md](AUTOFIX.md) | A failed build handed to a Claude Code routine, the fix deployed after you merge |
+| [CLAUDE-CODE.md](CLAUDE-CODE.md) | Using Deploy Center with Claude Code: the plugin, a CLAUDE.md block, the safety model |
 | [UNINSTALL.md](UNINSTALL.md) | Removing the app, the key and everything it kept |
 | [GOOD-FIRST-ISSUES.md](GOOD-FIRST-ISSUES.md) | Small tasks for a first pull request |
 | [../examples/](../examples/) | Deploying without a Mac (CI) |
