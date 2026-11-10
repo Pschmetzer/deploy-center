@@ -869,11 +869,13 @@ final class Store: ObservableObject {
         try? await Tool.json(["window", "--json"], as: WindowReply.self, timeout: 30)
     }
 
-    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false) {
-        let job = Job(item: item, preview: preview, sha: sha, clearCache: clearCache)
+    /// One row. `whenGreen` waits for the commit's CI like the footer's "only when green";
+    /// `force` (a reason) goes out inside a closed deploy window, as the footer's dialog does.
+    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, whenGreen: Bool = false, force: String? = nil) {
+        let job = Job(item: item, preview: preview, sha: sha, clearCache: clearCache, whenGreen: whenGreen, force: force)
         // A preview is never held by the deploy window. A live deploy from a row, the details or the
         // palette is: the script would refuse it anyway, so say why here instead of a failed row.
-        guard !preview, !observer else { enqueue([job]); return }
+        guard !preview, !observer, force == nil else { enqueue([job]); return }
         Task {
             if let w = await deployWindow(), w.denied {
                 say(L("Deploy window closed", "Deploy-Fenster geschlossen"),
