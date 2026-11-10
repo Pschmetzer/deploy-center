@@ -16,8 +16,9 @@ const fail = (name, why) => { console.log(`FAIL mcp: ${name}: ${why}`); fails++;
 const check = (name, cond, why = "") => (cond ? ok(name) : fail(name, why));
 const callLog = () => { try { return readFileSync(calls, "utf8"); } catch { return ""; } };
 
-// One server process; requests in, answers matched by id.
-function start(env = {}) {
+// One server process; requests in, answers matched by id. `elicit` answers the server's own
+// questions (elicitation/create) with a result; without it the client has no elicitation.
+function start(env = {}, { elicit = null } = {}) {
   const child = spawn(process.execPath, [server], { env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
   let buf = "", next = 1;
   const waiting = new Map();
@@ -28,6 +29,13 @@ function start(env = {}) {
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
       if (!line.trim()) continue;
       const msg = JSON.parse(line);
+      if (msg.method === "elicitation/create") {
+        s.asked.push(msg.params);
+        const result = elicit ? elicit(msg.params) : { action: "decline" };
+        child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }) + "\n");
+        continue;
+      }
+      if (msg.method) continue; // other requests or notifications from the server
       waiting.get(msg.id)?.(msg); waiting.delete(msg.id);
     }
   });
@@ -39,8 +47,10 @@ function start(env = {}) {
   });
   const s = {
     request,
+    asked: [],
     async init() {
-      const r = await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
+      const capabilities = elicit ? { elicitation: {} } : {};
+      const r = await request("initialize", { protocolVersion: "2025-06-18", capabilities, clientInfo: { name: "test", version: "0" } });
       child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
       return r.result;
     },
@@ -134,7 +144,7 @@ r = await s.call("deploys_logs", { project: "app-web", lines: 1000 });
 check("long logs keep the end", r.text.includes("trimmed") && r.text.trimEnd().endsWith("1000") && r.text.length < 200, r.text.slice(0, 200));
 s.stop();
 
-s = start({ DEPLOYS_MCP_TIMEOUT: "1", FAKE_SLEEP_ALL: "20" });
+s = start({ DEPLOYS_MCP_TIMEOUT: "1", FAKE_SLEEP_ALL: "20.019" });
 await s.init();
 const t0 = Date.now();
 r = await s.call("deploys_doctor");
@@ -148,7 +158,7 @@ r = await s.call("deploys_ledger");
 check("ledger is not held to the short timeout", !r.error && JSON.parse(r.text).kind === "ledger", r.text.slice(0, 200));
 s.stop();
 
-s = start({ DEPLOYS_MCP_SLOW_TIMEOUT: "1", FAKE_SLEEP_ALL: "20" });
+s = start({ DEPLOYS_MCP_SLOW_TIMEOUT: "1", FAKE_SLEEP_ALL: "20.019" });
 await s.init();
 const t1 = Date.now();
 r = await s.call("deploys_simulate");
@@ -161,8 +171,9 @@ r = await s.call("deploys_changed");
 check("a missing CLI is a clear error", r.error && r.text.includes("not found"), r.text);
 s.stop();
 
-// --- write tools with DEPLOYS_MCP_ALLOW_DEPLOY=1 ---
-s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1" });
+// --- write tools with DEPLOYS_MCP_ALLOW_DEPLOY=1; the human says yes to every question ---
+const yes = () => ({ action: "accept", content: { confirm: true } });
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", FAKE_RENDER_KEY: "true", DEPLOYS_MCP_MAX_DEPLOYS: "20" }, { elicit: yes });
 const info2 = await s.init();
 const all = await s.tools();
 check("the flag adds deploy and rollback", all.some((t) => t.name === "deploys_deploy") && all.some((t) => t.name === "deploys_rollback"));
@@ -175,8 +186,11 @@ r = await s.call("deploys_deploy", { project: "app-web" });
 let d = r.error ? {} : JSON.parse(r.text);
 check("deploy returns id and url", d.id === "dpl_1" && d.url === "https://app-web-x.vercel.app" && d.platform === "vercel" && d.target === "production", r.text);
 const log = callLog().trim().split("\n");
-check("the platform comes from status when list --json is missing", log.includes("list --json") && log.includes("status --json --no-github"), log.join(" | "));
-check("exactly one deploy-json call, for that project", log.filter((l) => l.includes("deploy")).join() === "vercel deploy-json app-web", log.join(" | "));
+check("the platform comes from list --json", log.includes("list --json") && !log.includes("status --json --no-github"), log.join(" | "));
+check("exactly one deploy-json call, for that project", log.filter((l) => l.includes("deploy-json")).join() === "vercel deploy-json app-web", log.join(" | "));
+const q = s.asked.at(-1);
+check("the server asks the human, naming project, platform and commits", /app-web/.test(q?.message) && /Vercel/.test(q?.message) && /4 commits waiting/.test(q?.message) &&
+  q?.requestedSchema?.properties?.confirm?.type === "boolean", JSON.stringify(q));
 r = await s.call("deploys_deploy", { project: "app-web", preview: true });
 check("preview passes --preview", !r.error && JSON.parse(r.text).target === "preview" && callLog().includes("vercel deploy-json app-web --preview"), r.text);
 r = await s.call("deploys_deploy", { project: "api" });
@@ -193,6 +207,76 @@ check("one project per call: an array is refused", r.error, r.text);
 r = await s.call("deploys_rollback", { project: "app-web" });
 d = r.error ? {} : JSON.parse(r.text);
 check("rollback returns the id", d.id === "dpl_0" && d.platform === "vercel", r.text);
+check("rollback asks the human too", /Roll back app-web/.test(s.asked.at(-1)?.message ?? ""), JSON.stringify(s.asked.at(-1)));
+writeFileSync(calls, "");
+r = await s.call("deploys_deploy", { project: "site" });
+check("nothing waiting: no deploy without force", r.error && /force/.test(r.text) && !callLog().includes("deploy-json"), r.text);
+r = await s.call("deploys_deploy", { project: "site", force: "yes" });
+check("force must be a boolean", r.error && /force/.test(r.text), r.text);
+s.stop();
+
+// An older CLI without list --json: the platform comes from status.
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", FAKE_RENDER_KEY: "true", FAKE_NO_LIST: "1" }, { elicit: yes });
+await s.init();
+writeFileSync(calls, "");
+r = await s.call("deploys_deploy", { project: "api" });
+check("the platform comes from status when list --json is missing", !r.error && JSON.parse(r.text).platform === "render" &&
+  callLog().includes("status --json --no-github"), r.text + " | " + callLog());
+s.stop();
+
+// The human says no, or does not tick the box: nothing starts.
+for (const [name, answer] of [["declines", { action: "decline" }], ["cancels", { action: "cancel" }], ["accepts without the tick", { action: "accept", content: { confirm: false } }]]) {
+  s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1" }, { elicit: () => answer });
+  await s.init();
+  writeFileSync(calls, "");
+  r = await s.call("deploys_deploy", { project: "app-web" });
+  const r2 = await s.call("deploys_rollback", { project: "app-web" });
+  check(`the human ${name}: nothing is deployed or rolled back`, r.error && r2.error && /nothing was started/.test(r.text) &&
+    !/deploy-json|rollback/.test(callLog()), r.text + " | " + callLog());
+  s.stop();
+}
+
+// A client that cannot ask: refused, unless DEPLOYS_MCP_CONFIRM=client.
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1" });
+await s.init();
+writeFileSync(calls, "");
+r = await s.call("deploys_deploy", { project: "app-web" });
+check("no elicitation: the write is refused", r.error && /cannot ask/.test(r.text) && !callLog().includes("deploy-json"), r.text);
+s.stop();
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", DEPLOYS_MCP_CONFIRM: "client" });
+await s.init();
+r = await s.call("deploys_deploy", { project: "app-web" });
+check("DEPLOYS_MCP_CONFIRM=client trusts the client's approval", !r.error && JSON.parse(r.text).id === "dpl_1" && s.asked.length === 0, r.text);
+s.stop();
+
+// At most DEPLOYS_MCP_MAX_DEPLOYS per run, and one at a time.
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", DEPLOYS_MCP_MAX_DEPLOYS: "1" }, { elicit: yes });
+await s.init();
+r = await s.call("deploys_deploy", { project: "app-web" });
+const over = await s.call("deploys_deploy", { project: "app-web" });
+check("the limit per run stops the second deploy", !r.error && over.error && /DEPLOYS_MCP_MAX_DEPLOYS/.test(over.text), over.text);
+s.stop();
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", DEPLOYS_MCP_MAX_DEPLOYS: "5" }, { elicit: yes });
+await s.init();
+const both = await Promise.all([s.call("deploys_deploy", { project: "app-web" }), s.call("deploys_deploy", { project: "app-web" })]);
+check("two deploys at once: the second is refused", both.filter((x) => x.error && /already in progress/.test(x.text)).length === 1 &&
+  both.filter((x) => !x.error).length === 1, JSON.stringify(both));
+s.stop();
+
+// A start that times out may have started: the text says so and says not to retry.
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", DEPLOYS_MCP_WRITE_TIMEOUT: "1", FAKE_DEPLOY_SLEEP: "5" }, { elicit: yes });
+await s.init();
+r = await s.call("deploys_deploy", { project: "app-web" });
+check("a timed-out deploy may have started: check status, do not retry", r.error && /MAY HAVE STARTED/.test(r.text) &&
+  /deploys_status/.test(r.text) && /not call it again/.test(r.text), r.text);
+s.stop();
+
+// --- masking: logs, notes and explain reach the model without known token shapes ---
+s = start({ FAKE_SECRET_LOG: "1" });
+await s.init();
+r = await s.call("deploys_logs", { project: "app-web" });
+check("logs: tokens are masked, the rest stays", !r.error && !/ghp_abcdefgh12345678|hunter2|sk-ant-abc12345678|rnd_abcdefgh123|s3cr3t/.test(r.text) &&
+  /\[masked\]/.test(r.text) && /Build ok · Umlaut ä/.test(r.text), r.text);
 s.stop();
 
 process.exit(fails ? 1 : 0);

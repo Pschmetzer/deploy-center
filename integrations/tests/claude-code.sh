@@ -121,8 +121,10 @@ check "mcp example: mcpServers.deploys runs integrations/mcp/server.mjs, deploys
 
 # --- the official validator, when installed ---
 if command -v claude >/dev/null 2>&1; then
+  # macOS has no timeout(1); coreutils installs it as gtimeout. Without either, run unbounded.
+  tmo() { if command -v timeout >/dev/null; then timeout "$@"; elif command -v gtimeout >/dev/null; then gtimeout "$@"; else shift; "$@"; fi; }
   for target in "$plug" .; do
-    if out="$(timeout 120 claude plugin validate --strict "$target" 2>&1)"; then ok "claude plugin validate --strict $target"
+    if out="$(tmo 120 claude plugin validate --strict "$target" 2>&1)"; then ok "claude plugin validate --strict $target"
     else fail "claude plugin validate --strict $target" "$(tail -5 <<<"$out")"; fi
   done
 else

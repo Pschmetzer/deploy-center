@@ -32,6 +32,8 @@ case "\$*" in
   "render list --json") cat "$tmp/render.json" ;;
   # As the real one: every provider that is on and set up. Render only with a key.
   "list --json") [ -n "\${FAKE_SLEEP:-}" ] && sleep "\$FAKE_SLEEP"
+    # An older CLI without list --json.
+    [ -n "\${FAKE_NO_LIST:-}" ] && { echo "unknown command: list" >&2; exit 1; }
     if [ -n "\${RENDER_API_KEY:-}" ] || [ "\${FAKE_RENDER_KEY:-false}" = true ]; then r="$tmp/render.json"; else r=/dev/null; fi
     jq -s '(.[0] | map(. + {platform:"vercel"})) + ((.[1] // []) | map(. + {platform:"render"}))' "$tmp/vercel.json" \$r ;;
   "notes app-web") printf '## app-web\\n- New billing page (#12) – Ana\\n- Faster search – Ben\\n\\nDependency updates:\\n- Bump jq – dependabot\\n' ;;
@@ -47,8 +49,11 @@ case "\$*" in
     jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
       | map({platform, name, building:false, state:"READY", changed})' "$tmp/vercel.json" "$tmp/render.json" ;;
   "explain "*) echo "explain: \$2" ;;
-  "logs "*) seq 1 "\${3:-80}" ;;
-  "vercel deploy-json app-web"|"vercel deploy-json app-web --preview") echo '{"id":"dpl_1","url":"https://app-web-x.vercel.app","state":"QUEUED"}' ;;
+  "logs "*) if [ -n "\${FAKE_SECRET_LOG:-}" ]; then
+      printf '%s\n' 'GITHUB_TOKEN=ghp_abcdefgh12345678' 'export DB_PASSWORD="hunter2"' 'key sk-ant-abc12345678 and rnd_abcdefgh123' \
+        'postgres://app:s3cr3t@db.example.test/app' 'Build ok · Umlaut ä'
+    else seq 1 "\${3:-80}"; fi ;;
+  "vercel deploy-json app-web"|"vercel deploy-json app-web --preview") [ -n "\${FAKE_DEPLOY_SLEEP:-}" ] && sleep "\$FAKE_DEPLOY_SLEEP"; echo '{"id":"dpl_1","url":"https://app-web-x.vercel.app","state":"QUEUED"}' ;;
   "render deploy-json api") echo '{"id":"dep-1","serviceId":"srv-1","state":"created"}' ;;
   "vercel rollback app-web") echo '{"id":"dpl_0","state":"READY"}' ;;
   "details me/app aaaa111 main") cat "$tmp/details-web.json" ;;
@@ -155,10 +160,10 @@ expect "pre-push: Render ignores other branches" "$out" "exit=0"
 out="$(push "(delete) $z refs/heads/main $s1" git@github.com:me/site.git)"
 expect "pre-push: a deleted branch builds nothing" "$out" "exit=0"
 start=$(date +%s)
-out="$(FAKE_SLEEP=30 DEPLOYS_PREPUSH_TIMEOUT=1 push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
+out="$(FAKE_SLEEP=30.017 DEPLOYS_PREPUSH_TIMEOUT=1 push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
 contains "pre-push: a CLI that does not answer lets the push go" "$out" $'push not checked.\nexit=0'
 [ $(( $(date +%s) - start )) -lt 6 ] && ok "pre-push: gives up after the timeout" || fail "pre-push: gives up after the timeout" "took too long"
-pgrep -f "sleep 30" >/dev/null && fail "pre-push: the stuck CLI is stopped" "still running" || ok "pre-push: the stuck CLI is stopped"
+pgrep -f "sleep 30.017" >/dev/null && fail "pre-push: the stuck CLI is stopped" "still running" || ok "pre-push: the stuck CLI is stopped"
 git -C "$tmp/repo" config deploys.prepush.block true
 out="$(push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
 contains "pre-push: blocks only when configured" "$out" "exit=1"
@@ -247,6 +252,8 @@ if command -v ruby >/dev/null; then
   expect "action: outputs are written before failing" "$(tr '\n' ' ' < "$tmp/out")" "started=1 failed=1 deployed=false "
   expect "action: deploy step only with deploy: true" "$(step deploy if)" "inputs.deploy == 'true' && steps.changed.outputs.count != '0'"
   case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
+else
+  echo "skip action: needs ruby"
 fi
 
 # --- VS Code extension: its own unit tests (node), when its dev dependencies are installed ---
@@ -291,7 +298,7 @@ expect "claude-code hook: silent on bad input" "$(echo 'not json' | "$hook"; ech
 start=$(date +%s)
 cat > "$tmp/bin/slow-deploys" <<SH
 #!/bin/bash
-sleep 30
+sleep 30.023
 SH
 chmod +x "$tmp/bin/slow-deploys"
 expect "claude-code hook: a CLI that does not answer is silent" "$(DEPLOYS="$tmp/bin/slow-deploys" DEPLOYS_HOOK_TIMEOUT=1 hk "git push")" "exit=0"
@@ -309,7 +316,7 @@ expect "claude-code hook: never deploys" "$(cat "$tmp/deploy.log" 2>/dev/null | 
 # --- the MCP server (needs node and `npm ci` in mcp/) ---
 if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
   DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
-  pgrep -f "sleep 20" >/dev/null && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
+  pgrep -f "sleep 20.019" >/dev/null && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
 else
   echo "skip mcp: needs node and (cd integrations/mcp && npm ci)"
 fi
@@ -430,6 +437,8 @@ if command -v ruby >/dev/null; then
   expect "approve-deploy: deploy: true only after the approval steps" "$(ruby -ryaml -e 's = YAML.load_file(ARGV[0])["jobs"]["deploy"]["steps"]; puts s.each_with_index.select { |x, _| (x["with"] || {})["deploy"] == true }.map { |_, i| s[0...i].map { |y| y["id"] }.join(",") }' digest/examples/approve-deploy.yml)" "approved,list,keep"
   case "$(cat "$tmp/approved.sh" "$tmp/keep.sh" "$tmp/report.sh")" in *'${{'*) fail "approve-deploy: no expressions inside run scripts" "found" ;; *) ok "approve-deploy: no expressions inside run scripts" ;; esac
   ruby -ryaml -e 'YAML.load_file(ARGV[0])' digest/examples/daily-digest.yml && ok "daily-digest.yml is valid YAML" || fail "daily-digest.yml is valid YAML" ruby
+else
+  echo "skip approve-deploy: needs ruby"
 fi
 
 echo
