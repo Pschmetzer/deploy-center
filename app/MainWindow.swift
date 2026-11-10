@@ -368,7 +368,9 @@ struct ContentView: View {
                 .padding(24).frame(width: 360)
             }
         }
-        .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item, deployCommit: store.observer ? nil : { sha in store.deployOne(item, preview: false, sha: sha) }) }
+        .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item, deployCommit: store.observer ? nil : { sha in store.deployOne(item, preview: false, sha: sha) },
+                                                         // After the detail sheet is gone, so the log can take its place.
+                                                         openLog: { DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { logItem = item } }) }
         .onChange(of: store.pendingDeployAll) { _, go in
             guard go else { return }
             store.pendingDeployAll = false

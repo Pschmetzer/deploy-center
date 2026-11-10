@@ -24,6 +24,7 @@ struct SettingsView: View {
     @AppStorage("checkUpdates") private var checkUpdates = true
     @ObservedObject private var updates = SoftwareUpdate.shared
     @AppStorage("demoMode") private var demoMode = false
+    @AppStorage("loadLogos") private var loadLogos = true
     @AppStorage("undoSeconds") private var undoSeconds = 8
     @AppStorage("staleDays") private var staleDays = 0
     @AppStorage("monthlyBudget") private var monthlyBudget = 0.0
@@ -104,6 +105,9 @@ struct SettingsView: View {
             }
             if let loginError { ErrorText(loginError) }
             Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
+            Toggle(L("Load logos from the project sites", "Logos von den Projektseiten laden"), isOn: $loadLogos)
+                .help(L("Off: no request goes to your sites; a letter stands in for the logo.",
+                        "Aus: keine Anfrage geht an deine Seiten; ein Buchstabe ersetzt das Logo."))
             Picker(L("Language", "Sprache") + (isGerman ? " · Language" : " · Sprache"), selection: $language) {
                 ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
             }

@@ -121,7 +121,7 @@ struct PhoneLinkSettings: View {
             Link(L("Create a Vercel token (vercel.com → Account → Tokens)", "Vercel-Token erstellen (vercel.com → Account → Tokens)"),
                  destination: URL(string: "https://vercel.com/account/tokens")!)
             Button(L("Show a QR code for the iPhone …", "QR-Code fürs iPhone zeigen …")) { qr = true }
-            if let p = link.problem { Text(p).foregroundStyle(.red) }
+            if let p = link.problem { ErrorText(p) }
             else if on, let t = link.lastPush {
                 Text(L("Handed over ", "Übergeben ") + t.formatted(.relative(presentation: .named))).foregroundStyle(.secondary)
             }
@@ -139,12 +139,17 @@ struct PhoneQRSheet: View {
     @State private var image: NSImage?
     @State private var empty = false
     @State private var left = 60
+    /// The code is covered while Deploy Center is not the front app (someone else may look).
+    @State private var inactive = false
 
     var body: some View {
         VStack(spacing: 14) {
             Text(L("Scan with the iPhone app", "Mit der iPhone-App scannen")).font(.headline)
             if let image {
                 Image(nsImage: image).interpolation(.none).resizable().frame(width: 260, height: 260)
+                    .blur(radius: inactive ? 18 : 0)
+                    .overlay { if inactive { Text(L("Hidden while Deploy Center is in the background", "Verdeckt, solange Deploy Center im Hintergrund ist")).font(.caption).multilineTextAlignment(.center).padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6)) } }
+                    .accessibilityLabel(L("QR code with your keys – show it to no one", "QR-Code mit deinen Schlüsseln – zeig ihn niemandem"))
                 Text(L("Deploy Center on the iPhone → Connect to the Mac → Scan the code. This code holds your keys: show it to no one. It closes in \(left) s.",
                        "Deploy Center auf dem iPhone → Mit dem Mac verbinden → Code scannen. Dieser Code enthält deine Schlüssel: zeig ihn niemandem. Er schließt in \(left) s."))
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(width: 300)
@@ -156,13 +161,31 @@ struct PhoneQRSheet: View {
             Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.defaultAction)
         }
         .padding(24)
+        // Not in screenshots, screen recordings or screen sharing: the code holds the keys.
+        .background(NoScreenCapture())
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in inactive = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in inactive = false }
         .task {
             let keys = await PhoneLinkModel.collect()
             if keys.isEmpty { empty = true; return }
             image = PhoneQRSheet.make(PhoneLink.qrText(keys) ?? "")
-            while left > 0 { try? await Task.sleep(for: .seconds(1)); left -= 1 }
+            // Cancelled (the sheet closed): stop, instead of 60 turns without a pause.
+            while left > 0 {
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                left -= 1
+            }
             dismiss()
         }
+    }
+
+    /// Sets the sheet's window so the system leaves it out of captures and sharing.
+    private struct NoScreenCapture: NSViewRepresentable {
+        func makeNSView(context: Context) -> NSView {
+            let v = NSView()
+            DispatchQueue.main.async { v.window?.sharingType = .none }
+            return v
+        }
+        func updateNSView(_ v: NSView, context: Context) { v.window?.sharingType = .none }
     }
 
     static func make(_ text: String) -> NSImage? {
