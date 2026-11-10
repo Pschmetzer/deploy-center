@@ -325,13 +325,34 @@ start_lock() {
 
 # ---------- GitHub (optional, for "new changes") ----------
 
-head_of() {
-  local repo="$1" ref="$2" out="$3"
-  gh api "repos/$repo/commits/$ref" 2>/dev/null \
-    | jq -c --arg k "$repo@$ref" '{key:$k, value:{at:(.commit.committer.date|fromdateiso8601), msg:(.commit.message|split("\n")[0]), sha:.sha}}' \
-    > "$out/$(echo "$repo@$ref" | tr '/@' '__').json" 2>/dev/null || true
+# Why a git host did not answer, in words, from what it wrote on stderr (a file): a rate limit,
+# no login, no such repo or no access. Shown as "branch head unknown: <why>".
+head_why() {  # head_why <stderr file> <host name>
+  local e; e="$(grep -v '^[[:space:]]*$' "$1" 2>/dev/null | tail -n 3)"
+  case "$e" in
+    "") echo "$2 did not answer" ;;
+    *"command not found"*|*"No such file"*) echo "the $2 CLI is not installed" ;;
+    *[Rr]"ate limit"*|*"secondary rate"*|*"HTTP 429"*) echo "$2's rate limit is reached; try again later" ;;
+    *"HTTP 401"*|*"Bad credentials"*|*"auth login"*|*"not logged"*) echo "not logged in to $2 (gh auth login)" ;;
+    *"HTTP 404"*|*"Not Found"*) echo "the repo or branch is not on $2, or this login cannot see it" ;;
+    *"HTTP 403"*) echo "$2 refused access (HTTP 403)" ;;
+    *"HTTP 000"*|*"Could not resolve"*|*"timed out"*|*"connect"*) echo "$2 could not be reached" ;;
+    *) echo "$2: $(printf '%s' "$e" | tail -n 1 | cut -c1-150)" ;;
+  esac
 }
-export -f head_of
+head_of() {
+  local repo="$1" ref="$2" out="$3" f ans
+  f="$out/$(echo "$repo@$ref" | tr '/@' '__').json"
+  if ans="$(gh api "repos/$repo/commits/$ref" 2>"$f.err")"; then
+    echo "$ans" | jq -c --arg k "$repo@$ref" '{key:$k, value:{at:(.commit.committer.date|fromdateiso8601), msg:(.commit.message|split("\n")[0]), sha:.sha}}' \
+      > "$f" 2>/dev/null || rm -f "$f"
+  else
+    # A record of why, so `changed` names the reason instead of guessing "is gh logged in?".
+    jq -nc --arg k "$repo@$ref" --arg e "$(head_why "$f.err" GitHub)" '{key:$k, value:{error:$e}}' > "$f" 2>/dev/null || true
+  fi
+  rm -f "$f.err"
+}
+export -f head_of head_why
 
 # What is merged but not live: commits from the live commit to the branch, and the pull
 # requests among them (squash "(#12)" or "Merge pull request #12"). ahead_by is exact;
@@ -377,7 +398,7 @@ open_prs_of() {
   local repo="$1" out="$2"
   # The repo goes to jq as --arg, never into the filter text.
   gh api --cache 5m "repos/$repo/pulls?state=open&per_page=100" 2>/dev/null \
-    | jq -c --arg k "$repo" '{key:$k, value:{all:length, drafts:(map(select(.draft)) | length), bots:(map(select(.user.type=="Bot")) | length)}}' \
+    | jq -c --arg k "$repo" '{key:$k, value:{all:length, partial:(length >= 100), drafts:(map(select(.draft)) | length), bots:(map(select(.user.type=="Bot")) | length)}}' \
     > "$out/$(echo "$repo" | tr '/' '_').json" 2>/dev/null || true
 }
 export -f open_prs_of
@@ -407,6 +428,14 @@ else
   GITHOST_VERCEL_LINK_JQ='(if .type == "gitlab" then null else "\(.org)/\(.repo)" end)'
   export -f githost_of githost_head_of githost_pending_of githost_open_prs_of
 fi
+
+# The default branch of a repo (GitHub or GitLab); empty when the host cannot tell.
+default_branch_of() {
+  case "$(githost_of "$1")" in
+    github) gh api --cache 1h "repos/$1" --jq '.default_branch // empty' 2>/dev/null | head -n 1 || true ;;
+    gitlab) if declare -F gitlab_default_branch >/dev/null; then gitlab_default_branch "$1"; fi ;;
+  esac
+}
 
 # The one rule for "has changes to deploy", read by `changed`, `deploy-changed` and the app.
 # Not deployable, paused, already building, or with no known head: not changed. It reads only the
@@ -444,16 +473,16 @@ with_heads() {
   if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! githost_available; then echo "$list" | jq "$CHANGED_RULE"; return; fi
   tmp="$(mktemp -d)"; mkdir "$tmp/h" "$tmp/p" "$tmp/o"
   echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
-    | xargs -P 8 -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
+    | xargs -r -P 8 -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
   heads="$(cat_all "$tmp/h"/*.json | jq -s 'from_entries')"
-  list="$(echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))')"
+  list="$(echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha, headError:(.error // null)}))')"
   # With GitHub's budget nearly spent, keep it for what decides "changed" (the heads above).
   local left; left="$(github_budget | jq -r '.remaining // 5000' 2>/dev/null || echo 5000)"
   if [ "${left:-5000}" -lt 300 ]; then rm -rf "$tmp"; echo "$list" | jq "$CHANGED_RULE"; return; fi
   # Compared only where the branch moved past the live commit.
   echo "$list" | jq -r '.[] | select(.repo and .ref and .lastSha and .headSha and .lastSha != .headSha) | "\(.repo) \(.lastSha) \(.ref)"' \
-    | sort -u | xargs -P 8 -n 3 bash -c 'githost_pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
-  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'githost_open_prs_of "$1" "$0"' "$tmp/o"
+    | sort -u | xargs -r -P 8 -n 3 bash -c 'githost_pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
+  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -r -P 8 -n 1 bash -c 'githost_open_prs_of "$1" "$0"' "$tmp/o"
   pend="$(cat_all "$tmp/p"/*.json | jq -s 'from_entries')"
   opens="$(cat_all "$tmp/o"/*.json | jq -s 'from_entries')"
   rm -rf "$tmp"
@@ -466,7 +495,8 @@ with_heads() {
              compareStatus:($x.status // null), behindBy:($x.behindBy // null),
              # green, yellow or red, and why (see RISK_DEF). Null when nothing was compared.
              risk:($x.risk // null),
-             openPRs:($op.all // null), openDrafts:($op.drafts // null), openBots:($op.bots // null)})' \
+             # 100 is one page: past that openPRs is a floor (as pendingPartial is for commits).
+             openPRs:($op.all // null), openPartial:($op.partial // false), openDrafts:($op.drafts // null), openBots:($op.bots // null)})' \
     | jq "$CHANGED_RULE"
 }
 
@@ -540,7 +570,7 @@ changed_json() {
   if team_on; then ignl="$(team_ignored 2>/dev/null)" || ignl=""; fi
   [ -n "$ignl" ] || ignl="$(jq -c . "$ign" 2>/dev/null || echo '[]')"
   all="$(echo "$all" | jq --argjson ign "$ignl" 'map(select(((.name as $n | $ign | index($n)) or ("\(.platform):\(.name)" as $q | $ign | index($q))) | not))')"
-  unknown="$(echo "$all" | jq -r "$UNKNOWN_RULE"' | .[] | "\(.platform) \(.name): \(.fetchError // "branch head unknown (is gh installed and logged in?)")"')"
+  unknown="$(echo "$all" | jq -r "$UNKNOWN_RULE"' | .[] | "\(.platform) \(.name): \(.fetchError // (if .headError then "branch head unknown: \(.headError)" else "branch head unknown (is gh installed and logged in?)" end))"')"
   if [ -n "$unknown" ]; then
     rc=1; echo "Error: state unknown, left out:" >&2; echo "$unknown" | sed 's/^/  /' >&2
   fi
@@ -574,14 +604,25 @@ CI_RULE='($s[0] // {}) as $s | ($r[0] // {}) as $r
   else {state:"green", reason:"\($all | length) checks passed"} end
   | . + {checks:($all | length), failed:($bad | length), running:($wait | length)}'
 
+# "final":true on an unknown verdict: asking again will not help (a GitLab repo nobody can read
+# here, a git host deploys does not know). The waits stop at once instead of running out.
 ci_of() {  # ci_of <owner/repo> <sha or branch>: the verdict as one line of JSON
+  case "$(githost_of "$1")" in
+    gitlab) if declare -F gitlab_ci_of >/dev/null; then gitlab_ci_of "$1" "$2"
+            else echo '{"state":"unknown","final":true,"reason":"CI of GitLab repos needs lib/githost.sh next to deploys"}'; fi
+            return 0 ;;
+    unknown) jq -nc --arg r "$1" '{state:"unknown", final:true, reason:"the CI of \($r) cannot be read (only GitHub and GitLab)"}'; return 0 ;;
+  esac
   local t rc=0; t="$(mktemp -d)"
   gh api "repos/$1/commits/$2/status" > "$t/s" 2>/dev/null || rc=$((rc + 1))
-  gh api "repos/$1/commits/$2/check-runs?per_page=100" > "$t/r" 2>/dev/null || rc=$((rc + 1))
+  # Every page: a monorepo matrix can have more than 100 check runs, and a red one on page 2
+  # must not read as green. --paginate prints one object per page; they are joined below.
+  gh api --paginate "repos/$1/commits/$2/check-runs?per_page=100" > "$t/r" 2>/dev/null || rc=$((rc + 1))
   # Neither answer: GitHub is down or gh is not logged in. That is not "no checks".
   if [ "$rc" = 2 ]; then echo '{"state":"unknown","reason":"GitHub could not be asked (is gh logged in?)"}'
   else
-    for f in s r; do jq -e . "$t/$f" >/dev/null 2>&1 || : > "$t/$f"; done
+    jq -e . "$t/s" >/dev/null 2>&1 || : > "$t/s"
+    jq -sc '{check_runs:[.[] | (.check_runs // [])[]]}' "$t/r" > "$t/r.t" 2>/dev/null && mv "$t/r.t" "$t/r" || : > "$t/r"
     jq -nc --slurpfile s "$t/s" --slurpfile r "$t/r" "$CI_RULE"
   fi
   rm -rf "$t"
@@ -593,7 +634,7 @@ ci_wait() {  # ci_wait <owner/repo> <ref> <max seconds>
   local waited=0 delay=10 v s
   while :; do
     v="$(ci_of "$1" "$2")"; s="$(echo "$v" | jq -r .state)"
-    case "$s" in pending|unknown) ;; *) echo "$v"; return 0;; esac
+    case "$s" in pending|unknown) [ "$(echo "$v" | jq -r '.final // false')" != true ] || { echo "$v"; return 0; } ;; *) echo "$v"; return 0;; esac
     if [ "$waited" -ge "$3" ]; then echo "$v" | jq -c --argjson w "$3" '. + {timedOut:true, waited:$w}'; return 0; fi
     [ $((waited + delay)) -le "$3" ] || delay=$(( $3 - waited ))
     echo "$(date +%H:%M:%S)  $1@${2:0:7}: $(echo "$v" | jq -r .reason), next look in ${delay}s" >&2
@@ -832,22 +873,24 @@ PROMPT
 AUTOFIX_LABEL="app.deploycenter.autofix"
 # A launchd job that runs this script every few seconds/minutes: job_on <label> <seconds> <log name> <args...>.
 job_plist() { echo "${DEPLOYS_LAUNCH_DIR:-$HOME/Library/LaunchAgents}/$1.plist"; }
+# Text for a plist <string>: a folder named "R&D" or "a<b" must not break launchctl bootstrap.
+xml_esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
 job_on() {
   local label="$1" every="$2" log="$HOME/Library/Logs/$3.log" self plist a pargs=""; shift 3
   plist="$(job_plist "$label")"; mkdir -p "$(dirname "$plist")"
   self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-  for a in "$@"; do pargs="$pargs<string>$a</string>"; done
+  for a in "$@"; do pargs="$pargs<string>$(xml_esc "$a")</string>"; done
   # Written with the PATH of whoever turns it on (the app passes the login shell's): launchd
   # starts jobs with a bare one, and autofix needs jq, gh, perl and the vercel CLI.
   cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>$label</string>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(printf '%s' "$PATH" | sed 's/&/\&amp;/g; s/</\&lt;/g')</string></dict>
-  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$self</string>$pargs</array>
-  <key>StandardOutPath</key><string>$log</string>
-  <key>StandardErrorPath</key><string>$log</string>
+  <key>Label</key><string>$(xml_esc "$label")</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(xml_esc "$PATH")</string></dict>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$(xml_esc "$self")</string>$pargs</array>
+  <key>StandardOutPath</key><string>$(xml_esc "$log")</string>
+  <key>StandardErrorPath</key><string>$(xml_esc "$log")</string>
   <key>StartInterval</key><integer>$every</integer>
 </dict></plist>
 PLIST
@@ -1583,7 +1626,7 @@ ai_details() { "$0" details "$1" "$2" "$3"; }
 ai_project() {  # ai_project <project>: {row, d}
   local j repo d; j="$(ai_row "$1")"; [ -n "$j" ] || die "$1 not found"
   repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$1 has no known repo"
-  d="$(ai_details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // "main"')")"
+  d="$(ai_details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // empty')")"
   jq -n --argjson row "$j" --argjson d "$d" '{row:$row, d:$d}'
 }
 
@@ -2023,7 +2066,7 @@ case "${1:-} ${2:-}" in
     j="$("$0" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
-    d="$("$0" details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // "main"')")"
+    d="$("$0" details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // empty')")"
     if [ "${1:-}" = "notes" ]; then
       echo "$d" | jq -r --arg p "$p" '"## \($p)", (.commits | map(select(.bot | not)) | .[] | "- \(.msg)\(if .pr then " (#\(.pr))" else "" end) – \(.author // "?")"),
         (if (.commits | map(select(.bot)) | length) > 0 then "", "Dependency updates:", (.commits | map(select(.bot)) | .[] | "- \(.msg) – \(.author // "?")") else empty end)'
@@ -2078,7 +2121,12 @@ BASH
     # Everything about one repo the window shows on demand: the commits between what is live and
     # the branch (with their PRs), the files they touch and which of them are risky to ship
     # unread, the CI result of the branch head, and the pull requests still open.
-    repo="${2:?owner/repo}"; base="${3:-}"; ref="${4:-main}"
+    repo="${2:?owner/repo}"; base="${3:-}"; ref="${4:-}"
+    # Without a branch: the repo's default branch, never a silent "main" (many repos use another).
+    if [ -z "$ref" ] || [ "$ref" = null ]; then
+      ref="$(default_branch_of "$repo")"
+      [ -n "$ref" ] || die "The default branch of $repo could not be read. Give the branch: deploys details $repo ${base:-<live sha>} <branch>"
+    fi
     if [ "$(githost_of "$repo")" = gitlab ]; then gitlab_details "$repo" "$base" "$ref"; exit 0; fi
     # The comparison goes through a file, not an argument: with its patches it can be megabytes,
     # more than one argument may hold ("Argument list too long"). The patches are not needed.
@@ -2087,9 +2135,12 @@ BASH
       gh api --cache 5m "repos/$repo/compare/$base...$ref" 2>/dev/null | jq 'del(.files[]?.patch)' > "$dt/cmp.t" 2>/dev/null \
         && [ -s "$dt/cmp.t" ] && mv "$dt/cmp.t" "$dt/cmp"
     fi
-    checks="$(gh api --cache 2m "repos/$repo/commits/$ref/check-runs?per_page=100" 2>/dev/null \
-      | jq '{total:.total_count, failed:([.check_runs[] | select(.conclusion=="failure" or .conclusion=="timed_out" or .conclusion=="cancelled")] | length),
-             running:([.check_runs[] | select(.status!="completed")] | length)}' 2>/dev/null || echo null)"
+    # Every page (--paginate prints one object each): a failure past the first 100 counts too.
+    checks="$(gh api --cache 2m --paginate "repos/$repo/commits/$ref/check-runs?per_page=100" 2>/dev/null \
+      | jq -s 'if length == 0 then null else [.[] | (.check_runs // [])[]] as $r
+               | {total:(.[0].total_count // ($r | length)), failed:([$r[] | select(.conclusion=="failure" or .conclusion=="timed_out" or .conclusion=="cancelled")] | length),
+                  running:([$r[] | select(.status!="completed")] | length)} end' 2>/dev/null || echo null)"
+    [ -n "$checks" ] || checks=null
     open="$(gh pr list -R "$repo" --state open --limit 50 --json number,title,author,isDraft,updatedAt,url,statusCheckRollup 2>/dev/null \
       | jq '[.[] | {number, title, author:.author.login, bot:(.author.is_bot // (.author.login | test("\\[bot\\]|dependabot|renovate"))),
                     draft:.isDraft, updatedAt, url,
@@ -2123,7 +2174,7 @@ BASH
     team="$(vercel_team)"; tmp="$(mktemp -d)"
     for i in $(seq "$days" -1 1); do
       echo "$(days_ago "$i") $(days_ago "$((i-1))")"
-    done | xargs -P 4 -n 2 bash -c 'cost_day "$2" "$3" "$0" "$1"' "$team" "$tmp"
+    done | xargs -r -P 4 -n 2 bash -c 'cost_day "$2" "$3" "$0" "$1"' "$team" "$tmp"
     # Builds per project over the last 7 days, to put a price on one build.
     since=$(( ($(date +%s) - 7*86400) * 1000 ))
     names="" next=""
@@ -2173,7 +2224,7 @@ BASH
       if command -v gh >/dev/null 2>&1; then
         { jq -r '.[] | select(.repo and (.type // "github") == "github") | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
           echo "${svcs:-[]}" | jq -r '.[] | .repo // empty | select(test("^https://github.com/")) | sub("^https://github.com/";"") | sub("\\.git$";"")'
-        } | sort -u | xargs -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
+        } | sort -u | xargs -r -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
         cat_all "$tmp"/*.jsonl
       fi
     } | jq -s '.'
@@ -2308,9 +2359,13 @@ BASH
     j="$("$0" "$plat" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
-    base="$(echo "$j" | jq -r '.lastSha // empty')"; ref="$(echo "$j" | jq -r '.ref // "main"')"
+    base="$(echo "$j" | jq -r '.lastSha // empty')"; ref="$(echo "$j" | jq -r '.ref // empty')"
+    if [ -z "$ref" ]; then ref="$(default_branch_of "$repo")"; [ -n "$ref" ] || die "$p has no known branch, and the default branch of $repo could not be read"; fi
     if [ -z "$base" ]; then r='{"level":"unknown","reasons":[],"files":0,"lines":0,"why":"the live commit is not known"}'
     elif [ "$base" = "$(echo "$j" | jq -r '.headSha // empty')" ]; then r='{"level":"green","reasons":[],"files":0,"lines":0,"why":"nothing waits"}'
+    elif [ "$(githost_of "$repo")" = gitlab ]; then
+      declare -F gitlab_risk_of >/dev/null || die "Risk for GitLab repos needs lib/githost.sh next to deploys"
+      r="$(gitlab_risk_of "$repo" "$base" "$ref")" || die "GitLab could not compare what is live with $ref (rewritten branch, or no GitLab login: glab auth login or deploys gitlab set-token)"
     else
       cmp="$(gh api --cache 5m "repos/$repo/compare/$base...$ref" 2>/dev/null | jq -c 'del(.files[]?.patch)' 2>/dev/null)" \
         || die "GitHub could not compare what is live with $ref (rewritten branch, or gh not logged in?)"
@@ -2395,7 +2450,8 @@ BASH
           case "$s" in
             green|none) start "$plat" "$name" "$sha" "$why" "$id" ;;
             red) skip=$((skip+1)); say "$plat" "$name" skipped "CI is red on ${sha:0:7} ($why)" ;;
-            *) if [ "$waited" -ge "$maxw" ]; then skip=$((skip+1)); say "$plat" "$name" skipped "checks on ${sha:0:7} not done after $((maxw / 60))m ($why)"
+            *) if [ "$(echo "$v" | jq -r '.final // false')" = true ]; then skip=$((skip+1)); say "$plat" "$name" skipped "CI unknown: $why"
+               elif [ "$waited" -ge "$maxw" ]; then skip=$((skip+1)); say "$plat" "$name" skipped "checks on ${sha:0:7} not done after $((maxw / 60))m ($why)"
                else next="$next$plat"$'\t'"$name"$'\t'"$id"$'\t'"$repo"$'\t'"$sha"$'\n'; fi ;;
           esac
         done <<< "$todo"

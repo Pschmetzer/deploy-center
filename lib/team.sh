@@ -72,7 +72,7 @@ team_sources() {
   [ "${DEPLOYS_TEAM_REFRESH:-}" != 1 ] || ttl=0
   list="$(team_repo_list "$@")"
   if [ -n "$list" ]; then
-    printf '%s\n' "$list" | xargs -P 8 -n 1 bash -c 'team_fetch_one "$4" "$1" "$2" "$3"' _ "$TEAM_CACHE" "$ttl" "$only" 2>/dev/null || true
+    printf '%s\n' "$list" | xargs -r -P 8 -n 1 bash -c 'team_fetch_one "$4" "$1" "$2" "$3"' _ "$TEAM_CACHE" "$ttl" "$only" 2>/dev/null || true
   fi
   while IFS= read -r r; do
     [ -n "$r" ] || continue
