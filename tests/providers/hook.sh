@@ -87,6 +87,14 @@ out="$(hook_cli list)"
 expect "list shows both hooks" "$(grep -c -E '^(site|other)' <<< "$out")" "2"
 expect "list never shows a URL" "$(leaks "$out")" "0"
 expect "list shows repo@ref" "$(grep -c 'me/app@main' <<< "$out")" "1"
+# PRV-124: a second add changes what it is given and keeps the rest (and says so).
+hook_cli add other "https://hooks.example.com/other/s3cr3t-2" --method PUT --header 'X-Env: prod' --body '{"a":1}' --repo me/other --ref dev --site https://other.example.com >/dev/null
+out="$(hook_cli add other "https://hooks.example.com/other/s3cr3t-3" --header 'X-Team: web')"
+expect "add again: the rest is kept" "$(jq -c '.[] | select(.name=="other") | [.method, .headers, .body, .repo, .ref, .site]' "$DEPLOYS_CONFIG/hooks.json")" \
+  '["PUT",{"X-Env":"prod","X-Team":"web"},"{\"a\":1}","me/other","dev","https://other.example.com"]'
+expect "add again: says what was kept, never the URL" "$out:$(leaks "$out")" "Hook other updated (https://hooks.example.com/•••); kept: method PUT; headers X-Env; body; repo me/other; ref dev; site https://other.example.com.:0"
+hook_cli add other "https://hooks.example.com/other/s3cr3t-3" --ref main --method post >/dev/null
+expect "add again: what is given changes" "$(jq -c '.[] | select(.name=="other") | [.method, .repo, .ref]' "$DEPLOYS_CONFIG/hooks.json")" '["POST","me/other","main"]'
 out="$(hook_cli remove other)"
 expect "remove" "$?:$(hook_list_raw | jq -r 'map(.name) | join(",")')" "0:site"
 expect "remove deletes the stored URL" "$([ -e "$DEPLOYS_CONFIG/hook-urls/other" ] && echo kept || echo gone)" "gone"

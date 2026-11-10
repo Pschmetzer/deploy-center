@@ -156,7 +156,7 @@ expect "deploy: and starts nothing" "$(calls POST)" 0
 
 # --- the skipped deployment and its fallback ---
 routes "GET /pages/projects/site$ project-off.json" "POST /deployments$ deploy-skipped.json,deploy-queued.json" "PATCH /pages/projects/site$ ok.json"
-echo '{"selftest":{"result":"verified"}}' > "$DEPLOYS_CONFIG/cloudflare.json"
+echo "{\"selftests\":{\"site\":{\"result\":\"verified\",\"at\":$(date +%s)}}}" > "$DEPLOYS_CONFIG/cloudflare.json"
 out="$(cf deploy-json site 2>&1)"; rc=$?
 [ "$rc" = 1 ] && [[ "$out" == *"skipped the build"*production_deployments_disabled*--toggle* ]] && ok "skipped: says so, points at --toggle" || fail "skipped: says so" "$rc $out"
 expect "skipped: without --toggle nothing is switched" "$(calls PATCH)" 0
@@ -203,6 +203,36 @@ routes "GET /pages/projects/site$ project-off.json" "POST /deployments$ deploy-q
 out="$(DEPLOYS_CLOUDFLARE_SELFTEST_TRIES=3 cf selftest site --yes)"; rc=$?
 [ "$rc" = 1 ] && [[ "$out" == *inconclusive* ]] && ok "selftest: no build stage is inconclusive" || fail "selftest: inconclusive" "$rc $out"
 expect "selftest: inconclusive records nothing" "$(jq -r '.selftest.result // "none"' "$DEPLOYS_CONFIG/cloudflare.json" 2>/dev/null || echo none)" none
+
+# PRV-056: a self-test counts for its own project, and not for ever. site has push-deploys off.
+# (The JSON is built first: macOS bash 3.2 mangles braces inside "$(f "...")".)
+now="$(date +%s)"
+st() { jq -nc --arg p "$1" --argjson at "$2" --arg k "${3:-selftests}" 'if $k == "selftest" then {selftest:{result:"verified", project:$p, at:$at}} else {selftests:{($p):{result:"verified", at:$at}}} end'; }
+sel() { routes "GET /pages/projects\\? projects.json"; echo "$1" > "$DEPLOYS_CONFIG/cloudflare.json"; cf list | jq -c '.[] | select(.name=="site") | .deployable'; }
+j1="$(st Blog "$now")"; j2="$(st site "$now")"; j3="$(st site $((now - 40 * 86400)))"; j4="$(st site "$now" selftest)"; j5="$(st Blog "$now" selftest)"
+expect "selftest: another project's test does not make site deployable" "$(sel "$j1")" false
+expect "selftest: its own test does" "$(sel "$j2")" true
+expect "selftest: one older than 30 days counts no more" "$(sel "$j3")" false
+expect "selftest: an earlier record counts for the project it names only" "$(sel "$j4"):$(sel "$j5")" "true:false"
+routes "GET /pages/projects/site$ project-off.json" "POST /deployments$ deploy-queued.json"
+echo "$j1" > "$DEPLOYS_CONFIG/cloudflare.json"
+out="$(cf deploy-json site 2>&1)"; rc=$?
+expect "selftest: deploy of an untested project still refuses" "$rc:$(calls POST)" "1:0"
+rm -rf "$DEPLOYS_CONFIG/locks"
+
+# PRV-057: a remembered account the token does not reach is looked for again, once.
+routes "GET /accounts/accOLD/pages/projects unauthorized.json:403" "GET /accounts\\? accounts-one.json" "GET /pages/projects\\? projects.json"
+echo '{"accountId":"accOLD"}' > "$DEPLOYS_CONFIG/cloudflare.json"
+out="$(CLOUDFLARE_ACCOUNT_ID='' cf list 2>"$tmp/err")"; rc=$?
+expect "account: a stale one is found again" "$rc:$(echo "$out" | jq length):$(jq -r .accountId "$DEPLOYS_CONFIG/cloudflare.json")" "0:3:$A"
+grep -q "looking for it again" "$tmp/err" && ok "account: and says so" || fail "account: and says so" "$(cat "$tmp/err")"
+routes "GET /pages/projects\\? unauthorized.json:403"
+out="$(cf list 2>&1)"; rc=$?
+expect "account: from the environment it is never forgotten" "$rc:$(calls '^GET /accounts?')" "1:0"
+routes "GET /user/tokens/verify token-active.json"
+echo "{\"accountId\":\"accOLD\",\"selftests\":{}}" > "$DEPLOYS_CONFIG/cloudflare.json"
+echo good | (unset CLOUDFLARE_API_TOKEN; cf set-key) >/dev/null 2>&1
+expect "set-key: the remembered account is forgotten" "$(jq -c '[.accountId, .selftests]' "$DEPLOYS_CONFIG/cloudflare.json")" '[null,{}]'
 
 # --- doctor ---
 routes "GET /user/tokens/verify token-active.json"

@@ -51,8 +51,18 @@ cf_state_set() {
   rmdir "$lock" 2>/dev/null || true
 }
 
-# "verified", "failed" (a self-test saw the build skipped) or "unverified" (none ran).
-cf_verified() { cf_state | jq -r '.selftest.result // "unverified"'; }
+# The self-tests per project, younger than DEPLOYS_CLOUDFLARE_SELFTEST_TTL seconds (30 days): a
+# test of project A proves nothing for B (another Git provider, plan or account), and Cloudflare
+# may change. An older record (only .selftest, from before) counts for the project it names.
+cf_selftests() {
+  cf_state | jq -c --argjson ttl "${DEPLOYS_CLOUDFLARE_SELFTEST_TTL:-2592000}" '
+    ((.selftests // {}) + (if (.selftest.project // null) != null and ((.selftests // {})[.selftest.project] == null)
+                          then {(.selftest.project): .selftest} else {} end))
+    | with_entries(select((now - (.value.at // 0)) < $ttl))'
+}
+# cf_verified <project>: "verified", "failed" (a self-test saw the build skipped) or "unverified"
+# (none ran for it, or too long ago).
+cf_verified() { cf_selftests | jq -r --arg p "${1:?project}" '.[$p].result // "unverified"'; }
 cf_toggle_on() { [ "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" = 1 ]; }
 
 # ---------- access ----------
@@ -168,15 +178,26 @@ cloudflare_ready() { [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || ( cloudflare_key ) >/
 cloudflare_has() { ( cf_call GET "$(cf_proj "$1")" ) >/dev/null 2>&1 && echo "$1"; }
 
 cf_projects() {
-  local page=1 all="[]" out pages
+  local page=1 all="[]" out pages err again=""
+  err="$(mktemp)"
   while :; do
-    out="$(cf_call GET "$(cf_proj)?page=$page&per_page=10")" || return 1
+    if ! out="$( (cf_call GET "$(cf_proj)?page=$page&per_page=10") 2>"$err")"; then
+      # A remembered account the token no longer reaches (a token for another account) answers
+      # 404 or 403 on the list: forgotten and looked for again, once, instead of failing for ever.
+      if [ "$page" = 1 ] && [ -z "$again" ] && [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ] \
+        && [ -n "$(cf_state | jq -r '.accountId // empty')" ] && grep -qE 'HTTP (404|403)' "$err"; then
+        echo "Cloudflare: the remembered account does not answer with this token; looking for it again." >&2
+        cf_state_set 'del(.accountId)'; again=1; continue
+      fi
+      cat "$err" >&2; rm -f "$err"; return 1
+    fi
     all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$out"))"
     # The list endpoint pages by 10; a short page is the last.
     pages="$(echo "$out" | jq 'length')"
     [ "$pages" -lt 10 ] && break
     page=$((page + 1)); [ "$page" -le 100 ] || break
   done
+  rm -f "$err"
   echo "$all"
 }
 
@@ -184,7 +205,7 @@ cloudflare_json() {
   local acct list
   acct="$(cloudflare_account)" || exit 1
   list="$(cf_projects)" || exit 1
-  echo "$list" | jq --arg a "$acct" --arg v "$(cf_verified)" --arg tg "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" "$CF_PHASE $CF_AUTO"'
+  echo "$list" | jq --arg a "$acct" --argjson st "$(cf_selftests)" --arg tg "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" "$CF_PHASE $CF_AUTO"'
     [.[] | (.source.config // null) as $c | (.canonical_deployment // {}) as $live | (.latest_deployment // null) as $new
       | ((.domains // []) | map(select(endswith(".pages.dev") | not)) | .[0]) as $custom
       | ($custom // .subdomain // null) as $dom
@@ -193,7 +214,7 @@ cloudflare_json() {
       | {name, id:.name, projectId:.id, auto:cf_auto,
          # Git-connected, and a POST is known to build: push-deploys still on, the self-test
          # passed, or the opt-in toggle fallback is allowed.
-         deployable:($c != null and (($c.production_deployments_enabled != false) or $v == "verified" or $tg == "1")),
+         deployable:($c != null and (($c.production_deployments_enabled != false) or ($st[.name].result // "") == "verified" or $tg == "1")),
          paused:false,
          # GitHub: owner/name; GitLab with its host (source.type), so heads are asked there.
          repo:(if $c then (if .source.type == "gitlab" then "gitlab.com/" else "" end) + "\($c.owner)/\($c.repo_name)" else null end),
@@ -306,7 +327,7 @@ cloudflare_deploy_json() {
   local sw="production_deployments_enabled" onval=true blocked
   if [ "$branch" != "$prod" ]; then sw="preview_deployment_setting"; onval='"all"'; fi
   blocked="$(echo "$cfg" | jq --arg s "$sw" 'if $s == "preview_deployment_setting" then (.[$s] // "all") == "none" else .[$s] == false end')"
-  if [ "$blocked" = true ] && [ "$sw" = production_deployments_enabled ] && [ "$toggle" = 0 ] && [ "$(cf_verified)" != verified ]; then
+  if [ "$blocked" = true ] && [ "$sw" = production_deployments_enabled ] && [ "$toggle" = 0 ] && [ "$(cf_verified "$p")" != verified ]; then
     die "Unverified: Cloudflare may skip a build while push-deploys are off. Run once: deploys cloudflare selftest $p --yes (or pass --toggle, see docs/providers/cloudflare.md)"
   fi
   lock="$(cf_lock "cloudflare-$p")" || exit 1
@@ -390,6 +411,8 @@ cloudflare_set_key() {
   # On stdin to `security -i`: never an argument anyone can see.
   printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$CLOUDFLARE_KEYCHAIN" "$key" | security -i >/dev/null \
     || die "The token works, but could not be saved in the keychain"
+  # A new token may be for another account: the remembered one is looked for again.
+  [ ! -s "$CLOUDFLARE_STATE" ] || cf_state_set 'del(.accountId)'
   echo "Cloudflare token saved and working."
 }
 
@@ -403,12 +426,12 @@ cloudflare_doctor() {
     else asrc=detected; fi
     acct="$( (cloudflare_account) 2>/dev/null)" || asrc=none
   fi
-  cf_state | jq -c --arg src "$src" --argjson valid "$valid" --arg acct "$acct" --arg asrc "$asrc" --arg tg "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" '
+  cf_state | jq -c --arg src "$src" --argjson valid "$valid" --arg acct "$acct" --arg asrc "$asrc" --arg tg "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" --argjson st "$(cf_selftests)" '
     {provider:"cloudflare", tokenSource:$src, tokenValid:$valid,
      account:(if $acct == "" then null else $acct end), accountSource:$asrc,
-     deployWhileOff:(.selftest.result // "unverified"), selftest:(.selftest // null),
+     deployWhileOff:(.selftest.result // "unverified"), selftest:(.selftest // null), selftests:$st,
      toggleFallback:($tg == "1"), togglesOpen:((.toggling // {}) | keys),
-     note:(if (.selftest.result // "unverified") == "verified" then "a deploy builds while push-deploys are off (self-test passed)"
+     note:(if (.selftest.result // "unverified") == "verified" then "a deploy builds while push-deploys are off (self-test passed for \(.selftest.project // "one project"); each project needs its own)"
            elif .selftest.result == "failed" then "Cloudflare skipped the self-test build: deploy needs --toggle"
            else "unverified: run deploys cloudflare selftest <project> --yes" end)}'
 }
@@ -432,15 +455,15 @@ cloudflare_selftest() {
   out="$(cf_post_deploy "$p" "$prod")" || exit 1
   st="$(echo "$out" | jq -c "$CF_PHASE"' cf_dep')"
   if [ "$(echo "$st" | jq '.skipped')" = true ]; then
-    cf_state_set '.selftest = {result:"failed", at:(now|floor), project:$p, reason:($s.skipReason // "skipped")}' --arg p "$p" --argjson s "$st"
+    cf_state_set '.selftest = {result:"failed", at:(now|floor), project:$p, reason:($s.skipReason // "skipped")} | .selftests[$p] = .selftest' --arg p "$p" --argjson s "$st"
     echo "Self-test: Cloudflare skipped the build ($(echo "$st" | jq -r '.skipReason // "skipped"')). Deploys need --toggle; see docs/providers/cloudflare.md."
     return 1
   fi
   id="$(echo "$st" | jq -r '.id')"
   for ((i = 0; i < tries; i++)); do
     if [ "$(echo "$st" | jq '(.stage == "build" or .stage == "deploy" or .phase == "ready") and ((.sha // "") != "")')" = true ]; then
-      cf_state_set '.selftest = {result:"verified", at:(now|floor), project:$p, deploymentId:$s.id, sha:$s.sha}' --arg p "$p" --argjson s "$st"
-      echo "Self-test passed: deployment $id reached the $(echo "$st" | jq -r '.stage') stage at $(echo "$st" | jq -r '.sha[0:7]'). Deploys now work while push-deploys are off."
+      cf_state_set '.selftest = {result:"verified", at:(now|floor), project:$p, deploymentId:$s.id, sha:$s.sha} | .selftests[$p] = .selftest' --arg p "$p" --argjson s "$st"
+      echo "Self-test passed: deployment $id reached the $(echo "$st" | jq -r '.stage') stage at $(echo "$st" | jq -r '.sha[0:7]'). Deploys of $p now work while push-deploys are off (for 30 days; then run it again)."
       return 0
     fi
     case "$(echo "$st" | jq -r '.phase')" in

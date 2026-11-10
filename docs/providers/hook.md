@@ -29,6 +29,10 @@ deploys hook doctor              # JSON, URLs masked
 
 The hook provider is off by default. Turn it on once with `deploys providers enable hook`; `providers/hook.sh` also runs on its own, with the same arguments.
 
+`add` for a name that exists updates that hook: what you give changes, the rest (method, headers,
+body, repo, ref, site) stays, and the answer names what was kept. Given headers are added to the
+ones there; to drop one, `remove` the hook and add it again.
+
 Pass `-` as the URL to read it from stdin. The URL then stays out of your shell history:
 
 ```bash

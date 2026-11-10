@@ -218,8 +218,18 @@ VERCEL_META='def vsha: (.githubCommitSha // .gitlabCommitSha // .bitbucketCommit
 # Start a build. Positional, for the commands below: <project> <preview: ""|1> <sha>.
 vercel_start() {
   local target="$1" preview="${2:-}" sha="${3:-}" body out lock
-  local repos; repos="$(repos_json)"
-  jq -e --arg p "$target" 'has($p)' <<< "$repos" >/dev/null || die "$target has no remembered repo. Turn its auto-deploy off with this tool, add it to $REPOS, or map it in the repo's deploy-center.json"
+  local repos live entry; repos="$(repos_json)"
+  if ! jq -e --arg p "$target" 'has($p)' <<< "$repos" >/dev/null; then
+    # Not written down, but still connected to Git: the live link says where it deploys from.
+    live="$(vercel_call "/v9/projects/$target")" || exit 1
+    entry="$(printf '%s' "$live" | jq -c '(.link // null) as $l | if $l == null then empty
+      elif $l.type == "gitlab" and $l.projectId then {type:"gitlab", projectId:$l.projectId, ref:($l.productionBranch // "main")}
+      elif ($l.type // "github") == "github" and (($l.org and $l.repo) or $l.repoId) then
+        {org:$l.org, repo:$l.repo, ref:($l.productionBranch // "main")} + (if $l.repoId then {repoId:$l.repoId} else {} end)
+      else empty end' 2>/dev/null)"
+    [ -n "$entry" ] || die "$target has no remembered repo. Turn its auto-deploy off with this tool, add it to $REPOS, or map it in the repo's deploy-center.json"
+    repos="$(jq -c --arg p "$target" --argjson e "$entry" '.[$p] = $e' <<< "$repos")"
+  fi
   # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
   if [ -z "$preview" ] && team_on; then
     sha="$(team_gate vercel "$target" "$(jq -r --arg p "$target" '.[$p] | if .type == "gitlab" or (.org | not) then "" else "\(.org)/\(.repo)" end' <<< "$repos")" \
@@ -257,24 +267,42 @@ vercel_deploy_json() {
 # Every project, the newest production attempt per project from one call: a build started in the
 # dashboard or the terminal is BUILDING here while targets.production still shows the finished one.
 vercel_json() {
-  local raw recent="" partial=false
+  local raw recent="" partial=false projects all next page=1 missing
+  projects="$(vercel_projects)" || exit 1
   # The newest attempts are extra: when they cannot be read (a network blip, an odd answer), the
   # list still comes, marked partial, and a build under way may not show. Never an empty
   # --argjson: a `:-` default of {} keeps its backslash under macOS bash 3.2 ({\}).
-  if raw="$(vercel_call "/v6/deployments?limit=100&target=production")"; then
-    recent="$(printf '%s' "$raw" | jq "$VERCEL_META"'[.deployments[]] | group_by(.name)
+  if raw="$(vercel_call "/v6/deployments?limit=100&target=production")" \
+    && all="$(printf '%s' "$raw" | jq -c '.deployments | if type == "array" then . else error("no list") end' 2>/dev/null)"; then
+    # 100 attempts of all projects together: a busy project can push the others out, and theirs
+    # would then read as "ready" while a build runs. Further pages (`until`), at most five in
+    # all, while a project that has deployed to production is still missing.
+    while [ "$page" -lt 5 ]; do
+      next="$(printf '%s' "$raw" | jq -r '.pagination.next // empty' 2>/dev/null)"
+      [ -n "$next" ] && [ "$(printf '%s' "$all" | jq 'length')" -ge $((page * 100)) ] || break
+      missing="$(jq -n --argjson p "$projects" --argjson d "$all" '[$p[] | select(.targets.production) | .name] - [$d[].name] | length')"
+      [ "$missing" -gt 0 ] || break
+      if ! raw="$(vercel_call "/v6/deployments?limit=100&target=production&until=$next")" \
+        || ! all="$(jq -c -s '.[0] + (.[1].deployments | if type == "array" then . else error("no list") end)' <(printf '%s' "$all") <(printf '%s' "$raw") 2>/dev/null)"; then
+        partial=true; all="${all:-[]}"; break
+      fi
+      page=$((page + 1))
+    done
+    recent="$(printf '%s' "$all" | jq "$VERCEL_META"'group_by(.name)
       | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta | vsha)})}) | from_entries' 2>/dev/null)" || recent=""
   fi
   if [ -z "$recent" ] || ! printf '%s' "$recent" | jq -e 'type == "object"' >/dev/null 2>&1; then recent='{}'; partial=true; fi
   [ "$partial" = false ] || echo "vercel: the newest builds could not be read; the list shows the live deploys only" >&2
-  vercel_projects | jq --slurpfile r <(repos_json) --argjson recent "$recent" --argjson partial "$partial" "$VERCEL_PHASE$VERCEL_META"'[.[] |
-    ((.link // null) | if . then {repo:'"$GITHOST_VERCEL_LINK_JQ"', ref:"main"} else null end) as $live |
+  printf '%s' "$projects" | jq --slurpfile r <(repos_json) --argjson recent "$recent" --argjson partial "$partial" "$VERCEL_PHASE$VERCEL_META"'[.[] |
+    ((.link // null) | if . then {repo:'"$GITHOST_VERCEL_LINK_JQ"', ref:(.productionBranch // "main"),
+      # What vercel_start needs to build from the live link when no repo is written down.
+      startable:(((.type // "github") == "github" and ((.org and .repo) or .repoId)) or (.type == "gitlab" and .projectId))} else null end) as $live |
     ($r[0][.name] // null) as $known |
     (((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // null) as $domain |
     {name, id:.name, auto:(.link != null), paused:(.paused // false),
      repo:(if $known.repo then (if $known.type == "gitlab" then $known.repo else "\($known.org)/\($known.repo)" end) else $live.repo end),
      ref:($known.ref // (.link.productionBranch // null)),
-     deployable:($known.repo != null),
+     deployable:(($known.repo != null) or ($live.startable == true)),
      domain:$domain,
      url:(($domain // .targets.production.alias[0]?) // null | if . then "https://\(.)" else null end),
      dashboardUrl:null,

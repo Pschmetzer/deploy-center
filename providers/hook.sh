@@ -308,7 +308,7 @@ hook_doctor() {
 # ---------- commands ----------
 
 hook_add() {
-  local n="${1:-}" u="${2:-}" repo="" ref="" site="" method="POST" body="" headers='{}' h k v
+  local n="${1:-}" u="${2:-}" repo="" ref="" site="" method="" body="" headers='{}' h k v
   [ -n "$n" ] && [ -n "$u" ] || die "Usage: deploys hook add <name> <url|-> [--repo owner/name] [--ref main] [--site https://…] [--method POST] [--header 'Name: value'] [--body '{…}']"
   hook_valid_name "$n"; shift 2
   while [ $# -gt 0 ]; do
@@ -331,23 +331,39 @@ hook_add() {
       *) die "Unknown option $1";;
     esac; shift
   done
-  case "$method" in POST|GET|PUT|PATCH) ;; *) die "--method is POST, GET, PUT or PATCH";; esac
+  case "$method" in ""|POST|GET|PUT|PATCH) ;; *) die "--method is POST, GET, PUT or PATCH";; esac
   [ -z "$repo" ] || [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "--repo is owner/name"
   [ -z "$site" ] || [[ "$site" =~ ^https?://[^[:space:]]+$ ]] || die "--site is an http(s) address"
   [ -z "$body" ] || echo "$body" | jq -e . >/dev/null 2>&1 || die "--body is JSON"
   # "-" reads the URL from stdin: it then stays out of the shell history.
   if [ "$u" = - ]; then IFS= read -r u || true; [ -n "$u" ] || die "No URL on stdin"; fi
   hook_check_url "$u"
-  local existed=0; [ -n "$(hook_entry "$n")" ] && existed=1
+  # An existing hook is updated, not replaced: what is not given again (method, headers, body,
+  # repo, ref, site) stays as it was, and the answer names what was kept. Given headers are added
+  # to the ones there.
+  local old existed=0 kept
+  old="$(hook_entry "$n")"; [ -n "$old" ] && existed=1; [ -n "$old" ] || old='{}'
   hook_url_save "$n" "$u"
-  hook_list_raw | jq --arg n "$n" --arg m "$method" --argjson h "$headers" --arg b "$body" --arg r "$repo" --arg f "$ref" --arg s "$site" '
-      map(select(.name != $n)) + [{name:$n, method:$m}
-        + (if ($h | length) > 0 then {headers:$h} else {} end)
-        + (if $b != "" then {body:$b} else {} end)
-        + (if $r != "" then {repo:$r, ref:(if $f == "" then "main" else $f end)} elif $f != "" then {ref:$f} else {} end)
-        + (if $s != "" then {site:$s} else {} end)]
+  hook_list_raw | jq --arg n "$n" --arg m "$method" --argjson h "$headers" --arg b "$body" --arg r "$repo" --arg f "$ref" --arg s "$site" --argjson o "$old" '
+      (($o.headers // {}) + $h) as $hs
+      | map(select(.name != $n)) + [{name:$n, method:(if $m != "" then $m else ($o.method // "POST") end)}
+        + (if ($hs | length) > 0 then {headers:$hs} else {} end)
+        + (if $b != "" then {body:$b} elif $o.body then {body:$o.body} else {} end)
+        + (if $r != "" then {repo:$r, ref:(if $f != "" then $f else ($o.ref // "main") end)}
+           elif $o.repo then {repo:$o.repo, ref:(if $f != "" then $f else ($o.ref // "main") end)}
+           elif $f != "" then {ref:$f} elif $o.ref then {ref:$o.ref} else {} end)
+        + (if $s != "" then {site:$s} elif $o.site then {site:$o.site} else {} end)]
       | sort_by(.name)' | hook_write "$(hook_config)"
-  if [ "$existed" = 1 ]; then echo "Hook $n updated ($(hook_mask "$u"))."; else echo "Hook $n added ($(hook_mask "$u"))."; fi
+  if [ "$existed" = 1 ]; then
+    kept="$(echo "$old" | jq -r --arg m "$method" --argjson h "$headers" --arg b "$body" --arg r "$repo" --arg f "$ref" --arg s "$site" '
+      [ (if $m == "" and .method then "method \(.method)" else empty end),
+        (((.headers // {}) | keys) - ($h | keys) | select(length > 0) | "headers \(join(", "))"),
+        (if $b == "" and .body then "body" else empty end),
+        (if $r == "" and .repo then "repo \(.repo)" else empty end),
+        (if $f == "" and .ref then "ref \(.ref)" else empty end),
+        (if $s == "" and .site then "site \(.site)" else empty end) ] | join("; ")')"
+    echo "Hook $n updated ($(hook_mask "$u"))${kept:+; kept: $kept}."
+  else echo "Hook $n added ($(hook_mask "$u"))."; fi
 }
 
 hook_remove() {

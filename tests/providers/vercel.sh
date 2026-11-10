@@ -129,5 +129,42 @@ expect "on: a GitLab project is linked as GitLab" "$rc:$(jq -c . "$CALLS.body" 2
 expect "no \${x:-{\\}} default in providers/ or lib/githost.sh" \
   "$(grep -n ':-{\\}}' providers/*.sh lib/githost.sh | wc -l | tr -d ' ')" "0"
 
+# --- PRV-020: 100 attempts of a busy project push the others out: further pages ---
+fresh
+fx="$tmp/fx/vercel"
+jq -n '{deployments: [range(100) | {uid: "dpl_b\(.)", name: "beta", state: "READY", created: (1767312000000 - .), meta: {}}],
+        pagination: {next: 1767000000000}}' | { cat; echo; echo 200; } > "$fx/GET_v6_deployments_limit_100_target_production.json"
+printf '%s\n200\n' '{"deployments":[{"uid":"dpl_alpha9","name":"alpha","state":"BUILDING","created":1767200000000,"meta":{}},{"uid":"dpl_gamma9","name":"gamma","state":"READY","created":1767100000000,"meta":{}}],"pagination":{"next":null}}' \
+  > "$fx/GET_v6_deployments_limit_100_target_production_until_1767000000000.json"
+out="$(lib 'vercel_json')"
+expect "a second page is read while a deployed project is missing" \
+  "$(echo "$out" | jq -c '[.[] | select(.name == "alpha" or .name == "gamma") | [.name, .phase]]'):$(calls 'until=1767000000000')" '[["alpha","building"],["gamma","ready"]]:1'
+rm -f "$fx/GET_v6_deployments_limit_100_target_production_until_1767000000000.json"
+fresh; out="$(lib 'vercel_json')"
+expect "a follow page that fails: the list still comes, partial" "$(echo "$out" | jq -c '[length, ([.[].partial] | unique)]')" '[4,[true]]'
+cp tests/fixtures/vercel/GET_v6_deployments_limit_100_target_production.json "$fx/"
+fresh; lib 'vercel_json' >/dev/null
+expect "one page that is not full: no second one" "$(calls 'until=')" "0"
+
+# --- PRV-027: connected but not written down: deployable from the live link ---
+fresh
+jq 'del(.alpha)' tests/fixtures/vercel/config/vercel-repos.json > "$tmp/config/vercel-repos.json"
+expect "a live GitHub link is deployable" "$(lib 'vercel_json' | jq -c '.[] | select(.name == "alpha") | [.deployable, .repo]')" '[true,"example/alpha"]'
+printf '%s\n200\n' '{"name":"alpha","link":{"type":"github","org":"example","repo":"alpha","repoId":42,"productionBranch":"trunk"}}' > "$fx/GET_v9_projects_alpha.json"
+# A wrapper in front of the wrapper that keeps the --input body of the call.
+mkdir -p "$tmp/vb"
+cat > "$tmp/vb/vercel" <<SH
+#!/bin/bash
+prev=""; for a in "\$@"; do [ "\$prev" = --input ] && cp "\$a" "\$VBODY"; prev="\$a"; done
+exec "$tmp/bin/vercel" "\$@"
+SH
+chmod +x "$tmp/vb/vercel"
+out="$(VBODY="$tmp/body.json" STUBPATH="$tmp/vb:$STUBPATH" lib 'vercel_start alpha "" ""')"; rc=$?
+expect "deploy from the live link" "$rc:$(jq -c '.gitSource' "$tmp/body.json" 2>/dev/null)" '0:{"type":"github","ref":"trunk","repoId":42}'
+printf '%s\n200\n' '{"name":"alpha","link":null}' > "$fx/GET_v9_projects_alpha.json"
+: > "$CALLS"; out="$(lib 'vercel_start alpha "" ""' 2>&1)"; rc=$?
+expect "no link and nothing written down: refused, nothing started" "$rc:$(grep -c 'no remembered repo' "$tmp/err"):$(calls 'POST')" "1:1:0"
+cp tests/fixtures/vercel/GET_v9_projects_alpha.json "$fx/"
+
 : "$root"
 echo; [ "$fails" = 0 ] && echo "All vercel tests passed." || { echo "$fails vercel tests failed."; exit 1; }

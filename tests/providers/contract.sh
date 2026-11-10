@@ -89,6 +89,21 @@ for f in providers/*.sh; do
     IFS=$'\t' read -r sid sph sraw <<<"$s"
     expect "$p: _$v is deployId<TAB>phase<TAB>state" "$([ -n "$sid" ] && [ -n "$sraw" ] && echo "$PHASES" | jq -e --arg x "$sph" 'index($x) != null' >/dev/null && echo ok || echo "[$s]")" "ok"
   done
+  # PRV-138: `deploys watch` ends on this provider's status line (a final phase, or "none"):
+  # it once looped for ever on one that printed JSON. A time limit, so a regression fails here
+  # instead of hanging the run (sleep is a stand-in, so 20 s is many rounds).
+  # The fixtures' deploy is still building: in a copy it has finished (Render live, Vercel READY).
+  rm -rf "$tmp/fxw"; cp -R "$FIXTURES" "$tmp/fxw"
+  for wf in "$tmp/fxw/$p"/*"$CONTRACT_DEPLOY"*; do
+    [ -f "$wf" ] && sed -i.bak 's/build_in_progress/live/g; s/"BUILDING"/"READY"/g' "$wf" && rm -f "$wf.bak"
+  done
+  # shellcheck source=/dev/null
+  ( [ ! -f "tests/fixtures/$p/env" ] || . "tests/fixtures/$p/env"
+    env -u DEPLOYS_LIB FIXTURES="$tmp/fxw" PATH="$STUBPATH" DEPLOYS_CONFIG="$tmp/config-$p" HOME="$tmp" NO_COLOR=1 \
+      perl -e 'alarm 20; exec @ARGV' /bin/bash ./deploys watch "$CONTRACT_NAME" "$CONTRACT_DEPLOY" >"$tmp/watch" 2>&1 </dev/null ); rc=$?
+  how="rc $rc: $(tail -n 1 "$tmp/watch")"
+  if [ "$rc" = 0 ] || [ "$rc" = 1 ]; then how=ended; elif [ "$rc" = 142 ]; then how="still running after 20 s: $(tail -n 2 "$tmp/watch" | tr '\n' ' ')"; fi
+  expect "$p: deploys watch ends (live 0, failed 1)" "$how" "ended"
   rm -rf "$tmp/config-$p/locks"
   d="$(lib "$p" "${p}_deploy_json $CONTRACT_ID")"
   expect "$p: _deploy_json prints id, url, state, phase" \
