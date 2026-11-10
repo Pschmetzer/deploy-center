@@ -1,0 +1,33 @@
+# The fake curl's answers. Columns: METHOD  URL glob  body glob  fixture  status  when  sets
+# "-" means none. First match wins. "when" names a state flag that must be set ("!flag": not set);
+# "sets" sets a flag once the line matched, so a later read sees the change.
+GET    */api/health                                -  health.json                 200  -           -
+GET    */api/v1/version                            -  version.json                200  -           -
+GET    */api/v1/applications                       -  applications.json           200  -           -
+GET    */api/v1/applications/app-shop              -  app-shop-off-previews.json  200  shop-prev   -
+GET    */api/v1/applications/app-shop              -  app-shop-off.json           200  shop-off    -
+GET    */api/v1/applications/app-shop              -  app-shop.json               200  -           -
+GET    */api/v1/applications/app-blog              -  app-blog.json               200  -           -
+GET    */api/v1/applications/app-api               -  app-api.json                200  -           -
+GET    */api/v1/applications/app-cache             -  app-cache.json              200  -           -
+PATCH  */api/v1/applications/app-shop  *is_preview_deployments_enabled?:false*  patched.json  200  -  shop-prev
+PATCH  */api/v1/applications/app-shop  *is_auto_deploy_enabled?:false*          patched.json  200  -  shop-off
+PATCH  */api/v1/applications/app-shop  *                                         patched.json  200  -  -
+PATCH  */api/v1/applications/app-blog  *                                         patched.json  200  -  -
+PATCH  */api/v1/applications/app-api   *                                         patched.json  200  -  -
+GET    */api/v1/applications/app-shop/rollback-images  -  rollback-images-shop.json  200  -       -
+GET    */api/v1/applications/app-blog/rollback-images  -  error-404.json          404  -           -
+POST   */api/v1/applications/app-shop/rollback     *  rollback.json               200  -           -
+POST   */api/v1/applications/app-blog/rollback     *  error-404.json              404  -           -
+GET    */api/v1/applications/app-shop/logs?*       -  runtime-logs.json           200  -           -
+GET    */api/v1/deployments/applications/app-shop?*   -  deployments-shop.json    200  -           -
+GET    */api/v1/deployments/applications/app-blog?*   -  deployments-blog.json    200  -           -
+GET    */api/v1/deployments/applications/app-cache?*  -  deployments-cache.json   200  -           -
+GET    */api/v1/deployments/applications/app-api?*    -  error-500.json           500  -           -
+POST   */api/v1/deploy?uuid=app-shop               -  deploy-shop.json            200  -           -
+POST   */api/v1/deploy?uuid=app-cache              -  deploy-skipped.json         200  -           -
+GET    */api/v1/deployments/dep-new                -  deployment-new.json         200  -           -
+GET    */api/v1/deployments/dep-shop-3             -  deployment-shop-3.json      200  -           -
+GET    */api/v1/deployments/dep-blog-5             -  deployment-blog-5.json      200  -           -
+POST   */api/v1/deployments/dep-shop-3/cancel      -  cancel.json                 200  -           -
+POST   */api/v1/deployments/dep-blog-4/cancel      -  cancel-done.json            400  -           -

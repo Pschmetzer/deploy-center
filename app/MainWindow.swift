@@ -358,8 +358,10 @@ struct ContentView: View {
 
     /// Problems and offers above the list, most important first. Only the first is always shown;
     /// the others fold away, so the list keeps its room.
-    enum Notice: Hashable { case trigger, loadFailed(Platform), setup(Platform), auto(Platform), github, provider, update }
+    enum Notice: Hashable { case trigger, loadFailed(Platform), setup(Platform), auto(Platform), github, provider, update, claude }
     @AppStorage("noticesExpanded") private var noticesExpanded = false
+    @AppStorage(ClaudeNudge.wantedKey) private var claudeNudge = false
+    @AppStorage(ClaudeNudge.dismissedKey) private var claudeNudgeDismissed = false
 
     private var notices: [Notice] {
         var out: [Notice] = []
@@ -371,6 +373,7 @@ struct ContentView: View {
         if store.doctor.map({ $0.githubCli && $0.githubLoggedIn == false }) == true || (store.githubBudget?.remaining ?? .max) < 300 { out.append(.github) }
         if !store.providerIssues.isEmpty && store.providerIssues != closedIssues { out.append(.provider) }
         if let v = store.newVersion, v != skippedVersion { out.append(.update) }
+        if claudeNudge && !claudeNudgeDismissed { out.append(.claude) }
         return out
     }
 
@@ -383,6 +386,7 @@ struct ContentView: View {
         case .github: return "GitHub"
         case .provider: return L("provider problem", "Störung beim Anbieter")
         case .update: return L("new version", "neue Version")
+        case .claude: return "Claude"
         }
     }
 
@@ -395,6 +399,7 @@ struct ContentView: View {
         case .github: githubBanner
         case .provider: providerBanner
         case .update: updateBanner
+        case .claude: ClaudeNudgeLine()
         }
     }
 
