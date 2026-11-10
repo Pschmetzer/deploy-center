@@ -1,7 +1,9 @@
 # App Store texts: English (en-US)
 
 ## Name (30)
-Deploy Center
+Deploy Center: Hand Deploys
+
+("Deploy Center" alone is taken on the App Store.)
 
 ## Subtitle (30)
 Deploy and roll back anywhere
