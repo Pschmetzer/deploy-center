@@ -987,8 +987,8 @@ struct ContentView: View {
                 Text(search.isEmpty ? L("Everything is live", "Alles ist live") : L("Nothing matches “\(search)”", "Nichts passt zu „\(search)“"))
                     .font(.headline)
                 if hiddenHits > 0 {
-                    Text(L("\(hiddenHits) hidden \(hiddenHits == 1 ? "project matches" : "projects match") (Settings → Projects)",
-                           "\(hiddenHits) \(hiddenHits == 1 ? "ausgeblendetes Projekt passt" : "ausgeblendete Projekte passen") (Einstellungen → Projekte)"))
+                    Text(L("\(hiddenHits) hidden \(hiddenHits == 1 ? "project matches" : "projects match") (\(SettingsTab.projects.path))",
+                           "\(hiddenHits) \(hiddenHits == 1 ? "ausgeblendetes Projekt passt" : "ausgeblendete Projekte passen") (\(SettingsTab.projects.path))"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
@@ -1004,7 +1004,7 @@ struct ContentView: View {
                 Text(hiddenHere > 0 ? L("All projects here are hidden", "Alle Projekte hier sind ausgeblendet") : L("No projects here", "Keine Projekte hier"))
                     .font(.headline)
                 Text(hiddenHere > 0
-                     ? L("\(hiddenHere) hidden. Show them again in Settings → Projects.", "\(hiddenHere) ausgeblendet. Wieder zeigen unter Einstellungen → Projekte.")
+                     ? L("\(hiddenHere) hidden. Show them again in \(SettingsTab.projects.path).", "\(hiddenHere) ausgeblendet. Wieder zeigen unter \(SettingsTab.projects.path).")
                      : L("This account has no projects on \(scopes.map(\.rawValue).joined(separator: " or ")).", "Dieses Konto hat keine Projekte bei \(scopes.map(\.rawValue).joined(separator: " oder "))."))
                     .font(.caption).foregroundStyle(.secondary)
                 if hiddenHere > 0 { Button(L("Open Settings", "Einstellungen öffnen")) { store.openSettings(.projects) } }
@@ -1173,7 +1173,7 @@ struct ContentView: View {
                 // Observer mode (Settings → Team): the deploy buttons are gone, and the script refuses anyway.
                 Label(L("Observer", "Beobachter"), systemImage: "eye")
                     .foregroundStyle(.secondary).padding(.horizontal, 6)
-                    .help(L("This Mac only looks. Turn it off in Settings → Team.", "Dieser Mac schaut nur zu. Abschalten unter Einstellungen → Team."))
+                    .help(L("This Mac only looks. Turn it off in \(SettingsTab.team.path).", "Dieser Mac schaut nur zu. Abschalten unter \(SettingsTab.team.path)."))
             } else {
                 Button { confirming = true } label: {
                     Label(count > 1 ? L("Deploy \(count)", "\(count) deployen") : L("Deploy", "Deployen"),
