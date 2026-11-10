@@ -229,6 +229,10 @@ deploys triggers
 
 **Check for Updates …** (in the app menu) and the daily check use Sparkle: it reads `deploycenter.app/appcast.xml`, downloads the new version from GitHub and checks its EdDSA signature before it replaces the app. While deploys are running it waits and installs once they are done. If a check or the download fails, the app stays as it was and the error log has a line starting with `update failed:`. Install by hand from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest), or with `brew upgrade --cask --greedy deploy-center`.
 
+## The widget is not in the widget gallery
+
+Check the app list on the left of the gallery (search finds nothing there). If no app from outside Apple is listed at all, macOS has not loaded third-party widgets yet: restart the Mac, then look for **Deploy Center**. If only Deploy Center is missing, the installed copy may have no widget: `ls ~/Applications/"Deploy Center.app"/Contents/PlugIns` must show `DeployCenterWidgets.appex`. Reinstall from the release, or build with `./build.sh --widgets --install`.
+
 ## Still stuck?
 
 Open an [issue](https://github.com/Pschmetzer/deploy-center/issues) with the output of **Copy diagnostics** and the relevant lines of the error log. Issues are public: remove project names and domains first. Never paste a key.

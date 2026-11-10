@@ -310,6 +310,64 @@ extension Item {
     }
 }
 
+/// `deploys scan status --json`: is the Claude Code CLI there and logged in, and the newest bug scans.
+struct ScanReport: Decodable, Sendable {
+    struct Run: Decodable, Sendable, Identifiable {
+        let id: String
+        let repo: String
+        let at: Double
+        let status: String          // running | clean | pr | failed
+        let step: String?
+        let prUrl: String?
+        let fixes: Int?
+        let error: String?
+        var running: Bool { status == "running" }
+    }
+    /// A security check (`deploys check`): counts of vulnerable packages, secrets, code findings.
+    struct Check: Decodable, Sendable, Identifiable {
+        let id: String
+        let repo: String
+        let at: Double
+        let status: String          // running | done | failed
+        let osv: Int?
+        let gitleaks: Int?
+        let semgrep: Int?
+        let tools: [String: String]?   // osv|gitleaks|semgrep -> clean|found|error|missing
+        let error: String?
+        var running: Bool { status == "running" }
+        /// What a bug scan can work on: vulnerable packages and code findings, never secrets.
+        var fixable: Int { (osv ?? 0) + (semgrep ?? 0) }
+    }
+    struct Tools: Decodable, Sendable { let osv: Bool; let gitleaks: Bool; let semgrep: Bool
+        var any: Bool { osv || gitleaks || semgrep } }
+    let installed: Bool
+    let loggedIn: Bool
+    let runs: [Run]
+    let checks: [Check]?
+    let tools: Tools?
+    func newestCheck(repo: String?) -> Check? {
+        guard let repo else { return nil }
+        return (checks ?? []).filter { $0.repo.caseInsensitiveCompare(repo) == .orderedSame }.max { $0.at < $1.at }
+    }
+    /// The newest scan of a repo (owner/name).
+    func newest(repo: String?) -> Run? {
+        guard let repo else { return nil }
+        return runs.filter { $0.repo.caseInsensitiveCompare(repo) == .orderedSame }.max { $0.at < $1.at }
+    }
+    var anyRunning: Bool { runs.contains(where: \.running) || (checks ?? []).contains(where: \.running) }
+}
+
+/// `deploys check show <id>`: the secrets part, for "rotate this key" (no values are ever in it).
+struct CheckDetails: Decodable, Sendable {
+    struct Leak: Decodable, Sendable, Hashable { let rule: String; let file: String; let line: Int?; let commit: String? }
+    struct Part: Decodable, Sendable { let items: [Leak]? }
+    struct Code: Decodable, Sendable { let secrets: [Leak]? }
+    let gitleaks: Part?
+    let semgrep: Code?
+    /// gitleaks and Semgrep's secret rules, together.
+    var leaks: [Leak] { (gitleaks?.items ?? []) + (semgrep?.secrets ?? []) }
+}
+
 /// `deploys autofix status --json`. Older scripts send `pr` and no PR state; newer ones
 /// `prNumber`, `prState`, `prUrl`. A missing field is nil, a broken fire is skipped.
 struct AutofixReport: Decodable {

@@ -138,10 +138,88 @@ final class Store: ObservableObject {
     /// The last answer of "Fix with Claude" per row, for the details sheet.
     @Published var autofixResult: [String: Message] = [:]
 
+    /// Bug scans by the local Claude Code CLI (`deploys scan`), and the repos being started right now.
+    @Published var scan: ScanReport?
+    @Published var scanStarting: Set<String> = []
+    private var scanPoll: Task<Void, Never>?
+
+    func loadScanStatus() async {
+        if case .success(let r)? = await Self.extra(["scan", "status", "--json"], ScanReport.self) { scan = r }
+        // While a scan runs, look again every 20 seconds; it takes minutes, the app must not block.
+        if scan?.anyRunning == true, scanPoll == nil {
+            scanPoll = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                    guard let self else { return }
+                    if case .success(let r)? = await Self.extra(["scan", "status", "--json"], ScanReport.self) { self.scan = r }
+                    if self.scan?.anyRunning != true { self.scanPoll = nil; return }
+                }
+            }
+        }
+    }
+    func scanRun(_ i: Item) -> ScanReport.Run? { scan?.newest(repo: i.repo) }
+    func checkRun(_ i: Item) -> ScanReport.Check? { scan?.newestCheck(repo: i.repo) }
+    @Published var checkLeaks: [String: [CheckDetails.Leak]] = [:]
+    func canCheck(_ i: Item) -> Bool {
+        guard let r = i.repo, scan?.tools?.any != false else { return false }
+        return !scanStarting.contains("check:" + r) && checkRun(i)?.running != true
+    }
+
+    /// "Security check": OSV-Scanner, gitleaks and Semgrep on the repo, read-only, in the background.
+    func securityCheck(_ i: Item) async {
+        guard let repo = i.repo, canCheck(i) else { return }
+        let key = Self.key(i), name = Demo.mask(i.name)
+        scanStarting.insert("check:" + repo); defer { scanStarting.remove("check:" + repo) }
+        do {
+            _ = try await Tool.run(["check", "start", repo, i.ref ?? "main"], timeout: 60)
+            tell(L("\(name): security check started", "\(name): Sicherheits-Check gestartet"),
+                 L("OSV-Scanner, gitleaks and Semgrep, read-only", "OSV-Scanner, gitleaks und Semgrep, nur lesend"), ok: true, key: key)
+        } catch {
+            tell(L("\(name): security check not started", "\(name): Sicherheits-Check nicht gestartet"), error.localizedDescription, ok: false, key: key)
+        }
+        await loadScanStatus()
+    }
+
+    /// The secrets of a check, for the details sheet. Never sent anywhere.
+    func loadLeaks(_ c: ScanReport.Check) async {
+        guard (c.gitleaks ?? 0) > 0, checkLeaks[c.id] == nil else { return }
+        if case .success(let d)? = await Self.extra(["check", "show", c.id], CheckDetails.self) { checkLeaks[c.id] = d.leaks }
+    }
+    func canScan(_ i: Item) -> Bool {
+        guard let r = i.repo, !observer else { return false }
+        return !scanStarting.contains(r) && scanRun(i)?.running != true
+    }
+
+    /// "Find bugs with Claude": `deploys scan start <repo> <branch>`, detached; the result comes as a PR.
+    func scanForBugs(_ i: Item, findings: Bool = false) async {
+        guard let repo = i.repo, canScan(i) else { return }
+        let key = Self.key(i), name = Demo.mask(i.name)
+        if let s = scan, !s.installed || !s.loggedIn {
+            tell(L("\(name): bug scan not possible", "\(name): Bug-Scan nicht möglich"),
+                 s.installed ? L("Claude Code is not logged in. In Terminal: claude login", "Claude Code ist nicht angemeldet. Im Terminal: claude login")
+                             : L("Claude Code is not installed. In Terminal: npm i -g @anthropic-ai/claude-code", "Claude Code ist nicht installiert. Im Terminal: npm i -g @anthropic-ai/claude-code"),
+                 ok: false, key: key)
+            return
+        }
+        scanStarting.insert(repo); defer { scanStarting.remove(repo) }
+        do {
+            var args = ["scan", "start", repo, i.ref ?? "main"]
+            if findings, let c = checkRun(i), c.status == "done", c.fixable > 0 { args += ["--findings", c.id] }
+            _ = try await Tool.run(args, timeout: 120)
+            tell(L("\(name): Claude is looking for bugs", "\(name): Claude sucht nach Bugs"),
+                 L("takes 10–30 minutes; fixes come as a pull request, nothing is merged or deployed",
+                   "dauert 10–30 Minuten; Fixes kommen als Pull Request, nichts wird gemergt oder deployt"), ok: true, key: key)
+        } catch {
+            tell(L("\(name): bug scan not started", "\(name): Bug-Scan nicht gestartet"), error.localizedDescription, ok: false, key: key)
+        }
+        await loadScanStatus()
+    }
+
     /// When `autofix sync` last ran, so a refresh every few seconds does not ask GitHub every time.
     private var lastAutofixSync = Date.distantPast
 
     func loadAgentStatus() async {
+        await loadScanStatus()
         // A hand-over still marked "fixing": bring it up to date with its PR first. The 10-minute
         // job does this too, but it may not be running, and then a merged fix said "fixing" for hours.
         // Before the first status (nil): once, which also loads a schedule launchd dropped.
@@ -237,6 +315,7 @@ final class Store: ObservableObject {
     private func offerAutofixSetup() {
         show(Toast(text: L("Autofix is not set up: no routine yet", "Autofix ist nicht eingerichtet: noch keine Routine"), ok: false,
                    undoLabel: L("Open Settings", "Einstellungen öffnen"), undo: {
+            UserDefaults.standard.set("claude", forKey: "settingsTab")
             NSApp.activate(ignoringOtherApps: true)
             Store.openSettingsWindow()
         }))

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `./build.sh --install` builds the widgets too when a signing identity is set, so a local install no longer removes the widgets from ~/Applications.
 - Autofix: "Claude is fixing it" no longer sticks. The app runs `deploys autofix sync` (new: records merged, closed or open fix PRs, never fires) every few minutes while a hand-over is open, so a merged fix shows "Fix merged – deploy now" even when the 10-minute job is not running. `autofix --only` syncs its project first.
 - Autofix: 90 minutes after a hand-over with no PR the row says "No fix PR from Claude – see session" (a cause outside the code, say) and links the session, instead of "fixing" for good.
 - `autofix status` reports `scheduled` only when launchd has the job loaded; `autofix sync` loads a job file launchd dropped again.
@@ -54,6 +55,8 @@
 - CLI: keys piped to `set-key`/`ai set-key` lose a trailing CR and surrounding spaces; spaces, quotes or a backslash inside are refused. `logs <p> 0` is refused (it printed the whole log), `history` takes 1 to 100, `open` only `--dashboard`. Tables work without `column` (an awk fallback).
 - CLI: `ignore vercel:api` leaves out only that platform's project. A name that is a group and a project is refused by `deploys deploy`; `group:<name>` picks the group.
 - Vercel: deploys from GitLab or Bitbucket get their commit (`lastSha`, rollback, history, savings). Turning auto-deploy off keeps a link whose repo cannot be written down (Bitbucket) instead of losing it; turning a GitLab one back on points to the dashboard. `vercel deploy --wait` gives up like `watch` (exit 3) instead of asking for ever. Vercel and Render `deploy-json` refuse unknown options instead of deploying the newest commit.
+- Bug scan: "Find bugs with Claude" (row menu and details) runs the Claude Code CLI on this Mac against the repo, fixes up to five real bugs, runs build and tests, and opens one PR with a report. Never merges or deploys. `deploys scan start|status|list|log`. See docs/SCAN.md.
+- Security check: OSV-Scanner, gitleaks and Semgrep on a repo, free and local (`deploys check start|show`, "Security check" in the row menu and details). "Fix with Claude" hands the package and code findings to a bug scan (`scan start … --findings <id>`). Secrets are redacted, never stored as values, never sent to Claude or put in a PR; the app lists them as keys to rotate.
 
 ## 0.9.1
 

@@ -1095,6 +1095,77 @@ expect "without lib/githost.sh: GitHub counted, GitLab left unknown" \
   "$( (unset -f githost_of githost_available githost_head_of githost_pending_of githost_open_prs_of; DEPLOYS_LIB=1 . "$tmp/nolib/deploys"; set +e
        with_heads '[{"name":"gh","repo":"me/app","ref":"main","deployable":true,"lastSha":"aaaa"},{"name":"gl","repo":"gitlab.com/me/app","ref":"main","deployable":true,"lastSha":"aaaa"}]' \
        | jq -c 'map([.name, .pendingCommits, .headSha])') )" '[["gh",3,"bbbb"],["gl",null,null]]'
+# --- scan: caps, no second scan, clean vs PR, never merges ---
+sc="$tmp/sc"; mkdir -p "$sc/origin"
+git -C "$sc/origin" init -q -b main && echo 'x=1' > "$sc/origin/a.js" && git -C "$sc/origin" add -A && git -C "$sc/origin" -c user.name=t -c user.email=t@t commit -q -m init
+git clone -q --bare "$sc/origin" "$sc/remote.git"
+SCAN_DIR="$sc/dir"; export DEPLOYS_NOTIFY=0 DEPLOYS_SCAN_FOREGROUND=1
+sc_claude_bin() { echo /bin/true; }
+sc_open_prs() { echo "${SCOPEN:-[]}"; }
+sc_pr() { echo "pr $*" >> "$CALLS"; echo "https://github.com/me/web/pull/7"; }
+gh() { case "$*" in "repo clone"*) git clone -q "$sc/remote.git" "$4";; *) command gh "$@";; esac; }
+SCFIX=0
+sc_claude() { [ "$SCFIX" = 1 ] && { echo 'x=2' > "$1/a.js"; echo secret > "$1/.env.local"; echo t > "$1/a.test.js"; }; printf '## Fixed\n- a.js: wrong value -> fixed\n## Checks\n- none\n'; }
+sc_reset() { rm -rf "$SCAN_STATE" "$SCAN_DIR"; : > "$CALLS"; }
+sc_reset; ( scan_start me/web main ) >/dev/null 2>&1
+expect "scan: nothing changed is clean, no PR" "$(jq -r '.runs[0].status' "$SCAN_STATE"):$(grep -c '^pr ' "$CALLS")" "clean:0"
+sc_reset; SCFIX=1; ( scan_start me/web main ) >/dev/null 2>&1
+expect "scan: a fix becomes a PR on claude/scan-" "$(jq -r '.runs[0] | "\(.status) \(.branch | startswith("claude/scan-web-")) \(.prUrl) \(.fixes)"' "$SCAN_STATE")" "pr true https://github.com/me/web/pull/7 1"
+expect "scan: the branch is pushed, main untouched" "$(git -C "$sc/remote.git" log --oneline main | wc -l | tr -d ' '):$(git -C "$sc/remote.git" branch --list 'claude/scan-*' | wc -l | tr -d ' ')" "1:1"
+expect "scan: the report is kept" "$(cat "$SCAN_DIR"/logs/*.md | grep -c 'wrong value')" "1"
+expect "scan: changed and new test files are committed, other new files are not" "$(git -C "$sc/remote.git" show --name-only --format= "$(git -C "$sc/remote.git" branch --list 'claude/scan-*' | tr -d ' *')" | sort | tr '\n' ' ')" "a.js a.test.js "
+SCOPEN='[{"number":7}]'; out="$( ( scan_start me/web main ) 2>&1)"
+expect "scan: an open scan PR blocks the next scan" "$(echo "$out" | grep -c 'open bug-scan PR (#7)')" "1"; SCOPEN='[]'
+sc_reset; echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running"}]}' > "$SCAN_STATE"
+expect "scan: no second scan of a repo while one runs" "$( ( scan_start me/web main ) 2>&1 | grep -c 'running already')" "1"
+echo '{"runs":[{"id":"a","repo":"me/web","at":1,"status":"running"}]}' > "$SCAN_STATE"; sc_reap
+expect "scan: a run over the time limit is reaped" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
+echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":999999}]}' > "$SCAN_STATE"; sc_reap
+expect "scan: a run whose process is gone is reaped" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
+echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$$"'}]}' > "$SCAN_STATE"; sc_reap
+expect "scan: a live run is left alone" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "running"
+expect "scan: a bad branch name is refused" "$( ( scan_start me/web 'a..b' ) 2>&1 | grep -c 'not a branch name')" "1"
+expect "scan: a bad repo is refused" "$( ( scan_start 'me/web;rm' ) 2>&1 | grep -c 'not a GitHub repo')" "1"
+sc_reset; for i in 1 2 3 4; do jq -n --argjson t "$(date +%s)" --arg i "$i" '{id:$i, repo:"me/x", at:$t, status:"clean"}'; done | jq -s '{runs:.}' > "$SCAN_STATE"
+expect "scan: the daily cap" "$( ( scan_start me/web main ) 2>&1 | grep -c 'daily cap')" "1"
+unset -f gh; unset DEPLOYS_SCAN_FOREGROUND
+
+# --- check: OSV, gitleaks, Semgrep; exit codes, no secret stored, never handed to Claude ---
+ck="$tmp/ck"; mkdir -p "$ck/bin" "$ck/w"
+cat > "$ck/bin/osv-scanner" <<'X'
+#!/bin/bash
+[ "${CKOSV:-1}" = 9 ] && exit 127
+echo '{"results":[{"source":{"path":"'"$PWD"'/package-lock.json"},"packages":[{"package":{"name":"lodash","version":"4.17.15","ecosystem":"npm"},"vulnerabilities":[{"id":"GHSA-1"},{"id":"GHSA-2"}]}]}]}'
+exit "${CKOSV:-1}"
+X
+cat > "$ck/bin/gitleaks" <<'X'
+#!/bin/bash
+case " $* " in *" --redact "*) s=REDACTED;; *) s=AKIATHESECRETVALUE;; esac
+echo '[{"RuleID":"aws-access-token","File":"a.js","StartLine":3,"Commit":"abcdef123","Secret":"'$s'","Match":"k='$s'"}]'; exit 2
+X
+cat > "$ck/bin/semgrep" <<'X'
+#!/bin/bash
+echo '{"results":[{"check_id":"js.eval","path":"a.js","start":{"line":5},"extra":{"severity":"WARNING","message":"eval used","lines":"eval(SNIPPET_FROM_REPO)"}},
+  {"check_id":"generic.secrets.aws-key","path":"a.js","start":{"line":3},"extra":{"severity":"ERROR","message":"AWS key here","lines":"x"}}],"errors":[]}'
+X
+chmod +x "$ck/bin/"*
+ckrun() { ( PATH="$ck/bin:$PATH"; "$@" ); }
+o="$(ckrun ck_osv "$ck/w")"; g="$(ckrun ck_gitleaks "$ck/w")"; m="$(ckrun ck_semgrep "$ck/w")"
+expect "check: osv exit 1 is findings, relative path" "$(echo "$o" | jq -c '[.status, .count, .items[0].file, .items[0].vulns]')" '["found",1,"package-lock.json",2]'
+expect "check: osv exit 127 is an error, not clean" "$(CKOSV=9 ckrun ck_osv "$ck/w" | jq -r .status)" "error"
+expect "check: gitleaks exit 2 is findings" "$(echo "$g" | jq -c '[.status, .count, .items[0].rule, .items[0].commit]')" '["found",1,"aws-access-token","abcdef1"]'
+expect "check: no secret value is kept" "$(echo "$g" | grep -c 'AKIATHESECRETVALUE\|REDACTED\|Match')" "0"
+expect "check: semgrep findings without code snippets" "$(echo "$m" | jq -c '[.count, (tostring | contains("SNIPPET"))]')" '[1,false]'
+expect "check: a semgrep secret rule is a key to rotate, not a code finding" "$(echo "$m" | jq -c '[.items[].rule, .secrets[].rule]')" '["js.eval","generic.secrets.aws-key"]'
+mkdir -p "$tmp/sgb"; printf '#!/bin/bash\nexit 2\n' > "$tmp/sgb/semgrep"; chmod +x "$tmp/sgb/semgrep"
+expect "check: semgrep with no output is an error, not empty" "$(PATH="$tmp/sgb:$PATH" ck_semgrep "$ck/w" | jq -r .status)" "error"
+expect "check: a missing tool is missing, not an error" "$(PATH=/usr/bin:/bin ck_semgrep "$ck/w" | jq -r .status)" "missing"
+mkdir -p "$SCAN_DIR/checks"; jq -n --argjson o "$o" --argjson g "$g" --argjson m "$m" '{osv:$o, gitleaks:$g, semgrep:$m}' > "$SCAN_DIR/checks/c1.json"
+pr="$(ck_findings_prompt c1)"
+expect "check: osv and semgrep go to the bug scan" "$(echo "$pr" | grep -c 'lodash 4.17.15\|js.eval')" "2"
+expect "check: no gitleaks and no secret rule go to the bug scan" "$(echo "$pr" | grep -ci 'aws')" "0"
+expect "check: no findings, no prompt" "$(echo '{"osv":{"items":[]},"semgrep":{"items":[]}}' > "$SCAN_DIR/checks/c2.json"; ck_findings_prompt c2 | wc -c | tr -d ' ')" "0"
+
 # --- appcast.py: newest first, same version replaced, bad input refused ---
 ac="$tmp/appcast.xml"; printf -- '- one & <two>\n' > "$tmp/notes.md"; sig="$(printf 'A%.0s' $(seq 86))=="
 acadd() { python3 -I scripts/appcast.py --appcast "$ac" --version "$1" --url "https://github.com/me/app/releases/download/v$1/a.zip" \

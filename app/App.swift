@@ -33,28 +33,38 @@ struct SettingsView: View {
     @State private var providerError: String?
     @State private var switching: String?
 
+    /// Last opened settings tab; others (e.g. the autofix toast) may set it before opening Settings.
+    @AppStorage("settingsTab") private var tab = "general"
+
+    private func page<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        Form { content() }.formStyle(.grouped)
+    }
+
     private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?" }
 
     var body: some View {
-        ScrollViewReader { proxy in Form {
-            generalSection
-            platformsSection
-            PhoneLinkSettings()
-            deploySection
-            GuardSettings(store: store)
-            ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
-            ClaudeAISettings().id("claudeAI")
-            costsSection
-            notificationsSection
-            updatesSection
-            hiddenSection
-            TeamSettings(store: store)
-            CommandPaletteSettings()
-            helpSection
-        } }
-        .formStyle(.grouped)
+        TabView(selection: $tab) {
+            page { generalSection; notificationsSection; updatesSection }
+                .tabItem { Label(L("General", "Allgemein"), systemImage: "gearshape") }.tag("general")
+            page { platformsSection; PhoneLinkSettings(); hiddenSection }
+                .tabItem { Label(L("Platforms", "Plattformen"), systemImage: "server.rack") }.tag("platforms")
+            page { deploySection; GuardSettings(store: store); costsSection }
+                .tabItem { Label(L("Deploy", "Deploy"), systemImage: "paperplane") }.tag("deploy")
+            ScrollViewReader { proxy in
+                page {
+                    ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
+                    ClaudeAISettings().id("claudeAI")
+                    AutofixSettings().id("autofix")
+                }
+            }
+            .tabItem { Label("Claude", systemImage: "sparkles") }.tag("claude")
+            page { TeamSettings(store: store); CommandPaletteSettings() }
+                .tabItem { Label(L("Team", "Team"), systemImage: "person.2") }.tag("team")
+            page { helpSection }
+                .tabItem { Label(L("Help", "Hilfe"), systemImage: "questionmark.circle") }.tag("help")
+        }
         .frame(width: 560)
-        .frame(minHeight: 480, idealHeight: 680, maxHeight: 820)
+        .frame(minHeight: 420, idealHeight: 560, maxHeight: 820)
         .task {
             // Fresh switches; a script without `deploys providers` was asked at start already.
             if store.providersFromScript { await store.loadProviders() }
@@ -258,7 +268,6 @@ struct SettingsView: View {
             Text(L("Version ", "Version ") + version
                  + L(" · no telemetry; GitHub, Vercel and Render are asked with your own logins", " · keine Telemetrie; GitHub, Vercel und Render werden mit deinen eigenen Anmeldungen gefragt"))
                 .font(.caption).foregroundStyle(.secondary)
-            AutofixSettings().id("autofix")
         }
     }
 

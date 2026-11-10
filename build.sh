@@ -2,13 +2,14 @@
 # Builds "Deploy Center.app" and a zip for a release. Needs swiftc (Xcode or Command Line Tools).
 #   ./build.sh            build into build/ (universal: Apple silicon and Intel)
 #   ./build.sh --fast     only for this Mac's architecture (quicker; not for a release)
-#   ./build.sh --install  also copy the app to ~/Applications (quits a running copy first)
+#   ./build.sh --install  also copy the app to ~/Applications (quits a running copy first); with a
+#                         signing identity it always builds the widgets too
 #   ./build.sh --widgets  also build the widget extension (widgets/) into the app, see docs/WIDGETS-IOS.md
 # Only the app and its zip in build/ are replaced; other files there stay.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-usage() { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; }
 fast=0 install=0 widgets=0
 for arg in "$@"; do
   case "$arg" in
@@ -21,6 +22,13 @@ for arg in "$@"; do
 done
 
 die() { echo "build.sh: $*" >&2; exit 1; }
+# --install replaces the copy in ~/Applications. Without the widgets that copy loses them, and any
+# widget placed on the desktop goes blank, so an install with a signing identity always has them.
+if [ "$install" = 1 ] && [ "$widgets" = 0 ] && { [ -n "${DEVELOPER_ID:-}" ] || [ -s "$HOME/.config/deploys/signing-identity" ]; } \
+   && [ "${DEVELOPER_ID:-}" != "-" ]; then
+  widgets=1
+  echo "build.sh: --install builds the widgets too (the installed copy keeps them)." >&2
+fi
 for tool in swiftc lipo ditto codesign; do
   command -v "$tool" >/dev/null || die "$tool is missing; install Xcode or run: xcode-select --install"
 done

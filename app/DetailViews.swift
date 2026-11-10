@@ -353,10 +353,77 @@ struct ProjectDetail: View {
         }
     }
 
+    /// Security check: counts per tool; secrets as "rotate this key", the rest can go to a bug scan.
+    @ViewBuilder private func checkBlock(_ item: Item) -> some View {
+        if item.repo != nil, store.scan?.tools?.any == true {
+            let c = store.checkRun(item)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    Button { Task { await store.securityCheck(item) } } label: {
+                        HStack(spacing: 4) {
+                            if c?.running == true { ProgressView().controlSize(.small) }
+                            Text(L("Security check", "Sicherheits-Check"))
+                        }
+                    }
+                    .disabled(!store.canCheck(item))
+                    if let c, c.status == "done" {
+                        Text(L("\(c.osv ?? 0) vulnerable packages · \(c.gitleaks ?? 0) secrets · \(c.semgrep ?? 0) code findings",
+                               "\(c.osv ?? 0) unsichere Pakete · \(c.gitleaks ?? 0) Secrets · \(c.semgrep ?? 0) Code-Funde"))
+                            .font(.caption).foregroundStyle(c.fixable + (c.gitleaks ?? 0) == 0 ? Color.green : Color.orange)
+                        if c.fixable > 0, !store.observer {
+                            Button(L("Fix with Claude", "Mit Claude beheben")) { Task { await store.scanForBugs(item, findings: true) } }
+                                .disabled(!store.canScan(item))
+                        }
+                    } else if let c, c.status == "failed" {
+                        Text(scrub(c.error ?? L("Check failed", "Check fehlgeschlagen"))).font(.caption).foregroundStyle(.red).lineLimit(2)
+                    }
+                }
+                if let c, let leaks = store.checkLeaks[c.id], !leaks.isEmpty {
+                    Text(L("Rotate these keys (a commit does not remove them from the history):",
+                           "Diese Keys neu erzeugen (ein Commit entfernt sie nicht aus der Historie):")).font(.caption).foregroundStyle(.red)
+                    ForEach(leaks, id: \.self) { l in
+                        Text("\(l.rule) – \(scrub(l.file))\(l.line.map { ":\($0)" } ?? "")\(l.commit.map { " (\($0))" } ?? "")")
+                            .font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                }
+            }
+            .task(id: c?.id) { if let c, c.status == "done" { await store.loadLeaks(c) } }
+        }
+    }
+
+    /// Bug scan: Claude Code on this Mac looks through the repo and opens one fix PR.
+    @ViewBuilder private func scanBlock(_ item: Item) -> some View {
+        if item.repo != nil, !store.observer {
+            let run = store.scanRun(item), starting = item.repo.map { store.scanStarting.contains($0) } ?? false
+            HStack(spacing: 10) {
+                Button { Task { await store.scanForBugs(item) } } label: {
+                    HStack(spacing: 4) {
+                        if starting || run?.running == true { ProgressView().controlSize(.small) }
+                        Text(L("Find bugs with Claude", "Mit Claude nach Bugs suchen"))
+                    }
+                }
+                .disabled(!store.canScan(item))
+                if let run {
+                    switch run.status {
+                    case "running": Text(L("Claude is looking for bugs …", "Claude sucht nach Bugs …")).font(.caption).foregroundStyle(.secondary)
+                    case "clean": Text(L("Last scan: nothing to fix", "Letzter Scan: nichts zu beheben")).font(.caption).foregroundStyle(.green)
+                    case "pr":
+                        if let u = run.prUrl.flatMap(URL.init(string:)) {
+                            Link(L("Fix PR with \(run.fixes ?? 0) fix(es)", "Fix-PR mit \(run.fixes ?? 0) Fix(es)"), destination: u).font(.caption)
+                        }
+                    default: Text(scrub(run.error ?? L("Scan failed", "Scan fehlgeschlagen"))).font(.caption).foregroundStyle(.red).lineLimit(2)
+                    }
+                }
+            }
+        }
+    }
+
     @ViewBuilder private func content(_ d: Details) -> some View {
         let item = self.live
         VStack(alignment: .leading, spacing: 18) {
             autofixBlock(item)
+            scanBlock(item)
+            checkBlock(item)
             // What is live, and what the branch would bring.
             if let live = item.lastMsg {
                 labelled(L("Live now", "Jetzt live"), scrub(live) + (item.lastSha.map { "  (\($0.prefix(7)))" } ?? ""))
