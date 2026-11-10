@@ -728,6 +728,10 @@ def sync_hand_dates():
         page = os.path.join(ROOT, "site", m.group(2).strip("/"), "index.html")
         html_text = open(page, encoding="utf-8").read()
         new = re.sub(r'("dateModified":\s*")\d{4}-\d\d-\d\d"', r"\g<1>" + d + '"', html_text)
+        # and the visible "Last updated", so it says the same as the JSON-LD
+        day = datetime.date.fromisoformat(d)
+        new = re.sub(r'(Last updated )<time datetime="[^"]*">[^<]*</time>',
+                     lambda m: f'{m.group(1)}<time datetime="{d}">{day.day} {day:%B} {day.year}</time>', new)
         if new != html_text:
             with open(page, "w", encoding="utf-8") as f:
                 f.write(new)

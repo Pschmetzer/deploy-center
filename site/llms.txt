@@ -52,5 +52,10 @@
 - [Auto-deploy guard](https://deploycenter.app/docs/guard/)
 - [GitLab as a source](https://deploycenter.app/docs/gitlab/)
 - [Install the CLI](https://deploycenter.app/docs/install-cli/): install script, Homebrew, Docker, CI variables.
-- [Hosts](https://deploycenter.app/docs/netlify/): Netlify, [Cloudflare Pages](https://deploycenter.app/docs/cloudflare-pages/), [AWS Amplify](https://deploycenter.app/docs/aws-amplify/), [DigitalOcean](https://deploycenter.app/docs/digitalocean/), [Coolify](https://deploycenter.app/docs/coolify/), [deploy hooks](https://deploycenter.app/docs/deploy-hooks/).
+- [Netlify](https://deploycenter.app/docs/netlify/)
+- [Cloudflare Pages](https://deploycenter.app/docs/cloudflare-pages/)
+- [AWS Amplify](https://deploycenter.app/docs/aws-amplify/)
+- [DigitalOcean App Platform](https://deploycenter.app/docs/digitalocean/)
+- [Coolify](https://deploycenter.app/docs/coolify/)
+- [Deploy hooks (any host)](https://deploycenter.app/docs/deploy-hooks/)
 - [All docs as one text file](https://deploycenter.app/docs/llms-full.txt)
