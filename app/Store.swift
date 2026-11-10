@@ -128,7 +128,8 @@ final class Store: ObservableObject {
     func loadAgentStatus() async {
         // A hand-over still marked "fixing": bring it up to date with its PR first. The 10-minute
         // job does this too, but it may not be running, and then a merged fix said "fixing" for hours.
-        if autofix?.fires.contains(where: { $0.status == "fired" && $0.mergedSha == nil && $0.prState != "closed" }) ?? true,
+        // Before the first status (nil): once, which also loads a schedule launchd dropped.
+        if autofix?.fires.contains(where: { RowAutofix.needsSync($0) }) ?? true,
            Date().timeIntervalSince(lastAutofixSync) > 180 {
             lastAutofixSync = Date()
             _ = try? await Tool.run(["autofix", "sync"], timeout: 90)
