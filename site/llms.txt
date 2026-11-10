@@ -2,7 +2,6 @@
 
 > Free, open-source (MIT) Mac app, Mac widgets and bash CLI that turns off Git auto-deploy on Vercel, Render and other hosts, so you stop paying for a build on every push. It shows the commits and pull requests waiting to go live and the build costs, and deploys what changed when you decide. Made for AI coding: the agent pushes as often as it likes, you deploy once; Autofix hands a failed build to a Claude Code routine that opens a fix PR; Claude in the app explains failures, writes release notes and checks if a change is safe to ship; Claude Desktop and Claude Code connect through an MCP server and a Claude Code plugin.
 
-- Version: 0.8.0.
 - Hosts: Vercel and Render on by default; Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and any deploy hook opt-in. Sources: GitHub and GitLab.
 - Safe deploys: only when CI is green, a site check with automatic rollback, deploy windows, a risk score, and a guard that turns auto-deploy off again every 30 minutes.
 - Savings: a simulator before you switch and a ledger afterwards, all marked as estimates.
