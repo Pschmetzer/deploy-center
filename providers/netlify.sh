@@ -372,8 +372,10 @@ netlify_url() {
 netlify_set_key() {
   local key=""
   IFS= read -r key || true
+  # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+  key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || netlify_die "Pipe the token in: pbpaste | deploys netlify set-key"
-  case "$key" in *\'*|*\"*|*' '*) netlify_die "That does not look like a Netlify token";; esac
+  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) netlify_die "That does not look like a Netlify token";; esac
   ( NETLIFY_AUTH_TOKEN="$key"; key_of() { printf '%s' "$NETLIFY_AUTH_TOKEN"; }; netlify_call GET /user >/dev/null ) \
     || netlify_die "Netlify did not accept that token; nothing was saved"
   # On stdin to `security -i`, so the token is never an argument anyone can see.

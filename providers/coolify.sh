@@ -407,8 +407,10 @@ coolify_set_url() {
 coolify_set_key() {
   local key=""
   IFS= read -r key || true
+  # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+  key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || coolify_die "Pipe the token in: pbpaste | deploys coolify set-key"
-  case "$key" in *\'*|*\"*|*' '*) coolify_die "That does not look like a Coolify token";; esac
+  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) coolify_die "That does not look like a Coolify token";; esac
   coolify_base >/dev/null || coolify_die "Set the instance first: deploys coolify set-url https://coolify.example.com"
   ( COOLIFY_TOKEN="$key"; key_of() { printf '%s' "$COOLIFY_TOKEN"; }; coolify_call GET /applications >/dev/null ) \
     || coolify_die "Coolify did not accept that token; nothing was saved"
