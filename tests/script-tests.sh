@@ -1648,10 +1648,11 @@ out="$( ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE=ok; : > "$
 expect "http_call: @file is sent as the body, -D keeps the headers" "$out:$(grep -c -- "--data-binary @$tmp/http/body.json" "$tmp/http/log"):$(grep -c -- "-D $tmp/http/h.txt" "$tmp/http/log")" '{"ok":true}:1:1'
 out="$( ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE=ok; : > "$HTTP_LOG"; . ./lib/http.sh; http_call X POST https://api.x.test/v1/things "@$tmp/http/none.json" ) 2>&1)"; rc=$?
 expect "http_call: a body file that is not there is an error, no call" "$rc:$(echo "$out" | grep -c 'cannot be read'):$(grep -c . "$tmp/http/log")" "1:1:0"
-# FEA-110: --dry-run for autodeploy-on only goes to a provider whose meta says onDryRun.
+# FEA-110: --dry-run for autodeploy-on only goes to a provider whose meta says onDryRun. Vercel
+# says so (providers/vercel.sh): the plan comes, and nothing is connected again.
 fresh
-expect "FEA-110: autodeploy-on --dry-run is refused by a provider without onDryRun, nothing called" \
-  "$(run "$O" "$E" vercel autodeploy-on web --dry-run; grep -c 'no dry run' "$E"; grep -c . "$e2e/calls.log")" $'1\n1\n0'
+expect "FEA-110: vercel autodeploy-on --dry-run is a plan, nothing posted" \
+  "$(run "$O" "$E" vercel autodeploy-on web --dry-run; grep -c 'Dry run: nothing changed' "$O"; grep -c 'no dry run' "$E"; grep -c 'POST' "$e2e/calls.log")" $'0\n1\n0\n0'
 fresh
 expect "logs --runtime: refused where the provider has no runtime log" "$(run "$O" "$E" logs web --runtime; grep -c 'no runtime log' "$E")" $'1\n1'
 # ===== end CLI track =====

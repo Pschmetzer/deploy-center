@@ -39,6 +39,8 @@ case "$path" in
     jq -n --rawfile c "$FIX/files/$repo/$file" '{sha:"f1x", content:($c | @base64)}' | answer; exit 0 ;;
   repos/acme/shop/commits/main|repos/acme/shop/commits/release)
     [ -n "$GH_HEAD" ] || exit 1; echo "{\"sha\":\"$GH_HEAD\"}" | answer; exit 0 ;;
+  # The commit checked before a pinned production deploy: on the branch (providers/vercel.sh).
+  repos/acme/shop/compare/*) echo '{"status":"identical"}' | answer; exit 0 ;;
 esac
 f="$FIX/api/$(printf '%s' "$path" | tr '/?&=' '____').json"
 [ -f "$f" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
