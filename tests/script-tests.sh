@@ -236,6 +236,9 @@ case "$m $url" in
       flaky) n=$(( $(cat "$E2E/site" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$E2E/site"; [ "$n" = 1 ] && printf 502 || printf 200 ;;
       *) printf 200 ;;
     esac ;;
+  "POST http://ai.test/v1/messages")   # deploys ai: keep the body it was given
+    p=""; for a in "$@"; do [ "$p" = --data ] && cp "${a#@}" "$E2E/ai-body"; p="$a"; done
+    printf '%s\n200' '{"content":[{"type":"text","text":"Risk: low."}],"stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":3}}' ;;
   *) printf '%s\n404' '{}' ;;
 esac
 CURL
@@ -772,6 +775,16 @@ expect "ai: no key, no call" "$(echo "$out" | grep -c 'No Anthropic API key'):$r
 expect "ai verify: a free models lookup" "$(env -u DEPLOYS_LIB AISTUB=models PATH="$ai/bin:$PATH" ANTHROPIC_API_KEY=sk-ant-x NO_COLOR=1 ./deploys ai verify 2>&1; grep -c 'argv .*-X GET .*/models/claude-opus-5-5' "$CALLS")" $'The key works, claude-opus-5-5 is available.\n1'
 expect "ai model: only known models" "$(cli ai model gpt-x | grep -c 'Choose one of'):$(cli ai model claude-sonnet-5-5)" "1:Claude model set to claude-sonnet-5-5"
 rm -f "$DEPLOYS_CONFIG/ai-model"
+# The whole command as the app runs it: real lookups (stand-ins for vercel, gh, Render), --json kept.
+fresh; export RENDER_API_KEY=rnd_test
+expect "ai ship (whole command): --json answer for a Vercel project" \
+  "$(ANTHROPIC_API_KEY=sk-ant-x DEPLOYS_ANTHROPIC_API=http://ai.test/v1 run "$O" "$E" ai ship web --json; jq -r .text "$O"; jq -r '.messages[0].content' "$e2e/ai-body" | grep -c 'feat: new')" $'0\nRisk: low.\n1'
+expect "ai ship (whole command): a Render service by its srv- id, as the app passes it" \
+  "$(ANTHROPIC_API_KEY=sk-ant-x DEPLOYS_ANTHROPIC_API=http://ai.test/v1 run "$O" "$E" ai ship srv-1 --json; jq -r .model "$O"; jq -r '.messages[0].content' "$e2e/ai-body" | grep -c 'api (render)')" $'0\nclaude-opus-5-5\n1'
+expect "ai notes (whole command): no author names or emails" \
+  "$(ANTHROPIC_API_KEY=sk-ant-x DEPLOYS_ANTHROPIC_API=http://ai.test/v1 run "$O" "$E" ai notes web --lang de; grep -c 'agent@example.test\|Some Agent' "$e2e/ai-body")" $'0\n0'
+unset RENDER_API_KEY
+
 expect "ai status: never the key" "$(ANTHROPIC_API_KEY=sk-ant-api03-TESTKEY cli ai status | grep -c TESTKEY):$(ANTHROPIC_API_KEY=sk-ant-api03-TESTKEY cli ai status | jq -r '.key')" "0:true"
 
 
