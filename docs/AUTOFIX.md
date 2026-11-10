@@ -71,6 +71,32 @@ If there is no payload (a scheduled or manual run), do nothing and stop.
 7. Do not merge.
 ```
 
+## One failure now: `--only`
+
+```bash
+deploys autofix --only vercel my-project     # or render; add --dry-run to only see what it would do
+```
+
+Hands this one failed build to the routine now, without waiting for the next run. The same caps,
+duplicate rules and lock apply. Exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | handed over (or, with `--dry-run`, would be) |
+| 1 | an error: the platform could not be read, GitHub could not be asked, the routine answered with an error or a rate limit |
+| 2 | nothing to fix: the project's newest build did not fail, or there is no such project |
+| 3 | already being fixed: this failed build was handed over before, an autofix PR is open, or it is the fix itself that failed |
+| 4 | a cap is reached (per project or per day) |
+| 5 | no routine or no routine token set |
+| 6 | another autofix run holds the lock |
+
+## Status for the app
+
+`deploys autofix status --json` (the same without `--json`): each fire has `at`, `project`,
+`platform`, `status`, `sha`, `session` (the Claude session URL), `error`, `mergedSha`, `pr`, and
+since this version `prNumber`, `prState` (`open`, `merged`, `closed`, or null before a PR is seen)
+and `prUrl`. The PR is looked up on each run (branch `claude/autofix-<project>-<sha7>`).
+
 ## Limits to know
 
 - A build that passes in the cloud session can still fail on Vercel or Render, because the session does not have the platform's environment variables. Expect some PRs that do not fix the deploy.

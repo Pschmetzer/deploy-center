@@ -35,6 +35,7 @@ struct SettingsView: View {
         ScrollViewReader { proxy in Form {
             generalSection
             deploySection
+            GuardSettings(store: store)
             ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
             costsSection
             notificationsSection
