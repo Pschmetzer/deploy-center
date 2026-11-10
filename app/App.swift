@@ -70,6 +70,14 @@ struct SettingsView: View {
                     "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
             Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
             Toggle(L("Look for a new version once a day", "Einmal am Tag nach einer neuen Version sehen"), isOn: $checkUpdates)
+            HStack {
+                Button(L("Check for updates now", "Jetzt nach Update suchen")) { Task { await store.checkForUpdate(force: true) } }
+                if store.newVersion != nil {
+                    Button(store.updating ? L("Updating …", "Aktualisiere …") : L("Update now", "Jetzt aktualisieren")) { Task { await store.installUpdate() } }
+                        .disabled(store.updating)
+                }
+                if let st = store.updateStatus { Text(st).font(.caption).foregroundStyle(.secondary) }
+            }
             Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
                 if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
                 NSWorkspace.shared.open(Log.url)
