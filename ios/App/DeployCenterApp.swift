@@ -30,9 +30,23 @@ struct DeployCenterApp: App {
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     let store = PhoneStore()
 
+    /// For the scene delegate (home-screen quick actions): the one app delegate.
+    static weak var current: AppDelegate?
+
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        Self.current = self
         UNUserNotificationCenter.current().delegate = self
+        Notes.registerActions()
         return true
+    }
+
+    func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let c = UISceneConfiguration(name: nil, sessionRole: session.role)
+        c.delegateClass = SceneDelegate.self
+        // Started by a quick action: handled once the store exists (it does: it is made with this delegate).
+        if let item = options.shortcutItem { QuickActions.handle(item, store: store) }
+        return c
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
@@ -41,7 +55,44 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let key = response.notification.request.content.userInfo["project"] as? String
+        if response.actionIdentifier == Notes.muteAction { Notes.muteToday(); return }
         await MainActor.run { if let key { store.openKey = key } }
+    }
+}
+
+/// Only for quick actions on the app icon while the app runs; SwiftUI keeps the window.
+@MainActor
+final class SceneDelegate: NSObject, UIWindowSceneDelegate {
+    func windowScene(_ windowScene: UIWindowScene, performActionFor item: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
+        guard let store = AppDelegate.current?.store else { completionHandler(false); return }
+        completionHandler(QuickActions.handle(item, store: store))
+    }
+}
+
+/// Quick actions on the app icon: "Refresh", and the projects that need a look (failed first, then waiting).
+@MainActor
+enum QuickActions {
+    static let reload = "app.deploycenter.ios.reload", open = "app.deploycenter.ios.open"
+
+    static func update(_ projects: [PhoneProject]) {
+        let look = projects.filter { $0.group != .live }.prefix(3)
+        UIApplication.shared.shortcutItems = look.map { p in
+            UIApplicationShortcutItem(type: open, localizedTitle: p.name, localizedSubtitle: p.stateText,
+                                      icon: UIApplicationShortcutIcon(systemImageName: p.failed ? "exclamationmark.triangle" : "clock"),
+                                      userInfo: ["project": p.key as NSString])
+        } + [UIApplicationShortcutItem(type: reload, localizedTitle: L("Refresh", "Aktualisieren"), localizedSubtitle: nil,
+                                       icon: UIApplicationShortcutIcon(systemImageName: "arrow.clockwise"), userInfo: nil)]
+    }
+
+    @discardableResult
+    static func handle(_ item: UIApplicationShortcutItem, store: PhoneStore) -> Bool {
+        switch item.type {
+        case reload: Task { await store.reload() }; return true
+        case open:
+            guard let key = item.userInfo?["project"] as? String else { return false }
+            store.openKey = key; return true
+        default: return false
+        }
     }
 }
 

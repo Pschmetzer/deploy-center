@@ -308,6 +308,19 @@ final class PhoneStore: ObservableObject {
         } catch { say(describe(error, p.provider), error: true) }
     }
 
+    /// Render: pause, resume or restart, after Face ID.
+    func serviceAction(_ p: PhoneProject, _ a: RenderAction) async {
+        guard p.provider == .render, running[p.key] == nil else { return }
+        running[p.key] = "starting"; defer { running[p.key] = nil }
+        guard await authenticate(a.title.replacingOccurrences(of: " …", with: "") + ": " + p.name) else { return }
+        if demo { say("\(p.name): \(a.done) (demo)."); return }
+        do {
+            try await Render(key: token(.render) ?? "").service(p, a)
+            say("\(p.name): \(a.done).")
+            try? await Task.sleep(for: .seconds(2)); await reload()
+        } catch { say(describe(error, p.provider), error: true) }
+    }
+
     // MARK: History and build logs (read only)
 
     func history(_ p: PhoneProject) async -> [DeployRecord]? {
@@ -432,6 +445,7 @@ final class PhoneStore: ObservableObject {
     }
 
     func writeSnapshot() {
+        QuickActions.update(projects)
         guard let url = DeploySnapshot.groupURL else { return }
         let snap = makeSnapshot()
         let old = DeploySnapshot.read(url)
@@ -469,16 +483,37 @@ final class PhoneStore: ObservableObject {
         guard !lines.isEmpty else { return }
         let body = lines.prefix(4).map(\.text).joined(separator: " · ")
             + (lines.count > 4 ? L(" · +\(lines.count - 4) more", " · +\(lines.count - 4) weitere") : "")
-        await Notes.post(body, project: lines.count == 1 ? lines[0].key : nil, id: "changes-" + lines.map(\.text).joined(separator: "|"))
+        await Notes.post(body, project: lines.count == 1 ? lines[0].key : nil, id: "changes-" + lines.map(\.text).joined(separator: "|"), news: true)
     }
 }
 
 /// Local notifications: grouped in one thread; the same news replaces itself instead of piling up.
+/// Actions on a notification: open the project, or no more news today (a deploy started here still reports its end).
 enum Notes {
-    static func post(_ body: String, project: String?, id: String? = nil) async {
+    static let category = "deploy-center.news"
+    static let openAction = "open", muteAction = "mute-today"
+    static let mutedKey = "notesMutedUntil"
+
+    static func registerActions() {
+        let open = UNNotificationAction(identifier: openAction, title: L("Open", "Öffnen"), options: [.foreground])
+        let mute = UNNotificationAction(identifier: muteAction, title: L("Mute for today", "Heute stumm"), options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(identifier: category, actions: [open, mute], intentIdentifiers: [], options: [])
+        ])
+    }
+    /// Until the start of tomorrow, in this device's calendar.
+    static func muteToday(now: Date = Date()) {
+        let cal = Calendar.current
+        UserDefaults.standard.set(cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)), forKey: mutedKey)
+    }
+    static var muted: Bool { (UserDefaults.standard.object(forKey: mutedKey) as? Date).map { Date() < $0 } ?? false }
+
+    static func post(_ body: String, project: String?, id: String? = nil, news: Bool = false) async {
+        if news && muted { return }
         let c = UNMutableNotificationContent()
         c.title = "Deploy Center"; c.body = body; c.sound = .default
         c.threadIdentifier = "deploy-center"
+        c.categoryIdentifier = category
         if let project { c.userInfo = ["project": project] }
         let r = UNNotificationRequest(identifier: id ?? "deploy-\(project ?? "")", content: c, trigger: nil)
         try? await UNUserNotificationCenter.current().add(r)

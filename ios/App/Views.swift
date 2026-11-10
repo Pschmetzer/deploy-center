@@ -30,7 +30,8 @@ struct RootView: View {
             }
         } detail: {
             if let key = selection, let p = store.projects.first(where: { $0.key == key }) {
-                ProjectDetail(store: store, project: p)
+                // A stack of its own: the log and the history push inside the detail column on iPad too.
+                NavigationStack { ProjectDetail(store: store, project: p) }.id(key)
             } else {
                 ContentUnavailableView(L("Choose a project", "Wähle ein Projekt"), systemImage: "square.stack.3d.up")
             }
@@ -332,6 +333,7 @@ struct ProjectDetail: View {
     @State private var confirmRollback = false
     @State private var confirmCancel = false
     @State private var findingRollback = false
+    @State private var renderAction: RenderAction?
 
     var body: some View {
         let p = project
@@ -414,6 +416,12 @@ struct ProjectDetail: View {
                     }
                 }
                 .disabled(p.building || busy || findingRollback)
+                if p.provider == .render {
+                    ForEach(p.paused ? [RenderAction.resume] : [.restart, .suspend], id: \.self) { a in
+                        Button(role: a == .suspend ? .destructive : nil) { renderAction = a } label: { Label(a.title, systemImage: a.icon) }
+                            .disabled(busy || p.building)
+                    }
+                }
             } footer: {
                 Text(L("Each deploy, cancel and rollback asks for Face ID. It goes straight from this device to \(p.provider.rawValue).",
                        "Jeder Deploy, jeder Abbruch und jedes Zurückrollen fragt nach Face ID. Es geht direkt von diesem Gerät an \(p.provider.rawValue)."))
@@ -426,6 +434,17 @@ struct ProjectDetail: View {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
         } message: {
             Text(p.deploySummary)
+        }
+        .confirmationDialog(renderAction.map { $0.title.replacingOccurrences(of: " …", with: "?") } ?? "",
+                            isPresented: Binding(get: { renderAction != nil }, set: { if !$0 { renderAction = nil } }), titleVisibility: .visible) {
+            Button(renderAction?.title.replacingOccurrences(of: " …", with: "") ?? "", role: renderAction == .suspend ? .destructive : nil) {
+                if let a = renderAction { Task { await store.serviceAction(p, a) } }
+            }
+            Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+        } message: {
+            Text(renderAction == .suspend ? L("The service stops answering until it is resumed.", "Der Dienst antwortet nicht mehr, bis er fortgesetzt wird.")
+                 : renderAction == .restart ? L("The live deploy starts again; nothing is built.", "Der Live-Deploy startet neu; gebaut wird nichts.")
+                 : L("The service starts again with its last deploy.", "Der Dienst startet wieder mit seinem letzten Deploy."))
         }
         .confirmationDialog(L("Cancel the build of \(p.name)?", "Build von \(p.name) abbrechen?"), isPresented: $confirmCancel, titleVisibility: .visible) {
             Button(L("Cancel the build", "Build abbrechen"), role: .destructive) { Task { await store.cancelBuild(p) } }
@@ -535,7 +554,7 @@ struct BuildLogView: View {
                 if let problem = log.problem {
                     ContentUnavailableView(L("No log", "Kein Log"), systemImage: "doc.text.magnifyingglass", description: Text(problem))
                 } else {
-                    ScrollView([.vertical, .horizontal]) {
+                    ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
                             ForEach(Array(log.lines.enumerated()), id: \.offset) { i, l in
                                 Text(l.isEmpty ? " " : l).font(.caption.monospaced())
@@ -544,6 +563,7 @@ struct BuildLogView: View {
                             }
                         }
                         .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                     }
                     .safeAreaInset(edge: .bottom) {

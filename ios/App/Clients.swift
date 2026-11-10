@@ -320,6 +320,25 @@ struct Vercel {
 
 // MARK: - Render
 
+enum RenderAction: String, CaseIterable {
+    case suspend, resume, restart
+    var title: String {
+        switch self {
+        case .suspend: L("Pause the service …", "Dienst pausieren …")
+        case .resume: L("Resume the service …", "Dienst fortsetzen …")
+        case .restart: L("Restart the service …", "Dienst neu starten …")
+        }
+    }
+    var icon: String { switch self { case .suspend: "pause.circle"; case .resume: "play.circle"; case .restart: "arrow.clockwise.circle" } }
+    var done: String {
+        switch self {
+        case .suspend: L("paused", "pausiert")
+        case .resume: L("resumed", "fortgesetzt")
+        case .restart: L("restarting", "startet neu")
+        }
+    }
+}
+
 struct Render {
     let http: HTTP
     init(key: String) { http = HTTP(base: "https://api.render.com/v1", token: key) }
@@ -417,6 +436,10 @@ struct Render {
         if let a = d.at { path += "&startTime=" + q(iso.string(from: a.addingTimeInterval(-5))) }
         if let b = d.finishedAt { path += "&endTime=" + q(iso.string(from: b.addingTimeInterval(5))) }
         return LogMask.renderLines(try await http.get(path))
+    }
+    /// Pause, resume or restart a service (Render's suspend, resume, restart).
+    func service(_ p: PhoneProject, _ action: RenderAction) async throws {
+        _ = try await http.request("POST", "/services/\(p.id)/\(action.rawValue)", body: JSON())
     }
     /// The rollback is a new deploy on Render: its id, to follow it.
     func rollback(_ p: PhoneProject, to deploy: String) async throws -> String? {
