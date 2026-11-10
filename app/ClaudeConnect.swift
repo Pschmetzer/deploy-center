@@ -219,26 +219,11 @@ enum ClaudeEnv {
 enum ClaudeRun {
     /// Runs a program with a plain PATH (plus `pathDirs`), stdout and stderr together.
     static func run(_ exe: String, _ args: [String], pathDirs: [String] = [], timeout: Double = 30) async -> (ok: Bool, out: String) {
-        await withCheckedContinuation { cont in
-            DispatchQueue.global().async {
-                let p = Process()
-                p.executableURL = URL(fileURLWithPath: exe)
-                p.arguments = args
-                p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
-                var env = ProcessInfo.processInfo.environment
-                env["PATH"] = (pathDirs + ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]).joined(separator: ":")
-                p.environment = env
-                let pipe = Pipe()
-                p.standardOutput = pipe; p.standardError = pipe; p.standardInput = FileHandle.nullDevice
-                do { try p.run() } catch { cont.resume(returning: (false, error.localizedDescription)); return }
-                let timer = DispatchWorkItem { if p.isRunning { p.terminate() } }
-                DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                p.waitUntilExit()
-                timer.cancel()
-                cont.resume(returning: (p.terminationStatus == 0, String(decoding: data, as: UTF8.self)))
-            }
-        }
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = (pathDirs + ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]).joined(separator: ":")
+        // The whole tree ends at the timeout: `claude` runs node, which kept the pipe (and Settings) hanging.
+        let r = await Tool.exec(exe, args, env: env, cwd: URL(fileURLWithPath: NSHomeDirectory()), mergeStderr: true, timeout: timeout)
+        return (r.status == 0, String(decoding: r.out, as: UTF8.self))
     }
 }
 

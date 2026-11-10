@@ -623,5 +623,69 @@ expect("autofix not set up by exit code", Store.autofixNotSetUp(ToolError(messag
 expect("autofix other error", Store.autofixNotSetUp(ToolError(message: "busy", exitCode: 3)), false)
 expect("autofix older script text", Store.autofixNotSetUp(ToolError(message: "autofix: no routine set")), true)
 
+// Tool.run with a stand-in script: output, errors with their exit code, timeouts, and a child that
+// keeps the pipe open after bash ended (the answer must not wait for it).
+let fakeDir = FileManager.default.temporaryDirectory.appendingPathComponent("dc-tool-\(UUID().uuidString)")
+try! FileManager.default.createDirectory(at: fakeDir, withIntermediateDirectories: true)
+let fake = fakeDir.appendingPathComponent("deploys")
+try! """
+case "$1" in
+  hello) echo "hi $2" ;;
+  fail) echo "it broke" >&2; exit 5 ;;
+  hang) sleep 30 ;;
+  daemon) (sleep 20 &) ; echo started ;;
+  big) head -c 300000 /dev/zero | tr '\\0' 'x' ;;
+esac
+""".write(to: fake, atomically: true, encoding: .utf8)
+Tool.testPath = fake.path
+func runFake(_ args: [String], timeout: Double = 20) -> (String, ToolError?, Double) {
+    let t = Date(), box = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var result: (String, ToolError?) = ("", nil)
+    Task.detached {
+        do { result = (String(decoding: try await Tool.run(args, timeout: timeout), as: UTF8.self), nil) }
+        catch { result = ("", error as? ToolError) }
+        box.signal()
+    }
+    box.wait()
+    return (result.0, result.1, Date().timeIntervalSince(t))
+}
+expect("run: output", runFake(["hello", "there"]).0, "hi there\n")
+let failed = runFake(["fail"])
+expect("run: error text", failed.1?.message ?? "nil", "it broke")
+expect("run: exit code", failed.1?.exitCode.map { Int($0) } ?? -1, 5)
+let hung = runFake(["hang"], timeout: 1)
+expect("run: timeout", hung.1?.timedOut ?? false, true)
+expect("run: timeout answers soon", hung.2 < 8, true)
+let daemon = runFake(["daemon"])
+expect("run: a child holding the pipe does not hold the answer", daemon.0, "started\n")
+expect("run: answered within a few seconds", daemon.2 < 8, true)
+expect("run: large output is read whole", runFake(["big"]).0.count, 300000)
+func execFake(_ args: [String], timeout: Double) -> ((status: Int32?, out: Data), Double) {
+    let t = Date(), box = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var r: (status: Int32?, out: Data) = (nil, Data())
+    Task.detached { r = await Tool.exec("/bin/bash", [fake.path] + args, mergeStderr: true, timeout: timeout); box.signal() }
+    box.wait()
+    return (r, Date().timeIntervalSince(t))
+}
+expect("exec: output and status", "\(execFake(["fail"], timeout: 10).0.status ?? -1) \(String(decoding: execFake(["fail"], timeout: 10).0.out, as: UTF8.self))", "5 it broke\n")
+let execHung = execFake(["hang"], timeout: 1)
+expect("exec: a hang ends without a status", execHung.0.status == nil && execHung.1 < 8, true)
+expect("exec: a child holding the pipe is not waited for", execFake(["daemon"], timeout: 20).1 < 8, true)
+Tool.testPath = nil
+try? FileManager.default.removeItem(at: fakeDir)
+
+// The app's masker knows what the script's masker knows.
+expect("mask Stripe", LogTools.maskSecrets("key sk_live_abcdefgh12345678"), "key [STRIPE KEY]")
+expect("mask GitLab", LogTools.maskSecrets("glpat-abcdefghij1234567890"), "[GITLAB TOKEN]")
+expect("mask npm", LogTools.maskSecrets("npm_abcdefghijklmnopqrstuvwxyz0123456789"), "[NPM TOKEN]")
+expect("mask Google", LogTools.maskSecrets("AIzaSyA1234567890abcdefghijklmnopqrstu"), "[GOOGLE KEY]")
+expect("mask --token", LogTools.maskSecrets("vercel deploy --token abc123def"), "vercel deploy --token [HIDDEN]")
+expect("mask private key block", LogTools.maskSecrets("a\n-----BEGIN RSA PRIVATE KEY-----\nMIIE\nabc\n-----END RSA PRIVATE KEY-----\nb"), "a\n[PRIVATE KEY]\nb")
+expect("mask cut-off private key", LogTools.maskSecrets("x -----BEGIN PRIVATE KEY-----\nMIIE"), "x [PRIVATE KEY]")
+var lk = LinkedKeys(); lk.render = "r"; var lk2 = lk; lk2.updated = Date().addingTimeInterval(99)
+expect("same keys at another time", PhoneLinkModel.sameKeys(lk, lk2), true)
+lk2.github = "g"
+expect("a changed key is pushed", PhoneLinkModel.sameKeys(lk, lk2), false)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
