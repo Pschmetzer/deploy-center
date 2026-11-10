@@ -1,0 +1,56 @@
+{
+ "count": 3,
+ "deployments": [
+  {
+   "id": 1,
+   "application_id": "1",
+   "deployment_uuid": "dep-blog-5",
+   "pull_request_id": 0,
+   "commit": "5555555555555555555555555555555555555555",
+   "commit_message": "broken",
+   "status": "failed",
+   "rollback": false,
+   "is_webhook": false,
+   "is_api": true,
+   "created_at": "2026-11-03T08:00:00+00:00",
+   "updated_at": "2026-11-03T08:00:00+00:00",
+   "application_name": "blog",
+   "server_name": "vps",
+   "deployment_url": "/project/p-1/environment/e-1/application/app-blog/deployment/dep-blog-5"
+  },
+  {
+   "id": 1,
+   "application_id": "1",
+   "deployment_uuid": "dep-blog-4",
+   "pull_request_id": 0,
+   "commit": "4444444444444444444444444444444444444444",
+   "commit_message": "post: hello",
+   "status": "finished",
+   "rollback": false,
+   "is_webhook": false,
+   "is_api": true,
+   "created_at": "2026-11-02T08:00:00.000000Z",
+   "updated_at": "2026-11-02T08:00:00.000000Z",
+   "application_name": "blog",
+   "server_name": "vps",
+   "deployment_url": "/project/p-1/environment/e-1/application/app-blog/deployment/dep-blog-4"
+  },
+  {
+   "id": 1,
+   "application_id": "1",
+   "deployment_uuid": "dep-blog-3",
+   "pull_request_id": 0,
+   "commit": "3333333333333333333333333333333333333333",
+   "commit_message": "post: first",
+   "status": "finished",
+   "rollback": false,
+   "is_webhook": false,
+   "is_api": true,
+   "created_at": "2026-11-01T08:00:00.000000Z",
+   "updated_at": "2026-11-01T08:00:00.000000Z",
+   "application_name": "blog",
+   "server_name": "vps",
+   "deployment_url": "/project/p-1/environment/e-1/application/app-blog/deployment/dep-blog-3"
+  }
+ ]
+}
