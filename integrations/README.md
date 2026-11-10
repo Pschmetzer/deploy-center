@@ -20,8 +20,23 @@ stays off: nothing here deploys unless a person asks for it.
 | [VERIFY.md](VERIFY.md) | How to check a release: SHA-256, `codesign`, `spctl`. |
 
 Tests: `integrations/tests/run.sh`. They use a stand-in `deploys`, `curl` and `gh`, so they need no
-network and no accounts. The MCP tests also need `node` and `npm ci` in `mcp/`, and are skipped
-without them.
+network and no accounts. The MCP tests also need `node` and `npm ci` in `mcp/`, the Action and
+approve-workflow tests need `ruby`, and the VS Code tests `npm ci` in `vscode/`; each part says
+`skip …` when its tool is missing.
+
+## What is tested, and what is not
+
+| Add-on | Tested here (stand-ins, no network) | Not tested by the project |
+|---|---|---|
+| MCP server | every tool, the server's own confirmation (yes, no, cancel, no tick, no elicitation), limits, timeouts, masking | a real deploy through each host (Claude Code, Claude Desktop, Cursor, VS Code) |
+| Action | the steps' scripts (changed, only/exclude, dry-run, deploy, setup checks) | a run on GitHub's runners against real accounts |
+| Digest and approve workflow | the scripts, the issue and message texts, the approval checks | a run on GitHub and a real post |
+| Notify, badge, status page | the texts, payloads, files and failure cases | a real post, a published page |
+| Claude Code plugin | the hook (which commands count), the files with `claude plugin validate` when installed | a session against real accounts |
+| pre-push hook | which pushes start builds, the timeouts | — |
+| VS Code extension | the CLI runner, the model, the masker, scoping | the UI itself (no editor test run yet) |
+| Raycast extension | type check | the commands in Raycast |
+| Docker image | builds and runs `doctor` (by hand) | a run against real accounts |
 
 ## Reading every project
 
