@@ -323,6 +323,9 @@ final class ClaudeLink: ObservableObject {
         let cData = await Task.detached { ClaudeFiles.read(ClaudeEnv.codeConfig) }.value
         if let e = ClaudeConfig.entry(cData) { code = .connected; codeAllows = ClaudeConfig.allowsDeploy(e) }
         else { code = cli == nil ? .notFound : .notConnected; codeAllows = false }
+        // The switch shows what Claude's files say, not a preference that may be older (a reset,
+        // or a connection made by the plugin or the CLI).
+        if desktop == .connected || code == .connected { UserDefaults.standard.set(desktopAllows || codeAllows, forKey: "claudeAllowDeploy") }
 
         autofix = try? await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20)
         ClaudeNudge.store(wanted: desktop == .notConnected || code == .notConnected)

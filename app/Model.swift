@@ -38,11 +38,17 @@ struct Lossy<T: Decodable>: Decodable {
     }
 }
 /// A list where a broken element is skipped and named, not the reason the whole list is gone.
-func decodeLossy<T: Decodable>(_ type: T.Type, from data: Data, label: String) throws -> [T] {
+/// With `maxBadShare`, a list where more than that share broke is an error, not a short list:
+/// a changed format must not be taken (and cached) as "most projects are gone".
+func decodeLossy<T: Decodable>(_ type: T.Type, from data: Data, label: String, maxBadShare: Double = 1) throws -> [T] {
     let all = try JSONDecoder().decode([Lossy<T>].self, from: data)
     let bad = all.enumerated().filter { $0.element.value == nil }
     if let first = bad.first {
         Log.write("\(label): skipped \(bad.count) of \(all.count) entries; first at \(first.offset): \(first.element.error ?? "")")
+        if all.count >= 3, Double(bad.count) / Double(all.count) > maxBadShare {
+            throw ToolError(message: L("Unexpected answer: \(bad.count) of \(all.count) entries unreadable – details in the log.",
+                                       "Unerwartete Antwort: \(bad.count) von \(all.count) Einträgen unlesbar – Details im Log."))
+        }
     }
     return all.compactMap(\.value)
 }

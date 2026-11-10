@@ -670,5 +670,10 @@ MainActor.assumeIsolated {
     expect("a running session locks the button", st.canFixWithClaude(f), false)
 }
 
+// LOG-014: a list that mostly broke is an error, not a short list.
+let mostlyBroken = Data(#"[{"name":"a","auto":false,"deployable":true},{"x":1},{"y":2},{"z":3}]"#.utf8)
+expect("mostly broken list is an error", (try? decodeLossy(VercelProject.self, from: mostlyBroken, label: "t", maxBadShare: 0.3)) == nil, true)
+expect("without a limit the rest is kept", (try? decodeLossy(VercelProject.self, from: mostlyBroken, label: "t"))?.count ?? -1, 1)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

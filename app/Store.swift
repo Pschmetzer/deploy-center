@@ -436,7 +436,12 @@ final class Store: ObservableObject {
             let data = try await Tool.run([p.cli, "json"], timeout: 240)
             // Switched off in Settings while this read ran: its rows must not come back.
             guard loadGeneration[p] == gen, isEnabled(p) else { return }
-            let fresh = try decode(p, data)
+            let fresh: [Item]
+            do { fresh = try decode(p, data) } catch {
+                Log.write("\(p.cli) json: unreadable answer (\(error)); it began: \(String(decoding: data.prefix(300), as: UTF8.self))")
+                throw (error as? ToolError) ?? ToolError(message: L("Unexpected answer from deploys \(p.cli) json – details in the log.",
+                                                                    "Unerwartete Antwort von deploys \(p.cli) json – Details im Log."))
+            }
             // An empty answer where there were projects is more likely a hiccup than every project gone.
             // A second empty answer in a row is believed (another account, or really nothing left).
             if fresh.isEmpty, !(items[p] ?? []).isEmpty, !emptyOnce.contains(p) {
@@ -491,7 +496,7 @@ final class Store: ObservableObject {
     private func decode(_ p: Platform, _ data: Data) throws -> [Item] {
             switch p {
             case .vercel:
-                let list = try decodeLossy(VercelProject.self, from: data, label: "vercel json")
+                let list = try decodeLossy(VercelProject.self, from: data, label: "vercel json", maxBadShare: 0.3)
                 return list.map { v in
                     Item(id: v.name, name: v.name,
                          detail: v.repo.map { "\($0) · \(v.ref ?? "main")" } ?? L("no Git repository", "kein Git-Repo"),
@@ -508,7 +513,7 @@ final class Store: ObservableObject {
                          latestState: v.latestState, latestId: v.latestId, latestSha: v.latestSha)
                 }
             case .render:
-                let list = try decodeLossy(RenderService.self, from: data, label: "render json")
+                let list = try decodeLossy(RenderService.self, from: data, label: "render json", maxBadShare: 0.3)
                 return list.map { r in
                     Item(id: r.id, name: r.name,
                          detail: Self.typeName(r.type) + (r.repo.map { " · \($0) · \(r.ref ?? "main")" } ?? ""),
