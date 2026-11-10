@@ -26,7 +26,16 @@ The format is guessed from the host. To choose it yourself, set `DEPLOYS_NOTIFY_
 | `discord` | discord.com | `{"content": …}`, with mentions off (`allowed_mentions`) |
 | `telegram` | api.telegram.org | `{"text": …}`. Put the chat in the URL: `…/bot<token>/sendMessage?chat_id=<id>` |
 | `ntfy` | ntfy.sh, ntfy.* | plain text |
+| `teams` | *.webhook.office.com, *.logic.azure.com, Power Automate | An Adaptive Card. Make the URL in Teams with the workflow "Post to a channel when a webhook request is received". |
+| `googlechat` | chat.googleapis.com | `{"text": …}`, the link as `<url\|label>` |
+| `matrix` | (set `DEPLOYS_NOTIFY_FORMAT=matrix`) | `{"text": …, "username": …}` for a [matrix-hookshot](https://github.com/matrix-org/matrix-hookshot) generic webhook |
+| `pushover` | api.pushover.net | JSON with your keys from `DEPLOYS_PUSHOVER_TOKEN` (the app) and `DEPLOYS_PUSHOVER_USER`. URL: `https://api.pushover.net/1/messages.json` |
 | `slack` | anything else | `{"text": …}`. Slack, Mattermost, Rocket.Chat and other compatible hooks. |
+
+ntfy also takes `DEPLOYS_NOTIFY_PRIORITY` (`1`–`5`, or `min`, `low`, `default`, `high`, `urgent`),
+`DEPLOYS_NOTIFY_TAGS` (`rocket,warning`) and `DEPLOYS_NOTIFY_TOKEN`, an access token for a protected
+topic; the token goes to curl on stdin like the URL. For e-mail, use ntfy's or Pushover's e-mail
+forwarding: the script sends no mail itself.
 
 The URL goes to curl on stdin, so it never appears in the process list. It must be `https://`.
 curl gives up after 20 seconds and retries a 429 or 5xx three times; a text over Discord's or

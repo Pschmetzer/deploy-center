@@ -174,6 +174,21 @@ expect "notify: the URL goes to curl on stdin" "$(cat "$tmp/curl.stdin")" 'url =
 case "$(cat "$tmp/curl.args")" in *secret*) fail "notify: URL not in curl's arguments" "found" ;; *) ok "notify: URL not in curl's arguments" ;; esac
 expect "notify: posts the summary" "$(jq -r '.text' "$tmp/curl.body" | sed -n 2p)" 'Live today (1): site'
 DEPLOYS_NOTIFY_URL='ftp://x' notify/notify.sh >/dev/null 2>&1; expect "notify: refuses a non-http URL" "$?" 1
+# More formats: Teams, Google Chat, Matrix hookshot, Pushover; ntfy priority, tags and a token.
+expect "notify: Teams by host, an Adaptive Card" "$(DEPLOYS_NOTIFY_URL='https://x.webhook.office.com/webhookb2/1' notify/notify.sh --dry-run | sed -n 2p | jq -r '.attachments[0].content.type + " " + (.attachments[0].content.body[0].text | split("\n")[1])')" "AdaptiveCard Live today (1): site"
+webhook_body teams "hi" "https://example.test/x" "Approve"; expect "post: Teams link is a button" "$(jq -r '.attachments[0].content.actions[0] | .type + " " + .url' <<<"$WEBHOOK_BODY")" "Action.OpenUrl https://example.test/x"
+expect "notify: Google Chat by host" "$(DEPLOYS_NOTIFY_URL='https://chat.googleapis.com/v1/spaces/A/messages?key=k' notify/notify.sh --dry-run | head -1)" "format: googlechat"
+webhook_body googlechat "hi" "https://example.test/x" "Approve"; expect "post: Google Chat link" "$(jq -r .text <<<"$WEBHOOK_BODY")" $'hi\n<https://example.test/x|Approve>'
+webhook_body matrix "hi"; expect "post: Matrix hookshot text" "$(jq -c . <<<"$WEBHOOK_BODY")" '{"text":"hi","username":"Deploy Center"}'
+expect "post: Pushover needs its keys" "$(webhook_body pushover hi 2>&1; echo "rc=$?")" $'Pushover needs DEPLOYS_PUSHOVER_TOKEN and DEPLOYS_PUSHOVER_USER\nrc=1'
+DEPLOYS_PUSHOVER_TOKEN=apptok DEPLOYS_PUSHOVER_USER=usr webhook_body pushover "hi" "https://example.test/x" "Open"
+expect "post: Pushover message" "$(jq -c '{user, title, message, url}' <<<"$WEBHOOK_BODY")" '{"user":"usr","title":"Deploy Center","message":"hi","url":"https://example.test/x"}'
+expect "notify: Pushover by host" "$(DEPLOYS_PUSHOVER_TOKEN=a DEPLOYS_PUSHOVER_USER=b DEPLOYS_NOTIFY_URL=https://api.pushover.net/1/messages.json notify/notify.sh --dry-run | head -1)" "format: pushover"
+DEPLOYS_NOTIFY_PRIORITY=high DEPLOYS_NOTIFY_TAGS=rocket,warning DEPLOYS_NOTIFY_TOKEN=tk_secret123 DEPLOYS_NOTIFY_URL='https://ntfy.sh/topic' notify/notify.sh >/dev/null
+contains "notify: ntfy priority and tags" "$(cat "$tmp/curl.args")" $'Priority: high\n-H\nTags: rocket,warning'
+expect "notify: the ntfy token goes on stdin, not in the arguments" "$(sed -n 2p "$tmp/curl.stdin"):$(grep -c tk_secret123 "$tmp/curl.args")" 'header = "Authorization: Bearer tk_secret123":0'
+DEPLOYS_NOTIFY_PRIORITY=loud DEPLOYS_NOTIFY_URL='https://ntfy.sh/topic' notify/notify.sh >/dev/null 2>&1; expect "notify: an unknown ntfy priority is refused" "$?" 1
+DEPLOYS_NOTIFY_TOKEN='a"b' DEPLOYS_NOTIFY_URL='https://ntfy.sh/topic' notify/notify.sh >/dev/null 2>&1; expect "notify: a token with quotes is refused" "$?" 1
 
 # --- pre-push ---
 z=0000000000000000000000000000000000000000; s1=1111111111111111111111111111111111111111
