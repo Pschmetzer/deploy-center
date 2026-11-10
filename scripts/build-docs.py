@@ -765,6 +765,20 @@ def update_sitemap(urls):
 VERSION_RE = r"\d+\.\d+\.\d+"
 
 
+def appcast_enclosure(version):
+    """(url, length) of the enclosure of <version> in site/appcast.xml, or (None, 0)."""
+    path = os.path.join(SITE, "appcast.xml")
+    if not os.path.exists(path):
+        return None, 0
+    for item in re.findall(r"<item>(.*?)</item>", open(path, encoding="utf-8").read(), re.S):
+        if f"<sparkle:shortVersionString>{version}</sparkle:shortVersionString>" not in item:
+            continue
+        m = re.search(r'<enclosure url="(https://[^"]+)" length="(\d+)"', item)
+        if m:
+            return m.group(1), int(m.group(2))
+    return None, 0
+
+
 def sync_site_version(version):
     """Put VERSION into site/index.html: the line under the download button and the JSON-LD.
 
@@ -780,6 +794,16 @@ def sync_site_version(version):
     new, n2 = re.subn(r'(id="version">Version )' + VERSION_RE, r"\g<1>" + version, new)
     if not (n1 and n2):
         raise BuildError("site/index.html: softwareVersion or the Version line is missing")
+    # downloadUrl and fileSize in the JSON-LD: the zip of this version, as site/appcast.xml lists it.
+    # Before the release is in the appcast, they keep pointing at the previous one.
+    zip_url, size = appcast_enclosure(version)
+    if zip_url:
+        new = re.sub(r'("downloadUrl":\s*")[^"]*"', lambda m: m.group(1) + zip_url + '"', new, count=1)
+        mb = f"{size / 1_000_000:.1f} MB"
+        if re.search(r'"fileSize":\s*"', new):
+            new = re.sub(r'("fileSize":\s*")[^"]*"', lambda m: m.group(1) + mb + '"', new, count=1)
+        else:
+            new = re.sub(r'("downloadUrl":\s*"[^"]*")', lambda m: m.group(1) + f', "fileSize": "{mb}"', new, count=1)
     if new != text:
         with open(path, "w", encoding="utf-8") as f:
             f.write(new)
