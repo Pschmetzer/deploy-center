@@ -178,5 +178,31 @@ expect "FEA-110: each item says on, skip or already" "$(echo "$out" | jq -c '[.i
 out="$(lib 'vercel_on --all --dry-run')"
 expect "FEA-110: the text form ends with nothing changed" "$(echo "$out" | tail -n 1)" "Dry run: nothing changed."
 
+# --- FEA-042: a production build of a given commit must be on the remembered branch ---
+# gh: compare <ref>...<sha> answers GHCMP (identical, behind, ahead, diverged); GHCMP=down fails.
+cat > "$tmp/bin/gh" <<'SH'
+#!/bin/bash
+echo "gh $*" >> "${CALLS:-/dev/null}"
+[ "${GHCMP:-}" != down ] || exit 1
+case "$*" in *"/compare/"*) echo "${GHCMP:-behind}" ;; esac
+SH
+chmod +x "$tmp/bin/gh"
+fresh
+out="$(GHCMP=behind lib 'vercel_deploy_json alpha --sha abc1234def' | jq -r .id)"
+expect "FEA-042: a commit on main is deployed" "$out:$(calls 'gh api repos/example/alpha/compare/main...abc1234def')" "dpl_alpha3:1"
+fresh
+GHCMP=diverged lib 'vercel_deploy_json alpha --sha abc1234def' >/dev/null; rc=$?
+expect "FEA-042: a commit off the branch is refused, nothing sent" "$rc:$(calls -- '--method POST'):$(grep -c 'not on example/alpha main (diverged)' "$tmp/err")" "1:0:1"
+fresh
+out="$(GHCMP=ahead DEPLOYS_VERCEL_ANY_SHA=1 lib 'vercel_deploy_json alpha --sha abc1234def' | jq -r .id)"
+expect "FEA-042: DEPLOYS_VERCEL_ANY_SHA=1 allows it, without asking" "$out:$(calls '/compare/')" "dpl_alpha3:0"
+fresh
+out="$(GHCMP=down lib 'vercel_deploy_json alpha --sha abc1234def' | jq -r .id)"
+expect "FEA-042: GitHub not reachable: a warning, deployed" "$out:$(grep -c 'could not check' "$tmp/err")" "dpl_alpha3:1"
+fresh
+GHCMP=diverged lib 'vercel_deploy_json alpha --preview --sha abc1234def' >/dev/null
+expect "FEA-042: a preview is not checked" "$(calls '/compare/')" 0
+rm -f "$tmp/bin/gh"
+
 : "$root"
 echo; [ "$fails" = 0 ] && echo "All vercel tests passed." || { echo "$fails vercel tests failed."; exit 1; }

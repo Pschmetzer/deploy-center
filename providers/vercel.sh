@@ -259,6 +259,25 @@ VERCEL_META='def vsha: (.githubCommitSha // .gitlabCommitSha // .bitbucketCommit
   def vmsg: (.githubCommitMessage // .gitlabCommitMessage // .bitbucketCommitMessage // null);'
 
 # Start a build. Positional, for the commands below: <project> <preview: ""|1> <sha>.
+# vercel_sha_on_ref <project> <repos json> <sha>: refuse a commit GitHub says is not in the
+# remembered branch's history (compare ref...sha "ahead" or "diverged": on another branch or a
+# fork). Not checked (a warning, and on): no gh, GitLab, or GitHub could not be asked.
+# DEPLOYS_VERCEL_ANY_SHA=1 allows it on purpose.
+vercel_sha_on_ref() {
+  local repo ref st
+  repo="$(jq -r --arg p "$1" '.[$p] | if .type == "gitlab" or (.org | not) then "" else "\(.org)/\(.repo)" end' <<< "$2")"
+  ref="$(jq -r --arg p "$1" '.[$p].ref // "main"' <<< "$2")"
+  [ -n "$repo" ] && [ "${DEPLOYS_VERCEL_ANY_SHA:-}" != 1 ] || return 0
+  if ! command -v gh >/dev/null 2>&1 \
+    || ! st="$(gh api "repos/$repo/compare/$ref...$3" --jq .status 2>/dev/null)" || [ -z "$st" ]; then
+    echo "Vercel: could not check that ${3:0:7} is on $repo $ref (GitHub not reachable); deploying it" >&2; return 0
+  fi
+  case "$st" in
+    identical|behind) return 0 ;;
+    *) die "Vercel: ${3:0:7} is not on $repo $ref ($st): a fork or another branch would go live as $1. Deploy without --sha, or set DEPLOYS_VERCEL_ANY_SHA=1 if this is meant" ;;
+  esac
+}
+
 vercel_start() {
   local target="$1" preview="${2:-}" sha="${3:-}" body out lock
   local repos live entry; repos="$(repos_json)"
@@ -278,6 +297,9 @@ vercel_start() {
     sha="$(team_gate vercel "$target" "$(jq -r --arg p "$target" '.[$p] | if .type == "gitlab" or (.org | not) then "" else "\(.org)/\(.repo)" end' <<< "$repos")" \
       "$(jq -r --arg p "$target" '.[$p].ref // "main"' <<< "$repos")" "$sha")" || exit 1
   fi
+  # FEA-042: a production build of a given commit must be on the remembered branch, not on a
+  # fork or another branch (its code would go live under the project's name).
+  [ -n "$preview" ] || [ -z "$sha" ] || vercel_sha_on_ref "$target" "$repos" "$sha" || exit 1
   lock="$(start_lock "vercel-$target")" || exit 1
   # Removed by hand on every way out: a `trap … RETURN` would stay set and fire on later returns.
   body="$(mktemp)"

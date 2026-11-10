@@ -165,6 +165,7 @@ For tests and unusual setups; none is needed in normal use.
 |---|---|
 | `DEPLOYS_VERCEL_TEAM` | The Vercel team id, instead of the remembered one |
 | `DEPLOYS_VERCEL_TIMEOUT` | Seconds one `vercel` call may take (60) |
+| `DEPLOYS_VERCEL_ANY_SHA` | `1`: a production `--sha` that GitHub says is not on the remembered branch (a fork, another branch) is deployed anyway; without it, refused (FEA-042) |
 | `NETLIFY_API`, `CLOUDFLARE_API_BASE`, `DIGITALOCEAN_API` | Another API address (test servers) |
 | `DEPLOYS_NETLIFY_POLLS` | How often a Netlify start looks for its new deploy |
 | `DEPLOYS_CLOUDFLARE_SELFTEST_TRIES` | Rounds of the Cloudflare self-test (5 s each) |
