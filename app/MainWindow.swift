@@ -105,9 +105,13 @@ struct ContentView: View {
                 HStack {
                     Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
                     Text(L("Version \(v) is out.", "Version \(v) ist da.")).font(.callout)
+                    Button(store.updating ? L("Updating …", "Aktualisiere …") : L("Update now", "Jetzt aktualisieren")) {
+                        Task { await store.installUpdate() }
+                    }.buttonStyle(.link).disabled(store.updating)
                     Button(L("Download", "Herunterladen")) {
                         NSWorkspace.shared.open(URL(string: "https://github.com/Pschmetzer/deploy-center/releases/latest")!)
                     }.buttonStyle(.link)
+                    if let st = store.updateStatus { Text(st).font(.caption).foregroundStyle(.secondary) }
                     Spacer()
                     Button { store.newVersion = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
                         .help(L("Not now", "Nicht jetzt"))
@@ -871,6 +875,10 @@ struct Row: View {
                 Circle().fill(ok ? Color.green : (failed ? Color.red : Color.orange)).frame(width: 7, height: 7)
                 Text(L("Last deploy ", "Zuletzt deployt ") + Self.ago(at) + (ok ? "" : " · \(s)"))
                     .font(.caption2).foregroundStyle(.secondary)
+                if failed, let showLog {
+                    Button(action: showLog) { Image(systemName: "text.alignleft").font(.caption2) }
+                        .buttonStyle(.borderless).help(L("Show the build log of the failed deploy", "Build-Log des fehlgeschlagenen Deploys zeigen"))
+                }
             }
             .help(at.formatted(date: .complete, time: .shortened) + (item.lastMsg.map { "\n" + L("Live: ", "Live: ") + $0 } ?? ""))
         } else {

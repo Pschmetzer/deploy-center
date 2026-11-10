@@ -688,20 +688,76 @@ final class Store: ObservableObject {
     // MARK: A newer version on GitHub, asked once a day (Settings can turn it off)
 
     @Published var newVersion: String?
-    func checkForUpdate() async {
-        let d = UserDefaults.standard
-        guard d.object(forKey: "checkUpdates") as? Bool ?? true else { return }
-        let last = d.double(forKey: "lastUpdateCheck")
-        guard Date().timeIntervalSince1970 - last > 86400 else { newVersion = d.string(forKey: "newVersion"); return }
-        d.set(Date().timeIntervalSince1970, forKey: "lastUpdateCheck")
+    @Published var updateStatus: String?
+    @Published var updating = false
+
+    private struct Release { let version: String; let zip: URL? }
+    private func latestRelease() async -> Release? {
         guard let url = URL(string: "https://api.github.com/repos/Pschmetzer/deploy-center/releases/latest"),
               let (data, _) = try? await URLSession.shared.data(from: url),
-              let tag = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["tag_name"] as? String else { return }
-        let latest = tag.trimmingCharacters(in: CharacterSet(charactersIn: "v"))
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tag = obj["tag_name"] as? String else { return nil }
+        let assets = obj["assets"] as? [[String: Any]] ?? []
+        let zip = assets.compactMap { $0["browser_download_url"] as? String }.first { $0.hasSuffix(".zip") }.flatMap(URL.init(string:))
+        return Release(version: tag.trimmingCharacters(in: CharacterSet(charactersIn: "v")), zip: zip)
+    }
+
+    /// Asked once a day on its own; `force` (the button in Settings) asks right now and says what it found.
+    func checkForUpdate(force: Bool = false) async {
+        let d = UserDefaults.standard
+        if !force {
+            guard d.object(forKey: "checkUpdates") as? Bool ?? true else { return }
+            let last = d.double(forKey: "lastUpdateCheck")
+            guard Date().timeIntervalSince1970 - last > 86400 else { newVersion = d.string(forKey: "newVersion"); return }
+        }
+        d.set(Date().timeIntervalSince1970, forKey: "lastUpdateCheck")
+        guard let rel = await latestRelease() else {
+            if force { updateStatus = L("Could not reach GitHub.", "GitHub nicht erreichbar.") }
+            return
+        }
         let mine = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
-        let newer = latest.compare(mine, options: .numeric) == .orderedDescending
-        newVersion = newer ? latest : nil
+        let newer = rel.version.compare(mine, options: .numeric) == .orderedDescending
+        newVersion = newer ? rel.version : nil
         d.set(newVersion, forKey: "newVersion")
+        if force { updateStatus = newer ? L("Version \(rel.version) is out.", "Version \(rel.version) ist da.")
+                                        : L("You have the newest version (\(mine)).", "Du hast die neueste Version (\(mine)).") }
+    }
+
+    /// Downloads the newest release, checks its signature, swaps the app in place and starts it again.
+    func installUpdate() async {
+        guard !updating else { return }
+        updating = true; defer { updating = false }
+        updateStatus = L("Downloading …", "Lade herunter …")
+        guard let rel = await latestRelease(), let zip = rel.zip else {
+            updateStatus = L("No download found in the release.", "Im Release ist kein Download."); return
+        }
+        do {
+            let (tmpZip, _) = try await URLSession.shared.download(from: zip)
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("deploycenter-update-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            func run(_ exe: String, _ args: [String]) throws {
+                let p = Process(); p.executableURL = URL(fileURLWithPath: exe); p.arguments = args
+                p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
+                try p.run(); p.waitUntilExit()
+                if p.terminationStatus != 0 { throw NSError(domain: "update", code: Int(p.terminationStatus)) }
+            }
+            try run("/usr/bin/ditto", ["-x", "-k", tmpZip.path, dir.path])
+            let newApp = dir.appendingPathComponent("Deploy Center.app")
+            guard FileManager.default.fileExists(atPath: newApp.path) else { updateStatus = L("Unexpected download.", "Unerwarteter Download."); return }
+            updateStatus = L("Checking the signature …", "Prüfe die Signatur …")
+            try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", newApp.path])
+            try run("/usr/sbin/spctl", ["-a", "-t", "exec", newApp.path])
+            let target = Bundle.main.bundleURL.path
+            let script = "while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.3; done; "
+                + "rm -rf \"\(target)\" && mv \"\(newApp.path)\" \"\(target)\" && open \"\(target)\"; rm -rf \"\(dir.path)\""
+            let sh = Process(); sh.executableURL = URL(fileURLWithPath: "/bin/sh"); sh.arguments = ["-c", script]
+            try sh.run()
+            updateStatus = L("Restarting …", "Starte neu …")
+            await MainActor.run { NSApplication.shared.terminate(nil) }
+        } catch {
+            updateStatus = L("Update failed: ", "Update fehlgeschlagen: ") + error.localizedDescription
+            Log.write("update failed: \(error)")
+        }
     }
 
     static func stateName(_ s: String) -> String {
