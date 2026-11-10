@@ -8,6 +8,7 @@ workflow sets `deploy: true` (also the digest's approve workflow, after a person
 | [action/](action/) | A GitHub Action that lists what has changes (`deploys changed --json`), and deploys only with `deploy: true`. It includes an example workflow for a `[deploy]` commit marker. |
 | [hooks/](hooks/) | A git `pre-push` hook. It warns how many builds a push would start on projects that still deploy on push. |
 | [badge/](badge/) | An SVG badge per project, for example `deployed · 3 d ago · 4 commits waiting`. No server needed. |
+| [statuspage/](statuspage/) | A static "what shipped when" page (`index.html`, an Atom feed, `status.json`) for the projects you list, with an optional site check. Any static host. |
 | [notify/](notify/) | A daily summary ("live today / waiting") sent to one webhook: Discord, Slack-compatible, ntfy or Telegram. |
 | [mcp/](mcp/) | An MCP server for AI coding agents (Claude Code, Claude Desktop, Cursor, VS Code). Read-only tools for what is waiting, building, release notes and logs; deploy and rollback of one project only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. |
 | [digest/](digest/) | A daily digest of what waits, agent and human commits apart, as Markdown, an issue and a webhook message. A person approves with a button or the `deploy-approved` label; an example workflow then deploys only the approved projects. |
@@ -20,7 +21,7 @@ without them.
 
 ## Reading every project
 
-The badge, notify and the hook need every project, including the ones that are up to date. That
+The badge, notify, the status page and the hook need every project, including the ones that are up to date. That
 is `deploys vercel list --json` plus `deploys render list --json` (see [lib/projects.sh](lib/projects.sh)).
 Render is read only when a key is there, in `RENDER_API_KEY` or the Mac keychain. With a Render
 key that is wrong or expired, `deploys render list --json` currently does not come back. Set a

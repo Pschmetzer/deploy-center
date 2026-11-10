@@ -1,0 +1,30 @@
+:root{--bg:#fafafa;--fg:#18181b;--muted:#71717a;--card:#fff;--line:#e4e4e7;--ok:#15803d;--okbg:#dcfce7;--warn:#a16207;--warnbg:#fef9c3;--bad:#b91c1c;--badbg:#fee2e2;--busy:#1d4ed8;--busybg:#dbeafe;--link:#2563eb}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0b0d;--fg:#e4e4e7;--muted:#a1a1aa;--card:#16161a;--line:#27272a;--ok:#4ade80;--okbg:#14532d55;--warn:#facc15;--warnbg:#713f1255;--bad:#f87171;--badbg:#7f1d1d55;--busy:#60a5fa;--busybg:#1e3a8a55;--link:#93c5fd}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+main{max-width:46rem;margin:0 auto;padding:2.5rem 16px 3rem}
+a{color:var(--link)}
+h1{font-size:1.6rem;margin:0 0 .25rem;letter-spacing:-.01em}
+h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:2.25rem 0 .75rem}
+h3{font-size:1rem;margin:0;overflow-wrap:anywhere}
+p{margin:.35rem 0}
+.lead{color:var(--muted);margin:0 0 .25rem}
+.meta,.when,.muted,.t,footer{color:var(--muted);font-size:.85rem}
+.cards{list-style:none;margin:0;padding:0;display:grid;gap:.75rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem 1.1rem}
+.row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
+.pill{font-size:.75rem;font-weight:600;padding:.15rem .6rem;border-radius:999px;white-space:nowrap}
+.ok{color:var(--ok);background:var(--okbg)}.warn{color:var(--warn);background:var(--warnbg)}
+.bad{color:var(--bad);background:var(--badbg)}.busy{color:var(--busy);background:var(--busybg)}
+.muted.pill{color:var(--muted);background:var(--line)}
+.msg{overflow-wrap:anywhere}
+.check{font-size:.85rem}.check.up{color:var(--ok)}.check.down{color:var(--bad)}
+details{margin-top:.5rem;font-size:.9rem}
+summary{cursor:pointer;color:var(--muted)}
+.next{margin:.4rem 0 0;padding-left:1.2rem}.next li{overflow-wrap:anywhere}
+.timeline{list-style:none;margin:0;padding:0;border-left:2px solid var(--line);margin-left:.4rem}
+.timeline li{position:relative;padding:.35rem 0 .35rem 1.1rem;display:flex;flex-wrap:wrap;justify-content:space-between;gap:.1rem .75rem}
+.dot{position:absolute;left:-.42rem;top:.75rem;width:.7rem;height:.7rem;border-radius:50%;background:var(--ok);border:2px solid var(--bg)}
+.failed .dot{background:var(--bad)}
+.what{overflow-wrap:anywhere}
+footer{margin-top:2.5rem;border-top:1px solid var(--line);padding-top:1rem}

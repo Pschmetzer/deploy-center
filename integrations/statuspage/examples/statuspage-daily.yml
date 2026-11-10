@@ -1,0 +1,65 @@
+# Example only: copy to .github/workflows/ in the repo that holds your statuspage.json, and adjust.
+#
+# Makes the status page once a day (and by hand) and publishes it to GitHub Pages. It only reads:
+# nothing is deployed. Settings > Pages > Source must be "GitHub Actions".
+name: status page
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # daily, 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  page:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Pin to a release tag or a full commit SHA, not a branch.
+      - uses: actions/checkout@v7
+        with:
+          repository: Pschmetzer/deploy-center
+          ref: main
+          path: .deploy-center
+          persist-credentials: false
+      - name: Vercel CLI
+        if: env.VERCEL_TOKEN != ''
+        run: npm install -g --no-fund --no-audit vercel@65.12.1 >/dev/null
+      - name: Make the page
+        env:
+          DEPLOYS_VERCEL_TEAM: ${{ vars.VERCEL_TEAM }}
+          # Reads commits for "Coming next". Private repos need a token that can read them.
+          GH_TOKEN: ${{ secrets.DEPLOYS_GH_TOKEN || github.token }}
+          REPOS_JSON: ${{ vars.DEPLOYS_REPOS_JSON }}
+        run: |
+          set -euo pipefail
+          export DEPLOYS_CONFIG="$RUNNER_TEMP/deploys-config" USER="${USER:-$(id -un)}"
+          export DEPLOYS="$PWD/.deploy-center/deploys"
+          mkdir -p "$DEPLOYS_CONFIG"
+          [ -z "$REPOS_JSON" ] || printf '%s' "$REPOS_JSON" > "$DEPLOYS_CONFIG/vercel-repos.json"
+          # The journal is written by the Mac app. Commit a copy (status/journal.jsonl) to get the timeline.
+          [ ! -f status/journal.jsonl ] || export DEPLOYS_JOURNAL="$PWD/status/journal.jsonl"
+          .deploy-center/integrations/statuspage/statuspage.sh --config statuspage.json --out public
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: public
+      - id: deployment
+        uses: actions/deploy-pages@v5
