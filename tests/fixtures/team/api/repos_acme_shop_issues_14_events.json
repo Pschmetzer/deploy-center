@@ -1,0 +1,3 @@
+[{"event":"labeled","label":{"name":"deploy-approved-by:dev-three"},"actor":{"login":"dev-one"}},
+ {"event":"labeled","label":{"name":"deploy-approved-by:dev-four"},"actor":{"login":"dev-four"}},
+ {"event":"labeled","label":{"name":"bug"},"actor":{"login":"dev-three"}}]

@@ -1,0 +1,2 @@
+[{"user":{"login":"dev-two"},"state":"COMMENTED","submitted_at":"2026-11-01T09:00:00Z"},
+ {"user":{"login":"dev-two"},"state":"APPROVED","submitted_at":"2026-11-01T10:00:00Z","html_url":"https://github.com/acme/shop/pull/12#review-1"}]

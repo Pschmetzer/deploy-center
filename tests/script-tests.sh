@@ -218,6 +218,7 @@ m=GET; for a in "$@"; do [ "$prev" = -X ] && m="$a"; prev="$a"; done; url="${*: 
 echo "curl $m $url" >> "$E2E/calls.log"
 case "$m $url" in
   "GET https://api.render.com/v1/services?limit=100"*) printf '%s\n200' '[{"cursor":"c1","service":{"id":"srv-1","name":"api","type":"web_service","suspended":"not_suspended","repo":"https://github.com/me/app","branch":"main","autoDeployTrigger":"off"}}]' ;;
+  "GET https://api.render.com/v1/services/srv-1") printf '%s\n200' '{"id":"srv-1","name":"api","repo":"https://github.com/me/app","branch":"main"}' ;;
   "GET https://api.render.com/v1/services/srv-1/deploys?limit=10")
     [ "${RSTUB:-}" = 429 ] && { printf '%s\n429' '{"message":"rate limit"}'; exit 0; }
     printf '%s\n200' '[{"deploy":{"id":"dep-1","status":"live","commit":{"id":"aaaa","message":"old"},"createdAt":"2026-01-01T00:00:00Z","finishedAt":"2026-01-01T00:01:00Z"}}]' ;;

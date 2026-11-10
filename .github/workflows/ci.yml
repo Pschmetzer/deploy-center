@@ -33,6 +33,8 @@ jobs:
           shellcheck site/install.sh
       - name: Script tests
         run: bash tests/script-tests.sh
+      - name: Team mode tests
+        run: bash tests/team-tests.sh
       - name: Install tests (install.sh, release tarball, Homebrew formula)
         run: bash tests/install-tests.sh
       - name: App tests
