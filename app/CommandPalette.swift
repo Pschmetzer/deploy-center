@@ -530,6 +530,8 @@ struct CommandPaletteHost: ViewModifier {
 /// asked exactly like one from a row. A deploy then takes the usual wait before it starts.
 private struct PaletteQuestions: ViewModifier {
     @ObservedObject var store: Store
+    /// The window's checkbox in the deploy confirmation, remembered.
+    @AppStorage("onlyWhenGreen") private var onlyGreen = false
     @Binding var deployItem: Item?
     @Binding var unchangedItem: Item?
     @Binding var rollbackItem: Item?
@@ -543,10 +545,16 @@ private struct PaletteQuestions: ViewModifier {
         content
             .alert(L("Put this live now?", "Jetzt live schalten?"), isPresented: binding($deployItem)) {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { deployItem = nil }
-                Button(L("Deploy", "Deployen")) { if let i = deployItem { store.deployOne(i, preview: false) }; deployItem = nil }
+                // The window's "only when CI is green" applies here too; the deploy window is
+                // checked by Store.deployOne, as for the window's row menu.
+                Button(onlyGreen ? L("Deploy when CI is green", "Deployen, wenn CI grün ist") : L("Deploy", "Deployen")) {
+                    if let i = deployItem { store.deployOne(i, preview: false, whenGreen: onlyGreen) }; deployItem = nil
+                }
             } message: {
                 Text(shown(deployItem) + (deployItem.map { ($0.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText($0) : "" } ?? "")
-                     + "\n\n" + L("The newest commit on GitHub goes live.", "Der neueste Stand von GitHub geht live."))
+                     + "\n\n" + (onlyGreen ? L("The newest commit whose CI passed goes live (as set in the window's deploy dialog).",
+                                                "Der neueste Commit mit grünem CI geht live (wie im Deploy-Dialog des Fensters eingestellt).")
+                                             : L("The newest commit on GitHub goes live.", "Der neueste Stand von GitHub geht live.")))
             }
             .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"), isPresented: binding($unchangedItem)) {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
