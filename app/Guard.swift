@@ -53,8 +53,8 @@ struct GuardSettings: View {
                 if busy { ProgressView().controlSize(.small) }
             }
             if let message {
-                Text(message).font(.caption.monospaced()).textSelection(.enabled)
-                    .foregroundStyle(failed ? .red : .secondary)
+                if failed { ErrorText(message) }
+                else { Text(message).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(.secondary) }
             }
 
             GuardAllowances(allowances: status?.allowances ?? [], busy: busy) { a in
@@ -81,11 +81,13 @@ struct GuardSettings: View {
         do {
             let out = String(data: try await Tool.run(args, timeout: 300), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            message = show ? (out.isEmpty ? L("Nothing to do.", "Nichts zu tun.") : Demo.mask(out)) : (out.isEmpty ? nil : Demo.mask(out))
+            // Only the names are replaced in demo mode; the rest of the report stays readable.
+            let shown = Demo.scrub(out, items: store.items.values.flatMap { $0 })
+            message = show ? (out.isEmpty ? L("Nothing to do.", "Nichts zu tun.") : shown) : (out.isEmpty ? nil : shown)
             failed = false
         } catch { message = error.localizedDescription; failed = true }
         await reload()
-        for p in [Platform.vercel, .render] { await store.load(p) }
+        for p in store.enabledProviders.compactMap(\.platform) { await store.load(p) }
     }
 }
 
@@ -102,10 +104,12 @@ private struct GuardLastRun: View {
                 }
                 ForEach(s.lastActions) { a in
                     HStack {
-                        Text(a.platform.capitalized).foregroundStyle(.secondary)
+                        Text(providerLabel(a.platform)).foregroundStyle(.secondary)
                         Text(Demo.mask(a.project ?? "–"))
                         Spacer()
-                        Text(label(a)).foregroundStyle(a.action == "failed" || a.action == "error" ? .red : .secondary)
+                        let bad = a.action == "failed" || a.action == "error"
+                        if bad { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).accessibilityHidden(true) }
+                        Text(label(a)).foregroundStyle(bad ? .red : .secondary)
                     }
                     .font(.caption)
                     .help(a.error ?? "")
@@ -128,7 +132,7 @@ private struct GuardLastRun: View {
         case "wouldOff": return L("would be turned off", "würde abgeschaltet")
         case "failed": return L("could not turn off", "Abschalten fehlgeschlagen")
         case "error": return L("could not be read", "nicht lesbar")
-        default: return a.action
+        default: return unknownCode(a.action, L("result", "Ergebnis"))
         }
     }
 }
@@ -165,12 +169,14 @@ private struct GuardAllowances: View {
 
     private func scope(_ a: GuardStatus.Allowance) -> String {
         if a.platform == "all" { return L("All projects", "Alle Projekte") }
-        if a.project == "*" { return L("All of ", "Alles bei ") + a.platform.capitalized }
-        return a.platform.capitalized + " · " + Demo.mask(a.project)
+        if a.project == "*" { return L("All of ", "Alles bei ") + providerLabel(a.platform) }
+        return providerLabel(a.platform) + " · " + Demo.mask(a.project)
     }
 
     private func left(_ a: GuardStatus.Allowance, now: Date) -> String {
         let m = max(0, Int((a.expiresAt - now.timeIntervalSince1970) / 60))
+        // Under an hour only the minutes: "5 min", not "0 h 5 min".
+        if m < 60 { return L("\(m) min left", "noch \(m) min") }
         return L("\(m / 60) h \(m % 60) min left", "noch \(m / 60) h \(m % 60) min")
     }
 }
@@ -185,7 +191,7 @@ private struct GuardAllowForm: View {
     @State private var confirming = false
 
     private var projects: [Item] {
-        [Platform.vercel, .render].flatMap { store.items[$0] ?? [] }.sorted { $0.name.lowercased() < $1.name.lowercased() }
+        store.enabledProviders.compactMap(\.platform).flatMap { store.items[$0] ?? [] }.sorted { $0.name.lowercased() < $1.name.lowercased() }
     }
 
     var body: some View {
@@ -211,7 +217,7 @@ private struct GuardAllowForm: View {
             }
         Text(L("While allowed, every push and every merged fix PR builds and costs money.",
                "Solange erlaubt, baut jeder Push und jeder gemergte Fix-PR und kostet Geld."))
-            .font(.caption).foregroundStyle(.orange)
+            .font(.caption).foregroundStyle(Color.warningText)
     }
 
     private var warning: String {
