@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stop Vercel building on every push · Deploy Center</title>
+<meta name="description" content="Why Vercel builds on every push, and how to build less: skip bot and agent previews, skip unchanged monorepo apps, batch pushes, deploy on your schedule.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/stop-vercel-building-every-push/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Stop Vercel building on every push · Deploy Center">
+<meta property="og:description" content="Why Vercel builds on every push, and how to build less: skip bot and agent previews, skip unchanged monorepo apps, batch pushes, deploy on your schedule.">
+<meta property="og:url" content="https://deploycenter.app/guides/stop-vercel-building-every-push/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Stop Vercel building on every push · Deploy Center">
+<meta name="twitter:description" content="Why Vercel builds on every push, and how to build less: skip bot and agent previews, skip unchanged monorepo apps, batch pushes, deploy on your schedule.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How to stop Vercel building on every push",
+  "description": "Why Vercel builds on every push, and how to build less: skip bot and agent previews, skip unchanged monorepo apps, batch pushes, deploy on your schedule.",
+  "url": "https://deploycenter.app/guides/stop-vercel-building-every-push/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/stop-vercel-building-every-push/",
+  "datePublished": "2026-11-10",
+  "dateModified": "2026-11-10",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Why does one push start several builds?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Every Vercel project connected to the repository builds on a push. A monorepo with a web app, docs and an admin app builds three times, even if only the docs changed."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does Vercel support [skip ci]?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Do not rely on it. An Ignored Build Step that checks VERCEL_GIT_COMMIT_MESSAGE, as shown above, works on every plan and you control the phrase."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Do skipped builds cost money?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "A skipped build is cancelled before the build command runs. Check your usage page to see how your plan counts it; it is far less than a full build."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "How much can I save?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "That depends on your pushes, projects and cost per build. The build cost calculator works it out with your numbers."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Stop Vercel building every push",
+    "item": "https://deploycenter.app/guides/stop-vercel-building-every-push/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+</div></nav>
+
+<main class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>How to stop Vercel building on every push</h1>
+<p class="answer">Vercel builds every connected project for every commit you push, on every branch: production on the production branch, a preview everywhere else. To build less, skip previews nobody looks at, skip projects a commit did not touch, and let one deploy cover many commits instead of one build per push.</p>
+<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<h2>1. See what is building</h2>
+<p>Open the project's <b>Deployments</b> tab and filter by <b>Preview</b>. Look for the patterns that cost the most: bot branches (Dependabot, Renovate), agent branches, and several projects building from one push to the same repository.</p>
+<pre><code class="language-bash"><span class="c"># the last deployments of a project, with branch and state</span>
+vercel ls my-project</code></pre>
+
+<h2>2. Skip previews for bot and agent branches</h2>
+<p>Add this as the Ignored Build Step (Settings → Git, or <code>ignoreCommand</code> in vercel.json). Exit 0 skips, exit 1 builds.</p>
+<pre><code class="language-bash">bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*|claude/*|cursor/*) exit 0;; *) exit 1;; esac'</code></pre>
+<p>Change the branch prefixes to the ones your tools use. Previews for those branches stop; pull requests from people still get one.</p>
+
+<h2>3. Skip projects a commit did not touch</h2>
+<p>In a monorepo one push builds every project connected to the repository. Two ways to skip the ones that did not change:</p>
+<ul>
+  <li>With npm, yarn or pnpm workspaces, turn on Vercel's option to skip deployments when the project's root directory and its dependencies did not change (in the project's build settings, under Root Directory).</li>
+  <li>With Turborepo, set the Ignored Build Step to <code>npx turbo-ignore</code>.</li>
+  <li>Without either, compare the folder yourself; see the <a href="/guides/vercel-ignored-build-step/">Ignored Build Step guide</a>.</li>
+</ul>
+
+<h2>4. Skip on demand with a commit message</h2>
+<pre><code class="language-bash">bash -c 'echo "$VERCEL_GIT_COMMIT_MESSAGE" | grep -qiF "[skip deploy]" &amp;&amp; exit 0 || exit 1'</code></pre>
+<p>A commit with <code>[skip deploy]</code> in its message then builds nothing. Only the newest commit of a push is checked.</p>
+
+<h2>5. Push less often</h2>
+<p>Commit as often as you like and push when a piece of work is done. Every push is a build per project; every commit is not. This is hard to keep up with AI coding agents, which push after each step: see <a href="/blog/ai-coding-agents-build-bill/">Your agent pushes 40 times. You deploy once.</a></p>
+
+<h2>6. Deploy production on your schedule</h2>
+<p>The steps above cut previews. For production, turn off auto-deploy and deploy once when you are ready, for example at the end of the day. The <a href="/guides/disable-vercel-auto-deploy/">disable auto-deploy guide</a> has three ways; <a href="/">Deploy Center</a> does it for every project at once and then deploys only what changed:</p>
+<pre><code class="language-bash">deploys vercel autodeploy-off --all
+deploys deploy-changed --yes</code></pre>
+
+<div class="note"><p><b>Trade-offs.</b> Fewer previews means fewer links to click in review. Deploying by hand means a fix is not live until you deploy it. Keep previews where people review, and skip them where nobody does.</p></div>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Why does one push start several builds?</summary><p>Every Vercel project connected to the repository builds on a push. A monorepo with a web app, docs and an admin app builds three times, even if only the docs changed.</p></details>
+  <details><summary>Does Vercel support [skip ci]?</summary><p>Do not rely on it. An Ignored Build Step that checks <code>VERCEL_GIT_COMMIT_MESSAGE</code>, as shown above, works on every plan and you control the phrase.</p></details>
+  <details><summary>Do skipped builds cost money?</summary><p>A skipped build is cancelled before the build command runs. Check your usage page to see how your plan counts it; it is far less than a full build.</p></details>
+  <details><summary>How much can I save?</summary><p>That depends on your pushes, projects and cost per build. The <a href="/vercel-build-cost-calculator/">build cost calculator</a> works it out with your numbers.</p></details>
+
+<div class="ctabox">
+  <h2>Do it for every project in one click.</h2>
+  <p>Deploy Center is a free, open-source Mac app. It turns off auto-deploy on Vercel and Render, shows the commits and PRs waiting to go live, and deploys what changed when you decide.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+  <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify.</p>
+</div></footer>
+</body>
+</html>

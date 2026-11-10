@@ -171,7 +171,7 @@ struct ContentView: View {
     }
 
     // Split in three: one long chain of modifiers is too much for the type checker of older Xcodes.
-    var body: some View { dialogs }
+    var body: some View { dialogs.commandPalette(store: store) }
 
     private var chrome: some View {
         VStack(spacing: 0) {

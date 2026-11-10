@@ -1,7 +1,8 @@
 # Integrations
 
 Small add-ons that call the `deploys` CLI. Each one only reads, except the GitHub Action when a
-workflow sets `deploy: true` and the MCP server when it is started with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. Auto-deploy stays off: nothing here deploys unless a person asks for it.
+workflow sets `deploy: true`, the MCP server when it is started with `DEPLOYS_MCP_ALLOW_DEPLOY=1`, and the Raycast extension after you confirm a deploy. Auto-deploy
+stays off: nothing here deploys unless a person asks for it.
 
 | Folder | What it does |
 |---|---|
@@ -11,6 +12,7 @@ workflow sets `deploy: true` and the MCP server when it is started with `DEPLOYS
 | [statuspage/](statuspage/) | A static "what shipped when" page (`index.html`, an Atom feed, `status.json`) for the projects you list, with an optional site check. Any static host. |
 | [notify/](notify/) | A daily summary ("live today / waiting") sent to one webhook: Discord, Slack-compatible, ntfy or Telegram. |
 | [mcp/](mcp/) | An MCP server for AI coding agents (Claude Code, Claude Desktop, Cursor, VS Code). Read-only tools for what is waiting, building, release notes and logs; deploy and rollback of one project only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. |
+| [raycast/](raycast/) | A Raycast extension: Waiting Deploys, Deploy Status and Deploy All Changed. It deploys only after a confirmation. Not on the Raycast Store yet ([PUBLISHING.md](raycast/PUBLISHING.md)). |
 | [docker/](docker/) | A Linux image with `deploys` and its tools, for CI. |
 | [VERIFY.md](VERIFY.md) | How to check a release: SHA-256, `codesign`, `spctl`. |
 
