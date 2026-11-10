@@ -50,6 +50,8 @@ struct ContentView: View {
     @State private var search = ""
     @State private var confirming = false
     @State private var confirmingOff = false
+    /// The platform whose auto-deploy banner was clicked (on "All" both can have one).
+    @State private var offPlatform = Platform.vercel
     @AppStorage("onlyChanged") private var onlyChanged = false
     @State private var rollbackItem: Item?
     @FocusState private var searchFocused: Bool
@@ -279,12 +281,12 @@ struct ContentView: View {
         }
         .alert(L("Turn off auto-deploy?", "Auto-Deploy ausschalten?"), isPresented: $confirmingOff) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
-            Button(L("Turn off", "Ausschalten")) { Task { await store.turnOffAutoDeploy(platform) } }
+            Button(L("Turn off", "Ausschalten")) { Task { await store.turnOffAutoDeploy(offPlatform) } }
         } message: {
-            Text(store.autoOn(platform).prefix(12).map { Demo.mask($0.name) }.joined(separator: "\n")
-                 + (store.autoOn(platform).count > 12 ? "\n" + L("and \(store.autoOn(platform).count - 12) more", "und \(store.autoOn(platform).count - 12) weitere") : "")
+            Text(store.autoOn(offPlatform).prefix(12).map { Demo.mask($0.name) }.joined(separator: "\n")
+                 + (store.autoOn(offPlatform).count > 12 ? "\n" + L("and \(store.autoOn(offPlatform).count - 12) more", "und \(store.autoOn(offPlatform).count - 12) weitere") : "")
                  + "\n\n"
-                 + (platform == .vercel
+                 + (offPlatform == .vercel
                     ? L("The Git connection is removed (the repo is remembered here). A push will no longer build. Reconnect any time in the Vercel dashboard.",
                         "Die Git-Verbindung wird getrennt (das Repo merkt sich die App). Ein Push baut nichts mehr. Wieder verbinden geht jederzeit im Vercel-Dashboard.")
                     : L("Auto-deploy is set to Off. A push will no longer build.",
@@ -328,7 +330,7 @@ struct ContentView: View {
                 }
             }
             Button { Task { for p in scopes { await store.load(p) }; await store.loadExtras() } } label: {
-                if store.loading.contains(platform) { ProgressView().controlSize(.small) }
+                if scopes.contains(where: { store.loading.contains($0) }) { ProgressView().controlSize(.small) }
                 else { Image(systemName: "arrow.clockwise") }
             }
             .accessibilityLabel(L("Reload", "Neu laden"))
@@ -336,20 +338,23 @@ struct ContentView: View {
                 "\n" + L("Updated ", "Aktualisiert ") + $0.formatted(date: .omitted, time: .shortened)
                     + (store.fromCache.contains(platform) ? L(" (saved copy)", " (gespeicherte Kopie)") : "") } ?? ""))
             .keyboardShortcut("r")
-            .disabled(store.loading.contains(platform))
+            .disabled(scopes.contains { store.loading.contains($0) })
         }
         .padding(12)
     }
 
     /// Problems and offers above the list, most important first. Only the first is always shown;
     /// the others fold away, so the list keeps its room.
-    enum Notice: Hashable { case trigger, auto(Platform), github, provider, update }
+    enum Notice: Hashable { case trigger, loadFailed(Platform), setup(Platform), auto(Platform), github, provider, update }
     @AppStorage("noticesExpanded") private var noticesExpanded = false
 
     private var notices: [Notice] {
         var out: [Notice] = []
         if !activeTriggers.isEmpty { out.append(.trigger) }
-        if !store.autoOn(platform).isEmpty { out.append(.auto(platform)) }
+        // Per platform, so on "All" a Vercel problem does not hide Render's list (and the other way round).
+        for p in scopes where store.lastLoadError[p] != nil && !errorFillsWindow(p) { out.append(.loadFailed(p)) }
+        if showAll { for p in scopes where setupNeeded(p) != nil { out.append(.setup(p)) } }
+        for p in scopes where !store.autoOn(p).isEmpty { out.append(.auto(p)) }
         if store.doctor.map({ $0.githubCli && $0.githubLoggedIn == false }) == true || (store.githubBudget?.remaining ?? .max) < 300 { out.append(.github) }
         if !store.providerIssues.isEmpty && store.providerIssues != closedIssues { out.append(.provider) }
         if let v = store.newVersion, v != skippedVersion { out.append(.update) }
@@ -359,6 +364,8 @@ struct ContentView: View {
     private func noticeTitle(_ n: Notice) -> String {
         switch n {
         case .trigger: return L("other build triggers", "andere Build-Auslöser")
+        case .loadFailed(let p): return L("\(p.rawValue) not loaded", "\(p.rawValue) nicht geladen")
+        case .setup(let p): return L("\(p.rawValue) not connected", "\(p.rawValue) nicht verbunden")
         case .auto(let p): return L("auto-deploy on (\(p.rawValue))", "Auto-Deploy an (\(p.rawValue))")
         case .github: return "GitHub"
         case .provider: return L("provider problem", "Störung beim Anbieter")
@@ -369,7 +376,9 @@ struct ContentView: View {
     @ViewBuilder private func notice(_ n: Notice) -> some View {
         switch n {
         case .trigger: triggerBanner
-        case .auto: autoBanner
+        case .loadFailed(let p): loadFailedBanner(p)
+        case .setup(let p): setupBanner(p)
+        case .auto(let p): autoBanner(p)
         case .github: githubBanner
         case .provider: providerBanner
         case .update: updateBanner
@@ -573,20 +582,70 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder private var autoBanner: some View {
-        let on = store.autoOn(platform)
+    /// What a platform still needs before its list can be read; nil when it is ready.
+    private func setupNeeded(_ p: Platform) -> String? {
+        guard let d = store.doctor, d.jq else { return nil }
+        switch p {
+        case .vercel:
+            if d.vercelCli && !d.vercelApi { return L("The Vercel CLI is too old.", "Die Vercel-CLI ist zu alt.") }
+            if !d.vercelLoggedIn { return L("Vercel is not connected.", "Vercel ist nicht verbunden.") }
+        case .render:
+            if !d.renderKey { return L("Render is not connected (no API key).", "Render ist nicht verbunden (kein API-Key).") }
+        }
+        return nil
+    }
+
+    /// A failed read takes the whole window only on its own tab and with nothing to show;
+    /// otherwise the last good list stays and the error is a notice above it.
+    private func errorFillsWindow(_ p: Platform) -> Bool {
+        !showAll && p == platform && (store.items[p] ?? []).isEmpty
+    }
+
+    @ViewBuilder private func loadFailedBanner(_ p: Platform) -> some View {
+        if let f = store.lastLoadError[p] {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("\(p.rawValue) could not be loaded", "\(p.rawValue) konnte nicht geladen werden")
+                         + (store.loadedAt[p].map { L(" – showing the list from ", " – zu sehen ist der Stand von ") + $0.formatted(date: .omitted, time: .shortened) } ?? ""))
+                        .font(.callout.weight(.medium))
+                    Text(Demo.scrub(f.message, items: allItems)).font(.caption).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
+                }
+                Spacer()
+                if store.loading.contains(p) { ProgressView().controlSize(.small) }
+                else { Button(L("Try again", "Nochmal versuchen")) { Task { await store.load(p) } } }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8).background(ground(.orange, 0.08))
+        }
+    }
+
+    @ViewBuilder private func setupBanner(_ p: Platform) -> some View {
+        if let why = setupNeeded(p) {
+            HStack(spacing: 10) {
+                Image(systemName: "link.circle").foregroundStyle(.secondary)
+                Text(why).font(.callout)
+                Spacer()
+                Button(L("Set up", "Einrichten")) { showAll = false; platform = p }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6).background(ground(.secondary, 0.08))
+        }
+    }
+
+    @ViewBuilder private func autoBanner(_ p: Platform) -> some View {
+        let on = store.autoOn(p)
         if !on.isEmpty {
             HStack(spacing: 10) {
                 Image(systemName: "dollarsign.circle.fill").font(.title2).foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(on.count == 1 ? L("1 project builds on every push", "1 Projekt baut bei jedem Push") : L("\(on.count) projects build on every push", "\(on.count) Projekte bauen bei jedem Push"))
+                    Text((on.count == 1 ? L("1 project builds on every push", "1 Projekt baut bei jedem Push") : L("\(on.count) projects build on every push", "\(on.count) Projekte bauen bei jedem Push"))
+                         + (showAll ? " (\(p.rawValue))" : ""))
                         .font(.headline)
                     Text(L("Every push costs build minutes. Turn it off and deploy here when you want.",
                            "Jeder Push kostet Build-Minuten. Ausschalten und hier deployen, wann du willst."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(L("Turn off auto-deploy", "Auto-Deploy ausschalten")) { confirmingOff = true }
+                Button(L("Turn off auto-deploy", "Auto-Deploy ausschalten")) { offPlatform = p; confirmingOff = true }
                     .buttonStyle(.borderedProminent).tint(.orange)
             }
             .padding(12)
@@ -599,17 +658,17 @@ struct ContentView: View {
         let visible = self.visible
         if let err = store.doctorError {
             Setup(title: L("Something is missing", "Etwas fehlt"), text: err, commands: []) { Task { await store.start() } }
-        } else if store.doctor == nil && (store.items[platform] ?? []).isEmpty {
+        } else if store.doctor == nil && scopes.allSatisfy({ (store.items[$0] ?? []).isEmpty }) {
             ProgressView(L("Checking access …", "Prüfe Zugang …")).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let d = store.doctor, !d.jq {
             Setup(title: L("jq is missing", "jq fehlt"),
                   text: L("Deploy Center needs the small tool jq. Install it with Homebrew:", "Deploy Center braucht das kleine Werkzeug jq. Installieren mit Homebrew:"),
                   commands: ["brew install jq"]) { Task { await store.start() } }
-        } else if platform == .vercel, let d = store.doctor, d.vercelCli, !d.vercelApi {
+        } else if !showAll, platform == .vercel, let d = store.doctor, d.vercelCli, !d.vercelApi {
             Setup(title: L("Update the Vercel CLI", "Vercel-CLI aktualisieren"),
                   text: L("Your Vercel CLI is too old (it has no `vercel api`).", "Deine Vercel-CLI ist zu alt (ihr fehlt `vercel api`)."),
                   commands: ["npm i -g vercel@latest"]) { Task { await store.start() } }
-        } else if platform == .vercel, let d = store.doctor, !d.vercelLoggedIn {
+        } else if !showAll, platform == .vercel, let d = store.doctor, !d.vercelLoggedIn {
             Setup(title: L("Connect Vercel", "Vercel verbinden"),
                   text: d.vercelCli
                     ? L("Log in once in Terminal. The app uses that login.", "Einmal im Terminal anmelden. Die App nutzt diese Anmeldung.")
@@ -617,18 +676,19 @@ struct ContentView: View {
                   commands: d.vercelCli ? ["vercel login"] : ["npm i -g vercel", "vercel login"]) {
                 Task { await store.start() }
             }
-        } else if platform == .render, let d = store.doctor, !d.renderKey {
+        } else if !showAll, platform == .render, let d = store.doctor, !d.renderKey {
             RenderKeySetup(store: store)
-        } else if let err = store.loadError[platform] {
+        } else if errorFillsWindow(platform), let err = store.lastLoadError[platform]?.message ?? store.loadError[platform] {
             VStack(spacing: 10) {
                 Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(.orange)
                 Text(L("Could not load \(platform.rawValue)", "\(platform.rawValue) konnte nicht geladen werden")).font(.headline)
-                Text(err).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).textSelection(.enabled)
-                Button(L("Try again", "Nochmal versuchen")) { Task { await store.load(platform) } }
+                Text(Demo.scrub(err, items: allItems)).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).textSelection(.enabled)
+                if store.loading.contains(platform) { ProgressView().controlSize(.small) }
+                else { Button(L("Try again", "Nochmal versuchen")) { Task { await store.load(platform) } } }
             }
             .padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if store.loading.contains(platform) && (store.items[platform] ?? []).isEmpty {
-            ProgressView(L("Loading \(platform.rawValue) …", "Lade \(platform.rawValue) …")).frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if scopes.contains(where: { store.loading.contains($0) }) && scopes.allSatisfy({ (store.items[$0] ?? []).isEmpty }) {
+            ProgressView(L("Loading \(scopes.map(\.rawValue).joined(separator: ", ")) …", "Lade \(scopes.map(\.rawValue).joined(separator: ", ")) …")).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if visible.isEmpty && (onlyChanged || !search.isEmpty) {
             let inScope = scopes.flatMap { store.items[$0] ?? [] }
             let hiddenHits = search.isEmpty ? 0 : inScope.filter { store.isHidden($0)
