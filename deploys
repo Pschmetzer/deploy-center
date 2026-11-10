@@ -28,7 +28,7 @@
 #   deploys vercel deploy <p> [--preview] [--sha <c>] [--wait]   --wait follows it until live or failed
 #   deploys history <project> [n]             the last n deploys (default 10): when, state, commit, source
 #   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>)
-#   deploys autofix [--dry-run]               a failed build goes to a Claude Code routine; a merged fix is deployed
+#   deploys autofix [--dry-run]               a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
 #   deploys autofix set-token | routine <id> | list | forget-token | prompt | status | schedule on|off
 #                                             (see docs/AUTOFIX.md)
 #   deploys open <project> [--dashboard]      the site, or its page at Vercel or Render
@@ -399,7 +399,7 @@ export -f workflow_hits b64d
 
 # Sourced by tests/script-tests.sh: the functions above, no command.
 # ---------- Autofix: a failed build hands itself to a Claude Code routine ----------
-# Detection and redeploy run here (the Vercel login and the Render key are on this Mac); the
+# Detection runs here (the Vercel login and the Render key are on this Mac); the
 # fix runs in a Claude Code routine in the cloud, which opens a PR. A person merges it; the next
 # run deploys exactly that merge commit, once. See docs/AUTOFIX.md.
 AUTOFIX_KEYCHAIN="deploy-center-routine"
@@ -430,7 +430,6 @@ af_notify() {
 # Seams the tests replace: what is live, a build log, a deploy.
 af_all() { DEPLOYS_NO_GITHUB=1 all_json; }
 af_logs() { "$0" logs "$1" 200 --id "$2"; }
-af_deploy() { "$0" "$1" deploy-json "$2" --sha "$3"; }
 
 # Obvious secrets out of a log before it leaves this Mac. A help, not a guarantee.
 af_mask() {
@@ -522,28 +521,25 @@ autofix_run() {  # autofix_run [dry]
   all="$(af_all)" || rc=1
   st="$(af_state)"
 
-  # 1. Redeploy: a fire whose PR was merged deploys that merge commit, once, while still failed.
+  # 1. A merged fix is only announced, never deployed: deploying stays a click in the app (or `deploys … deploy`).
   local open_fires f p plat repo did prs m msha
-  open_fires="$(echo "$st" | jq -c '.fires[] | select(.status == "fired" and (.redeployedSha == null) and (.done != true))')"
+  open_fires="$(echo "$st" | jq -c '.fires[] | select(.status == "fired" and (.mergedSha == null) and (.done != true))')"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     p="$(echo "$f" | jq -r .project)"; plat="$(echo "$f" | jq -r .platform)"; repo="$(echo "$f" | jq -r .repo)"; did="$(echo "$f" | jq -r .deployId)"
     local cur; cur="$(echo "$all" | jq -c --arg p "$p" --arg pl "$plat" '.[] | select(.name == $p and .platform == $pl)')"
     if [ -n "$cur" ] && [ "$(echo "$cur" | jq "$AUTOFIX_FAILED")" != true ]; then
       st="$(echo "$st" | jq --arg d "$did" '(.fires[] | select(.deployId == $d)).done = true')"
-      echo "autofix: $p is no longer failed; nothing to redeploy."; continue
+      echo "autofix: $p is no longer failed."; continue
     fi
     prs="$(af_prs "$repo" "$p" closed 2>/dev/null)" || { echo "autofix: could not ask GitHub about $p" >&2; rc=1; continue; }
     m="$(echo "$prs" | jq -c --argjson at "$(echo "$f" | jq .at)" '[.[] | select(.merged_at != null and ((.merged_at | fromdateiso8601) > $at))][0] // empty')"
     [ -n "$m" ] || continue
     msha="$(echo "$m" | jq -r .merge_commit_sha)"
-    if [ -n "$dry" ]; then echo "autofix (dry run): would deploy $p at $msha (PR #$(echo "$m" | jq .number))"; continue; fi
-    # Written down before the deploy starts: a crash after this must not deploy twice.
+    if [ -n "$dry" ]; then echo "autofix (dry run): would announce the merged fix for $p ($msha, PR #$(echo "$m" | jq .number))"; continue; fi
     st="$(echo "$st" | jq --arg d "$did" --arg s "$msha" --argjson n "$(echo "$m" | jq .number)" --argjson t "$now" \
-      '(.fires[] | select(.deployId == $d)) |= . + {redeployedSha:$s, pr:$n, redeployedAt:$t}')"
-    echo "$st" | af_save
-    if af_deploy "$plat" "$p" "$msha" >/dev/null; then af_notify "Autofix: $p is deploying the fix from PR #$(echo "$m" | jq .number)."
-    else af_notify "Autofix: the deploy of $p at ${msha:0:7} did not start."; rc=1; fi
+      '(.fires[] | select(.deployId == $d)) |= . + {mergedSha:$s, pr:$n, mergedSeenAt:$t}')"
+    af_notify "Autofix: the fix for $p (PR #$(echo "$m" | jq .number)) is merged. Deploy it in Deploy Center when you want it live."
   done <<< "$open_fires"
 
   # 2. Report what a build log cannot fix.
@@ -559,7 +555,7 @@ autofix_run() {  # autofix_run [dry]
     did="$(echo "$c" | jq -r .latestId)"; sha="$(echo "$c" | jq -r '.latestSha // ""')"
     prev="$(echo "$st" | jq -r --arg d "$did" '[.fires[] | select(.deployId == $d)][0].status // ""')"
     [ -n "$prev" ] && [ "$prev" != ratelimited ] && continue
-    if [ -n "$sha" ] && [ "$(echo "$st" | jq --arg s "$sha" '[.fires[] | select(.redeployedSha == $s)] | length')" != 0 ]; then
+    if [ -n "$sha" ] && [ "$(echo "$st" | jq --arg s "$sha" '[.fires[] | select(.mergedSha == $s or .redeployedSha == $s)] | length')" != 0 ]; then
       st="$(echo "$st" | jq --arg d "$did" --arg p "$p" --arg pl "$plat" --argjson t "$now" '.fires += [{deployId:$d, project:$p, platform:$pl, at:$t, status:"skipped", reason:"the fix itself failed"}]')"
       af_notify "Autofix: the fix for $p failed to build too. Not trying again; over to you."; continue
     fi
@@ -1015,9 +1011,9 @@ BASH
     af_state | jq --arg r "$(af_routine)" --argjson tok "$tok" --argjson sch "$sch" \
       '{routine:(if $r == "" then null else $r end), token:$tok, scheduled:$sch,
         fires:(.fires | sort_by(-.at) | .[0:20] | map({at, project, platform, status, sha:(.sha // null),
-          session:(.session // null), error:(.error // .reason // null), redeployedSha:(.redeployedSha // null), pr:(.pr // null)}))}' ;;
+          session:(.session // null), error:(.error // .reason // null), redeployedSha:(.redeployedSha // null), mergedSha:(.mergedSha // null), pr:(.pr // null)}))}' ;;
   "autofix list")
-    af_state | jq -r '.fires[] | [(.at | strftime("%Y-%m-%d %H:%M")), .project, .status, ((.sha // "")[0:7]), (.session // .error // .reason // ""), (if .redeployedSha then "redeployed \(.redeployedSha[0:7]) (PR #\(.pr))" else "" end)] | @tsv' \
+    af_state | jq -r '.fires[] | [(.at | strftime("%Y-%m-%d %H:%M")), .project, .status, ((.sha // "")[0:7]), (.session // .error // .reason // ""), (if .mergedSha then "merged \(.mergedSha[0:7]) (PR #\(.pr)), deploy by hand" elif .redeployedSha then "redeployed \(.redeployedSha[0:7]) (PR #\(.pr))" else "" end)] | @tsv' \
       | (printf 'WHEN\tPROJECT\tSTATUS\tCOMMIT\tSESSION\tREDEPLOY\n'; cat) | column -t -s $'\t' ;;
   "autofix "*)
     # autofix [--dry-run]: hand a failed build to the routine, deploy a merged fix. For launchd.

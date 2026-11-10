@@ -53,7 +53,7 @@ for f in providers/*.sh; do
   p="$(basename "$f" .sh)"
   [ -d "tests/fixtures/$p" ] || { fail "$p: fixtures" "tests/fixtures/$p is missing"; continue; }
   rm -rf "$tmp/config-$p"; mkdir -p "$tmp/config-$p"
-  [ -d "tests/fixtures/$p/config" ] && cp "tests/fixtures/$p/config"/* "$tmp/config-$p/"
+  [ -d "tests/fixtures/$p/config" ] && cp -R "tests/fixtures/$p/config"/. "$tmp/config-$p/"
   CONTRACT_ID="" CONTRACT_NAME="" CONTRACT_DEPLOY=""
   # shellcheck source=/dev/null
   . "tests/fixtures/$p/env"
@@ -101,9 +101,10 @@ for f in providers/*.sh; do
 done
 
 # --- switching providers on and off ---
-# A copy of the providers plus "extra", a provider that is off by default and writes down every
-# call, in a folder of its own (DEPLOYS_DIR): the real providers/ folder is not touched.
-dd="$tmp/dd"; mkdir -p "$dd/providers"; cp providers/*.sh "$dd/providers/"
+# A copy of the two default providers plus "extra", a provider that is off by default and writes
+# down every call, in a folder of its own (DEPLOYS_DIR): the real providers/ folder is not touched.
+# Only vercel and render are copied, so these checks stay the same as more providers land.
+dd="$tmp/dd"; mkdir -p "$dd/providers"; cp providers/vercel.sh providers/render.sh "$dd/providers/"
 cat > "$dd/providers/extra.sh" <<'SH'
 # shellcheck shell=bash
 extra_meta() { printf '%s\n' '{"id":"extra","label":"Extra","noun":"site","defaultOn":false,"keyEnv":["EXTRA_TOKEN"],"keychain":"deploy-center-extra","caps":{"off":false,"sha":false,"cancel":false,"rollback":false,"logs":false,"preview":false}}'; }
@@ -166,8 +167,12 @@ expect "a name on two platforms asks which" "$rc:$(grep -c 'Say which: render:sa
 expect "the provider prefix picks one" "$(both explain render:web >/dev/null; echo $?)" "0"
 
 # --- the script finds its providers through a symlink, and says so when they are missing ---
+# Every providers/*.sh, in the order deploys reads them; only vercel and render are on by default.
+ids_all() { for f in providers/*.sh; do basename "$f" .sh; done | jq -Rnc '[inputs]'; }
+expect "a symlinked deploys: only vercel and render on by default" \
+  "$(env -u DEPLOYS_DIR PATH="$STUBPATH" DEPLOYS_CONFIG="$pc" /bin/bash "$root/deploys" providers --json | jq -c 'map(select(.enabled) | .id)')" '["render","vercel"]'
 mkdir -p "$tmp/link"; ln -s "$root/deploys" "$tmp/link/deploys"
-expect "a symlinked deploys finds providers/" "$(env -u DEPLOYS_DIR PATH="$STUBPATH" DEPLOYS_CONFIG="$pc" /bin/bash "$tmp/link/deploys" providers --json | jq -c 'map(.id)')" '["render","vercel"]'
+expect "a symlinked deploys finds providers/" "$(env -u DEPLOYS_DIR PATH="$STUBPATH" DEPLOYS_CONFIG="$pc" /bin/bash "$tmp/link/deploys" providers --json | jq -c 'map(.id)')" "$(ids_all)"
 mkdir -p "$tmp/alone"; cp deploys "$tmp/alone/"
 expect "without providers/: a clear error" "$(env -u DEPLOYS_DIR PATH="$STUBPATH" DEPLOYS_CONFIG="$pc" NO_COLOR=1 /bin/bash "$tmp/alone/deploys" doctor 2>&1 | grep -c 'No providers in')" "1"
 

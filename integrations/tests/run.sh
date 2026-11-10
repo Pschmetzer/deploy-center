@@ -15,16 +15,18 @@ now="$(date +%s)"
 # app-web: Vercel, 3 days old, 4 commits waiting. site: Vercel, live a second ago, up to date,
 # Git still connected. api: Render, live 26 h ago (a newer attempt a minute ago), waiting (count unknown), auto-deploy on.
 cat > "$tmp/vercel.json" <<JSON
-[{"name":"app-web","auto":false,"repo":"me/app","ref":"main","deployable":true,"changed":true,"pendingCommits":4,"lastAt":$((now - 3*86400))},
- {"name":"site","auto":true,"repo":"me/site","ref":"main","deployable":true,"changed":false,"pendingCommits":0,"lastAt":$((now - 1))}]
+[{"name":"app-web","auto":false,"repo":"me/app","ref":"main","deployable":true,"changed":true,"pendingCommits":4,"lastAt":$((now - 3*86400)),"lastState":"READY","lastMsg":"Fix <b>login</b> & signup","lastSha":"abc1234"},
+ {"name":"site","auto":true,"repo":"me/site","ref":"main","deployable":true,"changed":false,"pendingCommits":0,"lastAt":$((now - 1)),"lastState":"READY","lastMsg":"Secret launch copy"}]
 JSON
 cat > "$tmp/render.json" <<JSON
-[{"name":"api","auto":true,"repo":"me/app","ref":"main","deployable":true,"changed":true,"pendingCommits":null,"lastAt":$((now - 60)),"liveAt":$((now - 26*3600))}]
+[{"name":"api","auto":true,"repo":"me/app","ref":"main","deployable":true,"changed":true,"pendingCommits":null,"lastAt":$((now - 60)),"liveAt":$((now - 26*3600)),"lastState":"build_failed","lastMsg":"Add rate limits"}]
 JSON
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/deploys" <<SH
 #!/bin/bash
 [ -n "\${FAKE_SLEEP:-}" ] && [ "\$1" = vercel ] && sleep "\$FAKE_SLEEP"
+[ -n "\${FAKE_SLEEP_ALL:-}" ] && sleep "\$FAKE_SLEEP_ALL"
+[ -n "\${MCP_CALLS:-}" ] && echo "\$*" >> "\$MCP_CALLS"
 case "\$*" in
   "vercel list --json") cat "$tmp/vercel.json" ;;
   "render list --json") cat "$tmp/render.json" ;;
@@ -32,11 +34,22 @@ case "\$*" in
   "list --json") [ -n "\${FAKE_SLEEP:-}" ] && sleep "\$FAKE_SLEEP"
     if [ -n "\${RENDER_API_KEY:-}" ] || [ "\${FAKE_RENDER_KEY:-false}" = true ]; then r="$tmp/render.json"; else r=/dev/null; fi
     jq -s '(.[0] | map(. + {platform:"vercel"})) + ((.[1] // []) | map(. + {platform:"render"}))' "$tmp/vercel.json" \$r ;;
+  "notes app-web") printf '## app-web\\n- New billing page (#12) – Ana\\n- Faster search – Ben\\n\\nDependency updates:\\n- Bump jq – dependabot\\n' ;;
+  "notes "*) exit 1 ;;
   "doctor") echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
   "changed --json") jq -s 'add | map(select(.changed))' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
   "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"
     if [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
     exit "\${FAKE_RC:-0}" ;;
+  "status --json"|"status --json --no-github")
+    jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
+      | map({platform, name, building:false, state:"READY", changed})' "$tmp/vercel.json" "$tmp/render.json" ;;
+  "explain "*) echo "explain: \$2" ;;
+  "notes "*) echo "## Notes for \$2" ;;
+  "logs "*) seq 1 "\${3:-80}" ;;
+  "vercel deploy-json app-web"|"vercel deploy-json app-web --preview") echo '{"id":"dpl_1","url":"https://app-web-x.vercel.app","state":"QUEUED"}' ;;
+  "render deploy-json api") echo '{"id":"dep-1","serviceId":"srv-1","state":"created"}' ;;
+  "vercel rollback app-web") echo '{"id":"dpl_0","state":"READY"}' ;;
   *) echo "unexpected: \$*" >&2; exit 1 ;;
 esac
 SH
@@ -116,6 +129,69 @@ git -C "$tmp/repo" config deploys.prepush.skip true
 out="$(push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
 expect "pre-push: skip turns it off" "$out" "exit=0"
 
+# --- status page ---
+# A stand-in curl for the site check: up for *.up.test, a 503 otherwise. The journal mixes kinds
+# and projects, has a broken line, and 35 deploys of app-web to check the limit of 30.
+mkdir -p "$tmp/sp-bin"
+cat > "$tmp/sp-bin/curl" <<'SH'
+#!/bin/bash
+for a in "$@"; do u="$a"; done
+echo "$u" >> "${SP_CURL_LOG:?}"
+case "$u" in *.up.test*) printf '200 0.123' ;; *) printf '503 0.050' ;; esac
+SH
+chmod +x "$tmp/sp-bin/curl"
+{
+  for i in $(seq 1 35); do printf '{"at":"%s","platform":"vercel","name":"app-web","result":"live","seconds":%d,"detail":null}\n' "$(date -u -d "@$((now - 86400*3 - i*3600))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$((now - 86400*3 - i*3600))" +%Y-%m-%dT%H:%M:%SZ)" "$((60 + i))"; done
+  printf '{"at":"%s","platform":"render","name":"api","result":"failed","seconds":30,"detail":"token sk_live_SECRET in /Users/me/x"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo 'not json'
+  printf '{"at":"%s","platform":"vercel","name":"site","result":"live","seconds":10,"detail":null}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"at":"%s","platform":"vercel","name":"app-web","result":"skipped","seconds":0,"detail":"nothing to do"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "$tmp/journal.jsonl"
+cat > "$tmp/sp.json" <<'JSON'
+{"title":"Acme <deploys>","baseUrl":"https://status.example.test",
+ "projects":["app-web",{"name":"api","platform":"render","label":"API","url":"https://api.up.test/health"},"vercel/missing"]}
+JSON
+sp() { SP_CURL_LOG="$tmp/sp-curl.log" PATH="$tmp/sp-bin:$PATH" RENDER_API_KEY=x DEPLOYS_JOURNAL="$tmp/journal.jsonl" statuspage/statuspage.sh "$@"; }
+: > "$tmp/sp-curl.log"
+sp --config "$tmp/sp.json" --out "$tmp/sp" >/dev/null; expect "statuspage: runs" "$?" 0
+st="$(cat "$tmp/sp/status.json")"; page="$(cat "$tmp/sp/index.html")"; feed="$(cat "$tmp/sp/feed.xml")"
+expect "statuspage: only allowlisted projects, in config order" "$(jq -c '[.projects[].name]' <<<"$st")" '["app-web","API","missing"]'
+case "$page$st$feed" in *site*|*"Secret launch"*) fail "statuspage: a project not listed does not leak" "found" ;; *) ok "statuspage: a project not listed does not leak" ;; esac
+expect "statuspage: a listed project that is not found is unknown" "$(jq -r '.projects[2].state' <<<"$st")" unknown
+expect "statuspage: live message" "$(jq -r '.projects[0].message' <<<"$st")" 'Fix <b>login</b> & signup'
+contains "statuspage: HTML-escaped" "$page" 'Fix &lt;b&gt;login&lt;/b&gt; &amp; signup'
+contains "statuspage: title escaped" "$page" '<title>Acme &lt;deploys&gt;</title>'
+expect "statuspage: notes from deploys notes, no authors by default" "$(jq -c '.projects[0].next' <<<"$st")" '["New billing page (#12)","Faster search","Dependency update: Bump jq"]'
+expect "statuspage: Render shows the live time, not the failed attempt" "$(jq -r '.projects[1] | "\(.state) \(.at)"' <<<"$st")" "live-failed $((now - 26*3600))"
+expect "statuspage: site check" "$(jq -c '.projects[1].check' <<<"$st")" '{"up":true,"code":200,"ms":123}'
+expect "statuspage: only the configured URL is checked" "$(cat "$tmp/sp-curl.log")" "https://api.up.test/health"
+expect "statuspage: timeline is the last 30" "$(jq '.timeline | length' <<<"$st")" 30
+expect "statuspage: timeline newest first, only listed, live and failed" "$(jq -r '.timeline[0] | "\(.name) \(.result)"' <<<"$st")" "API failed"
+case "$st$page$feed" in *SECRET*|*/Users/*|*"nothing to do"*|*abc1234*|*me/app*) fail "statuspage: no journal detail, SHA or repo" "found" ;; *) ok "statuspage: no journal detail, SHA or repo" ;; esac
+expect "statuspage: feed has an entry per deploy" "$(grep -c '<entry>' <<<"$feed")" 30
+contains "statuspage: feed links the page" "$feed" '<link rel="self" href="https://status.example.test/feed.xml"/>'
+case "$page" in *'src="http'*|*'href="http'*|*"@import"*|*"url("*) fail "statuspage: no external assets" "found" ;; *) ok "statuspage: no external assets" ;; esac
+contains "statuspage: dark mode" "$page" "prefers-color-scheme:dark"
+if command -v xmllint >/dev/null; then
+  xmllint --noout "$tmp/sp/feed.xml" && ok "statuspage: feed is well-formed XML" || fail "statuspage: feed is well-formed XML" xmllint
+  xmllint --html --noout "$tmp/sp/index.html" 2>/dev/null && ok "statuspage: page parses as HTML" || fail "statuspage: page parses as HTML" xmllint
+fi
+# hideMessages: no commit text anywhere, only "Updated".
+jq '. + {hideMessages: true}' "$tmp/sp.json" > "$tmp/sp-hide.json"
+sp --config "$tmp/sp-hide.json" --out "$tmp/sph" --no-check >/dev/null
+st="$(cat "$tmp/sph/status.json")"; all="$st$(cat "$tmp/sph/index.html" "$tmp/sph/feed.xml")"
+expect "statuspage hide: message is Updated" "$(jq -r '[.projects[0,1].message] | join(",")' <<<"$st")" "Updated,Updated"
+expect "statuspage hide: notes are one Updated" "$(jq -c '.projects[0].next' <<<"$st")" '["Updated"]'
+case "$all" in *login*|*billing*|*"Faster search"*|*"rate limits"*|*"Bump jq"*) fail "statuspage hide: no commit message anywhere" "found" ;; *) ok "statuspage hide: no commit message anywhere" ;; esac
+expect "statuspage: --no-check checks nothing" "$(jq -c '.projects[1].check' <<<"$st")" null
+echo '{"title":"x","projects":["app-web"],"showAuthors":true}' > "$tmp/sp-auth.json"
+expect "statuspage: authors only when asked" "$(sp --config "$tmp/sp-auth.json" --out "$tmp/spa" --no-check >/dev/null; jq -r '.projects[0].next[0]' "$tmp/spa/status.json")" "New billing page (#12) – Ana"
+echo '{"title":"x"}' > "$tmp/sp-empty.json"
+sp --config "$tmp/sp-empty.json" --out "$tmp/spe" >/dev/null 2>&1; expect "statuspage: no allowlist, no page" "$?" 1
+[ -e "$tmp/spe" ] && fail "statuspage: nothing written without an allowlist" "written" || ok "statuspage: nothing written without an allowlist"
+SP_CURL_LOG=/dev/null DEPLOYS_JOURNAL=/nonexistent RENDER_API_KEY=x statuspage/statuspage.sh --config "$tmp/sp-auth.json" --out "$tmp/spn" --no-check >/dev/null
+expect "statuspage: no journal, empty timeline" "$(jq '.timeline | length' "$tmp/spn/status.json")" 0
+
 # --- the Action's steps, run as GitHub would (needs ruby for the YAML) ---
 if command -v ruby >/dev/null; then
   step() { ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["runs"]["steps"].find { |s| s["id"] == ARGV[1] }[ARGV[2]]' action/action.yml "$1" "${2:-run}"; }
@@ -132,6 +208,14 @@ if command -v ruby >/dev/null; then
   expect "action: outputs are written before failing" "$(tr '\n' ' ' < "$tmp/out")" "started=1 failed=1 deployed=false "
   expect "action: deploy step only with deploy: true" "$(step deploy if)" "inputs.deploy == 'true' && steps.changed.outputs.count != '0'"
   case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
+fi
+
+# --- the MCP server (needs node and `npm ci` in mcp/) ---
+if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
+  DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
+  pgrep -f "sleep 20" >/dev/null && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
+else
+  echo "skip mcp: needs node and (cd integrations/mcp && npm ci)"
 fi
 
 echo

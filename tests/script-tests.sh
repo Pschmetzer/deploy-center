@@ -368,14 +368,14 @@ now="$(date +%s)"
 jq -n --argjson t "$now" '{fires:[{deployId:"o1",project:"web",status:"fired",at:($t-100)},{deployId:"o2",project:"web",status:"failed",at:($t-200)}]}' > "$AUTOFIX_STATE"
 expect "autofix: two fires today stop a third" "$(afrun | grep -c 'already had 2'):$(fired)" "1:0"
 
-# Merged fix: deployed once, at the merge commit; its own failure does not fire again.
+# Merged fix: never deployed, only recorded and announced; its own failure does not fire again.
 af_reset
 jq -n --argjson t "$((now - 600))" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",sha:"aaaa111",status:"fired",at:$t}]}' > "$AUTOFIX_STATE"
 CLOSEDPRS="[{\"number\":8,\"merged_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"merge_commit_sha\":\"ffff999\",\"ref\":\"claude/autofix-web-aaaa111\"}]"
 afrun >/dev/null
-expect "autofix: a merged fix is deployed at its merge commit" "$(grep -c '^deploy vercel web ffff999' "$CALLS")" "1"
+expect "autofix: a merged fix is never deployed" "$(grep -c '^deploy ' "$CALLS"):$(jq -r '.fires[0].mergedSha' "$AUTOFIX_STATE")" "0:ffff999"
 : > "$CALLS"; afrun >/dev/null
-expect "autofix: the merged fix is deployed only once" "$(grep -c '^deploy ' "$CALLS")" "0"
+expect "autofix: a merged fix stays undeployed on the next run" "$(grep -c '^deploy ' "$CALLS")" "0"
 ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d2","latestSha":"ffff999"}]'
 : > "$CALLS"; out="$(afrun)"
 expect "autofix: the fix failing too is not fired again" "$(fired):$(echo "$out" | grep -c 'failed to build too')" "0:1"

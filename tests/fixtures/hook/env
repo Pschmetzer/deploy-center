@@ -1,0 +1,4 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+# The hook URLs are files in the config folder (config/hook-urls), not keychain items.
+export DEPLOYS_HOOK_STORE=file
+CONTRACT_ID=alpha CONTRACT_NAME=alpha CONTRACT_DEPLOY=alpha@1700000000

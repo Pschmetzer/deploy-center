@@ -1,44 +1,35 @@
+<p align="center"><b>English</b> · <a href="README.de.md">Deutsch</a></p>
+
 <h1 align="center">Deploy Center</h1>
 
-<p align="center"><b>Stop paying for a build on every push.</b><br>
-Turn off auto-deploy on Vercel and Render in one click. Deploy what changed in two.</p>
+<p align="center"><b>Turn off auto-deploy on Vercel and Render. Deploy what changed with one click.</b><br>
+Your agent pushes 40 times. You deploy once.<br>
+Works great with Claude Code: let the agent push, you decide what ships.</p>
 
 <p align="center">
-  <a href="https://github.com/Pschmetzer/deploy-center/releases/latest"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS%2015%2B-4f7cff?style=for-the-badge&logo=apple&logoColor=white"></a>
-  <a href="https://deploycenter.app"><img alt="Website" src="https://img.shields.io/badge/Website-deploycenter.app-8b5cf6?style=for-the-badge"></a>
-</p>
-<p align="center">
   <a href="https://github.com/Pschmetzer/deploy-center/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Pschmetzer/deploy-center?label=release"></a>
-  <a href="https://github.com/Pschmetzer/deploy-center/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Pschmetzer/deploy-center/total"></a>
-  <a href="https://github.com/Pschmetzer/deploy-center/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Pschmetzer/deploy-center/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-black?logo=apple">
+  <a href="#install"><img alt="Homebrew cask" src="https://img.shields.io/badge/brew-cask-orange?logo=homebrew&logoColor=white"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
 <p align="center"><img src="docs/images/app.png" width="900" alt="Deploy Center: 149 PRs waiting to deploy, Vercel build costs of the last 7 days and the projects with commits waiting"></p>
 <p align="center"><sub>The author's real build bill: $99 in 7 days. Project names hidden by demo mode.</sub></p>
 
-**Contents:** [Install](#install-in-30-seconds) · [Requirements](#requirements) · [Why](#why) · [What it does](#what-it-does) ·
-[Connect your accounts](#connect-your-accounts) · [Command line](#command-line) · [Good to know](#good-to-know) ·
-[Docs](#docs) · [Privacy](#privacy) · [Build from source](#build-from-source) · [Help wanted](#help-wanted) · [License](#license)
-
-## Install in 30 seconds
-
-**Homebrew**
+## Install
 
 ```bash
 brew tap pschmetzer/tap && brew trust pschmetzer/tap && brew install --cask deploy-center
 ```
 
+Or [download the zip](https://github.com/Pschmetzer/deploy-center/releases/latest), unzip it and drag
+**Deploy Center** to *Applications*. Free, MIT, signed and notarized by Apple. Website: [deploycenter.app](https://deploycenter.app).
+
+<details>
+<summary>Homebrew notes and requirements</summary>
+
 Homebrew 6 asks you to trust a third-party tap once (`brew trust`). Without admin rights, add
-`--appdir="$HOME/Applications"` to the install. Updates: `brew upgrade --cask deploy-center` or **Update now** in Settings.
-
-**Or by hand:** download the zip from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest),
-unzip it and drag **Deploy Center** to *Applications*. It is signed and notarized by Apple, so it opens without a warning.
-
-Then connect Vercel (`vercel login`), paste a Render API key, and press **Turn off auto-deploy**. [Details below](#connect-your-accounts).
-New to it? [Try it safely](docs/SAFE-START.md): look first, then one project, then all.
-
-## Requirements
+`--appdir="$HOME/Applications"`. Updates: `brew upgrade --cask deploy-center` or **Update now** in Settings.
 
 | What | Needed for | Install |
 |---|---|---|
@@ -50,125 +41,132 @@ New to it? [Try it safely](docs/SAFE-START.md): look first, then one project, th
 
 The app finds `vercel` from nvm, volta or fnm only if your login shell sets them up (`~/.zprofile`, not only `~/.zshrc`).
 See [Troubleshooting](docs/TROUBLESHOOTING.md#vercel-is-installed-nvm-volta-fnm-but-the-app-does-not-find-it).
+</details>
 
 ## Why
 
-If you push dozens of times a day, every push builds every connected project. Build minutes add up
-fast. Deploying once a day with a click costs a fraction, and nothing ships by accident.
-Try the [cost calculator](https://deploycenter.app/#calc).
+Every push builds every connected project, and build minutes cost money. AI coding agents push
+many times a day, so the builds add up. Deploying once a day with a click costs a fraction,
+and nothing ships by accident. Try the [cost calculator](https://deploycenter.app/#calc).
 
-## What it does
+## How it works
 
-- **Turns off auto-deploy** for all your Vercel projects and Render services in one click.
-  On Vercel the Git connection is removed (Deploy Center remembers the repo first);
-  on Render auto-deploy is set to *Off*.
-- **Deploys the newest commit** from GitHub with a click, for one project or many at once,
-  and follows each deploy until it is live or failed.
-- **Shows what is waiting**: the last deploy and its state, and a *New changes* badge when
-  GitHub has a commit that is not live yet. *Select all changed* + *Deploy* is a daily deploy in two clicks.
-- **Counts what is waiting**: how many commits and merged pull requests on GitHub are not live,
-  per project and in total, and how many pull requests are still open.
-- A menu bar icon with the number of PRs waiting. Opens with the last lists at once and reads them again every 15 minutes; a notification when a
-  deploy ends while the window is in the background; ⌘R, ⌘F, ⌘1/⌘2, Esc.
-- **Preview deploys** (Vercel) and **rollback** to the previous live deploy, from the right-click menu.
-- Site logos, domains to click, search, English and German.
+1. **Connect.** Vercel uses your `vercel login`. For Render, paste an API key; it is stored in your macOS keychain.
+2. **Turn off auto-deploy.** One click for all projects. A push now builds nothing.
+3. **Deploy when you want.** The app shows what is waiting. *Select all changed* + *Deploy* is the daily deploy.
 
-## Connect your accounts
+New to it? [Try it safely](docs/SAFE-START.md): look first, then one project, then all.
 
-**Vercel** uses the login of the Vercel CLI on your Mac:
+## Features
 
-```bash
-npm i -g vercel
-vercel login
-```
+- Turns off auto-deploy for all Vercel projects and Render services at once. [What changes](docs/AUTO-DEPLOY.md)
+- Deploys the newest commit, for one project or many, and follows each deploy until live or failed
+- Shows what is waiting: commits and merged PRs not live yet, per project and in total. [How it counts](docs/NUMBERS.md)
+- Shows your Vercel build costs
+- Menu bar icon with the number of PRs waiting, and a notification when a deploy ends
+- Preview deploys (Vercel) and rollback to the previous live deploy
+- A bash CLI, `deploys`, that does all of this without the app, also on Linux and in CI. [CLI reference](docs/CLI.md)
+- Add-ons: a GitHub Action, badges, a daily summary to a webhook, a pre-push hook, a Docker image. [Integrations](integrations/)
+- Autofix: a failed build goes to a Claude Code routine that opens a fix PR. [Autofix](docs/AUTOFIX.md)
+- English and German
 
-**Render** needs an API key: dashboard.render.com → Account Settings → API Keys. Paste it into the app.
-It is stored in your macOS keychain and nowhere else.
+## Deploy Center + Claude Code
 
-**GitHub CLI** (`gh`, optional) lets the app show *New changes*. Without it everything else works.
+- **Autofix: a failed build fixes itself (almost).** Deploy Center hands the masked build log to a Claude Code
+  routine, and Claude opens a PR with the fix. After you merge, the next run deploys that merge commit, once.
+  It never merges by itself. [Autofix](docs/AUTOFIX.md)
+- **One deploy for many pushes.** Let the agent push as often as it likes; nothing builds until you deploy what changed.
+- **Copy for Claude.** The build log of a failed deploy has a button that copies the error and the log around it as a prompt, ready to paste.
+- *Coming:* an MCP server, so Claude can ask what is waiting and deploy only with your OK, and a digest of what the agent pushed for you to approve.
+
+More: [deploycenter.app/claude-code](https://deploycenter.app/claude-code/)
+
+## What it changes, and how to undo it
+
+| | What Deploy Center does | How to undo it |
+|---|---|---|
+| **Vercel** | Removes the project's Git connection. It writes down the repo and branch in `~/.config/deploys/vercel-repos.json` first. | Project → Settings → Git → connect the repository again. |
+| **Render** | Sets the service's auto-deploy to *Off*. The service stays connected to its repo. | Service → Settings → Build & Deploy → Auto-Deploy → *On Commit*. |
+
+There is no undo command: you turn auto-deploy back on in each dashboard. Uninstalling does not turn it back on.
+Deploy hooks and GitHub workflows that deploy keep working; `deploys triggers` lists them. On Render, a
+Blueprint with auto-sync can turn auto-deploy on again: add `autoDeployTrigger: off` to your services in
+`render.yaml`. Details: [Auto-deploy off and back on](docs/AUTO-DEPLOY.md) · [Uninstall](docs/UNINSTALL.md).
 
 ## Command line
 
-The app is a window over one bash script, `deploys`, which you can use on its own
-(it is inside the app at `Deploy Center.app/Contents/Resources/deploys`):
-
 ```bash
-deploys doctor                          # what is connected
-deploys changed                         # what is merged on GitHub and not live: commits and PRs per project
-deploys deploy-changed                  # the daily deploy: shows the list; add --yes to start it
-deploys vercel map my-project me/my-repo main   # where a project deploys from, set by hand
-deploys vercel list                     # which projects still deploy on push
-deploys vercel autodeploy-off --all
-deploys vercel deploy my-project        # newest commit to production
-deploys vercel deploy my-project --preview
-deploys render list
-deploys render autodeploy-off --all
-deploys render deploy my-service
-deploys vercel rollback my-project
-deploys status                          # what is building now, and what failed last
-deploys watch my-project                # follow the newest deploy until live or failed
-deploys logs my-project                 # the end of the newest build log
-deploys open my-project [--dashboard]   # the site, or its page at Vercel/Render
-deploys ignore my-project               # leave it out of changed / deploy-changed
-eval "$(deploys completion zsh)"        # tab completion (also: bash)
+deploys changed               # what is merged on GitHub and not live
+deploys deploy-changed --yes  # deploy all of it
 ```
 
-Add `--json` to any command for the machine answer. On a server or in CI, `RENDER_API_KEY`
-takes the place of the keychain and `VERCEL_TOKEN` is read by the Vercel CLI.
+Inside the app at `Deploy Center.app/Contents/Resources/deploys`. All commands, CI variables and
+settings: [docs/CLI.md](docs/CLI.md).
 
-Settings live in `~/.config/deploys/`: `vercel-repos.json` (which repo and branch each Vercel project
-deploys from, written when auto-deploy is turned off) and `vercel-team` (detected automatically).
+## Roadmap
 
-## Good to know
+- [x] Vercel and Render: auto-deploy off, deploy, preview, rollback
+- [x] What is waiting (commits and PRs) and Vercel build costs
+- [x] Menu bar, notifications, English and German
+- [x] `deploys` CLI, GitHub Action, badges, daily webhook summary, pre-push hook, Docker image
+- [x] Autofix for failed builds
+- [ ] Netlify
+- [ ] Cloudflare Pages
+- [ ] AWS Amplify
+- [ ] Generic deploy hook (any platform with a deploy URL)
+- [ ] MCP server for AI agents
+- [ ] Raycast extension
+- [ ] Linux CLI packaging
+- [ ] Team sync
 
-- A project you disconnected **before** using Deploy Center has no remembered repo. Tell it:
-  `deploys vercel map my-project me/my-repo main`.
-- To go back to auto-deploy, reconnect the repository in the Vercel dashboard, or set
-  auto-deploy to *On Commit* in Render. There is no command for it; see [Auto-deploy](docs/AUTO-DEPLOY.md#back-to-auto-deploy).
-- On Render, a Blueprint with auto-sync can apply `render.yaml` again on push. Add
-  `autoDeployTrigger: off` to your services there to keep it off.
-- Your Render key gives full access to your Render account. It never leaves your Mac
-  except in requests to api.render.com.
+Which platform should come next? [Vote with an issue](https://github.com/Pschmetzer/deploy-center/issues/new?template=platform-request.yml).
 
-## Docs
+## Alternatives
 
-- [Try it safely](docs/SAFE-START.md): look first, then one project, then all
-- [Auto-deploy off and back on](docs/AUTO-DEPLOY.md): what changes per platform
-- [Troubleshooting](docs/TROUBLESHOOTING.md): the error messages and what to do
-- [FAQ](docs/FAQ.md) · [Glossary](docs/GLOSSARY.md) · [How the app counts](docs/NUMBERS.md)
-- [Uninstall](docs/UNINSTALL.md): the app, the key and everything it kept
-- [Examples](examples/): the daily deploy from CI, without a Mac
+- **Vercel Ignored Build Step.** Built into Vercel and free. A command per project decides on each
+  push whether to build. Great for monorepos, and works well together with Deploy Center. It does not
+  give you one place to see and deploy what is waiting. See the [Glossary](docs/GLOSSARY.md#ignored-build-step).
+- **The dashboard toggle.** Disconnect Git on Vercel or set auto-deploy to *Off* on Render by hand.
+  Fine for one or two projects. With many, it is a lot of clicks, and you deploy from each dashboard.
+- **Status-only menu bar apps.** They show deploy status, some for more providers than Deploy Center
+  supports. They leave auto-deploy as it is. If you only want to watch builds, they may be all you need.
 
-## Privacy
+## FAQ
 
-No telemetry, no account, no server of ours. The app talks to Vercel and Render with your own
-logins, to GitHub through your `gh` login, to your own sites for their logos and the check
-after a deploy, and once a day to GitHub's release page to see whether a new version is out
-(Settings can turn that off). Errors are written to `~/Library/Logs/DeployCenter.log` on your Mac.
+**What does it cost?** Nothing. You pay Vercel and Render for the builds you start, and fewer of them.
 
-## Build from source
+**Does it deploy anything by itself?** No. It deploys when you press **Deploy** or run a `deploys`
+command with `--yes`. A scheduled deploy is yours to set up: [examples/](examples/).
+
+**Where is my Render key?** In your macOS keychain. It is sent only to api.render.com. It gives full
+access to your Render account.
+
+**Does the app send data anywhere?** No telemetry, no account, no server of ours. It talks to Vercel,
+Render and GitHub with your own logins, to your sites for logos and the check after a deploy, and once a
+day to GitHub's release page for updates (Settings can turn that off). Errors go to `~/Library/Logs/DeployCenter.log` on your Mac.
+
+**GitLab or Bitbucket?** Not yet. Deploys start from GitHub.
+
+**Windows or Linux?** The app needs macOS 15. The `deploys` CLI is bash and runs on Linux and in CI.
+
+More: [FAQ](docs/FAQ.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Glossary](docs/GLOSSARY.md) · [All docs](docs/README.md)
+
+## Contributing
+
+Ideas and bug reports are welcome in [Issues](https://github.com/Pschmetzer/deploy-center/issues).
+Most wanted: GitLab next to GitHub, and reports when a number in the app looks wrong.
+Small tasks to start with: [Good first issues](docs/GOOD-FIRST-ISSUES.md). How to build and test:
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
-./build.sh            # app and zip in build/
-./build.sh --install  # also copy it to ~/Applications
+./build.sh               # app and zip in build/
+tests/script-tests.sh    # the rules in deploys, no network needed
+tests/app-tests.sh       # the rules in the app
 ```
-
-Needs Xcode or the Command Line Tools. No Xcode project: a few Swift files in `app/` and the
-`deploys` script. Tests, no network needed:
-
-```bash
-tests/script-tests.sh   # the rules in deploys (a stand-in answers for gh)
-tests/app-tests.sh      # the rules in the app
-```
-`./release.sh` signs, notarizes and zips a release (it needs a Developer ID; see the file).
-
-## Help wanted
-
-Ideas and bug reports are welcome in [Issues](../../issues). Most wanted: GitLab next to GitHub,
-and reports when a number in the app looks wrong.
 
 ## License
 
 MIT, see [LICENSE](LICENSE). Not affiliated with Vercel or Render.
+Claude is a trademark of Anthropic; not affiliated.
 
 [Legal notice (Impressum)](https://deploycenter.app/impressum.html) · [Privacy policy (Datenschutz)](https://deploycenter.app/datenschutz.html)

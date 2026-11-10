@@ -3,6 +3,8 @@
 ## Unreleased
 
 - `deploys`: each platform is one file, `providers/vercel.sh` and `providers/render.sh`, behind one contract (`docs/PROVIDERS.md`). Nothing changes for Vercel and Render users. New: `deploys list --json` (every project on every platform), `deploys providers [--json]`, `deploys providers enable|disable <p>` (Vercel and Render are on by default, any later platform is off until turned on), and names as `render:web`. Every `json` entry has a `phase` (queued, building, ready, failed, canceled). `render deploy-json --preview` is refused instead of deploying production.
+- `providers/hook.sh` (generic deploy hook) follows the same contract: off until `deploys providers enable hook`, then `deploys hook add|remove|list|deploy` route through `deploys`. `deploys hook status <name>` keeps its JSON; its doctor fields are `hookReady`, `hookStore`, `hookCurl` and `hooks`.
+- `integrations/mcp/`: an MCP server for AI coding agents. Read-only by default (`changed`, `status`, `explain`, `notes`, `logs`, `doctor`); deploy and rollback of one project per call only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`.
 - `deploys autofix`: a failed build (Vercel `ERROR`, Render `build_failed`) is handed to a Claude Code routine that opens a fix PR; after the merge, the next run deploys that merge commit once. Caps, no duplicates, never merges. See `docs/AUTOFIX.md` and `scripts/autofix.plist.example`.
 - `deploys logs <project> --id <deploy>` reads the log of one deploy; `vercel json` and `render json` carry `latestId` and `latestSha` of the newest attempt.
 
