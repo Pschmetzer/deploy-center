@@ -77,6 +77,34 @@ struct RenderService: Decodable {
     let risk: Risk?
     let latestId: String?; let latestSha: String?
 }
+/// What every platform's list says of a project the same way; the row is built once from it,
+/// so a new column is added here and in the two field lists only.
+protocol ProjectRow {
+    var name: String { get }; var auto: Bool { get }; var deployable: Bool { get }
+    var repo: String? { get }; var ref: String? { get }; var domain: String? { get }
+    var lastAt: Double? { get }; var lastState: String? { get }; var headAt: Double? { get }; var headMsg: String? { get }
+    var lastSha: String? { get }; var headSha: String? { get }
+    var changed: Bool? { get }; var pendingCommits: Int? { get }; var pendingPRs: Int? { get }; var openPRs: Int? { get }
+    var building: Bool? { get }; var pendingPartial: Bool? { get }; var oldestPendingAt: Double? { get }; var rewritten: Bool? { get }
+    var openDrafts: Int? { get }; var openBots: Int? { get }; var lastMsg: String? { get }; var risk: Risk? { get }
+    var latestId: String? { get }; var latestSha: String? { get }
+}
+extension VercelProject: ProjectRow {}
+extension RenderService: ProjectRow {}
+extension ProjectRow {
+    /// The row; what differs per platform comes in as arguments.
+    func item(id: String, platform: Platform, detail: String, note: String?, link: String?, latestState: String?) -> Item {
+        Item(id: id, name: name, detail: detail, platform: platform, deployable: deployable, auto: auto, note: note, link: link,
+             domain: domain, lastAt: date(lastAt), lastState: lastState,
+             headAt: date(headAt), headMsg: headMsg, lastSha: lastSha, headSha: headSha,
+             repo: repo, ref: ref, changed: changed, pendingCommits: pendingCommits,
+             pendingPRs: pendingPRs, openPRs: openPRs, lastMsg: lastMsg, openDrafts: openDrafts, openBots: openBots,
+             building: building ?? false, pendingPartial: pendingPartial ?? false,
+             oldestPendingAt: date(oldestPendingAt), rewritten: rewritten ?? false, risk: risk,
+             latestState: latestState, latestId: latestId, latestSha: latestSha)
+    }
+}
+
 struct Costs: Decodable {
     struct Day: Decodable, Identifiable { let day: String; let total: Double; let build: Double; var id: String { day } }
     struct Project: Decodable { let name: String; let build: Double; let builds: Int? }
@@ -310,7 +338,10 @@ struct Item: Identifiable {
 /// An ad-hoc build may be refused; then nothing shows.
 @MainActor
 enum Notify {
+    /// Notifications need an app bundle; a bare binary (the tests) would crash asking for them.
+    static var available: Bool { Bundle.main.bundleIdentifier != nil }
     static func ask(then: (@Sendable (Bool) -> Void)? = nil) {
+        guard available else { then?(false); return }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in then?(granted) }
     }
     /// A reminder the person set up themselves: shown whether or not the window is in front.
@@ -318,7 +349,7 @@ enum Notify {
         add(title, body, id: "daily-reminder")
     }
     static func post(_ title: String, _ body: String) {
-        guard !NSApp.isActive, UserDefaults.standard.object(forKey: "notifications") as? Bool ?? true else { return }
+        guard available, !NSApp.isActive, UserDefaults.standard.object(forKey: "notifications") as? Bool ?? true else { return }
         add(title, body, id: UUID().uuidString)
     }
     /// The countdown before an automatic rollback: shown even with the window in front, with Cancel.
@@ -326,11 +357,13 @@ enum Notify {
         add(title, body, id: id, category: NotifyRouter.rollbackCategory)
     }
     static func remove(_ id: String) {
+        guard available else { return }
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
     }
     /// Asks first only when the person was never asked, so the first alarm of a run is not lost.
     private static func add(_ title: String, _ body: String, id: String, category: String? = nil) {
+        guard available else { return }
         Task {
             let center = UNUserNotificationCenter.current()
             switch await center.notificationSettings().authorizationStatus {

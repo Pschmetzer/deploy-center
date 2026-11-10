@@ -721,5 +721,56 @@ expect("window: unreadable file is no rules", DeployWindowConfig.parse(Data("nop
 let fol = Store.Followed(platform: "render", id: "srv-1", deployId: "dep-1", startedAt: 100, preview: false, rolledBack: true, sha: "abc")
 expect("followed deploy round trip", (try? JSONDecoder().decode(Store.Followed.self, from: JSONEncoder().encode(fol))) == fol, true)
 
+// LOG-048: one row builder for both platforms.
+if let r = try? decodeLossy(RenderService.self, from: Data(#"[{"id":"srv-9","name":"api","type":"web_service","paused":false,"auto":false,"deployable":true,"lastState":"build_failed","latestSha":"abc","changed":true}]"#.utf8), label: "t").first {
+    let i = r.item(id: r.id, platform: .render, detail: "", note: nil, link: nil, latestState: r.lastState)
+    expect("render row: id, newest attempt, failure", "\(i.id) \(i.latestSha ?? "") \(i.lastFailed) \(i.hasNewCommits)", "srv-9 abc true true")
+} else { expect("render row decodes", false, true) }
+
+// LOG-116: the queue and following, with the script answered by the test (no network).
+// The main run loop turns while waiting, so the store's tasks (main actor) run.
+MainActor.assumeIsolated {
+    func spin(until done: () -> Bool) {
+        let end = Date().addingTimeInterval(3)
+        while !done() && Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+    }
+    let oldUndo = UserDefaults.standard.object(forKey: "undoSeconds")
+    UserDefaults.standard.set(0, forKey: "undoSeconds")
+    Store.pollNanos = 20_000_000
+    Tool.testRunner = { args in
+        switch (args.first ?? "", args.dropFirst().first ?? "") {
+        case ("window", _): return Data(#"{"denied":false}"#.utf8)
+        case ("vercel", "deploy-json"): return Data(#"{"id":"dpl_1","state":"QUEUED"}"#.utf8)
+        case ("vercel", "status"): return Data(#"{"id":"dpl_1","state":"READY"}"#.utf8)
+        case ("ci", _): try await Task.sleep(nanoseconds: 5_000_000_000); return Data(#"{"state":"green","reason":""}"#.utf8)
+        default: throw ToolError(message: "not in this test")
+        }
+    }
+    let st = Store()
+    var a = item(changed: true, commits: 1); a.repo = "me/app"
+    st.items[.vercel] = [a]
+    st.deployOne(a, preview: false)
+    spin { if case .done = st.items[.vercel]![0].state { return true } else { return false } }
+    let i = st.items[.vercel]![0]
+    expect("deploy followed to live", "\(i.state)", "done(nil)")
+    expect("live row is current", "\(i.hasNewCommits) \(i.lastFailed)", "false false")
+    expect("nothing left to follow after the end", Store.readFollowed().isEmpty, true)
+
+    let ci = Store()
+    var b = item(changed: true, commits: 1); b.repo = "me/app"; b.selected = true
+    ci.items[.vercel] = [b]
+    ci.deploySelected(.vercel, whenGreen: true)
+    spin { ci.items[.vercel]![0].state == .running(L("waiting for checks", "wartet auf Checks")) }
+    expect("waiting for CI counts as busy", ci.deploysBusy, true)
+    ci.cancel(ci.items[.vercel]![0])
+    spin { !ci.items[.vercel]![0].state.isActive }
+    expect("CI wait cancelled", "\(ci.items[.vercel]![0].state)", "failed(\"\(L("Cancelled", "Abgebrochen"))\")")
+
+    Tool.testRunner = nil
+    Store.pollNanos = 6_000_000_000
+    if let oldUndo { UserDefaults.standard.set(oldUndo, forKey: "undoSeconds") } else { UserDefaults.standard.removeObject(forKey: "undoSeconds") }
+    UserDefaults.standard.removeObject(forKey: "followedDeploys")
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

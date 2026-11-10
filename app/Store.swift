@@ -548,41 +548,26 @@ final class Store: ObservableObject {
     }
 
     private func decode(_ p: Platform, _ data: Data) throws -> [Item] {
-            switch p {
-            case .vercel:
-                let list = try decodeLossy(VercelProject.self, from: data, label: "vercel json", maxBadShare: 0.3)
-                return list.map { v in
-                    Item(id: v.name, name: v.name,
-                         detail: v.repo.map { "\($0) · \(v.ref ?? "main")" } ?? L("no Git repository", "kein Git-Repo"),
-                         platform: .vercel, deployable: v.deployable, auto: v.auto,
-                         note: v.auto ? L("deploys on every push", "deployt bei jedem Push")
-                             : (v.deployable ? nil : L("repo unknown", "Repo unbekannt")),
-                         link: v.domain.map { "https://\($0)" },
-                         domain: v.domain, lastAt: date(v.lastAt), lastState: v.lastState,
-                         headAt: date(v.headAt), headMsg: v.headMsg, lastSha: v.lastSha, headSha: v.headSha,
-                         repo: v.repo, ref: v.ref, changed: v.changed, pendingCommits: v.pendingCommits,
-                         pendingPRs: v.pendingPRs, openPRs: v.openPRs, lastMsg: v.lastMsg, openDrafts: v.openDrafts, openBots: v.openBots,
-                         building: v.building ?? false, pendingPartial: v.pendingPartial ?? false,
-                         oldestPendingAt: date(v.oldestPendingAt), rewritten: v.rewritten ?? false, risk: v.risk,
-                         latestState: v.latestState, latestId: v.latestId, latestSha: v.latestSha)
-                }
-            case .render:
-                let list = try decodeLossy(RenderService.self, from: data, label: "render json", maxBadShare: 0.3)
-                return list.map { r in
-                    Item(id: r.id, name: r.name,
-                         detail: Self.typeName(r.type) + (r.repo.map { " · \($0) · \(r.ref ?? "main")" } ?? ""),
-                         platform: .render, deployable: r.deployable, auto: r.auto,
-                         note: r.paused ? L("suspended", "pausiert")
-                             : (r.auto ? L("deploys on every push", "deployt bei jedem Push") : nil),
-                         link: r.url, domain: r.domain, lastAt: date(r.lastAt), lastState: r.lastState,
-                         headAt: date(r.headAt), headMsg: r.headMsg, lastSha: r.lastSha, headSha: r.headSha,
-                         repo: r.repo, ref: r.ref, kind: r.type, changed: r.changed, pendingCommits: r.pendingCommits,
-                         pendingPRs: r.pendingPRs, openPRs: r.openPRs, lastMsg: r.lastMsg, openDrafts: r.openDrafts, openBots: r.openBots,
-                         building: r.building ?? false, pendingPartial: r.pendingPartial ?? false,
-                         oldestPendingAt: date(r.oldestPendingAt), rewritten: r.rewritten ?? false, risk: r.risk,
-                         latestState: r.lastState, latestId: r.latestId, latestSha: r.latestSha)
-                }
+        switch p {
+        case .vercel:
+            return try decodeLossy(VercelProject.self, from: data, label: "vercel json", maxBadShare: 0.3).map { v in
+                v.item(id: v.name, platform: .vercel,
+                       detail: v.repo.map { "\($0) · \(v.ref ?? "main")" } ?? L("no Git repository", "kein Git-Repo"),
+                       note: v.auto ? L("deploys on every push", "deployt bei jedem Push")
+                           : (v.deployable ? nil : L("repo unknown", "Repo unbekannt")),
+                       link: v.domain.map { "https://\($0)" }, latestState: v.latestState)
             }
+        case .render:
+            return try decodeLossy(RenderService.self, from: data, label: "render json", maxBadShare: 0.3).map { r in
+                // Render's lastState is its newest attempt already.
+                var i = r.item(id: r.id, platform: .render,
+                               detail: Self.typeName(r.type) + (r.repo.map { " · \($0) · \(r.ref ?? "main")" } ?? ""),
+                               note: r.paused ? L("suspended", "pausiert") : (r.auto ? L("deploys on every push", "deployt bei jedem Push") : nil),
+                               link: r.url, latestState: r.lastState)
+                i.kind = r.type
+                return i
+            }
+        }
     }
 
     /// Lists only, both platforms; costs and triggers cost many GitHub calls and stay manual.
@@ -1189,6 +1174,9 @@ final class Store: ObservableObject {
         // pump() runs once this returns (see pump), not here as well.
     }
 
+    /// Between two status questions; tests make it short.
+    nonisolated(unsafe) static var pollNanos: UInt64 = 6_000_000_000
+
     /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
     private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false, rolledBack: Bool = false, sha: String? = nil) async throws {
         let p = item.platform
@@ -1202,7 +1190,7 @@ final class Store: ObservableObject {
         let clock = SuspendingClock()
         let deadline = clock.now.advanced(by: .seconds(40 * 60))
         while clock.now < deadline {
-            try await Task.sleep(nanoseconds: 6_000_000_000)
+            try await Task.sleep(nanoseconds: Self.pollNanos)
             guard let s = await status(item, deployId) else {
                 // Network or login gone: say so instead of spinning for 40 minutes without a word.
                 misses += 1

@@ -151,7 +151,12 @@ enum Tool {
     /// Runs off the main thread. A GUI app does not get the shell's PATH, and `vercel` needs node.
     /// stdout and stderr are read at the same time (reading one to the end first can deadlock
     /// once the other fills its pipe), and a command that hangs is ended after `timeout` seconds.
+    /// Tests only: answers every script call instead of the script, so the queue, following and
+    /// cancelling can be run without a network or an account. Never set in the app.
+    nonisolated(unsafe) static var testRunner: (@Sendable ([String]) async throws -> Data)?
+
     static func run(_ args: [String], stdin: String? = nil, timeout: Double = 120) async throws -> Data {
+        if let fake = testRunner { return try await fake(args) }
         // A cancelled Swift task ends the process too, instead of letting it run to its timeout.
         let running = Running()
         return try await withTaskCancellationHandler {
