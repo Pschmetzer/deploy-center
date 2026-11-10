@@ -510,6 +510,8 @@ final class Store: ObservableObject {
         // "Show log" / "Roll back …" in a failure's notification: the window, then the log or the question.
         NotifyRouter.shared.onAction = { [weak self] action, key in
             guard let self else { return }
+            // "Turn off" works in the background; it needs no window.
+            if action == NotifyRouter.autoOffAction { self.turnOffAutoDeploy(key: key); return }
             NotifyRouter.shared.onOpen?(nil)
             if action == NotifyRouter.logAction { self.pendingLog = key } else if !self.observer { self.pendingRollback = key }
         }
@@ -702,6 +704,8 @@ final class Store: ObservableObject {
     /// A reload keeps what the person did: ticks stay, a deploy being followed keeps its state.
     /// How a deploy ended stays only while the branch is where it was; a new commit makes the row wait again.
     func merge(_ p: Platform, _ fresh: [Item]) {
+        let again = Self.autoOnAgain(old: items[p] ?? [], fresh: fresh).filter { allowance($0) == nil }
+        defer { for i in again { autoBackOn(i) } }
         let old = Dictionary((items[p] ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         items[p] = fresh.map { n in
             var n = n
@@ -714,6 +718,29 @@ final class Store: ObservableObject {
             }
             return n
         }
+    }
+
+    /// Rows whose auto-deploy was off at the last read and is on now (FEA-060): someone turned it on
+    /// in the dashboard, or a new connection did. The first read of a run says nothing.
+    nonisolated static func autoOnAgain(old: [Item], fresh: [Item]) -> [Item] {
+        let was = Dictionary(old.map { ($0.id, $0.auto) }, uniquingKeysWith: { a, _ in a })
+        return fresh.filter { $0.auto && was[$0.id] == false }
+    }
+    /// A word and, outside observer mode, "Turn off" in the toast and the notification; one click,
+    /// nothing turns off by itself.
+    private func autoBackOn(_ item: Item) {
+        let name = Demo.mask(item.name), key = Self.key(item)
+        let title = L("Auto-deploy is on again for \(name)", "Auto-Deploy ist wieder an bei \(name)")
+        let body = L("Every push builds again (costs build minutes).", "Jeder Push baut wieder (kostet Build-Minuten).")
+        log(Message(date: Date(), text: title, ok: false))
+        guard !observer else { Notify.post(title, body, project: item.name); show(Toast(text: title, ok: false)); return }
+        Notify.post(title, body, project: item.name, key: key, autoOn: true)
+        show(Toast(text: title, ok: false, undoLabel: L("Turn off", "Ausschalten"), undo: { [weak self] in self?.turnOffAutoDeploy(key: key) }))
+    }
+    /// "Turn off" from the toast or the notification, by `Store.key`.
+    func turnOffAutoDeploy(key: String) {
+        guard !observer, let i = items.values.joined().first(where: { Self.key($0) == key }), i.auto else { return }
+        Task { await turnOffAutoDeploy(i) }
     }
 
     /// Whether a reload keeps the row's state: always while it runs; an end state (live, failed,

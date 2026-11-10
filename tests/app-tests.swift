@@ -186,6 +186,12 @@ expect("health path gets a slash", Store.cleanPath("health") ?? "nil", "/health"
 expect("health path with a space", Store.cleanPath("/my health") ?? "nil", "/my%20health")
 expect("health path already encoded", Store.cleanPath("/my%20health") ?? "nil", "/my%20health")
 expect("empty health path", Store.cleanPath("  ") ?? "nil", "nil")
+do {
+    func row(_ id: String, auto: Bool) -> Item { Item(id: id, name: id, detail: "", platform: .vercel, deployable: true, auto: auto, note: nil, link: nil) }
+    expect("auto-deploy on again: off before, on now", Store.autoOnAgain(old: [row("app", auto: false)], fresh: [row("app", auto: true)]).map(\.id), ["app"])
+    expect("auto-deploy: a row new to the list says nothing", Store.autoOnAgain(old: [row("app", auto: false)], fresh: [row("new", auto: true)]).map(\.id), [String]())
+    expect("auto-deploy: still on says nothing", Store.autoOnAgain(old: [row("app", auto: true)], fresh: [row("app", auto: true)]).map(\.id), [String]())
+}
 expect("several health paths", Store.cleanPaths(" /health, api/ping ,,/health"), ["/health", "/api/ping"])
 expect("check links: front page without paths", Store.checkLinks("https://a.app/", []), ["https://a.app/"])
 expect("check links: each path", Store.checkLinks("https://a.app/", ["/health", "/api"]), ["https://a.app/health", "https://a.app/api"])

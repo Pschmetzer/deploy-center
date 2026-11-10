@@ -415,12 +415,14 @@ enum Notify {
     /// `project`: a click on it shows that project in the window. `key` (Store.key) with `failed`:
     /// the notification has "Show log" (and with `rollBack`, a live site that is broken, "Roll back …"),
     /// which open the window there; nothing runs by itself.
-    static func post(_ title: String, _ body: String, project: String? = nil, key: String? = nil, failed: Bool = false, rollBack: Bool = false) {
+    /// `autoOn` with `key`: auto-deploy came back on; the notification offers "Turn off".
+    static func post(_ title: String, _ body: String, project: String? = nil, key: String? = nil, failed: Bool = false, rollBack: Bool = false, autoOn: Bool = false) {
         let d = UserDefaults.standard
         guard available, !NSApp.isActive, d.object(forKey: "notifications") as? Bool ?? true else { return }
         // Quiet hours (Settings → Notifications): only failures still come.
         if !failed, quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo")) { return }
-        let category = failed && key != nil ? (rollBack ? NotifyRouter.brokenCategory : NotifyRouter.failedCategory) : nil
+        let category = autoOn && key != nil ? NotifyRouter.autoOnCategory
+            : failed && key != nil ? (rollBack ? NotifyRouter.brokenCategory : NotifyRouter.failedCategory) : nil
         add(title, body, id: UUID().uuidString, category: category, project: project, key: key)
         // A failure nobody looked at comes back once, 30 minutes later (Settings), unless the app was opened.
         if failed, let key, d.bool(forKey: "remindFailures") {
@@ -489,6 +491,8 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
     static let brokenCategory = "live-broken"
     static let logAction = "show-log"
     static let rollbackAction = "ask-rollback"
+    static let autoOnCategory = "auto-on-again"
+    static let autoOffAction = "auto-off"
     /// "Show log" / "Roll back …" of a failure, with the project's key: the window opens there.
     var onAction: (@MainActor (_ action: String, _ key: String) -> Void)?
     /// Gets the notification's id when Cancel is clicked.
@@ -501,11 +505,14 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
         let cancel = UNNotificationAction(identifier: Self.cancelAction, title: L("Cancel", "Abbrechen"), options: [])
         let log = UNNotificationAction(identifier: Self.logAction, title: L("Show log", "Log zeigen"), options: [.foreground])
         let back = UNNotificationAction(identifier: Self.rollbackAction, title: L("Roll back …", "Zurückrollen …"), options: [.foreground])
+        let off = UNNotificationAction(identifier: Self.autoOffAction, title: L("Turn off", "Ausschalten"), options: [])
         center.setNotificationCategories([UNNotificationCategory(identifier: Self.rollbackCategory, actions: [cancel],
                                                                  intentIdentifiers: [], options: []),
                                           UNNotificationCategory(identifier: Self.failedCategory, actions: [log],
                                                                  intentIdentifiers: [], options: []),
                                           UNNotificationCategory(identifier: Self.brokenCategory, actions: [log, back],
+                                                                 intentIdentifiers: [], options: []),
+                                          UNNotificationCategory(identifier: Self.autoOnCategory, actions: [off],
                                                                  intentIdentifiers: [], options: [])])
         center.delegate = self
     }
@@ -521,7 +528,7 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
         let id = response.notification.request.identifier
         let info = response.notification.request.content.userInfo
         if response.actionIdentifier == Self.cancelAction { Task { @MainActor in self.onCancel?(id) } }
-        else if [Self.logAction, Self.rollbackAction].contains(response.actionIdentifier), let key = info["key"] as? String {
+        else if [Self.logAction, Self.rollbackAction, Self.autoOffAction].contains(response.actionIdentifier), let key = info["key"] as? String {
             let a = response.actionIdentifier
             Task { @MainActor in self.onAction?(a, key) }
         }
