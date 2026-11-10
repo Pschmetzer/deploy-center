@@ -175,6 +175,20 @@ waiting project: `[{rule, index, project, matched, action, unmet}]`.
 - `deploys triggers --json`: build entries carry `minutes` and `usd` (minutes × your price per minute
   from `deploys price`; `null` when either is unknown).
 - `deploys team add` takes `https://github.com/owner/repo(.git)` and `git@github.com:owner/repo.git` too.
+- `deploys verify <p> --json`: `checks` `[{url, codes, healthy}]`, one per check asked. `url` and
+  `codes` stay those of the first failing check (else the first).
+
+## Checks, groups and observers in deploy-center.json
+
+- `projects.<name>.checks`: `["/health", {"path": "/api/ping", "expect": "2xx"}]`. Without `--path`,
+  `deploys verify` asks each of them (three times, as before); one failing fails the check. Only
+  HTTP paths: a shared file never names a command that runs on your Mac.
+- `groups.<name>` may be `{"order": ["api", "web"], "checks": true, "stopOnFail": true}`. With
+  `checks`, `deploys deploy <group>` runs `deploys verify <member> --no-rollback` once each member
+  is live (the last one too); with `stopOnFail` a failed check stops the rest of the group. A
+  group as a plain list works as before.
+- `observers` may hold `{"login": "a-login", "until": "2026-12-31"}`: an observer until that day
+  ends (UTC); a full ISO time counts to the second. A date that cannot be read keeps the observer.
 
 ## On a server or in CI
 

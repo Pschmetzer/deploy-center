@@ -233,12 +233,14 @@ case "$m $url" in
     if [ "$n" -le 2 ]; then printf '%s\n200' '[{"deploy":{"id":"dep-2","status":"build_in_progress"}}]'
     else printf '%s\n200' '[{"deploy":{"id":"dep-2","status":"live"}}]'; fi ;;
   "POST https://api.render.com/v1/services/srv-1/deploys") printf '%s\n201' '{"id":"dep-2","status":"created"}' ;;
+  "GET https://api.render.com/v1/services/srv-1/deploys/dep-2") printf '%s\n200' '{"id":"dep-2","status":"live"}' ;;
   # The site, as verify asks it (-o /dev/null -w '%{http_code}': only the status). SITE picks the answer.
   "GET https://web.example.test"*)
     case "${SITE:-ok}" in
       down) printf 503 ;;
       gone) printf 000; exit 28 ;;
       flaky) n=$(( $(cat "$E2E/site" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$E2E/site"; [ "$n" = 1 ] && printf 502 || printf 200 ;;
+      pathy) case "${*: -1}" in */bad) printf 503 ;; */moved) printf 301 ;; *) printf 200 ;; esac ;;
       *) printf 200 ;;
     esac ;;
   "POST http://ai.test/v1/messages")   # deploys ai: keep the body it was given
@@ -428,6 +430,28 @@ expect "verify: --no-rollback only reports (exit 2)" "$(SITE=down run "$O" "$E" 
 fresh
 expect "verify: Ctrl-C in the countdown stops the rollback" \
   "$(SITE=down CANCEL=1 run "$O" "$E" verify web --json; jq -c '{rolledBack, cancelled}' "$O"; rolled)" $'2\n{"rolledBack":false,"cancelled":true}\n0'
+# FEA-033: the project's checks (overrides.json here, deploy-center.json in a repo) are each asked.
+echo '{"projects":{"web":{"checks":["/ok",{"path":"/moved","expect":"3xx"}]}}}' > "$e2e/config/overrides.json"; fresh
+expect "FEA-033: verify asks every check of the project" \
+  "$(SITE=pathy run "$O" "$E" verify web --json; jq -c '[.healthy, (.checks | map([.url, .healthy]))]' "$O"; rolled)" \
+  $'0\n[true,[["https://web.example.test/ok",true],["https://web.example.test/moved",true]]]\n0'
+echo '{"projects":{"web":{"checks":["/ok","/bad"]}}}' > "$e2e/config/overrides.json"; fresh
+expect "FEA-033: one failing check fails verify and names it" \
+  "$(SITE=pathy run "$O" "$E" verify web --no-rollback --json; jq -c '[.healthy, .url]' "$O"; rolled)" $'2\n[false,"https://web.example.test/bad"]\n0'
+fresh
+expect "FEA-033: --path wins over the checks" "$(SITE=pathy run "$O" "$E" verify web --path /ok --json; jq -c '.checks | length' "$O")" $'0\n1'
+# FEA-072: a group with checks asks each member once live; stopOnFail stops the rest.
+# api has no address here, so its check fails; web comes after it.
+echo '{"groups":{"pair":{"order":["api","web"],"checks":true,"stopOnFail":true}}}' > "$e2e/config/overrides.json"; fresh
+expect "FEA-072: a member failing its check stops the rest (stopOnFail)" \
+  "$(run "$O" "$E" deploy pair; started; grep -c 'stopOnFail' "$E"; rolled)" $'1\n1\n1\n0'
+echo '{"groups":{"pair":{"order":["api","web"],"checks":true}}}' > "$e2e/config/overrides.json"; fresh
+expect "FEA-072: without stopOnFail the group goes on" \
+  "$(run "$O" "$E" deploy pair >/dev/null; [ "$(started)" -ge 2 ] && echo both; grep -c 'the group goes on' "$E"; rolled)" $'both\n1\n0'
+echo '{"groups":{"pair":["api","web"]}}' > "$e2e/config/overrides.json"; fresh
+expect "FEA-072: a plain group asks no site" "$(run "$O" "$E" deploy pair >/dev/null; grep -c 'web.example.test' "$e2e/calls.log")" $'0'
+
+rm -f "$e2e/config/overrides.json"
 expect "verify: a wrong --rollback-after is refused" "$(run "$O" "$E" verify web --rollback-after soon; grep -c 'takes seconds' "$E")" $'1\n1'
 unset DEPLOYS_JOURNAL
 

@@ -110,7 +110,7 @@ def named($n): [cf[] | select(((.config.projects // {})[$n] != null) or ((.confi
 def fileof($n):
   (userrepo($n) // (named($n)[0] | if . then ((.config.projects // {})[$n].repo // .repo) else null end) // ($extra[$n].repo // null)) as $r
   | ([cf[] | select(.repo == $r)][0]) // named($n)[0] // null;
-def keep: with_entries(select(.key as $k | ["repo","branch","health","window","approvals","ignored","platform"] | index($k)));
+def keep: with_entries(select(.key as $k | ["repo","branch","health","checks","window","approvals","ignored","platform"] | index($k)));
 def layers($n): fileof($n) as $f | [
   ($extra[$n] // null | if . then {from:"platform", v:(keep | with_entries(select(.value != null)))} else empty end),
   (if $f then {from:($f | src), v:($f.config | {window, approvals, health} | with_entries(select(.value != null)))} else empty end),
@@ -132,8 +132,16 @@ def resolve($n):
       else .[$e.key] = {value:$e.value, from:$l.from} end));
 ([cf[] | (.config.projects // {} | keys[]), (.config.ignored // [])[]] + ($repos | keys) + ($ign)
    + (($ov.projects // {}) | keys) + ($extra | keys) | unique) as $names
-| (reduce ((cf[] as $f | ($f.config.observers // [])[] | {login:., from:($f | src)}),
-           (($ov.observers // [])[] | {login:., from:"overrides.json"})) as $o
+# FEA-053: an observer is a login, or {"login":…, "until":"2026-12-31"} that counts until that day
+# ends (UTC; a full ISO time counts to the second). A date that cannot be read keeps it counting.
+| def obs: if type == "string" then .
+    elif type == "object" and (.login | type) == "string" then
+      (if .until == null then .login
+       else ((.until | tostring) as $u | (try (if ($u | test("T")) then ($u | sub("\\.[0-9]+"; "") | fromdateiso8601) else ($u + "T23:59:59Z" | fromdateiso8601) end) catch 1e12)) as $end
+            | if $end > now then .login else empty end end)
+    else empty end;
+  (reduce ((cf[] as $f | ($f.config.observers // [])[] | obs | {login:., from:($f | src)}),
+           (($ov.observers // [])[] | obs | {login:., from:"overrides.json"})) as $o
      ({}; if .[$o.login] then . else .[$o.login] = $o.from end)) as $obs
 | ($obs | to_entries | map(select((.key | ascii_downcase) == ($me | ascii_downcase))) | .[0].value // null) as $meObs
 | {me:(if $me == "" then null else $me end),

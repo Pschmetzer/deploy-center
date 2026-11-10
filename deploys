@@ -2245,6 +2245,8 @@ case "${1:-} ${2:-}" in
     # A production start waits for the deploy window, as `deploys <p> deploy` and deploy-changed do.
     [ -n "$pv" ] || freeze_check
     members=""; team_on && members="$(team_group "$name" 2>/dev/null || true)"
+    gopts='{}'; [ -z "$members" ] || gopts="$(team_effective 2>/dev/null | jq -c --arg g "$name" '.groups[$g].value | if type == "object" then {checks:(.checks == true), stopOnFail:(.stopOnFail == true)} else {} end' 2>/dev/null)" || gopts='{}'
+    [ -n "$gopts" ] || gopts='{}'
     if [ -n "$members" ]; then
       [ -z "$sha" ] || die "--sha is for one project, and $name is a group: $(echo "$members" | paste -sd ' ' -)"
       # With --json, stdout is only the JSON lines: the words go to stderr.
@@ -2276,6 +2278,17 @@ case "${1:-} ${2:-}" in
         fi
         "$SELF" watch "$p" "$(echo "$out" | jq -r .id)" ${pv:+--preview} >&"$wout" \
           || die "$p did not go live$([ "$i" -lt "$count" ] && echo "; the rest of the group was not started")"
+      fi
+      # FEA-072: a group with "checks": true asks each member's site (deploys verify, never a
+      # rollback) once it is live; with "stopOnFail": true a failed check stops the rest.
+      if [ -z "$pv" ] && [ "$(echo "$gopts" | jq -r '.checks')" = true ]; then
+        if [ "$json" = 1 ]; then vout=2; else vout=1; fi
+        if ! "$SELF" verify "$p" --no-rollback >&"$vout"; then
+          if [ "$(echo "$gopts" | jq -r '.stopOnFail')" = true ] && [ "$i" -lt "$count" ]; then
+            die "$p fails its check; the rest of the group was not started (stopOnFail)"
+          fi
+          echo "$p fails its check$([ "$i" -lt "$count" ] && echo "; the group goes on (no stopOnFail)")." >&2
+        fi
       fi
     done ;;
 
@@ -2855,27 +2868,49 @@ BASH
     # A failed lookup is "no address known", with the hint below, not a silent stop.
     [ -n "$url" ] || url="$(site_url_of "$p" "$plat")" || url=""
     [ -n "$url" ] || die "No address known for $p (give one with --url)"
-    case "$path" in ''|/*) ;; *) path="/$path";; esac
-    target="${url%/}$path"; [ -n "$path" ] || target="$url"
-    codes=""; bad=0
-    for i in 1 2 3; do
-      c="$(curl -sS -o /dev/null -w '%{http_code}' ${follow[@]+"${follow[@]}"} --connect-timeout 10 --max-time 20 -A "DeployCenter (verify)" "$target" 2>/dev/null)" || true
-      [ -n "$c" ] || c=000
-      codes="$codes${codes:+ }$c"
-      if [ -n "$expect" ]; then
-        case "$expect" in *xx) [ "${c:0:1}" = "${expect:0:1}" ] || bad=$((bad + 1)) ;; *) [ "$c" = "$expect" ] || bad=$((bad + 1)) ;; esac
-      else case "$c" in 000|5*) bad=$((bad + 1));; esac; fi
-      echo "$(date +%H:%M:%S)  $c  $target" >&2
-      [ "$i" = 3 ] || sleep 5
-    done
+    # FEA-033: without --path, the project's `checks` in deploy-center.json (["/health",
+    # {"path":"/api","expect":"2xx"}]) are each asked; one failing fails the check. HTTP only:
+    # a shared file never names a command to run here.
+    clist=""
+    if [ -z "$path" ] && team_on; then
+      clist="$(team_effective 2>/dev/null | jq -r --arg p "$p" --arg e "$expect" '(.projects[$p].checks.value // [])
+        | if type == "array" then .[] else empty end
+        | if type == "string" then {path:.} elif type == "object" and (.path | type) == "string" then . else empty end
+        | select(.path | test("^/?[A-Za-z0-9._~!$&()*+,;=:@%/?-]*$"))
+        | "\(.path)\u001f\(.expect // $e | tostring)"' 2>/dev/null)" || clist=""
+    fi
+    # Fields split by \037 (unit separator): a tab is whitespace to read and would drop an empty path.
+    [ -n "$clist" ] || clist="$path"$'\037'"$expect"
+    codes=""; target=""; cjson="[]"; failed=0
+    while IFS=$'\037' read -r cpath cexp <&3; do
+      case "$cexp" in ''|[1-5][0-9][0-9]|[1-5]xx) ;; *) echo "verify: \"$cexp\" is not a status like 200 or 2xx; the check of $cpath counts 5xx" >&2; cexp="" ;; esac
+      case "$cpath" in ''|/*) ;; *) cpath="/$cpath";; esac
+      ctarget="${url%/}$cpath"; [ -n "$cpath" ] || ctarget="$url"
+      ccodes=""; cbad=0
+      for i in 1 2 3; do
+        c="$(curl -sS -o /dev/null -w '%{http_code}' ${follow[@]+"${follow[@]}"} --connect-timeout 10 --max-time 20 -A "DeployCenter (verify)" "$ctarget" 2>/dev/null)" || true
+        [ -n "$c" ] || c=000
+        ccodes="$ccodes${ccodes:+ }$c"
+        if [ -n "$cexp" ]; then
+          case "$cexp" in *xx) [ "${c:0:1}" = "${cexp:0:1}" ] || cbad=$((cbad + 1)) ;; *) [ "$c" = "$cexp" ] || cbad=$((cbad + 1)) ;; esac
+        else case "$c" in 000|5*) cbad=$((cbad + 1));; esac; fi
+        echo "$(date +%H:%M:%S)  $c  $ctarget" >&2
+        [ "$i" = 3 ] || sleep 5
+      done
+      cjson="$(echo "$cjson" | jq -c --arg u "$ctarget" --arg c "$ccodes" --argjson h "$([ "$cbad" -lt 3 ] && echo true || echo false)" \
+        '. + [{url:$u, codes:($c | split(" ") | map(tonumber)), healthy:$h}]')"
+      # The first failing check (else the first) is the one named, as one check was before.
+      if [ -z "$target" ] || { [ "$cbad" -ge 3 ] && [ "$failed" = 0 ]; }; then target="$ctarget"; codes="$ccodes"; fi
+      [ "$cbad" -lt 3 ] || failed=$((failed + 1))
+    done 3<<< "$clist"
     report() {  # report <healthy> <rolledBack> <cancelled> <exit code>
       if [ "$json" = 1 ]; then
-        jq -n --arg p "$p" --arg u "$target" --arg c "$codes" --argjson h "$1" --argjson r "$2" --argjson x "$3" \
-          '{project:$p, url:$u, codes:($c | split(" ") | map(tonumber)), healthy:$h, rolledBack:$r, cancelled:$x}'
+        jq -n --arg p "$p" --arg u "$target" --arg c "$codes" --argjson h "$1" --argjson r "$2" --argjson x "$3" --argjson cs "$cjson" \
+          '{project:$p, url:$u, codes:($c | split(" ") | map(tonumber)), healthy:$h, rolledBack:$r, cancelled:$x, checks:$cs}'
       fi
       exit "$4"
     }
-    if [ "$bad" -lt 3 ]; then
+    if [ "$failed" = 0 ]; then
       [ "$json" = 1 ] || echo "${GREEN}ok${PLAIN}: $p answers ($codes)."
       report true false false 0
     fi

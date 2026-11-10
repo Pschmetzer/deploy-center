@@ -301,6 +301,12 @@ fresh
   expect "CLI-090: an old eff.<pid> file is not taken" "$(team_effective 2>/dev/null | jq -r '.planted // false')" "false"
   [ "$fails" = 0 ] || exit 1
 ) || fails=$((fails + 1))
+# FEA-053: an observer entry with "until" stops counting after that day.
+fresh; cp "$DEPLOYS_CONFIG/overrides.json" "$tmp/ov.keep" 2>/dev/null || echo '{}' > "$tmp/ov.keep"
+echo '{"observers":[{"login":"gone-obs","until":"2001-01-01"},{"login":"still-obs","until":"2999-01-01"},{"login":"iso-obs","until":"2001-01-01T10:00:00Z"},{"login":"odd-obs","until":"soon"},"plain-obs"]}' > "$DEPLOYS_CONFIG/overrides.json"
+expect "FEA-053: expired observers are left out, the rest count" \
+  "$("${D[@]}" config --json 2>/dev/null | jq -c '.observers.value | map(select(endswith("-obs"))) | sort')" '["odd-obs","plain-obs","still-obs"]'
+cp "$tmp/ov.keep" "$DEPLOYS_CONFIG/overrides.json"
 # FEA-052: team add takes a GitHub address as copied, and refuses other hosts.
 fresh; cp "$DEPLOYS_CONFIG/team-repos" "$tmp/team-repos.keep"
 "${D[@]}" team add https://github.com/acme/web.git >/dev/null 2>&1
