@@ -223,23 +223,53 @@ final class SavingsModel: ObservableObject {
 
     private let defaults = UserDefaults.standard
 
+    /// The last answers, in Application Support (0600): they name projects, so not in the plist.
+    nonisolated static func reportURL(_ name: String) -> URL { Journal.dir.appendingPathComponent("savings-\(name).json") }
+    private func readReport(_ name: String, oldKey: String) -> Data? {
+        if let d = try? Data(contentsOf: Self.reportURL(name)) { return d }
+        // Moved once out of the preferences of older versions.
+        guard let d = defaults.data(forKey: oldKey) else { return nil }
+        saveReport(d, name); defaults.removeObject(forKey: oldKey)
+        return d
+    }
+    private func saveReport(_ d: Data, _ name: String) {
+        let u = Self.reportURL(name)
+        try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+        do { try d.write(to: u, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: u.path) }
+        catch { Log.write("savings: report not saved (\(error.localizedDescription))") }
+    }
+
     private init() {
         // The last answers stay for the next start: both take many API calls.
-        if let d = defaults.data(forKey: "savingsSimulation") { simulation = try? JSONDecoder().decode(SimulateReport.self, from: d) }
-        if let d = defaults.data(forKey: "savingsLedger") { ledger = try? JSONDecoder().decode(LedgerReport.self, from: d) }
+        if let d = readReport("simulation", oldKey: "savingsSimulation") { simulation = try? JSONDecoder().decode(SimulateReport.self, from: d) }
+        if let d = readReport("ledger", oldKey: "savingsLedger") { ledger = try? JSONDecoder().decode(LedgerReport.self, from: d) }
         let s = defaults.double(forKey: "savingsSimulationAt"), g = defaults.double(forKey: "savingsLedgerAt")
         simulatedAt = s > 0 ? Date(timeIntervalSince1970: s) : nil
         ledgerAt = g > 0 ? Date(timeIntervalSince1970: g) : nil
     }
 
+    /// When the running simulation started (for "running for 40 s"); nil when none runs.
+    @Published var simulationStartedAt: Date?
+    private var simulationTask: Task<Void, Never>?
+    /// Stops a running simulation; the last result stays.
+    func cancelSimulation() { simulationTask?.cancel() }
+
     func loadSimulation(days: Int = 30) async {
         guard !loadingSimulation else { return }
-        loadingSimulation = true; defer { loadingSimulation = false }
+        let t = Task { await runSimulation(days: days) }
+        simulationTask = t
+        await t.value
+        simulationTask = nil
+    }
+
+    private func runSimulation(days: Int) async {
+        loadingSimulation = true; simulationStartedAt = Date()
+        defer { loadingSimulation = false; simulationStartedAt = nil }
         do {
             let data = try await Tool.run(["simulate", "--json", "--days", "\(days)"], timeout: 300)
             simulation = try Self.decode(SimulateReport.self, data, what: "simulate")
             simulationError = nil; simulatedAt = Date()
-            defaults.set(data, forKey: "savingsSimulation"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsSimulationAt")
+            saveReport(data, "simulation"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsSimulationAt")
         } catch is CancellationError {
         } catch { simulationError = error.localizedDescription }
     }
@@ -251,7 +281,7 @@ final class SavingsModel: ObservableObject {
             let data = try await Tool.run(["ledger", "--json"], timeout: 300)
             ledger = try Self.decode(LedgerReport.self, data, what: "ledger")
             ledgerError = nil; ledgerAt = Date()
-            defaults.set(data, forKey: "savingsLedger"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsLedgerAt")
+            saveReport(data, "ledger"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsLedgerAt")
         } catch is CancellationError {
         } catch { ledgerError = error.localizedDescription }
     }

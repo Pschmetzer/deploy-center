@@ -43,7 +43,16 @@ enum Journal {
     /// Posted after an entry was written, so an open history shows it.
     static let didAppend = Notification.Name("JournalDidAppend")
 
+    /// Called on the main thread when a deploy ends; the file work (and the trim, which reads it
+    /// all) runs on a queue of its own.
+    private static let writer = DispatchQueue(label: "app.deploycenter.journal", qos: .utility)
     static func append(_ e: JournalEntry) {
+        writer.async { appendNow(e) }
+    }
+    /// Waits for entries still being written (tests, and before reading right after a write).
+    static func flush() { writer.sync {} }
+
+    private static func appendNow(_ e: JournalEntry) {
         lock.lock(); defer { lock.unlock() }
         migrate()
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601

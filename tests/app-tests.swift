@@ -708,5 +708,18 @@ MainActor.assumeIsolated {
     st.hidden = []
 }
 
+// The deploy window as data (UI-029), followed deploys on disk (LOG-012).
+let win = DeployWindowConfig.parse(Data(#"{"deny":[{"days":["Friday"],"from":"15:00"},{"dates":["2026-12-24"],"reason":"Xmas"}],"note":"mine"}"#.utf8))
+expect("window: rules read, days short", win.deny.map { "\($0.days) \($0.from ?? "-") \($0.reason ?? "-")" }, ["[\"fri\"] 15:00 -", "[] - Xmas"])
+let winOut = (try? win.encoded(over: Data(#"{"deny":[],"note":"mine"}"#.utf8))).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+expect("window: other keys stay", winOut?["note"] as? String ?? "", "mine")
+expect("window: no empty fields written", ((winOut?["deny"] as? [[String: Any]])?[1].keys.sorted()) ?? [], ["dates", "reason"])
+expect("window: times", [DeployWindowConfig.validTime("15:00"), DeployWindowConfig.validTime("24:00"), DeployWindowConfig.validTime("9:5"), DeployWindowConfig.validTime("25:00")], [true, true, false, false])
+var badWin = win; badWin.deny[0].to = "7pm"
+expect("window: a bad time is named", badWin.problem != nil, true)
+expect("window: unreadable file is no rules", DeployWindowConfig.parse(Data("nope".utf8)).deny.count, 0)
+let fol = Store.Followed(platform: "render", id: "srv-1", deployId: "dep-1", startedAt: 100, preview: false, rolledBack: true, sha: "abc")
+expect("followed deploy round trip", (try? JSONDecoder().decode(Store.Followed.self, from: JSONEncoder().encode(fol))) == fol, true)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

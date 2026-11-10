@@ -411,8 +411,47 @@ final class Store: ObservableObject {
         async let a: Void = v ? load(.vercel) : ()
         async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
+        resumeFollowed()
         await loadAgentStatus()
         await loadExtras()
+    }
+
+    /// A deploy being followed, kept on disk until it ends: after a crash or an update restart the
+    /// app follows it on (a "live" message, the journal line) instead of forgetting it.
+    struct Followed: Codable, Equatable {
+        let platform: String, id: String, deployId: String, startedAt: Double
+        let preview: Bool, rolledBack: Bool, sha: String?
+    }
+    nonisolated private static let followedKey = "followedDeploys"
+    nonisolated static func readFollowed() -> [String: Followed] {
+        UserDefaults.standard.data(forKey: followedKey).flatMap { try? JSONDecoder().decode([String: Followed].self, from: $0) } ?? [:]
+    }
+    private func writeFollowed(_ all: [String: Followed]) {
+        UserDefaults.standard.set(try? JSONEncoder().encode(all), forKey: Self.followedKey)
+    }
+    private func remember(_ f: Followed) { var all = Self.readFollowed(); all["\(f.platform)/\(f.id)"] = f; writeFollowed(all) }
+    private func forget(_ p: Platform, _ id: String) {
+        var all = Self.readFollowed()
+        guard all.removeValue(forKey: "\(p.cli)/\(id)") != nil else { return }
+        writeFollowed(all)
+    }
+    private var resumed = false
+    /// Once per run, after the first lists: what was followed before the restart, at most 2 hours old.
+    private func resumeFollowed() {
+        guard !resumed else { return }
+        resumed = true
+        var all = Self.readFollowed()
+        for (key, f) in all {
+            guard Date().timeIntervalSince1970 - f.startedAt < 7200, let p = Platform.allCases.first(where: { $0.cli == f.platform }),
+                  let k = items[p]?.firstIndex(where: { $0.id == f.id }), items[p]![k].state == .idle else { all[key] = nil; continue }
+            items[p]![k].deployId = f.deployId
+            items[p]![k].startedAt = Date(timeIntervalSince1970: f.startedAt)
+            items[p]![k].state = .running(L("followed again after a restart", "nach dem Neustart weiter verfolgt"))
+            let item = items[p]![k]
+            Task { try? await follow(item, deployId: f.deployId, url: item.link, preview: f.preview, rolledBack: f.rolledBack, sha: f.sha) }
+        }
+        writeFollowed(all)
+        holdAwake()
     }
 
     /// The platform is on and its login is there: the same rule at start and on every refresh.
@@ -736,7 +775,20 @@ final class Store: ObservableObject {
         toast = t
         // "Undo" gets longer to be reached.
         let secs: UInt64 = t.undo == nil ? 5 : 10
-        Task { try? await Task.sleep(nanoseconds: secs * 1_000_000_000); if toast == t { toast = nil } }
+        Task {
+            try? await Task.sleep(nanoseconds: secs * 1_000_000_000)
+            // Held (the pointer is on it): it goes 2 seconds after it is let go.
+            while toastHeld, toast == t { try? await Task.sleep(nanoseconds: 500_000_000) }
+            if toastReleasedAt.map({ Date().timeIntervalSince($0) < 2 }) ?? false { try? await Task.sleep(nanoseconds: 2_000_000_000) }
+            if toast == t { toast = nil }
+        }
+    }
+    /// Set by the toast view while the pointer is on it (hover), so it can be read to the end.
+    private(set) var toastHeld = false
+    private var toastReleasedAt: Date?
+    func holdToast(_ on: Bool) {
+        toastHeld = on
+        if !on { toastReleasedAt = Date() }
     }
     /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
     struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool }
@@ -1005,7 +1057,8 @@ final class Store: ObservableObject {
         let before = itemNow(item)?.state
         set(item.platform, item.id, .running(L("cancelling", "wird abgebrochen")))
         Task {
-            let args = item.platform == .vercel ? ["vercel", "cancel", id] : ["render", "cancel", item.id, id]
+            // `deploys <platform> cancel`: Vercel takes the deploy id alone, the others the project and the deploy.
+            let args = item.platform == .vercel ? ["vercel", "cancel", id] : [item.platform.cli, "cancel", item.id, id]
             do { _ = try await Tool.run(args) }
             catch {
                 cancelled.remove(item.id)
@@ -1139,7 +1192,9 @@ final class Store: ObservableObject {
     /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
     private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false, rolledBack: Bool = false, sha: String? = nil) async throws {
         let p = item.platform
-        defer { cancelled.remove(item.id) }   // however it ended, a later deploy can be cancelled again
+        remember(Followed(platform: p.cli, id: item.id, deployId: deployId,
+                          startedAt: (itemNow(item)?.startedAt ?? Date()).timeIntervalSince1970, preview: preview, rolledBack: rolledBack, sha: sha))
+        defer { cancelled.remove(item.id); forget(p, item.id) }   // however it ended, a later deploy can be cancelled again
         var misses = 0
         // A deadline, not a count of rounds: slow status answers must not stretch 40 minutes to hours.
         // On the suspending clock, which stands still while the Mac sleeps: a lid closed for an hour
@@ -1163,7 +1218,8 @@ final class Store: ObservableObject {
     }
 
     private func status(_ item: Item, _ deployId: String) async -> StatusReply? {
-        let args = item.platform == .vercel ? ["vercel", "status", deployId] : ["render", "status", item.id, deployId]
+        // `deploys <platform> status` (JSON for the app); never another platform's command.
+        let args = item.platform == .vercel ? ["vercel", "status", deployId] : [item.platform.cli, "status", item.id, deployId]
         return try? await Tool.json(args, as: StatusReply.self, timeout: 60)
     }
 

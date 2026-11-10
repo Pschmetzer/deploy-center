@@ -326,6 +326,14 @@ final class ClaudeLink: ObservableObject {
         // The switch shows what Claude's files say, not a preference that may be older (a reset,
         // or a connection made by the plugin or the CLI).
         // Both connected: "on" only when both allow, so a later reconnect never widens what one of them may do.
+        // A node that moved (nvm, volta update): the entry still points at the old path, and
+        // Claude fails to start the server without a word here. Connecting again writes the new one.
+        let gone = [dData, cData].compactMap { ClaudeConfig.entry($0)?["command"] as? String }
+            .filter { $0.hasPrefix("/") && !FileManager.default.isExecutableFile(atPath: $0) }
+        if let g = gone.first {
+            say(L("Claude's config points at \(g), which is gone (Node was updated?). Connect again.",
+                  "Claudes Konfiguration zeigt auf \(g), das es nicht mehr gibt (Node aktualisiert?). Neu verbinden."), failed: true)
+        }
         if desktop == .connected || code == .connected {
             let allows = (desktop != .connected || desktopAllows) && (code != .connected || codeAllows)
             UserDefaults.standard.set(allows, forKey: "claudeAllowDeploy")
