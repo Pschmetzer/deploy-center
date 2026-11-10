@@ -511,7 +511,16 @@ struct ContentView: View {
                     "Nur Projekte mit einem gemergten Commit, der noch nicht live ist"))
 
             let busy = scopes.contains { store.loading.contains($0) }
-            Button { Task { for p in scopes { await store.load(p) }; await store.loadExtras() } } label: {
+            Button {
+                // Under "All" every platform at once, like the timed refresh; the extras after them.
+                let chosen = scopes
+                Task {
+                    await withTaskGroup(of: Void.self) { g in
+                        for p in chosen { g.addTask { await store.load(p) } }
+                    }
+                    await store.loadExtras()
+                }
+            } label: {
                 if busy { ProgressView().controlSize(.small) }
                 else { Image(systemName: "arrow.clockwise") }
             }
@@ -1025,6 +1034,7 @@ struct ContentView: View {
 
     private func row(_ item: Item, _ costRows: [String: Costs.Project], _ complete: Bool) -> some View {
         let c = item.platform == .vercel ? costRows[item.name] : nil
+        let fix = store.autofixState(item)
         return Row(item: item, showPlatform: showsAll, cost: c?.build,
             perBuild: complete ? c.flatMap { p in p.builds.flatMap { $0 > 0 ? p.build / Double($0) : nil } } : nil,
             pinned: store.isPinned(item), note: store.note(item),
@@ -1034,11 +1044,11 @@ struct ContentView: View {
             onCancel: { store.cancel(item) },
             onRetry: item.deployable && !store.observer ? { deployOne(item) } : nil,
             usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: search,
-            autofix: store.autofixState(item), allowedUntil: store.allowance(item)?.expiresAt,
+            autofix: fix, allowedUntil: store.allowance(item)?.expiresAt,
             autofixBusy: store.autofixRunning.contains(Store.key(item)),
             onAutofix: store.canFixWithClaude(item) ? { Task { await store.fixWithClaude(item) } } : nil) { tick(item) }
             // A merged fix waits for a click: the row stands out until it is live.
-            .listRowBackground(store.autofixState(item).map { if case .merged = $0 { return true } else { return false } } == true
+            .listRowBackground(fix.map { if case .merged = $0 { return true } else { return false } } == true
                                ? ground(.green, 0.12) : nil)
             .contextMenu { rowMenu(item) }
     }
@@ -1374,11 +1384,8 @@ struct CostsSheet: View {
 struct SavingShare: View {
     let before: Double, after: Double
     @State private var copied = false
-
-    private var image: NSImage? {
-        let r = ImageRenderer(content: SavingCard(before: before, after: after)); r.scale = 2
-        return r.nsImage
-    }
+    /// Rendered once when the popover opens, not on every redraw.
+    @State private var image: NSImage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1387,7 +1394,7 @@ struct SavingShare: View {
                 .fixedSize(horizontal: false, vertical: true).frame(width: 364, alignment: .leading)
             HStack {
                 Button(copied ? L("Copied ✓", "Kopiert ✓") : L("Copy picture and text", "Bild und Text kopieren")) {
-                    SavingCard.copy(before: before, after: after); copied = true
+                    SavingCard.copy(before: before, after: after, image: image); copied = true
                     // Back to its words after a moment, like the other copy buttons.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
                 }
@@ -1403,6 +1410,7 @@ struct SavingShare: View {
             }
         }
         .padding(16)
+        .onAppear { if image == nil { image = SavingCard.render(before: before, after: after) } }
     }
 
     @State private var saveError: String?
@@ -1468,11 +1476,15 @@ struct SavingCard: View {
     }
 
     /// Picture and sentence on the clipboard at once; a chat or post takes whichever it can.
-    @MainActor static func copy(before: Double, after: Double) {
+    @MainActor static func render(before: Double, after: Double) -> NSImage? {
         let r = ImageRenderer(content: SavingCard(before: before, after: after)); r.scale = 2
+        return r.nsImage
+    }
+
+    @MainActor static func copy(before: Double, after: Double, image: NSImage? = nil) {
         let pb = NSPasteboard.general; pb.clearContents()
         var items: [NSPasteboardWriting] = [text(before: before, after: after) as NSString]
-        if let img = r.nsImage { items.insert(img, at: 0) }
+        if let img = image ?? render(before: before, after: after) { items.insert(img, at: 0) }
         pb.writeObjects(items)
     }
 }
