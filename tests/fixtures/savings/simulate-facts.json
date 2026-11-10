@@ -1,0 +1,24 @@
+{
+  "now": 1769817600,
+  "days": 30,
+  "costs": {"buildsComplete": true, "projects": [{"name": "web", "build": 1.4, "builds": 7}]},
+  "rates": {"vercelUsdPerMinute": null, "renderUsdPerMinute": null},
+  "projects": [
+    {"platform": "vercel", "name": "web", "id": "web", "repo": "me/web", "ref": "main", "auto": true, "offAt": null,
+     "pushes": {"basis": "pushes", "list": [
+       {"at": 1767100000, "sha": "old0"},
+       {"at": 1767240000, "sha": "w1"}, {"at": 1767241000, "sha": "w2"}, {"at": 1767242000, "sha": "w3"},
+       {"at": 1767600000, "sha": "w4"}, {"at": 1767601000, "sha": "w5"}, {"at": 1767602000, "sha": "w6"}]},
+     "builds": {"minutes": [2, 4], "built": []}},
+    {"platform": "vercel", "name": "api", "id": "api", "repo": "me/api", "ref": "main", "auto": true, "offAt": null,
+     "pushes": {"basis": "commits", "list": [
+       {"at": 1767300000, "sha": "a1"}, {"at": 1767400000, "sha": "a2"}, {"at": 1767500000, "sha": "a3"}]},
+     "builds": {"minutes": [10], "built": []}},
+    {"platform": "render", "name": "svc", "id": "srv-x", "repo": "me/svc", "ref": "prod", "auto": true, "offAt": null,
+     "pushes": {"basis": "pushes", "list": [
+       {"at": 1769000000, "sha": "s1"}, {"at": 1769001000, "sha": "s2"}, {"at": 1769002000, "sha": "s3"}, {"at": 1769003000, "sha": "s4"}]},
+     "builds": {"minutes": [5, 5], "built": []}},
+    {"platform": "vercel", "name": "lost", "id": "lost", "repo": "me/lost", "ref": "main", "auto": false, "offAt": null,
+     "pushes": {"error": "GitHub could not be read (is gh logged in?)"}, "builds": null}
+  ]
+}

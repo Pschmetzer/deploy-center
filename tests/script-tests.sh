@@ -398,5 +398,8 @@ mkdir -p "$DEPLOYS_CONFIG/locks/autofix"
 expect "autofix: a held lock stops a second run" "$(afrun | grep -c 'running already'):$(fired)" "1:0"
 rmdir "$DEPLOYS_CONFIG/locks/autofix"
 
+# Savings (simulate, ledger) have their own file with fixtures.
+bash tests/savings-tests.sh || fails=$((fails+1))
+
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }
