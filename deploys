@@ -941,24 +941,42 @@ SCAN_PER_DAY="${DEPLOYS_SCAN_PER_DAY:-4}"          # scans per account per 24 h
 SCAN_MODEL="${DEPLOYS_SCAN_MODEL:-sonnet}"
 SCAN_MAX_FIXES="${DEPLOYS_SCAN_MAX_FIXES:-5}"
 # What Claude may run besides reading and editing: builds, tests, linters, read-only git.
-SCAN_TOOLS="Read Grep Glob Edit Write MultiEdit TodoWrite
-Bash(npm run *) Bash(npm test*) Bash(npm ci*) Bash(npm install*) Bash(npx tsc*) Bash(npx eslint*) Bash(npx vitest*) Bash(npx jest*)
-Bash(pnpm *) Bash(yarn *) Bash(bun *) Bash(node *) Bash(python3 -m pytest*) Bash(pytest*) Bash(ruff *) Bash(go build*) Bash(go test*) Bash(go vet*)
-Bash(cargo build*) Bash(cargo test*) Bash(cargo check*) Bash(swift build*) Bash(swift test*) Bash(bash -n *) Bash(shellcheck *)
-Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git show*) Bash(ls *) Bash(cat *)"
+SCAN_TOOLS=(Read Grep Glob Edit Write MultiEdit TodoWrite
+  "Bash(npm run *)" "Bash(npm test*)" "Bash(npm ci*)" "Bash(npm install*)" "Bash(npx tsc*)" "Bash(npx eslint*)" "Bash(npx vitest*)" "Bash(npx jest*)"
+  "Bash(pnpm *)" "Bash(yarn *)" "Bash(bun *)" "Bash(python3 -m pytest*)" "Bash(pytest*)" "Bash(ruff *)" "Bash(go build*)" "Bash(go test*)" "Bash(go vet*)"
+  "Bash(cargo build*)" "Bash(cargo test*)" "Bash(cargo check*)" "Bash(swift build*)" "Bash(swift test*)" "Bash(bash -n *)" "Bash(shellcheck *)"
+  "Bash(git status*)" "Bash(git diff*)" "Bash(git log*)" "Bash(git show*)" "Bash(ls *)")
 
 sc_state() { [ -s "$SCAN_STATE" ] && cat "$SCAN_STATE" || echo '{"runs":[]}'; }
-sc_save() { local t; t="$(mktemp)"; cat > "$t" && mv "$t" "$SCAN_STATE"; }
+# Same directory, so mv is atomic.
+sc_save() { local t; mkdir -p "$(dirname "$SCAN_STATE")"; t="$(mktemp "$SCAN_STATE.XXXXXX")"; cat > "$t" && mv "$t" "$SCAN_STATE"; }
 sc_slug() { echo "$1" | tr '/' '-' | tr -cd 'A-Za-z0-9._-'; }
-sc_update() {  # sc_update <id> <jq object to merge>; the state file is shared by every scan
-  local st; st="$(sc_state | jq --arg i "$1" --argjson o "$2" '(.runs[] | select(.id == $i)) |= . + $o')" && echo "$st" | sc_save
+# Every read-change-write of scan.json under one lock: the app reads status while scans write.
+sc_lock() {
+  local d="$CONFIG_DIR/locks/scan-state" i=0; mkdir -p "$CONFIG_DIR/locks"
+  while ! mkdir "$d" 2>/dev/null; do
+    i=$((i+1)); [ "$i" -lt 100 ] || { rmdir "$d" 2>/dev/null || true; i=0; }   # a lock older than ~10 s is stale
+    sleep 0.1
+  done
 }
+sc_unlock() { rmdir "$CONFIG_DIR/locks/scan-state" 2>/dev/null || true; }
+sc_edit() {  # sc_edit <jq filter> [jq args...]: change scan.json under the lock
+  local f="$1" st; shift; sc_lock
+  st="$(sc_state | jq "$@" "$f")" && echo "$st" | sc_save; sc_unlock
+}
+sc_update() { sc_edit '(.runs[] | select(.id == $i)) |= . + $o' --arg i "$1" --argjson o "$2"; }
 # Seams the tests replace.
 sc_claude_bin() { command -v claude 2>/dev/null || { for b in "$HOME/.local/bin/claude" "$HOME/.claude/local/claude" /opt/homebrew/bin/claude /usr/local/bin/claude; do [ -x "$b" ] && { echo "$b"; return; }; done; }; }
-sc_claude() {  # sc_claude <dir> <prompt>: the report on stdout. The subscription login, not an API key.
-  ( cd "$1" && env -u ANTHROPIC_API_KEY "$(sc_claude_bin)" -p "$2" --model "$SCAN_MODEL" \
-      --permission-mode acceptEdits --allowedTools $SCAN_TOOLS --output-format json ) \
-    | jq -r '.result // empty'
+# The repo is not trusted: --restricted ignores its .claude/settings.json (hooks, permissions) and
+# every other settings file, --strict-mcp-config its .mcp.json; file tools stay in the worktree.
+# Bash is there only for the commands in SCAN_TOOLS. A watchdog ends it after SCAN_TIMEOUT seconds.
+SCAN_TIMEOUT="${DEPLOYS_SCAN_TIMEOUT:-5400}"
+sc_claude() {  # sc_claude <dir> <prompt>: the report on stdout. The CLI's own login, not an API key.
+  ( cd "$1" && env -u ANTHROPIC_API_KEY perl -e 'alarm shift; exec @ARGV or die' "$SCAN_TIMEOUT" \
+      "$(sc_claude_bin)" -p "$2" --model "$SCAN_MODEL" --restricted --strict-mcp-config \
+      --tools "Read,Grep,Glob,Edit,Write,MultiEdit,TodoWrite,Bash" --allowedTools "${SCAN_TOOLS[@]}" \
+      --permission-mode acceptEdits --permission-prompts none --no-session-persistence --output-format json ) \
+    | jq -r 'if .is_error == true then ("claude: " + (.result // "error") + "\n" | halt_error(1)) else (.result // empty) end'
 }
 sc_open_prs() {  # open scan PRs of a repo
   gh api "repos/$1/pulls?state=open&per_page=100" | jq -c --arg b "claude/scan-$(sc_slug "${1#*/}")-" '[.[] | select(.head.ref | startswith($b)) | {number, url:.html_url}]'
@@ -988,15 +1006,19 @@ PROMPT
 
 scan_run() {  # scan_run <id> <owner/repo> <branch>: one scan, start to PR. Called by `scan start`, detached.
   local id="$1" repo="$2" br="$3" slug cache work sha fb report log
-  slug="$(sc_slug "${repo#*/}")"; cache="$SCAN_DIR/repos/$(sc_slug "$repo")"
+  slug="$(sc_slug "${repo#*/}")"; cache="$SCAN_DIR/repos/$(sc_slug "$repo")"; work="$SCAN_DIR/work/$id"
   log="$SCAN_DIR/logs/$id.md"; mkdir -p "$SCAN_DIR/repos" "$SCAN_DIR/work" "$SCAN_DIR/logs"
-  sc_update "$id" '{"status":"running","step":"clone"}'
+  # Whatever ends this run early (set -e, a signal): marked failed, the worktree gone.
+  SC_ID="$id"; SC_CACHE="$cache"; SC_WORK="$work"
+  trap 'sc_update "$SC_ID" "{\"status\":\"failed\",\"error\":\"stopped early (exit $?)\"}" 2>/dev/null; git -C "$SC_CACHE" worktree remove --force "$SC_WORK" 2>/dev/null; true' EXIT
+  sc_update "$id" "$(jq -nc --argjson p "$$" '{status:"running", step:"clone", pid:$p}')"
   if [ -d "$cache/.git" ]; then git -C "$cache" fetch -q origin "$br" || { sc_update "$id" '{"status":"failed","error":"git fetch failed"}'; return 1; }
   else gh repo clone "$repo" "$cache" -- -q || { sc_update "$id" '{"status":"failed","error":"could not clone the repo"}'; return 1; }
     git -C "$cache" fetch -q origin "$br" || true; fi
-  sha="$(git -C "$cache" rev-parse "origin/$br")"; fb="claude/scan-$slug-${sha:0:7}"
-  work="$SCAN_DIR/work/$id"
-  git -C "$cache" worktree add -q -B "$fb" "$work" "origin/$br" || { sc_update "$id" '{"status":"failed","error":"git worktree failed"}'; return 1; }
+  sha="$(git -C "$cache" rev-parse --verify -q "origin/$br^{commit}")" || { sc_update "$id" "$(jq -nc --arg b "$br" '{status:"failed", error:"no branch \($b) on GitHub"}')"; trap - EXIT; return 1; }
+  fb="claude/scan-$slug-${sha:0:7}-${id##*-}"
+  git -C "$cache" worktree prune
+  git -C "$cache" worktree add -q -b "$fb" "$work" "origin/$br" || { sc_update "$id" '{"status":"failed","error":"git worktree failed"}'; trap - EXIT; return 1; }
   sc_update "$id" "$(jq -nc --arg s "$sha" --arg b "$fb" '{step:"claude", sha:$s, branch:$b}')"
   report="$(sc_claude "$work" "$(sc_prompt)" 2>>"$SCAN_DIR/logs/$id.err")" || true
   printf '%s\n' "$report" > "$log"
@@ -1010,8 +1032,13 @@ scan_run() {  # scan_run <id> <owner/repo> <branch>: one scan, start to PR. Call
     local n body url; n="$(sed -n '/^## Fixed/,/^## /p' "$log" | grep -c '^- ' || true)"
     body="$(mktemp)"
     { cat "$log"; printf '\n---\nFound and fixed by a local Claude Code bug scan from Deploy Center. Review before merging; it is never merged or deployed by itself.\n'; } > "$body"
-    if git -C "$work" add -A && git -C "$work" -c user.name="Deploy Center" -c user.email="deploy-center@users.noreply.github.com" commit -q -m "Bug scan: $n fix(es) by Claude" \
-       && git -C "$work" push -q -f origin "$fb" && url="$(sc_pr "$repo" "$fb" "$br" "Bug scan: $n fix(es) by Claude" "$body")"; then
+    # Changed files, and new files only when they look like tests: a build or install may have
+    # left other files behind, and the PR is public.
+    git -C "$work" add -u
+    git -C "$work" ls-files -z --others --exclude-standard | grep -zE '(^|/)(tests?|__tests__|spec)/|[._-](test|spec)\.[A-Za-z]+$|_test\.(go|py)$|^test_.*\.py$' \
+      | xargs -0 -r git -C "$work" add -- 2>/dev/null || true
+    if ! git -C "$work" diff --cached --quiet && git -C "$work" -c user.name="Deploy Center" -c user.email="deploy-center@users.noreply.github.com" commit -q -m "Bug scan: $n fix(es) by Claude" \
+       && git -C "$work" push -q origin "$fb" && url="$(sc_pr "$repo" "$fb" "$br" "Bug scan: $n fix(es) by Claude" "$body")"; then
       url="$(echo "$url" | grep -Eo 'https://[^ ]+' | tail -1)"
       sc_update "$id" "$(jq -nc --arg u "$url" --argjson n "${n:-0}" '{status:"pr", step:"done", prUrl:$u, fixes:$n}')"
       af_notify "Bug scan: $repo has a fix PR with $n fix(es). $url"
@@ -1021,28 +1048,40 @@ scan_run() {  # scan_run <id> <owner/repo> <branch>: one scan, start to PR. Call
     rm -f "$body"
   fi
   git -C "$cache" worktree remove --force "$work" 2>/dev/null || true
+  trap - EXIT
 }
 
 scan_start() {  # scan_start <owner/repo> [branch]: checks, then the scan in the background. Prints the id.
   local repo="$1" br="${2:-main}" now st id open
-  case "$repo" in */*) ;; *) die "Usage: deploys scan start <owner/repo> [branch]";; esac
+  case "$repo" in [A-Za-z0-9]*/[A-Za-z0-9._-]*) ;; *) die "Usage: deploys scan start <owner/repo> [branch]";; esac
+  case "$repo" in *[!A-Za-z0-9._/-]*|*/*/*) die "not a GitHub repo: $repo";; esac
+  git check-ref-format --branch "$br" >/dev/null 2>&1 || die "not a branch name: $br"
   [ -n "$(sc_claude_bin)" ] || die "The Claude Code CLI is not installed: npm i -g @anthropic-ai/claude-code, then claude login"
   now="$(date +%s)"; st="$(sc_state)"
   [ "$(echo "$st" | jq --arg r "$repo" '[.runs[] | select(.repo == $r and .status == "running")] | length')" = 0 ] || die "a scan of $repo is running already"
   [ "$(echo "$st" | jq --argjson t "$now" '[.runs[] | select(.at > ($t - 86400) and .status != "refused")] | length')" -lt "$SCAN_PER_DAY" ] \
     || die "the daily cap of $SCAN_PER_DAY scans is reached (DEPLOYS_SCAN_PER_DAY)"
-  open="$(sc_open_prs "$repo" 2>/dev/null)" || open='[]'
+  open="$(sc_open_prs "$repo" 2>/dev/null)" || die "could not ask GitHub about open PRs of $repo"
   [ "$(echo "$open" | jq length)" = 0 ] || die "$repo has an open bug-scan PR (#$(echo "$open" | jq '.[0].number')); merge or close it first"
   id="$(sc_slug "$repo")-$now"
-  echo "$st" | jq --arg i "$id" --arg r "$repo" --arg b "$br" --argjson t "$now" '.runs = ([{id:$i, repo:$r, base:$b, at:$t, status:"running", step:"start"}] + .runs)[0:50]' | sc_save
+  sc_edit '.runs = ([{id:$i, repo:$r, base:$b, at:$t, status:"running", step:"start"}] + .runs)[0:50]' --arg i "$id" --arg r "$repo" --arg b "$br" --argjson t "$now"
   if [ -n "${DEPLOYS_SCAN_FOREGROUND:-}" ]; then scan_run "$id" "$repo" "$br"
   else mkdir -p "$SCAN_DIR/logs"; nohup "$0" scan run "$id" "$repo" "$br" > "$SCAN_DIR/logs/$id.out" 2>&1 & fi
   echo "$id"
 }
 # A scan whose process died (Mac asleep for hours, killed) is not "running" forever.
+# A scan whose process is gone (Mac restarted, killed) is not "running" forever, and one over the
+# time limit is ended. Writes only when something changes.
 sc_reap() {
-  local st; st="$(sc_state | jq --argjson t "$(date +%s)" '.runs |= map(if .status == "running" and .at < ($t - 7200) then . + {status:"failed", error:"stopped after 2 hours"} else . end)')"
-  echo "$st" | sc_save
+  local now r id pid dead=""; now="$(date +%s)"
+  while IFS=$'\t' read -r id pid r; do
+    [ -n "$id" ] || continue
+    if [ -n "$pid" ] && [ "$pid" != null ] && ! kill -0 "$pid" 2>/dev/null; then dead="$dead $id"
+    elif [ "$r" -lt $((now - SCAN_TIMEOUT - 600)) ]; then { [ -z "$pid" ] || [ "$pid" = null ] || kill "$pid" 2>/dev/null || true; }; dead="$dead $id"; fi
+  done < <(sc_state | jq -r '.runs[] | select(.status == "running") | [.id, (.pid // "null"), .at] | @tsv')
+  [ -n "$dead" ] || return 0
+  sc_edit '.runs |= map(if (.status == "running" and (.id | IN($d[]))) then . + {status:"failed", error:"the scan stopped (Mac asleep or restarted, or over the time limit)"} else . end)' \
+    --argjson d "$(printf '%s\n' $dead | jq -R . | jq -sc .)"
 }
 
 # ---------- Auto-deploy back on, allowances, and the guard ----------
@@ -1422,7 +1461,7 @@ case "${1:-} ${2:-}" in
   "deploy-changed "*) [ "${2:-}" != "--yes" ] || require_write "deploy-changed --yes" ;;
   # autofix hands failed builds to a routine that opens pull requests, and guard turns auto-deploy
   # off: both change something unless --dry-run (also after --only). Their settings and status only read.
-  "scan start") require_write "scan" ;;
+  "scan start"|"scan run") require_write "scan" ;;
   "autofix "|"autofix --"*|"guard "|"guard --"*)
     case " ${*:2} " in *" --dry-run "*) ;; *) require_write "$1" ;; esac ;;
 esac
@@ -2245,7 +2284,7 @@ BASH
     # For the app: is the CLI there and logged in, and the newest scans.
     sc_reap
     b="$(sc_claude_bin)"; inst=false; logged=false
-    if [ -n "$b" ]; then inst=true; "$b" auth status 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1 && logged=true; fi
+    if [ -n "$b" ]; then inst=true; env -u ANTHROPIC_API_KEY "$b" auth status 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1 && logged=true; fi
     sc_state | jq --argjson i "$inst" --argjson l "$logged" --argjson cap "$SCAN_PER_DAY" \
       '{installed:$i, loggedIn:$l, perDay:$cap, runs:(.runs[0:20] | map({id, repo, base, at, status, step:(.step // null), branch:(.branch // null), prUrl:(.prUrl // null), fixes:(.fixes // null), error:(.error // null)}))}' ;;
   "scan log")

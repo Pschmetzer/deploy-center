@@ -1051,7 +1051,7 @@ sc_open_prs() { echo "${SCOPEN:-[]}"; }
 sc_pr() { echo "pr $*" >> "$CALLS"; echo "https://github.com/me/web/pull/7"; }
 gh() { case "$*" in "repo clone"*) git clone -q "$sc/remote.git" "$4";; *) command gh "$@";; esac; }
 SCFIX=0
-sc_claude() { [ "$SCFIX" = 1 ] && echo 'x=2' > "$1/a.js"; printf '## Fixed\n- a.js: wrong value -> fixed\n## Checks\n- none\n'; }
+sc_claude() { [ "$SCFIX" = 1 ] && { echo 'x=2' > "$1/a.js"; echo secret > "$1/.env.local"; echo t > "$1/a.test.js"; }; printf '## Fixed\n- a.js: wrong value -> fixed\n## Checks\n- none\n'; }
 sc_reset() { rm -rf "$SCAN_STATE" "$SCAN_DIR"; : > "$CALLS"; }
 sc_reset; ( scan_start me/web main ) >/dev/null 2>&1
 expect "scan: nothing changed is clean, no PR" "$(jq -r '.runs[0].status' "$SCAN_STATE"):$(grep -c '^pr ' "$CALLS")" "clean:0"
@@ -1059,12 +1059,19 @@ sc_reset; SCFIX=1; ( scan_start me/web main ) >/dev/null 2>&1
 expect "scan: a fix becomes a PR on claude/scan-" "$(jq -r '.runs[0] | "\(.status) \(.branch | startswith("claude/scan-web-")) \(.prUrl) \(.fixes)"' "$SCAN_STATE")" "pr true https://github.com/me/web/pull/7 1"
 expect "scan: the branch is pushed, main untouched" "$(git -C "$sc/remote.git" log --oneline main | wc -l | tr -d ' '):$(git -C "$sc/remote.git" branch --list 'claude/scan-*' | wc -l | tr -d ' ')" "1:1"
 expect "scan: the report is kept" "$(cat "$SCAN_DIR"/logs/*.md | grep -c 'wrong value')" "1"
+expect "scan: changed and new test files are committed, other new files are not" "$(git -C "$sc/remote.git" show --name-only --format= "$(git -C "$sc/remote.git" branch --list 'claude/scan-*' | tr -d ' *')" | sort | tr '\n' ' ')" "a.js a.test.js "
 SCOPEN='[{"number":7}]'; out="$( ( scan_start me/web main ) 2>&1)"
 expect "scan: an open scan PR blocks the next scan" "$(echo "$out" | grep -c 'open bug-scan PR (#7)')" "1"; SCOPEN='[]'
 sc_reset; echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running"}]}' > "$SCAN_STATE"
 expect "scan: no second scan of a repo while one runs" "$( ( scan_start me/web main ) 2>&1 | grep -c 'running already')" "1"
 echo '{"runs":[{"id":"a","repo":"me/web","at":1,"status":"running"}]}' > "$SCAN_STATE"; sc_reap
-expect "scan: a run older than 2 hours is reaped" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
+expect "scan: a run over the time limit is reaped" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
+echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":999999}]}' > "$SCAN_STATE"; sc_reap
+expect "scan: a run whose process is gone is reaped" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
+echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$$"'}]}' > "$SCAN_STATE"; sc_reap
+expect "scan: a live run is left alone" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "running"
+expect "scan: a bad branch name is refused" "$( ( scan_start me/web 'a..b' ) 2>&1 | grep -c 'not a branch name')" "1"
+expect "scan: a bad repo is refused" "$( ( scan_start 'me/web;rm' ) 2>&1 | grep -c 'not a GitHub repo')" "1"
 sc_reset; for i in 1 2 3 4; do jq -n --argjson t "$(date +%s)" --arg i "$i" '{id:$i, repo:"me/x", at:$t, status:"clean"}'; done | jq -s '{runs:.}' > "$SCAN_STATE"
 expect "scan: the daily cap" "$( ( scan_start me/web main ) 2>&1 | grep -c 'daily cap')" "1"
 unset -f gh; unset DEPLOYS_SCAN_FOREGROUND
