@@ -196,8 +196,9 @@ struct Vercel {
     }
 
     /// After an Instant Rollback Vercel stops giving new production deploys the domains until one is promoted.
-    func isLive(_ p: PhoneProject, _ id: String) async throws -> Bool {
-        (try await http.get(t("/v9/projects/\(p.id)")) as? JSON)?.str("targets.production.id") == id
+    /// `readySubstate` of a READY deploy: STAGED (never had production traffic), ROLLING or PROMOTED; nil from older answers.
+    func readySubstate(_ id: String) async throws -> String? {
+        (try await http.get(t("/v13/deployments/\(id)")) as? JSON)?.str("readySubstate")
     }
 
     func status(_ id: String) async throws -> String {

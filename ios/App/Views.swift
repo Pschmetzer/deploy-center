@@ -54,6 +54,8 @@ struct RootView: View {
             }
         }
         .onChange(of: phase) { _, p in if p == .active && store.locked { Task { await store.unlock() } } }
+        // Sheets lie above the cover: close them when locking (the settings sheet takes its own QR sheet along).
+        .onChange(of: store.locked) { _, on in if on { settings = false; connect = false } }
     }
 }
 
@@ -210,9 +212,9 @@ struct Stat: View {
 extension PhoneProject {
     var icon: String {
         building ? "hammer.fill" : failed ? "xmark.octagon.fill" : changed ? "arrow.up.circle.fill"
-            : unknown ? "questionmark.circle" : "checkmark.circle.fill"
+            : unknown ? "questionmark.circle" : foreignRepo ? "minus.circle" : "checkmark.circle.fill"
     }
-    var tint: Color { building ? .blue : failed ? .red : changed ? .accentColor : unknown ? .orange : .green }
+    var tint: Color { building ? .blue : failed ? .red : changed ? .accentColor : unknown ? .orange : foreignRepo ? .secondary : .green }
     var stateText: String {
         if building { return L("building", "baut") }
         if failed { return L("failed", "fehlgeschlagen") }

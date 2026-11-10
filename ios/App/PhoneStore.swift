@@ -302,7 +302,7 @@ final class PhoneStore: ObservableObject {
             running[p.key] = s.lowercased()
             if ["ready", "live", "succeeded"].contains(s.lowercased()) {
                 // After an Instant Rollback a ready deploy keeps no domain until one is promoted (Vercel docs).
-                if p.provider == .vercel, let live = try? await vercel().isLive(p, id), !live {
+                if p.provider == .vercel, await stagedOnly(id) {
                     fail(L("\(p.name) is built but not live: after a rollback, Vercel keeps the old deploy until you promote this one in the dashboard.",
                            "\(p.name) ist gebaut, aber nicht live: Nach einem Zurückrollen behält Vercel den alten Deploy, bis du diesen im Dashboard beförderst."))
                 } else {
@@ -320,6 +320,17 @@ final class PhoneStore: ObservableObject {
                 + (lastError.map { " (\($0))" } ?? ""))
         }
         await reload()
+    }
+
+    /// True when the ready deploy still has no production traffic after about 30 s. READY and the domain
+    /// assignment are separate steps, so one look right after READY could be too early.
+    private func stagedOnly(_ id: String) async -> Bool {
+        for attempt in 0..<6 {
+            if attempt > 0 { try? await Task.sleep(for: .seconds(6)) }
+            guard let s = try? await vercel().readySubstate(id) else { return false }   // unknown: do not alarm
+            if s.uppercased() != "STAGED" { return false }
+        }
+        return true
     }
 
     private func simulate(_ p: PhoneProject, _ text: String) async {
