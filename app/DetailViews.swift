@@ -217,59 +217,7 @@ struct ProjectDetail: View {
                         .font(.callout)
                 }
             }
-            if !d.commits.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(L("Waiting to go live", "Wartet darauf, live zu gehen")).font(.headline)
-                        if d.onlyBots {
-                            Text(L("dependency updates only", "nur Abhängigkeits-Updates"))
-                                .font(.caption).padding(.horizontal, 6).padding(.vertical, 1)
-                                .background(Capsule().fill(Color.secondary.opacity(0.15)))
-                        }
-                        Spacer()
-                        if let u = d.compareUrl.flatMap(URL.init(string:)) {
-                            Button(L("On GitHub", "Auf GitHub")) { NSWorkspace.shared.open(u) }.buttonStyle(.link)
-                        }
-                    }
-                    Text(L("\(d.files) files, +\(d.additions) −\(d.deletions) lines", "\(d.files) Dateien, +\(d.additions) −\(d.deletions) Zeilen"))
-                        .font(.caption).foregroundStyle(.secondary)
-                    if !d.risky.isEmpty {
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                            Text(L("Worth a look before it goes live: ", "Vor dem Live-Gang ansehen: ") + d.risky.prefix(8).joined(separator: ", ")
-                                 + (d.risky.count > 8 ? " …" : ""))
-                                .font(.caption).textSelection(.enabled)
-                        }
-                    }
-                    if d.commits.contains(where: { $0.bot == true }) && !d.onlyBots {
-                        Toggle(L("Hide dependency updates", "Abhängigkeits-Updates ausblenden"), isOn: $hideBots)
-                            .toggleStyle(.checkbox).font(.caption)
-                    }
-                    ForEach(d.commits.filter { !(hideBots && !d.onlyBots && $0.bot == true) }) { c in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            if let pr = c.pr, let repo = item.repo, let u = URL(string: "https://github.com/\(repo)/pull/\(pr)") {
-                                Button("#\(pr)") { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospacedDigit())
-                            } else if let u = c.url.flatMap(URL.init(string:)) {
-                                Button(c.sha) { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospaced())
-                            }
-                            Text(scrub(c.msg)).font(.callout).lineLimit(2).help(scrub(c.msg))
-                            Spacer(minLength: 8)
-                            Text((Demo.person(c.author) ?? "") + " · " + Row.ago(Date(timeIntervalSince1970: c.at)))
-                                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                            if deployCommit != nil, item.deployable, c.full != nil {
-                                Button { commitToDeploy = c } label: { Image(systemName: "paperplane") }
-                                    .buttonStyle(.borderless).accessibilityLabel(L("Deploy up to this commit", "Bis zu diesem Commit deployen")).help(L("Deploy up to this commit", "Bis zu diesem Commit deployen"))
-                            }
-                        }
-                    }
-                }
-            } else if item.hasNewCommits {
-                Text(L("GitHub could not compare what is live with the branch (rewritten branch, or the live commit is unknown).",
-                       "GitHub konnte Live-Stand und Branch nicht vergleichen (Branch umgeschrieben oder Live-Commit unbekannt)."))
-                    .font(.callout).foregroundStyle(.secondary)
-            } else {
-                Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-            }
+            waiting(d)
             if item.platform == .vercel, let repo = item.repo,
                Platform.allCases.flatMap({ store.items[$0] ?? [] }).filter({ $0.repo == repo }).count > 1 {
                 VStack(alignment: .leading, spacing: 4) {
@@ -285,25 +233,7 @@ struct ProjectDetail: View {
                     .padding(6).background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.1)))
                 }
             }
-            VStack(alignment: .leading, spacing: 6) {
-                Text(L("Open pull requests (not merged)", "Offene Pull Requests (nicht gemergt)")).font(.headline)
-                if d.open.isEmpty {
-                    Text(L("None", "Keine")).font(.callout).foregroundStyle(.secondary)
-                }
-                ForEach(d.open) { pr in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Button("#\(pr.number)") { if let u = URL(string: pr.url) { NSWorkspace.shared.open(u) } }
-                            .buttonStyle(.link).font(.caption.monospacedDigit())
-                        Text(scrub(pr.title)).font(.callout).lineLimit(2)
-                        if pr.draft { tag(L("draft", "Entwurf")) }
-                        if pr.bot == true { tag("bot") }
-                        Spacer(minLength: 8)
-                        Image(systemName: pr.ci == "failed" ? "xmark.circle.fill" : pr.ci == "running" ? "clock" : pr.ci == "passed" ? "checkmark.circle.fill" : "minus.circle")
-                            .foregroundStyle(pr.ci == "failed" ? .red : pr.ci == "passed" ? .green : .secondary)
-                            .help(Self.ciText(pr.ci)).accessibilityLabel(Self.ciText(pr.ci))
-                    }
-                }
-            }
+            openPRs(d)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -315,6 +245,85 @@ struct ProjectDetail: View {
         case "running": return L("CI: still running", "CI: läuft noch")
         case "passed": return L("CI: passed", "CI: grün")
         default: return L("CI: no checks", "CI: keine Checks")
+        }
+    }
+
+    @ViewBuilder private func waiting(_ d: Details) -> some View {
+        let item = self.live
+        if !d.commits.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(L("Waiting to go live", "Wartet darauf, live zu gehen")).font(.headline)
+                    if d.onlyBots {
+                        Text(L("dependency updates only", "nur Abhängigkeits-Updates"))
+                            .font(.caption).padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                    }
+                    Spacer()
+                    if let u = d.compareUrl.flatMap(URL.init(string:)) {
+                        Button(L("On GitHub", "Auf GitHub")) { NSWorkspace.shared.open(u) }.buttonStyle(.link)
+                    }
+                }
+                Text(L("\(d.files) files, +\(d.additions) −\(d.deletions) lines", "\(d.files) Dateien, +\(d.additions) −\(d.deletions) Zeilen"))
+                    .font(.caption).foregroundStyle(.secondary)
+                if !d.risky.isEmpty {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text(L("Worth a look before it goes live: ", "Vor dem Live-Gang ansehen: ") + d.risky.prefix(8).joined(separator: ", ")
+                             + (d.risky.count > 8 ? " …" : ""))
+                            .font(.caption).textSelection(.enabled)
+                    }
+                }
+                if d.commits.contains(where: { $0.bot == true }) && !d.onlyBots {
+                    Toggle(L("Hide dependency updates", "Abhängigkeits-Updates ausblenden"), isOn: $hideBots)
+                        .toggleStyle(.checkbox).font(.caption)
+                }
+                ForEach(d.commits.filter { !(hideBots && !d.onlyBots && $0.bot == true) }) { c in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        if let pr = c.pr, let repo = item.repo, let u = URL(string: "https://github.com/\(repo)/pull/\(pr)") {
+                            Button("#\(pr)") { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospacedDigit())
+                        } else if let u = c.url.flatMap(URL.init(string:)) {
+                            Button(c.sha) { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospaced())
+                        }
+                        Text(scrub(c.msg)).font(.callout).lineLimit(2).help(scrub(c.msg))
+                        Spacer(minLength: 8)
+                        Text((Demo.person(c.author) ?? "") + " · " + Row.ago(Date(timeIntervalSince1970: c.at)))
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        if deployCommit != nil, item.deployable, c.full != nil {
+                            Button { commitToDeploy = c } label: { Image(systemName: "paperplane") }
+                                .buttonStyle(.borderless).accessibilityLabel(L("Deploy up to this commit", "Bis zu diesem Commit deployen")).help(L("Deploy up to this commit", "Bis zu diesem Commit deployen"))
+                        }
+                    }
+                }
+            }
+        } else if item.hasNewCommits {
+            Text(L("GitHub could not compare what is live with the branch (rewritten branch, or the live commit is unknown).",
+                   "GitHub konnte Live-Stand und Branch nicht vergleichen (Branch umgeschrieben oder Live-Commit unbekannt)."))
+                .font(.callout).foregroundStyle(.secondary)
+        } else {
+            Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        }
+    }
+
+    private func openPRs(_ d: Details) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("Open pull requests (not merged)", "Offene Pull Requests (nicht gemergt)")).font(.headline)
+            if d.open.isEmpty {
+                Text(L("None", "Keine")).font(.callout).foregroundStyle(.secondary)
+            }
+            ForEach(d.open) { pr in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Button("#\(pr.number)") { if let u = URL(string: pr.url) { NSWorkspace.shared.open(u) } }
+                        .buttonStyle(.link).font(.caption.monospacedDigit())
+                    Text(scrub(pr.title)).font(.callout).lineLimit(2)
+                    if pr.draft { tag(L("draft", "Entwurf")) }
+                    if pr.bot == true { tag("bot") }
+                    Spacer(minLength: 8)
+                    Image(systemName: pr.ci == "failed" ? "xmark.circle.fill" : pr.ci == "running" ? "clock" : pr.ci == "passed" ? "checkmark.circle.fill" : "minus.circle")
+                        .foregroundStyle(pr.ci == "failed" ? .red : pr.ci == "passed" ? .green : .secondary)
+                        .help(Self.ciText(pr.ci)).accessibilityLabel(Self.ciText(pr.ci))
+                }
+            }
         }
     }
 
