@@ -6,7 +6,7 @@ import UserNotifications
 
 @main
 struct DeployCenterApp: App {
-    @StateObject private var store = PhoneStore()
+    @StateObject private var store = PhoneStore.shared
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {
@@ -14,7 +14,9 @@ struct DeployCenterApp: App {
             .backgroundTask(.appRefresh(Background.id)) {
                 await Background.run()
             }
-            .onChange(of: phase) { _, p in if p == .background { Background.schedule() } }
+            .onChange(of: phase) { _, p in
+                if p == .background { Background.schedule(); store.lockIfWanted() }
+            }
     }
 }
 
@@ -28,18 +30,34 @@ enum Background {
     }
 
     /// Reads the lists, updates the widget, and notes what newly waits or failed. No server: iOS decides when.
+    /// The app's own store, so the list is fresh on return. iOS gives this about 30 seconds and then cancels
+    /// the task: a cut-off load replaces nothing and notes nothing.
     @MainActor static func run() async {
         schedule()
-        let store = PhoneStore()
+        let store = PhoneStore.shared
         guard !store.demo, store.hasAccount else { return }
-        let before = (try? Data(contentsOf: lastURL)).flatMap { try? JSONDecoder().decode([PhoneProject].self, from: $0) } ?? []
-        await store.reload()
-        await store.notifyChanges(from: before)
-        try? JSONEncoder().encode(store.projects).write(to: lastURL, options: .atomic)
+        // Nothing seen yet (first run, or the file is gone): nothing counts as new, no flood of notes.
+        let before = readLast()
+        guard await store.reload(), !Task.isCancelled else { return }
+        if let before { await store.notifyChanges(from: before) }
     }
 
+    /// In Application Support, not Caches: iOS may empty Caches, and then every waiting project looked new.
     static var lastURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("last-projects.json")
+    }
+    private static var oldLastURL: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("last-projects.json")
+    }
+    static func readLast() -> [PhoneProject]? {
+        let data = (try? Data(contentsOf: lastURL)) ?? (try? Data(contentsOf: oldLastURL))
+        return data.flatMap { try? JSONDecoder().decode([PhoneProject].self, from: $0) }
+    }
+    static func writeLast(_ projects: [PhoneProject]) {
+        // Application Support does not exist in a fresh sandbox.
+        try? FileManager.default.createDirectory(at: lastURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? JSONEncoder().encode(projects).write(to: lastURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        try? FileManager.default.removeItem(at: oldLastURL)
     }
 
     /// True when notifications may be shown.
