@@ -107,9 +107,10 @@ Without a server this is best effort.
 
 ### Tokens and Face ID
 
-- Tokens are stored with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`:
+- Tokens typed on the phone are stored with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`:
   - never synced, and not in backups;
   - readable by the background refresh after the first unlock.
+- Tokens from the Mac come through iCloud Keychain (decision 4). A token typed on the phone wins.
 - Every deploy and rollback asks twice:
   1. a confirmation;
   2. `LAContext` with `.deviceOwnerAuthentication`: Face ID, Touch ID or the passcode.
@@ -150,6 +151,33 @@ More about the iOS build:
   reload. In the simulator the widget installs with the app; on a device it needs the App Group
   registered.
 
+## Decision 4: the iPhone app connects to the Mac app
+
+**Chosen: the Apple ID is the account. The Mac hands its keys over through iCloud Keychain, or as a
+QR code. No account and no server of ours.**
+
+An own account with a server would hold every user's deploy tokens: a large liability, and the end
+of "Data Not Collected".
+
+- **iCloud Keychain** (`shared/PhoneLink.swift`): Mac app → Settings → iPhone → "Connect the iPhone
+  app". It writes one synchronizable keychain item in the team's keychain group
+  `<TEAMID>.app.deploycenter.shared`: the Vercel token made for the phone, the Vercel team id, the
+  Render key and the gh CLI's GitHub token. iCloud Keychain carries it, end-to-end encrypted, to the
+  devices with the same Apple ID. Turning the switch off removes it everywhere.
+  - The vercel CLI's own login is short-lived (it has `expiresAt`), so the phone gets a separate,
+    long-lived Vercel token, saved in the Mac app.
+  - macOS allows the keychain group only with an embedded provisioning profile: the Developer ID
+    profile of `app.deploycenter.mac`. `build.sh` embeds it from `DC_MAC_PROFILE` or
+    `~/.config/deploys/mac-developer-id.provisionprofile` (never in the repo, it names the team).
+    Without it the Mac app builds without the iCloud link.
+  - iOS: `keychain-access-groups` in `ios/Config/DeployCenter.entitlements`; the group name comes
+    from the Info.plist key `DCKeychainGroup` (`$(DEVELOPMENT_TEAM)`), so simulator builds without a
+    team have no link. `ios/build.sh --archive` fills in `$(AppIdentifierPrefix)` before its ad hoc
+    signature.
+- **QR code**: the Mac shows the same keys as a QR code for 60 seconds, on request. The iPhone app
+  scans it in "Connect to the Mac" (camera inside the app, no URL scheme) and keeps the keys on the
+  phone only.
+
 ## What was verified, and what not
 
 Verified on this Mac:
@@ -169,7 +197,12 @@ Verified on this Mac:
   demo mode on an iPhone 17 Pro Max and an iPad Pro 13" simulator. The screenshots are in
   `ios/AppStore/screenshots/`.
 
+- **Mac link:** the Mac app, signed with the Developer ID profile, launches, and writes and reads
+  the synchronizable item in the shared keychain group.
+
 Not verified:
+- **iCloud Keychain between Mac and iPhone:** needs TestFlight build 2 on a real iPhone.
+- **The QR scanner:** the simulator has no camera.
 - **The widget gallery:** the Mac widget was not opened there. That needs the screen, and this
   session had no access to it. To check: right-click the desktop → Edit Widgets → search "Deploy".
 - **Real deploys:** deploy, rollback and the status polling never ran against real accounts.
