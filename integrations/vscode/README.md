@@ -15,7 +15,7 @@ ready to paste back into the agent.
   Click it for **Deploy** (with confirmation), **Open site**, **Show log** and **Copy release notes**.
 - **Tree "Deploy Center"** in the Explorer: each project with its waiting commits and PRs, how
   long they have waited, and whether it is building or failed. Refresh is in the view's title bar.
-- **Failed builds:** **Show log** puts the build log into the "Deploy Center" output channel.
+- **Failed builds:** **Show log** opens the build log as a read-only document (the "Deploy Center" output channel keeps its warnings and deploy results).
   **Copy for AI** copies the first error and the lines around it, with tokens and keys masked.
 
 ## Commands

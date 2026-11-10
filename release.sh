@@ -92,7 +92,9 @@ if [ "$mode" = publish-only ]; then
   xcrun stapler validate "$check/Deploy Center.app" >/dev/null || die "$ZIP holds an app without a notarization ticket"
 else
   if publishing; then
-    [ -z "$(git status --porcelain --untracked-files=no)" ] || die "the working tree has uncommitted changes"
+    # Untracked files count too: build.sh takes app/*.swift, providers/*.sh and lib/*.sh by glob,
+    # so a new file that is in no commit would ship. (.gitignore'd ones, like build/, do not count.)
+    [ -z "$(git status --porcelain)" ] || die "the working tree has uncommitted or untracked files: $(git status --porcelain | head -5 | tr '\n' ' ')"
     [ "$(git symbolic-ref --short -q HEAD)" = main ] || die "releases are built from main"
   fi
   COMMIT="$(git rev-parse HEAD)"
@@ -118,7 +120,7 @@ if [ "$mode" != publish-only ]; then
   (cd integrations/mcp && npm ci --omit=dev --no-audit --no-fund)
   # Signed by build.sh; notarized here, so the wait can be resumed.
   # The widgets ship with every release (App Group <TEAMID>.app.deploycenter, no profile needed on macOS).
-  DEVELOPER_ID="$DEVELOPER_ID" NOTARY_PROFILE="" ./build.sh --widgets
+  DEVELOPER_ID="$DEVELOPER_ID" NOTARY_PROFILE="" DEPLOYS_REQUIRE_MCP=1 ./build.sh --widgets
 
   (cd build && ditto -c -k --keepParent "Deploy Center.app" notarize.zip)
   id="$(xcrun notarytool submit build/notarize.zip --keychain-profile "$NOTARY_PROFILE" --output-format json | jq -r .id)"
@@ -174,22 +176,31 @@ notes="$(mktemp)"
 { notes_of
   printf '\nNotarized by Apple: opens without a warning.\n\nSHA-256 of the zip: `%s`\n' "$SHA"
   printf '\nThe CLI on its own (macOS, Linux, CI): `curl -fsSL https://deploycenter.app/install.sh | sh` or `brew install pschmetzer/tap/deploys`. SHA-256 of %s: `%s`\n' "$(basename "$CLI")" "$CLI_SHA"; } > "$notes"
+# A new release is made as a draft: nobody can download it until its files are checked below.
 if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
   echo "Release $TAG exists; replacing its files."
   gh release upload "$TAG" "${ASSETS[@]}" --repo "$REPO" --clobber
 else
-  gh release create "$TAG" "${ASSETS[@]}" --repo "$REPO" --target "$COMMIT" \
+  gh release create "$TAG" "${ASSETS[@]}" --repo "$REPO" --target "$COMMIT" --draft \
     --title "Deploy Center $VERSION" --notes-file "$notes"
 fi
 rm -f "$notes"
 
-# The file people download must be the one that was notarized.
+# The files people download must be the ones that were notarized and packed. Read back with gh
+# (signed in), which also works while the release is still a draft.
+got_dir="$(mktemp -d)"
+gh release download "$TAG" --repo "$REPO" --dir "$got_dir" --pattern "$(basename "$ZIP")" --pattern "$(basename "$CLI")" \
+  || { rm -rf "$got_dir"; die "could not download the files of $TAG back to check them"; }
+got="$(shasum -a 256 "$got_dir/$(basename "$ZIP")" | cut -d' ' -f1)"
+cgot="$(shasum -a 256 "$got_dir/$(basename "$CLI")" | cut -d' ' -f1)"
+rm -rf "$got_dir"
+[ "$got" = "$SHA" ] || die "the uploaded zip has SHA-256 $got, expected $SHA; $TAG stays a draft (or as it was)"
+[ "$cgot" = "$CLI_SHA" ] || die "the uploaded CLI tarball has SHA-256 $cgot, expected $CLI_SHA; $TAG stays a draft (or as it was)"
+# Only now public (a release that was public already stays so).
+gh release edit "$TAG" --repo "$REPO" --draft=false >/dev/null
 url="https://github.com/$REPO/releases/download/$TAG/$(basename "$ZIP")"
 got="$(curl -fsSL --retry 3 "$url" | shasum -a 256 | cut -d' ' -f1)"
 [ "$got" = "$SHA" ] || die "the published zip has SHA-256 $got, expected $SHA ($url)"
-url="https://github.com/$REPO/releases/download/$TAG/$(basename "$CLI")"
-got="$(curl -fsSL --retry 3 "$url" | shasum -a 256 | cut -d' ' -f1)"
-[ "$got" = "$CLI_SHA" ] || die "the published CLI tarball has SHA-256 $got, expected $CLI_SHA ($url)"
 echo "Published: https://github.com/$REPO/releases/tag/$TAG"
 
 # --- Sparkle: sign the published zip, add it to the appcast (served by the website) --------
@@ -197,7 +208,14 @@ sig="$("$SPARKLE/bin/sign_update" --account "$SPARKLE_ACCOUNT" -p "$ZIP")" || di
 "$SPARKLE/bin/sign_update" --account "$SPARKLE_ACCOUNT" --verify "$ZIP" "$sig" >/dev/null || die "the EdDSA signature does not verify"
 notes="$(mktemp)"
 notes_of > "$notes"
-python3 -I scripts/appcast.py --appcast site/appcast.xml --version "$VERSION" \
+# The oldest macOS comes from the app itself (build.sh MIN_OS), so Sparkle never offers the update
+# to a Mac it does not start on.
+min_os_dir="$(mktemp -d)"
+ditto -x -k "$ZIP" "$min_os_dir"
+MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$min_os_dir/Deploy Center.app/Contents/Info.plist" 2>/dev/null || true)"
+rm -rf "$min_os_dir"
+[[ "$MIN_OS" =~ ^[0-9]+(\.[0-9]+)*$ ]] || die "the app in $ZIP names no LSMinimumSystemVersion"
+python3 -I scripts/appcast.py --appcast site/appcast.xml --version "$VERSION" --min-os "$MIN_OS" \
   --url "https://github.com/$REPO/releases/download/$TAG/$(basename "$ZIP")" \
   --length "$(stat -f%z "$ZIP")" --signature "$sig" --notes "$notes" \
   --release-page "https://github.com/$REPO/releases/tag/$TAG"

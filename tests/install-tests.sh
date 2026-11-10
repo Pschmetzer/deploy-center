@@ -31,7 +31,14 @@ if [ -d providers ]; then
   want+="deploys-cli-$version/providers/ "
   while IFS= read -r f; do want+="deploys-cli-$version/$f "; done < <(find providers -type f | LC_ALL=C sort)
 fi
+# lib/ too (team.sh, githost.sh, savings.sh): without it team mode, GitLab, simulate and ledger are gone.
+if [ -d lib ]; then
+  want+="deploys-cli-$version/lib/ "
+  while IFS= read -r f; do want+="deploys-cli-$version/$f "; done < <(find lib -type f | LC_ALL=C sort)
+  want="$(printf '%s' "$want" | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')"
+fi
 expect "package: contents" "$listing" "$want"
+contains "package: lib/team.sh goes in" "$listing" "deploys-cli-$version/lib/team.sh"
 expect "package: checksums.txt" "$(cat "$tmp/pkg/checksums.txt")" "$(sha256 "$tarball")  deploys-cli-$version.tar.gz
 $(sha256 LICENSE)  LICENSE"
 cp LICENSE "$tmp/pkg/"
@@ -98,6 +105,9 @@ expect "deploys --help: exit 0" "$rc" 0
 contains "deploys --help: the command list" "$help" "deploys doctor"
 expect "deploys --version" "$("$prefix/bin/deploys" --version)" "$version"
 [ -f "$prefix/lib/deploys/README-CLI.md" ] && ok "files in lib/deploys" || fail "files in lib/deploys" "no README-CLI.md"
+if [ -d lib ]; then
+  [ -f "$prefix/lib/deploys/lib/team.sh" ] && ok "install: lib/ next to deploys" || fail "install: lib/ next to deploys" "no lib/team.sh"
+fi
 contains "install: PATH hint when bin is not on PATH" "$out" "is not on your PATH"
 contains "install: dependency check runs" "$out" "Checking what deploys uses"
 out="$(PATH="$prefix/bin:$PATH" inst --prefix "$prefix")"; rc=$?
@@ -180,6 +190,7 @@ f="$(scripts/homebrew-formula.sh "$version" "$(sha256 "$tarball")")"; rc=$?
 expect "formula: exit 0" "$rc" 0
 contains "formula: url" "$f" "releases/download/v$version/deploys-cli-$version.tar.gz"
 contains "formula: depends on jq" "$f" 'depends_on "jq"'
+contains "formula: installs lib/" "$f" 'libexec.install "lib" if File.directory?("lib")'
 contains "formula: test runs --version" "$f" 'deploys --version'
 if command -v ruby >/dev/null; then
   ruby -c <<<"$f" >/dev/null 2>&1 && ok "formula: valid Ruby" || fail "formula: valid Ruby" "ruby -c failed"

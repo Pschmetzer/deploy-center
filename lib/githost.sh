@@ -18,17 +18,20 @@
 gitlab_host() { local h="${GITLAB_HOST:-gitlab.com}"; h="${h#*://}"; echo "${h%/}"; }
 
 # "host path" of a repo URL or slug: https://, ssh:// and git@host:path forms, .git dropped.
-# A bare owner/name is GitHub.
+# A bare owner/name is GitHub. A port stays with the host (git.example.com:8443): the API is
+# asked there. Only an ssh:// port is dropped, since that is the SSH port, not the web one.
 githost_split() {
-  local r="${1:-}"
+  local r="${1:-}" ssh=""
   r="${r%/}"; r="${r%.git}"
   case "$r" in
+    ssh://*|git+ssh://*) r="${r#*://}"; r="${r#*@}"; ssh=1 ;;
     *://*) r="${r#*://}"; r="${r#*@}" ;;
     git@*:*) r="${r#git@}"; r="${r/://}" ;;
   esac
   local first="${r%%/*}"
+  [ -z "$ssh" ] || first="${first%%:*}"
   case "$first" in
-    *.*|*:*) printf '%s %s\n' "$(echo "${first%%:*}" | tr '[:upper:]' '[:lower:]')" "${r#*/}" ;;
+    *.*|*:*) printf '%s %s\n' "$(echo "$first" | tr '[:upper:]' '[:lower:]')" "${r#*/}" ;;
     *) printf 'github.com %s\n' "$r" ;;
   esac
 }
@@ -60,9 +63,18 @@ GITHOST_VERCEL_LINK_JQ='(if .type == "gitlab" then
      then "gitlab.com/\(.projectNamespace)/\(.projectName)" else null end)
   else "\(.org)/\(.repo)" end)'
 
+# The GitLab token: GITLAB_TOKEN, else the keychain entry `deploys gitlab set-token` saved.
+# Empty when there is none. Never printed anywhere else.
+GITLAB_KEYCHAIN="deploy-center-gitlab"
+gitlab_token() {
+  if [ -n "${GITLAB_TOKEN:-}" ]; then printf '%s' "$GITLAB_TOKEN"; return 0; fi
+  command -v security >/dev/null 2>&1 || return 0
+  security find-generic-password -a "${USER:-$(id -un)}" -s "$GITLAB_KEYCHAIN" -w 2>/dev/null || true
+}
+
 # Whether any git host can be asked at all. Without one, `with_heads` adds no heads.
 githost_available() {
-  command -v gh >/dev/null 2>&1 || command -v glab >/dev/null 2>&1 || [ -n "${GITLAB_TOKEN:-}" ]
+  command -v gh >/dev/null 2>&1 || command -v glab >/dev/null 2>&1 || [ -n "$(gitlab_token)" ]
 }
 
 # ---------- dispatch: same arguments and output files as the GitHub functions ----------
@@ -89,7 +101,7 @@ gitlab_api() {
   if [ -z "${DEPLOYS_GITLAB_CURL:-}" ] && command -v glab >/dev/null 2>&1; then
     glab api --hostname "$host" "$path"; return
   fi
-  [ "$host" = "$(gitlab_host)" ] && tok="${GITLAB_TOKEN:-}"
+  [ "$host" = "$(gitlab_host)" ] && tok="$(gitlab_token)"
   # The token on stdin as a curl config line, so it never shows in the process list.
   out="$( { [ -z "$tok" ] || printf 'header = "PRIVATE-TOKEN: %s"\n' "$tok"; } \
     | curl -sS --connect-timeout 10 --max-time 60 -H "Accept: application/json" -K - -w '\n%{http_code}' \
@@ -115,16 +127,25 @@ GITLAB_JQ='def gldate: (. // null) | if . == null then null else sub("\\.[0-9]+"
         | ($c.d + "Z" | fromdateiso8601) - (if $c.s == "-" then -1 else 1 end) * (($c.h | tonumber) * 3600 + ($c.m | tonumber) * 60) end end;
   def glbot: ((.bot // false) or ((.username // .author_name // "") | test("\\[bot\\]|dependabot|renovate|^(project|group)_[0-9]+_bot|(^|[-_ ])bot$"; "i"))
     or ((.author_email // "") | test("\\[bot\\]|dependabot|renovate|noreply.*bot|bot@"; "i")));
-  def glmr: (.message // "" | (capture("See merge request [^!\\s]*!(?<n>[0-9]+)") // capture("\\(!(?<n>[0-9]+)\\)")) | .n | tonumber) // null;'
+  def glmr: (.message // "" | (capture("See merge request [^!\\s]*!(?<n>[0-9]+)") // capture("\\(!(?<n>[0-9]+)\\)")) | .n | tonumber) // null;
+  # A comparison with the .files GitHub gives ({filename, additions, deletions}), for RISK_DEF.
+  def glfiles: .files = [(.diffs // [])[] | {filename:(.new_path // .old_path),
+      additions:((.diff // "") | split("\n") | map(select(startswith("+"))) | length),
+      deletions:((.diff // "") | split("\n") | map(select(startswith("-"))) | length)}];'
 # shellcheck disable=SC2090
 export GITLAB_JQ
 
 gitlab_head_of() {
   local repo="$1" ref="$2" out="$3" host id
+  local f ans; f="$out/$(echo "$repo@$ref" | tr '/@' '__').json"
   read -r host id < <(gitlab_project "$repo")
-  gitlab_api "$host" "projects/$id/repository/commits/$(gitlab_enc "$ref")" 2>/dev/null \
-    | jq -c --arg k "$repo@$ref" "$GITLAB_JQ"'{key:$k, value:{at:(.committed_date | gldate), msg:(.title // (.message | split("\n")[0])), sha:.id}}' \
-    > "$out/$(echo "$repo@$ref" | tr '/@' '__').json" 2>/dev/null || true
+  if ans="$(gitlab_api "$host" "projects/$id/repository/commits/$(gitlab_enc "$ref")" 2>"$f.err")"; then
+    echo "$ans" | jq -c --arg k "$repo@$ref" "$GITLAB_JQ"'{key:$k, value:{at:(.committed_date | gldate), msg:(.title // (.message | split("\n")[0])), sha:.id}}' \
+      > "$f" 2>/dev/null || rm -f "$f"
+  elif declare -F head_why >/dev/null; then
+    jq -nc --arg k "$repo@$ref" --arg e "$(head_why "$f.err" GitLab | sed 's/(gh auth login)/(glab auth login, or deploys gitlab set-token)/')" '{key:$k, value:{error:$e}}' > "$f" 2>/dev/null || true
+  fi
+  rm -f "$f.err"
 }
 
 # The same record pending_of writes: commits from the live commit to the branch, the merge
@@ -153,13 +174,15 @@ gitlab_pending_of() {
     [ -n "$behind" ] || behind=null
     [ "$n" -gt 0 ] && status='"diverged"' || status='"behind"'
   fi
-  echo "$cmp" | jq -c --arg k "$key" --argjson st "$status" --argjson bb "$behind" "$GITLAB_JQ"'
-      [.commits[] | {sha:.id, n:glmr}] as $c
+  # The risk of the diff, as on GitHub, from the diffs of the same answer: no extra call.
+  echo "$cmp" | jq -c --arg k "$key" --argjson st "$status" --argjson bb "$behind" "${RISK_DEF:-def risk: null;}$GITLAB_JQ"'
+      (glfiles | risk) as $risk
+      | [.commits[] | {sha:.id, n:glmr}] as $c
       | {key:$k, value:{commits:(.commits | length), status:$st, behindBy:$bb,
           nums:[$c[] | .n // empty],
           # GitLab lists every commit of a comparison: the count is never a floor.
           partial:false,
-          oldestAt:([.commits[].committed_date | gldate] | min),
+          oldestAt:([.commits[].committed_date | gldate] | min), risk:$risk,
           bare:([$c[] | select(.n == null) | .sha])}}' > "$f" 2>/dev/null || return 0
   # A squash or fast-forward merge often leaves no !number in the message. For a few such
   # commits, ask which merged MR they came from; numbers are counted once.
@@ -175,7 +198,7 @@ gitlab_open_prs_of() {
   local repo="$1" out="$2" host id
   read -r host id < <(gitlab_project "$repo")
   gitlab_api "$host" "projects/$id/merge_requests?state=opened&per_page=100" 2>/dev/null \
-    | jq -c --arg k "$repo" "$GITLAB_JQ"'{key:$k, value:{all:length,
+    | jq -c --arg k "$repo" "$GITLAB_JQ"'{key:$k, value:{all:length, partial:(length >= 100),
         drafts:(map(select(.draft // .work_in_progress // false)) | length), bots:(map(select(.author | glbot)) | length)}}' \
     > "$out/$(echo "$repo" | tr '/' '_').json" 2>/dev/null || true
 }
@@ -222,16 +245,56 @@ gitlab_details() {
   rm -rf "$dt"
 }
 
+# `deploys ci` and --when-green for a GitLab repo: the newest pipeline of the commit, as one line
+# of the same JSON ci_of gives for GitHub. GitLab already sums the jobs up (allow_failure jobs do
+# not turn it red). A pipeline that waits for a person (manual, scheduled) is not "running": it
+# would never end, so it counts as no checks. Not readable: unknown, final (no 30 minute wait).
+gitlab_ci_of() {  # gitlab_ci_of <slug> <sha or branch>
+  local host id c e
+  read -r host id < <(gitlab_project "$1")
+  e="$(mktemp)"
+  if ! c="$(gitlab_api "$host" "projects/$id/repository/commits/$(gitlab_enc "$2")" 2>"$e")"; then
+    jq -nc --arg w "$(if declare -F head_why >/dev/null; then head_why "$e" GitLab; else tail -n 1 "$e" | cut -c1-150; fi)" \
+      '{state:"unknown", final:true, reason:"GitLab could not be asked: \($w)"}'
+    rm -f "$e"; return 0
+  fi
+  rm -f "$e"
+  echo "$c" | jq -c '(.last_pipeline // null) as $p
+    | if $p == null then {state:"none", reason:"no pipeline on this commit", checks:0, failed:0, running:0}
+      else ($p.status // "") as $s | "pipeline #\($p.id // "?")" as $n
+        | if $s == "success" then {state:"green", reason:"\($n) passed", checks:1, failed:0, running:0}
+          elif ($s | IN("failed", "canceled")) then {state:"red", reason:"\($n) \($s)", checks:1, failed:1, running:0}
+          elif ($s | IN("created", "waiting_for_resource", "preparing", "pending", "running")) then {state:"pending", reason:"\($n) is \($s)", checks:1, failed:0, running:1}
+          else {state:"none", reason:"\($n) is \($s) (nothing runs by itself)", checks:1, failed:0, running:0} end end' 2>/dev/null \
+    || echo '{"state":"unknown","final":true,"reason":"GitLab gave an answer that could not be read"}'
+}
+
+# `deploys risk` for a GitLab repo: the risk of what waits between <base> and <ref>. Fails when
+# GitLab cannot compare them.
+gitlab_risk_of() {  # gitlab_risk_of <slug> <base> <ref>
+  local host id
+  read -r host id < <(gitlab_project "$1")
+  gitlab_api "$host" "projects/$id/repository/compare?from=$(gitlab_enc "$2")&to=$(gitlab_enc "$3")" 2>/dev/null \
+    | jq -ce "$RISK_DEF$GITLAB_JQ"'glfiles | risk' 2>/dev/null
+}
+
+# The default branch of a repo on GitLab; empty when it cannot be read.
+gitlab_default_branch() {
+  local host id; read -r host id < <(gitlab_project "$1")
+  gitlab_api "$host" "projects/$id" 2>/dev/null | jq -r '.default_branch // empty' 2>/dev/null || true
+}
+
 # The project id Vercel's gitSource needs for a GitLab repo (`vercel map`).
 gitlab_project_id() { local host id; read -r host id < <(gitlab_project "$1"); gitlab_api "$host" "projects/$id" 2>/dev/null | jq -r '.id // empty'; }
 
 # For doctor: whether GitLab can be read with the login or token here.
 gitlab_logged_in() {
   if command -v glab >/dev/null 2>&1 && glab auth status --hostname "$(gitlab_host)" >/dev/null 2>&1; then return 0; fi
-  [ -n "${GITLAB_TOKEN:-}" ] && DEPLOYS_GITLAB_CURL=1 gitlab_api "$(gitlab_host)" user >/dev/null 2>&1
+  [ -n "$(gitlab_token)" ] && DEPLOYS_GITLAB_CURL=1 gitlab_api "$(gitlab_host)" user >/dev/null 2>&1
 }
 # The GitLab user, for `deploys where`.
 gitlab_user() { gitlab_api "$(gitlab_host)" user 2>/dev/null | jq -r '.username // empty' 2>/dev/null; }
 
 export -f gitlab_host githost_split githost_of githost_head_of githost_pending_of githost_open_prs_of \
-  gitlab_api gitlab_enc gitlab_project gitlab_head_of gitlab_pending_of gitlab_open_prs_of
+  gitlab_api gitlab_enc gitlab_project gitlab_head_of gitlab_pending_of gitlab_open_prs_of gitlab_token
+export GITLAB_KEYCHAIN

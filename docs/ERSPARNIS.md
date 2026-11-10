@@ -97,7 +97,7 @@ ledger (oben `since`, `days` seit dem ersten abgeschalteten Projekt):
 ## Grenzen
 
 - Eine Schätzung, keine Rechnung. Es zählt die Rechnung von Vercel oder Render.
-- Nur Vercel und Render. Die anderen Plattformen in `providers/` werden noch nicht gemessen.
+- Nur Vercel und Render. Die Zahlen kommen aus der Liste vergangener Deploys je Host und einem Preis pro Build-Minute, und angebunden sind bisher nur diese beiden. Die Opt-in-Hosts (Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify, Deploy-Hooks) erscheinen in `simulate` und `ledger` nicht, auch nicht als Anzahl; einen Termin dafür gibt es noch nicht. Bis dahin zeigen ihre eigenen Dashboards die Build-Minuten.
 - Jeder Build kostet den Durchschnitt. Build-Caches, größere Maschinen und Inklusiv-Minuten fehlen.
 - Die Vercel-Abrechnung deckt nur die letzten 7 Tage ab. Ein Projekt ohne abgerechnete Builds dort nimmt den Team-Preis.
 - Die Commit-Ersatzzählung zählt zu viel, wenn ein Push mehrere Commits trägt.

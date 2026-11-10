@@ -17,6 +17,7 @@
 #   DEPLOYS_AGENT_AUTHORS, DEPLOYS_AGENT_LABELS who counts as an agent (see classify.sh)
 #   DEPLOYS                  the CLI to call (default: deploys on PATH)
 #   GH_TOKEN                 for gh: reads pull requests, writes the issue
+#   glab                     reads merge requests of GitLab repos (logged in, or GITLAB_TOKEN)
 #
 # "Today" is the UTC day. The approval list is the projects waiting when the digest was made;
 # a deploy starts each of them at its branch head at the moment of approval.
@@ -61,15 +62,28 @@ echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1 || { cat "$tmp/changed.er
 partial=false; [ "$rc" = 0 ] || partial=true
 
 has_gh=0; command -v gh >/dev/null 2>&1 && has_gh=1
+has_glab=0; command -v glab >/dev/null 2>&1 && has_glab=1
 has_risk=0; "$DEPLOYS" --help 2>/dev/null | grep -qE '^[[:space:]]*deploys risk' && has_risk=1
 
-# The facts of one pull request, read once per repo and number.
+# The facts of one pull request (GitHub) or merge request (GitLab), read once per repo and number.
+# A repo is owner/name on GitHub and host/group[/sub]/name elsewhere, as deploys writes it. Any
+# host but github.com is read as GitLab, with glab (logged in, or GITLAB_TOKEN).
 pr_facts() {
-  local r="$1" n="$2" f
+  local r="$1" n="$2" f host="" path="$1"
   f="$tmp/pr_${1////_}_$2.json"
   if [ ! -f "$f" ]; then
-    { [ "$has_gh" = 1 ] && gh api "repos/$r/pulls/$n" --jq '{number, title, url:.html_url, prAuthor:.user.login, prBot:(.user.type == "Bot"), prLabels:[.labels[].name]}' 2>/dev/null; } > "$f" \
-      && jq -e 'type == "object"' "$f" >/dev/null 2>&1 || echo "{\"number\":$n}" > "$f"
+    case "${r%%/*}" in *.*) host="${r%%/*}"; path="${r#*/}" ;; esac
+    [ "$host" != github.com ] || host=""
+    if [ -z "$host" ]; then
+      { [ "$has_gh" = 1 ] && gh api "repos/$path/pulls/$n" --jq '{number, title, url:.html_url, prAuthor:.user.login, prBot:(.user.type == "Bot"), prLabels:[.labels[].name]}' 2>/dev/null; } > "$f" || true
+    else
+      # GitLab labels are plain strings; few bots are marked as such, so names decide too.
+      { [ "$has_glab" = 1 ] && glab api --hostname "$host" "projects/$(jq -rn --arg s "$path" '$s | @uri')/merge_requests/$n" 2>/dev/null \
+          | jq -c '{number:.iid, title, url:.web_url, prAuthor:.author.username,
+              prBot:((.author.bot // false) or ((.author.username // "") | test("\\[bot\\]|dependabot|renovate|^(project|group)_[0-9]+_bot"; "i"))),
+              prLabels:((.labels // []) | map(if type == "object" then .name else . end))}' 2>/dev/null; } > "$f" || true
+    fi
+    jq -e 'type == "object" and .number != null' "$f" >/dev/null 2>&1 || echo "{\"number\":$n}" > "$f"
   fi
   cat "$f"
 }
@@ -150,8 +164,23 @@ fi
 $howto}" > "$out"
 
 # --- the issue: one per day, updated in place; older open digests are closed ---
+# The list to approve is also posted as a comment by this token's account: approve-deploy.yml
+# reads it from there (an unedited comment of that account), never from the issue body, which
+# anyone with write access could change between the digest and the label.
 issue_url=""
-if [ "$issue" = 1 ] && [ -n "$names_csv" ]; then
+if [ "$issue" = 1 ] && [ -z "$names_csv" ]; then
+  # Nothing waits now: an open digest of today (or earlier) must not approve this morning's list later.
+  if [ "$dry" = 1 ]; then
+    echo "issue: nothing waiting; open digests in $repo would be closed"
+  else
+    command -v gh >/dev/null 2>&1 || { echo "--issue needs gh (GitHub CLI)" >&2; exit 1; }
+    open="$(gh issue list -R "$repo" --state open --label deploys-digest --limit 50 --json number,title,url)"
+    for old in $(jq -r '.[] | select(.title | startswith("Deploys waiting – ")) | .number' <<<"$open"); do
+      gh issue close "$old" -R "$repo" --comment "Nothing is waiting any more; closed so its label cannot approve an old list." >/dev/null 2>&1 || true
+      echo "Closed issue #$old (nothing waiting)."
+    done
+  fi
+elif [ "$issue" = 1 ]; then
   body="$markdown
 
 ## Approve
@@ -178,6 +207,9 @@ Or run [approve-deploy]($approve_url) with these projects. Nothing is deployed b
       num="${issue_url##*/}"
       echo "Opened issue $issue_url"
     fi
+    # The list approve-deploy.yml deploys: the newest unedited comment of this account.
+    printf 'The list a `deploy-approved` label deploys now: `%s`\n\n<!-- deploys-approve: %s -->\n' "$names_csv" "$names_csv" > "$tmp/approve.md"
+    gh issue comment "$num" -R "$repo" --body-file "$tmp/approve.md" >/dev/null
     # A digest of an earlier day lists what waited then: close it, so its label cannot approve.
     for old in $(jq -r --arg t "$title" '.[] | select(.title != $t and (.title | startswith("Deploys waiting – "))) | .number' <<<"$open"); do
       gh issue close "$old" -R "$repo" --comment "Replaced by #$num." >/dev/null 2>&1 || true

@@ -10,3 +10,11 @@ English version of [ZAHLEN.md](ZAHLEN.md).
 - **Force-push**: if the live commit is no longer in the repo, the row says "New changes (branch was rewritten)" instead of a number.
 - **After a rollback**: what is live is older than the branch, so the row has changes again.
 - **GitHub limit**: with fewer than 300 calls left, only the branch heads are read (no comparison, no open PRs).
+
+## Repos on GitLab
+
+The same rules apply to GitLab, with three differences ([GITLAB.md](GITLAB.md#differences-from-github)):
+
+- **No floor.** GitLab lists every commit of a comparison, so a count past 250 is exact, never "at least".
+- **No budget of its own.** GitLab limits requests per minute, not per hour. Only GitHub's limit above switches a reload to branch heads, for GitLab repos too.
+- **Open MRs** are counted like open PRs, but without a CI state: GitLab's list of merge requests does not carry their pipelines.

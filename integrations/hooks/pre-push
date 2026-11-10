@@ -25,28 +25,46 @@ done
 command -v "$DEPLOYS" >/dev/null 2>&1 || exit 0
 command -v jq >/dev/null 2>&1 || exit 0
 
-# owner/repo from git@github.com:o/r.git, ssh://git@github.com/o/r, https://github.com/o/r.git
-repo="$(printf '%s' "$remote_url" | sed -E 's#^(git@|ssh://git@|https?://([^@/]*@)?)github\.com[:/]##; s#\.git$##; s#/$##')"
-case "$repo" in */*) ;; *) exit 0 ;; esac
-case "$repo" in */*/*|*:*) exit 0 ;; esac
+# The repo as deploys names it: owner/name on GitHub (git@github.com:o/r.git, ssh://, https://),
+# host/group[/sub]/name elsewhere (GitLab: gitlab.com/group/name).
+hostpath="$(printf '%s' "$remote_url" | sed -E 's#^(ssh://)?([^@/]*@)?##; s#^https?://([^@/]*@)?##; s#^([^:/]+):([0-9]+/)?#\1/#; s#\.git$##; s#/$##')"
+case "$hostpath" in
+  github.com/*/*) repo="${hostpath#github.com/}"; case "$repo" in */*/*) exit 0 ;; esac ;;
+  */*/*) repo="$hostpath" ;;
+  *) exit 0 ;;
+esac
+case "$repo" in *[!A-Za-z0-9._/-]*|'') exit 0 ;; esac
 
-# Both lists at once, without GitHub calls (only auto, repo and ref matter here), and never
-# longer than DEPLOYS_PREPUSH_TIMEOUT seconds (default 20): then the push goes unchecked.
+# Every platform that is on (deploys list --json), without GitHub calls (only auto, repo and ref
+# matter here), and never longer than DEPLOYS_PREPUSH_TIMEOUT seconds (default 20): then the push
+# goes unchecked. A CLI without `list` gets the Vercel and Render lists, as before.
 tmp="$(mktemp -d 2>/dev/null)" || exit 0
 trap 'rm -rf "$tmp"' EXIT
 export DEPLOYS_NO_GITHUB=1
 killtree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do killtree "$c"; done; kill "$1" 2>/dev/null; }
-( exec "$DEPLOYS" vercel list --json >"$tmp/v" 2>/dev/null </dev/null ) & vp=$!; disown "$vp" 2>/dev/null
-rp=""
-# Render only with a key: without one there is nothing to read.
-if [ -n "${RENDER_API_KEY:-}" ] || "$DEPLOYS" doctor 2>/dev/null </dev/null | jq -e '.renderKey == true' >/dev/null 2>&1; then
-  ( exec "$DEPLOYS" render list --json >"$tmp/r" 2>/dev/null </dev/null ) & rp=$!; disown "$rp" 2>/dev/null
-fi
 limit="${DEPLOYS_PREPUSH_TIMEOUT:-20}"; case "$limit" in ''|*[!0-9]*) limit=20 ;; esac
+# list --json exits 1 when one platform could not be read; what it printed still counts.
+( exec "$DEPLOYS" list --json >"$tmp/a" 2>/dev/null </dev/null ) & ap=$!; disown "$ap" 2>/dev/null
 waited=0
-while kill -0 "$vp" 2>/dev/null || { [ -n "$rp" ] && kill -0 "$rp" 2>/dev/null; }; do
+while kill -0 "$ap" 2>/dev/null; do
   if [ "$waited" -ge $((limit * 5)) ]; then
-    killtree "$vp"; [ -n "$rp" ] && killtree "$rp"
+    killtree "$ap"; echo "deploys: no answer within ${limit}s, push not checked." >&2; exit 0
+  fi
+  sleep 0.2; waited=$((waited + 1))
+done
+a="$(cat "$tmp/a" 2>/dev/null)"
+vp="" rp=""
+if ! jq -e 'type=="array" and length > 0' >/dev/null 2>&1 <<<"$a"; then
+  a='[]'
+  ( exec "$DEPLOYS" vercel list --json >"$tmp/v" 2>/dev/null </dev/null ) & vp=$!; disown "$vp" 2>/dev/null
+  # Render only with a key: without one there is nothing to read.
+  if [ -n "${RENDER_API_KEY:-}" ] || "$DEPLOYS" doctor 2>/dev/null </dev/null | jq -e '.renderKey == true' >/dev/null 2>&1; then
+    ( exec "$DEPLOYS" render list --json >"$tmp/r" 2>/dev/null </dev/null ) & rp=$!; disown "$rp" 2>/dev/null
+  fi
+fi
+while { [ -n "$vp" ] && kill -0 "$vp" 2>/dev/null; } || { [ -n "$rp" ] && kill -0 "$rp" 2>/dev/null; }; do
+  if [ "$waited" -ge $((limit * 5)) ]; then
+    [ -n "$vp" ] && killtree "$vp"; [ -n "$rp" ] && killtree "$rp"
     echo "deploys: no answer within ${limit}s, push not checked." >&2; exit 0
   fi
   sleep 0.2; waited=$((waited + 1))
@@ -54,11 +72,11 @@ done
 v="$(cat "$tmp/v" 2>/dev/null)"; r="$(cat "$tmp/r" 2>/dev/null)"
 jq -e 'type=="array"' >/dev/null 2>&1 <<<"$v" || v='[]'
 jq -e 'type=="array"' >/dev/null 2>&1 <<<"$r" || r='[]'
-hits="$(jq -rn --argjson v "$v" --argjson r "$r" --arg repo "$repo" --args '
+hits="$(jq -rn --argjson a "$a" --argjson v "$v" --argjson r "$r" --arg repo "$repo" --args '
   ($ARGS.positional) as $br
-  | (($v | if type=="array" then . else [] end) | map(. + {platform:"vercel"}))
+  | $a + (($v | if type=="array" then . else [] end) | map(. + {platform:"vercel"}))
     + (($r | if type=="array" then . else [] end) | map(. + {platform:"render"}))
-  | map(select(.auto and ((.repo // "") | ascii_downcase) == ($repo | ascii_downcase)))
+  | map(select(.auto and ((.repo // "") | ascii_downcase | sub("^github\\.com/"; "")) == ($repo | ascii_downcase)))
   | .[] as $p | $br[] as $b
   | select($p.platform == "vercel" or $p.ref == $b)
   | "\($p.platform)  \($p.name)  (\(if $p.ref == $b then "production" else "preview" end), branch \($b))"
@@ -69,7 +87,7 @@ n="$(printf '%s\n' "$hits" | wc -l | tr -d ' ')"
 {
   echo "deploys: this push starts $n build(s), auto-deploy is still on for:"
   printf '%s\n' "$hits" | sed 's/^/  /'
-  echo "  Turn it off: deploys vercel autodeploy-off <p> / deploys render autodeploy-off <s>"
+  echo "  Turn it off: deploys <platform> autodeploy-off <project> (in the app: the auto-deploy switch)"
 } >&2
 if [ "$(git config --bool deploys.prepush.block 2>/dev/null)" = true ]; then
   echo "  Push stopped (deploys.prepush.block). Push anyway: git push --no-verify" >&2

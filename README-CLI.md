@@ -1,7 +1,8 @@
 # deploys: the Deploy Center CLI
 
-`deploys` turns off auto-deploy on Vercel and Render, then deploys by hand: what changed, when
-you say so. It is the same script the Mac app runs, and it works on its own on macOS, Linux,
+`deploys` turns off auto-deploy on Vercel and Render (and, opt-in, on Netlify, Cloudflare Pages,
+AWS Amplify, DigitalOcean App Platform, Coolify and any deploy hook), then deploys by hand: what
+changed, when you say so. It is the same script the Mac app runs, and it works on its own on macOS, Linux,
 WSL and in CI. MIT licensed. Website: [deploycenter.app](https://deploycenter.app/).
 
 ## Install
@@ -46,7 +47,7 @@ See [integrations/docker](integrations/docker/README.md). For GitHub Actions the
 [an action](integrations/action/README.md).
 
 **By hand:** download `deploys-cli-<version>.tar.gz` and `checksums.txt` from
-[Releases](https://github.com/Pschmetzer/deploy-center/releases), run `sha256sum -c checksums.txt --ignore-missing`,
+[Releases](https://github.com/Pschmetzer/deploy-center/releases), run `sha256sum -c checksums.txt --ignore-missing` (macOS: `shasum -a 256 -c checksums.txt --ignore-missing`),
 unpack, and put the folder anywhere; run `deploys` from inside it (it reads `VERSION` and
 `providers/` next to itself).
 
@@ -57,7 +58,9 @@ unpack, and put the folder anywhere; run `deploys` from inside it (it reads `VER
 | `bash`, `curl` | everything |
 | `jq` | everything |
 | Vercel CLI (`npm i -g vercel`) | Vercel projects |
-| GitHub CLI `gh` | optional: what is waiting to deploy (commits, PRs) |
+| GitHub CLI `gh` | optional: what is waiting to deploy (commits, PRs) on GitHub |
+| GitLab CLI `glab`, or `GITLAB_TOKEN` | optional: the same for repos on GitLab ([docs/GITLAB.md](docs/GITLAB.md)) |
+| `aws` CLI | only for AWS Amplify |
 | `column` | optional: the tables (`bsdextrautils` on Debian/Ubuntu) |
 
 ## First steps
@@ -84,7 +87,15 @@ No login, no keychain: keys come from the environment and are never printed.
 | `VERCEL_TOKEN` | Vercel access token (vercel.com/account/tokens), read by the Vercel CLI |
 | `RENDER_API_KEY` | Render API key (dashboard: Account settings, API keys) |
 | `GH_TOKEN` | optional, for `gh`: the GitHub API without the low anonymous rate limit |
+| `GITLAB_TOKEN`, `GITLAB_HOST` | optional: GitLab repos; `GITLAB_HOST` for self-managed GitLab (default gitlab.com) |
+| `NETLIFY_AUTH_TOKEN` | Netlify, once enabled with `deploys providers enable netlify` |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Pages (the account id only when the token sees more than one) |
+| `AWS_PROFILE` or `DEPLOYS_AMPLIFY_PROFILE`, `AWS_REGION` | AWS Amplify, through the `aws` CLI |
+| `DIGITALOCEAN_TOKEN` | DigitalOcean App Platform |
+| `COOLIFY_TOKEN`, `COOLIFY_URL` | Coolify, and the URL of your instance |
 | `DEPLOYS_CONFIG` | config folder (default `~/.config/deploys`); keep `vercel-repos.json` there between runs |
+
+The opt-in hosts are off until `deploys providers enable <name>`; see [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
 ```yaml
 - run: curl -fsSL https://deploycenter.app/install.sh | sh

@@ -1,0 +1,3 @@
+{"domainAssociations":[{"domainName":"example.com","domainStatus":"AVAILABLE","subDomains":[
+ {"subDomainSetting":{"prefix":"www","branchName":"main"},"verified":true},
+ {"subDomainSetting":{"prefix":"dev","branchName":"dev"},"verified":true}]}]}

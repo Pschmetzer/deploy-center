@@ -85,7 +85,10 @@ struct GuardSettings: View {
             failed = false
         } catch { message = error.localizedDescription; failed = true }
         await reload()
-        for p in [Platform.vercel, .render] { await store.load(p) }
+        // Only the platforms that are on (and can be read), all at once.
+        await withTaskGroup(of: Void.self) { g in
+            for p in Platform.allCases where store.canLoad(p) { g.addTask { await store.load(p) } }
+        }
     }
 }
 
@@ -102,7 +105,7 @@ private struct GuardLastRun: View {
                 }
                 ForEach(s.lastActions) { a in
                     HStack {
-                        Text(a.platform.capitalized).foregroundStyle(.secondary)
+                        Text(ProviderInfo.label(for: a.platform)).foregroundStyle(.secondary)
                         Text(Demo.mask(a.project ?? "–"))
                         Spacer()
                         Text(label(a)).foregroundStyle(a.action == "failed" || a.action == "error" ? .red : .secondary)
@@ -165,8 +168,8 @@ private struct GuardAllowances: View {
 
     private func scope(_ a: GuardStatus.Allowance) -> String {
         if a.platform == "all" { return L("All projects", "Alle Projekte") }
-        if a.project == "*" { return L("All of ", "Alles bei ") + a.platform.capitalized }
-        return a.platform.capitalized + " · " + Demo.mask(a.project)
+        if a.project == "*" { return L("All of ", "Alles bei ") + ProviderInfo.label(for: a.platform) }
+        return ProviderInfo.label(for: a.platform) + " · " + Demo.mask(a.project)
     }
 
     private func left(_ a: GuardStatus.Allowance, now: Date) -> String {

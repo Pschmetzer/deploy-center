@@ -186,7 +186,7 @@ digitalocean_ready() {
   command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && digitalocean_key >/dev/null 2>&1
 }
 
-digitalocean_has() { digitalocean_id_of "$1" >/dev/null 2>&1; }
+digitalocean_has() { digitalocean_id_of "$1" 2>/dev/null; }
 
 digitalocean_json() {
   local apps out="[]" a id d
@@ -261,11 +261,18 @@ digitalocean_on() {
   echo "DigitalOcean: $app deploys on push again, as before"
 }
 
-# digitalocean_deploy_json <app> [preview] [sha] — a new deployment of the branch's newest commit.
+# digitalocean_deploy_json <app> — a new deployment of the branch's newest commit.
 digitalocean_deploy_json() {
-  local app="$1" preview="${2:-}" sha="${3:-}" id info out lock=""
-  [ -z "$preview" ] || digitalocean_die "DigitalOcean: App Platform has no preview deploys"
-  [ -z "$sha" ] || digitalocean_die "DigitalOcean: a deployment always builds the newest commit of the branch; --sha is not supported"
+  local app="$1" id info out lock=""
+  shift || true
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --preview) digitalocean_die "DigitalOcean App Platform cannot deploy a preview (it has no preview deploys)" ;;
+      --sha) digitalocean_die "DigitalOcean App Platform cannot deploy a given commit: a deployment always builds the newest commit of the branch" ;;
+      "") ;;
+      *) digitalocean_die "Unknown option $1. Usage: deploy-json <app>" ;;
+    esac; shift
+  done
   id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
   info="$(digitalocean_app "$id")" || digitalocean_die "DigitalOcean: could not read $app"
   [ "$(echo "$info" | jq '.app.pinned_deployment != null')" = true ] \
@@ -278,8 +285,8 @@ digitalocean_deploy_json() {
     .deployment | {id, url:($a | url_of), state:(.phase // null), phase:(.phase | phase)}'
 }
 
-# digitalocean_status <app> <deployment-id> — App Platform needs the app to find a deployment.
-digitalocean_status() {
+# digitalocean_status_json <app> <deployment-id> — App Platform needs the app to find a deployment.
+digitalocean_status_json() {
   local app="${1:-}" d="${2:-}" id out
   [ -n "$d" ] || digitalocean_die "DigitalOcean: status needs the app and the deployment id"
   id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
@@ -287,12 +294,20 @@ digitalocean_status() {
   echo "$out" | jq --arg app "$id" "$DIGITALOCEAN_JQ"'.deployment | deploy_out(null; $app)'
 }
 
-digitalocean_latest() {
+digitalocean_latest_json() {
   local id out
   id="$(digitalocean_id_of "$1")" || digitalocean_die "DigitalOcean app $1 not found"
   out="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1")" || digitalocean_die "DigitalOcean: could not read the deployments of $1"
   echo "$out" | jq --arg app "$id" "$DIGITALOCEAN_JQ"'.deployments[0] // null | if . then deploy_out(null; $app) else null end'
 }
+
+# The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
+# The JSON stays in digitalocean_status_json/_latest_json, and `deploys digitalocean status|latest` prints it.
+DIGITALOCEAN_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
+digitalocean_status() { local j; j="$(digitalocean_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$DIGITALOCEAN_TSV"; }
+digitalocean_latest() { local j; j="$(digitalocean_latest_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$DIGITALOCEAN_TSV"; }
+digitalocean_cli_status() { digitalocean_status_json "$@"; }
+digitalocean_cli_latest() { digitalocean_latest_json "$@"; }
 
 # digitalocean_cancel <app> <deployment-id>
 digitalocean_cancel() {
@@ -383,8 +398,10 @@ digitalocean_url() {
 digitalocean_set_key() {
   local key=""
   IFS= read -r key || true
+  # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+  key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || digitalocean_die "Pipe the token in: pbpaste | deploys digitalocean set-key"
-  case "$key" in *\'*|*\"*|*' '*|*\\*) digitalocean_die "That does not look like a DigitalOcean token";; esac
+  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) digitalocean_die "That does not look like a DigitalOcean token";; esac
   ( DIGITALOCEAN_TOKEN="$key"; key_of() { printf '%s' "$DIGITALOCEAN_TOKEN"; }; digitalocean_call GET /v2/account >/dev/null ) \
     || digitalocean_die "DigitalOcean did not accept that token; nothing was saved"
   # On stdin to `security -i`, so the token is never an argument anyone can see.

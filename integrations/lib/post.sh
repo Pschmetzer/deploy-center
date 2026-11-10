@@ -45,7 +45,13 @@ webhook_body() {
 
 webhook_send() {
   local url="$1" format="$2" f extra=()
-  case "$url" in https://*|http://*) ;; *) echo "DEPLOYS_NOTIFY_URL must start with https://" >&2; return 1 ;; esac
+  # http:// only to this machine (a local ntfy, a test server): elsewhere a token in the URL
+  # (Telegram, Slack, Discord) would cross the network in clear text.
+  case "$url" in
+    https://*) ;;
+    http://localhost|http://localhost[:/]*|http://127.0.0.1|http://127.0.0.1[:/]*|http://\[::1\]|http://\[::1\][:/]*) ;;
+    *) echo "DEPLOYS_NOTIFY_URL must start with https:// (http:// only for localhost)" >&2; return 1 ;;
+  esac
   case "$url" in *'"'*|*'\'*|*$'\n'*) echo "DEPLOYS_NOTIFY_URL has characters a URL cannot have" >&2; return 1 ;; esac
   f="$(mktemp)"
   printf '%s' "$WEBHOOK_BODY" > "$f"

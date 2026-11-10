@@ -1,0 +1,3 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+export COOLIFY_URL=https://coolify.example.com COOLIFY_TOKEN=cf_fixture
+CONTRACT_ID=app-shop CONTRACT_NAME=shop CONTRACT_DEPLOY=dep-shop-3

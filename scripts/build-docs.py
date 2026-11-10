@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Build site/docs/ from the repo's Markdown. Python 3.9+, standard library only.
 
-    python3 scripts/build-docs.py            # writes site/docs/ and the docs part of site/sitemap.xml
+    python3 scripts/build-docs.py            # writes site/docs/ and the docs part of site/sitemap.xml,
+                                             # puts VERSION into site/index.html and site/llms.txt, and
+                                             # the git date of each hand-written page into sitemap.xml
 
 The pages are listed in PAGES below. Links between converted files become links between docs
 pages; links to any other file in the repo go to GitHub. A relative link to a file that does not
@@ -12,6 +14,7 @@ fenced code (also inside list items), tables, block quotes, rules, `code`, **bol
 and [links](url). Raw HTML is shown as text.
 """
 import datetime
+import hashlib
 import html
 import json
 import os
@@ -28,6 +31,11 @@ ASSETS = os.path.join(ROOT, "scripts", "docs-assets")
 BASE = "https://deploycenter.app"
 REPO = "https://github.com/Pschmetzer/deploy-center"
 BRANCH = "main"
+# site/img/og.png (1200 x 630), the same picture as on the home page
+OG_ALT = "Deploy Center: stop paying for a build on every push. Free Mac app for manual deploys."
+# The footer line on every docs page; the home page lists the same names.
+TRADEMARKS = ("Not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, "
+              "GitLab or Anthropic. Claude is a trademark of Anthropic.")
 
 # slug, nav label, group, source file, description. Order = sidebar order.
 PAGES = [
@@ -35,14 +43,40 @@ PAGES = [
      "Install Deploy Center with Homebrew or by hand, what it needs, and how to connect Vercel, Render and GitHub."),
     ("safe-start", "Try it safely", "Start", "docs/SAFE-START.md",
      "Try Deploy Center without risk: only look first, then turn off auto-deploy for one project, then for all."),
+    ("install-cli", "Install the CLI", "Start", "README-CLI.md",
+     "Install the deploys CLI alone on macOS, Linux, WSL or in CI: the install script, Homebrew, Docker, and the variables CI needs."),
     ("cli", "CLI reference", "Start", "docs/CLI.md",
      "Every command of the deploys CLI: changed, deploy-changed, status, watch, logs, Vercel, Render, autofix, CI variables, exit codes and settings."),
     ("auto-deploy", "Auto-deploy off and on", "Using it", "docs/AUTO-DEPLOY.md",
      "What turning off auto-deploy changes on Vercel and Render, and how to turn it back on."),
     ("autofix", "Autofix", "Using it", "docs/AUTOFIX.md",
      "deploys autofix hands a failed Vercel or Render build to a Claude Code routine that opens a fix pull request. It never deploys."),
-    ("deploy-hooks", "Deploy hooks (any host)", "Using it", "docs/providers/hook.md",
+    ("safe-deploy", "Safe deploys", "Using it", "docs/SAFE-DEPLOY.md",
+     "Batch many pushes into one deploy: deploy only when CI is green, a site check with automatic rollback, deploy windows and a risk score."),
+    ("guard", "Auto-deploy guard", "Using it", "docs/GUARD.md",
+     "deploys guard notices when auto-deploy comes back on by itself and turns it off again, and allows auto-deploy for a while on purpose."),
+    ("savings", "Savings: simulate and ledger", "Using it", "docs/SAVINGS.md",
+     "deploys simulate estimates what auto-deploy would cost a month, deploys ledger what turning it off saved, on Vercel and Render."),
+    ("team", "Team mode", "Using it", "docs/TEAM.md",
+     "The same deploy rules on every teammate's Mac without a server: a shared config file, observers and a two-person rule."),
+    ("claude", "Claude in the app", "Using it", "docs/CLAUDE.md",
+     "Ask Claude with your own Anthropic API key why a build failed, for release notes, and whether a deploy is safe to ship."),
+    ("claude-code", "Claude Code", "Using it", "docs/CLAUDE-CODE.md",
+     "Deploy Center with Claude Code: the MCP server, the plugin and Autofix. Claude writes and fixes the code, you decide what ships."),
+    ("gitlab", "GitLab as a source", "Using it", "docs/GITLAB.md",
+     "Read commits and merge requests waiting to deploy from gitlab.com or a self-managed GitLab, with glab or GITLAB_TOKEN."),
+    ("deploy-hooks", "Deploy hooks (any host)", "Hosts", "docs/providers/hook.md",
      "Deploy any host with a build-trigger URL by hand: Cloudflare Pages, Netlify, DigitalOcean, Coolify, Dokploy, Amplify."),
+    ("netlify", "Netlify", "Hosts", "docs/providers/netlify.md",
+     "Netlify in Deploy Center: turn it on, stop builds on push with an ignore line, and deploy sites by hand with a build hook."),
+    ("cloudflare-pages", "Cloudflare Pages", "Hosts", "docs/providers/cloudflare.md",
+     "Cloudflare Pages in Deploy Center: an API token, turning push-deploys off, a self-test, and deploying projects by hand."),
+    ("aws-amplify", "AWS Amplify", "Hosts", "docs/providers/amplify.md",
+     "AWS Amplify Hosting in Deploy Center: an AWS profile, auto-build off per branch, and deploys by hand."),
+    ("digitalocean", "DigitalOcean App Platform", "Hosts", "docs/providers/digitalocean.md",
+     "DigitalOcean App Platform in Deploy Center: a token, deploy_on_push off, and deploys by hand."),
+    ("coolify", "Coolify", "Hosts", "docs/providers/coolify.md",
+     "Coolify in Deploy Center: your instance URL and token, auto-deploy off, and deploys by hand."),
     ("ci", "Deploy from CI", "Using it", "examples/README.md",
      "Run the deploys CLI without a Mac: a daily deploy from GitHub Actions, the environment variables it needs."),
     ("uninstall", "Uninstall", "Using it", "docs/UNINSTALL.md",
@@ -55,6 +89,8 @@ PAGES = [
      "Short answers: cost, privacy, where the Render key is stored, GitLab, Linux, monorepos, builds that still run."),
     ("troubleshooting", "Troubleshooting", "Reference", "docs/TROUBLESHOOTING.md",
      "The error messages of Deploy Center and the deploys CLI, word for word, and what to do about each."),
+    ("providers", "Adding a host", "Reference", "docs/PROVIDERS.md",
+     "How a platform plugs into deploys: one file in providers/, its functions, its metadata and the contract tests."),
     ("verify", "Verify a release", "Reference", "integrations/VERIFY.md",
      "Check a Deploy Center release before you open it: SHA-256, codesign and Gatekeeper."),
     ("integrations", "Overview", "Integrations", "integrations/README.md",
@@ -70,9 +106,14 @@ INTEGRATIONS = {
     "hooks": ("pre-push hook", "A git pre-push hook that warns how many Vercel and Render builds a push would start."),
     "mcp": ("MCP server", "An MCP server for Claude Code, Claude Desktop, Cursor and VS Code: what is waiting, release notes, logs, and opt-in deploys."),
     "docker": ("Docker image", "A Linux image with the deploys CLI and its tools, for CI."),
+    "claude-code": ("Claude Code plugin", "A Claude Code plugin: the MCP server, a skill, commands and a push hook, so Claude knows how deploys work."),
+    "digest": ("Agent digest", "Once a day, what coding agents pushed per project, with a one-click approval through a GitHub workflow."),
+    "raycast": ("Raycast extension", "See which projects have commits waiting and deploy them by hand, from Raycast."),
+    "vscode": ("VS Code extension", "What is merged but not live, and a deploy by hand, inside VS Code, Cursor and Windsurf."),
 }
-INTEGRATION_ORDER = ["action", "badge", "statuspage", "notify", "hooks", "mcp", "docker"]
-GROUPS = ["Start", "Using it", "Reference", "Integrations"]
+INTEGRATION_ORDER = ["action", "badge", "statuspage", "notify", "hooks", "mcp", "claude-code", "digest",
+                     "raycast", "vscode", "docker"]
+GROUPS = ["Start", "Using it", "Hosts", "Reference", "Integrations"]
 # CLI help lines without a description of their own.
 MISSING = {
     "deploys --help | --version": "this help, or the version",
@@ -534,7 +575,7 @@ def jsonld(page, crumbs):
     return json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
 
 
-def render(page, pages, version):
+def render(page, pages, assets):
     crumbs = [("Home", "/"), ("Docs", "/docs/")]
     if page.slug:
         if page.group == "Integrations" and page.slug != "integrations":
@@ -546,7 +587,8 @@ def render(page, pages, version):
     title = f"{page.title} · Deploy Center docs" if page.slug else "Deploy Center docs"
     edit = (f' · <a href="{REPO}/edit/{BRANCH}/{page.source}" rel="noopener">Edit on GitHub</a>'
             if page.source else "")
-    updated = datetime.date.fromisoformat(page.updated).strftime("%B %-d, %Y")
+    ud = datetime.date.fromisoformat(page.updated)
+    updated = f"{ud:%B} {ud.day}, {ud.year}"  # not %-d: Windows has no such flag
     toc_html = toc(page)
     return f"""<!doctype html>
 <html lang="en">
@@ -565,18 +607,27 @@ def render(page, pages, version):
 <meta property="og:description" content="{esc(page.description)}">
 <meta property="og:url" content="{BASE}{page.url}">
 <meta property="og:image" content="{BASE}/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{OG_ALT}">
+<meta property="og:locale" content="en_US">
 <meta property="article:modified_time" content="{page.updated}">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{esc(page.title)}">
+<meta name="twitter:description" content="{esc(page.description)}">
+<meta name="twitter:image" content="{BASE}/img/og.png">
+<meta name="twitter:image:alt" content="{OG_ALT}">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
-<link rel="stylesheet" href="/docs/assets/docs.css?v={version}">
-<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="/docs/assets/docs.css?v={assets["docs.css"]}">
+<script>document.documentElement.classList.add('js');try{{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}}catch(e){{}}</script>
 <script type="application/ld+json">{jsonld(page, crumbs)}</script>
 </head>
 <body>
 <a class="skip" href="#content">Skip to content</a>
 <header class="top"><div class="bar">
-  <a class="brand" href="/"><img src="/img/icon.png" alt="" width="26" height="26">Deploy Center</a>
+  <a class="brand" href="/"><img src="/img/icon-64.png" alt="" width="26" height="26">Deploy Center</a>
   <a class="section" href="/docs/">Docs</a>
   <div class="search" role="search">
     <label class="sr" for="q">Search the docs</label>
@@ -584,7 +635,9 @@ def render(page, pages, version):
     <kbd>/</kbd>
     <ul id="results" role="listbox" hidden></ul>
   </div>
-  <a class="gh" href="{REPO}" rel="noopener">GitHub ★</a>
+  <a class="nav" href="/guides/">Guides</a>
+  <a class="gh" href="{REPO}" rel="noopener">GitHub<span aria-hidden="true"> ★</span></a>
+  <a class="dl" href="{REPO}/releases/latest">Download</a>
 </div></header>
 <div class="layout">
 <aside class="side"><details id="sidenav" open><summary>Docs menu</summary>
@@ -604,9 +657,10 @@ def render(page, pages, version):
 </div>
 <footer><div class="bar">
   <span>Deploy Center · MIT · <a href="/">deploycenter.app</a></span>
-  <span><a href="{REPO}/blob/{BRANCH}/CHANGELOG.md" rel="noopener">Changelog</a> · <a href="{REPO}/issues" rel="noopener">Issues</a> · <a href="/impressum.html">Impressum</a> · <a href="/datenschutz.html">Datenschutz</a> · Not affiliated with Vercel or Render</span>
+  <span><a href="{REPO}/blob/{BRANCH}/CHANGELOG.md" rel="noopener">Changelog</a> · <a href="{REPO}/issues" rel="noopener">Issues</a> · <a href="/impressum.html">Impressum</a> · <a href="/datenschutz.html">Datenschutz</a> </span>
+  <span class="fine">{esc(TRADEMARKS)}</span>
 </div></footer>
-<script src="/docs/assets/docs.js?v={version}" defer></script>
+<script src="/docs/assets/docs.js?v={assets["docs.js"]}" defer></script>
 </body>
 </html>
 """
@@ -653,6 +707,42 @@ def search_index(pages):
     return entries
 
 
+def sync_hand_dates():
+    """The pages in site/ written by hand: their <lastmod> in sitemap.xml and the "dateModified"
+    of their JSON-LD come from the last commit of the file, so neither is kept up by hand."""
+    path = os.path.join(SITE, "sitemap.xml")
+    if not os.path.exists(path):
+        return
+    text = open(path, encoding="utf-8").read()
+
+    def date_of(url_path):
+        rel = os.path.join("site", url_path.strip("/"), "index.html")
+        return last_updated(rel) if os.path.isfile(os.path.join(ROOT, rel)) else None
+
+    def fix(m):
+        if m.group(2).startswith("/docs/"):
+            return m.group(0)
+        d = date_of(m.group(2))
+        if not d:
+            return m.group(0)
+        page = os.path.join(ROOT, "site", m.group(2).strip("/"), "index.html")
+        html_text = open(page, encoding="utf-8").read()
+        new = re.sub(r'("dateModified":\s*")\d{4}-\d\d-\d\d"', r"\g<1>" + d + '"', html_text)
+        # and the visible "Last updated", so it says the same as the JSON-LD
+        day = datetime.date.fromisoformat(d)
+        new = re.sub(r'(Last updated )<time datetime="[^"]*">[^<]*</time>',
+                     lambda m: f'{m.group(1)}<time datetime="{d}">{day.day} {day:%B} {day.year}</time>', new)
+        if new != html_text:
+            with open(page, "w", encoding="utf-8") as f:
+                f.write(new)
+        return f"{m.group(1)}{m.group(2)}</loc><lastmod>{d}</lastmod>"
+
+    new = re.sub(r"(<url><loc>" + re.escape(BASE) + r")(/[^<]*)</loc><lastmod>[^<]*</lastmod>", fix, text)
+    if new != text:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new)
+
+
 def update_sitemap(urls):
     """Replace the docs block in site/sitemap.xml (between markers), leave everything else."""
     path = os.path.join(SITE, "sitemap.xml")
@@ -672,12 +762,67 @@ def update_sitemap(urls):
         f.write(text)
 
 
+VERSION_RE = r"\d+\.\d+\.\d+"
+
+
+def sync_site_version(version):
+    """Put VERSION into site/index.html: the line under the download button and the JSON-LD.
+
+    scripts/bump.sh does the same, but only from the previous version; this catches any drift.
+    """
+    if not re.fullmatch(VERSION_RE, version):
+        raise BuildError(f"VERSION is not x.y.z: {version!r}")
+    path = os.path.join(SITE, "index.html")
+    if not os.path.exists(path):
+        return
+    text = open(path, encoding="utf-8").read()
+    new, n1 = re.subn(r'("softwareVersion":\s*")' + VERSION_RE + '"', r"\g<1>" + version + '"', text)
+    new, n2 = re.subn(r'(id="version">Version )' + VERSION_RE, r"\g<1>" + version, new)
+    if not (n1 and n2):
+        raise BuildError("site/index.html: softwareVersion or the Version line is missing")
+    if new != text:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new)
+        print(f"build-docs: site/index.html now says version {version}")
+    path = os.path.join(SITE, "llms.txt")
+    if os.path.exists(path):
+        text = open(path, encoding="utf-8").read()
+        new, n = re.subn(r"(^- Version: )" + VERSION_RE, r"\g<1>" + version, text, flags=re.M)
+        if not n:
+            raise BuildError("site/llms.txt: the line '- Version: x.y.z' is missing")
+        if new != text:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(new)
+            print(f"build-docs: site/llms.txt now says version {version}")
+
+
+def llms_full(pages, version):
+    """Every docs page as plain text in one file, for AI assistants (llms.txt points here)."""
+    out = [f"# Deploy Center documentation (version {version})", "",
+           f"> All pages of {BASE}/docs/ as plain text. Generated by scripts/build-docs.py.", ""]
+    for p in pages:
+        text = re.sub(r"<pre[^>]*>(.*?)</pre>", lambda m: "\n```\n" + m.group(1) + "\n```\n", p.body, flags=re.S)
+        text = re.sub(r'<a class="anchor"[^>]*>#</a>', "", text)
+        text = re.sub(r"<h([1-6])[^>]*>", lambda m: "\n" + "#" * (int(m.group(1)) + 1) + " ", text)
+        text = re.sub(r"<li[^>]*>", "\n- ", text)
+        text = re.sub(r"</(p|h[1-6]|tr|ul|ol|blockquote|table)>", "\n", text)
+        text = re.sub(r"</t[dh]>", " | ", text)
+        text = html.unescape(re.sub(r"<[^>]+>", "", text))
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        out += [f"## {p.title}", "", f"URL: {BASE}{p.url}", "", text, ""]
+    return "\n".join(out)
+
+
 def main():
     pages = page_list()
     build_pages(pages)
     index = index_page(pages)
     version = (open(os.path.join(ROOT, "VERSION")).read().strip() if os.path.exists(os.path.join(ROOT, "VERSION")) else "0")
-    version += "-" + (git("rev-parse", "--short", "HEAD") or "dev")
+    if version != "0":
+        sync_site_version(version)
+    # ?v= changes only when the file does, so browsers keep the cached copy across commits
+    assets = {name: hashlib.sha256(open(os.path.join(ASSETS, name), "rb").read()).hexdigest()[:10]
+              for name in ("docs.css", "docs.js")}
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
     os.makedirs(os.path.join(OUT, "assets"))
@@ -687,10 +832,13 @@ def main():
         d = os.path.join(OUT, p.slug)
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "index.html"), "w", encoding="utf-8") as f:
-            f.write(render(p, pages, version))
+            f.write(render(p, pages, assets))
     with open(os.path.join(OUT, "search-index.json"), "w", encoding="utf-8") as f:
         json.dump(search_index(pages), f, ensure_ascii=False, separators=(",", ":"))
+    with open(os.path.join(OUT, "llms-full.txt"), "w", encoding="utf-8") as f:
+        f.write(llms_full(pages, version))
     update_sitemap([(index.url, index.updated)] + [(p.url, p.updated) for p in pages])
+    sync_hand_dates()
     print(f"build-docs: {len(pages) + 1} pages in site/docs/")
 
 

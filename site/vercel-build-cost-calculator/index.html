@@ -27,6 +27,7 @@
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="stylesheet" href="/css/site.css">
 <script type="application/ld+json">
 [
@@ -139,12 +140,13 @@
 </script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <nav class="top" aria-label="Main"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
-  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/" aria-current="page">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/" aria-current="page">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
 </div></nav>
 
-<main class="wrap narrow"><article>
+<main id="main" class="wrap narrow"><article>
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Vercel build cost calculator</h1>
 <p class="answer">Auto-deploy costs roughly <b>projects × pushes per day × cost per build × working days</b> a month. Deploying by hand costs the same formula with your number of deploys instead of your number of pushes; move the sliders to see both with your numbers.</p>
@@ -152,12 +154,13 @@
 
 <div class="calc">
   <div class="card">
-    <div class="field"><label for="p">Projects connected to Git <output id="po"></output></label><input id="p" type="range" min="1" max="80" value="20"></div>
-    <div class="field"><label for="u">Pushes per project per working day <output id="uo"></output></label><input id="u" type="range" min="1" max="60" value="8"><div class="hint">Count each push, not each commit. AI coding agents often push after every step.</div></div>
-    <div class="field"><label for="c">Average cost per build <output id="co"></output></label><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In cents. Your real number: last month's build cost divided by the number of builds, on your Vercel or Render usage page.</div></div>
-    <div class="field"><label for="d">Deploys by hand per project per day <output id="do"></output></label><input id="d" type="range" min="1" max="5" value="1"></div>
+    <div class="field"><div class="fh"><label for="p">Projects connected to Git</label><output id="po" for="p" aria-hidden="true"></output></div><input id="p" type="range" min="1" max="80" value="20"></div>
+    <div class="field"><div class="fh"><label for="u">Pushes per project per working day</label><output id="uo" for="u" aria-hidden="true"></output></div><input id="u" type="range" min="1" max="60" value="8"><div class="hint">Count each push, not each commit. AI coding agents often push after every step.</div></div>
+    <div class="field"><div class="fh"><label for="c">Average cost per build</label><output id="co" for="c" aria-hidden="true"></output></div><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In cents. Your real number: last month's build cost divided by the number of builds, on your Vercel or Render usage page.</div></div>
+    <div class="field"><div class="fh"><label for="d">Deploys by hand per project per day</label><output id="do" for="d" aria-hidden="true"></output></div><input id="d" type="range" min="1" max="5" value="1"></div>
   </div>
-  <div class="card result" aria-live="polite">
+  <div class="card result">
+    <p class="sr" id="said" aria-live="polite"></p>
     <div class="hint">You would save about</div>
     <div class="big" id="save">$0</div>
     <div class="hint">a month (22 working days)</div>
@@ -196,7 +199,7 @@ saving             = with auto-deploy − deploying by hand</code></pre>
 
 <div class="ctabox">
   <h2>Pay for one build a day, not one per push.</h2>
-  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, shows what is waiting, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <p>Deploy Center turns off auto-deploy on Vercel, Render, Netlify, Cloudflare Pages and more in one click, shows what is waiting, and deploys what changed when you decide. Free and open source for macOS.</p>
   <div class="cta">
     <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
     <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
@@ -238,7 +241,7 @@ saving             = with auto-deploy − deploying by hand</code></pre>
       <li><a href="/datenschutz.html">Datenschutz</a></li>
     </ul></div>
   </div>
-  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify.</p>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
 </div></footer>
 <script>
 (function(){
@@ -247,17 +250,25 @@ saving             = with auto-deploy − deploying by hand</code></pre>
   // prefill from the link, e.g. ?p=12&u=30&c=8&d=1
   const q=new URLSearchParams(location.search);
   ids.forEach(id=>{const v=+q.get(id),el=$(id); if(v>=+el.min&&v<=+el.max) el.value=v;});
-  const fmt=v=>'$'+Math.round(v).toLocaleString('en-US');
+  // under $10 with cents, so a small saving does not show as $0
+  const fmt=v=>v>0&&v<10?'$'+v.toFixed(2):'$'+Math.round(v).toLocaleString('en-US');
+  let moved=false;
   function calc(){
     const p=+$('p').value,u=+$('u').value,c=+$('c').value/100,d=+$('d').value;
     $('po').textContent=p;$('uo').textContent=u;$('co').textContent='$'+c.toFixed(2);$('do').textContent=d;
+    $('c').setAttribute('aria-valuetext','$'+c.toFixed(2));
     const days=22, now=p*u*c*days, after=p*Math.min(d,u)*c*days, save=Math.max(0,now-after);
     $('now').textContent=fmt(now);$('after').textContent=fmt(after);$('save').textContent=fmt(save);
     const link='https://deploycenter.app/vercel-build-cost-calculator/?'+ids.map(id=>id+'='+$(id).value).join('&');
     const t=`Auto-deploy would cost me about ${fmt(now)}/month in builds. Deploying by hand: ${fmt(after)}. Calculated with Deploy Center`;
     $('tweet').href='https://x.com/intent/post?text='+encodeURIComponent(t)+'&url='+encodeURIComponent(link);
+    // the address bar carries the numbers too, so a copied URL shows the same result
+    if(moved) try{history.replaceState(null,'','?'+ids.map(id=>id+'='+$(id).value).join('&'))}catch(e){}
+    return {now,after,save};
   }
-  ids.forEach(id=>$(id).addEventListener('input',calc));calc();
+  // read out only the saving, and only once a slider is let go
+  function say(){const r=calc();$('said').textContent='You would save about '+fmt(r.save)+' a month. With auto-deploy '+fmt(r.now)+', deploying by hand '+fmt(r.after)+'.'}
+  ids.forEach(id=>{$(id).addEventListener('input',()=>{moved=true;calc()});$(id).addEventListener('change',say)});calc();
 })();
 </script>
 </body>

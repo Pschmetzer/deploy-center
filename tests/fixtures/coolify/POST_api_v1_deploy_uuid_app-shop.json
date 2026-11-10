@@ -1,0 +1,11 @@
+{
+ "deployments": [
+  {
+   "message": "Application shop deployment queued.",
+   "resource_uuid": "app-shop",
+   "deployment_uuid": "dep-new"
+  }
+ ]
+}
+
+200

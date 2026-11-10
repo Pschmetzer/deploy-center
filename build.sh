@@ -42,6 +42,9 @@ VERSION="$(cat VERSION 2>/dev/null || true)"
 BUILD="build/Deploy Center.app"
 ZIP="build/DeployCenter-${VERSION}-universal.zip"
 YEAR="$(date +%Y)"
+# The oldest macOS the app runs on: the swiftc target, both Info.plists, and (read back from the
+# built app by release.sh) the appcast's minimumSystemVersion. Change it here only.
+MIN_OS="15.0"
 
 # Sparkle (in-app updates): the pinned, checksum-verified release from scripts/sparkle.sh.
 # SPARKLE_FEED_URL and SPARKLE_PUBLIC_KEY override the feed and key only for local update tests.
@@ -59,7 +62,7 @@ if [ "$fast" = 1 ]; then archs="$(uname -m)"; else archs="arm64 x86_64"; fi
 slices=()
 for arch in $archs; do
   swiftc -O -parse-as-library -swift-version 5 \
-    -target "$arch-apple-macosx15.0" \
+    -target "$arch-apple-macosx$MIN_OS" \
     -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "build/DeployCenter-$arch" app/*.swift shared/*.swift
   slices+=("build/DeployCenter-$arch")
@@ -82,7 +85,7 @@ if [ "$widgets" = 1 ]; then
   wslices=()
   for arch in $archs; do
     swiftc -O -parse-as-library -application-extension -swift-version 5 -module-name DeployCenterWidgets \
-      -target "$arch-apple-macosx15.0" -o "build/DeployCenterWidgets-$arch" widgets/*.swift shared/*.swift
+      -target "$arch-apple-macosx$MIN_OS" -o "build/DeployCenterWidgets-$arch" widgets/*.swift shared/*.swift
     wslices+=("build/DeployCenterWidgets-$arch")
   done
   lipo -create "${wslices[@]}" -output "$APPEX/Contents/MacOS/DeployCenterWidgets"
@@ -97,14 +100,22 @@ cp -R providers "$BUILD/Contents/Resources/providers"
 mkdir -p "$BUILD/Contents/Resources/lib" && cp lib/*.sh "$BUILD/Contents/Resources/lib/"
 [ -f app/AppIcon.icns ] && cp app/AppIcon.icns "$BUILD/Contents/Resources/AppIcon.icns"
 # The MCP server for Settings > Claude, only when its packages are installed (cd integrations/mcp && npm ci).
-# Without them the app points to the repo's copy, or says what is missing.
+# Without them the app points to the repo's copy, or says what is missing. A release
+# (DEPLOYS_REQUIRE_MCP=1, set by release.sh after its own npm ci) refuses to build without them,
+# so two builds of one commit do not ship different apps.
 if [ -f integrations/mcp/server.mjs ] && [ -d integrations/mcp/node_modules/@modelcontextprotocol ]; then
   mkdir -p "$BUILD/Contents/Resources/mcp"
   cp integrations/mcp/server.mjs integrations/mcp/package.json "$BUILD/Contents/Resources/mcp/"
   ditto integrations/mcp/node_modules "$BUILD/Contents/Resources/mcp/node_modules"
+elif [ "${DEPLOYS_REQUIRE_MCP:-}" = 1 ]; then
+  die "integrations/mcp/node_modules is missing; run (cd integrations/mcp && npm ci --omit=dev)"
 fi
+# A Claude Desktop extension (.mcpb) only when it is in git: no build script makes one, and a file
+# lying around locally must not end up in some builds and not in others.
 for f in integrations/mcp/deploy-center.mcpb integrations/claude-desktop/deploy-center.mcpb; do
-  if [ -f "$f" ]; then cp "$f" "$BUILD/Contents/Resources/deploy-center.mcpb"; break; fi
+  if [ -f "$f" ] && git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+    cp "$f" "$BUILD/Contents/Resources/deploy-center.mcpb"; break
+  fi
 done
 
 # The identity is needed before signing: the App Group is "<TEAMID>.app.deploycenter", the team id
@@ -150,7 +161,7 @@ cat > "$BUILD/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>
-  <key>LSMinimumSystemVersion</key><string>15.0</string>
+  <key>LSMinimumSystemVersion</key><string>${MIN_OS}</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHumanReadableCopyright</key><string>© ${YEAR} Deploy Center contributors. MIT License.</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -175,7 +186,7 @@ if [ "$widgets" = 1 ]; then
   <key>CFBundlePackageType</key><string>XPC!</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>
-  <key>LSMinimumSystemVersion</key><string>15.0</string>
+  <key>LSMinimumSystemVersion</key><string>${MIN_OS}</string>
   <key>NSExtension</key><dict><key>NSExtensionPointIdentifier</key><string>com.apple.widgetkit-extension</string></dict>
   ${GROUP_KEY}
 </dict></plist>
@@ -206,6 +217,8 @@ fi
 # With widgets the extension is signed first, with its entitlements, and the app without --deep,
 # which would sign the extension again and drop them.
 # Sparkle's helpers and its framework are signed first (inside out) with the app's identity.
+# In both branches only deploys is signed on its own; providers/*.sh and lib/*.sh are resources,
+# covered by the bundle's seal (codesign --verify --strict fails when one of them changes).
 sign_sparkle() {
   local id="$1"; shift
   for p in "$FW/Versions/B/Autoupdate" "$FW/Versions/B/Updater.app" "$FW"; do codesign --force "$@" -s "$id" "$p"; done
@@ -227,7 +240,6 @@ if [ "$widgets" = 1 ]; then
 elif [ -n "${DEVELOPER_ID:-}" ]; then
   sign_sparkle "$DEVELOPER_ID" --options runtime --timestamp
   codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/deploys"
-  codesign --force --options runtime --timestamp -s "$DEVELOPER_ID" "$BUILD/Contents/Resources/providers/"*.sh
   ent=(); [ -n "$LINK_ENT" ] && ent=(--entitlements build/app.entitlements)
   codesign --force --options runtime --timestamp ${ent[@]+"${ent[@]}"} -s "$DEVELOPER_ID" "$BUILD"
   codesign --verify --deep --strict "$BUILD"
@@ -254,8 +266,16 @@ if [ "$install" = 1 ]; then
     pgrep -xq DeployCenter && die "Deploy Center is still running; quit it and run again"
   fi
   mkdir -p "$HOME/Applications"
-  rm -rf "$dest"
-  cp -R "$BUILD" "$dest"
+  # Copied next to it first, then swapped: a copy that fails (disk full, rights) leaves the old app.
+  new="$HOME/Applications/.Deploy Center.app.new.$$" old="$HOME/Applications/.Deploy Center.app.old.$$"
+  rm -rf "$new" "$old"
+  cp -R "$BUILD" "$new" || { rm -rf "$new"; die "copying to $dest failed; the installed app was not touched"; }
+  if [ -e "$dest" ]; then mv "$dest" "$old"; fi
+  if ! mv "$new" "$dest"; then
+    [ -e "$old" ] && mv "$old" "$dest"
+    rm -rf "$new"; die "installing $dest failed; the old app is back"
+  fi
+  rm -rf "$old"
   echo "Installed: $dest"
   [ "$was_running" = 0 ] || open "$dest"
 fi

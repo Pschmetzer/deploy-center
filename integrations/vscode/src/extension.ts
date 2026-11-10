@@ -4,6 +4,7 @@
 import { execFile } from "node:child_process";
 import * as vscode from "vscode";
 import { deployArgs, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, Runner, urlIn } from "./cli";
+import { coalesce } from "./coalesce";
 import { aiPrompt } from "./log";
 import { describe, platformLabel, plural, Project, statusText, summarize } from "./model";
 import { parseRemotes, Scope, scopeProjects } from "./repo";
@@ -13,6 +14,8 @@ type ViewState = "loading" | "missing" | "error" | "empty" | "nomatch" | "ok";
 const SITE = "https://deploycenter.app";
 /** A refresh on focus only when the last one is older than this. */
 const FOCUS_STALE_MS = 60_000;
+/** Build logs open as documents of this scheme: read-only, never saved, no "unsaved" prompt. */
+const LOG_SCHEME = "deploy-center-log";
 
 function cfg() {
   const c = vscode.workspace.getConfiguration("deployCenter");
@@ -48,7 +51,15 @@ class Controller implements vscode.TreeDataProvider<Project> {
   private warning: string | null = null;
   private state: ViewState = "loading";
   private lastRefresh = 0;
-  private inFlight: Promise<void> | null = null;
+  /** One read at a time; a call during one (a changed setting) reads once more after it. */
+  readonly refresh = coalesce(() => this.load());
+  /** Build logs, shown as read-only documents (deploy-center-log:/…), so the output channel keeps its history. */
+  private readonly logs = new Map<string, string>();
+  private readonly logChanged = new vscode.EventEmitter<vscode.Uri>();
+  readonly logProvider: vscode.TextDocumentContentProvider = {
+    onDidChange: this.logChanged.event,
+    provideTextDocumentContent: (uri) => this.logs.get(uri.path) ?? "",
+  };
   private timer: ReturnType<typeof setInterval> | undefined;
 
   constructor() {
@@ -76,12 +87,7 @@ class Controller implements vscode.TreeDataProvider<Project> {
 
   dispose(): void {
     if (this.timer) clearInterval(this.timer);
-    this.status.dispose(); this.output.dispose(); this.changed.dispose();
-  }
-
-  refresh(): Promise<void> {
-    if (!this.inFlight) this.inFlight = this.load().finally(() => { this.inFlight = null; });
-    return this.inFlight;
+    this.status.dispose(); this.output.dispose(); this.changed.dispose(); this.logChanged.dispose();
   }
 
   private async load(): Promise<void> {
@@ -264,10 +270,14 @@ class Controller implements vscode.TreeDataProvider<Project> {
   async showLog(p: Project): Promise<void> {
     const run = this.need(); if (!run) return;
     const log = await this.readLog(run, p); if (log === null) return;
-    this.output.clear();
-    this.output.appendLine(`── ${p.name} (${p.platform}) · newest build log${p.state ? ` · ${p.state}` : ""} ──`);
-    this.output.append(log.endsWith("\n") ? log : log + "\n");
-    this.output.show(true);
+    // A read-only document per project: the output channel keeps its warnings and deploy results.
+    const head = `── ${p.name} (${platformLabel(p.platform)}) · newest build log${p.state ? ` · ${p.state}` : ""} · ${new Date().toLocaleTimeString()} ──\n`;
+    const uri = vscode.Uri.from({ scheme: LOG_SCHEME, path: `/${p.platform}/${p.name}.log` });
+    this.logs.set(uri.path, head + (log.endsWith("\n") ? log : log + "\n"));
+    this.logChanged.fire(uri);
+    const doc = await vscode.workspace.openTextDocument(uri);
+    await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: true });
+    this.output.appendLine(`[${new Date().toLocaleTimeString()}] Opened the build log of ${p.name}.`);
     if (p.failed) {
       const b = await vscode.window.showWarningMessage(`The newest build of ${p.name} failed.`, "Copy for AI");
       if (b) await this.copyForAi(p, log);
@@ -323,6 +333,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const tree = vscode.window.createTreeView("deployCenter.projects", { treeDataProvider: c, showCollapseAll: false });
   context.subscriptions.push(c, tree,
+    vscode.workspace.registerTextDocumentContentProvider(LOG_SCHEME, c.logProvider),
     vscode.window.onDidChangeWindowState((s) => { if (s.focused) c.onFocus(); }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => void c.refresh()),
     vscode.workspace.onDidChangeConfiguration((e) => {

@@ -18,11 +18,16 @@ final class PhoneLinkModel: ObservableObject {
     var available: Bool { PhoneLink.group != nil }
 
     /// At launch and after each change in Settings.
-    func pushIfOn() async { if on && available { await push() } }
+    /// Only when a key changed: every write carries a new date and syncs to all devices.
+    func pushIfOn() async { if on && available { await push(onlyIfChanged: true) } }
 
-    func push() async {
+    func push(onlyIfChanged: Bool = false) async {
         busy = true; defer { busy = false }
         let keys = await Self.collect()
+        if onlyIfChanged, !keys.isEmpty, let old = PhoneLink.read(), Self.sameKeys(old, keys) {
+            if lastPush == nil { lastPush = old.updated }
+            problem = nil; return
+        }
         guard !keys.isEmpty else {
             problem = L("No Vercel token for the iPhone and no Render key on this Mac yet.",
                         "Noch kein Vercel-Token fürs iPhone und kein Render-Key auf diesem Mac.")
@@ -36,6 +41,11 @@ final class PhoneLinkModel: ObservableObject {
         }
     }
 
+    /// The same keys, whenever they were written.
+    nonisolated static func sameKeys(_ a: LinkedKeys, _ b: LinkedKeys) -> Bool {
+        var a = a; a.updated = b.updated; return a == b
+    }
+
     func turnOff() {
         PhoneLink.remove(); lastPush = nil; problem = nil
     }
@@ -47,27 +57,24 @@ final class PhoneLinkModel: ObservableObject {
         k.vercel = MacSecret.get("deploy-center-phone-vercel") ?? ""
         let teamFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/deploys/vercel-team")
         k.vercelTeam = ((try? String(contentsOf: teamFile, encoding: .utf8)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        k.render = output("/usr/bin/security", ["find-generic-password", "-a", NSUserName(), "-s", "deploy-center-render", "-w"])
-            ?? output("/usr/bin/security", ["find-generic-password", "-a", NSUserName(), "-s", "render-api-key", "-w"]) ?? ""
-        k.github = output("/usr/bin/env", ["gh", "auth", "token"]) ?? ""
+        if let r = await output("/usr/bin/security", ["find-generic-password", "-a", NSUserName(), "-s", "deploy-center-render", "-w"]) {
+            k.render = r
+        } else {
+            k.render = await output("/usr/bin/security", ["find-generic-password", "-a", NSUserName(), "-s", "render-api-key", "-w"]) ?? ""
+        }
+        k.github = await output("/usr/bin/env", ["gh", "auth", "token"]) ?? ""
         k.updated = Date()
         return k
     }
 
-    /// stdout of a command, trimmed; nil when it fails or prints nothing. Nothing is logged.
-    nonisolated private static func output(_ tool: String, _ args: [String]) -> String? {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tool)
-        p.arguments = args
+    /// stdout of a command, trimmed; nil when it fails, prints nothing or takes longer than 15 s
+    /// (`gh` asking the keychain, say). No thread waits for it. Nothing is logged.
+    nonisolated private static func output(_ tool: String, _ args: [String]) async -> String? {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (env["PATH"] ?? "")
-        p.environment = env
-        let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
-        let d = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else { return nil }
-        let s = String(decoding: d, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        let r = await Tool.exec(tool, args, env: env, timeout: 15)
+        guard r.status == 0 else { return nil }
+        let s = String(decoding: r.out, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         return s.isEmpty ? nil : s
     }
 }
@@ -99,6 +106,7 @@ struct PhoneLinkSettings: View {
     @State private var vercel = ""
     @State private var hasVercel = MacSecret.get("deploy-center-phone-vercel") != nil
     @State private var qr = false
+    @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
         Section {
@@ -121,6 +129,9 @@ struct PhoneLinkSettings: View {
             Link(L("Create a Vercel token (vercel.com → Account → Tokens)", "Vercel-Token erstellen (vercel.com → Account → Tokens)"),
                  destination: URL(string: "https://vercel.com/account/tokens")!)
             Button(L("Show a QR code for the iPhone …", "QR-Code fürs iPhone zeigen …")) { qr = true }
+                // Demo mode is for recordings, and the code holds every key.
+                .disabled(demoMode)
+                .help(demoMode ? L("Not in demo mode: the code holds your keys.", "Nicht im Demo-Modus: Der Code enthält deine Schlüssel.") : "")
             if let p = link.problem { Text(p).foregroundStyle(.red) }
             else if on, let t = link.lastPush {
                 Text(L("Handed over ", "Übergeben ") + t.formatted(.relative(presentation: .named))).foregroundStyle(.secondary)
@@ -139,6 +150,7 @@ struct PhoneQRSheet: View {
     @State private var image: NSImage?
     @State private var empty = false
     @State private var left = 60
+    @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
         VStack(spacing: 14) {
@@ -156,7 +168,12 @@ struct PhoneQRSheet: View {
             Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.defaultAction)
         }
         .padding(24)
+        // Left out of screenshots, recordings and screen sharing (as far as macOS honours it).
+        .background(WindowAccessor { $0.sharingType = .none })
+        // Demo mode switched on while it is open: it closes.
+        .onChange(of: demoMode) { _, on in if on { dismiss() } }
         .task {
+            if demoMode { dismiss(); return }
             let keys = await PhoneLinkModel.collect()
             if keys.isEmpty { empty = true; return }
             image = PhoneQRSheet.make(PhoneLink.qrText(keys) ?? "")
