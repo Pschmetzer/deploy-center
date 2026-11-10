@@ -15,6 +15,8 @@ struct ClaudeAIStatus: Decodable {
     let cap: Int
     let used: Int
     let month: String
+    /// Newer scripts: ANTHROPIC_API_KEY from the environment is used while a key waits in the keychain.
+    var envHidesKeychain: Bool? = nil
 }
 
 struct ClaudeAnswer: Decodable {
@@ -129,7 +131,12 @@ struct ClaudeAISettings: View {
                         .foregroundStyle(status?.key == true ? .green : .secondary)
                         .accessibilityLabel(status?.key == true ? L("Key saved", "Schlüssel gespeichert") : L("No key", "Kein Schlüssel"))
                 }
-                if status?.source == "env" {
+                if status?.envHidesKeychain == true {
+                    // Often another account's key (Claude Code's): its credit is spent, not this one's.
+                    Text(L("ANTHROPIC_API_KEY in the environment is used, not the key saved here. Set DEPLOYS_ANTHROPIC_API_KEY or unset it to use the saved key.",
+                           "ANTHROPIC_API_KEY aus der Umgebung wird benutzt, nicht der hier gespeicherte Schlüssel. Setze DEPLOYS_ANTHROPIC_API_KEY oder entferne sie, um den gespeicherten zu nutzen."))
+                        .font(.caption).foregroundStyle(Color.warningText).fixedSize(horizontal: false, vertical: true)
+                } else if status?.source == "env" {
                     Text(L("ANTHROPIC_API_KEY is set in the environment and is used instead.", "ANTHROPIC_API_KEY ist in der Umgebung gesetzt und wird stattdessen benutzt."))
                         .font(.caption).foregroundStyle(.secondary)
                 }

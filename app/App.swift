@@ -301,6 +301,7 @@ struct SettingsView: View {
                         ProcessInfo.processInfo.operatingSystemVersionString,
                         "jq \(d?.jq ?? false), vercel \(d?.vercelCli ?? false)/api \(d?.vercelApi ?? false)/login \(d?.vercelLoggedIn ?? false)",
                         "gh \(d?.githubCli ?? false)/login \(d?.githubLoggedIn ?? false), render key \(d?.renderKey ?? false), observer \(store.observer)",
+                        "perl \(d?.perl.map(String.init) ?? "?"), curl \(d?.curl.map(String.init) ?? "?")",
                         "providers on: " + on.map(\.id).joined(separator: ", "),
                         on.compactMap(\.platform).map { "\($0.cli) \(store.items[$0]?.count ?? 0)" }.joined(separator: ", ") + " projects",
                         "last load error: " + (failures.isEmpty ? "none" : failures.joined(separator: "; "))].joined(separator: "\n")

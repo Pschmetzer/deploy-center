@@ -242,7 +242,8 @@ enum Tool {
                 } else {
                     let msg = String(data: errText, encoding: .utf8)?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    let text = msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg
+                    // With --json a newer script also says the error on stdout ({"error":…,"exit":N}).
+                    let text = jsonError(data) ?? (msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg)
                     Log.write("deploys \(args.joined(separator: " ")): \(text)")
                     // The whole text is in the log; a toast or a row gets the end, where the cause usually is.
                     answer(.failure(ToolError(message: shorten(text), exitCode: p.terminationStatus)))
@@ -295,6 +296,14 @@ enum Tool {
             throw ToolError(message: L("Unexpected answer from deploys \(args.first ?? "") – details in the log.",
                                        "Unerwartete Antwort von deploys \(args.first ?? "") – Details im Log."))
         }
+    }
+
+    /// The message of a `{"error": "…", "exit": N}` answer on stdout; nil for anything else.
+    static func jsonError(_ data: Data) -> String? {
+        guard data.count < 64_000, let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let e = o["error"] as? String else { return nil }
+        let t = e.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
     }
 
     /// At most about 300 characters, keeping the end.

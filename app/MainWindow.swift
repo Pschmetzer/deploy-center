@@ -592,7 +592,7 @@ struct ContentView: View {
 
     /// Problems and offers above the list, most important first. Only the first is always shown;
     /// the others fold away, so the list keeps its room.
-    enum Notice: Hashable { case trigger, loadFailed(Platform), setup(Platform), auto(Platform), allowance, github, provider, claude }
+    enum Notice: Hashable { case trigger, loadFailed(Platform), setup(Platform), auto(Platform), allowance, github, tools, provider, claude }
     @AppStorage("noticesExpanded") private var noticesExpanded = false
     @AppStorage(ClaudeNudge.wantedKey) private var claudeNudge = false
     @AppStorage(ClaudeNudge.dismissedKey) private var claudeNudgeDismissed = false
@@ -606,6 +606,7 @@ struct ContentView: View {
         for p in scopes where !store.autoOn(p).isEmpty { out.append(.auto(p)) }
         if !store.activeAllowances.isEmpty { out.append(.allowance) }
         if store.doctor.map({ $0.githubCli && $0.githubLoggedIn == false }) == true || (store.githubBudget?.remaining ?? .max) < 300 { out.append(.github) }
+        if !(store.doctor?.missingTools.isEmpty ?? true) { out.append(.tools) }
         if !store.providerIssues.isEmpty && store.providerIssues != closedIssues { out.append(.provider) }
         if claudeNudge && !claudeNudgeDismissed { out.append(.claude) }
         return out
@@ -615,7 +616,7 @@ struct ContentView: View {
     private func noticeWeight(_ n: Notice) -> Int {
         switch n {
         case .trigger: return 2
-        case .loadFailed, .auto, .github, .provider, .allowance: return 1
+        case .loadFailed, .auto, .github, .tools, .provider, .allowance: return 1
         case .setup, .claude: return 0
         }
     }
@@ -628,6 +629,7 @@ struct ContentView: View {
         case .auto(let p): return L("auto-deploy on (\(p.rawValue))", "Auto-Deploy an (\(p.rawValue))")
         case .allowance: return L("auto-deploy allowed for a while", "Auto-Deploy vorübergehend erlaubt")
         case .github: return "GitHub"
+        case .tools: return L("tools missing", "Werkzeuge fehlen")
         case .provider: return L("provider problem", "Störung beim Anbieter")
         case .claude: return "Claude"
         }
@@ -641,6 +643,7 @@ struct ContentView: View {
         case .auto(let p): autoBanner(p)
         case .allowance: AllowanceBanner(store: store, allItems: allItems)
         case .github: githubBanner
+        case .tools: toolsBanner
         case .provider: providerBanner
         case .claude: ClaudeNudgeLine()
         }
@@ -762,6 +765,25 @@ struct ContentView: View {
         let same = selectedAll.filter { !$0.hasNewCommits && $0.headSha != nil }.map { Demo.mask($0.name) }
         guard !same.isEmpty else { return "" }
         return "\n\n" + L("Already up to date, builds anyway: ", "Schon aktuell, baut trotzdem: ") + same.joined(separator: ", ")
+    }
+
+    /// `deploys doctor` says perl or curl is missing: without perl no log goes to Claude (it cannot
+    /// be masked), without curl no platform answers.
+    @ViewBuilder private var toolsBanner: some View {
+        let missing = store.doctor?.missingTools ?? []
+        if !missing.isEmpty {
+            HStack(spacing: 10) {
+                Image(systemName: "wrench.and.screwdriver").foregroundStyle(.orange)
+                Text(missing.contains("curl")
+                     ? L("curl is missing on this Mac, so deploys cannot reach the platforms. Install it (Xcode Command Line Tools or Homebrew).",
+                         "curl fehlt auf diesem Mac, darum erreicht deploys die Plattformen nicht. Installiere es (Xcode Command Line Tools oder Homebrew).")
+                     : L("perl is missing on this Mac, so Claude and autofix send nothing: secrets in logs cannot be masked.",
+                         "perl fehlt auf diesem Mac, darum senden Claude und Autofix nichts: Geheimnisse in Logs lassen sich nicht maskieren."))
+                    .font(.caption).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6).background(ground(.orange, 0.08))
+        }
     }
 
     /// Without a GitHub login, or with its hourly budget spent, the counts are missing. Say why.
@@ -1694,6 +1716,13 @@ struct Row: View {
                     keyFigure
                     AgentChips(autofix: autofix, allowedUntil: allowedUntil, busy: autofixBusy, onFix: onAutofix, onDeployMerged: onDeployMerged,
                                onDismiss: onDismissAutofix)
+                    // A list read only in part: a quiet mark, the reason in its tooltip.
+                    let gaps = Self.gapTexts(item)
+                    if !gaps.isEmpty {
+                        Image(systemName: "info.circle").font(.caption2).foregroundStyle(.secondary)
+                            .help(gaps.joined(separator: "\n"))
+                            .accessibilityLabel(gaps.joined(separator: ". "))
+                    }
                     if showPlatform {
                         Text("· " + item.platform.rawValue).font(.caption2).foregroundStyle(.secondary)
                     }
@@ -1810,6 +1839,7 @@ struct Row: View {
             lines.append(L("Oldest waiting commit ", "Ältester wartender Commit ") + Self.ago(since))
         }
         if let o = item.openPRs, o > 0 { lines.append(Self.openText(item, o)) }
+        lines.append(contentsOf: Self.gapTexts(item))
         if let cost, cost >= 0.01 {
             lines.append(L("Builds 7 days: ", "Builds 7 Tage: ") + cost.formatted(.currency(code: "USD"))
                          + (perBuild.map { L(", about ", ", etwa ") + $0.formatted(.currency(code: "USD")) + L(" per build", " pro Build") } ?? ""))
@@ -1854,11 +1884,27 @@ struct Row: View {
                        : commits + L(" waiting", " warten")
     }
 
+    /// What the list could not read this time, in words: shown quietly, it is no error.
+    static func gapTexts(_ i: Item) -> [String] {
+        var out: [String] = []
+        if i.partial {
+            out.append(L("The newest builds could not be read: a build under way may not show",
+                         "Die neuesten Builds waren nicht lesbar: ein laufender Build fehlt vielleicht"))
+        }
+        if i.budgetLow {
+            out.append(L("GitHub's hourly budget was nearly spent: waiting commits were not counted this time",
+                         "GitHubs Stundenbudget war fast aufgebraucht: wartende Commits wurden diesmal nicht gezählt"))
+        }
+        return out
+    }
+
     static func openText(_ i: Item, _ o: Int) -> String {
         var parts: [String] = []
         if let d = i.openDrafts, d > 0 { parts.append(L("\(d) \(d == 1 ? "draft" : "drafts")", "\(d) \(d == 1 ? "Entwurf" : "Entwürfe")")) }
         if let b = i.openBots, b > 0 { parts.append(L("\(b) \(b == 1 ? "bot" : "bots")", "\(b) \(b == 1 ? "Bot" : "Bots")")) }
-        let base = L("\(o) open \(o == 1 ? "PR" : "PRs")", "\(o) \(o == 1 ? "offener PR" : "offene PRs")")
+        let base = i.openPRsPartial
+            ? L("at least \(o) open PRs", "mindestens \(o) offene PRs")
+            : L("\(o) open \(o == 1 ? "PR" : "PRs")", "\(o) \(o == 1 ? "offener PR" : "offene PRs")")
         return parts.isEmpty ? base : base + " (" + parts.joined(separator: ", ") + ")"
     }
 

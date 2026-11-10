@@ -18,6 +18,9 @@ struct Doctor: Decodable {
     let jq: Bool; let vercelCli: Bool; let vercelApi: Bool; let vercelLoggedIn: Bool; let githubCli: Bool; let githubLoggedIn: Bool?; let renderKey: Bool
     /// Observer mode (DEPLOYS_READONLY or ~/.config/deploys/readonly): the script refuses every deploy.
     let readonly: Bool
+    /// perl masks secrets before `ai`/`autofix` send a log; curl does every API call. Nil: an older
+    /// script that does not say (not "missing").
+    let perl: Bool?; let curl: Bool?
     /// A field the script does not send (older or newer script) counts as "no", instead of the
     /// whole answer failing and the app showing nothing.
     init(from decoder: Decoder) throws {
@@ -26,8 +29,12 @@ struct Doctor: Decodable {
         jq = flag(.jq); vercelCli = flag(.vercelCli); vercelApi = flag(.vercelApi); vercelLoggedIn = flag(.vercelLoggedIn)
         githubCli = flag(.githubCli); renderKey = flag(.renderKey); readonly = flag(.readonly)
         githubLoggedIn = (try? c.decodeIfPresent(Bool.self, forKey: .githubLoggedIn)) ?? nil
+        perl = (try? c.decodeIfPresent(Bool.self, forKey: .perl)) ?? nil
+        curl = (try? c.decodeIfPresent(Bool.self, forKey: .curl)) ?? nil
     }
-    private enum CodingKeys: String, CodingKey { case jq, vercelCli, vercelApi, vercelLoggedIn, githubCli, githubLoggedIn, renderKey, readonly }
+    /// Tools the script needs that this Mac lacks (only what the script reported as missing).
+    var missingTools: [String] { [perl == false ? "perl" : nil, curl == false ? "curl" : nil].compactMap { $0 } }
+    private enum CodingKeys: String, CodingKey { case jq, vercelCli, vercelApi, vercelLoggedIn, githubCli, githubLoggedIn, renderKey, readonly, perl, curl }
 }
 
 /// One element of a list that may not decode; the rest of the list still does.
@@ -64,6 +71,8 @@ struct VercelProject: Decodable {
     let risk: Risk?
     /// The newest attempt (any outcome); `lastState` is what production serves.
     let latestState: String?; let latestId: String?; let latestSha: String?
+    /// Newer scripts: open PRs capped at 100, GitHub's budget nearly spent, the newest builds not read.
+    let openPRsPartial: Bool?; let budgetLow: Bool?; let partial: Bool?
 }
 struct RenderService: Decodable {
     let id: String; let name: String; let type: String; let paused: Bool; let auto: Bool; let deployable: Bool
@@ -76,6 +85,7 @@ struct RenderService: Decodable {
     let lastMsg: String?
     let risk: Risk?
     let latestId: String?; let latestSha: String?
+    let openPRsPartial: Bool?; let budgetLow: Bool?; let partial: Bool?
 }
 /// What every platform's list says of a project the same way; the row is built once from it,
 /// so a new column is added here and in the two field lists only.
@@ -88,6 +98,7 @@ protocol ProjectRow {
     var building: Bool? { get }; var pendingPartial: Bool? { get }; var oldestPendingAt: Double? { get }; var rewritten: Bool? { get }
     var openDrafts: Int? { get }; var openBots: Int? { get }; var lastMsg: String? { get }; var risk: Risk? { get }
     var latestId: String? { get }; var latestSha: String? { get }
+    var openPRsPartial: Bool? { get }; var budgetLow: Bool? { get }; var partial: Bool? { get }
 }
 extension VercelProject: ProjectRow {}
 extension RenderService: ProjectRow {}
@@ -101,7 +112,8 @@ extension ProjectRow {
              pendingPRs: pendingPRs, openPRs: openPRs, lastMsg: lastMsg, openDrafts: openDrafts, openBots: openBots,
              building: building ?? false, pendingPartial: pendingPartial ?? false,
              oldestPendingAt: date(oldestPendingAt), rewritten: rewritten ?? false, risk: risk,
-             latestState: latestState, latestId: latestId, latestSha: latestSha)
+             latestState: latestState, latestId: latestId, latestSha: latestSha,
+             openPRsPartial: openPRsPartial ?? false, budgetLow: budgetLow ?? false, partial: partial ?? false)
     }
 }
 
@@ -306,6 +318,13 @@ struct Item: Identifiable {
     var latestState: String? = nil
     var latestId: String? = nil
     var latestSha: String? = nil
+    /// The open PRs stop at 100 (the script reads one page): "at least".
+    var openPRsPartial = false
+    /// GitHub's hourly budget was nearly spent: waiting commits and PRs were not counted this time.
+    var budgetLow = false
+    /// The platform answered only in part (Vercel: the newest builds could not be read), so a
+    /// build under way may not show. A hint on the row, not an error banner.
+    var partial = false
     var selected = false
     var state: RunState = .idle
     var startedAt: Date? = nil

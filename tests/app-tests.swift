@@ -800,5 +800,27 @@ MainActor.assumeIsolated {
     expect("a new toast is not held by the old hover", st.toastHeld, false)
 }
 
+// Additive values of newer scripts (CLI, providers): read when sent, harmless when not.
+do {
+    let v = try JSONDecoder().decode(VercelProject.self, from: Data(#"{"name":"a","auto":false,"deployable":true,"openPRs":100,"openPRsPartial":true,"budgetLow":true,"partial":true}"#.utf8))
+    let i = v.item(id: "a", platform: .vercel, detail: "", note: nil, link: nil, latestState: nil)
+    expect("new list flags reach the row", "\(i.openPRsPartial) \(i.budgetLow) \(i.partial)", "true true true")
+    expect("capped open PRs say 'at least'", Row.openText(i, 100), L("at least 100 open PRs", "mindestens 100 offene PRs"))
+    expect("a partial list is a quiet hint, two of them here", Row.gapTexts(i).count, 2)
+    let old = try JSONDecoder().decode(VercelProject.self, from: Data(#"{"name":"a","auto":false,"deployable":true}"#.utf8))
+        .item(id: "a", platform: .vercel, detail: "", note: nil, link: nil, latestState: nil)
+    expect("an older script: no hints", "\(old.partial) \(Row.gapTexts(old).count)", "false 0")
+    let d = try JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"perl":false,"curl":true}"#.utf8))
+    expect("doctor names a missing perl", d.missingTools, ["perl"])
+    let d0 = try JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true}"#.utf8))
+    expect("an older doctor misses nothing", d0.missingTools, [])
+    let ai = try JSONDecoder().decode(ClaudeAIStatus.self, from: Data(#"{"key":true,"source":"env","model":"m","models":["m"],"cap":1,"used":0,"month":"2026-11","envHidesKeychain":true}"#.utf8))
+    expect("ai status: the environment hides the keychain", ai.envHidesKeychain == true, true)
+    let ai0 = try JSONDecoder().decode(ClaudeAIStatus.self, from: Data(#"{"key":true,"source":"env","model":"m","models":["m"],"cap":1,"used":0,"month":"2026-11"}"#.utf8))
+    expect("ai status from an older script", ai0.envHidesKeychain == nil, true)
+} catch { expect("newer script values decode", "\(error)", "no error") }
+expect("a JSON error on stdout is the message", Tool.jsonError(Data(#"{"error":"No project named x","exit":1}"#.utf8)) ?? "", "No project named x")
+expect("other stdout is no error message", Tool.jsonError(Data(#"[{"name":"a"}]"#.utf8)) == nil, true)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
