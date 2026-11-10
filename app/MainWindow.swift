@@ -108,6 +108,7 @@ struct ContentView: View {
     @State private var showMessages = false
     @State private var showJournal = false
     @State private var showFirstStart = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(FirstStart.key) private var firstStartDone = false
     @State private var pathText = ""
     @State private var noteItem: Item?
@@ -357,7 +358,7 @@ struct ContentView: View {
                                            selectChanged: waitsForFreshList ? nil : { selectAllCommand() },
                                            clearSelection: selectedAll.isEmpty ? nil : { scopes.forEach { store.clearSelection($0) } },
                                            reload: { reloadNow() }))
-        .animation(.easeOut(duration: 0.2), value: store.toast)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: store.toast)
     }
 
     private var withSheets: some View {
@@ -688,7 +689,7 @@ struct ContentView: View {
                         ForEach(all.dropFirst(), id: \.self) { n in Divider(); notice(n) }
                     }
                     Divider()
-                    Button { withAnimation(.easeOut(duration: 0.15)) { noticesExpanded.toggle() } } label: {
+                    Button { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { noticesExpanded.toggle() } } label: {
                         HStack(spacing: 6) {
                             Image(systemName: noticesExpanded ? "chevron.up" : "chevron.down")
                             // Folded away, an alarm still looks like one: the worst hidden notice sets the symbol.
