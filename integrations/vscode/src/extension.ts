@@ -38,6 +38,8 @@ class Controller implements vscode.TreeDataProvider<Project> {
   private readonly changed = new vscode.EventEmitter<Project | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
   readonly output = vscode.window.createOutputChannel("Deploy Center");
+  /** Build logs get their own channel: showing one does not wipe the warnings in "Deploy Center". */
+  readonly logs = vscode.window.createOutputChannel("Deploy Center: Build log");
   readonly status = vscode.window.createStatusBarItem("deployCenter.status", vscode.StatusBarAlignment.Left, 50);
 
   private cli: string | null = null;
@@ -76,7 +78,7 @@ class Controller implements vscode.TreeDataProvider<Project> {
 
   dispose(): void {
     if (this.timer) clearInterval(this.timer);
-    this.status.dispose(); this.output.dispose(); this.changed.dispose();
+    this.status.dispose(); this.output.dispose(); this.logs.dispose(); this.changed.dispose();
   }
 
   refresh(): Promise<void> {
@@ -294,10 +296,10 @@ class Controller implements vscode.TreeDataProvider<Project> {
   async showLog(p: Project): Promise<void> {
     const run = this.need(); if (!run) return;
     const log = await this.readLog(run, p); if (log === null) return;
-    this.output.clear();
-    this.output.appendLine(`── ${p.name} (${p.platform}) · newest build log${p.state ? ` · ${p.state}` : ""} ──`);
-    this.output.append(log.endsWith("\n") ? log : log + "\n");
-    this.output.show(true);
+    this.logs.clear();
+    this.logs.appendLine(`── ${p.name} (${p.platform}) · newest build log${p.state ? ` · ${p.state}` : ""} ──`);
+    this.logs.append(log.endsWith("\n") ? log : log + "\n");
+    this.logs.show(true);
     if (p.failed) {
       const b = await vscode.window.showWarningMessage(`The newest build of ${p.name} failed.`, "Copy for AI");
       if (b) await this.copyForAi(p, log);
