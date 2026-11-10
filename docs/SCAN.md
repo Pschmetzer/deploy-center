@@ -46,3 +46,34 @@ deploys scan status --json      installed, logged in, the newest scans
 deploys scan list               the same as a table
 deploys scan log <id>           Claude's report of one scan
 ```
+
+# Security check: OSV-Scanner, gitleaks and Semgrep
+
+"Security check" (right-click a row, or the project's details) runs three free tools on a fresh copy of the repo, on this Mac:
+
+| Tool | Finds | |
+|---|---|---|
+| OSV-Scanner | packages with known vulnerabilities (lockfiles, requirements) | free, open source |
+| gitleaks | keys and passwords in the code and the git history | free, offline |
+| Semgrep CE | bug and security patterns in the code (`p/default`, metrics off) | free CLI |
+
+```bash
+brew install osv-scanner gitleaks semgrep
+```
+
+A missing tool is shown as missing; the others still run. The check runs **no code of the repo**, so it is safe on any repo.
+
+**"Fix with Claude"** next to the result starts a bug scan (above) with the OSV and Semgrep findings: rule, file, line and message, at most 30, no code snippets. For a vulnerable package the scan may raise that package to a fixed version, the one exception to "no new dependencies".
+
+**Secrets stay on this Mac.** gitleaks runs with `--redact`; only rule, file, line and commit are kept, never the value. Secret findings (gitleaks, and Semgrep's secret rules) are never handed to Claude and never put in a PR: on a public repo that PR would point at the leak, and a commit does not remove a key from the history anyway. The app lists them as "rotate these keys".
+
+```
+deploys check start <owner/repo> [branch]
+deploys check show <id>                          findings (secrets redacted)
+deploys scan start <owner/repo> [branch] --findings <id>
+```
+
+| Variable | Default | |
+|---|---|---|
+| `DEPLOYS_SEMGREP_CONFIG` | `p/default` | Semgrep rules |
+| `DEPLOYS_CHECK_TIMEOUT` | `900` | seconds per tool |

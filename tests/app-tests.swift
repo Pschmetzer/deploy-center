@@ -550,6 +550,11 @@ do {
     expect("scan: PR and fixes", "\(r.newest(repo: "me/web")?.prUrl ?? "") \(r.newest(repo: "me/web")?.fixes ?? 0)", "https://github.com/me/web/pull/7 2")
     expect("scan: a running scan is seen", r.anyRunning, true)
     expect("scan: no repo, no run", r.newest(repo: nil) == nil, true)
+    expect("scan: an old script without checks still decodes", r.checks == nil && r.tools == nil, true)
+    let c = try! JSONDecoder().decode(ScanReport.self, from: Data(#"{"installed":true,"loggedIn":false,"runs":[],"tools":{"osv":true,"gitleaks":false,"semgrep":true},"checks":[{"id":"k1","repo":"me/web","at":5,"status":"done","osv":2,"gitleaks":1,"semgrep":3,"tools":{"osv":"found"},"error":null},{"id":"k2","repo":"me/api","at":6,"status":"running"}]}"#.utf8))
+    expect("check: newest check of a repo, fixable without secrets", "\(c.newestCheck(repo: "me/web")?.id ?? "") \(c.newestCheck(repo: "me/web")?.fixable ?? 0)", "k1 5")
+    expect("check: a running check keeps polling", c.anyRunning, true)
+    expect("check: tools", c.tools?.any ?? false, true)
 }
 
 print("")

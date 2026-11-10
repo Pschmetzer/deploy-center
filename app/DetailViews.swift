@@ -240,6 +240,44 @@ struct ProjectDetail: View {
         }
     }
 
+    /// Security check: counts per tool; secrets as "rotate this key", the rest can go to a bug scan.
+    @ViewBuilder private func checkBlock(_ item: Item) -> some View {
+        if item.repo != nil, store.scan?.tools?.any == true {
+            let c = store.checkRun(item)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    Button { Task { await store.securityCheck(item) } } label: {
+                        HStack(spacing: 4) {
+                            if c?.running == true { ProgressView().controlSize(.small) }
+                            Text(L("Security check", "Sicherheits-Check"))
+                        }
+                    }
+                    .disabled(!store.canCheck(item))
+                    if let c, c.status == "done" {
+                        Text(L("\(c.osv ?? 0) vulnerable packages · \(c.gitleaks ?? 0) secrets · \(c.semgrep ?? 0) code findings",
+                               "\(c.osv ?? 0) unsichere Pakete · \(c.gitleaks ?? 0) Secrets · \(c.semgrep ?? 0) Code-Funde"))
+                            .font(.caption).foregroundStyle(c.fixable + (c.gitleaks ?? 0) == 0 ? Color.green : Color.orange)
+                        if c.fixable > 0, !store.observer {
+                            Button(L("Fix with Claude", "Mit Claude beheben")) { Task { await store.scanForBugs(item, findings: true) } }
+                                .disabled(!store.canScan(item))
+                        }
+                    } else if let c, c.status == "failed" {
+                        Text(scrub(c.error ?? L("Check failed", "Check fehlgeschlagen"))).font(.caption).foregroundStyle(.red).lineLimit(2)
+                    }
+                }
+                if let c, let leaks = store.checkLeaks[c.id], !leaks.isEmpty {
+                    Text(L("Rotate these keys (a commit does not remove them from the history):",
+                           "Diese Keys neu erzeugen (ein Commit entfernt sie nicht aus der Historie):")).font(.caption).foregroundStyle(.red)
+                    ForEach(leaks, id: \.self) { l in
+                        Text("\(l.rule) – \(scrub(l.file))\(l.line.map { ":\($0)" } ?? "")\(l.commit.map { " (\($0))" } ?? "")")
+                            .font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                }
+            }
+            .task(id: c?.id) { if let c, c.status == "done" { await store.loadLeaks(c) } }
+        }
+    }
+
     /// Bug scan: Claude Code on this Mac looks through the repo and opens one fix PR.
     @ViewBuilder private func scanBlock(_ item: Item) -> some View {
         if item.repo != nil, !store.observer {
@@ -272,6 +310,7 @@ struct ProjectDetail: View {
         VStack(alignment: .leading, spacing: 18) {
             autofixBlock(item)
             scanBlock(item)
+            checkBlock(item)
             // What is live, and what the branch would bring.
             if let live = item.lastMsg {
                 labelled(L("Live now", "Jetzt live"), scrub(live) + (item.lastSha.map { "  (\($0.prefix(7)))" } ?? ""))

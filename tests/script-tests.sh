@@ -1076,6 +1076,39 @@ sc_reset; for i in 1 2 3 4; do jq -n --argjson t "$(date +%s)" --arg i "$i" '{id
 expect "scan: the daily cap" "$( ( scan_start me/web main ) 2>&1 | grep -c 'daily cap')" "1"
 unset -f gh; unset DEPLOYS_SCAN_FOREGROUND
 
+# --- check: OSV, gitleaks, Semgrep; exit codes, no secret stored, never handed to Claude ---
+ck="$tmp/ck"; mkdir -p "$ck/bin" "$ck/w"
+cat > "$ck/bin/osv-scanner" <<'X'
+#!/bin/bash
+[ "${CKOSV:-1}" = 9 ] && exit 127
+echo '{"results":[{"source":{"path":"'"$PWD"'/package-lock.json"},"packages":[{"package":{"name":"lodash","version":"4.17.15","ecosystem":"npm"},"vulnerabilities":[{"id":"GHSA-1"},{"id":"GHSA-2"}]}]}]}'
+exit "${CKOSV:-1}"
+X
+cat > "$ck/bin/gitleaks" <<'X'
+#!/bin/bash
+case " $* " in *" --redact "*) s=REDACTED;; *) s=AKIATHESECRETVALUE;; esac
+echo '[{"RuleID":"aws-access-token","File":"a.js","StartLine":3,"Commit":"abcdef123","Secret":"'$s'","Match":"k='$s'"}]'; exit 2
+X
+cat > "$ck/bin/semgrep" <<'X'
+#!/bin/bash
+echo '{"results":[{"check_id":"js.eval","path":"a.js","start":{"line":5},"extra":{"severity":"WARNING","message":"eval used","lines":"eval(SNIPPET_FROM_REPO)"}},
+  {"check_id":"generic.secrets.aws-key","path":"a.js","start":{"line":3},"extra":{"severity":"ERROR","message":"AWS key here","lines":"x"}}],"errors":[]}'
+X
+chmod +x "$ck/bin/"*
+ckrun() { ( PATH="$ck/bin:$PATH"; "$@" ); }
+o="$(ckrun ck_osv "$ck/w")"; g="$(ckrun ck_gitleaks "$ck/w")"; m="$(ckrun ck_semgrep "$ck/w")"
+expect "check: osv exit 1 is findings, relative path" "$(echo "$o" | jq -c '[.status, .count, .items[0].file, .items[0].vulns]')" '["found",1,"package-lock.json",2]'
+expect "check: osv exit 127 is an error, not clean" "$(CKOSV=9 ckrun ck_osv "$ck/w" | jq -r .status)" "error"
+expect "check: gitleaks exit 2 is findings" "$(echo "$g" | jq -c '[.status, .count, .items[0].rule, .items[0].commit]')" '["found",1,"aws-access-token","abcdef1"]'
+expect "check: no secret value is kept" "$(echo "$g" | grep -c 'AKIATHESECRETVALUE\|REDACTED\|Match')" "0"
+expect "check: semgrep findings without code snippets" "$(echo "$m" | jq -c '[.count, (tostring | contains("SNIPPET"))]')" '[2,false]'
+expect "check: a missing tool is missing, not an error" "$(PATH=/usr/bin:/bin ck_semgrep "$ck/w" | jq -r .status)" "missing"
+mkdir -p "$SCAN_DIR/checks"; jq -n --argjson o "$o" --argjson g "$g" --argjson m "$m" '{osv:$o, gitleaks:$g, semgrep:$m}' > "$SCAN_DIR/checks/c1.json"
+pr="$(ck_findings_prompt c1)"
+expect "check: osv and semgrep go to the bug scan" "$(echo "$pr" | grep -c 'lodash 4.17.15\|js.eval')" "2"
+expect "check: no gitleaks and no secret rule go to the bug scan" "$(echo "$pr" | grep -ci 'aws')" "0"
+expect "check: no findings, no prompt" "$(echo '{"osv":{"items":[]},"semgrep":{"items":[]}}' > "$SCAN_DIR/checks/c2.json"; ck_findings_prompt c2 | wc -c | tr -d ' ')" "0"
+
 # --- appcast.py: newest first, same version replaced, bad input refused ---
 ac="$tmp/appcast.xml"; printf -- '- one & <two>\n' > "$tmp/notes.md"; sig="$(printf 'A%.0s' $(seq 86))=="
 acadd() { python3 -I scripts/appcast.py --appcast "$ac" --version "$1" --url "https://github.com/me/app/releases/download/v$1/a.zip" \

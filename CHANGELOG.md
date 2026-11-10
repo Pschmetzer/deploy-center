@@ -6,6 +6,7 @@
 - Autofix: 90 minutes after a hand-over with no PR the row says "No fix PR from Claude – see session" (a cause outside the code, say) and links the session, instead of "fixing" for good.
 - `autofix status` reports `scheduled` only when launchd has the job loaded; `autofix sync` loads a job file launchd dropped again.
 - Bug scan: "Find bugs with Claude" (row menu and details) runs the Claude Code CLI on this Mac against the repo, fixes up to five real bugs, runs build and tests, and opens one PR with a report. Never merges or deploys. `deploys scan start|status|list|log`. See docs/SCAN.md.
+- Security check: OSV-Scanner, gitleaks and Semgrep on a repo, free and local (`deploys check start|show`, "Security check" in the row menu and details). "Fix with Claude" hands the package and code findings to a bug scan (`scan start … --findings <id>`). Secrets are redacted, never stored as values, never sent to Claude or put in a PR; the app lists them as keys to rotate.
 
 ## 0.9.1
 

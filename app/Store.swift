@@ -142,13 +142,40 @@ final class Store: ObservableObject {
         }
     }
     func scanRun(_ i: Item) -> ScanReport.Run? { scan?.newest(repo: i.repo) }
+    func checkRun(_ i: Item) -> ScanReport.Check? { scan?.newestCheck(repo: i.repo) }
+    @Published var checkLeaks: [String: [CheckDetails.Leak]] = [:]
+    func canCheck(_ i: Item) -> Bool {
+        guard let r = i.repo, scan?.tools?.any != false else { return false }
+        return !scanStarting.contains("check:" + r) && checkRun(i)?.running != true
+    }
+
+    /// "Security check": OSV-Scanner, gitleaks and Semgrep on the repo, read-only, in the background.
+    func securityCheck(_ i: Item) async {
+        guard let repo = i.repo, canCheck(i) else { return }
+        let key = Self.key(i), name = Demo.mask(i.name)
+        scanStarting.insert("check:" + repo); defer { scanStarting.remove("check:" + repo) }
+        do {
+            _ = try await Tool.run(["check", "start", repo, i.ref ?? "main"], timeout: 60)
+            tell(L("\(name): security check started", "\(name): Sicherheits-Check gestartet"),
+                 L("OSV-Scanner, gitleaks and Semgrep, read-only", "OSV-Scanner, gitleaks und Semgrep, nur lesend"), ok: true, key: key)
+        } catch {
+            tell(L("\(name): security check not started", "\(name): Sicherheits-Check nicht gestartet"), error.localizedDescription, ok: false, key: key)
+        }
+        await loadScanStatus()
+    }
+
+    /// The secrets of a check, for the details sheet. Never sent anywhere.
+    func loadLeaks(_ c: ScanReport.Check) async {
+        guard (c.gitleaks ?? 0) > 0, checkLeaks[c.id] == nil else { return }
+        if case .success(let d)? = await Self.extra(["check", "show", c.id], CheckDetails.self) { checkLeaks[c.id] = d.gitleaks?.items ?? [] }
+    }
     func canScan(_ i: Item) -> Bool {
         guard let r = i.repo, !observer else { return false }
         return !scanStarting.contains(r) && scanRun(i)?.running != true
     }
 
     /// "Find bugs with Claude": `deploys scan start <repo> <branch>`, detached; the result comes as a PR.
-    func scanForBugs(_ i: Item) async {
+    func scanForBugs(_ i: Item, findings: Bool = false) async {
         guard let repo = i.repo, canScan(i) else { return }
         let key = Self.key(i), name = Demo.mask(i.name)
         if let s = scan, !s.installed || !s.loggedIn {
@@ -160,7 +187,9 @@ final class Store: ObservableObject {
         }
         scanStarting.insert(repo); defer { scanStarting.remove(repo) }
         do {
-            _ = try await Tool.run(["scan", "start", repo, i.ref ?? "main"], timeout: 120)
+            var args = ["scan", "start", repo, i.ref ?? "main"]
+            if findings, let c = checkRun(i), c.status == "done", c.fixable > 0 { args += ["--findings", c.id] }
+            _ = try await Tool.run(args, timeout: 120)
             tell(L("\(name): Claude is looking for bugs", "\(name): Claude sucht nach Bugs"),
                  L("takes 10–30 minutes; fixes come as a pull request, nothing is merged or deployed",
                    "dauert 10–30 Minuten; Fixes kommen als Pull Request, nichts wird gemergt oder deployt"), ok: true, key: key)
