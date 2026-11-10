@@ -367,6 +367,25 @@ private func open(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.
     static var confirmed = false
     private var badge: AnyCancellable?
 
+    /// The Dock icon's menu: reload, and "deploy everything with changes", which opens the window
+    /// at the usual confirmation (nothing starts from the Dock).
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let m = NSMenu()
+        m.addItem(withTitle: L("Reload", "Neu laden"), action: #selector(dockReload), keyEquivalent: "").target = self
+        if let s = store, s.waiting.projects > 0, !s.observer {
+            m.addItem(withTitle: L("Deploy everything with changes …", "Alles mit Änderungen deployen …"), action: #selector(dockDeployAll), keyEquivalent: "").target = self
+        }
+        return m
+    }
+    @objc private func dockReload() { Task { await store?.autoRefresh() } }
+    @objc private func dockDeployAll() {
+        guard let s = store else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        if let w = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true && $0.canBecomeMain }) { w.makeKeyAndOrderFront(nil) }
+        else { s.windowRequest += 1 }
+        s.pendingDeployAll = true
+    }
+
     func attach(_ s: Store) {
         guard store !== s else { return }
         store = s
