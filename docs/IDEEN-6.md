@@ -340,7 +340,7 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 
 ### Fehlerbehandlung und Rückmeldung
 
-207. ✅ [UX] **Nach einem Ladefehler den Doctor neu fragen.** Läuft eine Anmeldung ab, die beim Start gültig war, kommt nur „HTTP 401“ in der Zeile; die Einrichtungsansicht erscheint nie, weil `autoRefresh` den Doctor nur bei fehlenden Feldern neu fragt. Bei 401/403 im Ladefehler sofort `doctor`. (app/Store.swift:428–432 und 352–356)
+207. ◐ [UX] **Nach einem Ladefehler den Doctor neu fragen.** Läuft eine Anmeldung ab, die beim Start gültig war, kommt nur „HTTP 401“ in der Zeile; die Einrichtungsansicht erscheint nie, weil `autoRefresh` den Doctor nur bei fehlenden Feldern neu fragt. Bei 401/403 im Ladefehler sofort `doctor`. (app/Store.swift:428–432 und 352–356)
 208. ✅ [UX] **`autofix sync`-Fehler werden verschluckt.** `try?` ohne Log; „Claude behebt es“ hängt dann wieder ohne Hinweis. Ins Log und in `extrasFailedAt`. (app/Store.swift:135)
 209. ✅ [UX] **Gerade erst übergebene Ergebnisse aus `messages` überleben keinen Neustart.** Die Glocke ist nach einem Update oder Sprachwechsel leer; die letzten 30 Meldungen in Application Support sichern. (app/Store.swift:575–581)
 210. ✅ [UX] **Antworten von Claude als Markdown darstellen.** `Text(answer.text)` zeigt `**`, `-` und `#` roh. `AttributedString(markdown:)` mit `.inlineOnlyPreservingWhitespace`. (app/ClaudeAI.swift:244)

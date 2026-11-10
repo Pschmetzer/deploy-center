@@ -899,6 +899,10 @@ MainActor.assumeIsolated {
     let st = Store()
     st.messages = (0..<35).map { Store.Message(date: Date(), text: "m\($0)", ok: true) }
     expect("messages: at most 30, the newest kept", "\(st.messages.count) \(st.messages.first?.text ?? "")", "30 m0")
+    st.messages.insert(Store.Message(date: Date(), text: "newest", ok: true), at: 0)
+    Store.flushMessages()
+    let onDisk = Store.readMessages()
+    expect("messages: a full list is still written", "\(onDisk.count) \(onDisk.first?.text ?? "")", "30 newest")
 
     // Ticking what changed: never a hidden row, a running one or one without changes.
     func row(_ id: String, changed: Bool, state: RunState = .idle) -> Item {

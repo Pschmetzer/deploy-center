@@ -807,7 +807,7 @@ final class Store: ObservableObject {
     /// At most 30, also for lines added without `say` (a rollback countdown).
     @Published var messages: [Message] = Store.readMessages() {
         didSet {
-            if messages.count > 30 { messages = Array(messages.prefix(30)); return }
+            if messages.count > 30 { messages = Array(messages.prefix(30)) }   // no second didSet: written below
             Self.writeMessages(messages)
         }
     }
@@ -819,6 +819,8 @@ final class Store: ObservableObject {
     }
     /// In order: the newest list is the one that stays on disk.
     nonisolated private static let messageQueue = DispatchQueue(label: "app.deploycenter.messages", qos: .utility)
+    /// Waits until every list handed to `writeMessages` is on disk (tests).
+    nonisolated static func flushMessages() { messageQueue.sync {} }
     nonisolated static func writeMessages(_ list: [Message]) {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         guard let d = try? enc.encode(list) else { return }
