@@ -24,7 +24,7 @@ out="$(scripts/package-cli.sh --out "$tmp/pkg" LICENSE 2>&1)"; rc=$?
 expect "package: exit 0" "$rc" 0
 tarball="$tmp/pkg/deploys-cli-$version.tar.gz"
 [ -f "$tarball" ] && ok "package: tarball written" || fail "package: tarball written" "$out"
-listing="$(tar -tzf "$tarball" | sort | tr '\n' ' ')"
+listing="$(tar -tzf "$tarball" | LC_ALL=C sort | tr '\n' ' ')"
 # providers/ goes in when the repo has it (its files, sorted, after deploys).
 want="deploys-cli-$version/ deploys-cli-$version/LICENSE deploys-cli-$version/README-CLI.md deploys-cli-$version/VERSION deploys-cli-$version/deploys "
 if [ -d providers ]; then
