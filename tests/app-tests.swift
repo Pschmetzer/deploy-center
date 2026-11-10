@@ -634,5 +634,41 @@ expect("journal: search finds the reason", Journal.filter(jk, text: "exploded", 
 expect("journal: filter by kind", Journal.filter(jk, text: "", kind: .failed).count, 1)
 expect("journal: newest day first", Journal.byDay(jk).first?.entries.first?.result ?? "", "brand-new")
 
+// Settings formats (LOG-068/074/118) and small guards.
+let guardJSON = #"{"enabled":true,"lastActions":[{"broken":1}],"allowances":[{"platform":"vercel","project":"web","expiresAt":1800000000000},{"platform":"render","project":"api","expiresAt":"2028-01-15T08:00:00Z"},{"nope":true}]}"#
+if let g = try? JSONDecoder().decode(GuardStatus.self, from: Data(guardJSON.utf8)) {
+    expect("guard: milliseconds read as seconds", g.allowances.first?.expiresAt ?? 0, 1_800_000_000.0)
+    expect("guard: ISO date read", g.allowances.count == 2 && g.allowances[1].expiresAt > 1_800_000_000, true)
+    expect("guard: a broken action is skipped", g.lastActions.count, 0)
+} else { expect("guard status decodes", false, true) }
+let afJSON = #"{"routine":"trig","token":true,"scheduled":false,"fires":[{"at":1,"project":"a","status":"fired"},{"at":"x"}]}"#
+expect("autofix settings: a broken fire is skipped", (try? JSONDecoder().decode(AutofixStatus.self, from: Data(afJSON.utf8)))?.fires.count ?? -1, 1)
+expect("a name like an option is not passed on", "\(Store.safeArg("-rf")) \(Store.safeArg("web"))", "false true")
+expect("PATH with a folder that is gone is read again", Tool.pathFoldersExist(FileManager.default.homeDirectoryForCurrentUser.path + "/no-such-folder-\(UUID().uuidString)"), false)
+expect("PATH of system folders only is kept", Tool.pathFoldersExist("/usr/bin:/bin"), true)
+do {
+    let dir = NSTemporaryDirectory() + "baks-\(UUID().uuidString)"
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    let file = dir + "/c.json"
+    FileManager.default.createFile(atPath: file, contents: Data("{}".utf8))
+    for n in 1...8 { FileManager.default.createFile(atPath: file + ".bak-2026010\(n)", contents: Data()) }
+    ClaudeFiles.pruneBackups(of: file, keep: 5)
+    let left = try FileManager.default.contentsOfDirectory(atPath: dir).filter { $0.contains(".bak-") }.sorted()
+    expect("only the newest five backups stay", left, (4...8).map { "c.json.bak-2026010\($0)" })
+    try? FileManager.default.removeItem(atPath: dir)
+} catch { expect("backup prune ran", "\(error)", "no error") }
+
+// LOG-039: a rate-limited hand-over leaves the button free.
+MainActor.assumeIsolated {
+    let st = Store()
+    var f = failedItem(); f.repo = "me/app"
+    st.items[.vercel] = [f]
+    st.autofix = AutofixReport(routine: "r", token: true, fires: [F(at: Date().timeIntervalSince1970, project: "app", platform: "vercel", status: "ratelimited")])
+    expect("rate limited: still 'fixing' in the row", st.autofixState(f) == .fixing(session: nil), true)
+    expect("rate limited: the button stays free", st.canFixWithClaude(f), true)
+    st.autofix = AutofixReport(routine: "r", token: true, fires: [F(at: Date().timeIntervalSince1970, project: "app", platform: "vercel", status: "fired", session: "https://claude.ai/code/s")])
+    expect("a running session locks the button", st.canFixWithClaude(f), false)
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

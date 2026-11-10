@@ -17,14 +17,41 @@ struct GuardStatus: Decodable {
     struct Allowance: Decodable, Identifiable {
         let platform: String        // vercel | render | all
         let project: String         // a name, or * for all of the platform
-        let expiresAt: Double
+        let expiresAt: Double       // epoch seconds; the script may also send milliseconds or ISO 8601
         var id: String { "\(platform):\(project)" }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: K.self)
+            platform = try c.decode(String.self, forKey: .platform)
+            project = try c.decode(String.self, forKey: .project)
+            if let n = try? c.decode(Double.self, forKey: .expiresAt) {
+                expiresAt = n > 1e12 ? n / 1000 : n
+            } else {
+                let s = try c.decode(String.self, forKey: .expiresAt)
+                let f = ISO8601DateFormatter(), g = ISO8601DateFormatter()
+                g.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                guard let d = f.date(from: s) ?? g.date(from: s) else {
+                    throw DecodingError.dataCorruptedError(forKey: .expiresAt, in: c, debugDescription: "not a date: \(s)")
+                }
+                expiresAt = d.timeIntervalSince1970
+            }
+        }
+        private enum K: String, CodingKey { case platform, project, expiresAt }
     }
     let enabled: Bool
     let lastRun: Double?
     let lastDry: Bool?
     let lastActions: [Action]
     let allowances: [Allowance]
+    /// A broken entry is skipped; the rest of the section still shows.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        enabled = ((try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? nil) ?? false
+        lastRun = (try? c.decodeIfPresent(Double.self, forKey: .lastRun)) ?? nil
+        lastDry = (try? c.decodeIfPresent(Bool.self, forKey: .lastDry)) ?? nil
+        lastActions = (((try? c.decodeIfPresent([Lossy<Action>].self, forKey: .lastActions)) ?? nil) ?? []).compactMap(\.value)
+        allowances = (((try? c.decodeIfPresent([Lossy<Allowance>].self, forKey: .allowances)) ?? nil) ?? []).compactMap(\.value)
+    }
+    private enum K: String, CodingKey { case enabled, lastRun, lastDry, lastActions, allowances }
 }
 
 struct GuardSettings: View {

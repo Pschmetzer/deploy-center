@@ -32,7 +32,8 @@ enum ClaudeConfig {
     }
 
     static func encode(_ root: [String: Any]) throws -> Data {
-        var d = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .withoutEscapingSlashes])
+        // Sorted: the same file gives the same text, so connecting twice does not reshuffle it.
+        var d = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys])
         d.append(0x0A)
         return d
     }
@@ -99,6 +100,18 @@ enum ClaudeFiles {
         return f.string(from: date)
     }
 
+    /// Only the newest `keep` backups of a file stay: each may hold other servers and their keys.
+    static func pruneBackups(of real: String, keep: Int) {
+        let fm = FileManager.default
+        let dir = (real as NSString).deletingLastPathComponent, prefix = (real as NSString).lastPathComponent + ".bak-"
+        guard let names = try? fm.contentsOfDirectory(atPath: dir) else { return }
+        let baks = names.filter { $0.hasPrefix(prefix) }.map { (dir as NSString).appendingPathComponent($0) }
+        func made(_ p: String) -> Date { ((try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date) ?? .distantPast }
+        // Newest first by time, then by name (the stamp), for backups within one second.
+        let sorted = baks.sorted { let a = made($0), b = made($1); return a != b ? a > b : $0 > $1 }
+        for old in sorted.dropFirst(keep) { try? fm.removeItem(atPath: old) }
+    }
+
     /// Writes through a temp file in the same folder and a rename, so the file is never half
     /// written. A symlink is followed (the link stays), the mode is kept (600 for a new file), and
     /// an existing file is first copied to `<file>.bak-<time>`. Returns the backup's path.
@@ -117,6 +130,7 @@ enum ClaudeFiles {
             try fm.copyItem(atPath: real, toPath: bak)
             try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: bak)
             backup = bak
+            pruneBackups(of: real, keep: 5)
         } else {
             try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
         }
@@ -177,11 +191,17 @@ enum ClaudeEnv {
                                 "/usr/local/bin/claude", home + "/.npm-global/bin/claude"])
     }
 
-    /// Folders the app may sit in during development: next to it, and up to four levels up.
+    /// Folders the app may sit in during development: next to it, and up to four levels up, but
+    /// only a checkout of this repo (.git and VERSION). A stray integrations/ folder in Downloads
+    /// must not end up in Claude's config or be installed as an extension.
     private static var nearBundle: [String] {
         var out: [String] = []
         var dir = (Bundle.main.bundlePath as NSString).deletingLastPathComponent
-        for _ in 0..<4 where dir.count > 1 { out.append(dir); dir = (dir as NSString).deletingLastPathComponent }
+        let fm = FileManager.default
+        for _ in 0..<4 where dir.count > 1 {
+            if fm.fileExists(atPath: dir + "/.git"), fm.fileExists(atPath: dir + "/VERSION") { out.append(dir) }
+            dir = (dir as NSString).deletingLastPathComponent
+        }
         return out
     }
 
@@ -231,7 +251,9 @@ enum ClaudeRun {
                 let pipe = Pipe()
                 p.standardOutput = pipe; p.standardError = pipe; p.standardInput = FileHandle.nullDevice
                 do { try p.run() } catch { cont.resume(returning: (false, error.localizedDescription)); return }
-                let timer = DispatchWorkItem { if p.isRunning { p.terminate() } }
+                // The whole tree: a grandchild (shell start files, claude) holding the pipe would
+                // keep the read below waiting after the parent ended.
+                let timer = DispatchWorkItem { if p.isRunning { Tool.killTree(p.processIdentifier) } }
                 DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
@@ -263,11 +285,20 @@ final class ClaudeLink: ObservableObject {
     @Published var restartHint = false
     @Published var extensionURL: URL?
 
-    var canConnect: Bool { node != nil && server != nil }
+    /// The major version of `node`, when it could be read.
+    @Published var nodeMajor: Int?
+    var canConnect: Bool { node != nil && server != nil && (nodeMajor ?? 18) >= 18 }
     var missing: String? {
         if let serverProblem { return serverProblem }
         if node == nil { return L("Node.js 18 or newer is needed (brew install node).", "Node.js 18 oder neuer wird gebraucht (brew install node).") }
+        if let m = nodeMajor, m < 18 {
+            return L("Node.js \(m) is too old: 18 or newer is needed (brew upgrade node).", "Node.js \(m) ist zu alt: 18 oder neuer wird gebraucht (brew upgrade node).")
+        }
         return nil
+    }
+    /// "v20.11.1" → 20.
+    nonisolated static func majorVersion(_ version: String) -> Int? {
+        Int(version.trimmingCharacters(in: .whitespacesAndNewlines).drop { $0 == "v" }.split(separator: ".").first ?? "")
     }
 
     /// Always from the files: Claude Desktop may rewrite its config while it runs.
@@ -278,6 +309,7 @@ final class ClaudeLink: ObservableObject {
         async let n = ClaudeEnv.node()
         async let c = ClaudeEnv.cli()
         node = await n; cli = await c
+        if let node { nodeMajor = Self.majorVersion(await ClaudeRun.run(node, ["--version"], timeout: 5).out) } else { nodeMajor = nil }
 
         let dData = ClaudeFiles.read(ClaudeEnv.desktopConfig)
         let dFound = ClaudeEnv.desktopApp != nil || dData != nil

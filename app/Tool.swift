@@ -90,11 +90,20 @@ enum Tool {
         // Reading it starts a login shell (up to 3 s); once a day is enough. A shell that did not
         // answer in time is not saved, so the next start tries again instead of a day without it.
         let d = UserDefaults.standard
-        if let saved = d.string(forKey: "searchPath"), Date().timeIntervalSince1970 - d.double(forKey: "searchPathAt") < 86400 { return saved }
+        // A saved PATH with a folder that is gone (nvm, fnm or volta moved to another node) is read anew.
+        if let saved = d.string(forKey: "searchPath"), Date().timeIntervalSince1970 - d.double(forKey: "searchPathAt") < 86400,
+           pathFoldersExist(saved) { return saved }
         let (result, complete) = computeSearchPath()
         if complete { d.set(result, forKey: "searchPath"); d.set(Date().timeIntervalSince1970, forKey: "searchPathAt") }
         return result
     }()
+
+    /// Every folder of a PATH below the home folder still exists (system folders are not checked).
+    static func pathFoldersExist(_ path: String) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return path.split(separator: ":").map(String.init).filter { $0.hasPrefix(home) }
+            .allSatisfy { FileManager.default.fileExists(atPath: $0) }
+    }
 
     /// The fixed places plus the shell's PATH. zsh is started interactive as well (`-i`), because
     /// nvm and fnm are usually set up in ~/.zshrc, which a login shell alone does not read.
@@ -179,6 +188,8 @@ enum Tool {
                     inPipe.fileHandleForWriting.write(Data((stdin + "\n").utf8))
                     try? inPipe.fileHandleForWriting.close()
                 }
+                // Cancelled before it started: nothing is started at all.
+                if running.isCancelled { cont.resume(throwing: CancellationError()); return }
                 do { try p.run() } catch { cont.resume(throwing: error); return }
                 if !running.started(p.processIdentifier) { killTree(p.processIdentifier) }
                 // Pipes, the timeout and the answer meet here from several queues; the lock keeps
@@ -227,7 +238,7 @@ enum Tool {
                     let text = msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg
                     Log.write("deploys \(args.joined(separator: " ")): \(text)")
                     // The whole text is in the log; a toast or a row gets the end, where the cause usually is.
-                    answer(.failure(ToolError(message: shorten(text))))
+                    answer(.failure(ToolError(message: shorten(text), exitCode: p.terminationStatus)))
                 }
             }
         }
@@ -278,6 +289,8 @@ struct ToolError: LocalizedError {
     let message: String
     /// The command was ended after its time ran out: it may have done its work anyway.
     var timedOut = false
+    /// The script's exit code, when it ended by itself with one other than 0.
+    var exitCode: Int32? = nil
     var errorDescription: String? { message }
 }
 
@@ -293,9 +306,14 @@ enum Log {
     static func write(_ line: String) {
         lock.lock(); defer { lock.unlock() }
         _ = privateOnce
-        let text = "\(Date().formatted(.iso8601))  \(line)\n"
+        // Further lines of a message are indented, so each entry still starts with its time.
+        let text = "\(Date().formatted(.iso8601))  \(line.replacingOccurrences(of: "\n", with: "\n    "))\n"
         let fm = FileManager.default
-        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(text.utf8)); try? h.close() }
+        // The throwing calls: the old seekToEndOfFile/write raise an exception on a full disk.
+        if let h = try? FileHandle(forWritingTo: url) {
+            do { try h.seekToEnd(); try h.write(contentsOf: Data(text.utf8)) } catch {}
+            try? h.close()
+        }
         else { fm.createFile(atPath: url.path, contents: Data(text.utf8), attributes: [.posixPermissions: 0o600]) }
         if let size = try? fm.attributesOfItem(atPath: url.path)[.size] as? Int, size > 1_000_000,
            let data = try? Data(contentsOf: url) {
