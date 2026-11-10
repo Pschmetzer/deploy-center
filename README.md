@@ -16,6 +16,18 @@ Works great with Claude Code: let the agent push, you decide what ships.</p>
 <p align="center"><img src="docs/images/app.png" width="900" alt="Deploy Center: 149 PRs waiting to deploy, Vercel build costs of the last 7 days and the projects with commits waiting"></p>
 <p align="center"><sub>The author's real build bill: $99 in 7 days. Project names hidden by demo mode.</sub></p>
 
+<details>
+<summary><b>More screenshots</b></summary>
+
+| | |
+|---|---|
+| <img src="docs/images/main-dark.png" width="430" alt="Main window in dark mode: projects with commits waiting to go live and the build costs of the last 14 days"><br><sub>What waits to go live, and what builds cost</sub> | <img src="docs/images/details-dark.png" width="430" alt="Details sheet of a project: the commit that is live, CI status and the three commits waiting"><br><sub>Details: what is live, what waits, CI status</sub> |
+| <img src="docs/images/log-dark.png" width="430" alt="Build log with the first error highlighted, and the Jump to the first error and Copy for Claude buttons"><br><sub>Build log: jump to the first error, copy it for Claude</sub> | <img src="docs/images/settings-dark.png" width="430" alt="Settings, Autofix section: routine, API token, check every 10 minutes, test without sending"><br><sub>Autofix: a failed build becomes a fix PR</sub> |
+| <img src="docs/images/menu-dark.png" width="300" alt="Menu bar menu: commits waiting per project, Open Deploy Center, Deploy everything with changes"><br><sub>The menu bar: what waits, at a glance</sub> | |
+
+<sub>Demo mode: project names are stand-ins.</sub>
+</details>
+
 ## Install
 
 ```bash
