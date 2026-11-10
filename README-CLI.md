@@ -120,6 +120,10 @@ out; without the file, no Vercel project is deployable. Keep the config folder b
     GH_TOKEN: ${{ github.token }}
 ```
 
+Team mode: when a shared `deploy-center.json` lists observers, `deploys` must know who runs it,
+and refuses to deploy otherwise. The Actions `github.token` cannot read `/user`: use a token
+that can (a fine-grained personal access token) as `GH_TOKEN` there.
+
 The first time, create `deploys-config/vercel-repos.json` with `deploys vercel map <project>
 <owner/repo> <branch>` (or copy it from `~/.config/deploys` on your Mac).
 

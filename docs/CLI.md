@@ -104,7 +104,8 @@ group one array of the starts), `status`, `list`, `providers`, `config`, `team j
 `scan status`, `autofix status`, `ai explain|notes|ship`, and `deploys <p> list|deploy`.
 `doctor`, `details`, `costs`, `triggers` and `github-budget` always answer JSON (the app reads
 them). `watch`, `logs`, `history`, `explain`, `diff` and `notes` are text only. With `--json` an
-error still goes to stderr as text, with a non-zero exit code; stdout then stays empty.
+error still goes to stderr as text, with a non-zero exit code; stdout holds only what was done
+before it (a group that stopped halfway prints the array of the starts so far), else nothing.
 Everything after `--` is passed on as it is (a value `--json` stays a value).
 
 ## Exit codes
