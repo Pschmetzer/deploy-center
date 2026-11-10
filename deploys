@@ -37,7 +37,7 @@
 #   deploys vercel team [<id>]                show or set the Vercel team
 #   deploys vercel deploy <p> [--preview] [--sha <c>] [--wait]   --wait follows it until live or failed
 #   deploys history <project> [n]             the last n deploys (default 10): when, state, commit, source
-#   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>)
+#   deploys logs <project> [lines] [--id <d>] [--masked]   the end of the newest build log (or of deploy <d>); --masked hides keys
 #   deploys autofix [--dry-run] [--only <platform> <p>]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
 #   deploys autofix set-token | routine <id> | list | forget-token | prompt | status | sync | schedule on|off
 #   deploys scan start <owner/repo> [branch]  Claude Code on this Mac looks for bugs and opens one fix PR (never merges)
@@ -71,12 +71,13 @@
 #   deploys render list                       services and their auto-deploy setting
 #   deploys render autodeploy-off <s>|--all
 #   deploys render autodeploy-on <s>|--all    auto-deploy "On Commit" again
-#   deploys autodeploy allow <vercel|render|all> <p>|--all <hours>   auto-deploy on for a while (1-168 h)
-#   deploys autodeploy allowed [--json] | revoke <vercel|render|all> <p>|--all
+#   deploys autodeploy allow <platform|all> <p>|--all <hours>   auto-deploy on for a while (1-168 h)
+#   deploys autodeploy allowed [--json] | revoke <platform|all> <p>|--all
 #   deploys guard [--dry-run]                 auto-deploy off wherever it is on without an allowance
 #   deploys guard status [--json] | schedule on|off   (every 30 minutes; see docs/GUARD.md)
 #   deploys render deploy <service>           deploy the newest commit
 #   deploys render set-key                    store the Render API key (read from stdin)
+#   deploys gitlab set-token | forget-token   a GitLab token in the keychain (read from stdin; docs/GITLAB.md)
 #
 # Exit codes: 0 done (also "nothing to deploy"), 1 an error, something failed to start, or the
 # state of some project could not be read (it is named and left out, never counted as current);
@@ -146,12 +147,24 @@ TEAM_LIB="${DEPLOYS_TEAM_LIB:-$(deploys_dir)/lib/team.sh}"
 # shellcheck source=lib/team.sh
 if [ -f "$TEAM_LIB" ]; then . "$TEAM_LIB"; fi
 team_on() { declare -F team_gate >/dev/null; }
+# Signs on this Mac that a team file counts here: read without lib/team.sh, from local files only.
+team_traces() {
+  [ -s "$CONFIG_DIR/team-repos" ] && grep -q '/' "$CONFIG_DIR/team-repos" 2>/dev/null && return 0
+  [ -s "$CONFIG_DIR/overrides.json" ] && return 0
+  grep -lq '"config":' "$CONFIG_DIR"/team-cache/*.json 2>/dev/null
+}
 
 # Every command that changes something on Vercel, Render or GitHub goes through here first.
 require_write() {
   local why; why="$(readonly_from)"
   if [ -z "$why" ] && team_on; then why="$(team_observer_from)"; fi
   [ -z "$why" ] || die "Observer mode ($why): \"deploys $1\" changes something and is refused. Observers can look, not deploy. To deploy from here: $(if [ -n "${DEPLOYS_READONLY:-}" ]; then echo "unset DEPLOYS_READONLY"; elif [ -e "$CONFIG_DIR/readonly" ]; then echo "deploys readonly off"; else echo "ask to be taken off the observers list"; fi)."
+  # Without lib/team.sh the two-person rule and the observers list are not read at all. When this
+  # Mac has seen a team file (repos added with `deploys team add`, overrides.json, a cached shared
+  # file), going on would skip them without a word: refused instead (an install without lib/).
+  if ! team_on && team_traces; then
+    die "\"deploys $1\" is refused: this Mac uses a shared deploy-center.json, but $TEAM_LIB is missing, so its approvals and observers would be skipped. Install deploys with its lib/ folder (brew upgrade, or install.sh again)."
+  fi
 }
 
 # vercel-repos.json as the commands read it: with the projects a shared file maps below it.
@@ -325,13 +338,34 @@ start_lock() {
 
 # ---------- GitHub (optional, for "new changes") ----------
 
-head_of() {
-  local repo="$1" ref="$2" out="$3"
-  gh api "repos/$repo/commits/$ref" 2>/dev/null \
-    | jq -c --arg k "$repo@$ref" '{key:$k, value:{at:(.commit.committer.date|fromdateiso8601), msg:(.commit.message|split("\n")[0]), sha:.sha}}' \
-    > "$out/$(echo "$repo@$ref" | tr '/@' '__').json" 2>/dev/null || true
+# Why a git host did not answer, in words, from what it wrote on stderr (a file): a rate limit,
+# no login, no such repo or no access. Shown as "branch head unknown: <why>".
+head_why() {  # head_why <stderr file> <host name>
+  local e; e="$(grep -v '^[[:space:]]*$' "$1" 2>/dev/null | tail -n 3)"
+  case "$e" in
+    "") echo "$2 did not answer" ;;
+    *"command not found"*|*"No such file"*) echo "the $2 CLI is not installed" ;;
+    *[Rr]"ate limit"*|*"secondary rate"*|*"HTTP 429"*) echo "$2's rate limit is reached; try again later" ;;
+    *"HTTP 401"*|*"Bad credentials"*|*"auth login"*|*"not logged"*) echo "not logged in to $2 (gh auth login)" ;;
+    *"HTTP 404"*|*"Not Found"*) echo "the repo or branch is not on $2, or this login cannot see it" ;;
+    *"HTTP 403"*) echo "$2 refused access (HTTP 403)" ;;
+    *"HTTP 000"*|*"Could not resolve"*|*"timed out"*|*"connect"*) echo "$2 could not be reached" ;;
+    *) echo "$2: $(printf '%s' "$e" | tail -n 1 | cut -c1-150)" ;;
+  esac
 }
-export -f head_of
+head_of() {
+  local repo="$1" ref="$2" out="$3" f ans
+  f="$out/$(echo "$repo@$ref" | tr '/@' '__').json"
+  if ans="$(gh api "repos/$repo/commits/$ref" 2>"$f.err")"; then
+    echo "$ans" | jq -c --arg k "$repo@$ref" '{key:$k, value:{at:(.commit.committer.date|fromdateiso8601), msg:(.commit.message|split("\n")[0]), sha:.sha}}' \
+      > "$f" 2>/dev/null || rm -f "$f"
+  else
+    # A record of why, so `changed` names the reason instead of guessing "is gh logged in?".
+    jq -nc --arg k "$repo@$ref" --arg e "$(head_why "$f.err" GitHub)" '{key:$k, value:{error:$e}}' > "$f" 2>/dev/null || true
+  fi
+  rm -f "$f.err"
+}
+export -f head_of head_why
 
 # What is merged but not live: commits from the live commit to the branch, and the pull
 # requests among them (squash "(#12)" or "Merge pull request #12"). ahead_by is exact;
@@ -377,7 +411,7 @@ open_prs_of() {
   local repo="$1" out="$2"
   # The repo goes to jq as --arg, never into the filter text.
   gh api --cache 5m "repos/$repo/pulls?state=open&per_page=100" 2>/dev/null \
-    | jq -c --arg k "$repo" '{key:$k, value:{all:length, drafts:(map(select(.draft)) | length), bots:(map(select(.user.type=="Bot")) | length)}}' \
+    | jq -c --arg k "$repo" '{key:$k, value:{all:length, partial:(length >= 100), drafts:(map(select(.draft)) | length), bots:(map(select(.user.type=="Bot")) | length)}}' \
     > "$out/$(echo "$repo" | tr '/' '_').json" 2>/dev/null || true
 }
 export -f open_prs_of
@@ -407,6 +441,14 @@ else
   GITHOST_VERCEL_LINK_JQ='(if .type == "gitlab" then null else "\(.org)/\(.repo)" end)'
   export -f githost_of githost_head_of githost_pending_of githost_open_prs_of
 fi
+
+# The default branch of a repo (GitHub or GitLab); empty when the host cannot tell.
+default_branch_of() {
+  case "$(githost_of "$1")" in
+    github) gh api --cache 1h "repos/$1" --jq '.default_branch // empty' 2>/dev/null | head -n 1 || true ;;
+    gitlab) if declare -F gitlab_default_branch >/dev/null; then gitlab_default_branch "$1"; fi ;;
+  esac
+}
 
 # The one rule for "has changes to deploy", read by `changed`, `deploy-changed` and the app.
 # Not deployable, paused, already building, or with no known head: not changed. It reads only the
@@ -444,16 +486,16 @@ with_heads() {
   if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! githost_available; then echo "$list" | jq "$CHANGED_RULE"; return; fi
   tmp="$(mktemp -d)"; mkdir "$tmp/h" "$tmp/p" "$tmp/o"
   echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
-    | xargs -P 8 -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
+    | xargs -r -P 8 -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
   heads="$(cat_all "$tmp/h"/*.json | jq -s 'from_entries')"
-  list="$(echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))')"
+  list="$(echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha, headError:(.error // null)}))')"
   # With GitHub's budget nearly spent, keep it for what decides "changed" (the heads above).
   local left; left="$(github_budget | jq -r '.remaining // 5000' 2>/dev/null || echo 5000)"
   if [ "${left:-5000}" -lt 300 ]; then rm -rf "$tmp"; echo "$list" | jq "$CHANGED_RULE"; return; fi
   # Compared only where the branch moved past the live commit.
   echo "$list" | jq -r '.[] | select(.repo and .ref and .lastSha and .headSha and .lastSha != .headSha) | "\(.repo) \(.lastSha) \(.ref)"' \
-    | sort -u | xargs -P 8 -n 3 bash -c 'githost_pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
-  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'githost_open_prs_of "$1" "$0"' "$tmp/o"
+    | sort -u | xargs -r -P 8 -n 3 bash -c 'githost_pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
+  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -r -P 8 -n 1 bash -c 'githost_open_prs_of "$1" "$0"' "$tmp/o"
   pend="$(cat_all "$tmp/p"/*.json | jq -s 'from_entries')"
   opens="$(cat_all "$tmp/o"/*.json | jq -s 'from_entries')"
   rm -rf "$tmp"
@@ -466,7 +508,8 @@ with_heads() {
              compareStatus:($x.status // null), behindBy:($x.behindBy // null),
              # green, yellow or red, and why (see RISK_DEF). Null when nothing was compared.
              risk:($x.risk // null),
-             openPRs:($op.all // null), openDrafts:($op.drafts // null), openBots:($op.bots // null)})' \
+             # 100 is one page: past that openPRs is a floor (as pendingPartial is for commits).
+             openPRs:($op.all // null), openPartial:($op.partial // false), openDrafts:($op.drafts // null), openBots:($op.bots // null)})' \
     | jq "$CHANGED_RULE"
 }
 
@@ -540,7 +583,7 @@ changed_json() {
   if team_on; then ignl="$(team_ignored 2>/dev/null)" || ignl=""; fi
   [ -n "$ignl" ] || ignl="$(jq -c . "$ign" 2>/dev/null || echo '[]')"
   all="$(echo "$all" | jq --argjson ign "$ignl" 'map(select(((.name as $n | $ign | index($n)) or ("\(.platform):\(.name)" as $q | $ign | index($q))) | not))')"
-  unknown="$(echo "$all" | jq -r "$UNKNOWN_RULE"' | .[] | "\(.platform) \(.name): \(.fetchError // "branch head unknown (is gh installed and logged in?)")"')"
+  unknown="$(echo "$all" | jq -r "$UNKNOWN_RULE"' | .[] | "\(.platform) \(.name): \(.fetchError // (if .headError then "branch head unknown: \(.headError)" else "branch head unknown (is gh installed and logged in?)" end))"')"
   if [ -n "$unknown" ]; then
     rc=1; echo "Error: state unknown, left out:" >&2; echo "$unknown" | sed 's/^/  /' >&2
   fi
@@ -574,14 +617,25 @@ CI_RULE='($s[0] // {}) as $s | ($r[0] // {}) as $r
   else {state:"green", reason:"\($all | length) checks passed"} end
   | . + {checks:($all | length), failed:($bad | length), running:($wait | length)}'
 
+# "final":true on an unknown verdict: asking again will not help (a GitLab repo nobody can read
+# here, a git host deploys does not know). The waits stop at once instead of running out.
 ci_of() {  # ci_of <owner/repo> <sha or branch>: the verdict as one line of JSON
+  case "$(githost_of "$1")" in
+    gitlab) if declare -F gitlab_ci_of >/dev/null; then gitlab_ci_of "$1" "$2"
+            else echo '{"state":"unknown","final":true,"reason":"CI of GitLab repos needs lib/githost.sh next to deploys"}'; fi
+            return 0 ;;
+    unknown) jq -nc --arg r "$1" '{state:"unknown", final:true, reason:"the CI of \($r) cannot be read (only GitHub and GitLab)"}'; return 0 ;;
+  esac
   local t rc=0; t="$(mktemp -d)"
   gh api "repos/$1/commits/$2/status" > "$t/s" 2>/dev/null || rc=$((rc + 1))
-  gh api "repos/$1/commits/$2/check-runs?per_page=100" > "$t/r" 2>/dev/null || rc=$((rc + 1))
+  # Every page: a monorepo matrix can have more than 100 check runs, and a red one on page 2
+  # must not read as green. --paginate prints one object per page; they are joined below.
+  gh api --paginate "repos/$1/commits/$2/check-runs?per_page=100" > "$t/r" 2>/dev/null || rc=$((rc + 1))
   # Neither answer: GitHub is down or gh is not logged in. That is not "no checks".
   if [ "$rc" = 2 ]; then echo '{"state":"unknown","reason":"GitHub could not be asked (is gh logged in?)"}'
   else
-    for f in s r; do jq -e . "$t/$f" >/dev/null 2>&1 || : > "$t/$f"; done
+    jq -e . "$t/s" >/dev/null 2>&1 || : > "$t/s"
+    jq -sc '{check_runs:[.[] | (.check_runs // [])[]]}' "$t/r" > "$t/r.t" 2>/dev/null && mv "$t/r.t" "$t/r" || : > "$t/r"
     jq -nc --slurpfile s "$t/s" --slurpfile r "$t/r" "$CI_RULE"
   fi
   rm -rf "$t"
@@ -593,7 +647,7 @@ ci_wait() {  # ci_wait <owner/repo> <ref> <max seconds>
   local waited=0 delay=10 v s
   while :; do
     v="$(ci_of "$1" "$2")"; s="$(echo "$v" | jq -r .state)"
-    case "$s" in pending|unknown) ;; *) echo "$v"; return 0;; esac
+    case "$s" in pending|unknown) [ "$(echo "$v" | jq -r '.final // false')" != true ] || { echo "$v"; return 0; } ;; *) echo "$v"; return 0;; esac
     if [ "$waited" -ge "$3" ]; then echo "$v" | jq -c --argjson w "$3" '. + {timedOut:true, waited:$w}'; return 0; fi
     [ $((waited + delay)) -le "$3" ] || delay=$(( $3 - waited ))
     echo "$(date +%H:%M:%S)  $1@${2:0:7}: $(echo "$v" | jq -r .reason), next look in ${delay}s" >&2
@@ -630,13 +684,56 @@ window_json() {
 # run: what this run starts itself (render deploy -> deploy-json) is not asked again.
 # Sets `frozen` to the window's text when the run goes ahead inside one.
 frozen=""
+# The shared window of deploy-center.json (docs/TEAM.md) is the other way round: when deploys
+# are allowed, {"days":["mon",…], "from":"09:00", "to":"16:00", "tz":"Europe/Berlin"} (or a
+# list of them: any one open is enough). Outside it is closed. A window.json-style {"deny":…}
+# that reaches a project through overrides is the local window, checked by window_json.
+TEAM_WINDOW_RULE='def hm: split(":") | (.[0] | tonumber) * 60 + ((.[1] // "0") | tonumber);
+  def open1: ((.days == null) or (.days | map(ascii_downcase | .[0:3]) | index($day)))
+      and ((.dates == null) or (.dates | index($date)))
+      and (((.from // "00:00") | hm) as $f | ((.to // "24:00") | hm) as $u | ($time | hm) as $t
+           | if $f <= $u then $t >= $f and $t < $u else $t >= $f or $t < $u end);
+  def says: "\((.days // ["every day"]) | join(", ")) \(.from // "00:00")–\(.to // "24:00")\(if .tz then " " + .tz else "" end)";
+  (if type == "array" then . else [.] end) as $w
+  | if any($w[]; open1) then {denied:false} else {denied:true, reason:"outside the shared deploy window (\($w | map(says) | join("; ")))"} end'
+TEAM_EFF_CACHE=""
+team_eff_once() { if [ -z "$TEAM_EFF_CACHE" ]; then TEAM_EFF_CACHE="$(team_effective 2>/dev/null)" || TEAM_EFF_CACHE='{}'; fi; echo "$TEAM_EFF_CACHE"; }
+# team_window_denied <name>: why the shared window of that project is closed now, or nothing.
+team_window_denied() {
+  team_on || return 0
+  local n="${1#*:}" w tz now
+  is_provider "${1%%:*}" || n="$1"
+  w="$(team_eff_once | jq -c --arg n "$n" '.projects[$n].window.value // null | if type == "object" and has("deny") then null else . end' 2>/dev/null)"
+  [ -n "$w" ] && [ "$w" != null ] || return 0
+  tz="$(echo "$w" | jq -r 'if type == "array" then .[0].tz else .tz end // empty')"
+  # An unknown zone would silently read as UTC: refused instead.
+  if [ -n "$tz" ] && [ -z "${DEPLOYS_NOW:-}" ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then
+    echo "the shared deploy window of $n names an unknown time zone \"$tz\""; return 0
+  fi
+  # Now in the window's own zone (DEPLOYS_NOW stands in for tests, as in now_parts).
+  if [ -n "${DEPLOYS_NOW:-}" ] || [ -z "$tz" ]; then now="$(now_parts)"
+  else now="$(TZ="$tz" LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]')"; fi
+  echo "$w" | jq -r --arg day "${now%% *}" --arg time "$(echo "$now" | cut -d' ' -f2)" --arg date "${now##* }" \
+    "$TEAM_WINDOW_RULE"' | if .denied then .reason else empty end' 2>/dev/null || echo "the shared deploy window of $n could not be read"
+}
+# freeze_check [<name>...]: the local window, then the shared window of each project named.
 freeze_check() {
   [ -z "${DEPLOYS_WINDOW_CHECKED:-}" ] || return 0
-  local w; w="$(window_json)" || exit 1
+  local w n why
+  # Read once here, in this shell: team_window_denied runs in $(…), where a cache would be lost.
+  if team_on; then team_eff_once >/dev/null; fi
+  w="$(window_json)" || exit 1
   if [ "$(echo "$w" | jq -r .denied)" = true ]; then
     frozen="$(echo "$w" | jq -r .reason)"
     [ "$forced" = 1 ] || die "No deploys now: the deploy window says \"$frozen\". To deploy anyway: --force \"why\""
   fi
+  for n in "$@"; do
+    [ -n "$n" ] || continue
+    why="$(team_window_denied "$n")"
+    [ -n "$why" ] || continue
+    [ "$forced" = 1 ] || die "No deploys of $n now: $why. To deploy anyway: --force \"why\""
+    frozen="${frozen:+$frozen; }$n: $why"
+  done
   export DEPLOYS_WINDOW_CHECKED=1
 }
 # A start inside a window, and why, goes to the journal the app shows.
@@ -718,13 +815,17 @@ export -f cost_day days_ago
 
 # ---------- Other things that start builds ----------
 
-# A workflow that deploys by itself defeats turning auto-deploy off.
+# A workflow that deploys by itself defeats turning auto-deploy off. The deploy commands of every
+# platform: Vercel, Render, Netlify, Cloudflare (wrangler), DigitalOcean (doctl), Amplify (aws),
+# Coolify (its /deploy API or webhook), and any deploy hook.
+WORKFLOW_DEPLOY_RE='vercel (deploy|--prod)|vercel-action|api\.render\.com/deploy|render-deploy|deploy[-_]hook|DEPLOY_HOOK|netlify (deploy|api createSiteDeploy)|netlify-cli|nwtgck/actions-netlify|wrangler (pages )?deploy|wrangler-action|cloudflare/pages-action|doctl apps (create-deployment|update)|digitalocean/app_action|aws amplify start-job|amplify publish|coolify[^ ]*/api/v1/deploy|/api/v1/deploy\?uuid=|COOLIFY_(WEBHOOK|TOKEN)'
+export WORKFLOW_DEPLOY_RE
 workflow_hits() {
   local repo="$1" out="$2"
   gh api "repos/$repo/contents/.github/workflows" --jq '.[] | select(.type=="file") | .path' 2>/dev/null | while read -r f; do
     gh api "repos/$repo/contents/$f" --jq '.content' 2>/dev/null | b64d 2>/dev/null \
       | grep -vE '^[[:space:]]*#' \
-      | grep -qE 'vercel (deploy|--prod)|vercel-action|api\.render\.com/deploy|render-deploy|deploy[-_]hook|DEPLOY_HOOK' \
+      | grep -qE "$WORKFLOW_DEPLOY_RE" \
       && jq -nc --arg w "$repo" --arg d "$f" '{kind:"workflow", where:$w, detail:$d}'
   done > "$out/$(echo "$repo" | tr '/' '_').jsonl" || true
 }
@@ -832,22 +933,24 @@ PROMPT
 AUTOFIX_LABEL="app.deploycenter.autofix"
 # A launchd job that runs this script every few seconds/minutes: job_on <label> <seconds> <log name> <args...>.
 job_plist() { echo "${DEPLOYS_LAUNCH_DIR:-$HOME/Library/LaunchAgents}/$1.plist"; }
+# Text for a plist <string>: a folder named "R&D" or "a<b" must not break launchctl bootstrap.
+xml_esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
 job_on() {
   local label="$1" every="$2" log="$HOME/Library/Logs/$3.log" self plist a pargs=""; shift 3
   plist="$(job_plist "$label")"; mkdir -p "$(dirname "$plist")"
   self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-  for a in "$@"; do pargs="$pargs<string>$a</string>"; done
+  for a in "$@"; do pargs="$pargs<string>$(xml_esc "$a")</string>"; done
   # Written with the PATH of whoever turns it on (the app passes the login shell's): launchd
   # starts jobs with a bare one, and autofix needs jq, gh, perl and the vercel CLI.
   cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>$label</string>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(printf '%s' "$PATH" | sed 's/&/\&amp;/g; s/</\&lt;/g')</string></dict>
-  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$self</string>$pargs</array>
-  <key>StandardOutPath</key><string>$log</string>
-  <key>StandardErrorPath</key><string>$log</string>
+  <key>Label</key><string>$(xml_esc "$label")</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(xml_esc "$PATH")</string></dict>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$(xml_esc "$self")</string>$pargs</array>
+  <key>StandardOutPath</key><string>$(xml_esc "$log")</string>
+  <key>StandardErrorPath</key><string>$(xml_esc "$log")</string>
   <key>StartInterval</key><integer>$every</integer>
 </dict></plist>
 PLIST
@@ -1333,13 +1436,39 @@ ad_unlock() { rmdir "$CONFIG_DIR/locks/autodeploy" 2>/dev/null || true; }
 # Seams the tests replace: what each platform has ([{name, id, auto}]) and the switches.
 ad_list_vercel() { vercel_projects | jq '[.[] | {name, id:.name, auto:(.link != null)}]'; }
 ad_list_render() { render_services | jq '[.[] | {name, id, auto:('"$(render_auto)"' != "off")}]'; }
-ad_off() { case "$1" in vercel) vercel_off_one "$2";; render) render_off_one "$3" "$2";; esac; }
-ad_on() { case "$1" in vercel) vercel_on_one "$2";; render) render_on_one "$3" "$2";; esac; }
-# Which platforms this Mac can read: a Vercel login (or remembered projects), a Render key.
+# Every other provider with caps.off: its contract list (`auto` in <p>_json) and its own switches.
+ad_list_any() { ( "${1}_json" ) | jq '[.[] | {name, id:(.id // .name), auto:(.auto == true)}]'; }
+ad_list() { if declare -F "ad_list_$1" >/dev/null; then "ad_list_$1"; else ad_list_any "$1"; fi; }
+# Whether auto-deploy of <p> can be switched on again from here (Netlify has no such switch).
+ad_can_on() { case "$1" in vercel|render) return 0 ;; esac; declare -F "${1}_on" >/dev/null; }
+ad_off() {
+  case "$1" in
+    vercel) vercel_off_one "$2" ;;
+    render) render_off_one "$3" "$2" ;;
+    *) "${1}_off" "$3"
+       # Read back: a provider that needs one more step by hand (Netlify: a line in netlify.toml)
+       # answers 0 with auto-deploy still on. That is not "turned off".
+       if [ "$(ad_list_any "$1" 2>/dev/null | jq -r --arg i "$3" --arg n "$2" '[.[] | select(.id == $i or .name == $n)][0].auto // false')" = true ]; then
+         die "$(meta_str "$1" label): auto-deploy of $2 is still on (see the step above)"
+       fi ;;
+  esac
+}
+ad_on() {
+  case "$1" in
+    vercel) vercel_on_one "$2" ;;
+    render) render_on_one "$3" "$2" ;;
+    *) ad_can_on "$1" || die "$(meta_str "$1" label) cannot turn auto-deploy on again from here"; "${1}_on" "$3" ;;
+  esac
+}
+# Which platforms this Mac can read: a Vercel login (or remembered projects), a Render key, and
+# every other provider that can turn auto-deploy off (caps.off), switched on and set up.
 ad_platforms() {
   # Only the providers that are switched on (deploys providers) and set up.
-  provider_on vercel && echo vercel
-  provider_on render && echo render
+  local p
+  for p in $(enabled_providers); do
+    case "$p" in vercel|render) ;; *) meta_flag "$p" off || continue ;; esac
+    provider_on "$p" && echo "$p"
+  done
   return 0
 }
 
@@ -1359,7 +1488,7 @@ guard_run() {
     [ "$sp" = all ] || [ "$sp" = "$plat" ] || continue
     err="$(mktemp)"
     # One platform that cannot be read is an error, never "nothing is on"; the other still runs.
-    if ! list="$(ad_list_"$plat" 2>"$err")" || ! echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    if ! list="$(ad_list "$plat" 2>"$err")" || ! echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1; then
       out="$(grep -v '^[[:space:]]*$' "$err" | tail -n 1 | sed 's/^Error: //' | cut -c1-300)"; rm -f "$err"
       echo "guard: could not read $plat${out:+: $out}" >&2; act "$plat" "" error "${out:-could not read}"; rc=1; continue
     fi
@@ -1406,6 +1535,9 @@ guard_main() {
   local dry="$1" first=false rc=0 names
   if [ -z "$dry" ] && [ "$(guard_state | jq '.firstRunPending == true')" = true ]; then dry=1; first=true; fi
   guard_run "$dry" || rc=1
+  # What failed last time: the same failures again (Netlify waiting for its netlify.toml line)
+  # are not notified every 30 minutes, only a change is.
+  local before; before="$(guard_state | jq -r '[(.lastActions // [])[] | select(.action == "failed" or .action == "error") | "\(.platform)\(if .project then " " + .project else "" end)"] | sort | join(", ")')"
   guard_state | jq --argjson t "$(date +%s)" --argjson a "$GUARD_ACTIONS" --argjson d "$([ -n "$dry" ] && echo true || echo false)" \
     '. + {lastRun:$t, lastDry:$d, lastActions:$a} | del(.firstRunPending)' | guard_save
   names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "off" or .action == "wouldOff") | "\(.platform) \(.project)"] | join(", ")')"
@@ -1414,22 +1546,24 @@ guard_main() {
   elif [ -n "$dry" ]; then [ -n "$names" ] || echo "guard (dry run): nothing to turn off."
   elif [ -n "$names" ]; then af_notify "Auto-deploy guard: turned auto-deploy off for $names."
   fi
-  names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "failed" or .action == "error") | "\(.platform)\(if .project then " " + .project else "" end)"] | join(", ")')"
-  [ -z "$names" ] || af_notify "Auto-deploy guard: could not check or switch $names. See: deploys guard status"
+  names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "failed" or .action == "error") | "\(.platform)\(if .project then " " + .project else "" end)"] | sort | join(", ")')"
+  [ -z "$names" ] || [ "$names" = "$before" ] || af_notify "Auto-deploy guard: could not check or switch $names. See: deploys guard status"
   return "$rc"
 }
 
-# allow/revoke take <vercel|render|all> <project>|--all. Prints "<key>\t<platform or all>\t<name or *>".
+# allow/revoke take <platform|all> <project>|--all. Prints "<key>\t<platform or all>\t<name or *>".
 ad_scope() {
   local plat="$1" target="$2"
-  case "$plat" in vercel|render|all) ;; *) die "Platform must be vercel, render or all";; esac
+  # Every platform that can turn auto-deploy off (caps.off) can have an allowance.
+  ad_platform_ok() { case "$1" in vercel|render) return 0 ;; esac; is_provider "$1" && meta_flag "$1" off; }
+  [ "$plat" = all ] || ad_platform_ok "$plat" || die "Platform must be all or one that can turn auto-deploy off: $(for p in "${PROVIDERS[@]}"; do ad_platform_ok "$p" && printf '%s ' "$p"; done | sed 's/ $//; s/ /, /g')"
   [ -n "$target" ] || die "Give a project name or --all"
   if [ "$target" = --all ]; then
     if [ "$plat" = all ]; then printf '*\tall\t*\n'; else printf '%s:*\t%s\t*\n' "$plat" "$plat"; fi
   else
     if [ "$plat" = all ]; then
       plat="$(lookup "$target")" || exit 1; plat="${plat%%$'\t'*}"
-      case "$plat" in vercel|render) ;; *) die "Allowances are for Vercel and Render; $target is on $(meta_str "$plat" label)";; esac
+      ad_platform_ok "$plat" || die "$(meta_str "$plat" label) cannot turn auto-deploy off, so $target needs no allowance"
     fi
     printf '%s:%s\t%s\t%s\n' "$plat" "$target" "$plat" "$target"
   fi
@@ -1442,13 +1576,20 @@ allow_main() {
   [ "$hours" -ge 1 ] && [ "$hours" -le 168 ] || die "Hours must be between 1 and 168"
   scope="$(ad_scope "$1" "${2:-}")" || exit 1
   IFS=$'\t' read -r key plat name <<< "$scope"
+  # Netlify cannot switch auto-deploy on again from here: no allowance that would do nothing.
+  [ "$plat" = all ] || ad_can_on "$plat" || die "$(meta_str "$plat" label) cannot turn auto-deploy on again from here (do it in its dashboard); nothing changed"
   until=$(( $(date +%s) + hours * 3600 ))
   # Written before switching on: a guard run in between must already see it.
   ad_lock || die "Could not take the auto-deploy lock; nothing changed"
   allow_read | jq --arg k "$key" --argjson u "$until" '.[$k] = $u' | allow_write
   ad_unlock
   if [ "$name" != "*" ]; then
-    id="$name"; [ "$plat" = render ] && { id="$( (render_id_of "$name") )" || bad=1; }
+    id="$name"
+    case "$plat" in
+      vercel) ;;
+      render) id="$( (render_id_of "$name") )" || bad=1 ;;
+      *) id="$( ("${plat}_has" "$name") 2>/dev/null)" && [ -n "$id" ] || bad=1 ;;
+    esac
     if [ "$bad" = 0 ] && ( ad_on "$plat" "$name" "$id" ); then :; else
       ad_lock && { allow_read | jq --arg k "$key" 'del(.[$k])' | allow_write; ad_unlock; }
       die "Auto-deploy of $plat $name was not turned on; the allowance is withdrawn"
@@ -1456,7 +1597,8 @@ allow_main() {
   else
     for p in $(ad_platforms); do
       [ "$plat" = all ] || [ "$plat" = "$p" ] || continue
-      list="$(ad_list_"$p")" || { echo "Could not read $p" >&2; bad=$((bad + 1)); continue; }
+      ad_can_on "$p" || { echo "$(meta_str "$p" label) left as it is: it cannot turn auto-deploy on again from here."; continue; }
+      list="$(ad_list "$p")" || { echo "Could not read $p" >&2; bad=$((bad + 1)); continue; }
       while IFS=$'\t' read -r name id; do
         [ -n "$name" ] || continue
         if [ "$p" = vercel ] && ! jq -e --arg n "$name" '.[$n].repo != null' "$REPOS" >/dev/null 2>&1; then
@@ -1583,7 +1725,7 @@ ai_details() { "$0" details "$1" "$2" "$3"; }
 ai_project() {  # ai_project <project>: {row, d}
   local j repo d; j="$(ai_row "$1")"; [ -n "$j" ] || die "$1 not found"
   repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$1 has no known repo"
-  d="$(ai_details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // "main"')")"
+  d="$(ai_details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // empty')")"
   jq -n --argjson row "$j" --argjson d "$d" '{row:$row, d:$d}'
 }
 
@@ -1731,7 +1873,7 @@ provider_cmd() {
   else sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1; fi
   # Production starts wait for the deploy window (docs/SAFE-DEPLOY.md); a forced one is journaled.
   case "$verb" in
-    deploy|deploy_json) [[ " $* " == *" --preview "* ]] || freeze_check; journal_forced "$p" "${1:-}" ;;
+    deploy|deploy_json) [[ " $* " == *" --preview "* ]] || freeze_check "${1:-}"; journal_forced "$p" "${1:-}" ;;
   esac
   "$fn" "$@"
 }
@@ -1782,7 +1924,7 @@ case "${1:-} ${2:-}" in
     count="$(echo "$members" | grep -c .)"; i=0
     # Production starts wait for the deploy window, as `<p> deploy` and deploy-changed do. Asked once
     # for the whole group, before anything starts: a window must not stop a group halfway.
-    [ -n "$pv" ] || freeze_check
+    [ -n "$pv" ] || freeze_check $members
     # A start that failed has said why on stderr; that stays the last line for one project.
     stop_group() { [ "$2" -le 1 ] || echo "$1 did not start; the rest of the group was not started." >&2; exit 1; }
     for p in $members; do
@@ -1881,7 +2023,13 @@ case "${1:-} ${2:-}" in
     pf=""
     for p in $(enabled_providers); do
       o="$("${p}_doctor" 2>/dev/null | tr -d '\n')" || o=""
-      o="${o#\{}"; o="${o%\}}"; [ -z "$o" ] || pf="$pf,$o"
+      # Objects with plain keys (provider, key, tokenOk, error: Netlify, Coolify and others) go under
+      # the provider's name: side by side, the last one would win. Vercel, Render and hook keep
+      # their prefixed keys at the top, where the app reads them.
+      case "$o" in
+        *'"provider":'*) pf="$pf,\"$p\":$o" ;;
+        *) o="${o#\{}"; o="${o%\}}"; [ -z "$o" ] || pf="$pf,$o" ;;
+      esac
     done
     glogin=false; gh auth status >/dev/null 2>&1 && glogin=true
     gllogin=false; gitlab_logged_in && gllogin=true
@@ -1953,12 +2101,19 @@ case "${1:-} ${2:-}" in
   "logs "*)
     # The last lines of the newest build log of one project, or with --id of that one deploy
     # (autofix: a build started after the failure must not hand over the wrong log).
-    p="${2:?project}"; n=80; did=""; shift 2
-    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>]}"; shift;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
+    # --masked: keys, tokens, passwords and email addresses replaced (as autofix and the app do),
+    # for a log that goes on to an agent or a language model.
+    p="${2:?project}"; n=80; did=""; masked=""; shift 2
+    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>] [--masked]}"; shift;; --masked) masked=1;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
     # 0 lines is no log at all, not the whole one (jq's .[-0:] is the whole array).
     [ "$n" -ge 1 ] || die "lines must be 1 or more"
     resolve "$p"; need_cap "$PLAT" logs "read build logs"
-    "${PLAT}_logs" "$PID" "$n" "$did" ;;
+    if [ -z "$masked" ]; then "${PLAT}_logs" "$PID" "$n" "$did"
+    else
+      # The exit code of the read, not of the mask: a log that could not be read stays an error.
+      lt="$(mktemp)"; lrc=0; ( "${PLAT}_logs" "$PID" "$n" "$did" ) > "$lt" || lrc=$?
+      af_mask < "$lt"; rm -f "$lt"; exit "$lrc"
+    fi ;;
 
   "open "*)
     # The site, or with --dashboard the project's page at its platform.
@@ -2023,7 +2178,7 @@ case "${1:-} ${2:-}" in
     j="$("$0" "$PLAT" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
-    d="$("$0" details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // "main"')")"
+    d="$("$0" details "$repo" "$(echo "$j" | jq -r '.lastSha // empty')" "$(echo "$j" | jq -r '.ref // empty')")"
     if [ "${1:-}" = "notes" ]; then
       echo "$d" | jq -r --arg p "$p" '"## \($p)", (.commits | map(select(.bot | not)) | .[] | "- \(.msg)\(if .pr then " (#\(.pr))" else "" end) – \(.author // "?")"),
         (if (.commits | map(select(.bot)) | length) > 0 then "", "Dependency updates:", (.commits | map(select(.bot)) | .[] | "- \(.msg) – \(.author // "?")") else empty end)'
@@ -2034,7 +2189,7 @@ case "${1:-} ${2:-}" in
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
     # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix scan check autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
+    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix scan check autodeploy guard providers list ${PROVIDERS[*]} ai gitlab completion --help --version"
     verbs_of() {
       local v="list deploy rollback status cancel autodeploy-off json" x
       for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
@@ -2053,6 +2208,7 @@ _deploys() {
   if (( CURRENT == 2 )); then compadd $cmds
 ${zv}  elif [[ \$words[2] == ai && CURRENT == 3 ]]; then compadd explain notes ship set-key forget-key verify model cap status
   elif [[ \$words[2] == providers && CURRENT == 3 ]]; then compadd enable disable
+  elif [[ \$words[2] == gitlab && CURRENT == 3 ]]; then compadd set-token forget-token
   elif [[ \$words[2] == completion ]]; then compadd zsh bash
   else compadd -a names; fi
 }
@@ -2066,6 +2222,7 @@ _deploys() {
   local cur=\${COMP_WORDS[COMP_CWORD]}
   if [ \$COMP_CWORD -eq 1 ]; then COMPREPLY=(\$(compgen -W "$cmds" -- "\$cur"))
 ${bv}  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = ai ]; then COMPREPLY=(\$(compgen -W "explain notes ship set-key forget-key verify model cap status" -- "\$cur"))
+  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = gitlab ]; then COMPREPLY=(\$(compgen -W "set-token forget-token" -- "\$cur"))
   else COMPREPLY=(\$(compgen -W "\$(cat "$CONFIG_DIR/names" 2>/dev/null)" -- "\$cur")); fi
 }
 complete -F _deploys deploys
@@ -2078,7 +2235,12 @@ BASH
     # Everything about one repo the window shows on demand: the commits between what is live and
     # the branch (with their PRs), the files they touch and which of them are risky to ship
     # unread, the CI result of the branch head, and the pull requests still open.
-    repo="${2:?owner/repo}"; base="${3:-}"; ref="${4:-main}"
+    repo="${2:?owner/repo}"; base="${3:-}"; ref="${4:-}"
+    # Without a branch: the repo's default branch, never a silent "main" (many repos use another).
+    if [ -z "$ref" ] || [ "$ref" = null ]; then
+      ref="$(default_branch_of "$repo")"
+      [ -n "$ref" ] || die "The default branch of $repo could not be read. Give the branch: deploys details $repo ${base:-<live sha>} <branch>"
+    fi
     if [ "$(githost_of "$repo")" = gitlab ]; then gitlab_details "$repo" "$base" "$ref"; exit 0; fi
     # The comparison goes through a file, not an argument: with its patches it can be megabytes,
     # more than one argument may hold ("Argument list too long"). The patches are not needed.
@@ -2087,9 +2249,12 @@ BASH
       gh api --cache 5m "repos/$repo/compare/$base...$ref" 2>/dev/null | jq 'del(.files[]?.patch)' > "$dt/cmp.t" 2>/dev/null \
         && [ -s "$dt/cmp.t" ] && mv "$dt/cmp.t" "$dt/cmp"
     fi
-    checks="$(gh api --cache 2m "repos/$repo/commits/$ref/check-runs?per_page=100" 2>/dev/null \
-      | jq '{total:.total_count, failed:([.check_runs[] | select(.conclusion=="failure" or .conclusion=="timed_out" or .conclusion=="cancelled")] | length),
-             running:([.check_runs[] | select(.status!="completed")] | length)}' 2>/dev/null || echo null)"
+    # Every page (--paginate prints one object each): a failure past the first 100 counts too.
+    checks="$(gh api --cache 2m --paginate "repos/$repo/commits/$ref/check-runs?per_page=100" 2>/dev/null \
+      | jq -s 'if length == 0 then null else [.[] | (.check_runs // [])[]] as $r
+               | {total:(.[0].total_count // ($r | length)), failed:([$r[] | select(.conclusion=="failure" or .conclusion=="timed_out" or .conclusion=="cancelled")] | length),
+                  running:([$r[] | select(.status!="completed")] | length)} end' 2>/dev/null || echo null)"
+    [ -n "$checks" ] || checks=null
     open="$(gh pr list -R "$repo" --state open --limit 50 --json number,title,author,isDraft,updatedAt,url,statusCheckRollup 2>/dev/null \
       | jq '[.[] | {number, title, author:.author.login, bot:(.author.is_bot // (.author.login | test("\\[bot\\]|dependabot|renovate"))),
                     draft:.isDraft, updatedAt, url,
@@ -2123,7 +2288,7 @@ BASH
     team="$(vercel_team)"; tmp="$(mktemp -d)"
     for i in $(seq "$days" -1 1); do
       echo "$(days_ago "$i") $(days_ago "$((i-1))")"
-    done | xargs -P 4 -n 2 bash -c 'cost_day "$2" "$3" "$0" "$1"' "$team" "$tmp"
+    done | xargs -r -P 4 -n 2 bash -c 'cost_day "$2" "$3" "$0" "$1"' "$team" "$tmp"
     # Builds per project over the last 7 days, to put a price on one build.
     since=$(( ($(date +%s) - 7*86400) * 1000 ))
     names="" next=""
@@ -2147,7 +2312,8 @@ BASH
   "triggers "*)
     # Builds in the last 24 h that nobody started from here, and workflows that deploy by themselves.
     since=$(( ($(date +%s) - 86400) * 1000 )); tmp="$(mktemp -d)"
-    # Vercel and Render only: these are their own extras (docs/PROVIDERS.md).
+    # The builds are read for Vercel and Render only (their own extras, docs/PROVIDERS.md); the
+    # workflows of every platform's repos are read.
     { if is_enabled vercel; then vercel_call "/v6/deployments?limit=100&since=$since" \
         | jq -c --slurpfile r "$REPOS" '.deployments[] | select(.source=="git" or .source=="hook" or .source=="deploy-hook" or .source=="import")
             | select(.created/1000 > ($r[0][.name].offAt // 1e12))
@@ -2173,7 +2339,13 @@ BASH
       if command -v gh >/dev/null 2>&1; then
         { jq -r '.[] | select(.repo and (.type // "github") == "github") | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
           echo "${svcs:-[]}" | jq -r '.[] | .repo // empty | select(test("^https://github.com/")) | sub("^https://github.com/";"") | sub("\\.git$";"")'
-        } | sort -u | xargs -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
+          # The GitHub repos of every other platform that is on (Netlify, Cloudflare, Coolify, ...).
+          for p in $(active_providers); do
+            case "$p" in vercel|render) continue ;; esac
+            ( "${p}_json" ) 2>/dev/null | jq -r '.[]? | .repo // empty' 2>/dev/null \
+              | while IFS= read -r r; do [ "$(githost_of "$r")" = github ] && echo "$r"; done
+          done
+        } | sort -u | xargs -r -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
         cat_all "$tmp"/*.jsonl
       fi
     } | jq -s '.'
@@ -2256,6 +2428,11 @@ BASH
     "$0" watch "$plat:$p" >&2 || die "The newest deploy of $p is not live; nothing to check"
     [ -n "$url" ] || url="$(site_url_of "$vid" "$plat")"
     [ -n "$url" ] || die "No address known for $p (give one with --url)"
+    # Without --path: the health path of the shared config (deploy-center.json "health"), if any.
+    if [ -z "$path" ] && team_on; then
+      path="$(team_eff_once | jq -r --arg n "$p" '.projects[$n].health.value // empty | strings' 2>/dev/null)" || path=""
+      [ -z "$path" ] || echo "Checking $path (health in the shared config)" >&2
+    fi
     case "$path" in ''|/*) ;; *) path="/$path";; esac
     target="${url%/}$path"; [ -n "$path" ] || target="$url"
     codes=""; bad=0
@@ -2308,9 +2485,13 @@ BASH
     j="$("$0" "$plat" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
-    base="$(echo "$j" | jq -r '.lastSha // empty')"; ref="$(echo "$j" | jq -r '.ref // "main"')"
+    base="$(echo "$j" | jq -r '.lastSha // empty')"; ref="$(echo "$j" | jq -r '.ref // empty')"
+    if [ -z "$ref" ]; then ref="$(default_branch_of "$repo")"; [ -n "$ref" ] || die "$p has no known branch, and the default branch of $repo could not be read"; fi
     if [ -z "$base" ]; then r='{"level":"unknown","reasons":[],"files":0,"lines":0,"why":"the live commit is not known"}'
     elif [ "$base" = "$(echo "$j" | jq -r '.headSha // empty')" ]; then r='{"level":"green","reasons":[],"files":0,"lines":0,"why":"nothing waits"}'
+    elif [ "$(githost_of "$repo")" = gitlab ]; then
+      declare -F gitlab_risk_of >/dev/null || die "Risk for GitLab repos needs lib/githost.sh next to deploys"
+      r="$(gitlab_risk_of "$repo" "$base" "$ref")" || die "GitLab could not compare what is live with $ref (rewritten branch, or no GitLab login: glab auth login or deploys gitlab set-token)"
     else
       cmp="$(gh api --cache 5m "repos/$repo/compare/$base...$ref" 2>/dev/null | jq -c 'del(.files[]?.patch)' 2>/dev/null)" \
         || die "GitHub could not compare what is live with $ref (rewritten branch, or gh not logged in?)"
@@ -2369,7 +2550,13 @@ BASH
       esac
     }
     start() {  # start <platform> <name> <sha or empty> <reason> [<id>]
-      local st sha="$3" why="$4" note
+      local st sha="$3" why="$4" note shut
+      # The shared deploy window of this project (deploy-center.json): closed means skipped, unless --force.
+      shut="$(team_window_denied "$2")"
+      if [ -n "$shut" ]; then
+        if [ "$forced" != 1 ]; then skip=$((skip+1)); say "$1" "$2" skipped "$shut (--force \"why\" to deploy anyway)"; return 0; fi
+        frozen="${frozen:+$frozen; }$2: $shut"
+      fi
       # A provider that cannot deploy a given commit (caps.sha false) builds the newest one of the
       # branch: started without --sha, and said so, since a push after the checked one comes along.
       if [ -n "$sha" ] && ! meta_flag "$1" sha; then
@@ -2395,7 +2582,8 @@ BASH
           case "$s" in
             green|none) start "$plat" "$name" "$sha" "$why" "$id" ;;
             red) skip=$((skip+1)); say "$plat" "$name" skipped "CI is red on ${sha:0:7} ($why)" ;;
-            *) if [ "$waited" -ge "$maxw" ]; then skip=$((skip+1)); say "$plat" "$name" skipped "checks on ${sha:0:7} not done after $((maxw / 60))m ($why)"
+            *) if [ "$(echo "$v" | jq -r '.final // false')" = true ]; then skip=$((skip+1)); say "$plat" "$name" skipped "CI unknown: $why"
+               elif [ "$waited" -ge "$maxw" ]; then skip=$((skip+1)); say "$plat" "$name" skipped "checks on ${sha:0:7} not done after $((maxw / 60))m ($why)"
                else next="$next$plat"$'\t'"$name"$'\t'"$id"$'\t'"$repo"$'\t'"$sha"$'\n'; fi ;;
           esac
         done <<< "$todo"
@@ -2407,7 +2595,7 @@ BASH
       done
     fi
     if [ "$json" = 1 ]; then jq -s '.' "$res"
-    else echo "$ok started, $bad failed to start$([ -n "$green" ] && echo ", $skip skipped")."; fi
+    else echo "$ok started, $bad failed to start$({ [ -n "$green" ] || [ "$skip" -gt 0 ]; } && echo ", $skip skipped")."; fi
     rm -f "$res"
     [ "$rc" = 0 ] || echo "Some projects could not be read and were left out (see above)." >&2
     [ "$bad" = "0" ] && [ "$rc" = 0 ] ;;
@@ -2636,6 +2824,30 @@ BASH
     [ -f "$lib" ] || die "lib/savings.sh is missing next to deploys ($lib)"
     # shellcheck source=lib/savings.sh
     . "$lib"; savings_main "$@" ;;
+
+  "gitlab "*)
+    # gitlab set-token: a GitLab token (read_api) from stdin into the keychain, instead of a
+    # GITLAB_TOKEN in the shell profile. Tried on $(gitlab_host) first: a typo replaces nothing.
+    # GITLAB_TOKEN, when set, still wins (docs/GITLAB.md).
+    declare -F gitlab_token >/dev/null || die "GitLab needs lib/githost.sh next to deploys"
+    case "${2:-}" in
+      set-token)
+        IFS= read -r key || true
+        # A token copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+        key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
+        [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys gitlab set-token"
+        case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) die "That does not look like a GitLab token (glpat-...)";; esac
+        ( GITLAB_TOKEN="$key" DEPLOYS_GITLAB_CURL=1 gitlab_api "$(gitlab_host)" user >/dev/null 2>&1 ) \
+          || die "$(gitlab_host) did not accept that token; nothing was saved"
+        # On stdin to `security -i`: the token is never an argument anyone can see.
+        printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$GITLAB_KEYCHAIN" "$key" | security -i >/dev/null \
+          || die "The token works, but could not be saved in the keychain"
+        echo "GitLab token for $(gitlab_host) saved and working."
+        [ -z "${GITLAB_TOKEN:-}" ] || echo "Note: GITLAB_TOKEN is set in this shell and wins over the keychain. Remove it from your shell profile." ;;
+      forget-token)
+        security delete-generic-password -a "$USER" -s "$GITLAB_KEYCHAIN" >/dev/null 2>&1 && echo "GitLab token removed." || echo "No GitLab token was saved." ;;
+      *) die "Usage: pbpaste | deploys gitlab set-token | deploys gitlab forget-token" ;;
+    esac ;;
 
   *)
     if is_provider "${1:-}"; then provider_cmd "$@"; exit $?; fi

@@ -25,7 +25,9 @@ sv_projects() {
   list="$(DEPLOYS_NO_GITHUB=1 all_json 2>/dev/null)" || true
   echo "${list:-[]}" | jq -c --slurpfile r "$REPOS" --slurpfile o "$roff" 'map({platform, name, id:(.id // .name),
       repo:(.repo // null), ref:(.ref // null), auto:(.auto // false),
-      offAt:(if .platform == "vercel" then ($r[0][.name].offAt // null) else ($o[0][.id // ""] // null) end)})' 2>/dev/null || echo '[]'
+      # render-off.json is for Render only; another provider counts only with an offAt of its own.
+      offAt:(if .platform == "vercel" then ($r[0][.name].offAt // null)
+             elif .platform == "render" then ($o[0][.id // ""] // null) else (.offAt // null) end)})' 2>/dev/null || echo '[]'
 }
 
 # Pushes to <branch> since <epoch>, as {basis, list:[{at, sha}]}; {error} when GitHub cannot be read.
@@ -59,6 +61,14 @@ sv_builds() {  # sv_builds <platform> <name> <id>
       {minutes:(map(select(.state == "READY" and .buildingAt and .ready) | (.ready - .buildingAt) / 60000) | .[0:20]),
        built:map({at:((.buildingAt // .created) / 1000 | floor), sha:(.meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // null)})}' 2>/dev/null \
       || echo '{"error":"Vercel deployments could not be read"}'
+  elif [ "$1" != render ]; then
+    # Another provider: its own <p>_builds <id> when it has one (the same {minutes, built}),
+    # else said plainly. Asking Render for a Netlify id gave wrong or empty numbers.
+    if declare -F "${1}_builds" >/dev/null; then
+      "${1}_builds" "$3" 2>/dev/null || echo '{"error":"the builds could not be read"}'
+    else
+      jq -nc --arg p "$1" '{error:"build history is not read for \($p) yet", unsupported:true}'
+    fi
   else
     render_call GET "/services/$3/deploys?limit=100" 2>/dev/null | jq -c 'def t: sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;
       [.[]?.deploy] | {minutes:(map(select(.status == "live" or .status == "deactivated") | select(.createdAt and .finishedAt)

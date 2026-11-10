@@ -22,11 +22,15 @@ glab auth login
 
 For a self-managed GitLab, log in with `glab auth login --hostname git.example.com`.
 
-**A token**, without glab: a personal access token with the `read_api` scope, in `GITLAB_TOKEN`.
+**A token**, without glab: a personal access token with the `read_api` scope, kept in the
+macOS keychain. It is tried on `GITLAB_HOST` first and saved only when GitLab takes it:
 
 ```bash
-export GITLAB_TOKEN=glpat-...
+pbpaste | deploys gitlab set-token     # deploys gitlab forget-token removes it
 ```
+
+`GITLAB_TOKEN` still works and wins over the keychain (for CI or Linux), but it puts the token in
+plain text in your shell profile.
 
 For a self-managed GitLab, also say where it is:
 
