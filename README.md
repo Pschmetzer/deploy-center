@@ -17,6 +17,10 @@ Turn off auto-deploy on Vercel and Render in one click. Deploy what changed in t
 <p align="center"><img src="docs/images/app.png" width="900" alt="Deploy Center: 149 PRs waiting to deploy, Vercel build costs of the last 7 days and the projects with commits waiting"></p>
 <p align="center"><sub>The author's real build bill: $99 in 7 days. Project names hidden by demo mode.</sub></p>
 
+**Contents:** [Install](#install-in-30-seconds) · [Requirements](#requirements) · [Why](#why) · [What it does](#what-it-does) ·
+[Connect your accounts](#connect-your-accounts) · [Command line](#command-line) · [Good to know](#good-to-know) ·
+[Docs](#docs) · [Privacy](#privacy) · [Build from source](#build-from-source) · [Help wanted](#help-wanted) · [License](#license)
+
 ## Install in 30 seconds
 
 **Homebrew**
@@ -30,9 +34,22 @@ Homebrew 6 asks you to trust a third-party tap once (`brew trust`). Without admi
 
 **Or by hand:** download the zip from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest),
 unzip it and drag **Deploy Center** to *Applications*. It is signed and notarized by Apple, so it opens without a warning.
-Requirements: macOS 15 or newer, Apple silicon or Intel.
 
 Then connect Vercel (`vercel login`), paste a Render API key, and press **Turn off auto-deploy**. [Details below](#connect-your-accounts).
+New to it? [Try it safely](docs/SAFE-START.md): look first, then one project, then all.
+
+## Requirements
+
+| What | Needed for | Install |
+|---|---|---|
+| macOS 15 or newer, Apple silicon or Intel | the app | |
+| `jq` | everything (the app asks for it if it is missing) | `brew install jq` |
+| Vercel CLI, which needs Node.js | Vercel | `npm i -g vercel`, then `vercel login` |
+| Render API key | Render | dashboard.render.com → Account Settings → API Keys |
+| GitHub CLI `gh` | optional: what is waiting (*New changes*, commits and PRs) | `brew install gh`, then `gh auth login` |
+
+The app finds `vercel` from nvm, volta or fnm only if your login shell sets them up (`~/.zprofile`, not only `~/.zshrc`).
+See [Troubleshooting](docs/TROUBLESHOOTING.md#vercel-is-installed-nvm-volta-fnm-but-the-app-does-not-find-it).
 
 ## Why
 
@@ -107,11 +124,20 @@ deploys from, written when auto-deploy is turned off) and `vercel-team` (detecte
 - A project you disconnected **before** using Deploy Center has no remembered repo. Tell it:
   `deploys vercel map my-project me/my-repo main`.
 - To go back to auto-deploy, reconnect the repository in the Vercel dashboard, or set
-  auto-deploy to *On Commit* in Render.
+  auto-deploy to *On Commit* in Render. There is no command for it; see [Auto-deploy](docs/AUTO-DEPLOY.md#back-to-auto-deploy).
 - On Render, a Blueprint with auto-sync can apply `render.yaml` again on push. Add
   `autoDeployTrigger: off` to your services there to keep it off.
 - Your Render key gives full access to your Render account. It never leaves your Mac
   except in requests to api.render.com.
+
+## Docs
+
+- [Try it safely](docs/SAFE-START.md): look first, then one project, then all
+- [Auto-deploy off and back on](docs/AUTO-DEPLOY.md): what changes per platform
+- [Troubleshooting](docs/TROUBLESHOOTING.md): the error messages and what to do
+- [FAQ](docs/FAQ.md) · [Glossary](docs/GLOSSARY.md) · [How the app counts](docs/NUMBERS.md)
+- [Uninstall](docs/UNINSTALL.md): the app, the key and everything it kept
+- [Examples](examples/): the daily deploy from CI, without a Mac
 
 ## Privacy
 
@@ -144,3 +170,5 @@ and reports when a number in the app looks wrong.
 ## License
 
 MIT, see [LICENSE](LICENSE). Not affiliated with Vercel or Render.
+
+[Legal notice (Impressum)](https://deploycenter.app/impressum.html) · [Privacy policy (Datenschutz)](https://deploycenter.app/datenschutz.html)
