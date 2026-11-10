@@ -22,8 +22,10 @@ struct Provider: TimelineProvider {
     }
 }
 
+/// The app's language (Settings → Language) comes with the snapshot; without one, the Mac's.
 private func L(_ en: String, _ de: String) -> String {
-    Locale.preferredLanguages.first?.hasPrefix("de") == true ? de : en
+    let lang = DeploySnapshot.read()?.language ?? Locale.preferredLanguages.first ?? "en"
+    return lang.hasPrefix("de") ? de : en
 }
 private func money(_ v: Double) -> String { v.formatted(.currency(code: "USD").precision(.fractionLength(0))) }
 

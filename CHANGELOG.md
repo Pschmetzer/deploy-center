@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Settings → General → Language: English, Deutsch or the Mac's language (the default). The app restarts to switch; the widgets follow it.
+
 ## 0.9.0
 
 - `deploys status --json` carries the shared `phase` of each project. VS Code extension 0.2.0: every platform, not only Vercel and Render; failed and building from `phase`; a name on two platforms is passed as `platform:name`; a hint when no project matches the folder.
