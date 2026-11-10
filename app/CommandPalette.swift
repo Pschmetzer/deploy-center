@@ -300,6 +300,8 @@ struct PaletteCosts: View {
             }.padding(12)
             Divider()
             if let c = store.costs {
+                Text(L("Vercel builds, last 7 days: ", "Vercel-Builds, letzte 7 Tage: ") + c.week.formatted(.currency(code: "USD")))
+                    .font(.callout).padding(.horizontal, 12).padding(.vertical, 8)
                 let top = c.projects.filter { $0.build > 0 }.sorted { $0.build > $1.build }.prefix(12)
                 if !top.isEmpty {
                     List(Array(top), id: \.name) { p in

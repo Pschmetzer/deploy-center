@@ -9,6 +9,7 @@
 //   DEPLOYS_BIN               path to `deploys` (else PATH, else the app bundle)
 //   DEPLOYS_MCP_ALLOW_DEPLOY  1 = also offer deploys_deploy and deploys_rollback
 //   DEPLOYS_MCP_TIMEOUT       seconds per command (default 90)
+//   DEPLOYS_MCP_SLOW_TIMEOUT  seconds for simulate and ledger, which make many GitHub calls (default 300)
 //   DEPLOYS_MCP_MAX_OUTPUT    characters returned per call (default 20000)
 
 import { spawn } from "node:child_process";
@@ -24,6 +25,8 @@ const NAME_RE = /^[A-Za-z0-9._:-]+$/;
 const ALLOW_DEPLOY = process.env.DEPLOYS_MCP_ALLOW_DEPLOY === "1";
 const TIMEOUT_MS = posInt(process.env.DEPLOYS_MCP_TIMEOUT, 90) * 1000;
 const MAX_OUTPUT = posInt(process.env.DEPLOYS_MCP_MAX_OUTPUT, 20000);
+// simulate and ledger read pushes and builds of every project: often a minute or two.
+const SLOW_TIMEOUT_MS = posInt(process.env.DEPLOYS_MCP_SLOW_TIMEOUT, 300) * 1000;
 
 function posInt(v, dflt) {
   const n = Number.parseInt(v ?? "", 10);
@@ -97,16 +100,16 @@ function trim(text, { keep = "head", max = MAX_OUTPUT } = {}) {
     : `${s.slice(0, max)}\n[… ${cut} more characters trimmed]`;
 }
 
-function describeFailure(args, r) {
-  if (r.timedOut) return `deploys ${args.join(" ")} did not finish within ${TIMEOUT_MS / 1000} s and was stopped.`;
+function describeFailure(args, r, timeoutMs = TIMEOUT_MS) {
+  if (r.timedOut) return `deploys ${args.join(" ")} did not finish within ${timeoutMs / 1000} s and was stopped.`;
   const msg = (r.stderr || r.stdout).trim() || "no output";
   return `deploys ${args.join(" ")} exited ${r.code}: ${trim(msg, { max: 4000 })}`;
 }
 
 // Runs and returns the text. Output plus a non-zero exit is returned with a note, not as an error.
-async function textOf(args, { keep = "head" } = {}) {
-  const r = await runDeploys(args);
-  if (r.timedOut || (r.code !== 0 && !r.stdout.trim())) throw new ToolError(describeFailure(args, r));
+async function textOf(args, { keep = "head", timeoutMs = TIMEOUT_MS } = {}) {
+  const r = await runDeploys(args, { timeoutMs });
+  if (r.timedOut || (r.code !== 0 && !r.stdout.trim())) throw new ToolError(describeFailure(args, r, timeoutMs));
   let out = trim(r.stdout, { keep });
   if (r.code !== 0) out += `\n\n[exit ${r.code}${r.stderr.trim() ? `: ${trim(r.stderr.trim(), { max: 2000 })}` : ""}]`;
   return out;
@@ -137,6 +140,13 @@ function checkLines(v) {
   if (v === undefined || v === null) return 80;
   const n = Number(v);
   if (!Number.isInteger(n) || n < 1 || n > 2000) throw new ToolError("lines must be a whole number from 1 to 2000.");
+  return n;
+}
+
+function checkDays(v) {
+  if (v === undefined || v === null) return 30;
+  const n = v;
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 1 || n > 90) throw new ToolError("days must be a whole number from 1 to 90.");
   return n;
 }
 
@@ -218,6 +228,33 @@ const tools = [
     annotations: { title: "Check setup", ...READ },
     run: () => textOf(["doctor"]),
   },
+  {
+    name: "deploys_simulate",
+    description:
+      "Estimate what auto-deploy would cost per month (builds, build minutes, USD) against deploying once a day, per project, " +
+      "from the pushes in the last `days` days (deploys simulate --json). Read-only. " +
+      "Use it to answer \"what does auto-deploy cost us?\". The numbers are ESTIMATES, not a bill: " +
+      "read the `method` field of the result for how they were counted and priced, and say so when you quote them. " +
+      "It reads GitHub and the build history of every project, so it can take a minute or two.",
+    inputSchema: {
+      type: "object",
+      properties: { days: { type: "integer", minimum: 1, maximum: 90, default: 30, description: "How many past days to count pushes over (1–90, default 30)." } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Cost of auto-deploy (estimate)", ...READ },
+    run: (a) => textOf(["simulate", "--days", String(checkDays(a.days)), "--json"], { timeoutMs: SLOW_TIMEOUT_MS }),
+  },
+  {
+    name: "deploys_ledger",
+    description:
+      "Estimate the builds skipped and the build minutes and USD saved since auto-deploy was turned off, per project (deploys ledger --json). Read-only. " +
+      "Use it to answer \"what did turning auto-deploy off save?\". The numbers are ESTIMATES, not a bill: " +
+      "read the `method` field of the result for how they were counted and priced, and say so when you quote them. " +
+      "It reads GitHub and the build history of every project, so it can take a minute or two.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Saved since auto-deploy off (estimate)", ...READ },
+    run: () => textOf(["ledger", "--json"], { timeoutMs: SLOW_TIMEOUT_MS }),
+  },
 ];
 
 if (ALLOW_DEPLOY) {
@@ -281,6 +318,7 @@ const server = new Server(
     instructions:
       "Deploy Center: Vercel and Render projects with auto-deploy off, deployed by hand. " +
       "Use deploys_changed to see what is waiting to go live and deploys_status for builds. " +
+      "deploys_simulate and deploys_ledger estimate what auto-deploy costs and what turning it off saved; quote them as estimates (see their method field). " +
       (ALLOW_DEPLOY
         ? "deploys_deploy and deploys_rollback change live sites: always ask the human first, one project per call."
         : "This server is read-only: it cannot deploy. Tell the human to deploy in Deploy Center or with `deploys`."),
