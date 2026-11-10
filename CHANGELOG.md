@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.7.0
+
+- Build log: a failed last deploy ("Last deploy … build_failed") has its own log button, not only a deploy started from the app.
+- Settings: "Check for updates now", and "Update now" downloads the newest release, checks its signature, replaces the app and restarts it.
+- Site: legal notice and privacy policy.
+
 ## 0.6.0
 
 Includes everything listed under 0.5.0, which was not published as its own release.
