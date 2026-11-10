@@ -38,10 +38,11 @@ Only the CLI, installed with Homebrew: `brew uninstall deploys`.
 | What | Where | Remove with |
 |---|---|---|
 | Render API key | Keychain, a password item with the service name `deploy-center-render` (older versions: `render-api-key`) | `security delete-generic-password -a "$USER" -s deploy-center-render` |
+| Anthropic API key (Claude in the app) | Keychain, service name `deploy-center-anthropic` | `deploys ai forget-key`, or `security delete-generic-password -a "$USER" -s deploy-center-anthropic` |
 | App settings | `~/Library/Preferences/app.deploycenter.mac.plist` | `defaults delete app.deploycenter.mac` |
 | Cached lists, deploy history, site logos | `~/Library/Caches/app.deploycenter.mac/` | `rm -rf ~/Library/Caches/app.deploycenter.mac` |
 | Error log | `~/Library/Logs/DeployCenter.log` | `rm ~/Library/Logs/DeployCenter.log` |
-| CLI settings: remembered repos, team, ignored projects | `~/.config/deploys/` (or `$DEPLOYS_CONFIG`) | `rm -rf ~/.config/deploys` |
+| CLI settings: remembered repos, team, ignored projects, Claude model, cap and usage (`ai-*`) | `~/.config/deploys/` (or `$DEPLOYS_CONFIG`) | `rm -rf ~/.config/deploys` |
 
 If you had a key under the old name, run the keychain line again with `-s render-api-key`.
 

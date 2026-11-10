@@ -57,6 +57,7 @@ deploys autofix --only vercel my-project  # this one failure now
 deploys autodeploy allow vercel my-project 4   # auto-deploy on for 4 hours (see GUARD.md)
 deploys autodeploy allowed | revoke vercel my-project
 deploys guard [--dry-run] | status | schedule on|off   # auto-deploy off where it came back on
+deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE.md
 eval "$(deploys completion zsh)"        # tab completion (also: bash)
 ```
 

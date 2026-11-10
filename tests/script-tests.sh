@@ -168,11 +168,14 @@ echo '{"web":{"org":"me","repo":"app","ref":"main"}}' > "$e2e/config/vercel-repo
 cat > "$e2e/bin/vercel" <<'VC'
 #!/bin/bash
 echo "vercel $*" >> "$E2E/calls.log"
+prev=""; for a in "$@"; do [ "$prev" = --input ] && cat "$a" >> "$E2E/bodies.log"; prev="$a"; done
 [ "${VSTUB:-}" = down ] && { echo "Error: You are not logged in" >&2; exit 1; }
 case "$*" in
   "api /v13/deployments"*POST*) echo '{"id":"dpl_new","url":"web-new.vercel.app","readyState":"QUEUED"}' ;;
   "api /v10/projects"*) echo '{"projects":[{"name":"web","link":null,"targets":{"production":{"id":"dpl_old","createdAt":1000,"readyState":"READY","meta":{"githubCommitSha":"'"${LIVE:-aaaa}"'"}}}}],"pagination":{}}' ;;
-  "api /v9/projects/web"*) echo '{"id":"prj_web","name":"web"}' ;;
+  "api /v9/projects/web"*) echo '{"id":"prj_web","name":"web","targets":{"production":{"id":"dpl_old","alias":["web.example.test"]}}}' ;;
+  "api /v6/deployments?projectId=web"*) echo '{"deployments":[{"uid":"dpl_old","meta":{"githubCommitSha":"bbbb"}},{"uid":"dpl_prev","meta":{"githubCommitSha":"aaaa"}}]}' ;;
+  "api /v1/projects/prj_web/rollback/dpl_prev"*POST*) echo '{}' ;;
   "api /v6/deployments?app=web"*) [ "${WSTUB:-}" = down ] && exit 1; echo '{"deployments":[{"uid":"dpl_old","state":"READY","created":1767225600000,"target":"production"}]}' ;;
   "api /v6/deployments"*) echo '{"deployments":[]}' ;;
   *) exit 1 ;;
@@ -188,6 +191,22 @@ case "$*" in
   *"compare/aaaa...main"*) [ -n "${BIG:-}" ] && { cat "$BIG"; exit 0; }
                            echo '{"status":"ahead","ahead_by":1,"behind_by":0,"commits":[{"sha":"bbbb","commit":{"message":"feat: new\n\nCo-Authored-By: Some Agent <agent@example.test>","committer":{"date":"2026-01-02T00:00:00Z"}},"author":{"type":"User"}}]}' ;;
   *"pulls?state=open"*) echo '{"key":"me/app","value":{"all":0,"drafts":0,"bots":0}}' ;;
+  # CI of the head commit. CI picks the answer; "slow" runs for two rounds, then passes.
+  *"commits/bbbb/status"*)
+    case "${CI:-green}" in
+      none) echo '{"state":"pending","total_count":0,"statuses":[]}' ;;
+      *) echo '{"state":"success","total_count":1,"statuses":[{"context":"lint","state":"success"}]}' ;;
+    esac ;;
+  *"commits/bbbb/check-runs"*)
+    st=completed; co=success
+    case "${CI:-green}" in
+      red) co=failure ;;
+      none) echo '{"total_count":0,"check_runs":[]}'; exit 0 ;;
+      pending) st=in_progress; co=null ;;
+      slow) n=$(( $(cat "$E2E/ci" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$E2E/ci"; [ "$n" -le 4 ] && { st=queued; co=null; } ;;
+    esac
+    [ "$co" = null ] || co="\"$co\""
+    echo '{"total_count":1,"check_runs":[{"name":"test","status":"'"$st"'","conclusion":'"$co"'}]}' ;;
   *) exit 1 ;;
 esac
 GH
@@ -199,6 +218,7 @@ m=GET; for a in "$@"; do [ "$prev" = -X ] && m="$a"; prev="$a"; done; url="${*: 
 echo "curl $m $url" >> "$E2E/calls.log"
 case "$m $url" in
   "GET https://api.render.com/v1/services?limit=100"*) printf '%s\n200' '[{"cursor":"c1","service":{"id":"srv-1","name":"api","type":"web_service","suspended":"not_suspended","repo":"https://github.com/me/app","branch":"main","autoDeployTrigger":"off"}}]' ;;
+  "GET https://api.render.com/v1/services/srv-1") printf '%s\n200' '{"id":"srv-1","name":"api","repo":"https://github.com/me/app","branch":"main"}' ;;
   "GET https://api.render.com/v1/services/srv-1/deploys?limit=10")
     [ "${RSTUB:-}" = 429 ] && { printf '%s\n429' '{"message":"rate limit"}'; exit 0; }
     printf '%s\n200' '[{"deploy":{"id":"dep-1","status":"live","commit":{"id":"aaaa","message":"old"},"createdAt":"2026-01-01T00:00:00Z","finishedAt":"2026-01-01T00:01:00Z"}}]' ;;
@@ -208,11 +228,20 @@ case "$m $url" in
     if [ "$n" -le 2 ]; then printf '%s\n200' '[{"deploy":{"id":"dep-2","status":"build_in_progress"}}]'
     else printf '%s\n200' '[{"deploy":{"id":"dep-2","status":"live"}}]'; fi ;;
   "POST https://api.render.com/v1/services/srv-1/deploys") printf '%s\n201' '{"id":"dep-2","status":"created"}' ;;
+  # The site, as verify asks it (-o /dev/null -w '%{http_code}': only the status). SITE picks the answer.
+  "GET https://web.example.test"*)
+    case "${SITE:-ok}" in
+      down) printf 503 ;;
+      gone) printf 000; exit 28 ;;
+      flaky) n=$(( $(cat "$E2E/site" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$E2E/site"; [ "$n" = 1 ] && printf 502 || printf 200 ;;
+      *) printf 200 ;;
+    esac ;;
   *) printf '%s\n404' '{}' ;;
 esac
 CURL
 printf '#!/bin/bash\nexit 44\n' > "$e2e/bin/security"
-printf '#!/bin/bash\nexit 0\n' > "$e2e/bin/sleep"
+# sleep returns at once and counts; CANCEL stands in for Ctrl-C during verify's countdown.
+printf '#!/bin/bash\necho "sleep $1" >> "$E2E/sleeps.log"\n[ "$1" = 1 ] && [ -n "${CANCEL:-}" ] && kill -INT "$PPID"\nexit 0\n' > "$e2e/bin/sleep"
 printf '#!/bin/bash\nexit 0\n' > "$e2e/bin/clear"
 chmod +x "$e2e/bin"/*
 run() {  # run <stdout file> <stderr file> deploys args... ; prints the exit code
@@ -221,7 +250,7 @@ run() {  # run <stdout file> <stderr file> deploys args... ; prints the exit cod
     HOME="$e2e" NO_COLOR=1 /bin/bash ./deploys "$@" > "$o" 2> "$e" </dev/null
   echo $?
 }
-fresh() { : > "$e2e/calls.log"; rm -rf "$e2e/config/locks"; }
+fresh() { : > "$e2e/calls.log"; : > "$e2e/bodies.log"; : > "$e2e/sleeps.log"; rm -rf "$e2e/config/locks" "$e2e/ci" "$e2e/site"; }
 O="$e2e/out"; E="$e2e/err"
 
 fresh; export RENDER_API_KEY=rnd_test
@@ -302,6 +331,113 @@ expect "details: a 4 MB comparison works" "$(BIG="$e2e/big.json" run "$O" "$E" d
 fresh
 expect "details: co-authors from the trailers" "$(run "$O" "$E" details me/app aaaa main; jq -c '.commits[0] | [.msg, .coAuthors]' "$O")" $'0\n["feat: new",[{"name":"Some Agent","email":"agent@example.test"}]]'
 unset RENDER_API_KEY
+
+# --- safe deploys: green CI, deploy window, verify with rollback, risk (docs/SAFE-DEPLOY.md) ---
+export DEPLOYS_JOURNAL="$e2e/journal.jsonl" RENDER_API_KEY=rnd_test
+started() { grep -c 'POST' "$e2e/calls.log"; }
+
+fresh
+expect "when-green: green CI starts both, at the checked commit" \
+  "$(run "$O" "$E" deploy-changed --yes --when-green; started; grep -c '"sha": *"bbbb"' "$e2e/bodies.log"; tail -n 1 "$O")" $'0\n2\n1\n2 started, 0 failed to start, 0 skipped.'
+expect "when-green: Render gets the commit too" "$(grep -c 'POST https://api.render.com/v1/services/srv-1/deploys' "$e2e/calls.log")" "1"
+fresh
+expect "when-green: red CI starts nothing and says why" \
+  "$(CI=red run "$O" "$E" deploy-changed --yes --when-green; started; grep -c 'skipped: CI is red on bbbb (failed: test)' "$O")" $'0\n0\n2'
+fresh
+expect "when-green: pending checks are waited for, then it starts" \
+  "$(CI=slow run "$O" "$E" deploy-changed --yes --when-green; started; grep -c 'Waiting for checks' "$E")" $'0\n2\n2'
+expect "when-green: the waits grow (backoff)" "$(paste -sd' ' "$e2e/sleeps.log")" "sleep 10 sleep 20"
+fresh
+expect "when-green: checks still running after --wait are skipped" \
+  "$(CI=pending run "$O" "$E" deploy-changed --yes --when-green --wait 1m; started; grep -c 'not done after 1m' "$O")" $'0\n0\n2'
+expect "when-green: --wait is kept to (10+20+30 s)" "$(paste -sd' ' "$e2e/sleeps.log")" "sleep 10 sleep 20 sleep 30"
+fresh
+expect "when-green: a commit without checks goes" "$(CI=none run "$O" "$E" deploy-changed --yes --when-green; started)" $'0\n2'
+fresh
+expect "when-green --json: one record per project" \
+  "$(CI=red run "$O" "$E" deploy-changed --yes --when-green --json; jq -c 'map({name, action}) | sort_by(.name)' "$O")" \
+  $'0\n[{"name":"api","action":"skipped"},{"name":"web","action":"skipped"}]'
+expect "when-green: a wrong --wait is refused" "$(run "$O" "$E" deploy-changed --yes --when-green --wait soon; grep -c 'takes a time' "$E")" $'1\n1'
+expect "ci: green, exit 0" "$(run "$O" "$E" ci me/app bbbb --json; jq -c '{state, checks}' "$O")" $'0\n{"state":"green","checks":2}'
+expect "ci: red, exit 1" "$(CI=red run "$O" "$E" ci me/app bbbb; cat "$O")" $'1\nred: failed: test'
+expect "ci: still pending, exit 2 (with --json 0)" "$(CI=pending run "$O" "$E" ci me/app bbbb; CI=pending run "$O" "$E" ci me/app bbbb --json; jq -r .state "$O")" $'2\n0\npending'
+expect "ci: GitHub down is unknown, not green" "$(GSTUB=down run "$O" "$E" ci me/app bbbb --json; jq -r .state "$O")" $'0\nunknown'
+
+# The window: Fridays from 15:00, and a night rule over midnight.
+echo '{"deny":[{"days":["fri"],"from":"15:00"},{"from":"22:00","to":"06:00","reason":"night"},{"dates":["2026-12-24"]}]}' > "$e2e/config/window.json"
+win() { DEPLOYS_NOW="$1" run "$O" "$E" window --json >/dev/null; jq -c '[.denied, .reason]' "$O"; }
+expect "window: Friday 16:00 is closed" "$(win 'fri 16:00 2026-11-13')" '[true,"fri 15:00–24:00"]'
+expect "window: Friday 14:59 is open" "$(win 'fri 14:59 2026-11-13')" '[false,null]'
+expect "window: Thursday 16:00 is open" "$(win 'thu 16:00 2026-11-12')" '[false,null]'
+expect "window: over midnight, 23:00 and 05:00 are closed" "$(win 'tue 23:00 2026-11-10'; win 'wed 05:00 2026-11-11')" $'[true,"night"]\n[true,"night"]'
+expect "window: a listed date is closed all day" "$(win 'thu 10:00 2026-12-24')" '[true,"2026-12-24 00:00–24:00"]'
+export DEPLOYS_NOW="fri 16:00 2026-11-13"
+fresh; : > "$DEPLOYS_JOURNAL"
+expect "window: deploy-changed --yes is refused inside it" \
+  "$(run "$O" "$E" deploy-changed --yes; started; grep -c 'deploy window says "fri 15:00–24:00"' "$E")" $'1\n0\n1'
+expect "window: so is vercel deploy and the app's deploy-json" \
+  "$(run "$O" "$E" vercel deploy web; run "$O" "$E" render deploy-json api; started)" $'1\n1\n0'
+expect "window: a preview still goes" "$(run "$O" "$E" vercel deploy web --preview; started)" $'0\n1'
+fresh
+expect "window: --force without a reason is refused" "$(run "$O" "$E" deploy-changed --yes --force; started)" $'1\n0'
+expect "window: --force \"why\" starts both and journals each" \
+  "$(run "$O" "$E" deploy-changed --yes --force "hotfix for login"; started; jq -sc 'map([.platform, .name, .result]) | sort' "$DEPLOYS_JOURNAL")" \
+  $'0\n2\n[["Render","api","forced"],["Vercel","web","forced"]]'
+expect "window: the reason is in the journal" "$(grep -c 'Deployed in the window \\"fri 15:00–24:00\\": hotfix for login' "$DEPLOYS_JOURNAL")" "2"
+fresh; : > "$DEPLOYS_JOURNAL"
+expect "window: render deploy --force journals once, not twice" "$(run "$O" "$E" render deploy api --force "db fix"; wc -l < "$DEPLOYS_JOURNAL" | tr -d ' ')" $'0\n1'
+expect "window: deploy <project> --force=… works too" "$(run "$O" "$E" deploy web --force="urgent" --json; jq -r .platform "$O")" $'0\nvercel'
+echo '{"deny":' > "$e2e/config/window.json"; fresh
+expect "window: a broken window.json stops deploys" "$(run "$O" "$E" deploy-changed --yes; started)" $'1\n0'
+rm -f "$e2e/config/window.json"; unset DEPLOYS_NOW
+fresh
+expect "window: none set, deploys go" "$(run "$O" "$E" deploy web; started)" $'0\n1'
+
+# verify: three questions; a broken site counts down and rolls back, unless told not to.
+fresh; : > "$DEPLOYS_JOURNAL"
+rolled() { grep -c 'rollback/dpl_prev' "$e2e/calls.log"; }
+expect "verify: a healthy site, nothing rolled back" \
+  "$(run "$O" "$E" verify web --json; jq -c '{healthy, codes}' "$O"; rolled)" $'0\n{"healthy":true,"codes":[200,200,200]}\n0'
+fresh
+expect "verify: one good answer of three is healthy (a fresh service may answer 502 first)" "$(SITE=flaky run "$O" "$E" verify web; rolled)" $'0\n0'
+fresh
+expect "verify: 5xx counts down, then rolls back (exit 1)" \
+  "$(SITE=down run "$O" "$E" verify web --path health --rollback-after 3 --json; jq -c '{healthy, rolledBack, url}' "$O"; rolled)" \
+  $'1\n{"healthy":false,"rolledBack":true,"url":"https://web.example.test/health"}\n1'
+expect "verify: the countdown is shown" "$(grep -o 'Rolling back web in  [0-9] s' "$E" | tr -s ' ' | paste -sd, -)" "Rolling back web in 3 s,Rolling back web in 2 s,Rolling back web in 1 s"
+expect "verify: the rollback is in the journal" "$(jq -r 'select(.result == "other") | .detail' "$DEPLOYS_JOURNAL")" "Rolled back: https://web.example.test/health answered 503 503 503"
+fresh
+expect "verify: no answer (timeout) counts as a failure too" "$(SITE=gone run "$O" "$E" verify web --rollback-after 0; rolled)" $'1\n1'
+fresh
+expect "verify: --no-rollback only reports (exit 2)" "$(SITE=down run "$O" "$E" verify web --no-rollback; rolled)" $'2\n0'
+fresh
+expect "verify: Ctrl-C in the countdown stops the rollback" \
+  "$(SITE=down CANCEL=1 run "$O" "$E" verify web --json; jq -c '{rolledBack, cancelled}' "$O"; rolled)" $'2\n{"rolledBack":false,"cancelled":true}\n0'
+expect "verify: a wrong --rollback-after is refused" "$(run "$O" "$E" verify web --rollback-after soon; grep -c 'takes seconds' "$E")" $'1\n1'
+unset DEPLOYS_JOURNAL
+
+# risk: the rule, then the command and the lists.
+risk_of() { jq -c "$RISK_DEF"' risk | [.level, (.reasons | map(.kind))]' <<< "$1"; }
+expect "risk: a small code change is green" "$(risk_of '{"files":[{"filename":"src/a.ts","additions":3,"deletions":1}]}')" '["green",[]]'
+expect "risk: migrations are red" "$(risk_of '{"files":[{"filename":"prisma/migrations/1/migration.sql"},{"filename":"db/x.sql"}]}')" '["red",["migrations"]]'
+expect "risk: lockfile, .env and config are yellow" \
+  "$(risk_of '{"files":[{"filename":"pnpm-lock.yaml"},{"filename":"apps/web/.env.production"},{"filename":"vercel.json"}]}')" '["yellow",["lockfile","env","config"]]'
+expect "risk: .envrc-like names are not .env files" "$(risk_of '{"files":[{"filename":"docs/environment.md"}]}')" '["green",[]]'
+expect "risk: a large diff is yellow, a very large one red" \
+  "$(risk_of '{"files":[{"filename":"a","additions":600}]}'; risk_of "$(jq -nc '{files:[range(150) | {filename:"f\(.)", additions:1}]}')")" $'["yellow",["size"]]\n["red",["size"]]'
+jq -n '{status:"ahead",ahead_by:1,behind_by:0,html_url:"x",commits:[{sha:"bbbb",commit:{message:"feat: new",committer:{date:"2026-01-02T00:00:00Z"}},author:{type:"User"}}],
+        files:[{filename:"prisma/migrations/2/migration.sql",additions:10,deletions:0,patch:"x"},{filename:"package-lock.json",additions:5,deletions:5}]}' > "$e2e/risky.json"
+fresh
+expect "risk <project> --json: red, with the reasons" \
+  "$(BIG="$e2e/risky.json" run "$O" "$E" risk web --json; jq -c '[.level, (.reasons | map(.kind)), .files]' "$O")" $'0\n["red",["migrations","lockfile"],2]'
+expect "risk <project>: for a person" "$(BIG="$e2e/risky.json" run "$O" "$E" risk web; head -n 1 "$O")" $'0\nred  web (2 files, 20 lines)'
+expect "risk: up to date is green" "$(LIVE=bbbb run "$O" "$E" risk web --json; jq -r .level "$O")" $'0\ngreen'
+expect "changed --json carries the risk, from the same comparison" \
+  "$(BIG="$e2e/risky.json" run "$O" "$E" changed --json --platform vercel; jq -r '.[0].risk.level' "$O")" $'0\nred'
+expect "deploy-changed (no --yes) names a red risk" \
+  "$(BIG="$e2e/risky.json" run "$O" "$E" deploy-changed; grep -c 'risk: database migrations' "$O")" $'0\n2'
+unset RENDER_API_KEY
+
 
 # --- autofix: which failures fire, caps, no duplicates, token never in argv, one redeploy ---
 af="$tmp/af"; mkdir -p "$af/bin"
@@ -572,6 +708,71 @@ unset -f render_call
 unset DEPLOYS_LAUNCH_DIR
 # Savings (simulate, ledger) have their own file with fixtures.
 bash tests/savings-tests.sh || fails=$((fails+1))
+
+# --- Claude in the app (deploys ai): masked body, key only on stdin, cap before the call, tally, refusals ---
+# A fake curl: logs argv and stdin, copies the body it was given, answers what AISTUB says. No network.
+ai="$tmp/ai"; mkdir -p "$ai/bin"
+cat > "$ai/bin/curl" <<'CURL'
+#!/bin/bash
+echo "argv $*" >> "$CALLS"; sed 's/^/stdin /' >> "$CALLS"
+prev=""; for a in "$@"; do [ "$prev" = --data ] && cat "${a#@}" > "$AIBODY"; prev="$a"; done
+case "${AISTUB:-ok}" in
+  ok) printf '%s\n200' '{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"Cause: x.\nLikely fix: y."}],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":20}}' ;;
+  refusal) printf '%s\n200' '{"content":[],"stop_reason":"refusal","stop_details":{"category":"cyber"},"usage":{"input_tokens":10,"output_tokens":0}}' ;;
+  401) printf '%s\n401' '{"error":{"message":"invalid x-api-key"}}' ;;
+  models) printf '%s\n200' '{"id":"claude-opus-5-5"}' ;;
+esac
+CURL
+chmod +x "$ai/bin/curl"
+export AIBODY="$tmp/ai-body.json"
+airun() { ( set -e; PATH="$ai/bin:$PATH" ANTHROPIC_API_KEY=sk-ant-api03-TESTKEY "$@" ) 2>&1; }
+ai_row() { echo '{"name":"web","platform":"vercel","repo":"me/web","ref":"main","lastSha":"aaaa","auto":false}'; }
+ai_log() { printf 'step 1\nstep 2\nnpm ERR! build failed for dev@example.com\nGITHUB_TOKEN=ghp_abcdefghijklmnop0123\nusing sk-ant-api03-LEAKED-KEY-1234567890 and AKIAABCDEFGHIJKLMNOP\nconnect postgres://admin:hunter2@db.internal/app\nauthorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig\n'; }
+ai_details() { echo '{"commits":[{"msg":"feat: dark mode (#4) by ops@example.org","bot":false},{"msg":"chore(deps): bump x","bot":true}],"files":3,"additions":40,"deletions":2,"risky":["prisma/migrations/1/migration.sql","package-lock.json"]}'; }
+rm -f "$DEPLOYS_CONFIG/ai-usage.json" "$DEPLOYS_CONFIG/ai-cap" "$DEPLOYS_CONFIG/ai-model"
+
+: > "$CALLS"; out="$(airun ai_run explain web)"
+expect "ai explain: prints the text blocks only" "$out" $'Cause: x.\nLikely fix: y.'
+expect "ai: the key is never in argv" "$(grep '^argv ' "$CALLS" | grep -c TESTKEY)" "0"
+expect "ai: the key goes in on stdin as x-api-key" "$(grep -c '^stdin header = "x-api-key: sk-ant-api03-TESTKEY"' "$CALLS")" "1"
+expect "ai: current API version and model, low effort, fallback on" \
+  "$(grep -c 'anthropic-version: 2026-10-21' "$CALLS"):$(grep -c 'stdin header = "anthropic-beta: server-side-fallback-2026-07-01"' "$CALLS"):$(jq -r '"\(.model) \(.output_config.effort) \(.fallbacks) \(.max_tokens)"' "$AIBODY")" \
+  "1:1:claude-opus-5-5 low default 4000"
+body="$(cat "$AIBODY")"
+expect "ai masking: tokens, keys, passwords, JWTs and emails never reach the body" \
+  "$(echo "$body" | grep -c 'ghp_abcdef\|LEAKED-KEY\|AKIAABCDEF\|hunter2\|eyJhbGci\|dev@example.com')" "0"
+expect "ai masking: the log is still there, with markers" "$(echo "$body" | grep -c 'npm ERR! build failed'):$(echo "$body" | grep -o '\[masked\]' | wc -l | tr -d ' '):$(echo "$body" | grep -c '\[email\]')" "1:5:1"
+expect "ai: the log is framed as untrusted data" "$(jq -r .system "$AIBODY" | grep -c 'untrusted data')" "1"
+expect "ai: usage is tallied per month" "$(jq -r --arg m "$(date -u +%Y-%m)" '.[$m]' "$DEPLOYS_CONFIG/ai-usage.json")" "120"
+
+: > "$CALLS"; airun ai_run notes web --lang de >/dev/null
+expect "ai notes: German, bot commits counted not listed, no emails" \
+  "$(jq -r .system "$AIBODY" | grep -c 'Write in German'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'bump x'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Dependency updates: 1'):$(grep -c 'ops@example.org' "$AIBODY")" "1:0:1:0"
+airun ai_run ship web >/dev/null
+expect "ai ship: diff stats, risky files and auto-deploy go in" \
+  "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Diff: 2 commits, 3 files, +40 -2'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'prisma/migrations'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'auto-deploy: off')" "1:1:1"
+expect "ai --json: text, tokens and the month's total for the app" "$(airun ai_run explain web --json | jq -c '{tokens, used, cap}')" '{"tokens":120,"used":480,"cap":300000}'
+
+printf '480' > "$DEPLOYS_CONFIG/ai-cap"; : > "$CALLS"
+out="$(airun ai_run explain web)"; rc=$?
+expect "ai: over the cap nothing is sent" "$(echo "$out" | grep -c 'cap is reached'):$rc:$(grep -c '^argv ' "$CALLS")" "1:1:0"
+rm -f "$DEPLOYS_CONFIG/ai-cap"
+
+printf 'claude-haiku-5-5' > "$DEPLOYS_CONFIG/ai-model"; : > "$CALLS"; airun ai_run explain web >/dev/null
+expect "ai: Haiku goes without the fallback (it has none)" "$(jq -r '.fallbacks // "none"' "$AIBODY"):$(grep -c 'anthropic-beta' "$CALLS")" "none:0"
+rm -f "$DEPLOYS_CONFIG/ai-model"
+
+out="$(AISTUB=refusal airun ai_run explain web)"; rc=$?
+expect "ai: a refusal is said plainly and fails" "$(echo "$out" | grep -c 'declined this request (cyber)'):$rc" "1:1"
+out="$(AISTUB=401 airun ai_run explain web)"; rc=$?
+expect "ai: a refused key is said plainly" "$(echo "$out" | grep -c 'refused the key'):$rc" "1:1"
+out="$( ( set -e; PATH="$ai/bin:$PATH"; unset ANTHROPIC_API_KEY; security() { :; }; ai_run explain web ) 2>&1)"; rc=$?
+expect "ai: no key, no call" "$(echo "$out" | grep -c 'No Anthropic API key'):$rc" "1:1"
+: > "$CALLS"
+expect "ai verify: a free models lookup" "$(env -u DEPLOYS_LIB AISTUB=models PATH="$ai/bin:$PATH" ANTHROPIC_API_KEY=sk-ant-x NO_COLOR=1 ./deploys ai verify 2>&1; grep -c 'argv .*-X GET .*/models/claude-opus-5-5' "$CALLS")" $'The key works, claude-opus-5-5 is available.\n1'
+expect "ai model: only known models" "$(cli ai model gpt-x | grep -c 'Choose one of'):$(cli ai model claude-sonnet-5-5)" "1:Claude model set to claude-sonnet-5-5"
+rm -f "$DEPLOYS_CONFIG/ai-model"
+expect "ai status: never the key" "$(ANTHROPIC_API_KEY=sk-ant-api03-TESTKEY cli ai status | grep -c TESTKEY):$(ANTHROPIC_API_KEY=sk-ant-api03-TESTKEY cli ai status | jq -r '.key')" "0:true"
 
 
 # --- security: masking, no shell or jq code from data, names in API paths, secrets on stdin ---

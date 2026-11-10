@@ -33,6 +33,7 @@ enum LogTools {
         (#"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}"#, "$1 [HIDDEN]"),
         (#"(?i)\b([A-Z0-9_]*(token|secret|password|passwd|api_?key|private_?key)[A-Z0-9_]*)(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)"#, "$1$3[HIDDEN]"),
         (#"(?i)(://[^/\s:@]+:)[^@\s/]+@"#, "$1[HIDDEN]@"),
+        (#"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#, "[EMAIL]"),
     ].map { (try! NSRegularExpression(pattern: $0.0), $0.1) }
 
     static func maskSecrets(_ text: String) -> String {

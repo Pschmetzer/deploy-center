@@ -255,6 +255,18 @@ expect("bearer masked", LogTools.maskSecrets("Authorization: Bearer abc.def-1234
 expect("env value masked", LogTools.maskSecrets("STRIPE_SECRET_KEY=sk_live_1234"), "STRIPE_SECRET_KEY=[HIDDEN]")
 expect("sk- key masked", LogTools.maskSecrets("key sk-proj-ABCDEFGHIJKLMNOPQRST"), "key [API KEY]")
 expect("password in a URL masked", LogTools.maskSecrets("postgres://app:hunter2@db:5432/x"), "postgres://app:[HIDDEN]@db:5432/x")
+expect("email masked", LogTools.maskSecrets("committed by dev.ops+ci@example.co.uk today"), "committed by [EMAIL] today")
+expect("Anthropic key masked", LogTools.maskSecrets("ANTHROPIC=sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUV"), "ANTHROPIC=[API KEY]")
+expect("Claude prompt carries no secrets", ["ghp_abcdefghijklmnopqrstuvwxyz0123", "hunter2", "me@example.com"].filter {
+    LogTools.claudePrompt(name: "web", repo: "me/web", ref: "main", sha: "abc", message: "failed for me@example.com",
+                          log: "npm ERR! token ghp_abcdefghijklmnopqrstuvwxyz0123\npostgres://u:hunter2@db/x\nby me@example.com").contains($0) }.count, 0)
+// Claude in the app: the script calls, and what counts as a failed build.
+expect("ai notes args", ClaudeAI.Ask.notes("de").args(project: "web"), ["ai", "notes", "web", "--json", "--lang", "de"])
+expect("ai explain args", ClaudeAI.Ask.explain.args(project: "srv-1"), ["ai", "explain", "srv-1", "--json"])
+expect("ai failed: platform error", { var i = item(); i.lastState = "build_failed"; return ClaudeAI.isFailed(i) }(), true)
+expect("ai: Autofix is offered only for build failures", { var i = item(); i.lastState = "update_failed"; return "\(ClaudeAI.isFailed(i)) \(ClaudeAI.autofixCanTake(i))" }(), "true false")
+expect("ai failed: a ready build is not", { var i = item(); i.lastState = "READY"; return ClaudeAI.isFailed(i) }(), false)
+expect("ai off by default", UserDefaults(suiteName: "dc-test-\(UUID())")!.bool(forKey: ClaudeAI.enabledKey), false)
 expect("plain text untouched", LogTools.maskSecrets("Error: module not found"), "Error: module not found")
 expect("ANSI codes out", LogTools.clean("\u{1B}[31mError\u{1B}[0m: x"), "Error: x")
 expect("long lines cut", LogTools.clean(String(repeating: "a", count: 1000)).count, 402)
@@ -303,6 +315,22 @@ MainActor.assumeIsolated {
     st.show(Store.Toast(text: "other", ok: true))
     expect("undo toast is not pushed away", st.toast?.text ?? "nil", "hidden")
 }
+
+// Safe deploys: the risk from the script, in the app's words; the window and CI answers.
+do {
+    let json = #"{"level":"red","files":120,"lines":4000,"reasons":[{"kind":"migrations","level":"red","files":["prisma/migrations/1/migration.sql"],"text":"x"},{"kind":"size","level":"red","files":[],"text":"x"},{"kind":"new","level":"yellow","text":"from a newer script"}]}"#
+    let r = try JSONDecoder().decode(Risk.self, from: Data(json.utf8))
+    expect("risk decodes, red", r.isRed, true)
+    expect("risk: migrations named", r.text(r.reasons[0]), L("Database migrations: ", "Datenbank-Migrationen: ") + "prisma/migrations/1/migration.sql")
+    expect("risk: size with numbers", r.text(r.reasons[1]), L("A very large diff: 120 files, 4000 lines", "Ein sehr großer Diff: 120 Dateien, 4000 Zeilen"))
+    expect("risk: an unknown kind keeps the script's text", r.text(r.reasons[2]), "from a newer script")
+    let v = try JSONDecoder().decode(VercelProject.self, from: Data(#"{"name":"a","auto":false,"deployable":true}"#.utf8))
+    expect("a list entry without risk still decodes", v.risk == nil, true)
+    let w = try JSONDecoder().decode(WindowReply.self, from: Data(#"{"denied":true,"reason":"fri 15:00–24:00","configured":true}"#.utf8))
+    expect("window reply", "\(w.denied) \(w.reason ?? "")", "true fri 15:00–24:00")
+    let ci = try JSONDecoder().decode(CIReply.self, from: Data(#"{"repo":"me/app","state":"red","reason":"failed: test","checks":2}"#.utf8))
+    expect("ci reply", ci.state, "red")
+} catch { expect("safe-deploy answers decode", error, "no error") }
 
 // Tabs from the enabled providers. No `deploys providers` (older script): Vercel and Render.
 func ids(_ l: [ProviderInfo]) -> [String] { l.map(\.id) }

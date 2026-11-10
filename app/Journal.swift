@@ -126,9 +126,12 @@ struct JournalView: View {
             } else {
                 List(entries.reversed()) { e in
                     HStack(spacing: 8) {
+                        // "forced": started inside a closed deploy window, with the reason in the detail.
                         Image(systemName: e.result == "failed" ? "xmark.octagon.fill"
-                              : (e.result == "skipped" ? "forward.circle.fill" : (e.result == "cancelled" ? "stop.circle.fill" : "checkmark.circle.fill")))
-                            .foregroundStyle(e.result == "failed" ? .red : (["skipped", "cancelled"].contains(e.result) ? .secondary : .green))
+                              : (e.result == "skipped" ? "forward.circle.fill" : (e.result == "cancelled" ? "stop.circle.fill"
+                              : (e.result == "forced" ? "exclamationmark.shield.fill" : "checkmark.circle.fill"))))
+                            .foregroundStyle(e.result == "failed" ? .red : (["skipped", "cancelled"].contains(e.result) ? .secondary
+                                             : (e.result == "forced" ? .orange : .green)))
                         Text(Demo.mask(e.name)).font(.body.weight(.medium))
                         Text(e.platform).font(.caption).foregroundStyle(.secondary)
                         if let f = failed["\(e.platform)/\(e.name)"], f.failed > 0 {
