@@ -139,7 +139,7 @@ expect "with_heads counts commits and PRs, open PRs split" \
 
 # --- commands for a person: usage lines, help, version, ignore, costs, completion ---
 cli() { env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" HOME="$tmp" NO_COLOR=1 /bin/bash ./deploys "$@" 2>&1; }
-expect "a missing name is a usage line" "$(cli logs; echo "rc=$?")" $'Error: Usage: deploys logs <project> [lines]\nrc=1'
+expect "a missing name is a usage line" "$(cli logs; echo "rc=$?")" $'Error: Usage: deploys logs <project> [lines] [--id <deploy>]\nrc=1'
 expect "--help lists history and exits 0" "$(cli --help | grep -c 'deploys history'; cli --help >/dev/null; echo $?)" $'1\n0'
 expect "--version is the VERSION file" "$(cli --version)" "$(cat VERSION)"
 expect "costs refuses a word" "$(cli costs abc | grep -c 'days a number')" "1"
@@ -295,6 +295,108 @@ fresh
 python3 -c 'import json; print(json.dumps({"status":"ahead","ahead_by":1,"html_url":"x","commits":[],"files":[{"filename":"f%d"%i,"additions":1,"deletions":0,"patch":"x"*40000} for i in range(100)]}))' > "$e2e/big.json"
 expect "details: a 4 MB comparison works" "$(BIG="$e2e/big.json" run "$O" "$E" details me/app aaaa main; jq -r .files "$O")" $'0\n100'
 unset RENDER_API_KEY
+
+# --- autofix: which failures fire, caps, no duplicates, token never in argv, one redeploy ---
+af="$tmp/af"; mkdir -p "$af/bin"
+cat > "$af/bin/curl" <<'CURL'
+#!/bin/bash
+echo "argv $*" >> "$CALLS"; sed 's/^/stdin /' >> "$CALLS"
+case "${AFCODE:-200}" in
+  200) printf '%s\n200' '{"type":"routine_fire","claude_code_session_url":"https://claude.ai/code/session_x"}' ;;
+  *) printf '%s\n%s' '{"error":{"type":"x"}}' "$AFCODE" ;;
+esac
+CURL
+chmod +x "$af/bin/curl"
+afrun() { ( set -e; PATH="$af/bin:$PATH" DEPLOYS_ROUTINE_TOKEN=sk-ant-oat01-SECRET DEPLOYS_NOTIFY=0 autofix_run "$@" ) 2>&1; }
+ALL='[]'; OPENPRS='[]'; CLOSEDPRS='[]'
+af_all() { echo "$ALL"; }
+af_logs() { printf 'npm ERR! build failed\nAPI_KEY=abc123 token: ghp_abcdefghijklmnop\n'; }
+af_deploy() { echo "deploy $*" >> "$CALLS"; }
+af_prs() { echo "prs $3" >> "$CALLS"; [ "$3" = open ] && echo "$OPENPRS" || echo "$CLOSEDPRS"; }
+af_reset() { rm -f "$AUTOFIX_STATE"; : > "$CALLS"; }
+mkdir -p "$DEPLOYS_CONFIG"; printf 'trig_test' > "$DEPLOYS_CONFIG/autofix-routine"
+fired() { grep -c '^argv ' "$CALLS" 2>/dev/null || true; }
+
+af_reset
+ALL='[{"platform":"vercel","name":"web","repo":"me/web","ref":"main","latestState":"CANCELED","latestId":"d1","latestSha":"aaaa111"},
+      {"platform":"render","name":"api","repo":"me/api","lastState":"update_failed","latestId":"r1","latestSha":"bbbb"},
+      {"platform":"render","name":"job","repo":"me/job","lastState":"canceled","latestId":"r2","latestSha":"cccc"}]'
+out="$(afrun)"
+expect "autofix: canceled and update_failed never fire" "$(fired)" "0"
+expect "autofix: update_failed is reported" "$(echo "$out" | grep -c 'api is update_failed')" "1"
+
+af_reset
+ALL='[{"platform":"vercel","name":"web","repo":"me/web","ref":"main","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"},
+      {"platform":"render","name":"api","repo":"me/api","lastState":"build_failed","latestId":"r1","latestSha":"bbbb"}]'
+afrun >/dev/null
+expect "autofix: one fire per run" "$(fired)" "1"
+expect "autofix: the token is never in argv" "$(grep '^argv ' "$CALLS" | grep -c SECRET)" "0"
+expect "autofix: the token goes in on stdin" "$(grep -c '^stdin header = "Authorization: Bearer sk-ant-oat01-SECRET"' "$CALLS")" "1"
+expect "autofix: fired is recorded with the session" "$(jq -r '.fires[0] | "\(.status) \(.session)"' "$AUTOFIX_STATE")" "fired https://claude.ai/code/session_x"
+: > "$CALLS"; afrun >/dev/null
+expect "autofix: the same failed deploy does not fire twice; the next project does" "$(fired):$(jq -c '[.fires[].deployId]' "$AUTOFIX_STATE")" '1:["d1","r1"]'
+: > "$CALLS"; afrun >/dev/null
+expect "autofix: nothing new, nothing fired" "$(fired)" "0"
+
+# The payload has masked secrets.
+af_reset; ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"}]'
+masked="$(af_logs | af_mask)"
+expect "autofix: secrets in the log are masked" "$(echo "$masked" | grep -c 'abc123\|ghp_abcdef')" "0"
+
+# 429 is retried next run; any other error is recorded and not retried.
+af_reset; AFCODE=429 afrun >/dev/null
+expect "autofix: 429 leaves it for the next run" "$(jq -r '.fires[0].status' "$AUTOFIX_STATE")" "ratelimited"
+: > "$CALLS"; afrun >/dev/null
+expect "autofix: after 429 the next run fires" "$(fired):$(jq -r '.fires[0].status' "$AUTOFIX_STATE")" "1:fired"
+af_reset; AFCODE=500 afrun >/dev/null
+: > "$CALLS"; AFCODE=500 afrun >/dev/null
+expect "autofix: a 500 is recorded and not retried" "$(fired):$(jq -r '.fires[0].status' "$AUTOFIX_STATE")" "0:failed"
+
+# An open autofix PR blocks a fire.
+af_reset; OPENPRS='[{"number":7,"ref":"claude/autofix-web-aaaa111"}]'
+expect "autofix: an open autofix PR blocks a fire" "$(afrun | grep -c 'open autofix PR'):$(fired)" "1:0"
+OPENPRS='[]'
+
+# Cap per project: two fires in 24 h, then none.
+af_reset
+now="$(date +%s)"
+jq -n --argjson t "$now" '{fires:[{deployId:"o1",project:"web",status:"fired",at:($t-100)},{deployId:"o2",project:"web",status:"failed",at:($t-200)}]}' > "$AUTOFIX_STATE"
+expect "autofix: two fires today stop a third" "$(afrun | grep -c 'already had 2'):$(fired)" "1:0"
+
+# Merged fix: deployed once, at the merge commit; its own failure does not fire again.
+af_reset
+jq -n --argjson t "$((now - 600))" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",sha:"aaaa111",status:"fired",at:$t}]}' > "$AUTOFIX_STATE"
+CLOSEDPRS="[{\"number\":8,\"merged_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"merge_commit_sha\":\"ffff999\",\"ref\":\"claude/autofix-web-aaaa111\"}]"
+afrun >/dev/null
+expect "autofix: a merged fix is deployed at its merge commit" "$(grep -c '^deploy vercel web ffff999' "$CALLS")" "1"
+: > "$CALLS"; afrun >/dev/null
+expect "autofix: the merged fix is deployed only once" "$(grep -c '^deploy ' "$CALLS")" "0"
+ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d2","latestSha":"ffff999"}]'
+: > "$CALLS"; out="$(afrun)"
+expect "autofix: the fix failing too is not fired again" "$(fired):$(echo "$out" | grep -c 'failed to build too')" "0:1"
+ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"READY","latestId":"d3","latestSha":"ffff999"}]'
+CLOSEDPRS='[]'
+
+# The prompt in the docs is the one the app copies.
+expect "autofix: docs/AUTOFIX.md shows the prompt af_prompt prints" \
+  "$(awk '/^```text$/{f=1;next} /^```$/{if(f)exit} f' docs/AUTOFIX.md)" "$(af_prompt)"
+
+# schedule on writes a launchd job that runs this script; off removes it; status never shows the token.
+printf '#!/bin/bash\necho "launchctl $*" >> "$CALLS"\n' > "$af/bin/launchctl"; chmod +x "$af/bin/launchctl"
+: > "$CALLS"
+( PATH="$af/bin:$PATH" DEPLOYS_LAUNCH_DIR="$af/agents" af_schedule_on )
+expect "autofix: schedule on writes the job and loads it" \
+  "$(grep -c '<string>autofix</string>' "$af/agents/app.deploycenter.autofix.plist"):$(grep -c 'launchctl bootstrap' "$CALLS")" "1:1"
+expect "autofix: the job is valid XML" "$(plutil -lint "$af/agents/app.deploycenter.autofix.plist" >/dev/null 2>&1 && echo ok || (command -v plutil >/dev/null && echo bad || echo ok))" "ok"
+( PATH="$af/bin:$PATH" DEPLOYS_LAUNCH_DIR="$af/agents" af_schedule_off )
+expect "autofix: schedule off removes it" "$([ -f "$af/agents/app.deploycenter.autofix.plist" ] && echo there || echo gone)" "gone"
+
+# Dry run writes nothing; a held lock stops a second run.
+af_reset; ALL='[{"platform":"vercel","name":"web","repo":"me/web","latestState":"ERROR","latestId":"d1","latestSha":"aaaa111"}]'
+expect "autofix: dry run fires and saves nothing" "$(afrun dry | grep -c 'would hand'):$(fired):$([ -f "$AUTOFIX_STATE" ] && echo saved || echo none)" "1:0:none"
+mkdir -p "$DEPLOYS_CONFIG/locks/autofix"
+expect "autofix: a held lock stops a second run" "$(afrun | grep -c 'running already'):$(fired)" "1:0"
+rmdir "$DEPLOYS_CONFIG/locks/autofix"
 
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }
