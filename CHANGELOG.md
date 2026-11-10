@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Digest issue: `@login`, HTML comments (a fake `deploys-approve` marker) and Markdown links in commit and PR titles are defused; the real approve marker stays the last line.
+- notify and digest: `DEPLOYS_TZ` (for example `Europe/Berlin`) sets the day of "today" and of the issue title; default UTC.
+- Ship-check example: the projects step added no `platform` to `deploys <p> json`, so waiting commits always showed 0; fixed and run in the tests. It runs on Claude Sonnet 5.5, pins the Action to `v0.9.1` and has a 15-minute job timeout.
+- Examples use one variable name for the Vercel team, `DEPLOYS_VERCEL_TEAM`.
+- MCP server: its version comes from `package.json` (no second copy in `server.mjs`); `scripts/bump.sh` no longer edits `server.mjs`, and a test checks that the Claude Code plugin and the MCP server carry the same version.
+- `integrations/lib/projects.sh`: `changed_projects` asks `deploys changed --json` instead of rebuilding the ignore rule.
+- VS Code: with nothing waiting, "Deploy…" moves to the end of the project menu as "Deploy again…".
+- Raycast: lists show the last result at once (cached) and refresh in the background; failed builds get "Show Log" and "Copy for AI" (secrets masked); unit tests for the parts without the Raycast API.
+- CI: shellcheck and actionlint also cover the integrations and the example workflows; the widgets are built like a release; Xcode 16.4 is selected by name; new jobs build the Docker image and check the Raycast extension; the docs job runs `check-site.py` and ruff; `npm audit` for the MCP server; npm caches; no Homebrew self-update. The changelog reminder also covers `providers/`, `lib/` and `integrations/`.
+- Dependabot also updates the npm packages of the MCP server, the VS Code and Raycast extensions, and the Docker base image.
+- Tests: every file `deploys` sources is checked in the release tarball and the Homebrew formula; the provider tests run in parallel; MCP rollback of an unknown project.
+- Docs: autofix never deploys (SAFE-DEPLOY.md, the autofix plist example); the CLAUDE.md block names `deploys deploy <project> --wait` for every platform; GUARD.md and AUTOFIX.md say they cover Vercel and Render only; the note about a hanging Render key is gone (it fails within a minute now).
+- Issue and PR templates: the platform request lists platforms Deploy Center does not have yet, the bug form names the integrations, widgets and iPhone app, the PR checklist names all test scripts.
 - pre-push hook: reads `deploys list --json`, so it warns for every platform that is on, and for GitLab remotes (`gitlab.com/group/sub/app`) too. An older CLI without `list` still gets the Vercel and Render lists.
 - Status page: `platform/name` works for every platform, not only `vercel/` and `render/`.
 - Badges: a name on two platforms gets one badge per platform (`vercel-web.svg`, `netlify-web.svg`); every other name keeps `<name>.svg`.
