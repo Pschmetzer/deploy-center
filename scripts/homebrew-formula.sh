@@ -59,6 +59,9 @@ class Deploys < Formula
   def install
     libexec.install "deploys", "VERSION"
     libexec.install "providers" if File.directory?("providers")
+    # lib/: team file, two-person rule, observers, GitLab, simulate and ledger. deploys reads
+    # it next to itself (libexec), like providers/.
+    libexec.install "lib" if File.directory?("lib")
     (bin/"deploys").write_env_script libexec/"deploys", {}
     doc.install "README-CLI.md"
   end

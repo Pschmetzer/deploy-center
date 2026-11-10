@@ -156,10 +156,20 @@ and tells you to deploy in Deploy Center or with `deploys vercel deploy app-web`
 - **No shell.** `deploys` is started with an argument array. Names must match
   `^[A-Za-z0-9._:-]+$`, at most 100 characters, and must not start with `-` (so a name cannot
   become an option). A rejected name never reaches `deploys`.
+- **Checked arguments.** Every call is checked against the tool's `inputSchema`: an argument the
+  tool does not take (`deploys_deploy {project, sha}`), a wrong type (`lines: "80"`) or a value out
+  of range is an error, and nothing runs.
+- **Masked logs.** `deploys_logs` replaces obvious secrets (known token prefixes, `NAME=value` for
+  names like `*_TOKEN`/`*PASSWORD`, `Bearer …`, `--token x`, `user:pass@` in URLs, private keys,
+  emails) with `[masked]` before the agent sees the text: the same rules as `deploys autofix`. A
+  help, not a guarantee: a token with no known prefix and no telling name still goes through.
 - **Bounded.** Each command has a timeout (`DEPLOYS_MCP_TIMEOUT`, default 90 s; simulate and
   ledger `DEPLOYS_MCP_SLOW_TIMEOUT`, default 300 s); then it is
   stopped together with the `vercel`, `gh` or `curl` it started. Output is trimmed to
-  `DEPLOYS_MCP_MAX_OUTPUT` characters (default 20000; logs keep the end).
+  `DEPLOYS_MCP_MAX_OUTPUT` characters (default 20000; logs keep the end, also of a log longer
+  than the server collects). `deploys_changed` and `deploys_status` answer compact JSON and are
+  never cut inside it: when the list does not fit, whole entries are left out and the answer is
+  `{"projects": [...], "truncated": n, "total": N, "note": "..."}`.
 - **Your logins.** The server uses the same Vercel CLI login, GitHub CLI login and Render key as
   `deploys` in your terminal. It adds none and prints none. The agent can read whatever those
   commands print (commit messages, build logs).

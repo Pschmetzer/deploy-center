@@ -59,9 +59,11 @@ function findDeploys(env = process.env) {
 
 class ToolError extends Error {}
 
-// Runs `deploys <args>`. Resolves with { code, stdout, stderr }; a non-zero exit is not a throw
+// Runs `deploys <args>`. Resolves with { code, stdout, stderr, cut }; a non-zero exit is not a throw
 // (changed/status exit 1 when one project could not be read, and still print the rest).
-function runDeploys(args, { timeoutMs = TIMEOUT_MS } = {}) {
+// keep "head" stops collecting stdout at the cap; keep "tail" keeps the newest part (a ring
+// buffer), so a long build log still ends with the real error. `cut` counts what was dropped.
+function runDeploys(args, { timeoutMs = TIMEOUT_MS, keep = "head" } = {}) {
   const bin = findDeploys();
   if (!bin) {
     throw new ToolError(
@@ -73,15 +75,32 @@ function runDeploys(args, { timeoutMs = TIMEOUT_MS } = {}) {
     // gh or curl it started, which would otherwise keep the pipes open.
     const child = spawn(bin, args, { detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1" } });
     const cap = 4 * MAX_OUTPUT + 65536;
-    let stdout = "", stderr = "", timedOut = false, done = false;
-    child.stdout.on("data", (d) => { if (stdout.length < cap) stdout += d; });
+    let stdout = "", stderr = "", timedOut = false, done = false, cut = 0;
+    child.stdout.on("data", (d) => {
+      const s = String(d);
+      if (keep === "tail") {
+        stdout += s;
+        if (stdout.length > cap) {
+          cut += stdout.length - cap;
+          stdout = stdout.slice(-cap);
+        }
+      } else if (stdout.length < cap) stdout += s;
+      else cut += s.length;
+    });
     child.stderr.on("data", (d) => { if (stderr.length < cap) stderr += d; });
     const kill = () => { try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch {} } };
     const timer = setTimeout(() => { timedOut = true; kill(); finish(null); }, timeoutMs);
     const finish = (code) => {
       if (done) return;
       done = true; clearTimeout(timer);
-      resolve({ code, timedOut, stdout, stderr });
+      // The first line of a ring buffer is cut somewhere in the middle, perhaps through a
+      // secret its masking rule can no longer recognise ("EN=abc…" of "VERCEL_TOKEN=abc…").
+      if (keep === "tail" && cut > 0) {
+        const nl = stdout.indexOf("\n");
+        cut += nl < 0 ? stdout.length : nl + 1;
+        stdout = nl < 0 ? "" : stdout.slice(nl + 1);
+      }
+      resolve({ code, timedOut, stdout, stderr, cut });
     };
     child.on("error", (e) => { stderr += String(e.message); finish(127); });
     child.on("close", (code, signal) => finish(code ?? (signal ? 1 : 0)));
@@ -90,29 +109,118 @@ function runDeploys(args, { timeoutMs = TIMEOUT_MS } = {}) {
 
 const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
 
-// Keeps the head (or the tail, for logs) and says how much was cut.
-function trim(text, { keep = "head", max = MAX_OUTPUT } = {}) {
-  const s = String(text).replace(ANSI, "");
-  if (s.length <= max) return s;
-  const cut = s.length - max;
-  return keep === "tail"
-    ? `[… ${cut} earlier characters trimmed]\n${s.slice(-max)}`
-    : `${s.slice(0, max)}\n[… ${cut} more characters trimmed]`;
+// Keeps the head (or the tail, for logs) and says how much was cut. `already` is what
+// runDeploys dropped before; it counts in the note too.
+function trim(text, { keep = "head", max = MAX_OUTPUT, already = 0 } = {}) {
+  let s = String(text).replace(ANSI, "");
+  if (s.length <= max && !already) return s;
+  if (keep === "tail") {
+    let cut = already + Math.max(0, s.length - max);
+    if (s.length > max) {
+      s = s.slice(-max);
+      // Start at a whole line.
+      const nl = s.indexOf("\n");
+      if (nl >= 0 && nl < s.length - 1) { cut += nl + 1; s = s.slice(nl + 1); }
+    }
+    return `[… ${cut} earlier characters trimmed]\n${s}`;
+  }
+  const cut = already + Math.max(0, s.length - max);
+  return `${s.slice(0, max)}\n[… ${cut} more characters trimmed]`;
+}
+
+// ---------- secrets out of logs ----------
+// Build logs go to the model (and its provider), so obvious secrets are masked first. The same
+// rules as `deploys autofix` (af_mask in deploys) and the app. A help, not a guarantee: a token
+// with no known prefix and no telling name still goes through. Kept in this file on purpose:
+// the app bundle and the plugin ship server.mjs alone.
+const SECRET_RULES = [
+  // A private key: in one piece (also on one line, with escaped \n), cut off at the bottom
+  // (BEGIN without END), or cut off at the top (END without BEGIN, the tail of a log).
+  [/-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----/g, "[masked private key]"],
+  [/-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*$/g, "[masked private key]"],
+  // (the key lines above END: base64 lines, or one line with escaped \n).
+  [/(?:^[A-Za-z0-9+/=]{8,}\r?\n)*[A-Za-z0-9+/=\\]*-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----/gm, "[masked private key]"],
+  // Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, JWT.
+  [/\b(?:sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/g, "[masked]"],
+  // NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret.
+  // The i flag on the whole rule: JS before Node 23 has no scoped (?i:…).
+  [/\b([A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|_key|authorization|auth|credentials?|dsn)["']?\s*[:=]\s*)((?:bearer|basic|token|bot)\s+)?("[^"]*"|'[^']*'|[^\s"',;]+)/gi, "$1$2[masked]"],
+  // Bearer x without a name in front (curl -H "Bearer …"), as the app masks it.
+  [/\b(bearer)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [masked]"],
+  // --token x, --token=x (vercel, npm and most CLIs).
+  [/(--(?:token|password|api-key|secret)(?:=|\s+))[^\s"']+/gi, "$1[masked]"],
+  // user:password@ in a URL (database URLs).
+  [/(:\/\/[^/\s:@]+):[^@\s/]+@/g, "$1:[masked]@"],
+  // An email address.
+  [/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "[email]"],
+];
+
+function maskSecrets(text) {
+  return SECRET_RULES.reduce((s, [re, to]) => s.replace(re, to), String(text));
 }
 
 function describeFailure(args, r, timeoutMs = TIMEOUT_MS) {
   if (r.timedOut) return `deploys ${args.join(" ")} did not finish within ${timeoutMs / 1000} s and was stopped.`;
   const msg = (r.stderr || r.stdout).trim() || "no output";
-  return `deploys ${args.join(" ")} exited ${r.code}: ${trim(msg, { max: 4000 })}`;
+  return `deploys ${args.join(" ")} exited ${r.code}: ${trim(maskSecrets(msg), { max: 4000 })}`;
 }
 
+const exitNote = (r) => `\n\n[exit ${r.code}${r.stderr.trim() ? `: ${trim(maskSecrets(r.stderr.trim()), { max: 2000 })}` : ""}]`;
+
 // Runs and returns the text. Output plus a non-zero exit is returned with a note, not as an error.
-async function textOf(args, { keep = "head", timeoutMs = TIMEOUT_MS } = {}) {
-  const r = await runDeploys(args, { timeoutMs });
+// mask: secrets out first, then trimmed (a cut through a token would leave a fragment no rule knows).
+async function textOf(args, { keep = "head", timeoutMs = TIMEOUT_MS, mask = false } = {}) {
+  const r = await runDeploys(args, { timeoutMs, keep });
   if (r.timedOut || (r.code !== 0 && !r.stdout.trim())) throw new ToolError(describeFailure(args, r, timeoutMs));
-  let out = trim(r.stdout, { keep });
-  if (r.code !== 0) out += `\n\n[exit ${r.code}${r.stderr.trim() ? `: ${trim(r.stderr.trim(), { max: 2000 })}` : ""}]`;
+  const text = mask ? maskSecrets(r.stdout.replace(ANSI, "")) : r.stdout;
+  let out = trim(text, { keep, already: r.cut });
+  if (r.code !== 0) out += exitNote(r);
   return out;
+}
+
+// For changed and status: the JSON list, compact, and never cut in the middle. When the whole
+// list does not fit, whole entries are left out from the end and the answer says how many:
+// {"projects":[…], "truncated": n, "total": N, "note": "…"}.
+async function jsonListOf(args) {
+  const r = await runDeploys(args);
+  if (r.timedOut || (r.code !== 0 && !r.stdout.trim())) throw new ToolError(describeFailure(args, r));
+  let out;
+  let list;
+  try {
+    list = r.cut ? undefined : JSON.parse(r.stdout);
+  } catch {
+    list = undefined;
+  }
+  if (list === undefined) {
+    out = `[deploys ${args.join(" ")} did not print complete JSON; this is its raw text and may be cut.]\n${trim(r.stdout, { already: r.cut })}`;
+  } else {
+    out = fitJson(list, args);
+  }
+  if (r.code !== 0) out += exitNote(r);
+  return out;
+}
+
+function fitJson(list, args, max = MAX_OUTPUT) {
+  const whole = JSON.stringify(list);
+  if (whole.length <= max) return whole;
+  if (!Array.isArray(list)) {
+    return `[deploys ${args.join(" ")} printed ${whole.length} characters of JSON, more than the ${max} this server returns; ask for less (DEPLOYS_MCP_MAX_OUTPUT).]`;
+  }
+  const wrap = (k) =>
+    JSON.stringify({
+      projects: list.slice(0, k),
+      truncated: list.length - k,
+      total: list.length,
+      note: `Only the first ${k} of ${list.length} entries fit; the rest were left out whole. Ask about one project (deploys_explain) for the others.`,
+    });
+  // The most entries that fit, by bisection.
+  let lo = 0, hi = list.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (wrap(mid).length <= max) lo = mid;
+    else hi = mid - 1;
+  }
+  return wrap(lo);
 }
 
 async function jsonOf(args) {
@@ -126,6 +234,46 @@ async function jsonOf(args) {
 }
 
 // ---------- argument checks ----------
+
+// The low-level Server does not check arguments against inputSchema, so this does, before a
+// tool runs: an unknown key is an error (deploys_deploy {sha:"abc"} would otherwise deploy the
+// newest commit while the agent believes it asked for abc), and so is a wrong type or range.
+function checkArgs(tool, args) {
+  if (args === null || typeof args !== "object" || Array.isArray(args)) throw new ToolError(`${tool.name}: arguments must be an object.`);
+  const schema = tool.inputSchema ?? {};
+  const props = schema.properties ?? {};
+  const known = Object.keys(props);
+  for (const k of Object.keys(args)) {
+    if (!Object.hasOwn(props, k)) {
+      throw new ToolError(
+        `${tool.name} does not take ${JSON.stringify(k)}; ` +
+          (known.length ? `its arguments are: ${known.join(", ")}.` : "it takes no arguments.") +
+          " Nothing was run.",
+      );
+    }
+  }
+  for (const k of schema.required ?? []) {
+    if (args[k] === undefined) throw new ToolError(`${k} is required for ${tool.name}.`);
+  }
+  for (const [k, v] of Object.entries(args)) {
+    const p = props[k];
+    if (v === undefined) continue;
+    if (p.type === "string") {
+      if (typeof v !== "string") throw new ToolError(`${k} must be a string.`);
+      if (p.pattern && !new RegExp(p.pattern).test(v)) {
+        throw new ToolError(`Invalid ${k} ${JSON.stringify(v.slice(0, 120))}: use letters, digits and . _ : - only.`);
+      }
+    } else if (p.type === "integer") {
+      if (typeof v !== "number" || !Number.isInteger(v)) throw new ToolError(`${k} must be a whole number.`);
+      if ((p.minimum !== undefined && v < p.minimum) || (p.maximum !== undefined && v > p.maximum)) {
+        throw new ToolError(`${k} must be a whole number from ${p.minimum} to ${p.maximum}.`);
+      }
+    } else if (p.type === "boolean") {
+      if (typeof v !== "boolean") throw new ToolError(`${k} must be true or false.`);
+    }
+  }
+  return args;
+}
 
 function checkProject(v) {
   if (typeof v !== "string" || v.length === 0) throw new ToolError("project is required: one project or service name.");
@@ -180,17 +328,20 @@ const tools = [
   {
     name: "deploys_changed",
     description:
-      "List the projects that have commits or merged PRs on GitHub that are not live yet (deploys changed --json). Read-only. Use it to answer \"what is waiting to go live?\".",
+      "List the projects that have commits or merged PRs on GitHub that are not live yet (deploys changed --json). Read-only. Use it to answer \"what is waiting to go live?\". " +
+      "Returns a JSON array; when it is too long, an object {projects, truncated, total, note} with whole entries left out.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "What is waiting to go live", ...READ },
-    run: () => textOf(["changed", "--json"]),
+    run: () => jsonListOf(["changed", "--json"]),
   },
   {
     name: "deploys_status",
-    description: "What is building right now and the newest state of every project, including failed ones (deploys status --json). Read-only.",
+    description:
+      "What is building right now and the newest state of every project, including failed ones (deploys status --json). Read-only. " +
+      "Returns a JSON array; when it is too long, an object {projects, truncated, total, note} with whole entries left out.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Building or failed", ...READ },
-    run: () => textOf(["status", "--json"]),
+    run: () => jsonListOf(["status", "--json"]),
   },
   {
     name: "deploys_explain",
@@ -208,7 +359,9 @@ const tools = [
   },
   {
     name: "deploys_logs",
-    description: "The last lines of the newest build log of one project (deploys logs). Read-only. Use it when a build failed.",
+    description:
+      "The last lines of the newest build log of one project (deploys logs). Read-only. Use it when a build failed. " +
+      "Obvious secrets (tokens, keys, passwords, emails) are replaced with [masked] before you see the log.",
     inputSchema: {
       type: "object",
       properties: { project: projectProp, lines: { type: "integer", minimum: 1, maximum: 2000, default: 80, description: "How many lines (default 80)." } },
@@ -218,7 +371,7 @@ const tools = [
     annotations: { title: "Build log", ...READ },
     run: (a) => {
       const p = checkProject(a.project);
-      return textOf(["logs", p, String(checkLines(a.lines))], { keep: "tail" });
+      return textOf(["logs", p, String(checkLines(a.lines))], { keep: "tail", mask: true });
     },
   },
   {
@@ -338,7 +491,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     return { isError: true, content: [{ type: "text", text: `Unknown tool ${req.params.name}.${why}` }] };
   }
   try {
-    const text = await tool.run(req.params.arguments ?? {});
+    const text = await tool.run(checkArgs(tool, req.params.arguments ?? {}));
     return { content: [{ type: "text", text }] };
   } catch (e) {
     const text = e instanceof ToolError ? e.message : `Unexpected error: ${e?.message ?? e}`;

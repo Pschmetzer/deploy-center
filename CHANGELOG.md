@@ -5,6 +5,11 @@
 - Autofix: "Claude is fixing it" no longer sticks. The app runs `deploys autofix sync` (new: records merged, closed or open fix PRs, never fires) every few minutes while a hand-over is open, so a merged fix shows "Fix merged – deploy now" even when the 10-minute job is not running. `autofix --only` syncs its project first.
 - Autofix: 90 minutes after a hand-over with no PR the row says "No fix PR from Claude – see session" (a cause outside the code, say) and links the session, instead of "fixing" for good.
 - `autofix status` reports `scheduled` only when launchd has the job loaded; `autofix sync` loads a job file launchd dropped again.
+- CLI tarball and Homebrew formula ship `lib/` next to `deploys`, so team files, the two-person rule, observers, GitLab, `simulate` and `ledger` work after install.sh or `brew install`.
+- MCP server: build logs are masked (tokens, keys, passwords, emails) before the agent sees them; arguments are checked against each tool's schema, an unknown or wrong one is an error; `deploys_logs` keeps the real end of a long log; `deploys_changed`/`deploys_status` are never cut in the middle of the JSON (whole entries are left out, with `truncated`).
+- GitHub Action: with `deploy: true` only the projects of the workflow's repository are started (new input `repo`, `*` for every repo); it fails and starts nothing when that cannot be made sure.
+- Claude Code plugin: the push reminder ignores `git stash push`, `--dry-run` and rejected pushes, and reads the right repo for `cd dir && git push` and `git -C dir push`.
+- `examples/daily-deploy.yml` installs the checked release tarball (with providers/ and lib/), pins the vercel CLI and sets `permissions:`. CI runs `integrations/tests/run.sh` with `REQUIRE_ALL=1`; a skipped part is reported as skipped, not passed.
 
 ## 0.9.1
 
