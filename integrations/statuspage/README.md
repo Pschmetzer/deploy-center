@@ -58,6 +58,8 @@ published.
 | `hideMessages` | `false` | `true` shows "Updated" instead of every commit message, in the page, the feed and `status.json`. The example config sets it to `true`: commit messages and the titles of waiting commits ("Coming next") are often not meant for the public. Set `false` only for a page you would show anyone. |
 | `showAuthors` | `false` | Keep the author names that `deploys notes` adds. |
 | `timeline` | `30` | How many deploys the timeline keeps. |
+| `lang` | `en` | `en` or `de`: the page's texts, the feed's titles and "Updated" in `status.json`. |
+| `staleHours` | `48` | When the page is older than this (the job that makes it may have stopped), a red line on the page says how old it is. Needs scripts in the browser. |
 | `journal` | the app's | Path to a `journal.jsonl`. `DEPLOYS_JOURNAL` overrides it. |
 
 What never leaves the script: projects not in the list, repos, commit SHAs, error texts, the

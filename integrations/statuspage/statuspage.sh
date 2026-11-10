@@ -39,6 +39,10 @@ cfg="$(jq -c '
      hideMessages: (.hideMessages // false),
      showAuthors: (.showAuthors // false),
      timeline: (.timeline // 30),
+     # The language of the page: its texts, the feed titles and "Updated" in status.json.
+     lang: ((.lang // "en") | if . == "en" or . == "de" then . else error("lang must be en or de") end),
+     # After this many hours the page warns that it is old (it is made by a job that may have stopped).
+     staleHours: ((.staleHours // 48) | if type == "number" and . > 0 then . else error("staleHours must be a positive number") end),
      journal: (.journal // null),
      # "name", "platform/name" or {name, platform?, label?, url?}
      projects: ((.projects // []) | map(
@@ -109,12 +113,30 @@ if [ -f "$journal" ]; then
     | sort_by(.at) | reverse | .[0:$cfg.timeline]')"
 fi
 
+# The page's texts, English and German (config "lang").
+texts='{
+ "en": {"updated":"Updated","depUpdate":"Dependency update: ","never":"never","live":"Live","liveFailed":"Live · last deploy failed",
+        "failed":"Failed","building":"Deploying","notYet":"Not deployed yet","unknown":"Unknown","feed":"Feed","projects":"Projects",
+        "unread":"Could not be read just now.","lastDeploy":"Last deploy","siteUp":"Site up","siteDown":"Site not reachable",
+        "next":"Coming next","waiting":"Changes waiting to ship.","recent":"Recent deploys","noDeploys":"No deploys recorded yet.",
+        "wentLive":"went live","deployFailed":"deploy failed","footerUtc":"Made with Deploy Center. Times in UTC.",
+        "footer":"Made with Deploy Center.","stale":"This page was last made {n} hours ago and may be out of date.",
+        "staleDays":"This page was last made {n} days ago and may be out of date."},
+ "de": {"updated":"Aktualisiert","depUpdate":"Abhängigkeit aktualisiert: ","never":"nie","live":"Live","liveFailed":"Live · letzter Deploy fehlgeschlagen",
+        "failed":"Fehlgeschlagen","building":"Wird deployt","notYet":"Noch nicht deployt","unknown":"Unbekannt","feed":"Feed","projects":"Projekte",
+        "unread":"Ließ sich gerade nicht lesen.","lastDeploy":"Letzter Deploy","siteUp":"Seite erreichbar","siteDown":"Seite nicht erreichbar",
+        "next":"Als Nächstes","waiting":"Änderungen warten darauf, live zu gehen.","recent":"Letzte Deploys","noDeploys":"Noch keine Deploys aufgezeichnet.",
+        "wentLive":"ging live","deployFailed":"Deploy fehlgeschlagen","footerUtc":"Erstellt mit Deploy Center. Zeiten in UTC.",
+        "footer":"Erstellt mit Deploy Center.","stale":"Diese Seite wurde vor {n} Stunden zuletzt erstellt und ist vielleicht nicht aktuell.",
+        "staleDays":"Diese Seite wurde vor {n} Tagen zuletzt erstellt und ist vielleicht nicht aktuell."}}'
+L="$(jq -c --arg l "$(jq -r .lang <<<"$cfg")" '.[$l]' <<<"$texts")"
+
 mkdir -p "$out"
 # status.json is the source for the page and the feed.
-jq -n --argjson cfg "$cfg" --argjson p "$picked" --argjson x "$extra" --argjson t "$timeline" '
-  def updated: "Updated";
+jq -n --argjson cfg "$cfg" --argjson p "$picked" --argjson x "$extra" --argjson t "$timeline" --argjson L "$L" '
+  def updated: $L.updated;
   def strip_author: if $cfg.showAuthors then . else sub(" – [^–]*$"; "") end;
-  {title: $cfg.title, description: $cfg.description, generatedAt: (now | floor),
+  {title: $cfg.title, description: $cfg.description, generatedAt: (now | floor), lang: $cfg.lang, staleHours: $cfg.staleHours,
    url: ($cfg.baseUrl | if . != "" and (endswith("/") | not) then . + "/" else . end),
    projects: [$p | to_entries[] | .value as $v | ($x[.key | tostring] // {notes: [], check: null}) as $e
      | {name: $v.label, platform: $v.platform, state: (if $v.found then $v.state else "unknown" end),
@@ -122,21 +144,21 @@ jq -n --argjson cfg "$cfg" --argjson p "$picked" --argjson x "$extra" --argjson 
         message: (if $v.found | not then null elif $cfg.hideMessages then (if $v.at then updated else null end) else $v.message end),
         waiting: ($v.changed // false),
         next: (if $cfg.hideMessages then (if ($e.notes | length) > 0 then [updated] else [] end)
-               else ($e.notes | map(if .kind == "dep" then "Dependency update: " + (.text | strip_author) else (.text | strip_author) end)) end),
+               else ($e.notes | map(if .kind == "dep" then $L.depUpdate + (.text | strip_author) else (.text | strip_author) end)) end),
         check: $e.check}],
    timeline: [$t[] | {name: .label, platform, result, at, seconds}]}' > "$out/status.json"
 
 # --- index.html: one file, no external assets, light and dark, readable on a phone ---
-jq -r --arg css "$(cat "$here/page.css")" '
+jq -r --arg css "$(cat "$here/page.css")" --argjson L "$L" '
   def h: tostring | @html;
   def iso: todate;
-  def when: if . then "<time datetime=\"\(iso)\">\(strftime("%Y-%m-%d %H:%M UTC"))</time>" else "never" end;
+  def when: if . then "<time datetime=\"\(iso)\">\(strftime("%Y-%m-%d %H:%M UTC"))</time>" else $L.never end;
   def dur: if . == null then "" elif . < 60 then "\(.) s" else "\((. / 60) | floor) min \(. % 60) s" end;
-  def badge: {live: ["ok", "Live"], "live-failed": ["warn", "Live · last deploy failed"], failed: ["bad", "Failed"],
-               building: ["busy", "Deploying"], never: ["muted", "Not deployed yet"], unknown: ["muted", "Unknown"]}[.]
+  def badge: {live: ["ok", $L.live], "live-failed": ["warn", $L.liveFailed], failed: ["bad", $L.failed],
+               building: ["busy", $L.building], never: ["muted", $L.notYet], unknown: ["muted", $L.unknown]}[.]
              // ["muted", .];
   "<!doctype html>",
-  "<html lang=\"en\"><head><meta charset=\"utf-8\">",
+  "<html lang=\"\(.lang)\"><head><meta charset=\"utf-8\">",
   "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
   "<meta name=\"color-scheme\" content=\"light dark\">",
   "<title>\(.title | h)</title>",
@@ -145,34 +167,37 @@ jq -r --arg css "$(cat "$here/page.css")" '
   "<style>\($css)</style></head><body><main>",
   "<header><h1>\(.title | h)</h1>",
   (if .description != "" then "<p class=\"lead\">\(.description | h)</p>" else empty end),
-  "<p class=\"meta\">Updated \(.generatedAt | when) · <a href=\"feed.xml\">Feed</a> · <a href=\"status.json\">JSON</a></p></header>",
-  "<section aria-labelledby=\"now\"><h2 id=\"now\">Projects</h2><ul class=\"cards\">",
+  "<p class=\"meta\">\($L.updated | h) \(.generatedAt | when) · <a href=\"feed.xml\">\($L.feed | h)</a> · <a href=\"status.json\">JSON</a></p>",
+  # Shown by the script below when the page is older than staleHours (the job that makes it may have stopped).
+  "<p class=\"stale\" role=\"alert\" hidden data-generated=\"\(.generatedAt)\" data-hours=\"\(.staleHours)\" data-text=\"\($L.stale | h)\" data-text-days=\"\($L.staleDays | h)\"></p></header>",
+  "<section aria-labelledby=\"now\"><h2 id=\"now\">\($L.projects | h)</h2><ul class=\"cards\">",
   (.projects[] | (.state | badge) as $b |
     "<li class=\"card\"><div class=\"row\"><h3>\(.name | h)</h3><span class=\"pill \($b[0])\">\($b[1] | h)</span></div>",
-    (if .state == "unknown" then "<p class=\"when\">Could not be read just now.</p>" else "<p class=\"when\">Last deploy \(.at | when)</p>" end),
+    (if .state == "unknown" then "<p class=\"when\">\($L.unread | h)</p>" else "<p class=\"when\">\($L.lastDeploy | h) \(.at | when)</p>" end),
     (if .message then "<p class=\"msg\">\(.message | h)</p>" else empty end),
-    (if .check then "<p class=\"check \(if .check.up then "up" else "down" end)\">\(if .check.up then "Site up" else "Site not reachable" end)"
+    (if .check then "<p class=\"check \(if .check.up then "up" else "down" end)\">\(if .check.up then $L.siteUp else $L.siteDown end | h)"
        + (if .check.code > 0 then " · HTTP \(.check.code)" + (if .check.up then " · \(.check.ms) ms" else "" end) else "" end) + "</p>" else empty end),
-    (if (.next | length) > 0 then "<details><summary>Coming next (\(.next | length))</summary><ul class=\"next\">"
+    (if (.next | length) > 0 then "<details><summary>\($L.next | h) (\(.next | length))</summary><ul class=\"next\">"
        + (.next | map("<li>\(h)</li>") | join("")) + "</ul></details>"
-     elif .waiting then "<p class=\"muted\">Changes waiting to ship.</p>" else empty end),
+     elif .waiting then "<p class=\"muted\">\($L.waiting | h)</p>" else empty end),
     "</li>"),
   "</ul></section>",
-  "<section aria-labelledby=\"tl\"><h2 id=\"tl\">Recent deploys</h2>",
-  (if (.timeline | length) == 0 then "<p class=\"muted\">No deploys recorded yet.</p>"
+  "<section aria-labelledby=\"tl\"><h2 id=\"tl\">\($L.recent | h)</h2>",
+  (if (.timeline | length) == 0 then "<p class=\"muted\">\($L.noDeploys | h)</p>"
    else "<ol class=\"timeline\">",
-     (.timeline[] | "<li class=\"\(.result)\"><span class=\"dot\" aria-hidden=\"true\"></span><span class=\"what\"><b>\(.name | h)</b> \(if .result == "live" then "went live" else "deploy failed" end)</span>"
+     (.timeline[] | "<li class=\"\(.result)\"><span class=\"dot\" aria-hidden=\"true\"></span><span class=\"what\"><b>\(.name | h)</b> \(if .result == "live" then $L.wentLive else $L.deployFailed end | h)</span>"
        + "<span class=\"t\">\(.at | when)\(if .seconds then " · " + (.seconds | dur) else "" end)</span></li>"),
      "</ol>" end),
   "</section>",
-  "<footer>Made with Deploy Center. Times in UTC.</footer>",
+  "<footer>\($L.footerUtc | h)</footer>",
   "</main>",
   # Local time where scripts run; the UTC text stays where they do not.
-  "<script>for(const t of document.querySelectorAll(\"time\")){const d=new Date(t.dateTime);if(!isNaN(d))t.textContent=d.toLocaleString([], {dateStyle:\"medium\",timeStyle:\"short\"})}document.querySelector(\"footer\").textContent=\"Made with Deploy Center.\"</script>",
+  "<script>for(const t of document.querySelectorAll(\"time\")){const d=new Date(t.dateTime);if(!isNaN(d))t.textContent=d.toLocaleString([], {dateStyle:\"medium\",timeStyle:\"short\"})}document.querySelector(\"footer\").textContent=\($L.footer | tojson | gsub("<"; "\\u003c"));"
+    + "const s=document.querySelector(\".stale\");if(s){const h=(Date.now()/1000-Number(s.dataset.generated))/3600;if(h>=Number(s.dataset.hours)){s.textContent=(h>=48?s.dataset.textDays:s.dataset.text).replace(\"{n}\",String(Math.floor(h>=48?h/24:h)));s.hidden=false}}</script>",
   "</body></html>"' "$out/status.json" > "$out/index.html"
 
 # --- feed.xml: Atom, one entry per deploy in the timeline ---
-jq -r '
+jq -r --argjson L "$L" '
   def x: tostring | @html;
   . as $s | ($s.url // "") as $link |
   (if $link != "" then $link else "urn:deploy-center:statuspage:" + ($s.title | @uri) end) as $id |
@@ -185,7 +210,7 @@ jq -r '
   (if $link != "" then "  <link rel=\"alternate\" href=\"\($link | x)\"/>", "  <link rel=\"self\" href=\"\($link | x)feed.xml\"/>" else empty end),
   ($s.timeline[] |
     "  <entry>",
-    "    <title>\(.name | x) \(if .result == "live" then "went live" else "deploy failed" end)</title>",
+    "    <title>\(.name | x) \(if .result == "live" then $L.wentLive else $L.deployFailed end | x)</title>",
     "    <id>urn:deploy-center:\(.platform | x):\(.name | @uri | x):\(.at)</id>",
     "    <updated>\(.at | todate)</updated>",
     (if $link != "" then "    <link href=\"\($link | x)\"/>" else empty end),

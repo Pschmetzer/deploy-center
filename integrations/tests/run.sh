@@ -273,6 +273,30 @@ sp --config "$tmp/sp-empty.json" --out "$tmp/spe" >/dev/null 2>&1; expect "statu
 [ -e "$tmp/spe" ] && fail "statuspage: nothing written without an allowlist" "written" || ok "statuspage: nothing written without an allowlist"
 SP_CURL_LOG=/dev/null DEPLOYS_JOURNAL=/nonexistent RENDER_API_KEY=x statuspage/statuspage.sh --config "$tmp/sp-auth.json" --out "$tmp/spn" --no-check >/dev/null
 expect "statuspage: no journal, empty timeline" "$(jq '.timeline | length' "$tmp/spn/status.json")" 0
+# lang: the page, the feed and status.json in German; the stale warning is in the page, hidden until old.
+jq '. + {lang: "de", hideMessages: true, staleHours: 24}' "$tmp/sp.json" > "$tmp/sp-de.json"
+sp --config "$tmp/sp-de.json" --out "$tmp/spd" --no-check >/dev/null; expect "statuspage de: runs" "$?" 0
+de_all="$(cat "$tmp/spd/index.html")"
+case "$de_all" in *'<html lang="de">'*'Letzter Deploy'*'Letzte Deploys'*'Erstellt mit Deploy Center'*) ok "statuspage de: German page" ;; *) fail "statuspage de: German page" "English left" ;; esac
+case "$de_all" in *'Last deploy'*|*'Recent deploys'*|*'Made with'*) fail "statuspage de: no English text left" "found" ;; *) ok "statuspage de: no English text left" ;; esac
+expect "statuspage de: Updated is Aktualisiert in status.json" "$(jq -r '.projects[0].message' "$tmp/spd/status.json")" "Aktualisiert"
+grep -q 'ging live\|Deploy fehlgeschlagen' "$tmp/spd/feed.xml" && ok "statuspage de: feed titles in German" || fail "statuspage de: feed titles in German" "English"
+expect "statuspage: the stale warning waits hidden, with its limit" "$(grep -o '<p class="stale" role="alert" hidden data-generated="[0-9]*" data-hours="24"' "$tmp/spd/index.html" | wc -l | tr -d ' ')" 1
+expect "statuspage: English page has the stale warning at 48 h" "$(grep -c 'data-hours="48"' "$tmp/sp/index.html")" 1
+# The page script, run against a stand-in DOM: a page 3 days old says so; a fresh one stays quiet.
+if command -v node >/dev/null; then
+  grep -o '<script>.*</script>' "$tmp/spd/index.html" | sed -e 's/^<script>//' -e 's/<\/script>$//' > "$tmp/page.js"
+  stale_js() { node -e '
+    const code = require("fs").readFileSync(process.argv[1], "utf8");
+    const st = { dataset: { generated: String(Date.now() / 1000 - Number(process.argv[2])), hours: "24", text: "{n} h", textDays: "{n} d" }, hidden: true, textContent: "" };
+    global.document = { querySelectorAll: () => [], querySelector: (q) => (q === ".stale" ? st : { textContent: "" }) };
+    eval(code); console.log(st.hidden ? "hidden" : st.textContent);' "$tmp/page.js" "$1"; }
+  expect "statuspage: a page 3 days old warns" "$(stale_js 259200)" "3 d"
+  expect "statuspage: a page 30 hours old warns in hours (limit 24)" "$(stale_js 108000)" "30 h"
+  expect "statuspage: a fresh page does not warn" "$(stale_js 600)" "hidden"
+else echo "skip statuspage page script: needs node"; fi
+jq '. + {lang: "fr"}' "$tmp/sp.json" > "$tmp/sp-fr.json"
+sp --config "$tmp/sp-fr.json" --out "$tmp/spf" --no-check >/dev/null 2>&1; expect "statuspage: an unknown lang is refused" "$?" 1
 
 # --- one Vercel CLI version everywhere (the action's default is the source) ---
 pin="$(sed -n '/vercel-cli-version:/,/default:/s/^ *default: "\([0-9.]*\)"/\1/p' action/action.yml)"
