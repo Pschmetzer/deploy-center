@@ -81,7 +81,6 @@ struct ContentView: View {
     /// and an update skipped until the next version.
     @AppStorage("ignoredTriggers") private var ignoredTriggers = ""
     @State private var closedIssues: [String] = []
-    @AppStorage("skippedVersion") private var skippedVersion = ""
     private var activeTriggers: [Trigger] {
         let ignored = Set(ignoredTriggers.split(separator: "\n").map(String.init))
         return store.triggers.filter { !ignored.contains($0.id) }
@@ -452,7 +451,7 @@ struct ContentView: View {
 
     /// Problems and offers above the list, most important first. Only the first is always shown;
     /// the others fold away, so the list keeps its room.
-    enum Notice: Hashable { case trigger, loadFailed(Platform), setup(Platform), auto(Platform), allowance, github, provider, update, claude }
+    enum Notice: Hashable { case trigger, loadFailed(Platform), setup(Platform), auto(Platform), allowance, github, provider, claude }
     @AppStorage("noticesExpanded") private var noticesExpanded = false
     @AppStorage(ClaudeNudge.wantedKey) private var claudeNudge = false
     @AppStorage(ClaudeNudge.dismissedKey) private var claudeNudgeDismissed = false
@@ -467,7 +466,6 @@ struct ContentView: View {
         if !store.activeAllowances.isEmpty { out.append(.allowance) }
         if store.doctor.map({ $0.githubCli && $0.githubLoggedIn == false }) == true || (store.githubBudget?.remaining ?? .max) < 300 { out.append(.github) }
         if !store.providerIssues.isEmpty && store.providerIssues != closedIssues { out.append(.provider) }
-        if let v = store.newVersion, v != skippedVersion { out.append(.update) }
         if claudeNudge && !claudeNudgeDismissed { out.append(.claude) }
         return out
     }
@@ -481,7 +479,6 @@ struct ContentView: View {
         case .allowance: return L("auto-deploy allowed for a while", "Auto-Deploy vorübergehend erlaubt")
         case .github: return "GitHub"
         case .provider: return L("provider problem", "Störung beim Anbieter")
-        case .update: return L("new version", "neue Version")
         case .claude: return "Claude"
         }
     }
@@ -495,7 +492,6 @@ struct ContentView: View {
         case .allowance: AllowanceBanner(store: store, allItems: allItems)
         case .github: githubBanner
         case .provider: providerBanner
-        case .update: updateBanner
         case .claude: ClaudeNudgeLine()
         }
     }
@@ -525,31 +521,6 @@ struct ContentView: View {
                     .accessibilityHint(L("Shows or hides the other notices", "Zeigt oder verbirgt die anderen Hinweise"))
                 }
             }
-        }
-    }
-
-    @ViewBuilder private var updateBanner: some View {
-        if let v = store.newVersion {
-            HStack {
-                Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
-                Text(L("Version \(v) is out.", "Version \(v) ist da.")).font(.callout)
-                Button(L("What's new", "Was ist neu")) {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/\(Updater.repo)/releases/latest")!)
-                }.buttonStyle(.link)
-                Button(store.updating ? L("Updating …", "Aktualisiere …") : L("Update now", "Jetzt aktualisieren")) {
-                    Task { await store.installUpdate() }
-                }.buttonStyle(.link).disabled(store.updating)
-                Button(L("Download", "Herunterladen")) {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/\(Updater.repo)/releases/latest")!)
-                }.buttonStyle(.link)
-                if let st = store.updateStatus { Text(st).font(.caption).foregroundStyle(.secondary) }
-                Spacer()
-                // Remembered for this version: the next one is shown again.
-                Button(L("Skip this version", "Diese Version überspringen")) { skippedVersion = v }.buttonStyle(.link).font(.caption)
-                Button { store.newVersion = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
-                    .help(L("Not now", "Nicht jetzt")).accessibilityLabel(L("Not now", "Nicht jetzt"))
-            }
-            .padding(.horizontal, 12).padding(.vertical, 6).background(ground(.blue, 0.06))
         }
     }
 

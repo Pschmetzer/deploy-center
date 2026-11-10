@@ -11,8 +11,8 @@ Deploy Center is maintained by one person in their spare time. The aim is a firs
 
 ## Supported versions
 
-Only the newest release gets fixes. Update with **Update now** in Settings or
-`brew upgrade --cask deploy-center`.
+Only the newest release gets fixes. Update with **Check for Updates …** in the app menu or
+`brew upgrade --cask --greedy deploy-center`.
 
 | Version | Fixes |
 |---|---|
@@ -54,7 +54,7 @@ the vendor).
 | Project lists, deploys, build logs, starts and rollbacks | Vercel | the `vercel` CLI, with its own login |
 | Service lists, deploys, build logs, starts and rollbacks | `api.render.com` | `curl` over HTTPS; the key on stdin (`curl -K -`) |
 | Commits, compares, pull requests, check runs, workflow files | `api.github.com` | the `gh` CLI, with its own login |
-| The newest release (once a day, can be turned off), then the zip | `api.github.com`, `github.com` | HTTPS, see [Updates](#updates) |
+| The update feed (once a day, can be turned off; no system profile), then the zip | `deploycenter.app/appcast.xml`, `github.com` | HTTPS, see [Updates](#updates) |
 | Project icons | each project's own domain | HTTPS to `https://<domain>/`; icon links in that page are followed |
 | Autofix: project, repo, branch, commit, deploy id and the last 60 KB of the build log, masked | `api.anthropic.com` (your routine) | `curl` over HTTPS; the token on stdin; only after you set up a routine and a token |
 | A daily summary of project names and counts | the webhook you set in `DEPLOYS_NOTIFY_URL` | `integrations/notify/notify.sh`, only when you run it |
@@ -116,14 +116,14 @@ URL, then travel unencrypted. Since only you choose the URL, a request to an int
 Releases are built by `release.sh`: signed with a Developer ID certificate, notarized by Apple and
 stapled. The release notes give the SHA-256 of the zip.
 
-**Update now** asks `https://api.github.com/repos/Pschmetzer/deploy-center/releases/latest`, and
-downloads only a zip under `https://github.com/Pschmetzer/deploy-center/releases/download/`. It
-unpacks it to a temporary folder and, before it replaces the app, checks that the bundle ID is
-`app.deploycenter.mac`, that the version is the release's and newer than the running one, that
-`codesign --verify --deep --strict` passes with a requirement for a Developer ID certificate of the
-**same team** as the running app, and that Gatekeeper accepts it (`spctl -a -t exec`). If any check
-fails, the app is left as it is. A self-built (ad hoc signed) app has no team and does not update
-itself (use Download).
+The app updates itself with [Sparkle 2](https://sparkle-project.org) (pinned version, its
+SHA-256 checked by `scripts/sparkle.sh`). The feed is https://deploycenter.app/appcast.xml
+(GitHub Pages, from `site/appcast.xml`); the zip comes from the GitHub release over HTTPS.
+`release.sh --publish` signs the zip with an EdDSA key that lives only in the release Mac's
+keychain; the app holds the public key (`SUPublicEDKey`) and refuses a download whose signature
+does not match, checked before the archive is unpacked (`SUVerifyUpdateBeforeExtraction`).
+Sparkle also checks the new app's code signature against the running one. Nothing is installed
+while deploys are running. A self-built (ad hoc signed) app is still checked against the EdDSA key.
 
 ## Known limits
 
