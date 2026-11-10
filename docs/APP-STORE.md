@@ -9,7 +9,9 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 | Item | Where |
 |---|---|
 | Xcode project (app + widget extension) | `ios/DeployCenter.xcodeproj` (folders `ios/App`, `widgets`, `shared`) |
-| Simulator build, archive and export | `ios/build.sh`, `ios/build.sh --archive` |
+| Simulator build, archive and export | `ios/build.sh`, `ios/build.sh --archive` (build number from the commit count) |
+| Logic checks without a device | `ios/test.sh`: the "waiting" rule, rollback targets, GitHub reads, against made-up answers |
+| Not offered on Mac or Apple Vision Pro | `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO`, `SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO`; the store switch is separate, see below |
 | Privacy manifest | `ios/App/PrivacyInfo.xcprivacy`: no tracking, no collected data, UserDefaults reason `CA92.1` |
 | Face ID usage text | `NSFaceIDUsageDescription` in the target's build settings |
 | Background refresh | `ios/Config/Info.plist` (`BGTaskSchedulerPermittedIdentifiers`, `UIBackgroundModes: fetch`) |
@@ -49,7 +51,8 @@ behind the app are in `docs/WIDGETS-IOS.md`.
    - The App Store Connect record exists: **"Deploy Center: Hand Deploys"**, because "Deploy Center" is
      already taken on the store. SKU `deploycenter-ios`, English (U.S.). The name can be changed
      before review. The name under the icon stays "Deploy Center".
-   - Build 1.0 (1) is uploaded (`ios/build.sh --archive`, then `--upload`).
+   - Builds are uploaded with `ios/build.sh --archive`, then `--upload`; the table under
+     "Submissions" names the one in review.
 
    - The store page is filled in, in English (U.S.) and German: subtitle, promotional text,
      description, keywords, support and marketing URL, copyright, and 3 screenshots each for the
@@ -63,7 +66,7 @@ behind the app are in `docs/WIDGETS-IOS.md`.
    - App Information → **Content Rights** (a legal statement about third-party content).
    - Version page → App Review: your contact (name, phone, email), then paste the review notes from
      `ios/AppStore/en.md`. The notes cannot be saved without the contact.
-   - TestFlight: the internal group "Owner" has build 1.0 (1), and the account holder is invited.
+   - TestFlight: the internal group "Owner" has the uploaded build, and the account holder is invited.
      Accept the invite in the TestFlight app, add a real token, then submit.
 
    The team has no registered devices, so the archive is unsigned and signed ad hoc with the
@@ -85,6 +88,7 @@ behind the app are in `docs/WIDGETS-IOS.md`.
    | App Privacy | "Data Not Collected" |
    | Privacy policy URL | https://deploycenter.app/datenschutz.html |
    | Age rating questionnaire | all "None", which gives 4+ |
+   | Pricing and Availability | turn off "iPhone and iPad Apps on Apple Silicon Macs" and "Apple Vision Pro": the Mac has its own app |
 
 3. **Archive and upload.** Archive with:
 
@@ -106,7 +110,8 @@ behind the app are in `docs/WIDGETS-IOS.md`.
    ```
 
    - The key belongs outside the repo, in `~/.appstoreconnect/private_keys/`.
-   - Raise `CURRENT_PROJECT_VERSION` for every upload.
+   - The build number is the commit count of `HEAD`, so it grows with every commit on `main`.
+     `BUILD_NUMBER=… ios/build.sh --archive` sets one by hand.
 4. **TestFlight.** Install the build on your own iPhone and add a real token. Then check:
    - deploy one project and roll it back;
    - a widget;
@@ -115,13 +120,19 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 
 ## Before each release
 
-1. Raise `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in the project.
-2. Run `ios/build.sh`, and check the demo on an iPhone and an iPad simulator.
+1. Raise `MARKETING_VERSION` in the project (the build number comes from `ios/build.sh --archive`).
+2. Run `ios/test.sh` and `ios/build.sh`, and check the demo on an iPhone and an iPad simulator.
 3. When a screen has changed, make new screenshots. Launch with `-demo`; `-open <project>` and
    `-settings` open a screen directly:
 
    ```bash
    xcrun simctl launch booted app.deploycenter.ios -demo -open Harbor-307
+   ```
+
+   For the German store page, the same in German:
+
+   ```bash
+   xcrun simctl launch booted app.deploycenter.ios -demo -open Harbor-307 -AppleLanguages "(de)" -AppleLocale de_DE
    ```
 
    Then capture it:

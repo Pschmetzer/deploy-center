@@ -645,7 +645,7 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 414. ✅ [Bug] **GitHub-Rate-Limit (403) wird nicht erkannt.** GitHub meldet das primäre Limit mit 403 und `x-ratelimit-remaining: 0`; die App versucht nur 429 erneut und zeigt „HTTP 403“. Header auswerten, Reset-Zeit nennen. (ios/App/Clients.swift:38–45)
 415. ✅ [Bug] **`Retry-After` wird ignoriert.** Feste 3/6 s statt der vom Server genannten Zeit; bei Render-429 schlägt die ganze Liste oft trotzdem fehl. (ios/App/Clients.swift:38–40)
 416. ✅ [Bug] **`URLSession.shared` cacht API-Antworten (Vermutung).** GitHub sendet `Cache-Control: private, max-age=60`; direkt nach einem Deploy kann der alte Branch-Stand aus dem Cache kommen, und Antworten liegen auf der Platte. Eigene `ephemeral`-Session mit `reloadIgnoringLocalCacheData`. (ios/App/Clients.swift:35)
-417. ◐ [Bug] **Hintergrund-Refresh überschreitet das Zeitfenster (Vermutung).** BGAppRefresh hat etwa 30 s; Laden mit vielen Repos, sequentieller Zweitschleife und Retry-Pausen bis 9 s pro Aufruf dauert länger, iOS bricht ab, Widget und Hinweise bleiben alt. Zeitbudget und `expirationHandler`, im Hintergrund nur das Nötigste lesen. (ios/App/DeployCenterApp.swift:31–39)
+417. ✅ [Bug] **Hintergrund-Refresh überschreitet das Zeitfenster (Vermutung).** BGAppRefresh hat etwa 30 s; Laden mit vielen Repos, sequentieller Zweitschleife und Retry-Pausen bis 9 s pro Aufruf dauert länger, iOS bricht ab, Widget und Hinweise bleiben alt. Zeitbudget und `expirationHandler`, im Hintergrund nur das Nötigste lesen. (ios/App/DeployCenterApp.swift:31–39)
 418. ✅ [Bug] **Hintergrundlauf arbeitet mit einem zweiten Store.** `Background.run` erzeugt eine neue `PhoneStore`; die sichtbare Instanz bekommt die neuen Daten nicht und zeigt beim Zurückkehren den alten Stand. Die App-Instanz teilen. (ios/App/DeployCenterApp.swift:33)
 419. ✅ [Bug] **Hinweis-Flut nach geleertem Cache.** `last-projects.json` liegt in `Caches`; löscht iOS es, ist `before` leer und jedes wartende Projekt gilt als „neu wartend“. Datei in `Application Support` und leeres `before` als „nicht melden“ behandeln. (ios/App/DeployCenterApp.swift:35, 41–43)
 420. ✅ [Bug] **Erlaubnis für Mitteilungen abgelehnt, Schalter bleibt an.** `requestPermission` ignoriert das Ergebnis; Schalter zurücksetzen und auf iOS-Einstellungen verweisen. (ios/App/DeployCenterApp.swift:45–47, Views.swift:280)
@@ -674,7 +674,7 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 435. ✅ [Security] **QR-Code ohne Ablauf.** `parse(qr:)` prüft `updated` nicht; ein altes Foto oder Bildschirmfoto des Codes funktioniert für immer. Codes älter als zwei Minuten ablehnen. (shared/PhoneLink.swift:87–91)
 436. [Security] **QR-Code enthält Schlüssel im Klartext.** Base64-JSON ist für jede Kamera lesbar; optional mit einem auf dem Mac angezeigten Kurzcode verschlüsseln (z. B. 6 Ziffern, HKDF + AES-GCM). (shared/PhoneLink.swift:82–85)
 437. [Security] **Eigene Tokens landen in der geteilten Schlüsselbund-Gruppe (Vermutung).** Ohne `kSecAttrAccessGroup` nimmt iOS die erste Gruppe aus `keychain-access-groups`, also die Team-Gruppe, die alle Apps des Teams lesen können. Die App-eigene Gruppe explizit setzen. (ios/App/Keychain.swift:22, ios/Config/DeployCenter.entitlements:9–12)
-438. ◐ [Security] **Volles gh-CLI-Token geht aufs iPhone.** Das Telefon liest GitHub nur; ein gh-Token mit `repo`/`workflow`-Rechten ist mehr als nötig. In der App die Scopes (`X-OAuth-Scopes`) anzeigen und zu einem fein granularen Nur-Lese-Token raten. (docs/WIDGETS-IOS.md:164–165)
+438. ✅ [Security] **Volles gh-CLI-Token geht aufs iPhone.** Das Telefon liest GitHub nur; ein gh-Token mit `repo`/`workflow`-Rechten ist mehr als nötig. In der App die Scopes (`X-OAuth-Scopes`) anzeigen und zu einem fein granularen Nur-Lese-Token raten. (docs/WIDGETS-IOS.md:164–165)
 439. ✅ [Security] **App-Umschalter zeigt Projekte und Domains.** Beim Wechsel in den Hintergrund einen Sichtschutz legen (optional), wie viele Admin-Apps es tun. (ios/App/DeployCenterApp.swift:17)
 440. ✅ [Security] **Optionale App-Sperre beim Öffnen.** Face ID schützt nur Deploy/Rollback; Liste, Domains und Commit-Texte sind offen. Schalter „Beim Öffnen entsperren“. (ios/App/PhoneStore.swift:113)
 441. ✅ [Security] **Widget auf Sperrbildschirm/StandBy zeigt Projektnamen.** `.privacySensitive()` für Namen, damit iOS sie im gesperrten Zustand ausblendet. (widgets/DeployWidget.swift:98)
@@ -684,21 +684,21 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 
 ### Performance
 
-444. [Perf] **Schlüsselbund bei jedem Neuzeichnen.** `hasAccount` und `token()` lesen bei jedem Aufruf per `SecItemCopyMatching`; einmal laden und im Store halten. (ios/App/PhoneStore.swift:29–32, Views.swift:16)
-445. [Perf] **Zweiter GitHub-Durchlauf läuft seriell.** Projekte mit abweichendem Live-Commit werden nacheinander verglichen; in dieselbe Task-Gruppe nehmen. (ios/App/PhoneStore.swift:96–102)
-446. [Perf] **ETags für GitHub.** Bedingte Anfragen (`If-None-Match`) liefern 304 und zählen nicht gegen das Limit; wichtig ohne Token (60/h) und für den Hintergrund. (ios/App/Clients.swift:247–257)
-447. [Perf] **Widget-L liest die Datei bei jedem Text.** `L()` im Widget dekodiert `snapshot.json` pro Aufruf; Sprache einmal aus dem Entry übergeben. (widgets/DeployWidget.swift:26–29)
-448. [Perf] **Widget wird auch ohne Änderung neu geladen.** `reloadAllTimelines()` nach jedem Laden verbraucht das Widget-Budget; nur bei geändertem Snapshot (Mac macht das schon). (ios/App/PhoneStore.swift:222–227)
-449. [Perf] **`ISO8601DateFormatter` pro Aufruf.** Bei hunderten Daten pro Laden einmal statisch anlegen. (ios/App/Clients.swift:64–70)
-450. [Perf] **Sofortstart aus dem letzten Stand.** `last-projects.json` existiert schon; beim Start zuerst anzeigen, dann im Hintergrund laden, statt leerer Liste mit Spinner. (ios/App/Views.swift:102, PhoneStore.swift:108)
-451. [Perf] **Bis zu zehn sequentielle `commits/{sha}/pulls`-Aufrufe.** Parallel (begrenzt) oder per GraphQL in einem Aufruf. (ios/App/Clients.swift:266–272)
+444. ✅ [Perf] **Schlüsselbund bei jedem Neuzeichnen.** `hasAccount` und `token()` lesen bei jedem Aufruf per `SecItemCopyMatching`; einmal laden und im Store halten. (ios/App/PhoneStore.swift:29–32, Views.swift:16)
+445. ✅ [Perf] **Zweiter GitHub-Durchlauf läuft seriell.** Projekte mit abweichendem Live-Commit werden nacheinander verglichen; in dieselbe Task-Gruppe nehmen. (ios/App/PhoneStore.swift:96–102)
+446. ✅ [Perf] **ETags für GitHub.** Bedingte Anfragen (`If-None-Match`) liefern 304 und zählen nicht gegen das Limit; wichtig ohne Token (60/h) und für den Hintergrund. (ios/App/Clients.swift:247–257)
+447. ✅ [Perf] **Widget-L liest die Datei bei jedem Text.** `L()` im Widget dekodiert `snapshot.json` pro Aufruf; Sprache einmal aus dem Entry übergeben. (widgets/DeployWidget.swift:26–29)
+448. ✅ [Perf] **Widget wird auch ohne Änderung neu geladen.** `reloadAllTimelines()` nach jedem Laden verbraucht das Widget-Budget; nur bei geändertem Snapshot (Mac macht das schon). (ios/App/PhoneStore.swift:222–227)
+449. ✅ [Perf] **`ISO8601DateFormatter` pro Aufruf.** Bei hunderten Daten pro Laden einmal statisch anlegen. (ios/App/Clients.swift:64–70)
+450. ✅ [Perf] **Sofortstart aus dem letzten Stand.** `last-projects.json` existiert schon; beim Start zuerst anzeigen, dann im Hintergrund laden, statt leerer Liste mit Spinner. (ios/App/Views.swift:102, PhoneStore.swift:108)
+451. ✅ [Perf] **Bis zu zehn sequentielle `commits/{sha}/pulls`-Aufrufe.** Parallel (begrenzt) oder per GraphQL in einem Aufruf. (ios/App/Clients.swift:266–272)
 
 
 ### Barrierefreiheit
 
 452. ✅ [A11y] **Meldungen werden VoiceOver nicht angesagt.** Das Toast-Overlay erscheint still; `AccessibilityNotification.Announcement` senden. (ios/App/Views.swift:47–55)
 453. ✅ [A11y] **Fehler verschwinden nach 4 Sekunden.** Für Fehler und bei aktivem VoiceOver länger oder bis zum Antippen stehen lassen; Schließen als echter Button. (ios/App/Views.swift:51–52)
-454. ◐ [A11y] **Zeilen ohne Aktionen.** VoiceOver-Aktionen „Deployen“, „Zurückrollen“, „Domain öffnen“ per `accessibilityActions` (wie in der Mac-App). (ios/App/Views.swift:158–173)
+454. ✅ [A11y] **Zeilen ohne Aktionen.** VoiceOver-Aktionen „Deployen“, „Zurückrollen“, „Domain öffnen“ per `accessibilityActions` (wie in der Mac-App). (ios/App/Views.swift:158–173)
 455. ✅ [A11y] **Symbolname im Status vorgelesen.** Das Icon in der Detailansicht ist nicht versteckt; VoiceOver liest „Hammer, baut“. `accessibilityHidden(true)`. (ios/App/Views.swift:188)
 456. ✅ [A11y] **Fußzeile nennt immer Face ID.** Auf Touch-ID-Geräten oder nur mit Code ist der Text falsch; `LAContext.biometryType` auswerten. (ios/App/Views.swift:219–220)
 457. ✅ [A11y] **QR-Scanner ohne Anleitung.** Nur „Abbrechen“ auf schwarzem Grund; Text „Auf den Code am Mac richten“ und VoiceOver-Hinweis, gefunden/nicht gefunden mit Haptik. (ios/App/ConnectMac.swift:90–113)
@@ -710,56 +710,56 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 
 ### iPad
 
-462. [UX] **Tastaturkürzel auf dem iPad.** ⌘R neu laden, ⌘, Einstellungen, ⌘D deployen der Auswahl, Pfeiltasten in der Liste. (ios/App/Views.swift:14–34)
-463. [UX] **Leere Detailspalte beim Start.** Auf breiten Displays das erste Projekt der Gruppe „Achtung“ oder „Wartet“ vorwählen. (ios/App/Views.swift:29–31)
-464. [UX] **Kontextmenü auf Zeilen.** Langes Drücken/Rechtsklick: Deployen, Domain öffnen, SHA kopieren, im Dashboard öffnen. (ios/App/Views.swift:96)
-465. [UX] **Mehrere Fenster nebeneinander.** Mit Stage Manager je Fenster eine eigene Auswahl (`@SceneStorage`) statt `@State`. (ios/App/Views.swift:9)
+462. ✅ [UX] **Tastaturkürzel auf dem iPad.** ⌘R neu laden, ⌘, Einstellungen, ⌘D deployen der Auswahl, Pfeiltasten in der Liste. (ios/App/Views.swift:14–34)
+463. ✅ [UX] **Leere Detailspalte beim Start.** Auf breiten Displays das erste Projekt der Gruppe „Achtung“ oder „Wartet“ vorwählen. (ios/App/Views.swift:29–31)
+464. ◐ [UX] **Kontextmenü auf Zeilen.** Langes Drücken/Rechtsklick: Deployen, Domain öffnen, SHA kopieren, im Dashboard öffnen. (ios/App/Views.swift:96)
+465. ✅ [UX] **Mehrere Fenster nebeneinander.** Mit Stage Manager je Fenster eine eigene Auswahl (`@SceneStorage`) statt `@State`. (ios/App/Views.swift:9)
 
 
 ### UX und Gleichstand mit der Mac-App
 
-466. [UX] **„Nichts Neues – trotzdem bauen?“ fehlt auf iOS.** Der Deploy-Knopf ist auch bei aktuellem Stand aktiv und kostet einen Build; die Mac-App fragt bereits nach. (ios/App/Views.swift:204–210)
-467. [UX] **Auto-Deploy-Warnung fehlt.** `autoDeploy` wird geladen, aber nie gezeigt; der Kern der App (Projekte, die bei jedem Push bauen) ist auf dem iPhone unsichtbar. Abzeichen und Banner wie auf dem Mac. (ios/App/Project.swift:15)
-468. [UX] **401/403 verständlich machen.** „HTTP 401: …“ als „Token ungültig oder abgelaufen“ mit Knopf zu den Einstellungen; 404 bei privatem Repo als „GitHub-Token fehlt“. (ios/App/Clients.swift:41–45, Views.swift:89)
-469. [UX] **Leere Liste erklären.** Hat das Konto keine Projekte (oft: falsches Team), steht nur die Übersicht mit Nullen; `ContentUnavailableView` mit Hinweis auf die Team-ID. (ios/App/Views.swift:81–100)
-470. [UX] **„Verbindung testen“ in den Einstellungen.** Nach dem Speichern Kontoname, Team und Anzahl Projekte pro Anbieter zeigen, statt erst in der Liste zu scheitern. (ios/App/Views.swift:307–313)
-471. [UX] **Herkunft des Schlüssels im Feld zeigen.** Leeres Feld mit Platzhalter „vom Mac“, wenn ein verknüpfter Schlüssel greift. (ios/App/Views.swift:267–272)
-472. [UX] **Neu laden beim Zurückkehren.** Beim Aktivwerden nur bei geänderter Verknüpfung; bei Daten älter als z. B. 5 Minuten automatisch laden. (ios/App/Views.swift:35–37)
-473. [UX] **Offline-Zustand.** Mit `NWPathMonitor` „Offline – Stand von 10:42“ zeigen, statt dreimal 30 s auf Zeitüberschreitung zu warten. (ios/App/Clients.swift:22)
-474. [UX] **Rollback ohne Verfolgung.** Nach einem Rollback 4 s warten und neu laden; wie beim Deploy bis „live“ verfolgen. (ios/App/PhoneStore.swift:156–158)
-475. [UX] **Rollback-Dialog zu knapp.** Commit-Nachricht und Datum des Ziels zeigen, nicht nur 7 Zeichen SHA. (ios/App/Views.swift:236–239)
-476. [UX] **„SHA“ ist mehrdeutig.** Nur der Live-SHA erscheint; Live und Neuester beide anzeigen und kopierbar machen. (ios/App/Views.swift:201)
-477. [UX] **Haptik bei Ergebnis.** Erfolg/Fehler eines Deploys mit `sensoryFeedback`, besonders wenn man nebenbei wartet. (ios/App/PhoneStore.swift:184–189)
-478. [UX] **Meldung zusammenfassen statt abschneiden.** Mitteilung nimmt nur vier Zeilen und verschweigt den Rest; „+2 weitere“ anhängen. (ios/App/PhoneStore.swift:241)
-479. [UX] **Mitteilungen ersetzen statt stapeln.** Feste `identifier` pro Projekt/Ereignis und `threadIdentifier`, damit sich Hinweise nicht häufen. (ios/App/PhoneStore.swift:242)
-480. [UX] **Hinweis bei ausgeschalteter Hintergrundaktualisierung.** `UIApplication.backgroundRefreshStatus` prüfen und bei „aus“ oder Stromsparmodus im Schalter-Fußtext sagen, dass keine Hinweise kommen. (ios/App/Views.swift:279–284)
-481. [UX] **Widget kennzeichnet Demo-Daten nicht.** `snap.demo` wird nicht ausgewertet; ein kleines „Demo“ im Widget verhindert Verwechslung. (widgets/DeployWidget.swift:32–45)
-482. [UX] **Widget zeigt nicht, wie alt die Daten sind.** Ohne Hintergrundlauf steht tagelang derselbe Stand da; `Text(snap.at, style: .relative)` und ab z. B. 6 Stunden grau. (widgets/DeployWidget.swift:32–90)
-483. [UX] **Scanner bleibt bei falschem Code nicht offen.** Ein fremder QR-Code schließt die Kamera; weiter scannen und den Hinweis einblenden. (ios/App/ConnectMac.swift:60–63)
-484. [UX] **Welcome erklärt Tokens nicht.** Links „Vercel-Token anlegen“ / „Render-API-Key anlegen“ mit nötigen Rechten direkt im Willkommensbildschirm. (ios/App/Views.swift:64–73)
+466. ✅ [UX] **„Nichts Neues – trotzdem bauen?“ fehlt auf iOS.** Der Deploy-Knopf ist auch bei aktuellem Stand aktiv und kostet einen Build; die Mac-App fragt bereits nach. (ios/App/Views.swift:204–210)
+467. ✅ [UX] **Auto-Deploy-Warnung fehlt.** `autoDeploy` wird geladen, aber nie gezeigt; der Kern der App (Projekte, die bei jedem Push bauen) ist auf dem iPhone unsichtbar. Abzeichen und Banner wie auf dem Mac. (ios/App/Project.swift:15)
+468. ✅ [UX] **401/403 verständlich machen.** „HTTP 401: …“ als „Token ungültig oder abgelaufen“ mit Knopf zu den Einstellungen; 404 bei privatem Repo als „GitHub-Token fehlt“. (ios/App/Clients.swift:41–45, Views.swift:89)
+469. ✅ [UX] **Leere Liste erklären.** Hat das Konto keine Projekte (oft: falsches Team), steht nur die Übersicht mit Nullen; `ContentUnavailableView` mit Hinweis auf die Team-ID. (ios/App/Views.swift:81–100)
+470. ✅ [UX] **„Verbindung testen“ in den Einstellungen.** Nach dem Speichern Kontoname, Team und Anzahl Projekte pro Anbieter zeigen, statt erst in der Liste zu scheitern. (ios/App/Views.swift:307–313)
+471. ✅ [UX] **Herkunft des Schlüssels im Feld zeigen.** Leeres Feld mit Platzhalter „vom Mac“, wenn ein verknüpfter Schlüssel greift. (ios/App/Views.swift:267–272)
+472. ✅ [UX] **Neu laden beim Zurückkehren.** Beim Aktivwerden nur bei geänderter Verknüpfung; bei Daten älter als z. B. 5 Minuten automatisch laden. (ios/App/Views.swift:35–37)
+473. ✅ [UX] **Offline-Zustand.** Mit `NWPathMonitor` „Offline – Stand von 10:42“ zeigen, statt dreimal 30 s auf Zeitüberschreitung zu warten. (ios/App/Clients.swift:22)
+474. ✅ [UX] **Rollback ohne Verfolgung.** Nach einem Rollback 4 s warten und neu laden; wie beim Deploy bis „live“ verfolgen. (ios/App/PhoneStore.swift:156–158)
+475. ✅ [UX] **Rollback-Dialog zu knapp.** Commit-Nachricht und Datum des Ziels zeigen, nicht nur 7 Zeichen SHA. (ios/App/Views.swift:236–239)
+476. ✅ [UX] **„SHA“ ist mehrdeutig.** Nur der Live-SHA erscheint; Live und Neuester beide anzeigen und kopierbar machen. (ios/App/Views.swift:201)
+477. ✅ [UX] **Haptik bei Ergebnis.** Erfolg/Fehler eines Deploys mit `sensoryFeedback`, besonders wenn man nebenbei wartet. (ios/App/PhoneStore.swift:184–189)
+478. ✅ [UX] **Meldung zusammenfassen statt abschneiden.** Mitteilung nimmt nur vier Zeilen und verschweigt den Rest; „+2 weitere“ anhängen. (ios/App/PhoneStore.swift:241)
+479. ✅ [UX] **Mitteilungen ersetzen statt stapeln.** Feste `identifier` pro Projekt/Ereignis und `threadIdentifier`, damit sich Hinweise nicht häufen. (ios/App/PhoneStore.swift:242)
+480. ✅ [UX] **Hinweis bei ausgeschalteter Hintergrundaktualisierung.** `UIApplication.backgroundRefreshStatus` prüfen und bei „aus“ oder Stromsparmodus im Schalter-Fußtext sagen, dass keine Hinweise kommen. (ios/App/Views.swift:279–284)
+481. ✅ [UX] **Widget kennzeichnet Demo-Daten nicht.** `snap.demo` wird nicht ausgewertet; ein kleines „Demo“ im Widget verhindert Verwechslung. (widgets/DeployWidget.swift:32–45)
+482. ✅ [UX] **Widget zeigt nicht, wie alt die Daten sind.** Ohne Hintergrundlauf steht tagelang derselbe Stand da; `Text(snap.at, style: .relative)` und ab z. B. 6 Stunden grau. (widgets/DeployWidget.swift:32–90)
+483. ✅ [UX] **Scanner bleibt bei falschem Code nicht offen.** Ein fremder QR-Code schließt die Kamera; weiter scannen und den Hinweis einblenden. (ios/App/ConnectMac.swift:60–63)
+484. ✅ [UX] **Welcome erklärt Tokens nicht.** Links „Vercel-Token anlegen“ / „Render-API-Key anlegen“ mit nötigen Rechten direkt im Willkommensbildschirm. (ios/App/Views.swift:64–73)
 
 
 ### Code und Teilung über shared/
 
-485. [Code] **Die „Wartet“-Regel in shared/ legen.** `changed`/`building`/`failed` sind ein Port von `CHANGED_RULE`; als gemeinsame, getestete Swift-Datei verhindert das Abweichungen zwischen Mac und iPhone. (ios/App/Project.swift:38–57)
-486. [Code] **Kein Testziel im iOS-Projekt.** Unit-Tests für `prNumber`, `changed`, `merging`, Render-/Vercel-Rollback-Ziel mit aufgezeichneten JSON-Antworten. (ios/DeployCenter.xcodeproj/project.pbxproj)
-487. [Code] **`L()` doppelt.** Einmal in Project.swift, einmal privat im Widget mit anderer Logik; eine Funktion mit Sprachparameter in shared/. (ios/App/Project.swift:75, widgets/DeployWidget.swift:26)
+485. ◐ [Code] **Die „Wartet“-Regel in shared/ legen.** `changed`/`building`/`failed` sind ein Port von `CHANGED_RULE`; als gemeinsame, getestete Swift-Datei verhindert das Abweichungen zwischen Mac und iPhone. (ios/App/Project.swift:38–57)
+486. ◐ [Code] **Kein Testziel im iOS-Projekt.** Unit-Tests für `prNumber`, `changed`, `merging`, Render-/Vercel-Rollback-Ziel mit aufgezeichneten JSON-Antworten. (ios/DeployCenter.xcodeproj/project.pbxproj)
+487. ◐ [Code] **`L()` doppelt.** Einmal in Project.swift, einmal privat im Widget mit anderer Logik; eine Funktion mit Sprachparameter in shared/. (ios/App/Project.swift:75, widgets/DeployWidget.swift:26)
 488. [Code] **Codable statt `[String: Any]`.** Kleine Decodable-Typen für Vercel/Render/GitHub machen Pfadfehler (`"targets.production.id"`) zu Compile-Fehlern. (ios/App/Clients.swift:6, 54–62)
-489. [Code] **HTTP injizierbar machen.** `URLSession` als Parameter, damit Tests ohne Netz laufen und der Hintergrund eine eigene Session nutzen kann. (ios/App/Clients.swift:15–35)
-490. [Code] **Feld-Zuordnung viermal von Hand.** `TokenKey` ↔ `LinkedKeys` steht in `adopt`, `linkedToken`, `save`, `onAppear`; ein KeyPath-Mapping. (ios/App/PhoneStore.swift:33–51, Views.swift:299–311)
-491. [Code] **iOS-Snapshot ohne Sprache.** `language` bleibt nil; die App-Sprache mitschreiben, damit Widget und App gleich sprechen. (ios/App/PhoneStore.swift:216)
-492. [Code] **Build-Nummer automatisch.** `CURRENT_PROJECT_VERSION` wird von Hand erhöht; in `ios/build.sh --archive` aus Datum oder `git rev-list --count` setzen. (ios/DeployCenter.xcodeproj/project.pbxproj:176, ios/build.sh:49)
-493. [Code] **`--run` ohne gebooteten Simulator.** `simctl install booted` scheitert kryptisch; vorher prüfen und einen Simulator vorschlagen/starten. (ios/build.sh:21–24)
+489. ✅ [Code] **HTTP injizierbar machen.** `URLSession` als Parameter, damit Tests ohne Netz laufen und der Hintergrund eine eigene Session nutzen kann. (ios/App/Clients.swift:15–35)
+490. ✅ [Code] **Feld-Zuordnung viermal von Hand.** `TokenKey` ↔ `LinkedKeys` steht in `adopt`, `linkedToken`, `save`, `onAppear`; ein KeyPath-Mapping. (ios/App/PhoneStore.swift:33–51, Views.swift:299–311)
+491. ✅ [Code] **iOS-Snapshot ohne Sprache.** `language` bleibt nil; die App-Sprache mitschreiben, damit Widget und App gleich sprechen. (ios/App/PhoneStore.swift:216)
+492. ✅ [Code] **Build-Nummer automatisch.** `CURRENT_PROJECT_VERSION` wird von Hand erhöht; in `ios/build.sh --archive` aus Datum oder `git rev-list --count` setzen. (ios/DeployCenter.xcodeproj/project.pbxproj:176, ios/build.sh:49)
+493. ✅ [Code] **`--run` ohne gebooteten Simulator.** `simctl install booted` scheitert kryptisch; vorher prüfen und einen Simulator vorschlagen/starten. (ios/build.sh:21–24)
 494. [Code] **iOS-Ziel in den bestehenden CI-Workflow.** Einen Schritt `xcodebuild -sdk iphonesimulator` (macOS-Runner) ergänzen; er fängt kaputte Builds der geteilten Dateien (shared/, widgets/), die die Mac-Änderungen sonst still brechen. (ios/build.sh:17)
 
 
 ### App Store und Doku
 
-495. [Store] **Verfügbarkeit auf Apple-Silicon-Macs abschalten.** Sonst erscheint die iPad-App im Mac App Store neben der echten Mac-App; in App Store Connect „iPhone- und iPad-Apps auf Mac“ (und visionOS) deaktivieren. (docs/APP-STORE.md:46–67)
-496. [Store] **Deutsche Screenshots.** Die deutsche Seite nutzt englische Bilder; mit `-AppleLanguages (de)` und `-demo` erzeugen. (docs/APP-STORE.md:56)
+495. ◐ [Store] **Verfügbarkeit auf Apple-Silicon-Macs abschalten.** Sonst erscheint die iPad-App im Mac App Store neben der echten Mac-App; in App Store Connect „iPhone- und iPad-Apps auf Mac“ (und visionOS) deaktivieren. (docs/APP-STORE.md:46–67)
+496. ◐ [Store] **Deutsche Screenshots.** Die deutsche Seite nutzt englische Bilder; mit `-AppleLanguages (de)` und `-demo` erzeugen. (docs/APP-STORE.md:56)
 497. [Store] **Accessibility-Angaben in App Store Connect.** Die neuen Barrierefreiheits-Labels (VoiceOver, größerer Text, Dunkelmodus …) erst nach geprüftem VoiceOver-Durchgang ausfüllen. (docs/APP-STORE.md:20)
-498. [Store] **Build-Nummern in der Doku widersprechen sich.** „Build 1.0 (1) is uploaded“ und Einreichung „1.0 (2)“; Status-Abschnitt aktualisieren. (docs/APP-STORE.md:52, 145)
-499. [Store] **Doku nennt nicht geprüfte Pfade.** Echte Deploys, Rollback und iCloud-Verknüpfung sind laut Doku nie gelaufen; vor der nächsten Version eine kurze Testliste mit einem Wegwerf-Projekt abhaken. (docs/WIDGETS-IOS.md:205–212)
+498. ✅ [Store] **Build-Nummern in der Doku widersprechen sich.** „Build 1.0 (1) is uploaded“ und Einreichung „1.0 (2)“; Status-Abschnitt aktualisieren. (docs/APP-STORE.md:52, 145)
+499. ◐ [Store] **Doku nennt nicht geprüfte Pfade.** Echte Deploys, Rollback und iCloud-Verknüpfung sind laut Doku nie gelaufen; vor der nächsten Version eine kurze Testliste mit einem Wegwerf-Projekt abhaken. (docs/WIDGETS-IOS.md:205–212)
 
 
 ### Features

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- iPhone app, deploys and rollbacks: "Nothing new to deploy" before a build of the live commit; the rollback question names the commit, its message and date, and the app follows the rollback until the old version is live; a success or error tap when a deploy or rollback ends.
+- iPhone app, list: auto-deploy shown on rows, in the details and as a line above the list; long press for deploy, rollback, open domain, copy the live SHA and the Render dashboard; VoiceOver's "Roll back" asks right there; live and newest commit both shown and copyable; an empty account explains the team id; a refused key (401/403) says so and offers the settings; a private repo without a GitHub token says so.
+- iPhone app, start and network: the last list shows at once while the first load runs; data older than five minutes reloads on return; offline shows "Offline" with the time of the data and reloads when the network is back.
+- iPhone and iPad: ⌘R reload, ⌘, settings, ⌘D deploy the selection; each window keeps its own selection; wide screens open the first project that needs attention.
+- iPhone app, settings: "Test connection" shows the account, team and project count per platform; empty fields say when the Mac's key is used; a note when Background App Refresh is off or Low Power Mode is on. The welcome screen links to creating a Vercel token and a Render API key.
+- iPhone app, QR code: a wrong or old code keeps the camera open with the reason.
+- iPhone app, speed: GitHub reads use ETags (a 304 does not count against the limit), the second compare pass and the PR lookups run in parallel, the keychain is read once per key, dates use shared formatters; the background refresh has a time budget and shorter retry waits.
+- iPhone app, notes: one note per project and event with a fixed id (no pile-up), more than three become one summary with "+N more".
+- Widgets: a "Demo" tag on made-up numbers; on iPhone the time of the data, orange after six hours; the language comes with the snapshot, read once; the iPhone app reloads widgets only when what they show changed.
+- shared: `DeployRule` holds the building/failed/waiting rule, `DeploySnapshot.localized` the language pick. `ios/test.sh` checks the rule, PR numbers, rollback targets, ETags and error texts against made-up answers on the Mac.
+- ios/build.sh: `--archive` sets the build number from the commit count (or `BUILD_NUMBER`); `--run` boots an iPhone simulator when none is booted. The app is not offered as an iPad app on Mac or Apple Vision Pro.
+
 - pre-push hook: reads `deploys list --json`, so it warns for every platform that is on, and for GitLab remotes (`gitlab.com/group/sub/app`) too. An older CLI without `list` still gets the Vercel and Render lists.
 - Status page: `platform/name` works for every platform, not only `vercel/` and `render/`.
 - Badges: a name on two platforms gets one badge per platform (`vercel-web.svg`, `netlify-web.svg`); every other name keeps `<name>.svg`.
