@@ -27,7 +27,9 @@
 #   deploys vercel team [<id>]                show or set the Vercel team
 #   deploys vercel deploy <p> [--preview] [--sha <c>] [--wait]   --wait follows it until live or failed
 #   deploys history <project> [n]             the last n deploys (default 10): when, state, commit, source
-#   deploys logs <project> [lines]            the end of the newest build log
+#   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>)
+#   deploys autofix [--dry-run]               a failed build goes to a Claude Code routine; a merged fix is deployed
+#   deploys autofix set-token | routine <id> | list | forget-token    (see docs/AUTOFIX.md)
 #   deploys open <project> [--dashboard]      the site, or its page at Vercel or Render
 #   deploys ignore <p> [--undo] | --list      leave a project out of changed and deploy-changed
 #   deploys costs [days] | triggers           Vercel charges per day; builds nobody started from here
@@ -441,7 +443,8 @@ render_last_of() {
         # The status is the newest attempt (a failure shows), the commit is what is live: a failed
         # deploy of the newest commit must not make the project look up to date.
         | {key:$id, value:{lastAt:(($new.finishedAt // $new.createdAt) | t), lastState:$new.status,
-                           lastSha:($live.commit.id // null), lastMsg:($live.commit.message // null | if . then split("\n")[0] else null end), liveAt:(($live.finishedAt // $live.createdAt) | t)}}' \
+                           lastSha:($live.commit.id // null), lastMsg:($live.commit.message // null | if . then split("\n")[0] else null end), liveAt:(($live.finishedAt // $live.createdAt) | t),
+                           latestId:($new.id // null), latestSha:($new.commit.id // null)}}' \
     > "$out/$id.json" 2>/dev/null || last_fail "unreadable answer"
   [ -s "$out/$id.json" ] || last_fail "empty answer"
 }
@@ -479,6 +482,155 @@ export -f workflow_hits b64d
 # ---------- Commands ----------
 
 # Sourced by tests/script-tests.sh: the functions above, no command.
+# ---------- Autofix: a failed build hands itself to a Claude Code routine ----------
+# Detection and redeploy run here (the Vercel login and the Render key are on this Mac); the
+# fix runs in a Claude Code routine in the cloud, which opens a PR. A person merges it; the next
+# run deploys exactly that merge commit, once. See docs/AUTOFIX.md.
+AUTOFIX_KEYCHAIN="deploy-center-routine"
+AUTOFIX_STATE="$CONFIG_DIR/autofix.json"
+AUTOFIX_API="${DEPLOYS_ROUTINE_API:-https://api.anthropic.com/v1/claude_code/routines}"
+AUTOFIX_PER_PROJECT="${DEPLOYS_AUTOFIX_PER_PROJECT:-2}"   # fires per project per 24 h
+AUTOFIX_PER_DAY="${DEPLOYS_AUTOFIX_PER_DAY:-6}"           # fires per account per 24 h
+
+# Only a build that failed can be fixed from its build log. Runtime and health-check failures
+# (Render update_failed, pre_deploy_failed) are reported, cancelled deploys never count.
+AUTOFIX_FAILED='((.platform == "vercel" and ((.latestState // .lastState) == "ERROR"))
+  or (.platform == "render" and .lastState == "build_failed"))'
+AUTOFIX_REPORT_ONLY='(.platform == "render" and ((.lastState == "update_failed") or (.lastState == "pre_deploy_failed")))'
+
+af_state() { [ -s "$AUTOFIX_STATE" ] && cat "$AUTOFIX_STATE" || echo '{"fires":[]}'; }
+af_save() { local t; t="$(mktemp)"; cat > "$t" && mv "$t" "$AUTOFIX_STATE"; }
+af_token() {
+  if [ -n "${DEPLOYS_ROUTINE_TOKEN:-}" ]; then printf '%s' "$DEPLOYS_ROUTINE_TOKEN"; return; fi
+  security find-generic-password -a "$USER" -s "$AUTOFIX_KEYCHAIN" -w 2>/dev/null || true
+}
+# Empty, not a failure, when none is set: under set -e a failing $(...) would end the run.
+af_routine() { cat "$CONFIG_DIR/autofix-routine" 2>/dev/null || true; }
+af_notify() {
+  echo "$1"
+  [ "${DEPLOYS_NOTIFY:-1}" = 1 ] && command -v osascript >/dev/null 2>&1 \
+    && osascript -e "display notification \"$(echo "$1" | tr -d '"\\')\" with title \"Deploy Center\"" >/dev/null 2>&1 || true
+}
+# Seams the tests replace: what is live, a build log, a deploy.
+af_all() { DEPLOYS_NO_GITHUB=1 all_json; }
+af_logs() { "$0" logs "$1" 200 --id "$2"; }
+af_deploy() { "$0" "$1" deploy-json "$2" --sha "$3"; }
+
+# Obvious secrets out of a log before it leaves this Mac. A help, not a guarantee.
+af_mask() {
+  perl -pe 's/\b(sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|AKIA[A-Z0-9]{12,}|rnd_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
+            s/((?i:token|secret|password|passwd|api[_-]?key|authorization)["\x27]?\s*[:=]\s*["\x27]?)[^\s"\x27,;]+/$1[masked]/g;
+            s#(://[^/\s:@]+):[^@\s/]+@#$1:[masked]@#g'
+}
+
+# Open (or merged) autofix PRs of one project: gh REST only, branch claude/autofix-<project>-*.
+af_prs() {  # af_prs <owner/repo> <project> <open|closed>
+  gh api "repos/$1/pulls?state=$3&per_page=50&sort=updated&direction=desc" \
+    --jq "[.[] | select(.head.ref | startswith(\"claude/autofix-$2-\")) | {number, merged_at, merge_commit_sha, ref:.head.ref}]"
+}
+
+# One fire. The token goes to curl on stdin, never as an argument. Prints "<code>\t<body>".
+af_fire() {  # af_fire <trigger id> <text file>
+  local tok body out code; tok="$(af_token)"; [ -n "$tok" ] || { printf '000\tno routine token'; return; }
+  body="$(mktemp)"; jq -Rs '{text:.}' < "$2" > "$body"
+  out="$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | curl -sS -K - --connect-timeout 10 --max-time 60 -X POST \
+    -H "anthropic-version: 2023-06-01" -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+    -H "Content-Type: application/json" --data @"$body" -w '\n%{http_code}' "$AUTOFIX_API/$1/fire" 2>&1)" || out=$'\n000'
+  rm -f "$body"; code="${out##*$'\n'}"; printf '%s\t%s' "$code" "$(echo "${out%$'\n'*}" | tr '\n' ' ' | cut -c1-300)"
+}
+
+af_lock() {
+  local d="$CONFIG_DIR/locks/autofix"; mkdir -p "$CONFIG_DIR/locks"
+  # A run that died leaves the lock; after 30 minutes it is taken over.
+  if [ -d "$d" ] && [ $(( $(date +%s) - $(mtime "$d") )) -ge 1800 ]; then rmdir "$d" 2>/dev/null || true; fi
+  mkdir "$d" 2>/dev/null || die "autofix is running already"
+  echo "$d"
+}
+
+autofix_run() {  # autofix_run [dry]
+  local dry="${1:-}" lock all now trig st rc=0
+  lock="$(af_lock)" || return 1
+  now="$(date +%s)"; trig="$(af_routine)"
+  all="$(af_all)" || rc=1
+  st="$(af_state)"
+
+  # 1. Redeploy: a fire whose PR was merged deploys that merge commit, once, while still failed.
+  local open_fires f p plat repo did prs m msha
+  open_fires="$(echo "$st" | jq -c '.fires[] | select(.status == "fired" and (.redeployedSha == null) and (.done != true))')"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    p="$(echo "$f" | jq -r .project)"; plat="$(echo "$f" | jq -r .platform)"; repo="$(echo "$f" | jq -r .repo)"; did="$(echo "$f" | jq -r .deployId)"
+    local cur; cur="$(echo "$all" | jq -c --arg p "$p" --arg pl "$plat" '.[] | select(.name == $p and .platform == $pl)')"
+    if [ -n "$cur" ] && [ "$(echo "$cur" | jq "$AUTOFIX_FAILED")" != true ]; then
+      st="$(echo "$st" | jq --arg d "$did" '(.fires[] | select(.deployId == $d)).done = true')"
+      echo "autofix: $p is no longer failed; nothing to redeploy."; continue
+    fi
+    prs="$(af_prs "$repo" "$p" closed 2>/dev/null)" || { echo "autofix: could not ask GitHub about $p" >&2; rc=1; continue; }
+    m="$(echo "$prs" | jq -c --argjson at "$(echo "$f" | jq .at)" '[.[] | select(.merged_at != null and ((.merged_at | fromdateiso8601) > $at))][0] // empty')"
+    [ -n "$m" ] || continue
+    msha="$(echo "$m" | jq -r .merge_commit_sha)"
+    if [ -n "$dry" ]; then echo "autofix (dry run): would deploy $p at $msha (PR #$(echo "$m" | jq .number))"; continue; fi
+    # Written down before the deploy starts: a crash after this must not deploy twice.
+    st="$(echo "$st" | jq --arg d "$did" --arg s "$msha" --argjson n "$(echo "$m" | jq .number)" --argjson t "$now" \
+      '(.fires[] | select(.deployId == $d)) |= . + {redeployedSha:$s, pr:$n, redeployedAt:$t}')"
+    echo "$st" | af_save
+    if af_deploy "$plat" "$p" "$msha" >/dev/null; then af_notify "Autofix: $p is deploying the fix from PR #$(echo "$m" | jq .number)."
+    else af_notify "Autofix: the deploy of $p at ${msha:0:7} did not start."; rc=1; fi
+  done <<< "$open_fires"
+
+  # 2. Report what a build log cannot fix.
+  echo "$all" | jq -r ".[] | select($AUTOFIX_REPORT_ONLY) | \"autofix: \(.platform) \(.name) is \(.lastState): not a build failure, left to you.\""
+
+  # 3. Fire: at most one per run, within the caps.
+  local cands c sha day_count proj_count text code resp prev
+  cands="$(echo "$all" | jq -c ".[] | select($AUTOFIX_FAILED and .latestId != null and .repo != null)")"
+  day_count="$(echo "$st" | jq --argjson t "$now" '[.fires[] | select(.status != "ratelimited" and .at > ($t - 86400))] | length')"
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    p="$(echo "$c" | jq -r .name)"; plat="$(echo "$c" | jq -r .platform)"; repo="$(echo "$c" | jq -r .repo)"
+    did="$(echo "$c" | jq -r .latestId)"; sha="$(echo "$c" | jq -r '.latestSha // ""')"
+    prev="$(echo "$st" | jq -r --arg d "$did" '[.fires[] | select(.deployId == $d)][0].status // ""')"
+    [ -n "$prev" ] && [ "$prev" != ratelimited ] && continue
+    if [ -n "$sha" ] && [ "$(echo "$st" | jq --arg s "$sha" '[.fires[] | select(.redeployedSha == $s)] | length')" != 0 ]; then
+      st="$(echo "$st" | jq --arg d "$did" --arg p "$p" --arg pl "$plat" --argjson t "$now" '.fires += [{deployId:$d, project:$p, platform:$pl, at:$t, status:"skipped", reason:"the fix itself failed"}]')"
+      af_notify "Autofix: the fix for $p failed to build too. Not trying again; over to you."; continue
+    fi
+    proj_count="$(echo "$st" | jq --arg p "$p" --argjson t "$now" '[.fires[] | select(.project == $p and (.status == "fired" or .status == "failed") and .at > ($t - 86400))] | length')"
+    if [ "$proj_count" -ge "$AUTOFIX_PER_PROJECT" ]; then echo "autofix: $p already had $proj_count fixes today; skipped."; continue; fi
+    if [ "$day_count" -ge "$AUTOFIX_PER_DAY" ]; then echo "autofix: the daily cap ($AUTOFIX_PER_DAY) is reached."; break; fi
+    local open; open="$(af_prs "$repo" "$p" open 2>/dev/null)" || { echo "autofix: could not ask GitHub about $p; not firing" >&2; rc=1; continue; }
+    if [ "$(echo "$open" | jq length)" != 0 ]; then echo "autofix: $p has an open autofix PR (#$(echo "$open" | jq '.[0].number')); waiting for it."; continue; fi
+    if [ -n "$dry" ]; then echo "autofix (dry run): would hand $plat $p (deploy $did, ${sha:0:7}) to the routine"; break; fi
+    [ -n "$trig" ] || { echo "autofix: no routine set. Run: deploys autofix routine <trig_id>" >&2; rc=1; break; }
+    text="$(mktemp)"
+    {
+      printf 'project: %s\nplatform: %s\nrepo: %s\nbranch: %s\ncommit: %s\ndeploy: %s\nfix branch: claude/autofix-%s-%s\n\nBuild log (last lines, secrets masked where recognised):\n```\n' \
+        "$p" "$plat" "$repo" "$(echo "$c" | jq -r '.ref // "main"')" "$sha" "$did" "$p" "${sha:0:7}"
+      af_logs "$p" "$did" 2>/dev/null | af_mask | tail -c 60000
+      printf '\n```\n'
+    } > "$text"
+    # Recorded before the call: the API has no idempotency, a crash must not fire twice.
+    st="$(echo "$st" | jq --arg d "$did" '.fires |= map(select(.deployId != $d))' \
+      | jq --arg d "$did" --arg p "$p" --arg pl "$plat" --arg r "$repo" --arg s "$sha" --argjson t "$now" \
+        '.fires += [{deployId:$d, project:$p, platform:$pl, repo:$r, sha:$s, at:$t, status:"pending"}]')"
+    echo "$st" | af_save
+    resp="$(af_fire "$trig" "$text")"; rm -f "$text"; code="${resp%%$'\t'*}"; resp="${resp#*$'\t'}"
+    case "$code" in
+      2*) local url; url="$(echo "$resp" | jq -r '.claude_code_session_url // empty' 2>/dev/null)"
+          st="$(echo "$st" | jq --arg d "$did" --arg u "$url" '(.fires[] | select(.deployId == $d)) |= . + {status:"fired", session:$u}')"
+          af_notify "Autofix: $p failed to build; a Claude session is fixing it. ${url}" ;;
+      429) st="$(echo "$st" | jq --arg d "$did" '(.fires[] | select(.deployId == $d)).status = "ratelimited"')"
+          echo "autofix: rate limited; $p is tried again on the next run." ;;
+      *)  st="$(echo "$st" | jq --arg d "$did" --arg e "HTTP $code: $resp" '(.fires[] | select(.deployId == $d)) |= . + {status:"failed", error:$e}')"
+          af_notify "Autofix: could not start a session for $p (HTTP $code)."; rc=1 ;;
+    esac
+    break
+  done <<< "$cands"
+  [ -n "$dry" ] || echo "$st" | af_save
+  rmdir "$lock" 2>/dev/null || true
+  return "$rc"
+}
+
 if [ "${DEPLOYS_LIB:-}" = 1 ]; then return 0 2>/dev/null || exit 0; fi
 
 # The version: VERSION next to the script (a checkout), or the app's Info.plist around it.
@@ -502,7 +654,7 @@ esac
 usage_if_short() { [ "$1" -ge "$2" ] || die "Usage: deploys $3"; }
 case "${1:-} ${2:-}" in
   "watch "*)       usage_if_short $# 2 "watch <project>" ;;
-  "logs "*)        usage_if_short $# 2 "logs <project> [lines]" ;;
+  "logs "*)        usage_if_short $# 2 "logs <project> [lines] [--id <deploy>]" ;;
   "open "*)        usage_if_short $# 2 "open <project> [--dashboard]" ;;
   "explain "*)     usage_if_short $# 2 "explain <project>" ;;
   "diff "*)        usage_if_short $# 2 "diff <project>" ;;
@@ -525,9 +677,10 @@ case "${1:-} ${2:-}" in
       || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" >/dev/null 2>&1; then src="keychain"; fi
     ghu="$(gh api user --jq .login 2>/dev/null || echo "not logged in")"
     vu="$(vercel whoami 2>/dev/null | tail -n 1 || true)"
-    printf 'version      %s\nscript       %s\nconfig       %s\nvercel team  %s\nvercel user  %s\ngithub user  %s\nrender key   %s\n' \
+    atok=none; [ -n "$(af_token)" ] && atok="set"
+    printf 'version      %s\nscript       %s\nconfig       %s\nvercel team  %s\nvercel user  %s\ngithub user  %s\nrender key   %s\nautofix      routine %s, token %s\n' \
       "$(deploys_version)" "$0" "$CONFIG_DIR" "$(cat "$CONFIG_DIR/vercel-team" 2>/dev/null || echo "not chosen yet")" \
-      "${vu:-not logged in}" "$ghu" "$src" ;;
+      "${vu:-not logged in}" "$ghu" "$src" "$(r="$(af_routine)"; echo "${r:-none}")" "$atok" ;;
 
   "history "*)
     # The last n deploys of one project: when, how it ended, which commit, what started it.
@@ -628,16 +781,22 @@ case "${1:-} ${2:-}" in
     done ;;
 
   "logs "*)
-    # The last lines of the newest build log of one project.
-    p="${2:?project}"; n="${3:-80}"; plat="$(platform_of "$p")"
+    # The last lines of the newest build log of one project, or with --id of that one deploy
+    # (autofix: a build started after the failure must not hand over the wrong log).
+    p="${2:?project}"; n=80; did=""; shift 2
+    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>]}"; shift;; [0-9]*) n="$1";; *) die "Unknown option $1";; esac; shift; done
+    plat="$(platform_of "$p")"
     if [ "$plat" = vercel ]; then
-      d="$(vercel_call "/v6/deployments?app=$p&limit=1&target=production" | jq -r '.deployments[0].uid // empty')"
+      d="$did"; [ -n "$d" ] || d="$(vercel_call "/v6/deployments?app=$p&limit=1&target=production" | jq -r '.deployments[0].uid // empty')"
       [ -n "$d" ] || die "No deployment of $p"
       vercel_call "/v3/deployments/$d/events?builds=1&direction=backward&limit=2000" \
         | jq -r --argjson n "$n" 'sort_by(.created) | map(.payload.text // .text // "" | select(test("\\S"))) | .[-$n:][]'
     else
       id="$(render_id_of "$p")"; owner="$(render_call GET "/services/$id" | jq -r .ownerId)"
-      render_call GET "/logs?ownerId=$owner&resource=$id&type=build&limit=$n&direction=backward" \
+      # Render's logs have no deploy filter: the deploy's own time window stands in for it.
+      win=""
+      [ -z "$did" ] || win="$(render_call GET "/services/$id/deploys/$did" | jq -r '"&startTime=\(.createdAt | @uri)" + (if .finishedAt then "&endTime=\(.finishedAt | @uri)" else "" end)')"
+      render_call GET "/logs?ownerId=$owner&resource=$id&type=build&limit=$n&direction=backward$win" \
         | jq -r '.logs | reverse | .[].message' | sed $'s/\x1b\\[[0-9;]*m//g'
     fi ;;
 
@@ -711,7 +870,7 @@ case "${1:-} ${2:-}" in
 
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
-    cmds="doctor where changed deploy-changed status watch history logs open ignore explain diff notes costs triggers details vercel render completion --help --version"
+    cmds="doctor where changed deploy-changed status watch history logs open ignore explain diff notes costs triggers details autofix vercel render completion --help --version"
     case "${2:-zsh}" in
       zsh) cat <<ZSH
 _deploys() {
@@ -969,7 +1128,7 @@ BASH
     # The newest production attempt per project, from one call: a build started in the dashboard
     # or the terminal is BUILDING here while targets.production still shows the finished one.
     recent="$(vercel_call "/v6/deployments?limit=100&target=production" \
-      | jq '[.deployments[]] | group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created})}) | from_entries' 2>/dev/null)"
+      | jq '[.deployments[]] | group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta.githubCommitSha // null)})}) | from_entries' 2>/dev/null)"
     list="$(vercel_projects | jq --slurpfile r "$REPOS" --argjson recent "${recent:-{\}}" '[.[] |
       ((.link // null) | if . then {repo:"\(.org)/\(.repo)", ref:"main"} else null end) as $live |
       ($r[0][.name] // null) as $known |
@@ -982,7 +1141,8 @@ BASH
        lastState:(.targets.production.readyState // null),
        lastSha:(.targets.production.meta.githubCommitSha // null),
        lastMsg:(.targets.production.meta.githubCommitMessage // null | if . then split("\n")[0] else null end),
-       latestState:($recent[.name].state // null)}] | sort_by(.name | ascii_downcase)')"
+       latestState:($recent[.name].state // null),
+       latestId:($recent[.name].id // null), latestSha:($recent[.name].sha // null)}] | sort_by(.name | ascii_downcase)')"
     echo "$list" | remember_names
     with_heads "$list" ;;
 
@@ -1053,6 +1213,34 @@ BASH
     lasts="$(cat_all "$tmp"/*.json | jq -s 'from_entries')"; rm -rf "$tmp"
     list="$(echo "$list" | jq --argjson l "${lasts:-{\}}" 'map(. + ($l[.id] // {}))')"
     with_heads "$list" ;;
+
+  "autofix set-token")
+    # The routine's API token (claude.ai: routine > Trigger > API > Generate token), from stdin.
+    IFS= read -r key || true
+    [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys autofix set-token"
+    case "$key" in sk-ant-*) ;; *) die "That does not look like a routine token (sk-ant-...)";; esac
+    printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$AUTOFIX_KEYCHAIN" "$key" | security -i >/dev/null \
+      || die "Could not save the token in the keychain"
+    echo "Routine token saved." ;;
+  "autofix forget-token")
+    security delete-generic-password -a "$USER" -s "$AUTOFIX_KEYCHAIN" >/dev/null 2>&1 && echo "Routine token removed." || echo "No routine token was saved." ;;
+  "autofix routine")
+    if [ -n "${3:-}" ]; then
+      case "$3" in trig_*) ;; *) die "A routine id starts with trig_";; esac
+      printf '%s' "$3" > "$CONFIG_DIR/autofix-routine"; echo "Autofix routine set to $3"
+    else r="$(af_routine)"; echo "${r:-none}"; fi ;;
+  "autofix list")
+    af_state | jq -r '.fires[] | [(.at | strftime("%Y-%m-%d %H:%M")), .project, .status, ((.sha // "")[0:7]), (.session // .error // .reason // ""), (if .redeployedSha then "redeployed \(.redeployedSha[0:7]) (PR #\(.pr))" else "" end)] | @tsv' \
+      | (printf 'WHEN\tPROJECT\tSTATUS\tCOMMIT\tSESSION\tREDEPLOY\n'; cat) | column -t -s $'\t' ;;
+  "autofix "*)
+    # autofix [--dry-run]: hand a failed build to the routine, deploy a merged fix. For launchd.
+    dry=""
+    for a in "${@:2}"; do case "$a" in --dry-run) dry=1;; *) die "Unknown option $a. Usage: deploys autofix [--dry-run] | set-token | routine [<id>] | list";; esac; done
+    if [ -z "$dry" ]; then
+      [ -n "$(af_routine)" ] || die "No routine set. See docs/AUTOFIX.md, then: deploys autofix routine <trig_id>"
+      [ -n "$(af_token)" ] || die "No routine token. Run: pbpaste | deploys autofix set-token"
+    fi
+    autofix_run "$dry" ;;
 
   *)
     sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
