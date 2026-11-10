@@ -1,22 +1,64 @@
 name: CI
-# Lint and tests only. Nothing here deploys anything.
+# Lint, tests and an unsigned build. Nothing here deploys or publishes anything, and no secrets are used.
 on:
   push:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Tools
-        run: brew install jq shellcheck
-      - name: shellcheck (errors only)
-        run: shellcheck --severity=error deploys build.sh release.sh tests/*.sh
+        run: brew install jq shellcheck actionlint
+      - name: No personal data in the public repo
+        run: scripts/check-public.sh
+      - name: actionlint
+        run: actionlint .github/workflows/*.yml docs/deploy-on-label.yml
+      - name: shellcheck
+        # deploys stays at errors only until its warnings are cleaned up.
+        run: |
+          shellcheck --severity=warning build.sh release.sh scripts/*.sh tests/*.sh
+          shellcheck --severity=error deploys
       - name: Script tests
         run: bash tests/script-tests.sh
       - name: App tests
         run: bash tests/app-tests.sh
-      - name: Type-check the app
-        run: swiftc -parse-as-library -swift-version 5 -typecheck app/*.swift
+      - name: Build (ad-hoc signed, universal)
+        run: ./build.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: DeployCenter-unsigned
+          path: build/DeployCenter-*-universal.zip
+          retention-days: 7
+
+  changelog:
+    # A change to the CLI or the app should say so in CHANGELOG.md. A warning, not a failure:
+    # the label "no-changelog" silences it.
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no-changelog')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: CHANGELOG.md touched?
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          files="$(git diff --name-only "$BASE"...HEAD)"
+          if grep -qE '^(deploys|app/)' <<<"$files" && ! grep -qx CHANGELOG.md <<<"$files"; then
+            echo "::warning file=CHANGELOG.md::This PR changes deploys or app/ but not CHANGELOG.md. Add a line under Unreleased, or the label no-changelog."
+          fi

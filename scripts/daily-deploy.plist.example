@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Example: every day at 18:00 deploy what is merged and not live. Copy to ~/Library/LaunchAgents/,
-     replace YOURNAME, then: launchctl load ~/Library/LaunchAgents/app.deploycenter.daily.plist -->
+<!-- Example: every day at 18:00 deploy what is merged and not live.
+       cp scripts/daily-deploy.plist.example ~/Library/LaunchAgents/app.deploycenter.daily.plist
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.deploycenter.daily.plist
+     Run it once now: launchctl kickstart gui/$(id -u)/app.deploycenter.daily
+     Remove it:       launchctl bootout gui/$(id -u)/app.deploycenter.daily
+     launchd starts jobs with a bare PATH, so it is set here: deploys needs jq, gh and the
+     vercel CLI (node). deploys itself is taken from PATH, ~/bin or the app. Add the folder of your node if it lives elsewhere (nvm, volta, ...).
+     The log goes to ~/Library/Logs/DeployCenter-daily.log; a failed run shows a notification. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>app.deploycenter.daily</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
   <key>ProgramArguments</key><array>
-    <string>/bin/bash</string><string>/Users/YOURNAME/bin/deploys</string><string>deploy-changed</string><string>--yes</string>
+    <string>/bin/sh</string><string>-c</string>
+    <string>log="$HOME/Library/Logs/DeployCenter-daily.log"; d="$(command -v deploys || ls "$HOME/bin/deploys" "$HOME/Applications/Deploy Center.app/Contents/Resources/deploys" "/Applications/Deploy Center.app/Contents/Resources/deploys" 2&gt;/dev/null | head -n1)"; { date; /bin/bash "$d" deploy-changed --yes; } &gt;&gt;"$log" 2&gt;&amp;1 || osascript -e 'display notification "The daily deploy failed. See ~/Library/Logs/DeployCenter-daily.log" with title "Deploy Center"'</string>
   </array>
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
-  <key>StandardOutPath</key><string>/tmp/deploy-center-daily.log</string>
-  <key>StandardErrorPath</key><string>/tmp/deploy-center-daily.log</string>
 </dict></plist>
