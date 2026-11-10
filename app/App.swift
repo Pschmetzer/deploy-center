@@ -39,6 +39,7 @@ struct SettingsView: View {
             notificationsSection
             updatesSection
             hiddenSection
+            CommandPaletteSettings()
             helpSection
         }
         .formStyle(.grouped)
