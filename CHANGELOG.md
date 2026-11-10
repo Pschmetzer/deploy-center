@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `deploys status --json` carries the shared `phase` of each project. VS Code extension 0.2.0: every platform, not only Vercel and Render; failed and building from `phase`; a name on two platforms is passed as `platform:name`; a hint when no project matches the folder.
+
 ## 0.8.0
 
 - Mac widgets ship with the app (small: PRs waiting; medium: top projects and the saving). Add them from the widget gallery.

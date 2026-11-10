@@ -115,9 +115,14 @@ export async function loadProjects(run: Runner, timeoutMs: number): Promise<Load
   };
 }
 
-/** The arguments that start one deploy. */
+/** The arguments that start one deploy: `deploys <provider> deploy-json <name>`. */
 export function deployArgs(p: { platform: string; name: string }): string[] {
   return [p.platform, "deploy-json", p.name];
+}
+
+/** logs, notes and open take the name, or platform:name when it is on two platforms. */
+export function projectArgs(verb: "logs" | "notes" | "open", p: { ref: string }, ...rest: string[]): string[] {
+  return [verb, p.ref, ...rest];
 }
 
 /** What a started deploy says: {id, url?, state}. */

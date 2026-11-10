@@ -3,6 +3,7 @@
 here="$(cd "$(dirname "$0")" && pwd)"
 [ -n "${FAKE_ARGS_LOG:-}" ] && printf '%s\n' "$#" "$@" >> "$FAKE_ARGS_LOG"
 [ -n "${FAKE_SLEEP:-}" ] && sleep "$FAKE_SLEEP"
+[ -n "${FAKE_OBSERVER:-}" ] && case "$2" in deploy-json) echo "Error: Observer mode (DEPLOYS_READONLY): \"deploys $1 $2\" changes something and is refused." >&2; exit 1 ;; esac
 case "$*" in
   "changed --json")
     [ -n "${FAKE_CHANGED_FAIL:-}" ] && { echo "Error: could not read render: timeout" >&2; exit 1; }
