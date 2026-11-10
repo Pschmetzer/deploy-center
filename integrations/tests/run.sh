@@ -10,6 +10,9 @@ fail() { echo "FAIL $1: $2"; fails=$((fails+1)); }
 # A part that could not run here is counted, not passed. REQUIRE_ALL=1 (CI) makes it a failure.
 skip() { echo "skip $1"; skips=$((skips+1)); }
 expect()   { [ "$2" = "$3" ] && ok "$1" || fail "$1" "expected [$3], got [$2]"; }
+# A leftover stand-in: a process that is exactly "sleep <odd duration>". The stand-ins use durations
+# no one else uses (30.4, 20.31, 20.32, 20.7), so shells elsewhere on this Mac never count.
+stray_sleep() { ps -axo pid=,command= | awk -v a="$1" '$2 ~ /(^|\/)sleep$/ && $3 == a && NF == 3'; }
 contains() { case "$2" in *"$3"*) ok "$1" ;; *) fail "$1" "[$3] not in [$2]" ;; esac; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -219,10 +222,10 @@ expect "pre-push: Render ignores other branches" "$out" "exit=0"
 out="$(push "(delete) $z refs/heads/main $s1" git@github.com:me/site.git)"
 expect "pre-push: a deleted branch builds nothing" "$out" "exit=0"
 start=$(date +%s)
-out="$(FAKE_SLEEP=30 DEPLOYS_PREPUSH_TIMEOUT=1 push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
+out="$(FAKE_SLEEP=30.4 DEPLOYS_PREPUSH_TIMEOUT=1 push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
 contains "pre-push: a CLI that does not answer lets the push go" "$out" $'push not checked.\nexit=0'
 [ $(( $(date +%s) - start )) -lt 6 ] && ok "pre-push: gives up after the timeout" || fail "pre-push: gives up after the timeout" "took too long"
-pgrep -f "sleep 30" >/dev/null && fail "pre-push: the stuck CLI is stopped" "still running" || ok "pre-push: the stuck CLI is stopped"
+[ -n "$(stray_sleep 30.4)" ] && fail "pre-push: the stuck CLI is stopped" "still running" || ok "pre-push: the stuck CLI is stopped"
 git -C "$tmp/repo" config deploys.prepush.block true
 out="$(push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
 contains "pre-push: blocks only when configured" "$out" "exit=1"
@@ -362,9 +365,7 @@ fi
 if command -v npm >/dev/null && [ -d vscode/node_modules ]; then
   (cd vscode && npm test --silent >"$tmp/vscode.log" 2>&1) && ok "vscode: unit tests" || { fail "vscode: unit tests" "see below"; cat "$tmp/vscode.log"; }
   # A timed-out CLI is stopped with its process group: the stand-in's sleep does not outlive the tests.
-  # Only an orphaned sleep counts (parent gone, so launchd's pid 1): a shell elsewhere on this Mac
-  # may run its own "sleep 20".
-  left="$(ps -axo pid=,ppid=,command= | awk '$2 == 1 && $3 ~ /(^|\/)sleep$/ && ($4 == "20" || $4 == "20.3") && NF == 4')"
+  left="$(stray_sleep 20.31; stray_sleep 20.32)"
   [ -n "$left" ] && fail "vscode: no sleep left behind" "$left" || ok "vscode: no sleep left behind"
 else
   skip "vscode: run npm ci in integrations/vscode first"
@@ -449,7 +450,7 @@ expect "claude-code hook: never deploys" "$(cat "$tmp/deploy.log" 2>/dev/null | 
 if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
   DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
   # 20.7: a length no other test sleeps, so only this test's child can match.
-  pgrep -f "sleep 20\.7" >/dev/null && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
+  [ -n "$(stray_sleep 20.7)" ] && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
 else
   skip "mcp: needs node and (cd integrations/mcp && npm ci)"
 fi

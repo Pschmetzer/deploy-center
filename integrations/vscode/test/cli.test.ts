@@ -63,7 +63,7 @@ test("loadProjects: an older CLI without repo in status still matches waiting pr
 
 test("a CLI that does not answer is stopped at the timeout", async () => {
   const t = Date.now();
-  const l = await loadProjects(runner({ FAKE_SLEEP: "20" }), 500);
+  const l = await loadProjects(runner({ FAKE_SLEEP: "20.31" }), 500);
   assert.ok(Date.now() - t < 5000, "gave up in time");
   assert.equal(l.failed, true);
   assert.match(l.warning ?? "", /did not answer in time/);
@@ -73,7 +73,7 @@ test("a timeout also stops what the CLI started (its process group)", async () =
   const dir = mkdtempSync(path.join(tmpdir(), "dc-"));
   try {
     const pidfile = path.join(dir, "pid");
-    const r = await runner({ FAKE_SLEEP: "20.3", FAKE_PIDFILE: pidfile })(["changed", "--json"], 500);
+    const r = await runner({ FAKE_SLEEP: "20.32", FAKE_PIDFILE: pidfile })(["changed", "--json"], 500);
     assert.equal(r.timedOut, true);
     const pid = Number(readFileSync(pidfile, "utf8").trim());
     assert.ok(pid > 0, "the child wrote its pid");
