@@ -1,0 +1,51 @@
+# Example only: copy to .github/workflows/daily-digest.yml in the repo you set as
+# DEPLOYS_DIGEST_REPO (the same one as approve-deploy.yml), and adjust.
+#
+# Every weekday morning: open or update the issue "Deploys waiting – <date>" and post the
+# digest to your webhook, with a button to approve-deploy. Deploys nothing.
+name: daily digest
+
+on:
+  schedule:
+    - cron: "17 7 * * 1-5"   # 07:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Pin both to a release tag or a full commit SHA, not a branch.
+      - uses: actions/checkout@v4
+        with:
+          repository: Pschmetzer/deploy-center
+          ref: main
+          path: deploy-center
+      # Only lists (no deploy: true); it also sets up `deploys` for the next step.
+      - uses: Pschmetzer/deploy-center/integrations/action@main
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-team: ${{ vars.VERCEL_TEAM }}
+          render-api-key: ${{ secrets.RENDER_API_KEY }}
+          repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
+      - name: Digest
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          # Reads the projects' commits and pull requests, and writes the issue here. Private
+          # project repos need a token that can read them (then give it issues: write here, too).
+          GH_TOKEN: ${{ github.token }}
+          DEPLOYS_DIGEST_REPO: ${{ github.repository }}
+          DEPLOYS_NOTIFY_URL: ${{ secrets.DEPLOYS_NOTIFY_URL }}
+          DEPLOYS_AGENT_AUTHORS: ${{ vars.DEPLOYS_AGENT_AUTHORS }}
+          DEPLOYS_AGENT_LABELS: ${{ vars.DEPLOYS_AGENT_LABELS }}
+        run: |
+          set -euo pipefail
+          args=(--issue --out digest.md)
+          [ -n "$DEPLOYS_NOTIFY_URL" ] && args+=(--post)
+          deploy-center/integrations/digest/digest.sh "${args[@]}"
+          cat digest.md >> "$GITHUB_STEP_SUMMARY"
