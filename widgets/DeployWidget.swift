@@ -112,6 +112,8 @@ struct ProjectRow: View {
         case .failed: return L("failed · \(p.platform)", "fehlgeschlagen · \(p.platform)")
         case .waiting:
             let prs = p.prs == 1 ? L("1 PR · ", "1 PR · ") : p.prs > 1 ? L("\(p.prs) PRs · ", "\(p.prs) PRs · ") : ""
+            // A waiting row with 0 commits means the count is unknown (e.g. rewritten history).
+            if p.commits == 0 { return prs + L("count unknown · \(p.platform)", "Anzahl unbekannt · \(p.platform)") }
             return prs + (p.commits == 1 ? L("1 commit · \(p.platform)", "1 Commit · \(p.platform)")
                                          : L("\(p.commits) commits · \(p.platform)", "\(p.commits) Commits · \(p.platform)"))
         }

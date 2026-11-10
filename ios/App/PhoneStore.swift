@@ -50,8 +50,8 @@ final class PhoneStore: ObservableObject {
         }
         if given(k.render) { Keychain.set(TokenKey.render.rawValue, k.render) }
         if given(k.github) { Keychain.set(TokenKey.github.rawValue, k.github) }
-        demo = false
-        Task { await reload() }
+        // Leaving demo mode reloads by itself (didSet); otherwise reload once here.
+        if demo { demo = false } else { Task { await reload() } }
     }
 
     var waiting: [PhoneProject] { projects.filter { $0.group == .waiting } }

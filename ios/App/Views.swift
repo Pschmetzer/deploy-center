@@ -137,9 +137,10 @@ struct Stat: View {
 
 extension PhoneProject {
     var icon: String {
-        building ? "hammer.fill" : failed ? "xmark.octagon.fill" : changed ? "arrow.up.circle.fill" : "checkmark.circle.fill"
+        building ? "hammer.fill" : failed ? "xmark.octagon.fill" : changed ? "arrow.up.circle.fill"
+            : unknown ? "questionmark.circle" : "checkmark.circle.fill"
     }
-    var tint: Color { building ? .blue : failed ? .red : changed ? .accentColor : .green }
+    var tint: Color { building ? .blue : failed ? .red : changed ? .accentColor : unknown ? .orange : .green }
     var stateText: String {
         if building { return L("building", "baut") }
         if failed { return L("failed", "fehlgeschlagen") }
