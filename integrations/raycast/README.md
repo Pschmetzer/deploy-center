@@ -26,7 +26,8 @@ the same way as the Mac app and the VS Code extension, ready to paste into Claud
 The extension's texts are English only: Raycast extensions have no localization.
 
 Deploy All starts exactly the projects in the list you confirmed, one after the other, with
-`deploys <vercel|render> deploy-json <name>`. Each row then shows "started" or "not started".
+`deploys <vercel|render> deploy-json <name>`. Each row then shows "started" or "not started". If Raycast is closed in the middle, the next
+Deploy All Changed names the projects that were never reached.
 
 ## Requirements
 
