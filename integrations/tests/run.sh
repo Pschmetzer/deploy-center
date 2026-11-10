@@ -47,8 +47,10 @@ cat > "$tmp/bin/deploys" <<SH
 [ -n "\${FAKE_SLEEP_ALL:-}" ] && sleep "\$FAKE_SLEEP_ALL"
 [ -n "\${MCP_CALLS:-}" ] && echo "\$*" >> "\$MCP_CALLS"
 case "\$*" in
-  "vercel list --json") cat "$tmp/vercel.json" ;;
-  "render list --json") cat "$tmp/render.json" ;;
+  "vercel list --json"|"vercel json") cat "$tmp/vercel.json" ;;
+  "render list --json"|"render json") cat "$tmp/render.json" ;;
+  # examples/daily-deploy.yml: the plain list, or the deploy itself (logged, nothing starts).
+  "deploy-changed"|"deploy-changed --yes") echo "\$*" >> "$tmp/example.log" ;;
   # As the real one: every provider that is on and set up. Render only with a key.
   "list --json") [ -n "\${FAKE_SLEEP:-}" ] && sleep "\$FAKE_SLEEP"
     # An older CLI without list: the MCP server falls back to status --json --no-github.
@@ -601,6 +603,40 @@ if command -v ruby >/dev/null; then
   ruby -ryaml -e 'YAML.load_file(ARGV[0])' digest/examples/daily-digest.yml && ok "daily-digest.yml is valid YAML" || fail "daily-digest.yml is valid YAML" ruby
 else
   skip "approve-deploy: its steps need ruby"
+fi
+
+# --- examples/: the run blocks people copy, run as GitHub would, against the stand-in ---
+if command -v ruby >/dev/null; then
+  xstep() { ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"][ARGV[1]]["steps"].find { |s| s["id"] == ARGV[2] || s["name"] == ARGV[2] }["run"]' "$@"; }
+  # claude-pr-ship-check.yml, "Projects of this repo": this repo's projects with what waits on each.
+  xstep ../examples/claude-pr-ship-check.yml ship-check projects > "$tmp/ship.sh"
+  : > "$tmp/ship.out"
+  ( export DEPLOYS="$tmp/bin/deploys" REPO=me/app VERCEL_TOKEN=x RENDER_API_KEY=x GITHUB_OUTPUT="$tmp/ship.out" \
+      CHANGED='[{"name":"app-web","platform":"vercel","pendingCommits":4,"pendingPRs":2}]'
+    bash -eo pipefail "$tmp/ship.sh" >/dev/null 2>&1 ) && ok "ship-check example: the projects step runs" || fail "ship-check example: the projects step runs" "exit $?"
+  rows="$(sed -n 's/^rows=//p' "$tmp/ship.out")"
+  expect "ship-check example: only this repo's projects, with what waits" "$(jq -c 'map([.platform, .name, .autoDeploy, .waitingCommits, .waitingPRs])' <<<"${rows:-null}")" \
+    '[["vercel","app-web",false,4,2],["render","api",true,0,0]]'
+  : > "$tmp/ship.out"
+  ( export DEPLOYS="$tmp/bin/deploys" REPO=me/app VERCEL_TOKEN="" RENDER_API_KEY="" GITHUB_OUTPUT="$tmp/ship.out" CHANGED=""
+    bash -eo pipefail "$tmp/ship.sh" >/dev/null 2>&1 )
+  expect "ship-check example: no tokens, an empty list" "$(sed -n 's/^rows=//p' "$tmp/ship.out")" "[]"
+  case "$(cat "$tmp/ship.sh")" in *'${{'*) fail "ship-check example: no expressions inside the run script" "found" ;; *) ok "ship-check example: no expressions inside the run script" ;; esac
+  # daily-deploy.yml, "Deploy what changed": a dry run by hand only lists, the schedule deploys.
+  xstep ../examples/daily-deploy.yml deploy "Deploy what changed" > "$tmp/daily.sh"
+  : > "$tmp/example.log"
+  PATH="$tmp/bin:$PATH" EVENT=workflow_dispatch DRY_RUN=true bash -eo pipefail "$tmp/daily.sh" >/dev/null 2>&1
+  expect "daily-deploy example: a dry run by hand only lists" "$(cat "$tmp/example.log")" "deploy-changed"
+  : > "$tmp/example.log"
+  PATH="$tmp/bin:$PATH" EVENT=schedule DRY_RUN="" bash -eo pipefail "$tmp/daily.sh" >/dev/null 2>&1
+  expect "daily-deploy example: the schedule deploys with --yes" "$(cat "$tmp/example.log")" "deploy-changed --yes"
+  : > "$tmp/example.log"
+  PATH="$tmp/bin:$PATH" EVENT=workflow_dispatch DRY_RUN=false bash -eo pipefail "$tmp/daily.sh" >/dev/null 2>&1
+  expect "daily-deploy example: by hand without dry run deploys" "$(cat "$tmp/example.log")" "deploy-changed --yes"
+  expect "daily-deploy example: has a job timeout" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"]["deploy"]["timeout-minutes"]' ../examples/daily-deploy.yml)" 60
+  expect "ship-check example: has a job timeout" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"]["ship-check"]["timeout-minutes"]' ../examples/claude-pr-ship-check.yml)" 15
+else
+  skip "examples: their steps need ruby"
 fi
 
 echo

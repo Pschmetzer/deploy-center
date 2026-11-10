@@ -604,10 +604,21 @@ expect "autofix: a held lock stops a second run" "$(afrun | grep -c 'running alr
 rmdir "$DEPLOYS_CONFIG/locks/autofix"
 
 # --- every provider: the contract (tests/providers/*.sh, each a test of its own) ---
+# All at once (each has its own temp folder); the output is printed in order once they are done.
+pv="$(mktemp -d)"; pids=()
 for t in tests/providers/*.sh; do
-  echo; echo "== $t"
-  env -u DEPLOYS_LIB -u DEPLOYS_CONFIG bash "$t" || fails=$((fails+1))
+  n="${t##*/}"
+  ( env -u DEPLOYS_LIB -u DEPLOYS_CONFIG bash "$t" > "$pv/$n.out" 2>&1; echo $? > "$pv/$n.rc" ) &
+  pids+=($!)
 done
+wait "${pids[@]}"
+for t in tests/providers/*.sh; do
+  n="${t##*/}"
+  echo; echo "== $t"
+  cat "$pv/$n.out"
+  [ "$(cat "$pv/$n.rc" 2>/dev/null)" = 0 ] || fails=$((fails+1))
+done
+rm -rf "$pv"
 
 # --- autofix --only and the PR fields of autofix status ---
 afonly() { ( set -e; PATH="$af/bin:$PATH" DEPLOYS_ROUTINE_TOKEN=sk-ant-oat01-SECRET DEPLOYS_NOTIFY=0 autofix_run "" "$@" ) >/dev/null 2>&1; echo $?; }
