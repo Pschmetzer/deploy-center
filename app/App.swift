@@ -44,6 +44,10 @@ struct SettingsView: View {
     @State private var providerError: String?
     @State private var switching: String?
 
+    private func page<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        Form { content() }.formStyle(.grouped)
+    }
+
     private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?" }
 
     /// The tab on screen, remembered.

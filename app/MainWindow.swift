@@ -1215,6 +1215,20 @@ struct ContentView: View {
             Button(L("Fix with Claude", "Mit Claude beheben")) { Task { await store.fixWithClaude(item) } }
                 .disabled(store.autofixBusy(item))
         }
+        if item.repo != nil, !store.observer {
+            Button(store.scanRun(item)?.running == true ? L("Claude is looking for bugs …", "Claude sucht nach Bugs …")
+                                                        : L("Find bugs with Claude", "Mit Claude nach Bugs suchen")) {
+                Task { await store.scanForBugs(item) }
+            }
+            .disabled(!store.canScan(item))
+        }
+        if item.repo != nil, store.scan?.tools?.any == true {
+            Button(store.checkRun(item)?.running == true ? L("Security check running …", "Sicherheits-Check läuft …")
+                                                         : L("Security check", "Sicherheits-Check")) {
+                Task { await store.securityCheck(item) }
+            }
+            .disabled(!store.canCheck(item))
+        }
         if canDeploy {
             Button(L("Deploy to production", "Live deployen")) {
                 if item.hasNewCommits || item.headSha == nil { store.deployOne(item, preview: false) }
