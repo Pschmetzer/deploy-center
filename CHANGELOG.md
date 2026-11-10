@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Command palette: in observer mode (Settings → Team) it offers no deploy, rollback or "deploy all changed", like the window.
+
 ## 0.8.0
 
 - Mac widgets ship with the app (small: PRs waiting; medium: top projects and the saving). Add them from the widget gallery.
