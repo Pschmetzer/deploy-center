@@ -384,6 +384,17 @@ SH
 chmod +x "$tmp/bin/one-deploys"
 expect "claude-code hook: singular, repo case ignored, exit 1 list still used" \
   "$(DEPLOYS="$tmp/bin/one-deploys" hk "git push" | head -1 | jq -r .systemMessage)" "1 commit waiting on web: deploy when ready (deploys changed)"
+git init -q "$tmp/cc-gl" && git -C "$tmp/cc-gl" remote add origin git@gitlab.com:grp/sub/app.git
+git -C "$tmp/cc-gl" remote add gh https://github.com/Me/App.git
+cat > "$tmp/bin/gl-deploys" <<SH
+#!/bin/bash
+echo '[{"name":"gl-web","repo":"gitlab.com/grp/sub/app","platform":"netlify","pendingCommits":2},{"name":"web","repo":"github.com/me/app","platform":"vercel","pendingCommits":1}]'
+SH
+chmod +x "$tmp/bin/gl-deploys"
+expect "claude-code hook: a GitLab remote (subgroup) is read" \
+  "$(DEPLOYS="$tmp/bin/gl-deploys" hk "git push" "$tmp/cc-gl" | head -1 | jq -r .systemMessage)" "2 commits waiting on gl-web: deploy when ready (deploys changed)"
+expect "claude-code hook: github.com/owner/name in .repo counts as owner/name" \
+  "$(DEPLOYS="$tmp/bin/gl-deploys" hk "git push gh" "$tmp/cc-gl" | head -1 | jq -r .systemMessage)" "1 commit waiting on web: deploy when ready (deploys changed)"
 deploy_calls_before="$(cat "$tmp/deploy.log" 2>/dev/null | wc -l)"
 hk "git push" >/dev/null
 expect "claude-code hook: never deploys" "$(cat "$tmp/deploy.log" 2>/dev/null | wc -l)" "$deploy_calls_before"
