@@ -39,7 +39,7 @@ final class Store: ObservableObject {
     private func checkStale() {
         let d = UserDefaults.standard
         let days = d.integer(forKey: "staleDays")
-        let today = Date().formatted(.iso8601.year().month().day())
+        let today = localDay()
         guard days > 0, d.string(forKey: "lastStaleAlarm") != today else { return }
         let old = items.values.joined().filter { i in
             i.hasNewCommits && i.state == .idle && !isHidden(i)
@@ -63,7 +63,7 @@ final class Store: ObservableObject {
         let budget = d.double(forKey: "monthlyBudget")
         guard budget > 0, let days = costs?.days.suffix(7), !days.isEmpty else { return }
         let month = days.map(\.build).reduce(0, +) / Double(days.count) * 30
-        let today = Date().formatted(.iso8601.year().month().day())
+        let today = localDay()
         guard month > budget * 0.8, d.string(forKey: "lastBudgetAlarm") != today else { return }
         d.set(today, forKey: "lastBudgetAlarm")
         let m = month.formatted(.currency(code: "USD")), b = budget.formatted(.currency(code: "USD"))
@@ -103,6 +103,23 @@ final class Store: ObservableObject {
     @Published var loadedAt: [Platform: Date] = [:]
     @Published var fromCache: Set<Platform> = []
 
+    /// The last failed read of a list. Unlike `loadError` it stays while a reload runs and goes only
+    /// when a read succeeds; the list in `items` is never dropped for it (it is the last good copy).
+    struct LoadFailure: Equatable { let message: String; let at: Date }
+    @Published var lastLoadError: [Platform: LoadFailure] = [:]
+
+    /// What the list of a platform is right now.
+    enum ListState: Equatable {
+        case notLoaded          // nothing read yet in this run and no saved copy
+        case cached(Date?)      // the copy saved by the last run (its time, if known)
+        case fresh(Date)        // read in this run
+    }
+    func listState(_ p: Platform) -> ListState {
+        if fromCache.contains(p) { return .cached(loadedAt[p]) }
+        if let at = loadedAt[p] { return .fresh(at) }
+        return .notLoaded
+    }
+
     // MARK: Cache — the last lists, so the window is full at once instead of after 10 seconds
 
     nonisolated static let cacheDir: URL = {
@@ -133,7 +150,11 @@ final class Store: ObservableObject {
         booted = true
         if UserDefaults.standard.bool(forKey: "hideDock") { NSApp.setActivationPolicy(.accessory) }
         LogoCache.sweep()
-        for p in Platform.allCases { try? FileManager.default.removeItem(at: Self.cacheDir.appendingPathComponent("\(p.cli)-v1.json")) }
+        if !UserDefaults.standard.bool(forKey: "migratedCacheV2") {
+            for p in Platform.allCases { try? FileManager.default.removeItem(at: Self.cacheDir.appendingPathComponent("\(p.cli)-v1.json")) }
+            UserDefaults.standard.set(true, forKey: "migratedCacheV2")
+        }
+        Journal.migrate()
         // After sleep the lists can be hours old, and the daily reminder may be overdue.
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
@@ -141,7 +162,9 @@ final class Store: ObservableObject {
                 await self?.autoRefresh(); self?.remindIfDue()
             }
         }
-        Task { await checkForUpdate() }
+        Task {   // hourly; the daily gate inside keeps it to one request a day, a failed one is tried again
+            while !Task.isCancelled { await checkForUpdate(); try? await Task.sleep(nanoseconds: 3_600_000_000_000) }
+        }
         Task {
             await start()
             while !Task.isCancelled {
@@ -175,33 +198,60 @@ final class Store: ObservableObject {
         await loadExtras()
     }
 
+    private var emptyOnce: Set<Platform> = []
     func load(_ p: Platform) async {
         loading.insert(p); loadError[p] = nil
         defer { loading.remove(p) }
         do {
             let data = try await Tool.run([p.cli, "json"])
-            merge(p, try decode(p, data))
+            let fresh = try decode(p, data)
+            // An empty answer where there were projects is more likely a hiccup than every project gone.
+            // A second empty answer in a row is believed (another account, or really nothing left).
+            if fresh.isEmpty, !(items[p] ?? []).isEmpty, !emptyOnce.contains(p) {
+                emptyOnce.insert(p)
+                let text = L("The answer was empty; showing the last list.", "Die Antwort war leer; die letzte Liste bleibt stehen.")
+                Log.write("\(p.cli) json: empty answer, kept \(items[p]?.count ?? 0) items")
+                lastLoadError[p] = LoadFailure(message: text, at: Date())
+                say(L("\(p.rawValue): empty list", "\(p.rawValue): leere Liste"), text, ok: false)
+                return
+            }
+            emptyOnce.remove(p)
+            merge(p, fresh)
+            pruneDurations(p, keeping: fresh)
             writeCache(p, data)
-            fromCache.remove(p); loadedAt[p] = Date()
+            fromCache.remove(p); loadedAt[p] = Date(); lastLoadError[p] = nil
             recordHistory()
             checkStale()
         } catch {
             loadError[p] = error.localizedDescription
+            lastLoadError[p] = LoadFailure(message: error.localizedDescription, at: Date())
         }
     }
 
     /// A reload keeps what the person did: ticks stay, a deploy being followed keeps its state.
+    /// How a deploy ended stays only while the branch is where it was; a new commit makes the row wait again.
     func merge(_ p: Platform, _ fresh: [Item]) {
         let old = Dictionary((items[p] ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         items[p] = fresh.map { n in
             var n = n
             if let o = old[n.id] {
                 n.selected = o.selected && n.deployable
-                // A deploy being followed keeps what cancelling, the timer and promoting need.
-                if o.state != .idle { n.state = o.state; n.deployId = o.deployId; n.startedAt = o.startedAt; n.previewId = o.previewId }
+                if Self.keepsState(old: o, fresh: n) {
+                    // A deploy being followed keeps what cancelling, the timer and promoting need.
+                    n.state = o.state; n.deployId = o.deployId; n.startedAt = o.startedAt; n.previewId = o.previewId
+                }
             }
             return n
         }
+    }
+
+    /// Whether a reload keeps the row's state: always while it runs; an end state (live, failed,
+    /// skipped) only while the branch has no commit that came after it.
+    nonisolated static func keepsState(old o: Item, fresh n: Item) -> Bool {
+        if o.state == .idle { return false }
+        if o.state.isActive { return true }
+        guard let was = o.headSha, !was.isEmpty, let now = n.headSha else { return false }
+        return was == now
     }
 
     private func decode(_ p: Platform, _ data: Data) throws -> [Item] {
@@ -327,15 +377,19 @@ final class Store: ObservableObject {
 
     private func set(_ p: Platform, _ id: String, _ s: RunState, countsAsLive: Bool = true) {
         guard let i = items[p]?.firstIndex(where: { $0.id == id }) else { return }
+        let was = items[p]![i].state
         items[p]![i].state = s
         if case .starting = s { items[p]![i].startedAt = Date() }
+        // Queued again: an older start time must not become this deploy's duration.
+        if case .queued = s { items[p]![i].startedAt = nil }
         if case .done = s, countsAsLive {
             items[p]![i].lastSha = items[p]![i].headSha
             items[p]![i].lastAt = Date(); items[p]![i].lastState = p == .vercel ? "READY" : "live"
             items[p]![i].changed = false; items[p]![i].pendingCommits = 0; items[p]![i].pendingPRs = 0
         }
         let name = items[p]![i].name
-        let took = items[p]![i].startedAt.map { Date().timeIntervalSince($0) }
+        // Only a deploy that really started has a duration; a row that never left the queue has none.
+        let took = was.isActive && was != .queued ? items[p]![i].startedAt.map { Date().timeIntervalSince($0) } : nil
         switch s {
         case .done: Journal.append(JournalEntry(platform: p.rawValue, name: name, result: countsAsLive ? "live" : "other", seconds: took, detail: nil))
         case .failed(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "failed", seconds: took, detail: m))
@@ -414,7 +468,7 @@ final class Store: ObservableObject {
 
     @Published var history: [String: Int] = (UserDefaults.standard.dictionary(forKey: "waitingHistory") as? [String: Int]) ?? [:]
     private func recordHistory() {
-        let day = Date().formatted(.iso8601.year().month().day())
+        let day = localDay()
         history[day] = max(history[day] ?? 0, waiting.prs)
         let keep = history.keys.sorted().suffix(30)
         history = history.filter { keep.contains($0.key) }
@@ -448,10 +502,21 @@ final class Store: ObservableObject {
     var undoSeconds: Int { UserDefaults.standard.object(forKey: "undoSeconds") as? Int ?? 8 }
     private var batch: [(Platform, String)] = []
 
+    /// Starts that got no answer in time, by row: they may be building anyway (see `deploy`).
+    private var unsureStarts: [String: Date] = [:]
+    private static let unsureWait: Double = 600
+
     func enqueue(_ jobs: [Job]) {
         Notify.ask()
         var added = 0
         for j in jobs where !(itemNow(j.item)?.state.isActive ?? false) {
+            if let at = unsureStarts[Self.key(j.item)], Date().timeIntervalSince(at) < Self.unsureWait {
+                let until = at.addingTimeInterval(Self.unsureWait).formatted(date: .omitted, time: .shortened)
+                say(L("\(j.item.name) may be building already", "\(j.item.name) baut vielleicht schon"),
+                    L("The last start got no answer. Check the dashboard; a new start is possible from \(until).",
+                      "Der letzte Start blieb ohne Antwort. Im Dashboard nachsehen; neu starten geht ab \(until)."), ok: false)
+                continue
+            }
             set(j.item.platform, j.item.id, .queued)
             var j = j; j.readyAt = Date().addingTimeInterval(Double(undoSeconds))   // each job counts from its own click
             queue.append(j); batch.append((j.item.platform, j.item.id)); added += 1
@@ -529,11 +594,20 @@ final class Store: ObservableObject {
             toast = Toast(text: L("\(item.name) is still starting – try again in a moment", "\(item.name) startet noch – gleich nochmal versuchen"), ok: false)
             return
         }
+        guard !cancelled.contains(item.id) else { return }
+        // Following goes on until the platform says the deploy ended, so the row can never be
+        // left "running" when the cancel fails or comes too late.
         cancelled.insert(item.id)
+        let before = itemNow(item)?.state
+        set(item.platform, item.id, .running(L("cancelling", "wird abgebrochen")))
         Task {
             let args = item.platform == .vercel ? ["vercel", "cancel", id] : ["render", "cancel", item.id, id]
-            do { _ = try await Tool.run(args); set(item.platform, item.id, .failed(L("Cancelled", "Abgebrochen"))) }
-            catch { cancelled.remove(item.id); say(L("Could not cancel \(item.name)", "\(item.name) ließ sich nicht abbrechen"), error.localizedDescription, ok: false) }
+            do { _ = try await Tool.run(args) }
+            catch {
+                cancelled.remove(item.id)
+                if let before, itemNow(item)?.state == .running(L("cancelling", "wird abgebrochen")) { set(item.platform, item.id, before) }
+                say(L("Could not cancel \(item.name)", "\(item.name) ließ sich nicht abbrechen"), error.localizedDescription, ok: false)
+            }
         }
     }
 
@@ -544,7 +618,7 @@ final class Store: ObservableObject {
         let d = UserDefaults.standard
         let hour = d.integer(forKey: "reminderHour")   // 0 = off
         guard hour > 0, Calendar.current.component(.hour, from: Date()) >= hour else { return }
-        let today = Date().formatted(.iso8601.year().month().day())
+        let today = localDay()
         guard d.string(forKey: "lastReminder") != today else { return }
         let w = waiting
         guard w.projects > 0 else { return }
@@ -555,13 +629,24 @@ final class Store: ObservableObject {
 
     // MARK: How long a build usually takes, per project (the last five)
 
+    /// Read once; every row asks for it on each redraw.
+    private lazy var durationsCache: [String: [Double]] = (UserDefaults.standard.dictionary(forKey: "durations") as? [String: [Double]]) ?? [:]
     private var durations: [String: [Double]] {
-        get { (UserDefaults.standard.dictionary(forKey: "durations") as? [String: [Double]]) ?? [:] }
-        set { UserDefaults.standard.set(newValue, forKey: "durations") }
+        get { durationsCache }
+        set { durationsCache = newValue; UserDefaults.standard.set(newValue, forKey: "durations") }
     }
     func usualMinutes(_ i: Item) -> Int? {
         guard let d = durations[Self.key(i)], !d.isEmpty else { return nil }
         return max(1, Int((d.reduce(0, +) / Double(d.count) / 60).rounded()))
+    }
+    /// Build times of projects no longer in a (non-empty) list go. Notes, pins, hidden marks and
+    /// health paths are the person's own and stay.
+    private func pruneDurations(_ p: Platform, keeping fresh: [Item]) {
+        guard !fresh.isEmpty else { return }
+        let keep = Set(fresh.map(Self.key)), prefix = "\(p.cli)/"
+        let gone = durations.keys.filter { $0.hasPrefix(prefix) && !keep.contains($0) }
+        guard !gone.isEmpty else { return }
+        var all = durations; gone.forEach { all[$0] = nil }; durations = all
     }
     private func recordDuration(_ i: Item) {
         guard let start = itemNow(i)?.startedAt else { return }
@@ -579,14 +664,24 @@ final class Store: ObservableObject {
     /// Production back to what was live before.
     func rollback(_ item: Item) {
         Notify.ask()
+        if let at = unsureStarts[Self.key(item)], Date().timeIntervalSince(at) < Self.unsureWait {
+            say(L("\(item.name) may be busy already", "\(item.name) ist vielleicht schon beschäftigt"),
+                L("The last start got no answer. Check the dashboard first.", "Der letzte Start blieb ohne Antwort. Erst im Dashboard nachsehen."), ok: false)
+            return
+        }
         clearPreview(item)
         Task {
             let p = item.platform
             set(p, item.id, .starting)
             do {
-                let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self)
+                let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self, timeout: 300)
+                unsureStarts[Self.key(item)] = nil
                 if p == .vercel { set(p, item.id, .done(item.link), countsAsLive: false); markBehind(p, item.id) }
                 else { set(p, item.id, .running(L("rolling back", "rollt zurück"))); try await follow(item, deployId: r.id, url: item.link, rolledBack: true) }
+            } catch let e as ToolError where e.timedOut {
+                unsureStarts[Self.key(item)] = Date()
+                set(p, item.id, .failed(L("No answer from the rollback – it may have happened anyway. Check the dashboard.",
+                                          "Keine Antwort beim Zurückrollen – es ist vielleicht trotzdem passiert. Im Dashboard nachsehen.")))
             } catch { set(p, item.id, .failed(error.localizedDescription)) }
         }
     }
@@ -602,10 +697,22 @@ final class Store: ObservableObject {
             if job.preview { args.append("--preview") }
             if let sha = job.sha { args += ["--sha", sha] }
             if job.clearCache { args.append("--clear-cache") }
-            let started = try await Tool.json(args, as: Started.self)
+            // Longer than a list read: a start that times out may have started anyway.
+            let started = try await Tool.json(args, as: Started.self, timeout: 300)
+            unsureStarts[Self.key(item)] = nil
             if let k = items[p]?.firstIndex(where: { $0.id == item.id }) { items[p]![k].deployId = started.id }
             set(p, item.id, .running(started.state ?? L("started", "gestartet")))
             try await follow(item, deployId: started.id, url: started.url, preview: job.preview)
+        } catch let e as ToolError where e.timedOut {
+            // No answer is not "not started": a second click right away could pay for two builds.
+            // A fresh list says whether a build is under way; the wait below holds either way.
+            unsureStarts[Self.key(item)] = Date()
+            await load(p)
+            set(p, item.id, .failed(itemNow(item)?.building == true
+                ? L("No answer from the start, but a build is running – check the dashboard.",
+                    "Keine Antwort beim Start, aber ein Build läuft – im Dashboard nachsehen.")
+                : L("No answer from the start – it may be building anyway. Check the dashboard before starting again.",
+                    "Keine Antwort beim Start – er baut vielleicht trotzdem. Vor einem neuen Start im Dashboard nachsehen.")))
         } catch {
             set(p, item.id, .failed(error.localizedDescription))
         }
@@ -615,10 +722,10 @@ final class Store: ObservableObject {
     /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
     private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false, rolledBack: Bool = false) async throws {
         let p = item.platform
+        defer { cancelled.remove(item.id) }   // however it ended, a later deploy can be cancelled again
         var misses = 0
         for _ in 0..<400 {
             try await Task.sleep(nanoseconds: 6_000_000_000)
-            if cancelled.contains(item.id) { return }
             let args = p == .vercel ? ["vercel", "status", deployId] : ["render", "status", item.id, deployId]
             guard let s = try? await Tool.json(args, as: StatusReply.self) else {
                 // Network or login gone: say so instead of spinning for 40 minutes without a word.
@@ -628,6 +735,9 @@ final class Store: ObservableObject {
             }
             misses = 0
             let state = (s.state ?? "").lowercased()
+            if state == "canceled", cancelled.remove(item.id) != nil {
+                set(p, item.id, .failed(L("Cancelled", "Abgebrochen"))); return
+            }
             switch (p, state) {
             case (.vercel, "ready"), (.render, "live"):
                 if preview {
@@ -653,19 +763,26 @@ final class Store: ObservableObject {
                  (.render, "canceled"), (.render, "pre_deploy_failed"), (.render, "deactivated"):
                 set(p, item.id, .failed(s.error ?? "Status: \(state)")); return
             default:
-                set(p, item.id, .running(Self.stateName(state)))
+                if !cancelled.contains(item.id) { set(p, item.id, .running(Self.stateName(state))) }
             }
         }
         set(p, item.id, .failed(L("No result after 40 minutes – check the dashboard", "Kein Ergebnis nach 40 Minuten – im Dashboard nachsehen")))
     }
 
     /// A path to ask after going live instead of the front page (/health), per project. Kept on this Mac.
-    func healthPath(_ i: Item) -> String { ((UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:])[Self.key(i)] ?? "" }
+    private lazy var healthPaths: [String: String] = (UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:]
+    func healthPath(_ i: Item) -> String { healthPaths[Self.key(i)].flatMap(Self.cleanPath) ?? "" }
     func setHealthPath(_ i: Item, _ path: String) {
-        var all = (UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:]
+        healthPaths[Self.key(i)] = Self.cleanPath(path)
+        UserDefaults.standard.set(healthPaths, forKey: "healthPaths")
+    }
+    /// "/health", with a leading slash; spaces and other characters a URL cannot hold are encoded,
+    /// so the check after going live is not silently skipped.
+    nonisolated static func cleanPath(_ path: String) -> String? {
         let t = path.trimmingCharacters(in: .whitespacesAndNewlines)
-        all[Self.key(i)] = t.isEmpty ? nil : (t.hasPrefix("/") ? t : "/" + t)
-        UserDefaults.standard.set(all, forKey: "healthPaths")
+        guard !t.isEmpty else { return nil }
+        let slashed = t.hasPrefix("/") ? t : "/" + t
+        return slashed.removingPercentEncoding.flatMap { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) } ?? slashed
     }
 
     /// After going live: does the site answer? A deploy can be "ready" and the page still broken.
@@ -676,7 +793,10 @@ final class Store: ObservableObject {
         for attempt in 0..<3 {
             var req = URLRequest(url: url, timeoutInterval: 20)
             req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
-            code = ((try? await URLSession.shared.data(for: req))?.1 as? HTTPURLResponse)?.statusCode
+            // Only the status is needed: stop reading once the headers are in.
+            if let (bytes, resp) = try? await URLSession.shared.bytes(for: req) {
+                code = (resp as? HTTPURLResponse)?.statusCode; bytes.task.cancel()
+            } else { code = nil }
             // 401/403: the site answers but is protected (Deployment Protection, login) — not broken.
             if let c = code, c < 400 || c == 401 || c == 403 { return }
             if attempt < 2 { try? await Task.sleep(nanoseconds: 6_000_000_000) }
@@ -685,78 +805,78 @@ final class Store: ObservableObject {
               "\(name) ist live, aber die Seite antwortet mit \(code.map(String.init) ?? "nichts")"), link, ok: false)
     }
 
-    // MARK: A newer version on GitHub, asked once a day (Settings can turn it off)
+    // MARK: A newer version on GitHub, asked once a day (Settings can turn it off). The work is in Updater.swift.
 
     @Published var newVersion: String?
     @Published var updateStatus: String?
     @Published var updating = false
+    private var savedVersionRead = false
 
-    private struct Release { let version: String; let zip: URL? }
-    private func latestRelease() async -> Release? {
-        guard let url = URL(string: "https://api.github.com/repos/Pschmetzer/deploy-center/releases/latest"),
-              let (data, _) = try? await URLSession.shared.data(from: url),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tag = obj["tag_name"] as? String else { return nil }
-        let assets = obj["assets"] as? [[String: Any]] ?? []
-        let zip = assets.compactMap { $0["browser_download_url"] as? String }.first { $0.hasSuffix(".zip") }.flatMap(URL.init(string:))
-        return Release(version: tag.trimmingCharacters(in: CharacterSet(charactersIn: "v")), zip: zip)
-    }
+    /// Deploys queued or building; the update waits for them instead of quitting in the middle.
+    private var deploysBusy: Bool { !queue.isEmpty || running > 0 || items.values.joined().contains { $0.state.isActive } }
 
     /// Asked once a day on its own; `force` (the button in Settings) asks right now and says what it found.
+    /// Only a successful answer counts as the day's check, so a network error is retried at the next round.
     func checkForUpdate(force: Bool = false) async {
         let d = UserDefaults.standard
+        let mine = Updater.runningVersion
         if !force {
             guard d.object(forKey: "checkUpdates") as? Bool ?? true else { return }
-            let last = d.double(forKey: "lastUpdateCheck")
-            guard Date().timeIntervalSince1970 - last > 86400 else { newVersion = d.string(forKey: "newVersion"); return }
+            guard Date().timeIntervalSince1970 - d.double(forKey: "lastUpdateCheck") > 86400 else {
+                if !savedVersionRead { savedVersionRead = true; newVersion = d.string(forKey: "newVersion") }
+                if let v = newVersion, !Updater.isNewer(v, than: mine) { newVersion = nil; d.removeObject(forKey: "newVersion") }
+                return
+            }
         }
-        d.set(Date().timeIntervalSince1970, forKey: "lastUpdateCheck")
-        guard let rel = await latestRelease() else {
-            if force { updateStatus = L("Could not reach GitHub.", "GitHub nicht erreichbar.") }
-            return
+        switch await Updater.latest() {
+        case .found(let rel):
+            d.set(Date().timeIntervalSince1970, forKey: "lastUpdateCheck")
+            let newer = Updater.isNewer(rel.version, than: mine)
+            newVersion = newer ? rel.version : nil
+            d.set(newVersion, forKey: "newVersion")
+            if force { updateStatus = newer ? L("Version \(rel.version) is out.", "Version \(rel.version) ist da.")
+                                            : L("You have the newest version (\(mine)).", "Du hast die neueste Version (\(mine)).") }
+        case .rateLimited(let until):
+            Log.write("update check: GitHub rate limit")
+            if force { updateStatus = L("GitHub limits requests right now", "GitHub begrenzt gerade die Anfragen")
+                + (until.map { L(", try again after ", ", versuch es nach ") + $0.formatted(date: .omitted, time: .shortened) } ?? "") + "." }
+        case .failed(let why):
+            Log.write("update check failed: \(why)")
+            if force { updateStatus = L("Could not reach GitHub.", "GitHub nicht erreichbar.") + " (\(why))" }
         }
-        let mine = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
-        let newer = rel.version.compare(mine, options: .numeric) == .orderedDescending
-        newVersion = newer ? rel.version : nil
-        d.set(newVersion, forKey: "newVersion")
-        if force { updateStatus = newer ? L("Version \(rel.version) is out.", "Version \(rel.version) ist da.")
-                                        : L("You have the newest version (\(mine)).", "Du hast die neueste Version (\(mine)).") }
     }
 
-    /// Downloads the newest release, checks its signature, swaps the app in place and starts it again.
+    /// Downloads the newest release, checks it, swaps the app in place and starts it again.
     func installUpdate() async {
         guard !updating else { return }
-        updating = true; defer { updating = false }
-        updateStatus = L("Downloading …", "Lade herunter …")
-        guard let rel = await latestRelease(), let zip = rel.zip else {
-            updateStatus = L("No download found in the release.", "Im Release ist kein Download."); return
+        let target = Bundle.main.bundleURL
+        if let problem = Updater.locationProblem(target) { updateStatus = problem; return }
+        guard let team = Updater.ownTeamID() else {
+            updateStatus = L("This build is not signed with a Developer ID; use Download.",
+                             "Dieser Build ist nicht mit einer Developer ID signiert; nutze „Herunterladen“."); return
         }
+        let busyText = L("Deploys are running or waiting; update when they are done.",
+                         "Deploys laufen oder warten; aktualisiere, wenn sie fertig sind.")
+        if deploysBusy { updateStatus = busyText; return }
+        updating = true; defer { updating = false }
         do {
-            let (tmpZip, _) = try await URLSession.shared.download(from: zip)
-            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("deploycenter-update-\(UUID().uuidString)")
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            func run(_ exe: String, _ args: [String]) throws {
-                let p = Process(); p.executableURL = URL(fileURLWithPath: exe); p.arguments = args
-                p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-                try p.run(); p.waitUntilExit()
-                if p.terminationStatus != 0 { throw NSError(domain: "update", code: Int(p.terminationStatus)) }
+            let rel: Updater.Release
+            switch await Updater.latest() {
+            case .found(let r): rel = r
+            case .rateLimited: throw Updater.Failure(message: L("GitHub limits requests right now.", "GitHub begrenzt gerade die Anfragen."))
+            case .failed(let why): throw Updater.Failure(message: L("Could not reach GitHub.", "GitHub nicht erreichbar.") + " (\(why))")
             }
-            try run("/usr/bin/ditto", ["-x", "-k", tmpZip.path, dir.path])
-            let newApp = dir.appendingPathComponent("Deploy Center.app")
-            guard FileManager.default.fileExists(atPath: newApp.path) else { updateStatus = L("Unexpected download.", "Unerwarteter Download."); return }
-            updateStatus = L("Checking the signature …", "Prüfe die Signatur …")
-            try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", newApp.path])
-            try run("/usr/sbin/spctl", ["-a", "-t", "exec", newApp.path])
-            let target = Bundle.main.bundleURL.path
-            let script = "while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.3; done; "
-                + "rm -rf \"\(target)\" && mv \"\(newApp.path)\" \"\(target)\" && open \"\(target)\"; rm -rf \"\(dir.path)\""
-            let sh = Process(); sh.executableURL = URL(fileURLWithPath: "/bin/sh"); sh.arguments = ["-c", script]
-            try sh.run()
+            let ready = try await Updater.prepare(rel, current: Updater.runningVersion, team: team) { s in
+                await MainActor.run { self.updateStatus = s }
+            }
+            // A deploy may have started during the download.
+            if deploysBusy { ready.discard(); updateStatus = busyText; return }
+            do { try ready.launch(target: target) } catch { ready.discard(); throw error }
             updateStatus = L("Restarting …", "Starte neu …")
-            await MainActor.run { NSApplication.shared.terminate(nil) }
+            NSApplication.shared.terminate(nil)
         } catch {
             updateStatus = L("Update failed: ", "Update fehlgeschlagen: ") + error.localizedDescription
-            Log.write("update failed: \(error)")
+            Log.write("update failed: \(error.localizedDescription)")
         }
     }
 

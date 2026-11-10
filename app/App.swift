@@ -75,6 +75,9 @@ struct SettingsView: View {
                 if store.newVersion != nil {
                     Button(store.updating ? L("Updating …", "Aktualisiere …") : L("Update now", "Jetzt aktualisieren")) { Task { await store.installUpdate() } }
                         .disabled(store.updating)
+                    Button(L("Download", "Herunterladen")) {
+                        NSWorkspace.shared.open(URL(string: "https://github.com/\(Updater.repo)/releases/latest")!)
+                    }
                 }
                 if let st = store.updateStatus { Text(st).font(.caption).foregroundStyle(.secondary) }
             }

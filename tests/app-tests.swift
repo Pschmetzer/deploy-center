@@ -116,5 +116,120 @@ let je = [JournalEntry(platform: "Vercel", name: "a\"b", result: "failed", secon
 expect("csv quotes names", Journal.csv(je).contains("\"a\"\"b\""), true)
 expect("failures of the last deploys", "\(Journal.failures(of: "a\"b", in: je))", "(failed: 1, total: 2)")
 
+// The journal: formulas, platforms, stable ids.
+let fx = [JournalEntry(platform: "Vercel", name: "=HYPERLINK(1)", result: "failed", seconds: nil, detail: "@x")]
+expect("csv defuses formulas", Journal.csv(fx).contains("\"'=HYPERLINK(1)\",failed,,\"'@x\""), true)
+let mix = [JournalEntry(platform: "Vercel", name: "shop", result: "failed", seconds: nil, detail: nil),
+           JournalEntry(platform: "Render", name: "shop", result: "live", seconds: nil, detail: nil)]
+expect("failures per platform", "\(Journal.failures(of: "shop", platform: "Render", in: mix))", "(failed: 0, total: 1)")
+expect("failure table per platform", "\(Journal.failureTable(mix)["Vercel/shop"].map { "\($0.failed)/\($0.total)" } ?? "nil")", "1/1")
+let fixed = Date(timeIntervalSince1970: 1000)
+expect("journal id is stable", JournalEntry(at: fixed, platform: "Vercel", name: "a", result: "live", seconds: nil, detail: nil).id
+       == JournalEntry(at: fixed, platform: "Vercel", name: "a", result: "live", seconds: nil, detail: nil).id, true)
+
+// Health paths.
+expect("health path gets a slash", Store.cleanPath("health") ?? "nil", "/health")
+expect("health path with a space", Store.cleanPath("/my health") ?? "nil", "/my%20health")
+expect("health path already encoded", Store.cleanPath("/my%20health") ?? "nil", "/my%20health")
+expect("empty health path", Store.cleanPath("  ") ?? "nil", "nil")
+
+// The updater: version order, rate limit, trusted downloads, where the app lives, and the swap script.
+expect("0.10.0 is newer than 0.9.1", Updater.isNewer("0.10.0", than: "0.9.1"), true)
+expect("same version is not newer", Updater.isNewer("0.7.0", than: "0.7.0"), false)
+expect("no downgrade", Updater.isNewer("0.6.9", than: "0.7.0"), false)
+expect("429 is the rate limit", Updater.rateLimit(status: 429, remaining: nil, reset: nil) != nil, true)
+expect("403 with none left is the rate limit", Updater.rateLimit(status: 403, remaining: "0", reset: "0") != nil, true)
+expect("403 with requests left is not", Updater.rateLimit(status: 403, remaining: "12", reset: nil) == nil, true)
+expect("asset of this repo", Updater.trustedAsset(URL(string: "https://github.com/\(Updater.repo)/releases/download/v1/a.zip")!), true)
+expect("asset elsewhere", Updater.trustedAsset(URL(string: "https://example.com/\(Updater.repo)/releases/download/v1/a.zip")!), false)
+expect("asset over http", Updater.trustedAsset(URL(string: "http://github.com/\(Updater.repo)/releases/download/v1/a.zip")!), false)
+expect("asset of another repo", Updater.trustedAsset(URL(string: "https://github.com/someone/else/releases/download/v1/a.zip")!), false)
+expect("team id shape", [Updater.validTeam("AB12CD34EF"), Updater.validTeam("ab12cd34ef"), Updater.validTeam("AB\" or 1")], [true, false, false])
+expect("requirement pins team and bundle", Updater.requirement(team: "AB12CD34EF").contains("leaf[subject.OU] = \"AB12CD34EF\"")
+       && Updater.requirement(team: "AB12CD34EF").contains("identifier \"\(Updater.bundleID)\""), true)
+expect("translocated app is refused",
+       Updater.locationProblem(URL(fileURLWithPath: "/private/var/folders/x/AppTranslocation/1/d/Deploy Center.app")) != nil, true)
+
+func swapRun(_ name: String, newExists: Bool) -> (kept: String?, old: Bool, tmp: Bool, started: String?) {
+    let fm = FileManager.default
+    let base = fm.temporaryDirectory.appendingPathComponent("dc-swap \(UUID().uuidString) \(name)")
+    let place = base.appendingPathComponent("Apps $HOME `x` \"q\" 'o'")
+    let tmp = base.appendingPathComponent("tmp $(touch pwned) ;")
+    let target = place.appendingPathComponent("Deploy Center.app"), new = tmp.appendingPathComponent("Deploy Center.app")
+    try? fm.createDirectory(at: target, withIntermediateDirectories: true)
+    try? "old".write(to: target.appendingPathComponent("v"), atomically: true, encoding: .utf8)
+    try? fm.createDirectory(at: tmp, withIntermediateDirectories: true)
+    if newExists {
+        try? fm.createDirectory(at: new, withIntermediateDirectories: true)
+        try? "new".write(to: new.appendingPathComponent("v"), atomically: true, encoding: .utf8)
+    }
+    // A stale .old from an earlier run must not swallow the app.
+    try? fm.createDirectory(at: URL(fileURLWithPath: target.path + ".old"), withIntermediateDirectories: true)
+    let started = base.appendingPathComponent("started")
+    let opener = base.appendingPathComponent("opener.sh")
+    try? "#!/bin/sh\nprintf '%s' \"$1\" > \"$(dirname \"$0\")/started\"\n".write(to: opener, atomically: true, encoding: .utf8)
+    try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: opener.path)
+    let dead = Process(); dead.executableURL = URL(fileURLWithPath: "/usr/bin/true"); try? dead.run(); dead.waitUntilExit()
+    let sh = Process(); sh.executableURL = URL(fileURLWithPath: "/bin/sh")
+    sh.arguments = Updater.swapArguments(pid: dead.processIdentifier, target: target.path, new: new.path, tmp: tmp.path, opener: opener.path)
+    sh.currentDirectoryURL = base
+    try? sh.run(); sh.waitUntilExit()
+    let kept = try? String(contentsOf: target.appendingPathComponent("v"), encoding: .utf8)
+    let result = (kept, fm.fileExists(atPath: target.path + ".old"), fm.fileExists(atPath: tmp.path),
+                  try? String(contentsOf: started, encoding: .utf8))
+    expect("\(name): no command ran from a path", fm.fileExists(atPath: base.appendingPathComponent("pwned").path)
+           || fm.fileExists(atPath: "pwned"), false)
+    try? fm.removeItem(at: base)
+    return result
+}
+let ok = swapRun("swap", newExists: true)
+expect("swap: new app in place", ok.kept ?? "nil", "new")
+expect("swap: .old removed", ok.old, false)
+expect("swap: temp removed", ok.tmp, false)
+expect("swap: the app is started", ok.started?.hasSuffix("/Deploy Center.app") ?? false, true)
+let back = swapRun("rollback", newExists: false)
+expect("rollback: old app restored", back.kept ?? "nil", "old")
+expect("rollback: .old gone", back.old, false)
+expect("rollback: the old app is started", back.started?.hasSuffix("/Deploy Center.app") ?? false, true)
+
+// A folder the app cannot write to is refused before anything is downloaded.
+do {
+    let fm = FileManager.default
+    let ro = fm.temporaryDirectory.appendingPathComponent("dc-ro \(UUID().uuidString)")
+    let app = ro.appendingPathComponent("Deploy Center.app")
+    try? fm.createDirectory(at: app, withIntermediateDirectories: true)
+    expect("writable folder is fine", Updater.locationProblem(app) == nil, true)
+    try? fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: ro.path)
+    expect("read-only folder is refused", Updater.locationProblem(app) != nil, true)
+    try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: ro.path)
+    try? fm.removeItem(at: ro)
+}
+
+// A reload keeps how a deploy ended only while the branch has not moved.
+var was = item(head: "h1"); was.state = .done(nil)
+var now = item(head: "h1")
+expect("end state kept, same head", Store.keepsState(old: was, fresh: now), true)
+now.headSha = "h2"
+expect("end state dropped on a new commit", Store.keepsState(old: was, fresh: now), false)
+was.state = .running("building")
+expect("running kept on a new commit", Store.keepsState(old: was, fresh: now), true)
+was.state = .idle
+expect("idle has nothing to keep", Store.keepsState(old: was, fresh: now), false)
+
+// The day key is the Mac's day, not UTC's.
+let lateUTC = Date(timeIntervalSince1970: 1_762_816_500)   // 2025-11-10 23:15 UTC
+expect("day in UTC", localDay(lateUTC, timeZone: TimeZone(identifier: "UTC")!), "2025-11-10")
+expect("day in Berlin", localDay(lateUTC, timeZone: TimeZone(identifier: "Europe/Berlin")!), "2025-11-11")
+
+// A timeout ends the whole tree, not only bash.
+let tree = Process(); tree.executableURL = URL(fileURLWithPath: "/bin/bash")
+tree.arguments = ["-c", "sleep 30 & sleep 30; wait"]
+let treeOut = Pipe(); tree.standardOutput = treeOut
+try? tree.run(); usleep(300_000)
+let t0 = Date()
+Tool.killTree(tree.processIdentifier)
+_ = treeOut.fileHandleForReading.readDataToEndOfFile()   // returns only once every child is gone
+expect("killTree closes the pipe at once", Date().timeIntervalSince(t0) < 3, true)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
