@@ -51,7 +51,13 @@ extension Store {
                               message: i.headMsg.map { Demo.scrub($0, items: Array(items.values.joined())) }))
         }
         let order: [DeploySnapshot.Project.Status: Int] = [.building: 0, .failed: 1, .waiting: 2]
-        rows.sort { (order[$0.status]!, -$0.prs, -$0.commits, $0.name) < (order[$1.status]!, -$1.prs, -$1.commits, $1.name) }
+        rows.sort { (a: DeploySnapshot.Project, b: DeploySnapshot.Project) -> Bool in
+            let oa: Int = order[a.status] ?? 3, ob: Int = order[b.status] ?? 3
+            if oa != ob { return oa < ob }
+            if a.prs != b.prs { return a.prs > b.prs }
+            if a.commits != b.commits { return a.commits > b.commits }
+            return a.name < b.name
+        }
         return DeploySnapshot(at: Date(), demo: Demo.on, waitingProjects: w.projects, waitingCommits: w.commits,
                               waitingPRs: w.prs, building: rows.filter { $0.status == .building }.count,
                               failed: rows.filter { $0.status == .failed }.count, saving: snapshotSaving,
@@ -65,8 +71,9 @@ extension Store {
         let today = f.string(from: Date())
         let before = costs.days.filter { $0.day < off }, after = costs.days.filter { $0.day > off && $0.day < today }
         guard !before.isEmpty, !after.isEmpty else { return nil }
-        return .init(before: before.map(\.build).reduce(0, +) / Double(before.count),
-                     after: after.map(\.build).reduce(0, +) / Double(after.count))
+        let sumBefore: Double = before.reduce(0) { $0 + $1.build }
+        let sumAfter: Double = after.reduce(0) { $0 + $1.build }
+        return DeploySnapshot.Saving(before: sumBefore / Double(before.count), after: sumAfter / Double(after.count))
     }
 }
 
