@@ -6,9 +6,12 @@ contact_links:
   - name: How the counts are made
     url: https://github.com/Pschmetzer/deploy-center/blob/main/docs/ZAHLEN.md
     about: Waiting commits, PRs and changed projects explained
-  - name: README (install, CLI, settings)
+  - name: README (install, what it changes, FAQ)
     url: https://github.com/Pschmetzer/deploy-center#readme
-    about: Install with Homebrew, the deploys CLI, what each setting does
+    about: Install with Homebrew, what turning auto-deploy off changes and how to undo it
+  - name: The deploys CLI
+    url: https://github.com/Pschmetzer/deploy-center/blob/main/docs/CLI.md
+    about: Every command, CI variables and settings
   - name: Website and cost calculator
     url: https://deploycenter.app
     about: What the app does and how much auto-deploy costs you
