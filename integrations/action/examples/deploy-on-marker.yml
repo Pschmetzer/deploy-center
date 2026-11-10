@@ -1,0 +1,41 @@
+# Example only: copy to .github/workflows/ in your own repo and adjust.
+#
+# Deploys when a person writes [deploy] in the commit message, and only then. Every other
+# push just reports what is waiting. Note: GitHub shows only the newest commit of a push
+# here (head_commit), so put the marker in the last commit you push.
+name: deploy on [deploy]
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy everything with changes
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  changed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Pin to a release tag or a full commit SHA, not a branch.
+      - uses: Pschmetzer/deploy-center/integrations/action@main
+        id: dc
+        with:
+          deploy: ${{ contains(github.event.head_commit.message, '[deploy]') || inputs.deploy == true }}
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-team: ${{ vars.VERCEL_TEAM }}
+          render-api-key: ${{ secrets.RENDER_API_KEY }}
+          repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
+
+      - name: Report
+        env:
+          COUNT: ${{ steps.dc.outputs.count }}
+          NAMES: ${{ steps.dc.outputs.names }}
+          DEPLOYED: ${{ steps.dc.outputs.deployed }}
+        run: echo "$COUNT with changes ($NAMES), deployed=$DEPLOYED"
