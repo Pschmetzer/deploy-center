@@ -440,7 +440,7 @@ final class Store: ObservableObject {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 5_000_000_000)   // the network needs a moment
-                await self?.autoRefresh(); self?.remindIfDue()
+                await self?.autoRefresh(); self?.remindIfDue(); self?.summaryIfDue()
             }
         }
         // Screens off: nobody looks, so no refresh; on wake one, if it is due.
@@ -452,7 +452,7 @@ final class Store: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.screensAsleep = false
-                if Date().timeIntervalSince(self.lastAutoRefresh) > Double(self.effectiveRefreshMinutes) * 60 { await self.autoRefresh(); self.remindIfDue() }
+                if Date().timeIntervalSince(self.lastAutoRefresh) > Double(self.effectiveRefreshMinutes) * 60 { await self.autoRefresh(); self.remindIfDue(); self.summaryIfDue() }
             }
         }
         Task {
@@ -471,7 +471,7 @@ final class Store: ObservableObject {
                 if screensAsleep { continue }
                 await autoRefresh()
                 await PhoneLinkModel.shared.pushIfStale()
-                remindIfDue()
+                remindIfDue(); summaryIfDue()
             }
         }
     }
@@ -1211,6 +1211,24 @@ final class Store: ObservableObject {
         d.set(today, forKey: "lastReminder")
         Notify.remind(L("Time for the daily deploy", "Zeit für den täglichen Deploy"),
                       L("\(w.prs) PRs in \(w.projects) projects wait to go live.", "\(w.prs) PRs in \(w.projects) Projekten warten darauf, live zu gehen."))
+    }
+
+    /// The day's close (FEA-061) at the hour set, and on Mondays the week before (FEA-101); only
+    /// when something ended. From the journal; nothing is sent anywhere.
+    private func summaryIfDue(now: Date = Date()) {
+        let d = UserDefaults.standard, cal = Calendar.current
+        let hour = d.integer(forKey: "summaryHour")
+        if hour > 0, cal.component(.hour, from: now) >= hour, d.string(forKey: "lastSummary") != localDay() {
+            d.set(localDay(), forKey: "lastSummary")
+            let today = Journal.load(limit: .max).filter { cal.isDate($0.at, inSameDayAs: now) }
+            if let line = JournalStats.summaryLine(today) { Notify.remind(L("Today", "Heute"), line, id: "day-summary") }
+        }
+        if d.bool(forKey: "weeklySummary"), cal.component(.weekday, from: now) == 2, cal.component(.hour, from: now) >= 9,
+           d.string(forKey: "lastWeekly") != localDay() {
+            d.set(localDay(), forKey: "lastWeekly")
+            let week = JournalStats.periods(Journal.load(limit: .max), days: 7, now: cal.startOfDay(for: now)).recent
+            if let line = JournalStats.summaryLine(week) { Notify.remind(L("Last week", "Letzte Woche"), line, id: "week-summary") }
+        }
     }
 
     // MARK: How long a build usually takes, per project (the last five)

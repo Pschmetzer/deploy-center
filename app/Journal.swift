@@ -13,6 +13,8 @@ struct JournalEntry: Codable, Identifiable {
     let result: String        // see Kind: live, preview, rollback, forced, failed, skipped, cancelled (other: older apps)
     let seconds: Double?
     let detail: String?
+    /// The person's own comment, added later in the history (FEA-048). The script leaves it alone.
+    var note: String? = nil
     init(at: Date = Date(), platform: String, name: String, result: String, seconds: Double?, detail: String?) {
         self.at = at; self.platform = platform; self.name = name; self.result = result; self.seconds = seconds; self.detail = detail
     }
@@ -119,6 +121,21 @@ enum Journal {
         catch { Log.write("journal: could not trim (\(error.localizedDescription))") }
     }
 
+    /// Sets (or with an empty text removes) the comment of one entry, by its id.
+    static func setNote(_ id: String, _ text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        writer.async {
+            lock.lock(); defer { lock.unlock() }
+            withFileLock {
+                var all = load(limit: .max)
+                guard let i = all.firstIndex(where: { $0.id == id }) else { return }
+                all[i].note = t.isEmpty ? nil : String(t.prefix(500))
+                rewrite(all)
+            }
+            DispatchQueue.main.async { NotificationCenter.default.post(name: didAppend, object: nil) }
+        }
+    }
+
     /// Oldest first.
     static func load(limit: Int) -> [JournalEntry] {
         migrate()
@@ -134,8 +151,8 @@ enum Journal {
             let safe = s.first.map { "=+-@\t\r".contains($0) } == true ? "'" + s : s
             return "\"" + safe.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
-        return (["time,platform,project,result,seconds,detail"] + list.map {
-            [$0.at.formatted(.iso8601), $0.platform, q($0.name), $0.result, $0.seconds.map { String(Int($0)) } ?? "", q($0.detail ?? "")].joined(separator: ",")
+        return (["time,platform,project,result,seconds,detail,note"] + list.map {
+            [$0.at.formatted(.iso8601), $0.platform, q($0.name), $0.result, $0.seconds.map { String(Int($0)) } ?? "", q($0.detail ?? ""), q($0.note ?? "")].joined(separator: ",")
         }).joined(separator: "\n")
     }
 
@@ -159,7 +176,7 @@ enum Journal {
         return list.filter { e in
             (kind == nil || e.kind == kind)
                 && (t.isEmpty || e.name.localizedCaseInsensitiveContains(t) || e.platform.localizedCaseInsensitiveContains(t)
-                    || (e.detail?.localizedCaseInsensitiveContains(t) ?? false))
+                    || (e.detail?.localizedCaseInsensitiveContains(t) ?? false) || (e.note?.localizedCaseInsensitiveContains(t) ?? false))
         }
     }
 
@@ -212,7 +229,12 @@ extension JournalEntry {
 }
 
 struct JournalView: View {
+    /// For "costliest failures" (an average build's price); nil leaves that part out.
+    var costs: Costs? = nil
     @Environment(\.dismiss) private var dismiss
+    @State private var stats = false
+    @State private var noteFor: JournalEntry?
+    @State private var noteText = ""
     @State private var entries: [JournalEntry] = []
     @State private var failed: [String: (failed: Int, total: Int)] = [:]
     @State private var search = ""
@@ -234,6 +256,11 @@ struct JournalView: View {
                     NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Journal.csv(shown), forType: .string)
                 }.disabled(shown.isEmpty)
                 Button(L("Save as CSV …", "Als CSV sichern …")) { save() }.disabled(shown.isEmpty)
+                Menu(L("Markdown", "Markdown")) {
+                    Button(L("Copy the list as a table", "Liste als Tabelle kopieren")) { copy(JournalStats.markdown(shown, mask: Demo.mask)) }
+                    Button(L("Copy this month's report", "Bericht dieses Monats kopieren")) { copy(JournalStats.monthReport(entries, mask: Demo.mask)) }
+                }.fixedSize().disabled(entries.isEmpty)
+                Toggle(L("Figures", "Zahlen"), isOn: $stats).toggleStyle(.button).disabled(entries.isEmpty)
                 Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(12)
             HStack {
@@ -244,7 +271,9 @@ struct JournalView: View {
                 }.fixedSize()
             }.padding(.horizontal, 12).padding(.bottom, 8)
             Divider()
-            if entries.isEmpty {
+            if stats && !entries.isEmpty {
+                JournalStatsView(entries: entries, costs: costs)
+            } else if entries.isEmpty {
                 Text(L("Nothing yet. Deploys that end are listed here.", "Noch nichts. Beendete Deploys stehen hier."))
                     .foregroundStyle(.secondary).padding(16)
             } else if shown.isEmpty {
@@ -264,6 +293,13 @@ struct JournalView: View {
         }
         .frame(minWidth: 560, idealWidth: 680, minHeight: 360, idealHeight: 520)
         .task { reload() }
+        .alert(L("Comment", "Kommentar"), isPresented: Binding(get: { noteFor != nil }, set: { if !$0 { noteFor = nil } })) {
+            TextField(L("Why it went out, what to watch", "Warum es raus ging, worauf achten"), text: $noteText)
+            Button(L("Cancel", "Abbrechen"), role: .cancel) { noteFor = nil }
+            Button(L("Save", "Speichern")) { if let e = noteFor { Journal.setNote(e.id, noteText) }; noteFor = nil }
+        } message: {
+            Text(L("Kept in this Mac's history.", "Bleibt im Verlauf dieses Macs."))
+        }
         .onReceive(NotificationCenter.default.publisher(for: Journal.didAppend)) { _ in reload() }
     }
 
@@ -287,10 +323,24 @@ struct JournalView: View {
             if let detail, !detail.isEmpty {
                 Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2).padding(.leading, 26)
             }
+            if let n = e.note {
+                Label(n, systemImage: "text.bubble").font(.caption).lineLimit(2).padding(.leading, 26)
+            }
         }
         .help(detail ?? "")
         .accessibilityElement(children: .combine)
+        .contextMenu {
+            if k == .failed || k == .rollback {
+                Button(L("Copy a postmortem template", "Postmortem-Vorlage kopieren")) { copy(JournalStats.postmortem(e, mask: Demo.mask)) }
+            }
+            Button(e.note == nil ? L("Add a comment …", "Kommentar hinzufügen …") : L("Edit the comment …", "Kommentar ändern …")) {
+                noteText = e.note ?? ""; noteFor = e
+            }
+            Button(L("Copy as Markdown", "Als Markdown kopieren")) { copy(JournalStats.markdown([e], mask: Demo.mask)) }
+        }
     }
+
+    private func copy(_ s: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string) }
 
     private func reload() {
         entries = Journal.load(limit: limit); failed = Journal.failureTable(entries)

@@ -18,6 +18,8 @@ struct SettingsView: View {
     @State private var language = AppLanguage.chosen
     @AppStorage("maxParallel") private var maxParallel = 3
     @AppStorage("reminderHour") private var reminderHour = 0
+    @AppStorage("summaryHour") private var summaryHour = 0
+    @AppStorage("weeklySummary") private var weeklySummary = false
     @AppStorage("quietFrom") private var quietFrom = 0
     @AppStorage("quietTo") private var quietTo = 0
     @AppStorage("remindFailures") private var remindFailures = false
@@ -253,6 +255,15 @@ struct SettingsView: View {
             .onChange(of: reminderHour) { _, h in if h > 0 { Notify.ask() } }
             .help(L("Only a reminder, and only when something waits. Nothing is deployed by itself.",
                     "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
+            Picker(L("Summary of the day", "Tagesabschluss"), selection: $summaryHour) {
+                Text(L("Off", "Aus")).tag(0)
+                ForEach(12...23, id: \.self) { Text(L("from \($0):00", "ab \($0):00 Uhr")).tag($0) }
+            }
+            .onChange(of: summaryHour) { _, h in if h > 0 { Notify.ask() } }
+            .help(L("How many deploys ended today and how many failed, from the history. Only when something ended.",
+                    "Wie viele Deploys heute fertig wurden und wie viele fehlschlugen, aus dem Verlauf. Nur wenn etwas fertig wurde."))
+            Toggle(L("Week in review on Mondays", "Wochenrückblick am Montag"), isOn: $weeklySummary)
+                .onChange(of: weeklySummary) { _, on in if on { Notify.ask() } }
             HStack {
                 Text(L("Quiet hours", "Ruhezeit"))
                 Spacer()

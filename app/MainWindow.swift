@@ -363,7 +363,7 @@ struct ContentView: View {
     private var withSheets: some View {
         chrome
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
-        .sheet(isPresented: $showJournal) { JournalView() }
+        .sheet(isPresented: $showJournal) { JournalView(costs: store.costs) }
         .sheet(isPresented: $showFirstStart) { FirstStartView(store: store) }
         .onChange(of: Platform.allCases.map { store.autoOn($0).count }.reduce(0, +) + (firstStartDone ? 0 : 1_000_000)) { _, _ in
             if FirstStart.due(done: firstStartDone, autoOn: Platform.allCases.map { store.autoOn($0).count }.reduce(0, +)), !Demo.on { showFirstStart = true }

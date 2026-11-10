@@ -409,8 +409,8 @@ enum Notify {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in then?(granted) }
     }
     /// A reminder the person set up themselves: shown whether or not the window is in front.
-    static func remind(_ title: String, _ body: String) {
-        add(title, body, id: "daily-reminder")
+    static func remind(_ title: String, _ body: String, id: String = "daily-reminder") {
+        add(title, body, id: id)
     }
     /// `project`: a click on it shows that project in the window. `key` (Store.key) with `failed`:
     /// the notification has "Show log" (and with `rollBack`, a live site that is broken, "Roll back …"),

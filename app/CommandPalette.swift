@@ -434,7 +434,7 @@ struct CommandPaletteHost: ViewModifier {
             .sheet(item: $sheet) { s in
                 switch s {
                 case .log(let i): BuildLog(store: store, item: i)
-                case .journal: JournalView()
+                case .journal: JournalView(costs: store.costs)
                 case .costs: if let c = store.costs { CostsSheet(costs: c) } else { NoCostsSheet() }
                 }
             }

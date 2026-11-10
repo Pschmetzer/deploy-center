@@ -44,6 +44,29 @@ do {
     expect("health: no doctor", Health.checks(nil, budget: nil, on: []).map(\.id), ["script"])
 }
 expect("first start: once, with something to turn off", "\(FirstStart.due(done: false, autoOn: 2)) \(FirstStart.due(done: true, autoOn: 2)) \(FirstStart.due(done: false, autoOn: 0))", "true false false")
+do {
+    let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+    func je(_ m: Double, _ n: String, _ r: String, _ s: Double? = nil) -> JournalEntry { JournalEntry(at: t0.addingTimeInterval(m * 60), platform: "vercel", name: n, result: r, seconds: s, detail: nil) }
+    let l = [je(0, "a", "live"), je(10, "a", "failed"), je(40, "a", "live"), je(50, "b", "preview"), je(60, "b", "rollback"), je(70, "b", "forced")]
+    expect("stats: clean share", JournalStats.cleanShare(l).map { Int(($0 * 100).rounded()) } ?? -1, 60)
+    let d = JournalStats.dora(l, days: 7)
+    expect("stats: dora", "\(d.perWeek) \(Int((d.failRate ?? 0) * 100)) \(Int(d.restoreMedian ?? 0))", "3.0 40 1200")
+    expect("stats: costly failures", JournalStats.costlyFailures(l, perBuild: { $0 == "a" ? 0.5 : nil }).map { "\($0.name) \($0.failed) \($0.usd)" }, ["a 1 0.5"])
+    let tr = (0..<10).map { je(Double($0), "c", "live", $0 < 5 ? 60 : 120) }
+    expect("stats: slower builds", JournalStats.trends(tr).map { "\($0.before) \($0.recent)" }, ["60.0 120.0"])
+    expect("stats: markdown escapes a bar", JournalStats.markdown([JournalEntry(at: t0, platform: "vercel", name: "x|y", result: "live", seconds: nil, detail: nil)]).contains("x\\|y"), true)
+    let pr = JournalStats.periods(l, days: 1, now: t0.addingTimeInterval(86400))
+    expect("stats: periods", "\(pr.recent.count) \(pr.before.count)", "6 0")
+}
+do {
+    var n = JournalEntry(platform: "vercel", name: "a", result: "live", seconds: nil, detail: nil); n.note = "release mail"
+    let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+    let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+    expect("journal note round trip", (try? dec.decode(JournalEntry.self, from: enc.encode(n)))?.note ?? "", "release mail")
+    expect("journal without note decodes", (try? dec.decode(JournalEntry.self, from: Data(#"{"at":"2026-01-01T00:00:00Z","platform":"vercel","name":"a","result":"live"}"#.utf8)))?.name ?? "", "a")
+    expect("search finds a note", Journal.filter([n], text: "mail", kind: nil).count, 1)
+    expect("summary line", JournalStats.summaryLine([n]) ?? "", L("1 deploys, 0 failed", "1 Deploys, 0 fehlgeschlagen"))
+}
 expect("state unknown word", Row.stateText("some_new_state"), "some new state")
 
 // Demo mode: names in free text become their stand-ins, in one pass.
