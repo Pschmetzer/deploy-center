@@ -38,6 +38,7 @@ struct SettingsView: View {
             generalSection
             platformsSection
             deploySection
+            GuardSettings(store: store)
             ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
             costsSection
             notificationsSection
