@@ -1,0 +1,17 @@
+[
+ {"want":"queued",   "d":{"latest_stage":{"name":"queued","status":"active"}}},
+ {"want":"queued",   "d":{"latest_stage":{"name":"queued","status":"idle"}}},
+ {"want":"queued",   "d":{}},
+ {"want":"building", "d":{"latest_stage":{"name":"initialize","status":"active"}}},
+ {"want":"building", "d":{"latest_stage":{"name":"clone_repo","status":"success"}}},
+ {"want":"building", "d":{"latest_stage":{"name":"build","status":"active"}}},
+ {"want":"building", "d":{"latest_stage":{"name":"deploy","status":"active"}}},
+ {"want":"building", "d":{"latest_stage":{"name":"deploy","status":"idle"}}},
+ {"want":"ready",    "d":{"latest_stage":{"name":"deploy","status":"success"}}},
+ {"want":"failed",   "d":{"latest_stage":{"name":"build","status":"failure"}}},
+ {"want":"failed",   "d":{"latest_stage":{"name":"clone_repo","status":"failure"}}},
+ {"want":"canceled", "d":{"latest_stage":{"name":"build","status":"canceled"}}},
+ {"want":"canceled", "d":{"latest_stage":{"name":"queued","status":"skipped"}}},
+ {"want":"canceled", "d":{"is_skipped":true,"latest_stage":{"name":"queued","status":"active"}}},
+ {"want":"canceled", "d":{"skip_reason":"production_deployments_disabled"}}
+]
