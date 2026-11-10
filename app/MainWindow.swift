@@ -57,7 +57,8 @@ struct ContentView: View {
     @AppStorage("onlyWhenGreen") private var onlyGreen = false
     /// The deploy window's rule while it is closed, the platforms waiting for "Deploy anyway…", and why.
     @State private var freezeReason: String?
-    @State private var frozenScopes: [Platform] = []
+    /// What "Deploy anyway" starts, with the reason, once the deploy window was found closed.
+    @State private var frozenRun: ((String) -> Void)?
     @State private var askingWhy = false
     @State private var forceText = ""
     /// The platform whose auto-deploy banner was clicked (on "All" both can have one).
@@ -275,7 +276,12 @@ struct ContentView: View {
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView() }
         .sheet(isPresented: $showCosts) { if let c = store.costs { CostsSheet(costs: c) } }
-        .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item, deployCommit: store.observer ? nil : { sha in store.deployOne(item, preview: false, sha: sha) }) }
+        .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item, deployCommit: store.observer ? nil : { sha in deployOne(item, sha: sha) }) }
+        .onChange(of: store.pendingDeploy?.id) { _, _ in
+            guard let i = store.pendingDeploy else { return }
+            store.pendingDeploy = nil
+            deployOne(i)
+        }
         .onChange(of: store.pendingDeployAll) { _, go in
             guard go else { return }
             store.pendingDeployAll = false
@@ -309,7 +315,7 @@ struct ContentView: View {
         .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"),
                isPresented: Binding(get: { unchangedItem != nil }, set: { if !$0 { unchangedItem = nil } })) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
-            Button(L("Build anyway", "Trotzdem bauen")) { if let i = unchangedItem { store.deployOne(i, preview: false) }; unchangedItem = nil }
+            Button(L("Build anyway", "Trotzdem bauen")) { if let i = unchangedItem { deployOne(i) }; unchangedItem = nil }
         } message: {
             Text(L("\(shown(unchangedItem?.name)) is already on the newest commit. A build costs build minutes and changes nothing.",
                    "\(shown(unchangedItem?.name)) ist schon auf dem neuesten Stand. Ein Build kostet Build-Minuten und ändert nichts."))
@@ -339,7 +345,7 @@ struct ContentView: View {
         }
         .alert(L("The deploy window is closed", "Das Deploy-Fenster ist zu"),
                isPresented: Binding(get: { freezeReason != nil }, set: { if !$0 { freezeReason = nil } })) {
-            Button(L("Cancel", "Abbrechen"), role: .cancel) { freezeReason = nil }
+            Button(L("Cancel", "Abbrechen"), role: .cancel) { freezeReason = nil; frozenRun = nil }
             Button(L("Deploy anyway…", "Trotzdem deployen …")) {
                 freezeReason = nil; forceText = ""
                 DispatchQueue.main.async { askingWhy = true }   // one alert after the other
@@ -355,7 +361,7 @@ struct ContentView: View {
                 // The script takes a reason starting with "-" for an option.
                 let why = String(forceText.trimmingCharacters(in: .whitespacesAndNewlines).drop { $0 == "-" || $0 == " " })
                 guard !why.isEmpty else { return }
-                frozenScopes.forEach { store.deploySelected($0, whenGreen: onlyGreen, force: why) }
+                frozenRun?(why); frozenRun = nil
             }
         } message: {
             Text(L("The reason is written to the deploy history.", "Der Grund steht danach im Deploy-Verlauf."))
@@ -587,9 +593,25 @@ struct ContentView: View {
         let chosen = scopes, green = onlyGreen
         Task {
             if let w = await store.deployWindow(), w.denied {
-                frozenScopes = chosen; freezeReason = w.reason ?? ""; return
+                frozenRun = { why in chosen.forEach { store.deploySelected($0, whenGreen: green, force: why) } }
+                freezeReason = w.reason ?? ""; return
             }
             chosen.forEach { store.deploySelected($0, whenGreen: green) }
+        }
+    }
+
+    /// One project (row menu, retry, palette, a commit in the details): the same way as the ticked
+    /// ones – a closed deploy window asks first, and "only when checks are green" holds. A preview
+    /// is not live, the script lets it through the window as well.
+    private func deployOne(_ item: Item, preview: Bool = false, sha: String? = nil, clearCache: Bool = false) {
+        let green = onlyGreen && !preview
+        guard !preview else { store.deployOne(item, preview: true); return }
+        Task {
+            if let w = await store.deployWindow(), w.denied {
+                frozenRun = { why in store.deployOne(item, preview: false, sha: sha, clearCache: clearCache, whenGreen: green, force: why) }
+                freezeReason = w.reason ?? ""; return
+            }
+            store.deployOne(item, preview: false, sha: sha, clearCache: clearCache, whenGreen: green)
         }
     }
 
@@ -867,7 +889,7 @@ struct ContentView: View {
             showDetails: item.repo == nil ? nil : { detailItem = item },
             showLog: { logItem = item },
             onCancel: { store.cancel(item) },
-            onRetry: item.deployable && !store.observer ? { store.deployOne(item, preview: false) } : nil,
+            onRetry: item.deployable && !store.observer ? { deployOne(item) } : nil,
             usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: search,
             autofix: store.autofixState(item), allowedUntil: store.allowance(item)?.expiresAt,
             autofixBusy: store.autofixRunning.contains(Store.key(item)),
@@ -888,7 +910,7 @@ struct ContentView: View {
         }
         if canDeploy {
             Button(L("Deploy to production", "Live deployen")) {
-                if item.hasNewCommits || item.headSha == nil { store.deployOne(item, preview: false) }
+                if item.hasNewCommits || item.headSha == nil { deployOne(item) }
                 else { unchangedItem = item }
             }
         }
@@ -903,10 +925,10 @@ struct ContentView: View {
             }
             if canDeploy {
                 if caps.preview {
-                    Button(L("Preview deploy (not live)", "Vorschau-Deploy (nicht live)")) { store.deployOne(item, preview: true) }
+                    Button(L("Preview deploy (not live)", "Vorschau-Deploy (nicht live)")) { deployOne(item, preview: true) }
                 }
                 if item.platform == .render {
-                    Button(L("Deploy with a cleared build cache", "Mit geleertem Build-Cache deployen")) { store.deployOne(item, preview: false, clearCache: true) }
+                    Button(L("Deploy with a cleared build cache", "Mit geleertem Build-Cache deployen")) { deployOne(item, clearCache: true) }
                 }
                 Button(L("Roll back production …", "Live zurückrollen …")) { rollbackItem = item }
             }
@@ -936,7 +958,8 @@ struct ContentView: View {
     private func selectAllCommand() {
         if searchFocused { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil); return }
         guard !waitsForFreshList else { return }
-        scopes.forEach { store.selectChanged($0) }
+        let shown = Set(visible.map(Store.key))   // only the rows the search and filters leave on screen
+        scopes.forEach { store.selectChanged($0, only: shown) }
     }
 
     /// Ticked projects on platforms that can build a preview.

@@ -488,8 +488,10 @@ final class Store: ObservableObject {
         for i in (items[p] ?? []).indices { items[p]![i].selected = false }
     }
 
-    func selectChanged(_ p: Platform) {
-        for i in (items[p] ?? []).indices where items[p]![i].deployable && items[p]![i].hasNewCommits && !items[p]![i].state.isActive {
+    /// Ticks what has changes; never a hidden project. `only`: just these rows (`Store.key`), e.g. the ones on screen.
+    func selectChanged(_ p: Platform, only keys: Set<String>? = nil) {
+        for i in (items[p] ?? []).indices where items[p]![i].deployable && items[p]![i].hasNewCommits && !items[p]![i].state.isActive
+            && !isHidden(items[p]![i]) && keys.map({ $0.contains(Self.key(items[p]![i])) }) ?? true {
             items[p]![i].selected = true
         }
     }
@@ -647,7 +649,7 @@ final class Store: ObservableObject {
     var maxParallel: Int { let n = UserDefaults.standard.integer(forKey: "maxParallel"); return n >= 1 ? n : 3 }
 
     func deploySelected(_ p: Platform, preview: Bool = false, whenGreen: Bool = false, force: String? = nil) {
-        let chosen = selected(p)
+        let chosen = selected(p).filter { !isHidden($0) }   // a hidden project never goes out with the others
         clearSelection(p)
         enqueue(chosen.map { Job(item: $0, preview: preview, whenGreen: whenGreen, force: force) })
     }
@@ -657,9 +659,11 @@ final class Store: ObservableObject {
         try? await Tool.json(["window", "--json"], as: WindowReply.self, timeout: 30)
     }
 
-    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false) {
-        enqueue([Job(item: item, preview: preview, sha: sha, clearCache: clearCache)])
+    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, whenGreen: Bool = false, force: String? = nil) {
+        enqueue([Job(item: item, preview: preview, sha: sha, clearCache: clearCache, whenGreen: whenGreen, force: force)])
     }
+    /// Set by the palette: one project to deploy; the window asks about the deploy window like for a row.
+    @Published var pendingDeploy: Item?
 
     /// Seconds between the click and the first build; in this time "cancel" in the row still costs nothing.
     var undoSeconds: Int { UserDefaults.standard.object(forKey: "undoSeconds") as? Int ?? 8 }
@@ -719,6 +723,11 @@ final class Store: ObservableObject {
     }
 
     private func pump() {
+        // Waiting for green checks takes no build slot; the job comes back to the queue once they are green.
+        while let k = queue.firstIndex(where: { $0.whenGreen && !$0.preview && $0.readyAt <= Date() && waitsFor($0) == nil }) {
+            let job = queue.remove(at: k)
+            ciWaits[job.item.id] = Task { await waitForChecks(job) }
+        }
         while running < maxParallel, let k = queue.firstIndex(where: { $0.readyAt <= Date() && waitsFor($0) == nil }) {
             let job = queue.remove(at: k)
             running += 1
@@ -735,7 +744,7 @@ final class Store: ObservableObject {
                                                              "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
             }
         }
-        if queue.isEmpty && running == 0 {
+        if queue.isEmpty && running == 0 && ciWaits.isEmpty {
             queueBatch = []
             let hadRun = !batch.isEmpty
             summarize()
@@ -760,6 +769,9 @@ final class Store: ObservableObject {
     func cancel(_ item: Item) {
         if let k = queue.firstIndex(where: { $0.item.id == item.id }) {
             queue.remove(at: k); set(item.platform, item.id, .idle); return
+        }
+        if let t = ciWaits.removeValue(forKey: item.id) {   // still waiting for checks: nothing was started
+            t.cancel(); set(item.platform, item.id, .idle); pump(); return
         }
         guard let id = itemNow(item)?.deployId else {
             show(Toast(text: L("\(item.name) is still starting – try again in a moment", "\(item.name) startet noch – gleich nochmal versuchen"), ok: false))
@@ -862,6 +874,40 @@ final class Store: ObservableObject {
         }
     }
 
+    /// Jobs waiting for their checks, by row; outside the queue and the build slots, and cancellable.
+    private var ciWaits: [String: Task<Void, Never>] = [:]
+
+    /// Only once the CI of the commit is green (waits up to 30 minutes for running checks).
+    private func waitForChecks(_ job: Job) async {
+        guard !Task.isCancelled else { return }   // cancelled before it began
+        let item = job.item, p = item.platform
+        if p == .render { queueBatch.insert(item.id) }
+        // Cancelled in the row: cancel() already took it out (a new wait for the row may be there now).
+        defer { if !Task.isCancelled { ciWaits[item.id] = nil; pump() } }
+        // The commit that is checked is the one that goes out: a newer push waits for the next deploy.
+        guard let repo = item.repo, let commit = job.sha ?? item.headSha else {
+            set(p, item.id, .skipped(L("Checks unknown: no commit or repo known", "Checks unbekannt: kein Commit oder Repo bekannt"))); return
+        }
+        set(p, item.id, .running(L("waiting for checks", "wartet auf Checks")))
+        do {
+            let ci = try await Tool.json(["ci", repo, commit, "--wait", "30m", "--json"], as: CIReply.self, timeout: 32 * 60)
+            guard !Task.isCancelled else { return }
+            switch ci.state {
+            case "green", "none":
+                var next = job; next.sha = commit; next.whenGreen = false; next.readyAt = .distantPast
+                set(p, item.id, .queued)
+                queue.append(next)
+            case "red":
+                set(p, item.id, .skipped(L("CI is red: ", "CI ist rot: ") + ci.reason))
+            default:
+                set(p, item.id, .skipped(L("Checks not done after 30 minutes: ", "Checks nach 30 Minuten nicht fertig: ") + ci.reason))
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            set(p, item.id, .failed(error.localizedDescription))
+        }
+    }
+
     private func deploy(_ job: Job) async {
         let item = job.item, p = item.platform
         if p == .render { queueBatch.insert(item.id) }
@@ -869,23 +915,7 @@ final class Store: ObservableObject {
         cancelled.remove(item.id)
         clearPreview(item)   // an older preview must not be promoted over what this deploy brings
         do {
-            var sha = job.sha
-            if job.whenGreen && !job.preview {
-                // The commit that is checked is the one that goes out: a newer push waits for the next deploy.
-                guard let repo = item.repo, let commit = sha ?? item.headSha else {
-                    set(p, item.id, .skipped(L("Checks unknown: no commit or repo known", "Checks unbekannt: kein Commit oder Repo bekannt"))); return
-                }
-                set(p, item.id, .running(L("waiting for checks", "wartet auf Checks")))
-                let ci = try await Tool.json(["ci", repo, commit, "--wait", "30m", "--json"], as: CIReply.self, timeout: 32 * 60)
-                switch ci.state {
-                case "green", "none": sha = commit
-                case "red":
-                    set(p, item.id, .skipped(L("CI is red: ", "CI ist rot: ") + ci.reason)); return
-                default:
-                    set(p, item.id, .skipped(L("Checks not done after 30 minutes: ", "Checks nach 30 Minuten nicht fertig: ") + ci.reason)); return
-                }
-                set(p, item.id, .starting)
-            }
+            let sha = job.sha   // with "only when green" the checked commit, see waitForChecks
             var args = [p.cli, "deploy-json", item.id]
             if job.preview { args.append("--preview") }
             if let sha { args += ["--sha", sha] }
@@ -913,15 +943,27 @@ final class Store: ObservableObject {
         // pump() runs once this returns (see pump), not here as well.
     }
 
-    /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
+    /// Shown when a build has no result after 40 minutes: still active, so no second build can start.
+    nonisolated static var overdueState: RunState { .running(L("no result after 40 min – still asking, check the dashboard",
+                                                             "nach 40 Min. kein Ergebnis – fragt weiter, im Dashboard nachsehen")) }
+    /// Asks every 6 seconds until the deploy is live or failed; after 40 minutes every 30 seconds,
+    /// still "running" (a build may take longer, and a free button would pay for a second one), for 12 hours at most.
     private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false, rolledBack: Bool = false) async throws {
         let p = item.platform
         defer { cancelled.remove(item.id) }   // however it ended, a later deploy can be cancelled again
         var misses = 0
         // A deadline, not a count of rounds: slow status answers must not stretch 40 minutes to hours.
-        let deadline = Date().addingTimeInterval(40 * 60)
+        let start = Date(), overdue = start.addingTimeInterval(40 * 60), deadline = start.addingTimeInterval(12 * 3600)
+        var toldOverdue = false
         while Date() < deadline {
-            try await Task.sleep(nanoseconds: 6_000_000_000)
+            try await Task.sleep(nanoseconds: Date() < overdue ? 6_000_000_000 : 30_000_000_000)
+            if !toldOverdue, Date() >= overdue, !cancelled.contains(item.id) {
+                toldOverdue = true
+                set(p, item.id, Self.overdueState)
+                say(L("\(item.name) has no result after 40 minutes", "\(item.name) hat nach 40 Minuten kein Ergebnis"),
+                    L("Still asking. Check the dashboard; the deploy button stays locked until it ends.",
+                      "Fragt weiter. Im Dashboard nachsehen; der Deploy-Knopf bleibt gesperrt, bis er endet."), ok: false)
+            }
             let args = p == .vercel ? ["vercel", "status", deployId] : ["render", "status", item.id, deployId]
             guard let s = try? await Tool.json(args, as: StatusReply.self, timeout: 60) else {
                 // Network or login gone: say so instead of spinning for 40 minutes without a word.
@@ -962,10 +1004,12 @@ final class Store: ObservableObject {
                 if !Self.knownStates.contains(state), Self.loggedStates.insert(state).inserted {
                     Log.write("\(p.cli) status: unknown state \"\(state)\" for \(item.name), shown as it is")
                 }
-                if !cancelled.contains(item.id) { set(p, item.id, .running(Self.stateName(state))) }
+                if !cancelled.contains(item.id) { set(p, item.id, toldOverdue ? Self.overdueState : .running(Self.stateName(state))) }
             }
         }
-        set(p, item.id, .failed(L("No result after 40 minutes – check the dashboard", "Kein Ergebnis nach 40 Minuten – im Dashboard nachsehen")))
+        // Still no end after 12 hours: the button frees, but a start right away is held (see enqueue).
+        unsureStarts[Self.key(item)] = Date()
+        set(p, item.id, .failed(L("No result after 12 hours – check the dashboard", "Kein Ergebnis nach 12 Stunden – im Dashboard nachsehen")))
     }
 
     /// A path to ask after going live instead of the front page (/health), per project. Kept on this Mac.
@@ -1027,12 +1071,26 @@ final class Store: ObservableObject {
         Notify.countdown(title, link + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), id: id)
         show(Toast(text: title, ok: false, undoLabel: L("Cancel", "Abbrechen"), undo: { [weak self] in self?.cancelRollback(key) }))
         messages.insert(Message(date: Date(), text: title + " – " + link, ok: false), at: 0)
+        let checkedId = itemNow(item)?.deployId
         rollbackCountdowns[key] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(n) * 1_000_000_000)
             guard !Task.isCancelled, let self, self.rollbackCountdowns.removeValue(forKey: key) != nil else { return }
             Notify.remove(id)
-            self.rollback(self.itemNow(item) ?? item)
+            let now = self.itemNow(item)
+            // A newer deploy (a fix) is queued, waiting or building, or already went out: it is not rolled back.
+            let newer = self.queue.contains { $0.item.id == item.id } || self.ciWaits[item.id] != nil
+            guard Self.rollbackStillDue(now, checkedId: checkedId, newerQueued: newer) else {
+                self.say(L("Rollback skipped", "Zurückrollen ausgelassen"),
+                         L("A newer deploy of \(item.name) is under way or live.", "Ein neuerer Deploy von \(item.name) läuft oder ist live."), ok: true)
+                return
+            }
+            self.rollback(now ?? item)
         }
+    }
+    /// The countdown's rollback only goes ahead while the deploy it checked is still the newest one.
+    nonisolated static func rollbackStillDue(_ now: Item?, checkedId: String?, newerQueued: Bool) -> Bool {
+        guard let now, !newerQueued, !now.state.isActive else { return false }
+        return now.deployId == checkedId
     }
     func cancelRollback(_ key: String) {
         guard let t = rollbackCountdowns.removeValue(forKey: key) else { return }

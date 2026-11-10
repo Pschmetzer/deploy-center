@@ -543,5 +543,42 @@ MainActor.assumeIsolated {
     expect("observer: the log is still there", looking.contains("log|vercel/app"), true)
 }
 
+// Ticking what changed: never a hidden project; ⌘A only the rows on screen.
+MainActor.assumeIsolated {
+    let st = Store()
+    var shown = item(changed: true, commits: 1); shown.state = .idle
+    var gone = Item(id: "web2", name: "web2", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil)
+    gone.changed = true
+    st.items[.vercel] = [shown, gone]
+    st.hidden = [Store.key(gone)]
+    st.selectChanged(.vercel)
+    expect("select changed skips a hidden project", st.selected(.vercel).map(\.id), ["app"])
+    st.clearSelection(.vercel); st.hidden = []
+    st.selectChanged(.vercel, only: [Store.key(gone)])
+    expect("⌘A ticks only the visible rows", st.selected(.vercel).map(\.id), ["web2"])
+    st.clearSelection(.vercel)
+}
+
+// After 40 minutes without a result the row stays busy, so no second build can start.
+expect("overdue build stays active", Store.overdueState.isActive, true)
+
+// The auto-rollback only goes ahead while the checked deploy is still the newest one.
+var live = item(); live.state = .done(nil); live.deployId = "d1"
+expect("rollback due for the checked deploy", Store.rollbackStillDue(live, checkedId: "d1", newerQueued: false), true)
+var newer = live; newer.deployId = "d2"
+expect("no rollback over a newer deploy", Store.rollbackStillDue(newer, checkedId: "d1", newerQueued: false), false)
+var busy = live; busy.state = .running("building")
+expect("no rollback while a deploy runs", Store.rollbackStillDue(busy, checkedId: "d1", newerQueued: false), false)
+expect("no rollback while one is queued", Store.rollbackStillDue(live, checkedId: "d1", newerQueued: true), false)
+expect("no rollback for a row that is gone", Store.rollbackStillDue(nil, checkedId: "d1", newerQueued: false), false)
+
+// Allowances with the script's wildcards cover every project.
+let later = Date().addingTimeInterval(3600)
+expect("allowance for all platforms", AutoDeployAllowance(platform: "all", project: "app", expiresAt: later).covers(item(.render)), true)
+expect("allowance for every project", AutoDeployAllowance(platform: "vercel", project: "*", expiresAt: later).covers(item()), true)
+expect("allowance for everything", AutoDeployAllowance(platform: "all", project: "*", expiresAt: later).covers(item(.render)), true)
+expect("wildcard project, other platform", AutoDeployAllowance(platform: "render", project: "*", expiresAt: later).covers(item()), false)
+expect("named project still exact", AutoDeployAllowance(platform: "vercel", project: "other", expiresAt: later).covers(item()), false)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

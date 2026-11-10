@@ -456,7 +456,8 @@ struct CommandPaletteHost: ViewModifier {
 }
 
 /// The palette's questions: the same words as the window's, so a deploy or rollback from here is
-/// asked exactly like one from a row. A deploy then takes the usual wait before it starts.
+/// asked exactly like one from a row. A deploy goes through the window (deploy window, "only when
+/// green", see `Store.pendingDeploy`) and then takes the usual wait before it starts.
 private struct PaletteQuestions: ViewModifier {
     @ObservedObject var store: Store
     @Binding var deployItem: Item?
@@ -472,14 +473,14 @@ private struct PaletteQuestions: ViewModifier {
         content
             .alert(L("Put this live now?", "Jetzt live schalten?"), isPresented: binding($deployItem)) {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { deployItem = nil }
-                Button(L("Deploy", "Deployen")) { if let i = deployItem { store.deployOne(i, preview: false) }; deployItem = nil }
+                Button(L("Deploy", "Deployen")) { if let i = deployItem { store.pendingDeploy = i }; deployItem = nil }
             } message: {
                 Text(shown(deployItem) + (deployItem.map { ($0.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText($0) : "" } ?? "")
                      + "\n\n" + L("The newest commit on GitHub goes live.", "Der neueste Stand von GitHub geht live."))
             }
             .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"), isPresented: binding($unchangedItem)) {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
-                Button(L("Build anyway", "Trotzdem bauen")) { if let i = unchangedItem { store.deployOne(i, preview: false) }; unchangedItem = nil }
+                Button(L("Build anyway", "Trotzdem bauen")) { if let i = unchangedItem { store.pendingDeploy = i }; unchangedItem = nil }
             } message: {
                 Text(L("\(shown(unchangedItem)) is already on the newest commit. A build costs build minutes and changes nothing.",
                        "\(shown(unchangedItem)) ist schon auf dem neuesten Stand. Ein Build kostet Build-Minuten und ändert nichts."))
