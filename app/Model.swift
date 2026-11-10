@@ -16,6 +16,33 @@ enum Platform: String, CaseIterable, Identifiable {
 
 struct Doctor: Decodable {
     let jq: Bool; let vercelCli: Bool; let vercelApi: Bool; let vercelLoggedIn: Bool; let githubCli: Bool; let githubLoggedIn: Bool?; let renderKey: Bool
+    /// A field the script does not send (older or newer script) counts as "no", instead of the
+    /// whole answer failing and the app showing nothing.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func flag(_ k: CodingKeys) -> Bool { ((try? c.decodeIfPresent(Bool.self, forKey: k)) ?? nil) ?? false }
+        jq = flag(.jq); vercelCli = flag(.vercelCli); vercelApi = flag(.vercelApi); vercelLoggedIn = flag(.vercelLoggedIn)
+        githubCli = flag(.githubCli); renderKey = flag(.renderKey)
+        githubLoggedIn = (try? c.decodeIfPresent(Bool.self, forKey: .githubLoggedIn)) ?? nil
+    }
+    private enum CodingKeys: String, CodingKey { case jq, vercelCli, vercelApi, vercelLoggedIn, githubCli, githubLoggedIn, renderKey }
+}
+
+/// One element of a list that may not decode; the rest of the list still does.
+struct Lossy<T: Decodable>: Decodable {
+    let value: T?; let error: String?
+    init(from decoder: Decoder) throws {
+        do { value = try T(from: decoder); error = nil } catch { value = nil; self.error = "\(error)" }
+    }
+}
+/// A list where a broken element is skipped and named, not the reason the whole list is gone.
+func decodeLossy<T: Decodable>(_ type: T.Type, from data: Data, label: String) throws -> [T] {
+    let all = try JSONDecoder().decode([Lossy<T>].self, from: data)
+    let bad = all.enumerated().filter { $0.element.value == nil }
+    if let first = bad.first {
+        Log.write("\(label): skipped \(bad.count) of \(all.count) entries; first at \(first.offset): \(first.element.error ?? "")")
+    }
+    return all.compactMap(\.value)
 }
 
 struct VercelProject: Decodable {
@@ -115,7 +142,10 @@ struct Item: Identifiable {
     /// GitHub's page of the commits between what is live and the branch.
     var compareURL: URL? {
         guard let repo, let live = lastSha, !live.isEmpty, hasNewCommits else { return nil }
-        return URL(string: "https://github.com/\(repo)/compare/\(live)...\(ref ?? headSha ?? "main")")
+        // A branch may hold characters a URL cannot (#, %, spaces); "/" stays as GitHub expects it.
+        let branch = ref ?? headSha ?? "main"
+        let safe = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "#?"))) ?? branch
+        return URL(string: "https://github.com/\(repo)/compare/\(live)...\(safe)")
     }
 
     /// The service's page on Render; Vercel's address needs the team's slug, which the list does not carry.
