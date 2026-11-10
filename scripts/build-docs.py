@@ -776,16 +776,17 @@ FOOTER_GUIDES = [
     ("/guides/netlify-stop-builds/", "Stop Netlify builds"),
     ("/guides/reduce-vercel-costs/", "Reduce Vercel costs"),
     ("/guides/auto-fix-failed-vercel-builds-with-claude/", "Auto-fix failed builds with Claude"),
+    ("/guides/deploy-hooks/", "Deploy hooks for any host"),
     ("/claude-code/", "Deploy Center + Claude Code"),
     ("/vercel-build-cost-calculator/", "Build cost calculator"),
     ("/blog/ai-coding-agents-build-bill/", "AI coding agents and your build bill"),
 ]
-FOOTER_GUIDES_RE = re.compile(r"(<div><h2>Guides</h2><ul>\n)(.*?)(\n *</ul></div>)", re.S)
+FOOTER_GUIDES_RE = re.compile(r"(<div><h2>Guides</h2><ul>)(.*?)(\n *</ul></div>)", re.S)
 
 
 def sync_footer_guides():
     """Write FOOTER_GUIDES into the footer of every hand-written page that has a Guides column."""
-    items = "\n".join(f'      <li><a href="{href}">{html.escape(label)}</a></li>' for href, label in FOOTER_GUIDES)
+    items = "".join(f'\n      <li><a href="{href}">{html.escape(label)}</a></li>' for href, label in FOOTER_GUIDES)
     for dirpath, dirnames, filenames in os.walk(SITE):
         if os.path.abspath(dirpath) == os.path.abspath(OUT):
             dirnames[:] = []
