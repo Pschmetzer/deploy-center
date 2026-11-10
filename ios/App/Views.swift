@@ -51,7 +51,7 @@ struct RootView: View {
         }
         .onContinueUserActivity(CSSearchableItemActionType) { a in if let k = Spotlight.key(a) { selection = k } }
         .onContinueUserActivity(Spotlight.activity) { a in if let k = Spotlight.key(a) { selection = k } }
-        .onChange(of: store.openKey) { _, k in if let k { selection = k; store.openKey = nil } }
+        .onChange(of: store.openKey, initial: true) { _, k in if let k { selection = k; store.openKey = nil } }
         .onChange(of: store.projects) { _, _ in if let w = pendingOpen { open(name: w[0], platform: w.count > 1 ? w[1] : nil) } }
         // deploycenter://select?project=<name>&platform=<Vercel|Render>, from the widget. It only shows the project.
         .onOpenURL { url in
