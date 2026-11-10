@@ -600,14 +600,27 @@ private struct PaletteQuestions: ViewModifier {
 @MainActor
 enum PaletteHotKey {
     static let defaultsKey = "paletteHotKey"
+    static let choiceKey = "paletteHotKeyChoice"
     private static var ref: EventHotKeyRef?
     private static var handler: EventHandlerRef?
+    private static var registered: Int?
 
-    /// False when the key could not be taken (another app holds ⌥⌘K).
+    /// The keys to choose from (FEA-123); ⌥⌘K stays the default.
+    static let choices: [(label: String, key: Int, mods: Int)] = [
+        ("⌥⌘K", kVK_ANSI_K, cmdKey | optionKey),
+        ("⌃⌥⌘K", kVK_ANSI_K, cmdKey | optionKey | controlKey),
+        ("⌥⌘D", kVK_ANSI_D, cmdKey | optionKey),
+        ("⌃⌥Space", kVK_Space, controlKey | optionKey),
+    ]
+    static var choice: Int { let c = UserDefaults.standard.integer(forKey: choiceKey); return choices.indices.contains(c) ? c : 0 }
+    static var label: String { choices[choice].label }
+
+    /// False when the key could not be taken (another app holds it).
     @discardableResult static func update() -> Bool {
         let on = UserDefaults.standard.bool(forKey: defaultsKey)
+        // Another key chosen: the old one goes first.
+        if let r = ref, !on || registered != choice { UnregisterEventHotKey(r); ref = nil; registered = nil }
         if on && ref == nil { return register() }
-        else if !on, let r = ref { UnregisterEventHotKey(r); ref = nil }
         return true
     }
 
@@ -622,8 +635,9 @@ enum PaletteHotKey {
         }
         var r: EventHotKeyRef?
         let id = EventHotKeyID(signature: OSType(0x4443_4B50), id: 1)   // "DCKP"
-        let status = RegisterEventHotKey(UInt32(kVK_ANSI_K), UInt32(cmdKey | optionKey), id, GetApplicationEventTarget(), 0, &r)
-        if status == noErr { ref = r; return true }
+        let c = choices[choice]
+        let status = RegisterEventHotKey(UInt32(c.key), UInt32(c.mods), id, GetApplicationEventTarget(), 0, &r)
+        if status == noErr { ref = r; registered = choice; return true }
         Log.write("palette hot key: register \(status)")
         return false
     }
@@ -632,17 +646,25 @@ enum PaletteHotKey {
 /// The section in Settings.
 struct CommandPaletteSettings: View {
     @AppStorage(PaletteHotKey.defaultsKey) private var hotKey = false
+    @AppStorage(PaletteHotKey.choiceKey) private var choice = 0
     @State private var taken = false
 
     var body: some View {
         Section(L("Advanced", "Erweitert")) {
-            Toggle(L("⌥⌘K opens the command palette from any app", "⌥⌘K öffnet die Befehlspalette aus jeder App"), isOn: $hotKey)
+            Toggle(L("A key opens the command palette from any app", "Eine Taste öffnet die Befehlspalette aus jeder App"), isOn: $hotKey)
                 .onChange(of: hotKey) { _, on in
                     // Taken by another app: the switch goes back and says why, instead of staying "on".
                     if !PaletteHotKey.update() && on { hotKey = false; taken = true } else if on { taken = false }
                 }
+            Picker(L("Key", "Taste"), selection: $choice) {
+                ForEach(PaletteHotKey.choices.indices, id: \.self) { Text(PaletteHotKey.choices[$0].label).tag($0) }
+            }
+            .disabled(!hotKey)
+            .onChange(of: choice) { _, _ in
+                if hotKey, !PaletteHotKey.update() { hotKey = false; taken = true } else { taken = false }
+            }
             if taken {
-                ErrorText(L("⌥⌘K is already used by another app.", "⌥⌘K wird schon von einer anderen App benutzt."))
+                ErrorText(L("\(PaletteHotKey.label) is already used by another app.", "\(PaletteHotKey.label) wird schon von einer anderen App benutzt."))
             }
             Text(L("In the window, ⌘K always opens it. Deploys and rollbacks from the palette still ask first.",
                    "Im Fenster öffnet ⌘K sie immer. Deploys und Rollbacks aus der Palette fragen trotzdem vorher."))

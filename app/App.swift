@@ -9,6 +9,7 @@ import Charts
 import UserNotifications
 import ServiceManagement
 import Combine
+import CoreSpotlight
 
 // MARK: - Settings (⌘,)
 
@@ -32,6 +33,8 @@ struct SettingsView: View {
     @AppStorage("demoMode") private var demoMode = false
     @AppStorage(Color.colorBlindKey) private var colorBlind = false
     @AppStorage("compactRows") private var compactRows = false
+    @AppStorage(Tips.key) private var tipOn = true
+    @AppStorage(Spotlight.key) private var spotlight = false
     @AppStorage(Notify.soundsKey) private var resultSounds = false
     @AppStorage("loadLogos") private var loadLogos = true
     @AppStorage("undoSeconds") private var undoSeconds = 8
@@ -156,6 +159,11 @@ struct SettingsView: View {
             }
             if let loginError { ErrorText(loginError) }
             Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
+                .onChange(of: demoMode) { _, _ in Spotlight.update(Array(store.items.values.joined()).filter { !store.isHidden($0) }) }
+            Toggle(L("Find projects in Spotlight", "Projekte in Spotlight finden"), isOn: $spotlight)
+                .help(L("Only names and platforms, kept on this Mac; never in demo mode.", "Nur Namen und Plattformen, auf diesem Mac; nie im Demo-Modus."))
+                .onChange(of: spotlight) { _, _ in Spotlight.update(Array(store.items.values.joined()).filter { !store.isHidden($0) }) }
+            Toggle(L("Tip of the day in the menu bar", "Tipp des Tages in der Menüleiste"), isOn: $tipOn)
             Toggle(L("Compact list (less space between rows)", "Kompakte Liste (weniger Abstand zwischen den Zeilen)"), isOn: $compactRows)
             Toggle(L("Colour-blind friendly (blue instead of green)", "Farbenblind-freundlich (Blau statt Grün)"), isOn: $colorBlind)
                 .help(L("Live and merged show in blue, failures stay red; the symbols differ as well.",
@@ -484,6 +492,12 @@ struct DeployCenterApp: App {
                           let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "project" })?.value else { return }
                     store.pendingSearch = name
                 }
+                // A Spotlight hit: the project is found in the window, never deployed.
+                .onContinueUserActivity(CSSearchableItemActionType) { a in
+                    guard let key = a.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+                          let i = store.items.values.joined().first(where: { Store.key($0) == key }) else { return }
+                    store.pendingSearch = i.name
+                }
                 // A project handed off from the iPhone app: shown, never deployed.
                 .onContinueUserActivity(Handoff.type) { a in
                     guard let key = a.userInfo?["project"] as? String,
@@ -511,6 +525,10 @@ struct DeployCenterApp: App {
                 }
             }
         }
+        // One project in a window of its own (FEA-124), by Store.key; the main window stays as it is.
+        WindowGroup(L("Project", "Projekt"), id: "project", for: String.self) { $key in
+            ProjectWindow(store: store, key: key ?? "")
+        }
         Settings { SettingsView(store: store) }
         MenuBarExtra(isInserted: $showMenuBar) {
             MenuBarContent(store: store)
@@ -537,6 +555,7 @@ struct DeployCenterApp: App {
 /// where the confirmation is.
 struct MenuBarContent: View {
     @ObservedObject var store: Store
+    @AppStorage(Tips.key) private var tipOn = true
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @AppStorage("demoMode") private var demoMode = false
@@ -607,6 +626,7 @@ struct MenuBarContent: View {
                    "Claude behebt \(store.fixingCount) \(store.fixingCount == 1 ? "fehlgeschlagenen Build" : "fehlgeschlagene Builds")"))
         }
         ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
+        if tipOn { Text(L("Tip: ", "Tipp: ") + Tips.tip()).foregroundStyle(.secondary) }
         // Stopping needs no confirmation in the window either; it is the same cancel as the row's.
         let active = Array(store.items.values.joined()).filter { $0.state.isActive }.sorted { $0.name < $1.name }
         if !active.isEmpty {
@@ -662,6 +682,23 @@ struct PromptTemplateSettings: View {
                 Text(L("Without {log} the prompt has no build log.", "Ohne {log} hat der Prompt kein Build-Log."))
                     .font(.caption).foregroundStyle(Color.warningText)
             }
+        }
+    }
+}
+
+/// The details of one project, followed live from the store. Deploying a commit goes through the
+/// same checks as in the sheet; observers only look.
+struct ProjectWindow: View {
+    @ObservedObject var store: Store
+    let key: String
+
+    var body: some View {
+        if let i = store.items.values.joined().first(where: { Store.key($0) == key }) {
+            ProjectDetail(store: store, item: i, deployCommit: store.observer ? nil : { sha in store.deployOne(i, preview: false, sha: sha) })
+                .navigationTitle(Demo.mask(i.name))
+        } else {
+            Text(L("This project is not in the loaded lists (yet).", "Dieses Projekt ist (noch) nicht in den geladenen Listen."))
+                .foregroundStyle(.secondary).padding(40)
         }
     }
 }

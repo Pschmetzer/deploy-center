@@ -693,6 +693,7 @@ final class Store: ObservableObject {
             fromCache.remove(p); loadedAt[p] = Date(); lastLoadError[p] = nil
             recordHistory()
             writeSnapshot()
+            Spotlight.update(Array(items.values.joined()).filter { !isHidden($0) })
             checkStale()
         } catch {
             guard loadGeneration[p] == gen else { return }
@@ -1698,7 +1699,7 @@ final class Store: ObservableObject {
             let t0 = Date()
             code = await Self.probe(url, timeout: 20)
             if Self.siteVerdict(code: code, networkUp: true) == .fine {
-                if timed { noteResponseTime(item, Date().timeIntervalSince(t0)) }
+                if timed { noteResponseTime(item, Date().timeIntervalSince(t0)); SiteLog.note(Self.key(item), up: true) }
                 return true
             }
             if attempt < 2 { try? await Task.sleep(nanoseconds: 6_000_000_000) }
@@ -1711,6 +1712,7 @@ final class Store: ObservableObject {
         }
         let verdict = Self.siteVerdict(code: code, networkUp: networkUp)
         if verdict == .fine { return true }
+        if verdict == .broken { SiteLog.note(Self.key(item), up: false) }
         // A 404 may only be a wrong path, so it is not rolled back.
         if verdict == .broken, mayRollBack, rollsBack(item) { countDownToRollback(item, link, code); return false }
         if verdict == .unreachable {
@@ -1760,7 +1762,9 @@ final class Store: ObservableObject {
                 if self.itemNow(item)?.state.isActive == true { return }
                 let code = await Self.probe(url, timeout: 20)
                 let up = code != nil ? true : await Self.networkUp()
-                seen.append(Self.siteVerdict(code: code, networkUp: up))
+                let v = Self.siteVerdict(code: code, networkUp: up)
+                seen.append(v)
+                if v == .fine || v == .broken { SiteLog.note(key, up: v == .fine) }
                 guard Self.watchFails(seen) else { continue }
                 self.watches[key] = nil
                 if mayRollBack, self.rollsBack(item) { self.countDownToRollback(item, url.absoluteString, code); return }

@@ -530,6 +530,22 @@ do {
     expect("failure causes: ids become #", JournalStats.cause("Deployment dpl_8f3k2 failed at a1b2c3d") ?? "", "Deployment # failed at #")
 }
 expect("prompt template", LogTools.fill("Fix {name} at {sha}: {log} {other}", ["name": "web", "sha": "abc", "log": "{name}"]), "Fix web at abc: {name} {other}")
+do {
+    let now = Date(timeIntervalSince1970: 10_000_000)
+    let old = SiteLog.Check(t: now.timeIntervalSince1970 - 40 * 86_400, ok: false)
+    let list = [old] + (0..<310).map { SiteLog.Check(t: now.timeIntervalSince1970 - Double($0), ok: $0 % 10 != 0) }
+    let t = SiteLog.trim(list, now: now)
+    expect("site log: old and too many dropped", "\(t.count) \(t.contains(old))", "300 false")
+    expect("site log: uptime", SiteLog.uptime([SiteLog.Check(t: 1, ok: true), SiteLog.Check(t: 2, ok: false)]) ?? -1, 0.5)
+    expect("site log: no checks, no uptime", SiteLog.uptime([]) == nil, true)
+}
+do {
+    let d = Date(timeIntervalSince1970: 1_700_000_000)
+    expect("tip: the same all day", Tips.tip(on: d) == Tips.tip(on: d.addingTimeInterval(60)), true)
+    expect("tip: another the next day", Tips.tip(on: d) != Tips.tip(on: d.addingTimeInterval(86_400)), true)
+}
+expect("spotlight entries sorted", Spotlight.entries([(key: "vercel/b", name: "b", platform: "Vercel"), (key: "render/a", name: "a", platform: "Render")]),
+       ["render/a\ta\tRender", "vercel/b\tb\tVercel"])
 expect("goal share", [SavingsModel.goalShare(saved: 25, goal: 100), SavingsModel.goalShare(saved: 300, goal: 100), SavingsModel.goalShare(saved: 5, goal: 0), SavingsModel.goalShare(saved: nil, goal: 50)].map { $0.map { String($0) } ?? "nil" }, ["0.25", "1.0", "nil", "nil"])
 expect("milestones", [5, 10, 99, 100, 1999, 2500].map { SavingsModel.milestone(saved: $0).map { Int($0) } ?? 0 }, [0, 10, 50, 100, 1000, 2000])
 expect("lenient: an empty object is an empty simulation",

@@ -74,6 +74,7 @@ struct WindowCommands: Commands {
 
 struct ContentView: View {
     @ObservedObject var store: Store
+    @Environment(\.openWindow) private var openWindow
     // The tab and the filter are remembered between launches. The tab is a provider id ("vercel");
     // older versions kept "Vercel", which reads the same lowercased.
     @AppStorage("lastPlatform") private var platformRaw = "vercel"
@@ -1259,6 +1260,7 @@ struct ContentView: View {
         Menu(L("More", "Mehr")) {
             if item.repo != nil {
                 Button(L("Details …", "Details …")) { detailItem = item }
+                Button(L("Open in its own window", "In eigenem Fenster öffnen")) { openWindow(id: "project", value: Store.key(item)) }
             }
             if canDeploy {
                 if caps.preview {

@@ -405,6 +405,12 @@ struct ProjectDetail: View {
             }
             risk(item)
             waiting(d)
+            let checks = SiteLog.checks(Store.key(item))
+            if let up = SiteLog.uptime(checks) {
+                Text(L("Up in \(String(format: "%.1f", up * 100)) % of \(checks.count) checks after deploys (30 days, this Mac)",
+                       "Erreichbar bei \(String(format: "%.1f", up * 100)) % von \(checks.count) Prüfungen nach Deploys (30 Tage, dieser Mac)"))
+                    .font(.caption).foregroundStyle(up < 0.99 ? Color.warningText : .secondary)
+            }
             Toggle(L("Roll back if the check fails", "Zurückrollen, wenn der Check fehlschlägt"),
                    isOn: Binding(get: { store.rollsBack(item) }, set: { store.setRollsBack(item, $0) }))
                 .toggleStyle(.checkbox)
