@@ -78,6 +78,23 @@ sources the providers, and they use those. A provider that its own tests source 
 a stand-in behind `declare -F die >/dev/null || die() { … }`, so the one in `deploys` always wins
 (`tests/providers/contract.sh` fails on a `<p>_die`, `<p>_mtime` or `<p>_lock` copy).
 
+### HTTP calls
+
+A provider that talks to an HTTP API with a bearer key uses `http_call` from `lib/http.sh` when
+`deploys` has loaded it (`declare -F http_call`), with `HTTP_AUTH` and `HTTP_FIX` as locals,
+and its own curl code otherwise (the file run on its own). The key goes to curl on stdin either
+way. Today Coolify, DigitalOcean (calls without a body) and Cloudflare (JSON calls) do this.
+They keep their own code where `http_call` would lose something:
+
+- a request body that may hold env values (DigitalOcean specs): `http_call` puts it in argv;
+- a form upload (Cloudflare `--form-string`);
+- `Retry-After` and other response headers (Render, Netlify, and the doctors' rate limits);
+- a call without the key (Netlify build hooks).
+
+`<p>_call`'s promise stays the same: Coolify and DigitalOcean return 1 with the reason on
+stderr (without `Error:`), Cloudflare ends the command. `tests/fixtures/http/stub.sh` gives the
+provider tests an `http_call` (the real one when `lib/http.sh` is there).
+
 ### Dispatch
 
 `deploys <p> <verb> [args]` runs `<p>_cli_<verb>` if it exists, else `<p>_<verb>` for a contract

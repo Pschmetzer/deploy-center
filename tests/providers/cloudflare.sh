@@ -275,6 +275,22 @@ out="$(printf '' | CLOUDFLARE_API_TOKEN='' cf set-key 2>&1)"; rc=$?
 expect "set-key: empty input" "$rc" 1
 
 # --- the shared contract, once it exists ---
+has() { case "$2" in *"$3"*) ok "$1" ;; *) fail "$1" "[$3] not in: $2" ;; esac; }
+# --- PRV-130: with deploys' http_call, JSON calls go through it; a form keeps the own path ---
+# shellcheck source=../fixtures/http/stub.sh
+. tests/fixtures/http/stub.sh
+routes "GET /user/tokens/verify$ token-active.json"
+out="$( http_stub; cf_call GET /user/tokens/verify 2>"$tmp/err" | jq -r '.status' )"
+expect "PRV-130: .result read after http_call" "$out" active
+has "PRV-130: http_call with the bearer header and a fix" "$(cat "$CALLS")" "http_call Cloudflare GET https://api.cloudflare.com/client/v4/user/tokens/verify auth[bearer] fix[set]"
+routes "POST /deployments$ deploy-queued.json"
+( http_stub; cf_call POST "/accounts/$A/pages/projects/site/deployments" --form-string "branch=main" >/dev/null 2>&1 )
+expect "PRV-130: a form is not sent through http_call" "$(calls '^http_call')" 0
+routes "GET /user/tokens/verify$ unauthorized.json:200"
+out="$( http_stub; cf_call GET /user/tokens/verify 2>&1 )"; rc=$?
+expect "PRV-130: success:false with a 2xx still fails" "$rc" 1
+has "PRV-130: with Cloudflare's own error text" "$out" "Cloudflare GET /user/tokens/verify:"
+
 if [ -f tests/providers/contract.sh ]; then bash tests/providers/contract.sh cloudflare || fails=$((fails+1)); fi
 
 echo

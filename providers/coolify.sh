@@ -67,12 +67,31 @@ coolify_key() {
   printf '%s' "$k"
 }
 
+# PRV-130: deploys' shared http_call (lib/http.sh) does the request when deploys has it; the
+# code in coolify_call below is the fallback (this file run on its own, or a deploys without lib/).
+# In a subshell, so its die returns 1 here like the rest of this file, and its "Error: " is
+# dropped: callers print the reason again or keep it as fetchError.
+coolify_http() {  # <method> <url> <body> <key> <fix>
+  local e rc=0
+  # shellcheck disable=SC2034  # read by http_call
+  local HTTP_AUTH="Authorization: Bearer $4" HTTP_FIX="$5"
+  e="$(mktemp)"
+  ( http_call Coolify "$1" "$2" "$3" ) 2>"$e" || rc=$?
+  [ "$rc" = 0 ] || sed 's/^.*Error:[^ ]* //' "$e" >&2
+  rm -f "$e"; return "$rc"
+}
+
 # coolify_call METHOD PATH [BODY] — the answer on stdout; on failure a reason on stderr, rc 1.
 # The token goes to curl on stdin (-K -), so it never shows in the process list.
 coolify_call() {
   local method="$1" path="$2" body="${3:-}" key base out code try err
   base="$(coolify_base)" || return 1
   key="$(coolify_key)" || return 1
+  if declare -F http_call >/dev/null; then
+    local fix="deploys coolify set-key; a 403 can also mean API access is off in Coolify: Settings > Advanced"
+    [ -z "${COOLIFY_TOKEN:-}" ] || fix="check COOLIFY_TOKEN in the environment; a 403 can also mean API access is off in Coolify: Settings > Advanced"
+    coolify_http "$method" "$base/api/v1$path" "$body" "$key" "$fix"; return
+  fi
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
   err="$(mktemp)"

@@ -278,5 +278,20 @@ expect "set-key: token never an argument" "$(grep -- 'goodtoken' "$CALLS" | grep
 out="$(printf '' | coolify_set_key 2>&1)"; rc=$?
 expect "set-key: empty refused" "$rc" 1
 
+# --- PRV-130: with deploys' http_call the request goes through it (key in HTTP_AUTH, not argv) ---
+# shellcheck source=../fixtures/http/stub.sh
+. tests/fixtures/http/stub.sh
+reset
+out="$( http_stub; coolify_apps 2>"$tmp/err" | jq 'length' )"
+expect "PRV-130: list through http_call" "$out" 4
+has "PRV-130: http_call with the bearer header and a fix" "$(cat "$CALLS")" "http_call Coolify GET https://coolify.example.com/api/v1/applications auth[bearer] fix[set]"
+hasnt "PRV-130: the token is not in curl's arguments" "$(grep '^curl' "$CALLS")" "tok-secret-123"
+reset
+out="$( http_stub; FAKE_STATUS=401 coolify_call GET /applications 2>&1 >/dev/null )"; rc=$?
+expect "PRV-130: a 401 returns 1, not the end of the run" "$rc" 1
+has "PRV-130: the reason without Error: (callers keep it as fetchError)" "$out" "Coolify GET"
+hasnt "PRV-130: no Error: prefix" "$out" "Error:"
+has "PRV-130: the fix names the API switch too" "$out" "Settings > Advanced"
+
 echo
 [ "$fails" = 0 ] && echo "All Coolify provider tests passed." || { echo "$fails failed."; exit 1; }

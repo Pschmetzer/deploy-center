@@ -50,12 +50,33 @@ digitalocean_key() {
   printf '%s' "$k"
 }
 
+# PRV-130: deploys' shared http_call (lib/http.sh) does the request when deploys has it; the
+# code in digitalocean_call below is the fallback (this file run on its own, or a deploys without lib/).
+# In a subshell, so its die returns 1 here like the rest of this file, and its "Error: " is
+# dropped: callers print the reason again or keep it as fetchError.
+digitalocean_http() {  # <method> <url> <body> <key> <fix>
+  local e rc=0
+  # shellcheck disable=SC2034  # read by http_call
+  local HTTP_AUTH="Authorization: Bearer $4" HTTP_FIX="$5"
+  e="$(mktemp)"
+  ( http_call DigitalOcean "$1" "$2" "$3" ) 2>"$e" || rc=$?
+  [ "$rc" = 0 ] || sed 's/^.*Error:[^ ]* //' "$e" >&2
+  rm -f "$e"; return "$rc"
+}
+
 # digitalocean_call METHOD PATH [BODY] — the answer on stdout; on failure a reason on stderr, rc 1.
 # The token goes to curl on stdin (-K -), so it never shows in the process list. Only for
 # api.digitalocean.com: log URLs are pre-signed and must never get the token (digitalocean_fetch).
 digitalocean_call() {
   local method="$1" path="$2" body="${3:-}" key out code try err bodyf=""
   key="$(digitalocean_key)" || return 1
+  # Not with a body: http_call passes it as an argument, and a spec can hold plain env values.
+  # Not when the doctor wants the headers (DIGITALOCEAN_HEADERS): http_call does not keep them.
+  if [ -z "$body" ] && [ -z "${DIGITALOCEAN_HEADERS:-}" ] && declare -F http_call >/dev/null; then
+    local fix="deploys digitalocean set-key; the token needs read and update scope for apps"
+    [ -z "${DIGITALOCEAN_TOKEN:-}" ] || fix="check DIGITALOCEAN_TOKEN in the environment; it needs read and update scope for apps"
+    digitalocean_http "$method" "$DIGITALOCEAN_API$path" "" "$key" "$fix"; return
+  fi
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   # A body goes through a private file, not an argument: a spec can hold plain env values.
   if [ -n "$body" ]; then

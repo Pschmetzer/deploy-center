@@ -93,6 +93,19 @@ cf_key_source() {
 cf_call() {
   local method="$1" path="$2" key out code try err; shift 2
   key="$(cloudflare_key)" || exit 1
+  # PRV-130: deploys' shared http_call (lib/http.sh) for JSON calls when deploys has it; a form
+  # (-F/--form-string) and this file run on its own take the code below. Its die ends the
+  # command, as cf_call's own does; .success and .result are read the same way after it.
+  if declare -F http_call >/dev/null && [ "${1:-}" != -F ] && [ "${1:-}" != --form-string ]; then
+    # shellcheck disable=SC2034  # read by http_call
+    local HTTP_AUTH="Authorization: Bearer $key" HTTP_FIX="deploys cloudflare set-key; the token needs Pages: Edit"
+    # shellcheck disable=SC2034
+    [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || HTTP_FIX="check CLOUDFLARE_API_TOKEN in the environment; it needs Pages: Edit"
+    out="$( ( http_call Cloudflare "$method" "$CLOUDFLARE_API$path" "${1:-}" ) )" || exit 1
+    [ "$(printf '%s' "$out" | jq -r '.success // false' 2>/dev/null)" = true ] \
+      || die "Cloudflare $method $path: $(printf '%s' "$out" | jq -r '[.errors[]? | "\(.code): \(.message)"] | join("; ") | select(. != "")' 2>/dev/null || printf '%s' "$out" | head -c 300)"
+    printf '%s' "$out" | jq '.result'; return
+  fi
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   if [ "${1:-}" = -F ] || [ "${1:-}" = --form-string ]; then args+=("$@")
   elif [ -n "${1:-}" ]; then args+=(-H "Content-Type: application/json" --data "$1"); fi
