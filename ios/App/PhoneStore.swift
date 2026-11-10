@@ -389,34 +389,42 @@ final class PhoneStore: ObservableObject {
         running[p.key] = rollback ? "rollback" : "queued"
         let keep = KeepAlive.start(title: rollback ? L("Rolling back \(p.name)", "\(p.name) wird zurückgerollt") : L("Deploying \(p.name)", "\(p.name) wird deployt"),
                                    subtitle: p.provider.rawValue)
+        let live = LiveDeploy.start(p, rollback: rollback)
         let start = Date(), end = start.addingTimeInterval(limit)
-        var outcome: String?, ok = false
+        var outcome: String?, ok = false, failed = false
         while Date() < end && !Task.isCancelled {
             try? await Task.sleep(for: .seconds(6))
             let s: String
             do { s = try await (check ?? { try await self.status(p, id) })().lowercased() } catch { continue }
             if !rollback { running[p.key] = s }
             keep.update(PhoneProject.stateWord(s), fraction: min(Date().timeIntervalSince(start) / 300, 0.95))
+            live.update(rollback ? PhoneProject.stateWord("rollback") : PhoneProject.stateWord(s))
             if ["ready", "live", "succeeded"].contains(s) {
                 ok = true
                 outcome = rollback ? L("\(p.name) is rolled back.", "\(p.name) ist zurückgerollt.") : L("\(p.name) is live.", "\(p.name) ist live.")
                 break
             }
             if PhoneProject.failedStates.contains(s) || ["deactivated", "cancelled"].contains(s) {
-                outcome = "\(p.name): \(PhoneProject.stateWord(s))"; break
+                outcome = "\(p.name): \(PhoneProject.stateWord(s))"; failed = true; break
             }
         }
         let text = outcome ?? L("\(p.name): no final state after \(Int(limit / 60)) minutes. Check it on \(p.provider.rawValue).",
                                 "\(p.name): nach \(Int(limit / 60)) Minuten kein Endstand. Prüfe es bei \(p.provider.rawValue).")
         say(text, error: !ok)
         keep.finish(success: ok)
+        live.finish(ok ? .live : failed ? .failed : .unknown,
+                    ok ? (rollback ? L("Rolled back", "Zurückgerollt") : L("Live", "Live")) : failed ? text.replacingOccurrences(of: "\(p.name): ", with: "")
+                       : L("No final state", "Kein Endstand"))
         if UIApplication.shared.applicationState != .active { await Notes.post(text, project: p.key) }
         await reload()
     }
 
     private func simulate(_ p: PhoneProject, _ start: String, _ done: String) async {
         running[p.key] = "building"; say(start)
+        let live = LiveDeploy.start(p, rollback: false)
+        live.update(PhoneProject.stateWord("building"))
         try? await Task.sleep(for: .seconds(3))
+        live.finish(.live, L("Live (demo)", "Live (Demo)"))
         if let i = projects.firstIndex(where: { $0.key == p.key }) {
             projects[i].liveSha = projects[i].headSha; projects[i].latestState = p.provider == .vercel ? "READY" : "live"
             projects[i].liveState = projects[i].latestState; projects[i].pendingCommits = 0; projects[i].pendingPRs = 0
@@ -458,7 +466,8 @@ final class PhoneStore: ObservableObject {
         var same = old; same?.at = snap.at
         if same != snap || Date().timeIntervalSince(last) > 15 * 60 {
             UserDefaults.standard.set(Date(), forKey: "widgetReloadAt")
-            WidgetCenter.shared.reloadTimelines(ofKind: DeploySnapshot.widgetKind)
+            WidgetCenter.shared.reloadAllTimelines()    // both widgets read the same snapshot
+            ControlCenter.shared.reloadAllControls()
         }
     }
 

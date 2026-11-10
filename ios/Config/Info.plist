@@ -27,6 +27,8 @@
 	</array>
 	<key>DCKeychainGroup</key>
 	<string>$(DEVELOPMENT_TEAM).app.deploycenter.shared</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>app.deploycenter.project</string>

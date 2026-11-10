@@ -4,6 +4,10 @@
 
 import SwiftUI
 import WidgetKit
+#if os(iOS)
+import ActivityKit
+import AppIntents
+#endif
 
 struct Entry: TimelineEntry {
     let date: Date
@@ -33,6 +37,7 @@ struct Words {
     init(_ snap: DeploySnapshot?) {
         german = (snap?.language ?? Locale.preferredLanguages.first ?? "en").hasPrefix("de")
     }
+    init(german: Bool) { self.german = german }
     func callAsFunction(_ en: String, _ de: String) -> String { german ? de : en }
     func n(_ n: Int, _ one: (String, String), _ many: (String, String)) -> String {
         "\(n) " + (n == 1 ? self(one.0, one.1) : self(many.0, many.1))
@@ -315,7 +320,165 @@ struct DeployWidget: Widget {
     }
 }
 
+/// Only what failed or builds, with a tap to open it. Mac and iPhone.
+struct ProblemsWidget: Widget {
+    static let kind = "DeployCenterProblems"
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: Self.kind, provider: Provider()) { ProblemsWidgetView(entry: $0) }
+            .configurationDisplayName(Words(DeploySnapshot.read())("Failed deploys", "Fehlgeschlagene Deploys"))
+            .description(Words(DeploySnapshot.read())("Only the projects whose deploy failed or still builds.",
+                                                      "Nur die Projekte, deren Deploy fehlschlug oder noch baut."))
+            .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+struct ProblemsWidgetView: View {
+    @Environment(\.widgetFamily) var family
+    let entry: Entry
+    var body: some View {
+        Group {
+            if let s = entry.snap, s.connected != false { ProblemsView(snap: s, date: entry.date, rows: family == .systemLarge ? 8 : family == .systemMedium ? 3 : 2) }
+            else { NoSnapshotView(notConnected: entry.snap?.connected == false) }
+        }
+        .environment(\.words, Words(entry.snap))
+        .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(URL(string: "deploycenter://"))
+    }
+}
+
+struct ProblemsView: View {
+    let snap: DeploySnapshot
+    let date: Date
+    let rows: Int
+    @Environment(\.words) private var w
+    var body: some View {
+        let bad = snap.projects.filter { $0.status != .waiting }
+        VStack(alignment: .leading, spacing: 6) {
+            Header(snap: snap, date: date, compact: true)
+            if bad.isEmpty {
+                Spacer(minLength: 0)
+                Label(w("Nothing failed", "Nichts fehlgeschlagen"), systemImage: "checkmark.circle.fill")
+                    .font(.callout.weight(.medium)).foregroundStyle(.green).widgetAccentable()
+                Spacer(minLength: 0)
+            } else {
+                StatusLine(snap: snap)
+                ForEach(bad.prefix(rows)) { p in Link(destination: link(p)) { ProjectRow(p: p) } }
+                let more = snap.failed + snap.building - min(rows, bad.count)
+                if more > 0 { Text(w("+\(more) more", "+\(more) weitere")).font(.caption2).foregroundStyle(.secondary) }
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+#if os(iOS)
+/// Control Center, lock screen and Action button (iOS 18): the waiting PRs, a tap opens the app.
+/// Only reads the snapshot: the extension holds no keys, so it cannot read the accounts itself.
+struct WaitingControl: ControlWidget {
+    struct Value: ControlValueProvider {
+        var previewValue: Int { 3 }
+        func currentValue() async throws -> Int { DeploySnapshot.read()?.waitingPRs ?? 0 }
+    }
+    var body: some ControlWidgetConfiguration {
+        let w = Words(DeploySnapshot.read())
+        return StaticControlConfiguration(kind: "app.deploycenter.ios.control.waiting", provider: Value()) { n in
+            ControlWidgetButton(action: OpenURLIntent(URL(string: "deploycenter://")!)) {
+                Label(w.n(n, ("PR waiting", "PR wartet"), ("PRs waiting", "PRs warten")), systemImage: n > 0 ? "arrow.up.circle.fill" : "paperplane")
+            }
+        }
+        .displayName(LocalizedStringResource(String.LocalizationValue(w("Waiting PRs", "Wartende PRs"))))
+        .description(LocalizedStringResource(String.LocalizationValue(w("Opens Deploy Center.", "Öffnet Deploy Center."))))
+    }
+}
+
+/// The Live Activity of a deploy the iPhone app follows (ios/Common/DeployActivity.swift).
+struct DeployActivityWidget: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: DeployActivity.self) { ctx in
+            DeployActivityView(ctx: ctx).padding()
+                .activityBackgroundTint(nil)
+                .widgetURL(activityLink(ctx.attributes))
+        } dynamicIsland: { ctx in
+            let w = Words(german: ctx.attributes.german)
+            return DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) { phaseIcon(ctx.state.phase).font(.title2) }
+                DynamicIslandExpandedRegion(.trailing) { elapsed(ctx).font(.title3.monospacedDigit()) }
+                DynamicIslandExpandedRegion(.center) { Text(ctx.attributes.project).font(.headline).lineLimit(1) }
+                DynamicIslandExpandedRegion(.bottom) {
+                    Text(line(ctx, w)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+            } compactLeading: {
+                phaseIcon(ctx.state.phase)
+            } compactTrailing: {
+                elapsed(ctx).monospacedDigit().frame(maxWidth: 44)
+            } minimal: {
+                phaseIcon(ctx.state.phase)
+            }
+            .widgetURL(activityLink(ctx.attributes))
+        }
+    }
+}
+
+private func activityLink(_ a: DeployActivity) -> URL {
+    var c = URLComponents(); c.scheme = "deploycenter"; c.host = "select"
+    c.queryItems = [URLQueryItem(name: "project", value: a.project), URLQueryItem(name: "platform", value: a.platform)]
+    return c.url ?? URL(string: "deploycenter://")!
+}
+
+private func phaseIcon(_ p: DeployActivity.ContentState.Phase) -> some View {
+    let (name, color): (String, Color) = switch p {
+    case .running: ("hammer.fill", .orange)
+    case .live: ("checkmark.circle.fill", .green)
+    case .failed: ("xmark.octagon.fill", .red)
+    case .unknown: ("questionmark.circle.fill", .secondary)
+    }
+    return Image(systemName: name).foregroundStyle(color)
+}
+
+/// Running: a clock from the start. Ended: the time it took.
+@ViewBuilder private func elapsed(_ ctx: ActivityViewContext<DeployActivity>) -> some View {
+    if ctx.state.phase == .running && !ctx.isStale {
+        Text(timerInterval: ctx.attributes.started...Date.distantFuture, countsDown: false)
+    } else {
+        Text(Duration.seconds(max(0, ctx.state.updated.timeIntervalSince(ctx.attributes.started))).formatted(.time(pattern: .minuteSecond)))
+    }
+}
+
+/// "Building · Vercel", or, when the app stopped updating, how old the state is.
+private func line(_ ctx: ActivityViewContext<DeployActivity>, _ w: Words) -> String {
+    let what = ctx.state.words + " · " + ctx.attributes.platform
+    guard ctx.isStale && ctx.state.phase == .running else { return what }
+    let t = ctx.state.updated.formatted(date: .omitted, time: .shortened)
+    return what + w(" · as of \(t), open the app to update", " · Stand \(t), App öffnen zum Aktualisieren")
+}
+
+struct DeployActivityView: View {
+    let ctx: ActivityViewContext<DeployActivity>
+    var body: some View {
+        let w = Words(german: ctx.attributes.german)
+        HStack(spacing: 12) {
+            phaseIcon(ctx.state.phase).font(.title)
+            VStack(alignment: .leading, spacing: 2) {
+                Text((ctx.attributes.rollback ? w("Rollback: ", "Zurückrollen: ") : "") + ctx.attributes.project).font(.headline).lineLimit(1)
+                Text(line(ctx, w)).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer(minLength: 0)
+            elapsed(ctx).font(.title3.monospacedDigit()).multilineTextAlignment(.trailing).frame(maxWidth: 80, alignment: .trailing)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+#endif
+
 @main
 struct DeployWidgets: WidgetBundle {
-    var body: some Widget { DeployWidget() }
+    var body: some Widget {
+        DeployWidget()
+        ProblemsWidget()
+        #if os(iOS)
+        DeployActivityWidget()
+        WaitingControl()
+        #endif
+    }
 }

@@ -216,6 +216,44 @@ of "Data Not Collected".
 | The Mac says it could not write (error −34018) | the Mac app was built without its Developer ID profile | install the released app, or use the QR code |
 | "The key from the Mac was refused" | the Mac's token was deleted or expired | make a new one in the Mac app (Settings → iPhone) |
 
+### What else the iPhone app does (reads only, unless it says Face ID)
+
+- **Build log (IOS-118).** A failed project, and each deploy in its history, shows the build log from
+  shortly before the first error line (else the last lines). Vercel: the deployment's events, Render:
+  the build logs in the deploy's time window, the same calls as `deploys logs`. Secrets are masked by
+  `ios/App/LogMask.swift`, a port of `af_mask` in `deploys` with the same rules in the same order.
+  The whole log is masked before anything is cut, kept, shown or copied; if a pattern does not
+  compile, nothing is shown. "Copy" puts the masked log on this device's clipboard only, for ten
+  minutes. Tests: `ios/Tests/run.sh` (swiftc, no simulator) compares the port line for line with
+  `af_mask`'s own output for the same text (`ios/Tests/fixtures/mask-out.txt`). When `af_mask`
+  changes, regenerate that file with it and keep the port in step.
+- **History (IOS-120).** The last 15 production deploys; a built one can go live again (a rollback to
+  it, with Face ID).
+- **Render services (IOS-132).** Pause, resume, restart, each with Face ID.
+- **Live Activity (IOS-122).** A deploy or rollback started in the app shows on the lock screen and
+  in the Dynamic Island, with its state and a running clock. There is no push server: it is updated
+  only while the app runs; after 90 seconds without an update it says how old it is and to open the
+  app. `ios/Common/DeployActivity.swift` is built into the app and the extension.
+- **Siri and Shortcuts (IOS-123).** "What waits in Deploy Center", "Failed deploys in Deploy Center":
+  answered from the state the app saved last, with its age. No deploy by voice: a deploy asks for
+  Face ID in the app.
+- **Quick actions, Spotlight, Handoff (IOS-133, IOS-129).** The app icon's menu has Refresh and the
+  projects that need a look. Projects are in Spotlight (not in demo mode). An open project continues on
+  another iPhone or iPad; the Mac app does not take it yet.
+- **Notification actions (IOS-124).** Open, and Mute for today (news from the background refresh only;
+  the end of a deploy started in the app still comes).
+- **Widgets.** A second widget, "Failed deploys", lists only what failed or builds (Mac and iPhone).
+  On iOS 18 a control for Control Center, the lock screen and the Action button shows the waiting PRs
+  and opens the app; it reads the snapshot only, the extension holds no keys.
+
+### Privacy manifest (IOS-114)
+
+`ios/App/PrivacyInfo.xcprivacy` declares the required-reason APIs the app uses: `UserDefaults`
+(CA92.1, the app's own settings) and file timestamps (C617.1: the modification date of the app's own
+`last-projects.json`, for "as of"). The widget extension has no manifest of its own because it uses none
+of these APIs: it reads the snapshot file's contents, not its dates, and no `UserDefaults`. Check
+again when the extension or `shared/` start using `UserDefaults`, file dates, disk space or uptime.
+
 ## What was verified, and what not
 
 Verified on this Mac:
@@ -237,6 +275,10 @@ Verified on this Mac:
 
 - **Mac link:** the Mac app, signed with the Developer ID profile, launches, and writes and reads
   the synchronizable item in the shared keychain group.
+- **New in this round (simulator only):** everything above builds for the simulator and the Mac
+  widget still builds with `./build.sh --widgets`. The build log with its masking was seen in demo
+  mode. The Live Activity, the control, quick actions, Siri and the notification actions were not tried
+  on a device, and the log, history and Render calls not against real accounts.
 - **QR code:** TestFlight build 2 on the owner's iPhone connected to the Mac app by scanning its
   code.
 
