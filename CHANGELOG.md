@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The CLI installs on its own (macOS, Linux, WSL, CI): `curl -fsSL https://deploycenter.app/install.sh | sh` (SHA-256 checked, `~/.local/bin`, sudo only for a prefix that needs it; `--prefix`, `--version`, `--uninstall`) or `brew install pschmetzer/tap/deploys`. Releases carry `deploys-cli-<version>.tar.gz` and `checksums.txt` next to the app zip. See `README-CLI.md`.
+- `integrations/mcp/`: an MCP server for AI coding agents. Read-only by default (`changed`, `status`, `explain`, `notes`, `logs`, `doctor`); deploy and rollback of one project per call only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`.
 - `deploys autofix`: a failed build (Vercel `ERROR`, Render `build_failed`) is handed to a Claude Code routine that opens a fix PR; after the merge, the next run deploys that merge commit once. Caps, no duplicates, never merges. See `docs/AUTOFIX.md` and `scripts/autofix.plist.example`.
 - `deploys logs <project> --id <deploy>` reads the log of one deploy; `vercel json` and `render json` carry `latestId` and `latestSha` of the newest attempt.
 

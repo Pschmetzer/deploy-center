@@ -25,7 +25,13 @@ expect "package: exit 0" "$rc" 0
 tarball="$tmp/pkg/deploys-cli-$version.tar.gz"
 [ -f "$tarball" ] && ok "package: tarball written" || fail "package: tarball written" "$out"
 listing="$(tar -tzf "$tarball" | sort | tr '\n' ' ')"
-expect "package: contents" "$listing" "deploys-cli-$version/ deploys-cli-$version/LICENSE deploys-cli-$version/README-CLI.md deploys-cli-$version/VERSION deploys-cli-$version/deploys "
+# providers/ goes in when the repo has it (its files, sorted, after deploys).
+want="deploys-cli-$version/ deploys-cli-$version/LICENSE deploys-cli-$version/README-CLI.md deploys-cli-$version/VERSION deploys-cli-$version/deploys "
+if [ -d providers ]; then
+  want+="deploys-cli-$version/providers/ "
+  while IFS= read -r f; do want+="deploys-cli-$version/$f "; done < <(find providers -type f | LC_ALL=C sort)
+fi
+expect "package: contents" "$listing" "$want"
 expect "package: checksums.txt" "$(cat "$tmp/pkg/checksums.txt")" "$(sha256 "$tarball")  deploys-cli-$version.tar.gz
 $(sha256 LICENSE)  LICENSE"
 cp LICENSE "$tmp/pkg/"
@@ -115,7 +121,7 @@ expect "install --version 0.6.9: that version" "$("$tmp/p3/bin/deploys" --versio
 [ -f "$tmp/p3/lib/deploys/providers/render.sh" ] && ok "install: providers/ next to deploys" || fail "install: providers/" "missing"
 out="$(inst --prefix "$tmp/p3" --version="v$version")"; rc=$?
 expect "install --version=v<x>: exit 0" "$rc" 0
-[ ! -e "$tmp/p3/lib/deploys/providers" ] && ok "install: an update leaves no old files behind" || fail "install: old files" "providers/ still there"
+[ ! -e "$tmp/p3/lib/deploys/providers/render.sh" ] && ok "install: an update leaves no old files behind" || fail "install: old files" "providers/render.sh still there"
 
 out="$(inst --prefix "$tmp/p4" --version 9.9.9)"; rc=$?
 expect "install a missing version: fails" "$rc" 1
