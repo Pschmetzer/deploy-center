@@ -1,0 +1,12 @@
+{
+  "title": "Acme deploys",
+  "description": "What shipped when.",
+  "baseUrl": "https://status.example.com/",
+  "projects": [
+    "app-web",
+    { "name": "api", "platform": "render", "label": "API", "url": "https://api.example.com/health" }
+  ],
+  "hideMessages": false,
+  "showAuthors": false,
+  "timeline": 30
+}
