@@ -36,6 +36,10 @@ struct SettingsView: View {
                 ForEach([1, 2, 3, 5, 10], id: \.self) { Text("\($0)").tag($0) }
             }
             Toggle(L("Show in the menu bar", "In der Menüleiste zeigen"), isOn: $showMenuBar)
+                // Without the menu bar the Dock icon is the only way back in: it comes back.
+                .onChange(of: showMenuBar) { _, on in
+                    if !on && hideDock { hideDock = false }
+                }
             Toggle(L("No Dock icon (menu bar only)", "Kein Dock-Symbol (nur Menüleiste)"), isOn: $hideDock)
                 .disabled(!showMenuBar)
                 .onChange(of: hideDock) { _, on in
@@ -121,6 +125,12 @@ struct DeployCenterApp: App {
     @StateObject private var store = Store()
     @AppStorage("showMenuBar") private var showMenuBar = true
 
+    init() {
+        // No menu bar and no Dock icon would leave the app without any way in.
+        let d = UserDefaults.standard
+        if d.object(forKey: "showMenuBar") as? Bool == false && d.bool(forKey: "hideDock") { d.set(false, forKey: "hideDock") }
+    }
+
     var body: some Scene {
         WindowGroup("Deploy Center", id: "main") {
             ContentView(store: store)
@@ -152,6 +162,8 @@ struct DeployCenterApp: App {
 struct MenuBarContent: View {
     @ObservedObject var store: Store
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+    @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
         let w = store.waiting
@@ -191,6 +203,11 @@ struct MenuBarContent: View {
             }
         }
         Button(L("Reload", "Neu laden")) { Task { await store.autoRefresh() } }
+        Button(L("Settings …", "Einstellungen …")) {
+            // Menu bar only: without activating, the window opens behind the other apps.
+            NSApp.activate(ignoringOtherApps: true); openSettings()
+        }
+        .keyboardShortcut(",")
         Divider()
         Button(L("Quit", "Beenden")) { NSApp.terminate(nil) }.keyboardShortcut("q")
     }

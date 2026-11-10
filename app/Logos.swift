@@ -49,9 +49,14 @@ actor LogoCache {
         }
     }
 
+    /// After a network error the site is asked again at the earliest after this long.
+    private static let retryAfter: TimeInterval = 10 * 60
+    private var failedAt: [String: Date] = [:]
+
     func image(for domain: String) async -> NSImage? {
         if let hit = cache[domain] { return hit }
-        let file = Self.dir.appendingPathComponent(domain.replacingOccurrences(of: "/", with: "_"))
+        if let at = failedAt[domain], Date().timeIntervalSince(at) < Self.retryAfter { return stale(domain) }
+        let file = Self.file(domain)
         if let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
            let at = attrs[.modificationDate] as? Date, Date().timeIntervalSince(at) < Self.week,
            let data = try? Data(contentsOf: file) {
@@ -59,33 +64,54 @@ actor LogoCache {
             cache[domain] = img
             return img
         }
-        let (img, data) = await fetch(domain)
+        let (img, data, transient) = await fetch(domain)
+        if img == nil && transient {
+            // Offline, a timeout, 429 or 5xx: that says nothing about the site. Keep what is on disk
+            // (even if older than a week) and ask again later instead of remembering "none" for a week.
+            failedAt[domain] = Date()
+            return stale(domain)
+        }
+        failedAt[domain] = nil
         cache[domain] = img
         try? FileManager.default.createDirectory(at: Self.dir, withIntermediateDirectories: true)
         try? (data ?? Data()).write(to: file, options: .atomic)
         return img
     }
 
-    private func get(_ url: URL) async -> Data? {
-        var req = URLRequest(url: url, timeoutInterval: 8)
-        req.setValue("Mozilla/5.0 (Macintosh) DeployCenter", forHTTPHeaderField: "User-Agent")
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              let http = resp as? HTTPURLResponse, http.statusCode == 200, !data.isEmpty else { return nil }
-        return data
+    private static func file(_ domain: String) -> URL { dir.appendingPathComponent(domain.replacingOccurrences(of: "/", with: "_")) }
+
+    /// The logo on disk, however old.
+    private func stale(_ domain: String) -> NSImage? {
+        guard let data = try? Data(contentsOf: Self.file(domain)), !data.isEmpty else { return nil }
+        return NSImage(data: data)
     }
 
-    private func fetch(_ domain: String) async -> (NSImage?, Data?) {
-        guard let base = URL(string: "https://\(domain)/") else { return (nil, nil) }
+    /// The body on 200; `transient` when the answer says nothing about the site (no answer, 429, 5xx).
+    private func get(_ url: URL) async -> (data: Data?, transient: Bool) {
+        var req = URLRequest(url: url, timeoutInterval: 8)
+        req.setValue("Mozilla/5.0 (Macintosh) DeployCenter", forHTTPHeaderField: "User-Agent")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), let http = resp as? HTTPURLResponse else { return (nil, true) }
+        if http.statusCode == 429 || http.statusCode >= 500 { return (nil, true) }
+        return (http.statusCode == 200 && !data.isEmpty ? data : nil, false)
+    }
+
+    private func fetch(_ domain: String) async -> (NSImage?, Data?, transient: Bool) {
+        guard let base = URL(string: "https://\(domain)/") else { return (nil, nil, false) }
         var candidates: [URL] = []
-        if let html = await get(base), let text = String(data: html, encoding: .utf8) {
+        let page = await get(base)
+        if page.transient { return (nil, nil, true) }
+        if let html = page.data, let text = String(data: html, encoding: .utf8) {
             candidates += Self.iconLinks(in: text).compactMap { URL(string: $0, relativeTo: base)?.absoluteURL }
         }
         candidates += ["apple-touch-icon.png", "favicon.svg", "favicon.png", "favicon.ico"]
             .compactMap { URL(string: $0, relativeTo: base)?.absoluteURL }
+        var transient = false
         for url in candidates {
-            if let data = await get(url), let img = NSImage(data: data), img.size.width > 0 { return (img, data) }
+            let r = await get(url)
+            transient = transient || r.transient
+            if let data = r.data, let img = NSImage(data: data), img.size.width > 0 { return (img, data, false) }
         }
-        return (nil, nil)
+        return (nil, nil, transient)
     }
 
     /// apple-touch-icon first: it is large and square.
@@ -113,6 +139,7 @@ struct Logo: View {
     let domain: String?
     let name: String
     @State private var image: NSImage?
+    @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
         ZStack {
@@ -130,8 +157,9 @@ struct Logo: View {
         }
         .frame(width: 34, height: 34)
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .task(id: domain) {
-            guard let domain else { return }
+        // In demo mode no real logo, also not the one fetched before demo mode was switched on.
+        .task(id: demoMode ? nil : domain) {
+            guard let domain, !demoMode else { image = nil; return }
             image = await LogoCache.shared.image(for: domain)
         }
     }
