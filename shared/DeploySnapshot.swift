@@ -33,6 +33,8 @@ struct DeploySnapshot: Codable, Equatable {
     let saving: Saving?
     /// Building and failed first, then waiting by the number of PRs; at most ten.
     let projects: [Project]
+    /// "en" or "de": the language the Mac app shows, so its widgets match it. Nil from older apps.
+    var language: String? = nil
 
     static let fileName = "snapshot.json"
     /// The App Group shared by the Mac app and its widget. It is set at build time

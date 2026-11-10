@@ -6,10 +6,65 @@ import Charts
 import UserNotifications
 import ServiceManagement
 
-// MARK: - Language (German if the Mac prefers it, English otherwise)
+// MARK: - Language (Settings → General → Language; by default German if the Mac prefers it)
 
+/// The choice is the app's own `AppleLanguages` (["en"] or ["de"]), which macOS reads at launch,
+/// so `Locale.preferredLanguages` and the system texts follow it. No key: the Mac's language.
 let isGerman = (Locale.preferredLanguages.first ?? "en").hasPrefix("de")
 func L(_ en: String, _ de: String) -> String { isGerman ? de : en }
+
+enum AppLanguage: String, CaseIterable, Identifiable {
+    case system, en, de
+    var id: String { rawValue }
+    /// English and Deutsch stay untranslated, so someone stuck in the wrong one still finds theirs.
+    var title: String {
+        switch self {
+        case .system: return L("Same as the Mac", "Wie der Mac")
+        case .en: return "English"
+        case .de: return "Deutsch"
+        }
+    }
+    static var chosen: AppLanguage {
+        guard let list = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleLanguages"] as? [String],
+              let first = list.first else { return .system }
+        return first.hasPrefix("de") ? .de : first.hasPrefix("en") ? .en : .system
+    }
+    /// Takes effect at the next launch (the texts are fixed when the views are built).
+    func save() {
+        if self == .system { UserDefaults.standard.removeObject(forKey: "AppleLanguages") }
+        else { UserDefaults.standard.set([rawValue], forKey: "AppleLanguages") }
+    }
+    /// The language this choice shows after a restart.
+    var resolved: AppLanguage {
+        guard self == .system else { return self }
+        let mac = UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?["AppleLanguages"] as? [String]
+        return (mac?.first ?? "en").hasPrefix("de") ? .de : .en
+    }
+    /// What the app shows now, which may differ from `chosen` until it restarts.
+    static var running: AppLanguage { isGerman ? .de : .en }
+}
+
+/// Quits after asking when deploys run, and opens the app again. No `open -n`: if the quit is
+/// cancelled, `open` only brings the running copy forward, so there are never two.
+@MainActor func relaunchApp(running deploys: Int) {
+    if deploys > 0 {
+        NSApp.activate(ignoringOtherApps: true)
+        let a = NSAlert()
+        a.messageText = L("\(deploys) \(deploys == 1 ? "deploy is" : "deploys are") still running", "\(deploys) \(deploys == 1 ? "Deploy läuft" : "Deploys laufen") noch")
+        a.informativeText = L("Builds that already started go on at Vercel or Render, but Deploy Center stops following them and queued ones do not start.",
+                              "Gestartete Builds laufen bei Vercel oder Render weiter, aber Deploy Center verfolgt sie nicht mehr, und wartende starten nicht.")
+        a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
+        a.addButton(withTitle: L("Restart anyway", "Trotzdem neu starten"))
+        guard a.runModal() == .alertSecondButtonReturn else { return }
+    }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/sh")
+    // Waits until this copy is gone (at most 10 s), then opens the bundle again.
+    p.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null && [ $((i+=1)) -le 50 ]; do sleep 0.2; done; /usr/bin/open \"$2\"",
+                   "relaunch", String(ProcessInfo.processInfo.processIdentifier), Bundle.main.bundlePath]
+    do { try p.run() } catch { Log.write("relaunch: \(error.localizedDescription)"); return }
+    NSApp.terminate(nil)
+}
 
 // MARK: - Calling the script
 

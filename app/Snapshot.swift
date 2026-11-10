@@ -61,7 +61,7 @@ extension Store {
         return DeploySnapshot(at: Date(), demo: Demo.on, waitingProjects: w.projects, waitingCommits: w.commits,
                               waitingPRs: w.prs, building: rows.filter { $0.status == .building }.count,
                               failed: rows.filter { $0.status == .failed }.count, saving: snapshotSaving,
-                              projects: Array(rows.prefix(10)))
+                              projects: Array(rows.prefix(10)), language: isGerman ? "de" : "en")
     }
 
     /// The same sum as the costs panel (kept private there; copied, not moved).

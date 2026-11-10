@@ -14,6 +14,7 @@ import ServiceManagement
 struct SettingsView: View {
     @ObservedObject var store: Store
     @AppStorage("refreshMinutes") private var refreshMinutes = 15
+    @State private var language = AppLanguage.chosen
     @AppStorage("maxParallel") private var maxParallel = 3
     @AppStorage("reminderHour") private var reminderHour = 0
     @AppStorage("showMenuBar") private var showMenuBar = true
@@ -100,6 +101,20 @@ struct SettingsView: View {
             }
             if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
             Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
+            Picker(L("Language", "Sprache") + (isGerman ? " · Language" : " · Sprache"), selection: $language) {
+                ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
+            }
+            .onChange(of: language) { _, l in l.save() }
+            if language.resolved != AppLanguage.running {
+                HStack {
+                    Text(L("Takes effect after a restart.", "Gilt nach einem Neustart."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(L("Restart now", "Jetzt neu starten")) {
+                        relaunchApp(running: store.items.values.joined().filter { $0.state.isActive }.count)
+                    }
+                }
+            }
         }
     }
 
