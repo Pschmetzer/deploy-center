@@ -67,9 +67,12 @@ enum ClaudeAI {
     }
 
     /// A build that ended in an error on the platform, or a deploy started here that failed.
-    static func isFailed(_ item: Item) -> Bool {
-        if case .failed = item.state { return true }
-        return ["ERROR", "build_failed", "update_failed", "pre_deploy_failed"].contains(item.lastState ?? "")
+    static func isFailed(_ item: Item) -> Bool { item.failed }
+
+    /// Claude answers in Markdown: bold, code and links rendered, line breaks and list dashes kept.
+    /// Text that is no valid Markdown is shown as written.
+    static func rendered(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
     }
 }
 
@@ -245,7 +248,7 @@ struct ClaudeAnswerSheet: View {
             Group {
                 if let answer {
                     ScrollView {
-                        Text(answer.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(ClaudeAI.rendered(answer.text)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 } else if let error {
                     Text(error).foregroundStyle(.red).textSelection(.enabled)

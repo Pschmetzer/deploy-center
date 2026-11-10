@@ -2,9 +2,6 @@
 
 import SwiftUI
 import AppKit
-import Charts
-import UserNotifications
-import ServiceManagement
 
 // MARK: - Model
 
@@ -21,6 +18,8 @@ final class Store: ObservableObject {
     @Published var busyMessage: String?
 
     @Published var doctorError: String?
+    /// `deploys --version`, read once, for "Copy diagnostics".
+    @Published var scriptVersion: String?
     @Published var costs: Costs?
     @Published var triggers: [Trigger] = []
     /// The platforms `deploys providers --json` reports (Vercel and Render without it), see Providers.swift.
@@ -260,7 +259,10 @@ final class Store: ObservableObject {
         if autofix?.fires.contains(where: { RowAutofix.needsSync($0) }) ?? true,
            Date().timeIntervalSince(lastAutofixSync) > 180 {
             lastAutofixSync = Date()
-            _ = try? await Tool.run(["autofix", "sync"], timeout: 90)
+            // A failure is logged and marked, so a "fixing" that does not move has a reason somewhere.
+            do { _ = try await Tool.run(["autofix", "sync"], timeout: 90); extrasFailedAt["autofix-sync"] = nil }
+            catch is CancellationError {}
+            catch { extrasFailedAt["autofix-sync"] = Date(); Log.write("autofix sync: \(error.localizedDescription)") }
         }
         async let a = Self.extra(["autofix", "status", "--json"], AutofixReport.self)
         async let g = Self.extra(["guard", "status", "--json"], AllowanceReport.self)
@@ -343,7 +345,6 @@ final class Store: ObservableObject {
         show(Toast(text: text, ok: ok))
         let m = Message(date: Date(), text: text, ok: ok, project: key)
         messages.insert(m, at: 0); autofixResult[key] = m
-        if messages.count > 30 { messages.removeLast() }
     }
 
     private func offerAutofixSetup() {
@@ -374,10 +375,6 @@ final class Store: ObservableObject {
         menu.performActionForItem(at: k)
     }
 
-    func buildCost(_ project: String) -> Double? {
-        costs?.projects.first(where: { $0.name == project }).map(\.build)
-    }
-
     /// When each list was last read, and which ones are still the copy from the last run.
     @Published var loadedAt: [Platform: Date] = [:]
     @Published var fromCache: Set<Platform> = []
@@ -401,10 +398,7 @@ final class Store: ObservableObject {
 
     // MARK: Cache — the last lists, so the window is full at once instead of after 10 seconds
 
-    nonisolated static let cacheDir: URL = {
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("app.deploycenter.mac", isDirectory: true)
-    }()
+    nonisolated static let cacheDir: URL = AppDirs.caches
     private func cacheURL(_ p: Platform) -> URL { Self.cacheDir.appendingPathComponent("\(p.cli)-v2.json") }
 
     private func readCache() {
@@ -501,6 +495,10 @@ final class Store: ObservableObject {
         }
         guard doctor?.jq == true else { return }
         Task { await readTeamObserver() }
+        if scriptVersion == nil {
+            Task { if let v = try? await Tool.run(["--version"], timeout: 10) {
+                scriptVersion = String(decoding: v, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) } }
+        }
         await loadProviders()
         // Both at once: each takes several seconds. A platform switched off in Settings is not read.
         let v = canLoad(.vercel), r = canLoad(.render)
@@ -552,7 +550,23 @@ final class Store: ObservableObject {
             guard loadGeneration[p] == gen else { return }
             loadError[p] = error.localizedDescription
             lastLoadError[p] = LoadFailure(message: error.localizedDescription, at: Date())
+            if Self.isAuthFailure(error.localizedDescription) { Task { await recheckDoctor() } }
         }
+    }
+
+    /// A login or key that was fine at the start and has run out since: the script says
+    /// "HTTP 401/403", "wrong or expired" or "not logged in".
+    nonisolated static func isAuthFailure(_ text: String) -> Bool {
+        let t = text.lowercased()
+        return ["http 401", "http 403", "wrong or expired", "not logged in", "vercel login", "bad credentials"].contains { t.contains($0) }
+    }
+    /// After a load failed for its login: the doctor again, so the setup view appears. One at a
+    /// time and at most every 5 minutes, since both platforms can fail at once.
+    private var lastAuthDoctor = Date.distantPast
+    private func recheckDoctor() async {
+        guard Date().timeIntervalSince(lastAuthDoctor) > 300 else { return }
+        lastAuthDoctor = Date()
+        if let fresh = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { doctor = fresh; doctorError = nil; lastDoctor = Date() }
     }
 
     /// A reload keeps what the person did: ticks stay, a deploy being followed keeps its state.
@@ -586,33 +600,22 @@ final class Store: ObservableObject {
             case .vercel:
                 let list = try decodeLossy(VercelProject.self, from: data, label: "vercel json")
                 return list.map { v in
-                    Item(id: v.name, name: v.name,
+                    Item(v, id: v.name,
                          detail: v.repo.map { "\($0) · \(v.ref ?? "main")" } ?? L("no Git repository", "kein Git-Repo"),
-                         platform: .vercel, deployable: v.deployable, auto: v.auto,
+                         platform: .vercel,
                          note: v.auto ? L("deploys on every push", "deployt bei jedem Push")
                              : (v.deployable ? nil : L("repo unknown", "Repo unbekannt")),
-                         link: v.domain.map { "https://\($0)" },
-                         domain: v.domain, lastAt: date(v.lastAt), lastState: v.lastState,
-                         headAt: date(v.headAt), headMsg: v.headMsg, lastSha: v.lastSha, headSha: v.headSha,
-                         repo: v.repo, ref: v.ref, changed: v.changed, pendingCommits: v.pendingCommits,
-                         pendingPRs: v.pendingPRs, openPRs: v.openPRs, lastMsg: v.lastMsg, openDrafts: v.openDrafts, openBots: v.openBots,
-                         building: v.building ?? false, pendingPartial: v.pendingPartial ?? false,
-                         oldestPendingAt: date(v.oldestPendingAt), rewritten: v.rewritten ?? false, risk: v.risk)
+                         link: v.domain.map { "https://\($0)" })
                 }
             case .render:
                 let list = try decodeLossy(RenderService.self, from: data, label: "render json")
                 return list.map { r in
-                    Item(id: r.id, name: r.name,
+                    Item(r, id: r.id,
                          detail: Self.typeName(r.type) + (r.repo.map { " · \($0) · \(r.ref ?? "main")" } ?? ""),
-                         platform: .render, deployable: r.deployable, auto: r.auto,
+                         platform: .render,
                          note: r.paused ? L("suspended", "pausiert")
                              : (r.auto ? L("deploys on every push", "deployt bei jedem Push") : nil),
-                         link: r.url, domain: r.domain, lastAt: date(r.lastAt), lastState: r.lastState,
-                         headAt: date(r.headAt), headMsg: r.headMsg, lastSha: r.lastSha, headSha: r.headSha,
-                         repo: r.repo, ref: r.ref, kind: r.type, changed: r.changed, pendingCommits: r.pendingCommits,
-                         pendingPRs: r.pendingPRs, openPRs: r.openPRs, lastMsg: r.lastMsg, openDrafts: r.openDrafts, openBots: r.openBots,
-                         building: r.building ?? false, pendingPartial: r.pendingPartial ?? false,
-                         oldestPendingAt: date(r.oldestPendingAt), rewritten: r.rewritten ?? false, risk: r.risk)
+                         link: r.url, kind: r.type)
                 }
             }
     }
@@ -672,13 +675,14 @@ final class Store: ObservableObject {
         return w
     }
 
-    static func typeName(_ t: String) -> String {
+    nonisolated static func typeName(_ t: String) -> String {
         switch t {
-        case "web_service": return "Web Service"
-        case "static_site": return "Static Site"
-        case "cron_job": return "Cron Job"
-        case "background_worker": return "Worker"
-        default: return t
+        case "web_service": return L("Web Service", "Webdienst")
+        case "static_site": return L("Static Site", "Statische Seite")
+        case "cron_job": return L("Cron Job", "Cronjob")
+        case "background_worker": return L("Worker", "Hintergrunddienst")
+        case "private_service": return L("Private Service", "Privater Dienst")
+        default: return t.replacingOccurrences(of: "_", with: " ")
         }
     }
 
@@ -794,8 +798,37 @@ final class Store: ObservableObject {
     }
     /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
     /// `project` is the row's `Store.key` when the line is about one project: a click opens its log.
-    struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool; var project: String? = nil }
-    @Published var messages: [Message] = []
+    struct Message: Identifiable, Codable {
+        var id = UUID(); let date: Date; let text: String; let ok: Bool; var project: String? = nil
+        init(date: Date, text: String, ok: Bool, project: String? = nil) { self.date = date; self.text = text; self.ok = ok; self.project = project }
+        private enum CodingKeys: String, CodingKey { case date, text, ok, project }
+    }
+    /// Kept in Application Support, so the bell is not empty after an update or a language switch.
+    /// At most 30, also for lines added without `say` (a rollback countdown).
+    @Published var messages: [Message] = Store.readMessages() {
+        didSet {
+            if messages.count > 30 { messages = Array(messages.prefix(30)) }   // no second didSet: written below
+            Self.writeMessages(messages)
+        }
+    }
+    nonisolated static var messagesURL: URL { AppDirs.support.appendingPathComponent("messages.json") }
+    nonisolated static func readMessages() -> [Message] {
+        guard let d = try? Data(contentsOf: messagesURL) else { return [] }
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        return Array(((try? dec.decode([Message].self, from: d)) ?? []).prefix(30))
+    }
+    /// In order: the newest list is the one that stays on disk.
+    nonisolated private static let messageQueue = DispatchQueue(label: "app.deploycenter.messages", qos: .utility)
+    /// Waits until every list handed to `writeMessages` is on disk (tests).
+    nonisolated static func flushMessages() { messageQueue.sync {} }
+    nonisolated static func writeMessages(_ list: [Message]) {
+        let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+        guard let d = try? enc.encode(list) else { return }
+        messageQueue.async {
+            try? FileManager.default.createDirectory(at: AppDirs.support, withIntermediateDirectories: true)
+            try? d.write(to: messagesURL, options: .atomic)
+        }
+    }
     /// Names scrubbed in demo mode: a Mac notification shows up in a screen recording too.
     private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil) {
         let all = Array(items.values.joined())
@@ -803,7 +836,6 @@ final class Store: ObservableObject {
         Notify.post(title, body)
         show(Toast(text: title, ok: ok))
         messages.insert(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok, project: project), at: 0)
-        if messages.count > 30 { messages.removeLast() }
     }
 
     /// GitHub's hourly budget for the gh login; the counts need it.
@@ -1271,7 +1303,7 @@ final class Store: ObservableObject {
                                           "Von Vercel übersprungen oder abgebrochen (Ignored Build Step?)"))); return
             case (.vercel, "error"), (.render, "build_failed"), (.render, "update_failed"),
                  (.render, "canceled"), (.render, "pre_deploy_failed"), (.render, "deactivated"):
-                set(p, item.id, .failed(s.error ?? "Status: \(state)")); return
+                set(p, item.id, .failed(s.error ?? Row.stateText(state))); return
             default:
                 if !Self.knownStates.contains(state), Self.loggedStates.insert(state).inserted {
                     Log.write("\(p.cli) status: unknown state \"\(state)\" for \(item.name), shown as it is")

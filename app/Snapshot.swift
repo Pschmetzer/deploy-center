@@ -38,11 +38,9 @@ extension Store {
         let w = waiting
         var rows: [DeploySnapshot.Project] = []
         for i in Array(items.values.joined()) where i.deployable && !isHidden(i) {
-            let s = (i.lastState ?? "").lowercased()
             let status: DeploySnapshot.Project.Status
             if i.building || i.state.isActive { status = .building }
-            else if case .failed = i.state { status = .failed }
-            else if s.contains("fail") || s == "error" { status = .failed }
+            else if i.failed { status = .failed }
             else if i.hasNewCommits && i.state == .idle { status = .waiting }
             else { continue }
             rows.append(.init(name: Demo.mask(i.name), platform: i.platform.rawValue, status: status,
@@ -64,26 +62,20 @@ extension Store {
                               projects: Array(rows.prefix(10)), language: isGerman ? "de" : "en")
     }
 
-    /// The same sum as the costs panel (kept private there; copied, not moved).
+    /// The same sum as the costs panel, on the same day (billing days are UTC, see `CostsSheet.today`).
     private var snapshotSaving: DeploySnapshot.Saving? {
-        guard let costs, let off = costs.offDay else { return nil }
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC")
-        let today = f.string(from: Date())
-        let before = costs.days.filter { $0.day < off }, after = costs.days.filter { $0.day > off && $0.day < today }
-        guard !before.isEmpty, !after.isEmpty else { return nil }
-        let sumBefore: Double = before.reduce(0) { $0 + $1.build }
-        let sumAfter: Double = after.reduce(0) { $0 + $1.build }
-        return DeploySnapshot.Saving(before: sumBefore / Double(before.count), after: sumAfter / Double(after.count))
+        guard let s = costs?.saving(today: CostsSheet.today()) else { return nil }
+        return DeploySnapshot.Saving(before: s.before, after: s.after)
     }
 }
 
 extension DeploySnapshot {
-    func sameContent(as o: DeploySnapshot) -> Bool {
-        var a = self; var b = o
-        a = DeploySnapshot(at: .distantPast, demo: a.demo, waitingProjects: a.waitingProjects, waitingCommits: a.waitingCommits,
-                           waitingPRs: a.waitingPRs, building: a.building, failed: a.failed, saving: a.saving, projects: a.projects)
-        b = DeploySnapshot(at: .distantPast, demo: b.demo, waitingProjects: b.waitingProjects, waitingCommits: b.waitingCommits,
-                           waitingPRs: b.waitingPRs, building: b.building, failed: b.failed, saving: b.saving, projects: b.projects)
-        return a == b
+    /// Everything but `at`: a new language must reach the widgets too.
+    func sameContent(as o: DeploySnapshot) -> Bool { o.dated(at) == self }
+    private func dated(_ d: Date) -> DeploySnapshot {
+        var c = DeploySnapshot(at: d, demo: demo, waitingProjects: waitingProjects, waitingCommits: waitingCommits,
+                               waitingPRs: waitingPRs, building: building, failed: failed, saving: saving, projects: projects, language: language)
+        c.version = version
+        return c
     }
 }

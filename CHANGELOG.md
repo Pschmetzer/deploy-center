@@ -8,6 +8,9 @@
 - Costs: with a monthly budget set, the chart shows the budget per day and a line says what is left until the month ends (or how the pace compares).
 - App: "Settings → …" in texts is built from the settings tab; a test checks that every `deploycenter://settings/…` link names a real tab.
 - App: MainWindow.swift is split; the costs sheet, the setup screens and the row have files of their own (no code changed).
+- App logic: the latest 30 messages survive a restart (Application Support); a list that fails with HTTP 401/403 or an expired login asks the doctor again, so the setup view appears; a failed `autofix sync` is logged instead of swallowed; Claude's answers render Markdown; Render service types and raw deploy states are translated; the widget's saving uses the same function and day as the costs panel; a new app language reaches the widgets; one rule for "failed" (widget, menu bar, Claude); savings reports moved from the preferences into files, decoded off the main thread; the Claude config is written with sorted keys; "Copy diagnostics" names the script version; one quit/restart dialog; dead code and unused imports gone.
+- Tests: the test runner never writes into the real Application Support, Caches or log (`DEPLOYCENTER_DATA_DIR`, or a temporary folder for a binary without a bundle); new tests for ticking changed rows, waiting on two branches, the provider list after a failed read, cancelling `Tool.run`, the widget snapshot, allowance dates, the message store and the savings move.
+
 - pre-push hook: reads `deploys list --json`, so it warns for every platform that is on, and for GitLab remotes (`gitlab.com/group/sub/app`) too. An older CLI without `list` still gets the Vercel and Render lists.
 - Status page: `platform/name` works for every platform, not only `vercel/` and `render/`.
 - Badges: a name on two platforms gets one badge per platform (`vercel-web.svg`, `netlify-web.svg`); every other name keeps `<name>.svg`.

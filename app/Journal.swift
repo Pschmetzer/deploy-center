@@ -19,10 +19,7 @@ struct JournalEntry: Codable, Identifiable {
 
 enum Journal {
     /// In Application Support: macOS may empty the Caches folder at any time.
-    static var dir: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("app.deploycenter.mac", isDirectory: true)
-    }
+    static var dir: URL { AppDirs.support }
     static var url: URL { dir.appendingPathComponent("journal.jsonl") }
     private static var oldURL: URL { Store.cacheDir.appendingPathComponent("journal.jsonl") }
     private static let maxEntries = 500
