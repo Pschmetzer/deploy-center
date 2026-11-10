@@ -29,7 +29,7 @@ jobs:
       - name: shellcheck
         # deploys stays at errors only until its warnings are cleaned up.
         run: |
-          shellcheck --severity=warning build.sh release.sh scripts/*.sh tests/*.sh
+          shellcheck --severity=warning build.sh release.sh scripts/*.sh tests/*.sh lib/*.sh
           shellcheck --severity=error deploys
       - name: Script tests
         run: bash tests/script-tests.sh

@@ -19,6 +19,7 @@
 #   deploys diff <project>                    commits and files between what is live and the branch
 #   deploys notes <project>                   the same as release notes (Markdown)
 #   deploys vercel map <p> <owner/repo> [br]  say where a project deploys from
+#                                             (GitLab: gitlab.com/group/name, see docs/GITLAB.md)
 #   deploys vercel list                       projects and whether a push still deploys them
 #   deploys vercel autodeploy-off <p>|--all   disconnect Git (remembers the repo first)
 #   deploys vercel deploy <p> [--preview]     deploy the newest commit of the remembered repo
@@ -158,7 +159,9 @@ vercel_off() {
   local p="$1" info
   info="$(vercel_call "/v9/projects/$p")" || die "Vercel project $p not found"
   # The link is the only place the repo is written down. Keep it before removing it.
-  remember_repo "$(echo "$info" | jq --arg p "$p" '{($p): (.link // {}) | {org, repo, repoId, ref:(.productionBranch // "main"), offAt:now|floor}}')"
+  remember_repo "$(echo "$info" | jq --arg p "$p" '{($p): ((.link // {}) | (if .type == "gitlab"
+      then {type:"gitlab", repo:'"$GITHOST_VERCEL_LINK_JQ"', projectId} else {org, repo, repoId} end)
+      + {ref:(.productionBranch // "main"), offAt:(now | floor)})}')"
   [ "$(echo "$info" | jq '.link != null')" = "true" ] || { echo "Vercel: $p was already manual"; return; }
   vercel api "$(with_team "/v9/projects/$p/link")" --method DELETE --dangerously-skip-permissions >/dev/null 2>&1 \
     || die "Vercel: could not disconnect $p"
@@ -184,7 +187,8 @@ vercel_deploy_json() {
   body="$(mktemp)"
   jq --arg p "$target" --arg prev "$preview" --arg sha "$sha" '.[$p] as $r | {name:$p, project:$p}
     + (if $prev == "" then {target:"production"} else {} end)
-    + {gitSource:({type:"github", ref:$r.ref} + (if $r.repoId then {repoId:$r.repoId} else {org:$r.org, repo:$r.repo} end)
+    + {gitSource:(if $r.type == "gitlab" then {type:"gitlab", ref:$r.ref, projectId:$r.projectId}
+                  else {type:"github", ref:$r.ref} + (if $r.repoId then {repoId:$r.repoId} else {org:$r.org, repo:$r.repo} end) end
                   + (if $sha != "" then {sha:$sha} else {} end))}' "$REPOS" > "$body"
   local errf; errf="$(mktemp)"
   out="$(vercel api "$(with_team /v13/deployments)" --method POST --input "$body" 2>"$errf")" \
@@ -251,6 +255,32 @@ open_prs_of() {
 }
 export -f open_prs_of
 
+# ---------- git hosts: GitHub above, GitLab in lib/githost.sh ----------
+# githost_of decides per repo; the githost_* dispatchers hand GitHub repos to the functions above.
+# The lib sits next to this script (also inside the app). Without it, GitHub works as before.
+deploys_dir() {
+  local s="${BASH_SOURCE[0]}" d
+  while [ -L "$s" ]; do d="$(cd -P "$(dirname "$s")" && pwd)"; s="$(readlink "$s")"; [[ "$s" == /* ]] || s="$d/$s"; done
+  cd -P "$(dirname "$s")" && pwd
+}
+if [ -f "$(deploys_dir)/lib/githost.sh" ]; then
+  # shellcheck source=lib/githost.sh
+  . "$(deploys_dir)/lib/githost.sh"
+else
+  githost_of() { case "${1:-}" in *:*|*/*/*) echo unknown ;; */*) echo github ;; *) echo unknown ;; esac; }
+  githost_available() { command -v gh >/dev/null 2>&1; }
+  githost_head_of() { [ "$(githost_of "$1")" != github ] || head_of "$@"; }
+  githost_pending_of() { [ "$(githost_of "$1")" != github ] || pending_of "$@"; }
+  githost_open_prs_of() { [ "$(githost_of "$1")" != github ] || open_prs_of "$@"; }
+  gitlab_logged_in() { return 1; }
+  gitlab_user() { :; }
+  # shellcheck disable=SC2016
+  GITHOST_SLUG_JQ='(sub("^https://github.com/";"") | sub("^https?://";"") | sub("\\.git$";"") | sub("/$";""))'
+  # shellcheck disable=SC2016
+  GITHOST_VERCEL_LINK_JQ='(if .type == "gitlab" then null else "\(.org)/\(.repo)" end)'
+  export -f githost_of githost_head_of githost_pending_of githost_open_prs_of
+fi
+
 # The one rule for "has changes to deploy", read by `changed`, `deploy-changed` and the app.
 # Not deployable, paused, already building, or with no known head: not changed.
 CHANGED_RULE='map(. + {building: ([.lastState, .latestState] | map(. // "" | ascii_downcase)
@@ -264,11 +294,12 @@ CHANGED_RULE='map(. + {building: ([.lastState, .latestState] | map(. // "" | asc
 
 with_heads() {
   local list="$1" tmp heads pend opens
-  # Without gh, or when asked to leave GitHub out (status --watch), no heads: nothing counts as changed.
-  if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! command -v gh >/dev/null 2>&1; then echo "$list" | jq "$CHANGED_RULE"; return; fi
+  # Without gh (or glab / GITLAB_TOKEN), or when asked to leave the git hosts out (status --watch),
+  # no heads: nothing counts as changed.
+  if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! githost_available; then echo "$list" | jq "$CHANGED_RULE"; return; fi
   tmp="$(mktemp -d)"; mkdir "$tmp/h" "$tmp/p" "$tmp/o"
   echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
-    | xargs -P 8 -n 2 bash -c 'head_of "$0" "$1" "'"$tmp/h"'"'
+    | xargs -P 8 -n 2 bash -c 'githost_head_of "$0" "$1" "'"$tmp/h"'"'
   heads="$(cat_all "$tmp/h"/*.json | jq -s 'from_entries')"
   list="$(echo "$list" | jq --argjson h "${heads:-{\}}" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha}))')"
   # With GitHub's budget nearly spent, keep it for what decides "changed" (the heads above).
@@ -276,8 +307,8 @@ with_heads() {
   if [ "${left:-5000}" -lt 300 ]; then rm -rf "$tmp"; echo "$list" | jq "$CHANGED_RULE"; return; fi
   # Compared only where the branch moved past the live commit.
   echo "$list" | jq -r '.[] | select(.repo and .ref and .lastSha and .headSha and .lastSha != .headSha) | "\(.repo) \(.lastSha) \(.ref)"' \
-    | sort -u | xargs -P 8 -n 3 bash -c 'pending_of "$0" "$1" "$2" "'"$tmp/p"'"'
-  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'open_prs_of "$0" "'"$tmp/o"'"'
+    | sort -u | xargs -P 8 -n 3 bash -c 'githost_pending_of "$0" "$1" "$2" "'"$tmp/p"'"'
+  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -P 8 -n 1 bash -c 'githost_open_prs_of "$0" "'"$tmp/o"'"'
   pend="$(cat_all "$tmp/p"/*.json | jq -s 'from_entries')"
   opens="$(cat_all "$tmp/o"/*.json | jq -s 'from_entries')"
   rm -rf "$tmp"
@@ -733,10 +764,11 @@ case "${1:-} ${2:-}" in
       || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" >/dev/null 2>&1; then src="keychain"; fi
     ghu="$(gh api user --jq .login 2>/dev/null || echo "not logged in")"
     vu="$(vercel whoami 2>/dev/null | tail -n 1 || true)"
+    glu="$(gitlab_user || true)"
     atok=none; [ -n "$(af_token)" ] && atok="set"
-    printf 'version      %s\nscript       %s\nconfig       %s\nvercel team  %s\nvercel user  %s\ngithub user  %s\nrender key   %s\nautofix      routine %s, token %s\n' \
+    printf 'version      %s\nscript       %s\nconfig       %s\nvercel team  %s\nvercel user  %s\ngithub user  %s\ngitlab user  %s\nrender key   %s\nautofix      routine %s, token %s\n' \
       "$(deploys_version)" "$0" "$CONFIG_DIR" "$(cat "$CONFIG_DIR/vercel-team" 2>/dev/null || echo "not chosen yet")" \
-      "${vu:-not logged in}" "$ghu" "$src" "$(r="$(af_routine)"; echo "${r:-none}")" "$atok" ;;
+      "${vu:-not logged in}" "$ghu" "${glu:-not logged in}" "$src" "$(r="$(af_routine)"; echo "${r:-none}")" "$atok" ;;
 
   "history "*)
     # The last n deploys of one project: when, how it ended, which commit, what started it.
@@ -767,11 +799,12 @@ case "${1:-} ${2:-}" in
     rkey=false; { [ -n "${RENDER_API_KEY:-}" ] || security find-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w >/dev/null 2>&1 \
       || security find-generic-password -a "$USER" -s "$LEGACY_KEYCHAIN_SERVICE" -w >/dev/null 2>&1; } && rkey=true
     glogin=false; gh auth status >/dev/null 2>&1 && glogin=true
+    gllogin=false; gitlab_logged_in && gllogin=true
     # Where the key comes from, and the versions that matter (jq 1.6+ for the date functions).
     ksrc=none; [ "$rkey" = true ] && ksrc=keychain; [ -n "${RENDER_API_KEY:-}" ] && ksrc=environment
     jqv="$(jq --version 2>/dev/null | sed 's/^jq-//' | tr -d '"\\')"
-    printf '{"jq":%s,"vercelCli":%s,"vercelApi":%s,"vercelLoggedIn":%s,"githubCli":%s,"githubLoggedIn":%s,"renderKey":%s,"renderKeySource":"%s","jqVersion":"%s","bashVersion":"%s"}\n' \
-      "$(has jq)" "$(has vercel)" "$vapi" "$vlogin" "$(has gh)" "$glogin" "$rkey" "$ksrc" "$jqv" "${BASH_VERSION%%(*}" ;;
+    printf '{"jq":%s,"vercelCli":%s,"vercelApi":%s,"vercelLoggedIn":%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"renderKey":%s,"renderKeySource":"%s","jqVersion":"%s","bashVersion":"%s"}\n' \
+      "$(has jq)" "$(has vercel)" "$vapi" "$vlogin" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$rkey" "$ksrc" "$jqv" "${BASH_VERSION%%(*}" ;;
 
   "github-budget "*)
     github_budget ;;
@@ -964,6 +997,7 @@ BASH
     # the branch (with their PRs), the files they touch and which of them are risky to ship
     # unread, the CI result of the branch head, and the pull requests still open.
     repo="${2:?owner/repo}"; base="${3:-}"; ref="${4:-main}"
+    if [ "$(githost_of "$repo")" = gitlab ]; then gitlab_details "$repo" "$base" "$ref"; exit 0; fi
     # The comparison goes through a file, not an argument: with its patches it can be megabytes,
     # more than one argument may hold ("Argument list too long"). The patches are not needed.
     dt="$(mktemp -d)"; echo null > "$dt/cmp"
@@ -1053,8 +1087,8 @@ BASH
           | jq -c '.[].blueprint | select(.autoSync==true) | {kind:"render-blueprint", where:.name, detail:"auto-sync on"}' || true
       fi
       if command -v gh >/dev/null 2>&1; then
-        { jq -r '.[] | select(.repo) | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
-          echo "${svcs:-[]}" | jq -r '.[] | .repo // empty | sub("^https://github.com/";"") | sub("\\.git$";"")'
+        { jq -r '.[] | select(.repo and (.type // "github") == "github") | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
+          echo "${svcs:-[]}" | jq -r '.[] | .repo // empty | select(test("^https://github.com/")) | sub("^https://github.com/";"") | sub("\\.git$";"")'
         } | sort -u | xargs -P 8 -n 1 bash -c 'workflow_hits "$0" "'"$tmp"'"'
         cat_all "$tmp"/*.jsonl
       fi
@@ -1109,6 +1143,15 @@ BASH
     # Say by hand where a project deploys from, for one disconnected before this tool knew it.
     p="${3:?project}"; r="${4:?owner/repo}"; ref="${5:-main}"
     case "$r" in */*) ;; *) die "Give the repo as owner/name";; esac
+    if [ "$(githost_of "$r")" = gitlab ]; then
+      # GitLab: host/group/name (or its URL). Vercel deploys it by project id.
+      read -r glh glp < <(githost_split "$r"); r="$glh/$glp"
+      pid="$(gitlab_project_id "$r" || true)"; [ -n "$pid" ] || die "GitLab project $r not found (is glab logged in, or GITLAB_TOKEN set?)"
+      tmp="$(mktemp)"
+      jq --arg p "$p" --arg r "$r" --arg ref "$ref" --argjson pid "$pid" \
+        '.[$p] = ({type:"gitlab", repo:$r, projectId:$pid, ref:$ref} + (if .[$p].offAt then {offAt:.[$p].offAt} else {} end))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
+      echo "Vercel: $p deploys from $r ($ref)"; exit 0
+    fi
     rid=""; command -v gh >/dev/null 2>&1 && rid="$(gh api "repos/$r" --jq .id 2>/dev/null || true)"
     tmp="$(mktemp)"
     # The whole entry is replaced: an old repoId would win over the new repo name.
@@ -1190,10 +1233,10 @@ BASH
     recent="$(vercel_call "/v6/deployments?limit=100&target=production" \
       | jq '[.deployments[]] | group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta.githubCommitSha // null)})}) | from_entries' 2>/dev/null)"
     list="$(vercel_projects | jq --slurpfile r "$REPOS" --argjson recent "${recent:-{\}}" '[.[] |
-      ((.link // null) | if . then {repo:"\(.org)/\(.repo)", ref:"main"} else null end) as $live |
+      ((.link // null) | if . then {repo:'"$GITHOST_VERCEL_LINK_JQ"', ref:"main"} else null end) as $live |
       ($r[0][.name] // null) as $known |
       {name, auto:(.link != null),
-       repo:(if $known.repo then "\($known.org)/\($known.repo)" else $live.repo end),
+       repo:(if $known.repo then (if $known.type == "gitlab" then $known.repo else "\($known.org)/\($known.repo)" end) else $live.repo end),
        ref:($known.ref // (.link.productionBranch // null)),
        deployable:($known.repo != null),
        domain:(((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // null),
@@ -1266,7 +1309,7 @@ BASH
       auto:('"$(render_auto)"' != "off"), deployable:(.suspended!="suspended"),
       url:(.serviceDetails.url // null),
       domain:((.serviceDetails.url // "") | sub("^https?://";"") | if . == "" then null else . end),
-      repo:((.repo // "") | sub("^https://github.com/";"") | sub("\\.git$";"") | if . == "" then null else . end),
+      repo:((.repo // "") | '"$GITHOST_SLUG_JQ"' | if . == "" then null else . end),
       ref:(.branch // null)}] | sort_by(.name | ascii_downcase)')"
     # Render names too, for tab completion and the `ignore` name check.
     echo "$list" | remember_names
