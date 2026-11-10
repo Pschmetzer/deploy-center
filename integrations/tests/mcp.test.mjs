@@ -112,7 +112,30 @@ check("ledger returns the report", rep.kind === "ledger" && rep.estimate === tru
 check("ledger runs ledger --json", callLog().trim() === "ledger --json", callLog());
 writeFileSync(calls, "");
 r = await s.call("deploys_ledger", { days: 7 });
-check("ledger passes no arguments on", !callLog().includes("--days"), callLog());
+check("ledger refuses an argument it does not take", r.error && /does not take "days"/.test(r.text), r.text);
+check("a refused argument never reaches deploys", callLog() === "", callLog());
+r = await s.call("deploys_explain", { project: "app-web", sha: "abc" });
+check("an unknown argument is an error, not ignored", r.error && /sha/.test(r.text) && /project/.test(r.text), r.text);
+r = await s.call("deploys_logs", { project: "app-web", lines: "80" });
+check("lines as a string is refused", r.error && /lines/.test(r.text), r.text);
+r = await s.call("deploys_logs", { project: "app-web", lines: 2001 });
+check("lines over 2000 is refused", r.error && /lines/.test(r.text), r.text);
+r = await s.call("deploys_explain", { project: ["app-web"] });
+check("a project list is refused", r.error && /project/.test(r.text), r.text);
+check("refused arguments never reach deploys", callLog() === "", callLog());
+
+// --- build logs: secrets masked ---
+r = await s.call("deploys_logs", { project: "secret-app" });
+const leaked = ["ghp_abcdefghijklmnop1234", "s3cr3t-value", "hunter2pass", "sk_live_abcdefgh1234", "AKIAABCDEFGHIJKLMNOP",
+  "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig", "dbpass", "MIIEvQIBADANBg", "glpat-abcdefgh12345", "abcdefghijklmnopqrstu", "dev@example.com"]
+  .filter((x) => r.text.includes(x));
+check("logs: secrets are masked", !r.error && leaked.length === 0, leaked.join(", ") + "\n" + r.text);
+check("logs: the rest of the log stays", r.text.includes("Build failed: missing module") && r.text.includes("[masked]") && r.text.includes("[masked private key]"), r.text);
+check("logs: names before the secret stay", r.text.includes("VERCEL_TOKEN=[masked]") && r.text.includes("postgres://admin:[masked]@db"), r.text);
+r = await s.call("deploys_logs", { project: "topkey-app" });
+check("logs: a key cut off at the top is masked", !r.error && !r.text.includes("QUJDREVG") && r.text.includes("[masked private key]") && r.text.includes("after the key"), r.text);
+r = await s.call("deploys_logs", { project: "bottomkey-app" });
+check("logs: a key cut off at the bottom is masked", !r.error && !r.text.includes("QUJDREVG") && r.text.includes("before the key") && r.text.includes("[masked private key]"), r.text);
 
 r = await s.call("deploys_deploy", { project: "app-web" });
 check("a write tool call is refused without the flag", r.error && r.text.includes("DEPLOYS_MCP_ALLOW_DEPLOY"), r.text);
@@ -132,9 +155,26 @@ s = start({ DEPLOYS_MCP_MAX_OUTPUT: "100" });
 await s.init();
 r = await s.call("deploys_logs", { project: "app-web", lines: 1000 });
 check("long logs keep the end", r.text.includes("trimmed") && r.text.trimEnd().endsWith("1000") && r.text.length < 200, r.text.slice(0, 200));
+// More than the server collects (4 × max + 64k): the newest part, not the end of the beginning.
+r = await s.call("deploys_logs", { project: "big-app" });
+check("a log longer than the buffer keeps its real end", !r.error && r.text.trimEnd().endsWith("line 30000 the real error") && r.text.includes("trimmed"), r.text.slice(-200));
+check("the kept part starts at a whole line", /^\[… \d+ earlier characters trimmed\]\nline \d+ /.test(r.text), r.text.slice(0, 120));
+r = await s.call("deploys_changed");
+check("changed that does not fit is still valid JSON", (() => { try { JSON.parse(r.text); return true; } catch { return false; } })(), r.text);
 s.stop();
 
-s = start({ DEPLOYS_MCP_TIMEOUT: "1", FAKE_SLEEP_ALL: "20" });
+s = start({ DEPLOYS_MCP_MAX_OUTPUT: "400" });
+await s.init();
+r = await s.call("deploys_changed");
+let cj = {};
+try { cj = JSON.parse(r.text); } catch {}
+check("changed too long: whole entries left out, with a count", cj.total === 2 && cj.truncated === 1 && cj.projects?.length === 1 && cj.projects[0].name === "app-web" && /left out/.test(cj.note), r.text);
+r = await s.call("deploys_status");
+try { cj = JSON.parse(r.text); } catch { cj = null; }
+check("status fits: a plain JSON list", Array.isArray(cj) && cj.length === 3, r.text);
+s.stop();
+
+s = start({ DEPLOYS_MCP_TIMEOUT: "1", FAKE_SLEEP_ALL: "20.7" });
 await s.init();
 const t0 = Date.now();
 r = await s.call("deploys_doctor");
@@ -148,7 +188,7 @@ r = await s.call("deploys_ledger");
 check("ledger is not held to the short timeout", !r.error && JSON.parse(r.text).kind === "ledger", r.text.slice(0, 200));
 s.stop();
 
-s = start({ DEPLOYS_MCP_SLOW_TIMEOUT: "1", FAKE_SLEEP_ALL: "20" });
+s = start({ DEPLOYS_MCP_SLOW_TIMEOUT: "1", FAKE_SLEEP_ALL: "20.7" });
 await s.init();
 const t1 = Date.now();
 r = await s.call("deploys_simulate");
@@ -162,7 +202,8 @@ check("a missing CLI is a clear error", r.error && r.text.includes("not found"),
 s.stop();
 
 // --- write tools with DEPLOYS_MCP_ALLOW_DEPLOY=1 ---
-s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1" });
+// The stand-in lists Render only with a key, as the real list --json does.
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", FAKE_RENDER_KEY: "true" });
 const info2 = await s.init();
 const all = await s.tools();
 check("the flag adds deploy and rollback", all.some((t) => t.name === "deploys_deploy") && all.some((t) => t.name === "deploys_rollback"));
@@ -175,7 +216,7 @@ r = await s.call("deploys_deploy", { project: "app-web" });
 let d = r.error ? {} : JSON.parse(r.text);
 check("deploy returns id and url", d.id === "dpl_1" && d.url === "https://app-web-x.vercel.app" && d.platform === "vercel" && d.target === "production", r.text);
 const log = callLog().trim().split("\n");
-check("the platform comes from status when list --json is missing", log.includes("list --json") && log.includes("status --json --no-github"), log.join(" | "));
+check("the platform comes from list --json", log.includes("list --json") && !log.includes("status --json --no-github"), log.join(" | "));
 check("exactly one deploy-json call, for that project", log.filter((l) => l.includes("deploy")).join() === "vercel deploy-json app-web", log.join(" | "));
 r = await s.call("deploys_deploy", { project: "app-web", preview: true });
 check("preview passes --preview", !r.error && JSON.parse(r.text).target === "preview" && callLog().includes("vercel deploy-json app-web --preview"), r.text);
@@ -193,6 +234,15 @@ check("one project per call: an array is refused", r.error, r.text);
 r = await s.call("deploys_rollback", { project: "app-web" });
 d = r.error ? {} : JSON.parse(r.text);
 check("rollback returns the id", d.id === "dpl_0" && d.platform === "vercel", r.text);
+s.stop();
+
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", FAKE_NO_LIST: "1" });
+await s.init();
+writeFileSync(calls, "");
+r = await s.call("deploys_deploy", { project: "api" });
+const log2 = callLog().trim().split("\n");
+check("the platform comes from status when list --json is missing",
+  !r.error && JSON.parse(r.text).platform === "render" && log2.includes("list --json") && log2.includes("status --json --no-github"), log2.join(" | "));
 s.stop();
 
 process.exit(fails ? 1 : 0);

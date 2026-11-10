@@ -5,7 +5,8 @@
 # for the projects that deploy from the pushed repository.
 #
 # Read-only: it calls `deploys changed --json` and nothing else. It never deploys.
-# Silent (exit 0, no output) when: the command was not a git push, `deploys` or `jq` is missing,
+# Silent (exit 0, no output) when: the command was not a git push (`git stash push`, a
+# `--dry-run`, a rejected or failed push do not count), `deploys` or `jq` is missing,
 # the repository is not on GitHub, nothing is waiting, the CLI does not answer in time, or the
 # reminder is turned off (plugin option push_reminder, or DEPLOYS_PUSH_REMINDER=off).
 #
@@ -25,6 +26,55 @@ cwd="$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null)"
 # The `if` rule in hooks.json already narrows this to git push; check again, it costs nothing.
 case "$cmd" in *"git push"*|*"git "*" push"*) ;; *) exit 0 ;; esac
 [ "$(jq -r '.tool_response.interrupted // false' <<<"$input" 2>/dev/null)" = true ] && exit 0
+# A push that did not happen: rejected, or git gave up.
+case "$(jq -r '.tool_response.stderr // empty' <<<"$input" 2>/dev/null)" in
+  *"[rejected]"*|*"failed to push"*|*"fatal:"*) exit 0 ;;
+esac
+[ -n "$cwd" ] && [ -d "$cwd" ] || cwd="$PWD"
+
+# Which command was the push, and in which folder. The command is split at && || ; | and
+# newlines; `cd dir` changes the folder for what follows, `git -C dir` for that git only.
+# Only `git [options] push`: not `git stash push`, not `--dry-run`/`-n`.
+resolve() {  # resolve <base> <path>: the folder, or nothing when it does not exist
+  local t="${2#[\"\']}"; t="${t%[\"\']}"
+  case "$t" in \~) t="$HOME" ;; \~/*) t="$HOME/${t#\~/}" ;; /*) ;; *) t="$1/$t" ;; esac
+  [ -d "$t" ] && (cd "$t" 2>/dev/null && pwd)
+}
+dir="$cwd" pushdir="" pushargs=()
+segment() {
+  local i=0 n=${#seg[@]} w d
+  [ "$n" -gt 0 ] || return 0
+  while [ "$i" -lt "$n" ] && [[ "${seg[$i]}" == [A-Za-z_]*=* ]]; do i=$((i+1)); done
+  w="${seg[$i]:-}"
+  if [ "$w" = cd ]; then d="$(resolve "$dir" "${seg[$((i+1))]:-~}")"; dir="${d:-$dir}"; return 0; fi
+  [ "$w" = git ] || return 0
+  d="$dir"; i=$((i+1))
+  while [ "$i" -lt "$n" ]; do
+    case "${seg[$i]}" in
+      -C) d="$(resolve "$d" "${seg[$((i+1))]:-}")"; [ -n "$d" ] || return 0; i=$((i+2)) ;;
+      -c|--git-dir|--work-tree|--namespace|--exec-path) i=$((i+2)) ;;
+      -*) i=$((i+1)) ;;
+      *) break ;;
+    esac
+  done
+  [ "${seg[$i]:-}" = push ] || return 0
+  local a args=("${seg[@]:$((i+1))}")
+  for a in ${args[@]+"${args[@]}"}; do case "$a" in --dry-run|-n) return 0 ;; esac; done
+  pushdir="$d"; pushargs=(${args[@]+"${args[@]}"})
+}
+words="$cmd"
+for sep in '&&' '||' ';' '|' $'\n'; do words="${words//"$sep"/ ; }"; done
+seg=()
+set -f   # split the command into words on purpose, without expanding globs
+# shellcheck disable=SC2086
+set -- $words
+set +f
+for w in "$@"; do
+  if [ "$w" = ";" ]; then segment; seg=(); [ -n "$pushdir" ] && break; else seg+=("$w"); fi
+done
+[ -n "$pushdir" ] || { segment; }
+[ -n "$pushdir" ] || exit 0
+cwd="$pushdir"
 
 # The CLI: DEPLOYS if set (and nothing else), then PATH, then the app bundle.
 if [ -n "${DEPLOYS:-}" ]; then bin="$DEPLOYS"
@@ -39,15 +89,10 @@ fi
 [ -n "$bin" ] && command -v "$bin" >/dev/null 2>&1 || exit 0
 
 # Which remote: the first word after "push" that is not an option and names a remote, else origin.
-[ -n "$cwd" ] && [ -d "$cwd" ] || cwd="$PWD"
 git -C "$cwd" rev-parse --git-dir >/dev/null 2>&1 || exit 0
 remote=origin
-set -f   # split the command into words on purpose, without expanding globs
-# shellcheck disable=SC2086
-set -- ${cmd#*push}
-set +f
-for w in "$@"; do
-  case "$w" in -*) continue ;; '&&'|';'|'|'|'||') break ;; esac
+for w in ${pushargs[@]+"${pushargs[@]}"}; do
+  case "$w" in -*) continue ;; esac
   git -C "$cwd" remote get-url "$w" >/dev/null 2>&1 && remote="$w"
   break
 done

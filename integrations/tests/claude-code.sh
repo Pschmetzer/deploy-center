@@ -120,9 +120,11 @@ check "mcp example: mcpServers.deploys runs integrations/mcp/server.mjs, deploys
   | .command=="node" and (.args[0]|endswith("integrations/mcp/server.mjs")) and .env.DEPLOYS_MCP_ALLOW_DEPLOY=="0"' "$plug/mcp/deploys.mcp.json"
 
 # --- the official validator, when installed ---
+# macOS has no timeout(1); coreutils calls it gtimeout. Without either, no limit.
+limit() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"; else shift; "$@"; fi; }
 if command -v claude >/dev/null 2>&1; then
   for target in "$plug" .; do
-    if out="$(timeout 120 claude plugin validate --strict "$target" 2>&1)"; then ok "claude plugin validate --strict $target"
+    if out="$(limit 120 claude plugin validate --strict "$target" 2>&1)"; then ok "claude plugin validate --strict $target"
     else fail "claude plugin validate --strict $target" "$(tail -5 <<<"$out")"; fi
   done
 else

@@ -4,9 +4,11 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 here="$PWD"
-fails=0
+fails=0 skips=0
 ok()   { echo "ok   $1"; }
 fail() { echo "FAIL $1: $2"; fails=$((fails+1)); }
+# A part that could not run here is counted, not passed. REQUIRE_ALL=1 (CI) makes it a failure.
+skip() { echo "skip $1"; skips=$((skips+1)); }
 expect()   { [ "$2" = "$3" ] && ok "$1" || fail "$1" "expected [$3], got [$2]"; }
 contains() { case "$2" in *"$3"*) ok "$1" ;; *) fail "$1" "[$3] not in [$2]" ;; esac; }
 
@@ -21,6 +23,23 @@ JSON
 cat > "$tmp/render.json" <<JSON
 [{"name":"api","auto":true,"repo":"me/app","ref":"main","deployable":true,"changed":true,"pendingCommits":null,"lastAt":$((now - 60)),"liveAt":$((now - 26*3600)),"lastSha":"bbbb222","lastState":"build_failed","lastMsg":"Add rate limits"}]
 JSON
+# A build log with secrets in it (made up), for the MCP server's masking; and a long one.
+cat > "$tmp/secret.log" <<'LOG'
+Cloning github.com/me/app (dev@example.com)
+VERCEL_TOKEN=s3cr3t-value npm run build
+curl -H "Authorization: Bearer abcdefghijklmnopqrstu" https://api.example.com
+pushing with ghp_abcdefghijklmnop1234 and glpat-abcdefgh12345
+"password": "hunter2pass", stripe sk_live_abcdefgh1234, aws AKIAABCDEFGHIJKLMNOP
+jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig
+DATABASE_URL=postgres://admin:dbpass@db.internal:5432/app
+-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC
+-----END PRIVATE KEY-----
+Build failed: missing module
+LOG
+# Its URL user:password@ line ends up as postgres://admin:[masked]@db only if the name rule does
+# not take the whole value first; DATABASE_URL has no secret word, so it does not.
+awk 'BEGIN { for (i = 1; i < 30000; i++) printf "line %d some build output here\n", i; print "line 30000 the real error" }' > "$tmp/big.log"
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/deploys" <<SH
 #!/bin/bash
@@ -32,6 +51,8 @@ case "\$*" in
   "render list --json") cat "$tmp/render.json" ;;
   # As the real one: every provider that is on and set up. Render only with a key.
   "list --json") [ -n "\${FAKE_SLEEP:-}" ] && sleep "\$FAKE_SLEEP"
+    # An older CLI without list: the MCP server falls back to status --json --no-github.
+    [ -n "\${FAKE_NO_LIST:-}" ] && { echo "Unknown command list" >&2; exit 1; }
     if [ -n "\${RENDER_API_KEY:-}" ] || [ "\${FAKE_RENDER_KEY:-false}" = true ]; then r="$tmp/render.json"; else r=/dev/null; fi
     jq -s '(.[0] | map(. + {platform:"vercel"})) + ((.[1] // []) | map(. + {platform:"render"}))' "$tmp/vercel.json" \$r ;;
   "notes app-web") printf '## app-web\\n- New billing page (#12) – Ana\\n- Faster search – Ben\\n\\nDependency updates:\\n- Bump jq – dependabot\\n' ;;
@@ -40,6 +61,12 @@ case "\$*" in
   "ledger --json") cat "$here/../tests/fixtures/savings/ledger-report.json" ;;
   "doctor") echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
   "changed --json") jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
+  # Without --yes: what it would start, leaving out ignored.json as the real one does
+  # (FAKE_IGNORE_IGNORED=1: a CLI that starts more than the Action asked for).
+  "deploy-changed --json") ign="\${DEPLOYS_CONFIG:-/nonexistent}/ignored.json"
+    if [ -s "\$ign" ] && [ -z "\${FAKE_IGNORE_IGNORED:-}" ]; then ig="\$(cat "\$ign")"; else ig='[]'; fi
+    jq -s --argjson ig "\$ig" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
+      | map(select(.changed and ((.name as \$n | \$ig | index(\$n)) | not)) | {platform, name, action:"would-deploy"})' "$tmp/vercel.json" "$tmp/render.json" ;;
   "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"
     if [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
     exit "\${FAKE_RC:-0}" ;;
@@ -47,6 +74,11 @@ case "\$*" in
     jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
       | map({platform, name, building:false, state:"READY", changed})' "$tmp/vercel.json" "$tmp/render.json" ;;
   "explain "*) echo "explain: \$2" ;;
+  "logs secret-app "*) cat "$tmp/secret.log" ;;
+  # The last lines of a log can start or end inside a key.
+  "logs topkey-app "*) printf 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo1\\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo2\\n-----END RSA PRIVATE KEY-----\\nafter the key\\n' ;;
+  "logs bottomkey-app "*) printf 'before the key\\n-----BEGIN RSA PRIVATE KEY-----\\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo3\\n' ;;
+  "logs big-app "*) cat "$tmp/big.log" ;;
   "logs "*) seq 1 "\${3:-80}" ;;
   "vercel deploy-json app-web"|"vercel deploy-json app-web --preview") echo '{"id":"dpl_1","url":"https://app-web-x.vercel.app","state":"QUEUED"}' ;;
   "render deploy-json api") echo '{"id":"dep-1","serviceId":"srv-1","state":"created"}' ;;
@@ -123,6 +155,8 @@ echo '[{"name":"a<b>&\"c","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/e
 contains "badge: names are XML-escaped" "$(cat "$tmp/e/a_b___c.svg")" 'a&lt;b&gt;&amp;&quot;c: deployed never'
 if command -v xmllint >/dev/null; then
   xmllint --noout "$tmp"/b/*.svg "$tmp"/e/*.svg && ok "badges are well-formed XML" || fail "badges are well-formed XML" xmllint
+else
+  skip "badges: XML check needs xmllint"
 fi
 
 # --- notify ---
@@ -214,6 +248,8 @@ contains "statuspage: dark mode" "$page" "prefers-color-scheme:dark"
 if command -v xmllint >/dev/null; then
   xmllint --noout "$tmp/sp/feed.xml" && ok "statuspage: feed is well-formed XML" || fail "statuspage: feed is well-formed XML" xmllint
   xmllint --html --noout "$tmp/sp/index.html" 2>/dev/null && ok "statuspage: page parses as HTML" || fail "statuspage: page parses as HTML" xmllint
+else
+  skip "statuspage: XML checks need xmllint"
 fi
 # hideMessages: no commit text anywhere, only "Updated".
 jq '. + {hideMessages: true}' "$tmp/sp.json" > "$tmp/sp-hide.json"
@@ -241,19 +277,45 @@ if command -v ruby >/dev/null; then
   expect "action: names" "$(grep '^names=' "$tmp/out")" "names=app-web,api"
   expect "action: projects is the JSON list" "$(sed -n '/^projects<</,$p' "$tmp/out" | sed -n 2p | jq -c 'map(.name)')" '["app-web","api"]'
   FAKE_RC=1 run_step changed.sh; expect "action: an unread project warns, does not fail" "$?" 0
-  run_step deploy.sh; expect "action: deploy step calls deploy-changed --yes" "$(cat "$tmp/deploy.log")" "deploy-changed --yes"
+  # repo: "*" is the whole account, as before.
+  REPO='*' run_step deploy.sh; expect "action: deploy step calls deploy-changed --yes" "$(cat "$tmp/deploy.log")" "deploy-changed --yes"
   expect "action: outputs after starting" "$(tr '\n' ' ' < "$tmp/out")" "started=2 failed=0 deployed=true "
-  FAKE_RC=1 run_step deploy.sh; expect "action: a failed start fails the step" "$?" 1
+  REPO='*' FAKE_RC=1 run_step deploy.sh; expect "action: a failed start fails the step" "$?" 1
   expect "action: outputs are written before failing" "$(tr '\n' ' ' < "$tmp/out")" "started=1 failed=1 deployed=false "
+  expect "action: repo defaults to the workflow's repository" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["inputs"]["repo"]["default"]' action/action.yml)" '${{ github.repository }}'
+  # Only this repo: the other repos' projects go into this run's ignored.json, then deploy-changed.
+  mkdir -p "$DEPLOYS_CONFIG"; : > "$tmp/deploy.log"; rm -f "$DEPLOYS_CONFIG/ignored.json"
+  REPO=me/app FAKE_RENDER_KEY=true run_step deploy.sh; expect "action: repo: the step passes" "$?" 0
+  expect "action: repo: other repos' projects are left out" "$(jq -c . "$DEPLOYS_CONFIG/ignored.json")" '["site"]'
+  expect "action: repo: then deploy-changed --yes" "$(cat "$tmp/deploy.log")" "deploy-changed --yes"
+  : > "$tmp/deploy.log"; rm -f "$DEPLOYS_CONFIG/ignored.json"
+  REPO=GitHub.com/Me/Site FAKE_RENDER_KEY=true run_step deploy.sh; expect "action: repo: case and github.com/ do not matter" "$?" 0
+  expect "action: repo: me/site leaves out me/app's projects" "$(jq -c . "$DEPLOYS_CONFIG/ignored.json")" '["api","app-web"]'
+  : > "$tmp/deploy.log"; rm -f "$DEPLOYS_CONFIG/ignored.json"
+  REPO=me/site FAKE_RENDER_KEY=true FAKE_IGNORE_IGNORED=1 run_step deploy.sh; expect "action: repo: a CLI that would start more fails the step" "$?" 1
+  expect "action: repo: and starts nothing" "$(cat "$tmp/deploy.log")" ""
+  # Render is not listed without a key, but api still shows as changed: fail closed.
+  rm -f "$DEPLOYS_CONFIG/ignored.json"
+  REPO=me/site run_step deploy.sh; expect "action: repo: a project missing from the list fails the step" "$?" 1
+  expect "action: repo: and starts nothing either" "$(cat "$tmp/deploy.log")" ""
+  rm -f "$DEPLOYS_CONFIG/ignored.json"
+  REPO=me/app DEPLOYS=/bin/false run_step deploy.sh; expect "action: repo: no list, no deploy" "$?" 1
+  expect "action: repo: no list, nothing started" "$(cat "$tmp/deploy.log")" ""
+  REPO=other/none FAKE_RENDER_KEY=true run_step deploy.sh; expect "action: repo: no project from that repo passes" "$?" 0
+  expect "action: repo: and starts nothing" "$(cat "$tmp/deploy.log")$(tr '\n' ' ' < "$tmp/out")" "started=0 failed=0 deployed=true "
+  REPO='me/app;x' run_step deploy.sh; expect "action: repo: a strange value is refused" "$?" 1
+  rm -f "$DEPLOYS_CONFIG/ignored.json"
   expect "action: deploy step only with deploy: true" "$(step deploy if)" "inputs.deploy == 'true' && steps.changed.outputs.count != '0'"
   case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
+else
+  skip "action: its steps need ruby"
 fi
 
 # --- VS Code extension: its own unit tests (node), when its dev dependencies are installed ---
 if command -v npm >/dev/null && [ -d vscode/node_modules ]; then
   (cd vscode && npm test --silent >"$tmp/vscode.log" 2>&1) && ok "vscode: unit tests" || { fail "vscode: unit tests" "see below"; cat "$tmp/vscode.log"; }
 else
-  echo "skip vscode: run npm ci in integrations/vscode first"
+  skip "vscode: run npm ci in integrations/vscode first"
 fi
 
 
@@ -264,6 +326,8 @@ hook="$here/claude-code/scripts/after-push.sh"
 if command -v shellcheck >/dev/null; then
   shellcheck --severity=style "$hook" && ok "claude-code: shellcheck after-push.sh" || fail "claude-code: shellcheck after-push.sh" "see above"
   shellcheck --severity=warning tests/claude-code.sh && ok "claude-code: shellcheck claude-code.sh" || fail "claude-code: shellcheck claude-code.sh" "see above"
+else
+  skip "claude-code: shellcheck is not installed"
 fi
 git init -q "$tmp/cc" && git -C "$tmp/cc" remote add origin git@github.com:me/app.git
 git init -q "$tmp/cc-other" && git -C "$tmp/cc-other" remote add origin https://github.com/someone/else.git
@@ -279,11 +343,23 @@ contains "claude-code hook: git push origin main -u" "$(hk "git push -u origin m
 expect "claude-code hook: another remote, nothing waiting there" "$(hk "git push mirror main")" "exit=0"
 expect "claude-code hook: a repo with no projects is silent" "$(hk "git push" "$tmp/cc-other")" "exit=0"
 expect "claude-code hook: not a push, silent" "$(hk "git status")" "exit=0"
+expect "claude-code hook: git stash push is not a push" "$(hk "git stash push -m wip")" "exit=0"
+expect "claude-code hook: --dry-run is not a push" "$(hk "git push --dry-run origin main")" "exit=0"
+expect "claude-code hook: -n is not a push" "$(hk "git push -n")" "exit=0"
+contains "claude-code hook: cd dir && git push reads that repo" "$(hk "cd $tmp/cc && git push" "$tmp/cc-other" | head -1)" "app-web"
+contains "claude-code hook: git -C dir push reads that repo" "$(hk "git -C $tmp/cc push origin main" "$tmp/cc-other" | head -1)" "app-web"
+expect "claude-code hook: git -C another repo, silent" "$(hk "git -C $tmp/cc-other push")" "exit=0"
+contains "claude-code hook: a push after other commands" "$(hk "git add -A && git commit -m x; git push" | head -1)" "app-web"
+hk_err() { jq -nc --arg c "git push" --arg d "$tmp/cc" --arg e "$1" '{hook_event_name:"PostToolUse",tool_name:"Bash",cwd:$d,tool_input:{command:$c},tool_response:{stdout:"",stderr:$e,interrupted:false}}' | "$hook"; echo "exit=$?"; }
+expect "claude-code hook: a rejected push, silent" "$(hk_err $' ! [rejected]        main -> main (fetch first)\nerror: failed to push some refs')" "exit=0"
+contains "claude-code hook: a normal push's stderr still counts" "$(hk_err $'To github.com:me/app.git\n   abc..def  main -> main' | head -1)" "app-web"
 expect "claude-code hook: silent without deploys" "$(DEPLOYS=/nonexistent hk "git push")" "exit=0"
 if [ ! -e "/Applications/Deploy Center.app" ] && [ ! -e "$HOME/Applications/Deploy Center.app" ]; then
   nodeploys="$tmp/nodeploys"; mkdir -p "$nodeploys"
   for t in jq git sed mktemp rm cat sleep pgrep kill dirname; do p="$(command -v "$t")" && ln -sf "$p" "$nodeploys/$t"; done
   expect "claude-code hook: silent with no deploys on PATH" "$(env -u DEPLOYS PATH="$nodeploys" HOME="$tmp" "$BASH" -c "$(declare -f hk); tmp='$tmp' hook='$hook'; hk 'git push'")" "exit=0"
+else
+  skip "claude-code hook: no-deploys-on-PATH check (Deploy Center.app is installed here)"
 fi
 expect "claude-code hook: off with the plugin option" "$(CLAUDE_PLUGIN_OPTION_PUSH_REMINDER=false hk "git push")" "exit=0"
 expect "claude-code hook: off with DEPLOYS_PUSH_REMINDER=off" "$(DEPLOYS_PUSH_REMINDER=off hk "git push")" "exit=0"
@@ -309,9 +385,10 @@ expect "claude-code hook: never deploys" "$(cat "$tmp/deploy.log" 2>/dev/null | 
 # --- the MCP server (needs node and `npm ci` in mcp/) ---
 if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
   DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
-  pgrep -f "sleep 20" >/dev/null && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
+  # 20.7: a length no other test sleeps (the VS Code tests leave their own "sleep 20" behind).
+  pgrep -f "sleep 20\.7" >/dev/null && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
 else
-  echo "skip mcp: needs node and (cd integrations/mcp && npm ci)"
+  skip "mcp: needs node and (cd integrations/mcp && npm ci)"
 fi
 
 # --- digest: classify (pure) ---
@@ -430,7 +507,13 @@ if command -v ruby >/dev/null; then
   expect "approve-deploy: deploy: true only after the approval steps" "$(ruby -ryaml -e 's = YAML.load_file(ARGV[0])["jobs"]["deploy"]["steps"]; puts s.each_with_index.select { |x, _| (x["with"] || {})["deploy"] == true }.map { |_, i| s[0...i].map { |y| y["id"] }.join(",") }' digest/examples/approve-deploy.yml)" "approved,list,keep"
   case "$(cat "$tmp/approved.sh" "$tmp/keep.sh" "$tmp/report.sh")" in *'${{'*) fail "approve-deploy: no expressions inside run scripts" "found" ;; *) ok "approve-deploy: no expressions inside run scripts" ;; esac
   ruby -ryaml -e 'YAML.load_file(ARGV[0])' digest/examples/daily-digest.yml && ok "daily-digest.yml is valid YAML" || fail "daily-digest.yml is valid YAML" ruby
+else
+  skip "approve-deploy: its steps need ruby"
 fi
 
 echo
-[ "$fails" = 0 ] && echo "All passed." || { echo "$fails failed."; exit 1; }
+if [ "$skips" -gt 0 ] && [ "${REQUIRE_ALL:-0}" = 1 ]; then
+  echo "$skips skipped, and REQUIRE_ALL=1 counts a skip as a failure."; fails=$((fails + skips))
+fi
+if [ "$fails" != 0 ]; then echo "$fails failed$([ "$skips" -gt 0 ] && echo ", $skips skipped")."; exit 1; fi
+if [ "$skips" -gt 0 ]; then echo "Passed, but $skips skipped (not tested here)."; else echo "All passed."; fi

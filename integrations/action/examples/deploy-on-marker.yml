@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: Deploy everything with changes
+        description: Deploy this repo's projects that have changes
         type: boolean
         default: false
 
@@ -32,6 +32,8 @@ jobs:
           vercel-team: ${{ vars.VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}
           repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
+          # Only projects that deploy from this repo are started (the default). "*" = every repo.
+          # repo: ${{ github.repository }}
 
       - name: Report
         env:

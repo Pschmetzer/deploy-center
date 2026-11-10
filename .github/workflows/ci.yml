@@ -38,6 +38,16 @@ jobs:
         run: bash tests/install-tests.sh
       - name: App tests
         run: bash tests/app-tests.sh
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Integration dependencies (MCP server, VS Code extension)
+        run: |
+          (cd integrations/mcp && npm ci --no-audit --no-fund)
+          (cd integrations/vscode && npm ci --no-audit --no-fund)
+      - name: Integration tests (MCP, Action, Claude Code plugin, digest, hooks)
+        # REQUIRE_ALL=1: a part that cannot run here fails the job instead of being skipped.
+        run: REQUIRE_ALL=1 bash integrations/tests/run.sh
       - name: Build (ad-hoc signed, universal)
         run: ./build.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

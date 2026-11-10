@@ -10,10 +10,17 @@ branding:
 inputs:
   deploy:
     description: >-
-      "true" starts a deploy of every project with changes (deploys deploy-changed --yes).
-      Anything else only reports. Default: only report.
+      "true" starts a deploy of every project with changes that deploys from `repo`
+      (deploys deploy-changed --yes). Anything else only reports. Default: only report.
     required: false
     default: "false"
+  repo:
+    description: >-
+      With deploy: true, only projects that deploy from this repository are started
+      (owner/name, or host/group/name for GitLab). Default: the repository running the workflow.
+      "*" deploys every changed project the tokens can see, in every repo.
+    required: false
+    default: ${{ github.repository }}
   vercel-token:
     description: A Vercel access token (pass a secret). Empty skips Vercel (when no vercel CLI is on the runner).
     required: false
@@ -124,8 +131,39 @@ runs:
         VERCEL_TOKEN: ${{ inputs.vercel-token }}
         RENDER_API_KEY: ${{ inputs.render-api-key }}
         GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ inputs.repo }}
       run: |
         set -euo pipefail
+        # Only this repo's projects: every other project the tokens see goes into ignored.json of
+        # this run's own config (in RUNNER_TEMP, gone after the job). Fails closed: when the list
+        # cannot be read, or a name is in this repo and in another, nothing is started.
+        if [ "$REPO" != "*" ]; then
+          case "$REPO" in ''|*[!A-Za-z0-9._/-]*|/*|*/) echo "::error::repo must look like owner/name (or \"*\" for every repo), not \"$REPO\""; exit 1 ;; esac
+          all="$("$DEPLOYS" list --json </dev/null)" || { echo "::error::deploys list --json failed, so this repo's projects are unknown. Nothing was started."; exit 1; }
+          echo "$all" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "::error::deploys list --json did not answer a list. Nothing was started."; exit 1; }
+          # .repo is owner/name for GitHub and host/group/name for GitLab; github.com/owner/name counts too.
+          sel='(.repo // "" | ascii_downcase | sub("^github\\.com/"; "")) as $r | ($want | ascii_downcase | sub("^github\\.com/"; "")) as $w | $r != "" and $r == $w'
+          mine="$(echo "$all" | jq -c --arg want "$REPO" "[.[] | select($sel) | .name] | unique")"
+          other="$(echo "$all" | jq -c --arg want "$REPO" "[.[] | select(($sel) | not) | .name] | unique")"
+          clash="$(jq -nr --argjson a "$mine" --argjson b "$other" '$a - ($a - $b) | join(", ")')"
+          if [ -n "$clash" ]; then
+            echo "::error::$clash is a name in $REPO and in another repo; deploying it here would start both. Nothing was started."; exit 1
+          fi
+          if [ "$mine" = "[]" ]; then
+            echo "No project deploys from $REPO. Nothing was started. (Set repo: \"*\" for every repo.)"
+            { echo "started=0"; echo "failed=0"; echo "deployed=true"; } >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          ign="$DEPLOYS_CONFIG/ignored.json"; [ -s "$ign" ] || echo '[]' > "$ign"
+          jq -c --argjson o "$other" '. + $o | unique' "$ign" > "$ign.new" && mv "$ign.new" "$ign"
+          # What deploy-changed would start now, checked before it starts anything.
+          plan="$("$DEPLOYS" deploy-changed --json </dev/null)" || true
+          echo "$plan" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "::error::deploys deploy-changed --json did not answer a list, so what it would start is unknown. Nothing was started."; exit 1; }
+          stray="$(echo "$plan" | jq -r --argjson m "$mine" '[.[] | .name | select(. as $n | $m | index($n) | not)] | join(", ")')"
+          if [ -n "$stray" ]; then
+            echo "::error::deploy-changed would also start projects outside $REPO ($stray). Nothing was started."; exit 1
+          fi
+          echo "Deploying only projects from $REPO: $(echo "$mine" | jq -r 'join(", ")')"
+        fi
         # Exits 1 when a start failed or a state could not be read; the outputs are written first.
         rc=0; out="$("$DEPLOYS" deploy-changed --yes </dev/null)" || rc=$?
         echo "$out"

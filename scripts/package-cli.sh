@@ -5,7 +5,7 @@
 #   scripts/package-cli.sh --ref <commit>        from that commit (what release.sh uses)
 #   scripts/package-cli.sh --out <dir> [file…]   other output folder; the files are added to checksums.txt
 # Writes <out>/deploys-cli-<version>.tar.gz, holding one folder deploys-cli-<version>/ with
-# deploys, VERSION, LICENSE, README-CLI.md and providers/ (when the repo has it), and
+# deploys, VERSION, LICENSE, README-CLI.md, providers/ and lib/ (each when the repo has it), and
 # <out>/checksums.txt ("<sha256>  <file name>", one per line, the format of sha256sum -c).
 set -euo pipefail
 caller="$PWD"
@@ -44,6 +44,9 @@ if [ -n "$ref" ]; then
   for f in "${paths[@]}"; do git cat-file -e "$ref:$f" 2>/dev/null || die "$f is missing at $ref"; done
   # providers/ may not exist at that commit; git archive fails on a missing path.
   git cat-file -e "$ref:providers" 2>/dev/null && paths+=(providers)
+  # lib/ (team file, two-person rule, observers, GitLab, simulate, ledger): deploys reads it
+  # next to itself, like providers/. Older commits have none.
+  git cat-file -e "$ref:lib" 2>/dev/null && paths+=(lib)
   name="deploys-cli-$version"
   tarball="$out/$name.tar.gz"
   git -c tar.umask=022 archive --format=tar --prefix="$name/" "$ref" -- "${paths[@]}" | gzip -n -9 > "$tarball"
@@ -56,6 +59,7 @@ else
   mkdir -p "$dir"
   cp deploys VERSION LICENSE README-CLI.md "$dir/"
   [ -d providers ] && cp -R providers "$dir/providers"
+  [ -d lib ] && cp -R lib "$dir/lib"
   chmod -R u=rwX,go=rX "$dir"
   chmod 0755 "$dir/deploys"
   tarball="$out/$name.tar.gz"
