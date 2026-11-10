@@ -818,11 +818,14 @@ struct ContentView: View {
     @ViewBuilder private var summaryBar: some View {
         // The tab's own count; under "All" the sum of its platforms.
         let w = store.waiting(for: scopes)
+        // On a tab: what waits on the other platforms, so "everything is live" is never said wrongly.
+        let elsewhere = showsAll ? 0 : store.waiting.projects - w.projects
         let costs = scopes.contains(.vercel) ? store.costs : nil
         let saved = costs?.saved(today: CostsSheet.today())
-        if w.projects > 0 || w.openPRs > 0 || costs != nil {
+        let line = waitingSummary(w, saved: saved, elsewhere: elsewhere, here: platform?.rawValue)
+        if w.projects > 0 || elsewhere > 0 || w.openPRs > 0 || costs != nil {
             HStack(spacing: 8) {
-                if w.projects > 0 {
+                if w.projects > 0 || elsewhere > 0 {
                     // The tab stays when it has changes of its own; else "All" shows where they are.
                     Button {
                         onlyChangedNow = true; search = ""
@@ -830,7 +833,7 @@ struct ContentView: View {
                     } label: {
                         // The chevron says it is a button, like the costs on the right.
                         HStack(spacing: 4) {
-                            Text(waitingSummary(w, saved: saved)).font(.callout.weight(.medium))
+                            Text(line).font(.callout.weight(.medium))
                             Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
                         }
                         .contentShape(Rectangle())
@@ -839,7 +842,7 @@ struct ContentView: View {
                     .help(summaryHelp(w))
                     .accessibilityHint(L("Shows the projects with changes", "Zeigt die Projekte mit Änderungen"))
                 } else {
-                    Text(waitingSummary(w, saved: saved)).font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                    Text(line).font(.callout.weight(.medium)).foregroundStyle(.secondary)
                         .help(summaryHelp(w))
                 }
                 Spacer()
@@ -1897,6 +1900,7 @@ struct Row: View {
             out.append(L("The newest builds could not be read: a build under way may not show",
                          "Die neuesten Builds waren nicht lesbar: ein laufender Build fehlt vielleicht"))
         }
+        if let w = i.fetchWarn { out.append(w) }
         if i.budgetLow {
             out.append(L("GitHub's hourly budget was nearly spent: waiting commits were not counted this time",
                          "GitHubs Stundenbudget war fast aufgebraucht: wartende Commits wurden diesmal nicht gezählt"))

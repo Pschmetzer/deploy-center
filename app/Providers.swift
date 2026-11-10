@@ -228,9 +228,15 @@ extension Costs {
 
 /// "7 projects · 44 PRs waiting · $41 saved": projects and PRs in one line, in the units of the
 /// menu bar and the Dock badge (projects), so the three never disagree.
-func waitingSummary(_ w: Store.Waiting, saved: Double?) -> String {
+/// `elsewhere`: projects waiting on other platforms than this tab's (`here`); then an empty tab
+/// does not claim that everything is live.
+func waitingSummary(_ w: Store.Waiting, saved: Double?, elsewhere: Int = 0, here: String? = nil) -> String {
     let waiting: String
-    if w.projects == 0 {
+    if w.projects == 0, elsewhere > 0 {
+        let n = L("\(elsewhere) \(elsewhere == 1 ? "project" : "projects")", "\(elsewhere) \(elsewhere == 1 ? "Projekt" : "Projekte")")
+        waiting = (here.map { L("Nothing waits on \($0)", "Auf \($0) wartet nichts") } ?? L("Nothing waits here", "Hier wartet nichts"))
+            + " · " + L("\(n) on other platforms", "\(n) auf anderen Plattformen")
+    } else if w.projects == 0 {
         waiting = L("Everything merged is live", "Alles Gemergte ist live")
     } else {
         let p = L("\(w.projects) \(w.projects == 1 ? "project" : "projects")", "\(w.projects) \(w.projects == 1 ? "Projekt" : "Projekte")")

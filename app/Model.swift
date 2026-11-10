@@ -73,6 +73,8 @@ struct VercelProject: Decodable {
     let latestState: String?; let latestId: String?; let latestSha: String?
     /// Newer scripts: open PRs capped at 100, GitHub's budget nearly spent, the newest builds not read.
     let openPRsPartial: Bool?; let budgetLow: Bool?; let partial: Bool?
+    /// A provider's note that part of the entry could not be read (Amplify: the domains).
+    let fetchWarn: String?
 }
 struct RenderService: Decodable {
     let id: String; let name: String; let type: String; let paused: Bool; let auto: Bool; let deployable: Bool
@@ -86,6 +88,7 @@ struct RenderService: Decodable {
     let risk: Risk?
     let latestId: String?; let latestSha: String?
     let openPRsPartial: Bool?; let budgetLow: Bool?; let partial: Bool?
+    let fetchWarn: String?
 }
 /// What every platform's list says of a project the same way; the row is built once from it,
 /// so a new column is added here and in the two field lists only.
@@ -99,6 +102,7 @@ protocol ProjectRow {
     var openDrafts: Int? { get }; var openBots: Int? { get }; var lastMsg: String? { get }; var risk: Risk? { get }
     var latestId: String? { get }; var latestSha: String? { get }
     var openPRsPartial: Bool? { get }; var budgetLow: Bool? { get }; var partial: Bool? { get }
+    var fetchWarn: String? { get }
 }
 extension VercelProject: ProjectRow {}
 extension RenderService: ProjectRow {}
@@ -113,7 +117,8 @@ extension ProjectRow {
              building: building ?? false, pendingPartial: pendingPartial ?? false,
              oldestPendingAt: date(oldestPendingAt), rewritten: rewritten ?? false, risk: risk,
              latestState: latestState, latestId: latestId, latestSha: latestSha,
-             openPRsPartial: openPRsPartial ?? false, budgetLow: budgetLow ?? false, partial: partial ?? false)
+             openPRsPartial: openPRsPartial ?? false, budgetLow: budgetLow ?? false, partial: partial ?? false,
+             fetchWarn: fetchWarn.flatMap { $0.isEmpty ? nil : $0 })
     }
 }
 
@@ -325,6 +330,8 @@ struct Item: Identifiable {
     /// The platform answered only in part (Vercel: the newest builds could not be read), so a
     /// build under way may not show. A hint on the row, not an error banner.
     var partial = false
+    /// The provider's own note on what it could not read (`fetchWarn`), shown like `partial`.
+    var fetchWarn: String? = nil
     var selected = false
     var state: RunState = .idle
     var startedAt: Date? = nil

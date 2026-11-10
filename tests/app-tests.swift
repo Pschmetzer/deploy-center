@@ -807,6 +807,9 @@ do {
     expect("new list flags reach the row", "\(i.openPRsPartial) \(i.budgetLow) \(i.partial)", "true true true")
     expect("capped open PRs say 'at least'", Row.openText(i, 100), L("at least 100 open PRs", "mindestens 100 offene PRs"))
     expect("a partial list is a quiet hint, two of them here", Row.gapTexts(i).count, 2)
+    let warned = try JSONDecoder().decode(RenderService.self, from: Data(#"{"id":"s","name":"a","type":"web","paused":false,"auto":false,"deployable":true,"fetchWarn":"domains could not be read"}"#.utf8))
+        .item(id: "s", platform: .render, detail: "", note: nil, link: nil, latestState: nil)
+    expect("a provider's fetchWarn is a hint too", Row.gapTexts(warned), ["domains could not be read"])
     let old = try JSONDecoder().decode(VercelProject.self, from: Data(#"{"name":"a","auto":false,"deployable":true}"#.utf8))
         .item(id: "a", platform: .vercel, detail: "", note: nil, link: nil, latestState: nil)
     expect("an older script: no hints", "\(old.partial) \(Row.gapTexts(old).count)", "false 0")
@@ -843,6 +846,9 @@ expect("autofix list: an open PR is said",
        AutofixSettings.label(F(at: 1, project: "a", platform: "vercel", status: "fired", prNumber: 3, prState: "open")), L("fix PR open", "Fix-PR offen"))
 expect("autofix list: a closed PR is said",
        AutofixSettings.label(F(at: 1, project: "a", platform: "vercel", status: "fired", prNumber: 3, prState: "closed")), L("fix PR closed unmerged", "Fix-PR ungemergt geschlossen"))
+expect("an empty tab names what waits elsewhere",
+       waitingSummary(Store.Waiting(), saved: nil, elsewhere: 7, here: "Render"),
+       L("Nothing waits on Render · 7 projects on other platforms", "Auf Render wartet nichts · 7 Projekte auf anderen Plattformen"))
 let now0 = Date()
 expect("ledger: due without a last run", SavingsModel.ledgerDue(at: nil, budget: nil, now: now0), true)
 expect("ledger: not again within a week", SavingsModel.ledgerDue(at: now0.addingTimeInterval(-3 * 86400), budget: nil, now: now0), false)

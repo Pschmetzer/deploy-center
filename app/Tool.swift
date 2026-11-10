@@ -242,9 +242,12 @@ enum Tool {
                 } else {
                     let msg = String(data: errText, encoding: .utf8)?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    // With --json a newer script also says the error on stdout ({"error":…,"exit":N}).
-                    let text = jsonError(data) ?? (msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg)
-                    Log.write("deploys \(args.joined(separator: " ")): \(text)")
+                    // With --json a newer script also says the error on stdout ({"error":…,"exit":N}):
+                    // that is the message; the log keeps stderr too, where the detail usually is.
+                    let plain = msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg
+                    let json = jsonError(data)
+                    let text = json ?? plain
+                    Log.write("deploys \(args.joined(separator: " ")): \(json.map { $0 + (msg.isEmpty ? "" : " | " + msg) } ?? plain)")
                     // The whole text is in the log; a toast or a row gets the end, where the cause usually is.
                     answer(.failure(ToolError(message: shorten(text), exitCode: p.terminationStatus)))
                 }
