@@ -2,5 +2,6 @@
 # (BuildKit reads <Dockerfile>.dockerignore next to the Dockerfile.)
 *
 !deploys
+!VERSION
 !providers/
 !lib/
