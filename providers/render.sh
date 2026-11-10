@@ -250,8 +250,10 @@ render_url() {
 render_set_key() {
   local key
   IFS= read -r key || true
+  # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+  key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || die "Pipe the key in: pbpaste | deploys render set-key"
-  case "$key" in *\'*|*\"*|*' '*) die "That does not look like a Render API key";; esac
+  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) die "That does not look like a Render API key";; esac
   # Tried first, saved only when Render takes it: a typo must not replace a working key.
   ( RENDER_API_KEY="$key" render_call GET "/services?limit=1" >/dev/null ) || die "Render did not accept that key; nothing was saved"
   # Sent to `security -i` on stdin, so the key is never an argument anyone can see.
@@ -283,7 +285,7 @@ render_history() {
     .[].deploy | [(.createdAt | t | strftime("%Y-%m-%d %H:%M")), .status, ((.commit.id // "")[0:7]), (.trigger // ""),
        (if .finishedAt then "\(((.finishedAt | t) - (.createdAt | t)))s" else "" end)]
     | map(if . == "" or . == null then "-" else . end) | @tsv' \
-    | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | column -t -s $'\t'
+    | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | table
 }
 
 render_usage() {  # <argc> <verb>
@@ -294,7 +296,7 @@ render_usage() {  # <argc> <verb>
 
 render_cli_list() {
   render_services | jq -r '.[] | [.name, .type, '"$(render_auto)"', (if .suspended=="suspended" then "suspended" else "active" end)] | @tsv' \
-    | (printf 'NAME\tTYPE\tAUTO-DEPLOY\tSTATE\n'; cat) | column -t -s $'\t'
+    | (printf 'NAME\tTYPE\tAUTO-DEPLOY\tSTATE\n'; cat) | table
 }
 
 # Through deploy-json, so the same one-minute start lock as the app and deploy-changed applies.

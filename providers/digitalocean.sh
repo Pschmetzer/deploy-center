@@ -398,8 +398,10 @@ digitalocean_url() {
 digitalocean_set_key() {
   local key=""
   IFS= read -r key || true
+  # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+  key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || digitalocean_die "Pipe the token in: pbpaste | deploys digitalocean set-key"
-  case "$key" in *\'*|*\"*|*' '*|*\\*) digitalocean_die "That does not look like a DigitalOcean token";; esac
+  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) digitalocean_die "That does not look like a DigitalOcean token";; esac
   ( DIGITALOCEAN_TOKEN="$key"; key_of() { printf '%s' "$DIGITALOCEAN_TOKEN"; }; digitalocean_call GET /v2/account >/dev/null ) \
     || digitalocean_die "DigitalOcean did not accept that token; nothing was saved"
   # On stdin to `security -i`, so the token is never an argument anyone can see.

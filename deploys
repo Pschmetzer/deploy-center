@@ -105,6 +105,13 @@ die() { echo "${RED}Error:${PLAIN} $*" >&2; exit 1; }
 # The files a glob names, or nothing when it names none: a bare `cat dir/*.json` fails then, and
 # under pipefail that ended a whole `vercel json` that simply had nothing to compare.
 cat_all() { cat "$@" 2>/dev/null || true; }
+# Tab-separated lines as a table. `column` is optional (not in every Linux image): without it an
+# awk padding does the same, so a table never ends a command with 127 and no output.
+table() {
+  if command -v column >/dev/null 2>&1; then column -t -s $'\t'; return; fi
+  awk -F'\t' '{ n[NR] = NF; for (i = 1; i <= NF; i++) { c[NR, i] = $i; if (length($i) > w[i]) w[i] = length($i) } }
+    END { for (r = 1; r <= NR; r++) { l = ""; for (i = 1; i <= n[r]; i++) l = l (i < n[r] ? sprintf("%-" w[i] "s  ", c[r, i]) : c[r, i]); print l } }'
+}
 
 # Colour only for a person at a terminal, never in what the app or a pipe reads.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then RED=$'\033[31m'; GREEN=$'\033[32m'; BOLD=$'\033[1m'; PLAIN=$'\033[0m'
@@ -249,6 +256,7 @@ keychain_broken() {  # keychain_broken <p>: true when its key is not in the envi
   case "$rc" in 0|44|127) return 1 ;; esac
   return 0
 }
+key_env_names() { "${1}_meta" | grep -o '"keyEnv":\[[^]]*\]' | sed 's/"keyEnv"://' | grep -o '[A-Za-z_][A-Za-z0-9_]*' | paste -sd' ' - | sed 's/ / or /g'; }
 key_of_env() {
   local v
   for v in $("${1}_meta" | grep -o '"keyEnv":\[[^]]*\]' | sed 's/"keyEnv"://' | grep -o '[A-Za-z_][A-Za-z0-9_]*'); do
@@ -273,6 +281,11 @@ lookup() {
     hits="$(jq -r --arg n "$n" '.[]? | select(.name == $n or .id == $n) | "\(.platform)\t\(.id)"' "$CONFIG_DIR/names.json" 2>/dev/null | sort -u \
       | while IFS=$'\t' read -r p id; do is_enabled "$p" && printf '%s\t%s\n' "$p" "$id"; done)"
     if [ -n "$hits" ]; then
+      # Two of them on the same platform: "p:name" would be just as ambiguous, so name the ids.
+      if [ "$(cut -f1 <<<"$hits" | sort -u | wc -l | tr -d ' ')" = 1 ] && [ "$(wc -l <<<"$hits" | tr -d ' ')" -gt 1 ]; then
+        p="$(head -n 1 <<<"$hits" | cut -f1)"
+        die "Several $(meta_str "$p" label) $(meta_str "$p" noun)s are named \"$n\": $(cut -f2 <<<"$hits" | paste -sd, - | sed 's/,/, /g'). Use the id instead, e.g. $(head -n 1 <<<"$hits" | cut -f2)"
+      fi
       [ "$(wc -l <<<"$hits" | tr -d ' ')" = 1 ] || die "\"$n\" is on $(cut -f1 <<<"$hits" | sort -u | tr '\n' ' ' | sed 's/ $//; s/ / and /g'). Say which: $(cut -f1 <<<"$hits" | head -n 1):$n"
       echo "$hits"; return 0
     fi
@@ -284,10 +297,10 @@ lookup() {
   die "No ${nouns:-project} named \"$n\""
 }
 # Only the provider a name is on (verify, risk, ai). Exits with lookup's message when none has it.
-platform_of() { local r; r="$(lookup "$1")" || exit 1; echo "${r%%$'\t'*}"; }
+platform_of() { local r; r="$(lookup "$1")" || exit $?; echo "${r%%$'\t'*}"; }
 # lookup into PLAT, PID and PNAME (the name without a "p:"). Not in a subshell: die ends the command.
 resolve() {
-  local r; r="$(lookup "$1")" || exit 1
+  local r; r="$(lookup "$1")" || exit $?
   PLAT="${r%%$'\t'*}"; PID="${r#*$'\t'}"; PNAME="$1"
   case "$PNAME" in "$PLAT":*) PNAME="${PNAME#"$PLAT":}";; esac
 }
@@ -457,19 +470,19 @@ with_heads() {
 # line, read by the completion scripts already in people's shell profiles, and by `ignore`) and
 # names.json ([{name, platform, id}], read by lookup).
 remember_names() {  # remember_names <p>, the list on stdin
-  # Old names stay, new ones join; one file, so nothing grows without end. In names.json this
-  # provider's entries are replaced by the fresh list.
+  # In names.json this provider's entries are replaced by the fresh list, so a deleted project
+  # goes with the next read; `names` is made from names.json (it used to keep every name for ever).
   # Two providers' lists are read at the same time: each writes its own temp file, and a lost
   # race only costs a name until the next read, never the list itself.
   local p="$1" list t; list="$(cat)"
-  t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
-  { cat "$CONFIG_DIR/names" 2>/dev/null; echo "$list" | jq -r '.[].name' 2>/dev/null; } | sort -u > "$t" 2>/dev/null \
-    && mv -f "$t" "$CONFIG_DIR/names" 2>/dev/null; rm -f "$t" "$CONFIG_DIR/names.tmp" "$CONFIG_DIR/names.new"
   t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
   { cat "$CONFIG_DIR/names.json" 2>/dev/null || echo '[]'; } \
     | jq -c --arg p "$p" --argjson l "$(echo "$list" | jq -c 'if type == "array" then . else [] end' 2>/dev/null || echo '[]')" \
         '(if type == "array" then . else [] end) | map(select(.platform != $p)) + ($l | map({name, platform:$p, id:(.id // .name)}))' \
         > "$t" 2>/dev/null && mv -f "$t" "$CONFIG_DIR/names.json" 2>/dev/null; rm -f "$t"
+  t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
+  jq -r '.[]? | .name' "$CONFIG_DIR/names.json" 2>/dev/null | sort -u > "$t" 2>/dev/null \
+    && mv -f "$t" "$CONFIG_DIR/names" 2>/dev/null; rm -f "$t" "$CONFIG_DIR/names.tmp" "$CONFIG_DIR/names.new"
   return 0
 }
 
@@ -486,6 +499,12 @@ provider_json() {
 all_json() {
   local t rc=0 p; t="$(mktemp -d)"
   for p in $(active_providers); do
+    # Its key sits in a keychain that cannot be read (locked under launchd or SSH): say that, not
+    # the provider's own "no token" (Render says it itself).
+    if [ "$p" != render ] && ! ( "${p}_ready" ) >/dev/null 2>&1 && keychain_broken "$p"; then
+      echo "Error: $(meta_str "$p" label): the keychain could not be read (locked? run it in a logged-in session, or set $(key_env_names "$p"))" > "$t/$p.err"
+      : > "$t/$p.failed"; continue
+    fi
     ( "$0" "$p" json 2>"$t/$p.err" | jq --arg p "$p" 'map(. + {platform:$p})' > "$t/$p.json" || : > "$t/$p.failed" ) &
   done
   wait
@@ -508,6 +527,8 @@ UNKNOWN_RULE='map(select((.deployable // false) and ((.paused // false) | not) a
 # make this return 1, so "nothing to deploy" is only said when everything was read.
 changed_json() {
   local all rc=0 unknown
+  # No platform on and set up: nothing was read, so nothing is known to be up to date.
+  [ -n "$(active_providers)" ] || die "No platform is on and set up, so nothing was read. See: deploys providers"
   all="$(all_json)" || rc=1
   local ign="$CONFIG_DIR/ignored.json" ignl=""; [ -f "$ign" ] || echo '[]' > "$ign"
   # With team mode: what the shared files leave out too, unless this Mac counts it again.
@@ -627,7 +648,8 @@ journal_file() {
 }
 journal_add() {  # journal_add <platform> <name> <result> <detail>
   local f p; f="$(journal_file)"
-  case "$1" in vercel) p=Vercel;; render) p=Render;; *) p="$1";; esac
+  # The provider's own label (Netlify, Cloudflare Pages …), as the app writes it.
+  p=""; if is_provider "$1"; then p="$(meta_str "$1" label 2>/dev/null)"; fi; [ -n "$p" ] || p="$1"
   mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
   jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$4" \
     '{at:(now | floor | todate), platform:$p, name:$n, result:$r, seconds:null, detail:$d}' >> "$f" 2>/dev/null || true
@@ -1068,7 +1090,13 @@ guard_run() {
 
 guard_state() { if [ -s "$GUARD_STATE" ] && jq -e 'type == "object"' "$GUARD_STATE" >/dev/null 2>&1; then cat "$GUARD_STATE"; else echo '{}'; fi; }
 guard_save() { local t; t="$(mktemp "$CONFIG_DIR/.guard.XXXXXX")"; cat > "$t" && mv "$t" "$GUARD_STATE"; }
-guard_scheduled() { [ -f "$(job_plist "$GUARD_LABEL")" ]; }
+# On means loaded, as for autofix: a job file launchd dropped is not "on".
+guard_scheduled() { [ -f "$(job_plist "$GUARD_LABEL")" ] && launchctl print "gui/$(id -u)/$GUARD_LABEL" >/dev/null 2>&1; }
+# The job file is there but launchd lost it: load it again (the person turned the guard on).
+guard_reload() {
+  [ -f "$(job_plist "$GUARD_LABEL")" ] && ! guard_scheduled || return 0
+  launchctl bootstrap "gui/$(id -u)" "$(job_plist "$GUARD_LABEL")" >/dev/null 2>&1 && echo "guard: the schedule was not loaded; loaded it again." >&2 || true
+}
 guard_schedule_on() {
   job_on "$GUARD_LABEL" 1800 DeployCenter-guard guard
   # The first run after turning it on only says what it would do.
@@ -1248,8 +1276,9 @@ ai_excerpt() {
 
 # Seams the tests replace: one project row, its build log, the waiting commits.
 ai_row() {
-  local plat; plat="$(platform_of "$1")"
-  "$0" "$plat" json | jq -c --arg p "$1" --arg pl "$plat" '[.[] | select(.name == $p or .id == $p)][0] // empty | .platform //= $pl'
+  # "p:name" too: the name without its prefix, and the id lookup found.
+  resolve "$1"
+  "$0" "$PLAT" json | jq -c --arg p "$PNAME" --arg id "$PID" --arg pl "$PLAT" '[.[] | select(.id == $id or .name == $p)][0] // empty | .platform //= $pl'
 }
 ai_log() { "$0" logs "$1" 300; }
 ai_details() { "$0" details "$1" "$2" "$3"; }
@@ -1462,8 +1491,15 @@ case "${1:-} ${2:-}" in
       fi
       # The next member of a group starts once this one is live.
       if [ -n "$wait_" ] || [ "$i" -lt "$count" ]; then
-        "$0" watch "$p" "$(echo "$out" | jq -r .id)" ${pv:+--preview} \
-          || die "$p did not go live$([ "$i" -lt "$count" ] && echo "; the rest of the group was not started")"
+        # A start without an id yet (Netlify: the build did not show up in time) follows the newest one.
+        did="$(echo "$out" | jq -r '.id // empty')"
+        wrc=0; "$0" watch "$p" ${did:+"$did"} ${pv:+--preview} || wrc=$?
+        if [ "$wrc" != 0 ]; then
+          rest=""; [ "$i" -ge "$count" ] || rest="; the rest of the group was not started"
+          # 3 is watch's "the platform could not be asked": the deploy itself may be fine.
+          if [ "$wrc" = 3 ]; then echo "${RED}Error:${PLAIN} could not follow $p to the end$rest" >&2; exit 3; fi
+          die "$p did not go live$rest"
+        fi
       fi
     done ;;
 
@@ -1483,7 +1519,7 @@ case "${1:-} ${2:-}" in
       ""' 
     echo "$eff" | jq -r '.projects | to_entries[] | .key as $p | .value | to_entries[]
         | [$p, .key, (.value.value | if type == "string" then . else tojson end), .value.from] | @tsv' \
-      | (printf 'PROJECT\tKEY\tVALUE\tFROM\n'; cat) | column -t -s $'\t'
+      | (printf 'PROJECT\tKEY\tVALUE\tFROM\n'; cat) | table
     echo "$eff" | jq -r '(.groups | to_entries[] | "group \(.key): \(.value.value | if type == "array" then join(" ") else tojson end)  (\(.value.from))"),
       (if (.observers.value | length) > 0 then "observers: \(.observers.value | join(", "))" else empty end)' ;;
 
@@ -1505,7 +1541,7 @@ case "${1:-} ${2:-}" in
       refresh) DEPLOYS_TEAM_REFRESH=1 team_sources | jq -r '.[] | "\(.repo): \(if .config then .path elif .error then .error else "no file" end)"' ;;
       journal) if [ "$json" = 1 ]; then jq -s . "$TEAM_JOURNAL" 2>/dev/null || echo '[]'
                else jq -r '[(.at | strftime("%Y-%m-%d %H:%M")), .kind, .project, (.sha[0:7]), .by, ([.approvals[]?.user] | join(",") | if . == "" then "-" else . end), (.reason // "-")] | @tsv' "$TEAM_JOURNAL" 2>/dev/null \
-                 | (printf 'WHEN (UTC)\tKIND\tPROJECT\tCOMMIT\tBY\tAPPROVED BY\tREASON\n'; cat) | column -t -s $'\t'; fi ;;
+                 | (printf 'WHEN (UTC)\tKIND\tPROJECT\tCOMMIT\tBY\tAPPROVED BY\tREASON\n'; cat) | table; fi ;;
       *) die "Usage: deploys team add|remove <owner/repo> | list | refresh | journal" ;;
     esac ;;
 
@@ -1525,6 +1561,8 @@ case "${1:-} ${2:-}" in
     # The last n deploys of one project: when, how it ended, which commit, what started it.
     p="$2"; n="${3:-10}"
     case "$n" in ''|*[!0-9]*) die "n must be a number";; esac
+    # The platforms give at most 100 per page.
+    [ "$n" -ge 1 ] && [ "$n" -le 100 ] || die "n must be from 1 to 100"
     resolve "$p"
     declare -F "${PLAT}_history" >/dev/null || die "$(meta_str "$PLAT" label) keeps no deploy history here"
     "${PLAT}_history" "$PID" "$n" ;;
@@ -1568,7 +1606,7 @@ case "${1:-} ${2:-}" in
     rc=0; all="$(DEPLOYS_NO_GITHUB="$nogh" all_json)" || rc=$?
     if [ "$json" = 1 ]; then echo "$all" | jq 'map({platform, name, repo:(.repo // null), building, phase:(.phase // null), state:(.latestState // .lastState), changed})'; exit "$rc"; fi
     echo "$all" | jq -r '.[] | select(.building or .phase == "failed") | [.platform, .name, (.latestState // .lastState)] | @tsv' \
-      | (printf 'PLATFORM\tPROJECT\tSTATE\n'; cat) | column -t -s $'\t'
+      | (printf 'PLATFORM\tPROJECT\tSTATE\n'; cat) | table
     if [ -n "$nogh" ]; then echo "$all" | jq -r '"\(map(select(.building)) | length) building."'
     else echo "$all" | jq -r '"\(map(select(.building)) | length) building, \(map(select(.changed)) | length) with changes."'; fi
     exit "$rc" ;;
@@ -1610,12 +1648,17 @@ case "${1:-} ${2:-}" in
     # (autofix: a build started after the failure must not hand over the wrong log).
     p="${2:?project}"; n=80; did=""; shift 2
     while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>]}"; shift;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
+    # 0 lines is no log at all, not the whole one (jq's .[-0:] is the whole array).
+    [ "$n" -ge 1 ] || die "lines must be 1 or more"
     resolve "$p"; need_cap "$PLAT" logs "read build logs"
     "${PLAT}_logs" "$PID" "$n" "$did" ;;
 
   "open "*)
     # The site, or with --dashboard the project's page at its platform.
-    p="${2:?project}"; resolve "$p"
+    p="${2:?project}"
+    case "${3:-}" in ""|--dashboard) ;; *) die "Unknown option $3. Usage: deploys open <project> [--dashboard]";; esac
+    [ $# -le 3 ] || die "Usage: deploys open <project> [--dashboard]"
+    resolve "$p"
     url="$("${PLAT}_url" "$PID" ${3:+"$3"})"
     [ -n "$url" ] || die "No address known for $p"
     # macOS open, xdg-open on Linux; without either (cron, ssh) the address is printed.
@@ -1828,10 +1871,14 @@ BASH
 
   "changed "*)
     # Everything with commits on GitHub that are not live, and how many of them.
-    rc=0; list="$(changed_json)" || rc=$?
-    # changed [--json] [--platform vercel|render]
+    # changed [--json] [--platform <provider>]
+    # A typo in --platform would filter everything out and read as "Nothing to deploy": refused first.
     for ((i=2; i<=$#; i++)); do
-      if [ "${!i}" = "--platform" ]; then j=$((i+1)); list="$(echo "$list" | jq --arg p "${!j:?vercel or render}" 'map(select(.platform == $p))')"; fi
+      if [ "${!i}" = "--platform" ]; then j=$((i+1)); is_provider "${!j:-}" || die "--platform takes one of: ${PROVIDERS[*]}"; fi
+    done
+    rc=0; list="$(changed_json)" || rc=$?
+    for ((i=2; i<=$#; i++)); do
+      if [ "${!i}" = "--platform" ]; then j=$((i+1)); list="$(echo "$list" | jq --arg p "${!j}" 'map(select(.platform == $p))')"; fi
     done
     if [ "$json" = 1 ]; then echo "$list"; exit "$rc"; fi
     if [ "$(echo "$list" | jq length)" = "0" ]; then
@@ -1839,7 +1886,7 @@ BASH
       echo "Nothing to deploy: every project is on its newest commit."; exit 0
     fi
     echo "$list" | jq -r '.[] | [.platform, .name, "\(.pendingCommits // "?") commit\(if .pendingCommits == 1 then "" else "s" end)", "\(.pendingPRs // "?") PR\(if .pendingPRs == 1 then "" else "s" end)", (.headMsg // "" | .[0:60])] | @tsv' \
-      | (printf 'PLATFORM\tPROJECT\tWAITING\tPRS\tNEWEST COMMIT\n'; cat) | column -t -s $'\t'
+      | (printf 'PLATFORM\tPROJECT\tWAITING\tPRS\tNEWEST COMMIT\n'; cat) | table
     echo "$list" | jq -r '"\(length) projects, \(map(.pendingCommits // 0) | add) commits, \(map(.pendingPRs // 0) | add) pull requests waiting."'
     exit "$rc" ;;
 
@@ -1876,7 +1923,11 @@ BASH
     # Once the newest deploy is ready: ask the site three times, 5 s apart. When every answer is
     # 5xx or none (a timeout), the check failed (as in the app: a fresh service may answer 502 for a
     # moment); then a countdown, and production goes back unless --no-rollback or Ctrl-C.
-    # Exit 0 healthy, 1 failed and rolled back, 2 failed and not rolled back.
+    # With --path the address must answer too: a 4xx there (a missing /health) fails as well.
+    # Redirects are followed. Exit 0 healthy, 1 failed and rolled back, 2 failed and not rolled
+    # back, 3 nothing was checked (unknown project, not live, no address, a wrong option): a
+    # script must never read an error as "rolled back".
+    die() { echo "${RED}Error:${PLAIN} $*" >&2; exit 3; }
     p="$2"; path=""; after=10; norb=""; url=""; shift 2
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -1889,19 +1940,20 @@ BASH
       shift
     done
     case "$after" in ''|*[!0-9]*) die "--rollback-after takes seconds, a number";; esac
-    plat="$(platform_of "$p")"
+    # "p:name" too: the platform's own id for its calls, the bare name for people and the journal.
+    resolve "$p"; plat="$PLAT"; vid="$PID"; p="$PNAME"
     # A check while the build still runs would test what was live before.
-    "$0" watch "$p" >&2 || die "The newest deploy of $p is not live; nothing to check"
-    [ -n "$url" ] || url="$(site_url_of "$p" "$plat")"
+    "$0" watch "$plat:$p" >&2 || die "The newest deploy of $p is not live; nothing to check"
+    [ -n "$url" ] || url="$(site_url_of "$vid" "$plat")"
     [ -n "$url" ] || die "No address known for $p (give one with --url)"
     case "$path" in ''|/*) ;; *) path="/$path";; esac
     target="${url%/}$path"; [ -n "$path" ] || target="$url"
     codes=""; bad=0
     for i in 1 2 3; do
-      c="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 -A "DeployCenter (verify)" "$target" 2>/dev/null)" || true
+      c="$(curl -sS -L --max-redirs 5 -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 -A "DeployCenter (verify)" "$target" 2>/dev/null)" || true
       [ -n "$c" ] || c=000
       codes="$codes${codes:+ }$c"
-      case "$c" in 000|5*) bad=$((bad + 1));; esac
+      case "$c" in 000|5*) bad=$((bad + 1));; 4*) [ -z "$path" ] || bad=$((bad + 1));; esac
       echo "$(date +%H:%M:%S)  $c  $target" >&2
       [ "$i" = 3 ] || sleep 5
     done
@@ -1931,7 +1983,7 @@ BASH
       journal_add "$plat" "$p" skipped "Check failed ($codes), rollback stopped by hand"
       report false false true 2
     fi
-    if out="$("$0" "$plat" rollback "$p" 2>&1)"; then
+    if out="$("$0" "$plat" rollback "$vid" 2>&1)"; then
       journal_add "$plat" "$p" other "Rolled back: $target answered $codes"
       [ "$json" = 1 ] || echo "Rolled back $p to the deploy before."
       report false true false 1
@@ -1942,8 +1994,8 @@ BASH
 
   "risk "*)
     # risk <project>: green, yellow or red for what waits to go live, and why (see RISK_DEF).
-    p="$2"; plat="$(platform_of "$p")"
-    j="$("$0" "$plat" json | jq -c --arg p "$p" '.[] | select(.name == $p)')"
+    resolve "$2"; p="$PNAME"; plat="$PLAT"
+    j="$("$0" "$plat" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
     [ -n "$j" ] || die "$p not found"
     repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
     base="$(echo "$j" | jq -r '.lastSha // empty')"; ref="$(echo "$j" | jq -r '.ref // "main"')"
@@ -2059,7 +2111,7 @@ BASH
     if [ "$json" = 1 ]; then allow_list
     else
       allow_list | jq -r '.[] | [.platform, .project, (.expiresAt | strftime("%Y-%m-%d %H:%M UTC")), "\(((.expiresAt - now) / 60) | floor) min left"] | @tsv' \
-        | (printf 'PLATFORM\tPROJECT\tUNTIL\tLEFT\n'; cat) | column -t -s $'\t'
+        | (printf 'PLATFORM\tPROJECT\tUNTIL\tLEFT\n'; cat) | table
     fi ;;
   "autodeploy "*)
     die "Usage: deploys autodeploy allow <vercel|render|all> <project>|--all <hours> | allowed [--json] | revoke <vercel|render|all> <project>|--all" ;;
@@ -2068,9 +2120,10 @@ BASH
     case "${3:-}" in
       on) guard_schedule_on; echo "The guard runs every 30 minutes (log: ~/Library/Logs/DeployCenter-guard.log). Its first run only reports." ;;
       off) guard_schedule_off; echo "The guard no longer runs by itself." ;;
-      *) if guard_scheduled; then echo on; else echo off; fi ;;
+      *) guard_reload; if guard_scheduled; then echo on; else echo off; fi ;;
     esac ;;
   "guard status")
+    guard_reload
     en=false; guard_scheduled && en=true
     s="$(guard_state | jq --argjson en "$en" --argjson al "$(allow_list)" \
       '{enabled:$en, lastRun:(.lastRun // null), lastDry:(.lastDry // null), firstRunPending:(.firstRunPending // false),
@@ -2092,8 +2145,10 @@ BASH
   "ai set-key")
     # The user's own Anthropic API key (console.anthropic.com), from stdin, into the keychain.
     IFS= read -r key || true
+    # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+    key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
     [ -n "$key" ] || die "Pipe the key in: pbpaste | deploys ai set-key"
-    case "$key" in sk-ant-*) ;; *) die "That does not look like an Anthropic API key (sk-ant-...)";; esac
+    case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) die "That does not look like an Anthropic API key (sk-ant-...)";; sk-ant-*) ;; *) die "That does not look like an Anthropic API key (sk-ant-...)";; esac
     printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$AI_KEYCHAIN" "$key" | security -i >/dev/null \
       || die "Could not save the key in the keychain"
     echo "Anthropic key saved." ;;
@@ -2133,6 +2188,8 @@ BASH
   "autofix set-token")
     # The routine's API token (claude.ai: routine > Trigger > API > Generate token), from stdin.
     IFS= read -r key || true
+    # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
+    key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
     [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys autofix set-token"
     case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*) die "That does not look like a routine token (sk-ant-...)";; sk-ant-*) ;; *) die "That does not look like a routine token (sk-ant-...)";; esac
     printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$AUTOFIX_KEYCHAIN" "$key" | security -i >/dev/null \
@@ -2177,7 +2234,7 @@ BASH
           prNumber:(.prNumber // .pr // null), prState:(.prState // (if .mergedSha then "merged" else null end)), prUrl:(.prUrl // null), done:(.done // false)}))}' ;;
   "autofix list")
     af_state | jq -r '.fires[] | [(.at | strftime("%Y-%m-%d %H:%M")), .project, .status, ((.sha // "")[0:7]), (.session // .error // .reason // ""), (if .mergedSha then "merged \(.mergedSha[0:7]) (PR #\(.pr)), deploy by hand" elif .redeployedSha then "redeployed \(.redeployedSha[0:7]) (PR #\(.pr))" else "" end)] | @tsv' \
-      | (printf 'WHEN\tPROJECT\tSTATUS\tCOMMIT\tSESSION\tREDEPLOY\n'; cat) | column -t -s $'\t' ;;
+      | (printf 'WHEN\tPROJECT\tSTATUS\tCOMMIT\tSESSION\tREDEPLOY\n'; cat) | table ;;
   "autofix "*)
     # autofix [--dry-run]: hand a failed build to the routine, deploy a merged fix. For launchd.
     # autofix --only <platform> <project>: this one failure now (exit codes in docs/AUTOFIX.md).
@@ -2219,7 +2276,7 @@ BASH
         done | jq -s '.')"
         if [ "$json" = 1 ]; then echo "$list"
         else echo "$list" | jq -r '.[] | [.id, .label, (if .enabled then "on" else "off" end), (if .ready == null then "-" elif .ready then "ready" else "not set up" end)] | @tsv' \
-          | (printf 'ID\tPLATFORM\tSTATE\tACCESS\n'; cat) | column -t -s $'\t'; fi ;;
+          | (printf 'ID\tPLATFORM\tSTATE\tACCESS\n'; cat) | table; fi ;;
       *) die "Usage: deploys providers [--json] | enable <provider> | disable <provider>" ;;
     esac ;;
 
@@ -2228,7 +2285,7 @@ BASH
     rc=0; all="$(all_json)" || rc=$?
     if [ "$json" = 1 ]; then echo "$all"; exit "$rc"; fi
     echo "$all" | jq -r '.[] | [.platform, .name, (if .auto then "auto" else "manual" end), (.lastState // "-")] | @tsv' \
-      | (printf 'PLATFORM\tPROJECT\tDEPLOYS\tSTATE\n'; cat) | column -t -s $'\t'
+      | (printf 'PLATFORM\tPROJECT\tDEPLOYS\tSTATE\n'; cat) | table
     exit "$rc" ;;
 
   "simulate "*|"ledger "*)

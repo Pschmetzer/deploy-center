@@ -22,6 +22,11 @@
 - App: waiting for green CI no longer holds a build slot and can be cancelled; the auto-rollback is skipped when a newer deploy has started; allowances for all platforms or all projects show their badge; demo mode hides the favicon in details; "Copy" in the build log masks secrets (⌥ copies the raw log).
 - iPhone: a second tap cannot start a second deploy; demo deploys need no passcode; rollback refuses when the live deploy is unknown instead of guessing; a QR import keeps keys the QR code leaves empty; a rewritten history or a compare error shows "count unknown" instead of "0 commits".
 - Docs and site: README, FAQ and guides no longer call built features "coming"; the site takes its version from `VERSION`; SECURITY.md and UNINSTALL.md list every data flow, job and keychain entry. `install.sh` runs from `main()` (a cut-off download installs nothing) and stops on Ctrl-C.
+- CLI: `deploy --wait` exits 3 (not 1, "did not go live") when the platform could not be asked, and follows the newest deploy when a start has no id yet (Netlify). `changed` with no platform on and set up is an error pointing to `deploys providers`, not "every project is on its newest commit"; `--platform` with an unknown name is refused.
+- CLI: a keychain that cannot be read is named for Netlify, Coolify, DigitalOcean, Cloudflare and Amplify too, instead of their "no token".
+- CLI: `verify`, `risk` and `ai` take `p:name`. **Changed:** `verify` exits 3 when nothing was checked (unknown project, not live, no address, a wrong option), so 1 always means "rolled back"; with `--path`, a 4xx fails the check too, and redirects are followed.
+- CLI: `guard schedule`/`guard status` say "on" only when launchd has the job loaded, and load a dropped one again. Two projects of one name on one platform name their ids instead of suggesting `p:name` again. The name cache forgets deleted projects. The journal writes a provider's label ("Netlify"), not its id.
+- CLI: keys piped to `set-key`/`ai set-key` lose a trailing CR and surrounding spaces; spaces, quotes or a backslash inside are refused. `logs <p> 0` is refused (it printed the whole log), `history` takes 1 to 100, `open` only `--dashboard`. Tables work without `column` (an awk fallback).
 
 ## 0.9.1
 

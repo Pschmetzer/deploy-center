@@ -244,7 +244,9 @@ vercel_rollback() {
 
 # vercel_logs <project> <lines> [deployId]: the end of a build log (newest production by default).
 vercel_logs() {
-  local p="$1" n="$2" d="${3:-}"
+  local p="$1" n="${2:-80}" d="${3:-}"
+  # jq's .[-0:] is the whole array: 0 lines must not print the whole log.
+  case "$n" in ''|*[!0-9]*|0) die "lines must be a number, 1 or more";; esac
   [ -n "$d" ] || d="$(vercel_call "/v6/deployments?app=$p&limit=1&target=production" | jq -r '.deployments[0].uid // empty')"
   [ -n "$d" ] || die "No deployment of $p"
   vercel_call "/v3/deployments/$d/events?builds=1&direction=backward&limit=2000" \
@@ -290,7 +292,7 @@ vercel_history() {
        (if .ready and .buildingAt then "\(((.ready - .buildingAt)/1000) | floor)s" else "" end)]
     # "-" for an empty field: BSD column merges empty fields and would shift the row.
     | map(if . == "" or . == null then "-" else . end) | @tsv' \
-    | (printf 'WHEN (UTC)\tTARGET\tSTATE\tCOMMIT\tSOURCE\tBUILD\n'; cat) | column -t -s $'\t'
+    | (printf 'WHEN (UTC)\tTARGET\tSTATE\tCOMMIT\tSOURCE\tBUILD\n'; cat) | table
 }
 
 # Usage lines for the verbs that take more than a project.
@@ -305,7 +307,7 @@ vercel_usage() {  # <argc> <verb>
 
 vercel_cli_list() {
   vercel_projects | jq -r '.[] | [.name, (if .link then "AUTO (\(.link.org // "")/\(.link.repo // ""))" else "manual" end)] | @tsv' \
-    | column -t -s $'\t'
+    | table
 }
 
 # vercel deploy <project> [--preview] [--sha <commit>] [--wait]

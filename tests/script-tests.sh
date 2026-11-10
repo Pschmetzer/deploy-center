@@ -242,6 +242,7 @@ case "$m $url" in
     case "${SITE:-ok}" in
       down) printf 503 ;;
       gone) printf 000; exit 28 ;;
+      notfound) printf 404 ;;
       flaky) n=$(( $(cat "$E2E/site" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$E2E/site"; [ "$n" = 1 ] && printf 502 || printf 200 ;;
       *) printf 200 ;;
     esac ;;
@@ -474,7 +475,7 @@ expect "verify: --no-rollback only reports (exit 2)" "$(SITE=down run "$O" "$E" 
 fresh
 expect "verify: Ctrl-C in the countdown stops the rollback" \
   "$(SITE=down CANCEL=1 run "$O" "$E" verify web --json; jq -c '{rolledBack, cancelled}' "$O"; rolled)" $'2\n{"rolledBack":false,"cancelled":true}\n0'
-expect "verify: a wrong --rollback-after is refused" "$(run "$O" "$E" verify web --rollback-after soon; grep -c 'takes seconds' "$E")" $'1\n1'
+expect "verify: a wrong --rollback-after is refused" "$(run "$O" "$E" verify web --rollback-after soon; grep -c 'takes seconds' "$E")" $'3\n1'
 unset DEPLOYS_JOURNAL
 
 # risk: the rule, then the command and the lists.
@@ -1105,6 +1106,10 @@ expect "appcast: valid XML" "$(python3 -I -c 'import sys,xml.dom.minidom as m; m
 acadd 1.0; expect "appcast: a bad version is refused" "$?" "1"
 acadd 1.0.0 nonsense; expect "appcast: a bad signature is refused" "$?" "1"
 expect "appcast: refused input changes nothing" "$(grep -c '<item>' "$ac")" "2"
+
+# The CLI and provider fixes of round 6 (docs/IDEEN-6.md, section 3), with the stand-ins above.
+# shellcheck source=cli-tests.sh
+. tests/cli-tests.sh
 
 echo
 [ "$fails" = 0 ] && echo "All script tests passed." || { echo "$fails failed."; exit 1; }
