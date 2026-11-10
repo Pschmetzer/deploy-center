@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import * as vscode from "vscode";
 import { deployArgs, deployFailure, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, Runner, urlIn } from "./cli";
 import { aiPrompt } from "./log";
-import { describe, platformLabel, plural, Project, statusText, summarize } from "./model";
+import { describe, platformLabel, plural, Project, statusText, summarize, followStep } from "./model";
 import { parseRemotes, Scope, scopeProjects } from "./repo";
 
 type ViewState = "loading" | "missing" | "error" | "empty" | "nomatch" | "ok";
@@ -237,7 +237,27 @@ class Controller implements vscode.TreeDataProvider<Project> {
       const btn = await (res.url ? vscode.window.showInformationMessage(res.text, "Open deploy") : vscode.window.showInformationMessage(res.text));
       if (btn === "Open deploy" && res.url) void vscode.env.openExternal(vscode.Uri.parse(res.url));
     } else void vscode.window.showErrorMessage(res.text);
-    setTimeout(() => void this.refresh(), 10_000);
+    if (res.ok) void this.follow(p); else setTimeout(() => void this.refresh(), 10_000);
+  }
+
+  /** After a start: look every 15 s (at most 15 min) until the build is live or failed, then say so. */
+  private async follow(p: Project): Promise<void> {
+    let seen = false;
+    for (let looks = 1; looks <= 60; looks++) {
+      await new Promise((r) => setTimeout(r, 15_000));
+      await this.refresh();
+      const now = this.all.find((x) => x.platform === p.platform && x.name === p.name);
+      if (now?.building) seen = true;
+      const step = followStep(now, seen, looks);
+      if (step === "wait") continue;
+      if (step === "live") void vscode.window.showInformationMessage(`${p.name} is live.`);
+      if (step === "failed" && now) {
+        const btn = await vscode.window.showErrorMessage(`${p.name}: the build failed.`, "Copy for AI", "Show log");
+        if (btn === "Copy for AI") await this.copyForAi(now);
+        if (btn === "Show log") await this.showLog(now);
+      }
+      return;
+    }
   }
 
   async deployRepo(): Promise<void> {

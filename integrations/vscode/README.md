@@ -38,6 +38,10 @@ The `deploys` CLI, which comes with the free Mac app. It is looked for in this o
 
 Without it, the status bar says `deploys not found` and offers the download and the setting.
 
+In a remote window (SSH, WSL, Dev Container) the extension runs on your own machine, where the app
+and your logins are (`extensionKind: ui`). It cannot read the remote folder's git remotes from
+there, so with `deployCenter.scope` set to `auto` it shows every project.
+
 ## Settings
 
 | Setting | Default | |

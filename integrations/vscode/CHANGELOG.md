@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- After a deploy starts, the extension follows it (every 15 s, at most 15 min) and says when it is live or failed, with "Copy for AI" and "Show log".
+- Runs on your own machine in remote windows (SSH, WSL, Dev Containers), where `deploys` and its logins are.
 - A deploy start that times out says it may have started anyway, so you check before deploying again.
 - A timeout stops `deploys` together with the `vercel`, `gh` or `curl` it started.
 - A second click on Deploy while the dialog or the start of that project is open does not open a second one.

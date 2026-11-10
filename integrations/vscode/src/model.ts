@@ -180,3 +180,17 @@ export function age(seconds: number): string {
   if (seconds < 86400) return `${Math.round(seconds / 3600)} h`;
   return `${Math.round(seconds / 86400)} d`;
 }
+
+export type FollowState = "wait" | "live" | "failed" | "gone";
+
+/**
+ * One look at a deploy that was just started. A new build may show up only after a while (the
+ * platform queues it), so "live" needs either a build that was seen running and is done now, or
+ * a few looks without any build (then the newest state is what there is).
+ */
+export function followStep(p: Pick<Project, "building" | "failed"> | undefined, seenBuilding: boolean, looks: number): FollowState {
+  if (!p) return "gone";
+  if (p.building) return "wait";
+  if (!seenBuilding && looks < 4) return "wait";
+  return p.failed ? "failed" : "live";
+}
