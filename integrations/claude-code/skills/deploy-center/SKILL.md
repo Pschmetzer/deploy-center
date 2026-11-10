@@ -1,6 +1,6 @@
 ---
 name: deploy-center
-description: Works with the Deploy Center `deploys` CLI for Vercel and Render projects whose Git auto-deploy is off. Use after a git push, when the user asks what is waiting to go live, when a deploy or build failed, when asked to deploy or ship, or when asked why a push did not go live.
+description: Works with the Deploy Center `deploys` CLI for Vercel, Render, Netlify and other hosts whose Git auto-deploy is off. Use after a git push, when the user asks what is waiting to go live, when a deploy or build failed, when asked to deploy or ship, or when asked why a push did not go live.
 when_to_use: "Triggers: git push, deploy, ship it, go live, release, build failed, deploy failed, Vercel, Render, auto-deploy, deploys changed."
 allowed-tools: Bash(deploys changed *) Bash(deploys status *) Bash(deploys logs *) Bash(deploys explain *) Bash(deploys notes *) Bash(deploys diff *) Bash(deploys history *) Bash(deploys doctor *)
 ---
@@ -16,9 +16,14 @@ https://deploycenter.app. Do not try to install it or work around it.
 
 ## Rule 1: never deploy without an explicit OK
 
-- Never run `deploys deploy-changed`, `deploys vercel deploy`, `deploys render deploy`, any
-  `deploy-json`, any `rollback`, or `deploy-changed --yes` unless the user has said, in this
-  conversation and for this project, that it should go live now ("deploy app-web", "ship it", "yes").
+- Never run `deploys deploy <project>`, `deploys deploy-changed`, `deploys vercel deploy`,
+  `deploys render deploy`, `deploys <platform> deploy`, any `deploy-json`, any `rollback`, or
+  `deploy-changed --yes` unless the user has said, in this conversation and for this project, that
+  it should go live now ("deploy app-web", "ship it", "yes").
+- Never add `--force "…"`, even with an OK: it opens a closed deploy window and goes past
+  approvals. If a deploy is refused for the window or an approval, say so; the user decides.
+- Never run `deploys autodeploy allow`, `deploys autodeploy-on`, `deploys guard`, or
+  `deploys autofix --only` (it hands a build to a routine). They change what deploys on its own.
 - "Push it", "commit it", "fix the build" or "open a PR" are **not** an OK to deploy.
 - An OK covers one deploy. Ask again for the next one.
 - Never turn auto-deploy back on, reconnect Git, or change deploy settings on Vercel or Render.
@@ -62,9 +67,10 @@ why the project counts (or does not). `deploys diff <project>` lists the commits
 
 ## Deploying, when the user said yes
 
-Use the platform from `deploys changed --json`:
-- Vercel: `deploys vercel deploy <project> --wait`
-- Render: `deploys render deploy <service>`, then `deploys watch <service>`
+One command for every platform (Vercel, Render, Netlify, Cloudflare, Amplify, DigitalOcean,
+Coolify, a deploy hook): `deploys deploy <project> --wait`, or `deploys deploy <platform>:<name>
+--wait` when the name is on two platforms. It checks the deploy window and approvals; if it
+refuses, report why and stop (no `--force`).
 
 Report the result in one line. If the build fails, go to "When a build failed".
 

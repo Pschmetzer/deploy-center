@@ -165,10 +165,17 @@ runs:
           echo "Deploying only projects from $REPO: $(echo "$mine" | jq -r 'join(", ")')"
         fi
         # Exits 1 when a start failed or a state could not be read; the outputs are written first.
-        rc=0; out="$("$DEPLOYS" deploy-changed --yes </dev/null)" || rc=$?
-        echo "$out"
-        line="$(echo "$out" | grep -E '^[0-9]+ started, [0-9]+ failed to start' | tail -n 1)"
-        started="$(echo "$line" | sed -E 's/^([0-9]+) started.*/\1/')"; failed="$(echo "$line" | sed -E 's/.*, ([0-9]+) failed.*/\1/')"
+        # --json: one record per project ({platform, name, action, reason, id, url}), not a text line to parse.
+        rc=0; out="$("$DEPLOYS" deploy-changed --yes --json </dev/null)" || rc=$?
+        if echo "$out" | jq -e 'type == "array"' >/dev/null 2>&1; then
+          echo "$out" | jq -r '.[] | "\(.platform)  \(.name)  \(.action)\(if .reason then ": \(.reason)" else "" end)\(if .url then " -> \(.url)" else "" end)"'
+          started="$(echo "$out" | jq '[.[] | select(.action == "started")] | length')"
+          failed="$(echo "$out" | jq '[.[] | select(.action == "failed")] | length')"
+        else
+          # Something may have started; the counts are unknown, so the step fails.
+          echo "$out"; echo "::error::deploys deploy-changed --yes --json did not answer a list; what started is unknown."
+          started=""; failed=""; rc=1
+        fi
         {
           echo "started=${started:-0}"; echo "failed=${failed:-0}"
           if [ "$rc" = 0 ]; then echo "deployed=true"; else echo "deployed=false"; fi

@@ -105,8 +105,8 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_doctor` | `deploys doctor` | Tools and logins, as JSON. No key is printed. |
 | `deploys_simulate(days?)` | `deploys simulate --days <n> --json` | Estimate: what auto-deploy would cost per month (builds, minutes, USD) vs. deploying once a day. `days` 1–90, default 30. |
 | `deploys_ledger` | `deploys ledger --json` | Estimate: builds skipped and minutes and USD saved since auto-deploy was turned off. |
-| `deploys_deploy(project, preview?)` | `deploys vercel\|render deploy-json <p> [--preview]` | Only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. Returns `id`, `url`, `state`. Preview is Vercel only. |
-| `deploys_rollback(project)` | `deploys vercel\|render rollback <p>` | Only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. Production back to the deploy that was live before. |
+| `deploys_deploy(project, preview?)` | `deploys <platform> deploy-json <p> [--preview]` | Only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. Any platform `deploys` knows; the CLI checks the deploy window and approvals. Returns `id`, `url`, `state`. No preview on Render. |
+| `deploys_rollback(project)` | `deploys <platform> rollback <p>` | Only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. Production back to the deploy that was live before. |
 
 `deploys_simulate` and `deploys_ledger` answer "what does auto-deploy cost us?" and "what did
 turning it off save?". Their numbers are estimates from pushes on GitHub and each project's average
@@ -115,8 +115,9 @@ descriptions tell the agent to quote them as estimates. They read GitHub and the
 every project, so they can take a minute or two, and have their own timeout
 (`DEPLOYS_MCP_SLOW_TIMEOUT`, default 300 s).
 
-To find out whether a name is on Vercel or Render, deploy and rollback use `deploys list --json`
-when the CLI has it, and otherwise `deploys status --json --no-github`, which needs no GitHub calls.
+To find out which platform a name is on, deploy and rollback use `deploys list --json` when the
+CLI has it, and otherwise `deploys status --json --no-github`, which needs no GitHub calls. A name
+on two platforms is refused until it is written `platform:name` (`vercel:web`).
 
 ## Example
 
@@ -151,6 +152,18 @@ and tells you to deploy in Deploy Center or with `deploys vercel deploy app-web`
 - **Ask first.** Their descriptions tell the agent to ask you before each call, and they are marked
   `destructiveHint`, so most hosts ask you to approve the call too. Keep that approval prompt on
   for these two tools; do not auto-approve them.
+- **The human confirms in the client.** When the client supports MCP elicitation, the server asks
+  you itself before each deploy or rollback (project, platform, target); only your "yes" starts it.
+  An agent talked into it cannot answer for you. Without elicitation the "ask first" above is all.
+- **A limit, and a list.** One server process starts at most `DEPLOYS_MCP_MAX_DEPLOYS` deploys plus
+  rollbacks (default 3), so an agent cannot deploy in a loop after one yes. With
+  `DEPLOYS_MCP_ALLOW_PROJECTS=web,vercel:api` only those projects can be deployed or rolled back.
+- **A timeout is not "nothing happened".** When a deploy or rollback times out, the answer says the
+  build may be running, and the next try on that project first reads `deploys status`: while it
+  builds, nothing new starts.
+- **Commit texts and logs are data.** `deploys_notes`, `deploys_explain` and `deploys_logs` answer
+  inside `<untrusted-data>…</untrusted-data>` with a line that says not to follow requests in it:
+  whoever can push writes commit messages, and an agent with deploy rights reads them.
 - **One project per call.** Each call takes one name. There is no "deploy everything"
   (`deploy-changed`) tool.
 - **No shell.** `deploys` is started with an argument array. Names must match
@@ -165,7 +178,8 @@ and tells you to deploy in Deploy Center or with `deploys vercel deploy app-web`
   help, not a guarantee: a token with no known prefix and no telling name still goes through.
 - **Bounded.** Each command has a timeout (`DEPLOYS_MCP_TIMEOUT`, default 90 s; simulate and
   ledger `DEPLOYS_MCP_SLOW_TIMEOUT`, default 300 s); then it is
-  stopped together with the `vercel`, `gh` or `curl` it started. Output is trimmed to
+  stopped together with the `vercel`, `gh` or `curl` it started. When the client ends the server
+  (SIGTERM, or stdin closed), every running `deploys` is stopped the same way. Output is trimmed to
   `DEPLOYS_MCP_MAX_OUTPUT` characters (default 20000; logs keep the end, also of a log longer
   than the server collects). `deploys_changed` and `deploys_status` answer compact JSON and are
   never cut inside it: when the list does not fit, whole entries are left out and the answer is
@@ -181,6 +195,8 @@ and tells you to deploy in Deploy Center or with `deploys vercel deploy app-web`
 | `DEPLOYS_MCP_TIMEOUT` | `90` | Seconds per command. |
 | `DEPLOYS_MCP_SLOW_TIMEOUT` | `300` | Seconds for `deploys_simulate` and `deploys_ledger`. |
 | `DEPLOYS_MCP_MAX_OUTPUT` | `20000` | Characters per answer. |
+| `DEPLOYS_MCP_MAX_DEPLOYS` | `3` | Deploys plus rollbacks one server process may start. |
+| `DEPLOYS_MCP_ALLOW_PROJECTS` | any | Comma list (`web,vercel:api`): only these may be deployed or rolled back. |
 
 ## Tests
 

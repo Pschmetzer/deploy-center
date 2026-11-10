@@ -7,7 +7,7 @@
 # Read-only: it calls `deploys changed --json` and nothing else. It never deploys.
 # Silent (exit 0, no output) when: the command was not a git push (`git stash push`, a
 # `--dry-run`, a rejected or failed push do not count), `deploys` or `jq` is missing,
-# the repository is not on GitHub, nothing is waiting, the CLI does not answer in time, or the
+# the remote is not a known git URL, nothing is waiting, the CLI does not answer in time, or the
 # reminder is turned off (plugin option push_reminder, or DEPLOYS_PUSH_REMINDER=off).
 #
 # Input: the hook JSON on stdin (tool_input.command, cwd).
@@ -23,7 +23,8 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 cmd="$(jq -r '.tool_input.command // empty' <<<"$input" 2>/dev/null)"
 cwd="$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null)"
-# The `if` rule in hooks.json already narrows this to git push; check again, it costs nothing.
+# hooks.json runs this after every Bash call (an `if` rule would miss `cd dir && git push` and
+# `git -C dir push`), so anything that is not a push ends here, before any other work.
 case "$cmd" in *"git push"*|*"git "*" push"*) ;; *) exit 0 ;; esac
 [ "$(jq -r '.tool_response.interrupted // false' <<<"$input" 2>/dev/null)" = true ] && exit 0
 # A push that did not happen: rejected, or git gave up.
@@ -97,8 +98,15 @@ for w in ${pushargs[@]+"${pushargs[@]}"}; do
   break
 done
 url="$(git -C "$cwd" remote get-url "$remote" 2>/dev/null)" || exit 0
-repo="$(printf '%s' "$url" | sed -E 's#^(git@|ssh://git@|https?://([^@/]*@)?)github\.com[:/]##; s#\.git$##; s#/$##')"
-case "$repo" in */*/*|*:*|'') exit 0 ;; */*) ;; *) exit 0 ;; esac
+# The repo as deploys names it: owner/name on GitHub, host/group[/sub]/name elsewhere (GitLab:
+# gitlab.com/group/name, see docs/GITLAB.md).
+hostpath="$(printf '%s' "$url" | sed -E 's#^(ssh://)?([^@/]*@)?##; s#^https?://([^@/]*@)?##; s#^([^:/]+):([0-9]+/)?#\1/#; s#\.git$##; s#/$##')"
+case "$hostpath" in
+  github.com/*/*) repo="${hostpath#github.com/}"; case "$repo" in */*/*) exit 0 ;; esac ;;
+  */*/*) repo="$hostpath" ;;
+  *) exit 0 ;;
+esac
+case "$repo" in *[!A-Za-z0-9._/-]*|'') exit 0 ;; esac
 
 # Ask the CLI, but never longer than DEPLOYS_HOOK_TIMEOUT seconds.
 tmp="$(mktemp -d 2>/dev/null)" || exit 0
@@ -115,7 +123,7 @@ done
 
 msg="$(jq -r --arg repo "$repo" '
   if type != "array" then empty else
-  map(select((.repo // "" | ascii_downcase) == ($repo | ascii_downcase)))
+  map(select((.repo // "" | ascii_downcase | sub("^github\\.com/"; "")) == ($repo | ascii_downcase)))
   | map(if (.pendingCommits | type) == "number"
         then "\(.pendingCommits) commit\(if .pendingCommits == 1 then "" else "s" end) waiting on \(.name)"
         else "changes waiting on \(.name)" end)
