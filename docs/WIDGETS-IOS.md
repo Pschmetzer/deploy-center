@@ -199,8 +199,8 @@ Verified on this Mac:
 
 - **Mac link:** the Mac app, signed with the Developer ID profile, launches, and writes and reads
   the synchronizable item in the shared keychain group.
-- **QR code:** TestFlight build 2 on the owner's iPhone scanned the Mac app's code and loaded the
-  projects.
+- **QR code:** TestFlight build 2 on the owner's iPhone connected to the Mac app by scanning its
+  code.
 
 Not verified:
 - **iCloud Keychain between Mac and iPhone:** needs TestFlight build 2 on a real iPhone.
