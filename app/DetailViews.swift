@@ -20,13 +20,15 @@ struct BuildLog: View {
     @State private var error: String?
     @State private var onlyErrors = false
     @State private var jump = 0
+    /// The last lines first; "Load more" asks for ten times as many.
+    @State private var lineCount = 200
 
     private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
 
     private func copy(_ s: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string) }
 
     /// Changes when a deploy starts or ends, so the log is read again then and not on every poll.
-    private var reloadKey: String { "\(live.state.isActive)|\(live.lastAt?.timeIntervalSince1970 ?? 0)|\(live.state == .idle)" }
+    private var reloadKey: String { "\(lineCount)|\(live.state.isActive)|\(live.lastAt?.timeIntervalSince1970 ?? 0)|\(live.state == .idle)" }
 
     var body: some View {
         let live = self.live
@@ -36,6 +38,10 @@ struct BuildLog: View {
                 if live.state.isActive { ProgressView().controlSize(.small) }
                 Spacer()
                 if let text {
+                    if lines.count >= lineCount - 1 && lineCount < 2000 {
+                        Button(L("Load more", "Mehr laden")) { lineCount = 2000 }
+                            .help(L("Up to 2000 lines instead of the last 200", "Bis zu 2000 Zeilen statt der letzten 200"))
+                    }
                     Toggle(L("Errors only", "Nur Fehler"), isOn: $onlyErrors).toggleStyle(.button)
                         .disabled(firstError == nil)
                     CopyButton(title: L("Copy", "Kopieren")) { text }
@@ -65,7 +71,7 @@ struct BuildLog: View {
         .frame(minWidth: 560, idealWidth: 760, maxWidth: .infinity, minHeight: 320, idealHeight: 520, maxHeight: .infinity)
         .task(id: reloadKey) {
             do {
-                let data = try await Tool.run(["logs", item.id, "200"])
+                let data = try await Tool.run(["logs", item.id, "\(lineCount)"])
                 let t = String(data: data, encoding: .utf8).map { $0.isEmpty ? L("(empty)", "(leer)") : $0 } ?? ""
                 // Split and searched once per load, not on every redraw.
                 lines = t.components(separatedBy: "\n"); firstError = LogTools.firstErrorLine(lines)
@@ -138,6 +144,7 @@ struct ProjectDetail: View {
     @State private var details: Details?
     @State private var error: String?
     @AppStorage("demoMode") private var demoMode = false
+    @AppStorage("hideBotCommits") private var hideBots = false
 
     private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
     private func scrub(_ s: String) -> String { Demo.scrub(s, items: Platform.allCases.flatMap { store.items[$0] ?? [] }) }
@@ -234,14 +241,18 @@ struct ProjectDetail: View {
                                 .font(.caption).textSelection(.enabled)
                         }
                     }
-                    ForEach(d.commits) { c in
+                    if d.commits.contains(where: { $0.bot == true }) && !d.onlyBots {
+                        Toggle(L("Hide dependency updates", "Abhängigkeits-Updates ausblenden"), isOn: $hideBots)
+                            .toggleStyle(.checkbox).font(.caption)
+                    }
+                    ForEach(d.commits.filter { !(hideBots && !d.onlyBots && $0.bot == true) }) { c in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             if let pr = c.pr, let repo = item.repo, let u = URL(string: "https://github.com/\(repo)/pull/\(pr)") {
                                 Button("#\(pr)") { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospacedDigit())
                             } else if let u = c.url.flatMap(URL.init(string:)) {
                                 Button(c.sha) { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospaced())
                             }
-                            Text(scrub(c.msg)).font(.callout).lineLimit(2)
+                            Text(scrub(c.msg)).font(.callout).lineLimit(2).help(scrub(c.msg))
                             Spacer(minLength: 8)
                             Text((Demo.person(c.author) ?? "") + " · " + Row.ago(Date(timeIntervalSince1970: c.at)))
                                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
@@ -259,7 +270,8 @@ struct ProjectDetail: View {
             } else {
                 Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             }
-            if item.platform == .vercel {
+            if item.platform == .vercel, let repo = item.repo,
+               Platform.allCases.flatMap({ store.items[$0] ?? [] }).filter({ $0.repo == repo }).count > 1 {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L("Fewer builds in a monorepo", "Weniger Builds im Monorepo")).font(.headline)
                     Text(L("In Vercel's project settings, Git → Ignored Build Step, this command skips a build when nothing in the project's folder changed:",
