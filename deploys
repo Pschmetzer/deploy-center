@@ -292,8 +292,12 @@ with_heads() {
 # Names for tab completion, kept up to date by every list read.
 remember_names() {
   # Old names stay, new ones join; one file, so nothing grows without end.
-  { cat "$CONFIG_DIR/names" 2>/dev/null; jq -r '.[].name' 2>/dev/null; } | sort -u > "$CONFIG_DIR/names.new" 2>/dev/null \
-    && mv "$CONFIG_DIR/names.new" "$CONFIG_DIR/names"; rm -f "$CONFIG_DIR/names.tmp"
+  # `vercel json` and `render json` run at the same time: each writes its own temp file, and a
+  # lost race only costs a name until the next read, never the list itself.
+  local t; t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || { cat >/dev/null; return 0; }
+  { cat "$CONFIG_DIR/names" 2>/dev/null; jq -r '.[].name' 2>/dev/null; } | sort -u > "$t" 2>/dev/null \
+    && mv -f "$t" "$CONFIG_DIR/names" 2>/dev/null; rm -f "$t" "$CONFIG_DIR/names.tmp" "$CONFIG_DIR/names.new"
+  return 0
 }
 
 # Every project on both platforms, each marked with its platform. Both read at once.
@@ -301,7 +305,9 @@ remember_names() {
 # is named on stderr and makes this return 1: an empty list must never stand for "all up to date".
 all_json() {
   local t rc=0 p; t="$(mktemp -d)"
-  if command -v vercel >/dev/null 2>&1; then
+  # Remembered Vercel projects count as "set up" too: under launchd's PATH the vercel CLI is
+  # often not found, and that must be an error, not a silent "no Vercel projects".
+  if command -v vercel >/dev/null 2>&1 || [ "$(jq 'length' "$REPOS" 2>/dev/null || echo 0)" != 0 ]; then
     ( "$0" vercel json 2>"$t/vercel.err" | jq 'map(. + {platform:"vercel"})' > "$t/vercel.json" || : > "$t/vercel.failed" ) &
   fi
   if has_render_key; then
@@ -389,7 +395,8 @@ render_call() {
 render_services() {
   local cursor="" page all="[]"
   while :; do
-    page="$(render_call GET "/services?limit=100${cursor:+&cursor=$cursor}")"
+    # `|| return`: inside $(...) set -e is off, and a failed page used to loop here for ever.
+    page="$(render_call GET "/services?limit=100${cursor:+&cursor=$cursor}")" || return 1
     all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$page"))"
     [ "$(echo "$page" | jq 'length')" -lt 100 ] && break
     cursor="$(echo "$page" | jq -r '.[-1].cursor')"
@@ -538,12 +545,15 @@ case "${1:-} ${2:-}" in
       vercel_call "/v6/deployments?app=$p&limit=$n" | jq -r '.deployments[]
         | [(.created/1000 | strftime("%Y-%m-%d %H:%M")), (.target // "preview"), .state,
            ((.meta.githubCommitSha // "")[0:7]), (.source // ""),
-           (if .ready and .buildingAt then "\(((.ready - .buildingAt)/1000) | floor)s" else "" end)] | @tsv' \
+           (if .ready and .buildingAt then "\(((.ready - .buildingAt)/1000) | floor)s" else "" end)]
+        # "-" for an empty field: BSD column merges empty fields and would shift the row.
+        | map(if . == "" or . == null then "-" else . end) | @tsv' \
         | (printf 'WHEN (UTC)\tTARGET\tSTATE\tCOMMIT\tSOURCE\tBUILD\n'; cat) | column -t -s $'\t'
     else
       render_call GET "/services/$(render_id_of "$p")/deploys?limit=$n" | jq -r 'def t: sub("\\.[0-9]+Z$";"Z") | fromdateiso8601;
         .[].deploy | [(.createdAt | t | strftime("%Y-%m-%d %H:%M")), .status, ((.commit.id // "")[0:7]), (.trigger // ""),
-           (if .finishedAt then "\(((.finishedAt | t) - (.createdAt | t)))s" else "" end)] | @tsv' \
+           (if .finishedAt then "\(((.finishedAt | t) - (.createdAt | t)))s" else "" end)]
+        | map(if . == "" or . == null then "-" else . end) | @tsv' \
         | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | column -t -s $'\t'
     fi ;;
 
@@ -906,8 +916,9 @@ BASH
     target="${3:-}"; [ -n "$target" ] || die "Give a project name or --all"
     if [ "$target" = "--all" ]; then
       # One that fails does not stop the rest; they are counted and the exit code says so.
-      bad=0
-      for p in $(vercel_projects | jq -r '.[] | select(.link) | .name'); do ( vercel_off "$p" ) || bad=$((bad + 1)); done
+      # The list first, on its own line: a failed read must stop here (set -e), not look like "none left".
+      bad=0; names="$(vercel_projects | jq -r '.[] | select(.link) | .name')"
+      for p in $names; do ( vercel_off "$p" ) || bad=$((bad + 1)); done
       [ "$bad" = 0 ] || die "$bad Vercel projects could not be disconnected (see above); the others are done"
       echo "Done. No Vercel project deploys on push any more."
     else
@@ -992,9 +1003,10 @@ BASH
   "render autodeploy-off")
     target="${3:-}"; [ -n "$target" ] || die "Give a service name or --all"
     if [ "$target" = "--all" ]; then
-      bad=0
-      while IFS=$'\t' read -r id name; do ( render_off "$id" "$name" ) || bad=$((bad + 1)); done \
-        < <(render_services | jq -r '.[] | select('"$(render_auto)"' != "off") | "\(.id)\t\(.name)"')
+      bad=0; todo="$(render_services | jq -r '.[] | select('"$(render_auto)"' != "off") | "\(.id)\t\(.name)"')"
+      while IFS=$'\t' read -r id name; do
+        [ -n "$id" ] || continue; ( render_off "$id" "$name" ) || bad=$((bad + 1))
+      done <<< "$todo"
       [ "$bad" = 0 ] || die "$bad Render services could not be switched off (see above); the others are done"
       echo "Done. No Render service deploys on push any more."
     else
@@ -1047,6 +1059,8 @@ BASH
       domain:((.serviceDetails.url // "") | sub("^https?://";"") | if . == "" then null else . end),
       repo:((.repo // "") | sub("^https://github.com/";"") | sub("\\.git$";"") | if . == "" then null else . end),
       ref:(.branch // null)}] | sort_by(.name | ascii_downcase)')"
+    # Render names too, for tab completion and the `ignore` name check.
+    echo "$list" | remember_names
     tmp="$(mktemp -d)"; kf="$tmp/key"; (umask 077; render_key > "$kf")
     echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$0" "'"$tmp"'" "'"$kf"'"'
     rm -f "$kf"
