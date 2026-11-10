@@ -57,7 +57,7 @@ function start(env = {}, { elicit = null } = {}) {
     async names() { return (await request("tools/list")).result.tools.map((t) => t.name).sort(); },
     async call(name, args = {}) {
       const r = (await request("tools/call", { name, arguments: args })).result;
-      return { error: r.isError === true, text: r.content.map((c) => c.text).join("\n") };
+      return { error: r.isError === true, text: r.content.map((c) => c.text).join("\n"), structured: r.structuredContent };
     },
     stop() { child.kill(); },
     tools: async () => (await request("tools/list")).result.tools,
@@ -65,7 +65,8 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_changed", "deploys_doctor", "deploys_explain", "deploys_ledger", "deploys_logs", "deploys_notes", "deploys_simulate", "deploys_status"];
+const READ = ["deploys_changed", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_history", "deploys_ledger", "deploys_list", "deploys_logs",
+  "deploys_notes", "deploys_risk", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -73,12 +74,29 @@ const info = await s.init();
 check("initialize names the server", info?.serverInfo?.name === "deploys", JSON.stringify(info?.serverInfo));
 check("instructions say read-only", /read-only/.test(info?.instructions ?? ""), info?.instructions);
 const names = await s.names();
-check("lists the eight read tools", JSON.stringify(names) === JSON.stringify(READ), JSON.stringify(names));
+check("lists the read tools", JSON.stringify(names) === JSON.stringify(READ), JSON.stringify(names));
 check("no write tool without DEPLOYS_MCP_ALLOW_DEPLOY", !names.includes("deploys_deploy") && !names.includes("deploys_rollback"), JSON.stringify(names));
 check("read tools are marked read-only", (await s.tools()).every((t) => t.annotations?.readOnlyHint === true));
 
 let r = await s.call("deploys_changed");
 check("changed returns the JSON list", !r.error && JSON.stringify(JSON.parse(r.text).map((p) => p.name)) === '["app-web","api"]', r.text);
+check("changed also returns structuredContent", JSON.stringify(r.structured?.result?.map((p) => p.name)) === '["app-web","api"]', JSON.stringify(r.structured));
+r = await s.call("deploys_list");
+check("list returns every project with its platform", !r.error && JSON.parse(r.text).every((p) => p.platform), r.text);
+r = await s.call("deploys_risk", { project: "app-web" });
+check("risk passes the name and --json", !r.error && JSON.parse(r.text).hints[0].hint === "touches the database schema", r.text);
+r = await s.call("deploys_history", { project: "app-web", count: 3 });
+check("history passes the count", !r.error && r.text.includes("history app-web 3"), r.text);
+r = await s.call("deploys_history", { project: "app-web", count: 0 });
+check("history refuses count 0", r.error && /count/.test(r.text), r.text);
+r = await s.call("deploys_diff", { project: "app-web" });
+check("diff passes the name", !r.error && r.text.includes("diff: app-web"), r.text);
+writeFileSync(calls, "");
+r = await s.call("deploys_status", { project: "app-web" });
+check("status of one project, without GitHub calls", !r.error && JSON.parse(r.text).length === 1 && JSON.parse(r.text)[0].name === "app-web" &&
+  callLog().trim() === "status --json --no-github", r.text + " | " + callLog());
+r = await s.call("deploys_status", { project: "nope" });
+check("status of an unknown project is an error", r.error && /nope/.test(r.text), r.text);
 r = await s.call("deploys_explain", { project: "app-web" });
 check("explain passes the name", !r.error && r.text.includes("explain: app-web"), r.text);
 r = await s.call("deploys_notes", { project: "app-web" });
@@ -135,6 +153,9 @@ for (const bad of ["a b", "x;rm -rf /", "$(id)", "--all", "-x", "", "a/b", "../e
 r = await s.call("deploys_notes", {});
 check("a missing name is an error", r.error, r.text);
 check("a rejected name never reaches deploys", callLog() === "", callLog());
+r = await s.call("deploys_notes", { project: "broken" });
+check("exit 1 with output: the output comes back, colour codes gone, the error noted", !r.error && r.text.startsWith("partial notes") &&
+  !r.text.includes("\u001b") && /\[exit 1: Error: GitHub rate limit\]/.test(r.text), JSON.stringify(r.text));
 s.stop();
 
 // --- trimming, timeout, a missing CLI ---
@@ -215,6 +236,16 @@ r = await s.call("deploys_deploy", { project: "site", force: "yes" });
 check("force must be a boolean", r.error && /force/.test(r.text), r.text);
 s.stop();
 
+// A name on two platforms is not guessed; a Render rollback goes to render.
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", FAKE_RENDER_KEY: "true", FAKE_DUP: "1" }, { elicit: yes });
+await s.init();
+writeFileSync(calls, "");
+r = await s.call("deploys_deploy", { project: "app-web" });
+check("a name on two platforms is refused", r.error && /more than one platform/.test(r.text) && !callLog().includes("deploy-json"), r.text);
+r = await s.call("deploys_rollback", { project: "api" });
+check("rollback of a Render service", !r.error && JSON.parse(r.text).platform === "render" && callLog().includes("render rollback api"), r.text);
+s.stop();
+
 // An older CLI without list --json: the platform comes from status.
 s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", FAKE_RENDER_KEY: "true", FAKE_NO_LIST: "1" }, { elicit: yes });
 await s.init();
@@ -269,6 +300,25 @@ await s.init();
 r = await s.call("deploys_deploy", { project: "app-web" });
 check("a timed-out deploy may have started: check status, do not retry", r.error && /MAY HAVE STARTED/.test(r.text) &&
   /deploys_status/.test(r.text) && /not call it again/.test(r.text), r.text);
+s.stop();
+
+// Allowlist and preview-only.
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", DEPLOYS_MCP_PROJECTS: "api" }, { elicit: yes });
+await s.init();
+writeFileSync(calls, "");
+r = await s.call("deploys_deploy", { project: "app-web" });
+const rb = await s.call("deploys_rollback", { project: "app-web" });
+check("DEPLOYS_MCP_PROJECTS: a project not listed is not deployed or rolled back", r.error && rb.error && /DEPLOYS_MCP_PROJECTS/.test(r.text) &&
+  !/deploy-json|rollback/.test(callLog()), r.text);
+s.stop();
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "preview" }, { elicit: yes });
+await s.init();
+const pnames = await s.names();
+check("preview mode: deploy but no rollback tool", pnames.includes("deploys_deploy") && !pnames.includes("deploys_rollback"), JSON.stringify(pnames));
+r = await s.call("deploys_deploy", { project: "app-web" });
+check("preview mode: production is refused", r.error && /preview/.test(r.text), r.text);
+r = await s.call("deploys_deploy", { project: "app-web", preview: true });
+check("preview mode: a preview deploys", !r.error && JSON.parse(r.text).target === "preview" && r.structured?.id === "dpl_1", r.text);
 s.stop();
 
 // --- masking: logs, notes and explain reach the model without known token shapes ---

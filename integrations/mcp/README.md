@@ -98,7 +98,11 @@ a different one needs `DEPLOYS_BIN`.
 | Tool | Runs | |
 |---|---|---|
 | `deploys_changed` | `deploys changed --json` | Projects with commits or PRs that are not live yet. |
-| `deploys_status` | `deploys status --json` | What is building, and the newest state of each project (failed ones too). |
+| `deploys_status(project?)` | `deploys status --json` | What is building, and the newest state of each project (failed ones too). With `project`: only that one, via `--no-github` (no GitHub calls), to follow a deploy. |
+| `deploys_list` | `deploys list --json` | Every project with its platform, repo, branch and auto-deploy flag. No GitHub calls. |
+| `deploys_risk(project)` | `deploys risk <p> --json` | Green, yellow or red for what waits: migrations, lockfiles, config, size. |
+| `deploys_diff(project)` | `deploys diff <p>` | Commits and files between what is live and the branch. |
+| `deploys_history(project, count?)` | `deploys history <p> <n>` | The last deploys (default 10): when, state, commit, source. Read it before a rollback. |
 | `deploys_explain(project)` | `deploys explain <p>` | Why a project is, or is not, counted as changed. |
 | `deploys_notes(project)` | `deploys notes <p>` | Release notes (Markdown) between what is live and the branch. |
 | `deploys_logs(project, lines)` | `deploys logs <p> <lines>` | The end of the newest build log. `lines` 1–2000, default 80. |
@@ -114,6 +118,9 @@ build; the `method` field in the result says how they were counted and priced, a
 descriptions tell the agent to quote them as estimates. They read GitHub and the build history of
 every project, so they can take a minute or two, and have their own timeout
 (`DEPLOYS_MCP_SLOW_TIMEOUT`, default 300 s).
+
+Tools that answer JSON (changed, status, list, risk, doctor, simulate, ledger, deploy, rollback)
+also return it as `structuredContent` (an array under `result`), so a client need not parse text.
 
 To find out whether a name is on Vercel or Render, deploy and rollback use `deploys list --json`
 when the CLI has it, and otherwise `deploys status --json --no-github`, which needs no GitHub calls.
@@ -140,7 +147,7 @@ when the CLI has it, and otherwise `deploys status --json --no-github`, which ne
 > **Agent** calls `deploys_deploy(project: "app-web")`. Your client shows the server's own
 > question, "Deploy app-web on Vercel now: production, 4 commits waiting?", and you tick yes.
 >
-> Started: `dpl_…`, https://app-web-….vercel.app (QUEUED). I can check `deploys_status` in a minute.
+> Started: `dpl_…`, https://app-web-….vercel.app (QUEUED). I can check `deploys_status(project: "app-web")` in a minute.
 
 Without `DEPLOYS_MCP_ALLOW_DEPLOY=1` the last step is not possible: the agent has no deploy tool
 and tells you to deploy in Deploy Center or with `deploys vercel deploy app-web`.
@@ -189,7 +196,8 @@ and tells you to deploy in Deploy Center or with `deploys vercel deploy app-web`
 
 | Env | Default | |
 |---|---|---|
-| `DEPLOYS_MCP_ALLOW_DEPLOY` | off | `1` adds `deploys_deploy` and `deploys_rollback`. |
+| `DEPLOYS_MCP_ALLOW_DEPLOY` | off | `1` adds `deploys_deploy` and `deploys_rollback`. `preview` adds only `deploys_deploy`, for preview deploys. |
+| `DEPLOYS_MCP_PROJECTS` | all | Comma-separated names: the only projects a deploy or rollback may touch. |
 | `DEPLOYS_MCP_CONFIRM` | `ask` | `ask`: the server asks you (elicitation) and refuses clients that cannot ask. `client`: rely on the client's own approval. |
 | `DEPLOYS_MCP_MAX_DEPLOYS` | `3` | Deploys and rollbacks per server run. |
 | `DEPLOYS_MCP_WRITE_TIMEOUT` | `300` | Seconds for a deploy or rollback to start. |

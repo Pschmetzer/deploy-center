@@ -9,7 +9,9 @@
 //
 // Env:
 //   DEPLOYS_BIN                path to `deploys` (else PATH, else the app bundle)
-//   DEPLOYS_MCP_ALLOW_DEPLOY   1 = also offer deploys_deploy and deploys_rollback
+//   DEPLOYS_MCP_ALLOW_DEPLOY   1 = also offer deploys_deploy and deploys_rollback;
+//                              preview = only deploys_deploy, and only preview deploys
+//   DEPLOYS_MCP_PROJECTS       comma-separated names: the only projects a write may touch
 //   DEPLOYS_MCP_CONFIRM        how a write is confirmed: "ask" (default: the server asks the human,
 //                              and refuses when the client cannot ask) or "client" (trust the
 //                              client's own tool approval; only for clients without elicitation)
@@ -29,7 +31,11 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 
 const VERSION = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version;
 const NAME_RE = /^[A-Za-z0-9._:-]+$/;
-const ALLOW_DEPLOY = process.env.DEPLOYS_MCP_ALLOW_DEPLOY === "1";
+const ALLOW_MODE = process.env.DEPLOYS_MCP_ALLOW_DEPLOY;
+const ALLOW_DEPLOY = ALLOW_MODE === "1" || ALLOW_MODE === "preview";
+const PREVIEW_ONLY = ALLOW_MODE === "preview";
+// An allowlist for deploys and rollbacks; empty means every project.
+const WRITE_PROJECTS = (process.env.DEPLOYS_MCP_PROJECTS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 const TIMEOUT_MS = posInt(process.env.DEPLOYS_MCP_TIMEOUT, 90) * 1000;
 const MAX_OUTPUT = posInt(process.env.DEPLOYS_MCP_MAX_OUTPUT, 20000);
 // simulate and ledger read pushes and builds of every project: often a minute or two.
@@ -175,6 +181,12 @@ function checkLines(v) {
   return n;
 }
 
+function checkCount(v) {
+  if (v === undefined || v === null) return 10;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 100) throw new ToolError("count must be a whole number from 1 to 100.");
+  return v;
+}
+
 function checkDays(v) {
   if (v === undefined || v === null) return 30;
   const n = v;
@@ -215,14 +227,66 @@ const tools = [
       "List the projects that have commits or merged PRs on GitHub that are not live yet (deploys changed --json). Read-only. Use it to answer \"what is waiting to go live?\".",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "What is waiting to go live", ...READ },
+    json: true,
     run: () => textOf(["changed", "--json"]),
   },
   {
     name: "deploys_status",
-    description: "What is building right now and the newest state of every project, including failed ones (deploys status --json). Read-only.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    description:
+      "What is building right now and the newest state of every project, including failed ones (deploys status --json). Read-only. " +
+      "With `project`, only that project's build state, without GitHub calls: use it to follow a deploy you started.",
+    inputSchema: { type: "object", properties: { project: projectProp }, additionalProperties: false },
     annotations: { title: "Building or failed", ...READ },
-    run: () => textOf(["status", "--json"]),
+    json: true,
+    run: async (a) => {
+      if (a.project === undefined) return textOf(["status", "--json"]);
+      const p = checkProject(a.project);
+      const r = await runDeploys(["status", "--json", "--no-github"]);
+      let list;
+      try {
+        list = JSON.parse(r.stdout);
+      } catch {
+        throw new ToolError(describeFailure(["status", "--json", "--no-github"], r));
+      }
+      const hit = Array.isArray(list) ? list.filter((x) => x && x.name === p) : [];
+      if (!hit.length) throw new ToolError(`No project named "${p}" in deploys status${r.code !== 0 ? " (some providers could not be read)" : ""}.`);
+      return JSON.stringify(hit, null, 2);
+    },
+  },
+  {
+    name: "deploys_list",
+    description: "Every project on every provider that is set up, with its platform, repo, branch and whether a push still deploys it (auto) (deploys list --json). Read-only, no GitHub calls.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "All projects", ...READ },
+    json: true,
+    run: () => textOf(["list", "--json"]),
+  },
+  {
+    name: "deploys_risk",
+    description: "Green, yellow or red for what waits on one project: migrations, lockfiles, config, size (deploys risk --json). Read-only. Use it before suggesting a deploy.",
+    inputSchema: { type: "object", properties: { project: projectProp }, required: ["project"], additionalProperties: false },
+    annotations: { title: "Risk of what waits", ...READ },
+    json: true,
+    run: (a) => textOf(["risk", checkProject(a.project), "--json"], { masked: true }),
+  },
+  {
+    name: "deploys_diff",
+    description: "The commits and changed files between what is live and the branch, for one project (deploys diff). Read-only.",
+    inputSchema: { type: "object", properties: { project: projectProp }, required: ["project"], additionalProperties: false },
+    annotations: { title: "What would go live", ...READ },
+    run: (a) => textOf(["diff", checkProject(a.project)], { masked: true }),
+  },
+  {
+    name: "deploys_history",
+    description: "The last deploys of one project: when, state, commit, source (deploys history). Read-only. Read it before a rollback, to see what would be live again.",
+    inputSchema: {
+      type: "object",
+      properties: { project: projectProp, count: { type: "integer", minimum: 1, maximum: 100, default: 10, description: "How many deploys (default 10)." } },
+      required: ["project"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Deploy history", ...READ },
+    run: (a) => textOf(["history", checkProject(a.project), String(checkCount(a.count))], { masked: true }),
   },
   {
     name: "deploys_explain",
@@ -260,6 +324,7 @@ const tools = [
     description: "Check the tools and logins deploys needs: jq, vercel CLI, gh, a Render key (deploys doctor, JSON). Read-only. No key is printed.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Check setup", ...READ },
+    json: true,
     run: () => textOf(["doctor"]),
   },
   {
@@ -276,6 +341,7 @@ const tools = [
       additionalProperties: false,
     },
     annotations: { title: "Cost of auto-deploy (estimate)", ...READ },
+    json: true,
     run: (a) => textOf(["simulate", "--days", String(checkDays(a.days)), "--json"], { timeoutMs: SLOW_TIMEOUT_MS }),
   },
   {
@@ -287,6 +353,7 @@ const tools = [
       "It reads GitHub and the build history of every project, so it can take a minute or two.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Saved since auto-deploy off (estimate)", ...READ },
+    json: true,
     run: () => textOf(["ledger", "--json"], { timeoutMs: SLOW_TIMEOUT_MS }),
   },
 ];
@@ -342,6 +409,12 @@ async function confirmWithHuman(summary) {
   }
 }
 
+function checkAllowed(project) {
+  if (WRITE_PROJECTS.length && !WRITE_PROJECTS.includes(project)) {
+    throw new ToolError(`${project} is not in DEPLOYS_MCP_PROJECTS, so this server does not deploy or roll it back. Use Deploy Center for it.`);
+  }
+}
+
 // One write at a time (a second call is refused, not queued), and at most MAX_WRITES per run.
 async function oneWrite(fn) {
   if (writing) throw new ToolError("A deploy or rollback is already in progress. One at a time: wait for it, then check deploys_status.");
@@ -379,12 +452,15 @@ if (ALLOW_DEPLOY) {
         additionalProperties: false,
       },
       annotations: { title: "Deploy one project", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+      json: true,
       run: async (a) => {
         const p = checkProject(a.project);
         for (const k of ["preview", "force"]) {
           if (a[k] !== undefined && typeof a[k] !== "boolean") throw new ToolError(`${k} must be true or false.`);
         }
         const preview = a.preview === true;
+        if (PREVIEW_ONLY && !preview) throw new ToolError("This server deploys previews only (DEPLOYS_MCP_ALLOW_DEPLOY=preview). Call it with preview=true, or deploy production in Deploy Center.");
+        checkAllowed(p);
         return oneWrite(async (count) => {
           const platform = await platformOf(p);
           if (platform === "render" && preview) throw new ToolError(`${p} is a Render service; Render has no preview deploys here.`);
@@ -421,8 +497,10 @@ if (ALLOW_DEPLOY) {
         "Returns the id (and url when known) of the deploy that is live again.",
       inputSchema: { type: "object", properties: { project: projectProp }, required: ["project"], additionalProperties: false },
       annotations: { title: "Roll back one project", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+      json: true,
       run: async (a) => {
         const p = checkProject(a.project);
+        checkAllowed(p);
         return oneWrite(async (count) => {
           const platform = await platformOf(p);
           if (platform !== "vercel" && platform !== "render") throw new ToolError(`${p} is on ${platform}, which this server cannot roll back.`);
@@ -435,6 +513,9 @@ if (ALLOW_DEPLOY) {
     },
   );
 }
+
+// Preview-only: no rollback tool at all.
+if (PREVIEW_ONLY) tools.splice(tools.findIndex((t) => t.name === "deploys_rollback"), 1);
 
 // ---------- the server ----------
 
@@ -454,7 +535,7 @@ const server = new Server(
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: tools.map(({ run, ...t }) => t),
+  tools: tools.map(({ run, json, ...t }) => t),
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
@@ -467,6 +548,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   }
   try {
     const text = await tool.run(req.params.arguments ?? {});
+    // JSON answers also as structuredContent (an object, so arrays go under "result").
+    if (tool.json) {
+      try {
+        const v = JSON.parse(text);
+        return { content: [{ type: "text", text }], structuredContent: v && typeof v === "object" && !Array.isArray(v) ? v : { result: v } };
+      } catch { /* a trimmed or partial answer stays text only */ }
+    }
     return { content: [{ type: "text", text }] };
   } catch (e) {
     const text = e instanceof ToolError ? e.message : `Unexpected error: ${e?.message ?? e}`;

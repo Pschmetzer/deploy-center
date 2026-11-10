@@ -35,8 +35,10 @@ case "\$*" in
     # An older CLI without list --json.
     [ -n "\${FAKE_NO_LIST:-}" ] && { echo "unknown command: list" >&2; exit 1; }
     if [ -n "\${RENDER_API_KEY:-}" ] || [ "\${FAKE_RENDER_KEY:-false}" = true ]; then r="$tmp/render.json"; else r=/dev/null; fi
-    jq -s '(.[0] | map(. + {platform:"vercel"})) + ((.[1] // []) | map(. + {platform:"render"}))' "$tmp/vercel.json" \$r ;;
+    jq -s --arg dup "\${FAKE_DUP:-}" '(.[0] | map(. + {platform:"vercel"})) + ((.[1] // []) | map(. + {platform:"render"}))
+      + (if \$dup != "" then [{name:"app-web", platform:"render"}] else [] end)' "$tmp/vercel.json" \$r ;;
   "notes app-web") printf '## app-web\\n- New billing page (#12) – Ana\\n- Faster search – Ben\\n\\nDependency updates:\\n- Bump jq – dependabot\\n' ;;
+  "notes broken") printf '\033[31mpartial notes\033[0m\n'; echo "Error: GitHub rate limit" >&2; exit 1 ;;
   "notes "*) exit 1 ;;
   "simulate --days "*" --json") jq --argjson d "\$3" '.days = \$d' "$here/../tests/fixtures/savings/simulate-report.json" ;;
   "ledger --json") cat "$here/../tests/fixtures/savings/ledger-report.json" ;;
@@ -49,6 +51,8 @@ case "\$*" in
     jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
       | map({platform, name, building:false, state:"READY", changed})' "$tmp/vercel.json" "$tmp/render.json" ;;
   "explain "*) echo "explain: \$2" ;;
+  "diff "*) echo "diff: \$2" ;;
+  "history "*) echo "history \$2 \$3" ;;
   "logs "*) if [ -n "\${FAKE_SECRET_LOG:-}" ]; then
       printf '%s\n' 'GITHUB_TOKEN=ghp_abcdefgh12345678' 'export DB_PASSWORD="hunter2"' 'key sk-ant-abc12345678 and rnd_abcdefgh123' \
         'postgres://app:s3cr3t@db.example.test/app' 'Build ok · Umlaut ä'
@@ -56,6 +60,7 @@ case "\$*" in
   "vercel deploy-json app-web"|"vercel deploy-json app-web --preview") [ -n "\${FAKE_DEPLOY_SLEEP:-}" ] && sleep "\$FAKE_DEPLOY_SLEEP"; echo '{"id":"dpl_1","url":"https://app-web-x.vercel.app","state":"QUEUED"}' ;;
   "render deploy-json api") echo '{"id":"dep-1","serviceId":"srv-1","state":"created"}' ;;
   "vercel rollback app-web") echo '{"id":"dpl_0","state":"READY"}' ;;
+  "render rollback api") echo '{"id":"dep-0","state":"live"}' ;;
   "details me/app aaaa111 main") cat "$tmp/details-web.json" ;;
   "details me/app bbbb222 main") cat "$tmp/details-api.json" ;;
   "--help") echo "deploys changed [--json]"; [ -n "\${FAKE_RISK:-}" ] && echo "  deploys risk <project> [--json]" ;;
