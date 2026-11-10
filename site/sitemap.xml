@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://deploycenter.app/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/disable-vercel-auto-deploy/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/stop-vercel-building-every-push/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/vercel-ignored-build-step/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/render-auto-deploy-off/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/netlify-stop-builds/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/reduce-vercel-costs/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/auto-fix-failed-vercel-builds-with-claude/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/claude-code/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/vercel-build-cost-calculator/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/blog/ai-coding-agents-build-bill/</loc><lastmod>2026-11-10</lastmod></url>
 </urlset>
