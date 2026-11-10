@@ -63,7 +63,8 @@ behind the app are in `docs/WIDGETS-IOS.md`.
    - App Information → **Content Rights** (a legal statement about third-party content).
    - Version page → App Review: your contact (name, phone, email), then paste the review notes from
      `ios/AppStore/en.md`. The notes cannot be saved without the contact.
-   - TestFlight with a real token, then submitting.
+   - TestFlight: the internal group "Owner" has build 1.0 (1), and the account holder is invited.
+     Accept the invite in the TestFlight app, add a real token, then submit.
 
    The team has no registered devices, so the archive is unsigned and signed ad hoc with the
    entitlements before the export (see the comment in `ios/build.sh`).
