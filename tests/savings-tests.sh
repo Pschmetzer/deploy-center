@@ -76,13 +76,13 @@ expect "fixture ledger-report.json is current" "$(echo "$led" | jq -S -c .)" "$(
 
 # --- GitHub: pushes from the activity list, commits when that cannot be read ---
 since=1769644800   # 2026-01-29
-expect "pushes: from GitHub's activity list, since the given time" "$(sv_pushes me/web main "$since" | jq -c '{basis, s:[.list[].sha]}')" \
-  '{"basis":"pushes","s":["p1","p2"]}'
+expect "pushes: from GitHub's activity list (pushes and PR merges), since the given time" "$(sv_pushes me/web main "$since" | jq -c '{basis, s:[.list[].sha]}')" \
+  '{"basis":"pushes","s":["p1","p2","m1"]}'
 expect "pushes: commits stand in when the activity list is refused" "$(GH_NO_ACTIVITY=1 sv_pushes me/web main "$since" | jq -c '{basis, s:[.list[].sha]}')" \
   '{"basis":"commits","s":["c1","c2"]}'
 expect "pushes: GitHub down is an error, not zero pushes" "$(GH_NO_ACTIVITY=1 GH_DOWN=1 sv_pushes me/web main "$since" | jq -c 'has("error")')" 'true'
 : > "$CALLS"; sv_pushes me/web prod "$since" >/dev/null
-expect "pushes: asked for the deploy branch" "$(grep -c 'ref=refs/heads/prod&activity_type=push' "$CALLS")" "1"
+expect "pushes: asked for the deploy branch" "$(grep -c 'activity?ref=refs/heads/prod&' "$CALLS")" "1"
 
 # --- builds: minutes of finished builds and which commits were built ---
 vercel_call() { cat "$FX/vercel-deployments.json"; }
@@ -100,7 +100,7 @@ facts="$(sv_facts ledger 30)"
 expect "facts: one document with every project, rates from the environment" \
   "$(echo "$facts" | jq -c '{n:(.projects | length), bare:.projects[0].pushes, r:.rates}')" '{"n":2,"bare":null,"r":{"vercelUsdPerMinute":null,"renderUsdPerMinute":null}}'
 expect "facts to ledger: pushes since off, the built one not skipped" "$(echo "$facts" | sv_ledger_from | jq -c '.projects[0] | {pushes, skipped, usdPerBuild}')" \
-  '{"pushes":2,"skipped":2,"usdPerBuild":0.2}'
+  '{"pushes":3,"skipped":3,"usdPerBuild":0.2}'
 expect "facts for simulate: a project without a repo is named" \
   "$(DEPLOYS_RENDER_USD_PER_MIN=0.02 sv_facts simulate 30 | jq -c '{bare:(.projects[] | select(.name == "bare") | .pushes.error), r:.rates.renderUsdPerMinute}')" \
   '{"bare":"no GitHub repo and branch known","r":0.02}'
