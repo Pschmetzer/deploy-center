@@ -3,7 +3,8 @@
 <h1 align="center">Deploy Center</h1>
 
 <p align="center"><b>Auto-Deploy bei Vercel und Render abschalten. Was sich geändert hat, mit einem Klick deployen.</b><br>
-Dein Agent pusht 40-mal. Du deployst einmal.</p>
+Dein Agent pusht 40-mal. Du deployst einmal.<br>
+Passt bestens zu Claude Code: Der Agent pusht, du entscheidest, was live geht.</p>
 
 <p align="center">
   <a href="https://github.com/Pschmetzer/deploy-center/releases/latest"><img alt="Neueste Version" src="https://img.shields.io/github/v/release/Pschmetzer/deploy-center?label=release"></a>
@@ -69,6 +70,17 @@ Neu dabei? [Sicher ausprobieren](docs/SAFE-START.md) (Englisch): erst schauen, d
 - Erweiterungen: eine GitHub Action, Badges, eine tägliche Zusammenfassung an einen Webhook, ein Pre-Push-Hook, ein Docker-Image. [Integrationen](integrations/)
 - Autofix: Ein fehlgeschlagener Build geht an eine Claude-Code-Routine, die einen Fix-PR öffnet. [Autofix](docs/AUTOFIX.md)
 - Englisch und Deutsch
+
+## Deploy Center + Claude Code
+
+- **Autofix: Ein fehlgeschlagener Build repariert sich (fast) selbst.** Deploy Center gibt das maskierte Build-Log
+  an eine Claude-Code-Routine, und Claude öffnet einen PR mit dem Fix. Nach deinem Merge deployt der nächste Lauf
+  genau diesen Merge-Commit, einmal. Gemergt wird nie von selbst. [Autofix](docs/AUTOFIX.md) (Englisch)
+- **Ein Deploy für viele Pushes.** Der Agent darf pushen, so oft er will; gebaut wird erst, wenn du deployst, was sich geändert hat.
+- **Für Claude kopieren.** Im Build-Log eines fehlgeschlagenen Deploys kopiert ein Knopf den Fehler und das Log drumherum als Prompt, fertig zum Einfügen.
+- *Kommt noch:* ein MCP-Server, damit Claude fragen kann, was wartet, und nur mit deinem OK deployt, und eine Übersicht dessen, was der Agent gepusht hat, zum Freigeben.
+
+Mehr: [deploycenter.app/claude-code](https://deploycenter.app/claude-code/)
 
 ## Was es ändert, und wie du es rückgängig machst
 
@@ -157,5 +169,6 @@ tests/app-tests.sh       # die Regeln in der App
 ## Lizenz
 
 MIT, siehe [LICENSE](LICENSE). Nicht verbunden mit Vercel oder Render.
+Claude ist eine Marke von Anthropic; keine Verbindung.
 
 [Impressum](https://deploycenter.app/impressum.html) · [Datenschutz](https://deploycenter.app/datenschutz.html)

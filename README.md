@@ -3,7 +3,8 @@
 <h1 align="center">Deploy Center</h1>
 
 <p align="center"><b>Turn off auto-deploy on Vercel and Render. Deploy what changed with one click.</b><br>
-Your agent pushes 40 times. You deploy once.</p>
+Your agent pushes 40 times. You deploy once.<br>
+Works great with Claude Code: let the agent push, you decide what ships.</p>
 
 <p align="center">
   <a href="https://github.com/Pschmetzer/deploy-center/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Pschmetzer/deploy-center?label=release"></a>
@@ -68,6 +69,17 @@ New to it? [Try it safely](docs/SAFE-START.md): look first, then one project, th
 - Add-ons: a GitHub Action, badges, a daily summary to a webhook, a pre-push hook, a Docker image. [Integrations](integrations/)
 - Autofix: a failed build goes to a Claude Code routine that opens a fix PR. [Autofix](docs/AUTOFIX.md)
 - English and German
+
+## Deploy Center + Claude Code
+
+- **Autofix: a failed build fixes itself (almost).** Deploy Center hands the masked build log to a Claude Code
+  routine, and Claude opens a PR with the fix. After you merge, the next run deploys that merge commit, once.
+  It never merges by itself. [Autofix](docs/AUTOFIX.md)
+- **One deploy for many pushes.** Let the agent push as often as it likes; nothing builds until you deploy what changed.
+- **Copy for Claude.** The build log of a failed deploy has a button that copies the error and the log around it as a prompt, ready to paste.
+- *Coming:* an MCP server, so Claude can ask what is waiting and deploy only with your OK, and a digest of what the agent pushed for you to approve.
+
+More: [deploycenter.app/claude-code](https://deploycenter.app/claude-code/)
 
 ## What it changes, and how to undo it
 
@@ -155,5 +167,6 @@ tests/app-tests.sh       # the rules in the app
 ## License
 
 MIT, see [LICENSE](LICENSE). Not affiliated with Vercel or Render.
+Claude is a trademark of Anthropic; not affiliated.
 
 [Legal notice (Impressum)](https://deploycenter.app/impressum.html) · [Privacy policy (Datenschutz)](https://deploycenter.app/datenschutz.html)
