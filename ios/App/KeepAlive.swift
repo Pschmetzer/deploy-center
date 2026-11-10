@@ -21,6 +21,7 @@ final class KeepAlive {
         let k = KeepAlive()
         k.title = title
         k.bgTask = UIApplication.shared.beginBackgroundTask(withName: "follow-deploy") { [weak k] in
+            // UIKit calls this on the main thread, and the task must end before it returns.
             MainActor.assumeIsolated { k?.endBackgroundTask() }
         }
         if #available(iOS 26, *) { k.submitContinued(subtitle) }
@@ -36,8 +37,10 @@ final class KeepAlive {
                 guard let t = task as? BGContinuedProcessingTask else { task.setTaskCompleted(success: false); return }
                 guard let self, !self.ended else { t.setTaskCompleted(success: true); return }
                 t.progress.totalUnitCount = 100
+                // May run on any thread: complete right here, then tidy up on the main actor.
                 t.expirationHandler = { [weak self] in
-                    MainActor.assumeIsolated { t.setTaskCompleted(success: false); self?.continued = nil }
+                    t.setTaskCompleted(success: false)
+                    Task { @MainActor in self?.continued = nil }
                 }
                 self.continued = t
             }

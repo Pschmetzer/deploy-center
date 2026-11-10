@@ -64,6 +64,13 @@ struct RootView: View {
                 selection = store.projects.first { $0.name == args[i + 1] }?.key
             }
             if args.contains("-settings") { try? await Task.sleep(for: .seconds(1)); settings = true }
+            // -keepalive: runs the background-time helper once, without a deploy (a check that it does not crash).
+            if args.contains("-keepalive") {
+                let k = KeepAlive.start(title: "Test", subtitle: "Deploy Center")
+                try? await Task.sleep(for: .seconds(2)); k.update("building", fraction: 0.5)
+                try? await Task.sleep(for: .seconds(2)); k.finish(success: true)
+                store.say("keepalive ok")
+            }
             #endif
         }
         .overlay(alignment: .bottom) { Toast(store: store) }
