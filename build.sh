@@ -51,6 +51,7 @@ rm -f "${slices[@]}"
 
 cp deploys "$BUILD/Contents/Resources/deploys"
 chmod +x "$BUILD/Contents/Resources/deploys"
+mkdir -p "$BUILD/Contents/Resources/lib" && cp lib/savings.sh "$BUILD/Contents/Resources/lib/savings.sh"
 [ -f app/AppIcon.icns ] && cp app/AppIcon.icns "$BUILD/Contents/Resources/AppIcon.icns"
 
 cat > "$BUILD/Contents/Info.plist" <<PLIST
