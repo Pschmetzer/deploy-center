@@ -28,6 +28,8 @@ struct AutofixStatus: Decodable {
 struct AutofixSettings: View {
     /// The projects, so the script's output shows stand-ins in demo mode.
     var items: [Item] = []
+    /// Read so the output redraws at once when demo mode is switched (⇧⌘D).
+    @AppStorage("demoMode") private var demoMode = false
     @State private var status: AutofixStatus?
     @State private var routineId = ""
     @State private var token = ""

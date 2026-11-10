@@ -53,7 +53,7 @@ struct GuardSettings: View {
                 if busy { ProgressView().controlSize(.small) }
             }
             if let message {
-                Text(Demo.scrub(message, items: Array(store.items.values.joined()))).font(.caption.monospaced()).textSelection(.enabled)
+                Text(message).font(.caption.monospaced()).textSelection(.enabled)
                     .foregroundStyle(failed ? .red : .secondary)
             }
 
@@ -81,7 +81,7 @@ struct GuardSettings: View {
         do {
             let out = String(data: try await Tool.run(args, timeout: 300), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            message = show ? (out.isEmpty ? L("Nothing to do.", "Nichts zu tun.") : out) : (out.isEmpty ? nil : out)
+            message = show ? (out.isEmpty ? L("Nothing to do.", "Nichts zu tun.") : Demo.mask(out)) : (out.isEmpty ? nil : Demo.mask(out))
             failed = false
         } catch { message = error.localizedDescription; failed = true }
         await reload()
