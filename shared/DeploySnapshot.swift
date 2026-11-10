@@ -39,6 +39,26 @@ struct DeploySnapshot: Codable, Equatable {
     /// "en" or "de": the language the Mac app shows, so its widgets match it. Nil from older apps.
     var language: String? = nil
 
+    /// English or German by a language code ("de", "de-DE" give German; nil gives the system's first).
+    /// The iOS app and the widgets pick their texts with it, so both follow the same rule.
+    static func localized(_ language: String?, _ en: String, _ de: String) -> String {
+        (language ?? Locale.preferredLanguages.first ?? "en").hasPrefix("de") ? de : en
+    }
+    /// A text in the language this snapshot was written in.
+    func text(_ en: String, _ de: String) -> String { Self.localized(language, en, de) }
+
+    /// Equal apart from the time it was written: nothing a widget shows has changed.
+    func sameShown(as o: DeploySnapshot) -> Bool {
+        var a = self, b = o
+        a = DeploySnapshot(at: .distantPast, demo: a.demo, waitingProjects: a.waitingProjects, waitingCommits: a.waitingCommits,
+                           waitingPRs: a.waitingPRs, building: a.building, failed: a.failed, saving: a.saving,
+                           projects: a.projects, language: a.language)
+        b = DeploySnapshot(at: .distantPast, demo: b.demo, waitingProjects: b.waitingProjects, waitingCommits: b.waitingCommits,
+                           waitingPRs: b.waitingPRs, building: b.building, failed: b.failed, saving: b.saving,
+                           projects: b.projects, language: b.language)
+        return a == b
+    }
+
     static let fileName = "snapshot.json"
     /// The App Group shared by the Mac app and its widget. It is set at build time
     /// (`DCAppGroup` in Info.plist) so no team id lives in the source.

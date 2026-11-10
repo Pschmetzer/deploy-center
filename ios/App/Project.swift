@@ -34,28 +34,29 @@ struct PhoneProject: Identifiable, Equatable, Codable {
     var rewritten = false
     var openPRs: Int? = nil
     var fetchError: String? = nil
+    var kind: String? = nil            // Render's service type ("web_service", "static_site", …)
 
     var key: String { provider.rawValue + "/" + id }
 
-    static let buildingStates: Set<String> = ["building", "queued", "initializing", "created", "build_in_progress",
-                                             "update_in_progress", "pre_deploy_in_progress"]
-    static let failedStates: Set<String> = ["error", "build_failed", "update_failed", "pre_deploy_failed", "canceled"]
+    /// The service's page on Render. Vercel's address needs the team's slug, which the list does not carry.
+    var dashboardURL: URL? {
+        guard provider == .render else { return nil }
+        let section = ["static_site": "static", "cron_job": "cron", "background_worker": "worker"][kind ?? ""] ?? "web"
+        return URL(string: "https://dashboard.render.com/\(section)/\(id)")
+    }
 
-    var building: Bool {
-        [liveState, latestState].compactMap { $0?.lowercased() }.contains { Self.buildingStates.contains($0) }
-    }
-    var failed: Bool {
-        guard !building, let s = latestState?.lowercased() else { return false }
-        return Self.failedStates.contains(s) && s != "canceled"
-    }
-    /// The same rule as `deploys changed` (CHANGED_RULE): there is something newer than what is live.
+    static var failedStates: Set<String> { DeployRule.failedStates }
+
+    /// The rule itself lives in shared/DeployRule.swift (the port of `deploys changed`'s CHANGED_RULE).
+    var building: Bool { DeployRule.building(live: liveState, latest: latestState) }
+    var failed: Bool { DeployRule.failed(latest: latestState, building: building) }
+    /// There is something newer than what is live.
     var changed: Bool {
-        guard deployable, !paused, headSha != nil || headAt != nil, !building, fetchError == nil,
-              compareStatus != "behind" else { return false }
-        if let l = liveSha, let h = headSha { return l != h }
-        if let h = headAt, let l = liveAt { return h > l }
-        return false
+        DeployRule.changed(deployable: deployable, paused: paused, building: building, readError: fetchError != nil,
+                           compareStatus: compareStatus, liveSha: liveSha, headSha: headSha, liveAt: liveAt, headAt: headAt)
     }
+    /// "Deploy" would build what is already live: nothing new, failed or unknown.
+    var upToDate: Bool { !changed && !failed && !building && !unknown && liveSha != nil && liveSha == headSha }
     var unknown: Bool { deployable && !paused && !foreignRepo && (fetchError != nil || (headSha == nil && headAt == nil)) }
 
     /// A platform state in words ("build_failed" → "build failed"), as the Mac app shows it.
@@ -103,4 +104,16 @@ let appLocale: Locale = {
     return Locale(components: c)
 }()
 
-func L(_ en: String, _ de: String) -> String { appLanguage == "de" ? de : en }
+func L(_ en: String, _ de: String) -> String { DeploySnapshot.localized(appLanguage, en, de) }
+
+extension PhoneProject {
+    /// Repo facts from `filled` (same repo, branch and live commit), deploy facts from `own`.
+    static func merging(_ own: PhoneProject, _ filled: PhoneProject) -> PhoneProject {
+        var x = own
+        x.headSha = filled.headSha; x.headAt = filled.headAt; x.headMsg = filled.headMsg
+        x.pendingCommits = filled.pendingCommits; x.pendingPRs = filled.pendingPRs; x.oldestPendingAt = filled.oldestPendingAt
+        x.compareStatus = filled.compareStatus; x.rewritten = filled.rewritten; x.openPRs = filled.openPRs
+        x.fetchError = own.fetchError ?? filled.fetchError
+        return x
+    }
+}
