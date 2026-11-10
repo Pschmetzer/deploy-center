@@ -39,7 +39,7 @@ final class Store: ObservableObject {
     private func checkStale() {
         let d = UserDefaults.standard
         let days = d.integer(forKey: "staleDays")
-        let today = Date().formatted(.iso8601.year().month().day())
+        let today = localDay()
         guard days > 0, d.string(forKey: "lastStaleAlarm") != today else { return }
         let old = items.values.joined().filter { i in
             i.hasNewCommits && i.state == .idle && !isHidden(i)
@@ -63,7 +63,7 @@ final class Store: ObservableObject {
         let budget = d.double(forKey: "monthlyBudget")
         guard budget > 0, let days = costs?.days.suffix(7), !days.isEmpty else { return }
         let month = days.map(\.build).reduce(0, +) / Double(days.count) * 30
-        let today = Date().formatted(.iso8601.year().month().day())
+        let today = localDay()
         guard month > budget * 0.8, d.string(forKey: "lastBudgetAlarm") != today else { return }
         d.set(today, forKey: "lastBudgetAlarm")
         let m = month.formatted(.currency(code: "USD")), b = budget.formatted(.currency(code: "USD"))
@@ -102,6 +102,23 @@ final class Store: ObservableObject {
     /// When each list was last read, and which ones are still the copy from the last run.
     @Published var loadedAt: [Platform: Date] = [:]
     @Published var fromCache: Set<Platform> = []
+
+    /// The last failed read of a list. Unlike `loadError` it stays while a reload runs and goes only
+    /// when a read succeeds; the list in `items` is never dropped for it (it is the last good copy).
+    struct LoadFailure: Equatable { let message: String; let at: Date }
+    @Published var lastLoadError: [Platform: LoadFailure] = [:]
+
+    /// What the list of a platform is right now.
+    enum ListState: Equatable {
+        case notLoaded          // nothing read yet in this run and no saved copy
+        case cached(Date?)      // the copy saved by the last run (its time, if known)
+        case fresh(Date)        // read in this run
+    }
+    func listState(_ p: Platform) -> ListState {
+        if fromCache.contains(p) { return .cached(loadedAt[p]) }
+        if let at = loadedAt[p] { return .fresh(at) }
+        return .notLoaded
+    }
 
     // MARK: Cache — the last lists, so the window is full at once instead of after 10 seconds
 
@@ -179,35 +196,60 @@ final class Store: ObservableObject {
         await loadExtras()
     }
 
+    private var emptyOnce: Set<Platform> = []
     func load(_ p: Platform) async {
         loading.insert(p); loadError[p] = nil
         defer { loading.remove(p) }
         do {
             let data = try await Tool.run([p.cli, "json"])
             let fresh = try decode(p, data)
+            // An empty answer where there were projects is more likely a hiccup than every project gone.
+            // A second empty answer in a row is believed (another account, or really nothing left).
+            if fresh.isEmpty, !(items[p] ?? []).isEmpty, !emptyOnce.contains(p) {
+                emptyOnce.insert(p)
+                let text = L("The answer was empty; showing the last list.", "Die Antwort war leer; die letzte Liste bleibt stehen.")
+                Log.write("\(p.cli) json: empty answer, kept \(items[p]?.count ?? 0) items")
+                lastLoadError[p] = LoadFailure(message: text, at: Date())
+                say(L("\(p.rawValue): empty list", "\(p.rawValue): leere Liste"), text, ok: false)
+                return
+            }
+            emptyOnce.remove(p)
             merge(p, fresh)
             pruneDurations(p, keeping: fresh)
             writeCache(p, data)
-            fromCache.remove(p); loadedAt[p] = Date()
+            fromCache.remove(p); loadedAt[p] = Date(); lastLoadError[p] = nil
             recordHistory()
             checkStale()
         } catch {
             loadError[p] = error.localizedDescription
+            lastLoadError[p] = LoadFailure(message: error.localizedDescription, at: Date())
         }
     }
 
     /// A reload keeps what the person did: ticks stay, a deploy being followed keeps its state.
+    /// How a deploy ended stays only while the branch is where it was; a new commit makes the row wait again.
     func merge(_ p: Platform, _ fresh: [Item]) {
         let old = Dictionary((items[p] ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         items[p] = fresh.map { n in
             var n = n
             if let o = old[n.id] {
                 n.selected = o.selected && n.deployable
-                // A deploy being followed keeps what cancelling, the timer and promoting need.
-                if o.state != .idle { n.state = o.state; n.deployId = o.deployId; n.startedAt = o.startedAt; n.previewId = o.previewId }
+                if Self.keepsState(old: o, fresh: n) {
+                    // A deploy being followed keeps what cancelling, the timer and promoting need.
+                    n.state = o.state; n.deployId = o.deployId; n.startedAt = o.startedAt; n.previewId = o.previewId
+                }
             }
             return n
         }
+    }
+
+    /// Whether a reload keeps the row's state: always while it runs; an end state (live, failed,
+    /// skipped) only while the branch has no commit that came after it.
+    nonisolated static func keepsState(old o: Item, fresh n: Item) -> Bool {
+        if o.state == .idle { return false }
+        if o.state.isActive { return true }
+        guard let was = o.headSha, !was.isEmpty, let now = n.headSha else { return false }
+        return was == now
     }
 
     private func decode(_ p: Platform, _ data: Data) throws -> [Item] {
@@ -424,7 +466,7 @@ final class Store: ObservableObject {
 
     @Published var history: [String: Int] = (UserDefaults.standard.dictionary(forKey: "waitingHistory") as? [String: Int]) ?? [:]
     private func recordHistory() {
-        let day = Date().formatted(.iso8601.year().month().day())
+        let day = localDay()
         history[day] = max(history[day] ?? 0, waiting.prs)
         let keep = history.keys.sorted().suffix(30)
         history = history.filter { keep.contains($0.key) }
@@ -458,10 +500,21 @@ final class Store: ObservableObject {
     var undoSeconds: Int { UserDefaults.standard.object(forKey: "undoSeconds") as? Int ?? 8 }
     private var batch: [(Platform, String)] = []
 
+    /// Starts that got no answer in time, by row: they may be building anyway (see `deploy`).
+    private var unsureStarts: [String: Date] = [:]
+    private static let unsureWait: Double = 600
+
     func enqueue(_ jobs: [Job]) {
         Notify.ask()
         var added = 0
         for j in jobs where !(itemNow(j.item)?.state.isActive ?? false) {
+            if let at = unsureStarts[Self.key(j.item)], Date().timeIntervalSince(at) < Self.unsureWait {
+                let until = at.addingTimeInterval(Self.unsureWait).formatted(date: .omitted, time: .shortened)
+                say(L("\(j.item.name) may be building already", "\(j.item.name) baut vielleicht schon"),
+                    L("The last start got no answer. Check the dashboard; a new start is possible from \(until).",
+                      "Der letzte Start blieb ohne Antwort. Im Dashboard nachsehen; neu starten geht ab \(until)."), ok: false)
+                continue
+            }
             set(j.item.platform, j.item.id, .queued)
             var j = j; j.readyAt = Date().addingTimeInterval(Double(undoSeconds))   // each job counts from its own click
             queue.append(j); batch.append((j.item.platform, j.item.id)); added += 1
@@ -539,11 +592,20 @@ final class Store: ObservableObject {
             toast = Toast(text: L("\(item.name) is still starting – try again in a moment", "\(item.name) startet noch – gleich nochmal versuchen"), ok: false)
             return
         }
+        guard !cancelled.contains(item.id) else { return }
+        // Following goes on until the platform says the deploy ended, so the row can never be
+        // left "running" when the cancel fails or comes too late.
         cancelled.insert(item.id)
+        let before = itemNow(item)?.state
+        set(item.platform, item.id, .running(L("cancelling", "wird abgebrochen")))
         Task {
             let args = item.platform == .vercel ? ["vercel", "cancel", id] : ["render", "cancel", item.id, id]
-            do { _ = try await Tool.run(args); set(item.platform, item.id, .failed(L("Cancelled", "Abgebrochen"))) }
-            catch { cancelled.remove(item.id); say(L("Could not cancel \(item.name)", "\(item.name) ließ sich nicht abbrechen"), error.localizedDescription, ok: false) }
+            do { _ = try await Tool.run(args) }
+            catch {
+                cancelled.remove(item.id)
+                if let before, itemNow(item)?.state == .running(L("cancelling", "wird abgebrochen")) { set(item.platform, item.id, before) }
+                say(L("Could not cancel \(item.name)", "\(item.name) ließ sich nicht abbrechen"), error.localizedDescription, ok: false)
+            }
         }
     }
 
@@ -554,7 +616,7 @@ final class Store: ObservableObject {
         let d = UserDefaults.standard
         let hour = d.integer(forKey: "reminderHour")   // 0 = off
         guard hour > 0, Calendar.current.component(.hour, from: Date()) >= hour else { return }
-        let today = Date().formatted(.iso8601.year().month().day())
+        let today = localDay()
         guard d.string(forKey: "lastReminder") != today else { return }
         let w = waiting
         guard w.projects > 0 else { return }
@@ -600,14 +662,24 @@ final class Store: ObservableObject {
     /// Production back to what was live before.
     func rollback(_ item: Item) {
         Notify.ask()
+        if let at = unsureStarts[Self.key(item)], Date().timeIntervalSince(at) < Self.unsureWait {
+            say(L("\(item.name) may be busy already", "\(item.name) ist vielleicht schon beschäftigt"),
+                L("The last start got no answer. Check the dashboard first.", "Der letzte Start blieb ohne Antwort. Erst im Dashboard nachsehen."), ok: false)
+            return
+        }
         clearPreview(item)
         Task {
             let p = item.platform
             set(p, item.id, .starting)
             do {
-                let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self)
+                let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self, timeout: 300)
+                unsureStarts[Self.key(item)] = nil
                 if p == .vercel { set(p, item.id, .done(item.link), countsAsLive: false); markBehind(p, item.id) }
                 else { set(p, item.id, .running(L("rolling back", "rollt zurück"))); try await follow(item, deployId: r.id, url: item.link, rolledBack: true) }
+            } catch let e as ToolError where e.timedOut {
+                unsureStarts[Self.key(item)] = Date()
+                set(p, item.id, .failed(L("No answer from the rollback – it may have happened anyway. Check the dashboard.",
+                                          "Keine Antwort beim Zurückrollen – es ist vielleicht trotzdem passiert. Im Dashboard nachsehen.")))
             } catch { set(p, item.id, .failed(error.localizedDescription)) }
         }
     }
@@ -623,10 +695,22 @@ final class Store: ObservableObject {
             if job.preview { args.append("--preview") }
             if let sha = job.sha { args += ["--sha", sha] }
             if job.clearCache { args.append("--clear-cache") }
-            let started = try await Tool.json(args, as: Started.self)
+            // Longer than a list read: a start that times out may have started anyway.
+            let started = try await Tool.json(args, as: Started.self, timeout: 300)
+            unsureStarts[Self.key(item)] = nil
             if let k = items[p]?.firstIndex(where: { $0.id == item.id }) { items[p]![k].deployId = started.id }
             set(p, item.id, .running(started.state ?? L("started", "gestartet")))
             try await follow(item, deployId: started.id, url: started.url, preview: job.preview)
+        } catch let e as ToolError where e.timedOut {
+            // No answer is not "not started": a second click right away could pay for two builds.
+            // A fresh list says whether a build is under way; the wait below holds either way.
+            unsureStarts[Self.key(item)] = Date()
+            await load(p)
+            set(p, item.id, .failed(itemNow(item)?.building == true
+                ? L("No answer from the start, but a build is running – check the dashboard.",
+                    "Keine Antwort beim Start, aber ein Build läuft – im Dashboard nachsehen.")
+                : L("No answer from the start – it may be building anyway. Check the dashboard before starting again.",
+                    "Keine Antwort beim Start – er baut vielleicht trotzdem. Vor einem neuen Start im Dashboard nachsehen.")))
         } catch {
             set(p, item.id, .failed(error.localizedDescription))
         }
@@ -636,10 +720,10 @@ final class Store: ObservableObject {
     /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
     private func follow(_ item: Item, deployId: String, url: String?, preview: Bool = false, rolledBack: Bool = false) async throws {
         let p = item.platform
+        defer { cancelled.remove(item.id) }   // however it ended, a later deploy can be cancelled again
         var misses = 0
         for _ in 0..<400 {
             try await Task.sleep(nanoseconds: 6_000_000_000)
-            if cancelled.contains(item.id) { return }
             let args = p == .vercel ? ["vercel", "status", deployId] : ["render", "status", item.id, deployId]
             guard let s = try? await Tool.json(args, as: StatusReply.self) else {
                 // Network or login gone: say so instead of spinning for 40 minutes without a word.
@@ -649,6 +733,9 @@ final class Store: ObservableObject {
             }
             misses = 0
             let state = (s.state ?? "").lowercased()
+            if state == "canceled", cancelled.remove(item.id) != nil {
+                set(p, item.id, .failed(L("Cancelled", "Abgebrochen"))); return
+            }
             switch (p, state) {
             case (.vercel, "ready"), (.render, "live"):
                 if preview {
@@ -674,7 +761,7 @@ final class Store: ObservableObject {
                  (.render, "canceled"), (.render, "pre_deploy_failed"), (.render, "deactivated"):
                 set(p, item.id, .failed(s.error ?? "Status: \(state)")); return
             default:
-                set(p, item.id, .running(Self.stateName(state)))
+                if !cancelled.contains(item.id) { set(p, item.id, .running(Self.stateName(state))) }
             }
         }
         set(p, item.id, .failed(L("No result after 40 minutes – check the dashboard", "Kein Ergebnis nach 40 Minuten – im Dashboard nachsehen")))

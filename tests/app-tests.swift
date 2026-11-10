@@ -133,5 +133,31 @@ expect("health path with a space", Store.cleanPath("/my health") ?? "nil", "/my%
 expect("health path already encoded", Store.cleanPath("/my%20health") ?? "nil", "/my%20health")
 expect("empty health path", Store.cleanPath("  ") ?? "nil", "nil")
 
+// A reload keeps how a deploy ended only while the branch has not moved.
+var was = item(head: "h1"); was.state = .done(nil)
+var now = item(head: "h1")
+expect("end state kept, same head", Store.keepsState(old: was, fresh: now), true)
+now.headSha = "h2"
+expect("end state dropped on a new commit", Store.keepsState(old: was, fresh: now), false)
+was.state = .running("building")
+expect("running kept on a new commit", Store.keepsState(old: was, fresh: now), true)
+was.state = .idle
+expect("idle has nothing to keep", Store.keepsState(old: was, fresh: now), false)
+
+// The day key is the Mac's day, not UTC's.
+let lateUTC = Date(timeIntervalSince1970: 1_762_816_500)   // 2025-11-10 23:15 UTC
+expect("day in UTC", localDay(lateUTC, timeZone: TimeZone(identifier: "UTC")!), "2025-11-10")
+expect("day in Berlin", localDay(lateUTC, timeZone: TimeZone(identifier: "Europe/Berlin")!), "2025-11-11")
+
+// A timeout ends the whole tree, not only bash.
+let tree = Process(); tree.executableURL = URL(fileURLWithPath: "/bin/bash")
+tree.arguments = ["-c", "sleep 30 & sleep 30; wait"]
+let treeOut = Pipe(); tree.standardOutput = treeOut
+try? tree.run(); usleep(300_000)
+let t0 = Date()
+Tool.killTree(tree.processIdentifier)
+_ = treeOut.fileHandleForReading.readDataToEndOfFile()   // returns only once every child is gone
+expect("killTree closes the pipe at once", Date().timeIntervalSince(t0) < 3, true)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

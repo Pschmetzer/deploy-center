@@ -1,5 +1,14 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
+  - name: Report a security problem
+    url: https://github.com/Pschmetzer/deploy-center/security/advisories/new
+    about: Privately, not as a public issue. See SECURITY.md.
+  - name: How the counts are made
+    url: https://github.com/Pschmetzer/deploy-center/blob/main/docs/ZAHLEN.md
+    about: Waiting commits, PRs and changed projects explained
+  - name: README (install, CLI, settings)
+    url: https://github.com/Pschmetzer/deploy-center#readme
+    about: Install with Homebrew, the deploys CLI, what each setting does
   - name: Website and cost calculator
     url: https://deploycenter.app
     about: What the app does and how much auto-deploy costs you

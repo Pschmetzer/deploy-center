@@ -1,0 +1,43 @@
+name: A number looks wrong
+description: Commits, PRs, changed projects or costs in the app do not match GitHub, Vercel or Render
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        How the counts are made: [docs/ZAHLEN.md](https://github.com/Pschmetzer/deploy-center/blob/main/docs/ZAHLEN.md).
+        `deploys explain <project>` says why a project is, or is not, counted as having changes.
+  - type: input
+    id: number
+    attributes:
+      label: Which number?
+      placeholder: 'e.g. "12 commits waiting" or "builds 7 days: $4.08"'
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect, and where did you see it?
+    validations:
+      required: true
+  - type: textarea
+    id: json
+    attributes:
+      label: Output of `deploys changed --json`
+      description: Cut it down to the one project. Replace names and domains with stand-ins.
+      render: json
+    validations:
+      required: true
+  - type: checkboxes
+    id: special
+    attributes:
+      label: Anything special about the repo?
+      options:
+        - label: The repo is shared by more than one project (for example a frontend and a backend)
+        - label: The branch was force-pushed or rebased
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Settings → "Copy diagnostics".
+      render: text
