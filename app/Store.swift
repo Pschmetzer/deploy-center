@@ -22,16 +22,27 @@ final class Store: ObservableObject {
 
     /// Costs and stray build triggers load after the lists; neither blocks deploying.
     private var lastExtras = Date.distantPast
+    /// When a part last failed to load; the values from before stay and count as out of date.
+    @Published var extrasFailedAt: [String: Date] = [:]
     func loadExtras() async {
         lastExtras = Date()
-        if doctor?.vercelLoggedIn == true {
-            costs = try? await Tool.json(["costs", "14"], as: Costs.self)
-            checkBudget()
-        }
         Task { await checkProviders() }
-        triggers = (try? await Tool.json(["triggers"], as: [Trigger].self)) ?? []
-        if doctor?.githubLoggedIn == true {
-            githubBudget = try? await Tool.json(["github-budget"], as: Budget.self)
+        // All three at once; each can take a minute (many API calls). A failure keeps the old values.
+        let vercel = doctor?.vercelLoggedIn == true, github = doctor?.githubLoggedIn == true
+        async let c = vercel ? Self.extra(["costs", "14"], Costs.self) : nil
+        async let t = Self.extra(["triggers"], [Trigger].self)
+        async let b = github ? Self.extra(["github-budget"], Budget.self) : nil
+        if let r = await c { if case .success(let v) = r { costs = v; checkBudget() }; note("costs", r) }
+        if let r = await t { if case .success(let v) = r { triggers = v }; note("triggers", r) }
+        if let r = await b { if case .success(let v) = r { githubBudget = v }; note("github-budget", r) }
+    }
+    nonisolated private static func extra<T: Decodable & Sendable>(_ args: [String], _ type: T.Type) async -> Result<T, Error>? {
+        do { return .success(try await Tool.json(args, as: T.self, timeout: 300)) } catch { return .failure(error) }
+    }
+    private func note<T>(_ name: String, _ r: Result<T, Error>) {
+        switch r {
+        case .success: extrasFailedAt[name] = nil
+        case .failure(let e): extrasFailedAt[name] = Date(); Log.write("\(name): \(e.localizedDescription)")
         }
     }
 
@@ -199,11 +210,17 @@ final class Store: ObservableObject {
     }
 
     private var emptyOnce: Set<Platform> = []
+    /// Counts the reads of each list; only the newest one may change it, so an older, slower
+    /// answer cannot overwrite a newer one.
+    private var loadGeneration: [Platform: Int] = [:]
     func load(_ p: Platform) async {
+        let gen = (loadGeneration[p] ?? 0) + 1
+        loadGeneration[p] = gen
         loading.insert(p); loadError[p] = nil
-        defer { loading.remove(p) }
+        defer { if loadGeneration[p] == gen { loading.remove(p) } }
         do {
             let data = try await Tool.run([p.cli, "json"])
+            guard loadGeneration[p] == gen else { return }
             let fresh = try decode(p, data)
             // An empty answer where there were projects is more likely a hiccup than every project gone.
             // A second empty answer in a row is believed (another account, or really nothing left).
@@ -223,6 +240,7 @@ final class Store: ObservableObject {
             recordHistory()
             checkStale()
         } catch {
+            guard loadGeneration[p] == gen else { return }
             loadError[p] = error.localizedDescription
             lastLoadError[p] = LoadFailure(message: error.localizedDescription, at: Date())
         }
@@ -257,7 +275,7 @@ final class Store: ObservableObject {
     private func decode(_ p: Platform, _ data: Data) throws -> [Item] {
             switch p {
             case .vercel:
-                let list = try JSONDecoder().decode([VercelProject].self, from: data)
+                let list = try decodeLossy(VercelProject.self, from: data, label: "vercel json")
                 return list.map { v in
                     Item(id: v.name, name: v.name,
                          detail: v.repo.map { "\($0) · \(v.ref ?? "main")" } ?? L("no Git repository", "kein Git-Repo"),
@@ -273,7 +291,7 @@ final class Store: ObservableObject {
                          oldestPendingAt: date(v.oldestPendingAt), rewritten: v.rewritten ?? false)
                 }
             case .render:
-                let list = try JSONDecoder().decode([RenderService].self, from: data)
+                let list = try decodeLossy(RenderService.self, from: data, label: "render json")
                 return list.map { r in
                     Item(id: r.id, name: r.name,
                          detail: Self.typeName(r.type) + (r.repo.map { " · \($0) · \(r.ref ?? "main")" } ?? ""),
@@ -292,9 +310,16 @@ final class Store: ObservableObject {
 
     /// Lists only, both platforms; costs and triggers cost many GitHub calls and stay manual.
     /// Not while something is deploying, so nothing being followed is disturbed.
+    private var lastDoctor = Date()
     func autoRefresh() async {
         guard loading.isEmpty else { return }
         if doctor == nil { await start(); return }
+        // Something was missing (a login, the Render key): ask again, at most every 30 minutes.
+        if let d = doctor, !(d.vercelLoggedIn && d.vercelApi && d.renderKey && d.githubLoggedIn != false),
+           Date().timeIntervalSince(lastDoctor) > 1800 {
+            lastDoctor = Date()
+            if let fresh = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { doctor = fresh; doctorError = nil }
+        }
         // Only the platform with a deploy under way is left alone; the other one stays current.
         let v = doctor?.vercelLoggedIn == true && !(items[.vercel] ?? []).contains { $0.state.isActive }
         let r = doctor?.renderKey == true && !(items[.render] ?? []).contains { $0.state.isActive }
@@ -313,7 +338,8 @@ final class Store: ObservableObject {
         let all = Array(items.values.joined())
         // Projects of one repo (frontend + backend) share their commits and PRs: count them once.
         var perRepo: [String: (commits: Int, prs: Int)] = [:]
-        for i in all where i.hasNewCommits && i.state == .idle {
+        // What the person hid, or what the app cannot deploy, is not waiting on them.
+        for i in all where i.hasNewCommits && i.state == .idle && i.deployable && !isHidden(i) {
             w.projects += 1
             if let r = i.repo {
                 let o = perRepo[r] ?? (0, 0)
@@ -325,7 +351,7 @@ final class Store: ObservableObject {
         for v in perRepo.values { w.commits += v.commits; w.prs += v.prs }
         // Open pull requests belong to a repo, and several projects can share one.
         var seen = Set<String>()
-        for i in all { if let r = i.repo, let n = i.openPRs, seen.insert(r).inserted { w.openPRs += n } }
+        for i in all where !isHidden(i) { if let r = i.repo, let n = i.openPRs, seen.insert(r).inserted { w.openPRs += n } }
         return w
     }
 
@@ -375,11 +401,15 @@ final class Store: ObservableObject {
         } catch { return error.localizedDescription }
     }
 
-    private func set(_ p: Platform, _ id: String, _ s: RunState, countsAsLive: Bool = true) {
+    /// Rows whose last deploy was cancelled by the person: not a failure in the journal or the summary.
+    private var endedByCancel: Set<String> = []
+    private func set(_ p: Platform, _ id: String, _ s: RunState, countsAsLive: Bool = true, cancelled byPerson: Bool = false) {
         guard let i = items[p]?.firstIndex(where: { $0.id == id }) else { return }
         let was = items[p]![i].state
         items[p]![i].state = s
-        if case .starting = s { items[p]![i].startedAt = Date() }
+        if byPerson { endedByCancel.insert(id) } else if !s.isActive || s == .queued { endedByCancel.remove(id) }
+        // A new start: the id of the last deploy must not be the one a cancel goes to.
+        if case .starting = s { items[p]![i].startedAt = Date(); items[p]![i].deployId = nil }
         // Queued again: an older start time must not become this deploy's duration.
         if case .queued = s { items[p]![i].startedAt = nil }
         if case .done = s, countsAsLive {
@@ -392,7 +422,7 @@ final class Store: ObservableObject {
         let took = was.isActive && was != .queued ? items[p]![i].startedAt.map { Date().timeIntervalSince($0) } : nil
         switch s {
         case .done: Journal.append(JournalEntry(platform: p.rawValue, name: name, result: countsAsLive ? "live" : "other", seconds: took, detail: nil))
-        case .failed(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "failed", seconds: took, detail: m))
+        case .failed(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: byPerson ? "cancelled" : "failed", seconds: took, detail: m))
         case .skipped(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "skipped", seconds: took, detail: m))
         default: break
         }
@@ -401,7 +431,9 @@ final class Store: ObservableObject {
             if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true) }
             else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true) }
             else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true) }
-        case .failed(let m): say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false)
+        case .failed(let m):
+            if byPerson { say(L("\(name) cancelled", "\(name) abgebrochen"), p.rawValue, ok: true) }
+            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false) }
         case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true)
         default: break
         }
@@ -414,17 +446,27 @@ final class Store: ObservableObject {
         var undoLabel: String? = nil; var undo: (() -> Void)? = nil
         static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
     }
-    @Published var toast: Toast?
+    /// One toast at a time. One with "Undo" is not pushed away by the next: those wait until it is gone.
+    @Published var toast: Toast? {
+        didSet { if toast == nil, !toastQueue.isEmpty { let next = toastQueue.removeFirst(); DispatchQueue.main.async { self.show(next) } } }
+    }
+    private var toastQueue: [Toast] = []
+    func show(_ t: Toast) {
+        // At most two wait behind "Undo"; older news is in `messages` anyway.
+        if let cur = toast, cur.undo != nil, t.undo == nil { toastQueue = Array((toastQueue + [t]).suffix(2)); return }
+        toast = t
+        // "Undo" gets longer to be reached.
+        let secs: UInt64 = t.undo == nil ? 5 : 10
+        Task { try? await Task.sleep(nanoseconds: secs * 1_000_000_000); if toast == t { toast = nil } }
+    }
     /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
     struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool }
     @Published var messages: [Message] = []
     private func say(_ title: String, _ body: String, ok: Bool) {
         Notify.post(title, body)
-        let t = Toast(text: title, ok: ok)
-        toast = t
+        show(Toast(text: title, ok: ok))
         messages.insert(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok), at: 0)
         if messages.count > 30 { messages.removeLast() }
-        Task { try? await Task.sleep(nanoseconds: 5_000_000_000); if toast == t { toast = nil } }
     }
 
     /// GitHub's hourly budget for the gh login; the counts need it.
@@ -452,8 +494,8 @@ final class Store: ObservableObject {
     /// Hide with a way back: the toast offers "Undo" for a few seconds.
     func hideWithUndo(_ i: Item) {
         toggleHidden(i)
-        toast = Toast(text: L("\(i.name) hidden", "\(i.name) ausgeblendet"), ok: true,
-                      undoLabel: L("Undo", "Rückgängig"), undo: { [weak self] in self?.toggleHidden(i) })
+        show(Toast(text: L("\(i.name) hidden", "\(i.name) ausgeblendet"), ok: true,
+                   undoLabel: L("Undo", "Rückgängig"), undo: { [weak self] in self?.toggleHidden(i) }))
     }
     func unhide(_ key: String) {
         hidden.remove(key); UserDefaults.standard.set(Array(hidden), forKey: "hidden")
@@ -523,7 +565,7 @@ final class Store: ObservableObject {
         }
         if added > 0, undoSeconds > 0 {
             let n = undoSeconds
-            toast = Toast(text: L("Starting in \(n) s – cancel in the row to stop", "Startet in \(n) s – in der Zeile abbrechen"), ok: true)
+            show(Toast(text: L("Starting in \(n) s – cancel in the row to stop", "Startet in \(n) s – in der Zeile abbrechen"), ok: true))
             Task { try? await Task.sleep(nanoseconds: UInt64(n) * 1_000_000_000 + 300_000_000); pump() }
         }
         pump()
@@ -535,12 +577,15 @@ final class Store: ObservableObject {
     private func summarize() {
         defer { batch = [] }
         guard batch.count >= 2 else { return }
-        var ok = 0, bad = 0
+        var ok = 0, bad = 0, stopped = 0
         for (p, id) in batch {
             guard let s = items[p]?.first(where: { $0.id == id })?.state else { continue }
-            if case .done = s { ok += 1 } else if case .failed = s { bad += 1 }
+            if case .done = s { ok += 1 }
+            else if case .failed = s { if endedByCancel.contains(id) { stopped += 1 } else { bad += 1 } }
         }
-        say(L("\(ok) live, \(bad) failed", "\(ok) live, \(bad) fehlgeschlagen"), L("Deploy run finished", "Deploy-Lauf beendet"), ok: bad == 0)
+        let title = stopped == 0 ? L("\(ok) live, \(bad) failed", "\(ok) live, \(bad) fehlgeschlagen")
+            : L("\(ok) live, \(bad) failed, \(stopped) cancelled", "\(ok) live, \(bad) fehlgeschlagen, \(stopped) abgebrochen")
+        say(title, L("Deploy run finished", "Deploy-Lauf beendet"), ok: bad == 0)
     }
 
     private func itemNow(_ i: Item) -> Item? { items[i.platform]?.first { $0.id == i.id } }
@@ -556,20 +601,21 @@ final class Store: ObservableObject {
         }
         // A frontend whose backend failed in this batch does not go out alone.
         for job in queue {
-            if case .failed? = waitsFor(job).flatMap({ itemNow($0)?.state }) {
+            let backend = waitsFor(job)
+            if case .failed? = backend.flatMap({ itemNow($0)?.state }) {
                 queue.removeAll { $0.item.id == job.item.id }
+                // The person stopped the backend: the frontend simply does not go, it did not fail.
+                if let b = backend, endedByCancel.contains(b.id) { set(job.item.platform, job.item.id, .idle); continue }
                 set(job.item.platform, job.item.id, .failed(L("Not started: the backend of the same repo failed",
                                                              "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
             }
         }
         if queue.isEmpty && running == 0 {
             queueBatch = []
-            do {
-                let hadRun = !batch.isEmpty
-                summarize()
-                // The row says "current" from what the app remembers; read what GitHub says now.
-                if hadRun { Task { await autoRefresh() } }
-            }
+            let hadRun = !batch.isEmpty
+            summarize()
+            // The row says "current" from what the app remembers; read what GitHub says now.
+            if hadRun { Task { await autoRefresh() } }
         }
     }
 
@@ -591,7 +637,7 @@ final class Store: ObservableObject {
             queue.remove(at: k); set(item.platform, item.id, .idle); return
         }
         guard let id = itemNow(item)?.deployId else {
-            toast = Toast(text: L("\(item.name) is still starting – try again in a moment", "\(item.name) startet noch – gleich nochmal versuchen"), ok: false)
+            show(Toast(text: L("\(item.name) is still starting – try again in a moment", "\(item.name) startet noch – gleich nochmal versuchen"), ok: false))
             return
         }
         guard !cancelled.contains(item.id) else { return }
@@ -677,7 +723,12 @@ final class Store: ObservableObject {
                 let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self, timeout: 300)
                 unsureStarts[Self.key(item)] = nil
                 if p == .vercel { set(p, item.id, .done(item.link), countsAsLive: false); markBehind(p, item.id) }
-                else { set(p, item.id, .running(L("rolling back", "rollt zurück"))); try await follow(item, deployId: r.id, url: item.link, rolledBack: true) }
+                else {
+                    // Kept, so the rollback can be cancelled like a deploy.
+                    if let k = items[p]?.firstIndex(where: { $0.id == item.id }) { items[p]![k].deployId = r.id }
+                    set(p, item.id, .running(L("rolling back", "rollt zurück")))
+                    try await follow(item, deployId: r.id, url: item.link, rolledBack: true)
+                }
             } catch let e as ToolError where e.timedOut {
                 unsureStarts[Self.key(item)] = Date()
                 set(p, item.id, .failed(L("No answer from the rollback – it may have happened anyway. Check the dashboard.",
@@ -716,7 +767,7 @@ final class Store: ObservableObject {
         } catch {
             set(p, item.id, .failed(error.localizedDescription))
         }
-        pump()
+        // pump() runs once this returns (see pump), not here as well.
     }
 
     /// Asks every 6 seconds until the deploy is live or failed (40 minutes at most).
@@ -724,10 +775,12 @@ final class Store: ObservableObject {
         let p = item.platform
         defer { cancelled.remove(item.id) }   // however it ended, a later deploy can be cancelled again
         var misses = 0
-        for _ in 0..<400 {
+        // A deadline, not a count of rounds: slow status answers must not stretch 40 minutes to hours.
+        let deadline = Date().addingTimeInterval(40 * 60)
+        while Date() < deadline {
             try await Task.sleep(nanoseconds: 6_000_000_000)
             let args = p == .vercel ? ["vercel", "status", deployId] : ["render", "status", item.id, deployId]
-            guard let s = try? await Tool.json(args, as: StatusReply.self) else {
+            guard let s = try? await Tool.json(args, as: StatusReply.self, timeout: 60) else {
                 // Network or login gone: say so instead of spinning for 40 minutes without a word.
                 misses += 1
                 if misses >= 5 { set(p, item.id, .running(L("status unavailable, retrying", "Status nicht abrufbar, neuer Versuch"))) }
@@ -736,7 +789,7 @@ final class Store: ObservableObject {
             misses = 0
             let state = (s.state ?? "").lowercased()
             if state == "canceled", cancelled.remove(item.id) != nil {
-                set(p, item.id, .failed(L("Cancelled", "Abgebrochen"))); return
+                set(p, item.id, .failed(L("Cancelled", "Abgebrochen")), cancelled: true); return
             }
             switch (p, state) {
             case (.vercel, "ready"), (.render, "live"):
@@ -763,6 +816,9 @@ final class Store: ObservableObject {
                  (.render, "canceled"), (.render, "pre_deploy_failed"), (.render, "deactivated"):
                 set(p, item.id, .failed(s.error ?? "Status: \(state)")); return
             default:
+                if !Self.knownStates.contains(state), Self.loggedStates.insert(state).inserted {
+                    Log.write("\(p.cli) status: unknown state \"\(state)\" for \(item.name), shown as it is")
+                }
                 if !cancelled.contains(item.id) { set(p, item.id, .running(Self.stateName(state))) }
             }
         }
@@ -880,6 +936,10 @@ final class Store: ObservableObject {
         }
     }
 
+    /// States the app knows; any other is shown as the platform sent it, and logged once.
+    static let knownStates: Set<String> = ["", "queued", "created", "initializing", "building", "build_in_progress",
+                                           "update_in_progress", "pre_deploy_in_progress"]
+    private static var loggedStates: Set<String> = []
     static func stateName(_ s: String) -> String {
         switch s {
         case "queued", "created", "initializing": return L("queued", "wartet")
