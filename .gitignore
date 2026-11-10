@@ -3,3 +3,4 @@ build/
 docs/IDEEN-PRIVAT.md
 .release.env
 marketing/
+dist/
