@@ -39,7 +39,7 @@ final class Store: ObservableObject {
         async let c = vercel ? Self.extra(["costs", "14"], Costs.self) : nil
         async let t = Self.extra(["triggers"], [Trigger].self)
         async let b = github ? Self.extra(["github-budget"], Budget.self) : nil
-        if let r = await c { if case .success(let v) = r { costs = v; checkBudget() }; note("costs", r) }
+        if let r = await c { if case .success(let v) = r { costs = v; checkBudget(); writeSnapshot() }; note("costs", r) }
         if let r = await t { if case .success(let v) = r { triggers = v }; note("triggers", r) }
         if let r = await b { if case .success(let v) = r { githubBudget = v }; note("github-budget", r) }
     }
@@ -337,6 +337,7 @@ final class Store: ObservableObject {
             writeCache(p, data)
             fromCache.remove(p); loadedAt[p] = Date(); lastLoadError[p] = nil
             recordHistory()
+            writeSnapshot()
             checkStale()
         } catch {
             guard loadGeneration[p] == gen else { return }

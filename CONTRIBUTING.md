@@ -15,7 +15,7 @@ open an issue first.
 ## Build
 
 Needs macOS 15 and `swiftc` (Xcode or the Command Line Tools), plus `jq`.
-There is no Xcode project: `build.sh` compiles `app/*.swift` into a universal app.
+There is no Xcode project: `build.sh` compiles `app/*.swift` and `shared/*.swift` into a universal app (widgets and the iOS app: docs/WIDGETS-IOS.md).
 
 ```bash
 ./build.sh
@@ -49,7 +49,7 @@ shellcheck --severity=error deploys build.sh release.sh tests/*.sh
 ```
 
 ```bash
-swiftc -parse-as-library -swift-version 5 -typecheck app/*.swift
+swiftc -parse-as-library -swift-version 5 -typecheck app/*.swift shared/*.swift
 ```
 
 `script-tests.sh` checks the rules in `deploys` with a stand-in for `gh`, without network.
