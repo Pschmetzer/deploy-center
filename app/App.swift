@@ -388,6 +388,10 @@ struct MenuBarContent: View {
             Text(L("Auto-deploy is still on for \(auto) \(auto == 1 ? "project" : "projects") (costs build minutes)",
                    "Auto-Deploy ist noch an bei \(auto) \(auto == 1 ? "Projekt" : "Projekten") (kostet Build-Minuten)"))
         }
+        if store.fixingCount > 0 {
+            Text(L("Claude is fixing \(store.fixingCount) failed \(store.fixingCount == 1 ? "build" : "builds")",
+                   "Claude behebt \(store.fixingCount) \(store.fixingCount == 1 ? "fehlgeschlagenen Build" : "fehlgeschlagene Builds")"))
+        }
         ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
         Divider()
         Button(L("Open Deploy Center", "Deploy Center öffnen")) {

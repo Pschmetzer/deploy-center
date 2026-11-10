@@ -417,7 +417,7 @@ struct ContentView: View {
 
     /// Problems and offers above the list, most important first. Only the first is always shown;
     /// the others fold away, so the list keeps its room.
-    enum Notice: Hashable { case trigger, loadFailed(Platform), setup(Platform), auto(Platform), github, provider, update, claude }
+    enum Notice: Hashable { case trigger, loadFailed(Platform), setup(Platform), auto(Platform), allowance, github, provider, update, claude }
     @AppStorage("noticesExpanded") private var noticesExpanded = false
     @AppStorage(ClaudeNudge.wantedKey) private var claudeNudge = false
     @AppStorage(ClaudeNudge.dismissedKey) private var claudeNudgeDismissed = false
@@ -429,6 +429,7 @@ struct ContentView: View {
         for p in scopes where store.lastLoadError[p] != nil && !errorFillsWindow(p) { out.append(.loadFailed(p)) }
         if showsAll { for p in scopes where setupNeeded(p) != nil { out.append(.setup(p)) } }
         for p in scopes where !store.autoOn(p).isEmpty { out.append(.auto(p)) }
+        if !store.activeAllowances.isEmpty { out.append(.allowance) }
         if store.doctor.map({ $0.githubCli && $0.githubLoggedIn == false }) == true || (store.githubBudget?.remaining ?? .max) < 300 { out.append(.github) }
         if !store.providerIssues.isEmpty && store.providerIssues != closedIssues { out.append(.provider) }
         if let v = store.newVersion, v != skippedVersion { out.append(.update) }
@@ -442,6 +443,7 @@ struct ContentView: View {
         case .loadFailed(let p): return L("\(p.rawValue) not loaded", "\(p.rawValue) nicht geladen")
         case .setup(let p): return L("\(p.rawValue) not connected", "\(p.rawValue) nicht verbunden")
         case .auto(let p): return L("auto-deploy on (\(p.rawValue))", "Auto-Deploy an (\(p.rawValue))")
+        case .allowance: return L("auto-deploy allowed for a while", "Auto-Deploy vorübergehend erlaubt")
         case .github: return "GitHub"
         case .provider: return L("provider problem", "Störung beim Anbieter")
         case .update: return L("new version", "neue Version")
@@ -455,6 +457,7 @@ struct ContentView: View {
         case .loadFailed(let p): loadFailedBanner(p)
         case .setup(let p): setupBanner(p)
         case .auto(let p): autoBanner(p)
+        case .allowance: AllowanceBanner(store: store, allItems: allItems)
         case .github: githubBanner
         case .provider: providerBanner
         case .update: updateBanner
@@ -848,7 +851,13 @@ struct ContentView: View {
             showLog: { logItem = item },
             onCancel: { store.cancel(item) },
             onRetry: item.deployable ? { store.deployOne(item, preview: false) } : nil,
-            usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: search) { tick(item) }
+            usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: search,
+            autofix: store.autofixState(item), allowedUntil: store.allowance(item)?.expiresAt,
+            autofixBusy: store.autofixRunning.contains(Store.key(item)),
+            onAutofix: store.canFixWithClaude(item) ? { Task { await store.fixWithClaude(item) } } : nil) { tick(item) }
+            // A merged fix waits for a click: the row stands out until it is live.
+            .listRowBackground(store.autofixState(item).map { if case .merged = $0 { return true } else { return false } } == true
+                               ? ground(.green, 0.12) : nil)
             .contextMenu { rowMenu(item) }
     }
 
@@ -856,6 +865,10 @@ struct ContentView: View {
     @ViewBuilder private func rowMenu(_ item: Item) -> some View {
         let canDeploy = item.deployable && !item.state.isActive
         let caps = store.provider(item.platform)?.caps ?? ProviderCaps()
+        if store.canFixWithClaude(item) {
+            Button(L("Fix with Claude", "Mit Claude beheben")) { Task { await store.fixWithClaude(item) } }
+                .disabled(store.autofixRunning.contains(Store.key(item)))
+        }
         if canDeploy {
             Button(L("Deploy to production", "Live deployen")) {
                 if item.hasNewCommits || item.headSha == nil { store.deployOne(item, preview: false) }
@@ -1255,6 +1268,10 @@ struct Row: View {
     var usualMinutes: Int? = nil
     var queueText: String? = nil
     var search = ""
+    var autofix: RowAutofix? = nil
+    var allowedUntil: Date? = nil
+    var autofixBusy = false
+    var onAutofix: (() -> Void)? = nil
     let toggle: () -> Void
     @Environment(\.accessibilityDifferentiateWithoutColor) private var noColour
 
@@ -1301,6 +1318,7 @@ struct Row: View {
                 // One figure per row; the rest is in the tooltip and for VoiceOver.
                 HStack(spacing: 6) {
                     keyFigure
+                    AgentChips(autofix: autofix, allowedUntil: allowedUntil, busy: autofixBusy, onFix: onAutofix)
                     if showPlatform {
                         Text("· " + item.platform.rawValue).font(.caption2).foregroundStyle(.tertiary)
                     }
@@ -1348,6 +1366,7 @@ struct Row: View {
             if let showDetails { Button(L("Details", "Details"), action: showDetails) }
             if let showLog { Button(L("Build log", "Build-Log"), action: showLog) }
             if case .failed = item.state, let onRetry { Button(L("Try again", "Erneut versuchen"), action: onRetry) }
+            if let onAutofix, !autofixBusy { Button(L("Fix with Claude", "Mit Claude beheben"), action: onAutofix) }
             if item.state.isActive, let onCancel { Button(L("Cancel the deploy", "Deploy abbrechen"), action: onCancel) }
             if let u = item.link.flatMap(URL.init(string:)) { Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) } }
         }
@@ -1411,6 +1430,8 @@ struct Row: View {
         case .skipped: parts.append(L("skipped", "übersprungen"))
         case .idle: break
         }
+        if let autofix { parts.append(AgentChips.text(autofix)) }
+        if let allowedUntil { parts.append(AgentChips.allowedText(allowedUntil)) }
         if let note { parts.append(L("note: ", "Notiz: ") + note) }
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
@@ -1562,6 +1583,96 @@ struct Row: View {
                         .buttonStyle(.borderless).help(L("Try again", "Erneut versuchen")).accessibilityLabel(L("Try again", "Erneut versuchen"))
                 }
             }
+        }
+    }
+}
+
+/// Autofix and a temporary auto-deploy allowance, as small chips on the row. Own view, so the
+/// row's body stays short enough for the type checker of older Xcode versions.
+struct AgentChips: View {
+    let autofix: RowAutofix?
+    let allowedUntil: Date?
+    var busy = false
+    var onFix: (() -> Void)? = nil
+
+    static func text(_ a: RowAutofix) -> String {
+        switch a {
+        case .fixing: return L("Claude is fixing it", "Claude behebt gerade")
+        case .prOpen(let n, _): return L("Fix PR #\(n) open", "Fix-PR #\(n) offen")
+        case .merged: return L("Fix merged – deploy now", "Fix gemergt – jetzt deployen")
+        case .handedBack: return L("Fix failed – over to you", "Fix fehlgeschlagen – an dich übergeben")
+        }
+    }
+    static func allowedText(_ until: Date) -> String {
+        let t = until.formatted(date: Calendar.current.isDateInToday(until) ? .omitted : .abbreviated, time: .shortened)
+        return L("Auto-deploy allowed until \(t)", "Auto-Deploy erlaubt bis \(t)")
+    }
+    /// The page a chip opens; none in demo mode, where a URL would show the repo.
+    static func link(_ a: RowAutofix) -> URL? {
+        switch a {
+        case .fixing(let u): return u
+        case .prOpen(_, let u), .merged(_, _, let u): return u
+        case .handedBack: return nil
+        }
+    }
+
+    var body: some View {
+        if let autofix { chip(autofix) }
+        if let allowedUntil {
+            Label(Self.allowedText(allowedUntil), systemImage: "bolt.badge.clock")
+                .font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+                .help(L("A temporary allowance: pushes deploy by themselves until then, then auto-deploy goes off again",
+                        "Vorübergehend erlaubt: Pushes deployen bis dahin von selbst, danach ist Auto-Deploy wieder aus"))
+        }
+        if let onFix {
+            Button(action: onFix) {
+                HStack(spacing: 4) {
+                    if busy { ProgressView().controlSize(.mini) } else { Image(systemName: "wand.and.stars") }
+                    Text(L("Fix with Claude", "Mit Claude beheben"))
+                }
+            }
+            .buttonStyle(.link).font(.caption2.weight(.semibold)).disabled(busy)
+            .help(L("Hand this failed build to your Claude Code routine now; it opens a fix PR",
+                    "Diesen fehlgeschlagenen Build jetzt an deine Claude-Code-Routine übergeben; sie öffnet einen Fix-PR"))
+        }
+    }
+
+    @ViewBuilder private func chip(_ a: RowAutofix) -> some View {
+        let (icon, colour): (String, Color) = {
+            switch a {
+            case .fixing: return ("sparkles", .purple)
+            case .prOpen: return ("arrow.triangle.pull", .blue)
+            case .merged: return ("checkmark.seal.fill", .green)
+            case .handedBack: return ("person.fill.questionmark", Color.warningText)
+            }
+        }()
+        if let u = Self.link(a), !Demo.on {
+            Button { NSWorkspace.shared.open(u) } label: { Label(Self.text(a), systemImage: icon) }
+                .buttonStyle(.link).font(.caption2.weight(.semibold)).foregroundStyle(colour)
+                .help(u.absoluteString)
+        } else {
+            Label(Self.text(a), systemImage: icon).font(.caption2.weight(.semibold)).foregroundStyle(colour)
+        }
+    }
+}
+
+/// Above the list while any project may deploy by itself for a while.
+struct AllowanceBanner: View {
+    @ObservedObject var store: Store
+    let allItems: [Item]
+    var body: some View {
+        let on = store.activeAllowances
+        if let last = on.map(\.expiresAt).max() {
+            HStack(spacing: 10) {
+                Image(systemName: "bolt.badge.clock.fill").foregroundStyle(.orange)
+                Text(L("Auto-deploy is allowed for a while: ", "Auto-Deploy ist vorübergehend erlaubt: ")
+                     + on.prefix(4).map { Demo.mask($0.project) }.joined(separator: ", ")
+                     + (on.count > 4 ? L(" and \(on.count - 4) more", " und \(on.count - 4) weitere") : "")
+                     + " · " + L("until ", "bis ") + last.formatted(date: Calendar.current.isDateInToday(last) ? .omitted : .abbreviated, time: .shortened))
+                    .font(.caption)
+                Spacer()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.08))
         }
     }
 }

@@ -381,6 +381,65 @@ let offCosts = try! JSONDecoder().decode(Costs.self, from: Data("""
 expect("saved over whole days since off", offCosts.saved(today: "2026-11-06") ?? -1, 16.0)
 expect("no saving before a whole day", offCosts.saved(today: "2026-11-04") == nil, true)
 
+// Autofix in the rows: old and new status shapes, each state and when it ends by itself.
+func fire(_ json: String) -> AutofixReport { try! JSONDecoder().decode(AutofixReport.self, from: Data(json.utf8)) }
+let oldShape = fire(#"{"routine":"trig_1","token":true,"scheduled":false,"fires":[{"at":100,"project":"app","platform":"vercel","status":"fired","session":"https://claude.ai/code/s1","pr":7,"mergedSha":null},{"broken":true}]}"#)
+expect("old status decodes, broken fire skipped", "\(oldShape.fires.count) \(oldShape.fires[0].prNumber ?? 0) \(oldShape.ready)", "1 7 true")
+let newShape = fire(#"{"routine":null,"token":false,"fires":[{"at":100,"project":"app","platform":"vercel","status":"fired","prNumber":9,"prState":"OPEN","prUrl":"https://github.com/me/app/pull/9"}]}"#)
+expect("new status decodes", "\(newShape.fires[0].prNumber ?? 0) \(newShape.fires[0].prState ?? "") \(newShape.ready)", "9 open false")
+expect("empty status decodes", fire("{}").fires.count, 0)
+
+func failedItem(_ p: Platform = .vercel) -> Item { var i = item(p, changed: false, last: "aaaaaaa1", head: "aaaaaaa1"); i.lastState = p == .vercel ? "ERROR" : "build_failed"; return i }
+typealias F = AutofixReport.Fire
+expect("fixing while failed", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "fired", session: "https://claude.ai/code/s1")) == .fixing(session: URL(string: "https://claude.ai/code/s1")), true)
+var green = failedItem(); green.lastState = "READY"
+expect("fixing ends when green again", RowAutofix.of(green, F(at: 1, project: "app", platform: "vercel", status: "fired")) == nil, true)
+expect("PR open", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, prState: "open")) == .prOpen(number: 4, url: nil), true)
+var waiting = failedItem(); waiting.changed = true; waiting.headSha = "bbbbbbb2"
+expect("merged, not live", RowAutofix.of(waiting, F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, mergedSha: "bbbbbbb2ffff")) == .merged(sha: "bbbbbbb2ffff", pr: 4, url: nil), true)
+var shipped = waiting; shipped.lastSha = "bbbbbbb2"; shipped.changed = false
+expect("merged ends once live", RowAutofix.of(shipped, F(at: 1, project: "app", platform: "vercel", status: "fired", mergedSha: "bbbbbbb2ffff")) == nil, true)
+expect("fix failed too", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "skipped")) == .handedBack, true)
+expect("PR closed unmerged", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, prState: "closed")) == .handedBack, true)
+expect("chip words", AgentChips.text(.prOpen(number: 12, url: nil)), L("Fix PR #12 open", "Fix-PR #12 offen"))
+
+// Fires name a Render service by its name, not its id; the newest one counts; the platform must match.
+let many = AutofixReport(routine: "trig_1", token: true, fires: [
+    F(at: 1, project: "app", platform: "render", status: "skipped"),
+    F(at: 5, project: "app", platform: "render", status: "fired"),
+    F(at: 9, project: "app", platform: "vercel", status: "skipped"),
+    F(at: 9, project: "srv-1", platform: "render", status: "skipped")])
+expect("render matched by name, newest", many.newest(for: failedItem(.render))?.at ?? 0, 5.0)
+
+// Allowances: epoch or ISO date; a Render one by id or name.
+let allow = try! JSONDecoder().decode(AllowanceReport.self, from: Data(#"{"allowances":[{"platform":"vercel","project":"app","expiresAt":2000000000},{"platform":"Render","project":"srv-1","expiresAt":"2033-05-18T03:33:20Z"},{"platform":"vercel","project":"x","expiresAt":"soon"}]}"#.utf8))
+expect("allowances decode, bad date skipped", allow.allowances.count, 2)
+expect("both date forms", allow.allowances[0].expiresAt == allow.allowances[1].expiresAt, true)
+expect("render allowance by id", allow.allowances[1].covers(item(.render)), true)
+expect("no guard answer decodes empty", (try? JSONDecoder().decode(AllowanceReport.self, from: Data("{}".utf8)))?.allowances.count ?? -1, 0)
+
+// A merged fix ticks its row once; unticked, the next load leaves it.
+MainActor.assumeIsolated {
+    UserDefaults.standard.removeObject(forKey: "autofixPreselected")
+    let st = Store()
+    st.items[.vercel] = [waiting]
+    st.autofix = AutofixReport(routine: "trig_1", token: true, fires: [F(at: 1, project: "app", platform: "vercel", status: "fired", mergedSha: "bbbbbbb2ffff")])
+    st.preselectMergedFixes()
+    expect("merged fix preselected", st.items[.vercel]![0].selected, true)
+    st.items[.vercel]![0].selected = false
+    st.preselectMergedFixes()
+    expect("preselected only once", st.items[.vercel]![0].selected, false)
+    expect("no button while a fix waits", st.canFixWithClaude(st.items[.vercel]![0]), false)
+    st.autofix = AutofixReport(routine: "trig_1", token: true, fires: [F(at: 1, project: "app", platform: "vercel", status: "fired")])
+    st.items[.vercel] = [failedItem()]
+    expect("menu bar count", st.fixingCount, 1)
+    st.autofix = AutofixReport(routine: "trig_1", token: true, fires: [])
+    expect("button on a failed row", st.canFixWithClaude(st.items[.vercel]![0]), true)
+    st.allowances = [AutoDeployAllowance(platform: "vercel", project: "app", expiresAt: Date().addingTimeInterval(-60))]
+    expect("expired allowance ignored", st.allowance(st.items[.vercel]![0]) == nil && st.activeAllowances.isEmpty, true)
+    UserDefaults.standard.removeObject(forKey: "autofixPreselected")
+}
+
 // Savings: the simulator and the ledger read what lib/savings.sh prints, and odd fields do not break them.
 func savingsData(_ file: String) -> Data { (try? Data(contentsOf: URL(fileURLWithPath: "tests/fixtures/savings/" + file))) ?? Data() }
 if let sim = try? JSONDecoder().decode(SimulateReport.self, from: savingsData("simulate-report.json")) {
