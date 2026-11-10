@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- App: "Put this live now?" is one sheet for the footer, a row and the palette, with a real "Only when checks are green" checkbox (it was the alert's "don't ask again" toggle). The palette's question now also says which projects are already up to date.
+- App: "Put this live now?" is one sheet for the footer, a row and the palette, with a real "Only when checks are green" checkbox (it was the alert's "don't ask again" toggle). The palette now asks with the same sheet as the window, checkbox included.
 - App: the command palette builds its lines once when it opens (and again when demo mode switches) and orders them once per query, instead of on every keystroke and every store poll.
 - App: the reload button loads every platform of the tab at once; the build log and the details mask names once per load or redraw; the saving picture is rendered once; a row reads its autofix state once.
 - Costs: with a monthly budget set, the chart shows the budget per day and a line says what is left until the month ends (or how the pace compares).
