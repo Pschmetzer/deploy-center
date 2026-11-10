@@ -71,10 +71,13 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 enum Tool {
     /// The script ships inside the app, so a download needs nothing but the app.
     static var path: String {
+        if let testPath { return testPath }
         if let bundled = Bundle.main.path(forResource: "deploys", ofType: nil) { return bundled }
         noteFallback()
         return NSHomeDirectory() + "/bin/deploys"
     }
+    /// Tests only: a stand-in script instead of the real one, so nothing reaches an account.
+    nonisolated(unsafe) static var testPath: String?
     /// A build without the script inside (tests, a bare `swiftc`) uses ~/bin/deploys, which may be
     /// another version with other JSON. Said once in the log, with that script's version.
     private static let fallbackNoted: Void = {
@@ -161,74 +164,146 @@ enum Tool {
         }
     }
 
+    /// What one `run` collects from its process; reached from the pipe, exit and timeout handlers.
+    /// The lock keeps them apart, and the answer is given exactly once.
+    private final class Collect: @unchecked Sendable {
+        let lock = NSLock()
+        var out = Data(), err = Data(), timedOut = false, answered = false, openPipes = 2, exited = false
+        let deliver: (Result<Data, Error>) -> Void
+        init(_ deliver: @escaping (Result<Data, Error>) -> Void) { self.deliver = deliver }
+        /// True for the one caller that may answer.
+        func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if answered { return false }; answered = true; return true }
+    }
+
     private static func runProcess(_ args: [String], stdin: String?, timeout: Double, running: Running) async throws -> Data {
         try await withCheckedThrowingContinuation { cont in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let p = Process()
-                p.executableURL = URL(fileURLWithPath: "/bin/bash")
-                p.arguments = [path] + args
-                var env = ProcessInfo.processInfo.environment
-                env["PATH"] = searchPath
-                p.environment = env
-                let out = Pipe(), err = Pipe()
-                p.standardOutput = out
-                p.standardError = err
-                if let stdin {
-                    let inPipe = Pipe()
-                    p.standardInput = inPipe
-                    inPipe.fileHandleForWriting.write(Data((stdin + "\n").utf8))
-                    try? inPipe.fileHandleForWriting.close()
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/bash")
+            p.arguments = [path] + args
+            var env = ProcessInfo.processInfo.environment
+            env["PATH"] = searchPath
+            p.environment = env
+            let out = Pipe(), err = Pipe()
+            p.standardOutput = out
+            p.standardError = err
+            // No thread waits on anything: the handlers below are called by the system, so many
+            // calls at once (status polls, list reads) cost no blocked threads.
+            let c = Collect { r in
+                // Whatever still holds the pipes (a daemon that left the process tree) is not waited for.
+                out.fileHandleForReading.readabilityHandler = nil
+                err.fileHandleForReading.readabilityHandler = nil
+                if running.isCancelled { cont.resume(throwing: CancellationError()); return }
+                if case .failure(let e as ToolError) = r, e.timedOut {
+                    Log.write("deploys \(args.joined(separator: " ")): no answer after \(Int(timeout)) s, ended")
                 }
-                do { try p.run() } catch { cont.resume(throwing: error); return }
-                if !running.started(p.processIdentifier) { killTree(p.processIdentifier) }
-                // Pipes, the timeout and the answer meet here from several queues; the lock keeps
-                // them apart, and the answer is given exactly once.
-                let lock = NSLock()
-                var outData = Data(), errData = Data(), timedOut = false, answered = false
-                func answer(_ r: Result<Data, Error>) {
-                    lock.lock(); defer { lock.unlock() }
-                    guard !answered else { return }
-                    answered = true
-                    if running.isCancelled { cont.resume(throwing: CancellationError()); return }
-                    if case .failure(let e as ToolError) = r, e.timedOut {
-                        Log.write("deploys \(args.joined(separator: " ")): no answer after \(Int(timeout)) s, ended")
-                    }
-                    cont.resume(with: r)
-                }
-                func timeoutError() -> ToolError {
-                    ToolError(message: L("No answer after \(Int(timeout)) seconds – try again.",
-                                                "Keine Antwort nach \(Int(timeout)) Sekunden – nochmal versuchen."), timedOut: true)
-                }
-                let read = DispatchGroup()
-                read.enter(); read.enter()
-                DispatchQueue.global().async { let d = out.fileHandleForReading.readDataToEndOfFile(); lock.lock(); outData = d; lock.unlock(); read.leave() }
-                DispatchQueue.global().async { let d = err.fileHandleForReading.readDataToEndOfFile(); lock.lock(); errData = d; lock.unlock(); read.leave() }
-                // Ending bash alone is not enough: `vercel`, node or curl under it keep the pipes open.
-                // Whatever still holds them three seconds later, the caller gets its answer.
-                let killer = DispatchWorkItem {
-                    guard p.isRunning else { return }
-                    lock.lock(); timedOut = true; lock.unlock()
-                    killTree(p.processIdentifier)
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 3) { answer(.failure(timeoutError())) }
-                }
-                DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
-                read.wait()
-                p.waitUntilExit()
+                cont.resume(with: r)
+            }
+            let timeoutError = ToolError(message: L("No answer after \(Int(timeout)) seconds – try again.",
+                                                    "Keine Antwort nach \(Int(timeout)) Sekunden – nochmal versuchen."), timedOut: true)
+            /// Once the process ended and both pipes are read (or `force`: the pipes are given up on).
+            let finish: @Sendable (Bool) -> Void = { force in
+                c.lock.lock()
+                guard c.exited, force || c.openPipes == 0 else { c.lock.unlock(); return }
+                let late = c.timedOut, data = c.out, errText = c.err
+                c.lock.unlock()
+                guard c.claim() else { return }
+                if late { c.deliver(.failure(timeoutError)); return }
+                if p.terminationStatus == 0 { c.deliver(.success(data)); return }
+                let msg = String(data: errText, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let text = msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg
+                Log.write("deploys \(args.joined(separator: " ")): \(text)")
+                // The whole text is in the log; a toast or a row gets the end, where the cause usually is.
+                c.deliver(.failure(ToolError(message: shorten(text), exitCode: p.terminationStatus)))
+            }
+            out.fileHandleForReading.readabilityHandler = { h in
+                let d = h.availableData
+                c.lock.lock(); if d.isEmpty { c.openPipes -= 1 } else { c.out.append(d) }; c.lock.unlock()
+                if d.isEmpty { h.readabilityHandler = nil; finish(false) }
+            }
+            err.fileHandleForReading.readabilityHandler = { h in
+                let d = h.availableData
+                c.lock.lock(); if d.isEmpty { c.openPipes -= 1 } else { c.err.append(d) }; c.lock.unlock()
+                if d.isEmpty { h.readabilityHandler = nil; finish(false) }
+            }
+            p.terminationHandler = { _ in
                 running.finished()
-                killer.cancel()
-                lock.lock(); let late = timedOut, data = outData, errText = errData; lock.unlock()
-                if late {
-                    answer(.failure(timeoutError()))
-                } else if p.terminationStatus == 0 {
-                    answer(.success(data))
-                } else {
-                    let msg = String(data: errText, encoding: .utf8)?
-                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    let text = msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg
-                    Log.write("deploys \(args.joined(separator: " ")): \(text)")
-                    // The whole text is in the log; a toast or a row gets the end, where the cause usually is.
-                    answer(.failure(ToolError(message: shorten(text))))
-                }
+                c.lock.lock(); c.exited = true; c.lock.unlock()
+                finish(false)
+                // A child that outlives bash keeps the pipes open: three seconds later the answer
+                // goes with what was read.
+                DispatchQueue.global().asyncAfter(deadline: .now() + 3) { finish(true) }
+            }
+            if let stdin {
+                let inPipe = Pipe()
+                p.standardInput = inPipe
+                inPipe.fileHandleForWriting.write(Data((stdin + "\n").utf8))
+                try? inPipe.fileHandleForWriting.close()
+            }
+            do { try p.run() } catch {
+                out.fileHandleForReading.readabilityHandler = nil
+                err.fileHandleForReading.readabilityHandler = nil
+                _ = c.claim()
+                cont.resume(throwing: error); return
+            }
+            if !running.started(p.processIdentifier) { killTree(p.processIdentifier) }
+            // Ending bash alone is not enough: `vercel`, node or curl under it keep the pipes open.
+            // Whatever still holds them three seconds later, the caller gets its answer.
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                c.lock.lock()
+                guard !c.answered else { c.lock.unlock(); return }
+                c.timedOut = true
+                c.lock.unlock()
+                if p.isRunning { killTree(p.processIdentifier) }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 3) { if c.claim() { c.deliver(.failure(timeoutError)) } }
+            }
+        }
+    }
+
+    /// Any program (not the script), without a waiting thread: stdout, with stderr in it or dropped.
+    /// After `timeout` the whole process tree is ended and the answer goes with what was read;
+    /// a child that outlives the program and keeps the pipe open is not waited for either.
+    /// `status` is nil when it could not start or ran out of time.
+    static func exec(_ exe: String, _ args: [String], env: [String: String]? = nil, cwd: URL? = nil,
+                     mergeStderr: Bool = false, timeout: Double = 30) async -> (status: Int32?, out: Data) {
+        await withCheckedContinuation { cont in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: exe)
+            p.arguments = args
+            if let env { p.environment = env }
+            if let cwd { p.currentDirectoryURL = cwd }
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError = mergeStderr ? pipe : FileHandle.nullDevice
+            p.standardInput = FileHandle.nullDevice
+            let c = Collect { _ in }
+            let done: @Sendable (Bool) -> Void = { force in
+                c.lock.lock()
+                guard force || (c.exited && c.openPipes <= 1) else { c.lock.unlock(); return }
+                let data = c.out, late = c.timedOut || !c.exited
+                c.lock.unlock()
+                guard c.claim() else { return }
+                pipe.fileHandleForReading.readabilityHandler = nil
+                cont.resume(returning: (late ? nil : p.terminationStatus, data))
+            }
+            pipe.fileHandleForReading.readabilityHandler = { h in
+                let d = h.availableData
+                c.lock.lock(); if d.isEmpty { c.openPipes -= 1 } else { c.out.append(d) }; c.lock.unlock()
+                if d.isEmpty { h.readabilityHandler = nil; done(false) }
+            }
+            p.terminationHandler = { _ in
+                c.lock.lock(); c.exited = true; c.lock.unlock()
+                done(false)
+                DispatchQueue.global().asyncAfter(deadline: .now() + 3) { done(true) }
+            }
+            do { try p.run() } catch {
+                pipe.fileHandleForReading.readabilityHandler = nil
+                _ = c.claim(); cont.resume(returning: (nil, Data())); return
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                c.lock.lock(); let open = !c.answered; if open { c.timedOut = true }; c.lock.unlock()
+                guard open else { return }
+                if p.isRunning { killTree(p.processIdentifier) }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 3) { done(true) }
             }
         }
     }
@@ -278,24 +353,32 @@ struct ToolError: LocalizedError {
     let message: String
     /// The command was ended after its time ran out: it may have done its work anyway.
     var timedOut = false
+    /// The script's exit code when it ended with one (not after a timeout).
+    var exitCode: Int32? = nil
     var errorDescription: String? { message }
 }
 
 /// Errors go to ~/Library/Logs/DeployCenter.log, so one can be attached to an issue.
-/// Only what the script said and when; no keys ever reach the script's output.
+/// What the script said and when, with keys and tokens masked: a CLI's error can quote one.
 enum Log {
     static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/DeployCenter.log")
-    private static let lock = NSLock()
+    /// Written in order on its own queue, never on the main thread.
+    private static let queue = DispatchQueue(label: "app.deploycenter.log", qos: .utility)
     /// A log from an older version may be readable by others; once per run it is made private.
     private static let privateOnce: Void = { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }()
     /// From any thread; the file is readable by this user only. Past 1 MB the older half goes,
     /// cut at a line, so no character is split.
     static func write(_ line: String) {
-        lock.lock(); defer { lock.unlock() }
+        let text = "\(Date().formatted(.iso8601))  \(LogTools.maskSecrets(line))\n"
+        queue.async { append(text) }
+    }
+    /// Waits until everything written so far is in the file (tests, before reading it).
+    static func flush() { queue.sync {} }
+    private static func append(_ text: String) {
         _ = privateOnce
-        let text = "\(Date().formatted(.iso8601))  \(line)\n"
         let fm = FileManager.default
-        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(text.utf8)); try? h.close() }
+        // The throwing calls: the old ones raise an Objective-C exception on a full disk, and the app ends.
+        if let h = try? FileHandle(forWritingTo: url) { _ = try? h.seekToEnd(); try? h.write(contentsOf: Data(text.utf8)); try? h.close() }
         else { fm.createFile(atPath: url.path, contents: Data(text.utf8), attributes: [.posixPermissions: 0o600]) }
         if let size = try? fm.attributesOfItem(atPath: url.path)[.size] as? Int, size > 1_000_000,
            let data = try? Data(contentsOf: url) {
