@@ -23,13 +23,15 @@ Renovate can keep the tag current. Give the job a `timeout-minutes`: with a wron
 
 | Input | Default | |
 |---|---|---|
-| `deploy` | `false` | `true` starts the deploys. Any other value only reports. |
+| `deploy` | `false` | `true` starts the deploys. `dry-run` writes what would be deployed to the job summary and starts nothing. Any other value only reports. |
+| `only` | none | Comma-separated names: only these projects count and deploy. |
+| `exclude` | none | Comma-separated names to leave out, also of the deploy. |
 | `vercel-token` | none | Read by the Vercel CLI (`VERCEL_TOKEN`). Leave it empty if you have no Vercel projects. |
 | `vercel-team` | none | The team id, if the token sees several teams. |
 | `render-api-key` | none | Leave it empty to skip Render. |
 | `github-token` | `github.token` | Reads branch heads and pull requests. Other private repos need a token that can read them. |
 | `repos-json` | none | The content of `vercel-repos.json`. Without it, Vercel projects whose Git connection is off are never counted. |
-| `vercel-cli-version` | `65.12.1` | Installed only when no `vercel` is on the runner. |
+| `vercel-cli-version` | `65.12.1` | Installed only when no `vercel` is on the runner, into the runner's temp folder (no global install). |
 
 | Output | |
 |---|---|

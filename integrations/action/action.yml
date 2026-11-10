@@ -11,9 +11,19 @@ inputs:
   deploy:
     description: >-
       "true" starts a deploy of every project with changes (deploys deploy-changed --yes).
+      "dry-run" writes the plan (what would be deployed) to the job summary and starts nothing.
       Anything else only reports. Default: only report.
     required: false
     default: "false"
+  only:
+    description: >-
+      Comma-separated project names: only these count (and deploy). Empty: every project.
+    required: false
+    default: ""
+  exclude:
+    description: Comma-separated project names to leave out (also of deploy).
+    required: false
+    default: ""
   vercel-token:
     description: A Vercel access token (pass a secret). Empty skips Vercel (when no vercel CLI is on the runner).
     required: false
@@ -65,6 +75,7 @@ runs:
   using: composite
   steps:
     - name: Set up deploys
+      id: setup
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
@@ -88,7 +99,13 @@ runs:
         fi
         if [ -n "$VERCEL_TOKEN" ] && ! command -v vercel >/dev/null 2>&1; then
           case "$CLI_VERSION" in *[!0-9.]*|"") echo "::error::vercel-cli-version must be a version like 65.12.1"; exit 1 ;; esac
-          npm install -g --no-fund --no-audit "vercel@$CLI_VERSION" >/dev/null
+          # Into the runner's temp folder, not the global one (self-hosted runners may not allow it);
+          # the log only when it fails.
+          prefix="$RUNNER_TEMP/vercel-cli"
+          if ! npm install --prefix "$prefix" --no-fund --no-audit "vercel@$CLI_VERSION" > "$RUNNER_TEMP/npm.log" 2>&1; then
+            cat "$RUNNER_TEMP/npm.log"; echo "::error::could not install vercel@$CLI_VERSION"; exit 1
+          fi
+          echo "$prefix/node_modules/.bin" >> "$GITHUB_PATH"
         fi
 
     - name: deploys changed --json
@@ -98,12 +115,27 @@ runs:
         VERCEL_TOKEN: ${{ inputs.vercel-token }}
         RENDER_API_KEY: ${{ inputs.render-api-key }}
         GH_TOKEN: ${{ inputs.github-token }}
+        ONLY: ${{ inputs.only }}
+        EXCLUDE: ${{ inputs.exclude }}
       run: |
         set -euo pipefail
         # Exit 1 with a list: some project's state could not be read (named above, left out).
         rc=0; list="$("$DEPLOYS" changed --json </dev/null)" || rc=$?
         echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "::error::deploys changed --json did not answer a list"; exit 1; }
         [ "$rc" = 0 ] || echo "::warning::deploys could not read every project; those are left out (see the log above)."
+        # only / exclude: the projects left out go to ignored.json in this run's own config folder,
+        # so deploy-changed leaves them out too.
+        names() { printf '%s\n' "$1" | tr ', ' '\n' | sed '/^$/d'; }
+        ONLY="${ONLY:-}" EXCLUDE="${EXCLUDE:-}"
+        for n in $(names "$ONLY") $(names "$EXCLUDE"); do
+          [[ "$n" =~ ^[A-Za-z0-9._:-]+$ ]] || { echo "::error::only/exclude: \"$n\" is not a project name"; exit 1; }
+        done
+        if [ -n "$ONLY$EXCLUDE" ]; then
+          o="$(names "$ONLY" | jq -Rnc '[inputs]')"; x="$(names "$EXCLUDE" | jq -Rnc '[inputs]')"
+          out="$(echo "$list" | jq -c --argjson o "$o" --argjson x "$x" 'map(.name) | map(select((($o | length) > 0 and (. as $n | $o | index($n) | not)) or (. as $n | $x | index($n))))')"
+          echo "$out" > "$DEPLOYS_CONFIG/ignored.json"
+          list="$(echo "$list" | jq -c --argjson ign "$out" 'map(select(.name as $n | $ign | index($n) | not))')"
+        fi
         count="$(echo "$list" | jq length)"
         {
           echo "count=$count"
@@ -115,6 +147,21 @@ runs:
           echo "### Projects with changes: $count"
           echo "$list" | jq -r '.[] | "- \(.platform) **\(.name)**: \(.pendingCommits // "?") commit(s) waiting"'
         } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Plan (dry run)
+      id: plan
+      if: inputs.deploy == 'dry-run' && steps.changed.outputs.count != '0'
+      shell: bash
+      env:
+        VERCEL_TOKEN: ${{ inputs.vercel-token }}
+        RENDER_API_KEY: ${{ inputs.render-api-key }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        # Without --yes deploy-changed only shows the list; nothing starts.
+        out="$("$DEPLOYS" deploy-changed </dev/null)" || true
+        echo "$out"
+        { echo "### Would deploy (dry run, nothing started)"; echo '```'; echo "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
     - name: deploys deploy-changed --yes
       id: deploy

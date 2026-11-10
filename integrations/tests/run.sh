@@ -44,6 +44,7 @@ case "\$*" in
   "ledger --json") cat "$here/../tests/fixtures/savings/ledger-report.json" ;;
   "doctor") [ -n "\${FAKE_DOCTOR_SLEEP:-}" ] && sleep "\$FAKE_DOCTOR_SLEEP"; echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
   "changed --json") jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
+  "deploy-changed") echo "Would deploy: app-web, api (run with --yes)" ;;
   "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"
     if [ -n "\${FAKE_NO_SUMMARY:-}" ]; then :; elif [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
     exit "\${FAKE_RC:-0}" ;;
@@ -259,7 +260,7 @@ expect "statuspage: no journal, empty timeline" "$(jq '.timeline | length' "$tmp
 # --- the Action's steps, run as GitHub would (needs ruby for the YAML) ---
 if command -v ruby >/dev/null; then
   step() { ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["runs"]["steps"].find { |s| s["id"] == ARGV[1] }[ARGV[2]]' action/action.yml "$1" "${2:-run}"; }
-  step changed > "$tmp/changed.sh"; step deploy > "$tmp/deploy.sh"
+  step changed > "$tmp/changed.sh"; step deploy > "$tmp/deploy.sh"; step setup > "$tmp/setup.sh"; step plan > "$tmp/plan.sh"
   run_step() { : > "$tmp/out"; : > "$tmp/sum"; GITHUB_OUTPUT="$tmp/out" GITHUB_STEP_SUMMARY="$tmp/sum" bash "$tmp/$1" >/dev/null 2>&1; }
   run_step changed.sh; expect "action: the step passes" "$?" 0
   expect "action: count" "$(grep '^count=' "$tmp/out")" "count=2"
@@ -272,7 +273,24 @@ if command -v ruby >/dev/null; then
   expect "action: outputs are written before failing" "$(tr '\n' ' ' < "$tmp/out")" "started=1 failed=1 deployed=false "
   FAKE_NO_SUMMARY=1 run_step deploy.sh; expect "action: no summary line, the step still ends with outputs" "$?:$(tr '\n' ' ' < "$tmp/out")" "0:started=0 failed=0 deployed=true "
   expect "action: deploy step only with deploy: true" "$(step deploy if)" "inputs.deploy == 'true' && steps.changed.outputs.count != '0'"
-  case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
+  ONLY=api run_step changed.sh; expect "action: only keeps the named projects" "$(grep '^names=' "$tmp/out")" "names=api"
+  expect "action: only writes the others to this run's ignored.json" "$(jq -c . "$DEPLOYS_CONFIG/ignored.json")" '["app-web"]'
+  EXCLUDE='api, x' run_step changed.sh; expect "action: exclude leaves projects out" "$(grep '^count=' "$tmp/out"):$(jq -c . "$DEPLOYS_CONFIG/ignored.json")" 'count=1:["api"]'
+  ONLY='a;b' run_step changed.sh; expect "action: only refuses what is not a name" "$?" 1
+  rm -f "$DEPLOYS_CONFIG/ignored.json"
+  run_step plan.sh; expect "action: dry-run shows the plan, starts nothing" "$?:$(grep -c 'Would deploy: app-web' "$tmp/sum")" "0:1"
+  expect "action: plan step only with deploy: dry-run" "$(step plan if)" "inputs.deploy == 'dry-run' && steps.changed.outputs.count != '0'"
+  setup() { : > "$tmp/out"; env GITHUB_ENV="$tmp/genv" GITHUB_PATH="$tmp/gpath" RUNNER_TEMP="$tmp/rt" ACTION_PATH="$here/action" \
+      VERCEL_TOKEN="${VT:-}" VERCEL_TEAM="${TEAM:-}" REPOS_JSON="${RJ:-}" CLI_VERSION="${CV:-65.12.1}" PATH="$PATH" bash "$tmp/setup.sh" >/dev/null 2>&1; echo $?; }
+  mkdir -p "$tmp/rt"
+  expect "action setup: a team id passes" "$(TEAM=team_abc-1 setup)" 0
+  expect "action setup: a team id with odd characters fails" "$(TEAM='x;y' setup)" 1
+  expect "action setup: repos-json must be an object" "$(RJ='[1]' setup)" 1
+  expect "action setup: repos-json that is not JSON fails" "$(RJ='{nope' setup)" 1
+  if ! command -v vercel >/dev/null; then
+    expect "action setup: a vercel-cli-version that is not a version fails" "$(VT=x CV='1.0; rm -rf /' setup)" 1
+  fi
+  case "$(cat "$tmp/changed.sh" "$tmp/deploy.sh" "$tmp/setup.sh" "$tmp/plan.sh")" in *'${{'*) fail "action: no inputs inside run scripts" "found" ;; *) ok "action: no inputs inside run scripts" ;; esac
 else
   echo "skip action: needs ruby"
 fi
