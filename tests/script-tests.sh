@@ -1041,6 +1041,34 @@ expect "without lib/githost.sh: GitHub counted, GitLab left unknown" \
   "$( (unset -f githost_of githost_available githost_head_of githost_pending_of githost_open_prs_of; DEPLOYS_LIB=1 . "$tmp/nolib/deploys"; set +e
        with_heads '[{"name":"gh","repo":"me/app","ref":"main","deployable":true,"lastSha":"aaaa"},{"name":"gl","repo":"gitlab.com/me/app","ref":"main","deployable":true,"lastSha":"aaaa"}]' \
        | jq -c 'map([.name, .pendingCommits, .headSha])') )" '[["gh",3,"bbbb"],["gl",null,null]]'
+# --- scan: caps, no second scan, clean vs PR, never merges ---
+sc="$tmp/sc"; mkdir -p "$sc/origin"
+git -C "$sc/origin" init -q -b main && echo 'x=1' > "$sc/origin/a.js" && git -C "$sc/origin" add -A && git -C "$sc/origin" -c user.name=t -c user.email=t@t commit -q -m init
+git clone -q --bare "$sc/origin" "$sc/remote.git"
+SCAN_DIR="$sc/dir"; export DEPLOYS_NOTIFY=0 DEPLOYS_SCAN_FOREGROUND=1
+sc_claude_bin() { echo /bin/true; }
+sc_open_prs() { echo "${SCOPEN:-[]}"; }
+sc_pr() { echo "pr $*" >> "$CALLS"; echo "https://github.com/me/web/pull/7"; }
+gh() { case "$*" in "repo clone"*) git clone -q "$sc/remote.git" "$4";; *) command gh "$@";; esac; }
+SCFIX=0
+sc_claude() { [ "$SCFIX" = 1 ] && echo 'x=2' > "$1/a.js"; printf '## Fixed\n- a.js: wrong value -> fixed\n## Checks\n- none\n'; }
+sc_reset() { rm -rf "$SCAN_STATE" "$SCAN_DIR"; : > "$CALLS"; }
+sc_reset; ( scan_start me/web main ) >/dev/null 2>&1
+expect "scan: nothing changed is clean, no PR" "$(jq -r '.runs[0].status' "$SCAN_STATE"):$(grep -c '^pr ' "$CALLS")" "clean:0"
+sc_reset; SCFIX=1; ( scan_start me/web main ) >/dev/null 2>&1
+expect "scan: a fix becomes a PR on claude/scan-" "$(jq -r '.runs[0] | "\(.status) \(.branch | startswith("claude/scan-web-")) \(.prUrl) \(.fixes)"' "$SCAN_STATE")" "pr true https://github.com/me/web/pull/7 1"
+expect "scan: the branch is pushed, main untouched" "$(git -C "$sc/remote.git" log --oneline main | wc -l | tr -d ' '):$(git -C "$sc/remote.git" branch --list 'claude/scan-*' | wc -l | tr -d ' ')" "1:1"
+expect "scan: the report is kept" "$(cat "$SCAN_DIR"/logs/*.md | grep -c 'wrong value')" "1"
+SCOPEN='[{"number":7}]'; out="$( ( scan_start me/web main ) 2>&1)"
+expect "scan: an open scan PR blocks the next scan" "$(echo "$out" | grep -c 'open bug-scan PR (#7)')" "1"; SCOPEN='[]'
+sc_reset; echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running"}]}' > "$SCAN_STATE"
+expect "scan: no second scan of a repo while one runs" "$( ( scan_start me/web main ) 2>&1 | grep -c 'running already')" "1"
+echo '{"runs":[{"id":"a","repo":"me/web","at":1,"status":"running"}]}' > "$SCAN_STATE"; sc_reap
+expect "scan: a run older than 2 hours is reaped" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
+sc_reset; for i in 1 2 3 4; do jq -n --argjson t "$(date +%s)" --arg i "$i" '{id:$i, repo:"me/x", at:$t, status:"clean"}'; done | jq -s '{runs:.}' > "$SCAN_STATE"
+expect "scan: the daily cap" "$( ( scan_start me/web main ) 2>&1 | grep -c 'daily cap')" "1"
+unset -f gh; unset DEPLOYS_SCAN_FOREGROUND
+
 # --- appcast.py: newest first, same version replaced, bad input refused ---
 ac="$tmp/appcast.xml"; printf -- '- one & <two>\n' > "$tmp/notes.md"; sig="$(printf 'A%.0s' $(seq 86))=="
 acadd() { python3 -I scripts/appcast.py --appcast "$ac" --version "$1" --url "https://github.com/me/app/releases/download/v$1/a.zip" \

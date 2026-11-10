@@ -240,10 +240,38 @@ struct ProjectDetail: View {
         }
     }
 
+    /// Bug scan: Claude Code on this Mac looks through the repo and opens one fix PR.
+    @ViewBuilder private func scanBlock(_ item: Item) -> some View {
+        if item.repo != nil, !store.observer {
+            let run = store.scanRun(item), starting = item.repo.map { store.scanStarting.contains($0) } ?? false
+            HStack(spacing: 10) {
+                Button { Task { await store.scanForBugs(item) } } label: {
+                    HStack(spacing: 4) {
+                        if starting || run?.running == true { ProgressView().controlSize(.small) }
+                        Text(L("Find bugs with Claude", "Mit Claude nach Bugs suchen"))
+                    }
+                }
+                .disabled(!store.canScan(item))
+                if let run {
+                    switch run.status {
+                    case "running": Text(L("Claude is looking for bugs …", "Claude sucht nach Bugs …")).font(.caption).foregroundStyle(.secondary)
+                    case "clean": Text(L("Last scan: nothing to fix", "Letzter Scan: nichts zu beheben")).font(.caption).foregroundStyle(.green)
+                    case "pr":
+                        if let u = run.prUrl.flatMap(URL.init(string:)) {
+                            Link(L("Fix PR with \(run.fixes ?? 0) fix(es)", "Fix-PR mit \(run.fixes ?? 0) Fix(es)"), destination: u).font(.caption)
+                        }
+                    default: Text(scrub(run.error ?? L("Scan failed", "Scan fehlgeschlagen"))).font(.caption).foregroundStyle(.red).lineLimit(2)
+                    }
+                }
+            }
+        }
+    }
+
     @ViewBuilder private func content(_ d: Details) -> some View {
         let item = self.live
         VStack(alignment: .leading, spacing: 18) {
             autofixBlock(item)
+            scanBlock(item)
             // What is live, and what the branch would bring.
             if let live = item.lastMsg {
                 labelled(L("Live now", "Jetzt live"), scrub(live) + (item.lastSha.map { "  (\($0.prefix(7)))" } ?? ""))

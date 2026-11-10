@@ -122,10 +122,59 @@ final class Store: ObservableObject {
     /// The last answer of "Fix with Claude" per row, for the details sheet.
     @Published var autofixResult: [String: Message] = [:]
 
+    /// Bug scans by the local Claude Code CLI (`deploys scan`), and the repos being started right now.
+    @Published var scan: ScanReport?
+    @Published var scanStarting: Set<String> = []
+    private var scanPoll: Task<Void, Never>?
+
+    func loadScanStatus() async {
+        if case .success(let r)? = await Self.extra(["scan", "status", "--json"], ScanReport.self) { scan = r }
+        // While a scan runs, look again every 20 seconds; it takes minutes, the app must not block.
+        if scan?.anyRunning == true, scanPoll == nil {
+            scanPoll = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                    guard let self else { return }
+                    if case .success(let r)? = await Self.extra(["scan", "status", "--json"], ScanReport.self) { self.scan = r }
+                    if self.scan?.anyRunning != true { self.scanPoll = nil; return }
+                }
+            }
+        }
+    }
+    func scanRun(_ i: Item) -> ScanReport.Run? { scan?.newest(repo: i.repo) }
+    func canScan(_ i: Item) -> Bool {
+        guard let r = i.repo, !observer else { return false }
+        return !scanStarting.contains(r) && scanRun(i)?.running != true
+    }
+
+    /// "Find bugs with Claude": `deploys scan start <repo> <branch>`, detached; the result comes as a PR.
+    func scanForBugs(_ i: Item) async {
+        guard let repo = i.repo, canScan(i) else { return }
+        let key = Self.key(i), name = Demo.mask(i.name)
+        if let s = scan, !s.installed || !s.loggedIn {
+            tell(L("\(name): bug scan not possible", "\(name): Bug-Scan nicht möglich"),
+                 s.installed ? L("Claude Code is not logged in. In Terminal: claude login", "Claude Code ist nicht angemeldet. Im Terminal: claude login")
+                             : L("Claude Code is not installed. In Terminal: npm i -g @anthropic-ai/claude-code", "Claude Code ist nicht installiert. Im Terminal: npm i -g @anthropic-ai/claude-code"),
+                 ok: false, key: key)
+            return
+        }
+        scanStarting.insert(repo); defer { scanStarting.remove(repo) }
+        do {
+            _ = try await Tool.run(["scan", "start", repo, i.ref ?? "main"], timeout: 120)
+            tell(L("\(name): Claude is looking for bugs", "\(name): Claude sucht nach Bugs"),
+                 L("takes 10–30 minutes; fixes come as a pull request, nothing is merged or deployed",
+                   "dauert 10–30 Minuten; Fixes kommen als Pull Request, nichts wird gemergt oder deployt"), ok: true, key: key)
+        } catch {
+            tell(L("\(name): bug scan not started", "\(name): Bug-Scan nicht gestartet"), error.localizedDescription, ok: false, key: key)
+        }
+        await loadScanStatus()
+    }
+
     /// When `autofix sync` last ran, so a refresh every few seconds does not ask GitHub every time.
     private var lastAutofixSync = Date.distantPast
 
     func loadAgentStatus() async {
+        await loadScanStatus()
         // A hand-over still marked "fixing": bring it up to date with its PR first. The 10-minute
         // job does this too, but it may not be running, and then a merged fix said "fixing" for hours.
         // Before the first status (nil): once, which also loads a schedule launchd dropped.

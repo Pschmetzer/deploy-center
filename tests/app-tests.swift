@@ -543,5 +543,14 @@ MainActor.assumeIsolated {
     expect("observer: the log is still there", looking.contains("log|vercel/app"), true)
 }
 
+// Bug scan status: the newest run per repo, running, a PR link.
+do {
+    let r = try! JSONDecoder().decode(ScanReport.self, from: Data(#"{"installed":true,"loggedIn":true,"perDay":4,"runs":[{"id":"b","repo":"me/web","base":"main","at":20,"status":"pr","step":"done","branch":"claude/scan-web-abc","prUrl":"https://github.com/me/web/pull/7","fixes":2,"error":null},{"id":"a","repo":"me/web","at":10,"status":"clean"},{"id":"c","repo":"me/api","at":30,"status":"running","step":"claude"}]}"#.utf8))
+    expect("scan: newest run of a repo", r.newest(repo: "Me/Web")?.id ?? "", "b")
+    expect("scan: PR and fixes", "\(r.newest(repo: "me/web")?.prUrl ?? "") \(r.newest(repo: "me/web")?.fixes ?? 0)", "https://github.com/me/web/pull/7 2")
+    expect("scan: a running scan is seen", r.anyRunning, true)
+    expect("scan: no repo, no run", r.newest(repo: nil) == nil, true)
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

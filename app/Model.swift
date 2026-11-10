@@ -291,6 +291,30 @@ extension Item {
     }
 }
 
+/// `deploys scan status --json`: is the Claude Code CLI there and logged in, and the newest bug scans.
+struct ScanReport: Decodable, Sendable {
+    struct Run: Decodable, Sendable, Identifiable {
+        let id: String
+        let repo: String
+        let at: Double
+        let status: String          // running | clean | pr | failed
+        let step: String?
+        let prUrl: String?
+        let fixes: Int?
+        let error: String?
+        var running: Bool { status == "running" }
+    }
+    let installed: Bool
+    let loggedIn: Bool
+    let runs: [Run]
+    /// The newest scan of a repo (owner/name).
+    func newest(repo: String?) -> Run? {
+        guard let repo else { return nil }
+        return runs.filter { $0.repo.caseInsensitiveCompare(repo) == .orderedSame }.max { $0.at < $1.at }
+    }
+    var anyRunning: Bool { runs.contains(where: \.running) }
+}
+
 /// `deploys autofix status --json`. Older scripts send `pr` and no PR state; newer ones
 /// `prNumber`, `prState`, `prUrl`. A missing field is nil, a broken fire is skipped.
 struct AutofixReport: Decodable {

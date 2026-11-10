@@ -40,6 +40,8 @@
 #   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>)
 #   deploys autofix [--dry-run] [--only <platform> <p>]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
 #   deploys autofix set-token | routine <id> | list | forget-token | prompt | status | sync | schedule on|off
+#   deploys scan start <owner/repo> [branch]  Claude Code on this Mac looks for bugs and opens one fix PR (never merges)
+#   deploys scan status [--json] | list | log <id>   the newest scans, their PRs and reports
 #                                             (see docs/AUTOFIX.md)
 #   deploys ai explain|notes|ship <p>         ask Claude (your own Anthropic key): why a build failed,
 #                                             plain release notes (--lang en|de), is it safe to ship
@@ -929,6 +931,120 @@ autofix_run() {  # autofix_run [dry] [<platform> <project>]  (the two: --only, t
   return "$rc"
 }
 
+# ---------- Bug scan: Claude Code on this Mac looks for bugs in a repo and opens one fix PR ----------
+# Runs the local `claude` CLI (its own login, e.g. a Claude subscription; no routine, nothing in
+# claude.ai) in a fresh worktree of the repo. Only real bugs, build and tests must pass, one PR on
+# claude/scan-<repo>-<sha7>. It never merges and never deploys. See docs/SCAN.md.
+SCAN_STATE="$CONFIG_DIR/scan.json"
+SCAN_DIR="${DEPLOYS_SCAN_DIR:-$CONFIG_DIR/scan}"
+SCAN_PER_DAY="${DEPLOYS_SCAN_PER_DAY:-4}"          # scans per account per 24 h
+SCAN_MODEL="${DEPLOYS_SCAN_MODEL:-sonnet}"
+SCAN_MAX_FIXES="${DEPLOYS_SCAN_MAX_FIXES:-5}"
+# What Claude may run besides reading and editing: builds, tests, linters, read-only git.
+SCAN_TOOLS="Read Grep Glob Edit Write MultiEdit TodoWrite
+Bash(npm run *) Bash(npm test*) Bash(npm ci*) Bash(npm install*) Bash(npx tsc*) Bash(npx eslint*) Bash(npx vitest*) Bash(npx jest*)
+Bash(pnpm *) Bash(yarn *) Bash(bun *) Bash(node *) Bash(python3 -m pytest*) Bash(pytest*) Bash(ruff *) Bash(go build*) Bash(go test*) Bash(go vet*)
+Bash(cargo build*) Bash(cargo test*) Bash(cargo check*) Bash(swift build*) Bash(swift test*) Bash(bash -n *) Bash(shellcheck *)
+Bash(git status*) Bash(git diff*) Bash(git log*) Bash(git show*) Bash(ls *) Bash(cat *)"
+
+sc_state() { [ -s "$SCAN_STATE" ] && cat "$SCAN_STATE" || echo '{"runs":[]}'; }
+sc_save() { local t; t="$(mktemp)"; cat > "$t" && mv "$t" "$SCAN_STATE"; }
+sc_slug() { echo "$1" | tr '/' '-' | tr -cd 'A-Za-z0-9._-'; }
+sc_update() {  # sc_update <id> <jq object to merge>; the state file is shared by every scan
+  local st; st="$(sc_state | jq --arg i "$1" --argjson o "$2" '(.runs[] | select(.id == $i)) |= . + $o')" && echo "$st" | sc_save
+}
+# Seams the tests replace.
+sc_claude_bin() { command -v claude 2>/dev/null || { for b in "$HOME/.local/bin/claude" "$HOME/.claude/local/claude" /opt/homebrew/bin/claude /usr/local/bin/claude; do [ -x "$b" ] && { echo "$b"; return; }; done; }; }
+sc_claude() {  # sc_claude <dir> <prompt>: the report on stdout. The subscription login, not an API key.
+  ( cd "$1" && env -u ANTHROPIC_API_KEY "$(sc_claude_bin)" -p "$2" --model "$SCAN_MODEL" \
+      --permission-mode acceptEdits --allowedTools $SCAN_TOOLS --output-format json ) \
+    | jq -r '.result // empty'
+}
+sc_open_prs() {  # open scan PRs of a repo
+  gh api "repos/$1/pulls?state=open&per_page=100" | jq -c --arg b "claude/scan-$(sc_slug "${1#*/}")-" '[.[] | select(.head.ref | startswith($b)) | {number, url:.html_url}]'
+}
+sc_pr() { gh pr create --repo "$1" --head "$2" --base "$3" --title "$4" --body-file "$5"; }
+
+sc_prompt() {
+  cat <<PROMPT
+You are checking this repository for bugs. Work only in this directory.
+
+1. Find real bugs: crashes, wrong logic, unhandled errors, off-by-one, broken edge cases, security holes, code that cannot work as its caller expects. No style changes, no refactors, no renames, no new dependencies, no formatting.
+2. Fix at most $SCAN_MAX_FIXES of them, the most important first. Keep each fix small. Add or extend a test where the project has tests.
+3. Run the project's build and tests if it has them. Undo any fix that breaks them.
+4. Do not commit, push or open a PR; that is done for you afterwards.
+5. If you are not sure something is a bug, do not change it; list it under "Not changed".
+
+End with a report in Markdown, in exactly this form:
+## Fixed
+- <file>: <the bug in one sentence> -> <the fix>
+## Not changed
+- <file>: <suspicion and why it was left>
+## Checks
+- <commands run and their result>
+If nothing needed fixing, say so under Fixed.
+PROMPT
+}
+
+scan_run() {  # scan_run <id> <owner/repo> <branch>: one scan, start to PR. Called by `scan start`, detached.
+  local id="$1" repo="$2" br="$3" slug cache work sha fb report log
+  slug="$(sc_slug "${repo#*/}")"; cache="$SCAN_DIR/repos/$(sc_slug "$repo")"
+  log="$SCAN_DIR/logs/$id.md"; mkdir -p "$SCAN_DIR/repos" "$SCAN_DIR/work" "$SCAN_DIR/logs"
+  sc_update "$id" '{"status":"running","step":"clone"}'
+  if [ -d "$cache/.git" ]; then git -C "$cache" fetch -q origin "$br" || { sc_update "$id" '{"status":"failed","error":"git fetch failed"}'; return 1; }
+  else gh repo clone "$repo" "$cache" -- -q || { sc_update "$id" '{"status":"failed","error":"could not clone the repo"}'; return 1; }
+    git -C "$cache" fetch -q origin "$br" || true; fi
+  sha="$(git -C "$cache" rev-parse "origin/$br")"; fb="claude/scan-$slug-${sha:0:7}"
+  work="$SCAN_DIR/work/$id"
+  git -C "$cache" worktree add -q -B "$fb" "$work" "origin/$br" || { sc_update "$id" '{"status":"failed","error":"git worktree failed"}'; return 1; }
+  sc_update "$id" "$(jq -nc --arg s "$sha" --arg b "$fb" '{step:"claude", sha:$s, branch:$b}')"
+  report="$(sc_claude "$work" "$(sc_prompt)" 2>>"$SCAN_DIR/logs/$id.err")" || true
+  printf '%s\n' "$report" > "$log"
+  if [ -z "$report" ]; then
+    sc_update "$id" "$(jq -nc --arg e "Claude gave no answer (logged in? run: claude login). $(tail -c 300 "$SCAN_DIR/logs/$id.err" 2>/dev/null)" '{status:"failed", error:$e}')"
+  elif [ -z "$(git -C "$work" status --porcelain)" ]; then
+    sc_update "$id" '{"status":"clean","step":"done"}'
+    af_notify "Bug scan: $repo looks clean, nothing changed."
+  else
+    sc_update "$id" '{"step":"pr"}'
+    local n body url; n="$(sed -n '/^## Fixed/,/^## /p' "$log" | grep -c '^- ' || true)"
+    body="$(mktemp)"
+    { cat "$log"; printf '\n---\nFound and fixed by a local Claude Code bug scan from Deploy Center. Review before merging; it is never merged or deployed by itself.\n'; } > "$body"
+    if git -C "$work" add -A && git -C "$work" -c user.name="Deploy Center" -c user.email="deploy-center@users.noreply.github.com" commit -q -m "Bug scan: $n fix(es) by Claude" \
+       && git -C "$work" push -q -f origin "$fb" && url="$(sc_pr "$repo" "$fb" "$br" "Bug scan: $n fix(es) by Claude" "$body")"; then
+      url="$(echo "$url" | grep -Eo 'https://[^ ]+' | tail -1)"
+      sc_update "$id" "$(jq -nc --arg u "$url" --argjson n "${n:-0}" '{status:"pr", step:"done", prUrl:$u, fixes:$n}')"
+      af_notify "Bug scan: $repo has a fix PR with $n fix(es). $url"
+    else
+      sc_update "$id" '{"status":"failed","error":"commit, push or PR failed (see the log)"}'
+    fi
+    rm -f "$body"
+  fi
+  git -C "$cache" worktree remove --force "$work" 2>/dev/null || true
+}
+
+scan_start() {  # scan_start <owner/repo> [branch]: checks, then the scan in the background. Prints the id.
+  local repo="$1" br="${2:-main}" now st id open
+  case "$repo" in */*) ;; *) die "Usage: deploys scan start <owner/repo> [branch]";; esac
+  [ -n "$(sc_claude_bin)" ] || die "The Claude Code CLI is not installed: npm i -g @anthropic-ai/claude-code, then claude login"
+  now="$(date +%s)"; st="$(sc_state)"
+  [ "$(echo "$st" | jq --arg r "$repo" '[.runs[] | select(.repo == $r and .status == "running")] | length')" = 0 ] || die "a scan of $repo is running already"
+  [ "$(echo "$st" | jq --argjson t "$now" '[.runs[] | select(.at > ($t - 86400) and .status != "refused")] | length')" -lt "$SCAN_PER_DAY" ] \
+    || die "the daily cap of $SCAN_PER_DAY scans is reached (DEPLOYS_SCAN_PER_DAY)"
+  open="$(sc_open_prs "$repo" 2>/dev/null)" || open='[]'
+  [ "$(echo "$open" | jq length)" = 0 ] || die "$repo has an open bug-scan PR (#$(echo "$open" | jq '.[0].number')); merge or close it first"
+  id="$(sc_slug "$repo")-$now"
+  echo "$st" | jq --arg i "$id" --arg r "$repo" --arg b "$br" --argjson t "$now" '.runs = ([{id:$i, repo:$r, base:$b, at:$t, status:"running", step:"start"}] + .runs)[0:50]' | sc_save
+  if [ -n "${DEPLOYS_SCAN_FOREGROUND:-}" ]; then scan_run "$id" "$repo" "$br"
+  else mkdir -p "$SCAN_DIR/logs"; nohup "$0" scan run "$id" "$repo" "$br" > "$SCAN_DIR/logs/$id.out" 2>&1 & fi
+  echo "$id"
+}
+# A scan whose process died (Mac asleep for hours, killed) is not "running" forever.
+sc_reap() {
+  local st; st="$(sc_state | jq --argjson t "$(date +%s)" '.runs |= map(if .status == "running" and .at < ($t - 7200) then . + {status:"failed", error:"stopped after 2 hours"} else . end)')"
+  echo "$st" | sc_save
+}
+
 # ---------- Auto-deploy back on, allowances, and the guard ----------
 # Auto-deploy can be turned on again, for good or for a few hours (an allowance). The guard
 # (`deploys guard`, a launchd job every 30 minutes) turns it off wherever it is on without an
@@ -1306,6 +1422,7 @@ case "${1:-} ${2:-}" in
   "deploy-changed "*) [ "${2:-}" != "--yes" ] || require_write "deploy-changed --yes" ;;
   # autofix hands failed builds to a routine that opens pull requests, and guard turns auto-deploy
   # off: both change something unless --dry-run (also after --only). Their settings and status only read.
+  "scan start") require_write "scan" ;;
   "autofix "|"autofix --"*|"guard "|"guard --"*)
     case " ${*:2} " in *" --dry-run "*) ;; *) require_write "$1" ;; esac ;;
 esac
@@ -1629,7 +1746,7 @@ case "${1:-} ${2:-}" in
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
     # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
+    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix scan autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
     verbs_of() {
       local v="list deploy rollback status cancel autodeploy-off json" x
       for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
@@ -2119,6 +2236,25 @@ BASH
   "autofix list")
     af_state | jq -r '.fires[] | [(.at | strftime("%Y-%m-%d %H:%M")), .project, .status, ((.sha // "")[0:7]), (.session // .error // .reason // ""), (if .mergedSha then "merged \(.mergedSha[0:7]) (PR #\(.pr)), deploy by hand" elif .redeployedSha then "redeployed \(.redeployedSha[0:7]) (PR #\(.pr))" else "" end)] | @tsv' \
       | (printf 'WHEN\tPROJECT\tSTATUS\tCOMMIT\tSESSION\tREDEPLOY\n'; cat) | column -t -s $'\t' ;;
+  "scan start")
+    scan_start "${3:-}" "${4:-main}" ;;
+  "scan run")
+    # Internal: the detached half of `scan start`.
+    scan_run "$3" "$4" "$5" ;;
+  "scan status")
+    # For the app: is the CLI there and logged in, and the newest scans.
+    sc_reap
+    b="$(sc_claude_bin)"; inst=false; logged=false
+    if [ -n "$b" ]; then inst=true; "$b" auth status 2>/dev/null | jq -e '.loggedIn == true' >/dev/null 2>&1 && logged=true; fi
+    sc_state | jq --argjson i "$inst" --argjson l "$logged" --argjson cap "$SCAN_PER_DAY" \
+      '{installed:$i, loggedIn:$l, perDay:$cap, runs:(.runs[0:20] | map({id, repo, base, at, status, step:(.step // null), branch:(.branch // null), prUrl:(.prUrl // null), fixes:(.fixes // null), error:(.error // null)}))}' ;;
+  "scan log")
+    [ -n "${3:-}" ] || die "Usage: deploys scan log <id>"
+    case "$3" in *[!A-Za-z0-9._-]*) die "bad id";; esac
+    cat "$SCAN_DIR/logs/$3.md" 2>/dev/null || die "no report for $3" ;;
+  "scan list")
+    sc_reap; sc_state | jq -r '.runs[] | [(.at | strftime("%Y-%m-%d %H:%M")), .repo, .status, (.prUrl // .error // "")] | @tsv' \
+      | (printf 'WHEN\tREPO\tSTATUS\tRESULT\n'; cat) | column -t -s $'\t' ;;
   "autofix "*)
     # autofix [--dry-run]: hand a failed build to the routine, deploy a merged fix. For launchd.
     # autofix --only <platform> <project>: this one failure now (exit codes in docs/AUTOFIX.md).

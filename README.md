@@ -93,6 +93,7 @@ Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only gree
 - A bash CLI, `deploys`, that does all of this without the app, also on Linux and in CI. [CLI reference](docs/CLI.md)
 - Add-ons: a GitHub Action, badges, a daily summary to a webhook, a pre-push hook, a Docker image. [Integrations](integrations/)
 - Autofix: a failed build goes to a Claude Code routine that opens a fix PR. [Autofix](docs/AUTOFIX.md)
+- Bug scan: Claude Code on your Mac looks through a repo for bugs and opens one fix PR. [Bug scan](docs/SCAN.md)
 - English and German
 
 ## Deploy Center + Claude Code
