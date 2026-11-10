@@ -29,7 +29,7 @@ struct HTTP {
     let base: String
     let token: String
     var extraHeaders: [String: String] = [:]
-    /// Ask with `If-None-Match` and reuse the answer on 304 (GitHub: a 304 does not count against the limit).
+    /// Ask with `If-None-Match` and reuse the answer on 304 (GitHub: with a token, a 304 does not count against the limit).
     var conditional = false
     /// Tests pass a session that answers from recorded JSON.
     var session: URLSession = HTTP.defaultSession

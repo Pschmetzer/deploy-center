@@ -217,7 +217,7 @@ Not verified:
 - **Simulator:** Face ID, the background refresh, notifications and the iOS widget on the Home
   Screen were not tried. VoiceOver was not tried either. Large text (accessibility sizes) was
   checked: the summary switches to two rows.
-- **Device and store:** no device build. Build 1.0 (1) is archived (ad hoc signed, see `ios/build.sh`) and uploaded; the store page is filled in. Status: `docs/APP-STORE.md`.
+- **Device and store:** no device build from here. Archives are signed ad hoc (see `ios/build.sh`) and uploaded; status: `docs/APP-STORE.md`.
 
 ### Test list before the next version
 

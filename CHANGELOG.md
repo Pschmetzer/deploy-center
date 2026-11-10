@@ -8,7 +8,7 @@
 - iPhone and iPad: ⌘R reload, ⌘, settings, ⌘D deploy the selection; each window keeps its own selection; wide screens open the first project that needs attention.
 - iPhone app, settings: "Test connection" shows the account, team and project count per platform; empty fields say when the Mac's key is used; a note when Background App Refresh is off or Low Power Mode is on. The welcome screen links to creating a Vercel token and a Render API key.
 - iPhone app, QR code: a wrong or old code keeps the camera open with the reason.
-- iPhone app, speed: GitHub reads use ETags (a 304 does not count against the limit), the second compare pass and the PR lookups run in parallel, the keychain is read once per key, dates use shared formatters; the background refresh has a time budget and shorter retry waits.
+- iPhone app, speed: GitHub reads use ETags (with a token, a 304 does not count against the limit), the second compare pass and the PR lookups run in parallel, the keychain is read once per key, dates use shared formatters; the background refresh has a time budget and shorter retry waits.
 - iPhone app, notes: one note per project and event with a fixed id (no pile-up), more than three become one summary with "+N more".
 - Widgets: a "Demo" tag on made-up numbers; on iPhone the time of the data, orange after six hours; the language comes with the snapshot, read once; the iPhone app reloads widgets only when what they show changed.
 - shared: `DeployRule` holds the building/failed/waiting rule, `DeploySnapshot.localized` the language pick. `ios/test.sh` checks the rule, PR numbers, rollback targets, ETags and error texts against made-up answers on the Mac.
