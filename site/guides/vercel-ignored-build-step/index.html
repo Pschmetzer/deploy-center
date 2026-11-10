@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vercel Ignored Build Step: examples and pitfalls · Deploy Center</title>
+<meta name="description" content="Vercel&#x27;s Ignored Build Step skips a build when the command exits 0 and builds when it exits 1. Copy-paste scripts and the pitfalls that make it build anyway.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/vercel-ignored-build-step/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Vercel Ignored Build Step: examples and pitfalls · Deploy Center">
+<meta property="og:description" content="Vercel&#x27;s Ignored Build Step skips a build when the command exits 0 and builds when it exits 1. Copy-paste scripts and the pitfalls that make it build anyway.">
+<meta property="og:url" content="https://deploycenter.app/guides/vercel-ignored-build-step/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Vercel Ignored Build Step: examples and pitfalls · Deploy Center">
+<meta name="twitter:description" content="Vercel&#x27;s Ignored Build Step skips a build when the command exits 0 and builds when it exits 1. Copy-paste scripts and the pitfalls that make it build anyway.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Vercel Ignored Build Step: script examples and pitfalls",
+  "description": "Vercel's Ignored Build Step skips a build when the command exits 0 and builds when it exits 1. Copy-paste scripts and the pitfalls that make it build anyway.",
+  "url": "https://deploycenter.app/guides/vercel-ignored-build-step/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/vercel-ignored-build-step/",
+  "datePublished": "2026-11-10",
+  "dateModified": "2026-11-10",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Does exit code 0 build or skip on Vercel?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Skip. Exit code 0 cancels the build, any other exit code (usually 1) lets it run."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Which environment variables can the ignore command use?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "The system variables such as VERCEL_ENV, VERCEL_GIT_COMMIT_REF, VERCEL_GIT_COMMIT_SHA, VERCEL_GIT_COMMIT_MESSAGE and VERCEL_GIT_PREVIOUS_SHA, plus your project's environment variables."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Why does my build still run?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Most often the script exits non-zero because of an error, or HEAD^ only looked at the newest commit. Run the script locally and print the exit code."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Is a skipped build free?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "It is cancelled before your build command runs, so it is much cheaper than a build. Check your usage page to see how your plan counts it."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Vercel Ignored Build Step",
+    "item": "https://deploycenter.app/guides/vercel-ignored-build-step/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+</div></nav>
+
+<main class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>Vercel Ignored Build Step: script examples and pitfalls</h1>
+<p class="answer">The Ignored Build Step is a command Vercel runs before each Git build: <b>exit code 0 skips</b> the build, <b>exit code 1 builds</b>. Set it under Project → Settings → Git → Ignored Build Step, or as <code>ignoreCommand</code> in <code>vercel.json</code>.</p>
+<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<h2>Where to put it</h2>
+<p>In the dashboard pick <b>Custom</b> and paste the command. Or keep it in the repository:</p>
+<pre><code class="language-json">{
+  "ignoreCommand": "bash scripts/vercel-ignore.sh"
+}</code></pre>
+<p>The command runs in the project's root directory after the repository is cloned. A script file is easier to read and test than a long one-liner.</p>
+
+<h2>Examples</h2>
+<h3>Only build production</h3>
+<pre><code class="language-bash">bash -c '[ "$VERCEL_ENV" = production ] &amp;&amp; exit 1 || exit 0'</code></pre>
+<h3>Only build when this folder changed</h3>
+<pre><code class="language-bash">git diff --quiet HEAD^ HEAD -- .</code></pre>
+<p><code>git diff --quiet</code> exits 0 when nothing changed (skip) and 1 when something did (build), which is exactly what Vercel expects. Add shared folders after the dot, for example <code>-- . ../../packages/ui</code>.</p>
+<h3>Skip bot branches</h3>
+<pre><code class="language-bash">bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*) exit 0;; *) exit 1;; esac'</code></pre>
+<h3>Skip when the commit message says so</h3>
+<pre><code class="language-bash">bash -c 'echo "$VERCEL_GIT_COMMIT_MESSAGE" | grep -qiF "[skip deploy]" &amp;&amp; exit 0 || exit 1'</code></pre>
+<h3>Turborepo</h3>
+<pre><code class="language-bash">npx turbo-ignore</code></pre>
+<h3>A script that compares with the last deployment</h3>
+<p><code>HEAD^</code> only looks at the newest commit. If you push five commits, a change in the third is missed. This script compares with the commit of the last successful deployment instead, and builds whenever it cannot tell:</p>
+<pre><code class="language-bash"><span class="c">#!/usr/bin/env bash</span>
+<span class="c"># scripts/vercel-ignore.sh  ·  exit 0 = skip the build, exit 1 = build</span>
+set -u
+paths=(. ../../packages)            # what this project depends on
+
+prev="${VERCEL_GIT_PREVIOUS_SHA:-}"
+[ -n "$prev" ] || exit 1            # first deployment: build
+
+<span class="c"># Vercel clones shallow; fetch the old commit if it is missing</span>
+git cat-file -e "$prev^{commit}" 2&gt;/dev/null || git fetch --depth=1 origin "$prev" 2&gt;/dev/null || exit 1
+
+git diff --quiet "$prev" HEAD -- "${paths[@]}"   # 0 = no change = skip</code></pre>
+
+<h2>Pitfalls</h2>
+<ul>
+  <li><b>The exit codes are the wrong way round</b> compared with most CI tools. 0 means “ignore this build”. Test with <code>bash scripts/vercel-ignore.sh; echo $?</code>.</li>
+  <li><b>Errors build.</b> A typo, a missing tool or a failing <code>git</code> command exits non-zero, so Vercel builds. That is safe, but it makes a broken script look like it does nothing.</li>
+  <li><b><code>HEAD^</code> misses commits</b> when one push has several. Compare with <code>VERCEL_GIT_PREVIOUS_SHA</code> as in the script above.</li>
+  <li><b>Shallow clone.</b> Old commits may not be in the clone. Fetch them, or fall back to building.</li>
+  <li><b>Empty variables.</b> <code>VERCEL_GIT_PREVIOUS_SHA</code> is empty on the first deployment of a branch.</li>
+  <li><b>It still costs a deployment.</b> Vercel creates the deployment, clones, runs the check and cancels. The list fills with cancelled entries.</li>
+  <li><b>Production too.</b> A rule written for previews also applies to the production branch unless you check <code>VERCEL_ENV</code>.</li>
+</ul>
+
+<div class="note ok"><p><b>When a script is the wrong tool.</b> If what you want is “deploy production when I decide”, a rule per project is a lot of upkeep. <a href="/guides/disable-vercel-auto-deploy/">Turning auto-deploy off</a> and deploying what changed with <a href="/">Deploy Center</a> is one click for every project.</p></div>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Does exit code 0 build or skip on Vercel?</summary><p>Skip. Exit code 0 cancels the build, any other exit code (usually 1) lets it run.</p></details>
+  <details><summary>Which environment variables can the ignore command use?</summary><p>The system variables such as <code>VERCEL_ENV</code>, <code>VERCEL_GIT_COMMIT_REF</code>, <code>VERCEL_GIT_COMMIT_SHA</code>, <code>VERCEL_GIT_COMMIT_MESSAGE</code> and <code>VERCEL_GIT_PREVIOUS_SHA</code>, plus your project's environment variables.</p></details>
+  <details><summary>Why does my build still run?</summary><p>Most often the script exits non-zero because of an error, or <code>HEAD^</code> only looked at the newest commit. Run the script locally and print the exit code.</p></details>
+  <details><summary>Is a skipped build free?</summary><p>It is cancelled before your build command runs, so it is much cheaper than a build. Check your usage page to see how your plan counts it.</p></details>
+
+<div class="ctabox">
+  <h2>Do it for every project in one click.</h2>
+  <p>Deploy Center is a free, open-source Mac app. It turns off auto-deploy on Vercel and Render, shows the commits and PRs waiting to go live, and deploys what changed when you decide.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+  <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify.</p>
+</div></footer>
+</body>
+</html>
