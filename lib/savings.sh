@@ -11,11 +11,25 @@
 # billing (`deploys costs`), else from the team's price per build minute, else from a rate you set:
 #   DEPLOYS_VERCEL_USD_PER_MIN   price of one Vercel build minute (only used without billing data)
 #   DEPLOYS_RENDER_USD_PER_MIN   price of one Render pipeline minute (Render has no billing API)
+# or, without those, from prices.json (`deploys price set vercel 0.008`).
 #
 # The calculations are pure jq on one "facts" document (sv_simulate_from, sv_ledger_from), so the
 # tests feed them fixtures; only sv_facts talks to GitHub, Vercel and Render.
 
 SV_MAX_JOBS=6
+
+# prices.json: {"vercelUsdPerMinute":0.0, "renderUsdPerMinute":0.0}, written by `deploys price`.
+PRICES="$CONFIG_DIR/prices.json"
+
+# The price of one build minute you set: DEPLOYS_<P>_USD_PER_MIN, else prices.json, else empty.
+sv_rate() {  # sv_rate vercel|render
+  local env
+  case "$1" in vercel) env="${DEPLOYS_VERCEL_USD_PER_MIN:-}" ;; render) env="${DEPLOYS_RENDER_USD_PER_MIN:-}" ;; *) return 0 ;; esac
+  if [ -n "$env" ]; then echo "$env"; return 0; fi
+  [ -f "$PRICES" ] || return 0
+  jq -r --arg k "${1}UsdPerMinute" '.[$k] // empty | numbers' "$PRICES" 2>/dev/null || true
+}
+
 
 # The projects with their repo, branch and the moment auto-deploy was first turned off (or null).
 sv_projects() {
@@ -105,7 +119,7 @@ sv_facts() {  # sv_facts <mode> <days>
   done
   wait
   cat_all "$t"/*.json | jq -sc --argjson now "$now" --argjson days "$days" --argjson costs "${costs:-null}" \
-    --arg vr "${DEPLOYS_VERCEL_USD_PER_MIN:-}" --arg rr "${DEPLOYS_RENDER_USD_PER_MIN:-}" \
+    --arg vr "$(sv_rate vercel)" --arg rr "$(sv_rate render)" \
     '{now:$now, days:$days, costs:$costs, projects:sort_by(.name | ascii_downcase),
       rates:{vercelUsdPerMinute:($vr | tonumber? // null), renderUsdPerMinute:($rr | tonumber? // null)}}'
   rm -rf "$t"

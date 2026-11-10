@@ -15,6 +15,7 @@
 #   deploys changed [--json]                  what has commits on GitHub that are not live
 #   deploys deploy-changed [--yes]            deploy all of those (shows the list without --yes)
 #     [--when-green [--wait 30m] [--strict]]  only commits whose CI passed; waits for running checks
+#   deploys plan [--when-green] [--json]      what deploy-changed --yes would start, and an estimate of its cost
 #   deploys deploy <project> [--sha <c>]      deploy one project to production (Vercel or Render)
 #   deploys verify <p> [--path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
 #     [--rollback-after 10] [--no-rollback]   count down, then roll back (Ctrl-C stops it)
@@ -52,6 +53,8 @@
 #   deploys costs [days] | triggers           Vercel charges per day; builds nobody started from here
 #   deploys simulate [--days 30] [--json]     estimate: what auto-deploy costs a month vs. once a day
 #   deploys ledger [--json]                   estimate: builds skipped and money saved since auto-deploy was off
+#   deploys price [set <vercel|render> <usd> | unset <p>]   your price of one build minute (prices.json)
+#   deploys budget [set <usd a month> [--strict] | off]     deploy-changed --yes stops before going over it
 #   deploys where                             config folder, version, key source, logins
 #   deploys render forget-key                 remove the Render key from the keychain
 #   deploys completion zsh|bash|fish          tab completion (eval "$(deploys completion zsh)";
@@ -96,6 +99,8 @@
 #   vercel-repos.json  which repo/branch each Vercel project deploys from
 #   vercel-team        team id (auto-detected; empty for a personal account)
 #   providers.json     which providers are on, when changed with `deploys providers`
+#   prices.json        your price of one build minute, where no billing says it (deploys price)
+#   budget.json        {"monthlyUsd":50,"strict":false}: the budget brake (deploys budget)
 #   window.json        when deploys are closed: {"deny":[{"days":["fri"],"from":"15:00"}]} (docs/SAFE-DEPLOY.md)
 #   overrides.json     this Mac's overrides of the shared deploy-center.json (docs/TEAM.md)
 #   readonly           present: observer mode (as DEPLOYS_READONLY=1)
@@ -845,13 +850,50 @@ deploy_one() {  # deploy_one <platform> <name> [<sha>] [<id>]: the start as JSON
   ( "${1}_deploy_json" "$id" ${3:+--sha "$3"} )
 }
 
+# Savings estimates and the plan, kept in lib/savings.sh and lib/plan.sh next to this script (or
+# in the app's Resources). Loaded only by the commands that put a price on builds.
+load_savings() {
+  [ -z "${SAVINGS_LOADED:-}" ] || return 0
+  local lib="${DEPLOYS_SAVINGS_LIB:-$LIB_DIR/savings.sh}"
+  [ -f "$lib" ] || die "lib/savings.sh is missing next to deploys ($lib)"
+  # shellcheck source=lib/savings.sh
+  . "$lib"
+  [ -f "$LIB_DIR/plan.sh" ] || die "lib/plan.sh is missing next to deploys ($LIB_DIR/plan.sh)"
+  # shellcheck source=lib/plan.sh
+  . "$LIB_DIR/plan.sh"
+  SAVINGS_LOADED=1
+}
+
+# --when-green as a preview: the same ci_of as the real run (four at a time), so what it promises
+# is what --yes does: green starts, red is skipped, pending would be waited for. Adds ci and wouldDo.
+with_ci_preview() {  # with_ci_preview <changed list JSON>
+  local list="$1" cid i=0 k repo sha cis
+  cid="$(mktemp -d)"
+  while IFS=$'\t' read -r k repo sha; do
+    [ -n "$k" ] || continue
+    if [ -z "$repo" ] || [ -z "$sha" ]; then echo '{"state":"unknown","reason":"the commit or repo is unknown, so its checks are too","noRepo":true}' > "$cid/$k"; continue; fi
+    ( ci_of "$repo" "$sha" </dev/null > "$cid/$k" 2>/dev/null || true ) &
+    i=$((i + 1)); [ $((i % 4)) != 0 ] || wait
+  done <<< "$(echo "$list" | jq -r 'to_entries[] | "\(.key)\t\(.value.repo // "")\t\(.value.headSha // "")"')"
+  wait
+  cis="$(for k in $(echo "$list" | jq -r 'keys[]'); do jq -c . "$cid/$k" 2>/dev/null || echo '{"state":"unknown","reason":"no answer"}'; done | jq -sc .)"
+  rm -rf "$cid"
+  echo "$list" | jq -c --argjson c "$cis" 'to_entries | map(.value + {ci:$c[.key],
+    wouldDo:(if ($c[.key].state == "green" or $c[.key].state == "none") then "would-deploy"
+             elif $c[.key].state == "red" or $c[.key].noRepo == true then "would-skip" else "would-wait" end)})'
+}
+# The rows of the deploy-changed preview (its --json), from the list with or without wouldDo.
+PREVIEW_ROWS='[.[] | {platform, name, sha:(.headSha // null), action:(.wouldDo // "would-deploy"), commits:(.pendingCommits // null), risk:(.risk.level // null)}
+  + (if .ci then {ci:{state:.ci.state, reason:(.ci.reason // null)}} else {} end)]'
+
 # ---------- Costs (Vercel billing, one UTC day per request) ----------
 
 # One day of charges, summed: total, builds, and builds per project.
 cost_day() {
-  local from="$1" to="$2" team="$3" out="$4"
-  vercel api "/v1/billing/charges?from=${from}T00:00:00.000Z&to=${to}T00:00:00.000Z${team:+&teamId=$team}" 2>/dev/null \
-    | jq -sc --arg d "$from" '{day:$d,
+  local from="$1" to="$2" team="$3" out="$4" raw
+  # A day that could not be read writes no file: it is missing (costs: missingDays), not $0.
+  raw="$(vercel api "/v1/billing/charges?from=${from}T00:00:00.000Z&to=${to}T00:00:00.000Z${team:+&teamId=$team}" 2>/dev/null)" || return 0
+  printf '%s' "$raw" | jq -sc --arg d "$from" '{day:$d,
         total:(map(.BilledCost) | add // 0),
         build:(map(select(.ServiceCategory=="Build & Deploy" or (.ServiceName|test("Build")))) | map(.BilledCost) | add // 0),
         projects:(map(select(.ServiceName|test("Build"))) | group_by(.Tags.ProjectName // "?")
@@ -2064,7 +2106,7 @@ case "${1:-} ${2:-}" in
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
     # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore hooks explain diff notes costs triggers simulate ledger details autofix autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
+    cmds="doctor where changed plan deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore hooks explain diff notes costs triggers simulate ledger price budget details autofix autodeploy guard providers list ${PROVIDERS[*]} ai completion --help --version"
     verbs_of() {
       local v="list deploy rollback status cancel autodeploy-off json" x
       for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
@@ -2186,8 +2228,12 @@ BASH
     offday="$( { jq '[.[] | .offAt? // empty]' "$REPOS"; jq '[.[]]' "$CONFIG_DIR/render-off.json" 2>/dev/null || echo '[]'; } \
       | jq -rs 'add | map(select(type=="number")) | min // empty | strftime("%Y-%m-%d")' 2>/dev/null)"
     [ -n "$builds" ] || builds='{}'
-    cat_all "$tmp"/*.json | jq -s --argjson b "$builds" --arg off "$offday" --argjson complete "$complete" 'sort_by(.day) | {currency:"USD", offDay:(if $off == "" then null else $off end), buildsComplete:$complete,
+    cat_all "$tmp"/*.json | jq -s --argjson b "$builds" --arg off "$offday" --argjson complete "$complete" --argjson want "$days" 'sort_by(.day) | {currency:"USD", offDay:(if $off == "" then null else $off end), buildsComplete:$complete,
       days:map({day, total, build}),
+      # Days whose charges could not be read (left out of days and months, not counted as $0).
+      missingDays:($want - length),
+      # Per calendar month (UTC) of the days read: a month cut by the window is partial.
+      months:(group_by(.day[0:7]) | map({month:.[0].day[0:7], total:(map(.total) | add), build:(map(.build) | add), days:length})),
       projects:(.[-7:] | map(.projects[]) | group_by(.name)
         | map({name:.[0].name, build:(map(.build)|add), builds:($b[.[0].name] // null)}) | sort_by(-.build))}'
     rm -rf "$tmp" ;;
@@ -2381,6 +2427,31 @@ BASH
     echo "$c$lv$PLAIN  $p$(echo "$r" | jq -r 'if .why then " (\(.why))" else " (\(.files) files, \(.lines) lines)" end')"
     echo "$r" | jq -r '.reasons[] | "  \(.level)  \(.text)"' ;;
 
+  "plan "*)
+    # What deploy-changed would do, and what it would cost: its preview with a price per build.
+    # --when-green asks CI as deploy-changed --when-green does. Starts nothing.
+    green=""; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --when-green) green=1 ;;
+        *) die "Unknown option $1. Usage: deploys plan [--when-green] [--json]" ;;
+      esac
+      shift
+    done
+    load_savings
+    rc=0; list="$(changed_json)" || rc=$?
+    [ "$rc" = 0 ] || [ "$(echo "$list" | jq length)" != 0 ] || die "Could not tell what has changes (see above)."
+    [ -z "$green" ] || [ "$(echo "$list" | jq length)" = 0 ] || list="$(with_ci_preview "$list")"
+    rows="$(echo "$list" | jq -c "$PREVIEW_ROWS"' as $r | [., $r] | transpose | map(.[1] + {id:(.[0].id // null)})' 2>/dev/null \
+      || echo "$list" | jq -c "$PREVIEW_ROWS")"
+    out="$(plan_from "$rows" "$(plan_facts "$rows")")"
+    out="$(echo "$out" | jq -c --argjson w "$(window_json)" --argjson b "$(budget_json "$(echo "$out" | jq .total.usd)")" \
+      '. + {window:{denied:($w.denied // false), reason:($w.reason // null)}, budget:$b}')"
+    if [ "$json" = 1 ]; then echo "$out" | jq .
+    elif [ "$(echo "$out" | jq '.projects | length')" = 0 ]; then echo "Nothing to deploy."
+    else echo "$out" | plan_print; fi
+    exit "$rc" ;;
+
   "deploy-changed "*)
     # The daily deploy: everything with changes. Without --yes it only shows what it would do.
     # Only what is known to have changes is started; what could not be read is named and left out.
@@ -2403,25 +2474,9 @@ BASH
       if [ "$json" = 1 ]; then echo '[]'; else echo "Nothing to deploy."; fi; exit 0
     fi
     if [ -z "$yes" ]; then
-      # --when-green: the preview asks the same ci_of as the real run (four at a time), so what it
-      # promises is what --yes does: green starts, red is skipped, pending would be waited for.
-      if [ -n "$green" ]; then
-        cid="$(mktemp -d)"; i=0
-        while IFS=$'\t' read -r k repo sha; do
-          if [ -z "$repo" ] || [ -z "$sha" ]; then echo '{"state":"unknown","reason":"the commit or repo is unknown, so its checks are too","noRepo":true}' > "$cid/$k"; continue; fi
-          ( ci_of "$repo" "$sha" </dev/null > "$cid/$k" 2>/dev/null || true ) &
-          i=$((i + 1)); [ $((i % 4)) != 0 ] || wait
-        done <<< "$(echo "$list" | jq -r 'to_entries[] | "\(.key)\t\(.value.repo // "")\t\(.value.headSha // "")"')"
-        wait
-        cis="$(for k in $(echo "$list" | jq -r 'keys[]'); do jq -c . "$cid/$k" 2>/dev/null || echo '{"state":"unknown","reason":"no answer"}'; done | jq -sc .)"
-        rm -rf "$cid"
-        list="$(echo "$list" | jq -c --argjson c "$cis" 'to_entries | map(.value + {ci:$c[.key],
-          wouldDo:(if ($c[.key].state == "green" or $c[.key].state == "none") then "would-deploy"
-                   elif $c[.key].state == "red" or $c[.key].noRepo == true then "would-skip" else "would-wait" end)})')"
-      fi
+      [ -z "$green" ] || list="$(with_ci_preview "$list")"
       if [ "$json" = 1 ]; then
-        echo "$list" | jq '[.[] | {platform, name, sha:(.headSha // null), action:(.wouldDo // "would-deploy"), commits:(.pendingCommits // null), risk:(.risk.level // null)}
-          + (if .ci then {ci:{state:.ci.state, reason:(.ci.reason // null)}} else {} end)]'
+        echo "$list" | jq "$PREVIEW_ROWS"
         exit "$rc"
       fi
       echo "$list" | jq -r --argjson w "$maxw" '.[] | "  \(.platform)  \(.name)  (\(.pendingCommits // "?") commits)\(if .ci then
@@ -2434,6 +2489,8 @@ BASH
       exit "$rc"
     fi
     freeze_check
+    # The budget brake (budget.json): over it, this run needs --force "why" as a closed window does.
+    if [ -f "$CONFIG_DIR/budget.json" ]; then load_savings; budget_check "$(echo "$list" | jq -c 'map(. + {action:"would-deploy"})')"; fi
     res="$(mktemp)"; ok=0; bad=0; skip=0
     # say <platform> <name> <action> <reason> [<start JSON>]: one line for a person, one record for --json.
     say() {
@@ -2452,6 +2509,7 @@ BASH
     start() {  # start <platform> <name> <sha or empty> <reason>
       local st
       if st="$(deploy_one "$1" "$2" "$3" "${5:-}" </dev/null)"; then ok=$((ok+1)); say "$1" "$2" started "$4" "$(echo "$st" | jq -c .)"; journal_forced "$1" "$2"
+        if [ -n "${budget_over:-}" ] && [ "${DEPLOYS_CALLER:-}" != app ]; then journal_add "$1" "$2" forced "Deployed $budget_over: $force_reason"; fi
       else bad=$((bad+1)); say "$1" "$2" failed "$4"; fi
     }
     todo="$(echo "$list" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.id // "-")\t\(.repo // "")\t\(.headSha // "")"')"
@@ -2681,11 +2739,10 @@ BASH
     exit "$rc" ;;
 
   "simulate "*|"ledger "*)
-    # Savings estimates, kept in lib/savings.sh next to this script (or in the app's Resources).
-    lib="${DEPLOYS_SAVINGS_LIB:-$LIB_DIR/savings.sh}"
-    [ -f "$lib" ] || die "lib/savings.sh is missing next to deploys ($lib)"
-    # shellcheck source=lib/savings.sh
-    . "$lib"; savings_main "$@" ;;
+    load_savings; savings_main "$@" ;;
+
+  "price "*) load_savings; price_main "${@:2}" ;;
+  "budget "*) load_savings; budget_main "${@:2}" ;;
 
   *)
     if is_provider "${1:-}"; then provider_cmd "$@"; exit $?; fi

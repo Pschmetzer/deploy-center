@@ -10,6 +10,7 @@ app at `Deploy Center.app/Contents/Resources/deploys`, and `./deploys` in this r
 deploys doctor                          # what is connected
 deploys changed                         # what is merged on GitHub and not live: commits and PRs per project
 deploys deploy-changed                  # the daily deploy: shows the list; add --yes to start it
+deploys plan [--when-green]             # the same list with an estimate per build and the sum (starts nothing)
 deploys status                          # what is building now, and what failed last
 deploys watch my-project                # follow the newest deploy until live or failed
 deploys logs my-project                 # the end of the newest build log
@@ -52,6 +53,8 @@ deploys history my-project [n]          # the last n deploys
 deploys costs [days]                    # Vercel charges per day
 deploys simulate [--days 30]            # estimate: auto-deploy a month vs. once a day, see SAVINGS.md
 deploys ledger                          # estimate: builds and money saved since auto-deploy was off
+deploys price set vercel 0.008          # your price of one build minute, where no billing says it (prices.json)
+deploys budget set 50 [--strict]        # deploy-changed --yes stops before going over $50 a month
 deploys triggers                        # builds nobody started from here, deploying workflows, Blueprints
 deploys where                           # config folder, version, key source, logins
 deploys autofix [--dry-run]             # see AUTOFIX.md
@@ -82,6 +85,7 @@ project could not be read (it is named and left out, never counted as current). 
 | `window` | `0` open, `1` closed (`--json`: always `0`) |
 | `deploy-changed --strict` | also `2` when a project was skipped (red or pending CI) |
 | `autofix --only` | `2` not failed, `3` handed over already or busy, `4` a cap, `5` no routine, `6` locked |
+| `deploy-changed --yes` with a budget | `1` over budget (or, with `--strict`, spending unknown) without `--force "why"` |
 | `deploy --wait`, groups | `3` the platform accepted the start but named no deploy id, so it was not followed (a group stops there) |
 
 ## Environment variables
@@ -102,6 +106,14 @@ project could not be read (it is named and left out, never counted as current). 
 | `DEPLOYS_TIMEOUT` | seconds one `gh` or `glab` call may take (default 120, `0` = no limit; needs perl) |
 | `DEPLOYS_LOG_MAX_BYTES` | size past which a launchd job log is renamed to `.1` (default 1 MB) |
 | `NO_COLOR` | no colour |
+
+**Budget brake.** `budget.json` (`deploys budget set 50`) holds dollars a month of Vercel build
+charges. Before `deploy-changed --yes` starts anything it adds this month's charges up to yesterday
+(`deploys costs`) and the plan's estimate for the run; over the budget it stops unless
+`--force "why"`, and the reason goes to the journal. When the charges cannot be read (no Vercel,
+billing down) it warns and goes ahead; with `--strict` it stops instead. Render has no billing API
+and is not in the sum. `deploys costs --json` names days it could not read (`missingDays`) and
+sums per month (`months`).
 
 `DEPLOYS_NOW` (the time the window rules read) counts only with `DEPLOYS_TESTING=1`: it is for tests.
 

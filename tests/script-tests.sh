@@ -182,6 +182,7 @@ case "$*" in
   "api /v1/projects/prj_web/rollback/dpl_prev"*POST*) echo '{}' ;;
   "api /v6/deployments?app=web"*) [ "${WSTUB:-}" = down ] && exit 1; echo '{"deployments":[{"uid":"dpl_old","state":"READY","created":1767225600000,"target":"production"}]}' ;;
   "api /v6/deployments"*) echo '{"deployments":[]}' ;;
+  "api /v1/billing"*) [ -n "${BILL:-}" ] || exit 1; echo "$BILL" ;;
   *) exit 1 ;;
 esac
 VC
@@ -1356,6 +1357,38 @@ git -C "$hk" config core.hooksPath .githooks
 expect "INT-082: core.hooksPath is where it goes" "$(run "$O" "$E" hooks install "$hk"; [ -f "$hk/.githooks/pre-push" ] && echo there)" $'0\nthere'
 git -C "$hk" config --unset core.hooksPath; mkdir -p "$hk/.husky"
 expect "INT-082: with Husky only the line to add" "$(run "$O" "$E" hooks install "$hk"; grep -c 'Add this line to .husky/pre-push' "$O"; grep -c deploy-center "$hk/.git/hooks/pre-push")" $'0\n1\n0'
+# FEA-114: plan is the deploy-changed preview with a price, and starts nothing.
+fresh
+run "$O" "$E" deploy-changed --json >/dev/null; dc="$(jq -c 'map([.platform, .name, .action])' "$O")"
+expect "FEA-114: plan --json lists what deploy-changed would start, each with a price field" \
+  "$(run "$O" "$E" plan --json; jq -c '[.kind, .estimate, (.projects | map([.platform, .name, .action])), (.projects | all(has("usd") and has("priceSource"))), .total.builds]' "$O"; grep -c POST "$e2e/calls.log")" \
+  $'0\n["plan",true,'"$dc"',true,'"$(echo "$dc" | jq length)"']'$'\n0'
+expect "FEA-114: deploy-changed --json is unchanged (no price fields)" "$(run "$O" "$E" deploy-changed --json; jq -c '.[0] | keys' "$O")" $'0\n["action","commits","name","platform","risk","sha"]'
+expect "FEA-010: price set is read by plan (a rate, not billing)" \
+  "$(run "$O" "$E" price set render 0.5; run "$O" "$E" price --json; jq -c '[.renderUsdPerMinute, .source.render]' "$O")" $'0\n0\n[0.5,"file"]'
+expect "FEA-010: the env variable wins over prices.json" "$(DEPLOYS_RENDER_USD_PER_MIN=0.25 run "$O" "$E" price --json; jq -c '[.renderUsdPerMinute, .source.render]' "$O")" $'0\n[0.25,"env"]'
+expect "FEA-010: a price that is no number is refused" "$(run "$O" "$E" price set vercel cheap; grep -c 'a number like' "$E")" $'1\n1'
+run "$O" "$E" price unset render >/dev/null
+# FEA-009: costs says which days it could not read, and sums per month.
+expect "FEA-009: costs counts unread days as missing, not as \$0" "$(run "$O" "$E" costs 3; jq -c '[.missingDays, (.days | length)]' "$O")" $'0\n[3,0]'
+expect "FEA-009: costs sums per month" \
+  "$(BILL='{"BilledCost":2,"ServiceName":"Build","Tags":{"ProjectName":"web"}}' run "$O" "$E" costs 2; jq -c '[.missingDays, (.months | map(.build) | add)]' "$O")" $'0\n[0,4]'
+# FEA-002: the budget brake of deploy-changed --yes.
+export DEPLOYS_JOURNAL="$e2e/journal.jsonl" RENDER_API_KEY=rnd_test
+fresh; : > "$DEPLOYS_JOURNAL"; run "$O" "$E" budget set 1 >/dev/null
+bill='{"BilledCost":5,"ServiceName":"Build","Tags":{"ProjectName":"web"}}'
+if [ "$(date -u +%d)" != 01 ]; then
+  expect "FEA-002: over budget, deploy-changed --yes starts nothing" \
+    "$(BILL="$bill" run "$O" "$E" deploy-changed --yes; started; grep -c 'Over budget' "$E")" $'1\n0\n1'
+  expect "FEA-002: --force \"why\" goes ahead and journals it" \
+    "$(BILL="$bill" run "$O" "$E" deploy-changed --yes --force "release day"; started; grep -c 'over budget.*release day' "$DEPLOYS_JOURNAL")" $'0\n2\n2'
+  expect "FEA-002: plan says it would go over" "$(BILL="$bill" run "$O" "$E" plan --json; jq -c '.budget | [.monthlyUsd, .over]' "$O")" $'0\n[1,true]'
+fi
+fresh
+expect "FEA-002: unknown spending warns and goes ahead" "$(run "$O" "$E" deploy-changed --yes; started; grep -c 'budget is not checked' "$E")" $'0\n2\n1'
+fresh; run "$O" "$E" budget set 1 --strict >/dev/null
+expect "FEA-002: strict: unknown spending stops it" "$(run "$O" "$E" deploy-changed --yes; started; grep -c 'budget is strict' "$E")" $'1\n0\n1'
+run "$O" "$E" budget off >/dev/null; fresh
 # ===== end CLI track =====
 
 echo
