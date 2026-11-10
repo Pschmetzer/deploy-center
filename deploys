@@ -291,7 +291,9 @@ remember_names() {
 # is named on stderr and makes this return 1: an empty list must never stand for "all up to date".
 all_json() {
   local t rc=0 p; t="$(mktemp -d)"
-  if command -v vercel >/dev/null 2>&1; then
+  # Remembered Vercel projects count as "set up" too: under launchd's PATH the vercel CLI is
+  # often not found, and that must be an error, not a silent "no Vercel projects".
+  if command -v vercel >/dev/null 2>&1 || [ "$(jq 'length' "$REPOS" 2>/dev/null || echo 0)" != 0 ]; then
     ( "$0" vercel json 2>"$t/vercel.err" | jq 'map(. + {platform:"vercel"})' > "$t/vercel.json" || : > "$t/vercel.failed" ) &
   fi
   if has_render_key; then
