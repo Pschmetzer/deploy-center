@@ -34,8 +34,9 @@ What to expect:
 
 - `valid on disk` and `satisfies its Designated Requirement` from the first command.
 - `Identifier=app.deploycenter.mac`
-- `TeamIdentifier=QX3P875C86`. The app's updater pins this same team: it installs an update
-  only when the update is signed by this team.
+- `TeamIdentifier=<TEAMID>`, a ten-character Apple team id. It must be the same id that `spctl`
+  shows in parentheses on its `origin=` line (step 3). The app's updater pins this same team: it
+  installs an update only when the update is signed by this team.
 - `flags=0x10000(runtime)`, which means the hardened runtime is on, as notarization requires.
 
 `TeamIdentifier=not set` or `Signature=adhoc` means a local build, not a release.
