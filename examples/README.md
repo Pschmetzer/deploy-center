@@ -8,6 +8,7 @@ accounts. Run each one by hand once and read the log; please report what you fin
 | File | What it does |
 |---|---|
 | [daily-deploy.yml](daily-deploy.yml) | GitHub Actions: every weekday, deploy everything with commits that are not live (`deploys deploy-changed --yes`). Run by hand, it only shows the list. It downloads the CLI tarball of a pinned release and checks it against `checksums.txt`. |
+| [dependency-updates-weekly.yml](dependency-updates-weekly.yml) + [bot-only.sh](bot-only.sh) | GitHub Actions: projects that wait only for bot commits (Dependabot, Renovate) go live every Monday. Add `examples/bot-only.sh --hold` as a step before the deploy in `daily-deploy.yml`, and the daily run leaves them out. A project with any human commit still ships daily. |
 | [claude-pr-ship-check.yml](claude-pr-ship-check.yml) | GitHub Actions in your app's repo: on each PR, Claude comments "What this ships" (projects affected, risk, auto-deploy off). See [docs/CLAUDE.md](../docs/CLAUDE.md). |
 | [../docs/deploy-on-label.yml](../docs/deploy-on-label.yml) | GitHub Actions in your app's repo: a merged PR with the label `deploy` calls a Render deploy hook. |
 | [../scripts/daily-deploy.plist.example](../scripts/daily-deploy.plist.example) | macOS LaunchAgent: the daily deploy on your own Mac at 18:00. |

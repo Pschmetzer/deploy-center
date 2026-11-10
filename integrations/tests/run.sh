@@ -191,6 +191,19 @@ expect "notify: the ntfy token goes on stdin, not in the arguments" "$(sed -n 2p
 DEPLOYS_NOTIFY_PRIORITY=loud DEPLOYS_NOTIFY_URL='https://ntfy.sh/topic' notify/notify.sh >/dev/null 2>&1; expect "notify: an unknown ntfy priority is refused" "$?" 1
 DEPLOYS_NOTIFY_TOKEN='a"b' DEPLOYS_NOTIFY_URL='https://ntfy.sh/topic' notify/notify.sh >/dev/null 2>&1; expect "notify: a token with quotes is refused" "$?" 1
 
+# --- examples/bot-only.sh: dependency-only projects held back, or kept alone ---
+expect "bot-only: a human commit anywhere is not bot-only" "$(../examples/bot-only.sh)" '{"botOnly":[],"other":["app-web","api"],"unknown":[]}'
+cp "$tmp/details-api.json" "$tmp/details-api.keep"
+echo '{"commits":[{"sha":"c5","msg":"Bump lodash","author":"dependabot[bot]","bot":true,"pr":null},{"sha":"c7","msg":"Bump jq","author":"renovate[bot]","bot":true,"pr":3}]}' > "$tmp/details-api.json"
+expect "bot-only: only bot commits" "$(../examples/bot-only.sh | jq -c .botOnly)" '["api"]'
+mkdir -p "$tmp/bo"; echo '["old"]' > "$tmp/bo/ignored.json"
+DEPLOYS_CONFIG="$tmp/bo" ../examples/bot-only.sh --hold >/dev/null
+expect "bot-only --hold: the bot-only ones join ignored.json" "$(jq -c . "$tmp/bo/ignored.json")" '["api","old"]'
+echo '[]' > "$tmp/bo/ignored.json"; DEPLOYS_CONFIG="$tmp/bo" ../examples/bot-only.sh --only >/dev/null
+expect "bot-only --only: every other project is left out" "$(jq -c . "$tmp/bo/ignored.json")" '["app-web"]'
+mv "$tmp/details-api.keep" "$tmp/details-api.json"
+expect "bot-only: an unknown option is refused" "$(../examples/bot-only.sh --all >/dev/null 2>&1; echo $?)" 1
+
 # --- Alfred script filter ---
 af="$(alfred/deploys-filter.sh)"
 expect "alfred: every project, as Alfred items" "$(jq -r '.items | length' <<<"$af")" 3
@@ -326,7 +339,7 @@ sp --config "$tmp/sp-fr.json" --out "$tmp/spf" --no-check >/dev/null 2>&1; expec
 
 # --- one Vercel CLI version everywhere (the action's default is the source) ---
 pin="$(sed -n '/vercel-cli-version:/,/default:/s/^ *default: "\([0-9.]*\)"/\1/p' action/action.yml)"
-for f in docker/Dockerfile statuspage/examples/statuspage-daily.yml ../examples/daily-deploy.yml; do
+for f in docker/Dockerfile statuspage/examples/statuspage-daily.yml ../examples/daily-deploy.yml ../examples/dependency-updates-weekly.yml; do
   others="$(grep -oE '(vercel@|VERCEL_CLI_VERSION[=:] *"?)[0-9]+\.[0-9]+\.[0-9]+' "$f" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u | tr '\n' ' ')"
   expect "vercel CLI pin in $f is the action's ($pin)" "$others" "$pin "
 done
