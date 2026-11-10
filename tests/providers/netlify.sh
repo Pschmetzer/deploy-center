@@ -27,7 +27,11 @@ m=GET; prev=""; data=""; for a in "$@"; do
 url="${*: -1}"
 conf="$(cat)"
 echo "curl $m $url ARGS[$*] DATA[$data]" >> "$CALLS"
-case "$conf" in *"Authorization: Bearer "*) ;; *) echo "no token on stdin" >&2; exit 2 ;; esac
+# The API gets the token on stdin; a build hook never does (it is a URL of its own).
+case "$url" in
+  https://api.netlify.com/build_hooks/*) case "$conf" in *Authorization*) echo "token sent to a build hook" >&2; exit 2 ;; esac ;;
+  *) case "$conf" in *"Authorization: Bearer "*) ;; *) echo "no token on stdin" >&2; exit 2 ;; esac ;;
+esac
 if [ -n "${FAKE_STATUS:-}" ]; then printf '%s\n%s' "$(cat "$FIX/error-$FAKE_STATUS.json")" "$FAKE_STATUS"; exit 0; fi
 case "$url" in https://api.netlify.com/build_hooks/*) touch "$FAKE_STATE/hooked" ;; esac
 while read -r rm glob file status when; do

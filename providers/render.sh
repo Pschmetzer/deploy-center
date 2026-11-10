@@ -83,7 +83,7 @@ render_has() { render_id_of "$1"; }
 render_off_one() {
   render_call PATCH "/services/$1" '{"autoDeployTrigger":"off"}' >/dev/null
   # When it was turned off, so a later push-triggered build can be told apart from earlier ones.
-  local f="$CONFIG_DIR/render-off.json" tmp; [ -f "$f" ] || echo '{}' > "$f"; tmp="$(mktemp)"
+  local f="$CONFIG_DIR/render-off.json" tmp; [ -f "$f" ] || (umask 077; echo '{}' > "$f"); tmp="$(mktemp)"
   jq --arg id "$1" '.[$id] = (.[$id] // (now|floor))' "$f" > "$tmp" && mv "$tmp" "$f"
   echo "Render: $2 no longer deploys on push"
 }
@@ -224,7 +224,7 @@ render_deploy_json() {
     svc="$(render_call GET "/services/$id")" || exit 1
     # By its name, as the shared config knows it, also when it was given by its srv- id.
     name="$(echo "$svc" | jq -r --arg n "$name" '.name // $n')"
-    sha="$(team_gate render "$name" "$(echo "$svc" | jq -r '(.repo // "") | sub("^https://github.com/";"") | sub("\\.git$";"")')" \
+    sha="$(team_gate render "$name" "$(echo "$svc" | jq -r '(.repo // "") | '"$GITHOST_SLUG_JQ"'')" \
       "$(echo "$svc" | jq -r '.branch // "main"')" "$sha")" || exit 1
   fi
   lock="$(start_lock "render-$id")" || exit 1
@@ -265,6 +265,8 @@ render_logs() {
   id="$(render_id_of "$1")"; owner="$(render_call GET "/services/$id" | jq -r '.ownerId // empty')"
   [ -n "$owner" ] || die "Render: could not read the owner of $1 (needed for its logs)"
   # Render's logs have no deploy filter: the deploy's own time window stands in for it.
+  case "$did" in ''|dep-[a-z0-9]*) ;; *) die "Render: \"$did\" is not a deploy id (dep-...)";; esac
+  case "$did" in *[!a-z0-9-]*) die "Render: \"$did\" is not a deploy id (dep-...)";; esac
   [ -z "$did" ] || win="$(render_call GET "/services/$id/deploys/$did" | jq -r '"&startTime=\(.createdAt | @uri)" + (if .finishedAt then "&endTime=\(.finishedAt | @uri)" else "" end)')"
   render_call GET "/logs?ownerId=$owner&resource=$id&type=build&limit=$n&direction=backward$win" \
     | jq -r '.logs | reverse | .[].message' | sed $'s/\x1b\\[[0-9;]*m//g'

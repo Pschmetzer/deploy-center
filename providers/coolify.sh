@@ -178,7 +178,7 @@ coolify_json() {
   while IFS= read -r uuid; do
     [ -n "$uuid" ] || continue
     if one="$(coolify_call GET "/applications/$uuid" 2>&1)"; then
-      if d="$(coolify_call GET "/deployments/applications/$uuid?take=20" 2>&1)"; then
+      if d="$(coolify_call GET "/deployments/applications/$uuid?take=50" 2>&1)"; then
         # A 200 that is not JSON is this app's error, not an empty --argjson.
         d="$(echo "$d" | jq -c 'if type == "object" then {deployments:(.deployments // [])} else error("no list") end' 2>/dev/null)" \
           || d="$(jq -nc '{fetchError:"Coolify answered without a deployment list"}')"
@@ -342,7 +342,7 @@ coolify_latest_json() {
   local id out base
   base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
   id="$(coolify_id_of "$1")" || coolify_die "Coolify application $1 not found"
-  out="$(coolify_call GET "/deployments/applications/$id?take=20")" || coolify_die "Coolify: could not read the deployments of $1"
+  out="$(coolify_call GET "/deployments/applications/$id?take=50")" || coolify_die "Coolify: could not read the deployments of $1"
   echo "$out" | jq --arg base "$base" "$COOLIFY_JQ"'(.deployments // []) | prod | .[0] // null | if . then deploy_out else null end'
 }
 

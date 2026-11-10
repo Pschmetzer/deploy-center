@@ -61,12 +61,17 @@ netlify_key() {
 netlify_call() {
   local method="$1" path="$2" body="${3:-}" key url out code try err
   key="$(netlify_key)" || return 1
-  case "$path" in http*) url="$path";; *) url="$NETLIFY_API$path";; esac
+  local auth=1
+  case "$path" in
+    https://api.netlify.com/build_hooks/*) url="$path"; auth="" ;;
+    http*) netlify_die "Netlify: not calling $path (only https://api.netlify.com/build_hooks/... is called by address)" ;;
+    *) url="$NETLIFY_API$path" ;;
+  esac
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
   err="$(mktemp)"
   for try in 1 2 3; do
-    out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$url" 2>"$err")" || out=$'\n000'
+    out="$( { [ -z "$auth" ] || printf 'header = "Authorization: Bearer %s"\n' "$key"; } | curl "${args[@]}" -w '\n%{http_code}' "$url" 2>"$err")" || out=$'\n000'
     code="${out##*$'\n'}"; out="${out%$'\n'*}"
     # Only reads are repeated: a POST that timed out may have started a build already.
     case "$code" in
