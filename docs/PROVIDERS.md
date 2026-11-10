@@ -1,7 +1,9 @@
 # Providers: adding a platform
 
 Each platform `deploys` can deploy to is one file: `providers/<p>.sh`. Today these are
-`vercel.sh`, `render.sh` and `hook.sh` (a generic deploy hook, off by default). `deploys` sources every `providers/*.sh` at start. There is no
+`vercel.sh` and `render.sh` (on by default), and `netlify.sh`, `cloudflare.sh`, `amplify.sh`,
+`digitalocean.sh`, `coolify.sh` and `hook.sh` (a generic deploy hook), each off until turned on.
+Their own notes are in [providers/](providers/). `deploys` sources every `providers/*.sh` at start. There is no
 list to edit: adding the file adds the provider, and its id is the file name without `.sh`.
 The shared commands (`changed`, `deploy-changed`, `status`, `watch`, `logs`, `open`, `explain`,
 `doctor`, `where`, `list`) call only the functions below. A new provider changes nothing outside
@@ -45,20 +47,20 @@ they exist). Where a capability is `false` in `_meta`, the function still exists
 
 | Function | Prints / does |
 |---|---|
-| `<p>_meta` | One JSON object: `{id, label, noun, defaultOn, keyEnv:[…], keychain, caps:{off, sha, cancel, rollback, logs, preview}}`. `noun` is what one item is called ("project", "service"), used in usage lines and errors. Written with `printf`: `doctor` reads it without jq. |
+| `<p>_meta` | One JSON object: `{id, label, noun, defaultOn, keyEnv:[…], keychain, caps:{off, sha, cancel, rollback, logs, preview}}`. `noun` is what one item is called ("project", "service"), used in usage lines and errors. **One line, written with `printf`, not jq**: `deploys` greps it (`meta_flag`, `meta_str`, `key_of`), also where jq is missing. `contract.sh` checks that it is one valid line. |
 | `<p>_ready` | Exit 0 when this Mac is set up for it (a key, a CLI login). Never prints a key. |
 | `<p>_json` | A JSON array, one entry per project (fields below), sorted by name. No GitHub calls: the core adds branch heads and `changed`. |
-| `<p>_has <name>` | Exit 0 and print the id when a project of that name (or id) exists. |
+| `<p>_has <name>` | Exit 0 and **print the id** when a project of that name (or id) exists: `lookup` uses that output, so a `_has` that only sets the exit code breaks `deploys deploy p:name`. Example: `netlify_has shop` prints `site-shop`. |
 | `<p>_off <id>\|--all` | Turn auto-deploy on push off. Print one line per project. |
 | `<p>_deploy_json <id> [--sha S] [--preview]` | Start a deploy; print `{id, url, state, phase}` (`url` may be null). Take the start lock with `start_lock "<p>-<id>"`. |
-| `<p>_status <id> <deployId>` | `deployId<TAB>phase<TAB>rawState` of one deploy. |
+| `<p>_status <id> <deployId>` | **One TSV line**, `deployId<TAB>phase<TAB>rawState`, of one deploy (for example `d-shop-3<TAB>ready<TAB>ready`), never JSON: `watch` reads it with `read`. A JSON variant for people is `<p>_cli_status`. |
 | `<p>_latest <id> [--preview]` | The same line for the newest deploy (production, or any target with `--preview`); `none` as the id when there is none. |
 | `<p>_cancel <id> <deployId>` | Cancel; print `{…, state}`. |
 | `<p>_rollback <id>` | Production back to the deploy that was live before; print `{id, state}`. |
 | `<p>_logs <id> <lines> [deployId]` | The end of a build log, plain text. |
 | `<p>_url <id> [--dashboard]` | The site's address, or the project's page at the platform. |
 | `<p>_set_key` | Read a key from stdin, try it, save it in the keychain as `deploy-center-<p>`. |
-| `<p>_doctor` | One JSON object of checks (`{"<p>Key":true, …}`), with `printf`, not jq. Its fields join `deploys doctor`. |
+| `<p>_doctor` | One JSON object of checks (`{"<p>Key":true, …}`). Its fields join `deploys doctor`. Prefer `printf`; a provider whose checks carry free text (an error line) may build it with `jq -n` for the escaping (Netlify, Cloudflare, Amplify, Coolify, DigitalOcean do), and then `doctor` without jq loses only its fields. |
 
 Optional: `<p>_where` (lines for `deploys where`), `<p>_history <id> <n>` (a table for
 `deploys history`), `<p>_usage <argc> <verb>` (usage lines for verbs with more arguments), and
@@ -70,7 +72,12 @@ Platform extras that are not part of the contract stay where they are: `vercel m
 ### Dispatch
 
 `deploys <p> <verb> [args]` runs `<p>_cli_<verb>` if it exists, else `<p>_<verb>` for a contract
-verb (`-` becomes `_`, and `autodeploy-off` is `off`). `<p> json` adds the branch heads and the
+verb (`-` becomes `_`, and `autodeploy-off` is `off`). `on` and `autodeploy-on` run `<p>_on`
+where the provider has one, and `list` is `json` where it has no `<p>_cli_list`. A verb it does
+not have is refused with the list of its commands; `deploys --help` lists them for every
+provider that is on, from the same functions (so a provider's own command, like
+`cloudflare_cli_selftest`, shows up there by being defined). `<p>_setup_hint` (optional) is the
+next step `deploys providers enable <p>` prints while the provider is not set up. `<p> json` adds the branch heads and the
 `changed` rule to `<p>_json`. `--json` turns `<p> list` into `<p> json` and `<p> deploy` into
 `<p> deploy-json`. Every older spelling keeps working (`vercel json`, `render deploy-json`, and
 `"$0" "$1" deploy-json` from autofix).
