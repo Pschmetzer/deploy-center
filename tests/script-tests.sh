@@ -2,7 +2,7 @@
 # Tests for the rules in `deploys` that decide what has changes and what waits.
 # No network: `gh` is a stand-in that answers from the cases below. Run: tests/script-tests.sh
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 fails=0
 ok()   { echo "ok   $1"; }
 fail() { echo "FAIL $1: $2"; fails=$((fails+1)); }
@@ -30,6 +30,8 @@ GH
 chmod +x "$tmp/bin/gh"; export PATH="$tmp/bin:$PATH"
 # shellcheck source=../deploys
 . ./deploys
+# deploys turns on set -e; here a failing check must count as FAIL, not end the run.
+set +e
 
 # --- the rule for "changed" ---
 rule() { echo "$1" | jq -c "$CHANGED_RULE | .[0] | {changed, building}"; }

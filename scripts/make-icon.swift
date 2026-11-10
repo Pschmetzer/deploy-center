@@ -1,4 +1,5 @@
-// Draws the app icon: a paper plane on a blue gradient. Run: swift scripts/make-icon.swift
+// Draws the app icon: a paper plane on a blue gradient, and writes app/AppIcon.icns.
+// Run from the repo root: swift scripts/make-icon.swift
 import AppKit
 let sizes = [16, 32, 64, 128, 256, 512, 1024]
 let dir = "build/AppIcon.iconset"
@@ -26,3 +27,11 @@ for s in sizes where s <= 512 {
     try! draw(s).write(to: URL(fileURLWithPath: "\(dir)/icon_\(s)x\(s).png"))
     try! draw(s * 2).write(to: URL(fileURLWithPath: "\(dir)/icon_\(s)x\(s)@2x.png"))
 }
+// Turn the iconset into the .icns that build.sh copies into the app.
+let iconutil = Process()
+iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
+iconutil.arguments = ["-c", "icns", dir, "-o", "app/AppIcon.icns"]
+try! iconutil.run()
+iconutil.waitUntilExit()
+guard iconutil.terminationStatus == 0 else { print("iconutil failed"); exit(1) }
+print("Wrote app/AppIcon.icns")

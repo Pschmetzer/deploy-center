@@ -1,13 +1,39 @@
 # Example: deploy by label instead of on every push (copy to .github/workflows/ in YOUR app's repo).
-# A merged PR with the label "deploy" triggers one build; other merges cost nothing.
+# A merged PR with the label "deploy" triggers one build; other merges cost nothing. Adding the
+# label after the merge also works. The merge commit is deployed, not whatever is newest.
+#
+# Secret: RENDER_DEPLOY_HOOK = the service's deploy hook URL (Settings → Deploy Hook). For Vercel,
+# use the commented step instead with VERCEL_DEPLOY_HOOK (Project → Settings → Git → Deploy Hooks);
+# a Vercel hook always builds the newest commit of its branch.
 name: Deploy on label
 on:
   pull_request:
-    types: [closed]
+    types: [closed, labeled]
+
+permissions: {}
+
+concurrency:
+  group: deploy-on-label
+  cancel-in-progress: false
+
 jobs:
   deploy:
-    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'deploy')
+    # closed: merged with the label. labeled: the label "deploy" added to a PR that is merged already.
+    if: >-
+      github.event.pull_request.merged == true &&
+      ((github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'deploy')) ||
+       (github.event.action == 'labeled' && github.event.label.name == 'deploy'))
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Call the Render deploy hook
-        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          case "$HOOK" in *\?*) sep='&' ;; *) sep='?' ;; esac
+          curl -fsS --retry 3 --retry-all-errors -X POST "${HOOK}${sep}ref=${SHA}"
+      # - name: Call the Vercel deploy hook
+      #   env:
+      #     HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+      #   run: curl -fsS --retry 3 --retry-all-errors -X POST "$HOOK"
