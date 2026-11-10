@@ -1,6 +1,6 @@
 # Deploy Center
 
-> Free, open-source (MIT) Mac app and bash CLI that turns off Git auto-deploy on Vercel and Render, so you stop paying for a build on every push. It shows the commits and pull requests waiting to go live and the build costs, and deploys what changed with one click. Works with Claude Code and other AI coding agents: the agent pushes as often as it likes, you deploy once, and Autofix hands failed builds to a Claude Code routine that opens a fix PR.
+> Free, open-source (MIT) Mac app and bash CLI that turns off Git auto-deploy on Vercel and Render, so you stop paying for a build on every push. It shows the commits and pull requests waiting to go live and the build costs, and deploys what changed with one click. Works with Claude Code and other AI coding agents: the agent pushes as often as it likes, you deploy once, and Autofix hands failed builds to a Claude Code routine that opens a fix PR, and an MCP server lets the agent ask what is waiting to go live.
 
 - Platforms: Vercel and Render today; Netlify support is coming.
 - Requirements: macOS 15 or later (app); the `deploys` CLI is bash and also runs on Linux and in CI.
@@ -36,4 +36,5 @@
 
 - [Turning auto-deploy off, and back on](https://github.com/Pschmetzer/deploy-center/blob/main/docs/AUTO-DEPLOY.md)
 - [Autofix reference](https://github.com/Pschmetzer/deploy-center/blob/main/docs/AUTOFIX.md)
+- [MCP server for AI agents](https://github.com/Pschmetzer/deploy-center/blob/main/integrations/mcp/README.md): Claude Code, Cursor, Codex setup.
 - [FAQ](https://github.com/Pschmetzer/deploy-center/blob/main/docs/FAQ.md)

@@ -86,7 +86,7 @@
     "name": "Can Claude deploy by itself?",
     "acceptedAnswer": {
      "@type": "Answer",
-     "text": "No. Autofix opens pull requests and never merges or deploys. The coming MCP server will only start a deploy after you confirm."
+     "text": "No. Autofix opens pull requests and never merges or deploys. The MCP server is read-only by default; with deploys allowed, it deploys one project at a time and only after you confirm."
     }
    },
    {
@@ -156,10 +156,17 @@
 <h2>Copy for Claude</h2>
 <p>When a build fails, open its log in Deploy Center. The failing lines are red, <b>Jump to first error</b> takes you there, and <b>Copy for Claude</b> copies the project, commit and error lines as a ready fix request. Paste it into Claude Code.</p>
 
-<h2>Ask Claude what is waiting <span class="tag">Coming soon</span></h2>
-<p>An MCP server (<code>integrations/mcp</code>) will let Claude Code ask Deploy Center what is waiting to go live and start a deploy, only after you say OK. It is not released yet; the setup will be one line:</p>
-<pre><code class="language-bash"><span class="c"># coming soon: the exact command ships with integrations/mcp</span>
-claude mcp add deploy-center -- &lt;command from integrations/mcp&gt;</code></pre>
+<h2>Ask Claude what is waiting</h2>
+<p>The MCP server in <a href="https://github.com/Pschmetzer/deploy-center/tree/main/integrations/mcp"><code>integrations/mcp</code></a> lets Claude Code ask Deploy Center what is waiting to go live, read release notes and build logs, and, only if you turn it on, deploy one project after you said yes. It is read-only by default, and there is no “deploy everything” tool.</p>
+<pre><code class="language-bash"><span class="c"># needs Node 18+; replace /path/to/deploy-center with your clone of the repo</span>
+cd /path/to/deploy-center/integrations/mcp &amp;&amp; npm ci
+
+<span class="c"># read-only: what is waiting, notes, logs</span>
+claude mcp add deploys -- node /path/to/deploy-center/integrations/mcp/server.mjs
+
+<span class="c"># or allow single-project deploys, each one asked for first</span>
+claude mcp add deploys -e DEPLOYS_MCP_ALLOW_DEPLOY=1 -- node /path/to/deploy-center/integrations/mcp/server.mjs</code></pre>
+<p>Then ask Claude “what is waiting to go live?”. Keep the approval prompt on for the deploy and rollback tools.</p>
 
 <h2>One approval a day <span class="tag">Coming soon</span></h2>
 <p>An agent digest will collect what your agents pushed during the day into one summary, so you approve one deploy instead of reacting to every push.</p>
@@ -178,7 +185,7 @@ deploys autofix schedule on            # check every 10 minutes</code></pre>
 <h2 id="faq">Questions</h2>
   <details><summary>Does Deploy Center work with Claude Code?</summary><p>Yes. Claude Code pushes to GitHub as usual; Deploy Center turns off the automatic Vercel and Render builds, shows what is waiting, and deploys it when you decide. Autofix hands failed builds to a Claude Code routine.</p></details>
   <details><summary>How do I stop Claude Code from triggering a Vercel build on every push?</summary><p>Turn off auto-deploy for the project, either in Vercel's Git settings or for all projects at once in Deploy Center. Claude keeps pushing; nothing builds until you deploy.</p></details>
-  <details><summary>Can Claude deploy by itself?</summary><p>No. Autofix opens pull requests and never merges or deploys. The coming MCP server will only start a deploy after you confirm.</p></details>
+  <details><summary>Can Claude deploy by itself?</summary><p>No. Autofix opens pull requests and never merges or deploys. The MCP server is read-only by default; with deploys allowed, it deploys one project at a time and only after you confirm.</p></details>
   <details><summary>Is Deploy Center made by Anthropic?</summary><p>No. Deploy Center is an independent open-source project. Claude is a trademark of Anthropic; Deploy Center is not affiliated with Anthropic.</p></details>
 
 <div class="ctabox">
