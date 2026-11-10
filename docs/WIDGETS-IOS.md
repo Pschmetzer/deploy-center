@@ -199,10 +199,11 @@ Verified on this Mac:
 
 - **Mac link:** the Mac app, signed with the Developer ID profile, launches, and writes and reads
   the synchronizable item in the shared keychain group.
+- **QR code:** TestFlight build 2 on the owner's iPhone scanned the Mac app's code and loaded the
+  projects.
 
 Not verified:
 - **iCloud Keychain between Mac and iPhone:** needs TestFlight build 2 on a real iPhone.
-- **The QR scanner:** the simulator has no camera.
 - **The widget gallery:** the Mac widget was not opened there. That needs the screen, and this
   session had no access to it. To check: right-click the desktop → Edit Widgets → search "Deploy".
 - **Real deploys:** deploy, rollback and the status polling never ran against real accounts.
