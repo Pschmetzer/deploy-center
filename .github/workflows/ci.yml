@@ -128,7 +128,7 @@ jobs:
       - run: npm run package
 
   raycast:
-    # The Raycast extension: types, ESLint and Prettier, as `ray lint` runs them. `ray lint` itself
+    # The Raycast extension: types, ESLint and Prettier, as `ray lint` runs them, and the unit tests. `ray lint` itself
     # also asks raycast.com for the author, and `ray build` is macOS-only; both stay with the
     # Store submission (integrations/raycast/PUBLISHING.md). Nothing is published.
     runs-on: ubuntu-latest
@@ -147,8 +147,9 @@ jobs:
           cache-dependency-path: integrations/raycast/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npx tsc --noEmit
-      - run: npx eslint src
-      - run: npx prettier --check src
+      - run: npx eslint src test
+      - run: npx prettier --check src test
+      - run: npm test
 
   docs:
     # site/docs/ is generated from the Markdown in this repo. Fails when the generator errors

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["test/**/*.ts", "src/lib/text.ts", "src/lib/log.ts"],
+  "compilerOptions": {
+    "outDir": ".test-out",
+    "rootDir": ".",
+    "noEmit": false,
+    "jsx": "react-jsx"
+  }
+}

@@ -1,7 +1,50 @@
-import { Action, ActionPanel, Color, Icon, List } from "@raycast/api";
-import { usePromise } from "@raycast/utils";
-import { StatusProject, isFailedState, platformLabel, status } from "./lib/deploys";
-import { ErrorView, ProjectActions, WarningItem, platformTag } from "./lib/ui";
+import { Action, ActionPanel, Clipboard, Color, Detail, Icon, List, Toast, showToast } from "@raycast/api";
+import { useCachedPromise, usePromise } from "@raycast/utils";
+import { StatusProject, buildLog, isFailedState, platformLabel, status } from "./lib/deploys";
+import { aiPrompt, fence, maskSecrets } from "./lib/log";
+import { ErrorView, ProjectActions, WarningItem, errorMessage, platformTag } from "./lib/ui";
+
+// The newest build log, masked, in a Detail view (what VS Code's "Show log" opens).
+function LogView(props: { p: StatusProject }) {
+  const { p } = props;
+  const { data, error, isLoading } = usePromise(buildLog, [p.projectRef], { onError: () => undefined });
+  const log = data === undefined ? "" : maskSecrets(data);
+  const f = fence(log);
+  const markdown = error
+    ? `**Could not read the log of ${p.name}.**\n\n${errorMessage(error)}`
+    : isLoading
+      ? "Reading the build log …"
+      : `${f}\n${log || "(empty)"}\n${f}`;
+  return (
+    <Detail
+      isLoading={isLoading}
+      navigationTitle={`${p.name} · build log`}
+      markdown={markdown}
+      actions={
+        <ActionPanel>
+          {log ? <Action title="Copy for AI" icon={Icon.Wand} onAction={() => copyForAi(p, data)} /> : null}
+          {log ? <Action.CopyToClipboard title="Copy Log" content={log} /> : null}
+        </ActionPanel>
+      }
+    />
+  );
+}
+
+// The first error block with a short prompt, ready for Claude Code, Cursor or a chat. Masked.
+async function copyForAi(p: StatusProject, log?: string) {
+  const toast = await showToast({ style: Toast.Style.Animated, title: `Reading the build log of ${p.name}` });
+  try {
+    const text = log ?? (await buildLog(p.projectRef));
+    await Clipboard.copy(aiPrompt({ name: p.name, platform: p.platform, repo: null, state: p.state }, text));
+    toast.style = Toast.Style.Success;
+    toast.title = "Copied the first error";
+    toast.message = "Ready to paste into Claude Code, Cursor or a chat";
+  } catch (e) {
+    toast.style = Toast.Style.Failure;
+    toast.title = `Could not read the log of ${p.name}`;
+    toast.message = errorMessage(e);
+  }
+}
 
 function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
   const { p } = props;
@@ -23,6 +66,12 @@ function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
       ]}
       actions={
         <ActionPanel title={`${p.name} (${platformLabel(p.platform)})`}>
+          {building ? null : (
+            <ActionPanel.Section>
+              <Action.Push title="Show Log" icon={Icon.Terminal} target={<LogView p={p} />} />
+              <Action title="Copy for AI" icon={Icon.Wand} onAction={() => copyForAi(p)} />
+            </ActionPanel.Section>
+          )}
           <ProjectActions name={p.name} projectRef={p.projectRef} onRefresh={props.onRefresh} />
         </ActionPanel>
       }
@@ -31,7 +80,11 @@ function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
 }
 
 export default function DeployStatus() {
-  const { data, error, isLoading, revalidate } = usePromise(status, [], { onError: () => undefined });
+  // The last list shows at once and is read again in the background (a read can take a minute).
+  const { data, error, isLoading, revalidate } = useCachedPromise(status, [], {
+    keepPreviousData: true,
+    onError: () => undefined,
+  });
   const all = data?.data ?? [];
   const building = all.filter((p) => p.building);
   const failed = all.filter((p) => !p.building && isFailedState(p.state));
