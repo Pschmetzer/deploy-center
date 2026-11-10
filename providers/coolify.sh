@@ -165,7 +165,7 @@ coolify_ready() {
     && coolify_base >/dev/null 2>&1 && coolify_key >/dev/null 2>&1
 }
 
-coolify_has() { coolify_id_of "$1" >/dev/null 2>&1; }
+coolify_has() { coolify_id_of "$1" 2>/dev/null; }
 
 coolify_json() {
   local apps base out="[]" uuid one d
@@ -248,8 +248,16 @@ coolify_on() {
 # A sha: Coolify's /deploy has no commit field, but a deployment takes the application's
 # git_commit_sha when it is queued. So: pin the sha, queue, put the old value back.
 coolify_deploy_json() {
-  local app="$1" preview="${2:-}" sha="${3:-}" id info pinned="" out did lock="" one base rc
-  [ -z "$preview" ] || coolify_die "Coolify: preview deploys need a pull request; not supported from here"
+  local app="$1" sha="" id info pinned="" out did lock="" one base rc
+  shift || true
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --preview) coolify_die "Coolify cannot deploy a preview from here (preview deploys need a pull request)" ;;
+      --sha) sha="${2:-}"; [ -n "$sha" ] || coolify_die "Usage: deploy-json <application> --sha <commit>"; shift ;;
+      "") ;;
+      *) coolify_die "Unknown option $1. Usage: deploy-json <application> [--sha <commit>]" ;;
+    esac; shift
+  done
   if [ -n "$sha" ]; then
     [[ "$sha" =~ ^[0-9a-fA-F]{7,40}$ ]] || coolify_die "Coolify: \"$sha\" is not a commit sha"
   fi
@@ -283,8 +291,8 @@ coolify_deploy_json() {
   fi
 }
 
-# coolify_status [<app>] <deployment-uuid>
-coolify_status() {
+# coolify_status_json [<app>] <deployment-uuid>
+coolify_status_json() {
   local d="${2:-$1}" out base
   base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
   out="$(coolify_call GET "/deployments/$d")" || coolify_die "Coolify: could not read deployment $d"
@@ -292,13 +300,21 @@ coolify_status() {
 }
 
 # The newest production deployment (not a PR preview).
-coolify_latest() {
+coolify_latest_json() {
   local id out base
   base="$(coolify_base)" || coolify_die "Coolify: no instance configured"
   id="$(coolify_id_of "$1")" || coolify_die "Coolify application $1 not found"
   out="$(coolify_call GET "/deployments/applications/$id?take=20")" || coolify_die "Coolify: could not read the deployments of $1"
   echo "$out" | jq --arg base "$base" "$COOLIFY_JQ"'(.deployments // []) | prod | .[0] // null | if . then deploy_out else null end'
 }
+
+# The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
+# The JSON stays in coolify_status_json/_latest_json, and `deploys coolify status|latest` prints it.
+COOLIFY_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
+coolify_status() { local j; j="$(coolify_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$COOLIFY_TSV"; }
+coolify_latest() { local j; j="$(coolify_latest_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$COOLIFY_TSV"; }
+coolify_cli_status() { coolify_status_json "$@"; }
+coolify_cli_latest() { coolify_latest_json "$@"; }
 
 # coolify_cancel [<app>] <deployment-uuid>
 coolify_cancel() {
@@ -348,7 +364,7 @@ coolify_logs() {
     return 0
   fi
   if [ -z "$d" ]; then
-    d="$(coolify_latest "$app" | jq -r '.id // empty')"
+    d="$(coolify_latest_json "$app" | jq -r '.id // empty')"
     [ -n "$d" ] || coolify_die "Coolify: $app has no deployments yet"
   fi
   out="$(coolify_call GET "/deployments/$d")" || coolify_die "Coolify: could not read deployment $d"

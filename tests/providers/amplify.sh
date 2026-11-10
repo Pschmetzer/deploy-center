@@ -166,8 +166,8 @@ expect "json: two branches, none production: no guess" "$(echo "$out" | jq -c '.
 
 # --- resolving names ---
 routes "${STD[@]}"
-expect "has: by name" "$(amp has Shop && echo y)" y
-expect "has: by app id" "$(amp has d2blog0002 && echo y)" y
+expect "has: by name gives <appId>/<branch>" "$(amp has Shop)" d1shop0001/main
+expect "has: by app id" "$(amp has d2blog0002)" d2blog0002/release
 expect "has: unknown" "$(amp has nope && echo y || echo n)" n
 routes "amplify list-apps . apps-dupe.json"
 out="$(amp latest Shop 2>&1)"; rc=$?

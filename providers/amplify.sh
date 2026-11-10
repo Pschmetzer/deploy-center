@@ -163,7 +163,8 @@ amplify_ready() {
 }
 
 amplify_has() {
-  ( amp_resolve "$1" && amp_branches "$AMP_APP" | jq -e --arg b "$AMP_BRANCH" 'any(.[]; .branchName == $b)' ) >/dev/null 2>&1
+  ( amp_resolve "$1" && amp_branches "$AMP_APP" | jq -e --arg b "$AMP_BRANCH" 'any(.[]; .branchName == $b)' >/dev/null \
+      && printf '%s/%s\n' "$AMP_APP" "$AMP_BRANCH" ) 2>/dev/null
 }
 
 # One app to one project. A failed read of its branches or jobs becomes fetchError, not a stop.
@@ -290,20 +291,28 @@ amplify_deploy_json() {
     | {id, url:(if $u == "" then null else "https://\($u)" end), state:.phase, phase, branch, sha}'
 }
 
-amplify_latest() {
+amplify_latest_json() {
   local jobs
   amp_resolve "$1"
   jobs="$(amp_jobs "$AMP_APP" "$AMP_BRANCH" 1)" || exit 1
   echo "$jobs" | jq -e --arg b "$AMP_BRANCH" "$AMP_JQ"' .[0] // empty | amp_job($b)' || die "Amplify: $1 has no builds yet"
 }
 
-# amplify_status <project> [<job id>]: one job (the newest without an id).
-amplify_status() {
-  [ -n "${2:-}" ] || { amplify_latest "$1"; return; }
+# amplify_status_json <project> [<job id>]: one job (the newest without an id).
+amplify_status_json() {
+  [ -n "${2:-}" ] || { amplify_latest_json "$1"; return; }
   amp_resolve "$1"
   amp_aws amplify get-job --app-id "$AMP_APP" --branch-name "$AMP_BRANCH" --job-id "$2" \
     | jq --arg b "$AMP_BRANCH" "$AMP_JQ"' .job.summary | amp_job($b)'
 }
+
+# The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
+# The JSON stays in amplify_status_json/_latest_json, and `deploys amplify status|latest` prints it.
+AMPLIFY_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
+amplify_status() { local j; j="$(amplify_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$AMPLIFY_TSV"; }
+amplify_latest() { local j; j="$(amp_resolve "$1"; jobs="$(amp_jobs "$AMP_APP" "$AMP_BRANCH" 1)" || exit 1; echo "$jobs" | jq -c --arg b "$AMP_BRANCH" "$AMP_JQ"' .[0] // null | if . then amp_job($b) else null end')" || return 1; printf '%s\n' "${j:-null}" | jq -r "$AMPLIFY_TSV"; }
+amplify_cli_status() { amplify_status_json "$@"; }
+amplify_cli_latest() { amplify_latest_json "$@"; }
 
 # amplify_cancel <project> [<job id>]: stop the given job, or the newest one still running.
 amplify_cancel() {
@@ -428,8 +437,8 @@ amplify_cmd() {
     off|autodeploy-off) amplify_off "${1:?project}" "${2:-}" ;;
     on|autodeploy-on) amplify_on "${1:?project}" ;;
     deploy-json|deploy) amplify_deploy_json "${1:?project}" "${@:2}" ;;
-    status) amplify_status "${1:?project}" "${2:-}" ;;
-    latest) amplify_latest "${1:?project}" ;;
+    status) amplify_status_json "${1:?project}" "${2:-}" ;;
+    latest) amplify_latest_json "${1:?project}" ;;
     cancel) amplify_cancel "${1:?project}" "${2:-}" ;;
     rollback) amplify_rollback "${1:?project}" "${2:-}" ;;
     logs) amplify_logs "${1:?project}" "${2:-60}" "${3:-}" ;;
