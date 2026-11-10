@@ -339,6 +339,7 @@ struct SettingsView: View {
                         "last load error: " + (failures.isEmpty ? "none" : failures.joined(separator: "; ")),
                         jobsLine].joined(separator: "\n")
             }
+            Button(L("Show the first-start guide again", "Erststart-Anleitung wieder zeigen")) { UserDefaults.standard.set(false, forKey: FirstStart.key) }
             Text(L("Diagnostics: versions and what is connected; no names, no keys.", "Diagnose: Versionen und was verbunden ist; keine Namen, keine Schlüssel."))
                 .font(.caption).foregroundStyle(.secondary)
             Text(L("Version ", "Version ") + version

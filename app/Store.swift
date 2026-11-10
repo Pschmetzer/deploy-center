@@ -780,6 +780,20 @@ final class Store: ObservableObject {
         }
     }
 
+    /// Auto-deploy off for one project only (the first start's step 3).
+    func turnOffAutoDeploy(_ item: Item) async {
+        busyMessage = L("Turning off auto-deploy …", "Schalte Auto-Deploy aus …")
+        defer { busyMessage = nil }
+        do {
+            _ = try await Tool.run([item.platform.cli, "autodeploy-off", item.id])
+            await load(item.platform, fresh: true)
+            say(L("Auto-deploy is off for \(Demo.mask(item.name))", "Auto-Deploy ist aus bei \(Demo.mask(item.name))"), "", ok: true)
+        } catch {
+            await load(item.platform, fresh: true)
+            say(L("Auto-deploy not turned off", "Auto-Deploy nicht ausgeschaltet"), error.localizedDescription, ok: false)
+        }
+    }
+
     func saveRenderKey(_ key: String) async -> String? {
         do {
             _ = try await Tool.run(["render", "set-key"], stdin: key.trimmingCharacters(in: .whitespacesAndNewlines))

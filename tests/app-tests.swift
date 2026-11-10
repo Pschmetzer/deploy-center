@@ -43,6 +43,7 @@ do {
     expect("health: vercel only when on", c.contains { $0.group == "Vercel" }, false)
     expect("health: no doctor", Health.checks(nil, budget: nil, on: []).map(\.id), ["script"])
 }
+expect("first start: once, with something to turn off", "\(FirstStart.due(done: false, autoOn: 2)) \(FirstStart.due(done: true, autoOn: 2)) \(FirstStart.due(done: false, autoOn: 0))", "true false false")
 expect("state unknown word", Row.stateText("some_new_state"), "some new state")
 
 // Demo mode: names in free text become their stand-ins, in one pass.
