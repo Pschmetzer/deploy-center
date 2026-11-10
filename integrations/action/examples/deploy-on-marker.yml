@@ -29,13 +29,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      # Pin to a release tag or a full commit SHA, not a branch.
+      # Pin to a release tag or a full commit SHA, not a branch. @main only until the first release
+      # after 0.9.1: v0.9.1's action has no `repo` filter and would start every changed project.
       - uses: Pschmetzer/deploy-center/integrations/action@main
         id: dc
         with:
           deploy: ${{ contains(github.event.head_commit.message, '[deploy]') || inputs.deploy == true }}
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-team: ${{ vars.VERCEL_TEAM }}
+          vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}
           repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
           # Only projects that deploy from this repo are started (the default). "*" = every repo.
