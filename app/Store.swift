@@ -959,6 +959,14 @@ final class Store: ObservableObject {
         case .skipped(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "skipped", seconds: took, detail: m))
         default: break
         }
+        // Settings → Notifications: a sound of its own per result (FEA-063), opt-in.
+        if UserDefaults.standard.bool(forKey: Notify.soundsKey) {
+            switch s {
+            case .done: NSSound(named: "Glass")?.play()
+            case .failed: NSSound(named: byPerson ? "Pop" : "Basso")?.play()
+            default: break
+            }
+        }
         switch s {
         case .done:
             if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true, project: items[p]![i].name, key: Self.key(items[p]![i])) }

@@ -431,6 +431,7 @@ enum Notify {
         }
     }
     static let escalationPrefix = "again|"
+    static let soundsKey = "resultSounds"
     /// The second reminders that wait: gone once the person is back in the app, or the project ran again.
     static func dropEscalations(_ key: String? = nil) {
         guard available else { return }
@@ -467,7 +468,11 @@ enum Notify {
             default: return
             }
             let c = UNMutableNotificationContent()
-            c.title = title; c.body = body; c.sound = .default
+            c.title = title; c.body = body
+            // With the result sounds on, a deploy's end already rang once; the countdown and the
+            // person's own reminder keep theirs.
+            let ownSound = UserDefaults.standard.bool(forKey: soundsKey) && category != NotifyRouter.rollbackCategory && id != "daily-reminder"
+            c.sound = ownSound ? nil : .default
             if let category { c.categoryIdentifier = category }
             var info: [String: String] = [:]
             if let project { info["project"] = project }

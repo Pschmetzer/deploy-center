@@ -31,6 +31,7 @@ struct SettingsView: View {
     @ObservedObject private var updates = SoftwareUpdate.shared
     @AppStorage("demoMode") private var demoMode = false
     @AppStorage(Color.colorBlindKey) private var colorBlind = false
+    @AppStorage(Notify.soundsKey) private var resultSounds = false
     @AppStorage("loadLogos") private var loadLogos = true
     @AppStorage("undoSeconds") private var undoSeconds = 8
     @AppStorage("staleDays") private var staleDays = 0
@@ -275,6 +276,9 @@ struct SettingsView: View {
             .onChange(of: summaryHour) { _, h in if h > 0 { Notify.ask() } }
             .help(L("How many deploys ended today and how many failed, from the history. Only when something ended.",
                     "Wie viele Deploys heute fertig wurden und wie viele fehlschlugen, aus dem Verlauf. Nur wenn etwas fertig wurde."))
+            Toggle(L("A sound per result (live, failed)", "Ein Klang je Ergebnis (live, fehlgeschlagen)"), isOn: $resultSounds)
+                .help(L("Glass when it is live, Basso when it failed, Pop when you cancelled.",
+                        "Glass bei live, Basso bei Fehler, Pop beim Abbrechen."))
             Toggle(L("Say when a deploy ends", "Ansagen, wenn ein Deploy fertig ist"), isOn: $speakResults)
                 .help(L("Spoken by VoiceOver when it is on, else by the Mac's voice.", "Mit VoiceOver von VoiceOver, sonst von der Stimme des Macs."))
             Toggle(L("Week in review on Mondays", "Wochenrückblick am Montag"), isOn: $weeklySummary)
