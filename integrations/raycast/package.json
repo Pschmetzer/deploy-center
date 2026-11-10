@@ -1,0 +1,82 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "deploy-center",
+  "title": "Deploy Center",
+  "description": "See which Vercel and Render projects have commits waiting, and deploy them by hand with Deploy Center.",
+  "icon": "extension-icon.png",
+  "author": "pschmetzer",
+  "categories": [
+    "Developer Tools"
+  ],
+  "keywords": [
+    "vercel",
+    "render",
+    "deploy",
+    "deployment"
+  ],
+  "license": "MIT",
+  "platforms": [
+    "macOS"
+  ],
+  "commands": [
+    {
+      "name": "waiting-deploys",
+      "title": "Waiting Deploys",
+      "subtitle": "Deploy Center",
+      "description": "Projects with commits or pull requests that are not live yet. Deploy, open, or copy release notes.",
+      "mode": "view"
+    },
+    {
+      "name": "deploy-status",
+      "title": "Deploy Status",
+      "subtitle": "Deploy Center",
+      "description": "Projects that are building right now, and projects whose newest deploy failed.",
+      "mode": "view"
+    },
+    {
+      "name": "deploy-all-changed",
+      "title": "Deploy All Changed",
+      "subtitle": "Deploy Center",
+      "description": "Shows every project with waiting commits, then deploys all of them after you confirm.",
+      "mode": "view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "deploysPath",
+      "title": "Path to deploys",
+      "description": "Where the deploys CLI is. Leave empty to look in Deploy Center.app (in /Applications or ~/Applications), then on PATH.",
+      "type": "textfield",
+      "required": false,
+      "placeholder": "/Applications/Deploy Center.app/Contents/Resources/deploys"
+    },
+    {
+      "name": "extraPath",
+      "title": "Extra PATH",
+      "description": "Folders, separated by colons, where deploys finds vercel, gh and jq. Homebrew's folders are always added.",
+      "type": "textfield",
+      "required": false,
+      "placeholder": "~/.npm-global/bin"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^2.11.1",
+    "@raycast/utils": "^2.3.3"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.2.0",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "eslint": "^9.39.5",
+    "prettier": "^3.9.10",
+    "typescript": "^6.0.3"
+  },
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint",
+    "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",
+    "publish": "npx @raycast/api@latest publish"
+  }
+}
