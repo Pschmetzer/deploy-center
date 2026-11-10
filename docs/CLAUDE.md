@@ -9,8 +9,9 @@ It is opt-in and off by default.
 | **Release notes for humans** (EN/DE) | detail sheet, when commits are waiting: *Ask Claude* | the titles of the waiting commits and PRs (no authors, no ids) |
 | **Is this safe to ship?** | detail sheet, when commits are waiting: *Ask Claude* | the diff stats, the risky file names (migrations, env files, lockfiles, build config, workflows), the commit titles, whether auto-deploy is on |
 
-*Explain this failure* also offers **Hand to Autofix** when [Autofix](AUTOFIX.md) is set up: that
-project's failed build goes to your routine (`deploys autofix --only <platform> <project>`), under the usual caps.
+*Explain this failure* also offers **Fix with Claude**, the same button as on the row: the failed
+build goes to your [Autofix](AUTOFIX.md) routine (`deploys autofix --only <platform> <project>`),
+under the usual caps. Without Autofix set up, it offers the setup instead.
 
 ## Turning it on
 
