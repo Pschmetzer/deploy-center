@@ -88,6 +88,15 @@ cf_key_source() {
   else echo none; fi
 }
 
+# FEA-078: {"remaining":r,"resetAt":now+t} from the Ratelimit header ("default";r=50;t=30: r
+# requests left, t seconds to the next window), null without one. Without jq.
+cf_ratelimit() {
+  tr -d '\r' < "$1" 2>/dev/null | awk -F': *' -v now="$(date +%s)" '
+    tolower($1) == "ratelimit" { if (match($2, /r=[0-9]+/)) r = substr($2, RSTART + 2, RLENGTH - 2)
+                                 if (match($2, /t=[0-9]+/)) t = substr($2, RSTART + 2, RLENGTH - 2) }
+    END { if (r == "") print "null"; else printf "{\"remaining\":%s,\"resetAt\":%s}\n", r, (t == "" ? "null" : now + t) }'
+}
+
 # cf_call METHOD PATH [json body | -F|--form-string field=value ...]: the API, `result` on success.
 # The token goes to curl on stdin, never into the process list. Reads are retried on 429/5xx.
 cf_call() {
@@ -96,7 +105,7 @@ cf_call() {
   # PRV-130: deploys' shared http_call (lib/http.sh) for JSON calls when deploys has it; a form
   # (-F/--form-string) and this file run on its own take the code below. Its die ends the
   # command, as cf_call's own does; .success and .result are read the same way after it.
-  if declare -F http_call >/dev/null && [ "${1:-}" != -F ] && [ "${1:-}" != --form-string ]; then
+  if [ -z "${CLOUDFLARE_HEADERS:-}" ] && declare -F http_call >/dev/null && [ "${1:-}" != -F ] && [ "${1:-}" != --form-string ]; then
     # shellcheck disable=SC2034  # read by http_call
     local HTTP_AUTH="Authorization: Bearer $key" HTTP_FIX="deploys cloudflare set-key; the token needs Pages: Edit"
     # shellcheck disable=SC2034
@@ -109,6 +118,8 @@ cf_call() {
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   if [ "${1:-}" = -F ] || [ "${1:-}" = --form-string ]; then args+=("$@")
   elif [ -n "${1:-}" ]; then args+=(-H "Content-Type: application/json" --data "$1"); fi
+  # The doctor asks for the headers (rate limit) with CLOUDFLARE_HEADERS=<file>.
+  [ -z "${CLOUDFLARE_HEADERS:-}" ] || args+=(-D "$CLOUDFLARE_HEADERS")
   err="$(mktemp)"
   for try in 1 2 3; do
     out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$CLOUDFLARE_API$path" 2>"$err")" || out=$'\n000'
@@ -438,20 +449,26 @@ cloudflare_set_key() {
 }
 
 cloudflare_doctor() {
-  local src valid=false acct="" asrc=none
+  local src valid=false acct="" asrc=none v="" h rl=null exp=null
   src="$(cf_key_source)"
   if [ "$src" != none ]; then
-    [ "$(cf_call GET /user/tokens/verify 2>/dev/null | jq -r '.status // empty')" = active ] && valid=true
+    h="$(mktemp)"
+    v="$(CLOUDFLARE_HEADERS="$h" cf_call GET /user/tokens/verify 2>/dev/null)" || v=""
+    [ "$(printf '%s' "$v" | jq -r '.status // empty' 2>/dev/null)" = active ] && valid=true
+    # FEA-078: expires_on (ISO, only for a token with an end date) as Unix seconds.
+    exp="$(printf '%s' "$v" | jq '.expires_on // null | if . then sub("\\.[0-9]+Z$";"Z") | fromdateiso8601 else null end' 2>/dev/null)" || exp=null
+    rl="$(cf_ratelimit "$h")"; rm -f "$h"
     if [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then asrc=environment
     elif [ -n "$(cf_state | jq -r '.accountId // empty')" ]; then asrc=config
     else asrc=detected; fi
     acct="$( (cloudflare_account) 2>/dev/null)" || asrc=none
   fi
-  cf_state | jq -c --arg src "$src" --argjson valid "$valid" --arg acct "$acct" --arg asrc "$asrc" --arg tg "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" --argjson st "$(cf_selftests)" '
+  cf_state | jq -c --arg src "$src" --argjson valid "$valid" --arg acct "$acct" --arg asrc "$asrc" --arg tg "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" --argjson st "$(cf_selftests)" \
+    --argjson exp "${exp:-null}" --argjson rl "${rl:-null}" '
     {provider:"cloudflare", tokenSource:$src, tokenValid:$valid,
      account:(if $acct == "" then null else $acct end), accountSource:$asrc,
      deployWhileOff:(.selftest.result // "unverified"), selftest:(.selftest // null), selftests:$st,
-     toggleFallback:($tg == "1"), togglesOpen:((.toggling // {}) | keys),
+     toggleFallback:($tg == "1"), togglesOpen:((.toggling // {}) | keys), expiresAt:$exp, rateLimit:$rl,
      note:(if (.selftest.result // "unverified") == "verified" then "a deploy builds while push-deploys are off (self-test passed for \(.selftest.project // "one project"); each project needs its own)"
            elif .selftest.result == "failed" then "Cloudflare skipped the self-test build: deploy needs --toggle"
            else "unverified: run deploys cloudflare selftest <project> --yes" end)}'

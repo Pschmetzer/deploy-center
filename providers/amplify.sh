@@ -489,6 +489,8 @@ amplify_doctor() {
      profile:(if $prof == "" then null else $prof end), profileSource:$src,
      region:(if $region == "" then null else $region end), identity:(if $arn == "" then null else $arn end),
      credentialsValid:$valid, enabled:$ready,
+     # FEA-078: the aws CLI shows neither; an SSO session end would need the credentials read out.
+     expiresAt:null, rateLimit:null,
      note:(if $cli | not then "install the aws CLI: brew install awscli"
            elif $valid | not then "the aws CLI cannot sign in: aws configure / aws sso login, then deploys amplify set-key <profile>"
            elif $region == "" then "no region: set AWS_REGION or a region in the profile"

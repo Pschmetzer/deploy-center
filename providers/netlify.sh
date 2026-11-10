@@ -91,6 +91,15 @@ netlify_wait() {
   echo "$s"
 }
 
+# FEA-078: {"remaining":N,"resetAt":<Unix s>|null} from a header file curl wrote (-D), from the
+# X-RateLimit-Remaining and X-RateLimit-Reset (a Unix time) headers; null when there are none. Without jq (doctor output).
+netlify_ratelimit() {
+  tr -d '\r' < "$1" 2>/dev/null | awk -F': *' '
+    { n = tolower($1) } n ~ /^(x-)?ratelimit-remaining$/ && $2 ~ /^[0-9]+$/ { r = $2 }
+    n ~ /^(x-)?ratelimit-reset$/ && $2 ~ /^[0-9]+$/ { t = $2 }
+    END { if (r == "") print "null"; else printf "{\"remaining\":%s,\"resetAt\":%s}\n", r, (t == "" ? "null" : t) }'
+}
+
 # netlify_call METHOD PATH|URL [BODY] — the answer on stdout; on failure a reason on stderr, rc 1.
 # The token goes to curl on stdin (-K -), so it never shows in the process list.
 netlify_call() {
@@ -118,6 +127,8 @@ netlify_call() {
     break
   done
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
+  # The doctor asks for the headers (rate limit) with NETLIFY_HEADERS=<file>.
+  [ -z "${NETLIFY_HEADERS:-}" ] || cp "$hdr" "$NETLIFY_HEADERS" 2>/dev/null || true
   rm -f "$err" "$hdr"
   if [[ "$code" != 2* ]]; then
     local hint="" fix="deploys netlify set-key" msg
@@ -505,19 +516,21 @@ netlify_set_key() {
 }
 
 netlify_doctor() {
-  local src="missing" ok=false err="" n=null hooks
+  local src="missing" ok=false err="" n=null hooks h rl=null
   if [ -n "${NETLIFY_AUTH_TOKEN:-}" ]; then src="env"
   elif security find-generic-password -a "${USER:-$(id -un)}" -s "$NETLIFY_KEYCHAIN" >/dev/null 2>&1; then src="keychain"; fi
   if [ "$src" != missing ]; then
-    if err="$(netlify_call GET /user 2>&1 >/dev/null)"; then ok=true; err=""
+    h="$(mktemp)"
+    if err="$(NETLIFY_HEADERS="$h" netlify_call GET /user 2>&1 >/dev/null)"; then ok=true; err=""
       n="$(netlify_sites 2>/dev/null | jq 'length' 2>/dev/null)" || n=null
     fi
+    rl="$(netlify_ratelimit "$h")"; rm -f "$h"
   fi
   hooks="$(jq 'length' "$(netlify_hooks_file)" 2>/dev/null)" || hooks=0
   jq -n --arg src "$src" --argjson ok "$ok" --arg err "$err" --argjson n "${n:-null}" --argjson h "${hooks:-0}" \
-    --argjson gh "$(command -v gh >/dev/null 2>&1 && echo true || echo false)" \
+    --argjson gh "$(command -v gh >/dev/null 2>&1 && echo true || echo false)" --argjson rl "${rl:-null}" \
     '{provider:"netlify", key:$src, tokenOk:$ok, error:(if $err == "" then null else $err end),
-      sites:$n, hooks:$h, gh:$gh}'
+      sites:$n, hooks:$h, gh:$gh, expiresAt:null, rateLimit:$rl}'
 }
 
 # ---------- the contract's status lines (docs/PROVIDERS.md) ----------

@@ -112,7 +112,16 @@ for f in providers/*.sh; do
   expect "$p: _deploy_json prints id, url, state, phase" \
     "$(echo "$d" | jq -c --argjson ph "$PHASES" '[has("id"), has("url"), has("state"), (.phase as $x | $ph | index($x) != null)] | all' 2>&1)" "true"
   expect "$p: _url prints an address" "$(lib "$p" "${p}_url $CONTRACT_ID" | grep -c '^https://')" "1"
-  expect "$p: _doctor prints a JSON object" "$(lib "$p" "${p}_doctor" | jq -r type 2>&1)" "object"
+  doc="$(lib "$p" "${p}_doctor")"
+  expect "$p: _doctor prints a JSON object" "$(echo "$doc" | jq -r type 2>&1)" "object"
+  # FEA-078: expiresAt (Unix s) and rateLimit {remaining, resetAt} where the platform tells; null
+  # (or left out) otherwise. Vercel, Render and Hook leave them out: their fields join the top of
+  # `deploys doctor` as well, where one provider's rateLimit would read as everyone's.
+  expect "$p: _doctor expiresAt/rateLimit are null or in shape" "$(echo "$doc" | jq -c '
+      [((.expiresAt // null) | . == null or type == "number"),
+       ((.rateLimit // null) | . == null or ((.remaining | type == "number") and (.resetAt == null or (.resetAt | type == "number"))))] | all' 2>&1)" "true"
+  case "$p" in vercel|render|hook) expect "$p: flat _doctor without expiresAt/rateLimit" "$(echo "$doc" | jq -c '[has("expiresAt"), has("rateLimit")]')" "[false,false]" ;;
+    *) expect "$p: _doctor has expiresAt and rateLimit" "$(echo "$doc" | jq -c '[has("expiresAt"), has("rateLimit")]')" "[true,true]" ;; esac
 
   label="$(echo "$meta" | jq -r .label)"
   for cap in $(echo "$meta" | jq -r '.caps | to_entries[] | select(.value == false) | .key'); do
@@ -202,6 +211,17 @@ for p in netlify:2 coolify:2 digitalocean:2 cloudflare:3 amplify:3; do
 done
 out="$(lib cloudflare 'type die | sed -n 4p')"
 case "$out" in *RED*) ok "PRV-131: under deploys, deploys' own die is used" ;; *) fail "PRV-131: under deploys, deploys' own die is used" "$out" ;; esac
+
+# --- FEA-078: rate limits read from the headers the platform sends (fixture header files) ---
+R=tests/fixtures/ratelimit
+expect "FEA-078: Netlify X-RateLimit-*" "$(lib netlify "netlify_ratelimit $R/netlify.headers")" '{"remaining":56,"resetAt":1372700873}'
+expect "FEA-078: DigitalOcean ratelimit-*" "$(lib digitalocean "digitalocean_ratelimit $R/digitalocean.headers")" '{"remaining":4816,"resetAt":1444931833}'
+expect "FEA-078: Coolify, no reset header" "$(lib coolify "coolify_ratelimit $R/coolify.headers")" '{"remaining":199,"resetAt":null}'
+cfr="$(lib cloudflare "cf_ratelimit $R/cloudflare.headers")"; now="$(date +%s)"
+expect "FEA-078: Cloudflare Ratelimit r=50;t=30" "$(echo "$cfr" | jq -c --argjson n "$now" '[.remaining, (.resetAt - $n | . >= 28 and . <= 31)]')" '[50,true]'
+for p in netlify:netlify digitalocean:digitalocean coolify:coolify cloudflare:cf; do
+  expect "FEA-078: ${p%%:*} without the headers: null" "$(lib "${p%%:*}" "${p#*:}_ratelimit $R/none.headers")" null
+done
 
 # --- the script finds its providers through a symlink, and says so when they are missing ---
 # Every providers/*.sh, in the order deploys reads them; only vercel and render are on by default.

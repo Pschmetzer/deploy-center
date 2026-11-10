@@ -289,6 +289,7 @@ expect "PRV-130: a call with a body keeps the file (not http_call)" "$(calls '^h
 reset
 ( http_stub; DIGITALOCEAN_HEADERS="$tmp/h" digitalocean_call GET /v2/account >/dev/null 2>&1 )
 expect "PRV-130: the doctor's header read keeps the own path" "$(calls '^http_call')" 0
+has "FEA-078: the doctor's read keeps the headers (-D)" "$(cat "$CALLS")" "-D $tmp/h"
 reset
 out="$( http_stub; FAKE_STATUS=401 digitalocean_call GET /v2/account 2>&1 >/dev/null )"; rc=$?
 expect "PRV-130: a 401 returns 1" "$rc" 1

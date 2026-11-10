@@ -50,6 +50,15 @@ digitalocean_key() {
   printf '%s' "$k"
 }
 
+# FEA-078: {"remaining":N,"resetAt":<Unix s>|null} from a header file curl wrote (-D), from the
+# ratelimit-remaining and ratelimit-reset (Unix epoch, per hour) headers; null when there are none. Without jq (doctor output).
+digitalocean_ratelimit() {
+  tr -d '\r' < "$1" 2>/dev/null | awk -F': *' '
+    { n = tolower($1) } n ~ /^(x-)?ratelimit-remaining$/ && $2 ~ /^[0-9]+$/ { r = $2 }
+    n ~ /^(x-)?ratelimit-reset$/ && $2 ~ /^[0-9]+$/ { t = $2 }
+    END { if (r == "") print "null"; else printf "{\"remaining\":%s,\"resetAt\":%s}\n", r, (t == "" ? "null" : t) }'
+}
+
 # PRV-130: deploys' shared http_call (lib/http.sh) does the request when deploys has it; the
 # code in digitalocean_call below is the fallback (this file run on its own, or a deploys without lib/).
 # In a subshell, so its die returns 1 here like the rest of this file, and its "Error: " is
@@ -83,6 +92,8 @@ digitalocean_call() {
     bodyf="$(umask 077; mktemp)"; printf '%s' "$body" > "$bodyf"
     args+=(-H "Content-Type: application/json" --data-binary "@$bodyf")
   fi
+  # The doctor asks for the headers (rate limit) with DIGITALOCEAN_HEADERS=<file>.
+  [ -z "${DIGITALOCEAN_HEADERS:-}" ] || args+=(-D "$DIGITALOCEAN_HEADERS")
   err="$(mktemp)"
   for try in 1 2 3; do
     out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$DIGITALOCEAN_API$path" 2>"$err")" || out=$'\n000'
@@ -492,18 +503,20 @@ digitalocean_set_key() {
 }
 
 digitalocean_doctor() {
-  local src="missing" ok=false err="" n=null specs
+  local src="missing" ok=false err="" n=null specs h rl=null
   if [ -n "${DIGITALOCEAN_TOKEN:-}" ]; then src="env"
   elif security find-generic-password -a "${USER:-$(id -un)}" -s "$DIGITALOCEAN_KEYCHAIN" >/dev/null 2>&1; then src="keychain"; fi
   if [ "$src" != missing ]; then
-    if err="$(digitalocean_call GET /v2/account 2>&1 >/dev/null)"; then ok=true; err=""
+    h="$(mktemp)"
+    if err="$(DIGITALOCEAN_HEADERS="$h" digitalocean_call GET /v2/account 2>&1 >/dev/null)"; then ok=true; err=""
       n="$(digitalocean_apps 2>/dev/null | jq 'length' 2>/dev/null)" || n=null
     fi
+    rl="$(digitalocean_ratelimit "$h")"; rm -f "$h"
   fi
   specs="$(find "$(digitalocean_specs_dir)" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')"
-  jq -n --arg src "$src" --argjson ok "$ok" --arg err "$err" --argjson n "${n:-null}" --argjson s "${specs:-0}" \
+  jq -n --arg src "$src" --argjson ok "$ok" --arg err "$err" --argjson n "${n:-null}" --argjson s "${specs:-0}" --argjson rl "${rl:-null}" \
     '{provider:"digitalocean", key:$src, tokenOk:$ok, error:(if $err == "" then null else $err end),
-      apps:$n, savedSpecs:$s}'
+      apps:$n, savedSpecs:$s, expiresAt:null, rateLimit:$rl}'
 }
 
 # ---------- the contract's status lines (docs/PROVIDERS.md) ----------

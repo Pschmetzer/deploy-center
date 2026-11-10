@@ -60,7 +60,7 @@ they exist). Where a capability is `false` in `_meta`, the function still exists
 | `<p>_logs <id> <lines> [deployId]` | The end of a build log, plain text. All three positional: `deploys logs` passes an empty `deployId` for the newest. |
 | `<p>_url <id> [--dashboard]` | The site's address, or the project's page at the platform. |
 | `<p>_set_key` | Read a key from stdin, try it, save it in the keychain as `deploy-center-<p>`. |
-| `<p>_doctor` | One JSON object of checks (`{"<p>Key":true, …}`), with `printf`, not jq. Its fields join `deploys doctor`. |
+| `<p>_doctor` | One JSON object of checks (`{"<p>Key":true, …}`), with `printf`, not jq. Its fields join `deploys doctor`. Providers with `"provider"` in it also give `expiresAt` (Unix seconds, when the key ends) and `rateLimit` (`{remaining, resetAt}`, Unix seconds) from the call the doctor makes anyway, `null` where the platform does not say (below). |
 
 Optional: `<p>_where` (lines for `deploys where`), `<p>_history <id> <n>` (a table for
 `deploys history`), `<p>_usage <argc> <verb>` (usage lines for verbs with more arguments), and
@@ -70,6 +70,20 @@ Optional: `<p>_where` (lines for `deploys where`), `<p>_history <id> <n>` (a tab
 and Coolify (their `_status_json` / `_latest_json`).
 Platform extras that are not part of the contract stay where they are: `vercel map`,
 `vercel team`, `costs`, `triggers`.
+
+### Key end and rate limit in the doctor
+
+| Provider | `expiresAt` | `rateLimit` |
+|---|---|---|
+| Cloudflare | `expires_on` of `GET /user/tokens/verify` (only a token with an end date) | `Ratelimit: "default";r=…;t=…` (`resetAt` = now + t) |
+| Netlify | null (the API does not say) | `X-RateLimit-Remaining`, `X-RateLimit-Reset` of `GET /user` |
+| DigitalOcean | null | `ratelimit-remaining`, `ratelimit-reset` of `GET /v2/account` (per hour) |
+| Coolify | null | `X-RateLimit-Remaining`; `resetAt` null (Laravel sends a reset only with a 429) |
+| Amplify | null (an SSO session end would need the credentials read out) | null |
+| Vercel, Render, Hook | left out: their fields also join the top level of `deploys doctor` | left out |
+
+The headers come from the provider's own curl code (`<P>_HEADERS=<file>` makes `<p>_call` keep
+them; `http_call` does not), and `tests/fixtures/ratelimit/` holds header files for the parsers.
 
 ### Shared helpers
 

@@ -241,6 +241,10 @@ expect "set-key: the remembered account is forgotten" "$(jq -c '[.accountId, .se
 # --- doctor ---
 routes "GET /user/tokens/verify token-active.json"
 out="$(cf doctor)"
+expect "FEA-078: doctor without an end date: expiresAt null, no Ratelimit header: null" "$(echo "$out" | jq -c '[.expiresAt, .rateLimit]')" '[null,null]'
+routes "GET /user/tokens/verify token-expiring.json"
+expect "FEA-078: doctor reads expires_on as Unix seconds" "$(cf doctor | jq .expiresAt)" 1798761600
+routes "GET /user/tokens/verify token-active.json"
 expect "doctor: unverified by default" "$(echo "$out" | jq -c '[.tokenSource, .tokenValid, .account, .accountSource, .deployWhileOff]')" "[\"environment\",true,\"$A\",\"environment\",\"unverified\"]"
 [[ "$(echo "$out" | jq -r .note)" == unverified* ]] && ok "doctor: says unverified" || fail "doctor: says unverified" "$out"
 out="$(CLOUDFLARE_API_TOKEN=bad cf doctor)"

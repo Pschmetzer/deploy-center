@@ -67,6 +67,15 @@ coolify_key() {
   printf '%s' "$k"
 }
 
+# FEA-078: {"remaining":N,"resetAt":<Unix s>|null} from a header file curl wrote (-D), from the
+# X-RateLimit-Remaining (Laravel; a reset only comes with a 429) headers; null when there are none. Without jq (doctor output).
+coolify_ratelimit() {
+  tr -d '\r' < "$1" 2>/dev/null | awk -F': *' '
+    { n = tolower($1) } n ~ /^(x-)?ratelimit-remaining$/ && $2 ~ /^[0-9]+$/ { r = $2 }
+    n ~ /^(x-)?ratelimit-reset$/ && $2 ~ /^[0-9]+$/ { t = $2 }
+    END { if (r == "") print "null"; else printf "{\"remaining\":%s,\"resetAt\":%s}\n", r, (t == "" ? "null" : t) }'
+}
+
 # PRV-130: deploys' shared http_call (lib/http.sh) does the request when deploys has it; the
 # code in coolify_call below is the fallback (this file run on its own, or a deploys without lib/).
 # In a subshell, so its die returns 1 here like the rest of this file, and its "Error: " is
@@ -87,13 +96,15 @@ coolify_call() {
   local method="$1" path="$2" body="${3:-}" key base out code try err
   base="$(coolify_base)" || return 1
   key="$(coolify_key)" || return 1
-  if declare -F http_call >/dev/null; then
+  # Not when the doctor wants the headers (COOLIFY_HEADERS): http_call does not keep them.
+  if [ -z "${COOLIFY_HEADERS:-}" ] && declare -F http_call >/dev/null; then
     local fix="deploys coolify set-key; a 403 can also mean API access is off in Coolify: Settings > Advanced"
     [ -z "${COOLIFY_TOKEN:-}" ] || fix="check COOLIFY_TOKEN in the environment; a 403 can also mean API access is off in Coolify: Settings > Advanced"
     coolify_http "$method" "$base/api/v1$path" "$body" "$key" "$fix"; return
   fi
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
+  [ -z "${COOLIFY_HEADERS:-}" ] || args+=(-D "$COOLIFY_HEADERS")
   err="$(mktemp)"
   for try in 1 2 3; do
     out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$base/api/v1$path" 2>"$err")" || out=$'\n000'
@@ -507,24 +518,25 @@ coolify_set_key() {
 }
 
 coolify_doctor() {
-  local src="missing" ok=false err="" n=null base="" usrc="missing" ver="" e
+  local src="missing" ok=false err="" n=null base="" usrc="missing" ver="" e h rl=null
   if [ -n "${COOLIFY_URL:-}" ]; then usrc="env"
   elif [ -f "$(coolify_config_dir)/coolify.json" ] && jq -e '.url' "$(coolify_config_dir)/coolify.json" >/dev/null 2>&1; then usrc="file"; fi
   base="$(coolify_base 2>/dev/null)" || base=""
   if [ -n "${COOLIFY_TOKEN:-}" ]; then src="env"
   elif security find-generic-password -a "${USER:-$(id -un)}" -s "$COOLIFY_KEYCHAIN" >/dev/null 2>&1; then src="keychain"; fi
   if [ -n "$base" ] && [ "$src" != missing ]; then
-    e="$(mktemp)"
-    if n="$(coolify_apps 2>"$e" | jq 'length' 2>/dev/null)" && [ -n "$n" ]; then ok=true
+    e="$(mktemp)"; h="$(mktemp)"
+    if n="$(COOLIFY_HEADERS="$h" coolify_apps 2>"$e" | jq 'length' 2>/dev/null)" && [ -n "$n" ]; then ok=true
       ver="$(coolify_call GET /version 2>/dev/null | tr -d '"' | head -c 40)" || ver=""
     else n=null; err="$(tail -n 1 "$e")"; fi
-    rm -f "$e"
+    rl="$(coolify_ratelimit "$h")"; rm -f "$e" "$h"
   fi
   jq -n --arg src "$src" --argjson ok "$ok" --arg err "$err" --argjson n "${n:-null}" \
-    --arg base "$base" --arg usrc "$usrc" --arg ver "$ver" \
+    --arg base "$base" --arg usrc "$usrc" --arg ver "$ver" --argjson rl "${rl:-null}" \
     '{provider:"coolify", url:(if $base == "" then null else $base end), urlSource:$usrc,
       https:($base | startswith("https://")), key:$src, tokenOk:$ok,
-      error:(if $err == "" then null else $err end), version:(if $ver == "" then null else $ver end), apps:$n}'
+      error:(if $err == "" then null else $err end), version:(if $ver == "" then null else $ver end), apps:$n,
+      expiresAt:null, rateLimit:$rl}'
 }
 
 # ---------- the contract's status lines (docs/PROVIDERS.md) ----------
