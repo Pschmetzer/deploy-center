@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auto-fix failed Vercel builds with Claude · Deploy Center</title>
+<meta name="description" content="Fix a failed Vercel or Render build automatically: Deploy Center hands the build log to a Claude Code routine, which fixes the error and opens a pull request.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/auto-fix-failed-vercel-builds-with-claude/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Auto-fix failed Vercel builds with Claude · Deploy Center">
+<meta property="og:description" content="Fix a failed Vercel or Render build automatically: Deploy Center hands the build log to a Claude Code routine, which fixes the error and opens a pull request.">
+<meta property="og:url" content="https://deploycenter.app/guides/auto-fix-failed-vercel-builds-with-claude/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Auto-fix failed Vercel builds with Claude · Deploy Center">
+<meta name="twitter:description" content="Fix a failed Vercel or Render build automatically: Deploy Center hands the build log to a Claude Code routine, which fixes the error and opens a pull request.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How to auto-fix failed Vercel builds with Claude",
+  "description": "Fix a failed Vercel or Render build automatically: Deploy Center hands the build log to a Claude Code routine, which fixes the error and opens a pull request.",
+  "url": "https://deploycenter.app/guides/auto-fix-failed-vercel-builds-with-claude/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/auto-fix-failed-vercel-builds-with-claude/",
+  "datePublished": "2026-11-10",
+  "dateModified": "2026-11-10",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "How do I fix a failed Vercel build with AI?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Give the agent the error lines from the build log and the commit. Deploy Center does this for you: Copy for Claude for one failure, or Autofix, which hands every failed build to a Claude Code routine that opens a fix PR."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does Autofix merge or deploy by itself?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. It opens a pull request. A person merges it, and you deploy the fix with one click."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Is my build log sent anywhere?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Only to your own Claude Code routine, with recognized secrets masked. Deploy Center has no server of its own."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does it work for Render?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes, for Render deploys that fail in the build. Runtime and health-check failures are reported but not handed over."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Auto-fix failed builds with Claude",
+    "item": "https://deploycenter.app/guides/auto-fix-failed-vercel-builds-with-claude/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+</div></nav>
+
+<main class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>How to auto-fix failed Vercel builds with Claude</h1>
+<p class="answer">Deploy Center's Autofix checks for failed Vercel and Render builds every 10 minutes and hands each one, with the build log and secrets masked, to a Claude Code routine that fixes the error and opens a pull request. You review and merge the PR, then deploy the fix with one click.</p>
+<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<ol class="flowline" aria-label="Autofix flow">
+  <li class="fail"><span>Build fails</span></li>
+  <li><span>Claude Code routine</span></li>
+  <li><span>Fix PR</span></li>
+  <li class="you"><span>You merge</span></li>
+  <li class="live"><span>One-click deploy</span></li>
+</ol>
+
+<h2>What you need</h2>
+<ul>
+  <li><a href="/">Deploy Center</a> on a Mac, connected to Vercel and/or Render.</li>
+  <li>A Claude Code routine at claude.ai/code with the repositories attached, and a cloud environment that can reach your package registries.</li>
+</ul>
+
+<h2>Set it up</h2>
+<ol>
+  <li><b>Create the routine</b> at claude.ai/code: <b>Routines → New</b>. Attach the repositories, pick the environment, and paste the prompt. <code>deploys autofix prompt</code> prints it, and the app has a button that copies it.</li>
+  <li><b>Add an API trigger</b> in the routine: <b>Trigger → + → API → Generate token</b>. The token is shown once.</li>
+  <li><b>Give both to Deploy Center</b>, in <b>Settings → Autofix</b> or in the terminal:</li>
+</ol>
+<pre><code class="language-bash">pbpaste | deploys autofix set-token      # token goes to the keychain
+deploys autofix routine trig_XXXXXXXX</code></pre>
+<ol start="4">
+  <li><b>Try it without firing anything:</b></li>
+</ol>
+<pre><code class="language-bash">deploys autofix --dry-run</code></pre>
+<ol start="5">
+  <li><b>Run it every 10 minutes</b> (installs a launchd job; <code>off</code> removes it):</li>
+</ol>
+<pre><code class="language-bash">deploys autofix schedule on</code></pre>
+<p><code>deploys autofix list</code> shows every hand-over with its session link. The full reference is in <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/AUTOFIX.md">docs/AUTOFIX.md</a>.</p>
+
+<h2>What it does and does not do</h2>
+<ul>
+  <li><b>Fires for</b> Vercel production deploys in <code>ERROR</code> and Render deploys in <code>build_failed</code>. Render runtime and health-check failures are only reported, because the build log does not show their cause.</li>
+  <li><b>Never merges, never deploys.</b> A person merges; you start the deploy.</li>
+  <li><b>Rate limits:</b> 2 hand-overs per project and 6 per account in 24 hours. No duplicates, and no new hand-over while a fix PR for that project is open.</li>
+  <li><b>One attempt per fix.</b> If the fix fails too, you get a notification instead of another round.</li>
+  <li><b>Secrets are masked</b> in the log when recognized. Masking is a help, not a guarantee: if your build logs may print secrets, do not use Autofix.</li>
+</ul>
+
+<h2>Honest limits</h2>
+<ul>
+  <li>The cloud session does not have your platform's environment variables, so a build can pass there and still fail on Vercel. Expect some PRs that do not fix the deploy.</li>
+  <li>Causes outside the code, such as a missing secret, an expired key or a platform outage, cannot be fixed in a PR. Claude reports the cause instead.</li>
+  <li>Detection runs while your Mac is awake. Every hand-over uses one routine run, including the ones that end in “nothing to fix in code”.</li>
+  <li>The routines API is a research preview and may change.</li>
+</ul>
+
+<h2>Without Autofix: Copy for Claude</h2>
+<p>For a single failure, open the build log in Deploy Center and click <b>Copy for Claude</b>. It copies the project, commit and error lines as a fix request to paste into Claude Code.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>How do I fix a failed Vercel build with AI?</summary><p>Give the agent the error lines from the build log and the commit. Deploy Center does this for you: Copy for Claude for one failure, or Autofix, which hands every failed build to a Claude Code routine that opens a fix PR.</p></details>
+  <details><summary>Does Autofix merge or deploy by itself?</summary><p>No. It opens a pull request. A person merges it, and you deploy the fix with one click.</p></details>
+  <details><summary>Is my build log sent anywhere?</summary><p>Only to your own Claude Code routine, with recognized secrets masked. Deploy Center has no server of its own.</p></details>
+  <details><summary>Does it work for Render?</summary><p>Yes, for Render deploys that fail in the build. Runtime and health-check failures are reported but not handed over.</p></details>
+
+<div class="ctabox">
+  <h2>Do it for every project in one click.</h2>
+  <p>Deploy Center is a free, open-source Mac app. It turns off auto-deploy on Vercel and Render, shows the commits and PRs waiting to go live, and deploys what changed when you decide.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify. Claude is a trademark of Anthropic. Deploy Center is not affiliated with Anthropic.</p>
+</div></footer>
+</body>
+</html>

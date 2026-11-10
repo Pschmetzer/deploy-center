@@ -363,5 +363,26 @@ MainActor.assumeIsolated {
     UserDefaults.standard.removeObject(forKey: "autofixPreselected")
 }
 
+// The command palette's fuzzy search.
+expect("fuzzy: letters in order", fuzzyScore("dpl", "deploy app") != nil, true)
+expect("fuzzy: letters missing", fuzzyScore("xyz", "deploy app") == nil, true)
+expect("fuzzy: wrong order", fuzzyScore("ba", "abc") == nil, true)
+expect("fuzzy: empty query matches", fuzzyScore("  ", "anything") ?? -1, 0)
+expect("fuzzy: case and accents", fuzzyScore("UBER zuruck", "Über – zurückrollen") != nil, true)
+expect("fuzzy: word starts beat the middle", (fuzzyScore("sa", "shop-api") ?? 0) > (fuzzyScore("sa", "visa") ?? 0), true)
+expect("fuzzy: a whole word beats scattered letters",
+       (fuzzyScore("log", "log shop") ?? 0) > (fuzzyScore("log", "lots of good") ?? 0), true)
+expect("fuzzy: shorter wins a tie", (fuzzyScore("open", "open a") ?? 0) > (fuzzyScore("open", "open abc") ?? 0), true)
+let paletteEntries: [(id: String, texts: [String])] = [
+    ("reload", ["Reload", "Neu laden"]), ("deploy|a", ["deploy alpha"]), ("deploy|b", ["deploy bravo"]), ("log|a", ["log alpha"])]
+expect("palette: recent first without a query",
+       paletteOrder(query: "", entries: paletteEntries, recent: ["log|a", "gone", "deploy|b", "log|a"]),
+       ["log|a", "deploy|b", "reload", "deploy|a"])
+expect("palette: only matches", paletteOrder(query: "alp", entries: paletteEntries, recent: []), ["log|a", "deploy|a"])
+expect("palette: the other language", paletteOrder(query: "neu", entries: paletteEntries, recent: []), ["reload"])
+expect("palette: a recent one ahead of an equal match",
+       paletteOrder(query: "deploy", entries: paletteEntries, recent: ["deploy|b"]).prefix(2).joined(separator: ","), "deploy|b,deploy|a")
+expect("palette: best match first", paletteOrder(query: "log", entries: paletteEntries, recent: []).first ?? "", "log|a")
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

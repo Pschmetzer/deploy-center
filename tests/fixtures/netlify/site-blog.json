@@ -1,0 +1,21 @@
+{
+  "id": "site-blog",
+  "name": "blog",
+  "url": "http://blog-123.netlify.app",
+  "ssl_url": "https://blog-123.netlify.app",
+  "custom_domain": null,
+  "admin_url": "https://app.netlify.com/sites/blog",
+  "build_settings": {
+    "provider": "github",
+    "repo_url": "https://github.com/me/blog",
+    "repo_branch": "trunk",
+    "base": "site",
+    "stop_builds": false
+  },
+  "published_deploy": {
+    "id": "d-blog-0",
+    "state": "ready",
+    "commit_ref": "b000000",
+    "title": "first post"
+  }
+}
