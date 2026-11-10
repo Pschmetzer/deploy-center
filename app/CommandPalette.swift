@@ -373,7 +373,7 @@ struct CommandPaletteHost: ViewModifier {
     enum PaletteSheet: Identifiable {
         case log(Item), journal, costs
         var id: String {
-            switch self { case .log(let i): return "log|" + Store.key(i); case .journal: return "journal"; case .costs: return "costs" }
+            switch self { case .log(let i): return "log|\(i.platform.cli)/\(i.id)"; case .journal: return "journal"; case .costs: return "costs" }
         }
     }
 
