@@ -171,7 +171,7 @@ case "$*" in
   "api /v13/deployments"*POST*) echo '{"id":"dpl_new","url":"web-new.vercel.app","readyState":"QUEUED"}' ;;
   "api /v10/projects"*) echo '{"projects":[{"name":"web","link":null,"targets":{"production":{"id":"dpl_old","createdAt":1000,"readyState":"READY","meta":{"githubCommitSha":"'"${LIVE:-aaaa}"'"}}}}],"pagination":{}}' ;;
   "api /v9/projects/web"*) echo '{"id":"prj_web","name":"web"}' ;;
-  "api /v6/deployments?app=web"*) [ "${WSTUB:-}" = down ] && exit 1; echo '{"deployments":[{"uid":"dpl_old","state":"READY"}]}' ;;
+  "api /v6/deployments?app=web"*) [ "${WSTUB:-}" = down ] && exit 1; echo '{"deployments":[{"uid":"dpl_old","state":"READY","created":1767225600000,"target":"production"}]}' ;;
   "api /v6/deployments"*) echo '{"deployments":[]}' ;;
   *) exit 1 ;;
 esac
@@ -278,6 +278,14 @@ rm -f "$e2e/polls"
 expect "watch: follows a Render build to live" "$(run "$O" "$E" watch api; tail -n 1 "$O" | cut -c11-)" $'0\nlive'
 # Once to find the platform, once for the id; not once per poll.
 expect "watch: Render service list not read per poll" "$(grep -c 'services?limit=100' "$e2e/calls.log")" "2"
+
+# history: empty fields show as "-", so the columns stay in place.
+fresh
+expect "history: one row, empty fields as -" "$(run "$O" "$E" history web; sed -n 2p "$O" | tr -s ' ')" $'0\n2026-01-01 00:00 production READY - - -'
+# render json writes the Render names, so `ignore` knows them.
+run "$O" "$E" render json >/dev/null
+expect "render json: names remembered, ignore accepts a Render service" "$(run "$O" "$E" ignore api; run "$O" "$E" ignore --list; cat "$O")" $'0\n0\napi'
+run "$O" "$E" ignore api --undo >/dev/null
 fresh; export WSTUB=down
 expect "watch: platform unreachable is exit 3" "$(run "$O" "$E" watch web)" "3"
 unset WSTUB
