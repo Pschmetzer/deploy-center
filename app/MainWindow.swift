@@ -29,6 +29,12 @@ struct ContentView: View {
     @State private var noteItem: Item?
     @State private var noteText = ""
     @State private var logItem: Item?
+    /// Read so the window redraws at once when demo mode is switched.
+    @AppStorage("demoMode") private var demoMode = false
+
+    /// A project name as the screen may show it.
+    private func shown(_ name: String?) -> String { Demo.mask(name ?? "") }
+    private var allItems: [Item] { Platform.allCases.flatMap { store.items[$0] ?? [] } }
 
     /// The platforms the list shows: one tab, or both under "All".
     /// "35" projects, or "35 · 9" when 9 of them have changes waiting.
@@ -49,7 +55,9 @@ struct ContentView: View {
         var all = scopes.flatMap { store.items[$0] ?? [] }.filter { !store.isHidden($0) }
         if onlyChanged { all = all.filter { $0.hasNewCommits } }
         if !search.isEmpty {
-            all = all.filter { $0.name.localizedCaseInsensitiveContains(search) || $0.detail.localizedCaseInsensitiveContains(search)
+            // In demo mode only the stand-in counts: typing a real name must not find the project.
+            all = all.filter { Demo.on ? Demo.mask($0.name).localizedCaseInsensitiveContains(search)
+                : $0.name.localizedCaseInsensitiveContains(search) || $0.detail.localizedCaseInsensitiveContains(search)
                 || ($0.domain ?? "").localizedCaseInsensitiveContains(search) }
         }
         // Pinned first, then what waits to go live (most commits first), then the rest by name.
@@ -68,9 +76,9 @@ struct ContentView: View {
     }
 
     /// Rows whose waiting changes are those of the row above (same repo): they need not repeat them.
-    private var sameRepoAsAbove: Set<String> {
+    private func sameRepoAsAbove(_ rows: [Item]) -> Set<String> {
         var out = Set<String>(); var prev: Item?
-        for i in visible {
+        for i in rows {
             if let p = prev, let r = i.repo, r == p.repo, i.hasNewCommits, p.hasNewCommits { out.insert(Store.key(i)) }
             prev = i
         }
@@ -101,28 +109,8 @@ struct ContentView: View {
             if let msg = store.busyMessage {
                 HStack { ProgressView().controlSize(.small); Text(msg) }.padding(8)
             }
-            if let v = store.newVersion {
-                HStack {
-                    Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
-                    Text(L("Version \(v) is out.", "Version \(v) ist da.")).font(.callout)
-                    Button(store.updating ? L("Updating …", "Aktualisiere …") : L("Update now", "Jetzt aktualisieren")) {
-                        Task { await store.installUpdate() }
-                    }.buttonStyle(.link).disabled(store.updating)
-                    Button(L("Download", "Herunterladen")) {
-                        NSWorkspace.shared.open(URL(string: "https://github.com/Pschmetzer/deploy-center/releases/latest")!)
-                    }.buttonStyle(.link)
-                    if let st = store.updateStatus { Text(st).font(.caption).foregroundStyle(.secondary) }
-                    Spacer()
-                    Button { store.newVersion = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
-                        .help(L("Not now", "Nicht jetzt"))
-                }
-                .padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue.opacity(0.06))
-            }
-            triggerBanner
-            providerBanner
-            autoBanner
+            noticeArea
             waitingBar
-            githubBanner
             if showAll || platform == .vercel, let c = store.costs { CostBar(costs: c) }
             content
             Divider()
@@ -132,7 +120,7 @@ struct ContentView: View {
         .overlay(alignment: .bottom) {
             if let t = store.toast {
                 HStack(spacing: 10) {
-                    Label(t.text, systemImage: t.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                    Label(Demo.scrub(t.text, items: allItems), systemImage: t.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
                     if let label = t.undoLabel, let undo = t.undo {
                         Button(label) { undo(); store.toast = nil }.buttonStyle(.link)
                     }
@@ -147,9 +135,9 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: store.toast)
-        .sheet(item: $logItem) { item in BuildLog(item: item) }
+        .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView() }
-        .sheet(item: $detailItem) { item in ProjectDetail(item: item) { sha in store.deployOne(item, preview: false, sha: sha) } }
+        .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item) { sha in store.deployOne(item, preview: false, sha: sha) } }
         .onChange(of: store.pendingDeployAll) { _, go in
             guard go else { return }
             store.pendingDeployAll = false
@@ -162,27 +150,27 @@ struct ContentView: View {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { pathItem = nil }
             Button(L("Save", "Speichern")) { if let i = pathItem { store.setHealthPath(i, pathText) }; pathItem = nil }
         } message: {
-            Text(L("This path is asked once \(pathItem?.name ?? "") is live, instead of the front page. Empty = front page.",
-                   "Dieser Pfad wird abgefragt, sobald \(pathItem?.name ?? "") live ist, statt der Startseite. Leer = Startseite."))
+            Text(L("This path is asked once \(shown(pathItem?.name)) is live, instead of the front page. Empty = front page.",
+                   "Dieser Pfad wird abgefragt, sobald \(shown(pathItem?.name)) live ist, statt der Startseite. Leer = Startseite."))
         }
         .alert(L("Note", "Notiz"), isPresented: Binding(get: { noteItem != nil }, set: { if !$0 { noteItem = nil } })) {
             TextField(L("e.g. only after the release mail", "z. B. erst nach der Release-Mail"), text: $noteText)
             Button(L("Cancel", "Abbrechen"), role: .cancel) { noteItem = nil }
             Button(L("Save", "Speichern")) { if let i = noteItem { store.setNote(i, noteText) }; noteItem = nil }
         } message: {
-            Text(L("Shown under \(noteItem?.name ?? ""). Kept on this Mac only.", "Steht unter \(noteItem?.name ?? ""). Bleibt nur auf diesem Mac."))
+            Text(L("Shown under \(shown(noteItem?.name)). Kept on this Mac only.", "Steht unter \(shown(noteItem?.name)). Bleibt nur auf diesem Mac."))
         }
         .onChange(of: store.pendingSearch) { _, name in
             guard let name else { return }
-            showAll = true; onlyChanged = false; search = name; store.pendingSearch = nil
+            showAll = true; onlyChanged = false; search = Demo.mask(name); store.pendingSearch = nil
         }
         .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"),
                isPresented: Binding(get: { unchangedItem != nil }, set: { if !$0 { unchangedItem = nil } })) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
             Button(L("Build anyway", "Trotzdem bauen")) { if let i = unchangedItem { store.deployOne(i, preview: false) }; unchangedItem = nil }
         } message: {
-            Text(L("\(unchangedItem?.name ?? "") is already on the newest commit. A build costs build minutes and changes nothing.",
-                   "\(unchangedItem?.name ?? "") ist schon auf dem neuesten Stand. Ein Build kostet Build-Minuten und ändert nichts."))
+            Text(L("\(shown(unchangedItem?.name)) is already on the newest commit. A build costs build minutes and changes nothing.",
+                   "\(shown(unchangedItem?.name)) ist schon auf dem neuesten Stand. Ein Build kostet Build-Minuten und ändert nichts."))
         }
         .task {
             store.boot()
@@ -195,7 +183,7 @@ struct ContentView: View {
             Button(L("Deploy", "Deployen")) { scopes.forEach { store.deploySelected($0) } }
         } message: {
             Text(selectedAll.map { i in
-                    i.name + ((i.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText(i) : "") }.joined(separator: "\n")
+                    Demo.mask(i.name) + ((i.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText(i) : "") }.joined(separator: "\n")
                  + "\n\n" + L("The newest commit on GitHub goes live.",
                                "Der neueste Stand von GitHub geht live.")
                  + unchangedNote)
@@ -205,14 +193,14 @@ struct ContentView: View {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { rollbackItem = nil }
             Button(L("Roll back", "Zurückrollen"), role: .destructive) { if let i = rollbackItem { store.rollback(i) }; rollbackItem = nil }
         } message: {
-            Text(L("\(rollbackItem?.name ?? "") goes back to the deploy that was live before this one.",
-                   "\(rollbackItem?.name ?? "") geht zurück auf den Stand, der davor live war."))
+            Text(L("\(shown(rollbackItem?.name)) goes back to the deploy that was live before this one.",
+                   "\(shown(rollbackItem?.name)) geht zurück auf den Stand, der davor live war."))
         }
         .alert(L("Turn off auto-deploy?", "Auto-Deploy ausschalten?"), isPresented: $confirmingOff) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             Button(L("Turn off", "Ausschalten")) { Task { await store.turnOffAutoDeploy(platform) } }
         } message: {
-            Text(store.autoOn(platform).map(\.name).joined(separator: "\n") + "\n\n"
+            Text(store.autoOn(platform).map { Demo.mask($0.name) }.joined(separator: "\n") + "\n\n"
                  + (platform == .vercel
                     ? L("The Git connection is removed (the repo is remembered here). A push will no longer build. Reconnect any time in the Vercel dashboard.",
                         "Die Git-Verbindung wird getrennt (das Repo merkt sich die App). Ein Push baut nichts mehr. Wieder verbinden geht jederzeit im Vercel-Dashboard.")
@@ -261,6 +249,7 @@ struct ContentView: View {
                 if store.loading.contains(platform) { ProgressView().controlSize(.small) }
                 else { Image(systemName: "arrow.clockwise") }
             }
+            .accessibilityLabel(L("Reload", "Neu laden"))
             .help(L("Reload (⌘R)", "Neu laden (⌘R)") + (store.loadedAt[platform].map {
                 "\n" + L("Updated ", "Aktualisiert ") + $0.formatted(date: .omitted, time: .shortened)
                     + (store.fromCache.contains(platform) ? L(" (saved copy)", " (gespeicherte Kopie)") : "") } ?? ""))
@@ -270,6 +259,89 @@ struct ContentView: View {
         .padding(12)
     }
 
+    /// Problems and offers above the list, most important first. Only the first is always shown;
+    /// the others fold away, so the list keeps its room.
+    enum Notice: Hashable { case trigger, auto(Platform), github, provider, update }
+    @AppStorage("noticesExpanded") private var noticesExpanded = false
+
+    private var notices: [Notice] {
+        var out: [Notice] = []
+        if !store.triggers.isEmpty { out.append(.trigger) }
+        if !store.autoOn(platform).isEmpty { out.append(.auto(platform)) }
+        if store.doctor.map({ $0.githubCli && $0.githubLoggedIn == false }) == true || (store.githubBudget?.remaining ?? .max) < 300 { out.append(.github) }
+        if !store.providerIssues.isEmpty { out.append(.provider) }
+        if store.newVersion != nil { out.append(.update) }
+        return out
+    }
+
+    private func noticeTitle(_ n: Notice) -> String {
+        switch n {
+        case .trigger: return L("other build triggers", "andere Build-Auslöser")
+        case .auto(let p): return L("auto-deploy on (\(p.rawValue))", "Auto-Deploy an (\(p.rawValue))")
+        case .github: return "GitHub"
+        case .provider: return L("provider problem", "Störung beim Anbieter")
+        case .update: return L("new version", "neue Version")
+        }
+    }
+
+    @ViewBuilder private func notice(_ n: Notice) -> some View {
+        switch n {
+        case .trigger: triggerBanner
+        case .auto: autoBanner
+        case .github: githubBanner
+        case .provider: providerBanner
+        case .update: updateBanner
+        }
+    }
+
+    @ViewBuilder private var noticeArea: some View {
+        let all = notices
+        if let first = all.first {
+            VStack(spacing: 0) {
+                notice(first)
+                if all.count > 1 {
+                    if noticesExpanded {
+                        ForEach(all.dropFirst(), id: \.self) { n in Divider(); notice(n) }
+                    }
+                    Divider()
+                    Button { withAnimation(.easeOut(duration: 0.15)) { noticesExpanded.toggle() } } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: noticesExpanded ? "chevron.up" : "chevron.down")
+                            Text(noticesExpanded ? L("Show fewer notices", "Weniger Hinweise zeigen")
+                                 : L("\(all.count - 1) more: ", "\(all.count - 1) weitere: ") + all.dropFirst().map(noticeTitle).joined(separator: " · "))
+                                .lineLimit(1)
+                            Spacer()
+                        }
+                        .font(.caption).foregroundStyle(.secondary)
+                        .padding(.horizontal, 12).padding(.vertical, 5).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(L("Shows or hides the other notices", "Zeigt oder verbirgt die anderen Hinweise"))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var updateBanner: some View {
+        if let v = store.newVersion {
+            HStack {
+                Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
+                Text(L("Version \(v) is out.", "Version \(v) ist da.")).font(.callout)
+                Button(store.updating ? L("Updating …", "Aktualisiere …") : L("Update now", "Jetzt aktualisieren")) {
+                    Task { await store.installUpdate() }
+                }.buttonStyle(.link).disabled(store.updating)
+                Button(L("Download", "Herunterladen")) {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/Pschmetzer/deploy-center/releases/latest")!)
+                }.buttonStyle(.link)
+                if let st = store.updateStatus { Text(st).font(.caption).foregroundStyle(.secondary) }
+                Spacer()
+                Button { store.newVersion = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                    .help(L("Not now", "Nicht jetzt")).accessibilityLabel(L("Not now", "Nicht jetzt"))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6).background(Color.blue.opacity(0.06))
+        }
+    }
+
     @ViewBuilder private var triggerBanner: some View {
         if !store.triggers.isEmpty {
             HStack(alignment: .top, spacing: 10) {
@@ -277,7 +349,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L("Something else still starts builds", "Etwas anderes startet noch Builds")).font(.headline)
                     ForEach(store.triggers.prefix(6)) { tr in
-                        Text("• \(Self.triggerName(tr.kind)): \(tr.where) – \(tr.detail)").font(.caption).textSelection(.enabled)
+                        Text("• \(Self.triggerName(tr.kind)): " + Demo.scrub("\(tr.where) – \(tr.detail)", items: allItems)).font(.caption).textSelection(.enabled)
                     }
                     if store.triggers.count > 6 {
                         Text(L("and \(store.triggers.count - 6) more", "und \(store.triggers.count - 6) weitere")).font(.caption).foregroundStyle(.secondary)
@@ -314,7 +386,7 @@ struct ContentView: View {
 
     /// Ticked projects that are already on their newest commit: building them costs and changes nothing.
     private var unchangedNote: String {
-        let same = selectedAll.filter { !$0.hasNewCommits && $0.headSha != nil }.map(\.name)
+        let same = selectedAll.filter { !$0.hasNewCommits && $0.headSha != nil }.map { Demo.mask($0.name) }
         guard !same.isEmpty else { return "" }
         return "\n\n" + L("Already up to date, builds anyway: ", "Schon aktuell, baut trotzdem: ") + same.joined(separator: ", ")
     }
@@ -413,6 +485,8 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var content: some View {
+        // Filtered and sorted once per render; the list, the empty states and "same repo" all use it.
+        let visible = self.visible
         if let err = store.doctorError {
             Setup(title: L("Something is missing", "Etwas fehlt"), text: err, commands: []) { Task { await store.start() } }
         } else if store.doctor == nil && (store.items[platform] ?? []).isEmpty {
@@ -462,7 +536,7 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            let dupes = sameRepoAsAbove
+            let dupes = sameRepoAsAbove(visible)
             List(visible) { item in
                 Row(item: item, sameRepoAsAbove: dupes.contains(Store.key(item)), cost: item.platform == .vercel ? store.buildCost(item.name) : nil,
                     perBuild: item.platform == .vercel ? store.costs?.perBuild(item.name) : nil,
@@ -525,17 +599,17 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Button { showJournal = true } label: { Image(systemName: "clock.arrow.circlepath") }
-                .buttonStyle(.borderless).help(L("Deploy history", "Deploy-Verlauf"))
+                .buttonStyle(.borderless).help(L("Deploy history", "Deploy-Verlauf")).accessibilityLabel(L("Deploy history", "Deploy-Verlauf"))
             if !store.messages.isEmpty {
                 Button { showMessages.toggle() } label: { Image(systemName: "bell") }
-                    .buttonStyle(.borderless).help(L("Latest messages", "Letzte Meldungen"))
+                    .buttonStyle(.borderless).help(L("Latest messages", "Letzte Meldungen")).accessibilityLabel(L("Latest messages", "Letzte Meldungen"))
                     .popover(isPresented: $showMessages) {
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(store.messages.prefix(15)) { m in
                                 HStack(alignment: .top, spacing: 6) {
                                     Image(systemName: m.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(m.ok ? .green : .red)
                                     Text(m.date.formatted(date: .omitted, time: .shortened)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                    Text(m.text).font(.caption).textSelection(.enabled)
+                                    Text(Demo.scrub(m.text, items: allItems)).font(.caption).textSelection(.enabled)
                                 }
                             }
                         }
@@ -572,6 +646,9 @@ struct ContentView: View {
 
 struct CostBar: View {
     let costs: Costs
+    private static let dayFormat: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); return f
+    }()
     private var last7: [Costs.Day] { Array(costs.days.suffix(7)) }
     private var week: Double { last7.map(\.build).reduce(0, +) }
     private var average: Double { last7.isEmpty ? 0 : week / Double(last7.count) }
@@ -580,8 +657,7 @@ struct CostBar: View {
     private var saving: (before: Double, after: Double)? {
         guard let off = costs.offDay else { return nil }
         // Today is not over yet: a half day would make "since" look cheaper than it is.
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC")
-        let today = f.string(from: Date())
+        let today = Self.dayFormat.string(from: Date())
         let before = costs.days.filter { $0.day < off }, after = costs.days.filter { $0.day > off && $0.day < today }
         guard !before.isEmpty, !after.isEmpty else { return nil }
         return (before.map(\.build).reduce(0, +) / Double(before.count), after.map(\.build).reduce(0, +) / Double(after.count))
@@ -699,6 +775,7 @@ struct Setup: View {
                     Text(c).font(.system(.body, design: .monospaced)).textSelection(.enabled)
                     Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c, forType: .string) }
                         label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).help(L("Copy", "Kopieren"))
+                        .accessibilityLabel(L("Copy \(c)", "\(c) kopieren"))
                 }
                 .padding(8).background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
             }
@@ -772,7 +849,7 @@ struct Row: View {
             }
             .buttonStyle(.plain)
             .disabled(!item.deployable || item.state.isActive)
-            .accessibilityLabel(item.name)
+            .accessibilityLabel(Demo.mask(item.name))
             .accessibilityValue(item.selected ? L("selected", "ausgewählt") : L("not selected", "nicht ausgewählt"))
 
             Logo(domain: Demo.on ? nil : item.domain, name: Demo.mask(item.name))
@@ -801,7 +878,7 @@ struct Row: View {
                     } else if item.hasNewCommits {
                         Label(Self.waitingText(item), systemImage: "arrow.up.circle.fill")
                             .font(.caption2.weight(.semibold)).foregroundStyle(.blue)
-                            .help(item.headMsg.map { L("Newest commit: ", "Neuester Commit: ") + $0
+                            .help(item.headMsg.map { L("Newest commit: ", "Neuester Commit: ") + (Demo.on ? "…" : $0)
                                 + (item.headAt.map { " (\(Self.ago($0)))" } ?? "") } ?? "")
                     }
                     if item.hasNewCommits, !sameRepoAsAbove, let since = item.oldestPendingAt {
@@ -830,7 +907,7 @@ struct Row: View {
                 Button(action: showDetails) { Image(systemName: "info.circle") }
                     .buttonStyle(.borderless)
                     .help(L("Details: waiting commits, files, CI, open PRs", "Details: wartende Commits, Dateien, CI, offene PRs"))
-                    .accessibilityLabel(L("Details for \(item.name)", "Details zu \(item.name)"))
+                    .accessibilityLabel(L("Details for \(Demo.mask(item.name))", "Details zu \(Demo.mask(item.name))"))
             }
         }
         .padding(.vertical, 4)
@@ -859,11 +936,34 @@ struct Row: View {
         return parts.isEmpty ? base : base + " (" + parts.joined(separator: ", ") + ")"
     }
 
-    static func ago(_ d: Date) -> String {
+    /// Built once: a formatter per row and render was the most expensive part of a list update.
+    private static let relative: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
         f.locale = Locale(identifier: isGerman ? "de_DE" : "en_US")
         f.unitsStyle = .full
-        return f.localizedString(for: d, relativeTo: Date())
+        return f
+    }()
+
+    static func ago(_ d: Date) -> String { relative.localizedString(for: d, relativeTo: Date()) }
+
+    /// Vercel's and Render's deploy states in words ("build_failed" → "Build failed").
+    static func stateText(_ raw: String) -> String {
+        switch raw.lowercased() {
+        case "": return L("unknown", "unbekannt")
+        case "ready", "live", "succeeded": return L("live", "live")
+        case "error": return L("failed", "fehlgeschlagen")
+        case "build_failed": return L("build failed", "Build fehlgeschlagen")
+        case "update_failed": return L("update failed", "Update fehlgeschlagen")
+        case "pre_deploy_failed": return L("pre-deploy step failed", "Pre-Deploy-Schritt fehlgeschlagen")
+        case "canceled", "cancelled": return L("cancelled", "abgebrochen")
+        case "deactivated": return L("deactivated", "deaktiviert")
+        case "building", "build_in_progress": return L("building", "baut")
+        case "update_in_progress": return L("updating", "wird aktualisiert")
+        case "pre_deploy_in_progress": return L("pre-deploy step running", "Pre-Deploy-Schritt läuft")
+        case "queued", "created": return L("queued", "wartet")
+        case "initializing": return L("starting", "startet")
+        default: return raw.replacingOccurrences(of: "_", with: " ")
+        }
     }
 
     @ViewBuilder private var lastDeploy: some View {
@@ -873,14 +973,15 @@ struct Row: View {
             let failed = s.contains("fail") || s == "error" || s == "canceled"
             HStack(spacing: 4) {
                 Circle().fill(ok ? Color.green : (failed ? Color.red : Color.orange)).frame(width: 7, height: 7)
-                Text(L("Last deploy ", "Zuletzt deployt ") + Self.ago(at) + (ok ? "" : " · \(s)"))
+                Text(L("Last deploy ", "Zuletzt deployt ") + Self.ago(at) + (ok ? "" : " · " + Self.stateText(s)))
                     .font(.caption2).foregroundStyle(.secondary)
                 if failed, let showLog {
                     Button(action: showLog) { Image(systemName: "text.alignleft").font(.caption2) }
                         .buttonStyle(.borderless).help(L("Show the build log of the failed deploy", "Build-Log des fehlgeschlagenen Deploys zeigen"))
+                        .accessibilityLabel(L("Build log", "Build-Log"))
                 }
             }
-            .help(at.formatted(date: .complete, time: .shortened) + (item.lastMsg.map { "\n" + L("Live: ", "Live: ") + $0 } ?? ""))
+            .help(at.formatted(date: .complete, time: .shortened) + (item.lastMsg.map { "\n" + L("Live: ", "Live: ") + (Demo.on ? "…" : $0) } ?? ""))
         } else {
             Text(L("Never deployed", "Noch nie deployt")).font(.caption2).foregroundStyle(.secondary)
         }
@@ -889,7 +990,7 @@ struct Row: View {
     @ViewBuilder private var cancelButton: some View {
         if let onCancel {
             Button(action: onCancel) { Image(systemName: "stop.circle") }
-                .buttonStyle(.borderless).help(L("Cancel", "Abbrechen"))
+                .buttonStyle(.borderless).help(L("Cancel", "Abbrechen")).accessibilityLabel(L("Cancel the deploy", "Deploy abbrechen"))
         }
     }
 
@@ -926,33 +1027,34 @@ struct Row: View {
                 Label("Live", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.caption.weight(.semibold))
                 if let url, let u = URL(string: url) {
                     Button { NSWorkspace.shared.open(u) } label: { Image(systemName: "arrow.up.right.square") }
-                        .buttonStyle(.borderless).help(url)
+                        .buttonStyle(.borderless).help(url).accessibilityLabel(L("Open the deployed site", "Deployte Seite öffnen"))
                     if item.previewId != nil {
                         Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url, forType: .string) }
                             label: { Image(systemName: "link") }
                             .buttonStyle(.borderless).help(L("Copy the preview link", "Vorschau-Link kopieren"))
+                            .accessibilityLabel(L("Copy the preview link", "Vorschau-Link kopieren"))
                     }
                 }
             }
         case .skipped(let msg):
             Label(L("Skipped", "Übersprungen"), systemImage: "forward.circle.fill")
                 .foregroundStyle(.secondary).font(.caption.weight(.semibold))
-                .help(msg)
+                .help(Demo.scrub(msg, items: [item]))
         case .failed(let msg):
             HStack(spacing: 4) {
                 Label(L("Failed", "Fehler"), systemImage: "xmark.octagon.fill")
                     .foregroundStyle(.red).font(.caption.weight(.semibold))
-                    .help(msg)
+                    .help(Demo.scrub(msg, items: [item]))
                 Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString("\(item.name): \(msg)", forType: .string) }
                     label: { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(.borderless).help(L("Copy the error", "Fehler kopieren"))
+                    .buttonStyle(.borderless).help(L("Copy the error", "Fehler kopieren")).accessibilityLabel(L("Copy the error", "Fehler kopieren"))
                 if let showLog {
                     Button(action: showLog) { Image(systemName: "text.alignleft") }
-                        .buttonStyle(.borderless).help(L("Build log", "Build-Log"))
+                        .buttonStyle(.borderless).help(L("Build log", "Build-Log")).accessibilityLabel(L("Build log", "Build-Log"))
                 }
                 if let onRetry {
                     Button(action: onRetry) { Image(systemName: "arrow.clockwise") }
-                        .buttonStyle(.borderless).help(L("Try again", "Erneut versuchen"))
+                        .buttonStyle(.borderless).help(L("Try again", "Erneut versuchen")).accessibilityLabel(L("Try again", "Erneut versuchen"))
                 }
             }
         }

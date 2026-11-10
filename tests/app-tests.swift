@@ -31,6 +31,19 @@ expect("past 250 commits it is a floor", Row.waitingText(item(changed: true, com
 expect("rewritten branch", Row.waitingText(item(changed: true, rewritten: true)),
        L("New changes (branch was rewritten)", "Neue Änderungen (Branch wurde umgeschrieben)"))
 
+// Deploy states in words, not raw API values.
+expect("state build_failed", Row.stateText("build_failed"), L("build failed", "Build fehlgeschlagen"))
+expect("state ERROR", Row.stateText("ERROR"), L("failed", "fehlgeschlagen"))
+expect("state unknown word", Row.stateText("some_new_state"), "some new state")
+
+// Demo mode: names in free text become their stand-ins, in one pass.
+UserDefaults.standard.set(true, forKey: "demoMode")
+var shop = item(); shop = Item(id: "shop-api", name: "shop-api", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil)
+shop.repo = "acme/shop"
+expect("demo scrub", Demo.scrub("shop-api failed (acme/shop)", items: [shop]), "\(Demo.mask("shop-api")) failed (\(Demo.mask("acme/shop")))")
+UserDefaults.standard.removeObject(forKey: "demoMode")
+expect("no demo, no change", Demo.scrub("shop-api failed", items: [shop]), "shop-api failed")
+
 // Links.
 expect("compare link", item(changed: true).compareURL?.absoluteString ?? "nil", "https://github.com/me/app/compare/a...main")
 expect("no compare link without changes", item(changed: false).compareURL?.absoluteString ?? "nil", "nil")
