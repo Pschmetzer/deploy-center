@@ -42,7 +42,8 @@ case "\$*" in
   "notes "*) exit 1 ;;
   "simulate --days "*" --json") jq --argjson d "\$3" '.days = \$d' "$here/../tests/fixtures/savings/simulate-report.json" ;;
   "ledger --json") cat "$here/../tests/fixtures/savings/ledger-report.json" ;;
-  "doctor") [ -n "\${FAKE_DOCTOR_SLEEP:-}" ] && sleep "\$FAKE_DOCTOR_SLEEP"; echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
+  "doctor") [ -n "\${FAKE_ENV_DUMP:-}" ] && { env | cut -d= -f1; exit 0; }
+    [ -n "\${FAKE_DOCTOR_SLEEP:-}" ] && sleep "\$FAKE_DOCTOR_SLEEP"; echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
   "changed --json") jq -s '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
   "deploy-changed") echo "Would deploy: app-web, api (run with --yes)" ;;
   "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"

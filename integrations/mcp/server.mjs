@@ -77,6 +77,16 @@ function findDeploys(env = process.env) {
 
 class ToolError extends Error {}
 
+// The environment for `deploys`: the host's, minus keys that `deploys` never needs here (the
+// MCP host's own model keys). Provider keys stay: each provider reads its own variables.
+const NOT_FOR_CLI = /^(ANTHROPIC_|OPENAI_|CLAUDE_CODE_OAUTH|GEMINI_|GOOGLE_API_KEY$|MISTRAL_|GROQ_|COHERE_)/;
+function childEnv(env = process.env) {
+  const out = { NO_COLOR: "1" };
+  for (const [k, v] of Object.entries(env)) if (!NOT_FOR_CLI.test(k)) out[k] = v;
+  out.NO_COLOR = "1";
+  return out;
+}
+
 // Runs `deploys <args>`. Resolves with { code, stdout, stderr }; a non-zero exit is not a throw
 // (changed/status exit 1 when one project could not be read, and still print the rest).
 function runDeploys(args, { timeoutMs = TIMEOUT_MS } = {}) {
@@ -89,7 +99,7 @@ function runDeploys(args, { timeoutMs = TIMEOUT_MS } = {}) {
   return new Promise((resolve) => {
     // An argument array, no shell. Its own process group, so a timeout also stops the vercel,
     // gh or curl it started, which would otherwise keep the pipes open.
-    const child = spawn(bin, args, { detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1" } });
+    const child = spawn(bin, args, { detached: true, stdio: ["ignore", "pipe", "pipe"], env: childEnv() });
     const cap = 4 * MAX_OUTPUT + 65536;
     let stdout = "", stderr = "", timedOut = false, done = false;
     // Strings, not Buffers: a multi-byte character split across two chunks stays whole.
@@ -175,11 +185,11 @@ function checkProject(v) {
   return v;
 }
 
+// Numbers must be JSON numbers, as the schema says ("80" is refused like "7" for days).
 function checkLines(v) {
   if (v === undefined || v === null) return 80;
-  const n = Number(v);
-  if (!Number.isInteger(n) || n < 1 || n > 2000) throw new ToolError("lines must be a whole number from 1 to 2000.");
-  return n;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 2000) throw new ToolError("lines must be a whole number from 1 to 2000.");
+  return v;
 }
 
 function checkCount(v) {

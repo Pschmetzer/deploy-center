@@ -192,7 +192,8 @@ and tells you to deploy in Deploy Center or with `deploys vercel deploy app-web`
   autofix (known token prefixes, `NAME=secret`, `user:password@` in URLs) before the agent sees
   them. A help, not a guarantee: a token with no known shape still goes through.
 - **Your logins.** The server uses the same Vercel CLI login, GitHub CLI login and Render key as
-  `deploys` in your terminal. It adds none and prints none. The agent can read whatever those
+  `deploys` in your terminal. It adds none and prints none. The host's own model keys
+  (`ANTHROPIC_*`, `OPENAI_*` and the like) are not passed on to `deploys`; provider keys are. The agent can read whatever those
   commands print (commit messages, build logs).
 
 | Env | Default | |
