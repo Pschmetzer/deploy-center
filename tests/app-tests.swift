@@ -583,5 +583,19 @@ do {
     expect("new file is 600", mode(fresh), 0o600)
 } catch { expect("claude config tests ran", "\(error)", "no error") }
 
+// The palette in observer mode: like the window, nothing that deploys or rolls back.
+MainActor.assumeIsolated {
+    let st = Store()
+    st.items[.vercel] = [item(changed: true, commits: 1)]
+    let normal = PaletteCommands.all(st).map(\.id)
+    expect("palette offers deploy, rollback and deploy all",
+           normal.contains("deploy|vercel/app") && normal.contains("rollback|vercel/app") && normal.contains("action.deployChanged"), true)
+    st.teamObserver = true
+    let looking = PaletteCommands.all(st).map(\.id)
+    expect("observer: no deploy or rollback in the palette",
+           looking.contains { $0.hasPrefix("deploy|") || $0.hasPrefix("rollback|") || $0 == "action.deployChanged" }, false)
+    expect("observer: the log is still there", looking.contains("log|vercel/app"), true)
+}
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

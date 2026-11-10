@@ -103,8 +103,10 @@ enum PaletteCommands {
             out.append(PaletteCommand(id: "action." + a.rawValue, title: L(en, de), detail: detail, symbol: symbol, texts: [en, de], kind: .action(a)))
         }
         let w = store.waiting
-        add(.deployChanged, "Deploy all changed …", "Alles mit Änderungen deployen …", "paperplane.fill",
-            detail: w.projects > 0 ? L("\(w.projects) waiting", "\(w.projects) warten") : L("nothing waits", "nichts wartet"))
+        // Observer mode (Settings → Team): like the window, nothing that deploys or rolls back.
+        let looksOnly = store.observer
+        if !looksOnly { add(.deployChanged, "Deploy all changed …", "Alles mit Änderungen deployen …", "paperplane.fill",
+            detail: w.projects > 0 ? L("\(w.projects) waiting", "\(w.projects) warten") : L("nothing waits", "nichts wartet")) }
         add(.reload, "Reload", "Neu laden", "arrow.clockwise")
         let active = store.items.values.joined().filter { $0.state.isActive }.count
         if active > 0 { add(.stopAll, "Stop all", "Alles abbrechen", "stop.circle", detail: L("\(active) running", "\(active) laufen")) }
@@ -121,7 +123,7 @@ enum PaletteCommands {
             let detail = [i.platform.rawValue, waiting].compactMap { $0 }.joined(separator: " · ")
             for v in PaletteVerb.allCases {
                 switch v {
-                case .deploy, .rollback: guard i.deployable && !i.state.isActive else { continue }
+                case .deploy, .rollback: guard i.deployable && !i.state.isActive && !looksOnly else { continue }
                 case .open: guard i.link.flatMap({ URL(string: $0) }) != nil else { continue }
                 case .dashboard: guard i.platform == .vercel || i.dashboardURL != nil else { continue }
                 case .log, .notes: break
@@ -416,6 +418,7 @@ struct CommandPaletteHost: ViewModifier {
         case .action(let a):
             switch a {
             case .deployChanged:
+                guard !store.observer else { return }
                 // The window ticks everything with changes and asks "Put this live now?".
                 if store.waiting.projects > 0 { store.pendingDeployAll = true }
                 else { store.show(Store.Toast(text: L("Everything merged is live", "Alles Gemergte ist live"), ok: true)) }
@@ -430,10 +433,10 @@ struct CommandPaletteHost: ViewModifier {
             let i = store.items[item.platform]?.first { $0.id == item.id } ?? item
             switch v {
             case .deploy:
-                guard i.deployable && !i.state.isActive else { return }
+                guard i.deployable && !i.state.isActive && !store.observer else { return }
                 if i.hasNewCommits || i.headSha == nil { deployItem = i } else { unchangedItem = i }
             case .rollback:
-                guard i.deployable && !i.state.isActive else { return }
+                guard i.deployable && !i.state.isActive && !store.observer else { return }
                 rollbackItem = i
             case .log: sheet = .log(i)
             case .open: if let l = i.link, let u = URL(string: l) { NSWorkspace.shared.open(u) }
@@ -483,7 +486,7 @@ private struct PaletteQuestions: ViewModifier {
             }
             .alert(L("Roll back production?", "Live zurückrollen?"), isPresented: binding($rollbackItem)) {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { rollbackItem = nil }
-                Button(L("Roll back", "Zurückrollen"), role: .destructive) { if let i = rollbackItem { store.rollback(i) }; rollbackItem = nil }
+                Button(L("Roll back", "Zurückrollen"), role: .destructive) { if let i = rollbackItem, !store.observer { store.rollback(i) }; rollbackItem = nil }
             } message: {
                 Text(L("\(shown(rollbackItem)) goes back to the deploy that was live before this one.",
                        "\(shown(rollbackItem)) geht zurück auf den Stand, der davor live war."))
