@@ -13,6 +13,14 @@
 #   deploys doctor                            check tools and access (JSON)
 #   deploys changed [--json]                  what has commits on GitHub that are not live
 #   deploys deploy-changed [--yes]            deploy all of those (shows the list without --yes)
+#     [--when-green [--wait 30m]]             only commits whose CI passed; waits for running checks
+#   deploys deploy <project> [--sha <c>]      deploy one project to production (Vercel or Render)
+#   deploys verify <p> [--path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
+#     [--rollback-after 10] [--no-rollback]   count down, then roll back (Ctrl-C stops it)
+#   deploys risk <project> [--json]           green/yellow/red for what waits: migrations, lockfiles, config, size
+#   deploys ci <owner/repo> [<ref>] [--wait 30m]  the CI verdict of a commit: green, pending, red, none
+#   deploys window [--json]                   is the deploy window (window.json) open now?
+#   --force "why"                             deploy inside a closed window; the reason goes to the journal
 #   deploys status [--watch] [--no-github]    what is building or failed (--no-github: no GitHub calls)
 #   deploys watch <p> [<id>] [--preview]      follow a deploy until it is live or failed
 #   deploys explain <project>                 why a project is (not) counted as changed
@@ -64,6 +72,7 @@
 # Config lives in ${DEPLOYS_CONFIG:-~/.config/deploys}:
 #   vercel-repos.json  which repo/branch each Vercel project deploys from
 #   vercel-team        team id (auto-detected; empty for a personal account)
+#   window.json        when deploys are closed: {"deny":[{"days":["fri"],"from":"15:00"}]} (docs/SAFE-DEPLOY.md)
 #   overrides.json     this Mac's overrides of the shared deploy-center.json (docs/TEAM.md)
 #   readonly           present: observer mode (as DEPLOYS_READONLY=1)
 
@@ -138,7 +147,20 @@ repos_json() {
 # `vercel deploy p --json` is `vercel deploy-json p`. The old spellings keep working.
 json=0
 args=()
-for a in "$@"; do if [ "$a" = "--json" ]; then json=1; else args+=("$a"); fi; done
+# --force "reason" anywhere starts a deploy inside a closed deploy window; the reason goes to the journal.
+forced=0; force_reason=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) json=1 ;;
+    --force) forced=1; force_reason="${2:-}"; [ $# -lt 2 ] || shift ;;
+    --force=*) forced=1; force_reason="${1#--force=}" ;;
+    *) args+=("$1") ;;
+  esac
+  shift
+done
+if [ "$forced" = 1 ] && { [ -z "${force_reason// /}" ] || [ "${force_reason:0:1}" = - ]; }; then
+  die 'Say why with --force: --force "hotfix for the login page"'
+fi
 if [ "$json" = 1 ]; then
   case "${args[0]:-} ${args[1]:-}" in
     "vercel list"|"render list") args[1]="json" ;;
@@ -293,14 +315,15 @@ pending_of() {
     rm -f "$f.err"; return 0
   fi
   rm -f "$f.err"
-  echo "$cmp" | jq -c --arg k "$key" '
+  # The risk of the diff comes from the same answer: no extra call.
+  echo "$cmp" | jq -c --arg k "$key" "$RISK_DEF"' risk as $risk |
       [.commits[] | {sha, n:(first(.commit.message | (capture("\\(#(?<n>[0-9]+)\\)") // capture("Merge pull request #(?<n>[0-9]+)")) | .n) // null)}] as $c
       | {key:$k, value:{commits:.ahead_by, status:(.status // null), behindBy:(.behind_by // null),
           prs:([$c[] | .n // empty] | unique | length),
           # GitHub lists 250 commits at most; past that the PR count is a floor.
           partial:(.ahead_by > (.commits | length)),
           oldestAt:(.commits[0].commit.committer.date // null | if . then fromdateiso8601 else null end),
-          bare:([$c[] | select(.n == null) | .sha])}}' > "$f" 2>/dev/null || return 0
+          bare:([$c[] | select(.n == null) | .sha]), risk:$risk}}' > "$f" 2>/dev/null || return 0
   # A rebase merge leaves no number in the message. For a few such commits, ask which PR they came from.
   local bare n
   bare="$(jq -r '.value.bare | if length <= 10 then .[] else empty end' "$f")"
@@ -388,6 +411,8 @@ with_heads() {
              oldestPendingAt:($x.oldestAt // null), rewritten:($x.rewritten // false),
              # ahead, behind, diverged or identical: how the branch stands to what is live. Null when not compared.
              compareStatus:($x.status // null), behindBy:($x.behindBy // null),
+             # green, yellow or red, and why (see RISK_DEF). Null when nothing was compared.
+             risk:($x.risk // null),
              openPRs:($op.all // null), openDrafts:($op.drafts // null), openBots:($op.bots // null)})' \
     | jq "$CHANGED_RULE"
 }
@@ -452,6 +477,155 @@ changed_json() {
 
 # What is left of GitHub's hourly budget for the gh login, as {remaining, limit, reset}.
 github_budget() { gh api rate_limit --jq '.resources.core | {remaining, limit, reset}' 2>/dev/null || echo 'null'; }
+
+# ---------- Safe deploys: green CI, deploy window, risk, journal (docs/SAFE-DEPLOY.md) ----------
+
+# "30m", "90s", "1h" or plain seconds, as seconds. Anything else is refused.
+duration_s() {
+  [[ "${1:-}" =~ ^([0-9]+)([smh]?)$ ]] || return 1
+  case "${BASH_REMATCH[2]}" in h) echo $(( BASH_REMATCH[1] * 3600 ));; m) echo $(( BASH_REMATCH[1] * 60 ));; *) echo "${BASH_REMATCH[1]}";; esac
+}
+
+# The CI verdict of one commit from GitHub's combined status ($s) and its check runs ($r):
+# red when anything failed, pending while anything runs, green when all passed, none without checks.
+CI_RULE='($s[0] // {}) as $s | ($r[0] // {}) as $r
+  | ([($s.statuses // [])[] | {name:.context, state:(if .state == "success" then "ok" elif .state == "pending" then "wait" else "bad" end)}]
+     + [($r.check_runs // [])[] | {name, state:(if .status != "completed" then "wait"
+         elif ((.conclusion // "") | IN("success", "neutral", "skipped")) then "ok" else "bad" end)}]) as $all
+  | ($all | map(select(.state == "bad") | .name) | unique) as $bad
+  | ($all | map(select(.state == "wait") | .name) | unique) as $wait
+  | def names: .[0:5] | join(", ") + (if length > 5 then " …" else "" end);
+  if ($all | length) == 0 then {state:"none", reason:"no checks on this commit"}
+  elif ($bad | length) > 0 then {state:"red", reason:"failed: \($bad | names)"}
+  elif ($wait | length) > 0 then {state:"pending", reason:"still running: \($wait | names)"}
+  else {state:"green", reason:"\($all | length) checks passed"} end
+  | . + {checks:($all | length), failed:($bad | length), running:($wait | length)}'
+
+ci_of() {  # ci_of <owner/repo> <sha or branch>: the verdict as one line of JSON
+  local t rc=0; t="$(mktemp -d)"
+  gh api "repos/$1/commits/$2/status" > "$t/s" 2>/dev/null || rc=$((rc + 1))
+  gh api "repos/$1/commits/$2/check-runs?per_page=100" > "$t/r" 2>/dev/null || rc=$((rc + 1))
+  # Neither answer: GitHub is down or gh is not logged in. That is not "no checks".
+  if [ "$rc" = 2 ]; then echo '{"state":"unknown","reason":"GitHub could not be asked (is gh logged in?)"}'
+  else
+    for f in s r; do jq -e . "$t/$f" >/dev/null 2>&1 || : > "$t/$f"; done
+    jq -nc --slurpfile s "$t/s" --slurpfile r "$t/r" "$CI_RULE"
+  fi
+  rm -rf "$t"
+}
+
+# Ask again while the checks run: after 10 s, 20 s, 40 s … at most 2 minutes apart, `max` seconds in all.
+# The time slept is counted, not the clock, so a test with a stand-in `sleep` ends too.
+ci_wait() {  # ci_wait <owner/repo> <ref> <max seconds>
+  local waited=0 delay=10 v s
+  while :; do
+    v="$(ci_of "$1" "$2")"; s="$(echo "$v" | jq -r .state)"
+    case "$s" in pending|unknown) ;; *) echo "$v"; return 0;; esac
+    if [ "$waited" -ge "$3" ]; then echo "$v" | jq -c --argjson w "$3" '. + {timedOut:true, waited:$w}'; return 0; fi
+    [ $((waited + delay)) -le "$3" ] || delay=$(( $3 - waited ))
+    echo "$(date +%H:%M:%S)  $1@${2:0:7}: $(echo "$v" | jq -r .reason), next look in ${delay}s" >&2
+    sleep "$delay"; waited=$((waited + delay)); delay=$(( delay * 2 > 120 ? 120 : delay * 2 ))
+  done
+}
+
+# Deploy windows: ~/.config/deploys/window.json, e.g. {"deny":[{"days":["fri"],"from":"15:00"}]}.
+# A rule matches on its days (all when left out), its dates ("2026-12-24"), and from–to local time
+# (00:00–24:00 when left out; a "from" after "to" runs over midnight).
+WINDOW="$CONFIG_DIR/window.json"
+WINDOW_RULE='def hm: split(":") | (.[0] | tonumber) * 60 + ((.[1] // "0") | tonumber);
+  def says: (.reason // ("\((.days // .dates // ["every day"]) | join(", ")) \(.from // "00:00")–\(.to // "24:00")"));
+  ($time | hm) as $t
+  | [(.deny // [])[] | select(
+      ((.days == null) or (.days | map(ascii_downcase | .[0:3]) | index($day)))
+      and ((.dates == null) or (.dates | index($date)))
+      and (((.from // "00:00") | hm) as $f | ((.to // "24:00") | hm) as $u
+           | if $f <= $u then $t >= $f and $t < $u else $t >= $f or $t < $u end))] as $hit
+  | if ($hit | length) > 0 then {denied:true, reason:($hit[0] | says), rule:$hit[0]} else {denied:false} end
+  | . + {configured:true, now:"\($day) \($time) \($date)"}'
+
+# Now as the rules read it, local time: "fri 15:30 2026-11-13". DEPLOYS_NOW stands in for tests.
+now_parts() { if [ -n "${DEPLOYS_NOW:-}" ]; then echo "$DEPLOYS_NOW"; else LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]'; fi; }
+
+window_json() {
+  [ -f "$WINDOW" ] || { echo '{"denied":false,"configured":false}'; return 0; }
+  local n; n="$(now_parts)"
+  jq -c --arg day "${n%% *}" --arg time "$(echo "$n" | cut -d' ' -f2)" --arg date "${n##* }" "$WINDOW_RULE" "$WINDOW" 2>/dev/null \
+    || die "$WINDOW could not be read (see docs/SAFE-DEPLOY.md for the format)"
+}
+
+# Inside a denied window a start is refused, unless --force "reason" was given. Asked once per
+# run: what this run starts itself (render deploy -> deploy-json) is not asked again.
+# Sets `frozen` to the window's text when the run goes ahead inside one.
+frozen=""
+freeze_check() {
+  [ -z "${DEPLOYS_WINDOW_CHECKED:-}" ] || return 0
+  local w; w="$(window_json)" || exit 1
+  if [ "$(echo "$w" | jq -r .denied)" = true ]; then
+    frozen="$(echo "$w" | jq -r .reason)"
+    [ "$forced" = 1 ] || die "No deploys now: the deploy window says \"$frozen\". To deploy anyway: --force \"why\""
+  fi
+  export DEPLOYS_WINDOW_CHECKED=1
+}
+# A start inside a window, and why, goes to the journal the app shows.
+journal_forced() {  # journal_forced <platform> <name>
+  [ -n "$frozen" ] || return 0
+  journal_add "$1" "$2" forced "Deployed in the window \"$frozen\": $force_reason"
+}
+
+# The app's journal (Deploy history), so what the terminal did shows there too.
+journal_file() {
+  if [ -n "${DEPLOYS_JOURNAL:-}" ]; then echo "$DEPLOYS_JOURNAL"
+  elif [ "$(uname)" = Darwin ]; then echo "$HOME/Library/Application Support/app.deploycenter.mac/journal.jsonl"
+  else echo "$CONFIG_DIR/journal.jsonl"; fi
+}
+journal_add() {  # journal_add <platform> <name> <result> <detail>
+  local f p; f="$(journal_file)"
+  case "$1" in vercel) p=Vercel;; render) p=Render;; *) p="$1";; esac
+  mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
+  jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$4" \
+    '{at:(now | floor | todate), platform:$p, name:$n, result:$r, seconds:null, detail:$d}' >> "$f" 2>/dev/null || true
+}
+
+# What a pending diff touches, from a GitHub comparison (its .files): migrations are red, lockfiles,
+# environment files and config yellow, a large diff yellow and a very large one red. The worst wins.
+# Each reason has a kind, so the app can say it in its own language.
+# shellcheck disable=SC2089,SC2090  # a jq program, handed to jq as one argument
+RISK_DEF='def risk:
+  [(.files // [])[] | .filename] as $f
+  | def hits(re): [$f[] | select(test(re))];
+    def some(fs): fs[0:3] | join(", ") + (if (fs | length) > 3 then " and \((fs | length) - 3) more" else "" end);
+  hits("(^|/)(migrations?|migrate|prisma)/|\\.sql$|(^|/)schema\\.(prisma|rb)$") as $mig
+  | hits("(^|/)(package-lock\\.json|npm-shrinkwrap\\.json|pnpm-lock\\.yaml|yarn\\.lock|bun\\.lockb?|Pipfile\\.lock|poetry\\.lock|uv\\.lock|Gemfile\\.lock|Cargo\\.lock|go\\.sum|composer\\.lock)$") as $lock
+  | hits("(^|/)\\.env($|\\.)") as $env
+  | hits("(^|/)(vercel\\.json|render\\.yaml|Dockerfile|docker-compose\\.ya?ml|Procfile|(next|vite|nuxt|astro|svelte|remix)\\.config\\.[a-z]+)$|^\\.github/workflows/") as $cfg
+  | ([(.files // [])[] | (.additions // 0) + (.deletions // 0)] | add // 0) as $lines
+  | ($f | length) as $n
+  | [ (if ($mig | length) > 0 then {kind:"migrations", level:"red", files:$mig[0:10], text:"database migrations: \(some($mig))"} else empty end),
+      (if ($lock | length) > 0 then {kind:"lockfile", level:"yellow", files:$lock[0:10], text:"dependencies changed: \(some($lock))"} else empty end),
+      (if ($env | length) > 0 then {kind:"env", level:"yellow", files:$env[0:10], text:"environment files: \(some($env))"} else empty end),
+      (if ($cfg | length) > 0 then {kind:"config", level:"yellow", files:$cfg[0:10], text:"build or platform config: \(some($cfg))"} else empty end),
+      (if $lines > 3000 or $n >= 100 then {kind:"size", level:"red", files:[], text:"a very large diff: \($n) files, \($lines) lines"}
+       elif $lines > 500 or $n > 30 then {kind:"size", level:"yellow", files:[], text:"a large diff: \($n) files, \($lines) lines"} else empty end) ] as $r
+  | {level:(if any($r[]; .level == "red") then "red" elif ($r | length) > 0 then "yellow" else "green" end),
+     reasons:$r, files:$n, lines:$lines};'
+# shellcheck disable=SC2090
+export RISK_DEF
+
+# The site of a project: its own domain first, then the platform address.
+site_url_of() {  # site_url_of <project> <platform>
+  if [ "$2" = vercel ]; then
+    vercel_call "/v9/projects/$1" | jq -r '((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // (.targets.production.alias[0] // empty) | "https://\(.)"'
+  else
+    render_call GET "/services/$(render_id_of "$1")" | jq -r '.serviceDetails.url // empty'
+  fi
+}
+
+# One start, through the same functions (and the same start lock) as the app.
+deploy_one() {  # deploy_one <platform> <name> [<sha>] [<render id>]: the start as JSON
+  if [ "$1" = vercel ]; then ( vercel_deploy_json "$2" "" "${3:-}" )
+  # By its srv- id when known: a name may hold characters an API path cannot (safe_arg refuses them).
+  else local rid="${4:--}"; [ "$rid" != "-" ] || rid="$2"; "$0" render deploy-json "$rid" ${3:+--sha "$3"}; fi
+}
 
 # ---------- Render ----------
 
@@ -1075,6 +1249,9 @@ case "${1:-} ${2:-}" in
   "diff "*)        usage_if_short $# 2 "diff <project>" ;;
   "notes "*)       usage_if_short $# 2 "notes <project>" ;;
   "history "*)     usage_if_short $# 2 "history <project> [n]" ;;
+  "verify "*)      usage_if_short $# 2 "verify <project> [--path /health] [--rollback-after 10] [--no-rollback]" ;;
+  "risk "*)        usage_if_short $# 2 "risk <project> [--json]" ;;
+  "ci "*)          usage_if_short $# 2 "ci <owner/repo> [<sha or branch>] [--wait 30m] [--json]" ;;
   "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
   "vercel map")    usage_if_short $# 4 "vercel map <project> <owner/repo> [branch]" ;;
   "vercel deploy"|"vercel deploy-json"|"vercel rollback") usage_if_short $# 3 "vercel ${2} <project>" ;;
@@ -1155,11 +1332,15 @@ case "${1:-} ${2:-}" in
       i=$((i + 1)); plat="$(platform_of "$p")"
       if [ "$plat" = vercel ]; then
         out="$(DEPLOYS_FORCE_REASON="$force" vercel_deploy_json "$p" "$pv" "$sha")" || stop_group "$p" "$count"
-        echo "$out" | jq -r --arg p "$p" '"Vercel: \($p) started -> \(.url) (\(.state))"'
+        if [ "$json" = 1 ]; then echo "$out" | jq -c --arg p vercel '. + {platform:$p}'; else
+          echo "$out" | jq -r --arg p "$p" '"Vercel: \($p) started -> \(.url) (\(.state))"'
+        fi
       else
         [ -z "$pv" ] || die "Render has no preview deploys ($p)"
         out="$(DEPLOYS_FORCE_REASON="$force" "$0" render deploy-json "$p" ${sha:+--sha "$sha"})" || stop_group "$p" "$count"
-        echo "$out" | jq -r --arg p "$p" '"Render: \($p) started (\(.id), \(.state))"'
+        if [ "$json" = 1 ]; then echo "$out" | jq -c --arg p render '. + {platform:$p}'; else
+          echo "$out" | jq -r --arg p "$p" '"Render: \($p) started (\(.id), \(.state))"'
+        fi
       fi
       # The next member of a group starts once this one is live.
       if [ -n "$wait_" ] || [ "$i" -lt "$count" ]; then
@@ -1426,7 +1607,7 @@ case "${1:-} ${2:-}" in
 
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
-    cmds="doctor where changed deploy deploy-changed config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix autodeploy guard vercel render completion --help --version"
+    cmds="doctor where changed deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore explain diff notes costs triggers simulate ledger details autofix autodeploy guard vercel render completion --help --version"
     case "${2:-zsh}" in
       zsh) cat <<ZSH
 _deploys() {
@@ -1577,31 +1758,203 @@ BASH
     echo "$list" | jq -r '"\(length) projects, \(map(.pendingCommits // 0) | add) commits, \(map(.pendingPRs // 0) | add) pull requests waiting."'
     exit "$rc" ;;
 
+  "ci "*)
+    # ci <owner/repo> [<sha or branch>] [--wait 30m]: green, pending, red or none, and why.
+    # Exit 0 green (or no checks), 1 red, 2 still pending or GitHub not reachable; with --json
+    # always 0, the verdict is in the answer (the app reads it).
+    repo="$2"; ref="main"; maxw=0; shift 2
+    case "$repo" in */*) ;; *) die "Give the repo as owner/name";; esac
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --wait) maxw="$(duration_s "${2:-}")" || die "--wait takes a time like 30m, 90s or 1h"; shift ;;
+        -*) die "Unknown option $1. Usage: deploys ci <owner/repo> [<sha or branch>] [--wait 30m] [--json]" ;;
+        *) ref="$1" ;;
+      esac
+      shift
+    done
+    v="$(ci_wait "$repo" "$ref" "$maxw")"
+    if [ "$json" = 1 ]; then echo "$v" | jq --arg r "$repo" --arg ref "$ref" '{repo:$r, ref:$ref} + .'; exit 0; fi
+    echo "$v" | jq -r '"\(.state): \(.reason)"'
+    case "$(echo "$v" | jq -r .state)" in green|none) exit 0;; red) exit 1;; *) exit 2;; esac ;;
+
+  "window "*)
+    # Whether the deploy window is open now (window.json); exit 0 open, 1 closed (--json: always 0).
+    w="$(window_json)"
+    if [ "$json" = 1 ]; then echo "$w" | jq '. + {file:$f}' --arg f "$WINDOW"; exit 0
+    elif [ "$(echo "$w" | jq -r .configured)" != true ]; then echo "No deploy window set ($WINDOW). Deploys are allowed at any time."
+    elif [ "$(echo "$w" | jq -r .denied)" = true ]; then echo "${RED}Closed${PLAIN}: $(echo "$w" | jq -r .reason). Deploys need --force \"why\"."
+    else echo "${GREEN}Open${PLAIN}: no rule in $WINDOW applies now."; fi
+    [ "$(echo "$w" | jq -r .denied)" != true ] ;;
+
+  "verify "*)
+    # verify <project> [--path /health] [--rollback-after 10] [--no-rollback] [--url <address>]
+    # Once the newest deploy is ready: ask the site three times, 5 s apart. When every answer is
+    # 5xx or none (a timeout), the check failed (as in the app: a fresh service may answer 502 for a
+    # moment); then a countdown, and production goes back unless --no-rollback or Ctrl-C.
+    # Exit 0 healthy, 1 failed and rolled back, 2 failed and not rolled back.
+    p="$2"; path=""; after=10; norb=""; url=""; shift 2
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --path) path="${2:?Usage: deploys verify <project> --path /health}"; shift ;;
+        --rollback-after) after="${2:-}"; shift ;;
+        --no-rollback) norb=1 ;;
+        --url) url="${2:?Usage: deploys verify <project> --url https://…}"; shift ;;
+        *) die "Unknown option $1. Usage: deploys verify <project> [--path /health] [--rollback-after 10] [--no-rollback] [--url <address>] [--json]" ;;
+      esac
+      shift
+    done
+    case "$after" in ''|*[!0-9]*) die "--rollback-after takes seconds, a number";; esac
+    plat="$(platform_of "$p")"
+    # A check while the build still runs would test what was live before.
+    "$0" watch "$p" >&2 || die "The newest deploy of $p is not live; nothing to check"
+    [ -n "$url" ] || url="$(site_url_of "$p" "$plat")"
+    [ -n "$url" ] || die "No address known for $p (give one with --url)"
+    case "$path" in ''|/*) ;; *) path="/$path";; esac
+    target="${url%/}$path"; [ -n "$path" ] || target="$url"
+    codes=""; bad=0
+    for i in 1 2 3; do
+      c="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 -A "DeployCenter (verify)" "$target" 2>/dev/null)" || true
+      [ -n "$c" ] || c=000
+      codes="$codes${codes:+ }$c"
+      case "$c" in 000|5*) bad=$((bad + 1));; esac
+      echo "$(date +%H:%M:%S)  $c  $target" >&2
+      [ "$i" = 3 ] || sleep 5
+    done
+    report() {  # report <healthy> <rolledBack> <cancelled> <exit code>
+      if [ "$json" = 1 ]; then
+        jq -n --arg p "$p" --arg u "$target" --arg c "$codes" --argjson h "$1" --argjson r "$2" --argjson x "$3" \
+          '{project:$p, url:$u, codes:($c | split(" ") | map(tonumber)), healthy:$h, rolledBack:$r, cancelled:$x}'
+      fi
+      exit "$4"
+    }
+    if [ "$bad" -lt 3 ]; then
+      [ "$json" = 1 ] || echo "${GREEN}ok${PLAIN}: $p answers ($codes)."
+      report true false false 0
+    fi
+    [ "$json" = 1 ] || echo "${RED}$p fails its check${PLAIN} ($codes from $target)."
+    if [ -n "$norb" ]; then [ "$json" = 1 ] || echo "Not rolled back (--no-rollback)."; report false false false 2; fi
+    stop=""; trap 'stop=1' INT TERM
+    for ((s = after; s > 0; s--)); do
+      printf '\rRolling back %s in %2d s – Ctrl-C to stop ' "$p" "$s" >&2
+      sleep 1
+      [ -z "$stop" ] || break
+    done
+    trap - INT TERM
+    [ "$after" = 0 ] || echo >&2
+    if [ -n "$stop" ]; then
+      [ "$json" = 1 ] || echo "Rollback stopped; $p stays on the deploy that failed its check."
+      journal_add "$plat" "$p" skipped "Check failed ($codes), rollback stopped by hand"
+      report false false true 2
+    fi
+    if out="$("$0" "$plat" rollback "$p" 2>&1)"; then
+      journal_add "$plat" "$p" other "Rolled back: $target answered $codes"
+      [ "$json" = 1 ] || echo "Rolled back $p to the deploy before."
+      report false true false 1
+    fi
+    echo "$out" >&2
+    journal_add "$plat" "$p" failed "Check failed ($codes) and the rollback failed too"
+    report false false false 2 ;;
+
+  "risk "*)
+    # risk <project>: green, yellow or red for what waits to go live, and why (see RISK_DEF).
+    p="$2"; plat="$(platform_of "$p")"
+    j="$("$0" "$plat" json | jq -c --arg p "$p" '.[] | select(.name == $p)')"
+    [ -n "$j" ] || die "$p not found"
+    repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
+    base="$(echo "$j" | jq -r '.lastSha // empty')"; ref="$(echo "$j" | jq -r '.ref // "main"')"
+    if [ -z "$base" ]; then r='{"level":"unknown","reasons":[],"files":0,"lines":0,"why":"the live commit is not known"}'
+    elif [ "$base" = "$(echo "$j" | jq -r '.headSha // empty')" ]; then r='{"level":"green","reasons":[],"files":0,"lines":0,"why":"nothing waits"}'
+    else
+      cmp="$(gh api --cache 5m "repos/$repo/compare/$base...$ref" 2>/dev/null | jq -c 'del(.files[]?.patch)' 2>/dev/null)" \
+        || die "GitHub could not compare what is live with $ref (rewritten branch, or gh not logged in?)"
+      r="$(echo "$cmp" | jq -c "$RISK_DEF"' risk')"
+    fi
+    r="$(echo "$r" | jq -c --arg p "$p" --arg pl "$plat" '{project:$p, platform:$pl} + .')"
+    if [ "$json" = 1 ]; then echo "$r" | jq .; exit 0; fi
+    lv="$(echo "$r" | jq -r .level)"
+    case "$lv" in red) c="$RED";; green) c="$GREEN";; *) c="$BOLD";; esac
+    echo "$c$lv$PLAIN  $p$(echo "$r" | jq -r 'if .why then " (\(.why))" else " (\(.files) files, \(.lines) lines)" end')"
+    echo "$r" | jq -r '.reasons[] | "  \(.level)  \(.text)"' ;;
+
   "deploy-changed "*)
     # The daily deploy: everything with changes. Without --yes it only shows what it would do.
     # Only what is known to have changes is started; what could not be read is named and left out.
+    # --when-green: only commits whose CI passed; pending checks are waited for (--wait, default 30m).
+    yes=""; green=""; maxw=1800
+    shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --yes) yes=1 ;;
+        --when-green) green=1 ;;
+        --wait) maxw="$(duration_s "${2:-}")" || die "--wait takes a time like 30m, 90s or 1h"; shift ;;
+        *) die "Unknown option $1. Usage: deploys deploy-changed [--yes] [--when-green [--wait 30m]] [--force \"why\"] [--json]" ;;
+      esac
+      shift
+    done
     rc=0; list="$(changed_json)" || rc=$?; n="$(echo "$list" | jq length)"
     if [ "$n" = "0" ]; then
       [ "$rc" = 0 ] || die "Could not tell what has changes (see above). Nothing was started."
-      echo "Nothing to deploy."; exit 0
+      if [ "$json" = 1 ]; then echo '[]'; else echo "Nothing to deploy."; fi; exit 0
     fi
-    if [ "${2:-}" != "--yes" ]; then
-      echo "$list" | jq -r '.[] | "  \(.platform)  \(.name)  (\(.pendingCommits // "?") commits)"'
-      echo "Would deploy these $n. Run again with --yes to start them."; exit "$rc"
-    fi
-    ok=0; bad=0
-    while IFS=$'\t' read -r plat name id; do
-      if [ "$plat" = "vercel" ]; then
-        if ( vercel_deploy_json "$name" | jq -r --arg n "$name" '"Vercel: \($n) started -> \(.url)"' ); then ok=$((ok+1))
-        else echo "Vercel: $name failed to start" >&2; bad=$((bad+1)); fi
-      else
-        # deploy-json takes the same start lock as the app, so a second start within a minute is refused.
-        # By its srv- id: a name may hold characters an API path cannot (safe_arg refuses them).
-        if ( "$0" render deploy-json "${id:-$name}" | jq -r --arg n "$name" '"Render: \($n) started (\(.id))"' ); then ok=$((ok+1))
-        else echo "Render: $name failed to start" >&2; bad=$((bad+1)); fi
+    if [ -z "$yes" ]; then
+      if [ "$json" = 1 ]; then
+        echo "$list" | jq '[.[] | {platform, name, sha:(.headSha // null), action:"would-deploy", commits:(.pendingCommits // null), risk:(.risk.level // null)}]'
+        exit "$rc"
       fi
-    done < <(echo "$list" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.id // "")"')
-    echo "$ok started, $bad failed to start."
+      echo "$list" | jq -r '.[] | "  \(.platform)  \(.name)  (\(.pendingCommits // "?") commits)\(if .risk.level == "red" then "  risk: \(.risk.reasons | map(select(.level == "red") | .text) | join("; "))" else "" end)"'
+      w="$(window_json)"; [ "$(echo "$w" | jq -r .denied)" = true ] && echo "The deploy window is closed now ($(echo "$w" | jq -r .reason)): --yes needs --force \"why\"."
+      echo "Would deploy these $n$([ -n "$green" ] && echo " whose checks pass"). Run again with --yes to start them."; exit "$rc"
+    fi
+    freeze_check
+    res="$(mktemp)"; ok=0; bad=0; skip=0
+    # say <platform> <name> <action> <reason> [<start JSON>]: one line for a person, one record for --json.
+    say() {
+      local plat="$1" name="$2" act="$3" why="$4" st="${5:-}" P
+      [ -n "$st" ] || st="{}"  # not ${5:-{\}}: bash 3.2 keeps the backslash
+      case "$plat" in vercel) P=Vercel;; render) P=Render;; *) P="$plat";; esac
+      jq -nc --arg p "$plat" --arg n "$name" --arg a "$act" --arg w "$why" --argjson s "$st" \
+        '{platform:$p, name:$n, action:$a, reason:(if $w == "" then null else $w end), id:($s.id // null), url:($s.url // null)}' >> "$res"
+      [ "$json" = 1 ] && return 0
+      case "$act" in
+        started) if [ "$plat" = vercel ]; then echo "$P: $name started -> $(echo "$st" | jq -r .url)"; else echo "$P: $name started ($(echo "$st" | jq -r .id))"; fi ;;
+        failed) echo "$P: $name failed to start" >&2 ;;
+        skipped) echo "$P: $name skipped: $why" ;;
+      esac
+    }
+    start() {  # start <platform> <name> <sha or empty> <reason>
+      local st
+      if st="$(deploy_one "$1" "$2" "$3" "${5:-}" </dev/null)"; then ok=$((ok+1)); say "$1" "$2" started "$4" "$(echo "$st" | jq -c .)"; journal_forced "$1" "$2"
+      else bad=$((bad+1)); say "$1" "$2" failed "$4"; fi
+    }
+    todo="$(echo "$list" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.id // "-")\t\(.repo // "")\t\(.headSha // "")"')"
+    if [ -z "$green" ]; then
+      while IFS=$'\t' read -r plat name id _ _; do start "$plat" "$name" "" "" "$id"; done <<< "$todo"
+    else
+      # Every project is asked in rounds, so one slow CI does not hold up the others; each starts
+      # as soon as its own commit is green, at exactly that commit (a newer push waits for the next run).
+      waited=0; delay=10
+      while [ -n "$todo" ]; do
+        next=""
+        while IFS=$'\t' read -r plat name id repo sha; do
+          if [ -z "$repo" ] || [ -z "$sha" ]; then skip=$((skip+1)); say "$plat" "$name" skipped "the commit or repo is unknown, so its checks are too"; continue; fi
+          v="$(ci_of "$repo" "$sha" </dev/null)"; s="$(echo "$v" | jq -r .state)"; why="$(echo "$v" | jq -r .reason)"
+          case "$s" in
+            green|none) start "$plat" "$name" "$sha" "$why" "$id" ;;
+            red) skip=$((skip+1)); say "$plat" "$name" skipped "CI is red on ${sha:0:7} ($why)" ;;
+            *) if [ "$waited" -ge "$maxw" ]; then skip=$((skip+1)); say "$plat" "$name" skipped "checks on ${sha:0:7} not done after $((maxw / 60))m ($why)"
+               else next="$next$plat"$'\t'"$name"$'\t'"$id"$'\t'"$repo"$'\t'"$sha"$'\n'; fi ;;
+          esac
+        done <<< "$todo"
+        todo="${next%$'\n'}"
+        [ -n "$todo" ] || break
+        [ $((waited + delay)) -le "$maxw" ] || delay=$(( maxw - waited ))
+        [ "$json" = 1 ] || echo "Waiting for checks on $(echo "$todo" | cut -f2 | paste -sd, - | sed 's/,/, /g'); next look in ${delay}s." >&2
+        sleep "$delay"; waited=$((waited + delay)); delay=$(( delay * 2 > 120 ? 120 : delay * 2 ))
+      done
+    fi
+    if [ "$json" = 1 ]; then jq -s '.' "$res"
+    else echo "$ok started, $bad failed to start$([ -n "$green" ] && echo ", $skip skipped")."; fi
+    rm -f "$res"
     [ "$rc" = 0 ] || echo "Some projects could not be read and were left out (see above)." >&2
     [ "$bad" = "0" ] && [ "$rc" = 0 ] ;;
 
@@ -1665,7 +2018,10 @@ BASH
         *) die "Unknown option $1. Usage: deploys vercel deploy <project> [--preview] [--sha <commit>] [--wait]";;
       esac; shift
     done
+    # The deploy window holds production only; a preview changes nothing anyone sees.
+    [ -n "$pv" ] || freeze_check
     out="$(vercel_deploy_json "$target" "$pv" "$sha")"
+    journal_forced vercel "$target"
     echo "$out" | jq -r '"Vercel: deploy started -> \(.url) (\(.state))"'
     # Follow exactly this deploy, not "the newest one", until it is live or failed.
     if [ -n "$wait_" ]; then
@@ -1681,7 +2037,10 @@ BASH
     # deploy-json <project> [--preview] [--sha <commit>]
     p="${3:?project}"; pv=""; sha=""; shift 3 || true
     while [ $# -gt 0 ]; do case "$1" in --preview) pv=1;; --sha) sha="${2:?commit}"; shift;; esac; shift; done
-    vercel_deploy_json "$p" "$pv" "$sha" ;;
+    [ -n "$pv" ] || freeze_check
+    out="$(vercel_deploy_json "$p" "$pv" "$sha")"
+    journal_forced vercel "$p"
+    echo "$out" ;;
   "vercel cancel")
     vercel api "$(with_team "/v12/deployments/${3:?deployment id}/cancel")" --method PATCH >/dev/null 2>&1 || die "Vercel: could not cancel ${3}"
     echo '{"state":"CANCELED"}' ;;
@@ -1758,9 +2117,12 @@ BASH
     fi ;;
   "render deploy")
     # Through deploy-json, so the same one-minute start lock as the app and deploy-changed applies.
-    "$0" render deploy-json "${@:3}" | jq -r '"Render: deploy started (\(.id), \(.state))"' ;;
+    freeze_check
+    "$0" render deploy-json "${@:3}" | jq -r '"Render: deploy started (\(.id), \(.state))"'
+    journal_forced render "$3" ;;
   "render deploy-json")
     # deploy-json <service> [--sha <commit>] [--clear-cache]
+    freeze_check
     name="${3:?service}"; id="$(render_id_of "$name")"; sha=""; cc=""; shift 3 || true
     while [ $# -gt 0 ]; do case "$1" in --sha) sha="${2:?commit}"; shift;; --clear-cache) cc=1;; esac; shift; done
     # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
@@ -1772,6 +2134,7 @@ BASH
     lock="$(start_lock "render-$id")" || exit 1
     body="$(jq -nc --arg sha "$sha" --arg cc "$cc" '(if $sha != "" then {commitId:$sha} else {} end) + (if $cc != "" then {clearCache:"clear"} else {} end)')"
     out="$(render_call POST "/services/$id/deploys" "$body")" || { rm -f "$lock"; exit 1; }
+    journal_forced render "$name"
     echo "$out" | jq --arg s "$id" '{id, serviceId:$s, state:.status}' ;;
   "render cancel")
     render_call POST "/services/${3:?service id}/deploys/${4:?deploy id}/cancel" '{}' | jq '{id, state:.status}' ;;

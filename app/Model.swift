@@ -55,6 +55,7 @@ struct VercelProject: Decodable {
     let building: Bool?; let pendingPartial: Bool?; let oldestPendingAt: Double?; let rewritten: Bool?
     let openDrafts: Int?; let openBots: Int?
     let lastMsg: String?
+    let risk: Risk?
 }
 struct RenderService: Decodable {
     let id: String; let name: String; let type: String; let paused: Bool; let auto: Bool; let deployable: Bool
@@ -65,6 +66,7 @@ struct RenderService: Decodable {
     let building: Bool?; let pendingPartial: Bool?; let oldestPendingAt: Double?; let rewritten: Bool?
     let openDrafts: Int?; let openBots: Int?
     let lastMsg: String?
+    let risk: Risk?
 }
 struct Costs: Decodable {
     struct Day: Decodable, Identifiable { let day: String; let total: Double; let build: Double; var id: String { day } }
@@ -95,6 +97,33 @@ struct Details: Decodable {
     let commits: [Commit]; let files: Int; let additions: Int; let deletions: Int; let risky: [String]
     let onlyBots: Bool; let compareUrl: String?; let checks: Checks?; let open: [OpenPR]
 }
+
+/// What waits to go live, scored by the script (`deploys risk`): green, yellow or red, and why.
+struct Risk: Decodable, Equatable {
+    struct Reason: Decodable, Equatable { let kind: String; let level: String; let files: [String]?; let text: String }
+    let level: String; let reasons: [Reason]; let files: Int?; let lines: Int?
+    var isRed: Bool { level == "red" }
+
+    /// One reason in the app's language; the script's English text for a kind it does not know.
+    func text(_ r: Reason) -> String {
+        let f = (r.files ?? []).prefix(3).joined(separator: ", ") + ((r.files?.count ?? 0) > 3 ? " …" : "")
+        switch r.kind {
+        case "migrations": return L("Database migrations: ", "Datenbank-Migrationen: ") + f
+        case "lockfile": return L("Dependencies changed: ", "Abhängigkeiten geändert: ") + f
+        case "env": return L("Environment files: ", "Umgebungsdateien: ") + f
+        case "config": return L("Build or platform config: ", "Build- oder Plattform-Konfiguration: ") + f
+        case "size":
+            let n = files ?? 0, l = lines ?? 0
+            return r.level == "red" ? L("A very large diff: \(n) files, \(l) lines", "Ein sehr großer Diff: \(n) Dateien, \(l) Zeilen")
+                                    : L("A large diff: \(n) files, \(l) lines", "Ein großer Diff: \(n) Dateien, \(l) Zeilen")
+        default: return r.text
+        }
+    }
+}
+/// `deploys ci … --json`: the CI verdict of one commit.
+struct CIReply: Decodable { let state: String; let reason: String }
+/// `deploys window --json`: whether the deploy window is closed now, and by which rule.
+struct WindowReply: Decodable { let denied: Bool; let reason: String? }
 
 struct Started: Decodable { let id: String; let url: String?; let state: String? }
 struct StatusReply: Decodable { let id: String; let url: String?; let state: String?; let error: String? }
@@ -135,6 +164,7 @@ struct Item: Identifiable {
     var pendingPartial = false
     var oldestPendingAt: Date? = nil
     var rewritten = false
+    var risk: Risk? = nil
     var selected = false
     var state: RunState = .idle
     var startedAt: Date? = nil
@@ -186,8 +216,16 @@ enum Notify {
         guard !NSApp.isActive, UserDefaults.standard.object(forKey: "notifications") as? Bool ?? true else { return }
         add(title, body, id: UUID().uuidString)
     }
+    /// The countdown before an automatic rollback: shown even with the window in front, with Cancel.
+    static func countdown(_ title: String, _ body: String, id: String) {
+        add(title, body, id: id, category: NotifyRouter.rollbackCategory)
+    }
+    static func remove(_ id: String) {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
+    }
     /// Asks first only when the person was never asked, so the first alarm of a run is not lost.
-    private static func add(_ title: String, _ body: String, id: String) {
+    private static func add(_ title: String, _ body: String, id: String, category: String? = nil) {
         Task {
             let center = UNUserNotificationCenter.current()
             switch await center.notificationSettings().authorizationStatus {
@@ -198,8 +236,37 @@ enum Notify {
             }
             let c = UNMutableNotificationContent()
             c.title = title; c.body = body; c.sound = .default
+            if let category { c.categoryIdentifier = category }
             try? await center.add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
         }
+    }
+}
+
+/// The Cancel button of the rollback countdown, and the countdown shown while the app is in front.
+/// Other notifications behave as before: not shown while the app is in front.
+final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
+    static let shared = NotifyRouter()
+    static let rollbackCategory = "rollback-countdown"
+    static let cancelAction = "cancel-rollback"
+    /// Gets the notification's id when Cancel is clicked.
+    var onCancel: (@MainActor (String) -> Void)?
+
+    func install() {
+        let center = UNUserNotificationCenter.current()
+        let cancel = UNNotificationAction(identifier: Self.cancelAction, title: L("Cancel", "Abbrechen"), options: [])
+        center.setNotificationCategories([UNNotificationCategory(identifier: Self.rollbackCategory, actions: [cancel],
+                                                                 intentIdentifiers: [], options: [])])
+        center.delegate = self
+    }
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler(notification.request.content.categoryIdentifier == Self.rollbackCategory ? [.banner, .sound] : [])
+    }
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let id = response.notification.request.identifier
+        if response.actionIdentifier == Self.cancelAction { Task { @MainActor in self.onCancel?(id) } }
+        completionHandler()
     }
 }
 
