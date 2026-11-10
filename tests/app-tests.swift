@@ -580,5 +580,58 @@ expect("allowance for everything", AutoDeployAllowance(platform: "all", project:
 expect("wildcard project, other platform", AutoDeployAllowance(platform: "render", project: "*", expiresAt: later).covers(item()), false)
 expect("named project still exact", AutoDeployAllowance(platform: "vercel", project: "other", expiresAt: later).covers(item()), false)
 
+// Words in the row: one of each also in the "at least" case.
+expect("partial, one of each", Row.waitingText(item(changed: true, commits: 1, prs: 1, partial: true)),
+       L("1 commit, at least 1 PR waiting", "1 Commit, mindestens 1 PR wartet"))
+
+// A cancelled deploy is no failure, in both spellings.
+expect("canceled looks cancelled", Row.look("CANCELED"), Row.DeployLook.cancelled)
+expect("cancelled looks cancelled", Row.look("cancelled"), Row.DeployLook.cancelled)
+expect("build_failed looks failed", Row.look("build_failed"), Row.DeployLook.failed)
+expect("ready looks ok", Row.look("READY"), Row.DeployLook.ok)
+var cancelledRow = item(changed: false); cancelledRow.lastAt = Date(); cancelledRow.lastState = "canceled"
+expect("cancelled is not the failed key figure", Row.keyFigure(cancelledRow), Row.KeyFigure.lastDeploy)
+
+// Search: the filter and the highlight use one rule, any case and without accents.
+expect("search ignores case", Row.matches("my-App", "app"), true)
+expect("search ignores accents", Row.matches("Über-Shop", "uber"), true)
+expect("empty search matches nothing", Row.matches("app", ""), false)
+expect("search misses", Row.matches("shop", "app"), false)
+
+// Where a repo lives.
+expect("owner/name is GitHub", GitHost(repo: "me/app"), GitHost.github)
+expect("gitlab.com path is GitLab", GitHost(repo: "gitlab.com/group/app"), GitHost.gitlab(host: "gitlab.com"))
+expect("self-managed GitLab", GitHost(repo: "git.example.org/team/sub/app").name, "GitLab")
+expect("github.com prefix is GitHub", GitHost(repo: "github.com/me/app"), GitHost.github)
+expect("GitHub PR link", GitHost.prURL("me/app", 12)?.absoluteString ?? "", "https://github.com/me/app/pull/12")
+expect("GitLab MR link", GitHost.prURL("gitlab.com/group/app", 12)?.absoluteString ?? "", "https://gitlab.com/group/app/-/merge_requests/12")
+expect("PR labels", GitHost.prLabel("me/app", 3) + " " + GitHost.prLabel("gitlab.com/g/app", 3), "#3 !3")
+var labItem = item(changed: true, last: "aaa", head: "bbb", repo: "gitlab.com/group/app")
+expect("GitLab compare link", GitHost.compareURL(labItem)?.absoluteString ?? "", "https://gitlab.com/group/app/-/compare/aaa...main")
+labItem.repo = "me/app"
+expect("GitHub compare link unchanged", GitHost.compareURL(labItem)?.absoluteString ?? "", "https://github.com/me/app/compare/aaa...main")
+
+// The month at this pace: whole days only.
+let paceDays = (1...8).map { Costs.Day(day: "2026-11-0\($0)", total: 2, build: 2) } + [Costs.Day(day: "2026-11-09", total: 0, build: 0)]
+expect("pace leaves today out", CostsSheet.dailyPace(paceDays, today: "2026-11-09"), 2.0)
+expect("pace of the last 7 days", CostsSheet.dailyPace(paceDays, today: "2026-11-10"), Double(12) / 7)
+expect("pace without days", CostsSheet.dailyPace([], today: "2026-11-10"), 0.0)
+
+// What leaves the app from a row and the details.
+expect("copied error is masked", Row.errorCopy(item(), "push failed: ghp_abcdefghijklmnopqrstuvwxyz0123456789").contains("ghp_abcdef"), false)
+expect("first line of a failure", Row.firstLine("Build failed\nat step 3"), "Build failed")
+expect("ignored build step has a fallback", ProjectDetail.ignoredBuildStep, "git diff --quiet ${VERCEL_GIT_PREVIOUS_SHA:-HEAD^} HEAD -- .")
+expect("error line marked without colour", LogText.shown("Error: x", bad: true, noColour: true), "✖ Error: x")
+expect("error line plain with colour", LogText.shown("Error: x", bad: true, noColour: false), "Error: x")
+
+// Window texts.
+expect("closed notices ignore order", ContentView.issuesKey(["Vercel: a", "GitHub: b"]) == ContentView.issuesKey(["GitHub: b", "Vercel: a"]), true)
+var repoA = item(changed: true, commits: 4), repoB = item(.render, changed: true, commits: 2)
+expect("repo header", ContentView.repoSummary([repoA, repoB]), L("2 projects · 4 commits waiting", "2 Projekte · 4 Commits warten"))
+repoA.changed = false; repoB.changed = false
+expect("repo header, nothing waits", ContentView.repoSummary([repoA, repoB]), L("2 projects", "2 Projekte"))
+expect("confirmation names the platform", DeployConfirm.line(item(.render, changed: true, commits: 1), platform: true),
+       "app (Render) – " + L("1 commit waiting", "1 Commit wartet"))
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
