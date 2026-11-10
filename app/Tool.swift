@@ -98,10 +98,11 @@ enum Tool {
         return result
     }()
 
-    /// Every folder of a PATH below the home folder still exists (system folders are not checked).
+    /// Every node-manager folder of a PATH (nvm, fnm, volta: they move with each node version)
+    /// still exists. Fixed places such as ~/.local/bin may be missing for good and are not checked.
     static func pathFoldersExist(_ path: String) -> Bool {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return path.split(separator: ":").map(String.init).filter { $0.hasPrefix(home) }
+        let managers = ["/.nvm/versions/", "/fnm", "/.fnm/", "/.volta/", "/.asdf/installs/"]
+        return path.split(separator: ":").map(String.init).filter { p in managers.contains { p.contains($0) } }
             .allSatisfy { FileManager.default.fileExists(atPath: $0) }
     }
 

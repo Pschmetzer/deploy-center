@@ -644,8 +644,9 @@ if let g = try? JSONDecoder().decode(GuardStatus.self, from: Data(guardJSON.utf8
 let afJSON = #"{"routine":"trig","token":true,"scheduled":false,"fires":[{"at":1,"project":"a","status":"fired"},{"at":"x"}]}"#
 expect("autofix settings: a broken fire is skipped", (try? JSONDecoder().decode(AutofixStatus.self, from: Data(afJSON.utf8)))?.fires.count ?? -1, 1)
 expect("a name like an option is not passed on", "\(Store.safeArg("-rf")) \(Store.safeArg("web"))", "false true")
-expect("PATH with a folder that is gone is read again", Tool.pathFoldersExist(FileManager.default.homeDirectoryForCurrentUser.path + "/no-such-folder-\(UUID().uuidString)"), false)
+expect("PATH with a folder that is gone is read again", Tool.pathFoldersExist(FileManager.default.homeDirectoryForCurrentUser.path + "/.nvm/versions/node/v0-\(UUID().uuidString)/bin:/usr/bin"), false)
 expect("PATH of system folders only is kept", Tool.pathFoldersExist("/usr/bin:/bin"), true)
+expect("a missing ~/.local/bin does not drop the cache", Tool.pathFoldersExist(NSHomeDirectory() + "/.local/bin-\(UUID().uuidString):/usr/bin"), true)
 do {
     let dir = NSTemporaryDirectory() + "baks-\(UUID().uuidString)"
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)

@@ -325,7 +325,11 @@ final class ClaudeLink: ObservableObject {
         else { code = cli == nil ? .notFound : .notConnected; codeAllows = false }
         // The switch shows what Claude's files say, not a preference that may be older (a reset,
         // or a connection made by the plugin or the CLI).
-        if desktop == .connected || code == .connected { UserDefaults.standard.set(desktopAllows || codeAllows, forKey: "claudeAllowDeploy") }
+        // Both connected: "on" only when both allow, so a later reconnect never widens what one of them may do.
+        if desktop == .connected || code == .connected {
+            let allows = (desktop != .connected || desktopAllows) && (code != .connected || codeAllows)
+            UserDefaults.standard.set(allows, forKey: "claudeAllowDeploy")
+        }
 
         autofix = try? await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20)
         ClaudeNudge.store(wanted: desktop == .notConnected || code == .notConnected)

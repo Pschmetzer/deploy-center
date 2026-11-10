@@ -811,7 +811,8 @@ final class Store: ObservableObject {
         let chosen = selected(p)
         let queued = enqueue(chosen.map { Job(item: $0, preview: preview, whenGreen: whenGreen, force: force) })
         // A refused start (observer mode, "may be building already") keeps its tick, so nothing is lost.
-        for i in (items[p] ?? []).indices where queued.contains(Self.key(items[p]![i])) { items[p]![i].selected = false }
+        // Rows already under way untick too: they are running, nothing is lost.
+        for i in (items[p] ?? []).indices where queued.contains(Self.key(items[p]![i])) || items[p]![i].state.isActive { items[p]![i].selected = false }
     }
 
     /// Whether the deploy window (window.json) is closed now. Nil when the script could not say.
