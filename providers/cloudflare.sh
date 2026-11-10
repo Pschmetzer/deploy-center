@@ -127,6 +127,8 @@ CF_PHASE='def cf_skipped: (.is_skipped == true) or (.skip_reason != null) or (.l
     elif ($s.name == "deploy") and ($s.status == "success") then "ready"
     elif ($s.name // "queued") == "queued" then "queued"
     else "building" end;
+  # The platform'"'"'s own word for it (the contract'"'"'s state): stage and status, e.g. build/active.
+  def cf_raw: if .stage and .status then "\(.stage)/\(.status)" else (.status // .phase) end;
   def cf_t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | fromdateiso8601) else null end;
   def cf_dep: {id, phase:cf_phase, stage:(.latest_stage.name // null), status:(.latest_stage.status // null),
     environment, branch:(.deployment_trigger.metadata.branch // null),
@@ -142,13 +144,11 @@ CF_AUTO='def cf_auto: (.source.config // null) as $c
 
 # ---------- the contract ----------
 
-# Compact (jq -c): deploys greps it (meta_flag, meta_str, key_of). Contract fields: id, label,
-# noun, defaultOn, keyEnv (an array), keychain, caps (docs/PROVIDERS.md). Off by default.
+# One line, with printf (not jq): deploys greps it without jq (meta_flag, meta_str, key_of,
+# doctor). Contract fields: id, label, noun, defaultOn, keyEnv (an array), keychain, caps
+# (docs/PROVIDERS.md). Off by default.
 cloudflare_meta() {
-  jq -nc '{id:"cloudflare", name:"cloudflare", label:"Cloudflare Pages", noun:"project", defaultOn:false, default:false,
-    caps:{off:true, sha:false, cancel:false, rollback:true, logs:true, preview:true},
-    keyEnv:["CLOUDFLARE_API_TOKEN"], keychain:"deploy-center-cloudflare",
-    billing:"build count (Free: 500 per month), not price per build"}'
+  printf '%s\n' '{"id":"cloudflare","name":"cloudflare","label":"Cloudflare Pages","noun":"project","defaultOn":false,"default":false,"caps":{"off":true,"sha":false,"cancel":false,"rollback":true,"logs":true,"preview":true},"keyEnv":["CLOUDFLARE_API_TOKEN"],"keychain":"deploy-center-cloudflare","billing":"build count (Free: 500 per month), not price per build"}'
 }
 
 # Ready when there is a token. Says nothing, decides by its exit status.
@@ -291,7 +291,7 @@ cloudflare_deploy_json() {
     toggled=true
     [ "$(echo "$out" | jq "$CF_PHASE"' cf_dep | .skipped')" = true ] && { rm -f "$lock"; die "Cloudflare skipped the build even with $sw on"; }
   fi
-  echo "$out" | jq --argjson tg "$toggled" --arg b "$branch" "$CF_PHASE"' cf_dep | {id, url, state:.phase, phase, branch:$b, toggled:$tg}'
+  echo "$out" | jq --argjson tg "$toggled" --arg b "$branch" "$CF_PHASE"' cf_dep | {id, url, state:cf_raw, phase, branch:$b, toggled:$tg}'
 }
 
 cloudflare_latest_json() {
@@ -306,7 +306,7 @@ cloudflare_status_json() {
 
 # The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
 # The JSON stays in cloudflare_status_json/_latest_json, and `deploys cloudflare status|latest` prints it.
-CLOUDFLARE_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
+CLOUDFLARE_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage and .status then "\(.stage)/\(.status)" else null end) // .status // .phase // "?")" end'
 cloudflare_status() { local j; j="$(cloudflare_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
 cloudflare_latest() { local j; j="$(cf_call GET "$(cf_proj "$1")/deployments?per_page=1")" || return 1; j="$(echo "$j" | jq -c "$CF_PHASE"' .[0] // null | if . then cf_dep else null end')" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
 cloudflare_cli_status() { cloudflare_status_json "$@"; }
@@ -323,7 +323,7 @@ cloudflare_rollback() {
       [.[] | select(.id != $live and cf_phase == "ready")] | .[0].id // empty')" || exit 1
     [ -n "$id" ] || die "Cloudflare: no earlier good production deployment of $p to go back to"
   fi
-  cf_call POST "$(cf_proj "$p")/deployments/$id/rollback" | jq "$CF_PHASE"' cf_dep | {id, url, state:.phase, phase}'
+  cf_call POST "$(cf_proj "$p")/deployments/$id/rollback" | jq "$CF_PHASE"' cf_dep | {id, url, state:cf_raw, phase}'
 }
 
 # cloudflare_logs <project> [lines] [<id>]
@@ -421,6 +421,17 @@ cloudflare_selftest() {
 
 # ---------- commands ----------
 
+# Cloudflare's own commands, as `deploys cloudflare selftest|account` (deploys finds <p>_cli_*).
+cloudflare_cli_selftest() {
+  [ -n "${1:-}" ] || die "Usage: deploys cloudflare selftest <project> --yes (starts one real build)"
+  cloudflare_selftest "$1" "${2:-}"
+}
+cloudflare_cli_account() {
+  if [ -n "${1:-}" ]; then cf_state_set '.accountId = $a' --arg a "$1"; echo "Cloudflare account set."
+  else cloudflare_account; fi
+}
+
+# The file run on its own (bash providers/cloudflare.sh <command>; the tests do).
 cloudflare_cmd() {
   local c="${1:-}"; shift || true
   case "$c" in
@@ -438,10 +449,8 @@ cloudflare_cmd() {
     url|open) cloudflare_url "${1:?project}" "${2:-}" ;;
     set-key) cloudflare_set_key ;;
     doctor) cloudflare_doctor ;;
-    selftest) cloudflare_selftest "${1:?project}" "${2:-}" ;;
-    account)
-      if [ -n "${1:-}" ]; then cf_state_set '.accountId = $a' --arg a "$1"; echo "Cloudflare account set."
-      else cloudflare_account; fi ;;
+    selftest) cloudflare_cli_selftest "$@" ;;
+    account) cloudflare_cli_account "$@" ;;
     *) die "Usage: deploys cloudflare meta|list|has|off|on|deploy|deploy-json|status|latest|rollback|logs|url|set-key|doctor|selftest|account" ;;
   esac
 }

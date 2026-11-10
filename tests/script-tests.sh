@@ -342,7 +342,7 @@ expect "status --json carries the phase" "$(jq -r 'map(has("phase")) | all' "$O"
 fresh
 expect "watch: nothing running" "$(run "$O" "$E" watch web; cat "$O")" $'0\nNothing is building for web. The newest deploy (dpl_old) is READY.'
 rm -f "$e2e/polls"
-expect "watch: follows a Render build to live" "$(run "$O" "$E" watch api; tail -n 1 "$O" | cut -c11-)" $'0\nlive'
+expect "watch: follows a Render build to live" "$(run "$O" "$E" watch api; tail -n 1 "$O" | cut -c11-)" $'0\nlive  (12s)'
 # The names the last list read saw give platform and id: the service list is not read at all,
 # and never once per poll (before the provider files: once for the platform, once for the id).
 expect "watch: Render service list not read per poll" "$(grep -c 'services?limit=100' "$e2e/calls.log")" "0"

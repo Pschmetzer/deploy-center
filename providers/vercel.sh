@@ -11,7 +11,7 @@ vercel_meta() {
 # Set up here: the CLI is installed, or projects are remembered. Under launchd's PATH the vercel
 # CLI is often not found, and that must be an error, not a silent "no Vercel projects".
 vercel_ready() {
-  command -v vercel >/dev/null 2>&1 || [ "$(jq 'length' "$REPOS" 2>/dev/null || echo 0)" != 0 ]
+  type -P vercel >/dev/null 2>&1 || [ "$(jq 'length' "$REPOS" 2>/dev/null || echo 0)" != 0 ]
 }
 
 # The team the commands act on. Detected once and remembered; a personal account has none.
@@ -29,8 +29,15 @@ vercel_team() {
     cat "$CONFIG_DIR/vercel-team"; return
   fi
   if [ -f "$CONFIG_DIR/vercel-team" ] && [ $(( $(date +%s) - $(mtime "$CONFIG_DIR/vercel-team") )) -lt 86400 ]; then echo ""; return; fi
-  local teams n
-  teams="$(vercel api /v2/teams 2>/dev/null)" || die "The vercel CLI is not logged in. Run: vercel login"
+  local teams n e w
+  e="$(mktemp)"
+  # Only a login problem is "not logged in": a network error or a 5xx says what it was.
+  if ! teams="$(vercel api /v2/teams 2>"$e")"; then
+    w="$(grep -v '^[[:space:]]*$' "$e" | tail -n 1 | cut -c1-200)"; rm -f "$e"
+    case "$w" in ""|*[Ll]ogin*|*"logged in"*|*[Cc]redentials*|*[Tt]oken*|*401*|*403*) die "The vercel CLI is not logged in. Run: vercel login" ;; esac
+    die "Could not read the Vercel teams: $w"
+  fi
+  rm -f "$e"
   n="$(echo "$teams" | jq '.teams | length')"
   if [ "$n" = "0" ]; then
     : > "$CONFIG_DIR/vercel-team"; echo ""
@@ -47,11 +54,23 @@ team_q() { local t; t="$(vercel_team)"; [ -n "$t" ] && echo "teamId=$t" || echo 
 with_team() { local q; q="$(team_q)"; case "$1" in *\?*) echo "$1${q:+&$q}";; *) echo "$1${q:+?$q}";; esac; }
 
 # On failure the last line vercel printed goes to stderr: "not found" and "not logged in" differ.
+# A read that met a rate limit, a server error or a network hiccup is asked again (three times
+# in all), as the other providers do; a write never is: a timed-out POST may have started a build.
 vercel_call() {
-  local e rc=0; e="$(mktemp)"
-  vercel api "$(with_team "$1")" "${@:2}" 2>"$e" || rc=$?
+  local e rc try path a get=1 out; e="$(mktemp)"
+  path="$(with_team "$1")"
+  for a in "${@:2}"; do case "$a" in --method|-X) get="" ;; esac; done
+  for try in 1 2 3; do
+    rc=0; out="$(vercel api "$path" "${@:2}" 2>"$e")" || rc=$?
+    [ "$rc" != 0 ] && [ -n "$get" ] && [ "$try" -lt 3 ] \
+      && grep -qiE '(^|[^0-9])(429|50[0-9])([^0-9]|$)|rate.?limit|too many requests|ETIMEDOUT|ECONNRESET|ENOTFOUND|socket hang up|network' "$e" \
+      && { sleep $((try * 2)); continue; }
+    break
+  done
   [ "$rc" = 0 ] || grep -v '^[[:space:]]*$' "$e" | tail -n 1 | sed 's/^/vercel: /' >&2
-  rm -f "$e"; return "$rc"
+  rm -f "$e"
+  [ -z "$out" ] || printf '%s\n' "$out"
+  return "$rc"
 }
 
 vercel_projects() {
@@ -185,10 +204,21 @@ vercel_deploy_json() {
 # Every project, the newest production attempt per project from one call: a build started in the
 # dashboard or the terminal is BUILDING here while targets.production still shows the finished one.
 vercel_json() {
-  local recent
-  recent="$(vercel_call "/v6/deployments?limit=100&target=production" \
-    | jq '[.deployments[]] | group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // null)})}) | from_entries' 2>/dev/null)"
-  vercel_projects | jq --slurpfile r <(repos_json) --argjson recent "${recent:-{\}}" "$VERCEL_PHASE"'[.[] |
+  local recent projects need deps='[]' page next=""
+  projects="$(vercel_projects)" || return 1
+  # The newest production attempt of each project. One page holds the 100 newest of the whole
+  # account: while a project that has a production deploy is not on them yet, older pages follow
+  # (three at most). A failed read leaves latestState empty, as before.
+  need="$(jq -c '[.[] | select(.targets.production != null) | .name]' <<< "$projects")"
+  for _ in 1 2 3; do
+    page="$(vercel_call "/v6/deployments?limit=100&target=production${next:+&until=$next}" 2>/dev/null)" || break
+    deps="$(jq -c --argjson p "$page" '. + ($p.deployments // [])' <<< "$deps" 2>/dev/null)" || break
+    next="$(jq -r '.pagination.next // empty' <<< "$page" 2>/dev/null)"
+    [ -n "$next" ] || break
+    [ "$(jq --argjson n "$need" '[.[].name] as $have | [$n[] | select(. as $x | $have | index($x) | not)] | length' <<< "$deps")" -gt 0 ] || break
+  done
+  recent="$(jq 'group_by(.name) | map({key:.[0].name, value:(max_by(.created) | {state, created, id:.uid, sha:(.meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // null)})}) | from_entries' <<< "$deps" 2>/dev/null)"
+  echo "$projects" | jq --slurpfile r <(repos_json) --argjson recent "${recent:-{\}}" "$VERCEL_PHASE"'[.[] |
     ((.link // null) | if . then {repo:'"$GITHOST_VERCEL_LINK_JQ"', ref:"main"} else null end) as $live |
     ($r[0][.name] // null) as $known |
     (((.targets.production.alias // []) | map(select(endswith(".vercel.app")|not)) | .[0]) // null) as $domain |
@@ -234,10 +264,11 @@ vercel_cancel() {
 
 # Production back to the previous ready production deployment.
 vercel_rollback() {
-  local p="${1:?project}" cur prev pid
+  local p="${1:?project}" cur prev pid proj
   # "Before" means before the deployment that is live now, which after an earlier rollback or a
-  # promotion is not always the newest one.
-  cur="$(vercel_call "/v9/projects/$p" | jq -r '.targets.production.id // empty')"
+  # promotion is not always the newest one. One read of the project gives that and its id.
+  proj="$(vercel_call "/v9/projects/$p")" || die "Could not read the Vercel project $p"
+  cur="$(echo "$proj" | jq -r '.targets.production.id // empty' 2>/dev/null)"
   prev="$(vercel_call "/v6/deployments?projectId=$p&target=production&state=READY&limit=20" \
     | jq -r --arg cur "$cur" '.deployments as $d | (($d | map(.uid) | index($cur)) // 0) as $i
         | ($d[$i].meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // null) as $sha
@@ -246,7 +277,7 @@ vercel_rollback() {
            | map(select($sha == null or (.meta | (.githubCommitSha // .gitlabCommitSha // .bitbucketCommitSha) // "") != $sha)) | .[0].uid // empty)')"
   [ -n "$prev" ] || die "No earlier production deployment of $p to roll back to"
   # The project's id, not its name: Vercel answers 404 to a name on these endpoints.
-  pid="$(vercel_call "/v9/projects/$p" | jq -r '.id // empty')"
+  pid="$(echo "$proj" | jq -r '.id // empty' 2>/dev/null)"
   vercel api "$(with_team "/v1/projects/${pid:-$p}/rollback/$prev")" --method POST >/dev/null 2>&1 || die "Vercel: rollback of $p failed"
   echo "{\"id\":\"$prev\",\"state\":\"READY\"}"
 }
@@ -281,9 +312,12 @@ vercel_set_key() { die "Vercel uses the vercel CLI login, not a stored key. Run:
 # Written with printf, not jq: doctor has to work when jq is missing.
 vercel_doctor() {
   local cli=false vapi=false vlogin=false
-  command -v vercel >/dev/null 2>&1 && cli=true
-  vercel api --help >/dev/null 2>&1 && vapi=true
-  vercel whoami >/dev/null 2>&1 && vlogin=true
+  # Each vercel run is a Node start of a second or so: without the CLI, none.
+  if type -P vercel >/dev/null 2>&1; then
+    cli=true
+    vercel api --help >/dev/null 2>&1 && vapi=true
+    vercel whoami >/dev/null 2>&1 && vlogin=true
+  fi
   printf '{"vercelCli":%s,"vercelApi":%s,"vercelLoggedIn":%s}\n' "$cli" "$vapi" "$vlogin"
 }
 
@@ -346,13 +380,26 @@ vercel_cli_status() {
 
 vercel_cli_cancel() { vercel_cancel "" "${1:?deployment id}"; }
 
+# vercel team [<id>] [--no-check]: a new id is asked of Vercel first, so a typo is not kept
+# (--no-check keeps it unasked, e.g. offline).
 vercel_cli_team() {
-  if [ -n "${1:-}" ]; then valid_team "$1" || die "A team id has letters, digits, _ and - only"; printf '%s' "$1" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $1"; else vercel_team; echo; fi
+  local id="" chk=1 a
+  for a in "$@"; do case "$a" in --no-check) chk="" ;; *) id="$a" ;; esac; done
+  if [ -n "$id" ]; then
+    valid_team "$id" || die "A team id has letters, digits, _ and - only"
+    if [ -n "$chk" ]; then vercel api "/v2/teams/$id" >/dev/null 2>&1 || die "Vercel does not know team $id here (or could not be asked). Check the id (vercel teams ls), or keep it unchecked: deploys vercel team $id --no-check"; fi
+    printf '%s' "$id" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $id"
+  else vercel_team; echo; fi
 }
 
 # Say by hand where a project deploys from, for one disconnected before this tool knew it.
+# vercel map <p> <owner/repo> [<branch>] [--no-check]: the project is asked of Vercel first.
 vercel_cli_map() {
+  local chk=1 a rest=()
+  for a in "$@"; do case "$a" in --no-check) chk="" ;; *) rest+=("$a") ;; esac; done
+  set -- ${rest[@]+"${rest[@]}"}
   local p="${1:?project}" r="${2:?owner/repo}" ref="${3:-main}" rid="" tmp
+  if [ -n "$chk" ]; then vercel_call "/v9/projects/$p" >/dev/null 2>&1 || die "Vercel has no project $p in this team (or could not be asked). Check the name (deploys vercel list), or keep it unchecked: deploys vercel map $p $r $ref --no-check"; fi
   case "$r" in */*) ;; *) die "Give the repo as owner/name";; esac
   if [ "$(githost_of "$r")" = gitlab ]; then
     # GitLab: host/group/name (or its URL). Vercel deploys it by project id.
@@ -364,7 +411,7 @@ vercel_cli_map() {
       '.[$p] = ({type:"gitlab", repo:$r, projectId:$pid, ref:$ref} + (if .[$p].offAt then {offAt:.[$p].offAt} else {} end))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
     echo "Vercel: $p deploys from $r ($ref)"; return 0
   fi
-  command -v gh >/dev/null 2>&1 && rid="$(gh api "repos/$r" --jq .id 2>/dev/null || true)"
+  type -P gh >/dev/null 2>&1 && rid="$(gh api "repos/$r" --jq .id 2>/dev/null || true)"
   tmp="$(mktemp)"
   # The whole entry is replaced: an old repoId would win over the new repo name.
   jq --arg p "$p" --arg o "${r%%/*}" --arg n "${r#*/}" --arg ref "$ref" --arg rid "$rid" \

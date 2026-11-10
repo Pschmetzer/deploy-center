@@ -14,6 +14,9 @@ hasnt() { case "$2" in *"$3"*) fail "$1" "[$3] in: $(printf '%s' "$2" | head -c 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 export DEPLOYS_CONFIG="$tmp/config" FIX="$PWD/tests/fixtures/team" CALLS="$tmp/calls.log"
 export DEPLOYS_VERCEL_TEAM=tm1 GH_USER=dev-one GH_HEAD=""
+# A fixed clock inside the repo file's window (mon–thu 09:00–16:00 UTC): the tests must not
+# depend on when they run. Tests of the window itself set their own DEPLOYS_NOW.
+export DEPLOYS_NOW="tue 10:00 2026-11-10"
 mkdir -p "$tmp/bin" "$DEPLOYS_CONFIG"; : > "$CALLS"
 
 # gh: `gh api [flags] <path>`. Files in a repo come from fixtures/team/files, everything else

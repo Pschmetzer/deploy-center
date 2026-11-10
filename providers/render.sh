@@ -232,13 +232,38 @@ render_rollback() {
 }
 
 # render_logs <service> <lines> [deployId]
+# The workspace (owner) of a service never changes: read once, then kept in render-owners.json.
+render_owner_of() {
+  local id="$1" f="$CONFIG_DIR/render-owners.json" o t
+  o="$(jq -r --arg i "$id" '.[$i] // empty' "$f" 2>/dev/null)"
+  if [ -z "$o" ]; then
+    o="$(render_call GET "/services/$id" | jq -r '.ownerId // empty')" || return 1
+    [ -n "$o" ] || return 1
+    t="$(mktemp "$CONFIG_DIR/.owners.XXXXXX")" \
+      && { jq --arg i "$id" --arg o "$o" '. + {($i): $o}' "$f" 2>/dev/null || jq -n --arg i "$id" --arg o "$o" '{($i): $o}'; } > "$t" \
+      && mv "$t" "$f" || rm -f "$t"
+  fi
+  printf '%s\n' "$o"
+}
+
 render_logs() {
-  local id n="$2" did="${3:-}" owner win=""
-  id="$(render_id_of "$1")"; owner="$(render_call GET "/services/$id" | jq -r .ownerId)"
+  local id n="$2" did="${3:-}" owner win="" page all='[]' got=0 lim more next
+  id="$(render_id_of "$1")"; owner="$(render_owner_of "$id")" || die "Render: could not read service $id"
   # Render's logs have no deploy filter: the deploy's own time window stands in for it.
   [ -z "$did" ] || win="$(render_call GET "/services/$id/deploys/$did" | jq -r '"&startTime=\(.createdAt | @uri)" + (if .finishedAt then "&endTime=\(.finishedAt | @uri)" else "" end)')"
-  render_call GET "/logs?ownerId=$owner&resource=$id&type=build&limit=$n&direction=backward$win" \
-    | jq -r '.logs | reverse | .[].message' | sed $'s/\x1b\\[[0-9;]*m//g'
+  # The logs API answers at most 100 lines a question: more come page by page, newest first,
+  # through the next window it names (hasMore, nextStartTime, nextEndTime). Without those, it stops.
+  while [ "$got" -lt "$n" ]; do
+    lim=$((n - got)); [ "$lim" -le 100 ] || lim=100
+    page="$(render_call GET "/logs?ownerId=$owner&resource=$id&type=build&limit=$lim&direction=backward$win")" || { [ "$got" -gt 0 ] && break; return 1; }
+    all="$(jq -c --argjson p "$page" '. + ($p.logs // [])' <<< "$all")"
+    got="$(jq 'length' <<< "$all")"
+    more="$(jq -r '.hasMore // false' <<< "$page")"
+    next="$(jq -r 'if .nextStartTime and .nextEndTime then "&startTime=\(.nextStartTime | @uri)&endTime=\(.nextEndTime | @uri)" else empty end' <<< "$page")"
+    [ "$more" = true ] && [ -n "$next" ] && [ "$(jq '.logs // [] | length' <<< "$page")" -gt 0 ] || break
+    win="$next"
+  done
+  jq -r '.[:'"$n"'] | reverse | .[].message' <<< "$all" | sed $'s/\x1b\\[[0-9;]*m//g'
 }
 
 render_url() {
@@ -302,7 +327,11 @@ render_cli_list() {
 # Through deploy-json, so the same one-minute start lock as the app and deploy-changed applies.
 render_cli_deploy() { render_deploy_json "$@" | jq -r '"Render: deploy started (\(.id), \(.state))"'; }
 
-render_cli_status() { render_call GET "/services/${1:?service id}/deploys/${2:?deploy id}" | jq '{id, state:.status}'; }
+# render status <service name or srv- id> <deploy id>
+render_cli_status() {
+  local id; id="$(render_id_of "${1:?Usage: deploys render status <service> <deploy id>}")"
+  render_call GET "/services/$id/deploys/${2:?Usage: deploys render status <service> <deploy id>}" | jq '{id, state:.status}'
+}
 
 render_cli_forget_key() {
   # Both names the key was ever stored under. A key in RENDER_API_KEY is not touched.
