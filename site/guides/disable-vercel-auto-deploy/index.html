@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to disable Vercel auto-deploy: 3 ways · Deploy Center</title>
+<meta name="description" content="Stop Vercel deploying on every push: disconnect Git, set git.deploymentEnabled in vercel.json, or add an Ignored Build Step. Steps, code and trade-offs.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/disable-vercel-auto-deploy/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="How to disable Vercel auto-deploy: 3 ways · Deploy Center">
+<meta property="og:description" content="Stop Vercel deploying on every push: disconnect Git, set git.deploymentEnabled in vercel.json, or add an Ignored Build Step. Steps, code and trade-offs.">
+<meta property="og:url" content="https://deploycenter.app/guides/disable-vercel-auto-deploy/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How to disable Vercel auto-deploy: 3 ways · Deploy Center">
+<meta name="twitter:description" content="Stop Vercel deploying on every push: disconnect Git, set git.deploymentEnabled in vercel.json, or add an Ignored Build Step. Steps, code and trade-offs.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How to disable Vercel auto-deploy",
+  "description": "Stop Vercel deploying on every push: disconnect Git, set git.deploymentEnabled in vercel.json, or add an Ignored Build Step. Steps, code and trade-offs.",
+  "url": "https://deploycenter.app/guides/disable-vercel-auto-deploy/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/disable-vercel-auto-deploy/",
+  "datePublished": "2026-11-10",
+  "dateModified": "2026-11-10",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Does disconnecting Git delete my Vercel deployments?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. Existing deployments, domains and environment variables stay. Only new builds from Git pushes stop."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Can I keep preview deployments and only stop production?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes. Set \"deploymentEnabled\": {\"main\": false} in vercel.json, or use an Ignored Build Step that cancels when VERCEL_ENV is production."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Do CLI deploys still work after I turn auto-deploy off?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes. vercel deploy --prod works with or without a Git connection, and so does Deploy Center."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Which way saves the most?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Disconnecting, because nothing starts on a push. With the Ignored Build Step a deployment is still created and then cancelled; check your usage page to see how your plan counts it."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "What do I lose?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Automatic production deploys and automatic previews. You have to remember to deploy; Deploy Center shows a count of what is waiting in the menu bar."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Disable Vercel auto-deploy",
+    "item": "https://deploycenter.app/guides/disable-vercel-auto-deploy/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+</div></nav>
+
+<main class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>How to disable Vercel auto-deploy</h1>
+<p class="answer">To stop Vercel from deploying on every push, disconnect the Git repository in Project → Settings → Git, set <code>git.deploymentEnabled</code> to <code>false</code> in <code>vercel.json</code>, or add an Ignored Build Step that cancels the builds you do not want. Disconnecting stops every Git build; the other two keep the repository connected and skip builds by rule.</p>
+<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<div class="tablewrap"><table>
+  <thead><tr><th>Way</th><th>Stops</th><th>Keeps</th><th>Best for</th></tr></thead>
+  <tbody>
+    <tr><td><a href="#disconnect">1. Disconnect Git</a></td><td>All Git builds, production and preview</td><td>Deployments, domains, env vars</td><td>Deploying on your schedule</td></tr>
+    <tr><td><a href="#deployment-enabled">2. <code>git.deploymentEnabled</code></a></td><td>Builds for the branches you list</td><td>Git connection, other branches</td><td>Turning off one branch, in code</td></tr>
+    <tr><td><a href="#ignored-build-step">3. Ignored Build Step</a></td><td>Builds your script rejects</td><td>Everything; each push still starts a deployment that gets cancelled</td><td>Rules like “only if this folder changed”</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="disconnect">1. Disconnect the Git repository</h2>
+<p>This is the only way that makes a push do nothing at all on Vercel.</p>
+<ol>
+  <li>Write down the repository and the production branch. You need them to reconnect later.</li>
+  <li>Open the project on vercel.com, then <b>Settings → Git</b>.</li>
+  <li>Under <b>Connected Git Repository</b>, click <b>Disconnect</b> and confirm.</li>
+  <li>Deploy by hand from a checkout of the branch:</li>
+</ol>
+<pre><code class="language-bash"><span class="c"># production deploy of the folder you are in (the build runs on Vercel)</span>
+vercel deploy --prod
+
+<span class="c"># or build on your machine or in CI and upload the result</span>
+vercel build --prod
+vercel deploy --prebuilt --prod</code></pre>
+<div class="note"><p><b>Trade-offs.</b> No preview deployment per pull request, no automatic production deploy, and deploy hooks live in the Git settings, so they go with the connection. Your existing deployments, domains and environment variables stay.</p></div>
+
+<h2 id="deployment-enabled">2. <code>git.deploymentEnabled</code> in vercel.json</h2>
+<p>The repository stays connected, but Vercel skips Git deployments for the branches you turn off. Put <code>vercel.json</code> in the project's root directory.</p>
+<p>Off for every branch:</p>
+<pre><code class="language-json">{
+  "git": {
+    "deploymentEnabled": false
+  }
+}</code></pre>
+<p>Off for production only, previews keep working:</p>
+<pre><code class="language-json">{
+  "git": {
+    "deploymentEnabled": {
+      "main": false
+    }
+  }
+}</code></pre>
+<p>The keys are branch names; Vercel also accepts glob patterns such as <code>"renovate/*": false</code>. Then deploy production with <code>vercel deploy --prod</code> as above.</p>
+<div class="note"><p><b>Trade-offs.</b> It lives in the repository, so it is reviewed and versioned, but you need one file per project. In a monorepo every project reads its own <code>vercel.json</code>.</p></div>
+
+<h2 id="ignored-build-step">3. Ignored Build Step</h2>
+<p>Vercel runs a command before each Git build. Exit code <b>0 cancels</b> the build, exit code <b>1 lets it run</b>. Set it in <b>Settings → Git → Ignored Build Step</b> (choose <b>Custom</b>), or in <code>vercel.json</code>:</p>
+<pre><code class="language-json">{
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- ."
+}</code></pre>
+<p>This example builds only when the last commit changed something in the project's folder. To cancel every Git build, the command is simply <code>exit 0</code>.</p>
+<div class="note"><p><b>Trade-offs.</b> Every push still creates a deployment that shows up as cancelled, and a script that errors lets the build run. The <a href="/guides/vercel-ignored-build-step/">Ignored Build Step guide</a> has tested examples and the pitfalls.</p></div>
+
+<h2 id="deploy-center">4. All projects in one click: Deploy Center</h2>
+<p>Doing way 1 by hand is fine for one project and tedious for thirty. <a href="/">Deploy Center</a> does it for all of them, writes down each repository and production branch first, and then shows what is waiting to go live.</p>
+<ol>
+  <li>Install the app and connect with your <code>vercel</code> CLI login.</li>
+  <li>Click <b>Turn off auto-deploy</b> on the banner. Or in the terminal:</li>
+</ol>
+<pre><code class="language-bash">deploys vercel autodeploy-off --all   # disconnect Git, remember repo and branch
+deploys changed                        # what is waiting to go live
+deploys deploy-changed --yes           # ship the newest commit of each</code></pre>
+<p>The repositories are recorded in <code>~/.config/deploys/vercel-repos.json</code>, so you can reconnect any project later.</p>
+
+<h2 id="undo">Turn auto-deploy back on</h2>
+<ul>
+  <li><b>Disconnected:</b> Settings → Git → connect the same repository again and set the production branch.</li>
+  <li><b><code>deploymentEnabled</code>:</b> delete the key or set it to <code>true</code>, and push.</li>
+  <li><b>Ignored Build Step:</b> set the setting back to <b>Automatic</b>, or remove <code>ignoreCommand</code>.</li>
+</ul>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Does disconnecting Git delete my Vercel deployments?</summary><p>No. Existing deployments, domains and environment variables stay. Only new builds from Git pushes stop.</p></details>
+  <details><summary>Can I keep preview deployments and only stop production?</summary><p>Yes. Set <code>"deploymentEnabled": {"main": false}</code> in vercel.json, or use an Ignored Build Step that cancels when <code>VERCEL_ENV</code> is <code>production</code>.</p></details>
+  <details><summary>Do CLI deploys still work after I turn auto-deploy off?</summary><p>Yes. <code>vercel deploy --prod</code> works with or without a Git connection, and so does Deploy Center.</p></details>
+  <details><summary>Which way saves the most?</summary><p>Disconnecting, because nothing starts on a push. With the Ignored Build Step a deployment is still created and then cancelled; check your usage page to see how your plan counts it.</p></details>
+  <details><summary>What do I lose?</summary><p>Automatic production deploys and automatic previews. You have to remember to deploy; Deploy Center shows a count of what is waiting in the menu bar.</p></details>
+
+<div class="ctabox">
+  <h2>Do it for every project in one click.</h2>
+  <p>Deploy Center is a free, open-source Mac app. It turns off auto-deploy on Vercel and Render, shows the commits and PRs waiting to go live, and deploys what changed when you decide.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+  <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify.</p>
+</div></footer>
+</body>
+</html>

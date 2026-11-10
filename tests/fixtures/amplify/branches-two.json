@@ -1,0 +1,4 @@
+{"branches":[
+ {"branchName":"a","stage":"BETA","enableAutoBuild":true},
+ {"branchName":"b","stage":"DEVELOPMENT","enableAutoBuild":true}
+]}
