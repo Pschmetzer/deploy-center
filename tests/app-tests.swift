@@ -988,5 +988,7 @@ do {
     expect("rules: list", RulesConfig.list(" a, b\n,c "), ["a", "b", "c"])
 }
 
+expect("cli text: a shell's own error stays", CLIText.german("bash: foo: command not found"), "bash: foo: command not found")
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

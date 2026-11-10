@@ -8,8 +8,8 @@ enum CLIText {
     private static let table: [(String, String)] = [
         (#"No project or service named "(.+)" was seen yet \(deploys changed reads the names\)"#,
          #"Noch kein Projekt oder Dienst namens „$1“ gesehen (deploys changed liest die Namen)"#),
-        (#"(.+) not found"#, "$1 nicht gefunden"),
-        (#"(.+) has no known repo"#, "$1 hat kein bekanntes Repo"),
+        (#"(\S+) not found"#, "$1 nicht gefunden"),
+        (#"(\S+) has no known repo"#, "$1 hat kein bekanntes Repo"),
         (#"No deploy of (.+) found"#, "Kein Deploy von $1 gefunden"),
         (#"The newest deploy of (.+) is not live; nothing to check"#, "Der neueste Deploy von $1 ist nicht live; nichts zu prüfen"),
         (#"(.+) is being started already \(wait a minute\)"#, "$1 wird schon gestartet (eine Minute warten)"),

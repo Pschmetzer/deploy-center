@@ -872,10 +872,12 @@ final class Store: ObservableObject {
     /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
     struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool }
     @Published var messages: [Message] = []
-    private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil, key: String? = nil) {
+    /// `rollBack`: production is live and broken, so the notification offers "Roll back …" (a failed
+    /// build never replaced production: there it offers only the log).
+    private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil, key: String? = nil, rollBack: Bool = false) {
         // The project ran again: a second reminder of its last failure is no longer true.
         if let key { Notify.dropEscalations(key) }
-        Notify.post(title, body, project: project, key: key, failed: !ok)
+        Notify.post(title, body, project: project, key: key, failed: !ok, rollBack: rollBack)
         show(Toast(text: title, ok: ok))
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok))
     }
@@ -1461,7 +1463,8 @@ final class Store: ObservableObject {
             return
         }
         say(L("\(name) is live, but the site answers \(code.map(String.init) ?? "nothing")",
-              "\(name) ist live, aber die Seite antwortet mit \(code.map(String.init) ?? "nichts")"), link, ok: false)
+              "\(name) ist live, aber die Seite antwortet mit \(code.map(String.init) ?? "nichts")"), link, ok: false,
+            project: name, key: Self.key(item), rollBack: true)
     }
 
     // MARK: After the first check: the answer time against the last deploy's, and a watch for a while
@@ -1505,7 +1508,8 @@ final class Store: ObservableObject {
                 self.watches[key] = nil
                 if mayRollBack, self.rollsBack(item) { self.countDownToRollback(item, url.absoluteString, code); return }
                 self.say(L("\(item.name) stopped answering after the deploy", "\(item.name) antwortet nach dem Deploy nicht mehr richtig"),
-                         url.absoluteString + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), ok: false)
+                         url.absoluteString + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), ok: false,
+                         project: item.name, key: Self.key(item), rollBack: true)
                 return
             }
             self?.watches[key] = nil

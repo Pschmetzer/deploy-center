@@ -405,17 +405,19 @@ enum Notify {
         add(title, body, id: "daily-reminder")
     }
     /// `project`: a click on it shows that project in the window. `key` (Store.key) with `failed`:
-    /// the notification has "Show log" and "Roll back …", which open the window there; nothing runs by itself.
-    static func post(_ title: String, _ body: String, project: String? = nil, key: String? = nil, failed: Bool = false) {
+    /// the notification has "Show log" (and with `rollBack`, a live site that is broken, "Roll back …"),
+    /// which open the window there; nothing runs by itself.
+    static func post(_ title: String, _ body: String, project: String? = nil, key: String? = nil, failed: Bool = false, rollBack: Bool = false) {
         let d = UserDefaults.standard
         guard available, !NSApp.isActive, d.object(forKey: "notifications") as? Bool ?? true else { return }
         // Quiet hours (Settings → Notifications): only failures still come.
         if !failed, quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo")) { return }
-        add(title, body, id: UUID().uuidString, category: failed && key != nil ? NotifyRouter.failedCategory : nil, project: project, key: key)
+        let category = failed && key != nil ? (rollBack ? NotifyRouter.brokenCategory : NotifyRouter.failedCategory) : nil
+        add(title, body, id: UUID().uuidString, category: category, project: project, key: key)
         // A failure nobody looked at comes back once, 30 minutes later (Settings), unless the app was opened.
         if failed, let key, d.bool(forKey: "remindFailures") {
             add(L("Still failing: ", "Immer noch fehlgeschlagen: ") + title, body, id: escalationPrefix + key,
-                category: NotifyRouter.failedCategory, project: project, key: key, after: 30 * 60)
+                category: category, project: project, key: key, after: 30 * 60)
         }
     }
     static let escalationPrefix = "again|"
@@ -476,6 +478,7 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
     static let rollbackCategory = "rollback-countdown"
     static let cancelAction = "cancel-rollback"
     static let failedCategory = "deploy-failed"
+    static let brokenCategory = "live-broken"
     static let logAction = "show-log"
     static let rollbackAction = "ask-rollback"
     /// "Show log" / "Roll back …" of a failure, with the project's key: the window opens there.
@@ -492,7 +495,9 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
         let back = UNNotificationAction(identifier: Self.rollbackAction, title: L("Roll back …", "Zurückrollen …"), options: [.foreground])
         center.setNotificationCategories([UNNotificationCategory(identifier: Self.rollbackCategory, actions: [cancel],
                                                                  intentIdentifiers: [], options: []),
-                                          UNNotificationCategory(identifier: Self.failedCategory, actions: [log, back],
+                                          UNNotificationCategory(identifier: Self.failedCategory, actions: [log],
+                                                                 intentIdentifiers: [], options: []),
+                                          UNNotificationCategory(identifier: Self.brokenCategory, actions: [log, back],
                                                                  intentIdentifiers: [], options: [])])
         center.delegate = self
     }
