@@ -92,6 +92,14 @@ lastSha, lastMsg, fetchError, phase}`. Every key is present; unknown values are 
 - `fetchError`: why the live deploy could not be read. A project with one is never counted as
   changed and never as up to date.
 - `phase`: see below. Extra fields (`latestState`, `latestId`, `latestSha`, `type`) are welcome.
+- `fetchWarn` (optional): something that could not be read but does not make the row wrong
+  enough for `fetchError`, for example Amplify's custom domains (the address shown may be the
+  default one). The app shows it quietly at the row.
+- `triggeredSha` (optional, hook): `lastSha` is then the branch head when the hook fired, not a
+  commit seen live (the host may build another one). It still counts the commits since the
+  trigger; the app need not call it live. A hook's `phase` is `queued` for `HOOK_QUEUED_SECS`
+  (180) after a good trigger, then `ready`; its `_status` line is `ready` at once, since
+  `watch` would learn nothing more by waiting.
 
 ### Phase
 
@@ -160,7 +168,12 @@ exports its worker: `export -f render_last_of`.
      and `CONTRACT_DEPLOY`, which `_has`, `_status`, `_latest`, `_deploy_json` and `_url` are
      called with.
    - `expect.json`: `{"<name>": "<phase>"}` for every project in the list fixture.
-   - `config/` (optional): files copied into the config folder first.
+   - `config/` (optional): files copied into the config folder first. A provider that is off by
+     default needs `providers.json` there (`{"enabled":["<p>","render","vercel"]}`).
+   - `CONTRACT_DONE` (optional, in `env`): a sed script that turns the files of
+     `CONTRACT_DEPLOY` into a finished deploy, for the `deploys watch` check (the default fits
+     Render and Vercel).
+   - `bin/` (optional): stand-ins for a provider's own CLI, put on the PATH (Amplify: `aws`).
    - One file per API call: `<METHOD>_<path>.json`, where `<path>` is the URL path and query with
      every character other than letters, digits, `.` and `-` as `_` (for example
      `GET_v1_services_limit_100.json`). The file holds the body, a newline and the HTTP status.
