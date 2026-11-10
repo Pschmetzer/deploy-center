@@ -196,6 +196,8 @@ struct SettingsView: View {
     }
 }
 
+private func open(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.open(u) } }
+
 @main
 struct DeployCenterApp: App {
     /// One store for the window and the menu bar, so both show the same counts.
@@ -220,7 +222,22 @@ struct DeployCenterApp: App {
                 }
         }
             .windowResizability(.contentMinSize)
-        .commands { WindowCommands() }
+        .commands {
+            WindowCommands()
+            CommandGroup(after: .appInfo) {
+                Button(L("Check for Updates …", "Nach Updates suchen …")) { Task { await store.checkForUpdate(force: true) } }
+            }
+            CommandGroup(replacing: .help) {
+                Button(L("Deploy Center on GitHub", "Deploy Center auf GitHub")) { open("https://github.com/\(Updater.repo)#readme") }
+                Button(L("What's new", "Was ist neu")) { open("https://github.com/\(Updater.repo)/releases") }
+                Button(L("Report a problem …", "Problem melden …")) { open("https://github.com/\(Updater.repo)/issues/new/choose") }
+                Divider()
+                Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
+                    if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
+                    NSWorkspace.shared.open(Log.url)
+                }
+            }
+        }
         Settings { SettingsView(store: store) }
         MenuBarExtra(isInserted: $showMenuBar) {
             MenuBarContent(store: store)
@@ -248,13 +265,17 @@ struct MenuBarContent: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @AppStorage("demoMode") private var demoMode = false
+    @AppStorage("onlyChanged") private var onlyChanged = false
+    @AppStorage("showAll") private var showAll = false
+
+    private func openMain() { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
 
     var body: some View {
         let w = store.waiting
         let changed = Array(store.items.values.joined()).filter { $0.hasNewCommits && $0.deployable && $0.state == .idle }
             .sorted { ($0.pendingCommits ?? 0) > ($1.pendingCommits ?? 0) }
         if w.projects == 0 {
-            Text(L("Everything merged is live", "Alles Gemergte ist live"))
+            Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle")
         } else {
             Text(L("\(w.prs) PRs, \(w.commits) commits waiting", "\(w.prs) PRs, \(w.commits) Commits warten"))
             Divider()
@@ -264,7 +285,12 @@ struct MenuBarContent: View {
                     openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
                 }
             }
-            if changed.count > 12 { Text(L("and \(changed.count - 12) more", "und \(changed.count - 12) weitere")) }
+            if changed.count > 12 {
+                // Opens the window with everything that waits, not only the first twelve.
+                Button(L("and \(changed.count - 12) more …", "und \(changed.count - 12) weitere …")) {
+                    showAll = true; onlyChanged = true; openMain()
+                }
+            }
         }
         if w.openPRs > 0 {
             Text(L("\(w.openPRs) PRs still open", "\(w.openPRs) PRs noch offen"))
@@ -286,7 +312,12 @@ struct MenuBarContent: View {
                 store.pendingDeployAll = true
             }
         }
-        Button(L("Reload", "Neu laden")) { Task { await store.autoRefresh() } }
+        Button(store.loading.isEmpty ? L("Reload", "Neu laden") : L("Loading …", "Lädt …")) { Task { await store.autoRefresh() } }
+            .disabled(!store.loading.isEmpty)
+        if let at = store.loadedAt.values.min() {
+            Text(L("As of ", "Stand ") + at.formatted(date: .omitted, time: .shortened)
+                 + (store.fromCache.isEmpty ? "" : L(" (saved copy)", " (gespeicherte Kopie)")))
+        }
         Button(L("Settings …", "Einstellungen …")) {
             // Menu bar only: without activating, the window opens behind the other apps.
             NSApp.activate(ignoringOtherApps: true); openSettings()

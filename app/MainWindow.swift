@@ -83,6 +83,11 @@ struct ContentView: View {
         return c > 0 ? "\(n) · \(c)" : "\(n)"
     }
 
+    private var waitingSubtitle: String {
+        let n = store.waiting.projects
+        return n == 0 ? "" : L("\(n) \(n == 1 ? "project waits" : "projects wait")", "\(n) \(n == 1 ? "Projekt wartet" : "Projekte warten")")
+    }
+
     private static func tabLabel(_ store: Store, _ p: Platform) -> String {
         let n = store.items[p]?.count ?? 0, c = store.changedCount(p)
         return L("\(p.rawValue), \(n) projects, \(c) with changes", "\(p.rawValue), \(n) Projekte, \(c) mit Änderungen")
@@ -193,6 +198,9 @@ struct ContentView: View {
             AccessibilityNotification.Announcement(Demo.scrub(t.text, items: allItems)).post()
             stickyError = t.ok ? nil : t
         }
+        // Mission Control and the window title say what waits; the Dock icon carries the number.
+        .navigationSubtitle(waitingSubtitle)
+        .onChange(of: store.waiting.projects, initial: true) { _, n in NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil }
         .focusedSceneValue(\.windowActions, WindowActions(
             tab: { n in showAll = n == 0; if n == 1 { platform = .vercel } else if n == 2 { platform = .render } },
             search: { searchFocused = true }))
@@ -240,7 +248,7 @@ struct ContentView: View {
             try? await Task.sleep(nanoseconds: 200_000_000)
             if search.isEmpty { NSApp.keyWindow?.makeFirstResponder(nil) }
         }
-        .alert(L("Deploy to production?", "Live deployen?"), isPresented: $confirming) {
+        .alert(L("Put this live now?", "Jetzt live schalten?"), isPresented: $confirming) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             Button(L("Deploy", "Deployen")) { scopes.forEach { store.deploySelected($0) } }
         } message: {
@@ -303,8 +311,9 @@ struct ContentView: View {
             if !stamps.isEmpty {
                 // Dropped first when the window is narrow; the reload button's tooltip still has it.
                 ViewThatFits(in: .horizontal) {
-                    Text((scopes.contains { store.fromCache.contains($0) } ? L("saved ", "gespeichert ") : L("updated ", "Aktualisiert "))
-                         + stamps.joined(separator: " · "))
+                    Text(scopes.contains { store.fromCache.contains($0) }
+                         ? L("As of ", "Stand von ") + stamps.joined(separator: " · ") + L(" (not current)", " (nicht aktuell)")
+                         : L("updated ", "Aktualisiert ") + stamps.joined(separator: " · "))
                         .font(.caption2).foregroundStyle(.secondary).fixedSize()
                     Color.clear.frame(width: 0, height: 0)
                 }
@@ -591,19 +600,36 @@ struct ContentView: View {
         } else if store.loading.contains(platform) && (store.items[platform] ?? []).isEmpty {
             ProgressView(L("Loading \(platform.rawValue) …", "Lade \(platform.rawValue) …")).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if visible.isEmpty && (onlyChanged || !search.isEmpty) {
+            let inScope = scopes.flatMap { store.items[$0] ?? [] }
+            let hiddenHits = search.isEmpty ? 0 : inScope.filter { store.isHidden($0)
+                && (Demo.on ? Demo.mask($0.name) : $0.name).localizedCaseInsensitiveContains(search) }.count
             VStack(spacing: 8) {
-                Image(systemName: onlyChanged ? "checkmark.seal.fill" : "magnifyingglass").font(.system(size: 34))
-                    .foregroundStyle(onlyChanged ? .green : .secondary)
-                Text(onlyChanged ? L("Everything is live", "Alles ist live") : L("Nothing matches “\(search)”", "Nichts passt zu „\(search)“"))
+                Image(systemName: search.isEmpty ? "checkmark.seal.fill" : "magnifyingglass").font(.system(size: 34))
+                    .foregroundStyle(search.isEmpty ? .green : .secondary)
+                Text(search.isEmpty ? L("Everything is live", "Alles ist live") : L("Nothing matches “\(search)”", "Nichts passt zu „\(search)“"))
                     .font(.headline)
+                if hiddenHits > 0 {
+                    Text(L("\(hiddenHits) hidden \(hiddenHits == 1 ? "project matches" : "projects match") (Settings → Hidden projects)",
+                           "\(hiddenHits) \(hiddenHits == 1 ? "ausgeblendetes Projekt passt" : "ausgeblendete Projekte passen") (Einstellungen → Ausgeblendete Projekte)"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                HStack {
+                    if !search.isEmpty { Button(L("Clear the search", "Suche leeren")) { search = "" } }
+                    if onlyChanged { Button(L("Show all projects", "Alle Projekte zeigen")) { onlyChanged = false } }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if visible.isEmpty {
+            let hiddenHere = scopes.flatMap { store.items[$0] ?? [] }.filter { store.isHidden($0) }.count
             VStack(spacing: 8) {
-                Image(systemName: "tray").font(.system(size: 34)).foregroundStyle(.secondary)
-                Text(L("No projects here", "Keine Projekte hier")).font(.headline)
-                Text(L("This account has none on \(platform.rawValue), or all are hidden.", "Dieses Konto hat hier keine bei \(platform.rawValue), oder alle sind ausgeblendet."))
+                Image(systemName: hiddenHere > 0 ? "eye.slash" : "tray").font(.system(size: 34)).foregroundStyle(.secondary)
+                Text(hiddenHere > 0 ? L("All projects here are hidden", "Alle Projekte hier sind ausgeblendet") : L("No projects here", "Keine Projekte hier"))
+                    .font(.headline)
+                Text(hiddenHere > 0
+                     ? L("\(hiddenHere) hidden. Show them again in Settings → Hidden projects.", "\(hiddenHere) ausgeblendet. Wieder zeigen unter Einstellungen → Ausgeblendete Projekte.")
+                     : L("This account has no projects on \(scopes.map(\.rawValue).joined(separator: " or ")).", "Dieses Konto hat keine Projekte bei \(scopes.map(\.rawValue).joined(separator: " oder "))."))
                     .font(.caption).foregroundStyle(.secondary)
+                if hiddenHere > 0 { SettingsLink { Text(L("Open Settings", "Einstellungen öffnen")) } }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -1059,7 +1085,7 @@ struct Row: View {
                         .help(perBuild.map { L("About ", "Etwa ") + $0.formatted(.currency(code: "USD")) + L(" per build", " pro Build") } ?? "")
                 }
                 if item.hasNewCommits && sameRepoAsAbove {
-                    Label(L("same changes as the row above (same repo)", "gleiche Änderungen wie die Zeile darüber (gleiches Repo)"), systemImage: "arrow.up.circle")
+                    Label(L("same as above (same repo)", "wie oben (gleiches Repo)"), systemImage: "arrow.up.circle")
                         .font(.caption2).foregroundStyle(.secondary)
                 } else if item.hasNewCommits {
                     Label(Self.waitingText(item), systemImage: "arrow.up.circle.fill")
@@ -1170,7 +1196,7 @@ struct Row: View {
                         .accessibilityLabel(L("Build log", "Build-Log"))
                 }
             }
-            .help(at.formatted(date: .complete, time: .shortened) + (item.lastMsg.map { "\n" + L("Live: ", "Live: ") + (Demo.on ? "…" : $0) } ?? ""))
+            .help(at.formatted(date: .complete, time: .shortened) + (item.lastMsg.map { "\nLive: " + (Demo.on ? "…" : $0) } ?? ""))
         } else {
             Text(L("Never deployed", "Noch nie deployt")).font(.caption2).foregroundStyle(.secondary)
         }
@@ -1213,7 +1239,12 @@ struct Row: View {
             }
         case .done(let url):
             HStack(spacing: 6) {
-                Label("Live", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.caption.weight(.semibold))
+                // A preview is not live: it says so, in blue.
+                if item.previewId != nil {
+                    Label(L("Preview ready", "Vorschau fertig"), systemImage: "eye.circle.fill").foregroundStyle(.blue).font(.caption.weight(.semibold))
+                } else {
+                    Label("Live", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.caption.weight(.semibold))
+                }
                 if let url, let u = URL(string: url) {
                     Button { NSWorkspace.shared.open(u) } label: { Image(systemName: "arrow.up.right.square") }
                         .buttonStyle(.borderless).help(url).accessibilityLabel(L("Open the deployed site", "Deployte Seite öffnen"))
