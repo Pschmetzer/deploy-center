@@ -1261,6 +1261,8 @@ struct CostsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var hovered: String?
     @State private var sharing = false
+    /// Settings → Costs; 0 = no budget, then neither the line nor the sentence.
+    @AppStorage("monthlyBudget") private var budget = 0.0
     private static let dayFormat: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); return f
     }()
@@ -1274,6 +1276,36 @@ struct CostsSheet: View {
     static func dailyPace(_ days: [Costs.Day], today: String) -> Double {
         let whole = Array(days.filter { $0.day != today }.suffix(7))
         return whole.isEmpty ? 0 : whole.map(\.build).reduce(0, +) / Double(whole.count)
+    }
+
+    /// Days in the month of `today` ("yyyy-MM-dd", UTC like the billing data); 30 when unreadable.
+    static func daysInMonth(_ today: String) -> Int {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC") ?? .current
+        guard let d = dayFormat.date(from: today), let r = cal.range(of: .day, in: .month, for: d) else { return 30 }
+        return r.count
+    }
+
+    /// The sentence under the costs when a monthly budget is set. With the 1st of the month in the
+    /// data (the sheet reads 14 days): what is left until the month ends. Otherwise the pace of the
+    /// last 7 whole days against the budget. Nil without a budget or without data.
+    static func budgetLine(budget: Double, days: [Costs.Day], today: String) -> (text: String, over: Bool)? {
+        guard budget > 0 else { return nil }
+        let usd = FloatingPointFormatStyle<Double>.Currency(code: "USD")
+        let b = budget.formatted(usd), month = String(today.prefix(7))
+        if days.contains(where: { $0.day == month + "-01" }) {
+            let spent = days.filter { $0.day.hasPrefix(month) && $0.day <= today }.map(\.build).reduce(0, +)
+            let left = budget - spent
+            if left >= 0 {
+                return (L("Budget \(b): \(left.formatted(usd)) left until the end of the month (\(spent.formatted(usd)) so far)",
+                          "Budget \(b): noch \(left.formatted(usd)) bis Monatsende (bisher \(spent.formatted(usd)))"), false)
+            }
+            return (L("Budget \(b): \((-left).formatted(usd)) over this month", "Budget \(b): diesen Monat \((-left).formatted(usd)) darüber"), true)
+        }
+        guard let pace = Store.monthPace(days, today: today) else { return nil }
+        let diff = abs(budget - pace).formatted(usd)
+        return pace <= budget
+            ? (L("Budget \(b) a month: ≈ \(diff) to spare at this pace", "Budget \(b) im Monat: bei diesem Tempo ≈ \(diff) Luft"), false)
+            : (L("Budget \(b) a month: ≈ \(diff) over at this pace", "Budget \(b) im Monat: bei diesem Tempo ≈ \(diff) darüber"), true)
     }
 
     var body: some View {
@@ -1316,6 +1348,9 @@ struct CostsSheet: View {
                 Text(L("Auto-deploy off since \(off); the saving shows after a full day", "Auto-Deploy aus seit \(off); die Ersparnis zeigt sich nach einem ganzen Tag"))
                     .font(.caption).foregroundStyle(.secondary)
             }
+            if let line = Self.budgetLine(budget: budget, days: costs.days, today: Self.today()) {
+                Text(line.text).font(.caption.weight(.medium)).foregroundStyle(line.over ? Color.warningText : .secondary)
+            }
         }
     }
 
@@ -1341,14 +1376,21 @@ struct CostsSheet: View {
 
     private var chart: some View {
         let today = Self.today()
+        // The budget as a day's share of it, so it sits on the same scale as the bars.
+        let daily = budget > 0 ? budget / Double(Self.daysInMonth(today)) : 0
         return VStack(alignment: .leading, spacing: 4) {
-            Chart(costs.days) { d in
-                // A day over twice the average stands out; today is lighter: it is not over yet.
-                BarMark(x: .value("Day", String(d.day.suffix(2))), y: .value("USD", d.build))
-                    .foregroundStyle(d.build > 2 * average && average > 0 ? Color.orange.gradient : Color.accentColor.gradient)
-                    .opacity(d.day == today ? 0.45 : 1)
-                if let off = costs.offDay, d.day == off {
-                    RuleMark(x: .value("Day", String(d.day.suffix(2)))).foregroundStyle(.green).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
+            Chart {
+                ForEach(costs.days) { d in
+                    // A day over twice the average stands out; today is lighter: it is not over yet.
+                    BarMark(x: .value("Day", String(d.day.suffix(2))), y: .value("USD", d.build))
+                        .foregroundStyle(d.build > 2 * average && average > 0 ? Color.orange.gradient : Color.accentColor.gradient)
+                        .opacity(d.day == today ? 0.45 : 1)
+                    if let off = costs.offDay, d.day == off {
+                        RuleMark(x: .value("Day", String(d.day.suffix(2)))).foregroundStyle(.green).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
+                    }
+                }
+                if daily > 0 {
+                    RuleMark(y: .value("USD", daily)).foregroundStyle(.red.opacity(0.7)).lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                 }
             }
             .chartYAxis { AxisMarks(position: .leading) { _ in AxisValueLabel() } }
@@ -1373,6 +1415,9 @@ struct CostsSheet: View {
                 }
                 if costs.offDay != nil {
                     HStack(spacing: 3) { Rectangle().fill(Color.green).frame(width: 7, height: 1.5); Text(L("auto-deploy off", "Auto-Deploy aus")) }
+                }
+                if daily > 0 {
+                    HStack(spacing: 3) { Rectangle().fill(Color.red.opacity(0.7)).frame(width: 7, height: 1.5); Text(L("budget per day", "Budget pro Tag")) }
                 }
             }
             .font(.caption2).foregroundStyle(.secondary)
