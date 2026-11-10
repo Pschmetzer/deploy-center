@@ -272,6 +272,8 @@ fresh; export RENDER_API_KEY=rnd_test
 run "$O" "$E" status --no-github >/dev/null
 expect "status --no-github makes no GitHub call" "$(grep -c '^gh ' "$e2e/calls.log")" "0"
 expect "status --no-github prints no change count" "$(tail -n 1 "$O")" "0 building."
+run "$O" "$E" status --no-github --json >/dev/null
+expect "status --json carries the repo" "$(jq -r 'map(.repo) | join(",")' "$O")" "me/app,me/app"
 
 # watch: a finished newest deploy is reported as such; a network failure is exit 3, not "failed".
 fresh
@@ -403,6 +405,156 @@ mkdir -p "$DEPLOYS_CONFIG/locks/autofix"
 expect "autofix: a held lock stops a second run" "$(afrun | grep -c 'running already'):$(fired)" "1:0"
 rmdir "$DEPLOYS_CONFIG/locks/autofix"
 
+# --- GitLab as a source: githost_of, glab, curl with GITLAB_TOKEN, a self-managed host ---
+# One set of answers (answer.sh) behind both stand-ins: glab for `glab api`, curl for the API.
+gl="$tmp/gl"; mkdir -p "$gl/glab" "$gl/curl"
+cat > "$gl/answer.sh" <<'ANS'
+#!/bin/bash
+# answer.sh <api path>: the body on stdout, or exit 44 (404) / 42 (429).
+p="${1#projects/*/}"
+c() { printf '{"id":"%s","short_id":"%s","title":"%s","message":"%s","author_name":"%s","author_email":"%s@x","committed_date":"%s","web_url":"https://x/%s"}' "$1" "$1" "$2" "$3" "$4" "$4" "$5" "$1"; }
+case "$p" in
+  user) echo '{"username":"me"}' ;;
+  "repository/commits/main") c bbbb "feat: two (!12)" "feat: two (!12)" ann "2026-01-02T01:00:00.000+01:00" ;;
+  "repository/compare?from=aaaa&to=main") echo "{\"commit\":$(c bbbb t t ann 2026-01-02T00:00:00Z),\"web_url\":\"https://gl/compare\",\"commits\":[
+      $(c c1 "fix: one" 'Merge branch b into main\n\nSee merge request me/app!11' ann 2026-01-01T00:00:00Z),
+      $(c c3 "docs: squashed" "docs: squashed" ann 2026-01-01T02:00:00.000-01:00),
+      $(c c4 "chore: from !12" "chore: from 12" ann 2026-01-01T04:00:00Z),
+      $(c bbbb "feat: two (!12)" "feat: two (!12)" renovate-bot 2026-01-02T00:00:00Z)],
+    \"diffs\":[{\"new_path\":\"src/a.ts\",\"diff\":\"@@ -1 +1,2 @@\n-x\n+y\n+z\n\"},{\"new_path\":\".gitlab-ci.yml\",\"diff\":\"@@ -1 +1 @@\n-a\n+b\n\"}]}" ;;
+  "repository/merge_base?refs%5B%5D=aaaa&refs%5B%5D=main") echo '{"id":"aaaa"}' ;;
+  "repository/commits/c3/merge_requests") echo '[{"iid":13,"state":"merged"}]' ;;
+  "repository/commits/c4/merge_requests") echo '[{"iid":12,"state":"merged"},{"iid":99,"state":"closed"}]' ;;
+  "repository/compare?from=div&to=main") echo "{\"commits\":[$(c d1 x x ann 2026-01-01T00:00:00Z)]}" ;;
+  "repository/merge_base?refs%5B%5D=div&refs%5B%5D=main") echo '{"id":"zzzz"}' ;;
+  "repository/compare?from=main&to=div") echo "{\"commits\":[$(c e1 x x ann 2026-01-01T00:00:00Z),$(c e2 x x ann 2026-01-01T00:00:00Z)]}" ;;
+  "repository/compare?from=behi&to=main") echo '{"commits":[]}' ;;
+  "repository/merge_base?refs%5B%5D=behi&refs%5B%5D=main") echo '{"id":"bbbb"}' ;;
+  "repository/compare?from=main&to=behi") echo "{\"commits\":[$(c f1 x x ann 2026-01-01T00:00:00Z)]}" ;;
+  "repository/compare?from=dead&to=main") exit 44 ;;
+  "repository/compare?from=rate&to=main") exit 42 ;;
+  "merge_requests?state=opened&per_page="*) echo '[
+      {"iid":20,"title":"a","draft":false,"author":{"username":"ann"},"updated_at":"2026-01-01T00:00:00Z","web_url":"u20"},
+      {"iid":21,"title":"b","draft":true,"author":{"username":"ann"},"updated_at":"2026-01-01T00:00:00Z","web_url":"u21"},
+      {"iid":22,"title":"c","work_in_progress":false,"author":{"username":"renovate-bot"},"updated_at":"2026-01-01T00:00:00Z","web_url":"u22"},
+      {"iid":23,"title":"d","author":{"username":"project_42_bot_1f2e"},"updated_at":"2026-01-01T00:00:00Z","web_url":"u23"}]' ;;
+  "repository/commits/bbbb/statuses?per_page=100") echo '[{"status":"success"},{"status":"failed"},{"status":"running"}]' ;;
+  *) exit 44 ;;
+esac
+ANS
+cat > "$gl/glab/glab" <<'GLAB'
+#!/bin/bash
+echo "glab $*" >> "$CALLS"
+[ "$1 $2" = "auth status" ] && exit "${GLAB_AUTH:-0}"
+[ "$1 $2" = "api --hostname" ] || exit 1
+out="$("$(dirname "$0")/../answer.sh" "$4")"; rc=$?
+case "$rc" in 0) echo "$out" ;; 44) echo "glab: 404 Not Found (HTTP 404)" >&2; exit 1 ;; *) echo "glab: 429 Too Many Requests (HTTP 429)" >&2; exit 1 ;; esac
+GLAB
+cat > "$gl/curl/curl" <<'CURL'
+#!/bin/bash
+echo "argv $*" >> "$CALLS"; sed 's/^/stdin /' >> "$CALLS"
+url="${*: -1}"; host="${url#https://}"; host="${host%%/*}"
+[ "${GLSTUB:-}" = 401 ] && { printf '%s\n401' '{"message":"401 Unauthorized"}'; exit 0; }
+out="$("$(dirname "$0")/../answer.sh" "${url#https://*/api/v4/}")"; rc=$?
+case "$rc" in 0) printf '%s\n200' "$out" ;; 44) printf '%s\n404' '{"message":"404 Ref Not Found"}' ;; *) printf '%s\n429' '{}' ;; esac
+CURL
+chmod +x "$gl/answer.sh" "$gl/glab/glab" "$gl/curl/curl"
+
+expect "githost_of: owner/name is GitHub" "$(githost_of me/app)" "github"
+expect "githost_of: a GitHub URL" "$(githost_of https://github.com/me/app.git)" "github"
+expect "githost_of: a gitlab.com URL with subgroups" "$(githost_of https://gitlab.com/g/sub/app)" "gitlab"
+expect "githost_of: an ssh remote" "$(githost_of git@gitlab.com:g/app.git)" "gitlab"
+expect "githost_of: the .repo slug" "$(githost_of gitlab.com/g/app)" "gitlab"
+expect "githost_of: a self-managed host needs GITLAB_HOST" \
+  "$(githost_of git.example.com/g/app):$(GITLAB_HOST=https://git.example.com/ githost_of https://git.example.com/g/app)" "unknown:gitlab"
+expect "githost_of: or DEPLOYS_GITLAB_HOSTS, or gitlab in the name" \
+  "$(DEPLOYS_GITLAB_HOSTS="a.io code.b.io" githost_of code.b.io/g/app):$(githost_of gitlab.corp.io/g/app)" "gitlab:gitlab"
+expect "githost_of: Bitbucket is neither" "$(githost_of https://bitbucket.org/me/app)" "unknown"
+expect "slug: GitHub stays owner/name, GitLab keeps its host" \
+  "$(jq -nc "[\"https://github.com/me/app.git\", \"https://gitlab.com/g/s/app.git\"] | map($GITHOST_SLUG_JQ)")" '["me/app","gitlab.com/g/s/app"]'
+expect "slug of a Vercel link: GitHub and GitLab" \
+  "$(jq -nc "[{type:\"github\",org:\"me\",repo:\"app\"},{type:\"gitlab\",projectUrl:\"https://gitlab.com/g/app\"}] | map($GITHOST_VERCEL_LINK_JQ)")" '["me/app","gitlab.com/g/app"]'
+expect "GitLab dates with fractions and offsets" \
+  "$(jq -nc "$GITLAB_JQ"'["2026-01-02T01:00:00.000+01:00","2026-01-01T18:30:00-05:30","2026-01-02T00:00:00Z"] | map(gldate)')" '[1767312000,1767312000,1767312000]'
+
+# glab: compare counting, MR counting (message, "(!n)", lookups, once each), open MRs.
+glwh() { PATH="$gl/glab:$PATH" with_heads "$1"; }
+out="$(glwh '[{"name":"gl","repo":"gitlab.com/me/app","ref":"main","deployable":true,"lastSha":"aaaa"}]' \
+  | jq -c '.[0] | {changed, headSha, headAt, pendingCommits, pendingPRs, openPRs, openDrafts, openBots, compareStatus, behindBy, pendingPartial, oldestPendingAt}')"
+expect "glab: commits, merge requests and open MRs counted" \
+  "$out" '{"changed":true,"headSha":"bbbb","headAt":1767312000,"pendingCommits":4,"pendingPRs":3,"openPRs":4,"openDrafts":1,"openBots":2,"compareStatus":"ahead","behindBy":0,"pendingPartial":false,"oldestPendingAt":1767225600}'
+out="$(glwh '[{"name":"gh","repo":"me/app","ref":"main","deployable":true,"lastSha":"aaaa"},{"name":"gl","repo":"gitlab.com/me/app","ref":"main","deployable":true,"lastSha":"aaaa"}]' \
+  | jq -c 'map({name, pendingCommits, pendingPRs, openPRs})')"
+expect "GitHub and GitLab side by side, GitHub as before" \
+  "$out" '[{"name":"gh","pendingCommits":3,"pendingPRs":3,"openPRs":4},{"name":"gl","pendingCommits":4,"pendingPRs":3,"openPRs":4}]'
+gpd="$tmp/glpend"; mkdir -p "$gpd"
+PATH="$gl/glab:$PATH" gitlab_pending_of gitlab.com/me/app div main "$gpd"
+expect "glab: live not an ancestor and new commits is diverged" "$(jq -c '.value | {commits, status, behindBy}' "$gpd"/gitlab.com_me_app_div_main.json)" '{"commits":1,"status":"diverged","behindBy":2}'
+PATH="$gl/glab:$PATH" gitlab_pending_of gitlab.com/me/app behi main "$gpd"
+expect "glab: a branch behind what is live" "$(jq -c '.value | {commits, status, behindBy}' "$gpd"/gitlab.com_me_app_behi_main.json)" '{"commits":0,"status":"behind","behindBy":1}'
+expect "a GitLab branch behind is not a change" \
+  "$(glwh '[{"name":"gl","repo":"gitlab.com/me/app","ref":"main","deployable":true,"lastSha":"behi"}]' | jq -c '.[0] | {changed, compareStatus}')" '{"changed":false,"compareStatus":"behind"}'
+PATH="$gl/glab:$PATH" gitlab_pending_of gitlab.com/me/app dead main "$gpd"
+expect "glab: compare 404 is a rewritten branch" "$(jq -c .value "$gpd"/gitlab.com_me_app_dead_main.json 2>/dev/null)" '{"rewritten":true}'
+PATH="$gl/glab:$PATH" gitlab_pending_of gitlab.com/me/app rate main "$gpd"
+expect "glab: a rate limit is not" "$(find "$gpd" -name '*rate*' | wc -l | tr -d ' ')" "0"
+
+# curl with GITLAB_TOKEN against a self-managed host: the same answers, the token only on stdin
+# and only to GITLAB_HOST.
+: > "$CALLS"
+out="$(PATH="$gl/curl:$PATH" DEPLOYS_GITLAB_CURL=1 GITLAB_HOST=https://git.example.com GITLAB_TOKEN=glpat-SECRET \
+  with_heads '[{"name":"gl","repo":"git.example.com/grp/app","ref":"main","deployable":true,"lastSha":"aaaa"}]' \
+  | jq -c '.[0] | {changed, pendingCommits, pendingPRs, openPRs, openDrafts, openBots, compareStatus}')"
+expect "curl: a self-managed host counts the same" \
+  "$out" '{"changed":true,"pendingCommits":4,"pendingPRs":3,"openPRs":4,"openDrafts":1,"openBots":2,"compareStatus":"ahead"}'
+expect "curl: every call goes to that host's API" \
+  "$(grep '^argv ' "$CALLS" | grep -vc 'https://git.example.com/api/v4/projects/grp%2Fapp/')" "0"
+expect "curl: the token is never in argv" "$(grep '^argv ' "$CALLS" | grep -c SECRET)" "0"
+expect "curl: the token goes in on stdin" "$(grep -c '^stdin header = "PRIVATE-TOKEN: glpat-SECRET"' "$CALLS")" "$(grep -c '^argv ' "$CALLS")"
+: > "$CALLS"
+PATH="$gl/curl:$PATH" DEPLOYS_GITLAB_CURL=1 GITLAB_HOST=git.example.com GITLAB_TOKEN=glpat-SECRET \
+  gitlab_open_prs_of gitlab.com/me/app "$gpd"
+expect "curl: the token is not sent to another host" "$(grep -c 'https://gitlab.com/api/v4/' "$CALLS"):$(grep -c SECRET "$CALLS")" "1:0"
+
+# details: the same JSON shape as for GitHub.
+glcli() { env -u DEPLOYS_LIB PATH="$gl/glab:$tmp/bin:/usr/bin:/bin" HOME="$tmp" NO_COLOR=1 /bin/bash ./deploys "$@" 2>&1 </dev/null; }
+d="$(glcli details gitlab.com/me/app aaaa main)"
+expect "details (GitLab): commits newest first, with their MRs" "$(echo "$d" | jq -c '[.commits[] | [.sha, .pr, .bot]]')" '[["bbbb",12,true],["c4",null,false],["c3",null,false],["c1",11,false]]'
+expect "details (GitLab): files, lines, risky files, CI, open MRs" \
+  "$(echo "$d" | jq -c '{files, additions, deletions, risky, onlyBots, compareUrl, checks, open:(.open | map([.number, .draft, .bot, .ci]))}')" \
+  '{"files":2,"additions":3,"deletions":2,"risky":[".gitlab-ci.yml"],"onlyBots":false,"compareUrl":"https://gl/compare","checks":{"total":3,"failed":1,"running":1},"open":[[20,false,false,"none"],[21,true,false,"none"],[22,false,true,"none"],[23,false,true,"none"]]}'
+expect "details (GitLab): the keys the app reads, as for GitHub" \
+  "$(echo "$d" | jq -c 'keys')" '["additions","checks","commits","compareUrl","deletions","files","onlyBots","open","risky"]'
+
+# doctor: gitlabCli and gitlabLoggedIn, from glab or from GITLAB_TOKEN.
+expect "doctor: glab installed and logged in" "$(glcli doctor | jq -c '{gitlabCli, gitlabLoggedIn}')" '{"gitlabCli":true,"gitlabLoggedIn":true}'
+expect "doctor: glab not logged in" "$(GLAB_AUTH=1 glcli doctor | jq -c '{gitlabCli, gitlabLoggedIn}')" '{"gitlabCli":true,"gitlabLoggedIn":false}'
+gldoc() { env -u DEPLOYS_LIB PATH="$gl/curl:/usr/bin:/bin" HOME="$tmp" "$@" /bin/bash ./deploys doctor 2>/dev/null </dev/null | jq -c '{gitlabCli, gitlabLoggedIn}'; }
+expect "doctor: a working GITLAB_TOKEN counts" "$(gldoc GITLAB_TOKEN=t)" '{"gitlabCli":false,"gitlabLoggedIn":true}'
+expect "doctor: a refused GITLAB_TOKEN does not" "$(gldoc GITLAB_TOKEN=t GLSTUB=401)" '{"gitlabCli":false,"gitlabLoggedIn":false}'
+expect "doctor: nothing set up" "$(gldoc)" '{"gitlabCli":false,"gitlabLoggedIn":false}'
+
+# Vercel: a GitLab link is remembered with its project id, and deployed from it; GitHub as before.
+real_vercel_call="$(declare -f vercel_call)"
+vercel_call() { echo '{"link":{"type":"gitlab","projectId":"77","projectUrl":"https://gitlab.com/g/app","productionBranch":"prod"}}'; }
+vercel() { local i=""; while [ $# -gt 0 ]; do [ "$1" = --input ] && i="$2"; shift; done
+           [ -z "$i" ] || jq -c .gitSource "$i" >> "$CALLS"; echo '{"id":"d","url":"u","readyState":"QUEUED"}'; }
+echo '{"gh":{"org":"me","repo":"app","ref":"main"}}' > "$REPOS"; rm -rf "$DEPLOYS_CONFIG/locks"; : > "$CALLS"
+( vercel_off glv ) >/dev/null 2>&1
+expect "vercel_off: a GitLab link is remembered" "$(jq -c '.glv | del(.offAt)' "$REPOS")" '{"type":"gitlab","repo":"gitlab.com/g/app","projectId":"77","ref":"prod"}'
+( DEPLOYS_VERCEL_TEAM=t vercel_deploy_json glv "" abc ) >/dev/null 2>&1; ( DEPLOYS_VERCEL_TEAM=t vercel_deploy_json gh ) >/dev/null 2>&1
+expect "vercel deploy: gitSource for GitLab and GitHub" "$(cat "$CALLS")" \
+  $'{"type":"gitlab","ref":"prod","projectId":"77","sha":"abc"}\n{"type":"github","ref":"main","org":"me","repo":"app"}'
+unset -f vercel; eval "$real_vercel_call"
+
+# deploys without lib/ next to it (an old copy in ~/bin): GitHub works as before.
+mkdir -p "$tmp/nolib"; cp deploys "$tmp/nolib/deploys"
+expect "without lib/githost.sh: doctor still answers" \
+  "$(env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" HOME="$tmp" /bin/bash "$tmp/nolib/deploys" doctor </dev/null | jq -c '{githubCli, gitlabLoggedIn}')" '{"githubCli":true,"gitlabLoggedIn":false}'
+expect "without lib/githost.sh: GitHub counted, GitLab left unknown" \
+  "$( (unset -f githost_of githost_available githost_head_of githost_pending_of githost_open_prs_of; DEPLOYS_LIB=1 . "$tmp/nolib/deploys"; set +e
+       with_heads '[{"name":"gh","repo":"me/app","ref":"main","deployable":true,"lastSha":"aaaa"},{"name":"gl","repo":"gitlab.com/me/app","ref":"main","deployable":true,"lastSha":"aaaa"}]' \
+       | jq -c 'map([.name, .pendingCommits, .headSha])') )" '[["gh",3,"bbbb"],["gl",null,null]]'
 # --- autofix --only and the PR fields of autofix status ---
 afonly() { ( set -e; PATH="$af/bin:$PATH" DEPLOYS_ROUTINE_TOKEN=sk-ant-oat01-SECRET DEPLOYS_NOTIFY=0 autofix_run "" "$@" ) >/dev/null 2>&1; echo $?; }
 af_reset; OPENPRS='[]'; CLOSEDPRS='[]'

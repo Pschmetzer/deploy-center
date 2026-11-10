@@ -1,0 +1,19 @@
+#!/bin/bash
+# A stand-in deploys CLI for the unit tests. Answers from the JSON next to it; FAKE_* steer it.
+here="$(cd "$(dirname "$0")" && pwd)"
+[ -n "${FAKE_ARGS_LOG:-}" ] && printf '%s\n' "$#" "$@" >> "$FAKE_ARGS_LOG"
+[ -n "${FAKE_SLEEP:-}" ] && sleep "$FAKE_SLEEP"
+case "$*" in
+  "changed --json")
+    [ -n "${FAKE_CHANGED_FAIL:-}" ] && { echo "Error: could not read render: timeout" >&2; exit 1; }
+    cat "$here/changed.json"
+    [ -n "${FAKE_PARTIAL:-}" ] && { echo "Error: state unknown, left out:" >&2; echo "  render api: branch head unknown" >&2; exit 1; }
+    exit 0 ;;
+  "status --json --no-github")
+    [ -n "${FAKE_OLD_STATUS:-}" ] && { jq 'map(del(.repo))' "$here/status.json"; exit 0; }
+    cat "$here/status.json" ;;
+  "vercel deploy-json app-web") echo '{"id":"dpl_1","url":"https://app-web-abc.vercel.app","state":"QUEUED"}' ;;
+  "render deploy-json api") echo "Error: render-x is being started already (wait a minute)" >&2; exit 1 ;;
+  "logs worker 200") printf 'Cloning\nInstalling\n\033[31mnpm ERR! missing script: build\033[0m\nnpm ERR! A complete log is in /tmp/x\n' ;;
+  *) echo "unexpected: $*" >&2; exit 2 ;;
+esac
