@@ -356,6 +356,11 @@ expect("settings: reported first, then coming soon", ProviderInfo.settingsRows(r
        "vercel:true render:true netlify:true cloudflare:false")
 expect("settings: no double of a reported one", ProviderInfo.settingsRows(reported.list).filter { $0.info.id == "netlify" }.count, 1)
 
+// The script lists alphabetically; the window keeps Vercel, Render first, the rest in the script's order.
+let alpha = ProviderInfo.parse(Data(#"[{"id":"amplify","enabled":true},{"id":"netlify","enabled":false},{"id":"render","enabled":true},{"id":"vercel","enabled":true}]"#.utf8)).list
+expect("Vercel and Render first", ids(alpha), ["vercel", "render", "amplify", "netlify"])
+expect("tabs keep ⌘1 Vercel", ProviderTab.shortcuts(ProviderTab.tabs(ProviderInfo.enabled(alpha)))[.provider("vercel")] ?? 0, 1)
+
 // Layout: 1 provider no tabs, 2–3 segmented with All, 4 and more a menu.
 expect("layout 1", TabLayout.decide(1), TabLayout.hidden)
 expect("layout 2", TabLayout.decide(2), TabLayout.segmented)
