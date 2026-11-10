@@ -52,6 +52,8 @@ struct BuildLog: View {
     @AppStorage("demoMode") private var demoMode = false
     @State private var text: String?
     @State private var lines: [String] = []
+    /// `lines` as the screen shows them: in demo mode masked once per load, not on every redraw.
+    @State private var shownLines: [String] = []
     @State private var firstError: Int?
     @State private var error: String?
     @State private var onlyErrors = false
@@ -64,6 +66,8 @@ struct BuildLog: View {
     @State private var reloadFailed: Date?
 
     private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
+
+    private func maskLines() { shownLines = demoMode ? lines.map { Demo.scrub($0, items: [live]) } : lines }
 
     private func copy(_ s: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string) }
 
@@ -123,7 +127,7 @@ struct BuildLog: View {
                     }
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 4)
                 }
-                LogText(lines: demoMode ? lines.map { Demo.scrub($0, items: [live]) } : lines,
+                LogText(lines: shownLines,
                         onlyErrors: onlyErrors, firstError: firstError, jump: jump,
                         label: L("Build log of \(Demo.mask(live.name))", "Build-Log von \(Demo.mask(live.name))"))
                     .overlay(alignment: .bottomTrailing) {
@@ -136,6 +140,7 @@ struct BuildLog: View {
         }
         // Not wider than the main window may be (680), so the sheet never sticks out of it.
         .frame(minWidth: 640, idealWidth: 760, maxWidth: .infinity, minHeight: 420, idealHeight: 520, maxHeight: .infinity)
+        .onChange(of: demoMode) { _, _ in maskLines() }
         .task(id: reloadKey) {
             do {
                 // Through the project's own platform, the way the store cancels and rolls back:
@@ -144,6 +149,7 @@ struct BuildLog: View {
                 let t = String(data: data, encoding: .utf8).map { $0.isEmpty ? L("(empty)", "(leer)") : $0 } ?? ""
                 // Split and searched once per load, not on every redraw.
                 lines = t.components(separatedBy: "\n"); firstError = LogTools.firstErrorLine(lines)
+                maskLines()
                 text = t; self.error = nil; loadedAt = Date(); reloadFailed = nil
             } catch {
                 if text == nil { self.error = error.localizedDescription } else { reloadFailed = loadedAt ?? Date() }
@@ -215,6 +221,9 @@ struct LogText: NSViewRepresentable {
 
 // MARK: - One project in detail
 
+/// The projects `ProjectDetail.scrub` masks, set at the start of each redraw.
+final class ScrubItems { var items: [Item] = [] }
+
 struct ProjectDetail: View {
     @ObservedObject var store: Store
     /// The row as it was when the sheet opened; `live` follows the store.
@@ -239,7 +248,12 @@ struct ProjectDetail: View {
 
     private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
     private var allItems: [Item] { Platform.allCases.flatMap { store.items[$0] ?? [] } }
-    private func scrub(_ s: String) -> String { Demo.scrub(s, items: allItems) }
+    /// Every project, gathered once per redraw for `scrub` (it runs for each commit line).
+    @State private var scrubItems = ScrubItems()
+    private func scrub(_ s: String) -> String {
+        guard Demo.on else { return s }
+        return Demo.scrub(s, items: scrubItems.items)
+    }
 
     /// The release notes for the clipboard; in demo mode with stand-ins, as the screen shows them.
     static func releaseNotes(_ item: Item, _ commits: [Details.Commit], all: [Item]) -> String {
@@ -252,7 +266,9 @@ struct ProjectDetail: View {
 
     var body: some View {
         let item = self.live
-        VStack(alignment: .leading, spacing: 0) {
+        // A plain box, not state: filling it here does not ask for another redraw.
+        scrubItems.items = Demo.on ? allItems : []
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 Logo(domain: Demo.on ? nil : item.domain, name: Demo.mask(item.name))
                 VStack(alignment: .leading, spacing: 2) {
