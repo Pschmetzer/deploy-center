@@ -116,6 +116,23 @@ let je = [JournalEntry(platform: "Vercel", name: "a\"b", result: "failed", secon
 expect("csv quotes names", Journal.csv(je).contains("\"a\"\"b\""), true)
 expect("failures of the last deploys", "\(Journal.failures(of: "a\"b", in: je))", "(failed: 1, total: 2)")
 
+// The journal: formulas, platforms, stable ids.
+let fx = [JournalEntry(platform: "Vercel", name: "=HYPERLINK(1)", result: "failed", seconds: nil, detail: "@x")]
+expect("csv defuses formulas", Journal.csv(fx).contains("\"'=HYPERLINK(1)\",failed,,\"'@x\""), true)
+let mix = [JournalEntry(platform: "Vercel", name: "shop", result: "failed", seconds: nil, detail: nil),
+           JournalEntry(platform: "Render", name: "shop", result: "live", seconds: nil, detail: nil)]
+expect("failures per platform", "\(Journal.failures(of: "shop", platform: "Render", in: mix))", "(failed: 0, total: 1)")
+expect("failure table per platform", "\(Journal.failureTable(mix)["Vercel/shop"].map { "\($0.failed)/\($0.total)" } ?? "nil")", "1/1")
+let fixed = Date(timeIntervalSince1970: 1000)
+expect("journal id is stable", JournalEntry(at: fixed, platform: "Vercel", name: "a", result: "live", seconds: nil, detail: nil).id
+       == JournalEntry(at: fixed, platform: "Vercel", name: "a", result: "live", seconds: nil, detail: nil).id, true)
+
+// Health paths.
+expect("health path gets a slash", Store.cleanPath("health") ?? "nil", "/health")
+expect("health path with a space", Store.cleanPath("/my health") ?? "nil", "/my%20health")
+expect("health path already encoded", Store.cleanPath("/my%20health") ?? "nil", "/my%20health")
+expect("empty health path", Store.cleanPath("  ") ?? "nil", "nil")
+
 // The updater: version order, rate limit, trusted downloads, where the app lives, and the swap script.
 expect("0.10.0 is newer than 0.9.1", Updater.isNewer("0.10.0", than: "0.9.1"), true)
 expect("same version is not newer", Updater.isNewer("0.7.0", than: "0.7.0"), false)

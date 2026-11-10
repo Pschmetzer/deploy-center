@@ -150,7 +150,11 @@ final class Store: ObservableObject {
         booted = true
         if UserDefaults.standard.bool(forKey: "hideDock") { NSApp.setActivationPolicy(.accessory) }
         LogoCache.sweep()
-        for p in Platform.allCases { try? FileManager.default.removeItem(at: Self.cacheDir.appendingPathComponent("\(p.cli)-v1.json")) }
+        if !UserDefaults.standard.bool(forKey: "migratedCacheV2") {
+            for p in Platform.allCases { try? FileManager.default.removeItem(at: Self.cacheDir.appendingPathComponent("\(p.cli)-v1.json")) }
+            UserDefaults.standard.set(true, forKey: "migratedCacheV2")
+        }
+        Journal.migrate()
         // After sleep the lists can be hours old, and the daily reminder may be overdue.
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
@@ -213,6 +217,7 @@ final class Store: ObservableObject {
             }
             emptyOnce.remove(p)
             merge(p, fresh)
+            pruneDurations(p, keeping: fresh)
             writeCache(p, data)
             fromCache.remove(p); loadedAt[p] = Date(); lastLoadError[p] = nil
             recordHistory()
@@ -372,15 +377,19 @@ final class Store: ObservableObject {
 
     private func set(_ p: Platform, _ id: String, _ s: RunState, countsAsLive: Bool = true) {
         guard let i = items[p]?.firstIndex(where: { $0.id == id }) else { return }
+        let was = items[p]![i].state
         items[p]![i].state = s
         if case .starting = s { items[p]![i].startedAt = Date() }
+        // Queued again: an older start time must not become this deploy's duration.
+        if case .queued = s { items[p]![i].startedAt = nil }
         if case .done = s, countsAsLive {
             items[p]![i].lastSha = items[p]![i].headSha
             items[p]![i].lastAt = Date(); items[p]![i].lastState = p == .vercel ? "READY" : "live"
             items[p]![i].changed = false; items[p]![i].pendingCommits = 0; items[p]![i].pendingPRs = 0
         }
         let name = items[p]![i].name
-        let took = items[p]![i].startedAt.map { Date().timeIntervalSince($0) }
+        // Only a deploy that really started has a duration; a row that never left the queue has none.
+        let took = was.isActive && was != .queued ? items[p]![i].startedAt.map { Date().timeIntervalSince($0) } : nil
         switch s {
         case .done: Journal.append(JournalEntry(platform: p.rawValue, name: name, result: countsAsLive ? "live" : "other", seconds: took, detail: nil))
         case .failed(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "failed", seconds: took, detail: m))
@@ -620,13 +629,24 @@ final class Store: ObservableObject {
 
     // MARK: How long a build usually takes, per project (the last five)
 
+    /// Read once; every row asks for it on each redraw.
+    private lazy var durationsCache: [String: [Double]] = (UserDefaults.standard.dictionary(forKey: "durations") as? [String: [Double]]) ?? [:]
     private var durations: [String: [Double]] {
-        get { (UserDefaults.standard.dictionary(forKey: "durations") as? [String: [Double]]) ?? [:] }
-        set { UserDefaults.standard.set(newValue, forKey: "durations") }
+        get { durationsCache }
+        set { durationsCache = newValue; UserDefaults.standard.set(newValue, forKey: "durations") }
     }
     func usualMinutes(_ i: Item) -> Int? {
         guard let d = durations[Self.key(i)], !d.isEmpty else { return nil }
         return max(1, Int((d.reduce(0, +) / Double(d.count) / 60).rounded()))
+    }
+    /// Build times of projects no longer in a (non-empty) list go. Notes, pins, hidden marks and
+    /// health paths are the person's own and stay.
+    private func pruneDurations(_ p: Platform, keeping fresh: [Item]) {
+        guard !fresh.isEmpty else { return }
+        let keep = Set(fresh.map(Self.key)), prefix = "\(p.cli)/"
+        let gone = durations.keys.filter { $0.hasPrefix(prefix) && !keep.contains($0) }
+        guard !gone.isEmpty else { return }
+        var all = durations; gone.forEach { all[$0] = nil }; durations = all
     }
     private func recordDuration(_ i: Item) {
         guard let start = itemNow(i)?.startedAt else { return }
@@ -750,12 +770,19 @@ final class Store: ObservableObject {
     }
 
     /// A path to ask after going live instead of the front page (/health), per project. Kept on this Mac.
-    func healthPath(_ i: Item) -> String { ((UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:])[Self.key(i)] ?? "" }
+    private lazy var healthPaths: [String: String] = (UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:]
+    func healthPath(_ i: Item) -> String { healthPaths[Self.key(i)].flatMap(Self.cleanPath) ?? "" }
     func setHealthPath(_ i: Item, _ path: String) {
-        var all = (UserDefaults.standard.dictionary(forKey: "healthPaths") as? [String: String]) ?? [:]
+        healthPaths[Self.key(i)] = Self.cleanPath(path)
+        UserDefaults.standard.set(healthPaths, forKey: "healthPaths")
+    }
+    /// "/health", with a leading slash; spaces and other characters a URL cannot hold are encoded,
+    /// so the check after going live is not silently skipped.
+    nonisolated static func cleanPath(_ path: String) -> String? {
         let t = path.trimmingCharacters(in: .whitespacesAndNewlines)
-        all[Self.key(i)] = t.isEmpty ? nil : (t.hasPrefix("/") ? t : "/" + t)
-        UserDefaults.standard.set(all, forKey: "healthPaths")
+        guard !t.isEmpty else { return nil }
+        let slashed = t.hasPrefix("/") ? t : "/" + t
+        return slashed.removingPercentEncoding.flatMap { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) } ?? slashed
     }
 
     /// After going live: does the site answer? A deploy can be "ready" and the page still broken.
@@ -766,7 +793,10 @@ final class Store: ObservableObject {
         for attempt in 0..<3 {
             var req = URLRequest(url: url, timeoutInterval: 20)
             req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
-            code = ((try? await URLSession.shared.data(for: req))?.1 as? HTTPURLResponse)?.statusCode
+            // Only the status is needed: stop reading once the headers are in.
+            if let (bytes, resp) = try? await URLSession.shared.bytes(for: req) {
+                code = (resp as? HTTPURLResponse)?.statusCode; bytes.task.cancel()
+            } else { code = nil }
             // 401/403: the site answers but is protected (Deployment Protection, login) — not broken.
             if let c = code, c < 400 || c == 401 || c == 403 { return }
             if attempt < 2 { try? await Task.sleep(nanoseconds: 6_000_000_000) }

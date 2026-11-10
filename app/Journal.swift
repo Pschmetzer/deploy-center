@@ -4,33 +4,63 @@ import SwiftUI
 import AppKit
 
 struct JournalEntry: Codable, Identifiable {
-    var id = UUID()
+    /// Stable across loads, so a list does not redraw every row when it is read again.
+    var id: String { "\(at.timeIntervalSince1970)|\(platform)|\(name)|\(result)" }
     let at: Date
     let platform: String
     let name: String
     let result: String        // live, other (preview, rollback), failed, skipped
     let seconds: Double?
     let detail: String?
-    enum CodingKeys: String, CodingKey { case at, platform, name, result, seconds, detail }
     init(at: Date = Date(), platform: String, name: String, result: String, seconds: Double?, detail: String?) {
         self.at = at; self.platform = platform; self.name = name; self.result = result; self.seconds = seconds; self.detail = detail
     }
 }
 
 enum Journal {
-    static var url: URL { Store.cacheDir.appendingPathComponent("journal.jsonl") }
+    /// In Application Support: macOS may empty the Caches folder at any time.
+    static var dir: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("app.deploycenter.mac", isDirectory: true)
+    }
+    static var url: URL { dir.appendingPathComponent("journal.jsonl") }
+    private static var oldURL: URL { Store.cacheDir.appendingPathComponent("journal.jsonl") }
     private static let maxEntries = 500
+    /// Lines in the file, counted once; trimmed only past a margin, so an entry does not
+    /// read and decode the whole file.
+    private static var lines: Int?
+    private static let lock = NSLock()
+
+    /// The journal of older versions, moved once out of the Caches folder.
+    static func migrate() {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: oldURL.path), !fm.fileExists(atPath: url.path) else { return }
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? fm.moveItem(at: oldURL, to: url)
+    }
 
     static func append(_ e: JournalEntry) {
+        lock.lock(); defer { lock.unlock() }
+        migrate()
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         guard let data = try? enc.encode(e) else { return }
-        try? FileManager.default.createDirectory(at: Store.cacheDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let line = data + Data("\n".utf8)
         if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line); try? h.close() }
         else { try? line.write(to: url) }
-        // Kept small: past 500 lines the oldest go.
-        let all = load(limit: .max)
-        if all.count > maxEntries { rewrite(Array(all.suffix(maxEntries))) }
+        let n = (lines ?? countLines()) + (lines == nil ? 0 : 1)
+        lines = n
+        // Kept small: past 500 lines (and a margin) the oldest go.
+        if n > maxEntries + 50 {
+            let all = load(limit: .max)
+            rewrite(Array(all.suffix(maxEntries)))
+            lines = min(all.count, maxEntries)
+        }
+    }
+
+    private static func countLines() -> Int {
+        guard let data = try? Data(contentsOf: url) else { return 0 }
+        return data.reduce(0) { $1 == 10 ? $0 + 1 : $0 }
     }
 
     private static func rewrite(_ list: [JournalEntry]) {
@@ -41,6 +71,7 @@ enum Journal {
 
     /// Oldest first.
     static func load(limit: Int) -> [JournalEntry] {
+        migrate()
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
         let all = text.split(separator: "\n").compactMap { try? dec.decode(JournalEntry.self, from: Data($0.utf8)) }
@@ -48,22 +79,35 @@ enum Journal {
     }
 
     static func csv(_ list: [JournalEntry]) -> String {
-        func q(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
+        // Quoted, and a cell that a spreadsheet would read as a formula starts with ' instead.
+        func q(_ s: String) -> String {
+            let safe = s.first.map { "=+-@\t\r".contains($0) } == true ? "'" + s : s
+            return "\"" + safe.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        }
         return (["time,platform,project,result,seconds,detail"] + list.map {
             [$0.at.formatted(.iso8601), $0.platform, q($0.name), $0.result, $0.seconds.map { String(Int($0)) } ?? "", q($0.detail ?? "")].joined(separator: ",")
         }).joined(separator: "\n")
     }
 
-    /// Of the last `window` ended deploys of a project: how many failed.
-    static func failures(of name: String, in list: [JournalEntry], window: Int = 10) -> (failed: Int, total: Int) {
-        let mine = list.filter { $0.name == name && ["live", "failed"].contains($0.result) }.suffix(window)
+    /// Of the last `window` ended deploys of a project: how many failed. A frontend and a backend
+    /// of the same name are two projects.
+    static func failures(of name: String, platform: String? = nil, in list: [JournalEntry], window: Int = 10) -> (failed: Int, total: Int) {
+        let mine = list.filter { $0.name == name && (platform == nil || $0.platform == platform) && ["live", "failed"].contains($0.result) }.suffix(window)
         return (mine.filter { $0.result == "failed" }.count, mine.count)
+    }
+
+    /// The same count for every project at once, keyed "platform/name": one pass instead of one per row.
+    static func failureTable(_ list: [JournalEntry], window: Int = 10) -> [String: (failed: Int, total: Int)] {
+        var recent: [String: [Bool]] = [:]
+        for e in list where ["live", "failed"].contains(e.result) { recent["\(e.platform)/\(e.name)", default: []].append(e.result == "failed") }
+        return recent.mapValues { r in let w = r.suffix(window); return (w.filter { $0 }.count, w.count) }
     }
 }
 
 struct JournalView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var entries: [JournalEntry] = []
+    @State private var failed: [String: (failed: Int, total: Int)] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -86,8 +130,7 @@ struct JournalView: View {
                             .foregroundStyle(e.result == "failed" ? .red : (e.result == "skipped" ? .secondary : .green))
                         Text(Demo.mask(e.name)).font(.body.weight(.medium))
                         Text(e.platform).font(.caption).foregroundStyle(.secondary)
-                        let f = Journal.failures(of: e.name, in: entries)
-                        if f.failed > 0 {
+                        if let f = failed["\(e.platform)/\(e.name)"], f.failed > 0 {
                             Text(L("\(f.failed) of last \(f.total) failed", "\(f.failed) der letzten \(f.total) fehlgeschlagen"))
                                 .font(.caption2).foregroundStyle(.orange)
                         }
@@ -100,6 +143,6 @@ struct JournalView: View {
             }
         }
         .frame(width: 640, height: 460)
-        .task { entries = Journal.load(limit: 200) }
+        .task { entries = Journal.load(limit: 200); failed = Journal.failureTable(entries) }
     }
 }
