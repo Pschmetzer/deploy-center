@@ -4,9 +4,11 @@ Each heading is a message the app or `deploys` shows, word for word. Search this
 
 First steps for any problem:
 
-- `deploys doctor` prints what is connected as JSON (`jq`, `vercelCli`, `vercelApi`, `vercelLoggedIn`, `githubCli`, `githubLoggedIn`, `renderKey`).
-- In the app, **Settings → Copy diagnostics** copies versions and what is connected, without project names or keys. Paste it into an issue.
-- **Settings → Open the error log** opens `~/Library/Logs/DeployCenter.log`: every failed call to `deploys` and what it said.
+- `deploys doctor` prints what is connected as JSON: `jq`, `jqVersion`, `bashVersion`, `githubCli`, `githubLoggedIn`, `gitlabCli`, `gitlabLoggedIn`, `readonly`, and the fields of each platform that is on (Vercel: `vercelCli`, `vercelApi`, `vercelLoggedIn`; Render: `renderKey`, `renderKeySource`; deploy hooks: `hookReady`, `hooks`). For Netlify, Cloudflare, Amplify, DigitalOcean and Coolify ask the platform itself, for example `deploys netlify doctor`: their answers share field names (`provider`, and `key`, `tokenOk`, `error` for three of them), and in the combined answer only the last one of each is left.
+- In the app, **Settings → Platforms → Health** shows the same per platform as a checklist, with what to do for each problem.
+- In the app, **Settings → Help → Copy diagnostics** copies versions and what is connected, without project names or keys. Paste it into an issue.
+- **Settings → Help → Open the error log** opens `~/Library/Logs/DeployCenter.log`: every failed call to `deploys` and what it said.
+- An environment variable can change what `deploys` does (`DEPLOYS_READONLY`, `DEPLOYS_NO_GITHUB`, `DEPLOYS_CONFIG`, …). [CLI.md](CLI.md) lists them all.
 
 The app runs the `deploys` script inside it (`Deploy Center.app/Contents/Resources/deploys`), so every error below can be reproduced in Terminal with the same command.
 
@@ -28,7 +30,7 @@ brew tap pschmetzer/tap && brew trust pschmetzer/tap && brew install --cask depl
 brew install --cask deploy-center --appdir="$HOME/Applications"
 ```
 
-By hand: unzip the release and drag **Deploy Center** into `~/Applications`. **Update now** in Settings replaces the app where it is, so updates need no admin rights either.
+By hand: unzip the release and drag **Deploy Center** into `~/Applications`. The built-in updater (Sparkle) replaces the app where it is, so updates need no admin rights either.
 
 ### macOS says the app cannot be opened (Gatekeeper)
 
@@ -111,7 +113,17 @@ Your login belongs to more than one team. The error lists each team id and name.
 deploys vercel team team_abc123
 ```
 
-The choice is saved in `~/.config/deploys/vercel-team`. In CI, set `DEPLOYS_VERCEL_TEAM` instead.
+The choice is saved in `~/.config/deploys/vercel-team`. In CI, set `DEPLOYS_VERCEL_TEAM` instead. The example workflows read it from the repository variable `DEPLOYS_VERCEL_TEAM` (`vars.DEPLOYS_VERCEL_TEAM`). Some older examples read `vars.VERCEL_TEAM`: if you copied one of those, rename the variable under Settings → Secrets and variables → Actions → Variables, or keep the old name in your copy.
+
+### "Vercel could not be loaded" (or "Render could not be loaded")
+
+The last read of the list failed. The banner says when the list on screen is from, and the line under it is what `deploys` reported. Press **Try again** first: a network blip is the usual cause. Vercel reads are asked again by themselves, Render reads up to three times, so a message that stays means the problem is still there.
+
+- `fetch failed`, `ETIMEDOUT`, `ENOTFOUND`, `ECONNRESET`, or `no answer from Render (network or timeout)`: the Mac could not reach the platform. Check the network, a VPN or a proxy.
+- `no answer within … s`: the Vercel CLI hung. Try `vercel whoami` in Terminal: if that hangs too, the problem is the CLI or the network, not Deploy Center.
+- A 401 or 403 in the message: the login or key is wrong or expired. Vercel: `vercel login`. Render: see below.
+
+When only the newest builds could not be read, the list still comes. The row gets a small ⓘ whose tooltip says *The newest builds could not be read: a build under way may not show*. That is a notice, not an error: the next refresh fills it in.
 
 ### "<project> has no remembered repo. Turn its auto-deploy off with this tool, or add it to …/vercel-repos.json"
 
@@ -223,6 +235,12 @@ The first run after `deploys guard schedule on` only reports what it would turn 
 the next run on. `deploys guard status` shows the last run; the log is
 `~/Library/Logs/DeployCenter-guard.log`.
 
+## Team mode
+
+### "Observer mode (…): "deploys …" changes something and is refused."
+
+This Mac is an observer: you are on the `observers` list of the repo's `deploy-center.json`, or observer mode is on here. Observers can look, not deploy. The message ends with what to do: `deploys readonly off`, unset `DEPLOYS_READONLY`, or ask to be taken off the list. See [TEAM.md](TEAM.md).
+
 ## Claude and Autofix
 
 ### "No Anthropic API key. Run: pbpaste | deploys ai set-key (or set ANTHROPIC_API_KEY)"
@@ -244,6 +262,20 @@ Deploy Center stops calling Claude once your monthly cap is used up. It starts a
 ### "autofix is running already"
 
 Another Autofix run holds the lock, often the scheduled one. Wait for it. A run that died leaves the lock behind; it is taken over after 30 minutes.
+
+### "The config file is not valid JSON. Nothing was changed."
+
+**Connect** next to Claude Desktop (Settings → Claude) edits `~/Library/Application Support/Claude/claude_desktop_config.json` only when it is valid JSON. Fix or remove the broken file, then connect again.
+
+## iPhone
+
+### "This build cannot use iCloud Keychain. Use the QR code."
+
+A self-built (ad hoc signed) app has no keychain group to share with the iPhone. Use **Show a QR code for the iPhone …** in Settings → iPhone, or install a release.
+
+### "Could not write to iCloud Keychain (error …)"
+
+The Mac's keychain refused the item. The number is the keychain's error code (`security error <number>` in Terminal explains it); the same line is in the error log. Check that iCloud Keychain is on (System Settings → your name → iCloud → Passwords), or use the QR code instead.
 
 ## Deploying
 

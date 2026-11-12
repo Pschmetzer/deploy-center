@@ -1435,7 +1435,9 @@ expect "CLI-055: a stale lock folder is cleared, a fresh one kept, a stale lock 
   find "$tmp/l55" -name "*stale*" | grep -c .) )" $'old-gone\nnew-kept\noldf-gone\n0'
 expect "CLI-055: start_lock takes over a stale start, refuses a fresh one" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . "$deploys_src"; set +e
   f="$(start_lock vercel/web)"; touch -t 202001010000 "$f"; (start_lock vercel/web >/dev/null 2>&1) && echo taken; (start_lock vercel/web >/dev/null 2>&1) || echo refused) )" $'taken\nrefused'
+# The stand-in sleep in $tmp/bin returns at once, so the lock's wait would be no wait at all: the real one here.
 expect "CLI-056: ai usage adds under a lock and leaves none behind" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . "$deploys_src"; set +e
+  sleep() { /bin/sleep "$@"; }
   AI_USAGE="$tmp/l55/ai-usage.json"; ai_add_usage 5 & ai_add_usage 7 & wait; ai_add_usage 1; ai_used; [ -e "$AI_USAGE.lock" ] && echo left || echo clean) )" $'13\nclean'
 expect "CLI-056: a dead holder's lock does not cost every later call the wait" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . "$deploys_src"; set +e
   mkdir "$tmp/l55/x.lock"; touch -t 202001010000 "$tmp/l55/x.lock"; file_lock "$tmp/l55/x" && echo got; file_unlock "$tmp/l55/x"; [ -e "$tmp/l55/x.lock" ] || echo clean) )" $'got\nclean'

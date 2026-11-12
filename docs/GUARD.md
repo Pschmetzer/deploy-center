@@ -28,7 +28,7 @@ deploys guard schedule on|off                 # every 30 minutes through launchd
 deploys guard status [--json]                 # on/off, last run, what it did, allowances
 ```
 
-In the app: **Settings → Auto-deploy guard** has the same: the switch, the last run, running
+In the app: **Settings → Deploy → Auto-deploy guard** has the same: the switch, the last run, running
 allowances with the time left and **Revoke now**, and **Allow auto-deploy …** for one project or
 all, for 1, 4 or 24 hours.
 

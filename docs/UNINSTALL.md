@@ -4,7 +4,7 @@ Uninstalling does not turn auto-deploy back on. Your projects stay manual until 
 
 ## 1. Stop what runs on its own
 
-- In the app, turn off **Settings → Open at login** (or remove Deploy Center under System Settings → General → Login Items).
+- In the app, turn off **Settings → General → Open at login** (or remove Deploy Center under System Settings → General → Login Items).
 - Autofix, if you turned on its schedule (launchd job `app.deploycenter.autofix`):
   ```bash
   deploys autofix schedule off
@@ -16,12 +16,20 @@ Uninstalling does not turn auto-deploy back on. Your projects stay manual until 
   Both remove their file in `~/Library/LaunchAgents/`. Without `deploys`, run
   `launchctl bootout gui/$(id -u)/app.deploycenter.autofix` (or `.guard`) and delete
   `~/Library/LaunchAgents/app.deploycenter.autofix.plist` (or `.guard.plist`).
-- Only if you set up the daily LaunchAgent from [`scripts/daily-deploy.plist.example`](../scripts/daily-deploy.plist.example):
+- The daily deploy, if you set it up with `deploys schedule daily` (launchd job `app.deploycenter.daily`):
+  ```bash
+  deploys schedule off
+  ```
+  If you set it up by hand from [`scripts/daily-deploy.plist.example`](../scripts/daily-deploy.plist.example):
   ```bash
   launchctl unload ~/Library/LaunchAgents/app.deploycenter.daily.plist
   rm ~/Library/LaunchAgents/app.deploycenter.daily.plist /tmp/deploy-center-daily.log
   ```
-- The iPhone app: in Settings, turn off **Connect the iPhone app (iCloud Keychain)**. That removes
+- The pre-push check, in each repo where you ran `deploys hooks install`:
+  ```bash
+  deploys hooks uninstall <repo folder>   # puts back the pre-push hook that was there before
+  ```
+- The iPhone app: in Settings → iPhone, turn off **Connect the iPhone app (iCloud Keychain)**. That removes
   the keys the Mac put into your iCloud Keychain (item `app.deploycenter.link`), so they leave your
   other devices too. A QR code leaves nothing behind on the Mac; delete the iOS app on the phone.
 
@@ -82,6 +90,7 @@ Only the CLI, installed with Homebrew: `brew uninstall deploys`.
 | Keys of the opt-in hosts (Netlify, Cloudflare, DigitalOcean, Coolify; Amplify keeps only a profile name) | Keychain, service names `deploy-center-netlify`, `deploy-center-cloudflare`, `deploy-center-digitalocean`, `deploy-center-coolify`, `deploy-center-amplify` | `security delete-generic-password -a "$USER" -s deploy-center-<name>` for each one you set |
 | Deploy hook URLs | Keychain, `deploy-center-hook-<name>` (without a keychain: `~/.config/deploys/hook-urls/`) | `deploys hook remove <name>` |
 | The Vercel token made for the iPhone | Keychain, service name `deploy-center-phone-vercel` | `security delete-generic-password -a "$USER" -s deploy-center-phone-vercel` |
+| Keys handed to the iPhone | iCloud Keychain (synced), service `app.deploycenter.link` | turn off **Settings → iPhone** first (see above); it removes them on all devices |
 | Widget data (a small snapshot of what waits) | `~/Library/Group Containers/<team id>.app.deploycenter/` | delete that folder (only builds with widgets have it) |
 | App settings | `~/Library/Preferences/app.deploycenter.mac.plist` | `defaults delete app.deploycenter.mac` |
 | Cached lists, deploy history, site logos | `~/Library/Caches/app.deploycenter.mac/` | `rm -rf ~/Library/Caches/app.deploycenter.mac` |
@@ -103,4 +112,5 @@ Deploy Center never had its own account. To revoke what it used:
   dashboard. On Netlify, also delete the build hook named `deploy-center` and, if you want builds on
   push again, the `ignore` line in `netlify.toml`.
 - GitLab: `glab auth logout`, or revoke the `GITLAB_TOKEN` in GitLab → Preferences → Access tokens.
+- iPhone: the keys it got are the Mac's (the Vercel token for the iPhone, the Render key, the `gh` token). Revoke them at Vercel, Render and GitHub if the phone or a QR code may have been seen by someone else.
 - Vercel and GitHub: it used your `vercel` and `gh` logins. `vercel logout` and `gh auth logout` end them, also for everything else that uses them.

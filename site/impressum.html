@@ -8,6 +8,7 @@
 <link rel="canonical" href="https://deploycenter.app/impressum.html">
 <link rel="icon" href="img/icon.png">
 <style>
+.skip{position:absolute;left:-9999px;top:8px;z-index:100;background:var(--card);color:var(--text);padding:8px 14px;border-radius:8px;border:1px solid var(--line)}.skip:focus{left:12px}
 :root{--bg:#0b0d12;--card:#151924;--line:#232838;--text:#e9ecf3;--muted:#9aa3b5;--accent:#4f7cff}
 @media (prefers-color-scheme: light){:root{--bg:#fbfbfd;--card:#fff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475}}
 *{box-sizing:border-box}
@@ -27,8 +28,9 @@ footer{color:var(--muted);font-size:14px;padding:40px 0 60px}
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Zum Inhalt</a>
 <nav><div class="wrap"><a href="./"><img src="img/icon.png" alt="">Deploy Center</a></div></nav>
-<main class="wrap">
+<main id="main" class="wrap">
   <h1>Impressum</h1>
   <p class="lead">Anbieterkennzeichnung: Angaben gemäß § 5 Digitale-Dienste-Gesetz (DDG)</p>
 

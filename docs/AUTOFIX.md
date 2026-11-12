@@ -21,7 +21,7 @@ you merge ──> deploys autofix: notifies you; you deploy with a click
 
 ## Setup (once)
 
-In the app: Settings > Autofix walks through these steps. In the terminal:
+In the app: Settings → Claude → Autofix walks through these steps. In the terminal:
 
 1. **Create the routine** at claude.ai/code: Routines > New.
    - Attach the repositories that should be fixed.
@@ -43,7 +43,7 @@ In the app: Settings > Autofix walks through these steps. In the terminal:
    ```
    This installs a launchd job. `deploys autofix schedule off` removes it. [`scripts/autofix.plist.example`](../scripts/autofix.plist.example) shows the same job written by hand.
 
-`deploys autofix sync` brings the hand-overs up to date with their PRs (merged, closed, open) without firing anything; the app runs it every few minutes while one is open, and it loads the schedule again if launchd dropped it. `deploys autofix list` shows every hand-over with its session link and the merged fix; `deploys autofix status` gives the same as JSON. `deploys where` shows whether a routine and a token are set.
+`deploys autofix sync` brings the hand-overs up to date with their PRs (merged, closed, open) without firing anything; the app runs it at most every 3 minutes while a hand-over can still change (see [below](#what-the-row-in-the-app-says)), and it loads the schedule again if launchd dropped it. `deploys autofix list` shows every hand-over with its session link and the merged fix; `deploys autofix status` gives the same as JSON. `deploys where` shows whether a routine and a token are set.
 
 The token is kept in the keychain under `deploy-center-routine`. It goes to curl on stdin and never appears as an argument. `DEPLOYS_ROUTINE_TOKEN` can replace it on a machine without a keychain. `deploys autofix forget-token` removes it.
 
@@ -96,6 +96,31 @@ duplicate rules and lock apply. Exit codes:
 `platform`, `status`, `sha`, `session` (the Claude session URL), `error`, `mergedSha`, `pr`, and
 since this version `prNumber`, `prState` (`open`, `merged`, `closed`, or null before a PR is seen)
 and `prUrl`. The PR is looked up on each run (branch `claude/autofix-<project>-<sha7>`).
+
+## What the row in the app says
+
+The app reads `deploys autofix status --json` and shows the newest hand-over of a project as a chip
+on its row. The first case that fits wins:
+
+| Chip | When |
+|---|---|
+| **Fix merged – deploy now** | the fix PR is merged, its commit is not live yet, and the branch has commits waiting. Gone once that commit is live or the fix was deployed |
+| **Fix PR #N open** | Claude opened the fix PR and it is still open |
+| **Fix failed – over to you** | the build is still failing and the PR was closed (or merged without the fix being recorded), or the hand-over was `skipped` or `failed` |
+| **No fix PR from Claude – see session** | handed over (`fired`) more than 90 minutes ago and still no PR: the session most likely ended without one, for example because the cause is not in the code. The chip links to the session and its report |
+| **Claude is fixing it** | handed over (`fired`, `pending` or `ratelimited`) and the build is still failing |
+
+The chips "fixing", "over to you" and "no fix PR" show only while the newest build has failed;
+once it is green again, only an open fix PR or a merged fix that waits to be deployed still shows. To keep the chips current, the app runs
+`deploys autofix sync` before it reads the status, at most every 3 minutes. It does this only
+while a hand-over can still change: a PR is open, or the hand-over is less than 90 minutes old. An
+older hand-over without a PR is left to the 10-minute job.
+
+Three more rules:
+
+- A hand-over the script marks `done` (the build went green) still shows its open PR for 24 hours, then nothing.
+- A failure of another commit than the one handed over shows no chip, so that failure can be handed over too.
+- If `autofix sync` fails (an older script without it, for example), the app does not try it again for an hour.
 
 ## Limits to know
 

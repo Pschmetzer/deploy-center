@@ -21,9 +21,9 @@ Works great with Claude Code: let the agent push, you decide what ships.</p>
 
 | | |
 |---|---|
-| <img src="docs/images/main-dark.png" width="430" alt="Main window in dark mode: projects with commits waiting to go live and the build costs of the last 7 days"><br><sub>What waits to go live, and what builds cost</sub> | <img src="docs/images/details-dark.png" width="430" alt="Details sheet of a project: the commit that is live, CI status and the three commits waiting"><br><sub>Details: what is live, what waits, CI status</sub> |
-| <img src="docs/images/log-dark.png" width="430" alt="Build log with the first error highlighted, and the Jump to the first error and Copy for Claude buttons"><br><sub>Build log: jump to the first error, copy it for Claude</sub> | <img src="docs/images/settings-dark.png" width="430" alt="Settings, Autofix section: routine, API token, check every 10 minutes, test without sending"><br><sub>Autofix: a failed build becomes a fix PR</sub> |
-| <img src="docs/images/menu-dark.png" width="300" alt="Menu bar menu: commits waiting per project, Open Deploy Center, Deploy everything with changes"><br><sub>The menu bar: what waits, at a glance</sub> | |
+| <img src="docs/images/main-dark.webp" width="430" alt="Main window in dark mode: projects with commits waiting to go live and the build costs of the last 14 days"><br><sub>What waits to go live, and what builds cost</sub> | <img src="docs/images/details-dark.png" width="430" alt="Details sheet of a project: the commit that is live, CI status and the three commits waiting"><br><sub>Details: what is live, what waits, CI status</sub> |
+| <img src="docs/images/log-dark.webp" width="430" alt="Build log with the first error highlighted, and the Jump to the first error and Copy for Claude buttons"><br><sub>Build log: jump to the first error, copy it for Claude</sub> | <img src="docs/images/settings-dark.png" width="430" alt="Settings, Autofix section: routine, API token, check every 10 minutes, test without sending"><br><sub>Autofix: a failed build becomes a fix PR</sub> |
+| <img src="docs/images/menu-dark.webp" width="300" alt="Menu bar menu: commits waiting per project, Open Deploy Center, Deploy everything with changes"><br><sub>The menu bar: what waits, at a glance</sub> | |
 
 <sub>Demo mode: project names are stand-ins.</sub>
 </details>
@@ -83,29 +83,29 @@ Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only gree
 
 ## Features
 
-- Turns off auto-deploy for all Vercel projects and Render services at once. [What changes](docs/AUTO-DEPLOY.md)
+- Turns off auto-deploy for all Vercel projects and Render services at once, and turns it back on with `deploys vercel|render autodeploy-on`. [What changes](docs/AUTO-DEPLOY.md)
 - More hosts, opt-in: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and any deploy hook (`deploys providers enable <name>`). [Providers](docs/PROVIDERS.md)
 - Reads what is waiting from GitHub or GitLab (gitlab.com or your own). [GitLab](docs/GITLAB.md)
 - Deploys the newest commit, for one project or many, and follows each deploy until live or failed
 - Shows what is waiting: commits and merged PRs not live yet, per project and in total. [How it counts](docs/NUMBERS.md)
 - Shows your Vercel build costs
 - Estimates what auto-deploy would cost a month, and what turning it off saved since. [How it estimates](docs/SAVINGS.md)
-- Menu bar icon with the number of PRs waiting, and a notification when a deploy ends
+- Menu bar icon with the number of PRs waiting, a notification when a deploy ends, Mac widgets, a command palette (⌘K, or ⌥⌘K from any app) and projects in Spotlight
 - Preview deploys and rollback to the previous live deploy, on the hosts that support them
 - A bash CLI, `deploys`, that does all of this without the app, also on Linux and in CI. [CLI reference](docs/CLI.md)
-- Add-ons: a GitHub Action, badges, a daily summary to a webhook, a pre-push hook, a Docker image, an MCP server, a Raycast extension, an agent digest. [Integrations](integrations/)
+- Add-ons: a GitHub Action, badges, a daily summary to a webhook, a pre-push hook, a Docker image, an MCP server, a Claude Code plugin, VS Code and Raycast extensions, an agent digest. [Integrations](integrations/)
 - Autofix: a failed build goes to a Claude Code routine that opens a fix PR. [Autofix](docs/AUTOFIX.md)
 - Ask Claude, with your own Anthropic key: why a build failed, release notes, is it safe to ship. [Claude in the app](docs/CLAUDE.md)
 - Safe deploys (only green CI, health check with rollback, deploy windows), a guard that turns auto-deploy off again, and a team mode without a server. [Safe deploys](docs/SAFE-DEPLOY.md) · [Guard](docs/GUARD.md) · [Team](docs/TEAM.md)
 - Bug scan: Claude Code on your Mac looks through a repo for bugs and opens one fix PR. [Bug scan](docs/SCAN.md)
 - Security check: OSV-Scanner, gitleaks and Semgrep (free, local); findings can go to the bug scan. [Security check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep)
-- English and German
+- English and German: the Mac's language, or pick one in Settings → General → Language
 
 ## Deploy Center + Claude Code
 
 - **Autofix: a failed build fixes itself (almost).** Deploy Center hands the masked build log to a Claude Code
-  routine, and Claude opens a PR with the fix. After you merge, the next run deploys that merge commit, once.
-  It never merges by itself. [Autofix](docs/AUTOFIX.md)
+  routine, and Claude opens a PR with the fix. After you merge, the next run tells you; you deploy the fix with a click.
+  It never merges or deploys by itself. [Autofix](docs/AUTOFIX.md)
 - **One deploy for many pushes.** Let the agent push as often as it likes; nothing builds until you deploy what changed.
 - **Copy for Claude.** The build log of a failed deploy has a button that copies the error and the log around it as a prompt, ready to paste.
 - **MCP server.** Claude can ask what is waiting and deploy only with your OK. [MCP server](integrations/mcp/) · [Claude Code plugin](integrations/claude-code/)
@@ -148,11 +148,13 @@ settings: [docs/CLI.md](docs/CLI.md).
 - [x] Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify (opt-in)
 - [x] Generic deploy hook (any platform with a deploy URL)
 - [x] GitLab as a source next to GitHub
-- [x] MCP server for AI agents, Claude Code plugin, agent digest
+- [x] MCP server for AI agents, Claude Code plugin, agent digest, VS Code extension
 - [x] Raycast extension
 - [x] Linux CLI packaging (`install.sh`, Homebrew formula)
 - [x] Team mode (a shared `deploy-center.json`, no server)
+- [x] Mac widgets, command palette, Claude in the app
 - [ ] Bitbucket and Gitea as a source
+- [ ] iPhone app in the App Store
 
 Which platform should come next? [Vote with an issue](https://github.com/Pschmetzer/deploy-center/issues/new?template=platform-request.yml).
 
@@ -189,7 +191,7 @@ More: [FAQ](docs/FAQ.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Gloss
 ## Contributing
 
 Ideas and bug reports are welcome in [Issues](https://github.com/Pschmetzer/deploy-center/issues).
-Most wanted: Bitbucket or Gitea next to GitHub and GitLab, tests for the provider files, and reports when a number in the app looks wrong.
+Most wanted: Bitbucket or Gitea next to GitHub and GitLab, and reports when a number in the app looks wrong.
 Small tasks to start with: [Good first issues](docs/GOOD-FIRST-ISSUES.md). How to build and test:
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -197,7 +199,10 @@ Small tasks to start with: [Good first issues](docs/GOOD-FIRST-ISSUES.md). How t
 ./build.sh               # app and zip in build/
 tests/script-tests.sh    # the rules in deploys, no network needed
 tests/app-tests.sh       # the rules in the app
+tests/all.sh             # every suite CI runs, with a summary (--quick: without app and integrations)
 ```
+
+The full list (team, install and integration tests, the public-repo check): [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 
 ## License
 

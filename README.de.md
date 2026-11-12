@@ -60,29 +60,29 @@ Neu dabei? [Sicher ausprobieren](docs/SAFE-START.md) (Englisch): erst schauen, d
 
 ## Funktionen
 
-- Schaltet Auto-Deploy für alle Vercel-Projekte und Render-Services auf einmal ab. [Was sich ändert](docs/AUTO-DEPLOY.md)
+- Schaltet Auto-Deploy für alle Vercel-Projekte und Render-Services auf einmal ab, und mit `deploys vercel|render autodeploy-on` wieder ein. [Was sich ändert](docs/AUTO-DEPLOY.md)
 - Weitere Hosts zum Einschalten: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify und jeder Deploy-Hook (`deploys providers enable <name>`). [Provider](docs/PROVIDERS.md) (Englisch)
 - Liest, was wartet, von GitHub oder GitLab (gitlab.com oder eigene Instanz). [GitLab](docs/GITLAB.md) (Englisch)
 - Deployt den neuesten Commit, für ein Projekt oder viele, und verfolgt jedes Deploy, bis es live oder fehlgeschlagen ist
 - Zeigt, was wartet: Commits und gemergte PRs, die noch nicht live sind, pro Projekt und insgesamt. [Wie gezählt wird](docs/ZAHLEN.md)
 - Zeigt deine Vercel-Buildkosten
 - Schätzt, was Auto-Deploy im Monat kosten würde und was das Abschalten seitdem gespart hat. [Wie geschätzt wird](docs/ERSPARNIS.md)
-- Menüleisten-Symbol mit der Zahl wartender PRs und eine Mitteilung, wenn ein Deploy fertig ist
+- Menüleisten-Symbol mit der Zahl wartender PRs, eine Mitteilung, wenn ein Deploy fertig ist, Mac-Widgets, eine Befehlspalette (⌘K, oder ⌥⌘K aus jeder App) und Projekte in Spotlight
 - Preview-Deploys und Rollback auf das vorige Live-Deploy, bei den Hosts, die das können
 - Eine Bash-CLI, `deploys`, die all das ohne die App kann, auch unter Linux und in CI. [CLI-Referenz](docs/CLI.md)
-- Erweiterungen: eine GitHub Action, Badges, eine tägliche Zusammenfassung an einen Webhook, ein Pre-Push-Hook, ein Docker-Image, ein MCP-Server, eine Raycast-Erweiterung, ein Agent-Digest. [Integrationen](integrations/)
+- Erweiterungen: eine GitHub Action, Badges, eine tägliche Zusammenfassung an einen Webhook, ein Pre-Push-Hook, ein Docker-Image, ein MCP-Server, ein Claude-Code-Plugin, Erweiterungen für VS Code und Raycast, ein Agent-Digest. [Integrationen](integrations/)
 - Autofix: Ein fehlgeschlagener Build geht an eine Claude-Code-Routine, die einen Fix-PR öffnet. [Autofix](docs/AUTOFIX.md)
 - Claude fragen, mit deinem eigenen Anthropic-Key: warum ein Build scheiterte, Release-Notes, ist das sicher zu deployen. [Claude in der App](docs/CLAUDE.md) (Englisch)
 - Sichere Deploys (nur grüne CI, Health-Check mit Rollback, Deploy-Fenster), ein Wächter, der Auto-Deploy wieder abschaltet, und ein Team-Modus ohne Server. [Sichere Deploys](docs/SAFE-DEPLOY.md) · [Wächter](docs/GUARD.md) · [Team](docs/TEAM.md) (Englisch)
 - Bug-Scan: Claude Code auf deinem Mac sucht im Repo nach Bugs und öffnet einen Fix-PR. [Bug-Scan](docs/SCAN.md) (Englisch)
 - Sicherheits-Check: OSV-Scanner, gitleaks und Semgrep (kostenlos, lokal); Funde können an den Bug-Scan gehen. [Sicherheits-Check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep) (Englisch)
-- Englisch und Deutsch
+- Englisch und Deutsch: die Sprache des Macs, oder wähle eine unter Einstellungen → Allgemein → Sprache
 
 ## Deploy Center + Claude Code
 
 - **Autofix: Ein fehlgeschlagener Build repariert sich (fast) selbst.** Deploy Center gibt das maskierte Build-Log
-  an eine Claude-Code-Routine, und Claude öffnet einen PR mit dem Fix. Nach deinem Merge deployt der nächste Lauf
-  genau diesen Merge-Commit, einmal. Gemergt wird nie von selbst. [Autofix](docs/AUTOFIX.md) (Englisch)
+  an eine Claude-Code-Routine, und Claude öffnet einen PR mit dem Fix. Nach deinem Merge sagt dir der nächste Lauf
+  Bescheid; du deployst den Fix mit einem Klick. Gemergt und deployt wird nie von selbst. [Autofix](docs/AUTOFIX.md) (Englisch)
 - **Ein Deploy für viele Pushes.** Der Agent darf pushen, so oft er will; gebaut wird erst, wenn du deployst, was sich geändert hat.
 - **Für Claude kopieren.** Im Build-Log eines fehlgeschlagenen Deploys kopiert ein Knopf den Fehler und das Log drumherum als Prompt, fertig zum Einfügen.
 - **MCP-Server.** Claude kann fragen, was wartet, und deployt nur mit deinem OK. [MCP-Server](integrations/mcp/) · [Claude-Code-Plugin](integrations/claude-code/) (Englisch)
@@ -126,11 +126,13 @@ Einstellungen: [docs/CLI.md](docs/CLI.md) (Englisch).
 - [x] Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify (zum Einschalten)
 - [x] Allgemeiner Deploy-Hook (jede Plattform mit einer Deploy-URL)
 - [x] GitLab als Quelle neben GitHub
-- [x] MCP-Server für KI-Agenten, Claude-Code-Plugin, Agent-Digest
+- [x] MCP-Server für KI-Agenten, Claude-Code-Plugin, Agent-Digest, VS-Code-Erweiterung
 - [x] Raycast-Erweiterung
 - [x] Linux-Pakete für die CLI (`install.sh`, Homebrew-Formel)
 - [x] Team-Modus (eine gemeinsame `deploy-center.json`, kein Server)
+- [x] Mac-Widgets, Befehlspalette, Claude in der App
 - [ ] Bitbucket und Gitea als Quelle
+- [ ] iPhone-App im App Store
 
 Welche Plattform soll als Nächstes kommen? [Stimm per Issue ab](https://github.com/Pschmetzer/deploy-center/issues/new?template=platform-request.yml).
 
@@ -167,7 +169,7 @@ Mehr (Englisch): [FAQ](docs/FAQ.md) · [Troubleshooting](docs/TROUBLESHOOTING.md
 ## Mitmachen
 
 Ideen und Fehlerberichte gern in den [Issues](https://github.com/Pschmetzer/deploy-center/issues).
-Am meisten gesucht: Bitbucket oder Gitea neben GitHub und GitLab, Tests für die Provider-Dateien, und Hinweise, wenn eine Zahl in der App falsch aussieht.
+Am meisten gesucht: Bitbucket oder Gitea neben GitHub und GitLab, und Hinweise, wenn eine Zahl in der App falsch aussieht.
 Kleine Aufgaben für den Einstieg: [Good first issues](docs/GOOD-FIRST-ISSUES.md). Bauen und testen:
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -175,7 +177,10 @@ Kleine Aufgaben für den Einstieg: [Good first issues](docs/GOOD-FIRST-ISSUES.md
 ./build.sh               # App und Zip in build/
 tests/script-tests.sh    # die Regeln in deploys, ohne Netzwerk
 tests/app-tests.sh       # die Regeln in der App
+tests/all.sh             # alle Suiten aus der CI, mit Zusammenfassung (--quick: ohne App und Integrationen)
 ```
+
+Die vollständige Liste (Team-, Install- und Integrationstests, die Prüfung aufs öffentliche Repo): [CONTRIBUTING.md](CONTRIBUTING.md#tests) (Englisch).
 
 ## Lizenz
 

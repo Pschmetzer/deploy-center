@@ -12,7 +12,7 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 | Simulator build, archive and export | `ios/build.sh`, `ios/build.sh --archive` (build number from the UTC time) |
 | Logic checks without a device | `ios/test.sh`: the "waiting" rule, rollback targets, GitHub reads, against made-up answers |
 | Not offered on Mac or Apple Vision Pro | `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO`, `SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO`; the store switch is separate, see below |
-| Privacy manifest | `ios/App/PrivacyInfo.xcprivacy`: no tracking, no collected data, UserDefaults reason `CA92.1` |
+| Privacy manifest | `ios/App/PrivacyInfo.xcprivacy`: no tracking, no collected data, UserDefaults reason `CA92.1` (the app's own settings). The widget extension has no manifest of its own: it reads one JSON file from the App Group container and uses no API that needs a reason. When the app or the widgets start using another such API (file timestamps, system boot time, disk space, active keyboards), add its reason to the manifest of that target |
 | Face ID usage text | `NSFaceIDUsageDescription` in the target's build settings |
 | Background refresh | `ios/Config/Info.plist` (`BGTaskSchedulerPermittedIdentifiers`, `UIBackgroundModes: fetch`) |
 | Export compliance | `ITSAppUsesNonExemptEncryption = NO` (only HTTPS through the system) |
@@ -43,34 +43,33 @@ behind the app are in `docs/WIDGETS-IOS.md`.
   - the store text says the app is not affiliated with them.
 - **2.5.1 Software requirements:** public APIs only, no private frameworks, no downloaded code.
 
+## Status (2026-11-10)
+
+| Item | State |
+|---|---|
+| App IDs `app.deploycenter.ios` and `app.deploycenter.ios.widgets`, App Group `group.app.deploycenter`, App Store profiles | done |
+| App Store Connect record | done: **"Deploy Center: Hand Deploys"** ("Deploy Center" is taken on the store; the name can change before review, the name under the icon stays "Deploy Center"). SKU `deploycenter-ios`, English (U.S.) |
+| Store page, English (U.S.) and German | done: subtitle, promotional text, description, keywords, support and marketing URL, copyright, 3 screenshots each for the 6.3" iPhone and the 13" iPad (the German page uses the English ones). Developer Tools, secondary Productivity. Age rating 4+ (all "None"). Free, in all 175 countries. "Sign-in required" off |
+| App Privacy | privacy policy URL for each language; answer "Data Not Collected" |
+| Builds | 1.0 (1) uploaded; 1.0 (2), with the Mac connection, uploaded and submitted for review (see [Submissions](#submissions)) |
+| Checked on a device | the QR connection, on a real iPhone (TestFlight build 2). Not yet: the iCloud Keychain connection, VoiceOver |
+
+These owner steps were open before the first submission. Check in App Store Connect that they are
+saved:
+
+- App Privacy → **Publish** (your statement that the answers are correct).
+- App Information → **Content Rights** (a legal statement about third-party content).
+- Version page → App Review: your contact (name, phone, email) and the review notes from
+  `ios/AppStore/en.md`. The notes cannot be saved without the contact.
+
+The team has no registered devices, so the archive is unsigned and signed ad hoc with the
+entitlements before the export (see the comment in `ios/build.sh`).
+
 ## Steps only the owner can do (ask before each)
 
-0. **Status (2026-11-10):** done:
-   - The App IDs `app.deploycenter.ios` and `app.deploycenter.ios.widgets` exist, with App Groups on and
-     `group.app.deploycenter`, and App Store profiles.
-   - The App Store Connect record exists: **"Deploy Center: Hand Deploys"**, because "Deploy Center" is
-     already taken on the store. SKU `deploycenter-ios`, English (U.S.). The name can be changed
-     before review. The name under the icon stays "Deploy Center".
-   - Builds are uploaded with `ios/build.sh --archive`, then `--upload`; the table under
-     "Submissions" names the one in review.
+Steps 1 to 3 are done for this app (see the status above). They stay here for a new account or a
+second app.
 
-   - The store page is filled in, in English (U.S.) and German: subtitle, promotional text,
-     description, keywords, support and marketing URL, copyright, and 3 screenshots each for the
-     6.3" iPhone and the 13" iPad (`ios/AppStore/screenshots/`; the German page uses the English ones).
-     Category Developer Tools, secondary Productivity. Age rating 4+ (all "None"). Price free, in all
-     175 countries. "Sign-in required" is off.
-   - App Privacy: privacy policy URL set, answer "Data Not Collected" saved but **not published**.
-
-   Still open, for the owner:
-   - App Privacy → **Publish** (it is your statement that the answers are correct).
-   - App Information → **Content Rights** (a legal statement about third-party content).
-   - Version page → App Review: your contact (name, phone, email), then paste the review notes from
-     `ios/AppStore/en.md`. The notes cannot be saved without the contact.
-   - TestFlight: the internal group "Owner" has the uploaded build, and the account holder is invited.
-     Accept the invite in the TestFlight app, add a real token, then submit.
-
-   The team has no registered devices, so the archive is unsigned and signed ad hoc with the
-   entitlements before the export (see the comment in `ios/build.sh`).
 1. **App IDs and the App Group.** Register `app.deploycenter.ios` and `app.deploycenter.ios.widgets`,
    with the App Group `group.app.deploycenter` on both. `ios/build.sh --archive` uses
    `-allowProvisioningUpdates` and can create them itself, so the first archive is itself an
@@ -79,7 +78,7 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 
    | Field | Value |
    |---|---|
-   | Name | Deploy Center |
+   | Name | Deploy Center: Hand Deploys ("Deploy Center" alone is taken) |
    | Primary language | English (U.S.) |
    | Bundle id | `app.deploycenter.ios` |
    | SKU | your choice |
@@ -115,7 +114,14 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 4. **TestFlight.** Install the build on your own iPhone and add a real token. Then check:
    - deploy one project and roll it back;
    - a widget;
-   - a background note.
+   - a background note. To run the background refresh at once, pause the app in Xcode's debugger
+     and type:
+
+     ```
+     e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"app.deploycenter.ios.refresh"]
+     ```
+
+     then continue. This works on a device or simulator run from Xcode, not in a TestFlight build.
 5. **Submit.** Paste the texts and the review notes, add the screenshots, then submit for review.
 
 ## Before each release
@@ -149,12 +155,14 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 
    It must print nothing.
 
+5. In App Store Connect → App Privacy, check that every language of the store page has its own
+   privacy policy URL. Without one, "Add for Review" is blocked.
+
 ## Submissions
 
 | Date | Version (build) | Status |
 |---|---|---|
 | 2026-11-10 | 1.0 (2), with the Mac connection | Submitted for review; released automatically after approval |
 
-Checked before submitting: the QR connection on a real iPhone (TestFlight build 2). Not yet checked
-on a device: the iCloud Keychain connection. Each localization needs its own privacy policy URL
-(App Privacy → language menu); German had none at first and blocked "Add for Review".
+Each localization needs its own privacy policy URL (App Privacy → language menu); German had none
+at first and blocked "Add for Review" (now step 5 of "Before each release").

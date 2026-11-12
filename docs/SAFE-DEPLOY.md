@@ -49,7 +49,7 @@ GitHub is not reachable. With `--json` the exit code is always 0 and the verdict
 
 **In the app**, the deploy confirmation has a checkbox, **Only when checks are green**, which is
 remembered. While a row waits, it says "waiting for checks". A red CI skips the row and shows the
-reason.
+reason. **Settings → Deploy → Deploy only when the checks are green** is the same switch.
 
 ## 2. Health check with auto-rollback
 
@@ -88,6 +88,13 @@ per project and kept on this Mac. The app already checks the site after going li
 countdown, shown as a notification (even while the app is in front) and as a line in the window,
 both with **Cancel**. When the countdown ends, production rolls back to the deploy before.
 A 404 does not start a rollback, and neither does the check after a rollback.
+
+**Settings → Deploy → Watch the site after going live** keeps asking for a few minutes (every
+minute) instead of once. Two failed answers in a row warn, or roll back where the project rolls back
+by itself. When the site answers slower than before the deploy, the app says so. The details show
+the uptime from these checks (30 days, this Mac only), and once a day the app warns when the site's
+certificate ends within two weeks. The paths to ask are in the row menu: **Pages to check after
+deploy …**.
 
 ## 3. Deploy window / freeze
 
@@ -141,6 +148,8 @@ deploys window --json   # {"denied":true,"reason":"fri 15:00–24:00",…}
 
 **In the app**, Deploy in the confirmation asks first if the window is closed: "The deploy window
 is closed". Click **Deploy anyway…**, then give the reason, which goes to the deploy history.
+**Settings → Deploy → Deploy window** edits the same `window.json`: add a time (days, from, to,
+over midnight too), **Save**. Keys the editor does not know are kept.
 
 ## 4. Risk light
 
@@ -174,6 +183,23 @@ computed from the comparison already read for the commit count, so it costs no e
 
 **In the app**, a row shows a red dot only when the risk is red. Yellow stays quiet. The details
 show the level and every reason.
+
+## 5. More brakes in the app
+
+All opt-in, in **Settings → Deploy** unless the row menu is named:
+
+- **Ask for a tick before database migrations go live:** when the waiting commits change migration
+  files, every live deploy of them asks first.
+- **Ask for Touch ID or the password before risky steps:** deploying several projects at once, a
+  rollback by hand, and allowing auto-deploy. The automatic rollback after a failed check does not
+  wait for it.
+- **Critical projects** (row menu → **Critical: type the name to go live**): going live asks for the
+  project's name.
+- **A budget per project** (row menu → **Monthly budget …**): USD a month for its builds; a warning
+  comes at 80 % of it, at the week's pace. The monthly budget for all projects is in Settings → Costs.
+- **Rules** (Settings → Deploy → Rules): the editor for `rules.json`, "when … then deploy, hold or
+  notify" (see [CLI.md](CLI.md#rules)). The app only edits the file; `deploys deploy-changed
+  --by-rules` applies it.
 
 ## Tests
 
