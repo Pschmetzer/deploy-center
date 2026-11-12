@@ -1,0 +1,1 @@
+{"logs":[{"message":"==> Build failed 😞"},{"message":"\u001b[33mnpm ERR! missing script: build\u001b[0m"},{"message":"==> Running build command 'npm run build'"}],"hasMore":false}

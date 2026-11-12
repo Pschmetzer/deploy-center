@@ -12,9 +12,27 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>app.deploycenter.ios.refresh</string>
+		<string>app.deploycenter.ios.follow.*</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.deploycenter.ios</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>deploycenter</string>
+			</array>
+		</dict>
 	</array>
 	<key>DCKeychainGroup</key>
 	<string>$(DEVELOPMENT_TEAM).app.deploycenter.shared</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>app.deploycenter.project</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
