@@ -1,0 +1,4 @@
+[{"created":3,"payload":{"text":"\u001b[31mError: Command \"npm run build\" exited with 1\u001b[0m"}},
+ {"created":1,"payload":{"text":"Cloning github.com/me/app"}},
+ {"created":2,"text":"Running build with VERCEL_TOKEN=abcdefSECRET123456"},
+ {"created":4,"payload":{"text":"   "}}]

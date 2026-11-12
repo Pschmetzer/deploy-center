@@ -53,7 +53,7 @@ the first time.
 Projects made by direct upload (wrangler) have no Git connection; pushes never build them, and
 `deploys` says so instead of changing anything.
 
-## The self-test (do this once)
+## The self-test (once per project)
 
 Cloudflare does not document whether "create deployment" builds while production deployments are
 off. It may build, or it may create a deployment that is **skipped**
@@ -71,8 +71,10 @@ deploys cloudflare selftest <project> --yes
 Without `--yes` it only explains what it would do. With it, it starts one production deployment of
 the production branch and watches it for up to three minutes.
 
-- **Passed:** the deployment reached the `build` stage with a commit hash. This is remembered, and
-  deploys work from then on. `doctor` says `verified`.
+- **Passed:** the deployment reached the `build` stage with a commit hash. This is remembered for
+  that project, for 30 days (`DEPLOYS_CLOUDFLARE_SELFTEST_TTL`, in seconds), and its deploys work
+  until then. A test of one project does not count for another: each has its own Git provider,
+  plan or account. `doctor` says `verified` and lists every project's result in `selftests`.
 - **Skipped:** Cloudflare refused to build while push-deploys are off. `doctor` says `failed`, and a
   deploy needs the toggle fallback below.
 - **Inconclusive:** the build failed or stopped before the build stage (a broken project, a slow

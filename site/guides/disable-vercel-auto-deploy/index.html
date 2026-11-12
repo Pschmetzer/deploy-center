@@ -27,6 +27,7 @@
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="stylesheet" href="/css/site.css">
 <script type="application/ld+json">
 [
@@ -138,7 +139,7 @@
 <a class="skip" href="#main">Skip to content</a>
 <nav class="top" aria-label="Main"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
-  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
 </div></nav>
 
 <main id="main" class="wrap narrow"><article>
@@ -150,9 +151,9 @@
 <div class="tablewrap"><table>
   <thead><tr><th>Way</th><th>Stops</th><th>Keeps</th><th>Best for</th></tr></thead>
   <tbody>
-    <tr><td><a href="#disconnect">1. Disconnect Git</a></td><td>All Git builds, production and preview</td><td>Deployments, domains, env vars</td><td>Deploying on your schedule</td></tr>
-    <tr><td><a href="#deployment-enabled">2. <code>git.deploymentEnabled</code></a></td><td>Builds for the branches you list</td><td>Git connection, other branches</td><td>Turning off one branch, in code</td></tr>
-    <tr><td><a href="#ignored-build-step">3. Ignored Build Step</a></td><td>Builds your script rejects</td><td>Everything; each push still starts a deployment that gets cancelled</td><td>Rules like “only if this folder changed”</td></tr>
+    <tr><th scope="row"><a href="#disconnect">1. Disconnect Git</a></th><td>All Git builds, production and preview</td><td>Deployments, domains, env vars</td><td>Deploying on your schedule</td></tr>
+    <tr><th scope="row"><a href="#deployment-enabled">2. <code>git.deploymentEnabled</code></a></th><td>Builds for the branches you list</td><td>Git connection, other branches</td><td>Turning off one branch, in code</td></tr>
+    <tr><th scope="row"><a href="#ignored-build-step">3. Ignored Build Step</a></th><td>Builds your script rejects</td><td>Everything; each push still starts a deployment that gets cancelled</td><td>Rules like “only if this folder changed”</td></tr>
   </tbody>
 </table></div>
 
@@ -170,7 +171,7 @@ vercel deploy --prod
 <span class="c"># or build on your machine or in CI and upload the result</span>
 vercel build --prod
 vercel deploy --prebuilt --prod</code></pre>
-<div class="note"><p><b>Trade-offs.</b> No preview deployment per pull request, no automatic production deploy, and deploy hooks live in the Git settings, so they go with the connection. Your existing deployments, domains and environment variables stay.</p></div>
+<div class="note"><p><b>Trade-offs.</b> No preview deployment per pull request, no automatic production deploy, and deploy hooks live in the Git settings, so they go with the connection (<code>deploys triggers</code> lists what can still start a build). Your existing deployments, domains and environment variables stay.</p></div>
 
 <h2 id="deployment-enabled">2. <code>git.deploymentEnabled</code> in vercel.json</h2>
 <p>The repository stays connected, but Vercel skips Git deployments for the branches you turn off. Put <code>vercel.json</code> in the project's root directory.</p>
@@ -226,7 +227,7 @@ deploys deploy-changed --yes           # ship the newest commit of each</code></
 
 <div class="ctabox">
   <h2>Do it for every project in one click.</h2>
-  <p>Deploy Center is a free, open-source Mac app. It turns off auto-deploy on Vercel and Render, shows the commits and PRs waiting to go live, and deploys what changed when you decide.</p>
+  <p>Deploy Center is a free, open-source Mac app. It turns off auto-deploy on Vercel, Render, Netlify, Cloudflare Pages and more, shows the commits and PRs waiting to go live, and deploys what changed when you decide.</p>
   <div class="cta">
     <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
     <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
@@ -268,7 +269,7 @@ deploys deploy-changed --yes           # ship the newest commit of each</code></
       <li><a href="/datenschutz.html">Datenschutz</a></li>
     </ul></div>
   </div>
-  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify.</p>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
 </div></footer>
 </body>
 </html>

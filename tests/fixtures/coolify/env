@@ -1,0 +1,7 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+# The contract answers are the <METHOD>_<path>.json files (tests/lib/fake-curl.sh) under a host
+# of their own; the provider's own tests use routes and the other files.
+export COOLIFY_URL=https://coolify-contract.example.com COOLIFY_TOKEN=cool_fixture
+CONTRACT_ID=app-shop CONTRACT_NAME=shop CONTRACT_DEPLOY=dep-shop-3
+# What turns the deploy's files into a finished one for the `deploys watch` check (a sed script).
+CONTRACT_DONE='s/"status": *"in_progress"/"status": "finished"/g'

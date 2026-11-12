@@ -144,6 +144,16 @@ gh auth login
 
 GitHub allows a fixed number of API calls per hour for your login. Under 300 left, Deploy Center reads only the newest commit of each branch and skips the counts. They come back when the hour resets. `deploys github-budget` shows what is left.
 
+## GitLab
+
+### "gitlab: HTTP 401: …"
+
+GitLab refused the token, or glab is not logged in to that host. Run `deploys doctor`: `gitlabLoggedIn` must be true. Log in again with `glab auth login` (self-managed: `--hostname git.example.com`), or make a new personal access token with the `read_api` scope and put it in `GITLAB_TOKEN`. See [GITLAB.md](GITLAB.md#set-up).
+
+### Repos on a self-managed GitLab show no numbers
+
+The token goes only to `GITLAB_HOST`, gitlab.com when unset. Set `GITLAB_HOST=git.example.com`. The app starts `deploys` from launchd, which does not read your shell profile: put the variables in `~/.zprofile`, or use glab, which keeps its own login.
+
 ## Render
 
 ### Connect Render
@@ -176,16 +186,6 @@ The service was renamed or deleted on Render. Reload the list.
 
 A Render **Blueprint** with auto-sync can apply `render.yaml` again on a push. Add `autoDeployTrigger: off` to the services in `render.yaml`. `deploys triggers` lists Blueprints with auto-sync on.
 
-## GitLab
-
-### "gitlab: HTTP 401: …"
-
-The GitLab token is missing, wrong or expired. Log in with `glab auth login` (for your own GitLab: `--hostname`), or set `GITLAB_TOKEN` (scope `read_api`). With both, `glab` is used. See [GITLAB.md](GITLAB.md).
-
-### A GitLab project shows "branch head unknown"
-
-Neither `glab` nor `GITLAB_TOKEN` is set up, or the repo is on another host (Bitbucket, Gitea): those are not read. For your own GitLab set `GITLAB_HOST`.
-
 ## Other hosts
 
 Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and deploy hooks are off until `deploys providers enable <p>`. Each has its own page with its errors: [Netlify](providers/netlify.md), [Cloudflare](providers/cloudflare.md), [Amplify](providers/amplify.md), [DigitalOcean](providers/digitalocean.md), [Coolify](providers/coolify.md), [deploy hook](providers/hook.md).
@@ -198,17 +198,25 @@ This Mac is an observer: you are on the `observers` list of the repo's `deploy-c
 
 ## Claude and Autofix
 
+### "No Anthropic API key. Run: pbpaste | deploys ai set-key (or set ANTHROPIC_API_KEY)"
+
+Claude in the app needs your own Anthropic API key. Add it in **Settings → Claude**, or copy it and run `pbpaste | deploys ai set-key`. See [CLAUDE.md](CLAUDE.md#turning-it-on).
+
+### "Anthropic refused the key (401). Check it in Settings > Claude in the app, or: deploys ai verify"
+
+The key was deleted or mistyped. `deploys ai verify` tests it. Make a new one at console.anthropic.com and store it again.
+
+### "This month's Claude cap is reached (… of … tokens). Raise it in Settings > Claude in the app, or: deploys ai cap <tokens>"
+
+Deploy Center stops calling Claude once your monthly cap is used up. It starts again next month, or at once if you raise the cap.
+
 ### "That does not look like a routine token (sk-ant-...)"
 
-`deploys autofix set-token` takes the routine's token on stdin: `pbpaste | deploys autofix set-token`. See [AUTOFIX.md](AUTOFIX.md).
+`deploys autofix set-token` takes the token of the Claude Code routine, which starts with `sk-ant-`. Copy it again from the routine at claude.ai → Code → Routines, then `pbpaste | deploys autofix set-token`. See [AUTOFIX.md](AUTOFIX.md#setup-once).
 
 ### "autofix is running already"
 
-A run is still going (the scheduled one every 10 minutes, or one you started). Wait for it; its log is `~/Library/Logs/DeployCenter-autofix.log`.
-
-### "This month's Claude cap is reached (…)"
-
-Claude in the app stops at the monthly token cap you set. Raise it in Settings → Claude → **Claude in the app**, or with `deploys ai cap <tokens>`. See [CLAUDE.md](CLAUDE.md).
+Another Autofix run holds the lock, often the scheduled one. Wait for it. A run that died leaves the lock behind; it is taken over after 30 minutes.
 
 ### "The config file is not valid JSON. Nothing was changed."
 
@@ -218,7 +226,7 @@ Claude in the app stops at the monthly token cap you set. Raise it in Settings �
 
 ### "This build cannot use iCloud Keychain. Use the QR code."
 
-A self-built (ad hoc signed) app has no keychain group to share with the iPhone. Use **Show a QR code for the iPhone …** in Settings → Platforms → iPhone, or install a release.
+A self-built (ad hoc signed) app has no keychain group to share with the iPhone. Use **Show a QR code for the iPhone …** in Settings → iPhone, or install a release.
 
 ### "Could not write to iCloud Keychain (error …)"
 
@@ -252,9 +260,13 @@ deploys triggers
 
 ## Updating
 
-### An update does not show up, or does not install
+### An update does not install
 
-The app updates itself with Sparkle: once a day (Settings → General → **Check for updates automatically**) and on **Check for Updates …** in the app menu. It reads `https://deploycenter.app/appcast.xml`, downloads the zip from GitHub, and installs it only if the EdDSA signature and the Developer ID match, and only once no deploy is running. If a check fails, the app stays as it was and Sparkle says why. Install by hand from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest), or with `brew upgrade --cask --greedy deploy-center`.
+**Check for Updates …** (in the app menu) and the daily check use Sparkle: it reads `deploycenter.app/appcast.xml`, downloads the new version from GitHub and checks its EdDSA signature before it replaces the app. While deploys are running it waits and installs once they are done. If a check or the download fails, the app stays as it was and the error log has a line starting with `update failed:`. Install by hand from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest), or with `brew upgrade --cask --greedy deploy-center`.
+
+## The widget is not in the widget gallery
+
+Check the app list on the left of the gallery (search finds nothing there). If no app from outside Apple is listed at all, macOS has not loaded third-party widgets yet: restart the Mac, then look for **Deploy Center**. If only Deploy Center is missing, the installed copy may have no widget: `ls ~/Applications/"Deploy Center.app"/Contents/PlugIns` must show `DeployCenterWidgets.appex`. Reinstall from the release, or build with `./build.sh --widgets --install`.
 
 ## Still stuck?
 

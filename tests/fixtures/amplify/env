@@ -1,0 +1,6 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+# Amplify is read with the aws CLI: bin/aws answers from contract/<args>.json.
+export DEPLOYS_AMPLIFY_PROFILE=fixture AWS_REGION=eu-central-1
+CONTRACT_ID=d1shop0001/main CONTRACT_NAME=Shop CONTRACT_DEPLOY=12
+# What turns the deploy's files into a finished one for the `deploys watch` check (a sed script).
+CONTRACT_DONE='s/"RUNNING"/"SUCCEED"/g'

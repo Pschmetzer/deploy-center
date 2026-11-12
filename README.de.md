@@ -2,7 +2,7 @@
 
 <h1 align="center">Deploy Center</h1>
 
-<p align="center"><b>Auto-Deploy bei Vercel und Render abschalten. Was sich geändert hat, mit einem Klick deployen.</b><br>
+<p align="center"><b>Auto-Deploy bei Vercel, Render und weiteren Hosts abschalten. Was sich geändert hat, mit einem Klick deployen.</b><br>
 Dein Agent pusht 40-mal. Du deployst einmal.<br>
 Passt bestens zu Claude Code: Der Agent pusht, du entscheidest, was live geht.</p>
 
@@ -48,7 +48,7 @@ Siehe [Troubleshooting](docs/TROUBLESHOOTING.md#vercel-is-installed-nvm-volta-fn
 
 Jeder Push baut jedes verbundene Projekt, und Build-Minuten kosten Geld. KI-Coding-Agenten pushen
 viele Male am Tag, da kommt einiges zusammen. Einmal am Tag per Klick deployen kostet einen Bruchteil,
-und nichts geht aus Versehen live. Probier den [Kostenrechner](https://deploycenter.app/#calc).
+und nichts geht aus Versehen live. Probier den [Kostenrechner](https://deploycenter.app/vercel-build-cost-calculator/).
 
 ## So funktioniert's
 
@@ -61,21 +61,21 @@ Neu dabei? [Sicher ausprobieren](docs/SAFE-START.md) (Englisch): erst schauen, d
 ## Funktionen
 
 - Schaltet Auto-Deploy für alle Vercel-Projekte und Render-Services auf einmal ab, und mit `deploys vercel|render autodeploy-on` wieder ein. [Was sich ändert](docs/AUTO-DEPLOY.md)
-- Weitere Hosts, zum Einschalten: [Netlify](docs/providers/netlify.md), [Cloudflare Pages](docs/providers/cloudflare.md), [AWS Amplify](docs/providers/amplify.md), [DigitalOcean App Platform](docs/providers/digitalocean.md), [Coolify](docs/providers/coolify.md) und [jeder Deploy-Hook](docs/providers/hook.md) (Englisch)
-- Wartende Commits und Pull Requests von GitHub oder GitLab (Merge Requests). [GitLab](docs/GITLAB.md) (Englisch)
+- Weitere Hosts zum Einschalten: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify und jeder Deploy-Hook (`deploys providers enable <name>`). [Provider](docs/PROVIDERS.md) (Englisch)
+- Liest, was wartet, von GitHub oder GitLab (gitlab.com oder eigene Instanz). [GitLab](docs/GITLAB.md) (Englisch)
 - Deployt den neuesten Commit, für ein Projekt oder viele, und verfolgt jedes Deploy, bis es live oder fehlgeschlagen ist
 - Zeigt, was wartet: Commits und gemergte PRs, die noch nicht live sind, pro Projekt und insgesamt. [Wie gezählt wird](docs/ZAHLEN.md)
 - Zeigt deine Vercel-Buildkosten
 - Schätzt, was Auto-Deploy im Monat kosten würde und was das Abschalten seitdem gespart hat. [Wie geschätzt wird](docs/ERSPARNIS.md)
 - Menüleisten-Symbol mit der Zahl wartender PRs, eine Mitteilung, wenn ein Deploy fertig ist, Mac-Widgets und eine Befehlspalette (⌘K)
-- Preview-Deploys (Vercel) und Rollback auf das vorige Live-Deploy
-- Sichere Deploys: nur bei grüner CI, ein Seiten-Check mit automatischem Rollback, Deploy-Fenster, eine Risiko-Ampel. [Safe deploys](docs/SAFE-DEPLOY.md) (Englisch)
-- Ein Wächter, der Auto-Deploy wieder abschaltet, wenn es jemand eingeschaltet hat. [Guard](docs/GUARD.md) (Englisch)
-- Team-Modus ohne Server: eine gemeinsame `deploy-center.json`, Beobachter, Vier-Augen-Regel. [Team](docs/TEAM.md) (Englisch)
+- Preview-Deploys und Rollback auf das vorige Live-Deploy, bei den Hosts, die das können
 - Eine Bash-CLI, `deploys`, die all das ohne die App kann, auch unter Linux und in CI. [CLI-Referenz](docs/CLI.md)
-- Erweiterungen: eine GitHub Action, Badges, eine tägliche Zusammenfassung an einen Webhook, ein Pre-Push-Hook, ein Docker-Image, ein MCP-Server, ein Claude-Code-Plugin, Erweiterungen für VS Code und Raycast. [Integrationen](integrations/)
+- Erweiterungen: eine GitHub Action, Badges, eine tägliche Zusammenfassung an einen Webhook, ein Pre-Push-Hook, ein Docker-Image, ein MCP-Server, ein Claude-Code-Plugin, Erweiterungen für VS Code und Raycast, ein Agent-Digest. [Integrationen](integrations/)
 - Autofix: Ein fehlgeschlagener Build geht an eine Claude-Code-Routine, die einen Fix-PR öffnet. [Autofix](docs/AUTOFIX.md)
-- Claude in der App, mit deinem eigenen Anthropic-Schlüssel: Fehler erklären, verständliche Release-Notes, kann das live gehen. [Claude in der App](docs/CLAUDE.md) (Englisch)
+- Claude fragen, mit deinem eigenen Anthropic-Key: warum ein Build scheiterte, Release-Notes, ist das sicher zu deployen. [Claude in der App](docs/CLAUDE.md) (Englisch)
+- Sichere Deploys (nur grüne CI, Health-Check mit Rollback, Deploy-Fenster), ein Wächter, der Auto-Deploy wieder abschaltet, und ein Team-Modus ohne Server. [Sichere Deploys](docs/SAFE-DEPLOY.md) · [Wächter](docs/GUARD.md) · [Team](docs/TEAM.md) (Englisch)
+- Bug-Scan: Claude Code auf deinem Mac sucht im Repo nach Bugs und öffnet einen Fix-PR. [Bug-Scan](docs/SCAN.md) (Englisch)
+- Sicherheits-Check: OSV-Scanner, gitleaks und Semgrep (kostenlos, lokal); Funde können an den Bug-Scan gehen. [Sicherheits-Check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep) (Englisch)
 - Englisch und Deutsch: die Sprache des Macs, oder wähle eine unter Einstellungen → Allgemein → Sprache
 
 ## Deploy Center + Claude Code
@@ -85,7 +85,8 @@ Neu dabei? [Sicher ausprobieren](docs/SAFE-START.md) (Englisch): erst schauen, d
   Bescheid; du deployst den Fix mit einem Klick. Gemergt und deployt wird nie von selbst. [Autofix](docs/AUTOFIX.md) (Englisch)
 - **Ein Deploy für viele Pushes.** Der Agent darf pushen, so oft er will; gebaut wird erst, wenn du deployst, was sich geändert hat.
 - **Für Claude kopieren.** Im Build-Log eines fehlgeschlagenen Deploys kopiert ein Knopf den Fehler und das Log drumherum als Prompt, fertig zum Einfügen.
-- **MCP-Server und Claude-Code-Plugin.** Claude kann fragen, was wartet, und deployt nur mit deinem OK (nur lesend, solange du es nicht erlaubst). [Claude Code](docs/CLAUDE-CODE.md) · [MCP-Server](integrations/mcp/) (Englisch)
+- **MCP-Server.** Claude kann fragen, was wartet, und deployt nur mit deinem OK. [MCP-Server](integrations/mcp/) · [Claude-Code-Plugin](integrations/claude-code/) (Englisch)
+- **Agent-Digest.** Einmal am Tag, was der Agent gepusht hat, zum Freigeben. [Digest](integrations/digest/) (Englisch)
 
 Mehr: [deploycenter.app/claude-code](https://deploycenter.app/claude-code/)
 
@@ -96,8 +97,8 @@ Mehr: [deploycenter.app/claude-code](https://deploycenter.app/claude-code/)
 | **Vercel** | Entfernt die Git-Verbindung des Projekts. Vorher notiert es Repo und Branch in `~/.config/deploys/vercel-repos.json`. | Project → Settings → Git → Repository wieder verbinden. |
 | **Render** | Stellt Auto-Deploy des Service auf *Off*. Der Service bleibt mit seinem Repo verbunden. | Service → Settings → Build & Deploy → Auto-Deploy → *On Commit*. |
 
-Wieder einschalten: `deploys vercel autodeploy-on <projekt>` oder `deploys render autodeploy-on <service>` (oder `--all`),
-oder im jeweiligen Dashboard. Deinstallieren schaltet es nicht wieder ein. Deploy-Hooks und GitHub-Workflows, die deployen, laufen weiter;
+Auto-Deploy wieder einschalten: `deploys vercel autodeploy-on <projekt>|--all` und `deploys render autodeploy-on <service>|--all`, oder im jeweiligen Dashboard.
+Deinstallieren schaltet es nicht wieder ein. Deploy-Hooks und GitHub-Workflows, die deployen, laufen weiter;
 `deploys triggers` listet sie auf. Bei Render kann ein Blueprint mit Auto-Sync Auto-Deploy wieder einschalten:
 Trag `autoDeployTrigger: off` bei deinen Services in `render.yaml` ein.
 Details (Englisch): [Auto-Deploy aus und wieder an](docs/AUTO-DEPLOY.md) · [Deinstallieren](docs/UNINSTALL.md).
@@ -124,11 +125,12 @@ Einstellungen: [docs/CLI.md](docs/CLI.md) (Englisch).
 - [x] Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify (zum Einschalten)
 - [x] Allgemeiner Deploy-Hook (jede Plattform mit einer Deploy-URL)
 - [x] GitLab als Quelle neben GitHub
-- [x] MCP-Server für KI-Agenten, Claude-Code-Plugin, VS-Code-Erweiterung
-- [x] CLI für Linux: `install.sh`, ein Release-Tarball, eine Homebrew-Formel
-- [x] Team-Modus ohne Server (eine gemeinsame `deploy-center.json` im Repo)
+- [x] MCP-Server für KI-Agenten, Claude-Code-Plugin, Agent-Digest, VS-Code-Erweiterung
+- [x] Raycast-Erweiterung
+- [x] Linux-Pakete für die CLI (`install.sh`, Homebrew-Formel)
+- [x] Team-Modus (eine gemeinsame `deploy-center.json`, kein Server)
 - [x] Mac-Widgets, Befehlspalette, Claude in der App
-- [ ] Raycast-Erweiterung im Raycast Store (die Erweiterung liegt in `integrations/raycast/`)
+- [ ] Bitbucket und Gitea als Quelle
 - [ ] iPhone-App im App Store
 
 Welche Plattform soll als Nächstes kommen? [Stimm per Issue ab](https://github.com/Pschmetzer/deploy-center/issues/new?template=platform-request.yml).
@@ -145,7 +147,7 @@ Welche Plattform soll als Nächstes kommen? [Stimm per Issue ab](https://github.
 
 ## FAQ
 
-**Was kostet es?** Nichts. Vercel und Render bezahlst du für die Builds, die du startest, und davon gibt es weniger.
+**Was kostet es?** Nichts. Deine Hosts (Vercel, Render, …) bezahlst du für die Builds, die du startest, und davon gibt es weniger.
 
 **Deployt es etwas von selbst?** Nein. Es deployt, wenn du **Deployen** drückst oder einen `deploys`-Befehl
 mit `--yes` ausführst. Ein geplantes Deploy richtest du selbst ein: [examples/](examples/).
@@ -155,18 +157,18 @@ auf dein Render-Konto.
 
 **Schickt die App Daten irgendwohin?** Keine Telemetrie, kein Konto, kein eigener Server. Sie spricht mit
 Vercel, Render und GitHub über deine eigenen Logins, mit deinen Websites für Logos und den Check nach einem
-Deploy, und einmal am Tag mit deploycenter.app/appcast.xml wegen Updates, geladen von GitHub (abschaltbar in den Einstellungen). Fehler landen in `~/Library/Logs/DeployCenter.log` auf deinem Mac.
+Deploy, und einmal am Tag mit deploycenter.app/appcast.xml wegen Updates, die von GitHub geladen werden (abschaltbar in den Einstellungen). Fehler landen in `~/Library/Logs/DeployCenter.log` auf deinem Mac.
 
-**GitLab oder Bitbucket?** GitLab ja: Was wartet, liest die App von gitlab.com oder deinem eigenen GitLab ([GitLab](docs/GITLAB.md), Englisch). Bitbucket noch nicht.
+**GitLab oder Bitbucket?** GitLab ja: gitlab.com und eigene Instanzen, über `glab` oder `GITLAB_TOKEN` ([GitLab](docs/GITLAB.md), Englisch). Bitbucket noch nicht.
 
-**Windows oder Linux?** Die App braucht macOS 15. Die `deploys`-CLI ist Bash und läuft unter Linux und in CI.
+**Windows oder Linux?** Die App braucht macOS 15. Die `deploys`-CLI ist Bash und läuft unter Linux, in WSL und in CI: `curl -fsSL https://deploycenter.app/install.sh | sh`.
 
 Mehr (Englisch): [FAQ](docs/FAQ.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Glossar](docs/GLOSSARY.md) · [Alle Docs](docs/README.md)
 
 ## Mitmachen
 
 Ideen und Fehlerberichte gern in den [Issues](https://github.com/Pschmetzer/deploy-center/issues).
-Am meisten gesucht: Hinweise, wenn eine Zahl in der App falsch aussieht.
+Am meisten gesucht: Bitbucket oder Gitea neben GitHub und GitLab, und Hinweise, wenn eine Zahl in der App falsch aussieht.
 Kleine Aufgaben für den Einstieg: [Good first issues](docs/GOOD-FIRST-ISSUES.md). Bauen und testen:
 [CONTRIBUTING.md](CONTRIBUTING.md).
 

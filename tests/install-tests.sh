@@ -27,11 +27,22 @@ tarball="$tmp/pkg/deploys-cli-$version.tar.gz"
 listing="$(tar -tzf "$tarball" | LC_ALL=C sort | tr '\n' ' ')"
 # providers/ goes in when the repo has it (its files, sorted, after deploys).
 want="deploys-cli-$version/ deploys-cli-$version/LICENSE deploys-cli-$version/README-CLI.md deploys-cli-$version/VERSION deploys-cli-$version/deploys "
+# The pre-push for `deploys hooks install` (INT-082); the list is sorted below.
+if [ -f integrations/hooks/pre-push ]; then
+  want+="deploys-cli-$version/integrations/ deploys-cli-$version/integrations/hooks/ deploys-cli-$version/integrations/hooks/pre-push "
+fi
 if [ -d providers ]; then
   want+="deploys-cli-$version/providers/ "
   while IFS= read -r f; do want+="deploys-cli-$version/$f "; done < <(find providers -type f | LC_ALL=C sort)
 fi
+# lib/ too (team.sh, githost.sh, savings.sh): without it team mode, GitLab, simulate and ledger are gone.
+if [ -d lib ]; then
+  want+="deploys-cli-$version/lib/ "
+  while IFS= read -r f; do want+="deploys-cli-$version/$f "; done < <(find lib -type f | LC_ALL=C sort)
+  want="$(printf '%s' "$want" | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')"
+fi
 expect "package: contents" "$listing" "$want"
+contains "package: lib/team.sh goes in" "$listing" "deploys-cli-$version/lib/team.sh"
 expect "package: checksums.txt" "$(cat "$tmp/pkg/checksums.txt")" "$(sha256 "$tarball")  deploys-cli-$version.tar.gz
 $(sha256 LICENSE)  LICENSE"
 cp LICENSE "$tmp/pkg/"
@@ -98,6 +109,9 @@ expect "deploys --help: exit 0" "$rc" 0
 contains "deploys --help: the command list" "$help" "deploys doctor"
 expect "deploys --version" "$("$prefix/bin/deploys" --version)" "$version"
 [ -f "$prefix/lib/deploys/README-CLI.md" ] && ok "files in lib/deploys" || fail "files in lib/deploys" "no README-CLI.md"
+if [ -d lib ]; then
+  [ -f "$prefix/lib/deploys/lib/team.sh" ] && ok "install: lib/ next to deploys" || fail "install: lib/ next to deploys" "no lib/team.sh"
+fi
 contains "install: PATH hint when bin is not on PATH" "$out" "is not on your PATH"
 contains "install: dependency check runs" "$out" "Checking what deploys uses"
 out="$(PATH="$prefix/bin:$PATH" inst --prefix "$prefix")"; rc=$?
@@ -180,6 +194,7 @@ f="$(scripts/homebrew-formula.sh "$version" "$(sha256 "$tarball")")"; rc=$?
 expect "formula: exit 0" "$rc" 0
 contains "formula: url" "$f" "releases/download/v$version/deploys-cli-$version.tar.gz"
 contains "formula: depends on jq" "$f" 'depends_on "jq"'
+contains "formula: installs lib/" "$f" 'libexec.install "lib" if File.directory?("lib")'
 contains "formula: test runs --version" "$f" 'deploys --version'
 if command -v ruby >/dev/null; then
   ruby -c <<<"$f" >/dev/null 2>&1 && ok "formula: valid Ruby" || fail "formula: valid Ruby" "ruby -c failed"
@@ -189,6 +204,45 @@ scripts/homebrew-formula.sh --write "$tmp/tap" --no-check "$version" "$(sha256 "
 [ -f "$tmp/tap/Formula/deploys.rb" ] && ok "formula --write" || fail "formula --write" "no Formula/deploys.rb"
 scripts/homebrew-formula.sh 1.2 abc >/dev/null 2>&1
 expect "formula: bad version fails" "$?" 1
+
+# --- CI lane: edge cases of install.sh (DOC-073) ---------------------------------------------
+# A good install first; each broken release below must leave it as it was.
+edge="$tmp/edge"; inst --prefix "$edge" >/dev/null
+# The download stopped before checksums.txt: nothing changes.
+nosums="$tmp/nosums"; cp -R "$rel" "$nosums"; rm "$nosums/latest/download/checksums.txt"
+out="$(DEPLOYS_INSTALL_BASE="file://$nosums" inst --prefix "$edge")"; rc=$?
+expect "no checksums.txt: fails and says so" "$rc:$(grep -c 'could not download' <<<"$out")" "1:1"
+expect "no checksums.txt: the install before still works" "$("$edge/bin/deploys" --version)" "$version"
+# A release whose tarball is cut short, with a checksums.txt that matches it (a broken upload).
+cut="$tmp/cut"; cp -R "$rel" "$cut"; t="$cut/download/v$version/deploys-cli-$version.tar.gz"
+head -c 200 "$tarball" > "$t"
+printf '%s  %s\n' "$(sha256 "$t")" "deploys-cli-$version.tar.gz" > "$cut/latest/download/checksums.txt"
+out="$(DEPLOYS_INSTALL_BASE="file://$cut" inst --prefix "$edge")"; rc=$?
+[ "$rc" != 0 ] && ok "cut tarball: fails" || fail "cut tarball: fails" "exit 0: $out"
+expect "cut tarball: the install before still works" "$("$edge/bin/deploys" --version)" "$version"
+[ ! -e "$edge/lib/deploys.new" ] && ok "cut tarball: no half-copied lib/deploys.new" || fail "cut tarball: lib/deploys.new" "left behind"
+# A system install.sh does not know (Windows shells, an unknown kernel): it installs and only the hints are generic.
+fakeos="$tmp/fakeos"; mkdir -p "$fakeos"
+for os in MINGW64_NT-10.0-19045 FreeBSD; do
+  printf '#!/bin/sh\necho %s\n' "$os" > "$fakeos/uname"; chmod +x "$fakeos/uname"
+  out="$(PATH="$fakeos:$PATH" inst --prefix "$tmp/os-$os")"; rc=$?
+  expect "uname $os: installs" "$rc:$("$tmp/os-$os/bin/deploys" --version 2>/dev/null)" "0:$version"
+done
+# install.sh under BusyBox sh (Alpine), when BusyBox is there.
+if command -v busybox >/dev/null && busybox sh -c true 2>/dev/null; then
+  out="$(busybox sh "$repo/site/install.sh" --prefix "$tmp/bb" 2>&1)"; rc=$?
+  expect "busybox sh: installs" "$rc:$("$tmp/bb/bin/deploys" --version 2>/dev/null)" "0:$version"
+else
+  echo "skip busybox sh (not installed)"
+fi
+# ===== CLI track (improve/cli): additions, kept together =====
+# The tarball carries lib/, and an installed deploys finds it (team mode, GitLab, savings).
+contains "package: lib/team.sh goes in" "$listing" "deploys-cli-$version/lib/team.sh"
+contains "formula: installs lib/" "$f" 'libexec.install "lib"'
+inst --prefix "$tmp/p-lib" >/dev/null
+[ -f "$tmp/p-lib/lib/deploys/lib/team.sh" ] && ok "install: lib/ next to deploys" || fail "install: lib/ next to deploys" "no lib/team.sh"
+expect "install: an installed deploys has team mode" "$(DEPLOYS_CONFIG="$tmp/cfg-lib" "$tmp/p-lib/bin/deploys" config --json 2>/dev/null | jq -r 'has("projects")')" "true"
+# ===== end CLI track =====
 
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails failed"; exit 1; fi

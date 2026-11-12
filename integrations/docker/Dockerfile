@@ -3,18 +3,29 @@
 # Run (keys from the environment, never baked into the image):
 #   docker run --rm -e VERCEL_TOKEN -e RENDER_API_KEY -e GH_TOKEN \
 #     -v "$PWD/deploys-config:/config" deploys changed --json
-FROM node:22-bookworm-slim
+# Pinned by digest (the multi-arch index), so a rebuild gets the same base. To update:
+#   docker buildx imagetools inspect node:22-bookworm-slim   (the Digest: line)
+FROM node:22-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
 
 ARG VERCEL_CLI_VERSION=65.12.1
 
 # bsdextrautils has `column`, used by the table output of status and the lists.
+# gh comes from GitHub's own apt repo (Debian's is far behind), as cli/cli's docs/install_linux.md says.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends bash jq curl ca-certificates git gh bsdextrautils \
+ && apt-get install -y --no-install-recommends bash jq curl ca-certificates git bsdextrautils \
+ && mkdir -p -m 755 /etc/apt/keyrings \
+ && curl -fsSL -o /etc/apt/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+ && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends gh \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g --no-fund --no-audit "vercel@${VERCEL_CLI_VERSION}" \
  && npm cache clean --force
 
 COPY deploys /usr/local/bin/deploys
+# VERSION next to the script, so `deploys --version` names the release.
+COPY VERSION /usr/local/bin/VERSION
 # The platforms, one file each. DEPLOYS_DIR says where they are (not next to the script here).
 COPY providers /usr/local/lib/deploys/providers
 # lib/ (team mode, GitLab) is found next to the script itself.

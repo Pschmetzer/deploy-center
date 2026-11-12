@@ -21,10 +21,5 @@ no real project names in examples, texts in English and German, nothing builds w
    knows Discord, Slack-style, ntfy and Telegram. Add a Teams format and a test in
    [integrations/tests/run.sh](../integrations/tests/run.sh).
 
-6. **Troubleshooting entry from a real error.** Pick an error message in [`deploys`](../deploys) or
-   [`providers/`](../providers/) that is not in [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) yet and
-   add what it means and what to do.
-
-7. **A negative test for a check script.** `scripts/check-links.py` and `scripts/check-site.py` have
-   no test that they catch a broken link. Add a small fixture folder with one broken link and a
-   test that expects the script to fail.
+6. **Troubleshooting entry from a real error.** Pick an error message in [`deploys`](../deploys) that
+   is not in [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) yet and add what it means and what to do.

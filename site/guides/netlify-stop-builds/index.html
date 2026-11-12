@@ -27,6 +27,7 @@
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="stylesheet" href="/css/site.css">
 <script type="application/ld+json">
 [
@@ -94,7 +95,7 @@
     "name": "Does Deploy Center support Netlify?",
     "acceptedAnswer": {
      "@type": "Answer",
-     "text": "Not yet. Vercel and Render are supported today; Netlify support is coming."
+     "text": "Yes, as an opt-in host: deploys providers enable netlify. It uses a build hook and an ignore rule in netlify.toml, so a push builds nothing and a deploy from Deploy Center goes through."
     }
    }
   ]
@@ -130,7 +131,7 @@
 <a class="skip" href="#main">Skip to content</a>
 <nav class="top" aria-label="Main"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
-  <div class="links"><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></div>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
 </div></nav>
 
 <main id="main" class="wrap narrow"><article>
@@ -140,12 +141,12 @@
 <p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <div class="tablewrap"><table>
-  <thead><tr><th></th><th>Stop builds</th><th><code>ignore</code> + build hook</th></tr></thead>
+  <thead><tr><th scope="col">What</th><th>Stop builds</th><th><code>ignore</code> + build hook</th></tr></thead>
   <tbody>
-    <tr><td>Git pushes</td><td>No build</td><td>Cancelled by the ignore command</td></tr>
-    <tr><td>Build hook</td><td>No build</td><td>Builds</td></tr>
-    <tr><td>How you deploy</td><td><code>netlify deploy --prod</code> from your machine or CI</td><td>One POST to the hook URL; Netlify builds</td></tr>
-    <tr><td>Where it is set</td><td>Site settings (or API)</td><td><code>netlify.toml</code> in the repository</td></tr>
+    <tr><th scope="row">Git pushes</th><td>No build</td><td>Cancelled by the ignore command</td></tr>
+    <tr><th scope="row">Build hook</th><td>No build</td><td>Builds</td></tr>
+    <tr><th scope="row">How you deploy</th><td><code>netlify deploy --prod</code> from your machine or CI</td><td>One POST to the hook URL; Netlify builds</td></tr>
+    <tr><th scope="row">Where it is set</th><td>Site settings (or API)</td><td><code>netlify.toml</code> in the repository</td></tr>
   </tbody>
 </table></div>
 
@@ -184,17 +185,17 @@ netlify deploy --prod</code></pre>
   ignore = '[ "$CONTEXT" = production ] &amp;&amp; [ -z "$INCOMING_HOOK_TITLE" ]'</code></pre>
 
 <h2>Netlify in Deploy Center</h2>
-<p><a href="/">Deploy Center</a> supports Vercel and Render today. Netlify support is coming, built on the build hook approach above, so the app can show what is waiting and deploy it with one click. Follow the <a href="https://github.com/Pschmetzer/deploy-center">repository</a> for the release.</p>
+<p><a href="/">Deploy Center</a> supports Netlify as an opt-in host, built on the build hook approach above. Turn it on with <code>deploys providers enable netlify</code>, store a personal access token with <code>deploys netlify set-key</code>, then run <code>deploys netlify autodeploy-off &lt;site&gt;</code>: it creates a build hook named <code>deploy-center</code> and prints the <code>ignore</code> line for <code>netlify.toml</code>. Deploy Center accepts the rule <code>ignore = "[ -z \"$INCOMING_HOOK_TITLE\" ]"</code>, which skips every build a build hook did not start. Setup, limits and what it cannot do: <a href="/docs/netlify/">the Netlify provider docs</a>.</p>
 
 <h2 id="faq">Questions</h2>
   <details><summary>What is the difference between Stop builds and the ignore command?</summary><p>Stop builds stops every build, build hooks included; you deploy by uploading a build with the CLI. The ignore command cancels the builds it rejects, so you can still let build hook builds through.</p></details>
   <details><summary>Which exit code skips a Netlify build?</summary><p>Exit code 0 cancels the build. Exit code 1 lets it run.</p></details>
   <details><summary>How do I know a build came from a build hook?</summary><p>Netlify sets <code>INCOMING_HOOK_TITLE</code>, <code>INCOMING_HOOK_URL</code> and <code>INCOMING_HOOK_BODY</code> for builds triggered by a build hook. For a push they are empty.</p></details>
-  <details><summary>Does Deploy Center support Netlify?</summary><p>Not yet. Vercel and Render are supported today; Netlify support is coming.</p></details>
+  <details><summary>Does Deploy Center support Netlify?</summary><p>Yes, as an opt-in host: <code>deploys providers enable netlify</code>. It uses a build hook and an ignore rule in <code>netlify.toml</code>, so a push builds nothing and a deploy from Deploy Center goes through.</p></details>
 
 <div class="ctabox">
   <h2>Use Vercel or Render too?</h2>
-  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click and deploys what changed when you decide. Free and open source for macOS; Netlify support is coming.</p>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
   <div class="cta">
     <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
     <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
@@ -236,7 +237,7 @@ netlify deploy --prod</code></pre>
       <li><a href="/datenschutz.html">Datenschutz</a></li>
     </ul></div>
   </div>
-  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render or Netlify.</p>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
 </div></footer>
 </body>
 </html>

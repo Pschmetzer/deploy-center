@@ -12,12 +12,15 @@
       img.src=img.dataset[t];
     });
   }
+  const label=()=>document.querySelectorAll('.theme').forEach(b=>b.setAttribute('aria-label',current()==='light'?'Switch to dark mode':'Switch to light mode'));
   if(root.hasAttribute('data-theme')) swapImages();
+  label();
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change',label);
   document.querySelectorAll('.theme').forEach(btn=>btn.addEventListener('click',()=>{
     const next=current()==='light'?'dark':'light';
     root.setAttribute('data-theme',next);
     try{localStorage.setItem('theme',next)}catch(e){}
-    swapImages();
+    swapImages(); label();
   }));
 })();
 // copy buttons, with a fallback and a message for screen readers
@@ -27,8 +30,9 @@
   document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',async()=>{
     const text=b.dataset.copy; let ok=false;
     try{await navigator.clipboard.writeText(text);ok=true}catch(e){ok=fallback(text)}
-    b.textContent=ok?'Copied':'Select to copy';
-    if(live) live.textContent=ok?'Copied to the clipboard':'Copying failed; select the text instead';
+    if(!ok){const pre=b.parentElement.querySelector('pre');if(pre){const r=document.createRange();r.selectNodeContents(pre);const sel=getSelection();sel.removeAllRanges();sel.addRange(r)}}
+    b.textContent=ok?'Copied':'Selected: press Cmd-C';
+    if(live) live.textContent=ok?'Copied to the clipboard':'Copying failed; the command is selected, press Command-C';
     setTimeout(()=>{b.textContent='Copy'},1600);
   }));
 })();
@@ -43,6 +47,9 @@
 })();
 // mobile menu: close after a link is chosen
 document.querySelectorAll('.menu .panel a').forEach(a=>a.addEventListener('click',()=>a.closest('details').removeAttribute('open')));
+// and Escape or a click outside it
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;document.querySelectorAll('details.menu[open]').forEach(d=>{d.removeAttribute('open');d.querySelector('summary').focus()})});
+document.addEventListener('click',e=>{document.querySelectorAll('details.menu[open]').forEach(d=>{if(!d.contains(e.target))d.removeAttribute('open')})});
 // sticky download on phones, once the hero button is out of view and before the final call to action
 (function(){
   const s=document.getElementById('sticky'), dl=document.getElementById('dl'), fin=document.querySelector('.final');

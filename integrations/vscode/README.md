@@ -15,7 +15,7 @@ ready to paste back into the agent.
   Click it for **Deploy** (with confirmation), **Open site**, **Show log** and **Copy release notes**.
 - **Tree "Deploy Center"** in the Explorer: each project with its waiting commits and PRs, how
   long they have waited, and whether it is building or failed. Refresh is in the view's title bar.
-- **Failed builds:** **Show log** puts the build log into the "Deploy Center" output channel.
+- **Failed builds:** **Show log** opens the build log as a read-only document (the "Deploy Center" output channel keeps its warnings and deploy results).
   **Copy for AI** copies the first error and the lines around it, with tokens and keys masked.
 
 ## Commands
@@ -26,6 +26,13 @@ ready to paste back into the agent.
 | Deploy Center: Refresh | Read the projects again |
 | Deploy Center: Show Actions | The status bar's quick pick |
 | Deploy Center: Show Build Log / Copy Build Error for AI / Copy Release Notes / Open Site / Open Dashboard | For one project |
+| Deploy Center: Deploy Preview | Vercel: the newest commit at a preview address, after a confirmation; production stays |
+| Deploy Center: Roll Back Production | Vercel and Render: production back to the deploy before, after a confirmation |
+
+## Languages
+
+English and German, following the editor's display language (`Configure Display Language`).
+The text that **Copy for AI** puts on the clipboard stays English.
 
 ## Needs
 
@@ -37,6 +44,10 @@ The `deploys` CLI, which comes with the free Mac app. It is looked for in this o
 4. `deploys` on `PATH` (also `/opt/homebrew/bin` and `/usr/local/bin`).
 
 Without it, the status bar says `deploys not found` and offers the download and the setting.
+
+In a remote window (SSH, WSL, Dev Container) the extension runs on your own machine, where the app
+and your logins are (`extensionKind: ui`). It cannot read the remote folder's git remotes from
+there, so with `deployCenter.scope` set to `auto` it shows every project.
 
 ## Settings
 

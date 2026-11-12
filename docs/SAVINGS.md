@@ -95,7 +95,7 @@ ledger (`since`, `days` since the first project was turned off, at the top):
 ## Limits
 
 - An estimate, not a bill. Your invoice from Vercel or Render is what counts.
-- Vercel and Render only. The other platforms in `providers/` are not measured yet.
+- Vercel and Render only. The numbers come from each host's list of past deploys and a price per build minute, and only these two are wired up so far. The opt-in hosts (Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify, deploy hooks) do not appear in `simulate` or `ledger`, not even as a count; there is no date for that yet. Until then, their own dashboards show the build minutes.
 - Every build is priced at the average. Build caches, larger machines and included minutes are not in it.
 - Vercel billing covers the last 7 days only. A project without billed builds there falls back to the team rate.
 - The commit fallback overcounts when a push carries several commits.

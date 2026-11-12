@@ -23,8 +23,17 @@ enum LogTools {
     static func firstErrorLine(_ lines: [String]) -> Int? { lines.firstIndex(where: isErrorLine) }
 
     /// Keys and tokens a build may print, replaced before a log leaves the app (clipboard, prompt).
+    /// The same kinds as the script's masker (`af_mask` in deploys), so "Copy for Claude" lets none through that Autofix would hide.
     private static let secrets: [(NSRegularExpression, String)] = [
+        // A private key over several lines, or one cut off before its END line.
+        (#"(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----.*?(-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----|\z)"#, "[PRIVATE KEY]"),
         (#"\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"#, "[GITHUB TOKEN]"),
+        (#"\bglpat-[A-Za-z0-9_-]{8,}"#, "[GITLAB TOKEN]"),
+        (#"\b((sk|rk|pk)_(live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,})"#, "[STRIPE KEY]"),
+        (#"\bAIza[A-Za-z0-9_-]{20,}"#, "[GOOGLE KEY]"),
+        (#"\bnpm_[A-Za-z0-9]{20,}"#, "[NPM TOKEN]"),
+        (#"\bASIA[0-9A-Z]{12,}"#, "[AWS KEY]"),
+        (#"(--(?i:token|password|api-key|secret)(?:=|\s+))[^\s"']+"#, "$1[HIDDEN]"),
         (#"\bsk-[A-Za-z0-9_-]{16,}"#, "[API KEY]"),
         (#"\brnd_[A-Za-z0-9]{16,}"#, "[RENDER KEY]"),
         (#"\bAKIA[0-9A-Z]{16}\b"#, "[AWS KEY]"),

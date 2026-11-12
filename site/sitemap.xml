@@ -16,16 +16,30 @@
   <url><loc>https://deploycenter.app/docs/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/getting-started/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/safe-start/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/install-cli/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/cli/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/auto-deploy/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/autofix/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/safe-deploy/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/guard/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/savings/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/team/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/claude/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/claude-code/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/gitlab/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/deploy-hooks/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/netlify/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/cloudflare-pages/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/aws-amplify/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/digitalocean/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/coolify/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/ci/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/uninstall/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/numbers/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/glossary/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/faq/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/troubleshooting/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/providers/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/verify/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/action/</loc><lastmod>2026-11-10</lastmod></url>
@@ -34,10 +48,10 @@
   <url><loc>https://deploycenter.app/docs/integrations/notify/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/hooks/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/mcp/</loc><lastmod>2026-11-10</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/docker/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/claude-code/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/digest/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/raycast/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/vscode/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/docker/</loc><lastmod>2026-11-10</lastmod></url>
   <!-- /docs -->
 </urlset>

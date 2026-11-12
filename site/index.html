@@ -29,9 +29,12 @@
 <link rel="icon" href="img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="manifest" href="site.webmanifest">
-<link rel="preload" as="image" type="image/webp" href="img/app-dark-1800.webp" imagesrcset="img/app-dark-900.webp 900w, img/app-dark-1800.webp 1800w" imagesizes="(max-width: 1040px) 100vw, 1000px">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="preload" as="image" type="image/webp" href="img/app-dark-1800.webp" imagesrcset="img/app-dark-900.webp 900w, img/app-dark-1800.webp 1800w" imagesizes="(max-width: 960px) 100vw, 920px">
 <script type="application/ld+json">
-[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Deploy Center", "description": "Free, open-source Mac app and CLI that turns off auto-deploy on Vercel, Render and other hosts, deploys what changed when you decide, and hands failed builds to Claude for a fix PR.", "operatingSystem": "macOS 15 or later; CLI on macOS, Linux and WSL", "applicationCategory": "DeveloperApplication", "softwareVersion": "0.9.1", "image": "https://deploycenter.app/img/og.png", "screenshot": "https://deploycenter.app/img/app-dark-1800.webp", "featureList": ["Turn off auto-deploy on Vercel and Render in one click", "Opt-in hosts: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, any deploy hook", "Commits and pull requests waiting to go live, from GitHub or GitLab", "Deploy, preview deploy and rollback", "Autofix: a failed build goes to a Claude Code routine that opens a fix PR", "Claude in the app: explain a failure, release notes, is this safe to ship", "Connect Claude Desktop and Claude Code; MCP server and Claude Code plugin", "Deploy only when CI is green, site check with automatic rollback, deploy windows, risk score", "Auto-deploy guard", "Build costs, savings simulator and ledger", "Mac widgets, menu bar and command palette", "Team mode without a server: shared config, observers, two-person rule", "bash CLI for Linux, WSL and CI"], "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/licenses/MIT", "url": "https://deploycenter.app/", "downloadUrl": "https://github.com/Pschmetzer/deploy-center/releases/latest", "releaseNotes": "https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md", "codeRepository": "https://github.com/Pschmetzer/deploy-center", "sameAs": ["https://github.com/Pschmetzer/deploy-center"], "author": {"@type": "Person", "name": "Patrick Schmetzer", "url": "https://github.com/Pschmetzer"}, "isAccessibleForFree": true},
+[{"@context": "https://schema.org", "@type": "WebSite", "@id": "https://deploycenter.app/#website", "name": "Deploy Center", "url": "https://deploycenter.app/", "inLanguage": "en", "publisher": {"@id": "https://deploycenter.app/#org"}},
+{"@context": "https://schema.org", "@type": "Organization", "@id": "https://deploycenter.app/#org", "name": "Deploy Center", "url": "https://deploycenter.app/", "logo": "https://deploycenter.app/img/icon-512.png", "sameAs": ["https://github.com/Pschmetzer/deploy-center", "https://github.com/Pschmetzer/homebrew-tap"]},
+{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Deploy Center", "description": "Free, open-source Mac app and CLI that turns off auto-deploy on Vercel, Render and other hosts, deploys what changed when you decide, and hands failed builds to Claude for a fix PR.", "operatingSystem": "macOS 15 or later; CLI on macOS, Linux and WSL", "softwareRequirements": "macOS 15 or later, Apple silicon or Intel; the CLI needs bash, curl and jq", "applicationCategory": "DeveloperApplication", "softwareVersion": "0.9.1", "image": "https://deploycenter.app/img/og.png", "screenshot": "https://deploycenter.app/img/app-dark-1800.webp", "featureList": ["Turn off auto-deploy on Vercel and Render in one click", "Opt-in hosts: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, any deploy hook", "Commits and pull requests waiting to go live, from GitHub or GitLab", "Deploy, preview deploy and rollback", "Autofix: a failed build goes to a Claude Code routine that opens a fix PR", "Claude in the app: explain a failure, release notes, is this safe to ship", "Connect Claude Desktop and Claude Code; MCP server and Claude Code plugin", "Deploy only when CI is green, site check with automatic rollback, deploy windows, risk score", "Auto-deploy guard", "Build costs, savings simulator and ledger", "Mac widgets, menu bar and command palette", "Team mode without a server: shared config, observers, two-person rule", "bash CLI for Linux, WSL and CI"], "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/licenses/MIT", "url": "https://deploycenter.app/", "downloadUrl": "https://github.com/Pschmetzer/deploy-center/releases/latest", "releaseNotes": "https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md", "codeRepository": "https://github.com/Pschmetzer/deploy-center", "sameAs": ["https://github.com/Pschmetzer/deploy-center"], "author": {"@type": "Person", "name": "Patrick Schmetzer", "url": "https://github.com/Pschmetzer"}, "isAccessibleForFree": true},
 {"@context": "https://schema.org", "@type": "HowTo", "name": "Turn off auto-deploy and deploy by hand with Deploy Center", "step": [{"@type": "HowToStep", "name": "Connect", "text": "Use your vercel CLI login, a Render API key in the macOS keychain, and gh or glab for GitHub or GitLab."}, {"@type": "HowToStep", "name": "Turn auto-deploy off", "text": "One click for every project. The simulator shows the expected saving first; the guard keeps auto-deploy off."}, {"@type": "HowToStep", "name": "Deploy when you want", "text": "Select all changed, then Deploy. Optionally only when CI is green, with a site check and automatic rollback."}]},
 {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
 {"@type": "Question", "name": "Is it really free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. MIT license, no paid tier, no account. The code is on GitHub."}},
@@ -39,11 +42,11 @@
 {"@type": "Question", "name": "Does Claude merge or deploy anything on its own?", "acceptedAnswer": {"@type": "Answer", "text": "No. Autofix opens a fix pull request and never merges it; deploying stays a click. The MCP server is read-only unless you switch on Let Claude deploy, and then Claude asks before each deploy or rollback, one project at a time."}},
 {"@type": "Question", "name": "Do I need an Anthropic API key?", "acceptedAnswer": {"@type": "Answer", "text": "Only for Claude in the app (explain a failure, release notes, ship check), which is off by default and has a monthly token cap. Autofix runs as your own Claude Code routine. Everything else works without Claude."}},
 {"@type": "Question", "name": "What do I lose without auto-deploy?", "acceptedAnswer": {"@type": "Answer", "text": "Automatic deploys and automatic preview builds per pull request. You have to remember to deploy; the menu bar count, the widgets and an optional daily summary help. Preview deploys can still be started by hand."}},
-{"@type": "Question", "name": "Can I go back?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. deploys vercel autodeploy-on and deploys render autodeploy-on turn it back on, or use the Vercel and Render dashboards. Deploy Center remembers each Vercel repo before it disconnects it."}},
-{"@type": "Question", "name": "Which hosts are supported?", "acceptedAnswer": {"@type": "Answer", "text": "Vercel and Render are on by default. Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and a generic deploy hook are opt-in with deploys providers enable or Settings, Platforms. Waiting commits come from GitHub or GitLab."}},
+{"@type": "Question", "name": "Can I go back?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The commands \"deploys vercel autodeploy-on --all\" and \"deploys render autodeploy-on --all\" turn it back on, or use the Vercel and Render dashboards. Deploy Center remembers each Vercel repo before it disconnects it."}},
+{"@type": "Question", "name": "Which hosts are supported?", "acceptedAnswer": {"@type": "Answer", "text": "Vercel and Render are on by default. Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and a generic deploy hook are opt-in with the command \"deploys providers enable <name>\" or in Settings, Platforms. Waiting commits come from GitHub or GitLab."}},
 {"@type": "Question", "name": "Is there an iPhone app?", "acceptedAnswer": {"@type": "Answer", "text": "It is built and on its way to the App Store: what waits, deploy and rollback with Face ID, and Home Screen widgets. The Mac app and its widgets are available now."}},
 {"@type": "Question", "name": "Can my team use it?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, without a server: a shared deploy-center.json in each repo, observer mode, and an optional two-person rule for production deploys."}},
-{"@type": "Question", "name": "Windows or Linux?", "acceptedAnswer": {"@type": "Answer", "text": "The app is macOS only. The deploys CLI is bash and installs on Linux, WSL and in CI with curl -fsSL https://deploycenter.app/install.sh | sh."}}]}]
+{"@type": "Question", "name": "Windows or Linux?", "acceptedAnswer": {"@type": "Answer", "text": "The app is macOS only. The deploys CLI is bash and installs on Linux, WSL and in CI with the command \"curl -fsSL https://deploycenter.app/install.sh | sh\"."}}]}]
 </script>
 <script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="stylesheet" href="css/home.css">
@@ -51,7 +54,7 @@
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <nav aria-label="Main"><div class="wrap">
-  <a class="brand" href="/"><img src="img/icon.png" alt="" width="24" height="24"><span>Deploy Center</span></a>
+  <a class="brand" href="/"><img src="img/icon-64.png" alt="" width="24" height="24"><span>Deploy Center</span></a>
   <div class="links">
     <a class="opt" href="#features">Features</a>
     <a href="#ai">Claude</a>
@@ -59,12 +62,12 @@
     <a class="opt" href="#integrations">Integrations</a>
     <a href="/docs/getting-started/">Docs</a>
     <a href="/guides/">Guides</a>
-    <a class="gh" href="https://github.com/Pschmetzer/deploy-center">GitHub ★</a>
-    <button class="theme" type="button" aria-label="Switch between light and dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+    <a class="gh" href="https://github.com/Pschmetzer/deploy-center">GitHub<span aria-hidden="true"> ★</span></a>
+    <button class="theme" type="button" aria-label="Switch to light mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
     <a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a>
   </div>
   <div class="mobile-tools">
-    <button class="theme" type="button" aria-label="Switch between light and dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+    <button class="theme" type="button" aria-label="Switch to light mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
     <details class="menu"><summary>Menu</summary>
       <div class="panel">
         <a href="#features">Features</a>
@@ -121,7 +124,7 @@ shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip</pre><button type="button
   <figure class="shot">
     <picture>
       <source type="image/webp" srcset="img/app-dark-900.webp 900w, img/app-dark-1800.webp 1800w" sizes="(max-width: 960px) 100vw, 920px">
-      <img src="img/app-dark-1800.webp" width="1800" height="1144" alt="The Deploy Center window: 38 PRs waiting in 5 projects on Vercel and Render, Vercel build costs of the last 14 days, and a Deploy button" fetchpriority="high">
+      <img src="img/app-dark-1800.webp" width="1800" height="1144" alt="The Deploy Center window: 38 PRs waiting in 5 projects on Vercel and Render, Vercel build costs of the last 7 days, and a Deploy button" fetchpriority="high">
     </picture>
   </figure>
   <p class="caption">The real app in demo mode: project names are stand-ins.</p>
@@ -159,7 +162,7 @@ shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip</pre><button type="button
       <li><b>Build costs</b>Vercel spend for 7 days, the monthly pace, a budget warning at 80 %.</li>
       <li><b>Share the saving</b>A picture and a sentence, without project names.</li>
     </ul>
-    <p class="more"><a href="/vercel-build-cost-calculator/">Build cost calculator →</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAVINGS.md">How it is counted</a></p>
+    <p class="more"><a href="/vercel-build-cost-calculator/">Build cost calculator →</a> · <a href="/docs/savings/">How it is counted</a></p>
   </div>
 </div></section>
 
@@ -187,10 +190,10 @@ shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip</pre><button type="button
   </ol>
   <div class="two wide" style="margin-top:28px;align-items:start">
     <ul class="list two">
-      <li><b>Claude in the app <span class="tag new">new</span></b>Explain a failure (then <i>Fix with Claude</i>), plain release notes in English or German, “Is this safe to ship?”. Your key, a monthly cap. <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/CLAUDE.md">More</a></li>
-      <li><b>Connect in one click</b>Settings → Claude connects Claude Desktop and Claude Code. Claude deploys only if you allow it, and asks each time. <a href="https://github.com/Pschmetzer/deploy-center/blob/main/integrations/mcp/README.md">MCP server</a></li>
+      <li><b>Claude in the app <span class="tag new">new</span></b>Explain a failure (then <i>Fix with Claude</i>), plain release notes in English or German, “Is this safe to ship?”. Your key, a monthly cap. <a href="/docs/claude/">More</a></li>
+      <li><b>Connect in one click</b>Settings → Claude connects Claude Desktop and Claude Code. Claude deploys only if you allow it, and asks each time. <a href="/docs/integrations/mcp/">MCP server</a></li>
       <li><b>Claude Code plugin</b>A skill and four commands for what waits, status, shipping and fixing, plus a reminder after each push. <a href="/claude-code/">More</a></li>
-      <li><b>Agent digest</b>Daily: agent and human commits apart, PRs, risk hints, with an approve button. <a href="https://github.com/Pschmetzer/deploy-center/blob/main/integrations/digest/README.md">More</a></li>
+      <li><b>Agent digest</b>Daily: agent and human commits apart, PRs, risk hints, with an approve button. <a href="/docs/integrations/digest/">More</a></li>
       <li><b>“What this ships” on PRs</b>Claude Code action comments affected projects and a risk level. <a href="https://github.com/Pschmetzer/deploy-center/blob/main/examples/claude-pr-ship-check.yml">Workflow</a></li>
       <li><b>Copy for Claude</b>The build log copies the first error and its context as a prompt, secrets masked. <a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Guide</a></li>
     </ul>
@@ -222,7 +225,7 @@ shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip</pre><button type="button
     <li><b>Observers</b>Read-only for anyone listed; deploy buttons disappear.</li>
     <li><b>Two-person rule</b>Production needs an approval from someone else on that exact commit. Overrides are journaled.</li>
   </ul>
-  <p class="more"><a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/SAFE-DEPLOY.md">Safe deploys</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/GUARD.md">Guard</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/TEAM.md">Team mode</a></p>
+  <p class="more"><a href="/docs/safe-deploy/">Safe deploys</a> · <a href="/docs/guard/">Guard</a> · <a href="/docs/team/">Team mode</a></p>
 </div></section>
 
 <section class="alt" id="everywhere"><div class="wrap two">
@@ -321,7 +324,7 @@ shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip</pre><button type="button
       <details class="q"><summary>What do I lose without auto-deploy?</summary><p>Automatic deploys and automatic preview builds per pull request. You have to remember to deploy; the menu bar count, the widgets and an optional daily summary help. Preview deploys can still be started by hand.</p></details>
     </div>
     <div>
-      <details class="q"><summary>Can I go back?</summary><p>Yes. <code>deploys vercel autodeploy-on</code> and <code>deploys render autodeploy-on</code> turn it back on, or use the dashboards. Deploy Center remembers each Vercel repo before it disconnects it. <a href="/docs/auto-deploy/">Auto-deploy off and on</a> · <a href="/docs/uninstall/">Uninstall</a></p></details>
+      <details class="q"><summary>Can I go back?</summary><p>Yes. <code>deploys vercel autodeploy-on --all</code> and <code>deploys render autodeploy-on --all</code> turn it back on, or use the dashboards. Deploy Center remembers each Vercel repo before it disconnects it. <a href="/docs/auto-deploy/">Auto-deploy off and on</a> · <a href="/docs/uninstall/">Uninstall</a></p></details>
       <details class="q" id="faq-hosts"><summary>Which hosts are supported?</summary><p>Vercel and Render are on by default. Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and a <a href="/docs/deploy-hooks/">generic deploy hook</a> are opt-in: <code>deploys providers enable netlify</code>, or Settings → Platforms. On Cloudflare Pages it saves build quota rather than money. Waiting commits come from GitHub or GitLab.</p></details>
       <details class="q"><summary>Is there an iPhone app?</summary><p>It is built and on its way to the App Store: what waits, deploy and rollback with Face ID, and Home Screen widgets. The Mac app and its widgets are available now. <a href="https://github.com/Pschmetzer/deploy-center">Watch the repo</a> to hear when it is out.</p></details>
       <details class="q"><summary>Can my team use it?</summary><p>Yes, without a server: a shared <code>deploy-center.json</code> in each repo, observer mode, and an optional two-person rule for production deploys.</p></details>
@@ -338,7 +341,7 @@ shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip</pre><button type="button
     <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a>
     <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
   </div>
-  <p class="small" style="margin-top:14px">Not on a Mac? <a href="/docs/cli/">Use the CLI</a>. Using Claude Code? <a href="/claude-code/">Add the plugin</a>. Ideas? <a href="https://github.com/Pschmetzer/deploy-center/issues">Open an issue</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/GOOD-FIRST-ISSUES.md">Good first issues</a></p>
+  <p class="small" style="margin-top:14px">Not on a Mac? <a href="/docs/install-cli/">Use the CLI</a>. Using Claude Code? <a href="/claude-code/">Add the plugin</a>. Ideas? <a href="https://github.com/Pschmetzer/deploy-center/issues">Open an issue</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/GOOD-FIRST-ISSUES.md">Good first issues</a></p>
 </div></section>
 </main>
 

@@ -42,7 +42,13 @@ jobs:
           SENDER_TYPE: ${{ github.event.sender.type }}
           APPROVERS: ${{ vars.DEPLOYS_APPROVERS }}
           INPUT: ${{ inputs.projects }}
-          BODY: ${{ github.event.issue.body }}
+          TITLE: ${{ github.event.issue.title }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          # The account the digest runs as (it posts the list as a comment). github.token in the
+          # daily digest workflow: github-actions[bot].
+          DIGEST_BOT: ${{ vars.DEPLOYS_DIGEST_BOT || 'github-actions[bot]' }}
         run: |
           set -euo pipefail
           no() { echo "::error::$1"; echo "reason=$1" >> "$GITHUB_OUTPUT"; exit 1; }
@@ -50,23 +56,57 @@ jobs:
           [ -n "$APPROVERS" ] || no "Set the repository variable DEPLOYS_APPROVERS (logins of the people who may approve)."
           printf '%s\n' "$APPROVERS" | tr ', ' '\n' | grep -qixF -- "$ACTOR" || no "$ACTOR is not in DEPLOYS_APPROVERS."
           if [ "$EVENT" = issues ]; then
-            list="$(printf '%s\n' "$BODY" | tr -d '\r' | sed -n 's/^<!-- deploys-approve: \(.*\) -->$/\1/p' | tail -n 1)"
+            # Only today's digest (UTC): when a daily run failed, yesterday's issue would otherwise
+            # still deploy whatever the branch head is now.
+            [ "$TITLE" = "Deploys waiting – $(date -u +%Y-%m-%d)" ] || no "Only today's digest issue can be approved, not \"$TITLE\"."
+            # From the digest's own newest comment, and only if nobody edited it: the issue body
+            # can be changed by anyone with write access, and the approver would not see it.
+            comments="$(gh api "repos/$REPO/issues/$ISSUE/comments" --paginate)" || no "The issue's comments could not be read."
+            list="$(printf '%s\n' "$comments" | jq -rs --arg bot "$DIGEST_BOT" '
+              add // [] | map(select(.user.login == $bot and (.body | test("<!-- deploys-approve: ")))) | last
+              | if . == null then "" elif .created_at != .updated_at then "EDITED" else (.body | capture("<!-- deploys-approve: (?<l>[^>]*) -->").l) end')"
+            [ "$list" != EDITED ] || no "The digest's list was edited after it was posted. Nothing is deployed; run the digest again."
           else
             list="$INPUT"
           fi
           list="$(printf '%s\n' "$list" | tr ', ' '\n' | sed '/^$/d' | sort -u)"
           [ -n "$list" ] || no "No projects named."
           if [ "$list" = all ]; then echo "projects=*" >> "$GITHUB_OUTPUT"; echo "Approved by $ACTOR: everything waiting."; exit 0; fi
-          ! printf '%s\n' "$list" | grep -qvE '^[A-Za-z0-9._-]+$' || no "Project names may hold letters, digits, . _ - only."
+          ! printf '%s\n' "$list" | grep -qvE '^([a-z0-9]+:)?[A-Za-z0-9._-]+$' || no "Project names may hold letters, digits, . _ - only (platform:name for one platform)."
           echo "projects=$(printf '%s\n' "$list" | paste -sd, -)" >> "$GITHUB_OUTPUT"
           echo "Approved by $ACTOR: $(printf '%s\n' "$list" | paste -sd, -)"
 
-      # Pin to a release tag or a full commit SHA, not a branch. This first run only lists.
+      # The list in the issue body must be the digest's own: anyone with triage rights can edit the
+      # body after the approver read it. GitHub records who edited the body last; only the digest's
+      # account (github-actions, or DEPLOYS_DIGEST_BOT when the digest runs with another token) may have.
+      - name: The issue body is the digest's own
+        id: body
+        if: github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          NUMBER: ${{ github.event.issue.number }}
+          BOT: ${{ vars.DEPLOYS_DIGEST_BOT || 'github-actions' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016 # $owner etc. are GraphQL variables, not shell
+          editor="$(gh api graphql -F owner="$OWNER" -F name="$REPO" -F number="$NUMBER" \
+            -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){editor{login}}}}' \
+            --jq '.data.repository.issue.editor.login // ""')"
+          case "$editor" in
+            ""|"$BOT"|"${BOT}[bot]") echo "The body is the digest's (last edited by: ${editor:-nobody})." ;;
+            *) echo "::error::The issue body was edited by $editor after the digest wrote it. Run the digest again, then approve."; exit 1 ;;
+          esac
+
+      # Pin to a release tag or a full commit SHA, not a branch. This first run only sets up
+      # deploys (and the vercel CLI) for the next step; it asks nothing.
       - uses: Pschmetzer/deploy-center/integrations/action@main
         id: list
         with:
+          deploy: setup
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-team: ${{ vars.VERCEL_TEAM }}
+          vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}
           repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
 
@@ -81,11 +121,21 @@ jobs:
         run: |
           set -euo pipefail
           [ "$PROJECTS" = "*" ] && { echo "Everything waiting was approved."; exit 0; }
-          v='[]'; r='[]'
-          if [ -n "$VERCEL_TOKEN" ]; then v="$("$DEPLOYS" vercel list --json </dev/null)"; fi
-          if [ -n "$RENDER_API_KEY" ]; then r="$("$DEPLOYS" render list --json </dev/null)"; fi
-          all="$(jq -n --argjson v "$v" --argjson r "$r" '$v + $r | map(.name) | unique')"
-          want="$(printf '%s' "$PROJECTS" | jq -Rc 'split(",") | map(select(length > 0))')"
+          # Every platform that is set up (deploys list --json), not only Vercel and Render.
+          list="$("$DEPLOYS" list --json </dev/null)"
+          all="$(echo "$list" | jq -c 'map(.name) | unique')"
+          req="$(printf '%s' "$PROJECTS" | jq -Rc 'split(",") | map(select(length > 0))')"
+          # platform:name picks one platform. ignored.json leaves projects out by name, so a name
+          # that is on two platforms cannot be deployed on one of them only: refused, not both.
+          both="$(echo "$list" | jq -r --argjson req "$req" '
+            [ $req[] | select(contains(":")) | split(":") as [$p, $n]
+              | select([$list[] | select(.name == $n)] | length > 1 and (map(.platform) | unique | length) > 1) | "\($p):\($n)" ] | join(", ")' --argjson list "$list")"
+          [ -z "$both" ] || { echo "::error::$both: that name is on more than one platform, and only one was approved; deploying would start all of them. Nothing was started."; exit 1; }
+          bad="$(echo "$list" | jq -r --argjson req "$req" '[ $req[] | select(contains(":")) | split(":") as [$p, $n]
+              | select([$list[] | select(.name == $n and .platform == $p)] | length == 0) | "\($p):\($n)" ] | join(", ")' --argjson list "$list")"
+          [ -z "$bad" ] || echo "::warning::Not found on that platform, so not deployed: $bad"
+          want="$(echo "$list" | jq -c --argjson req "$req" '[ $req[] | if contains(":") then (split(":") as [$p, $n]
+              | if ([$list[] | select(.name == $n and .platform == $p)] | length) > 0 then $n else empty end) else . end ] | unique' --argjson list "$list")"
           ign="$DEPLOYS_CONFIG/ignored.json"; [ -f "$ign" ] || echo '[]' > "$ign"
           jq --argjson all "$all" --argjson want "$want" '. + ($all - $want) | unique' "$ign" > "$ign.t" && mv "$ign.t" "$ign"
           missing="$(jq -nr --argjson all "$all" --argjson want "$want" '$want - $all | join(", ")')"
@@ -96,15 +146,20 @@ jobs:
         id: dc
         with:
           deploy: true
+          # The approved projects deploy from app repos, not from this one: what is not approved
+          # is in ignored.json already (step keep), so every repo is allowed here.
+          repo: "*"
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-team: ${{ vars.VERCEL_TEAM }}
+          vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}
           repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
 
-      - name: Report on the issue
+      # What happened, on the run's page (both routes), and on the issue when it came from one.
+      - name: Report
         id: report
-        if: always() && github.event_name == 'issues'
+        if: always()
         env:
+          EVENT: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
@@ -120,6 +175,8 @@ jobs:
           elif [ -z "$STARTED" ]; then msg="Not deployed: the run stopped before deploying."
           elif [ "$STARTED" = 0 ] && [ "${FAILED:-0}" = 0 ]; then msg="Nothing to deploy: none of the approved projects has changes now."
           else msg="Started ${STARTED} deploy(s)${NAMES:+ ($NAMES)}, ${FAILED:-0} failed to start."; fi
+          [ -z "${GITHUB_STEP_SUMMARY:-}" ] || { echo "### Approved deploy"; echo; echo "$msg"; } >> "$GITHUB_STEP_SUMMARY"
+          [ "${EVENT:-}" = issues ] || exit 0
           gh issue comment "$ISSUE" -R "$REPO" --body "$msg [Run]($RUN_URL)"
           # The label is taken off: adding it again is a new approval.
           gh issue edit "$ISSUE" -R "$REPO" --remove-label deploy-approved

@@ -17,6 +17,7 @@
 #   DEPLOYS_AGENT_AUTHORS, DEPLOYS_AGENT_LABELS who counts as an agent (see classify.sh)
 #   DEPLOYS                  the CLI to call (default: deploys on PATH)
 #   GH_TOKEN                 for gh: reads pull requests, writes the issue
+#   glab                     reads merge requests of GitLab repos (logged in, or GITLAB_TOKEN)
 #
 # "Today" is the UTC day. The approval list is the projects waiting when the digest was made;
 # a deploy starts each of them at its branch head at the moment of approval.
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+[ "$json" = 1 ] && { [ "$issue" = 1 ] || [ "$post" = 1 ]; } && { echo "--json prints the digest only; use it without --issue and --post" >&2; exit 1; }
 repo="${DEPLOYS_DIGEST_REPO:-}"
 workflow="${DEPLOYS_DIGEST_WORKFLOW:-approve-deploy.yml}"
 url="${DEPLOYS_NOTIFY_URL:-}"
@@ -61,15 +63,32 @@ echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1 || { cat "$tmp/changed.er
 partial=false; [ "$rc" = 0 ] || partial=true
 
 has_gh=0; command -v gh >/dev/null 2>&1 && has_gh=1
+has_glab=0; command -v glab >/dev/null 2>&1 && has_glab=1
 has_risk=0; "$DEPLOYS" --help 2>/dev/null | grep -qE '^[[:space:]]*deploys risk' && has_risk=1
 
-# The facts of one pull request, read once per repo and number.
+# The facts of one pull request (GitHub) or merge request (GitLab), read once per repo and number.
+# A repo is owner/name on GitHub and host/group[/sub]/name elsewhere, as deploys writes it. Any
+# host but github.com is read as GitLab, with glab (logged in, or GITLAB_TOKEN).
 pr_facts() {
-  local r="$1" n="$2" f
+  local r="$1" n="$2" f host="" path="$1"
   f="$tmp/pr_${1////_}_$2.json"
-  if [ ! -f "$f" ]; then
-    { [ "$has_gh" = 1 ] && gh api "repos/$r/pulls/$n" --jq '{number, title, url:.html_url, prAuthor:.user.login, prBot:(.user.type == "Bot"), prLabels:[.labels[].name]}' 2>/dev/null; } > "$f" \
-      && jq -e 'type == "object"' "$f" >/dev/null 2>&1 || echo "{\"number\":$n}" > "$f"
+  # Projects run side by side and may share a pull request: the answer is written to a temp
+  # file and moved into place, so no one reads a cache file that is still being written.
+  if [ ! -s "$f" ]; then
+    local t; t="$(mktemp "$f.XXXXXX")"
+    case "${r%%/*}" in *.*) host="${r%%/*}"; path="${r#*/}" ;; esac
+    [ "$host" != github.com ] || host=""
+    if [ -z "$host" ]; then
+      { [ "$has_gh" = 1 ] && gh api "repos/$path/pulls/$n" --jq '{number, title, url:.html_url, prAuthor:.user.login, prBot:(.user.type == "Bot"), prLabels:[.labels[].name], prBranch:.head.ref}' 2>/dev/null; } > "$t" || true
+    else
+      # GitLab labels are plain strings; few bots are marked as such, so names decide too.
+      { [ "$has_glab" = 1 ] && glab api --hostname "$host" "projects/$(jq -rn --arg s "$path" '$s | @uri')/merge_requests/$n" 2>/dev/null \
+          | jq -c '{number:.iid, title, url:.web_url, prAuthor:.author.username,
+              prBot:((.author.bot // false) or ((.author.username // "") | test("\\[bot\\]|dependabot|renovate|^(project|group)_[0-9]+_bot"; "i"))),
+              prLabels:((.labels // []) | map(if type == "object" then .name else . end)), prBranch:.source_branch}' 2>/dev/null; } > "$t" || true
+    fi
+    jq -e 'type == "object" and .number != null' "$t" >/dev/null 2>&1 || echo "{\"number\":$n}" > "$t"
+    mv -f "$t" "$f"
   fi
   cat "$f"
 }
@@ -85,8 +104,9 @@ risk_hints() {
     || printf '%s' "$raw" | jq -Rsc 'split("\n") | map(select(test("\\S")))'
 }
 
-: > "$tmp/projects.jsonl"
-while IFS= read -r p; do
+# One project: its commits, their pull requests and kinds, its risk. Writes one JSON line to $2.
+one_project() {
+  local p="$1" outf="$2" name prepo live ref d n commits prs
   name="$(jq -r '.name' <<<"$p")"; prepo="$(jq -r '.repo // empty' <<<"$p")"
   live="$(jq -r '.lastSha // empty' <<<"$p")"; ref="$(jq -r '.ref // "main"' <<<"$p")"
   d='null'
@@ -95,11 +115,11 @@ while IFS= read -r p; do
     jq -e 'type == "object"' >/dev/null 2>&1 <<<"$d" || d='null'
   fi
   # Each commit gets its pull request's facts, then a kind.
-  : > "$tmp/prs.jsonl"
-  for n in $(jq -r '.commits // [] | map(.pr // empty) | unique | .[]' <<<"$d"); do pr_facts "$prepo" "$n" >> "$tmp/prs.jsonl"; done
-  commits="$(jq -c --slurpfile prs "$tmp/prs.jsonl" '
+  prs="$outf.prs"; : > "$prs"
+  for n in $(jq -r '.commits // [] | map(.pr // empty) | unique | .[]' <<<"$d"); do pr_facts "$prepo" "$n" >> "$prs"; done
+  commits="$(jq -c --slurpfile prs "$prs" '
     ($prs | map({key:(.number | tostring), value:.}) | from_entries) as $by
-    | (.commits // []) | map(. + (if .pr then ($by[.pr | tostring] // {} | {prAuthor, prBot, prLabels, prTitle:.title, prUrl:.url} | with_entries(select(.value != null))) else {} end))' <<<"$d" | classify)"
+    | (.commits // []) | map(. + (if .pr then ($by[.pr | tostring] // {} | {prAuthor, prBot, prLabels, prBranch, prTitle:.title, prUrl:.url} | with_entries(select(.value != null))) else {} end))' <<<"$d" | classify)"
   jq -c --argjson d "$d" --argjson c "$commits" --argjson risk "$(risk_hints "$name")" '
     {name, platform:(.platform // null), repo:(.repo // null), ref:(.ref // null), pending:(.pendingCommits // null),
      known:($d != null), compareUrl:($d.compareUrl // null),
@@ -108,8 +128,27 @@ while IFS= read -r p; do
             kind:(if all(.kind == "agent") then "agent" elif all(.kind == "human") then "human" else "mixed" end),
             why:(map(select(.kind == "agent") | .why) | unique)})),
      loose:($c | map(select(.pr | not)) | map({sha, msg, author, kind, why})),
-     risk:($risk + (($d.risky // []) | map("changes \(.)")) + (if ($d.checks.failed // 0) > 0 then ["CI failed on the branch head"] else [] end) | unique)}' <<<"$p" >> "$tmp/projects.jsonl"
+     risk:($risk + (($d.risky // []) | map("changes \(.)")) + (if ($d.checks.failed // 0) > 0 then ["CI failed on the branch head"] else [] end) | unique)}' <<<"$p" > "$outf"
+}
+
+# A few projects at a time (DEPLOYS_DIGEST_JOBS, default 4): each is a `deploys details` and a
+# GitHub call per pull request, so 30 projects one by one take minutes. The lines keep the order.
+jobs="${DEPLOYS_DIGEST_JOBS:-4}"; case "$jobs" in ''|*[!0-9]*|0) jobs=4 ;; esac
+i=0; running=0
+while IFS= read -r p; do
+  i=$((i + 1)); one_project "$p" "$tmp/project_$(printf '%05d' "$i").json" &
+  running=$((running + 1))
+  if [ "$running" -ge "$jobs" ]; then wait; running=0; fi
 done < <(jq -c '.[]' <<<"$list")
+wait
+: > "$tmp/projects.jsonl"
+lost=0
+for ((n = 1; n <= i; n++)); do
+  f="$tmp/project_$(printf '%05d' "$n").json"
+  if [ -s "$f" ]; then cat "$f" >> "$tmp/projects.jsonl"; else lost=$((lost + 1)); fi
+done
+# A project that could not be put together is left out and counted, like an unread one.
+[ "$lost" = 0 ] || { echo "$lost project(s) could not be read for the digest and are left out" >&2; partial=true; }
 
 digest="$(jq -s --arg date "$today" --arg title "$title" --argjson partial "$partial" '
   {date:$date, title:$title, partial:$partial, projects:.,
@@ -118,7 +157,11 @@ digest="$(jq -s --arg date "$today" --arg title "$title" --argjson partial "$par
 
 if [ "$json" = 1 ]; then echo "$digest"; [ -n "$out" ] && echo "$digest" > "$out"; exit 0; fi
 
+# PR titles and commit messages are other people's text: an @mention would ping someone from the
+# issue, and an image (![](https://…)) would be fetched by every reader. Both are defused with a
+# zero-width space; at most 20 pull requests per project, the rest behind the compare link.
 markdown="$(jq -r '
+  def safe: tostring | gsub("@"; "@\u200b") | gsub("!\\["; "!\u200b[") | gsub("<"; "&lt;");
   def kindtxt: if .kind == "agent" then "agent" + (if (.why | type) == "array" and (.why | length) > 0 then " (" + (.why | join(", ")) + ")" elif (.why | type) == "string" then " (\(.why))" else "" end) else .kind end;
   "# \(.title)", "",
   (if (.projects | length) == 0 then "Nothing waiting: every project is on its newest commit."
@@ -128,9 +171,10 @@ markdown="$(jq -r '
     "", "## \(.name)" + ([.platform, .repo] | map(select(.)) | if length > 0 then " (\(join(", ")))" else "" end), "",
     (if .known then "\(.agent + .human) commit\(if (.agent + .human) == 1 then "" else "s" end) waiting: \(.agent) agent, \(.human) human"
      else "Changes waiting (\(.pending // "?") commits; the commits could not be read)" end),
-    (if (.prs | length) > 0 then "", "Pull requests:", (.prs[] | "- #\(.number) \(.title) – \(kindtxt)") else empty end),
+    (if (.prs | length) > 0 then "", "Pull requests:", (.prs[0:20][] | "- #\(.number) \(.title | safe) – \(kindtxt)"),
+       (if (.prs | length) > 20 then "- … and \((.prs | length) - 20) more (see all changes below)" else empty end) else empty end),
     (if (.loose | length) > 0 then "", "Commits without a pull request:",
-       (.loose[0:10][] | "- `\(.sha)` \(.msg) – \(.author // "?"), \(.kind)"),
+       (.loose[0:10][] | "- `\(.sha)` \(.msg | safe) – \((.author // "?") | safe), \(.kind)"),
        (if (.loose | length) > 10 then "- … and \((.loose | length) - 10) more" else empty end) else empty end),
     (if (.risk | length) > 0 then "", "Check before shipping:", (.risk[] | "- \(.)") else empty end),
     (if .compareUrl then "", "[All changes](\(.compareUrl))" else empty end))' <<<"$digest")"
@@ -150,8 +194,27 @@ fi
 $howto}" > "$out"
 
 # --- the issue: one per day, updated in place; older open digests are closed ---
+# The list to approve is also posted as a comment by this token's account: approve-deploy.yml
+# reads it from there (an unedited comment of that account), never from the issue body, which
+# anyone with write access could change between the digest and the label.
 issue_url=""
-if [ "$issue" = 1 ] && [ -n "$names_csv" ]; then
+if [ "$issue" = 1 ] && [ -z "$names_csv" ]; then
+  # Nothing waits now: an open digest of today (or earlier) must not approve this morning's list later.
+  if [ "$dry" = 1 ]; then
+    echo "issue: nothing waiting; open digests in $repo would be closed"
+  else
+    command -v gh >/dev/null 2>&1 || { echo "--issue needs gh (GitHub CLI)" >&2; exit 1; }
+    open="$(gh issue list -R "$repo" --state open --label deploys-digest --limit 50 --json number,title,url)"
+    for old in $(jq -r '.[] | select(.title | startswith("Deploys waiting – ")) | .number' <<<"$open"); do
+      gh issue close "$old" -R "$repo" --comment "Nothing is waiting any more; closed so its label cannot approve an old list." >/dev/null 2>&1 || true
+      echo "Closed issue #$old (nothing waiting)."
+    done
+  fi
+elif [ "$issue" = 1 ]; then
+  # GitHub takes 65,536 characters in an issue body: a longer list is cut, the approval part and
+  # its marker always stay (DEPLOYS_DIGEST_MAX_BODY, for tests).
+  max="${DEPLOYS_DIGEST_MAX_BODY:-60000}"; case "$max" in ''|*[!0-9]*) max=60000 ;; esac
+  markdown="$(jq -rn --arg t "$markdown" --argjson n "$max" '$t | if length > $n then .[0:$n] + "\n\n… (cut: the list is longer than an issue can hold; see `deploys changed`)" else . end')"
   body="$markdown
 
 ## Approve
@@ -178,6 +241,9 @@ Or run [approve-deploy]($approve_url) with these projects. Nothing is deployed b
       num="${issue_url##*/}"
       echo "Opened issue $issue_url"
     fi
+    # The list approve-deploy.yml deploys: the newest unedited comment of this account.
+    printf 'The list a `deploy-approved` label deploys now: `%s`\n\n<!-- deploys-approve: %s -->\n' "$names_csv" "$names_csv" > "$tmp/approve.md"
+    gh issue comment "$num" -R "$repo" --body-file "$tmp/approve.md" >/dev/null
     # A digest of an earlier day lists what waited then: close it, so its label cannot approve.
     for old in $(jq -r --arg t "$title" '.[] | select(.title != $t and (.title | startswith("Deploys waiting – "))) | .number' <<<"$open"); do
       gh issue close "$old" -R "$repo" --comment "Replaced by #$num." >/dev/null 2>&1 || true
@@ -188,11 +254,13 @@ fi
 # --- the message: a short version of the digest, with the button ---
 if [ "$post" = 1 ]; then
   text="$(jq -r '
+    def safe: tostring | gsub("@"; "@\u200b");
     "\(.title)",
+    (if .partial then "(List incomplete: some projects could not be read.)" else empty end),
     (if (.projects | length) == 0 then "Nothing waiting." else
       "\(.agent) agent and \(.human) human commit\(if .human == 1 then "" else "s" end) in \(.projects | length) project\(if (.projects | length) == 1 then "" else "s" end).",
       (.projects[] | "• \(.name): " + (if .known then "\(.agent) agent, \(.human) human" else "changes waiting" end)
-        + (if (.prs | length) > 0 then " – " + (.prs[0:5] | map("#\(.number) \(.title)") | join("; ")) + (if (.prs | length) > 5 then "; …" else "" end) else "" end)
+        + (if (.prs | length) > 0 then " – " + (.prs[0:5] | map("#\(.number) \(.title | safe)") | join("; ")) + (if (.prs | length) > 5 then "; …" else "" end) else "" end)
         + (if (.risk | length) > 0 then " – check: " + (.risk[0:3] | join(", ")) else "" end)) end)' <<<"$digest")"
   link="" label=""
   if [ -n "$names_csv" ]; then

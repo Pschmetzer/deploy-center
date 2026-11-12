@@ -1,5 +1,5 @@
 {
-  "description": "After a git push, one read-only line: what is waiting to go live (deploys changed).",
+  "description": "After a git push, one read-only line: what is waiting to go live (deploys changed). Optional: the same at session start.",
   "hooks": {
     "PostToolUse": [
       {
@@ -7,9 +7,19 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git push *)",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/after-push.sh\"",
             "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/after-push.sh\" --session-start",
+            "timeout": 20
           }
         ]
       }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { describe, mergeProjects, parseArray, platformLabel, statusText, summarize } from "../src/model";
+import { describe, mergeProjects, parseArray, platformLabel, statusText, summarize, followStep } from "../src/model";
 
 test("parseArray keeps an array, refuses anything else", () => {
   assert.deepEqual(parseArray('[{"a":1}]'), [{ a: 1 }]);
@@ -85,4 +85,13 @@ test("a name on two platforms is passed as platform:name, others as they are", (
     { name: "web", platform: "vercel" }, { name: "web", platform: "render" }, { name: "api", platform: "render" },
   ]);
   assert.deepEqual(p.map((x) => x.ref).sort(), ["api", "render:web", "vercel:web"]);
+});
+
+test("followStep: wait for the build, then live or failed", () => {
+  assert.equal(followStep(undefined, false, 1), "gone");
+  assert.equal(followStep({ building: true, failed: false }, false, 1), "wait");
+  assert.equal(followStep({ building: false, failed: false }, false, 1), "wait");
+  assert.equal(followStep({ building: false, failed: false }, true, 2), "live");
+  assert.equal(followStep({ building: false, failed: true }, true, 2), "failed");
+  assert.equal(followStep({ building: false, failed: false }, false, 4), "live");
 });

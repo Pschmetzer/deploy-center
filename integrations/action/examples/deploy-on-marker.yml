@@ -1,6 +1,7 @@
 # Example only: copy to .github/workflows/ in your own repo and adjust.
 #
-# Deploys when a person writes [deploy] in the commit message, and only then. Every other
+# Deploys when a person writes [deploy] in the commit message, and only then. It deploys every
+# project with changes that deploys can see, not only this repo's. Every other
 # push just reports what is waiting. Note: GitHub shows only the newest commit of a push
 # here (head_commit), so put the marker in the last commit you push.
 name: deploy on [deploy]
@@ -11,27 +12,39 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: Deploy everything with changes
+        description: Deploy this repo's projects that have changes
         type: boolean
         default: false
 
 permissions:
   contents: read
 
+# Two quick pushes with [deploy] must not run deploy-changed --yes twice at the same time.
+# Queued, not cancelled: a run that started deploys finishes and reports.
+concurrency:
+  group: deploys-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   changed:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Anyone who can push to main can write [deploy]. To have a reviewer approve each run, create
+    # an environment "production" with required reviewers (Settings → Environments) and uncomment:
+    # environment: production
     steps:
-      # Pin to a release tag or a full commit SHA, not a branch.
+      # Pin to a full commit SHA (or a release tag after 0.9.1), not a branch: 0.9.1 has no `repo`
+      # input yet, so it would deploy changed projects of every repo the tokens see.
       - uses: Pschmetzer/deploy-center/integrations/action@main
         id: dc
         with:
           deploy: ${{ contains(github.event.head_commit.message, '[deploy]') || inputs.deploy == true }}
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-team: ${{ vars.VERCEL_TEAM }}
+          vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}
           repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
+          # Only projects that deploy from this repo are started (the default). "*" = every repo.
+          # repo: ${{ github.repository }}
 
       - name: Report
         env:

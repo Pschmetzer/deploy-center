@@ -1,14 +1,14 @@
 {
   "name": "deploys-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server (stdio) for the Deploy Center `deploys` CLI: what is waiting to go live, and deploys only when allowed.",
   "license": "MIT",
   "private": true,
   "type": "module",
   "main": "server.mjs",
   "bin": { "deploys-mcp": "server.mjs" },
-  "engines": { "node": ">=18" },
-  "scripts": { "test": "node ../tests/mcp.test.mjs" },
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "bash ../tests/run.sh" },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2"
   }
