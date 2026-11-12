@@ -22,7 +22,14 @@ body:
       options:
         - Vercel
         - Render
+        - Netlify
+        - Cloudflare Pages
+        - AWS Amplify
+        - DigitalOcean
+        - Coolify
+        - Deploy hook
         - GitHub
+        - GitLab
         - Other
     validations:
       required: true

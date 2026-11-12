@@ -1,0 +1,16 @@
+[
+  {"name": "new commit on the branch", "deployable": true, "liveSha": "a", "headSha": "b", "want": true},
+  {"name": "same commit", "deployable": true, "liveSha": "a", "headSha": "a", "want": false},
+  {"name": "not deployable", "deployable": false, "liveSha": "a", "headSha": "b", "want": false},
+  {"name": "paused", "deployable": true, "paused": true, "liveSha": "a", "headSha": "b", "want": false},
+  {"name": "no head at all", "deployable": true, "liveSha": "a", "want": false},
+  {"name": "building", "deployable": true, "building": true, "liveSha": "a", "headSha": "b", "want": false},
+  {"name": "a fetch error", "deployable": true, "fetchError": "403", "liveSha": "a", "headSha": "b", "want": false},
+  {"name": "branch behind what is live", "deployable": true, "compareStatus": "behind", "liveSha": "a", "headSha": "b", "want": false},
+  {"name": "branch ahead", "deployable": true, "compareStatus": "ahead", "liveSha": "a", "headSha": "b", "want": true},
+  {"name": "no SHAs: newer head time", "deployable": true, "liveAt": 100, "headAt": 200, "want": true},
+  {"name": "no SHAs: older head time", "deployable": true, "liveAt": 200, "headAt": 100, "want": false},
+  {"name": "no SHAs: same time", "deployable": true, "liveAt": 100, "headAt": 100, "want": false},
+  {"name": "a head SHA but no live SHA: times decide", "deployable": true, "headSha": "b", "liveAt": 100, "headAt": 200, "want": true},
+  {"name": "a head time, nothing live yet", "deployable": true, "headAt": 200, "want": true, "known": "ios: needs a live time"}
+]

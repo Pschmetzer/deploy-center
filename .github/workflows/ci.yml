@@ -21,23 +21,35 @@ jobs:
         with:
           persist-credentials: false
       - name: Tools
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: brew install jq shellcheck actionlint
       - name: No personal data in the public repo
         run: scripts/check-public.sh
-      - name: actionlint
-        run: actionlint .github/workflows/*.yml docs/deploy-on-label.yml
+      - name: actionlint (workflows and the example workflows people copy)
+        run: actionlint .github/workflows/*.yml docs/deploy-on-label.yml examples/*.yml integrations/*/examples/*.yml
       - name: shellcheck
         run: |
           shellcheck --severity=warning deploys providers/*.sh build.sh release.sh scripts/*.sh tests/*.sh tests/lib/*.sh tests/providers/*.sh lib/*.sh
+          shellcheck --severity=warning integrations/*/*.sh integrations/claude-code/scripts/*.sh integrations/hooks/pre-push integrations/tests/*.sh
           shellcheck site/install.sh
+      - name: Lint the example LaunchAgents and the icon script
+        run: |
+          plutil -lint scripts/*.plist.example
+          swiftc -typecheck scripts/make-icon.swift
       - name: Script tests
         run: bash tests/script-tests.sh
       - name: Team mode tests
         run: bash tests/team-tests.sh
       - name: Install tests (install.sh, release tarball, Homebrew formula)
         run: bash tests/install-tests.sh
-      - name: App tests
+      - name: Release tests (release gate, bump.sh, site checks, check-public, Homebrew cask)
+        run: bash tests/release-tests.sh
+      - name: App tests (English and German, with the deploys JSON contract)
         run: bash tests/app-tests.sh
+      - name: The "waiting" rule in deploys and in the iPhone app agree
+        run: bash tests/ios-rule-tests.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -48,13 +60,90 @@ jobs:
       - name: Integration tests (MCP, Action, Claude Code plugin, digest, hooks)
         # REQUIRE_ALL=1: a part that cannot run here fails the job instead of being skipped.
         run: REQUIRE_ALL=1 bash integrations/tests/run.sh
-      - name: Build (ad-hoc signed, universal)
-        run: ./build.sh
+      - name: Build with the widgets (ad-hoc signed, universal)
+        run: ./build.sh --widgets
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: DeployCenter-unsigned
           path: build/DeployCenter-*-universal.zip
           retention-days: 7
+
+  ios:
+    # The iPhone app and its widgets, built for the simulator without signing. Catches a change in
+    # shared/ (PhoneLink, DeploySnapshot) that breaks the iOS build. Nothing is uploaded.
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Xcode
+        run: xcodebuild -version
+      - name: Build for the simulator (unsigned)
+        run: |
+          xcodebuild -project ios/DeployCenter.xcodeproj -scheme DeployCenter -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/ios-dd CODE_SIGNING_ALLOWED=NO build -quiet
+      - name: iPhone tests without a simulator (the log masking against the script's af_mask)
+        run: bash ios/Tests/run.sh
+
+  linux-cli:
+    # The CLI on Linux (GNU date/stat/sed, bash 5), as README, Docker image and Action promise.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tools
+        run: |
+          # jq, shellcheck, ruby and python3 come with the runner; `column` is in bsdextrautils.
+          command -v column >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q bsdextrautils; }
+          bash --version | head -1; jq --version
+      - name: Script tests
+        run: bash tests/script-tests.sh
+      - name: Team mode tests
+        run: bash tests/team-tests.sh
+      - name: Release tests
+        run: bash tests/release-tests.sh
+      - name: The script's "waiting" rule against the shared cases
+        run: bash tests/ios-rule-tests.sh
+
+  integrations:
+    # integrations/tests/run.sh: Action, digest, statuspage, badge, notify, hooks, the Claude Code
+    # plugin and the MCP server, against a stand-in deploys and curl. No network beyond npm ci.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Tools
+        run: command -v column >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q bsdextrautils; }
+      - name: npm ci (MCP server, VS Code extension)
+        run: |
+          (cd integrations/mcp && npm ci --no-audit --no-fund)
+          (cd integrations/vscode && npm ci --no-audit --no-fund)
+      - name: Integration tests (on Linux, where the Action and the Docker image run)
+        # REQUIRE_ALL=1: a part that cannot run here fails the job instead of being skipped.
+        run: REQUIRE_ALL=1 bash integrations/tests/run.sh
+
+  docker:
+    # The Docker image builds from the repository root and the CLI inside finds its providers.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build
+        run: docker build -f integrations/docker/Dockerfile -t deploys .
+      - name: deploys runs and finds its providers (no keys, no network)
+        run: |
+          docker run --rm --entrypoint bash deploys -c 'deploys help >/dev/null && ls "$DEPLOYS_DIR/providers/vercel.sh"'
 
   cli-install:
     # The CLI's own install paths on Linux: install.sh under dash (Ubuntu's sh) and bash,
@@ -93,10 +182,41 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deploys-vscode
+          path: integrations/vscode/*.vsix
+          retention-days: 7
+
+  raycast:
+    # The Raycast extension: it builds (TypeScript checked) and passes ESLint and Prettier.
+    # Not `ray lint`: it asks raycast.com whether the author has a store account (a network call
+    # and an account matter, not a code check). Nothing is published.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: integrations/raycast
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: Build (ray build, offline)
+        run: npx --no-install ray build -e dist
+      - name: ESLint
+        run: npx --no-install eslint src
+      - name: Prettier
+        run: npx --no-install prettier --check src
 
   docs:
     # site/docs/ is generated from the Markdown in this repo. Fails when the generator errors
-    # (a link to a file that does not exist) or when any link or #anchor in site/ is broken.
+    # (a link to a file that does not exist), when any link or #anchor in site/ is broken, or when
+    # a page lacks its title, canonical or JSON-LD. fetch-depth 0 also brings the tags the release
+    # gate needs.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -108,6 +228,12 @@ jobs:
         run: python3 scripts/build-docs.py
       - name: Check links
         run: python3 scripts/check-links.py site
+      - name: Check the site (titles, canonical, JSON-LD, sitemap, lang/alt/h1, image size, security.txt)
+        run: python3 scripts/check-site.py
+      - name: Every L(English, Deutsch) has both texts with the same values
+        run: python3 -I scripts/check-strings.py
+      - name: Release gate (VERSION, home page and appcast name the same release)
+        run: python3 -I scripts/check-release.py
 
   public-commits:
     # Names and paths often land in commit messages, not in files: the same check as for the

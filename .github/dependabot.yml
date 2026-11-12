@@ -1,7 +1,27 @@
-# Keeps the pinned GitHub Actions (by commit SHA) up to date with a weekly PR.
+# Keeps the pinned GitHub Actions (by commit SHA), the npm lockfiles of the add-ons and the
+# Docker base image up to date with weekly PRs.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /integrations/mcp
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: /integrations/vscode
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: /integrations/raycast
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: docker
+    directory: /integrations/docker
     schedule:
       interval: weekly
