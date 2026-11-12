@@ -134,7 +134,10 @@ expect "CLI-096: ledger --days is refused" "$(cli ledger --days 5 --json | grep 
 expect "CLI-041: GitLab pushes are said to be uncounted" \
   "$( (githost_of() { echo gitlab; }; sv_pushes gitlab.com/g/x main 0 | jq -r .error) )" "a GitLab project: its pushes are not counted yet (GitHub only)"
 expect "CLI-041: without gh, each GitHub project says so (no stop for all)" \
-  "$( (githost_of() { echo github; }; unset -f gh; PATH=/usr/bin:/bin; command -v gh >/dev/null 2>&1 && echo skip || sv_pushes me/app main 0 | jq -r '.error | startswith("counting pushes on GitHub needs gh")') )" "true"
+  "$( (githost_of() { echo github; }; unset -f gh
+       # A PATH with the system tools but no gh (on Linux runners gh is in /usr/bin).
+       nogh="$(mktemp -d)"; for f in /usr/bin/* /bin/*; do n="${f##*/}"; [ "$n" = gh ] || [ -e "$nogh/$n" ] || ln -s "$f" "$nogh/$n"; done
+       PATH="$nogh"; sv_pushes me/app main 0 | jq -r '.error | startswith("counting pushes on GitHub needs gh")'; /bin/rm -rf "$nogh") )" "true"
 # ===== end CLI track =====
 
 echo
