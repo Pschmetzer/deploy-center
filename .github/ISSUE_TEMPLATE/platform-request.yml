@@ -16,6 +16,10 @@ body:
       options:
         - Fly.io
         - Railway
+        - Heroku
+        - Firebase Hosting
+        - Azure Static Web Apps
+        - Kamal
         - Other (say which below)
     validations:
       required: true

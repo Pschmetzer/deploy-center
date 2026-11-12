@@ -11,7 +11,7 @@ you merge ──> deploys autofix: notifies you; you deploy with a click
 
 ## What it does and does not do
 
-- **It fires for** Vercel production deploys in `ERROR` and Render deploys in `build_failed`.
+- **It fires for** Vercel production deploys in `ERROR` and Render deploys in `build_failed`. Only these two platforms: a failed build on Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean or Coolify is not handed over yet.
 - **It only reports** Render `update_failed` and `pre_deploy_failed`. These are runtime or health-check failures, and the build log does not show their cause. Cancelled deploys never count.
 - **One fire per run.** Each project gets at most 2 fires in 24 hours (`DEPLOYS_AUTOFIX_PER_PROJECT`), and the account gets at most 6 (`DEPLOYS_AUTOFIX_PER_DAY`).
 - **No duplicates.** The same failed deploy is never handed over twice. While an autofix PR for a project is still open, that project is not handed over again.

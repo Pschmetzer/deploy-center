@@ -38,8 +38,8 @@ Git auto-deploy is off on this project's Vercel/Render. A push does not go live;
   env var, secret, quota or outage, change nothing and tell me what to set. Never paste secrets.
 - Why auto-deploy is off: every push would start a paid build; I deploy the batch once instead.
 - Numbers look odd (a project counted as changed or not): run `deploys explain <project>`.
-- When I say deploy: Vercel `deploys vercel deploy <project> --wait`, Render
-  `deploys render deploy <service>` then `deploys watch <service>`. One project, then report.
+- When I say deploy: `deploys deploy <project> --wait` (any platform; it checks deploy windows,
+  CI and team approvals, and follows the build until live or failed). One project, then report.
 ```
 
 ## The safety model

@@ -168,7 +168,8 @@ download() {
   # See SECURITY.md, "Provenance of the CLI download".
 
   mkdir "$tmp/x"
-  tar -xzf "$tmp/$file" -C "$tmp/x"
+  # As root (a Docker build), tar would keep the owners stored in the archive: take ours instead.
+  tar -xzf "$tmp/$file" -C "$tmp/x" --no-same-owner
   src="$tmp/x/deploys-cli-$version"
   [ -f "$src/deploys" ] || die "$file holds no deploys-cli-$version/deploys"
 }
@@ -306,6 +307,13 @@ main() {
   if [ "$action" = uninstall ]; then
     do_uninstall
     exit 0
+  fi
+
+  # A base from the environment replaces where both the tarball and checksums.txt come from, so
+  # the checksum no longer vouches for anything. Say so loudly; a CI job may set it unnoticed.
+  if [ -n "${DEPLOYS_INSTALL_BASE:-}" ]; then
+    warn "DEPLOYS_INSTALL_BASE is set: downloading from $BASE instead of the GitHub releases."
+    warn "The tarball and checksums.txt both come from there; unset it unless you trust that source."
   fi
 
   has curl || die "curl is needed to download the release (see below for jq, which deploys needs too)"

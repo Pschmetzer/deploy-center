@@ -10,6 +10,9 @@ fail() { echo "FAIL $1: $2"; fails=$((fails+1)); }
 # A part that could not run here is counted, not passed. REQUIRE_ALL=1 (CI) makes it a failure.
 skip() { echo "skip $1"; skips=$((skips+1)); }
 expect()   { [ "$2" = "$3" ] && ok "$1" || fail "$1" "expected [$3], got [$2]"; }
+# A leftover stand-in: a process that is exactly "sleep <odd duration>". The stand-ins use durations
+# no one else uses (30.4, 30.029, 20.31, 20.32, 20.33, 20.7), so shells elsewhere on this Mac never count.
+stray_sleep() { ps -axo pid=,command= | awk -v a="$1" '$2 ~ /(^|\/)sleep$/ && $3 == a && NF == 3'; }
 contains() { case "$2" in *"$3"*) ok "$1" ;; *) fail "$1" "[$3] not in [$2]" ;; esac; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -47,8 +50,8 @@ cat > "$tmp/bin/deploys" <<SH
 [ -n "\${FAKE_SLEEP_ALL:-}" ] && sleep "\$FAKE_SLEEP_ALL"
 [ -n "\${MCP_CALLS:-}" ] && echo "\$*" >> "\$MCP_CALLS"
 case "\$*" in
-  "vercel list --json") cat "$tmp/vercel.json" ;;
-  "render list --json") cat "$tmp/render.json" ;;
+  "vercel list --json"|"vercel json") cat "$tmp/vercel.json" ;;
+  "render list --json"|"render json") cat "$tmp/render.json" ;;
   # As the real one: every provider that is on and set up. Render only with a key.
   "list --json") [ -n "\${FAKE_SLEEP:-}" ] && sleep "\$FAKE_SLEEP"
     # An older CLI without list: the MCP server falls back to status --json --no-github.
@@ -74,7 +77,8 @@ case "\$*" in
     jq -s --arg lv "\${FAKE_LEVEL:-}" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))
       | if env.FAKE_GITLAB == "1" then map(if .repo == "me/app" then .repo = "gitlab.com/grp/sub/app" else . end) else . end
       | if \$lv != "" then map(if .name == "app-web" then . + {risk:{level:\$lv, reasons:[{level:\$lv, text:"touches a migration"}]}} else . + {risk:{level:"green", reasons:[]}} end) else . end' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
-  "deploy-changed") echo "Would deploy: app-web, api (run with --yes)" ;;
+  # The plain list, or (below) the deploy itself; both are logged for examples/daily-deploy.yml.
+  "deploy-changed") echo "\$*" >> "$tmp/example.log"; echo "Would deploy: app-web, api (run with --yes)" ;;
   # Without --yes: what it would start, leaving out ignored.json as the real one does
   # (FAKE_IGNORE_IGNORED=1: a CLI that starts more than the Action asked for).
   "deploy-changed --json") ign="\${DEPLOYS_CONFIG:-/nonexistent}/ignored.json"
@@ -88,7 +92,7 @@ case "\$*" in
     exit "\${FAKE_RC:-0}" ;;
   "watch vercel:app-web dpl_1") [ -n "\${FAKE_WATCH_SLOW:-}" ] && sleep 5; exit "\${FAKE_WATCH_WEB:-0}" ;;
   "watch render:api dep-1") exit "\${FAKE_WATCH_API:-0}" ;;
-  "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"
+  "deploy-changed --yes") echo "\$*" >> "$tmp/deploy.log"; echo "\$*" >> "$tmp/example.log"
     if [ -n "\${FAKE_NO_SUMMARY:-}" ]; then :; elif [ "\${FAKE_RC:-0}" = 0 ]; then echo "2 started, 0 failed to start."; else echo "1 started, 1 failed to start."; fi
     exit "\${FAKE_RC:-0}" ;;
   "status --json"|"status --json --no-github")
@@ -186,7 +190,8 @@ expect "a CLI that fails is an empty list and an error" "$(DEPLOYS=/bin/false al
 expect "notify: a CLI that fails posts nothing" "$(DEPLOYS=/bin/false notify/notify.sh --dry-run 2>/dev/null; echo "rc=$?")" "rc=1"
 expect "badge: a CLI that fails writes no badge" "$(DEPLOYS=/bin/false badge/badge.sh "$tmp/bfail" 2>/dev/null; echo "rc=$?"; ls "$tmp/bfail" 2>/dev/null | wc -l | tr -d ' ')" $'rc=1\n0'
 mkdir -p "$DEPLOYS_CONFIG"; echo '["api"]' > "$DEPLOYS_CONFIG/ignored.json"
-expect "changed leaves out ignored and up-to-date" "$(RENDER_API_KEY=x changed_projects | jq -c 'map(.name)')" '["app-web"]'
+expect "changed is what deploys changed --json says" "$(RENDER_API_KEY=x changed_projects | jq -c 'map(.name)')" '["app-web","api"]'
+expect "changed: a CLI that fails is an empty list and an error" "$(DEPLOYS=/bin/false changed_projects 2>/dev/null; echo "rc=$?")" $'[]\nrc=1'
 contains "notify: ignored projects are not waiting" "$(RENDER_API_KEY=x notify/notify.sh --dry-run)" 'Waiting (1): app-web (4 commits)'
 rm -f "$DEPLOYS_CONFIG/ignored.json"
 
@@ -219,9 +224,13 @@ out="$(RENDER_API_KEY=x notify/notify.sh --dry-run)"
 contains "notify: live today" "$out" 'Live today (1): site'
 contains "notify: waiting with counts" "$out" 'Waiting (2): app-web (4 commits), api'
 contains "notify: Slack-style by default" "$out" 'format: slack'
+contains "notify: UTC by default" "$out" "Deploy Center, $(date -u +%Y-%m-%d) (UTC)"
 contains "notify: failed builds are named" "$out" 'Failed (1): api'
-contains "notify: the day in UTC by default" "$out" "$(date -u +%Y-%m-%d) (UTC)"
+contains "notify: DEPLOYS_TZ sets the day" "$(DEPLOYS_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "Deploy Center, $(TZ=Pacific/Kiritimati date +%Y-%m-%d) (Pacific/Kiritimati)"
 contains "notify: DEPLOYS_NOTIFY_TZ names its day" "$(RENDER_API_KEY=x DEPLOYS_NOTIFY_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "$(TZ=Pacific/Kiritimati date +%Y-%m-%d) (Pacific/Kiritimati)"
+contains "notify: DEPLOYS_NOTIFY_TZ wins over DEPLOYS_TZ" "$(DEPLOYS_TZ=UTC DEPLOYS_NOTIFY_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "(Pacific/Kiritimati)"
+expect "notify: a bad DEPLOYS_TZ is refused" "$(DEPLOYS_TZ='x;y' notify/notify.sh --dry-run >/dev/null 2>&1; echo $?)" 1
+expect "notify: a bad DEPLOYS_NOTIFY_TZ is refused" "$(DEPLOYS_NOTIFY_TZ='x;y' notify/notify.sh --dry-run >/dev/null 2>&1; echo $?)" 1
 expect "notify: Discord never pings" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -c .allowed_mentions)" '{"parse":[]}'
 expect "notify: Discord by host" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -r 'has("content")')" true
 expect "notify: Telegram by host" "$(DEPLOYS_NOTIFY_URL='https://api.telegram.org/botT/sendMessage?chat_id=1' notify/notify.sh --dry-run | head -1)" "format: telegram"
@@ -305,15 +314,15 @@ expect "pre-push: Render ignores other branches" "$out" "exit=0"
 out="$(push "(delete) $z refs/heads/main $s1" git@github.com:me/site.git)"
 expect "pre-push: a deleted branch builds nothing" "$out" "exit=0"
 start=$(date +%s)
-out="$(FAKE_SLEEP=30.017 DEPLOYS_PREPUSH_TIMEOUT=1 push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
+out="$(FAKE_SLEEP=30.4 DEPLOYS_PREPUSH_TIMEOUT=1 push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
 contains "pre-push: a CLI that does not answer lets the push go" "$out" $'push not checked.\nexit=0'
 [ $(( $(date +%s) - start )) -lt 6 ] && ok "pre-push: gives up after the timeout" || fail "pre-push: gives up after the timeout" "took too long"
-pgrep -f "sleep 30.017" >/dev/null && fail "pre-push: the stuck CLI is stopped" "still running" || ok "pre-push: the stuck CLI is stopped"
+[ -n "$(stray_sleep 30.4)" ] && fail "pre-push: the stuck CLI is stopped" "still running" || ok "pre-push: the stuck CLI is stopped"
 start=$(date +%s)
 out="$(FAKE_DOCTOR_SLEEP=30.029 DEPLOYS_PREPUSH_TIMEOUT=1 push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
 contains "pre-push: a doctor that hangs lets the push go" "$out" "exit=0"
 [ $(( $(date +%s) - start )) -lt 6 ] && ok "pre-push: a hanging doctor is bounded by the timeout" || fail "pre-push: a hanging doctor is bounded by the timeout" "took too long"
-pgrep -f "sleep 30.029" >/dev/null && fail "pre-push: the hanging doctor is stopped" "still running" || ok "pre-push: the hanging doctor is stopped"
+[ -n "$(stray_sleep 30.029)" ] && fail "pre-push: the hanging doctor is stopped" "still running" || ok "pre-push: the hanging doctor is stopped"
 git -C "$tmp/repo" config deploys.prepush.block true
 out="$(push "refs/heads/main $s1 refs/heads/main $z" git@github.com:me/site.git)"
 contains "pre-push: blocks only when configured" "$out" "exit=1"
@@ -547,10 +556,9 @@ rules() { sed -n '/^const errorPattern/,$p' "$1" | grep -v 'eslint-disable' | tr
 if command -v npm >/dev/null && [ -d vscode/node_modules ]; then
   (cd vscode && npm test --silent >"$tmp/vscode.log" 2>&1) && ok "vscode: unit tests" || { fail "vscode: unit tests" "see below"; cat "$tmp/vscode.log"; }
   # A timed-out CLI is stopped with its process group: the stand-in's sleep does not outlive the tests.
-  # Only an orphaned sleep with the tests' own lengths counts (parent gone, so pid 1). Other
-  # suites leave orphans on purpose (tests/app-tests.swift: "sleep 19.6", up to 20 s, in the same
-  # CI job): a plain "sleep 20" from elsewhere made this fail now and then.
-  left="$(ps -axo pid=,ppid=,command= | awk '$2 == 1 && $3 ~ /(^|\/)sleep$/ && ($4 == "20.1" || $4 == "20.2" || $4 == "20.3") && NF == 4')"
+  # Only the stand-in's own odd lengths count (see stray_sleep): other suites leave orphans on
+  # purpose (tests/app-tests.swift: "sleep 19.6") and a plain "sleep 20" elsewhere must not match.
+  left="$(stray_sleep 20.31; stray_sleep 20.32; stray_sleep 20.33)"
   [ -n "$left" ] && fail "vscode: no sleep left behind" "$left" || ok "vscode: no sleep left behind"
 else
   skip "vscode: run npm ci in integrations/vscode first"
@@ -647,7 +655,7 @@ expect "claude-code hook: never deploys" "$(cat "$tmp/deploy.log" 2>/dev/null | 
 if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
   DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
   # 20.7: a length no other test sleeps, so only this test's child can match.
-  pgrep -f "sleep 20\.7" >/dev/null && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
+  [ -n "$(stray_sleep 20.7)" ] && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
 else
   skip "mcp: needs node and (cd integrations/mcp && npm ci)"
 fi
@@ -706,6 +714,7 @@ contains "digest: glab asked for the MR" "$(cat "$tmp/glab.log" 2>/dev/null)" "m
 expect "digest: GitLab repos never go to gh" "$(grep -c 'grp' "$tmp/gh.log" || true)" 0
 expect "digest: --issue needs a repo" "$(digest/digest.sh --issue >/dev/null 2>&1; echo $?)" 1
 expect "digest: --post needs a URL" "$(digest/digest.sh --post >/dev/null 2>&1; echo $?)" 1
+contains "digest: DEPLOYS_TZ sets the day in the title" "$(DEPLOYS_TZ=Pacific/Kiritimati RENDER_API_KEY=x digest/digest.sh)" "# Deploys waiting – $(TZ=Pacific/Kiritimati date +%Y-%m-%d)"
 expect "digest: a bad repo is refused" "$(DEPLOYS_DIGEST_REPO='me/ops;x' digest/digest.sh >/dev/null 2>&1; echo $?)" 1
 expect "digest: --json with --issue is refused" "$(digest/digest.sh --json --issue >/dev/null 2>&1; echo $?)" 1
 cp "$tmp/pr14.json" "$tmp/pr14.bak"
@@ -743,6 +752,14 @@ case "$(cat "$tmp/gh.log")" in *"issue create"*) fail "digest issue: no second i
 contains "digest issue: an older day's is closed" "$(cat "$tmp/gh.log")" "issue close 3 -R me/ops --comment Replaced by #5."
 out="$(RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue --dry-run)"
 contains "digest issue: the body carries the approve list" "$out" '<!-- deploys-approve: app-web,api -->'
+# Commit titles are written by anyone who can push: no pings, no hidden marker, no links.
+cp "$tmp/details-web.json" "$tmp/details-web.bak"
+jq '.commits[3].msg = "Ship <!-- deploys-approve: all --> cc @boss [win](https://evil.example)"' "$tmp/details-web.bak" > "$tmp/details-web.json"
+out="$(RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue --dry-run)"
+cp "$tmp/details-web.bak" "$tmp/details-web.json"
+expect "digest issue: an injected marker in a commit title is not a marker" "$(grep -c '<!-- deploys-approve' <<<"$out")" 1
+contains "digest issue: the injected title is shown, defused" "$out" "Ship &lt;!-- deploys-approve: all --&gt; cc @$(printf '\342\200\213')boss \\[win\\](https://evil.example)"
+expect "digest issue: the real marker stays the last line" "$(tail -n 1 <<<"$out")" '<!-- deploys-approve: app-web,api -->'
 : > "$tmp/gh.log"; RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue >/dev/null
 contains "digest issue: the list goes into a comment of the digest" "$(cat "$tmp/gh.log")" "issue comment 5 -R me/ops --body-file"
 : > "$tmp/gh.log"; FAKE_NOTHING=1 RENDER_API_KEY=x DEPLOYS_DIGEST_REPO=me/ops digest/digest.sh --issue >/dev/null
@@ -826,6 +843,40 @@ if command -v ruby >/dev/null; then
   ruby -ryaml -e 'YAML.load_file(ARGV[0])' digest/examples/daily-digest.yml && ok "daily-digest.yml is valid YAML" || fail "daily-digest.yml is valid YAML" ruby
 else
   skip "approve-deploy: its steps need ruby"
+fi
+
+# --- examples/: the run blocks people copy, run as GitHub would, against the stand-in ---
+if command -v ruby >/dev/null; then
+  xstep() { ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"][ARGV[1]]["steps"].find { |s| s["id"] == ARGV[2] || s["name"] == ARGV[2] }["run"]' "$@"; }
+  # claude-pr-ship-check.yml, "Projects of this repo": this repo's projects with what waits on each.
+  xstep ../examples/claude-pr-ship-check.yml ship-check projects > "$tmp/ship.sh"
+  : > "$tmp/ship.out"
+  ( export DEPLOYS="$tmp/bin/deploys" REPO=me/app VERCEL_TOKEN=x RENDER_API_KEY=x GITHUB_OUTPUT="$tmp/ship.out" \
+      CHANGED='[{"name":"app-web","platform":"vercel","pendingCommits":4,"pendingPRs":2}]'
+    bash -eo pipefail "$tmp/ship.sh" >/dev/null 2>&1 ) && ok "ship-check example: the projects step runs" || fail "ship-check example: the projects step runs" "exit $?"
+  rows="$(sed -n 's/^rows=//p' "$tmp/ship.out")"
+  expect "ship-check example: only this repo's projects, with what waits" "$(jq -c 'map([.platform, .name, .autoDeploy, .waitingCommits, .waitingPRs])' <<<"${rows:-null}")" \
+    '[["vercel","app-web",false,4,2],["render","api",true,0,0]]'
+  : > "$tmp/ship.out"
+  ( export DEPLOYS="$tmp/bin/deploys" REPO=me/app VERCEL_TOKEN="" RENDER_API_KEY="" GITHUB_OUTPUT="$tmp/ship.out" CHANGED=""
+    bash -eo pipefail "$tmp/ship.sh" >/dev/null 2>&1 )
+  expect "ship-check example: no tokens, an empty list" "$(sed -n 's/^rows=//p' "$tmp/ship.out")" "[]"
+  case "$(cat "$tmp/ship.sh")" in *'${{'*) fail "ship-check example: no expressions inside the run script" "found" ;; *) ok "ship-check example: no expressions inside the run script" ;; esac
+  # daily-deploy.yml, "Deploy what changed": a dry run by hand only lists, the schedule deploys.
+  xstep ../examples/daily-deploy.yml deploy "Deploy what changed" > "$tmp/daily.sh"
+  : > "$tmp/example.log"
+  PATH="$tmp/bin:$PATH" EVENT=workflow_dispatch DRY_RUN=true bash -eo pipefail "$tmp/daily.sh" >/dev/null 2>&1
+  expect "daily-deploy example: a dry run by hand only lists" "$(cat "$tmp/example.log")" "deploy-changed"
+  : > "$tmp/example.log"
+  PATH="$tmp/bin:$PATH" EVENT=schedule DRY_RUN="" bash -eo pipefail "$tmp/daily.sh" >/dev/null 2>&1
+  expect "daily-deploy example: the schedule deploys with --yes" "$(cat "$tmp/example.log")" "deploy-changed --yes"
+  : > "$tmp/example.log"
+  PATH="$tmp/bin:$PATH" EVENT=workflow_dispatch DRY_RUN=false bash -eo pipefail "$tmp/daily.sh" >/dev/null 2>&1
+  expect "daily-deploy example: by hand without dry run deploys" "$(cat "$tmp/example.log")" "deploy-changed --yes"
+  expect "daily-deploy example: has a job timeout" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"]["deploy"]["timeout-minutes"]' ../examples/daily-deploy.yml)" 60
+  expect "ship-check example: has a job timeout" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["jobs"]["ship-check"]["timeout-minutes"]' ../examples/claude-pr-ship-check.yml)" 15
+else
+  skip "examples: their steps need ruby"
 fi
 
 echo

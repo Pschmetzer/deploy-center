@@ -103,10 +103,14 @@ GitHub sees the IP address and time of each download, as for any download from G
 
 - The Render key is stored in the macOS keychain (service `deploy-center-render`), the routine token
   under `deploy-center-routine`, the Anthropic key under `deploy-center-anthropic`, the keys of the
-  opt-in hosts under `deploy-center-<name>` and each deploy hook URL under `deploy-center-hook-<name>`. Both are read from stdin when you set them, stored through
+  opt-in hosts under `deploy-center-<name>`, each deploy hook URL under `deploy-center-hook-<name>`
+  and a Vercel token made for the iPhone under `deploy-center-phone-vercel`. All of them are read from stdin when you set them, stored through
   `security -i` on stdin, and handed to `curl` on stdin. They are never a command-line argument
   (visible in `ps`), and never printed: not by `where`, `doctor`, `autofix status`, `--json` output
   or error messages. Prefer a key made only for this app.
+- *Connect the iPhone app* copies the Vercel token, the Render key and the GitHub token into one
+  item of your iCloud Keychain (`app.deploycenter.link`), end-to-end encrypted by Apple. Turning the
+  switch off deletes that item on all your devices.
 - `RENDER_API_KEY` and `DEPLOYS_ROUTINE_TOKEN` in the environment take precedence (for CI). They are
   not checked like a key typed into `set-key`, so set them only from a secret store.
 - While `render json` reads many services at once, the key sits in a `0600` file inside a `0700`

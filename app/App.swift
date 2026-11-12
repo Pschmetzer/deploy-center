@@ -497,7 +497,7 @@ struct SettingsView: View {
         }
         let base: String = SettingsText.diagnostics(version: version, os: ProcessInfo.processInfo.operatingSystemVersionString,
                                                     doctor: d, providers: store.providers, counts: counts,
-                                                    gitlabRepos: gitlab, autofix: store.autofix)
+                                                    gitlabRepos: gitlab, autofix: store.autofix, script: store.scriptVersion)
         let perl: String = d?.perl.map { String($0) } ?? "?"
         let curl: String = d?.curl.map { String($0) } ?? "?"
         let extra: [String] = [
@@ -581,18 +581,7 @@ private func open(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.
     private var running: Int { store.map { $0.items.values.joined().filter { $0.state.isActive }.count } ?? 0 }
 
     /// Asks while deploys run; true when it may go on.
-    func confirmLeaving(restart: Bool = false) -> Bool {
-        let n = running
-        guard n > 0 else { return true }
-        NSApp.activate(ignoringOtherApps: true)
-        let a = NSAlert()
-        a.messageText = L("\(n) \(n == 1 ? "deploy is" : "deploys are") still running", "\(n) \(n == 1 ? "Deploy läuft" : "Deploys laufen") noch")
-        a.informativeText = L("Builds that already started go on at Vercel or Render, but Deploy Center stops following them and queued ones do not start.",
-                              "Gestartete Builds laufen bei Vercel oder Render weiter, aber Deploy Center verfolgt sie nicht mehr, und wartende starten nicht.")
-        a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
-        a.addButton(withTitle: restart ? L("Restart anyway", "Trotzdem neu starten") : L("Quit anyway", "Trotzdem beenden"))
-        return a.runModal() == .alertSecondButtonReturn
-    }
+    func confirmLeaving(restart: Bool = false) -> Bool { confirmQuit(running: running, restart: restart) }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if Self.confirmed { return .terminateNow }

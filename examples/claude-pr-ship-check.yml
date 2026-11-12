@@ -7,6 +7,9 @@
 #   Pschmetzer/deploy-center/integrations/action   reads `deploys changed --json` (never deploys here)
 #   anthropics/claude-code-action@v1               Anthropic's official Claude Code GitHub Action
 #
+# The comment is short, so it runs on Claude Sonnet 5.5 (--model below), not the most expensive model.
+# Change --model if you want another one.
+#
 # Secrets (Settings → Secrets and variables → Actions):
 #   ANTHROPIC_API_KEY  your own Anthropic API key (console.anthropic.com)
 #   VERCEL_TOKEN       a Vercel access token (leave it out if you use only Render)
@@ -44,6 +47,8 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
+    # A hanging step would otherwise run up to six hours (GitHub's default) on your minutes.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,7 +58,7 @@ jobs:
       # What is merged but not live, for every project deploys can see. Report only: deploy stays "false".
       - name: Projects with changes (deploys changed --json)
         id: changed
-        uses: Pschmetzer/deploy-center/integrations/action@v0.9.1   # pin a tag or commit SHA
+        uses: Pschmetzer/deploy-center/integrations/action@v0.9.1   # a release tag; or a full commit SHA
         with:
           deploy: "false"
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -74,7 +79,11 @@ jobs:
         run: |
           # list --json: every project of every provider that is set up, each with its platform
           # (vercel json / render json alone carry no platform, so the join below would never hit).
-          all="$("$DEPLOYS" list --json </dev/null)" || echo "::warning::deploys list could not read every provider; the list may be short."
+          # Without a token there is nothing to read: an empty list, not an error.
+          all="[]"
+          if [ -n "$VERCEL_TOKEN$RENDER_API_KEY" ]; then
+            all="$("$DEPLOYS" list --json </dev/null)" || echo "::warning::deploys list could not read every provider; the list may be short."
+          fi
           rows="$(echo "${all:-[]}" | jq -c --arg r "$REPO" --argjson ch "${CHANGED:-[]}" '
             [.[] | select((.repo // "" | ascii_downcase) == ($r | ascii_downcase)) | .name as $n | .platform as $p
               | ([$ch[] | select(.name == $n and .platform == $p)][0] // {}) as $c

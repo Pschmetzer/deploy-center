@@ -16,14 +16,19 @@ jobs:
   test:
     runs-on: macos-15
     timeout-minutes: 30
+    env:
+      # macOS minutes count tenfold: no brew self-update and no cleanup on every run.
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Xcode 16.4
+        # The image's default today, named so a new default does not change warnings or
+        # type-checker timeouts without a commit here.
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
       - name: Tools
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-          HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: brew install jq shellcheck actionlint
       - name: No personal data in the public repo
         run: scripts/check-public.sh
@@ -32,7 +37,7 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck --severity=warning deploys providers/*.sh build.sh release.sh scripts/*.sh tests/*.sh tests/lib/*.sh tests/providers/*.sh lib/*.sh
-          shellcheck --severity=warning integrations/*/*.sh integrations/claude-code/scripts/*.sh integrations/hooks/pre-push integrations/tests/*.sh
+          shellcheck --severity=warning integrations/*/*.sh integrations/lib/*.sh integrations/claude-code/scripts/*.sh integrations/hooks/pre-push integrations/tests/*.sh
           shellcheck site/install.sh
       - name: Lint the example LaunchAgents and the icon script
         run: |
@@ -53,10 +58,17 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            integrations/mcp/package-lock.json
+            integrations/vscode/package-lock.json
       - name: Integration dependencies (MCP server, VS Code extension)
         run: |
           (cd integrations/mcp && npm ci --no-audit --no-fund)
           (cd integrations/vscode && npm ci --no-audit --no-fund)
+      - name: npm audit (MCP server, bundled into the app)
+        working-directory: integrations/mcp
+        run: npm audit --omit=dev --audit-level=high
       - name: Integration tests (MCP, Action, Claude Code plugin, digest, hooks)
         # REQUIRE_ALL=1: a part that cannot run here fails the job instead of being skipped.
         run: REQUIRE_ALL=1 bash integrations/tests/run.sh
@@ -121,6 +133,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            integrations/mcp/package-lock.json
+            integrations/vscode/package-lock.json
       - name: Tools (column; xmllint for the badge and status page checks)
         run: |
           missing=()
@@ -137,6 +153,7 @@ jobs:
 
   docker:
     # The Docker image builds from the repository root and the CLI inside finds its providers.
+    # Nothing is pushed.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -147,6 +164,7 @@ jobs:
         run: docker build -f integrations/docker/Dockerfile -t deploys .
       - name: deploys runs and finds its providers (no keys, no network)
         run: |
+          docker run --rm deploys --version
           docker run --rm --entrypoint bash deploys -c 'deploys help >/dev/null && ls "$DEPLOYS_DIR/providers/vercel.sh"'
 
   cli-install:
@@ -182,6 +200,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: integrations/vscode/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
@@ -193,7 +213,7 @@ jobs:
           retention-days: 7
 
   raycast:
-    # The Raycast extension: it builds (TypeScript checked) and passes ESLint and Prettier.
+    # The Raycast extension: it builds (TypeScript checked), passes ESLint and Prettier, and its unit tests.
     # Not `ray lint`: it asks raycast.com whether the author has a store account (a network call
     # and an account matter, not a code check). Nothing is published.
     runs-on: ubuntu-latest
@@ -208,13 +228,17 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: integrations/raycast/package-lock.json
       - run: npm ci --no-audit --no-fund
       - name: Build (ray build, offline)
         run: npx --no-install ray build -e dist
       - name: ESLint
-        run: npx --no-install eslint src
+        run: npx --no-install eslint src test
       - name: Prettier
-        run: npx --no-install prettier --check src
+        run: npx --no-install prettier --check src test
+      - name: Unit tests
+        run: npm test
 
   docs:
     # site/docs/ is generated from the Markdown in this repo. Fails when the generator errors
@@ -238,6 +262,8 @@ jobs:
         run: python3 -I scripts/check-strings.py
       - name: Release gate (VERSION, home page and appcast name the same release)
         run: python3 -I scripts/check-release.py
+      - name: ruff (syntax errors and pyflakes in scripts/*.py)
+        run: pipx run ruff==0.16.7 check --isolated --select E9,F scripts/*.py
 
   public-commits:
     # Names and paths often land in commit messages, not in files: the same check as for the
@@ -258,7 +284,7 @@ jobs:
         run: git log --format=%B "$BASE..HEAD" | scripts/check-public.sh --stdin
 
   changelog:
-    # A change to the CLI or the app should say so in CHANGELOG.md. A warning, not a failure:
+    # A change to the CLI, its providers and lib/, the integrations or the app should say so in CHANGELOG.md. A warning, not a failure:
     # the label "no-changelog" silences it.
     if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no-changelog')
     runs-on: ubuntu-latest
@@ -273,6 +299,6 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           files="$(git diff --name-only "$BASE"...HEAD)"
-          if grep -qE '^(deploys|app/)' <<<"$files" && ! grep -qx CHANGELOG.md <<<"$files"; then
-            echo "::warning file=CHANGELOG.md::This PR changes deploys or app/ but not CHANGELOG.md. Add a line under Unreleased, or the label no-changelog."
+          if grep -qE '^(deploys|app/|providers/|lib/|integrations/)' <<<"$files" && ! grep -qx CHANGELOG.md <<<"$files"; then
+            echo "::warning file=CHANGELOG.md::This PR changes deploys, providers/, lib/, integrations/ or app/ but not CHANGELOG.md. Add a line under Unreleased, or the label no-changelog."
           fi

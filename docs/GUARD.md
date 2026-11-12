@@ -57,7 +57,9 @@ all, for 1, 4 or 24 hours.
   Revoking `vercel my-project` while an `all --all` allowance runs leaves the project on.
 
 Platforms the guard looks at: Vercel when the `vercel` CLI is there (or projects are remembered),
-Render when a key is set.
+Render when a key is set. Not yet Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean or Coolify:
+there a teammate or a dashboard click can turn automatic builds back on without the guard noticing.
+`deploys list --json` shows each project's `auto` flag, so check those by hand for now.
 
 ## Files
 

@@ -11,7 +11,7 @@ vercel_meta() {
 # Set up here: the CLI is installed, or projects are remembered. Under launchd's PATH the vercel
 # CLI is often not found, and that must be an error, not a silent "no Vercel projects".
 vercel_ready() {
-  command -v vercel >/dev/null 2>&1 || [ "$(jq 'length' "$REPOS" 2>/dev/null || echo 0)" != 0 ]
+  type -P vercel >/dev/null 2>&1 || [ "$(jq 'length' "$REPOS" 2>/dev/null || echo 0)" != 0 ]
 }
 
 # The team the commands act on. Detected once and remembered; a personal account has none.
@@ -31,9 +31,13 @@ vercel_team() {
   if [ -f "$CONFIG_DIR/vercel-team" ] && [ $(( $(date +%s) - $(mtime "$CONFIG_DIR/vercel-team") )) -lt 86400 ]; then echo ""; return; fi
   local teams n ef e
   # The CLI's own words go along: "fetch failed" is not "not logged in", and must not send
-  # people to `vercel login`.
+  # people to `vercel login`. Only a login problem does.
   ef="$(mktemp)"
-  teams="$(vercel_api_raw /v2/teams 2>"$ef")" || { e="$(cat "$ef")"; rm -f "$ef"; die "Could not ask Vercel for your teams${e:+ ($e)}. If it says you are not logged in: vercel login"; }
+  if ! teams="$(vercel_api_raw /v2/teams 2>"$ef")"; then
+    e="$(grep -v '^[[:space:]]*$' "$ef" | tail -n 1 | cut -c1-200)"; rm -f "$ef"
+    case "$e" in ""|*[Ll]ogin*|*"logged in"*|*[Cc]redentials*|*[Tt]oken*|*401*|*403*) die "The vercel CLI is not logged in. Run: vercel login" ;; esac
+    die "Could not ask Vercel for your teams ($e)"
+  fi
   rm -f "$ef"
   # Only a real team list is remembered: an error body without .teams is not "no team" for a day.
   echo "$teams" | jq -e '.teams | type == "array"' >/dev/null 2>&1 || die "Vercel answered without a team list: $(printf '%s' "$teams" | head -c 200)"
@@ -59,10 +63,13 @@ with_team() {
 # `vercel` with a time limit: macOS has no `timeout`, and perl's alarm survives the exec. A hung
 # CLI then ends with 142 (SIGALRM). Without perl it runs as it is. Update notices stay off
 # stderr: they would be the line a failure is reported with.
-VERCEL_TIMEOUT="${DEPLOYS_VERCEL_TIMEOUT:-60}"
+VERCEL_TIMEOUT="${DEPLOYS_VERCEL_TIMEOUT:-${DEPLOYS_CLI_TIMEOUT:-60}}"
 vercel_run() {
-  # A `vercel` shell function (a test's stand-in) cannot be exec'd: it is called as it is.
-  if [ "$(type -t vercel)" != function ] && command -v perl >/dev/null 2>&1; then
+  # A `vercel` shell function cannot be exec'd: deploys' own (cli_limit, which ends with 124) gets
+  # this limit; a test's stand-in is called as it is.
+  if [ "$(type -t vercel)" = function ]; then
+    DEPLOYS_CLI_TIMEOUT="$VERCEL_TIMEOUT" NO_UPDATE_NOTIFIER=1 vercel "$@"
+  elif command -v perl >/dev/null 2>&1; then
     NO_UPDATE_NOTIFIER=1 perl -e 'alarm shift; exec @ARGV or die "vercel: $!\n"' "$VERCEL_TIMEOUT" vercel "$@"
   else
     NO_UPDATE_NOTIFIER=1 vercel "$@"
@@ -72,15 +79,15 @@ vercel_run() {
 # Worth asking again: no answer, a network error, the rate limit or a server error. The words
 # are the vercel CLI's and Node's (inferred, not checked against every CLI version).
 vercel_transient() {  # <rc> <stderr file>
-  [ "$1" = 142 ] && return 0
-  grep -qiE 'fetch failed|ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|socket hang up|network|timed? ?out|too many requests|rate limit|\((429|5[0-9][0-9])\)' "$2"
+  [ "$1" = 142 ] || [ "$1" = 124 ] && return 0
+  grep -qiE 'fetch failed|ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|socket hang up|network|timed? ?out|too many requests|rate.?limit|(^|[^0-9])(429|5[0-9][0-9])([^0-9]|$)' "$2"
 }
 
 # The reason of a failed call in one line: the first "error" line, or else the last line.
 vercel_reason() {  # <rc> <stderr file>
   local r; r="$(grep -m 1 -i 'error' "$2" | cut -c1-300)"
   [ -n "$r" ] || r="$(grep -v '^[[:space:]]*$' "$2" | tail -n 1 | cut -c1-300)"
-  [ "$1" != 142 ] || r="no answer within ${VERCEL_TIMEOUT} s${r:+ ($r)}"
+  case "$1" in 142|124) r="no answer within ${VERCEL_TIMEOUT} s${r:+ ($r)}" ;; esac
   printf '%s' "${r:-failed (exit $1)}"
 }
 
@@ -265,7 +272,7 @@ vercel_sha_on_ref() {
   repo="$(jq -r --arg p "$1" '.[$p] | if .type == "gitlab" or (.org | not) then "" else "\(.org)/\(.repo)" end' <<< "$2")"
   ref="$(jq -r --arg p "$1" '.[$p].ref // "main"' <<< "$2")"
   [ -n "$repo" ] && [ "${DEPLOYS_VERCEL_ANY_SHA:-}" != 1 ] || return 0
-  command -v gh >/dev/null 2>&1 || { echo "Vercel: could not check that ${3:0:7} is on $repo $ref (no gh); deploying it" >&2; return 0; }
+  type -P gh >/dev/null 2>&1 || { echo "Vercel: could not check that ${3:0:7} is on $repo $ref (no gh); deploying it" >&2; return 0; }
   e="$(mktemp)"
   if ! st="$(gh api "repos/$repo/compare/$ref...$3" --jq .status 2>"$e")" || [ -z "$st" ]; then
     # GitHub answered that it does not know the commit there (404/422): refused, not waved through.
@@ -415,10 +422,11 @@ vercel_cancel() {
 
 # Production back to the previous ready production deployment.
 vercel_rollback() {
-  local p="${1:?project}" cur prev pid
+  local p="${1:?project}" cur prev pid proj
   # "Before" means before the deployment that is live now, which after an earlier rollback or a
-  # promotion is not always the newest one.
-  cur="$(vercel_call "/v9/projects/$p" | jq -r '.targets.production.id // empty')"
+  # promotion is not always the newest one. One read of the project gives that and its id.
+  proj="$(vercel_call "/v9/projects/$p")" || die "Could not read the Vercel project $p"
+  cur="$(echo "$proj" | jq -r '.targets.production.id // empty' 2>/dev/null)"
   prev="$(vercel_call "/v6/deployments?projectId=$p&target=production&state=READY&limit=20" \
     | jq -r --arg cur "$cur" "$VERCEL_META"'.deployments as $d | (($d | map(.uid) | index($cur)) // 0) as $i
         | ($d[$i].meta // {} | vsha) as $sha
@@ -427,7 +435,7 @@ vercel_rollback() {
            | map(select($sha == null or ((.meta // {} | vsha) // "") != $sha)) | .[0].uid // empty)')"
   [ -n "$prev" ] || die "No earlier production deployment of $p to roll back to"
   # The project's id, not its name: Vercel answers 404 to a name on these endpoints.
-  pid="$(vercel_call "/v9/projects/$p" | jq -r '.id // empty')"
+  pid="$(echo "$proj" | jq -r '.id // empty' 2>/dev/null)"
   vercel_call "/v1/projects/${pid:-$p}/rollback/$prev" --method POST >/dev/null || die "Vercel: rollback of $p failed"
   echo "{\"id\":\"$prev\",\"state\":\"READY\"}"
 }
@@ -462,9 +470,12 @@ vercel_set_key() { die "Vercel uses the vercel CLI login, not a stored key. Run:
 # Written with printf, not jq: doctor has to work when jq is missing.
 vercel_doctor() {
   local cli=false vapi=false vlogin=false
-  command -v vercel >/dev/null 2>&1 && cli=true
-  vercel api --help >/dev/null 2>&1 && vapi=true
-  vercel whoami >/dev/null 2>&1 && vlogin=true
+  # Each vercel run is a Node start of a second or so: without the CLI, none.
+  if type -P vercel >/dev/null 2>&1; then
+    cli=true
+    vercel api --help >/dev/null 2>&1 && vapi=true
+    vercel whoami >/dev/null 2>&1 && vlogin=true
+  fi
   printf '{"vercelCli":%s,"vercelApi":%s,"vercelLoggedIn":%s}\n' "$cli" "$vapi" "$vlogin"
 }
 
@@ -529,13 +540,26 @@ vercel_cli_status() {
 
 vercel_cli_cancel() { vercel_cancel "" "${1:?deployment id}"; }
 
+# vercel team [<id>] [--no-check]: a new id is asked of Vercel first, so a typo is not kept
+# (--no-check keeps it unasked, e.g. offline).
 vercel_cli_team() {
-  if [ -n "${1:-}" ]; then valid_team "$1" || die "A team id has letters, digits, _ and - only"; printf '%s' "$1" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $1"; else vercel_team; echo; fi
+  local id="" chk=1 a
+  for a in "$@"; do case "$a" in --no-check) chk="" ;; *) id="$a" ;; esac; done
+  if [ -n "$id" ]; then
+    valid_team "$id" || die "A team id has letters, digits, _ and - only"
+    if [ -n "$chk" ]; then vercel api "/v2/teams/$id" >/dev/null 2>&1 || die "Vercel does not know team $id here (or could not be asked). Check the id (vercel teams ls), or keep it unchecked: deploys vercel team $id --no-check"; fi
+    printf '%s' "$id" > "$CONFIG_DIR/vercel-team"; echo "Vercel team set to $id"
+  else vercel_team; echo; fi
 }
 
 # Say by hand where a project deploys from, for one disconnected before this tool knew it.
+# vercel map <p> <owner/repo> [<branch>] [--no-check]: the project is asked of Vercel first.
 vercel_cli_map() {
+  local chk=1 a rest=()
+  for a in "$@"; do case "$a" in --no-check) chk="" ;; *) rest+=("$a") ;; esac; done
+  set -- ${rest[@]+"${rest[@]}"}
   local p="${1:?project}" r="${2:?owner/repo}" ref="${3:-main}" rid="" tmp
+  if [ -n "$chk" ]; then vercel_call "/v9/projects/$p" >/dev/null 2>&1 || die "Vercel has no project $p in this team (or could not be asked). Check the name (deploys vercel list), or keep it unchecked: deploys vercel map $p $r $ref --no-check"; fi
   case "$r" in */*) ;; *) die "Give the repo as owner/name";; esac
   if [ "$(githost_of "$r")" = gitlab ]; then
     # GitLab: host/group/name (or its URL). Vercel deploys it by project id.
@@ -547,7 +571,7 @@ vercel_cli_map() {
       '.[$p] = ({type:"gitlab", repo:$r, projectId:$pid, ref:$ref} + (if .[$p].offAt then {offAt:.[$p].offAt} else {} end))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
     echo "Vercel: $p deploys from $r ($ref)"; return 0
   fi
-  command -v gh >/dev/null 2>&1 && rid="$(gh api "repos/$r" --jq .id 2>/dev/null || true)"
+  type -P gh >/dev/null 2>&1 && rid="$(gh api "repos/$r" --jq .id 2>/dev/null || true)"
   tmp="$(mktemp)"
   # The whole entry is replaced: an old repoId would win over the new repo name.
   jq --arg p "$p" --arg o "${r%%/*}" --arg n "${r#*/}" --arg ref "$ref" --arg rid "$rid" \

@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deploy hooks: deploy any host with one URL · Deploy Center</title>
+<meta name="description" content="What a deploy hook is, where Vercel, Netlify, Cloudflare Pages, Coolify and DigitalOcean keep it, how to call it with curl, how to keep the URL secret, and how to stop builds on push.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/deploy-hooks/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Deploy hooks: deploy any host with one URL · Deploy Center">
+<meta property="og:description" content="What a deploy hook is, where the big hosts keep it, how to call it with curl, how to keep the URL secret, and how to stop builds on push.">
+<meta property="og:url" content="https://deploycenter.app/guides/deploy-hooks/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for manual deploys.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Deploy hooks: deploy any host with one URL · Deploy Center">
+<meta name="twitter:description" content="What a deploy hook is, where the big hosts keep it, how to call it with curl, how to keep the URL secret, and how to stop builds on push.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Deploy hooks: deploy any host with one URL",
+  "description": "What a deploy hook is, where Vercel, Netlify, Cloudflare Pages, Coolify and DigitalOcean keep it, how to call it with curl, how to keep the URL secret, and how to stop builds on push.",
+  "url": "https://deploycenter.app/guides/deploy-hooks/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/deploy-hooks/",
+  "datePublished": "2026-11-10",
+  "dateModified": "2026-11-10",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Organization",
+   "@id": "https://deploycenter.app/#org",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "What is a deploy hook?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "A secret URL from your host. A request to it, usually a POST, starts a build of a branch you chose when you made the hook. No login and no CLI are needed, only the URL."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Do Vercel deploy hooks work without a Git connection?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. Vercel keeps deploy hooks in the project's Git settings and builds from the connected repository, so disconnecting Git removes them too."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does a deploy hook tell me whether the build worked?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. A 2xx answer only means the build was started. Whether it passed you see at the host."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Is the hook URL a secret?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes. Anyone with the URL can start builds. Keep it out of the repository and out of shell history, and delete or rotate it at the host if it leaks."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Deploy hooks",
+    "item": "https://deploycenter.app/guides/deploy-hooks/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>Deploy hooks: deploy any host with one URL</h1>
+<p class="answer">A deploy hook is a secret URL from your host: one request to it starts a build of a branch you picked. Create it in the host's settings, call it with <code>curl</code> when you want to deploy, and turn off the host's build on every push, so the hook is the only thing that builds.</p>
+<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time></p>
+
+<div class="tablewrap"><table>
+  <thead><tr><th scope="col">Host</th><th scope="col">Where the hook is</th><th scope="col">Stop builds on push</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Vercel</th><td>Project → Settings → Git → <b>Deploy Hooks</b></td><td>Needs the Git connection, see <a href="#vercel">below</a></td></tr>
+    <tr><th scope="row">Netlify</th><td>Site configuration → Build &amp; deploy → <b>Build hooks</b></td><td>An <code>ignore</code> command, or <b>Stop builds</b> (that stops hooks too)</td></tr>
+    <tr><th scope="row">Cloudflare Pages</th><td>Workers &amp; Pages → project → Settings → Builds → <b>Deploy hooks</b></td><td>Settings → Builds → <b>Branch control</b></td></tr>
+    <tr><th scope="row">Coolify</th><td>The resource → <b>Webhooks</b> (needs an API token)</td><td><b>Auto Deploy</b> off in the resource's settings</td></tr>
+    <tr><th scope="row">DigitalOcean App Platform</th><td>No anonymous hook: the API's new-deployment endpoint works as one</td><td>The component → Source → untick <b>Autodeploy</b></td></tr>
+    <tr><th scope="row">GitHub Actions</th><td>A workflow with <code>on: workflow_dispatch</code> and its dispatches endpoint</td><td>Remove the <code>push</code> trigger from the workflow</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="call">Call a hook</h2>
+<p>Most hooks take an empty POST. Keep the URL in a variable or a secret store, never in the repository:</p>
+<pre><code class="language-bash">curl -fsS -X POST "$DEPLOY_HOOK_URL"</code></pre>
+<p>A 2xx answer means the build was <b>started</b>, nothing more. The build can still fail at the host, so check it there. Do not retry blindly on a timeout: the first request may have started a build already, and a retry starts a second one.</p>
+<p>Some endpoints need a token in a header. Coolify's deploy webhook is a GET with an API token; DigitalOcean's new-deployment endpoint is a POST with a token and a small body:</p>
+<pre><code class="language-bash">curl -fsS -H "Authorization: Bearer $COOLIFY_TOKEN" \
+  "https://coolify.example.com/api/v1/deploy?uuid=$UUID&amp;force=false"
+
+curl -fsS -X POST -H "Authorization: Bearer $DO_TOKEN" -H "Content-Type: application/json" \
+  -d '{"force_build":true}' "https://api.digitalocean.com/v2/apps/$APP_ID/deployments"</code></pre>
+
+<h2 id="vercel">Vercel deploy hooks</h2>
+<p>In the project, open <b>Settings → Git → Deploy Hooks</b>, give the hook a name and a branch, and copy the URL. A POST to it builds the newest commit of that branch. Vercel keeps deploy hooks with the Git connection, so if you <a href="/guides/disable-vercel-auto-deploy/">disconnect Git</a> to stop builds on push, the hooks go with it. Without Git, deploy the remembered repository through the Vercel API instead; that is what <code>deploys vercel deploy</code> does.</p>
+
+<h2 id="secret">Keep the URL secret</h2>
+<ul>
+  <li>Anyone with the URL can start builds, and builds cost minutes. Treat it like a password.</li>
+  <li>Read it from stdin or an environment variable, so it stays out of your shell history and out of <code>ps</code>.</li>
+  <li>In CI, store it as a secret. Never commit it, not even in a private repository.</li>
+  <li>If it leaks, delete or rotate it at the host. Removing it from your own tools does not stop it from working.</li>
+</ul>
+
+<h2 id="deploy-center">Deploy hooks in Deploy Center</h2>
+<p><a href="/">Deploy Center</a> turns any such URL into a project you deploy by hand, next to Vercel and Render. It is opt-in:</p>
+<pre><code class="language-bash">deploys providers enable hook
+pbpaste | deploys hook add blog - --repo me/blog --site https://blog.example.com
+deploys changed          # commits on the branch since the last trigger
+deploys hook deploy blog # one request, never retried</code></pre>
+<p>The URL goes into the macOS keychain (on Linux a <code>0600</code> file) and is masked in every output. Header values can name an environment variable, like <code>'Authorization: Bearer $COOLIFY_TOKEN'</code>, so no token is stored in a file. A hook has no status API, so Deploy Center shows "triggered", not the build result. Every option and more examples: <a href="/docs/deploy-hooks/">the deploy hook docs</a>.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>What is a deploy hook?</summary><p>A secret URL from your host. A request to it, usually a POST, starts a build of a branch you chose when you made the hook. No login and no CLI are needed, only the URL.</p></details>
+  <details><summary>Do Vercel deploy hooks work without a Git connection?</summary><p>No. Vercel keeps deploy hooks in the project's Git settings and builds from the connected repository, so disconnecting Git removes them too.</p></details>
+  <details><summary>Does a deploy hook tell me whether the build worked?</summary><p>No. A 2xx answer only means the build was started. Whether it passed you see at the host.</p></details>
+  <details><summary>Is the hook URL a secret?</summary><p>Yes. Anyone with the URL can start builds. Keep it out of the repository and out of shell history, and delete or rotate it at the host if it leaks.</p></details>
+
+<div class="ctabox">
+  <h2>Deploy all your hosts from one window.</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, adds Netlify, Cloudflare Pages, Coolify and any deploy hook opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+</body>
+</html>

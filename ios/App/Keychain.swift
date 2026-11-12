@@ -7,12 +7,25 @@ enum Keychain {
     private static let service = "app.deploycenter.ios"
 
     static func get(_ key: String) -> String? {
+        if case .found(let v) = lookup(key) { return v }
+        return nil
+    }
+
+    /// "Not there" and "could not read" apart: a locked device (before the first unlock) answers
+    /// errSecInteractionNotAllowed, which must not count as "no key".
+    enum Lookup { case found(String), missing, failed }
+    static func lookup(_ key: String) -> Lookup {
         var item: CFTypeRef?
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: key, kSecReturnData as String: true,
                                 kSecMatchLimit as String: kSecMatchLimitOne]
-        guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess, let d = item as? Data else { return nil }
-        return String(data: d, encoding: .utf8)
+        switch SecItemCopyMatching(q as CFDictionary, &item) {
+        case errSecSuccess:
+            guard let d = item as? Data, let s = String(data: d, encoding: .utf8) else { return .failed }
+            return .found(s)
+        case errSecItemNotFound: return .missing
+        default: return .failed
+        }
     }
 
     /// An empty value deletes the item. "After first unlock" so the background refresh can read it;

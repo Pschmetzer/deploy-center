@@ -103,7 +103,7 @@ GitLab repo (`gitlab.com/group/name`) it asks `glab api` for each merge request 
 needs a login there (`glab auth login`, or `GITLAB_TOKEN`). "Check
 before shipping" lists the files `deploys details` marks as risky, a failed CI run on the branch
 head and, when the CLI has it, what `deploys risk <project> --json` says. `DEPLOYS_DIGEST_WORKFLOW`
-names another workflow file. "Today" is the UTC day.
+names another workflow file. "Today" is the UTC day, or the day in `DEPLOYS_TZ` (for example `Europe/Berlin`).
 
 Without `gh` (or `glab` for GitLab), commit messages stand in for PR titles and labels are not read.
 

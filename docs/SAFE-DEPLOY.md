@@ -137,7 +137,7 @@ with the window and the reason. These still go out inside a window:
 - rollbacks
 - `verify` (a rollback is a fix)
 
-An autofix redeploy runs `deploy-json` without `--force`, so it waits for the window to open.
+Autofix never deploys (see [AUTOFIX.md](AUTOFIX.md)). The fix you deploy after merging it goes through the window like any other deploy.
 
 ```bash
 deploys window          # Open / Closed, and which rule

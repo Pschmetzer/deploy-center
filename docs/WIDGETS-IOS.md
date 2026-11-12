@@ -177,6 +177,10 @@ of "Data Not Collected".
   `<TEAMID>.app.deploycenter.shared`: the Vercel token made for the phone, the Vercel team id, the
   Render key and the gh CLI's GitHub token. iCloud Keychain carries it, end-to-end encrypted, to the
   devices with the same Apple ID. Turning the switch off removes it everywhere.
+  - The phone only reads GitHub, but the gh CLI's token usually has `repo` and `workflow` rights.
+    The phone's settings show a classic token's scopes (`X-OAuth-Scopes`) and, when it can write,
+    suggest a fine-grained token with read-only access to contents and pull requests, typed on the
+    phone (a key typed there wins over the Mac's).
   - The vercel CLI's own login is short-lived (it has `expiresAt`), so the phone gets a separate,
     long-lived Vercel token, saved in the Mac app.
   - macOS allows the keychain group only with an embedded provisioning profile: the Developer ID
@@ -303,7 +307,8 @@ Not verified:
 - **The widget gallery:** the Mac widget was not opened there. That needs the screen, and this
   session had no access to it. To check: right-click the desktop → Edit Widgets → search "Deploy".
 - **Real deploys:** deploy, cancel, rollback and the status polling never ran against real accounts
-  (test plan above). The continued processing task (iOS 26) builds but was not tried on a device.
+  (test plan above). `ios/test.sh` checks the rollback targets, the rule and the GitHub reads against
+  made-up answers only. The continued processing task (iOS 26) builds but was not tried on a device.
 - **Vercel teams:** with several teams and no team id set, the app reads the personal account.
   The settings screen has a field for the team id.
 - **Simulator:** Face ID, the background refresh, notifications, the Lock Screen widgets and the iOS
@@ -312,7 +317,25 @@ Not verified:
   `e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"app.deploycenter.ios.refresh"]`,
   then continue. VoiceOver was not tried either. Large text (accessibility sizes) was
   checked: the summary switches to two rows.
-- **Device and store:** no device build. Build 1.0 (1) is archived (ad hoc signed, see `ios/build.sh`) and uploaded; the store page is filled in. Status: `docs/APP-STORE.md`.
+- **Device and store:** no device build from here. Archives are signed ad hoc (see `ios/build.sh`) and uploaded; status: `docs/APP-STORE.md`.
+
+### Test list before the next version
+
+With one throwaway project on Vercel and one on Render (nothing anyone relies on), on a real iPhone:
+
+- [ ] Deploy from the list (context menu) and from the details; Face ID asks once, the row follows the
+      build to "live", and the phone gives a success tap.
+- [ ] Deploy a project that is up to date: the question says "Nothing new to deploy".
+- [ ] Roll back on Vercel: the question names the commit and its date; the phone says it is back on
+      the previous version once the domain points to it.
+- [ ] Roll back on Render: the same, once the new deploy of the old commit is live.
+- [ ] A wrong token: the list says the key was refused and offers the settings; "Test the keys"
+      shows the same.
+- [ ] Flight mode: the list says "Offline" with the time of the data, and reloads when the network is back.
+- [ ] iCloud Keychain: turn on "Connect the iPhone app" on the Mac; the phone shows "Connected to the
+      Mac" within a few minutes.
+- [ ] Widget on the Home Screen: numbers match the app; after three hours without the app its time turns orange (iPhone only).
+- [ ] A background note: with notifications on, a failed build shows up as a note.
 
 ## Steps only the owner can do (Apple Developer account)
 

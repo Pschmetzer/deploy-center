@@ -6,21 +6,77 @@ import SwiftUI
 import UniformTypeIdentifiers
 import UserNotifications
 
+/// The questions before a deploy or a rollback, asked in one place for the list, the details,
+/// VoiceOver actions, the context menu and the keyboard.
+@MainActor
+final class Asks: ObservableObject {
+    @Published var deploy: PhoneProject?
+    @Published var rollback: (project: PhoneProject, target: RollbackTarget)?
+    /// The project whose rollback target is being looked up.
+    @Published var finding: String?
+
+    func askRollback(_ p: PhoneProject, _ store: PhoneStore) {
+        guard finding == nil else { return }
+        finding = p.key
+        Task {
+            defer { finding = nil }
+            store.message = nil
+            if let t = await store.rollbackTarget(p) { rollback = (p, t) }
+            else if store.message == nil { store.say(L("Nothing to roll back to.", "Nichts zum Zurückrollen.")) }
+        }
+    }
+    func canDeploy(_ p: PhoneProject, _ store: PhoneStore) -> Bool { p.deployable && !p.building && store.running[p.key] == nil }
+    func canRollBack(_ p: PhoneProject, _ store: PhoneStore) -> Bool {
+        finding == nil && !p.paused && !p.building && store.running[p.key] == nil
+    }
+}
+
+/// What the keyboard shortcuts of the focused window act on (iPad with a keyboard).
+struct DeployActions {
+    let reload: () -> Void
+    let settings: () -> Void
+    let deploy: (() -> Void)?
+}
+extension FocusedValues {
+    @Entry var deployActions: DeployActions?
+}
+
+struct DeployCommands: Commands {
+    @FocusedValue(\.deployActions) private var actions
+    var body: some Commands {
+        CommandGroup(after: .newItem) {
+            Button(L("Reload", "Neu laden")) { actions?.reload() }
+                .keyboardShortcut("r").disabled(actions == nil)
+            Button(L("Deploy the selected project …", "Ausgewähltes Projekt deployen …")) { actions?.deploy?() }
+                .keyboardShortcut("d").disabled(actions?.deploy == nil)
+        }
+        CommandGroup(replacing: .appSettings) {
+            Button(L("Settings …", "Einstellungen …")) { actions?.settings() }
+                .keyboardShortcut(",").disabled(actions == nil)
+        }
+    }
+}
+
 struct RootView: View {
     @ObservedObject var store: PhoneStore
+    @StateObject private var asks = Asks()
     @Environment(\.scenePhase) private var phase
-    @State private var selection: String?
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    /// Per window: with Stage Manager two windows can show two projects.
+    @SceneStorage("selection") private var selection: String?
     @State private var settings = false
     @State private var connect = false
     /// A widget link that came before the list was read: name and platform.
     @State private var pendingOpen: [String]?
+
+    private var selected: PhoneProject? { selection.flatMap { key in store.projects.first { $0.key == key } } }
 
     var body: some View {
         NavigationSplitView {
             Group {
                 if !store.booted && store.projects.isEmpty && !store.demo { ProgressView() }
                 else if !store.demo && !store.hasAccount { Welcome(store: store, settings: $settings, connect: $connect) }
-                else { ProjectList(store: store, selection: $selection, settings: $settings) }
+                else { ProjectList(store: store, asks: asks, selection: $selection, settings: $settings) }
             }
             .navigationTitle("Deploy Center")
             .toolbar {
@@ -30,17 +86,23 @@ struct RootView: View {
                 }
             }
         } detail: {
-            if let key = selection, let p = store.projects.first(where: { $0.key == key }) {
+            if let p = selected {
                 // A stack of its own: the log and the history push inside the detail column on iPad too.
-                NavigationStack { ProjectDetail(store: store, project: p) }.id(key)
+                NavigationStack { ProjectDetail(store: store, asks: asks, project: p) }.id(p.key)
             } else {
                 ContentUnavailableView(L("Choose a project", "Wähle ein Projekt"), systemImage: "square.stack.3d.up")
             }
         }
+        .focusedSceneValue(\.deployActions, DeployActions(
+            reload: { Task { await store.reload() } },
+            settings: { settings = true },
+            deploy: selected.flatMap { p in asks.canDeploy(p, store) ? { asks.deploy = p } : nil }))
+        .deployQuestions(store: store, asks: asks)
         .sheet(isPresented: $settings) { SettingsView(store: store) }
         .sheet(isPresented: $connect) { ConnectMacView(store: store) }
         .onChange(of: phase) { _, p in
             guard p == .active, !store.demo, !store.loading else { return }
+            store.forgetKeptTokens()    // the keychain may have changed while the app was away
             Task {
                 let had = store.linked
                 await store.refreshLink()
@@ -68,6 +130,12 @@ struct RootView: View {
             if let i = args.firstIndex(of: "-open"), i + 1 < args.count {
                 selection = store.projects.first { $0.name == args[i + 1] }?.key
             }
+            #endif
+            // Wide screens: an empty detail column helps nobody. The window's own choice stays.
+            if sizeClass == .regular && selected == nil {
+                selection = (store.projects.first { $0.group == .attention } ?? store.projects.first { $0.group == .waiting })?.key
+            }
+            #if DEBUG
             if args.contains("-settings") { try? await Task.sleep(for: .seconds(1)); settings = true }
             // -keepalive: runs the background-time helper once, without a deploy (a check that it does not crash).
             if args.contains("-keepalive") {
@@ -100,6 +168,53 @@ struct RootView: View {
         if let p = store.projects.first(where: { $0.name == name && (platform == nil || $0.provider.rawValue == platform) }) {
             selection = p.key; pendingOpen = nil
         } else { pendingOpen = [name] + (platform.map { [$0] } ?? []) }
+    }
+}
+
+extension View {
+    /// The deploy and rollback questions; `asks` says which one is open.
+    func deployQuestions(store: PhoneStore, asks: Asks) -> some View { modifier(DeployQuestions(store: store, asks: asks)) }
+}
+
+struct DeployQuestions: ViewModifier {
+    @ObservedObject var store: PhoneStore
+    @ObservedObject var asks: Asks
+
+    func body(content: Content) -> some View {
+        let p = asks.deploy
+        // Already on the newest commit: say so, as the Mac app does; a build changes nothing and costs minutes.
+        let nothingNew = p?.upToDate ?? false
+        content
+            .confirmationDialog(nothingNew ? L("Nothing new to deploy", "Nichts Neues zu deployen")
+                                           : L("Deploy \(p?.name ?? "")?", "\(p?.name ?? "") deployen?"),
+                                isPresented: Binding(get: { asks.deploy != nil }, set: { if !$0 { asks.deploy = nil } }),
+                                titleVisibility: .visible, presenting: p) { p in
+                Button(nothingNew ? L("Build anyway", "Trotzdem bauen") : L("Deploy", "Deployen")) { Task { await store.deploy(p) } }
+                Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+            } message: { p in
+                if nothingNew {
+                    Text(L("\(p.name) is already on the newest commit. A build costs build minutes and changes nothing.",
+                           "\(p.name) ist schon auf dem neuesten Stand. Ein Build kostet Build-Minuten und ändert nichts."))
+                } else {
+                    Text(p.deploySummary)
+                }
+            }
+            .confirmationDialog(L("Roll back \(asks.rollback?.project.name ?? "")?", "\(asks.rollback?.project.name ?? "") zurückrollen?"),
+                                isPresented: Binding(get: { asks.rollback != nil }, set: { if !$0 { asks.rollback = nil } }),
+                                titleVisibility: .visible, presenting: asks.rollback) { r in
+                Button(L("Roll back", "Zurückrollen"), role: .destructive) { Task { await store.rollback(r.project, to: r.target) } }
+                Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+            } message: { r in
+                Text(Self.describe(r.target))
+            }
+    }
+
+    /// "a1b2c3d “Fix the header”, from 3 days ago"; without a commit the deploy id names it.
+    static func describe(_ t: RollbackTarget) -> String {
+        var what = t.sha.map { String($0.prefix(7)) } ?? String(t.id.prefix(24))
+        if let m = t.title, !m.isEmpty { what += " “\(m)”" }
+        if let d = t.at { what += L(", from ", ", vom ") + d.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(appLocale)) }
+        return L("The previous deploy goes live again: \(what).", "Der vorige Deploy geht wieder live: \(what).")
     }
 }
 
@@ -155,9 +270,14 @@ struct Welcome: View {
         } description: {
             Text(L("Connect to Deploy Center on your Mac, or add a Vercel token or a Render API key. Keys go only to Vercel, Render and GitHub.",
                    "Verbinde dich mit Deploy Center auf deinem Mac, oder füge ein Vercel-Token oder einen Render-API-Key hinzu. Schlüssel gehen nur an Vercel, Render und GitHub."))
+            Text(L("A Vercel token needs the scope of the team whose projects you want to see. A Render API key sees every workspace of its account.",
+                   "Ein Vercel-Token braucht als Bereich das Team, dessen Projekte du sehen willst. Ein Render-API-Key sieht alle Workspaces seines Kontos."))
+                .font(.footnote)
         } actions: {
             Button(L("Connect to the Mac", "Mit dem Mac verbinden")) { connect = true }.buttonStyle(.borderedProminent)
             Button(L("Enter a token", "Token eingeben")) { settings = true }
+            Link(L("Create a Vercel token", "Vercel-Token anlegen"), destination: URL(string: "https://vercel.com/account/tokens")!)
+            Link(L("Create a Render API key", "Render-API-Key anlegen"), destination: URL(string: "https://dashboard.render.com/u/settings#api-keys")!)
             Button(L("Try the demo", "Demo ausprobieren")) { store.demo = true }
         }
     }
@@ -165,10 +285,10 @@ struct Welcome: View {
 
 struct ProjectList: View {
     @ObservedObject var store: PhoneStore
+    @ObservedObject var asks: Asks
     @Binding var selection: String?
     @Binding var settings: Bool
     @State private var query = ""
-    @State private var confirm: PhoneProject?
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -183,17 +303,32 @@ struct ProjectList: View {
         List(selection: $selection) {
             Section {
                 Summary(store: store)
+                let auto = store.projects.filter(\.autoDeploy).count
+                if auto > 0 {
+                    // The point of the app: these build on every push, and every build costs.
+                    Label(auto == 1 ? L("1 project builds on every push (auto-deploy on).", "1 Projekt baut bei jedem Push (Auto-Deploy an).")
+                                    : L("\(auto) projects build on every push (auto-deploy on).", "\(auto) Projekte bauen bei jedem Push (Auto-Deploy an)."),
+                          systemImage: "bolt.fill")
+                        .font(.footnote).foregroundStyle(.orange)
+                }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if let at = store.loadedAt {
                         // Read again every half minute, so "a minute ago" does not stay "now".
                         TimelineView(.periodic(from: .now, by: 30)) { _ in
-                            Text((store.demo ? L("Demo data · ", "Demodaten · ") : "") + L("Updated ", "Stand ") + relative(at))
+                            Text((store.offline ? L("Offline · ", "Offline · ") : "")
+                                 + (store.demo ? L("Demo data · ", "Demodaten · ") : "") + L("Updated ", "Stand ") + relative(at))
                         }
+                    } else if store.offline {
+                        Text(L("Offline", "Offline"))
                     }
                     ForEach(store.errors, id: \.self) { Text($0).foregroundStyle(.red) }
                     if !store.stale.isEmpty {
                         Text(L("Shown as last read: ", "Angezeigt wie zuletzt gelesen: ") + store.stale.map(\.rawValue).sorted().joined(separator: ", "))
+                    }
+                    if store.keyRefused {
+                        Button(L("Check the keys in Settings", "Schlüssel in den Einstellungen prüfen")) { settings = true }
+                            .font(.footnote)
                     }
                 }
             }
@@ -203,16 +338,17 @@ struct ProjectList: View {
                     Section(g.title) {
                         ForEach(rows) { p in
                             Row(p: p, running: store.running[p.key]).tag(p.key)
+                                .contextMenu { menu(p) }
                                 .swipeActions(edge: .trailing) {
-                                    if canDeploy(p) {
-                                        Button { confirm = p } label: { Label(L("Deploy", "Deployen"), systemImage: "paperplane") }
+                                    if asks.canDeploy(p, store) {
+                                        Button { asks.deploy = p } label: { Label(L("Deploy", "Deployen"), systemImage: "paperplane") }
                                             .tint(.accentColor)
                                     }
                                 }
+                                // VoiceOver: the same actions as the detail view, without opening it.
                                 .accessibilityActions {
-                                    if canDeploy(p) { Button(L("Deploy …", "Deployen …")) { confirm = p } }
-                                    // The same actions as the detail view, without opening it.
-                                    Button(L("Roll back …", "Zurückrollen …")) { selection = p.key }
+                                    if asks.canDeploy(p, store) { Button(L("Deploy …", "Deployen …")) { asks.deploy = p } }
+                                    if asks.canRollBack(p, store) { Button(L("Roll back …", "Zurückrollen …")) { asks.askRollback(p, store) } }
                                     if let d = p.domain, let url = URL(string: "https://" + d) {
                                         Button(L("Open domain", "Domain öffnen")) { openURL(url) }
                                     }
@@ -231,15 +367,23 @@ struct ProjectList: View {
                     .accessibilityLabel(L("Share the state", "Stand teilen"))
             }
         }
-        .confirmationDialog(L("Deploy \(confirm?.name ?? "")?", "\(confirm?.name ?? "") deployen?"),
-                            isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible,
-                            presenting: confirm) { p in
-            Button(L("Deploy", "Deployen")) { Task { await store.deploy(p) } }
-            Button(L("Cancel", "Abbrechen"), role: .cancel) {}
-        } message: { p in Text(p.deploySummary) }
     }
 
-    private func canDeploy(_ p: PhoneProject) -> Bool { p.deployable && !p.building && store.running[p.key] == nil }
+    @ViewBuilder private func menu(_ p: PhoneProject) -> some View {
+        Button { asks.deploy = p } label: { Label(L("Deploy …", "Deployen …"), systemImage: "paperplane") }
+            .disabled(!asks.canDeploy(p, store))
+        Button(role: .destructive) { asks.askRollback(p, store) } label: { Label(L("Roll back …", "Zurückrollen …"), systemImage: "arrow.uturn.backward") }
+            .disabled(!asks.canRollBack(p, store))
+        if let d = p.domain, let url = URL(string: "https://" + d) {
+            Button { openURL(url) } label: { Label(L("Open domain", "Domain öffnen"), systemImage: "safari") }
+        }
+        if let s = p.liveSha {
+            Button { UIPasteboard.general.string = s } label: { Label(L("Copy live SHA", "Live-SHA kopieren"), systemImage: "doc.on.doc") }
+        }
+        if let url = p.dashboardURL {
+            Button { openURL(url) } label: { Label(L("Open in the Render dashboard", "Im Render-Dashboard öffnen"), systemImage: "arrow.up.forward.app") }
+        }
+    }
 
     private func matches(_ p: PhoneProject) -> Bool {
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -378,12 +522,9 @@ struct Row: View {
 
 struct ProjectDetail: View {
     @ObservedObject var store: PhoneStore
+    @ObservedObject var asks: Asks
     let project: PhoneProject
-    @State private var confirmDeploy = false
-    @State private var rollbackTo: RollbackTarget?
-    @State private var confirmRollback = false
     @State private var confirmCancel = false
-    @State private var findingRollback = false
     @State private var renderAction: RenderAction?
 
     var body: some View {
@@ -395,8 +536,10 @@ struct ProjectDetail: View {
                     HStack(spacing: 6) { Image(systemName: p.icon).accessibilityHidden(true); Text(p.stateText) }.foregroundStyle(p.tint)
                 }
                 LabeledContent(L("Platform", "Plattform"), value: p.provider.rawValue)
-                LabeledContent(L("Auto-deploy", "Auto-Deploy"),
-                               value: p.autoDeploy ? L("on: every push builds", "an: jeder Push baut") : L("off", "aus"))
+                LabeledContent(L("Auto-deploy", "Auto-Deploy")) {
+                    Text(p.autoDeploy ? L("on: every push builds", "an: jeder Push baut") : L("off", "aus"))
+                        .foregroundStyle(p.autoDeploy ? .orange : .secondary)
+                }
                 if let r = p.repo { LabeledContent(L("Repository", "Repository"), value: r + (p.branch.map { " · \($0)" } ?? "")) }
                 if let h = p.otherHost { LabeledContent(L("Repository", "Repository"), value: L("on \(h) (only GitHub is read)", "auf \(h) (gelesen wird nur GitHub)")) }
                 if let d = p.domain { LabeledContent(L("Domain", "Domain"), value: d) }
@@ -408,16 +551,23 @@ struct ProjectDetail: View {
                 }
                 if let e = p.fetchError { Text(e).font(.footnote).foregroundStyle(.red) }
             } footer: {
-                if store.stale.contains(p.provider) {
-                    Text(L("\(p.provider.rawValue) could not be read just now: this is the last state read.",
-                           "\(p.provider.rawValue) war gerade nicht lesbar: das ist der zuletzt gelesene Stand."))
+                VStack(alignment: .leading, spacing: 4) {
+                    if p.autoDeploy {
+                        Text(L("Every push to \(p.branch ?? "the branch") builds and goes live, and each build can cost build minutes.",
+                               "Jeder Push auf \(p.branch ?? "den Branch") baut und geht live, und jeder Build kann Build-Minuten kosten."))
+                    }
+                    if store.stale.contains(p.provider) {
+                        Text(L("\(p.provider.rawValue) could not be read just now: this is the last state read.",
+                               "\(p.provider.rawValue) war gerade nicht lesbar: das ist der zuletzt gelesene Stand."))
+                    }
                 }
             }
             Section(L("Commits", "Commits")) {
                 if let m = p.headMsg { LabeledContent(L("Newest", "Neuester"), value: m) }
-                if let s = p.headSha { LabeledContent(L("Newest commit", "Neuester Commit")) { Text(s.prefix(7)).monospaced() } }
                 if let m = p.liveMsg { LabeledContent(L("Live", "Live"), value: m) }
-                if let s = p.liveSha { LabeledContent(L("Live commit", "Live-Commit")) { Text(s.prefix(7)).monospaced() } }
+                // Both commits, so "SHA" is never ambiguous; long press copies the whole one.
+                if let s = p.liveSha { ShaRow(label: L("Live commit", "Live-Commit"), sha: s) }
+                if let s = p.headSha, s != p.liveSha { ShaRow(label: L("Newest commit", "Neuester Commit"), sha: s) }
             }
             .textSelection(.enabled)
             if p.changed, let titles = p.pendingTitles, !titles.isEmpty {
@@ -444,33 +594,26 @@ struct ProjectDetail: View {
             }
             Section {
                 Button {
-                    confirmDeploy = true
+                    asks.deploy = p
                 } label: {
                     Label(p.failed ? L("Deploy again …", "Erneut deployen …") : L("Deploy the newest commit …", "Neuesten Commit deployen …"),
                           systemImage: "paperplane")
                 }
-                .disabled(!p.deployable || p.building || busy)
+                .disabled(!asks.canDeploy(p, store))
                 if store.buildId(p) != nil && (p.building || store.running[p.key].map { $0 != "rollback" && $0 != "starting" } == true) {
                     Button(role: .destructive) { confirmCancel = true } label: {
                         Label(L("Cancel the build …", "Build abbrechen …"), systemImage: "stop.circle")
                     }
                 }
                 Button(role: .destructive) {
-                    guard !findingRollback else { return }
-                    findingRollback = true
-                    Task {
-                        defer { findingRollback = false }
-                        store.message = nil
-                        rollbackTo = await store.rollbackTarget(p); confirmRollback = rollbackTo != nil
-                        if rollbackTo == nil && store.message == nil { store.say(L("Nothing to roll back to.", "Nichts zum Zurückrollen.")) }
-                    }
+                    asks.askRollback(p, store)
                 } label: {
                     HStack {
                         Label(L("Roll back …", "Zurückrollen …"), systemImage: "arrow.uturn.backward")
-                        if findingRollback { Spacer(); ProgressView() }
+                        if asks.finding == p.key { Spacer(); ProgressView() }
                     }
                 }
-                .disabled(p.building || p.paused || busy || findingRollback)
+                .disabled(!asks.canRollBack(p, store))
                 if p.provider == .render {
                     ForEach(p.paused ? [RenderAction.resume] : [.restart, .suspend], id: \.self) { a in
                         Button(role: a == .suspend ? .destructive : nil) { renderAction = a } label: { Label(a.title, systemImage: a.icon) }
@@ -489,12 +632,6 @@ struct ProjectDetail: View {
             a.title = p.name; a.userInfo = ["project": p.key]
             a.isEligibleForHandoff = true; a.isEligibleForSearch = false
         }
-        .confirmationDialog(L("Deploy \(p.name)?", "\(p.name) deployen?"), isPresented: $confirmDeploy, titleVisibility: .visible) {
-            Button(L("Deploy", "Deployen")) { Task { await store.deploy(p) } }
-            Button(L("Cancel", "Abbrechen"), role: .cancel) {}
-        } message: {
-            Text(p.deploySummary)
-        }
         .confirmationDialog(renderAction.map { $0.title.replacingOccurrences(of: " …", with: "?") } ?? "",
                             isPresented: Binding(get: { renderAction != nil }, set: { if !$0 { renderAction = nil } }), titleVisibility: .visible) {
             Button(renderAction?.title.replacingOccurrences(of: " …", with: "") ?? "", role: renderAction == .suspend ? .destructive : nil) {
@@ -512,25 +649,6 @@ struct ProjectDetail: View {
         } message: {
             Text(L("What is live stays live.", "Was live ist, bleibt live."))
         }
-        .confirmationDialog(L("Roll back \(p.name)?", "\(p.name) zurückrollen?"), isPresented: $confirmRollback, titleVisibility: .visible) {
-            Button(L("Roll back", "Zurückrollen"), role: .destructive) {
-                if let t = rollbackTo { Task { await store.rollback(p, to: t) } }
-            }
-            Button(L("Cancel", "Abbrechen"), role: .cancel) {}
-        } message: {
-            Text(rollbackText)
-        }
-    }
-
-    /// "Back to “Footer links” (a1b2c3d, 3 days ago)", with what is known.
-    private var rollbackText: String {
-        guard let t = rollbackTo else { return "" }
-        var facts: [String] = []
-        // Without a commit SHA the deploy id names it.
-        facts.append(t.sha.map { String($0.prefix(7)) } ?? String(t.id.prefix(24)))
-        if let d = t.at { facts.append(relative(d)) }
-        let what = t.title.map { L("\"\($0)\"", "„\($0)“") } ?? L("The previous deploy", "Der vorige Deploy")
-        return what + (facts.isEmpty ? "" : " (" + facts.joined(separator: ", ") + ")") + L(" goes live again.", " geht wieder live.")
     }
 
     private func links(_ p: PhoneProject) -> [(String, URL)]? {
@@ -664,29 +782,48 @@ extension PhoneStore {
     }
 }
 
+/// A commit, short, selectable, with "Copy" in its context menu.
+struct ShaRow: View {
+    let label: String
+    let sha: String
+    var body: some View {
+        LabeledContent(label) {
+            Text(String(sha.prefix(7))).font(.body.monospaced()).textSelection(.enabled)
+        }
+        .contextMenu {
+            Button { UIPasteboard.general.string = sha } label: { Label(L("Copy", "Kopieren"), systemImage: "doc.on.doc") }
+        }
+        .accessibilityAction(named: L("Copy", "Kopieren")) { UIPasteboard.general.string = sha }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var store: PhoneStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
-    @State private var vercel = ""
-    @State private var team = ""
-    @State private var render = ""
-    @State private var github = ""
-    @State private var initial: [String] = []
+    typealias Key = PhoneStore.TokenKey
+    @State private var fields: [Key: String] = [:]
+    @State private var saved: [Key: String] = [:]
     @AppStorage("notify") private var notify = false
     @AppStorage("lockOnOpen") private var lockOnOpen = false
     @State private var connect = false
     @State private var notesDenied = false
     @State private var testResults: [String] = []
-    @State private var testing = false
     @State private var saveFailed = false
     @State private var confirmRemove = false
     @State private var githubScopes: [String]?
+    @State private var testing = false
 
-    private var fields: [String] { [vercel, team, render, github] }
-    private var dirty: Bool { !initial.isEmpty && fields != initial }
+    /// Typed but not saved: swiping the sheet away must not throw it away silently.
+    private var dirty: Bool { Key.allCases.contains { (fields[$0] ?? "") != (saved[$0] ?? "") } }
     /// Scopes that can change repos: more than the phone needs (it only reads GitHub).
     private var writeScopes: [String] { (githubScopes ?? []).filter { ["repo", "workflow", "write:packages", "delete_repo", "admin:org"].contains($0) } }
+
+    private func field(_ k: Key) -> Binding<String> { Binding(get: { fields[k] ?? "" }, set: { fields[k] = $0 }) }
+    /// The placeholder says when the Mac's key is in use for an empty field.
+    private func prompt(_ k: Key, _ en: String, _ de: String) -> String {
+        store.linkedToken(k) != nil && (fields[k] ?? "").isEmpty ? L(en, de) + L(" (from the Mac)", " (vom Mac)") : L(en, de)
+    }
 
     var body: some View {
         NavigationStack {
@@ -702,12 +839,12 @@ struct SettingsView: View {
                            "Schlüssel vom Mac gelten, wenn ein Feld unten leer ist. Ein hier eingetragener Schlüssel hat Vorrang."))
                 }
                 Section {
-                    // No password content type: iOS would offer to save the tokens in iCloud Passwords.
-                    SecureField(L("Vercel token", "Vercel-Token"), text: $vercel).textContentType(nil).privacySensitive()
-                    TextField(L("Vercel team id (optional)", "Vercel-Team-ID (optional)"), text: $team)
+                    // No password content type: iOS would offer to save the tokens in iCloud Passwords, against "never synced".
+                    SecureField(prompt(.vercel, "Vercel token", "Vercel-Token"), text: field(.vercel)).textContentType(nil).privacySensitive()
+                    TextField(prompt(.vercelTeam, "Vercel team id (optional)", "Vercel-Team-ID (optional)"), text: field(.vercelTeam))
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    SecureField(L("Render API key", "Render-API-Key"), text: $render).textContentType(nil).privacySensitive()
-                    SecureField(L("GitHub token (optional, for private repos)", "GitHub-Token (optional, für private Repos)"), text: $github)
+                    SecureField(prompt(.render, "Render API key", "Render-API-Key"), text: field(.render)).textContentType(nil).privacySensitive()
+                    SecureField(prompt(.github, "GitHub token (optional, for private repos)", "GitHub-Token (optional, für private Repos)"), text: field(.github))
                         .textContentType(nil).privacySensitive()
                     if !writeScopes.isEmpty {
                         Label(L("This GitHub token can also write (\(writeScopes.joined(separator: ", "))). The phone only reads: a fine-grained token with read-only access to contents and pull requests is enough.",
@@ -810,9 +947,9 @@ struct SettingsView: View {
     }
 
     private func loadFields() {
-        vercel = store.ownToken(.vercel) ?? ""; team = store.ownToken(.vercelTeam) ?? ""
-        render = store.ownToken(.render) ?? ""; github = store.ownToken(.github) ?? ""
-        initial = fields
+        var f: [Key: String] = [:]
+        for k in Key.allCases { f[k] = store.ownToken(k) ?? "" }
+        fields = f; saved = f
     }
 
     private var backgroundProblem: String? {
@@ -835,11 +972,23 @@ struct SettingsView: View {
     private func test() async {
         testing = true; defer { testing = false }
         testResults = []
-        let v = vercel.isEmpty ? store.linkedToken(.vercel) : vercel
-        let t = team.isEmpty ? store.linkedToken(.vercelTeam) : team
-        let r = render.isEmpty ? store.linkedToken(.render) : render
-        let g = github.isEmpty ? store.linkedToken(.github) : github
-        if let v { testResults.append("Vercel: " + (await result { try await Vercel(token: v, team: t).whoami() })) }
+        func pick(_ k: Key) -> String? {
+            let typed = (fields[k] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return typed.isEmpty ? store.linkedToken(k) : typed
+        }
+        let v = pick(.vercel), t = pick(.vercelTeam), r = pick(.render), g = pick(.github)
+        if let v {
+            testResults.append("Vercel: " + (await result {
+                // No team typed: the one team the token sees, as the list does; with several, say so.
+                var team = t, note = ""
+                if team == nil {
+                    let r = try await Vercel.resolveTeam(token: v)
+                    team = r.id
+                    if r.teams > 1 { note = L(" · personal account (\(r.teams) teams: enter a team id)", " · persönliches Konto (\(r.teams) Teams: Team-ID eintragen)") }
+                }
+                return try await Vercel(token: v, team: team).whoami() + note
+            }))
+        }
         if let r { testResults.append("Render: " + (await result { try await Render(key: r).whoami() })) }
         if let g { testResults.append("GitHub: " + (await result { try await GitHub(token: g).whoami() })) }
         if testResults.isEmpty { testResults = [L("No key to test.", "Kein Schlüssel zum Testen.")] }
@@ -850,14 +999,11 @@ struct SettingsView: View {
 
     private func save() -> Bool {
         guard dirty else { return true }
-        var ok = true
-        ok = Keychain.set(PhoneStore.TokenKey.vercel.rawValue, vercel) && ok
-        ok = Keychain.set(PhoneStore.TokenKey.vercelTeam.rawValue, team) && ok
-        ok = Keychain.set(PhoneStore.TokenKey.render.rawValue, render) && ok
-        ok = Keychain.set(PhoneStore.TokenKey.github.rawValue, github) && ok
+        let ok = Key.allCases.map { store.setOwnToken($0, fields[$0] ?? "") }.allSatisfy { $0 }
         Background.schedule()
         Task { await store.reload() }
-        if !ok { saveFailed = true } else { initial = fields }
-        return ok
+        if !ok { saveFailed = true; return false }
+        saved = fields
+        return true
     }
 }

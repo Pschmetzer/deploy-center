@@ -60,7 +60,11 @@ What it does instead:
 
 3. Add the `ignore` line to `netlify.toml` and merge it to the production branch. If the site
    has a base directory, the file goes there. If the file already has a `[build]` section, add
-   only the `ignore` line to it.
+   only the `ignore` line to it. Deploy Center only looks for an `ignore` line that names
+   `INCOMING_HOOK_TITLE` in `netlify.toml` on the production branch (in the base directory it
+   knows, then the root). Which section the line is in, a `[context.production]` section with
+   another `ignore` that wins, or a base directory changed in the Netlify UI is not checked:
+   after such a change, check by hand that a push builds nothing.
 
 4. Run `autodeploy-off` again. It reads the file through `gh` and, once it finds the rule, marks
    the site as deployable. Until then `deploys netlify deploy <site>` refuses: without the rule,

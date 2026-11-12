@@ -34,11 +34,9 @@ extension Store {
         let w = waiting
         var rows: [DeploySnapshot.Project] = []
         for i in Array(items.values.joined()) where i.deployable && !isHidden(i) {
-            let s = (i.lastState ?? "").lowercased()
             let status: DeploySnapshot.Project.Status
             if i.building || i.state.isActive { status = .building }
-            else if case .failed = i.state { status = .failed }
-            else if s.contains("fail") || s == "error" { status = .failed }
+            else if i.failed { status = .failed }
             else if i.hasNewCommits && i.state == .idle { status = .waiting }
             else { continue }
             rows.append(.init(name: Demo.mask(i.name), platform: i.platform.rawValue, status: status,
@@ -86,15 +84,14 @@ extension Store {
 }
 
 extension DeploySnapshot {
-    /// Everything but the time it was made; the language too, so switching it reaches the widgets.
-    func sameContent(as o: DeploySnapshot) -> Bool {
-        func plain(_ s: DeploySnapshot) -> DeploySnapshot {
-            DeploySnapshot(at: .distantPast, demo: s.demo, waitingProjects: s.waitingProjects, waitingCommits: s.waitingCommits,
-                           waitingPRs: s.waitingPRs, building: s.building, failed: s.failed, byPlatform: s.byPlatform,
-                           saving: s.saving, projects: s.projects,
-                           language: s.language)
-        }
-        return plain(self) == plain(o)
+    /// Everything but `at`: a new language or platform split must reach the widgets too.
+    func sameContent(as o: DeploySnapshot) -> Bool { o.dated(at) == self }
+    private func dated(_ d: Date) -> DeploySnapshot {
+        var c = DeploySnapshot(at: d, demo: demo, waitingProjects: waitingProjects, waitingCommits: waitingCommits,
+                               waitingPRs: waitingPRs, building: building, failed: failed, byPlatform: byPlatform,
+                               saving: saving, projects: projects, language: language)
+        c.version = version
+        return c
     }
 }
 

@@ -224,14 +224,22 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   async projectMenu(p: Project): Promise<void> {
     type Item = vscode.QuickPickItem & { id: string };
     const items: Item[] = [
-      { label: t("$(rocket) Deploy…"), description: p.waiting ? describe(p) : t("nothing waiting"), id: "deploy" },
       { label: t("$(link-external) Open site"), id: "open" },
       { label: t("$(output) Show log"), description: p.failed ? t("the newest build failed") : undefined, id: "log" },
       { label: t("$(markdown) Copy release notes"), id: "notes" },
     ];
-    if (canPreview(p)) items.splice(1, 0, { label: t("$(eye) Deploy preview…"), description: t("production stays as it is"), id: "preview" });
+    const preview: Item | null = canPreview(p) ? { label: t("$(eye) Deploy preview…"), description: t("production stays as it is"), id: "preview" } : null;
+    if (p.waiting && preview) items.unshift(preview);
+    if (p.failed) items.unshift({ label: t("$(copy) Copy for AI"), description: t("the first error block, ready to paste"), id: "ai" });
     if (canRollback(p)) items.push({ label: t("$(history) Roll back…"), description: t("production to the deploy before"), id: "rollback" });
-    if (p.failed) items.splice(1, 0, { label: t("$(copy) Copy for AI"), description: t("the first error block, ready to paste"), id: "ai" });
+    // With something waiting, deploying is what the menu is for: first. With nothing waiting it
+    // only rebuilds the same commit (a paid build), so it goes last with the preview, where a
+    // quick Enter misses both.
+    if (p.waiting) items.unshift({ label: t("$(rocket) Deploy…"), description: describe(p), id: "deploy" });
+    else {
+      if (preview) items.push(preview);
+      items.push({ label: t("$(rocket) Deploy again…"), description: t("nothing waiting: rebuilds the newest commit"), id: "deploy" });
+    }
     const pick = await vscode.window.showQuickPick(items, { title: `${p.name} (${platformLabel(p.platform)})` });
     switch (pick?.id) {
       case "deploy": return this.deploy(p);

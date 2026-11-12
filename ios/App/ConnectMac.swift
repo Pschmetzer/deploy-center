@@ -105,9 +105,11 @@ struct ConnectMacView: View {
                 }
             }
             .fullScreenCover(isPresented: $scanning) {
+                // A wrong or old code keeps the camera open, with the reason over the picture.
                 QRScanner { text in
-                    scanning = false
-                    handle(text)
+                    // A good code closes the camera and shows what it holds before anything is saved.
+                    guard let why = reason(text) else { scanning = false; return nil }
+                    return why
                 } cancel: { error, denied in
                     scanning = false
                     scanError = error; cameraDenied = denied
@@ -125,21 +127,28 @@ struct ConnectMacView: View {
         if store.linked != nil { await store.reload(); dismiss() }
     }
 
+    /// A pasted code: a wrong one says why here.
     private func handle(_ text: String) {
+        scanError = reason(text)
+        if let e = scanError {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            AccessibilityNotification.Announcement(e).post()
+        }
+    }
+
+    /// Takes a good code into the preview (`found`) and returns nil; else why it was not taken.
+    private func reason(_ text: String) -> String? {
         switch PhoneLink.read(qr: text.trimmingCharacters(in: .whitespacesAndNewlines)) {
         case .keys(let k):
             found = k; scanError = nil
             UINotificationFeedbackGenerator().notificationOccurred(.success)
-        case .notOurs: scanError = L("That is not a Deploy Center code.", "Das ist kein Deploy-Center-Code.")
-        case .newerVersion: scanError = L("This code comes from a newer Mac app. Update Deploy Center on this iPhone.",
-                                          "Dieser Code kommt von einer neueren Mac-App. Aktualisiere Deploy Center auf diesem iPhone.")
-        case .expired: scanError = L("This code is too old. Show a new one on the Mac (and check that both clocks are right).",
-                                     "Dieser Code ist zu alt. Zeig auf dem Mac einen neuen (und prüfe, dass beide Uhren stimmen).")
-        case .empty: scanError = L("The code holds no Vercel or Render key.", "Der Code enthält keinen Vercel- oder Render-Schlüssel.")
-        }
-        if let e = scanError {
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
-            AccessibilityNotification.Announcement(e).post()
+            return nil
+        case .notOurs: return L("That is not a Deploy Center code.", "Das ist kein Deploy-Center-Code.")
+        case .newerVersion: return L("This code comes from a newer Mac app. Update Deploy Center on this iPhone.",
+                                     "Dieser Code kommt von einer neueren Mac-App. Aktualisiere Deploy Center auf diesem iPhone.")
+        case .expired: return L("This code is too old. Show a new one on the Mac (and check that both clocks are right).",
+                                "Dieser Code ist zu alt. Zeig auf dem Mac einen neuen (und prüfe, dass beide Uhren stimmen).")
+        case .empty: return L("The code holds no Vercel or Render key.", "Der Code enthält keinen Vercel- oder Render-Schlüssel.")
         }
     }
 
@@ -156,7 +165,8 @@ struct ConnectMacView: View {
 
 /// The camera, reading one QR code.
 struct QRScanner: UIViewControllerRepresentable {
-    let found: (String) -> Void
+    /// Returns why the code was not taken (the camera stays open), or nil when it was.
+    let found: (String) -> String?
     let cancel: (String?, Bool) -> Void      // message, and whether camera access was refused
 
     func makeUIViewController(context: Context) -> ScannerController {
@@ -165,12 +175,15 @@ struct QRScanner: UIViewControllerRepresentable {
     func updateUIViewController(_ c: ScannerController, context: Context) {}
 
     final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
-        var found: ((String) -> Void)?
+        var found: ((String) -> String?)?
         var cancel: ((String?, Bool) -> Void)?
         private let session = AVCaptureSession()
         private var preview: AVCaptureVideoPreviewLayer?
         private var camera: AVCaptureDevice?
         private var done = false
+        private let hint = UILabel()
+        /// The camera reports the same code many times a second: each rejected one is answered once.
+        private var rejected: String?
 
         override func viewDidLoad() {
             super.viewDidLoad()
@@ -178,7 +191,6 @@ struct QRScanner: UIViewControllerRepresentable {
             let close = button(L("Cancel", "Abbrechen")) { [weak self] in self?.finish { $0.cancel?(nil, false) } }
             let toggle: () -> Void = { [weak self] in self?.toggleTorch() }
             // What to do, for everyone and for VoiceOver: the camera picture alone says nothing.
-            let hint = UILabel()
             hint.text = L("Point the camera at the code on the Mac.", "Richte die Kamera auf den Code am Mac.")
             hint.textColor = .white
             hint.font = .preferredFont(forTextStyle: .body)
@@ -209,13 +221,13 @@ struct QRScanner: UIViewControllerRepresentable {
                         c += [torch.leadingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
                               torch.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor, constant: 12)]
                     }
-                    self.view.addSubview(hint)
+                    self.view.addSubview(self.hint)
                     let g = self.view.safeAreaLayoutGuide
-                    c += [hint.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 24),
-                          hint.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -24),
-                          hint.bottomAnchor.constraint(equalTo: g.bottomAnchor, constant: -32)]
+                    c += [self.hint.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 24),
+                          self.hint.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -24),
+                          self.hint.bottomAnchor.constraint(equalTo: g.bottomAnchor, constant: -32)]
                     NSLayoutConstraint.activate(c)
-                    UIAccessibility.post(notification: .screenChanged, argument: hint)
+                    UIAccessibility.post(notification: .screenChanged, argument: self.hint)
                 }
             }
         }
@@ -278,8 +290,12 @@ struct QRScanner: UIViewControllerRepresentable {
         }
 
         func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject], from connection: AVCaptureConnection) {
-            guard let s = (objects.first as? AVMetadataMachineReadableCodeObject)?.stringValue else { return }
-            finish { $0.found?(s) }
+            guard !done, let s = (objects.first as? AVMetadataMachineReadableCodeObject)?.stringValue, s != rejected else { return }
+            guard let why = found?(s) else { finish { _ in }; return }
+            rejected = s
+            hint.text = why
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            UIAccessibility.post(notification: .announcement, argument: why)
         }
 
         private func finish(_ f: (ScannerController) -> Void) {

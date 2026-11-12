@@ -2,9 +2,7 @@
 
 import SwiftUI
 import AppKit
-import Charts
 import UserNotifications
-import ServiceManagement
 
 // MARK: - Data
 
@@ -599,6 +597,12 @@ extension Item {
         case .vercel: return (latestState ?? lastState ?? "").lowercased() == "error"
         case .render: return (lastState ?? "").lowercased() == "build_failed"
         }
+    }
+    /// Failed, by either source: a deploy started here that failed, or the platform's last build.
+    /// The one rule for the widget, the menu bar and Claude's "why did it fail".
+    var failed: Bool {
+        if case .failed = state { return true }
+        return anyFailure
     }
 }
 

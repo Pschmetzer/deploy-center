@@ -9,6 +9,7 @@ struct APIError: LocalizedError {
     let status: Int
     let message: String
     /// GitHub answers a spent rate limit with 403 and X-RateLimit-Remaining: 0, others with 429.
+    /// The status stays as it came: callers decide by it.
     var rateLimited = false
 
     /// What to do about it, not only the HTTP code.
@@ -18,14 +19,18 @@ struct APIError: LocalizedError {
         if rateLimited || status == 429 { return L("Rate limit reached. Try again later.", "Limit erreicht. Versuch es später noch einmal.") }
         switch status {
         case 0: return message
-        case 401: return L("Key refused (HTTP 401). Check it in Settings.", "Schlüssel abgelehnt (HTTP 401). Prüfe ihn in den Einstellungen.")
-        case 403: return L("No access (HTTP 403): \(message)", "Kein Zugriff (HTTP 403): \(message)")
+        case 401: return L("The key was refused: wrong or expired (HTTP 401). Check it in Settings.",
+                           "Der Schlüssel wurde abgelehnt: falsch oder abgelaufen (HTTP 401). In den Einstellungen prüfen.")
+        case 403: return L("The key lacks the rights for this (HTTP 403): \(message)",
+                           "Dem Schlüssel fehlen die Rechte dafür (HTTP 403): \(message)")
         case 404: return L("Not found (HTTP 404): \(message)", "Nicht gefunden (HTTP 404): \(message)")
         case 500...: return L("The service has a problem (HTTP \(status)). Try again later.",
                               "Der Dienst hat ein Problem (HTTP \(status)). Versuch es später noch einmal.")
         default: return "HTTP \(status): \(message)"
         }
     }
+    /// A key problem the person can fix in Settings.
+    var isAuth: Bool { !rateLimited && (status == 401 || status == 403) }
 }
 
 /// A network error in words; everything else as it describes itself.
@@ -49,10 +54,15 @@ struct HTTP {
     let base: String
     let token: String
     var extraHeaders: [String: String] = [:]
+    /// Ask with `If-None-Match` and reuse the answer on 304 (GitHub: with a token, a 304 does not count against the limit).
+    var conditional = false
+    /// Tests pass a session that answers from recorded JSON.
+    var session: URLSession = HTTP.defaultSession
 
     /// No disk cache: GitHub sends `max-age=60`, so a cached branch head could hide a fresh push,
-    /// and answers with commit texts would otherwise lie on the disk. Waits for a connection instead of failing at once.
-    static let session: URLSession = {
+    /// and answers with commit texts would otherwise lie on the disk. ETags are kept in memory only.
+    /// Waits for a connection instead of failing at once.
+    static let defaultSession: URLSession = {
         let c = URLSessionConfiguration.ephemeral
         c.requestCachePolicy = .reloadIgnoringLocalCacheData
         c.urlCache = nil
@@ -63,9 +73,13 @@ struct HTTP {
         c.httpAdditionalHeaders = ["User-Agent": "DeployCenter-iOS/\(v)"]
         return URLSession(configuration: c)
     }()
+    /// Set for the background refresh (about 30 s in all): shorter waits, so one slow call cannot use it up.
+    @TaskLocal static var inBackground = false
+    /// Longer waits than this are not slept through: the call fails with the time.
+    static var longestWait: Double { inBackground ? 2 : 8 }
+    static var timeout: TimeInterval { inBackground ? 10 : 30 }
+    /// A dropped connection is tried again (GETs only).
     private static let retryable: Set<URLError.Code> = [.timedOut, .networkConnectionLost, .cannotConnectToHost, .dnsLookupFailed]
-    /// Longer waits than this are not slept through (the background refresh has about 30 s): the call fails with the time.
-    static let longestWait: Double = 8
 
     func request(_ method: String, _ path: String, body: Any? = nil) async throws -> Any {
         try await send(method, path, body: body).json
@@ -73,7 +87,7 @@ struct HTTP {
 
     func send(_ method: String, _ path: String, body: Any? = nil) async throws -> (json: Any, response: HTTPURLResponse?) {
         guard let url = URL(string: base + path) else { throw APIError(status: 0, message: "bad URL") }
-        var r = URLRequest(url: url, timeoutInterval: 30)
+        var r = URLRequest(url: url, timeoutInterval: Self.timeout)
         r.httpMethod = method
         // No header at all without a token: GitHub answers an empty "Bearer " with 401.
         if !token.isEmpty { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
@@ -83,16 +97,22 @@ struct HTTP {
             r.setValue("application/json", forHTTPHeaderField: "Content-Type")
             r.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
+        let tag = conditional && method == "GET" ? ETags.shared.key(url, token) : nil
+        let cached = tag.flatMap { ETags.shared.get($0) }
+        if let cached { r.setValue(cached.etag, forHTTPHeaderField: "If-None-Match") }
         var attempt = 0
         while true {
             attempt += 1
-            let data: Data, resp: URLResponse
-            do { (data, resp) = try await Self.session.data(for: r) }
+            let fresh: Data, resp: URLResponse
+            do { (fresh, resp) = try await session.data(for: r) }
             catch let e as URLError where method == "GET" && attempt < 3 && Self.retryable.contains(e.code) {
-                try await Task.sleep(for: .seconds(2 * attempt)); continue
+                try await Task.sleep(for: .seconds(min(Double(2 * attempt), Self.longestWait))); continue
             }
             let http = resp as? HTTPURLResponse
-            let code = http?.statusCode ?? 0
+            var code = http?.statusCode ?? 0
+            var data = fresh
+            // Unchanged since the last read: the answer kept in memory.
+            if code == 304, let cached { code = 200; data = cached.data }
             let limited = code == 429 || Self.rateLimited(http)
             // Never retry a POST: it may already have started a build.
             if method == "GET", attempt < 3, limited || code >= 500 {
@@ -105,6 +125,9 @@ struct HTTP {
                 let msg = ((obj?["error"] as? JSON)?["message"] as? String) ?? (obj?["message"] as? String)
                     ?? String(data: data.prefix(200), encoding: .utf8) ?? ""
                 throw APIError(status: code, message: msg, rateLimited: limited)
+            }
+            if let tag, http?.statusCode == 200, let etag = http?.value(forHTTPHeaderField: "etag") {
+                ETags.shared.set(tag, etag: etag, data: data)
             }
             if data.isEmpty { return (JSON(), http) }
             return (try JSONSerialization.jsonObject(with: data), http)
@@ -138,6 +161,26 @@ struct HTTP {
     func get(_ path: String) async throws -> Any { try await request("GET", path) }
 }
 
+/// GitHub's ETags and the answers they belong to, in memory only (gone when the app quits).
+/// Keyed by token and URL, so an answer read with one token never serves another.
+final class ETags: @unchecked Sendable {
+    static let shared = ETags()
+    private let lock = NSLock()
+    private var items: [String: (etag: String, data: Data)] = [:]
+    private var order: [String] = []
+    private let limit = 500
+
+    func key(_ url: URL, _ token: String) -> String { String(token.hashValue) + " " + url.absoluteString }
+    func get(_ k: String) -> (etag: String, data: Data)? { lock.lock(); defer { lock.unlock() }; return items[k] }
+    func set(_ k: String, etag: String, data: Data) {
+        lock.lock(); defer { lock.unlock() }
+        if items[k] == nil { order.append(k) }
+        items[k] = (etag, data)
+        while order.count > limit { items[order.removeFirst()] = nil }
+    }
+    func removeAll() { lock.lock(); items = [:]; order = []; lock.unlock() }
+}
+
 extension Dictionary where Key == String, Value == Any {
     subscript(path p: String) -> Any? {
         var cur: Any? = self
@@ -148,12 +191,17 @@ extension Dictionary where Key == String, Value == Any {
     func int(_ p: String) -> Int? { (self[path: p] as? NSNumber)?.intValue }
 }
 
+/// Made once: a load reads hundreds of dates. ISO8601DateFormatter is safe to share between threads.
+private let isoFractional: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
+}()
+private let isoPlain: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f
+}()
+
 func isoDate(_ s: String?) -> Date? {
     guard let s else { return nil }
-    let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let d = f.date(from: s) { return d }
-    f.formatOptions = [.withInternetDateTime]
-    return f.date(from: s)
+    return isoFractional.date(from: s) ?? isoPlain.date(from: s)
 }
 
 func firstLine(_ s: String?) -> String? { s.map { String($0.split(separator: "\n").first ?? "") } }
@@ -176,12 +224,12 @@ enum RepoRef {
     }
 }
 
-/// The deploy a rollback goes back to.
-struct RollbackTarget {
+/// The deploy a rollback goes back to, for the question before it: commit, first line of its message, time.
+struct RollbackTarget: Equatable {
     let id: String
     let sha: String?
-    let title: String?
-    let at: Date?
+    var title: String? = nil
+    var at: Date? = nil
 }
 
 /// One deploy in a project's history (newest first in lists).
@@ -205,8 +253,8 @@ struct DeployRecord: Identifiable, Equatable {
 struct Vercel {
     let http: HTTP
     let team: String?
-    init(token: String, team: String?) {
-        http = HTTP(base: "https://api.vercel.com", token: token)
+    init(token: String, team: String?, session: URLSession = HTTP.defaultSession) {
+        http = HTTP(base: "https://api.vercel.com", token: token, session: session)
         self.team = (team?.isEmpty ?? true) ? nil : team
     }
     private func t(_ path: String) -> String {
@@ -216,8 +264,8 @@ struct Vercel {
 
     /// With no team set: one team is used, none means the personal account.
     /// `teams` is how many there are: with more than one, nobody can guess which is meant.
-    static func resolveTeam(token: String) async throws -> (id: String?, teams: Int) {
-        let r = try await HTTP(base: "https://api.vercel.com", token: token).get("/v2/teams") as? JSON
+    static func resolveTeam(token: String, session: URLSession = HTTP.defaultSession) async throws -> (id: String?, teams: Int) {
+        let r = try await HTTP(base: "https://api.vercel.com", token: token, session: session).get("/v2/teams") as? JSON
         let teams = (r?["teams"] as? [JSON]) ?? []
         return (teams.count == 1 ? teams[0].str("id") : nil, teams.count)
     }
@@ -336,7 +384,7 @@ struct Vercel {
         let curSha = list[i].str("meta.githubCommitSha")
         guard let prev = list[(i + 1)...].first(where: { $0.str("meta.githubCommitSha") != curSha }), let id = prev.str("uid") else { return nil }
         return RollbackTarget(id: id, sha: prev.str("meta.githubCommitSha"), title: firstLine(prev.str("meta.githubCommitMessage")),
-                              at: prev.int("created").map { Date(timeIntervalSince1970: Double($0) / 1000) })
+                              at: (prev.int("created") ?? prev.int("createdAt")).map { Date(timeIntervalSince1970: Double($0) / 1000) })
     }
     /// The newest production deploys, newest first.
     func history(_ p: PhoneProject, limit: Int = 15) async throws -> [DeployRecord] {
@@ -353,6 +401,7 @@ struct Vercel {
     func buildLog(_ id: String) async throws -> [String] {
         LogMask.vercelLines(try await http.get(t("/v3/deployments/\(id)/events?builds=1&direction=backward&limit=2000")))
     }
+    /// The deploy that has the production domains now.
     func productionId(_ p: PhoneProject) async throws -> String? {
         (try await http.get(t("/v9/projects/\(p.id)")) as? JSON)?.str("targets.production.id")
     }
@@ -389,7 +438,9 @@ enum RenderAction: String, CaseIterable {
 
 struct Render {
     let http: HTTP
-    init(key: String) { http = HTTP(base: "https://api.render.com/v1", token: key) }
+    init(key: String, session: URLSession = HTTP.defaultSession) {
+        http = HTTP(base: "https://api.render.com/v1", token: key, session: session)
+    }
 
     func whoami() async throws -> String {
         let owners = ((try await http.get("/owners?limit=20")) as? [JSON] ?? []).compactMap { $0.str("owner.name") ?? $0.str("owner.email") }
@@ -423,6 +474,7 @@ struct Render {
         var x = PhoneProject(provider: .render, id: id, name: name)
         if let r = s.str("repo") { let ref = RepoRef.parse(r); x.repo = ref.github; x.otherHost = ref.otherHost }
         x.branch = s.str("branch")
+        x.kind = s.str("type")
         x.owner = s.str("ownerId")
         x.paused = s.str("suspended") == "suspended"
         x.autoDeploy = (s.str("autoDeployTrigger").map { $0 != "off" }) ?? (s.str("autoDeploy") == "yes")
@@ -503,18 +555,24 @@ struct Render {
     func rollback(_ p: PhoneProject, to deploy: String) async throws -> String? {
         (try await http.request("POST", "/services/\(p.id)/rollback", body: ["deployId": deploy]) as? JSON)?.str("id")
     }
+    /// The commit of the deploy that is live now (a rollback builds a new deploy of an old commit).
+    func liveCommit(_ p: PhoneProject) async throws -> String? {
+        let deps = ((try await http.get("/services/\(p.id)/deploys?limit=10")) as? [JSON] ?? []).compactMap { $0["deploy"] as? JSON }
+        return deps.first(where: { $0.str("status") == "live" })?.str("commit.id")
+    }
 }
 
 // MARK: - GitHub
 
 struct GitHub {
     let http: HTTP
-    init(token: String?) {
-        // Without a token public repos still work (60 requests an hour).
+    init(token: String?, session: URLSession = HTTP.defaultSession) {
+        // Without a token public repos still work (60 requests an hour); ETags save most of them.
         http = HTTP(base: "https://api.github.com", token: token ?? "",
-                    extraHeaders: ["X-GitHub-Api-Version": "2022-11-28"])
+                    extraHeaders: ["X-GitHub-Api-Version": "2022-11-28"], conditional: true, session: session)
     }
 
+    /// For "Test connection": the login of the token's account.
     func whoami() async throws -> String {
         let u = try await http.get("/user") as? JSON
         return L("Signed in as \(u?.str("login") ?? "?")", "Angemeldet als \(u?.str("login") ?? "?")")
@@ -538,6 +596,11 @@ struct GitHub {
             p.headSha = head?.str("sha")
             p.headAt = isoDate(head?.str("commit.committer.date"))
             p.headMsg = firstLine(head?.str("commit.message"))
+        } catch let e as APIError where e.status == 404 && http.token.isEmpty {
+            // GitHub answers a private repo without a token with 404.
+            p.fetchError = L("Repository not found. If it is private, add a GitHub token in Settings.",
+                             "Repository nicht gefunden. Ist es privat, ein GitHub-Token in den Einstellungen eintragen.")
+            return
         } catch { p.fetchError = explain(error); return }
         if let known { p.openPRs = known.0; p.openPRsCapped = known.1 }
         else if let open = try? await http.get("/repos/\(repo)/pulls?state=open&per_page=100") as? [JSON] {
@@ -560,10 +623,18 @@ struct GitHub {
             }
             var extra = Set<Int>()
             if !without.isEmpty && without.count <= 10 {
-                for s in without {
-                    if let prs = try? await http.get("/repos/\(repo)/commits/\(s)/pulls") as? [JSON] {
-                        prs.compactMap { $0.int("number") }.forEach { extra.insert($0) }
+                // At most four at a time.
+                let http = self.http
+                await withTaskGroup(of: [Int].self) { g in
+                    var n = 0
+                    for s in without {
+                        if n >= 4, let found = await g.next() { found.forEach { extra.insert($0) }; n -= 1 }
+                        g.addTask {
+                            ((try? await http.get("/repos/\(repo)/commits/\(s)/pulls")) as? [JSON] ?? []).compactMap { $0.int("number") }
+                        }
+                        n += 1
                     }
+                    for await found in g { found.forEach { extra.insert($0) } }
                 }
             }
             p.pendingPRs = numbers.count + extra.count

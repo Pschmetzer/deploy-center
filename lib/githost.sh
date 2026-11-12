@@ -76,7 +76,7 @@ gitlab_token() {
 
 # Whether any git host can be asked at all. Without one, `with_heads` adds no heads.
 githost_available() {
-  command -v gh >/dev/null 2>&1 || command -v glab >/dev/null 2>&1 || [ -n "$(gitlab_token)" ]
+  type -P gh >/dev/null 2>&1 || type -P glab >/dev/null 2>&1 || [ -n "$(gitlab_token)" ]
 }
 
 # ---------- dispatch: same arguments and output files as the GitHub functions ----------
@@ -102,7 +102,7 @@ githost_open_prs_of() {
 # (DEPLOYS_GITLAB_TIMEOUT seconds, 60) is asked again, three times in all, 2 s then 4 s apart.
 gitlab_api() {
   local host="$1" path="$2" out code tok="" try err rc
-  if [ -z "${DEPLOYS_GITLAB_CURL:-}" ] && command -v glab >/dev/null 2>&1; then
+  if [ -z "${DEPLOYS_GITLAB_CURL:-}" ] && type -P glab >/dev/null 2>&1; then
     err="$(mktemp)"
     for try in 1 2 3; do
       rc=0
@@ -353,7 +353,7 @@ gitlab_project_id() { local host id; read -r host id < <(gitlab_project "$1"); g
 
 # For doctor: whether GitLab can be read with the login or token here.
 gitlab_logged_in() {
-  if command -v glab >/dev/null 2>&1 && glab auth status --hostname "$(gitlab_host)" >/dev/null 2>&1; then return 0; fi
+  if type -P glab >/dev/null 2>&1 && glab auth status --hostname "$(gitlab_host)" >/dev/null 2>&1; then return 0; fi
   [ -n "$(gitlab_token)" ] && DEPLOYS_GITLAB_CURL=1 gitlab_api "$(gitlab_host)" user >/dev/null 2>&1
 }
 # The GitLab user, for `deploys where`.

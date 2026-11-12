@@ -36,10 +36,10 @@ import {
   ListToolsRequestSchema, ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-// package.json lies next to this file in the repo and in the app bundle; a copy alone still runs.
+// One version, in package.json (it ships next to this file, in the repo and in the app).
 const VERSION = (() => {
   try {
-    return JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version ?? "0.0.0";
+    return JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version || "0.0.0";
   } catch {
     return "0.0.0";
   }
