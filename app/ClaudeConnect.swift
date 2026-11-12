@@ -31,8 +31,8 @@ enum ClaudeConfig {
         return root
     }
 
+    /// Sorted keys: the same file gives the same bytes, so a hand-kept config shows real diffs only.
     static func encode(_ root: [String: Any]) throws -> Data {
-        // Sorted: the same file gives the same text, so connecting twice does not reshuffle it.
         var d = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys])
         d.append(0x0A)
         return d

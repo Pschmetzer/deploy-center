@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds the iOS app (ios/DeployCenter.xcodeproj). Needs Xcode.
 #   ios/build.sh               build for the simulator into build/ios-dd
-#   ios/build.sh --run         also install and start it in the booted simulator, in demo mode
+#   ios/build.sh --run         also install and start it in the booted simulator (boots an iPhone one if none is), in demo mode
 #   ios/build.sh --archive     archive for the App Store and export an .ipa into build/ios-export (no upload);
 #                              the build number is the UTC time (YYYYMMDDHHMM) unless BUILD_NUMBER is set
 #   ios/build.sh --upload      upload that archive to App Store Connect, with the Apple ID signed in to Xcode
@@ -15,14 +15,19 @@ die() { echo "ios/build.sh: $*" >&2; exit 1; }
 
 case "$mode" in
   build|--run)
-    if [ "$mode" = --run ] && ! xcrun simctl list devices booted | grep -q Booted; then
-      die "no simulator is running: start one first (open -a Simulator, or xcrun simctl boot <device>)"
-    fi
     xcodebuild -project ios/DeployCenter.xcodeproj -scheme DeployCenter -sdk iphonesimulator \
       -configuration Debug -derivedDataPath "$DD" CODE_SIGN_IDENTITY=- build -quiet
     APP="$DD/Build/Products/Debug-iphonesimulator/DeployCenter.app"
     echo "Built: $APP"
     if [ "$mode" = --run ]; then
+      # "install booted" fails with a bare "No devices are booted": boot the first available iPhone instead.
+      if ! xcrun simctl list devices booted | grep -q "(Booted)"; then
+        udid="$(xcrun simctl list devices available | sed -n 's/^ *iPhone[^(]*(\([0-9A-F-]\{36\}\)).*/\1/p' | head -n1)"
+        [ -n "$udid" ] || die "no simulator is booted and no iPhone simulator is installed (Xcode → Settings → Components)"
+        echo "Booting the simulator $udid …"
+        xcrun simctl boot "$udid"
+        open -a Simulator
+      fi
       xcrun simctl install booted "$APP"
       xcrun simctl launch booted app.deploycenter.ios -demo
     fi ;;
@@ -31,6 +36,9 @@ case "$mode" in
     if [ -z "$id" ] && [ -s "$HOME/.config/deploys/signing-identity" ]; then id="$(head -n1 "$HOME/.config/deploys/signing-identity")"; fi
     team="$(sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p' <<<"$id")"
     [ -n "$team" ] || die "no team id: set DEVELOPER_ID or ~/.config/deploys/signing-identity"
+    # Every upload needs a higher build number: the UTC time grows on every branch and never repeats a minute.
+    build_number="${BUILD_NUMBER:-$(date -u +%Y%m%d%H%M)}"
+    [[ "$build_number" =~ ^[0-9]+$ ]] || die "build number is not a number: $build_number"
     mkdir -p build
     cat > build/ExportOptions.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -52,7 +60,8 @@ PLIST
     fi
     xcodebuild -project ios/DeployCenter.xcodeproj -scheme DeployCenter -configuration Release \
       -destination 'generic/platform=iOS' -archivePath build/DeployCenter-iOS.xcarchive \
-      DEVELOPMENT_TEAM="$team" CURRENT_PROJECT_VERSION="${BUILD_NUMBER:-$(date -u +%Y%m%d%H%M)}" CODE_SIGNING_ALLOWED=NO archive
+      DEVELOPMENT_TEAM="$team" CURRENT_PROJECT_VERSION="$build_number" CODE_SIGNING_ALLOWED=NO archive
+    echo "Build number: $build_number"
     # The archive is unsigned: automatic signing would first need a development profile, and that
     # needs a registered device. An ad hoc signature carries the entitlements (the App Group) to the
     # export, which re-signs with App Store profiles; those need no device.

@@ -125,7 +125,10 @@ provider they are `coolify_off`, `coolify_deploy_json` and so on.
 - **Services and databases** (one-click services, Compose stacks deployed as a Service) are not
   listed. Only Applications have the Auto Deploy setting and deployment history used here.
 - **Self-signed certificates.** curl checks TLS. Point `CURL_CA_BUNDLE` at your CA, or use a
-  real certificate. Plain `http://` works, but your token then crosses the network
-  unencrypted, and `doctor` reports `"https": false`.
+  real certificate. Plain `http://` is used only for this machine (localhost, 127.0.0.1,
+  [::1]) or when you allow it on purpose, since the token then crosses the network unencrypted:
+  `deploys coolify set-url http://10.0.0.5:8000 --allow-http` (kept for that address in
+  coolify.json), or `DEPLOYS_COOLIFY_ALLOW_HTTP=1`. An `http://` instance saved before this
+  change needs that once. `doctor` reports `"https": false`.
 - Checked against Coolify's OpenAPI spec and API source at v4.7.3. Rollback needs v4.3 or
   newer. Cancel and the deployment list need v4.0.

@@ -30,7 +30,7 @@ team_fetch_one() {
     [ "$age" -lt "$ttl" ] && return 0
   fi
   [ -z "$only" ] || return 0
-  command -v gh >/dev/null 2>&1 || return 0
+  type -P gh >/dev/null 2>&1 || return 0
   err="$(mktemp)"
   for p in deploy-center.json .deploy-center.json; do
     if out="$(gh api "repos/$repo/contents/$p" 2>"$err")"; then
@@ -93,7 +93,7 @@ team_me() {
   [ -z "$key" ] || f="$TEAM_CACHE/me-$key"
   hosts="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}/hosts.yml"
   if [ -s "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -lt 3600 ] && ! [ "$hosts" -nt "$f" ]; then cat "$f"; return; fi
-  if [ -z "${DEPLOYS_NO_GITHUB:-}" ] && command -v gh >/dev/null 2>&1; then
+  if [ -z "${DEPLOYS_NO_GITHUB:-}" ] && type -P gh >/dev/null 2>&1; then
     local me; me="$(gh api user --jq .login 2>/dev/null | head -n 1)"
     if [ -n "$me" ]; then printf '%s' "$me" > "$f"; echo "$me"; return; fi
   fi
@@ -145,10 +145,12 @@ def resolve($n):
      ({}; if .[$o.login] then . else .[$o.login] = $o.from end)) as $obs
 | ($obs | to_entries | map(select((.key | ascii_downcase) == ($me | ascii_downcase))) | .[0].value // null) as $meObs
 | {me:(if $me == "" then null else $me end),
-   # source: env, file or team, for the app (the from text is for people and may change).
-   readonly:(if $ro != "" then {value:true, from:$ro, source:(if ($ro | startswith("DEPLOYS_READONLY")) then "env" else "file" end)}
-             elif $meObs then {value:true, from:"observers in \($meObs)", source:"team"}
-             else {value:false, from:"default", source:null} end),
+    # source: env, file or team, for the app (the from text is for people and may change).
+    readonly:(if $ro != "" then {value:true, from:$ro, source:(if ($ro | startswith("DEPLOYS_READONLY")) then "env" else "file" end)}
+              elif $meObs then {value:true, from:"observers in \($meObs)", source:"team"}
+              # Fail closed: with an observers list and no login, nobody can tell whether you are on it.
+              elif $me == "" and ($obs | length) > 0 then {value:true, from:"observers listed, and gh cannot tell who you are (gh auth login)", source:"team"}
+              else {value:false, from:"default", source:null} end),
    observers:{value:($obs | keys), from:$obs},
    groups:(reduce ((cf[] as $f | ($f.config.groups // {}) | to_entries[] | {k:.key, v:.value, from:($f | src)}),
                    (($ov.groups // {}) | to_entries[] | {k:.key, v:.value, from:"overrides.json"})) as $g
@@ -219,8 +221,15 @@ team_repos_json() {
 team_ignored() { team_effective | jq -c '[.projects | to_entries[] | select(.value.ignored.value == true) | .key]'; }
 
 # Observer by the shared lists (cache only, no network): prints where it comes from, or nothing.
+# With an observers list and no login known yet, gh is asked once who you are (team_me keeps it).
 team_observer_from() {
-  DEPLOYS_NO_GITHUB=1 team_effective 2>/dev/null | jq -r 'select(.readonly.value and (.readonly.from | startswith("observers"))) | .readonly.from' 2>/dev/null || true
+  local r f='select(.readonly.value and (.readonly.from | startswith("observers"))) | .readonly.from'
+  r="$(DEPLOYS_NO_GITHUB=1 team_effective 2>/dev/null | jq -r "$f" 2>/dev/null || true)"
+  case "$r" in *"cannot tell who you are"*)
+    team_me >/dev/null 2>&1 || true
+    r="$(DEPLOYS_NO_GITHUB=1 team_effective 2>/dev/null | jq -r "$f" 2>/dev/null || true)" ;;
+  esac
+  printf '%s' "$r"
 }
 
 # A group's members in deploy order, or nothing when the name is no group.
@@ -242,7 +251,7 @@ team_approvals() {
   local repo="$1" sha="$2" me="$3" prs issues have='[]' n raw e
   # GitHub not readable is not "no approvals": the answer says so ({error}), and team_gate stops.
   e="$(mktemp)"
-  if ! raw="$(gh api "repos/$repo/commits/$sha/pulls" 2>"$e")" || ! prs="$(jq -c '[.[] | {number, url:.html_url, labels:[.labels[]?.name], head:(.head.sha // null)}]' <<< "$raw" 2>/dev/null)"; then
+  if ! raw="$(gh api "repos/$repo/commits/$sha/pulls" 2>"$e")" || ! prs="$(jq -c '[.[] | {number, url:.html_url, head:(.head.sha // null), labels:[.labels[]?.name]}]' <<< "$raw" 2>/dev/null)"; then
     jq -nc --arg w "$(grep -v '^[[:space:]]*$' "$e" | tail -n 1 | cut -c1-200)" '{error:(if $w == "" then "no readable answer" else $w end), have:[], prs:[]}'
     rm -f "$e"; return 0
   fi
@@ -297,7 +306,7 @@ team_gate() {
   esac
   [ "$((10#$need))" -ge 1 ] || { [ -z "$sha" ] || echo "$sha"; return 0; }
   need="$((10#$need))"
-  command -v gh >/dev/null 2>&1 || die "$p needs $need approval(s) ($from), and checking them needs the gh CLI. Install it, or: --force \"reason\""
+  type -P gh >/dev/null 2>&1 || die "$p needs $need approval(s) ($from), and checking them needs the gh CLI. Install it, or: --force \"reason\""
   [ -n "$repo" ] || die "$p needs $need approval(s) ($from), but no GitHub repo is known for it (approvals are read from GitHub; a GitLab repo cannot have them yet)"
   [ -n "$me" ] || die "$p needs $need approval(s) ($from), but gh cannot tell who you are. Run: gh auth login"
   if [ -z "$sha" ]; then

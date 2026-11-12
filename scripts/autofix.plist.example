@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Example: every 10 minutes hand a failed build to the autofix routine, and deploy a merged fix.
+<!-- Example: every 10 minutes hand a failed build to the autofix routine, and announce a merged fix
+     (autofix never deploys; you deploy the fix yourself).
        cp scripts/autofix.plist.example ~/Library/LaunchAgents/app.deploycenter.autofix.plist
        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.deploycenter.autofix.plist
      Run it once now: launchctl kickstart gui/$(id -u)/app.deploycenter.autofix

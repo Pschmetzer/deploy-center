@@ -32,6 +32,7 @@
 - [Stop Netlify builds](https://deploycenter.app/guides/netlify-stop-builds/): stop_builds versus an ignore command that only lets build hooks through.
 - [Reduce Vercel costs](https://deploycenter.app/guides/reduce-vercel-costs/): A checklist: builds first, then functions, images and bandwidth.
 - [Auto-fix failed builds with Claude](https://deploycenter.app/guides/auto-fix-failed-vercel-builds-with-claude/): A failed Vercel or Render build goes to a Claude Code routine, which opens a fix PR.
+- [Deploy hooks for any host](https://deploycenter.app/guides/deploy-hooks/): What a deploy hook is, where each host keeps it, calling it with curl, keeping the URL secret.
 
 ## Tools and reading
 

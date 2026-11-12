@@ -46,6 +46,19 @@ Releases are signed with a Developer ID and notarized by Apple, so they open wit
 
 A build you made yourself with `./build.sh` is not notarized. Open it with right-click → **Open** the first time.
 
+### Installing the CLI on Linux or WSL with install.sh
+
+The script prints what is missing after the install, with the command for your package manager.
+Messages it may show:
+
+- **"install.sh: curl is needed to download the release (see below for jq, which deploys needs too)"** or **"install.sh: tar is needed to unpack the release"**: install them with your package manager and run the script again.
+- **"install.sh: SHA-256 mismatch for … Nothing was installed."**: the download is broken or was changed on the way. Run it again; if it repeats, open an issue and do not install by hand.
+- **"install.sh: … is not writable and sudo is missing."**: use the default prefix (`~/.local`), pass `--prefix "$HOME/.local"`, or run as root.
+- **"install.sh: …/deploys exists and was not installed by this script (Homebrew or by hand?)"**: remove that file, pick another `--prefix`, or pass `--force`.
+- **"install.sh: DEPLOYS_INSTALL_BASE is set: downloading from … instead of the GitHub releases."**: something set that variable (a CI job, your shell profile). Unset it unless you put it there on purpose.
+- **"… is not on your PATH. Add it, then open a new terminal"**: add the line the script prints to `~/.bashrc` or `~/.zshrc`.
+- **"install.sh: deploys is installed, but needs the required tools above before it can run."**: install `bash`, `jq` and `curl` with the commands listed above it. On WSL, install them inside the Linux distribution, not on Windows.
+
 ## Vercel
 
 ### Connect Vercel – "Install the Vercel CLI, then log in once in Terminal."
@@ -187,9 +200,40 @@ The service was renamed or deleted on Render. Reload the list.
 
 A Render **Blueprint** with auto-sync can apply `render.yaml` again on a push. Add `autoDeployTrigger: off` to the services in `render.yaml`. `deploys triggers` lists Blueprints with auto-sync on.
 
-## Other hosts
+## Opt-in hosts
 
-Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and deploy hooks are off until `deploys providers enable <p>`. Each has its own page with its errors: [Netlify](providers/netlify.md), [Cloudflare](providers/cloudflare.md), [Amplify](providers/amplify.md), [DigitalOcean](providers/digitalocean.md), [Coolify](providers/coolify.md), [deploy hook](providers/hook.md).
+### "Netlify is off. Turn it on: deploys providers enable netlify"
+
+Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify and deploy hooks are off until you
+turn them on, so no command talks to them by accident. Run the command from the message (the name
+differs per host), then set its key. `deploys providers` lists which are on.
+
+### "No Cloudflare API token. …" / "No Coolify token. …"
+
+The host is on, but no key is stored for it. The message says where to create one. Then
+`pbpaste | deploys <host> set-key` (AWS Amplify takes a profile name instead:
+`echo my-profile | deploys amplify set-key`). Each host's page has the details:
+[Netlify](providers/netlify.md), [Cloudflare Pages](providers/cloudflare.md),
+[AWS Amplify](providers/amplify.md), [DigitalOcean](providers/digitalocean.md),
+[Coolify](providers/coolify.md), [deploy hooks](providers/hook.md).
+
+### "… has no build hook yet. Run: deploys netlify autodeploy-off …"
+
+Netlify deploys by hand through a build hook, which `autodeploy-off` creates. Run it once for that site.
+
+## Auto-deploy guard
+
+### The guard turned auto-deploy off again, but I wanted it on
+
+That is its job: what is on without a running allowance gets turned off. Allow it for a while
+instead, for example `deploys autodeploy allow vercel my-project 4` (4 hours), or in **Settings →
+Auto-deploy guard → Allow auto-deploy …**. `deploys guard schedule off` stops the guard. Details: [GUARD.md](GUARD.md).
+
+### The guard did nothing on its first run
+
+The first run after `deploys guard schedule on` only reports what it would turn off; it acts from
+the next run on. `deploys guard status` shows the last run; the log is
+`~/Library/Logs/DeployCenter-guard.log`.
 
 ## Team mode
 

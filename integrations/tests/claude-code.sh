@@ -60,6 +60,9 @@ check "plugin: name is not reserved" jq -e '.name | (test("^(claude|anthropic|an
 check "plugin: version, description and author.name" \
   jq -e '(.version|type=="string") and (.description|type=="string" and length>0) and (.author.name|type=="string" and length>0)' "$man"
 check "plugin: homepage is a URL" jq -e '.homepage | test("^https://")' "$man"
+# The plugin and the MCP server ship in the app together and scripts/bump.sh sets both: one version.
+check "plugin: same version as the MCP server (scripts/bump.sh sets both)" \
+  jq -en --slurpfile a "$man" --slurpfile b integrations/mcp/package.json '$a[0].version == $b[0].version'
 check "plugin: only documented top-level keys" jq -e 'keys - ["$schema","name","displayName","version","description","author","homepage",
   "repository","license","keywords","metadata","icon","documentationUrl","supportUrl","privacyPolicyUrl","termsOfServiceUrl",
   "defaultEnabled","dependencies","settings","userConfig","channels","skills","commands","agents","hooks","mcpServers",

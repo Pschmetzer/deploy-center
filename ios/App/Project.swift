@@ -33,6 +33,7 @@ struct PhoneProject: Identifiable, Equatable, Codable {
     var rewritten = false
     var openPRs: Int? = nil
     var fetchError: String? = nil
+    var kind: String? = nil            // Render's service type ("web_service", "static_site", …)
     /// Titles of the commits that wait (oldest first), at most 20: what goes live with the next deploy.
     var pendingTitles: [String]? = nil
     /// GitHub lists at most 100 open PRs per page and 250 commits per compare: the counts are then "at least".
@@ -47,47 +48,29 @@ struct PhoneProject: Identifiable, Equatable, Codable {
 
     var key: String { provider.rawValue + "/" + id }
 
-    static let buildingStates: Set<String> = ["building", "queued", "initializing", "created", "build_in_progress",
-                                             "update_in_progress", "pre_deploy_in_progress"]
-    static let failedStates: Set<String> = ["error", "build_failed", "update_failed", "pre_deploy_failed", "canceled"]
+    /// The service's page on Render. Vercel's address needs the team's slug, which the list does not carry.
+    var dashboardURL: URL? {
+        guard provider == .render else { return nil }
+        let section = ["static_site": "static", "cron_job": "cron", "background_worker": "worker"][kind ?? ""] ?? "web"
+        return URL(string: "https://dashboard.render.com/\(section)/\(id)")
+    }
 
-    var building: Bool {
-        [liveState, latestState].compactMap { $0?.lowercased() }.contains { Self.buildingStates.contains($0) }
-    }
-    var failed: Bool {
-        guard !building, let s = latestState?.lowercased() else { return false }
-        return Self.failedStates.contains(s) && s != "canceled"
-    }
+    static var buildingStates: Set<String> { DeployRule.buildingStates }
+    static var failedStates: Set<String> { DeployRule.failedStates }
+
+    /// The rule itself lives in shared/DeployRule.swift (the port of `deploys changed`'s CHANGED_RULE).
+    var building: Bool { DeployRule.building(live: liveState, latest: latestState) }
+    var failed: Bool { DeployRule.failed(latest: latestState, building: building) }
     /// The newest attempt was canceled: neither building nor failed, but worth saying.
     var canceled: Bool { !building && ["canceled", "cancelled"].contains(latestState?.lowercased() ?? "") }
-    /// The same rule as `deploys changed` (CHANGED_RULE): there is something newer than what is live.
+    /// There is something newer than what is live.
     var changed: Bool {
-        guard deployable, !paused, headSha != nil || headAt != nil, !building, fetchError == nil,
-              compareStatus != "behind" else { return false }
-        if let l = liveSha, let h = headSha { return l != h }
-        if let h = headAt, let l = liveAt { return h > l }
-        return false
+        DeployRule.changed(deployable: deployable, paused: paused, building: building, readError: fetchError != nil,
+                           compareStatus: compareStatus, liveSha: liveSha, headSha: headSha, liveAt: liveAt, headAt: headAt)
     }
+    /// "Deploy" would build what is already live: nothing new, failed or unknown.
+    var upToDate: Bool { !changed && !failed && !building && !unknown && liveSha != nil && liveSha == headSha }
     var unknown: Bool { deployable && !paused && !foreignRepo && (fetchError != nil || (headSha == nil && headAt == nil)) }
-
-    /// A platform state in words ("build_failed" → "build failed"), as the Mac app shows it.
-    static func stateName(_ raw: String) -> String {
-        switch raw.lowercased() {
-        case "starting", "initializing": return L("starting", "startet")
-        case "rolling back": return L("rolling back", "rollt zurück")
-        case "queued", "created": return L("queued", "in der Warteschlange")
-        case "building", "build_in_progress": return L("building", "baut")
-        case "update_in_progress": return L("updating", "aktualisiert")
-        case "pre_deploy_in_progress": return L("pre-deploy running", "Pre-Deploy läuft")
-        case "ready", "live", "succeeded": return L("live", "live")
-        case "error", "build_failed": return L("build failed", "Build fehlgeschlagen")
-        case "update_failed": return L("update failed", "Update fehlgeschlagen")
-        case "pre_deploy_failed": return L("pre-deploy failed", "Pre-Deploy fehlgeschlagen")
-        case "canceled", "cancelled": return L("canceled", "abgebrochen")
-        case "deactivated": return L("replaced", "ersetzt")
-        default: return raw.lowercased().replacingOccurrences(of: "_", with: " ")
-        }
-    }
 
     /// A provider state ("BUILDING", "build_failed", …) in words.
     static func stateWord(_ raw: String) -> String {
@@ -102,8 +85,8 @@ struct PhoneProject: Identifiable, Equatable, Codable {
         case "canceled", "cancelled": L("canceled", "abgebrochen")
         case "deactivated": L("replaced", "abgelöst")
         case "starting": L("starting", "startet")
-        case "rollback": L("rolling back", "rollt zurück")
-        default: raw.lowercased()
+        case "rollback", "rolling back": L("rolling back", "rollt zurück")
+        default: raw.lowercased().replacingOccurrences(of: "_", with: " ")
         }
     }
 
@@ -133,10 +116,23 @@ let appLocale: Locale = {
     return Locale(components: c)
 }()
 
-func L(_ en: String, _ de: String) -> String { appLanguage == "de" ? de : en }
+func L(_ en: String, _ de: String) -> String { DeploySnapshot.localized(appLanguage, en, de) }
 var appIsGerman: Bool { appLanguage == "de" }
 
 /// "1 commit", "3 commits", "100+ PRs": the number with the singular or plural word.
 func plural(_ n: Int, _ one: (String, String), _ many: (String, String), atLeast: Bool = false) -> String {
     "\(n)\(atLeast ? "+" : "") " + (n == 1 && !atLeast ? L(one.0, one.1) : L(many.0, many.1))
+}
+
+extension PhoneProject {
+    /// Repo facts from `filled` (same repo, branch and live commit), deploy facts from `own`.
+    static func merging(_ own: PhoneProject, _ filled: PhoneProject) -> PhoneProject {
+        var x = own
+        x.headSha = filled.headSha; x.headAt = filled.headAt; x.headMsg = filled.headMsg
+        x.pendingCommits = filled.pendingCommits; x.pendingPRs = filled.pendingPRs; x.oldestPendingAt = filled.oldestPendingAt
+        x.compareStatus = filled.compareStatus; x.rewritten = filled.rewritten; x.openPRs = filled.openPRs
+        x.pendingTitles = filled.pendingTitles; x.openPRsCapped = filled.openPRsCapped; x.pendingCapped = filled.pendingCapped
+        x.fetchError = own.fetchError ?? filled.fetchError
+        return x
+    }
 }

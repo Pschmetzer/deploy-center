@@ -22,7 +22,7 @@ struct Provider: TimelineProvider {
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
         // The app asks for a reload after each change; this is only the fallback. A second entry once
-        // the snapshot is three hours old, so "out of date" shows without the app.
+        // the snapshot is three hours old, so "out of date" shows without the app (iOS only, see isStale).
         let snap = DeploySnapshot.read(), now = Date()
         var entries = [Entry(date: now, snap: snap)]
         if let s = snap, s.at.addingTimeInterval(Words.staleAfter) > now { entries.append(Entry(date: s.at.addingTimeInterval(Words.staleAfter), snap: s)) }
@@ -35,7 +35,7 @@ struct Provider: TimelineProvider {
 struct Words {
     let german: Bool
     init(_ snap: DeploySnapshot?) {
-        german = (snap?.language ?? Locale.preferredLanguages.first ?? "en").hasPrefix("de")
+        german = DeploySnapshot.localized(snap?.language, "en", "de") == "de"
     }
     init(german: Bool) { self.german = german }
     func callAsFunction(_ en: String, _ de: String) -> String { german ? de : en }
@@ -61,13 +61,23 @@ private func link(_ p: DeploySnapshot.Project) -> URL {
 }
 
 extension DeploySnapshot {
-    func isStale(at date: Date) -> Bool { date.timeIntervalSince(at) > Words.staleAfter }
+    /// Only on iOS: there the app is often not running for hours. The Mac app writes the snapshot only
+    /// when its content changes, so its time is the last change, not the last look: old there means nothing.
+    func isStale(at date: Date) -> Bool {
+        #if os(iOS)
+        date.timeIntervalSince(at) > Words.staleAfter
+        #else
+        false
+        #endif
+    }
     /// One sentence for VoiceOver: "5 PRs waiting in 3 projects, 1 building, 1 failed."
     func spoken(_ w: Words) -> String {
         var s = w("\(w.n(waitingPRs, ("PR", "PR"), ("PRs", "PRs"))) waiting in \(w.n(waitingProjects, ("project", "Projekt"), ("projects", "Projekten")))",
                   "\(w.n(waitingPRs, ("PR", "PR"), ("PRs", "PRs"))) \(waitingPRs == 1 ? "wartet" : "warten") in \(w.n(waitingProjects, ("project", "Projekt"), ("projects", "Projekten")))")
         if building > 0 { s += w(", \(building) building", ", \(building) im Bau") }
         if failed > 0 { s += w(", \(failed) failed", ", \(failed) fehlgeschlagen") }
+        // The "Demo" mark is hidden from VoiceOver with the rest of the header: say it here.
+        if demo { s += w(", demo data", ", Demodaten") }
         return s + "."
     }
 }
@@ -84,10 +94,14 @@ struct Header: View {
             if !compact { Text("Deploy Center").lineLimit(1) }
             if snap.demo { Text("Demo").padding(.horizontal, 4).background(.quaternary, in: Capsule()) }
             Spacer(minLength: 2)
-            Text(snap.isStale(at: date) ? w("old: ", "alt: ") + snap.at.formatted(date: .omitted, time: .shortened)
-                                         : snap.at.formatted(date: .omitted, time: .shortened))
+            // The time of the data, only on iOS (see isStale): with the day when it is not today.
+            #if os(iOS)
+            let when = Calendar.current.isDate(snap.at, inSameDayAs: date) ? snap.at.formatted(date: .omitted, time: .shortened)
+                                                                           : snap.at.formatted(.dateTime.day().month().hour().minute())
+            Text(snap.isStale(at: date) ? w("old: ", "alt: ") + when : when)
                 .foregroundStyle(snap.isStale(at: date) ? Color.orange : .secondary)
                 .lineLimit(1)
+            #endif
         }
         .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
     }

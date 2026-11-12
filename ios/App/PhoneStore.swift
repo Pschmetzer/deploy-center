@@ -3,6 +3,7 @@
 
 import Foundation
 import LocalAuthentication
+import Network
 import UIKit
 import UserNotifications
 import WidgetKit
@@ -32,13 +33,29 @@ final class PhoneStore: ObservableObject {
     }
     /// Set from the switch "Unlock on open": the list stays covered until Face ID passes.
     @Published var locked = false
+    /// No network path: loads are skipped instead of waiting for three time-outs.
+    @Published var offline = false
+    /// A key was refused (401/403) in the last load: the list offers the settings.
+    @Published var keyRefused = false
 
-    enum TokenKey: String, CaseIterable { case vercel, vercelTeam, render, github }
+    enum TokenKey: String, CaseIterable {
+        case vercel, vercelTeam, render, github
+        /// The same key in what the Mac hands over.
+        var linked: WritableKeyPath<LinkedKeys, String> {
+            switch self {
+            case .vercel: \.vercel
+            case .vercelTeam: \.vercelTeam
+            case .render: \.render
+            case .github: \.github
+            }
+        }
+    }
 
     private var deployIds: [String: String] = [:]       // project key → id of the deploy being followed
 
     /// One store for the app and the background refresh, so what the background read shows up on return.
     static let shared = PhoneStore()
+    private let path = NWPathMonitor()
 
     private init() {
         #if DEBUG
@@ -53,6 +70,17 @@ final class PhoneStore: ObservableObject {
         locked = Self.lockOnOpen && !demo
         // The last state at once, then the network: the list is never empty only because it is loading.
         if !demo, let last = Background.loadLast() { projects = Self.sorted(last.projects); loadedAt = last.at }
+        path.pathUpdateHandler = { p in
+            let off = p.status != .satisfied
+            Task { @MainActor in
+                let store = PhoneStore.shared
+                guard store.offline != off else { return }
+                store.offline = off
+                // Back online after a skipped load: read again.
+                if !off && store.hasAccount && !store.demo { await store.reload() }
+            }
+        }
+        path.start(queue: DispatchQueue(label: "app.deploycenter.ios.path"))
     }
 
     /// The keys the Mac app handed over through iCloud Keychain (shared/PhoneLink.swift), if any.
@@ -61,7 +89,27 @@ final class PhoneStore: ObservableObject {
     var hasAccount: Bool { token(.vercel) != nil || token(.render) != nil }
     /// A key typed (or scanned) on this phone wins; otherwise the one from the Mac.
     func token(_ k: TokenKey) -> String? { ownToken(k) ?? linkedToken(k) }
-    func ownToken(_ k: TokenKey) -> String? { Keychain.get(k.rawValue).flatMap { $0.isEmpty ? nil : $0 } }
+
+    /// The keychain is read once per key, not on every redraw. A failed read (the device still locked
+    /// after a restart) is not kept, so it does not count as "no key" until the app quits.
+    private var ownCache: [TokenKey: String?] = [:]
+    func ownToken(_ k: TokenKey) -> String? {
+        if let kept = ownCache[k] { return kept }
+        switch Keychain.lookup(k.rawValue) {
+        case .found(let v): let t = v.isEmpty ? nil : v; ownCache[k] = .some(t); return t
+        case .missing: ownCache[k] = .some(nil); return nil
+        case .failed: return nil
+        }
+    }
+    /// Every write goes through here, so the kept copy never differs from the keychain.
+    @discardableResult
+    func setOwnToken(_ k: TokenKey, _ value: String) -> Bool {
+        let ok = Keychain.set(k.rawValue, value)
+        ownCache[k] = nil
+        return ok
+    }
+    /// The keychain may have changed while the app was away (or was locked): read it again.
+    func forgetKeptTokens() { ownCache = [:] }
     func linkedToken(_ k: TokenKey) -> String? {
         guard let l = linked, !ignoreLink else { return nil }
         let v: String
@@ -87,12 +135,12 @@ final class PhoneStore: ObservableObject {
         func given(_ v: String) -> Bool { !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         var ok = true
         if given(k.vercel) {
-            ok = Keychain.set(TokenKey.vercel.rawValue, k.vercel) && ok
-            ok = Keychain.set(TokenKey.vercelTeam.rawValue, k.vercelTeam) && ok
+            ok = setOwnToken(.vercel, k.vercel) && ok
+            ok = setOwnToken(.vercelTeam, k.vercelTeam) && ok
             teamCache = nil
         }
-        if given(k.render) { ok = Keychain.set(TokenKey.render.rawValue, k.render) && ok }
-        if given(k.github) { ok = Keychain.set(TokenKey.github.rawValue, k.github) && ok }
+        if given(k.render) { ok = setOwnToken(.render, k.render) && ok }
+        if given(k.github) { ok = setOwnToken(.github, k.github) && ok }
         if !ok { say(L("Could not save every key in this device's keychain. Try again.",
                        "Konnte nicht jeden Schlüssel im Schlüsselbund dieses Geräts sichern. Versuch es noch einmal."), error: true) }
         if demo { demo = false } else { Task { await reload() } }
@@ -101,7 +149,7 @@ final class PhoneStore: ObservableObject {
 
     /// Removes every key typed or scanned on this phone. The Mac's iCloud item stays (it is the Mac's).
     func forgetOwnKeys() {
-        for k in TokenKey.allCases { Keychain.set(k.rawValue, "") }
+        for k in TokenKey.allCases { setOwnToken(k, "") }
         teamCache = nil
         Task { await reload() }
     }
@@ -142,9 +190,10 @@ final class PhoneStore: ObservableObject {
     /// Deletes the keys typed or scanned here, stops using the Mac link on this phone (the Mac and iCloud
     /// keep theirs), and clears what the widget and the notes kept.
     func removeAllKeys() {
-        for k in TokenKey.allCases { Keychain.set(k.rawValue, "") }
+        for k in TokenKey.allCases { setOwnToken(k, "") }
         teamCache = nil
-        projects = []; errors = []; stale = []; loadedAt = nil
+        ETags.shared.removeAll()
+        projects = []; errors = []; stale = []; loadedAt = nil; keyRefused = false
         try? FileManager.default.removeItem(at: Background.lastURL)
         if let url = DeploySnapshot.groupURL { try? FileManager.default.removeItem(at: url) }
         WidgetCenter.shared.reloadAllTimelines()
@@ -204,10 +253,16 @@ final class PhoneStore: ObservableObject {
     private func load() async -> Bool {
         await refreshLink()
         if demo {
-            projects = DemoData.projects(); loadedAt = Date(); errors = []; stale = []; writeSnapshot(); return true
+            projects = DemoData.projects(); loadedAt = Date(); errors = []; stale = []; keyRefused = false; writeSnapshot(); return true
         }
+        // Offline: keep what is there; the list says so, and the path monitor reloads when it is back.
+        if offline { return false }
         let previous = projects.isEmpty ? (Background.readLast() ?? []) : projects
-        var all: [PhoneProject] = [], errs: [String] = [], failed: Set<ProviderKind> = []
+        var all: [PhoneProject] = [], errs: [String] = [], failed: Set<ProviderKind> = [], refused = false
+        func note(_ provider: ProviderKind, _ error: Error) {
+            if (error as? APIError)?.isAuth == true { refused = true }
+            errs.append(provider.rawValue + ": " + describe(error, provider)); failed.insert(provider)
+        }
         if let v = token(.vercel) {
             do {
                 teamCache = nil   // a new load may follow a new team; the polls in between reuse it
@@ -218,13 +273,13 @@ final class PhoneStore: ObservableObject {
                 }
                 let r = try await Vercel(token: v, team: team.id).projects()
                 all += r.list; errs += r.notes.map { "Vercel: " + $0 }
-            } catch { errs.append("Vercel: " + describe(error, .vercel)); failed.insert(.vercel) }
+            } catch { note(.vercel, error) }
         }
         if let r = token(.render) {
             do {
                 let x = try await Render(key: r).projects()
                 all += x.list; errs += x.notes.map { "Render: " + $0 }
-            } catch { errs.append("Render: " + describe(error, .render)); failed.insert(.render) }
+            } catch { note(.render, error) }
         }
         // iOS ended the background time: keep what was there, write nothing half-done.
         if Task.isCancelled { return false }
@@ -233,7 +288,7 @@ final class PhoneStore: ObservableObject {
         // A provider that failed keeps its last rows: an outage or a spent limit is not "nothing waits".
         for k in failed { all += previous.filter { $0.provider == k } }
         projects = Self.sorted(all)
-        errors = errs; stale = failed; loadedAt = Date()
+        errors = errs; stale = failed; loadedAt = Date(); keyRefused = refused
         writeSnapshot()
         await updateBadge()
         // What the person has seen; the background refresh only notes what is new after this.
@@ -404,7 +459,13 @@ final class PhoneStore: ObservableObject {
                 let r = Render(key: token(.render) ?? "")
                 let id = try await r.rollback(p, to: target.id)
                 say(L("\(p.name) is rolling back.", "\(p.name) wird zurückgerollt."))
-                if let id { await follow(p, id, rollback: true) } else { try? await Task.sleep(for: .seconds(4)); await reload() }
+                if let id { await follow(p, id, rollback: true) } else {
+                    // No id to follow: wait for the old commit to be live again (Render builds it anew), at most 5 minutes.
+                    await follow(p, target.id, rollback: true, limit: 5 * 60) {
+                        guard let sha = target.sha else { return "unknown" }
+                        return try await r.liveCommit(p) == sha ? "live" : "rollback"
+                    }
+                }
             }
         } catch { say(describe(error, p.provider), error: true) }
     }
@@ -546,6 +607,7 @@ final class PhoneStore: ObservableObject {
             projects[i].liveState = projects[i].latestState; projects[i].pendingCommits = 0; projects[i].pendingPRs = 0
             projects[i].pendingTitles = []
         }
+        running[p.key] = nil
         say(done)
         writeSnapshot()
     }
@@ -570,6 +632,8 @@ final class PhoneStore: ObservableObject {
                               language: appLanguage, connected: demo || hasAccount)
     }
 
+    /// The widget is reloaded only when what it shows changed, or its time is half an hour old:
+    /// each reload counts against the widget's daily budget.
     func writeSnapshot() {
         QuickActions.update(projects)
         Spotlight.index(projects, demo: demo)
@@ -581,8 +645,7 @@ final class PhoneStore: ObservableObject {
         // Widget reloads have a daily budget: only when the picture changed, or every 15 minutes so its
         // "as of" time stays true.
         let last = UserDefaults.standard.object(forKey: "widgetReloadAt") as? Date ?? .distantPast
-        var same = old; same?.at = snap.at
-        if same != snap || Date().timeIntervalSince(last) > 15 * 60 {
+        if !(old?.sameShown(as: snap) ?? false) || Date().timeIntervalSince(last) > 15 * 60 {
             UserDefaults.standard.set(Date(), forKey: "widgetReloadAt")
             WidgetCenter.shared.reloadAllTimelines()    // both widgets read the same snapshot
             ControlCenter.shared.reloadAllControls()
@@ -602,16 +665,22 @@ final class PhoneStore: ObservableObject {
         // A provider with no rows before (a new key, or a run that failed) has nothing to compare with:
         // all its projects would look new.
         let seen = Set(before.map(\.provider))
-        var lines: [(key: String, text: String)] = []
+        var events: [(id: String, key: String, text: String)] = []
         for p in projects where seen.contains(p.provider) && !stale.contains(p.provider) {
             let o = old[p.key]
-            if p.failed && !(o?.failed ?? false) { lines.append((p.key, L("\(p.name) failed", "\(p.name) fehlgeschlagen"))) }
-            else if p.group == .waiting && o?.group != .waiting { lines.append((p.key, L("\(p.name) is waiting", "\(p.name) wartet"))) }
+            if p.failed && !(o?.failed ?? false) { events.append(("failed:" + p.key, p.key, L("\(p.name) failed", "\(p.name) fehlgeschlagen"))) }
+            else if p.group == .waiting && o?.group != .waiting { events.append(("waiting:" + p.key, p.key, L("\(p.name) is waiting", "\(p.name) wartet"))) }
         }
-        guard !lines.isEmpty else { return }
-        let body = lines.prefix(4).map(\.text).joined(separator: " · ")
-            + (lines.count > 4 ? L(" · +\(lines.count - 4) more", " · +\(lines.count - 4) weitere") : "")
-        await Notes.post(body, project: lines.count == 1 ? lines[0].key : nil, id: "changes-" + lines.map(\.text).joined(separator: "|"), news: true)
+        guard !events.isEmpty else { return }
+        // A few: one note each, with a fixed id, so the same news replaces itself instead of piling up.
+        // Many: one summary that says how many more there are.
+        if events.count <= 3 {
+            for e in events { await Notes.post(e.text, project: e.key, id: e.id, news: true) }
+        } else {
+            let more = events.count - 3
+            await Notes.post(events.prefix(3).map(\.text).joined(separator: " · ") + " · " + L("+\(more) more", "+\(more) weitere"),
+                             project: nil, id: "summary", news: true)
+        }
     }
 }
 
@@ -645,18 +714,5 @@ enum Notes {
         if let project { c.userInfo = ["project": project] }
         let r = UNNotificationRequest(identifier: id ?? "deploy-\(project ?? "")", content: c, trigger: nil)
         try? await UNUserNotificationCenter.current().add(r)
-    }
-}
-
-extension PhoneProject {
-    /// Repo facts from `filled` (same repo, branch and live commit), deploy facts from `own`.
-    static func merging(_ own: PhoneProject, _ filled: PhoneProject) -> PhoneProject {
-        var x = own
-        x.headSha = filled.headSha; x.headAt = filled.headAt; x.headMsg = filled.headMsg
-        x.pendingCommits = filled.pendingCommits; x.pendingPRs = filled.pendingPRs; x.oldestPendingAt = filled.oldestPendingAt
-        x.compareStatus = filled.compareStatus; x.rewritten = filled.rewritten; x.openPRs = filled.openPRs
-        x.pendingTitles = filled.pendingTitles; x.openPRsCapped = filled.openPRsCapped; x.pendingCapped = filled.pendingCapped
-        x.fetchError = own.fetchError ?? filled.fetchError
-        return x
     }
 }

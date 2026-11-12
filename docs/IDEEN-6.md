@@ -138,11 +138,11 @@ In den Abschnitten 1–7: ✅ = gebaut, ◐ = teilweise (Branch `fix/welle-2`). 
 
 ### Hauptfenster: Bestätigungen und Hinweise
 
-68. ◐ [UX] **Eine Bestätigung für alle Wege.** Fenster und Palette haben getrennte Dialoge mit unterschiedlichem Inhalt (die Palette ohne „schon aktuell“, ohne „Nur wenn grün“); eine gemeinsame Komponente nehmen. (MainWindow.swift:326–338; CommandPalette.swift:473–479)
+68. ✅ [UX] **Eine Bestätigung für alle Wege.** Fenster und Palette haben getrennte Dialoge mit unterschiedlichem Inhalt (die Palette ohne „schon aktuell“, ohne „Nur wenn grün“); eine gemeinsame Komponente nehmen. (MainWindow.swift:326–338; CommandPalette.swift:473–479)
 69. ✅ [UX] **„Live deployen“ im Zeilenmenü fragt nicht.** Die Palette fragt beim selben Befehl; bei 0 s Wartezeit startet ein Fehlklick sofort einen bezahlten Build. (MainWindow.swift:890–893)
 70. ✅ [UX] **Riskante Projekte in der Bestätigung kennzeichnen.** Ein „⚠︎ riskant (Migration, Env)“ hinter dem Namen, wenn `risk.isRed`, denn der Dialog ist der letzte Moment vor dem Live-Gang. (MainWindow.swift:331–332)
 71. ✅ [UX] **Plattform in der Sammelbestätigung nennen.** Unter „Alle“ ist ein Name auf Vercel und Render sonst nicht zu unterscheiden. (MainWindow.swift:331)
-72. [Code] **„Nur wenn grün“ hängt am Unterdrücken-Schalter des Dialogs.** `dialogSuppressionToggle` meint „nicht mehr fragen“, und VoiceOver bzw. künftige macOS-Versionen können ihn so behandeln (Vermutung); ein Sheet mit echter Checkbox nehmen. (MainWindow.swift:338)
+72. ✅ [Code] **„Nur wenn grün“ hängt am Unterdrücken-Schalter des Dialogs.** `dialogSuppressionToggle` meint „nicht mehr fragen“, und VoiceOver bzw. künftige macOS-Versionen können ihn so behandeln (Vermutung); ein Sheet mit echter Checkbox nehmen. (MainWindow.swift:338)
 73. ✅ [UX] **„Alles abbrechen“ fragt nicht.** Ein Klick bricht alle laufenden und wartenden Deploys ab; kurze Rückfrage mit Anzahl, oder Rückgängig während der Wartezeit. (MainWindow.swift:964)
 74. ✅ [UX] **„Ignorieren“ bei Build-Auslösern ist endgültig.** Ohne Rückgängig-Toast und ohne Liste in den Einstellungen bleibt ein versehentlich ignorierter Workflow für immer unsichtbar. (MainWindow.swift:82, 538)
 75. ✅ [UX] **Die eingeklappte Hinweiszeile sagt zu wenig.** „1 weitere: Clau…“ (Screenshot) zeigt nur Wörter; ein Symbol und eine Farbe je Hinweis (rot, orange, grau) zeigen die Dringlichkeit ohne Aufklappen. (MainWindow.swift:509–519)
@@ -172,22 +172,22 @@ In den Abschnitten 1–7: ✅ = gebaut, ◐ = teilweise (Branch `fix/welle-2`). 
 
 ### Leistung
 
-94. [Perf] **Die Palette rechnet pro Tastendruck mehrfach alles neu.** `PaletteCommands.all` (6 Einträge je Projekt) und die Fuzzy-Sortierung laufen in `results`, `recentCount`, `move` und `onChange` getrennt; einmal pro Abfrage berechnen und zwischenspeichern. (CommandPalette.swift:162–172, 226, 276)
-95. [Perf] **Die Palette rechnet bei jedem Store-Poll neu.** Solange sie offen ist, baut jede Store-Änderung die Liste neu; den Projekt-Index beim Öffnen einfrieren und nur den Status nachziehen. (CommandPalette.swift:153, 175)
-96. [Perf] **Details: `scrub` baut pro Zeile die Liste aller Projekte.** Jeder Commit-Text ruft `Platform.allCases.flatMap` auf; die Liste einmal pro Render bilden. (DetailViews.swift:159, 343)
-97. [Perf] **Build-Log maskiert im Demo-Modus bei jedem Render 2000 Zeilen.** Das Ergebnis pro Laden zwischenspeichern. (DetailViews.swift:69)
-98. [Perf] **Der Neu-laden-Knopf lädt Plattformen nacheinander.** Unter „Alle“ wartet Render auf Vercel; mit `TaskGroup` parallel laden. (MainWindow.swift:405)
-99. [Perf] **`ImageRenderer` bei jedem Body.** `SavingShare.image` ist berechnet und rendert die Karte bei jedem Neuzeichnen; einmal in `onAppear` erzeugen. (MainWindow.swift:1138–1141, 1153)
+94. ✅ [Perf] **Die Palette rechnet pro Tastendruck mehrfach alles neu.** `PaletteCommands.all` (6 Einträge je Projekt) und die Fuzzy-Sortierung laufen in `results`, `recentCount`, `move` und `onChange` getrennt; einmal pro Abfrage berechnen und zwischenspeichern. (CommandPalette.swift:162–172, 226, 276)
+95. ✅ [Perf] **Die Palette rechnet bei jedem Store-Poll neu.** Solange sie offen ist, baut jede Store-Änderung die Liste neu; den Projekt-Index beim Öffnen einfrieren und nur den Status nachziehen. (CommandPalette.swift:153, 175)
+96. ✅ [Perf] **Details: `scrub` baut pro Zeile die Liste aller Projekte.** Jeder Commit-Text ruft `Platform.allCases.flatMap` auf; die Liste einmal pro Render bilden. (DetailViews.swift:159, 343)
+97. ✅ [Perf] **Build-Log maskiert im Demo-Modus bei jedem Render 2000 Zeilen.** Das Ergebnis pro Laden zwischenspeichern. (DetailViews.swift:69)
+98. ✅ [Perf] **Der Neu-laden-Knopf lädt Plattformen nacheinander.** Unter „Alle“ wartet Render auf Vercel; mit `TaskGroup` parallel laden. (MainWindow.swift:405)
+99. ✅ [Perf] **`ImageRenderer` bei jedem Body.** `SavingShare.image` ist berechnet und rendert die Karte bei jedem Neuzeichnen; einmal in `onAppear` erzeugen. (MainWindow.swift:1138–1141, 1153)
 100. [Perf] **`autofixState` zweimal pro Zeile.** Für Zeile und Hintergrund getrennt abgefragt; einmal lesen und weiterreichen. (MainWindow.swift:872, 876)
 
 
 ### Code
 
-101. [Code] **MainWindow.swift ist zu groß (1716 Zeilen).** `CostsSheet`/`SavingShare`/`SavingCard`, `Row`/`AgentChips`, `Setup`/`RenderKeySetup` und die Hinweise in eigene Dateien; der Typprüfer braucht heute Tricks („in drei Teile geteilt“). (MainWindow.swift:215, 1043–1716)
+101. ◐ [Code] **MainWindow.swift ist zu groß (1716 Zeilen).** `CostsSheet`/`SavingShare`/`SavingCard`, `Row`/`AgentChips`, `Setup`/`RenderKeySetup` und die Hinweise in eigene Dateien; der Typprüfer braucht heute Tricks („in drei Teile geteilt“). (MainWindow.swift:215, 1043–1716)
 102. [Code] **Die Einrichtung ist fest auf Vercel und Render verdrahtet.** `setupNeeded` und die Einrichtungs-Bildschirme kennen nur zwei Plattformen; die Prüfung sollte aus `deploys doctor` je Provider kommen, damit neue Provider ohne App-Änderung erscheinen. (MainWindow.swift:690–700, 781–794)
 103. [Code] **`Platform` mit zwei Fällen blockiert neue Provider.** Das Fenster nutzt zugleich Provider-IDs (Strings) und `Platform`; solange `Platform` nur Vercel und Render kennt, bleibt jeder weitere Provider „kommt bald“. (Model.swift:11–15; MainWindow.swift:125)
-104. [Code] **Pfade zu den Einstellungen stehen als freier Text.** „Einstellungen → Team“ und „→ Ausgeblendete Projekte“ sind an fünf Stellen verteilt; aus dem Tab-Enum erzeugen, dann bleiben sie beim Umbau richtig. (MainWindow.swift:816, 833, 968–971; Store.swift:675)
-105. [Code] **Test für die Verweise auf Tabs.** Ein kleiner Test prüft, dass jeder `settingsTab`-Wert, der irgendwo gesetzt wird, ein existierender Tab ist. (App.swift:37; Store.swift:209)
+104. ◐ [Code] **Pfade zu den Einstellungen stehen als freier Text.** „Einstellungen → Team“ und „→ Ausgeblendete Projekte“ sind an fünf Stellen verteilt; aus dem Tab-Enum erzeugen, dann bleiben sie beim Umbau richtig. (MainWindow.swift:816, 833, 968–971; Store.swift:675)
+105. ✅ [Code] **Test für die Verweise auf Tabs.** Ein kleiner Test prüft, dass jeder `settingsTab`-Wert, der irgendwo gesetzt wird, ein existierender Tab ist. (App.swift:37; Store.swift:209)
 106. [Code] **„Fokus weg“ per `makeFirstResponder(nil)` nach 200 ms.** Mit `.defaultFocus` bzw. `@FocusState` beim Start ohne Wartezeit lösen. (MainWindow.swift:319–321)
 
 
@@ -217,7 +217,7 @@ In den Abschnitten 1–7: ✅ = gebaut, ◐ = teilweise (Branch `fix/welle-2`). 
 
 ### Kosten-Sheet
 
-123. [UX] **Kosten-Sheet mit „Budget“.** Ist ein Monatsbudget gesetzt, eine Linie im Diagramm und „noch … $ bis Monatsende“. (MainWindow.swift:1097–1130)
+123. ✅ [UX] **Kosten-Sheet mit „Budget“.** Ist ein Monatsbudget gesetzt, eine Linie im Diagramm und „noch … $ bis Monatsende“. (MainWindow.swift:1097–1130)
 124. ✅ [UX] **Den angebrochenen Tag im Diagramm kennzeichnen.** Den heutigen Balken heller und als „bisher“ markieren, damit er nicht wie ein billiger Tag aussieht. (MainWindow.swift:1099–1102)
 
 
@@ -290,7 +290,7 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 170. ✅ [Bug] **Vergleichslink zeigt bei GitLab-Repos auf github.com.** `compareURL` ist fest `https://github.com/…`, seit 0.8.0 kann die Quelle GitLab sein. Host aus dem Skript (`repoHost`/`compareUrl`) mitliefern. (app/Model.swift:180)
 171. ✅ [Bug] **„Claude fragen“ übergibt bei Render die Service-ID ohne Plattform.** `ClaudeAI.ask(…, project: item.id)` schickt `srv-…` bzw. bei Vercel den Namen ohne Präfix; ein Name auf zwei Plattformen ist mehrdeutig. `platform:name` wie bei anderen Befehlen. (Vermutung zur Skriptseite) (app/ClaudeAI.swift:278)
 172. ✅ [Bug] **Fehler-JSON des Skripts wird zu „data couldn't be read“.** Antwortet `vercel json` mit einem Objekt statt einer Liste (z. B. `{"error":…}`), scheitert `decodeLossy` mit der englischen Systemmeldung, die so in der Zeile steht. Objekt mit `error` erkennen und dessen Text zeigen. (app/Model.swift:42, app/Store.swift:333)
-173. [Bug] **Widget rechnet „heute“ in UTC, das Fenster lokal.** `snapshotSaving` nutzt einen UTC-`DateFormatter`, `Costs.saving` bekommt den lokalen Tag; um Mitternacht zeigen Widget und Fenster verschiedene Ersparnisse. `costs.saving(today: localDay())` wiederverwenden statt Kopie. (app/Snapshot.swift:67–77)
+173. ✅ [Bug] **Widget rechnet „heute“ in UTC, das Fenster lokal.** `snapshotSaving` nutzt einen UTC-`DateFormatter`, `Costs.saving` bekommt den lokalen Tag; um Mitternacht zeigen Widget und Fenster verschiedene Ersparnisse. `costs.saving(today: localDay())` wiederverwenden statt Kopie. (app/Snapshot.swift:67–77)
 174. ✅ [Bug] **Strenge Dekodierung in Settings-Bereichen.** `AutofixStatus` (`scheduled`), `GuardStatus` und `TeamConfig` (`readonly`, `sources`) verlangen Felder; fehlt eins (ältere/neuere Skriptversion), zeigt der Bereich „nicht eingerichtet“ bzw. nichts, und `teamObserver` wird nie gesetzt. Tolerant wie `Doctor`. (app/Autofix.swift:22–25, app/Guard.swift:23–27, app/Team.swift:22–27)
 175. ✅ [Bug] **Deutsche Schätzmethode ist fest eingebaut.** `EstimateFooter` zeigt auf Englisch die Methode aus dem Skript, auf Deutsch immer denselben festen Text; ändert das Skript seine Methode, steht im deutschen Fenster etwas Falsches. Skript-Text in beiden Sprachen zeigen oder `method_de` liefern. (app/Savings.swift:406–407)
 176. ✅ [Bug] **„Kopieren des Prompts“ scheitert still.** `copyPrompt` kehrt bei einem Fehler ohne Meldung zurück; der Knopf wirkt kaputt. Fehler in `message`. (app/Autofix.swift:133)
@@ -304,7 +304,7 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 180. ✅ [Bug] **Der QR-Code mit allen Schlüsseln erscheint auch im Demo-Modus.** Gerade dann wird aufgenommen. Im Demo-Modus Knopf sperren oder Code verpixeln. (app/PhoneLinkMac.swift:123 und 159–163)
 181. ✅ [Bug] **Plural-Reste.** „1 projects wait …“, „1 PRs in 1 projects“, „1 PRs, 1 commits waiting“, „1 PRs still open“ (EN und DE). Gleiche Hilfsfunktion wie in `summaryLine`. (app/Store.swift:68 und 799, app/App.swift:394 und 410)
 182. ✅ [Bug] **Plattformnamen per `capitalized`.** „Digitalocean“, „Cloudflare“ statt „DigitalOcean“, „Cloudflare Pages“ in Simulator, Bilanz und Wächter. `ProviderInfo.label` nutzen. (app/Savings.swift:509 und 670, app/Guard.swift:105 und 168)
-183. [UX] **Render-Diensttypen und rohe Status bleiben englisch.** `typeName` („Web Service“, „Worker“) und `"Status: \(state)"` sind nicht übersetzt. In `L()` ziehen. (app/Store.swift:469–477 und 961)
+183. ✅ [UX] **Render-Diensttypen und rohe Status bleiben englisch.** `typeName` („Web Service“, „Worker“) und `"Status: \(state)"` sind nicht übersetzt. In `L()` ziehen. (app/Store.swift:469–477 und 961)
 
 
 ### Sicherheit
@@ -329,7 +329,7 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 197. ✅ [Perf] **Ruhezustand während einer Deploy-Schlange verzögern.** Schläft der Mac mitten im Lauf, startet die Schlange nicht weiter und `follow` läuft in die Deadline. `.idleSystemSleepDisabled` mit Grund, solange `queue` nicht leer ist. (app/Store.swift:722)
 198. ✅ [Perf] **`Tool.run` belegt drei blockierte GCD-Threads pro Aufruf.** Bei vielen Status-Abfragen und Ladevorgängen gleichzeitig droht die GCD-Thread-Grenze (64). `terminationHandler` plus `readabilityHandler` statt `read.wait()`/`waitUntilExit()`. (app/Tool.swift:164–233)
 199. ◐ [Perf] **Log- und Journal-Schreiben auf dem Hauptthread.** `Log.write` öffnet, sucht, schreibt und `stat`et die Datei synchron, aufgerufen vom `@MainActor`-Store; `Journal.append` ebenso. Eigene serielle Queue. (app/Tool.swift:293–307, app/Journal.swift:42–59)
-200. [Perf] **Savings-Berichte als JSON-Blob in UserDefaults.** `savingsSimulation`/`savingsLedger` (mit allen übersprungenen Pushes) landen in der Preferences-plist und werden beim ersten Zugriff auf dem Hauptthread dekodiert. Datei in Application Support, Dekodierung im Hintergrund. (app/Savings.swift:192–199 und 208)
+200. ✅ [Perf] **Savings-Berichte als JSON-Blob in UserDefaults.** `savingsSimulation`/`savingsLedger` (mit allen übersprungenen Pushes) landen in der Preferences-plist und werden beim ersten Zugriff auf dem Hauptthread dekodiert. Datei in Application Support, Dekodierung im Hintergrund. (app/Savings.swift:192–199 und 208)
 201. ✅ [Perf] **`DateFormatter` pro Aufruf in `SavingsFormat.day`.** Die Bilanz ruft das für jeden übersprungenen Push. Statisch halten. (app/Savings.swift:270)
 202. ✅ [Perf] **`Demo.scrub` baut bei jedem Aufruf einen Regex über alle Namen.** `makeSnapshot` ruft es pro Zeile, `tell` pro Toast. Regex zwischenspeichern, solange sich `items` nicht ändert. (app/DemoText.swift:9–34, app/Snapshot.swift:51)
 203. ✅ [Perf] **Logo-Abruf lädt die ganze Startseite.** `get(base)` liest das komplette HTML (bei manchen Seiten MBs) nur für `<link rel=icon>`. Nach 64 KB abbrechen (`bytes(for:)`) oder nur `<head>` lesen. (app/Logos.swift:114)
@@ -340,10 +340,10 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 
 ### Fehlerbehandlung und Rückmeldung
 
-207. [UX] **Nach einem Ladefehler den Doctor neu fragen.** Läuft eine Anmeldung ab, die beim Start gültig war, kommt nur „HTTP 401“ in der Zeile; die Einrichtungsansicht erscheint nie, weil `autoRefresh` den Doctor nur bei fehlenden Feldern neu fragt. Bei 401/403 im Ladefehler sofort `doctor`. (app/Store.swift:428–432 und 352–356)
-208. [UX] **`autofix sync`-Fehler werden verschluckt.** `try?` ohne Log; „Claude behebt es“ hängt dann wieder ohne Hinweis. Ins Log und in `extrasFailedAt`. (app/Store.swift:135)
-209. [UX] **Gerade erst übergebene Ergebnisse aus `messages` überleben keinen Neustart.** Die Glocke ist nach einem Update oder Sprachwechsel leer; die letzten 30 Meldungen in Application Support sichern. (app/Store.swift:575–581)
-210. [UX] **Antworten von Claude als Markdown darstellen.** `Text(answer.text)` zeigt `**`, `-` und `#` roh. `AttributedString(markdown:)` mit `.inlineOnlyPreservingWhitespace`. (app/ClaudeAI.swift:244)
+207. ◐ [UX] **Nach einem Ladefehler den Doctor neu fragen.** Läuft eine Anmeldung ab, die beim Start gültig war, kommt nur „HTTP 401“ in der Zeile; die Einrichtungsansicht erscheint nie, weil `autoRefresh` den Doctor nur bei fehlenden Feldern neu fragt. Bei 401/403 im Ladefehler sofort `doctor`. (app/Store.swift:428–432 und 352–356)
+208. ✅ [UX] **`autofix sync`-Fehler werden verschluckt.** `try?` ohne Log; „Claude behebt es“ hängt dann wieder ohne Hinweis. Ins Log und in `extrasFailedAt`. (app/Store.swift:135)
+209. ✅ [UX] **Gerade erst übergebene Ergebnisse aus `messages` überleben keinen Neustart.** Die Glocke ist nach einem Update oder Sprachwechsel leer; die letzten 30 Meldungen in Application Support sichern. (app/Store.swift:575–581)
+210. ✅ [UX] **Antworten von Claude als Markdown darstellen.** `Text(answer.text)` zeigt `**`, `-` und `#` roh. `AttributedString(markdown:)` mit `.inlineOnlyPreservingWhitespace`. (app/ClaudeAI.swift:244)
 
 
 ### Persistenz und Neustart
@@ -356,30 +356,30 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 ### Code-Struktur
 
 214. [Code] **Andere Plattformen über `deploys list --json` laden statt über das `Platform`-Enum.** Netlify, Cloudflare, Coolify, DigitalOcean, Amplify und Hook kann man in Settings einschalten, ihr Tab sagt aber nur „kann diese Projekte noch nicht auflisten“, weil nur `Platform.vercel/.render` einen Lader hat. Ein generisches `Item` aus `list --json` mit `phase`, Fähigkeiten aus `ProviderCaps`. (app/Model.swift:11–15, app/Providers.swift:46, app/Store.swift:385–419)
-215. [Code] **`decode()` mappt Vercel und Render fast identisch.** 30 Zeilen doppelt; ein gemeinsames Protokoll `ScriptProject` mit den gleichen Feldern und eine Abbildung. (app/Store.swift:385–419)
+215. ✅ [Code] **`decode()` mappt Vercel und Render fast identisch.** 30 Zeilen doppelt; ein gemeinsames Protokoll `ScriptProject` mit den gleichen Feldern und eine Abbildung. (app/Store.swift:385–419)
 216. [Code] **Zwei Typen für `autofix status`.** `AutofixStatus` (Autofix.swift) und `AutofixReport` (Model.swift) lesen dasselbe Kommando unterschiedlich tolerant. Einer reicht. (app/Autofix.swift:8–26, app/Model.swift:296–347)
-217. [Code] **Dreimal die Regel „fehlgeschlagen“.** `Item.lastFailed`, `ClaudeAI.isFailed` und `makeSnapshot` prüfen verschiedene Listen von Statuswörtern. Eine Eigenschaft am `Item`. (app/Model.swift:288–291, app/ClaudeAI.swift:70–73, app/Snapshot.swift:41–45)
-218. [Code] **Gleicher Beenden-Dialog zweimal.** Menüleiste „Beenden“ und `relaunchApp` haben denselben NSAlert-Text kopiert. Eine Funktion `confirmQuit(running:)`. (app/App.swift:445–456, app/Tool.swift:49–59)
+217. ✅ [Code] **Dreimal die Regel „fehlgeschlagen“.** `Item.lastFailed`, `ClaudeAI.isFailed` und `makeSnapshot` prüfen verschiedene Listen von Statuswörtern. Eine Eigenschaft am `Item`. (app/Model.swift:288–291, app/ClaudeAI.swift:70–73, app/Snapshot.swift:41–45)
+218. ✅ [Code] **Gleicher Beenden-Dialog zweimal.** Menüleiste „Beenden“ und `relaunchApp` haben denselben NSAlert-Text kopiert. Eine Funktion `confirmQuit(running:)`. (app/App.swift:445–456, app/Tool.swift:49–59)
 219. [Code] **Settings-Bereiche wiederholen `busy/message/failed/run()`.** Autofix, Guard, Team, ClaudeAI haben je eine eigene Kopie. Ein kleines `ScriptAction`-ObservableObject. (app/Autofix.swift:150–159, app/Guard.swift:79–89, app/Team.swift:115–125, app/ClaudeAI.swift:161–168)
-220. [Code] **Tote Funktion `buildCost`.** Wird nirgends aufgerufen (und würde Render-Dienste mit Vercel-Kosten gleichen Namens versehen). Entfernen. (app/Store.swift:215–217)
-221. [Code] **Unnötige Imports.** Model, Tool, Logos, Store importieren `Charts`, `UserNotifications`, `ServiceManagement`, ohne sie alle zu brauchen; das verlangsamt `swiftc` über alle Dateien. Pro Datei nur das Nötige. (app/Model.swift:3–7, app/Tool.swift:3–7, app/Logos.swift:3–7)
+220. ✅ [Code] **Tote Funktion `buildCost`.** Wird nirgends aufgerufen (und würde Render-Dienste mit Vercel-Kosten gleichen Namens versehen). Entfernen. (app/Store.swift:215–217)
+221. ✅ [Code] **Unnötige Imports.** Model, Tool, Logos, Store importieren `Charts`, `UserNotifications`, `ServiceManagement`, ohne sie alle zu brauchen; das verlangsamt `swiftc` über alle Dateien. Pro Datei nur das Nötige. (app/Model.swift:3–7, app/Tool.swift:3–7, app/Logos.swift:3–7)
 222. [Code] **Magische Statuswörter.** `"READY"`, `"live"`, `"canceled"`, `"build_failed"` stehen verstreut als Strings; ein Enum pro Plattform (oder das `phase` des Skripts) verhindert Tippfehler. (app/Store.swift:528 und 935–961)
-223. [Code] **Claude-Konfiguration verliert die Schlüsselreihenfolge.** `JSONSerialization` schreibt die Datei des Nutzers in beliebiger Reihenfolge zurück; bei Hand-Pflege sieht jede Änderung wie ein Komplettumbau aus. Mindestens `.sortedKeys` für stabile Diffs. (app/ClaudeConnect.swift:35)
-224. [Code] **Feste Plattformliste in Guard, Savings und Diagnose.** `[Platform.vercel, .render]` bzw. nur zwei Zähler in „Diagnose kopieren“; mit weiteren Anbietern fehlen sie. `enabledProviders` nutzen und Skriptversion (`deploys --version`) in die Diagnose. (app/Guard.swift:88 und 188, app/App.swift:259–264)
+223. ✅ [Code] **Claude-Konfiguration verliert die Schlüsselreihenfolge.** `JSONSerialization` schreibt die Datei des Nutzers in beliebiger Reihenfolge zurück; bei Hand-Pflege sieht jede Änderung wie ein Komplettumbau aus. Mindestens `.sortedKeys` für stabile Diffs. (app/ClaudeConnect.swift:35)
+224. ◐ [Code] **Feste Plattformliste in Guard, Savings und Diagnose.** `[Platform.vercel, .render]` bzw. nur zwei Zähler in „Diagnose kopieren“; mit weiteren Anbietern fehlen sie. `enabledProviders` nutzen und Skriptversion (`deploys --version`) in die Diagnose. (app/Guard.swift:88 und 188, app/App.swift:259–264)
 
 
 ### Tests
 
 225. [Test] **Tests in beiden Sprachen laufen lassen.** `isGerman` wird einmal beim Start festgelegt; `app-tests.sh` testet also nur die Sprache des Macs. Zweiter Lauf mit `-AppleLanguages '(de)'` bzw. `(en)`. (tests/app-tests.sh:13, app/Tool.swift:13)
-226. [Test] **Test: `selectChanged` lässt Ausgeblendete und laufende Zeilen aus.** Fängt den Fehler oben und den Menüleisten-Pfad. (app/Store.swift:492)
-227. [Test] **Test: `waiting` mit zwei Branches eines Repos.** Zwei Projekte, gleiches Repo, verschiedene `ref`. (app/Store.swift:447)
-228. [Test] **Test: `loadProviders` behält die Liste bei Fehler.** Mit einem Fake-Skript, das beim zweiten Aufruf nichts liefert. (app/Providers.swift:229)
-229. [Test] **Test: `Tool.run`-Timeout und Abbruch.** Ein Skript mit `sleep 30`: Timeout liefert `timedOut`, ein gecancelter Task liefert `CancellationError`, keiner hängt (killTree ist getestet, die Antwortpfade nicht). (app/Tool.swift:143–233)
-230. [Test] **Test: `makeSnapshot`.** Reihenfolge building → failed → waiting, Demo-Maskierung, ausgeblendete fehlen, `sameContent` ignoriert nur `at`. (app/Snapshot.swift:37–65)
-231. [Test] **Test: `AutoDeployAllowance` mit Millisekunden und ISO mit Bruchteilen.** Beide Pfade des Dekoders sind ungetestet. (app/Model.swift:403–418)
+226. ✅ [Test] **Test: `selectChanged` lässt Ausgeblendete und laufende Zeilen aus.** Fängt den Fehler oben und den Menüleisten-Pfad. (app/Store.swift:492)
+227. ✅ [Test] **Test: `waiting` mit zwei Branches eines Repos.** Zwei Projekte, gleiches Repo, verschiedene `ref`. (app/Store.swift:447)
+228. ✅ [Test] **Test: `loadProviders` behält die Liste bei Fehler.** Mit einem Fake-Skript, das beim zweiten Aufruf nichts liefert. (app/Providers.swift:229)
+229. ✅ [Test] **Test: `Tool.run`-Timeout und Abbruch.** Ein Skript mit `sleep 30`: Timeout liefert `timedOut`, ein gecancelter Task liefert `CancellationError`, keiner hängt (killTree ist getestet, die Antwortpfade nicht). (app/Tool.swift:143–233)
+230. ✅ [Test] **Test: `makeSnapshot`.** Reihenfolge building → failed → waiting, Demo-Maskierung, ausgeblendete fehlen, `sameContent` ignoriert nur `at`. (app/Snapshot.swift:37–65)
+231. ✅ [Test] **Test: `AutoDeployAllowance` mit Millisekunden und ISO mit Bruchteilen.** Beide Pfade des Dekoders sind ungetestet. (app/Model.swift:403–418)
 232. [Test] **Test: `cancel` während des CI-Wartens und `follow`-Deadline.** Mit einer Uhr, die man vorstellen kann (Idee „Clock injizierbar“ ist bekannt; hier die zwei konkreten Fälle). (app/Store.swift:761–784 und 918–970)
 233. [Test] **Test: Maskierer gegen die Muster des Skripts.** Je ein Beispiel für Stripe, GitLab, npm, Google, Private-Key-Block; gleiche Fixtures für `tests/script-tests.sh`. (app/LogTools.swift:26)
-234. [Test] **Tests schreiben nicht in die echte Application-Support-Ablage.** `Journal.dir` und `Store.cacheDir` sind fest `app.deploycenter.mac`; ein Test, der `Journal.append` oder `writeCache` erreicht, schreibt in die Daten des echten Nutzers. Ordner per Umgebungsvariable umlenkbar machen. (app/Journal.swift:22–26, app/Store.swift:242–245)
+234. ✅ [Test] **Tests schreiben nicht in die echte Application-Support-Ablage.** `Journal.dir` und `Store.cacheDir` sind fest `app.deploycenter.mac`; ein Test, der `Journal.append` oder `writeCache` erreicht, schreibt in die Daten des echten Nutzers. Ordner per Umgebungsvariable umlenkbar machen. (app/Journal.swift:22–26, app/Store.swift:242–245)
 235. [Test] **`swiftc -strict-concurrency=complete` im Testlauf.** Zeigt die Datenrennen (statische Vars, `NSImage` über Actor-Grenzen, `NotifyRouter.onCancel`) als Warnungen, ohne den App-Build auf Swift 6 umzustellen. (tests/app-tests.sh:12)
 
 
@@ -401,20 +401,20 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 242. ✅ [Bug] **`_status`/`_latest` liefern JSON statt `id<TAB>phase<TAB>state`.** `watch` liest die erste Zeile („{“) als ID, die Phase bleibt leer, und die Schleife läuft endlos weiter; davon hängen auch `deploy --wait`, Gruppen-Deploys und `verify`. TSV ausgeben wie im Vertrag, das JSON nur in `_cli_status`. (providers/netlify.sh:294/301, cloudflare.sh:296, coolify.sh:287/295, digitalocean.sh:282/290, amplify.sh:293/301; deploys:1544)
 243. ✅ [Bug] **`_deploy_json` mit Positionsargumenten statt `--sha/--preview`.** Netlify, Coolify und DigitalOcean lesen `$2` als „preview“; `deploys deploy x --sha abc` stirbt deshalb mit der Preview-Meldung, und bei Coolify ist `--sha` über `deploys` nie erreichbar. Flags parsen wie bei Vercel. (providers/netlify.sh:264, coolify.sh:250, digitalocean.sh:265)
 244. ✅ [Bug] **`deploy-changed --when-green` scheitert bei jedem Provider ohne `sha`-Fähigkeit.** `deploy_one` gibt immer `--sha` mit; Cloudflare stirbt damit („cannot deploy a given commit“), Netlify und DigitalOcean ebenso. Vorher `caps.sha` prüfen und dann ohne SHA starten (mit einer Warnung, dass ein neuerer Push mitkommen kann) oder sauber überspringen. (deploys:633, deploys:1975; providers/cloudflare.sh:255)
-245. [Test] **Vertragstests laufen für fünf Provider gar nicht.** `tests/fixtures/<p>/env` fehlt bei netlify, cloudflare, coolify, digitalocean und amplify; `contract.sh` überspringt sie, deshalb sind die drei Fehler oben unbemerkt. `env` anlegen und fehlende Fixtures im CI als Fehler werten statt als „skip“. (tests/providers/contract.sh:71)
+245. ✅ [Test] **Vertragstests laufen für fünf Provider gar nicht.** `tests/fixtures/<p>/env` fehlt bei netlify, cloudflare, coolify, digitalocean und amplify; `contract.sh` überspringt sie, deshalb sind die drei Fehler oben unbemerkt. `env` anlegen und fehlende Fixtures im CI als Fehler werten statt als „skip“. (tests/providers/contract.sh:71)
 246. ✅ [Bug] **`doctor` erzeugt doppelte JSON-Schlüssel.** Netlify, Coolify und DigitalOcean liefern alle `provider`, `key`, `tokenOk` und `error`; `doctor` klebt die Objekte zusammen, also gewinnt still der letzte Provider. Schlüssel mit Präfix versehen (`netlifyTokenOk`) wie bei Vercel und Render, oder je Provider ein verschachteltes Objekt. (deploys:1485–1495; providers/netlify.sh:380, coolify.sh:405, digitalocean.sh:396)
-247. [Code] **`_meta`/`_doctor` brauchen jq, obwohl der Vertrag printf verlangt.** Netlify, Cloudflare, Amplify und Coolify bauen beides mit `jq -n`; ohne jq ist der Provider dann still „aus“, und `doctor` verliert genau dort seine Felder. (providers/netlify.sh:159/368, cloudflare.sh:147, amplify.sh:153; docs/PROVIDERS.md:48/61)
-248. [Code] **Übrige Standalone-Teile in den neuen Providern.** Kommentare zu „A1 provider PR“ und „while the dispatcher does not route here yet“, eigene `die`/`mtime`/`CONFIG_DIR`/`USER`-Ersatzdefinitionen und `*_cmd`-Dispatcher sind jetzt toter Code; entfernen spart Abweichungen. (providers/cloudflare.sh:4–9/27–34, amplify.sh:4–9/26–33, netlify.sh:10/28–34)
+247. ◐ [Code] **`_meta`/`_doctor` brauchen jq, obwohl der Vertrag printf verlangt.** Netlify, Cloudflare, Amplify und Coolify bauen beides mit `jq -n`; ohne jq ist der Provider dann still „aus“, und `doctor` verliert genau dort seine Felder. (providers/netlify.sh:159/368, cloudflare.sh:147, amplify.sh:153; docs/PROVIDERS.md:48/61)
+248. ◐ [Code] **Übrige Standalone-Teile in den neuen Providern.** Kommentare zu „A1 provider PR“ und „while the dispatcher does not route here yet“, eigene `die`/`mtime`/`CONFIG_DIR`/`USER`-Ersatzdefinitionen und `*_cmd`-Dispatcher sind jetzt toter Code; entfernen spart Abweichungen. (providers/cloudflare.sh:4–9/27–34, amplify.sh:4–9/26–33, netlify.sh:10/28–34)
 249. [Code] **Fünf Kopien desselben HTTP-Clients.** `render_call`, `netlify_call`, `cf_call`, `coolify_call` und `digitalocean_call` wiederholen Retry, Timeout, `-K -` und Fehlerhinweise; eine `lib/http.sh` mit `http_call <label> <keyfn> …` macht Korrekturen (z. B. `Retry-After`) an einer Stelle möglich. (providers/render.sh:27, netlify.sh:61, cloudflare.sh:67, coolify.sh:66)
-250. [Code] **`meta_flag`/`meta_str` lesen `_meta` mit grep.** `"defaultOn": true` mit Leerzeichen wird schon nicht mehr erkannt; der Test prüft nur „eine Zeile“. Den Test auf genau `"key":value` ohne Leerzeichen erweitern oder mit jq lesen, wenn es da ist. (deploys:206/224/230)
+250. ✅ [Code] **`meta_flag`/`meta_str` lesen `_meta` mit grep.** `"defaultOn": true` mit Leerzeichen wird schon nicht mehr erkannt; der Test prüft nur „eine Zeile“. Den Test auf genau `"key":value` ohne Leerzeichen erweitern oder mit jq lesen, wenn es da ist. (deploys:206/224/230)
 
 
 ### Kern `deploys`: Bugs
 
 251. ✅ [Bug] **`deploys deploy <p>` umgeht das Deploy-Fenster.** Der Befehl ruft `${plat}_deploy_json` direkt auf, ohne `freeze_check` und `journal_forced`; nur `<p> deploy` und `deploy-changed` prüfen `window.json`. Dasselbe gilt für Gruppen. (deploys:1374–1416, vgl. deploys:1358)
-252. [Security] **Observer-Modus durch die Reihenfolge der Flags umgehbar.** `require_write` greift bei `deploy-changed` nur, wenn `--yes` das erste Argument ist; `deploy-changed --when-green --yes` startet Deploys bei allen Providern ohne `team_gate`, also überall außer Vercel/Render bzw. überall ohne lib/team.sh. `--yes` an beliebiger Stelle prüfen. (deploys:1306, deploys:1918)
-253. [Security] **`autodeploy allow` und `revoke` sind im Observer-Modus erlaubt.** Beide schalten Auto-Deploy über `ad_on`/`guard_run` an oder aus und stehen nicht in der `require_write`-Liste. (deploys:1302–1311, deploys:1994–1998)
-254. [Security] **`safe_arg` fehlt bei `deploy`, `verify`, `risk`, `ai` und `autofix --only`.** Ein Name mit `?teamId=…` geht so ungeprüft über `lookup` → `vercel_has` in einen API-Pfad; SECURITY.md verspricht, dass solche Namen vor jedem Aufruf abgelehnt werden. (deploys:1327–1339)
+252. ✅ [Security] **Observer-Modus durch die Reihenfolge der Flags umgehbar.** `require_write` greift bei `deploy-changed` nur, wenn `--yes` das erste Argument ist; `deploy-changed --when-green --yes` startet Deploys bei allen Providern ohne `team_gate`, also überall außer Vercel/Render bzw. überall ohne lib/team.sh. `--yes` an beliebiger Stelle prüfen. (deploys:1306, deploys:1918)
+253. ✅ [Security] **`autodeploy allow` und `revoke` sind im Observer-Modus erlaubt.** Beide schalten Auto-Deploy über `ad_on`/`guard_run` an oder aus und stehen nicht in der `require_write`-Liste. (deploys:1302–1311, deploys:1994–1998)
+254. ✅ [Security] **`safe_arg` fehlt bei `deploy`, `verify`, `risk`, `ai` und `autofix --only`.** Ein Name mit `?teamId=…` geht so ungeprüft über `lookup` → `vercel_has` in einen API-Pfad; SECURITY.md verspricht, dass solche Namen vor jedem Aufruf abgelehnt werden. (deploys:1327–1339)
 255. ✅ [Bug] **Das gemeinsame `window` und `health` aus deploy-center.json wirken in der CLI nicht.** `freeze_check` liest nur das lokale `window.json` (eine Deny-Liste); das Team-Format ist ein Erlaubt-Fenster mit `tz`, und `verify` liest `health` nicht. TEAM.md sagt aber, die Safe-Deploy-Prüfungen nutzen beides. (deploys:555–574, deploys:1828; lib/team.sh:110; docs/TEAM.md:50)
 256. ✅ [Bug] **Projekte ohne Git-Repo zählen immer als „state unknown“.** Render-Dienste aus einem Image (Repo null, aber `deployable`) und Bitbucket-Repos (`githost_of` → unknown) bekommen nie einen Head; `UNKNOWN_RULE` meldet sie bei jedem Lauf, und `changed`/`deploy-changed` enden immer mit Exit 1, was einen Cron dauerhaft rot macht. Ohne Repo `deployable` mit dem Grund „kein Repo“ führen und nicht als unbekannt zählen. (deploys:463, providers/render.sh:171, lib/githost.sh:48)
 257. ✅ [Bug] **`verify`, `risk` und `ai` brechen bei `p:name`.** `risk` filtert mit `.name == "vercel:web"` und findet nichts; `verify` gibt den Namen mit Präfix an `"$0" "$plat" rollback` und `site_url_of`. Wie `explain` erst `resolve` aufrufen und `PNAME`/`PID` nutzen. (deploys:1840/1843/1882, deploys:1893–1894, deploys:1211)
@@ -443,7 +443,7 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 280. ✅ [Bug] **`job_on` maskiert Pfade nicht für XML.** `$self` und `$log` kommen roh in die plist; ein `&` oder `<` im Pfad (z. B. ein Ordner „R&D“) bricht `launchctl bootstrap`. Wie PATH escapen. (deploys:770–782)
 281. ✅ [Bug] **`vercel logs <p> 0` gibt das ganze Log aus.** `.[-0:]` ist in jq das ganze Array. `n` ab 1 verlangen. (providers/vercel.sh:251, deploys:1560)
 282. ✅ [Bug] **`history n` ohne Obergrenze.** Vercel und Render erlauben höchstens 100 pro Seite; `history web 500` endet in einem API-Fehler. Begrenzen oder Seiten holen. (deploys:1474–1478; providers/vercel.sh:287, render.sh:279)
-283. [Bug] **Render-Logs mit mehr als 100 Zeilen.** autofix fordert 200, `ai explain` 300 Zeilen an; die Logs-API von Render begrenzt `limit` vermutlich auf 100, dann kommt ein Fehler oder ein abgeschnittenes Log. Über `nextStartTime` paginieren. (Vermutung) (providers/render.sh:237; deploys:699/1213)
+283. ✅ [Bug] **Render-Logs mit mehr als 100 Zeilen.** autofix fordert 200, `ai explain` 300 Zeilen an; die Logs-API von Render begrenzt `limit` vermutlich auf 100, dann kommt ein Fehler oder ein abgeschnittenes Log. Über `nextStartTime` paginieren. (Vermutung) (providers/render.sh:237; deploys:699/1213)
 284. ✅ [Bug] **Bei `changed --platform` wird der Wert nicht geprüft.** `--platform vercle` liefert eine leere Liste und „Nothing to deploy“. Gegen `PROVIDERS` prüfen. (deploys:1781–1783)
 285. ✅ [Bug] **`verify` zählt 404 auf einem expliziten `--path` als gesund.** Nur 000 und 5xx gelten als Fehler, und Weiterleitungen werden nicht verfolgt; ein fehlender `/health`-Endpunkt besteht so den Check. Bei gesetztem `--path` 404 als Fehler werten und `-L` nutzen (die Domain bleibt dabei im Log). (deploys:1849–1852)
 286. ✅ [Bug] **`netlify deploy` gibt `id:null` an `watch` weiter.** Taucht der Build nicht in 30 s auf, liefert `netlify_deploy_json` `id:null`; `deploy --wait` ruft dann `watch p null` auf und endet nach fünf Fehlversuchen mit „unreachable“. Ohne ID auf `latest` zurückfallen. (providers/netlify.sh:290; deploys:1413)
@@ -454,80 +454,80 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 291. ✅ [Bug] **Projekt- und Gruppenname kollidieren.** Heißt eine Gruppe wie ein Projekt, gewinnt in `deploys deploy` immer die Gruppe; das einzelne Projekt ist nicht mehr allein deploybar. Ein Präfix `group:` oder eine Warnung. (deploys:1393–1397; lib/team.sh:185)
 292. ✅ [Bug] **GitLab mit Port wird falsch angesprochen.** `githost_split` schneidet `:8443` vom Host ab, also gehen die Aufrufe an `https://host/api/v4` auf Port 443. Den Port behalten. (lib/githost.sh:31)
 293. ✅ [Bug] **`open` reicht ein drittes Argument ungeprüft weiter.** `deploys open web foo` übergibt „foo“ an `<p>_url`; nur `--dashboard` erlauben. (deploys:1567)
-294. [Bug] **`vercel_json.recent` sieht nur die 100 neuesten Production-Deploys.** Bei vielen Projekten fehlen bei älteren `latestState`/`latestId`, und autofix übersieht deren Fehlschläge. Fehlende Projekte einzeln nachfragen oder seitenweise holen. (providers/vercel.sh:180–181)
+294. ✅ [Bug] **`vercel_json.recent` sieht nur die 100 neuesten Production-Deploys.** Bei vielen Projekten fehlen bei älteren `latestState`/`latestId`, und autofix übersieht deren Fehlschläge. Fehlende Projekte einzeln nachfragen oder seitenweise holen. (providers/vercel.sh:180–181)
 295. ✅ [Bug] **`open_prs_of` zählt höchstens 100 offene PRs.** Danach ist die Zahl eine Untergrenze ohne Kennzeichnung (wie es bei `partial` gelöst ist). `total_count` aus der Search-API nehmen oder `partial` setzen. (deploys:337; lib/githost.sh:177)
 
 
 ### Kern: Fehlerbehandlung, Timeouts, Rate-Limits
 
-296. [UX] **`vercel_call` ohne Retry.** Render, Netlify, Cloudflare und Coolify wiederholen GETs bei 429/5xx; `vercel api` wird nur einmal versucht, und ein 429 bricht `vercel json` ganz ab. Dieselbe Schleife für GETs ergänzen. (providers/vercel.sh:50–55)
-297. [UX] **gh, glab und die vercel-CLI ohne Zeitlimit.** Ein hängendes `gh api` (Proxy, VPN) blockiert `changed` und die App ohne Ende. Einen portablen Timeout-Wrapper (`timeout`/`gtimeout`, sonst Hintergrundprozess mit kill) um alle CLI-Aufrufe legen. (deploys:288/301/337; lib/githost.sh:90; providers/vercel.sh:52)
-298. [UX] **`vercel_team` hält jeden Fehler für „nicht eingeloggt“.** Netzfehler und 5xx heißen „Run: vercel login“. Die stderr-Zeile wie bei `vercel_call` zeigen. (providers/vercel.sh:33)
-299. [UX] **Ein GitHub-Rate-Limit klar benennen.** `with_heads` spart Budget unter 300, sagt das aber nicht; `changed` sollte „GitHub-Limit erreicht, Reset um 14:05“ ausgeben (aus `github_budget.reset`). (deploys:391–393)
-300. [UX] **Anthropic 429/529 ohne Wiederholung.** `ai_ask` stirbt sofort; ein bis zwei Wiederholungen mit `retry-after` ersparen dem Nutzer den zweiten Klick. (deploys:1183–1184)
-301. [UX] **`costs` ohne Vercel.** Ist Vercel aus oder nicht eingeloggt, endet `costs` mit „vercel CLI is not logged in“. Vorher `provider_on vercel` prüfen und „costs gibt es nur für Vercel“ sagen. (deploys:1718)
+296. ✅ [UX] **`vercel_call` ohne Retry.** Render, Netlify, Cloudflare und Coolify wiederholen GETs bei 429/5xx; `vercel api` wird nur einmal versucht, und ein 429 bricht `vercel json` ganz ab. Dieselbe Schleife für GETs ergänzen. (providers/vercel.sh:50–55)
+297. ✅ [UX] **gh, glab und die vercel-CLI ohne Zeitlimit.** Ein hängendes `gh api` (Proxy, VPN) blockiert `changed` und die App ohne Ende. Einen portablen Timeout-Wrapper (`timeout`/`gtimeout`, sonst Hintergrundprozess mit kill) um alle CLI-Aufrufe legen. (deploys:288/301/337; lib/githost.sh:90; providers/vercel.sh:52)
+298. ✅ [UX] **`vercel_team` hält jeden Fehler für „nicht eingeloggt“.** Netzfehler und 5xx heißen „Run: vercel login“. Die stderr-Zeile wie bei `vercel_call` zeigen. (providers/vercel.sh:33)
+299. ✅ [UX] **Ein GitHub-Rate-Limit klar benennen.** `with_heads` spart Budget unter 300, sagt das aber nicht; `changed` sollte „GitHub-Limit erreicht, Reset um 14:05“ ausgeben (aus `github_budget.reset`). (deploys:391–393)
+300. ✅ [UX] **Anthropic 429/529 ohne Wiederholung.** `ai_ask` stirbt sofort; ein bis zwei Wiederholungen mit `retry-after` ersparen dem Nutzer den zweiten Klick. (deploys:1183–1184)
+301. ✅ [UX] **`costs` ohne Vercel.** Ist Vercel aus oder nicht eingeloggt, endet `costs` mit „vercel CLI is not logged in“. Vorher `provider_on vercel` prüfen und „costs gibt es nur für Vercel“ sagen. (deploys:1718)
 
 
 ### Kern: Exit-Codes und JSON-Ausgabe
 
-302. [UX] **`deploy --json` für Gruppen gibt NDJSON aus.** Alle anderen Befehle liefern ein Array oder ein Objekt; bei Gruppen kommt eine Zeile je Mitglied. Ein Array (oder ausdrücklich dokumentiertes NDJSON) ausgeben. (deploys:1408)
+302. ✅ [UX] **`deploy --json` für Gruppen gibt NDJSON aus.** Alle anderen Befehle liefern ein Array oder ein Objekt; bei Gruppen kommt eine Zeile je Mitglied. Ein Array (oder ausdrücklich dokumentiertes NDJSON) ausgeben. (deploys:1408)
 303. [UX] **Fehler mit `--json` als JSON.** Heute kommt dann Klartext auf stderr und nichts auf stdout; `{"error":{"code":"auth","message":…}}` würde App, MCP und Skripte vereinfachen. (deploys:104)
 304. [Feature] **`--json` für `history`, `watch`, `costs`-Tabelle, `logs`.** `history` ist nur eine Tabelle, `watch` nur Text; `watch --json` als NDJSON-Strom (eine Zeile je Statuswechsel) eignet sich für Editor-Integrationen. (providers/vercel.sh:286, render.sh:278; deploys:1524)
 305. [UX] **`costs`, `triggers`, `details` und `github-budget` drucken immer JSON.** Für Menschen fehlt eine Tabelle; mit `--json` das JSON, sonst eine kurze Übersicht wie bei `changed`. (deploys:1713–1775)
 306. [Feature] **JSON-Schemas für `changed`, `status`, `list` und `deploy`.** docs/deploy-center.schema.json gibt es nur für die Team-Datei; ein `schemaVersion` im JSON und Schemas in docs/ schützen App, VS-Code-Erweiterung und MCP vor stillen Feldänderungen.
-307. [UX] **`window` endet bei kaputter Datei mit 1, wie „geschlossen“.** `die` und „geschlossen“ teilen sich Exit 1. Für Lesefehler einen anderen Code. (deploys:1813–1820)
-308. [UX] **Die Exit-Codes sind unvollständig dokumentiert.** docs/CLI.md und der Hilfekopf nennen nur 0/1/3; `ci` (2), `verify` (1/2), `autofix --only` (2–6) und `window` (1) fehlen. Eine Tabelle je Befehl. (docs/CLI.md:72–76; deploys:76–78)
+307. ✅ [UX] **`window` endet bei kaputter Datei mit 1, wie „geschlossen“.** `die` und „geschlossen“ teilen sich Exit 1. Für Lesefehler einen anderen Code. (deploys:1813–1820)
+308. ✅ [UX] **Die Exit-Codes sind unvollständig dokumentiert.** docs/CLI.md und der Hilfekopf nennen nur 0/1/3; `ci` (2), `verify` (1/2), `autofix --only` (2–6) und `window` (1) fehlen. Eine Tabelle je Befehl. (docs/CLI.md:72–76; deploys:76–78)
 
 
 ### Kern: Hilfe, UX, Vervollständigung
 
-309. [UX] **Unbekannter Befehl ohne Hinweis.** Bei einem Tippfehler (`deploys chaged`) kommt die ganze Hilfe mit Exit 1, aber keine Zeile „Unknown command chaged; did you mean changed?“. (deploys:2184, deploys:1355)
-310. [UX] **Doppelte und ungeordnete Hilfe.** `vercel deploy` steht zweimal (Zeile 34 und 38), `deploy` auch (17 und 60), `render list`/`render deploy` stehen hinter `--help`. Nach Themen gruppieren (Alltag, Plattformen, Sicherheit, Team, Claude). (deploys:12–74)
+309. ✅ [UX] **Unbekannter Befehl ohne Hinweis.** Bei einem Tippfehler (`deploys chaged`) kommt die ganze Hilfe mit Exit 1, aber keine Zeile „Unknown command chaged; did you mean changed?“. (deploys:2184, deploys:1355)
+310. ✅ [UX] **Doppelte und ungeordnete Hilfe.** `vercel deploy` steht zweimal (Zeile 34 und 38), `deploy` auch (17 und 60), `render list`/`render deploy` stehen hinter `--help`. Nach Themen gruppieren (Alltag, Plattformen, Sicherheit, Team, Claude). (deploys:12–74)
 311. [Feature] **`deploys help <befehl>` und `<befehl> --help`.** `deploys deploy --help` endet heute mit „Unknown option --help“. Pro Befehl die Usage-Zeile aus `usage_if_short` wiederverwenden. (deploys:1386)
-312. [UX] **Die Hilfe kennt die neuen Provider nicht.** Eigene Verben wie `cloudflare selftest/account`, `coolify set-url`, `netlify autodeploy-off --rule-added` und `amplify on` stehen nirgends; aus `declare -F <p>_cli_*` die Hilfe der eingeschalteten Provider erzeugen.
-313. [UX] **`watch` ohne Gesamt-Timeout, Dauer und Adresse.** Ein Deploy, der ewig „queued“ ist, lässt `watch` endlos laufen; `--timeout 30m`, eine Laufzeitanzeige und am Ende die URL. (deploys:1535–1554)
-314. [UX] **`deploy` ohne `--wait` sagt nicht, wie man folgt.** Nach „started“ die Zeile `deploys watch <p> <id>` ausgeben. (deploys:1409)
-315. [UX] **`providers enable` ohne nächsten Schritt.** Nach dem Einschalten `<p>_ready` prüfen und „Jetzt: pbpaste | deploys netlify set-key“ ausgeben. (deploys:2145–2152)
-316. [UX] **`vercel team <id>` und `vercel map` prüfen nichts.** Ein Tippfehler bei der Team-ID oder dem Projektnamen wird gespeichert; mit `/v2/teams/<id>` bzw. `/v9/projects/<p>` prüfen (und offline mit `--no-check` speichern). (providers/vercel.sh:342–366)
-317. [UX] **`render status` verlangt die srv-ID.** Andere Befehle nehmen den Namen; `render_cli_status` sollte `render_id_of` nutzen. (providers/render.sh:300)
-318. [UX] **Amplify-IDs mit `/` werden von `safe_arg` abgelehnt.** Die Doku sagt „commands take the id“ (`<appId>/<branch>`), aber `deploys amplify deploy app/main` scheitert an „no /“. Für amplify `/` genau einmal erlauben. (providers/amplify.sh:21; deploys:1323)
+312. ✅ [UX] **Die Hilfe kennt die neuen Provider nicht.** Eigene Verben wie `cloudflare selftest/account`, `coolify set-url`, `netlify autodeploy-off --rule-added` und `amplify on` stehen nirgends; aus `declare -F <p>_cli_*` die Hilfe der eingeschalteten Provider erzeugen.
+313. ✅ [UX] **`watch` ohne Gesamt-Timeout, Dauer und Adresse.** Ein Deploy, der ewig „queued“ ist, lässt `watch` endlos laufen; `--timeout 30m`, eine Laufzeitanzeige und am Ende die URL. (deploys:1535–1554)
+314. ✅ [UX] **`deploy` ohne `--wait` sagt nicht, wie man folgt.** Nach „started“ die Zeile `deploys watch <p> <id>` ausgeben. (deploys:1409)
+315. ✅ [UX] **`providers enable` ohne nächsten Schritt.** Nach dem Einschalten `<p>_ready` prüfen und „Jetzt: pbpaste | deploys netlify set-key“ ausgeben. (deploys:2145–2152)
+316. ✅ [UX] **`vercel team <id>` und `vercel map` prüfen nichts.** Ein Tippfehler bei der Team-ID oder dem Projektnamen wird gespeichert; mit `/v2/teams/<id>` bzw. `/v9/projects/<p>` prüfen (und offline mit `--no-check` speichern). (providers/vercel.sh:342–366)
+317. ✅ [UX] **`render status` verlangt die srv-ID.** Andere Befehle nehmen den Namen; `render_cli_status` sollte `render_id_of` nutzen. (providers/render.sh:300)
+318. ✅ [UX] **Amplify-IDs mit `/` werden von `safe_arg` abgelehnt.** Die Doku sagt „commands take the id“ (`<appId>/<branch>`), aber `deploys amplify deploy app/main` scheitert an „no /“. Für amplify `/` genau einmal erlauben. (providers/amplify.sh:21; deploys:1323)
 319. [Feature] **Vervollständigung für Flags und `p:name`.** `--preview`, `--sha`, `--wait`, `--json`, `--platform <p>` und Namen mit Plattformpräfix (aus names.json) fehlen; außerdem fish. (deploys:1629–1670)
-320. [UX] **`deploy-changed` beachtet die Reihenfolge Backend vor Frontend nicht.** Die App startet das Backend eines Repos zuerst; die CLI startet in Namensreihenfolge. Dieselbe Regel (oder Team-`groups`) anwenden. (deploys:1962–1964)
+320. ◐ [UX] **`deploy-changed` beachtet die Reihenfolge Backend vor Frontend nicht.** Die App startet das Backend eines Repos zuerst; die CLI startet in Namensreihenfolge. Dieselbe Regel (oder Team-`groups`) anwenden. (deploys:1962–1964)
 
 
 ### Kern: Performance
 
 321. [Perf] **`team_effective` läuft mehrmals pro Befehl.** `repos_json`, `team_ignored`, `team_observer_from`, `team_group` und `team_gate` rechnen jeweils `team_sources` plus die große jq-Zusammenführung neu. Das Ergebnis pro Prozess in einer Variablen merken. (lib/team.sh:148–185)
-322. [Perf] **`is_enabled` startet jq bei jedem Aufruf.** In `lookup` passiert das je Treffer, in `completion` je Provider; `enabled_providers` einmal pro Prozess cachen. (deploys:207–216)
+322. ✅ [Perf] **`is_enabled` startet jq bei jedem Aufruf.** In `lookup` passiert das je Treffer, in `completion` je Provider; `enabled_providers` einmal pro Prozess cachen. (deploys:207–216)
 323. [Perf] **Netlify, DigitalOcean und Coolify lesen die Deploys je Site nacheinander.** Bei 30 Sites sind das 30 serielle Aufrufe plus O(n²) `jq '. + [$s]'`. Parallel wie `render_last_of` (xargs -P) und am Ende einmal `jq -s`. (providers/netlify.sh:186–194, digitalocean.sh:195–203, coolify.sh:170)
-324. [Perf] **`*_id_of` liest bei jedem Aufruf die ganze Liste.** `netlify_latest`, `coolify_latest` und `digitalocean_status` lösen den Namen jedes Mal über alle Sites auf, auch wenn schon eine ID kommt; `watch` macht das alle 6 s. Eine ID direkt durchlassen (Muster erkennen wie `srv-`). (providers/netlify.sh:110/303, coolify.sh:119, digitalocean.sh:285)
+324. ◐ [Perf] **`*_id_of` liest bei jedem Aufruf die ganze Liste.** `netlify_latest`, `coolify_latest` und `digitalocean_status` lösen den Namen jedes Mal über alle Sites auf, auch wenn schon eine ID kommt; `watch` macht das alle 6 s. Eine ID direkt durchlassen (Muster erkennen wie `srv-`). (providers/netlify.sh:110/303, coolify.sh:119, digitalocean.sh:285)
 325. [Perf] **Amplify löst Projekte bei jedem Aufruf auf.** `amp_resolve` ruft `list-apps` und `list-branches` auf (je ein Start der Python-CLI, etwa 1 s); `watch` zahlt das alle 6 s. Die Auflösung in names.json bzw. im Prozess merken. (providers/amplify.sh:136–160)
-326. [Perf] **`vercel_rollback` liest das Projekt zweimal.** `/v9/projects/$p` für `targets.production.id` und dann für `.id`; ein Aufruf reicht. (providers/vercel.sh:231/240)
-327. [Perf] **`vercel_doctor` startet die vercel-CLI dreimal.** `command -v`, `vercel api --help` und `vercel whoami` sind jeweils ein Node-Start; `whoami` allein beantwortet beides. (providers/vercel.sh:271–276)
+326. ✅ [Perf] **`vercel_rollback` liest das Projekt zweimal.** `/v9/projects/$p` für `targets.production.id` und dann für `.id`; ein Aufruf reicht. (providers/vercel.sh:231/240)
+327. ◐ [Perf] **`vercel_doctor` startet die vercel-CLI dreimal.** `command -v`, `vercel api --help` und `vercel whoami` sind jeweils ein Node-Start; `whoami` allein beantwortet beides. (providers/vercel.sh:271–276)
 328. [Perf] **`all_json` startet sich selbst je Provider neu.** `"$0" "$p" json` lädt alle Provider und lib/team.sh erneut und bricht bei `bash ./deploys` ohne x-Bit; eine Subshell mit `provider_json` reicht. (deploys:448)
 329. [Perf] **Autofix fragt jq je Feld einzeln.** In `af_sync_fires`/`autofix_run` laufen pro Eintrag 5–8 Aufrufe `echo | jq -r`; einmal `jq -r '[…] | @tsv'` und `read` sind deutlich schneller. (deploys:823–827, 883–885)
-330. [Perf] **`render_logs` liest den Dienst für `ownerId` bei jedem Aufruf.** Die Owner-ID ändert sich nie und lässt sich in render-off.json oder names.json merken. (providers/render.sh:234)
+330. ✅ [Perf] **`render_logs` liest den Dienst für `ownerId` bei jedem Aufruf.** Die Owner-ID ändert sich nie und lässt sich in render-off.json oder names.json merken. (providers/render.sh:234)
 
 
 ### Kern: Sicherheit
 
-331. [Security] **Observer-Erkennung ist „fail open“.** Ist `gh` nicht eingeloggt (oder ein anderes GH_TOKEN gesetzt), ist `me` leer und die Observer-Liste greift nie; mit nicht leerer `observers`-Liste und unbekanntem Nutzer sollte das als Observer gelten (oder eine deutliche Warnung). (lib/team.sh:132, lib/team.sh:87–95)
-332. [Security] **Freigaben auf veralteten Reviews.** `team_approvals` zählt ein APPROVED-Review, auch wenn danach neue Commits in den PR kamen (ohne „dismiss stale reviews“). `review.commit_id` gegen den letzten Head des PRs vor dem Merge prüfen. (lib/team.sh:205–208)
-333. [Security] **Der Coolify-Token geht auch über http://.** `coolify_base` nimmt `http://`, und der Bearer-Token geht dann im Klartext; wie bei hook nur localhost erlauben oder ausdrücklich bestätigen lassen. (providers/coolify.sh:43–52)
-334. [Security] **`hook_check_url` erlaubt `http://localhost.example.com`.** Der Präfixtest `http://localhost*` lässt jede Domain durch, die mit „localhost“ beginnt; den Host genau vergleichen. (providers/hook.sh:72)
-335. [Security] **Der Netlify-Token geht mit an die Build-Hook-URL.** `netlify_call POST <hook-url>` setzt den Bearer-Header, obwohl der Hook keinen braucht; stammt die URL aus einer manipulierten netlify-hooks.json, geht der Token mit. Ohne Authorization posten und den Host api.netlify.com prüfen. (providers/netlify.sh:279)
-336. [Security] **`open` öffnet jede URL, die eine API liefert.** Ein `file://`- oder Custom-Scheme-Wert aus einem Platform-Feld würde mit `open` gestartet; nur `https://` zulassen. (deploys:1570)
+331. ✅ [Security] **Observer-Erkennung ist „fail open“.** Ist `gh` nicht eingeloggt (oder ein anderes GH_TOKEN gesetzt), ist `me` leer und die Observer-Liste greift nie; mit nicht leerer `observers`-Liste und unbekanntem Nutzer sollte das als Observer gelten (oder eine deutliche Warnung). (lib/team.sh:132, lib/team.sh:87–95)
+332. ✅ [Security] **Freigaben auf veralteten Reviews.** `team_approvals` zählt ein APPROVED-Review, auch wenn danach neue Commits in den PR kamen (ohne „dismiss stale reviews“). `review.commit_id` gegen den letzten Head des PRs vor dem Merge prüfen. (lib/team.sh:205–208)
+333. ✅ [Security] **Der Coolify-Token geht auch über http://.** `coolify_base` nimmt `http://`, und der Bearer-Token geht dann im Klartext; wie bei hook nur localhost erlauben oder ausdrücklich bestätigen lassen. (providers/coolify.sh:43–52)
+334. ✅ [Security] **`hook_check_url` erlaubt `http://localhost.example.com`.** Der Präfixtest `http://localhost*` lässt jede Domain durch, die mit „localhost“ beginnt; den Host genau vergleichen. (providers/hook.sh:72)
+335. ✅ [Security] **Der Netlify-Token geht mit an die Build-Hook-URL.** `netlify_call POST <hook-url>` setzt den Bearer-Header, obwohl der Hook keinen braucht; stammt die URL aus einer manipulierten netlify-hooks.json, geht der Token mit. Ohne Authorization posten und den Host api.netlify.com prüfen. (providers/netlify.sh:279)
+336. ✅ [Security] **`open` öffnet jede URL, die eine API liefert.** Ein `file://`- oder Custom-Scheme-Wert aus einem Platform-Feld würde mit `open` gestartet; nur `https://` zulassen. (deploys:1570)
 
 
 ### Kern: Code-Qualität
 
-337. [Code] **`deploys_dir` ist zweimal definiert, dazu `script_dir` und `readlink -f`.** Drei Wege, den eigenen Ordner zu finden (deploys:128, :346, :156, :2177); `readlink -f` fehlt auf macOS vor 12.3, und dann findet `simulate` lib/savings.sh über einen Symlink nicht. Eine Funktion, einmal berechnet.
-338. [Code] **Toter `--force`-Zweig in `deploy`.** `--force` wird schon oben global entfernt; die Schleife in `deploy` erreicht ihn nie. (deploys:1385)
-339. [Code] **`act()` und `stop_group()` sind Funktionen in Funktionen.** Sie werden global definiert und überschreiben sich bei weiteren Aufrufen; als normale Hilfsfunktionen anlegen. (deploys:992, deploys:1400)
+337. ✅ [Code] **`deploys_dir` ist zweimal definiert, dazu `script_dir` und `readlink -f`.** Drei Wege, den eigenen Ordner zu finden (deploys:128, :346, :156, :2177); `readlink -f` fehlt auf macOS vor 12.3, und dann findet `simulate` lib/savings.sh über einen Symlink nicht. Eine Funktion, einmal berechnet.
+338. ✅ [Code] **Toter `--force`-Zweig in `deploy`.** `--force` wird schon oben global entfernt; die Schleife in `deploy` erreicht ihn nie. (deploys:1385)
+339. ✅ [Code] **`act()` und `stop_group()` sind Funktionen in Funktionen.** Sie werden global definiert und überschreiben sich bei weiteren Aufrufen; als normale Hilfsfunktionen anlegen. (deploys:992, deploys:1400)
 340. [Code] **Das Skript hat 2184 Zeilen.** Autofix, ai, guard/allow und Savings in `lib/autofix.sh`, `lib/ai.sh`, `lib/guard.sh` auslagern (wie team/githost), damit Reviews und shellcheck-Ausnahmen kleiner werden.
 341. [Code] **Drei Regeln für „fehlgeschlagener Check“.** `CI_RULE` (deploys:497), `details.checks` (deploys:1686, ohne `action_required`/`startup_failure`) und die PR-`statusCheckRollup`-Auswertung (deploys:1691) urteilen verschieden; einmal als jq-def ablegen.
 342. [Code] **Zwei Listen für riskante Dateien.** `RISK_DEF` (deploys:603–606) und `details.risky`/`gitlab_details.risky` (deploys:1707, lib/githost.sh:218) weichen ab (z. B. `bun.lockb`, `uv.lock`, `.gitlab-ci.yml`); eine gemeinsame Regex.
-343. [Code] **Die `--json`/`--force`-Erkennung schluckt auch Werte.** `deploys hook add x - --body --json` verliert `--json` als Wert; das globale Parsen nach `--` beenden und Werte von Optionen auslassen. (deploys:180–188)
+343. ◐ [Code] **Die `--json`/`--force`-Erkennung schluckt auch Werte.** `deploys hook add x - --body --json` verliert `--json` als Wert; das globale Parsen nach `--` beenden und Werte von Optionen auslassen. (deploys:180–188)
 
 
 ### Guard, Autofix, Trigger: Abdeckung neuer Provider
@@ -555,13 +555,13 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 ### Netlify
 
 354. [Feature] **Prüfung der ignore-Regel auch für GitLab.** `netlify_rule_in_repo` liest nur über `gh`; GitLab-Repos brauchen immer `--rule-added`. Über `gitlab_api …/repository/files` lesen. (providers/netlify.sh:140–153)
-355. [UX] **Die Regel wird nur auf dem Hauptbranch geprüft.** Ein `[context.production]`, das `ignore` überschreibt, oder ein falscher `base` wird nicht erkannt; die Doku-Zeile sollte das nennen.
+355. ✅ [UX] **Die Regel wird nur auf dem Hauptbranch geprüft.** Ein `[context.production]`, das `ignore` überschreibt, oder ein falscher `base` wird nicht erkannt; die Doku-Zeile sollte das nennen.
 356. [Feature] **Netlify-Deploy-Previews ehrlich zählen.** Die ignore-Regel überspringt Previews ebenfalls; ein Hinweis bei `autodeploy-off`, wie man Previews für bestimmte Branches zulässt.
 
 
 ### Cloudflare, Coolify, DigitalOcean, Amplify, Hook
 
-357. [UX] **`cloudflare_deploy_json` meldet `state:` die Phase.** Der Vertrag will dort den rohen Zustand (`latest_stage.status`); die App zeigt sonst „building“ statt „initialize/build“. (providers/cloudflare.sh:293)
+357. ✅ [UX] **`cloudflare_deploy_json` meldet `state:` die Phase.** Der Vertrag will dort den rohen Zustand (`latest_stage.status`); die App zeigt sonst „building“ statt „initialize/build“. (providers/cloudflare.sh:293)
 358. [Feature] **Mehrere Coolify-Instanzen.** Heute geht nur eine pro Setup (`coolify.json url`); viele betreiben getrennte Server für Staging und Produktion. Eine Liste `instances[]` mit Namenspräfix. (providers/coolify.sh:14)
 359. [Feature] **Hook mit Status-URL.** `hook add … --status-url <url> --status-jq '.state'` würde aus „triggered“ einen echten Status machen (viele CI-Dispatches liefern eine Run-ID).
 360. [UX] **Ein Hook bleibt nach 2xx für immer „ready“.** Für `changed` heißt das, er gilt als live, auch wenn der Build danach scheitert. Phase `queued` mit Hinweis „Status unbekannt“ wäre ehrlicher (der Vermerk steht nur in `meta.note`). (providers/hook.sh:223–229)
@@ -597,24 +597,24 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 
 ### Doku (README-CLI.md, docs/CLI.md, docs/PROVIDERS.md)
 
-381. [UX] **Das CI-Beispiel deployt für Vercel vermutlich nichts.** Es setzt kein `DEPLOYS_CONFIG` und speichert keine vercel-repos.json zwischen den Läufen; ohne Zuordnung ist kein Vercel-Projekt `deployable`, und ohne vercel-CLI im Runner ist Vercel nicht „ready“ und fällt still weg. Den Cache-Schritt, `npm i -g vercel` und `DEPLOYS_CONFIG` ins Beispiel aufnehmen. (README-CLI.md:84–92)
-382. [UX] **Die Anforderungstabelle ist unvollständig.** perl (autofix/ai), `security` (macOS) bzw. Env-Variablen unter Linux, glab/GITLAB_TOKEN, aws-CLI (Amplify) und column als „ohne: keine Tabellen“ (heute ein Absturz) fehlen. (README-CLI.md:55–63)
-383. [UX] **„Add --json to any command“ stimmt nicht.** `watch`, `logs`, `history`, `explain`, `diff` und `notes` haben kein JSON; die Liste der Befehle mit JSON nennen. (docs/CLI.md:70)
-384. [UX] **docs/CLI.md kennt nur Vercel und Render.** `deploy`, `verify`, `risk`, `ci`, `window`, `team`, `readonly`, `providers`, `list` und die fünf neuen Provider fehlen; auch README-CLI.md beginnt mit „on Vercel and Render“. (docs/CLI.md, README-CLI.md:3)
-385. [UX] **PROVIDERS.md ist veraltet.** Zeile 3–4 nennt nur vercel, render und hook; der printf-Zwang für `_meta`/`_doctor` wird von vier Providern verletzt, und die Pflicht, dass `_has` die ID druckt bzw. `_status` TSV liefert, sollte mit einem Beispiel und dem Hinweis auf `contract.sh` hervorgehoben werden. (docs/PROVIDERS.md:3–4, 48–61)
-386. [UX] **Umgebungsvariablen sammeln.** `DEPLOYS_NO_GITHUB`, `DEPLOYS_READONLY`, `NO_COLOR`, `DEPLOYS_NOTIFY`, `DEPLOYS_JOURNAL`, `DEPLOYS_TEAM_TTL`, `DEPLOYS_GITLAB_HOSTS`, `DEPLOYS_CLOUDFLARE_TOGGLE`, `DEPLOYS_NETLIFY_POLLS` und `DEPLOYS_AUTOFIX_PER_*` stehen verstreut im Code; eine Tabelle in docs/CLI.md.
+381. ✅ [UX] **Das CI-Beispiel deployt für Vercel vermutlich nichts.** Es setzt kein `DEPLOYS_CONFIG` und speichert keine vercel-repos.json zwischen den Läufen; ohne Zuordnung ist kein Vercel-Projekt `deployable`, und ohne vercel-CLI im Runner ist Vercel nicht „ready“ und fällt still weg. Den Cache-Schritt, `npm i -g vercel` und `DEPLOYS_CONFIG` ins Beispiel aufnehmen. (README-CLI.md:84–92)
+382. ✅ [UX] **Die Anforderungstabelle ist unvollständig.** perl (autofix/ai), `security` (macOS) bzw. Env-Variablen unter Linux, glab/GITLAB_TOKEN, aws-CLI (Amplify) und column als „ohne: keine Tabellen“ (heute ein Absturz) fehlen. (README-CLI.md:55–63)
+383. ✅ [UX] **„Add --json to any command“ stimmt nicht.** `watch`, `logs`, `history`, `explain`, `diff` und `notes` haben kein JSON; die Liste der Befehle mit JSON nennen. (docs/CLI.md:70)
+384. ✅ [UX] **docs/CLI.md kennt nur Vercel und Render.** `deploy`, `verify`, `risk`, `ci`, `window`, `team`, `readonly`, `providers`, `list` und die fünf neuen Provider fehlen; auch README-CLI.md beginnt mit „on Vercel and Render“. (docs/CLI.md, README-CLI.md:3)
+385. ✅ [UX] **PROVIDERS.md ist veraltet.** Zeile 3–4 nennt nur vercel, render und hook; der printf-Zwang für `_meta`/`_doctor` wird von vier Providern verletzt, und die Pflicht, dass `_has` die ID druckt bzw. `_status` TSV liefert, sollte mit einem Beispiel und dem Hinweis auf `contract.sh` hervorgehoben werden. (docs/PROVIDERS.md:3–4, 48–61)
+386. ✅ [UX] **Umgebungsvariablen sammeln.** `DEPLOYS_NO_GITHUB`, `DEPLOYS_READONLY`, `NO_COLOR`, `DEPLOYS_NOTIFY`, `DEPLOYS_JOURNAL`, `DEPLOYS_TEAM_TTL`, `DEPLOYS_GITLAB_HOSTS`, `DEPLOYS_CLOUDFLARE_TOGGLE`, `DEPLOYS_NETLIFY_POLLS` und `DEPLOYS_AUTOFIX_PER_*` stehen verstreut im Code; eine Tabelle in docs/CLI.md.
 
 
 ### Tests
 
-387. [Test] **Tabellentest für den Observer-Modus.** Für jeden schreibenden Befehl in jeder Flag-Reihenfolge prüfen, dass `DEPLOYS_READONLY=1` ihn ablehnt; das hätte `deploy-changed --when-green --yes` und `autodeploy allow` gefunden.
-388. [Test] **Tabellentest für `safe_arg`.** Jeder Befehl, der einen Namen nimmt, bekommt `a/b`, `a?x` und `a%2F` und darf keinen API-Aufruf in `$CALLS` hinterlassen.
-389. [Test] **Deploy-Fenster für alle Startwege.** `deploy`, `deploy <gruppe>`, `<p> deploy`, `deploy-changed --yes` und autofix-Redeploys mit `DEPLOYS_NOW` in einem geschlossenen Fenster.
-390. [Test] **`doctor` auf eindeutige Schlüssel prüfen.** `jq` sieht doppelte Schlüssel nicht; mit `jq --stream` oder python `object_pairs_hook` testen, dass kein Schlüssel doppelt ist.
+387. ✅ [Test] **Tabellentest für den Observer-Modus.** Für jeden schreibenden Befehl in jeder Flag-Reihenfolge prüfen, dass `DEPLOYS_READONLY=1` ihn ablehnt; das hätte `deploy-changed --when-green --yes` und `autodeploy allow` gefunden.
+388. ✅ [Test] **Tabellentest für `safe_arg`.** Jeder Befehl, der einen Namen nimmt, bekommt `a/b`, `a?x` und `a%2F` und darf keinen API-Aufruf in `$CALLS` hinterlassen.
+389. ✅ [Test] **Deploy-Fenster für alle Startwege.** `deploy`, `deploy <gruppe>`, `<p> deploy`, `deploy-changed --yes` und autofix-Redeploys mit `DEPLOYS_NOW` in einem geschlossenen Fenster.
+390. ✅ [Test] **`doctor` auf eindeutige Schlüssel prüfen.** `jq` sieht doppelte Schlüssel nicht; mit `jq --stream` oder python `object_pairs_hook` testen, dass kein Schlüssel doppelt ist.
 391. [Test] **Linux-Lauf ohne `column`, `security` und mit GNU-xargs.** Ein CI-Job in einem schlanken Container (debian-slim) mit nur bash, curl, jq und gh fängt die Portabilitätsfehler oben.
-392. [Test] **Hilfe gegen die case-Zweige prüfen.** Ein Test, der jeden `case`-Befehl in deploys sucht und verlangt, dass er in `--help` und in der Vervollständigung steht.
-393. [Test] **`--when-green` mit einem Provider ohne `caps.sha`.** Erwartung: kein `--sha` an `_deploy_json`, eine verständliche Meldung, kein Abbruch der anderen.
-394. [Test] **Projekte ohne Repo.** Ein Render-Image-Dienst und ein Bitbucket-Vercel-Projekt in den Fixtures dürfen `changed` nicht auf Exit 1 setzen.
+392. ✅ [Test] **Hilfe gegen die case-Zweige prüfen.** Ein Test, der jeden `case`-Befehl in deploys sucht und verlangt, dass er in `--help` und in der Vervollständigung steht.
+393. ✅ [Test] **`--when-green` mit einem Provider ohne `caps.sha`.** Erwartung: kein `--sha` an `_deploy_json`, eine verständliche Meldung, kein Abbruch der anderen.
+394. ◐ [Test] **Projekte ohne Repo.** Ein Render-Image-Dienst und ein Bitbucket-Vercel-Projekt in den Fixtures dürfen `changed` nicht auf Exit 1 setzen.
 
 ## 4. iOS-App, Widgets, shared (128)
 ### Bugs: Deploy, Rollback, Status
@@ -645,7 +645,7 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 414. ✅ [Bug] **GitHub-Rate-Limit (403) wird nicht erkannt.** GitHub meldet das primäre Limit mit 403 und `x-ratelimit-remaining: 0`; die App versucht nur 429 erneut und zeigt „HTTP 403“. Header auswerten, Reset-Zeit nennen. (ios/App/Clients.swift:38–45)
 415. ✅ [Bug] **`Retry-After` wird ignoriert.** Feste 3/6 s statt der vom Server genannten Zeit; bei Render-429 schlägt die ganze Liste oft trotzdem fehl. (ios/App/Clients.swift:38–40)
 416. ✅ [Bug] **`URLSession.shared` cacht API-Antworten (Vermutung).** GitHub sendet `Cache-Control: private, max-age=60`; direkt nach einem Deploy kann der alte Branch-Stand aus dem Cache kommen, und Antworten liegen auf der Platte. Eigene `ephemeral`-Session mit `reloadIgnoringLocalCacheData`. (ios/App/Clients.swift:35)
-417. ◐ [Bug] **Hintergrund-Refresh überschreitet das Zeitfenster (Vermutung).** BGAppRefresh hat etwa 30 s; Laden mit vielen Repos, sequentieller Zweitschleife und Retry-Pausen bis 9 s pro Aufruf dauert länger, iOS bricht ab, Widget und Hinweise bleiben alt. Zeitbudget und `expirationHandler`, im Hintergrund nur das Nötigste lesen. (ios/App/DeployCenterApp.swift:31–39)
+417. ✅ [Bug] **Hintergrund-Refresh überschreitet das Zeitfenster (Vermutung).** BGAppRefresh hat etwa 30 s; Laden mit vielen Repos, sequentieller Zweitschleife und Retry-Pausen bis 9 s pro Aufruf dauert länger, iOS bricht ab, Widget und Hinweise bleiben alt. Zeitbudget und `expirationHandler`, im Hintergrund nur das Nötigste lesen. (ios/App/DeployCenterApp.swift:31–39)
 418. ✅ [Bug] **Hintergrundlauf arbeitet mit einem zweiten Store.** `Background.run` erzeugt eine neue `PhoneStore`; die sichtbare Instanz bekommt die neuen Daten nicht und zeigt beim Zurückkehren den alten Stand. Die App-Instanz teilen. (ios/App/DeployCenterApp.swift:33)
 419. ✅ [Bug] **Hinweis-Flut nach geleertem Cache.** `last-projects.json` liegt in `Caches`; löscht iOS es, ist `before` leer und jedes wartende Projekt gilt als „neu wartend“. Datei in `Application Support` und leeres `before` als „nicht melden“ behandeln. (ios/App/DeployCenterApp.swift:35, 41–43)
 420. ✅ [Bug] **Erlaubnis für Mitteilungen abgelehnt, Schalter bleibt an.** `requestPermission` ignoriert das Ergebnis; Schalter zurücksetzen und auf iOS-Einstellungen verweisen. (ios/App/DeployCenterApp.swift:45–47, Views.swift:280)
@@ -674,7 +674,7 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 435. ✅ [Security] **QR-Code ohne Ablauf.** `parse(qr:)` prüft `updated` nicht; ein altes Foto oder Bildschirmfoto des Codes funktioniert für immer. Codes älter als zwei Minuten ablehnen. (shared/PhoneLink.swift:87–91)
 436. [Security] **QR-Code enthält Schlüssel im Klartext.** Base64-JSON ist für jede Kamera lesbar; optional mit einem auf dem Mac angezeigten Kurzcode verschlüsseln (z. B. 6 Ziffern, HKDF + AES-GCM). (shared/PhoneLink.swift:82–85)
 437. [Security] **Eigene Tokens landen in der geteilten Schlüsselbund-Gruppe (Vermutung).** Ohne `kSecAttrAccessGroup` nimmt iOS die erste Gruppe aus `keychain-access-groups`, also die Team-Gruppe, die alle Apps des Teams lesen können. Die App-eigene Gruppe explizit setzen. (ios/App/Keychain.swift:22, ios/Config/DeployCenter.entitlements:9–12)
-438. ◐ [Security] **Volles gh-CLI-Token geht aufs iPhone.** Das Telefon liest GitHub nur; ein gh-Token mit `repo`/`workflow`-Rechten ist mehr als nötig. In der App die Scopes (`X-OAuth-Scopes`) anzeigen und zu einem fein granularen Nur-Lese-Token raten. (docs/WIDGETS-IOS.md:164–165)
+438. ✅ [Security] **Volles gh-CLI-Token geht aufs iPhone.** Das Telefon liest GitHub nur; ein gh-Token mit `repo`/`workflow`-Rechten ist mehr als nötig. In der App die Scopes (`X-OAuth-Scopes`) anzeigen und zu einem fein granularen Nur-Lese-Token raten. (docs/WIDGETS-IOS.md:164–165)
 439. ✅ [Security] **App-Umschalter zeigt Projekte und Domains.** Beim Wechsel in den Hintergrund einen Sichtschutz legen (optional), wie viele Admin-Apps es tun. (ios/App/DeployCenterApp.swift:17)
 440. ✅ [Security] **Optionale App-Sperre beim Öffnen.** Face ID schützt nur Deploy/Rollback; Liste, Domains und Commit-Texte sind offen. Schalter „Beim Öffnen entsperren“. (ios/App/PhoneStore.swift:113)
 441. ✅ [Security] **Widget auf Sperrbildschirm/StandBy zeigt Projektnamen.** `.privacySensitive()` für Namen, damit iOS sie im gesperrten Zustand ausblendet. (widgets/DeployWidget.swift:98)
@@ -684,21 +684,21 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 
 ### Performance
 
-444. [Perf] **Schlüsselbund bei jedem Neuzeichnen.** `hasAccount` und `token()` lesen bei jedem Aufruf per `SecItemCopyMatching`; einmal laden und im Store halten. (ios/App/PhoneStore.swift:29–32, Views.swift:16)
-445. [Perf] **Zweiter GitHub-Durchlauf läuft seriell.** Projekte mit abweichendem Live-Commit werden nacheinander verglichen; in dieselbe Task-Gruppe nehmen. (ios/App/PhoneStore.swift:96–102)
-446. [Perf] **ETags für GitHub.** Bedingte Anfragen (`If-None-Match`) liefern 304 und zählen nicht gegen das Limit; wichtig ohne Token (60/h) und für den Hintergrund. (ios/App/Clients.swift:247–257)
-447. [Perf] **Widget-L liest die Datei bei jedem Text.** `L()` im Widget dekodiert `snapshot.json` pro Aufruf; Sprache einmal aus dem Entry übergeben. (widgets/DeployWidget.swift:26–29)
-448. [Perf] **Widget wird auch ohne Änderung neu geladen.** `reloadAllTimelines()` nach jedem Laden verbraucht das Widget-Budget; nur bei geändertem Snapshot (Mac macht das schon). (ios/App/PhoneStore.swift:222–227)
-449. [Perf] **`ISO8601DateFormatter` pro Aufruf.** Bei hunderten Daten pro Laden einmal statisch anlegen. (ios/App/Clients.swift:64–70)
-450. [Perf] **Sofortstart aus dem letzten Stand.** `last-projects.json` existiert schon; beim Start zuerst anzeigen, dann im Hintergrund laden, statt leerer Liste mit Spinner. (ios/App/Views.swift:102, PhoneStore.swift:108)
-451. [Perf] **Bis zu zehn sequentielle `commits/{sha}/pulls`-Aufrufe.** Parallel (begrenzt) oder per GraphQL in einem Aufruf. (ios/App/Clients.swift:266–272)
+444. ✅ [Perf] **Schlüsselbund bei jedem Neuzeichnen.** `hasAccount` und `token()` lesen bei jedem Aufruf per `SecItemCopyMatching`; einmal laden und im Store halten. (ios/App/PhoneStore.swift:29–32, Views.swift:16)
+445. ✅ [Perf] **Zweiter GitHub-Durchlauf läuft seriell.** Projekte mit abweichendem Live-Commit werden nacheinander verglichen; in dieselbe Task-Gruppe nehmen. (ios/App/PhoneStore.swift:96–102)
+446. ✅ [Perf] **ETags für GitHub.** Bedingte Anfragen (`If-None-Match`) liefern 304 und zählen nicht gegen das Limit; wichtig ohne Token (60/h) und für den Hintergrund. (ios/App/Clients.swift:247–257)
+447. ✅ [Perf] **Widget-L liest die Datei bei jedem Text.** `L()` im Widget dekodiert `snapshot.json` pro Aufruf; Sprache einmal aus dem Entry übergeben. (widgets/DeployWidget.swift:26–29)
+448. ✅ [Perf] **Widget wird auch ohne Änderung neu geladen.** `reloadAllTimelines()` nach jedem Laden verbraucht das Widget-Budget; nur bei geändertem Snapshot (Mac macht das schon). (ios/App/PhoneStore.swift:222–227)
+449. ✅ [Perf] **`ISO8601DateFormatter` pro Aufruf.** Bei hunderten Daten pro Laden einmal statisch anlegen. (ios/App/Clients.swift:64–70)
+450. ✅ [Perf] **Sofortstart aus dem letzten Stand.** `last-projects.json` existiert schon; beim Start zuerst anzeigen, dann im Hintergrund laden, statt leerer Liste mit Spinner. (ios/App/Views.swift:102, PhoneStore.swift:108)
+451. ✅ [Perf] **Bis zu zehn sequentielle `commits/{sha}/pulls`-Aufrufe.** Parallel (begrenzt) oder per GraphQL in einem Aufruf. (ios/App/Clients.swift:266–272)
 
 
 ### Barrierefreiheit
 
 452. ✅ [A11y] **Meldungen werden VoiceOver nicht angesagt.** Das Toast-Overlay erscheint still; `AccessibilityNotification.Announcement` senden. (ios/App/Views.swift:47–55)
 453. ✅ [A11y] **Fehler verschwinden nach 4 Sekunden.** Für Fehler und bei aktivem VoiceOver länger oder bis zum Antippen stehen lassen; Schließen als echter Button. (ios/App/Views.swift:51–52)
-454. ◐ [A11y] **Zeilen ohne Aktionen.** VoiceOver-Aktionen „Deployen“, „Zurückrollen“, „Domain öffnen“ per `accessibilityActions` (wie in der Mac-App). (ios/App/Views.swift:158–173)
+454. ✅ [A11y] **Zeilen ohne Aktionen.** VoiceOver-Aktionen „Deployen“, „Zurückrollen“, „Domain öffnen“ per `accessibilityActions` (wie in der Mac-App). (ios/App/Views.swift:158–173)
 455. ✅ [A11y] **Symbolname im Status vorgelesen.** Das Icon in der Detailansicht ist nicht versteckt; VoiceOver liest „Hammer, baut“. `accessibilityHidden(true)`. (ios/App/Views.swift:188)
 456. ✅ [A11y] **Fußzeile nennt immer Face ID.** Auf Touch-ID-Geräten oder nur mit Code ist der Text falsch; `LAContext.biometryType` auswerten. (ios/App/Views.swift:219–220)
 457. ✅ [A11y] **QR-Scanner ohne Anleitung.** Nur „Abbrechen“ auf schwarzem Grund; Text „Auf den Code am Mac richten“ und VoiceOver-Hinweis, gefunden/nicht gefunden mit Haptik. (ios/App/ConnectMac.swift:90–113)
@@ -710,56 +710,56 @@ Stand: origin/main aa128e9. Bereits bekannte Ideen (IDEEN 1–5, CHANGELOG) sind
 
 ### iPad
 
-462. [UX] **Tastaturkürzel auf dem iPad.** ⌘R neu laden, ⌘, Einstellungen, ⌘D deployen der Auswahl, Pfeiltasten in der Liste. (ios/App/Views.swift:14–34)
-463. [UX] **Leere Detailspalte beim Start.** Auf breiten Displays das erste Projekt der Gruppe „Achtung“ oder „Wartet“ vorwählen. (ios/App/Views.swift:29–31)
-464. [UX] **Kontextmenü auf Zeilen.** Langes Drücken/Rechtsklick: Deployen, Domain öffnen, SHA kopieren, im Dashboard öffnen. (ios/App/Views.swift:96)
-465. [UX] **Mehrere Fenster nebeneinander.** Mit Stage Manager je Fenster eine eigene Auswahl (`@SceneStorage`) statt `@State`. (ios/App/Views.swift:9)
+462. ✅ [UX] **Tastaturkürzel auf dem iPad.** ⌘R neu laden, ⌘, Einstellungen, ⌘D deployen der Auswahl, Pfeiltasten in der Liste. (ios/App/Views.swift:14–34)
+463. ✅ [UX] **Leere Detailspalte beim Start.** Auf breiten Displays das erste Projekt der Gruppe „Achtung“ oder „Wartet“ vorwählen. (ios/App/Views.swift:29–31)
+464. ◐ [UX] **Kontextmenü auf Zeilen.** Langes Drücken/Rechtsklick: Deployen, Domain öffnen, SHA kopieren, im Dashboard öffnen. (ios/App/Views.swift:96)
+465. ✅ [UX] **Mehrere Fenster nebeneinander.** Mit Stage Manager je Fenster eine eigene Auswahl (`@SceneStorage`) statt `@State`. (ios/App/Views.swift:9)
 
 
 ### UX und Gleichstand mit der Mac-App
 
-466. [UX] **„Nichts Neues – trotzdem bauen?“ fehlt auf iOS.** Der Deploy-Knopf ist auch bei aktuellem Stand aktiv und kostet einen Build; die Mac-App fragt bereits nach. (ios/App/Views.swift:204–210)
-467. [UX] **Auto-Deploy-Warnung fehlt.** `autoDeploy` wird geladen, aber nie gezeigt; der Kern der App (Projekte, die bei jedem Push bauen) ist auf dem iPhone unsichtbar. Abzeichen und Banner wie auf dem Mac. (ios/App/Project.swift:15)
-468. [UX] **401/403 verständlich machen.** „HTTP 401: …“ als „Token ungültig oder abgelaufen“ mit Knopf zu den Einstellungen; 404 bei privatem Repo als „GitHub-Token fehlt“. (ios/App/Clients.swift:41–45, Views.swift:89)
-469. [UX] **Leere Liste erklären.** Hat das Konto keine Projekte (oft: falsches Team), steht nur die Übersicht mit Nullen; `ContentUnavailableView` mit Hinweis auf die Team-ID. (ios/App/Views.swift:81–100)
-470. [UX] **„Verbindung testen“ in den Einstellungen.** Nach dem Speichern Kontoname, Team und Anzahl Projekte pro Anbieter zeigen, statt erst in der Liste zu scheitern. (ios/App/Views.swift:307–313)
-471. [UX] **Herkunft des Schlüssels im Feld zeigen.** Leeres Feld mit Platzhalter „vom Mac“, wenn ein verknüpfter Schlüssel greift. (ios/App/Views.swift:267–272)
-472. [UX] **Neu laden beim Zurückkehren.** Beim Aktivwerden nur bei geänderter Verknüpfung; bei Daten älter als z. B. 5 Minuten automatisch laden. (ios/App/Views.swift:35–37)
-473. [UX] **Offline-Zustand.** Mit `NWPathMonitor` „Offline – Stand von 10:42“ zeigen, statt dreimal 30 s auf Zeitüberschreitung zu warten. (ios/App/Clients.swift:22)
-474. [UX] **Rollback ohne Verfolgung.** Nach einem Rollback 4 s warten und neu laden; wie beim Deploy bis „live“ verfolgen. (ios/App/PhoneStore.swift:156–158)
-475. [UX] **Rollback-Dialog zu knapp.** Commit-Nachricht und Datum des Ziels zeigen, nicht nur 7 Zeichen SHA. (ios/App/Views.swift:236–239)
-476. [UX] **„SHA“ ist mehrdeutig.** Nur der Live-SHA erscheint; Live und Neuester beide anzeigen und kopierbar machen. (ios/App/Views.swift:201)
-477. [UX] **Haptik bei Ergebnis.** Erfolg/Fehler eines Deploys mit `sensoryFeedback`, besonders wenn man nebenbei wartet. (ios/App/PhoneStore.swift:184–189)
-478. [UX] **Meldung zusammenfassen statt abschneiden.** Mitteilung nimmt nur vier Zeilen und verschweigt den Rest; „+2 weitere“ anhängen. (ios/App/PhoneStore.swift:241)
-479. [UX] **Mitteilungen ersetzen statt stapeln.** Feste `identifier` pro Projekt/Ereignis und `threadIdentifier`, damit sich Hinweise nicht häufen. (ios/App/PhoneStore.swift:242)
-480. [UX] **Hinweis bei ausgeschalteter Hintergrundaktualisierung.** `UIApplication.backgroundRefreshStatus` prüfen und bei „aus“ oder Stromsparmodus im Schalter-Fußtext sagen, dass keine Hinweise kommen. (ios/App/Views.swift:279–284)
-481. [UX] **Widget kennzeichnet Demo-Daten nicht.** `snap.demo` wird nicht ausgewertet; ein kleines „Demo“ im Widget verhindert Verwechslung. (widgets/DeployWidget.swift:32–45)
-482. [UX] **Widget zeigt nicht, wie alt die Daten sind.** Ohne Hintergrundlauf steht tagelang derselbe Stand da; `Text(snap.at, style: .relative)` und ab z. B. 6 Stunden grau. (widgets/DeployWidget.swift:32–90)
-483. [UX] **Scanner bleibt bei falschem Code nicht offen.** Ein fremder QR-Code schließt die Kamera; weiter scannen und den Hinweis einblenden. (ios/App/ConnectMac.swift:60–63)
-484. [UX] **Welcome erklärt Tokens nicht.** Links „Vercel-Token anlegen“ / „Render-API-Key anlegen“ mit nötigen Rechten direkt im Willkommensbildschirm. (ios/App/Views.swift:64–73)
+466. ✅ [UX] **„Nichts Neues – trotzdem bauen?“ fehlt auf iOS.** Der Deploy-Knopf ist auch bei aktuellem Stand aktiv und kostet einen Build; die Mac-App fragt bereits nach. (ios/App/Views.swift:204–210)
+467. ✅ [UX] **Auto-Deploy-Warnung fehlt.** `autoDeploy` wird geladen, aber nie gezeigt; der Kern der App (Projekte, die bei jedem Push bauen) ist auf dem iPhone unsichtbar. Abzeichen und Banner wie auf dem Mac. (ios/App/Project.swift:15)
+468. ✅ [UX] **401/403 verständlich machen.** „HTTP 401: …“ als „Token ungültig oder abgelaufen“ mit Knopf zu den Einstellungen; 404 bei privatem Repo als „GitHub-Token fehlt“. (ios/App/Clients.swift:41–45, Views.swift:89)
+469. ✅ [UX] **Leere Liste erklären.** Hat das Konto keine Projekte (oft: falsches Team), steht nur die Übersicht mit Nullen; `ContentUnavailableView` mit Hinweis auf die Team-ID. (ios/App/Views.swift:81–100)
+470. ✅ [UX] **„Verbindung testen“ in den Einstellungen.** Nach dem Speichern Kontoname, Team und Anzahl Projekte pro Anbieter zeigen, statt erst in der Liste zu scheitern. (ios/App/Views.swift:307–313)
+471. ✅ [UX] **Herkunft des Schlüssels im Feld zeigen.** Leeres Feld mit Platzhalter „vom Mac“, wenn ein verknüpfter Schlüssel greift. (ios/App/Views.swift:267–272)
+472. ✅ [UX] **Neu laden beim Zurückkehren.** Beim Aktivwerden nur bei geänderter Verknüpfung; bei Daten älter als z. B. 5 Minuten automatisch laden. (ios/App/Views.swift:35–37)
+473. ✅ [UX] **Offline-Zustand.** Mit `NWPathMonitor` „Offline – Stand von 10:42“ zeigen, statt dreimal 30 s auf Zeitüberschreitung zu warten. (ios/App/Clients.swift:22)
+474. ✅ [UX] **Rollback ohne Verfolgung.** Nach einem Rollback 4 s warten und neu laden; wie beim Deploy bis „live“ verfolgen. (ios/App/PhoneStore.swift:156–158)
+475. ✅ [UX] **Rollback-Dialog zu knapp.** Commit-Nachricht und Datum des Ziels zeigen, nicht nur 7 Zeichen SHA. (ios/App/Views.swift:236–239)
+476. ✅ [UX] **„SHA“ ist mehrdeutig.** Nur der Live-SHA erscheint; Live und Neuester beide anzeigen und kopierbar machen. (ios/App/Views.swift:201)
+477. ✅ [UX] **Haptik bei Ergebnis.** Erfolg/Fehler eines Deploys mit `sensoryFeedback`, besonders wenn man nebenbei wartet. (ios/App/PhoneStore.swift:184–189)
+478. ✅ [UX] **Meldung zusammenfassen statt abschneiden.** Mitteilung nimmt nur vier Zeilen und verschweigt den Rest; „+2 weitere“ anhängen. (ios/App/PhoneStore.swift:241)
+479. ✅ [UX] **Mitteilungen ersetzen statt stapeln.** Feste `identifier` pro Projekt/Ereignis und `threadIdentifier`, damit sich Hinweise nicht häufen. (ios/App/PhoneStore.swift:242)
+480. ✅ [UX] **Hinweis bei ausgeschalteter Hintergrundaktualisierung.** `UIApplication.backgroundRefreshStatus` prüfen und bei „aus“ oder Stromsparmodus im Schalter-Fußtext sagen, dass keine Hinweise kommen. (ios/App/Views.swift:279–284)
+481. ✅ [UX] **Widget kennzeichnet Demo-Daten nicht.** `snap.demo` wird nicht ausgewertet; ein kleines „Demo“ im Widget verhindert Verwechslung. (widgets/DeployWidget.swift:32–45)
+482. ✅ [UX] **Widget zeigt nicht, wie alt die Daten sind.** Ohne Hintergrundlauf steht tagelang derselbe Stand da; `Text(snap.at, style: .relative)` und ab z. B. 6 Stunden grau. (widgets/DeployWidget.swift:32–90)
+483. ✅ [UX] **Scanner bleibt bei falschem Code nicht offen.** Ein fremder QR-Code schließt die Kamera; weiter scannen und den Hinweis einblenden. (ios/App/ConnectMac.swift:60–63)
+484. ✅ [UX] **Welcome erklärt Tokens nicht.** Links „Vercel-Token anlegen“ / „Render-API-Key anlegen“ mit nötigen Rechten direkt im Willkommensbildschirm. (ios/App/Views.swift:64–73)
 
 
 ### Code und Teilung über shared/
 
-485. [Code] **Die „Wartet“-Regel in shared/ legen.** `changed`/`building`/`failed` sind ein Port von `CHANGED_RULE`; als gemeinsame, getestete Swift-Datei verhindert das Abweichungen zwischen Mac und iPhone. (ios/App/Project.swift:38–57)
-486. [Code] **Kein Testziel im iOS-Projekt.** Unit-Tests für `prNumber`, `changed`, `merging`, Render-/Vercel-Rollback-Ziel mit aufgezeichneten JSON-Antworten. (ios/DeployCenter.xcodeproj/project.pbxproj)
-487. [Code] **`L()` doppelt.** Einmal in Project.swift, einmal privat im Widget mit anderer Logik; eine Funktion mit Sprachparameter in shared/. (ios/App/Project.swift:75, widgets/DeployWidget.swift:26)
+485. ◐ [Code] **Die „Wartet“-Regel in shared/ legen.** `changed`/`building`/`failed` sind ein Port von `CHANGED_RULE`; als gemeinsame, getestete Swift-Datei verhindert das Abweichungen zwischen Mac und iPhone. (ios/App/Project.swift:38–57)
+486. ◐ [Code] **Kein Testziel im iOS-Projekt.** Unit-Tests für `prNumber`, `changed`, `merging`, Render-/Vercel-Rollback-Ziel mit aufgezeichneten JSON-Antworten. (ios/DeployCenter.xcodeproj/project.pbxproj)
+487. ◐ [Code] **`L()` doppelt.** Einmal in Project.swift, einmal privat im Widget mit anderer Logik; eine Funktion mit Sprachparameter in shared/. (ios/App/Project.swift:75, widgets/DeployWidget.swift:26)
 488. [Code] **Codable statt `[String: Any]`.** Kleine Decodable-Typen für Vercel/Render/GitHub machen Pfadfehler (`"targets.production.id"`) zu Compile-Fehlern. (ios/App/Clients.swift:6, 54–62)
-489. [Code] **HTTP injizierbar machen.** `URLSession` als Parameter, damit Tests ohne Netz laufen und der Hintergrund eine eigene Session nutzen kann. (ios/App/Clients.swift:15–35)
-490. [Code] **Feld-Zuordnung viermal von Hand.** `TokenKey` ↔ `LinkedKeys` steht in `adopt`, `linkedToken`, `save`, `onAppear`; ein KeyPath-Mapping. (ios/App/PhoneStore.swift:33–51, Views.swift:299–311)
-491. [Code] **iOS-Snapshot ohne Sprache.** `language` bleibt nil; die App-Sprache mitschreiben, damit Widget und App gleich sprechen. (ios/App/PhoneStore.swift:216)
-492. [Code] **Build-Nummer automatisch.** `CURRENT_PROJECT_VERSION` wird von Hand erhöht; in `ios/build.sh --archive` aus Datum oder `git rev-list --count` setzen. (ios/DeployCenter.xcodeproj/project.pbxproj:176, ios/build.sh:49)
-493. [Code] **`--run` ohne gebooteten Simulator.** `simctl install booted` scheitert kryptisch; vorher prüfen und einen Simulator vorschlagen/starten. (ios/build.sh:21–24)
+489. ✅ [Code] **HTTP injizierbar machen.** `URLSession` als Parameter, damit Tests ohne Netz laufen und der Hintergrund eine eigene Session nutzen kann. (ios/App/Clients.swift:15–35)
+490. ✅ [Code] **Feld-Zuordnung viermal von Hand.** `TokenKey` ↔ `LinkedKeys` steht in `adopt`, `linkedToken`, `save`, `onAppear`; ein KeyPath-Mapping. (ios/App/PhoneStore.swift:33–51, Views.swift:299–311)
+491. ✅ [Code] **iOS-Snapshot ohne Sprache.** `language` bleibt nil; die App-Sprache mitschreiben, damit Widget und App gleich sprechen. (ios/App/PhoneStore.swift:216)
+492. ✅ [Code] **Build-Nummer automatisch.** `CURRENT_PROJECT_VERSION` wird von Hand erhöht; in `ios/build.sh --archive` aus Datum oder `git rev-list --count` setzen. (ios/DeployCenter.xcodeproj/project.pbxproj:176, ios/build.sh:49)
+493. ✅ [Code] **`--run` ohne gebooteten Simulator.** `simctl install booted` scheitert kryptisch; vorher prüfen und einen Simulator vorschlagen/starten. (ios/build.sh:21–24)
 494. [Code] **iOS-Ziel in den bestehenden CI-Workflow.** Einen Schritt `xcodebuild -sdk iphonesimulator` (macOS-Runner) ergänzen; er fängt kaputte Builds der geteilten Dateien (shared/, widgets/), die die Mac-Änderungen sonst still brechen. (ios/build.sh:17)
 
 
 ### App Store und Doku
 
-495. [Store] **Verfügbarkeit auf Apple-Silicon-Macs abschalten.** Sonst erscheint die iPad-App im Mac App Store neben der echten Mac-App; in App Store Connect „iPhone- und iPad-Apps auf Mac“ (und visionOS) deaktivieren. (docs/APP-STORE.md:46–67)
-496. [Store] **Deutsche Screenshots.** Die deutsche Seite nutzt englische Bilder; mit `-AppleLanguages (de)` und `-demo` erzeugen. (docs/APP-STORE.md:56)
+495. ◐ [Store] **Verfügbarkeit auf Apple-Silicon-Macs abschalten.** Sonst erscheint die iPad-App im Mac App Store neben der echten Mac-App; in App Store Connect „iPhone- und iPad-Apps auf Mac“ (und visionOS) deaktivieren. (docs/APP-STORE.md:46–67)
+496. ◐ [Store] **Deutsche Screenshots.** Die deutsche Seite nutzt englische Bilder; mit `-AppleLanguages (de)` und `-demo` erzeugen. (docs/APP-STORE.md:56)
 497. [Store] **Accessibility-Angaben in App Store Connect.** Die neuen Barrierefreiheits-Labels (VoiceOver, größerer Text, Dunkelmodus …) erst nach geprüftem VoiceOver-Durchgang ausfüllen. (docs/APP-STORE.md:20)
-498. [Store] **Build-Nummern in der Doku widersprechen sich.** „Build 1.0 (1) is uploaded“ und Einreichung „1.0 (2)“; Status-Abschnitt aktualisieren. (docs/APP-STORE.md:52, 145)
-499. [Store] **Doku nennt nicht geprüfte Pfade.** Echte Deploys, Rollback und iCloud-Verknüpfung sind laut Doku nie gelaufen; vor der nächsten Version eine kurze Testliste mit einem Wegwerf-Projekt abhaken. (docs/WIDGETS-IOS.md:205–212)
+498. ✅ [Store] **Build-Nummern in der Doku widersprechen sich.** „Build 1.0 (1) is uploaded“ und Einreichung „1.0 (2)“; Status-Abschnitt aktualisieren. (docs/APP-STORE.md:52, 145)
+499. ◐ [Store] **Doku nennt nicht geprüfte Pfade.** Echte Deploys, Rollback und iCloud-Verknüpfung sind laut Doku nie gelaufen; vor der nächsten Version eine kurze Testliste mit einem Wegwerf-Projekt abhaken. (docs/WIDGETS-IOS.md:205–212)
 
 
 ### Features
@@ -884,68 +884,68 @@ Stand: origin/main (aa128e9). Bereits Bekanntes aus IDEEN 1–5, CHANGELOG und g
 
 587. [CI] **`integrations/tests/run.sh` läuft nie in CI.** MCP-Tests, `tests/claude-code.sh`, Action-Schritte, Digest und Hooks sind nur lokal getestet. Ein Job mit node und `npm ci` in `integrations/mcp` fehlt. (.github/workflows/ci.yml:33-40)
 588. [CI] **Übersprungene Tests zählen als bestanden.** `run.sh` schreibt „skip mcp“/„skip vscode“ und meldet „All passed.“. In CI sollte `REQUIRE_ALL=1` ein Skip zum Fehler machen. (integrations/tests/run.sh:252-257, :309-315)
-589. [CI] **Raycast ohne CI.** `npm ci`, `tsc --noEmit`, `ray lint` und `ray build` in einem Job; Typfehler fallen heute erst beim Store-Einreichen auf. (.github/workflows/ci.yml:67-85)
-590. [CI] **shellcheck lässt `integrations/**` aus.** Nicht geprüft: after-push.sh, `hooks/pre-push`, digest.sh, classify.sh, notify.sh, badge.sh, statuspage.sh, `lib/post.sh`, `integrations/tests/run.sh`. (.github/workflows/ci.yml:31)
-591. [CI] **actionlint ohne die Beispiele.** `examples/*.yml`, `integrations/*/examples/*.yml` und (per `action-validator`) `integrations/action/action.yml` werden nicht geprüft. Genau die kopieren Nutzer. (.github/workflows/ci.yml:28)
-592. [CI] **Widgets werden in CI nie gebaut.** `./build.sh` läuft ohne `--widgets`, das Release aber immer mit. Ein Fehler in `widgets/*.swift` fällt erst beim Release auf. (.github/workflows/ci.yml:42; release.sh:121)
+589. ◐ [CI] **Raycast ohne CI.** `npm ci`, `tsc --noEmit`, `ray lint` und `ray build` in einem Job; Typfehler fallen heute erst beim Store-Einreichen auf. (.github/workflows/ci.yml:67-85)
+590. ✅ [CI] **shellcheck lässt `integrations/**` aus.** Nicht geprüft: after-push.sh, `hooks/pre-push`, digest.sh, classify.sh, notify.sh, badge.sh, statuspage.sh, `lib/post.sh`, `integrations/tests/run.sh`. (.github/workflows/ci.yml:31)
+591. ◐ [CI] **actionlint ohne die Beispiele.** `examples/*.yml`, `integrations/*/examples/*.yml` und (per `action-validator`) `integrations/action/action.yml` werden nicht geprüft. Genau die kopieren Nutzer. (.github/workflows/ci.yml:28)
+592. ◐ [CI] **Widgets werden in CI nie gebaut.** `./build.sh` läuft ohne `--widgets`, das Release aber immer mit. Ein Fehler in `widgets/*.swift` fällt erst beim Release auf. (.github/workflows/ci.yml:42; release.sh:121)
 593. [CI] **Skript-Tests nur auf macOS.** Laut Changelog läuft das CLI auch unter Linux, die Ubuntu-Jobs prüfen aber nur install.sh. `tests/script-tests.sh` und `team-tests.sh` gehören auch auf ubuntu-latest. (.github/workflows/ci.yml:49-65)
-594. [CI] **Changelog-Pflicht ignoriert providers/, lib/, integrations/.** Das Muster ist nur `^(deploys|app/)`. (.github/workflows/ci.yml:118)
-595. [CI] **`check-site.py` läuft nirgends.** JSON-LD-, Meta- und Sitemap-Prüfung im docs-Job ergänzen oder mit check-links zusammenlegen. (scripts/check-site.py:1-8; .github/workflows/ci.yml:87-100)
-596. [CI] **Brew ohne Cache und mit Auto-Update.** `HOMEBREW_NO_AUTO_UPDATE=1` und `HOMEBREW_NO_INSTALL_CLEANUP=1` sparen pro Lauf eine bis zwei Minuten macOS-Zeit, die zehnfach berechnet wird. (.github/workflows/ci.yml:23-24)
-597. [CI] **setup-node ohne npm-Cache.** `cache: npm` mit `cache-dependency-path`. (.github/workflows/ci.yml:79-82)
-598. [CI] **Xcode-Version nicht festgelegt.** `macos-15` wechselt das Standard-Xcode. Ein `xcode-select -s /Applications/Xcode_16.x.app` macht Typprüfer-Timeouts und Swift-Warnungen reproduzierbar. (.github/workflows/ci.yml:17)
-599. [CI] **Docker-Image wird nie gebaut.** Ein `docker build` plus `docker run … --version` im Ubuntu-Job hätte z. B. einen falschen `COPY`-Pfad erkannt. (integrations/docker/Dockerfile)
-600. [CI] **Python-Skripte ohne Lint.** `ruff check scripts/*.py` (build-docs.py hat 700 Zeilen). (scripts/build-docs.py)
-601. [CI] **Dependabot nur für Actions.** npm in `integrations/mcp`, `integrations/vscode` und `integrations/raycast` fehlt, ebenso Docker. Das MCP-SDK ist exakt gepinnt und wird nie angehoben. (.github/dependabot.yml:4)
-602. [CI] **Abhängigkeiten der Integrationen auditieren.** `npm audit --omit=dev --audit-level=high` für mcp (es wird mit `node_modules` in die App gebündelt). (integrations/mcp/package.json:12-14)
-603. [CI] **pages.yml ohne `timeout-minutes`.** Der IndexNow-Schritt hat eines, der Job nicht. (.github/workflows/pages.yml:31-36)
+594. ✅ [CI] **Changelog-Pflicht ignoriert providers/, lib/, integrations/.** Das Muster ist nur `^(deploys|app/)`. (.github/workflows/ci.yml:118)
+595. ✅ [CI] **`check-site.py` läuft nirgends.** JSON-LD-, Meta- und Sitemap-Prüfung im docs-Job ergänzen oder mit check-links zusammenlegen. (scripts/check-site.py:1-8; .github/workflows/ci.yml:87-100)
+596. ✅ [CI] **Brew ohne Cache und mit Auto-Update.** `HOMEBREW_NO_AUTO_UPDATE=1` und `HOMEBREW_NO_INSTALL_CLEANUP=1` sparen pro Lauf eine bis zwei Minuten macOS-Zeit, die zehnfach berechnet wird. (.github/workflows/ci.yml:23-24)
+597. ✅ [CI] **setup-node ohne npm-Cache.** `cache: npm` mit `cache-dependency-path`. (.github/workflows/ci.yml:79-82)
+598. ✅ [CI] **Xcode-Version nicht festgelegt.** `macos-15` wechselt das Standard-Xcode. Ein `xcode-select -s /Applications/Xcode_16.x.app` macht Typprüfer-Timeouts und Swift-Warnungen reproduzierbar. (.github/workflows/ci.yml:17)
+599. ✅ [CI] **Docker-Image wird nie gebaut.** Ein `docker build` plus `docker run … --version` im Ubuntu-Job hätte z. B. einen falschen `COPY`-Pfad erkannt. (integrations/docker/Dockerfile)
+600. ✅ [CI] **Python-Skripte ohne Lint.** `ruff check scripts/*.py` (build-docs.py hat 700 Zeilen). (scripts/build-docs.py)
+601. ✅ [CI] **Dependabot nur für Actions.** npm in `integrations/mcp`, `integrations/vscode` und `integrations/raycast` fehlt, ebenso Docker. Das MCP-SDK ist exakt gepinnt und wird nie angehoben. (.github/dependabot.yml:4)
+602. ✅ [CI] **Abhängigkeiten der Integrationen auditieren.** `npm audit --omit=dev --audit-level=high` für mcp (es wird mit `node_modules` in die App gebündelt). (integrations/mcp/package.json:12-14)
+603. ✅ [CI] **pages.yml ohne `timeout-minutes`.** Der IndexNow-Schritt hat eines, der Job nicht. (.github/workflows/pages.yml:31-36)
 
 
 ### Tests
 
-604. [Test] **Tarball-Inhalt vollständig prüfen.** install-tests.sh prüft nur providers/. Ein Test „jede Datei, die deploys per `deploys_dir`/`DEPLOYS_DIR` sourct, ist im Tarball und in der Formel“ hätte den lib/-Fehler gefunden. (tests/install-tests.sh:28-31)
-605. [Test] **MCP: fehlende Fälle.** Unbekannte Argumente, Name auf zwei Plattformen, `platform:name`, Rollback eines unbekannten Projekts, Timeout während `deploy-json`, Tail bei Ausgaben über `cap`, JSON-Kürzung. (integrations/tests/mcp.test.mjs:164-196)
+604. ✅ [Test] **Tarball-Inhalt vollständig prüfen.** install-tests.sh prüft nur providers/. Ein Test „jede Datei, die deploys per `deploys_dir`/`DEPLOYS_DIR` sourct, ist im Tarball und in der Formel“ hätte den lib/-Fehler gefunden. (tests/install-tests.sh:28-31)
+605. ✅ [Test] **MCP: fehlende Fälle.** Unbekannte Argumente, Name auf zwei Plattformen, `platform:name`, Rollback eines unbekannten Projekts, Timeout während `deploy-json`, Tail bei Ausgaben über `cap`, JSON-Kürzung. (integrations/tests/mcp.test.mjs:164-196)
 606. [Test] **after-push: fehlende Fälle.** `git stash push`, `git push --dry-run`, `cd x && git push`, `git -C dir push`, GitLab-Remote. (integrations/tests/run.sh:271-307)
 607. [Test] **Gemeinsame Secret-Fixture für alle Maskierer.** Eine Datei `tests/fixtures/secrets.txt` mit Erwartung, gegen die Swift (LogTools), TypeScript (vscode/log.ts) und bash (`af_mask`) laufen. So driften die drei Listen nicht auseinander. (integrations/vscode/src/log.ts:21; deploys:704)
-608. [Test] **Raycast-Logik testen.** `classify`, `commitsText`, `sortByAge`, `findDeploys` ohne Raycast-API (wie vscode/model.ts) herauslösen und mit `node --test` prüfen. (integrations/raycast/src/lib/deploys.ts:147-160)
+608. ✅ [Test] **Raycast-Logik testen.** `classify`, `commitsText`, `sortByAge`, `findDeploys` ohne Raycast-API (wie vscode/model.ts) herauslösen und mit `node --test` prüfen. (integrations/raycast/src/lib/deploys.ts:147-160)
 609. [Test] **VS Code im Extension-Host.** `@vscode/test-electron` mit Stand-in-`deploys`: Aktivierung, Status-Text, Kontextwerte, Untrusted-Workspace bleibt inaktiv. (integrations/vscode/package.json:240-246)
-610. [Test] **Beispiel-Workflows in CI ausführen.** Wie bei action.yml die `run:`-Blöcke von daily-deploy.yml und claude-pr-ship-check.yml (Schritt „Projects of this repo“) mit Stand-in-deploys laufen lassen. (examples/claude-pr-ship-check.yml:66-76)
+610. ✅ [Test] **Beispiel-Workflows in CI ausführen.** Wie bei action.yml die `run:`-Blöcke von daily-deploy.yml und claude-pr-ship-check.yml (Schritt „Projects of this repo“) mit Stand-in-deploys laufen lassen. (examples/claude-pr-ship-check.yml:66-76)
 611. [Test] **Testabdeckung für bash messen.** `kcov` oder `bashcov` über script-tests, team-tests und die Provider-Tests; zeigt ungetestete Zweige in 2 000+ Zeilen `deploys`. (tests/script-tests.sh)
-612. [Test] **Provider-Tests parallel.** Die Schleife über `tests/providers/*.sh` läuft nacheinander. Mit `xargs -P` oder Hintergrundjobs ginge CI schneller. (tests/script-tests.sh:553-557)
+612. ✅ [Test] **Provider-Tests parallel.** Die Schleife über `tests/providers/*.sh` läuft nacheinander. Mit `xargs -P` oder Hintergrundjobs ginge CI schneller. (tests/script-tests.sh:553-557)
 613. [Test] **`appcast.py` gegen Sparkle prüfen.** Das erzeugte XML mit `generate_appcast`/`sign_update --verify` oder einem Sparkle-Schema-Check prüfen, nicht nur mit eigenen Regeln. (tests/script-tests.sh:1044)
-614. [Test] **Der Digest-Text mit Injektion.** Commit-Titel mit `<!-- deploys-approve: all -->`, `@user` und Markdown-Links: im Body maskiert, und der Marker bleibt der letzte. (integrations/digest/digest.sh:131-162)
+614. ✅ [Test] **Der Digest-Text mit Injektion.** Commit-Titel mit `<!-- deploys-approve: all -->`, `@user` und Markdown-Links: im Body maskiert, und der Marker bleibt der letzte. (integrations/digest/digest.sh:131-162)
 
 
 ### Code und Wartung
 
 615. [Code] **Ein gemeinsamer Node-Kern für MCP, VS Code und Raycast.** Dreimal stehen `findDeploys`/`isExecutable`/Timeout/ANSI/Fehlerklassen, mit verschiedenen Suchreihenfolgen (MCP: PATH zuerst, Raycast/VS Code: App zuerst). Ein `integrations/node-lib` per esbuild einbinden. (integrations/mcp/server.mjs:38-58; integrations/raycast/src/lib/deploys.ts:106-130; integrations/vscode/src/cli.ts:30-51)
-616. [Code] **`lib/projects.sh` baut die Ignore-Regel nach.** `changed_projects` liest `ignored.json` selbst und kennt Team-`ignored` und `overrides.json` nicht. Besser `deploys changed --json` aufrufen. (integrations/lib/projects.sh:20-24)
-617. [Code] **Variablennamen der Beispiele vereinheitlichen.** `vars.VERCEL_TEAM` (deploy-on-marker, approve-deploy) gegenüber `vars.DEPLOYS_VERCEL_TEAM` (ship-check, daily-deploy). (integrations/action/examples/deploy-on-marker.yml:32; integrations/digest/examples/approve-deploy.yml:69; examples/claude-pr-ship-check.yml:52)
-618. [Code] **Beispiele mit `@main` trotz „pin a tag“.** Gleich einen Release-Tag (`@v0.9.1`) bzw. einen bewegten `v1`-Tag zeigen. (integrations/action/examples/deploy-on-marker.yml:27; examples/claude-pr-ship-check.yml:48; integrations/digest/examples/approve-deploy.yml:65, :95)
+616. ✅ [Code] **`lib/projects.sh` baut die Ignore-Regel nach.** `changed_projects` liest `ignored.json` selbst und kennt Team-`ignored` und `overrides.json` nicht. Besser `deploys changed --json` aufrufen. (integrations/lib/projects.sh:20-24)
+617. ✅ [Code] **Variablennamen der Beispiele vereinheitlichen.** `vars.VERCEL_TEAM` (deploy-on-marker, approve-deploy) gegenüber `vars.DEPLOYS_VERCEL_TEAM` (ship-check, daily-deploy). (integrations/action/examples/deploy-on-marker.yml:32; integrations/digest/examples/approve-deploy.yml:69; examples/claude-pr-ship-check.yml:52)
+618. ◐ [Code] **Beispiele mit `@main` trotz „pin a tag“.** Gleich einen Release-Tag (`@v0.9.1`) bzw. einen bewegten `v1`-Tag zeigen. (integrations/action/examples/deploy-on-marker.yml:27; examples/claude-pr-ship-check.yml:48; integrations/digest/examples/approve-deploy.yml:65, :95)
 619. [Code] **`daily-deploy.yml` nutzt die eigene Action nicht.** CLI-Installation, Team-ID-Prüfung und Ausgaben stehen doppelt. (examples/daily-deploy.yml:38-52)
-620. [Code] **MCP-Version aus package.json lesen.** `VERSION = "0.1.0"` ist hart codiert. (integrations/mcp/server.mjs:23)
+620. ✅ [Code] **MCP-Version aus package.json lesen.** `VERSION = "0.1.0"` ist hart codiert. (integrations/mcp/server.mjs:23)
 621. [Code] **MCP-Server mit esbuild in eine Datei bündeln.** Statt `node_modules` (Hunderte Dateien) ins App-Bundle zu kopieren: weniger Signier- und Notarisierungsaufwand, kleinerer Download, reproduzierbar. (build.sh:93-97)
 622. [Code] **`.mcpb` im Repo bauen.** Ein `scripts/build-mcpb.sh` mit `manifest.json`, damit build.sh die Datei nicht nur zufällig findet. (build.sh:98-100)
-623. [Code] **Ein Werkzeug für alle Versionen.** `scripts/bump.sh` setzt auch package.json (mcp, vscode, raycast), plugin.json, marketplace.json und `VERSION` im MCP; ein CI-Check meldet, wenn sie auseinanderlaufen. (scripts/bump.sh:30)
-624. [Code] **Kosten-Hinweis im Ship-Check: kleineres Modell.** Für einen 15-Zeilen-Kommentar reicht ein Sonnet- oder Haiku-Modell. Ausgerechnet ein Kosten-Spar-Werkzeug sollte nicht standardmäßig das teuerste Modell nehmen. (examples/claude-pr-ship-check.yml:99)
-625. [Code] **`timeout-minutes` in den Beispielen.** ship-check und daily-deploy haben keins; ein hängendes `deploys` läuft sonst bis zu sechs Stunden (Default-Limit) auf Kosten des Nutzers. (examples/claude-pr-ship-check.yml:37-40; examples/daily-deploy.yml:26-28)
+623. ◐ [Code] **Ein Werkzeug für alle Versionen.** `scripts/bump.sh` setzt auch package.json (mcp, vscode, raycast), plugin.json, marketplace.json und `VERSION` im MCP; ein CI-Check meldet, wenn sie auseinanderlaufen. (scripts/bump.sh:30)
+624. ✅ [Code] **Kosten-Hinweis im Ship-Check: kleineres Modell.** Für einen 15-Zeilen-Kommentar reicht ein Sonnet- oder Haiku-Modell. Ausgerechnet ein Kosten-Spar-Werkzeug sollte nicht standardmäßig das teuerste Modell nehmen. (examples/claude-pr-ship-check.yml:99)
+625. ✅ [Code] **`timeout-minutes` in den Beispielen.** ship-check und daily-deploy haben keins; ein hängendes `deploys` läuft sonst bis zu sechs Stunden (Default-Limit) auf Kosten des Nutzers. (examples/claude-pr-ship-check.yml:37-40; examples/daily-deploy.yml:26-28)
 626. [Code] **Action: Vercel-CLI cachen.** `npm install -g vercel@…` läuft bei jedem Lauf; ein `actions/cache` auf das npm-Prefix spart 20–40 s pro Lauf. (integrations/action/action.yml:89-92)
 
 
 ### UX und Doku
 
-627. [UX] **Doku-Widerspruch zu Autofix.** SAFE-DEPLOY.md spricht von „An autofix redeploy runs deploy-json“, und die plist-Vorlage sagt „and deploy a merged fix“. Laut AUTOFIX.md deployt Autofix nie. (docs/SAFE-DEPLOY.md:130; scripts/autofix.plist.example:2)
-628. [UX] **CLAUDE.md-Block nur für Vercel/Render.** `deploys deploy <project> --wait` nennen, das für alle Anbieter gilt und Fenster, CI und Freigaben prüft. (docs/CLAUDE-CODE.md:42-43)
-629. [UX] **Plattform-Wunsch-Vorlage listet Vorhandenes.** Netlify, Cloudflare Pages, Amplify und Deploy-Hook gibt es schon. Ersetzen durch Fly.io, Railway, Heroku, Firebase Hosting, Azure Static Web Apps, Kamal. (.github/ISSUE_TEMPLATE/platform-request.yml:16-21)
-630. [UX] **Bug-Vorlage ohne Integrationen.** Unter „Where“ fehlen VS Code, Raycast, MCP, Claude-Code-Plugin, GitHub Action, Widgets und iPhone. (.github/ISSUE_TEMPLATE/bug.yml:28-32)
-631. [UX] **PR-Vorlage nennt nur zwei Testskripte.** Ergänzen: `integrations/tests/run.sh`, `tests/team-tests.sh`, `scripts/check-public.sh`, `npm test` in vscode. (.github/PULL_REQUEST_TEMPLATE.md:7)
-632. [UX] **Hinweis zum hängenden Render-Key prüfen.** integrations/README sagt, `render list --json` „currently does not come back“ bei falschem Key. Laut #42 ist die Endlosschleife behoben; den Satz prüfen und entfernen oder belegen. (Vermutung) (integrations/README.md:30-31)
-633. [UX] **Guard und Autofix nur für Vercel und Render.** Netlify, Cloudflare und Amplify können Auto-Build ebenfalls wieder einschalten, und ihre Fehlbuilds fehlen in Autofix. Die Doku sagt es nur nebenbei; entweder dokumentieren oder ausbauen. (docs/GUARD.md:59-60; docs/AUTOFIX.md:14)
-634. [UX] **VS Code bietet „Deploy…“ ohne Änderungen an.** Statt nur einer Warnung im Dialog den Eintrag ausgrauen bzw. ans Ende setzen; ein Fehlklick kostet sonst einen Build. (integrations/vscode/src/extension.ts:195, :220)
-635. [UX] **Raycast ohne Zwischenspeicher.** `usePromise` lässt beim Öffnen bis zu zwei Minuten leer. `useCachedPromise` zeigt die letzte Liste sofort und lädt im Hintergrund. (integrations/raycast/src/waiting-deploys.tsx:8; src/deploy-status.tsx:34)
-636. [UX] **Raycast „Deploy Status“ ohne Build-Log.** Bei fehlgeschlagenen Builds fehlt „Show Log“ bzw. „Copy for AI“ (beides kann VS Code). (integrations/raycast/src/deploy-status.tsx:24-28)
-637. [UX] **Digest-Issue pingt Leute.** `@login` in Commit-Titeln und PR-Titeln erzeugt Benachrichtigungen im Tages-Issue. `@` durch `@​` oder Backticks entschärfen. (integrations/digest/digest.sh:131-133)
-638. [UX] **notify und digest nur in UTC.** `DEPLOYS_TZ` (oder `TZ`) für „heute“ und die Überschrift. (integrations/notify/notify.sh:15, :35; integrations/digest/digest.sh:55)
+627. ✅ [UX] **Doku-Widerspruch zu Autofix.** SAFE-DEPLOY.md spricht von „An autofix redeploy runs deploy-json“, und die plist-Vorlage sagt „and deploy a merged fix“. Laut AUTOFIX.md deployt Autofix nie. (docs/SAFE-DEPLOY.md:130; scripts/autofix.plist.example:2)
+628. ✅ [UX] **CLAUDE.md-Block nur für Vercel/Render.** `deploys deploy <project> --wait` nennen, das für alle Anbieter gilt und Fenster, CI und Freigaben prüft. (docs/CLAUDE-CODE.md:42-43)
+629. ✅ [UX] **Plattform-Wunsch-Vorlage listet Vorhandenes.** Netlify, Cloudflare Pages, Amplify und Deploy-Hook gibt es schon. Ersetzen durch Fly.io, Railway, Heroku, Firebase Hosting, Azure Static Web Apps, Kamal. (.github/ISSUE_TEMPLATE/platform-request.yml:16-21)
+630. ✅ [UX] **Bug-Vorlage ohne Integrationen.** Unter „Where“ fehlen VS Code, Raycast, MCP, Claude-Code-Plugin, GitHub Action, Widgets und iPhone. (.github/ISSUE_TEMPLATE/bug.yml:28-32)
+631. ✅ [UX] **PR-Vorlage nennt nur zwei Testskripte.** Ergänzen: `integrations/tests/run.sh`, `tests/team-tests.sh`, `scripts/check-public.sh`, `npm test` in vscode. (.github/PULL_REQUEST_TEMPLATE.md:7)
+632. ✅ [UX] **Hinweis zum hängenden Render-Key prüfen.** integrations/README sagt, `render list --json` „currently does not come back“ bei falschem Key. Laut #42 ist die Endlosschleife behoben; den Satz prüfen und entfernen oder belegen. (Vermutung) (integrations/README.md:30-31)
+633. ✅ [UX] **Guard und Autofix nur für Vercel und Render.** Netlify, Cloudflare und Amplify können Auto-Build ebenfalls wieder einschalten, und ihre Fehlbuilds fehlen in Autofix. Die Doku sagt es nur nebenbei; entweder dokumentieren oder ausbauen. (docs/GUARD.md:59-60; docs/AUTOFIX.md:14)
+634. ✅ [UX] **VS Code bietet „Deploy…“ ohne Änderungen an.** Statt nur einer Warnung im Dialog den Eintrag ausgrauen bzw. ans Ende setzen; ein Fehlklick kostet sonst einen Build. (integrations/vscode/src/extension.ts:195, :220)
+635. ✅ [UX] **Raycast ohne Zwischenspeicher.** `usePromise` lässt beim Öffnen bis zu zwei Minuten leer. `useCachedPromise` zeigt die letzte Liste sofort und lädt im Hintergrund. (integrations/raycast/src/waiting-deploys.tsx:8; src/deploy-status.tsx:34)
+636. ✅ [UX] **Raycast „Deploy Status“ ohne Build-Log.** Bei fehlgeschlagenen Builds fehlt „Show Log“ bzw. „Copy for AI“ (beides kann VS Code). (integrations/raycast/src/deploy-status.tsx:24-28)
+637. ✅ [UX] **Digest-Issue pingt Leute.** `@login` in Commit-Titeln und PR-Titeln erzeugt Benachrichtigungen im Tages-Issue. `@` durch `@​` oder Backticks entschärfen. (integrations/digest/digest.sh:131-133)
+638. ✅ [UX] **notify und digest nur in UTC.** `DEPLOYS_TZ` (oder `TZ`) für „heute“ und die Überschrift. (integrations/notify/notify.sh:15, :35; integrations/digest/digest.sh:55)
 
 
 ### Features – bestehende Integrationen ausbauen
@@ -1020,7 +1020,7 @@ Geprüft: `site/`, `README.md`, `README.de.md`, `README-CLI.md`, `CONTRIBUTING.m
 695. ✅ [Text] **Der Doku-Index ist unvollständig.** Es fehlen docs/GITLAB.md, docs/providers/*.md, WIDGETS-IOS.md und README-CLI.md. (docs/README.md:3-22)
 696. ✅ [Text] **NUMBERS/ZAHLEN erklären nur GitHub.** GitLab zählt ohne 250er-Grenze, kennt kein Stundenbudget und gibt Open-MR ohne CI-Status (docs/GITLAB.md:85-95). Einen Absatz in beiden Sprachen ergänzen. (docs/NUMBERS.md:7, :12, docs/ZAHLEN.md:5, :10)
 697. ✅ [Text] **SAVINGS sagt „Vercel and Render only“, nennt aber keinen Zeitplan und keine Alternative.** Die Opt-in-Hosts sollten zumindest die Zahl der Builds ohne Preis zeigen, oder die Seite sagt klar warum nicht. (docs/SAVINGS.md:98, docs/ERSPARNIS.md:100)
-698. [Text] **Der Blog-Artikel hängt in der Guides-Breadcrumb.** Er läuft unter Home › Guides, ohne /blog/-Übersicht. Entweder eine Blog-Übersicht anlegen oder den Artikel unter /guides/ führen. (site/blog/ai-coding-agents-build-bill/index.html:136)
+698. ✅ [Text] **Der Blog-Artikel hängt in der Guides-Breadcrumb.** Er läuft unter Home › Guides, ohne /blog/-Übersicht. Entweder eine Blog-Übersicht anlegen oder den Artikel unter /guides/ führen. (site/blog/ai-coding-agents-build-bill/index.html:136)
 699. ✅ [Text] **„Everyone codes with Claude now“ ist eine Übertreibung.** Das passt nicht zum sonst nüchternen, ehrlichen Ton und ist angreifbar. Sachlich formulieren. (site/claude-code/index.html:135)
 700. [Text] **Die README-Alternativen nennen Status-Apps ohne Namen.** Ohne Namen ist der Vergleich nicht nachprüfbar. Zwei oder drei Beispiele mit Link machen ihn fair und vertrauenswürdig. (README.md:158-159, site/index.html:481)
 701. [Text] **APP-STORE.md enthält einen internen Betriebsstand.** Abschnitt „Steps only the owner can do“ mit Kontostatus, TestFlight-Gruppe und „account holder is invited“ gehört nicht ins öffentliche Repo. Den Stand in ein privates Issue oder eine Notiz verschieben, die Checkliste allgemein lassen. (docs/APP-STORE.md:45-70)
@@ -1031,7 +1031,7 @@ Geprüft: `site/`, `README.md`, `README.de.md`, `README-CLI.md`, `CONTRIBUTING.m
 702. [Security] **Die Datenschutzerklärung erwähnt Anthropic nicht.** „Claude in der App“ (API-Key, maskierter Text an api.anthropic.com) und Autofix (Build-Log an eine Claude-Code-Routine) fehlen ganz. `grep anthropic|claude|routine` in datenschutz.html findet 0 Treffer. Mit Rechtsgrundlage, Drittlandübermittlung und Opt-in-Hinweis ergänzen. (site/datenschutz.html:51-53)
 703. [Security] **Die Datenschutzerklärung nennt nur Vercel, Render und GitHub.** Es fehlen GitLab (inkl. self-managed), die Opt-in-Hosts (Netlify, Cloudflare, AWS, DigitalOcean, Coolify, Hooks), Webhook-Ziele des Tagesberichts (Slack, Discord, Telegram, ntfy) und Downloads über install.sh und Homebrew. (site/datenschutz.html:51-53)
 704. [Security] **Der Satz „Nothing else leaves the Mac“ stimmt nicht mehr.** Der Threat-Model-Tabelle fehlen Claude in der App (api.anthropic.com mit eigenem Key), GitLab, die Opt-in-Hosts, die iCloud-Schlüsselbund-Kopplung und der QR-Weg zum iPhone. (SECURITY.md:52-62)
-705. [Security] **Die Schlüsselliste in SECURITY.md ist unvollständig.** Es fehlen `deploy-center-anthropic` (UNINSTALL.md:41 nennt ihn), die Tokens der Opt-in-Provider und der iCloud-Sync. (SECURITY.md:66-70)
+705. ✅ [Security] **Die Schlüsselliste in SECURITY.md ist unvollständig.** Es fehlen `deploy-center-anthropic` (UNINSTALL.md:41 nennt ihn), die Tokens der Opt-in-Provider und der iCloud-Sync. (SECURITY.md:66-70)
 706. [Security] **Der Klarname steht maschinenlesbar auf etwa 12 Seiten.** Im JSON-LD-`author` jeder Guide-, Blog- und Rechnerseite. Für das Impressum ist er Pflicht, für JSON-LD nicht. Abwägen, ob „Deploy Center“ als Organization reicht (das schützt auch vor Scraping). (site/guides/*/index.html:46, site/claude-code/index.html:46, site/blog/ai-coding-agents-build-bill/index.html:46, site/vercel-build-cost-calculator/index.html:46, :134)
 707. [Security] **Die Telefonnummer im Impressum und in der Datenschutzerklärung.** Nach DDG § 5 reicht meist eine zweite schnelle Kontaktmöglichkeit wie ein Kontaktformular, die Nummer ist dann nicht nötig (rechtlich prüfen). In einem öffentlichen Repo wird sie dauerhaft gecrawlt. (site/impressum.html:39, site/datenschutz.html:37)
 708. [Text] **Der Markenhinweis im Impressum ist veraltet.** Nur „Vercel und Render“, es fehlen GitHub, GitLab, Netlify, Cloudflare, AWS, DigitalOcean, Coolify und Anthropic/Claude. (site/impressum.html:48)
@@ -1045,13 +1045,13 @@ Geprüft: `site/`, `README.md`, `README.de.md`, `README-CLI.md`, `CONTRIBUTING.m
 712. [Security] **Die Prüfsumme belegt nur Unversehrtheit, nicht die Herkunft.** `checksums.txt` kommt aus demselben Release wie das Tarball. Wer das Release ändern kann, ändert beide. Eine Signatur mit fest eingebautem öffentlichem Schlüssel prüfen (minisign oder cosign) oder `gh attestation verify`, wenn `gh` da ist. (site/install.sh:124-148)
 713. [Security] **Ein abgebrochener Download kann ein halbes Skript ausführen.** Bei `curl | sh` läuft schon an, was angekommen ist. Den ganzen Ablauf in `main() { … }` legen und erst in der letzten Zeile `main "$@"` aufrufen. (site/install.sh:17-270)
 714. [Bug] **Strg-C bricht die Installation nicht ab.** `trap 'rm -rf "$tmp"' EXIT INT TERM` fängt INT ab, räumt auf und lässt das Skript danach weiterlaufen. Für INT und TERM `…; exit 130` ergänzen. (site/install.sh:121)
-715. [Security] **Mit der Umgebungsvariable lassen sich Quelle und Prüfsumme gemeinsam austauschen.** `DEPLOYS_INSTALL_BASE` kommt aus der Umgebung und gilt auch für checksums.txt. In CI oder einer fremden Shell kann eine gesetzte Variable unbemerkt einen Spiegel nutzen. Beim Überschreiben deutlich warnen, mit einer Signatur aus dem vorigen Punkt wäre es egal. (site/install.sh:22)
-716. [Security] **`tar` übernimmt als root die Eigentümer aus dem Archiv.** Läuft das Skript als root (z. B. im Docker-Build), behält `tar -xzf` die Eigentümer aus dem Archiv. `--no-same-owner` ergänzen. (site/install.sh:151)
+715. ✅ [Security] **Mit der Umgebungsvariable lassen sich Quelle und Prüfsumme gemeinsam austauschen.** `DEPLOYS_INSTALL_BASE` kommt aus der Umgebung und gilt auch für checksums.txt. In CI oder einer fremden Shell kann eine gesetzte Variable unbemerkt einen Spiegel nutzen. Beim Überschreiben deutlich warnen, mit einer Signatur aus dem vorigen Punkt wäre es egal. (site/install.sh:22)
+716. ✅ [Security] **`tar` übernimmt als root die Eigentümer aus dem Archiv.** Läuft das Skript als root (z. B. im Docker-Build), behält `tar -xzf` die Eigentümer aus dem Archiv. `--no-same-owner` ergänzen. (site/install.sh:151)
 717. [Bug] **Der Austausch des lib-Ordners ist nicht atomar.** Erst `rm -rf "$libdir"`, dann `mv`: scheitert `mv`, ist nichts mehr installiert. Zuerst nach `.old` verschieben und bei einem Fehler zurückholen. (site/install.sh:170-171)
 718. [Bug] **glab fehlt in der Abhängigkeitsprüfung.** `report` nennt `gh`, aber nicht `glab`, obwohl GitLab als Quelle unterstützt wird. `glab` (oder `GITLAB_TOKEN`) als optional ergänzen. (site/install.sh:249-256)
 719. [Text] **Der Doku-Link am Ende zeigt auf GitHub.** Er verweist auf README-CLI auf GitHub, nicht auf `https://deploycenter.app/docs/cli/`. (site/install.sh:268)
 720. [Feature] **`--dry-run` für install.sh.** Es zeigt Quelle, Prüfsumme, Zielpfade und ob sudo nötig wäre, ohne etwas zu schreiben. Das ist hilfreich für vorsichtige Nutzer und CI-Reviews. (site/install.sh:7-12)
-721. [Security] **In CI ist die Version nicht festgelegt.** Das CI-Beispiel installiert „latest“. Für reproduzierbare Läufe und gegen ein kompromittiertes neues Release `--version x.y.z` empfehlen. (README-CLI.md:90)
+721. ✅ [Security] **In CI ist die Version nicht festgelegt.** Das CI-Beispiel installiert „latest“. Für reproduzierbare Läufe und gegen ein kompromittiertes neues Release `--version x.y.z` empfehlen. (README-CLI.md:90)
 722. ✅ [Text] **Die Prüfanleitung „von Hand“ fehlt für macOS.** `sha256sum -c` gibt es nicht auf jedem macOS. `shasum -a 256 -c checksums.txt --ignore-missing` als zweite Zeile nennen. (README-CLI.md:49)
 723. [Feature] **`.well-known/security.txt`.** RFC 9116 mit Link auf die GitHub-Advisories und SECURITY.md, damit Forscher die Meldestelle ohne Suchen finden. (site/)
 
@@ -1059,15 +1059,15 @@ Geprüft: `site/`, `README.md`, `README.de.md`, `README-CLI.md`, `CONTRIBUTING.m
 ### Onboarding und Doku-Lücken
 
 724. [Bug] **UNINSTALL vergisst alles, was im Hintergrund läuft.** Es fehlen der Autofix-launchd-Job (`deploys autofix schedule off`), der Guard-Job, der Schlüssel `deploy-center-routine`, Widget- und App-Group-Daten, die iCloud-Schlüsselbund-Einträge für das iPhone, `claude mcp remove deploys`, das Claude-Code-Plugin, die VS-Code-Erweiterung und `install.sh --uninstall`. `grep autofix|guard|routine|widget|icloud` findet 0 Treffer. (docs/UNINSTALL.md:5-14, :36-46)
-725. ◐ [Text] **TROUBLESHOOTING deckt nur Vercel, GitHub und Render ab.** Es fehlen Abschnitte zu GitLab (glab, Token, Host), Autofix (Token, Routine, Caps), Claude in der App (Key, Cap erreicht), Guard, Widgets, Opt-in-Hosts und install.sh unter Linux. (docs/TROUBLESHOOTING.md)
+725. ✅ [Text] **TROUBLESHOOTING deckt nur Vercel, GitHub und Render ab.** Es fehlen Abschnitte zu GitLab (glab, Token, Host), Autofix (Token, Routine, Caps), Claude in der App (Key, Cap erreicht), Guard, Widgets, Opt-in-Hosts und install.sh unter Linux. (docs/TROUBLESHOOTING.md)
 726. ✅ [SEO] **Wichtige Doku fehlt auf der Website.** `PAGES` enthält weder SAFE-DEPLOY, TEAM, GUARD, CLAUDE, CLAUDE-CODE, SAVINGS, GITLAB, PROVIDERS noch providers/*.md oder README-CLI. Deshalb verlinken Startseite und llms.txt diese Inhalte als GitHub-Blobs, das kostet internen Linkfluss und Verweildauer. Aufnehmen und die Links umstellen. (scripts/build-docs.py:33-61; Verweise site/index.html:342, :370-374, :405, :442; site/llms.txt:43-50)
 727. ✅ [Bug] **Digest und Claude-Code-Plugin fehlen in der Sitemap.** Sie stehen nicht im committeten Docs-Block, obwohl build-docs.py jeden `integrations/*/README.md` aufnehmen soll. Prüfen, ob die committete sitemap.xml veraltet ist oder die Ordner übersprungen werden. (Vermutung) (site/sitemap.xml:13-37, scripts/build-docs.py:63-74)
 728. ✅ [Text] **Die Label-Liste der Integrationen ist unvollständig.** `INTEGRATIONS` und `INTEGRATION_ORDER` kennen weder raycast noch digest noch claude-code, diese erscheinen nur mit ihrer H1 und ohne Beschreibung. Damit fehlt auch die Meta-Description. (scripts/build-docs.py:65-74)
 729. ✅ [Bug] **Die Datumsformatierung in build-docs ist nicht portabel.** `strftime("%B %-d, %Y")`: `%-d` gibt es unter Windows nicht (ValueError). Für Beiträger unter Windows bricht der Build. `f"{d:%B} {d.day}, {d.year}"` nutzen. (scripts/build-docs.py:549)
 730. ✅ [Text] **Für die Website gibt es keine Beiträger-Anleitung.** Es fehlt, wie man `site/` lokal ansieht (`python3 -m http.server -d site`), `build-docs.py` und `check-links.py` ausführt und neue Guides in sitemap, llms.txt und Footer einträgt. In CONTRIBUTING ergänzen. (CONTRIBUTING.md)
-731. [Text] **Der Pflegeaufwand neuer Guides ist hoch.** Die Footer-Liste der Guides steht von Hand auf 12 Seiten, der Related-Block je Guide auch. Ein kleines Skript (wie build-docs) oder ein Partial würde Lücken verhindern. (site/guides/*/index.html Footer, site/404.html)
+731. ◐ [Text] **Der Pflegeaufwand neuer Guides ist hoch.** Die Footer-Liste der Guides steht von Hand auf 12 Seiten, der Related-Block je Guide auch. Ein kleines Skript (wie build-docs) oder ein Partial würde Lücken verhindern. (site/guides/*/index.html Footer, site/404.html)
 732. [Feature] **Der SAFE-START-Weg zeigt die Ersparnis nicht zuerst.** Vor dem Abschalten `deploys simulate` als ersten Lesebefehl zeigen: so sieht man die Ersparnis vorher, und es ändert nichts. (docs/SAFE-START.md:9-18)
-733. [Text] **Der Abschnitt „Getting started“ übernimmt Veraltetes aus der README.** Der Abschnitt „What it changes, and how to undo it“ wandert samt Fehler auf die Website. Entweder die README fixen oder eine eigene docs-Quelle nehmen. (scripts/build-docs.py:82-84)
+733. ✅ [Text] **Der Abschnitt „Getting started“ übernimmt Veraltetes aus der README.** Der Abschnitt „What it changes, and how to undo it“ wandert samt Fehler auf die Website. Entweder die README fixen oder eine eigene docs-Quelle nehmen. (scripts/build-docs.py:82-84)
 734. ✅ [Text] **Die Docs-Seiten haben keinen Weg zum Download.** Die Kopfleiste (build-docs) hat nur Docs, Suche und GitHub. Ein „Download“-Knopf und ein Link zu Guides und Rechner fehlen, wer aus der Suche kommt, sackt hier ab. (scripts/build-docs.py:578-590)
 735. ✅ [Text] **Den Guide-Seiten fehlt die Doku in der Navigation.** Die Kopfleiste zeigt Guides, Calculator und GitHub, aber weder Docs noch Download. (site/guides/*/index.html:143, site/vercel-build-cost-calculator/index.html:143)
 736. ✅ [Text] **Der Netlify-Guide verweist nicht auf die Provider-Doku.** Sobald der Abschnitt „not yet“ ersetzt ist, den Link auf /docs/… oder docs/providers/netlify.md setzen. Dort steht auch, welche `ignore`-Zeile Deploy Center akzeptiert. (site/guides/netlify-stop-builds/index.html:185-187)
@@ -1084,14 +1084,14 @@ Geprüft: `site/`, `README.md`, `README.de.md`, `README-CLI.md`, `CONTRIBUTING.m
 743. [SEO] **Der Autor ist nicht einheitlich ausgezeichnet.** Docs-Seiten nennen eine Organization als Autor, Guides eine Person mit Repo-URL als `url`. Einheitlich machen (siehe Datenschutz-Punkt), sonst schwächt es die E-E-A-T-Signale. (scripts/build-docs.py:508, site/guides/*/index.html:44-48)
 744. ✅ [SEO] **`softwareVersion` und `dateModified` sind von Hand gepflegt.** Beides beim Pages-Build aus VERSION und git log einsetzen, dazu `lastmod` der Hand-Einträge in sitemap.xml (alle stehen auf demselben Tag). (site/index.html:34, site/sitemap.xml:3-14)
 745. ✅ [SEO] **Die Seite hat kein `WebSite`- und `Organization`-Schema.** Ein `WebSite` mit `SearchAction` auf die Docs-Suche und eine `Organization` mit Logo und `sameAs` (GitHub, Homebrew-Tap) gehören auf die Startseite. (site/index.html:33-47)
-746. ◐ [SEO] **Das Schema der Startseite ist veraltet.** Der `HowTo`-Block bringt bei Google seit 2023 keine Rich Results mehr. Für GEO ist er harmlos, dient aber nur noch als Textquelle; nicht weiter ausbauen und stattdessen `SoftwareApplication` vollständig machen (`fileSize`, `softwareRequirements`, `downloadUrl` mit Versionspfad). (site/index.html:35)
+746. ✅ [SEO] **Das Schema der Startseite ist veraltet.** Der `HowTo`-Block bringt bei Google seit 2023 keine Rich Results mehr. Für GEO ist er harmlos, dient aber nur noch als Textquelle; nicht weiter ausbauen und stattdessen `SoftwareApplication` vollständig machen (`fileSize`, `softwareRequirements`, `downloadUrl` mit Versionspfad). (site/index.html:35)
 747. [SEO] **Gleiches OG-Bild auf allen Guides.** Jede Guide-Seite teilt `og.png` mit dem Startseiten-Alt-Text. Pro Guide ein einfaches Titelbild (Text auf Markenfarbe, beim Build erzeugt) erhöht die Klickrate in Social und Slack. (site/guides/*/index.html:18-21)
 748. [SEO] **Der Rechner-Titel spricht nur Vercel an.** Die Seite rechnet auch für Render. Eigene Landingpages „Render build minutes calculator“ und „Netlify build credits calculator“ mit voreingestellten Werten fangen diese Suchen ab. (site/vercel-build-cost-calculator/index.html:6)
 749. ✅ [SEO] **Die Rechner-URL ändert sich beim Schieben nicht.** Der Teilen-Link wird gebaut, die Adresszeile bleibt aber leer. `history.replaceState` mit den Werten macht jede kopierte URL teilbar und ist kanonisch harmlos. (site/vercel-build-cost-calculator/index.html:251-259)
 750. [SEO] **Kanonische URLs der Rechtsseiten.** `impressum.html` und `datenschutz.html` sind `noindex`, haben aber `canonical`. Das ist nicht falsch, doch für die Rechtsseiten wären saubere Pfade wie `/impressum/` und ein Eintrag auf allen Seiten ohne `.html` einheitlicher. (Abwägung) (site/datenschutz.html:7-8)
 751. [SEO] **Keine `hreflang`-Paare für die deutschen Rechtsseiten.** Die Rechtsseiten sind deutsch, ohne englische Fassung; zumindest `lang="de"` stimmt. Zusammen mit dem bekannten /de/-Plan die Paare setzen. (site/impressum.html, site/datenschutz.html)
 752. [SEO] **IndexNow meldet jedes Mal alle URLs.** pages.yml schickt die ganze Sitemap. Nur geänderte URLs (aus `git diff`) senden, sonst stuft Bing die Meldungen ab. (Vermutung zur Bewertung) (site/4747785d1fcf908f9504c58a9a66de5a.txt, Ablauf in pages.yml:56-61)
-753. ◐ [SEO] **Keine Seite für „Vercel deploy hooks“.** Das ist ein häufiges Suchthema, und docs/providers/hook.md hat den Inhalt schon. Als Guide „Deploy any host with a deploy hook“ veröffentlichen. (docs/providers/hook.md)
+753. ✅ [SEO] **Keine Seite für „Vercel deploy hooks“.** Das ist ein häufiges Suchthema, und docs/providers/hook.md hat den Inhalt schon. Als Guide „Deploy any host with a deploy hook“ veröffentlichen. (docs/providers/hook.md)
 754. ✅ [SEO] **FAQ-Antworten mit Befehlen sind schlecht zitierbar.** Im JSON-LD stehen Befehle als Fließtext ohne Codeauszeichnung („deploys vercel autodeploy-on and deploys render …“). Für Zitate durch KI-Assistenten den Befehl in Anführungszeichen oder als eigene Frage setzen. (site/index.html:42)
 
 
@@ -1117,9 +1117,9 @@ Geprüft: `site/`, `README.md`, `README.de.md`, `README-CLI.md`, `CONTRIBUTING.m
 768. ✅ [Perf] **Preload und Bild passen nicht zusammen.** Der Preload nutzt `imagesizes="(max-width: 1040px) 100vw, 1000px"`, das `<source>` aber `sizes="(max-width: 960px) 100vw, 920px"`. Der Browser lädt dann eventuell zweimal. Gleich setzen. (site/index.html:32 vs. :303)
 769. ✅ [Perf] **Ein 29-KB-Icon für 24 px.** Startseite und Docs-Seiten nutzen `img/icon.png` (29 KB) in der Kopfleiste, die Guides `icon-64.png` (4,7 KB). Überall icon-64 nehmen. (site/index.html:238, scripts/build-docs.py:579)
 770. ✅ [Perf] **Toter Ballast: `site/img/app.png` (324 KB).** Keine Seite verweist darauf. Löschen, das verkleinert auch das Pages-Artefakt. (site/img/app.png)
-771. [Perf] **Das Manifest-Icon ist 142 KB groß.** `icon-512.png` lässt sich verlustfrei (oxipng) oder als WebP stark verkleinern, und ein `maskable`-Icon fehlt. (site/site.webmanifest:9-12)
+771. ◐ [Perf] **Das Manifest-Icon ist 142 KB groß.** `icon-512.png` lässt sich verlustfrei (oxipng) oder als WebP stark verkleinern, und ein `maskable`-Icon fehlt. (site/site.webmanifest:9-12)
 772. [Perf] **Etwa 180 Zeilen Inline-CSS auf der Startseite.** Sie werden bei jedem Besuch neu geladen, `site.css` dagegen gecacht. Die gemeinsamen Teile (Variablen, Nav, Footer, Buttons) auslagern. (Leftover zu bekannter Idee 300) (site/index.html:48-233)
-773. ◐ [Perf] **Die Startseite lädt Bilder für das falsche Theme.** `swapImages` entfernt bei manuell gewähltem Theme die `<source>`-Elemente und setzt `src`, nachdem das System-Bild schon geladen war. Mit der Theme-Wahl im `<head>` (oben) kann das Skript vor dem Laden greifen. (site/index.html:580-588)
+773. ✅ [Perf] **Die Startseite lädt Bilder für das falsche Theme.** `swapImages` entfernt bei manuell gewähltem Theme die `<source>`-Elemente und setzt `src`, nachdem das System-Bild schon geladen war. Mit der Theme-Wahl im `<head>` (oben) kann das Skript vor dem Laden greifen. (site/index.html:580-588)
 774. ✅ [Perf] **Unnötige Versionsparameter für Docs-Assets.** `?v=VERSION-sha` ändert sich bei jedem Commit, auch ohne CSS-Änderung. Den Hash des Datei-Inhalts nehmen, dann bleibt der Cache länger gültig. (scripts/build-docs.py:572, :682-683)
 
 

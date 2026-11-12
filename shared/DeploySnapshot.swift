@@ -52,6 +52,21 @@ struct DeploySnapshot: Codable, Equatable {
     /// false: the iOS app has no account yet, so "nothing waits" would not be true. Nil from the Mac.
     var connected: Bool? = nil
 
+    /// English or German by a language code ("de", "de-DE" give German; nil gives the system's first).
+    /// The iOS app and the widgets pick their texts with it, so both follow the same rule.
+    static func localized(_ language: String?, _ en: String, _ de: String) -> String {
+        (language ?? Locale.preferredLanguages.first ?? "en").hasPrefix("de") ? de : en
+    }
+    /// A text in the language this snapshot was written in.
+    func text(_ en: String, _ de: String) -> String { Self.localized(language, en, de) }
+
+    /// Equal apart from the time it was written: nothing a widget shows has changed.
+    func sameShown(as o: DeploySnapshot) -> Bool {
+        var a = self, b = o
+        a.at = .distantPast; b.at = .distantPast
+        return a == b
+    }
+
     static let fileName = "snapshot.json"
     /// The widget's kind, for a reload of just this widget.
     static let widgetKind = "DeployCenterWaiting"

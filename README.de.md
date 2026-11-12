@@ -96,6 +96,7 @@ Mehr: [deploycenter.app/claude-code](https://deploycenter.app/claude-code/)
 |---|---|---|
 | **Vercel** | Entfernt die Git-Verbindung des Projekts. Vorher notiert es Repo und Branch in `~/.config/deploys/vercel-repos.json`. | Project → Settings → Git → Repository wieder verbinden. |
 | **Render** | Stellt Auto-Deploy des Service auf *Off*. Der Service bleibt mit seinem Repo verbunden. | Service → Settings → Build & Deploy → Auto-Deploy → *On Commit*. |
+| **Opt-in-Hosts** | Nichts, bis du den Host einschaltest (`deploys providers enable <name>`) und dann Auto-Deploy für ein Projekt ausschaltest. Netlify: legt einen Build-Hook namens `deploy-center` an und zeigt die `ignore`-Zeile, die du in `netlify.toml` einträgst. Cloudflare Pages, AWS Amplify, DigitalOcean und Coolify: schaltet das Bauen bei jedem Push ab. Deploy-Hooks ändern beim Host nichts. | Wie es wieder angeht, auf der Seite des Hosts (Englisch): [Netlify](docs/providers/netlify.md#undo), [Cloudflare Pages](docs/providers/cloudflare.md#undo), [AWS Amplify](docs/providers/amplify.md#turning-auto-build-off), [DigitalOcean](docs/providers/digitalocean.md#undo), [Coolify](docs/providers/coolify.md#commands). |
 
 Auto-Deploy wieder einschalten: `deploys vercel autodeploy-on <projekt>|--all` und `deploys render autodeploy-on <service>|--all`, oder im jeweiligen Dashboard.
 Deinstallieren schaltet es nicht wieder ein. Deploy-Hooks und GitHub-Workflows, die deployen, laufen weiter;

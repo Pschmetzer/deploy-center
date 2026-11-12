@@ -55,13 +55,15 @@ unpack, and put the folder anywhere; run `deploys` from inside it (it reads `VER
 
 | Tool | Needed for |
 | --- | --- |
-| `bash`, `curl` | everything |
-| `jq` | everything |
+| `bash` (3.2 or newer), `curl` | everything |
+| `jq` (1.6 or newer) | everything |
 | Vercel CLI (`npm i -g vercel`) | Vercel projects |
 | GitHub CLI `gh` | optional: what is waiting to deploy (commits, PRs) on GitHub |
 | GitLab CLI `glab`, or `GITLAB_TOKEN` | optional: the same for repos on GitLab ([docs/GITLAB.md](docs/GITLAB.md)) |
 | `aws` CLI | only for AWS Amplify |
-| `column` | optional: the tables (`bsdextrautils` on Debian/Ubuntu) |
+| `perl` | `autofix` and `ai` (masking keys in logs), `check`, and the time limit on `gh`/`vercel` calls; on every Mac, and in most Linux images |
+| `security` (macOS) | the keychain; on Linux and in CI the keys come from environment variables instead (below) |
+| `column` | optional: without it the tables are padded by awk (`bsdextrautils` on Debian/Ubuntu) |
 
 ## First steps
 
@@ -97,15 +99,36 @@ No login, no keychain: keys come from the environment and are never printed.
 
 The opt-in hosts are off until `deploys providers enable <name>`; see [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
+In CI, pin the release you tested with `--version`: runs stay reproducible, and a new release
+(good or bad) reaches your pipeline only when you raise the number.
+
+Vercel needs two things in CI that a Mac has already: the Vercel CLI, and `vercel-repos.json`
+(where each disconnected project deploys from). Without the CLI, Vercel is not set up and is left
+out; without the file, no Vercel project is deployable. Keep the config folder between runs:
+
 ```yaml
-- run: curl -fsSL https://deploycenter.app/install.sh | sh
+- run: curl -fsSL https://deploycenter.app/install.sh | sh -s -- --version 0.9.1
 - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+- run: npm i -g vercel
+- uses: actions/cache@v4
+  with:
+    path: deploys-config
+    key: deploys-config-${{ github.run_id }}
+    restore-keys: deploys-config-
 - run: deploys deploy-changed --yes
   env:
+    DEPLOYS_CONFIG: ${{ github.workspace }}/deploys-config
     VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
     GH_TOKEN: ${{ github.token }}
 ```
+
+Team mode: when a shared `deploy-center.json` lists observers, `deploys` must know who runs it,
+and refuses to deploy otherwise. The Actions `github.token` cannot read `/user`: use a token
+that can (a fine-grained personal access token) as `GH_TOKEN` there.
+
+The first time, create `deploys-config/vercel-repos.json` with `deploys vercel map <project>
+<owner/repo> <branch>` (or copy it from `~/.config/deploys` on your Mac).
 
 ## Update and uninstall
 

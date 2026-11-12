@@ -45,5 +45,5 @@ approve-workflow tests need `ruby`, and the VS Code tests `npm ci` in `vscode/`;
 The badge, notify, the status page and the hook need every project, including the ones that are up to
 date. That is `deploys list --json`: every provider that is on and set up (see [lib/projects.sh](lib/projects.sh)).
 Render is read only when a key is there, in `RENDER_API_KEY` or the Mac keychain. With a Render
-key that is wrong or expired, `deploys render list --json` currently does not come back. Set a
-working key, or remove the wrong one.
+key that is wrong or expired, `deploys render list --json` fails within a minute and says so
+(HTTP 401/403). Set a working key, or remove the wrong one.

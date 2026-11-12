@@ -37,10 +37,12 @@ ntfy also takes `DEPLOYS_NOTIFY_PRIORITY` (`1`–`5`, or `min`, `low`, `default`
 topic; the token goes to curl on stdin like the URL. For e-mail, use ntfy's or Pushover's e-mail
 forwarding: the script sends no mail itself.
 
-The URL goes to curl on stdin, so it never appears in the process list. It must be `https://`.
+The URL goes to curl on stdin, so it never appears in the process list. It must be `https://` (`http://` only for localhost).
 curl gives up after 20 seconds and retries a 429 or 5xx three times; a text over Discord's or
 Telegram's limit is cut with a note. "Today" is the UTC day, or the day in `DEPLOYS_NOTIFY_TZ`
-(for example `Europe/Berlin`).
+(for example `Europe/Berlin`), else in `DEPLOYS_TZ`, which the digest uses too. A zone name that
+is not one is refused.
+
 To send it every day, schedule the script with launchd or cron, or in CI with the Docker image.
 
 Not tested yet: a real post to each service. The payloads are checked with `--dry-run` and with a

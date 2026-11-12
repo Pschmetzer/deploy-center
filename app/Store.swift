@@ -2,9 +2,6 @@
 
 import SwiftUI
 import AppKit
-import Charts
-import UserNotifications
-import ServiceManagement
 
 // MARK: - Model
 
@@ -23,6 +20,8 @@ final class Store: ObservableObject {
     @Published var busyMessage: String?
 
     @Published var doctorError: String?
+    /// `deploys --version`, read once, for "Copy diagnostics".
+    @Published var scriptVersion: String?
     @Published var costs: Costs?
     @Published var triggers: [Trigger] = []
     /// The platforms `deploys providers --json` reports (Vercel and Render without it), see Providers.swift.
@@ -363,8 +362,14 @@ final class Store: ObservableObject {
         if autofix?.fires.contains(where: { RowAutofix.needsSync($0) }) ?? true,
            Date().timeIntervalSince(lastAutofixSync) > 180 {
             lastAutofixSync = Date()
-            // A script without `autofix sync`, or one that failed: not again for an hour.
-            if (try? await Tool.run(["autofix", "sync"], timeout: 90)) == nil { lastAutofixSync = Date().addingTimeInterval(3600) }
+            // A failure is logged and marked, so a "fixing" that does not move has a reason somewhere;
+            // a script without `autofix sync`, or one that failed, is not asked again for an hour.
+            do { _ = try await Tool.run(["autofix", "sync"], timeout: 90); extrasFailedAt["autofix-sync"] = nil }
+            catch is CancellationError {}
+            catch {
+                lastAutofixSync = Date().addingTimeInterval(3600)
+                extrasFailedAt["autofix-sync"] = Date(); Log.write("autofix sync: \(error.localizedDescription)")
+            }
         }
         // Both are local files: seconds, not the 300 s of the costs.
         async let a = Self.extra(["autofix", "status", "--json"], AutofixReport.self, timeout: 30)
@@ -513,10 +518,6 @@ final class Store: ObservableObject {
         menu.performActionForItem(at: k)
     }
 
-    func buildCost(_ project: String) -> Double? {
-        costs?.projects.first(where: { $0.name == project }).map(\.build)
-    }
-
     /// When each list was last read, and which ones are still the copy from the last run.
     @Published var loadedAt: [Platform: Date] = [:]
     @Published var fromCache: Set<Platform> = []
@@ -540,10 +541,7 @@ final class Store: ObservableObject {
 
     // MARK: Cache — the last lists, so the window is full at once instead of after 10 seconds
 
-    nonisolated static let cacheDir: URL = {
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("app.deploycenter.mac", isDirectory: true)
-    }()
+    nonisolated static let cacheDir: URL = AppDirs.caches
     private func cacheURL(_ p: Platform) -> URL { Self.cacheDir.appendingPathComponent("\(p.cli)-v2.json") }
 
     private func readCache() {
@@ -691,6 +689,10 @@ final class Store: ObservableObject {
         }
         guard doctor?.jq == true else { return }
         Task { await readTeamObserver() }
+        if scriptVersion == nil {
+            Task { if let v = try? await Tool.run(["--version"], timeout: 10) {
+                scriptVersion = String(decoding: v, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) } }
+        }
         await loadProviders()
         // Both at once: each takes several seconds. A platform switched off in Settings is not read.
         let v = canLoad(.vercel), r = canLoad(.render)
@@ -805,7 +807,23 @@ final class Store: ObservableObject {
             guard loadGeneration[p] == gen else { return }
             loadError[p] = error.localizedDescription
             lastLoadError[p] = LoadFailure(message: error.localizedDescription, at: Date())
+            if Self.isAuthFailure(error.localizedDescription) { Task { await recheckDoctor() } }
         }
+    }
+
+    /// A login or key that was fine at the start and has run out since: the script says
+    /// "HTTP 401/403", "wrong or expired" or "not logged in".
+    nonisolated static func isAuthFailure(_ text: String) -> Bool {
+        let t = text.lowercased()
+        return ["http 401", "http 403", "wrong or expired", "not logged in", "vercel login", "bad credentials"].contains { t.contains($0) }
+    }
+    /// After a load failed for its login: the doctor again, so the setup view appears. One at a
+    /// time and at most every 5 minutes, since both platforms can fail at once.
+    private var lastAuthDoctor = Date.distantPast
+    private func recheckDoctor() async {
+        guard Date().timeIntervalSince(lastAuthDoctor) > 300 else { return }
+        lastAuthDoctor = Date()
+        if let fresh = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { doctor = fresh; doctorError = nil; lastDoctor = Date() }
     }
 
     /// A reload keeps what the person did: ticks stay, a deploy being followed keeps its state.
@@ -958,11 +976,11 @@ final class Store: ObservableObject {
 
     nonisolated static func typeName(_ t: String) -> String {
         switch t {
-        case "web_service": return "Web Service"
-        case "static_site": return "Static Site"
-        case "cron_job": return "Cron Job"
-        case "background_worker": return "Worker"
-        case "private_service": return "Private Service"
+        case "web_service": return L("Web Service", "Webdienst")
+        case "static_site": return L("Static Site", "Statische Seite")
+        case "cron_job": return L("Cron Job", "Cronjob")
+        case "background_worker": return L("Worker", "Hintergrunddienst")
+        case "private_service": return L("Private Service", "Privater Dienst")
         // A type Render added later: readable words instead of the raw code.
         default: return t.split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
         }
@@ -1142,8 +1160,37 @@ final class Store: ObservableObject {
     }
     /// The last messages, newest first, so a line that vanished after 5 seconds can still be read.
     /// `project` is the row's `Store.key` when the line is about one project: a click opens its log.
-    struct Message: Identifiable { let id = UUID(); let date: Date; let text: String; let ok: Bool; var project: String? = nil }
-    @Published var messages: [Message] = []
+    struct Message: Identifiable, Codable {
+        var id = UUID(); let date: Date; let text: String; let ok: Bool; var project: String? = nil
+        init(date: Date, text: String, ok: Bool, project: String? = nil) { self.date = date; self.text = text; self.ok = ok; self.project = project }
+        private enum CodingKeys: String, CodingKey { case date, text, ok, project }
+    }
+    /// Kept in Application Support, so the bell is not empty after an update or a language switch.
+    /// At most 30, also for lines added without `say` (a rollback countdown).
+    @Published var messages: [Message] = Store.readMessages() {
+        didSet {
+            if messages.count > 30 { messages = Array(messages.prefix(30)) }   // no second didSet: written below
+            Self.writeMessages(messages)
+        }
+    }
+    nonisolated static var messagesURL: URL { AppDirs.support.appendingPathComponent("messages.json") }
+    nonisolated static func readMessages() -> [Message] {
+        guard let d = try? Data(contentsOf: messagesURL) else { return [] }
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        return Array(((try? dec.decode([Message].self, from: d)) ?? []).prefix(30))
+    }
+    /// In order: the newest list is the one that stays on disk.
+    nonisolated private static let messageQueue = DispatchQueue(label: "app.deploycenter.messages", qos: .utility)
+    /// Waits until every list handed to `writeMessages` is on disk (tests).
+    nonisolated static func flushMessages() { messageQueue.sync {} }
+    nonisolated static func writeMessages(_ list: [Message]) {
+        let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+        guard let d = try? enc.encode(list) else { return }
+        messageQueue.async {
+            try? FileManager.default.createDirectory(at: AppDirs.support, withIntermediateDirectories: true)
+            try? d.write(to: messagesURL, options: .atomic)
+        }
+    }
     /// `rollBack`: production is live and broken, so the notification offers "Roll back …" (a failed
     /// build never replaced production: there it offers only the log). `row` (`Store.key`) ties the
     /// message to its row. Names scrubbed in demo mode: a Mac notification shows up in a screen recording too.
@@ -1158,10 +1205,9 @@ final class Store: ObservableObject {
         if UserDefaults.standard.bool(forKey: Speech.resultsKey) { Speech.say(title) }
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok, project: row ?? key))
     }
-    /// The last 30 messages, newest first.
+    /// Newest first; `messages`' didSet keeps 30 and writes them to disk.
     private func log(_ m: Message) {
         messages.insert(m, at: 0)
-        if messages.count > 30 { messages.removeLast(messages.count - 30) }
     }
 
     /// GitHub's hourly budget for the gh login; the counts need it.
@@ -1737,7 +1783,7 @@ final class Store: ObservableObject {
                                       "Von Vercel übersprungen oder abgebrochen (Ignored Build Step?)"))); return true
         case (.vercel, "error"), (.render, "build_failed"), (.render, "update_failed"),
              (.render, "canceled"), (.render, "pre_deploy_failed"), (.render, "deactivated"):
-            set(p, item.id, .failed(s.error ?? "Status: \(state)")); return true
+            set(p, item.id, .failed(s.error ?? Row.stateText(state))); return true
         default:
             if !Self.knownStates.contains(state), Self.loggedStates.insert(state).inserted {
                 Log.write("\(p.cli) status: unknown state \"\(state)\" for \(item.name), shown as it is")

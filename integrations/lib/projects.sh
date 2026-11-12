@@ -33,9 +33,22 @@ ignored_names() {
   if [ -f "$ign" ]; then jq -c 'if type=="array" then . else [] end' "$ign" 2>/dev/null || echo '[]'; else echo '[]'; fi
 }
 
-# What `deploys changed --json` lists: changed, and not left out with `deploys ignore`.
+# What `deploys changed --json` lists, asked from the CLI itself: its ignore rules (ignored.json,
+# the team's ignored list, overrides.json) are not rebuilt here. Exit 1 with a list means some
+# project could not be read; the list of the others is still used.
 changed_projects() {
-  local all
-  all="$(all_projects)" || return 1
-  jq --argjson ign "$(ignored_names)" 'map(select(.changed and ((.name as $n | $ign | index($n)) | not)))' <<<"$all"
+  local out rc=0 err
+  err="$(mktemp)"
+  out="$("$DEPLOYS" changed --json 2>"$err" </dev/null)" || rc=$?
+  if jq -e 'type=="array"' <<<"${out:-null}" >/dev/null 2>&1; then
+    [ "$rc" = 0 ] || echo "Warning: deploys changed could not read every project; the list may be short. $(tail -n 1 "$err")" >&2
+    rm -f "$err"
+    jq -c . <<<"$out"
+    return 0
+  fi
+  # No list at all: never stand for "nothing waiting".
+  echo "Error: deploys changed --json gave no list (exit $rc). $(tail -n 1 "$err")" >&2
+  rm -f "$err"
+  echo '[]'
+  return 1
 }

@@ -33,8 +33,9 @@ jobs:
     # an environment "production" with required reviewers (Settings → Environments) and uncomment:
     # environment: production
     steps:
-      # Pin to a full commit SHA (or a release tag after 0.9.1), not a branch: 0.9.1 has no `repo`
-      # input yet, so it would deploy changed projects of every repo the tokens see.
+      # Pin to a release tag or a full commit SHA, not a branch. @main only until the first release
+      # after 0.9.1: v0.9.1's action has no `repo` input and would deploy changed projects of every
+      # repo the tokens see.
       - uses: Pschmetzer/deploy-center/integrations/action@main
         id: dc
         with:

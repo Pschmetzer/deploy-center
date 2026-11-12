@@ -38,6 +38,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         }
     }
 
+    /// "Settings → Team" as the text names the place, built from the tab so it follows a renamed tab.
+    var path: String { L("Settings", "Einstellungen") + " → " + title }
+
     /// How tall the window is on this tab: Help is short, Claude is long (the window still scrolls).
     var height: Double {
         switch self {
@@ -113,9 +116,9 @@ enum SettingsText {
     /// The diagnostics to paste into an issue: versions and what is connected, per platform the
     /// script reports, without project names and without keys.
     static func diagnostics(version: String, os: String, doctor: Doctor?, providers: [ProviderInfo],
-                            counts: [String: Int], gitlabRepos: Int, autofix: AutofixReport?) -> String {
+                            counts: [String: Int], gitlabRepos: Int, autofix: AutofixReport?, script: String? = nil) -> String {
         let d = doctor
-        var lines = ["Deploy Center \(version)", os,
+        var lines = ["Deploy Center \(version)" + (script.map { ", deploys \($0)" } ?? ""), os,
                      "jq \(d?.jq ?? false), gh \(d?.githubCli ?? false)/login \(d.map { $0.githubLoggedIn.map(String.init) ?? "?" } ?? "false")"]
         for p in providers {
             var line = "\(p.label): " + (p.enabled ? "on" : "off")
@@ -158,7 +161,7 @@ enum SettingsText {
     /// The keyboard shortcuts of the window, for the Help tab.
     static var shortcuts: [(keys: String, what: String)] {
         [("⌘K", L("Command palette", "Befehlspalette")),
-         ("⌥⌘K", L("Command palette from any app (Settings → General)", "Befehlspalette aus jeder App (Einstellungen → Allgemein)")),
+         ("⌥⌘K", L("Command palette from any app", "Befehlspalette aus jeder App") + " (\(SettingsTab.general.path))"),
          ("⌘F", L("Search", "Suchen")),
          ("⌘R", L("Reload", "Neu laden")),
          ("⌘A", L("Tick everything with changes", "Alles mit Änderungen anhaken")),

@@ -237,29 +237,42 @@ final class SavingsModel: ObservableObject {
 
     private let defaults = UserDefaults.standard
 
-    /// The last answers, in Application Support (0600): they name projects, so not in the plist.
-    nonisolated static func reportURL(_ name: String) -> URL { Journal.dir.appendingPathComponent("savings-\(name).json") }
-    private func readReport(_ name: String, oldKey: String) -> Data? {
-        if let d = try? Data(contentsOf: Self.reportURL(name)) { return d }
-        // Moved once out of the preferences of older versions.
-        guard let d = defaults.data(forKey: oldKey) else { return nil }
-        saveReport(d, name); defaults.removeObject(forKey: oldKey)
-        return d
-    }
-    private func saveReport(_ d: Data, _ name: String) {
-        let u = Self.reportURL(name)
-        try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-        do { try d.write(to: u, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: u.path) }
-        catch { Log.write("savings: report not saved (\(error.localizedDescription))") }
-    }
+    /// The last answers, as files in Application Support (0600: they name projects): with every skipped
+    /// push they grow too big for the preferences, which are read whole on the main thread.
+    nonisolated static var simulationURL: URL { AppDirs.support.appendingPathComponent("savings-simulation.json") }
+    nonisolated static var ledgerURL: URL { AppDirs.support.appendingPathComponent("savings-ledger.json") }
 
     private init() {
-        // The last answers stay for the next start: both take many API calls.
-        if let d = readReport("simulation", oldKey: "savingsSimulation") { simulation = try? JSONDecoder().decode(SimulateReport.self, from: d) }
-        if let d = readReport("ledger", oldKey: "savingsLedger") { ledger = try? JSONDecoder().decode(LedgerReport.self, from: d) }
+        // The last answers stay for the next start: both take many API calls. The times are small
+        // and read at once (`refreshLedgerIfOld` needs them); the reports are decoded off the main thread.
         let s = defaults.double(forKey: "savingsSimulationAt"), g = defaults.double(forKey: "savingsLedgerAt")
         simulatedAt = s > 0 ? Date(timeIntervalSince1970: s) : nil
         ledgerAt = g > 0 ? Date(timeIntervalSince1970: g) : nil
+        Self.moveOutOfDefaults(defaults)
+        Task.detached(priority: .utility) {
+            let sim = (try? Data(contentsOf: Self.simulationURL)).flatMap { try? JSONDecoder().decode(SimulateReport.self, from: $0) }
+            let led = (try? Data(contentsOf: Self.ledgerURL)).flatMap { try? JSONDecoder().decode(LedgerReport.self, from: $0) }
+            await MainActor.run {
+                // A load that finished meanwhile is newer.
+                let m = SavingsModel.shared
+                if m.simulation == nil { m.simulation = sim }
+                if m.ledger == nil { m.ledger = led }
+            }
+        }
+    }
+
+    /// Older versions kept both reports in the preferences: moved once into the files.
+    nonisolated static func moveOutOfDefaults(_ d: UserDefaults) {
+        for (key, url) in [("savingsSimulation", simulationURL), ("savingsLedger", ledgerURL)] {
+            guard let data = d.data(forKey: key) else { continue }
+            if !FileManager.default.fileExists(atPath: url.path) { save(data, to: url) }
+            if FileManager.default.fileExists(atPath: url.path) { d.removeObject(forKey: key) }
+        }
+    }
+    nonisolated static func save(_ data: Data, to url: URL) {
+        try? FileManager.default.createDirectory(at: AppDirs.support, withIntermediateDirectories: true)
+        do { try data.write(to: url, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
+        catch { Log.write("savings: report not saved (\(error.localizedDescription))") }
     }
 
     /// When the running simulation started (for "running for 40 s"); nil when none runs.
@@ -283,7 +296,7 @@ final class SavingsModel: ObservableObject {
             let data = try await Tool.run(["simulate", "--json", "--days", "\(days)"], timeout: 300)
             simulation = try Self.decode(SimulateReport.self, data, what: "simulate")
             simulationError = nil; simulatedAt = Date()
-            saveReport(data, "simulation"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsSimulationAt")
+            Self.save(data, to: Self.simulationURL); defaults.set(Date().timeIntervalSince1970, forKey: "savingsSimulationAt")
         } catch is CancellationError {
         } catch { simulationError = error.localizedDescription }
     }
@@ -296,7 +309,7 @@ final class SavingsModel: ObservableObject {
             ledger = try Self.decode(LedgerReport.self, data, what: "ledger")
             ledgerError = nil; ledgerAt = Date()
             if let l = ledger { noteMilestone(l) }
-            saveReport(data, "ledger"); defaults.set(Date().timeIntervalSince1970, forKey: "savingsLedgerAt")
+            Self.save(data, to: Self.ledgerURL); defaults.set(Date().timeIntervalSince1970, forKey: "savingsLedgerAt")
         } catch is CancellationError {
         } catch { ledgerError = error.localizedDescription }
     }

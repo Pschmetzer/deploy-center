@@ -349,7 +349,7 @@ expect "status --json carries the phase" "$(jq -r 'map(has("phase")) | all' "$O"
 fresh
 expect "watch: nothing running" "$(run "$O" "$E" watch web; cat "$O")" $'0\nNothing is building for web. The newest deploy (dpl_old) is READY.'
 rm -f "$e2e/polls"
-expect "watch: follows a Render build to live" "$(run "$O" "$E" watch api; tail -n 1 "$O" | cut -c11-)" $'0\nlive'
+expect "watch: follows a Render build to live" "$(run "$O" "$E" watch api; tail -n 1 "$O" | cut -c11-)" $'0\nlive  (12s)'
 # The names the last list read saw give platform and id: the service list is not read at all,
 # and never once per poll (before the provider files: once for the platform, once for the id).
 expect "watch: Render service list not read per poll" "$(grep -c 'services?limit=100' "$e2e/calls.log")" "0"
@@ -655,10 +655,21 @@ expect "autofix: a held lock stops a second run" "$(afrun | grep -c 'running alr
 rmdir "$DEPLOYS_CONFIG/locks/autofix"
 
 # --- every provider: the contract (tests/providers/*.sh, each a test of its own) ---
+# All at once (each has its own temp folder); the output is printed in order once they are done.
+pv="$(mktemp -d)"; pids=()
 for t in tests/providers/*.sh; do
-  echo; echo "== $t"
-  env -u DEPLOYS_LIB -u DEPLOYS_CONFIG bash "$t" || fails=$((fails+1))
+  n="${t##*/}"
+  ( env -u DEPLOYS_LIB -u DEPLOYS_CONFIG bash "$t" > "$pv/$n.out" 2>&1; echo $? > "$pv/$n.rc" ) &
+  pids+=($!)
 done
+wait "${pids[@]}"
+for t in tests/providers/*.sh; do
+  n="${t##*/}"
+  echo; echo "== $t"
+  cat "$pv/$n.out"
+  [ "$(cat "$pv/$n.rc" 2>/dev/null)" = 0 ] || fails=$((fails+1))
+done
+rm -rf "$pv"
 
 # --- autofix --only and the PR fields of autofix status ---
 afonly() { ( set -e; PATH="$af/bin:$PATH" DEPLOYS_ROUTINE_TOKEN=sk-ant-oat01-SECRET DEPLOYS_NOTIFY=0 autofix_run "" "$@" ) >/dev/null 2>&1; echo $?; }
@@ -1324,8 +1335,9 @@ expect "CLI-078: window names an unknown key and a bad time" "$(run "$O" "$E" wi
 rm -f "$e2e/config/window.json"
 
 # CLI-032, CLI-033, CLI-034, CLI-048, CLI-050: arguments.
-expect "CLI-032: deploy --help shows its lines" "$(run "$O" "$E" deploy --help; grep -c '^  deploys deploy ' "$O")" $'0\n2'
-expect "CLI-033: an unknown command is named" "$(run "$O" "$E" deplyo; grep -c 'unknown command "deplyo"' "$E")" $'1\n1'
+# One line since the help was regrouped: "deploy <p>|<group>" covers a project and a group.
+expect "CLI-032: deploy --help shows its lines" "$(run "$O" "$E" deploy --help; grep -c '^  deploys deploy ' "$O")" $'0\n1'
+expect "CLI-033: an unknown command is named" "$(run "$O" "$E" deplyo; grep -ci 'unknown command "deplyo"' "$E")" $'1\n1'
 expect "CLI-034: vercel map without arguments is a usage line" "$(run "$O" "$E" vercel map; grep -c 'Usage: deploys vercel map' "$E"; grep -c 'unbound' "$E")" $'1\n1\n0'
 fresh
 expect "CLI-048: changed --platform with a typo is refused, nothing read" "$(run "$O" "$E" changed --platform verzel; grep -c 'takes one of' "$E"; wc -l < "$e2e/calls.log" | tr -d ' ')" $'1\n1\n0'
@@ -1670,11 +1682,11 @@ printf '# Changes\n\n## Unreleased\n\n- a fix\n\n## 1.2.3\n' > "$bp/CHANGELOG.md
 printf '<p>Version 1.2.3 · x</p>\n{"softwareVersion": "1.2.3"}\n' > "$bp/site/index.html"
 printf '{\n  "name": "deploys-mcp",\n  "version": "1.2.3",\n  "dependencies": { "x": "1.2.3" }\n}\n' > "$bp/integrations/mcp/package.json"
 printf '{"name":"deploys-mcp","version":"1.2.3","packages":{"":{"version":"1.2.3"},"node_modules/x":{"version":"1.2.3"}}}\n' > "$bp/integrations/mcp/package-lock.json"
-printf 'const VERSION = "1.2.3";\n' > "$bp/integrations/mcp/server.mjs"
+printf 'const VERSION = JSON.parse(readFileSync(new URL("./package.json", import.meta.url))).version;\n' > "$bp/integrations/mcp/server.mjs"
 printf '{\n  "name": "deploys",\n  "version": "1.2.3"\n}\n' > "$bp/integrations/claude-code/.claude-plugin/plugin.json"
 bash "$bp/scripts/bump.sh" minor >/dev/null 2>&1
-expect "bump: VERSION, site, MCP and plugin versions" "$(cat "$bp/VERSION") $(grep -c '1.3.0' "$bp/site/index.html") $(jq -r .version "$bp/integrations/mcp/package.json") $(jq -r '.version, .packages[""].version' "$bp/integrations/mcp/package-lock.json" | tr '\n' ' ')$(grep -c '"1.3.0"' "$bp/integrations/mcp/server.mjs") $(jq -r .version "$bp/integrations/claude-code/.claude-plugin/plugin.json")" \
-  "1.3.0 2 1.3.0 1.3.0 1.3.0 1 1.3.0"
+expect "bump: VERSION, site, MCP and plugin versions" "$(cat "$bp/VERSION") $(grep -c '1.3.0' "$bp/site/index.html") $(jq -r .version "$bp/integrations/mcp/package.json") $(jq -r '.version, .packages[""].version' "$bp/integrations/mcp/package-lock.json" | tr '\n' ' ')$(jq -r .version "$bp/integrations/claude-code/.claude-plugin/plugin.json")" \
+  "1.3.0 2 1.3.0 1.3.0 1.3.0 1.3.0"
 expect "bump: dependency versions stay" "$(jq -r .dependencies.x "$bp/integrations/mcp/package.json") $(jq -r '.packages["node_modules/x"].version' "$bp/integrations/mcp/package-lock.json")" "1.2.3 1.2.3"
 printf '<p>Version 9.9.9 · x</p>\n' > "$bp/site/index.html"
 printf -- '- more\n' >> "$bp/CHANGELOG.md"

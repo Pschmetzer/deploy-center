@@ -60,13 +60,16 @@ hook_mask() {
 }
 
 hook_check_url() {
-  local u="$1"
-  local host="${u#*://}"; host="${host%%[/?#]*}"
+  local u="$1" a h
+  # The host exactly, not a prefix: http://localhost.example.com is someone else's machine.
+  # No user@ in the address at all: http://localhost:1@evil.com is evil.com to curl.
+  a="${u#*://}"; a="${a%%[/?#]*}"
+  h="$a"; case "$h" in \[*\]*) h="${h%%]*}]" ;; *) h="${h%%:*}" ;; esac
   case "$u" in https://*) ;;
-    # Plain http only to this Mac: the host exactly, with or without a port. Not
-    # http://localhost.example.com, http://127.0.0.1.example.com or a user@ in front.
-    http://*) case "$host" in localhost|localhost:[0-9]*|127.0.0.1|127.0.0.1:[0-9]*|\[::1\]|\[::1\]:[0-9]*) ;;
-        *) die "Use the https:// address of the hook: over http the secret URL travels in the clear";; esac ;;
+    # Plain http only to this Mac: the host exactly, with or without a port.
+    http://*) case "$a" in *@*) h="" ;; esac
+      case "$h" in localhost|127.0.0.1|\[::1\]) ;;
+        *) die "Use the https:// address of the hook: over http the secret URL travels in the clear (only localhost may use http)";; esac ;;
     *) die "That is not a hook URL (it should start with https://)";; esac
   case "$u" in *[[:space:]\"\'\\]*) die "The hook URL contains spaces, quotes or backslashes";; esac
   [ "${#u}" -le 2048 ] || die "The hook URL is longer than 2048 characters"
@@ -176,7 +179,7 @@ hook_off() {
 # The head of the branch right now, so the trigger can say which commit it asked for.
 hook_head() {
   local repo="$1" ref="$2"
-  command -v gh >/dev/null 2>&1 && [ -z "${DEPLOYS_NO_GITHUB:-}" ] || return 0
+  type -P gh >/dev/null 2>&1 && [ -z "${DEPLOYS_NO_GITHUB:-}" ] || return 0
   gh api "repos/$repo/commits/$ref" 2>/dev/null \
     | jq -c '{sha, msg:(.commit.message | split("\n")[0])}' 2>/dev/null || true
 }

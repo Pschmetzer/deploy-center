@@ -35,8 +35,11 @@ body:
         - Autofix / Claude
         - Guard
         - Team mode
-        - MCP server / Claude Code plugin
-        - VS Code / Raycast / GitHub Action
+        - VS Code / Cursor extension
+        - Raycast extension
+        - MCP server
+        - Claude Code plugin
+        - GitHub Action
         - Website / docs
         - Update / install
     validations:

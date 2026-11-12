@@ -104,6 +104,12 @@ enum ClaudeAI {
         if case .failed = item.state { return true }
         return item.anyFailure
     }
+
+    /// Claude answers in Markdown: bold, code and links rendered, line breaks and list dashes kept.
+    /// Text that is no valid Markdown is shown as written.
+    static func rendered(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+    }
 }
 
 // MARK: - Settings > Claude in the app
@@ -245,7 +251,7 @@ struct MarkdownText: View {
             if t.hasPrefix("- ") || t.hasPrefix("* ") { t = "• " + t.dropFirst(2) }
             return t == l ? l : t.trimmingCharacters(in: .whitespaces)
         }.joined(separator: "\n")
-        return (try? AttributedString(markdown: lines, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+        return ClaudeAI.rendered(lines)
     }
 
     var body: some View {

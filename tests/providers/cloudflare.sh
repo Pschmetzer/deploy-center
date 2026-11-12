@@ -137,7 +137,7 @@ out="$(cf off site 2>&1)"; rc=$?
 # --- deploy ---
 routes "GET /pages/projects/site$ project-on.json" "POST /deployments$ deploy-queued.json"
 out="$(cf deploy-json site)"; rc=$?
-expect "deploy: started" "$rc/$(echo "$out" | jq -c '[.id, .state, .branch, .toggled]')" '0/["d-q","queued","main",false]'
+expect "deploy: started" "$rc/$(echo "$out" | jq -c '[.id, .state, .branch, .toggled]')" '0/["d-q","queued/active","main",false]'
 expect "deploy: production branch sent" "$(grep -c 'POST .* form: branch=main' "$CALLS")" 1
 rm -rf "$DEPLOYS_CONFIG/locks"
 routes "GET /pages/projects/site$ project-on.json" "POST /deployments$ deploy-queued.json"
@@ -257,7 +257,7 @@ expect "status: one deployment" "$(cf status site d-q | jq -c '[.phase, .stage, 
 routes "GET /pages/projects/site$ project-on.json" "GET /deployments\\?env=production deployments-prod.json" "POST /deployments/[^/]+/rollback$ rollback.json"
 out="$(cf rollback site)"
 expect "rollback: to the newest good one before live" "$(grep -o 'POST [^ ]*' "$CALLS" | sed 's|.*/deployments/||')" "d-old/rollback"
-expect "rollback: answer" "$(echo "$out" | jq -c '[.id, .state]')" '["d-old2","building"]'
+expect "rollback: answer" "$(echo "$out" | jq -c '[.id, .state]')" '["d-old2","deploy/active"]'
 : > "$CALLS"; cf rollback site d-x >/dev/null
 expect "rollback: to a given one" "$(grep -c 'deployments/d-x/rollback' "$CALLS")" 1
 routes "GET /deployments/d-q/history/logs logs.json"

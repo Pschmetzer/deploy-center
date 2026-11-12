@@ -47,20 +47,20 @@ they exist). Where a capability is `false` in `_meta`, the function still exists
 
 | Function | Prints / does |
 |---|---|
-| `<p>_meta` | One JSON object on one line: `{id, label, noun, defaultOn, keyEnv:[…], keychain, caps:{off, sha, cancel, rollback, logs, preview}}`. `noun` is what one item is called ("project", "service"), used in usage lines and errors. Vercel, Render and Hook write it with `printf` so `doctor` works without jq; the others use `jq -nc` (they need jq for everything else anyway). Extra keys are allowed: Cloudflare and Amplify add `name`, `default`, `billing`, `needs`, `profileEnv`; `auth` says how Vercel logs in. |
+| `<p>_meta` | One JSON object: `{id, label, noun, defaultOn, keyEnv:[…], keychain, caps:{off, sha, cancel, rollback, logs, preview}}`. `noun` is what one item is called ("project", "service"), used in usage lines and errors. **One line, written with `printf`, not jq**: `deploys` greps it (`meta_flag`, `meta_str`, `key_of`), also where jq is missing. `contract.sh` checks that it is one valid line. Extra keys are allowed: Cloudflare and Amplify add `name`, `default`, `billing`, `needs`, `profileEnv`; `auth` says how Vercel logs in; `runtimeLogs` and `onDryRun` are flags `deploys` reads. |
 | `<p>_ready` | Exit 0 when this Mac is set up for it (a key, a CLI login). Never prints a key. |
 | `<p>_json` | A JSON array, one entry per project (fields below), sorted by name. No GitHub calls: the core adds branch heads and `changed`. |
-| `<p>_has <name>` | Exit 0 and print the id (what the other functions take) when a project of that name (or id) exists. Exit 1 when there is none; Vercel exits 2 when it could not be asked. |
+| `<p>_has <name>` | Exit 0 and **print the id** (what the other functions take) when a project of that name (or id) exists: `lookup` uses that output, so a `_has` that only sets the exit code breaks `deploys deploy p:name`. Example: `netlify_has shop` prints `site-shop`. Exit 1 when there is none; Vercel exits 2 when it could not be asked. |
 | `<p>_off <id>\|--all` | Turn auto-deploy on push off. Print one line per project. `--all`: every project, one failure does not stop the rest, the exit code counts them. (Amplify's `--all` means "the other branches too"; `deploys amplify off --all` is per app.) |
 | `<p>_deploy_json <id> [--sha S] [--preview]` | Start a deploy; print `{id, url, state, phase}` (`url` may be null). Take the start lock with `start_lock "<p>-<id>"`. |
-| `<p>_status <id> <deployId>` | One line, `deployId<TAB>phase<TAB>rawState`, for one deploy. Never JSON: `watch` reads the first line only, and a `{` there used to loop for ever. |
+| `<p>_status <id> <deployId>` | **One TSV line**, `deployId<TAB>phase<TAB>rawState`, of one deploy (for example `d-shop-3<TAB>ready<TAB>ready`), never JSON: `watch` reads the first line only, and a `{` there used to loop for ever. A JSON variant for people is `<p>_cli_status`. |
 | `<p>_latest <id> [--preview]` | The same line for the newest deploy (production, or any target with `--preview`); `none<TAB><TAB>none` when there is none (not an error: `watch` says "no deploy"). |
 | `<p>_cancel <id> <deployId>` | Cancel; print `{id, state, phase}` (a `message` for people may come along). |
 | `<p>_rollback <id>` | Production back to the deploy that was live before; print `{id, state}` (and `phase`, `message`). The app reads it from `deploys <p> rollback <id>`, so no `_cli_rollback` with prose. |
 | `<p>_logs <id> <lines> [deployId]` | The end of a build log, plain text. All three positional: `deploys logs` passes an empty `deployId` for the newest. A provider whose `_meta` says `"runtimeLogs":true` (Render, Coolify) takes `--runtime` in the third place for the running app's own log instead. |
 | `<p>_url <id> [--dashboard]` | The site's address, or the project's page at the platform. |
 | `<p>_set_key` | Read a key from stdin, try it, save it in the keychain as `deploy-center-<p>`. |
-| `<p>_doctor` | One JSON object of checks (`{"<p>Key":true, …}`), with `printf`, not jq. Its fields join `deploys doctor`. Providers with `"provider"` in it also give `expiresAt` (Unix seconds, when the key ends) and `rateLimit` (`{remaining, resetAt}`, Unix seconds) from the call the doctor makes anyway, `null` where the platform does not say (below). |
+| `<p>_doctor` | One JSON object of checks (`{"<p>Key":true, …}`). Its fields join `deploys doctor`. Prefer `printf`; a provider whose checks carry free text (an error line) may build it with `jq -n` for the escaping (Netlify, Cloudflare, Amplify, Coolify, DigitalOcean do), and then `doctor` without jq loses only its fields. Providers with `"provider"` in it also give `expiresAt` (Unix seconds, when the key ends) and `rateLimit` (`{remaining, resetAt}`, Unix seconds) from the call the doctor makes anyway, `null` where the platform does not say (below). |
 
 Optional: `<p>_where` (lines for `deploys where`), `<p>_history <id> <n>` (a table for
 `deploys history`), `<p>_usage <argc> <verb>` (usage lines for verbs with more arguments), and
@@ -119,7 +119,12 @@ provider tests an `http_call` (the real one when `lib/http.sh` is there).
 ### Dispatch
 
 `deploys <p> <verb> [args]` runs `<p>_cli_<verb>` if it exists, else `<p>_<verb>` for a contract
-verb (`-` becomes `_`, and `autodeploy-off` is `off`). `<p> json` adds the branch heads and the
+verb (`-` becomes `_`, and `autodeploy-off` is `off`). `on` and `autodeploy-on` run `<p>_on`
+where the provider has one, and `list` is `json` where it has no `<p>_cli_list`. A verb it does
+not have is refused with the list of its commands; `deploys --help` lists them for every
+provider that is on, from the same functions (so a provider's own command, like
+`cloudflare_cli_selftest`, shows up there by being defined). `<p>_setup_hint` (optional) is the
+next step `deploys providers enable <p>` prints while the provider is not set up. `<p> json` adds the branch heads and the
 `changed` rule to `<p>_json`. `--json` turns `<p> list` into `<p> json` and `<p> deploy` into
 `<p> deploy-json`. Every older spelling keeps working (`vercel json`, `render deploy-json`, and
 `"$0" "$1" deploy-json` from autofix).

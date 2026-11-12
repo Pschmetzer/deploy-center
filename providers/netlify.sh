@@ -103,13 +103,16 @@ netlify_ratelimit() {
 # netlify_call METHOD PATH|URL [BODY] — the answer on stdout; on failure a reason on stderr, rc 1.
 # The token goes to curl on stdin (-K -), so it never shows in the process list.
 netlify_call() {
-  local method="$1" path="$2" body="${3:-}" key url out code try err
-  key="$(netlify_key)" || return 1
-  local auth=1
+  local method="$1" path="$2" body="${3:-}" key="" url out code try err
+  # A full URL is a build hook: it needs no token, and only Netlify's own hook address is taken.
+  # The URL comes from netlify-hooks.json; a changed file must not send the token, or a build
+  # request, anywhere else.
   case "$path" in
-    https://api.netlify.com/build_hooks/*) url="$path"; auth="" ;;
-    http*) die "Netlify: not calling $path (only https://api.netlify.com/build_hooks/... is called by address)" ;;
-    *) url="$NETLIFY_API$path" ;;
+    http*) case "$path" in
+             https://api.netlify.com/build_hooks/*) url="$path" ;;
+             *) echo "Netlify: refused to post to ${path%%\?*}: a build hook is https://api.netlify.com/build_hooks/<id> (check netlify-hooks.json)" >&2; return 1 ;;
+           esac ;;
+    *) key="$(netlify_key)" || return 1; url="$NETLIFY_API$path" ;;
   esac
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
@@ -117,7 +120,7 @@ netlify_call() {
   args+=(-D "$hdr")
   for try in 1 2 3; do
     : > "$hdr"
-    out="$( { [ -z "$auth" ] || printf 'header = "Authorization: Bearer %s"\n' "$key"; } | curl "${args[@]}" -w '\n%{http_code}' "$url" 2>"$err")" || out=$'\n000'
+    out="$( { [ -z "$key" ] || printf 'header = "Authorization: Bearer %s"\n' "$key"; } | curl "${args[@]}" -w '\n%{http_code}' "$url" 2>"$err")" || out=$'\n000'
     code="${out##*$'\n'}"; out="${out%$'\n'*}"
     # Only reads are repeated: a POST that timed out may have started a build already.
     case "$code" in
@@ -171,6 +174,14 @@ netlify_id_of() {
   [ -n "$id" ] || { echo "No Netlify site named \"$n\". See: deploys netlify list" >&2; return 1; }
   echo "$id"
 }
+# A site id (a UUID, what watch passes every 6 s) as it is, without reading every site again.
+# Not for _has: there "exists" must be asked, and a UUID could be another provider's.
+netlify_id_fast() {
+  case "$1" in
+    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-*-*-*) echo "$1" ;;
+    *) netlify_id_of "$1" ;;
+  esac
+}
 
 # jq definitions shared by the readers below.
 # shellcheck disable=SC2016
@@ -211,7 +222,7 @@ netlify_rule_in_build() {
 # Look for our ignore line in the repo's netlify.toml (base directory first). yes | no | unknown.
 netlify_rule_in_repo() {
   local repo="$1" ref="$2" base="${3:-}" p raw got=0
-  command -v gh >/dev/null 2>&1 || { echo unknown; return; }
+  type -P gh >/dev/null 2>&1 || { echo unknown; return; }
   for p in ${base:+"${base%/}/netlify.toml"} netlify.toml; do
     raw="$(gh api "repos/$repo/contents/$p?ref=$(jq -rn --arg r "$ref" '$r|@uri')" 2>/dev/null)" || continue
     got=1
@@ -229,8 +240,8 @@ netlify_rule_in_repo() {
 # Compact (jq -c): deploys greps it (meta_flag, meta_str, key_of). Contract fields: id, label,
 # noun, defaultOn, keyEnv (an array), keychain, caps (docs/PROVIDERS.md). Off by default.
 netlify_meta() {
-  jq -nc --arg k "$NETLIFY_KEYCHAIN" '{id:"netlify", label:"Netlify", noun:"site", defaultOn:false, keyEnv:["NETLIFY_AUTH_TOKEN"], keychain:$k,
-    caps:{off:true, sha:false, cancel:true, rollback:true, logs:false, preview:false}}'
+  # printf, not jq: deploys reads it without jq (doctor, meta_str, key_of).
+  printf '{"id":"netlify","label":"Netlify","noun":"site","defaultOn":false,"keyEnv":["NETLIFY_AUTH_TOKEN"],"keychain":"%s","caps":{"off":true,"sha":false,"cancel":true,"rollback":true,"logs":false,"preview":false}}\n' "$NETLIFY_KEYCHAIN"
 }
 
 # Usable without asking anyone: tools there and a token found (not checked against Netlify).
@@ -435,7 +446,7 @@ netlify_status_json() {
 # The newest production deploy that was not skipped by the ignore rule, as JSON (null: none).
 netlify_latest_json() {
   local id out
-  id="$(netlify_id_of "$1")" || die "Netlify site $1 not found"
+  id="$(netlify_id_fast "$1")" || die "Netlify site $1 not found"
   out="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=20")" || die "Netlify: could not read the deploys of $1"
   echo "$out" | jq "$NETLIFY_JQ"'map(select(skipped | not)) | .[0] // null | if . then deploy_out else null end'
 }
@@ -533,7 +544,7 @@ netlify_doctor() {
   fi
   hooks="$(jq 'length' "$(netlify_hooks_file)" 2>/dev/null)" || hooks=0
   jq -n --arg src "$src" --argjson ok "$ok" --arg err "$err" --argjson n "${n:-null}" --argjson h "${hooks:-0}" \
-    --argjson gh "$(command -v gh >/dev/null 2>&1 && echo true || echo false)" --argjson rl "${rl:-null}" \
+    --argjson gh "$(type -P gh >/dev/null 2>&1 && echo true || echo false)" --argjson rl "${rl:-null}" \
     '{provider:"netlify", key:$src, tokenOk:$ok, error:(if $err == "" then null else $err end),
       sites:$n, hooks:$h, gh:$gh, expiresAt:null, rateLimit:$rl}'
 }

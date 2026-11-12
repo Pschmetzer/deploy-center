@@ -1,5 +1,5 @@
-# Keeps the pinned GitHub Actions (by commit SHA), the npm lockfiles of the add-ons and the
-# Docker base image up to date with weekly PRs.
+# Weekly PRs for the pinned GitHub Actions (by commit SHA), the npm dependencies of the
+# integrations and the Docker base image.
 version: 2
 updates:
   - package-ecosystem: github-actions

@@ -54,7 +54,10 @@ fi
 [ "$post" = 0 ] || [ "$dry" = 1 ] || [ -n "$url" ] || { echo "--post needs DEPLOYS_NOTIFY_URL (or --dry-run)" >&2; exit 1; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-today="$(date -u +%Y-%m-%d)"
+# The day in the title: DEPLOYS_TZ (e.g. Europe/Berlin), default UTC.
+tz="${DEPLOYS_TZ:-UTC}"
+[[ "$tz" =~ ^[A-Za-z0-9/_+-]+$ ]] || { echo "DEPLOYS_TZ must be a zone name like Europe/Berlin" >&2; exit 1; }
+today="$(TZ="$tz" date +%Y-%m-%d)"
 title="Deploys waiting – $today"
 
 # --- what waits: deploys changed, then per project its commits and pull requests ---
@@ -157,26 +160,27 @@ digest="$(jq -s --arg date "$today" --arg title "$title" --argjson partial "$par
 
 if [ "$json" = 1 ]; then echo "$digest"; [ -n "$out" ] && echo "$digest" > "$out"; exit 0; fi
 
-# PR titles and commit messages are other people's text: an @mention would ping someone from the
-# issue, and an image (![](https://…)) would be fetched by every reader. Both are defused with a
-# zero-width space; at most 20 pull requests per project, the rest behind the compare link.
+# Commit and PR titles are written by anyone who can push: in the issue they must not ping people
+# (@login gets a zero-width space), open an HTML comment (a fake deploys-approve marker), add links
+# or load images (brackets and backticks are escaped, so ![](https://…) is plain text). At most 20
+# pull requests per project, the rest behind the compare link.
 markdown="$(jq -r '
-  def safe: tostring | gsub("@"; "@\u200b") | gsub("!\\["; "!\u200b[") | gsub("<"; "&lt;");
-  def kindtxt: if .kind == "agent" then "agent" + (if (.why | type) == "array" and (.why | length) > 0 then " (" + (.why | join(", ")) + ")" elif (.why | type) == "string" then " (\(.why))" else "" end) else .kind end;
+  def safe: tostring | gsub("<"; "&lt;") | gsub(">"; "&gt;") | gsub("@"; "@\u200b") | gsub("!\\["; "!\u200b[") | gsub("(?<c>[\\[\\]`])"; "\\\(.c)");
+  def kindtxt: if .kind == "agent" then "agent" + (if (.why | type) == "array" and (.why | length) > 0 then " (" + (.why | map(safe) | join(", ")) + ")" elif (.why | type) == "string" then " (\(.why | safe))" else "" end) else .kind end;
   "# \(.title)", "",
   (if (.projects | length) == 0 then "Nothing waiting: every project is on its newest commit."
    else "\(.projects | length) project\(if (.projects | length) == 1 then "" else "s" end) waiting: \(.agent) commit\(if .agent == 1 then "" else "s" end) by agents, \(.human) by people." end),
   (if .partial then "", "Some projects could not be read and are left out (see `deploys changed`)." else empty end),
   (.projects[] |
-    "", "## \(.name)" + ([.platform, .repo] | map(select(.)) | if length > 0 then " (\(join(", ")))" else "" end), "",
+    "", "## \(.name | safe)" + ([.platform, .repo] | map(select(.) | safe) | if length > 0 then " (\(join(", ")))" else "" end), "",
     (if .known then "\(.agent + .human) commit\(if (.agent + .human) == 1 then "" else "s" end) waiting: \(.agent) agent, \(.human) human"
      else "Changes waiting (\(.pending // "?") commits; the commits could not be read)" end),
     (if (.prs | length) > 0 then "", "Pull requests:", (.prs[0:20][] | "- #\(.number) \(.title | safe) – \(kindtxt)"),
        (if (.prs | length) > 20 then "- … and \((.prs | length) - 20) more (see all changes below)" else empty end) else empty end),
     (if (.loose | length) > 0 then "", "Commits without a pull request:",
-       (.loose[0:10][] | "- `\(.sha)` \(.msg | safe) – \((.author // "?") | safe), \(.kind)"),
+       (.loose[0:10][] | "- `\(.sha | safe)` \(.msg | safe) – \((.author // "?") | safe), \(.kind)"),
        (if (.loose | length) > 10 then "- … and \((.loose | length) - 10) more" else empty end) else empty end),
-    (if (.risk | length) > 0 then "", "Check before shipping:", (.risk[] | "- \(.)") else empty end),
+    (if (.risk | length) > 0 then "", "Check before shipping:", (.risk[] | "- \(. | safe)") else empty end),
     (if .compareUrl then "", "[All changes](\(.compareUrl))" else empty end))' <<<"$digest")"
 
 approve_url=""; [ -n "$repo" ] && approve_url="https://github.com/$repo/actions/workflows/$workflow"

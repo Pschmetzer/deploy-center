@@ -765,6 +765,59 @@ def update_sitemap(urls):
 VERSION_RE = r"\d+\.\d+\.\d+"
 
 
+# The "Guides" column in the footer of the hand-written pages (site/guides/, site/blog/, the
+# calculator, /claude-code/, 404). A new guide goes here once; build-docs writes the list into
+# every page that has the column, so no footer is left behind. Order = footer order.
+FOOTER_GUIDES = [
+    ("/guides/disable-vercel-auto-deploy/", "Disable Vercel auto-deploy"),
+    ("/guides/stop-vercel-building-every-push/", "Stop Vercel building every push"),
+    ("/guides/vercel-ignored-build-step/", "Vercel Ignored Build Step"),
+    ("/guides/render-auto-deploy-off/", "Turn off Render auto-deploy"),
+    ("/guides/netlify-stop-builds/", "Stop Netlify builds"),
+    ("/guides/reduce-vercel-costs/", "Reduce Vercel costs"),
+    ("/guides/auto-fix-failed-vercel-builds-with-claude/", "Auto-fix failed builds with Claude"),
+    ("/guides/deploy-hooks/", "Deploy hooks for any host"),
+    ("/claude-code/", "Deploy Center + Claude Code"),
+    ("/vercel-build-cost-calculator/", "Build cost calculator"),
+    ("/blog/ai-coding-agents-build-bill/", "AI coding agents and your build bill"),
+]
+FOOTER_GUIDES_RE = re.compile(r"(<div><h2>Guides</h2><ul>)(.*?)(\n *</ul></div>)", re.S)
+
+
+def sync_footer_guides():
+    """Write FOOTER_GUIDES into the footer of every hand-written page that has a Guides column."""
+    items = "".join(f'\n      <li><a href="{href}">{html.escape(label)}</a></li>' for href, label in FOOTER_GUIDES)
+    for dirpath, dirnames, filenames in os.walk(SITE):
+        if os.path.abspath(dirpath) == os.path.abspath(OUT):
+            dirnames[:] = []
+            continue
+        dirnames[:] = [d for d in dirnames if os.path.join(dirpath, d) != OUT]
+        for name in filenames:
+            if not name.endswith(".html"):
+                continue
+            path = os.path.join(dirpath, name)
+            text = open(path, encoding="utf-8").read()
+            new = FOOTER_GUIDES_RE.sub(lambda m: m.group(1) + items + m.group(3), text)
+            if new != text:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(new)
+                print(f"build-docs: footer guides updated in {os.path.relpath(path, ROOT)}")
+
+
+def appcast_enclosure(version):
+    """(url, length) of the enclosure of <version> in site/appcast.xml, or (None, 0)."""
+    path = os.path.join(SITE, "appcast.xml")
+    if not os.path.exists(path):
+        return None, 0
+    for item in re.findall(r"<item>(.*?)</item>", open(path, encoding="utf-8").read(), re.S):
+        if f"<sparkle:shortVersionString>{version}</sparkle:shortVersionString>" not in item:
+            continue
+        m = re.search(r'<enclosure url="(https://[^"]+)" length="(\d+)"', item)
+        if m:
+            return m.group(1), int(m.group(2))
+    return None, 0
+
+
 def sync_site_version(version):
     """Put VERSION into site/index.html: the line under the download button and the JSON-LD.
 
@@ -780,6 +833,16 @@ def sync_site_version(version):
     new, n2 = re.subn(r'(id="version">Version )' + VERSION_RE, r"\g<1>" + version, new)
     if not (n1 and n2):
         raise BuildError("site/index.html: softwareVersion or the Version line is missing")
+    # downloadUrl and fileSize in the JSON-LD: the zip of this version, as site/appcast.xml lists it.
+    # Before the release is in the appcast, they keep pointing at the previous one.
+    zip_url, size = appcast_enclosure(version)
+    if zip_url:
+        new = re.sub(r'("downloadUrl":\s*")[^"]*"', lambda m: m.group(1) + zip_url + '"', new, count=1)
+        mb = f"{size / 1_000_000:.1f} MB"
+        if re.search(r'"fileSize":\s*"', new):
+            new = re.sub(r'("fileSize":\s*")[^"]*"', lambda m: m.group(1) + mb + '"', new, count=1)
+        else:
+            new = re.sub(r'("downloadUrl":\s*"[^"]*")', lambda m: m.group(1) + f', "fileSize": "{mb}"', new, count=1)
     if new != text:
         with open(path, "w", encoding="utf-8") as f:
             f.write(new)
@@ -820,6 +883,7 @@ def main():
     version = (open(os.path.join(ROOT, "VERSION")).read().strip() if os.path.exists(os.path.join(ROOT, "VERSION")) else "0")
     if version != "0":
         sync_site_version(version)
+    sync_footer_guides()
     # ?v= changes only when the file does, so browsers keep the cached copy across commits
     assets = {name: hashlib.sha256(open(os.path.join(ASSETS, name), "rb").read()).hexdigest()[:10]
               for name in ("docs.css", "docs.js")}

@@ -5,7 +5,9 @@ import { changedItemProps, sortByAge, waitingSentence } from "./lib/changed";
 import { ErrorView, ProjectActions, WarningItem, confirmAndDeploy } from "./lib/ui";
 
 export default function WaitingDeploys() {
+  // The last list shows at once and is read again in the background (a read can take a minute).
   const { data, error, isLoading, revalidate } = useCachedPromise(changed, [], {
+    keepPreviousData: true,
     // Errors are shown in the list itself, not as an extra toast.
     onError: () => undefined,
   });

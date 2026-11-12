@@ -11,6 +11,7 @@ ok()   { echo "ok   $1"; }
 fail() { echo "FAIL $1: $2"; fails=$((fails+1)); }
 expect() { [ "$2" = "$3" ] && ok "$1" || fail "$1" "expected [$3], got [$2]"; }
 has()  { case "$2" in *"$3"*) ok "$1" ;; *) fail "$1" "[$3] not in: $2" ;; esac; }
+hasnt() { case "$2" in *"$3"*) fail "$1" "[$3] is in: $2" ;; *) ok "$1" ;; esac; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 FIX="$PWD/tests/fixtures/digitalocean"

@@ -1,7 +1,41 @@
-import { Action, ActionPanel, Color, Icon, List } from "@raycast/api";
-import { useCachedPromise } from "@raycast/utils";
-import { StatusProject, isFailedState, platformLabel, status } from "./lib/deploys";
-import { ErrorView, ProjectActions, WarningItem, copyBuildError, platformTag } from "./lib/ui";
+import { Action, ActionPanel, Color, Detail, Icon, List } from "@raycast/api";
+import { useCachedPromise, usePromise } from "@raycast/utils";
+import { StatusProject, buildLog, isFailedState, platformLabel, status } from "./lib/deploys";
+import { fence, maskSecrets } from "./lib/log";
+import { ErrorView, ProjectActions, WarningItem, copyBuildError, errorMessage, platformTag } from "./lib/ui";
+
+// The newest build log, masked, in a Detail view (what VS Code's "Show log" opens).
+function LogView(props: { p: StatusProject }) {
+  const { p } = props;
+  const { data, error, isLoading } = usePromise(buildLog, [p.projectRef], { onError: () => undefined });
+  const log = data === undefined ? "" : maskSecrets(data);
+  const f = fence(log);
+  const markdown = error
+    ? `**Could not read the log of ${p.name}.**\n\n${errorMessage(error)}`
+    : isLoading
+      ? "Reading the build log …"
+      : `${f}\n${log || "(empty)"}\n${f}`;
+  return (
+    <Detail
+      isLoading={isLoading}
+      navigationTitle={`${p.name} · build log`}
+      markdown={markdown}
+      actions={
+        <ActionPanel>
+          {log ? (
+            <Action
+              title="Copy Build Error"
+              icon={Icon.Bug}
+              shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
+              onAction={() => copyBuildError(p)}
+            />
+          ) : null}
+          {log ? <Action.CopyToClipboard title="Copy Log" content={log} /> : null}
+        </ActionPanel>
+      }
+    />
+  );
+}
 
 function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
   const { p } = props;
@@ -23,13 +57,16 @@ function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
       ]}
       actions={
         <ActionPanel title={`${p.name} (${platformLabel(p.platform)})`}>
-          {!building && (
-            <Action
-              title="Copy Build Error"
-              icon={Icon.Bug}
-              shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
-              onAction={() => copyBuildError(p)}
-            />
+          {building ? null : (
+            <ActionPanel.Section>
+              <Action
+                title="Copy Build Error"
+                icon={Icon.Bug}
+                shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
+                onAction={() => copyBuildError(p)}
+              />
+              <Action.Push title="Show Log" icon={Icon.Terminal} target={<LogView p={p} />} />
+            </ActionPanel.Section>
           )}
           <ProjectActions name={p.name} projectRef={p.projectRef} onRefresh={props.onRefresh} />
         </ActionPanel>
@@ -39,7 +76,11 @@ function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
 }
 
 export default function DeployStatus() {
-  const { data, error, isLoading, revalidate } = useCachedPromise(status, [], { onError: () => undefined });
+  // The last list shows at once and is read again in the background (a read can take a minute).
+  const { data, error, isLoading, revalidate } = useCachedPromise(status, [], {
+    keepPreviousData: true,
+    onError: () => undefined,
+  });
   const all = data?.data ?? [];
   const building = all.filter((p) => p.building);
   const failed = all.filter((p) => !p.building && isFailedState(p.state));

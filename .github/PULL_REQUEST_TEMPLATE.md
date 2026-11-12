@@ -6,6 +6,7 @@
 
 - [ ] The tests CI runs pass: `bash tests/script-tests.sh`, `tests/team-tests.sh`, `tests/install-tests.sh`,
       `tests/release-tests.sh`, `tests/app-tests.sh`, `integrations/tests/run.sh` (see `.github/workflows/ci.yml`)
+- [ ] Integrations touched: `npm test` in `integrations/vscode` passes
 - [ ] `shellcheck --severity=warning` is clean for changed shell scripts, and `scripts/check-public.sh` passes
 - [ ] `./build.sh` builds
 - [ ] `CHANGELOG.md` has a line under Unreleased (or the PR has the label `no-changelog`)
