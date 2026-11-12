@@ -6,31 +6,22 @@
 <title>Impressum · Deploy Center</title>
 <meta name="robots" content="noindex">
 <link rel="canonical" href="https://deploycenter.app/impressum.html">
-<link rel="icon" href="img/icon.png">
-<style>
-.skip{position:absolute;left:-9999px;top:8px;z-index:100;background:var(--card);color:var(--text);padding:8px 14px;border-radius:8px;border:1px solid var(--line)}.skip:focus{left:12px}
-:root{--bg:#0b0d12;--card:#151924;--line:#232838;--text:#e9ecf3;--muted:#9aa3b5;--accent:#4f7cff}
-@media (prefers-color-scheme: light){:root{--bg:#fbfbfd;--card:#fff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:17px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
-a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-.wrap{max-width:760px;margin:0 auto;padding:0 20px}
-nav{border-bottom:1px solid var(--line)}
-nav .wrap{display:flex;align-items:center;gap:10px;height:56px}
-nav img{width:26px;height:26px;border-radius:7px}
-nav a{color:var(--text);font-weight:650;display:flex;align-items:center;gap:10px}
-h1{font-size:40px;letter-spacing:-.02em;margin:56px 0 6px}
-.lead{color:var(--muted);margin:0 0 36px}
-section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:14px}
-h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px}
-p{margin:0}
-footer{color:var(--muted);font-size:14px;padding:40px 0 60px}
-</style>
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
 </head>
 <body>
 <a class="skip" href="#main">Zum Inhalt</a>
-<nav><div class="wrap"><a href="./"><img src="img/icon.png" alt="">Deploy Center</a></div></nav>
-<main id="main" class="wrap">
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+<main id="main" class="wrap narrow legal">
   <h1>Impressum</h1>
   <p class="lead">Anbieterkennzeichnung: Angaben gemäß § 5 Digitale-Dienste-Gesetz (DDG)</p>
 
@@ -46,12 +37,13 @@ footer{color:var(--muted);font-size:14px;padding:40px 0 60px}
   <section><h2>Angaben zum Unternehmen</h2>
     <p>Umsatzsteuer-Identifikationsnummer gemäß § 27 a Umsatzsteuergesetz: DE304539158</p></section>
 
+  <!-- ENTWURF: rechtlich prüfen (Markenhinweis erweitert) -->
   <section><h2>Urheberrecht und Lizenz</h2>
-    <p>Der Quellcode von Deploy Center steht unter der <a href="https://github.com/Pschmetzer/deploy-center/blob/main/LICENSE">MIT-Lizenz</a>. Vercel und Render sind Marken ihrer jeweiligen Inhaber; Deploy Center ist mit diesen Anbietern nicht verbunden.</p></section>
+    <p>Der Quellcode von Deploy Center steht unter der <a href="https://github.com/Pschmetzer/deploy-center/blob/main/LICENSE">MIT-Lizenz</a>. Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab, Anthropic und Claude sind Marken ihrer jeweiligen Inhaber; Deploy Center ist mit diesen Anbietern nicht verbunden.</p></section>
 
   <section><h2>Verbraucherstreitbeilegung</h2>
     <p>Wir sind nicht bereit oder verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.</p></section>
 </main>
-<footer><div class="wrap"><a href="./">← Zurück zu Deploy Center</a> · <a href="datenschutz.html">Datenschutz</a></div></footer>
+<footer class="site"><div class="wrap"><p class="fine"><a href="/">← Zurück zu Deploy Center</a> · <a href="/datenschutz.html">Datenschutz</a> · <a href="/docs/getting-started/">Docs</a> · <a href="/guides/">Guides</a></p></div></footer>
 </body>
 </html>
