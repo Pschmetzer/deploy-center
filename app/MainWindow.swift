@@ -1114,35 +1114,47 @@ struct ContentView: View {
         return nil
     }
 
+    /// "Vercel could not be loaded (09:12) – showing the list from 09:02": its own function, as one
+    /// expression in the banner it was too long for the type checker on CI.
+    private func loadFailedTitle(_ p: Platform, at: Date) -> String {
+        let head: String = L("\(p.rawValue) could not be loaded", "\(p.rawValue) konnte nicht geladen werden")
+        let when: String = " (" + at.formatted(date: .omitted, time: .shortened) + ")"
+        guard let shown = store.loadedAt[p] else { return head + when }
+        let tail: String = L(" – showing the list from ", " – zu sehen ist der Stand von ") + shown.formatted(date: .omitted, time: .shortened)
+        return head + when + tail
+    }
+
+    /// The script's own words, for a bug report: folded away, copyable, next to the log.
+    private func errorDetails(_ raw: String) -> some View {
+        DisclosureGroup(L("Details", "Details")) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(raw).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    CopyButton(title: L("Copy the error", "Fehler kopieren")) { LogTools.maskSecrets(raw) }
+                    Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
+                        if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
+                        NSWorkspace.shared.open(Log.url)
+                    }
+                }
+                .controlSize(.small)
+            }
+        }
+        .font(.caption)
+    }
+
     @ViewBuilder private func loadFailedBanner(_ p: Platform) -> some View {
         if let f = store.lastLoadError[p] {
             let raw = Demo.scrub(f.message, items: allItems)
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(L("\(p.rawValue) could not be loaded", "\(p.rawValue) konnte nicht geladen werden")
-                         + " (" + f.at.formatted(date: .omitted, time: .shortened) + ")"
-                         + (store.loadedAt[p].map { L(" – showing the list from ", " – zu sehen ist der Stand von ") + $0.formatted(date: .omitted, time: .shortened) } ?? ""))
+                    Text(loadFailedTitle(p, at: f.at))
                         .font(.callout.weight(.medium))
                     if let nice = Self.friendlyError(f.message, p.rawValue) {
                         Text(nice).font(.caption).foregroundStyle(.secondary)
                     }
-                    // The script's own words, for a bug report: folded away, copyable, next to the log.
-                    DisclosureGroup(L("Details", "Details")) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(raw).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                            HStack {
-                                CopyButton(title: L("Copy the error", "Fehler kopieren")) { LogTools.maskSecrets(raw) }
-                                Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
-                                    if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
-                                    NSWorkspace.shared.open(Log.url)
-                                }
-                            }
-                            .controlSize(.small)
-                        }
-                    }
-                    .font(.caption)
+                    errorDetails(raw)
                 }
                 Spacer()
                 if store.loading.contains(p) { ProgressView().controlSize(.small) }
