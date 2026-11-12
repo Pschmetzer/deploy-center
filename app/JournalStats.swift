@@ -175,52 +175,67 @@ struct JournalStatsView: View {
     private var period: (recent: [JournalEntry], before: [JournalEntry]) { JournalStats.periods(entries, days: days) }
 
     var body: some View {
-        let p = period, d = JournalStats.dora(p.recent, days: days), db = JournalStats.dora(p.before, days: days)
+        let p = period
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Picker(L("Period", "Zeitraum"), selection: $days) {
                     Text(L("7 days", "7 Tage")).tag(7); Text(L("30 days", "30 Tage")).tag(30); Text(L("90 days", "90 Tage")).tag(90)
                 }.pickerStyle(.segmented).frame(width: 280)
-                Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
-                    GridRow {
-                        Text(""); Text(L("Now", "Jetzt")).bold(); Text(L("The \(days) days before", "Die \(days) Tage davor")).foregroundStyle(.secondary)
-                    }
-                    GridRow { Text(L("Deploys a week", "Deploys pro Woche")); Text(fmt(d.perWeek)); Text(fmt(db.perWeek)).foregroundStyle(.secondary) }
-                    GridRow { Text(L("Clean deploys", "Saubere Deploys")); Text(pct(JournalStats.cleanShare(p.recent))); Text(pct(JournalStats.cleanShare(p.before))).foregroundStyle(.secondary) }
-                    GridRow { Text(L("Failed or rolled back", "Fehlgeschlagen oder zurückgerollt")); Text(pct(d.failRate)); Text(pct(db.failRate)).foregroundStyle(.secondary) }
-                    GridRow { Text(L("Back to good (median)", "Wieder gut (Median)")); Text(dur(d.restoreMedian)); Text(dur(db.restoreMedian)).foregroundStyle(.secondary) }
-                }
+                figures(p)
                 Text(L("From this Mac's history only; lead time from commit to live needs GitHub and is not counted.",
                        "Nur aus dem Verlauf dieses Macs; die Zeit vom Commit bis live braucht GitHub und fehlt."))
                     .font(.caption).foregroundStyle(.secondary)
                 heat(p.recent)
-                let t = JournalStats.trends(entries).filter { $0.recent > $0.before * 1.2 }.prefix(5)
-                if !t.isEmpty {
-                    Text(L("Builds getting slower", "Builds werden langsamer")).font(.headline)
-                    ForEach(Array(t), id: \.key) { r in
-                        Text("\(Demo.mask(r.name)): \(dur(r.before)) → \(dur(r.recent))").font(.callout)
-                    }
-                }
-                let causes = JournalStats.failureCauses(p.recent).prefix(5)
-                if !causes.isEmpty {
-                    Text(L("Why builds failed", "Warum Builds fehlschlugen")).font(.headline)
-                    ForEach(Array(causes), id: \.cause) { r in
-                        Text("\(r.count)× " + Demo.scrub(r.cause, items: Set(entries.map(\.name)).map { Item(id: $0, name: $0, detail: "", platform: .vercel, deployable: false, auto: false, note: nil, link: nil) }) + " – " + r.projects.prefix(3).map(Demo.mask).joined(separator: ", ")
-                             + (r.projects.count > 3 ? " …" : "")).font(.callout).lineLimit(2).textSelection(.enabled)
-                    }
-                }
-                if let c = costs {
-                    let f = JournalStats.costlyFailures(p.recent, perBuild: c.perBuild).prefix(5)
-                    if !f.isEmpty {
-                        Text(L("Costliest failures", "Teuerste Fehlschläge")).font(.headline)
-                        ForEach(Array(f), id: \.name) { r in
-                            Text(L("\(Demo.mask(r.name)): \(r.failed) failed, about $\(String(format: "%.2f", r.usd))",
-                                   "\(Demo.mask(r.name)): \(r.failed) fehlgeschlagen, etwa \(String(format: "%.2f", r.usd)) $")).font(.callout)
-                        }
-                    }
-                }
+                lists(p.recent)
             }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// In parts of their own: as one body it was too long for the type checker on CI.
+    @ViewBuilder private func figures(_ p: (recent: [JournalEntry], before: [JournalEntry])) -> some View {
+        let d = JournalStats.dora(p.recent, days: days), db = JournalStats.dora(p.before, days: days)
+        Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
+            GridRow {
+                Text(""); Text(L("Now", "Jetzt")).bold(); Text(L("The \(days) days before", "Die \(days) Tage davor")).foregroundStyle(.secondary)
+            }
+            GridRow { Text(L("Deploys a week", "Deploys pro Woche")); Text(fmt(d.perWeek)); Text(fmt(db.perWeek)).foregroundStyle(.secondary) }
+            GridRow { Text(L("Clean deploys", "Saubere Deploys")); Text(pct(JournalStats.cleanShare(p.recent))); Text(pct(JournalStats.cleanShare(p.before))).foregroundStyle(.secondary) }
+            GridRow { Text(L("Failed or rolled back", "Fehlgeschlagen oder zurückgerollt")); Text(pct(d.failRate)); Text(pct(db.failRate)).foregroundStyle(.secondary) }
+            GridRow { Text(L("Back to good (median)", "Wieder gut (Median)")); Text(dur(d.restoreMedian)); Text(dur(db.restoreMedian)).foregroundStyle(.secondary) }
+        }
+    }
+
+    @ViewBuilder private func lists(_ recent: [JournalEntry]) -> some View {
+        let t = JournalStats.trends(entries).filter { $0.recent > $0.before * 1.2 }.prefix(5)
+        if !t.isEmpty {
+            Text(L("Builds getting slower", "Builds werden langsamer")).font(.headline)
+            ForEach(Array(t), id: \.key) { r in
+                Text("\(Demo.mask(r.name)): \(dur(r.before)) → \(dur(r.recent))").font(.callout)
+            }
+        }
+        let causes = JournalStats.failureCauses(recent).prefix(5)
+        if !causes.isEmpty {
+            Text(L("Why builds failed", "Warum Builds fehlschlugen")).font(.headline)
+            ForEach(Array(causes), id: \.cause) { r in
+                Text(causeLine(count: r.count, cause: r.cause, projects: r.projects)).font(.callout).lineLimit(2).textSelection(.enabled)
+            }
+        }
+        if let c = costs {
+            let f = JournalStats.costlyFailures(recent, perBuild: c.perBuild).prefix(5)
+            if !f.isEmpty {
+                Text(L("Costliest failures", "Teuerste Fehlschläge")).font(.headline)
+                ForEach(Array(f), id: \.name) { r in
+                    Text(L("\(Demo.mask(r.name)): \(r.failed) failed, about $\(String(format: "%.2f", r.usd))",
+                           "\(Demo.mask(r.name)): \(r.failed) fehlgeschlagen, etwa \(String(format: "%.2f", r.usd)) $")).font(.callout)
+                }
+            }
+        }
+    }
+
+    private func causeLine(count: Int, cause: String, projects: [String]) -> String {
+        let stand: [Item] = Set(entries.map(\.name)).map { Item(id: $0, name: $0, detail: "", platform: .vercel, deployable: false, auto: false, note: nil, link: nil) }
+        let names: String = projects.prefix(3).map(Demo.mask).joined(separator: ", ") + (projects.count > 3 ? " …" : "")
+        return "\(count)× " + Demo.scrub(cause, items: stand) + " – " + names
     }
 
     /// Weekday × time of day (four blocks of six hours), darker = more deploys, red = failures.

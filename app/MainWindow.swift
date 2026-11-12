@@ -435,18 +435,25 @@ struct ContentView: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: store.toast)
     }
 
+    /// Projects that still deploy by themselves, over all platforms.
+    private var autoOnTotal: Int { Platform.allCases.reduce(0) { $0 + store.autoOn($1).count } }
+    /// Someone who used the app before this version has a history: no first start for them.
+    private func checkFirstStartOnce() {
+        let d = UserDefaults.standard
+        guard !firstStartDone, d.object(forKey: "firstStartChecked") == nil else { return }
+        d.set(true, forKey: "firstStartChecked")
+        let used: Bool = !Journal.load(limit: 1).isEmpty || d.object(forKey: "lastPlatform") != nil
+        if used { firstStartDone = true }
+    }
+
     private var withSheets: some View {
         chrome
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView(costs: store.costs) }
         .sheet(isPresented: $showFirstStart) { FirstStartView(store: store) }
-        // Someone who used the app before this version has a history: no first start for them.
-        .onAppear { if !firstStartDone, UserDefaults.standard.object(forKey: "firstStartChecked") == nil {
-            UserDefaults.standard.set(true, forKey: "firstStartChecked")
-            if !Journal.load(limit: 1).isEmpty || UserDefaults.standard.object(forKey: "lastPlatform") != nil { firstStartDone = true }
-        } }
-        .onChange(of: Platform.allCases.map { store.autoOn($0).count }.reduce(0, +) + (firstStartDone ? 0 : 1_000_000)) { _, _ in
-            if FirstStart.due(done: firstStartDone, autoOn: Platform.allCases.map { store.autoOn($0).count }.reduce(0, +)), !Demo.on { showFirstStart = true }
+        .onAppear { checkFirstStartOnce() }
+        .onChange(of: autoOnTotal + (firstStartDone ? 0 : 1_000_000)) { _, _ in
+            if FirstStart.due(done: firstStartDone, autoOn: autoOnTotal), !Demo.on { showFirstStart = true }
         }
         .sheet(isPresented: $showCosts) {
             if let c = store.costs { CostsSheet(costs: c) }

@@ -53,7 +53,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var defaultsKeys: [String] {
         switch self {
         case .general: return ["refreshMinutes", "showMenuBar", "hideDock", "notifications", "reminderHour", "checkUpdates", "demoMode", "paletteHotKey",
-                               Spotlight.key, Tips.key, "compactRows", "colorBlind", "loadLogos", "quietFrom", "quietTo"]
+                               "spotlightProjects", "tipOfTheDay", "compactRows", "colorBlind", "loadLogos", "quietFrom", "quietTo"]
         case .deploy: return ["maxParallel", "undoSeconds", "staleDays", "onlyWhenGreen", "confirmSingleDeploy",
                               "watchMinutes", MigrationCheck.key, OwnerCheck.key]
         case .costs: return ["monthlyBudget", "savingsDays"]
