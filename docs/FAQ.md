@@ -1,7 +1,7 @@
 # FAQ
 
 ### What does it cost?
-Nothing. Deploy Center is free and open source (MIT). You pay Vercel and Render for the builds you start, and fewer of them.
+Nothing. Deploy Center is free and open source (MIT). You pay your hosts (Vercel, Render, and the opt-in ones: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify) for the builds you start, and fewer of them.
 `deploys simulate` estimates what auto-deploy would cost you a month, `deploys ledger` what turning it off saved: [SAVINGS.md](SAVINGS.md).
 
 ### Does it deploy anything by itself?
@@ -11,22 +11,22 @@ No. It deploys when you press **Deploy** or run a `deploys` command. The daily r
 See [AUTO-DEPLOY.md](AUTO-DEPLOY.md). In short: Vercel loses the Git connection (the repo is remembered), Render's auto-deploy is set to *Off*, and a push builds nothing.
 
 ### Can I go back?
-Yes, in the Vercel and Render dashboards. There is no command for it. See [AUTO-DEPLOY.md](AUTO-DEPLOY.md#back-to-auto-deploy).
+Yes: `deploys vercel autodeploy-on <project>|--all` and `deploys render autodeploy-on <service>|--all`, or in the Vercel and Render dashboards. See [AUTO-DEPLOY.md](AUTO-DEPLOY.md#back-to-auto-deploy).
 
 ### Where is my Render key stored?
 In your macOS keychain, as the item `deploy-center-render`. `deploys` hands it to `curl` on stdin, so it does not show in the process list, and sends it only to api.render.com. The key gives full access to your Render account.
 
 ### Does the app send data anywhere?
-No telemetry, no account, no server of ours. It talks to Vercel and Render with your logins, to GitHub through your `gh` login, to your own sites for their logos and the check after a deploy, and once a day to GitHub's release page to see whether a new version is out (Settings → **Look for a new version once a day** turns that off).
+No telemetry, no account, no server of ours. It talks to Vercel and Render with your logins, to GitHub through your `gh` login, to your own sites for their logos and the check after a deploy, and once a day to `deploycenter.app/appcast.xml` to see whether a new version is out; an update itself is downloaded from GitHub (Settings → **Look for a new version once a day** turns that off). Claude features and Autofix send data to Anthropic only after you set them up: [SECURITY.md](../SECURITY.md#what-is-sent-where).
 
 ### Do I need the GitHub CLI?
 For deploying, no. For seeing what is waiting (**New changes**, commits and PRs waiting, **Select all changed**, `deploys changed` and `deploy-changed`), yes: those read GitHub through `gh`.
 
 ### GitLab or Bitbucket?
-Not yet. Deploys start from GitHub (`gitSource` type `github`). GitLab is on the wish list in the README.
+GitLab, yes: gitlab.com and self-managed GitLab are read like GitHub, through `glab` or `GITLAB_TOKEN` (+ `GITLAB_HOST`). See [GITLAB.md](GITLAB.md). Bitbucket is not supported yet.
 
 ### Windows or Linux?
-The app needs macOS 15 or newer. The `deploys` script is bash and runs on Linux too; in CI the key comes from `RENDER_API_KEY` instead of the keychain. See [examples/](../examples/).
+The app needs macOS 15 or newer. The `deploys` script is bash and runs on Linux and in WSL (install it inside the Linux distribution): `curl -fsSL https://deploycenter.app/install.sh | sh`. In CI the key comes from `RENDER_API_KEY` instead of the keychain. See [examples/](../examples/).
 
 ### I disconnected a Vercel project before I used Deploy Center. It says "repo unknown".
 Tell it where the project deploys from: `deploys vercel map my-project me/my-repo main`.

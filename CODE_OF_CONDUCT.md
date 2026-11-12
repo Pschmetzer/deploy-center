@@ -11,5 +11,8 @@ are not accepted, in issues, pull requests or anywhere else the project is repre
 Contact the maintainer by the email address on the [legal notice](https://deploycenter.app/impressum.html).
 Reports are read only by the maintainer and kept confidential.
 
+If the report is about the maintainer, or you would rather not write to them, report the account
+or the content to GitHub instead: [Report abuse](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam).
+
 The maintainer may edit or remove comments, commits and issues that break these rules, and may
 ban someone from the project for repeated or serious breaches.

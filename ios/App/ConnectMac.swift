@@ -23,7 +23,8 @@ struct ConnectMacView: View {
                     Section {
                         Label(L("Connected to the Mac", "Mit dem Mac verbunden"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                         if let at = store.linked?.updated {
-                            Text(L("Keys from ", "Schlüssel vom ") + at.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary)
+                            Text(L("Keys from ", "Schlüssel vom ") + at.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(appLocale)))
+                                .foregroundStyle(.secondary)
                         }
                         Toggle(L("Do not use them on this iPhone", "Auf diesem iPhone nicht nutzen"), isOn: $store.ignoreLink)
                     } footer: {
@@ -118,6 +119,7 @@ struct ConnectMacView: View {
 
     private func check() async {
         checking = true; defer { checking = false }
+        store.useLinkAgain()    // the person wants the Mac link back, also after "Remove all keys"
         await store.refreshLink()
         nothingYet = store.linked == nil
         if store.linked != nil { await store.reload(); dismiss() }
@@ -135,7 +137,10 @@ struct ConnectMacView: View {
                                      "Dieser Code ist zu alt. Zeig auf dem Mac einen neuen (und prüfe, dass beide Uhren stimmen).")
         case .empty: scanError = L("The code holds no Vercel or Render key.", "Der Code enthält keinen Vercel- oder Render-Schlüssel.")
         }
-        if scanError != nil { UINotificationFeedbackGenerator().notificationOccurred(.error) }
+        if let e = scanError {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            AccessibilityNotification.Announcement(e).post()
+        }
     }
 
     /// "Vercel, Render and GitHub, from the Mac at 14:05": what a code holds, never the keys.
@@ -144,7 +149,7 @@ struct ConnectMacView: View {
         if !k.vercel.isEmpty { parts.append(k.vercelTeam.isEmpty ? "Vercel" : L("Vercel (with team)", "Vercel (mit Team)")) }
         if !k.render.isEmpty { parts.append("Render") }
         if !k.github.isEmpty { parts.append("GitHub") }
-        let time = k.updated.formatted(date: .omitted, time: .shortened)
+        let time = k.updated.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(appLocale))
         return parts.joined(separator: ", ") + L(", from the Mac at \(time).", ", vom Mac um \(time).")
     }
 }
@@ -172,6 +177,18 @@ struct QRScanner: UIViewControllerRepresentable {
             view.backgroundColor = .black
             let close = button(L("Cancel", "Abbrechen")) { [weak self] in self?.finish { $0.cancel?(nil, false) } }
             let toggle: () -> Void = { [weak self] in self?.toggleTorch() }
+            // What to do, for everyone and for VoiceOver: the camera picture alone says nothing.
+            let hint = UILabel()
+            hint.text = L("Point the camera at the code on the Mac.", "Richte die Kamera auf den Code am Mac.")
+            hint.textColor = .white
+            hint.font = .preferredFont(forTextStyle: .body)
+            hint.adjustsFontForContentSizeCategory = true
+            hint.numberOfLines = 0
+            hint.textAlignment = .center
+            hint.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+            hint.layer.cornerRadius = 10
+            hint.clipsToBounds = true
+            hint.translatesAutoresizingMaskIntoConstraints = false
             AVCaptureDevice.requestAccess(for: .video) { ok in
                 DispatchQueue.main.async {
                     // Canceled while iOS asked: start nothing.
@@ -192,7 +209,13 @@ struct QRScanner: UIViewControllerRepresentable {
                         c += [torch.leadingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
                               torch.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor, constant: 12)]
                     }
+                    self.view.addSubview(hint)
+                    let g = self.view.safeAreaLayoutGuide
+                    c += [hint.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 24),
+                          hint.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -24),
+                          hint.bottomAnchor.constraint(equalTo: g.bottomAnchor, constant: -32)]
                     NSLayoutConstraint.activate(c)
+                    UIAccessibility.post(notification: .screenChanged, argument: hint)
                 }
             }
         }

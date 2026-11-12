@@ -38,6 +38,8 @@ struct TeamConfig: Decodable {
 
 struct TeamSettings: View {
     @ObservedObject var store: Store
+    /// Read so the output redraws at once when demo mode is switched (⇧⌘D).
+    @AppStorage("demoMode") private var demoMode = false
     @State private var config: TeamConfig?
     @State private var repo = ""
     @State private var busy = false
@@ -99,7 +101,7 @@ struct TeamSettings: View {
                 if busy { ProgressView().controlSize(.small) }
             }
             if let message {
-                Text(message).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(failed ? .red : .secondary)
+                Text(Demo.scrub(message, items: Array(store.items.values.joined()))).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(failed ? .red : .secondary)
             }
         } header: {
             Text(L("Team", "Team"))

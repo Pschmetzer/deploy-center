@@ -27,3 +27,20 @@ struct CopyButton: View {
         .accessibilityLabel(copied ? L("Copied", "Kopiert") : title)
     }
 }
+
+/// Hands the NSWindow a SwiftUI view sits in to `configure`, once it is in one (sheets, Settings).
+struct WindowAccessor: NSViewRepresentable {
+    let configure: (NSWindow) -> Void
+    func makeNSView(context: Context) -> NSView { Probe(configure) }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class Probe: NSView {
+        let configure: (NSWindow) -> Void
+        init(_ configure: @escaping (NSWindow) -> Void) { self.configure = configure; super.init(frame: .zero) }
+        required init?(coder: NSCoder) { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { configure(window) }
+        }
+    }
+}

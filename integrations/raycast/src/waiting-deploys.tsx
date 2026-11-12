@@ -44,7 +44,7 @@ export default function WaitingDeploys() {
                       icon={Icon.Upload}
                       onAction={() => confirmAndDeploy(p, waitingSentence(p), revalidate)}
                     />
-                    <ProjectActions name={p.name} onRefresh={revalidate} />
+                    <ProjectActions name={p.name} projectRef={p.projectRef} onRefresh={revalidate} />
                   </ActionPanel>
                 }
               />

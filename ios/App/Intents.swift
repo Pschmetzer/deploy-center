@@ -22,7 +22,7 @@ enum Spoken {
     }
     static func age(_ at: Date?, now: Date = Date()) -> String {
         guard let at else { return "" }
-        let rel = at.formatted(.relative(presentation: .named, unitsStyle: .wide))
+        let rel = at.formatted(Date.RelativeFormatStyle(presentation: .named, unitsStyle: .wide, locale: appLocale))
         return L(" As of \(rel); open the app for the newest state.", " Stand \(rel); die App zeigt den neuesten.")
     }
     /// The state the app saved last (the background refresh saves it too). Nil: nothing read yet.

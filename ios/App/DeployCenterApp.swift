@@ -14,7 +14,9 @@ struct DeployCenterApp: App {
             .backgroundTask(.appRefresh(Background.id)) {
                 await Background.run()
             }
-            .onChange(of: phase) { _, p in if p == .background { Background.schedule() } }
+            .onChange(of: phase) { _, p in
+                if p == .background { Background.schedule(); delegate.store.lockIfWanted() }
+            }
             .commands {
                 // iPad with a keyboard: ⌘R reads everything again.
                 CommandGroup(after: .newItem) {
@@ -28,7 +30,7 @@ struct DeployCenterApp: App {
 /// Owns the store, so a tapped notification can open its project; shows notifications in the foreground too.
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    let store = PhoneStore()
+    let store = PhoneStore.shared
 
     /// For the scene delegate (home-screen quick actions): the one app delegate.
     static weak var current: AppDelegate?
@@ -113,42 +115,46 @@ enum Background {
     }
 
     /// Reads the lists, updates the widget, and notes what newly waits or failed. No server: iOS decides when.
+    /// The app's own store, so the list is fresh on return. iOS gives this about 30 seconds and then cancels
+    /// the task: a cut-off load replaces nothing and notes nothing.
     @MainActor static func run() async {
         schedule()
-        let store = PhoneStore()
-        await store.refreshLink()
+        let store = PhoneStore.shared
+        await store.refreshLink()   // a cold background launch has not read the Mac's keys yet
         guard !store.demo, store.hasAccount else { return }
-        let before = loadLast()?.projects ?? []
-        await store.reload()
-        guard !Task.isCancelled else { return }
-        await store.notifyChanges(from: before)
+        // Nothing seen yet (first run, or the file is gone): nothing counts as new, no flood of notes.
+        let before = readLast()
+        guard await store.reload(), !Task.isCancelled else { return }
+        if let before { await store.notifyChanges(from: before) }
     }
 
-    /// Application Support, not Caches: iOS empties Caches when space runs low, and the next run would
-    /// then report every waiting project as new. Readable after the first unlock, for this refresh.
+    /// In Application Support, not Caches: iOS may empty Caches, and then every waiting project looked new.
     static var lastURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("last-projects.json")
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("last-projects.json")
     }
-    private static var oldURL: URL {
+    private static var oldLastURL: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("last-projects.json")
     }
-
-    static func saveLast(_ projects: [PhoneProject]) {
-        guard let d = try? JSONEncoder().encode(projects) else { return }
-        try? d.write(to: lastURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    static func readLast() -> [PhoneProject]? {
+        let data = (try? Data(contentsOf: lastURL)) ?? (try? Data(contentsOf: oldLastURL))
+        return data.flatMap { try? JSONDecoder().decode([PhoneProject].self, from: $0) }
     }
-
+    /// The last list with the time it was written (the file's date): for the list at launch, Siri and Spotlight.
     static func loadLast() -> (projects: [PhoneProject], at: Date)? {
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: lastURL.path), fm.fileExists(atPath: oldURL.path) { try? fm.moveItem(at: oldURL, to: lastURL) }
-        guard let d = try? Data(contentsOf: lastURL), let p = try? JSONDecoder().decode([PhoneProject].self, from: d) else { return nil }
-        let at = (try? fm.attributesOfItem(atPath: lastURL.path)[.modificationDate]) as? Date ?? Date()
-        return (p, at)
+        guard let p = readLast() else { return nil }
+        let url = FileManager.default.fileExists(atPath: lastURL.path) ? lastURL : oldLastURL
+        return (p, (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date ?? Date())
+    }
+    static func writeLast(_ projects: [PhoneProject]) {
+        // Application Support does not exist in a fresh sandbox.
+        try? FileManager.default.createDirectory(at: lastURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? JSONEncoder().encode(projects).write(to: lastURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        try? FileManager.default.removeItem(at: oldLastURL)
     }
 
-    static func requestPermission() async {
-        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+    /// True when notifications may be shown.
+    @discardableResult
+    static func requestPermission() async -> Bool {
+        (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 }

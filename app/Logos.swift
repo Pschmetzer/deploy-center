@@ -100,10 +100,27 @@ actor LogoCache {
     }
 
     /// The body on 200; `transient` when the answer says nothing about the site (no answer, 429, 5xx).
-    private func get(_ url: URL) async -> (data: Data?, transient: Bool) {
+    /// `limit`: stop reading after that many bytes (the front page: its <head> is enough for the icon links).
+    private func get(_ url: URL, limit: Int? = nil) async -> (data: Data?, transient: Bool) {
         var req = URLRequest(url: url, timeoutInterval: 8)
         req.setValue("Mozilla/5.0 (Macintosh) DeployCenter", forHTTPHeaderField: "User-Agent")
-        guard let (data, resp) = try? await URLSession.shared.data(for: req), let http = resp as? HTTPURLResponse else { return (nil, true) }
+        let data: Data, resp: URLResponse
+        if let limit {
+            guard let (bytes, r) = try? await URLSession.shared.bytes(for: req) else { return (nil, true) }
+            var d = Data()
+            do {
+                for try await b in bytes {
+                    d.append(b)
+                    if d.count >= limit { break }
+                }
+            } catch { if d.isEmpty { return (nil, true) } }
+            bytes.task.cancel()
+            data = d; resp = r
+        } else {
+            guard let (d, r) = try? await URLSession.shared.data(for: req) else { return (nil, true) }
+            data = d; resp = r
+        }
+        guard let http = resp as? HTTPURLResponse else { return (nil, true) }
         if http.statusCode == 429 || http.statusCode >= 500 { return (nil, true) }
         return (http.statusCode == 200 && !data.isEmpty ? data : nil, false)
     }
@@ -111,9 +128,10 @@ actor LogoCache {
     private func fetch(_ domain: String) async -> (NSImage?, Data?, transient: Bool) {
         guard let base = URL(string: "https://\(domain)/") else { return (nil, nil, false) }
         var candidates: [URL] = []
-        let page = await get(base)
+        let page = await get(base, limit: 64 * 1024)
         if page.transient { return (nil, nil, true) }
-        if let html = page.data, let text = String(data: html, encoding: .utf8) {
+        // Cut at 64 KB, maybe inside a character: decoded leniently.
+        if let html = page.data, case let text = String(decoding: html, as: UTF8.self), !text.isEmpty {
             candidates += Self.iconLinks(in: text).compactMap { URL(string: $0, relativeTo: base)?.absoluteURL }
         }
         candidates += ["apple-touch-icon.png", "favicon.svg", "favicon.png", "favicon.ico"]

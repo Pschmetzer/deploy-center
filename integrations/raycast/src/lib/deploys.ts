@@ -1,13 +1,18 @@
 import { getPreferenceValues } from "@raycast/api";
-import { execFile } from "node:child_process";
+import { ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
+// A provider id as the CLI spells it: vercel, render, netlify, cloudflare, amplify, hook, …
+export type Platform = string;
+
 // What `deploys changed --json` returns per project (only the fields used here).
 export interface ChangedProject {
   name: string;
-  platform: "vercel" | "render";
+  platform: Platform;
+  // The name, or platform:name when the name is on two platforms (set here, not by the CLI).
+  projectRef: string;
   repo?: string | null;
   ref?: string | null;
   pendingCommits?: number | null;
@@ -24,7 +29,8 @@ export interface ChangedProject {
 // What `deploys status --json` returns per project.
 export interface StatusProject {
   name: string;
-  platform: "vercel" | "render";
+  platform: Platform;
+  projectRef: string;
   building: boolean;
   state: string | null;
   changed: boolean;
@@ -61,6 +67,8 @@ const APP_CLI = "Deploy Center.app/Contents/Resources/deploys";
 export const TIMEOUT = {
   read: 120_000,
   deploy: 180_000,
+  // deploy-changed starts one project after the other.
+  many: 600_000,
   quick: 60_000,
 };
 
@@ -150,11 +158,13 @@ const AUTH_PATTERNS = [
   /No Render API key/i,
   /Render did not accept/i,
   /gh auth login/i,
-  /\b(401|403)\b/,
+  // An HTTP status, not any 401 (a commit "Fix #401" or a project named api-403 is no login error).
+  /\bHTTP\s*(401|403)\b/i,
   /unauthori[sz]ed/i,
   /invalid token/i,
 ];
 
+// Only stderr: stdout carries commit messages and project names, which can say anything.
 function classify(stderr: string): DeploysErrorKind {
   return AUTH_PATTERNS.some((re) => re.test(stderr)) ? "auth" : "failed";
 }
@@ -165,50 +175,90 @@ export interface RunResult {
   code: number;
 }
 
-// Runs deploys with an argument array (no shell), a timeout and the wider PATH.
+const MAX_OUTPUT = 16 * 1024 * 1024;
+
+// The CLI runs in its own process group: a timeout ends it and what it started (vercel, gh, curl).
+function killGroup(child: ChildProcess, signal: NodeJS.Signals) {
+  try {
+    if (child.pid) process.kill(-child.pid, signal);
+  } catch {
+    try {
+      child.kill(signal);
+    } catch {
+      // gone already
+    }
+  }
+}
+
+// Runs deploys with an argument array (no shell), stdin closed, a timeout and the wider PATH.
 // Resolves for every exit code; rejects only when it could not run or ran out of time.
 export function run(args: string[], timeout = TIMEOUT.read): Promise<RunResult> {
   const bin = findDeploys();
   return new Promise((resolve, reject) => {
-    execFile(
-      bin,
-      args,
-      {
-        timeout,
-        killSignal: "SIGTERM",
-        maxBuffer: 16 * 1024 * 1024,
+    let child: ChildProcess;
+    try {
+      child = spawn(bin, args, {
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, PATH: searchPath(), NO_COLOR: "1", TERM: "dumb" },
-      },
-      (error, stdout, stderr) => {
-        const out = String(stdout ?? "");
-        const err = String(stderr ?? "");
-        if (error) {
-          const e = error as NodeJS.ErrnoException & { killed?: boolean; signal?: string; code?: number | string };
-          if (e.code === "ENOENT" || e.code === "EACCES") {
-            reject(new DeploysError("missing", `Could not start ${bin}: ${e.message}`));
-            return;
-          }
-          if (e.killed || e.signal === "SIGTERM") {
-            reject(
-              new DeploysError(
-                "timeout",
-                `deploys ${args.join(" ")} did not finish within ${Math.round(timeout / 1000)} s. A platform or GitHub may be slow; try again.`,
-              ),
-            );
-            return;
-          }
-          resolve({ stdout: out, stderr: err, code: typeof e.code === "number" ? e.code : 1 });
-          return;
-        }
-        resolve({ stdout: out, stderr: err, code: 0 });
-      },
-    );
+      });
+    } catch (e) {
+      reject(new DeploysError("missing", `Could not start ${bin}: ${(e as Error).message}`));
+      return;
+    }
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    let size = 0;
+    let timedOut = false;
+    let done = false;
+    const take = (into: Buffer[]) => (b: Buffer) => {
+      size += b.length;
+      if (size > MAX_OUTPUT) killGroup(child, "SIGKILL");
+      else into.push(b);
+    };
+    child.stdout?.on("data", take(out));
+    child.stderr?.on("data", take(err));
+    let hard: ReturnType<typeof setTimeout> | undefined;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup(child, "SIGTERM");
+      hard = setTimeout(() => killGroup(child, "SIGKILL"), 2000);
+    }, timeout);
+    const end = () => {
+      done = true;
+      clearTimeout(timer);
+      if (hard) clearTimeout(hard);
+    };
+    child.on("error", (e: NodeJS.ErrnoException) => {
+      if (done) return;
+      end();
+      reject(new DeploysError("missing", `Could not start ${bin}: ${e.message}`));
+    });
+    child.on("close", (code) => {
+      if (done) return;
+      end();
+      if (timedOut) {
+        killGroup(child, "SIGKILL");
+        reject(
+          new DeploysError(
+            "timeout",
+            `deploys ${args.join(" ")} did not finish within ${Math.round(timeout / 1000)} s. A platform or GitHub may be slow; try again.`,
+          ),
+        );
+        return;
+      }
+      resolve({
+        stdout: Buffer.concat(out).toString(),
+        stderr: Buffer.concat(err).toString(),
+        code: typeof code === "number" ? code : 1,
+      });
+    });
   });
 }
 
 function failure(args: string[], r: RunResult): DeploysError {
   const msg = lastLines(r.stderr) || lastLines(r.stdout) || `deploys ${args.join(" ")} ended with code ${r.code}`;
-  return new DeploysError(classify(r.stderr + r.stdout), msg.replace(/^Error:\s*/gm, ""));
+  return new DeploysError(classify(r.stderr), msg.replace(/^Error:\s*/gm, ""));
 }
 
 export interface JsonResult<T> {
@@ -243,27 +293,91 @@ export async function runText(args: string[], timeout = TIMEOUT.quick): Promise<
   return clean(r.stdout);
 }
 
-export function changed(): Promise<JsonResult<ChangedProject[]>> {
-  return runJson<ChangedProject[]>(["changed", "--json"]);
+// notes, open and logs take the name, or platform:name when the name is on two platforms (as the
+// VS Code extension does), so a twin never opens or reads the other platform's project.
+// `all` is every project (from status), since a list of waiting ones may hold only one twin.
+export function withRefs<T extends { name: string; platform: string }>(
+  list: Omit<T, "projectRef">[],
+  all: { name: string; platform: string }[] = list,
+): (T & { projectRef: string })[] {
+  const count = new Map<string, number>();
+  const seen = new Set<string>();
+  for (const p of [...all, ...list]) {
+    const k = `${p.platform}/${p.name}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    count.set(p.name, (count.get(p.name) ?? 0) + 1);
+  }
+  return list.map(
+    (p) =>
+      ({ ...p, projectRef: (count.get(p.name) ?? 0) > 1 ? `${p.platform}:${p.name}` : p.name }) as T & {
+        projectRef: string;
+      },
+  );
 }
 
-export function status(): Promise<JsonResult<StatusProject[]>> {
-  return runJson<StatusProject[]>(["status", "--json"]);
+export async function changed(): Promise<JsonResult<ChangedProject[]>> {
+  // Every project's name and platform too (no GitHub calls), to know which names are on two
+  // platforms. Without it, only the waiting list itself is counted.
+  const [r, all] = await Promise.all([
+    runJson<Omit<ChangedProject, "projectRef">[]>(["changed", "--json"]),
+    runJson<{ name: string; platform: string }[]>(["status", "--json", "--no-github"]).then(
+      (s) => (Array.isArray(s.data) ? s.data : []),
+      () => [],
+    ),
+  ]);
+  return { ...r, data: withRefs<ChangedProject>(r.data, all) };
 }
 
+export async function status(): Promise<JsonResult<StatusProject[]>> {
+  const r = await runJson<Omit<StatusProject, "projectRef">[]>(["status", "--json"]);
+  return { ...r, data: withRefs<StatusProject>(r.data) };
+}
+
+// `deploys <platform> deploy-json <name>`: the CLI's provider id as it is (vercel, netlify, …).
 export async function deploy(p: { name: string; platform: string }): Promise<DeployStarted> {
   const { data } = await runJson<DeployStarted>([p.platform, "deploy-json", p.name], TIMEOUT.deploy);
   return data;
 }
 
-export function releaseNotes(name: string): Promise<string> {
-  return runText(["notes", name], TIMEOUT.read);
+// What `deploys deploy-changed --json` lists (without --yes) and reports (with --yes).
+export interface DeployChangedRow {
+  platform: Platform;
+  name: string;
+  action: "would-deploy" | "started" | "failed" | "skipped";
+  reason?: string | null;
+  id?: string | null;
+  url?: string | null;
+}
+
+// Several projects at once go through the CLI's own deploy-changed, as the daily job does: one run
+// with its rules (freeze, deploy window, start lock, journal). It takes no names, so it first
+// shows what it would start; if that is not exactly the confirmed list, nothing starts.
+export async function deployChanged(
+  confirmed: { name: string; platform: string }[],
+): Promise<JsonResult<DeployChangedRow[]>> {
+  const key = (p: { name: string; platform: string }) => `${p.platform}/${p.name}`;
+  const plan = await runJson<DeployChangedRow[]>(["deploy-changed", "--json"], TIMEOUT.read);
+  const want = new Set(confirmed.map(key));
+  const got = new Set(plan.data.map(key));
+  const same = want.size === got.size && [...want].every((k) => got.has(k));
+  if (!same) {
+    throw new DeploysError(
+      "failed",
+      "What waits changed since the list was shown (a push or a finished build). Nothing was started; refresh and confirm again.",
+    );
+  }
+  return runJson<DeployChangedRow[]>(["deploy-changed", "--yes", "--json"], TIMEOUT.many);
+}
+
+export function releaseNotes(ref: string): Promise<string> {
+  return runText(["notes", ref], TIMEOUT.read);
 }
 
 // `deploys open` opens the address itself on a Mac; elsewhere it prints it. The printed address
 // (if any) is returned so the caller can open it.
-export async function openProject(name: string, dashboard: boolean): Promise<string | undefined> {
-  const out = await runText(dashboard ? ["open", name, "--dashboard"] : ["open", name]);
+export async function openProject(ref: string, dashboard: boolean): Promise<string | undefined> {
+  const out = await runText(dashboard ? ["open", ref, "--dashboard"] : ["open", ref]);
   return out.match(/https?:\/\/\S+/)?.[0];
 }
 
@@ -275,8 +389,20 @@ export function isFailedState(state: string | null | undefined): boolean {
   return /error|fail/i.test(state ?? "");
 }
 
+const LABELS: Record<string, string> = {
+  vercel: "Vercel",
+  render: "Render",
+  netlify: "Netlify",
+  cloudflare: "Cloudflare",
+  amplify: "AWS Amplify",
+  digitalocean: "DigitalOcean",
+  coolify: "Coolify",
+  hook: "Deploy hook",
+};
+
+// "Vercel", "AWS Amplify"; an unknown provider id as it is, first letter upper case.
 export function platformLabel(p: string): string {
-  return p === "vercel" ? "Vercel" : p === "render" ? "Render" : p;
+  return LABELS[p] ?? p.charAt(0).toUpperCase() + p.slice(1);
 }
 
 export function plural(n: number, word: string): string {

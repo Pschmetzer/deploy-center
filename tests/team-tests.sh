@@ -14,6 +14,9 @@ hasnt() { case "$2" in *"$3"*) fail "$1" "[$3] in: $(printf '%s' "$2" | head -c 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 export DEPLOYS_CONFIG="$tmp/config" FIX="$PWD/tests/fixtures/team" CALLS="$tmp/calls.log"
 export DEPLOYS_VERCEL_TEAM=tm1 GH_USER=dev-one GH_HEAD=""
+# The fixture repo has a shared deploy window (mon-thu 09:00-16:00 UTC): a fixed time inside it,
+# or the deploy tests would fail outside office hours.
+export DEPLOYS_TESTING=1 DEPLOYS_NOW="mon 10:00 2026-11-09"
 mkdir -p "$tmp/bin" "$DEPLOYS_CONFIG"; : > "$CALLS"
 
 # gh: `gh api [flags] <path>`. Files in a repo come from fixtures/team/files, everything else
@@ -36,6 +39,8 @@ case "$path" in
     jq -n --rawfile c "$FIX/files/$repo/$file" '{sha:"f1x", content:($c | @base64)}' | answer; exit 0 ;;
   repos/acme/shop/commits/main|repos/acme/shop/commits/release)
     [ -n "$GH_HEAD" ] || exit 1; echo "{\"sha\":\"$GH_HEAD\"}" | answer; exit 0 ;;
+  # The commit checked before a pinned production deploy: on the branch (providers/vercel.sh).
+  repos/acme/shop/compare/*) echo '{"status":"identical"}' | answer; exit 0 ;;
 esac
 f="$FIX/api/$(printf '%s' "$path" | tr '/?&=' '____').json"
 [ -f "$f" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
@@ -78,6 +83,15 @@ expect "health: overrides.json wins over the project entry" "$(q '.projects.web.
 expect "health: the file's default fills a project without one" "$(q '.projects.docs.health | "\(.value) \(.from)"')" "/api/health acme/shop:deploy-center.json"
 expect "approvals: the file default applies to its projects" "$(q '.projects.web.approvals | "\(.value) \(.from)"')" "1 acme/shop:deploy-center.json"
 expect "approvals: a project entry in the file may lower it" "$(q '.projects.docs.approvals.value')" "0"
+# FEA-112: team init prints a deploy-center.json from these settings and writes nothing.
+before="$(find "$DEPLOYS_CONFIG" -type f ! -path '*/team-cache/*' ! -path '*/locks/*' | sort | xargs cat 2>/dev/null | cksum)"
+init="$("${D[@]}" team init acme/shop 2>/dev/null)"; rc=$?
+expect "FEA-112: team init: this repo's projects with branch and health, the schema" \
+  "$rc:$(echo "$init" | jq -c '[.version, (.projects | keys), .projects.web.branch, .projects.web.health, .projects.web.platform, (."$schema" | test("schema.json"))]')" \
+  '0:[1,["api","docs","web"],"main","/up","vercel",true]'
+expect "FEA-112: team init writes nothing" "$(find "$DEPLOYS_CONFIG" -type f ! -path '*/team-cache/*' ! -path '*/locks/*' | sort | xargs cat 2>/dev/null | cksum)" "$before"
+out="$("${D[@]}" team init 2>&1)"; rc=$?
+expect "FEA-112: team init without a repo is a usage line" "$rc:$(echo "$out" | grep -c 'team init <owner/repo>')" "1:1"
 expect "approvals: the project entry wins over the file default" "$(q '.projects.api.approvals.value')" "2"
 expect "a project named only in a file deploys from that repo" "$(q '.projects.api.repo | "\(.value) \(.from)"')" "acme/shop acme/shop:deploy-center.json"
 expect "a project in another repo's file takes that repo" "$(q '.projects.cli | "\(.repo.value) \(.branch.value)"')" "acme/tools stable"
@@ -124,7 +138,9 @@ echo '{"projects":{"web":{"health":"/up"}}}' > "$DEPLOYS_CONFIG/overrides.json"
 fresh; : > "$CALLS"
 for cmd in "deploy web" "vercel deploy web" "vercel rollback web" "vercel autodeploy-off --all" "vercel map web acme/shop" \
            "render deploy api" "render rollback api" "render cancel s1 d1" "hook deploy site" "deploy-changed --yes" "autofix" \
-           "autofix --only vercel web" "guard" "vercel autodeploy-on web" "render autodeploy-on api" "netlify deploy site"; do
+           "autofix --only vercel web" "guard" "vercel autodeploy-on web" "render autodeploy-on api" "netlify deploy site" \
+           "deploy-changed --when-green --yes" "deploy-changed --json --yes" "autodeploy allow vercel web 2" \
+           "autodeploy revoke vercel web" "verify web"; do
   # shellcheck disable=SC2086  # the words of the command
   out="$(DEPLOYS_READONLY=1 "${D[@]}" $cmd 2>&1)"; rc=$?
   expect "DEPLOYS_READONLY=1 refuses: $cmd" "$rc:$(echo "$out" | grep -c 'Observer mode (DEPLOYS_READONLY is set)')" "1:1"
@@ -169,6 +185,10 @@ fresh
   expect "a label on an open issue naming the commit counts" "$(n dddd444dddd444dddd444dddd444dddd444dddd)" "dev-two"
   out="$(team_gate render api acme/shop main aaaa111aaaa111aaaa111aaaa111aaaa111aaaa 2>&1)"; rc=$?
   expect "two needed, one there: refused" "$rc:$(echo "$out" | grep -c 'needs 2 approval')" "1:1"
+  # 290: GitHub not readable is not "no approvals" (there is no fixture for this commit: a 404).
+  expect "290: a GitHub error is an error, not an empty list" "$(team_approvals acme/shop eeee555 dev-one | jq -r '.error')" "gh: Not Found (HTTP 404)"
+  out="$(team_gate render api acme/shop main eeee555 2>&1)"; rc=$?
+  expect "290: team_gate says GitHub could not be read" "$rc:$(echo "$out" | grep -c 'could not be read to check them'):$(echo "$out" | grep -c 'Found none')" "1:1:0"
   [ "$fails" = 0 ] || exit 1
 ) || fails=$((fails + 1))
 
@@ -217,11 +237,23 @@ fresh
 out="$(GH_HEAD=bbbb222bbbb222bbbb222bbbb222bbbb222bbbb "${D[@]}" vercel deploy-json web 2>&1)"; rc=$?
 expect "the app's path (vercel deploy-json) is checked too" "$rc:$(echo "$out" | grep -c 'needs 1 approval')" "1:1"
 
-# A copy of the script without lib/team.sh still deploys, and observer mode still holds.
+# A copy of the script without lib/team.sh: observer mode still holds.
 # providers/ comes along (without it deploys stops at once); lib/ does not.
 mkdir -p "$tmp/alone"; cp deploys "$tmp/alone/deploys"; cp -R providers "$tmp/alone/providers"
 out="$(DEPLOYS_READONLY=1 bash "$tmp/alone/deploys" vercel deploy web 2>&1)"; rc=$?
 expect "without lib/team.sh observer mode still refuses" "$rc:$(echo "$out" | grep -c 'Observer mode')" "1:1"
+# 524: this Mac uses a team file (team-repos, overrides.json or a cached shared file), and lib/ is
+# gone: a deploy stops instead of skipping the two-person rule; reading still works.
+# No real keychain or network: security finds nothing, curl answers nothing, no Render key.
+mkdir -p "$tmp/b524"; printf '#!/bin/bash\ncat >/dev/null; exit 44\n' > "$tmp/b524/security"; printf '#!/bin/bash\nexit 7\n' > "$tmp/b524/curl"
+chmod +x "$tmp/b524"/*; OLDPATH="$PATH"; export PATH="$tmp/b524:$PATH"; unset RENDER_API_KEY
+out="$(bash "$tmp/alone/deploys" vercel deploy web 2>&1)"; rc=$?
+expect "524: without lib/team.sh and a team file, a deploy is refused" "$rc:$(echo "$out" | grep -c 'lib/team.sh is missing')" "1:1"
+out="$(DEPLOYS_TEAM_LIB=/nonexistent bash ./deploys deploy-changed --yes 2>&1)"; rc=$?
+expect "524: deploy-changed --yes too" "$rc:$(echo "$out" | grep -c 'is missing, so its approvals')" "1:1"
+out="$(DEPLOYS_TEAM_LIB=/nonexistent bash ./deploys doctor 2>&1)"; rc=$?
+expect "524: doctor still runs" "$rc" "0"
+export PATH="$OLDPATH"
 
 # The fixtures follow the schema (when python3 with jsonschema is there; CI on macOS may lack it).
 if python3 -c 'import jsonschema' 2>/dev/null; then
@@ -234,6 +266,81 @@ PY
 )"
   expect "the schema is valid and the fixtures follow it" "$out" "valid"
 else echo "skip schema check (no python3 jsonschema)"; fi
+
+# ===== CLI track (improve/cli): additions, kept together =====
+# CLI-004: an approvals value that is no whole number keeps the rule shut, also with --force.
+for bad in '"two"' '"2x"' '1.5'; do
+  fresh; : > "$CALLS"
+  echo "{\"projects\":{\"web\":{\"approvals\":$bad}}}" > "$DEPLOYS_CONFIG/overrides.json"
+  out="$(GH_HEAD=bbbb222bbbb222bbbb222bbbb222bbbb222bbbb "${D[@]}" deploy web --force "why" 2>&1)"; rc=$?
+  expect "approvals $bad: refused, nothing sent" "$rc:$(echo "$out" | grep -c 'must be a whole number'):$(grep -c 'vercel POST' "$CALLS")" "1:1:0"
+done
+echo '{"projects":{"web":{"health":"/up","approvals":0},"playground":{"ignored":false}}}' > "$DEPLOYS_CONFIG/overrides.json"
+fresh
+# CLI-040: an approving review of an older head does not approve what was pushed after it.
+mkdir -p "$tmp/fix40"; cp -R "$FIX/." "$tmp/fix40/"
+echo '[{"number":12,"html_url":"https://github.com/acme/shop/pull/12","labels":[],"head":{"sha":"newhead"}}]' \
+  > "$tmp/fix40/api/repos_acme_shop_commits_aaaa111aaaa111aaaa111aaaa111aaaa111aaaa_pulls.json"
+jq '(.[] | select(.state == "APPROVED")) += {commit_id:"oldhead"}' "$FIX/api/repos_acme_shop_pulls_12_reviews.json" > "$tmp/fix40/api/repos_acme_shop_pulls_12_reviews.json"
+(
+  export DEPLOYS_LIB=1 FIX="$tmp/fix40"
+  # shellcheck source=../deploys
+  . ./deploys; set +e
+  expect "CLI-040: a review of an older head does not count" "$(team_approvals acme/shop aaaa111aaaa111aaaa111aaaa111aaaa111aaaa dev-one | jq -c '[.have[].user]')" "[]"
+  jq '(.[] | select(.state == "APPROVED")) += {commit_id:"newhead"}' "$FIX/api/repos_acme_shop_pulls_12_reviews.json" > "$tmp/r.json" && mv "$tmp/r.json" "$FIX/api/repos_acme_shop_pulls_12_reviews.json"
+  expect "CLI-040: a review of the final head counts" "$(team_approvals acme/shop aaaa111aaaa111aaaa111aaaa111aaaa111aaaa dev-one | jq -c '[.have[].user]')" '["dev-two"]'
+  [ "$fails" = 0 ] || exit 1
+) || fails=$((fails + 1))
+# LOG-078: where observer mode comes from, as a field (the from text is for people).
+expect "LOG-078: readonly.source env" "$(DEPLOYS_READONLY=1 "${D[@]}" config --json | jq -r .readonly.source)" "env"
+fresh
+expect "LOG-078: readonly.source team" "$(GH_USER=dev-watcher "${D[@]}" config --json | jq -r .readonly.source)" "team"
+# CLI-090: one team merge per command; the subshells read it, a write or another environment does not.
+fresh
+(
+  export DEPLOYS_LIB=1
+  # shellcheck source=../deploys
+  . ./deploys; set +e
+  n90="$tmp/n90"; : > "$n90"
+  eval "orig_sources() $(declare -f team_sources | tail -n +2)"
+  team_sources() { echo x >> "$n90"; orig_sources "$@"; }
+  team_eff_forget; a="$(team_ignored)"; b="$(team_group nope)"; c="$(repos_json)"
+  expect "CLI-090: three readers in subshells, one merge" "$(wc -l < "$n90" | tr -d ' ')" "1"
+  d="$(DEPLOYS_NO_GITHUB=1 team_ignored)"
+  expect "CLI-090: another environment merges again" "$(wc -l < "$n90" | tr -d ' ')" "2"
+  team_eff_forget; e="$(team_ignored)"
+  expect "CLI-090: after a write it merges again" "$(wc -l < "$n90" | tr -d ' ')" "3"
+  expect "CLI-090: the same answer from the memo" "$a" "$e"
+  : "$b$c$d"
+  [ "$fails" = 0 ] || exit 1
+) || fails=$((fails + 1))
+# CLI-090 follow-up: a file left by an earlier run with the same pid is never read.
+fresh
+(
+  export DEPLOYS_LIB=1
+  # shellcheck source=../deploys
+  . ./deploys; set +e
+  mkdir -p "$TEAM_CACHE"; printf '%s\n%s\n' "$(team_eff_key)" '{"planted":true}' > "$TEAM_CACHE/eff.$$"
+  expect "CLI-090: an old eff.<pid> file is not taken" "$(team_effective 2>/dev/null | jq -r '.planted // false')" "false"
+  [ "$fails" = 0 ] || exit 1
+) || fails=$((fails + 1))
+# FEA-053: an observer entry with "until" stops counting after that day.
+fresh; cp "$DEPLOYS_CONFIG/overrides.json" "$tmp/ov.keep" 2>/dev/null || echo '{}' > "$tmp/ov.keep"
+echo '{"observers":[{"login":"gone-obs","until":"2001-01-01"},{"login":"still-obs","until":"2999-01-01"},{"login":"iso-obs","until":"2001-01-01T10:00:00Z"},{"login":"odd-obs","until":"soon"},"plain-obs"]}' > "$DEPLOYS_CONFIG/overrides.json"
+expect "FEA-053: expired observers are left out, the rest count" \
+  "$("${D[@]}" config --json 2>/dev/null | jq -c '.observers.value | map(select(endswith("-obs"))) | sort')" '["odd-obs","plain-obs","still-obs"]'
+cp "$tmp/ov.keep" "$DEPLOYS_CONFIG/overrides.json"
+# FEA-052: team add takes a GitHub address as copied, and refuses other hosts.
+fresh; cp "$DEPLOYS_CONFIG/team-repos" "$tmp/team-repos.keep"
+"${D[@]}" team add https://github.com/acme/web.git >/dev/null 2>&1
+"${D[@]}" team add git@github.com:acme/tools.git >/dev/null 2>&1
+expect "FEA-052: team add https://github.com/o/r.git and git@github.com:o/r.git are o/r" "$(grep -c '^acme/web$' "$DEPLOYS_CONFIG/team-repos"):$(grep -c '^acme/tools$' "$DEPLOYS_CONFIG/team-repos"):$(grep -c 'github' "$DEPLOYS_CONFIG/team-repos")" "1:1:0"
+out="$("${D[@]}" team add https://gitlab.com/acme/web 2>&1)"; rc=$?
+expect "FEA-052: team add refuses another host" "$rc:$(echo "$out" | grep -c 'GitHub repos only')" "1:1"
+"${D[@]}" team remove https://github.com/acme/web >/dev/null 2>&1
+expect "FEA-052: team remove takes the same address" "$(grep -c '^acme/web$' "$DEPLOYS_CONFIG/team-repos")" "0"
+cp "$tmp/team-repos.keep" "$DEPLOYS_CONFIG/team-repos"
+# ===== end CLI track =====
 
 echo
 [ "$fails" = 0 ] && echo "All passed." || { echo "$fails failed."; exit 1; }

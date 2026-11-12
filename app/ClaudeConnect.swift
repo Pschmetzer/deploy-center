@@ -85,6 +85,23 @@ enum ClaudeConfig {
 
     static func codeRemoveArgs() -> [String] { ["mcp", "remove", serverName, "--scope", "user"] }
 
+    /// The add arguments that bring back an entry as it was (node, server, deploys, the switch); nil when it lacks one.
+    static func codeAddArgs(restoring e: [String: Any]) -> [String]? {
+        guard let node = e["command"] as? String, let server = (e["args"] as? [String])?.first,
+              let deploys = (e["env"] as? [String: Any])?["DEPLOYS_BIN"] as? String else { return nil }
+        return codeAddArgs(node: node, server: server, deploys: deploys, allowDeploy: allowsDeploy(e))
+    }
+
+    /// The entry points into the app (server.mjs, the bundled deploys) by absolute paths; after the
+    /// app was moved (Downloads → Applications) one of them is gone and Claude has no tools, silently.
+    static func stale(_ e: [String: Any], exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> Bool {
+        var paths: [String] = []
+        if let c = e["command"] as? String { paths.append(c) }
+        if let a = (e["args"] as? [String])?.first { paths.append(a) }
+        if let d = (e["env"] as? [String: Any])?["DEPLOYS_BIN"] as? String { paths.append(d) }
+        return paths.contains { $0.hasPrefix("/") && !exists($0) }
+    }
+
     /// Plugins are installed inside Claude Code; the app only copies these.
     static let pluginCommands = ["/plugin marketplace add Pschmetzer/deploy-center", "/plugin install deploy-center@deploy-center"]
 }
@@ -97,6 +114,17 @@ enum ClaudeFiles {
     static func stamp(_ date: Date = Date()) -> String {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyyMMdd-HHmmss"
         return f.string(from: date)
+    }
+
+    /// The newest `keep` backups of a file stay; older ones go. They hold the tokens of other MCP
+    /// servers (their `env`), and each connect or allow click made one more.
+    static func pruneBackups(of real: String, keep: Int) {
+        let fm = FileManager.default
+        let dir = (real as NSString).deletingLastPathComponent, prefix = (real as NSString).lastPathComponent + ".bak-"
+        guard let names = try? fm.contentsOfDirectory(atPath: dir) else { return }
+        // The stamp sorts by time; "-2" of the same second after the plain one.
+        let baks = names.filter { $0.hasPrefix(prefix) }.sorted()
+        for name in baks.dropLast(keep) { try? fm.removeItem(atPath: (dir as NSString).appendingPathComponent(name)) }
     }
 
     /// Writes through a temp file in the same folder and a rename, so the file is never half
@@ -117,6 +145,7 @@ enum ClaudeFiles {
             try fm.copyItem(atPath: real, toPath: bak)
             try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: bak)
             backup = bak
+            pruneBackups(of: real, keep: 3)
         } else {
             try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
         }
@@ -160,6 +189,9 @@ enum ClaudeEnv {
     static func find(_ name: String, overrideKey: String, candidates: [String]) async -> String? {
         if let o = override(overrideKey) { return isExec(o) ? o : nil }
         if let hit = candidates.first(where: isExec) { return hit }
+        // The login shell's PATH the app already read once (Tool.searchPath), before starting another shell.
+        if let hit = Tool.searchPath.split(separator: ":").map({ "\($0)/\(name)" })
+            .first(where: { isExec($0) && !$0.contains("/Application Support/Claude/") }) { return hit }
         let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { isExec($0) ? $0 : nil } ?? "/bin/zsh"
         let r = await ClaudeRun.run(shell, ["-lc", "command -v \(name)"], timeout: 3)
         let p = r.out.split(separator: "\n").last.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
@@ -219,26 +251,11 @@ enum ClaudeEnv {
 enum ClaudeRun {
     /// Runs a program with a plain PATH (plus `pathDirs`), stdout and stderr together.
     static func run(_ exe: String, _ args: [String], pathDirs: [String] = [], timeout: Double = 30) async -> (ok: Bool, out: String) {
-        await withCheckedContinuation { cont in
-            DispatchQueue.global().async {
-                let p = Process()
-                p.executableURL = URL(fileURLWithPath: exe)
-                p.arguments = args
-                p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
-                var env = ProcessInfo.processInfo.environment
-                env["PATH"] = (pathDirs + ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]).joined(separator: ":")
-                p.environment = env
-                let pipe = Pipe()
-                p.standardOutput = pipe; p.standardError = pipe; p.standardInput = FileHandle.nullDevice
-                do { try p.run() } catch { cont.resume(returning: (false, error.localizedDescription)); return }
-                let timer = DispatchWorkItem { if p.isRunning { p.terminate() } }
-                DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                p.waitUntilExit()
-                timer.cancel()
-                cont.resume(returning: (p.terminationStatus == 0, String(decoding: data, as: UTF8.self)))
-            }
-        }
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = (pathDirs + ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]).joined(separator: ":")
+        // The whole tree ends at the timeout: `claude` runs node, which kept the pipe (and Settings) hanging.
+        let r = await Tool.exec(exe, args, env: env, cwd: URL(fileURLWithPath: NSHomeDirectory()), mergeStderr: true, timeout: timeout)
+        return (r.status == 0, String(decoding: r.out, as: UTF8.self))
     }
 }
 
@@ -287,10 +304,17 @@ final class ClaudeLink: ObservableObject {
         }
         else if let e = ClaudeConfig.entry(dData) { desktop = .connected; desktopAllows = ClaudeConfig.allowsDeploy(e) }
         else { desktop = .notConnected; desktopAllows = false }
+        var stale: [String] = []
+        if desktop == .connected, let e = ClaudeConfig.entry(dData), ClaudeConfig.stale(e) { stale.append("Claude Desktop") }
 
         let cData = await Task.detached { ClaudeFiles.read(ClaudeEnv.codeConfig) }.value
         if let e = ClaudeConfig.entry(cData) { code = .connected; codeAllows = ClaudeConfig.allowsDeploy(e) }
         else { code = cli == nil ? .notFound : .notConnected; codeAllows = false }
+        if code == .connected, let e = ClaudeConfig.entry(cData), ClaudeConfig.stale(e) { stale.append("Claude Code") }
+        if !stale.isEmpty {
+            say(L("Out of date: \(stale.joined(separator: ", ")) points to a place the app is no longer in. Connect again.",
+                  "Veraltet: \(stale.joined(separator: ", ")) zeigt auf einen Ort, an dem die App nicht mehr liegt. Neu verbinden."), failed: true)
+        }
 
         autofix = try? await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20)
         ClaudeNudge.store(wanted: desktop == .notConnected || code == .notConnected)
@@ -353,10 +377,18 @@ final class ClaudeLink: ObservableObject {
         guard let node, let server else { say(missing ?? "", failed: true); return }
         busy = true; defer { busy = false }
         let dirs = [(node as NSString).deletingLastPathComponent, (cli as NSString).deletingLastPathComponent]
+        // The entry as it was, so a failed add does not leave Claude Code without Deploy Center.
+        let before = code == .connected ? ClaudeConfig.entry(await Task.detached { ClaudeFiles.read(ClaudeEnv.codeConfig) }.value) : nil
         if code == .connected { _ = await ClaudeRun.run(cli, ClaudeConfig.codeRemoveArgs(), pathDirs: dirs) }
         let r = await ClaudeRun.run(cli, ClaudeConfig.codeAddArgs(node: node, server: server, deploys: Tool.path, allowDeploy: allowDeploy), pathDirs: dirs)
         if r.ok { say(L("Connected. New Claude Code sessions see Deploy Center.", "Verbunden. Neue Claude-Code-Sitzungen sehen Deploy Center.")) }
-        else { say(Tool.shorten(r.out.trimmingCharacters(in: .whitespacesAndNewlines)), failed: true) }
+        else {
+            var text = Tool.shorten(r.out.trimmingCharacters(in: .whitespacesAndNewlines))
+            if let old = before.flatMap(ClaudeConfig.codeAddArgs(restoring:)), await ClaudeRun.run(cli, old, pathDirs: dirs).ok {
+                text += L(" The previous connection was put back.", " Die vorherige Verbindung wurde wiederhergestellt.")
+            }
+            say(text, failed: true)
+        }
         await refresh()
     }
 
@@ -566,13 +598,15 @@ enum ClaudeNudge {
 
 struct ClaudeNudgeLine: View {
     @AppStorage(ClaudeNudge.dismissedKey) private var dismissed = false
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         HStack {
             Image(systemName: "sparkles").foregroundStyle(.purple)
             Text(L("Claude found. Connect it so Claude can see what's waiting.", "Claude gefunden. Verbinde es, damit Claude sieht, was wartet."))
                 .font(.callout)
-            SettingsLink { Text(L("Connect …", "Verbinden …")) }.buttonStyle(.link)
+            // Straight to the Claude tab, not to whichever tab was open last.
+            Button(L("Connect …", "Verbinden …")) { SettingsNav.prepare(.claude); openSettings() }.buttonStyle(.link)
             Spacer()
             Button { dismissed = true } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
                 .help(L("Don't show again", "Nicht mehr zeigen")).accessibilityLabel(L("Don't show again", "Nicht mehr zeigen"))

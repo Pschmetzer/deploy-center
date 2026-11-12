@@ -26,7 +26,7 @@ team_fetch_one() {
   local repo="$1" dir="$2" ttl="$3" only="${4:-}" f now age p out err
   f="$dir/$(printf '%s' "$repo" | sed 's#/#__#').json"; now="$(date +%s)"
   if [ -f "$f" ]; then
-    age=$(( now - $(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f") ))
+    age=$(( now - $(mtime "$f") ))
     [ "$age" -lt "$ttl" ] && return 0
   fi
   [ -z "$only" ] || return 0
@@ -72,7 +72,7 @@ team_sources() {
   [ "${DEPLOYS_TEAM_REFRESH:-}" != 1 ] || ttl=0
   list="$(team_repo_list "$@")"
   if [ -n "$list" ]; then
-    printf '%s\n' "$list" | xargs -P 8 -n 1 bash -c 'team_fetch_one "$4" "$1" "$2" "$3"' _ "$TEAM_CACHE" "$ttl" "$only" 2>/dev/null || true
+    printf '%s\n' "$list" | xargs -r -P 8 -n 1 bash -c 'team_fetch_one "$4" "$1" "$2" "$3"' _ "$TEAM_CACHE" "$ttl" "$only" 2>/dev/null || true
   fi
   while IFS= read -r r; do
     [ -n "$r" ] || continue
@@ -86,7 +86,13 @@ team_sources() {
 # The GitHub login of whoever runs this, kept for an hour. Empty when gh cannot tell.
 team_me() {
   local f="$TEAM_CACHE/me"; mkdir -p "$TEAM_CACHE"
-  if [ -s "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -lt 3600 ]; then cat "$f"; return; fi
+  # Per gh login: after `gh auth switch` (which rewrites gh's hosts.yml) or with another GH_TOKEN,
+  # the old name must not count. Without asking gh: a hash of the token variables (never the
+  # token itself), and the age of hosts.yml.
+  local key hosts; key="$(printf '%s' "${GH_TOKEN:-}${GITHUB_TOKEN:-}" | shasum 2>/dev/null | cut -c1-12)" || key=""
+  [ -z "$key" ] || f="$TEAM_CACHE/me-$key"
+  hosts="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}/hosts.yml"
+  if [ -s "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -lt 3600 ] && ! [ "$hosts" -nt "$f" ]; then cat "$f"; return; fi
   if [ -z "${DEPLOYS_NO_GITHUB:-}" ] && command -v gh >/dev/null 2>&1; then
     local me; me="$(gh api user --jq .login 2>/dev/null | head -n 1)"
     if [ -n "$me" ]; then printf '%s' "$me" > "$f"; echo "$me"; return; fi
@@ -104,7 +110,7 @@ def named($n): [cf[] | select(((.config.projects // {})[$n] != null) or ((.confi
 def fileof($n):
   (userrepo($n) // (named($n)[0] | if . then ((.config.projects // {})[$n].repo // .repo) else null end) // ($extra[$n].repo // null)) as $r
   | ([cf[] | select(.repo == $r)][0]) // named($n)[0] // null;
-def keep: with_entries(select(.key as $k | ["repo","branch","health","window","approvals","ignored","platform"] | index($k)));
+def keep: with_entries(select(.key as $k | ["repo","branch","health","checks","window","approvals","ignored","platform"] | index($k)));
 def layers($n): fileof($n) as $f | [
   ($extra[$n] // null | if . then {from:"platform", v:(keep | with_entries(select(.value != null)))} else empty end),
   (if $f then {from:($f | src), v:($f.config | {window, approvals, health} | with_entries(select(.value != null)))} else empty end),
@@ -126,14 +132,23 @@ def resolve($n):
       else .[$e.key] = {value:$e.value, from:$l.from} end));
 ([cf[] | (.config.projects // {} | keys[]), (.config.ignored // [])[]] + ($repos | keys) + ($ign)
    + (($ov.projects // {}) | keys) + ($extra | keys) | unique) as $names
-| (reduce ((cf[] as $f | ($f.config.observers // [])[] | {login:., from:($f | src)}),
-           (($ov.observers // [])[] | {login:., from:"overrides.json"})) as $o
+# FEA-053: an observer is a login, or {"login":…, "until":"2026-12-31"} that counts until that day
+# ends (UTC; a full ISO time counts to the second). A date that cannot be read keeps it counting.
+| def obs: if type == "string" then .
+    elif type == "object" and (.login | type) == "string" then
+      (if .until == null then .login
+       else ((.until | tostring) as $u | (try (if ($u | test("T")) then ($u | sub("\\.[0-9]+"; "") | fromdateiso8601) else ($u + "T23:59:59Z" | fromdateiso8601) end) catch 1e12)) as $end
+            | if $end > now then .login else empty end end)
+    else empty end;
+  (reduce ((cf[] as $f | ($f.config.observers // [])[] | obs | {login:., from:($f | src)}),
+           (($ov.observers // [])[] | obs | {login:., from:"overrides.json"})) as $o
      ({}; if .[$o.login] then . else .[$o.login] = $o.from end)) as $obs
 | ($obs | to_entries | map(select((.key | ascii_downcase) == ($me | ascii_downcase))) | .[0].value // null) as $meObs
 | {me:(if $me == "" then null else $me end),
-   readonly:(if $ro != "" then {value:true, from:$ro}
-             elif $meObs then {value:true, from:"observers in \($meObs)"}
-             else {value:false, from:"default"} end),
+   # source: env, file or team, for the app (the from text is for people and may change).
+   readonly:(if $ro != "" then {value:true, from:$ro, source:(if ($ro | startswith("DEPLOYS_READONLY")) then "env" else "file" end)}
+             elif $meObs then {value:true, from:"observers in \($meObs)", source:"team"}
+             else {value:false, from:"default", source:null} end),
    observers:{value:($obs | keys), from:$obs},
    groups:(reduce ((cf[] as $f | ($f.config.groups // {}) | to_entries[] | {k:.key, v:.value, from:($f | src)}),
                    (($ov.groups // {}) | to_entries[] | {k:.key, v:.value, from:"overrides.json"})) as $g
@@ -145,7 +160,34 @@ def resolve($n):
 
 # The effective config as JSON. Arguments: extra "name=owner/repo@branch@platform" entries for
 # projects this Mac knows only from the platform (a Render service), for one deploy.
+# One merge per process: repos_json, team_ignored, team_group and the rest each asked for the
+# whole merge again. Most of them run in $(...), where a variable set inside is lost, so the
+# first plain call (no extra projects) writes it to team-cache/eff.<pid> ($$ is the same in every
+# subshell, a child process has its own), with the environment it was made in as the first line;
+# a call in another environment merges anew. Writing team or readonly config calls
+# team_eff_forget; deploys removes the file on exit, and leftovers go after an hour.
+# The pid alone is not enough: a later run may get the same pid and find an old file. The token
+# is made once per process (subshells share it, a child process makes its own).
+TEAM_EFF_TOKEN="$$.$RANDOM.$(date +%s)"
+team_eff_file() { echo "$TEAM_CACHE/eff.$TEAM_EFF_TOKEN"; }
+team_eff_key() { printf '%s|%s|%s|%s' "${DEPLOYS_NO_GITHUB:-}" "${DEPLOYS_TEAM_REFRESH:-}" "${DEPLOYS_READONLY-unset}" "$CONFIG_DIR"; }
+team_eff_forget() { rm -f "$(team_eff_file)"; }
 team_effective() {
+  local f k out rc=0
+  if [ $# = 0 ]; then
+    f="$(team_eff_file)"; k="$(team_eff_key)"
+    if [ -s "$f" ] && [ "$(head -n 1 "$f")" = "$k" ]; then tail -n +2 "$f"; return 0; fi
+    out="$(team_merge)" || rc=$?
+    if [ "$rc" = 0 ] && [ -n "$out" ] && mkdir -p "$TEAM_CACHE" 2>/dev/null; then
+      find "$TEAM_CACHE" -name 'eff.*' -mmin +60 -exec rm -f {} + 2>/dev/null || true
+      local t="$f.$RANDOM.t"; printf '%s\n%s\n' "$k" "$out" > "$t" 2>/dev/null && mv -f "$t" "$f" 2>/dev/null || rm -f "$t"
+    fi
+    [ -z "$out" ] || printf '%s\n' "$out"
+    return "$rc"
+  fi
+  team_merge "$@"
+}
+team_merge() {
   local extra='{}' e n rest repos=()
   for e in "$@"; do
     n="${e%%=*}"; rest="${e#*=}"
@@ -197,19 +239,30 @@ team_journal() {  # team_journal <json object>
 # (its first 7 characters), added by <user> themself (read from the issue's events: anyone may
 # add a label with someone else's name, and that does not count).
 team_approvals() {
-  local repo="$1" sha="$2" me="$3" prs issues have='[]' n
-  prs="$(gh api "repos/$repo/commits/$sha/pulls" 2>/dev/null | jq -c '[.[] | {number, url:.html_url, labels:[.labels[]?.name]}]' 2>/dev/null)" || prs='[]'
+  local repo="$1" sha="$2" me="$3" prs issues have='[]' n raw e
+  # GitHub not readable is not "no approvals": the answer says so ({error}), and team_gate stops.
+  e="$(mktemp)"
+  if ! raw="$(gh api "repos/$repo/commits/$sha/pulls" 2>"$e")" || ! prs="$(jq -c '[.[] | {number, url:.html_url, labels:[.labels[]?.name], head:(.head.sha // null)}]' <<< "$raw" 2>/dev/null)"; then
+    jq -nc --arg w "$(grep -v '^[[:space:]]*$' "$e" | tail -n 1 | cut -c1-200)" '{error:(if $w == "" then "no readable answer" else $w end), have:[], prs:[]}'
+    rm -f "$e"; return 0
+  fi
+  rm -f "$e"
   [ -n "$prs" ] || prs='[]'
-  # Reviews: the newest state of each person who is not the deployer.
+  # Reviews: the newest state of each person who is not the deployer. An approval counts for what
+  # it saw: a review of an older head (pushed to after the approval) does not approve the PR's
+  # final content. (Checked when GitHub names both commits.)
+  local head
   for n in $(jq -r '.[].number' <<< "$prs"); do
-    have="$(gh api --paginate "repos/$repo/pulls/$n/reviews" 2>/dev/null | jq -s -c --argjson have "$have" --arg me "$me" --argjson n "$n" \
+    head="$(jq -r --argjson n "$n" '[.[] | select(.number == $n)][0].head // ""' <<< "$prs")"
+    have="$(gh api --paginate "repos/$repo/pulls/$n/reviews" 2>/dev/null | jq -s -c --argjson have "$have" --arg me "$me" --argjson n "$n" --arg head "$head" \
       '[.[][]? | select(.user.login and ((.user.login | ascii_downcase) != ($me | ascii_downcase)) and (.state != "COMMENTED"))]
        | group_by(.user.login) | map(max_by(.submitted_at // "")) | map(select(.state == "APPROVED"))
+       | map(select($head == "" or .commit_id == null or .commit_id == $head))
        | $have + map({user:.user.login, via:"review on PR #\($n)", url:(.html_url // null)})' 2>/dev/null || echo "$have")"
   done
   # Labels: on those PRs, and on open issues that name the commit.
-  issues="$(gh api "repos/$repo/issues?state=open&per_page=100" 2>/dev/null | jq -c --arg s "${sha:0:7}" \
-    '[.[] | select(((.title // "") + " " + (.body // "")) | contains($s)) | {number, url:.html_url, labels:[.labels[]?.name]}]' 2>/dev/null)" || issues='[]'
+  issues="$(gh api --paginate "repos/$repo/issues?state=open&per_page=100" 2>/dev/null | jq -s -c --arg s "${sha:0:7}" \
+    '[add // [] | .[] | select(((.title // "") + " " + (.body // "")) | contains($s)) | {number, url:.html_url, labels:[.labels[]?.name]}]' 2>/dev/null)" || issues='[]'
   [ -n "$issues" ] || issues='[]'
   local item num lbl who by
   while IFS=$'\t' read -r num item lbl; do
@@ -236,8 +289,14 @@ team_gate() {
     die "Observer mode ($(jq -r '.readonly.from' <<< "$eff")): $me may look, not deploy. Deploying $p is refused."
   fi
   need="$(jq -r --arg p "$p" '.projects[$p].approvals.value // 0' <<< "$eff")"
-  [ "$need" -ge 1 ] 2>/dev/null || { [ -z "$sha" ] || echo "$sha"; return 0; }
   local from; from="$(jq -r --arg p "$p" '.projects[$p].approvals.from' <<< "$eff")"
+  # Only a whole number counts. "two", true or 1.5 must not read as "no approval needed": the rule
+  # stays shut until the file says what it means (--force does not get past a broken file either).
+  case "$need" in
+    ''|*[!0-9]*) die "\"approvals\" for $p is \"$need\" ($from): it must be a whole number (0, 1, 2 …). Fix the file; until then $p is not deployed." ;;
+  esac
+  [ "$((10#$need))" -ge 1 ] || { [ -z "$sha" ] || echo "$sha"; return 0; }
+  need="$((10#$need))"
   command -v gh >/dev/null 2>&1 || die "$p needs $need approval(s) ($from), and checking them needs the gh CLI. Install it, or: --force \"reason\""
   [ -n "$repo" ] || die "$p needs $need approval(s) ($from), but no GitHub repo is known for it (approvals are read from GitHub; a GitLab repo cannot have them yet)"
   [ -n "$me" ] || die "$p needs $need approval(s) ($from), but gh cannot tell who you are. Run: gh auth login"
@@ -246,6 +305,10 @@ team_gate() {
     [ -n "$sha" ] || die "$p needs $need approval(s), but the head of $repo ${ref:-main} could not be read"
   fi
   a="$(team_approvals "$repo" "$sha" "$me")"
+  local gherr; gherr="$(jq -r '.error // empty' <<< "$a")"
+  if [ -n "$gherr" ] && [ -z "${DEPLOYS_FORCE_REASON:-}" ]; then
+    die "$p needs $need approval(s) ($from), but GitHub could not be read to check them ($gherr). Nothing was started. Try again, or deliberately: --force \"reason\""
+  fi
   n="$(jq '.have | length' <<< "$a")"
   if [ "$n" -ge "$need" ]; then
     team_journal "$(jq -c --arg p "$p" --arg pl "$plat" --arg sha "$sha" --arg me "$me" --argjson need "$need" \

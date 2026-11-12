@@ -138,7 +138,7 @@ expect "json: runs" "$rc" 0
 expect "json: sorted by name" "$(echo "$out" | jq -c 'map(.name)')" '["blog","Shop","static"]'
 s="$(echo "$out" | jq -c '.[] | select(.name=="Shop")')"
 expect "json: contract fields" "$(echo "$s" | jq -c 'keys')" \
-  '["auto","dashboardUrl","deployable","domain","fetchError","id","lastAt","lastMsg","lastSha","lastState","name","paused","phase","ref","repo","url"]'
+  '["auto","dashboardUrl","deployable","domain","fetchError","fetchWarn","id","lastAt","lastMsg","lastSha","lastState","name","paused","phase","ref","repo","url"]'
 expect "json: id is app/branch" "$(echo "$s" | jq -r .id)" "d1shop0001/main"
 expect "json: auto is enableAutoBuild" "$(echo "$s" | jq .auto)" true
 expect "json: custom domain of the branch" "$(echo "$s" | jq -r '.domain + " " + .url')" "www.example.com https://www.example.com"
@@ -147,9 +147,19 @@ expect "json: lastAt in seconds" "$(echo "$s" | jq .lastAt)" 1767326645
 expect "json: live commit is the newest succeeded" "$(echo "$s" | jq -r '.lastSha + " " + .lastMsg')" "bbbb222 feat: b"
 expect "json: repo and ref" "$(echo "$s" | jq -r '.repo + "@" + .ref')" "me/shop@main"
 expect "json: dashboard" "$(echo "$s" | jq -r .dashboardUrl)" "https://eu-central-1.console.aws.amazon.com/amplify/apps/d1shop0001/branches/main/deployments"
-expect "json: deployable" "$(echo "$s" | jq -c '[.deployable, .paused, .fetchError]')" '[true,false,null]'
+expect "json: deployable" "$(echo "$s" | jq -c '[.deployable, .paused, .fetchError, .fetchWarn]')" '[true,false,null,null]'
+# PRV-109: the domains cannot be read: the default address, said so, and still deployable.
+routes "amplify list-apps . apps.json" "amplify get-app d1shop0001 get-app-shop.json" "amplify list-branches d1shop0001 branches-shop.json" \
+  "amplify list-branches d2blog0002 branches-blog.json" "amplify list-branches d3static003 branches-none.json" \
+  "amplify list-jobs d1shop0001 jobs-shop.json" "amplify list-jobs d2blog0002 jobs-blog.json" \
+  "amplify list-domain-associations d1shop0001 err-notfound.txt:254" "amplify list-domain-associations . domains-none.json"
+w="$(amp json | jq -c '.[] | select(.name=="Shop")')"
+has "json: unread domains are a fetchWarn" "$(echo "$w" | jq -r .fetchWarn)" "custom domains could not be read"
+expect "json: unread domains are not an error" "$(echo "$w" | jq -c '[.deployable, .fetchError, (.domain | test("example.com$") | not)]')" '[true,null,true]'
+expect "json: read domains, no fetchWarn" "$(amp json | jq -c '[.[] | select(.name=="blog") | .fetchWarn]')" '[null]'
+routes "${STD[@]}"
 b="$(echo "$out" | jq -c '.[] | select(.name=="blog")')"
-expect "json: production branch by stage" "$(echo "$b" | jq -c '[.id, .auto, .phase, .repo]')" '["d2blog0002/release",false,"canceled","me/blog"]'
+expect "json: production branch by stage" "$(echo "$b" | jq -c '[.id, .auto, .phase, .repo]')" '["d2blog0002/release",false,"canceled","gitlab.com/me/blog"]'
 expect "json: default domain" "$(echo "$b" | jq -r .url)" "https://release.d2blog0002.amplifyapp.com"
 expect "json: no succeeded build, no live commit" "$(echo "$b" | jq -c '[.lastSha, .lastMsg]')" '[null,null]'
 st="$(echo "$out" | jq -c '.[] | select(.name=="static")')"
@@ -166,8 +176,8 @@ expect "json: two branches, none production: no guess" "$(echo "$out" | jq -c '.
 
 # --- resolving names ---
 routes "${STD[@]}"
-expect "has: by name" "$(amp has Shop && echo y)" y
-expect "has: by app id" "$(amp has d2blog0002 && echo y)" y
+expect "has: by name gives <appId>/<branch>" "$(amp has Shop)" d1shop0001/main
+expect "has: by app id" "$(amp has d2blog0002)" d2blog0002/release
 expect "has: unknown" "$(amp has nope && echo y || echo n)" n
 routes "amplify list-apps . apps-dupe.json"
 out="$(amp latest Shop 2>&1)"; rc=$?
@@ -193,9 +203,15 @@ routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branche
 out="$(amp off Shop 2>&1)"; rc=$?
 expect "off: still on after the call: stops" "$rc" 1
 has "off: and says so" "$out" "still shows it on"
-routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branches-shop-off.json" "amplify update-branch d1shop0001 update-on.json"
+routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branches-shop-off.json" "amplify update-branch d1shop0001 update-on.json" "amplify update-app d1shop0001 update-app.json"
 out="$(amp on Shop)"
-has "on: --enable-auto-build" "$(grep update-branch "$CALLS")" "--branch-name main --enable-auto-build"
+has "on: --enable-auto-build" "$(grep update-branch "$CALLS" | head -n 1)" "--branch-name main --enable-auto-build"
+# PRV-062: the off --all above wrote down dev and the new-branch setting; on turns both back on.
+has "on: undoes off --all for dev" "$(grep update-branch "$CALLS" | tail -n 1)" "--branch-name dev --enable-auto-build"
+has "on: and for new branches" "$(grep update-app "$CALLS")" "--enable-branch-auto-build"
+expect "on: then forgets it" "$(jq -c '.d1shop0001 // "gone"' "$DEPLOYS_CONFIG/amplify-off.json")" '"gone"'
+: > "$CALLS"; out="$(amp on Shop)"
+expect "on: without an earlier off --all only the production branch" "$(calls update-branch):$(calls update-app)" "1:0"
 
 # --- deploy ---
 routes "${STD[@]}" "amplify start-job d1shop0001 start-job.json"
@@ -233,12 +249,14 @@ expect "deploy: no Git, refused before any start" "$rc/$(calls start-job)" "1/0"
 routes "${STD[@]}" "amplify get-job --job-id.12 get-job.json"
 expect "latest: newest job" "$(amp latest Shop | jq -c '[.id, .phase, .sha, .msg, .createdAt]')" '["12","building","cccc333","feat: c",1767326645]'
 has "latest: one job asked for" "$(grep list-jobs "$CALLS")" "--max-items 1"
+expect "latest: the contract line (deploys watch reads it)" "$(bash -c '. ./providers/amplify.sh; amplify_latest Shop' 2>&1)" "12	building	RUNNING"
 expect "status: by id" "$(amp status Shop 12 | jq -c '[.id, .phase, .status]')" '["12","failed","FAILED"]'
 routes "${STD[@]}" "amplify list-jobs d1shop0001 jobs-none.json"
 routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branches-shop.json" "amplify list-jobs . jobs-none.json"
 out="$(amp latest Shop 2>&1)"; rc=$?
-expect "latest: none" "$rc" 1
-has "latest: says so" "$out" "no builds yet"
+expect "latest: none is null (people)" "$rc:$out" "0:null"
+out="$(bash -c '. ./providers/amplify.sh; amplify_latest Shop' 2>&1)"; rc=$?
+expect "latest: none is the contract's none line" "$rc:$out" "0:none		?"
 
 # --- cancel ---
 routes "${STD[@]}" "amplify stop-job d1shop0001 stop-job.json"
@@ -287,6 +305,37 @@ routes "${STD[@]}" "amplify get-job --job-id.7 get-job-expired.json"
 out="$(amp logs Shop 60 7)"
 has "logs: an expired link says so" "$out" "could not be read"
 hasnt "logs: and keeps it secret" "$out" "secret3"
+
+# PRV-110: only the end of a step's log is asked for; a cut-off first line is left out.
+cat > "$tmp/bin/curl-range" <<'CURL'
+#!/bin/bash
+hdr=""; prev=""; for a in "$@"; do [ "$prev" = -D ] && hdr="$a"; prev="$a"; done
+echo "curl $*" >> "$CALLS"
+printf 'HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 4000-4099/4100\r\n\r\n' > "$hdr"
+printf 'tial line\nwhole line\n'
+CURL
+chmod +x "$tmp/bin/curl-range"
+routes "${STD[@]}" "amplify get-job --job-id.12 get-job.json"
+out="$(mkdir -p "$tmp/rb"; cp "$tmp/bin/curl-range" "$tmp/rb/curl"; PATH="$tmp/rb:$PATH" DEPLOYS_AMPLIFY_LOG_BYTES=100 amp logs Shop)"
+has "logs: only the end is asked for" "$(grep -m 1 '^curl ' "$CALLS")" "Range: bytes=-100"
+expect "logs: the cut-off first line is left out" "$(echo "$out" | grep -c 'tial line'):$(echo "$out" | grep -c 'whole line')" "0:2"
+
+# An empty log answers the range with 416: asked again without one, not "expired".
+printf '#!/bin/bash\necho "curl $*" >> "$CALLS"\ncase "$*" in *Range*) exit 22;; esac\nexit 0\n' > "$tmp/rb/curl"
+routes "${STD[@]}" "amplify get-job --job-id.12 get-job.json"
+out="$(PATH="$tmp/rb:$PATH" amp logs Shop)"
+expect "logs: an empty step log is not an expired link" "$(echo "$out" | grep -c 'could not be read'):$(grep -c '^curl ' "$CALLS")" "0:4"
+
+# PRV-106: twenty jobs without a success: a hundred are asked for, the live commit is found.
+mkdir -p "$tmp/fx106"; cp -R "$FIX"/. "$tmp/fx106/"
+jq -n '{jobSummaries: [range(20) | {jobId: "\(100 - .)", status: "FAILED", commitId: "ffff\(.)", startTime: "2026-01-02T03:04:05Z"}]}' > "$tmp/fx106/jobs-20.json"
+jq '.jobSummaries += [{jobId: "60", status: "SUCCEED", commitId: "good123", commitMessage: "fix: ok", startTime: "2026-01-01T03:04:05Z"}]' "$tmp/fx106/jobs-20.json" > "$tmp/fx106/jobs-100.json"
+routes "amplify list-apps . apps.json" "amplify list-branches d1shop0001 branches-shop.json" "amplify list-branches d2blog0002 branches-blog.json" \
+  "amplify list-branches d3static003 branches-none.json" "amplify list-jobs d1shop0001.*--max-items.100 jobs-100.json" \
+  "amplify list-jobs d1shop0001 jobs-20.json" "amplify list-jobs d2blog0002 jobs-blog.json" "amplify list-domain-associations . domains-none.json"
+out="$(FIX="$tmp/fx106" amp json | jq -c '.[] | select(.name=="Shop") | [.lastSha, .phase]')"
+expect "json: no success in 20 jobs: 100 are asked for" "$out:$(calls 'list-jobs --app-id d1shop0001 --branch-name main --max-items 100')" '["good123","failed"]:1'
+expect "json: blog (a success in its few jobs) is not asked again" "$(calls 'list-jobs --app-id d2blog0002 --branch-name release --max-items 100')" 0
 
 # --- url ---
 routes "${STD[@]}"

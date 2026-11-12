@@ -33,6 +33,26 @@ test("secrets are masked", () => {
   assert.match(t, /\[HIDDEN\]/);
 });
 
+test("the masking covers what the app, CLI and MCP server mask", () => {
+  const cases: [string, string][] = [
+    ["push glpat-" + "abcdefgh12345678", "push [GITLAB TOKEN]"],
+    ["stripe sk_" + "live_abcdefgh1234", "stripe [STRIPE KEY]"],
+    ["stripe rk_" + "live_abcdefgh1234", "stripe [STRIPE KEY]"],
+    ["google AIza" + "SyA1234567890abcdefghijk", "google [GOOGLE KEY]"],
+    ["npm npm_" + "abcdefghijklmnopqrstuvwx", "npm [NPM TOKEN]"],
+    ["claude sk-ant-" + "api03-ABCDEFGHIJKLMNOP", "claude [API KEY]"],
+    ["vercel --token abcdef123456 deploy", "vercel --token [HIDDEN] deploy"],
+    ["vercel --token=abcdef123456", "vercel --token=[HIDDEN]"],
+    ["by dev@example.com", "by [EMAIL]"],
+  ];
+  for (const [input, want] of cases) assert.equal(maskSecrets(input), want, input);
+  const key = "a\n-----BEGIN RSA " + "PRIVATE KEY-----\nMIIE\nabc\n-----END RSA PRIVATE KEY-----\nb";
+  assert.equal(maskSecrets(key), "a\n[PRIVATE KEY]\nb");
+  // The excerpt may end inside a key: what is left of it goes too.
+  assert.equal(maskSecrets("x -----BEGIN " + "PRIVATE KEY-----\nMIIE\nQUJD"), "x [PRIVATE KEY]");
+  assert.equal(maskSecrets("QUJDREVGR0hJSktM\n-----END " + "PRIVATE KEY-----\nafter"), "[PRIVATE KEY]\nafter");
+});
+
 test("fence outgrows backticks in the log", () => {
   assert.equal(fence("no ticks"), "```");
   assert.equal(fence("a ```` b"), "`````");

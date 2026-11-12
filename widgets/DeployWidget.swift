@@ -104,6 +104,8 @@ struct BigNumber: View {
     }
     var body: some View {
         Text("\(snap.waitingPRs)").font(.system(size: size, weight: .bold, design: .rounded)).monospacedDigit()
+            .lineLimit(1).minimumScaleFactor(0.5)
+            .contentTransition(.numericText())
             .foregroundStyle(snap.waitingPRs > 0 && !snap.isStale(at: date) ? Color.accentColor : .secondary)
             .widgetAccentable()
             .minimumScaleFactor(0.6).lineLimit(1)
@@ -121,7 +123,9 @@ struct SmallView: View {
             Spacer(minLength: 0)
             BigNumber(snap: snap, date: date, size: 44)
             Text(snap.waitingPRs == 1 ? w("PR waiting", "PR wartet") : w("PRs waiting", "PRs warten")).font(.caption.weight(.medium))
+                .lineLimit(1).minimumScaleFactor(0.7)
             Text(w.n(snap.waitingProjects, ("project", "Projekt"), ("projects", "Projekte"))).font(.caption2).foregroundStyle(.secondary)
+                .lineLimit(1).minimumScaleFactor(0.7)
             StatusLine(snap: snap)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -148,6 +152,7 @@ struct ListView: View {
     let date: Date
     let rows: Int
     @Environment(\.words) private var w
+    @ScaledMetric(relativeTo: .caption) private var columnWidth = 104.0
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
@@ -155,13 +160,17 @@ struct ListView: View {
                 Spacer(minLength: 0)
                 BigNumber(snap: snap, date: date, size: 36)
                 Text(snap.waitingPRs == 1 ? w("PR waiting", "PR wartet") : w("PRs waiting", "PRs warten")).font(.caption.weight(.medium))
+                    .lineLimit(1).minimumScaleFactor(0.7)
                 Text(w.n(snap.waitingProjects, ("project", "Projekt"), ("projects", "Projekte"))).font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
                 if let s = snap.saving, s.after < s.before {
                     Text(w("≈ \(money(s.month))/mo saved", "≈ \(money(s.month))/Monat gespart"))
                         .font(.caption2.weight(.semibold)).foregroundStyle(.green)
+                        .lineLimit(2).minimumScaleFactor(0.7)
                 }
             }
-            .frame(width: 104, alignment: .leading)
+            // Grows with the text size.
+            .frame(minWidth: 0, idealWidth: columnWidth, maxWidth: columnWidth, alignment: .leading)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(snap.spoken(w))
             VStack(alignment: .leading, spacing: 7) {
@@ -188,7 +197,7 @@ struct ProjectRow: View {
     @Environment(\.words) private var w
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).foregroundStyle(tint).font(.caption).frame(width: 14).widgetAccentable()
+            Image(systemName: icon).foregroundStyle(tint).font(.caption).frame(width: 14).widgetAccentable().accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 // Names and commit lines are hidden on a locked device's lock screen; the counts are not.
                 Text(p.name).font(.caption.weight(.semibold)).lineLimit(1).privacySensitive()
@@ -209,6 +218,8 @@ struct ProjectRow: View {
         case .failed: return w("failed · \(p.platform)", "fehlgeschlagen · \(p.platform)")
         case .waiting:
             let prs = p.prs > 0 ? w.n(p.prs, ("PR", "PR"), ("PRs", "PRs")) + " · " : ""
+            // A waiting row with 0 commits means the count is unknown (e.g. rewritten history).
+            if p.commits == 0 { return prs + w("count unknown · \(p.platform)", "Anzahl unbekannt · \(p.platform)") }
             return prs + w.n(p.commits, ("commit", "Commit"), ("commits", "Commits")) + " · \(p.platform)"
         }
     }

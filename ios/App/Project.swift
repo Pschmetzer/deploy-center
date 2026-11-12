@@ -22,6 +22,7 @@ struct PhoneProject: Identifiable, Equatable, Codable {
     var liveState: String? = nil
     var latestState: String? = nil
     var latestId: String? = nil
+    var latestAt: Date? = nil          // when the newest attempt started
     var headSha: String? = nil
     var headAt: Date? = nil
     var headMsg: String? = nil
@@ -39,6 +40,8 @@ struct PhoneProject: Identifiable, Equatable, Codable {
     var pendingCapped = false
     /// The repo is on a host this app does not read (GitLab, Bitbucket): no "waiting" for it.
     var otherHost: String? = nil
+    /// A repo outside GitHub (GitLab, Bitbucket): deployable, but only GitHub is compared.
+    var foreignRepo: Bool { otherHost != nil }
     /// Render: the workspace (owner) id, for reading build logs.
     var owner: String? = nil
 
@@ -65,7 +68,26 @@ struct PhoneProject: Identifiable, Equatable, Codable {
         if let h = headAt, let l = liveAt { return h > l }
         return false
     }
-    var unknown: Bool { deployable && !paused && (fetchError != nil || (headSha == nil && headAt == nil)) }
+    var unknown: Bool { deployable && !paused && !foreignRepo && (fetchError != nil || (headSha == nil && headAt == nil)) }
+
+    /// A platform state in words ("build_failed" → "build failed"), as the Mac app shows it.
+    static func stateName(_ raw: String) -> String {
+        switch raw.lowercased() {
+        case "starting", "initializing": return L("starting", "startet")
+        case "rolling back": return L("rolling back", "rollt zurück")
+        case "queued", "created": return L("queued", "in der Warteschlange")
+        case "building", "build_in_progress": return L("building", "baut")
+        case "update_in_progress": return L("updating", "aktualisiert")
+        case "pre_deploy_in_progress": return L("pre-deploy running", "Pre-Deploy läuft")
+        case "ready", "live", "succeeded": return L("live", "live")
+        case "error", "build_failed": return L("build failed", "Build fehlgeschlagen")
+        case "update_failed": return L("update failed", "Update fehlgeschlagen")
+        case "pre_deploy_failed": return L("pre-deploy failed", "Pre-Deploy fehlgeschlagen")
+        case "canceled", "cancelled": return L("canceled", "abgebrochen")
+        case "deactivated": return L("replaced", "ersetzt")
+        default: return raw.lowercased().replacingOccurrences(of: "_", with: " ")
+        }
+    }
 
     /// A provider state ("BUILDING", "build_failed", …) in words.
     static func stateWord(_ raw: String) -> String {
@@ -101,11 +123,18 @@ struct PhoneProject: Identifiable, Equatable, Codable {
     }
 }
 
-/// The language iOS picked for this app: it follows Settings → Deploy Center → Language and the order
-/// of the person's languages, limited to en and de, so the app's text matches the system dialogs.
-let appIsGerman = Bundle.main.preferredLocalizations.first?.hasPrefix("de") == true
+/// The language the app shows: what iOS picked from the bundle's localizations (en, de), so texts,
+/// system dialogs and dates agree, also with a per-app language from the iOS Settings.
+let appLanguage: String = Bundle.main.preferredLocalizations.first?.hasPrefix("de") == true ? "de" : "en"
+/// Dates and relative times in the language of the texts; the region still sets the formats.
+let appLocale: Locale = {
+    var c = Locale.Components(locale: .current)
+    c.languageComponents = .init(identifier: appLanguage)
+    return Locale(components: c)
+}()
 
-func L(_ en: String, _ de: String) -> String { appIsGerman ? de : en }
+func L(_ en: String, _ de: String) -> String { appLanguage == "de" ? de : en }
+var appIsGerman: Bool { appLanguage == "de" }
 
 /// "1 commit", "3 commits", "100+ PRs": the number with the singular or plural word.
 func plural(_ n: Int, _ one: (String, String), _ many: (String, String), atLeast: Bool = false) -> String {

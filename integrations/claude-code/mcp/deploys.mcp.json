@@ -2,8 +2,12 @@
   "mcpServers": {
     "deploys": {
       "command": "node",
-      "args": ["/path/to/deploy-center/integrations/mcp/server.mjs"],
-      "env": { "DEPLOYS_MCP_ALLOW_DEPLOY": "0" }
+      "args": [
+        "/Applications/Deploy Center.app/Contents/Resources/mcp/server.mjs"
+      ],
+      "env": {
+        "DEPLOYS_MCP_ALLOW_DEPLOY": "0"
+      }
     }
   }
 }

@@ -18,7 +18,10 @@ struct DeploySnapshot: Codable, Equatable {
         let prs: Int
         let since: Date?          // oldest commit waiting, or when the deploy started
         let message: String?      // newest commit message, masked in demo mode
-        var id: String { platform + "/" + name }
+        /// The provider's own id ("Vercel/prj_…"), so two projects of one name (two teams) stay apart.
+        /// Last and optional: older snapshots and the Mac app's rows without it still decode and build.
+        var key: String? = nil
+        var id: String { key ?? (platform + "/" + name) }
     }
 
     static let version = 1

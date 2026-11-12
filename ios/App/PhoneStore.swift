@@ -26,24 +26,31 @@ final class PhoneStore: ObservableObject {
         didSet { UserDefaults.standard.set(demo, forKey: "demo"); Task { await reload() } }
     }
     /// "Do not use the Mac's keys on this iPhone": a local choice, the Mac keeps sharing them.
+    /// Also set by "Remove all keys from this iPhone", until the person connects again.
     @Published var ignoreLink: Bool {
-        didSet { UserDefaults.standard.set(ignoreLink, forKey: "ignoreMacLink"); Task { await reload() } }
+        didSet { UserDefaults.standard.set(ignoreLink, forKey: "ignoreLink"); Task { await reload() } }
     }
+    /// Set from the switch "Unlock on open": the list stays covered until Face ID passes.
+    @Published var locked = false
 
     enum TokenKey: String, CaseIterable { case vercel, vercelTeam, render, github }
 
-    private var again = false
-    private var teamCache: (token: String, id: String?)?
     private var deployIds: [String: String] = [:]       // project key → id of the deploy being followed
 
-    init() {
+    /// One store for the app and the background refresh, so what the background read shows up on return.
+    static let shared = PhoneStore()
+
+    private init() {
         #if DEBUG
         let argDemo = ProcessInfo.processInfo.arguments.contains("-demo")
         #else
         let argDemo = false
         #endif
-        demo = argDemo || UserDefaults.standard.bool(forKey: "demo")
-        ignoreLink = UserDefaults.standard.bool(forKey: "ignoreMacLink")
+        let d = UserDefaults.standard
+        demo = argDemo || d.bool(forKey: "demo")
+        // "ignoreMacLink" was the key of the switch before it and "Remove all keys" became one setting.
+        ignoreLink = d.bool(forKey: "ignoreLink") || d.bool(forKey: "ignoreMacLink")
+        locked = Self.lockOnOpen && !demo
         // The last state at once, then the network: the list is never empty only because it is loading.
         if !demo, let last = Background.loadLast() { projects = Self.sorted(last.projects); loadedAt = last.at }
     }
@@ -68,15 +75,24 @@ final class PhoneStore: ObservableObject {
         if l != linked { linked = l }
         booted = true
     }
+    /// "Check again" in the connect sheet: the person wants the Mac link back.
+    func useLinkAgain() { if ignoreLink { ignoreLink = false }; Task { await refreshLink() } }
     var linkAvailable: Bool { PhoneLink.group != nil }
 
     /// Keys from the Mac's QR code: kept on this phone only, like typed ones. Empty fields keep what
-    /// is already here (a code without a GitHub token does not remove the one typed on the phone).
+    /// is already here (a code without a GitHub token does not remove the one typed on the phone);
+    /// the Vercel team goes with the Vercel token.
     @discardableResult
     func adopt(_ k: LinkedKeys) -> Bool {
+        func given(_ v: String) -> Bool { !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         var ok = true
-        let pairs: [(TokenKey, String)] = [(.vercel, k.vercel), (.vercelTeam, k.vercelTeam), (.render, k.render), (.github, k.github)]
-        for (key, v) in pairs where !v.isEmpty { ok = Keychain.set(key.rawValue, v) && ok }
+        if given(k.vercel) {
+            ok = Keychain.set(TokenKey.vercel.rawValue, k.vercel) && ok
+            ok = Keychain.set(TokenKey.vercelTeam.rawValue, k.vercelTeam) && ok
+            teamCache = nil
+        }
+        if given(k.render) { ok = Keychain.set(TokenKey.render.rawValue, k.render) && ok }
+        if given(k.github) { ok = Keychain.set(TokenKey.github.rawValue, k.github) && ok }
         if !ok { say(L("Could not save every key in this device's keychain. Try again.",
                        "Konnte nicht jeden Schlüssel im Schlüsselbund dieses Geräts sichern. Versuch es noch einmal."), error: true) }
         if demo { demo = false } else { Task { await reload() } }
@@ -90,6 +106,51 @@ final class PhoneStore: ObservableObject {
         Task { await reload() }
     }
 
+    // MARK: App lock (optional)
+
+    static var lockOnOpen: Bool { UserDefaults.standard.bool(forKey: "lockOnOpen") }
+
+    /// Face ID, Touch ID or the code. A device without any code cannot lock: it stays open.
+    func unlock() async {
+        guard locked, !unlocking else { return }
+        unlocking = true
+        defer { unlocking = false }
+        let ctx = LAContext()
+        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else { locked = false; return }
+        if (try? await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: L("Unlock Deploy Center", "Deploy Center entsperren"))) == true {
+            locked = false
+        }
+    }
+    private var unlocking = false
+    /// Only on going to the background: the Face ID sheet itself makes the app inactive.
+    func lockIfWanted() { if Self.lockOnOpen && !demo { locked = true } }
+
+    /// "Face ID", "Touch ID", "Optic ID" or the device code, for texts that name it.
+    var unlockName: String {
+        let ctx = LAContext()
+        _ = ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)   // sets biometryType
+        switch ctx.biometryType {
+        case .faceID: return "Face ID"
+        case .touchID: return "Touch ID"
+        case .opticID: return "Optic ID"
+        default: return L("the device code", "dem Gerätecode")
+        }
+    }
+
+    // MARK: Removing everything from this phone
+
+    /// Deletes the keys typed or scanned here, stops using the Mac link on this phone (the Mac and iCloud
+    /// keep theirs), and clears what the widget and the notes kept.
+    func removeAllKeys() {
+        for k in TokenKey.allCases { Keychain.set(k.rawValue, "") }
+        teamCache = nil
+        projects = []; errors = []; stale = []; loadedAt = nil
+        try? FileManager.default.removeItem(at: Background.lastURL)
+        if let url = DeploySnapshot.groupURL { try? FileManager.default.removeItem(at: url) }
+        WidgetCenter.shared.reloadAllTimelines()
+        if !ignoreLink { ignoreLink = true }    // reloads: with no key nothing is read
+    }
+
     var waiting: [PhoneProject] { projects.filter { $0.group == .waiting } }
     var waitingPRs: Int {
         // Projects of one repo share commits and PRs: count each repo once.
@@ -99,38 +160,73 @@ final class PhoneStore: ObservableObject {
     }
 
     func say(_ text: String, error: Bool = false) {
-        message = text; messageIsError = error
-        UIAccessibility.post(notification: .announcement, argument: text)
+        message = text; messageIsError = error    // the toast shows it and VoiceOver hears it there
     }
+    func fail(_ text: String) { say(text, error: true) }
 
     // MARK: Loading
 
-    /// Reads everything. A call while a read runs (the demo switch, new keys) reads again right after.
-    func reload() async {
-        guard !loading else { again = true; return }
-        loading = true; defer { loading = false }
-        repeat { again = false; await load() } while again && !Task.isCancelled
+    /// A reload asked for while one runs is not dropped: it runs once more right after.
+    private var reloadAgain = false
+
+    /// Returns once a load that started after the call has finished (also when one was already running).
+    /// False when it was cut off (the background refresh ran out of time): then nothing was replaced.
+    @discardableResult
+    func reload() async -> Bool {
+        if loading {
+            reloadAgain = true
+            while loading && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(200)) }
+            return !Task.isCancelled && lastLoadComplete
+        }
+        loading = true
+        repeat {
+            reloadAgain = false
+            lastLoadComplete = await load()
+        } while reloadAgain && !Task.isCancelled
+        loading = false
+        return lastLoadComplete
+    }
+    private var lastLoadComplete = false
+
+    /// The resolved Vercel team, per token: asked once, not on every status poll.
+    private var teamCache: (token: String, team: String?, teams: Int)?
+    private func vercelTeam(_ v: String) async throws -> (id: String?, teams: Int) {
+        if let t = token(.vercelTeam) { return (t, 1) }
+        if let c = teamCache, c.token == v { return (c.team, c.teams) }
+        let r = try await Vercel.resolveTeam(token: v)
+        teamCache = (v, r.id, r.teams)
+        return r
     }
 
-    private func load() async {
+    private func load() async -> Bool {
         await refreshLink()
         if demo {
-            projects = DemoData.projects(); loadedAt = Date(); errors = []; stale = []; writeSnapshot(); return
+            projects = DemoData.projects(); loadedAt = Date(); errors = []; stale = []; writeSnapshot(); return true
         }
-        let previous = projects.isEmpty ? (Background.loadLast()?.projects ?? []) : projects
+        let previous = projects.isEmpty ? (Background.readLast() ?? []) : projects
         var all: [PhoneProject] = [], errs: [String] = [], failed: Set<ProviderKind> = []
-        if token(.vercel) != nil {
-            do { all += try await vercel().projects() }
-            catch { errs.append("Vercel: " + describe(error, .vercel)); failed.insert(.vercel) }
+        if let v = token(.vercel) {
+            do {
+                teamCache = nil   // a new load may follow a new team; the polls in between reuse it
+                let team = try await vercelTeam(v)
+                if team.id == nil && team.teams > 1 {
+                    errs.append(L("Vercel: \(team.teams) teams, so only the personal account is shown. Enter a team id in Settings.",
+                                  "Vercel: \(team.teams) Teams, darum nur das persönliche Konto. Team-ID in den Einstellungen eintragen."))
+                }
+                let r = try await Vercel(token: v, team: team.id).projects()
+                all += r.list; errs += r.notes.map { "Vercel: " + $0 }
+            } catch { errs.append("Vercel: " + describe(error, .vercel)); failed.insert(.vercel) }
         }
         if let r = token(.render) {
-            do { all += try await Render(key: r).projects() }
-            catch { errs.append("Render: " + describe(error, .render)); failed.insert(.render) }
+            do {
+                let x = try await Render(key: r).projects()
+                all += x.list; errs += x.notes.map { "Render: " + $0 }
+            } catch { errs.append("Render: " + describe(error, .render)); failed.insert(.render) }
         }
         // iOS ended the background time: keep what was there, write nothing half-done.
-        if Task.isCancelled { return }
+        if Task.isCancelled { return false }
         await fillFromGitHub(&all)
-        if Task.isCancelled { return }
+        if Task.isCancelled { return false }
         // A provider that failed keeps its last rows: an outage or a spent limit is not "nothing waits".
         for k in failed { all += previous.filter { $0.provider == k } }
         projects = Self.sorted(all)
@@ -138,7 +234,8 @@ final class PhoneStore: ObservableObject {
         writeSnapshot()
         await updateBadge()
         // What the person has seen; the background refresh only notes what is new after this.
-        Background.saveLast(projects)
+        Background.writeLast(projects)
+        return true
     }
 
     /// One GitHub read per repo and branch, then one per other live commit of it (the open PRs are
@@ -206,7 +303,7 @@ final class PhoneStore: ObservableObject {
         var err: NSError?
         // Face ID or Touch ID, with the passcode as a fallback.
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else {
-            say(L("Set a passcode on this device to deploy from it.", "Lege einen Code für dieses Gerät fest, um von hier zu deployen."), error: true)
+            fail(L("Set a passcode on this device to deploy from it.", "Lege einen Code für dieses Gerät fest, um von hier zu deployen."))
             return false
         }
         do { return try await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) }
@@ -229,8 +326,9 @@ final class PhoneStore: ObservableObject {
         // Taken before Face ID: a second tap meanwhile must not start a second build.
         guard running[p.key] == nil else { return }
         running[p.key] = "starting"; defer { running[p.key] = nil; deployIds[p.key] = nil }
-        guard await authenticate(L("Deploy \(p.name)", "\(p.name) deployen")) else { return }
+        // The demo deploys nothing: no device code needed (App Review devices may have none).
         if demo { await simulate(p, L("Deploy started (demo).", "Deploy gestartet (Demo)."), L("\(p.name) is live (demo).", "\(p.name) ist live (Demo).")); return }
+        guard await authenticate(L("Deploy \(p.name)", "\(p.name) deployen")) else { return }
         let started = Date()
         do {
             let id: String
@@ -262,8 +360,8 @@ final class PhoneStore: ObservableObject {
 
     func cancelBuild(_ p: PhoneProject) async {
         guard let id = buildId(p) else { return }
-        guard await authenticate(L("Cancel the build of \(p.name)", "Build von \(p.name) abbrechen")) else { return }
         if demo { say(L("Build of \(p.name) canceled (demo).", "Build von \(p.name) abgebrochen (Demo).")); return }
+        guard await authenticate(L("Cancel the build of \(p.name)", "Build von \(p.name) abbrechen")) else { return }
         do {
             switch p.provider {
             case .vercel: try await vercel().cancel(id)
@@ -289,8 +387,8 @@ final class PhoneStore: ObservableObject {
     func rollback(_ p: PhoneProject, to target: RollbackTarget) async {
         guard running[p.key] == nil else { return }
         running[p.key] = "rollback"; defer { running[p.key] = nil; deployIds[p.key] = nil }
-        guard await authenticate(L("Roll back \(p.name)", "\(p.name) zurückrollen")) else { return }
         if demo { await simulate(p, L("Rolling back (demo).", "Wird zurückgerollt (Demo)."), L("Rolled back (demo).", "Zurückgerollt (Demo).")); return }
+        guard await authenticate(L("Roll back \(p.name)", "\(p.name) zurückrollen")) else { return }
         do {
             switch p.provider {
             case .vercel:
@@ -312,8 +410,8 @@ final class PhoneStore: ObservableObject {
     func serviceAction(_ p: PhoneProject, _ a: RenderAction) async {
         guard p.provider == .render, running[p.key] == nil else { return }
         running[p.key] = "starting"; defer { running[p.key] = nil }
-        guard await authenticate(a.title.replacingOccurrences(of: " …", with: "") + ": " + p.name) else { return }
         if demo { say("\(p.name): \(a.done) (demo)."); return }
+        guard await authenticate(a.title.replacingOccurrences(of: " …", with: "") + ": " + p.name) else { return }
         do {
             try await Render(key: token(.render) ?? "").service(p, a)
             say("\(p.name): \(a.done).")
@@ -365,12 +463,7 @@ final class PhoneStore: ObservableObject {
 
     private func vercel() async throws -> Vercel {
         let v = token(.vercel) ?? ""
-        if let team = token(.vercelTeam) { return Vercel(token: v, team: team) }
-        // Asked once per token, not on every poll.
-        if let c = teamCache, c.token == v { return Vercel(token: v, team: c.id) }
-        let id = try await Vercel.resolveTeam(token: v)
-        teamCache = (v, id)
-        return Vercel(token: v, team: id)
+        return Vercel(token: v, team: try await vercelTeam(v).id)
     }
 
     private func status(_ p: PhoneProject, _ id: String) async throws -> String {
@@ -391,15 +484,23 @@ final class PhoneStore: ObservableObject {
                                    subtitle: p.provider.rawValue)
         let live = LiveDeploy.start(p, rollback: rollback)
         let start = Date(), end = start.addingTimeInterval(limit)
-        var outcome: String?, ok = false, failed = false
+        var outcome: String?, ok = false, failed = false, lastError: String?
         while Date() < end && !Task.isCancelled {
             try? await Task.sleep(for: .seconds(6))
             let s: String
-            do { s = try await (check ?? { try await self.status(p, id) })().lowercased() } catch { continue }
+            do { s = try await (check ?? { try await self.status(p, id) })().lowercased() }
+            catch { lastError = explain(error); continue }
+            lastError = nil
             if !rollback { running[p.key] = s }
             keep.update(PhoneProject.stateWord(s), fraction: min(Date().timeIntervalSince(start) / 300, 0.95))
             live.update(rollback ? PhoneProject.stateWord("rollback") : PhoneProject.stateWord(s))
             if ["ready", "live", "succeeded"].contains(s) {
+                // After an Instant Rollback a ready deploy keeps no domain until one is promoted (Vercel docs).
+                if !rollback, p.provider == .vercel, await stagedOnly(id) {
+                    outcome = L("\(p.name) is built but not live: after a rollback, Vercel keeps the old deploy until you promote this one in the dashboard.",
+                                "\(p.name) ist gebaut, aber nicht live: Nach einem Zurückrollen behält Vercel den alten Deploy, bis du diesen im Dashboard beförderst.")
+                    failed = true; break
+                }
                 ok = true
                 outcome = rollback ? L("\(p.name) is rolled back.", "\(p.name) ist zurückgerollt.") : L("\(p.name) is live.", "\(p.name) ist live.")
                 break
@@ -410,6 +511,7 @@ final class PhoneStore: ObservableObject {
         }
         let text = outcome ?? L("\(p.name): no final state after \(Int(limit / 60)) minutes. Check it on \(p.provider.rawValue).",
                                 "\(p.name): nach \(Int(limit / 60)) Minuten kein Endstand. Prüfe es bei \(p.provider.rawValue).")
+            + (lastError.map { " (\($0))" } ?? "")
         say(text, error: !ok)
         keep.finish(success: ok)
         live.finish(ok ? .live : failed ? .failed : .unknown,
@@ -417,6 +519,17 @@ final class PhoneStore: ObservableObject {
                        : L("No final state", "Kein Endstand"))
         if UIApplication.shared.applicationState != .active { await Notes.post(text, project: p.key) }
         await reload()
+    }
+
+    /// True when the ready deploy still has no production traffic after about 30 s. READY and the domain
+    /// assignment are separate steps, so one look right after READY could be too early.
+    private func stagedOnly(_ id: String) async -> Bool {
+        for attempt in 0..<6 {
+            if attempt > 0 { try? await Task.sleep(for: .seconds(6)) }
+            guard let s = try? await vercel().readySubstate(id) else { return false }   // unknown: do not alarm
+            if s.uppercased() != "STAGED" { return false }
+        }
+        return true
     }
 
     private func simulate(_ p: PhoneProject, _ start: String, _ done: String) async {
@@ -439,8 +552,10 @@ final class PhoneStore: ObservableObject {
     func makeSnapshot() -> DeploySnapshot {
         let rows: [DeploySnapshot.Project] = projects.compactMap { p in
             guard let s = p.snapshotStatus else { return nil }
+            // Building or failed: since the attempt started, not since what is live. No commit text: no widget shows it.
             return .init(name: p.name, platform: p.provider.rawValue, status: s, commits: p.pendingCommits ?? 0,
-                         prs: p.pendingPRs ?? 0, since: s == .waiting ? p.oldestPendingAt : p.liveAt, message: p.headMsg)
+                         prs: p.pendingPRs ?? 0, since: s == .waiting ? p.oldestPendingAt : (p.latestAt ?? p.liveAt),
+                         message: nil, key: p.key)
         }
         let order: [DeploySnapshot.Project.Status: Int] = [.building: 0, .failed: 1, .waiting: 2]
         let sorted = rows.sorted { (order[$0.status]!, -$0.prs, $0.name) < (order[$1.status]!, -$1.prs, $1.name) }
@@ -449,7 +564,7 @@ final class PhoneStore: ObservableObject {
                               waitingCommits: waiting.reduce(0) { $0 + ($1.pendingCommits ?? 0) }, waitingPRs: waitingPRs,
                               building: rows.filter { $0.status == .building }.count,
                               failed: rows.filter { $0.status == .failed }.count, saving: nil, projects: Array(sorted.prefix(10)),
-                              language: appIsGerman ? "de" : "en", connected: demo || hasAccount)
+                              language: appLanguage, connected: demo || hasAccount)
     }
 
     func writeSnapshot() {

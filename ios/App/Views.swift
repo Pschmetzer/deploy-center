@@ -78,11 +78,22 @@ struct RootView: View {
             }
             #endif
         }
-        .overlay(alignment: .bottom) { Toast(store: store) }
+        .overlay(alignment: .bottom) {
+            if let m = store.message { Toast(store: store, text: m) }
+        }
         .sensoryFeedback(trigger: store.message) { _, new in
             guard new != nil else { return nil }
             return store.messageIsError ? .error : .success
         }
+        // App lock (optional) and the cover in the app switcher: nothing of the list shows.
+        .overlay {
+            if store.locked || (PhoneStore.lockOnOpen && !store.demo && phase != .active) {
+                LockCover(store: store)
+            }
+        }
+        .onChange(of: phase) { _, p in if p == .active && store.locked { Task { await store.unlock() } } }
+        // Sheets lie above the cover: close them when locking (the settings sheet takes its own QR sheet along).
+        .onChange(of: store.locked) { _, on in if on { settings = false; connect = false } }
     }
 
     private func open(name: String, platform: String?) {
@@ -92,25 +103,45 @@ struct RootView: View {
     }
 }
 
-/// The last message, at the bottom. Errors stay longer, and VoiceOver reads each one (PhoneStore.say).
+/// A short note at the bottom. VoiceOver hears it; errors (and everything while VoiceOver runs)
+/// stay until closed, other notes for a few seconds.
 struct Toast: View {
     @ObservedObject var store: PhoneStore
+    let text: String
     var body: some View {
-        if let m = store.message {
-            Button { store.message = nil } label: {
-                Label(m, systemImage: store.messageIsError ? "exclamationmark.triangle.fill" : "info.circle.fill")
-                    .font(.callout).multilineTextAlignment(.leading)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16).padding(.bottom, 12)
-            .accessibilityHint(L("Closes the message", "Schließt die Meldung"))
-            .task(id: m) {
-                try? await Task.sleep(for: .seconds(store.messageIsError ? 15 : 5))
-                if store.message == m { store.message = nil }
+        HStack(spacing: 10) {
+            if store.messageIsError { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).accessibilityHidden(true) }
+            Text(text).font(.callout)
+            Button { store.message = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("Close message", "Meldung schließen"))
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16).padding(.bottom, 12)
+        .accessibilityElement(children: .contain)
+        .task(id: text) {
+            AccessibilityNotification.Announcement(store.messageIsError ? L("Error: ", "Fehler: ") + text : text).post()
+            guard !store.messageIsError, !UIAccessibility.isVoiceOverRunning else { return }
+            try? await Task.sleep(for: .seconds(5))
+            if store.message == text { store.message = nil }
+        }
+    }
+}
+
+struct LockCover: View {
+    @ObservedObject var store: PhoneStore
+    var body: some View {
+        ZStack {
+            Rectangle().fill(.background).ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: "lock.fill").font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
+                Text("Deploy Center").font(.headline)
+                if store.locked {
+                    Button(L("Unlock", "Entsperren")) { Task { await store.unlock() } }.buttonStyle(.borderedProminent)
+                }
             }
         }
+        .task { await store.unlock() }   // at launch; on return the scene phase asks
     }
 }
 
@@ -138,6 +169,7 @@ struct ProjectList: View {
     @Binding var settings: Bool
     @State private var query = ""
     @State private var confirm: PhoneProject?
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         if store.projects.isEmpty && !store.loading && store.loadedAt != nil {
@@ -154,7 +186,10 @@ struct ProjectList: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if let at = store.loadedAt {
-                        Text((store.demo ? L("Demo data · ", "Demodaten · ") : "") + L("Updated ", "Stand ") + at.formatted(.relative(presentation: .named)))
+                        // Read again every half minute, so "a minute ago" does not stay "now".
+                        TimelineView(.periodic(from: .now, by: 30)) { _ in
+                            Text((store.demo ? L("Demo data · ", "Demodaten · ") : "") + L("Updated ", "Stand ") + relative(at))
+                        }
                     }
                     ForEach(store.errors, id: \.self) { Text($0).foregroundStyle(.red) }
                     if !store.stale.isEmpty {
@@ -176,6 +211,11 @@ struct ProjectList: View {
                                 }
                                 .accessibilityActions {
                                     if canDeploy(p) { Button(L("Deploy …", "Deployen …")) { confirm = p } }
+                                    // The same actions as the detail view, without opening it.
+                                    Button(L("Roll back …", "Zurückrollen …")) { selection = p.key }
+                                    if let d = p.domain, let url = URL(string: "https://" + d) {
+                                        Button(L("Open domain", "Domain öffnen")) { openURL(url) }
+                                    }
                                 }
                         }
                     }
@@ -233,6 +273,11 @@ struct EmptyState: View {
     }
 }
 
+/// "5 minutes ago" in the app's language.
+func relative(_ d: Date) -> String {
+    d.formatted(Date.RelativeFormatStyle(presentation: .named, locale: appLocale))
+}
+
 struct Summary: View {
     @ObservedObject var store: PhoneStore
     @Environment(\.dynamicTypeSize) private var size
@@ -269,15 +314,18 @@ struct Stat: View {
 
 extension PhoneProject {
     var icon: String {
-        building ? "hammer.fill" : failed ? "xmark.octagon.fill" : changed ? "arrow.up.circle.fill" : "checkmark.circle.fill"
+        building ? "hammer.fill" : failed ? "xmark.octagon.fill" : changed ? "arrow.up.circle.fill"
+            : unknown ? "questionmark.circle" : foreignRepo ? "minus.circle" : "checkmark.circle.fill"
     }
-    var tint: Color { building ? .blue : failed ? .red : changed ? .accentColor : .green }
+    var tint: Color { building ? .blue : failed ? .red : changed ? .accentColor : unknown ? .orange : foreignRepo ? .secondary : .green }
     var stateText: String {
         if building { return L("building", "baut") }
         if failed { return latestState.map(Self.stateWord) ?? L("failed", "fehlgeschlagen") }
+        // Before `changed`: after a force push the compare fails and the count is unknown, not 0.
+        if rewritten && changed { return L("history rewritten · count unknown", "Verlauf neu geschrieben · Anzahl unbekannt") }
         if changed {
             let prs = (pendingPRs ?? 0) > 0 ? plural(pendingPRs!, ("PR", "PR"), ("PRs", "PRs"), atLeast: pendingCapped) + " · " : ""
-            let n = pendingCommits ?? 0
+            guard let n = pendingCommits else { return prs + L("waiting, count unknown", "wartet, Anzahl unbekannt") }
             return prs + (n == 1 ? L("1 commit waiting", "1 Commit wartet") : L("\(n) commits waiting", "\(n) Commits warten"))
         }
         if paused { return L("paused", "pausiert") }
@@ -344,7 +392,7 @@ struct ProjectDetail: View {
         List {
             Section {
                 LabeledContent(L("Status", "Status")) {
-                    HStack(spacing: 6) { Image(systemName: p.icon); Text(p.stateText) }.foregroundStyle(p.tint)
+                    HStack(spacing: 6) { Image(systemName: p.icon).accessibilityHidden(true); Text(p.stateText) }.foregroundStyle(p.tint)
                 }
                 LabeledContent(L("Platform", "Plattform"), value: p.provider.rawValue)
                 LabeledContent(L("Auto-deploy", "Auto-Deploy"),
@@ -354,7 +402,9 @@ struct ProjectDetail: View {
                 if let d = p.domain { LabeledContent(L("Domain", "Domain"), value: d) }
                 if let n = p.openPRs { LabeledContent(L("Open pull requests", "Offene Pull Requests"), value: "\(n)" + (p.openPRsCapped ? "+" : "")) }
                 if let d = p.oldestPendingAt, p.changed {
-                    LabeledContent(L("Waiting since", "Wartet seit"), value: d.formatted(.relative(presentation: .named)))
+                    TimelineView(.periodic(from: .now, by: 30)) { _ in
+                        LabeledContent(L("Waiting since", "Wartet seit"), value: relative(d))
+                    }
                 }
                 if let e = p.fetchError { Text(e).font(.footnote).foregroundStyle(.red) }
             } footer: {
@@ -406,10 +456,12 @@ struct ProjectDetail: View {
                     }
                 }
                 Button(role: .destructive) {
+                    guard !findingRollback else { return }
                     findingRollback = true
                     Task {
-                        rollbackTo = await store.rollbackTarget(p); findingRollback = false
-                        confirmRollback = rollbackTo != nil
+                        defer { findingRollback = false }
+                        store.message = nil
+                        rollbackTo = await store.rollbackTarget(p); confirmRollback = rollbackTo != nil
                         if rollbackTo == nil && store.message == nil { store.say(L("Nothing to roll back to.", "Nichts zum Zurückrollen.")) }
                     }
                 } label: {
@@ -418,7 +470,7 @@ struct ProjectDetail: View {
                         if findingRollback { Spacer(); ProgressView() }
                     }
                 }
-                .disabled(p.building || busy || findingRollback)
+                .disabled(p.building || p.paused || busy || findingRollback)
                 if p.provider == .render {
                     ForEach(p.paused ? [RenderAction.resume] : [.restart, .suspend], id: \.self) { a in
                         Button(role: a == .suspend ? .destructive : nil) { renderAction = a } label: { Label(a.title, systemImage: a.icon) }
@@ -426,8 +478,9 @@ struct ProjectDetail: View {
                     }
                 }
             } footer: {
-                Text(L("Each deploy, cancel and rollback asks for Face ID. It goes straight from this device to \(p.provider.rawValue).",
-                       "Jeder Deploy, jeder Abbruch und jedes Zurückrollen fragt nach Face ID. Es geht direkt von diesem Gerät an \(p.provider.rawValue)."))
+                let how = store.unlockName
+                Text(L("Each deploy, cancel and rollback asks for \(how). It goes straight from this device to \(p.provider.rawValue).",
+                       "Jeder Deploy, jeder Abbruch und jedes Zurückrollen fragt nach \(how). Es geht direkt von diesem Gerät an \(p.provider.rawValue)."))
             }
         }
         .navigationTitle(p.name)
@@ -473,8 +526,9 @@ struct ProjectDetail: View {
     private var rollbackText: String {
         guard let t = rollbackTo else { return "" }
         var facts: [String] = []
-        if let s = t.sha { facts.append(String(s.prefix(7))) }
-        if let d = t.at { facts.append(d.formatted(.relative(presentation: .named))) }
+        // Without a commit SHA the deploy id names it.
+        facts.append(t.sha.map { String($0.prefix(7)) } ?? String(t.id.prefix(24)))
+        if let d = t.at { facts.append(relative(d)) }
         let what = t.title.map { L("\"\($0)\"", "„\($0)“") } ?? L("The previous deploy", "Der vorige Deploy")
         return what + (facts.isEmpty ? "" : " (" + facts.joined(separator: ", ") + ")") + L(" goes live again.", " geht wieder live.")
     }
@@ -620,14 +674,19 @@ struct SettingsView: View {
     @State private var github = ""
     @State private var initial: [String] = []
     @AppStorage("notify") private var notify = false
+    @AppStorage("lockOnOpen") private var lockOnOpen = false
     @State private var connect = false
     @State private var notesDenied = false
     @State private var testResults: [String] = []
     @State private var testing = false
     @State private var saveFailed = false
+    @State private var confirmRemove = false
+    @State private var githubScopes: [String]?
 
     private var fields: [String] { [vercel, team, render, github] }
     private var dirty: Bool { !initial.isEmpty && fields != initial }
+    /// Scopes that can change repos: more than the phone needs (it only reads GitHub).
+    private var writeScopes: [String] { (githubScopes ?? []).filter { ["repo", "workflow", "write:packages", "delete_repo", "admin:org"].contains($0) } }
 
     var body: some View {
         NavigationStack {
@@ -644,12 +703,17 @@ struct SettingsView: View {
                 }
                 Section {
                     // No password content type: iOS would offer to save the tokens in iCloud Passwords.
-                    SecureField(L("Vercel token", "Vercel-Token"), text: $vercel).textContentType(nil)
+                    SecureField(L("Vercel token", "Vercel-Token"), text: $vercel).textContentType(nil).privacySensitive()
                     TextField(L("Vercel team id (optional)", "Vercel-Team-ID (optional)"), text: $team)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    SecureField(L("Render API key", "Render-API-Key"), text: $render).textContentType(nil)
+                    SecureField(L("Render API key", "Render-API-Key"), text: $render).textContentType(nil).privacySensitive()
                     SecureField(L("GitHub token (optional, for private repos)", "GitHub-Token (optional, für private Repos)"), text: $github)
-                        .textContentType(nil)
+                        .textContentType(nil).privacySensitive()
+                    if !writeScopes.isEmpty {
+                        Label(L("This GitHub token can also write (\(writeScopes.joined(separator: ", "))). The phone only reads: a fine-grained token with read-only access to contents and pull requests is enough.",
+                                "Dieses GitHub-Token darf auch schreiben (\(writeScopes.joined(separator: ", "))). Das iPhone liest nur: Ein fein granulares Token mit Nur-Lese-Zugriff auf Inhalte und Pull Requests genügt."),
+                              systemImage: "exclamationmark.shield").font(.footnote).foregroundStyle(.orange)
+                    }
                     Button { Task { await test() } } label: {
                         HStack { Text(L("Test the keys", "Schlüssel testen")); if testing { Spacer(); ProgressView() } }
                     }
@@ -660,15 +724,26 @@ struct SettingsView: View {
                            "Hier eingetragene Schlüssel bleiben im Schlüsselbund dieses Geräts, nie synchronisiert. Gesendet nur an api.vercel.com, api.render.com und api.github.com."))
                 }
                 Section {
+                    Toggle(L("Unlock on open", "Beim Öffnen entsperren"), isOn: $lockOnOpen)
+                } footer: {
+                    Text(L("Asks for \(store.unlockName) when Deploy Center opens, and hides the list in the app switcher.",
+                           "Fragt beim Öffnen nach \(store.unlockName) und verdeckt die Liste im App-Umschalter."))
+                }
+                Section {
                     Toggle(L("Demo mode (made-up projects)", "Demo-Modus (erfundene Projekte)"), isOn: $store.demo)
                     Toggle(L("Notify when something waits or fails", "Melden, wenn etwas wartet oder fehlschlägt"), isOn: $notify)
                         .onChange(of: notify) { _, on in
+                            // Switched back off when iOS says no; the system settings can change that later.
                             Task {
-                                if on { await Background.requestPermission() }
+                                if on, !(await Background.requestPermission()) {
+                                    notify = false
+                                    store.fail(L("Notifications are off for Deploy Center in the iOS Settings.",
+                                                 "Mitteilungen sind für Deploy Center in den iOS-Einstellungen aus."))
+                                }
                                 await checkNotes(); await store.updateBadge(); Background.schedule()
                             }
                         }
-                    if notify && notesDenied {
+                    if notesDenied {
                         Button(L("Notifications are off for Deploy Center. Open Settings …", "Mitteilungen sind für Deploy Center aus. Einstellungen öffnen …")) {
                             openSettings()
                         }
@@ -685,6 +760,14 @@ struct SettingsView: View {
                 } footer: {
                     Text(L("The app follows your iPhone's language. To pick another one for this app only: Settings → Deploy Center → Language.",
                            "Die App folgt der Sprache deines iPhones. Eine andere nur für diese App: Einstellungen → Deploy Center → Sprache."))
+                }
+                Section {
+                    Button(L("Remove all keys from this iPhone …", "Alle Schlüssel von diesem iPhone entfernen …"), role: .destructive) {
+                        confirmRemove = true
+                    }
+                } footer: {
+                    Text(L("Deletes the keys typed or scanned here and stops using the Mac's keys on this iPhone. The Mac keeps its keys.",
+                           "Löscht die hier eingetragenen oder gescannten Schlüssel und nutzt die Schlüssel vom Mac auf diesem iPhone nicht mehr. Der Mac behält seine."))
                 }
                 Section {
                     Link(L("Privacy policy", "Datenschutz"), destination: URL(string: "https://deploycenter.app/datenschutz.html")!)
@@ -711,14 +794,25 @@ struct SettingsView: View {
                 Text(L("The device's keychain refused it. The keys that were there before are kept.",
                        "Der Schlüsselbund des Geräts hat abgelehnt. Die vorherigen Schlüssel bleiben erhalten."))
             }
-            .onAppear {
-                vercel = store.ownToken(.vercel) ?? ""; team = store.ownToken(.vercelTeam) ?? ""
-                render = store.ownToken(.render) ?? ""; github = store.ownToken(.github) ?? ""
-                initial = fields
-            }
+            .onAppear(perform: loadFields)
             .task { await checkNotes() }
-            .sheet(isPresented: $connect) { ConnectMacView(store: store) }
+            .task(id: store.token(.github)) { githubScopes = await GitHub(token: store.token(.github)).scopes() }
+            // A QR code scanned from here writes the keychain: read it again, or "Done" would save the old fields over it.
+            .sheet(isPresented: $connect, onDismiss: loadFields) { ConnectMacView(store: store) }
+            .confirmationDialog(L("Remove all keys from this iPhone?", "Alle Schlüssel von diesem iPhone entfernen?"),
+                                isPresented: $confirmRemove, titleVisibility: .visible) {
+                Button(L("Remove", "Entfernen"), role: .destructive) {
+                    store.removeAllKeys(); loadFields()
+                }
+                Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+            }
         }
+    }
+
+    private func loadFields() {
+        vercel = store.ownToken(.vercel) ?? ""; team = store.ownToken(.vercelTeam) ?? ""
+        render = store.ownToken(.render) ?? ""; github = store.ownToken(.github) ?? ""
+        initial = fields
     }
 
     private var backgroundProblem: String? {
@@ -763,7 +857,7 @@ struct SettingsView: View {
         ok = Keychain.set(PhoneStore.TokenKey.github.rawValue, github) && ok
         Background.schedule()
         Task { await store.reload() }
-        if !ok { saveFailed = true }
+        if !ok { saveFailed = true } else { initial = fields }
         return ok
     }
 }

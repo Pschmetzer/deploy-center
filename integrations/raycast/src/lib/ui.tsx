@@ -84,23 +84,26 @@ export function WarningItem(props: { warning?: string; onRetry: () => void }) {
   );
 }
 
+// Vercel and Render keep their look; every other platform gets a neutral one, never Render's purple.
 export function platformIcon(platform: string): Image.ImageLike {
-  return platform === "vercel" ? { source: Icon.Globe } : { source: Icon.Cloud };
+  if (platform === "vercel") return { source: Icon.Globe };
+  if (platform === "render") return { source: Icon.Cloud };
+  return { source: Icon.HardDrive };
 }
+
+const TAG_COLOR: Record<string, Color> = { vercel: Color.PrimaryText, render: Color.Purple };
 
 export function platformTag(platform: string): List.Item.Accessory {
-  return {
-    tag: { value: platformLabel(platform), color: platform === "vercel" ? Color.PrimaryText : Color.Purple },
-  };
+  return { tag: { value: platformLabel(platform), color: TAG_COLOR[platform] ?? Color.SecondaryText } };
 }
 
-async function openWithToast(name: string, dashboard: boolean) {
+async function openWithToast(name: string, projectRef: string, dashboard: boolean) {
   const toast = await showToast({
     style: Toast.Style.Animated,
     title: dashboard ? "Opening dashboard" : "Opening site",
   });
   try {
-    const url = await openProject(name, dashboard);
+    const url = await openProject(projectRef, dashboard);
     if (url) await open(url);
     await toast.hide();
   } catch (e) {
@@ -110,10 +113,10 @@ async function openWithToast(name: string, dashboard: boolean) {
   }
 }
 
-async function copyNotes(name: string) {
+async function copyNotes(name: string, projectRef: string) {
   const toast = await showToast({ style: Toast.Style.Animated, title: `Reading release notes for ${name}` });
   try {
-    const notes = await releaseNotes(name);
+    const notes = await releaseNotes(projectRef);
     await Clipboard.copy(notes);
     toast.style = Toast.Style.Success;
     toast.title = "Release notes copied";
@@ -160,8 +163,10 @@ export async function confirmAndDeploy(p: { name: string; platform: string }, de
   if (ok) await deployOne(p, onDone);
 }
 
-// The actions every project row shares, below the row's own primary action.
-export function ProjectActions(props: { name: string; onRefresh: () => void }) {
+// The actions every project row shares, below the row's own primary action. projectRef is the
+// name, or platform:name for a name on two platforms; the Deploy Center link searches the plain name.
+export function ProjectActions(props: { name: string; projectRef?: string; onRefresh: () => void }) {
+  const projectRef = props.projectRef ?? props.name;
   return (
     <>
       <ActionPanel.Section>
@@ -169,19 +174,19 @@ export function ProjectActions(props: { name: string; onRefresh: () => void }) {
           title="Open Site"
           icon={Icon.Globe}
           shortcut={Keyboard.Shortcut.Common.Open}
-          onAction={() => openWithToast(props.name, false)}
+          onAction={() => openWithToast(props.name, projectRef, false)}
         />
         <Action
           title="Open Dashboard"
           icon={Icon.AppWindowGrid2x2}
           shortcut={Keyboard.Shortcut.Common.OpenWith}
-          onAction={() => openWithToast(props.name, true)}
+          onAction={() => openWithToast(props.name, projectRef, true)}
         />
         <Action
           title="Copy Release Notes"
           icon={Icon.Clipboard}
           shortcut={Keyboard.Shortcut.Common.Copy}
-          onAction={() => copyNotes(props.name)}
+          onAction={() => copyNotes(props.name, projectRef)}
         />
         <Action.Open
           title="Show in Deploy Center"
