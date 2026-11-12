@@ -84,21 +84,28 @@ enum PhoneLink {
         return qrPrefix + d.base64EncodedString()
     }
 
-    /// The Mac shows a code for a minute; older ones (a photo, a screenshot) are refused.
-    /// A little slack both ways for clocks that are not quite in step.
-    static let qrMaxAge: TimeInterval = 120
-
-    enum QRResult: Equatable { case keys(LinkedKeys), notOurs, expired }
+    enum QRResult: Equatable {
+        case keys(LinkedKeys)
+        case notOurs        // some other QR code
+        case newerVersion   // "deploycenter-link:2:…": the Mac app is newer than this one
+        case expired        // made more than qrMaxAge ago: a photo of the screen, not the screen
+        case empty          // no Vercel or Render key in it
+    }
+    /// The Mac shows the code for a minute; the rest allows for clocks that differ a little.
+    static let qrMaxAge: TimeInterval = 5 * 60
 
     static func read(qr: String, now: Date = Date()) -> QRResult {
-        guard qr.hasPrefix(qrPrefix), let d = Data(base64Encoded: String(qr.dropFirst(qrPrefix.count))),
-              let k = try? JSONDecoder().decode(LinkedKeys.self, from: d), !k.isEmpty else { return .notOurs }
+        let ours = "deploycenter-link:"
+        guard qr.hasPrefix(ours) else { return .notOurs }
+        guard qr.hasPrefix(qrPrefix) else { return .newerVersion }
+        guard let d = Data(base64Encoded: String(qr.dropFirst(qrPrefix.count))),
+              let k = try? JSONDecoder().decode(LinkedKeys.self, from: d) else { return .notOurs }
         guard abs(now.timeIntervalSince(k.updated)) <= qrMaxAge else { return .expired }
-        return .keys(k)
+        return k.isEmpty ? .empty : .keys(k)
     }
 
-    static func parse(qr: String) -> LinkedKeys? {
-        if case .keys(let k) = read(qr: qr) { return k }
+    static func parse(qr: String, now: Date = Date()) -> LinkedKeys? {
+        if case .keys(let k) = read(qr: qr, now: now) { return k }
         return nil
     }
 }

@@ -26,7 +26,7 @@ struct DeploySnapshot: Codable, Equatable {
 
     static let version = 1
     var version = Self.version
-    let at: Date
+    var at: Date
     let demo: Bool
     let waitingProjects: Int
     let waitingCommits: Int
@@ -38,8 +38,12 @@ struct DeploySnapshot: Codable, Equatable {
     let projects: [Project]
     /// "en" or "de": the language the Mac app shows, so its widgets match it. Nil from older apps.
     var language: String? = nil
+    /// false: the iOS app has no account yet, so "nothing waits" would not be true. Nil from the Mac.
+    var connected: Bool? = nil
 
     static let fileName = "snapshot.json"
+    /// The widget's kind, for a reload of just this widget.
+    static let widgetKind = "DeployCenterWaiting"
     /// The App Group shared by the Mac app and its widget. It is set at build time
     /// (`DCAppGroup` in Info.plist) so no team id lives in the source.
     static var appGroup: String? {
@@ -60,10 +64,11 @@ struct DeploySnapshot: Codable, Equatable {
     }()
     static let decoder: JSONDecoder = { let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d }()
 
+    /// Any version that decodes: a newer app may add optional fields, and an older widget still shows
+    /// what it knows instead of "Open the app". A change that breaks this must rename a field.
     static func read(_ url: URL? = groupURL) -> DeploySnapshot? {
-        guard let url, let data = try? Data(contentsOf: url),
-              let s = try? decoder.decode(DeploySnapshot.self, from: data), s.version == version else { return nil }
-        return s
+        guard let url, let data = try? Data(contentsOf: url) else { return nil }
+        return try? decoder.decode(DeploySnapshot.self, from: data)
     }
 
     /// Made-up numbers for the widget gallery, the simulator and screenshots.

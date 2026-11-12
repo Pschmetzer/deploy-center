@@ -1,0 +1,28 @@
+Authorization: Bearer [masked]
+aws_secret_access_key = [masked]
+[masked] [masked]
+[masked] [masked] [masked]
+SECRET_KEY=[masked] STRIPE_KEY=[masked] NEXT_PUBLIC_ANON_KEY=[masked]
+DATABASE_URL=postgres://u:[masked]@db.example.com/db
+[masked private key]
+PEM="[masked private key]"
+vercel deploy --token [masked] --prod
+VERCEL_TOKEN=[masked]
+[masked] [masked] [masked]
+[masked]
+[masked] [masked] [masked] [masked]
+export API_TOKEN=[masked]
+{"password": [masked], "client_secret":[masked]}
+x-api-key: [masked]
+Ocp-Apim-Subscription-Key: [masked]
+x;AccountKey=[masked];y
+got Bearer [masked]
+Set-Cookie: [masked]
+u?a=1&X-Amz-Signature=[masked]&b=2
+npm ERR! ./src/author.ts:12 Type error: keyboard: 3 tokens: 12 of 40
+mail [email] now
+Authorization: Basic [masked]
+password=[masked];next
+GET /f?sig=[masked]&x=1 200
+[masked private key]
+Build completed in 12s

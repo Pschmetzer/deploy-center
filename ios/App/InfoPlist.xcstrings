@@ -18,8 +18,8 @@
     "NSFaceIDUsageDescription" : {
       "extractionState" : "manual",
       "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Face ID bestätigt jeden Deploy und jedes Zurückrollen." } },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Face ID confirms each deploy and rollback." } }
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Face ID bestätigt jeden Deploy, jeden Abbruch und jedes Zurückrollen." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Face ID confirms each deploy, cancel and rollback." } }
       }
     }
   },

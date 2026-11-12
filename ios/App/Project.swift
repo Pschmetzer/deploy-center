@@ -23,7 +23,6 @@ struct PhoneProject: Identifiable, Equatable, Codable {
     var latestState: String? = nil
     var latestId: String? = nil
     var latestAt: Date? = nil          // when the newest attempt started
-    var foreignRepo = false            // a repo outside GitHub: only GitHub is compared
     var headSha: String? = nil
     var headAt: Date? = nil
     var headMsg: String? = nil
@@ -34,6 +33,17 @@ struct PhoneProject: Identifiable, Equatable, Codable {
     var rewritten = false
     var openPRs: Int? = nil
     var fetchError: String? = nil
+    /// Titles of the commits that wait (oldest first), at most 20: what goes live with the next deploy.
+    var pendingTitles: [String]? = nil
+    /// GitHub lists at most 100 open PRs per page and 250 commits per compare: the counts are then "at least".
+    var openPRsCapped = false
+    var pendingCapped = false
+    /// The repo is on a host this app does not read (GitLab, Bitbucket): no "waiting" for it.
+    var otherHost: String? = nil
+    /// A repo outside GitHub (GitLab, Bitbucket): deployable, but only GitHub is compared.
+    var foreignRepo: Bool { otherHost != nil }
+    /// Render: the workspace (owner) id, for reading build logs.
+    var owner: String? = nil
 
     var key: String { provider.rawValue + "/" + id }
 
@@ -48,6 +58,8 @@ struct PhoneProject: Identifiable, Equatable, Codable {
         guard !building, let s = latestState?.lowercased() else { return false }
         return Self.failedStates.contains(s) && s != "canceled"
     }
+    /// The newest attempt was canceled: neither building nor failed, but worth saying.
+    var canceled: Bool { !building && ["canceled", "cancelled"].contains(latestState?.lowercased() ?? "") }
     /// The same rule as `deploys changed` (CHANGED_RULE): there is something newer than what is live.
     var changed: Bool {
         guard deployable, !paused, headSha != nil || headAt != nil, !building, fetchError == nil,
@@ -74,6 +86,24 @@ struct PhoneProject: Identifiable, Equatable, Codable {
         case "canceled", "cancelled": return L("canceled", "abgebrochen")
         case "deactivated": return L("replaced", "ersetzt")
         default: return raw.lowercased().replacingOccurrences(of: "_", with: " ")
+        }
+    }
+
+    /// A provider state ("BUILDING", "build_failed", …) in words.
+    static func stateWord(_ raw: String) -> String {
+        switch raw.lowercased() {
+        case "queued", "created", "initializing": L("queued", "in der Warteschlange")
+        case "building", "build_in_progress": L("building", "baut")
+        case "update_in_progress", "pre_deploy_in_progress", "deploying": L("going live", "geht live")
+        case "ready", "live", "succeeded": L("live", "live")
+        case "error", "build_failed": L("build failed", "Build fehlgeschlagen")
+        case "update_failed": L("update failed", "Update fehlgeschlagen")
+        case "pre_deploy_failed": L("pre-deploy failed", "Pre-Deploy fehlgeschlagen")
+        case "canceled", "cancelled": L("canceled", "abgebrochen")
+        case "deactivated": L("replaced", "abgelöst")
+        case "starting": L("starting", "startet")
+        case "rollback": L("rolling back", "rollt zurück")
+        default: raw.lowercased()
         }
     }
 
@@ -104,3 +134,9 @@ let appLocale: Locale = {
 }()
 
 func L(_ en: String, _ de: String) -> String { appLanguage == "de" ? de : en }
+var appIsGerman: Bool { appLanguage == "de" }
+
+/// "1 commit", "3 commits", "100+ PRs": the number with the singular or plural word.
+func plural(_ n: Int, _ one: (String, String), _ many: (String, String), atLeast: Bool = false) -> String {
+    "\(n)\(atLeast ? "+" : "") " + (n == 1 && !atLeast ? L(one.0, one.1) : L(many.0, many.1))
+}
