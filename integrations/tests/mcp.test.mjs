@@ -196,6 +196,11 @@ const leaked = ["ghp_abcdefghijklmnop1234", "s3cr3t-value", "hunter2pass", "sk_l
 check("logs: secrets are masked", !r.error && leaked.length === 0, leaked.join(", ") + "\n" + r.text);
 check("logs: the rest of the log stays", r.text.includes("Build failed: missing module") && r.text.includes("[masked]") && r.text.includes("[masked private key]"), r.text);
 check("logs: names before the secret stay", r.text.includes("VERCEL_TOKEN=[masked]") && r.text.includes("postgres://admin:[masked]@db"), r.text);
+// The fixture the CLI, the iPhone app and the editor add-ons are checked against: every secret in
+// it carries the word SECRET, and none may survive (SECRET_KEY= is a name, not a secret).
+r = await s.call("deploys_logs", { project: "fixture-app" });
+const survived = (inner(r.text) ?? "").split("\n").filter((l) => l.replaceAll("SECRET_KEY=", "").includes("SECRET"));
+check("logs: no secret of the shared fixture survives", !r.error && inner(r.text) && survived.length === 0, survived.join(" | ") || r.text);
 r = await s.call("deploys_logs", { project: "topkey-app" });
 check("logs: a key cut off at the top is masked", !r.error && !r.text.includes("QUJDREVG") && r.text.includes("[masked private key]") && r.text.includes("after the key"), r.text);
 r = await s.call("deploys_logs", { project: "bottomkey-app" });
@@ -325,6 +330,27 @@ r = await s.call("deploys_deploy", { project: "twin" });
 check("a name on two platforms asks for platform:name", r.error && /(vercel:twin or netlify:twin|netlify:twin or vercel:twin)/.test(r.text), r.text);
 r = await s.call("deploys_rollback", { project: "netlify:shop" });
 check("rolls back on another platform", !r.error && JSON.parse(r.text).platform === "netlify", r.text);
+s.stop();
+
+// The commit the human said yes to is the one deployed (--sha), where the platform can pin one.
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", FAKE_HEAD: "1" }, { elicit: yes });
+await s.init();
+writeFileSync(calls, "");
+r = await s.call("deploys_deploy", { project: "app-web" });
+d = r.error ? {} : JSON.parse(r.text);
+check("production deploys the confirmed commit", !r.error && d.sha === "cccc333333333333333333333333333333333333" &&
+  callLog().includes("vercel deploy-json app-web --sha cccc333333333333333333333333333333333333"), r.text + " | " + callLog());
+check("the question names that commit and its first line", /commit cccc333 "Add the billing page"/.test(s.asked.at(-1)?.message ?? ""), JSON.stringify(s.asked.at(-1)));
+r = await s.call("deploys_deploy", { project: "app-web", preview: true });
+check("a preview is not pinned", !r.error && JSON.parse(r.text).sha === null && !/--preview --sha/.test(callLog()), r.text);
+s.stop();
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", FAKE_HEAD: "1", FAKE_NO_PIN: "1" }, { elicit: yes });
+await s.init();
+writeFileSync(calls, "");
+r = await s.call("deploys_deploy", { project: "app-web" });
+check("a platform without caps.sha: no --sha, and the question says the newest commit is built",
+  !r.error && JSON.parse(r.text).sha === null && !callLog().includes("--sha") && /cannot deploy a given commit/.test(s.asked.at(-1)?.message ?? ""),
+  r.text + " | " + JSON.stringify(s.asked.at(-1)));
 s.stop();
 
 // A name on two platforms is not guessed; a Render rollback goes to render.

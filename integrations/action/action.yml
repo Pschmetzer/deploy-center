@@ -113,6 +113,15 @@ outputs:
 runs:
   using: composite
   steps:
+    # The vercel CLI from an earlier run (one key per version and runner type), so it is not
+    # installed from npm every time. A runner with vercel on PATH never fills it.
+    - name: Cached vercel CLI
+      if: inputs.vercel-token != ''
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/vercel-cli
+        key: deploys-vercel-cli-${{ runner.os }}-${{ runner.arch }}-${{ inputs.vercel-cli-version }}
+
     - name: Set up deploys
       id: setup
       shell: bash
@@ -149,7 +158,8 @@ runs:
           # Into the runner's temp folder, not the global one (self-hosted runners may not allow it);
           # the log only when it fails.
           prefix="$RUNNER_TEMP/vercel-cli"
-          if ! npm install --prefix "$prefix" --no-fund --no-audit "vercel@$CLI_VERSION" > "$RUNNER_TEMP/npm.log" 2>&1; then
+          if [ -x "$prefix/node_modules/.bin/vercel" ]; then echo "vercel $CLI_VERSION from the cache"
+          elif ! npm install --prefix "$prefix" --no-fund --no-audit "vercel@$CLI_VERSION" > "$RUNNER_TEMP/npm.log" 2>&1; then
             cat "$RUNNER_TEMP/npm.log"; echo "::error::could not install vercel@$CLI_VERSION"; exit 1
           fi
           echo "$prefix/node_modules/.bin" >> "$GITHUB_PATH"

@@ -213,9 +213,12 @@ const SECRET_RULES = [
   [/\b(?:sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/g, "[masked]"],
   // NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret.
   // The i flag on the whole rule: JS before Node 23 has no scoped (?i:…).
-  [/\b([A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|_key|authorization|auth|credentials?|dsn)["']?\s*[:=]\s*)((?:bearer|basic|token|bot)\s+)?("[^"]*"|'[^']*'|[^\s"',;]+)/gi, "$1$2[masked]"],
+  [/\b([A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn)["']?\s*[:=]\s*)((?:bearer|basic|token|bot)\s+)?("[^"]*"|'[^']*'|[^\s"',;]+)/gi, "$1$2[masked]"],
   // Bearer x without a name in front (curl -H "Bearer …"), as the app masks it.
   [/\b(bearer)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [masked]"],
+  // Whole cookies, and the signature and credential parts of a signed URL (S3, Azure SAS, GCS).
+  [/\b((?:set-cookie|cookie)\s*:\s*).+/gi, "$1[masked]"],
+  [/([?&](?:sig|signature|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&\s"']+/gi, "$1[masked]"],
   // --token x, --token=x (vercel, npm and most CLIs).
   [/(--(?:token|password|api-key|secret)(?:=|\s+))[^\s"']+/gi, "$1[masked]"],
   // user:password@ in a URL (database URLs).
@@ -612,8 +615,27 @@ async function waitingOf(name, platform) {
   }
   if (r.timedOut || !Array.isArray(list)) return null;
   const hit = list.find((x) => x && x.name === name && x.platform === platform);
-  if (hit) return { waiting: true, commits: Number.isInteger(hit.pendingCommits) ? hit.pendingCommits : null };
-  return r.code === 0 ? { waiting: false, commits: 0 } : null;
+  if (hit) {
+    // The branch head the human is asked about: that commit is deployed, not a later push.
+    const sha = typeof hit.headSha === "string" && /^[0-9a-f]{7,40}$/i.test(hit.headSha) ? hit.headSha : null;
+    const msg = typeof hit.headMsg === "string" ? hit.headMsg.split("\n")[0].slice(0, 100) : null;
+    return { waiting: true, commits: Number.isInteger(hit.pendingCommits) ? hit.pendingCommits : null, sha, msg };
+  }
+  return r.code === 0 ? { waiting: false, commits: 0, sha: null, msg: null } : null;
+}
+
+// Whether the platform can deploy a given commit (caps.sha in deploys providers --json). Unknown
+// counts as no: then the confirmation says the newest commit of the branch is built.
+let caps = null;
+async function pinsCommit(platform) {
+  if (!caps) {
+    const r = await runDeploys(["providers", "--json"]);
+    let list;
+    try { list = JSON.parse(r.stdout); } catch { list = null; }
+    if (!Array.isArray(list)) return false;
+    caps = new Map(list.filter((p) => p && typeof p.id === "string").map((p) => [p.id, p.caps?.sha === true]));
+  }
+  return caps.get(platform) === true;
 }
 
 // The human says yes in the client, not the model: an MCP elicitation with one checkbox. A client
@@ -687,6 +709,7 @@ if (ALLOW_DEPLOY) {
         "The server then asks the human itself and starts nothing without that yes. " +
         "Call only after they said yes to this exact project in this conversation. Never call it for several projects in a row on your own. " +
         "A production deploy of a project with nothing waiting needs force=true. " +
+        "Production deploys the branch head the human confirmed (by its commit SHA where the platform can), not a later push. " +
         "If it times out, it may have started: check deploys_status, do not call it again. Returns the deploy id and url.",
       inputSchema: {
         type: "object",
@@ -716,18 +739,26 @@ if (ALLOW_DEPLOY) {
           if (w && !w.waiting && a.force !== true) {
             throw new ToolError(`Nothing of ${platform}:${name} is waiting to go live, so nothing was started. If the human wants the newest commit built again, call it with force=true.`);
           }
+          // Production goes live with the commit the human said yes to (--sha), so a push that
+          // lands between the question and the start is not deployed with it.
+          const sha = !preview && w?.sha && (await pinsCommit(platform)) ? w.sha : null;
+          const commit = !w?.sha
+            ? ""
+            : sha
+              ? `, commit ${sha.slice(0, 7)}${w.msg ? ` "${w.msg}"` : ""}`
+              : `; this platform cannot deploy a given commit, so the newest commit of the branch at the start is built (now ${w.sha.slice(0, 7)})`;
           const what = preview
             ? "a preview deploy (production stays as it is)"
             : w === null
               ? "production (could not check what is waiting)"
               : w.waiting
-                ? `production, ${w.commits === null ? "commits" : w.commits === 1 ? "1 commit" : `${w.commits} commits`} waiting`
+                ? `production, ${w.commits === null ? "commits" : w.commits === 1 ? "1 commit" : `${w.commits} commits`} waiting${commit}`
                 : "production, nothing waiting (a rebuild of the newest commit)";
           await confirmWithHuman(`Deploy ${platform}:${name} now: ${what}.`);
           // <platform> deploy-json works for every platform; the CLI checks the deploy window and approvals.
-          const d = await startOne([platform, "deploy-json", name, ...(preview ? ["--preview"] : [])], platform, name);
+          const d = await startOne([platform, "deploy-json", name, ...(preview ? ["--preview"] : []), ...(sha ? ["--sha", sha] : [])], platform, name);
           return JSON.stringify(
-            { project: name, platform, target: preview ? "preview" : "production", id: d.id ?? null, url: d.url ?? null, state: d.state ?? null },
+            { project: name, platform, target: preview ? "preview" : "production", sha, id: d.id ?? null, url: d.url ?? null, state: d.state ?? null },
             null,
             2,
           );
