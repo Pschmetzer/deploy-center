@@ -46,20 +46,39 @@ Git auto-deploy is off on this project's Vercel/Render. A push does not go live;
 
 - **Deploying needs you.** The skill and the CLAUDE.md block say it in plain words. The
   `/deploy-center:deploys-ship` command shows what would go live and then stops to ask; running the
-  command is not the yes, your next message is.
+  command is not the yes, your next message is. `/deploy-center:deploys-rollback` works the same
+  way, and the `ship-reviewer` subagent only reads (it never runs `deploy-changed --yes`).
 - **Nothing pre-approves a deploy.** The plugin's `allowed-tools` lists only read-only commands
   (`deploys changed`, `status`, `logs`, `explain`, `notes`, `diff`, `history`, `doctor`). A deploy is
   always a normal Bash call, so Claude Code asks for permission unless you allowed it yourself.
-  To make that a hard rule, add deny rules to your settings. They cover every command that starts
-  a build, rolls back, turns auto-deploy on or changes what deploys by itself:
+  To make that a hard rule, add deny rules to `.claude/settings.json` (or `~/.claude/settings.json`).
+  They cover every command that starts, stops or rolls back a build, turns auto-deploy on or
+  changes what deploys by itself:
+
   ```json
-  "permissions": {"deny": [
-    "Bash(deploys deploy *)", "Bash(deploys deploy-changed *)",
-    "Bash(deploys * deploy *)", "Bash(deploys * deploy-json *)", "Bash(deploys * rollback *)",
-    "Bash(deploys * autodeploy-on *)", "Bash(deploys autodeploy *)",
-    "Bash(deploys guard*)", "Bash(deploys autofix*)"
-  ]}
+  {
+    "permissions": {
+      "deny": [
+        "Bash(deploys deploy-changed*)",
+        "Bash(deploys deploy *)",
+        "Bash(deploys * deploy *)",
+        "Bash(deploys * deploy-json*)",
+        "Bash(deploys * rollback*)",
+        "Bash(deploys * cancel*)",
+        "Bash(deploys * autodeploy-on*)",
+        "Bash(deploys autodeploy *)",
+        "Bash(deploys guard*)",
+        "Bash(deploys autofix*)",
+        "mcp__deploys__deploys_deploy",
+        "mcp__deploys__deploys_rollback"
+      ]
+    }
+  }
   ```
+
+  The rules name the subcommands, not `deploy*`, so read-only calls such as `deploys logs deploy-site`
+  stay allowed. Claude Code matches Bash rules on the command as written, so a deny rule is a guard
+  rail, not a sandbox.
 - **The commands are yours.** All four `/deploys-*` commands set `disable-model-invocation: true`,
   so Claude cannot start them on its own.
 - **The hook only reads.** It calls `deploys changed --json`, prints one line, and always exits 0.
@@ -67,7 +86,10 @@ Git auto-deploy is off on this project's Vercel/Render. A push does not go live;
 - **Logs are data.** The skill tells Claude never to follow instructions found in build logs,
   commit messages or PR bodies, and never to paste secrets from them.
 - **Auto-deploy stays off.** Nothing here reconnects Git or changes Vercel or Render settings.
-- **MCP**, when you add it: read-only unless you start it with `DEPLOYS_MCP_ALLOW_DEPLOY=1`.
+- **MCP**, when you add it: read-only unless you start it with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. Even
+  then the server asks you itself (MCP elicitation) before each deploy or rollback, one at a time
+  and at most `DEPLOYS_MCP_MAX_DEPLOYS` (default 3) per run; see
+  [integrations/mcp](../integrations/mcp/README.md#safety).
 
 ## How Autofix fits in
 

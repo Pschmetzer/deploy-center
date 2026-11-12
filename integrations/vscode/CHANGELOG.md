@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- German: every text, command and setting follows the editor's language (English and Deutsch). "Copy for AI" stays English, it is written for the AI.
+- **Deploy Preview** (Vercel) and **Roll Back Production** (Vercel, Render), each after a confirmation, in the project menu and the tree.
+- A folder's remote matches a project only on the same host: `gitlab.com:me/app` is not GitHub's `me/app`.
+- After a deploy starts, the extension follows it (every 15 s, at most 15 min) and says when it is live or failed, with "Copy for AI" and "Show log".
+- Runs on your own machine in remote windows (SSH, WSL, Dev Containers), where `deploys` and its logins are.
+- A deploy start that times out says it may have started anyway, so you check before deploying again.
+- A second click on Deploy while the dialog or the start of that project is open does not open a second one.
+- "Copy for AI" masks the same key shapes as the CLI: GitLab, Stripe, Google, npm, AWS session keys, private keys.
 - A timeout ends the CLI and everything it started (its process group), not only the shell.
 - The build log masks what the app and the MCP server mask: GitLab, Stripe, Google, npm and Anthropic keys, private key blocks (also when cut off), `--token x` and email addresses.
 - "Show log" opens a read-only document; the output channel keeps its earlier warnings and deploy results.

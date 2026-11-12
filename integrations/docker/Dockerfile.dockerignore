@@ -1,0 +1,7 @@
+# Build context is the repository root; only what the image copies is sent.
+# (BuildKit reads <Dockerfile>.dockerignore next to the Dockerfile.)
+*
+!deploys
+!VERSION
+!providers/
+!lib/

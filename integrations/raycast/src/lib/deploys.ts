@@ -337,7 +337,16 @@ export async function status(): Promise<JsonResult<StatusProject[]>> {
 // `deploys <platform> deploy-json <name>`: the CLI's provider id as it is (vercel, netlify, …).
 export async function deploy(p: { name: string; platform: string }): Promise<DeployStarted> {
   const { data } = await runJson<DeployStarted>([p.platform, "deploy-json", p.name], TIMEOUT.deploy);
+  // A start is a deploy id. Anything else ({} or a list) is not "started", whatever the exit code.
+  if (!data || typeof data !== "object" || Array.isArray(data) || typeof (data as { id?: unknown }).id !== "string") {
+    throw new Error(`deploys ${p.platform} deploy-json ${p.name} gave no deploy id`);
+  }
   return data;
+}
+
+// The end of the newest build log (200 lines: enough for the first error block).
+export function buildLog(ref: string): Promise<string> {
+  return runText(["logs", ref, "200"], TIMEOUT.read);
 }
 
 // What `deploys deploy-changed --json` lists (without --yes) and reports (with --yes).

@@ -10,19 +10,29 @@
 # the remote is not a known git URL, nothing is waiting, the CLI does not answer in time, or the
 # reminder is turned off (plugin option push_reminder, or DEPLOYS_PUSH_REMINDER=off).
 #
+# With --session-start (SessionStart hook, opt-in: plugin option session_hint): the same line at the
+# start of a session, for the repository of the session's folder, every branch. No push needed.
+#
 # Input: the hook JSON on stdin (tool_input.command, cwd).
 # Output: JSON with systemMessage (shown to the user) and additionalContext (for Claude).
-# Env: DEPLOYS                 the CLI to call (default: deploys on PATH, then the app bundle)
+# Env: DEPLOYS                 the CLI to call (default: the app bundle, then deploys on PATH)
 #      DEPLOYS_HOOK_TIMEOUT    seconds to wait for the CLI (default 15)
 
 input="$(cat)"   # read all of stdin first, so Claude Code never writes into a closed pipe
-for v in "${DEPLOYS_PUSH_REMINDER:-}" "${CLAUDE_PLUGIN_OPTION_PUSH_REMINDER:-}"; do
-  case "$v" in off|false|0|no) exit 0 ;; esac
-done
+mode=push; [ "${1:-}" = --session-start ] && mode=session
+if [ "$mode" = push ]; then
+  for v in "${DEPLOYS_PUSH_REMINDER:-}" "${CLAUDE_PLUGIN_OPTION_PUSH_REMINDER:-}"; do
+    case "$v" in off|false|0|no) exit 0 ;; esac
+  done
+else
+  # Off unless turned on: it asks GitHub at every session start.
+  case "${DEPLOYS_SESSION_HINT:-${CLAUDE_PLUGIN_OPTION_SESSION_HINT:-}}" in on|true|1|yes) ;; *) exit 0 ;; esac
+fi
 command -v jq >/dev/null 2>&1 || exit 0
 
 cmd="$(jq -r '.tool_input.command // empty' <<<"$input" 2>/dev/null)"
 cwd="$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null)"
+[ "$mode" = session ] && cmd="git push --all"   # every branch of origin counts
 # hooks.json runs this after every Bash call (an `if` rule would miss `cd dir && git push` and
 # `git -C dir push`), so anything that is not a push ends here, before any other work.
 case "$cmd" in *"git push"*|*"git "*" push"*) ;; *) exit 0 ;; esac
@@ -77,26 +87,39 @@ done
 [ -n "$pushdir" ] || exit 0
 cwd="$pushdir"
 
-# The CLI: DEPLOYS if set (and nothing else), then PATH, then the app bundle.
+
+# The CLI: DEPLOYS if set (and nothing else), then the app bundle, then PATH (the order of the
+# MCP server and the editor add-ons: an older deploys on PATH does not win over the app's).
 if [ -n "${DEPLOYS:-}" ]; then bin="$DEPLOYS"
 else
-  bin="$(command -v deploys 2>/dev/null)"
+  bin=""
   for c in "/Applications/Deploy Center.app/Contents/Resources/deploys" \
            "$HOME/Applications/Deploy Center.app/Contents/Resources/deploys"; do
-    [ -n "$bin" ] && break
-    [ -x "$c" ] && bin="$c"
+    [ -x "$c" ] && { bin="$c"; break; }
   done
+  [ -n "$bin" ] || bin="$(command -v deploys 2>/dev/null)"
 fi
 [ -n "$bin" ] && command -v "$bin" >/dev/null 2>&1 || exit 0
 
 # Which remote: the first word after "push" that is not an option and names a remote, else origin.
+# Which branch: the refspec after it ("main", "HEAD:main", "+x:main"), else the current branch.
+# Unknown (--all, --tags, a detached HEAD): every branch counts.
 git -C "$cwd" rev-parse --git-dir >/dev/null 2>&1 || exit 0
-remote=origin
+remote=origin branch="" spec="" nonopt=0 all=0
 for w in ${pushargs[@]+"${pushargs[@]}"}; do
-  case "$w" in -*) continue ;; esac
-  git -C "$cwd" remote get-url "$w" >/dev/null 2>&1 && remote="$w"
-  break
+  case "$w" in --all|--mirror|--tags) all=1; continue ;; -*) continue ;; esac
+  nonopt=$((nonopt + 1))
+  if [ "$nonopt" = 1 ] && git -C "$cwd" remote get-url "$w" >/dev/null 2>&1; then remote="$w"; continue; fi
+  [ "$nonopt" -le 2 ] && [ -z "$spec" ] && spec="$w"
 done
+if [ "$all" = 0 ]; then
+  if [ -n "$spec" ]; then
+    branch="${spec#+}"; branch="${branch##*:}"; branch="${branch#refs/heads/}"
+    [ "$branch" = HEAD ] && branch="$(git -C "$cwd" symbolic-ref --short -q HEAD 2>/dev/null)"
+  else
+    branch="$(git -C "$cwd" symbolic-ref --short -q HEAD 2>/dev/null)"
+  fi
+fi
 url="$(git -C "$cwd" remote get-url "$remote" 2>/dev/null)" || exit 0
 # The repo as deploys names it: owner/name on GitHub, host/group[/sub]/name elsewhere (GitLab:
 # gitlab.com/group/name, see docs/GITLAB.md).
@@ -121,9 +144,12 @@ while kill -0 "$pid" 2>/dev/null; do
 done
 # `changed --json` exits 1 when some project could not be read; the list it printed still counts.
 
-msg="$(jq -r --arg repo "$repo" '
+# A push to a feature branch does not touch what a project deploys from: only projects whose
+# branch (.ref) is the pushed one count, or all of them when the branch is unknown.
+msg="$(jq -r --arg repo "$repo" --arg br "$branch" '
   if type != "array" then empty else
   map(select((.repo // "" | ascii_downcase | sub("^github\\.com/"; "")) == ($repo | ascii_downcase)))
+  | map(select($br == "" or (.ref // "") == "" or .ref == $br))
   | map(if (.pendingCommits | type) == "number"
         then "\(.pendingCommits) commit\(if .pendingCommits == 1 then "" else "s" end) waiting on \(.name)"
         else "changes waiting on \(.name)" end)
@@ -131,6 +157,16 @@ msg="$(jq -r --arg repo "$repo" '
   end' "$tmp/out" 2>/dev/null)"
 [ -n "$msg" ] || exit 0
 
+if [ "$mode" = session ]; then
+  jq -cn --arg m "$msg" '{
+    systemMessage: ("Deploy Center: " + $m),
+    hookSpecificOutput: {
+      hookEventName: "SessionStart",
+      additionalContext: ("Deploy Center: " + $m + ". Auto-deploy is off. Mention it only if the user asks about deploys or before they ship. Do not deploy unless the user explicitly says so.")
+    }
+  }'
+  exit 0
+fi
 jq -cn --arg m "$msg" '{
   systemMessage: $m,
   hookSpecificOutput: {

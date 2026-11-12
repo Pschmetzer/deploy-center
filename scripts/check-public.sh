@@ -40,7 +40,7 @@ tokens=(
   '\bxox[abprs]-[A-Za-z0-9-]{10,}'                               # Slack
   '-----BEGIN ([A-Z]+ )*PRIVATE KEY-----'                        # a private key block
 )
-is_test_path() { case "$1" in tests/*|*/tests/*|*/test/*) return 0 ;; *) return 1 ;; esac; }
+is_test_path() { case "$1" in tests/*|*/tests/*|*/Tests/*|*/test/*) return 0 ;; *) return 1 ;; esac; }
 
 # Email addresses: not after ":" or "/" (user:password@host in a URL), and not the placeholders,
 # no-reply addresses or git@host remotes. The legal pages carry the contact address the law asks for.

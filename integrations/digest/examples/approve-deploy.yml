@@ -42,6 +42,7 @@ jobs:
           SENDER_TYPE: ${{ github.event.sender.type }}
           APPROVERS: ${{ vars.DEPLOYS_APPROVERS }}
           INPUT: ${{ inputs.projects }}
+          TITLE: ${{ github.event.issue.title }}
           ISSUE: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
@@ -55,6 +56,9 @@ jobs:
           [ -n "$APPROVERS" ] || no "Set the repository variable DEPLOYS_APPROVERS (logins of the people who may approve)."
           printf '%s\n' "$APPROVERS" | tr ', ' '\n' | grep -qixF -- "$ACTOR" || no "$ACTOR is not in DEPLOYS_APPROVERS."
           if [ "$EVENT" = issues ]; then
+            # Only today's digest (UTC): when a daily run failed, yesterday's issue would otherwise
+            # still deploy whatever the branch head is now.
+            [ "$TITLE" = "Deploys waiting – $(date -u +%Y-%m-%d)" ] || no "Only today's digest issue can be approved, not \"$TITLE\"."
             # From the digest's own newest comment, and only if nobody edited it: the issue body
             # can be changed by anyone with write access, and the approver would not see it.
             comments="$(gh api "repos/$REPO/issues/$ISSUE/comments" --paginate)" || no "The issue's comments could not be read."
@@ -72,12 +76,37 @@ jobs:
           echo "projects=$(printf '%s\n' "$list" | paste -sd, -)" >> "$GITHUB_OUTPUT"
           echo "Approved by $ACTOR: $(printf '%s\n' "$list" | paste -sd, -)"
 
-      # Pin to a release tag or a full commit SHA, not a branch. This first run only lists.
+      # The list in the issue body must be the digest's own: anyone with triage rights can edit the
+      # body after the approver read it. GitHub records who edited the body last; only the digest's
+      # account (github-actions, or DEPLOYS_DIGEST_BOT when the digest runs with another token) may have.
+      - name: The issue body is the digest's own
+        id: body
+        if: github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          NUMBER: ${{ github.event.issue.number }}
+          BOT: ${{ vars.DEPLOYS_DIGEST_BOT || 'github-actions' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016 # $owner etc. are GraphQL variables, not shell
+          editor="$(gh api graphql -F owner="$OWNER" -F name="$REPO" -F number="$NUMBER" \
+            -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){editor{login}}}}' \
+            --jq '.data.repository.issue.editor.login // ""')"
+          case "$editor" in
+            ""|"$BOT"|"${BOT}[bot]") echo "The body is the digest's (last edited by: ${editor:-nobody})." ;;
+            *) echo "::error::The issue body was edited by $editor after the digest wrote it. Run the digest again, then approve."; exit 1 ;;
+          esac
+
+      # Pin to a release tag or a full commit SHA, not a branch. This first run only sets up
+      # deploys (and the vercel CLI) for the next step; it asks nothing.
       - uses: Pschmetzer/deploy-center/integrations/action@main
         id: list
         with:
+          deploy: setup
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-team: ${{ vars.VERCEL_TEAM }}
+          vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}
           repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
 
@@ -121,14 +150,16 @@ jobs:
           # is in ignored.json already (step keep), so every repo is allowed here.
           repo: "*"
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-team: ${{ vars.VERCEL_TEAM }}
+          vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}
           repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
 
-      - name: Report on the issue
+      # What happened, on the run's page (both routes), and on the issue when it came from one.
+      - name: Report
         id: report
-        if: always() && github.event_name == 'issues'
+        if: always()
         env:
+          EVENT: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
@@ -144,6 +175,8 @@ jobs:
           elif [ -z "$STARTED" ]; then msg="Not deployed: the run stopped before deploying."
           elif [ "$STARTED" = 0 ] && [ "${FAILED:-0}" = 0 ]; then msg="Nothing to deploy: none of the approved projects has changes now."
           else msg="Started ${STARTED} deploy(s)${NAMES:+ ($NAMES)}, ${FAILED:-0} failed to start."; fi
+          [ -z "${GITHUB_STEP_SUMMARY:-}" ] || { echo "### Approved deploy"; echo; echo "$msg"; } >> "$GITHUB_STEP_SUMMARY"
+          [ "${EVENT:-}" = issues ] || exit 0
           gh issue comment "$ISSUE" -R "$REPO" --body "$msg [Run]($RUN_URL)"
           # The label is taken off: adding it again is a new approval.
           gh issue edit "$ISSUE" -R "$REPO" --remove-label deploy-approved

@@ -25,7 +25,7 @@ For each project in the config:
 - **Coming next**: what is merged but not live yet, from `deploys notes <project>`. Read only for
   projects with changes. Authors are left out unless `showAuthors` is on.
 - **Site check** (optional): with a `url`, the address is fetched once while the page is made.
-  2xx and 3xx count as up. It is the result at that moment, not uptime over time.
+  2xx and 3xx count as up, and 401/403 too (a login wall answers). At most 5 redirects, http(s) only. It is the result at that moment, not uptime over time.
 
 Below that, **Recent deploys**: the last 30 that went live or failed, newest first, from the
 app's journal. Skipped and cancelled deploys are left out. The journal's error text is never
@@ -43,7 +43,7 @@ published.
     "render/worker",
     { "name": "api", "platform": "render", "label": "API", "url": "https://api.example.com/health" }
   ],
-  "hideMessages": false,
+  "hideMessages": true,
   "showAuthors": false,
   "timeline": 30
 }
@@ -54,11 +54,13 @@ published.
 | `projects` | none | **The allowlist.** Only these are shown, in this order. A name, `platform/name`, or an object with `name`, `platform`, `label` (shown instead of the name) and `url` (the site check). Without it the script stops and writes nothing. |
 | `title` | `Deploys` | Page and feed title. |
 | `description` | empty | A line under the title. |
-| `baseUrl` | empty | Where the page will live. Used for the feed's links and ids. |
-| `hideMessages` | `false` | `true` shows "Updated" instead of every commit message, in the page, the feed and `status.json`. |
+| `baseUrl` | empty | Where the page will live. Used for the feed's links and ids. Must be an `http(s)://` address. |
+| `hideMessages` | `false` | `true` shows "Updated" instead of every commit message, in the page, the feed and `status.json`. The example config sets it to `true`: commit messages and the titles of waiting commits ("Coming next") are often not meant for the public. Set `false` only for a page you would show anyone. |
 | `showAuthors` | `false` | Keep the author names that `deploys notes` adds. |
 | `timeline` | `30` | How many deploys the timeline keeps. |
-| `journal` | the app's | Path to a `journal.jsonl`. `DEPLOYS_JOURNAL` overrides it. |
+| `lang` | `en` | `en` or `de`: the page's texts, the feed's titles and "Updated" in `status.json`. |
+| `staleHours` | `48` | When the page is older than this (the job that makes it may have stopped), a red line on the page says how old it is. Needs scripts in the browser. |
+| `journal` | the app's | Path to a `journal.jsonl`. `DEPLOYS_JOURNAL` overrides it. Without a journal (in CI, on another machine) the timeline comes from each platform's history, when the CLI has `deploys history --json`. |
 
 What never leaves the script: projects not in the list, repos, commit SHAs, error texts, the
 URLs of site checks. A project in the list that cannot be read shows as "Unknown".
@@ -78,7 +80,7 @@ or in CI.
 **GitHub Pages.** Copy [examples/statuspage-daily.yml](examples/statuspage-daily.yml) to
 `.github/workflows/` in a repo with your `statuspage.json`, and set Settings > Pages > Source to
 "GitHub Actions". It regenerates the page every day and on demand. It needs the same secrets as
-the [Action](../action/): `VERCEL_TOKEN`, `RENDER_API_KEY`, and the variables `VERCEL_TEAM` and
+the [Action](../action/): `VERCEL_TOKEN`, `RENDER_API_KEY`, and the variables `DEPLOYS_VERCEL_TEAM` and
 `DEPLOYS_REPOS_JSON` (the content of `~/.config/deploys/vercel-repos.json`). For "Coming next"
 from private repos, add a `DEPLOYS_GH_TOKEN` that can read them. CI has no journal: to get the
 timeline there, commit a copy as `status/journal.jsonl`. From the Mac you can also push the
@@ -104,3 +106,4 @@ journal fixture, with no network. It checks the allowlist (nothing else leaks), 
 (no commit text anywhere), the timeline limit and order, escaping, and that no journal detail,
 SHA or repo is published. Not tested yet: a run against real accounts, and the example workflow on
 GitHub.
+All add-ons at a glance: [what is tested](../README.md#what-is-tested-and-what-is-not).

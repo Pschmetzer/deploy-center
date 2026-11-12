@@ -50,7 +50,7 @@ every project not approved (`deploys ignore`), then runs the [Action](../action/
 2. **Add secrets**: `VERCEL_TOKEN`, `RENDER_API_KEY` (leave out what you don't use) and
    `DEPLOYS_NOTIFY_URL` (your Slack, Discord, ntfy or Telegram webhook, as for
    [notify](../notify/)). **Add variables**: `DEPLOYS_REPOS_JSON` (your
-   `~/.config/deploys/vercel-repos.json`) and `VERCEL_TEAM` if you use a team.
+   `~/.config/deploys/vercel-repos.json`) and `DEPLOYS_VERCEL_TEAM` if you use a team.
 3. **Say who may approve**: the variable `DEPLOYS_APPROVERS`, GitHub logins separated by commas.
    Without it, nothing deploys. Don't list a login whose token an agent uses.
 4. **Say who counts as an agent** (optional): the variables `DEPLOYS_AGENT_AUTHORS` and
@@ -75,8 +75,10 @@ digest step a token that can read them and write issues in the ops repo.
 | A `Co-Authored-By:` trailer matches it | `Co-Authored-By: Claude <noreply@anthropic.com>` |
 | The pull request has a label in `DEPLOYS_AGENT_LABELS` | `ai-generated` |
 | The pull request was opened by a matching login | an agent's PR, merged by a person |
+| The pull request's branch starts with a prefix in `DEPLOYS_AGENT_BRANCHES` (default `claude/ cursor/ codex/ copilot/ devin/`) | `claude/fix-login` |
 
-Everything else is human. Patterns are globs (`*`, `?`), matched without case against the whole
+Everything else is human. A "Generated with …" line in a commit body is not read (the digest gets
+commit titles only); the branch and the co-author trailer are the reliable signs. Patterns are globs (`*`, `?`), matched without case against the whole
 login; for a co-author also against the first word of the name, and a pattern with `@` against
 the email (`*@cursor.com`). Setting a variable replaces its default list:
 
@@ -116,3 +118,8 @@ Without `gh` (or `glab` for GitLab), commit messages stand in for PR titles and 
 
 Not tested yet: runs on GitHub's runners and real posts. The scripts and the workflow's steps are
 tested locally with a stand-in `deploys`, `curl` and `gh` (`integrations/tests/run.sh`).
+All add-ons at a glance: [what is tested](../README.md#what-is-tested-and-what-is-not).
+
+The projects are read four at a time (`DEPLOYS_DIGEST_JOBS`, default `4`), each with one
+`deploys details` and one GitHub call per pull request. A project that cannot be put together is
+left out and the digest says that some projects could not be read.

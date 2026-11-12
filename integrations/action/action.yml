@@ -11,9 +11,22 @@ inputs:
   deploy:
     description: >-
       "true" starts a deploy of every project with changes that deploys from `repo`
-      (deploys deploy-changed --yes). Anything else only reports. Default: only report.
+      (deploys deploy-changed --yes).
+      "dry-run" writes the plan (what would be deployed) to the job summary and starts nothing.
+      "setup" only sets up deploys for later steps of the job ($DEPLOYS, its config, the vercel CLI)
+      and asks nothing.
+      Anything else only reports. Default: only report.
     required: false
     default: "false"
+  only:
+    description: >-
+      Comma-separated project names: only these count (and deploy). Empty: every project.
+    required: false
+    default: ""
+  exclude:
+    description: Comma-separated project names to leave out (also of deploy).
+    required: false
+    default: ""
   repo:
     description: >-
       With deploy: true, only projects that deploy from this repository are started
@@ -43,6 +56,20 @@ inputs:
       Needed for Vercel projects whose Git connection was turned off: without it they never count as changed.
     required: false
     default: ""
+  wait:
+    description: >-
+      With deploy: true, follow every started build until it is live or failed, at most this long
+      (like 20m, 90s or 1h; a plain number is minutes; at most 6h). Empty: do not wait, deployed
+      then only means "started". A failed build fails the step.
+    required: false
+    default: ""
+  fail-on-risk:
+    description: >-
+      "red" (or "yellow") fails the action, before anything is deployed, when a project with
+      changes has that risk or a higher one (migrations, lockfiles, config, size: deploys risk).
+      Empty: the risk is only reported.
+    required: false
+    default: ""
   vercel-cli-version:
     description: The vercel CLI version to install when none is on the runner.
     required: false
@@ -67,11 +94,27 @@ outputs:
   deployed:
     description: '"true" when every deploy was started and every state could be read.'
     value: ${{ steps.deploy.outputs.deployed || 'false' }}
+  risk:
+    description: The highest risk of the projects with changes, green, yellow or red (empty when none was compared).
+    value: ${{ steps.changed.outputs.risk }}
+  risky:
+    description: The projects whose risk is yellow or red, comma-separated.
+    value: ${{ steps.changed.outputs.risky }}
+  states:
+    description: 'With wait: a JSON object, project name to ready, failed, timeout or unknown (could not be asked).'
+    value: ${{ steps.wait.outputs.states || '{}' }}
+  failed-builds:
+    description: 'With wait: the projects whose build failed, comma-separated.'
+    value: ${{ steps.wait.outputs.failed-builds }}
+  live:
+    description: 'With wait: "true" when every started build went live in time.'
+    value: ${{ steps.wait.outputs.live || 'false' }}
 
 runs:
   using: composite
   steps:
     - name: Set up deploys
+      id: setup
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
@@ -79,9 +122,17 @@ runs:
         VERCEL_TEAM: ${{ inputs.vercel-team }}
         REPOS_JSON: ${{ inputs.repos-json }}
         CLI_VERSION: ${{ inputs.vercel-cli-version }}
+        WAIT: ${{ inputs.wait }}
       run: |
         set -euo pipefail
         cfg="$RUNNER_TEMP/deploys-config"; mkdir -p "$cfg"
+        # wait: checked here, before anything starts. Seconds go to the deploy and wait steps.
+        if [ -n "${WAIT:-}" ] && [ "$WAIT" != 0 ]; then
+          [[ "$WAIT" =~ ^([0-9]+)([smh]?)$ ]] || { echo "::error::wait must be a time like 20m, 90s or 1h"; exit 1; }
+          n="${BASH_REMATCH[1]}"; case "${BASH_REMATCH[2]}" in s) w=$((10#$n));; h) w=$((10#$n * 3600));; *) w=$((10#$n * 60));; esac
+          [ "$w" -ge 1 ] && [ "$w" -le 21600 ] || { echo "::error::wait must be between 1s and 6h"; exit 1; }
+          echo "DEPLOYS_WAIT_S=$w" >> "$GITHUB_ENV"
+        fi
         echo "DEPLOYS_CONFIG=$cfg" >> "$GITHUB_ENV"
         echo "DEPLOYS=$ACTION_PATH/../../deploys" >> "$GITHUB_ENV"
         echo "USER=${USER:-$(id -un)}" >> "$GITHUB_ENV"
@@ -95,11 +146,75 @@ runs:
         fi
         if [ -n "$VERCEL_TOKEN" ] && ! command -v vercel >/dev/null 2>&1; then
           case "$CLI_VERSION" in *[!0-9.]*|"") echo "::error::vercel-cli-version must be a version like 65.12.1"; exit 1 ;; esac
-          npm install -g --no-fund --no-audit "vercel@$CLI_VERSION" >/dev/null
+          # Into the runner's temp folder, not the global one (self-hosted runners may not allow it);
+          # the log only when it fails.
+          prefix="$RUNNER_TEMP/vercel-cli"
+          if ! npm install --prefix "$prefix" --no-fund --no-audit "vercel@$CLI_VERSION" > "$RUNNER_TEMP/npm.log" 2>&1; then
+            cat "$RUNNER_TEMP/npm.log"; echo "::error::could not install vercel@$CLI_VERSION"; exit 1
+          fi
+          echo "$prefix/node_modules/.bin" >> "$GITHUB_PATH"
         fi
 
     - name: deploys changed --json
       id: changed
+      if: inputs.deploy != 'setup'
+      shell: bash
+      env:
+        VERCEL_TOKEN: ${{ inputs.vercel-token }}
+        RENDER_API_KEY: ${{ inputs.render-api-key }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        ONLY: ${{ inputs.only }}
+        EXCLUDE: ${{ inputs.exclude }}
+        FAIL_ON_RISK: ${{ inputs.fail-on-risk }}
+      run: |
+        set -euo pipefail
+        # Exit 1 with a list: some project's state could not be read (named above, left out).
+        rc=0; list="$("$DEPLOYS" changed --json </dev/null)" || rc=$?
+        echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "::error::deploys changed --json did not answer a list"; exit 1; }
+        [ "$rc" = 0 ] || echo "::warning::deploys could not read every project; those are left out (see the log above)."
+        # only / exclude: the projects left out go to ignored.json in this run's own config folder,
+        # so deploy-changed leaves them out too.
+        names() { printf '%s\n' "$1" | tr ', ' '\n' | sed '/^$/d'; }
+        ONLY="${ONLY:-}" EXCLUDE="${EXCLUDE:-}"
+        for n in $(names "$ONLY") $(names "$EXCLUDE"); do
+          [[ "$n" =~ ^[A-Za-z0-9._:-]+$ ]] || { echo "::error::only/exclude: \"$n\" is not a project name"; exit 1; }
+        done
+        if [ -n "$ONLY$EXCLUDE" ]; then
+          o="$(names "$ONLY" | jq -Rnc '[inputs]')"; x="$(names "$EXCLUDE" | jq -Rnc '[inputs]')"
+          out="$(echo "$list" | jq -c --argjson o "$o" --argjson x "$x" 'map(.name) | map(select((($o | length) > 0 and (. as $n | $o | index($n) | not)) or (. as $n | $x | index($n))))')"
+          echo "$out" > "$DEPLOYS_CONFIG/ignored.json"
+          list="$(echo "$list" | jq -c --argjson ign "$out" 'map(select(.name as $n | $ign | index($n) | not))')"
+        fi
+        count="$(echo "$list" | jq length)"
+        # The risk of what waits (deploys changed --json carries it): the highest one, and who has it.
+        rank='{"green":1,"yellow":2,"red":3}'
+        risk="$(echo "$list" | jq -r --argjson r "$rank" '[.[].risk.level // empty | select($r[.])] | max_by($r[.]) // ""')"
+        {
+          echo "count=$count"
+          echo "names=$(echo "$list" | jq -r 'map(.name) | join(",")')"
+          echo "risk=$risk"
+          echo "risky=$(echo "$list" | jq -r 'map(select(.risk.level == "red" or .risk.level == "yellow") | .name) | join(",")')"
+          d="EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+          echo "projects<<$d"; echo "$list" | jq -c .; echo "$d"
+        } >> "$GITHUB_OUTPUT"
+        {
+          echo "### Projects with changes: $count"
+          echo "$list" | jq -r '.[] | "- \(.platform) **\(.name)**: \(.pendingCommits // "?") commit(s) waiting\(if .risk.level then ", risk \(.risk.level)\(if (.risk.reasons // []) | map(select(.level != "green")) | length > 0 then ": " + ((.risk.reasons | map(select(.level != "green") | .text)) | join("; ")) else "" end)" else "" end)"'
+        } >> "$GITHUB_STEP_SUMMARY"
+        # fail-on-risk: the gate. Fails before the deploy step, so nothing starts.
+        case "${FAIL_ON_RISK:-}" in
+          "") ;;
+          red|yellow)
+            if [ -n "$risk" ] && [ "$(echo "$rank" | jq --arg a "$risk" '.[$a]')" -ge "$(echo "$rank" | jq --arg a "$FAIL_ON_RISK" '.[$a]')" ]; then
+              echo "::error::risk $risk is at or above fail-on-risk ($FAIL_ON_RISK): $(echo "$list" | jq -r --arg l "$FAIL_ON_RISK" 'map(select(.risk.level == "red" or ($l == "yellow" and .risk.level == "yellow")) | .name) | join(", ")'). Nothing was deployed."
+              exit 1
+            fi ;;
+          *) echo "::error::fail-on-risk must be red, yellow or empty"; exit 1 ;;
+        esac
+
+    - name: Plan (dry run)
+      id: plan
+      if: inputs.deploy == 'dry-run' && steps.changed.outputs.count != '0'
       shell: bash
       env:
         VERCEL_TOKEN: ${{ inputs.vercel-token }}
@@ -107,21 +222,10 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
         set -euo pipefail
-        # Exit 1 with a list: some project's state could not be read (named above, left out).
-        rc=0; list="$("$DEPLOYS" changed --json </dev/null)" || rc=$?
-        echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "::error::deploys changed --json did not answer a list"; exit 1; }
-        [ "$rc" = 0 ] || echo "::warning::deploys could not read every project; those are left out (see the log above)."
-        count="$(echo "$list" | jq length)"
-        {
-          echo "count=$count"
-          echo "names=$(echo "$list" | jq -r 'map(.name) | join(",")')"
-          d="EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
-          echo "projects<<$d"; echo "$list" | jq -c .; echo "$d"
-        } >> "$GITHUB_OUTPUT"
-        {
-          echo "### Projects with changes: $count"
-          echo "$list" | jq -r '.[] | "- \(.platform) **\(.name)**: \(.pendingCommits // "?") commit(s) waiting"'
-        } >> "$GITHUB_STEP_SUMMARY"
+        # Without --yes deploy-changed only shows the list; nothing starts.
+        out="$("$DEPLOYS" deploy-changed </dev/null)" || true
+        echo "$out"
+        { echo "### Would deploy (dry run, nothing started)"; echo '```'; echo "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
     - name: deploys deploy-changed --yes
       id: deploy
@@ -169,6 +273,8 @@ runs:
         rc=0; out="$("$DEPLOYS" deploy-changed --yes --json </dev/null)" || rc=$?
         if echo "$out" | jq -e 'type == "array"' >/dev/null 2>&1; then
           echo "$out" | jq -r '.[] | "\(.platform)  \(.name)  \(.action)\(if .reason then ": \(.reason)" else "" end)\(if .url then " -> \(.url)" else "" end)"'
+          # For the wait step: the deploy id of each start, for deploys watch.
+          [ -z "${RUNNER_TEMP:-}" ] || echo "$out" | jq -c 'map(select(.action == "started"))' > "$RUNNER_TEMP/deploys-started.json"
           started="$(echo "$out" | jq '[.[] | select(.action == "started")] | length')"
           failed="$(echo "$out" | jq '[.[] | select(.action == "failed")] | length')"
         else
@@ -181,3 +287,41 @@ runs:
           if [ "$rc" = 0 ]; then echo "deployed=true"; else echo "deployed=false"; fi
         } >> "$GITHUB_OUTPUT"
         exit "$rc"
+
+    - name: Wait for the builds
+      id: wait
+      if: ${{ !cancelled() && inputs.deploy == 'true' && inputs.wait != '' && inputs.wait != '0' && steps.deploy.outputs.started != '' && steps.deploy.outputs.started != '0' }}
+      shell: bash
+      env:
+        VERCEL_TOKEN: ${{ inputs.vercel-token }}
+        RENDER_API_KEY: ${{ inputs.render-api-key }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -uo pipefail
+        f="$RUNNER_TEMP/deploys-started.json"
+        [ -s "$f" ] || { echo "::warning::no started deploy to follow"; echo "live=false" >> "$GITHUB_OUTPUT"; exit 0; }
+        # One deadline for all: the builds run side by side, so following them one after the other
+        # costs no extra time. No timeout(1): it is not on every runner.
+        end=$((SECONDS + ${DEPLOYS_WAIT_S:-1200})); states='{}'
+        while IFS=$'\t' read -r plat name id; do
+          left=$((end - SECONDS))
+          if [ "$left" -le 0 ]; then st=timeout
+          else
+            "$DEPLOYS" watch "$plat:$name" ${id:+"$id"} </dev/null & pid=$!
+            # Looked at once a second; past the deadline the watch is stopped.
+            while kill -0 "$pid" 2>/dev/null; do
+              [ "$SECONDS" -lt "$end" ] || { kill "$pid" 2>/dev/null; break; }
+              sleep 1
+            done
+            wait "$pid"; rc=$?
+            case "$rc" in 0) st=ready ;; 1) st=failed ;; 3) st=unknown ;; *) st=timeout ;; esac
+          fi
+          echo "$plat $name: $st"
+          states="$(echo "$states" | jq -c --arg k "$name" --arg v "$st" '. + {($k): $v}')"
+        done < <(jq -r '.[] | [.platform, .name, (.id // "")] | @tsv' "$f")
+        bad="$(echo "$states" | jq -r 'to_entries | map(select(.value == "failed") | .key) | join(",")')"
+        live="$(echo "$states" | jq -r 'if (to_entries | all(.value == "ready")) then "true" else "false" end')"
+        { echo "states=$states"; echo "failed-builds=$bad"; echo "live=$live"; } >> "$GITHUB_OUTPUT"
+        { echo "### Builds"; echo "$states" | jq -r 'to_entries[] | "- **\(.key)**: \(.value)"'; } >> "$GITHUB_STEP_SUMMARY"
+        [ -z "$bad" ] || { echo "::error::build failed: $bad"; exit 1; }
+        [ "$live" = true ] || echo "::warning::not every build was live in time: $(echo "$states" | jq -r 'to_entries | map(select(.value != "ready") | "\(.key) \(.value)") | join(", ")')"

@@ -1,7 +1,7 @@
 {
   "name": "deploy-center",
   "displayName": "Deploy Center",
-  "description": "See what is waiting to go live on Vercel, Render and the other Deploy Center platforms, and deploy it by hand, from VS Code, Cursor or Windsurf.",
+  "description": "%description%",
   "version": "0.2.0",
   "publisher": "deploycenter",
   "license": "MIT",
@@ -29,6 +29,10 @@
     "claude code"
   ],
   "main": "./dist/extension.js",
+  "extensionKind": [
+    "ui",
+    "workspace"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -43,53 +47,65 @@
     "commands": [
       {
         "command": "deployCenter.refresh",
-        "title": "Refresh",
+        "title": "%command.refresh%",
         "category": "Deploy Center",
         "icon": "$(refresh)"
       },
       {
         "command": "deployCenter.menu",
-        "title": "Show Actions",
+        "title": "%command.menu%",
         "category": "Deploy Center"
       },
       {
         "command": "deployCenter.deployRepo",
-        "title": "Deploy Waiting for This Repo",
+        "title": "%command.deployRepo%",
         "category": "Deploy Center",
         "icon": "$(rocket)"
       },
       {
         "command": "deployCenter.deployProject",
-        "title": "Deploy",
+        "title": "%command.deployProject%",
         "category": "Deploy Center",
         "icon": "$(rocket)"
       },
       {
+        "command": "deployCenter.deployPreview",
+        "title": "%command.deployPreview%",
+        "category": "Deploy Center",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "deployCenter.rollback",
+        "title": "%command.rollback%",
+        "category": "Deploy Center",
+        "icon": "$(history)"
+      },
+      {
         "command": "deployCenter.openSite",
-        "title": "Open Site",
+        "title": "%command.openSite%",
         "category": "Deploy Center",
         "icon": "$(link-external)"
       },
       {
         "command": "deployCenter.openDashboard",
-        "title": "Open Dashboard",
+        "title": "%command.openDashboard%",
         "category": "Deploy Center"
       },
       {
         "command": "deployCenter.showLog",
-        "title": "Show Build Log",
+        "title": "%command.showLog%",
         "category": "Deploy Center",
         "icon": "$(output)"
       },
       {
         "command": "deployCenter.copyForAi",
-        "title": "Copy Build Error for AI",
+        "title": "%command.copyForAi%",
         "category": "Deploy Center",
         "icon": "$(copy)"
       },
       {
         "command": "deployCenter.copyNotes",
-        "title": "Copy Release Notes",
+        "title": "%command.copyNotes%",
         "category": "Deploy Center"
       }
     ],
@@ -106,27 +122,27 @@
     "viewsWelcome": [
       {
         "view": "deployCenter.projects",
-        "contents": "The deploys command was not found.\n[Get Deploy Center](https://deploycenter.app)\nOr set its path in [Settings](command:workbench.action.openSettings?%22deployCenter.cliPath%22).",
+        "contents": "%welcome.missing%",
         "when": "deployCenter.state == missing"
       },
       {
         "view": "deployCenter.projects",
-        "contents": "Nothing is waiting. Every project is on its newest commit.\n[Refresh](command:deployCenter.refresh)",
+        "contents": "%welcome.empty%",
         "when": "deployCenter.state == empty"
       },
       {
         "view": "deployCenter.projects",
-        "contents": "No project deploys from this folder's repo. To see every project, set Deploy Center › Scope to all.\n[Open Settings](command:workbench.action.openSettings?%22deployCenter.scope%22)",
+        "contents": "%welcome.nomatch%",
         "when": "deployCenter.state == nomatch"
       },
       {
         "view": "deployCenter.projects",
-        "contents": "Could not read the projects. See the Deploy Center output for the reason.\n[Refresh](command:deployCenter.refresh)",
+        "contents": "%welcome.error%",
         "when": "deployCenter.state == error"
       },
       {
         "view": "deployCenter.projects",
-        "contents": "Reading projects…",
+        "contents": "%welcome.loading%",
         "when": "!deployCenter.state || deployCenter.state == loading"
       }
     ],
@@ -158,6 +174,16 @@
           "command": "deployCenter.deployProject",
           "when": "view == deployCenter.projects && viewItem =~ /project/",
           "group": "1_deploy"
+        },
+        {
+          "command": "deployCenter.deployPreview",
+          "when": "view == deployCenter.projects && viewItem =~ /can-preview/",
+          "group": "1_deploy@2"
+        },
+        {
+          "command": "deployCenter.rollback",
+          "when": "view == deployCenter.projects && viewItem =~ /can-rollback/",
+          "group": "1_deploy@3"
         },
         {
           "command": "deployCenter.openSite",
@@ -199,7 +225,7 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "markdownDescription": "Full path to the `deploys` command. Empty: the one inside `/Applications/Deploy Center.app`, then `~/Applications`, then `PATH`."
+          "markdownDescription": "%config.cliPath.markdownDescription%"
         },
         "deployCenter.scope": {
           "type": "string",
@@ -209,30 +235,30 @@
             "all"
           ],
           "enumDescriptions": [
-            "The projects whose repo matches this folder's git remote; all projects when none match.",
-            "Only the projects whose repo matches this folder's git remote.",
-            "All projects."
+            "%config.scope.enum.auto%",
+            "%config.scope.enum.repo%",
+            "%config.scope.enum.all%"
           ],
           "default": "auto",
-          "description": "Which projects the status bar and the tree show."
+          "description": "%config.scope.description%"
         },
         "deployCenter.pollMinutes": {
           "type": "number",
           "default": 5,
           "minimum": 1,
-          "description": "How often to check, in minutes, while the window has focus. It also checks when the window gets focus again."
+          "description": "%config.pollMinutes.description%"
         },
         "deployCenter.timeoutSeconds": {
           "type": "number",
           "default": 120,
           "minimum": 10,
-          "description": "How long one call of the deploys command may take before it is stopped."
+          "description": "%config.timeoutSeconds.description%"
         },
         "deployCenter.logLines": {
           "type": "number",
           "default": 200,
           "minimum": 20,
-          "description": "How many lines of the build log to show."
+          "description": "%config.logLines.description%"
         }
       }
     }
@@ -252,5 +278,6 @@
     "esbuild": "0.28.2",
     "ovsx": "1.2.0",
     "typescript": "6.0.3"
-  }
+  },
+  "l10n": "./l10n"
 }

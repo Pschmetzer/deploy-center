@@ -1,7 +1,7 @@
 {
   "name": "deploy-center",
   "displayName": "Deploy Center",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Works with the deploys CLI: after a push, say what is waiting to go live; read failed build logs and fix them; deploy only after the user says yes.",
   "author": {
     "name": "Deploy Center",
@@ -10,13 +10,25 @@
   "homepage": "https://deploycenter.app",
   "repository": "https://github.com/Pschmetzer/deploy-center",
   "license": "MIT",
-  "keywords": ["deploy", "vercel", "render", "auto-deploy", "build-logs"],
+  "keywords": [
+    "deploy",
+    "vercel",
+    "render",
+    "auto-deploy",
+    "build-logs"
+  ],
   "userConfig": {
     "push_reminder": {
       "type": "boolean",
       "title": "Reminder after git push",
       "description": "After Claude runs git push, print one line with what is waiting to go live (read-only).",
       "default": true
+    },
+    "session_hint": {
+      "type": "boolean",
+      "title": "Hint at session start",
+      "description": "At the start of a session, one line with what is waiting to go live for this folder's repo (read-only; asks GitHub, so it is off by default).",
+      "default": false
     }
   }
 }

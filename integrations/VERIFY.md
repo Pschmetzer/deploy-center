@@ -4,19 +4,19 @@ Every release on GitHub is one zip, `DeployCenter-<version>-universal.zip`. `rel
 with a Developer ID, has Apple notarize it, staples the ticket, and writes the zip's SHA-256 into
 the release notes. Three checks, each a single command, tell you the zip is that file.
 
-Here, `0.7.0` stands for the version you downloaded.
+Here, `<version>` stands for the version you downloaded, for example `0.9.1`.
 
 ## 1. The checksum matches the release notes
 
 ```bash
-shasum -a 256 ~/Downloads/DeployCenter-0.7.0-universal.zip
+shasum -a 256 ~/Downloads/DeployCenter-<version>-universal.zip
 ```
 
 Compare that with the line `SHA-256 of the zip:` in the release notes. You can also print the
 line without a browser:
 
 ```bash
-gh release view v0.7.0 --repo Pschmetzer/deploy-center --json body -q .body | grep SHA-256
+gh release view v<version> --repo Pschmetzer/deploy-center --json body -q .body | grep SHA-256
 ```
 
 The Homebrew cask carries the same value in `sha256`, and `brew` checks it for you.
@@ -34,8 +34,9 @@ What to expect:
 
 - `valid on disk` and `satisfies its Designated Requirement` from the first command.
 - `Identifier=app.deploycenter.mac`
-- `TeamIdentifier=QX3P875C86`. The app's updater pins this same team: it installs an update
-  only when the update is signed by this team.
+- `TeamIdentifier=<TEAMID>`, a ten-character Apple team id. It must be the same id that `spctl`
+  shows in parentheses on its `origin=` line (step 3). The app's updater pins this same team: it
+  installs an update only when the update is signed by this team.
 - `flags=0x10000(runtime)`, which means the hardened runtime is on, as notarization requires.
 
 `TeamIdentifier=not set` or `Signature=adhoc` means a local build, not a release.
@@ -57,13 +58,21 @@ What to expect:
 `rejected`, or `source=Unnotarized Developer ID`, means you should not open it. Report that in an
 issue, together with the version and the zip's SHA-256.
 
-## The `deploys` script on its own
+## The `deploys` CLI on its own
 
-The script is not signed. It is plain text, so read it before you run it. To pin it to a release,
-download it from the tag instead of `main`:
+The CLI is not signed. Each release has it as a tarball, `deploys-cli-<version>.tar.gz`, with
+`deploys`, `VERSION` and `providers/` inside (the script alone does not run without `providers/`),
+and a `checksums.txt` with the SHA-256 of every file of the release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Pschmetzer/deploy-center/v0.7.0/deploys -o deploys
+v=<version>
+base="https://github.com/Pschmetzer/deploy-center/releases/download/v$v"
+curl -fsSLO "$base/deploys-cli-$v.tar.gz"
+curl -fsSLO "$base/checksums.txt"
+shasum -a 256 -c checksums.txt --ignore-missing
 ```
 
-Then compare it with the file of the same name in the tag: `git show v0.7.0:deploys | diff - deploys`.
+`deploys-cli-<version>.tar.gz: OK` means it is the file of the release. The install script
+(`curl -fsSL https://deploycenter.app/install.sh | sh`) runs the same check before it writes
+anything. The files are plain text, so read them before you run them; to compare them with the
+source, `git diff --no-index <unpacked folder>/deploys <checkout at tag v<version>>/deploys`.

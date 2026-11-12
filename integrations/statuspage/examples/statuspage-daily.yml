@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   page:
@@ -44,7 +44,7 @@ jobs:
         run: npm install -g --no-fund --no-audit vercel@65.12.1 >/dev/null
       - name: Make the page
         env:
-          DEPLOYS_VERCEL_TEAM: ${{ vars.VERCEL_TEAM }}
+          DEPLOYS_VERCEL_TEAM: ${{ vars.DEPLOYS_VERCEL_TEAM }}
           # Reads commits for "Coming next". Private repos need a token that can read them.
           GH_TOKEN: ${{ secrets.DEPLOYS_GH_TOKEN || github.token }}
           REPOS_JSON: ${{ vars.DEPLOYS_REPOS_JSON }}
