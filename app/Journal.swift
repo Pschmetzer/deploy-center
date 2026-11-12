@@ -2,6 +2,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct JournalEntry: Codable, Identifiable {
     /// Stable across loads, so a list does not redraw every row when it is read again.
@@ -9,9 +10,11 @@ struct JournalEntry: Codable, Identifiable {
     let at: Date
     let platform: String
     let name: String
-    let result: String        // live, other (preview, rollback), failed, skipped, cancelled
+    let result: String        // see Kind: live, preview, rollback, forced, failed, skipped, cancelled (other: older apps)
     let seconds: Double?
     let detail: String?
+    /// The person's own comment, added later in the history (FEA-048). The script leaves it alone.
+    var note: String? = nil
     init(at: Date = Date(), platform: String, name: String, result: String, seconds: Double?, detail: String?) {
         self.at = at; self.platform = platform; self.name = name; self.result = result; self.seconds = seconds; self.detail = detail
     }
@@ -36,16 +39,57 @@ enum Journal {
         try? fm.moveItem(at: oldURL, to: url)
     }
 
+    /// Posted after an entry was written, so an open history shows it.
+    static let didAppend = Notification.Name("JournalDidAppend")
+
+    /// Called on the main thread when a deploy ends; the file work (and the trim, which reads it
+    /// all) runs on a queue of its own.
+    private static let writer = DispatchQueue(label: "app.deploycenter.journal", qos: .utility)
     static func append(_ e: JournalEntry) {
+        writer.async { appendNow(e) }
+    }
+    /// Waits for entries still being written (tests, and before reading right after a write).
+    static func flush() { writer.sync {} }
+
+    /// "<journal>.lock", a folder, as the script takes it (deploys journal_add): waited for two
+    /// seconds at most, and a stale lock never costs a line.
+    static func withFileLock<T>(_ body: () -> T) -> T {
+        let l = url.path + ".lock"
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var locked = false
+        for _ in 0..<20 {
+            if mkdir(l, 0o700) == 0 { locked = true; break }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        defer { if locked { rmdir(l) } }
+        return body()
+    }
+
+    private static func appendNow(_ e: JournalEntry) {
         lock.lock(); defer { lock.unlock() }
+        withFileLock { appendLocked(e) }
+    }
+    private static func appendLocked(_ e: JournalEntry) {
         migrate()
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         guard let data = try? enc.encode(e) else { return }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let line = data + Data("\n".utf8)
-        // The throwing calls: the old ones raise an Objective-C exception on a full disk, and the app ends.
-        if let h = try? FileHandle(forWritingTo: url) { _ = try? h.seekToEnd(); try? h.write(contentsOf: line); try? h.close() }
-        else { try? line.write(to: url) }
+        // The throwing calls: the old seekToEndOfFile/write raise an Objective-C exception on a full
+        // disk, which no catch stops.
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                let h = try FileHandle(forWritingTo: url)
+                defer { try? h.close() }
+                try h.seekToEnd(); try h.write(contentsOf: line)
+            } else {
+                try line.write(to: url)
+                private600(url)
+            }
+        } catch {
+            Log.write("journal: could not write (\(error.localizedDescription))")
+            return
+        }
         let n = (lines ?? countLines()) + (lines == nil ? 0 : 1)
         lines = n
         // Kept small: past 500 lines (and a margin) the oldest go.
@@ -54,6 +98,12 @@ enum Journal {
             rewrite(Array(all.suffix(maxEntries)))
             lines = min(all.count, maxEntries)
         }
+        DispatchQueue.main.async { NotificationCenter.default.post(name: didAppend, object: nil) }
+    }
+
+    /// Project names and error texts: readable by this user only, like the log.
+    private static func private600(_ u: URL) {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: u.path)
     }
 
     private static func countLines() -> Int {
@@ -64,7 +114,40 @@ enum Journal {
     private static func rewrite(_ list: [JournalEntry]) {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         let text = list.compactMap { try? enc.encode($0) }.map { String(decoding: $0, as: UTF8.self) }.joined(separator: "\n") + "\n"
-        try? Data(text.utf8).write(to: url, options: .atomic)
+        do { try Data(text.utf8).write(to: url, options: .atomic); private600(url) }
+        catch { Log.write("journal: could not trim (\(error.localizedDescription))") }
+    }
+
+    /// Sets (or with an empty text removes) the comment of one entry, by its id.
+    static func setNote(_ id: String, _ text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        writer.async {
+            lock.lock(); defer { lock.unlock() }
+            withFileLock { setNoteLocked(id, t) }
+            DispatchQueue.main.async { NotificationCenter.default.post(name: didAppend, object: nil) }
+        }
+    }
+
+    /// Only the one line changes; every other line stays byte for byte (the script's lines, keys
+    /// this app does not know, lines it cannot read).
+    static func setNoteLocked(_ id: String, _ t: String) {
+        guard let text = try? String(contentsOf: url, encoding: .utf8), let out = withNote(text, id: id, note: t) else { return }
+        do { try Data(out.utf8).write(to: url, options: .atomic); private600(url) }
+        catch { Log.write("journal: comment not saved (\(error.localizedDescription))") }
+    }
+    /// The file's text with the comment set on the one entry; nil when it is not there.
+    static func withNote(_ text: String, id: String, note t: String) -> String? {
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        var lines = text.components(separatedBy: "\n")
+        for (n, line) in lines.enumerated().reversed() where !line.isEmpty {
+            guard let e = try? dec.decode(JournalEntry.self, from: Data(line.utf8)), e.id == id,
+                  var obj = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any] else { continue }
+            if t.isEmpty { obj.removeValue(forKey: "note") } else { obj["note"] = String(t.prefix(500)) }
+            guard let out = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys, .withoutEscapingSlashes]) else { return nil }
+            lines[n] = String(decoding: out, as: UTF8.self)
+            return lines.joined(separator: "\n")
+        }
+        return nil
     }
 
     /// Oldest first.
@@ -76,14 +159,21 @@ enum Journal {
         return limit == .max ? all : Array(all.suffix(limit))
     }
 
-    static func csv(_ list: [JournalEntry]) -> String {
+    /// `perBuild`: an average Vercel build's price by project (Costs); a build that ran (live,
+    /// failed, forced, preview, rollback) gets it in the last column as an estimate (FEA-014).
+    static func csv(_ list: [JournalEntry], perBuild: ((String) -> Double?)? = nil) -> String {
         // Quoted, and a cell that a spreadsheet would read as a formula starts with ' instead.
         func q(_ s: String) -> String {
             let safe = s.first.map { "=+-@\t\r".contains($0) } == true ? "'" + s : s
             return "\"" + safe.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
-        return (["time,platform,project,result,seconds,detail"] + list.map {
-            [$0.at.formatted(.iso8601), $0.platform, q($0.name), $0.result, $0.seconds.map { String(Int($0)) } ?? "", q($0.detail ?? "")].joined(separator: ",")
+        func usd(_ e: JournalEntry) -> String {
+            guard e.platform == "Vercel", ["live", "failed", "forced", "preview", "rollback"].contains(e.result),
+                  let p = perBuild?(e.name) else { return "" }
+            return String(format: "%.2f", p)
+        }
+        return (["time,platform,project,result,seconds,detail,note,usd_estimate"] + list.map {
+            [$0.at.formatted(.iso8601), $0.platform, q($0.name), $0.result, $0.seconds.map { String(Int($0)) } ?? "", q($0.detail ?? ""), q($0.note ?? ""), usd($0)].joined(separator: ",")
         }).joined(separator: "\n")
     }
 
@@ -100,12 +190,83 @@ enum Journal {
         for e in list where ["live", "failed"].contains(e.result) { recent["\(e.platform)/\(e.name)", default: []].append(e.result == "failed") }
         return recent.mapValues { r in let w = r.suffix(window); return (w.filter { $0 }.count, w.count) }
     }
+
+    /// Entries that match a search (project, platform or detail) and a kind; nil kind is all.
+    static func filter(_ list: [JournalEntry], text: String, kind: JournalEntry.Kind?) -> [JournalEntry] {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        return list.filter { e in
+            (kind == nil || e.kind == kind)
+                && (t.isEmpty || e.name.localizedCaseInsensitiveContains(t) || e.platform.localizedCaseInsensitiveContains(t)
+                    || (e.detail?.localizedCaseInsensitiveContains(t) ?? false) || (e.note?.localizedCaseInsensitiveContains(t) ?? false))
+        }
+    }
+
+    /// Newest day first, each day's entries newest first.
+    static func byDay(_ list: [JournalEntry]) -> [(day: String, entries: [JournalEntry])] {
+        let groups = Dictionary(grouping: list) { localDay($0.at) }
+        return groups.keys.sorted(by: >).map { k in (k, groups[k]!.sorted { $0.at > $1.at }) }
+    }
+}
+
+extension JournalEntry {
+    /// The result as a known kind; a word from a newer script or app is `.other`.
+    enum Kind: String, CaseIterable {
+        case live, preview, rollback, forced, failed, skipped, cancelled, other
+        var title: String {
+            switch self {
+            case .live: return L("Live", "Live")
+            case .preview: return L("Preview", "Vorschau")
+            case .rollback: return L("Rolled back", "Zurückgerollt")
+            case .forced: return L("Forced", "Erzwungen")
+            case .failed: return L("Failed", "Fehlgeschlagen")
+            case .skipped: return L("Skipped", "Übersprungen")
+            case .cancelled: return L("Cancelled", "Abgebrochen")
+            case .other: return L("Other", "Anderes")
+            }
+        }
+        var symbol: String {
+            switch self {
+            case .live: return "checkmark.circle.fill"
+            case .preview: return "eye.circle.fill"
+            case .rollback: return "arrow.uturn.backward.circle.fill"
+            case .forced: return "exclamationmark.shield.fill"
+            case .failed: return "xmark.octagon.fill"
+            case .skipped: return "forward.circle.fill"
+            case .cancelled: return "stop.circle.fill"
+            case .other: return "circle.fill"
+            }
+        }
+        var color: Color {
+            switch self {
+            case .live: return Color.good
+            case .preview, .rollback: return .blue
+            case .forced: return .orange
+            case .failed: return .red
+            case .skipped, .cancelled, .other: return .secondary
+            }
+        }
+    }
+    var kind: Kind { Kind(rawValue: result) ?? .other }
 }
 
 struct JournalView: View {
+    /// For "costliest failures" (an average build's price); nil leaves that part out.
+    var costs: Costs? = nil
     @Environment(\.dismiss) private var dismiss
+    @State private var stats = false
+    @State private var noteFor: JournalEntry?
+    @State private var noteText = ""
     @State private var entries: [JournalEntry] = []
     @State private var failed: [String: (failed: Int, total: Int)] = [:]
+    @State private var search = ""
+    @State private var kind: JournalEntry.Kind?
+    @State private var limit = 200
+
+    private var shown: [JournalEntry] { Journal.filter(entries, text: search, kind: kind) }
+    /// Names in the details are scrubbed in demo mode, like everywhere on screen.
+    private var names: [Item] {
+        Set(entries.map(\.name)).map { Item(id: $0, name: $0, detail: "", platform: .vercel, deployable: false, auto: false, note: nil, link: nil) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -113,38 +274,105 @@ struct JournalView: View {
                 Text(L("Deploy history", "Deploy-Verlauf")).font(.headline)
                 Spacer()
                 Button(L("Copy as CSV", "Als CSV kopieren")) {
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Journal.csv(entries), forType: .string)
-                }.disabled(entries.isEmpty)
+                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Journal.csv(shown, perBuild: costs?.perBuild), forType: .string)
+                }.disabled(shown.isEmpty)
+                Button(L("Save as CSV …", "Als CSV sichern …")) { save() }.disabled(shown.isEmpty)
+                Menu(L("Markdown", "Markdown")) {
+                    Button(L("Copy the list as a table", "Liste als Tabelle kopieren")) { copy(JournalStats.markdown(shown, mask: Demo.mask)) }
+                    Button(L("Copy this month's report", "Bericht dieses Monats kopieren")) { copy(JournalStats.monthReport(entries, mask: Demo.mask)) }
+                }.fixedSize().disabled(entries.isEmpty)
+                Toggle(L("Figures", "Zahlen"), isOn: $stats).toggleStyle(.button).disabled(entries.isEmpty)
                 Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(12)
+            HStack {
+                TextField(L("Search project or reason", "Projekt oder Grund suchen"), text: $search).textFieldStyle(.roundedBorder)
+                Picker(L("Result", "Ergebnis"), selection: $kind) {
+                    Text(L("All", "Alle")).tag(JournalEntry.Kind?.none)
+                    ForEach(JournalEntry.Kind.allCases, id: \.self) { k in Text(k.title).tag(JournalEntry.Kind?.some(k)) }
+                }.fixedSize()
+            }.padding(.horizontal, 12).padding(.bottom, 8)
             Divider()
-            if entries.isEmpty {
+            if stats && !entries.isEmpty {
+                JournalStatsView(entries: entries, costs: costs)
+            } else if entries.isEmpty {
                 Text(L("Nothing yet. Deploys that end are listed here.", "Noch nichts. Beendete Deploys stehen hier."))
                     .foregroundStyle(.secondary).padding(16)
+            } else if shown.isEmpty {
+                Text(L("Nothing matches.", "Nichts gefunden.")).foregroundStyle(.secondary).padding(16)
             } else {
-                List(entries.reversed()) { e in
-                    HStack(spacing: 8) {
-                        // "forced": started inside a closed deploy window, with the reason in the detail.
-                        Image(systemName: e.result == "failed" ? "xmark.octagon.fill"
-                              : (e.result == "skipped" ? "forward.circle.fill" : (e.result == "cancelled" ? "stop.circle.fill"
-                              : (e.result == "forced" ? "exclamationmark.shield.fill" : "checkmark.circle.fill"))))
-                            .foregroundStyle(e.result == "failed" ? .red : (["skipped", "cancelled"].contains(e.result) ? .secondary
-                                             : (e.result == "forced" ? .orange : .green)))
-                        Text(Demo.mask(e.name)).font(.body.weight(.medium))
-                        Text(e.platform).font(.caption).foregroundStyle(.secondary)
-                        if let f = failed["\(e.platform)/\(e.name)"], f.failed > 0 {
-                            Text(L("\(f.failed) of last \(f.total) failed", "\(f.failed) der letzten \(f.total) fehlgeschlagen"))
-                                .font(.caption2).foregroundStyle(.orange)
+                List {
+                    ForEach(Journal.byDay(shown), id: \.day) { group in
+                        Section(SavingsFormat.day(group.day)) {
+                            ForEach(group.entries) { e in row(e) }
                         }
-                        Spacer()
-                        if let s = e.seconds { Text("\(Int(s) / 60):\(String(format: "%02d", Int(s) % 60))").font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
-                        Text(e.at.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
                     }
-                    .help(e.detail ?? "")
+                    if entries.count >= limit {
+                        Button(L("Load older entries", "Ältere Einträge laden")) { limit = .max; reload() }.buttonStyle(.link)
+                    }
                 }
             }
         }
-        .frame(width: 640, height: 460)
-        .task { entries = Journal.load(limit: 200); failed = Journal.failureTable(entries) }
+        .frame(minWidth: 560, idealWidth: 680, minHeight: 360, idealHeight: 520)
+        .task { reload() }
+        .alert(L("Comment", "Kommentar"), isPresented: Binding(get: { noteFor != nil }, set: { if !$0 { noteFor = nil } })) {
+            TextField(L("Why it went out, what to watch", "Warum es raus ging, worauf achten"), text: $noteText)
+            Button(L("Cancel", "Abbrechen"), role: .cancel) { noteFor = nil }
+            Button(L("Save", "Speichern")) { if let e = noteFor { Journal.setNote(e.id, noteText) }; noteFor = nil }
+        } message: {
+            Text(L("Kept in this Mac's history.", "Bleibt im Verlauf dieses Macs."))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Journal.didAppend)) { _ in reload() }
+    }
+
+    private func row(_ e: JournalEntry) -> some View {
+        let k = e.kind, detail = e.detail.map { Demo.on ? Demo.scrub($0, items: names) : $0 }
+        let took = e.seconds.map { "\(Int($0) / 60):\(String(format: "%02d", Int($0) % 60))" }
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Image(systemName: k.symbol).foregroundStyle(k.color).accessibilityHidden(true)
+                Text(Demo.mask(e.name)).font(.body.weight(.medium))
+                Text(k.title).font(.caption).foregroundStyle(k.color == .secondary ? Color.secondary : k.color)
+                Text(e.platform).font(.caption).foregroundStyle(.secondary)
+                if let f = failed["\(e.platform)/\(e.name)"], f.failed > 0 {
+                    Text(L("\(f.failed) of last \(f.total) failed", "\(f.failed) der letzten \(f.total) fehlgeschlagen"))
+                        .font(.caption2).foregroundStyle(.orange)
+                }
+                Spacer()
+                if let took { Text(took).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
+                Text(e.at.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+            }
+            if let detail, !detail.isEmpty {
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2).padding(.leading, 26)
+            }
+            if let n = e.note {
+                Label(n, systemImage: "text.bubble").font(.caption).lineLimit(2).padding(.leading, 26)
+            }
+        }
+        .help(detail ?? "")
+        .accessibilityElement(children: .combine)
+        .contextMenu {
+            if k == .failed || k == .rollback {
+                Button(L("Copy a postmortem template", "Postmortem-Vorlage kopieren")) { copy(JournalStats.postmortem(e, mask: Demo.mask)) }
+            }
+            Button(e.note == nil ? L("Add a comment …", "Kommentar hinzufügen …") : L("Edit the comment …", "Kommentar ändern …")) {
+                noteText = e.note ?? ""; noteFor = e
+            }
+            Button(L("Copy as Markdown", "Als Markdown kopieren")) { copy(JournalStats.markdown([e], mask: Demo.mask)) }
+        }
+    }
+
+    private func copy(_ s: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string) }
+
+    private func reload() {
+        entries = Journal.load(limit: limit); failed = Journal.failureTable(entries)
+    }
+
+    private func save() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "deploy-history.csv"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        guard panel.runModal() == .OK, let u = panel.url else { return }
+        do { try Data(Journal.csv(shown, perBuild: costs?.perBuild).utf8).write(to: u, options: .atomic) }
+        catch { Log.write("journal: CSV not saved (\(error.localizedDescription))") }
     }
 }

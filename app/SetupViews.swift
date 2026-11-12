@@ -40,19 +40,30 @@ struct RenderKeySetup: View {
             Text(L("Create an API key at dashboard.render.com → Account Settings → API Keys and paste it here. It is stored in your macOS keychain, nowhere else.",
                    "Erstelle einen API-Key unter dashboard.render.com → Account Settings → API Keys und füge ihn hier ein. Er wird nur im macOS-Schlüsselbund gespeichert."))
                 .foregroundStyle(.secondary).multilineTextAlignment(.center)
-            SecureField("rnd_…", text: $key).textFieldStyle(.roundedBorder).frame(width: 320)
-            if let error { Text(error).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center) }
+            SecureField(L("Render API key", "Render-API-Key"), text: $key, prompt: Text("rnd_…"))
+                .textFieldStyle(.roundedBorder).frame(width: 320)
+                .onSubmit { if canSave { save() } }
+            if !key.isEmpty && !looksRight {
+                Text(L("A Render API key starts with rnd_.", "Ein Render-API-Key beginnt mit rnd_."))
+                    .font(.caption).foregroundStyle(Color.warningText)
+            }
+            if let error { ErrorText(error).multilineTextAlignment(.center) }
             HStack {
                 Button(L("Open Render", "Render öffnen")) {
                     NSWorkspace.shared.open(URL(string: "https://dashboard.render.com/u/settings#api-keys")!)
                 }
-                Button(saving ? L("Saving …", "Speichere …") : L("Save key", "Key speichern")) {
-                    saving = true
-                    Task { error = await store.saveRenderKey(key); saving = false; if error == nil { key = "" } }
-                }
-                .buttonStyle(.borderedProminent).disabled(key.count < 10 || saving)
+                Button(saving ? L("Saving …", "Speichere …") : L("Save key", "Key speichern")) { save() }
+                    .buttonStyle(.borderedProminent).disabled(!canSave)
             }
         }
         .padding(30).frame(maxWidth: 480).frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var trimmed: String { key.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var looksRight: Bool { trimmed.hasPrefix("rnd_") && trimmed.count >= 10 }
+    private var canSave: Bool { looksRight && !saving }
+    private func save() {
+        saving = true
+        Task { error = await store.saveRenderKey(key); saving = false; if error == nil { key = "" } }
     }
 }

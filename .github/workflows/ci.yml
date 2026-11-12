@@ -32,22 +32,29 @@ jobs:
         run: brew install jq shellcheck actionlint
       - name: No personal data in the public repo
         run: scripts/check-public.sh
-      - name: actionlint
-        # The examples too: those are the files people copy into their own repos.
+      - name: actionlint (workflows and the example workflows people copy)
         run: actionlint .github/workflows/*.yml docs/deploy-on-label.yml examples/*.yml integrations/*/examples/*.yml
       - name: shellcheck
         run: |
           shellcheck --severity=warning deploys providers/*.sh build.sh release.sh scripts/*.sh tests/*.sh tests/lib/*.sh tests/providers/*.sh lib/*.sh
-          shellcheck --severity=warning integrations/*/*.sh integrations/lib/*.sh integrations/hooks/pre-push integrations/claude-code/scripts/*.sh integrations/tests/*.sh
+          shellcheck --severity=warning integrations/*/*.sh integrations/lib/*.sh integrations/claude-code/scripts/*.sh integrations/hooks/pre-push integrations/tests/*.sh
           shellcheck site/install.sh
+      - name: Lint the example LaunchAgents and the icon script
+        run: |
+          plutil -lint scripts/*.plist.example
+          swiftc -typecheck scripts/make-icon.swift
       - name: Script tests
         run: bash tests/script-tests.sh
       - name: Team mode tests
         run: bash tests/team-tests.sh
       - name: Install tests (install.sh, release tarball, Homebrew formula)
         run: bash tests/install-tests.sh
-      - name: App tests
+      - name: Release tests (release gate, bump.sh, site checks, check-public, Homebrew cask)
+        run: bash tests/release-tests.sh
+      - name: App tests (English and German, with the deploys JSON contract)
         run: bash tests/app-tests.sh
+      - name: The "waiting" rule in deploys and in the iPhone app agree
+        run: bash tests/ios-rule-tests.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -65,13 +72,100 @@ jobs:
       - name: Integration tests (MCP, Action, Claude Code plugin, digest, hooks)
         # REQUIRE_ALL=1: a part that cannot run here fails the job instead of being skipped.
         run: REQUIRE_ALL=1 bash integrations/tests/run.sh
-      - name: Build (ad-hoc signed, universal, with the widgets like a release)
+      - name: Build with the widgets (ad-hoc signed, universal)
         run: ./build.sh --widgets
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: DeployCenter-unsigned
           path: build/DeployCenter-*-universal.zip
           retention-days: 7
+
+  ios:
+    # The iPhone app and its widgets, built for the simulator without signing. Catches a change in
+    # shared/ (PhoneLink, DeploySnapshot) that breaks the iOS build. Nothing is uploaded.
+    runs-on: macos-26 # the iOS 26 SDK (BGContinuedProcessingTask in KeepAlive.swift)
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Xcode
+        run: xcodebuild -version
+      - name: Build for the simulator (unsigned)
+        run: |
+          xcodebuild -project ios/DeployCenter.xcodeproj -scheme DeployCenter -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/ios-dd CODE_SIGNING_ALLOWED=NO build -quiet
+      - name: iPhone tests without a simulator (the log masking against the script's af_mask)
+        run: bash ios/Tests/run.sh
+
+  linux-cli:
+    # The CLI on Linux (GNU date/stat/sed, bash 5), as README, Docker image and Action promise.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tools
+        run: |
+          # jq, shellcheck, ruby and python3 come with the runner; `column` is in bsdextrautils.
+          command -v column >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q bsdextrautils; }
+          bash --version | head -1; jq --version
+      - name: Script tests
+        run: bash tests/script-tests.sh
+      - name: Team mode tests
+        run: bash tests/team-tests.sh
+      - name: Release tests
+        run: bash tests/release-tests.sh
+      - name: The script's "waiting" rule against the shared cases
+        run: bash tests/ios-rule-tests.sh
+
+  integrations:
+    # integrations/tests/run.sh: Action, digest, statuspage, badge, notify, hooks, the Claude Code
+    # plugin and the MCP server, against a stand-in deploys and curl. No network beyond npm ci.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            integrations/mcp/package-lock.json
+            integrations/vscode/package-lock.json
+      - name: Tools (column; xmllint for the badge and status page checks)
+        run: |
+          missing=()
+          command -v column >/dev/null || missing+=(bsdextrautils)
+          command -v xmllint >/dev/null || missing+=(libxml2-utils)
+          if [ "${#missing[@]}" -gt 0 ]; then sudo apt-get update -q && sudo apt-get install -y -q "${missing[@]}"; fi
+      - name: npm ci (MCP server, VS Code extension)
+        run: |
+          (cd integrations/mcp && npm ci --no-audit --no-fund)
+          (cd integrations/vscode && npm ci --no-audit --no-fund)
+      - name: Integration tests (on Linux, where the Action and the Docker image run)
+        # REQUIRE_ALL=1: a part that cannot run here fails the job instead of being skipped.
+        run: REQUIRE_ALL=1 bash integrations/tests/run.sh
+
+  docker:
+    # The Docker image builds from the repository root and the CLI inside finds its providers.
+    # Nothing is pushed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build
+        run: docker build -f integrations/docker/Dockerfile -t deploys .
+      - name: deploys runs and finds its providers (no keys, no network)
+        run: |
+          docker run --rm deploys --version
+          docker run --rm --entrypoint bash deploys -c 'deploys help >/dev/null && ls "$DEPLOYS_DIR/providers/vercel.sh"'
 
   cli-install:
     # The CLI's own install paths on Linux: install.sh under dash (Ubuntu's sh) and bash,
@@ -90,20 +184,6 @@ jobs:
         run: INSTALL_SH=dash bash tests/install-tests.sh
       - name: Install tests (bash as sh)
         run: INSTALL_SH=bash bash tests/install-tests.sh
-
-  docker:
-    # The Linux image of the CLI (integrations/docker): it builds, and deploys starts in it.
-    # Nothing is pushed.
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: docker build
-        run: docker build -f integrations/docker/Dockerfile -t deploys-ci .
-      - name: deploys starts in the image
-        run: docker run --rm deploys-ci --version
 
   vscode:
     # The VS Code / Cursor extension: type check, unit tests against a stand-in deploys, and a
@@ -126,11 +206,16 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deploys-vscode
+          path: integrations/vscode/*.vsix
+          retention-days: 7
 
   raycast:
-    # The Raycast extension: types, ESLint and Prettier, as `ray lint` runs them, and the unit tests. `ray lint` itself
-    # also asks raycast.com for the author, and `ray build` is macOS-only; both stay with the
-    # Store submission (integrations/raycast/PUBLISHING.md). Nothing is published.
+    # The Raycast extension: it builds (TypeScript checked), passes ESLint and Prettier, and its unit tests.
+    # Not `ray lint`: it asks raycast.com whether the author has a store account (a network call
+    # and an account matter, not a code check). Nothing is published.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -146,14 +231,20 @@ jobs:
           cache: npm
           cache-dependency-path: integrations/raycast/package-lock.json
       - run: npm ci --no-audit --no-fund
-      - run: npx tsc --noEmit
-      - run: npx eslint src test
-      - run: npx prettier --check src test
-      - run: npm test
+      - name: Build (ray build, offline)
+        run: npx --no-install ray build -e dist
+      - name: ESLint
+        run: npx --no-install eslint src test
+      - name: Prettier
+        run: npx --no-install prettier --check src test
+      - name: Unit tests
+        run: npm test
 
   docs:
     # site/docs/ is generated from the Markdown in this repo. Fails when the generator errors
-    # (a link to a file that does not exist) or when any link or #anchor in site/ is broken.
+    # (a link to a file that does not exist), when any link or #anchor in site/ is broken, or when
+    # a page lacks its title, canonical or JSON-LD. fetch-depth 0 also brings the tags the release
+    # gate needs.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -165,8 +256,12 @@ jobs:
         run: python3 scripts/build-docs.py
       - name: Check links
         run: python3 scripts/check-links.py site
-      - name: Check the site (JSON-LD, meta tags, sitemap)
+      - name: Check the site (titles, canonical, JSON-LD, sitemap, lang/alt/h1, image size, security.txt)
         run: python3 scripts/check-site.py
+      - name: Every L(English, Deutsch) has both texts with the same values
+        run: python3 -I scripts/check-strings.py
+      - name: Release gate (VERSION, home page and appcast name the same release)
+        run: python3 -I scripts/check-release.py
       - name: ruff (syntax errors and pyflakes in scripts/*.py)
         run: pipx run ruff==0.16.7 check --isolated --select E9,F scripts/*.py
 

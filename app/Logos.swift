@@ -34,7 +34,24 @@ actor LogoCache {
 
     /// Logos are kept on disk for a week; an empty file remembers "this site has none".
     private static let dir = Store.cacheDir.appendingPathComponent("logos", isDirectory: true)
-    private static let week: TimeInterval = 7 * 24 * 3600
+    /// 5 to 9 days, fixed per domain: logos fetched together do not all expire on the same day.
+    private static func freshFor(_ domain: String) -> TimeInterval {
+        let spread = domain.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF } % 5
+        return TimeInterval(5 + spread) * 24 * 3600
+    }
+    /// At most this many sites are asked at the same time; a list of 40 does not open 40 at once.
+    private static let parallel = 4
+    private var running = 0
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private func acquire() async {
+        if running < Self.parallel { running += 1; return }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+    private func release() {
+        if waiting.isEmpty { running -= 1 } else { waiting.removeFirst().resume() }
+    }
+    /// The page is only read for its <link> tags; an icon is small.
+    private static let pageLimit = 64 * 1024, iconLimit = 1024 * 1024
 
     /// Once at start: logos of sites not seen for a month go, so the folder does not grow for ever.
     nonisolated static func sweep() {
@@ -68,13 +85,15 @@ actor LogoCache {
         if let at = failedAt[domain], Date().timeIntervalSince(at) < Self.retryAfter { return stale(domain) }
         let file = Self.file(domain)
         if let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
-           let at = attrs[.modificationDate] as? Date, Date().timeIntervalSince(at) < Self.week,
+           let at = attrs[.modificationDate] as? Date, Date().timeIntervalSince(at) < Self.freshFor(domain),
            let data = try? Data(contentsOf: file) {
             let img = data.isEmpty ? nil : NSImage(data: data)
             cache[domain] = img
             return img
         }
+        await acquire()
         let (img, data, transient) = await fetch(domain)
+        release()
         if img == nil && transient {
             // Offline, a timeout, 429 or 5xx: that says nothing about the site. Keep what is on disk
             // (even if older than a week) and ask again later instead of remembering "none" for a week.
@@ -96,46 +115,67 @@ actor LogoCache {
         return NSImage(data: data)
     }
 
-    /// The body on 200; `transient` when the answer says nothing about the site (no answer, 429, 5xx).
-    /// `limit`: stop reading after that many bytes (the front page: its <head> is enough for the icon links).
-    private func get(_ url: URL, limit: Int? = nil) async -> (data: Data?, transient: Bool) {
+    /// Only https to a public host: a page's <link> (or a redirect) must not make the app ask
+    /// localhost, the local network or a file.
+    nonisolated static func allowed(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased(), !host.isEmpty else { return false }
+        if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || host.hasSuffix(".internal") || !host.contains(".") { return false }
+        // IP literals: no loopback, private, link-local or unique-local ranges.
+        if host.contains(":") { return false }   // IPv6 literal: never needed for an icon
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        if parts.count == 4 {
+            let (a, b) = (parts[0], parts[1])
+            if a == 10 || a == 127 || a == 0 || (a == 169 && b == 254) || (a == 172 && (16...31).contains(b)) || (a == 192 && b == 168) || (a == 100 && (64...127).contains(b)) { return false }
+        }
+        return true
+    }
+
+    /// Refuses a redirect to an address that `allowed` would refuse.
+    private final class Guard: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest) async -> URLRequest? {
+            guard let u = request.url, LogoCache.allowed(u) else { return nil }
+            return request
+        }
+    }
+
+    /// The body on 200 (at most `limit` bytes, else nothing; with `cut` the first `limit` bytes:
+    /// a front page's <head> is enough for the icon links); `transient` when the answer says
+    /// nothing about the site (no answer, 429, 5xx).
+    private func get(_ url: URL, limit: Int, cut: Bool = false) async -> (data: Data?, transient: Bool) {
+        guard Self.allowed(url) else { return (nil, false) }
         var req = URLRequest(url: url, timeoutInterval: 8)
         req.setValue("Mozilla/5.0 (Macintosh) DeployCenter", forHTTPHeaderField: "User-Agent")
-        let data: Data, resp: URLResponse
-        if let limit {
-            guard let (bytes, r) = try? await URLSession.shared.bytes(for: req) else { return (nil, true) }
-            var d = Data()
-            do {
-                for try await b in bytes {
-                    d.append(b)
-                    if d.count >= limit { break }
-                }
-            } catch { if d.isEmpty { return (nil, true) } }
-            bytes.task.cancel()
-            data = d; resp = r
-        } else {
-            guard let (d, r) = try? await URLSession.shared.data(for: req) else { return (nil, true) }
-            data = d; resp = r
-        }
-        guard let http = resp as? HTTPURLResponse else { return (nil, true) }
+        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req, delegate: Guard()),
+              let http = resp as? HTTPURLResponse else { return (nil, true) }
         if http.statusCode == 429 || http.statusCode >= 500 { return (nil, true) }
-        return (http.statusCode == 200 && !data.isEmpty ? data : nil, false)
+        guard http.statusCode == 200 else { return (nil, false) }
+        if !cut, http.expectedContentLength > Int64(limit) { bytes.task.cancel(); return (nil, false) }
+        var data = Data()
+        do {
+            for try await b in bytes {
+                data.append(b)
+                if data.count >= limit, cut { bytes.task.cancel(); break }
+                if data.count > limit { bytes.task.cancel(); return (nil, false) }
+            }
+        } catch { if !cut || data.isEmpty { return (nil, true) } }
+        return (data.isEmpty ? nil : data, false)
     }
 
     private func fetch(_ domain: String) async -> (NSImage?, Data?, transient: Bool) {
         guard let base = URL(string: "https://\(domain)/") else { return (nil, nil, false) }
         var candidates: [URL] = []
-        let page = await get(base, limit: 64 * 1024)
+        let page = await get(base, limit: Self.pageLimit, cut: true)
         if page.transient { return (nil, nil, true) }
-        // Cut at 64 KB, maybe inside a character: decoded leniently.
+        // Cut at the limit, maybe inside a character: decoded leniently.
         if let html = page.data, case let text = String(decoding: html, as: UTF8.self), !text.isEmpty {
-            candidates += Self.iconLinks(in: text).compactMap { URL(string: $0, relativeTo: base)?.absoluteURL }
+            candidates += Self.iconLinks(in: text).compactMap { URL(string: $0, relativeTo: base)?.absoluteURL }.filter(Self.allowed)
         }
         candidates += ["apple-touch-icon.png", "favicon.svg", "favicon.png", "favicon.ico"]
             .compactMap { URL(string: $0, relativeTo: base)?.absoluteURL }
         var transient = false
-        for url in candidates {
-            let r = await get(url)
+        for url in candidates.prefix(8) {
+            let r = await get(url, limit: Self.iconLimit)
             transient = transient || r.transient
             if let data = r.data, let img = NSImage(data: data), img.size.width > 0 { return (img, data, false) }
         }
@@ -171,6 +211,8 @@ struct Logo: View {
     @State private var lightOnClear = false
     @Environment(\.colorScheme) private var scheme
     @AppStorage("demoMode") private var demoMode = false
+    /// Settings → General: off, the app asks no project site for its icon.
+    @AppStorage("loadLogos") private var loadLogos = true
 
     var body: some View {
         ZStack {
@@ -192,8 +234,8 @@ struct Logo: View {
         // Decoration: the name next to it is read out already.
         .accessibilityHidden(true)
         // In demo mode no real logo, also not the one fetched before demo mode was switched on.
-        .task(id: demoMode ? nil : domain) {
-            guard let domain, !demoMode else { image = nil; return }
+        .task(id: demoMode || !loadLogos ? nil : domain) {
+            guard let domain, !demoMode, loadLogos else { image = nil; return }
             let img = await LogoCache.shared.image(for: domain)
             lightOnClear = img?.isLightOnClear ?? false
             image = img

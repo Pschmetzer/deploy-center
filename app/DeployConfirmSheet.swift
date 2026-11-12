@@ -10,6 +10,8 @@ struct DeployConfirmSheet: View {
     let items: [Item]
     /// Under "All": the same name can be on Vercel and on Render.
     let platforms: Bool
+    /// What the builds cost and whether the budget holds (`Store.costNote`, already led by a blank line); empty when unknown.
+    var costNote: String = ""
     let onDeploy: () -> Void
     @Environment(\.dismiss) private var dismiss
     /// Remembered, and read by the window when the deploy starts.
@@ -19,7 +21,7 @@ struct DeployConfirmSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L("Put this live now?", "Jetzt live schalten?")).font(.headline).accessibilityAddTraits(.isHeader)
             ScrollView {
-                Text(DeployConfirm.message(items, platforms: platforms) + DeployConfirm.unchangedNote(items))
+                Text(DeployConfirm.message(items, platforms: platforms) + DeployConfirm.unchangedNote(items) + costNote)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

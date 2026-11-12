@@ -11,7 +11,7 @@ fail() { echo "FAIL $1: $2"; fails=$((fails+1)); }
 skip() { echo "skip $1"; skips=$((skips+1)); }
 expect()   { [ "$2" = "$3" ] && ok "$1" || fail "$1" "expected [$3], got [$2]"; }
 # A leftover stand-in: a process that is exactly "sleep <odd duration>". The stand-ins use durations
-# no one else uses (30.4, 20.31, 20.32, 20.7), so shells elsewhere on this Mac never count.
+# no one else uses (30.4, 30.029, 20.31, 20.32, 20.33, 20.7), so shells elsewhere on this Mac never count.
 stray_sleep() { ps -axo pid=,command= | awk -v a="$1" '$2 ~ /(^|\/)sleep$/ && $3 == a && NF == 3'; }
 contains() { case "$2" in *"$3"*) ok "$1" ;; *) fail "$1" "[$3] not in [$2]" ;; esac; }
 
@@ -556,7 +556,9 @@ rules() { sed -n '/^const errorPattern/,$p' "$1" | grep -v 'eslint-disable' | tr
 if command -v npm >/dev/null && [ -d vscode/node_modules ]; then
   (cd vscode && npm test --silent >"$tmp/vscode.log" 2>&1) && ok "vscode: unit tests" || { fail "vscode: unit tests" "see below"; cat "$tmp/vscode.log"; }
   # A timed-out CLI is stopped with its process group: the stand-in's sleep does not outlive the tests.
-  left="$(stray_sleep 20.31; stray_sleep 20.32)"
+  # Only the stand-in's own odd lengths count (see stray_sleep): other suites leave orphans on
+  # purpose (tests/app-tests.swift: "sleep 19.6") and a plain "sleep 20" elsewhere must not match.
+  left="$(stray_sleep 20.31; stray_sleep 20.32; stray_sleep 20.33)"
   [ -n "$left" ] && fail "vscode: no sleep left behind" "$left" || ok "vscode: no sleep left behind"
 else
   skip "vscode: run npm ci in integrations/vscode first"

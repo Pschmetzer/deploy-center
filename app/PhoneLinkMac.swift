@@ -15,15 +15,45 @@ final class PhoneLinkModel: ObservableObject {
     @Published var busy = false
 
     var on: Bool { UserDefaults.standard.bool(forKey: "phoneLink") }
+    /// The saving a month from the costs (Store.savingPerMonth), handed to the phone with the keys.
+    private(set) var savingPerMonth: Double?
+    /// A new figure goes out with the keys; the same one writes nothing.
+    func update(savingPerMonth v: Double?) {
+        guard v != savingPerMonth else { return }
+        savingPerMonth = v
+        Task { await pushIfOn() }
+    }
     var available: Bool { PhoneLink.group != nil }
 
     /// At launch and after each change in Settings.
     /// Only when a key changed: every write carries a new date and syncs to all devices.
     func pushIfOn() async { if on && available { await push(onlyIfChanged: true) } }
+    /// At launch and then once a day: keys that changed on the Mac reach the phone.
+    func pushIfStale() async {
+        if let t = lastPush, Date().timeIntervalSince(t) < 24 * 3600 { return }
+        await pushIfOn()
+    }
+    /// The gh CLI's token can usually write (repo, workflow); the phone only reads. Off for a new
+    /// connection; a connection made before the switch existed keeps getting it (`migrateGitHub`).
+    nonisolated static let githubKey = "phoneLinkGitHub"
+
+    /// The switch was never set: on when this Mac already handed keys to the phone (a keychain entry,
+    /// or the link switched on: a link made when the token always went along), off for a new one. Decided once, then it is the
+    /// person's own setting.
+    nonisolated static func migrateGitHub(_ d: UserDefaults = .standard, linkExists: () -> Bool) {
+        guard d.object(forKey: githubKey) == nil else { return }
+        d.set(linkExists(), forKey: githubKey)
+    }
+    /// At launch, before anyone can switch the link on: an existing link is one switched on already
+    /// or with a keychain entry. A link switched on later is new and starts without the token.
+    nonisolated static func migrateGitHubAtLaunch(_ d: UserDefaults = .standard) {
+        migrateGitHub(d, linkExists: { d.bool(forKey: "phoneLink") || PhoneLink.read() != nil })
+    }
 
     func push(onlyIfChanged: Bool = false) async {
         busy = true; defer { busy = false }
-        let keys = await Self.collect()
+        var keys = await Self.collect()
+        keys.savingPerMonth = savingPerMonth
         if onlyIfChanged, !keys.isEmpty, let old = PhoneLink.read(), Self.sameKeys(old, keys) {
             if lastPush == nil { lastPush = old.updated }
             problem = nil; return
@@ -37,7 +67,7 @@ final class PhoneLinkModel: ObservableObject {
         if s == errSecSuccess { lastPush = Date(); problem = nil }
         else {
             problem = L("Could not write to iCloud Keychain (error \(s)).", "Konnte nicht in den iCloud-Schlüsselbund schreiben (Fehler \(s)).")
-            Log.write("phone link: SecItemAdd \(s)")
+            Log.write("phone link: keychain write \(s)")
         }
     }
 
@@ -62,7 +92,10 @@ final class PhoneLinkModel: ObservableObject {
         } else {
             k.render = await output("/usr/bin/security", ["find-generic-password", "-a", NSUserName(), "-s", "render-api-key", "-w"]) ?? ""
         }
-        k.github = await output("/usr/bin/env", ["gh", "auth", "token"]) ?? ""
+        // Only when asked for (Settings → iPhone): the gh token's scopes are wider than the phone needs.
+        // Normally decided at launch already (`migrateGitHubAtLaunch`); here only the keychain counts.
+        migrateGitHub(linkExists: { PhoneLink.read() != nil })
+        if UserDefaults.standard.bool(forKey: githubKey) { k.github = await output("/usr/bin/env", ["gh", "auth", "token"]) ?? "" }
         k.updated = Date()
         return k
     }
@@ -91,12 +124,20 @@ enum MacSecret {
         let s = String(decoding: d, as: UTF8.self)
         return s.isEmpty ? nil : s
     }
-    static func set(_ service: String, _ value: String) {
-        SecItemDelete(base(service) as CFDictionary)
+    /// Updates in place (the old token stays if writing fails); an empty value deletes.
+    /// True when the keychain took it.
+    @discardableResult
+    static func set(_ service: String, _ value: String) -> Bool {
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !v.isEmpty else { return }
-        var add = base(service); add[kSecValueData as String] = Data(v.utf8)
-        SecItemAdd(add as CFDictionary, nil)
+        guard !v.isEmpty else { SecItemDelete(base(service) as CFDictionary); return true }
+        let data = Data(v.utf8)
+        var status = SecItemUpdate(base(service) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var add = base(service); add[kSecValueData as String] = data
+            status = SecItemAdd(add as CFDictionary, nil)
+        }
+        if status != errSecSuccess { Log.write("keychain: \(service) not saved (status \(status))") }
+        return status == errSecSuccess
     }
 }
 
@@ -106,6 +147,7 @@ struct PhoneLinkSettings: View {
     @State private var vercel = ""
     @State private var hasVercel = MacSecret.get("deploy-center-phone-vercel") != nil
     @State private var qr = false
+    @AppStorage(PhoneLinkModel.githubKey) private var shareGitHub = false
     @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
@@ -128,17 +170,21 @@ struct PhoneLinkSettings: View {
             }
             Link(L("Create a Vercel token (vercel.com → Account → Tokens)", "Vercel-Token erstellen (vercel.com → Account → Tokens)"),
                  destination: URL(string: "https://vercel.com/account/tokens")!)
+            Toggle(L("Also hand over the GitHub token of the gh CLI", "Auch das GitHub-Token der gh-CLI übergeben"), isOn: $shareGitHub)
+                .onChange(of: shareGitHub) { Task { await link.pushIfOn() } }
+                .help(L("It can usually push code and run workflows; the iPhone app only reads commits. Off, the phone shows no commit counts.",
+                        "Es darf meist Code pushen und Workflows starten; die iPhone-App liest nur Commits. Aus: das iPhone zeigt keine Commit-Zahlen."))
             Button(L("Show a QR code for the iPhone …", "QR-Code fürs iPhone zeigen …")) { qr = true }
                 // Demo mode is for recordings, and the code holds every key.
                 .disabled(demoMode)
                 .help(demoMode ? L("Not in demo mode: the code holds your keys.", "Nicht im Demo-Modus: Der Code enthält deine Schlüssel.") : "")
-            if let p = link.problem { Text(p).foregroundStyle(.red) }
+            if let p = link.problem { ErrorText(p) }
             else if on, let t = link.lastPush {
                 Text(L("Handed over ", "Übergeben ") + t.formatted(.relative(presentation: .named))).foregroundStyle(.secondary)
             }
         } header: { Text("iPhone") } footer: {
-            Text(L("The iPhone app gets the keys of this Mac: the Vercel token above, the Render key and the GitHub token of the gh CLI. With iCloud Keychain they reach every device signed in with your Apple ID, end-to-end encrypted; there is no server of ours. Turning it off removes them there too.",
-                   "Die iPhone-App bekommt die Schlüssel dieses Macs: das Vercel-Token oben, den Render-Key und das GitHub-Token der gh-CLI. Mit dem iCloud-Schlüsselbund kommen sie auf jedes Gerät mit deiner Apple-ID, Ende-zu-Ende-verschlüsselt; es gibt keinen Server von uns. Ausschalten entfernt sie dort auch."))
+            Text(L("The iPhone app gets the keys of this Mac: the Vercel token above, the Render key and, if you turn it on, the GitHub token of the gh CLI (its scopes are wide; a fine-grained read-only token is safer). With iCloud Keychain they reach every device signed in with your Apple ID, end-to-end encrypted; there is no server of ours. Turning it off removes them there too.",
+                   "Die iPhone-App bekommt die Schlüssel dieses Macs: das Vercel-Token oben, den Render-Key und, wenn eingeschaltet, das GitHub-Token der gh-CLI (es darf viel; ein fein begrenztes Nur-Lese-Token ist sicherer). Mit dem iCloud-Schlüsselbund kommen sie auf jedes Gerät mit deiner Apple-ID, Ende-zu-Ende-verschlüsselt; es gibt keinen Server von uns. Ausschalten entfernt sie dort auch."))
         }
         .sheet(isPresented: $qr) { PhoneQRSheet() }
     }
@@ -150,6 +196,11 @@ struct PhoneQRSheet: View {
     @State private var image: NSImage?
     @State private var empty = false
     @State private var left = 60
+    /// The code is covered while Deploy Center is not the front app (someone else may look).
+    @State private var inactive = false
+    /// The same code as text, for "Copy code" (a phone without a camera pastes it).
+    @State private var code = ""
+    @State private var copied = false
     @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
@@ -157,6 +208,9 @@ struct PhoneQRSheet: View {
             Text(L("Scan with the iPhone app", "Mit der iPhone-App scannen")).font(.headline)
             if let image {
                 Image(nsImage: image).interpolation(.none).resizable().frame(width: 260, height: 260)
+                    .blur(radius: inactive ? 18 : 0)
+                    .overlay { if inactive { Text(L("Hidden while Deploy Center is in the background", "Verdeckt, solange Deploy Center im Hintergrund ist")).font(.caption).multilineTextAlignment(.center).padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6)) } }
+                    .accessibilityLabel(L("QR code with your keys – show it to no one", "QR-Code mit deinen Schlüsseln – zeig ihn niemandem"))
                 Text(L("Deploy Center on the iPhone → Connect to the Mac → Scan the code. This code holds your keys: show it to no one. It closes in \(left) s.",
                        "Deploy Center auf dem iPhone → Mit dem Mac verbinden → Code scannen. Dieser Code enthält deine Schlüssel: zeig ihn niemandem. Er schließt in \(left) s."))
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(width: 300)
@@ -165,21 +219,52 @@ struct PhoneQRSheet: View {
                        "Noch keine Schlüssel zum Übergeben: zuerst ein Vercel-Token fürs iPhone sichern oder Render einrichten."))
                     .frame(width: 300)
             } else { ProgressView() }
-            Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.defaultAction)
+            HStack {
+                if image != nil {
+                    // Universal Clipboard takes it to the iPhone; it is cleared again when the code closes.
+                    Button(copied ? L("Copied", "Kopiert") : L("Copy code", "Code kopieren")) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(code, forType: .string)
+                        copied = true
+                    }
+                    .disabled(inactive)
+                    .help(L("For the iPhone app's \"Paste code\" (Universal Clipboard). The clipboard is cleared when this closes.",
+                            "Für „Code einfügen“ in der iPhone-App (Universelle Zwischenablage). Die Zwischenablage wird beim Schließen geleert."))
+                }
+                Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.defaultAction)
+            }
         }
         .padding(24)
+        // The keys must not stay on the clipboard.
+        .onDisappear { Self.clearClipboard(code) }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in inactive = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in inactive = false }
         // Left out of screenshots, recordings and screen sharing (as far as macOS honours it).
         .background(WindowAccessor { $0.sharingType = .none })
         // Demo mode switched on while it is open: it closes.
         .onChange(of: demoMode) { _, on in if on { dismiss() } }
         .task {
             if demoMode { dismiss(); return }
-            let keys = await PhoneLinkModel.collect()
+            var keys = await PhoneLinkModel.collect()
             if keys.isEmpty { empty = true; return }
-            image = PhoneQRSheet.make(PhoneLink.qrText(keys) ?? "")
-            while left > 0 { try? await Task.sleep(for: .seconds(1)); left -= 1 }
+            keys.savingPerMonth = PhoneLinkModel.shared.savingPerMonth
+            // One id per code: a phone can refuse one it used before (a photo of the screen).
+            keys.once = UUID().uuidString
+            code = PhoneLink.qrText(keys) ?? ""
+            image = PhoneQRSheet.make(code)
+            // Cancelled (the sheet closed): stop, instead of 60 turns without a pause.
+            while left > 0 {
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                left -= 1
+            }
             dismiss()
         }
+    }
+
+    /// Empties the clipboard if it still holds this code (and only then).
+    static func clearClipboard(_ code: String) {
+        guard !code.isEmpty, NSPasteboard.general.string(forType: .string) == code else { return }
+        NSPasteboard.general.clearContents()
     }
 
     static func make(_ text: String) -> NSImage? {

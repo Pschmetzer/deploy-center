@@ -6,20 +6,16 @@ import WidgetKit
 
 extension Store {
     private static var lastSnapshot: DeploySnapshot?
-    private static var watchingDemo = false
+    /// Watches only the demo switch (KVO on its key), not every write to the defaults.
+    private static var demoWatch: NSKeyValueObservation?
 
     /// Called after every reload of a list and of the costs. Cheap: a few KB, only when something changed.
     func writeSnapshot() {
         guard let url = DeploySnapshot.groupURL else { return }
-        if !Self.watchingDemo {
-            Self.watchingDemo = true
+        if Self.demoWatch == nil {
             // Demo mode masks names in the snapshot too: the widget cannot read the app's settings.
-            var demo = Demo.on
-            NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated {
-                    guard Demo.on != demo else { return }
-                    demo = Demo.on; self.writeSnapshot()
-                }
+            Self.demoWatch = UserDefaults.standard.observe(\.demoMode, options: [.new]) { [weak self] _, _ in
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.writeSnapshot() } }
             }
         }
         let snap = makeSnapshot()
@@ -58,24 +54,57 @@ extension Store {
         }
         return DeploySnapshot(at: Date(), demo: Demo.on, waitingProjects: w.projects, waitingCommits: w.commits,
                               waitingPRs: w.prs, building: rows.filter { $0.status == .building }.count,
-                              failed: rows.filter { $0.status == .failed }.count, saving: snapshotSaving,
+                              failed: rows.filter { $0.status == .failed }.count, byPlatform: Self.counts(rows), saving: snapshotSaving,
                               projects: Array(rows.prefix(10)), language: isGerman ? "de" : "en")
     }
 
-    /// The same sum as the costs panel, on the same day (billing days are UTC, see `CostsSheet.today`).
+    /// Per platform, sorted by name; platforms with nothing to say are left out.
+    nonisolated static func counts(_ rows: [DeploySnapshot.Project]) -> [DeploySnapshot.PlatformCount] {
+        Set(rows.map(\.platform)).sorted().map { p in
+            let mine = rows.filter { $0.platform == p }
+            return .init(platform: p, waiting: mine.filter { $0.status == .waiting }.count,
+                         prs: mine.filter { $0.status == .waiting }.map(\.prs).reduce(0, +),
+                         building: mine.filter { $0.status == .building }.count, failed: mine.filter { $0.status == .failed }.count)
+        }
+    }
+
+    /// The app's own sum (Costs.saving, with the kept baseline and the same day), so the widget
+    /// and the window never disagree.
     private var snapshotSaving: DeploySnapshot.Saving? {
         guard let s = costs?.saving(today: CostsSheet.today()) else { return nil }
         return DeploySnapshot.Saving(before: s.before, after: s.after)
     }
+
+    /// The saving a month for the iPhone (LinkedKeys.savingPerMonth): whole dollars, nil under one.
+    var savingPerMonth: Double? {
+        guard let s = costs?.saving(today: CostsSheet.today()) else { return nil }
+        let v = ((s.before - s.after) * 30).rounded()
+        return v >= 1 ? v : nil
+    }
 }
 
 extension DeploySnapshot {
-    /// Everything but `at`: a new language must reach the widgets too.
+    /// Everything but `at`: a new language or platform split must reach the widgets too.
     func sameContent(as o: DeploySnapshot) -> Bool { o.dated(at) == self }
     private func dated(_ d: Date) -> DeploySnapshot {
         var c = DeploySnapshot(at: d, demo: demo, waitingProjects: waitingProjects, waitingCommits: waitingCommits,
-                               waitingPRs: waitingPRs, building: building, failed: failed, saving: saving, projects: projects, language: language)
+                               waitingPRs: waitingPRs, building: building, failed: failed, byPlatform: byPlatform,
+                               saving: saving, projects: projects, language: language)
         c.version = version
         return c
     }
+}
+
+extension UserDefaults {
+    /// For KVO: the defaults key "demoMode" (Demo.on).
+    @objc dynamic var demoMode: Bool { bool(forKey: "demoMode") }
+}
+
+/// Handoff with the iPhone app: the project open in the details, as "Vercel/<id>" (the iPhone's key).
+/// Receiving needs the type in Info.plist (NSUserActivityTypes); it only shows the project, never deploys.
+enum Handoff {
+    static let type = "app.deploycenter.project"
+    static func key(_ i: Item) -> String { i.platform.rawValue + "/" + i.id }
+    /// The project a handed-off key names, if this Mac lists it.
+    static func item(for key: String, in items: [Item]) -> Item? { items.first { Self.key($0) == key } }
 }

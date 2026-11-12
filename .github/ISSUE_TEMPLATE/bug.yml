@@ -31,11 +31,16 @@ body:
         - Menu bar
         - Widgets
         - iPhone app
+        - Command palette
+        - Autofix / Claude
+        - Guard
+        - Team mode
         - VS Code / Cursor extension
         - Raycast extension
         - MCP server
         - Claude Code plugin
         - GitHub Action
+        - Website / docs
         - Update / install
     validations:
       required: true

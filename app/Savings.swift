@@ -115,6 +115,20 @@ struct SimulateReport: Decodable {
         savingMonth = t.obj("savingMonth") ?? SavingsAmount()
         usdComplete = t.bool("usdComplete") ?? true
     }
+
+    /// What if a project went live up to `perDay` times on each day it had pushes (FEA-006)? One a
+    /// day is the script's "once a day"; more never counts more builds than there were pushes. Per
+    /// month, like the rest; the dollars cover the priced projects only (`complete` says whether all).
+    func whatIf(perDay: Int) -> (builds: Double, usd: Double, complete: Bool) {
+        let k = days > 0 ? 30 / days : 1
+        var builds = 0.0, usd = 0.0, complete = true
+        for r in projects where r.pushes > 0 {
+            let b = min(r.pushes, r.activeDays * Double(max(1, perDay))) * k
+            builds += b
+            if let p = r.usdPerBuild { usd += b * p } else { complete = false }
+        }
+        return (builds, usd, complete)
+    }
 }
 
 struct LedgerReport: Decodable {
@@ -166,9 +180,43 @@ struct LedgerReport: Decodable {
     /// Per day for the share card: what builds would have cost (skipped + built) and what the
     /// builds that ran cost. Only after a whole day and with a price.
     var perDay: (before: Double, after: Double)? {
-        guard days >= 1, let usd, usd > 0 else { return nil }
-        let built = builtUsd ?? 0
+        // A missing price of the built ones is not $0: "after" would look free and the saving 100 %.
+        // Both sums cover the priced projects only, so a partial price list still compares like with like.
+        guard days >= 1, let usd, usd > 0, let built = builtUsd else { return nil }
         return ((usd + built) / days, built / days)
+    }
+
+    /// Every skipped build has a known duration; otherwise the minutes are a floor, not a total
+    /// (a project without a measured build yet counts 0 in the script's sum).
+    var minutesComplete: Bool { projects.allSatisfy { $0.skipped == 0 || $0.savedMinutes != nil } }
+    private var minutesTotal: Double { vercelMinutes + renderMinutes }
+
+    /// What was saved in a few words: dollars when priced, else minutes; nil when nothing is known
+    /// yet (nothing skipped, or skipped builds of unknown duration), never "≈ 0 minutes".
+    var savedAmount: String? {
+        guard skipped > 0 else { return nil }
+        if let usd, usd > 0 { return SavingsFormat.usdShort(usd) }
+        guard minutesTotal > 0 else { return nil }
+        return SavingsFormat.minutes(minutesTotal) + " " + L("minutes", "Minuten")
+    }
+
+    /// The headline of the ledger.
+    var headline: String {
+        if skipped == 0 { return L("Nothing skipped yet – every push was built", "Noch nichts übersprungen – jeder Push wurde gebaut") }
+        if let a = savedAmount { return L("\(a) saved", "\(a) gespart") }
+        let n = SavingsFormat.count(skipped)
+        return L("\(counted(n, "build", "builds")) skipped, duration not known yet", "\(counted(n, "Build", "Builds")) übersprungen, Dauer noch unbekannt")
+    }
+
+    /// The banner line in the main window.
+    var bannerText: String {
+        let since = SavingsFormat.day(self.since), n = SavingsFormat.count(skipped)
+        guard let a = savedAmount else {
+            return skipped == 0
+                ? L("Auto-deploy off since \(since) · nothing skipped yet", "Auto-Deploy aus seit \(since) · noch nichts übersprungen")
+                : L("\(counted(n, "build", "builds")) skipped since \(since) · duration not known yet", "\(counted(n, "Build", "Builds")) übersprungen seit \(since) · Dauer noch unbekannt")
+        }
+        return L("\(a) saved since \(since) · \(counted(n, "build", "builds")) skipped", "\(a) gespart seit \(since) · \(counted(n, "Build", "Builds")) übersprungen")
     }
 }
 
@@ -189,8 +237,8 @@ final class SavingsModel: ObservableObject {
 
     private let defaults = UserDefaults.standard
 
-    /// The last answers, as files in Application Support: with every skipped push they grow too big
-    /// for the preferences, which are read whole on the main thread.
+    /// The last answers, as files in Application Support (0600: they name projects): with every skipped
+    /// push they grow too big for the preferences, which are read whole on the main thread.
     nonisolated static var simulationURL: URL { AppDirs.support.appendingPathComponent("savings-simulation.json") }
     nonisolated static var ledgerURL: URL { AppDirs.support.appendingPathComponent("savings-ledger.json") }
 
@@ -223,12 +271,27 @@ final class SavingsModel: ObservableObject {
     }
     nonisolated static func save(_ data: Data, to url: URL) {
         try? FileManager.default.createDirectory(at: AppDirs.support, withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
+        do { try data.write(to: url, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
+        catch { Log.write("savings: report not saved (\(error.localizedDescription))") }
     }
+
+    /// When the running simulation started (for "running for 40 s"); nil when none runs.
+    @Published var simulationStartedAt: Date?
+    private var simulationTask: Task<Void, Never>?
+    /// Stops a running simulation; the last result stays.
+    func cancelSimulation() { simulationTask?.cancel() }
 
     func loadSimulation(days: Int = 30) async {
         guard !loadingSimulation else { return }
-        loadingSimulation = true; defer { loadingSimulation = false }
+        let t = Task { await runSimulation(days: days) }
+        simulationTask = t
+        await t.value
+        simulationTask = nil
+    }
+
+    private func runSimulation(days: Int) async {
+        loadingSimulation = true; simulationStartedAt = Date()
+        defer { loadingSimulation = false; simulationStartedAt = nil }
         do {
             let data = try await Tool.run(["simulate", "--json", "--days", "\(days)"], timeout: 300)
             simulation = try Self.decode(SimulateReport.self, data, what: "simulate")
@@ -245,15 +308,52 @@ final class SavingsModel: ObservableObject {
             let data = try await Tool.run(["ledger", "--json"], timeout: 300)
             ledger = try Self.decode(LedgerReport.self, data, what: "ledger")
             ledgerError = nil; ledgerAt = Date()
+            if let l = ledger { noteMilestone(l) }
             Self.save(data, to: Self.ledgerURL); defaults.set(Date().timeIntervalSince1970, forKey: "savingsLedgerAt")
         } catch is CancellationError {
         } catch { ledgerError = error.localizedDescription }
     }
 
-    /// The ledger again when the last one is older than half a day.
-    func refreshLedgerIfOld() async {
-        if let at = ledgerAt, Date().timeIntervalSince(at) < 12 * 3600 { return }
+    /// The part of a goal the saved dollars reach, 0…1; nil without a goal or a price.
+    nonisolated static func goalShare(saved: Double?, goal: Double) -> Double? {
+        guard goal > 0, goal.isFinite, let s = saved else { return nil }
+        return min(1, max(0, s / goal))
+    }
+    /// Dollar marks worth a word (FEA-099): $10, 25, 50, 100, 250, 500, 1000, then every 1000.
+    nonisolated static func milestone(saved: Double) -> Double? {
+        let marks: [Double] = [10, 25, 50, 100, 250, 500, 1000]
+        if saved >= 2000 { return (saved / 1000).rounded(.down) * 1000 }
+        return marks.last { saved >= $0 }
+    }
+    /// The highest mark said so far is kept; the first read only notes where it stands, so an
+    /// old ledger does not announce itself.
+    private func noteMilestone(_ l: LedgerReport) {
+        let key = "savingsMilestone"
+        guard !demoMode, let usd = l.usd, usd > 0, let m = Self.milestone(saved: usd) else { return }
+        let first = defaults.object(forKey: key) == nil
+        guard first || m > defaults.double(forKey: key) else { return }
+        // A mark is spent only when it can be seen; with the window in front it waits for later.
+        guard first || Notify.wouldShow else { return }
+        defaults.set(m, forKey: key)
+        guard !first else { return }
+        let since = SavingsFormat.day(l.since)
+        Notify.post(L("\(SavingsFormat.usdShort(m)) saved", "\(SavingsFormat.usdShort(m)) gespart"),
+                    L("Since auto-deploy went off on \(since): \(SavingsFormat.usdShort(usd)) in builds that did not run.",
+                      "Seit Auto-Deploy am \(since) aus ist: \(SavingsFormat.usdShort(usd)) an Builds, die nicht liefen."))
+    }
+    private var demoMode: Bool { defaults.bool(forKey: "demoMode") }
+
+    /// The ledger by itself once a week (it pages through GitHub and asks each platform per
+    /// project); opening the ledger or "Estimate again" reads it any time. Not with less than a
+    /// fifth of GitHub's hourly budget left.
+    func refreshLedgerIfOld(budget: Store.Budget?) async {
+        if !Self.ledgerDue(at: ledgerAt, budget: budget) { return }
         await loadLedger()
+    }
+    nonisolated static func ledgerDue(at: Date?, budget: Store.Budget?, now: Date = Date()) -> Bool {
+        if let at, now.timeIntervalSince(at) < 7 * 24 * 3600 { return false }
+        if let b = budget, b.limit > 0, Double(b.remaining) < Double(b.limit) * 0.2 { return false }
+        return true
     }
 
     nonisolated static func decode<T: Decodable>(_ type: T.Type, _ data: Data, what: String) throws -> T {
@@ -293,6 +393,8 @@ enum SavingsFormat {
         u.hasPrefix("pipeline") ? L("pipeline minutes", "Pipeline-Minuten") : L("build minutes", "Build-Minuten")
     }
     /// "2026-01-20" as a date for the reader.
+    /// "2026-01-20" as a date in words, the same day everywhere: read and written in UTC, so a Mac
+    /// west of UTC does not show the 19th.
     /// The script's method in German for the two texts it has (simulation, ledger); a text the app
     /// does not know is shown as the script wrote it, so the German window never says something else.
     static func methodGerman(_ method: String) -> String {
@@ -315,7 +417,9 @@ enum SavingsFormat {
     static func day(_ s: String?) -> String {
         guard let s else { return "–" }
         guard let d = dayParser.date(from: s) else { return s }
-        return d.formatted(date: .abbreviated, time: .omitted)
+        var style = Date.FormatStyle(date: .abbreviated, time: .omitted)
+        style.timeZone = TimeZone(identifier: "UTC")!
+        return d.formatted(style)
     }
     static func name(_ n: String) -> String { Demo.mask(n) }
     static func problem(_ p: String) -> String {
@@ -333,11 +437,18 @@ enum SavingsFormat {
 // MARK: - The two hooks
 
 /// Under the cost bar: before anything was turned off an offer to simulate, afterwards the ledger total.
+/// "1 build", "≈ 3 builds": the word that fits a formatted count ("1" is the only singular).
+private func counted(_ formatted: String, _ one: String, _ other: String) -> String { formatted + " " + (formatted == "1" ? one : other) }
+
+/// Nothing saved yet: under a minute and no skipped build. Then the app says so plainly.
+private func nothingSaved(_ l: LedgerReport) -> Bool { l.vercelMinutes + l.renderMinutes < 1 && l.skipped < 1 && (l.usd ?? 0) < 0.01 }
+
 struct SavingsEntry: View {
     @ObservedObject var store: Store
     @ObservedObject private var model = SavingsModel.shared
     @AppStorage("savingsBannerDismissed") private var dismissed = false
     @State private var sheet: SavingsSheet.Tab?
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private var items: [Item] { Platform.allCases.flatMap { store.items[$0] ?? [] } }
     /// Auto-deploy was turned off here at least once.
@@ -347,7 +458,8 @@ struct SavingsEntry: View {
         Group {
             if let l = model.ledger, l.hasStarted {
                 ledgerLine(l)
-            } else if everOff || (!items.isEmpty && !items.contains(where: { $0.auto })) {
+            } else if everOff {
+                // Only after it was turned off here: someone who never had it on has nothing to see.
                 bar(icon: "chart.line.downtrend.xyaxis", text: L("Auto-deploy is off. See what it saved so far.",
                                                                 "Auto-Deploy ist aus. Sieh nach, was es bisher gespart hat."),
                     button: L("Ledger …", "Bilanz …")) { sheet = .ledger }
@@ -358,20 +470,17 @@ struct SavingsEntry: View {
             }
         }
         .sheet(item: $sheet) { tab in SavingsSheet(start: tab) }
-        .task(id: everOff) { if everOff { await model.refreshLedgerIfOld() } }
+        .task(id: everOff) { if everOff { await model.refreshLedgerIfOld(budget: store.githubBudget) } }
     }
 
     private func ledgerLine(_ l: LedgerReport) -> some View {
-        let minutes = SavingsFormat.minutes(l.vercelMinutes + l.renderMinutes) + " " + L("minutes", "Minuten")
-        let amount = (l.usd ?? 0) > 0 ? SavingsFormat.usdShort(l.usd) : minutes
-        return bar(icon: "leaf", text: L("\(amount) saved since \(SavingsFormat.day(l.since)) · \(SavingsFormat.count(l.skipped)) builds skipped",
-                                         "\(amount) gespart seit \(SavingsFormat.day(l.since)) · \(SavingsFormat.count(l.skipped)) Builds übersprungen"),
-                   button: L("Ledger …", "Bilanz …")) { sheet = .ledger }
+        // No green bar while nothing is saved (or its size is not known yet).
+        bar(icon: "leaf", text: l.bannerText, button: L("Ledger …", "Bilanz …"), neutral: l.savedAmount == nil) { sheet = .ledger }
     }
 
-    private func bar(icon: String, text: String, button: String, close: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
+    private func bar(icon: String, text: String, button: String, neutral: Bool = false, close: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: icon).foregroundStyle(.green)
+            Image(systemName: icon).foregroundStyle(neutral ? Color.secondary : Color.good)
             Text(text).font(.callout)
             Spacer()
             Button(button, action: action).buttonStyle(.link)
@@ -381,7 +490,7 @@ struct SavingsEntry: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 6)
-        .background(Color.green.opacity(0.08))
+        .background((neutral ? Color.secondary : Color.good).opacity(contrast == .increased ? 0.2 : 0.08))
     }
 }
 
@@ -418,7 +527,7 @@ struct SavingsSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker("", selection: $tab) {
+                Picker(L("Savings view", "Ersparnis-Ansicht"), selection: $tab) {
                     Text(L("Simulator", "Simulator")).tag(Tab.simulator)
                     Text(L("Ledger", "Bilanz")).tag(Tab.ledger)
                 }
@@ -441,6 +550,8 @@ struct SavingsSheet: View {
 
 /// "How this is estimated", folded away, and the state of the last load.
 private struct EstimateFooter: View {
+    enum Kind { case simulator, ledger }
+    let kind: Kind
     let method: String
     let at: Date?
     let loading: Bool
@@ -473,6 +584,7 @@ private struct EstimateFooter: View {
 struct SimulatorView: View {
     @ObservedObject private var model = SavingsModel.shared
     @AppStorage("savingsDays") private var days = 30
+    @AppStorage("whatIfPerDay") private var perDay = 2
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -483,13 +595,12 @@ struct SimulatorView: View {
             } else {
                 start
             }
-            if let e = model.simulationError {
-                Text(e).font(.caption).foregroundStyle(.red).textSelection(.enabled)
-            }
+            if let e = model.simulationError { ErrorText(e) }
             if let s = model.simulation {
-                EstimateFooter(method: s.method, at: model.simulatedAt, loading: model.loadingSimulation) {
+                EstimateFooter(kind: .simulator, method: s.method, at: model.simulatedAt, loading: model.loadingSimulation) {
                     Task { await model.loadSimulation(days: days) }
                 }
+                if model.loadingSimulation { HStack { Spacer(); SimulationProgress(model: model) } }
             }
         }
         .padding(20)
@@ -513,11 +624,30 @@ struct SimulatorView: View {
         }
     }
 
+    /// A slider: deploying up to N times a day, between once a day and every push.
+    @ViewBuilder private func whatIf(_ s: SimulateReport) -> some View {
+        let w = s.whatIf(perDay: perDay)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(L("What if: up to \(perDay)× a day", "Was wäre, wenn: bis zu \(perDay)× am Tag")).font(.callout)
+                Slider(value: Binding(get: { Double(perDay) }, set: { perDay = Int($0.rounded()) }), in: 1...8, step: 1)
+                    .frame(width: 180)
+                    .accessibilityLabel(L("Deploys a day", "Deploys am Tag")).accessibilityValue("\(perDay)")
+            }
+            Text(L("≈ \(SavingsFormat.usdShort(w.usd)) a month, \(SavingsFormat.count(w.builds.rounded())) builds",
+                   "≈ \(SavingsFormat.usdShort(w.usd)) im Monat, \(SavingsFormat.count(w.builds.rounded())) Builds")
+                 + (w.complete ? "" : L(" (priced projects only)", " (nur Projekte mit Preis)")))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.top, 4)
+    }
+
     private var loading: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
             Text(L("Counting pushes and measuring builds … (this takes a minute)", "Zähle Pushes und messe Builds … (das dauert eine Minute)"))
                 .foregroundStyle(.secondary)
+            SimulationProgress(model: model)
         }
     }
 
@@ -528,16 +658,17 @@ struct SimulatorView: View {
             HStack(alignment: .firstTextBaseline, spacing: 28) {
                 headline(L("Auto-deploy would cost", "Auto-Deploy würde kosten"), s.autoMonth, color: .red)
                 Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                headline(L("Deploying once a day", "Einmal am Tag deployen"), s.dailyMonth, color: .green)
+                headline(L("Deploying once a day", "Einmal am Tag deployen"), s.dailyMonth, color: Color.good)
             }
             if let d = s.savingMonth.usd, d > 0 {
                 Text(L("\(SavingsFormat.usdShort(d)) a month less", "\(SavingsFormat.usdShort(d)) im Monat weniger"))
-                    .font(.title3.weight(.semibold)).foregroundStyle(.green)
+                    .font(.title3.weight(.semibold)).foregroundStyle(Color.good)
             }
+            whatIf(s)
             if !s.usdComplete {
                 Text(L("Some projects have no price yet (Render has no billing API: set DEPLOYS_RENDER_USD_PER_MIN). Their minutes count, their dollars do not.",
                        "Manche Projekte haben noch keinen Preis (Render hat keine Abrechnungs-API: DEPLOYS_RENDER_USD_PER_MIN setzen). Ihre Minuten zählen, ihre Dollar nicht."))
-                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption).foregroundStyle(Color.warningText).fixedSize(horizontal: false, vertical: true)
             }
         }
         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
@@ -552,20 +683,28 @@ struct SimulatorView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 4) {
                             Text(SavingsFormat.name(r.name)).lineLimit(1)
-                            Text(ProviderInfo.label(for: r.platform)).font(.caption2).foregroundStyle(.secondary)
-                            if !r.auto { Text(L("off", "aus")).font(.caption2).foregroundStyle(.green) }
+                            Text(providerLabel(r.platform)).font(.caption2).foregroundStyle(.secondary)
+                            if !r.auto { Text(L("off", "aus")).font(.caption2).foregroundStyle(Color.good) }
                         }
-                        if let p = r.problem { Text(SavingsFormat.problem(p)).font(.caption2).foregroundStyle(.orange) }
+                        if let p = r.problem { Text(SavingsFormat.problem(p)).font(.caption2).foregroundStyle(Color.warningText) }
                         else if let b = SavingsFormat.basis(r.basis) { Text(b).font(.caption2).foregroundStyle(.secondary) }
                     }
-                    Text(SavingsFormat.approx(r.pushesPerDay)).monospacedDigit()
-                    Text(SavingsFormat.approx(r.avgBuildMinutes, suffix: " min")).monospacedDigit()
-                    amount(r.autoMonth, unit: r.unit)
-                    amount(r.dailyMonth, unit: r.unit)
+                    // VoiceOver reads the row as one sentence, not five loose cells.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(rowSentence(r))
+                    Text(SavingsFormat.approx(r.pushesPerDay)).monospacedDigit().accessibilityHidden(true)
+                    Text(SavingsFormat.approx(r.avgBuildMinutes, suffix: " min")).monospacedDigit().accessibilityHidden(true)
+                    amount(r.autoMonth, unit: r.unit).accessibilityHidden(true)
+                    amount(r.dailyMonth, unit: r.unit).accessibilityHidden(true)
                 }
             }
         }
         .font(.callout)
+    }
+
+    private func rowSentence(_ r: SimulateReport.Row) -> String {
+        L("\(SavingsFormat.name(r.name)), \(providerLabel(r.platform))\(r.auto ? "" : ", auto-deploy off"): \(SavingsFormat.approx(r.pushesPerDay)) pushes a day, builds of \(SavingsFormat.approx(r.avgBuildMinutes, suffix: " min")); auto-deploy \(SavingsFormat.usd(r.autoMonth.usd)) a month, once a day \(SavingsFormat.usd(r.dailyMonth.usd))",
+          "\(SavingsFormat.name(r.name)), \(providerLabel(r.platform))\(r.auto ? "" : ", Auto-Deploy aus"): \(SavingsFormat.approx(r.pushesPerDay)) Pushes am Tag, Builds von \(SavingsFormat.approx(r.avgBuildMinutes, suffix: " min")); Auto-Deploy \(SavingsFormat.usd(r.autoMonth.usd)) im Monat, einmal am Tag \(SavingsFormat.usd(r.dailyMonth.usd))")
     }
 
     private func headline(_ title: String, _ a: SavingsAmount, color: Color) -> some View {
@@ -580,7 +719,7 @@ struct SimulatorView: View {
         var parts: [String] = []
         if let v = a.vercelMinutes, v > 0 { parts.append(SavingsFormat.minutes(v) + " " + L("Vercel build minutes", "Vercel-Build-Minuten")) }
         if let r = a.renderMinutes, r > 0 { parts.append(SavingsFormat.minutes(r) + " " + L("Render pipeline minutes", "Render-Pipeline-Minuten")) }
-        if let b = a.builds { parts.append(L("≈ \(SavingsFormat.count(b)) builds", "≈ \(SavingsFormat.count(b)) Builds")) }
+        if let b = a.builds { let c = SavingsFormat.count(b); parts.append("≈ " + L(counted(c, "build", "builds"), counted(c, "Build", "Builds"))) }
         return parts.joined(separator: " · ")
     }
 
@@ -592,12 +731,27 @@ struct SimulatorView: View {
     }
 }
 
+/// How long the simulation runs so far, and a way to stop it (the last result stays).
+private struct SimulationProgress: View {
+    @ObservedObject var model: SavingsModel
+    var body: some View {
+        if let start = model.simulationStartedAt {
+            TimelineView(.periodic(from: start, by: 1)) { ctx in
+                Text(L("\(Int(ctx.date.timeIntervalSince(start))) s", "\(Int(ctx.date.timeIntervalSince(start))) s"))
+                    .monospacedDigit().foregroundStyle(.secondary)
+            }
+            Button(L("Cancel", "Abbrechen")) { model.cancelSimulation() }
+        }
+    }
+}
+
 // MARK: - Ledger
 
 struct LedgerView: View {
     let showSimulator: () -> Void
     @ObservedObject private var model = SavingsModel.shared
     @State private var sharing = false
+    @AppStorage("savingsGoal") private var savingsGoal = 0.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -619,17 +773,34 @@ struct LedgerView: View {
                     Button(L("Show the ledger", "Bilanz zeigen")) { Task { await model.loadLedger() } }.buttonStyle(.borderedProminent)
                 }
             }
-            if let e = model.ledgerError {
-                Text(e).font(.caption).foregroundStyle(.red).textSelection(.enabled)
-            }
+            if let e = model.ledgerError { ErrorText(e) }
             if let l = model.ledger {
-                EstimateFooter(method: l.method, at: model.ledgerAt, loading: model.loadingLedger) {
+                EstimateFooter(kind: .ledger, method: l.method, at: model.ledgerAt, loading: model.loadingLedger) {
                     Task { await model.loadLedger() }
                 }
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Opening the ledger reads it again when the last answer is older than half a day
+        // (the automatic run is weekly, see refreshLedgerIfOld).
+        .task { if let at = model.ledgerAt, Date().timeIntervalSince(at) > 12 * 3600 { await model.loadLedger() } }
+    }
+
+    /// A goal of the person's own (FEA-013): how far the dollars saved since the start have come.
+    @ViewBuilder private func goal(_ l: LedgerReport) -> some View {
+        HStack(spacing: 8) {
+            Text(L("Goal (USD)", "Ziel (USD)")).font(.callout)
+            TextField(L("Goal", "Ziel"), value: $savingsGoal, format: .number, prompt: Text("0"))
+                .labelsHidden().frame(width: 70).multilineTextAlignment(.trailing)
+                .onChange(of: savingsGoal) { _, v in if v < 0 || !v.isFinite { savingsGoal = 0 } }
+            if let share = SavingsModel.goalShare(saved: l.usd, goal: savingsGoal) {
+                ProgressView(value: share).frame(width: 140)
+                    .accessibilityLabel(L("Goal reached to", "Ziel erreicht zu")).accessibilityValue("\(Int(share * 100)) %")
+                Text(share >= 1 ? L("reached", "erreicht") : "\(Int(share * 100)) %").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 4)
     }
 
     private var notStarted: some View {
@@ -644,14 +815,26 @@ struct LedgerView: View {
 
     @ViewBuilder private func report(_ l: LedgerReport) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(bigNumber(l))
-                .font(.system(size: 40, weight: .bold).monospacedDigit()).foregroundStyle(.green)
+            if nothingSaved(l) {
+                // A zero is not celebrated in 40 pt green.
+                Text(L("Nothing saved yet", "Noch nichts gespart")).font(.title2.weight(.semibold))
+                Text(L("It takes a push to a project with auto-deploy off: that build is then skipped and counted here.",
+                       "Es braucht einen Push auf ein Projekt mit ausgeschaltetem Auto-Deploy: dieser Build wird dann übersprungen und hier gezählt."))
+                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else if l.savedAmount == nil {
+                // Skipped builds of unknown duration: a sentence, not a 40 pt number.
+                Text(bigNumber(l)).font(.title2.weight(.semibold))
+            } else {
+                Text(bigNumber(l))
+                    .font(.system(size: 40, weight: .bold).monospacedDigit()).foregroundStyle(Color.good)
+            }
             Text(L("since \(SavingsFormat.day(l.since))", "seit \(SavingsFormat.day(l.since))")).font(.title3).foregroundStyle(.secondary)
             Text(totalsLine(l)).font(.callout).foregroundStyle(.secondary)
+            goal(l)
             if !l.usdComplete {
                 Text(L("Some skipped builds have no price (Render: set DEPLOYS_RENDER_USD_PER_MIN); their minutes count, their dollars do not.",
                        "Manche übersprungenen Builds haben keinen Preis (Render: DEPLOYS_RENDER_USD_PER_MIN setzen); ihre Minuten zählen, ihre Dollar nicht."))
-                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption).foregroundStyle(Color.warningText).fixedSize(horizontal: false, vertical: true)
             }
             if let d = l.perDay, d.before > d.after {
                 Button(L("Share the saving …", "Ersparnis teilen …")) { sharing = true }
@@ -667,17 +850,12 @@ struct LedgerView: View {
     }
 
     /// "≈ $12.40 saved", or the minutes when no build has a price.
-    private func bigNumber(_ l: LedgerReport) -> String {
-        if let usd = l.usd, l.usdComplete || usd > 0 {
-            return L("\(SavingsFormat.usdShort(usd)) saved", "\(SavingsFormat.usdShort(usd)) gespart")
-        }
-        let m = SavingsFormat.minutes(l.vercelMinutes + l.renderMinutes)
-        return L("\(m) minutes saved", "\(m) Minuten gespart")
-    }
+    private func bigNumber(_ l: LedgerReport) -> String { l.headline }
 
     private func totalsLine(_ l: LedgerReport) -> String {
-        var parts = [L("≈ \(SavingsFormat.count(l.skipped)) builds skipped of \(SavingsFormat.count(l.pushes)) pushes",
-                       "≈ \(SavingsFormat.count(l.skipped)) Builds übersprungen von \(SavingsFormat.count(l.pushes)) Pushes")]
+        let s = SavingsFormat.count(l.skipped), p = SavingsFormat.count(l.pushes)
+        var parts = [L("≈ \(counted(s, "build", "builds")) skipped of \(counted(p, "push", "pushes"))",
+                       "≈ \(counted(s, "Build", "Builds")) übersprungen von \(counted(p, "Push", "Pushes"))")]
         if l.vercelMinutes > 0 { parts.append(SavingsFormat.minutes(l.vercelMinutes) + " " + L("Vercel build minutes", "Vercel-Build-Minuten")) }
         if l.renderMinutes > 0 { parts.append(SavingsFormat.minutes(l.renderMinutes) + " " + L("Render pipeline minutes", "Render-Pipeline-Minuten")) }
         return parts.joined(separator: " · ")
@@ -713,12 +891,12 @@ private struct LedgerRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 4) {
                         Text(SavingsFormat.name(row.name)).lineLimit(1)
-                        Text(ProviderInfo.label(for: row.platform)).font(.caption2).foregroundStyle(.secondary)
+                        Text(providerLabel(row.platform)).font(.caption2).foregroundStyle(.secondary)
                     }
                     Text(L("off since \(SavingsFormat.day(row.offDay)) · \(SavingsFormat.count(row.skipped)) of \(SavingsFormat.count(row.pushes)) pushes not built",
                            "aus seit \(SavingsFormat.day(row.offDay)) · \(SavingsFormat.count(row.skipped)) von \(SavingsFormat.count(row.pushes)) Pushes nicht gebaut"))
                         .font(.caption).foregroundStyle(.secondary)
-                    if let p = row.problem { Text(SavingsFormat.problem(p)).font(.caption2).foregroundStyle(.orange) }
+                    if let p = row.problem { Text(SavingsFormat.problem(p)).font(.caption2).foregroundStyle(Color.warningText) }
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 1) {

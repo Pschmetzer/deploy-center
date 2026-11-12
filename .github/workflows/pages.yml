@@ -2,62 +2,86 @@ name: Website
 # Publishes site/ to GitHub Pages. Only the website; the app is never deployed from here.
 # site/docs/ is not in git: it is built here from the repo's Markdown and deploys --help, so it never drifts.
 on:
-  push:
+  # Only after CI passed on main (DOC-048): a red main never goes live. Every green run publishes
+  # the whole site (a run skipped because CI was cancelled is covered by the next one); what the
+  # push changed only picks the IndexNow URLs. workflow_dispatch publishes by hand.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths:
-      - "site/**"
-      - ".github/workflows/pages.yml"
-      # sources of site/docs/
-      - "README.md"
-      - "deploys"
-      - "docs/**/*.md"
-      - "examples/README.md"
-      - "integrations/**/*.md"
-      - "scripts/build-docs.py"
-      - "scripts/check-links.py"
-      - "scripts/docs-assets/**"
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
+    # Read-only: builds site/docs/ and checks the whole site. Only the deploy job can write Pages.
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      urls: ${{ steps.urls.outputs.urls }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
+          # The commit CI passed, not whatever main is now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0 # "Last updated" on each docs page comes from git log
+          persist-credentials: false
+      - name: What the push changed (main is squash-merged, so one commit; only for IndexNow)
+        run: git diff --name-only HEAD~1 HEAD | tee "$RUNNER_TEMP/changed.txt" || true
       - name: Build docs
         run: python3 scripts/build-docs.py
       - name: Check links
         run: python3 scripts/check-links.py site
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Check the site (titles, canonical, JSON-LD, sitemap, lang/alt/h1, image size, security.txt)
+        run: python3 scripts/check-site.py
+      - name: URLs for IndexNow (DOC-047; only the pages this push changed, all of them when run by hand)
+        id: urls
+        env:
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [ "$MANUAL" = true ]; then urls="$(python3 -I scripts/indexnow-urls.py site/sitemap.xml --all)"
+          else urls="$(python3 -I scripts/indexnow-urls.py site/sitemap.xml < "$RUNNER_TEMP/changed.txt")"; fi
+          echo "$urls"
+          echo "urls=$urls" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
+          # site/.well-known/ (security.txt); check-site.py checks it. .git/.github are left out regardless.
+          include-hidden-files: true
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
       # Tell search engines (Bing, Yandex, Seznam, Naver …) which URLs changed. Best effort only:
       # this step can fail or time out without failing the deploy.
       - name: Ping IndexNow
+        if: needs.build.outputs.urls != '[]' && needs.build.outputs.urls != ''
         continue-on-error: true
         timeout-minutes: 2
         env:
           INDEXNOW_KEY: 4747785d1fcf908f9504c58a9a66de5a
+          URLS: ${{ needs.build.outputs.urls }}
         run: |
-          urls=$(grep -o '<loc>[^<]*</loc>' site/sitemap.xml | sed 's/<[^>]*>//g' | jq -R . | jq -sc .)
+          urls="${URLS:-[]}"
           body=$(jq -nc --arg key "$INDEXNOW_KEY" --argjson urls "$urls" \
             '{host: "deploycenter.app", key: $key, keyLocation: "https://deploycenter.app/\($key).txt", urlList: $urls}')
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST https://api.indexnow.org/indexnow \

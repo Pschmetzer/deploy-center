@@ -4,10 +4,13 @@
 
 ## Checks
 
-- [ ] `bash tests/script-tests.sh`, `bash tests/team-tests.sh` and `bash tests/app-tests.sh` pass
-- [ ] Integrations touched: `bash integrations/tests/run.sh` and `npm test` in `integrations/vscode` pass
-- [ ] `scripts/check-public.sh` passes
+- [ ] The tests CI runs pass: `bash tests/script-tests.sh`, `tests/team-tests.sh`, `tests/install-tests.sh`,
+      `tests/release-tests.sh`, `tests/app-tests.sh`, `integrations/tests/run.sh` (see `.github/workflows/ci.yml`)
+- [ ] Integrations touched: `npm test` in `integrations/vscode` passes
+- [ ] `shellcheck --severity=warning` is clean for changed shell scripts, and `scripts/check-public.sh` passes
 - [ ] `./build.sh` builds
+- [ ] `CHANGELOG.md` has a line under Unreleased (or the PR has the label `no-changelog`)
+- [ ] Docs changed with the behaviour; a change to `README.md`, `docs/NUMBERS.md` or `docs/SAVINGS.md` also goes into its German twin
 - [ ] New texts have English and German (`L("English", "Deutsch")`)
 - [ ] Nothing starts a build without an explicit click or a command with `--yes`
 - [ ] No real project names, team IDs, domains or personal paths (the repo is public)

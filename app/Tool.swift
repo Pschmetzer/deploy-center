@@ -8,7 +8,8 @@ import AppKit
 /// The choice is the app's own `AppleLanguages` (["en"] or ["de"]), which macOS reads at launch,
 /// so `Locale.preferredLanguages` and the system texts follow it. No key: the Mac's language.
 let isGerman = (Locale.preferredLanguages.first ?? "en").hasPrefix("de")
-func L(_ en: String, _ de: String) -> String { isGerman ? de : en }
+/// Only the text of the chosen language is built (each one may interpolate numbers and names).
+func L(_ en: @autoclosure () -> String, _ de: @autoclosure () -> String) -> String { isGerman ? de() : en() }
 
 enum AppLanguage: String, CaseIterable, Identifiable {
     case system, en, de
@@ -21,20 +22,26 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         case .de: return "Deutsch"
         }
     }
-    static var chosen: AppLanguage {
-        guard let list = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleLanguages"] as? [String],
+    static var chosen: AppLanguage { chosen(in: .standard, domain: Bundle.main.bundleIdentifier ?? "") }
+    /// The app's own choice only (its persistent domain), not the Mac's list that `standard` also shows.
+    static func chosen(in d: UserDefaults, domain: String) -> AppLanguage {
+        guard let list = d.persistentDomain(forName: domain)?["AppleLanguages"] as? [String],
               let first = list.first else { return .system }
         return first.hasPrefix("de") ? .de : first.hasPrefix("en") ? .en : .system
     }
     /// Takes effect at the next launch (the texts are fixed when the views are built).
-    func save() {
-        if self == .system { UserDefaults.standard.removeObject(forKey: "AppleLanguages") }
-        else { UserDefaults.standard.set([rawValue], forKey: "AppleLanguages") }
+    /// "Same as the Mac" removes the key, so the Mac's list counts again.
+    func save(to d: UserDefaults = .standard) {
+        if self == .system { d.removeObject(forKey: "AppleLanguages") }
+        else { d.set([rawValue], forKey: "AppleLanguages") }
     }
     /// The language this choice shows after a restart.
     var resolved: AppLanguage {
+        resolved(mac: UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?["AppleLanguages"] as? [String])
+    }
+    /// `mac`: the Mac's own language list.
+    func resolved(mac: [String]?) -> AppLanguage {
         guard self == .system else { return self }
-        let mac = UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?["AppleLanguages"] as? [String]
         return (mac?.first ?? "en").hasPrefix("de") ? .de : .en
     }
     /// What the app shows now, which may differ from `chosen` until it restarts.
@@ -73,6 +80,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 enum Tool {
     /// The script ships inside the app, so a download needs nothing but the app.
     static var path: String {
+        if let t = testScript { return t }
         if let testPath { return testPath }
         if let bundled = Bundle.main.path(forResource: "deploys", ofType: nil) { return bundled }
         noteFallback()
@@ -95,11 +103,21 @@ enum Tool {
         // Reading it starts a login shell (up to 3 s); once a day is enough. A shell that did not
         // answer in time is not saved, so the next start tries again instead of a day without it.
         let d = UserDefaults.standard
-        if let saved = d.string(forKey: "searchPath"), Date().timeIntervalSince1970 - d.double(forKey: "searchPathAt") < 86400 { return saved }
+        // A saved PATH with a folder that is gone (nvm, fnm or volta moved to another node) is read anew.
+        if let saved = d.string(forKey: "searchPath"), Date().timeIntervalSince1970 - d.double(forKey: "searchPathAt") < 86400,
+           pathFoldersExist(saved) { return saved }
         let (result, complete) = computeSearchPath()
         if complete { d.set(result, forKey: "searchPath"); d.set(Date().timeIntervalSince1970, forKey: "searchPathAt") }
         return result
     }()
+
+    /// Every node-manager folder of a PATH (nvm, fnm, volta: they move with each node version)
+    /// still exists. Fixed places such as ~/.local/bin may be missing for good and are not checked.
+    static func pathFoldersExist(_ path: String) -> Bool {
+        let managers = ["/.nvm/versions/", "/fnm", "/.fnm/", "/.volta/", "/.asdf/installs/"]
+        return path.split(separator: ":").map(String.init).filter { p in managers.contains { p.contains($0) } }
+            .allSatisfy { FileManager.default.fileExists(atPath: $0) }
+    }
 
     /// The fixed places plus the shell's PATH. zsh is started interactive as well (`-i`), because
     /// nvm and fnm are usually set up in ~/.zshrc, which a login shell alone does not read.
@@ -145,7 +163,15 @@ enum Tool {
     /// Runs off the main thread. A GUI app does not get the shell's PATH, and `vercel` needs node.
     /// stdout and stderr are read at the same time (reading one to the end first can deadlock
     /// once the other fills its pipe), and a command that hangs is ended after `timeout` seconds.
+    /// Tests only: answers every script call instead of the script, so the queue, following and
+    /// cancelling can be run without a network or an account. Never set in the app.
+    nonisolated(unsafe) static var testRunner: (@Sendable ([String]) async throws -> Data)?
+    /// Tests only: a stand-in script run by bash instead of `deploys`, for the pipes, the timeout,
+    /// stdin and cancelling. Never set in the app.
+    nonisolated(unsafe) static var testScript: String?
+
     static func run(_ args: [String], stdin: String? = nil, timeout: Double = 120) async throws -> Data {
+        if let fake = testRunner { return try await fake(args) }
         // A cancelled Swift task ends the process too, instead of letting it run to its timeout.
         let running = Running()
         return try await withTaskCancellationHandler {
@@ -184,6 +210,8 @@ enum Tool {
             p.arguments = [path] + args
             var env = ProcessInfo.processInfo.environment
             env["PATH"] = searchPath
+            // The app journals what it starts itself; the script then writes no second line.
+            env["DEPLOYS_CALLER"] = "app"
             p.environment = env
             let out = Pipe(), err = Pipe()
             p.standardOutput = out
@@ -212,10 +240,14 @@ enum Tool {
                 if late { c.deliver(.failure(timeoutError)); return }
                 if p.terminationStatus == 0 { c.deliver(.success(data)); return }
                 let msg = String(data: errText, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let text = msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg
-                Log.write("deploys \(args.joined(separator: " ")): \(text)")
+                // With --json a newer script also says the error on stdout ({"error":…,"exit":N}):
+                // that is the message; the log keeps stderr too, where the detail usually is.
+                let plain = msg.isEmpty ? "Exit code \(p.terminationStatus)" : msg
+                let json = jsonError(data)
+                let text = json ?? plain
+                Log.write("deploys \(args.joined(separator: " ")): \(json.map { $0 + (msg.isEmpty ? "" : " | " + msg) } ?? plain)")
                 // The whole text is in the log; a toast or a row gets the end, where the cause usually is.
-                c.deliver(.failure(ToolError(message: shorten(text), exitCode: p.terminationStatus)))
+                c.deliver(.failure(ToolError(message: shorten(CLIText.shown(text)), exitCode: p.terminationStatus)))
             }
             out.fileHandleForReading.readabilityHandler = { h in
                 let d = h.availableData
@@ -240,6 +272,13 @@ enum Tool {
                 p.standardInput = inPipe
                 inPipe.fileHandleForWriting.write(Data((stdin + "\n").utf8))
                 try? inPipe.fileHandleForWriting.close()
+            }
+            // Cancelled before it started: nothing is started at all.
+            if running.isCancelled {
+                out.fileHandleForReading.readabilityHandler = nil
+                err.fileHandleForReading.readabilityHandler = nil
+                _ = c.claim()
+                cont.resume(throwing: CancellationError()); return
             }
             do { try p.run() } catch {
                 out.fileHandleForReading.readabilityHandler = nil
@@ -318,10 +357,21 @@ enum Tool {
             all.append(pid)
             next += children(of: pid)
         }
+        // The start time of each, so the SIGKILL two seconds later cannot reach a process that
+        // got the same id in between.
+        let started = all.map { startTime($0) }
         for pid in all { kill(pid, SIGTERM) }
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
-            for pid in all where kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+            for (pid, t) in zip(all, started) where kill(pid, 0) == 0 && t != nil && startTime(pid) == t { kill(pid, SIGKILL) }
         }
+    }
+
+    /// When a process started (seconds and microseconds), nil when it is gone.
+    static func startTime(_ pid: pid_t) -> UInt64? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
     }
 
     private static func children(of pid: pid_t) -> [pid_t] {
@@ -345,6 +395,14 @@ enum Tool {
         }
     }
 
+    /// The message of a `{"error": "…", "exit": N}` answer on stdout; nil for anything else.
+    static func jsonError(_ data: Data) -> String? {
+        guard data.count < 64_000, let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let e = o["error"] as? String else { return nil }
+        let t = e.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+
     /// At most about 300 characters, keeping the end.
     static func shorten(_ text: String, max: Int = 300) -> String {
         text.count <= max ? text : "… " + String(text.suffix(max))
@@ -355,7 +413,7 @@ struct ToolError: LocalizedError {
     let message: String
     /// The command was ended after its time ran out: it may have done its work anyway.
     var timedOut = false
-    /// The script's exit code when it ended with one (not after a timeout).
+    /// The script's exit code, when it ended by itself with one other than 0.
     var exitCode: Int32? = nil
     var errorDescription: String? { message }
 }
@@ -387,7 +445,9 @@ enum AppDirs {
 /// Errors go to ~/Library/Logs/DeployCenter.log, so one can be attached to an issue.
 /// What the script said and when, with keys and tokens masked: a CLI's error can quote one.
 enum Log {
-    static let url = AppDirs.log
+    static var url: URL { testURL ?? AppDirs.log }
+    /// Tests only: a log of their own, so they never write into the person's log. Never set in the app.
+    nonisolated(unsafe) static var testURL: URL?
     /// Written in order on its own queue, never on the main thread.
     private static let queue = DispatchQueue(label: "app.deploycenter.log", qos: .utility)
     /// A log from an older version may be readable by others; once per run it is made private.
@@ -395,7 +455,8 @@ enum Log {
     /// From any thread; the file is readable by this user only. Past 1 MB the older half goes,
     /// cut at a line, so no character is split.
     static func write(_ line: String) {
-        let text = "\(Date().formatted(.iso8601))  \(LogTools.maskSecrets(line))\n"
+        // Further lines of a message are indented, so each entry still starts with its time.
+        let text = "\(Date().formatted(.iso8601))  \(LogTools.maskSecrets(line).replacingOccurrences(of: "\n", with: "\n    "))\n"
         queue.async { append(text) }
     }
     /// Waits until everything written so far is in the file (tests, before reading it).

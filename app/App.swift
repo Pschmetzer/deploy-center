@@ -8,6 +8,8 @@ import AppKit
 import Charts
 import UserNotifications
 import ServiceManagement
+import Combine
+import CoreSpotlight
 
 // MARK: - Settings (⌘,)
 
@@ -17,15 +19,32 @@ struct SettingsView: View {
     @State private var language = AppLanguage.chosen
     @AppStorage("maxParallel") private var maxParallel = 3
     @AppStorage("reminderHour") private var reminderHour = 0
+    @AppStorage("summaryHour") private var summaryHour = 0
+    @AppStorage("weeklySummary") private var weeklySummary = false
+    @AppStorage(Speech.resultsKey) private var speakResults = false
+    @AppStorage("quietFrom") private var quietFrom = 0
+    @AppStorage("quietTo") private var quietTo = 0
+    @AppStorage("remindFailures") private var remindFailures = false
     @AppStorage("showMenuBar") private var showMenuBar = true
     @AppStorage("hideDock") private var hideDock = false
     @AppStorage("notifications") private var notifications = true
     @AppStorage("checkUpdates") private var checkUpdates = true
     @ObservedObject private var updates = SoftwareUpdate.shared
     @AppStorage("demoMode") private var demoMode = false
+    @AppStorage(Color.colorBlindKey) private var colorBlind = false
+    @AppStorage("compactRows") private var compactRows = false
+    @AppStorage(Tips.key) private var tipOn = true
+    @AppStorage(Spotlight.key) private var spotlight = false
+    @AppStorage(Notify.soundsKey) private var resultSounds = false
+    @AppStorage("loadLogos") private var loadLogos = true
     @AppStorage("undoSeconds") private var undoSeconds = 8
     @AppStorage("staleDays") private var staleDays = 0
     @AppStorage("monthlyBudget") private var monthlyBudget = 0.0
+    /// The checkbox of the deploy confirmation, here too, so the remembered state can be seen.
+    @AppStorage("onlyWhenGreen") private var onlyWhenGreen = false
+    @AppStorage(OwnerCheck.key) private var ownerCheck = false
+    @AppStorage("watchMinutes") private var watchMinutes = 0
+    @AppStorage(MigrationCheck.key) private var migrationCheck = true
     @AppStorage("confirmSingleDeploy") private var confirmSingle = true
     @AppStorage("ignoredTriggers") private var ignoredTriggers = ""
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
@@ -78,14 +97,15 @@ struct SettingsView: View {
     var body: some View {
         TabView(selection: tab) {
             page(.general) { _ in generalSection; notificationsSection; updatesSection; CommandPaletteSettings() }
-            page(.platforms) { _ in platformsSection }
+            page(.platforms) { _ in platformsSection; HealthCard(store: store) }
             page(.projects) { _ in projectsSection }
-            page(.deploy) { _ in deploySection; GuardSettings(store: store) }
+            page(.deploy) { _ in deploySection; DeployWindowSettings(); RulesSettings(); GuardSettings(store: store) }
             page(.costs) { _ in costsSection }
             page(.claude) { proxy in
                 ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
                 ClaudeAISettings(items: allItems).id("claudeAI")
-                AutofixSettings(items: allItems).id("autofix")
+                PromptTemplateSettings()
+                AutofixSettings(store: store).id("autofix")
             }
             page(.iphone) { _ in PhoneLinkSettings() }
             page(.team) { _ in TeamSettings(store: store) }
@@ -184,9 +204,21 @@ struct SettingsView: View {
                     Button(L("Open Login Items", "Anmeldeobjekte öffnen")) { SMAppService.openSystemSettingsLoginItems() }
                 }
             }
-            if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
+            if let loginError { ErrorText(loginError) }
             Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
                 .help(L("Also in the View menu: ⇧⌘D", "Auch im Menü Darstellung: ⇧⌘D"))
+                .onChange(of: demoMode) { _, _ in Spotlight.update(Array(store.items.values.joined()).filter { !store.isHidden($0) }) }
+            Toggle(L("Find projects in Spotlight", "Projekte in Spotlight finden"), isOn: $spotlight)
+                .help(L("Only names and platforms, kept on this Mac; never in demo mode.", "Nur Namen und Plattformen, auf diesem Mac; nie im Demo-Modus."))
+                .onChange(of: spotlight) { _, _ in Spotlight.update(Array(store.items.values.joined()).filter { !store.isHidden($0) }) }
+            Toggle(L("Tip of the day in the menu bar", "Tipp des Tages in der Menüleiste"), isOn: $tipOn)
+            Toggle(L("Compact list (less space between rows)", "Kompakte Liste (weniger Abstand zwischen den Zeilen)"), isOn: $compactRows)
+            Toggle(L("Colour-blind friendly (blue instead of green)", "Farbenblind-freundlich (Blau statt Grün)"), isOn: $colorBlind)
+                .help(L("Live and merged show in blue, failures stay red; the symbols differ as well.",
+                        "Live und Gemergt erscheinen blau, Fehler bleiben rot; die Symbole unterscheiden sich ebenfalls."))
+            Toggle(L("Load logos from the project sites", "Logos von den Projektseiten laden"), isOn: $loadLogos)
+                .help(L("Off: no request goes to your sites; a letter stands in for the logo.",
+                        "Aus: keine Anfrage geht an deine Seiten; ein Buchstabe ersetzt das Logo."))
             Picker(L("Language", "Sprache") + (isGerman ? " · Language" : " · Sprache"), selection: $language) {
                 ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
             }
@@ -197,7 +229,10 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button(L("Restart now", "Jetzt neu starten")) {
+                        // relaunchApp asks itself; the quit check must not ask a second time.
+                        AppDelegate.confirmed = true
                         relaunchApp(running: store.items.values.joined().filter { $0.state.isActive }.count)
+                        AppDelegate.confirmed = false
                     }
                 }
             }
@@ -214,6 +249,33 @@ struct SettingsView: View {
             .onChange(of: reminderHour) { _, h in if h > 0 { Notify.ask() } }
             .help(L("Only a reminder, and only when something waits. Nothing is deployed by itself.",
                     "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
+            Picker(L("Summary of the day", "Tagesabschluss"), selection: $summaryHour) {
+                Text(L("Off", "Aus")).tag(0)
+                ForEach(12...23, id: \.self) { Text(L("from \($0):00", "ab \($0):00 Uhr")).tag($0) }
+            }
+            .onChange(of: summaryHour) { _, h in if h > 0 { Notify.ask() } }
+            .help(L("How many deploys ended today and how many failed, from the history. Only when something ended.",
+                    "Wie viele Deploys heute fertig wurden und wie viele fehlschlugen, aus dem Verlauf. Nur wenn etwas fertig wurde."))
+            Toggle(L("A sound per result (live, failed)", "Ein Klang je Ergebnis (live, fehlgeschlagen)"), isOn: $resultSounds)
+                .help(L("Glass when it is live, Basso when it failed, Pop when you cancelled.",
+                        "Glass bei live, Basso bei Fehler, Pop beim Abbrechen."))
+            Toggle(L("Say when a deploy ends", "Ansagen, wenn ein Deploy fertig ist"), isOn: $speakResults)
+                .help(L("Spoken by VoiceOver when it is on, else by the Mac's voice.", "Mit VoiceOver von VoiceOver, sonst von der Stimme des Macs."))
+            Toggle(L("Week in review on Mondays", "Wochenrückblick am Montag"), isOn: $weeklySummary)
+                .onChange(of: weeklySummary) { _, on in if on { Notify.ask() } }
+            HStack {
+                Text(L("Quiet hours", "Ruhezeit"))
+                Spacer()
+                Picker(L("from", "von"), selection: $quietFrom) { ForEach(0...23, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) } }
+                    .labelsHidden().frame(width: 90)
+                Text(L("to", "bis"))
+                Picker(L("to", "bis"), selection: $quietTo) { ForEach(0...23, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) } }
+                    .labelsHidden().frame(width: 90)
+            }
+            .help(L("Inside these hours only failures notify. The same hour twice: off. macOS Focus applies as well.",
+                    "In diesen Stunden melden sich nur Fehler. Zweimal dieselbe Stunde: aus. Der macOS-Fokus gilt zusätzlich."))
+            Toggle(L("Remind again after 30 minutes when a failure was not looked at", "Nach 30 Minuten noch einmal erinnern, wenn ein Fehler nicht angesehen wurde"),
+                   isOn: $remindFailures)
             if notificationsDenied {
                 HStack {
                     Text(L("Notifications are turned off for Deploy Center in System Settings.",
@@ -388,6 +450,21 @@ struct SettingsView: View {
                 Text(L("Off", "Aus")).tag(0)
                 ForEach(SettingsChoice.staleDays.filter { $0 > 0 }, id: \.self) { Text(L("\($0) days", "\($0) Tage")).tag($0) }
             }
+            Toggle(L("Deploy only when the checks are green", "Nur deployen, wenn die Checks grün sind"), isOn: $onlyWhenGreen)
+                .help(L("The same switch as in the deploy confirmation: commits whose CI did not pass stay back.",
+                        "Derselbe Schalter wie in der Deploy-Rückfrage: Commits, deren CI nicht durchlief, bleiben zurück."))
+            Picker(L("Watch the site after going live", "Seite nach dem Live-Gang beobachten"), selection: $watchMinutes) {
+                Text(L("Check once", "Einmal prüfen")).tag(0)
+                ForEach([5, 15, 30], id: \.self) { Text(L("\($0) minutes, every minute", "\($0) Minuten, jede Minute")).tag($0) }
+            }
+            .help(L("Two failed answers in a row warn, or roll back where the project rolls back by itself (its details).",
+                    "Zwei fehlgeschlagene Antworten hintereinander warnen, oder rollen zurück, wo das Projekt selbst zurückrollt (seine Details)."))
+            Toggle(L("Ask for a tick before database migrations go live", "Vor dem Live-Gang von Datenbank-Migrationen ein Häkchen verlangen"), isOn: $migrationCheck)
+                .help(L("When the waiting commits change migration files, every live deploy of them asks first.",
+                        "Ändern die wartenden Commits Migrationsdateien, fragt jeder Live-Deploy davon erst nach."))
+            Toggle(L("Ask for Touch ID or the password before risky steps", "Vor riskanten Schritten nach Touch ID oder dem Passwort fragen"), isOn: $ownerCheck)
+                .help(L("Deploying several projects at once, a rollback by hand, and allowing auto-deploy. The automatic rollback after a failed check does not wait.",
+                        "Mehrere Projekte auf einmal deployen, ein Rollback von Hand und Auto-Deploy erlauben. Das automatische Zurückrollen nach einem fehlgeschlagenen Check wartet nicht."))
         }
     }
 
@@ -409,6 +486,29 @@ struct SettingsView: View {
         Section(L("Savings", "Ersparnis")) { SavingsLink() }
     }
 
+    /// Counts and times only: no project names, no error texts (they can hold names).
+    private func diagnosticsText() -> String {
+        let counts: [String: Int] = Dictionary(uniqueKeysWithValues: Platform.allCases.map { ($0.cli, store.items[$0]?.count ?? 0) })
+        let gitlab: Int = Set(allItems.compactMap(\.repo).filter { GitHost(repo: $0) != .github }).count
+        let d: Doctor? = store.doctor
+        let jobs: [String] = d?.jobsMissing ?? []
+        let failures: [String] = Platform.allCases.compactMap { p in
+            store.lastLoadError[p].map { "\(p.cli) failed \($0.at.formatted(date: .numeric, time: .shortened))" }
+        }
+        let base: String = SettingsText.diagnostics(version: version, os: ProcessInfo.processInfo.operatingSystemVersionString,
+                                                    doctor: d, providers: store.providers, counts: counts,
+                                                    gitlabRepos: gitlab, autofix: store.autofix, script: store.scriptVersion)
+        let perl: String = d?.perl.map { String($0) } ?? "?"
+        let curl: String = d?.curl.map { String($0) } ?? "?"
+        let extra: [String] = [
+            "language \(AppLanguage.running.rawValue), observer \(store.observer)",
+            "perl \(perl), curl \(curl)",
+            "last load error: " + (failures.isEmpty ? "none" : failures.joined(separator: "; ")),
+            "jobs missing tools: " + (jobs.isEmpty ? "none" : jobs.joined(separator: ", ")),
+        ]
+        return base + "\n" + extra.joined(separator: "\n")
+    }
+
     // MARK: Help
 
     @ViewBuilder private var helpSection: some View {
@@ -417,13 +517,8 @@ struct SettingsView: View {
                 if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
                 NSWorkspace.shared.open(Log.url)
             }
-            CopyButton(title: L("Copy diagnostics", "Diagnose kopieren")) {
-                let counts = Dictionary(uniqueKeysWithValues: Platform.allCases.map { ($0.cli, store.items[$0]?.count ?? 0) })
-                let gitlab = Set(allItems.compactMap(\.repo).filter { GitHost(repo: $0) != .github }).count
-                return SettingsText.diagnostics(version: version, os: ProcessInfo.processInfo.operatingSystemVersionString,
-                                                doctor: store.doctor, providers: store.providers, counts: counts,
-                                                gitlabRepos: gitlab, autofix: store.autofix, script: store.scriptVersion)
-            }
+            CopyButton(title: L("Copy diagnostics", "Diagnose kopieren")) { diagnosticsText() }
+            Button(L("Show the first-start guide again", "Erststart-Anleitung wieder zeigen")) { UserDefaults.standard.set(false, forKey: FirstStart.key) }
             Text(L("Diagnostics: versions and what is connected; no names, no keys.", "Diagnose: Versionen und was verbunden ist; keine Namen, keine Schlüssel."))
                 .font(.caption).foregroundStyle(.secondary)
             Text(L("Version ", "Version ") + version
@@ -444,10 +539,61 @@ struct SettingsView: View {
 
 private func open(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.open(u) } }
 
+/// Every way out (⌘Q, the Dock's Quit, the menu bar, logging out) asks first while deploys run,
+/// and the Dock badge follows the store even with the window closed.
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+    weak var store: Store?
+    /// Set once the person already said yes (the restart in Settings asks itself).
+    static var confirmed = false
+    private var badge: AnyCancellable?
+
+    /// The Dock icon's menu: reload, and "deploy everything with changes", which opens the window
+    /// at the usual confirmation (nothing starts from the Dock).
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let m = NSMenu()
+        m.addItem(withTitle: L("Reload", "Neu laden"), action: #selector(dockReload), keyEquivalent: "").target = self
+        if let s = store, s.waiting.projects > 0, !s.observer {
+            m.addItem(withTitle: L("Deploy everything with changes …", "Alles mit Änderungen deployen …"), action: #selector(dockDeployAll), keyEquivalent: "").target = self
+        }
+        return m
+    }
+    @objc private func dockReload() { Task { await store?.autoRefresh() } }
+    @objc private func dockDeployAll() {
+        guard let s = store else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        if let w = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true && $0.canBecomeMain }) { w.makeKeyAndOrderFront(nil) }
+        else { s.windowRequest += 1 }
+        s.pendingDeployAll = true
+    }
+
+    func attach(_ s: Store) {
+        guard store !== s else { return }
+        store = s
+        // After the change, not before it (objectWillChange fires first).
+        badge = s.objectWillChange.receive(on: RunLoop.main).sink { [weak s] _ in
+            guard let s else { return }
+            let n = s.waiting.projects
+            let label = n > 0 ? "\(n)" : nil
+            if NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
+        }
+    }
+
+    private var running: Int { store.map { $0.items.values.joined().filter { $0.state.isActive }.count } ?? 0 }
+
+    /// Asks while deploys run; true when it may go on.
+    func confirmLeaving(restart: Bool = false) -> Bool { confirmQuit(running: running, restart: restart) }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if Self.confirmed { return .terminateNow }
+        return confirmLeaving() ? .terminateNow : .terminateCancel
+    }
+}
+
 @main
 struct DeployCenterApp: App {
     /// One store for the window and the menu bar, so both show the same counts.
     @StateObject private var store: Store
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @ObservedObject private var updates = SoftwareUpdate.shared
     @AppStorage("showMenuBar") private var showMenuBar = true
     @AppStorage("demoMode") private var demoMode = false
@@ -464,7 +610,8 @@ struct DeployCenterApp: App {
     var body: some Scene {
         WindowGroup("Deploy Center", id: "main") {
             ContentView(store: store)
-                .task { await ClaudeNudge.refresh() }
+                .modifier(OpensSettingsOnRequest(store: store))
+                .task { appDelegate.attach(store); await ClaudeNudge.refresh() }
                 // deploycenter://select?project=name (or platform:name) shows exactly that project in the
                 // window; deploycenter://settings/claude opens that tab of Settings. A link only shows:
                 // it never ticks, queues or starts a build, since any web page could open one.
@@ -475,6 +622,18 @@ struct DeployCenterApp: App {
                           let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "project" })?.value,
                           let req = Store.showRequest(value, items: Array(store.items.values.joined())) else { return }
                     store.pendingShow = req
+                }
+                // A Spotlight hit: the project is found in the window, never deployed.
+                .onContinueUserActivity(CSSearchableItemActionType) { a in
+                    guard let key = a.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+                          let i = store.items.values.joined().first(where: { Store.key($0) == key }) else { return }
+                    store.show(i)
+                }
+                // A project handed off from the iPhone app: shown, never deployed.
+                .onContinueUserActivity(Handoff.type) { a in
+                    guard let key = a.userInfo?["project"] as? String,
+                          let i = Handoff.item(for: key, in: Array(store.items.values.joined())) else { return }
+                    store.show(i)
                 }
         }
             .windowResizability(.contentMinSize)
@@ -501,17 +660,23 @@ struct DeployCenterApp: App {
                 }
             }
         }
+        // One project in a window of its own (FEA-124), by Store.key; the main window stays as it is.
+        WindowGroup(L("Project", "Projekt"), id: "project", for: String.self) { $key in
+            ProjectWindow(store: store, key: key ?? "")
+        }
         Settings { SettingsView(store: store) }
         MenuBarExtra(isInserted: $showMenuBar) {
             MenuBarContent(store: store)
         } label: {
             let w = store.waiting
-            let n = w.prs > 0 ? w.prs : w.projects
+            // Projects, as on the Dock badge and in the window's title.
+            let n = w.projects
             // No array of all items: this label is built on every change of the store.
             let active = store.items.values.contains { $0.contains { $0.state.isActive } }
             let failed = !active && store.items.values.contains { $0.contains { if case .failed = $0.state { return true } else { return false } } }
             Image(systemName: active ? "paperplane.fill" : (failed ? "exclamationmark.triangle.fill" : "paperplane"))
-                .task { store.boot(); await PhoneLinkModel.shared.pushIfOn() }
+                .task { appDelegate.attach(store); store.boot() }
+                .modifier(OpensSettingsOnRequest(store: store))
                 .accessibilityLabel("Deploy Center")
                 .accessibilityValue(active ? L("deploying", "deployt gerade")
                     : failed ? L("a deploy failed", "ein Deploy ist fehlgeschlagen")
@@ -525,6 +690,7 @@ struct DeployCenterApp: App {
 /// where the confirmation is.
 struct MenuBarContent: View {
     @ObservedObject var store: Store
+    @AppStorage(Tips.key) private var tipOn = true
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @AppStorage("demoMode") private var demoMode = false
@@ -535,7 +701,8 @@ struct MenuBarContent: View {
 
     var body: some View {
         let w = store.waiting
-        let changed = Array(store.items.values.joined()).filter { $0.hasNewCommits && $0.deployable && $0.state == .idle && !store.isHidden($0) }
+        // The same rule as the count (Store.isWaiting): hidden projects stay out.
+        let changed = Array(store.items.values.joined()).filter { store.isWaiting($0) }
             .sorted { ($0.pendingCommits ?? 0) > ($1.pendingCommits ?? 0) }
         let connected = Platform.allCases.filter { p in
             guard let d = store.doctor else { return false }
@@ -548,8 +715,13 @@ struct MenuBarContent: View {
         } else if connected.isEmpty {
             Text(L("Nothing connected yet", "Noch nichts verbunden"))
         }
+        // The reason is in the window, with "Try again": the item opens it there.
         ForEach(failed, id: \.self) { p in
-            Label(L("\(p.rawValue) could not be loaded", "\(p.rawValue) konnte nicht geladen werden"), systemImage: "exclamationmark.triangle")
+            Button {
+                showAll = false; UserDefaults.standard.set(p.cli, forKey: "lastPlatform"); openMain()
+            } label: {
+                Label(L("\(p.rawValue) could not be loaded – show why …", "\(p.rawValue) konnte nicht geladen werden – Grund zeigen …"), systemImage: "exclamationmark.triangle")
+            }
         }
         if !unread.isEmpty && failed.isEmpty {
             Text(L("Not loaded yet: ", "Noch nicht geladen: ") + unread.map(\.rawValue).joined(separator: ", "))
@@ -560,8 +732,8 @@ struct MenuBarContent: View {
                 Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle")
             }
         } else {
-            Text(L("\(plural(w.prs, "PR", "PRs")), \(plural(w.commits, "commit", "commits")) waiting",
-                   "\(plural(w.prs, "PR", "PRs")), \(plural(w.commits, "Commit", "Commits")) warten"))
+            Text(L(plural(w.projects, "project", "projects") + " · " + plural(w.prs, "PR", "PRs") + " waiting",
+                   plural(w.projects, "Projekt", "Projekte") + " · " + plural(w.prs, "PR", "PRs") + (w.projects == 1 ? " wartet" : " warten")))
             Divider()
             ForEach(changed.prefix(12)) { i in
                 Button("\(Demo.mask(i.name))  –  \(Row.waitingText(i))") {
@@ -589,6 +761,18 @@ struct MenuBarContent: View {
                    "Claude behebt \(store.fixingCount) \(store.fixingCount == 1 ? "fehlgeschlagenen Build" : "fehlgeschlagene Builds")"))
         }
         ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
+        if tipOn { Text(L("Tip: ", "Tipp: ") + Tips.tip()).foregroundStyle(.secondary) }
+        // Stopping needs no confirmation in the window either; it is the same cancel as the row's.
+        let active = Array(store.items.values.joined()).filter { $0.state.isActive }.sorted { $0.name < $1.name }
+        if !active.isEmpty {
+            Divider()
+            ForEach(active.prefix(8)) { i in
+                Button(L("Cancel \(Demo.mask(i.name))", "\(Demo.mask(i.name)) abbrechen")) { store.cancel(i) }
+            }
+            if active.count > 1 {
+                Button(L("Cancel all \(active.count) deploys", "Alle \(active.count) Deploys abbrechen")) { store.cancelAll() }
+            }
+        }
         Divider()
         Button(L("Open Deploy Center", "Deploy Center öffnen")) {
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
@@ -612,10 +796,44 @@ struct MenuBarContent: View {
         }
         .keyboardShortcut(",")
         Divider()
-        Button(L("Quit", "Beenden")) {
-            let running = store.items.values.joined().filter { $0.state.isActive }.count
-            if confirmQuit(running: running) { NSApp.terminate(nil) }
-        }
+        // The app delegate asks while deploys run, as for ⌘Q and the Dock.
+        Button(L("Quit", "Beenden")) { NSApp.terminate(nil) }
         .keyboardShortcut("q")
+    }
+}
+
+/// Settings → Claude: the text of "Copy for Claude" (FEA-028). Empty = the built-in prompt.
+struct PromptTemplateSettings: View {
+    @AppStorage(LogTools.promptTemplateKey) private var template = ""
+
+    var body: some View {
+        Section(L("“Copy for Claude” prompt", "Prompt für „Für Claude kopieren“")) {
+            TextEditor(text: $template).font(.callout.monospaced()).frame(minHeight: 80)
+                .accessibilityLabel(L("Prompt template", "Prompt-Vorlage"))
+            Text(L("Placeholders: {name} {repo} {ref} {sha} {status} {log}. Empty = the built-in prompt. Secrets in the log stay masked.",
+                   "Platzhalter: {name} {repo} {ref} {sha} {status} {log}. Leer = der eingebaute Prompt. Geheimnisse im Log bleiben maskiert."))
+                .font(.caption).foregroundStyle(.secondary)
+            if !template.isEmpty, !template.contains("{log}") {
+                Text(L("Without {log} the prompt has no build log.", "Ohne {log} hat der Prompt kein Build-Log."))
+                    .font(.caption).foregroundStyle(Color.warningText)
+            }
+        }
+    }
+}
+
+/// The details of one project, followed live from the store. Deploying a commit goes through the
+/// same checks as in the sheet; observers only look.
+struct ProjectWindow: View {
+    @ObservedObject var store: Store
+    let key: String
+
+    var body: some View {
+        if let i = store.items.values.joined().first(where: { Store.key($0) == key }) {
+            ProjectDetail(store: store, item: i, deployCommit: store.observer ? nil : { sha in store.deployOne(i, preview: false, sha: sha) })
+                .navigationTitle(Demo.mask(i.name))
+        } else {
+            Text(L("This project is not in the loaded lists (yet).", "Dieses Projekt ist (noch) nicht in den geladenen Listen."))
+                .foregroundStyle(.secondary).padding(40)
+        }
     }
 }

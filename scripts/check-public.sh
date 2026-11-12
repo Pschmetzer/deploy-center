@@ -22,6 +22,8 @@ patterns=(
   '/Users/[A-Za-z0-9._-]+'                      # macOS home folders
   '/home/[a-z][a-z0-9._-]+/'                    # Linux home folders
   'Developer ID Application: [^"]*\([A-Z0-9]{10}\)'  # a real Team ID (the placeholder is TEAMID)
+  'TeamIdentifier=[A-Z0-9]{10}'                 # codesign -dv output
+  'DEVELOPMENT_TEAM *= *"?[A-Z0-9]{10}'         # an Xcode project with the team filled in
   'team_[A-Za-z0-9]{20,}'                       # Vercel team ID
   'prj_[A-Za-z0-9]{20,}'                        # Vercel project ID
   '(srv|crn|usr|tea)-[a-z0-9]{16,}'             # Render IDs

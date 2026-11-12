@@ -31,6 +31,18 @@ struct CostsSheet: View {
     /// Today as the billing data names days (UTC).
     static func today() -> String { dayFormat.string(from: Date()) }
     private var last7: [Costs.Day] { Array(costs.days.suffix(7)) }
+
+    /// "2026-11-01" → "Nov 1" on a month's first day (and for the first bar), else "2".
+    static func axisLabel(_ day: String, first: Bool) -> String {
+        guard let d = dayFormat.date(from: day) else { return String(day.suffix(2)) }
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        let n = cal.component(.day, from: d)
+        guard first || n == 1 else { return "\(n)" }
+        var style = Date.FormatStyle(date: .omitted, time: .omitted).month(.abbreviated).day()
+        style.timeZone = cal.timeZone
+        style.locale = Locale(identifier: isGerman ? "de_DE" : "en_US")
+        return d.formatted(style)
+    }
     private var average: Double { Self.dailyPace(costs.days, today: Self.today()) }
 
     /// Build costs per day at the current pace: the last 7 whole days. Today is not over yet and
@@ -88,6 +100,7 @@ struct CostsSheet: View {
         .frame(width: 520)
     }
 
+    /// Where the money goes: the dearest projects of the 7 days.
     private var summary: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(L("Vercel builds, last 7 days", "Vercel-Builds, letzte 7 Tage")).font(.caption).foregroundStyle(.secondary)
@@ -98,7 +111,7 @@ struct CostsSheet: View {
             if let s = costs.saving(today: Self.today()) {
                 Text(L("per day: ", "pro Tag: ") + s.before.formatted(.currency(code: "USD")) + L(" before, ", " vorher, ")
                      + s.after.formatted(.currency(code: "USD")) + L(" since", " seitdem"))
-                    .font(.caption.weight(.medium)).foregroundStyle(s.after < s.before ? .green : .orange)
+                    .font(.caption.weight(.medium)).foregroundStyle(s.after < s.before ? Color.good : .orange)
                 if s.after < s.before {
                     Button(L("Share the saving …", "Ersparnis teilen …")) { sharing = true }
                         .buttonStyle(.link).font(.caption)
@@ -144,11 +157,17 @@ struct CostsSheet: View {
             Chart {
                 ForEach(costs.days) { d in
                     // A day over twice the average stands out; today is lighter: it is not over yet.
-                    BarMark(x: .value("Day", String(d.day.suffix(2))), y: .value("USD", d.build))
+                    BarMark(x: .value("Day", d.day), y: .value("USD", d.build))
                         .foregroundStyle(d.build > 2 * average && average > 0 ? Color.orange.gradient : Color.accentColor.gradient)
+                        // The dearest day carries its value, without hovering.
+                        .annotation(position: .top) {
+                            if d.day == costs.days.max(by: { $0.build < $1.build })?.day, d.build > 0 {
+                                Text(usd0(d.build)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                            }
+                        }
                         .opacity(d.day == today ? 0.45 : 1)
                     if let off = costs.offDay, d.day == off {
-                        RuleMark(x: .value("Day", String(d.day.suffix(2)))).foregroundStyle(.green).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
+                        RuleMark(x: .value("Day", d.day)).foregroundStyle(.green).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
                     }
                 }
                 if daily > 0 {
@@ -156,11 +175,16 @@ struct CostsSheet: View {
                 }
             }
             .chartYAxis { AxisMarks(position: .leading) { _ in AxisValueLabel() } }
-            .chartXAxis { AxisMarks { _ in AxisValueLabel() } }
+            // "Nov 1" on the first day of a month and the first bar, else the day: the month change is seen.
+            .chartXAxis {
+                AxisMarks { v in
+                    AxisValueLabel { Text(v.as(String.self).map { Self.axisLabel($0, first: $0 == costs.days.first?.day) } ?? "") }
+                }
+            }
             .chartXSelection(value: $hovered)
             .overlay(alignment: .topTrailing) {
                 // The value of the day under the pointer, with its full date.
-                if let h = hovered, let d = costs.days.first(where: { String($0.day.suffix(2)) == h }) {
+                if let h = hovered, let d = costs.days.first(where: { $0.day == h }) {
                     Text(d.day + ": " + d.build.formatted(.currency(code: "USD")) + (d.day == today ? L(" (so far)", " (bisher)") : ""))
                         .font(.caption2.monospacedDigit()).padding(.horizontal, 5).padding(.vertical, 2)
                         .background(RoundedRectangle(cornerRadius: 4).fill(.regularMaterial))
@@ -191,17 +215,27 @@ struct CostsSheet: View {
 struct SavingShare: View {
     let before: Double, after: Double
     @State private var copied = false
-    /// Rendered once when the popover opens, not on every redraw.
+    /// Rendered once when the popover opens (and again for a new look), not on every redraw ("Copied ✓").
     @State private var image: NSImage?
+    @State private var saveError: String?
+    @AppStorage("savingCardTheme") private var theme = 0
+
+    private func render() -> NSImage? { SavingCard.render(before: before, after: after, theme: theme) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SavingCard(before: before, after: after).scaleEffect(0.7).frame(width: 364, height: 200)
+            SavingCard(before: before, after: after, theme: theme).scaleEffect(0.7).frame(width: 364, height: 200)
+            Picker(L("Look", "Aussehen"), selection: $theme) {
+                ForEach(SavingCard.themes.indices, id: \.self) { Text(SavingCard.themes[$0].name).tag($0) }
+            }
+            .pickerStyle(.segmented).frame(width: 364)
+            // A new look is a new picture for the share menu and the file.
+            .onChange(of: theme) { _, _ in image = render() }
             Text(SavingCard.text(before: before, after: after)).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true).frame(width: 364, alignment: .leading)
             HStack {
                 Button(copied ? L("Copied ✓", "Kopiert ✓") : L("Copy picture and text", "Bild und Text kopieren")) {
-                    SavingCard.copy(before: before, after: after, image: image); copied = true
+                    SavingCard.copy(before: before, after: after, theme: theme, image: image); copied = true
                     // Back to its words after a moment, like the other copy buttons.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
                 }
@@ -212,19 +246,16 @@ struct SavingShare: View {
                               preview: SharePreview(L("Build cost saving", "Build-Ersparnis"), image: Image(nsImage: img)))
                 }
             }
-            if let saveError {
-                Text(saveError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true).frame(width: 364, alignment: .leading)
-            }
+            if let saveError { ErrorText(saveError) }
         }
         .padding(16)
-        .onAppear { if image == nil { image = SavingCard.render(before: before, after: after) } }
+        .task { if image == nil { image = render() } }
     }
 
-    @State private var saveError: String?
 
     private func save() {
         saveError = nil
-        guard let img = image, let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+        guard let img = image ?? render(), let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
               let png = rep.representation(using: .png, properties: [:]) else {
             saveError = L("The picture could not be made.", "Das Bild ließ sich nicht erzeugen."); return
         }
@@ -242,6 +273,15 @@ struct SavingShare: View {
 /// A picture of the saving to post somewhere: two numbers and the app's name, nothing about the projects.
 struct SavingCard: View {
     let before: Double, after: Double
+    var theme = 0
+    /// The card's looks (FEA-105): the text stays white on each.
+    static let themes: [(name: String, colors: [Color])] = [
+        (L("Night", "Nacht"), [Color(red: 0.07, green: 0.09, blue: 0.16), Color(red: 0.18, green: 0.11, blue: 0.32)]),
+        (L("Ocean", "Ozean"), [Color(red: 0.02, green: 0.16, blue: 0.27), Color(red: 0.0, green: 0.33, blue: 0.42)]),
+        (L("Forest", "Wald"), [Color(red: 0.05, green: 0.16, blue: 0.10), Color(red: 0.12, green: 0.30, blue: 0.20)]),
+        (L("Graphite", "Graphit"), [Color(red: 0.12, green: 0.12, blue: 0.13), Color(red: 0.26, green: 0.26, blue: 0.28)]),
+    ]
+    private var colors: [Color] { Self.themes[Self.themes.indices.contains(theme) ? theme : 0].colors }
     private var month: Double { max(0, before - after) * 30 }
 
     var body: some View {
@@ -268,30 +308,29 @@ struct SavingCard: View {
             }
             Text(L("≈ ", "≈ ") + month.formatted(.currency(code: "USD").precision(.fractionLength(0))) + L(" a month saved", " im Monat gespart"))
                 .font(.title2.weight(.bold)).foregroundStyle(.white)
-            Text("github.com/Pschmetzer/deploy-center").font(.caption).foregroundStyle(.white.opacity(0.6))
+            Text("github.com/\(Updater.repo)").font(.caption).foregroundStyle(.white.opacity(0.6))
         }
         .padding(28).frame(width: 520, alignment: .leading)
-        .background(LinearGradient(colors: [Color(red: 0.07, green: 0.09, blue: 0.16), Color(red: 0.18, green: 0.11, blue: 0.32)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+        .background(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
     }
 
     /// The sentence that goes with the picture.
     static func text(before: Double, after: Double) -> String {
         let m = (max(0, before - after) * 30).formatted(.currency(code: "USD").precision(.fractionLength(0)))
-        return L("I turned off auto-deploy and now deploy by hand: builds went from \(before.formatted(.currency(code: "USD"))) to \(after.formatted(.currency(code: "USD"))) a day, about \(m) a month saved. https://github.com/Pschmetzer/deploy-center",
-                 "Ich habe Auto-Deploy ausgeschaltet und deploye jetzt von Hand: Builds von \(before.formatted(.currency(code: "USD"))) auf \(after.formatted(.currency(code: "USD"))) am Tag, etwa \(m) im Monat gespart. https://github.com/Pschmetzer/deploy-center")
+        return L("I turned off auto-deploy and now deploy by hand: builds went from \(before.formatted(.currency(code: "USD"))) to \(after.formatted(.currency(code: "USD"))) a day, about \(m) a month saved. https://github.com/\(Updater.repo)",
+                 "Ich habe Auto-Deploy ausgeschaltet und deploye jetzt von Hand: Builds von \(before.formatted(.currency(code: "USD"))) auf \(after.formatted(.currency(code: "USD"))) am Tag, etwa \(m) im Monat gespart. https://github.com/\(Updater.repo)")
     }
 
     /// Picture and sentence on the clipboard at once; a chat or post takes whichever it can.
-    @MainActor static func render(before: Double, after: Double) -> NSImage? {
-        let r = ImageRenderer(content: SavingCard(before: before, after: after)); r.scale = 2
+    @MainActor static func render(before: Double, after: Double, theme: Int = 0) -> NSImage? {
+        let r = ImageRenderer(content: SavingCard(before: before, after: after, theme: theme)); r.scale = 2
         return r.nsImage
     }
 
-    @MainActor static func copy(before: Double, after: Double, image: NSImage? = nil) {
+    @MainActor static func copy(before: Double, after: Double, theme: Int = 0, image: NSImage? = nil) {
         let pb = NSPasteboard.general; pb.clearContents()
         var items: [NSPasteboardWriting] = [text(before: before, after: after) as NSString]
-        if let img = image ?? render(before: before, after: after) { items.insert(img, at: 0) }
+        if let img = image ?? render(before: before, after: after, theme: theme) { items.insert(img, at: 0) }
         pb.writeObjects(items)
     }
 }

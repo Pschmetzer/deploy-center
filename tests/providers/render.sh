@@ -53,7 +53,7 @@ expect "the list's parallel reads wait for Retry-After too" "$(grep '^sleep' "$C
 rm -f "$tmp/config/render-names.json"
 lib 'render_id_of web; render_id_of web' > "$tmp/ids"
 expect "a name is looked up once, then kept" "$(tr '\n' ' ' < "$tmp/ids"):$(grep -c 'services?limit=100' "$CALLS")" "srv-a srv-a :1"
-expect "the kept list holds only ids and names, 0600" "$(jq -c '.[0] | keys' "$tmp/config/render-names.json"):$(stat -f %Lp "$tmp/config/render-names.json" 2>/dev/null || stat -c %a "$tmp/config/render-names.json")" '["id","name"]:600'
+expect "the kept list holds only ids and names, 0600" "$(jq -c '.[0] | keys' "$tmp/config/render-names.json"):$(stat -c %a "$tmp/config/render-names.json" 2>/dev/null || stat -f %Lp "$tmp/config/render-names.json")" '["id","name"]:600'
 echo '[{"id":"srv-old","name":"other"}]' > "$tmp/config/render-names.json"
 expect "a name missing from the kept list is asked for again" "$(lib 'render_id_of web')" "srv-a"
 echo '[{"id":"srv-old","name":"web"}]' > "$tmp/config/render-names.json"
