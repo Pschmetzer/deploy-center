@@ -22,7 +22,10 @@ What it does instead:
 
 1. **A build hook.** `autodeploy-off` creates a build hook named `deploy-center` on the site,
    or reuses one that already exists. Its URL is kept in `~/.config/deploys/netlify-hooks.json`
-   (mode 0600). Anyone who has that URL can start a build, so it is never printed.
+   (mode 0600). Anyone who has that URL can start a build, so it is never printed. If that file
+   is ever unreadable it is kept as `netlify-hooks.json.bak` and started again. When the site's
+   production branch changes, the next `autodeploy-off` moves the hook to it (same URL); until
+   then the site is not deployable.
 2. **An ignore rule in your repo.** Before every build Netlify runs the `ignore` command and
    skips the build when the command exits 0. Netlify sets `INCOMING_HOOK_TITLE` only for builds a
    build hook started

@@ -29,6 +29,10 @@ deploys hook doctor              # JSON, URLs masked
 
 The hook provider is off by default. Turn it on once with `deploys providers enable hook`; `providers/hook.sh` also runs on its own, with the same arguments.
 
+`add` for a name that exists updates that hook: what you give changes, the rest (method, headers,
+body, repo, ref, site) stays, and the answer names what was kept. Given headers are added to the
+ones there; to drop one, `remove` the hook and add it again.
+
 Pass `-` as the URL to read it from stdin. The URL then stays out of your shell history:
 
 ```bash
@@ -106,6 +110,32 @@ deploys hook add app "https://api.github.com/repos/me/app/actions/workflows/depl
 ```
 
 GitHub answers `204 No Content`, which counts as triggered. The run shows up in the repo's Actions tab.
+
+### GitHub Pages and Surge (static sites)
+
+GitHub Pages and Surge have no deploy hook of their own; a workflow builds and uploads the
+site, so the dispatch above is the hook. Give the workflow only `on: workflow_dispatch` (no
+`push:`), so a push builds nothing. For GitHub Pages this holds only with Settings → Pages →
+Source set to **GitHub Actions**; with "Deploy from a branch", Pages builds every push anyway:
+
+```yaml
+on: workflow_dispatch
+permissions: { contents: read, pages: write, id-token: write }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci && npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: dist }
+      - uses: actions/deploy-pages@v4
+```
+
+For Surge, the last two steps are `npx surge dist my-site.surge.sh` with `SURGE_TOKEN` from the
+repo's secrets. Then add it as above, with `--site https://me.github.io/app` (or the surge.sh
+address) so `deploys open` and the site check know where it lives.
 
 ### Netlify, Dokploy, Amplify, others
 

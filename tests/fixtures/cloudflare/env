@@ -1,3 +1,7 @@
 # Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
-export CLOUDFLARE_API_TOKEN=cf_fixture CLOUDFLARE_ACCOUNT_ID=acc0000000000000000000000000000a
+# The contract answers are the <METHOD>_<path>.json files (tests/lib/fake-curl.sh); the
+# provider's own tests use routes and the other files.
+export CLOUDFLARE_API_TOKEN=cf_fixture CLOUDFLARE_ACCOUNT_ID=acc1
 CONTRACT_ID=site CONTRACT_NAME=site CONTRACT_DEPLOY=d-q
+# What turns the deploy's files into a finished one for the `deploys watch` check (a sed script).
+CONTRACT_DONE='s/"latest_stage":{"name":"build","status":"active"}/"latest_stage":{"name":"deploy","status":"success"}/g'

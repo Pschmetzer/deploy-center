@@ -23,12 +23,13 @@ DIGITALOCEAN_API="${DIGITALOCEAN_API:-https://api.digitalocean.com}"
 DIGITALOCEAN_KEYCHAIN="deploy-center-digitalocean"
 DIGITALOCEAN_DASHBOARD="https://cloud.digitalocean.com/apps"
 
-# ---------- small helpers (the main script has its own; these stand in when sourced alone) ----------
+# ---------- small helpers ----------
 
-digitalocean_die() {
-  if declare -F die >/dev/null; then die "$@"; fi
-  echo "Error: $*" >&2; exit 1
-}
+# What `deploys` defines (PRV-131). These stand in only when this file is sourced on its own
+# (the provider tests do that); under `deploys` its own die, mtime and start_lock are used.
+declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
+# GNU first: on Linux `stat -f` means the file system and "succeeds" with the wrong answer.
+declare -F mtime >/dev/null || mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 digitalocean_config_dir() { echo "${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}"; }
 digitalocean_specs_dir() {
   local d; d="$(digitalocean_config_dir)/do-specs"
@@ -39,6 +40,8 @@ digitalocean_specs_dir() {
 # The token: environment first, then the keychain. Uses the shared key_of when A1 provides it.
 digitalocean_key() {
   local k=""
+  # Read once per list (digitalocean_json): its parallel reads must not each ask the keychain.
+  if [ -n "${_DIGITALOCEAN_KEY:-}" ]; then printf '%s' "$_DIGITALOCEAN_KEY"; return 0; fi
   if declare -F key_of >/dev/null; then k="$(key_of digitalocean 2>/dev/null)" || k=""
   elif [ -n "${DIGITALOCEAN_TOKEN:-}" ]; then k="$DIGITALOCEAN_TOKEN"
   else k="$(security find-generic-password -a "${USER:-$(id -un)}" -s "$DIGITALOCEAN_KEYCHAIN" -w 2>/dev/null)" || k=""
@@ -47,18 +50,50 @@ digitalocean_key() {
   printf '%s' "$k"
 }
 
+# FEA-078: {"remaining":N,"resetAt":<Unix s>|null} from a header file curl wrote (-D), from the
+# ratelimit-remaining and ratelimit-reset (Unix epoch, per hour) headers; null when there are none. Without jq (doctor output).
+digitalocean_ratelimit() {
+  tr -d '\r' < "$1" 2>/dev/null | awk -F': *' '
+    { n = tolower($1) } n ~ /^(x-)?ratelimit-remaining$/ && $2 ~ /^[0-9]+$/ { r = $2 }
+    n ~ /^(x-)?ratelimit-reset$/ && $2 ~ /^[0-9]+$/ { t = $2 }
+    END { if (r == "") print "null"; else printf "{\"remaining\":%s,\"resetAt\":%s}\n", r, (t == "" ? "null" : t) }'
+}
+
+# PRV-130: deploys' shared http_call (lib/http.sh) does the request when deploys has it; the
+# code in digitalocean_call below is the fallback (this file run on its own, or a deploys without lib/).
+# In a subshell, so its die returns 1 here like the rest of this file, and its "Error: " is
+# dropped: callers print the reason again or keep it as fetchError.
+digitalocean_http() {  # <method> <url> <body> <key> <fix>
+  local e rc=0
+  # shellcheck disable=SC2034  # read by http_call
+  local HTTP_AUTH="Authorization: Bearer $4" HTTP_FIX="$5"
+  e="$(mktemp)"
+  ( http_call DigitalOcean "$1" "$2" "$3" ) 2>"$e" || rc=$?
+  [ "$rc" = 0 ] || sed '1s/^[^ ]*Error:[^ ]* //' "$e" >&2
+  rm -f "$e"; return "$rc"
+}
+
 # digitalocean_call METHOD PATH [BODY] — the answer on stdout; on failure a reason on stderr, rc 1.
 # The token goes to curl on stdin (-K -), so it never shows in the process list. Only for
 # api.digitalocean.com: log URLs are pre-signed and must never get the token (digitalocean_fetch).
 digitalocean_call() {
   local method="$1" path="$2" body="${3:-}" key out code try err bodyf=""
   key="$(digitalocean_key)" || return 1
+  # Not with a body: http_call passes it as an argument, and a spec can hold plain env values.
+  # Not when the doctor wants the headers (DIGITALOCEAN_HEADERS): http_call does not keep them.
+  if [ -z "$body" ] && [ -z "${DIGITALOCEAN_HEADERS:-}" ] && declare -F http_call >/dev/null; then
+    local fix="deploys digitalocean set-key; the token needs read and update scope for apps"
+    [ -z "${DIGITALOCEAN_TOKEN:-}" ] || fix="check DIGITALOCEAN_TOKEN in the environment; it needs read and update scope for apps"
+    digitalocean_http "$method" "$DIGITALOCEAN_API$path" "" "$key" "$fix"; return
+  fi
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   # A body goes through a private file, not an argument: a spec can hold plain env values.
   if [ -n "$body" ]; then
     bodyf="$(umask 077; mktemp)"; printf '%s' "$body" > "$bodyf"
     args+=(-H "Content-Type: application/json" --data-binary "@$bodyf")
   fi
+  # The doctor asks for the headers (rate limit) with DIGITALOCEAN_HEADERS=<file>.
+  [ -z "${DIGITALOCEAN_HEADERS:-}" ] || args+=(-D "$DIGITALOCEAN_HEADERS")
   err="$(mktemp)"
   for try in 1 2 3; do
     out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$DIGITALOCEAN_API$path" 2>"$err")" || out=$'\n000'
@@ -85,6 +120,8 @@ digitalocean_call() {
       5*) hint=" (DigitalOcean had a problem: try again later)";;
     esac
     msg="$(printf '%s' "$out" | jq -r '.message // .id // empty' 2>/dev/null)" || msg=""
+    # Not JSON (curl's own error, a proxy's HTML page): its first 200 characters, on one line.
+    [ -n "$msg" ] || msg="$(printf '%s' "$out" | tr '\n\r\t' '   ' | cut -c1-200)"
     echo "DigitalOcean $method ${path%%\?*} -> HTTP $code$hint${msg:+: $msg}" >&2
     return 1
   fi
@@ -94,7 +131,7 @@ digitalocean_call() {
 # A pre-signed log URL: https only, and without the token (it would leak to another host).
 digitalocean_fetch() {
   case "$1" in https://*) ;; *) echo "DigitalOcean: skipped a log URL that is not https" >&2; return 1 ;; esac
-  curl -sSfL --connect-timeout 10 --max-time 120 "$1"
+  curl -sSfL --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 "$1"
 }
 
 # Every app, all pages (links.pages.next is set while there are more).
@@ -113,6 +150,8 @@ digitalocean_apps() {
 # An app by name (spec.name), id, live domain or one of its domains.
 digitalocean_id_of() {
   local n="$1" id
+  # An app id (a UUID) needs no listing of every app; a wrong one fails at the next call.
+  if [[ "$n" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then echo "$n"; return 0; fi
   id="$(digitalocean_apps | jq -r --arg n "$n" '.[] | select(.id==$n or .spec.name==$n
     or .live_domain==$n or ([.spec.domains[]?.domain] | index($n))) | .id' | head -n 1)" || return 1
   [ -n "$id" ] || { echo "No DigitalOcean app named \"$n\". See: deploys digitalocean list" >&2; return 1; }
@@ -188,19 +227,40 @@ digitalocean_ready() {
 
 digitalocean_has() { digitalocean_id_of "$1" 2>/dev/null; }
 
+# One app with its newest deployment as {..app, _d:{last} | {fetchError}}, for digitalocean_json.
+digitalocean_app_last() {
+  local a="$1" id d
+  id="$(echo "$a" | jq -r '.id')"
+  if d="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1" 2>&1)"; then
+    # A 200 that is not JSON (a proxy's page) is this app's error, not an empty --argjson.
+    d="$(echo "$d" | jq -c 'if type == "object" then {last:(.deployments[0] // null)} else error("no list") end' 2>/dev/null)" \
+      || d="$(jq -nc '{fetchError:"DigitalOcean answered without a deployment list"}')"
+  else
+    d="$(jq -nc --arg e "$d" '{fetchError:$e}')"
+  fi
+  jq -nc --argjson a "$a" --argjson d "$d" '$a + {_d:$d}'
+}
+
 digitalocean_json() {
-  local apps out="[]" a id d
-  apps="$(digitalocean_apps)" || digitalocean_die "Could not list DigitalOcean apps"
-  # The app list has the active and the in-progress deployment, not a failed one: ask for the newest.
+  local apps out a tmpd n=0 _DIGITALOCEAN_KEY pids=()
+  apps="$(digitalocean_apps)" || die "Could not list DigitalOcean apps"
+  # The token once, for the reads below (they run eight at a time).
+  _DIGITALOCEAN_KEY="$(digitalocean_key)" || die "Could not list DigitalOcean apps"
+  # The app list has the active and the in-progress deployment, not a failed one: ask for the
+  # newest, eight apps at a time (one after another took seconds for many apps), a file each.
+  tmpd="$(mktemp -d)"
   while IFS= read -r a; do
-    id="$(echo "$a" | jq -r '.id')"
-    if d="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1" 2>&1)"; then
-      d="$(echo "$d" | jq -c '{last:(.deployments[0] // null)}')"
-    else
-      d="$(jq -nc --arg e "$d" '{fetchError:$e}')"
-    fi
-    out="$(jq -c --argjson a "$a" --argjson d "$d" '. + [$a + {_d:$d}]' <<<"$out")"
+    [ -n "$a" ] || continue
+    n=$((n + 1))
+    ( digitalocean_app_last "$a" > "$tmpd/$n.json" ) &
+    pids+=("$!")
+    # Only these jobs are waited for (not others of the calling shell).
+    [ $((n % 8)) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
   done < <(echo "$apps" | jq -c '.[]')
+  # ${pids[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
+  wait ${pids[@]+"${pids[@]}"}
+  out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s '.')" || out="[]"
+  rm -rf "$tmpd"
   echo "$out" | jq "$DIGITALOCEAN_JQ"'
     [ .[] | (.spec // {}) as $s
       | ([$s | components[] | git_of] | .[0]) as $git
@@ -210,8 +270,12 @@ digitalocean_json() {
       | {name:($s.name // .id), id,
          auto:($s | auto_on),
          paused:$paused,
-         deployable:((($s | components | length) > 0) and ($paused | not)),
-         repo:($git.repo // null), ref:($git.branch // null),
+         deployable:(([$s | components[] | select(git_of or (.image | type) == "object")] | length > 0) and ($paused | not)),
+         # GitHub: owner/name; GitLab and Bitbucket with their host, so heads are asked there.
+         repo:(([$s | components[] | first(gits[] as $g | select((.[$g] | type) == "object") | $g)] | .[0]) as $h
+               | ($git.repo // null) | if . == null then null elif $h == "gitlab" then "gitlab.com/\(.)"
+                 elif $h == "bitbucket" then "bitbucket.org/\(.)" else . end),
+         ref:($git.branch // null),
          domain:(.live_domain // ((url_of // "") | sub("^https?://";"") | sub("/.*$";"") | if . == "" then null else . end)),
          url:url_of, dashboardUrl:"'"$DIGITALOCEAN_DASHBOARD"'/\(.id)",
          lastAt:($new.created_at | t), lastState:($new.phase // null),
@@ -224,24 +288,41 @@ digitalocean_json() {
 # digitalocean_off <app>: deploy_on_push=false on every component. GET the spec, change only the
 # flags, PUT the whole spec back. The spec before the change goes to do-specs/<id>.json.
 digitalocean_off() {
+  # --all (docs/PROVIDERS.md): every app, one by one. One that fails does not stop the rest;
+  # they are counted and the exit code says so. The list first, on its own: a failed read stops here.
+  if [ "${1:-}" = --all ]; then
+    local _names _n _bad=0
+    _names="$(digitalocean_apps | jq -r '.[] | .id // empty')" || die "DigitalOcean: could not list the apps"
+    while IFS= read -r _n; do
+      [ -n "$_n" ] || continue
+      ( digitalocean_off_one "$_n" ) || _bad=$((_bad + 1))
+    done <<< "$_names"
+    [ "$_bad" = 0 ] || die "$_bad DigitalOcean apps could not be switched off (see above); the others are done"
+    echo "Done. No DigitalOcean app deploys on push any more."
+    return 0
+  fi
+  digitalocean_off_one "$@"
+}
+
+digitalocean_off_one() {
   local app="$1" id info spec new back res left
-  id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
-  info="$(digitalocean_app "$id")" || digitalocean_die "DigitalOcean: could not read $app"
+  id="$(digitalocean_id_of "$app")" || die "DigitalOcean app $app not found"
+  info="$(digitalocean_app "$id")" || die "DigitalOcean: could not read $app"
   spec="$(echo "$info" | jq -c '.app.spec // empty')"
-  [ -n "$spec" ] || digitalocean_die "DigitalOcean: $app came back without a spec"
+  [ -n "$spec" ] || die "DigitalOcean: $app came back without a spec"
   if [ "$(echo "$spec" | jq "$DIGITALOCEAN_JQ"'auto_on')" != true ]; then
     echo "DigitalOcean: $app already does not deploy on push. Deploy with: deploys digitalocean deploy $app"
     return 0
   fi
   back="$(digitalocean_specs_dir)/$id.json"
   (umask 077; echo "$spec" | jq . > "$back.tmp") && mv "$back.tmp" "$back" && chmod 600 "$back" \
-    || digitalocean_die "DigitalOcean: could not save the spec of $app; nothing was changed"
+    || die "DigitalOcean: could not save the spec of $app; nothing was changed"
   new="$(echo "$spec" | jq -c "$DIGITALOCEAN_JQ"'push_off')"
   # update_all_source_versions stays false: the PUT must not pull a newer commit.
   res="$(digitalocean_call PUT "/v2/apps/$id" "$(jq -nc --argjson s "$new" '{spec:$s, update_all_source_versions:false}')")" \
-    || digitalocean_die "DigitalOcean: could not update the spec of $app (the old one is kept in $back)"
+    || die "DigitalOcean: could not update the spec of $app (the old one is kept in $back)"
   left="$(echo "$res" | jq -r "$DIGITALOCEAN_JQ"'.app.spec // {} | [components[] | select(push_flag == true) | .name] | join(", ")')"
-  [ -z "$left" ] || digitalocean_die "DigitalOcean: $app still deploys on push for: $left"
+  [ -z "$left" ] || die "DigitalOcean: $app still deploys on push for: $left"
   echo "DigitalOcean: $app no longer deploys on push (the old spec is in $back). Deploy with: deploys digitalocean deploy $app"
 }
 
@@ -249,15 +330,15 @@ digitalocean_off() {
 # spec. Only the flags: other changes made since `off` (env, sizes, domains) are kept.
 digitalocean_on() {
   local app="$1" id info spec back new
-  id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
+  id="$(digitalocean_id_of "$app")" || die "DigitalOcean app $app not found"
   back="$(digitalocean_specs_dir)/$id.json"
-  [ -s "$back" ] || digitalocean_die "DigitalOcean: no saved spec for $app ($back). Turn it on in the dashboard: $DIGITALOCEAN_DASHBOARD/$id/settings"
-  info="$(digitalocean_app "$id")" || digitalocean_die "DigitalOcean: could not read $app"
+  [ -s "$back" ] || die "DigitalOcean: no saved spec for $app ($back). Turn it on in the dashboard: $DIGITALOCEAN_DASHBOARD/$id/settings"
+  info="$(digitalocean_app "$id")" || die "DigitalOcean: could not read $app"
   spec="$(echo "$info" | jq -c '.app.spec')"
   new="$(echo "$spec" | jq -c --slurpfile old "$back" "$DIGITALOCEAN_JQ"'push_from($old[0])')"
   if [ "$new" = "$spec" ]; then echo "DigitalOcean: $app already has the saved deploy-on-push settings"; return 0; fi
   digitalocean_call PUT "/v2/apps/$id" "$(jq -nc --argjson s "$new" '{spec:$s, update_all_source_versions:false}')" >/dev/null \
-    || digitalocean_die "DigitalOcean: could not update the spec of $app"
+    || die "DigitalOcean: could not update the spec of $app"
   echo "DigitalOcean: $app deploys on push again, as before"
 }
 
@@ -267,20 +348,20 @@ digitalocean_deploy_json() {
   shift || true
   while [ $# -gt 0 ]; do
     case "$1" in
-      --preview) digitalocean_die "DigitalOcean App Platform cannot deploy a preview (it has no preview deploys)" ;;
-      --sha) digitalocean_die "DigitalOcean App Platform cannot deploy a given commit: a deployment always builds the newest commit of the branch" ;;
+      --preview) die "DigitalOcean App Platform cannot deploy a preview (it has no preview deploys)" ;;
+      --sha) die "DigitalOcean App Platform cannot deploy a given commit: a deployment always builds the newest commit of the branch" ;;
       "") ;;
-      *) digitalocean_die "Unknown option $1. Usage: deploy-json <app>" ;;
+      *) die "Unknown option $1. Usage: deploy-json <app>" ;;
     esac; shift
   done
-  id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
-  info="$(digitalocean_app "$id")" || digitalocean_die "DigitalOcean: could not read $app"
+  id="$(digitalocean_id_of "$app")" || die "DigitalOcean app $app not found"
+  info="$(digitalocean_app "$id")" || die "DigitalOcean: could not read $app"
   [ "$(echo "$info" | jq '.app.pinned_deployment != null')" = true ] \
-    && digitalocean_die "DigitalOcean: $app is pinned to a rollback. Commit or revert it in the dashboard first: $DIGITALOCEAN_DASHBOARD/$id"
+    && die "DigitalOcean: $app is pinned to a rollback. Commit or revert it in the dashboard first: $DIGITALOCEAN_DASHBOARD/$id"
   if declare -F start_lock >/dev/null; then lock="$(start_lock "digitalocean-$id")" || exit 1; fi
   out="$(digitalocean_call POST "/v2/apps/$id/deployments" '{"force_build":false}')" \
-    || { rm -f "$lock"; digitalocean_die "DigitalOcean: could not start a deployment of $app"; }
-  echo "$out" | jq -e '.deployment.id' >/dev/null 2>&1 || { rm -f "$lock"; digitalocean_die "DigitalOcean: $(echo "$out" | head -c 400)"; }
+    || { rm -f "$lock"; die "DigitalOcean: could not start a deployment of $app"; }
+  echo "$out" | jq -e '.deployment.id' >/dev/null 2>&1 || { rm -f "$lock"; die "DigitalOcean: $(echo "$out" | head -c 400)"; }
   echo "$out" | jq --argjson a "$(echo "$info" | jq -c .app)" "$DIGITALOCEAN_JQ"'
     .deployment | {id, url:($a | url_of), state:(.phase // null), phase:(.phase | phase)}'
 }
@@ -288,16 +369,16 @@ digitalocean_deploy_json() {
 # digitalocean_status_json <app> <deployment-id> — App Platform needs the app to find a deployment.
 digitalocean_status_json() {
   local app="${1:-}" d="${2:-}" id out
-  [ -n "$d" ] || digitalocean_die "DigitalOcean: status needs the app and the deployment id"
-  id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
-  out="$(digitalocean_call GET "/v2/apps/$id/deployments/$d")" || digitalocean_die "DigitalOcean: could not read deployment $d"
+  [ -n "$d" ] || die "DigitalOcean: status needs the app and the deployment id"
+  id="$(digitalocean_id_of "$app")" || die "DigitalOcean app $app not found"
+  out="$(digitalocean_call GET "/v2/apps/$id/deployments/$d")" || die "DigitalOcean: could not read deployment $d"
   echo "$out" | jq --arg app "$id" "$DIGITALOCEAN_JQ"'.deployment | deploy_out(null; $app)'
 }
 
 digitalocean_latest_json() {
   local id out
-  id="$(digitalocean_id_of "$1")" || digitalocean_die "DigitalOcean app $1 not found"
-  out="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1")" || digitalocean_die "DigitalOcean: could not read the deployments of $1"
+  id="$(digitalocean_id_of "$1")" || die "DigitalOcean app $1 not found"
+  out="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1")" || die "DigitalOcean: could not read the deployments of $1"
   echo "$out" | jq --arg app "$id" "$DIGITALOCEAN_JQ"'.deployments[0] // null | if . then deploy_out(null; $app) else null end'
 }
 
@@ -312,10 +393,10 @@ digitalocean_cli_latest() { digitalocean_latest_json "$@"; }
 # digitalocean_cancel <app> <deployment-id>
 digitalocean_cancel() {
   local app="${1:-}" d="${2:-}" id
-  [ -n "$d" ] || digitalocean_die "DigitalOcean: cancel needs the app and the deployment id"
-  id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
-  digitalocean_call POST "/v2/apps/$id/deployments/$d/cancel" >/dev/null || digitalocean_die "DigitalOcean: could not cancel $d"
-  echo "DigitalOcean: deployment $d canceled"
+  [ -n "$d" ] || die "DigitalOcean: cancel needs the app and the deployment id"
+  id="$(digitalocean_id_of "$app")" || die "DigitalOcean app $app not found"
+  digitalocean_call POST "/v2/apps/$id/deployments/$d/cancel" >/dev/null || die "DigitalOcean: could not cancel $d"
+  jq -nc --arg d "$d" '{id:$d, state:"CANCELED", phase:"canceled", message:"DigitalOcean: deployment \($d) canceled"}'
 }
 
 # digitalocean_rollback <app> [deployment-id]: back to the deployment that was live before the
@@ -323,11 +404,11 @@ digitalocean_cancel() {
 # rollback is committed at once (skip_pin): a pinned app takes no new deployments, ours included.
 digitalocean_rollback() {
   local app="$1" want="${2:-}" id info live list cands c v target=""
-  id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
+  id="$(digitalocean_id_of "$app")" || die "DigitalOcean app $app not found"
   if [ -n "$want" ]; then cands="$want"; else
-    info="$(digitalocean_app "$id")" || digitalocean_die "DigitalOcean: could not read $app"
+    info="$(digitalocean_app "$id")" || die "DigitalOcean: could not read $app"
     live="$(echo "$info" | jq -r '.app.active_deployment.id // empty')"
-    list="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=20")" || digitalocean_die "DigitalOcean: could not read the deployments of $app"
+    list="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=20")" || die "DigitalOcean: could not read the deployments of $app"
     # Newest first. Only deployments older than the live one, and only ones that went live.
     cands="$(echo "$list" | jq -r --arg live "$live" '.deployments // [] | (map(.id) | index($live)) as $i
       | (if $i == null then . else .[($i + 1):] end)
@@ -340,38 +421,47 @@ digitalocean_rollback() {
       echo "$v" | jq -r '.warnings[]? | "DigitalOcean warns: \(.message)"' >&2
       break
     fi
-    [ -n "$want" ] && digitalocean_die "DigitalOcean: cannot roll $app back to $c: $(echo "$v" | jq -r '.error.message // "not valid"')"
+    [ -n "$want" ] && die "DigitalOcean: cannot roll $app back to $c: $(echo "$v" | jq -r '.error.message // "not valid"')"
   done
-  [ -n "$target" ] || digitalocean_die "DigitalOcean: $app has no earlier deployment that can be rolled back to"
-  digitalocean_call POST "/v2/apps/$id/rollback" "$(jq -nc --arg d "$target" '{deployment_id:$d, skip_pin:true}')" >/dev/null \
-    || digitalocean_die "DigitalOcean: could not roll back to $target"
-  echo "DigitalOcean: $app is rolling back to deployment $target"
+  [ -n "$target" ] || die "DigitalOcean: $app has no earlier deployment that can be rolled back to"
+  local out
+  out="$(digitalocean_call POST "/v2/apps/$id/rollback" "$(jq -nc --arg d "$target" '{deployment_id:$d, skip_pin:true}')")" \
+    || die "DigitalOcean: could not roll back to $target"
+  # The rollback is a deployment of its own when App Platform names one; else the target.
+  printf '%s' "$out" | jq -c --arg t "$target" --arg a "$app" "$DIGITALOCEAN_JQ"'(try .deployment catch null) as $d
+    | {id:($d.id // $t), state:($d.phase // "PENDING_DEPLOY"), phase:(($d.phase // "PENDING_DEPLOY") | phase), target:$t,
+       message:"DigitalOcean: \($a) is rolling back to deployment \($t)"}' 2>/dev/null \
+    || jq -nc --arg t "$target" --arg a "$app" '{id:$t, state:"PENDING_DEPLOY", phase:"queued", target:$t, message:"DigitalOcean: \($a) is rolling back to deployment \($t)"}'
 }
 
 # digitalocean_logs <app> [--id <deployment>] [--component <name>]: the build log of each
 # component, read from the historic URLs App Platform returns (pre-signed, no token sent there).
 digitalocean_logs() {
-  local app="$1" d="" only="" id dep comps c res urls u
+  local app="$1" d="" only="" n="" id dep comps c res urls u
   shift
+  # `deploys logs` calls <app> <lines> <deployId>, positional; the flags work too.
   while [ $# -gt 0 ]; do case "$1" in
     --id) d="${2:-}"; shift 2 ;;
     --component) only="${2:-}"; shift 2 ;;
-    *) shift ;;
+    -*) die "Unknown option $1. Usage: digitalocean_logs <app> [lines] [deployId | --id <deployment>] [--component <name>]" ;;
+    '') shift ;;
+    *[!0-9]*) d="$1"; shift ;;
+    *) n="$1"; shift ;;
   esac; done
-  id="$(digitalocean_id_of "$app")" || digitalocean_die "DigitalOcean app $app not found"
+  id="$(digitalocean_id_of "$app")" || die "DigitalOcean app $app not found"
   if [ -n "$d" ]; then
-    dep="$(digitalocean_call GET "/v2/apps/$id/deployments/$d")" || digitalocean_die "DigitalOcean: could not read deployment $d"
+    dep="$(digitalocean_call GET "/v2/apps/$id/deployments/$d")" || die "DigitalOcean: could not read deployment $d"
     dep="$(echo "$dep" | jq -c '.deployment')"
   else
-    dep="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1")" || digitalocean_die "DigitalOcean: could not read the deployments of $app"
+    dep="$(digitalocean_call GET "/v2/apps/$id/deployments?page=1&per_page=1")" || die "DigitalOcean: could not read the deployments of $app"
     dep="$(echo "$dep" | jq -c '.deployments[0] // empty')"
   fi
-  [ -n "$dep" ] || digitalocean_die "DigitalOcean: $app has no deployments yet"
+  [ -n "$dep" ] || die "DigitalOcean: $app has no deployments yet"
   d="$(echo "$dep" | jq -r '.id')"
   # Components built from source; databases have no build log.
   comps="$(echo "$dep" | jq -r "$DIGITALOCEAN_JQ"'.spec // {} | components[] | .name')"
   [ -n "$comps" ] || comps="$(digitalocean_app "$id" | jq -r "$DIGITALOCEAN_JQ"'.app.spec // {} | components[] | .name')"
-  [ -n "$comps" ] || digitalocean_die "DigitalOcean: $app has no components with a build log"
+  [ -n "$comps" ] || die "DigitalOcean: $app has no components with a build log"
   for c in $comps; do
     [ -z "$only" ] || [ "$c" = "$only" ] || continue
     res="$(digitalocean_call GET "/v2/apps/$id/deployments/$d/components/$c/logs?type=BUILD&follow=false")" || continue
@@ -381,16 +471,20 @@ digitalocean_logs() {
       echo "(no build log archived yet; the build may still be running: $DIGITALOCEAN_DASHBOARD/$id/deployments/$d)"
       continue
     fi
-    for u in $urls; do digitalocean_fetch "$u" || echo "(could not read $c's log: $DIGITALOCEAN_DASHBOARD/$id/deployments/$d)"; done
+    # The end of each log, like the other providers: a build log can be megabytes.
+    for u in $urls; do
+      if [ -n "$n" ]; then digitalocean_fetch "$u" | tail -n "$n" || echo "(could not read $c's log: $DIGITALOCEAN_DASHBOARD/$id/deployments/$d)"
+      else digitalocean_fetch "$u" || echo "(could not read $c's log: $DIGITALOCEAN_DASHBOARD/$id/deployments/$d)"; fi
+    done
   done
 }
 
 # digitalocean_url <app> [--dashboard]
 digitalocean_url() {
   local id info
-  id="$(digitalocean_id_of "$1")" || digitalocean_die "DigitalOcean app $1 not found"
+  id="$(digitalocean_id_of "$1")" || die "DigitalOcean app $1 not found"
   if [ "${2:-}" = --dashboard ]; then echo "$DIGITALOCEAN_DASHBOARD/$id"; return 0; fi
-  info="$(digitalocean_app "$id")" || digitalocean_die "DigitalOcean: could not read $1"
+  info="$(digitalocean_app "$id")" || die "DigitalOcean: could not read $1"
   echo "$info" | jq -r "$DIGITALOCEAN_JQ"'.app | url_of // empty'
 }
 
@@ -400,27 +494,29 @@ digitalocean_set_key() {
   IFS= read -r key || true
   # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
   key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
-  [ -n "$key" ] || digitalocean_die "Pipe the token in: pbpaste | deploys digitalocean set-key"
-  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) digitalocean_die "That does not look like a DigitalOcean token";; esac
+  [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys digitalocean set-key"
+  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) die "That does not look like a DigitalOcean token";; esac
   ( DIGITALOCEAN_TOKEN="$key"; key_of() { printf '%s' "$DIGITALOCEAN_TOKEN"; }; digitalocean_call GET /v2/account >/dev/null ) \
-    || digitalocean_die "DigitalOcean did not accept that token; nothing was saved"
+    || die "DigitalOcean did not accept that token; nothing was saved"
   # On stdin to `security -i`, so the token is never an argument anyone can see.
   printf 'add-generic-password -U -a %s -s %s -w %s\n' "${USER:-$(id -un)}" "$DIGITALOCEAN_KEYCHAIN" "$key" | security -i >/dev/null \
-    || digitalocean_die "The token works, but could not be saved in the keychain"
+    || die "The token works, but could not be saved in the keychain"
   echo "DigitalOcean token saved and working."
 }
 
 digitalocean_doctor() {
-  local src="missing" ok=false err="" n=null specs
+  local src="missing" ok=false err="" n=null specs h rl=null
   if [ -n "${DIGITALOCEAN_TOKEN:-}" ]; then src="env"
   elif security find-generic-password -a "${USER:-$(id -un)}" -s "$DIGITALOCEAN_KEYCHAIN" >/dev/null 2>&1; then src="keychain"; fi
   if [ "$src" != missing ]; then
-    if err="$(digitalocean_call GET /v2/account 2>&1 >/dev/null)"; then ok=true; err=""
+    h="$(mktemp)"
+    if err="$(DIGITALOCEAN_HEADERS="$h" digitalocean_call GET /v2/account 2>&1 >/dev/null)"; then ok=true; err=""
       n="$(digitalocean_apps 2>/dev/null | jq 'length' 2>/dev/null)" || n=null
     fi
+    rl="$(digitalocean_ratelimit "$h")"; rm -f "$h"
   fi
   specs="$(find "$(digitalocean_specs_dir)" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')"
-  jq -n --arg src "$src" --argjson ok "$ok" --arg err "$err" --argjson n "${n:-null}" --argjson s "${specs:-0}" \
+  jq -n --arg src "$src" --argjson ok "$ok" --arg err "$err" --argjson n "${n:-null}" --argjson s "${specs:-0}" --argjson rl "${rl:-null}" \
     '{provider:"digitalocean", key:$src, tokenOk:$ok, error:(if $err == "" then null else $err end),
-      apps:$n, savedSpecs:$s}'
+      apps:$n, savedSpecs:$s, expiresAt:null, rateLimit:$rl}'
 }
