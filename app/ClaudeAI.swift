@@ -15,6 +15,8 @@ struct ClaudeAIStatus: Decodable {
     let cap: Int
     let used: Int
     let month: String
+    /// Newer scripts: ANTHROPIC_API_KEY from the environment is used while a key waits in the keychain.
+    var envHidesKeychain: Bool? = nil
 }
 
 struct ClaudeAnswer: Decodable {
@@ -27,6 +29,8 @@ struct ClaudeAnswer: Decodable {
 
 enum ClaudeAI {
     static let enabledKey = "claudeInApp"
+    /// Posted when Settings saved or forgot the key, so "Ask Claude" shows up without a restart.
+    static let keyChanged = Notification.Name("claudeAIKeyChanged")
     static var enabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
 
     static func status() async -> ClaudeAIStatus? {
@@ -53,23 +57,52 @@ enum ClaudeAI {
         }
     }
 
+    /// Answers of the last 30 minutes, so switching the language back or opening the sheet again
+    /// costs no tokens. Keyed by question (with its language) and project.
+    private static let answers = AnswerCache()
+    final class AnswerCache: @unchecked Sendable {
+        private let lock = NSLock(); private var kept: [String: (at: Date, answer: ClaudeAnswer)] = [:]
+        func get(_ k: String) -> ClaudeAnswer? {
+            lock.lock(); defer { lock.unlock() }
+            guard let e = kept[k], Date().timeIntervalSince(e.at) < 1800 else { return nil }
+            return e.answer
+        }
+        func set(_ k: String, _ a: ClaudeAnswer) { lock.lock(); kept[k] = (Date(), a); lock.unlock() }
+    }
+
+    /// Always asks anew: without the build it is about, a kept answer could be about another one.
     static func ask(_ what: Ask, project: String) async throws -> ClaudeAnswer {
+        try await askNow(what, project: project)
+    }
+    /// Kept per question, project and `version` (the commit of the failed build, or the branch
+    /// head for release notes): asking again about the same thing costs no tokens.
+    static func ask(_ what: Ask, project: String, version: String) async throws -> ClaudeAnswer {
+        let key = what.id + "|" + project + "@" + version
+        if let a = answers.get(key) { return a }
+        let a = try await askNow(what, project: project)
+        answers.set(key, a)
+        return a
+    }
+
+    private static func askNow(_ what: Ask, project: String) async throws -> ClaudeAnswer {
         try await Tool.json(what.args(project: project), as: ClaudeAnswer.self, timeout: 180)
     }
 
+    /// "claude-opus-5-5" → "Claude Opus 5.5", also for models this app does not know yet
+    /// ("claude-sonnet-6-0-20270101" → "Claude Sonnet 6.0"). Anything else stays as it came.
     static func modelName(_ id: String) -> String {
-        switch id {
-        case "claude-opus-5-5": return "Claude Opus 5.5"
-        case "claude-sonnet-5-5": return "Claude Sonnet 5.5"
-        case "claude-haiku-5-5": return "Claude Haiku 5.5"
-        default: return id
-        }
+        let parts = id.split(separator: "-").map(String.init)
+        guard parts.count >= 3, parts[0] == "claude", parts[1].allSatisfy(\.isLetter) else { return id }
+        let nums = parts.dropFirst(2).prefix { $0.count <= 2 && $0.allSatisfy(\.isNumber) }
+        guard !nums.isEmpty else { return id }
+        return "Claude " + parts[1].prefix(1).uppercased() + parts[1].dropFirst() + " " + nums.joined(separator: ".")
     }
 
     /// A build that ended in an error on the platform, or a deploy started here that failed.
+    /// Broader than `Item.lastFailed` (what autofix can fix): runtime failures can be explained too.
     static func isFailed(_ item: Item) -> Bool {
         if case .failed = item.state { return true }
-        return ["ERROR", "build_failed", "update_failed", "pre_deploy_failed"].contains(item.lastState ?? "")
+        return item.anyFailure
     }
 }
 
@@ -101,10 +134,15 @@ struct ClaudeAISettings: View {
                     Button(L("Save", "Speichern")) { Task { await saveKey() } }
                         .disabled(!key.hasPrefix("sk-ant-") || busy)
                     Image(systemName: status?.key == true ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(status?.key == true ? .green : .secondary)
+                        .foregroundStyle(status?.key == true ? Color.good : .secondary)
                         .accessibilityLabel(status?.key == true ? L("Key saved", "Schlüssel gespeichert") : L("No key", "Kein Schlüssel"))
                 }
-                if status?.source == "env" {
+                if status?.envHidesKeychain == true {
+                    // Often another account's key (Claude Code's): its credit is spent, not this one's.
+                    Text(L("ANTHROPIC_API_KEY in the environment is used, not the key saved here. Set DEPLOYS_ANTHROPIC_API_KEY or unset it to use the saved key.",
+                           "ANTHROPIC_API_KEY aus der Umgebung wird benutzt, nicht der hier gespeicherte Schlüssel. Setze DEPLOYS_ANTHROPIC_API_KEY oder entferne sie, um den gespeicherten zu nutzen."))
+                        .font(.caption).foregroundStyle(Color.warningText).fixedSize(horizontal: false, vertical: true)
+                } else if status?.source == "env" {
                     Text(L("ANTHROPIC_API_KEY is set in the environment and is used instead.", "ANTHROPIC_API_KEY ist in der Umgebung gesetzt und wird stattdessen benutzt."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -137,7 +175,8 @@ struct ClaudeAISettings: View {
                     }
                 }
                 if let message {
-                    Text(Demo.scrub(message, items: items)).font(.caption).textSelection(.enabled).foregroundStyle(failed ? .red : .secondary)
+                    if failed { ErrorText(Demo.scrub(message, items: items)) }
+                    else { Text(Demo.scrub(message, items: items)).font(.caption).textSelection(.enabled).foregroundStyle(.secondary) }
                 }
             }
         } header: {
@@ -146,7 +185,11 @@ struct ClaudeAISettings: View {
         .task(id: enabled) { if enabled { await reload() } }
     }
 
-    private func reload() async { status = await ClaudeAI.status() }
+    private func reload() async {
+        let had = status?.key
+        status = await ClaudeAI.status()
+        if status?.key != had { NotificationCenter.default.post(name: ClaudeAI.keyChanged, object: nil) }
+    }
 
     private func saveKey() async {
         busy = true; defer { busy = false }
@@ -172,6 +215,54 @@ struct ClaudeAISettings: View {
     }
 }
 
+/// Claude's Markdown, shown as such: paragraphs and list lines with bold, italics, links and
+/// `code`, and fenced code blocks in a monospaced box.
+struct MarkdownText: View {
+    let text: String
+
+    private struct Block: Identifiable { let id: Int; let code: Bool; let text: String }
+
+    private var blocks: [Block] {
+        var out: [Block] = [], buf: [String] = [], inCode = false
+        func flush() {
+            let t = buf.joined(separator: "\n")
+            if !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { out.append(Block(id: out.count, code: inCode, text: t)) }
+            buf = []
+        }
+        for line in text.components(separatedBy: "\n") {
+            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") { flush(); inCode.toggle(); continue }
+            buf.append(line)
+        }
+        flush()
+        return out
+    }
+
+    private func inline(_ s: String) -> AttributedString {
+        // Headings and bullets read as plain lines; the rest is Markdown inside a line.
+        let lines = s.components(separatedBy: "\n").map { l -> String in
+            var t = l
+            while t.hasPrefix("#") { t.removeFirst() }
+            if t.hasPrefix("- ") || t.hasPrefix("* ") { t = "• " + t.dropFirst(2) }
+            return t == l ? l : t.trimmingCharacters(in: .whitespaces)
+        }.joined(separator: "\n")
+        return (try? AttributedString(markdown: lines, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(blocks) { b in
+                if b.code {
+                    Text(b.text).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                        .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
+                } else {
+                    Text(inline(b.text)).textSelection(.enabled)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - "Ask Claude" in the detail sheet and the build log
 
 /// One menu, shown only when Claude in the app is on and a key is there. The answer opens in a sheet.
@@ -185,21 +276,35 @@ struct ClaudeMenu: View {
     @State private var asking: ClaudeAI.Ask?
 
     var body: some View {
+        // Asking (your API key, an answer here) and fixing (Autofix, a pull request) in one menu,
+        // each item saying what it does.
+        let canAsk = enabled && hasKey && (waiting || ClaudeAI.isFailed(item))
+        let canFix = store.canFixWithClaude(item)
         Group {
-            if enabled && hasKey && (waiting || ClaudeAI.isFailed(item)) {
+            if canAsk || canFix {
                 Menu {
-                    if ClaudeAI.isFailed(item) {
-                        Button(ClaudeAI.Ask.explain.title) { asking = .explain }
+                    if canAsk {
+                        if ClaudeAI.isFailed(item) {
+                            Button(ClaudeAI.Ask.explain.title + L(" – answer here", " – Antwort hier")) { asking = .explain }
+                        }
+                        if waiting {
+                            Button(ClaudeAI.Ask.notes(isGerman ? "de" : "en").title) { asking = .notes(isGerman ? "de" : "en") }
+                            Button(ClaudeAI.Ask.ship.title) { asking = .ship }
+                        }
                     }
-                    if waiting {
-                        Button(ClaudeAI.Ask.notes(isGerman ? "de" : "en").title) { asking = .notes(isGerman ? "de" : "en") }
-                        Button(ClaudeAI.Ask.ship.title) { asking = .ship }
+                    if canFix {
+                        if canAsk { Divider() }
+                        Button(L("Fix with Claude – opens a pull request", "Mit Claude beheben – öffnet einen Pull Request")) {
+                            Task { await store.fixWithClaude(item) }
+                        }
+                        .disabled(store.autofixBusy(item))
                     }
                 } label: {
-                    Label(L("Ask Claude", "Claude fragen"), systemImage: "sparkles")
+                    Label("Claude", systemImage: "sparkles")
                 }
                 .fixedSize()
-                .help(L("Sends masked text to Anthropic with your own key", "Sendet maskierten Text mit deinem eigenen Schlüssel an Anthropic"))
+                .help(L("Ask Claude (masked text, your own key) or hand the failed build to your Autofix routine",
+                        "Claude fragen (maskierter Text, eigener Schlüssel) oder den fehlgeschlagenen Build an deine Autofix-Routine geben"))
                 .sheet(item: $asking) { a in
                     // "Fix with Claude" as in the row: the same caps, setup offer and toast.
                     ClaudeAnswerSheet(item: item, ask: a,
@@ -208,6 +313,13 @@ struct ClaudeMenu: View {
             }
         }
         .task(id: enabled) { if enabled { hasKey = await ClaudeAI.status()?.key ?? false } }
+        // A key saved in Settings, or set in Terminal while the app was in the background.
+        .onReceive(NotificationCenter.default.publisher(for: ClaudeAI.keyChanged)) { _ in
+            Task { if enabled { hasKey = await ClaudeAI.status()?.key ?? false } }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { if enabled && !hasKey { hasKey = await ClaudeAI.status()?.key ?? false } }
+        }
     }
 }
 
@@ -217,6 +329,7 @@ struct ClaudeAnswerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var answer: ClaudeAnswer?
     @State private var error: String?
+    @State private var attempt = 0
     /// Hands this failed build to Autofix (`Store.fixWithClaude`); nil when Autofix cannot take it.
     let onAutofix: (() -> Void)?
     /// `answer` is given only by tests and screenshots.
@@ -244,11 +357,15 @@ struct ClaudeAnswerSheet: View {
             }
             Group {
                 if let answer {
+                    // Markdown as it is meant (lists, bold, code); "Copy" still copies the raw text.
                     ScrollView {
-                        Text(answer.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        MarkdownText(text: Demo.scrub(answer.text, items: [item])).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 } else if let error {
-                    Text(error).foregroundStyle(.red).textSelection(.enabled)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ErrorText(Demo.scrub(error, items: [item]))
+                        Button(L("Try again", "Nochmal versuchen")) { attempt += 1 }
+                    }
                 } else {
                     ProgressView(L("Asking Claude …", "Frage Claude …")).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -276,10 +393,17 @@ struct ClaudeAnswerSheet: View {
         }
         .padding(16)
         .frame(minWidth: 460, idealWidth: 540, minHeight: 260, idealHeight: 340)
-        .task(id: ask.id) {
+        .task(id: "\(ask.id)|\(attempt)") {
             if preset { return }
             answer = nil; error = nil
-            do { answer = try await ClaudeAI.ask(ask, project: item.id) } catch { self.error = error.localizedDescription }
+            // The same question about the same build is answered from the cache (no tokens);
+            // "Try again" asks anew.
+            let version = item.latestSha ?? item.headSha ?? ""
+            do {
+                answer = attempt == 0 && !version.isEmpty
+                    ? try await ClaudeAI.ask(ask, project: item.id, version: version)
+                    : try await ClaudeAI.ask(ask, project: item.id)
+            } catch { self.error = error.localizedDescription }
         }
     }
 }

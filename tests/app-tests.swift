@@ -34,6 +34,47 @@ expect("rewritten branch", Row.waitingText(item(changed: true, rewritten: true))
 // Deploy states in words, not raw API values.
 expect("state build_failed", Row.stateText("build_failed"), L("build failed", "Build fehlgeschlagen"))
 expect("state ERROR", Row.stateText("ERROR"), L("failed", "fehlgeschlagen"))
+expect("state trigger failed", Row.stateText("trigger failed (HTTP 500)"), L("trigger failed", "Auslösen fehlgeschlagen") + " (HTTP 500)")
+expect("name check: case and spaces aside", "\(NameCheck.matches(" Shop-API ", "shop-api")) \(NameCheck.matches("", "")) \(NameCheck.matches("shop", "shop-api"))", "true false false")
+do {
+    let d = try! JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"githubCli":true,"githubLoggedIn":false,"renderKey":false,"perl":true,"curl":true}"#.utf8))
+    let c = Health.checks(d, budget: Store.Budget(remaining: 50, limit: 5000, reset: 600), on: ["render"], now: Date(timeIntervalSince1970: 0))
+    expect("health: what is wrong", c.filter { !$0.ok }.map(\.id), ["ghlogin", "ghbudget", "renderkey"])
+    expect("health: vercel only when on", c.contains { $0.group == "Vercel" }, false)
+    expect("health: no doctor", Health.checks(nil, budget: nil, on: []).map(\.id), ["script"])
+}
+expect("first start: once, with something to turn off", "\(FirstStart.due(done: false, autoOn: 2)) \(FirstStart.due(done: true, autoOn: 2)) \(FirstStart.due(done: false, autoOn: 0))", "true false false")
+do {
+    let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+    func je(_ m: Double, _ n: String, _ r: String, _ s: Double? = nil) -> JournalEntry { JournalEntry(at: t0.addingTimeInterval(m * 60), platform: "vercel", name: n, result: r, seconds: s, detail: nil) }
+    let l = [je(0, "a", "live"), je(10, "a", "failed"), je(40, "a", "live"), je(50, "b", "preview"), je(60, "b", "rollback"), je(70, "b", "forced")]
+    expect("stats: clean share", JournalStats.cleanShare(l).map { Int(($0 * 100).rounded()) } ?? -1, 60)
+    let d = JournalStats.dora(l, days: 7)
+    expect("stats: dora", "\(d.perWeek) \(Int((d.failRate ?? 0) * 100)) \(Int(d.restoreMedian ?? 0))", "3.0 40 1200")
+    expect("stats: costly failures", JournalStats.costlyFailures(l, perBuild: { $0 == "a" ? 0.5 : nil }).map { "\($0.name) \($0.failed) \($0.usd)" }, ["a 1 0.5"])
+    let tr = (0..<10).map { je(Double($0), "c", "live", $0 < 5 ? 60 : 120) }
+    expect("stats: slower builds", JournalStats.trends(tr).map { "\($0.before) \($0.recent)" }, ["60.0 120.0"])
+    expect("stats: markdown escapes a bar", JournalStats.markdown([JournalEntry(at: t0, platform: "vercel", name: "x|y", result: "live", seconds: nil, detail: nil)]).contains("x\\|y"), true)
+    let pr = JournalStats.periods(l, days: 1, now: t0.addingTimeInterval(86400))
+    expect("stats: periods", "\(pr.recent.count) \(pr.before.count)", "6 0")
+}
+do {
+    var n = JournalEntry(platform: "vercel", name: "a", result: "live", seconds: nil, detail: nil); n.note = "release mail"
+    let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+    let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+    expect("journal note round trip", (try? dec.decode(JournalEntry.self, from: enc.encode(n)))?.note ?? "", "release mail")
+    expect("journal without note decodes", (try? dec.decode(JournalEntry.self, from: Data(#"{"at":"2026-01-01T00:00:00Z","platform":"vercel","name":"a","result":"live"}"#.utf8)))?.name ?? "", "a")
+    let file = #"{"at":"2026-01-01T00:00:00.5Z","platform":"Vercel","name":"x","result":"live","extra":1}"# + "\n"
+        + #"{"at":"2026-01-01T00:00:00Z","platform":"Vercel","name":"a","result":"live","seconds":null,"detail":"d","by":"script"}"# + "\n"
+    let aId = (try? dec.decode(JournalEntry.self, from: Data(file.split(separator: "\n")[1].utf8)))?.id ?? ""
+    let noted = Journal.withNote(file, id: aId, note: "hi") ?? ""
+    expect("note: other lines stay byte for byte", noted.hasPrefix(String(file.split(separator: "\n")[0]) + "\n"), true)
+    expect("note: unknown keys stay", noted.contains(#""by":"script""#) && noted.contains(#""note":"hi""#), true)
+    expect("search finds a note", Journal.filter([n], text: "mail", kind: nil).count, 1)
+    expect("summary line", JournalStats.summaryLine([n]) ?? "", L("1 deploys, 0 failed", "1 Deploys, 0 fehlgeschlagen"))
+}
+expect("spoken summary", Speech.summary(waiting: 3, failed: 0, running: 1), L("3 projects wait, 1 running.", "3 Projekte warten, 1 laufen."))
+expect("spoken summary, nothing", Speech.summary(waiting: 0, failed: 0, running: 0), L("Nothing waits, nothing failed.", "Nichts wartet, nichts ist fehlgeschlagen."))
 expect("state unknown word", Row.stateText("some_new_state"), "some new state")
 
 // Demo mode: names in free text become their stand-ins, in one pass.
@@ -137,6 +178,9 @@ MainActor.assumeIsolated {
 let je = [JournalEntry(platform: "Vercel", name: "a\"b", result: "failed", seconds: 61, detail: "x"),
           JournalEntry(platform: "Vercel", name: "a\"b", result: "live", seconds: 30, detail: nil)]
 expect("csv quotes names", Journal.csv(je).contains("\"a\"\"b\""), true)
+expect("csv: a price per build in the last column", Journal.csv(je, perBuild: { _ in 0.126 }).split(separator: "\n").map { $0.split(separator: ",", omittingEmptySubsequences: false).last.map(String.init) ?? "" },
+       ["usd_estimate", "0.13", "0.13"])
+expect("csv: no price, empty", Journal.csv(je).hasSuffix(","), true)
 expect("failures of the last deploys", "\(Journal.failures(of: "a\"b", in: je))", "(failed: 1, total: 2)")
 
 // The journal: formulas, platforms, stable ids.
@@ -155,6 +199,18 @@ expect("health path gets a slash", Store.cleanPath("health") ?? "nil", "/health"
 expect("health path with a space", Store.cleanPath("/my health") ?? "nil", "/my%20health")
 expect("health path already encoded", Store.cleanPath("/my%20health") ?? "nil", "/my%20health")
 expect("empty health path", Store.cleanPath("  ") ?? "nil", "nil")
+do {
+    func row(_ id: String, auto: Bool) -> Item { Item(id: id, name: id, detail: "", platform: .vercel, deployable: true, auto: auto, note: nil, link: nil) }
+    expect("auto-deploy on again: off before, on now", Store.autoOnAgain(old: [row("app", auto: false)], fresh: [row("app", auto: true)]).map(\.id), ["app"])
+    expect("auto-deploy: a row new to the list says nothing", Store.autoOnAgain(old: [row("app", auto: false)], fresh: [row("new", auto: true)]).map(\.id), [String]())
+    expect("auto-deploy: still on says nothing", Store.autoOnAgain(old: [row("app", auto: true)], fresh: [row("app", auto: true)]).map(\.id), [String]())
+}
+expect("several health paths", Store.cleanPaths(" /health, api/ping ,,/health"), ["/health", "/api/ping"])
+expect("check links: front page without paths", Store.checkLinks("https://a.app/", []), ["https://a.app/"])
+expect("check links: each path", Store.checkLinks("https://a.app/", ["/health", "/api"]), ["https://a.app/health", "https://a.app/api"])
+expect("page text: case and spaces aside", Store.pageHas("<h1>Welcome  to\nShop</h1>", "welcome to shop"), true)
+expect("page text: missing", Store.pageHas("<h1>Error</h1>", "Welcome"), false)
+expect("page text: none asked", Store.pageHas("", "  "), true)
 
 // A reload keeps how a deploy ended only while the branch has not moved.
 var was = item(head: "h1"); was.state = .done(nil)
@@ -262,6 +318,12 @@ do {
     expect("risk: migrations named", r.text(r.reasons[0]), L("Database migrations: ", "Datenbank-Migrationen: ") + "prisma/migrations/1/migration.sql")
     expect("risk: size with numbers", r.text(r.reasons[1]), L("A very large diff: 120 files, 4000 lines", "Ein sehr großer Diff: 120 Dateien, 4000 Zeilen"))
     expect("risk: an unknown kind keeps the script's text", r.text(r.reasons[2]), "from a newer script")
+    var m = item(changed: true); m.risk = r
+    expect("migrations: new commits ask", MigrationCheck.needed(m, sha: nil), true)
+    expect("migrations: a given commit (rollback) does not", MigrationCheck.needed(m, sha: "abc"), false)
+    m.changed = false
+    expect("migrations: nothing waits, nothing asked", MigrationCheck.needed(m, sha: nil), false)
+    expect("migrations: no migration reason", MigrationCheck.needed(item(changed: true), sha: nil), false)
     let v = try JSONDecoder().decode(VercelProject.self, from: Data(#"{"name":"a","auto":false,"deployable":true}"#.utf8))
     expect("a list entry without risk still decodes", v.risk == nil, true)
     let w = try JSONDecoder().decode(WindowReply.self, from: Data(#"{"denied":true,"reason":"fri 15:00–24:00","configured":true}"#.utf8))
@@ -339,11 +401,11 @@ expect("never deployed", Row.keyFigure(item(changed: false)), Row.KeyFigure.neve
 
 // The summary line and the saving.
 var wait = Store.Waiting(); wait.projects = 3; wait.prs = 12
-expect("summary with saving", summaryLine(wait, saved: 41), L("12 PRs waiting · \(usd0(41)) saved", "12 PRs warten · \(usd0(41)) gespart"))
-expect("summary without saving", summaryLine(wait, saved: nil), L("12 PRs waiting", "12 PRs warten"))
+expect("summary with saving", waitingSummary(wait, saved: 41), L("3 projects · 12 PRs waiting · \(usd0(41)) saved", "3 Projekte · 12 PRs warten · \(usd0(41)) gespart"))
+expect("summary without saving", waitingSummary(wait, saved: nil), L("3 projects · 12 PRs waiting", "3 Projekte · 12 PRs warten"))
 wait.prs = 0
-expect("summary without PRs", summaryLine(wait, saved: nil), L("3 projects waiting", "3 Projekte warten"))
-expect("summary when all is live", summaryLine(Store.Waiting(), saved: nil), L("Everything merged is live", "Alles Gemergte ist live"))
+expect("summary without PRs", waitingSummary(wait, saved: nil), L("3 projects waiting", "3 Projekte warten"))
+expect("summary when all is live", waitingSummary(Store.Waiting(), saved: nil), L("Everything merged is live", "Alles Gemergte ist live"))
 let offCosts = try! JSONDecoder().decode(Costs.self, from: Data("""
 {"days":[{"day":"2026-11-01","total":10,"build":10},{"day":"2026-11-02","total":10,"build":10},{"day":"2026-11-03","total":4,"build":4},
          {"day":"2026-11-04","total":1,"build":1},{"day":"2026-11-05","total":3,"build":3},{"day":"2026-11-06","total":9,"build":9}],
@@ -372,7 +434,17 @@ expect("sync for an open PR, however old", RowAutofix.needsSync(F(at: 1, project
 var doneFire = F(at: 1, project: "app", platform: "vercel", status: "fired"); doneFire.done = true
 expect("no sync for a fire that is green again", RowAutofix.needsSync(doneFire, now: soon), false)
 expect("done decodes", fire(#"{"fires":[{"at":1,"project":"a","status":"fired","done":true}]}"#).fires[0].done, true)
-expect("rate limited is not 'no PR'", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "ratelimited"), now: late) == .fixing(session: nil), true)
+expect("rate limited is not 'no PR'", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "ratelimited"), now: late) == .waiting(.rateLimit), true)
+expect("pending, fresh: starting", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "pending"), now: soon) == .waiting(.starting), true)
+expect("pending for long: unclear", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "pending"),
+                                                   now: Date(timeIntervalSince1970: 1 + RowAutofix.unclearAfter + 1)) == .waiting(.unclear), true)
+expect("a start that failed is its own case", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "failed")) == .handedBack(.startFailed), true)
+expect("unsupported carries the reason",
+       RowAutofix.of(failedItem(), fire(#"{"fires":[{"at":1,"project":"app","platform":"vercel","status":"unsupported","reason":"autofix works with GitHub repos only"}]}"#).fires[0])
+         == .unsupported(reason: "autofix works with GitHub repos only"), true)
+expect("start failed and fix failed read differently", AgentChips.text(.handedBack(.startFailed)) != AgentChips.text(.handedBack(.fixFailed)), true)
+expect("an unsupported chip can be dismissed", AgentChips.dismissable(.unsupported(reason: nil)), true)
+expect("a running fix cannot be dismissed", AgentChips.dismissable(.fixing(session: nil)), false)
 expect("no PR chip links the session", AgentChips.link(.noPR(session: URL(string: "https://claude.ai/code/s1")))?.absoluteString ?? "", "https://claude.ai/code/s1")
 var green = failedItem(); green.lastState = "READY"
 expect("fixing ends when green again", RowAutofix.of(green, F(at: 1, project: "app", platform: "vercel", status: "fired")) == nil, true)
@@ -381,8 +453,8 @@ var waiting = failedItem(); waiting.changed = true; waiting.headSha = "bbbbbbb2"
 expect("merged, not live", RowAutofix.of(waiting, F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, mergedSha: "bbbbbbb2ffff")) == .merged(sha: "bbbbbbb2ffff", pr: 4, url: nil), true)
 var shipped = waiting; shipped.lastSha = "bbbbbbb2"; shipped.changed = false
 expect("merged ends once live", RowAutofix.of(shipped, F(at: 1, project: "app", platform: "vercel", status: "fired", mergedSha: "bbbbbbb2ffff")) == nil, true)
-expect("fix failed too", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "skipped")) == .handedBack, true)
-expect("PR closed unmerged", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, prState: "closed")) == .handedBack, true)
+expect("fix failed too", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "skipped")) == .handedBack(.fixFailed), true)
+expect("PR closed unmerged", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, prState: "closed")) == .handedBack(.fixFailed), true)
 expect("chip words", AgentChips.text(.prOpen(number: 12, url: nil)), L("Fix PR #12 open", "Fix-PR #12 offen"))
 
 // Fires name a Render service by its name, not its id; the newest one counts; the platform must match.
@@ -435,6 +507,10 @@ if let sim = try? JSONDecoder().decode(SimulateReport.self, from: savingsData("s
     expect("simulate: Render without price", sim.projects[2].autoMonth.usd == nil, true)
     expect("simulate: incomplete prices are said", sim.usdComplete, false)
     expect("simulate: a problem is kept", sim.projects[3].problem != nil, true)
+    // web: min(6, 2×2) × $0.20, api: min(3, 3×2) × $0.67; svc min(4, 1×2) builds without a price.
+    let w = sim.whatIf(perDay: 2)
+    expect("what if twice a day", "\((w.usd * 100).rounded() / 100) \(w.builds) \(w.complete)", "2.81 9.0 false")
+    expect("what if: more than the pushes counts the pushes", sim.whatIf(perDay: 8).builds, 13.0)
 } else { expect("simulate fixture decodes", false, true) }
 if let led = try? JSONDecoder().decode(LedgerReport.self, from: savingsData("ledger-report.json")) {
     expect("ledger: since", led.since ?? "", "2026-01-20")
@@ -449,6 +525,40 @@ if let led = try? JSONDecoder().decode(LedgerReport.self, from: oddLedger) {
     expect("lenient: unreadable dollars are unknown", led.projects[0].savedUsd == nil, true)
     expect("lenient: no start, no ledger", led.hasStarted, false)
 } else { expect("lenient ledger decodes", false, true) }
+do {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    expect("certificate: 30 days left says nothing", Store.certificateWarning(expires: now.addingTimeInterval(30 * 86_400), now: now) == nil, true)
+    expect("certificate: 10 days left", Store.certificateWarning(expires: now.addingTimeInterval(10.5 * 86_400), now: now) ?? -99, 10)
+    expect("certificate: expired", (Store.certificateWarning(expires: now.addingTimeInterval(-86_400), now: now) ?? 99) <= 0, true)
+}
+do {
+    let f = [JournalEntry(platform: "Vercel", name: "a", result: "failed", seconds: nil, detail: "Build failed: exit code 1\nmore"),
+             JournalEntry(platform: "Vercel", name: "b", result: "failed", seconds: nil, detail: "Build failed: exit code 2"),
+             JournalEntry(platform: "Vercel", name: "a", result: "failed", seconds: nil, detail: "Timeout after 600 s"),
+             JournalEntry(platform: "Vercel", name: "a", result: "live", seconds: nil, detail: "Build failed: exit code 1")]
+    let c = JournalStats.failureCauses(f)
+    expect("failure causes: alike ones together", "\(c.first?.cause ?? "") \(c.first?.count ?? 0) \(c.first?.projects ?? [])", "Build failed: exit code # 2 [\"a\", \"b\"]")
+    expect("failure causes: ids become #", JournalStats.cause("Deployment dpl_8f3k2 failed at a1b2c3d") ?? "", "Deployment # failed at #")
+}
+expect("prompt template", LogTools.fill("Fix {name} at {sha}: {log} {other}", ["name": "web", "sha": "abc", "log": "{name}"]), "Fix web at abc: {name} {other}")
+do {
+    let now = Date(timeIntervalSince1970: 10_000_000)
+    let old = SiteLog.Check(t: now.timeIntervalSince1970 - 40 * 86_400, ok: false)
+    let list = [old] + (0..<310).map { SiteLog.Check(t: now.timeIntervalSince1970 - Double($0), ok: $0 % 10 != 0) }
+    let t = SiteLog.trim(list, now: now)
+    expect("site log: old and too many dropped", "\(t.count) \(t.contains(old))", "300 false")
+    expect("site log: uptime", SiteLog.uptime([SiteLog.Check(t: 1, ok: true), SiteLog.Check(t: 2, ok: false)]) ?? -1, 0.5)
+    expect("site log: no checks, no uptime", SiteLog.uptime([]) == nil, true)
+}
+do {
+    let d = Date(timeIntervalSince1970: 1_700_000_000)
+    expect("tip: the same all day", Tips.tip(on: d) == Tips.tip(on: d.addingTimeInterval(60)), true)
+    expect("tip: another the next day", Tips.tip(on: d) != Tips.tip(on: d.addingTimeInterval(86_400)), true)
+}
+expect("spotlight entries sorted", Spotlight.entries([(key: "vercel/b", name: "b", platform: "Vercel"), (key: "render/a", name: "a", platform: "Render")]),
+       ["render/a\ta\tRender", "vercel/b\tb\tVercel"])
+expect("goal share", [SavingsModel.goalShare(saved: 25, goal: 100), SavingsModel.goalShare(saved: 300, goal: 100), SavingsModel.goalShare(saved: 5, goal: 0), SavingsModel.goalShare(saved: nil, goal: 50)].map { $0.map { String($0) } ?? "nil" }, ["0.25", "1.0", "nil", "nil"])
+expect("milestones", [5, 10, 99, 100, 1999, 2500].map { SavingsModel.milestone(saved: $0).map { Int($0) } ?? 0 }, [0, 10, 50, 100, 1000, 2000])
 expect("lenient: an empty object is an empty simulation",
        (try? JSONDecoder().decode(SimulateReport.self, from: Data("{}".utf8)))?.projects.count ?? -1, 0)
 UserDefaults.standard.set(true, forKey: "demoMode")
@@ -554,6 +664,450 @@ MainActor.assumeIsolated {
     expect("observer: the log is still there", looking.contains("log|vercel/app"), true)
 }
 
+
+// MARK: - Mac logic (improve/mac-logic): failures, autofix fires, site check, savings, waiting rows, journal
+
+// LOG-036/041: a failure is what autofix calls one.
+var vNewestFailed = item(); vNewestFailed.lastState = "READY"; vNewestFailed.latestState = "ERROR"
+expect("vercel: newest attempt ERROR, production READY is failed", vNewestFailed.lastFailed, true)
+var vOld = item(); vOld.lastState = "ERROR"
+expect("vercel: no newest attempt known, last state decides", vOld.lastFailed, true)
+var rRuntime = item(.render); rRuntime.lastState = "update_failed"
+expect("render: update_failed is not a build failure", rRuntime.lastFailed, false)
+var rBuild = item(.render); rBuild.lastState = "build_failed"
+expect("render: build_failed is", rBuild.lastFailed, true)
+let latestJSON = #"[{"name":"web","auto":false,"deployable":true,"lastState":"READY","latestState":"ERROR","latestId":"dpl_2","latestSha":"cccc"}]"#
+expect("vercel list decodes the newest attempt", (try? decodeLossy(VercelProject.self, from: Data(latestJSON.utf8), label: "t"))?.first?.latestState ?? "", "ERROR")
+
+// LOG-037/038/117: which fire speaks for the row.
+var newFail = failedItem(); newFail.latestSha = "ddddddd4"
+expect("old done fire + new failure: nothing, so it can be handed over",
+       RowAutofix.of(newFail, { var f = F(at: 1, project: "app", platform: "vercel", status: "fired", sha: "aaaaaaa1"); f.done = true; return f }(), now: late) == nil, true)
+expect("fire of another failed build: nothing",
+       RowAutofix.of(newFail, F(at: 1, project: "app", platform: "vercel", status: "fired", session: "https://claude.ai/code/s1", sha: "aaaaaaa1"), now: late) == nil, true)
+expect("fire of this failed build: fixing",
+       RowAutofix.of(newFail, F(at: 1, project: "app", platform: "vercel", status: "fired", sha: "ddddddd4ffff"), now: soon) == .fixing(session: nil), true)
+expect("fire sha decodes", fire(#"{"fires":[{"at":1,"project":"a","status":"fired","sha":"abc"}]}"#).fires[0].sha ?? "", "abc")
+var doneOpen = F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, prState: "open"); doneOpen.done = true
+expect("done fire, PR open, fresh: still shown", RowAutofix.of(green, doneOpen, now: soon) == .prOpen(number: 4, url: nil), true)
+expect("done fire, PR open, a day later: gone", RowAutofix.of(green, doneOpen, now: Date(timeIntervalSince1970: 1 + RowAutofix.doneOpenFor + 1)) == nil, true)
+
+// LOG-001/021: the check after going live.
+expect("site: 200 fine", Store.siteVerdict(code: 200, networkUp: true), Store.SiteVerdict.fine)
+expect("site: 429 is bot protection, fine", Store.siteVerdict(code: 429, networkUp: true), Store.SiteVerdict.fine)
+expect("site: 503 broken", Store.siteVerdict(code: 503, networkUp: true), Store.SiteVerdict.broken)
+expect("site: 404 odd, no rollback", Store.siteVerdict(code: 404, networkUp: true), Store.SiteVerdict.odd)
+expect("site: no answer, network up: broken", Store.siteVerdict(code: nil, networkUp: true), Store.SiteVerdict.broken)
+expect("site: no answer, Mac offline: never a rollback", Store.siteVerdict(code: nil, networkUp: false), Store.SiteVerdict.unreachable)
+
+// LOG-022: a health path with a query.
+expect("health path keeps its query", Store.cleanPath("/health?check=1") ?? "nil", "/health?check=1")
+expect("health path with space and query", Store.cleanPath("my health?a=b c") ?? "nil", "/my%20health?a=b%20c")
+
+// LOG-003: the saving after the costs window no longer reaches before offDay.
+var lateCosts = try! JSONDecoder().decode(Costs.self, from: Data("""
+{"days":[{"day":"2026-11-20","total":2,"build":2},{"day":"2026-11-21","total":2,"build":2}],"projects":[],"offDay":"2026-11-03"}
+""".utf8))
+expect("no 'before' in the window and none kept: unknown", lateCosts.saved(today: "2026-11-22") == nil, true)
+lateCosts.baseline = Costs.Baseline(offDay: "2026-11-03", perDay: 10, days: 2)
+expect("kept 'before': saved over all whole days since off", lateCosts.saved(today: "2026-11-22") ?? -1, 144.0)
+lateCosts.baseline = Costs.Baseline(offDay: "2026-10-01", perDay: 10, days: 2)
+expect("kept 'before' of another off day is not used", lateCosts.saved(today: "2026-11-22") == nil, true)
+expect("measured baseline", offCosts.measuredBaseline.map { "\($0.perDay) \($0.days)" } ?? "", "10.0 2")
+expect("days between", Costs.daysBetween("2026-02-27", "2026-03-02") ?? -1, 3)
+
+// LOG-051/055: no "≈ 0 minutes saved".
+let unknownLedger = try! JSONDecoder().decode(LedgerReport.self, from: Data(#"{"since":"2026-01-20","days":3,"projects":[{"name":"web","skipped":3,"savedMinutes":null}],"total":{"skipped":3,"pushes":3,"builds":0,"usd":null,"vercelMinutes":0,"renderMinutes":0}}"#.utf8))
+expect("ledger: skipped, duration unknown", unknownLedger.headline, L("3 builds skipped, duration not known yet", "3 Builds übersprungen, Dauer noch unbekannt"))
+expect("ledger: minutes incomplete", unknownLedger.minutesComplete, false)
+let nothingLedger = try! JSONDecoder().decode(LedgerReport.self, from: Data(#"{"since":"2026-01-20","days":3,"projects":[],"total":{"skipped":0,"usd":0}}"#.utf8))
+expect("ledger: nothing skipped is said, not $0.00", nothingLedger.headline, L("Nothing skipped yet – every push was built", "Noch nichts übersprungen – jeder Push wurde gebaut"))
+let noBuiltPrice = try! JSONDecoder().decode(LedgerReport.self, from: Data(#"{"since":"2026-01-20","days":3,"projects":[],"total":{"skipped":2,"usd":4}}"#.utf8))
+expect("share card: no price of the built ones is not $0", noBuiltPrice.perDay == nil, true)
+
+// LOG-004/UI-002: one rule for what waits.
+MainActor.assumeIsolated {
+    let st = Store()
+    var a = item(changed: true, commits: 1); a.repo = "me/a"
+    var b = Item(id: "b", name: "b", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil); b.changed = true; b.repo = "me/b"
+    var c = Item(id: "c", name: "c", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil); c.changed = true; c.state = .running("x")
+    var r = item(.render, changed: true); r.repo = "me/r"
+    st.items[.vercel] = [a, b, c]; st.items[.render] = [r]
+    st.hidden = ["vercel/b"]
+    expect("changed count leaves out hidden and running rows", st.changedCount(.vercel), 1)
+    expect("tab counts add up to the summary", Platform.allCases.map { st.changedCount($0) }.reduce(0, +), st.waiting.projects)
+    expect("waiting for one tab", st.waiting(for: [.render]).projects, 1)
+    st.selectChanged(.vercel)
+    expect("select changed skips hidden rows", st.selected(.vercel).map(\.id), ["app"])
+    st.clearSelection(.vercel)
+    st.selectChanged(.vercel, only: ["vercel/zzz"])
+    expect("select changed only among the rows shown", st.selected(.vercel).count, 0)
+    st.hidden = []
+}
+
+// The journal: kinds, search and days.
+let jk = [JournalEntry(at: Date(timeIntervalSince1970: 1_800_000_000), platform: "Vercel", name: "shop", result: "preview", seconds: nil, detail: nil),
+          JournalEntry(at: Date(timeIntervalSince1970: 1_800_000_100), platform: "Render", name: "api", result: "failed", seconds: nil, detail: "build exploded"),
+          JournalEntry(at: Date(timeIntervalSince1970: 1_800_200_000), platform: "Render", name: "api", result: "brand-new", seconds: nil, detail: nil)]
+expect("journal: preview is its own kind", jk[0].kind, JournalEntry.Kind.preview)
+expect("journal: an unknown word is other", jk[2].kind, JournalEntry.Kind.other)
+expect("journal: search finds the reason", Journal.filter(jk, text: "exploded", kind: nil).map(\.name), ["api"])
+expect("journal: filter by kind", Journal.filter(jk, text: "", kind: .failed).count, 1)
+expect("journal: newest day first", Journal.byDay(jk).first?.entries.first?.result ?? "", "brand-new")
+
+// Settings formats (LOG-068/074/118) and small guards.
+let guardJSON = #"{"enabled":true,"lastActions":[{"broken":1}],"allowances":[{"platform":"vercel","project":"web","expiresAt":1800000000000},{"platform":"render","project":"api","expiresAt":"2028-01-15T08:00:00Z"},{"nope":true}]}"#
+if let g = try? JSONDecoder().decode(GuardStatus.self, from: Data(guardJSON.utf8)) {
+    expect("guard: milliseconds read as seconds", g.allowances.first?.expiresAt ?? 0, 1_800_000_000.0)
+    expect("guard: ISO date read", g.allowances.count == 2 && g.allowances[1].expiresAt > 1_800_000_000, true)
+    expect("guard: a broken action is skipped", g.lastActions.count, 0)
+} else { expect("guard status decodes", false, true) }
+let afJSON = #"{"routine":"trig","token":true,"scheduled":false,"fires":[{"at":1,"project":"a","status":"fired"},{"at":"x"}]}"#
+expect("autofix settings: a broken fire is skipped", (try? JSONDecoder().decode(AutofixStatus.self, from: Data(afJSON.utf8)))?.fires.count ?? -1, 1)
+expect("a name like an option is not passed on", "\(Store.safeArg("-rf")) \(Store.safeArg("web"))", "false true")
+expect("PATH with a folder that is gone is read again", Tool.pathFoldersExist(FileManager.default.homeDirectoryForCurrentUser.path + "/.nvm/versions/node/v0-\(UUID().uuidString)/bin:/usr/bin"), false)
+expect("PATH of system folders only is kept", Tool.pathFoldersExist("/usr/bin:/bin"), true)
+expect("a missing ~/.local/bin does not drop the cache", Tool.pathFoldersExist(NSHomeDirectory() + "/.local/bin-\(UUID().uuidString):/usr/bin"), true)
+do {
+    let dir = NSTemporaryDirectory() + "baks-\(UUID().uuidString)"
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    let file = dir + "/c.json"
+    FileManager.default.createFile(atPath: file, contents: Data("{}".utf8))
+    for n in 1...8 { FileManager.default.createFile(atPath: file + ".bak-2026010\(n)", contents: Data()) }
+    ClaudeFiles.pruneBackups(of: file, keep: 5)
+    let left = try FileManager.default.contentsOfDirectory(atPath: dir).filter { $0.contains(".bak-") }.sorted()
+    expect("only the newest five backups stay", left, (4...8).map { "c.json.bak-2026010\($0)" })
+    try? FileManager.default.removeItem(atPath: dir)
+} catch { expect("backup prune ran", "\(error)", "no error") }
+
+// LOG-039: a rate-limited hand-over leaves the button free.
+MainActor.assumeIsolated {
+    let st = Store()
+    var f = failedItem(); f.repo = "me/app"
+    st.items[.vercel] = [f]
+    st.autofix = AutofixReport(routine: "r", token: true, fires: [F(at: Date().timeIntervalSince1970, project: "app", platform: "vercel", status: "ratelimited")])
+    expect("rate limited: waiting in the row, not 'fixing'", st.autofixState(f) == .waiting(.rateLimit), true)
+    expect("rate limited does not count as fixing", st.fixingCount, 0)
+    expect("rate limited: the button stays free", st.canFixWithClaude(f), true)
+    st.autofix = AutofixReport(routine: "r", token: true, fires: [F(at: Date().timeIntervalSince1970, project: "app", platform: "vercel", status: "fired", session: "https://claude.ai/code/s")])
+    expect("a running session locks the button", st.canFixWithClaude(f), false)
+}
+
+// LOG-014: a list that mostly broke is an error, not a short list.
+let mostlyBroken = Data(#"[{"name":"a","auto":false,"deployable":true},{"x":1},{"y":2},{"z":3}]"#.utf8)
+expect("mostly broken list is an error", (try? decodeLossy(VercelProject.self, from: mostlyBroken, label: "t", maxBadShare: 0.3)) == nil, true)
+expect("without a limit the rest is kept", (try? decodeLossy(VercelProject.self, from: mostlyBroken, label: "t"))?.count ?? -1, 1)
+
+// UI-036: an unknown Render type in words; UI-011: a chip can be waved away.
+expect("unknown service type readable", Store.typeName("key_value_store"), "Key Value Store")
+MainActor.assumeIsolated {
+    let st = Store()
+    let f = failedItem()
+    st.items[.vercel] = [f]
+    st.autofix = AutofixReport(routine: "r", token: true, fires: [F(at: 1, project: "app", platform: "vercel", status: "fired", session: "https://claude.ai/code/s")])
+    let had = st.autofixState(f) != nil
+    st.dismissAutofix(f)
+    expect("dismissed chip is gone", "\(had) \(st.autofixState(f) == nil)", "true true")
+    UserDefaults.standard.removeObject(forKey: "autofixDismissed")
+}
+
+// Second round: model names, one fire type, start times, cached counts.
+expect("model name known", ClaudeAI.modelName("claude-opus-5-5"), "Claude Opus 5.5")
+expect("model name new, with a date", ClaudeAI.modelName("claude-sonnet-6-0-20270101"), "Claude Sonnet 6.0")
+expect("model name foreign stays", ClaudeAI.modelName("gpt-x"), "gpt-x")
+expect("settings fire has error and id", fire(#"{"fires":[{"at":2,"project":"a","status":"failed","error":"HTTP 500"}]}"#).fires.map { "\($0.error ?? "") \($0.id)" }, ["HTTP 500 a-2.0"])
+expect("this process has a start time", Tool.startTime(getpid()) != nil, true)
+var rt = item(.render); rt.lastState = "update_failed"
+expect("runtime failure can be explained, not autofixed", "\(ClaudeAI.isFailed(rt)) \(rt.lastFailed)", "true false")
+MainActor.assumeIsolated {
+    let st = Store()
+    st.items[.vercel] = [item(changed: true)]
+    expect("cached count", st.changedCount(.vercel), 1)
+    st.items[.vercel]![0].changed = false
+    expect("cache follows a change of a row", st.changedCount(.vercel), 0)
+    st.items[.vercel]![0].changed = true; st.hidden = ["vercel/app"]
+    expect("cache follows hiding", st.changedCount(.vercel), 0)
+    st.hidden = []
+}
+
+// The deploy window as data (UI-029), followed deploys on disk (LOG-012).
+let win = DeployWindowConfig.parse(Data(#"{"deny":[{"days":["Friday"],"from":"15:00"},{"dates":["2026-12-24"],"reason":"Xmas"}],"note":"mine"}"#.utf8))
+expect("window: rules read, days short", win.deny.map { "\($0.days) \($0.from ?? "-") \($0.reason ?? "-")" }, ["[\"fri\"] 15:00 -", "[] - Xmas"])
+let winOut = (try? win.encoded(over: Data(#"{"deny":[],"note":"mine"}"#.utf8))).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+expect("window: other keys stay", winOut?["note"] as? String ?? "", "mine")
+expect("window: no empty fields written", ((winOut?["deny"] as? [[String: Any]])?[1].keys.sorted()) ?? [], ["dates", "reason"])
+expect("window: times", [DeployWindowConfig.validTime("15:00"), DeployWindowConfig.validTime("24:00"), DeployWindowConfig.validTime("9:5"), DeployWindowConfig.validTime("25:00")], [true, true, false, false])
+var badWin = win; badWin.deny[0].to = "7pm"
+expect("window: a bad time is named", badWin.problem != nil, true)
+expect("window: unreadable file is no rules", DeployWindowConfig.parse(Data("nope".utf8)).deny.count, 0)
+let fol = Store.Followed(platform: "render", id: "srv-1", deployId: "dep-1", startedAt: 100, preview: false, rolledBack: true, sha: "abc")
+expect("followed deploy round trip", (try? JSONDecoder().decode(Store.Followed.self, from: JSONEncoder().encode(fol))) == fol, true)
+
+// LOG-048: one row builder for both platforms.
+if let r = try? decodeLossy(RenderService.self, from: Data(#"[{"id":"srv-9","name":"api","type":"web_service","paused":false,"auto":false,"deployable":true,"lastState":"build_failed","latestSha":"abc","changed":true}]"#.utf8), label: "t").first {
+    let i = r.item(id: r.id, platform: .render, detail: "", note: nil, link: nil, latestState: r.lastState)
+    expect("render row: id, newest attempt, failure", "\(i.id) \(i.latestSha ?? "") \(i.lastFailed) \(i.hasNewCommits)", "srv-9 abc true true")
+} else { expect("render row decodes", false, true) }
+
+// LOG-116: the queue and following, with the script answered by the test (no network).
+// The main run loop turns while waiting, so the store's tasks (main actor) run.
+MainActor.assumeIsolated {
+    func spin(until done: () -> Bool) {
+        let end = Date().addingTimeInterval(3)
+        while !done() && Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+    }
+    let oldUndo = UserDefaults.standard.object(forKey: "undoSeconds")
+    UserDefaults.standard.set(0, forKey: "undoSeconds")
+    Store.pollNanos = 20_000_000
+    Tool.testRunner = { args in
+        switch (args.first ?? "", args.dropFirst().first ?? "") {
+        case ("window", _): return Data(#"{"denied":false}"#.utf8)
+        case ("vercel", "deploy-json"): return Data(#"{"id":"dpl_1","state":"QUEUED"}"#.utf8)
+        case ("vercel", "status"): return Data(#"{"id":"dpl_1","state":"READY"}"#.utf8)
+        case ("ci", _): try await Task.sleep(nanoseconds: 5_000_000_000); return Data(#"{"state":"green","reason":""}"#.utf8)
+        default: throw ToolError(message: "not in this test")
+        }
+    }
+    let st = Store()
+    var a = item(changed: true, commits: 1); a.repo = "me/app"
+    st.items[.vercel] = [a]
+    st.deployOne(a, preview: false)
+    spin { if case .done = st.items[.vercel]![0].state { return true } else { return false } }
+    let i = st.items[.vercel]![0]
+    expect("deploy followed to live", "\(i.state)", "done(nil)")
+    expect("live row is current", "\(i.hasNewCommits) \(i.lastFailed)", "false false")
+    expect("nothing left to follow after the end", Store.readFollowed().isEmpty, true)
+
+    let ci = Store()
+    var b = item(changed: true, commits: 1); b.repo = "me/app"; b.selected = true
+    ci.items[.vercel] = [b]
+    ci.deploySelected(.vercel, whenGreen: true)
+    spin { ci.items[.vercel]![0].state == .running(L("waiting for checks", "wartet auf Checks")) }
+    expect("waiting for CI counts as busy", ci.deploysBusy, true)
+    ci.cancel(ci.items[.vercel]![0])
+    spin { !ci.items[.vercel]![0].state.isActive }
+    // Nothing was started yet: the row is simply back to idle (main's rule).
+    expect("CI wait cancelled", "\(ci.items[.vercel]![0].state)", "idle")
+
+    Tool.testRunner = nil
+    Store.pollNanos = nil
+    if let oldUndo { UserDefaults.standard.set(oldUndo, forKey: "undoSeconds") } else { UserDefaults.standard.removeObject(forKey: "undoSeconds") }
+    UserDefaults.standard.removeObject(forKey: "followedDeploys")
+}
+
+// Review fixes: one summary line, window.json never overwritten unread, hover hold per toast.
+expect("waiting summary: projects and PRs", waitingSummary(Store.Waiting(projects: 7, commits: 9, prs: 44, openPRs: 0), saved: 41),
+       L("7 projects · 44 PRs waiting · \(usd0(41)) saved", "7 Projekte · 44 PRs warten · \(usd0(41)) gespart"))
+expect("waiting summary: one project, no PRs", waitingSummary(Store.Waiting(projects: 1, commits: 2, prs: 0, openPRs: 0), saved: nil),
+       L("1 project waiting", "1 Projekt wartet"))
+expect("window.json with a typo is not written over", DeployWindowConfig.unreadable(Data("{\"deny\": [".utf8)), true)
+expect("missing window.json may be written", DeployWindowConfig.unreadable(nil), false)
+let emptyWin = (try? DeployWindowConfig().encoded(over: Data(#"{"deny":[{"days":["fri"]}],"note":"x"}"#.utf8)))
+    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+expect("no rules keep the other keys", "\((emptyWin?["deny"] as? [Any])?.count ?? -1) \(emptyWin?["note"] as? String ?? "")", "0 x")
+MainActor.assumeIsolated {
+    let st = Store()
+    st.show(Store.Toast(text: "a", ok: true)); st.holdToast(true)
+    st.show(Store.Toast(text: "b", ok: true))
+    expect("a new toast is not held by the old hover", st.toastHeld, false)
+}
+
+// Additive values of newer scripts (CLI, providers): read when sent, harmless when not.
+do {
+    let v = try JSONDecoder().decode(VercelProject.self, from: Data(#"{"name":"a","auto":false,"deployable":true,"openPRs":100,"openPRsPartial":true,"budgetLow":true,"partial":true}"#.utf8))
+    let i = v.item(id: "a", platform: .vercel, detail: "", note: nil, link: nil, latestState: nil)
+    expect("new list flags reach the row", "\(i.openPRsPartial) \(i.budgetLow) \(i.partial)", "true true true")
+    expect("capped open PRs say 'at least'", Row.openText(i, 100), L("at least 100 open PRs", "mindestens 100 offene PRs"))
+    expect("a partial list is a quiet hint, two of them here", Row.gapTexts(i).count, 2)
+    let warned = try JSONDecoder().decode(RenderService.self, from: Data(#"{"id":"s","name":"a","type":"web","paused":false,"auto":false,"deployable":true,"fetchWarn":"domains could not be read"}"#.utf8))
+        .item(id: "s", platform: .render, detail: "", note: nil, link: nil, latestState: nil)
+    expect("a provider's fetchWarn is a hint too", Row.gapTexts(warned), ["domains could not be read"])
+    let old = try JSONDecoder().decode(VercelProject.self, from: Data(#"{"name":"a","auto":false,"deployable":true}"#.utf8))
+        .item(id: "a", platform: .vercel, detail: "", note: nil, link: nil, latestState: nil)
+    expect("an older script: no hints", "\(old.partial) \(Row.gapTexts(old).count)", "false 0")
+    let d = try JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"perl":false,"curl":true}"#.utf8))
+    expect("doctor names a missing perl", d.missingTools, ["perl"])
+    let d0 = try JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true}"#.utf8))
+    expect("an older doctor misses nothing", d0.missingTools, [])
+    let ai = try JSONDecoder().decode(ClaudeAIStatus.self, from: Data(#"{"key":true,"source":"env","model":"m","models":["m"],"cap":1,"used":0,"month":"2026-11","envHidesKeychain":true}"#.utf8))
+    expect("ai status: the environment hides the keychain", ai.envHidesKeychain == true, true)
+    let ai0 = try JSONDecoder().decode(ClaudeAIStatus.self, from: Data(#"{"key":true,"source":"env","model":"m","models":["m"],"cap":1,"used":0,"month":"2026-11"}"#.utf8))
+    expect("ai status from an older script", ai0.envHidesKeychain == nil, true)
+} catch { expect("newer script values decode", "\(error)", "no error") }
+// The phone link: new fields are optional both ways.
+do {
+    var k = LinkedKeys(); k.vercel = "v"; k.savingPerMonth = 42; k.once = "id1"
+    let back = try JSONDecoder().decode(LinkedKeys.self, from: try JSONEncoder().encode(k))
+    expect("saving and once id travel", "\(back.savingPerMonth ?? 0) \(back.once ?? "")", "42.0 id1")
+    let older = try JSONDecoder().decode(LinkedKeys.self, from: Data(#"{"vercel":"v","vercelTeam":"","render":"","github":"","updated":0}"#.utf8))
+    expect("keys from an older Mac app still read", older.savingPerMonth == nil && older.once == nil && older.vercel == "v", true)
+} catch { expect("linked keys decode", "\(error)", "no error") }
+let snapEN = DeploySnapshot(at: Date(), demo: false, waitingProjects: 1, waitingCommits: 1, waitingPRs: 0, building: 0, failed: 0,
+                            saving: nil, projects: [], language: "en")
+var snapDE = snapEN; snapDE.language = "de"
+expect("a language switch is a change for the widgets", snapEN.sameContent(as: snapDE), false)
+expect("only the time is not", snapEN.sameContent(as: DeploySnapshot(at: .distantPast, demo: false, waitingProjects: 1, waitingCommits: 1, waitingPRs: 0,
+                                                                     building: 0, failed: 0, saving: nil, projects: [], language: "en")), true)
+// Settings: a pasted repo address, the hand-over list with PR states.
+expect("team: owner/repo stays", TeamSettings.ownerRepo(" me/app ") ?? "", "me/app")
+expect("team: a github.com address", TeamSettings.ownerRepo("https://github.com/me/app.git") ?? "", "me/app")
+expect("team: a git remote", TeamSettings.ownerRepo("git@github.com:me/app.git") ?? "", "me/app")
+expect("team: a page of the repo", TeamSettings.ownerRepo("github.com/me/app/tree/main") ?? "", "me/app")
+expect("team: no slash is no repo", TeamSettings.ownerRepo("app") == nil, true)
+expect("autofix list: an open PR is said",
+       AutofixSettings.label(F(at: 1, project: "a", platform: "vercel", status: "fired", prNumber: 3, prState: "open")), L("fix PR open", "Fix-PR offen"))
+expect("autofix list: a closed PR is said",
+       AutofixSettings.label(F(at: 1, project: "a", platform: "vercel", status: "fired", prNumber: 3, prState: "closed")), L("fix PR closed unmerged", "Fix-PR ungemergt geschlossen"))
+expect("an empty tab names what waits elsewhere",
+       waitingSummary(Store.Waiting(), saved: nil, elsewhere: 7, here: "Render"),
+       L("Nothing waits on Render · 7 projects on other platforms", "Auf Render wartet nichts · 7 Projekte auf anderen Plattformen"))
+let now0 = Date()
+expect("ledger: due without a last run", SavingsModel.ledgerDue(at: nil, budget: nil, now: now0), true)
+expect("ledger: not again within a week", SavingsModel.ledgerDue(at: now0.addingTimeInterval(-3 * 86400), budget: nil, now: now0), false)
+expect("ledger: not on a nearly spent GitHub budget",
+       SavingsModel.ledgerDue(at: nil, budget: Store.Budget(remaining: 500, limit: 5000, reset: 0), now: now0), false)
+expect("a JSON error on stdout is the message", Tool.jsonError(Data(#"{"error":"No project named x","exit":1}"#.utf8)) ?? "", "No project named x")
+expect("other stdout is no error message", Tool.jsonError(Data(#"[{"name":"a"}]"#.utf8)) == nil, true)
+
+// Mac track (rest): deploy window editor, language, the script runner, Claude nudge, CLI texts, snapshot, phone link, Handoff.
+expect("window rule summary", DeployWindowSettings.summary(.init(days: ["fri", "sat"], from: "15:00")),
+       L("Fri, Sat 15:00–24:00", "Fr, Sa 15:00–24:00"))
+expect("window rule over midnight", DeployWindowSettings.summary(.init(from: "22:00", to: "06:00")),
+       L("every day 22:00–06:00 (over midnight)", "jeden Tag 22:00–06:00 (über Mitternacht)"))
+do {
+    let suite = "dc-test-lang-\(UUID().uuidString)"
+    let d = UserDefaults(suiteName: suite)!
+    expect("language: nothing chosen is the Mac's", AppLanguage.chosen(in: d, domain: suite), AppLanguage.system)
+    AppLanguage.de.save(to: d)
+    expect("language: German saved", AppLanguage.chosen(in: d, domain: suite), AppLanguage.de)
+    AppLanguage.system.save(to: d)
+    expect("language: same as the Mac removes the key", d.persistentDomain(forName: suite)?["AppleLanguages"] == nil, true)
+    expect("language: system follows a German Mac", AppLanguage.system.resolved(mac: ["de-DE", "en"]), AppLanguage.de)
+    expect("language: system follows another Mac as English", AppLanguage.system.resolved(mac: ["fr-FR"]), AppLanguage.en)
+    expect("language: a choice stays", AppLanguage.en.resolved(mac: ["de"]), AppLanguage.en)
+    d.removePersistentDomain(forName: suite)
+}
+do {
+    // A stand-in for `deploys`, and a log of the test's own: nothing real is started or written.
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("dc-tool-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let script = dir.appendingPathComponent("deploys")
+    try? """
+    case "$1" in
+      big) head -c 200000 /dev/zero | tr '\\0' x >&2; printf ok ;;
+      echo) read -r l; printf '%s' "$l" ;;
+      slow) sleep 5 ;;
+      fail) echo "Error: app not found" >&2; exit 3 ;;
+    esac
+    """.write(to: script, atomically: true, encoding: .utf8)
+    Tool.testScript = script.path; Log.testURL = dir.appendingPathComponent("test.log")
+    func run(_ args: [String], stdin: String? = nil, timeout: Double = 10, cancelAfter: Double? = nil) -> Result<String, Error> {
+        let done = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var r: Result<String, Error> = .success("")
+        let t = Task.detached {
+            do { r = .success(String(decoding: try await Tool.run(args, stdin: stdin, timeout: timeout), as: UTF8.self)) }
+            catch { r = .failure(error) }
+            done.signal()
+        }
+        if let c = cancelAfter { Thread.sleep(forTimeInterval: c); t.cancel() }
+        _ = done.wait(timeout: .now() + 15)
+        return r
+    }
+    expect("tool: 200 KB on stderr does not hang", (try? run(["big"]).get()) ?? "error", "ok")
+    expect("tool: stdin reaches the script", (try? run(["echo"], stdin: "hello").get()) ?? "error", "hello")
+    if case .failure(let e as ToolError) = run(["slow"], timeout: 0.5) { expect("tool: timeout", e.timedOut, true) } else { expect("tool: timeout", "no timeout", "timeout") }
+    if case .failure(let e as ToolError) = run(["fail"]) {
+        expect("tool: exit code and message", "\(e.exitCode ?? 0) \(e.message)", "3 " + L("Error: app not found", "Fehler: app nicht gefunden"))
+    } else { expect("tool: failure", "no failure", "failure") }
+    if case .failure(let e) = run(["slow"], cancelAfter: 0.3) { expect("tool: cancel", e is CancellationError, true) } else { expect("tool: cancel", "not cancelled", "cancelled") }
+    Tool.testScript = nil; Log.testURL = nil
+    try? FileManager.default.removeItem(at: dir)
+}
+let ours = Data(#"{"mcpServers":{"deploy-center":{"command":"node"}}}"#.utf8), other = Data(#"{"mcpServers":{"x":{}}}"#.utf8)
+expect("nudge: desktop without our entry", ClaudeNudge.wanted(desktopInstalled: true, desktopData: other, codeData: nil, cliFound: false), true)
+expect("nudge: desktop connected", ClaudeNudge.wanted(desktopInstalled: true, desktopData: ours, codeData: nil, cliFound: false), false)
+expect("nudge: unreadable desktop config is not offered", ClaudeNudge.wanted(desktopInstalled: true, desktopData: Data("{".utf8), codeData: nil, cliFound: false), false)
+expect("nudge: no desktop app", ClaudeNudge.wanted(desktopInstalled: false, desktopData: nil, codeData: nil, cliFound: false), false)
+expect("nudge: Claude Code found, not connected", ClaudeNudge.wanted(desktopInstalled: false, desktopData: nil, codeData: other, cliFound: true), true)
+expect("nudge: Claude Code connected", ClaudeNudge.wanted(desktopInstalled: false, desktopData: nil, codeData: ours, cliFound: true), false)
+expect("cli text: German with the name", CLIText.german("Error: No deploy of web found"), "Fehler: Kein Deploy von web gefunden")
+expect("cli text: the cap", CLIText.german("This month's Claude cap is reached (5 of 9 tokens). Raise it in Settings > Claude in the app, or: deploys ai cap <tokens>"),
+       "Das Claude-Limit dieses Monats ist erreicht (5 von 9 Tokens). Erhöhen unter Einstellungen > Claude in der App oder: deploys ai cap <tokens>")
+expect("cli text: unknown stays", CLIText.german("Something new"), "Something new")
+do {
+    let rows: [DeploySnapshot.Project] = [
+        .init(name: "a", platform: "Vercel", status: .waiting, commits: 1, prs: 2, since: nil, message: nil),
+        .init(name: "b", platform: "Render", status: .failed, commits: 0, prs: 0, since: nil, message: nil),
+        .init(name: "c", platform: "Vercel", status: .building, commits: 0, prs: 0, since: nil, message: nil)]
+    expect("snapshot: counts per platform", Store.counts(rows).map { "\($0.platform) \($0.waiting) \($0.prs) \($0.building) \($0.failed)" },
+           ["Render 0 0 0 1", "Vercel 1 2 1 0"])
+    let f = FileManager.default.temporaryDirectory.appendingPathComponent("dc-snap-\(UUID().uuidString).json")
+    try? Data(#"{"version":2,"at":"2026-11-10T10:00:00Z","demo":false,"waitingProjects":1,"waitingCommits":1,"waitingPRs":0,"building":0,"failed":0,"projects":[],"newField":true}"#.utf8).write(to: f)
+    expect("snapshot: a newer version still reads", DeploySnapshot.read(f)?.waitingProjects ?? -1, 1)
+    try? FileManager.default.removeItem(at: f)
+}
+var k1 = LinkedKeys(); k1.vercel = "v"; var k2 = k1; k2.updated = Date().addingTimeInterval(99); k2.once = "x"
+expect("phone link: only the time changed is the same", k1.sameContent(as: k2), true)
+k2.render = "r"
+expect("phone link: a new key is a change", k1.sameContent(as: k2), false)
+let hand = item(.render)
+expect("handoff key is the iPhone's", Handoff.key(hand), "Render/srv-1")
+expect("handoff finds the project", Handoff.item(for: "Render/srv-1", in: [item(), hand])?.platform.cli ?? "", "render")
+expect("updates: on by default", [Updater.automaticChecks(nil), Updater.automaticChecks(false)], [true, false])
+
+expect("quiet hours", [Notify.quiet(hour: 23, from: 22, to: 7), Notify.quiet(hour: 6, from: 22, to: 7), Notify.quiet(hour: 7, from: 22, to: 7),
+                        Notify.quiet(hour: 13, from: 12, to: 14), Notify.quiet(hour: 3, from: 0, to: 0)], [true, true, false, true, false])
+
+expect("owner check: several projects ask, one does not", [OwnerCheck.needed(projects: 1), OwnerCheck.needed(projects: 2)], [false, true])
+expect("owner check is off by default", OwnerCheck.on, false)
+
+do {
+    let nested = try? JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"providers":{"vercel":{"vercelCli":true,"vercelLoggedIn":true},"render":{"renderKey":true}},"jobsMissing":["autofix:gh"]}"#.utf8))
+    expect("doctor: provider flags under providers", "\(nested?.vercelLoggedIn ?? false) \(nested?.renderKey ?? false) \(nested?.jobsMissing ?? [])", "true true [\"autofix:gh\"]")
+    let flat = try? JSONDecoder().decode(Doctor.self, from: Data(#"{"renderKey":true,"providers":{"render":{"renderKey":false}}}"#.utf8))
+    expect("doctor: the provider's own object wins over the flat copy", flat?.renderKey ?? true, false)
+    let g = try? JSONDecoder().decode(GuardStatus.self, from: Data(#"{"enabled":true,"lastActions":[],"allowances":[],"pathMissing":["vercel"]}"#.utf8))
+    expect("guard: a tool the job no longer finds", g?.pathMissing ?? [], ["vercel"])
+    let a = try? JSONDecoder().decode(AutofixStatus.self, from: Data(#"{"token":true,"scheduled":true,"fires":[]}"#.utf8))
+    expect("autofix: older script, nothing missing", a?.pathMissing ?? ["?"], [String]())
+}
+
+expect("cost note: all builds known", Store.costNote(perBuild: [1.5, 0.5], month: nil, budget: 0),
+       "\n\n" + L("These builds cost about \(2.0.formatted(.currency(code: "USD"))).", "Diese Builds kosten etwa \(2.0.formatted(.currency(code: "USD")))."))
+expect("cost note: nothing known, budget fine", Store.costNote(perBuild: [nil], month: 10, budget: 20), "")
+expect("cost note: budget used up", Store.costNote(perBuild: [], month: 30, budget: 20).contains("20"), true)
+expect("project month", Store.projectMonth(build: 7, days: 7) ?? 0, 30.0)
+
+expect("watch: one bad answer is a blip", Store.watchFails([.fine, .broken]), false)
+expect("watch: two in a row count", Store.watchFails([.fine, .broken, .broken]), true)
+expect("watch: offline is never a failure", Store.watchFails([.unreachable, .unreachable]), false)
+expect("slower: twice and half a second more", [Store.slower(before: 0.2, after: 0.5), Store.slower(before: 0.4, after: 1.2)], [false, true])
+
+do {
+    let old = Data(#"{"rules":[{"name":"Docs","when":{"ciGreen":true,"paths":["docs/**"],"onlyPaths":true,"branch":"main"},"then":"deploy","color":"red"}],"version":2}"#.utf8)
+    let rc = RulesConfig.parse(old)
+    expect("rules: read", "\(rc.rules.count) \(rc.rules.first?.then.rawValue ?? "") \(rc.rules.first?.onlyPaths ?? false)", "1 deploy true")
+    let back = (try? rc.encoded(over: old)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    let r0 = (back?["rules"] as? [[String: Any]])?.first
+    expect("rules: unknown keys stay", "\(back?["version"] as? Int ?? 0) \(r0?["color"] as? String ?? "") \((r0?["when"] as? [String: Any])?["branch"] as? String ?? "")", "2 red main")
+    expect("rules: unchanged reads back the same", RulesConfig.parse(try? rc.encoded(over: old)) == rc, true)
+    var bare = RulesConfig(); bare.rules = [.init(name: "all", then: .deploy)]
+    expect("rules: deploying everything is refused", bare.problem != nil, true)
+    bare.rules[0].labels = ["ship"]
+    expect("rules: with a condition it may", bare.problem == nil, true)
+    expect("rules: summary", RulesConfig.summary(rc.rules[0]),
+           L("When CI is green and only docs/** changed: deploy it", "Wenn CI grün ist und nur docs/** geändert: deployen"))
+    expect("rules: list", RulesConfig.list(" a, b\n,c "), ["a", "b", "c"])
+}
+
+expect("cli text: need_cap", CLIText.german("Error: Render cannot deploy a preview (api)"), "Fehler: Render kann keine Vorschau deployen (api)")
+expect("cli text: fetchWarn", CLIText.german("custom domains could not be read; the address shown may be the default one"),
+       "Eigene Domains waren nicht lesbar; die gezeigte Adresse ist vielleicht die Standardadresse")
+if let hk = try? JSONDecoder().decode(VercelProject.self, from: Data(#"{"name":"h","auto":false,"deployable":true,"lastState":"triggered","lastSha":"abc","triggeredSha":"abc","phase":"queued"}"#.utf8)) {
+    let hi = hk.item(id: "h", platform: .vercel, detail: "", note: nil, link: nil, latestState: nil)
+    expect("hook: triggered, not live", "\(hi.triggered) \(hi.lastState ?? "")", "true queued")
+} else { expect("hook row decodes", "no", "yes") }
+expect("cli text: a shell's own error stays", CLIText.german("bash: foo: command not found"), "bash: foo: command not found")
 // Ticking what changed: never a hidden project; ⌘A only the rows on screen.
 MainActor.assumeIsolated {
     let st = Store()
@@ -878,6 +1432,34 @@ do {
 // Messages carry the project they are about.
 expect("message: project key kept", Store.Message(date: Date(), text: "x", ok: false, project: "vercel/app").project ?? "", "vercel/app")
 
+// doctor: a provider's flags under providers.<p> win over the flat copy; the flat one alone still counts.
+let docNested = try? JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"vercelCli":false,"renderKey":false,"providers":{"vercel":{"vercelCli":true,"vercelApi":true,"vercelLoggedIn":true},"render":{"renderKey":true}}}"#.utf8))
+expect("doctor: nested vercel flags win", docNested?.vercelCli ?? false, true)
+expect("doctor: nested render key wins", docNested?.renderKey ?? false, true)
+let docFlat = try? JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"vercelLoggedIn":true,"renderKey":true}"#.utf8))
+expect("doctor: flat (older script) still read", (docFlat?.vercelLoggedIn ?? false) && (docFlat?.renderKey ?? false), true)
+
+// LOG-108: the iPhone's GitHub token. A link made before the switch existed keeps getting it;
+// a new one does not; a choice once made stays.
+do {
+    let suite = "dc-test-phone-gh"
+    let d = UserDefaults(suiteName: suite)!; d.removePersistentDomain(forName: suite)
+    PhoneLinkModel.migrateGitHub(d, linkExists: { true })
+    expect("existing link: GitHub token stays on", d.bool(forKey: PhoneLinkModel.githubKey), true)
+    d.removePersistentDomain(forName: suite)
+    PhoneLinkModel.migrateGitHub(d, linkExists: { false })
+    expect("new link: GitHub token off (and decided)", d.object(forKey: PhoneLinkModel.githubKey) != nil && !d.bool(forKey: PhoneLinkModel.githubKey), true)
+    var asked = false
+    PhoneLinkModel.migrateGitHub(d, linkExists: { asked = true; return true })
+    expect("decided once: not asked again", asked, false)
+    expect("decided once: stays off", d.bool(forKey: PhoneLinkModel.githubKey), false)
+    d.removePersistentDomain(forName: suite)
+    // At launch: the link switched on (a QR-only Mac, or no keychain group) counts as existing.
+    d.set(true, forKey: "phoneLink")
+    PhoneLinkModel.migrateGitHubAtLaunch(d)
+    expect("launch: link on, no keychain entry: token stays on", d.bool(forKey: PhoneLinkModel.githubKey), true)
+    d.removePersistentDomain(forName: suite)
+}
 
 // The QR code of the iPhone link: the keys go there and back unchanged; anything else is refused.
 // Made now: a code older than PhoneLink.qrMaxAge is refused as a photo of the screen.
@@ -949,7 +1531,8 @@ MainActor.assumeIsolated {
     expect("palette: not deployable, no deploy", ids.contains("deploy|render/srv-9"), false)
     expect("palette: a link gives open", "\(ids.contains("open|render/srv-9")) \(ids.contains("open|vercel/app"))", "true false")
     expect("palette: Vercel and Render rows have a dashboard", "\(ids.contains("dashboard|vercel/app")) \(ids.contains("dashboard|render/srv-9"))", "true true")
-    expect("palette: a hidden row is not offered", ids.contains { $0.hasSuffix("|vercel/secret") }, false)
+    // A hidden row only offers "show" (our palette verb for hidden projects), nothing that acts on it.
+    expect("palette: a hidden row is not offered", ids.filter { $0.hasSuffix("|vercel/secret") }.allSatisfy { $0.hasPrefix("show|") }, true)
     UserDefaults.standard.set(true, forKey: "demoMode")
     let demo = PaletteCommands.all(st)
     expect("palette, demo mode: the real name is not searchable",
@@ -958,7 +1541,7 @@ MainActor.assumeIsolated {
     UserDefaults.standard.removeObject(forKey: "demoMode")
     expect("palette verbs: every verb has an English and a German word",
            PaletteVerb.allCases.allSatisfy { !$0.words.en.isEmpty && !$0.words.de.isEmpty }, true)
-    expect("palette verbs: only deploy and rollback ask first", PaletteVerb.allCases.filter(\.asks).map(\.rawValue), ["deploy", "rollback"])
+    expect("palette verbs: only deploy, rollback and preview ask first", PaletteVerb.allCases.filter(\.asks).map(\.rawValue), ["deploy", "rollback", "preview"])
 }
 
 // The Claude nudge: stored only when it changes; once dismissed, refresh leaves it alone (and reads no config).
@@ -994,7 +1577,7 @@ if let dir = ProcessInfo.processInfo.environment["DC_CONTRACT"] {
     }
     if let a = load(AutofixStatus.self, "autofix.json") {
         expect("contract autofix: routine, token, newest first", "\(a.routine ?? "-") \(a.token) \(a.fires.map(\.project))", "routine-1 true [\"web\", \"api\"]")
-        expect("contract autofix: the PR and the merged commit", "\(a.fires.first?.pr ?? 0) \(a.fires.first?.mergedSha ?? "-")", "9 ffff999")
+        expect("contract autofix: the PR and the merged commit", "\(a.fires.first?.prNumber ?? 0) \(a.fires.first?.mergedSha ?? "-")", "9 ffff999")
     }
     if let c = load(TeamConfig.self, "config.json") {
         expect("contract config: not an observer, web needs 2 approvals", "\(c.readonly.value) \(c.guarded.map { "\($0.name)=\($0.approvals)" })", "false [\"web=2\"]")

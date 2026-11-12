@@ -23,7 +23,7 @@ final class SoftwareUpdate: NSObject, ObservableObject, SPUUpdaterDelegate {
         super.init()
         controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: self, userDriverDelegate: nil)
         // The old daily check had its own switch ("checkUpdates"); it still decides, so Sparkle never asks again.
-        controller.updater.automaticallyChecksForUpdates = UserDefaults.standard.object(forKey: "checkUpdates") as? Bool ?? true
+        controller.updater.automaticallyChecksForUpdates = Updater.automaticChecks(UserDefaults.standard.object(forKey: "checkUpdates"))
         controller.startUpdater()
         watch = controller.updater.publisher(for: \.canCheckForUpdates).receive(on: RunLoop.main).sink { [weak self] in self?.canCheck = $0 }
     }
@@ -40,7 +40,7 @@ final class SoftwareUpdate: NSObject, ObservableObject, SPUUpdaterDelegate {
     nonisolated func updater(_ updater: SPUUpdater, shouldPostponeRelaunchForUpdate item: SUAppcastItem,
                              untilInvokingBlock installHandler: @escaping () -> Void) -> Bool {
         MainActor.assumeIsolated {
-            guard isBusy() else { return false }
+            guard Updater.postponeRestart(busy: isBusy()) else { return false }
             Log.write("update \(item.displayVersionString): waiting for running deploys")
             Task { @MainActor [weak self] in
                 while self?.isBusy() == true { try? await Task.sleep(nanoseconds: 5_000_000_000) }

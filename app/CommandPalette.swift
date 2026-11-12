@@ -61,9 +61,10 @@ func paletteOrder(query: String, entries: [(id: String, texts: [String])], recen
 
 enum PaletteAction: String, CaseIterable {
     case deployChanged, reload, stopAll, journal, settings, costs
+    case selectChanged, clearSelection, toggleFilter, showAll, demoMode
 }
 enum PaletteVerb: String, CaseIterable {
-    case deploy, log, open, dashboard, rollback, notes
+    case deploy, log, open, dashboard, rollback, notes, preview, pin, hide, show
     /// What the person may type, in both languages: an English verb also works on a German Mac.
     var words: (en: String, de: String) {
         switch self {
@@ -73,10 +74,14 @@ enum PaletteVerb: String, CaseIterable {
         case .dashboard: return ("dashboard", "Dashboard")
         case .rollback: return ("rollback", "zurückrollen")
         case .notes: return ("notes", "Notiz")
+        case .preview: return ("preview deploy", "Vorschau-Deploy")
+        case .pin: return ("pin", "anheften")
+        case .hide: return ("hide", "ausblenden")
+        case .show: return ("show", "zeigen")
         }
     }
     /// Asks first, in the same words as the window.
-    var asks: Bool { self == .deploy || self == .rollback }
+    var asks: Bool { self == .deploy || self == .rollback || self == .preview }
 }
 
 struct PaletteCommand: Identifiable {
@@ -109,28 +114,42 @@ enum PaletteCommands {
             detail: w.projects > 0 ? L("\(w.projects) waiting", "\(w.projects) warten") : L("nothing waits", "nichts wartet")) }
         add(.reload, "Reload", "Neu laden", "arrow.clockwise")
         let active = store.items.values.joined().filter { $0.state.isActive }.count
-        if active > 0 { add(.stopAll, "Stop all", "Alles abbrechen", "stop.circle", detail: L("\(active) running", "\(active) laufen")) }
+        if active > 0 { add(.stopAll, "Stop all …", "Alles abbrechen …", "stop.circle", detail: L("\(active) running", "\(active) laufen")) }
         add(.journal, "Open journal (deploy history)", "Journal öffnen (Deploy-Verlauf)", "clock.arrow.circlepath")
         add(.settings, "Settings", "Einstellungen", "gear")
         add(.costs, "Costs", "Kosten", "dollarsign.circle")
+        if !looksOnly && w.projects > 0 { add(.selectChanged, "Tick all changed", "Alle mit Änderungen anhaken", "checkmark.circle") }
+        if store.items.values.contains(where: { $0.contains { $0.selected } }) {
+            add(.clearSelection, "Clear the selection", "Auswahl leeren", "circle")
+        }
+        add(.toggleFilter, "Changed only (on/off)", "Nur mit Änderungen (an/aus)", "line.3.horizontal.decrease.circle")
+        add(.showAll, "Show all platforms", "Alle Plattformen zeigen", "square.grid.2x2")
+        add(.demoMode, Demo.on ? "Turn off demo mode" : "Turn on demo mode", Demo.on ? "Demo-Modus ausschalten" : "Demo-Modus einschalten", "theatermasks")
 
         // Only platforms with a tab: a switched-off one may still have its old list in memory.
         let projects = store.enabledProviders.compactMap(\.platform).flatMap { store.items[$0] ?? [] }.filter { !store.isHidden($0) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        // The same name on two platforms: the platform goes into the title, so the lines differ.
+        var seen: [String: Int] = [:]
+        for i in projects { seen[Demo.mask(i.name).lowercased(), default: 0] += 1 }
         for i in projects {
             // In demo mode only the stand-in is searchable: typing a real name must not reveal it.
-            let name = Demo.mask(i.name)
+            let masked = Demo.mask(i.name)
+            let name = (seen[masked.lowercased()] ?? 0) > 1 ? masked + " (\(i.platform.rawValue))" : masked
             let waiting = i.hasNewCommits && i.deployable ? Row.waitingText(i) : nil
             let detail = [i.platform.rawValue, waiting].compactMap { $0 }.joined(separator: " · ")
             let info = store.provider(i.platform)   // unknown platform info: offered, as before
             for v in PaletteVerb.allCases {
                 switch v {
+                case .preview:
+                    guard i.deployable && !i.state.isActive && !looksOnly && store.provider(i.platform)?.caps.preview == true else { continue }
                 case .deploy: guard i.deployable && !i.state.isActive && !looksOnly else { continue }
                 case .rollback: guard (info?.caps.rollback ?? true) && i.deployable && !i.state.isActive && !looksOnly else { continue }
                 case .open: guard i.link.flatMap({ URL(string: $0) }) != nil else { continue }
                 case .dashboard: guard i.platform == .vercel || i.dashboardURL != nil else { continue }
+                case .show: continue   // only for hidden projects, below
                 case .log: guard info?.caps.logs ?? true else { continue }
-                case .notes: break
+                case .notes, .pin, .hide: break
                 }
                 let words = v.words
                 let symbol: String
@@ -141,13 +160,35 @@ enum PaletteCommands {
                 case .dashboard: symbol = "rectangle.on.rectangle"
                 case .rollback: symbol = "arrow.uturn.backward"
                 case .notes: symbol = "note.text"
+                case .preview: symbol = "eye"
+                case .pin: symbol = store.isPinned(i) ? "pin.slash" : "pin"
+                case .hide: symbol = "eye.slash"
+                case .show: symbol = "eye"
                 }
-                out.append(PaletteCommand(id: v.rawValue + "|" + Store.key(i), title: L(words.en, words.de) + " " + name,
+                let title = v == .pin && store.isPinned(i) ? L("unpin", "nicht mehr anheften") : L(words.en, words.de)
+                out.append(PaletteCommand(id: v.rawValue + "|" + Store.key(i), title: title + " " + name,
                                           detail: detail, symbol: symbol,
                                           texts: ["\(words.en) \(name)", "\(words.de) \(name)"], kind: .project(v, i)))
             }
         }
+        // Hidden projects can be found too, with one command: show them again.
+        for i in Platform.allCases.flatMap({ store.items[$0] ?? [] }) where store.isHidden(i) {
+            let name = Demo.mask(i.name), w = PaletteVerb.show.words
+            out.append(PaletteCommand(id: "show|" + Store.key(i), title: L(w.en, w.de) + " " + name,
+                                      detail: i.platform.rawValue + " · " + L("hidden", "ausgeblendet"), symbol: "eye",
+                                      texts: ["\(w.en) \(name)", "\(w.de) \(name)"], kind: .project(.show, i)))
+        }
         return out
+    }
+
+    /// Hidden projects that would match: the palette says they exist instead of "nothing found".
+    static func hiddenMatches(_ store: Store, _ query: String) -> Int {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return 0 }
+        let words = q.split(separator: " ").map(String.init)
+        return Platform.allCases.flatMap { store.items[$0] ?? [] }.filter { i in
+            store.isHidden(i) && words.contains { Demo.mask(i.name).localizedCaseInsensitiveContains($0) }
+        }.count
     }
 }
 
@@ -162,6 +203,10 @@ struct CommandPalette: View {
     @State private var selection: String?
     @State private var monitor: Any?
     @FocusState private var focused: Bool
+    @Environment(\.openSettings) private var openSettings
+    /// Built when the palette opens and when the store changes, not on every key press.
+    @State private var commands: [PaletteCommand]?
+    private var allCommands: [PaletteCommand] { commands ?? PaletteCommands.all(store) }
 
     /// The window the palette sits in: its arrow keys and Esc are taken there only.
     @State private var home = WindowBox()
@@ -169,7 +214,7 @@ struct CommandPalette: View {
     static let limit = 60
 
     private var ordered: (shown: [PaletteCommand], total: Int) {
-        let all = PaletteCommands.all(store)
+        let all = allCommands
         let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let order = paletteOrder(query: query, entries: all.map { ($0.id, $0.texts) }, recent: PaletteCommands.recent)
         return (order.prefix(Self.limit).compactMap { byId[$0] }, order.count)
@@ -177,7 +222,7 @@ struct CommandPalette: View {
     private var results: [PaletteCommand] { ordered.shown }
     private var recentCount: Int {
         guard query.trimmingCharacters(in: .whitespaces).isEmpty else { return 0 }
-        let ids = Set(PaletteCommands.all(store).map(\.id))
+        let ids = Set(allCommands.map(\.id))
         return Set(PaletteCommands.recent.filter { ids.contains($0) }).count
     }
 
@@ -203,7 +248,17 @@ struct CommandPalette: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if shown.isEmpty {
-                            Text(L("Nothing found", "Nichts gefunden")).foregroundStyle(.secondary).padding(12)
+                            Text(L("Nothing found", "Nichts gefunden")).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 12)
+                            let hidden = PaletteCommands.hiddenMatches(store, query)
+                            if hidden > 0 {
+                                Button(L("\(plural(hidden, "hidden project matches", "hidden projects match")) – open Settings",
+                                         "\(hidden) \(hidden == 1 ? "ausgeblendetes Projekt passt" : "ausgeblendete Projekte passen") – Einstellungen öffnen")) {
+                                    // Hidden projects are on the Projects tab.
+                                    SettingsNav.prepare(.projects)
+                                    dismiss(); NSApp.activate(ignoringOtherApps: true); openSettings()
+                                }
+                                .buttonStyle(.link).padding(.horizontal, 12).padding(.vertical, 4)
+                            }
                         }
                         ForEach(Array(shown.enumerated()), id: \.element.id) { n, cmd in
                             if n == 0 && recent > 0 { header(L("Recent", "Zuletzt")) }
@@ -231,6 +286,7 @@ struct CommandPalette: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("Command palette", "Befehlspalette"))
         .onAppear {
+            commands = PaletteCommands.all(store)
             focused = true
             let home = self.home
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
@@ -243,6 +299,8 @@ struct CommandPalette: View {
         }
         .onDisappear { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil }
         .onChange(of: query) { _, _ in selection = results.first?.id }
+        // After the change (objectWillChange fires before it).
+        .onReceive(store.objectWillChange.receive(on: RunLoop.main)) { _ in commands = PaletteCommands.all(store) }
     }
 
     private func header(_ s: String) -> some View {
@@ -296,8 +354,8 @@ struct CommandPalette: View {
         guard !shown.isEmpty else { return }
         let at = shown.firstIndex { $0.id == selection } ?? 0
         let next = shown[max(0, min(shown.count - 1, at + by))]
+        // VoiceOver hears the row through its "selected" trait; no extra announcement on top.
         selection = next.id
-        AccessibilityNotification.Announcement(next.title).post()
     }
 
     private func run(_ cmd: PaletteCommand) {
@@ -353,6 +411,8 @@ extension View {
 final class PaletteCenter: ObservableObject {
     static let shared = PaletteCenter()
     @Published var requests = 0
+    /// Bumped by the palette's "Changed only (on/off)": the window flips its filter.
+    @Published var filterToggles = 0
     /// Main windows on screen that can show the palette.
     var hosts = 0
     /// Set when there was no window: the next one to appear opens the palette.
@@ -405,6 +465,8 @@ struct CommandPaletteHost: ViewModifier {
     @State private var rollbackItem: Item?
     @State private var noteItem: Item?
     @State private var noteText = ""
+    @State private var previewItem: Item?
+    @State private var stopping = false
 
     enum PaletteSheet: Identifiable {
         case log(Item), journal, costs
@@ -428,15 +490,42 @@ struct CommandPaletteHost: ViewModifier {
             .sheet(item: $sheet) { s in
                 switch s {
                 case .log(let i): BuildLog(store: store, item: i)
-                case .journal: JournalView()
+                case .journal: JournalView(costs: store.costs)
                 case .costs: if let c = store.costs { CostsSheet(costs: c) } else { PaletteCosts() }
                 }
             }
             .modifier(PaletteQuestions(store: store, deployItem: $deployItem, unchangedItem: $unchangedItem,
                                        rollbackItem: $rollbackItem, noteItem: $noteItem, noteText: $noteText))
+            .alert(L("Preview deploy?", "Vorschau-Deploy?"), isPresented: Binding(get: { previewItem != nil }, set: { if !$0 { previewItem = nil } })) {
+                Button(L("Cancel", "Abbrechen"), role: .cancel) { previewItem = nil }
+                Button(L("Build a preview", "Vorschau bauen")) { if let i = previewItem, !store.observer { store.deployOne(i, preview: true) }; previewItem = nil }
+            } message: {
+                Text(L("\(Demo.mask(previewItem?.name ?? "")) gets a preview build. Production stays as it is; the build costs build minutes.",
+                       "\(Demo.mask(previewItem?.name ?? "")) bekommt einen Vorschau-Build. Live bleibt, wie es ist; der Build kostet Build-Minuten."))
+            }
+            .alert(L("Stop every deploy?", "Alle Deploys abbrechen?"), isPresented: $stopping) {
+                Button(L("Keep running", "Weiterlaufen lassen"), role: .cancel) {}
+                Button(L("Stop all", "Alles abbrechen"), role: .destructive) { store.cancelAll() }
+            } message: {
+                Text(L("Running builds are cancelled at the platform, queued ones do not start.",
+                       "Laufende Builds werden beim Anbieter abgebrochen, wartende starten nicht."))
+            }
             .onChange(of: center.requests) { _, _ in
                 guard !busy, center.target == nil || center.target === home.window else { return }
                 showing = true
+            }
+            // From a failure's notification: the log, or the rollback question (never the rollback itself).
+            .onChange(of: store.pendingLog) { _, k in
+                guard let k else { return }
+                store.pendingLog = nil
+                if let i = store.itemNamed(key: k) { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { sheet = .log(i) } }
+            }
+            .onChange(of: store.pendingRollback) { _, k in
+                guard let k else { return }
+                store.pendingRollback = nil
+                if let i = store.itemNamed(key: k), i.deployable, !i.state.isActive, !store.observer {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { rollbackItem = i }
+                }
             }
             .onAppear {
                 center.hosts += 1
@@ -459,10 +548,20 @@ struct CommandPaletteHost: ViewModifier {
                 if store.waiting.projects > 0 { store.pendingDeployAll = true }
                 else { store.show(Store.Toast(text: L("Everything merged is live", "Alles Gemergte ist live"), ok: true)) }
             case .reload: Task { await store.autoRefresh() }
-            case .stopAll: store.cancelAll()
+            case .stopAll: stopping = true
             case .journal: sheet = .journal
             case .settings: NSApp.activate(ignoringOtherApps: true); openSettings()
             case .costs: sheet = .costs
+            case .selectChanged:
+                guard !store.observer else { return }
+                // Like ⌘A in the window: hidden projects stay out (Store.isWaiting).
+                Platform.allCases.forEach { store.selectChanged($0) }
+            case .clearSelection: Platform.allCases.forEach { store.clearSelection($0) }
+            case .toggleFilter: PaletteCenter.shared.filterToggles += 1
+            case .showAll: UserDefaults.standard.set(true, forKey: "showAll")
+            case .demoMode:
+                let d = UserDefaults.standard
+                d.set(!d.bool(forKey: "demoMode"), forKey: "demoMode")
             }
         case .project(let v, let item):
             // The row as it is now, not as it was when the palette listed it.
@@ -487,6 +586,14 @@ struct CommandPaletteHost: ViewModifier {
                     }
                 }
             case .notes: noteText = store.note(i) ?? ""; noteItem = i
+            case .preview:
+                guard i.deployable && !i.state.isActive && !store.observer else { return }
+                previewItem = i
+            case .pin: store.togglePin(i)
+            case .hide:
+                if i.selected { store.toggle(i.platform, i.id) }
+                store.hideWithUndo(i)
+            case .show: store.unhide(Store.key(i))
             }
         }
     }
@@ -497,6 +604,7 @@ struct CommandPaletteHost: ViewModifier {
 /// green", see `Store.pendingDeploy`) and then takes the usual wait before it starts.
 private struct PaletteQuestions: ViewModifier {
     @ObservedObject var store: Store
+    /// The window's checkbox in the deploy confirmation, remembered.
     @Binding var deployItem: Item?
     @Binding var unchangedItem: Item?
     @Binding var rollbackItem: Item?
@@ -545,8 +653,20 @@ private struct PaletteQuestions: ViewModifier {
 @MainActor
 enum PaletteHotKey {
     static let defaultsKey = "paletteHotKey"
+    static let choiceKey = "paletteHotKeyChoice"
     private static var ref: EventHotKeyRef?
     private static var handler: EventHandlerRef?
+    private static var registered: Int?
+
+    /// The keys to choose from (FEA-123); ⌥⌘K stays the default.
+    static let choices: [(label: String, key: Int, mods: Int)] = [
+        ("⌥⌘K", kVK_ANSI_K, cmdKey | optionKey),
+        ("⌃⌥⌘K", kVK_ANSI_K, cmdKey | optionKey | controlKey),
+        ("⌥⌘D", kVK_ANSI_D, cmdKey | optionKey),
+        ("⌃⌥Space", kVK_Space, controlKey | optionKey),
+    ]
+    static var choice: Int { let c = UserDefaults.standard.integer(forKey: choiceKey); return choices.indices.contains(c) ? c : 0 }
+    static var label: String { choices[choice].label }
 
     /// The last attempt to take ⌥⌘K failed (another app holds it, say).
     private(set) static var failed = false
@@ -554,8 +674,9 @@ enum PaletteHotKey {
     /// Takes or frees the key as the setting says. False when it is wanted but could not be taken.
     @discardableResult static func update() -> Bool {
         let on = UserDefaults.standard.bool(forKey: defaultsKey)
-        if on && ref == nil { failed = !register() }
-        else if !on { if let r = ref { UnregisterEventHotKey(r); ref = nil }; failed = false }
+        // Another key chosen: the old one goes first.
+        if let r = ref, !on || registered != choice { UnregisterEventHotKey(r); ref = nil; registered = nil }
+        if on && ref == nil { failed = !register() } else if !on { failed = false }
         return !failed
     }
 
@@ -570,8 +691,9 @@ enum PaletteHotKey {
         }
         var r: EventHotKeyRef?
         let id = EventHotKeyID(signature: OSType(0x4443_4B50), id: 1)   // "DCKP"
-        let status = RegisterEventHotKey(UInt32(kVK_ANSI_K), UInt32(cmdKey | optionKey), id, GetApplicationEventTarget(), 0, &r)
-        if status == noErr { ref = r; return true }
+        let c = choices[choice]
+        let status = RegisterEventHotKey(UInt32(c.key), UInt32(c.mods), id, GetApplicationEventTarget(), 0, &r)
+        if status == noErr { ref = r; registered = choice; return true }
         Log.write("palette hot key: register \(status)")
         return false
     }
@@ -580,19 +702,25 @@ enum PaletteHotKey {
 /// The section in Settings.
 struct CommandPaletteSettings: View {
     @AppStorage(PaletteHotKey.defaultsKey) private var hotKey = false
-    @State private var failed = PaletteHotKey.failed
+    @AppStorage(PaletteHotKey.choiceKey) private var choice = 0
+    @State private var taken = PaletteHotKey.failed
 
     var body: some View {
         Section(L("Command palette", "Befehlspalette")) {
-            Toggle(L("⌥⌘K opens the command palette from any app", "⌥⌘K öffnet die Befehlspalette aus jeder App"), isOn: $hotKey)
+            Toggle(L("A key opens the command palette from any app", "Eine Taste öffnet die Befehlspalette aus jeder App"), isOn: $hotKey)
                 .onChange(of: hotKey) { _, on in
-                    // Taken by another app: the switch goes back, and the reason stays below it.
-                    if PaletteHotKey.update() { if on { failed = false } } else { failed = true; hotKey = false }
+                    // Taken by another app: the switch goes back and says why, instead of staying "on".
+                    if !PaletteHotKey.update() && on { hotKey = false; taken = true } else if on { taken = false }
                 }
-            if failed {
-                Text(L("⌥⌘K is taken by another app, so it could not be switched on.",
-                       "⌥⌘K ist schon von einer anderen App belegt und ließ sich nicht einschalten."))
-                    .font(.caption).foregroundStyle(.red)
+            Picker(L("Key", "Taste"), selection: $choice) {
+                ForEach(PaletteHotKey.choices.indices, id: \.self) { Text(PaletteHotKey.choices[$0].label).tag($0) }
+            }
+            .disabled(!hotKey)
+            .onChange(of: choice) { _, _ in
+                if hotKey, !PaletteHotKey.update() { hotKey = false; taken = true } else { taken = false }
+            }
+            if taken {
+                ErrorText(L("\(PaletteHotKey.label) is already used by another app.", "\(PaletteHotKey.label) wird schon von einer anderen App benutzt."))
             }
             Text(L("In the window, ⌘K always opens it. Deploys and rollbacks from the palette still ask first.",
                    "Im Fenster öffnet ⌘K sie immer. Deploys und Rollbacks aus der Palette fragen trotzdem vorher."))

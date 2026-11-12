@@ -73,7 +73,27 @@ enum LogTools {
         if let sha { head += " Commit: \(sha)." }
         if let message, !message.isEmpty { head += " Status: \(maskSecrets(message))." }
         let f = fence(for: excerpt)
-        return head + "\n\nBuild log (excerpt around the first error):\n\(f)\n\(excerpt)\n\(f)\n\nFind the cause and propose a fix."
+        let block = "\(f)\n\(excerpt)\n\(f)"
+        // Settings → Claude: a prompt of the person's own (FEA-028); the log is always masked.
+        if let t = UserDefaults.standard.string(forKey: promptTemplateKey), !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return fill(t, ["name": name, "repo": repo ?? "", "ref": ref ?? "", "sha": sha ?? "",
+                            "status": message.map(maskSecrets) ?? "", "log": block])
+        }
+        return head + "\n\nBuild log (excerpt around the first error):\n" + block + "\n\nFind the cause and propose a fix."
+    }
+    static let promptTemplateKey = "claudePromptTemplate"
+    /// "{name}", "{repo}", "{ref}", "{sha}", "{status}", "{log}" replaced in one pass, so a value
+    /// that holds "{log}" stays as it is. A placeholder it does not know stays too.
+    static func fill(_ template: String, _ values: [String: String]) -> String {
+        guard let re = try? NSRegularExpression(pattern: #"\{(name|repo|ref|sha|status|log)\}"#) else { return template }
+        let ns = template as NSString
+        var out = "", last = 0
+        for m in re.matches(in: template, range: NSRange(location: 0, length: ns.length)) {
+            out += ns.substring(with: NSRange(location: last, length: m.range.location - last))
+            out += values[ns.substring(with: m.range(at: 1))] ?? ""
+            last = m.range.location + m.range.length
+        }
+        return out + ns.substring(from: last)
     }
 }
 
