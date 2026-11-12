@@ -65,22 +65,17 @@ the vendor).
 | Service lists, deploys, build logs, starts and rollbacks | `api.render.com` | `curl` over HTTPS; the key on stdin (`curl -K -`) |
 | Commits, compares, pull requests, check runs, workflow files | `api.github.com` | the `gh` CLI, with its own login |
 | Commits, compares, merge requests (only for repos on GitLab) | `GITLAB_HOST` (`gitlab.com` when unset) | the `glab` CLI with its login, or `curl` with `GITLAB_TOKEN` on stdin; never to another host a repo URL names |
-| Site lists, deploys, logs, starts and rollbacks (opt-in hosts, only after `deploys providers enable <p>`) | `api.netlify.com`, `api.cloudflare.com`, `api.digitalocean.com`, your Coolify server; AWS through the `aws` CLI | `curl` over HTTPS with the token on stdin; Amplify with the `aws` CLI's own credentials |
-| A POST that starts a build | the deploy hook URL you added | `curl`, URL and headers on stdin |
-| Claude in the app (opt-in, your own key): masked log excerpts, commit titles, file names | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after `deploys ai set-key`, with a monthly token cap |
 | Keys for the iPhone app: the Vercel token for the iPhone, the Render key, the `gh` token | iCloud Keychain (end-to-end encrypted by Apple), or a QR code on screen | only when you turn on Settings → iPhone or show the QR code; see [iPhone link](#iphone-link) |
 | The `deploy-center` MCP entry: paths to `node`, the server and `deploys`, and `DEPLOYS_MCP_ALLOW_DEPLOY=1` only if you allow deploys; no key | `~/Library/Application Support/Claude/claude_desktop_config.json`, Claude Code's config | only on Connect in Settings → Claude; only that entry is added or removed |
 | The update feed (once a day, can be turned off; no system profile), then the zip | `deploycenter.app/appcast.xml`, `github.com` | HTTPS, see [Updates](#updates) |
-| Project icons | each project's own domain | HTTPS to `https://<domain>/`; icon links in that page are followed |
+| Project icons, and the site check after a deploy (`deploys verify`, plain GETs) | each project's own domain (or the `--url` you pass) | HTTPS to `https://<domain>/` (and `--path`); icon links in that page are followed |
 | Is a host down? (a plain GET, nothing of yours) | `www.vercel-status.com`, `status.render.com`, `www.githubstatus.com` | HTTPS, from the app |
-| Commits, compares and merge requests (repos on GitLab only) | `gitlab.com` or your `GITLAB_HOST` | the `glab` CLI with its own login, or `curl` with `GITLAB_TOKEN` on stdin; only for projects whose repo is on GitLab |
 | Opt-in hosts, once turned on (`deploys providers enable <name>`): site lists, deploys, build logs, starts, rollbacks | `api.netlify.com`, `api.cloudflare.com`, AWS Amplify (through the `aws` CLI and your AWS profile), `api.digitalocean.com`, your own Coolify instance (`COOLIFY_URL`) | HTTPS; each key from the keychain (`deploy-center-<name>`; for Amplify only a profile name) or the environment, on stdin |
 | A deploy hook: the POST that starts a build, with the method, headers and body you set | the hook URL you added (`deploys hook add`) | `curl` over HTTPS (or `http://` to `localhost`); the URL from the keychain, on stdin |
-| Claude in the app / `deploys ai` (opt-in, your own key): the masked log excerpt around the first error, or the titles of waiting commits and PRs, or diff stats and risky file names ([details](docs/CLAUDE.md#privacy)) | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after you turn it on and save a key, and only when you ask |
+| Claude in the app / `deploys ai` (opt-in, your own key): the masked log excerpt around the first error, or the titles of waiting commits and PRs, or diff stats and risky file names ([details](docs/CLAUDE.md#privacy)) | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after you turn it on and save a key, only when you ask, with a monthly token cap |
 | Autofix: project, repo, branch, commit, deploy id and the last 60 KB of the build log, masked | `api.anthropic.com` (your routine) | `curl` over HTTPS; the token on stdin; only after you set up a routine and a token |
 | A daily summary of project names and counts | the webhook you set in `DEPLOYS_NOTIFY_URL` | `integrations/notify/notify.sh`, only when you run it |
 | The agent digest: project names, commit titles and authors, PR titles, risk hints | the webhook you set, and an issue in a GitHub repo of yours | `integrations/digest/`, only when you run it (usually from your own GitHub workflow) |
-| The iPhone app: the Vercel token, Render key and GitHub token of this Mac | your iCloud Keychain (end-to-end encrypted by Apple), or a QR code shown for a minute | only when you turn on *Connect the iPhone app* or show the code |
 
 The MCP server, the Claude Code plugin, the Raycast and VS Code extensions run on your Mac and call
 `deploys`; they send nothing on their own. The Autofix routine runs in Anthropic's cloud under your
