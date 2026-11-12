@@ -71,7 +71,7 @@ jobs:
   ios:
     # The iPhone app and its widgets, built for the simulator without signing. Catches a change in
     # shared/ (PhoneLink, DeploySnapshot) that breaks the iOS build. Nothing is uploaded.
-    runs-on: macos-15
+    runs-on: macos-26 # the iOS 26 SDK (BGContinuedProcessingTask in KeepAlive.swift)
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,8 +121,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - name: Tools
-        run: command -v column >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q bsdextrautils; }
+      - name: Tools (column; xmllint for the badge and status page checks)
+        run: |
+          missing=()
+          command -v column >/dev/null || missing+=(bsdextrautils)
+          command -v xmllint >/dev/null || missing+=(libxml2-utils)
+          if [ "${#missing[@]}" -gt 0 ]; then sudo apt-get update -q && sudo apt-get install -y -q "${missing[@]}"; fi
       - name: npm ci (MCP server, VS Code extension)
         run: |
           (cd integrations/mcp && npm ci --no-audit --no-fund)
