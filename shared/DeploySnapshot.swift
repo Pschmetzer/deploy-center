@@ -24,6 +24,14 @@ struct DeploySnapshot: Codable, Equatable {
         var id: String { key ?? (platform + "/" + name) }
     }
 
+    struct PlatformCount: Codable, Equatable {
+        let platform: String      // "Vercel", "Render", …
+        let waiting: Int          // projects
+        let prs: Int
+        let building: Int
+        let failed: Int
+    }
+
     static let version = 1
     var version = Self.version
     var at: Date
@@ -33,6 +41,9 @@ struct DeploySnapshot: Codable, Equatable {
     let waitingPRs: Int
     let building: Int
     let failed: Int
+    /// The counts of each platform (all rows, not only the ten in `projects`), so a widget can
+    /// show one platform. Nil from older apps.
+    var byPlatform: [PlatformCount]? = nil
     let saving: Saving?
     /// Building and failed first, then waiting by the number of PRs; at most ten.
     let projects: [Project]

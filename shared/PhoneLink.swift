@@ -15,8 +15,19 @@ struct LinkedKeys: Codable, Equatable {
     var render = ""
     var github = ""
     var updated = Date()
+    /// What turning auto-deploy off saves a month, in USD, as the Mac app works it out; nil when
+    /// not known. Older apps on either side leave it out.
+    var savingPerMonth: Double? = nil
+    /// QR code only: a fresh id per code, so a phone can refuse a code it has used before.
+    var once: String? = nil
 
     var isEmpty: Bool { vercel.isEmpty && render.isEmpty }
+    /// The same keys and figures; when they were written (and a QR code's id) do not count.
+    func sameContent(as o: LinkedKeys) -> Bool {
+        var a = self, b = o
+        a.updated = .distantPast; b.updated = .distantPast; a.once = nil; b.once = nil
+        return a == b
+    }
 }
 
 enum PhoneLink {
@@ -55,12 +66,16 @@ enum PhoneLink {
     }
 
     /// Writes the keys (Mac). "After first unlock", not "this device only": that is what lets it sync.
+    /// Unchanged keys write nothing; changed ones are updated in place, so the item never vanishes
+    /// from the other devices in between (a delete syncs too) and a failed write keeps the old one.
     @discardableResult
     static func write(_ keys: LinkedKeys) -> OSStatus {
         guard let g = group else { return errSecMissingEntitlement }
+        if let old = read(), old.sameContent(as: keys) { return errSecSuccess }
         guard let d = try? JSONEncoder().encode(keys) else { return errSecParam }
-        var del = base(g); del[kSecAttrSynchronizable as String] = kSecAttrSynchronizableAny
-        SecItemDelete(del as CFDictionary)
+        var find = base(g); find[kSecAttrSynchronizable as String] = kSecAttrSynchronizableAny
+        let s = SecItemUpdate(find as CFDictionary, [kSecValueData as String: d] as CFDictionary)
+        guard s == errSecItemNotFound else { return s }
         var add = base(g)
         add[kSecAttrSynchronizable as String] = kCFBooleanTrue
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock

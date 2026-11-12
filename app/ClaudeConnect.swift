@@ -32,7 +32,8 @@ enum ClaudeConfig {
     }
 
     static func encode(_ root: [String: Any]) throws -> Data {
-        var d = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .withoutEscapingSlashes])
+        // Sorted: the same file gives the same text, so connecting twice does not reshuffle it.
+        var d = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys])
         d.append(0x0A)
         return d
     }
@@ -209,11 +210,17 @@ enum ClaudeEnv {
                                 "/usr/local/bin/claude", home + "/.npm-global/bin/claude"])
     }
 
-    /// Folders the app may sit in during development: next to it, and up to four levels up.
+    /// Folders the app may sit in during development: next to it, and up to four levels up, but
+    /// only a checkout of this repo (.git and VERSION). A stray integrations/ folder in Downloads
+    /// must not end up in Claude's config or be installed as an extension.
     private static var nearBundle: [String] {
         var out: [String] = []
         var dir = (Bundle.main.bundlePath as NSString).deletingLastPathComponent
-        for _ in 0..<4 where dir.count > 1 { out.append(dir); dir = (dir as NSString).deletingLastPathComponent }
+        let fm = FileManager.default
+        for _ in 0..<4 where dir.count > 1 {
+            if fm.fileExists(atPath: dir + "/.git"), fm.fileExists(atPath: dir + "/VERSION") { out.append(dir) }
+            dir = (dir as NSString).deletingLastPathComponent
+        }
         return out
     }
 
@@ -280,11 +287,20 @@ final class ClaudeLink: ObservableObject {
     @Published var restartHint = false
     @Published var extensionURL: URL?
 
-    var canConnect: Bool { node != nil && server != nil }
+    /// The major version of `node`, when it could be read.
+    @Published var nodeMajor: Int?
+    var canConnect: Bool { node != nil && server != nil && (nodeMajor ?? 18) >= 18 }
     var missing: String? {
         if let serverProblem { return serverProblem }
         if node == nil { return L("Node.js 18 or newer is needed (brew install node).", "Node.js 18 oder neuer wird gebraucht (brew install node).") }
+        if let m = nodeMajor, m < 18 {
+            return L("Node.js \(m) is too old: 18 or newer is needed (brew upgrade node).", "Node.js \(m) ist zu alt: 18 oder neuer wird gebraucht (brew upgrade node).")
+        }
         return nil
+    }
+    /// "v20.11.1" → 20.
+    nonisolated static func majorVersion(_ version: String) -> Int? {
+        Int(version.trimmingCharacters(in: .whitespacesAndNewlines).drop { $0 == "v" }.split(separator: ".").first ?? "")
     }
 
     /// Always from the files: Claude Desktop may rewrite its config while it runs.
@@ -295,6 +311,7 @@ final class ClaudeLink: ObservableObject {
         async let n = ClaudeEnv.node()
         async let c = ClaudeEnv.cli()
         node = await n; cli = await c
+        if let node { nodeMajor = Self.majorVersion(await ClaudeRun.run(node, ["--version"], timeout: 5).out) } else { nodeMajor = nil }
 
         let dData = ClaudeFiles.read(ClaudeEnv.desktopConfig)
         let dFound = ClaudeEnv.desktopApp != nil || dData != nil
@@ -314,6 +331,13 @@ final class ClaudeLink: ObservableObject {
         if !stale.isEmpty {
             say(L("Out of date: \(stale.joined(separator: ", ")) points to a place the app is no longer in. Connect again.",
                   "Veraltet: \(stale.joined(separator: ", ")) zeigt auf einen Ort, an dem die App nicht mehr liegt. Neu verbinden."), failed: true)
+        }
+        // The switch shows what Claude's files say, not a preference that may be older (a reset,
+        // or a connection made by the plugin or the CLI).
+        // Both connected: "on" only when both allow, so a later reconnect never widens what one of them may do.
+        if desktop == .connected || code == .connected {
+            let allows = (desktop != .connected || desktopAllows) && (code != .connected || codeAllows)
+            UserDefaults.standard.set(allows, forKey: "claudeAllowDeploy")
         }
 
         autofix = try? await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20)
@@ -365,6 +389,11 @@ final class ClaudeLink: ObservableObject {
         let running = { NSRunningApplication.runningApplications(withBundleIdentifier: ClaudeEnv.desktopBundleId) }
         for r in running() { r.terminate() }
         for _ in 0..<40 where !running().isEmpty { try? await Task.sleep(nanoseconds: 250_000_000) }
+        // Still running (a quit dialog left open, say): the hint stays, nothing is opened twice.
+        guard running().isEmpty else {
+            say(L("Claude Desktop did not quit. Quit it yourself, then open it again.", "Claude Desktop wurde nicht beendet. Selbst beenden und wieder öffnen."), failed: true)
+            return
+        }
         let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = true
         _ = try? await NSWorkspace.shared.openApplication(at: app, configuration: cfg)
         restartHint = false
@@ -420,6 +449,7 @@ final class ClaudeLink: ObservableObject {
 // MARK: - Settings > Claude
 
 struct ClaudeSettings: View {
+    @AppStorage(ClaudeNudge.dismissedKey) private var nudgeDismissed = false
     /// Scrolls the Settings form to the Autofix section.
     var showAutofix: () -> Void = {}
     @StateObject private var link = ClaudeLink()
@@ -445,11 +475,17 @@ struct ClaudeSettings: View {
                 Label(L("Claude can start a production deploy or a rollback of one project. It asks you before each one; a deploy uses build minutes and changes what is live.",
                         "Claude kann ein Produktions-Deploy oder einen Rollback eines Projekts starten. Es fragt vor jedem; ein Deploy kostet Build-Minuten und ändert, was live ist."),
                       systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption).foregroundStyle(.orange)
+                    .font(.caption).foregroundStyle(Color.warningText)
             }
 
             if let m = link.message {
-                Text(m).font(.caption).textSelection(.enabled).foregroundStyle(link.failed ? .red : .secondary)
+                if link.failed { ErrorText(m) }
+                else { Text(m).font(.caption).textSelection(.enabled).foregroundStyle(.secondary) }
+            }
+            // "Don't show again" on the hint in the window can be undone here.
+            if nudgeDismissed {
+                Button(L("Show the Claude hint in the window again", "Claude-Hinweis im Fenster wieder zeigen")) { nudgeDismissed = false }
+                    .buttonStyle(.link).font(.caption)
             }
         } header: {
             HStack {
@@ -477,7 +513,7 @@ struct ClaudeSettings: View {
     private func status(_ s: ClaudeLink.Status) -> some View {
         let (text, color): (String, Color) = {
             switch s {
-            case .connected: return (L("connected", "verbunden"), .green)
+            case .connected: return (L("connected", "verbunden"), Color.good)
             case .notConnected: return (L("not connected", "nicht verbunden"), .secondary)
             case .notFound: return (L("not found", "nicht gefunden"), .secondary)
             case .problem: return (L("problem", "Problem"), .orange)
@@ -565,7 +601,7 @@ struct ClaudeSettings: View {
                     Text(ready ? (a?.scheduled == true ? L("on", "an") : L("set up, not scheduled", "eingerichtet, nicht geplant"))
                          : L("not set up", "nicht eingerichtet"))
                 }
-                .font(.caption).foregroundStyle(ready ? .green : .secondary)
+                .font(.caption).foregroundStyle(ready ? Color.good : .secondary)
                 Button(ready ? L("Show", "Zeigen") : L("Set up …", "Einrichten …"), action: showAutofix)
             }
         } label: {
@@ -585,14 +621,31 @@ enum ClaudeNudge {
         if UserDefaults.standard.bool(forKey: wantedKey) != wanted { UserDefaults.standard.set(wanted, forKey: wantedKey) }
     }
 
-    /// Once at launch, off the main thread: Claude found but not connected?
+    /// Once per run, off the main thread: Claude found but not connected? The window calls this
+    /// each time it is built; a login shell (up to 3 s) once is enough.
+    private static let ran = OnceFlag()
+    final class OnceFlag: @unchecked Sendable {
+        private let lock = NSLock(); private var done = false
+        /// True the first time only.
+        func first() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
+    }
     static func refresh() async {
         if UserDefaults.standard.bool(forKey: dismissedKey) { return }
+        guard ran.first() else { return }
         let desktopData = await Task.detached { ClaudeFiles.read(ClaudeEnv.desktopConfig) }.value
-        let desktop = ClaudeEnv.desktopApp != nil && (try? ClaudeConfig.parse(desktopData)) != nil && ClaudeConfig.entry(desktopData) == nil
         let codeData = await Task.detached { ClaudeFiles.read(ClaudeEnv.codeConfig) }.value
-        let code = ClaudeConfig.entry(codeData) == nil ? (await ClaudeEnv.cli()) != nil : false
-        await MainActor.run { store(wanted: desktop || code) }
+        // The CLI is looked for (a login shell) only when Claude Code is not connected yet.
+        let cli = ClaudeConfig.entry(codeData) == nil ? (await ClaudeEnv.cli()) != nil : false
+        let want = wanted(desktopInstalled: ClaudeEnv.desktopApp != nil, desktopData: desktopData, codeData: codeData, cliFound: cli)
+        await MainActor.run { store(wanted: want) }
+    }
+    /// Whether to offer the connection: Claude Desktop is installed with a config that can be read
+    /// and has no Deploy Center entry, or the Claude Code CLI is there and not connected.
+    /// A config that cannot be read is never offered for writing.
+    static func wanted(desktopInstalled: Bool, desktopData: Data?, codeData: Data?, cliFound: Bool) -> Bool {
+        let desktop = desktopInstalled && (try? ClaudeConfig.parse(desktopData)) != nil && ClaudeConfig.entry(desktopData) == nil
+        let code = cliFound && ClaudeConfig.entry(codeData) == nil
+        return desktop || code
     }
 }
 

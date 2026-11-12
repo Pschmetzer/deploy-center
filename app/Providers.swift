@@ -216,11 +216,38 @@ struct RepoGroup: Identifiable {
 extension Costs {
     /// Average build cost per day before auto-deploy was turned off and since, whole days only.
     /// `today` is not over yet: a half day would make "since" look cheaper than it is.
+    /// Past the window of the costs (two weeks after `offDay`) "before" comes from the kept
+    /// `baseline`, and the days are all whole days since `offDay`, not only those in the window.
     func saving(today: String) -> (before: Double, after: Double, days: Int)? {
         guard let off = offDay else { return nil }
-        let before = days.filter { $0.day < off }, after = days.filter { $0.day > off && $0.day < today }
-        guard !before.isEmpty, !after.isEmpty else { return nil }
-        return (before.map(\.build).reduce(0, +) / Double(before.count), after.map(\.build).reduce(0, +) / Double(after.count), after.count)
+        let after = days.filter { $0.day > off && $0.day < today }
+        guard !after.isEmpty else { return nil }
+        let before: Double
+        if let b = measuredBaseline, b.days >= (baseline?.offDay == off ? baseline!.days : 0) { before = b.perDay }
+        else if let b = baseline, b.offDay == off { before = b.perDay }
+        else { return nil }
+        let whole = max(after.count, Self.daysBetween(off, today).map { $0 - 1 } ?? 0)
+        return (before, after.map(\.build).reduce(0, +) / Double(after.count), whole)
+    }
+
+    /// "Before" as the days in this answer show it; nil when none of them is before `offDay`.
+    var measuredBaseline: Baseline? {
+        guard let off = offDay else { return nil }
+        let before = days.filter { $0.day < off }
+        guard !before.isEmpty else { return nil }
+        return Baseline(offDay: off, perDay: before.map(\.build).reduce(0, +) / Double(before.count), days: before.count)
+    }
+
+    /// Calendar days from one "2026-11-03" to another; nil for a malformed day.
+    static func daysBetween(_ a: String, _ b: String) -> Int? {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        func d(_ s: String) -> Date? {
+            let p = s.split(separator: "-").compactMap { Int($0) }
+            guard p.count == 3 else { return nil }
+            return cal.date(from: DateComponents(year: p[0], month: p[1], day: p[2]))
+        }
+        guard let x = d(a), let y = d(b) else { return nil }
+        return cal.dateComponents([.day], from: x, to: y).day
     }
 
     /// What the whole days since auto-deploy went off cost less than before; nil when unknown or none.
@@ -234,18 +261,23 @@ extension Costs {
     var week: Double { days.suffix(7).map(\.build).reduce(0, +) }
 }
 
-/// "1 project", "3 projects": the number with the word that fits it.
-func plural(_ n: Int, _ one: String, _ many: String) -> String { "\(n) \(n == 1 ? one : many)" }
-
-/// "12 PRs waiting · $41 saved": what waits, and the saving when it is known.
-func summaryLine(_ w: Store.Waiting, saved: Double?) -> String {
+/// "7 projects · 44 PRs waiting · $41 saved": projects and PRs in one line, in the units of the
+/// menu bar and the Dock badge (projects), so the three never disagree.
+/// `elsewhere`: projects waiting on other platforms than this tab's (`here`); then an empty tab
+/// does not claim that everything is live.
+func waitingSummary(_ w: Store.Waiting, saved: Double?, elsewhere: Int = 0, here: String? = nil) -> String {
     let waiting: String
-    if w.projects == 0 {
+    if w.projects == 0, elsewhere > 0 {
+        let n = L("\(elsewhere) \(elsewhere == 1 ? "project" : "projects")", "\(elsewhere) \(elsewhere == 1 ? "Projekt" : "Projekte")")
+        waiting = (here.map { L("Nothing waits on \($0)", "Auf \($0) wartet nichts") } ?? L("Nothing waits here", "Hier wartet nichts"))
+            + " · " + L("\(n) on other platforms", "\(n) auf anderen Plattformen")
+    } else if w.projects == 0 {
         waiting = L("Everything merged is live", "Alles Gemergte ist live")
-    } else if w.prs > 0 {
-        waiting = L("\(w.prs) \(w.prs == 1 ? "PR" : "PRs") waiting", "\(w.prs) \(w.prs == 1 ? "PR wartet" : "PRs warten")")
     } else {
-        waiting = L("\(w.projects) \(w.projects == 1 ? "project" : "projects") waiting", "\(w.projects) \(w.projects == 1 ? "Projekt wartet" : "Projekte warten")")
+        let p = L("\(w.projects) \(w.projects == 1 ? "project" : "projects")", "\(w.projects) \(w.projects == 1 ? "Projekt" : "Projekte")")
+        waiting = w.prs > 0
+            ? p + " · " + L("\(w.prs) \(w.prs == 1 ? "PR waiting" : "PRs waiting")", "\(w.prs) \(w.prs == 1 ? "PR wartet" : "PRs warten")")
+            : p + " " + L("waiting", w.projects == 1 ? "wartet" : "warten")
     }
     guard let saved else { return waiting }
     return waiting + " · " + L("\(usd0(saved)) saved", "\(usd0(saved)) gespart")
@@ -270,6 +302,9 @@ extension Store {
         // Render would switch a platform the person turned off back on.
         if data == nil, providersFromScript { return }
         let r = ProviderInfo.parse(data)
+        // A hiccup (timeout, error) after a good read keeps that list: falling back to the
+        // built-in one would switch platforms the person turned off back on.
+        if !r.fromScript, providersFromScript { return }
         ProviderInfo.remember(r.list)
         // Remembered for the next start, so the saved lists of a switched-off platform are not shown first.
         UserDefaults.standard.set(r.list.filter { !$0.enabled }.map(\.id), forKey: "disabledProviders")
@@ -285,7 +320,10 @@ extension Store {
         catch { return error.localizedDescription }
         await loadProviders()
         // Read again with the checks of a start, so a missing login shows its setup screen.
-        if on, Platform.allCases.contains(where: { $0.cli == id }) { await start() }
+        if on, let p = Platform.allCases.first(where: { $0.cli == id }) {
+            if let d = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { doctor = d; doctorError = nil }
+            if canLoad(p) { await load(p) }
+        }
         return nil
     }
 }

@@ -52,8 +52,10 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     /// (pinned, hidden, notes): those have their own buttons on the Projects tab.
     var defaultsKeys: [String] {
         switch self {
-        case .general: return ["refreshMinutes", "showMenuBar", "hideDock", "notifications", "reminderHour", "checkUpdates", "demoMode", "paletteHotKey"]
-        case .deploy: return ["maxParallel", "undoSeconds", "staleDays", "onlyWhenGreen", "confirmSingleDeploy"]
+        case .general: return ["refreshMinutes", "showMenuBar", "hideDock", "notifications", "reminderHour", "checkUpdates", "demoMode", "paletteHotKey",
+                               "spotlightProjects", "tipOfTheDay", "compactRows", "colorBlind", "loadLogos", "quietFrom", "quietTo"]
+        case .deploy: return ["maxParallel", "undoSeconds", "staleDays", "onlyWhenGreen", "confirmSingleDeploy",
+                              "watchMinutes", MigrationCheck.key, OwnerCheck.key]
         case .costs: return ["monthlyBudget", "savingsDays"]
         case .platforms, .projects, .claude, .iphone, .team, .help: return []
         }

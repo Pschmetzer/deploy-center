@@ -6,31 +6,36 @@ import SwiftUI
 import AppKit
 
 struct AutofixStatus: Decodable {
-    struct Fire: Decodable, Identifiable {
-        let at: Double
-        let project: String
-        let platform: String?
-        let status: String
-        let sha: String?
-        let session: String?
-        let error: String?
-        let redeployedSha: String?
-        let mergedSha: String?
-        let pr: Int?
-        var id: String { "\(project)-\(at)" }
-    }
+    /// The same fire as the rows read (Model.swift), with its PR state.
+    typealias Fire = AutofixReport.Fire
     let routine: String?
     let token: Bool
     let scheduled: Bool
     let fires: [Fire]
+    /// Tools the scheduled job no longer finds on its PATH (newer scripts).
+    let pathMissing: [String]
+    /// A broken fire is skipped, not the reason Settings shows nothing.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        routine = (try? c.decodeIfPresent(String.self, forKey: .routine)) ?? nil
+        token = ((try? c.decodeIfPresent(Bool.self, forKey: .token)) ?? nil) ?? false
+        scheduled = ((try? c.decodeIfPresent(Bool.self, forKey: .scheduled)) ?? nil) ?? false
+        fires = (((try? c.decodeIfPresent([Lossy<Fire>].self, forKey: .fires)) ?? nil) ?? []).compactMap(\.value)
+        pathMissing = ((try? c.decodeIfPresent([String].self, forKey: .pathMissing)) ?? nil) ?? []
+    }
+    private enum K: String, CodingKey { case routine, token, scheduled, fires, pathMissing }
 }
 
 struct AutofixSettings: View {
-    /// The projects, so the script's output shows stand-ins in demo mode.
-    var items: [Item] = []
+    /// The rows read the same status: after a run here they are brought up to date at once.
+    @ObservedObject var store: Store
+    /// The projects, so demo mode can replace their names in the script's output.
+    private var items: [Item] { store.items.values.flatMap { $0 } }
     /// Read so the output redraws at once when demo mode is switched (⇧⌘D).
     @AppStorage("demoMode") private var demoMode = false
     @State private var status: AutofixStatus?
+    /// A failed read keeps the last good status on screen, with this under it.
+    @State private var readError: String?
     @State private var routineId = ""
     @State private var token = ""
     @State private var busy = false
@@ -54,8 +59,13 @@ struct AutofixSettings: View {
                     }
                 }
             }
-            .help(L("New routine: attach your repos, paste the prompt. Then Trigger > + > API > Generate token.",
-                    "Neue Routine: Repos anhängen, Prompt einfügen. Dann Trigger > + > API > Generate token."))
+            // The steps on claude.ai, on screen and not only in a tooltip.
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("a. New routine: attach your repos, paste the prompt.", "a. Neue Routine: Repos anhängen, Prompt einfügen."))
+                Text(L("b. Trigger › + › API › Generate token.", "b. Trigger › + › API › Generate token."))
+                Text(L("c. Copy the routine ID and the token into the fields below.", "c. Routinen-ID und Token unten eintragen."))
+            }
+            .font(.caption).foregroundStyle(.secondary)
 
             // 2. Its id and API token. The token goes to the keychain through the script's stdin.
             HStack {
@@ -76,17 +86,24 @@ struct AutofixSettings: View {
                 get: { status?.scheduled ?? false },
                 set: { on in Task { await run(["autofix", "schedule", on ? "on" : "off"]) } }))
                 .disabled(!ready || busy)
+            if let s = status, s.scheduled, !s.pathMissing.isEmpty {
+                PathMissingLine(missing: s.pathMissing, busy: busy) { Task { await run(["autofix", "schedule", "on"]) } }
+            }
 
             HStack {
                 Button(L("Test (sends nothing)", "Testen (sendet nichts)")) { Task { await run(["autofix", "--dry-run"], show: true) } }
                     .disabled(busy)
+                // One hand-over at a time: a row's "Fix with Claude" holds the script's lock too.
                 Button(L("Run now", "Jetzt ausführen")) { Task { await run(["autofix"], show: true) } }
-                    .disabled(!ready || busy)
+                    .disabled(!ready || busy || !store.autofixRunning.isEmpty)
                 if busy { ProgressView().controlSize(.small) }
             }
+            if let readError {
+                ErrorText(L("Could not read the autofix status: ", "Autofix-Status nicht lesbar: ") + Demo.scrub(readError, items: items))
+            }
             if let message {
-                Text(Demo.scrub(message, items: items)).font(.caption.monospaced()).textSelection(.enabled)
-                    .foregroundStyle(failed ? .red : .secondary)
+                if failed { ErrorText(Demo.scrub(message, items: items)) }
+                else { Text(Demo.scrub(message, items: items)).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(.secondary) }
             }
 
             if let fires = status?.fires, !fires.isEmpty {
@@ -97,7 +114,11 @@ struct AutofixSettings: View {
                                 .foregroundStyle(.secondary)
                             Text(Demo.mask(f.project))
                             Spacer()
-                            Text(label(f)).foregroundStyle(f.status == "failed" ? .red : .secondary)
+                            if f.status == "failed" { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).accessibilityHidden(true) }
+                            Text(Self.label(f)).foregroundStyle(f.status == "failed" ? .red : .secondary)
+                            if let n = f.prNumber, let s = f.prUrl, let url = URL(string: s), !Demo.on {
+                                Button("PR #\(n)") { NSWorkspace.shared.open(url) }.buttonStyle(.link)
+                            }
                             if let s = f.session, let url = URL(string: s) {
                                 Button(L("Session", "Sitzung")) { NSWorkspace.shared.open(url) }.buttonStyle(.link)
                             }
@@ -113,23 +134,35 @@ struct AutofixSettings: View {
     }
 
     private func check(_ ok: Bool) -> some View {
-        Image(systemName: ok ? "checkmark.circle.fill" : "circle").foregroundStyle(ok ? .green : .secondary)
+        Image(systemName: ok ? "checkmark.circle.fill" : "circle").foregroundStyle(ok ? Color.good : .secondary)
     }
 
-    private func label(_ f: AutofixStatus.Fire) -> String {
-        if let r = f.mergedSha { return L("fix merged, ready to deploy", "Fix gemergt, bereit zum Deployen") + " (\(r.prefix(7)))" }
+    static func label(_ f: AutofixStatus.Fire) -> String {
         if let r = f.redeployedSha { return L("fix deployed", "Fix deployt") + " (\(r.prefix(7)))" }
+        if let r = f.mergedSha { return L("fix merged, ready to deploy", "Fix gemergt, bereit zum Deployen") + " (\(r.prefix(7)))" }
+        // The PR's state says more than "session started".
+        switch f.prState {
+        case "open": return f.done ? L("green again, fix PR still open", "wieder grün, Fix-PR noch offen") : L("fix PR open", "Fix-PR offen")
+        case "closed": return L("fix PR closed unmerged", "Fix-PR ungemergt geschlossen")
+        default: break
+        }
+        if f.done { return L("green again", "wieder grün") }
         switch f.status {
         case "fired": return L("session started", "Sitzung gestartet")
+        case "pending": return L("starting", "startet")
+        case "unsupported": return L("not supported (GitHub only)", "nicht unterstützt (nur GitHub)")
         case "ratelimited": return L("waiting (rate limit)", "wartet (Rate-Limit)")
         case "skipped": return L("fix failed too", "Fix ebenfalls fehlgeschlagen")
         case "failed": return L("could not start", "Start fehlgeschlagen")
-        default: return f.status
+        default: return unknownCode(f.status, L("status", "Status"))
         }
     }
 
     private func reload() async {
-        status = try? await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20)
+        do {
+            status = try await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20)
+            readError = nil
+        } catch { readError = error.localizedDescription }
         if routineId.isEmpty, let r = status?.routine { routineId = r }
     }
 
@@ -161,6 +194,10 @@ struct AutofixSettings: View {
     /// A script call; with `show` its output is shown under the buttons.
     private func run(_ args: [String], show: Bool = false) async {
         busy = true; defer { busy = false }
+        // A real hand-over takes the script's lock: the rows wait for it (Store.autofixBusy).
+        let handsOver = args == ["autofix"]
+        if handsOver { store.autofixRunning.insert(Store.autofixAllKey) }
+        defer { if handsOver { store.autofixRunning.remove(Store.autofixAllKey) } }
         do {
             let out = String(data: try await Tool.run(args, timeout: 300), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -168,5 +205,7 @@ struct AutofixSettings: View {
             failed = false
         } catch { message = error.localizedDescription; failed = true }
         await reload()
+        // The rows show the new hand-over now, not at the next refresh (a dry run changes nothing).
+        if !args.contains("--dry-run") { await store.loadAgentStatus() }
     }
 }
