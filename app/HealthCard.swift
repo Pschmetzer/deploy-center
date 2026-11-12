@@ -19,8 +19,8 @@ enum Health {
         guard let d else {
             return [HealthCheck(id: "script", group: "deploys", ok: false,
                                 text: L("The deploys script did not answer.", "Das deploys-Skript hat nicht geantwortet."),
-                                fix: L("The error log (Settings → Advanced) says why; then check again.",
-                                       "Das Fehlerprotokoll (Einstellungen → Erweitert) sagt, warum; dann erneut prüfen."))]
+                                fix: L("The error log (Help → Open the error log) says why; then check again.",
+                                       "Das Fehlerprotokoll (Hilfe → Fehlerprotokoll öffnen) sagt, warum; dann erneut prüfen."))]
         }
         var out: [HealthCheck] = []
         func add(_ id: String, _ group: String, _ ok: Bool, _ good: String, _ bad: String, _ fix: String) {
@@ -71,7 +71,7 @@ enum Health {
         add("jobs", L("Scheduled jobs", "Geplante Aufgaben"), d.jobsMissing.isEmpty,
             L("Scheduled jobs find their tools.", "Geplante Aufgaben finden ihre Werkzeuge."),
             L("Scheduled jobs miss tools: \(d.jobsMissing.joined(separator: ", ")).", "Geplanten Aufgaben fehlen Werkzeuge: \(d.jobsMissing.joined(separator: ", "))."),
-            L("Set them up again in Settings → Deploy & guard.", "Unter Einstellungen → Deploy & Wächter neu einrichten."))
+            L("Set them up again in Settings → Deploy.", "Unter Einstellungen → Deploy neu einrichten."))
         if d.readonly {
             out.append(HealthCheck(id: "readonly", group: "deploys", ok: false,
                                    text: L("Observer mode: the script refuses every deploy.", "Beobachtermodus: Das Skript lehnt jeden Deploy ab."),

@@ -604,8 +604,8 @@ struct ContentView: View {
                 DispatchQueue.main.async { askingWhy = true }   // one alert after the other
             }
         } message: {
-            Text(L("No deploys now: \(freezeReason ?? ""). The times are in Settings → Deploy & guard → Deploy window.",
-                   "Gerade keine Deploys: \(freezeReason ?? ""). Die Zeiten stehen unter Einstellungen → Deploy & Wächter → Deploy-Fenster."))
+            Text(L("No deploys now: \(freezeReason ?? ""). The times are in Settings → Deploy → Deploy window.",
+                   "Gerade keine Deploys: \(freezeReason ?? ""). Die Zeiten stehen unter Einstellungen → Deploy → Deploy-Fenster."))
         }
         .alert(L("Why deploy now?", "Warum jetzt deployen?"), isPresented: $askingWhy) {
             TextField(L("e.g. hotfix for the login page", "z. B. Hotfix für die Login-Seite"), text: $forceText)
