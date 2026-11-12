@@ -28,23 +28,49 @@ CONFIG_DIR="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}"
 CLOUDFLARE_STATE="$CONFIG_DIR/cloudflare.json"
 USER="${USER:-$(id -un)}"
 
-# What `deploys` itself defines, for when this file runs on its own.
+# What `deploys` defines (PRV-131). These stand in only when this file is sourced on its own
+# (the provider tests do that); under `deploys` its own die, mtime and start_lock are used.
 declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
 # GNU first: on Linux `stat -f` means the file system and "succeeds" with the wrong answer.
-cf_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+declare -F mtime >/dev/null || mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+# A second start of the same project within a minute is refused (as in `deploys`).
+declare -F start_lock >/dev/null || start_lock() {
+  local d="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
+  if [ -f "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -ge 60 ]; then rm -f "$f"; fi
+  ( set -C; : > "$f" ) 2>/dev/null || die "$1 is being started already (wait a minute)"
+  echo "$f"
+}
 
 # ---------- state: account id, remembered settings, the self-test ----------
 
 cf_state() { [ -s "$CLOUDFLARE_STATE" ] && cat "$CLOUDFLARE_STATE" || echo '{}'; }
 # cf_state_set <jq filter> [jq args...]: change the state file in one step.
 cf_state_set() {
-  local f="$1" tmp; shift
-  mkdir -p "$CONFIG_DIR"; tmp="$(mktemp)"
-  cf_state | jq "$@" "$f" > "$tmp" && mv "$tmp" "$CLOUDFLARE_STATE" || { rm -f "$tmp"; die "Could not write $CLOUDFLARE_STATE"; }
+  local f="$1" tmp lock i=0; shift
+  mkdir -p "$CONFIG_DIR"; tmp="$(umask 077; mktemp)"; lock="$CLOUDFLARE_STATE.lock"
+  # A mkdir lock: two runs at once must not lose each other's change. A lock older than a
+  # minute is a crashed run's.
+  while ! mkdir "$lock" 2>/dev/null; do
+    [ $(( $(date +%s) - $(mtime "$lock" 2>/dev/null || date +%s) )) -lt 60 ] || { rmdir "$lock" 2>/dev/null; continue; }
+    i=$((i + 1)); [ "$i" -lt 50 ] || { rm -f "$tmp"; die "$CLOUDFLARE_STATE is locked by another run"; }
+    sleep 0.1
+  done
+  cf_state | jq "$@" "$f" > "$tmp" && mv "$tmp" "$CLOUDFLARE_STATE" || { rm -f "$tmp"; rmdir "$lock" 2>/dev/null; die "Could not write $CLOUDFLARE_STATE"; }
+  rmdir "$lock" 2>/dev/null || true
 }
 
-# "verified", "failed" (a self-test saw the build skipped) or "unverified" (none ran).
-cf_verified() { cf_state | jq -r '.selftest.result // "unverified"'; }
+# The self-tests per project, younger than DEPLOYS_CLOUDFLARE_SELFTEST_TTL seconds (30 days): a
+# test of project A proves nothing for B (another Git provider, plan or account), and Cloudflare
+# may change. An older record (only .selftest, from before) counts for the project it names.
+cf_selftests() {
+  cf_state | jq -c --argjson ttl "${DEPLOYS_CLOUDFLARE_SELFTEST_TTL:-2592000}" '
+    ((.selftests // {}) + (if (.selftest.project // null) != null and ((.selftests // {})[.selftest.project] == null)
+                          then {(.selftest.project): .selftest} else {} end))
+    | with_entries(select((now - (.value.at // 0)) < $ttl))'
+}
+# cf_verified <project>: "verified", "failed" (a self-test saw the build skipped) or "unverified"
+# (none ran for it, or too long ago).
+cf_verified() { cf_selftests | jq -r --arg p "${1:?project}" '.[$p].result // "unverified"'; }
 cf_toggle_on() { [ "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" = 1 ]; }
 
 # ---------- access ----------
@@ -62,14 +88,38 @@ cf_key_source() {
   else echo none; fi
 }
 
-# cf_call METHOD PATH [json body | -F field=value ...]: the API, `result` on success.
+# FEA-078: {"remaining":r,"resetAt":now+t} from the Ratelimit header ("default";r=50;t=30: r
+# requests left, t seconds to the next window), null without one. Without jq.
+cf_ratelimit() {
+  tr -d '\r' < "$1" 2>/dev/null | awk -F': *' -v now="$(date +%s)" '
+    tolower($1) == "ratelimit" { if (match($2, /r=[0-9]+/)) r = substr($2, RSTART + 2, RLENGTH - 2)
+                                 if (match($2, /t=[0-9]+/)) t = substr($2, RSTART + 2, RLENGTH - 2) }
+    END { if (r == "") print "null"; else printf "{\"remaining\":%s,\"resetAt\":%s}\n", r, (t == "" ? "null" : now + t) }'
+}
+
+# cf_call METHOD PATH [json body | -F|--form-string field=value ...]: the API, `result` on success.
 # The token goes to curl on stdin, never into the process list. Reads are retried on 429/5xx.
 cf_call() {
   local method="$1" path="$2" key out code try err; shift 2
   key="$(cloudflare_key)" || exit 1
+  # PRV-130: deploys' shared http_call (lib/http.sh) for JSON calls when deploys has it; a form
+  # (-F/--form-string) and this file run on its own take the code below. Its die ends the
+  # command, as cf_call's own does; .success and .result are read the same way after it.
+  if [ -z "${CLOUDFLARE_HEADERS:-}" ] && declare -F http_call >/dev/null && [ "${1:-}" != -F ] && [ "${1:-}" != --form-string ]; then
+    # shellcheck disable=SC2034  # read by http_call
+    local HTTP_AUTH="Authorization: Bearer $key" HTTP_FIX="deploys cloudflare set-key; the token needs Pages: Edit"
+    # shellcheck disable=SC2034
+    [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || HTTP_FIX="check CLOUDFLARE_API_TOKEN in the environment; it needs Pages: Edit"
+    out="$( ( http_call Cloudflare "$method" "$CLOUDFLARE_API$path" "${1:-}" ) )" || exit 1
+    [ "$(printf '%s' "$out" | jq -r '.success // false' 2>/dev/null)" = true ] \
+      || die "Cloudflare $method $path: $(printf '%s' "$out" | jq -r '[.errors[]? | "\(.code): \(.message)"] | join("; ") | select(. != "")' 2>/dev/null || printf '%s' "$out" | head -c 300)"
+    printf '%s' "$out" | jq '.result'; return
+  fi
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
-  if [ "${1:-}" = -F ]; then args+=("$@")
+  if [ "${1:-}" = -F ] || [ "${1:-}" = --form-string ]; then args+=("$@")
   elif [ -n "${1:-}" ]; then args+=(-H "Content-Type: application/json" --data "$1"); fi
+  # The doctor asks for the headers (rate limit) with CLOUDFLARE_HEADERS=<file>.
+  [ -z "${CLOUDFLARE_HEADERS:-}" ] || args+=(-D "$CLOUDFLARE_HEADERS")
   err="$(mktemp)"
   for try in 1 2 3; do
     out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$CLOUDFLARE_API$path" 2>"$err")" || out=$'\n000'
@@ -82,7 +132,9 @@ cf_call() {
   done
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
   rm -f "$err"
-  local ok; ok="$(printf '%s' "$out" | jq -r '.success // false' 2>/dev/null)"
+  # `|| ok=""`: an answer that is not JSON (an HTML 502, a curl error) must reach the message
+  # below, not end the script without a word under set -e.
+  local ok; ok="$(printf '%s' "$out" | jq -r '.success // false' 2>/dev/null)" || ok=""
   if [[ "$code" != 2* ]] || [ "$ok" != true ]; then
     local hint="" fix="deploys cloudflare set-key" msg
     [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && fix="check CLOUDFLARE_API_TOKEN in the environment"
@@ -158,15 +210,33 @@ cloudflare_ready() { [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || ( cloudflare_key ) >/
 cloudflare_has() { ( cf_call GET "$(cf_proj "$1")" ) 2>/dev/null | jq -er '.name // empty'; }
 
 cf_projects() {
-  local page=1 all="[]" out pages
+  local page=1 all="[]" out pages err again=""
+  err="$(mktemp)"
   while :; do
-    out="$(cf_call GET "$(cf_proj)?page=$page&per_page=10")" || return 1
+    if ! out="$( (cf_call GET "$(cf_proj)?page=$page&per_page=10") 2>"$err")"; then
+      # A remembered account the token no longer reaches (a token for another account) answers
+      # 404 or 403 on the list. When the token sees exactly one other account, that one is taken,
+      # once, instead of failing for ever. Otherwise (several accounts, or a token without Pages
+      # rights) the choice stays and the error shows.
+      if [ "$page" = 1 ] && [ -z "$again" ] && [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ] && grep -qE 'HTTP (404|403)' "$err"; then
+        local old new accts; again=1
+        old="$(cf_state | jq -r '.accountId // empty')"
+        accts="$( (cf_call GET "/accounts?per_page=50") 2>/dev/null)" || accts="[]"
+        new="$(printf '%s' "$accts" | jq -r 'if type == "array" and length == 1 then .[0].id else empty end' 2>/dev/null)"
+        if [ -n "$old" ] && [ -n "$new" ] && [ "$new" != "$old" ]; then
+          echo "Cloudflare: the remembered account does not answer with this token; using the token's account $new." >&2
+          cf_state_set '.accountId = $a' --arg a "$new"; continue
+        fi
+      fi
+      cat "$err" >&2; rm -f "$err"; return 1
+    fi
     all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$out"))"
     # The list endpoint pages by 10; a short page is the last.
     pages="$(echo "$out" | jq 'length')"
     [ "$pages" -lt 10 ] && break
     page=$((page + 1)); [ "$page" -le 100 ] || break
   done
+  rm -f "$err"
   echo "$all"
 }
 
@@ -174,20 +244,23 @@ cloudflare_json() {
   local acct list
   acct="$(cloudflare_account)" || exit 1
   list="$(cf_projects)" || exit 1
-  echo "$list" | jq --arg a "$acct" --arg v "$(cf_verified)" --arg tg "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" "$CF_PHASE $CF_AUTO"'
+  echo "$list" | jq --arg a "$acct" --argjson st "$(cf_selftests)" --arg tg "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" "$CF_PHASE $CF_AUTO"'
     [.[] | (.source.config // null) as $c | (.canonical_deployment // {}) as $live | (.latest_deployment // null) as $new
       | ((.domains // []) | map(select(endswith(".pages.dev") | not)) | .[0]) as $custom
       | ($custom // .subdomain // null) as $dom
-      | {name, id:.name, auto:cf_auto,
+      # id is the name: every call here puts it in the URL path (projects/<name>), where the
+      # project UUID would 404. The UUID stays as projectId.
+      | {name, id:.name, projectId:.id, auto:cf_auto,
          # Git-connected, and a POST is known to build: push-deploys still on, the self-test
          # passed, or the opt-in toggle fallback is allowed.
-         deployable:($c != null and (($c.production_deployments_enabled != false) or $v == "verified" or $tg == "1")),
+         deployable:($c != null and (($c.production_deployments_enabled != false) or ($st[.name].result // "") == "verified" or $tg == "1")),
          paused:false,
-         repo:(if $c then "\($c.owner)/\($c.repo_name)" else null end),
+         # GitHub: owner/name; GitLab with its host (source.type), so heads are asked there.
+         repo:(if $c then (if .source.type == "gitlab" then "gitlab.com/" else "" end) + "\($c.owner)/\($c.repo_name)" else null end),
          ref:($c.production_branch // .production_branch // null),
          domain:$dom, url:(if $dom then "https://\($dom)" else null end),
          dashboardUrl:"https://dash.cloudflare.com/\($a)/pages/view/\(.name)",
-         lastAt:(($new // {}).created_on | cf_t), lastState:(($new // {}).latest_stage.status // null),
+         lastAt:(($new // {}).created_on | cf_t), lastState:(($new // {}).latest_stage | if . and .name then "\(.name):\(.status // "")" else null end),
          lastSha:($live.deployment_trigger.metadata.commit_hash // null),
          lastMsg:($live.deployment_trigger.metadata.commit_message // null | if . then split("\n")[0] else null end),
          fetchError:null,
@@ -208,6 +281,23 @@ cf_config() { cf_call GET "$(cf_proj "$1")" | jq -c '.source.config // null'; }
 
 # Both push switches off. What they were is kept (only the first time), so `on` can restore it.
 cloudflare_off() {
+  # --all (docs/PROVIDERS.md): every project, one by one. One that fails does not stop the rest;
+  # they are counted and the exit code says so. The list first, on its own: a failed read stops here.
+  if [ "${1:-}" = --all ]; then
+    local _names _n _bad=0
+    _names="$(cf_projects | jq -r '.[] | .name // empty')" || die "Cloudflare: could not list the projects"
+    while IFS= read -r _n; do
+      [ -n "$_n" ] || continue
+      ( cloudflare_off_one "$_n" ) || _bad=$((_bad + 1))
+    done <<< "$_names"
+    [ "$_bad" = 0 ] || die "$_bad Cloudflare projects could not be switched off (see above); the others are done"
+    echo "Done. No Cloudflare project deploys on push any more."
+    return 0
+  fi
+  cloudflare_off_one "$@"
+}
+
+cloudflare_off_one() {
   local p="$1" cfg
   cfg="$(cf_config "$p")" || exit 1
   [ "$cfg" != null ] || die "Cloudflare: $p is not connected to Git (direct upload): pushes do not build it"
@@ -233,15 +323,15 @@ cloudflare_on() {
   echo "Cloudflare: $p deploys on push again ($(echo "$prev" | jq -r '"production \(if .production_deployments_enabled then "on" else "off" end), previews \(.preview_deployment_setting)"'))"
 }
 
-cf_lock() {
-  if declare -F start_lock >/dev/null; then start_lock "$1"; return; fi
-  local d="$CONFIG_DIR/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
-  if [ -f "$f" ] && [ $(( $(date +%s) - $(cf_mtime "$f") )) -ge 60 ]; then rm -f "$f"; fi
-  ( set -C; : > "$f" ) 2>/dev/null || die "$1 is being started already (wait a minute)"
-  echo "$f"
-}
 
-cf_post_deploy() { cf_call POST "$(cf_proj "$1")/deployments" -F "branch=$2"; }
+# --form-string, not -F: a branch named "@file" or "<file" must not upload that file.
+cf_post_deploy() { cf_call POST "$(cf_proj "$1")/deployments" --form-string "branch=$2"; }
+
+# Push builds back to what they were; the note in the state goes only when that worked.
+cf_toggle_back() {  # <project> <before json> <setting>
+  if ( cf_patch_config "$1" "$2" ); then cf_state_set 'del(.toggling[$p])' --arg p "$1"
+  else echo "Cloudflare: could not turn $3 back off for $1. Run: deploys cloudflare off $1" >&2; fi
+}
 
 # cloudflare_deploy_json <project> [--preview] [--branch <b>] [--toggle]
 # Prints {id, url, state, phase, branch, toggled}. --preview needs a branch other than production.
@@ -269,10 +359,10 @@ cloudflare_deploy_json() {
   local sw="production_deployments_enabled" onval=true blocked
   if [ "$branch" != "$prod" ]; then sw="preview_deployment_setting"; onval='"all"'; fi
   blocked="$(echo "$cfg" | jq --arg s "$sw" 'if $s == "preview_deployment_setting" then (.[$s] // "all") == "none" else .[$s] == false end')"
-  if [ "$blocked" = true ] && [ "$sw" = production_deployments_enabled ] && [ "$toggle" = 0 ] && [ "$(cf_verified)" != verified ]; then
+  if [ "$blocked" = true ] && [ "$sw" = production_deployments_enabled ] && [ "$toggle" = 0 ] && [ "$(cf_verified "$p")" != verified ]; then
     die "Unverified: Cloudflare may skip a build while push-deploys are off. Run once: deploys cloudflare selftest $p --yes (or pass --toggle, see docs/providers/cloudflare.md)"
   fi
-  lock="$(cf_lock "cloudflare-$p")" || exit 1
+  lock="$(start_lock "cloudflare-$p")" || exit 1
   out="$(cf_post_deploy "$p" "$branch")" || { rm -f "$lock"; exit 1; }
   local toggled=false
   if [ "$(echo "$out" | jq "$CF_PHASE"' cf_dep | .skipped')" = true ]; then
@@ -284,9 +374,14 @@ cloudflare_deploy_json() {
     # the start fails. A push in between is built too.
     local before; before="$(echo "$cfg" | jq -c --arg s "$sw" '{($s): .[$s]}')"
     echo "Cloudflare: turning $sw on for $p for a moment (race window: a push now would build too)" >&2
-    cf_patch_config "$p" "{\"$sw\":$onval}" || { rm -f "$lock"; exit 1; }
+    # Written down first, and switched back on Ctrl-C too: push builds left on cost builds.
+    # `doctor` names any that stayed open (togglesOpen).
+    cf_state_set '.toggling[$p] = {before:$b, at:(now|floor)}' --arg p "$p" --argjson b "$before"
+    trap 'cf_toggle_back "$p" "$before" "$sw"; rm -f "$lock"; exit 130' INT TERM
+    cf_patch_config "$p" "{\"$sw\":$onval}" || { trap - INT TERM; cf_state_set 'del(.toggling[$p])' --arg p "$p"; rm -f "$lock"; exit 1; }
     local rc=0; out="$(cf_post_deploy "$p" "$branch")" || rc=$?
-    ( cf_patch_config "$p" "$before" ) || echo "Cloudflare: could not turn $sw back off for $p. Run: deploys cloudflare off $p" >&2
+    cf_toggle_back "$p" "$before" "$sw"
+    trap - INT TERM
     [ "$rc" = 0 ] || { rm -f "$lock"; exit 1; }
     toggled=true
     [ "$(echo "$out" | jq "$CF_PHASE"' cf_dep | .skipped')" = true ] && { rm -f "$lock"; die "Cloudflare skipped the build even with $sw on"; }
@@ -295,8 +390,9 @@ cloudflare_deploy_json() {
 }
 
 cloudflare_latest_json() {
-  cf_call GET "$(cf_proj "$1")/deployments?per_page=1" | jq -e "$CF_PHASE"' .[0] // empty | cf_dep' \
-    || die "Cloudflare: $1 has no deployments"
+  # A failed call is that failure (cf_call says why); no deployment is null, not an error.
+  local out; out="$(cf_call GET "$(cf_proj "$1")/deployments?per_page=1")" || exit 1
+  printf '%s' "$out" | jq "$CF_PHASE"' .[0] // null | if . then cf_dep else null end'
 }
 # cloudflare_status_json <project> [<id>]: one deployment (the newest without an id).
 cloudflare_status_json() {
@@ -304,15 +400,7 @@ cloudflare_status_json() {
   cf_call GET "$(cf_proj "$1")/deployments/$2" | jq "$CF_PHASE"' cf_dep'
 }
 
-# The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
-# The JSON stays in cloudflare_status_json/_latest_json, and `deploys cloudflare status|latest` prints it.
-CLOUDFLARE_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
-cloudflare_status() { local j; j="$(cloudflare_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
-cloudflare_latest() { local j; j="$(cf_call GET "$(cf_proj "$1")/deployments?per_page=1")" || return 1; j="$(echo "$j" | jq -c "$CF_PHASE"' .[0] // null | if . then cf_dep else null end')" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
-cloudflare_cli_status() { cloudflare_status_json "$@"; }
-cloudflare_cli_latest() { cloudflare_latest_json "$@"; }
-
-cloudflare_cancel() { die "Cloudflare Pages cannot cancel a deployment (there is no documented way). Stop it in the dashboard: $(cloudflare_url "$1" --dashboard)"; }
+cloudflare_cancel() { die "Cloudflare Pages cannot cancel a deployment from here: it has no documented way. Stop it in the dashboard: $(cloudflare_url "$1" --dashboard)"; }
 
 # cloudflare_rollback <project> [<id>]: production back to <id>, or to the newest good one before live.
 cloudflare_rollback() {
@@ -329,7 +417,8 @@ cloudflare_rollback() {
 # cloudflare_logs <project> [lines] [<id>]
 cloudflare_logs() {
   local p="$1" n="${2:-60}" id="${3:-}"
-  [ -n "$id" ] || id="$(cloudflare_latest_json "$p" | jq -r '.id')" || exit 1
+  [ -n "$id" ] || id="$(cloudflare_latest_json "$p" | jq -r '.id // empty')" || exit 1
+  [ -n "$id" ] || die "Cloudflare: $p has no deployments"
   cf_call GET "$(cf_proj "$p")/deployments/$id/history/logs" | jq -r '.data[]? | "\(.ts // "")  \(.line // "")"' | tail -n "$n"
 }
 
@@ -339,7 +428,7 @@ cloudflare_url() {
   acct="$(cloudflare_account)" || exit 1
   if [ "${2:-}" = --dashboard ]; then echo "https://dash.cloudflare.com/$acct/pages/view/$p"; return; fi
   info="$(cf_call GET "$(cf_proj "$p")")" || exit 1
-  echo "$info" | jq -r '((.domains // []) | map(select(endswith(".pages.dev") | not)) | .[0]) // .subdomain | "https://\(.)"'
+  echo "$info" | jq -r '((.domains // []) | map(select(endswith(".pages.dev") | not)) | .[0]) // .subdomain // empty | "https://\(.)"'
 }
 
 # Read from stdin, tried first, saved only when Cloudflare says it is active.
@@ -354,25 +443,33 @@ cloudflare_set_key() {
   # On stdin to `security -i`: never an argument anyone can see.
   printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$CLOUDFLARE_KEYCHAIN" "$key" | security -i >/dev/null \
     || die "The token works, but could not be saved in the keychain"
+  # A new token may be for another account: the remembered one is looked for again.
+  [ ! -s "$CLOUDFLARE_STATE" ] || cf_state_set 'del(.accountId)'
   echo "Cloudflare token saved and working."
 }
 
 cloudflare_doctor() {
-  local src valid=false acct="" asrc=none
+  local src valid=false acct="" asrc=none v="" h rl=null exp=null
   src="$(cf_key_source)"
   if [ "$src" != none ]; then
-    [ "$(cf_call GET /user/tokens/verify 2>/dev/null | jq -r '.status // empty')" = active ] && valid=true
+    h="$(mktemp)"
+    v="$(CLOUDFLARE_HEADERS="$h" cf_call GET /user/tokens/verify 2>/dev/null)" || v=""
+    [ "$(printf '%s' "$v" | jq -r '.status // empty' 2>/dev/null)" = active ] && valid=true
+    # FEA-078: expires_on (ISO, only for a token with an end date) as Unix seconds.
+    exp="$(printf '%s' "$v" | jq '.expires_on // null | if . then sub("\\.[0-9]+Z$";"Z") | fromdateiso8601 else null end' 2>/dev/null)" || exp=null
+    rl="$(cf_ratelimit "$h")"; rm -f "$h"
     if [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then asrc=environment
     elif [ -n "$(cf_state | jq -r '.accountId // empty')" ]; then asrc=config
     else asrc=detected; fi
     acct="$( (cloudflare_account) 2>/dev/null)" || asrc=none
   fi
-  cf_state | jq -c --arg src "$src" --argjson valid "$valid" --arg acct "$acct" --arg asrc "$asrc" --arg tg "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" '
+  cf_state | jq -c --arg src "$src" --argjson valid "$valid" --arg acct "$acct" --arg asrc "$asrc" --arg tg "${DEPLOYS_CLOUDFLARE_TOGGLE:-}" --argjson st "$(cf_selftests)" \
+    --argjson exp "${exp:-null}" --argjson rl "${rl:-null}" '
     {provider:"cloudflare", tokenSource:$src, tokenValid:$valid,
      account:(if $acct == "" then null else $acct end), accountSource:$asrc,
-     deployWhileOff:(.selftest.result // "unverified"), selftest:(.selftest // null),
-     toggleFallback:($tg == "1"),
-     note:(if (.selftest.result // "unverified") == "verified" then "a deploy builds while push-deploys are off (self-test passed)"
+     deployWhileOff:(.selftest.result // "unverified"), selftest:(.selftest // null), selftests:$st,
+     toggleFallback:($tg == "1"), togglesOpen:((.toggling // {}) | keys), expiresAt:$exp, rateLimit:$rl,
+     note:(if (.selftest.result // "unverified") == "verified" then "a deploy builds while push-deploys are off (self-test passed for \(.selftest.project // "one project"); each project needs its own)"
            elif .selftest.result == "failed" then "Cloudflare skipped the self-test build: deploy needs --toggle"
            else "unverified: run deploys cloudflare selftest <project> --yes" end)}'
 }
@@ -396,15 +493,15 @@ cloudflare_selftest() {
   out="$(cf_post_deploy "$p" "$prod")" || exit 1
   st="$(echo "$out" | jq -c "$CF_PHASE"' cf_dep')"
   if [ "$(echo "$st" | jq '.skipped')" = true ]; then
-    cf_state_set '.selftest = {result:"failed", at:(now|floor), project:$p, reason:($s.skipReason // "skipped")}' --arg p "$p" --argjson s "$st"
+    cf_state_set '.selftest = {result:"failed", at:(now|floor), project:$p, reason:($s.skipReason // "skipped")} | .selftests[$p] = .selftest' --arg p "$p" --argjson s "$st"
     echo "Self-test: Cloudflare skipped the build ($(echo "$st" | jq -r '.skipReason // "skipped"')). Deploys need --toggle; see docs/providers/cloudflare.md."
     return 1
   fi
   id="$(echo "$st" | jq -r '.id')"
   for ((i = 0; i < tries; i++)); do
     if [ "$(echo "$st" | jq '(.stage == "build" or .stage == "deploy" or .phase == "ready") and ((.sha // "") != "")')" = true ]; then
-      cf_state_set '.selftest = {result:"verified", at:(now|floor), project:$p, deploymentId:$s.id, sha:$s.sha}' --arg p "$p" --argjson s "$st"
-      echo "Self-test passed: deployment $id reached the $(echo "$st" | jq -r '.stage') stage at $(echo "$st" | jq -r '.sha[0:7]'). Deploys now work while push-deploys are off."
+      cf_state_set '.selftest = {result:"verified", at:(now|floor), project:$p, deploymentId:$s.id, sha:$s.sha} | .selftests[$p] = .selftest' --arg p "$p" --argjson s "$st"
+      echo "Self-test passed: deployment $id reached the $(echo "$st" | jq -r '.stage') stage at $(echo "$st" | jq -r '.sha[0:7]'). Deploys of $p now work while push-deploys are off (for 30 days; then run it again)."
       return 0
     fi
     case "$(echo "$st" | jq -r '.phase')" in
@@ -412,9 +509,11 @@ cloudflare_selftest() {
         echo "Self-test inconclusive: deployment $id ended $(echo "$st" | jq -r '.phase') at stage $(echo "$st" | jq -r '.stage') before building. Fix the project and run it again."
         return 1 ;;
     esac
+    printf '.' >&2
     sleep 5
     st="$(cloudflare_status_json "$p" "$id" | jq -c .)" || exit 1
   done
+  echo >&2
   echo "Self-test inconclusive: deployment $id did not reach the build stage in time (stage $(echo "$st" | jq -r '.stage')). Run it again later."
   return 1
 }
@@ -450,3 +549,13 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   set -euo pipefail
   cloudflare_cmd "$@"
 fi
+
+# ---------- the contract's status lines (docs/PROVIDERS.md) ----------
+# `deploys watch`, `deploy --wait` and group deploys read one line: deployId<TAB>phase<TAB>state,
+# and "none" as the id when there is no deploy. The JSON above stays for people:
+# `deploys cloudflare status|latest` prints it (cloudflare_cli_status, cloudflare_cli_latest).
+CLOUDFLARE_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
+cloudflare_status() { local j; j="$(cloudflare_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
+cloudflare_latest() { local j; j="$(cloudflare_latest_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
+cloudflare_cli_status() { cloudflare_status_json "$@"; }
+cloudflare_cli_latest() { cloudflare_latest_json "$@"; }

@@ -10,7 +10,7 @@ RENDER_LEGACY_KEYCHAIN_SERVICE="render-api-key"
 export RENDER_KEYCHAIN_SERVICE RENDER_LEGACY_KEYCHAIN_SERVICE
 
 render_meta() {
-  printf '%s\n' '{"id":"render","label":"Render","noun":"service","defaultOn":true,"keyEnv":["RENDER_API_KEY"],"keychain":"deploy-center-render","auth":"API key","caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":false}}'
+  printf '%s\n' '{"id":"render","label":"Render","noun":"service","defaultOn":true,"keyEnv":["RENDER_API_KEY"],"keychain":"deploy-center-render","auth":"API key","runtimeLogs":true,"onDryRun":true,"caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":false}}'
 }
 
 render_key() {
@@ -26,6 +26,17 @@ render_key() {
 # and an exit inside an `if` ends the whole script, not only the test.
 render_ready() { ( render_key ) >/dev/null 2>&1; }
 
+# How long to wait after a 429 (try 1 or 2): Render's Retry-After in seconds from the header
+# file curl wrote (-D), at most 30 s; without one 3 s, then 6 s.
+render_wait() {
+  local s
+  s="$(tr -d '\r' < "$2" 2>/dev/null | awk -F': *' 'tolower($1) == "retry-after" && $2 ~ /^[0-9]+$/ { print $2; exit }')"
+  [ -n "$s" ] || s=$(( $1 * 3 ))
+  [ "$s" -le 30 ] || s=30
+  echo "$s"
+}
+export -f render_wait
+
 # The key goes to curl on stdin so it never shows in the process list.
 render_call() {
   local method="$1" path="$2" body="${3:-}" key out code
@@ -33,25 +44,27 @@ render_call() {
   # A hung connection must not hang the app: 10 s to connect, 60 s in all.
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
-  local try err; err="$(mktemp)"
+  local try err hdr; err="$(mktemp)"; hdr="$(mktemp)"
+  args+=(-D "$hdr")
   for try in 1 2 3; do
+    : > "$hdr"
     # A curl failure (no network, timeout) is code 000 here, not a silent stop under set -e.
     out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$RENDER_API$path" 2>"$err")" || out=$'\n000'
     code="${out##*$'\n'}"; out="${out%$'\n'*}"
     # 429 (rate limit), 5xx and network errors: wait and ask again. Only reads are repeated:
     # a POST that timed out may have started a build already.
     case "$code" in
-      429) [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; } ;;
+      429) [ "$try" -lt 3 ] && { sleep "$(render_wait "$try" "$hdr")"; continue; } ;;
       5*|000) [ "$method" = GET ] && [ "$try" -lt 3 ] && { sleep $((try * 2)); continue; } ;;
     esac
     break
   done
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
-  rm -f "$err"
+  rm -f "$err" "$hdr"
   if [[ "$code" != 2* ]]; then
     local hint="" fix="deploys render set-key"
     [ -n "${RENDER_API_KEY:-}" ] && fix="check RENDER_API_KEY in the environment"
-    case "$code" in 000) hint=" (no answer: network or timeout)";; 401|403) hint=" (the Render key is wrong or expired: $fix)";; 404) hint=" (not found: renamed or deleted?)";; 429) hint=" (rate limit: try again in a minute)";; 5*) hint=" (Render had a problem: try again later)";; esac
+    case "$code" in 000) hint=" (no answer: network or timeout)";; 401|403) hint=" (the Render key is wrong or expired: $fix)";; 404) hint=" (not found: renamed or deleted?)";; 429) hint=" (rate limit, asked 3 times: try again in a minute)";; 5*) hint=" (Render had a problem${try:+, asked $try times}: try again later)";; esac
     die "Render $method $path -> HTTP $code$hint: $out"
   fi
   printf '%s' "$out"
@@ -61,7 +74,7 @@ render_services() {
   local cursor="" page all="[]"
   while :; do
     # `|| return`: inside $(...) set -e is off, and a failed page used to loop here for ever.
-    page="$(render_call GET "/services?limit=100${cursor:+&cursor=$cursor}")" || return 1
+    page="$(render_call GET "/services?limit=100${cursor:+&cursor=$(jq -rn --arg c "$cursor" '$c|@uri')}")" || return 1
     all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$page"))"
     [ "$(echo "$page" | jq 'length')" -lt 100 ] && break
     cursor="$(echo "$page" | jq -r '.[-1].cursor')"
@@ -69,12 +82,31 @@ render_services() {
   echo "$all" | jq '[.[].service]'
 }
 
+# The services' ids and names for render_id_of, kept DEPLOYS_RENDER_NAME_TTL seconds (default 60,
+# 0 = never kept): deploy, logs, url and watch (every 6 s) then do not page through every service
+# each time. Lists (render_json) always ask Render. A name not in the kept list is asked for again.
+render_names() {
+  local f="$CONFIG_DIR/render-names.json" ttl="${DEPLOYS_RENDER_NAME_TTL:-60}" now m list
+  now="$(date +%s)"
+  if [ "${1:-}" != --fresh ] && [ "$ttl" -gt 0 ] 2>/dev/null && [ -s "$f" ]; then
+    m="$(mtime "$f" 2>/dev/null)" || m=0
+    if [ $(( now - ${m:-0} )) -lt "$ttl" ] && jq -e 'type == "array"' "$f" >/dev/null 2>&1; then cat "$f"; return 0; fi
+  fi
+  list="$(render_services | jq -c '[.[] | {id, name}]')" || return 1
+  if [ "$ttl" -gt 0 ] 2>/dev/null && [ -d "$CONFIG_DIR" ]; then
+    (umask 077; printf '%s\n' "$list" > "$f.$$" && mv "$f.$$" "$f") 2>/dev/null || rm -f "$f.$$"
+  fi
+  printf '%s\n' "$list"
+}
+
 render_auto() { echo '(.autoDeployTrigger // (if .autoDeploy=="yes" then "commit" else "off" end))'; }
 
 render_id_of() {
   local name="$1" id
   case "$name" in srv-*|crn-*) echo "$name"; return;; esac
-  id="$(render_services | jq -r --arg n "$name" '.[] | select(.name==$n) | .id')"
+  id="$(render_names | jq -r --arg n "$name" '.[] | select(.name==$n) | .id')" || exit 1
+  # Not in the kept list: it may be new or renamed a moment ago.
+  [ -n "$id" ] || id="$(render_names --fresh | jq -r --arg n "$name" '.[] | select(.name==$n) | .id')" || exit 1
   [ -n "$id" ] || die "No Render service named \"$name\". See: deploys render list"
   # Two services may share a name (in different projects): never pick one at random.
   [ "$(echo "$id" | wc -l | tr -d ' ')" = 1 ] || die "Several Render services are named \"$name\" ($(echo "$id" | tr '\n' ' ')). Use the srv- id."
@@ -86,7 +118,7 @@ render_has() { render_id_of "$1"; }
 render_off_one() {
   render_call PATCH "/services/$1" '{"autoDeployTrigger":"off"}' >/dev/null
   # When it was turned off, so a later push-triggered build can be told apart from earlier ones.
-  local f="$CONFIG_DIR/render-off.json" tmp; [ -f "$f" ] || echo '{}' > "$f"; tmp="$(mktemp)"
+  local f="$CONFIG_DIR/render-off.json" tmp; [ -f "$f" ] || (umask 077; echo '{}' > "$f"); tmp="$(mktemp)"
   jq --arg id "$1" '.[$id] = (.[$id] // (now|floor))' "$f" > "$tmp" && mv "$tmp" "$f"
   echo "Render: $2 no longer deploys on push"
 }
@@ -97,7 +129,29 @@ render_on_one() {
   render_call PATCH "/services/$1" '{"autoDeployTrigger":"commit"}' >/dev/null
   echo "Render: $2 deploys on push again"
 }
+# FEA-110: what `autodeploy-on` would do, without changing anything (reads only). Items are
+# "name<TAB>id<TAB>action<TAB>reason" on stdin (action on|skip|already); --json prints
+# {provider, dryRun:true, items:[{name, id, action, reason}], on, skipped}, otherwise one line each.
+render_on_plan() {  # [--json]
+  local items; items="$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t")
+    | {name:.[0], id:.[1], action:.[2], reason:(if (.[3] // "") == "" then null else .[3] end)})')" || return 1
+  if [ "${1:-}" = --json ]; then
+    jq -nc --argjson i "$items" '{provider:"render", dryRun:true, items:$i,
+      on:($i | map(select(.action == "on")) | length), skipped:($i | map(select(.action != "on")) | length)}'
+  else
+    echo "$items" | jq -r '.[] | if .action == "on" then "Render: would turn on \(.name) (pushes build again)"
+      else "Render: \(.name) \(.action)\(if .reason then ": \(.reason)" else "" end)" end'
+    echo "Dry run: nothing changed."
+  fi
+}
+
 render_on() {
+  local dry="" j="" a args=()
+  for a in "$@"; do case "$a" in --dry-run) dry=1 ;; --json) j=--json ;; *) args+=("$a") ;; esac; done
+  # `deploys <p> autodeploy-on … --json` takes --json off the line and sets its json=1.
+  [ "${json:-0}" != 1 ] || j=--json
+  if [ -n "$dry" ]; then render_on_dry "${args[0]:-}" $j; return; fi
+  set -- "${args[@]+"${args[@]}"}"
   local target="${1:-}" bad=0 todo id name
   [ -n "$target" ] || die "Give a service name or --all"
   if [ "$target" = "--all" ]; then
@@ -112,6 +166,17 @@ render_on() {
   fi
 }
 render_cli_autodeploy_on() { render_on "$@"; }
+
+render_on_dry() {  # <service>|--all [--json]
+  local target="$1" list
+  [ -n "$target" ] || die "Give a service name or --all"
+  if [ "$target" = --all ]; then list="$(render_services)" || exit 1
+  else list="$(render_call GET "/services/$(render_id_of "$target")" | jq -c '[.]')" || exit 1; fi
+  echo "$list" | jq -r --arg all "$target" '.[] | ('"$(render_auto)"') as $a
+    | if $a == "off" then [.name, .id, "on", "auto-deploy On Commit"]
+      elif $all == "--all" then empty else [.name, .id, "already", "auto-deploy is \($a)"] end | @tsv' \
+    | render_on_plan "${2:-}"
+}
 
 render_off() {
   local target="${1:-}" bad todo id name
@@ -146,16 +211,41 @@ render_last_of() {
   last_fail() { jq -nc --arg k "$id" --arg e "$1" '{key:$k, value:{fetchError:$e}}' > "$out/$id.json"; }
   key="$(cat "$3" 2>/dev/null)"; [ -n "$key" ] || { last_fail "no Render key"; return 0; }
   # Eight of these run at once: this is where Render's rate limit (429) hits. Wait and ask again.
-  local raw code try
-  for try in 1 2 3; do
-    raw="$(printf 'header = "Authorization: Bearer %s"\n' "$key" \
-      | curl -sS --connect-timeout 10 --max-time 60 -K - -w '\n%{http_code}' -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=10")" || raw=$'\n000'
-    code="${raw##*$'\n'}"
-    [ "$code" = 429 ] && [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; }
-    break
-  done
-  [[ "$code" == 2* ]] || { last_fail "HTTP $code"; return 0; }
-  printf '%s' "${raw%$'\n'*}" \
+  # Like render_call: a time limit (a hung service must not hold one of the eight slots, and so
+  # the whole list), and 5xx or no answer asked again too.
+  local raw code try body limit=10 hdr="$out/$id.hdr"
+  fetch_deploys() {
+    for try in 1 2 3; do
+      : > "$hdr"
+      raw="$(printf 'header = "Authorization: Bearer %s"\n' "$key" \
+        | curl -sS --connect-timeout 10 --max-time 60 -K - -D "$hdr" -w '\n%{http_code}' -H "Accept: application/json" "https://api.render.com/v1/services/$id/deploys?limit=$1")" || raw=$'\n000'
+      code="${raw##*$'\n'}"
+      case "$code" in
+        429) [ "$try" -lt 3 ] && { sleep "$(render_wait "$try" "$hdr")"; continue; } ;;
+        5*|000) [ "$try" -lt 3 ] && { sleep $((try * 2)); continue; } ;;
+      esac
+      break
+    done
+  }
+  fetch_deploys "$limit"
+  if [[ "$code" != 2* ]]; then
+    case "$code" in
+      000) last_fail "no answer from Render (network or timeout), asked 3 times" ;;
+      401|403) last_fail "HTTP $code: the Render key is wrong or expired" ;;
+      429) last_fail "HTTP 429: Render's rate limit, asked 3 times" ;;
+      5*) last_fail "HTTP $code: Render had a problem, asked 3 times" ;;
+      *) last_fail "HTTP $code" ;;
+    esac
+    return 0
+  fi
+  body="${raw%$'\n'*}"
+  # The ten newest all failed or were cancelled: what is live is further back. Without it the
+  # service would look never deployed (and so changed).
+  if printf '%s' "$body" | jq -e 'type == "array" and length >= 10 and ([.[].deploy | select(.status == "live")] | length == 0)' >/dev/null 2>&1; then
+    fetch_deploys 50
+    [[ "$code" != 2* ]] || body="${raw%$'\n'*}"
+  fi
+  printf '%s' "$body" \
     | jq -c --arg id "$id" 'def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) else null end;
         [.[].deploy] as $d | ($d[0] // {}) as $new | (($d | map(select(.status=="live")) | .[0]) // {}) as $live
         # The status is the newest attempt (a failure shows), the commit is what is live: a failed
@@ -177,14 +267,19 @@ render_json() {
     domain:((.serviceDetails.url // "") | sub("^https?://";"") | if . == "" then null else . end),
     repo:((.repo // "") | '"$GITHOST_SLUG_JQ"' | if . == "" then null else . end),
     ref:(.branch // null)}] | sort_by(.name | ascii_downcase)')" || exit 1
-  tmp="$(mktemp -d)"; kf="$tmp/key"; (umask 077; render_key > "$kf")
-  echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$2" "$0" "$1"' "$tmp" "$kf"
+  tmp="$(mktemp -d)"; kf="$tmp/key"
+  # The key file goes on every way out: a failed key read or xargs must not leave it behind.
+  if ! (umask 077; render_key > "$kf"); then rm -rf "$tmp"; exit 1; fi
+  echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$2" "$0" "$1"' "$tmp" "$kf" || true
   rm -f "$kf"
-  lasts="$(cat_all "$tmp"/*.json | jq -s 'from_entries')"; rm -rf "$tmp"
-  # bash 3.2 keeps the backslash of an escaped {} default (invalid JSON): an empty answer becomes {} here.
-  [ -n "$lasts" ] || lasts='{}'
-  echo "$list" | jq --argjson l "$lasts" "$RENDER_PHASE"'map({lastAt:null, lastState:null, lastSha:null, lastMsg:null, fetchError:null}
-    + . + ($l[.id] // {}) | . + {phase:(.lastState | rphase)})'
+  lasts="$(cat_all "$tmp"/*.json | jq -s 'from_entries' 2>/dev/null)" || lasts=""
+  rm -rf "$tmp"
+  # Never an empty --argjson (a `:-` default of {} keeps its backslash under macOS bash 3.2).
+  # Every service then still shows; without its record each one says so in fetchError.
+  local lost=false
+  if [ -z "$lasts" ] || ! printf '%s' "$lasts" | jq -e 'type == "object"' >/dev/null 2>&1; then lasts='{}'; lost=true; fi
+  echo "$list" | jq --argjson l "$lasts" --argjson lost "$lost" "$RENDER_PHASE"'map({lastAt:null, lastState:null, lastSha:null, lastMsg:null, fetchError:null}
+    + . + ($l[.id] // (if $lost then {fetchError:"the deploys could not be read"} else {} end)) | . + {phase:(.lastState | rphase)})'
 }
 
 # render_deploy_json <service> [--sha <commit>] [--clear-cache]
@@ -198,7 +293,7 @@ render_deploy_json() {
     svc="$(render_call GET "/services/$id")" || exit 1
     # By its name, as the shared config knows it, also when it was given by its srv- id.
     name="$(echo "$svc" | jq -r --arg n "$name" '.name // $n')"
-    sha="$(team_gate render "$name" "$(echo "$svc" | jq -r '(.repo // "") | sub("^https://github.com/";"") | sub("\\.git$";"")')" \
+    sha="$(team_gate render "$name" "$(echo "$svc" | jq -r '(.repo // "") | '"$GITHOST_SLUG_JQ"'')" \
       "$(echo "$svc" | jq -r '.branch // "main"')" "$sha")" || exit 1
   fi
   lock="$(start_lock "render-$id")" || exit 1
@@ -234,12 +329,18 @@ render_rollback() {
 }
 
 # render_logs <service> <lines> [deployId]
+# render_logs <service> <lines> [deployId | --runtime]: a build log, or with --runtime (FEA-022,
+# FEA-093) the running service's own log (type=app, the last hour) instead.
 render_logs() {
-  local id n="$2" did="${3:-}" owner win=""
-  id="$(render_id_of "$1")"; owner="$(render_call GET "/services/$id" | jq -r .ownerId)"
+  local id n="$2" did="${3:-}" owner win="" type=build
+  [ "$did" != --runtime ] || { type=app; did=""; }
+  id="$(render_id_of "$1")"; owner="$(render_call GET "/services/$id" | jq -r '.ownerId // empty')"
+  [ -n "$owner" ] || die "Render: could not read the owner of $1 (needed for its logs)"
   # Render's logs have no deploy filter: the deploy's own time window stands in for it.
+  case "$did" in ''|dep-[a-z0-9]*) ;; *) die "Render: \"$did\" is not a deploy id (dep-...)";; esac
+  case "$did" in *[!a-z0-9-]*) die "Render: \"$did\" is not a deploy id (dep-...)";; esac
   [ -z "$did" ] || win="$(render_call GET "/services/$id/deploys/$did" | jq -r '"&startTime=\(.createdAt | @uri)" + (if .finishedAt then "&endTime=\(.finishedAt | @uri)" else "" end)')"
-  render_call GET "/logs?ownerId=$owner&resource=$id&type=build&limit=$n&direction=backward$win" \
+  render_call GET "/logs?ownerId=$owner&resource=$id&type=$type&limit=$n&direction=backward$win" \
     | jq -r '.logs | reverse | .[].message' | sed $'s/\x1b\\[[0-9;]*m//g'
 }
 

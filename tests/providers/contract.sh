@@ -17,6 +17,8 @@ mkdir -p "$tmp/bin"
 cp tests/lib/fake-curl.sh "$tmp/bin/curl"; cp tests/lib/fake-vercel.sh "$tmp/bin/vercel"; cp tests/lib/fake-aws.sh "$tmp/bin/aws"
 printf '#!/bin/bash\nexit 44\n' > "$tmp/bin/security"   # no keychain entry
 printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/sleep"
+# A provider that calls its own CLI (Amplify: aws) brings a stand-in in tests/fixtures/<p>/bin.
+for f in tests/fixtures/*/bin/*; do [ -f "$f" ] && cp "$f" "$tmp/bin/"; done
 chmod +x "$tmp/bin"/*
 export FIXTURES="$root/tests/fixtures" CALLS="$tmp/calls.log"
 STUBPATH="$tmp/bin:/usr/bin:/bin"
@@ -52,7 +54,7 @@ lib() {  # lib <p> <shell code>: the code with deploys sourced (DEPLOYS_LIB=1)
 for f in providers/*.sh; do
   p="$(basename "$f" .sh)"
   rm -rf "$tmp/config-$p"; mkdir -p "$tmp/config-$p"
-  CONTRACT_ID="" CONTRACT_NAME="" CONTRACT_DEPLOY=""
+  CONTRACT_ID="" CONTRACT_NAME="" CONTRACT_DEPLOY="" CONTRACT_DONE=""
 
   missing="$(lib "$p" 'for v in '"$FUNCS"'; do declare -F "'"$p"'_$v" >/dev/null || echo "$v"; done' | tr '\n' ' ')"
   expect "$p: every contract function exists" "$missing" ""
@@ -78,7 +80,7 @@ for f in providers/*.sh; do
   out="$(cli "$p" "$p" json)"; rc=$?
   expect "$p: json from the fixtures" "$rc:$(echo "$out" | jq -r 'type' 2>&1)" "0:array"
   expect "$p: json has every field" "$(echo "$out" | jq -c --argjson f "$FIELDS" '[.[] | . as $e | $f[] | . as $k | select($e | has($k) | not)] | unique' 2>&1)" "[]"
-  expect "$p: phase is in the enum" "$(echo "$out" | jq -c --argjson ph "$PHASES" '[.[] | select(.phase as $x | $ph | index($x) | not) | .name]' 2>&1)" "[]"
+  expect "$p: phase is in the enum" "$(echo "$out" | jq -c --argjson ph "$PHASES" '[.[] | select(.phase != null and (.phase as $x | $ph | index($x) | not)) | .name]' 2>&1)" "[]"
   expect "$p: each phase is the expected one" "$(echo "$out" | jq -cS 'map({(.name): .phase}) | add' 2>&1)" "$(jq -cS . "tests/fixtures/$p/expect.json")"
   expect "$p: building follows the phase" "$(echo "$out" | jq -c '[.[] | select(.building != (.phase == "queued" or .phase == "building")) | .name]')" "[]"
   expect "$p: names are remembered with platform and id" \
@@ -90,12 +92,37 @@ for f in providers/*.sh; do
     IFS=$'\t' read -r sid sph sraw <<<"$s"
     expect "$p: _$v is deployId<TAB>phase<TAB>state" "$([ -n "$sid" ] && [ -n "$sraw" ] && echo "$PHASES" | jq -e --arg x "$sph" 'index($x) != null' >/dev/null && echo ok || echo "[$s]")" "ok"
   done
+  # PRV-138: `deploys watch` ends on this provider's status line (a final phase, or "none"):
+  # it once looped for ever on one that printed JSON. A time limit, so a regression fails here
+  # instead of hanging the run (sleep is a stand-in, so 20 s is many rounds).
+  # The fixtures' deploy is still building: in a copy it has finished (Render live, Vercel READY;
+  # another provider's env names its own sed script in CONTRACT_DONE).
+  rm -rf "$tmp/fxw"; cp -R "$FIXTURES" "$tmp/fxw"
+  while IFS= read -r wf; do
+    sed -i.bak "${CONTRACT_DONE:-s/build_in_progress/live/g; s/\"BUILDING\"/\"READY\"/g}" "$wf" && rm -f "$wf.bak"
+  done < <(find "$tmp/fxw/$p" -type f -name "*$CONTRACT_DEPLOY*")
+  # shellcheck source=/dev/null
+  ( [ ! -f "tests/fixtures/$p/env" ] || . "tests/fixtures/$p/env"
+    env -u DEPLOYS_LIB FIXTURES="$tmp/fxw" PATH="$STUBPATH" DEPLOYS_CONFIG="$tmp/config-$p" HOME="$tmp" NO_COLOR=1 \
+      perl -e 'alarm 20; exec @ARGV' /bin/bash ./deploys watch "$CONTRACT_NAME" "$CONTRACT_DEPLOY" >"$tmp/watch" 2>&1 </dev/null ); rc=$?
+  how="rc $rc: $(tail -n 1 "$tmp/watch")"
+  if [ "$rc" = 0 ] || [ "$rc" = 1 ]; then how=ended; elif [ "$rc" = 142 ]; then how="still running after 20 s: $(tail -n 2 "$tmp/watch" | tr '\n' ' ')"; fi
+  expect "$p: deploys watch ends (live 0, failed 1)" "$how" "ended"
   rm -rf "$tmp/config-$p/locks"
   d="$(lib "$p" "${p}_deploy_json $CONTRACT_ID")"
   expect "$p: _deploy_json prints id, url, state, phase" \
     "$(echo "$d" | jq -c --argjson ph "$PHASES" '[has("id"), has("url"), has("state"), (.phase as $x | $ph | index($x) != null)] | all' 2>&1)" "true"
   expect "$p: _url prints an address" "$(lib "$p" "${p}_url $CONTRACT_ID" | grep -c '^https://')" "1"
-  expect "$p: _doctor prints a JSON object" "$(lib "$p" "${p}_doctor" | jq -r type 2>&1)" "object"
+  doc="$(lib "$p" "${p}_doctor")"
+  expect "$p: _doctor prints a JSON object" "$(echo "$doc" | jq -r type 2>&1)" "object"
+  # FEA-078: expiresAt (Unix s) and rateLimit {remaining, resetAt} where the platform tells; null
+  # (or left out) otherwise. Vercel, Render and Hook leave them out: their fields join the top of
+  # `deploys doctor` as well, where one provider's rateLimit would read as everyone's.
+  expect "$p: _doctor expiresAt/rateLimit are null or in shape" "$(echo "$doc" | jq -c '
+      [((.expiresAt // null) | . == null or type == "number"),
+       ((.rateLimit // null) | . == null or ((.remaining | type == "number") and (.resetAt == null or (.resetAt | type == "number"))))] | all' 2>&1)" "true"
+  case "$p" in vercel|render|hook) expect "$p: flat _doctor without expiresAt/rateLimit" "$(echo "$doc" | jq -c '[has("expiresAt"), has("rateLimit")]')" "[false,false]" ;;
+    *) expect "$p: _doctor has expiresAt and rateLimit" "$(echo "$doc" | jq -c '[has("expiresAt"), has("rateLimit")]')" "[true,true]" ;; esac
 
   label="$(echo "$meta" | jq -r .label)"
   for cap in $(echo "$meta" | jq -r '.caps | to_entries[] | select(.value == false) | .key'); do
@@ -171,6 +198,31 @@ jq -n '[{name:"same",platform:"vercel",id:"same"},{name:"same",platform:"render"
 both explain same >/dev/null; rc=$?
 expect "a name on two platforms asks which" "$rc:$(grep -c 'Say which: render:same' "$tmp/err")" "1:1"
 expect "the provider prefix picks one" "$(both explain render:web >/dev/null; echo $?)" "0"
+
+# --- PRV-131: the helpers deploys has (die, mtime, start_lock) are not copied per provider ---
+# Each provider uses the shared names; a file that runs on its own (the provider tests) brings
+# a stand-in behind `declare -F`, so deploys' own definition always wins.
+copies="$(grep -nE '^[a-z]+_(die|mtime|lock|b64d)\(\)' providers/*.sh | tr '\n' ' ')"
+expect "PRV-131: no provider keeps its own die/mtime/lock copy" "$copies" ""
+expect "PRV-131: no stat -f before stat -c (GNU stat -f is the file system)" "$(grep -c 'stat -f %m "[^"]*" 2>/dev/null || stat -c' providers/*.sh | grep -vc ':0$')" "0"
+# Netlify, Coolify and DigitalOcean take the start lock only under deploys; Cloudflare and Amplify always.
+for p in netlify:2 coolify:2 digitalocean:2 cloudflare:3 amplify:3; do
+  expect "PRV-131: ${p%:*} alone has die and mtime$([ "${p#*:}" = 3 ] && echo " and start_lock")" \
+    "$(env -i PATH="$STUBPATH" HOME="$tmp" /bin/bash -c ". providers/${p%:*}.sh >/dev/null 2>&1; declare -F die mtime start_lock | wc -l | tr -d ' '")" "${p#*:}"
+done
+out="$(lib cloudflare 'type die | sed -n 4p')"
+case "$out" in *RED*) ok "PRV-131: under deploys, deploys' own die is used" ;; *) fail "PRV-131: under deploys, deploys' own die is used" "$out" ;; esac
+
+# --- FEA-078: rate limits read from the headers the platform sends (fixture header files) ---
+R=tests/fixtures/ratelimit
+expect "FEA-078: Netlify X-RateLimit-*" "$(lib netlify "netlify_ratelimit $R/netlify.headers")" '{"remaining":56,"resetAt":1372700873}'
+expect "FEA-078: DigitalOcean ratelimit-*" "$(lib digitalocean "digitalocean_ratelimit $R/digitalocean.headers")" '{"remaining":4816,"resetAt":1444931833}'
+expect "FEA-078: Coolify, no reset header" "$(lib coolify "coolify_ratelimit $R/coolify.headers")" '{"remaining":199,"resetAt":null}'
+cfr="$(lib cloudflare "cf_ratelimit $R/cloudflare.headers")"; now="$(date +%s)"
+expect "FEA-078: Cloudflare Ratelimit r=50;t=30" "$(echo "$cfr" | jq -c --argjson n "$now" '[.remaining, (.resetAt - $n | . >= 28 and . <= 31)]')" '[50,true]'
+for p in netlify:netlify digitalocean:digitalocean coolify:coolify cloudflare:cf; do
+  expect "FEA-078: ${p%%:*} without the headers: null" "$(lib "${p%%:*}" "${p#*:}_ratelimit $R/none.headers")" null
+done
 
 # --- the script finds its providers through a symlink, and says so when they are missing ---
 # Every providers/*.sh, in the order deploys reads them; only vercel and render are on by default.

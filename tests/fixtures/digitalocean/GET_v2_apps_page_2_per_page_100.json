@@ -1,0 +1,24 @@
+{
+  "apps": [
+    {
+      "id": "app-pinned",
+      "spec": {
+        "name": "Pinned",
+        "services": [{"name": "app", "gitlab": {"repo": "me/pinned", "branch": "main", "deploy_on_push": true}}]
+      },
+      "default_ingress": "https://pinned-1.ondigitalocean.app",
+      "pinned_deployment": {"id": "d-pin-1"}
+    },
+    {
+      "id": "app-image",
+      "spec": {
+        "name": "image",
+        "services": [{"name": "nginx", "image": {"registry_type": "DOCKER_HUB", "registry": "library", "repository": "nginx", "tag": "1.27"}}]
+      }
+    }
+  ],
+  "links": {"pages": {"first": "https://api.digitalocean.com/v2/apps?page=1&per_page=100",
+                      "prev": "https://api.digitalocean.com/v2/apps?page=1&per_page=100"}},
+  "meta": {"total": 4}
+}
+200

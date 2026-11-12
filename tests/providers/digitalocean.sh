@@ -214,6 +214,7 @@ expect "latest" "$(digitalocean_latest_json shop | jq -c '[.id, .phase]')" '["d-
 expect "latest: the contract line" "$(digitalocean_latest shop | cut -f1,2)" "d-shop-3	building"
 expect "latest: none" "$(digitalocean_latest_json image)" null
 expect "latest: none, as the contract line" "$(digitalocean_latest image)" "none		?"
+expect "has: gives the id" "$(digitalocean_has shop)" "app-shop"
 out="$(digitalocean_cancel shop d-shop-3)"
 expect "cancel: posted" "$(calls 'curl POST .*/v2/apps/app-shop/deployments/d-shop-3/cancel')" 1
 has "cancel: said" "$out" "canceled"
@@ -275,6 +276,25 @@ expect "set-key: saved via stdin" "$(grep -c 'security -i STDIN\[add-generic-pas
 expect "set-key: token never an argument" "$(grep -- 'dop_v1_good' "$CALLS" | grep -vc 'STDIN\[')" 0
 out="$(printf '' | digitalocean_set_key 2>&1)"; rc=$?
 expect "set-key: empty refused" "$rc" 1
+
+# --- PRV-130: with deploys' http_call, reads go through it; a body never does (env values) ---
+# shellcheck source=../fixtures/http/stub.sh
+. tests/fixtures/http/stub.sh
+reset
+( http_stub; digitalocean_call GET /v2/account >/dev/null 2>"$tmp/err" )
+has "PRV-130: a read through http_call" "$(cat "$CALLS")" "http_call DigitalOcean GET https://api.digitalocean.com/v2/account auth[bearer] fix[set]"
+hasnt "PRV-130: the token is not in curl's arguments" "$(grep '^curl' "$CALLS")" "dop_v1_secret123"
+reset
+( http_stub; digitalocean_call POST /v2/apps/x/deployments '{"force_build":false}' >/dev/null 2>&1 )
+expect "PRV-130: a call with a body keeps the file (not http_call)" "$(calls '^http_call'):$(grep -c 'BODY\[body-' "$CALLS")" "0:1"
+reset
+( http_stub; DIGITALOCEAN_HEADERS="$tmp/h" digitalocean_call GET /v2/account >/dev/null 2>&1 )
+expect "PRV-130: the doctor's header read keeps the own path" "$(calls '^http_call')" 0
+has "FEA-078: the doctor's read keeps the headers (-D)" "$(cat "$CALLS")" "-D $tmp/h"
+reset
+out="$( http_stub; FAKE_STATUS=401 digitalocean_call GET /v2/account 2>&1 >/dev/null )"; rc=$?
+expect "PRV-130: a 401 returns 1" "$rc" 1
+hasnt "PRV-130: no Error: prefix" "$out" "Error:"
 
 echo
 [ "$fails" = 0 ] && echo "All DigitalOcean provider tests passed." || { echo "$fails failed."; exit 1; }

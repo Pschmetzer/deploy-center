@@ -6,132 +6,54 @@
       "spec": {
         "name": "shop",
         "region": "fra",
-        "domains": [
-          {
-            "domain": "shop.example.com",
-            "type": "PRIMARY"
-          }
-        ],
+        "domains": [{"domain": "shop.example.com", "type": "PRIMARY"}],
         "services": [
           {
             "name": "web",
-            "github": {
-              "repo": "me/shop",
-              "branch": "main",
-              "deploy_on_push": true
-            },
+            "github": {"repo": "me/shop", "branch": "main", "deploy_on_push": true},
             "build_command": "npm run build",
             "run_command": "npm start",
             "http_port": 8080,
             "instance_count": 2,
             "instance_size_slug": "apps-s-1vcpu-1gb",
-            "envs": [
-              {
-                "key": "NODE_ENV",
-                "value": "production",
-                "scope": "RUN_AND_BUILD_TIME"
-              },
-              {
-                "key": "API_SECRET",
-                "value": "EV[1:abc:def]",
-                "type": "SECRET"
-              }
-            ]
+            "envs": [{"key": "NODE_ENV", "value": "production", "scope": "RUN_AND_BUILD_TIME"},
+                     {"key": "API_SECRET", "value": "EV[1:abc:def]", "type": "SECRET"}]
           },
           {
             "name": "api",
-            "gitlab": {
-              "repo": "me/shop-api",
-              "branch": "main",
-              "deploy_on_push": true
-            },
+            "gitlab": {"repo": "me/shop-api", "branch": "main", "deploy_on_push": true},
             "source_dir": "api"
           }
         ],
         "static_sites": [
-          {
-            "name": "docs",
-            "github": {
-              "repo": "me/shop",
-              "branch": "main",
-              "deploy_on_push": true
-            },
-            "source_dir": "docs",
-            "output_dir": "dist",
-            "catchall_document": "index.html"
-          }
+          {"name": "docs", "github": {"repo": "me/shop", "branch": "main", "deploy_on_push": true},
+           "source_dir": "docs", "output_dir": "dist", "catchall_document": "index.html"}
         ],
         "workers": [
-          {
-            "name": "queue",
-            "image": {
-              "registry_type": "DOCR",
-              "repository": "shop-queue",
-              "tag": "latest",
-              "deploy_on_push": {
-                "enabled": true
-              }
-            }
-          }
+          {"name": "queue",
+           "image": {"registry_type": "DOCR", "repository": "shop-queue", "tag": "latest",
+                     "deploy_on_push": {"enabled": true}}}
         ],
         "jobs": [
-          {
-            "name": "migrate",
-            "kind": "PRE_DEPLOY",
-            "bitbucket": {
-              "repo": "me/shop",
-              "branch": "main"
-            },
-            "run_command": "npm run migrate"
-          }
+          {"name": "migrate", "kind": "PRE_DEPLOY",
+           "bitbucket": {"repo": "me/shop", "branch": "main"},
+           "run_command": "npm run migrate"}
         ],
-        "databases": [
-          {
-            "name": "db",
-            "engine": "PG",
-            "production": true,
-            "cluster_name": "shop-db"
-          }
-        ],
-        "ingress": {
-          "rules": [
-            {
-              "match": {
-                "path": {
-                  "prefix": "/"
-                }
-              },
-              "component": {
-                "name": "web"
-              }
-            }
-          ]
-        },
-        "alerts": [
-          {
-            "rule": "DEPLOYMENT_FAILED"
-          }
-        ]
+        "databases": [{"name": "db", "engine": "PG", "production": true, "cluster_name": "shop-db"}],
+        "ingress": {"rules": [{"match": {"path": {"prefix": "/"}}, "component": {"name": "web"}}]},
+        "alerts": [{"rule": "DEPLOYMENT_FAILED"}]
       },
       "default_ingress": "https://shop-abc12.ondigitalocean.app",
       "live_url": "https://shop.example.com",
       "live_domain": "shop.example.com",
       "active_deployment": {
-        "id": "d-shop-2",
-        "phase": "ACTIVE",
+        "id": "d-shop-2", "phase": "ACTIVE",
         "cause": "commit 2222222 pushed to github.com/me/shop",
         "created_at": "2026-11-01T10:00:00Z",
-        "services": [
-          {
-            "name": "web",
-            "source_commit_hash": "2222222aaaa"
-          }
-        ]
+        "services": [{"name": "web", "source_commit_hash": "2222222aaaa"}]
       },
       "in_progress_deployment": {
-        "id": "d-shop-3",
-        "phase": "BUILDING",
-        "created_at": "2026-11-02T09:00:00Z"
+        "id": "d-shop-3", "phase": "BUILDING", "created_at": "2026-11-02T09:00:00Z"
       }
     },
     {
@@ -139,36 +61,19 @@
       "spec": {
         "name": "blog",
         "static_sites": [
-          {
-            "name": "site",
-            "github": {
-              "repo": "me/blog",
-              "branch": "trunk",
-              "deploy_on_push": false
-            }
-          }
+          {"name": "site", "github": {"repo": "me/blog", "branch": "trunk", "deploy_on_push": false}}
         ]
       },
       "default_ingress": "https://blog-xyz.ondigitalocean.app",
       "live_url": "https://blog-xyz.ondigitalocean.app",
       "active_deployment": {
-        "id": "d-blog-1",
-        "phase": "ACTIVE",
-        "cause": "manual",
-        "created_at": "2026-10-01T10:00:00Z",
-        "static_sites": [
-          {
-            "name": "site",
-            "source_commit_hash": "bbbbbbb"
-          }
-        ]
+        "id": "d-blog-1", "phase": "ACTIVE", "cause": "manual", "created_at": "2026-10-01T10:00:00Z",
+        "static_sites": [{"name": "site", "source_commit_hash": "bbbbbbb"}]
       }
     }
   ],
-  "links": {},
-  "meta": {
-    "total": 2
-  }
+  "links": {"pages": {"last": "https://api.digitalocean.com/v2/apps?page=2&per_page=100",
+                      "next": "https://api.digitalocean.com/v2/apps?page=2&per_page=100"}},
+  "meta": {"total": 4}
 }
-
 200

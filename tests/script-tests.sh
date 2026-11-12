@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC1090  # later ". \"$deploys_src\"" on purpose, see below
 # Tests for the rules in `deploys` that decide what has changes and what waits.
 # No network: `gh` is a stand-in that answers from the cases below. Run: tests/script-tests.sh
 set -uo pipefail
@@ -34,6 +35,9 @@ GH
 chmod +x "$tmp/bin/gh"; export PATH="$tmp/bin:$PATH"
 # shellcheck source=../deploys
 . ./deploys
+# Later sourcings go through a variable: shellcheck inlines every literal ". ./deploys" when
+# both files are checked together, and a dozen copies made that one call take over 20 minutes in CI.
+deploys_src=./deploys
 # The script turns on set -e; these tests look at failures, so they must not end on one.
 set +e
 
@@ -585,6 +589,7 @@ expect "autofix --preview: masked log, prompt, routine id; nothing fired or save
   "$(echo "$pv" | jq -r '"\(.routine) \(.deployId) \(.masked_log | test("npm ERR")) \(.masked_log | test("abc123|ghp_abcdef")) \(.prompt | test("You fix failed deploy builds"))"'):$(grep -c 'FIRED\|^argv ' "$CALLS"):$([ -f "$AUTOFIX_STATE" ] && echo saved || echo none)" \
   "trig_test d1 true false true:0:none"
 expect "autofix --preview: never the routine token" "$(echo "$pv" | grep -c 'sk-ant-oat01')" "0"
+# shellcheck disable=SC2034  # json is read by af_preview
 pv="$( ( json=1; af_preview vercel nope ) 2>&1)"; rc=$?
 expect "autofix --preview: no failed build is exit 2" "$rc:$(echo "$pv" | grep -c 'no failed build')" "2:1"
 # FEA-017: a class for the kind of failure, from the masked log.
@@ -1365,15 +1370,15 @@ expect "LOG-038: a fire that turned green still learns its PR was merged" "$(
   st="$(af_state)"; all='[]'; now="$(date +%s)"; dry=""; rc=0; DEPLOYS_NOTIFY=0 af_sync_fires >/dev/null; echo "$st" | jq -r '.fires[0].prState')" "merged"
 mkdir -p "$tmp/gh43"; printf '#!/bin/bash\necho %s\n' "'[{\"number\":5,\"title\":\"autofix(web): missing env\",\"head\":{\"ref\":\"fix-web-build\"},\"html_url\":\"u\"},{\"number\":6,\"title\":\"other\",\"head\":{\"ref\":\"x\"}}]'" > "$tmp/gh43/gh"; chmod +x "$tmp/gh43/gh"
 expect "LOG-043: a fix PR is found by its title on another branch" \
-  "$( (unset -f af_prs; PATH="$tmp/gh43:$PATH"; DEPLOYS_LIB=1 . ./deploys; set +e; af_prs me/web web open | jq -c '[.[].number]') )" "[5]"
+  "$( (unset -f af_prs; PATH="$tmp/gh43:$PATH"; DEPLOYS_LIB=1 . "$deploys_src"; set +e; af_prs me/web web open | jq -c '[.[].number]') )" "[5]"
 unset RENDER_API_KEY DEPLOYS_JOURNAL
 # CLI-029: a job whose PATH no longer finds a CLI this shell finds is reported, nothing is changed.
 mkdir -p "$tmp/j29/agents" "$tmp/j29/bin" "$tmp/j29/old"; printf '#!/bin/bash\n' > "$tmp/j29/bin/vercel"; chmod +x "$tmp/j29/bin/vercel"
 printf '<?xml version="1.0"?><plist version="1.0"><dict><key>EnvironmentVariables</key><dict><key>PATH</key><string>%s</string></dict></dict></plist>\n' "$tmp/j29/old:/usr/bin:/bin" > "$tmp/j29/agents/app.deploycenter.autofix.plist"
 expect "CLI-029: the autofix job's stale PATH is named" \
-  "$( (DEPLOYS_LIB=1 . ./deploys; set +e; PATH="$tmp/j29/bin:$PATH"; DEPLOYS_LAUNCH_DIR="$tmp/j29/agents"; job_missing "$AUTOFIX_LABEL" | tr ' ' '\n' | grep -x vercel; job_missing_json | grep -o '"autofix:vercel"') )" $'vercel\n"autofix:vercel"'
+  "$( (DEPLOYS_LIB=1 . "$deploys_src"; set +e; PATH="$tmp/j29/bin:$PATH"; DEPLOYS_LAUNCH_DIR="$tmp/j29/agents"; job_missing "$AUTOFIX_LABEL" | tr ' ' '\n' | grep -x vercel; job_missing_json | grep -o '"autofix:vercel"') )" $'vercel\n"autofix:vercel"'
 expect "CLI-029: a job PATH that finds it is fine" \
-  "$( (DEPLOYS_LIB=1 . ./deploys; set +e; PATH="$tmp/j29/bin:$PATH"; DEPLOYS_LAUNCH_DIR="$tmp/j29/agents"; sed -i '' "s:$tmp/j29/old:$tmp/j29/bin:" "$DEPLOYS_LAUNCH_DIR/app.deploycenter.autofix.plist"; job_missing "$AUTOFIX_LABEL" | tr ' ' '\n' | grep -c -x vercel) )" "0"
+  "$( (DEPLOYS_LIB=1 . "$deploys_src"; set +e; PATH="$tmp/j29/bin:$PATH"; DEPLOYS_LAUNCH_DIR="$tmp/j29/agents"; sed -i '' "s:$tmp/j29/old:$tmp/j29/bin:" "$DEPLOYS_LAUNCH_DIR/app.deploycenter.autofix.plist"; job_missing "$AUTOFIX_LABEL" | tr ' ' '\n' | grep -c -x vercel) )" "0"
 # CLI-036: the --when-green preview asks CI like the real run and says what --yes would do.
 export RENDER_API_KEY=rnd_test
 fresh
@@ -1387,7 +1392,7 @@ unset RENDER_API_KEY
 # CLI-053, PRV-084: a remembered id is checked before a change; "could not ask" is not "not found".
 mkdir -p "$tmp/c53"; echo '[{"name":"web","platform":"vercel","id":"prj_old"}]' > "$tmp/c53/names.json"
 # shellcheck disable=SC2034  # read by the sourced script
-l53() { (DEPLOYS_CONFIG="$tmp/c53" DEPLOYS_LIB=1 . ./deploys; set +e; active_providers() { echo vercel; }; is_enabled() { [ "$1" = vercel ]; }; eval "$1"; WRITING="$2"; lookup "${3:-web}" 2>&1; echo "rc=$?"); }
+l53() { (DEPLOYS_CONFIG="$tmp/c53" DEPLOYS_LIB=1 . "$deploys_src"; set +e; active_providers() { echo vercel; }; is_enabled() { [ "$1" = vercel ]; }; eval "$1"; WRITING="$2"; lookup "${3:-web}" 2>&1; echo "rc=$?"); }
 expect "CLI-053: a read uses the remembered id" "$(l53 'vercel_has() { echo prj_new; }' "")" $'vercel\tprj_old\nrc=0'
 expect "CLI-053: a change checks it and takes the new one" "$(l53 'vercel_has() { echo prj_new; }' 1)" $'vercel\tprj_new\nrc=0'
 expect "CLI-053: a change keeps the remembered id when the platform cannot answer" "$(l53 'vercel_has() { return 2; }' 1)" $'vercel\tprj_old\nrc=0'
@@ -1411,21 +1416,21 @@ expect "INT-076: notes --json keeps the author apart" \
 unset RENDER_API_KEY
 # CLI-055, CLI-056: a stale lock is taken over by one rename, a fresh one never; small files under a lock.
 mkdir -p "$tmp/l55"
-expect "CLI-055: a stale lock folder is cleared, a fresh one kept, a stale lock file cleared" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+expect "CLI-055: a stale lock folder is cleared, a fresh one kept, a stale lock file cleared" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . "$deploys_src"; set +e
   mkdir "$tmp/l55/old" "$tmp/l55/new"; touch -t 202001010000 "$tmp/l55/old"; : > "$tmp/l55/oldf"; touch -t 202001010000 "$tmp/l55/oldf"
   lock_clear_stale "$tmp/l55/old" 300; lock_clear_stale "$tmp/l55/new" 300; lock_clear_stale "$tmp/l55/oldf" 60
   [ -e "$tmp/l55/old" ] && echo old-kept || echo old-gone; [ -d "$tmp/l55/new" ] && echo new-kept; [ -e "$tmp/l55/oldf" ] && echo oldf-kept || echo oldf-gone
   find "$tmp/l55" -name "*stale*" | grep -c .) )" $'old-gone\nnew-kept\noldf-gone\n0'
-expect "CLI-055: start_lock takes over a stale start, refuses a fresh one" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+expect "CLI-055: start_lock takes over a stale start, refuses a fresh one" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . "$deploys_src"; set +e
   f="$(start_lock vercel/web)"; touch -t 202001010000 "$f"; (start_lock vercel/web >/dev/null 2>&1) && echo taken; (start_lock vercel/web >/dev/null 2>&1) || echo refused) )" $'taken\nrefused'
-expect "CLI-056: ai usage adds under a lock and leaves none behind" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+expect "CLI-056: ai usage adds under a lock and leaves none behind" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . "$deploys_src"; set +e
   AI_USAGE="$tmp/l55/ai-usage.json"; ai_add_usage 5 & ai_add_usage 7 & wait; ai_add_usage 1; ai_used; [ -e "$AI_USAGE.lock" ] && echo left || echo clean) )" $'13\nclean'
-expect "CLI-056: a dead holder's lock does not cost every later call the wait" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . ./deploys; set +e
+expect "CLI-056: a dead holder's lock does not cost every later call the wait" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . "$deploys_src"; set +e
   mkdir "$tmp/l55/x.lock"; touch -t 202001010000 "$tmp/l55/x.lock"; file_lock "$tmp/l55/x" && echo got; file_unlock "$tmp/l55/x"; [ -e "$tmp/l55/x.lock" ] || echo clean) )" $'got\nclean'
 # CLI-062 (with main's names.json): the completion list holds plain names only; a name like
 # $(cmd) from a platform list never reaches it.
 mkdir -p "$tmp/n62"
-expect "CLI-062: only plain names go into the completion list" "$( (DEPLOYS_CONFIG="$tmp/n62" DEPLOYS_LIB=1 . ./deploys; set +e
+expect "CLI-062: only plain names go into the completion list" "$( (DEPLOYS_CONFIG="$tmp/n62" DEPLOYS_LIB=1 . "$deploys_src"; set +e
   echo '[{"name":"web","id":"p1"},{"name":"$(touch x)","id":"p2"}]' | remember_names vercel; cat "$CONFIG_DIR/names" | paste -sd, -) )" "web"
 # CLI-066: rebase-merged commits are asked in parallel; a PR already named in a message counts once.
 mkdir -p "$tmp/bin66"; printf '#!/bin/bash\ncase "$*" in *"commits/c3/pulls"*) echo 12 ;; *) exec "%s/bin/gh" "$@" ;; esac\n' "$tmp" > "$tmp/bin66/gh"; chmod +x "$tmp/bin66/gh"
@@ -1476,7 +1481,7 @@ expect "CLI-039: a preview is not held by the window" "$(run "$O" "$E" vercel de
 rm -f "$e2e/config/window.json"; unset RENDER_API_KEY
 # PRV-129: cache file names are one per key (a_b/c and a/b_c used to share one file).
 expect "PRV-129: two repos that tr would merge get two names" \
-  "$( (DEPLOYS_LIB=1 . ./deploys; set +e; [ "$(cache_name 'a_b/c@main')" != "$(cache_name 'a/b_c@main')" ] && echo two; cache_name 'me/app@main') )" $'two\nme_app_main'
+  "$( (DEPLOYS_LIB=1 . "$deploys_src"; set +e; [ "$(cache_name 'a_b/c@main')" != "$(cache_name 'a/b_c@main')" ] && echo two; cache_name 'me/app@main') )" $'two\nme_app_main'
 # CLI-027: a command about one project asks GitHub about that one only.
 l27='[{"name":"app","repo":"me/app","ref":"main","deployable":true,"lastSha":"aaaa"},{"name":"other","id":"prj_o","repo":"me/other","ref":"main","deployable":true,"lastSha":"aaaa"}]'
 expect "CLI-027: DEPLOYS_ONLY keeps one row (by name or id)" \
@@ -1648,10 +1653,11 @@ out="$( ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE=ok; : > "$
 expect "http_call: @file is sent as the body, -D keeps the headers" "$out:$(grep -c -- "--data-binary @$tmp/http/body.json" "$tmp/http/log"):$(grep -c -- "-D $tmp/http/h.txt" "$tmp/http/log")" '{"ok":true}:1:1'
 out="$( ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE=ok; : > "$HTTP_LOG"; . ./lib/http.sh; http_call X POST https://api.x.test/v1/things "@$tmp/http/none.json" ) 2>&1)"; rc=$?
 expect "http_call: a body file that is not there is an error, no call" "$rc:$(echo "$out" | grep -c 'cannot be read'):$(grep -c . "$tmp/http/log")" "1:1:0"
-# FEA-110: --dry-run for autodeploy-on only goes to a provider whose meta says onDryRun.
+# FEA-110: --dry-run for autodeploy-on only goes to a provider whose meta says onDryRun. Vercel
+# says so (providers/vercel.sh): the plan comes, and nothing is connected again.
 fresh
-expect "FEA-110: autodeploy-on --dry-run is refused by a provider without onDryRun, nothing called" \
-  "$(run "$O" "$E" vercel autodeploy-on web --dry-run; grep -c 'no dry run' "$E"; grep -c . "$e2e/calls.log")" $'1\n1\n0'
+expect "FEA-110: vercel autodeploy-on --dry-run is a plan, nothing posted" \
+  "$(run "$O" "$E" vercel autodeploy-on web --dry-run; grep -c 'Dry run: nothing changed' "$O"; grep -c 'no dry run' "$E"; grep -c 'POST' "$e2e/calls.log")" $'0\n1\n0\n0'
 fresh
 expect "logs --runtime: refused where the provider has no runtime log" "$(run "$O" "$E" logs web --runtime; grep -c 'no runtime log' "$E")" $'1\n1'
 # ===== end CLI track =====

@@ -16,5 +16,4 @@
  "deployment_url": "/project/p-1/environment/e-1/application/app-shop/deployment/dep-shop-3",
  "logs": "[{\"command\": null, \"output\": \"Starting deployment of shop to vps.\", \"type\": \"stdout\", \"hidden\": false, \"batch\": 1, \"order\": 1}, {\"command\": \"docker exec x git ls-remote\", \"output\": \"secret internals\", \"type\": \"stdout\", \"hidden\": true, \"batch\": 1, \"order\": 2}, {\"command\": \"npm run build\", \"output\": \"built in 41s\", \"type\": \"stdout\", \"hidden\": false, \"batch\": 1, \"order\": 3}, {\"command\": null, \"output\": \"Rolling update started.\", \"type\": \"stdout\", \"hidden\": false, \"batch\": 1, \"order\": 4}]"
 }
-
 200
