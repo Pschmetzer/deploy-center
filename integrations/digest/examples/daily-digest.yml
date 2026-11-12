@@ -19,10 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      # Pin to a release tag or a full commit SHA, not a branch. Only lists (no deploy: true); it
-      # also sets up `deploys` (env DEPLOYS) for the next step, and the digest script comes from the
-      # same copy of the repo, so both are always the same version.
-      - uses: Pschmetzer/deploy-center/integrations/action@v0.9.1
+      # Pin both to a release tag or a full commit SHA, not a branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Pschmetzer/deploy-center
+          ref: main
+          path: deploy-center
+          persist-credentials: false
+      # Only lists (no deploy: true); it also sets up `deploys` for the next step.
+      - uses: Pschmetzer/deploy-center/integrations/action@main
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}

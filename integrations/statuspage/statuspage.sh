@@ -47,7 +47,7 @@ cfg="$(jq -c '
      # "name", "platform/name" or {name, platform?, label?, url?}
      projects: ((.projects // []) | map(
         if type == "string" then
-          (if test("^(vercel|render)/") then {platform: split("/")[0], name: (split("/")[1:] | join("/"))} else {name: .} end)
+          (if test("^[a-z][a-z0-9]*/[^/]") then {platform: split("/")[0], name: (split("/")[1:] | join("/"))} else {name: .} end)
         elif type == "object" and (.name | type) == "string" then {name, platform: (.platform // null), label: (.label // null), url: (.url // null)}
         else error("each project is a name or an object with a name") end))}' "$config")" \
   || { echo "Could not read $config" >&2; exit 1; }

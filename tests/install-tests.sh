@@ -27,11 +27,22 @@ tarball="$tmp/pkg/deploys-cli-$version.tar.gz"
 listing="$(tar -tzf "$tarball" | LC_ALL=C sort | tr '\n' ' ')"
 # providers/ goes in when the repo has it (its files, sorted, after deploys).
 want="deploys-cli-$version/ deploys-cli-$version/LICENSE deploys-cli-$version/README-CLI.md deploys-cli-$version/VERSION deploys-cli-$version/deploys "
+# The pre-push for `deploys hooks install` (INT-082); the list is sorted below.
+if [ -f integrations/hooks/pre-push ]; then
+  want+="deploys-cli-$version/integrations/ deploys-cli-$version/integrations/hooks/ deploys-cli-$version/integrations/hooks/pre-push "
+fi
 if [ -d providers ]; then
   want+="deploys-cli-$version/providers/ "
   while IFS= read -r f; do want+="deploys-cli-$version/$f "; done < <(find providers -type f | LC_ALL=C sort)
 fi
+# lib/ too (team.sh, githost.sh, savings.sh): without it team mode, GitLab, simulate and ledger are gone.
+if [ -d lib ]; then
+  want+="deploys-cli-$version/lib/ "
+  while IFS= read -r f; do want+="deploys-cli-$version/$f "; done < <(find lib -type f | LC_ALL=C sort)
+  want="$(printf '%s' "$want" | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')"
+fi
 expect "package: contents" "$listing" "$want"
+contains "package: lib/team.sh goes in" "$listing" "deploys-cli-$version/lib/team.sh"
 expect "package: checksums.txt" "$(cat "$tmp/pkg/checksums.txt")" "$(sha256 "$tarball")  deploys-cli-$version.tar.gz
 $(sha256 LICENSE)  LICENSE"
 cp LICENSE "$tmp/pkg/"
@@ -98,6 +109,9 @@ expect "deploys --help: exit 0" "$rc" 0
 contains "deploys --help: the command list" "$help" "deploys doctor"
 expect "deploys --version" "$("$prefix/bin/deploys" --version)" "$version"
 [ -f "$prefix/lib/deploys/README-CLI.md" ] && ok "files in lib/deploys" || fail "files in lib/deploys" "no README-CLI.md"
+if [ -d lib ]; then
+  [ -f "$prefix/lib/deploys/lib/team.sh" ] && ok "install: lib/ next to deploys" || fail "install: lib/ next to deploys" "no lib/team.sh"
+fi
 contains "install: PATH hint when bin is not on PATH" "$out" "is not on your PATH"
 contains "install: dependency check runs" "$out" "Checking what deploys uses"
 out="$(PATH="$prefix/bin:$PATH" inst --prefix "$prefix")"; rc=$?
@@ -180,6 +194,7 @@ f="$(scripts/homebrew-formula.sh "$version" "$(sha256 "$tarball")")"; rc=$?
 expect "formula: exit 0" "$rc" 0
 contains "formula: url" "$f" "releases/download/v$version/deploys-cli-$version.tar.gz"
 contains "formula: depends on jq" "$f" 'depends_on "jq"'
+contains "formula: installs lib/" "$f" 'libexec.install "lib" if File.directory?("lib")'
 contains "formula: test runs --version" "$f" 'deploys --version'
 if command -v ruby >/dev/null; then
   ruby -c <<<"$f" >/dev/null 2>&1 && ok "formula: valid Ruby" || fail "formula: valid Ruby" "ruby -c failed"
@@ -189,6 +204,15 @@ scripts/homebrew-formula.sh --write "$tmp/tap" --no-check "$version" "$(sha256 "
 [ -f "$tmp/tap/Formula/deploys.rb" ] && ok "formula --write" || fail "formula --write" "no Formula/deploys.rb"
 scripts/homebrew-formula.sh 1.2 abc >/dev/null 2>&1
 expect "formula: bad version fails" "$?" 1
+
+# ===== CLI track (improve/cli): additions, kept together =====
+# The tarball carries lib/, and an installed deploys finds it (team mode, GitLab, savings).
+contains "package: lib/team.sh goes in" "$listing" "deploys-cli-$version/lib/team.sh"
+contains "formula: installs lib/" "$f" 'libexec.install "lib"'
+inst --prefix "$tmp/p-lib" >/dev/null
+[ -f "$tmp/p-lib/lib/deploys/lib/team.sh" ] && ok "install: lib/ next to deploys" || fail "install: lib/ next to deploys" "no lib/team.sh"
+expect "install: an installed deploys has team mode" "$(DEPLOYS_CONFIG="$tmp/cfg-lib" "$tmp/p-lib/bin/deploys" config --json 2>/dev/null | jq -r 'has("projects")')" "true"
+# ===== end CLI track =====
 
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails failed"; exit 1; fi

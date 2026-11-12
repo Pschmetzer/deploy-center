@@ -12,6 +12,11 @@
 - A timeout stops `deploys` together with the `vercel`, `gh` or `curl` it started.
 - A second click on Deploy while the dialog or the start of that project is open does not open a second one.
 - "Copy for AI" masks the same key shapes as the CLI: GitLab, Stripe, Google, npm, AWS session keys, private keys.
+- A timeout ends the CLI and everything it started (its process group), not only the shell.
+- The build log masks what the app and the MCP server mask: GitLab, Stripe, Google, npm and Anthropic keys, private key blocks (also when cut off), `--token x` and email addresses.
+- "Show log" opens a read-only document; the output channel keeps its earlier warnings and deploy results.
+- A change of a setting while a refresh runs is no longer lost: one more refresh follows.
+- GitLab repos match with host and subgroups (`gitlab.com/group/sub/app`), so the same owner/name on GitHub and GitLab are two repos.
 
 ## 0.2.0
 

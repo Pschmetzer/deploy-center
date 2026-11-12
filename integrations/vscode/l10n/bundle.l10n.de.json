@@ -2,7 +2,6 @@
   "did not answer in time. It may have started anyway: check its state (Refresh) before you deploy again.": "hat nicht rechtzeitig geantwortet. Vielleicht ist er trotzdem gestartet: Prüfe den Stand (Aktualisieren), bevor du noch einmal deployst.",
   "{0} did not answer in time.": "{0} hat nicht rechtzeitig geantwortet.",
   "{0} failed (exit {1}).": "{0} ist fehlgeschlagen (Exit {1}).",
-  "Deploy Center: Build log": "Deploy Center: Build-Log",
   "$(warning) deploys not found": "$(warning) deploys nicht gefunden",
   "Deploy Center: the deploys command was not found. Click for options.": "Deploy Center: Der Befehl deploys wurde nicht gefunden. Klicke für Möglichkeiten.",
   "Reading projects…": "Projekte werden gelesen …",

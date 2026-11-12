@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import * as vscode from "vscode";
 import { canPreview, canRollback, deployArgs, deployFailure, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, rollbackArgs, Runner, urlIn } from "./cli";
 import { count, setTranslator, t } from "./i18n";
+import { coalesce } from "./coalesce";
 import { aiPrompt } from "./log";
 import { describe, platformLabel, Project, statusText, summarize, followStep } from "./model";
 import { parseRemotes, Scope, scopeProjects } from "./repo";
@@ -17,6 +18,8 @@ type ViewState = "loading" | "missing" | "error" | "empty" | "nomatch" | "ok";
 const SITE = "https://deploycenter.app";
 /** A refresh on focus only when the last one is older than this. */
 const FOCUS_STALE_MS = 60_000;
+/** Build logs open as documents of this scheme: read-only, never saved, no "unsaved" prompt. */
+const LOG_SCHEME = "deploy-center-log";
 
 function cfg() {
   const c = vscode.workspace.getConfiguration("deployCenter");
@@ -42,8 +45,6 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   private readonly changed = new vscode.EventEmitter<Project | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
   readonly output = vscode.window.createOutputChannel("Deploy Center");
-  /** Build logs get their own channel: showing one does not wipe the warnings in "Deploy Center". */
-  readonly logs = vscode.window.createOutputChannel(t("Deploy Center: Build log"));
   readonly status = vscode.window.createStatusBarItem("deployCenter.status", vscode.StatusBarAlignment.Left, 50);
 
   private cli: string | null = null;
@@ -54,7 +55,15 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   private warning: string | null = null;
   private state: ViewState = "loading";
   private lastRefresh = 0;
-  private inFlight: Promise<void> | null = null;
+  /** One read at a time; a call during one (a changed setting) reads once more after it. */
+  readonly refresh = coalesce(() => this.load());
+  /** Build logs, shown as read-only documents (deploy-center-log:/…), so the output channel keeps its history. */
+  private readonly logs = new Map<string, string>();
+  private readonly logChanged = new vscode.EventEmitter<vscode.Uri>();
+  readonly logProvider: vscode.TextDocumentContentProvider = {
+    onDidChange: this.logChanged.event,
+    provideTextDocumentContent: (uri) => this.logs.get(uri.path) ?? "",
+  };
   private timer: ReturnType<typeof setInterval> | undefined;
 
   /** Timers of follow-ups (refresh later, follow a deploy); dispose clears them. */
@@ -103,12 +112,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     for (const t of this.pending) clearTimeout(t);
     this.pending.clear();
     if (this.timer) clearInterval(this.timer);
-    this.status.dispose(); this.output.dispose(); this.logs.dispose(); this.changed.dispose();
-  }
-
-  refresh(): Promise<void> {
-    if (!this.inFlight) this.inFlight = this.load().finally(() => { this.inFlight = null; });
-    return this.inFlight;
+    this.status.dispose(); this.output.dispose(); this.changed.dispose(); this.logChanged.dispose();
   }
 
   private async load(): Promise<void> {
@@ -373,10 +377,14 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   async showLog(p: Project): Promise<void> {
     const run = this.need(); if (!run) return;
     const log = await this.readLog(run, p); if (log === null) return;
-    this.logs.clear();
-    this.logs.appendLine(`── ${p.name} (${p.platform}) · ${t("newest build log")}${p.state ? ` · ${p.state}` : ""} ──`);
-    this.logs.append(log.endsWith("\n") ? log : log + "\n");
-    this.logs.show(true);
+    // A read-only document per project: the output channel keeps its warnings and deploy results.
+    const head = `── ${p.name} (${platformLabel(p.platform)}) · ${t("newest build log")}${p.state ? ` · ${p.state}` : ""} · ${new Date().toLocaleTimeString()} ──\n`;
+    const uri = vscode.Uri.from({ scheme: LOG_SCHEME, path: `/${p.platform}/${p.name}.log` });
+    this.logs.set(uri.path, head + (log.endsWith("\n") ? log : log + "\n"));
+    this.logChanged.fire(uri);
+    const doc = await vscode.workspace.openTextDocument(uri);
+    await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: true });
+    this.output.appendLine(`[${new Date().toLocaleTimeString()}] Opened the build log of ${p.name}.`);
     if (p.failed) {
       const b = await vscode.window.showWarningMessage(t("The newest build of {0} failed.", p.name), t("Copy for AI"));
       if (b) await this.copyForAi(p, log);
@@ -434,6 +442,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const tree = vscode.window.createTreeView("deployCenter.projects", { treeDataProvider: c, showCollapseAll: false });
   context.subscriptions.push(c, tree,
+    vscode.workspace.registerTextDocumentContentProvider(LOG_SCHEME, c.logProvider),
     vscode.window.onDidChangeWindowState((s) => { if (s.focused) c.onFocus(); }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => void c.refresh()),
     vscode.workspace.onDidChangeConfiguration((e) => {

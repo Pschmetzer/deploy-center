@@ -69,6 +69,29 @@ test("a CLI that does not answer is stopped at the timeout", async () => {
   assert.match(l.warning ?? "", /did not answer in time/);
 });
 
+test("a timeout also stops what the CLI started (its process group)", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "dc-"));
+  try {
+    const pidfile = path.join(dir, "pid");
+    const r = await runner({ FAKE_SLEEP: "20.3", FAKE_PIDFILE: pidfile })(["changed", "--json"], 500);
+    assert.equal(r.timedOut, true);
+    const pid = Number(readFileSync(pidfile, "utf8").trim());
+    assert.ok(pid > 0, "the child wrote its pid");
+    let alive = true;
+    for (let i = 0; i < 20 && alive; i++) {
+      try { process.kill(pid, 0); await new Promise((res) => setTimeout(res, 100)); } catch { alive = false; }
+    }
+    assert.equal(alive, false, "the sleep behind the CLI is gone");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a CLI that cannot start is an error, not a hang", async () => {
+  const r = await makeRunner("/nonexistent/deploys")(["changed", "--json"], 2000);
+  assert.equal(r.code, 1);
+  assert.equal(r.timedOut, false);
+  assert.match(r.stderr, /ENOENT/);
+});
+
 test("arguments are passed as they are, never through a shell", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "dc-"));
   try {

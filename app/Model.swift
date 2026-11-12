@@ -37,9 +37,18 @@ struct Lossy<T: Decodable>: Decodable {
         do { value = try T(from: decoder); error = nil } catch { value = nil; self.error = "\(error)" }
     }
 }
+/// What the script prints instead of a list when a command fails with `--json`.
+struct ScriptFailure: Decodable { let error: String }
 /// A list where a broken element is skipped and named, not the reason the whole list is gone.
 func decodeLossy<T: Decodable>(_ type: T.Type, from data: Data, label: String) throws -> [T] {
-    let all = try JSONDecoder().decode([Lossy<T>].self, from: data)
+    let all: [Lossy<T>]
+    do { all = try JSONDecoder().decode([Lossy<T>].self, from: data) }
+    catch {
+        // `{"error": "…"}` instead of a list: the script's own words, not "the data couldn't be read".
+        if let f = try? JSONDecoder().decode(ScriptFailure.self, from: data), !f.error.isEmpty { throw ToolError(message: Tool.shorten(f.error)) }
+        Log.write("\(label): not a list (\(error)); it began: \(String(decoding: data.prefix(300), as: UTF8.self))")
+        throw ToolError(message: L("Unexpected answer from \(label) – details in the log.", "Unerwartete Antwort von \(label) – Details im Log."))
+    }
     let bad = all.enumerated().filter { $0.element.value == nil }
     if let first = bad.first {
         Log.write("\(label): skipped \(bad.count) of \(all.count) entries; first at \(first.offset): \(first.element.error ?? "")")
@@ -177,7 +186,12 @@ struct Item: Identifiable {
         // A branch may hold characters a URL cannot (#, %, spaces); "/" stays as GitHub expects it.
         let branch = ref ?? headSha ?? "main"
         let safe = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "#?"))) ?? branch
-        return URL(string: "https://github.com/\(repo)/compare/\(live)...\(safe)")
+        // A GitHub repo is "owner/name"; any other host comes with it ("gitlab.com/group/name").
+        let first = repo.split(separator: "/").first.map(String.init) ?? ""
+        guard first.contains(".") else { return URL(string: "https://github.com/\(repo)/compare/\(live)...\(safe)") }
+        if first == "github.com" { return URL(string: "https://\(repo)/compare/\(live)...\(safe)") }
+        // GitLab (gitlab.com or a self-hosted one); the script only reads those two kinds of host.
+        return URL(string: "https://\(repo)/-/compare/\(live)...\(safe)")
     }
 
     /// The service's page on Render; Vercel's address needs the team's slug, which the list does not carry.
@@ -210,7 +224,7 @@ enum Notify {
     }
     /// A reminder the person set up themselves: shown whether or not the window is in front.
     static func remind(_ title: String, _ body: String) {
-        add(title, body, id: "daily-reminder")
+        add(title, body, id: NotifyRouter.reminderId)
     }
     static func post(_ title: String, _ body: String) {
         guard !NSApp.isActive, UserDefaults.standard.object(forKey: "notifications") as? Bool ?? true else { return }
@@ -247,6 +261,11 @@ enum Notify {
 final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     static let shared = NotifyRouter()
     static let rollbackCategory = "rollback-countdown"
+    /// The daily reminder: the person asked for it, so it shows with the app in front too.
+    static let reminderId = "daily-reminder"
+    static func showsInFront(_ n: UNNotificationRequest) -> Bool {
+        n.content.categoryIdentifier == rollbackCategory || n.identifier == reminderId
+    }
     static let cancelAction = "cancel-rollback"
     /// Gets the notification's id when Cancel is clicked.
     var onCancel: (@MainActor (String) -> Void)?
@@ -260,7 +279,7 @@ final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked
     }
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler(notification.request.content.categoryIdentifier == Self.rollbackCategory ? [.banner, .sound] : [])
+        completionHandler(Self.showsInFront(notification.request) ? [.banner, .sound] : [])
     }
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
@@ -289,6 +308,64 @@ extension Item {
         let s = (lastState ?? "").lowercased()
         return s.contains("fail") || s == "error"
     }
+}
+
+/// `deploys scan status --json`: is the Claude Code CLI there and logged in, and the newest bug scans.
+struct ScanReport: Decodable, Sendable {
+    struct Run: Decodable, Sendable, Identifiable {
+        let id: String
+        let repo: String
+        let at: Double
+        let status: String          // running | clean | pr | failed
+        let step: String?
+        let prUrl: String?
+        let fixes: Int?
+        let error: String?
+        var running: Bool { status == "running" }
+    }
+    /// A security check (`deploys check`): counts of vulnerable packages, secrets, code findings.
+    struct Check: Decodable, Sendable, Identifiable {
+        let id: String
+        let repo: String
+        let at: Double
+        let status: String          // running | done | failed
+        let osv: Int?
+        let gitleaks: Int?
+        let semgrep: Int?
+        let tools: [String: String]?   // osv|gitleaks|semgrep -> clean|found|error|missing
+        let error: String?
+        var running: Bool { status == "running" }
+        /// What a bug scan can work on: vulnerable packages and code findings, never secrets.
+        var fixable: Int { (osv ?? 0) + (semgrep ?? 0) }
+    }
+    struct Tools: Decodable, Sendable { let osv: Bool; let gitleaks: Bool; let semgrep: Bool
+        var any: Bool { osv || gitleaks || semgrep } }
+    let installed: Bool
+    let loggedIn: Bool
+    let runs: [Run]
+    let checks: [Check]?
+    let tools: Tools?
+    func newestCheck(repo: String?) -> Check? {
+        guard let repo else { return nil }
+        return (checks ?? []).filter { $0.repo.caseInsensitiveCompare(repo) == .orderedSame }.max { $0.at < $1.at }
+    }
+    /// The newest scan of a repo (owner/name).
+    func newest(repo: String?) -> Run? {
+        guard let repo else { return nil }
+        return runs.filter { $0.repo.caseInsensitiveCompare(repo) == .orderedSame }.max { $0.at < $1.at }
+    }
+    var anyRunning: Bool { runs.contains(where: \.running) || (checks ?? []).contains(where: \.running) }
+}
+
+/// `deploys check show <id>`: the secrets part, for "rotate this key" (no values are ever in it).
+struct CheckDetails: Decodable, Sendable {
+    struct Leak: Decodable, Sendable, Hashable { let rule: String; let file: String; let line: Int?; let commit: String? }
+    struct Part: Decodable, Sendable { let items: [Leak]? }
+    struct Code: Decodable, Sendable { let secrets: [Leak]? }
+    let gitleaks: Part?
+    let semgrep: Code?
+    /// gitleaks and Semgrep's secret rules, together.
+    var leaks: [Leak] { (gitleaks?.items ?? []) + (semgrep?.secrets ?? []) }
 }
 
 /// `deploys autofix status --json`. Older scripts send `pr` and no PR state; newer ones
@@ -418,8 +495,10 @@ struct AutoDeployAllowance: Decodable, Equatable {
     }
     private enum K: String, CodingKey { case platform, project, expiresAt }
 
-    /// A Render allowance may name the service by id or by name.
-    func covers(_ i: Item) -> Bool { platform == i.platform.cli && (project == i.name || project == i.id) }
+    /// A Render allowance may name the service by id or by name; "all" and "*" are the script's wildcards.
+    func covers(_ i: Item) -> Bool {
+        (platform == "all" || platform == i.platform.cli) && (project == "*" || project == i.name || project == i.id)
+    }
 }
 struct AllowanceReport: Decodable {
     let allowances: [AutoDeployAllowance]
@@ -428,4 +507,44 @@ struct AllowanceReport: Decodable {
         allowances = (((try? c.decodeIfPresent([Lossy<AutoDeployAllowance>].self, forKey: .allowances)) ?? nil) ?? []).compactMap(\.value)
     }
     private enum K: String, CodingKey { case allowances }
+}
+
+// MARK: - Tolerant reading of the Settings parts: an older or newer script may leave a field out.
+
+private struct AnyKey: CodingKey {
+    var stringValue: String; var intValue: Int? { nil }
+    init(_ s: String) { stringValue = s }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
+}
+private extension KeyedDecodingContainer where K == AnyKey {
+    func opt<T: Decodable>(_ key: String, _ type: T.Type = T.self) -> T? { (try? decodeIfPresent(T.self, forKey: AnyKey(key))) ?? nil }
+}
+
+extension AutofixStatus {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        routine = c.opt("routine")
+        token = c.opt("token") ?? false
+        scheduled = c.opt("scheduled") ?? false
+        fires = (c.opt("fires", [Lossy<Fire>].self) ?? []).compactMap(\.value)
+    }
+}
+extension GuardStatus {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        enabled = c.opt("enabled") ?? false
+        lastRun = c.opt("lastRun"); lastDry = c.opt("lastDry")
+        lastActions = (c.opt("lastActions", [Lossy<Action>].self) ?? []).compactMap(\.value)
+        allowances = (c.opt("allowances", [Lossy<Allowance>].self) ?? []).compactMap(\.value)
+    }
+}
+extension TeamConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        me = c.opt("me")
+        readonly = c.opt("readonly") ?? Flag(value: false, from: "")
+        sources = (c.opt("sources", [Lossy<Source>].self) ?? []).compactMap(\.value)
+        projects = c.opt("projects"); groups = c.opt("groups"); observers = c.opt("observers")
+    }
 }

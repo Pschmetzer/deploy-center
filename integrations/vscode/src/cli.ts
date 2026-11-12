@@ -1,8 +1,7 @@
-// Finding the deploys CLI and running it: spawn with an argument array (no shell), a timeout that
-// stops the whole process group (deploys and the vercel, gh or curl it started), and stdin closed
-// so nothing can wait for input.
+// Finding the deploys CLI and running it: an argument array (no shell), its own process group
+// with a timeout that ends the whole group, and stdin closed so nothing can wait for input.
 
-import { spawn } from "node:child_process";
+import { ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -68,34 +67,57 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEn
   return { ...env, PATH: parts.join(path.delimiter), NO_COLOR: "1" };
 }
 
-const MAX_BUFFER = 32 * 1024 * 1024;
+const MAX_OUTPUT = 32 * 1024 * 1024;
 
+/** Ends the CLI and everything it started (vercel, gh, curl): it runs in its own process group. */
+function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  try {
+    if (child.pid) process.kill(-child.pid, signal);
+  } catch {
+    try { child.kill(signal); } catch { /* gone */ }
+  }
+}
+
+/**
+ * Runs the CLI with an argument array (no shell), stdin closed. At the timeout the whole process
+ * group gets SIGTERM, then SIGKILL two seconds later, so no vercel or sleep is left behind.
+ */
 export function makeRunner(cli: string, env: NodeJS.ProcessEnv = childEnv()): Runner {
   return (args, timeoutMs) =>
     new Promise((resolve) => {
-      // Its own process group (not on Windows), so a timeout also stops what deploys started.
-      const group = process.platform !== "win32";
-      let stdout = "", stderr = "", timedOut = false, done = false;
-      const child = spawn(cli, args, { env, windowsHide: true, detached: group, stdio: ["ignore", "pipe", "pipe"] });
-      child.stdout.setEncoding("utf8");
-      child.stderr.setEncoding("utf8");
-      child.stdout.on("data", (d: string) => { if (stdout.length < MAX_BUFFER) stdout += d; });
-      child.stderr.on("data", (d: string) => { if (stderr.length < MAX_BUFFER) stderr += d; });
-      const kill = () => {
-        try {
-          if (group && child.pid) process.kill(-child.pid, "SIGTERM"); else child.kill("SIGTERM");
-        } catch {
-          try { child.kill("SIGTERM"); } catch { /* gone already */ }
-        }
+      let child: ChildProcess;
+      try {
+        child = spawn(cli, args, { detached: true, stdio: ["ignore", "pipe", "pipe"], env, windowsHide: true });
+      } catch (e) {
+        resolve({ code: 1, stdout: "", stderr: (e as Error).message, timedOut: false });
+        return;
+      }
+      const out: Buffer[] = [], err: Buffer[] = [];
+      let size = 0, timedOut = false, done = false, spawnError = "";
+      const take = (into: Buffer[]) => (b: Buffer) => {
+        size += b.length;
+        if (size > MAX_OUTPUT) { killGroup(child, "SIGKILL"); return; }
+        into.push(b);
       };
+      child.stdout?.on("data", take(out));
+      child.stderr?.on("data", take(err));
+      let hard: ReturnType<typeof setTimeout> | undefined;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        killGroup(child, "SIGTERM");
+        hard = setTimeout(() => killGroup(child, "SIGKILL"), 2000);
+      }, timeoutMs);
       const finish = (code: number) => {
         if (done) return;
-        done = true; clearTimeout(timer);
-        resolve({ code, stdout, stderr, timedOut });
+        done = true;
+        clearTimeout(timer);
+        if (hard) clearTimeout(hard);
+        // Children that outlived a timed-out CLI (a sleep, a stuck curl) go too.
+        if (timedOut) killGroup(child, "SIGKILL");
+        resolve({ code, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString() || spawnError, timedOut });
       };
-      const timer = setTimeout(() => { timedOut = true; kill(); finish(1); }, timeoutMs);
-      child.on("error", (e) => { stderr += e.message; finish(127); });
-      child.on("close", (code) => finish(code ?? 1));
+      child.on("error", (e) => { spawnError = e.message; finish(1); });
+      child.on("close", (code) => finish(typeof code === "number" ? code : 1));
     });
 }
 

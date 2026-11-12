@@ -25,9 +25,11 @@ Copy Build Error copies the first error block of the newest build log, with keys
 the same way as the Mac app and the VS Code extension, ready to paste into Claude Code or a chat.
 The extension's texts are English only: Raycast extensions have no localization.
 
-Deploy All starts exactly the projects in the list you confirmed, one after the other, with
-`deploys <vercel|render> deploy-json <name>`. Each row then shows "started" or "not started". If Raycast is closed in the middle, the next
-Deploy All Changed names the projects that were never reached.
+Deploy All starts exactly the projects in the list you confirmed, in one
+`deploys deploy-changed --yes --json` (the CLI's rules: freeze, deploy window, start lock). It
+first asks the CLI what it would start; if that is not the confirmed list (a push came in), nothing
+starts. Each row then shows "started" or "not started", the list is read again, and Deploy All
+stays off until you open the command again.
 
 ## Requirements
 

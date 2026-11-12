@@ -22,6 +22,8 @@ struct PhoneProject: Identifiable, Equatable, Codable {
     var liveState: String? = nil
     var latestState: String? = nil
     var latestId: String? = nil
+    var latestAt: Date? = nil          // when the newest attempt started
+    var foreignRepo = false            // a repo outside GitHub: only GitHub is compared
     var headSha: String? = nil
     var headAt: Date? = nil
     var headMsg: String? = nil
@@ -54,7 +56,26 @@ struct PhoneProject: Identifiable, Equatable, Codable {
         if let h = headAt, let l = liveAt { return h > l }
         return false
     }
-    var unknown: Bool { deployable && !paused && (fetchError != nil || (headSha == nil && headAt == nil)) }
+    var unknown: Bool { deployable && !paused && !foreignRepo && (fetchError != nil || (headSha == nil && headAt == nil)) }
+
+    /// A platform state in words ("build_failed" → "build failed"), as the Mac app shows it.
+    static func stateName(_ raw: String) -> String {
+        switch raw.lowercased() {
+        case "starting", "initializing": return L("starting", "startet")
+        case "rolling back": return L("rolling back", "rollt zurück")
+        case "queued", "created": return L("queued", "in der Warteschlange")
+        case "building", "build_in_progress": return L("building", "baut")
+        case "update_in_progress": return L("updating", "aktualisiert")
+        case "pre_deploy_in_progress": return L("pre-deploy running", "Pre-Deploy läuft")
+        case "ready", "live", "succeeded": return L("live", "live")
+        case "error", "build_failed": return L("build failed", "Build fehlgeschlagen")
+        case "update_failed": return L("update failed", "Update fehlgeschlagen")
+        case "pre_deploy_failed": return L("pre-deploy failed", "Pre-Deploy fehlgeschlagen")
+        case "canceled", "cancelled": return L("canceled", "abgebrochen")
+        case "deactivated": return L("replaced", "ersetzt")
+        default: return raw.lowercased().replacingOccurrences(of: "_", with: " ")
+        }
+    }
 
     enum Group: Int, CaseIterable { case attention, waiting, live
         var title: String {
@@ -72,6 +93,14 @@ struct PhoneProject: Identifiable, Equatable, Codable {
     }
 }
 
-func L(_ en: String, _ de: String) -> String {
-    Locale.preferredLanguages.first?.hasPrefix("de") == true ? de : en
-}
+/// The language the app shows: what iOS picked from the bundle's localizations (en, de), so texts,
+/// system dialogs and dates agree, also with a per-app language from the iOS Settings.
+let appLanguage: String = Bundle.main.preferredLocalizations.first?.hasPrefix("de") == true ? "de" : "en"
+/// Dates and relative times in the language of the texts; the region still sets the formats.
+let appLocale: Locale = {
+    var c = Locale.Components(locale: .current)
+    c.languageComponents = .init(identifier: appLanguage)
+    return Locale(components: c)
+}()
+
+func L(_ en: String, _ de: String) -> String { appLanguage == "de" ? de : en }

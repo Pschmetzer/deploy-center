@@ -41,7 +41,10 @@ export class MarkdownString {
 }
 export enum StatusBarAlignment { Left = 1 }
 export enum ProgressLocation { Window = 10, Notification = 15 }
-export const Uri = { parse: (s: string) => ({ toString: () => s }) };
+export const Uri = {
+  parse: (s: string) => ({ toString: () => s }),
+  from: (c: { scheme: string; path: string }) => ({ scheme: c.scheme, path: c.path, toString: () => `${c.scheme}:${c.path}` }),
+};
 
 function channel(name: string) {
   return { name, text: "", appendLine(s: string) { this.text += s + "\n"; }, append(s: string) { this.text += s; }, clear() { this.text = ""; }, show() {}, dispose() {} };
@@ -63,6 +66,7 @@ export const window = {
   },
   withProgress(_o: unknown, task: (p: { report(v: unknown): void }) => Promise<unknown>) { return task({ report() {} }); },
   onDidChangeWindowState() { return { dispose() {} }; },
+  showTextDocument(doc: unknown) { calls.push({ kind: "showDoc", args: [doc] }); return Promise.resolve(); },
 };
 
 export const workspace = {
@@ -70,6 +74,8 @@ export const workspace = {
   getConfiguration() { return { get: <T>(k: string, d: T): T => (k in settings ? settings[k] as T : d) }; },
   onDidChangeWorkspaceFolders() { return { dispose() {} }; },
   onDidChangeConfiguration() { return { dispose() {} }; },
+  registerTextDocumentContentProvider() { return { dispose() {} }; },
+  openTextDocument(uri: unknown) { calls.push({ kind: "openDoc", args: [uri] }); return Promise.resolve({ uri }); },
 };
 
 export const commands = {

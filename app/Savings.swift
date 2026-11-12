@@ -265,10 +265,28 @@ enum SavingsFormat {
         u.hasPrefix("pipeline") ? L("pipeline minutes", "Pipeline-Minuten") : L("build minutes", "Build-Minuten")
     }
     /// "2026-01-20" as a date for the reader.
+    /// The script's method in German for the two texts it has (simulation, ledger); a text the app
+    /// does not know is shown as the script wrote it, so the German window never says something else.
+    static func methodGerman(_ method: String) -> String {
+        let price = "Jeder Build kostet den Schnitt des Projekts: Minuten aus den letzten fertigen Builds (bis zu 20), Dollar aus Vercels Abrechnung pro Build (7 Tage), sonst aus dem Minutenpreis des Teams, sonst aus DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN."
+        if method.isEmpty || method.hasPrefix("Estimate. Pushes to the deploy branch") {
+            return "Schätzung. Jeder Push auf den Deploy-Branch im Zeitraum zählt als ein Build (GitHub-Aktivität; wo Pushes fehlen, Commits, eine Obergrenze). "
+                + price + " „1× am Tag“ zählt einen Build an jedem Tag mit Push. Pro Monat = Zeitraum auf 30 Tage hochgerechnet."
+        }
+        if method.hasPrefix("Estimate. Since auto-deploy was turned off") {
+            return "Schätzung. Seit Auto-Deploy aus ist, zählt jeder Push auf den Deploy-Branch, dessen Commit nie gebaut wurde, als gesparter Build (GitHub-Aktivität; wo Pushes fehlen, Commits, eine Obergrenze). " + price
+        }
+        return method
+    }
+
+    /// Made once: the ledger asks for every skipped push.
+    private static let dayParser: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
     static func day(_ s: String?) -> String {
         guard let s else { return "–" }
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); f.locale = Locale(identifier: "en_US_POSIX")
-        guard let d = f.date(from: s) else { return s }
+        guard let d = dayParser.date(from: s) else { return s }
         return d.formatted(date: .abbreviated, time: .omitted)
     }
     static func name(_ n: String) -> String { Demo.mask(n) }
@@ -404,7 +422,7 @@ private struct EstimateFooter: View {
         VStack(alignment: .leading, spacing: 6) {
             DisclosureGroup(L("How this is estimated", "Wie das geschätzt wird")) {
                 Text(L(method.isEmpty ? "Pushes on the deploy branch times the average build of each project." : method,
-                       "Schätzung: Pushes auf den Deploy-Branch mal der durchschnittliche Build jedes Projekts. Minuten aus den letzten fertigen Builds (bis zu 20), Dollar aus Vercels Abrechnung pro Build (7 Tage), sonst aus dem Minutenpreis des Teams, sonst aus DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN. Wo GitHub keine Pushes liefert, werden Commits gezählt (eine Obergrenze)."))
+                       SavingsFormat.methodGerman(method)))
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -506,7 +524,7 @@ struct SimulatorView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 4) {
                             Text(SavingsFormat.name(r.name)).lineLimit(1)
-                            Text(r.platform.capitalized).font(.caption2).foregroundStyle(.secondary)
+                            Text(ProviderInfo.label(for: r.platform)).font(.caption2).foregroundStyle(.secondary)
                             if !r.auto { Text(L("off", "aus")).font(.caption2).foregroundStyle(.green) }
                         }
                         if let p = r.problem { Text(SavingsFormat.problem(p)).font(.caption2).foregroundStyle(.orange) }
@@ -667,7 +685,7 @@ private struct LedgerRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 4) {
                         Text(SavingsFormat.name(row.name)).lineLimit(1)
-                        Text(row.platform.capitalized).font(.caption2).foregroundStyle(.secondary)
+                        Text(ProviderInfo.label(for: row.platform)).font(.caption2).foregroundStyle(.secondary)
                     }
                     Text(L("off since \(SavingsFormat.day(row.offDay)) · \(SavingsFormat.count(row.skipped)) of \(SavingsFormat.count(row.pushes)) pushes not built",
                            "aus seit \(SavingsFormat.day(row.offDay)) · \(SavingsFormat.count(row.skipped)) von \(SavingsFormat.count(row.pushes)) Pushes nicht gebaut"))

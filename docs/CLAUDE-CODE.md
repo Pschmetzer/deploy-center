@@ -52,7 +52,8 @@ Git auto-deploy is off on this project's Vercel/Render. A push does not go live;
   (`deploys changed`, `status`, `logs`, `explain`, `notes`, `diff`, `history`, `doctor`). A deploy is
   always a normal Bash call, so Claude Code asks for permission unless you allowed it yourself.
   To make that a hard rule, add deny rules to `.claude/settings.json` (or `~/.claude/settings.json`).
-  They cover every command that starts, stops or rolls back a build, or turns auto-deploy on:
+  They cover every command that starts, stops or rolls back a build, turns auto-deploy on or
+  changes what deploys by itself:
 
   ```json
   {
@@ -65,6 +66,9 @@ Git auto-deploy is off on this project's Vercel/Render. A push does not go live;
         "Bash(deploys * rollback*)",
         "Bash(deploys * cancel*)",
         "Bash(deploys * autodeploy-on*)",
+        "Bash(deploys autodeploy *)",
+        "Bash(deploys guard*)",
+        "Bash(deploys autofix*)",
         "mcp__deploys__deploys_deploy",
         "mcp__deploys__deploys_rollback"
       ]

@@ -157,6 +157,8 @@ reset
 out="$(coolify_off api 2>&1)"; rc=$?
 expect "off api: not applied -> exit 1" "$rc" 1
 has "off api: says so" "$out" "still has Auto Deploy on"
+# PRV-117: and leaves no record behind that a later `on` would "put back".
+expect "off api: nothing written down" "$(jq 'has("app-api")' "$of" 2>/dev/null || echo false)" false
 # on: back to what it was.
 reset
 coolify_off shop >/dev/null 2>&1
@@ -174,29 +176,32 @@ expect "deploy shop: dashboard link" "$(echo "$out" | jq -r .dashboardUrl)" \
 expect "deploy shop: one POST, no PATCH" "$(calls 'curl POST .*/deploy?uuid=app-shop')|$(calls 'curl PATCH')" "1|0"
 # With a sha: pin, deploy, put back — in that order.
 reset
-out="$(coolify_deploy_json shop "" abc1234 2>&1)"; rc=$?
+out="$(coolify_deploy_json shop --sha abc1234 2>&1)"; rc=$?
 expect "deploy --sha: exit 0" "$rc" 0
 expect "deploy --sha: pin, deploy, restore" "$(grep -oE 'curl (PATCH|POST) [^ ]+|DATA\[[^]]*\]' "$CALLS" | grep -vE 'DATA\[\]' | tr '\n' ' ')" \
   'curl PATCH https://coolify.example.com/api/v1/applications/app-shop DATA[{"git_commit_sha":"abc1234"}] curl POST https://coolify.example.com/api/v1/deploy?uuid=app-shop curl PATCH https://coolify.example.com/api/v1/applications/app-shop DATA[{"git_commit_sha":"HEAD"}] '
-out="$(coolify_deploy_json shop "" 'abc;rm' 2>&1)"; rc=$?
+out="$(coolify_deploy_json shop --sha 'abc;rm' 2>&1)"; rc=$?
 expect "deploy --sha: not a sha refused" "$rc" 1
 reset
-out="$(coolify_deploy_json cache "" abc1234 2>&1)"; rc=$?
+out="$(coolify_deploy_json cache --sha abc1234 2>&1)"; rc=$?
 expect "deploy --sha on an image app: refused" "$rc" 1
 has "deploy --sha on an image app: says why" "$out" "does not build from git"
 expect "deploy --sha on an image app: nothing changed" "$(calls 'curl PATCH')" 0
 out="$(coolify_deploy_json cache 2>&1)"; rc=$?
 expect "deploy not queued: exit 1" "$rc" 1
 has "deploy not queued: Coolify's reason" "$out" "Unauthorized to deploy this application"
-out="$(coolify_deploy_json shop preview 2>&1)"; rc=$?
+out="$(coolify_deploy_json shop --preview 2>&1)"; rc=$?
 expect "deploy --preview: refused" "$rc" 1
 
 # --- status, latest, cancel, rollback, logs, url, has ---
 reset
-expect "status" "$(coolify_status dep-shop-3 | jq -c '[.id, .phase, .sha[0:7], .msg]')" '["dep-shop-3","building","3333333","feat: checkout"]'
-expect "status: app and deployment" "$(coolify_status shop dep-shop-3 | jq -r .id)" dep-shop-3
-expect "latest: skips the PR preview" "$(coolify_latest shop | jq -r .id)" dep-shop-3
-expect "latest: HEAD is no sha" "$(coolify_latest cache | jq -c '[.id, .phase, .sha]')" '["dep-cache-1","canceled",null]'
+expect "status" "$(coolify_status_json dep-shop-3 | jq -c '[.id, .phase, .sha[0:7], .msg]')" '["dep-shop-3","building","3333333","feat: checkout"]'
+expect "status: app and deployment" "$(coolify_status_json shop dep-shop-3 | jq -r .id)" dep-shop-3
+expect "status: the contract line" "$(coolify_status shop dep-shop-3 | cut -f1,2)" "dep-shop-3	building"
+expect "latest: skips the PR preview" "$(coolify_latest_json shop | jq -r .id)" dep-shop-3
+expect "latest: the contract line" "$(coolify_latest shop | cut -f1,2)" "dep-shop-3	building"
+expect "has: gives the id" "$(coolify_has shop)" "app-shop"
+expect "latest: HEAD is no sha" "$(coolify_latest_json cache | jq -c '[.id, .phase, .sha]')" '["dep-cache-1","canceled",null]'
 out="$(coolify_cancel shop dep-shop-3)"
 expect "cancel: posted" "$(calls 'curl POST .*/deployments/dep-shop-3/cancel')" 1
 has "cancel: said" "$out" "canceled"
@@ -230,9 +235,9 @@ expect "url" "$(coolify_url shop)" https://shop.example.com
 expect "url: no scheme gets https" "$(coolify_url blog)" https://blog.example.com
 expect "url --dashboard" "$(coolify_url shop --dashboard)" https://coolify.example.com/project/p-1/environment/e-1/application/app-shop
 expect "url: image app without domain" "$(coolify_url cache)" ""
-coolify_has blog && ok "has: blog" || fail "has: blog" "not found"
-coolify_has app-shop && ok "has: by uuid" || fail "has: by uuid" "not found"
-coolify_has nope && fail "has: nope" "found" || ok "has: unknown app"
+expect "has: blog gives its uuid" "$(coolify_has blog)" app-blog
+coolify_has app-shop >/dev/null && ok "has: by uuid" || fail "has: by uuid" "not found"
+coolify_has nope >/dev/null && fail "has: nope" "found" || ok "has: unknown app"
 
 # --- 401 / 403: a wrong token is an error with a reason, never an empty list ---
 reset
@@ -273,6 +278,21 @@ expect "set-key: saved via stdin" "$(grep -c 'security -i STDIN\[add-generic-pas
 expect "set-key: token never an argument" "$(grep -- 'goodtoken' "$CALLS" | grep -vc 'STDIN\[')" 0
 out="$(printf '' | coolify_set_key 2>&1)"; rc=$?
 expect "set-key: empty refused" "$rc" 1
+
+# --- PRV-130: with deploys' http_call the request goes through it (key in HTTP_AUTH, not argv) ---
+# shellcheck source=../fixtures/http/stub.sh
+. tests/fixtures/http/stub.sh
+reset
+out="$( http_stub; coolify_apps 2>"$tmp/err" | jq 'length' )"
+expect "PRV-130: list through http_call" "$out" 4
+has "PRV-130: http_call with the bearer header and a fix" "$(cat "$CALLS")" "http_call Coolify GET https://coolify.example.com/api/v1/applications auth[bearer] fix[set]"
+hasnt "PRV-130: the token is not in curl's arguments" "$(grep '^curl' "$CALLS")" "tok-secret-123"
+reset
+out="$( http_stub; FAKE_STATUS=401 coolify_call GET /applications 2>&1 >/dev/null )"; rc=$?
+expect "PRV-130: a 401 returns 1, not the end of the run" "$rc" 1
+has "PRV-130: the reason without Error: (callers keep it as fetchError)" "$out" "Coolify GET"
+hasnt "PRV-130: no Error: prefix" "$out" "Error:"
+has "PRV-130: the fix names the API switch too" "$out" "Settings > Advanced"
 
 echo
 [ "$fails" = 0 ] && echo "All Coolify provider tests passed." || { echo "$fails failed."; exit 1; }

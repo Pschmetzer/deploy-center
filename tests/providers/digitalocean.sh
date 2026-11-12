@@ -193,10 +193,10 @@ expect "deploy shop: exit 0" "$rc" 0
 expect "deploy shop: the new deployment" "$(echo "$out" | jq -c '[.id, .phase, .state, .url]')" '["d-shop-new","queued","PENDING_BUILD","https://shop.example.com"]'
 expect "deploy shop: one POST, no forced build" "$(calls 'curl POST .*/v2/apps/app-shop/deployments ')" 1
 expect "deploy shop: body" "$(last_body)" '{"force_build":false}'
-out="$(digitalocean_deploy_json shop "" abc123 2>&1)"; rc=$?
+out="$(digitalocean_deploy_json shop --sha abc123 2>&1)"; rc=$?
 expect "deploy --sha: refused" "$rc" 1
-has "deploy --sha: says why" "$out" "not supported"
-out="$(digitalocean_deploy_json shop preview 2>&1)"; rc=$?
+has "deploy --sha: says why" "$out" "cannot deploy a given commit"
+out="$(digitalocean_deploy_json shop --preview 2>&1)"; rc=$?
 expect "deploy --preview: refused" "$rc" 1
 out="$(digitalocean_deploy_json Pinned 2>&1)"; rc=$?
 expect "deploy pinned: refused" "$rc" 1
@@ -204,13 +204,17 @@ has "deploy pinned: says why" "$out" "pinned to a rollback"
 
 # --- status, latest, cancel, rollback, url, has ---
 reset
-expect "status" "$(digitalocean_status shop d-shop-3 | jq -c '[.id, .phase, .sha, .progress, .dashboardUrl]')" \
+expect "status" "$(digitalocean_status_json shop d-shop-3 | jq -c '[.id, .phase, .sha, .progress, .dashboardUrl]')" \
   '["d-shop-3","building","3333333cccc","1/4","https://cloud.digitalocean.com/apps/app-shop/deployments/d-shop-3"]'
-expect "status: the failed step" "$(digitalocean_status shop d-shop-x | jq -c '[.phase, .error]')" '["failed","Build failed: npm exited 1"]'
+expect "status: the contract line" "$(digitalocean_status shop d-shop-3 | cut -f1,2)" "d-shop-3	building"
+expect "status: the failed step" "$(digitalocean_status_json shop d-shop-x | jq -c '[.phase, .error]')" '["failed","Build failed: npm exited 1"]'
 out="$(digitalocean_status d-shop-3 2>&1)"; rc=$?
 expect "status: needs the app" "$rc" 1
-expect "latest" "$(digitalocean_latest shop | jq -c '[.id, .phase]')" '["d-shop-3","building"]'
-expect "latest: none" "$(digitalocean_latest image)" null
+expect "latest" "$(digitalocean_latest_json shop | jq -c '[.id, .phase]')" '["d-shop-3","building"]'
+expect "latest: the contract line" "$(digitalocean_latest shop | cut -f1,2)" "d-shop-3	building"
+expect "latest: none" "$(digitalocean_latest_json image)" null
+expect "latest: none, as the contract line" "$(digitalocean_latest image)" "none		?"
+expect "has: gives the id" "$(digitalocean_has shop)" "app-shop"
 out="$(digitalocean_cancel shop d-shop-3)"
 expect "cancel: posted" "$(calls 'curl POST .*/v2/apps/app-shop/deployments/d-shop-3/cancel')" 1
 has "cancel: said" "$out" "canceled"
@@ -223,10 +227,10 @@ expect "rollback: validated, then rolled back, unpinned" "$(calls 'rollback/vali
 expect "url" "$(digitalocean_url shop)" https://shop.example.com
 expect "url: default ingress" "$(digitalocean_url blog)" https://blog-xyz.ondigitalocean.app
 expect "url --dashboard" "$(digitalocean_url shop --dashboard)" https://cloud.digitalocean.com/apps/app-shop
-digitalocean_has blog && ok "has: by name" || fail "has: blog" "not found"
-digitalocean_has app-shop && ok "has: by id" || fail "has: by id" "not found"
-digitalocean_has shop.example.com && ok "has: by domain" || fail "has: by domain" "not found"
-digitalocean_has nope && fail "has: nope" "found" || ok "has: unknown app"
+expect "has: by name gives the id" "$(digitalocean_has blog)" app-blog
+digitalocean_has app-shop >/dev/null && ok "has: by id" || fail "has: by id" "not found"
+digitalocean_has shop.example.com >/dev/null && ok "has: by domain" || fail "has: by domain" "not found"
+digitalocean_has nope >/dev/null && fail "has: nope" "found" || ok "has: unknown app"
 
 # --- logs: follow the historic URLs, without the token ---
 reset
@@ -272,6 +276,25 @@ expect "set-key: saved via stdin" "$(grep -c 'security -i STDIN\[add-generic-pas
 expect "set-key: token never an argument" "$(grep -- 'dop_v1_good' "$CALLS" | grep -vc 'STDIN\[')" 0
 out="$(printf '' | digitalocean_set_key 2>&1)"; rc=$?
 expect "set-key: empty refused" "$rc" 1
+
+# --- PRV-130: with deploys' http_call, reads go through it; a body never does (env values) ---
+# shellcheck source=../fixtures/http/stub.sh
+. tests/fixtures/http/stub.sh
+reset
+( http_stub; digitalocean_call GET /v2/account >/dev/null 2>"$tmp/err" )
+has "PRV-130: a read through http_call" "$(cat "$CALLS")" "http_call DigitalOcean GET https://api.digitalocean.com/v2/account auth[bearer] fix[set]"
+hasnt "PRV-130: the token is not in curl's arguments" "$(grep '^curl' "$CALLS")" "dop_v1_secret123"
+reset
+( http_stub; digitalocean_call POST /v2/apps/x/deployments '{"force_build":false}' >/dev/null 2>&1 )
+expect "PRV-130: a call with a body keeps the file (not http_call)" "$(calls '^http_call'):$(grep -c 'BODY\[body-' "$CALLS")" "0:1"
+reset
+( http_stub; DIGITALOCEAN_HEADERS="$tmp/h" digitalocean_call GET /v2/account >/dev/null 2>&1 )
+expect "PRV-130: the doctor's header read keeps the own path" "$(calls '^http_call')" 0
+has "FEA-078: the doctor's read keeps the headers (-D)" "$(cat "$CALLS")" "-D $tmp/h"
+reset
+out="$( http_stub; FAKE_STATUS=401 digitalocean_call GET /v2/account 2>&1 >/dev/null )"; rc=$?
+expect "PRV-130: a 401 returns 1" "$rc" 1
+hasnt "PRV-130: no Error: prefix" "$out" "Error:"
 
 echo
 [ "$fails" = 0 ] && echo "All DigitalOcean provider tests passed." || { echo "$fails failed."; exit 1; }

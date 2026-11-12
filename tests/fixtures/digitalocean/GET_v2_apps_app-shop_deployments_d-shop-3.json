@@ -1,0 +1,10 @@
+{"deployment": {
+  "id": "d-shop-3", "phase": "BUILDING", "cause": "manual", "created_at": "2026-11-02T09:00:00Z",
+  "progress": {"success_steps": 1, "total_steps": 4, "running_steps": 1},
+  "services": [{"name": "web", "source_commit_hash": "3333333cccc"}, {"name": "api"}],
+  "spec": {"name": "shop",
+           "services": [{"name": "web", "github": {"repo": "me/shop", "branch": "main"}},
+                        {"name": "api", "gitlab": {"repo": "me/shop-api", "branch": "main"}}],
+           "static_sites": [{"name": "docs", "github": {"repo": "me/shop", "branch": "main"}}]}
+}}
+200

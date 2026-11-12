@@ -1,0 +1,58 @@
+[
+  {
+    "id": "d-shop-new",
+    "site_id": "site-shop",
+    "state": "enqueued",
+    "context": "production",
+    "commit_ref": null,
+    "title": null,
+    "created_at": "2026-11-10T08:00:00.000Z",
+    "deploy_ssl_url": "https://d-shop-new--shop.netlify.app",
+    "admin_url": "https://app.netlify.com/sites/shop"
+  },
+  {
+    "id": "d-shop-skip",
+    "site_id": "site-shop",
+    "state": "canceled",
+    "context": "production",
+    "commit_ref": "4444444",
+    "title": "push that was skipped",
+    "error_message": "Canceled build due to no content change",
+    "created_at": "2026-11-03T12:00:00.000Z",
+    "admin_url": "https://app.netlify.com/sites/shop"
+  },
+  {
+    "id": "d-shop-3",
+    "site_id": "site-shop",
+    "state": "building",
+    "context": "production",
+    "commit_ref": "3333333",
+    "title": "fix: tax",
+    "created_at": "2026-11-03T11:00:00.000Z",
+    "deploy_ssl_url": "https://d-shop-3--shop.netlify.app",
+    "admin_url": "https://app.netlify.com/sites/shop"
+  },
+  {
+    "id": "d-shop-2",
+    "site_id": "site-shop",
+    "state": "ready",
+    "context": "production",
+    "commit_ref": "2222222",
+    "title": "feat: cart",
+    "created_at": "2026-11-02T09:58:00.000Z",
+    "published_at": "2026-11-02T10:00:00.000Z",
+    "admin_url": "https://app.netlify.com/sites/shop"
+  },
+  {
+    "id": "d-shop-1",
+    "site_id": "site-shop",
+    "state": "ready",
+    "context": "production",
+    "commit_ref": "1111111",
+    "title": "init",
+    "created_at": "2026-11-01T09:00:00.000Z",
+    "published_at": "2026-11-01T09:01:00.000Z",
+    "admin_url": "https://app.netlify.com/sites/shop"
+  }
+]
+200

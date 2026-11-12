@@ -45,9 +45,10 @@ jobs:
       github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       # What is merged but not live, for every project deploys can see. Report only: deploy stays "false".
       - name: Projects with changes (deploys changed --json)
@@ -83,7 +84,7 @@ jobs:
           echo "rows=$rows" >> "$GITHUB_OUTPUT"
 
       - name: Claude writes "What this ships"
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed # v1.0.271
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |

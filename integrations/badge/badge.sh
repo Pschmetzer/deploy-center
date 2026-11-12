@@ -31,7 +31,8 @@ lines="$(echo "$list" | jq -r '
     | if $s < 3600 then "\(($s / 60) | floor) min ago"
       elif $s < 86400 then "\(($s / 3600) | floor) h ago"
       else "\(($s / 86400) | floor) d ago" end;
-  .[] | select(.name)
+  (map(select(.name) | .name) | group_by(.) | map(select(length > 1) | .[0])) as $twice
+  | .[] | select(.name)
   # The commit that is live (Render: liveAt), not the newest attempt, which may have failed.
   | ((.liveAt // .lastAt // 0) | if . > 0 then age else "never" end) as $when
   # The newest build, as the status page reads it: building, or failed (Render: an older one is
@@ -45,7 +46,9 @@ lines="$(echo "$list" | jq -r '
        (if .pendingCommits then "\(.pendingCommits) commit\(if .pendingCommits == 1 then "" else "s" end) waiting"
         else "changes waiting" end)
      else "up to date" end) as $what
-  | [.name, "\($when) · \($what)",
+  # A name on two platforms gets the platform in its file name (vercel-web.svg), so one badge
+  # does not overwrite the other; every other name keeps <name>.svg.
+  | [(if (.name as $n | $twice | index($n)) and .platform then "\(.platform)-\(.name)" else .name end), "\($when) · \($what)",
      (if $build == "failed" then "#e05d44" elif $build == "building" then "#007ec6"
       elif (.liveAt // .lastAt // 0) == 0 then "#9f9f9f" elif .changed then "#dfb317" else "#4c1" end),
      (.platform // "")]

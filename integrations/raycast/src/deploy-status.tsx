@@ -31,7 +31,7 @@ function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
               onAction={() => copyBuildError(p)}
             />
           )}
-          <ProjectActions name={p.name} onRefresh={props.onRefresh} />
+          <ProjectActions name={p.name} projectRef={p.projectRef} onRefresh={props.onRefresh} />
         </ActionPanel>
       }
     />

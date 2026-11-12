@@ -98,12 +98,14 @@ It reads JSON and calls only jq, so it also works alone:
 | `--dry-run` | With `--issue`/`--post`: print what would be sent. |
 
 It reads `deploys changed --json` (so `deploys ignore` applies), then `deploys details` per
-project for the commits and `gh api` for each pull request's title, labels and author. "Check
+project for the commits and `gh api` for each pull request's title, labels and author. For a
+GitLab repo (`gitlab.com/group/name`) it asks `glab api` for each merge request instead, so glab
+needs a login there (`glab auth login`, or `GITLAB_TOKEN`). "Check
 before shipping" lists the files `deploys details` marks as risky, a failed CI run on the branch
 head and, when the CLI has it, what `deploys risk <project> --json` says. `DEPLOYS_DIGEST_WORKFLOW`
 names another workflow file. "Today" is the UTC day.
 
-Without `gh`, commit messages stand in for PR titles and labels are not read.
+Without `gh` (or `glab` for GitLab), commit messages stand in for PR titles and labels are not read.
 
 ## Limits
 

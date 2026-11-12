@@ -26,9 +26,11 @@ struct ProviderInfo: Decodable, Identifiable, Equatable, Sendable {
     let label: String       // what the tab says: "Vercel"
     var enabled: Bool
     var caps: ProviderCaps
+    /// The provider's status page as the script reports it (`statusPage`); see `statusURL`.
+    var statusPage: String?
 
-    init(id: String, label: String, enabled: Bool, caps: ProviderCaps = ProviderCaps()) {
-        self.id = id; self.label = label; self.enabled = enabled; self.caps = caps
+    init(id: String, label: String, enabled: Bool, caps: ProviderCaps = ProviderCaps(), statusPage: String? = nil) {
+        self.id = id; self.label = label; self.enabled = enabled; self.caps = caps; self.statusPage = statusPage
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -39,8 +41,24 @@ struct ProviderInfo: Decodable, Identifiable, Equatable, Sendable {
         label = l.isEmpty ? fromId : l
         enabled = ((try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? nil) ?? false
         caps = ((try? c.decodeIfPresent(ProviderCaps.self, forKey: .caps)) ?? nil) ?? ProviderCaps()
+        let page = ((try? c.decodeIfPresent(String.self, forKey: .statusPage)) ?? nil) ?? ""
+        statusPage = page.hasPrefix("https://") ? page : nil
     }
-    private enum CodingKeys: String, CodingKey { case id, label, enabled, caps }
+    private enum CodingKeys: String, CodingKey { case id, label, enabled, caps, statusPage }
+
+    /// The status page: the script's (https only), else the one the app knows for this provider.
+    var statusURL: URL? { (statusPage ?? Self.knownStatusPages[id]).flatMap(URL.init(string:)) }
+    /// The machine-readable status (Atlassian Statuspage, `/api/v2/status.json`); only for the known
+    /// pages that have one, so a page of the script is linked but never fetched.
+    var statusFeed: URL? { Self.statuspageHosted.contains(id) ? Self.knownStatusPages[id].flatMap { URL(string: $0 + "/api/v2/status.json") } : nil }
+    static let knownStatusPages = ["vercel": "https://www.vercel-status.com", "render": "https://status.render.com",
+                                   "netlify": "https://www.netlifystatus.com", "cloudflare": "https://www.cloudflarestatus.com",
+                                   "digitalocean": "https://status.digitalocean.com", "amplify": "https://health.aws.amazon.com/health/status",
+                                   "railway": "https://status.railway.com", "fly": "https://status.flyio.net"]
+    private static let statuspageHosted: Set<String> = ["vercel", "render", "netlify", "cloudflare", "digitalocean"]
+    /// The source hosts the status banner also watches, next to the platforms.
+    static let gitHosts: [(label: String, page: String, feed: String)] = [
+        ("GitHub", "https://www.githubstatus.com", "https://www.githubstatus.com/api/v2/status.json")]
 
     /// The app's own loader for this provider, if it has one.
     var platform: Platform? { Platform.allCases.first { $0.cli == id } }
@@ -52,6 +70,23 @@ struct ProviderInfo: Decodable, Identifiable, Equatable, Sendable {
         ProviderInfo(id: "render", label: "Render", enabled: true,
                      caps: ProviderCaps(off: true, sha: true, cancel: true, rollback: true, logs: true, preview: false)),
     ]
+
+    /// What a platform is called ("DigitalOcean App Platform", not "Digitalocean"): the script's label
+    /// when it reported one, then the providers it ships with, then the id with a capital.
+    static func label(for id: String) -> String {
+        let key = id.lowercased()
+        labelLock.lock(); let seen = seenLabels[key]; labelLock.unlock()
+        if let seen { return seen }
+        if let k = known[key] { return k }
+        return key.prefix(1).uppercased() + String(key.dropFirst())
+    }
+    static func remember(_ list: [ProviderInfo]) {
+        labelLock.lock(); for p in list { seenLabels[p.id] = p.label }; labelLock.unlock()
+    }
+    private static let known = ["vercel": "Vercel", "render": "Render", "netlify": "Netlify", "cloudflare": "Cloudflare Pages",
+                                "coolify": "Coolify", "digitalocean": "DigitalOcean App Platform", "amplify": "AWS Amplify Hosting"]
+    private static let labelLock = NSLock()
+    nonisolated(unsafe) private static var seenLabels: [String: String] = [:]
 
     /// Shown in Settings as "coming soon" until the script reports them.
     static let comingSoon: [ProviderInfo] = [
@@ -199,6 +234,9 @@ extension Costs {
     var week: Double { days.suffix(7).map(\.build).reduce(0, +) }
 }
 
+/// "1 project", "3 projects": the number with the word that fits it.
+func plural(_ n: Int, _ one: String, _ many: String) -> String { "\(n) \(n == 1 ? one : many)" }
+
 /// "12 PRs waiting · $41 saved": what waits, and the saving when it is known.
 func summaryLine(_ w: Store.Waiting, saved: Double?) -> String {
     let waiting: String
@@ -228,7 +266,13 @@ extension Store {
     /// command: then it is Vercel and Render, as before.
     func loadProviders() async {
         let data = try? await Tool.run(["providers", "--json"], timeout: 20)
+        // A slow or failed answer after a good one keeps that list: falling back to Vercel and
+        // Render would switch a platform the person turned off back on.
+        if data == nil, providersFromScript { return }
         let r = ProviderInfo.parse(data)
+        ProviderInfo.remember(r.list)
+        // Remembered for the next start, so the saved lists of a switched-off platform are not shown first.
+        UserDefaults.standard.set(r.list.filter { !$0.enabled }.map(\.id), forKey: "disabledProviders")
         if providers != r.list { providers = r.list }
         providersFromScript = r.fromScript
         // A platform switched off keeps no rows: it would still count as waiting.
