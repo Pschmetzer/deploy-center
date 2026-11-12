@@ -206,6 +206,7 @@ struct SettingsView: View {
             }
             if let loginError { ErrorText(loginError) }
             Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
+                .help(L("Also in the View menu: ⇧⌘D", "Auch im Menü Darstellung: ⇧⌘D"))
                 .onChange(of: demoMode) { _, _ in Spotlight.update(Array(store.items.values.joined()).filter { !store.isHidden($0) }) }
             Toggle(L("Find projects in Spotlight", "Projekte in Spotlight finden"), isOn: $spotlight)
                 .help(L("Only names and platforms, kept on this Mac; never in demo mode.", "Nur Namen und Plattformen, auf diesem Mac; nie im Demo-Modus."))
@@ -218,7 +219,6 @@ struct SettingsView: View {
             Toggle(L("Load logos from the project sites", "Logos von den Projektseiten laden"), isOn: $loadLogos)
                 .help(L("Off: no request goes to your sites; a letter stands in for the logo.",
                         "Aus: keine Anfrage geht an deine Seiten; ein Buchstabe ersetzt das Logo."))
-                .help(L("Also in the View menu: ⇧⌘D", "Auch im Menü Darstellung: ⇧⌘D"))
             Picker(L("Language", "Sprache") + (isGerman ? " · Language" : " · Sprache"), selection: $language) {
                 ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
             }
@@ -631,13 +631,13 @@ struct DeployCenterApp: App {
                 .onContinueUserActivity(CSSearchableItemActionType) { a in
                     guard let key = a.userInfo?[CSSearchableItemActivityIdentifier] as? String,
                           let i = store.items.values.joined().first(where: { Store.key($0) == key }) else { return }
-                    store.pendingSearch = i.name
+                    store.show(i)
                 }
                 // A project handed off from the iPhone app: shown, never deployed.
                 .onContinueUserActivity(Handoff.type) { a in
                     guard let key = a.userInfo?["project"] as? String,
                           let i = Handoff.item(for: key, in: Array(store.items.values.joined())) else { return }
-                    store.pendingSearch = i.name
+                    store.show(i)
                 }
         }
             .windowResizability(.contentMinSize)

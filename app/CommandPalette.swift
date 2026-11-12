@@ -253,8 +253,8 @@ struct CommandPalette: View {
                             if hidden > 0 {
                                 Button(L("\(plural(hidden, "hidden project matches", "hidden projects match")) – open Settings",
                                          "\(hidden) \(hidden == 1 ? "ausgeblendetes Projekt passt" : "ausgeblendete Projekte passen") – Einstellungen öffnen")) {
-                                    // Hidden projects are on the General tab.
-                                    UserDefaults.standard.set("general", forKey: "settingsTab")
+                                    // Hidden projects are on the Projects tab.
+                                    SettingsNav.prepare(.projects)
                                     dismiss(); NSApp.activate(ignoringOtherApps: true); openSettings()
                                 }
                                 .buttonStyle(.link).padding(.horizontal, 12).padding(.vertical, 4)
@@ -706,6 +706,7 @@ struct CommandPaletteSettings: View {
     @State private var taken = PaletteHotKey.failed
 
     var body: some View {
+        Section(L("Command palette", "Befehlspalette")) {
             Toggle(L("A key opens the command palette from any app", "Eine Taste öffnet die Befehlspalette aus jeder App"), isOn: $hotKey)
                 .onChange(of: hotKey) { _, on in
                     // Taken by another app: the switch goes back and says why, instead of staying "on".
@@ -720,7 +721,6 @@ struct CommandPaletteSettings: View {
             }
             if taken {
                 ErrorText(L("\(PaletteHotKey.label) is already used by another app.", "\(PaletteHotKey.label) wird schon von einer anderen App benutzt."))
-        Section(L("Command palette", "Befehlspalette")) {
             }
             Text(L("In the window, ⌘K always opens it. Deploys and rollbacks from the palette still ask first.",
                    "Im Fenster öffnet ⌘K sie immer. Deploys und Rollbacks aus der Palette fragen trotzdem vorher."))

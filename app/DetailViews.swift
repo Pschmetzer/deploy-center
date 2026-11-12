@@ -527,6 +527,7 @@ struct ProjectDetail: View {
             if item.platform == .vercel, let repo = item.repo,
                // Vercel projects only: a Render backend in the same repo builds on Render, not here.
                (store.items[.vercel] ?? []).filter({ $0.repo == repo }).count > 1 {
+                DisclosureGroup(isExpanded: $monorepoOpen) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L("In Vercel's project settings, Git → Ignored Build Step, this command skips a build when nothing in the project's folder changed:",
                            "In Vercels Projekteinstellungen unter Git → Ignored Build Step überspringt dieser Befehl einen Build, wenn sich im Ordner des Projekts nichts geändert hat:"))

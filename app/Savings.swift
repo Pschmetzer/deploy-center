@@ -408,10 +408,6 @@ enum SavingsFormat {
         style.timeZone = TimeZone(identifier: "UTC")!
         return d.formatted(style)
     }
-    private static let dayParser: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
     static func name(_ n: String) -> String { Demo.mask(n) }
     static func problem(_ p: String) -> String {
         if p.hasPrefix("GitHub") { return L("GitHub could not be read (is gh logged in?)", "GitHub nicht lesbar (ist gh angemeldet?)") }

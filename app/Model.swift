@@ -42,14 +42,17 @@ struct Doctor: Decodable {
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        // A provider's field at the top (older scripts) or under its provider (newer ones): either counts.
+        // A provider's own field is read under "providers":{"<p>":{…}} (newer scripts send it there and,
+        // for now, at the top too); at the top for older scripts.
         let nested = ((try? c.decodeIfPresent([String: Flags].self, forKey: .providers)) ?? nil) ?? [:]
-        func flag(_ k: CodingKeys) -> Bool {
-            ((try? c.decodeIfPresent(Bool.self, forKey: k)) ?? nil) ?? nested.values.lazy.compactMap { $0.values[k.stringValue] }.first ?? false
+        func flag(_ k: CodingKeys, of provider: String? = nil) -> Bool {
+            if let provider, let v = nested[provider]?.values[k.stringValue] { return v }
+            return ((try? c.decodeIfPresent(Bool.self, forKey: k)) ?? nil) ?? nested.values.lazy.compactMap { $0.values[k.stringValue] }.first ?? false
         }
         jobsMissing = ((try? c.decodeIfPresent([String].self, forKey: .jobsMissing)) ?? nil) ?? []
-        jq = flag(.jq); vercelCli = flag(.vercelCli); vercelApi = flag(.vercelApi); vercelLoggedIn = flag(.vercelLoggedIn)
-        githubCli = flag(.githubCli); renderKey = flag(.renderKey); readonly = flag(.readonly)
+        jq = flag(.jq)
+        vercelCli = flag(.vercelCli, of: "vercel"); vercelApi = flag(.vercelApi, of: "vercel"); vercelLoggedIn = flag(.vercelLoggedIn, of: "vercel")
+        githubCli = flag(.githubCli); renderKey = flag(.renderKey, of: "render"); readonly = flag(.readonly)
         githubLoggedIn = (try? c.decodeIfPresent(Bool.self, forKey: .githubLoggedIn)) ?? nil
         perl = (try? c.decodeIfPresent(Bool.self, forKey: .perl)) ?? nil
         curl = (try? c.decodeIfPresent(Bool.self, forKey: .curl)) ?? nil
@@ -858,24 +861,8 @@ private extension KeyedDecodingContainer where K == AnyKey {
     func opt<T: Decodable>(_ key: String, _ type: T.Type = T.self) -> T? { (try? decodeIfPresent(T.self, forKey: AnyKey(key))) ?? nil }
 }
 
-extension AutofixStatus {
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: AnyKey.self)
-        routine = c.opt("routine")
-        token = c.opt("token") ?? false
-        scheduled = c.opt("scheduled") ?? false
-        fires = (c.opt("fires", [Lossy<Fire>].self) ?? []).compactMap(\.value)
-    }
-}
-extension GuardStatus {
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: AnyKey.self)
-        enabled = c.opt("enabled") ?? false
-        lastRun = c.opt("lastRun"); lastDry = c.opt("lastDry")
-        lastActions = (c.opt("lastActions", [Lossy<Action>].self) ?? []).compactMap(\.value)
-        allowances = (c.opt("allowances", [Lossy<Allowance>].self) ?? []).compactMap(\.value)
-    }
-}
+// AutofixStatus reads itself tolerantly in Autofix.swift (with `pathMissing`).
+// GuardStatus too, in Guard.swift.
 extension TeamConfig {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)

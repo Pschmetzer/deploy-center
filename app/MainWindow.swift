@@ -107,7 +107,6 @@ struct ContentView: View {
     @State private var search = ""
     @State private var confirming = false
     @State private var confirmingOff = false
-    @State private var confirmingStop = false
     /// The checkbox in the deploy confirmation: only commits whose CI passed go out. Remembered.
     @AppStorage("onlyWhenGreen") private var onlyGreen = false
     /// The deploy window's rule while it is closed, the platforms waiting for "Deploy anyway…", and why.
@@ -153,10 +152,8 @@ struct ContentView: View {
     @State private var logItem: Item?
     @Environment(\.openSettings) private var openSettings
     @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.openSettings) private var openSettings
     /// The palette flips the filter that is on screen (through this counter), not only the stored one.
     @ObservedObject private var palette = PaletteCenter.shared
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A single deploy from the row menu, asked first like from the palette.
     @State private var askDeployItem: Item?
     @AppStorage("confirmSingleDeploy") private var confirmSingle = true
@@ -497,7 +494,7 @@ struct ContentView: View {
             }
         }
         .background {
-            Color.clear.alert(L("Stop every deploy?", "Alle Deploys abbrechen?"), isPresented: $confirmingStop) {
+            Color.clear.alert(stopTitle, isPresented: $confirmingStop) {
                 Button(L("Keep running", "Weiterlaufen lassen"), role: .cancel) {}
                 Button(L("Stop all", "Alles abbrechen"), role: .destructive) { store.cancelAll() }
             } message: {
@@ -624,13 +621,6 @@ struct ContentView: View {
         } message: {
             Text(L("\(shown(rollbackItem?.name)) goes back to the deploy that was live before this one.",
                    "\(shown(rollbackItem?.name)) geht zurück auf den Stand, der davor live war."))
-        }
-        .alert(stopTitle, isPresented: $confirmingStop) {
-            Button(L("Keep running", "Weiterlaufen lassen"), role: .cancel) {}
-            Button(L("Stop all", "Alles abbrechen"), role: .destructive) { store.cancelAll() }
-        } message: {
-            Text(L("Running builds are cancelled at the platform, queued ones do not start.",
-                   "Laufende Builds werden beim Anbieter abgebrochen, wartende starten nicht."))
         }
         .alert(L("Turn off auto-deploy?", "Auto-Deploy ausschalten?"), isPresented: $confirmingOff) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
@@ -782,7 +772,7 @@ struct ContentView: View {
     static func noticeLook(_ n: Notice) -> (symbol: String, colour: Color) {
         switch n {
         case .trigger: return ("exclamationmark.triangle.fill", .red)
-        case .loadFailed, .github, .provider: return ("exclamationmark.circle.fill", .orange)
+        case .loadFailed, .github, .provider, .tools: return ("exclamationmark.circle.fill", .orange)
         case .auto, .allowance: return ("dollarsign.circle.fill", .orange)
         case .setup, .claude: return ("info.circle", .secondary)
         }
@@ -1052,11 +1042,11 @@ struct ContentView: View {
     private func summaryHelp(_ w: Store.Waiting) -> String {
         var lines: [String] = []
         if w.projects > 0 {
+            lines.append(L("\(w.commits) \(w.commits == 1 ? "commit" : "commits") in \(w.projects) \(w.projects == 1 ? "project" : "projects"), merged and not live",
+                           "\(w.commits) \(w.commits == 1 ? "Commit" : "Commits") in \(w.projects) \(w.projects == 1 ? "Projekt" : "Projekten"), gemergt und nicht live"))
             let all = store.waiting.projects
             if !showsAll, let p = platform, all != w.projects {
                 lines.append(L("On \(p.rawValue); \(all) over all platforms", "Auf \(p.rawValue); \(all) über alle Plattformen"))
-            lines.append(L("\(w.commits) \(w.commits == 1 ? "commit" : "commits") in \(w.projects) \(w.projects == 1 ? "project" : "projects"), merged and not live",
-                           "\(w.commits) \(w.commits == 1 ? "Commit" : "Commits") in \(w.projects) \(w.projects == 1 ? "Projekt" : "Projekten"), gemergt und nicht live"))
             }
         }
         if w.openPRs > 0 {
@@ -1767,7 +1757,6 @@ struct SavingShare: View {
         .task { if image == nil { image = render() } }
     }
 
-    @State private var saveError: String?
 
     private func save() {
         saveError = nil
@@ -2196,11 +2185,6 @@ struct Row: View {
         LogTools.maskSecrets(Demo.on ? Demo.mask(i.name) + ": " + Demo.scrub(msg, items: [i]) : i.name + ": " + msg)
     }
 
-    /// The first line of a failure, for the row: the rest is in the tooltip and the log.
-    static func firstLine(_ msg: String) -> String {
-        msg.split(whereSeparator: \.isNewline).first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
-    }
-
     /// What the list could not read this time, in words: shown quietly, it is no error.
     static func gapTexts(_ i: Item) -> [String] {
         var out: [String] = []
@@ -2512,5 +2496,4 @@ struct AllowanceBanner: View {
             .background(Color.orange.opacity(contrast == .increased ? 0.2 : 0.08))   // stronger with "Increase contrast"
         }
     }
-    @Environment(\.colorSchemeContrast) private var contrast
 }

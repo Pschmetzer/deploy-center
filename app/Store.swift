@@ -372,6 +372,7 @@ final class Store: ObservableObject {
         // A script without these commands: nothing is shown, nothing is said. A failed read keeps
         // the last good answer, so rows do not flip to "not allowed" for a hiccup.
         if case .success(let r)? = await a { autofix = r; preselectMergedFixes() }
+        // A failure keeps the last allowances: their badge warns about costs.
         if case .success(let r)? = await g, r.allowances != allowances { allowances = r.allowances }
     }
 
@@ -380,7 +381,6 @@ final class Store: ObservableObject {
         let newest = (fireIndex[i.name] ?? []).filter { ($0.platform?.lowercased() ?? i.platform.cli) == i.platform.cli }.max { $0.at < $1.at }
         if let f = newest, dismissedFires.contains(Self.fireKey(i, f)) { return nil }
         return RowAutofix.of(i, newest)
-        // A failure keeps the last allowances: their badge warns about costs.
     }
 
     /// Hand-overs the person waved away ("No fix PR" read and done with), kept on this Mac.
@@ -582,7 +582,7 @@ final class Store: ObservableObject {
         NotifyRouter.shared.onOpen = { [weak self] project in
             guard let self else { return }
             NSApp.activate(ignoringOtherApps: true)
-            if let project { self.pendingSearch = project }
+            if let project { self.pendingShow = ShowRequest(name: project, key: nil) }
             // An open window comes to the front; only without one is a new one asked for.
             if let w = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true && $0.canBecomeMain }) {
                 w.makeKeyAndOrderFront(nil)
@@ -1084,12 +1084,12 @@ final class Store: ObservableObject {
         }
         switch s {
         case .done:
-            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true, project: items[p]![i].name, row: rowKey, key: Self.key(items[p]![i]), silent: rang) }
+            if countsAsLive { say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true, project: items[p]![i].name, key: Self.key(items[p]![i]), row: rowKey, silent: rang) }
             else if items[p]![i].previewId != nil { say(L("\(name): preview is ready", "\(name): Vorschau ist fertig"), p.rawValue, ok: true, project: items[p]![i].name, row: rowKey, silent: rang) }
             else { say(L("\(name) rolled back", "\(name) zurückgerollt"), p.rawValue, ok: true, project: items[p]![i].name, row: rowKey, silent: rang) }
         case .failed(let m):
             if byPerson { say(L("\(name) cancelled", "\(name) abgebrochen"), p.rawValue, ok: true, project: items[p]![i].name, row: rowKey, silent: rang) }
-            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false, project: items[p]![i].name, row: rowKey, key: Self.key(items[p]![i]), silent: rang) }
+            else { say(L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: false, project: items[p]![i].name, key: Self.key(items[p]![i]), row: rowKey, silent: rang) }
         case .skipped(let m): say(L("\(name) skipped", "\(name) übersprungen"), m, ok: true, project: items[p]![i].name, row: rowKey)
         default: break
         }
@@ -1259,13 +1259,13 @@ final class Store: ObservableObject {
     var maxParallel: Int { let n = UserDefaults.standard.integer(forKey: "maxParallel"); return n >= 1 ? n : 3 }
 
     func deploySelected(_ p: Platform, preview: Bool = false, whenGreen: Bool = false, force: String? = nil) {
+        let chosen = selected(p).filter { !isHidden($0) }   // a hidden project never goes out with the others
         // A refusal keeps the ticks: nothing went out.
         guard namesTyped(chosen, preview: preview) else { return }
         let queued = enqueue(chosen.map { Job(item: $0, preview: preview, whenGreen: whenGreen, force: force) })
         // A refused start (observer mode, "may be building already") keeps its tick, so nothing is lost.
         // Rows already under way untick too: they are running, nothing is lost.
         for i in (items[p] ?? []).indices where queued.contains(Self.key(items[p]![i])) || items[p]![i].state.isActive { items[p]![i].selected = false }
-        let chosen = selected(p).filter { !isHidden($0) }   // a hidden project never goes out with the others
     }
 
     /// Whether the deploy window (window.json) is closed now. Nil when the script could not say.
@@ -1978,14 +1978,14 @@ final class Store: ObservableObject {
     }
     private var rollbackCountdowns: [String: Task<Void, Never>] = [:]
 
-    var healthPathCount: Int { healthPaths.values.filter { Self.cleanPath($0) != nil }.count }
+    var healthPathCount: Int { healthPathTexts.values.filter { !Self.cleanPaths($0).isEmpty }.count }
     /// Settings → Projects: one kind of mark off for every project (the dialog asked first).
     func clearMarks(_ m: ProjectMarks) {
         let d = UserDefaults.standard
         switch m {
         case .pinned: pinned = []; d.set([String](), forKey: "pinned")
         case .notes: notes = [:]; d.set([String: String](), forKey: "notes")
-        case .checkPaths: healthPaths = [:]; d.set([String: String](), forKey: "healthPaths")
+        case .checkPaths: healthPathTexts = [:]; d.set([String: String](), forKey: "healthPaths")
         case .autoRollback: autoRollback = []; d.set([String](), forKey: "autoRollback")
         case .ignoredTriggers: break   // an @AppStorage string of the window, cleared by Settings itself
         }

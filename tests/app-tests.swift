@@ -739,7 +739,7 @@ MainActor.assumeIsolated {
     st.selectChanged(.vercel)
     expect("select changed skips hidden rows", st.selected(.vercel).map(\.id), ["app"])
     st.clearSelection(.vercel)
-    st.selectChanged(.vercel, among: ["vercel/zzz"])
+    st.selectChanged(.vercel, only: ["vercel/zzz"])
     expect("select changed only among the rows shown", st.selected(.vercel).count, 0)
     st.hidden = []
 }
@@ -885,7 +885,8 @@ MainActor.assumeIsolated {
     expect("waiting for CI counts as busy", ci.deploysBusy, true)
     ci.cancel(ci.items[.vercel]![0])
     spin { !ci.items[.vercel]![0].state.isActive }
-    expect("CI wait cancelled", "\(ci.items[.vercel]![0].state)", "failed(\"\(L("Cancelled", "Abgebrochen"))\")")
+    // Nothing was started yet: the row is simply back to idle (main's rule).
+    expect("CI wait cancelled", "\(ci.items[.vercel]![0].state)", "idle")
 
     Tool.testRunner = nil
     Store.pollNanos = nil
@@ -1063,7 +1064,7 @@ do {
     let nested = try? JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"providers":{"vercel":{"vercelCli":true,"vercelLoggedIn":true},"render":{"renderKey":true}},"jobsMissing":["autofix:gh"]}"#.utf8))
     expect("doctor: provider flags under providers", "\(nested?.vercelLoggedIn ?? false) \(nested?.renderKey ?? false) \(nested?.jobsMissing ?? [])", "true true [\"autofix:gh\"]")
     let flat = try? JSONDecoder().decode(Doctor.self, from: Data(#"{"renderKey":true,"providers":{"render":{"renderKey":false}}}"#.utf8))
-    expect("doctor: the top level wins", flat?.renderKey ?? false, true)
+    expect("doctor: the provider's own object wins over the flat copy", flat?.renderKey ?? true, false)
     let g = try? JSONDecoder().decode(GuardStatus.self, from: Data(#"{"enabled":true,"lastActions":[],"allowances":[],"pathMissing":["vercel"]}"#.utf8))
     expect("guard: a tool the job no longer finds", g?.pathMissing ?? [], ["vercel"])
     let a = try? JSONDecoder().decode(AutofixStatus.self, from: Data(#"{"token":true,"scheduled":true,"fires":[]}"#.utf8))
@@ -1429,6 +1430,30 @@ do {
 
 // Messages carry the project they are about.
 expect("message: project key kept", Store.Message(date: Date(), text: "x", ok: false, project: "vercel/app").project ?? "", "vercel/app")
+
+// doctor: a provider's flags under providers.<p> win over the flat copy; the flat one alone still counts.
+let docNested = try? JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"vercelCli":false,"renderKey":false,"providers":{"vercel":{"vercelCli":true,"vercelApi":true,"vercelLoggedIn":true},"render":{"renderKey":true}}}"#.utf8))
+expect("doctor: nested vercel flags win", docNested?.vercelCli ?? false, true)
+expect("doctor: nested render key wins", docNested?.renderKey ?? false, true)
+let docFlat = try? JSONDecoder().decode(Doctor.self, from: Data(#"{"jq":true,"vercelLoggedIn":true,"renderKey":true}"#.utf8))
+expect("doctor: flat (older script) still read", (docFlat?.vercelLoggedIn ?? false) && (docFlat?.renderKey ?? false), true)
+
+// LOG-108: the iPhone's GitHub token. A link made before the switch existed keeps getting it;
+// a new one does not; a choice once made stays.
+do {
+    let suite = "dc-test-phone-gh"
+    let d = UserDefaults(suiteName: suite)!; d.removePersistentDomain(forName: suite)
+    PhoneLinkModel.migrateGitHub(d, linkExists: { true })
+    expect("existing link: GitHub token stays on", d.bool(forKey: PhoneLinkModel.githubKey), true)
+    d.removePersistentDomain(forName: suite)
+    PhoneLinkModel.migrateGitHub(d, linkExists: { false })
+    expect("new link: GitHub token off (and decided)", d.object(forKey: PhoneLinkModel.githubKey) != nil && !d.bool(forKey: PhoneLinkModel.githubKey), true)
+    var asked = false
+    PhoneLinkModel.migrateGitHub(d, linkExists: { asked = true; return true })
+    expect("decided once: not asked again", asked, false)
+    expect("decided once: stays off", d.bool(forKey: PhoneLinkModel.githubKey), false)
+    d.removePersistentDomain(forName: suite)
+}
 
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

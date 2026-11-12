@@ -3,7 +3,8 @@
 import SwiftUI
 import AppKit
 
-/// Opens Settings when the store asks (Store.openSettings(tab:)), for code that is not a view.
+/// Opens Settings when the store asks (Store.openSettings), for code that is not a view; also from
+/// the menu bar, where no main window may be open.
 /// The main window too, when a notification was clicked (Store.windowRequest).
 struct OpensSettingsOnRequest: ViewModifier {
     @ObservedObject var store: Store
@@ -11,7 +12,11 @@ struct OpensSettingsOnRequest: ViewModifier {
     @Environment(\.openWindow) private var openWindow
     func body(content: Content) -> some View {
         content
-            .onChange(of: store.settingsRequest) { openSettings() }
+            .onChange(of: store.settingsRequest) { _, tab in
+                guard tab != nil else { return }
+                store.settingsRequest = nil
+                NSApp.activate(ignoringOtherApps: true); openSettings()
+            }
             .onChange(of: store.windowRequest) { openWindow(id: "main") }
     }
 }
