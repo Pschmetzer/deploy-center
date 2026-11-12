@@ -1378,7 +1378,7 @@ printf '<?xml version="1.0"?><plist version="1.0"><dict><key>EnvironmentVariable
 expect "CLI-029: the autofix job's stale PATH is named" \
   "$( (DEPLOYS_LIB=1 . "$deploys_src"; set +e; PATH="$tmp/j29/bin:$PATH"; DEPLOYS_LAUNCH_DIR="$tmp/j29/agents"; job_missing "$AUTOFIX_LABEL" | tr ' ' '\n' | grep -x vercel; job_missing_json | grep -o '"autofix:vercel"') )" $'vercel\n"autofix:vercel"'
 expect "CLI-029: a job PATH that finds it is fine" \
-  "$( (DEPLOYS_LIB=1 . "$deploys_src"; set +e; PATH="$tmp/j29/bin:$PATH"; DEPLOYS_LAUNCH_DIR="$tmp/j29/agents"; sed -i '' "s:$tmp/j29/old:$tmp/j29/bin:" "$DEPLOYS_LAUNCH_DIR/app.deploycenter.autofix.plist"; job_missing "$AUTOFIX_LABEL" | tr ' ' '\n' | grep -c -x vercel) )" "0"
+  "$( (DEPLOYS_LIB=1 . "$deploys_src"; set +e; PATH="$tmp/j29/bin:$PATH"; DEPLOYS_LAUNCH_DIR="$tmp/j29/agents"; sed -i.bak "s:$tmp/j29/old:$tmp/j29/bin:" "$DEPLOYS_LAUNCH_DIR/app.deploycenter.autofix.plist" && rm -f "$DEPLOYS_LAUNCH_DIR/app.deploycenter.autofix.plist.bak"; job_missing "$AUTOFIX_LABEL" | tr ' ' '\n' | grep -c -x vercel) )" "0"
 # CLI-036: the --when-green preview asks CI like the real run and says what --yes would do.
 export RENDER_API_KEY=rnd_test
 fresh

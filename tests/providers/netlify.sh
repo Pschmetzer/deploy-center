@@ -178,7 +178,7 @@ expect "json: every site's deploys read once" "$(calls '/deploys?production=true
 cp "$hf" "$tmp/hooks.good"
 echo '{"site-shop": {"url": ' > "$hf"
 out="$(netlify_hooks_file 2>&1 >/dev/null)"
-expect "hooks file: broken one kept as .bak, 0600" "$(head -c 13 "$hf.bak"):$(stat -f %Lp "$hf.bak" 2>/dev/null || stat -c %a "$hf.bak")" '{"site-shop"::600'
+expect "hooks file: broken one kept as .bak, 0600" "$(head -c 13 "$hf.bak"):$(stat -c %a "$hf.bak" 2>/dev/null || stat -f %Lp "$hf.bak")" '{"site-shop"::600'
 expect "hooks file: started again as {}" "$(cat "$hf")" '{}'
 has "hooks file: says so" "$out" "kept as"
 cp "$tmp/hooks.good" "$hf"; rm -f "$hf.bak"

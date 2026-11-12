@@ -205,6 +205,36 @@ scripts/homebrew-formula.sh --write "$tmp/tap" --no-check "$version" "$(sha256 "
 scripts/homebrew-formula.sh 1.2 abc >/dev/null 2>&1
 expect "formula: bad version fails" "$?" 1
 
+# --- CI lane: edge cases of install.sh (DOC-073) ---------------------------------------------
+# A good install first; each broken release below must leave it as it was.
+edge="$tmp/edge"; inst --prefix "$edge" >/dev/null
+# The download stopped before checksums.txt: nothing changes.
+nosums="$tmp/nosums"; cp -R "$rel" "$nosums"; rm "$nosums/latest/download/checksums.txt"
+out="$(DEPLOYS_INSTALL_BASE="file://$nosums" inst --prefix "$edge")"; rc=$?
+expect "no checksums.txt: fails and says so" "$rc:$(grep -c 'could not download' <<<"$out")" "1:1"
+expect "no checksums.txt: the install before still works" "$("$edge/bin/deploys" --version)" "$version"
+# A release whose tarball is cut short, with a checksums.txt that matches it (a broken upload).
+cut="$tmp/cut"; cp -R "$rel" "$cut"; t="$cut/download/v$version/deploys-cli-$version.tar.gz"
+head -c 200 "$tarball" > "$t"
+printf '%s  %s\n' "$(sha256 "$t")" "deploys-cli-$version.tar.gz" > "$cut/latest/download/checksums.txt"
+out="$(DEPLOYS_INSTALL_BASE="file://$cut" inst --prefix "$edge")"; rc=$?
+[ "$rc" != 0 ] && ok "cut tarball: fails" || fail "cut tarball: fails" "exit 0: $out"
+expect "cut tarball: the install before still works" "$("$edge/bin/deploys" --version)" "$version"
+[ ! -e "$edge/lib/deploys.new" ] && ok "cut tarball: no half-copied lib/deploys.new" || fail "cut tarball: lib/deploys.new" "left behind"
+# A system install.sh does not know (Windows shells, an unknown kernel): it installs and only the hints are generic.
+fakeos="$tmp/fakeos"; mkdir -p "$fakeos"
+for os in MINGW64_NT-10.0-19045 FreeBSD; do
+  printf '#!/bin/sh\necho %s\n' "$os" > "$fakeos/uname"; chmod +x "$fakeos/uname"
+  out="$(PATH="$fakeos:$PATH" inst --prefix "$tmp/os-$os")"; rc=$?
+  expect "uname $os: installs" "$rc:$("$tmp/os-$os/bin/deploys" --version 2>/dev/null)" "0:$version"
+done
+# install.sh under BusyBox sh (Alpine), when BusyBox is there.
+if command -v busybox >/dev/null && busybox sh -c true 2>/dev/null; then
+  out="$(busybox sh "$repo/site/install.sh" --prefix "$tmp/bb" 2>&1)"; rc=$?
+  expect "busybox sh: installs" "$rc:$("$tmp/bb/bin/deploys" --version 2>/dev/null)" "0:$version"
+else
+  echo "skip busybox sh (not installed)"
+fi
 # ===== CLI track (improve/cli): additions, kept together =====
 # The tarball carries lib/, and an installed deploys finds it (team mode, GitLab, savings).
 contains "package: lib/team.sh goes in" "$listing" "deploys-cli-$version/lib/team.sh"

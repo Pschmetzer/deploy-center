@@ -23,17 +23,21 @@ grep -q '^## Unreleased' CHANGELOG.md || die "CHANGELOG.md has no \"## Unrelease
 grep -q "^## \[\{0,1\}$new\]\{0,1\}\( \|$\)" CHANGELOG.md && die "CHANGELOG.md has \"## $new\" already"
 awk '/^## Unreleased/{f=1;next} /^## /{f=0} f&&/^- /{n++} END{exit n?0:1}' CHANGELOG.md \
   || die "nothing under \"## Unreleased\" to release"
+# Both version mentions on the home page must be found before anything changes: a replacement
+# without a hit would leave the old version there silently, and a stop halfway would leave
+# VERSION and CHANGELOG.md bumped.
+if [ -f site/index.html ]; then
+  for pat in "Version $cur ·" "\"softwareVersion\": \"$cur\""; do
+    grep -qF "$pat" site/index.html || die "site/index.html has no '$pat'; set the version there by hand"
+  done
+fi
 
 tmp="$(mktemp)"
 awk -v v="$new" '!done && /^## Unreleased/ { print; print ""; print "## " v; done=1; next } { print }' CHANGELOG.md > "$tmp"
 mv "$tmp" CHANGELOG.md
 echo "$new" > VERSION
 # The site's home page names the version twice (the line under the download button and the JSON-LD).
-# Each must be found: a replacement without a hit would leave the old version there silently.
 if [ -f site/index.html ]; then
-  for pat in "Version $cur ·" "\"softwareVersion\": \"$cur\""; do
-    grep -qF "$pat" site/index.html || die "site/index.html has no '$pat'; set the version there by hand"
-  done
   sed -i.bak -e "s/Version $cur ·/Version $new ·/" -e "s/\"softwareVersion\": \"$cur\"/\"softwareVersion\": \"$new\"/" site/index.html
   rm -f site/index.html.bak
 fi
