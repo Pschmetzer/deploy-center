@@ -29,6 +29,21 @@ Render's infrastructure as code: services described in a `render.yaml` in the re
 ### Deploy hook
 A secret URL that starts a deploy when something calls it, for example a GitHub workflow. It works without auto-deploy, so it can keep building after auto-deploy is off. `deploys triggers` looks for workflows that call one.
 
+### Stop builds (Netlify)
+Netlify's `build_settings.stop_builds`. It stops builds on a push, but also from the API and from build hooks, so Deploy Center does not use it. It turns pushes off with an ignore command in `netlify.toml` and deploys through a build hook instead: [providers/netlify.md](providers/netlify.md).
+
+### Branch control (Cloudflare Pages)
+The project's Git switches for **production deployments** and **preview deployments**. `deploys cloudflare off` turns both off and remembers what they were: [providers/cloudflare.md](providers/cloudflare.md).
+
+### Auto-build (AWS Amplify)
+Amplify builds every connected branch with auto-build on, on each push. Deploy Center turns it off per branch and starts a job when you deploy: [providers/amplify.md](providers/amplify.md).
+
+### Deploy on push (DigitalOcean), auto-deploy (Coolify)
+The per-component `deploy_on_push` on DigitalOcean App Platform, and an application's `is_auto_deploy_enabled` on Coolify. `autodeploy-off` sets them to false: [providers/digitalocean.md](providers/digitalocean.md), [providers/coolify.md](providers/coolify.md).
+
+### Merge request (GitLab)
+GitLab's name for a pull request. For a repo on GitLab, "PRs waiting" counts merge requests: [GITLAB.md](GITLAB.md).
+
 ### Build minutes
 What Vercel and Render charge for building. Every push with auto-deploy on costs a build per connected project.
 
@@ -54,10 +69,10 @@ A second start of the same project within a minute is refused, from the app and 
 A project left out of `changed` and `deploy-changed`: `deploys ignore my-project`, undone with `deploys ignore my-project --undo`.
 
 ### Hidden project
-A row hidden in the app. Hidden projects are listed in Settings, where **Show** brings them back.
+A row hidden in the app. Hidden projects are listed in Settings → General, where **Show** brings them back.
 
 ### Demo mode
-Settings → Demo mode replaces project names and domains, for screenshots.
+Settings → General → Demo mode replaces project names and domains, for screenshots.
 
 ### GitHub budget
 GitHub's hourly limit of API calls for your login. Under 300 left, Deploy Center reads only the branch heads. `deploys github-budget` shows what is left.

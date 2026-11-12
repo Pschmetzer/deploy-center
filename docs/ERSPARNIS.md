@@ -7,7 +7,7 @@ Zwei Befehle, zwei Fragen:
 - `deploys simulate [--days 30]`: *Was kostet Auto-Deploy im Monat, verglichen mit einem Deploy pro Tag?* Geht, bevor du etwas abschaltest.
 - `deploys ledger`: *Was hat das Abschalten bisher gespart?* Zählt ab dem Tag, an dem Auto-Deploy aus ging.
 
-Beide brauchen `gh` (angemeldet), weil sie Pushes auf GitHub zählen. Mit `--json` kommt die Antwort für Maschinen. In der App: der Simulator (ein Banner, solange nichts abgeschaltet ist, und Einstellungen → Kosten) und das Ledger („≈ $X gespart seit …“, pro Projekt).
+Beide brauchen `gh` (angemeldet), weil sie Pushes auf GitHub zählen. Mit `--json` kommt die Antwort für Maschinen. In der App: der Simulator (ein Banner, solange nichts abgeschaltet ist, und Einstellungen → Kosten → Ersparnis) und das Ledger („≈ $X gespart seit …“, pro Projekt; mit einem eigenen Ziel in USD und wie weit die Ersparnis ist).
 
 Jede Zahl ist eine Schätzung und trägt „≈“. Das JSON sagt, wie sie entstand (`method`).
 
@@ -103,3 +103,13 @@ ledger (oben `since`, `days` seit dem ersten abgeschalteten Projekt):
 - Die Commit-Ersatzzählung zählt zu viel, wenn ein Push mehrere Commits trägt.
 - Ein Deploy, das ein Hook oder Workflow startet, zählt als gebaut; das Ledger zählt diesen Push dann nicht als gespart.
 - Ohne `gh`, oder ohne bekanntes Repo und Branch, hat ein Projekt keine Zahlen (`problem` sagt warum).
+
+## Warum steht da ≈ 0 $?
+
+- **Nichts wurde übersprungen.** Das Ledger zählt einen Push nur dann als gespart, wenn sein Commit nach dem Abschalten von Auto-Deploy nie gebaut wurde. Hast du jeden Push deployt, oder hat ein Hook oder Workflow ihn gebaut, ist nichts gespart.
+- **Der Commit wurde als Preview gebaut.** Bei Vercel zählt jedes Deployment des Projekts, auch Previews. Bei einem Fast-Forward-Merge ist der Commit auf dem Deploy-Branch derselbe, den schon eine Preview gebaut hat; der Push zählt dann als gebaut.
+- **Keine Pushes im Zeitraum.** `simulate` zählt die letzten `--days` (Vorgabe 30), `ledger` erst ab dem Tag, an dem Auto-Deploy hier abgeschaltet wurde. Projekte, deren Auto-Deploy nie mit Deploy Center abgeschaltet wurde, fehlen im Ledger ganz.
+- **Billige Builds.** Dollar werden auf Cent gerundet. Zeigt die Vercel-Abrechnung der letzten 7 Tage 0 $ für die Builds des Projekts, kostet ein Build 0 $.
+- **„?“ ist nicht 0.** Ohne bekannten Durchschnitts-Build (kein fertiger Build unter den letzten 100) oder ohne Preis (Render ohne `DEPLOYS_RENDER_USD_PER_MIN`) ist die Zahl unbekannt und zeigt „?“. Die Summe hat dann `usdComplete: false`.
+
+Umgekehrt: Gelesen werden nur die letzten 100 Deployments eines Projekts. Bei einem Projekt mit vielen Deploys kann ein älterer, gebauter Push ungebaut aussehen und zählt dann als gespart.

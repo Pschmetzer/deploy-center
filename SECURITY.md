@@ -3,7 +3,7 @@
 ## Report a problem
 
 Open a [private security advisory](https://github.com/Pschmetzer/deploy-center/security/advisories/new)
-(Security tab), not a public issue. Please include the version (Settings → "Copy diagnostics")
+(Security tab), not a public issue. Please include the version (Settings → Help → "Copy diagnostics")
 and the steps to see the problem. Leave out real project names, domains and keys.
 
 Deploy Center is maintained by one person in their spare time. The aim is a first answer within
@@ -12,7 +12,10 @@ Deploy Center is maintained by one person in their spare time. The aim is a firs
 ## Supported versions
 
 Only the newest release gets fixes. Update with **Check for Updates …** in the app menu or
-`brew upgrade --cask --greedy deploy-center`.
+`brew upgrade --cask --greedy deploy-center`. The `deploys` CLI, the Docker image and the
+integrations in `integrations/` (MCP server, VS Code and Raycast extensions, GitHub Action) are
+fixed in the same repo: use the newest release. The iPhone app gets fixes in its newest
+build.
 
 | Version | Fixes |
 |---|---|
@@ -24,15 +27,20 @@ Only the newest release gets fixes. Update with **Check for Updates …** in the
 Deploy Center runs as you, on your Mac (or in your CI job), with your Vercel, Render and GitHub
 logins. It has no server of its own. What it protects:
 
-1. **Your keys**: the Render API key, the Claude routine token, the Vercel and GitHub CLI logins.
+1. **Your keys**: the Render API key, the Claude routine token, the Anthropic API key, the tokens
+   of the opt-in hosts (Netlify, Cloudflare, DigitalOcean, Coolify; an AWS profile name for
+   Amplify), deploy hook URLs, the Vercel, GitHub and GitLab CLI logins, and the keys handed to
+   the iPhone app.
 2. **Your build minutes and live sites**: nothing may start a build, a rollback or a cancel unless
    you asked for it.
 3. **Your Mac**: text that comes from somewhere else must never run as code.
 
 Text from somewhere else is everything the tool did not get from you directly: project and service
-names, repo names, commit messages, build logs and workflow file names from the Vercel, Render and
-GitHub APIs; a `deploycenter://` link any web page can open; arguments an AI agent passes through
-the MCP server; and the build log a Claude routine reads. It is handled as data:
+names, repo names, commit messages, build logs and workflow file names from the APIs of the hosts
+and of GitHub and GitLab; a `deploy-center.json` in a repo (team mode: anyone with push rights
+writes it); a `deploycenter://` link any web page can open; arguments an AI agent passes through
+the MCP server; Claude's answers in the app; and the build log a Claude routine reads. It is
+handled as data:
 
 - `deploys` passes it to `jq` as `--arg`, never inside a filter; builds JSON with `jq`, never with
   `printf`; passes it to `bash -c` as an argument, never as part of the script.
@@ -41,7 +49,9 @@ the MCP server; and the build log a Claude routine reads. It is handled as data:
   team id is letters, digits, `_` and `-` only. Anything else is refused before any request.
 - The MCP server runs `deploys` with an argument array (no shell), accepts only names matching
   `[A-Za-z0-9._:-]+`, and offers deploy and rollback only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`, one
-  project per call.
+  project per call. Even then it asks you itself (MCP elicitation) before each one, and refuses a
+  client that cannot ask unless started with `DEPLOYS_MCP_CONFIRM=client` (then the client's own
+  approval is the only yes; see [integrations/mcp](integrations/mcp/README.md#safety)).
 
 Out of scope: someone who already runs code as your Mac user (they can read your keychain items
 the same way the app does), and Vercel, Render, GitHub and their CLIs themselves (report those to
@@ -54,6 +64,12 @@ the vendor).
 | Project lists, deploys, build logs, starts and rollbacks | Vercel | the `vercel` CLI, with its own login |
 | Service lists, deploys, build logs, starts and rollbacks | `api.render.com` | `curl` over HTTPS; the key on stdin (`curl -K -`) |
 | Commits, compares, pull requests, check runs, workflow files | `api.github.com` | the `gh` CLI, with its own login |
+| Commits, compares, merge requests (only for repos on GitLab) | `GITLAB_HOST` (`gitlab.com` when unset) | the `glab` CLI with its login, or `curl` with `GITLAB_TOKEN` on stdin; never to another host a repo URL names |
+| Site lists, deploys, logs, starts and rollbacks (opt-in hosts, only after `deploys providers enable <p>`) | `api.netlify.com`, `api.cloudflare.com`, `api.digitalocean.com`, your Coolify server; AWS through the `aws` CLI | `curl` over HTTPS with the token on stdin; Amplify with the `aws` CLI's own credentials |
+| A POST that starts a build | the deploy hook URL you added | `curl`, URL and headers on stdin |
+| Claude in the app (opt-in, your own key): masked log excerpts, commit titles, file names | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after `deploys ai set-key`, with a monthly token cap |
+| Keys for the iPhone app: the Vercel token for the iPhone, the Render key, the `gh` token | iCloud Keychain (end-to-end encrypted by Apple), or a QR code on screen | only when you turn on Settings → iPhone or show the QR code; see [iPhone link](#iphone-link) |
+| The `deploy-center` MCP entry: paths to `node`, the server and `deploys`, and `DEPLOYS_MCP_ALLOW_DEPLOY=1` only if you allow deploys; no key | `~/Library/Application Support/Claude/claude_desktop_config.json`, Claude Code's config | only on Connect in Settings → Claude; only that entry is added or removed |
 | The update feed (once a day, can be turned off; no system profile), then the zip | `deploycenter.app/appcast.xml`, `github.com` | HTTPS, see [Updates](#updates) |
 | Project icons | each project's own domain | HTTPS to `https://<domain>/`; icon links in that page are followed |
 | Is a host down? (a plain GET, nothing of yours) | `www.vercel-status.com`, `status.render.com`, `www.githubstatus.com` | HTTPS, from the app |
@@ -96,7 +112,9 @@ GitHub sees the IP address and time of each download, as for any download from G
 - While `render json` reads many services at once, the key sits in a `0600` file inside a `0700`
   `mktemp -d` folder and is removed right after.
 - `~/.config/deploys` is set to `0700` on every run. It holds the remembered repos, the team id,
-  the ignore list, locks and the Autofix state, but no key.
+  the ignore list, locks and the Autofix state, but no API key. Deploy hook URLs (Netlify's in
+  `netlify-hooks.json`, and `hook-urls/` when there is no keychain) are secrets too: anyone with
+  one can start a build. They are `0600` files and never printed.
 
 ### Autofix log masking
 
@@ -112,6 +130,23 @@ help, not a guarantee. If a build can print secrets in another shape, do not tur
 The routine's prompt tells it that the payload is untrusted data and never to merge; a person
 merges the fix PR, and a merged fix is only announced, never deployed by itself.
 
+## iPhone link
+
+The iPhone app has no login of its own. It gets keys from the Mac in one of two ways:
+
+- **iCloud Keychain** (Settings → iPhone → *Connect the iPhone app*): one synced keychain item
+  (service `app.deploycenter.link`) holds the Vercel token made for the iPhone, the Render key and
+  the GitHub token of the `gh` CLI. It reaches every device signed in with your Apple ID. Turning
+  the switch off deletes it there too (`PhoneLink.remove`); deleting the app does not.
+- **QR code** (*Show a QR code for the iPhone …*): the same keys, as base64 JSON behind
+  `deploycenter-link:1:`. They are not encrypted: anyone who sees or photographs the code has the
+  keys. The window closes after 60 seconds, and the iPhone app refuses a code made more than five
+  minutes ago, but the keys in it do not expire.
+
+Use a Vercel token made only for the phone, and a Render key you can revoke. If a code may have
+been seen, or a device is lost, revoke the keys at Vercel, Render and GitHub; removing the link
+does not make a copied key useless.
+
 ## Nothing starts a build by itself
 
 - Every start, rollback and cancel is a click in the app or a command (`deploy-changed` only with
@@ -119,12 +154,16 @@ merges the fix PR, and a merged fix is only announced, never deployed by itself.
 - `deploycenter://select?project=<name>` (or `platform:name`) only shows that project in the main
   window, and `deploycenter://settings/<tab>` only opens a settings tab. Neither ticks, starts or
   rolls back anything, whatever the link says.
+- Autofix and the guard run as LaunchAgents (`app.deploycenter.autofix`, `app.deploycenter.guard`)
+  only after `deploys autofix schedule on` / `deploys guard schedule on` (or the switch in
+  Settings → Deploy for the guard and Settings → Claude for Autofix). The guard only turns
+  auto-deploy off; Autofix opens fix PRs and never merges.
 - The GitHub Action deploys only with `deploy: true`. Its inputs reach the scripts through `env:`,
   never as `${{ … }}` inside a `run:` script (a test checks this). It has no
   `pull_request_target` trigger. The examples set `permissions: contents: read` (or none) and
   pass keys as secrets. Pin the action to a release tag or a commit SHA, not `@main`.
 - The MCP server is read-only unless you start it with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. Build logs it
-  returns are not masked, and they are text from somewhere else: an agent with deploy rights could
+  returns are masked first (the same masker as Autofix; a help, not a guarantee), and they are text from somewhere else: an agent with deploy rights could
   be talked into a deploy by a log line. Keep deploy rights off unless you watch the agent.
 
 ## Provenance of the CLI download
@@ -170,8 +209,6 @@ while deploys are running. A self-built (ad hoc signed) app is still checked aga
   host or address. The request is a plain GET; the answer is only shown if it is an image.
 - `notify.sh` and the GitHub Action write project names into messages, the job summary and
   `$GITHUB_OUTPUT`. Names come from your own Vercel and Render accounts.
-- `pages.yml` (the website) uses action tags, not commit SHAs, and the default checkout
-  credentials. It runs only on pushes to `main`.
 
 ## For new code (providers, plugins, MCP tools)
 

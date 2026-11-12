@@ -39,7 +39,7 @@
   "url": "https://deploycenter.app/claude-code/",
   "mainEntityOfPage": "https://deploycenter.app/claude-code/",
   "datePublished": "2026-11-10",
-  "dateModified": "2026-11-10",
+  "dateModified": "2026-11-12",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -132,7 +132,7 @@
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Deploy Center + Claude Code: let the agent push, you decide what ships</h1>
 <p class="answer">Claude Code pushes many small commits, and with auto-deploy on, each one is a paid build on Vercel or Render. Deploy Center turns those builds off, ships everything waiting in one deploy when you decide, and hands failed builds back to Claude to fix.</p>
-<p class="meta">Last updated <time datetime="2026-11-10">10 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-12">12 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p><b>Claude writes and pushes the code. Deploy Center is the other half: you decide what ships, and Claude fixes what breaks.</b> Deploy Center is a free, open-source Mac app that works with Claude Code.</p>
 
@@ -183,7 +183,7 @@ claude mcp add deploys -e DEPLOYS_MCP_ALLOW_DEPLOY=1 -- node /path/to/deploy-cen
 <ol>
   <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center</a> and connect Vercel (your <code>vercel</code> CLI login) and Render (an API key in the keychain).</li>
   <li>Click <b>Turn off auto-deploy</b>. Claude's pushes now wait instead of building.</li>
-  <li>Optional: set up Autofix in <b>Settings → Autofix</b>, or in the terminal:</li>
+  <li>Optional: set up Autofix in <b>Settings → Claude → Autofix</b>, or in the terminal:</li>
 </ol>
 <pre><code class="language-bash">pbpaste | deploys autofix set-token     # the routine's API token
 deploys autofix routine trig_XXXXXXXX  # the routine's trigger id

@@ -11,19 +11,25 @@ No. It deploys when you press **Deploy** or run a `deploys` command. The daily r
 See [AUTO-DEPLOY.md](AUTO-DEPLOY.md). In short: Vercel loses the Git connection (the repo is remembered), Render's auto-deploy is set to *Off*, and a push builds nothing.
 
 ### Can I go back?
-Yes: `deploys vercel autodeploy-on <project>|--all` and `deploys render autodeploy-on <service>|--all`, or in the Vercel and Render dashboards. See [AUTO-DEPLOY.md](AUTO-DEPLOY.md#back-to-auto-deploy).
+Yes: `deploys vercel autodeploy-on <project>` connects Git again from the remembered repo, `deploys render autodeploy-on <service>` sets auto-deploy to *On Commit* (both take `--all`; add `--dry-run` to see first what would change). The dashboards work too. See [AUTO-DEPLOY.md](AUTO-DEPLOY.md#back-to-auto-deploy).
 
 ### Where is my Render key stored?
 In your macOS keychain, as the item `deploy-center-render`. `deploys` hands it to `curl` on stdin, so it does not show in the process list, and sends it only to api.render.com. The key gives full access to your Render account.
 
 ### Does the app send data anywhere?
-No telemetry, no account, no server of ours. It talks to Vercel and Render with your logins, to GitHub through your `gh` login, to your own sites for their logos and the check after a deploy, and once a day to `deploycenter.app/appcast.xml` to see whether a new version is out; an update itself is downloaded from GitHub (Settings → **Look for a new version once a day** turns that off). Claude features and Autofix send data to Anthropic only after you set them up: [SECURITY.md](../SECURITY.md#what-is-sent-where).
+No telemetry, no account, no server of ours. It talks to Vercel and Render with your logins, to GitHub through your `gh` login, to your own sites for their logos and the check after a deploy, and once a day to `deploycenter.app/appcast.xml` to see whether a new version is out; the update itself comes from GitHub (Settings → **Check for updates automatically** turns the daily check off). Claude in the app and Autofix talk to Anthropic only when you set them up with your own key or routine. More: [SECURITY.md](../SECURITY.md#what-is-sent-where).
 
 ### Do I need the GitHub CLI?
 For deploying, no. For seeing what is waiting (**New changes**, commits and PRs waiting, **Select all changed**, `deploys changed` and `deploy-changed`), yes: those read GitHub through `gh`.
 
 ### GitLab or Bitbucket?
-GitLab, yes: gitlab.com and self-managed GitLab are read like GitHub, through `glab` or `GITLAB_TOKEN` (+ `GITLAB_HOST`). See [GITLAB.md](GITLAB.md). Bitbucket is not supported yet.
+GitLab, yes: for a project whose repo is on gitlab.com or your own GitLab, what is waiting (commits, merged and open merge requests) is read from GitLab through `glab` or `GITLAB_TOKEN`. See [GITLAB.md](GITLAB.md). Bitbucket and other hosts, not yet: those projects show "branch head unknown".
+
+### How do I switch the app to English or German?
+Settings → General → **Language**: English, Deutsch, or the Mac's language (the default). It takes effect after a restart (**Restart now** is right there); the widgets follow it. Messages from the `deploys` CLI stay English.
+
+### How do I update?
+The app checks once a day (Settings → General → **Check for updates automatically**) and on **Check for Updates …** in the app menu. Sparkle shows what is new and installs once no deploy is running. With Homebrew: `brew upgrade --cask --greedy deploy-center`.
 
 ### Windows or Linux?
 The app needs macOS 15 or newer. The `deploys` script is bash and runs on Linux and in WSL (install it inside the Linux distribution): `curl -fsSL https://deploycenter.app/install.sh | sh`. In CI the key comes from `RENDER_API_KEY` instead of the keychain. See [examples/](../examples/).

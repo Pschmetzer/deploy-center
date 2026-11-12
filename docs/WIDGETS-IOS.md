@@ -109,8 +109,9 @@ Without a server this is best effort.
 - **Following a deploy:** the app polls the deploy it started. When it goes to the background, a
   background task buys about half a minute, and on iOS 26 a continued processing task keeps going with
   a progress in the system, until the deploy ends or iOS stops it. The end comes as a notification.
-- **Live Activity:** none yet. One started by the app is possible without a server, but it only
-  updates while the app runs; one that updates while the app is closed needs push from a server (APNs).
+- **Live Activity:** a deploy or rollback started in the app shows on the lock screen and in the
+  Dynamic Island (IOS-122, below). Without a server it updates only while the app runs; one that
+  updates while the app is closed would need push from a server (APNs).
 
 ### Tokens and Face ID
 

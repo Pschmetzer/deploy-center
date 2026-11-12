@@ -13,7 +13,7 @@ deploys deploy-changed                  # the daily deploy: shows the list; add 
 deploys plan [--when-green]             # the same list with an estimate per build and the sum (starts nothing)
 deploys status                          # what is building now, and what failed last
 deploys watch my-project                # follow the newest deploy until live or failed
-deploys logs my-project                 # the end of the newest build log
+deploys logs my-project                 # the end of the newest build log, keys and tokens always masked
 deploys open my-project [--dashboard]   # the site, or its page at Vercel/Render
 deploys ignore my-project               # leave it out of changed / deploy-changed
 ```
@@ -24,6 +24,7 @@ deploys ignore my-project               # leave it out of changed / deploy-chang
 deploys vercel list                     # which projects still deploy on push
 deploys vercel autodeploy-off --all     # or one project by name
 deploys vercel autodeploy-on my-project # connect Git again (or --all)
+deploys vercel autodeploy-on --all --dry-run   # what it would reconnect; changes nothing
 deploys vercel deploy my-project        # newest commit to production
 deploys vercel deploy my-project --preview
 deploys vercel rollback my-project
@@ -37,6 +38,7 @@ deploys vercel team [<id>]              # show or set the Vercel team
 deploys render list
 deploys render autodeploy-off --all     # or one service by name
 deploys render autodeploy-on my-service # auto-deploy "On Commit" again (or --all)
+deploys render autodeploy-on --all --dry-run   # what it would switch on; changes nothing
 deploys render deploy my-service
 deploys render rollback my-service
 deploys render set-key                  # store the API key in the keychain (reads stdin)
