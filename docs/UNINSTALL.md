@@ -5,7 +5,6 @@ Uninstalling does not turn auto-deploy back on. Your projects stay manual until 
 ## 1. Stop what runs on its own
 
 - In the app, turn off **Settings → General → Open at login** (or remove Deploy Center under System Settings → General → Login Items).
-- **Settings → iPhone**: turn off **Connect the iPhone app (iCloud Keychain)**. That removes the keys the Mac put into iCloud Keychain, on every device signed in with your Apple ID. Deleting the app does not.
 - Autofix, if you turned on its schedule (launchd job `app.deploycenter.autofix`):
   ```bash
   deploys autofix schedule off

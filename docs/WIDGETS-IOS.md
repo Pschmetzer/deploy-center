@@ -109,8 +109,9 @@ Without a server this is best effort.
 - **Following a deploy:** the app polls the deploy it started. When it goes to the background, a
   background task buys about half a minute, and on iOS 26 a continued processing task keeps going with
   a progress in the system, until the deploy ends or iOS stops it. The end comes as a notification.
-- **Live Activity:** none yet. One started by the app is possible without a server, but it only
-  updates while the app runs; one that updates while the app is closed needs push from a server (APNs).
+- **Live Activity:** a deploy or rollback started in the app shows on the lock screen and in the
+  Dynamic Island (IOS-122, below). Without a server it updates only while the app runs; one that
+  updates while the app is closed would need push from a server (APNs).
 
 ### Tokens and Face ID
 
@@ -171,7 +172,7 @@ QR code. No account and no server of ours.**
 An own account with a server would hold every user's deploy tokens: a large liability, and the end
 of "Data Not Collected".
 
-- **iCloud Keychain** (`shared/PhoneLink.swift`): Mac app → Settings → Platforms → iPhone → "Connect the iPhone
+- **iCloud Keychain** (`shared/PhoneLink.swift`): Mac app → Settings → iPhone → "Connect the iPhone
   app". It writes one synchronizable keychain item in the team's keychain group
   `<TEAMID>.app.deploycenter.shared`: the Vercel token made for the phone, the Vercel team id, the
   Render key and the gh CLI's GitHub token. iCloud Keychain carries it, end-to-end encrypted, to the

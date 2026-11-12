@@ -3,7 +3,7 @@
 ## Report a problem
 
 Open a [private security advisory](https://github.com/Pschmetzer/deploy-center/security/advisories/new)
-(Security tab), not a public issue. Please include the version (Settings → Advanced → "Copy diagnostics")
+(Security tab), not a public issue. Please include the version (Settings → Help → "Copy diagnostics")
 and the steps to see the problem. Leave out real project names, domains and keys.
 
 Deploy Center is maintained by one person in their spare time. The aim is a first answer within
@@ -49,7 +49,9 @@ handled as data:
   team id is letters, digits, `_` and `-` only. Anything else is refused before any request.
 - The MCP server runs `deploys` with an argument array (no shell), accepts only names matching
   `[A-Za-z0-9._:-]+`, and offers deploy and rollback only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`, one
-  project per call.
+  project per call. Even then it asks you itself (MCP elicitation) before each one, and refuses a
+  client that cannot ask unless started with `DEPLOYS_MCP_CONFIRM=client` (then the client's own
+  approval is the only yes; see [integrations/mcp](integrations/mcp/README.md#safety)).
 
 Out of scope: someone who already runs code as your Mac user (they can read your keychain items
 the same way the app does), and Vercel, Render, GitHub and their CLIs themselves (report those to
@@ -66,7 +68,7 @@ the vendor).
 | Site lists, deploys, logs, starts and rollbacks (opt-in hosts, only after `deploys providers enable <p>`) | `api.netlify.com`, `api.cloudflare.com`, `api.digitalocean.com`, your Coolify server; AWS through the `aws` CLI | `curl` over HTTPS with the token on stdin; Amplify with the `aws` CLI's own credentials |
 | A POST that starts a build | the deploy hook URL you added | `curl`, URL and headers on stdin |
 | Claude in the app (opt-in, your own key): masked log excerpts, commit titles, file names | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after `deploys ai set-key`, with a monthly token cap |
-| Keys for the iPhone app: the Vercel token for the iPhone, the Render key, the `gh` token | iCloud Keychain (end-to-end encrypted by Apple), or a QR code on screen | only when you turn on Settings → Platforms → iPhone or show the QR code; see [iPhone link](#iphone-link) |
+| Keys for the iPhone app: the Vercel token for the iPhone, the Render key, the `gh` token | iCloud Keychain (end-to-end encrypted by Apple), or a QR code on screen | only when you turn on Settings → iPhone or show the QR code; see [iPhone link](#iphone-link) |
 | The `deploy-center` MCP entry: paths to `node`, the server and `deploys`, and `DEPLOYS_MCP_ALLOW_DEPLOY=1` only if you allow deploys; no key | `~/Library/Application Support/Claude/claude_desktop_config.json`, Claude Code's config | only on Connect in Settings → Claude; only that entry is added or removed |
 | The update feed (once a day, can be turned off; no system profile), then the zip | `deploycenter.app/appcast.xml`, `github.com` | HTTPS, see [Updates](#updates) |
 | Project icons | each project's own domain | HTTPS to `https://<domain>/`; icon links in that page are followed |
@@ -132,13 +134,14 @@ merges the fix PR, and a merged fix is only announced, never deployed by itself.
 
 The iPhone app has no login of its own. It gets keys from the Mac in one of two ways:
 
-- **iCloud Keychain** (Settings → Platforms → iPhone → *Connect the iPhone app*): one synced keychain item
+- **iCloud Keychain** (Settings → iPhone → *Connect the iPhone app*): one synced keychain item
   (service `app.deploycenter.link`) holds the Vercel token made for the iPhone, the Render key and
   the GitHub token of the `gh` CLI. It reaches every device signed in with your Apple ID. Turning
   the switch off deletes it there too (`PhoneLink.remove`); deleting the app does not.
 - **QR code** (*Show a QR code for the iPhone …*): the same keys, as base64 JSON behind
   `deploycenter-link:1:`. They are not encrypted: anyone who sees or photographs the code has the
-  keys. The window closes after 60 seconds, but the keys in it do not expire.
+  keys. The window closes after 60 seconds, and the iPhone app refuses a code made more than five
+  minutes ago, but the keys in it do not expire.
 
 Use a Vercel token made only for the phone, and a Render key you can revoke. If a code may have
 been seen, or a device is lost, revoke the keys at Vercel, Render and GitHub; removing the link
@@ -160,7 +163,7 @@ does not make a copied key useless.
   `pull_request_target` trigger. The examples set `permissions: contents: read` (or none) and
   pass keys as secrets. Pin the action to a release tag or a commit SHA, not `@main`.
 - The MCP server is read-only unless you start it with `DEPLOYS_MCP_ALLOW_DEPLOY=1`. Build logs it
-  returns are not masked, and they are text from somewhere else: an agent with deploy rights could
+  returns are masked first (the same masker as Autofix; a help, not a guarantee), and they are text from somewhere else: an agent with deploy rights could
   be talked into a deploy by a log line. Keep deploy rights off unless you watch the agent.
 
 ## Provenance of the CLI download
