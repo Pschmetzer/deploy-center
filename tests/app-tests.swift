@@ -763,7 +763,7 @@ if let g = try? JSONDecoder().decode(GuardStatus.self, from: Data(guardJSON.utf8
     expect("guard: a broken action is skipped", g.lastActions.count, 0)
 } else { expect("guard status decodes", false, true) }
 let afJSON = #"{"routine":"trig","token":true,"scheduled":false,"fires":[{"at":1,"project":"a","status":"fired"},{"at":"x"}]}"#
-expect("autofix settings: a broken fire is skipped", (try? JSONDecoder().decode(AutofixStatus.self, from: Data(afJSON.utf8)))?.fires.count ?? -1, 1)
+expect("autofix settings: a broken fire is skipped", (try? JSONDecoder().decode(AutofixReport.self, from: Data(afJSON.utf8)))?.fires.count ?? -1, 1)
 expect("a name like an option is not passed on", "\(Store.safeArg("-rf")) \(Store.safeArg("web"))", "false true")
 expect("PATH with a folder that is gone is read again", Tool.pathFoldersExist(FileManager.default.homeDirectoryForCurrentUser.path + "/.nvm/versions/node/v0-\(UUID().uuidString)/bin:/usr/bin"), false)
 expect("PATH of system folders only is kept", Tool.pathFoldersExist("/usr/bin:/bin"), true)
@@ -888,6 +888,31 @@ MainActor.assumeIsolated {
     spin { !ci.items[.vercel]![0].state.isActive }
     // Nothing was started yet: the row is simply back to idle (main's rule).
     expect("CI wait cancelled", "\(ci.items[.vercel]![0].state)", "idle")
+
+    // The follow deadline (40 minutes, 12 hours), on a short clock: a deploy that never ends frees the row.
+    Store.followLimits = (.milliseconds(100), .milliseconds(400))
+    Tool.testRunner = { args in
+        switch (args.first ?? "", args.dropFirst().first ?? "") {
+        case ("window", _): return Data(#"{"denied":false}"#.utf8)
+        case ("vercel", "deploy-json"): return Data(#"{"id":"dpl_2","state":"QUEUED"}"#.utf8)
+        case ("vercel", "status"): return Data(#"{"id":"dpl_2","state":"BUILDING"}"#.utf8)
+        default: throw ToolError(message: "not in this test")
+        }
+    }
+    let slow = Store()
+    var c = item(changed: true, commits: 1); c.repo = "me/app"
+    slow.items[.vercel] = [c]
+    slow.deployOne(c, preview: false)
+    var sawOverdue = false
+    spin {
+        if slow.items[.vercel]![0].state == Store.overdueState { sawOverdue = true }
+        if case .failed = slow.items[.vercel]![0].state { return true } else { return false }
+    }
+    expect("follow: overdue said before giving up", sawOverdue, true)
+    expect("follow: no result after the deadline", "\(slow.items[.vercel]![0].state)",
+           "failed(\"\(L("No result after 12 hours – check the dashboard", "Kein Ergebnis nach 12 Stunden – im Dashboard nachsehen"))\")")
+    expect("follow: nothing left to follow after the deadline", Store.readFollowed().isEmpty, true)
+    Store.followLimits = (.seconds(40 * 60), .seconds(12 * 3600))
 
     Tool.testRunner = nil
     Store.pollNanos = nil
@@ -1068,7 +1093,7 @@ do {
     expect("doctor: the provider's own object wins over the flat copy", flat?.renderKey ?? true, false)
     let g = try? JSONDecoder().decode(GuardStatus.self, from: Data(#"{"enabled":true,"lastActions":[],"allowances":[],"pathMissing":["vercel"]}"#.utf8))
     expect("guard: a tool the job no longer finds", g?.pathMissing ?? [], ["vercel"])
-    let a = try? JSONDecoder().decode(AutofixStatus.self, from: Data(#"{"token":true,"scheduled":true,"fires":[]}"#.utf8))
+    let a = try? JSONDecoder().decode(AutofixReport.self, from: Data(#"{"token":true,"scheduled":true,"fires":[]}"#.utf8))
     expect("autofix: older script, nothing missing", a?.pathMissing ?? ["?"], [String]())
 }
 
@@ -1315,7 +1340,9 @@ expect("German method for the ledger", SavingsFormat.methodGerman("Estimate. Sin
 expect("an unknown method is shown as written", SavingsFormat.methodGerman("New way of counting."), "New way of counting.")
 
 // Settings parts read an answer with fields missing instead of showing "not set up".
-expect("autofix status without scheduled", (try? JSONDecoder().decode(AutofixStatus.self, from: Data(#"{"routine":"trig_1","token":true,"fires":[]}"#.utf8)))?.routine ?? "nil", "trig_1")
+expect("autofix status without scheduled", (try? JSONDecoder().decode(AutofixReport.self, from: Data(#"{"routine":"trig_1","token":true,"fires":[]}"#.utf8)))?.routine ?? "nil", "trig_1")
+// One reader for rows and Settings: an empty routine is none (Settings showed "1. Routine" as done).
+expect("autofix status: an empty routine is not ready", (try? JSONDecoder().decode(AutofixReport.self, from: Data(#"{"routine":"","token":true,"scheduled":true,"pathMissing":["gh"],"fires":[]}"#.utf8))).map { "\($0.ready) \($0.scheduled) \($0.pathMissing)" } ?? "nil", "false true [\"gh\"]")
 expect("guard status without lastActions", (try? JSONDecoder().decode(GuardStatus.self, from: Data(#"{"enabled":true}"#.utf8)))?.enabled ?? false, true)
 expect("team config without sources", (try? JSONDecoder().decode(TeamConfig.self, from: Data(#"{"readonly":{"value":true,"from":"repo"}}"#.utf8)))?.readonly.value ?? false, true)
 
@@ -1327,6 +1354,17 @@ expect("mask Google", LogTools.maskSecrets("AIzaSyA1234567890abcdefghijklmnopqrs
 expect("mask --token", LogTools.maskSecrets("vercel deploy --token abc123def"), "vercel deploy --token [HIDDEN]")
 expect("mask private key block", LogTools.maskSecrets("a\n-----BEGIN RSA PRIVATE KEY-----\nMIIE\nabc\n-----END RSA PRIVATE KEY-----\nb"), "a\n[PRIVATE KEY]\nb")
 expect("mask cut-off private key", LogTools.maskSecrets("x -----BEGIN PRIVATE KEY-----\nMIIE"), "x [PRIVATE KEY]")
+// The script's masker test reads the same lines (tests/script-tests.sh): what one hides, the other hides.
+if let sample = try? String(contentsOfFile: "tests/fixtures/mask/secrets.txt", encoding: .utf8),
+   let plain = try? String(contentsOfFile: "tests/fixtures/mask/plain.txt", encoding: .utf8) {
+    let left = LogTools.maskSecrets(sample).split(separator: "\n").map { $0.replacingOccurrences(of: "SECRET_KEY=", with: "S_K=") }.filter { $0.contains("SECRET") }
+    expect("mask: no secret of the script's list survives", left, [])
+    expect("mask: an ordinary build line is left as it is", LogTools.maskSecrets(plain), plain)
+} else { expect("mask fixtures readable", false, true) }
+// The phone's GitHub token: its own read-only one wins over the gh CLI's; neither unless asked.
+expect("phone GitHub: own token wins", PhoneLinkModel.githubSource(own: "github_pat_x", shareGh: true), PhoneLinkModel.GitHubSource.own)
+expect("phone GitHub: gh only when switched on", [PhoneLinkModel.githubSource(own: nil, shareGh: true), PhoneLinkModel.githubSource(own: "", shareGh: false)],
+       [PhoneLinkModel.GitHubSource.gh, .none])
 var lk = LinkedKeys(); lk.render = "r"; var lk2 = lk; lk2.updated = Date().addingTimeInterval(99)
 expect("same keys at another time", PhoneLinkModel.sameKeys(lk, lk2), true)
 lk2.github = "g"
@@ -1793,7 +1831,7 @@ if let dir = ProcessInfo.processInfo.environment["DC_CONTRACT"] {
         expect("contract guard: actions and allowances", "\(g.lastActions.map(\.action)) \(g.allowances.map(\.platform).sorted())", "[\"off\", \"failed\"] [\"all\", \"vercel\"]")
         expect("contract guard: the error of a failed switch", g.lastActions.last?.error ?? "-", "could not disconnect web")
     }
-    if let a = load(AutofixStatus.self, "autofix.json") {
+    if let a = load(AutofixReport.self, "autofix.json") {
         expect("contract autofix: routine, token, newest first", "\(a.routine ?? "-") \(a.token) \(a.fires.map(\.project))", "routine-1 true [\"web\", \"api\"]")
         expect("contract autofix: the PR and the merged commit", "\(a.fires.first?.prNumber ?? 0) \(a.fires.first?.mergedSha ?? "-")", "9 ffff999")
     }

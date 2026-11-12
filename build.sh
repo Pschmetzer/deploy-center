@@ -181,6 +181,8 @@ cat > "$BUILD/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>Deploy Center</string>
   <key>CFBundleDisplayName</key><string>Deploy Center</string>
   <key>CFBundleIdentifier</key><string>app.deploycenter.mac</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>de</string></array>
   <key>CFBundleExecutable</key><string>DeployCenter</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -207,6 +209,8 @@ if [ "$widgets" = 1 ]; then
   <key>CFBundleName</key><string>Deploy Center Widgets</string>
   <key>CFBundleDisplayName</key><string>Deploy Center</string>
   <key>CFBundleIdentifier</key><string>app.deploycenter.mac.widgets</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>de</string></array>
   <key>CFBundleExecutable</key><string>DeployCenterWidgets</string>
   <key>CFBundlePackageType</key><string>XPC!</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>

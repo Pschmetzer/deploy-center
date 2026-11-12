@@ -942,32 +942,13 @@ expect "ai status: never the key" "$(ANTHROPIC_API_KEY=sk-ant-api03-TESTKEY cli 
 
 # --- security: masking, no shell or jq code from data, names in API paths, secrets on stdin ---
 # The log handed to the Autofix routine: common token formats are masked, the build output is kept.
-sample="$(cat <<'LOG'
-Authorization: Bearer abcdefSECRET1234567890
-aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYSECRET
-AKIAIOSFODNN7SECRETX ASIAIOSFODNN7SECRETX
-sk_live_51HxxxxxxxxxxSECRET rk_test_51HxxxxxxSECRET whsec_abcdefSECRET123
-SECRET_KEY=djangoSECRETvalue STRIPE_KEY=fooSECRET NEXT_PUBLIC_ANON_KEY=xSECRET
-DATABASE_URL=postgres://u:pwSECRET@db.example.com/db
------BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktSECRET
------END OPENSSH PRIVATE KEY-----
-PEM="-----BEGIN PRIVATE KEY-----\nMIIBSECRET\n-----END PRIVATE KEY-----"
-vercel deploy --token abcdefSECRET123456 --prod
-VERCEL_TOKEN=abcdefSECRET123456
-ghp_abcdefghijklmnopSECRET github_pat_11AAAAAA_bbbbSECRET glpat-abcdefSECRET1234
-eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sigSECRET
-npm_abcdefghijklmnopqrstSECRET AIzaSyA-abcdefghijklmnopqrSECRET sk-ant-api03-abSECRET rnd_abcdefSECRET1
-export API_TOKEN="quoted SECRET with spaces"
-{"password": "jsonSECRET", "client_secret":"jsSECRET"}
-x-api-key: hdrSECRET123
-LOG
-)"
+# The same lines as the app's masker test (tests/app-tests.swift): one list for both maskers.
+sample="$(cat tests/fixtures/mask/secrets.txt)"
 masked="$(printf '%s\n' "$sample" | af_mask)"
 expect "mask: no secret of any listed format survives" "$(printf '%s\n' "$masked" | sed 's/SECRET_KEY=/S_K=/' | grep -c SECRET)" "0"
 expect "mask: the header name and scheme stay readable" "$(printf '%s\n' "$masked" | grep -c '^Authorization: Bearer \[masked\]$')" "1"
 expect "mask: a private key block becomes one line" "$(printf '%s\n' "$masked" | grep -c 'masked private key')" "2"
-plain='npm ERR! ./src/author.ts:12 Type error: keyboard: 3 tokens: 12 of 40'
+plain="$(cat tests/fixtures/mask/plain.txt)"
 expect "mask: an ordinary build line is left as it is" "$(printf '%s\n' "$plain" | af_mask)" "$plain"
 
 # Values are arguments of `bash -c`, never part of its script: a team id or a temp folder with

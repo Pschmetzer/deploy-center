@@ -5,27 +5,6 @@
 import SwiftUI
 import AppKit
 
-struct AutofixStatus: Decodable {
-    /// The same fire as the rows read (Model.swift), with its PR state.
-    typealias Fire = AutofixReport.Fire
-    let routine: String?
-    let token: Bool
-    let scheduled: Bool
-    let fires: [Fire]
-    /// Tools the scheduled job no longer finds on its PATH (newer scripts).
-    let pathMissing: [String]
-    /// A broken fire is skipped, not the reason Settings shows nothing.
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: K.self)
-        routine = (try? c.decodeIfPresent(String.self, forKey: .routine)) ?? nil
-        token = ((try? c.decodeIfPresent(Bool.self, forKey: .token)) ?? nil) ?? false
-        scheduled = ((try? c.decodeIfPresent(Bool.self, forKey: .scheduled)) ?? nil) ?? false
-        fires = (((try? c.decodeIfPresent([Lossy<Fire>].self, forKey: .fires)) ?? nil) ?? []).compactMap(\.value)
-        pathMissing = ((try? c.decodeIfPresent([String].self, forKey: .pathMissing)) ?? nil) ?? []
-    }
-    private enum K: String, CodingKey { case routine, token, scheduled, fires, pathMissing }
-}
-
 struct AutofixSettings: View {
     /// The rows read the same status: after a run here they are brought up to date at once.
     @ObservedObject var store: Store
@@ -33,7 +12,7 @@ struct AutofixSettings: View {
     private var items: [Item] { store.items.values.flatMap { $0 } }
     /// Read so the output redraws at once when demo mode is switched (⇧⌘D).
     @AppStorage("demoMode") private var demoMode = false
-    @State private var status: AutofixStatus?
+    @State private var status: AutofixReport?
     /// A failed read keeps the last good status on screen, with this under it.
     @State private var readError: String?
     @State private var routineId = ""
@@ -42,7 +21,7 @@ struct AutofixSettings: View {
     @State private var message: String?
     @State private var failed = false
 
-    private var ready: Bool { status?.routine != nil && status?.token == true }
+    private var ready: Bool { status?.ready == true }
 
     var body: some View {
         Section {
@@ -137,7 +116,7 @@ struct AutofixSettings: View {
         Image(systemName: ok ? "checkmark.circle.fill" : "circle").foregroundStyle(ok ? Color.good : .secondary)
     }
 
-    static func label(_ f: AutofixStatus.Fire) -> String {
+    static func label(_ f: AutofixReport.Fire) -> String {
         if let r = f.redeployedSha { return L("fix deployed", "Fix deployt") + " (\(r.prefix(7)))" }
         if let r = f.mergedSha { return L("fix merged, ready to deploy", "Fix gemergt, bereit zum Deployen") + " (\(r.prefix(7)))" }
         // The PR's state says more than "session started".
@@ -160,7 +139,7 @@ struct AutofixSettings: View {
 
     private func reload() async {
         do {
-            status = try await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20)
+            status = try await Tool.json(["autofix", "status"], as: AutofixReport.self, timeout: 20)
             readError = nil
         } catch { readError = error.localizedDescription }
         if routineId.isEmpty, let r = status?.routine { routineId = r }

@@ -27,7 +27,7 @@ enum LogTools {
     private static let secrets: [(NSRegularExpression, String)] = [
         // A private key over several lines, or one cut off before its END line.
         (#"(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----.*?(-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----|\z)"#, "[PRIVATE KEY]"),
-        (#"\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"#, "[GITHUB TOKEN]"),
+        (#"\b(gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,})"#, "[GITHUB TOKEN]"),
         (#"\bglpat-[A-Za-z0-9_-]{8,}"#, "[GITLAB TOKEN]"),
         (#"\b((sk|rk|pk)_(live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,})"#, "[STRIPE KEY]"),
         (#"\bAIza[A-Za-z0-9_-]{20,}"#, "[GOOGLE KEY]"),
@@ -35,12 +35,17 @@ enum LogTools {
         (#"\bASIA[0-9A-Z]{12,}"#, "[AWS KEY]"),
         (#"(--(?i:token|password|api-key|secret)(?:=|\s+))[^\s"']+"#, "$1[HIDDEN]"),
         (#"\bsk-[A-Za-z0-9_-]{16,}"#, "[API KEY]"),
-        (#"\brnd_[A-Za-z0-9]{16,}"#, "[RENDER KEY]"),
+        (#"\brnd_[A-Za-z0-9]{8,}"#, "[RENDER KEY]"),
         (#"\bAKIA[0-9A-Z]{16}\b"#, "[AWS KEY]"),
         (#"\bxox[abprs]-[A-Za-z0-9-]{10,}"#, "[SLACK TOKEN]"),
-        (#"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"#, "[JWT]"),
+        (#"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+"#, "[JWT]"),
+        // NAME=value, NAME: value, "name": "value", for names that say secret (VERCEL_TOKEN, x-api-key,
+        // aws_secret_access_key, AccountKey=, ...): the script's rule, so "tokens: 12" stays as it is.
+        (#"\b((?i:[A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn))["']?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("[^"]*"|'[^']*'|[^\s"',;]+)"#, "$1$2[HIDDEN]"),
         (#"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}"#, "$1 [HIDDEN]"),
-        (#"(?i)\b([A-Z0-9_]*(token|secret|password|passwd|api_?key|private_?key)[A-Z0-9_]*)(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)"#, "$1$3[HIDDEN]"),
+        (#"(?i)\b((?:set-cookie|cookie)\s*:\s*).+"#, "$1[HIDDEN]"),
+        // Signed URLs: the signature and credential parts of a query (S3, Azure SAS, GCS).
+        (#"([?&](?i:sig|signature|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&\s"']+"#, "$1[HIDDEN]"),
         (#"(?i)(://[^/\s:@]+:)[^@\s/]+@"#, "$1[HIDDEN]@"),
         (#"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#, "[EMAIL]"),
     ].map { (try! NSRegularExpression(pattern: $0.0), $0.1) }
