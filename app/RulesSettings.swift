@@ -128,10 +128,15 @@ struct RulesConfig: Equatable {
         var c: [String] = []
         if !r.projects.isEmpty { c.append(L("for ", "für ") + r.projects.map { String($0.split(separator: "/").last ?? "") }.joined(separator: ", ")) }
         if r.ciGreen { c.append(L("CI is green", "CI grün ist")) }
-        if !r.paths.isEmpty { c.append((r.onlyPaths ? L("only ", "nur ") : "") + r.paths.joined(separator: ", ") + L(" changed", " geändert")) }
+        if !r.paths.isEmpty {
+            let only: String = r.onlyPaths ? L("only ", "nur ") : ""
+            c.append(only + r.paths.joined(separator: ", ") + L(" changed", " geändert"))
+        }
         if !r.labels.isEmpty { c.append(L("a PR has ", "ein PR hat ") + r.labels.joined(separator: ", ")) }
         if let h = r.minAgeHours { c.append(L("it waits \(h) h or more", "es \(h) h oder länger wartet")) }
-        return (c.isEmpty ? L("Always", "Immer") : L("When ", "Wenn ") + c.joined(separator: L(" and ", " und "))) + ": " + r.then.title
+        let and: String = L(" and ", " und ")
+        let when: String = c.isEmpty ? L("Always", "Immer") : L("When ", "Wenn ") + c.joined(separator: and)
+        return when + ": " + r.then.title
     }
 }
 

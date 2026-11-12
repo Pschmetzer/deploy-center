@@ -2278,6 +2278,13 @@ struct Row: View {
         return .other
     }
 
+    private func lastDeployHelp(_ at: Date) -> String {
+        let when: String = at.formatted(date: .complete, time: .shortened)
+        guard let msg = item.lastMsg else { return when }
+        let label: String = item.triggered ? L("Last triggered: ", "Zuletzt ausgelöst: ") : L("Live now: ", "Jetzt live: ")
+        return when + "\n" + label + (Demo.on ? "…" : msg)
+    }
+
     @ViewBuilder private var lastDeploy: some View {
         if let at = item.lastAt {
             let s = (item.lastState ?? "").lowercased()
@@ -2298,7 +2305,7 @@ struct Row: View {
                         .accessibilityLabel(L("Build log", "Build-Log"))
                 }
             }
-            .help(at.formatted(date: .complete, time: .shortened) + (item.lastMsg.map { "\n" + (item.triggered ? L("Last triggered: ", "Zuletzt ausgelöst: ") : L("Live now: ", "Jetzt live: ")) + (Demo.on ? "…" : $0) } ?? ""))
+            .help(lastDeployHelp(at))
         } else {
             Text(L("Never deployed", "Noch nie deployt")).font(.caption).foregroundStyle(.secondary)
         }

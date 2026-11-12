@@ -486,6 +486,29 @@ struct SettingsView: View {
         Section(L("Savings", "Ersparnis")) { SavingsLink() }
     }
 
+    /// Counts and times only: no project names, no error texts (they can hold names).
+    private func diagnosticsText() -> String {
+        let counts: [String: Int] = Dictionary(uniqueKeysWithValues: Platform.allCases.map { ($0.cli, store.items[$0]?.count ?? 0) })
+        let gitlab: Int = Set(allItems.compactMap(\.repo).filter { GitHost(repo: $0) != .github }).count
+        let d: Doctor? = store.doctor
+        let jobs: [String] = d?.jobsMissing ?? []
+        let failures: [String] = Platform.allCases.compactMap { p in
+            store.lastLoadError[p].map { "\(p.cli) failed \($0.at.formatted(date: .numeric, time: .shortened))" }
+        }
+        let base: String = SettingsText.diagnostics(version: version, os: ProcessInfo.processInfo.operatingSystemVersionString,
+                                                    doctor: d, providers: store.providers, counts: counts,
+                                                    gitlabRepos: gitlab, autofix: store.autofix)
+        let perl: String = d?.perl.map { String($0) } ?? "?"
+        let curl: String = d?.curl.map { String($0) } ?? "?"
+        let extra: [String] = [
+            "language \(AppLanguage.running.rawValue), observer \(store.observer)",
+            "perl \(perl), curl \(curl)",
+            "last load error: " + (failures.isEmpty ? "none" : failures.joined(separator: "; ")),
+            "jobs missing tools: " + (jobs.isEmpty ? "none" : jobs.joined(separator: ", ")),
+        ]
+        return base + "\n" + extra.joined(separator: "\n")
+    }
+
     // MARK: Help
 
     @ViewBuilder private var helpSection: some View {
@@ -494,23 +517,7 @@ struct SettingsView: View {
                 if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
                 NSWorkspace.shared.open(Log.url)
             }
-            CopyButton(title: L("Copy diagnostics", "Diagnose kopieren")) {
-                let counts = Dictionary(uniqueKeysWithValues: Platform.allCases.map { ($0.cli, store.items[$0]?.count ?? 0) })
-                let gitlab = Set(allItems.compactMap(\.repo).filter { GitHost(repo: $0) != .github }).count
-                let d = store.doctor
-                // Counts and times only: no project names, no error texts (they can hold names).
-                let jobs: [String] = d?.jobsMissing ?? []
-                let failures = Platform.allCases.compactMap { p in
-                    store.lastLoadError[p].map { "\(p.cli) failed \($0.at.formatted(date: .numeric, time: .shortened))" }
-                }
-                return SettingsText.diagnostics(version: version, os: ProcessInfo.processInfo.operatingSystemVersionString,
-                                                doctor: store.doctor, providers: store.providers, counts: counts,
-                                                gitlabRepos: gitlab, autofix: store.autofix)
-                    + "\n" + ["language \(AppLanguage.running.rawValue), observer \(store.observer)",
-                              "perl \(d?.perl.map(String.init) ?? "?"), curl \(d?.curl.map(String.init) ?? "?")",
-                              "last load error: " + (failures.isEmpty ? "none" : failures.joined(separator: "; ")),
-                              "jobs missing tools: " + (jobs.isEmpty ? "none" : jobs.joined(separator: ", "))].joined(separator: "\n")
-            }
+            CopyButton(title: L("Copy diagnostics", "Diagnose kopieren")) { diagnosticsText() }
             Button(L("Show the first-start guide again", "Erststart-Anleitung wieder zeigen")) { UserDefaults.standard.set(false, forKey: FirstStart.key) }
             Text(L("Diagnostics: versions and what is connected; no names, no keys.", "Diagnose: Versionen und was verbunden ist; keine Namen, keine Schlüssel."))
                 .font(.caption).foregroundStyle(.secondary)
