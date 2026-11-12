@@ -144,13 +144,15 @@ async function copyNotes(name: string, projectRef: string) {
 // (the same excerpt and masking as the Mac app and the VS Code extension).
 export async function copyBuildError(p: {
   name: string;
+  // platform:name when the name is on two platforms.
+  projectRef?: string;
   platform: string;
   repo?: string | null;
   state?: string | null;
 }) {
   const toast = await showToast({ style: Toast.Style.Animated, title: `Reading the build log of ${p.name}` });
   try {
-    const log = await buildLog(p.name);
+    const log = await buildLog(p.projectRef ?? p.name);
     await Clipboard.copy(
       aiPrompt({ name: p.name, platform: p.platform, repo: p.repo ?? null, state: p.state ?? null }, log),
     );

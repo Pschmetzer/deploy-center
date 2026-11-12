@@ -48,5 +48,5 @@ jobs:
           set -euo pipefail
           args=(--issue --out digest.md)
           [ -n "$DEPLOYS_NOTIFY_URL" ] && args+=(--post)
-          "$(dirname "$DEPLOYS")/integrations/digest/digest.sh" "${args[@]}"
+          deploy-center/integrations/digest/digest.sh "${args[@]}"
           cat digest.md >> "$GITHUB_STEP_SUMMARY"

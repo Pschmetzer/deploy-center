@@ -7,9 +7,7 @@
 - A folder's remote matches a project only on the same host: `gitlab.com:me/app` is not GitHub's `me/app`.
 - After a deploy starts, the extension follows it (every 15 s, at most 15 min) and says when it is live or failed, with "Copy for AI" and "Show log".
 - Runs on your own machine in remote windows (SSH, WSL, Dev Containers), where `deploys` and its logins are.
-- Build logs open in their own output channel ("Deploy Center: Build log"), so CLI warnings stay.
 - A deploy start that times out says it may have started anyway, so you check before deploying again.
-- A timeout stops `deploys` together with the `vercel`, `gh` or `curl` it started.
 - A second click on Deploy while the dialog or the start of that project is open does not open a second one.
 - "Copy for AI" masks the same key shapes as the CLI: GitLab, Stripe, Google, npm, AWS session keys, private keys.
 - A timeout ends the CLI and everything it started (its process group), not only the shell.
