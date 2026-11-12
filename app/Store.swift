@@ -1685,6 +1685,8 @@ final class Store: ObservableObject {
 
     /// Between two status questions; tests make it short. nil: the pace of `pollSeconds`.
     nonisolated(unsafe) static var pollNanos: UInt64?
+    /// When following says "no result" (40 minutes) and gives up (12 hours); tests make them short.
+    nonisolated(unsafe) static var followLimits: (overdue: Duration, deadline: Duration) = (.seconds(40 * 60), .seconds(12 * 3600))
 
     /// Shown when a build has no result after 40 minutes: still active, so no second build can start.
     nonisolated static var overdueState: RunState { .running(L("no result after 40 min – still asking, check the dashboard",
@@ -1703,7 +1705,7 @@ final class Store: ObservableObject {
         // On the suspending clock, which stands still while the Mac sleeps: a lid closed for an hour
         // must not turn a deploy that went live meanwhile into "no result".
         let clock = SuspendingClock()
-        let start = clock.now, overdue = start.advanced(by: .seconds(40 * 60)), deadline = start.advanced(by: .seconds(12 * 3600))
+        let start = clock.now, overdue = start.advanced(by: Self.followLimits.overdue), deadline = start.advanced(by: Self.followLimits.deadline)
         var toldOverdue = false
         let usual = usualMinutes(item)
         while clock.now < deadline {

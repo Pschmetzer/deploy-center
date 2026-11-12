@@ -36,6 +36,14 @@ final class PhoneLinkModel: ObservableObject {
     /// The gh CLI's token can usually write (repo, workflow); the phone only reads. Off for a new
     /// connection; a connection made before the switch existed keeps getting it (`migrateGitHub`).
     nonisolated static let githubKey = "phoneLinkGitHub"
+    /// A token made for the phone (fine-grained, read-only), in this Mac's keychain. It wins over the gh token.
+    nonisolated static let githubOwnKey = "deploy-center-phone-github"
+    enum GitHubSource: Equatable { case own, gh, none }
+    /// Which GitHub token the phone gets: its own one when saved, else the gh CLI's when switched on.
+    nonisolated static func githubSource(own: String?, shareGh: Bool) -> GitHubSource {
+        if let own, !own.isEmpty { return .own }
+        return shareGh ? .gh : .none
+    }
 
     /// The switch was never set: on when this Mac already handed keys to the phone (a keychain entry,
     /// or the link switched on: a link made when the token always went along), off for a new one. Decided once, then it is the
@@ -95,7 +103,10 @@ final class PhoneLinkModel: ObservableObject {
         // Only when asked for (Settings → iPhone): the gh token's scopes are wider than the phone needs.
         // Normally decided at launch already (`migrateGitHubAtLaunch`); here only the keychain counts.
         migrateGitHub(linkExists: { PhoneLink.read() != nil })
-        if UserDefaults.standard.bool(forKey: githubKey) { k.github = await output("/usr/bin/env", ["gh", "auth", "token"]) ?? "" }
+        let own = MacSecret.get(githubOwnKey)
+        if githubSource(own: own, shareGh: UserDefaults.standard.bool(forKey: githubKey)) == .gh {
+            k.github = await output("/usr/bin/env", ["gh", "auth", "token"]) ?? ""
+        } else { k.github = own ?? "" }
         k.updated = Date()
         return k
     }
@@ -148,6 +159,8 @@ struct PhoneLinkSettings: View {
     @State private var hasVercel = MacSecret.get("deploy-center-phone-vercel") != nil
     @State private var qr = false
     @AppStorage(PhoneLinkModel.githubKey) private var shareGitHub = false
+    @State private var github = ""
+    @State private var hasGitHub = MacSecret.get(PhoneLinkModel.githubOwnKey) != nil
     @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
@@ -170,8 +183,29 @@ struct PhoneLinkSettings: View {
             }
             Link(L("Create a Vercel token (vercel.com → Account → Tokens)", "Vercel-Token erstellen (vercel.com → Account → Tokens)"),
                  destination: URL(string: "https://vercel.com/account/tokens")!)
+            HStack {
+                SecureField(hasGitHub ? L("GitHub token for the iPhone: saved", "GitHub-Token fürs iPhone: gespeichert")
+                                      : L("GitHub token for the iPhone (read-only)", "GitHub-Token fürs iPhone (nur lesen)"), text: $github)
+                Button(L("Save", "Sichern")) {
+                    MacSecret.set(PhoneLinkModel.githubOwnKey, github); github = ""
+                    hasGitHub = MacSecret.get(PhoneLinkModel.githubOwnKey) != nil
+                    Task { await link.pushIfOn() }
+                }.disabled(github.isEmpty)
+                if hasGitHub {
+                    Button(L("Remove", "Entfernen")) {
+                        MacSecret.set(PhoneLinkModel.githubOwnKey, "")
+                        hasGitHub = MacSecret.get(PhoneLinkModel.githubOwnKey) != nil
+                        Task { await link.pushIfOn() }
+                    }
+                }
+            }
+            .help(L("A fine-grained token with read access to Contents and Pull requests is enough; the phone only reads commits and pull requests. It is used instead of the gh CLI's token.",
+                    "Ein Fine-grained-Token mit Lesezugriff auf Contents und Pull requests reicht; das iPhone liest nur Commits und Pull Requests. Es wird statt des Tokens der gh-CLI benutzt."))
+            Link(L("Create a fine-grained GitHub token (github.com → Settings → Developer settings)", "Fine-grained-GitHub-Token erstellen (github.com → Settings → Developer settings)"),
+                 destination: URL(string: "https://github.com/settings/personal-access-tokens/new")!)
             Toggle(L("Also hand over the GitHub token of the gh CLI", "Auch das GitHub-Token der gh-CLI übergeben"), isOn: $shareGitHub)
                 .onChange(of: shareGitHub) { Task { await link.pushIfOn() } }
+                .disabled(hasGitHub)
                 .help(L("It can usually push code and run workflows; the iPhone app only reads commits. Off, the phone shows no commit counts.",
                         "Es darf meist Code pushen und Workflows starten; die iPhone-App liest nur Commits. Aus: das iPhone zeigt keine Commit-Zahlen."))
             Button(L("Show a QR code for the iPhone …", "QR-Code fürs iPhone zeigen …")) { qr = true }
@@ -183,8 +217,8 @@ struct PhoneLinkSettings: View {
                 Text(L("Handed over ", "Übergeben ") + t.formatted(.relative(presentation: .named))).foregroundStyle(.secondary)
             }
         } header: { Text("iPhone") } footer: {
-            Text(L("The iPhone app gets the keys of this Mac: the Vercel token above, the Render key and, if you turn it on, the GitHub token of the gh CLI (its scopes are wide; a fine-grained read-only token is safer). With iCloud Keychain they reach every device signed in with your Apple ID, end-to-end encrypted; there is no server of ours. Turning it off removes them there too.",
-                   "Die iPhone-App bekommt die Schlüssel dieses Macs: das Vercel-Token oben, den Render-Key und, wenn eingeschaltet, das GitHub-Token der gh-CLI (es darf viel; ein fein begrenztes Nur-Lese-Token ist sicherer). Mit dem iCloud-Schlüsselbund kommen sie auf jedes Gerät mit deiner Apple-ID, Ende-zu-Ende-verschlüsselt; es gibt keinen Server von uns. Ausschalten entfernt sie dort auch."))
+            Text(L("The iPhone app gets the keys of this Mac: the Vercel token above, the Render key and a GitHub token: the read-only one saved above or, if you turn it on, the gh CLI's (its scopes are wide). With iCloud Keychain they reach every device signed in with your Apple ID, end-to-end encrypted; there is no server of ours. Turning it off removes them there too.",
+                   "Die iPhone-App bekommt die Schlüssel dieses Macs: das Vercel-Token oben, den Render-Key und ein GitHub-Token: das oben gesicherte Nur-Lese-Token oder, wenn eingeschaltet, das der gh-CLI (es darf viel). Mit dem iCloud-Schlüsselbund kommen sie auf jedes Gerät mit deiner Apple-ID, Ende-zu-Ende-verschlüsselt; es gibt keinen Server von uns. Ausschalten entfernt sie dort auch."))
         }
         .sheet(isPresented: $qr) { PhoneQRSheet() }
     }
