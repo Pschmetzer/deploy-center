@@ -33,6 +33,14 @@ test("secrets are masked", () => {
   assert.match(t, /\[HIDDEN\]/);
 });
 
+test("the shapes of the CLI's masker are masked too", () => {
+  const k = (a: string, b: string) => a + b; // built here, as above
+  const t = maskSecrets([k("glpat-", "abcdefgh1234"), k("sk_live_", "abcdefgh1234"), k("whsec_", "abcdefgh1234"),
+    k("AIza", "abcdefghijklmnopqrstuv12"), k("npm_", "abcdefghijklmnopqrst12"), k("ASIA", "ABCDEFGHIJKL1234"),
+    k("-----BEGIN RSA PRIVATE ", "KEY-----\nabc\n-----END RSA PRIVATE KEY-----")].join(" "));
+  assert.ok(!/glpat-a|sk_live_a|whsec_a|AIzaa|npm_a|ASIAA|\nabc\n/.test(t), t);
+});
+
 test("the masking covers what the app, CLI and MCP server mask", () => {
   const cases: [string, string][] = [
     ["push glpat-" + "abcdefgh12345678", "push [GITLAB TOKEN]"],

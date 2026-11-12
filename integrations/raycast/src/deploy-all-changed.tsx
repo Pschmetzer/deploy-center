@@ -1,5 +1,5 @@
 import { Action, ActionPanel, Alert, Color, Icon, List, Toast, confirmAlert, showToast } from "@raycast/api";
-import { usePromise } from "@raycast/utils";
+import { useCachedPromise } from "@raycast/utils";
 import { useState } from "react";
 import { ChangedProject, changed, deployChanged, platformLabel, plural } from "./lib/deploys";
 import { changedItemProps, commitsText, sortByAge } from "./lib/changed";
@@ -35,7 +35,7 @@ async function deployAll(list: ChangedProject[], onEach: (key: string, o: Outcom
 }
 
 export default function DeployAllChanged() {
-  const { data, error, isLoading, revalidate } = usePromise(changed, [], { onError: () => undefined });
+  const { data, error, isLoading, revalidate } = useCachedPromise(changed, [], { onError: () => undefined });
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
   const [running, setRunning] = useState(false);
   // After a run the list is read again, and "Deploy All" stays off for this command: what was
@@ -45,18 +45,39 @@ export default function DeployAllChanged() {
   const commits = list.reduce((n, p) => n + (p.pendingCommits ?? 0), 0);
 
   async function start() {
-    const lines = list.map((p) => `• ${p.name} (${platformLabel(p.platform)}, ${commitsText(p)})`).join("\n");
+    // Read the list again: the window may have been open for a while, and some projects may be
+    // live or ignored by now. The alert shows, and the loop deploys, the fresh list only.
+    let fresh: ChangedProject[];
+    try {
+      fresh = sortByAge((await changed()).data ?? []);
+    } catch (e) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Could not read what is waiting",
+        message: errorMessage(e),
+      });
+      return;
+    }
+    if (!fresh.length) {
+      await showToast({ style: Toast.Style.Success, title: "Nothing is waiting any more" });
+      revalidate();
+      return;
+    }
+    const key = (p: ChangedProject) => `${p.platform}/${p.name}`;
+    const gone = list.filter((p) => !fresh.some((f) => key(f) === key(p))).map((p) => p.name);
+    const lines = fresh.map((p) => `• ${p.name} (${platformLabel(p.platform)}, ${commitsText(p)})`).join("\n");
+    const note = gone.length ? `\n\nNo longer waiting, left out: ${gone.join(", ")}` : "";
     const ok = await confirmAlert({
-      title: `Deploy ${plural(list.length, "project")}?`,
-      message: `Each one builds its newest commit to production:\n\n${lines}`,
+      title: `Deploy ${plural(fresh.length, "project")}?`,
+      message: `Each one builds its newest commit to production:\n\n${lines}${note}`,
       icon: { source: "extension-icon.png" },
-      primaryAction: { title: `Deploy ${list.length}`, style: Alert.ActionStyle.Default },
+      primaryAction: { title: `Deploy ${fresh.length}`, style: Alert.ActionStyle.Destructive },
     });
     if (!ok) return;
     setRunning(true);
     setOutcomes({});
     try {
-      await deployAll(list, (key, o) => setOutcomes((prev) => ({ ...prev, [key]: o })));
+      await deployAll(fresh, (key, o) => setOutcomes((prev) => ({ ...prev, [key]: o })));
     } finally {
       setRunning(false);
       setRan(true);
@@ -65,7 +86,13 @@ export default function DeployAllChanged() {
   }
 
   const deployAllAction = list.length > 0 && !running && !ran && (
-    <Action title={`Deploy All ${list.length}`} icon={Icon.Upload} onAction={start} />
+    <Action
+      title={`Deploy All ${list.length}`}
+      icon={Icon.Upload}
+      style={Action.Style.Destructive}
+      shortcut={{ modifiers: ["cmd", "shift"], key: "enter" }}
+      onAction={start}
+    />
   );
 
   return (
@@ -89,7 +116,7 @@ export default function DeployAllChanged() {
             title={list.length ? "Would Deploy" : undefined}
             subtitle={
               list.length
-                ? `${plural(list.length, "project")}, ${plural(commits, "commit")} · ↵ to deploy all`
+                ? `${plural(list.length, "project")}, ${plural(commits, "commit")} · ⌘⇧↵ to deploy all`
                 : undefined
             }
           >
@@ -114,9 +141,10 @@ export default function DeployAllChanged() {
                   }
                   actions={
                     <ActionPanel title={p.name}>
-                      {deployAllAction}
-                      {o && <Action.CopyToClipboard title="Copy Result" content={o.detail} />}
+                      {/* Enter on a row is not "deploy everything": that is ⌘⇧↵. */}
                       <ProjectActions name={p.name} projectRef={p.projectRef} onRefresh={revalidate} />
+                      {o && <Action.CopyToClipboard title="Copy Result" content={o.detail} />}
+                      {deployAllAction}
                     </ActionPanel>
                   }
                 />

@@ -6,7 +6,7 @@
     "app-web",
     { "name": "api", "platform": "render", "label": "API", "url": "https://api.example.com/health" }
   ],
-  "hideMessages": false,
+  "hideMessages": true,
   "showAuthors": false,
   "timeline": 30
 }

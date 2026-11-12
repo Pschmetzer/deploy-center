@@ -15,6 +15,9 @@ case "$*" in
     [ -n "${FAKE_OLD_STATUS:-}" ] && { jq 'map(del(.repo))' "$here/status.json"; exit 0; }
     cat "$here/status.json" ;;
   "vercel deploy-json app-web") echo '{"id":"dpl_1","url":"https://app-web-abc.vercel.app","state":"QUEUED"}' ;;
+  "vercel deploy-json app-web --preview") echo '{"id":"dpl_p","url":"https://app-web-p.vercel.app","state":"QUEUED"}' ;;
+  "vercel rollback app-web") [ -n "${FAKE_ROLLBACK_EMPTY:-}" ] && { echo '{}'; exit 0; }; echo '{"id":"dpl_0","state":"READY"}' ;;
+  "render rollback api") echo "Error: no earlier deploy of api" >&2; exit 1 ;;
   "render deploy-json api") echo "Error: render-x is being started already (wait a minute)" >&2; exit 1 ;;
   "logs worker 200") printf 'Cloning\nInstalling\n\033[31mnpm ERR! missing script: build\033[0m\nnpm ERR! A complete log is in /tmp/x\n' ;;
   *) echo "unexpected: $*" >&2; exit 2 ;;
