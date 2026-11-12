@@ -40,8 +40,11 @@ const secrets: [RegExp, string][] = [
   [/\bxox[abprs]-[A-Za-z0-9-]{8,}/g, "[SLACK TOKEN]"],
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+/g, "[JWT]"],
   // NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret.
-  [/\b([A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|_key|authorization|auth|credentials?|dsn)["']?\s*[:=]\s*)((?:bearer|basic|token|bot)\s+)?("[^"]*"|'[^']*'|[^\s"',;]+)/gi, "$1$2[HIDDEN]"],
+  [/\b([A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn)["']?\s*[:=]\s*)((?:bearer|basic|token|bot)\s+)?("[^"]*"|'[^']*'|[^\s"',;]+)/gi, "$1$2[HIDDEN]"],
   [/\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 [HIDDEN]"],
+  // Whole cookies, and the signature and credential parts of a signed URL (S3, Azure SAS, GCS).
+  [/\b((?:set-cookie|cookie)\s*:\s*).+/gi, "$1[HIDDEN]"],
+  [/([?&](?:sig|signature|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)=)[^&\s"']+/gi, "$1[HIDDEN]"],
   // --token x, --token=x (vercel, npm and most CLIs).
   [/(--(?:token|password|api-key|secret)(?:=|\s+))[^\s"']+/gi, "$1[HIDDEN]"],
   [/(:\/\/[^/\s:@]+:)[^@\s/]+@/gi, "$1[HIDDEN]@"],

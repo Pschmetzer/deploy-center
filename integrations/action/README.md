@@ -37,7 +37,7 @@ Renovate can keep the tag current. Give the job a `timeout-minutes`: with a wron
 | `repos-json` | none | The content of `vercel-repos.json`. Without it, Vercel projects whose Git connection is off are never counted. |
 | `wait` | none | With `deploy: true`: follow each started build (`deploys watch`) until it is live or failed, at most this long (`20m`, `90s`, `1h`; a plain number is minutes; up to `6h`). A failed build fails the step. Without it, `deployed` only means "started". |
 | `fail-on-risk` | none | `red` (or `yellow`): fail before anything is deployed when a project with changes has that risk or higher (migrations, lockfiles, config, size; see `deploys risk`). Empty only reports it. |
-| `vercel-cli-version` | `65.12.1` | Installed only when no `vercel` is on the runner, into the runner's temp folder (no global install). |
+| `vercel-cli-version` | `65.12.1` | Installed only when no `vercel` is on the runner, into the runner's temp folder (no global install), and kept in the Actions cache per version and runner type, so later runs skip the npm install. |
 
 | Output | |
 |---|---|

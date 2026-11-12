@@ -76,7 +76,10 @@ case "\$*" in
   "changed --json") [ -n "\${FAKE_NOTHING:-}" ] && { echo '[]'; exit 0; }
     jq -s --arg lv "\${FAKE_LEVEL:-}" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"})) | map(select(.changed))
       | if env.FAKE_GITLAB == "1" then map(if .repo == "me/app" then .repo = "gitlab.com/grp/sub/app" else . end) else . end
-      | if \$lv != "" then map(if .name == "app-web" then . + {risk:{level:\$lv, reasons:[{level:\$lv, text:"touches a migration"}]}} else . + {risk:{level:"green", reasons:[]}} end) else . end' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
+      | if \$lv != "" then map(if .name == "app-web" then . + {risk:{level:\$lv, reasons:[{level:\$lv, text:"touches a migration"}]}} else . + {risk:{level:"green", reasons:[]}} end) else . end
+      | if env.FAKE_HEAD == "1" then map(if .name == "app-web" then . + {headSha:"cccc333333333333333333333333333333333333", headMsg:"Add the billing page\\nwith a body"} else . end) else . end' "$tmp/vercel.json" "$tmp/render.json"; exit "\${FAKE_RC:-0}" ;;
+  # caps.sha per platform; FAKE_NO_PIN=1: Vercel cannot deploy a given commit.
+  "providers --json") if [ -n "\${FAKE_NO_PIN:-}" ]; then echo '[{"id":"vercel","caps":{"sha":false}}]'; else echo '[{"id":"vercel","caps":{"sha":true}},{"id":"netlify","caps":{"sha":false}}]'; fi ;;
   # The plain list, or (below) the deploy itself; both are logged for examples/daily-deploy.yml.
   "deploy-changed") echo "\$*" >> "$tmp/example.log"; echo "Would deploy: app-web, api (run with --yes)" ;;
   # Without --yes: what it would start, leaving out ignored.json as the real one does
@@ -106,12 +109,15 @@ case "\$*" in
   "logs topkey-app "*) printf 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo1\\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo2\\n-----END RSA PRIVATE KEY-----\\nafter the key\\n' ;;
   "logs bottomkey-app "*) printf 'before the key\\n-----BEGIN RSA PRIVATE KEY-----\\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo3\\n' ;;
   "logs big-app "*) cat "$tmp/big.log" ;;
+  # The shared secret fixture every masker is checked against (ios/Tests/fixtures).
+  "logs fixture-app "*) cat "$here/../ios/Tests/fixtures/mask-in.txt" ;;
   "logs "*) if [ -n "\${FAKE_SECRET_LOG:-}" ]; then
       printf '%s\n' 'GITHUB_TOKEN=ghp_abcdefgh12345678' 'export DB_PASSWORD="hunter2"' 'key sk-ant-abc12345678 and rnd_abcdefgh123' \
         'postgres://app:s3cr3t@db.example.test/app' 'Build ok · Umlaut ä'
     else seq 1 "\${3:-80}"; fi ;;
   "vercel deploy-json app-web"|"vercel deploy-json app-web --preview") [ -n "\${FAKE_DEPLOY_SLEEP:-}" ] && sleep "\$FAKE_DEPLOY_SLEEP"
     echo '{"id":"dpl_1","url":"https://app-web-x.vercel.app","state":"QUEUED"}' ;;
+  "vercel deploy-json app-web --sha "*) echo '{"id":"dpl_2","url":"https://app-web-y.vercel.app","state":"QUEUED"}' ;;
   "netlify deploy-json shop") echo '{"id":"nd-1","url":"https://shop.netlify.app","state":"new"}' ;;
   "netlify rollback shop") echo '{"id":"nd-0","state":"ready"}' ;;
   "render deploy-json api") echo '{"id":"dep-1","serviceId":"srv-1","state":"created"}' ;;

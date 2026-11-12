@@ -16,16 +16,16 @@ npm_abcdefghijklmnopqrstSECRET AIzaSyA-abcdefghijklmnopqrSECRET sk-ant-api03-abS
 export API_TOKEN="quoted SECRET with spaces"
 {"password": "jsonSECRET", "client_secret":"jsSECRET"}
 x-api-key: hdrSECRET123
-Ocp-Apim-Subscription-Key: abc123
-x;AccountKey=zz==;y
-got Bearer abcdefghijklmnop
-Set-Cookie: s=1
-u?a=1&X-Amz-Signature=dead&b=2
+Ocp-Apim-Subscription-Key: abcSECRET123
+x;AccountKey=SECRETzz==;y
+got Bearer abcdefghSECRETijklmnop
+Set-Cookie: s=SECRET1
+u?a=1&X-Amz-Signature=deadSECRET&b=2
 npm ERR! ./src/author.ts:12 Type error: keyboard: 3 tokens: 12 of 40
 mail ops@example.org now
-Authorization: Basic dXNlcjpwYXNzd29yZA==
-password=hunter2;next
-GET /f?sig=abc&x=1 200
+Authorization: Basic dXNlcjpwYXNzSECRETd29yZA==
+password=hunterSECRET2;next
+GET /f?sig=SECRETabc&x=1 200
 mid -----BEGIN RSA PRIVATE KEY----- tail
 MIIEowSECRETbody
 -----END RSA PRIVATE KEY----- after

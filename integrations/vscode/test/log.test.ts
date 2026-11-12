@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import { aiPrompt, fence, firstErrorBlock, isErrorLine, maskSecrets } from "../src/log";
 
@@ -70,4 +72,15 @@ test("aiPrompt names the project and fences the first error", () => {
   const p = aiPrompt({ name: "web", platform: "vercel", repo: "me/app", state: "ERROR" }, "ok\nError: boom\n");
   assert.match(p, /^The Vercel deploy of "web" failed\. Repo: me\/app\. Status: ERROR\./);
   assert.match(p, /```\nok\nError: boom\n```/);
+});
+
+// The fixture the CLI, the iPhone app and the MCP server are checked against
+// (ios/Tests/fixtures/mask-in.txt): every secret in it carries the word SECRET, and none may
+// survive. Labels like [WEBHOOK SECRET] and the name SECRET_KEY= do not count.
+test("no secret of the shared fixture survives", () => {
+  const input = readFileSync(join(__dirname, "../../../..", "ios", "Tests", "fixtures", "mask-in.txt"), "utf8");
+  const left = maskSecrets(input)
+    .split("\n")
+    .filter((l) => l.replace(/\[[A-Z ]+\]/g, "").replace(/SECRET_KEY=/g, "").includes("SECRET"));
+  assert.deepEqual(left, []);
 });

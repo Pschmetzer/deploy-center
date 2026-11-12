@@ -141,6 +141,10 @@
 - Coolify: Ctrl-C during a deploy with `--sha` puts the app's commit back instead of leaving it pinned for later auto-deploys.
 - Savings (`simulate`, `ledger`) no longer ask Render about another platform's projects: a provider without its own `<p>_builds` is marked unsupported.
 - Open pull requests: a full page (100) is marked `openPartial`, a floor and not the exact count. `xargs` no longer runs once on empty input on Linux. The launchd job files escape `&` and `<` in paths.
+- iPhone app: tokens are stored in the app's own keychain group, not the team group the Mac link uses (which other apps of the same team could read); keys an older version stored there move over on first read.
+- MCP server: `deploys_deploy` deploys the branch head the human confirmed, by its commit SHA (`--sha`) where the platform can pin one, and the question names that commit; a push between the question and the start is no longer deployed with it.
+- Masking: the MCP server and the VS Code and Raycast add-ons now also mask cookies, signed-URL signatures (`sig=`, `X-Amz-Signature=` …) and `-key`/`AccountKey=` names, as the CLI does. One shared fixture (`ios/Tests/fixtures/mask-in.txt`) is checked against all of them, and `ios/Tests/run.sh` checks that `mask-out.txt` is still what `af_mask` prints.
+- Action: the vercel CLI it installs is kept in the Actions cache per version and runner type, so later runs skip the npm install.
 
 ## 0.9.1
 

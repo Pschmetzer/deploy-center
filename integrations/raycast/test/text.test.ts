@@ -1,6 +1,8 @@
 // Unit tests for the parts of the extension that need no Raycast API (src/lib/text.ts and
 // src/lib/log.ts). Run: npm test (tsc into .test-out, then node --test). No network, no Raycast.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import type { ChangedProject } from "../src/lib/deploys";
 import { aiPrompt, firstErrorBlock, isErrorLine, maskSecrets } from "../src/lib/log";
@@ -106,4 +108,20 @@ test("firstErrorBlock and aiPrompt: from the first real error, masked, fenced", 
   const prompt = aiPrompt({ name: "web", platform: "vercel", repo: null, state: "ERROR" }, "a ``` b\nError: x");
   assert.ok(prompt.startsWith('The Vercel deploy of "web" failed. Status: ERROR.'), prompt);
   assert.ok(prompt.includes("````\n"), "the fence is longer than the backticks in the log");
+});
+
+// The fixture the CLI, the iPhone app and the MCP server are checked against
+// (ios/Tests/fixtures/mask-in.txt): every secret in it carries the word SECRET, and none may
+// survive. Labels like [WEBHOOK SECRET] and the name SECRET_KEY= do not count.
+test("no secret of the shared fixture survives", () => {
+  const input = readFileSync(join(__dirname, "../../../..", "ios", "Tests", "fixtures", "mask-in.txt"), "utf8");
+  const left = maskSecrets(input)
+    .split("\n")
+    .filter((l) =>
+      l
+        .replace(/\[[A-Z ]+\]/g, "")
+        .replace(/SECRET_KEY=/g, "")
+        .includes("SECRET"),
+    );
+  assert.deepEqual(left, []);
 });
