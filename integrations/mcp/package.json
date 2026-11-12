@@ -1,6 +1,6 @@
 {
   "name": "deploys-mcp",
-  "version": "0.2.0",
+  "version": "0.10.0",
   "description": "MCP server (stdio) for the Deploy Center `deploys` CLI: what is waiting to go live, and deploys only when allowed.",
   "license": "MIT",
   "private": true,

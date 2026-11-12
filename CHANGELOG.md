@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.10.0
+
+- **Fixed:** "Vercel could not be loaded … jq: invalid JSON text passed to --argjson" after a single failed Vercel call. Under macOS's bash 3.2 an empty fallback became `{\}`; the list now loads with `partial` rows instead of failing, and `vercel_call` has a time limit and retries reads (never writes).
+- CLI: `deploys plan [--when-green] [--json]` shows what `deploy-changed --yes` would start and roughly what it costs; `deploys price set`, `deploys budget set <usd> [--strict]` stops `deploy-changed` over budget unless `--force "why"`.
+- CLI: the app's rules (`~/.config/deploys/rules.json`) are acted on: `deploys rules check`, hold rules in `deploy-changed`/`plan`, `deploy-changed --by-rules`, and `deploys schedule daily [HH:MM]` (opt-in, off by default).
+- CLI: `deploys hooks install|uninstall|status` (keeps an existing pre-push), `verify` checks per project from `deploy-center.json`, `autofix --preview` (sends nothing), failure classes in `autofix status`, `ai ask`, `ai slow`, `watch --timeout`.
+- CLI safety: `deploy` respects the deploy window; observer mode also blocks `autodeploy allow/revoke`; tab completion never runs project names; a non-integer `approvals` blocks instead of opening the two-person rule; `deploys logs` is always masked; `autodeploy-on --dry-run` is only passed to providers that support it.
+- Providers: Netlify, Cloudflare, Amplify, DigitalOcean and Coolify follow the status contract, so `watch` and `deploy --wait` end; contract tests for all eight. Hook URLs over http only for exact localhost. **Changed:** a Vercel project with no remembered repo is not deployable (`repoUnknown: true`) instead of deploying from its live link. A Vercel production deploy with `--sha` is refused when the commit is not on the remembered branch (`DEPLOYS_VERCEL_ANY_SHA=1` to allow).
+- Mac app: rule editor, Touch ID or password before risky steps (opt-in), site watch after going live, uptime per project, TLS certificate warning, migration tick before a live deploy, "critical" projects ask for the name, cost estimate and budget in the confirmation, health card, first-start guide, journal numbers (failure causes, monthly report), Spotlight (opt-in), a global hot key, colour-blind mode, quiet hours, project in its own window. A followed deploy resumes after a restart; status and cancel go to the right platform (they always went to Render).
+- iPhone: build log with masked secrets, deploy history, Live Activity, Siri and Shortcuts (read-only), Spotlight, cancel build, Lock Screen and failed-builds widgets; an outage keeps the last rows; QR codes expire after 5 minutes. **Changed:** the GitHub token goes to the iPhone only with a new switch; it stays on for existing links, new links start off.
+- MCP server: a client without elicitation is refused by default; Claude Code supports it, for Claude Desktop set `DEPLOYS_MCP_CONFIRM=client`. New read tools and `deploys_plan`. Claude Code plugin 0.3.0.
+- Integrations: the GitHub Action can wait for builds (`wait`) and has `only`, `exclude`, `deploy: dry-run` and a risk gate; notify reaches Teams, Google Chat, Matrix and Pushover. **Changed:** the example workflows use `vars.DEPLOYS_VERCEL_TEAM` (rename `VERCEL_TEAM`).
+- CI: release gate, Linux, iOS, Raycast and Docker jobs, app tests in English and German; the website publishes only after a green CI.
 - pre-push hook: reads `deploys list --json`, so it warns for every platform that is on, and for GitLab remotes (`gitlab.com/group/sub/app`) too. An older CLI without `list` still gets the Vercel and Render lists.
 - Status page: `platform/name` works for every platform, not only `vercel/` and `render/`.
 - Badges: a name on two platforms gets one badge per platform (`vercel-web.svg`, `netlify-web.svg`); every other name keeps `<name>.svg`.
