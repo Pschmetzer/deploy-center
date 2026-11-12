@@ -108,7 +108,7 @@ In den Abschnitten 1–7: ✅ = gebaut, ◐ = teilweise (Branch `fix/welle-2`). 
 43. ✅ [Bug] **Auswahllisten bleiben bei unbekannten Werten leer.** Steht in `refreshMinutes`, `maxParallel`, `undoSeconds` oder `staleDays` ein Wert, der nicht in der Liste ist (älteres Build, `defaults write`), zeigt die Liste nichts; Wert auf den nächsten erlaubten setzen. (App.swift:84–86, 167–177)
 44. ✅ [Bug] **„Diagnose kopieren“ kennt nur Vercel und Render.** Weitere Provider, GitLab und Autofix fehlen; die Zeilen aus `deploys providers --json` bauen. (App.swift:258–265)
 45. ✅ [Bug] **Der Text im Hilfe-Abschnitt ist veraltet.** Er nennt nur „GitHub, Vercel und Render“, obwohl es GitLab und weitere Provider gibt. (App.swift:268–269)
-46. [Bug] **System-Texte bleiben auf Englisch.** Im Screenshot stehen bei deutscher Oberfläche „File Edit View Window Help“ und „Deploy Center Settings“; vermutlich fehlen `de.lproj` bzw. `CFBundleLocalizations` im Bundle (Vermutung). (build.sh)
+46. ✅ [Bug] **System-Texte bleiben auf Englisch.** Im Screenshot stehen bei deutscher Oberfläche „File Edit View Window Help“ und „Deploy Center Settings“; vermutlich fehlen `de.lproj` bzw. `CFBundleLocalizations` im Bundle (Vermutung). (build.sh)
 
 
 ### Einstellungen: Aufbau der Tabs
@@ -167,7 +167,7 @@ In den Abschnitten 1–7: ✅ = gebaut, ◐ = teilweise (Branch `fix/welle-2`). 
 90. ✅ [A11y] **Fehlerzeilen im Log nicht nur rot.** Bei „Ohne Farbe unterscheiden“ ein „✖“ oder fette Schrift vor die Fehlerzeilen setzen. (DetailViews.swift:127)
 91. ✅ [A11y] **Das Log-Textfeld hat keinen Namen.** Das `NSTextView` braucht ein Accessibility-Label „Build-Log von …“, sonst sagt VoiceOver nur „Text“. (DetailViews.swift:104–111)
 92. ✅ [A11y] **PR- und Commit-Knöpfe ohne Zusammenhang.** VoiceOver liest „#123“ bzw. den SHA; als Label „Pull Request 123 öffnen: Titel“ setzen. (DetailViews.swift:339, 341, 381)
-93. [A11y] **Paletten-Zeilen ohne Hinweis auf die Tastatur.** Mit VoiceOver landet man in den Knöpfen statt in der Liste; die Liste als `List` mit Auswahl anlegen, nicht als `LazyVStack` aus Knöpfen. (CommandPalette.swift:193–201)
+93. [A11y] **Paletten-Zeilen ohne Hinweis auf die Tastatur.** Mit VoiceOver landet man in den Knöpfen statt in der Liste; die Liste als `List` mit Auswahl anlegen, nicht als `LazyVStack` aus Knöpfen. (CommandPalette.swift:193–201) — (Welle 4: Zeilen haben schon Label, Hinweis und „ausgewählt“; Umbau auf `List` nur mit VoiceOver-Test am Gerät)
 
 
 ### Leistung
@@ -178,17 +178,17 @@ In den Abschnitten 1–7: ✅ = gebaut, ◐ = teilweise (Branch `fix/welle-2`). 
 97. ✅ [Perf] **Build-Log maskiert im Demo-Modus bei jedem Render 2000 Zeilen.** Das Ergebnis pro Laden zwischenspeichern. (DetailViews.swift:69)
 98. ✅ [Perf] **Der Neu-laden-Knopf lädt Plattformen nacheinander.** Unter „Alle“ wartet Render auf Vercel; mit `TaskGroup` parallel laden. (MainWindow.swift:405)
 99. ✅ [Perf] **`ImageRenderer` bei jedem Body.** `SavingShare.image` ist berechnet und rendert die Karte bei jedem Neuzeichnen; einmal in `onAppear` erzeugen. (MainWindow.swift:1138–1141, 1153)
-100. [Perf] **`autofixState` zweimal pro Zeile.** Für Zeile und Hintergrund getrennt abgefragt; einmal lesen und weiterreichen. (MainWindow.swift:872, 876)
+100. [Perf] **`autofixState` zweimal pro Zeile.** Für Zeile und Hintergrund getrennt abgefragt; einmal lesen und weiterreichen. (MainWindow.swift:872, 876) — (Welle 4: schon erledigt: `row()` liest den Stand einmal (MainWindow.swift `let fix`))
 
 
 ### Code
 
 101. ◐ [Code] **MainWindow.swift ist zu groß (1716 Zeilen).** `CostsSheet`/`SavingShare`/`SavingCard`, `Row`/`AgentChips`, `Setup`/`RenderKeySetup` und die Hinweise in eigene Dateien; der Typprüfer braucht heute Tricks („in drei Teile geteilt“). (MainWindow.swift:215, 1043–1716)
-102. [Code] **Die Einrichtung ist fest auf Vercel und Render verdrahtet.** `setupNeeded` und die Einrichtungs-Bildschirme kennen nur zwei Plattformen; die Prüfung sollte aus `deploys doctor` je Provider kommen, damit neue Provider ohne App-Änderung erscheinen. (MainWindow.swift:690–700, 781–794)
-103. [Code] **`Platform` mit zwei Fällen blockiert neue Provider.** Das Fenster nutzt zugleich Provider-IDs (Strings) und `Platform`; solange `Platform` nur Vercel und Render kennt, bleibt jeder weitere Provider „kommt bald“. (Model.swift:11–15; MainWindow.swift:125)
+102. [Code] **Die Einrichtung ist fest auf Vercel und Render verdrahtet.** `setupNeeded` und die Einrichtungs-Bildschirme kennen nur zwei Plattformen; die Prüfung sollte aus `deploys doctor` je Provider kommen, damit neue Provider ohne App-Änderung erscheinen. (MainWindow.swift:690–700, 781–794) — (Welle 4: größerer Umbau; zusammen mit 103/214 als eigene Welle planen)
+103. [Code] **`Platform` mit zwei Fällen blockiert neue Provider.** Das Fenster nutzt zugleich Provider-IDs (Strings) und `Platform`; solange `Platform` nur Vercel und Render kennt, bleibt jeder weitere Provider „kommt bald“. (Model.swift:11–15; MainWindow.swift:125) — (Welle 4: größerer Umbau (generisches `Item` aus `list --json`); eigene Welle mit Entscheidung)
 104. ◐ [Code] **Pfade zu den Einstellungen stehen als freier Text.** „Einstellungen → Team“ und „→ Ausgeblendete Projekte“ sind an fünf Stellen verteilt; aus dem Tab-Enum erzeugen, dann bleiben sie beim Umbau richtig. (MainWindow.swift:816, 833, 968–971; Store.swift:675)
 105. ✅ [Code] **Test für die Verweise auf Tabs.** Ein kleiner Test prüft, dass jeder `settingsTab`-Wert, der irgendwo gesetzt wird, ein existierender Tab ist. (App.swift:37; Store.swift:209)
-106. [Code] **„Fokus weg“ per `makeFirstResponder(nil)` nach 200 ms.** Mit `.defaultFocus` bzw. `@FocusState` beim Start ohne Wartezeit lösen. (MainWindow.swift:319–321)
+106. [Code] **„Fokus weg“ per `makeFirstResponder(nil)` nach 200 ms.** Mit `.defaultFocus` bzw. `@FocusState` beim Start ohne Wartezeit lösen. (MainWindow.swift:319–321) — (Welle 4: ohne Laufzeittest am Fenster nicht sicher ersetzbar (wer beim Start den Fokus bekommt, entscheidet AppKit))
 
 
 ### Details und Build-Log
@@ -312,8 +312,8 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 184. ✅ [Security] **Das Fehlerprotokoll speichert stderr ungefiltert.** `Log.write("deploys …: \(text)")` schreibt rohe Skriptfehler (curl-/CLI-Ausgaben können Tokens enthalten), und das Log wird zum Anhängen an öffentliche Issues angeboten. `LogTools.maskSecrets` in `Log.write`. (app/Tool.swift:228 und 293)
 185. ✅ [Security] **Der Maskierer der App ist schwächer als der des Skripts.** Laut CHANGELOG maskiert das Skript Stripe (`sk_live_`), GitLab (`glpat-`), npm (`npm_`), Google (`AIza…`), AWS-Secret-Keys und `-----BEGIN … PRIVATE KEY-----`; `LogTools.secrets` kennt davon fast nichts, „Für Claude kopieren“ lässt sie durch. Eine gemeinsame Musterliste (Datei im Bundle), die Skript und App lesen, plus Test pro Muster. (app/LogTools.swift:26–37)
 186. ✅ [Security] **QR-Code-Fenster ist in Screenshots und Bildschirmfreigaben sichtbar.** Für das Sheet `NSWindow.sharingType = .none` setzen, dann fehlt es in Aufnahmen, Zoom/Meet-Freigaben und `screencapture`. (app/PhoneLinkMac.swift:137–166)
-187. [Security] **QR-Code enthält die Schlüssel im Klartext.** Wer den Code 60 s sieht oder fotografiert, hat Render-Key und GitHub-Token. Inhalt mit einem einmaligen Code verschlüsseln, den man am iPhone eintippt (6 Ziffern). (app/PhoneLinkMac.swift:162)
-188. [Security] **Das volle `gh`-Token wird per iCloud auf alle Geräte verteilt.** `gh auth token` hat meist `repo`, `workflow`, oft `admin:org`. Hinweis plus Feld für ein eigenes, nur lesendes Fine-grained-Token fürs iPhone, wie beim Vercel-Token. (app/PhoneLinkMac.swift:52)
+187. [Security] **QR-Code enthält die Schlüssel im Klartext.** Wer den Code 60 s sieht oder fotografiert, hat Render-Key und GitHub-Token. Inhalt mit einem einmaligen Code verschlüsseln, den man am iPhone eintippt (6 Ziffern). (app/PhoneLinkMac.swift:162) — (Welle 4: braucht neues QR-Format auf Mac und iPhone und eine Sicherheitsentscheidung (6 Ziffern sind offline schnell durchprobiert))
+188. ✅ [Security] **Das volle `gh`-Token wird per iCloud auf alle Geräte verteilt.** `gh auth token` hat meist `repo`, `workflow`, oft `admin:org`. Hinweis plus Feld für ein eigenes, nur lesendes Fine-grained-Token fürs iPhone, wie beim Vercel-Token. (app/PhoneLinkMac.swift:52)
 189. ✅ [Security] **Backups der Claude-Konfiguration häufen sich und enthalten fremde Tokens.** Jeder Verbinden-/Trennen-/Erlauben-Klick legt `claude_desktop_config.json.bak-…` an; darin stehen die `env`-Tokens anderer MCP-Server. Nur die letzten 3 behalten. (app/ClaudeConnect.swift:114–119)
 190. ✅ [Security] **MCP-Eintrag zeigt nach Umzug der App ins Leere.** `DEPLOYS_BIN` und `server.mjs` stehen als absolute Pfade ins App-Bundle in der Claude-Konfiguration; nach Verschieben der App (Downloads → Programme) ist Claude still ohne Werkzeuge, Settings sagt weiter „verbunden“. Pfade im Eintrag prüfen und „veraltet – neu verbinden“ zeigen. (app/ClaudeConnect.swift:288 und 308)
 
@@ -321,7 +321,7 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 ### Leistung und Energie
 
 191. [Feature] **Statusseiten auch für die eingeschalteten Anbieter.** `checkProviders` fragt fest Vercel, Render und GitHub; mit GitLab-Quelle oder Netlify/Cloudflare fehlt deren Störung. Feed-URL aus `deploys providers --json`. (app/Store.swift:95–97)
-192. [Perf] **Refresh mit `NSBackgroundActivityScheduler`.** Die 15-Minuten-Schleife weckt die App punktgenau; der Scheduler bündelt mit anderen Aufgaben, pausiert bei Last und spart Akku. (app/Store.swift:285–292)
+192. [Perf] **Refresh mit `NSBackgroundActivityScheduler`.** Die 15-Minuten-Schleife weckt die App punktgenau; der Scheduler bündelt mit anderen Aufgaben, pausiert bei Last und spart Akku. (app/Store.swift:285–292) — (Welle 4: weitgehend erledigt: lockerer 60-s-Takt mit 15 s Toleranz, Pause bei schlafenden Bildschirmen, Low Power doppeltes Intervall)
 193. ✅ [Perf] **Stromsparmodus und teures Netz beachten.** Bei `ProcessInfo.isLowPowerModeEnabled` oder `NWPath.isExpensive` (Hotspot) das Intervall verdoppeln und Kosten/Trigger auslassen. (app/Store.swift:296–299)
 194. ✅ [Perf] **Kein Neuladen bei schlafendem Bildschirm.** Bei gesperrtem Bildschirm (`screensDidSleepNotification`) Runden aussetzen und beim Aufwachen des Bildschirms einmal laden; heute gibt es nur das Aufwachen des ganzen Systems. (app/Store.swift:279–284)
 195. ✅ [Perf] **Status-Abfragen mit Backoff.** `follow` startet alle 6 s bash+node, auch bei einem 20-Minuten-Build; erste 2 Minuten alle 6 s, danach 15–30 s, ab `usualMinutes` wieder dichter. (app/Store.swift:925)
@@ -355,32 +355,32 @@ Gelesen gegen den Arbeitsstand von `feat/settings-tabs` (auf `origin/main` aa128
 
 ### Code-Struktur
 
-214. [Code] **Andere Plattformen über `deploys list --json` laden statt über das `Platform`-Enum.** Netlify, Cloudflare, Coolify, DigitalOcean, Amplify und Hook kann man in Settings einschalten, ihr Tab sagt aber nur „kann diese Projekte noch nicht auflisten“, weil nur `Platform.vercel/.render` einen Lader hat. Ein generisches `Item` aus `list --json` mit `phase`, Fähigkeiten aus `ProviderCaps`. (app/Model.swift:11–15, app/Providers.swift:46, app/Store.swift:385–419)
+214. [Code] **Andere Plattformen über `deploys list --json` laden statt über das `Platform`-Enum.** Netlify, Cloudflare, Coolify, DigitalOcean, Amplify und Hook kann man in Settings einschalten, ihr Tab sagt aber nur „kann diese Projekte noch nicht auflisten“, weil nur `Platform.vercel/.render` einen Lader hat. Ein generisches `Item` aus `list --json` mit `phase`, Fähigkeiten aus `ProviderCaps`. (app/Model.swift:11–15, app/Providers.swift:46, app/Store.swift:385–419) — (Welle 4: größerer Umbau, hängt an 102/103; eigene Welle)
 215. ✅ [Code] **`decode()` mappt Vercel und Render fast identisch.** 30 Zeilen doppelt; ein gemeinsames Protokoll `ScriptProject` mit den gleichen Feldern und eine Abbildung. (app/Store.swift:385–419)
-216. [Code] **Zwei Typen für `autofix status`.** `AutofixStatus` (Autofix.swift) und `AutofixReport` (Model.swift) lesen dasselbe Kommando unterschiedlich tolerant. Einer reicht. (app/Autofix.swift:8–26, app/Model.swift:296–347)
+216. ✅ [Code] **Zwei Typen für `autofix status`.** `AutofixStatus` (Autofix.swift) und `AutofixReport` (Model.swift) lesen dasselbe Kommando unterschiedlich tolerant. Einer reicht. (app/Autofix.swift:8–26, app/Model.swift:296–347)
 217. ✅ [Code] **Dreimal die Regel „fehlgeschlagen“.** `Item.lastFailed`, `ClaudeAI.isFailed` und `makeSnapshot` prüfen verschiedene Listen von Statuswörtern. Eine Eigenschaft am `Item`. (app/Model.swift:288–291, app/ClaudeAI.swift:70–73, app/Snapshot.swift:41–45)
 218. ✅ [Code] **Gleicher Beenden-Dialog zweimal.** Menüleiste „Beenden“ und `relaunchApp` haben denselben NSAlert-Text kopiert. Eine Funktion `confirmQuit(running:)`. (app/App.swift:445–456, app/Tool.swift:49–59)
-219. [Code] **Settings-Bereiche wiederholen `busy/message/failed/run()`.** Autofix, Guard, Team, ClaudeAI haben je eine eigene Kopie. Ein kleines `ScriptAction`-ObservableObject. (app/Autofix.swift:150–159, app/Guard.swift:79–89, app/Team.swift:115–125, app/ClaudeAI.swift:161–168)
+219. [Code] **Settings-Bereiche wiederholen `busy/message/failed/run()`.** Autofix, Guard, Team, ClaudeAI haben je eine eigene Kopie. Ein kleines `ScriptAction`-ObservableObject. (app/Autofix.swift:150–159, app/Guard.swift:79–89, app/Team.swift:115–125, app/ClaudeAI.swift:161–168) — (Welle 4: die vier unterscheiden sich in Timeout, Demo-Maske, Text bei leerer Ausgabe und Folgeaktion; ein gemeinsames Objekt spart kaum Code)
 220. ✅ [Code] **Tote Funktion `buildCost`.** Wird nirgends aufgerufen (und würde Render-Dienste mit Vercel-Kosten gleichen Namens versehen). Entfernen. (app/Store.swift:215–217)
 221. ✅ [Code] **Unnötige Imports.** Model, Tool, Logos, Store importieren `Charts`, `UserNotifications`, `ServiceManagement`, ohne sie alle zu brauchen; das verlangsamt `swiftc` über alle Dateien. Pro Datei nur das Nötige. (app/Model.swift:3–7, app/Tool.swift:3–7, app/Logos.swift:3–7)
-222. [Code] **Magische Statuswörter.** `"READY"`, `"live"`, `"canceled"`, `"build_failed"` stehen verstreut als Strings; ein Enum pro Plattform (oder das `phase` des Skripts) verhindert Tippfehler. (app/Store.swift:528 und 935–961)
+222. [Code] **Magische Statuswörter.** `"READY"`, `"live"`, `"canceled"`, `"build_failed"` stehen verstreut als Strings; ein Enum pro Plattform (oder das `phase` des Skripts) verhindert Tippfehler. (app/Store.swift:528 und 935–961) — (Welle 4: Zustände kommen als Rohtext aus vier Plattformen und gehen in `shared/DeployRule.swift` (auch iPhone); Enum erst mit dem generischen `phase` aus 214)
 223. ✅ [Code] **Claude-Konfiguration verliert die Schlüsselreihenfolge.** `JSONSerialization` schreibt die Datei des Nutzers in beliebiger Reihenfolge zurück; bei Hand-Pflege sieht jede Änderung wie ein Komplettumbau aus. Mindestens `.sortedKeys` für stabile Diffs. (app/ClaudeConnect.swift:35)
 224. ◐ [Code] **Feste Plattformliste in Guard, Savings und Diagnose.** `[Platform.vercel, .render]` bzw. nur zwei Zähler in „Diagnose kopieren“; mit weiteren Anbietern fehlen sie. `enabledProviders` nutzen und Skriptversion (`deploys --version`) in die Diagnose. (app/Guard.swift:88 und 188, app/App.swift:259–264)
 
 
 ### Tests
 
-225. [Test] **Tests in beiden Sprachen laufen lassen.** `isGerman` wird einmal beim Start festgelegt; `app-tests.sh` testet also nur die Sprache des Macs. Zweiter Lauf mit `-AppleLanguages '(de)'` bzw. `(en)`. (tests/app-tests.sh:13, app/Tool.swift:13)
+225. [Test] **Tests in beiden Sprachen laufen lassen.** `isGerman` wird einmal beim Start festgelegt; `app-tests.sh` testet also nur die Sprache des Macs. Zweiter Lauf mit `-AppleLanguages '(de)'` bzw. `(en)`. (tests/app-tests.sh:13, app/Tool.swift:13) — (Welle 4: schon erledigt: `tests/app-tests.sh` läuft mit `-AppleLanguages (en)` und `(de)`)
 226. ✅ [Test] **Test: `selectChanged` lässt Ausgeblendete und laufende Zeilen aus.** Fängt den Fehler oben und den Menüleisten-Pfad. (app/Store.swift:492)
 227. ✅ [Test] **Test: `waiting` mit zwei Branches eines Repos.** Zwei Projekte, gleiches Repo, verschiedene `ref`. (app/Store.swift:447)
 228. ✅ [Test] **Test: `loadProviders` behält die Liste bei Fehler.** Mit einem Fake-Skript, das beim zweiten Aufruf nichts liefert. (app/Providers.swift:229)
 229. ✅ [Test] **Test: `Tool.run`-Timeout und Abbruch.** Ein Skript mit `sleep 30`: Timeout liefert `timedOut`, ein gecancelter Task liefert `CancellationError`, keiner hängt (killTree ist getestet, die Antwortpfade nicht). (app/Tool.swift:143–233)
 230. ✅ [Test] **Test: `makeSnapshot`.** Reihenfolge building → failed → waiting, Demo-Maskierung, ausgeblendete fehlen, `sameContent` ignoriert nur `at`. (app/Snapshot.swift:37–65)
 231. ✅ [Test] **Test: `AutoDeployAllowance` mit Millisekunden und ISO mit Bruchteilen.** Beide Pfade des Dekoders sind ungetestet. (app/Model.swift:403–418)
-232. [Test] **Test: `cancel` während des CI-Wartens und `follow`-Deadline.** Mit einer Uhr, die man vorstellen kann (Idee „Clock injizierbar“ ist bekannt; hier die zwei konkreten Fälle). (app/Store.swift:761–784 und 918–970)
-233. [Test] **Test: Maskierer gegen die Muster des Skripts.** Je ein Beispiel für Stripe, GitLab, npm, Google, Private-Key-Block; gleiche Fixtures für `tests/script-tests.sh`. (app/LogTools.swift:26)
+232. ✅ [Test] **Test: `cancel` während des CI-Wartens und `follow`-Deadline.** Mit einer Uhr, die man vorstellen kann (Idee „Clock injizierbar“ ist bekannt; hier die zwei konkreten Fälle). (app/Store.swift:761–784 und 918–970)
+233. ✅ [Test] **Test: Maskierer gegen die Muster des Skripts.** Je ein Beispiel für Stripe, GitLab, npm, Google, Private-Key-Block; gleiche Fixtures für `tests/script-tests.sh`. (app/LogTools.swift:26)
 234. ✅ [Test] **Tests schreiben nicht in die echte Application-Support-Ablage.** `Journal.dir` und `Store.cacheDir` sind fest `app.deploycenter.mac`; ein Test, der `Journal.append` oder `writeCache` erreicht, schreibt in die Daten des echten Nutzers. Ordner per Umgebungsvariable umlenkbar machen. (app/Journal.swift:22–26, app/Store.swift:242–245)
-235. [Test] **`swiftc -strict-concurrency=complete` im Testlauf.** Zeigt die Datenrennen (statische Vars, `NSImage` über Actor-Grenzen, `NotifyRouter.onCancel`) als Warnungen, ohne den App-Build auf Swift 6 umzustellen. (tests/app-tests.sh:12)
+235. ✅ [Test] **`swiftc -strict-concurrency=complete` im Testlauf.** Zeigt die Datenrennen (statische Vars, `NSImage` über Actor-Grenzen, `NotifyRouter.onCancel`) als Warnungen, ohne den App-Build auf Swift 6 umzustellen. (tests/app-tests.sh:12)
 
 
 ### Features (Logik)

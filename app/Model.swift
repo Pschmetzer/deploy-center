@@ -666,8 +666,8 @@ struct CheckDetails: Decodable, Sendable {
 
 /// `deploys autofix status --json`. Older scripts send `pr` and no PR state; newer ones
 /// `prNumber`, `prState`, `prUrl`. A missing field is nil, a broken fire is skipped.
+/// The one reader of this command: the rows, Settings > Autofix and the Claude connection.
 struct AutofixReport: Decodable {
-    /// Also Settings > Autofix (`AutofixStatus.Fire`): one reader for one format.
     struct Fire: Decodable, Identifiable {
         var id: String { "\(project)-\(at)" }
         /// Why a start failed or was skipped.
@@ -710,16 +710,24 @@ struct AutofixReport: Decodable {
     let routine: String?
     let token: Bool
     let fires: [Fire]
+    /// The scheduled job is on (Settings > Autofix).
+    let scheduled: Bool
+    /// Tools the scheduled job no longer finds on its PATH (newer scripts).
+    let pathMissing: [String]
     /// A routine and its token are set: `deploys autofix --only` can hand a build over.
     var ready: Bool { routine != nil && token }
-    init(routine: String?, token: Bool, fires: [Fire]) { self.routine = routine; self.token = token; self.fires = fires }
+    init(routine: String?, token: Bool, fires: [Fire], scheduled: Bool = false, pathMissing: [String] = []) {
+        self.routine = routine; self.token = token; self.fires = fires; self.scheduled = scheduled; self.pathMissing = pathMissing
+    }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: K.self)
         routine = ((try? c.decodeIfPresent(String.self, forKey: .routine)) ?? nil).flatMap { $0.isEmpty ? nil : $0 }
         token = ((try? c.decodeIfPresent(Bool.self, forKey: .token)) ?? nil) ?? false
         fires = (((try? c.decodeIfPresent([Lossy<Fire>].self, forKey: .fires)) ?? nil) ?? []).compactMap(\.value)
+        scheduled = ((try? c.decodeIfPresent(Bool.self, forKey: .scheduled)) ?? nil) ?? false
+        pathMissing = ((try? c.decodeIfPresent([String].self, forKey: .pathMissing)) ?? nil) ?? []
     }
-    private enum K: String, CodingKey { case routine, token, fires }
+    private enum K: String, CodingKey { case routine, token, fires, scheduled, pathMissing }
 
     /// The newest hand-over of this row. Fires name the project (a Render service by its name, not its id).
     func newest(for i: Item) -> Fire? {
@@ -865,8 +873,7 @@ private extension KeyedDecodingContainer where K == AnyKey {
     func opt<T: Decodable>(_ key: String, _ type: T.Type = T.self) -> T? { (try? decodeIfPresent(T.self, forKey: AnyKey(key))) ?? nil }
 }
 
-// AutofixStatus reads itself tolerantly in Autofix.swift (with `pathMissing`).
-// GuardStatus too, in Guard.swift.
+// GuardStatus reads itself tolerantly in Guard.swift.
 extension TeamConfig {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)

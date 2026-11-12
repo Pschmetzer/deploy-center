@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- App: the masker for "Copy for Claude" and prompts knows what the script's masker knows (`x-api-key:`, JSON `"password": …`, cookies, signed URLs, short Render and GitHub tokens, JWTs) and leaves "tokens: 12" alone; both maskers are tested against one list of lines (`tests/fixtures/mask/`). Settings → iPhone takes a read-only GitHub token of its own for the phone; it wins over the gh CLI's. One reader for `deploys autofix status` (rows and Settings). Menus and system texts follow the app language (`CFBundleLocalizations` en, de). Tests: the follow deadline on a short clock, and the test build checks concurrency strictly (warnings only).
 - Site and docs: Impressum and Datenschutz use the shared stylesheet and the site's top navigation (with Docs and Guides), with sized icons; the Impressum's trademark note names all supported hosts and Anthropic (draft, legal review pending). SECURITY.md: the "What is sent where" table has no duplicate rows and lists the site check after a deploy.
 - App: "Put this live now?" is one sheet for the footer, a row and the palette, with a real "Only when checks are green" checkbox (it was the alert's "don't ask again" toggle). The palette now asks with the same sheet as the window, checkbox included.
 - App: the command palette builds its lines once when it opens (and again when demo mode switches) and orders them once per query, instead of on every keystroke and every store poll.

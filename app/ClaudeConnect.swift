@@ -280,7 +280,7 @@ final class ClaudeLink: ObservableObject {
     @Published var node: String?
     @Published var server: String?
     @Published var serverProblem: String?
-    @Published var autofix: AutofixStatus?
+    @Published var autofix: AutofixReport?
     @Published var busy = false
     @Published var message: String?
     @Published var failed = false
@@ -340,7 +340,7 @@ final class ClaudeLink: ObservableObject {
             UserDefaults.standard.set(allows, forKey: "claudeAllowDeploy")
         }
 
-        autofix = try? await Tool.json(["autofix", "status"], as: AutofixStatus.self, timeout: 20)
+        autofix = try? await Tool.json(["autofix", "status"], as: AutofixReport.self, timeout: 20)
         ClaudeNudge.store(wanted: desktop == .notConnected || code == .notConnected)
     }
 
