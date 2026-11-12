@@ -7,7 +7,7 @@ Zwei Befehle, zwei Fragen:
 - `deploys simulate [--days 30]`: *Was kostet Auto-Deploy im Monat, verglichen mit einem Deploy pro Tag?* Geht, bevor du etwas abschaltest.
 - `deploys ledger`: *Was hat das Abschalten bisher gespart?* Zählt ab dem Tag, an dem Auto-Deploy aus ging.
 
-Beide brauchen `gh` (angemeldet), weil sie Pushes auf GitHub zählen. Mit `--json` kommt die Antwort für Maschinen. In der App: der Simulator (ein Banner, solange nichts abgeschaltet ist, und Einstellungen → Kosten → Ersparnis) und das Ledger („≈ $X gespart seit …“, pro Projekt).
+Beide brauchen `gh` (angemeldet), weil sie Pushes auf GitHub zählen. Mit `--json` kommt die Antwort für Maschinen. In der App: der Simulator (ein Banner, solange nichts abgeschaltet ist, und Einstellungen → Kosten → Ersparnis) und das Ledger („≈ $X gespart seit …“, pro Projekt; mit einem eigenen Ziel in USD und wie weit die Ersparnis ist).
 
 Jede Zahl ist eine Schätzung und trägt „≈“. Das JSON sagt, wie sie entstand (`method`).
 

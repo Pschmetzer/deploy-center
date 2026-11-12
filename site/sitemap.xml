@@ -9,7 +9,7 @@
   <url><loc>https://deploycenter.app/guides/netlify-stop-builds/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/guides/reduce-vercel-costs/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/guides/auto-fix-failed-vercel-builds-with-claude/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/claude-code/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/claude-code/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/vercel-build-cost-calculator/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/blog/ai-coding-agents-build-bill/</loc><lastmod>2026-11-10</lastmod></url>
   <!-- docs: written by scripts/build-docs.py -->
@@ -17,13 +17,13 @@
   <url><loc>https://deploycenter.app/docs/getting-started/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/safe-start/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/install-cli/</loc><lastmod>2026-11-11</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/cli/</loc><lastmod>2026-11-11</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/cli/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/auto-deploy/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/autofix/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/safe-deploy/</loc><lastmod>2026-11-10</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/guard/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/guard/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/savings/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/team/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/team/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/claude/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/claude-code/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/gitlab/</loc><lastmod>2026-11-10</lastmod></url>

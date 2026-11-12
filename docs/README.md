@@ -36,15 +36,15 @@ The pages write a setting as *Settings → tab → section*. The Mac app's Setti
 
 | Tab (Deutsch) | What is on it |
 |---|---|
-| General (Allgemein) | reload interval, menu bar and Dock, open at login, demo mode, language; notifications and the daily reminder; updates; the command palette shortcut |
-| Platforms (Plattformen) | which platforms are on |
+| General (Allgemein) | reload interval, menu bar and Dock, open at login, demo mode, projects in Spotlight, tip of the day, compact list, colour-blind friendly colours, site logos, language; notifications (daily reminder, summary of the day, sounds, spoken result, week in review, quiet hours, a second reminder for a failure); updates; the global shortcut for the command palette (⌥⌘K) |
+| Platforms (Plattformen) | which platforms are on; **Health**: what `deploys doctor` says per platform, with what to do |
 | Projects (Projekte) | hidden projects; marks |
-| Deploy | builds at the same time, the wait before a deploy starts, asking before a single deploy, the warning for commits that wait long; the auto-deploy guard ([GUARD.md](GUARD.md)) |
+| Deploy | builds at the same time, the wait before a deploy starts, asking before a single deploy, the warning for commits that wait long, only when the checks are green, watching the site after going live, a tick before migrations, Touch ID before risky steps; the deploy window editor; the rule editor; the auto-deploy guard ([SAFE-DEPLOY.md](SAFE-DEPLOY.md), [GUARD.md](GUARD.md)) |
 | Costs (Kosten) | a monthly build budget; the savings estimate ([SAVINGS.md](SAVINGS.md)) |
 | Claude | Claude Desktop and Claude Code; Claude in the app ([CLAUDE.md](CLAUDE.md)); Autofix ([AUTOFIX.md](AUTOFIX.md)) |
 | iPhone | the iPhone link: iCloud Keychain or a QR code ([WIDGETS-IOS.md](WIDGETS-IOS.md)) |
 | Team | the shared `deploy-center.json` ([TEAM.md](TEAM.md)) |
-| Help (Hilfe) | open the error log, copy diagnostics; the keyboard shortcuts |
+| Help (Hilfe) | open the error log, copy diagnostics, show the first-start guide again; the keyboard shortcuts |
 
 A link in the app that leads to a setting (for example the Autofix notice) opens the right tab, and so does `deploycenter://settings/<tab>` (for example `deploycenter://settings/claude`).
 

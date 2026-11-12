@@ -90,7 +90,7 @@ Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only gree
 - Shows what is waiting: commits and merged PRs not live yet, per project and in total. [How it counts](docs/NUMBERS.md)
 - Shows your Vercel build costs
 - Estimates what auto-deploy would cost a month, and what turning it off saved since. [How it estimates](docs/SAVINGS.md)
-- Menu bar icon with the number of PRs waiting, a notification when a deploy ends, Mac widgets and a command palette (⌘K)
+- Menu bar icon with the number of PRs waiting, a notification when a deploy ends, Mac widgets, a command palette (⌘K, or ⌥⌘K from any app) and projects in Spotlight
 - Preview deploys and rollback to the previous live deploy, on the hosts that support them
 - A bash CLI, `deploys`, that does all of this without the app, also on Linux and in CI. [CLI reference](docs/CLI.md)
 - Add-ons: a GitHub Action, badges, a daily summary to a webhook, a pre-push hook, a Docker image, an MCP server, a Claude Code plugin, VS Code and Raycast extensions, an agent digest. [Integrations](integrations/)

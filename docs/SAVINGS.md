@@ -7,7 +7,7 @@ Two commands, two questions:
 - `deploys simulate [--days 30]`: *What would auto-deploy cost me a month, next to deploying once a day?* Works before you turn anything off.
 - `deploys ledger`: *What has turning auto-deploy off saved so far?* Counts from the day you turned it off.
 
-Both need `gh` (logged in), because they count pushes on GitHub. Add `--json` for the machine answer. In the app: the Simulator (a banner before anything is turned off, and Settings → Costs → Savings) and the Ledger ("≈ $X saved since …", per project).
+Both need `gh` (logged in), because they count pushes on GitHub. Add `--json` for the machine answer. In the app: the Simulator (a banner before anything is turned off, and Settings → Costs → Savings) and the Ledger ("≈ $X saved since …", per project; with a goal of your own in USD and how far the saving has come).
 
 Every number is an estimate and shows "≈". The JSON says how it was made (`method`).
 

@@ -67,7 +67,7 @@ Neu dabei? [Sicher ausprobieren](docs/SAFE-START.md) (Englisch): erst schauen, d
 - Zeigt, was wartet: Commits und gemergte PRs, die noch nicht live sind, pro Projekt und insgesamt. [Wie gezählt wird](docs/ZAHLEN.md)
 - Zeigt deine Vercel-Buildkosten
 - Schätzt, was Auto-Deploy im Monat kosten würde und was das Abschalten seitdem gespart hat. [Wie geschätzt wird](docs/ERSPARNIS.md)
-- Menüleisten-Symbol mit der Zahl wartender PRs, eine Mitteilung, wenn ein Deploy fertig ist, Mac-Widgets und eine Befehlspalette (⌘K)
+- Menüleisten-Symbol mit der Zahl wartender PRs, eine Mitteilung, wenn ein Deploy fertig ist, Mac-Widgets, eine Befehlspalette (⌘K, oder ⌥⌘K aus jeder App) und Projekte in Spotlight
 - Preview-Deploys und Rollback auf das vorige Live-Deploy, bei den Hosts, die das können
 - Eine Bash-CLI, `deploys`, die all das ohne die App kann, auch unter Linux und in CI. [CLI-Referenz](docs/CLI.md)
 - Erweiterungen: eine GitHub Action, Badges, eine tägliche Zusammenfassung an einen Webhook, ein Pre-Push-Hook, ein Docker-Image, ein MCP-Server, ein Claude-Code-Plugin, Erweiterungen für VS Code und Raycast, ein Agent-Digest. [Integrationen](integrations/)

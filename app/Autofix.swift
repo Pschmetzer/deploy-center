@@ -62,7 +62,7 @@ struct AutofixSettings: View {
             // The steps on claude.ai, on screen and not only in a tooltip.
             VStack(alignment: .leading, spacing: 2) {
                 Text(L("a. New routine: attach your repos, paste the prompt.", "a. Neue Routine: Repos anhängen, Prompt einfügen."))
-                Text(L("b. Trigger › + › API › Generate token.", "b. Trigger › + › API › Generate token."))
+                Text(L("b. Trigger › + › API › Generate token.", "b. Unter Trigger › + › API: Generate token."))
                 Text(L("c. Copy the routine ID and the token into the fields below.", "c. Routinen-ID und Token unten eintragen."))
             }
             .font(.caption).foregroundStyle(.secondary)
