@@ -446,7 +446,8 @@ struct ContentView: View {
         if used { firstStartDone = true }
     }
 
-    private var withSheets: some View {
+    /// The sheets in two layers: one long chain was too much for the type checker on CI.
+    private var withFirstSheets: some View {
         chrome
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView(costs: store.costs) }
@@ -468,6 +469,10 @@ struct ContentView: View {
                 .padding(24).frame(width: 360)
             }
         }
+    }
+
+    private var withSheets: some View {
+        withFirstSheets
         .sheet(item: $detailItem) { item in ProjectDetail(store: store, item: item, deployCommit: store.observer ? nil : { sha in deployOne(item, sha: sha) },
                                                          // After the detail sheet is gone, so the log can take its place.
                                                          openLog: { DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { logItem = item } })
