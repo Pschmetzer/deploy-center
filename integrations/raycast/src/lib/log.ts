@@ -1,8 +1,9 @@
 import { platformLabel } from "./text";
 
-// Reading a build log: the first error block, and a prompt to hand it to an AI. A copy of the VS
-// Code extension's src/log.ts: change both together. The same rules
-// as the Mac app (app/LogTools.swift), so both copy the same excerpt.
+// Reading a build log: the first error block, and a prompt to hand it to an AI. The same rules
+// as the Mac app (app/LogTools.swift) and the VS Code extension (integrations/vscode/src/log.ts,
+// kept the same by integrations/tests/run.sh), so all copy the same excerpt. Imports only ./text,
+// so the unit tests run without the Raycast API.
 
 const errorPattern =
   /\b(error|errors|failed|failure|fatal|exception|traceback)\b|\berr!|cannot find|not found|exited with \d+/i;

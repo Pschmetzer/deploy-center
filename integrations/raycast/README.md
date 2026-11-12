@@ -1,6 +1,6 @@
 # Deploy Center for Raycast
 
-See which Vercel and Render projects have commits waiting, and deploy them by hand, from Raycast.
+See which projects have commits waiting (Vercel, Render, Netlify, Cloudflare, AWS Amplify, DigitalOcean, Coolify and deploy hooks), and deploy them by hand, from Raycast.
 
 [Deploy Center](https://github.com/Pschmetzer/deploy-center) turns off Git auto-deploy on Vercel and
 Render, so a push no longer starts a build. This extension is a front end for its `deploys` CLI:
@@ -16,8 +16,14 @@ it reads what is waiting and starts a deploy only when you confirm one.
 | Command | What it shows | Actions |
 |---|---|---|
 | **Waiting Deploys** | Projects with commits or PRs not live yet, with the age of the oldest waiting commit (`deploys changed --json`). | Deploy (asks first), Open Site, Open Dashboard, Copy Release Notes, Show in Deploy Center |
-| **Deploy Status** | Projects building right now, and projects whose newest deploy failed (`deploys status --json`). | Open Site, Open Dashboard, Copy Release Notes, Show in Deploy Center |
+| **Deploy Status** | Projects building right now, and projects whose newest deploy failed (`deploys status --json`). | Copy Build Error and Show Log (failed ones), Open Site, Open Dashboard, Copy Release Notes, Show in Deploy Center |
+| **Deploy Center Menu Bar** | In the menu bar: how many projects wait, the icon red when a newest build failed. Reads `deploys status --json` every 10 minutes. | Click a failed project to copy its build error; open Waiting Deploys |
+| **Deploy Project** | Type a project name after the command (`platform:name` when a name is on two platforms). | Deploy (asks first) |
 | **Deploy All Changed** | The same list as Waiting Deploys. Nothing starts until you press ↵ and confirm. | Deploy All (asks first, with every project named) |
+
+Copy Build Error copies the first error block of the newest build log, with keys and tokens masked
+the same way as the Mac app and the VS Code extension, ready to paste into Claude Code or a chat.
+The extension's texts are English only: Raycast extensions have no localization.
 
 Deploy All starts exactly the projects in the list you confirmed, in one
 `deploys deploy-changed --yes --json` (the CLI's rules: freeze, deploy window, start lock). It

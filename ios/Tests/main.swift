@@ -104,7 +104,7 @@ let vercel = Vercel(token: "t", team: nil, session: Stub.session)
 let vp = PhoneProject(provider: .vercel, id: "prj_1", name: "alpha")
 do {
     let t = try await vercel.rollbackTarget(vp)
-    check(t?.id == "dpl_old" && t?.sha == "aaa" && t?.message == "Older" && t?.at == Date(timeIntervalSince1970: 1),
+    check(t?.id == "dpl_old" && t?.sha == "aaa" && t?.title == "Older" && t?.at == Date(timeIntervalSince1970: 1),
           "Vercel: the deploy before the live one, of another commit, with its first line and time")
 } catch { check(false, "Vercel rollback target: \(error)") }
 
@@ -122,7 +122,7 @@ Stub.routes["/v1/services/srv-1/deploys?limit=50"] = (200, [:], #"""
 let render = Render(key: "k", session: Stub.session)
 do {
     let t = try await render.rollbackTarget(PhoneProject(provider: .render, id: "srv-1", name: "beta"))
-    check(t?.id == "dep-1" && t?.sha == "bbb" && t?.message == "Before" && t?.at != nil,
+    check(t?.id == "dep-1" && t?.sha == "bbb" && t?.title == "Before" && t?.at != nil,
           "Render: the deactivated deploy of another commit before the live one")
 } catch { check(false, "Render rollback target: \(error)") }
 

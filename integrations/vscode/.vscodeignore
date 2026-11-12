@@ -5,3 +5,6 @@
 !README.md
 !CHANGELOG.md
 !LICENSE
+!l10n/**
+!package.nls.json
+!package.nls.de.json

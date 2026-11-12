@@ -57,10 +57,13 @@ vp="" rp=""
 if ! jq -e 'type=="array" and length > 0' >/dev/null 2>&1 <<<"$a"; then
   a='[]'
   ( exec "$DEPLOYS" vercel list --json >"$tmp/v" 2>/dev/null </dev/null ) & vp=$!; disown "$vp" 2>/dev/null
-  # Render only with a key: without one there is nothing to read.
-  if [ -n "${RENDER_API_KEY:-}" ] || "$DEPLOYS" doctor 2>/dev/null </dev/null | jq -e '.renderKey == true' >/dev/null 2>&1; then
-    ( exec "$DEPLOYS" render list --json >"$tmp/r" 2>/dev/null </dev/null ) & rp=$!; disown "$rp" 2>/dev/null
-  fi
+  # Render only with a key: without one there is nothing to read. The doctor check runs inside the
+  # same bounded background job, so a doctor that hangs (a keychain prompt) cannot hold the push.
+  (
+    if [ -n "${RENDER_API_KEY:-}" ] || "$DEPLOYS" doctor 2>/dev/null </dev/null | jq -e '.renderKey == true' >/dev/null 2>&1; then
+      exec "$DEPLOYS" render list --json >"$tmp/r" 2>/dev/null </dev/null
+    fi
+  ) & rp=$!; disown "$rp" 2>/dev/null
 fi
 while { [ -n "$vp" ] && kill -0 "$vp" 2>/dev/null; } || { [ -n "$rp" ] && kill -0 "$rp" 2>/dev/null; }; do
   if [ "$waited" -ge $((limit * 5)) ]; then

@@ -1,8 +1,8 @@
-import { Action, ActionPanel, Clipboard, Color, Detail, Icon, List, Toast, showToast } from "@raycast/api";
+import { Action, ActionPanel, Color, Detail, Icon, List } from "@raycast/api";
 import { useCachedPromise, usePromise } from "@raycast/utils";
 import { StatusProject, buildLog, isFailedState, platformLabel, status } from "./lib/deploys";
-import { aiPrompt, fence, maskSecrets } from "./lib/log";
-import { ErrorView, ProjectActions, WarningItem, errorMessage, platformTag } from "./lib/ui";
+import { fence, maskSecrets } from "./lib/log";
+import { ErrorView, ProjectActions, WarningItem, copyBuildError, errorMessage, platformTag } from "./lib/ui";
 
 // The newest build log, masked, in a Detail view (what VS Code's "Show log" opens).
 function LogView(props: { p: StatusProject }) {
@@ -22,28 +22,19 @@ function LogView(props: { p: StatusProject }) {
       markdown={markdown}
       actions={
         <ActionPanel>
-          {log ? <Action title="Copy for AI" icon={Icon.Wand} onAction={() => copyForAi(p, data)} /> : null}
+          {log ? (
+            <Action
+              title="Copy Build Error"
+              icon={Icon.Bug}
+              shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
+              onAction={() => copyBuildError(p)}
+            />
+          ) : null}
           {log ? <Action.CopyToClipboard title="Copy Log" content={log} /> : null}
         </ActionPanel>
       }
     />
   );
-}
-
-// The first error block with a short prompt, ready for Claude Code, Cursor or a chat. Masked.
-async function copyForAi(p: StatusProject, log?: string) {
-  const toast = await showToast({ style: Toast.Style.Animated, title: `Reading the build log of ${p.name}` });
-  try {
-    const text = log ?? (await buildLog(p.projectRef));
-    await Clipboard.copy(aiPrompt({ name: p.name, platform: p.platform, repo: null, state: p.state }, text));
-    toast.style = Toast.Style.Success;
-    toast.title = "Copied the first error";
-    toast.message = "Ready to paste into Claude Code, Cursor or a chat";
-  } catch (e) {
-    toast.style = Toast.Style.Failure;
-    toast.title = `Could not read the log of ${p.name}`;
-    toast.message = errorMessage(e);
-  }
 }
 
 function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
@@ -68,8 +59,13 @@ function StatusItem(props: { p: StatusProject; onRefresh: () => void }) {
         <ActionPanel title={`${p.name} (${platformLabel(p.platform)})`}>
           {building ? null : (
             <ActionPanel.Section>
+              <Action
+                title="Copy Build Error"
+                icon={Icon.Bug}
+                shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
+                onAction={() => copyBuildError(p)}
+              />
               <Action.Push title="Show Log" icon={Icon.Terminal} target={<LogView p={p} />} />
-              <Action title="Copy for AI" icon={Icon.Wand} onAction={() => copyForAi(p)} />
             </ActionPanel.Section>
           )}
           <ProjectActions name={p.name} projectRef={p.projectRef} onRefresh={props.onRefresh} />

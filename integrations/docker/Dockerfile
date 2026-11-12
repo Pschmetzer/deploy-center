@@ -24,6 +24,8 @@ RUN apt-get update \
  && npm cache clean --force
 
 COPY deploys /usr/local/bin/deploys
+# VERSION next to the script, so `deploys --version` names the release.
+COPY VERSION /usr/local/bin/VERSION
 # The platforms, one file each. DEPLOYS_DIR says where they are (not next to the script here).
 COPY providers /usr/local/lib/deploys/providers
 # lib/ (team mode, GitLab) is found next to the script itself.

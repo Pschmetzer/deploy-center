@@ -29,7 +29,7 @@
 - MCP server: its version comes from `package.json` (no second copy in `server.mjs`); `scripts/bump.sh` no longer edits `server.mjs`, and a test checks that the Claude Code plugin and the MCP server carry the same version.
 - `integrations/lib/projects.sh`: `changed_projects` asks `deploys changed --json` instead of rebuilding the ignore rule.
 - VS Code: with nothing waiting, "Deploy…" moves to the end of the project menu as "Deploy again…".
-- Raycast: lists show the last result at once (cached) and refresh in the background; failed builds get "Show Log" and "Copy for AI" (secrets masked); unit tests for the parts without the Raycast API.
+- Raycast: lists show the last result at once (cached) and refresh in the background; failed builds get "Show Log" and "Copy Build Error" (secrets masked); unit tests for the parts without the Raycast API.
 - CI: shellcheck and actionlint also cover the integrations and the example workflows; the widgets are built like a release; Xcode 16.4 is selected by name; new jobs build the Docker image and check the Raycast extension; the docs job runs `check-site.py` and ruff; `npm audit` for the MCP server; npm caches; no Homebrew self-update. The changelog reminder also covers `providers/`, `lib/` and `integrations/`.
 - Dependabot also updates the npm packages of the MCP server, the VS Code and Raycast extensions, and the Docker base image.
 - Tests: every file `deploys` sources is checked in the release tarball and the Homebrew formula; the provider tests run in parallel; MCP rollback of an unknown project.

@@ -1,6 +1,6 @@
 # Example: the daily deploy from GitHub Actions, without a Mac.
 # Copy to .github/workflows/daily-deploy.yml in a repo of your own (a private "ops" repo is a good place).
-# Not tested by the Deploy Center project yet: run it once by hand (workflow_dispatch) and check the log.
+# Run it once by hand (workflow_dispatch, dry run on) and read the log before the schedule takes over.
 #
 # Secrets to add in that repo (Settings → Secrets and variables → Actions):
 #   VERCEL_TOKEN     a Vercel access token (vercel.com/account/tokens)

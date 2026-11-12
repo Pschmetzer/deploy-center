@@ -6,6 +6,7 @@ import { accessSync, constants, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { mergeProjects, parseArray, Project } from "./model";
+import { t } from "./i18n";
 
 export const APP_CLI = "/Applications/Deploy Center.app/Contents/Resources/deploys";
 
@@ -120,11 +121,20 @@ export function makeRunner(cli: string, env: NodeJS.ProcessEnv = childEnv()): Ru
     });
 }
 
+/**
+ * What a deploy start that failed says. A start that timed out may still have reached the
+ * platform, so it says so: deploying again at once could start a second build.
+ */
+export function deployFailure(r: RunResult): string {
+  if (r.timedOut) return t("did not answer in time. It may have started anyway: check its state (Refresh) before you deploy again.");
+  return errorLine(r, "deploy");
+}
+
 /** The last useful line of stderr, for a message: "Error: " and colour codes gone. */
 export function errorLine(r: RunResult, what: string): string {
-  if (r.timedOut) return `${what} did not answer in time.`;
+  if (r.timedOut) return t("{0} did not answer in time.", what);
   const line = r.stderr.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "";
-  return line.replace(/\u001B\[[0-9;]*m/g, "").replace(/^Error:\s*/, "") || `${what} failed (exit ${r.code}).`;
+  return line.replace(/\u001B\[[0-9;]*m/g, "").replace(/^Error:\s*/, "") || t("{0} failed (exit {1}).", what, r.code);
 }
 
 export interface Loaded {
@@ -155,9 +165,23 @@ export async function loadProjects(run: Runner, timeoutMs: number): Promise<Load
   };
 }
 
-/** The arguments that start one deploy: `deploys <provider> deploy-json <name>`. */
-export function deployArgs(p: { platform: string; name: string }): string[] {
-  return [p.platform, "deploy-json", p.name];
+/** The arguments that start one deploy: `deploys <provider> deploy-json <name> [--preview]`. */
+export function deployArgs(p: { platform: string; name: string }, preview = false): string[] {
+  return [p.platform, "deploy-json", p.name, ...(preview ? ["--preview"] : [])];
+}
+
+/** Preview deploys: Vercel only (as the MCP server); a Render service has none here. */
+export function canPreview(p: { platform: string }): boolean {
+  return p.platform === "vercel";
+}
+
+/** Rollback back to the deploy before the current one: Vercel and Render. */
+export function canRollback(p: { platform: string }): boolean {
+  return p.platform === "vercel" || p.platform === "render";
+}
+
+export function rollbackArgs(p: { platform: string; name: string }): string[] {
+  return [p.platform, "rollback", p.name];
 }
 
 /** logs, notes and open take the name, or platform:name when it is on two platforms. */

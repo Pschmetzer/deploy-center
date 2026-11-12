@@ -39,6 +39,29 @@
       "subtitle": "Deploy Center",
       "description": "Shows every project with waiting commits, then deploys all of them after you confirm.",
       "mode": "view"
+    },
+    {
+      "name": "menu-bar",
+      "title": "Deploy Center Menu Bar",
+      "subtitle": "Deploy Center",
+      "description": "How many projects wait to go live, in the menu bar; red when a newest build failed. Copy a build error from there.",
+      "mode": "menu-bar",
+      "interval": "10m"
+    },
+    {
+      "name": "deploy-project",
+      "title": "Deploy Project",
+      "subtitle": "Deploy Center",
+      "description": "Deploy one project by name, after you confirm. Write platform:name when a name is on two platforms.",
+      "mode": "no-view",
+      "arguments": [
+        {
+          "name": "project",
+          "placeholder": "project",
+          "type": "text",
+          "required": true
+        }
+      ]
     }
   ],
   "preferences": [

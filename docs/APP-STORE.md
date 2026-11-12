@@ -9,7 +9,7 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 | Item | Where |
 |---|---|
 | Xcode project (app + widget extension) | `ios/DeployCenter.xcodeproj` (folders `ios/App`, `widgets`, `shared`) |
-| Simulator build, archive and export | `ios/build.sh`, `ios/build.sh --archive` (build number from the commit count) |
+| Simulator build, archive and export | `ios/build.sh`, `ios/build.sh --archive` (build number from the UTC time) |
 | Logic checks without a device | `ios/test.sh`: the "waiting" rule, rollback targets, GitHub reads, against made-up answers |
 | Not offered on Mac or Apple Vision Pro | `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO`, `SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO`; the store switch is separate, see below |
 | Privacy manifest | `ios/App/PrivacyInfo.xcprivacy`: no tracking, no collected data, UserDefaults reason `CA92.1` |
@@ -110,7 +110,7 @@ behind the app are in `docs/WIDGETS-IOS.md`.
    ```
 
    - The key belongs outside the repo, in `~/.appstoreconnect/private_keys/`.
-   - The build number is the commit count of `HEAD`, so it grows with every commit on `main`.
+   - The build number is the UTC time (`YYYYMMDDHHMM`), so it grows with every archive, on any branch.
      `BUILD_NUMBER=… ios/build.sh --archive` sets one by hand.
 4. **TestFlight.** Install the build on your own iPhone and add a real token. Then check:
    - deploy one project and roll it back;

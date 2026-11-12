@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseRemotes, repoSlug, scopeProjects } from "../src/repo";
+import { parseRemotes, repoKey, repoSlug, scopeProjects } from "../src/repo";
 
 test("repoSlug reads every spelling of a remote", () => {
   for (const r of [
@@ -47,4 +47,16 @@ test("the same owner/name on GitHub and GitLab are two repos", () => {
 
 test("a repo is not matched by prefix", () => {
   assert.deepEqual(scopeProjects([{ repo: "me/app-old" }], ["git@github.com:me/app.git"], "repo").projects, []);
+});
+
+test("repoKey keeps the host: GitLab's me/app is not GitHub's", () => {
+  for (const r of ["git@github.com:me/app.git", "https://github.com/Me/App/", "ssh://git@github.com:22/me/app.git", "me/app", "https://www.github.com/me/app"])
+    assert.equal(repoKey(r), "github.com/me/app", r);
+  assert.equal(repoKey("git@gitlab.com:me/app.git"), "gitlab.com/me/app");
+  assert.equal(repoKey("gitlab.com/group/sub/app"), "gitlab.com/group/sub/app");
+  assert.equal(repoKey("https://gitlab.com/group/sub/app.git"), "gitlab.com/group/sub/app");
+  assert.equal(repoKey("app"), null);
+  const both = [{ name: "gh", repo: "me/app" }, { name: "gl", repo: "gitlab.com/me/app" }];
+  assert.deepEqual(scopeProjects(both, ["git@gitlab.com:me/app.git"], "repo").projects.map((p) => p.name), ["gl"]);
+  assert.deepEqual(scopeProjects(both, ["git@github.com:me/app.git"], "repo").projects.map((p) => p.name), ["gh"]);
 });

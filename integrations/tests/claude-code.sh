@@ -95,7 +95,7 @@ done < <(jq -r '.hooks[][].hooks[].command | capture("\\$\\{CLAUDE_PLUGIN_ROOT\\
 
 # --- skills: skills/<name>/SKILL.md with YAML frontmatter ---
 known_fm=" name description when_to_use argument-hint disable-model-invocation user-invocable allowed-tools arguments disallowed-tools model effort context agent background hooks paths shell metadata license compatibility "
-for want in deploy-center deploys-waiting deploys-status deploys-fix deploys-ship; do
+for want in deploy-center deploys-waiting deploys-status deploys-fix deploys-ship deploys-notes deploys-rollback; do
   f="$plug/skills/$want/SKILL.md"
   [ -f "$f" ] || { fail "skill $want: SKILL.md exists" "$f"; continue; }
   [ "$(head -1 "$f")" = "---" ] && fm="$(awk 'NR==1{next} /^---$/{exit} {print}' "$f")" || fm=""
@@ -107,7 +107,7 @@ for want in deploy-center deploys-waiting deploys-status deploys-fix deploys-shi
   [ -z "$n" ] || [ "$n" = "$want" ] && ok "skill $want: name matches its folder" || fail "skill $want: name matches its folder" "$n"
 done
 # The safety model, in the files themselves.
-for s in deploys-waiting deploys-status deploys-fix deploys-ship; do
+for s in deploys-waiting deploys-status deploys-fix deploys-ship deploys-notes deploys-rollback; do
   grep -q '^disable-model-invocation: true' "$plug/skills/$s/SKILL.md" \
     && ok "skill $s: only the user runs it" || fail "skill $s: only the user runs it" "model-invocable"
 done
@@ -116,6 +116,17 @@ if grep -hE '^allowed-tools:' "$plug"/skills/*/SKILL.md | grep -qiE 'deploy-chan
 else ok "skills: no deploy command is pre-approved"; fi
 grep -q 'Stop and wait for the answer' "$plug/skills/deploys-ship/SKILL.md" \
   && ok "deploys-ship: asks before deploying" || fail "deploys-ship: asks before deploying" "missing"
+grep -q 'Stop and wait for the answer' "$plug/skills/deploys-rollback/SKILL.md" \
+  && ok "deploys-rollback: asks before rolling back" || fail "deploys-rollback: asks before rolling back" "missing"
+# The subagent: read-only, never --yes.
+agent="$plug/agents/ship-reviewer.md"
+if [ -f "$agent" ]; then
+  [ "$(sed -nE 's/^name: *//p' "$agent")" = ship-reviewer ] && ok "agent ship-reviewer: name" || fail "agent ship-reviewer: name" "missing"
+  grep -q 'never with `--yes`' "$agent" && grep -q 'You never deploy' "$agent" \
+    && ok "agent ship-reviewer: read-only" || fail "agent ship-reviewer: read-only" "missing"
+else fail "agent ship-reviewer: exists" "$agent"; fi
+check "hooks: SessionStart calls the hook script with --session-start" jq -e '.hooks.SessionStart[0].hooks[0].command | endswith("--session-start")' "$hooks"
+check "plugin: session_hint is off by default" jq -e '.userConfig.session_hint.default == false' "$man"
 grep -qi 'never deploy without an explicit OK' "$plug/skills/deploy-center/SKILL.md" \
   && ok "deploy-center skill: never deploy without an explicit OK" || fail "deploy-center skill: never deploy without an explicit OK" "missing"
 

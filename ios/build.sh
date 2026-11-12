@@ -3,7 +3,7 @@
 #   ios/build.sh               build for the simulator into build/ios-dd
 #   ios/build.sh --run         also install and start it in the booted simulator (boots an iPhone one if none is), in demo mode
 #   ios/build.sh --archive     archive for the App Store and export an .ipa into build/ios-export (no upload);
-#                              the build number is the commit count (git rev-list --count HEAD), or BUILD_NUMBER
+#                              the build number is the UTC time (YYYYMMDDHHMM) unless BUILD_NUMBER is set
 #   ios/build.sh --upload      upload that archive to App Store Connect, with the Apple ID signed in to Xcode
 # The team id comes from the signing identity (~/.config/deploys/signing-identity or DEVELOPER_ID),
 # never from the repo. Uploading is a separate, manual step: see docs/APP-STORE.md.
@@ -36,8 +36,8 @@ case "$mode" in
     if [ -z "$id" ] && [ -s "$HOME/.config/deploys/signing-identity" ]; then id="$(head -n1 "$HOME/.config/deploys/signing-identity")"; fi
     team="$(sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p' <<<"$id")"
     [ -n "$team" ] || die "no team id: set DEVELOPER_ID or ~/.config/deploys/signing-identity"
-    # Every upload needs a higher build number: the commit count only grows on main.
-    build_number="${BUILD_NUMBER:-$(git rev-list --count HEAD)}"
+    # Every upload needs a higher build number: the UTC time grows on every branch and never repeats a minute.
+    build_number="${BUILD_NUMBER:-$(date -u +%Y%m%d%H%M)}"
     [[ "$build_number" =~ ^[0-9]+$ ]] || die "build number is not a number: $build_number"
     mkdir -p build
     cat > build/ExportOptions.plist <<PLIST
