@@ -154,13 +154,13 @@ lock_clear_stale() {  # lock_clear_stale <path> <seconds>
   else ln "$t" "$f" 2>/dev/null; rm -f "$t"; fi
   return 0
 }
-# A short lock for a small file that two runs may rewrite at once (counts, lists): waited for two
+# A short lock for a small file that two runs may rewrite at once (counts, lists): waited for five
 # seconds at most, taken over after <stale> seconds (0: never), and without it the write still
 # happens (as before). No trap: callers unlock themselves, so AF_RUN_LOCK's trap stays theirs.
 file_lock() {  # file_lock <file> [stale seconds, default 10]; then file_unlock <file>
   local i=0
   [ "${2:-10}" = 0 ] || lock_clear_stale "$1.lock" "${2:-10}"
-  while [ "$i" -lt 20 ]; do mkdir "$1.lock" 2>/dev/null && return 0; i=$((i + 1)); sleep 0.1; done
+  while [ "$i" -lt 50 ]; do mkdir "$1.lock" 2>/dev/null && return 0; i=$((i + 1)); sleep 0.1; done
   return 1
 }
 file_unlock() { rmdir "$1.lock" 2>/dev/null || true; }

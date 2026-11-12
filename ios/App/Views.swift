@@ -822,7 +822,7 @@ struct SettingsView: View {
     private func field(_ k: Key) -> Binding<String> { Binding(get: { fields[k] ?? "" }, set: { fields[k] = $0 }) }
     /// The placeholder says when the Mac's key is in use for an empty field.
     private func prompt(_ k: Key, _ en: String, _ de: String) -> String {
-        store.linkedToken(k) != nil && (fields[k] ?? "").isEmpty ? L("\(en) (from the Mac)", "\(de) (vom Mac)") : L(en, de)
+        store.linkedToken(k) != nil && (fields[k] ?? "").isEmpty ? L(en, de) + L(" (from the Mac)", " (vom Mac)") : L(en, de)
     }
 
     var body: some View {

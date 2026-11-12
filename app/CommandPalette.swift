@@ -261,7 +261,7 @@ struct CommandPalette: View {
                             let hidden = PaletteCommands.hiddenMatches(store, query)
                             if hidden > 0 {
                                 Button(L("\(plural(hidden, "hidden project matches", "hidden projects match")) – open Settings",
-                                         "\(hidden) \(hidden == 1 ? "ausgeblendetes Projekt passt" : "ausgeblendete Projekte passen") – Einstellungen öffnen")) {
+                                         "\(plural(hidden, "ausgeblendetes Projekt passt", "ausgeblendete Projekte passen")) – Einstellungen öffnen")) {
                                     // Hidden projects are on the Projects tab.
                                     SettingsNav.prepare(.projects)
                                     dismiss(); NSApp.activate(ignoringOtherApps: true); openSettings()

@@ -1255,7 +1255,7 @@ struct ContentView: View {
                     .font(.headline)
                 ForEach(elsewhere, id: \.self) { p in
                     let n = store.changedCount(p)
-                    Button(L("\(plural(n, "project waits", "projects wait")) on \(p.rawValue)", "Bei \(p.rawValue) \(n == 1 ? "wartet" : "warten") \(plural(n, "Projekt", "Projekte"))")) {
+                    Button(L("\(plural(n, "project", "projects")) \(n == 1 ? "waits" : "wait") on \(p.rawValue)", "Bei \(p.rawValue) \(n == 1 ? "wartet" : "warten") \(plural(n, "Projekt", "Projekte"))")) {
                         select(.provider(p.cli))
                     }
                     .buttonStyle(.link)
