@@ -115,5 +115,27 @@ expect "--help lists simulate and ledger" "$(cli --help | grep -cE 'deploys (sim
 expect "a missing lib is a clear error" "$(DEPLOYS_SAVINGS_LIB=/nonexistent cli ledger --json | grep -c 'lib/savings.sh is missing')" "1"
 expect "the fixtures hold no personal data" "$(grep -rcE '(srv|prj|team)_?-?[a-z0-9]{16,}|/Users/' "$fx" | grep -vc ':0$')" "0"
 
+# ===== CLI track (improve/cli): additions, kept together =====
+# LOG-051, LOG-064: skipped builds of unknown length make the minutes unknown, not 0.
+nob="$(jq '(.projects[] | select(.name == "svc") | .builds.minutes) = []' "$fx/ledger-facts.json" | sv_ledger_from)"
+expect "LOG-051: a project without measured builds: its minutes unknown" \
+  "$(echo "$nob" | jq -c '{m:(.projects[] | select(.name == "svc") | .savedMinutes), r:.total.renderMinutes, v:.total.vercelMinutes, c:.minutesComplete}')" \
+  '{"m":null,"r":null,"v":12,"c":false}'
+expect "LOG-051: all minutes known: complete" "$(echo "$led" | jq -c '.minutesComplete')" "true"
+# LOG-053: a build list cut off after the day auto-deploy went off says so.
+cut="$(jq '(.projects[] | select(.name == "web") | .builds) += {full:false, oldestAt:9999999999}' "$fx/ledger-facts.json" | sv_ledger_from)"
+expect "LOG-053: only the newest 100 builds: a problem is named" "$(echo "$cut" | jq -r '.projects[] | select(.name == "web") | .problem')" \
+  "only the newest 100 builds were read; skipped may be too high"
+# LOG-056: the method in German too.
+expect "LOG-056: methodDe in both reports" "$(echo "$sim" | jq -r '.methodDe | startswith("Schätzung")'):$(echo "$led" | jq -r '.methodDe | startswith("Schätzung")')" "true:true"
+# CLI-096: --days is for simulate.
+expect "CLI-096: ledger --days is refused" "$(cli ledger --days 5 --json | grep -c 'is for simulate')" "1"
+# CLI-041: a GitLab project is named as not counted yet, not as "GitHub could not be read".
+expect "CLI-041: GitLab pushes are said to be uncounted" \
+  "$( (githost_of() { echo gitlab; }; sv_pushes gitlab.com/g/x main 0 | jq -r .error) )" "a GitLab project: its pushes are not counted yet (GitHub only)"
+expect "CLI-041: without gh, each GitHub project says so (no stop for all)" \
+  "$( (githost_of() { echo github; }; unset -f gh; PATH=/usr/bin:/bin; command -v gh >/dev/null 2>&1 && echo skip || sv_pushes me/app main 0 | jq -r '.error | startswith("counting pushes on GitHub needs gh")') )" "true"
+# ===== end CLI track =====
+
 echo
 [ "$fails" = 0 ] && echo "All savings tests passed." || { echo "$fails savings tests failed."; exit 1; }

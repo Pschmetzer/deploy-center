@@ -81,7 +81,8 @@ check "hooks: known events only" jq -e '.hooks | keys - ["PreToolUse","PostToolU
 check "hooks: each group has a hooks array of command handlers" jq -e '[.hooks[][]] | all(
   (.hooks|type=="array" and length>0) and (.hooks|all(.type=="command" and (.command|type=="string"))))' "$hooks"
 check "hooks: timeouts are numbers" jq -e '[.hooks[][].hooks[] | .timeout // 1] | all(type=="number" and . > 0)' "$hooks"
-check "hooks: PostToolUse on Bash, only for git push" jq -e '.hooks.PostToolUse[0] | .matcher=="Bash" and .hooks[0].if=="Bash(git push *)"' "$hooks"
+# No `if` rule: Bash(git push *) misses `cd dir && git push` and `git -C dir push`; the script filters.
+check "hooks: PostToolUse on Bash, filtered by the script, not an if rule" jq -e '.hooks.PostToolUse[0] | .matcher=="Bash" and (.hooks[0].if == null)' "$hooks"
 check "hooks: \${CLAUDE_PLUGIN_ROOT} is quoted in shell form" \
   jq -e '[.hooks[][].hooks[] | select(.args == null) | .command] | all(test("\"\\$\\{CLAUDE_PLUGIN_ROOT\\}[^\"]*\""))' "$hooks"
 while IFS= read -r p; do
@@ -116,13 +117,18 @@ grep -qi 'never deploy without an explicit OK' "$plug/skills/deploy-center/SKILL
   && ok "deploy-center skill: never deploy without an explicit OK" || fail "deploy-center skill: never deploy without an explicit OK" "missing"
 
 # --- optional MCP config (not loaded by the plugin) ---
-check "mcp example: mcpServers.deploys runs integrations/mcp/server.mjs, deploys off" jq -e '.mcpServers.deploys
-  | .command=="node" and (.args[0]|endswith("integrations/mcp/server.mjs")) and .env.DEPLOYS_MCP_ALLOW_DEPLOY=="0"' "$plug/mcp/deploys.mcp.json"
+check "mcp example: mcpServers.deploys runs the server in the app bundle, deploys off" jq -e '.mcpServers.deploys
+  | .command=="node" and (.args[0]|endswith("Deploy Center.app/Contents/Resources/mcp/server.mjs")) and (.args[0]|test("/path/to")|not) and .env.DEPLOYS_MCP_ALLOW_DEPLOY=="0"' "$plug/mcp/deploys.mcp.json"
+# The same file build.sh copies into the bundle.
+grep -q 'Resources/mcp' build.sh && grep -q 'integrations/mcp/server.mjs' build.sh \
+  && ok "mcp example: build.sh ships server.mjs to Resources/mcp" || fail "mcp example: build.sh ships server.mjs to Resources/mcp" "path changed"
 
 # --- the official validator, when installed ---
+# macOS has no timeout(1); coreutils calls it gtimeout. Without either, no limit.
+limit() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"; else shift; "$@"; fi; }
 if command -v claude >/dev/null 2>&1; then
   for target in "$plug" .; do
-    if out="$(timeout 120 claude plugin validate --strict "$target" 2>&1)"; then ok "claude plugin validate --strict $target"
+    if out="$(limit 120 claude plugin validate --strict "$target" 2>&1)"; then ok "claude plugin validate --strict $target"
     else fail "claude plugin validate --strict $target" "$(tail -5 <<<"$out")"; fi
   done
 else

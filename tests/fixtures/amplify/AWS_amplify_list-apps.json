@@ -1,0 +1,27 @@
+{
+  "apps": [
+    {
+      "appId": "d1shop0001",
+      "appArn": "arn:aws:amplify:eu-central-1:123456789012:apps/d1shop0001",
+      "name": "Shop",
+      "repository": "https://github.com/me/shop",
+      "platform": "WEB_COMPUTE",
+      "defaultDomain": "d1shop0001.amplifyapp.com",
+      "enableBranchAutoBuild": true,
+      "productionBranch": {
+        "branchName": "main",
+        "status": "SUCCEED",
+        "lastDeployTime": "2026-01-02T03:00:00+00:00"
+      }
+    },
+    {
+      "appId": "d2blog0002",
+      "appArn": "arn:aws:amplify:eu-central-1:123456789012:apps/d2blog0002",
+      "name": "blog",
+      "repository": "https://gitlab.com/me/blog.git",
+      "platform": "WEB",
+      "defaultDomain": "d2blog0002.amplifyapp.com",
+      "enableBranchAutoBuild": false
+    }
+  ]
+}

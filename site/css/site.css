@@ -5,15 +5,23 @@
   --accent:#4f7cff; --accent2:#8b5cf6; --green:#34c759; --red:#ff5f57; --orange:#ff9f0a;
   --radius:16px; --max:1120px;
 }
+/* light: the accents too, darker so links and numbers keep 4.5:1 on white (same values as index.html).
+   data-theme is the choice made on the home page, read in <head> of each page. */
 @media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475}
+  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475;--accent:#2f5fe8;--accent2:#7c3aed;--green:#1f8f3a;--red:#d93025;--orange:#b25e00}
 }
+:root[data-theme="light"]{color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475;--accent:#2f5fe8;--accent2:#7c3aed;--green:#1f8f3a;--red:#d93025;--orange:#b25e00}
+:root[data-theme="dark"]{color-scheme:dark}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{margin:0;background:var(--bg);color:var(--text);font:17px/1.65 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;overflow-wrap:break-word}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
 img{max-width:100%;height:auto}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.skip{position:absolute;left:-9999px;top:8px;z-index:100;background:var(--card);color:var(--text);padding:8px 14px;border-radius:8px;border:1px solid var(--line)}
+.skip:focus{left:12px}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .wrap{max-width:var(--max);margin:0 auto;padding:0 16px}
 .narrow{max-width:760px}
 
@@ -25,6 +33,10 @@ nav.top .brand img{width:24px;height:24px;border-radius:6px}
 nav.top .links{margin-left:auto;display:flex;gap:16px;font-size:15px}
 nav.top .links a{color:var(--muted)}
 nav.top .links a:hover,nav.top .links a[aria-current]{color:var(--text);text-decoration:none}
+nav.top .links{align-items:center}
+nav.top .links a.dl{background:var(--accent);color:#fff;font-weight:600;padding:5px 11px;border-radius:8px}
+nav.top .links a.dl:hover{color:#fff;filter:brightness(1.08)}
+@media (max-width:560px){nav.top .links{gap:12px;font-size:14px}nav.top .links a.opt{display:none}}
 @media (max-width:380px){nav.top .brand span{display:none}}
 
 /* article */
@@ -90,8 +102,8 @@ details p{color:var(--muted);margin:10px 0 0}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
 .field{margin-bottom:20px}
 .field:last-child{margin-bottom:0}
-.field label{display:flex;justify-content:space-between;gap:12px;font-weight:600;font-size:15px;margin-bottom:8px}
-.field label output{color:var(--accent);font-variant-numeric:tabular-nums;white-space:nowrap}
+.field .fh{display:flex;justify-content:space-between;gap:12px;font-weight:600;font-size:15px;margin-bottom:8px}
+.field .fh output{color:var(--accent);font-variant-numeric:tabular-nums;white-space:nowrap}
 input[type=range]{width:100%;accent-color:var(--accent)}
 .hint{font-size:13px;color:var(--muted);margin-top:4px}
 .result{display:flex;flex-direction:column;justify-content:center;text-align:center;background:linear-gradient(160deg,color-mix(in srgb,var(--green) 16%,var(--card)),var(--card))}
@@ -118,5 +130,5 @@ ol.flowline li span{background:var(--card);border:1px solid var(--line);border-r
 ol.flowline li.fail span{border-color:color-mix(in srgb,var(--red) 55%,var(--line));color:var(--red)}
 ol.flowline li.you span{border-color:color-mix(in srgb,var(--accent) 60%,var(--line))}
 ol.flowline li.live span{border-color:color-mix(in srgb,var(--green) 55%,var(--line));color:var(--green)}
-ol.flowline li+li::before{content:"→";color:var(--muted)}
+ol.flowline li+li::before{content:"→";content:"→" / "";color:var(--muted)}
 .tag{display:inline-block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--orange);border:1px solid color-mix(in srgb,var(--orange) 50%,var(--line));border-radius:999px;padding:1px 8px;vertical-align:middle;margin-left:6px}

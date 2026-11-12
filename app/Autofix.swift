@@ -31,6 +31,8 @@ struct AutofixSettings: View {
     @ObservedObject var store: Store
     /// The projects, so demo mode can replace their names in the script's output.
     private var items: [Item] { store.items.values.flatMap { $0 } }
+    /// Read so the output redraws at once when demo mode is switched (⇧⌘D).
+    @AppStorage("demoMode") private var demoMode = false
     @State private var status: AutofixStatus?
     /// A failed read keeps the last good status on screen, with this under it.
     @State private var readError: String?
@@ -165,17 +167,17 @@ struct AutofixSettings: View {
     }
 
     private func copyPrompt() async {
+        let text: String
         do {
-            let data = try await Tool.run(["autofix", "prompt"], timeout: 10)
-            let text = String(decoding: data, as: UTF8.self)
-            guard !text.isEmpty else {
-                message = L("The script gave no prompt.", "Das Skript lieferte keinen Prompt."); failed = true; return
+            guard let t = String(data: try await Tool.run(["autofix", "prompt"], timeout: 10), encoding: .utf8), !t.isEmpty else {
+                message = L("The prompt came back empty.", "Der Prompt kam leer zurück."); failed = true; return
             }
-            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
-            message = L("Prompt copied. Paste it into the new routine.", "Prompt kopiert. Füge ihn in die neue Routine ein."); failed = false
+            text = t
         } catch {
-            message = L("Could not copy the prompt: ", "Prompt nicht kopiert: ") + error.localizedDescription; failed = true
+            message = L("Could not copy the prompt: ", "Prompt ließ sich nicht kopieren: ") + error.localizedDescription; failed = true; return
         }
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+        message = L("Prompt copied. Paste it into the new routine.", "Prompt kopiert. Füge ihn in die neue Routine ein."); failed = false
     }
 
     private func saveRoutine() async { await run(["autofix", "routine", routineId.trimmingCharacters(in: .whitespaces)]) }

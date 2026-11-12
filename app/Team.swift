@@ -38,6 +38,8 @@ struct TeamConfig: Decodable {
 
 struct TeamSettings: View {
     @ObservedObject var store: Store
+    /// Read so the output redraws at once when demo mode is switched (⇧⌘D).
+    @AppStorage("demoMode") private var demoMode = false
     @State private var config: TeamConfig?
     @State private var repo = ""
     @State private var busy = false

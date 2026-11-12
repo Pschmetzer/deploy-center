@@ -99,9 +99,21 @@ enum PhoneLink {
         return qrPrefix + d.base64EncodedString()
     }
 
-    static func parse(qr: String) -> LinkedKeys? {
+    /// The Mac shows a code for a minute; older ones (a photo, a screenshot) are refused.
+    /// A little slack both ways for clocks that are not quite in step.
+    static let qrMaxAge: TimeInterval = 120
+
+    enum QRResult: Equatable { case keys(LinkedKeys), notOurs, expired }
+
+    static func read(qr: String, now: Date = Date()) -> QRResult {
         guard qr.hasPrefix(qrPrefix), let d = Data(base64Encoded: String(qr.dropFirst(qrPrefix.count))),
-              let k = try? JSONDecoder().decode(LinkedKeys.self, from: d), !k.isEmpty else { return nil }
-        return k
+              let k = try? JSONDecoder().decode(LinkedKeys.self, from: d), !k.isEmpty else { return .notOurs }
+        guard abs(now.timeIntervalSince(k.updated)) <= qrMaxAge else { return .expired }
+        return .keys(k)
+    }
+
+    static func parse(qr: String) -> LinkedKeys? {
+        if case .keys(let k) = read(qr: qr) { return k }
+        return nil
     }
 }

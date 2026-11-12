@@ -1,38 +1,46 @@
 import { Action, ActionPanel, Alert, Color, Icon, List, Toast, confirmAlert, showToast } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
 import { useState } from "react";
-import { ChangedProject, changed, deploy, platformLabel, plural } from "./lib/deploys";
+import { ChangedProject, changed, deployChanged, platformLabel, plural } from "./lib/deploys";
 import { changedItemProps, commitsText, sortByAge } from "./lib/changed";
 import { ErrorView, ProjectActions, WarningItem, errorMessage } from "./lib/ui";
 
 type Outcome = { ok: true; detail: string } | { ok: false; detail: string };
 
-// Starts exactly the projects that were shown and confirmed, one after the other.
-// deploy-json takes the same start lock as the app, so a second start within a minute is refused.
+// One `deploys deploy-changed --yes --json`, only when it would start exactly the confirmed list.
+// The CLI starts them with its own rules (freeze, deploy window, start lock, journal).
 async function deployAll(list: ChangedProject[], onEach: (key: string, o: Outcome) => void) {
   const toast = await showToast({ style: Toast.Style.Animated, title: `Deploying ${plural(list.length, "project")}` });
-  let ok = 0;
-  const failed: string[] = [];
-  for (const [i, p] of list.entries()) {
-    toast.message = `${i + 1} of ${list.length}: ${p.name}`;
-    try {
-      const r = await deploy(p);
-      ok++;
-      onEach(`${p.platform}/${p.name}`, { ok: true, detail: r.url ?? r.state ?? r.id });
-    } catch (e) {
-      failed.push(p.name);
-      onEach(`${p.platform}/${p.name}`, { ok: false, detail: errorMessage(e) });
+  try {
+    const { data, warning } = await deployChanged(list);
+    let ok = 0;
+    const failed: string[] = [];
+    for (const r of data) {
+      const started = r.action === "started";
+      if (started) ok++;
+      else failed.push(r.name);
+      onEach(`${r.platform}/${r.name}`, {
+        ok: started,
+        detail: started ? (r.url ?? r.id ?? "started") : (r.reason ?? warning ?? r.action),
+      });
     }
+    toast.style = failed.length ? Toast.Style.Failure : Toast.Style.Success;
+    toast.title = failed.length ? `${ok} started, ${failed.length} did not start` : `${plural(ok, "deploy")} started`;
+    toast.message = failed.length ? `Not started: ${failed.join(", ")}` : "Follow them in Deploy Status.";
+  } catch (e) {
+    toast.style = Toast.Style.Failure;
+    toast.title = "Nothing was started";
+    toast.message = errorMessage(e);
   }
-  toast.style = failed.length ? Toast.Style.Failure : Toast.Style.Success;
-  toast.title = failed.length ? `${ok} started, ${failed.length} did not start` : `${plural(ok, "deploy")} started`;
-  toast.message = failed.length ? `Not started: ${failed.join(", ")}` : "Follow them in Deploy Status.";
 }
 
 export default function DeployAllChanged() {
   const { data, error, isLoading, revalidate } = usePromise(changed, [], { onError: () => undefined });
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
   const [running, setRunning] = useState(false);
+  // After a run the list is read again, and "Deploy All" stays off for this command: what was
+  // just started may still look waiting while it builds. Open the command again to deploy more.
+  const [ran, setRan] = useState(false);
   const list = sortByAge(data?.data ?? []);
   const commits = list.reduce((n, p) => n + (p.pendingCommits ?? 0), 0);
 
@@ -51,10 +59,12 @@ export default function DeployAllChanged() {
       await deployAll(list, (key, o) => setOutcomes((prev) => ({ ...prev, [key]: o })));
     } finally {
       setRunning(false);
+      setRan(true);
+      revalidate();
     }
   }
 
-  const deployAllAction = list.length > 0 && !running && (
+  const deployAllAction = list.length > 0 && !running && !ran && (
     <Action title={`Deploy All ${list.length}`} icon={Icon.Upload} onAction={start} />
   );
 
@@ -106,7 +116,7 @@ export default function DeployAllChanged() {
                     <ActionPanel title={p.name}>
                       {deployAllAction}
                       {o && <Action.CopyToClipboard title="Copy Result" content={o.detail} />}
-                      <ProjectActions name={p.name} onRefresh={revalidate} />
+                      <ProjectActions name={p.name} projectRef={p.projectRef} onRefresh={revalidate} />
                     </ActionPanel>
                   }
                 />

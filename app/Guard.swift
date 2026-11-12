@@ -126,7 +126,7 @@ struct GuardSettings: View {
         // The window's "allowed until" badges at once, not at the next refresh.
         await store.loadAgentStatus()
         await withTaskGroup(of: Void.self) { g in
-            for p in store.enabledProviders.compactMap(\.platform) { g.addTask { await store.load(p) } }
+            for p in Platform.allCases where store.canLoad(p) { g.addTask { await store.load(p) } }
         }
     }
 }
@@ -144,7 +144,7 @@ private struct GuardLastRun: View {
                 }
                 ForEach(s.lastActions) { a in
                     HStack {
-                        Text(providerLabel(a.platform)).foregroundStyle(.secondary)
+                        Text(ProviderInfo.label(for: a.platform)).foregroundStyle(.secondary)
                         Text(Demo.mask(a.project ?? "–"))
                         Spacer()
                         let bad = a.action == "failed" || a.action == "error"
@@ -213,8 +213,8 @@ private struct GuardAllowances: View {
 
     private func scope(_ a: GuardStatus.Allowance) -> String {
         if a.platform == "all" { return L("All projects", "Alle Projekte") }
-        if a.project == "*" { return L("All of ", "Alles bei ") + providerLabel(a.platform) }
-        return providerLabel(a.platform) + " · " + Demo.mask(a.project)
+        if a.project == "*" { return L("All of ", "Alles bei ") + ProviderInfo.label(for: a.platform) }
+        return ProviderInfo.label(for: a.platform) + " · " + Demo.mask(a.project)
     }
 
     private func left(_ a: GuardStatus.Allowance, now: Date) -> String {

@@ -382,6 +382,25 @@ enum SavingsFormat {
     /// "2026-01-20" as a date for the reader.
     /// "2026-01-20" as a date in words, the same day everywhere: read and written in UTC, so a Mac
     /// west of UTC does not show the 19th.
+    /// The script's method in German for the two texts it has (simulation, ledger); a text the app
+    /// does not know is shown as the script wrote it, so the German window never says something else.
+    static func methodGerman(_ method: String) -> String {
+        let price = "Jeder Build kostet den Schnitt des Projekts: Minuten aus den letzten fertigen Builds (bis zu 20), Dollar aus Vercels Abrechnung pro Build (7 Tage), sonst aus dem Minutenpreis des Teams, sonst aus DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN."
+        if method.isEmpty || method.hasPrefix("Estimate. Pushes to the deploy branch") {
+            return "Schätzung. Jeder Push auf den Deploy-Branch im Zeitraum zählt als ein Build (GitHub-Aktivität; wo Pushes fehlen, Commits, eine Obergrenze). "
+                + price + " „1× am Tag“ zählt einen Build an jedem Tag mit Push. Pro Monat = Zeitraum auf 30 Tage hochgerechnet."
+        }
+        if method.hasPrefix("Estimate. Since auto-deploy was turned off") {
+            return "Schätzung. Seit Auto-Deploy aus ist, zählt jeder Push auf den Deploy-Branch, dessen Commit nie gebaut wurde, als gesparter Build (GitHub-Aktivität; wo Pushes fehlen, Commits, eine Obergrenze). " + price
+        }
+        return method
+    }
+
+    /// Made once: the ledger asks for every skipped push.
+    private static let dayParser: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
     static func day(_ s: String?) -> String {
         guard let s else { return "–" }
         guard let d = dayParser.date(from: s) else { return s }
@@ -529,24 +548,11 @@ private struct EstimateFooter: View {
     let loading: Bool
     let reload: () -> Void
 
-    /// The script's method is English; the German says the same for each tab (the simulator
-    /// counts pushes in a window, the ledger skipped builds since auto-deploy went off).
-    static func germanMethod(_ k: Kind) -> String {
-        let price = "Jeder Build zum Durchschnitt des Projekts: Minuten aus den letzten fertigen Builds (bis zu 20), Dollar aus Vercels Abrechnung pro Build (7 Tage), sonst aus dem Minutenpreis des Teams, sonst aus DEPLOYS_VERCEL_USD_PER_MIN / DEPLOYS_RENDER_USD_PER_MIN."
-        switch k {
-        case .simulator:
-            return "Schätzung. Pushes auf den Deploy-Branch im Zeitraum (GitHub-Aktivität; wo Pushes nicht lesbar sind, Commits – eine Obergrenze) zählen je als ein Build. " + price
-                + " „Einmal am Tag“ zählt einen Build je Tag mit Push. Pro Monat = Zeitraum auf 30 Tage hochgerechnet."
-        case .ledger:
-            return "Schätzung. Seit Auto-Deploy aus ist, zählt jeder Push auf den Deploy-Branch, dessen Commit nie gebaut wurde, als übersprungener Build (GitHub-Aktivität; wo Pushes nicht lesbar sind, Commits – eine Obergrenze). " + price
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             DisclosureGroup(L("How this is estimated", "Wie das geschätzt wird")) {
                 Text(L(method.isEmpty ? "Pushes on the deploy branch times the average build of each project." : method,
-                       Self.germanMethod(kind)))
+                       SavingsFormat.methodGerman(method)))
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }

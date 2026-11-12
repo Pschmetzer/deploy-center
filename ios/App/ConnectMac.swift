@@ -18,7 +18,8 @@ struct ConnectMacView: View {
                     Section {
                         Label(L("Connected to the Mac", "Mit dem Mac verbunden"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                         if let at = store.linked?.updated {
-                            Text(L("Keys from ", "Schlüssel vom ") + at.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary)
+                            Text(L("Keys from ", "Schlüssel vom ") + at.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(appLocale)))
+                                .foregroundStyle(.secondary)
                         }
                     } footer: {
                         Text(L("To disconnect, turn off \"Connect the iPhone app\" in the Mac app's Settings → iPhone.",
@@ -31,7 +32,7 @@ struct ConnectMacView: View {
                                "1. Auf dem Mac Deploy Center → Einstellungen → iPhone öffnen.\n2. \"Mit der iPhone-App verbinden (iCloud-Schlüsselbund)\" einschalten.\n3. Dieses iPhone braucht dieselbe Apple-ID, mit eingeschaltetem iCloud-Schlüsselbund (Passwörter)."))
                         Button {
                             checking = true
-                            store.refreshLink()
+                            store.useLinkAgain()
                             Task {
                                 await store.reload()
                                 checking = false
@@ -59,8 +60,19 @@ struct ConnectMacView: View {
             .fullScreenCover(isPresented: $scanning) {
                 QRScanner { text in
                     scanning = false
-                    if let keys = PhoneLink.parse(qr: text) { store.adopt(keys); dismiss() }
-                    else { scanError = L("That is not a Deploy Center code.", "Das ist kein Deploy-Center-Code.") }
+                    switch PhoneLink.read(qr: text) {
+                    case .keys(let keys):
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        store.adopt(keys); dismiss()
+                    case .expired:
+                        UINotificationFeedbackGenerator().notificationOccurred(.error)
+                        scanError = L("This code is too old. Show a new one on the Mac and scan it within a minute.",
+                                      "Dieser Code ist zu alt. Zeig auf dem Mac einen neuen und scanne ihn innerhalb einer Minute.")
+                    case .notOurs:
+                        UINotificationFeedbackGenerator().notificationOccurred(.error)
+                        scanError = L("That is not a Deploy Center code.", "Das ist kein Deploy-Center-Code.")
+                    }
+                    if let e = scanError { AccessibilityNotification.Announcement(e).post() }
                 } cancel: { error in
                     scanning = false
                     scanError = error
@@ -86,6 +98,13 @@ struct QRScanner: UIViewControllerRepresentable {
         var cancel: ((String?) -> Void)?
         private let session = AVCaptureSession()
         private var done = false
+        private var preview: AVCaptureVideoPreviewLayer?
+
+        // Rotation, Split View and Stage Manager change the size: the camera follows.
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            preview?.frame = view.bounds
+        }
 
         override func viewDidLoad() {
             super.viewDidLoad()
@@ -96,6 +115,18 @@ struct QRScanner: UIViewControllerRepresentable {
             close.setTitleColor(.white, for: .normal)
             close.titleLabel?.font = .preferredFont(forTextStyle: .headline)
             close.translatesAutoresizingMaskIntoConstraints = false
+            // What to do, for everyone and for VoiceOver: the camera picture alone says nothing.
+            let hint = UILabel()
+            hint.text = L("Point the camera at the code on the Mac.", "Richte die Kamera auf den Code am Mac.")
+            hint.textColor = .white
+            hint.font = .preferredFont(forTextStyle: .body)
+            hint.adjustsFontForContentSizeCategory = true
+            hint.numberOfLines = 0
+            hint.textAlignment = .center
+            hint.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+            hint.layer.cornerRadius = 10
+            hint.clipsToBounds = true
+            hint.translatesAutoresizingMaskIntoConstraints = false
             AVCaptureDevice.requestAccess(for: .video) { ok in
                 DispatchQueue.main.async {
                     guard ok else {
@@ -105,9 +136,15 @@ struct QRScanner: UIViewControllerRepresentable {
                     }
                     self.start()
                     self.view.addSubview(close)
+                    self.view.addSubview(hint)
+                    let g = self.view.safeAreaLayoutGuide
                     NSLayoutConstraint.activate([
-                        close.trailingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-                        close.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor, constant: 12)])
+                        close.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -20),
+                        close.topAnchor.constraint(equalTo: g.topAnchor, constant: 12),
+                        hint.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 24),
+                        hint.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -24),
+                        hint.bottomAnchor.constraint(equalTo: g.bottomAnchor, constant: -32)])
+                    UIAccessibility.post(notification: .screenChanged, argument: hint)
                 }
             }
         }
@@ -125,7 +162,7 @@ struct QRScanner: UIViewControllerRepresentable {
             out.metadataObjectTypes = [.qr]
             let layer = AVCaptureVideoPreviewLayer(session: session)
             layer.frame = view.bounds; layer.videoGravity = .resizeAspectFill
-            view.layer.addSublayer(layer)
+            view.layer.addSublayer(layer); preview = layer
             DispatchQueue.global(qos: .userInitiated).async { self.session.startRunning() }
         }
 

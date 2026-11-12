@@ -54,7 +54,7 @@ actor LogoCache {
         if waiting.isEmpty { running -= 1 } else { waiting.removeFirst().resume() }
     }
     /// The page is only read for its <link> tags; an icon is small.
-    private static let pageLimit = 512 * 1024, iconLimit = 1024 * 1024
+    private static let pageLimit = 64 * 1024, iconLimit = 1024 * 1024
 
     /// Once at start: logos of sites not seen for a month go, so the folder does not grow for ever.
     nonisolated static func sweep() {
@@ -142,9 +142,10 @@ actor LogoCache {
         }
     }
 
-    /// The body on 200 (at most `limit` bytes, else nothing); `transient` when the answer says
+    /// The body on 200 (at most `limit` bytes, else nothing; with `cut` the first `limit` bytes:
+    /// a front page's <head> is enough for the icon links); `transient` when the answer says
     /// nothing about the site (no answer, 429, 5xx).
-    private func get(_ url: URL, limit: Int) async -> (data: Data?, transient: Bool) {
+    private func get(_ url: URL, limit: Int, cut: Bool = false) async -> (data: Data?, transient: Bool) {
         guard Self.allowed(url) else { return (nil, false) }
         var req = URLRequest(url: url, timeoutInterval: 8)
         req.setValue("Mozilla/5.0 (Macintosh) DeployCenter", forHTTPHeaderField: "User-Agent")
@@ -152,23 +153,25 @@ actor LogoCache {
               let http = resp as? HTTPURLResponse else { return (nil, true) }
         if http.statusCode == 429 || http.statusCode >= 500 { return (nil, true) }
         guard http.statusCode == 200 else { return (nil, false) }
-        if http.expectedContentLength > Int64(limit) { bytes.task.cancel(); return (nil, false) }
+        if !cut, http.expectedContentLength > Int64(limit) { bytes.task.cancel(); return (nil, false) }
         var data = Data()
         do {
             for try await b in bytes {
                 data.append(b)
+                if data.count >= limit, cut { bytes.task.cancel(); break }
                 if data.count > limit { bytes.task.cancel(); return (nil, false) }
             }
-        } catch { return (nil, true) }
+        } catch { if !cut || data.isEmpty { return (nil, true) } }
         return (data.isEmpty ? nil : data, false)
     }
 
     private func fetch(_ domain: String) async -> (NSImage?, Data?, transient: Bool) {
         guard let base = URL(string: "https://\(domain)/") else { return (nil, nil, false) }
         var candidates: [URL] = []
-        let page = await get(base, limit: Self.pageLimit)
+        let page = await get(base, limit: Self.pageLimit, cut: true)
         if page.transient { return (nil, nil, true) }
-        if let html = page.data, let text = String(data: html, encoding: .utf8) {
+        // Cut at the limit, maybe inside a character: decoded leniently.
+        if let html = page.data, case let text = String(decoding: html, as: UTF8.self), !text.isEmpty {
             candidates += Self.iconLinks(in: text).compactMap { URL(string: $0, relativeTo: base)?.absoluteURL }.filter(Self.allowed)
         }
         candidates += ["apple-touch-icon.png", "favicon.svg", "favicon.png", "favicon.ico"]

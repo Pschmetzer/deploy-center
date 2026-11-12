@@ -26,19 +26,33 @@ final class PhoneLinkModel: ObservableObject {
     var available: Bool { PhoneLink.group != nil }
 
     /// At launch and after each change in Settings.
-    func pushIfOn() async { if on && available { await push() } }
+    /// Only when a key changed: every write carries a new date and syncs to all devices.
+    func pushIfOn() async { if on && available { await push(onlyIfChanged: true) } }
     /// At launch and then once a day: keys that changed on the Mac reach the phone.
     func pushIfStale() async {
         if let t = lastPush, Date().timeIntervalSince(t) < 24 * 3600 { return }
         await pushIfOn()
     }
-    /// The gh CLI's token can usually write (repo, workflow); the phone only reads. Off by default.
+    /// The gh CLI's token can usually write (repo, workflow); the phone only reads. Off for a new
+    /// connection; a connection made before the switch existed keeps getting it (`migrateGitHub`).
     nonisolated static let githubKey = "phoneLinkGitHub"
 
-    func push() async {
+    /// The switch was never set: on when this Mac already handed keys to the phone (a link made
+    /// when the token always went along), off for a new connection. Decided once, then it is the
+    /// person's own setting.
+    nonisolated static func migrateGitHub(_ d: UserDefaults = .standard, linkExists: () -> Bool) {
+        guard d.object(forKey: githubKey) == nil else { return }
+        d.set(linkExists(), forKey: githubKey)
+    }
+
+    func push(onlyIfChanged: Bool = false) async {
         busy = true; defer { busy = false }
         var keys = await Self.collect()
         keys.savingPerMonth = savingPerMonth
+        if onlyIfChanged, !keys.isEmpty, let old = PhoneLink.read(), Self.sameKeys(old, keys) {
+            if lastPush == nil { lastPush = old.updated }
+            problem = nil; return
+        }
         guard !keys.isEmpty else {
             problem = L("No Vercel token for the iPhone and no Render key on this Mac yet.",
                         "Noch kein Vercel-Token fürs iPhone und kein Render-Key auf diesem Mac.")
@@ -52,6 +66,11 @@ final class PhoneLinkModel: ObservableObject {
         }
     }
 
+    /// The same keys, whenever they were written.
+    nonisolated static func sameKeys(_ a: LinkedKeys, _ b: LinkedKeys) -> Bool {
+        var a = a; a.updated = b.updated; return a == b
+    }
+
     func turnOff() {
         PhoneLink.remove(); lastPush = nil; problem = nil
     }
@@ -63,32 +82,26 @@ final class PhoneLinkModel: ObservableObject {
         k.vercel = MacSecret.get("deploy-center-phone-vercel") ?? ""
         let teamFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/deploys/vercel-team")
         k.vercelTeam = ((try? String(contentsOf: teamFile, encoding: .utf8)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        k.render = output("/usr/bin/security", ["find-generic-password", "-a", NSUserName(), "-s", "deploy-center-render", "-w"])
-            ?? output("/usr/bin/security", ["find-generic-password", "-a", NSUserName(), "-s", "render-api-key", "-w"]) ?? ""
+        if let r = await output("/usr/bin/security", ["find-generic-password", "-a", NSUserName(), "-s", "deploy-center-render", "-w"]) {
+            k.render = r
+        } else {
+            k.render = await output("/usr/bin/security", ["find-generic-password", "-a", NSUserName(), "-s", "render-api-key", "-w"]) ?? ""
+        }
         // Only when asked for (Settings → iPhone): the gh token's scopes are wider than the phone needs.
-        if UserDefaults.standard.bool(forKey: githubKey) { k.github = output("/usr/bin/env", ["gh", "auth", "token"]) ?? "" }
+        migrateGitHub(linkExists: { PhoneLink.read() != nil })
+        if UserDefaults.standard.bool(forKey: githubKey) { k.github = await output("/usr/bin/env", ["gh", "auth", "token"]) ?? "" }
         k.updated = Date()
         return k
     }
 
-    /// stdout of a command, trimmed; nil when it fails or prints nothing. Nothing is logged.
-    nonisolated private static func output(_ tool: String, _ args: [String]) -> String? {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tool)
-        p.arguments = args
+    /// stdout of a command, trimmed; nil when it fails, prints nothing or takes longer than 15 s
+    /// (`gh` asking the keychain, say). No thread waits for it. Nothing is logged.
+    nonisolated private static func output(_ tool: String, _ args: [String]) async -> String? {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (env["PATH"] ?? "")
-        p.environment = env
-        let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
-        // gh or security can wait for a dialog or the network: after 10 s the key counts as missing.
-        let killer = DispatchWorkItem { if p.isRunning { Tool.killTree(p.processIdentifier) } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: killer)
-        let d = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        killer.cancel()
-        guard p.terminationStatus == 0 else { return nil }
-        let s = String(decoding: d, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        let r = await Tool.exec(tool, args, env: env, timeout: 15)
+        guard r.status == 0 else { return nil }
+        let s = String(decoding: r.out, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         return s.isEmpty ? nil : s
     }
 }
@@ -129,6 +142,7 @@ struct PhoneLinkSettings: View {
     @State private var hasVercel = MacSecret.get("deploy-center-phone-vercel") != nil
     @State private var qr = false
     @AppStorage(PhoneLinkModel.githubKey) private var shareGitHub = false
+    @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
         Section {
@@ -155,6 +169,9 @@ struct PhoneLinkSettings: View {
                 .help(L("It can usually push code and run workflows; the iPhone app only reads commits. Off, the phone shows no commit counts.",
                         "Es darf meist Code pushen und Workflows starten; die iPhone-App liest nur Commits. Aus: das iPhone zeigt keine Commit-Zahlen."))
             Button(L("Show a QR code for the iPhone …", "QR-Code fürs iPhone zeigen …")) { qr = true }
+                // Demo mode is for recordings, and the code holds every key.
+                .disabled(demoMode)
+                .help(demoMode ? L("Not in demo mode: the code holds your keys.", "Nicht im Demo-Modus: Der Code enthält deine Schlüssel.") : "")
             if let p = link.problem { ErrorText(p) }
             else if on, let t = link.lastPush {
                 Text(L("Handed over ", "Übergeben ") + t.formatted(.relative(presentation: .named))).foregroundStyle(.secondary)
@@ -178,6 +195,7 @@ struct PhoneQRSheet: View {
     /// The same code as text, for "Copy code" (a phone without a camera pastes it).
     @State private var code = ""
     @State private var copied = false
+    @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
         VStack(spacing: 14) {
@@ -213,11 +231,14 @@ struct PhoneQRSheet: View {
         .padding(24)
         // The keys must not stay on the clipboard.
         .onDisappear { Self.clearClipboard(code) }
-        // Not in screenshots, screen recordings or screen sharing: the code holds the keys.
-        .background(NoScreenCapture())
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in inactive = true }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in inactive = false }
+        // Left out of screenshots, recordings and screen sharing (as far as macOS honours it).
+        .background(WindowAccessor { $0.sharingType = .none })
+        // Demo mode switched on while it is open: it closes.
+        .onChange(of: demoMode) { _, on in if on { dismiss() } }
         .task {
+            if demoMode { dismiss(); return }
             var keys = await PhoneLinkModel.collect()
             if keys.isEmpty { empty = true; return }
             keys.savingPerMonth = PhoneLinkModel.shared.savingPerMonth
@@ -232,16 +253,6 @@ struct PhoneQRSheet: View {
             }
             dismiss()
         }
-    }
-
-    /// Sets the sheet's window so the system leaves it out of captures and sharing.
-    private struct NoScreenCapture: NSViewRepresentable {
-        func makeNSView(context: Context) -> NSView {
-            let v = NSView()
-            DispatchQueue.main.async { v.window?.sharingType = .none }
-            return v
-        }
-        func updateNSView(_ v: NSView, context: Context) { v.window?.sharingType = .none }
     }
 
     /// Empties the clipboard if it still holds this code (and only then).

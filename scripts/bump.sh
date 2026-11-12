@@ -29,8 +29,30 @@ awk -v v="$new" '!done && /^## Unreleased/ { print; print ""; print "## " v; don
 mv "$tmp" CHANGELOG.md
 echo "$new" > VERSION
 # The site's home page names the version twice (the line under the download button and the JSON-LD).
+# Each must be found: a replacement without a hit would leave the old version there silently.
 if [ -f site/index.html ]; then
+  for pat in "Version $cur ·" "\"softwareVersion\": \"$cur\""; do
+    grep -qF "$pat" site/index.html || die "site/index.html has no '$pat'; set the version there by hand"
+  done
   sed -i.bak -e "s/Version $cur ·/Version $new ·/" -e "s/\"softwareVersion\": \"$cur\"/\"softwareVersion\": \"$new\"/" site/index.html
   rm -f site/index.html.bak
 fi
-echo "VERSION $cur -> $new; CHANGELOG.md has \"## $new\" now, site/index.html too. Check: git diff"
+# The MCP server and the Claude Code plugin ship inside the app, so they carry its version.
+# (The VS Code and Raycast extensions are published on their own, with their own changelogs.)
+set_json_version() {
+  [ -f "$1" ] || return 0
+  grep -q '"version": "[0-9.]*"' "$1" || die "$1 has no \"version\""
+  sed -i.bak -e "1,/\"version\": \"[0-9.]*\"/s/\"version\": \"[0-9.]*\"/\"version\": \"$new\"/" "$1" && rm -f "$1.bak"
+}
+set_json_version integrations/mcp/package.json
+set_json_version integrations/claude-code/.claude-plugin/plugin.json
+if [ -f integrations/mcp/package-lock.json ]; then
+  # The lock names the package's own version twice (top and packages[""]); dependencies stay.
+  jq --arg v "$new" '.version = $v | .packages[""].version = $v' integrations/mcp/package-lock.json > integrations/mcp/package-lock.json.new \
+    && mv integrations/mcp/package-lock.json.new integrations/mcp/package-lock.json
+fi
+if [ -f integrations/mcp/server.mjs ]; then
+  grep -q '^const VERSION = "[0-9.]*";' integrations/mcp/server.mjs || die "integrations/mcp/server.mjs has no VERSION line"
+  sed -i.bak -e "s/^const VERSION = \"[0-9.]*\";/const VERSION = \"$new\";/" integrations/mcp/server.mjs && rm -f integrations/mcp/server.mjs.bak
+fi
+echo "VERSION $cur -> $new; CHANGELOG.md has \"## $new\" now, site/index.html, the MCP server and the Claude Code plugin too. Check: git diff"

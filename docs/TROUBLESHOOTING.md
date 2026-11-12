@@ -133,6 +133,16 @@ gh auth login
 
 GitHub allows a fixed number of API calls per hour for your login. Under 300 left, Deploy Center reads only the newest commit of each branch and skips the counts. They come back when the hour resets. `deploys github-budget` shows what is left.
 
+## GitLab
+
+### "gitlab: HTTP 401: …"
+
+GitLab refused the token, or glab is not logged in to that host. Run `deploys doctor`: `gitlabLoggedIn` must be true. Log in again with `glab auth login` (self-managed: `--hostname git.example.com`), or make a new personal access token with the `read_api` scope and put it in `GITLAB_TOKEN`. See [GITLAB.md](GITLAB.md#set-up).
+
+### Repos on a self-managed GitLab show no numbers
+
+The token goes only to `GITLAB_HOST`, gitlab.com when unset. Set `GITLAB_HOST=git.example.com`. The app starts `deploys` from launchd, which does not read your shell profile: put the variables in `~/.zprofile`, or use glab, which keeps its own login.
+
 ## Render
 
 ### Connect Render
@@ -165,6 +175,28 @@ The service was renamed or deleted on Render. Reload the list.
 
 A Render **Blueprint** with auto-sync can apply `render.yaml` again on a push. Add `autoDeployTrigger: off` to the services in `render.yaml`. `deploys triggers` lists Blueprints with auto-sync on.
 
+## Claude and Autofix
+
+### "No Anthropic API key. Run: pbpaste | deploys ai set-key (or set ANTHROPIC_API_KEY)"
+
+Claude in the app needs your own Anthropic API key. Add it in **Settings → Claude**, or copy it and run `pbpaste | deploys ai set-key`. See [CLAUDE.md](CLAUDE.md#turning-it-on).
+
+### "Anthropic refused the key (401). Check it in Settings > Claude in the app, or: deploys ai verify"
+
+The key was deleted or mistyped. `deploys ai verify` tests it. Make a new one at console.anthropic.com and store it again.
+
+### "This month's Claude cap is reached (… of … tokens). Raise it in Settings > Claude in the app, or: deploys ai cap <tokens>"
+
+Deploy Center stops calling Claude once your monthly cap is used up. It starts again next month, or at once if you raise the cap.
+
+### "That does not look like a routine token (sk-ant-...)"
+
+`deploys autofix set-token` takes the token of the Claude Code routine, which starts with `sk-ant-`. Copy it again from the routine at claude.ai → Code → Routines, then `pbpaste | deploys autofix set-token`. See [AUTOFIX.md](AUTOFIX.md#setup-once).
+
+### "autofix is running already"
+
+Another Autofix run holds the lock, often the scheduled one. Wait for it. A run that died leaves the lock behind; it is taken over after 30 minutes.
+
 ## Deploying
 
 ### "<project> is being started already (wait a minute)"
@@ -193,9 +225,9 @@ deploys triggers
 
 ## Updating
 
-### "Update failed: …"
+### An update does not install
 
-**Update now** downloads the newest release, checks its signature with `codesign` and Gatekeeper, and only then replaces the app. If any check fails, the app stays as it was and the reason is in the error log. Install by hand from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest), or with `brew upgrade --cask deploy-center`.
+**Check for Updates …** (in the app menu) and the daily check use Sparkle: it reads `deploycenter.app/appcast.xml`, downloads the new version from GitHub and checks its EdDSA signature before it replaces the app. While deploys are running it waits and installs once they are done. If a check or the download fails, the app stays as it was and the error log has a line starting with `update failed:`. Install by hand from [the latest release](https://github.com/Pschmetzer/deploy-center/releases/latest), or with `brew upgrade --cask --greedy deploy-center`.
 
 ## The widget is not in the widget gallery
 

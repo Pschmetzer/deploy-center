@@ -1,7 +1,7 @@
-// Finding the deploys CLI and running it: execFile with an argument array (no shell), a timeout,
-// and stdin closed so nothing can wait for input.
+// Finding the deploys CLI and running it: an argument array (no shell), its own process group
+// with a timeout that ends the whole group, and stdin closed so nothing can wait for input.
 
-import { execFile } from "node:child_process";
+import { ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -66,17 +66,57 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEn
   return { ...env, PATH: parts.join(path.delimiter), NO_COLOR: "1" };
 }
 
+const MAX_OUTPUT = 32 * 1024 * 1024;
+
+/** Ends the CLI and everything it started (vercel, gh, curl): it runs in its own process group. */
+function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  try {
+    if (child.pid) process.kill(-child.pid, signal);
+  } catch {
+    try { child.kill(signal); } catch { /* gone */ }
+  }
+}
+
+/**
+ * Runs the CLI with an argument array (no shell), stdin closed. At the timeout the whole process
+ * group gets SIGTERM, then SIGKILL two seconds later, so no vercel or sleep is left behind.
+ */
 export function makeRunner(cli: string, env: NodeJS.ProcessEnv = childEnv()): Runner {
   return (args, timeoutMs) =>
     new Promise((resolve) => {
-      const child = execFile(cli, args, { timeout: timeoutMs, killSignal: "SIGTERM", maxBuffer: 32 * 1024 * 1024, env, windowsHide: true },
-        (err, stdout, stderr) => {
-          const e = err as (NodeJS.ErrnoException & { killed?: boolean; signal?: string; code?: number | string }) | null;
-          const timedOut = !!e && e.killed === true && e.signal === "SIGTERM";
-          const code = !e ? 0 : typeof e.code === "number" ? e.code : 1;
-          resolve({ code, stdout: String(stdout), stderr: String(stderr || (e && !timedOut && typeof e.code === "string" ? e.message : "")), timedOut });
-        });
-      child.stdin?.end();
+      let child: ChildProcess;
+      try {
+        child = spawn(cli, args, { detached: true, stdio: ["ignore", "pipe", "pipe"], env, windowsHide: true });
+      } catch (e) {
+        resolve({ code: 1, stdout: "", stderr: (e as Error).message, timedOut: false });
+        return;
+      }
+      const out: Buffer[] = [], err: Buffer[] = [];
+      let size = 0, timedOut = false, done = false, spawnError = "";
+      const take = (into: Buffer[]) => (b: Buffer) => {
+        size += b.length;
+        if (size > MAX_OUTPUT) { killGroup(child, "SIGKILL"); return; }
+        into.push(b);
+      };
+      child.stdout?.on("data", take(out));
+      child.stderr?.on("data", take(err));
+      let hard: ReturnType<typeof setTimeout> | undefined;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        killGroup(child, "SIGTERM");
+        hard = setTimeout(() => killGroup(child, "SIGKILL"), 2000);
+      }, timeoutMs);
+      const finish = (code: number) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (hard) clearTimeout(hard);
+        // Children that outlived a timed-out CLI (a sleep, a stuck curl) go too.
+        if (timedOut) killGroup(child, "SIGKILL");
+        resolve({ code, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString() || spawnError, timedOut });
+      };
+      child.on("error", (e) => { spawnError = e.message; finish(1); });
+      child.on("close", (code) => finish(typeof code === "number" ? code : 1));
     });
 }
 

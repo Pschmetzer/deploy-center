@@ -126,7 +126,8 @@ enum PaletteCommands {
         add(.showAll, "Show all platforms", "Alle Plattformen zeigen", "square.grid.2x2")
         add(.demoMode, Demo.on ? "Turn off demo mode" : "Turn on demo mode", Demo.on ? "Demo-Modus ausschalten" : "Demo-Modus einschalten", "theatermasks")
 
-        let projects = Platform.allCases.flatMap { store.items[$0] ?? [] }.filter { !store.isHidden($0) }
+        // Only platforms with a tab: a switched-off one may still have its old list in memory.
+        let projects = store.enabledProviders.compactMap(\.platform).flatMap { store.items[$0] ?? [] }.filter { !store.isHidden($0) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         // The same name on two platforms: the platform goes into the title, so the lines differ.
         var seen: [String: Int] = [:]
@@ -137,15 +138,18 @@ enum PaletteCommands {
             let name = (seen[masked.lowercased()] ?? 0) > 1 ? masked + " (\(i.platform.rawValue))" : masked
             let waiting = i.hasNewCommits && i.deployable ? Row.waitingText(i) : nil
             let detail = [i.platform.rawValue, waiting].compactMap { $0 }.joined(separator: " · ")
+            let info = store.provider(i.platform)   // unknown platform info: offered, as before
             for v in PaletteVerb.allCases {
                 switch v {
-                case .deploy, .rollback: guard i.deployable && !i.state.isActive && !looksOnly else { continue }
                 case .preview:
                     guard i.deployable && !i.state.isActive && !looksOnly && store.provider(i.platform)?.caps.preview == true else { continue }
+                case .deploy: guard i.deployable && !i.state.isActive && !looksOnly else { continue }
+                case .rollback: guard (info?.caps.rollback ?? true) && i.deployable && !i.state.isActive && !looksOnly else { continue }
                 case .open: guard i.link.flatMap({ URL(string: $0) }) != nil else { continue }
                 case .dashboard: guard i.platform == .vercel || i.dashboardURL != nil else { continue }
                 case .show: continue   // only for hidden projects, below
-                case .log, .notes, .pin, .hide: break
+                case .log: guard info?.caps.logs ?? true else { continue }
+                case .notes, .pin, .hide: break
                 }
                 let words = v.words
                 let symbol: String
@@ -204,12 +208,18 @@ struct CommandPalette: View {
     @State private var commands: [PaletteCommand]?
     private var allCommands: [PaletteCommand] { commands ?? PaletteCommands.all(store) }
 
-    private var results: [PaletteCommand] {
+    /// The window the palette sits in: its arrow keys and Esc are taken there only.
+    @State private var home = WindowBox()
+    /// Lines shown at most; the rest is found by typing more.
+    static let limit = 60
+
+    private var ordered: (shown: [PaletteCommand], total: Int) {
         let all = allCommands
         let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let order = paletteOrder(query: query, entries: all.map { ($0.id, $0.texts) }, recent: PaletteCommands.recent)
-        return order.prefix(60).compactMap { byId[$0] }
+        return (order.prefix(Self.limit).compactMap { byId[$0] }, order.count)
     }
+    private var results: [PaletteCommand] { ordered.shown }
     private var recentCount: Int {
         guard query.trimmingCharacters(in: .whitespaces).isEmpty else { return 0 }
         let ids = Set(allCommands.map(\.id))
@@ -217,7 +227,8 @@ struct CommandPalette: View {
     }
 
     var body: some View {
-        let shown = results
+        let o = ordered
+        let shown = o.shown, more = o.total - o.shown.count
         let current = shown.first { $0.id == selection } ?? shown.first
         let recent = recentCount
         VStack(spacing: 0) {
@@ -254,6 +265,10 @@ struct CommandPalette: View {
                             if n == recent && recent > 0 { header(L("All", "Alle")) }
                             row(cmd, selected: cmd.id == current?.id).id(cmd.id)
                         }
+                        if more > 0 {
+                            Text(L("\(more) more – type to narrow down", "\(more) weitere – tippen, um einzugrenzen"))
+                                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
+                        }
                     }
                     .padding(.vertical, 4)
                 }
@@ -267,12 +282,16 @@ struct CommandPalette: View {
                 .accessibilityHidden(true)
         }
         .frame(width: 540)
+        .background(WindowReader { home.window = $0 })
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("Command palette", "Befehlspalette"))
         .onAppear {
             commands = PaletteCommands.all(store)
             focused = true
+            let home = self.home
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+                // Keys in another window (Settings, say) are not the palette's.
+                guard let w = home.window, e.window === w else { return e }
                 let code = e.keyCode
                 let handled = MainActor.assumeIsolated { key(code) }
                 return handled ? nil : e
@@ -345,19 +364,39 @@ struct CommandPalette: View {
     }
 }
 
-/// No cost data yet: said in a sheet of its own (the costs with their projects are in CostsSheet).
-struct NoCostsSheet: View {
+/// "Costs" from the palette before any cost data was read; with data the palette opens `CostsSheet`,
+/// which also ranks the projects.
+struct PaletteCosts: View {
     @Environment(\.dismiss) private var dismiss
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L("Costs", "Kosten")).font(.headline)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(L("Costs", "Kosten")).font(.headline)
+                Spacer()
+                Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
+            }.padding(12)
+            Divider()
             Text(L("No cost data yet. Costs come from Vercel's billing data and are read once an hour.",
                    "Noch keine Kostendaten. Die Kosten kommen aus Vercels Abrechnung und werden stündlich gelesen."))
-                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack { Spacer(); Button(L("Done", "Fertig")) { dismiss() }.keyboardShortcut(.defaultAction) }
+                .foregroundStyle(.secondary).padding(16)
         }
-        .padding(20).frame(width: 400)
+        .frame(width: 560)
     }
+}
+
+/// A weak hold on a window, for closures that must not keep it alive.
+final class WindowBox { weak var window: NSWindow? }
+
+/// Hands over the window a view sits in, once it has one.
+struct WindowReader: NSViewRepresentable {
+    let found: (NSWindow?) -> Void
+    final class Probe: NSView {
+        var found: ((NSWindow?) -> Void)?
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); found?(window) }
+    }
+    func makeNSView(context: Context) -> NSView { let p = Probe(); p.found = found; return p }
+    func updateNSView(_ v: NSView, context: Context) {}
 }
 
 // MARK: - The hook in the main window
@@ -378,16 +417,31 @@ final class PaletteCenter: ObservableObject {
     var hosts = 0
     /// Set when there was no window: the next one to appear opens the palette.
     var pendingOpen = false
+    /// The main windows (each host adds its own), and the one a request is for: only that one opens it.
+    private var windows: [WindowBox] = []
+    private(set) weak var target: NSWindow?
+
+    func register(_ w: NSWindow?) {
+        windows.removeAll { $0.window == nil }
+        guard let w, !windows.contains(where: { $0.window === w }) else { return }
+        let b = WindowBox(); b.window = w; windows.append(b)
+    }
+
+    /// ⌘K in the menu: the palette in the window in front.
+    func open(in w: NSWindow?) { target = w; requests += 1 }
 
     func summon() {
         NSApp.activate(ignoringOtherApps: true)
         if hosts > 0 {
-            // The main window by its scene id ("main-…"), not just any window that can be main (Settings).
-            let open = NSApp.windows.filter { $0.canBecomeMain && ($0.isVisible || $0.isMiniaturized) }
-            if let w = open.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true }) ?? open.first {
+            // A main window (never Settings): the one in front, else any on screen or in the Dock.
+            let mains = windows.compactMap(\.window)
+            let w = mains.first { $0.isKeyWindow } ?? mains.first { $0.isMainWindow }
+                ?? mains.first { $0.isVisible || $0.isMiniaturized }
+            if let w {
                 if w.isMiniaturized { w.deminiaturize(nil) }
                 w.makeKeyAndOrderFront(nil)
             }
+            target = w
             requests += 1
         } else if let u = URL(string: "deploycenter://palette") {
             // Opening the app's own link makes SwiftUI open a window; it never starts anything.
@@ -401,6 +455,8 @@ struct CommandPaletteHost: ViewModifier {
     @ObservedObject var store: Store
     @ObservedObject private var center = PaletteCenter.shared
     @Environment(\.openSettings) private var openSettings
+    /// Settings → Deploy: ask before one project goes live (on by default).
+    @AppStorage("confirmSingleDeploy") private var confirmSingle = true
     @State private var showing = false
     @State private var chosen: PaletteCommand?
     @State private var sheet: PaletteSheet?
@@ -419,15 +475,15 @@ struct CommandPaletteHost: ViewModifier {
         }
     }
 
+    /// This host's window, so a request for another main window leaves this one alone.
+    @State private var home = WindowBox()
+    /// One of the palette's own sheets or questions is up: a second sheet would not show.
+    private var busy: Bool { showing || sheet != nil || deployItem != nil || unchangedItem != nil || rollbackItem != nil || noteItem != nil }
+
     func body(content: Content) -> some View {
         content
-            .background {
-                // Only there for the shortcut; invisible and not in VoiceOver's way.
-                Button(L("Command palette", "Befehlspalette")) { showing = true }
-                    .keyboardShortcut("k")
-                    .opacity(0).frame(width: 0, height: 0).allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
+            // ⌘K is in the View menu (`WindowCommands`), which asks `PaletteCenter.open(in:)`.
+            .background(WindowReader { w in home.window = w; center.register(w) })
             .sheet(isPresented: $showing, onDismiss: runChosen) {
                 CommandPalette(store: store) { cmd in chosen = cmd; showing = false }
             }
@@ -435,7 +491,7 @@ struct CommandPaletteHost: ViewModifier {
                 switch s {
                 case .log(let i): BuildLog(store: store, item: i)
                 case .journal: JournalView(costs: store.costs)
-                case .costs: if let c = store.costs { CostsSheet(costs: c) } else { NoCostsSheet() }
+                case .costs: if let c = store.costs { CostsSheet(costs: c) } else { PaletteCosts() }
                 }
             }
             .modifier(PaletteQuestions(store: store, deployItem: $deployItem, unchangedItem: $unchangedItem,
@@ -454,7 +510,10 @@ struct CommandPaletteHost: ViewModifier {
                 Text(L("Running builds are cancelled at the platform, queued ones do not start.",
                        "Laufende Builds werden beim Anbieter abgebrochen, wartende starten nicht."))
             }
-            .onChange(of: center.requests) { _, _ in showing = true }
+            .onChange(of: center.requests) { _, _ in
+                guard !busy, center.target == nil || center.target === home.window else { return }
+                showing = true
+            }
             // From a failure's notification: the log, or the rollback question (never the rollback itself).
             .onChange(of: store.pendingLog) { _, k in
                 guard let k else { return }
@@ -510,7 +569,8 @@ struct CommandPaletteHost: ViewModifier {
             switch v {
             case .deploy:
                 guard i.deployable && !i.state.isActive && !store.observer else { return }
-                if i.hasNewCommits || i.headSha == nil { deployItem = i } else { unchangedItem = i }
+                if i.hasNewCommits || i.headSha == nil { if confirmSingle { deployItem = i } else { store.pendingDeploy = i } }
+                else { unchangedItem = i }
             case .rollback:
                 guard i.deployable && !i.state.isActive && !store.observer else { return }
                 rollbackItem = i
@@ -540,11 +600,11 @@ struct CommandPaletteHost: ViewModifier {
 }
 
 /// The palette's questions: the same words as the window's, so a deploy or rollback from here is
-/// asked exactly like one from a row. A deploy then takes the usual wait before it starts.
+/// asked exactly like one from a row. A deploy goes through the window (deploy window, "only when
+/// green", see `Store.pendingDeploy`) and then takes the usual wait before it starts.
 private struct PaletteQuestions: ViewModifier {
     @ObservedObject var store: Store
     /// The window's checkbox in the deploy confirmation, remembered.
-    @AppStorage("onlyWhenGreen") private var onlyGreen = false
     @Binding var deployItem: Item?
     @Binding var unchangedItem: Item?
     @Binding var rollbackItem: Item?
@@ -558,20 +618,13 @@ private struct PaletteQuestions: ViewModifier {
         content
             .alert(L("Put this live now?", "Jetzt live schalten?"), isPresented: binding($deployItem)) {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { deployItem = nil }
-                // The window's "only when CI is green" applies here too; the deploy window is
-                // checked by Store.deployOne, as for the window's row menu.
-                Button(onlyGreen ? L("Deploy when CI is green", "Deployen, wenn CI grün ist") : L("Deploy", "Deployen")) {
-                    if let i = deployItem { store.deployOne(i, preview: false, whenGreen: onlyGreen) }; deployItem = nil
-                }
+                Button(L("Deploy", "Deployen")) { if let i = deployItem { store.pendingDeploy = i }; deployItem = nil }
             } message: {
-                Text(shown(deployItem) + (deployItem.map { ($0.pendingCommits ?? 0) > 0 ? " – " + Row.waitingText($0) : "" } ?? "")
-                     + "\n\n" + (onlyGreen ? L("The newest commit whose CI passed goes live (as set in the window's deploy dialog).",
-                                                "Der neueste Commit mit grünem CI geht live (wie im Deploy-Dialog des Fensters eingestellt).")
-                                             : L("The newest commit on GitHub goes live.", "Der neueste Stand von GitHub geht live.")))
+                Text(DeployConfirm.message(deployItem.map { [$0] } ?? [], platforms: false))
             }
             .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"), isPresented: binding($unchangedItem)) {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
-                Button(L("Build anyway", "Trotzdem bauen")) { if let i = unchangedItem { store.deployOne(i, preview: false) }; unchangedItem = nil }
+                Button(L("Build anyway", "Trotzdem bauen")) { if let i = unchangedItem { store.pendingDeploy = i }; unchangedItem = nil }
             } message: {
                 Text(L("\(shown(unchangedItem)) is already on the newest commit. A build costs build minutes and changes nothing.",
                        "\(shown(unchangedItem)) ist schon auf dem neuesten Stand. Ein Build kostet Build-Minuten und ändert nichts."))
@@ -593,7 +646,7 @@ private struct PaletteQuestions: ViewModifier {
     }
 }
 
-// MARK: - Global hot key (Settings → Advanced, off by default)
+// MARK: - Global hot key (Settings → General, off by default)
 
 /// ⌥⌘K from any app brings Deploy Center forward with the palette open. A Carbon hot key:
 /// it needs no accessibility permission and sees only this one key combination.
@@ -615,13 +668,16 @@ enum PaletteHotKey {
     static var choice: Int { let c = UserDefaults.standard.integer(forKey: choiceKey); return choices.indices.contains(c) ? c : 0 }
     static var label: String { choices[choice].label }
 
-    /// False when the key could not be taken (another app holds it).
+    /// The last attempt to take ⌥⌘K failed (another app holds it, say).
+    private(set) static var failed = false
+
+    /// Takes or frees the key as the setting says. False when it is wanted but could not be taken.
     @discardableResult static func update() -> Bool {
         let on = UserDefaults.standard.bool(forKey: defaultsKey)
         // Another key chosen: the old one goes first.
         if let r = ref, !on || registered != choice { UnregisterEventHotKey(r); ref = nil; registered = nil }
-        if on && ref == nil { return register() }
-        return true
+        if on && ref == nil { failed = !register() } else if !on { failed = false }
+        return !failed
     }
 
     private static func register() -> Bool {
@@ -647,10 +703,9 @@ enum PaletteHotKey {
 struct CommandPaletteSettings: View {
     @AppStorage(PaletteHotKey.defaultsKey) private var hotKey = false
     @AppStorage(PaletteHotKey.choiceKey) private var choice = 0
-    @State private var taken = false
+    @State private var taken = PaletteHotKey.failed
 
     var body: some View {
-        Section(L("Advanced", "Erweitert")) {
             Toggle(L("A key opens the command palette from any app", "Eine Taste öffnet die Befehlspalette aus jeder App"), isOn: $hotKey)
                 .onChange(of: hotKey) { _, on in
                     // Taken by another app: the switch goes back and says why, instead of staying "on".
@@ -665,6 +720,7 @@ struct CommandPaletteSettings: View {
             }
             if taken {
                 ErrorText(L("\(PaletteHotKey.label) is already used by another app.", "\(PaletteHotKey.label) wird schon von einer anderen App benutzt."))
+        Section(L("Command palette", "Befehlspalette")) {
             }
             Text(L("In the window, ⌘K always opens it. Deploys and rollbacks from the palette still ask first.",
                    "Im Fenster öffnet ⌘K sie immer. Deploys und Rollbacks aus der Palette fragen trotzdem vorher."))

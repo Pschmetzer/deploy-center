@@ -6,6 +6,42 @@ import Charts
 import UserNotifications
 import ServiceManagement
 
+// MARK: - Where a repo lives
+
+/// GitHub or GitLab, from the script's repo string (lib/githost.sh): GitHub repos are "owner/name",
+/// GitLab ones carry their host ("gitlab.com/group/name", or a self-managed host). A GitHub owner
+/// never holds a dot, so a dot in the first part means a host.
+enum GitHost: Equatable {
+    case github
+    case gitlab(host: String)
+
+    init(repo: String?) {
+        let parts = (repo ?? "").split(separator: "/")
+        if parts.count >= 3, parts[0].contains("."), parts[0].lowercased() != "github.com" {
+            self = .gitlab(host: String(parts[0]))
+        } else { self = .github }
+    }
+    init(_ item: Item) { self.init(repo: item.repo) }
+
+    /// "GitHub" or "GitLab", for "On GitHub", "Asking GitLab …".
+    var name: String { self == .github ? "GitHub" : "GitLab" }
+
+    /// The repo's web page.
+    static func web(_ repo: String) -> String {
+        switch GitHost(repo: repo) {
+        case .github: return "https://github.com/" + (repo.lowercased().hasPrefix("github.com/") ? String(repo.dropFirst(11)) : repo)
+        case .gitlab: return "https://" + repo
+        }
+    }
+    /// A pull request (GitHub) or merge request (GitLab) by its number.
+    static func prURL(_ repo: String, _ n: Int) -> URL? {
+        URL(string: web(repo) + (GitHost(repo: repo) == .github ? "/pull/\(n)" : "/-/merge_requests/\(n)"))
+    }
+    /// "#12" on GitHub, "!12" on GitLab, as each site writes it.
+    static func prLabel(_ repo: String?, _ n: Int) -> String { GitHost(repo: repo) == .github ? "#\(n)" : "!\(n)" }
+    // The compare link (GitHub or GitLab) is `Item.compareURL`, one place for both hosts.
+}
+
 // MARK: - Build log
 
 struct BuildLog: View {
@@ -27,6 +63,9 @@ struct BuildLog: View {
     @State private var shownLines: [String] = []
     /// ⌘+ and ⌘− in the log; remembered.
     @AppStorage("logFontSize") private var fontSize = Double(NSFont.smallSystemFontSize)
+    /// When the log on screen was read, and since when reading it again fails.
+    @State private var loadedAt: Date?
+    @State private var reloadFailed: Date?
 
     private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
 
@@ -56,11 +95,20 @@ struct BuildLog: View {
                     ClaudeMenu(store: store, item: live, waiting: false)
                     // The two copies in one menu: the header had too many buttons.
                     Menu(L("Copy", "Kopieren")) {
-                        Button(L("Copy the log", "Log kopieren")) { copied(text) }
+                        // Tokens masked like "Copy for Claude"; with ⌥ held the raw log.
+                        Button(L("Copy the log (⌥: with tokens)", "Log kopieren (⌥: mit Tokens)")) {
+                            copied(NSEvent.modifierFlags.contains(.option) ? text : LogTools.maskSecrets(text))
+                        }
                         Button(L("Copy for Claude (prompt with the error)", "Für Claude kopieren (Prompt mit Fehler)")) {
                             var msg: String?
                             if case .failed(let m) = live.state { msg = m }
-                            copied(LogTools.claudePrompt(name: live.name, repo: live.repo, ref: live.ref, sha: live.headSha, message: msg, log: text))
+                            // In demo mode the stand-ins, like on screen: a pasted prompt is seen in the demo too.
+                            if Demo.on {
+                                copied(LogTools.claudePrompt(name: Demo.mask(live.name), repo: live.repo.map(Demo.mask), ref: live.ref, sha: live.headSha,
+                                                             message: msg.map { Demo.scrub($0, items: [live]) }, log: Demo.scrub(text, items: [live])))
+                            } else {
+                                copied(LogTools.claudePrompt(name: live.name, repo: live.repo, ref: live.ref, sha: live.headSha, message: msg, log: text))
+                            }
                         }
                     }
                     .fixedSize()
@@ -85,7 +133,19 @@ struct BuildLog: View {
                 .padding(16)
             }
             else if text != nil {
-                LogText(lines: shownLines, onlyErrors: onlyErrors, firstError: firstError, jump: jump, fontSize: fontSize)
+                if let reloadFailed {
+                    // The log on screen is older than it looks: say so, with a way to try again.
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityHidden(true)
+                        Text(L("As of \(reloadFailed.formatted(date: .omitted, time: .shortened)) – reloading failed",
+                               "Stand von \(reloadFailed.formatted(date: .omitted, time: .shortened)) – Neuladen fehlgeschlagen"))
+                        Button(L("Try again", "Nochmal")) { attempt += 1 }.buttonStyle(.link)
+                        Spacer()
+                    }
+                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 4)
+                }
+                LogText(lines: shownLines, onlyErrors: onlyErrors, firstError: firstError, jump: jump, fontSize: fontSize,
+                        label: L("Build log of \(Demo.mask(live.name))", "Build-Log von \(Demo.mask(live.name))"))
                     .overlay(alignment: .bottomTrailing) {
                         if firstError != nil {
                             Button(L("Jump to the first error", "Zum ersten Fehler")) { jump += 1 }
@@ -94,7 +154,8 @@ struct BuildLog: View {
                     }
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
-        .frame(minWidth: 760, maxWidth: .infinity, minHeight: 420, idealHeight: 520, maxHeight: .infinity)
+        // Not wider than the main window may be (680), so the sheet never sticks out of it.
+        .frame(minWidth: 640, idealWidth: 760, maxWidth: .infinity, minHeight: 420, idealHeight: 520, maxHeight: .infinity)
         .task(id: reloadKey) {
             await load()
             // While the build runs, the log follows it: read again every 5 seconds.
@@ -109,13 +170,17 @@ struct BuildLog: View {
 
     private func load() async {
         do {
-            let data = try await Tool.run(["logs", item.id, "\(lineCount)"])
+            // Through the project's own platform, the way the store cancels and rolls back:
+            // a name on two platforms is not ambiguous then.
+            let data = try await Tool.run([item.platform.cli, "logs", item.id, "\(lineCount)"])
             let t = String(data: data, encoding: .utf8).map { $0.isEmpty ? L("(empty)", "(leer)") : $0 } ?? ""
             // Split, searched and scrubbed once per load, not on every redraw.
             let l = t.components(separatedBy: "\n")
             if l != lines { lines = l; firstError = LogTools.firstErrorLine(l); shownLines = scrubbed(l) }
-            text = t; self.error = nil
-        } catch { if text == nil { self.error = error.localizedDescription } }
+            text = t; self.error = nil; loadedAt = Date(); reloadFailed = nil
+        } catch {
+            if text == nil { self.error = error.localizedDescription } else { reloadFailed = loadedAt ?? Date() }
+        }
     }
 
     private func scrubbed(_ l: [String]) -> [String] { Demo.on ? l.map { Demo.scrub($0, items: [live]) } : l }
@@ -145,8 +210,14 @@ struct LogText: NSViewRepresentable {
     let firstError: Int?
     let jump: Int
     var fontSize = Double(NSFont.smallSystemFontSize)
+    /// What VoiceOver calls the text view ("Build log of shop").
+    var label = ""
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var noColour
 
-    final class Coordinator { var shown: [String]?; var filter = false; var jump = 0; var errorRange: NSRange?; var size = 0.0 }
+    /// An error line as the log shows it: with "Differentiate without colour" a mark in front, not red alone.
+    static func shown(_ line: String, bad: Bool, noColour: Bool) -> String { bad && noColour ? "✖ " + line : line }
+
+    final class Coordinator { var shown: [String]?; var filter = false; var noColour = false; var jump = 0; var errorRange: NSRange?; var size = 0.0 }
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -163,21 +234,25 @@ struct LogText: NSViewRepresentable {
 
     func updateNSView(_ sv: NSScrollView, context: Context) {
         guard let tv = sv.documentView as? NSTextView else { return }
+        if tv.accessibilityLabel() != label { tv.setAccessibilityLabel(label) }
         let c = context.coordinator
-        if c.shown != lines || c.filter != onlyErrors || c.size != fontSize {
+        if c.shown != lines || c.filter != onlyErrors || c.size != fontSize || c.noColour != noColour {
             // Follow the end only when the reader was there (or on the first fill); a filter change
             // goes to the first error; a size change keeps the place.
             let first = c.shown == nil, filterChanged = c.filter != onlyErrors, sizeChanged = c.size != fontSize && !first
             let visible = sv.contentView.documentVisibleRect
             let atEnd = first || visible.maxY >= tv.bounds.height - 30
-            c.shown = lines; c.filter = onlyErrors; c.size = fontSize
+            c.shown = lines; c.filter = onlyErrors; c.size = fontSize; c.noColour = noColour
             let font = NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular)
+            let bold = NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .bold)
             let out = NSMutableAttributedString()
             c.errorRange = nil
-            for (n, line) in lines.enumerated() {
-                let bad = LogTools.isErrorLine(line)
+            for (n, raw) in lines.enumerated() {
+                let bad = LogTools.isErrorLine(raw)
                 if onlyErrors && !bad { continue }
-                var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: bad ? NSColor.systemRed : NSColor.textColor]
+                let line = Self.shown(raw, bad: bad, noColour: noColour)
+                var attrs: [NSAttributedString.Key: Any] = [.font: bad && noColour ? bold : font,
+                                                            .foregroundColor: bad ? NSColor.systemRed : NSColor.textColor]
                 if n == firstError { attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.12) }
                 let start = out.length
                 out.append(NSAttributedString(string: line + "\n", attributes: attrs))
@@ -215,15 +290,34 @@ struct ProjectDetail: View {
     @AppStorage("demoMode") private var demoMode = false
     @AppStorage("hideBotCommits") private var hideBots = false
     @State private var attempt = 0
+    @State private var loadedAt: Date?
+    @State private var reloadFailed: Date?
+    @State private var showAllCommits = false
+    /// Waiting commits listed at first; the rest behind "Show … more".
+    static let commitsShown = 30
+    /// Vercel's Ignored Build Step: compares with the last deployed commit, so a deploy by hand over several
+    /// commits is not skipped because the newest one touched another folder. Without a previous deploy
+    /// the variable is empty; then the last commit stands in, never an empty argument (that would skip).
+    static let ignoredBuildStep = "git diff --quiet ${VERCEL_GIT_PREVIOUS_SHA:-HEAD^} HEAD -- ."
 
     private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
-    private func scrub(_ s: String) -> String { Demo.scrub(s, items: Platform.allCases.flatMap { store.items[$0] ?? [] }) }
+    private var allItems: [Item] { Platform.allCases.flatMap { store.items[$0] ?? [] } }
+    private func scrub(_ s: String) -> String { Demo.scrub(s, items: allItems) }
+
+    /// The release notes for the clipboard; in demo mode with stand-ins, as the screen shows them.
+    static func releaseNotes(_ item: Item, _ commits: [Details.Commit], all: [Item]) -> String {
+        let notes = LogTools.releaseNotes(name: Demo.mask(item.name), commits: Demo.on ? commits.map {
+            Details.Commit(sha: $0.sha, full: $0.full, url: $0.url, msg: Demo.scrub($0.msg, items: all), author: Demo.person($0.author),
+                           bot: $0.bot, at: $0.at, pr: $0.pr)
+        } : commits)
+        return notes
+    }
 
     var body: some View {
         let item = self.live
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                Logo(domain: item.domain, name: Demo.mask(item.name))
+                Logo(domain: Demo.on ? nil : item.domain, name: Demo.mask(item.name))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Demo.mask(item.name)).font(.title3.weight(.semibold))
                     Text(demoMode ? item.platform.rawValue : item.detail).font(.caption).foregroundStyle(.secondary)
@@ -247,7 +341,7 @@ struct ProjectDetail: View {
                     .buttonStyle(.borderless).help(L("Ask GitHub again", "GitHub neu fragen")).accessibilityLabel(L("Reload", "Neu laden"))
                 ClaudeMenu(store: store, item: item, waiting: !(details?.commits.isEmpty ?? true))
                 if let d = details, !d.commits.isEmpty {
-                    CopyButton(title: L("Copy release notes", "Release-Notes kopieren")) { LogTools.releaseNotes(name: item.name, commits: d.commits) }
+                    CopyButton(title: L("Copy release notes", "Release-Notes kopieren")) { Self.releaseNotes(item, d.commits, all: allItems) }
                     .help(L("The waiting commits as a list, ready for a mail or a chat message", "Die wartenden Commits als Liste, fertig für Mail oder Chat"))
                 }
                 Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
@@ -261,9 +355,19 @@ struct ProjectDetail: View {
                 }
                 .padding(20)
             } else if let d = details {
+                if let reloadFailed {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityHidden(true)
+                        Text(L("As of \(reloadFailed.formatted(date: .omitted, time: .shortened)) – reloading failed",
+                               "Stand von \(reloadFailed.formatted(date: .omitted, time: .shortened)) – Neuladen fehlgeschlagen"))
+                        Button(L("Try again", "Nochmal")) { attempt += 1 }.buttonStyle(.link)
+                        Spacer()
+                    }
+                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 4)
+                }
                 ScrollView { content(d).padding(16) }
             } else {
-                ProgressView(L("Asking GitHub …", "Frage GitHub …")).frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView(L("Asking \(GitHost(item).name) …", "Frage \(GitHost(item).name) …")).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(minWidth: 620, maxWidth: .infinity, minHeight: 420, idealHeight: 560, maxHeight: .infinity)
@@ -282,9 +386,13 @@ struct ProjectDetail: View {
         .task(id: "\(attempt)|\(item.lastSha ?? "")|\(item.headSha ?? "")") {
             guard let repo = item.repo else { return }
             do {
-                details = try await Tool.json(["details", repo, item.lastSha ?? "", item.ref ?? "main"], as: Details.self)
-                error = nil
-            } catch { if details == nil { self.error = error.localizedDescription } }
+                // Without a known branch the branch's newest commit stands in for it: "main" would
+                // compare the wrong branch in a repo on "master" or "develop".
+                details = try await Tool.json(["details", repo, item.lastSha ?? "", item.ref ?? item.headSha ?? "main"], as: Details.self)
+                error = nil; loadedAt = Date(); reloadFailed = nil
+            } catch {
+                if details == nil { self.error = error.localizedDescription } else { reloadFailed = loadedAt ?? Date() }
+            }
         }
     }
 
@@ -417,18 +525,21 @@ struct ProjectDetail: View {
                 .help(L("After going live the site (or the page to check) is asked three times. If it answers 5xx or not at all, a notification counts down \(Store.rollbackSeconds) seconds – with Cancel – and production goes back to the deploy before.",
                         "Nach dem Live-Gang wird die Seite (oder die Prüfseite) dreimal abgefragt. Antwortet sie mit 5xx oder gar nicht, zählt eine Mitteilung \(Store.rollbackSeconds) Sekunden herunter – mit Abbrechen – und Live geht auf den Deploy davor zurück."))
             if item.platform == .vercel, let repo = item.repo,
-               Platform.allCases.flatMap({ store.items[$0] ?? [] }).filter({ $0.repo == repo }).count > 1 {
-                DisclosureGroup(isExpanded: $monorepoOpen) {
+               // Vercel projects only: a Render backend in the same repo builds on Render, not here.
+               (store.items[.vercel] ?? []).filter({ $0.repo == repo }).count > 1 {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L("In Vercel's project settings, Git → Ignored Build Step, this command skips a build when nothing in the project's folder changed:",
                            "In Vercels Projekteinstellungen unter Git → Ignored Build Step überspringt dieser Befehl einen Build, wenn sich im Ordner des Projekts nichts geändert hat:"))
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
-                        Text("git diff --quiet HEAD^ HEAD -- .").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                        CopyButton(title: L("Copy the command", "Befehl kopieren"), systemImage: "doc.on.doc") { "git diff --quiet HEAD^ HEAD -- ." }
+                        Text(Self.ignoredBuildStep).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                        CopyButton(title: L("Copy the command", "Befehl kopieren"), systemImage: "doc.on.doc") { Self.ignoredBuildStep }
                             .buttonStyle(.borderless)
                     }
                     .padding(6).background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.1)))
+                    Text(L("It compares with the last deployed commit, so a deploy by hand over several commits still builds when any of them touched the folder.",
+                           "Er vergleicht mit dem zuletzt deployten Commit, darum baut ein Handdeploy über mehrere Commits trotzdem, wenn einer davon den Ordner betraf."))
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 } label: {
                     Text(L("Fewer builds in a monorepo", "Weniger Builds im Monorepo")).font(.headline)
@@ -468,7 +579,7 @@ struct ProjectDetail: View {
                     }
                     Spacer()
                     if let u = d.compareUrl.flatMap(URL.init(string:)) {
-                        Button(L("On GitHub", "Auf GitHub")) { NSWorkspace.shared.open(u) }.buttonStyle(.link)
+                        Button(L("On \(GitHost(item).name)", "Auf \(GitHost(item).name)")) { NSWorkspace.shared.open(u) }.buttonStyle(.link)
                     }
                 }
                 Text(L(plural(d.files, "file", "files") + ", +\(d.additions) −\(d.deletions) lines",
@@ -488,31 +599,39 @@ struct ProjectDetail: View {
                 }
                 let commits = d.commits.filter { !(hideBots && !d.onlyBots && $0.bot == true) }
                 LazyVStack(alignment: .leading, spacing: 6) {
-                ForEach(commits.prefix(listLimit)) { c in
+                ForEach(commits.prefix(showAllCommits ? listLimit : Self.commitsShown)) { c in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        if let pr = c.pr, let repo = item.repo, let u = URL(string: "https://github.com/\(repo)/pull/\(pr)") {
-                            Button("#\(pr)") { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospacedDigit())
+                        if let pr = c.pr, let repo = item.repo, let u = GitHost.prURL(repo, pr) {
+                            Button(GitHost.prLabel(repo, pr)) { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospacedDigit())
+                                .accessibilityLabel(L("Open pull request \(pr): \(scrub(c.msg))", "Pull Request \(pr) öffnen: \(scrub(c.msg))"))
                         } else if let u = c.url.flatMap(URL.init(string:)) {
                             Button(c.sha) { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospaced())
+                                .accessibilityLabel(L("Open commit \(c.sha): \(scrub(c.msg))", "Commit \(c.sha) öffnen: \(scrub(c.msg))"))
                         }
                         Text(scrub(c.msg)).font(.callout).lineLimit(2).help(scrub(c.msg))
                         Spacer(minLength: 8)
                         Text([Demo.person(c.author), Row.ago(Date(timeIntervalSince1970: c.at))].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                             .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                        if deployCommit != nil, item.deployable, c.full != nil {
+                        // Not at the branch's newest commit: there it is a plain deploy of everything.
+                        if deployCommit != nil, item.deployable, let full = c.full, full != item.headSha {
                             Button { commitToDeploy = c } label: { Image(systemName: "paperplane") }
                                 .buttonStyle(.borderless).accessibilityLabel(L("Deploy up to this commit", "Bis zu diesem Commit deployen")).help(L("Deploy up to this commit", "Bis zu diesem Commit deployen"))
                         }
                     }
                 }
                 }
-                if commits.count > listLimit {
+                // A long list would push the risk notes out of sight; the rest on request, and past
+                // `listLimit` on GitHub.
+                if !showAllCommits && commits.count > Self.commitsShown {
+                    Button(L("Show \(min(commits.count, listLimit) - Self.commitsShown) more commits", "\(min(commits.count, listLimit) - Self.commitsShown) weitere Commits zeigen")) { showAllCommits = true }
+                        .buttonStyle(.link).font(.caption)
+                } else if showAllCommits && commits.count > listLimit {
                     moreOnGitHub(commits.count - listLimit, d.compareUrl.flatMap(URL.init(string:)))
                 }
             }
         } else if item.hasNewCommits {
-            Text(L("GitHub could not compare what is live with the branch (rewritten branch, or the live commit is unknown).",
-                   "GitHub konnte Live-Stand und Branch nicht vergleichen (Branch umgeschrieben oder Live-Commit unbekannt)."))
+            Text(L("\(GitHost(item).name) could not compare what is live with the branch (rewritten branch, or the live commit is unknown).",
+                   "\(GitHost(item).name) konnte Live-Stand und Branch nicht vergleichen (Branch umgeschrieben oder Live-Commit unbekannt)."))
                 .font(.callout).foregroundStyle(.secondary)
         } else {
             Label(L("Everything merged is live", "Alles Gemergte ist live"), systemImage: "checkmark.circle.fill").foregroundStyle(Color.good)
@@ -538,8 +657,9 @@ struct ProjectDetail: View {
             LazyVStack(alignment: .leading, spacing: 6) {
             ForEach(d.open.prefix(listLimit)) { pr in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Button("#\(pr.number)") { if let u = URL(string: pr.url) { NSWorkspace.shared.open(u) } }
+                    Button(GitHost.prLabel(live.repo, pr.number)) { if let u = URL(string: pr.url) { NSWorkspace.shared.open(u) } }
                         .buttonStyle(.link).font(.caption.monospacedDigit())
+                        .accessibilityLabel(L("Open pull request \(pr.number): \(scrub(pr.title))", "Pull Request \(pr.number) öffnen: \(scrub(pr.title))"))
                     Text(scrub(pr.title)).font(.callout).lineLimit(2)
                     if pr.draft { tag(L("draft", "Entwurf")) }
                     if pr.bot == true { tag(L("bot", "Bot")) }

@@ -5,7 +5,8 @@ import Foundation
 extension Demo {
     /// Every project name, repo and domain in `text` replaced by its stand-in, longest first so
     /// "shop-api" is not cut into "shop" + "-api". Without demo mode the text stays as it is.
-    /// Only for the screen: what goes to the clipboard stays real.
+    /// For the screen and, in demo mode, for what is copied too (release notes, the build log for
+    /// Claude): a recording or a pasted text then shows the same stand-ins as the window.
     static func scrub(_ text: String, items: [Item]) -> String {
         guard on, !text.isEmpty else { return text }
         var words = Set<String>()
@@ -32,18 +33,17 @@ extension Demo {
         return out + ns.substring(from: last)
     }
 
-    /// The pattern for a set of names, built once per set: a build log scrubs up to 2000 lines.
+    /// The pattern over all names is built once per list of names, not on every toast and widget row.
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var cached: (words: [String], re: NSRegularExpression)?
     private static func regex(for list: [String]) -> NSRegularExpression? {
-        let key = list.joined(separator: "\u{1}")
         cacheLock.lock(); defer { cacheLock.unlock() }
-        if let c = cache, c.key == key { return c.re }
+        if let c = cached, c.words == list { return c.re }
         guard let re = try? NSRegularExpression(pattern: list.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|"),
                                                 options: .caseInsensitive) else { return nil }
-        cache = (key, re)
+        cached = (list, re)
         return re
     }
-    nonisolated(unsafe) private static var cache: (key: String, re: NSRegularExpression)?
-    private static let cacheLock = NSLock()
 
     /// A person's name in demo mode: a stand-in, like project names.
     static func person(_ s: String?) -> String? { s.map { on ? mask($0) : $0 } }
