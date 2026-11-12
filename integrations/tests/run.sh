@@ -547,9 +547,10 @@ rules() { sed -n '/^const errorPattern/,$p' "$1" | grep -v 'eslint-disable' | tr
 if command -v npm >/dev/null && [ -d vscode/node_modules ]; then
   (cd vscode && npm test --silent >"$tmp/vscode.log" 2>&1) && ok "vscode: unit tests" || { fail "vscode: unit tests" "see below"; cat "$tmp/vscode.log"; }
   # A timed-out CLI is stopped with its process group: the stand-in's sleep does not outlive the tests.
-  # Only an orphaned sleep counts (parent gone, so launchd's pid 1): a shell elsewhere on this Mac
-  # may run its own "sleep 20".
-  left="$(ps -axo pid=,ppid=,command= | awk '$2 == 1 && $3 ~ /(^|\/)sleep$/ && ($4 == "20" || $4 == "20.3") && NF == 4')"
+  # Only an orphaned sleep with the tests' own lengths counts (parent gone, so pid 1). Other
+  # suites leave orphans on purpose (tests/app-tests.swift: "sleep 19.6", up to 20 s, in the same
+  # CI job): a plain "sleep 20" from elsewhere made this fail now and then.
+  left="$(ps -axo pid=,ppid=,command= | awk '$2 == 1 && $3 ~ /(^|\/)sleep$/ && ($4 == "20.1" || $4 == "20.2" || $4 == "20.3") && NF == 4')"
   [ -n "$left" ] && fail "vscode: no sleep left behind" "$left" || ok "vscode: no sleep left behind"
 else
   skip "vscode: run npm ci in integrations/vscode first"

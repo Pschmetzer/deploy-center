@@ -29,6 +29,15 @@ body:
         - App
         - deploys CLI
         - Menu bar
+        - Widgets
+        - iPhone app
+        - Command palette
+        - Autofix / Claude
+        - Guard
+        - Team mode
+        - MCP server / Claude Code plugin
+        - VS Code / Raycast / GitHub Action
+        - Website / docs
         - Update / install
     validations:
       required: true

@@ -4,11 +4,14 @@ contact_links:
     url: https://github.com/Pschmetzer/deploy-center/security/advisories/new
     about: Privately, not as a public issue. See SECURITY.md.
   - name: How the counts are made
-    url: https://github.com/Pschmetzer/deploy-center/blob/main/docs/ZAHLEN.md
+    url: https://github.com/Pschmetzer/deploy-center/blob/main/docs/NUMBERS.md
     about: Waiting commits, PRs and changed projects explained
   - name: README (install, what it changes, FAQ)
     url: https://github.com/Pschmetzer/deploy-center#readme
     about: Install with Homebrew, what turning auto-deploy off changes and how to undo it
+  - name: FAQ
+    url: https://github.com/Pschmetzer/deploy-center/blob/main/docs/FAQ.md
+    about: Common questions, before you open an issue
   - name: The deploys CLI
     url: https://github.com/Pschmetzer/deploy-center/blob/main/docs/CLI.md
     about: Every command, CI variables and settings

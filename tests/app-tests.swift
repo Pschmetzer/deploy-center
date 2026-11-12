@@ -236,7 +236,8 @@ try? tree.run(); usleep(300_000)
 let t0 = Date()
 Tool.killTree(tree.processIdentifier)
 _ = treeOut.fileHandleForReading.readDataToEndOfFile()   // returns only once every child is gone
-expect("killTree closes the pipe at once", Date().timeIntervalSince(t0) < 3, true)
+// Two sleeps of 30 s: "at once" is anything well below that, also on a busy CI runner.
+expect("killTree closes the pipe at once", Date().timeIntervalSince(t0) < 10, true)
 // Build logs: what is a failure, what leaves the app.
 expect("cache miss is no error", LogTools.isErrorLine("Build Cache not found, building from scratch"), false)
 expect("ErrorBoundary file is no error", LogTools.isErrorLine("  src/ErrorBoundary.tsx  2.1 kB"), false)
@@ -1242,7 +1243,7 @@ case "$1" in
   hello) echo "hi $2" ;;
   fail) echo "it broke" >&2; exit 5 ;;
   hang) sleep 30 ;;
-  daemon) (sleep 20 &) ; echo started ;;
+  daemon) (sleep 19.6 &) ; echo started ;;  # 19.6: no other test looks for this orphan
   big) head -c 300000 /dev/zero | tr '\\0' 'x' ;;
 esac
 """.write(to: fake, atomically: true, encoding: .utf8)
@@ -1458,6 +1459,134 @@ do {
     PhoneLinkModel.migrateGitHubAtLaunch(d)
     expect("launch: link on, no keychain entry: token stays on", d.bool(forKey: PhoneLinkModel.githubKey), true)
     d.removePersistentDomain(forName: suite)
+}
+
+// The QR code of the iPhone link: the keys go there and back unchanged; anything else is refused.
+// Made now: a code older than PhoneLink.qrMaxAge is refused as a photo of the screen.
+let linkKeys = LinkedKeys(vercel: "v-key", vercelTeam: "team", render: "r-key", github: "g-key",
+                          updated: Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded()))
+let qr = PhoneLink.qrText(linkKeys) ?? ""
+expect("qr: has the prefix", qr.hasPrefix(PhoneLink.qrPrefix), true)
+expect("qr: round trip", PhoneLink.parse(qr: qr) == linkKeys, true)
+expect("qr: another prefix is refused", PhoneLink.parse(qr: "deploycenter-link:2:" + qr.dropFirst(PhoneLink.qrPrefix.count)) == nil, true)
+expect("qr: broken base64 is refused", PhoneLink.parse(qr: PhoneLink.qrPrefix + "%%%") == nil, true)
+expect("qr: other JSON is refused", PhoneLink.parse(qr: PhoneLink.qrPrefix + Data("{}".utf8).base64EncodedString()) == nil, true)
+expect("qr: no Vercel or Render key is refused", PhoneLink.parse(qr: PhoneLink.qrText(LinkedKeys(github: "g")) ?? "") == nil, true)
+
+// The widget file: what the Mac writes, the widgets and the iPhone read back.
+let snap = DeploySnapshot(at: Date(timeIntervalSince1970: 1_762_816_500), demo: false, waitingProjects: 1, waitingCommits: 3,
+                          waitingPRs: 1, building: 0, failed: 1, saving: .init(before: 2, after: 0.5),
+                          projects: [.init(name: "app", platform: "Vercel", status: .failed, commits: 3, prs: 1,
+                                           since: Date(timeIntervalSince1970: 1_762_800_000), message: "Fix login")],
+                          language: "de")
+let snapData = (try? DeploySnapshot.encoder.encode(snap)) ?? Data()
+expect("snapshot: round trip", (try? DeploySnapshot.decoder.decode(DeploySnapshot.self, from: snapData)) == snap, true)
+expect("snapshot: saving a month", snap.saving?.month ?? -1, 45.0)
+expect("snapshot: broken JSON is refused", (try? DeploySnapshot.decoder.decode(DeploySnapshot.self, from: Data("{\"at\":1}".utf8))) == nil, true)
+
+// Claude connection: finding node/claude and running them. Temp files only, no login shell
+// (a candidate always hits), never the real Claude config.
+final class Box<T>: @unchecked Sendable { var value: T?; init() {} }
+func waitFor<T>(_ f: @escaping @Sendable () async -> T) -> T {
+    let sem = DispatchSemaphore(value: 0), box = Box<T>()
+    Task.detached { box.value = await f(); sem.signal() }
+    sem.wait()
+    return box.value!
+}
+let envDir = NSTemporaryDirectory() + "dc-env-\(UUID().uuidString)"
+try? FileManager.default.createDirectory(atPath: envDir, withIntermediateDirectories: true)
+let exe = envDir + "/node", plainFile = envDir + "/notes.txt"
+FileManager.default.createFile(atPath: exe, contents: Data("#!/bin/sh\n".utf8), attributes: [.posixPermissions: 0o755])
+FileManager.default.createFile(atPath: plainFile, contents: Data("x".utf8), attributes: [.posixPermissions: 0o644])
+expect("isExec: an executable file", ClaudeEnv.isExec(exe), true)
+expect("isExec: a file without x", ClaudeEnv.isExec(plainFile), false)
+expect("isExec: a folder is not a program", ClaudeEnv.isExec(envDir), false)
+expect("isExec: missing", ClaudeEnv.isExec(envDir + "/gone"), false)
+expect("find: the first candidate that runs", waitFor { await ClaudeEnv.find("node", overrideKey: "dcTestNoSuchKey", candidates: [envDir + "/gone", plainFile, exe]) } ?? "-", exe)
+let both = waitFor { await ClaudeRun.run("/bin/sh", ["-c", "echo out; echo err >&2"]) }
+expect("ClaudeRun: ok, stdout and stderr together", "\(both.ok) \(both.out.contains("out")) \(both.out.contains("err"))", "true true true")
+expect("ClaudeRun: an exit code is not ok", waitFor { await ClaudeRun.run("/bin/sh", ["-c", "exit 3"]) }.ok, false)
+expect("ClaudeRun: a missing program is not ok", waitFor { await ClaudeRun.run(envDir + "/gone", []) }.ok, false)
+let slowStart = Date()
+let slow = waitFor { await ClaudeRun.run("/bin/sleep", ["20"], timeout: 0.5) }
+expect("ClaudeRun: a hang is ended at the timeout", "\(slow.ok) \(Date().timeIntervalSince(slowStart) < 10)", "false true")
+try? FileManager.default.removeItem(atPath: envDir)
+
+// --- CI lane: palette by item state, Claude nudge, the status models, the deploys JSON contract ---
+
+// The palette: which verbs a row gets depends on its state; hidden rows and real names in demo mode stay out.
+MainActor.assumeIsolated {
+    let st = Store()
+    var busy = item(changed: true); busy.state = .running("building")
+    var linked = Item(id: "srv-9", name: "linked", detail: "", platform: .render, deployable: false, auto: false, note: nil, link: "https://linked.example")
+    linked.kind = "static_site"
+    let secret = Item(id: "secret", name: "secret", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil)
+    st.items[.vercel] = [busy, secret]
+    st.items[.render] = [linked]
+    st.hidden = [Store.key(secret)]
+    let ids = PaletteCommands.all(st).map(\.id)
+    expect("palette: a running row has no deploy or rollback", ids.contains("deploy|vercel/app") || ids.contains("rollback|vercel/app"), false)
+    expect("palette: a running row can still show its log", ids.contains("log|vercel/app"), true)
+    expect("palette: stop all appears while something runs", ids.contains("action.stopAll"), true)
+    expect("palette: not deployable, no deploy", ids.contains("deploy|render/srv-9"), false)
+    expect("palette: a link gives open", "\(ids.contains("open|render/srv-9")) \(ids.contains("open|vercel/app"))", "true false")
+    expect("palette: Vercel and Render rows have a dashboard", "\(ids.contains("dashboard|vercel/app")) \(ids.contains("dashboard|render/srv-9"))", "true true")
+    // A hidden row only offers "show" (our palette verb for hidden projects), nothing that acts on it.
+    expect("palette: a hidden row is not offered", ids.filter { $0.hasSuffix("|vercel/secret") }.allSatisfy { $0.hasPrefix("show|") }, true)
+    UserDefaults.standard.set(true, forKey: "demoMode")
+    let demo = PaletteCommands.all(st)
+    expect("palette, demo mode: the real name is not searchable",
+           demo.contains { c in c.texts.contains { $0.contains("linked") } || c.title.contains("linked") }, false)
+    expect("palette, demo mode: the stand-in is", demo.contains { $0.texts.contains("log " + Demo.mask("linked")) }, true)
+    UserDefaults.standard.removeObject(forKey: "demoMode")
+    expect("palette verbs: every verb has an English and a German word",
+           PaletteVerb.allCases.allSatisfy { !$0.words.en.isEmpty && !$0.words.de.isEmpty }, true)
+    expect("palette verbs: only deploy, rollback and preview ask first", PaletteVerb.allCases.filter(\.asks).map(\.rawValue), ["deploy", "rollback", "preview"])
+}
+
+// The Claude nudge: stored only when it changes; once dismissed, refresh leaves it alone (and reads no config).
+let nudgeKeys = [ClaudeNudge.wantedKey, ClaudeNudge.dismissedKey]
+let nudgeBefore = nudgeKeys.map { UserDefaults.standard.object(forKey: $0) }
+ClaudeNudge.store(wanted: true)
+expect("nudge: stored", UserDefaults.standard.bool(forKey: ClaudeNudge.wantedKey), true)
+ClaudeNudge.store(wanted: false)
+expect("nudge: cleared", UserDefaults.standard.bool(forKey: ClaudeNudge.wantedKey), false)
+UserDefaults.standard.set(true, forKey: ClaudeNudge.wantedKey)
+UserDefaults.standard.set(true, forKey: ClaudeNudge.dismissedKey)
+waitFor { await ClaudeNudge.refresh() }
+expect("nudge: dismissed, refresh changes nothing", UserDefaults.standard.bool(forKey: ClaudeNudge.wantedKey), true)
+for (k, v) in zip(nudgeKeys, nudgeBefore) { if let v { UserDefaults.standard.set(v, forKey: k) } else { UserDefaults.standard.removeObject(forKey: k) } }
+
+// The status models. Missing fields are read with defaults (main, "Settings parts read an answer
+// with fields missing"), so only the shape that matters is checked here.
+let dec = JSONDecoder()
+func decodes<T: Decodable>(_ t: T.Type, _ s: String) -> Bool { (try? dec.decode(t, from: Data(s.utf8))) != nil }
+expect("GuardStatus: a minimal answer", decodes(GuardStatus.self, #"{"enabled":false,"lastActions":[],"allowances":[]}"#), true)
+let team = try? dec.decode(TeamConfig.self, from: Data(#"{"readonly":{"value":true,"from":"x"},"sources":[],"projects":{"b":{"approvals":{"value":1,"from":"x"}},"a":{"approvals":{"value":3,"from":"x"}},"c":{"approvals":{"value":0,"from":"x"}},"d":{}}}"#.utf8))
+expect("TeamConfig.guarded: only approvals above 0, by name", team.map { $0.guarded.map { "\($0.name)=\($0.approvals)" } } ?? [], ["a=3", "b=1"])
+
+// The contract: what `deploys` really answers (tests/contract-json.sh), read with the app's own models.
+if let dir = ProcessInfo.processInfo.environment["DC_CONTRACT"] {
+    func load<T: Decodable>(_ t: T.Type, _ f: String) -> T? {
+        guard let d = FileManager.default.contents(atPath: dir + "/" + f) else { expect("contract: \(f) exists", false, true); return nil }
+        do { return try dec.decode(t, from: d) } catch { expect("contract: \(f) decodes as \(t)", "\(error)", "no error"); return nil }
+    }
+    if let g = load(GuardStatus.self, "guard.json") {
+        expect("contract guard: actions and allowances", "\(g.lastActions.map(\.action)) \(g.allowances.map(\.platform).sorted())", "[\"off\", \"failed\"] [\"all\", \"vercel\"]")
+        expect("contract guard: the error of a failed switch", g.lastActions.last?.error ?? "-", "could not disconnect web")
+    }
+    if let a = load(AutofixStatus.self, "autofix.json") {
+        expect("contract autofix: routine, token, newest first", "\(a.routine ?? "-") \(a.token) \(a.fires.map(\.project))", "routine-1 true [\"web\", \"api\"]")
+        expect("contract autofix: the PR and the merged commit", "\(a.fires.first?.prNumber ?? 0) \(a.fires.first?.mergedSha ?? "-")", "9 ffff999")
+    }
+    if let c = load(TeamConfig.self, "config.json") {
+        expect("contract config: not an observer, web needs 2 approvals", "\(c.readonly.value) \(c.guarded.map { "\($0.name)=\($0.approvals)" })", "false [\"web=2\"]")
+    }
+    if let w = load(WindowReply.self, "window.json") {
+        expect("contract window: closed, with the reason", "\(w.denied) \(w.reason ?? "-")", "true freeze")
+    }
+} else {
+    print("skip contract tests (DC_CONTRACT not set; tests/app-tests.sh sets it)")
 }
 
 print("")
