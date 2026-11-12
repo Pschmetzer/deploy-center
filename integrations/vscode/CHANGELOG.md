@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - German: every text, command and setting follows the editor's language (English and Deutsch). "Copy for AI" stays English, it is written for the AI.
 - **Deploy Preview** (Vercel) and **Roll Back Production** (Vercel, Render), each after a confirmation, in the project menu and the tree.
