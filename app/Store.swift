@@ -637,6 +637,8 @@ final class Store: ObservableObject {
                 self.knownParallel = self.maxParallel; self.pump()
             }
         }
+        // LOG-108: decided before Settings can switch a new link on.
+        PhoneLinkModel.migrateGitHubAtLaunch()
         Task {
             await start()
             // The phone's keys at launch, with or without a window, and again once a day below

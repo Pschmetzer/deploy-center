@@ -1453,6 +1453,11 @@ do {
     expect("decided once: not asked again", asked, false)
     expect("decided once: stays off", d.bool(forKey: PhoneLinkModel.githubKey), false)
     d.removePersistentDomain(forName: suite)
+    // At launch: the link switched on (a QR-only Mac, or no keychain group) counts as existing.
+    d.set(true, forKey: "phoneLink")
+    PhoneLinkModel.migrateGitHubAtLaunch(d)
+    expect("launch: link on, no keychain entry: token stays on", d.bool(forKey: PhoneLinkModel.githubKey), true)
+    d.removePersistentDomain(forName: suite)
 }
 
 print("")

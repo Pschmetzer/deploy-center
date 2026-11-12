@@ -67,7 +67,7 @@ struct ErrorText: View {
 func providerLabel(_ id: String) -> String {
     let l = id.lowercased()
     if l == "all" { return L("All", "Alle") }
-    return (ProviderInfo.builtIn + ProviderInfo.comingSoon).first { $0.id == l }?.label ?? id.capitalized
+    return ProviderInfo.label(for: l)   // the names the script told, then the known ones
 }
 
 /// A code from the script the app does not know yet (a newer script): readable, not raw, and noted

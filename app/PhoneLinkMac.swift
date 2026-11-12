@@ -37,12 +37,17 @@ final class PhoneLinkModel: ObservableObject {
     /// connection; a connection made before the switch existed keeps getting it (`migrateGitHub`).
     nonisolated static let githubKey = "phoneLinkGitHub"
 
-    /// The switch was never set: on when this Mac already handed keys to the phone (a link made
-    /// when the token always went along), off for a new connection. Decided once, then it is the
+    /// The switch was never set: on when this Mac already handed keys to the phone (a keychain entry,
+    /// or the link switched on: a link made when the token always went along), off for a new one. Decided once, then it is the
     /// person's own setting.
     nonisolated static func migrateGitHub(_ d: UserDefaults = .standard, linkExists: () -> Bool) {
         guard d.object(forKey: githubKey) == nil else { return }
         d.set(linkExists(), forKey: githubKey)
+    }
+    /// At launch, before anyone can switch the link on: an existing link is one switched on already
+    /// or with a keychain entry. A link switched on later is new and starts without the token.
+    nonisolated static func migrateGitHubAtLaunch(_ d: UserDefaults = .standard) {
+        migrateGitHub(d, linkExists: { d.bool(forKey: "phoneLink") || PhoneLink.read() != nil })
     }
 
     func push(onlyIfChanged: Bool = false) async {
@@ -88,6 +93,7 @@ final class PhoneLinkModel: ObservableObject {
             k.render = await output("/usr/bin/security", ["find-generic-password", "-a", NSUserName(), "-s", "render-api-key", "-w"]) ?? ""
         }
         // Only when asked for (Settings → iPhone): the gh token's scopes are wider than the phone needs.
+        // Normally decided at launch already (`migrateGitHubAtLaunch`); here only the keychain counts.
         migrateGitHub(linkExists: { PhoneLink.read() != nil })
         if UserDefaults.standard.bool(forKey: githubKey) { k.github = await output("/usr/bin/env", ["gh", "auth", "token"]) ?? "" }
         k.updated = Date()

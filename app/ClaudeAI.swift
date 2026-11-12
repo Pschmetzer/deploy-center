@@ -175,8 +175,8 @@ struct ClaudeAISettings: View {
                     }
                 }
                 if let message {
-                    if failed { ErrorText(message) }
-                    else { Text(message).font(.caption).textSelection(.enabled).foregroundStyle(.secondary) }
+                    if failed { ErrorText(Demo.scrub(message, items: items)) }
+                    else { Text(Demo.scrub(message, items: items)).font(.caption).textSelection(.enabled).foregroundStyle(.secondary) }
                 }
             }
         } header: {
