@@ -123,8 +123,8 @@ expect "vercel on: a GitLab mapping points to the dashboard" \
 # In a subshell with the script sourced again: earlier tests replaced or removed some functions.
 r6="$tmp/r6"; mkdir -p "$r6"
 (
-  # shellcheck source=../deploys
-  . ./deploys; set +e
+  # shellcheck source=/dev/null  # deploys_src is ./deploys, from script-tests.sh
+  . "$deploys_src"; set +e
 
   # 280: a "&" or "<" in a path goes into the plist escaped (launchctl refuses broken XML).
   mkdir -p "$r6/R&D<x>/Library/Logs" "$r6/agents" "$r6/bin"
