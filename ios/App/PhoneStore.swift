@@ -148,6 +148,9 @@ final class PhoneStore: ObservableObject {
         try? FileManager.default.removeItem(at: Background.lastURL)
         if let url = DeploySnapshot.groupURL { try? FileManager.default.removeItem(at: url) }
         WidgetCenter.shared.reloadAllTimelines()
+        // Names also live in the quick actions, in Spotlight and as the badge count.
+        QuickActions.update([]); Spotlight.index([], demo: demo)
+        Task { await updateBadge() }
         if !ignoreLink { ignoreLink = true }    // reloads: with no key nothing is read
     }
 

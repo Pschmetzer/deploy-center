@@ -692,11 +692,11 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    if store.linked != nil {
+                    if store.linked != nil && !store.ignoreLink {
                         Label(L("Connected to the Mac (iCloud Keychain)", "Mit dem Mac verbunden (iCloud-Schlüsselbund)"), systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                     }
-                    Button(store.linked == nil ? L("Connect to the Mac …", "Mit dem Mac verbinden …") : L("Connection details …", "Verbindung …")) { connect = true }
+                    Button(store.linked == nil || store.ignoreLink ? L("Connect to the Mac …", "Mit dem Mac verbinden …") : L("Connection details …", "Verbindung …")) { connect = true }
                 } header: { Text("Mac") } footer: {
                     Text(L("Keys from the Mac are used when a field below is empty. A key typed here wins.",
                            "Schlüssel vom Mac gelten, wenn ein Feld unten leer ist. Ein hier eingetragener Schlüssel hat Vorrang."))
