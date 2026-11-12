@@ -22,7 +22,7 @@ cat > "$tmp/bin/curl" <<'CURL'
 cfg="$(cat)"
 m=GET; prev=""; body=""; form=""
 for a in "$@"; do
-  case "$prev" in -X) m="$a";; --data) body="$a";; -F) form="$form $a";; esac; prev="$a"
+  case "$prev" in -X) m="$a";; --data) body="$a";; -F|--form-string) form="$form $a";; esac; prev="$a"
 done
 url="${*: -1}"; path="${url#*client/v4}"
 echo "$m $path${body:+ $body}${form:+ form:$form}" >> "$CALLS"
@@ -95,7 +95,9 @@ out="$(cf json)"
 expect "json: sorted by name" "$(echo "$out" | jq -c 'map(.name)')" '["Blog","site","upload"]'
 s="$(echo "$out" | jq -c '.[] | select(.name=="site")')"
 expect "json: contract fields" "$(echo "$s" | jq -c 'keys')" \
-  '["auto","dashboardUrl","deployable","domain","fetchError","id","lastAt","lastMsg","lastSha","lastState","name","paused","phase","ref","repo","url"]'
+  '["auto","dashboardUrl","deployable","domain","fetchError","id","lastAt","lastMsg","lastSha","lastState","name","paused","phase","projectId","ref","repo","url"]'
+# The id is the name (cf_proj puts it in the URL path); the UUID would 404 there.
+expect "json: id is the project name, the UUID is projectId" "$(echo "$s" | jq -c '[.id, .projectId]')" '["site","p1"]'
 expect "json: off project is not auto" "$(echo "$s" | jq .auto)" false
 expect "json: custom domain over pages.dev" "$(echo "$s" | jq -r .url)" "https://www.example.com"
 expect "json: live commit" "$(echo "$s" | jq -r '.lastSha + " " + .lastMsg')" "aaaa111 fix: live"
@@ -154,7 +156,7 @@ expect "deploy: and starts nothing" "$(calls POST)" 0
 
 # --- the skipped deployment and its fallback ---
 routes "GET /pages/projects/site$ project-off.json" "POST /deployments$ deploy-skipped.json,deploy-queued.json" "PATCH /pages/projects/site$ ok.json"
-echo '{"selftest":{"result":"verified"}}' > "$DEPLOYS_CONFIG/cloudflare.json"
+echo "{\"selftests\":{\"site\":{\"result\":\"verified\",\"at\":$(date +%s)}}}" > "$DEPLOYS_CONFIG/cloudflare.json"
 out="$(cf deploy-json site 2>&1)"; rc=$?
 [ "$rc" = 1 ] && [[ "$out" == *"skipped the build"*production_deployments_disabled*--toggle* ]] && ok "skipped: says so, points at --toggle" || fail "skipped: says so" "$rc $out"
 expect "skipped: without --toggle nothing is switched" "$(calls PATCH)" 0
@@ -174,6 +176,13 @@ rm -rf "$DEPLOYS_CONFIG/locks"
 routes "GET /pages/projects/site$ project-off.json" "POST /deployments$ deploy-skipped.json,unauthorized.json:403" "PATCH /pages/projects/site$ ok.json"
 out="$(DEPLOYS_CLOUDFLARE_TOGGLE=1 cf deploy-json site 2>&1)"; rc=$?
 expect "toggle: a failed start still switches back" "$rc/$(calls PATCH)" "1/2"
+expect "toggle: switched back, nothing left open" "$(jq -c '.toggling // {}' "$DEPLOYS_CONFIG/cloudflare.json")" "{}"
+rm -rf "$DEPLOYS_CONFIG/locks"
+# The switch back fails: the note stays, and doctor names it.
+routes "GET /pages/projects/site$ project-off.json" "POST /deployments$ deploy-skipped.json,deploy-queued.json" "PATCH /pages/projects/site$ ok.json,unauthorized.json:403"
+DEPLOYS_CLOUDFLARE_TOGGLE=1 cf deploy-json site >/dev/null 2>&1
+expect "toggle: a failed switch back stays written down" "$(jq -c '.toggling | keys' "$DEPLOYS_CONFIG/cloudflare.json")" '["site"]'
+rm -rf "$DEPLOYS_CONFIG/locks"
 expect "toggle: switched back off" "$(grep '^PATCH' "$CALLS" | tail -n 1 | sed 's/^PATCH [^ ]* //' | jq '.source.config.production_deployments_enabled')" false
 
 # --- self-test ---
@@ -195,9 +204,47 @@ out="$(DEPLOYS_CLOUDFLARE_SELFTEST_TRIES=3 cf selftest site --yes)"; rc=$?
 [ "$rc" = 1 ] && [[ "$out" == *inconclusive* ]] && ok "selftest: no build stage is inconclusive" || fail "selftest: inconclusive" "$rc $out"
 expect "selftest: inconclusive records nothing" "$(jq -r '.selftest.result // "none"' "$DEPLOYS_CONFIG/cloudflare.json" 2>/dev/null || echo none)" none
 
+# PRV-056: a self-test counts for its own project, and not for ever. site has push-deploys off.
+# (The JSON is built first: macOS bash 3.2 mangles braces inside "$(f "...")".)
+now="$(date +%s)"
+st() { jq -nc --arg p "$1" --argjson at "$2" --arg k "${3:-selftests}" 'if $k == "selftest" then {selftest:{result:"verified", project:$p, at:$at}} else {selftests:{($p):{result:"verified", at:$at}}} end'; }
+sel() { routes "GET /pages/projects\\? projects.json"; echo "$1" > "$DEPLOYS_CONFIG/cloudflare.json"; cf list | jq -c '.[] | select(.name=="site") | .deployable'; }
+j1="$(st Blog "$now")"; j2="$(st site "$now")"; j3="$(st site $((now - 40 * 86400)))"; j4="$(st site "$now" selftest)"; j5="$(st Blog "$now" selftest)"
+expect "selftest: another project's test does not make site deployable" "$(sel "$j1")" false
+expect "selftest: its own test does" "$(sel "$j2")" true
+expect "selftest: one older than 30 days counts no more" "$(sel "$j3")" false
+expect "selftest: an earlier record counts for the project it names only" "$(sel "$j4"):$(sel "$j5")" "true:false"
+routes "GET /pages/projects/site$ project-off.json" "POST /deployments$ deploy-queued.json"
+echo "$j1" > "$DEPLOYS_CONFIG/cloudflare.json"
+out="$(cf deploy-json site 2>&1)"; rc=$?
+expect "selftest: deploy of an untested project still refuses" "$rc:$(calls POST)" "1:0"
+rm -rf "$DEPLOYS_CONFIG/locks"
+
+# PRV-057: a remembered account the token does not reach is looked for again, once.
+routes "GET /accounts/accOLD/pages/projects unauthorized.json:403" "GET /accounts\\? accounts-one.json" "GET /pages/projects\\? projects.json"
+echo '{"accountId":"accOLD"}' > "$DEPLOYS_CONFIG/cloudflare.json"
+out="$(CLOUDFLARE_ACCOUNT_ID='' cf list 2>"$tmp/err")"; rc=$?
+expect "account: a stale one is found again" "$rc:$(echo "$out" | jq length):$(jq -r .accountId "$DEPLOYS_CONFIG/cloudflare.json")" "0:3:$A"
+grep -q "using the token's account" "$tmp/err" && ok "account: and says so" || fail "account: and says so" "$(cat "$tmp/err")"
+routes "GET /accounts/accOLD/pages/projects unauthorized.json:403" "GET /accounts\\? accounts-two.json"
+echo '{"accountId":"accOLD"}' > "$DEPLOYS_CONFIG/cloudflare.json"
+out="$(CLOUDFLARE_ACCOUNT_ID='' cf list 2>&1)"; rc=$?
+expect "account: several accounts: the choice stays, the error shows" "$rc:$(jq -r .accountId "$DEPLOYS_CONFIG/cloudflare.json")" "1:accOLD"
+routes "GET /pages/projects\\? unauthorized.json:403"
+out="$(cf list 2>&1)"; rc=$?
+expect "account: from the environment it is never forgotten" "$rc:$(calls '^GET /accounts?')" "1:0"
+routes "GET /user/tokens/verify token-active.json"
+echo "{\"accountId\":\"accOLD\",\"selftests\":{}}" > "$DEPLOYS_CONFIG/cloudflare.json"
+echo good | (unset CLOUDFLARE_API_TOKEN; cf set-key) >/dev/null 2>&1
+expect "set-key: the remembered account is forgotten" "$(jq -c '[.accountId, .selftests]' "$DEPLOYS_CONFIG/cloudflare.json")" '[null,{}]'
+
 # --- doctor ---
 routes "GET /user/tokens/verify token-active.json"
 out="$(cf doctor)"
+expect "FEA-078: doctor without an end date: expiresAt null, no Ratelimit header: null" "$(echo "$out" | jq -c '[.expiresAt, .rateLimit]')" '[null,null]'
+routes "GET /user/tokens/verify token-expiring.json"
+expect "FEA-078: doctor reads expires_on as Unix seconds" "$(cf doctor | jq .expiresAt)" 1798761600
+routes "GET /user/tokens/verify token-active.json"
 expect "doctor: unverified by default" "$(echo "$out" | jq -c '[.tokenSource, .tokenValid, .account, .accountSource, .deployWhileOff]')" "[\"environment\",true,\"$A\",\"environment\",\"unverified\"]"
 [[ "$(echo "$out" | jq -r .note)" == unverified* ]] && ok "doctor: says unverified" || fail "doctor: says unverified" "$out"
 out="$(CLOUDFLARE_API_TOKEN=bad cf doctor)"
@@ -232,6 +279,22 @@ out="$(printf '' | CLOUDFLARE_API_TOKEN='' cf set-key 2>&1)"; rc=$?
 expect "set-key: empty input" "$rc" 1
 
 # --- the shared contract, once it exists ---
+has() { case "$2" in *"$3"*) ok "$1" ;; *) fail "$1" "[$3] not in: $2" ;; esac; }
+# --- PRV-130: with deploys' http_call, JSON calls go through it; a form keeps the own path ---
+# shellcheck source=../fixtures/http/stub.sh
+. tests/fixtures/http/stub.sh
+routes "GET /user/tokens/verify$ token-active.json"
+out="$( http_stub; cf_call GET /user/tokens/verify 2>"$tmp/err" | jq -r '.status' )"
+expect "PRV-130: .result read after http_call" "$out" active
+has "PRV-130: http_call with the bearer header and a fix" "$(cat "$CALLS")" "http_call Cloudflare GET https://api.cloudflare.com/client/v4/user/tokens/verify auth[bearer] fix[set]"
+routes "POST /deployments$ deploy-queued.json"
+( http_stub; cf_call POST "/accounts/$A/pages/projects/site/deployments" --form-string "branch=main" >/dev/null 2>&1 )
+expect "PRV-130: a form is not sent through http_call" "$(calls '^http_call')" 0
+routes "GET /user/tokens/verify$ unauthorized.json:200"
+out="$( http_stub; cf_call GET /user/tokens/verify 2>&1 )"; rc=$?
+expect "PRV-130: success:false with a 2xx still fails" "$rc" 1
+has "PRV-130: with Cloudflare's own error text" "$out" "Cloudflare GET /user/tokens/verify:"
+
 if [ -f tests/providers/contract.sh ]; then bash tests/providers/contract.sh cloudflare || fails=$((fails+1)); fi
 
 echo

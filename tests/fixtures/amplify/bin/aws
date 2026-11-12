@@ -1,0 +1,19 @@
+#!/bin/bash
+# A stand-in for the aws CLI in tests/providers/contract.sh (the provider's own tests bring
+# their own): logs "aws <args>" to $CALLS without --output/--profile/--region/timeouts, and
+# answers from $FIXTURES/amplify/contract/<args>.json, every character other than letters,
+# digits, "." and "-" as "_" (aws amplify get-job --app-id a --branch-name main --job-id 3
+# -> amplify_get-job_--app-id_a_--branch-name_main_--job-id_3.json). No file: exit 254.
+[ "${1:-}" = --version ] && { echo "aws-cli/2.31.0 Python/3.13 Darwin/25 source/arm64"; exit 0; }
+args=(); skip=0
+for a in "$@"; do
+  [ "$skip" = 1 ] && { skip=0; continue; }
+  case "$a" in --output|--profile|--region|--cli-connect-timeout|--cli-read-timeout) skip=1; continue ;; esac
+  args+=("$a")
+done
+echo "aws ${args[*]}" >> "${CALLS:-/dev/null}"
+[ "${args[0]:-} ${args[1]:-}" = "configure get" ] && { echo "eu-central-1"; exit 0; }
+key="$(printf '%s' "${args[*]}" | sed 's/[^A-Za-z0-9.-]/_/g')"
+f="${FIXTURES:?}/amplify/contract/$key.json"
+[ -f "$f" ] && { cat "$f"; exit 0; }
+echo "An error occurred (NotFoundException): no fixture $key" >&2; exit 254

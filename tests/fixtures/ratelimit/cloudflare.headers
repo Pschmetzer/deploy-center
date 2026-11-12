@@ -1,0 +1,4 @@
+HTTP/2 200
+ratelimit: "default";r=50;t=30
+ratelimit-policy: "burst";q=100;w=60
+

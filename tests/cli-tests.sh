@@ -123,8 +123,8 @@ expect "vercel on: a GitLab mapping points to the dashboard" \
 # In a subshell with the script sourced again: earlier tests replaced or removed some functions.
 r6="$tmp/r6"; mkdir -p "$r6"
 (
-  # shellcheck source=../deploys
-  . ./deploys; set +e
+  # shellcheck source=/dev/null  # deploys_src is ./deploys, from script-tests.sh
+  . "$deploys_src"; set +e
 
   # 280: a "&" or "<" in a path goes into the plist escaped (launchctl refuses broken XML).
   mkdir -p "$r6/R&D<x>/Library/Logs" "$r6/agents" "$r6/bin"
@@ -245,7 +245,8 @@ fake_logs() { echo "building $1"; echo "API_TOKEN=supersecretvalue123"; }
 FAKE
 l536() { env -u DEPLOYS_LIB PATH="$e2e/bin:/usr/bin:/bin" DEPLOYS_DIR="$p536" DEPLOYS_CONFIG="$p536/config" HOME="$e2e" /bin/bash ./deploys logs fake:web "$@" 2>&1; }
 expect "536: logs --masked hides the token" "$(l536 --masked | grep -c supersecretvalue123):$(l536 --masked | grep -c 'API_TOKEN=\[masked\]')" "0:1"
-expect "536: logs without --masked is unchanged" "$(l536 | grep -c supersecretvalue123)" "1"
+# Without --masked too: logs always masks (it reaches the app, the MCP server and models).
+expect "536: logs without --masked is masked as well" "$(l536 | grep -c supersecretvalue123):$(l536 | grep -c 'API_TOKEN=\[masked\]')" "0:1"
 
 # 583: gitlab set-token, trimmed like the other keys, tried before it is saved.
 : > "$CALLS"

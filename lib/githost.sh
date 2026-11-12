@@ -61,7 +61,9 @@ GITHOST_SLUG_JQ='(sub("^https://github.com/";"") | sub("^https?://";"") | sub("\
 GITHOST_VERCEL_LINK_JQ='(if .type == "gitlab" then
     (if .projectUrl then (.projectUrl | '"$GITHOST_SLUG_JQ"') elif .projectNamespace and .projectName
      then "gitlab.com/\(.projectNamespace)/\(.projectName)" else null end)
-  else "\(.org)/\(.repo)" end)'
+  elif (.type == "github" or .type == null) and .org and .repo then "\(.org)/\(.repo)"
+  # Bitbucket (owner/slug) and anything else: not a repo the git-host code can ask, so none.
+  else null end)'
 
 # The GitLab token: GITLAB_TOKEN, else the keychain entry `deploys gitlab set-token` saved.
 # Empty when there is none. Never printed anywhere else.
@@ -96,17 +98,40 @@ githost_open_prs_of() {
 
 # GET one API path (with query) on a GitLab host; the body on stdout. On failure: "HTTP <code>"
 # (and the answer) on stderr, exit 1. glab when installed (DEPLOYS_GITLAB_CURL=1 forces curl).
+# Every call is a read: a rate limit (429), a server error (5xx), no answer or a hung glab
+# (DEPLOYS_GITLAB_TIMEOUT seconds, 60) is asked again, three times in all, 2 s then 4 s apart.
 gitlab_api() {
-  local host="$1" path="$2" out code tok=""
+  local host="$1" path="$2" out code tok="" try err rc
   if [ -z "${DEPLOYS_GITLAB_CURL:-}" ] && type -P glab >/dev/null 2>&1; then
-    glab api --hostname "$host" "$path"; return
+    err="$(mktemp)"
+    for try in 1 2 3; do
+      rc=0
+      # perl's alarm survives the exec (macOS has no `timeout`); a hung glab ends with 142.
+      if command -v perl >/dev/null 2>&1; then
+        out="$(perl -e 'alarm shift; exec @ARGV or exit 127' "${DEPLOYS_GITLAB_TIMEOUT:-60}" glab api --hostname "$host" "$path" 2>"$err")" || rc=$?
+      else
+        out="$(glab api --hostname "$host" "$path" 2>"$err")" || rc=$?
+      fi
+      [ "$rc" = 0 ] && break
+      [ "$try" -lt 3 ] && { [ "$rc" = 142 ] || grep -qE 'HTTP (429|5[0-9][0-9])|timed? ?out|connection (refused|reset)' "$err"; } \
+        || break
+      sleep $((try * 2))
+    done
+    [ "$rc" = 142 ] && echo "gitlab: no answer from glab in ${DEPLOYS_GITLAB_TIMEOUT:-60} s" >> "$err"
+    cat "$err" >&2; rm -f "$err"
+    [ "$rc" = 0 ] || return 1
+    printf '%s\n' "$out"; return 0
   fi
   [ "$host" = "$(gitlab_host)" ] && tok="$(gitlab_token)"
-  # The token on stdin as a curl config line, so it never shows in the process list.
-  out="$( { [ -z "$tok" ] || printf 'header = "PRIVATE-TOKEN: %s"\n' "$tok"; } \
-    | curl -sS --connect-timeout 10 --max-time 60 -H "Accept: application/json" -K - -w '\n%{http_code}' \
-      "https://$host/api/v4/$path" 2>/dev/null)" || out=$'\n000'
-  code="${out##*$'\n'}"; out="${out%$'\n'*}"
+  for try in 1 2 3; do
+    # The token on stdin as a curl config line, so it never shows in the process list.
+    out="$( { [ -z "$tok" ] || printf 'header = "PRIVATE-TOKEN: %s"\n' "$tok"; } \
+      | curl -sS --connect-timeout 10 --max-time 60 -H "Accept: application/json" -K - -w '\n%{http_code}' \
+        "https://$host/api/v4/$path" 2>/dev/null)" || out=$'\n000'
+    code="${out##*$'\n'}"; out="${out%$'\n'*}"
+    case "$code" in 429|5*|000) [ "$try" -lt 3 ] && { sleep $((try * 2)); continue; } ;; esac
+    break
+  done
   if [[ "$code" != 2* ]]; then echo "gitlab: HTTP $code: $(printf '%s' "$out" | head -c 300)" >&2; return 1; fi
   printf '%s' "$out"
 }
@@ -135,9 +160,20 @@ GITLAB_JQ='def gldate: (. // null) | if . == null then null else sub("\\.[0-9]+"
 # shellcheck disable=SC2090
 export GITLAB_JQ
 
+# The file name for a key like group/app@ref, the same as deploys' cache_name (used when it
+# is there): "/" and "@" become "_"; a key with a "_" of its own also gets its checksum, so
+# a_b/c@main and a/b_c@main do not meet in one file (PRV-129). Readers glob the folder and
+# go by the key inside, so only the names change.
+githost_cache_name() {
+  if declare -F cache_name >/dev/null; then cache_name "$1"; return; fi
+  local n; n="$(printf '%s' "$1" | tr '/@' '__')"
+  case "$1" in *_*) n="$n-$(printf '%s' "$1" | cksum | cut -d' ' -f1)" ;; esac
+  printf '%s' "$n"
+}
+
 gitlab_head_of() {
   local repo="$1" ref="$2" out="$3" host id
-  local f ans; f="$out/$(echo "$repo@$ref" | tr '/@' '__').json"
+  local f ans; f="$out/$(githost_cache_name "$repo@$ref").json"
   read -r host id < <(gitlab_project "$repo")
   if ans="$(gitlab_api "$host" "projects/$id/repository/commits/$(gitlab_enc "$ref")" 2>"$f.err")"; then
     echo "$ans" | jq -c --arg k "$repo@$ref" "$GITLAB_JQ"'{key:$k, value:{at:(.committed_date | gldate), msg:(.title // (.message | split("\n")[0])), sha:.id}}' \
@@ -154,12 +190,15 @@ gitlab_head_of() {
 # and only when live is not an ancestor is the other direction compared for behindBy.
 gitlab_pending_of() {
   local repo="$1" base="$2" ref="$3" out="$4" key f host id cmp mb status behind="null" n
-  key="$repo@$base@$ref"; f="$out/$(echo "$key" | tr '/@' '__').json"
+  key="$repo@$base@$ref"; f="$out/$(githost_cache_name "$key").json"
   read -r host id < <(gitlab_project "$repo")
   if ! cmp="$(gitlab_api "$host" "projects/$id/repository/compare?from=$(gitlab_enc "$base")&to=$(gitlab_enc "$ref")" 2>"$f.err")"; then
-    # As on GitHub, only a 404 (the live commit is gone: branch rewritten) is a record.
-    if grep -qE 'HTTP 404|404 Not Found|Ref Not Found' "$f.err"; then
-      printf '{"key":"%s","value":{"rewritten":true}}\n' "$key" > "$f"
+    # As on GitHub, only a 404 (the live commit is gone: branch rewritten) is a record. GitLab
+    # also answers 404 for a private project it will not show: rewritten only when the branch
+    # itself can be read, else no record (not known), not "history rewritten" for every such repo.
+    if grep -qE 'HTTP 404|404 Not Found|Ref Not Found' "$f.err" \
+      && gitlab_api "$host" "projects/$id/repository/commits/$(gitlab_enc "$ref")" >/dev/null 2>&1; then
+      jq -nc --arg k "$key" '{key:$k, value:{rewritten:true}}' > "$f"
     fi
     rm -f "$f.err"; return 0
   fi
@@ -186,21 +225,46 @@ gitlab_pending_of() {
           bare:([$c[] | select(.n == null) | .sha])}}' > "$f" 2>/dev/null || return 0
   # A squash or fast-forward merge often leaves no !number in the message. For a few such
   # commits, ask which merged MR they came from; numbers are counted once.
+  # Which merged MR a commit came from does not change: each answer is kept, one file per commit
+  # (gitlab_mrs_of), so a refresh asks only for commits it has not seen.
   local bare nums
   bare="$(jq -r '.value.bare | if length <= 10 then .[] else empty end' "$f")"
-  nums="$(for s in $bare; do gitlab_api "$host" "projects/$id/repository/commits/$s/merge_requests" 2>/dev/null \
-            | jq -r '.[] | select(.state == "merged") | .iid' 2>/dev/null; done | jq -sc '.')"
+  nums="$(for s in $bare; do gitlab_mrs_of "$host" "$id" "$s"; done | jq -sc '.')"
   jq -c --argjson more "${nums:-[]}" '.value.prs = ((.value.nums + $more) | unique | length) | del(.value.bare, .value.nums)' "$f" > "$f.t" && mv "$f.t" "$f"
 }
 
-# Open merge requests: all, drafts, bots. The same record open_prs_of writes.
+# gitlab_mrs_of <host> <project id> <sha>: the iids of the merged MRs a commit came from, one a
+# line. Kept in <config>/cache/gitlab-mrs/ once GitLab answered; a failed answer is not kept.
+gitlab_mrs_of() {
+  local d f out
+  d="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}/cache/gitlab-mrs"
+  f="$d/$(printf '%s_%s_%s' "$1" "$2" "$3" | tr -c 'A-Za-z0-9._-' '_')"
+  if [ -f "$f" ]; then cat "$f"; return 0; fi
+  out="$(gitlab_api "$1" "projects/$2/repository/commits/$3/merge_requests" 2>/dev/null)" || return 0
+  out="$(printf '%s' "$out" | jq -r '.[] | select(.state == "merged") | .iid' 2>/dev/null)" || return 0
+  if mkdir -p "$d" 2>/dev/null; then
+    printf '%s\n' "$out" | grep . > "$f.$$" || true
+    mv -f "$f.$$" "$f" 2>/dev/null || rm -f "$f.$$"
+  fi
+  printf '%s\n' "$out" | grep . || true
+}
+
+# Open merge requests: all, drafts, bots. The same record open_prs_of writes. Up to five pages
+# of 100 (a page with fewer is the last); more than 500 count as 500.
 gitlab_open_prs_of() {
-  local repo="$1" out="$2" host id
+  local repo="$1" out="$2" host id page=1 chunk all="[]"
   read -r host id < <(gitlab_project "$repo")
-  gitlab_api "$host" "projects/$id/merge_requests?state=opened&per_page=100" 2>/dev/null \
-    | jq -c --arg k "$repo" "$GITLAB_JQ"'{key:$k, value:{all:length, partial:(length >= 100),
+  while [ "$page" -le 5 ]; do
+    chunk="$(gitlab_api "$host" "projects/$id/merge_requests?state=opened&per_page=100&page=$page" 2>/dev/null)" || return 0
+    printf '%s' "$chunk" | jq -e 'type == "array"' >/dev/null 2>&1 || return 0
+    all="$(jq -c -s '.[0] + .[1]' <(printf '%s' "$all") <(printf '%s' "$chunk"))"
+    [ "$(printf '%s' "$chunk" | jq 'length')" -ge 100 ] || break
+    page=$((page + 1))
+  done
+  printf '%s' "$all" \
+    | jq -c --arg k "$repo" "$GITLAB_JQ"'{key:$k, value:{all:length, partial:(length >= 500),
         drafts:(map(select(.draft // .work_in_progress // false)) | length), bots:(map(select(.author | glbot)) | length)}}' \
-    > "$out/$(echo "$repo" | tr '/' '_').json" 2>/dev/null || true
+    > "$out/$(githost_cache_name "$repo").json" 2>/dev/null || true
 }
 
 # `deploys details` for a GitLab repo: the same JSON as for GitHub. Checks come from the commit
@@ -295,6 +359,6 @@ gitlab_logged_in() {
 # The GitLab user, for `deploys where`.
 gitlab_user() { gitlab_api "$(gitlab_host)" user 2>/dev/null | jq -r '.username // empty' 2>/dev/null; }
 
-export -f gitlab_host githost_split githost_of githost_head_of githost_pending_of githost_open_prs_of \
-  gitlab_api gitlab_enc gitlab_project gitlab_head_of gitlab_pending_of gitlab_open_prs_of gitlab_token
+export -f gitlab_host githost_cache_name githost_split githost_of githost_head_of githost_pending_of githost_open_prs_of \
+  gitlab_api gitlab_enc gitlab_project gitlab_head_of gitlab_pending_of gitlab_open_prs_of gitlab_mrs_of gitlab_token
 export GITLAB_KEYCHAIN

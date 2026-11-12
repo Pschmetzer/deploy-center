@@ -1,0 +1,14 @@
+{
+  "jobSummaries": [
+    {
+      "jobArn": "x/12",
+      "jobId": "12",
+      "commitId": "cccc333",
+      "commitMessage": "feat: c\n\nbody",
+      "commitTime": "2026-01-02T04:00:00+00:00",
+      "startTime": "2026-01-02T05:04:05.123000+01:00",
+      "status": "RUNNING",
+      "jobType": "WEB_HOOK"
+    }
+  ]
+}

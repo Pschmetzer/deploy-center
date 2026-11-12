@@ -78,7 +78,7 @@ deploys deploy-changed              # shows the list; add --yes to deploy it
 
 Render: `export RENDER_API_KEY=…` (on a Mac, `deploys render set-key` stores it in the keychain
 instead), then `deploys render list`. `deploys --help` lists every command. Tab completion:
-`eval "$(deploys completion bash)"` in `~/.bashrc` (or `zsh` in `~/.zshrc`).
+`eval "$(deploys completion bash)"` in `~/.bashrc` (or `zsh` in `~/.zshrc`; fish: `deploys completion fish | source`).
 
 ## In CI
 

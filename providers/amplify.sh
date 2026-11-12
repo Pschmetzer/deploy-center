@@ -28,10 +28,18 @@ CONFIG_DIR="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}"
 USER="${USER:-$(id -un)}"
 export AWS_PAGER=""
 
-# What `deploys` itself defines, for when this file runs on its own.
+# What `deploys` defines (PRV-131). These stand in only when this file is sourced on its own
+# (the provider tests do that); under `deploys` its own die, mtime and start_lock are used.
 declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
 # GNU first: on Linux `stat -f` means the file system and "succeeds" with the wrong answer.
-amp_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+declare -F mtime >/dev/null || mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+# A second start of the same project within a minute is refused (as in `deploys`).
+declare -F start_lock >/dev/null || start_lock() {
+  local d="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
+  if [ -f "$f" ] && [ $(( $(date +%s) - $(mtime "$f") )) -ge 60 ]; then rm -f "$f"; fi
+  ( set -C; : > "$f" ) 2>/dev/null || die "$1 is being started already (wait a minute)"
+  echo "$f"
+}
 
 # ---------- access ----------
 
@@ -62,7 +70,8 @@ amp_aws() {
   [ -z "${AWS_REGION:-}" ] || args+=(--region "$AWS_REGION")
   err="$(mktemp)"
   # ${args[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
-  out="$(aws "$@" ${args[@]+"${args[@]}"} --output json 2>"$err")" || rc=$?
+  # Two attempts and a time limit: a hung connection (proxy, SSO) must not hang the app.
+  out="$(AWS_MAX_ATTEMPTS="${AWS_MAX_ATTEMPTS:-2}" aws "$@" ${args[@]+"${args[@]}"} --cli-connect-timeout 10 --cli-read-timeout 60 --output json 2>"$err")" || rc=$?
   if [ "$rc" != 0 ]; then
     local msg hint="" fix="deploys amplify set-key"
     [ -n "${DEPLOYS_AMPLIFY_PROFILE:-}${AWS_PROFILE:-}" ] && fix="check DEPLOYS_AMPLIFY_PROFILE / AWS_PROFILE"
@@ -88,7 +97,7 @@ amp_aws() {
 # A job to one phase: queued|building|ready|failed|canceled. Times to epoch seconds.
 AMP_JQ='def amp_phase: (.status // null) as $s
   | if $s == null then null
-    elif $s == "RUNNING" then "building"
+    elif $s == "RUNNING" or $s == "PROVISIONING" then "building"
     elif $s == "SUCCEED" then "ready"
     elif $s == "FAILED" then "failed"
     elif ($s == "CANCELLING" or $s == "CANCELLED") then "canceled"
@@ -172,16 +181,31 @@ amplify_has() {
 
 # One app to one project. A failed read of its branches or jobs becomes fetchError, not a stop.
 amp_project() {
-  local app="$1" id branches jobs="[]" assoc="[]" err="" br
+  local app="$1" id branches jobs="[]" assoc="[]" err="" warn="" br
   id="$(echo "$app" | jq -r '.appId')"
-  if ! branches="$( (amp_branches "$id") 2>&1)"; then err="${branches#Error: }"; branches="[]"; fi
+  # RED/PLAIN empty in the subshell: die's colour codes must not end up in fetchError.
+  if ! branches="$( (RED=""; PLAIN=""; amp_branches "$id") 2>&1)"; then err="${branches#Error: }"; branches="[]"; fi
   br="$(echo "$branches" | jq -r --argjson app "$app" "$AMP_JQ"' amp_prod($app) // empty' 2>/dev/null)"
   if [ -n "$br" ] && [ -z "$err" ]; then
-    if ! jobs="$( (amp_jobs "$id" "$br") 2>&1)"; then err="${jobs#Error: }"; jobs="[]"; fi
-    assoc="$( (amp_aws amplify list-domain-associations --app-id "$id" | jq -c '.domainAssociations // []') 2>/dev/null)" || assoc="[]"
+    # shellcheck disable=SC2034  # read by die, in the subshell
+    if ! jobs="$( (RED=""; PLAIN=""; amp_jobs "$id" "$br") 2>&1)"; then err="${jobs#Error: }"; jobs="[]"; fi
+    # The 20 newest all failed or were cancelled: what is live is further back. Without it the
+    # app would look never deployed (and so changed). Asked once more, for 100.
+    if [ -z "$err" ] && echo "$jobs" | jq -e 'length >= 20 and ([.[] | select(.status == "SUCCEED")] | length == 0)' >/dev/null 2>&1; then
+      local more
+      more="$( (RED=""; PLAIN=""; amp_jobs "$id" "$br" 100) 2>/dev/null)" \
+        && echo "$more" | jq -e 'type == "array"' >/dev/null 2>&1 && jobs="$more"
+    fi
+    # A failed read is not "no custom domain": the default address would be shown as if it
+    # were the one, so it says so (fetchWarn, PRV-109). Empty or not a list counts as failed
+    # (without pipefail the pipe's status is jq's).
+    assoc="$( (amp_aws amplify list-domain-associations --app-id "$id" | jq -c '.domainAssociations // []') 2>/dev/null)" || assoc=""
+    if ! printf '%s' "$assoc" | jq -e 'type == "array"' >/dev/null 2>&1; then
+      assoc="[]"; warn="custom domains could not be read; the address shown may be the default one"
+    fi
   fi
   [ -n "$br" ] || [ -n "$err" ] || err="no production branch (and more than one branch)"
-  echo "$app" | jq -c --arg b "$br" --argjson brs "$branches" --argjson jobs "$jobs" --argjson assoc "$assoc" --arg err "$err" "$AMP_JQ"'
+  echo "$app" | jq -c --arg b "$br" --argjson brs "$branches" --argjson jobs "$jobs" --argjson assoc "$assoc" --arg err "$err" --arg warn "$warn" "$AMP_JQ"'
     ($brs | map(select(.branchName == $b)) | .[0] // {}) as $branch
     | ($jobs[0] // null) as $new | ([$jobs[] | select(.status == "SUCCEED")][0] // {}) as $live
     | (if $b == "" then null else amp_domain($b; $assoc) end) as $dom
@@ -190,25 +214,42 @@ amp_project() {
        # Git-connected and the branch is known: StartJob RELEASE builds whether auto-build is on or not.
        deployable:(((.repository // "") != "") and $b != "" and $err == ""),
        paused:false,
-       repo:((.repository // "") | if . == "" then null else sub("^https?://[^/]+/"; "") | sub("\\.git$"; "") end),
+       # GitHub: owner/name; GitLab, Bitbucket: host/path; CodeCommit and others: none (not a
+       # repo the git-host code can ask).
+       repo:((.repository // null) | (. // "") | sub("\\.git$";"") | sub("/$";"")
+    | if test("^https?://(www\\.)?github\\.com/") then sub("^https?://(www\\.)?github\\.com/";"")
+      elif test("^https?://[^/]*(gitlab|bitbucket)[^/]*/") then sub("^https?://";"")
+      else null end | if . == "" then null else . end),
        ref:(if $b == "" then null else $b end),
        domain:$dom, url:(if $dom then "https://\($dom)" else null end),
        dashboardUrl:(if $b == "" then "https://\(amp_region).console.aws.amazon.com/amplify/apps/\(.appId)/overview" else amp_dash($b) end),
        lastAt:(($new // {}) | (.startTime // .commitTime) | amp_t), lastState:(($new // {}).status // null),
        lastSha:($live.commitId // null), lastMsg:($live.commitMessage | amp_msg),
        fetchError:(if $err == "" then null else $err end),
+       fetchWarn:(if $warn == "" then null else $warn end),
        phase:(if $new then ($new | amp_phase) else null end)}'
 }
 
 amplify_json() {
-  local apps app out=()
+  local apps app tmpd n=0 out pids=()
   apps="$(amp_apps)" || exit 1
+  # Three aws calls per app, each starting Python (about a second): four apps at a time, a file
+  # each, read once at the end (one after another, ten apps took half a minute).
+  tmpd="$(mktemp -d)"
   while IFS= read -r app; do
     [ -n "$app" ] || continue
-    out+=("$(amp_project "$app")") || exit 1
+    n=$((n + 1))
+    ( amp_project "$app" > "$tmpd/$n.json" ) &
+    pids+=("$!")
+    # Only these jobs are waited for (not others of the calling shell).
+    [ $((n % ${DEPLOYS_AMPLIFY_PARALLEL:-4})) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
   done < <(echo "$apps" | jq -c '.[]')
-  [ "${#out[@]}" -gt 0 ] || { echo '[]'; return; }
-  printf '%s\n' "${out[@]}" | jq -s 'sort_by(.name | ascii_downcase)'
+  # ${pids[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
+  wait ${pids[@]+"${pids[@]}"}
+  out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s 'sort_by(.name | ascii_downcase)')" || out=""
+  rm -rf "$tmpd"
+  [ -n "$out" ] || die "Amplify: the apps could not be read"
+  printf '%s\n' "$out"
 }
 
 amp_set_auto() {
@@ -231,6 +272,11 @@ amplify_off() {
   fi
   others="$(echo "$branches" | jq -r --arg b "$AMP_BRANCH" '.[] | select(.branchName != $b and .enableAutoBuild == true) | .branchName')"
   if [ "$all" = --all ]; then
+    # What --all changes is written down first (added to what an earlier --all wrote), so
+    # amplify_on can turn exactly that back on.
+    amp_off_edit --arg a "$AMP_APP" --arg o "$others" --argjson nb "$(echo "$AMP_APPJSON" | jq '.enableBranchAutoBuild == true')" \
+      '.[$a] = {branches: (((.[$a].branches // []) + ($o | split("\n") | map(select(. != "")))) | unique),
+                newBranches: ((.[$a].newBranches // false) or $nb)}' || exit 1
     while IFS= read -r b; do
       [ -n "$b" ] || continue
       got="$(amp_set_auto "$AMP_APP" "$b" --no-enable-auto-build)" || exit 1
@@ -245,21 +291,35 @@ amplify_off() {
   fi
 }
 
+# The branches and the new-branch setting `off --all` turned off, per app id: amplify-off.json.
+AMP_OFF_FILE="$CONFIG_DIR/amplify-off.json"
+amp_off_edit() {
+  local tmp; mkdir -p "$CONFIG_DIR"; [ -s "$AMP_OFF_FILE" ] || echo '{}' > "$AMP_OFF_FILE"
+  tmp="$(mktemp)"
+  jq "$@" "$AMP_OFF_FILE" > "$tmp" && mv "$tmp" "$AMP_OFF_FILE" || { rm -f "$tmp"; die "Could not write $AMP_OFF_FILE"; }
+}
+
 amplify_on() {
-  local got
+  local got prev b
   amp_resolve "$1"
   got="$(amp_set_auto "$AMP_APP" "$AMP_BRANCH" --enable-auto-build)" || exit 1
   [ "$got" = true ] || die "Amplify: asked to turn auto-build on for $AMP_BRANCH, but it still shows it off"
   echo "Amplify: $AMP_BRANCH of $1 builds on push again"
+  # Undo what `off --all` did, as it was written down; forgotten once it is all back on.
+  prev="$(jq -c --arg a "$AMP_APP" '.[$a] // empty' "$AMP_OFF_FILE" 2>/dev/null)" || prev=""
+  [ -n "$prev" ] || return 0
+  while IFS= read -r b; do
+    [ -n "$b" ] && [ "$b" != "$AMP_BRANCH" ] || continue
+    got="$(amp_set_auto "$AMP_APP" "$b" --enable-auto-build)" || exit 1
+    echo "Amplify: $b of $1 builds on push again"
+  done < <(echo "$prev" | jq -r '.branches[]?')
+  if [ "$(echo "$prev" | jq '.newBranches == true')" = true ]; then
+    amp_aws amplify update-app --app-id "$AMP_APP" --enable-branch-auto-build >/dev/null || exit 1
+    echo "Amplify: new branches of $1 build on push again"
+  fi
+  amp_off_edit --arg a "$AMP_APP" 'del(.[$a])'
 }
 
-amp_lock() {
-  if declare -F start_lock >/dev/null; then start_lock "$1"; return; fi
-  local d="$CONFIG_DIR/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
-  if [ -f "$f" ] && [ $(( $(date +%s) - $(amp_mtime "$f") )) -ge 60 ]; then rm -f "$f"; fi
-  ( set -C; : > "$f" ) 2>/dev/null || die "$1 is being started already (wait a minute)"
-  echo "$f"
-}
 
 # amplify_deploy_json <project> [--sha <commit>] [--preview --branch <b>] [--message <m>]
 # Prints {id, url, state, phase, branch, sha}. --preview builds another Amplify branch of the app.
@@ -287,7 +347,7 @@ amplify_deploy_json() {
   if [ -n "$sha" ]; then [[ "$sha" =~ ^[0-9a-fA-F]{7,40}$ ]] || die "--sha wants a commit hash, got $sha"; fi
   local args=(--app-id "$AMP_APP" --branch-name "$branch" --job-type RELEASE --job-reason "Deploy Center")
   [ -z "$sha" ] || args+=(--commit-id "$sha" --commit-message "${msg:-Deploy $sha}")
-  lock="$(amp_lock "amplify-$AMP_APP-$branch")" || exit 1
+  lock="$(start_lock "amplify-$AMP_APP-$branch")" || exit 1
   out="$(amp_aws amplify start-job "${args[@]}")" || { rm -f "$lock"; exit 1; }
   url="$(amp_domain_of "$branch")"
   echo "$out" | jq --arg b "$branch" --arg u "$url" "$AMP_JQ"' .jobSummary | amp_job($b)
@@ -298,7 +358,8 @@ amplify_latest_json() {
   local jobs
   amp_resolve "$1"
   jobs="$(amp_jobs "$AMP_APP" "$AMP_BRANCH" 1)" || exit 1
-  echo "$jobs" | jq -e --arg b "$AMP_BRANCH" "$AMP_JQ"' .[0] // empty | amp_job($b)' || die "Amplify: $1 has no builds yet"
+  # No build yet is null (the contract's "none"), not an error.
+  echo "$jobs" | jq --arg b "$AMP_BRANCH" "$AMP_JQ"' .[0] // null | if . then amp_job($b) else null end'
 }
 
 # amplify_status_json <project> [<job id>]: one job (the newest without an id).
@@ -324,7 +385,10 @@ amplify_cancel() {
   if [ -z "$id" ]; then
     job="$(amp_jobs "$AMP_APP" "$AMP_BRANCH" 5 | jq -c --arg b "$AMP_BRANCH" "$AMP_JQ"'
       [.[] | amp_job($b) | select(.phase == "queued" or .phase == "building")][0] // empty')" || exit 1
-    [ -n "$job" ] || die "Amplify: no build of $1 is running"
+    if [ -z "$job" ]; then
+      local last; last="$(amp_jobs "$AMP_APP" "$AMP_BRANCH" 1 2>/dev/null | jq -r '.[0] | if . then "the newest, job \(.jobId), is \(.status)" else "there are no builds" end' 2>/dev/null)" || last=""
+      die "Amplify: no build of $1 is running${last:+ ($last)}"
+    fi
     id="$(echo "$job" | jq -r '.id')"
   fi
   amp_aws amplify stop-job --app-id "$AMP_APP" --branch-name "$AMP_BRANCH" --job-id "$id" \
@@ -363,22 +427,33 @@ amplify_logs() {
   [ -n "$id" ] || id="$(amp_jobs "$AMP_APP" "$AMP_BRANCH" 1 | jq -r '.[0].jobId // empty')" || exit 1
   [ -n "$id" ] || die "Amplify: $p has no builds yet"
   job="$(amp_aws amplify get-job --app-id "$AMP_APP" --branch-name "$AMP_BRANCH" --job-id "$id")" || exit 1
+  # Only the end of each step's log is read (DEPLOYS_AMPLIFY_LOG_BYTES, default 256 KB): a big
+  # build log is not loaded whole to show its last lines. A cut-off first line is left out.
+  local cap="${DEPLOYS_AMPLIFY_LOG_BYTES:-262144}" hdr; hdr="$(mktemp)"
   {
     while IFS=$'\t' read -r step url; do
       [ -n "$url" ] || continue
-      if out="$(curl -sSf --connect-timeout 10 --max-time 60 "$url" 2>/dev/null)"; then
+      : > "$hdr"
+      # An empty log answers a range with 416: asked once more without one.
+      if out="$(curl -sSf --connect-timeout 10 --max-time 60 -H "Range: bytes=-$cap" -D "$hdr" "$url" 2>/dev/null)" \
+        || { : > "$hdr"; out="$(curl -sSf --connect-timeout 10 --max-time 60 "$url" 2>/dev/null)"; }; then
+        if tr -d '\r' < "$hdr" | grep -qiE '^content-range: bytes [1-9][0-9]*-'; then out="$(printf '%s\n' "$out" | sed '1d')"; fi
         printf '%s\n' "$out" | awk -v s="$step" '{print s "  " $0}'
       else
         echo "$step  (log could not be read; the link may have expired: run logs again)"
       fi
     done < <(echo "$job" | jq -r '.job.steps[]? | [(.stepName // "STEP"), (.logUrl // "")] | @tsv')
   } | tail -n "$n"
+  rm -f "$hdr"
 }
 
 # amp_domain_of <branch>: its custom domain, else <branch>.<default domain>. After amp_resolve.
 amp_domain_of() {
   local assoc
-  assoc="$( (amp_aws amplify list-domain-associations --app-id "$AMP_APP" | jq -c '.domainAssociations // []') 2>/dev/null)" || assoc="[]"
+  assoc="$( (amp_aws amplify list-domain-associations --app-id "$AMP_APP" | jq -c '.domainAssociations // []') 2>/dev/null)" || assoc=""
+  if ! printf '%s' "$assoc" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    assoc="[]"; echo "Warning: the custom domains of $AMP_APP could not be read; the address may be the default one" >&2
+  fi
   echo "$AMP_APPJSON" | jq -r --arg b "$1" --argjson a "${assoc:-[]}" "$AMP_JQ"' amp_domain($b; $a) // empty'
 }
 
@@ -401,8 +476,11 @@ amplify_set_key() {
   [ -n "$prof" ] || die "Pipe in an AWS CLI profile name: echo my-profile | deploys amplify set-key (or \"default\")"
   [[ "$prof" =~ ^[A-Za-z0-9._@+=,-]+$ ]] || die "That does not look like a profile name. AWS keys go into aws configure, not here"
   [[ "$prof" =~ ^(AKIA|ASIA)[A-Z0-9]{12,}$ ]] && die "That is an access key, not a profile name. Run aws configure --profile <name>, then set-key <name>"
-  who="$(DEPLOYS_AMPLIFY_PROFILE="$prof" amp_aws sts get-caller-identity 2>&1 | jq -r '.Arn // empty' 2>/dev/null)" || who=""
-  [ -n "$who" ] || die "The aws CLI could not sign in with profile $prof; nothing was saved"
+  local ans
+  # shellcheck disable=SC2034  # read by die, in the subshell (no colour codes in the message)
+  ans="$( (RED=""; PLAIN=""; DEPLOYS_AMPLIFY_PROFILE="$prof" amp_aws sts get-caller-identity) 2>&1)" || true
+  who="$(printf '%s' "$ans" | jq -r '.Arn // empty' 2>/dev/null)" || who=""
+  [ -n "$who" ] || die "The aws CLI could not sign in with profile $prof; nothing was saved ($(printf '%s' "$ans" | sed 's/^Error: //' | tr '\n' ' ' | cut -c1-300))"
   printf 'add-generic-password -U -a %s -s %s -w %s\n' "$USER" "$AMPLIFY_KEYCHAIN" "$prof" | security -i >/dev/null \
     || die "The profile works, but could not be saved in the keychain"
   echo "Amplify: profile $prof saved and working ($who)."
@@ -422,6 +500,8 @@ amplify_doctor() {
      profile:(if $prof == "" then null else $prof end), profileSource:$src,
      region:(if $region == "" then null else $region end), identity:(if $arn == "" then null else $arn end),
      credentialsValid:$valid, enabled:$ready,
+     # FEA-078: the aws CLI shows neither; an SSO session end would need the credentials read out.
+     expiresAt:null, rateLimit:null,
      note:(if $cli | not then "install the aws CLI: brew install awscli"
            elif $valid | not then "the aws CLI cannot sign in: aws configure / aws sso login, then deploys amplify set-key <profile>"
            elif $region == "" then "no region: set AWS_REGION or a region in the profile"

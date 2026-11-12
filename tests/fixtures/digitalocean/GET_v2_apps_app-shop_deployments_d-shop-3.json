@@ -7,5 +7,4 @@
                         {"name": "api", "gitlab": {"repo": "me/shop-api", "branch": "main"}}],
            "static_sites": [{"name": "docs", "github": {"repo": "me/shop", "branch": "main"}}]}
 }}
-
 200

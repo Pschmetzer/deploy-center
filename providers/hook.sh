@@ -60,12 +60,16 @@ hook_mask() {
 }
 
 hook_check_url() {
-  local u="$1" h
+  local u="$1" a h
   # The host exactly, not a prefix: http://localhost.example.com is someone else's machine.
-  h="${u#http://}"; h="${h%%[/?#]*}"; h="${h##*@}"; case "$h" in \[*\]*) h="${h%%]*}]" ;; *) h="${h%%:*}" ;; esac
+  # No user@ in the address at all: http://localhost:1@evil.com is evil.com to curl.
+  a="${u#*://}"; a="${a%%[/?#]*}"
+  h="$a"; case "$h" in \[*\]*) h="${h%%]*}]" ;; *) h="${h%%:*}" ;; esac
   case "$u" in https://*) ;;
-    http://*) case "$h" in localhost|127.0.0.1|\[::1\]) ;;
-                *) die "Use the https:// address of the hook: over http the secret URL travels in the clear (only localhost may use http)";; esac ;;
+    # Plain http only to this Mac: the host exactly, with or without a port.
+    http://*) case "$a" in *@*) h="" ;; esac
+      case "$h" in localhost|127.0.0.1|\[::1\]) ;;
+        *) die "Use the https:// address of the hook: over http the secret URL travels in the clear (only localhost may use http)";; esac ;;
     *) die "That is not a hook URL (it should start with https://)";; esac
   case "$u" in *[[:space:]\"\'\\]*) die "The hook URL contains spaces, quotes or backslashes";; esac
   [ "${#u}" -le 2048 ] || die "The hook URL is longer than 2048 characters"
@@ -109,7 +113,13 @@ hook_expand() {
   printf '%s' "$out$s"
 }
 # A value for curl's config file: backslashes and quotes escaped.
-hook_cq() { local s="${1//\\/\\\\}"; printf '"%s"' "${s//\"/\\\"}"; }
+# Newlines, returns and tabs as \n, \r, \t (curl reads those escapes): a body over several lines
+# would otherwise end the option and leave the rest as garbage.
+hook_cq() {
+  local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"
+  printf '"%s"' "$s"
+}
 
 # ---------- the contract ----------
 
@@ -126,13 +136,19 @@ hook_ready() { [ "$(hook_list_raw | jq 'length' 2>/dev/null || echo 0)" -gt 0 ];
 hook_known() { hook_valid_name "$1" >/dev/null 2>&1 || return 1; [ -n "$(hook_entry "$1")" ]; }
 hook_has() { hook_known "${1:-}" && echo "$1"; }
 
+# How long after a good trigger the list shows "queued" instead of "ready": a build usually
+# takes that long, and green straight away would hide one that fails. HOOK_QUEUED_SECS, else 180.
+hook_queued_secs() {
+  case "${HOOK_QUEUED_SECS:-}" in ''|*[!0-9]*) echo 180 ;; *) echo "$HOOK_QUEUED_SECS" ;; esac
+}
+
 hook_json() {
   local list st stored='{}' n
   list="$(hook_list_raw)"; st="$(hook_state)"
   for n in $(echo "$list" | jq -r '.[].name'); do
     hook_url_stored "$n" && stored="$(echo "$stored" | jq -c --arg n "$n" '.[$n] = true')"
   done
-  list="$(echo "$list" | jq --argjson st "$st" --argjson ok "$stored" '[.[] | ($st[.name] // {}) as $s | {
+  list="$(echo "$list" | jq --argjson st "$st" --argjson ok "$stored" --argjson now "$(date +%s)" --argjson qs "$(hook_queued_secs)" '[.[] | ($st[.name] // {}) as $s | {
       name, id:.name,
       # Whether a push builds by itself is up to the host; this side cannot tell.
       auto:null,
@@ -142,10 +158,14 @@ hook_json() {
       url:(.site // null), dashboardUrl:null,
       lastAt:($s.at // null),
       lastState:(if $s.at == null then null elif $s.ok then "triggered" else "trigger failed (\($s.error // "HTTP \($s.http // "?")"))" end),
-      lastSha:($s.sha // null), lastMsg:($s.msg // null),
+      # The branch head when the hook fired, not a commit seen live: the host may build another
+      # branch or commit. lastSha keeps it for "commits since the last trigger"; triggeredSha
+      # says what it is, so the app need not call it live (PRV-077).
+      lastSha:($s.sha // null), triggeredSha:($s.sha // null), lastMsg:($s.msg // null),
       fetchError:(if $ok[.name] then null else "the hook URL is not stored here (deploys hook set-key \(.name))" end),
-      # No status API: a 2xx answer is as far as anyone can see.
-      phase:(if $s.at == null then null elif $s.ok then "ready" else "failed" end)}]
+      # No status API: a 2xx answer is as far as anyone can see. For a while after it the build
+      # is likely still running, so the list says queued, then ready (PRV-125).
+      phase:(if $s.at == null then null elif $s.ok then (if ($now - $s.at) < $qs then "queued" else "ready" end) else "failed" end)}]
     | sort_by(.name | ascii_downcase)')"
   # No GitHub calls here: `deploys hook json` adds the branch heads (provider_json).
   echo "$list"
@@ -165,15 +185,30 @@ hook_head() {
 }
 
 hook_record() {
-  local n="$1" rec="$2" st
-  st="$(hook_state | jq -c --arg n "$n" --argjson r "$rec" '.[$n] = $r')" || return 0
-  echo "$st" | hook_write "$(hook_state_file)"
+  local n="$1" rec="$2" st f lock i=0
+  f="$(hook_state_file)"; lock="$f.lock"
+  # Two triggers at once (a group deploy) must not overwrite each other: a mkdir lock, given up
+  # after five seconds (a crashed run's lock older than a minute is taken over).
+  while ! mkdir "$lock" 2>/dev/null; do
+    if [ -d "$lock" ] && [ $(( $(date +%s) - $(mtime "$lock" 2>/dev/null || date +%s) )) -ge 60 ]; then rmdir "$lock" 2>/dev/null; continue; fi
+    i=$((i + 1)); [ "$i" -lt 50 ] || { echo "Warning: hook state is locked; the trigger of $n is not recorded" >&2; return 0; }
+    sleep 0.1
+  done
+  # A broken state file is kept aside and started anew, with a warning: the trigger did happen.
+  if ! st="$(hook_state | jq -c --arg n "$n" --argjson r "$rec" '.[$n] = $r' 2>/dev/null)"; then
+    cp "$f" "$f.bak" 2>/dev/null || true
+    echo "Warning: $f was not readable; kept as $f.bak and started anew" >&2
+    st="$(jq -nc --arg n "$n" --argjson r "$rec" '{($n): $r}')"
+  fi
+  echo "$st" | hook_write "$f"
+  rmdir "$lock" 2>/dev/null || true
 }
 
 # Fire the hook once (never again on failure: it may already have started a build).
 hook_deploy_json() {
   local n="${1:-}" e u method headers body cfg out code rc=0 h hv miss head sha=null msg=null now rec repo ref
   hook_known "$n" || die "No hook named \"$n\""
+  local _a; for _a in "${@:2}"; do case "$_a" in --preview|--sha) ;; -*) die "Deploy hook: unknown option $_a";; esac; done
   case " ${*:2} " in
     *" --preview "*) die "Deploy hook cannot start a preview: the hook builds what the host is set to build.";;
     *" --sha "*) die "Deploy hook cannot deploy a given commit: the hook builds what the host is set to build.";;
@@ -201,7 +236,14 @@ hook_deploy_json() {
   if [ -n "$repo" ]; then head="$(hook_head "$repo" "$ref")"
     [ -z "$head" ] || { sha="$(echo "$head" | jq -c .sha)"; msg="$(echo "$head" | jq -c .msg)"; }
   fi
+  # Two clicks or two runs must not build twice: the same one-minute lock as the other providers.
+  if declare -F start_lock >/dev/null; then
+    # In a subshell: start_lock's die would end the script here and leave the config, which
+    # holds the secret URL, in the temp folder.
+    ( start_lock "hook-$n" ) >/dev/null || { rm -f "$cfg" "$out"; exit 1; }
+  fi
   code="$(curl -K - < "$cfg" 2>"$out.err")" || rc=$?
+  local said=""; said="$(head -c 200 "$out" 2>/dev/null | tr '\n\r\t' '   ')" || said=""
   rm -f "$cfg" "$out"
   now="$(date +%s)"
   if [ "$rc" = 0 ] && [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
@@ -214,15 +256,19 @@ hook_deploy_json() {
   # curl's own error, with the URL masked in case it names it.
   local err; err="$(tail -n 1 "$out.err" 2>/dev/null | cut -c1-200)"; rm -f "$out.err"
   err="${err//"$u"/$(hook_mask "$u")}"
-  if [ "$rc" != 0 ]; then err="no answer (${err:-curl exit $rc})"; else err="HTTP ${code:-000}"; fi
+  said="${said//"$u"/$(hook_mask "$u")}"
+  if [ "$rc" != 0 ]; then err="no answer (${err:-curl exit $rc})"; else err="HTTP ${code:-000}${said:+: $said}"; fi
   # A failed trigger keeps the sha of the last good one: what is live has not moved.
   rec="$(hook_state | jq -c --arg n "$n" --argjson at "$now" --arg e "$err" --arg c "${code:-0}" '(.[$n] // {}) + {ok:false, http:($c|tonumber? // 0), at:$at, error:$e}')"
   hook_record "$n" "$rec"
+  # No answer (curl failed, a timeout): the host may have started a build anyway.
+  [ "$rc" = 0 ] || die "Hook $n: $err. Whether a build started is unknown: look at the host before triggering again"
   die "Hook $n did not start a build: $err"
 }
 
 # The contract's line: deployId<TAB>phase<TAB>state. The id is name@time of the last trigger,
-# "none" when it was never triggered.
+# "none" when it was never triggered. Always final ("ready" after a 2xx, never "queued"):
+# `deploys watch` waits on this line, and no later answer will ever tell it more.
 hook_status() {
   local n="${1:-}"; hook_known "$n" || die "No hook named \"$n\""
   hook_state | jq -r --arg n "$n" '(.[$n] // null) as $s
@@ -230,11 +276,12 @@ hook_status() {
       else ["\($n)@\($s.at)", (if $s.ok then "ready" else "failed" end), (if $s.ok then "triggered" else "trigger failed" end)] end | @tsv'
 }
 hook_latest() { hook_status "$1"; }
-# deploys hook status <name>: the same as JSON, for people and scripts.
+# deploys hook status <name>: as JSON, for people and scripts, with the phase the list shows
+# (queued for a while after a trigger, see hook_queued_secs).
 hook_cli_status() {
   local n="${1:-}"; hook_known "$n" || die "No hook named \"$n\""
-  hook_state | jq -c --arg n "$n" '(.[$n] // null) as $s | {name:$n,
-    phase:(if $s == null then null elif $s.ok then "ready" else "failed" end),
+  hook_state | jq -c --arg n "$n" --argjson now "$(date +%s)" --argjson qs "$(hook_queued_secs)" '(.[$n] // null) as $s | {name:$n,
+    phase:(if $s == null then null elif $s.ok then (if ($now - $s.at) < $qs then "queued" else "ready" end) else "failed" end),
     state:(if $s == null then "never triggered" elif $s.ok then "triggered" else "trigger failed" end),
     at:($s.at // null), sha:($s.sha // null)}'
 }
@@ -276,7 +323,7 @@ hook_doctor() {
 # ---------- commands ----------
 
 hook_add() {
-  local n="${1:-}" u="${2:-}" repo="" ref="" site="" method="POST" body="" headers='{}' h k v
+  local n="${1:-}" u="${2:-}" repo="" ref="" site="" method="" body="" headers='{}' h k v
   [ -n "$n" ] && [ -n "$u" ] || die "Usage: deploys hook add <name> <url|-> [--repo owner/name] [--ref main] [--site https://…] [--method POST] [--header 'Name: value'] [--body '{…}']"
   hook_valid_name "$n"; shift 2
   while [ $# -gt 0 ]; do
@@ -290,30 +337,48 @@ hook_add() {
         k="${h%%:*}"; v="${h#*:}"; v="${v# }"
         [ "$k" != "$h" ] && [[ "$k" =~ ^[A-Za-z0-9-]+$ ]] || die "A header is 'Name: value'"
         # Secrets stay out of the file: a credential-looking header must name a variable.
-        if [[ "$k" =~ [Aa]uthorization|[Tt]oken|[Kk]ey|[Ss]ecret|[Pp]assword|[Cc]ookie ]] && [[ "$v" != *'$'* ]]; then
+        # A reference is the whole secret part: "$TOKEN", "${TOKEN}" or "<scheme> $TOKEN".
+        local ref_re='^([A-Za-z]+ )?\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)$'
+        if [[ "$k" =~ [Aa]uthorization|[Tt]oken|[Kk]ey|[Ss]ecret|[Pp]assword|[Cc]ookie ]] && ! [[ "$v" =~ $ref_re ]]; then
           die "The $k header looks like a secret. Put it in the environment and write a reference: --header '$k: Bearer \$TOKEN'"
         fi
         headers="$(echo "$headers" | jq -c --arg k "$k" --arg v "$v" '.[$k] = $v')";;
       *) die "Unknown option $1";;
     esac; shift
   done
-  case "$method" in POST|GET|PUT|PATCH) ;; *) die "--method is POST, GET, PUT or PATCH";; esac
+  case "$method" in ""|POST|GET|PUT|PATCH) ;; *) die "--method is POST, GET, PUT or PATCH";; esac
   [ -z "$repo" ] || [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "--repo is owner/name"
   [ -z "$site" ] || [[ "$site" =~ ^https?://[^[:space:]]+$ ]] || die "--site is an http(s) address"
   [ -z "$body" ] || echo "$body" | jq -e . >/dev/null 2>&1 || die "--body is JSON"
   # "-" reads the URL from stdin: it then stays out of the shell history.
   if [ "$u" = - ]; then IFS= read -r u || true; [ -n "$u" ] || die "No URL on stdin"; fi
   hook_check_url "$u"
-  local existed=0; [ -n "$(hook_entry "$n")" ] && existed=1
+  # An existing hook is updated, not replaced: what is not given again (method, headers, body,
+  # repo, ref, site) stays as it was, and the answer names what was kept. Given headers are added
+  # to the ones there.
+  local old existed=0 kept
+  old="$(hook_entry "$n")"; [ -n "$old" ] && existed=1; [ -n "$old" ] || old='{}'
   hook_url_save "$n" "$u"
-  hook_list_raw | jq --arg n "$n" --arg m "$method" --argjson h "$headers" --arg b "$body" --arg r "$repo" --arg f "$ref" --arg s "$site" '
-      map(select(.name != $n)) + [{name:$n, method:$m}
-        + (if ($h | length) > 0 then {headers:$h} else {} end)
-        + (if $b != "" then {body:$b} else {} end)
-        + (if $r != "" then {repo:$r, ref:(if $f == "" then "main" else $f end)} elif $f != "" then {ref:$f} else {} end)
-        + (if $s != "" then {site:$s} else {} end)]
+  hook_list_raw | jq --arg n "$n" --arg m "$method" --argjson h "$headers" --arg b "$body" --arg r "$repo" --arg f "$ref" --arg s "$site" --argjson o "$old" '
+      (($o.headers // {}) + $h) as $hs
+      | map(select(.name != $n)) + [{name:$n, method:(if $m != "" then $m else ($o.method // "POST") end)}
+        + (if ($hs | length) > 0 then {headers:$hs} else {} end)
+        + (if $b != "" then {body:$b} elif $o.body then {body:$o.body} else {} end)
+        + (if $r != "" then {repo:$r, ref:(if $f != "" then $f else ($o.ref // "main") end)}
+           elif $o.repo then {repo:$o.repo, ref:(if $f != "" then $f else ($o.ref // "main") end)}
+           elif $f != "" then {ref:$f} elif $o.ref then {ref:$o.ref} else {} end)
+        + (if $s != "" then {site:$s} elif $o.site then {site:$o.site} else {} end)]
       | sort_by(.name)' | hook_write "$(hook_config)"
-  if [ "$existed" = 1 ]; then echo "Hook $n updated ($(hook_mask "$u"))."; else echo "Hook $n added ($(hook_mask "$u"))."; fi
+  if [ "$existed" = 1 ]; then
+    kept="$(echo "$old" | jq -r --arg m "$method" --argjson h "$headers" --arg b "$body" --arg r "$repo" --arg f "$ref" --arg s "$site" '
+      [ (if $m == "" and .method then "method \(.method)" else empty end),
+        (((.headers // {}) | keys) - ($h | keys) | select(length > 0) | "headers \(join(", "))"),
+        (if $b == "" and .body then "body" else empty end),
+        (if $r == "" and .repo then "repo \(.repo)" else empty end),
+        (if $f == "" and .ref then "ref \(.ref)" else empty end),
+        (if $s == "" and .site then "site \(.site)" else empty end) ] | join("; ")')"
+    echo "Hook $n updated ($(hook_mask "$u"))${kept:+; kept: $kept}."
+  else echo "Hook $n added ($(hook_mask "$u"))."; fi
 }
 
 hook_remove() {
