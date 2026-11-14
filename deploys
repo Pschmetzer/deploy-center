@@ -819,7 +819,9 @@ watch_line() {
 # The CI verdict of one commit from GitHub's combined status ($s) and its check runs ($r):
 # red when anything failed, pending while anything runs, green when all passed, none without checks.
 CI_RULE='($s[0] // {}) as $s | ($r[0] // {}) as $r
-  | ([($s.statuses // [])[] | {name:.context, state:(if .state == "success" then "ok" elif .state == "pending" then "wait" else "bad" end)}]
+  | ([($s.statuses // [])[]
+      # Vercel posts its own status ("Deployment was blocked" while auto-deploy is off): not CI.
+      | select((.context // "") | test("^Vercel( |$)") | not) | {name:.context, state:(if .state == "success" then "ok" elif .state == "pending" then "wait" else "bad" end)}]
      + [($r.check_runs // [])[] | {name, state:(if .status != "completed" then "wait"
          elif ((.conclusion // "") | IN("success", "neutral", "skipped")) then "ok" else "bad" end)}]) as $all
   | ($all | map(select(.state == "bad") | .name) | unique) as $bad
