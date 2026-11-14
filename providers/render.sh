@@ -261,7 +261,7 @@ export -f render_last_of
 render_json() {
   local list tmp kf lasts
   list="$(render_services | jq '[.[] | {id, name, type, paused:(.suspended=="suspended"),
-    auto:('"$(render_auto)"' != "off"), deployable:(.suspended!="suspended"),
+    auto:('"$(render_auto)"' != "off"), deployable:(.suspended!="suspended" and .type!="cron_job"),
     url:(.serviceDetails.url // null),
     dashboardUrl:(.dashboardUrl // null),
     domain:((.serviceDetails.url // "") | sub("^https?://";"") | if . == "" then null else . end),
@@ -289,8 +289,10 @@ render_deploy_json() {
   id="$(render_id_of "$name")"; shift || true
   while [ $# -gt 0 ]; do case "$1" in --sha) sha="${2:?commit}"; shift;; --clear-cache) cc=1;; --preview) die "Render cannot deploy a preview";; "") ;; *) die "Unknown option $1. Usage: deploy-json <service> [--sha <commit>] [--clear-cache]";; esac; shift; done
   # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
+  # Render has no deploy for cron jobs (HTTP 400): they run the latest commit by themselves.
+  svc="$(render_call GET "/services/$id")" || exit 1
+  [ "$(echo "$svc" | jq -r '.type // ""')" != cron_job ] || die "Render cron jobs cannot be deployed; $name runs the latest commit on its next schedule."
   if team_on; then
-    svc="$(render_call GET "/services/$id")" || exit 1
     # By its name, as the shared config knows it, also when it was given by its srv- id.
     name="$(echo "$svc" | jq -r --arg n "$name" '.name // $n')"
     sha="$(team_gate render "$name" "$(echo "$svc" | jq -r '(.repo // "") | '"$GITHOST_SLUG_JQ"'')" \
