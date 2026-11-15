@@ -41,7 +41,6 @@ struct SettingsView: View {
     @AppStorage("staleDays") private var staleDays = 0
     @AppStorage("monthlyBudget") private var monthlyBudget = 0.0
     /// The checkbox of the deploy confirmation, here too, so the remembered state can be seen.
-    @AppStorage("onlyWhenGreen") private var onlyWhenGreen = false
     @AppStorage(OwnerCheck.key) private var ownerCheck = false
     @AppStorage("watchMinutes") private var watchMinutes = 0
     @AppStorage(MigrationCheck.key) private var migrationCheck = true
@@ -450,9 +449,6 @@ struct SettingsView: View {
                 Text(L("Off", "Aus")).tag(0)
                 ForEach(SettingsChoice.staleDays.filter { $0 > 0 }, id: \.self) { Text(L("\($0) days", "\($0) Tage")).tag($0) }
             }
-            Toggle(L("Deploy only when the checks are green", "Nur deployen, wenn die Checks grün sind"), isOn: $onlyWhenGreen)
-                .help(L("The same switch as in the deploy confirmation: commits whose CI did not pass stay back.",
-                        "Derselbe Schalter wie in der Deploy-Rückfrage: Commits, deren CI nicht durchlief, bleiben zurück."))
             Picker(L("Watch the site after going live", "Seite nach dem Live-Gang beobachten"), selection: $watchMinutes) {
                 Text(L("Check once", "Einmal prüfen")).tag(0)
                 ForEach([5, 15, 30], id: \.self) { Text(L("\($0) minutes, every minute", "\($0) Minuten, jede Minute")).tag($0) }

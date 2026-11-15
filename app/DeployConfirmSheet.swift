@@ -1,5 +1,5 @@
 // Deploy Center — "Put this live now?": one question for every way a deploy starts by hand
-// (the footer, a row, the palette), with a real checkbox for "Only when checks are green".
+// (the footer, a row, the palette). A red CI never holds a deploy back: the row shows it, the person decides.
 
 import SwiftUI
 
@@ -14,8 +14,6 @@ struct DeployConfirmSheet: View {
     var costNote: String = ""
     let onDeploy: () -> Void
     @Environment(\.dismiss) private var dismiss
-    /// Remembered, and read by the window when the deploy starts.
-    @AppStorage("onlyWhenGreen") private var onlyGreen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -26,9 +24,6 @@ struct DeployConfirmSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 300)
-            Toggle(L("Only when checks are green", "Nur wenn die Checks grün sind"), isOn: $onlyGreen)
-                .toggleStyle(.checkbox)
-                .help(L("Only commits whose checks passed go live", "Nur Commits mit bestandenen Checks gehen live"))
             HStack {
                 Spacer()
                 Button(L("Cancel", "Abbrechen")) { dismiss() }.keyboardShortcut(.cancelAction)

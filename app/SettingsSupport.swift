@@ -57,7 +57,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .general: return ["refreshMinutes", "showMenuBar", "hideDock", "notifications", "reminderHour", "checkUpdates", "demoMode", "paletteHotKey",
                                "spotlightProjects", "tipOfTheDay", "compactRows", "colorBlind", "loadLogos", "quietFrom", "quietTo"]
-        case .deploy: return ["maxParallel", "undoSeconds", "staleDays", "onlyWhenGreen", "confirmSingleDeploy",
+        case .deploy: return ["maxParallel", "undoSeconds", "staleDays", "confirmSingleDeploy",
                               "watchMinutes", MigrationCheck.key, OwnerCheck.key]
         case .costs: return ["monthlyBudget", "savingsDays"]
         case .platforms, .projects, .claude, .iphone, .team, .help: return []
