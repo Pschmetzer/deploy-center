@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- App: the switch "Only when checks are green" is gone (deploy confirmation and Settings → Deploy). A red CI is shown on the row and never holds a deploy started by hand back. The CLI keeps `--when-green`.
+
 ## 0.10.0
 
 - **Fixed:** "Vercel could not be loaded … jq: invalid JSON text passed to --argjson" after a single failed Vercel call. Under macOS's bash 3.2 an empty fallback became `{\}`; the list now loads with `partial` rows instead of failing, and `vercel_call` has a time limit and retries reads (never writes).

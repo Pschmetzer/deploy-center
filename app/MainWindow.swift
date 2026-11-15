@@ -116,7 +116,6 @@ struct ContentView: View {
     @State private var confirming = false
     @State private var confirmingOff = false
     /// The checkbox in the deploy confirmation: only commits whose CI passed go out. Remembered.
-    @AppStorage("onlyWhenGreen") private var onlyGreen = false
     /// The deploy window's rule while it is closed, the platforms waiting for "Deploy anyway…", and why.
     @State private var freezeReason: String?
     /// What "Deploy anyway" starts, with the reason, once the deploy window was found closed.
@@ -905,15 +904,15 @@ struct ContentView: View {
 
     /// What the confirmation's Deploy does: inside a closed deploy window it asks first.
     private func startDeploy() {
-        let chosen = scopes, green = onlyGreen, count = selectedAll.count
+        let chosen = scopes, count = selectedAll.count
         Task {
             if OwnerCheck.needed(projects: count),
                !(await OwnerCheck.confirm(L("put \(count) projects live", "\(count) Projekte live schalten"))) { return }
             if let w = await store.deployWindow(), w.denied {
-                frozenRun = { why in chosen.forEach { store.deploySelected($0, whenGreen: green, force: why) } }
+                frozenRun = { why in chosen.forEach { store.deploySelected($0, force: why) } }
                 freezeReason = w.reason ?? ""; return
             }
-            chosen.forEach { store.deploySelected($0, whenGreen: green) }
+            chosen.forEach { store.deploySelected($0) }
         }
     }
 
@@ -923,17 +922,16 @@ struct ContentView: View {
     }
 
     /// One project (row menu, retry, palette, a commit in the details): the same way as the ticked
-    /// ones – a closed deploy window asks first, and "only when checks are green" holds. A preview
+    /// ones – a closed deploy window asks first. A red CI never holds it back. A preview
     /// is not live, the script lets it through the window as well.
     private func deployOne(_ item: Item, preview: Bool = false, sha: String? = nil, clearCache: Bool = false) {
-        let green = onlyGreen && !preview
         guard !preview else { store.deployOne(item, preview: true); return }
         Task {
             if let w = await store.deployWindow(), w.denied {
-                frozenRun = { why in store.deployOne(item, preview: false, sha: sha, clearCache: clearCache, whenGreen: green, force: why) }
+                frozenRun = { why in store.deployOne(item, preview: false, sha: sha, clearCache: clearCache, force: why) }
                 freezeReason = w.reason ?? ""; return
             }
-            store.deployOne(item, preview: false, sha: sha, clearCache: clearCache, whenGreen: green)
+            store.deployOne(item, preview: false, sha: sha, clearCache: clearCache)
         }
     }
 

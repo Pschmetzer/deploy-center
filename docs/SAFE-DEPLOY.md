@@ -47,9 +47,8 @@ deploys ci owner/repo <sha-or-branch> [--wait 10m] [--json]
 The exit code is 0 for green or no checks, 1 for red, and 2 when checks are still pending or
 GitHub is not reachable. With `--json` the exit code is always 0 and the verdict is in the answer.
 
-**In the app**, the deploy confirmation has a checkbox, **Only when checks are green**, which is
-remembered. While a row waits, it says "waiting for checks". A red CI skips the row and shows the
-reason. **Settings → Deploy → Deploy only when the checks are green** is the same switch.
+**In the app** a red CI never holds a deploy back: the row shows "CI is red" with the failed
+checks, and Deploy starts it anyway. The switch "Only when checks are green" was removed.
 
 ## 2. Health check with auto-rollback
 
