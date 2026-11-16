@@ -29,6 +29,7 @@ The format is guessed from the host. To choose it yourself, set `DEPLOYS_NOTIFY_
 | `teams` | *.webhook.office.com, *.logic.azure.com, Power Automate | An Adaptive Card. Make the URL in Teams with the workflow "Post to a channel when a webhook request is received". |
 | `googlechat` | chat.googleapis.com | `{"text": …}`, the link as `<url\|label>` |
 | `matrix` | (set `DEPLOYS_NOTIFY_FORMAT=matrix`) | `{"text": …, "username": …}` for a [matrix-hookshot](https://github.com/matrix-org/matrix-hookshot) generic webhook |
+| `custom` | never guessed: set `DEPLOYS_NOTIFY_FORMAT=custom` | Your own body for PagerDuty, Opsgenie, Zulip, a Lambda: `DEPLOYS_NOTIFY_TEMPLATE` is a jq program whose input is `{text, url, label}` and whose output is the JSON body, e.g. `{summary: .text}`. |
 | `pushover` | api.pushover.net | JSON with your keys from `DEPLOYS_PUSHOVER_TOKEN` (the app) and `DEPLOYS_PUSHOVER_USER`. URL: `https://api.pushover.net/1/messages.json` |
 | `slack` | anything else | `{"text": …}`. Slack, Mattermost, Rocket.Chat and other compatible hooks. |
 

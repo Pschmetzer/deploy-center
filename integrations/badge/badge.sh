@@ -10,6 +10,9 @@
 # projects get a badge too. Nothing is deployed, nothing is served: commit the SVGs, put
 # them on any static host, or open them locally.
 #
+# Next to each <name>.svg goes <name>.json, a shields.io endpoint (schemaVersion 1), so a README can show
+# it live: https://img.shields.io/endpoint?url=<where the JSON is served>.
+#
 # Env: DEPLOYS  the CLI to call (default: deploys on PATH)
 set -euo pipefail
 DEPLOYS="${DEPLOYS:-deploys}"
@@ -90,6 +93,8 @@ while IFS=$'\t' read -r name text colour platform; do
   </g>
 </svg>
 SVG
+  # The same badge as a shields.io endpoint (schemaVersion 1): <stem>.json, for a dynamic README badge.
+  jq -n --arg l "$left" --arg m "$text" --arg c "${colour#\#}" '{schemaVersion: 1, label: $l, message: $m, color: $c}' > "$out/$stem.json"
   n=$((n + 1))
 done <<< "$lines"
 echo "$n badge(s) in $out/"
