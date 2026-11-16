@@ -47,7 +47,7 @@ deploys scan list               the same as a table
 deploys scan log <id>           Claude's report of one scan
 ```
 
-# Security check: OSV-Scanner, gitleaks and Semgrep
+## Security check: OSV-Scanner, gitleaks and Semgrep
 
 "Security check" (right-click a row, or the project's details) runs three free tools on a fresh copy of the repo, on this Mac:
 

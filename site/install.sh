@@ -248,7 +248,7 @@ check_tools() {
     report bash required "deploys is a bash script"
     report jq required "everything"
     report curl required "Render and the GitHub API"
-    report perl required "masking secrets in build logs (logs, autofix, ai)"
+    report perl optional "masking secrets in build logs (autofix, ai, check) and the time limit on gh/vercel calls"
     report vercel optional "Vercel projects"
     report gh optional "what is waiting to deploy: commits and PRs; then: gh auth login (or GH_TOKEN in CI)"
     # GitLab works with glab or with GITLAB_TOKEN alone, so glab is named only without a token.
@@ -333,7 +333,7 @@ main() {
   say "Next: deploys doctor   (checks tools and access)."
   say "Keys: vercel login or VERCEL_TOKEN; RENDER_API_KEY for Render (on a Mac also: deploys render set-key)."
   say "Docs: https://deploycenter.app/docs/cli/"
-  if ! { has bash && has jq && has curl && has perl; }; then
+  if ! { has bash && has jq && has curl; }; then
     warn "deploys is installed, but needs the required tools above before it can run."
     # In CI, DEPLOYS_REQUIRE_DEPS=1 makes that a failure (exit 3) instead of a warning.
     [ "${DEPLOYS_REQUIRE_DEPS:-}" != 1 ] || exit 3

@@ -17,7 +17,7 @@ Yes: `deploys vercel autodeploy-on <project>` connects Git again from the rememb
 In your macOS keychain, as the item `deploy-center-render`. `deploys` hands it to `curl` on stdin, so it does not show in the process list, and sends it only to api.render.com. The key gives full access to your Render account.
 
 ### Does the app send data anywhere?
-No telemetry, no account, no server of ours. It talks to Vercel and Render with your logins, to GitHub through your `gh` login, to your own sites for their logos and the check after a deploy, and once a day to `deploycenter.app/appcast.xml` to see whether a new version is out; the update itself comes from GitHub (Settings → **Check for updates automatically** turns the daily check off). Claude in the app and Autofix talk to Anthropic only when you set them up with your own key or routine. More: [SECURITY.md](../SECURITY.md#what-is-sent-where).
+No telemetry, no account, no server of ours. It talks to Vercel and Render with your logins, to GitHub through your `gh` login, to your own sites for their logos and the check after a deploy, to the public status pages of Vercel, Render and GitHub (a plain GET, nothing of yours), and once a day to `deploycenter.app/appcast.xml` to see whether a new version is out; the update itself comes from GitHub (Settings → **Check for updates automatically** turns the daily check off). Claude in the app and Autofix talk to Anthropic only when you set them up with your own key or routine. More: [SECURITY.md](../SECURITY.md#what-is-sent-where).
 
 ### Do I need the GitHub CLI?
 For deploying, no. For seeing what is waiting (**New changes**, commits and PRs waiting, **Select all changed**, `deploys changed` and `deploy-changed`), yes: those read GitHub through `gh`.

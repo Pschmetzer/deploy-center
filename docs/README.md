@@ -22,12 +22,8 @@
 | [WIDGETS-IOS.md](WIDGETS-IOS.md) | The Mac widgets and the iPhone app: how they get their data, building them |
 | [APP-STORE.md](APP-STORE.md) | Releasing the iPhone app (maintainer) |
 | [PROVIDERS.md](PROVIDERS.md) | Adding a platform: one file in `providers/`, the contract, the tests |
-| [providers/](providers/) | The opt-in hosts: [Netlify](providers/netlify.md), [Cloudflare Pages](providers/cloudflare.md), [AWS Amplify](providers/amplify.md), [DigitalOcean](providers/digitalocean.md), [Coolify](providers/coolify.md), [deploy hooks](providers/hook.md) |
-| [GITLAB.md](GITLAB.md) | GitLab (gitlab.com or self-managed) as a source next to GitHub |
-| [WIDGETS-IOS.md](WIDGETS-IOS.md) | The Mac widget, the iPhone and iPad app and its widgets: how they are built |
 | [../README-CLI.md](../README-CLI.md) | The CLI on its own: install on Linux, WSL and in CI, keys, Docker |
 | [GOOD-FIRST-ISSUES.md](GOOD-FIRST-ISSUES.md) | Small tasks for a first pull request |
-| [../README-CLI.md](../README-CLI.md) | The CLI on its own (the README in the release tarball) |
 | [../examples/](../examples/) | Deploying without a Mac (CI) |
 
 ## The app's Settings

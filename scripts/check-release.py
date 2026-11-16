@@ -49,17 +49,36 @@ for v in ld:
     if v != version:
         problems.append(f'site/index.html: "softwareVersion" is {v}, VERSION is {version}')
 
+dl = re.findall(r'"downloadUrl":\s*"([^"]*)"', index)
+for u in dl:
+    m = re.search(r"/v(\d+\.\d+\.\d+)/DeployCenter-(\d+\.\d+\.\d+)-universal\.zip", u)
+    if not m or m.group(1) != version or m.group(2) != version:
+        problems.append(f'site/index.html: JSON-LD "downloadUrl" does not name {version}: {u}')
+llms = read("site/llms.txt") if os.path.exists(os.path.join(root, "site/llms.txt")) else ""
+lv = re.findall(r"^- Version: (\d+\.\d+\.\d+)", llms, re.M)
+for v in lv:
+    if v != version:
+        problems.append(f'site/llms.txt: says "Version: {v}", VERSION is {version} (scripts/build-docs.py sets it)')
+
 items = []
+sizes = {}
 try:
     channel = ET.fromstring(read("site/appcast.xml")).find("channel")
     for item in channel.findall("item") if channel is not None else []:
         v = (item.findtext(SPARKLE + "shortVersionString") or item.findtext(SPARKLE + "version") or "").strip()
         if re.fullmatch(r"\d+\.\d+\.\d+", v):
             items.append(v)
+            enc = item.find("enclosure")
+            if enc is not None and enc.get("length", "").isdigit():
+                sizes[v] = int(enc.get("length"))
         else:
             problems.append(f"site/appcast.xml: an item without an x.y.z version ({v!r})")
 except (ET.ParseError, OSError) as e:
     problems.append(f"site/appcast.xml: {e}")
+
+fs = re.findall(r'"fileSize":\s*"([\d.]+) MB"', index)
+if fs and version in sizes and abs(float(fs[0]) - sizes[version] / 1e6) > 0.3:
+    problems.append(f'site/index.html: JSON-LD "fileSize" {fs[0]} MB, the appcast says {sizes[version] / 1e6:.1f} MB')
 
 tagged = subprocess.run(["git", "-C", root, "rev-parse", "-q", "--verify", f"refs/tags/v{version}"],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0

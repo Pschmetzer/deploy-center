@@ -18,7 +18,7 @@ Options go after `sh -s --`:
 
 ```bash
 curl -fsSL https://deploycenter.app/install.sh | sh -s -- --prefix /usr/local     # /usr/local/bin; asks for sudo only if needed, and says so
-curl -fsSL https://deploycenter.app/install.sh | sh -s -- --version 0.8.0         # a given release
+curl -fsSL https://deploycenter.app/install.sh | sh -s -- --version <x.y.z>       # a given release
 curl -fsSL https://deploycenter.app/install.sh | sh -s -- --uninstall             # remove it again (config stays)
 ```
 
@@ -107,7 +107,7 @@ Vercel needs two things in CI that a Mac has already: the Vercel CLI, and `verce
 out; without the file, no Vercel project is deployable. Keep the config folder between runs:
 
 ```yaml
-- run: curl -fsSL https://deploycenter.app/install.sh | sh -s -- --version 0.9.1
+- run: curl -fsSL https://deploycenter.app/install.sh | sh -s -- --version <x.y.z>   # pin a release, see the Releases page
 - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 - run: npm i -g vercel
 - uses: actions/cache@v4

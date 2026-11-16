@@ -51,6 +51,10 @@ PAGES = [
      "What turning off auto-deploy changes on Vercel and Render, and how to turn it back on."),
     ("autofix", "Autofix", "Using it", "docs/AUTOFIX.md",
      "deploys autofix hands a failed Vercel or Render build to a Claude Code routine that opens a fix pull request. It never deploys."),
+    ("scan", "Bug scan and security check", "Using it", "docs/SCAN.md",
+     "deploys scan lets Claude Code look through a repo for bugs and open one fix pull request; deploys check runs OSV-Scanner, gitleaks and Semgrep locally."),
+    ("widgets-ios", "Widgets and iPhone app", "Using it", "docs/WIDGETS-IOS.md",
+     "The Mac widgets and the iPhone and iPad app: where they get their data, what they show and how to build them."),
     ("safe-deploy", "Safe deploys", "Using it", "docs/SAFE-DEPLOY.md",
      "Batch many pushes into one deploy: deploy only when CI is green, a site check with automatic rollback, deploy windows and a risk score."),
     ("guard", "Auto-deploy guard", "Using it", "docs/GUARD.md",
@@ -99,7 +103,7 @@ PAGES = [
 # integrations/<name>/README.md: known ones get a label and description; any other folder with a
 # README is added under its own H1.
 INTEGRATIONS = {
-    "action": ("GitHub Action", "A GitHub Action that lists what has changes with deploys changed --json, and deploys only with deploy: true."),
+    "action": ("GitHub Action", "A GitHub Action that lists what has changed with deploys changed --json, and deploys only with deploy: true."),
     "badge": ("Status badges", "SVG status badges per project, such as deployed 3 d ago, 4 commits waiting. No server needed."),
     "notify": ("Daily summary", "A daily live today / waiting summary to Discord, Slack, ntfy or Telegram."),
     "statuspage": ("Status page", "A static what-shipped-when page with an Atom feed and status.json, for any static host."),
