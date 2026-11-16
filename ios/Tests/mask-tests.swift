@@ -40,9 +40,9 @@ expect("excerpt: no error, nothing marked", quiet.errorAt == nil, true)
 expect("excerpt: '0 errors' is not an error", LogMask.excerpt(["Compiled, 0 errors", "done"]).errorAt == nil, true)
 
 // Round 7: platform tokens, webhooks, the clone URL of git, and a huge line.
-let extra = LogMask.mask(["git@github.com:me/app.git denied; mail me@x.com; dop_v1_" + String(repeating: "a", count: 20) + " postgres://u:p@ss@host/db https://hooks.slack.com/services/T1/B2/xyz"])?.first ?? ""
+let extra = LogMask.mask(["git@github.com:me/app.git denied; mail me@example.com; dop_v1_" + String(repeating: "a", count: 20) + " postgres://u:p@ss@host/db https://hooks.slack.com/services/T1/B2/xyz"])?.first ?? ""
 expect("mask: git@host stays, so the clone error reads", extra.contains("git@github.com:me/app.git"), true)
-expect("mask: an email goes", extra.contains("me@x.com"), false)
+expect("mask: an email goes", extra.contains("me@example.com"), false)
 expect("mask: a DigitalOcean token goes", extra.contains("dop_v1_"), false)
 expect("mask: a password with an @ goes whole", extra.contains("p@ss"), false)
 expect("mask: a webhook URL goes", extra.contains("hooks.slack.com"), false)

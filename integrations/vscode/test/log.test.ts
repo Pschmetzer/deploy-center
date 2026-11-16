@@ -100,8 +100,8 @@ test("private keys are cut out whole, from the top, and from the bottom", () => 
 
 test("platform tokens, webhooks and the clone URL of git", () => {
   const m = maskSecrets(
-    `git@github.com:me/app.git denied; dop_v1_${"a".repeat(20)} nfp_${"b".repeat(20)} https://hooks.slack.com/services/T1/B2/xyz 123456789:${"A".repeat(35)} postgres://u:p@ss@host/db mail@x.com`,
+    `git@github.com:me/app.git denied; dop_v1_${"a".repeat(20)} nfp_${"b".repeat(20)} https://hooks.slack.com/services/T1/B2/xyz 123456789:${"A".repeat(35)} postgres://u:p@ss@host/db mail@example.com`,
   );
   assert.ok(m.includes("git@github.com:me/app.git"), m);
-  for (const gone of ["dop_v1_", "nfp_", "hooks.slack.com", "123456789:", "p@ss", "mail@x.com"]) assert.ok(!m.includes(gone), `${gone}: ${m}`);
+  for (const gone of ["dop_v1_", "nfp_", "hooks.slack.com", "123456789:", "p@ss", "mail@example.com"]) assert.ok(!m.includes(gone), `${gone}: ${m}`);
 });
