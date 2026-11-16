@@ -271,6 +271,14 @@ expect "doctor ok" "$(netlify_doctor | jq -c '[.provider, .key, .tokenOk, .sites
 out="$( unset NETLIFY_AUTH_TOKEN; netlify_doctor )"
 expect "doctor: no token" "$(echo "$out" | jq -c '[.key, .tokenOk]')" '["missing",false]'
 
+# --- history: the last deploys as a table ---
+reset
+table() { cat; }   # the real one lives in deploys
+out="$(netlify_history site-shop 20 2>&1)"
+has "history: header" "$out" "WHEN (UTC)"
+has "history: a ready deploy with its commit and time" "$out" "2222222"
+expect "history: one line per deploy plus the header" "$(echo "$out" | grep -c .)" "$(( $(jq length "$FIX/deploys-shop.json") + 1 ))"
+
 # --- set_key: tried first, saved only when it works, never as an argument ---
 reset
 out="$(echo "bad-token" | FAKE_STATUS=401 netlify_set_key 2>&1)"; rc=$?
