@@ -35,6 +35,16 @@ long="$(perl -e 'print "a." x 75000')"
 cut="$(printf '%s\n' "$long" | af_mask | wc -c | tr -d ' ')"
 [ "$cut" -lt 4100 ] && [ $((SECONDS - start)) -lt 10 ] && ok "mask: a 150000-character line is cut and handled fast" || fail "mask: long line" "bytes $cut, $((SECONDS - start)) s"
 
+# --- the scan of an untrusted repo does not see the secrets of this shell ---
+names="$(GH_TOKEN=a NPM_TOKEN=b VERCEL_TOKEN=c AWS_SECRET_ACCESS_KEY=d MY_PASSWORD=e SSH_AUTH_SOCK=/x CLAUDE_CODE_OAUTH_TOKEN=keep ANTHROPIC_AUTH_TOKEN=keep2 HARMLESS=1 sc_secret_env_names | paste -sd, -)"
+has_name() { case ",$names," in *",$1,"*) return 0 ;; esac; return 1; }
+for n in GH_TOKEN NPM_TOKEN VERCEL_TOKEN AWS_SECRET_ACCESS_KEY MY_PASSWORD SSH_AUTH_SOCK; do
+  expect "scan env: $n is taken away" "$(has_name "$n" && echo yes || echo no)" "yes"
+done
+for n in CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_AUTH_TOKEN HARMLESS HOME PATH; do
+  expect "scan env: $n stays" "$(has_name "$n" && echo taken || echo stays)" "stays"
+done
+
 # --- EXIT traps chain instead of replacing each other ---
 : > "$tmp/trap.log"
 rc=0; ( trap_add "echo first >> '$tmp/trap.log'"; trap_add "echo \"second rc=\$?\" >> '$tmp/trap.log'"; exit 3 ) || rc=$?

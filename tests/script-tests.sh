@@ -523,6 +523,9 @@ expect "rollback is refused in observer mode" "$(DEPLOYS_READONLY=1 run "$O" "$E
 fresh
 expect "doctor --text: one line per thing" "$(run "$O" "$E" doctor --text; grep -c '^ok   jq$' "$O")" $'0\n1'
 fresh
+expect "vercel map: a repo with a query is refused before anything is written" "$(run "$O" "$E" vercel map web 'me/app?x=1'; grep -c 'Invalid repo' "$E")" $'1\n1'
+expect "vercel map: a branch with .. is refused" "$(run "$O" "$E" vercel map web me/app 'a..b'; grep -c 'Invalid commit or branch' "$E")" $'1\n1'
+fresh
 expect "list --platform render: only Render" "$(run "$O" "$E" list --platform render; grep -c '^vercel ' "$O"; grep -c '^render ' "$O")" $'0\n0\n1'
 expect "list --auto and --manual together are the whole list" \
   "$(run "$O" "$E" list --json; tot="$(jq length "$O")"; run "$O" "$E" list --json --auto >/dev/null; au="$(jq length "$O")"; run "$O" "$E" list --json --manual >/dev/null; ma="$(jq length "$O")"; [ "$tot" = "$((au + ma))" ] && echo same)" $'0\nsame'
@@ -958,6 +961,10 @@ expect "ai: usage is tallied per month" "$(jq -r --arg m "$(date -u +%Y-%m)" '.[
 : > "$CALLS"; airun ai_run notes web --lang de >/dev/null
 expect "ai notes: German, bot commits counted not listed, no emails" \
   "$(jq -r .system "$AIBODY" | grep -c 'Write in German'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'bump x'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Dependency updates: 1'):$(grep -c 'ops@example.org' "$AIBODY")" "1:0:1:0"
+: > "$CALLS"; airun ai_run notes web --lang fr >/dev/null
+expect "ai notes: --lang fr writes in French" "$(jq -r .system "$AIBODY" | grep -c 'Write in French')" "1"
+: > "$CALLS"; airun ai_run notes web --lang xx >/dev/null
+expect "ai notes: an unknown two-letter code names its ISO code" "$(jq -r .system "$AIBODY" | grep -c 'Write in the language with the ISO 639-1 code xx')" "1"
 airun ai_run ship web >/dev/null
 expect "ai ship: diff stats, risky files and auto-deploy go in" \
   "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Diff: 2 commits, 3 files, +40 -2'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'prisma/migrations'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'auto-deploy: off')" "1:1:1"
@@ -1242,8 +1249,18 @@ echo '{"runs":[{"id":"a","repo":"me/web","at":1,"status":"running"}]}' > "$SCAN_
 expect "scan: a run over the time limit is reaped" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
 echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":999999}]}' > "$SCAN_STATE"; sc_reap
 expect "scan: a run whose process is gone is reaped" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
-echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$$"'}]}' > "$SCAN_STATE"; sc_reap
+# A live scan: a process whose command line says "scan run", as nohup "$SELF" scan run does.
+bash -c 'sleep 60' scan run &
+livepid=$!
+echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$livepid"'}]}' > "$SCAN_STATE"; sc_reap
 expect "scan: a live run is left alone" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "running"
+# A pid that is alive but is not a scan (the number was reused after a restart): the run is over, the process is left alone.
+sleep 60 &
+otherpid=$!
+echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$otherpid"'}]}' > "$SCAN_STATE"; sc_reap
+expect "scan: a reused pid is no running scan" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
+expect "scan: and that other process was not touched" "$(kill -0 "$otherpid" 2>/dev/null && echo alive)" "alive"
+kill "$otherpid" "$livepid" 2>/dev/null; wait "$otherpid" "$livepid" 2>/dev/null || true
 expect "scan: a bad branch name is refused" "$( ( scan_start me/web 'a..b' ) 2>&1 | grep -c 'not a branch name')" "1"
 expect "scan: a bad repo is refused" "$( ( scan_start 'me/web;rm' ) 2>&1 | grep -c 'not a GitHub repo')" "1"
 sc_reset; for i in 1 2 3 4; do jq -n --argjson t "$(date +%s)" --arg i "$i" '{id:$i, repo:"me/x", at:$t, status:"clean"}'; done | jq -s '{runs:.}' > "$SCAN_STATE"
