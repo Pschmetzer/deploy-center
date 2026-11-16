@@ -10,6 +10,7 @@ Passt bestens zu Claude Code: Der Agent pusht, du entscheidest, was live geht.</
   <a href="https://github.com/Pschmetzer/deploy-center/releases/latest"><img alt="Neueste Version" src="https://img.shields.io/github/v/release/Pschmetzer/deploy-center?label=release"></a>
   <img alt="macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-black?logo=apple">
   <a href="#installieren"><img alt="Homebrew Cask" src="https://img.shields.io/badge/brew-cask-orange?logo=homebrew&logoColor=white"></a>
+  <a href="https://github.com/Pschmetzer/deploy-center/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Pschmetzer/deploy-center/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
@@ -72,7 +73,7 @@ Neu dabei? [Sicher ausprobieren](docs/SAFE-START.md) (Englisch): erst schauen, d
 - Eine Bash-CLI, `deploys`, die all das ohne die App kann, auch unter Linux und in CI. [CLI-Referenz](docs/CLI.md)
 - Erweiterungen: eine GitHub Action, Badges, eine tägliche Zusammenfassung an einen Webhook, ein Pre-Push-Hook, ein Docker-Image, ein MCP-Server, ein Claude-Code-Plugin, Erweiterungen für VS Code und Raycast, ein Agent-Digest. [Integrationen](integrations/)
 - Autofix: Ein fehlgeschlagener Build geht an eine Claude-Code-Routine, die einen Fix-PR öffnet. [Autofix](docs/AUTOFIX.md)
-- Claude fragen, mit deinem eigenen Anthropic-Key: warum ein Build scheiterte, Release-Notes, ist das sicher zu deployen. [Claude in der App](docs/CLAUDE.md) (Englisch)
+- Claude fragen, mit deinem eigenen Anthropic-Key: warum ein Build scheiterte, Release-Notes, ist das sicher zu deployen. [Claude in der App](docs/CLAUDE-IN-APP.md) (Englisch)
 - Sichere Deploys (nur grüne CI, Health-Check mit Rollback, Deploy-Fenster), ein Wächter, der Auto-Deploy wieder abschaltet, und ein Team-Modus ohne Server. [Sichere Deploys](docs/SAFE-DEPLOY.md) · [Wächter](docs/GUARD.md) · [Team](docs/TEAM.md) (Englisch)
 - Bug-Scan: Claude Code auf deinem Mac sucht im Repo nach Bugs und öffnet einen Fix-PR. [Bug-Scan](docs/SCAN.md) (Englisch)
 - Sicherheits-Check: OSV-Scanner, gitleaks und Semgrep (kostenlos, lokal); Funde können an den Bug-Scan gehen. [Sicherheits-Check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep) (Englisch)

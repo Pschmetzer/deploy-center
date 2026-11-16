@@ -46,6 +46,16 @@ pbpaste | deploys hook add blog - --repo me/blog --site https://blog.example.com
 - **Header values are references, not secrets.** Write `--header 'Authorization: Bearer $GH_TOKEN'`. `$VAR` and `${VAR}` are read from the environment when the hook fires. Nothing else is expanded, and nothing is `eval`ed. If the variable is not set, the hook does not fire. A header that looks like a credential (Authorization, Token, Key, Secret, Password, Cookie) is refused unless it names a variable.
 - `deploys hook remove` deletes the stored URL here. The URL still works at the host until you delete or rotate it there.
 
+## Undo
+
+```bash
+deploys hook remove <name>
+```
+
+removes the hook here: its entry in `hooks.json`, its state, and the stored URL (the keychain item
+`deploy-center-hook-<name>` on a Mac, `~/.config/deploys/hook-urls/<name>` elsewhere). Then delete or rotate the
+URL at the host, because it keeps working there until you do.
+
 ## Files
 
 `~/.config/deploys/hooks.json`:

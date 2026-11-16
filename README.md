@@ -10,6 +10,7 @@ Works great with Claude Code: let the agent push, you decide what ships.</p>
   <a href="https://github.com/Pschmetzer/deploy-center/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Pschmetzer/deploy-center?label=release"></a>
   <img alt="macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-black?logo=apple">
   <a href="#install"><img alt="Homebrew cask" src="https://img.shields.io/badge/brew-cask-orange?logo=homebrew&logoColor=white"></a>
+  <a href="https://github.com/Pschmetzer/deploy-center/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Pschmetzer/deploy-center/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
@@ -95,11 +96,11 @@ Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only gree
 - A bash CLI, `deploys`, that does all of this without the app, also on Linux and in CI. [CLI reference](docs/CLI.md)
 - Add-ons: a GitHub Action, badges, a daily summary to a webhook, a pre-push hook, a Docker image, an MCP server, a Claude Code plugin, VS Code and Raycast extensions, an agent digest. [Integrations](integrations/)
 - Autofix: a failed build goes to a Claude Code routine that opens a fix PR. [Autofix](docs/AUTOFIX.md)
-- Ask Claude, with your own Anthropic key: why a build failed, release notes, is it safe to ship. [Claude in the app](docs/CLAUDE.md)
+- Ask Claude, with your own Anthropic key: why a build failed, release notes, is it safe to ship. [Claude in the app](docs/CLAUDE-IN-APP.md)
 - Safe deploys (only green CI, health check with rollback, deploy windows), a guard that turns auto-deploy off again, and a team mode without a server. [Safe deploys](docs/SAFE-DEPLOY.md) · [Guard](docs/GUARD.md) · [Team](docs/TEAM.md)
 - Bug scan: Claude Code on your Mac looks through a repo for bugs and opens one fix PR. [Bug scan](docs/SCAN.md)
 - Security check: OSV-Scanner, gitleaks and Semgrep (free, local); findings can go to the bug scan. [Security check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep)
-- English and German: the Mac's language, or pick one in Settings → General → Language
+- English and German: the Mac's language, or pick one in Settings → General → Language (it takes effect after a restart)
 
 ## Deploy Center + Claude Code
 

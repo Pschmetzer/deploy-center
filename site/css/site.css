@@ -2,15 +2,15 @@
    Same tokens as index.html. Plain CSS, no build step. */
 :root{color-scheme:dark;
   --bg:#0b0d12; --bg2:#11141b; --card:#151924; --line:#232838; --text:#e9ecf3; --muted:#9aa3b5;
-  --accent:#4f7cff; --accent2:#8b5cf6; --green:#34c759; --red:#ff5f57; --orange:#ff9f0a;
+  --accent:#4f7cff; --accent2:#8b5cf6; --btn-a:#3a62e0; --btn-b:#7a3fe0; --green:#34c759; --red:#ff5f57; --orange:#ff9f0a;
   --radius:16px; --max:1120px;
 }
 /* light: the accents too, darker so links and numbers keep 4.5:1 on white (same values as index.html).
    data-theme is the choice made on the home page, read in <head> of each page. */
 @media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475;--accent:#2f5fe8;--accent2:#7c3aed;--green:#1f8f3a;--red:#d93025;--orange:#b25e00}
+  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475;--accent:#2f5fe8;--accent2:#7c3aed;--btn-a:#2f5fe8;--btn-b:#7c3aed;--green:#177a2e;--red:#d93025;--orange:#b25e00}
 }
-:root[data-theme="light"]{color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475;--accent:#2f5fe8;--accent2:#7c3aed;--green:#1f8f3a;--red:#d93025;--orange:#b25e00}
+:root[data-theme="light"]{color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475;--accent:#2f5fe8;--accent2:#7c3aed;--btn-a:#2f5fe8;--btn-b:#7c3aed;--green:#177a2e;--red:#d93025;--orange:#b25e00}
 :root[data-theme="dark"]{color-scheme:dark}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -34,7 +34,7 @@ nav.top .links{margin-left:auto;display:flex;gap:16px;font-size:15px}
 nav.top .links a{color:var(--muted)}
 nav.top .links a:hover,nav.top .links a[aria-current]{color:var(--text);text-decoration:none}
 nav.top .links{align-items:center}
-nav.top .links a.dl{background:var(--accent);color:#fff;font-weight:600;padding:5px 11px;border-radius:8px}
+nav.top .links a.dl{background:var(--btn-a);color:#fff;font-weight:600;padding:5px 11px;border-radius:8px}
 nav.top .links a.dl:hover{color:#fff;filter:brightness(1.08)}
 @media (max-width:560px){nav.top .links{gap:12px;font-size:14px}nav.top .links a.opt{display:none}}
 @media (max-width:380px){nav.top .brand span{display:none}}
@@ -84,7 +84,7 @@ details p{color:var(--muted);margin:10px 0 0}
 .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
 .btn{display:inline-flex;align-items:center;gap:10px;padding:12px 20px;border-radius:12px;font-weight:600;font-size:16px;border:1px solid var(--line);color:var(--text);background:var(--card)}
 .btn:hover{text-decoration:none;border-color:color-mix(in srgb,var(--accent) 60%,var(--line))}
-.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:0;color:#fff;box-shadow:0 8px 30px -8px color-mix(in srgb,var(--accent) 70%,transparent)}
+.btn.primary{background:linear-gradient(135deg,var(--btn-a),var(--btn-b));border:0;color:#fff;box-shadow:0 8px 30px -8px color-mix(in srgb,var(--accent) 70%,transparent)}
 .related{margin:40px 0 0;font-size:16px}
 .related ul{padding-left:20px}
 
@@ -103,6 +103,7 @@ details p{color:var(--muted);margin:10px 0 0}
 .field{margin-bottom:20px}
 .field:last-child{margin-bottom:0}
 .field .fh{display:flex;justify-content:space-between;gap:12px;font-weight:600;font-size:15px;margin-bottom:8px}
+.field .fh input.num{width:5.5em;font:inherit;font-variant-numeric:tabular-nums;color:var(--accent);background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:2px 8px;text-align:right}
 .field .fh output{color:var(--accent);font-variant-numeric:tabular-nums;white-space:nowrap}
 input[type=range]{width:100%;accent-color:var(--accent)}
 .hint{font-size:13px;color:var(--muted);margin-top:4px}
@@ -145,3 +146,22 @@ ol.flowline li+li::before{content:"→";content:"→" / "";color:var(--muted)}
 .legal p{margin:0 0 10px}
 .legal p:last-child{margin-bottom:0}
 .legal ul{margin:6px 0 10px;padding-left:20px}
+
+/* links inside running text are underlined, not only coloured (WCAG 1.4.1) */
+article p a,article li a,.answer a,.note a{text-decoration:underline;text-underline-offset:2px}
+@media print{
+  nav.top,.skip,footer .links,.theme,.copy{display:none!important}
+  body{background:#fff;color:#000;font-size:11pt}
+  a{color:#000;text-decoration:underline}
+  article a[href^="http"]::after{content:" (" attr(href) ")";font-size:.85em;word-break:break-all}
+  pre{background:#fff;color:#000;border-color:#999;white-space:pre-wrap}
+  article h2,article h3{break-after:avoid}pre,.note{break-inside:avoid}
+}
+
+/* theme switch and copy buttons, added by js/site.js */
+.theme{all:unset;cursor:pointer;color:var(--muted);width:36px;height:36px;display:grid;place-items:center;border-radius:8px;flex:none}
+.theme:hover{color:var(--text);background:var(--card)}
+.theme:focus-visible{outline:2px solid var(--accent)}
+.theme svg{width:17px;height:17px}
+pre .copy{position:absolute;top:8px;right:8px;font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#d7dbe6;background:#1a1f2c;border:1px solid #2d3447;border-radius:7px;padding:6px 10px;cursor:pointer;opacity:.85}
+pre .copy:hover,pre .copy:focus-visible{opacity:1;border-color:#4f7cff}

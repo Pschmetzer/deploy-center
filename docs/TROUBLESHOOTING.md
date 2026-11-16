@@ -221,6 +221,86 @@ The host is on, but no key is stored for it. The message says where to create on
 
 Netlify deploys by hand through a build hook, which `autodeploy-off` creates. Run it once for that site.
 
+### AWS Amplify: no apps, or the wrong ones
+
+Amplify is reached through the `aws` CLI, so `aws sts get-caller-identity --profile <name>` has to work first
+(`aws configure sso` or `aws configure`). Only apps in one region are listed: `AWS_REGION`, else the profile's region.
+Set `AWS_REGION` to the region of the app you expect. The identity needs the `amplify:` permissions listed in
+[the Amplify page](providers/amplify.md). Which profile is used: `DEPLOYS_AMPLIFY_PROFILE`, then `AWS_PROFILE`, then the keychain.
+
+### DigitalOcean: HTTP 401, or an app that still deploys on push
+
+401 means the token is wrong or expired: `pbpaste | deploys digitalocean set-key`. The token needs read and update scope
+for apps. If a component still deploys on push after `autodeploy-off`, the message names it; the previous spec is kept in
+`~/.config/deploys/do-specs/<app-id>.json`. See [the DigitalOcean page](providers/digitalocean.md).
+
+### Coolify: 403 "API is disabled", or 403 on every application
+
+In Coolify, turn on API access under Settings > Advanced. A token limited to some projects cannot use `/applications`
+at all: create one with team-wide scope and the permissions `read`, `write` and `deploy`. A plain `http://` instance
+that is not this machine is refused unless you set `DEPLOYS_COOLIFY_ALLOW_HTTP=1`. See [the Coolify page](providers/coolify.md).
+
+### Cloudflare Pages: "unverified" or a deployment that was skipped
+
+Cloudflare does not document whether a deployment you create builds while push-deploys are off. Run
+`deploys cloudflare selftest <project> --yes` once (it uses one build); `deploys cloudflare doctor` then says
+`verified` or `failed`. See [the Cloudflare page](providers/cloudflare.md).
+
+### Deploy hook: "triggered" and nothing more
+
+A deploy hook has no status API, so a 2xx answer counts as ready. The URL is a secret and lives in the keychain
+(or a 0600 file on Linux); `deploys hook set-key <name>` replaces it. See [the hook page](providers/hook.md).
+
+## Claude, MCP and scans
+
+### The agent says deploys are not allowed
+
+The MCP server is read-only by default. Deploying has to be turned on in the server's environment with
+`DEPLOYS_MCP_ALLOW_DEPLOY=1`, and then it still asks you before each deploy. See
+[integrations/mcp](../integrations/mcp/README.md).
+
+### The MCP server or the Claude Code plugin cannot find `deploys`
+
+It looks in this order: `DEPLOYS_BIN`, the copy inside `Deploy Center.app` (in `/Applications` or `~/Applications`),
+then `PATH`. Set `DEPLOYS_BIN` to the file you mean, and check that `deploys --version` runs in a terminal.
+
+### "Find bugs with Claude" does nothing, or says it is not set up
+
+The bug scan runs the Claude Code CLI on this Mac. Install it and log in once (`npm i -g @anthropic-ai/claude-code`, then
+`claude login`), and log `gh` in, because it clones and opens the pull request. `deploys scan status --json` shows what is
+missing. A second scan of a repo is refused while one runs or while its scan PR is open, and at most 4 scans run per 24 hours
+(`DEPLOYS_SCAN_PER_DAY`). A scan whose process is gone (restart, sleep) is marked failed: keep the Mac awake for 10 to 30
+minutes. See [SCAN.md](SCAN.md).
+
+### The security check shows a tool as missing
+
+`deploys check` needs `osv-scanner`, `gitleaks` and `semgrep` (`brew install osv-scanner gitleaks semgrep`). A missing tool is
+shown as missing and the others still run. Secrets it finds are never sent to Claude: rotate them.
+
+### Rollback did not do what I expected
+
+A rollback goes back to the deploy before the live one, on every host except a plain deploy hook. With auto-deploy on, the
+next push deploys again, so turn it off or fix forward. It does not undo database migrations or environment changes.
+`deploys verify <project>` rolls back by itself on a 5xx; `--no-rollback` only reports. See [SAFE-DEPLOY.md](SAFE-DEPLOY.md).
+
+## A deploy was refused
+
+### "deploy window closed"
+
+A rule in `window.json` (or the shared `deploy-center.json`) says deploys are closed now. `deploys window` shows why and
+exits 1 while it is closed. In an emergency `--force "why"` goes through, and the reason is written to the journal.
+See [SAFE-DEPLOY.md](SAFE-DEPLOY.md).
+
+### Nothing can be changed (observer mode)
+
+With `DEPLOYS_READONLY` set (any value but `0`, `false`, `no`, `off`) or observer mode turned on, `deploys` only reads.
+Turn it off with `deploys readonly off`, or unset the variable. See [TEAM.md](TEAM.md).
+
+### `deploys` says jq (or curl, or bash) is missing
+
+`jq`, `curl` and `bash` are required, `perl` is optional. `install.sh` names what is missing and how to install it on your system;
+`deploys doctor` checks again.
+
 ## Auto-deploy guard
 
 ### The guard turned auto-deploy off again, but I wanted it on
@@ -245,7 +325,7 @@ This Mac is an observer: you are on the `observers` list of the repo's `deploy-c
 
 ### "No Anthropic API key. Run: pbpaste | deploys ai set-key (or set ANTHROPIC_API_KEY)"
 
-Claude in the app needs your own Anthropic API key. Add it in **Settings → Claude**, or copy it and run `pbpaste | deploys ai set-key`. See [CLAUDE.md](CLAUDE.md#turning-it-on).
+Claude in the app needs your own Anthropic API key. Add it in **Settings → Claude**, or copy it and run `pbpaste | deploys ai set-key`. See [CLAUDE-IN-APP.md](CLAUDE-IN-APP.md#turning-it-on).
 
 ### "Anthropic refused the key (401). Check it in Settings > Claude in the app, or: deploys ai verify"
 

@@ -94,8 +94,12 @@ deploys autofix --only vercel my-project  # this one failure now
 deploys autodeploy allow vercel my-project 4   # auto-deploy on for 4 hours (see GUARD.md)
 deploys autodeploy allowed | revoke vercel my-project
 deploys guard [--dry-run] | status | schedule on|off   # auto-deploy off where it came back on
-deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE.md
+deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE-IN-APP.md
 deploys scan start owner/repo           # Claude Code looks for bugs and opens one fix PR (SCAN.md)
+deploys scan status | list | log <id>   # installed and logged in, the newest scans, one report
+deploys check start owner/repo [branch] # OSV-Scanner, gitleaks and Semgrep on a fresh copy, on this Mac (SCAN.md)
+deploys check show <id>                 # the findings, secrets redacted
+deploys config [--json] [--refresh]     # every setting in effect (shared files, this Mac) and where each came from
 deploys ai ask my-project --question "will this run a migration?"   # your own question; its commits and log go along
 deploys ai slow my-project              # why its builds take long (ai risk = ai ship)
 deploys autofix --preview --only vercel my-project --json   # what a hand-over would send; sends nothing
@@ -127,14 +131,13 @@ Everything after `--` is passed on as it is (a value `--json` stays a value).
 |---|---|
 | every command | `0` done (also "nothing to deploy"); `1` an error, something failed to start, or the state of some project could not be read (it is named and left out, never counted as current) |
 | `watch` | `0` live, `1` failed or canceled, `3` the platform could not be asked (or its answer read) five times in a row, `4` `--timeout` passed first (it may still go live) |
-| `deploy --wait`, `deploy <group>` | as `watch` for the member that stopped: `1` it failed, `3` it could not be followed |
+| `deploy --wait`, `deploy <group>` | as `watch` for the member that stopped: `1` it failed, `3` it could not be followed, also when the platform accepted the start but named no deploy id (a group stops there) |
 | `verify` | `0` healthy, `1` failed and rolled back, `2` failed and not rolled back, `3` nothing was checked |
 | `ci` | `0` green (or no checks), `1` red, `2` still pending or GitHub not reachable; with `--json` always `0` |
 | `window` | `0` open, `1` closed, `2` window.json could not be read; with `--json` `0` unless it could not be read |
 | `autofix --only` | `2` the build did not fail, `3` a fix is already under way, `4` a cap is reached, `5` no routine set up, `6` another autofix run holds the lock ([AUTOFIX.md](AUTOFIX.md)) |
 | `deploy-changed --strict` | also `2` when a project was skipped (red or pending CI) |
 | `deploy-changed --yes` with a budget | `1` over budget (or, with `--strict`, spending unknown) without `--force "why"` |
-| `deploy --wait`, groups | `3` also when the platform accepted the start but named no deploy id, so it was not followed (a group stops there) |
 | a GitHub, GitLab or Vercel CLI call | `124` when it gave no answer within `DEPLOYS_CLI_TIMEOUT` seconds |
 
 ## Environment variables
@@ -154,6 +157,12 @@ Everything after `--` is passed on as it is (a value `--json` stays a value).
 | `DEPLOYS_VERCEL_USD_PER_MIN`, `DEPLOYS_RENDER_USD_PER_MIN` | build-minute prices for `simulate` and `ledger` |
 | `DEPLOYS_TIMEOUT` | the older name of `DEPLOYS_CLI_TIMEOUT`, used where that is not set |
 | `DEPLOYS_LOG_MAX_BYTES` | size past which a launchd job log is renamed to `.1` (default 1 MB) |
+| `DEPLOYS_CLI_TIMEOUT` | seconds a `gh api`, `glab api` or `vercel api` call may take (default 90; `0` no limit) |
+| `DEPLOYS_VERCEL_TEAM` | the Vercel team id, if the token sees several teams |
+| `DEPLOYS_AMPLIFY_PROFILE` | the aws CLI profile for Amplify |
+| `DEPLOYS_CLOUDFLARE_TOGGLE` | `1`: Cloudflare deploys switch push-builds on for the start ([providers/cloudflare.md](providers/cloudflare.md)) |
+| `DEPLOYS_COOLIFY_ALLOW_HTTP` | `1`: the Coolify token may go to a plain `http://` instance that is not this machine |
+| `DEPLOYS_NETLIFY_POLLS` | how often a Netlify start looks for its new build (default 15) |
 | `NO_COLOR` | no colour |
 
 **Budget brake.** `budget.json` (`deploys budget set 50`) holds dollars a month of Vercel build
@@ -251,28 +260,6 @@ waiting project: `[{rule, index, project, matched, action, unmet}]`.
   without it no Vercel project is deployable.
 
 See [examples/](../examples/) for a daily deploy from GitHub Actions.
-
-## Environment variables
-
-| Variable | What |
-|---|---|
-| `DEPLOYS_CONFIG` | the config folder (default `~/.config/deploys`) |
-| `DEPLOYS_READONLY` | `1`: observer mode, as `deploys readonly on` |
-| `DEPLOYS_NO_GITHUB` | `1`: no GitHub or GitLab calls (nothing counts as changed then) |
-| `DEPLOYS_CLI_TIMEOUT` | seconds a `gh api`, `glab api` or `vercel api` call may take (default 90; `0` no limit) |
-| `DEPLOYS_VERCEL_TEAM` | the Vercel team id, if the token sees several teams |
-| `DEPLOYS_GITLAB_HOSTS` | self-managed GitLab hosts besides gitlab.com ([GITLAB.md](GITLAB.md)) |
-| `DEPLOYS_JOURNAL` | where the deploy journal is written |
-| `DEPLOYS_NOTIFY` | `0`: no macOS notifications from autofix (default `1`) |
-| `DEPLOYS_TEAM_TTL` | seconds a shared deploy-center.json is kept before it is read again ([TEAM.md](TEAM.md)) |
-| `DEPLOYS_AUTOFIX_PER_PROJECT`, `DEPLOYS_AUTOFIX_PER_DAY` | autofix caps ([AUTOFIX.md](AUTOFIX.md)) |
-| `DEPLOYS_VERCEL_USD_PER_MIN`, `DEPLOYS_RENDER_USD_PER_MIN` | the price of one build minute for `simulate` and `ledger` ([SAVINGS.md](SAVINGS.md)) |
-| `DEPLOYS_AMPLIFY_PROFILE` | the aws CLI profile for Amplify |
-| `DEPLOYS_CLOUDFLARE_TOGGLE` | `1`: Cloudflare deploys switch push-builds on for the start ([providers/cloudflare.md](providers/cloudflare.md)) |
-| `DEPLOYS_COOLIFY_ALLOW_HTTP` | `1`: the Coolify token may go to a plain `http://` instance that is not this machine |
-| `DEPLOYS_NETLIFY_POLLS` | how often a Netlify start looks for its new build (default 15) |
-| `DEPLOYS_DIR` | where `providers/` and `lib/` are, when not next to the script (Docker) |
-| `NO_COLOR` | no colours, also at a terminal |
 
 ## Settings
 

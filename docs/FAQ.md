@@ -17,7 +17,7 @@ Yes: `deploys vercel autodeploy-on <project>` connects Git again from the rememb
 In your macOS keychain, as the item `deploy-center-render`. `deploys` hands it to `curl` on stdin, so it does not show in the process list, and sends it only to api.render.com. The key gives full access to your Render account.
 
 ### Does the app send data anywhere?
-No telemetry, no account, no server of ours. It talks to Vercel and Render with your logins, to GitHub through your `gh` login, to your own sites for their logos and the check after a deploy, and once a day to `deploycenter.app/appcast.xml` to see whether a new version is out; the update itself comes from GitHub (Settings → **Check for updates automatically** turns the daily check off). Claude in the app and Autofix talk to Anthropic only when you set them up with your own key or routine. More: [SECURITY.md](../SECURITY.md#what-is-sent-where).
+No telemetry, no account, no server of ours. It talks to Vercel and Render with your logins, to GitHub through your `gh` login, to your own sites for their logos and the check after a deploy, to the public status pages of Vercel, Render and GitHub (a plain GET, nothing of yours), and once a day to `deploycenter.app/appcast.xml` to see whether a new version is out; the update itself comes from GitHub (Settings → **Check for updates automatically** turns the daily check off). Claude in the app and Autofix talk to Anthropic only when you set them up with your own key or routine. More: [SECURITY.md](../SECURITY.md#what-is-sent-where).
 
 ### Do I need the GitHub CLI?
 For deploying, no. For seeing what is waiting (**New changes**, commits and PRs waiting, **Select all changed**, `deploys changed` and `deploy-changed`), yes: those read GitHub through `gh`.
@@ -51,3 +51,18 @@ See [NUMBERS.md](NUMBERS.md).
 
 ### Something does not work.
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
+### Does it do preview deploys?
+Where the host has them: `deploys deploy <project> --preview` (Vercel, Cloudflare Pages, AWS Amplify; see [the host table](providers/README.md)). Render, Netlify, DigitalOcean and Coolify have no preview deploy here.
+
+### Can I roll back?
+Yes, on every host except a plain deploy hook: the Rollback button in the app, or `deploys <host> rollback <project>`. `deploys verify` rolls back by itself when the site answers 5xx after a deploy, unless you pass `--no-rollback`. See [SAFE-DEPLOY.md](SAFE-DEPLOY.md).
+
+### Is there an iPhone app?
+It is built for the App Store: what waits, deploy and rollback with Face ID, and widgets. How it works: [WIDGETS-IOS.md](WIDGETS-IOS.md).
+
+### Can my team use it?
+Yes, without a server: a shared `deploy-center.json` per repo, observer mode and an optional two-person rule. See [TEAM.md](TEAM.md).
+
+### Do I need an Anthropic key?
+Only for Claude in the app (explain a failure, release notes, ship check). Autofix uses a Claude Code routine instead. See [CLAUDE-IN-APP.md](CLAUDE-IN-APP.md).

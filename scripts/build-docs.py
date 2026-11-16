@@ -51,6 +51,10 @@ PAGES = [
      "What turning off auto-deploy changes on Vercel and Render, and how to turn it back on."),
     ("autofix", "Autofix", "Using it", "docs/AUTOFIX.md",
      "deploys autofix hands a failed Vercel or Render build to a Claude Code routine that opens a fix pull request. It never deploys."),
+    ("scan", "Bug scan and security check", "Using it", "docs/SCAN.md",
+     "deploys scan lets Claude Code look through a repo for bugs and open one fix pull request; deploys check runs OSV-Scanner, gitleaks and Semgrep locally."),
+    ("widgets-ios", "Widgets and iPhone app", "Using it", "docs/WIDGETS-IOS.md",
+     "The Mac widgets and the iPhone and iPad app: where they get their data, what they show and how to build them."),
     ("safe-deploy", "Safe deploys", "Using it", "docs/SAFE-DEPLOY.md",
      "Batch many pushes into one deploy: deploy only when CI is green, a site check with automatic rollback, deploy windows and a risk score."),
     ("guard", "Auto-deploy guard", "Using it", "docs/GUARD.md",
@@ -59,7 +63,7 @@ PAGES = [
      "deploys simulate estimates what auto-deploy would cost a month, deploys ledger what turning it off saved, on Vercel and Render."),
     ("team", "Team mode", "Using it", "docs/TEAM.md",
      "The same deploy rules on every teammate's Mac without a server: a shared config file, observers and a two-person rule."),
-    ("claude", "Claude in the app", "Using it", "docs/CLAUDE.md",
+    ("claude", "Claude in the app", "Using it", "docs/CLAUDE-IN-APP.md",
      "Ask Claude with your own Anthropic API key why a build failed, for release notes, and whether a deploy is safe to ship."),
     ("claude-code", "Claude Code", "Using it", "docs/CLAUDE-CODE.md",
      "Deploy Center with Claude Code: the MCP server, the plugin and Autofix. Claude writes and fixes the code, you decide what ships."),
@@ -67,6 +71,10 @@ PAGES = [
      "Read commits and merge requests waiting to deploy from gitlab.com or a self-managed GitLab, with glab or GITLAB_TOKEN."),
     ("deploy-hooks", "Deploy hooks (any host)", "Hosts", "docs/providers/hook.md",
      "Deploy any host with a build-trigger URL by hand: Cloudflare Pages, Netlify, DigitalOcean, Coolify, Dokploy, Amplify."),
+    ("vercel", "Vercel", "Hosts", "docs/providers/vercel.md",
+     "Vercel in Deploy Center: turn off the Git connection, deploy and preview by hand, roll back, and put it back."),
+    ("render", "Render", "Hosts", "docs/providers/render.md",
+     "Render in Deploy Center: an API key, auto-deploy off, deploying a service by hand, rollback, and undo."),
     ("netlify", "Netlify", "Hosts", "docs/providers/netlify.md",
      "Netlify in Deploy Center: turn it on, stop builds on push with an ignore line, and deploy sites by hand with a build hook."),
     ("cloudflare-pages", "Cloudflare Pages", "Hosts", "docs/providers/cloudflare.md",
@@ -99,7 +107,7 @@ PAGES = [
 # integrations/<name>/README.md: known ones get a label and description; any other folder with a
 # README is added under its own H1.
 INTEGRATIONS = {
-    "action": ("GitHub Action", "A GitHub Action that lists what has changes with deploys changed --json, and deploys only with deploy: true."),
+    "action": ("GitHub Action", "A GitHub Action that lists what has changed with deploys changed --json, and deploys only with deploy: true."),
     "badge": ("Status badges", "SVG status badges per project, such as deployed 3 d ago, 4 commits waiting. No server needed."),
     "notify": ("Daily summary", "A daily live today / waiting summary to Discord, Slack, ntfy or Telegram."),
     "statuspage": ("Status page", "A static what-shipped-when page with an Atom feed and status.json, for any static host."),
@@ -620,6 +628,7 @@ def render(page, pages, assets):
 <meta name="twitter:image:alt" content="{OG_ALT}">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
 <link rel="stylesheet" href="/docs/assets/docs.css?v={assets["docs.css"]}">
 <script>document.documentElement.classList.add('js');try{{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}}catch(e){{}}</script>
 <script type="application/ld+json">{jsonld(page, crumbs)}</script>
@@ -774,6 +783,14 @@ FOOTER_GUIDES = [
     ("/guides/vercel-ignored-build-step/", "Vercel Ignored Build Step"),
     ("/guides/render-auto-deploy-off/", "Turn off Render auto-deploy"),
     ("/guides/netlify-stop-builds/", "Stop Netlify builds"),
+    ("/guides/vercel-build-minutes-and-build-queue/", "Vercel build minutes and the build queue"),
+    ("/guides/deploy-to-vercel-from-github-actions/", "Deploy to Vercel from GitHub Actions"),
+    ("/guides/skip-vercel-previews-for-bots-and-agents/", "Skip Vercel previews for bots and agents"),
+    ("/guides/cloudflare-pages-stop-builds/", "Stop Cloudflare Pages builds"),
+    ("/guides/aws-amplify-disable-auto-build/", "Disable AWS Amplify auto-build"),
+    ("/guides/digitalocean-app-platform-deploy-on-push/", "Stop DigitalOcean App Platform builds"),
+    ("/guides/coolify-auto-deploy-off/", "Coolify: Auto Deploy off"),
+    ("/guides/roll-back-vercel-render-deployment/", "Roll back a Vercel or Render deploy"),
     ("/guides/reduce-vercel-costs/", "Reduce Vercel costs"),
     ("/guides/auto-fix-failed-vercel-builds-with-claude/", "Auto-fix failed builds with Claude"),
     ("/guides/deploy-hooks/", "Deploy hooks for any host"),

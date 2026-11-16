@@ -54,3 +54,16 @@ deploys render autodeploy-off --all
 Or press **Turn off auto-deploy** in the app. It lists every affected project before you confirm.
 
 From then on, one daily deploy is enough. In the app: **Select all changed**, then **Deploy**. In Terminal: `deploys deploy-changed --yes`.
+
+## Without the app (CLI only)
+
+The same order works in a terminal, and nothing changes until you say so:
+
+```bash
+deploys status                          # what is connected, what is waiting; changes nothing
+deploys list                            # your projects and whether auto-deploy is on; changes nothing
+deploys deploy-changed                  # a list of what would deploy; it only deploys with --yes
+```
+
+Then turn off one project (`deploys vercel autodeploy-off my-project`), push a commit and check that no build starts,
+and only then use `--all`. Back out with `deploys vercel autodeploy-on my-project`.

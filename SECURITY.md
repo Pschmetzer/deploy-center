@@ -3,8 +3,8 @@
 ## Report a problem
 
 Open a [private security advisory](https://github.com/Pschmetzer/deploy-center/security/advisories/new)
-(Security tab), not a public issue. Please include the version (Settings → Help → "Copy diagnostics")
-and the steps to see the problem. Leave out real project names, domains and keys.
+(Security tab), not a public issue. Please include the version (app: Settings → Help → "Copy diagnostics";
+CLI on Linux, WSL or in CI: `deploys --version` and `deploys where`) and the steps to see the problem. Leave out real project names, domains and keys.
 
 Deploy Center is maintained by one person in their spare time. The aim is a first answer within
 7 days, and a fix in a new release as soon as one is ready. There is no bug bounty.
@@ -72,7 +72,7 @@ the vendor).
 | Is a host down? (a plain GET, nothing of yours) | `www.vercel-status.com`, `status.render.com`, `www.githubstatus.com` | HTTPS, from the app |
 | Opt-in hosts, once turned on (`deploys providers enable <name>`): site lists, deploys, build logs, starts, rollbacks | `api.netlify.com`, `api.cloudflare.com`, AWS Amplify (through the `aws` CLI and your AWS profile), `api.digitalocean.com`, your own Coolify instance (`COOLIFY_URL`) | HTTPS; each key from the keychain (`deploy-center-<name>`; for Amplify only a profile name) or the environment, on stdin |
 | A deploy hook: the POST that starts a build, with the method, headers and body you set | the hook URL you added (`deploys hook add`) | `curl` over HTTPS (or `http://` to `localhost`); the URL from the keychain, on stdin |
-| Claude in the app / `deploys ai` (opt-in, your own key): the masked log excerpt around the first error, or the titles of waiting commits and PRs, or diff stats and risky file names ([details](docs/CLAUDE.md#privacy)) | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after you turn it on and save a key, only when you ask, with a monthly token cap |
+| Claude in the app / `deploys ai` (opt-in, your own key): the masked log excerpt around the first error, or the titles of waiting commits and PRs, or diff stats and risky file names ([details](docs/CLAUDE-IN-APP.md#privacy)) | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after you turn it on and save a key, only when you ask, with a monthly token cap |
 | Autofix: project, repo, branch, commit, deploy id and the last 60 KB of the build log, masked | `api.anthropic.com` (your routine) | `curl` over HTTPS; the token on stdin; only after you set up a routine and a token |
 | A daily summary of project names and counts | the webhook you set in `DEPLOYS_NOTIFY_URL` | `integrations/notify/notify.sh`, only when you run it |
 | The agent digest: project names, commit titles and authors, PR titles, risk hints | the webhook you set, and an issue in a GitHub repo of yours | `integrations/digest/`, only when you run it (usually from your own GitHub workflow) |

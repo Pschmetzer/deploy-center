@@ -9,6 +9,9 @@
 #   --version <x.y.z>  a given release instead of the latest
 #   --uninstall        remove what this script installed under the prefix (config stays)
 #   --force            replace a deploys in <dir>/bin that this script did not install
+#   --sha256 <hash>    the SHA-256 the tarball must have (or DEPLOYS_INSTALL_SHA256); pins a release in CI
+#   --dry-run          download and check, then say what would be written; write nothing
+#   --quiet            skip the list of tools deploys can use
 #   -h, --help         this text
 #
 # The tarball is checked against the release's checksums.txt (SHA-256) before anything is
@@ -41,6 +44,9 @@ Options:
   --version <x.y.z>  a given release instead of the latest
   --uninstall        remove what this script installed under the prefix (config stays)
   --force            replace a deploys in <dir>/bin that this script did not install
+  --sha256 <hash>    the SHA-256 the tarball must have (or DEPLOYS_INSTALL_SHA256); pins a release in CI
+  --dry-run          download and check, then say what would be written; write nothing
+  --quiet            skip the list of tools deploys can use
   -h, --help         this text
 USAGE
 }
@@ -66,7 +72,7 @@ sha256() {
   else die "no sha256sum, shasum or openssl to check the download with"; fi
 }
 # A redirect may lead to https only: the checksum comes from the same place as the archive.
-fetch() { curl -fsSL --proto '=https,file' --proto-redir '=https' --retry 3 -o "$2" "$1"; }
+fetch() { curl -fsSL --proto '=https,file' --proto-redir '=https' --connect-timeout 15 --max-time 300 --retry 3 -o "$2" "$1"; }
 
 # Clean up on every exit. Ctrl-C (INT) and TERM also stop the script: a trap alone would clean
 # up and then let it carry on with the next step.
@@ -142,8 +148,10 @@ download() {
   fetch "$sums_url" "$tmp/checksums.txt" \
     || die "could not download $sums_url. ${version:+Is v$version a release with the CLI (0.8.0 or newer)? }See https://github.com/$REPO/releases"
 
-  line="$(grep -E '^[0-9a-f]{64}  deploys-cli-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz$' "$tmp/checksums.txt" | head -n 1 || true)"
-  [ -n "$line" ] || die "checksums.txt names no deploys-cli tarball"
+  lines="$(grep -E '^[0-9a-f]{64}  deploys-cli-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz$' "$tmp/checksums.txt" || true)"
+  [ -n "$lines" ] || die "checksums.txt names no deploys-cli tarball"
+  [ "$(printf '%s\n' "$lines" | grep -c .)" = 1 ] || die "checksums.txt names more than one deploys-cli tarball; refusing to guess which one is meant"
+  line="$lines"
   want="${line%% *}"
   file="${line##* }"
   got_version="${file#deploys-cli-}"; got_version="${got_version%.tar.gz}"
@@ -159,6 +167,9 @@ download() {
   got="$(sha256 "$tmp/$file")"
   [ "$got" = "$want" ] || die "SHA-256 mismatch for $file: got $got, checksums.txt says $want. Nothing was installed."
   say "SHA-256 ok: $want"
+  if [ -n "$pin" ] && [ "$got" != "$pin" ]; then
+    die "the tarball's SHA-256 is $got, not the $pin you asked for. Nothing was installed."
+  fi
   # TODO(provenance): the checksum comes from the same release as the tarball, so it catches a
   # broken or swapped download, not a release that was replaced as a whole. No signing key and no
   # build attestation exist for the CLI yet, so there is nothing to check against here. Once
@@ -169,12 +180,19 @@ download() {
 
   mkdir "$tmp/x"
   # As root (a Docker build), tar would keep the owners stored in the archive: take ours instead.
+  # A path that leaves the folder (absolute, or with ..) is refused before anything is unpacked.
+  if tar -tzf "$tmp/$file" | grep -Eq '^/|(^|/)\.\.(/|$)'; then
+    die "$file holds a path outside its own folder; nothing was unpacked."
+  fi
   tar -xzf "$tmp/$file" -C "$tmp/x" --no-same-owner
   src="$tmp/x/deploys-cli-$version"
   [ -f "$src/deploys" ] || die "$file holds no deploys-cli-$version/deploys"
 }
 
 do_install() {
+  if [ -n "$SUDO" ]; then
+    say "With sudo: mkdir -p $bindir $prefix/lib; copy the files to $libdir; write $bindir/deploys."
+  fi
   if { [ -e "$bindir/deploys" ] || [ -L "$bindir/deploys" ]; } && ! ours "$bindir/deploys" && [ "$force" != 1 ]; then
     die "$bindir/deploys exists and was not installed by this script (Homebrew or by hand?). Remove it, pick another --prefix, or pass --force."
   fi
@@ -203,6 +221,10 @@ do_install() {
 
   installed="$("$bindir/deploys" --version 2>/dev/null || true)"
   say "Installed deploys $installed: $bindir/deploys (files in $libdir)"
+  case "$installed" in
+    *"$version"*) ;;
+    *) warn "expected version $version, but the installed deploys says '${installed:-nothing}'. Run: deploys doctor" ;;
+  esac
 }
 
 path_hint() {
@@ -248,7 +270,7 @@ check_tools() {
     report bash required "deploys is a bash script"
     report jq required "everything"
     report curl required "Render and the GitHub API"
-    report perl required "masking secrets in build logs (logs, autofix, ai)"
+    report perl optional "masking secrets in build logs (autofix, ai, check) and the time limit on gh/vercel calls"
     report vercel optional "Vercel projects"
     report gh optional "what is waiting to deploy: commits and PRs; then: gh auth login (or GH_TOKEN in CI)"
     # GitLab works with glab or with GITLAB_TOKEN alone, so glab is named only without a token.
@@ -270,6 +292,9 @@ main() {
   version=""
   action=install
   force=0
+  dry=0
+  quiet=0
+  pin="${DEPLOYS_INSTALL_SHA256:-}"
   while [ $# -gt 0 ]; do
     case "$1" in
       --prefix) [ $# -ge 2 ] || die "--prefix needs a folder"; prefix="$2"; shift 2 ;;
@@ -278,6 +303,10 @@ main() {
       --version=*) version="${1#*=}"; shift ;;
       --uninstall) action=uninstall; shift ;;
       --force) force=1; shift ;;
+      --sha256) [ $# -ge 2 ] || die "--sha256 needs a hash"; pin="$2"; shift 2 ;;
+      --sha256=*) pin="${1#*=}"; shift ;;
+      --dry-run) dry=1; shift ;;
+      --quiet) quiet=1; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "unknown option: $1 (see --help)" ;;
     esac
@@ -293,6 +322,10 @@ main() {
   bindir="$prefix/bin"
   libdir="$prefix/lib/deploys"
   version="${version#v}"
+  pin="$(printf '%s' "$pin" | tr 'A-F' 'a-f')"
+  if [ -n "$pin" ]; then
+    printf '%s' "$pin" | grep -Eq '^[0-9a-f]{64}$' || die "--sha256 needs 64 hex characters"
+  fi
   [ "$version" = latest ] && version=""
   if [ -n "$version" ]; then
     printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || die "not a version: $version (like 0.8.0)"
@@ -325,15 +358,19 @@ main() {
   tmp="$(mktemp -d 2>/dev/null || mktemp -d -t deploys)"
 
   download
+  if [ "$dry" = 1 ]; then
+    say "Dry run: the download is verified. Would install deploys $version into $libdir and write $bindir/deploys. Nothing was written."
+    exit 0
+  fi
   do_install
   path_hint
-  check_tools
+  [ "$quiet" = 1 ] || check_tools
 
   say ""
   say "Next: deploys doctor   (checks tools and access)."
   say "Keys: vercel login or VERCEL_TOKEN; RENDER_API_KEY for Render (on a Mac also: deploys render set-key)."
   say "Docs: https://deploycenter.app/docs/cli/"
-  if ! { has bash && has jq && has curl && has perl; }; then
+  if ! { has bash && has jq && has curl; }; then
     warn "deploys is installed, but needs the required tools above before it can run."
     # In CI, DEPLOYS_REQUIRE_DEPS=1 makes that a failure (exit 3) instead of a warning.
     [ "${DEPLOYS_REQUIRE_DEPS:-}" != 1 ] || exit 3

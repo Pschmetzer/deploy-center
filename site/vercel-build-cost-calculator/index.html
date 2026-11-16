@@ -39,7 +39,7 @@
   "url": "https://deploycenter.app/vercel-build-cost-calculator/",
   "mainEntityOfPage": "https://deploycenter.app/vercel-build-cost-calculator/",
   "datePublished": "2026-11-10",
-  "dateModified": "2026-11-12",
+  "dateModified": "2026-11-16",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -150,14 +150,14 @@
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Vercel build cost calculator</h1>
 <p class="answer">Auto-deploy costs roughly <b>projects × pushes per day × cost per build × working days</b> a month. Deploying by hand costs the same formula with your number of deploys instead of your number of pushes; move the sliders to see both with your numbers.</p>
-<p class="meta">Last updated <time datetime="2026-11-12">12 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <div class="calc">
   <div class="card">
-    <div class="field"><div class="fh"><label for="p">Projects connected to Git</label><output id="po" for="p" aria-hidden="true"></output></div><input id="p" type="range" min="1" max="80" value="20"></div>
-    <div class="field"><div class="fh"><label for="u">Pushes per project per working day</label><output id="uo" for="u" aria-hidden="true"></output></div><input id="u" type="range" min="1" max="60" value="8"><div class="hint">Count each push, not each commit. AI coding agents often push after every step.</div></div>
-    <div class="field"><div class="fh"><label for="c">Average cost per build</label><output id="co" for="c" aria-hidden="true"></output></div><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In cents. Your real number: last month's build cost divided by the number of builds, on your Vercel or Render usage page.</div></div>
-    <div class="field"><div class="fh"><label for="d">Deploys by hand per project per day</label><output id="do" for="d" aria-hidden="true"></output></div><input id="d" type="range" min="1" max="5" value="1"></div>
+    <div class="field"><div class="fh"><label for="p">Projects connected to Git</label><input class="num" id="pn" type="number" inputmode="numeric" step="1" aria-label="Projects connected to Git, as a number"></div><input id="p" type="range" min="1" max="80" value="20"></div>
+    <div class="field"><div class="fh"><label for="u">Pushes per project per working day</label><input class="num" id="un" type="number" inputmode="numeric" step="1" aria-label="Pushes per project per working day, as a number"></div><input id="u" type="range" min="1" max="60" value="8"><div class="hint">Count each push, not each commit. AI coding agents often push after every step.</div></div>
+    <div class="field"><div class="fh"><label for="c">Average cost per build</label><input class="num" id="cn" type="number" inputmode="numeric" step="1" aria-label="Average cost per build in cents, as a number"></div><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In cents. Your real number: last month's build cost divided by the number of builds, on your Vercel or Render usage page.</div></div>
+    <div class="field"><div class="fh"><label for="d">Deploys by hand per project per day</label><input class="num" id="dn" type="number" inputmode="numeric" step="1" aria-label="Deploys by hand per project per day, as a number"></div><input id="d" type="range" min="1" max="5" value="1"></div>
   </div>
   <div class="card result">
     <p class="sr" id="said" aria-live="polite"></p>
@@ -166,7 +166,7 @@
     <div class="hint">a month (22 working days)</div>
     <div class="row"><span>With auto-deploy</span><b id="now">$0</b></div>
     <div class="row"><span>Deploying by hand</span><b id="after">$0</b></div>
-    <div class="share"><a class="btn" id="tweet" target="_blank" rel="noopener">Share your number</a></div>
+    <div class="share"><a class="btn" id="tweet" target="_blank" rel="noopener">Share on X</a> <button class="btn" id="copylink" type="button">Copy link</button> <button class="btn" id="sharebtn" type="button" hidden>Share …</button></div>
   </div>
 </div>
 
@@ -175,7 +175,7 @@
 deploying by hand  = projects × min(deploys, pushes) × cost per build × 22
 saving             = with auto-deploy − deploying by hand</code></pre>
 <ul>
-  <li><b>22 working days</b> a month. Weekend pushes add to the first line.</li>
+  <li><b>22 working days</b> a month. Weekend pushes add to the first line. <code>deploys simulate</code> does not use this assumption: it counts the pushes you really made in the last days and scales them to 30 days, so its number can differ from this page.</li>
   <li><b>One build per project per push.</b> If several projects are connected to one repository, a push builds each of them; count them as separate projects.</li>
   <li><b>Previews count.</b> Pushes to any branch build a preview on Vercel. Include them, or set the sliders for production only.</li>
   <li><b>Nothing leaves your browser.</b> The numbers stay on this page; the share link only contains the four slider values.</li>
@@ -212,6 +212,14 @@ saving             = with auto-deploy − deploying by hand</code></pre>
   <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
   <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
   <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+  <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+  <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+  <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+  <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+  <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+  <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+  <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+  <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
 </ul></div>
 </article></main>
 
@@ -223,6 +231,14 @@ saving             = with auto-deploy − deploying by hand</code></pre>
       <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
       <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
       <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
       <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
       <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
       <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
@@ -256,7 +272,7 @@ saving             = with auto-deploy − deploying by hand</code></pre>
   let moved=false;
   function calc(){
     const p=+$('p').value,u=+$('u').value,c=+$('c').value/100,d=+$('d').value;
-    $('po').textContent=p;$('uo').textContent=u;$('co').textContent='$'+c.toFixed(2);$('do').textContent=d;
+    ids.forEach(id=>{const n=$(id+'n');if(document.activeElement!==n)n.value=$(id).value});
     $('c').setAttribute('aria-valuetext','$'+c.toFixed(2));
     const days=22, now=p*u*c*days, after=p*Math.min(d,u)*c*days, save=Math.max(0,now-after);
     $('now').textContent=fmt(now);$('after').textContent=fmt(after);$('save').textContent=fmt(save);
@@ -269,8 +285,22 @@ saving             = with auto-deploy − deploying by hand</code></pre>
   }
   // read out only the saving, and only once a slider is let go
   function say(){const r=calc();$('said').textContent='You would save about '+fmt(r.save)+' a month. With auto-deploy '+fmt(r.now)+', deploying by hand '+fmt(r.after)+'.'}
-  ids.forEach(id=>{$(id).addEventListener('input',()=>{moved=true;calc()});$(id).addEventListener('change',say)});calc();
+  ids.forEach(id=>{
+    $(id).addEventListener('input',()=>{moved=true;calc()});$(id).addEventListener('change',say);
+    // the number field sets the slider, within its limits
+    const n=$(id+'n'),r=$(id);n.min=r.min;n.max=r.max;
+    n.addEventListener('input',()=>{const v=Math.round(+n.value);if(v>=+r.min&&v<=+r.max){r.value=v;moved=true;calc()}});
+    n.addEventListener('change',()=>{const v=Math.min(+r.max,Math.max(+r.min,Math.round(+n.value)||+r.min));r.value=v;n.value=v;moved=true;say()});
+  });
+  const shareLink=()=>'https://deploycenter.app/vercel-build-cost-calculator/?'+ids.map(id=>id+'='+$(id).value).join('&');
+  $('copylink').addEventListener('click',async()=>{
+    try{await navigator.clipboard.writeText(shareLink());$('copylink').textContent='Copied'}catch(e){$('copylink').textContent='Copy failed'}
+    setTimeout(()=>{$('copylink').textContent='Copy link'},1800);
+  });
+  if(navigator.share){const b=$('sharebtn');b.hidden=false;b.addEventListener('click',()=>{const r=calc();navigator.share({title:'Vercel build cost calculator',text:'Auto-deploy would cost me about '+fmt(r.now)+'/month in builds. Deploying by hand: '+fmt(r.after)+'.',url:shareLink()}).catch(()=>{})})}
+  calc();
 })();
 </script>
+<script src="/js/site.js" defer></script>
 </body>
 </html>
