@@ -1525,7 +1525,7 @@ expect "CLI-028: the job carries DEPLOYS_LOG_ROTATE=1" "$(grep -c '<key>DEPLOYS_
 # CLI-030: without launchd, schedule on writes nothing and prints the cron line.
 mkdir -p "$tmp/nolc"; for b in sed dirname basename; do ln -sf "$(command -v "$b")" "$tmp/nolc/$b"; done
 # shellcheck disable=SC2123  # a PATH without launchctl is the point
-expect "CLI-030: no launchd: a cron line, no job file" "$( (PATH="$tmp/nolc"; DEPLOYS_LAUNCH_DIR="$tmp/j30"; job_on app.deploycenter.autofix 600 DeployCenter-autofix autofix) | grep -c "^\*/10 \* \* \* \* PATH=.* /bin/bash '.*deploys' 'autofix' >>"; [ -e "$tmp/j30" ] && echo file || echo none)" $'1\nnone'
+expect "CLI-030: no launchd: a cron line, no job file" "$( (PATH="$tmp/nolc"; DEPLOYS_LAUNCH_DIR="$tmp/j30"; job_on app.deploycenter.autofix 600 DeployCenter-autofix autofix) | grep -c "^\*/10 \* \* \* \* mkdir -p .* && PATH=.* /bin/bash '.*deploys' 'autofix' >>"; [ -e "$tmp/j30" ] && echo file || echo none)" $'1\nnone'
 # ===== CLI features track =====
 # INT-082: deploys hooks install chains an existing pre-push, uninstall puts it back.
 hk="$tmp/hk"; mkdir -p "$hk"; git -C "$hk" init -q
@@ -1618,7 +1618,7 @@ mkdir -p "$tmp/j68"
 expect "FEA-068: the job starts at 07:30, with the flags" \
   "$(grep -c '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>' "$tmp/j68/app.deploycenter.daily.plist"; grep -c '<string>deploy-changed</string><string>--yes</string><string>--when-green</string>' "$tmp/j68/app.deploycenter.daily.plist")" $'1\n1'
 # shellcheck disable=SC2123  # a PATH without launchctl is the point
-expect "FEA-068: without launchd the cron line runs at 07:30" "$( (PATH="$tmp/nolc"; job_on app.deploycenter.daily @07:30 DeployCenter-daily deploy-changed --yes) | grep -c "^30 7 \* \* \* PATH=.* 'deploy-changed' '--yes' >>")" "1"
+expect "FEA-068: without launchd the cron line runs at 07:30" "$( (PATH="$tmp/nolc"; job_on app.deploycenter.daily @07:30 DeployCenter-daily deploy-changed --yes) | grep -c "^30 7 \* \* \* mkdir -p .* && PATH=.* 'deploy-changed' '--yes' >>")" "1"
 expect "FEA-068: a time that is none is refused, nothing written" "$(run "$O" "$E" schedule daily 25:00; grep -c 'HH:MM' "$E"; [ -e "$e2e/config/schedule.json" ] && echo file || echo none)" $'1\n1\nnone'
 expect "FEA-068: status without a schedule" "$(run "$O" "$E" schedule status --json; jq -c '[.at, .scheduled]' "$O")" $'0\n[null,false]'
 expect "FEA-068: observers cannot schedule deploys" "$(DEPLOYS_READONLY=1 run "$O" "$E" schedule daily 08:00; grep -c 'Observer mode' "$E")" $'1\n1'

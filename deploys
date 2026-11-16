@@ -124,6 +124,9 @@
 #   readonly           present: observer mode (as DEPLOYS_READONLY=1)
 
 set -euo pipefail
+# What this script writes (journal with --force reasons, names, temp files with masked logs) is for
+# this user only. Files that must be readable by others are not made here.
+umask 077
 
 CONFIG_DIR="${DEPLOYS_CONFIG:-$HOME/.config/deploys}"
 REPOS="$CONFIG_DIR/vercel-repos.json"
@@ -224,11 +227,16 @@ vercel() { case "${1:-}" in api|whoami|teams) cli_limit vercel "$@" ;; *) comman
 # The parallel readers (xargs bash -c) are other shells: they get the limit too.
 export -f cli_limit gh glab vercel
 
-# Colour only for a person at a terminal, never in what the app or a pipe reads.
-if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then RED=$'\033[31m'; GREEN=$'\033[32m'; BOLD=$'\033[1m'; PLAIN=$'\033[0m'
+# Colour only for a person at a terminal, never in what the app or a pipe reads. NO_COLOR and
+# TERM=dumb switch it off; CLICOLOR_FORCE=1 (or --color) forces it, e.g. for a pager that shows it.
+COLOR_ON=""
+if [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ]; then
+  if [ -n "${CLICOLOR_FORCE:-}" ] && [ "${CLICOLOR_FORCE}" != 0 ]; then COLOR_ON=1; fi
+fi
+if { [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ]; } || [ -n "$COLOR_ON" ]; then RED=$'\033[31m'; GREEN=$'\033[32m'; BOLD=$'\033[1m'; PLAIN=$'\033[0m'
 else RED=""; GREEN=""; BOLD=""; PLAIN=""; fi
 # The same for messages on stderr, which may go to a terminal while stdout goes to a file (or back).
-if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then ERED=$'\033[31m'; EPLAIN=$'\033[0m'; else ERED=""; EPLAIN=""; fi
+if { [ -t 2 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ]; } || [ -n "$COLOR_ON" ]; then ERED=$'\033[31m'; EPLAIN=$'\033[0m'; else ERED=""; EPLAIN=""; fi
 # shellcheck disable=SC2034  # kept for messages that want them
 : "$GREEN$BOLD"
 
@@ -416,7 +424,12 @@ meta_str() { "${1}_meta" | grep -Eo "\"$2\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" 
 key_of() {
   local p="$1" v
   for v in $("${p}_meta" | grep -Eo '"keyEnv"[[:space:]]*:[[:space:]]*\[[^]]*\]' | sed -E 's/"keyEnv"[[:space:]]*://' | grep -o '[A-Za-z_][A-Za-z0-9_]*'); do
-    [ -n "${!v:-}" ] && { printf '%s' "${!v}"; return 0; }
+    if [ -n "${!v:-}" ]; then
+      # A quote, backslash or line break would end the header line of curl's config (and could add
+      # directives of its own): such a value is no key.
+      case "${!v}" in *[\"\\]*|*$'\n'*|*$'\r'*) echo "Error: $v has a character that cannot be in a key (quote, backslash or line break)." >&2; return 1;; esac
+      printf '%s' "${!v}"; return 0
+    fi
   done
   security find-generic-password -a "$USER" -s "deploy-center-$p" -w 2>/dev/null
 }
@@ -505,10 +518,15 @@ need_cap() { meta_flag "$1" "$2" || die "$(meta_str "$1" label) cannot $3"; }
 # app and the terminal: two quick clicks, or the app and a script at once, would pay for two
 # builds. The lock ages out after a minute; a start that failed removes it at once.
 start_lock() {
-  local d="$CONFIG_DIR/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
+  local d="$CONFIG_DIR/locks" f age; mkdir -p "$d"
+  # The checksum keeps "a b" and "a_b" apart, and a name like ".." can never be the folder itself.
+  f="$d/$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_' | sed 's/^\.*//')-$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
   lock_clear_stale "$f" 60
   # noclobber makes creating the file the check: two starts at the same moment cannot both pass.
-  ( set -C; : > "$f" ) 2>/dev/null || die "$1 is being started already (wait a minute)"
+  if ! ( set -C; : > "$f" ) 2>/dev/null; then
+    age=$(( $(date +%s) - $(mtime "$f" 2>/dev/null || date +%s) )); [ "$age" -ge 0 ] || age=0
+    die "$1 is being started already (try again in $(( 60 - age > 0 ? 60 - age : 1 )) s)"
+  fi
   echo "$f"
 }
 
@@ -666,7 +684,7 @@ with_heads() {
   if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! githost_available; then echo "$list" | jq "$CHANGED_RULE"; return; fi
   tmp="$(mktemp -d)"; mkdir "$tmp/h" "$tmp/p" "$tmp/o"
   echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
-    | xargs -r -P 8 -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
+    | tr ' \n' '\000\000' | xargs -0 -r -P 8 -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
   heads="$(cat_all "$tmp/h"/*.json | jq -s 'from_entries')"
   # An empty answer becomes {} on its own line: bash 3.2 keeps the backslash of an escaped {} default (invalid JSON).
   [ -n "$heads" ] || heads='{}'
@@ -684,8 +702,8 @@ with_heads() {
   fi
   # Compared only where the branch moved past the live commit.
   echo "$list" | jq -r '.[] | select(.repo and .ref and .lastSha and .headSha and .lastSha != .headSha) | "\(.repo) \(.lastSha) \(.ref)"' \
-    | sort -u | xargs -r -P 8 -n 3 bash -c 'githost_pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
-  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | xargs -r -P 8 -n 1 bash -c 'githost_open_prs_of "$1" "$0"' "$tmp/o"
+    | sort -u | tr ' \n' '\000\000' | xargs -0 -r -P 8 -n 3 bash -c 'githost_pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
+  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | tr '\n' '\000' | xargs -0 -r -P 8 -n 1 bash -c 'githost_open_prs_of "$1" "$0"' "$tmp/o"
   pend="$(cat_all "$tmp/p"/*.json | jq -s 'from_entries')"
   opens="$(cat_all "$tmp/o"/*.json | jq -s 'from_entries')"
   rm -rf "$tmp"
@@ -772,7 +790,7 @@ changed_json() {
   # No platform on and set up: nothing was read, so nothing is known to be up to date.
   [ -n "$(active_providers)" ] || die "No platform is on and set up, so nothing was read. See: deploys providers"
   all="$(all_json)" || rc=1
-  local ign="$CONFIG_DIR/ignored.json" ignl=""; [ -f "$ign" ] || echo '[]' > "$ign"
+  local ign="$CONFIG_DIR/ignored.json" ignl=""; [ -f "$ign" ] || echo '[]' 2>/dev/null > "$ign" || true
   # With team mode: what the shared files leave out too, unless this Mac counts it again.
   if team_on; then ignl="$(team_ignored 2>/dev/null)" || ignl=""; fi
   [ -n "$ignl" ] || ignl="$(jq -c . "$ign" 2>/dev/null || echo '[]')"
@@ -821,9 +839,13 @@ watch_line() {
 CI_RULE='($s[0] // {}) as $s | ($r[0] // {}) as $r
   | ([($s.statuses // [])[]
       # Vercel posts its own status ("Deployment was blocked" while auto-deploy is off): not CI.
-      | select((.context // "") | test("^Vercel( |$)") | not) | {name:.context, state:(if .state == "success" then "ok" elif .state == "pending" then "wait" else "bad" end)}]
-     + [($r.check_runs // [])[] | {name, state:(if .status != "completed" then "wait"
-         elif ((.conclusion // "") | IN("success", "neutral", "skipped")) then "ok" else "bad" end)}]) as $all
+      | select((.context // "") | test("^Vercel( |$)|^(deploy/)?[Nn]etlify|^Cloudflare Pages|^[Rr]ender( |$)|^DigitalOcean") | not)
+      | select(($ENV.DEPLOYS_CI_IGNORE // "") == "" or ((.context // "") | test($ENV.DEPLOYS_CI_IGNORE) | not))
+      | {name:.context, state:(if .state == "success" then "ok" elif .state == "pending" then "wait" else "bad" end)}]
+     + [($r.check_runs // [])[] | select((.conclusion // "") != "stale") | {name, state:(if .status != "completed" then "wait"
+         elif ((.conclusion // "") | IN("success", "neutral", "skipped")) then "ok"
+         # Cancelled (a newer run took over) or waiting for an approval: not green yet, but not red either.
+         elif ((.conclusion // "") | IN("cancelled", "action_required")) then "wait" else "bad" end)}]) as $all
   | ($all | map(select(.state == "bad") | .name) | unique) as $bad
   | ($all | map(select(.state == "wait") | .name) | unique) as $wait
   | def names: .[0:5] | join(", ") + (if length > 5 then " …" else "" end);
@@ -852,7 +874,7 @@ ci_of() {  # ci_of <owner/repo> <sha or branch>: the verdict as one line of JSON
     unknown) jq -nc --arg r "$1" '{state:"unknown", final:true, reason:"the CI of \($r) cannot be read (only GitHub and GitLab)"}'; return 0 ;;
   esac
   local t rc=0; t="$(mktemp -d)"
-  gh api "repos/$1/commits/$2/status" > "$t/s" 2>/dev/null || rc=$((rc + 1))
+  gh api "repos/$1/commits/$2/status?per_page=100" > "$t/s" 2>/dev/null || rc=$((rc + 1))
   # Every page: a monorepo matrix can have more than 100 check runs, and a red one on page 2
   # must not read as green. --paginate prints one object per page; they are joined below.
   gh api --paginate "repos/$1/commits/$2/check-runs?per_page=100" > "$t/r" 2>/dev/null || rc=$((rc + 1))
@@ -1183,6 +1205,9 @@ export -f workflow_hits b64d
 AUTOFIX_KEYCHAIN="deploy-center-routine"
 AUTOFIX_STATE="$CONFIG_DIR/autofix.json"
 AUTOFIX_API="${DEPLOYS_ROUTINE_API:-https://api.anthropic.com/v1/claude_code/routines}"
+# The token goes to this address: https only (plain http for this machine and the .test names of the tests).
+api_url_ok() { case "$1" in https://*|http://localhost|http://localhost[:/]*|http://127.0.0.1[:/]*|http://[[]::1[]][:/]*|http://*.test|http://*.test[:/]*) return 0;; esac; return 1; }
+api_url_ok "$AUTOFIX_API" || die "DEPLOYS_ROUTINE_API must be an https address (it receives your token)."
 AUTOFIX_PER_PROJECT="${DEPLOYS_AUTOFIX_PER_PROJECT:-2}"   # fires per project per 24 h
 AUTOFIX_PER_DAY="${DEPLOYS_AUTOFIX_PER_DAY:-6}"           # fires per account per 24 h
 
@@ -1220,8 +1245,8 @@ af_mask() {
     s/-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----.*?-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/[masked private key]/g;
     if ($pem) { $pem = 0 if /-----END [A-Z0-9 ]*PRIVATE KEY/; $_ = ""; next }
     if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY/) { $pem = 1; $_ = "[masked private key]\n"; next }
-    # Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, JWT.
-    s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
+    # Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, Netlify, DigitalOcean, Supabase, SendGrid, Resend, Sentry, Linear, JWT.
+    s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|nfp_[A-Za-z0-9]{8,}|dop_v1_[A-Fa-f0-9]{16,}|sbp_[A-Za-z0-9]{16,}|sb_secret_[A-Za-z0-9_-]{8,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|re_[A-Za-z0-9]{16,}|sntrys_[A-Za-z0-9+\/=_-]{16,}|lin_api_[A-Za-z0-9]{16,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
     # NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret
     # (VERCEL_TOKEN, SECRET_KEY, aws_secret_access_key, DB_PASSWORD, x-api-key, Ocp-Apim-Subscription-Key,
     # AccountKey=, ...).
@@ -1234,9 +1259,9 @@ af_mask() {
     # --token x, --token=x (vercel, npm and most CLIs).
     s/(--(?i:token|password|api-key|secret)(?:=|\s+))[^\s"\x27]+/${1}\[masked]/g;
     # user:password@ in a URL (database URLs).
-    s#(://[^/\s:@]+):[^@\s/]+@#${1}:\[masked]@#g;
+    s#(://[^/\s:@]+):[^\s/]+@#${1}:\[masked]@#g;
     # An email address.
-    s/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/[email]/g'
+    s/\b(?!git@)(?![A-Za-z0-9._%+-]*\@users\.noreply\.github\.com)[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/[email]/g'
 }
 
 # Open (or merged) autofix PRs of one project: gh REST only, branch claude/autofix-<project>-*.
@@ -1254,10 +1279,14 @@ af_fire() {  # af_fire <trigger id> <text file>
   # The token goes into a curl config line: a quote or a line break in it could add directives.
   case "$tok" in *[!A-Za-z0-9._-]*) printf '000\tthe routine token holds characters a token never has'; return;; esac
   body="$(mktemp)"; jq -Rs '{text:.}' < "$2" > "$body"
+  local errf; errf="$(mktemp)"
+  # curl's own stderr (a warning before the answer) is kept apart: the answer stays JSON.
   out="$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | curl -sS -K - --connect-timeout 10 --max-time 60 -X POST \
-    -H "anthropic-version: 2023-06-01" -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
-    -H "Content-Type: application/json" --data @"$body" -w '\n%{http_code}' "$AUTOFIX_API/$1/fire" 2>&1)" || out=$'\n000'
-  rm -f "$body"; code="${out##*$'\n'}"; printf '%s\t%s' "$code" "$(echo "${out%$'\n'*}" | tr '\n' ' ' | cut -c1-300)"
+    -H "anthropic-version: 2023-06-01" -H "anthropic-beta: ${DEPLOYS_ROUTINE_BETA:-experimental-cc-routine-2026-04-01}" \
+    -H "Content-Type: application/json" --data @"$body" -w '\n%{http_code}' "$AUTOFIX_API/$1/fire" 2>"$errf")" || out=$'\n000'
+  code="${out##*$'\n'}"; out="${out%$'\n'*}"
+  [ "$code" != 000 ] || [ -n "$out" ] || out="$(tail -n 1 "$errf")"
+  rm -f "$body" "$errf"; printf '%s\t%s' "$code" "$(echo "$out" | tr '\n' ' ' | cut -c1-300)"
 }
 
 # The text one fire sends: the failure's facts and the end of its build log, masked (af_mask).
@@ -1361,7 +1390,7 @@ job_on() {
       *) m=$(( every / 60 )); [ "$m" -ge 1 ] || m=1; when="*/$m * * * *"
          echo "No launchd here, so nothing was installed. To run it every $m minutes, add this line with crontab -e:" ;;
     esac
-    echo "$when PATH='$(printf '%s' "$PATH" | sed "s/'/'\\\\''/g")' DEPLOYS_LOG_ROTATE=1 /bin/bash '$self'$q >> \"\$HOME/.local/state/deploys-$(basename "$log" .log).log\" 2>&1"
+    echo "$when mkdir -p \"\$HOME/.local/state\" && PATH='$(printf '%s' "$PATH" | sed "s/'/'\\\\''/g")' DEPLOYS_LOG_ROTATE=1 /bin/bash '$self'$q >> \"\$HOME/.local/state/deploys-$(basename "$log" .log).log\" 2>&1"
     return 0
   fi
   plist="$(job_plist "$label")"; mkdir -p "$(dirname "$plist")"
@@ -1392,6 +1421,9 @@ PLIST
     rm -f "$new"; die "The job file for $label came out invalid; the old job is unchanged"
   fi
   launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
+  # bootout works in the background: the next bootstrap fails with "Input/output error" while the
+  # old job is still unloading. Wait (at most ~5 s) until launchd no longer knows it.
+  local w=0; while [ "$w" -lt 25 ] && launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; do sleep 0.2; w=$((w + 1)); done
   [ ! -f "$plist" ] || mv -f "$plist" "$plist.old"
   mv -f "$new" "$plist"
   if ! launchctl bootstrap "gui/$(id -u)" "$plist"; then
@@ -1749,7 +1781,7 @@ scan_run() {  # scan_run <id> <owner/repo> <branch>: one scan, start to PR. Call
   printf '%s\n' "$report" > "$log"
   if [ -z "$report" ]; then
     sc_update "$id" "$(jq -nc --arg e "Claude gave no answer (logged in? run: claude login). $(tail -c 300 "$SCAN_DIR/logs/$id.err" 2>/dev/null)" '{status:"failed", error:$e}')"
-  elif [ -z "$(git -C "$work" status --porcelain)" ]; then
+  elif [ -z "$(git -C "$work" status --porcelain --untracked-files=no)" ] && ! git -C "$work" ls-files -z --others --exclude-standard | grep -zqE '(^|/)(tests?|__tests__|spec)/|[._-](test|spec)\.[A-Za-z]+$|_test\.(go|py)$|^test_.*\.py$'; then
     sc_update "$id" '{"status":"clean","step":"done"}'
     af_notify "Bug scan: $repo looks clean, nothing changed."
   else
@@ -1799,7 +1831,7 @@ scan_start() {  # scan_start <owner/repo> [branch] [<check id>]: checks, then th
   id="$(sc_slug "$repo")-$now"
   sc_edit '.runs = ([{id:$i, repo:$r, base:$b, at:$t, status:"running", step:"start"}] + .runs)[0:50]' --arg i "$id" --arg r "$repo" --arg b "$br" --argjson t "$now"
   if [ -n "${DEPLOYS_SCAN_FOREGROUND:-}" ]; then scan_run "$id" "$repo" "$br" "$fid" >&2
-  else mkdir -p "$SCAN_DIR/logs"; nohup "$0" scan run "$id" "$repo" "$br" "$fid" > "$SCAN_DIR/logs/$id.out" 2>&1 & fi
+  else mkdir -p "$SCAN_DIR/logs"; nohup "$SELF" scan run "$id" "$repo" "$br" "$fid" > "$SCAN_DIR/logs/$id.out" 2>&1 & fi
   echo "$id"
 }
 # A scan whose process is gone (Mac restarted, killed) is not "running" forever, and one over the
@@ -1889,7 +1921,7 @@ check_start() {  # check_start <owner/repo> [branch]: in the background; prints 
   now="$(date +%s)"; id="check-$(sc_slug "$repo")-$now"
   sc_edit '.checks = ([{id:$i, repo:$r, base:$b, at:$t, status:"running"}] + (.checks // []))[0:50]' --arg i "$id" --arg r "$repo" --arg b "$br" --argjson t "$now"
   if [ -n "${DEPLOYS_SCAN_FOREGROUND:-}" ]; then check_run "$id" "$repo" "$br" >&2
-  else mkdir -p "$SCAN_DIR/logs"; nohup "$0" check run "$id" "$repo" "$br" > "$SCAN_DIR/logs/$id.out" 2>&1 & fi
+  else mkdir -p "$SCAN_DIR/logs"; nohup "$SELF" check run "$id" "$repo" "$br" > "$SCAN_DIR/logs/$id.out" 2>&1 & fi
   echo "$id"
 }
 ck_reap() {
@@ -2163,6 +2195,7 @@ revoke_main() {
 # checked before every request. See docs/CLAUDE.md.
 AI_KEYCHAIN="deploy-center-anthropic"
 AI_API="${DEPLOYS_ANTHROPIC_API:-https://api.anthropic.com/v1}"
+api_url_ok "$AI_API" || die "DEPLOYS_ANTHROPIC_API must be an https address (it receives your API key)."
 AI_VERSION="2026-10-21"
 AI_DEFAULT_MODEL="claude-opus-5-5"
 AI_MODELS="claude-opus-5-5 claude-sonnet-5-5 claude-haiku-5-5"
@@ -2403,7 +2436,12 @@ case " ${*:2} " in
 esac
 
 # A missing name is a usage line, not bash's "line 425: 2: project".
-usage_if_short() { [ "$1" -ge "$2" ] || die "Usage: deploys $3"; }
+# An option where the project belongs (`watch --timeout 30m`) counts as missing too.
+ARGV=("$@")
+usage_if_short() {
+  [ "$1" -ge "$2" ] || die "Usage: deploys $3"
+  case "${ARGV[$(($2 - 1))]:-}" in -*) die "Usage: deploys $3" ;; esac
+}
 case "${1:-} ${2:-}" in
   "watch "*)       usage_if_short $# 2 "watch <project>" ;;
   "logs "*)        usage_if_short $# 2 "logs <project> [lines] [--id <deploy>]" ;;
@@ -2551,7 +2589,9 @@ case "${1:-} ${2:-}" in
     while [ $# -gt 0 ]; do
       case "$1" in
         --preview) pv=1;; --wait) wait_=1;;
-        --sha) [ -n "${2:-}" ] || die "Usage: deploys deploy <project> --sha <commit>"; sha="$2"; shift;;
+        --sha) [ -n "${2:-}" ] || die "Usage: deploys deploy <project> --sha <commit>"; sha="$2"; shift
+          case "$sha" in *[!0-9a-fA-F]*|"") die "--sha takes a commit id (7 to 40 hex digits), not \"$sha\"";; esac
+          [ "${#sha}" -ge 7 ] && [ "${#sha}" -le 40 ] || die "--sha takes a commit id (7 to 40 hex digits), not \"$sha\"";;
         *) die "Unknown option $1. Usage: deploys deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force \"reason\"]";;
       esac; shift
     done
@@ -2607,7 +2647,7 @@ case "${1:-} ${2:-}" in
           group_json_out "$count"
           rest=""; [ "$i" -ge "$count" ] || rest="; the rest of the group was not started"
           # 3 is watch's "the platform could not be asked": the deploy itself may be fine.
-          if [ "$wrc" = 3 ]; then echo "${RED}Error:${PLAIN} could not follow $p to the end$rest" >&2; exit 3; fi
+          if [ "$wrc" = 3 ]; then echo "${ERED}Error:${EPLAIN} could not follow $p to the end$rest" >&2; exit 3; fi
           die "$p did not go live$rest"
         fi
       fi
@@ -2757,6 +2797,8 @@ case "${1:-} ${2:-}" in
     for p in $(enabled_providers); do
       o="$("${p}_doctor" 2>/dev/null | tr -d '\n')" || o=""
       case "$o" in '{'*'}') ;; *) continue ;; esac
+      # A provider whose answer is not valid JSON must not make the whole doctor unreadable.
+      printf '%s' "$o" | jq -e . >/dev/null 2>&1 || o="{\"provider\":\"$p\",\"error\":\"doctor answered something that is not JSON\"}"
       pn="$pn,\"$p\":$o"
       # Objects with plain keys (provider, key, tokenOk, error: Netlify, Coolify and others) also go
       # under the provider's name at the top: side by side, the last one would win. Vercel, Render
@@ -2823,7 +2865,7 @@ case "${1:-} ${2:-}" in
       esac; shift
     done
     resolve "$p"; plat="$PLAT"
-    first=1; misses=0; waited=0
+    first=1; misses=0; waited=0; t0=$SECONDS; poll=6
     while :; do
       if [ -n "$maxw" ] && [ "$waited" -ge "$maxw" ]; then
         echo "${ERED}Error:${EPLAIN} $p has not finished after $(watch_took "$waited") (--timeout); it may still go live: deploys watch $p${did:+ $did}" >&2
@@ -2839,7 +2881,7 @@ case "${1:-} ${2:-}" in
         if [ -n "$raw" ]; then printf '%s  (could not read the answer of %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2
         else printf '%s  (could not ask %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2; fi
         [ "$misses" -lt 5 ] || { echo "Error: ${ERED}could not reach $plat; the deploy itself may be fine${EPLAIN}" >&2; exit 3; }
-        sleep 6; waited=$((waited + 6)); continue
+        sleep "$poll"; waited=$((waited + poll)); [ $((SECONDS - t0)) -le "$waited" ] || waited=$((SECONDS - t0)); [ "$waited" -lt 120 ] || poll=15; continue
       fi
       misses=0; IFS=$'\t' read -r id ph st <<<"$s"
       [ "$id" != "none" ] || die "No deploy of $p found"
@@ -2854,7 +2896,7 @@ case "${1:-} ${2:-}" in
         ready) u="$( ("${plat}_url" "$PID") 2>/dev/null || true)"; case "$u" in http*) echo "Live: $u" ;; esac; exit 0 ;;
         failed|canceled) exit 1 ;;
       esac
-      sleep 6; waited=$((waited + 6))
+      sleep "$poll"; waited=$((waited + poll)); [ $((SECONDS - t0)) -le "$waited" ] || waited=$((SECONDS - t0)); [ "$waited" -lt 120 ] || poll=15
     done ;;
 
   "logs "*)
@@ -2896,7 +2938,7 @@ case "${1:-} ${2:-}" in
 
   "ignore "*)
     # Leave a project out of `changed` and `deploy-changed` (again with: ignore <p> --undo).
-    f="$CONFIG_DIR/ignored.json"; [ -f "$f" ] || echo '[]' > "$f"
+    f="$CONFIG_DIR/ignored.json"; [ -f "$f" ] || echo '[]' 2>/dev/null > "$f" || true
     if [ "${2:-}" = "--list" ] || [ -z "${2:-}" ]; then jq -r '.[]' "$f"; exit 0; fi
     # ignore <p> [--undo], --undo before or after the name; <provider>:<name> is the name.
     p=""; undo=""
@@ -3135,7 +3177,7 @@ BASH
     { if is_enabled vercel; then vercel_call "/v6/deployments?limit=100&since=$since" \
         | trig_vercel_rows "$vrate"; fi
       if provider_on render; then
-        roff="$CONFIG_DIR/render-off.json"; [ -f "$roff" ] || echo '{}' > "$roff"
+        roff="$CONFIG_DIR/render-off.json"; [ -f "$roff" ] || echo '{}' 2>/dev/null > "$roff" || true
         # The service list once (the workflow check below reuses it), and eight calls at a time:
         # more at once only meets Render's rate limit.
         svcs="$(render_services 2>/dev/null || echo '[]')"; running=0
@@ -3164,7 +3206,7 @@ BASH
             ( "${p}_json" ) 2>/dev/null | jq -r '.[]? | .repo // empty' 2>/dev/null \
               | while IFS= read -r r; do [ "$(githost_of "$r")" = github ] && echo "$r"; done
           done
-        } | sort -u | xargs -r -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
+        } | sort -u | tr '\n' '\000' | xargs -0 -r -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
         cat_all "$tmp"/*.jsonl
       fi
     } | jq -s '.'
@@ -3235,15 +3277,15 @@ BASH
     # as "rolled back". Redirects are followed (up to 5); with --path a 4xx fails as well.
     # --expect 200 (or 2xx): only that answer is healthy, so a 401 from deployment protection fails
     # too; an expected 3xx is asked without following. --follow is the default now (kept for scripts).
-    die() { echo "${RED}Error:${PLAIN} $*" >&2; exit 3; }
+    die() { echo "${ERED}Error:${EPLAIN} $*" >&2; exit 3; }
     p="$2"; path=""; after=10; norb=""; url=""; expect=""; follow=(-L --max-redirs 5); shift 2
     while [ $# -gt 0 ]; do
       case "$1" in
         --path) path="${2:?Usage: deploys verify <project> --path /health}"; shift ;;
-        --rollback-after) after="${2:-}"; shift ;;
+        --rollback-after) [ $# -ge 2 ] || die "--rollback-after takes seconds. Usage: deploys verify <project> --rollback-after 10"; after="$2"; shift ;;
         --no-rollback) norb=1 ;;
         --url) url="${2:?Usage: deploys verify <project> --url https://…}"; shift ;;
-        --expect) expect="${2:-}"; shift
+        --expect) [ $# -ge 2 ] || die "--expect takes a status like 200 or 2xx"; expect="$2"; shift
           case "$expect" in [1-5][0-9][0-9]|[1-5]xx) ;; *) die "--expect takes a status like 200 or 2xx" ;; esac ;;
         --follow) follow=(-L --max-redirs 3) ;;
         *) die "Unknown option $1. Usage: deploys verify <project> [--path /health] [--expect 200|2xx] [--follow] [--rollback-after 10] [--no-rollback] [--url <address>] [--json]" ;;
@@ -3286,7 +3328,7 @@ BASH
       ccodes=""; cbad=0; cfollow=(${follow[@]+"${follow[@]}"})
       case "$cexp" in 3*) cfollow=() ;; esac
       for i in 1 2 3; do
-        c="$(curl -sS -o /dev/null -w '%{http_code}' ${cfollow[@]+"${cfollow[@]}"} --connect-timeout 10 --max-time 20 -A "DeployCenter (verify)" "$ctarget" 2>/dev/null)" || true
+        c="$(curl -sS -o /dev/null -w '%{http_code}' --proto =http,https --proto-redir =https ${cfollow[@]+"${cfollow[@]}"} --connect-timeout 10 --max-time 20 -A "DeployCenter (verify)" "$ctarget" 2>/dev/null)" || true
         [ -n "$c" ] || c=000
         ccodes="$ccodes${ccodes:+ }$c"
         if [ -n "$cexp" ]; then
@@ -3554,7 +3596,7 @@ BASH
 
   "ai set-key")
     # The user's own Anthropic API key (console.anthropic.com), from stdin, into the keychain.
-    IFS= read -r key || true
+    if [ -t 0 ]; then IFS= read -rs key || true; echo >&2; else IFS= read -r key || true; fi
     # A pasted key often brings a CR or spaces along; anything else that is no key character is refused
     # (it would go into the keychain command line below).
     key="$(printf '%s' "$key" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
@@ -3606,7 +3648,7 @@ BASH
     die "Usage: deploys ai explain|notes|ship|risk|slow <project> [--json] [--lang en|de] | ask <project> --question \"…\" | set-key | forget-key | verify | model [<id>] | cap [<tokens>] | status" ;;
   "autofix set-token")
     # The routine's API token (claude.ai: routine > Trigger > API > Generate token), from stdin.
-    IFS= read -r key || true
+    if [ -t 0 ]; then IFS= read -rs key || true; echo >&2; else IFS= read -r key || true; fi
     # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
     key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
     [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys autofix set-token"
@@ -3619,6 +3661,8 @@ BASH
   "autofix routine")
     if [ -n "${3:-}" ]; then
       case "$3" in trig_*) ;; *) die "A routine id starts with trig_";; esac
+      # It goes into a URL path next to the token: letters and digits only (no /, ? or #).
+      case "${3#trig_}" in ""|*[!A-Za-z0-9]*) die "A routine id is trig_ and then letters and digits only";; esac
       printf '%s' "$3" > "$CONFIG_DIR/autofix-routine"; echo "Autofix routine set to $3"
     else r="$(af_routine)"; echo "${r:-none}"; fi ;;
   "autofix prompt")
@@ -3802,7 +3846,7 @@ BASH
     declare -F gitlab_token >/dev/null || die "GitLab needs lib/githost.sh next to deploys"
     case "${2:-}" in
       set-token)
-        IFS= read -r key || true
+        if [ -t 0 ]; then IFS= read -rs key || true; echo >&2; else IFS= read -r key || true; fi
         # A token copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
         key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
         [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys gitlab set-token"
