@@ -47,3 +47,43 @@
     pre.appendChild(b);
   });
 })();
+
+// Search on the guides, blog and 404 pages: the index the docs search reads (/docs/search-index.json),
+// which also lists the guides and the blog. Loaded on first use; nothing is sent anywhere.
+(function () {
+  var q = document.querySelector('input[data-site-search]'), list = document.getElementById('site-results');
+  if (!q || !list) return;
+  q.closest('.site-search').hidden = false;   // shown only when this script runs
+  var index = null, loading = null;
+  function load() {
+    if (!loading) {
+      loading = fetch('/docs/search-index.json').then(function (r) { return r.json(); }).then(function (d) {
+        index = d.map(function (e) { return { e: e, k: (e.p + ' ' + e.h + ' ' + e.t).toLowerCase(), p: e.p.toLowerCase() }; });
+      }).catch(function () { index = []; });
+    }
+    return loading;
+  }
+  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function render() {
+    var terms = q.value.toLowerCase().split(/\s+/).filter(Boolean), found = [];
+    if (!terms.length || !index) { list.hidden = true; list.innerHTML = ''; return; }
+    index.forEach(function (x) {
+      var score = 0;
+      for (var i = 0; i < terms.length; i++) {
+        if (x.k.indexOf(terms[i]) < 0) return;
+        score += x.p.indexOf(terms[i]) >= 0 ? 5 : 1;
+      }
+      found.push({ e: x.e, s: score + (x.e.h ? 0 : 2) });
+    });
+    found.sort(function (a, b) { return b.s - a.s; });
+    found = found.slice(0, 8);
+    list.innerHTML = found.length ? found.map(function (r) {
+      var title = r.e.h ? r.e.p + ' › ' + r.e.h : r.e.p;
+      return '<li><a href="' + esc(r.e.u) + '">' + esc(title) + '</a><small>' + esc(r.e.t.slice(0, 120)) + '</small></li>';
+    }).join('') : '<li class="empty">No results for \u201c' + esc(q.value.trim()) + '\u201d</li>';
+    list.hidden = false;
+  }
+  q.addEventListener('focus', load);
+  q.addEventListener('input', function () { load().then(render); });
+  q.addEventListener('keydown', function (e) { if (e.key === 'Escape') { q.value = ''; render(); } });
+})();

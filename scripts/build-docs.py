@@ -715,7 +715,41 @@ def search_index(pages):
                 continue
             entries.append({"p": p.title if p.slug else "Docs", "h": head or "", "u": p.url + (f"#{hid}" if hid else ""),
                             "t": text[:600]})
-    return entries
+    return entries + site_entries()
+
+
+def site_entries():
+    """The hand-written pages (guides, blog, calculator, Claude Code page) in the same index, so the
+    search on the guides, blog and 404 pages (site/js/site.js) finds them too: title, description and
+    the h2 headings as text."""
+    entries = []
+    for sub in ("guides", "blog"):
+        base = os.path.join(SITE, sub)
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            path = os.path.join(base, name, "index.html")
+            if os.path.isfile(path):
+                entries.append(site_entry(path, f"/{sub}/{name}/"))
+    for name in ("vercel-build-cost-calculator", "claude-code"):
+        path = os.path.join(SITE, name, "index.html")
+        if os.path.isfile(path):
+            entries.append(site_entry(path, f"/{name}/"))
+    return [e for e in entries if e]
+
+
+def site_entry(path, url):
+    text = open(path, encoding="utf-8").read()
+    t = re.search(r"<title>(.*?)</title>", text, re.S)
+    d = re.search(r'<meta name="description" content="([^"]*)"', text)
+    if not t:
+        return None
+    title = re.sub(r"\s*[·|]\s*Deploy Center\s*$", "", html.unescape(t.group(1))).strip()
+    art = re.search(r"<article.*?</article>", text, re.S)
+    heads = [html.unescape(re.sub(r"<[^>]+>", "", h)).strip()
+             for h in re.findall(r"<h2[^>]*>(.*?)</h2>", art.group(0) if art else "", re.S)]
+    body = " ".join([html.unescape(d.group(1)) if d else ""] + heads)
+    return {"p": title, "h": "", "u": url, "t": re.sub(r"\s+", " ", body).strip()[:600]}
 
 
 def sync_hand_dates():
