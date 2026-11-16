@@ -961,10 +961,11 @@ expect "ai: usage is tallied per month" "$(jq -r --arg m "$(date -u +%Y-%m)" '.[
 : > "$CALLS"; airun ai_run notes web --lang de >/dev/null
 expect "ai notes: German, bot commits counted not listed, no emails" \
   "$(jq -r .system "$AIBODY" | grep -c 'Write in German'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'bump x'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Dependency updates: 1'):$(grep -c 'ops@example.org' "$AIBODY")" "1:0:1:0"
-: > "$CALLS"; airun ai_run notes web --lang fr >/dev/null
+: > "$CALLS"; cp "$DEPLOYS_CONFIG/ai-usage.json" "$tmp/ai-usage.lang"; airun ai_run notes web --lang fr >/dev/null
 expect "ai notes: --lang fr writes in French" "$(jq -r .system "$AIBODY" | grep -c 'Write in French')" "1"
 : > "$CALLS"; airun ai_run notes web --lang xx >/dev/null
 expect "ai notes: an unknown two-letter code names its ISO code" "$(jq -r .system "$AIBODY" | grep -c 'Write in the language with the ISO 639-1 code xx')" "1"
+cp "$tmp/ai-usage.lang" "$DEPLOYS_CONFIG/ai-usage.json"
 airun ai_run ship web >/dev/null
 expect "ai ship: diff stats, risky files and auto-deploy go in" \
   "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Diff: 2 commits, 3 files, +40 -2'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'prisma/migrations'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'auto-deploy: off')" "1:1:1"
@@ -1250,12 +1251,13 @@ expect "scan: a run over the time limit is reaped" "$(jq -r '.runs[0].status' "$
 echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":999999}]}' > "$SCAN_STATE"; sc_reap
 expect "scan: a run whose process is gone is reaped" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
 # A live scan: a process whose command line says "scan run", as nohup "$SELF" scan run does.
-bash -c 'sleep 60' scan run &
+bash -c 'perl -e "sleep 60"; :' scan run &
 livepid=$!
+perl -e 'select(undef,undef,undef,0.5)'   # until the new process has its own command line (sleep is a stub here)
 echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$livepid"'}]}' > "$SCAN_STATE"; sc_reap
 expect "scan: a live run is left alone" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "running"
 # A pid that is alive but is not a scan (the number was reused after a restart): the run is over, the process is left alone.
-sleep 60 &
+perl -e 'sleep 60' &
 otherpid=$!
 echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$otherpid"'}]}' > "$SCAN_STATE"; sc_reap
 expect "scan: a reused pid is no running scan" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"

@@ -1936,7 +1936,7 @@ scan_start() {  # scan_start <owner/repo> [branch] [<check id>]: checks, then th
 # time limit is ended. Writes only when something changes.
 # Whether this pid is a scan of ours: after a restart the number can belong to any other process, which is not
 # "running" and must never be killed. Its command line says "scan run" (nohup "$SELF" scan run <id> ...).
-sc_pid_is_scan() { ps -o command= -p "$1" 2>/dev/null | grep -q 'scan run'; }
+sc_pid_is_scan() { local c; c="$(ps -o command= -p "$1" 2>/dev/null || true)"; case "$c" in *"scan run"*) return 0 ;; esac; return 1; }
 sc_reap() {
   local now r id pid dead=""; now="$(date +%s)"
   while IFS=$'\t' read -r id pid r; do
