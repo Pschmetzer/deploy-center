@@ -19,8 +19,9 @@ given, ask which one and stop.
    **Stop and wait for the answer.** Running this command is not the confirmation. Only a clear yes
    in the user's next message is.
 3. On yes, roll back exactly this one project:
-   - Vercel: `deploys vercel rollback $ARGUMENTS`
-   - Render: `deploys render rollback $ARGUMENTS`
+   `deploys <platform> rollback $ARGUMENTS`, with the platform from the history (vercel, render,
+   netlify, cloudflare, amplify, digitalocean, coolify). A platform that cannot roll back says so:
+   then change nothing and tell the user.
    Claude Code asks for permission for this command; that is on purpose.
 4. Report the result in one line, then `deploys status --json` for its state.
 

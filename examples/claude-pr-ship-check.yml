@@ -58,7 +58,7 @@ jobs:
       # What is merged but not live, for every project deploys can see. Report only: deploy stays "false".
       - name: Projects with changes (deploys changed --json)
         id: changed
-        uses: Pschmetzer/deploy-center/integrations/action@v0.9.1   # a release tag; or a full commit SHA
+        uses: Pschmetzer/deploy-center/integrations/action@v0.9.1   # a release tag; or a full commit SHA (the `repo` input needs a newer release)
         with:
           deploy: "false"
           vercel-token: ${{ secrets.VERCEL_TOKEN }}

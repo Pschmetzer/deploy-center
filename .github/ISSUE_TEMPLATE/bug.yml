@@ -38,6 +38,11 @@ body:
         - VS Code / Cursor extension
         - Raycast extension
         - MCP server
+        - Alfred workflow
+        - Digest / notify / status page / badge
+        - Docker image
+        - pre-push hook
+        - Installer
         - Claude Code plugin
         - GitHub Action
         - Website / docs
@@ -48,10 +53,8 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics
-      description: Settings → "Copy diagnostics". It holds versions only, no names.
+      description: 'For the app or the CLI, Settings → "Copy diagnostics" (versions only, no names). For the website, the Action or an add-on: your macOS or iOS version and the version of the add-on.'
       render: text
-    validations:
-      required: true
   - type: textarea
     id: error
     attributes:

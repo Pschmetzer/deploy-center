@@ -48,7 +48,7 @@ cat > "$tmp/bin/deploys" <<SH
 #!/bin/bash
 [ -n "\${FAKE_SLEEP:-}" ] && [ "\$1" = vercel ] && sleep "\$FAKE_SLEEP"
 [ -n "\${FAKE_SLEEP_ALL:-}" ] && sleep "\$FAKE_SLEEP_ALL"
-[ -n "\${MCP_CALLS:-}" ] && echo "\$*" >> "\$MCP_CALLS"
+[ -n "\${FAKE_MCP_CALLS:-}" ] && echo "\$*" >> "\$FAKE_MCP_CALLS"
 case "\$*" in
   "vercel list --json"|"vercel json") cat "$tmp/vercel.json" ;;
   "render list --json"|"render json") cat "$tmp/render.json" ;;
@@ -206,10 +206,10 @@ RENDER_API_KEY=x badge/badge.sh "$tmp/b" >/dev/null
 expect "one badge per project" "$(cd "$tmp/b" && echo *.svg)" "api.svg app-web.svg site.svg"
 contains "badge: days and commits" "$(cat "$tmp/b/app-web.svg")" "3 d ago · 4 commits waiting"
 contains "badge: Render shows the live commit's age, and a failed newest build" "$(cat "$tmp/b/api.svg")" "1 d ago · build failed"
-contains "badge: a failed build is red" "$(cat "$tmp/b/api.svg")" 'fill="#e05d44'
+contains "badge: a failed build is red" "$(cat "$tmp/b/api.svg")" 'fill="#c0392b'
 echo '[{"name":"busy","changed":false,"lastAt":1,"building":true}]' | badge/badge.sh "$tmp/bb" - >/dev/null
 contains "badge: a running build is blue, not up to date" "$(cat "$tmp/bb/busy.svg")" 'building'
-contains "badge: up to date is green" "$(cat "$tmp/b/site.svg")" 'fill="#4c1"'
+contains "badge: up to date is green" "$(cat "$tmp/b/site.svg")" 'fill="#2e7d32"'
 echo '[{"name":"web","platform":"vercel","changed":false,"lastAt":0},{"name":"web","platform":"netlify","changed":false,"lastAt":0},{"name":"solo","platform":"render","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/tw" - >/dev/null
 expect "badge: a name on two platforms gets one badge each" "$(cd "$tmp/tw" && echo *.svg)" "netlify-web.svg solo.svg vercel-web.svg"
 echo '[{"name":"a<b>&\"c","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/e" - >/dev/null
@@ -659,7 +659,7 @@ hk "git push" >/dev/null
 expect "claude-code hook: never deploys" "$(cat "$tmp/deploy.log" 2>/dev/null | wc -l)" "$deploy_calls_before"
 # --- the MCP server (needs node and `npm ci` in mcp/) ---
 if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
-  DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
+  DEPLOYS_BIN="$tmp/bin/deploys" FAKE_MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
   # 20.7: a length no other test sleeps, so only this test's child can match.
   [ -n "$(stray_sleep 20.7)" ] && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
 else

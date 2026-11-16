@@ -159,7 +159,8 @@ runs:
           # the log only when it fails.
           prefix="$RUNNER_TEMP/vercel-cli"
           if [ -x "$prefix/node_modules/.bin/vercel" ]; then echo "vercel $CLI_VERSION from the cache"
-          elif ! npm install --prefix "$prefix" --no-fund --no-audit "vercel@$CLI_VERSION" > "$RUNNER_TEMP/npm.log" 2>&1; then
+          # env -u: the install scripts of vercel's dependencies must not see the deploy token.
+          elif ! env -u VERCEL_TOKEN npm install --prefix "$prefix" --no-fund --no-audit "vercel@$CLI_VERSION" > "$RUNNER_TEMP/npm.log" 2>&1; then
             cat "$RUNNER_TEMP/npm.log"; echo "::error::could not install vercel@$CLI_VERSION"; exit 1
           fi
           echo "$prefix/node_modules/.bin" >> "$GITHUB_PATH"
@@ -320,14 +321,16 @@ runs:
             "$DEPLOYS" watch "$plat:$name" ${id:+"$id"} </dev/null & pid=$!
             # Looked at once a second; past the deadline the watch is stopped.
             while kill -0 "$pid" 2>/dev/null; do
-              [ "$SECONDS" -lt "$end" ] || { kill "$pid" 2>/dev/null; break; }
+              [ "$SECONDS" -lt "$end" ] || { kids="$(pgrep -P "$pid" 2>/dev/null || true)"; kill "$pid" 2>/dev/null; [ -z "$kids" ] || kill $kids 2>/dev/null; break; }
               sleep 1
             done
             wait "$pid"; rc=$?
             case "$rc" in 0) st=ready ;; 1) st=failed ;; 3) st=unknown ;; *) st=timeout ;; esac
           fi
           echo "$plat $name: $st"
-          states="$(echo "$states" | jq -c --arg k "$name" --arg v "$st" '. + {($k): $v}')"
+          # Keyed by name; two projects of the same name on two platforms get "platform:name".
+          key="$name"; [ "$(echo "$states" | jq --arg k "$name" 'has($k)')" = true ] && key="$plat:$name"
+          states="$(echo "$states" | jq -c --arg k "$key" --arg v "$st" '. + {($k): $v}')"
         done < <(jq -r '.[] | [.platform, .name, (.id // "")] | @tsv' "$f")
         bad="$(echo "$states" | jq -r 'to_entries | map(select(.value == "failed") | .key) | join(",")')"
         live="$(echo "$states" | jq -r 'if (to_entries | all(.value == "ready")) then "true" else "false" end')"

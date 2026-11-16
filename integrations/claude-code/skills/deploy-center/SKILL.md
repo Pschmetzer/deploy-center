@@ -8,7 +8,7 @@ allowed-tools: Bash(deploys changed *) Bash(deploys status *) Bash(deploys logs 
 # Deploy Center
 
 The user deploys with Deploy Center (the Mac app and its `deploys` CLI). Git auto-deploy is off on
-their Vercel and Render projects, so **a push does not go live**. A person decides what ships and
+their projects (Vercel, Render and the other platforms deploys knows), so **a push does not go live**. A person decides what ships and
 when. Your job is to write and fix code, say what is waiting, and deploy only when asked.
 
 If `deploys` is not installed (`command -v deploys` finds nothing), say so once and point to

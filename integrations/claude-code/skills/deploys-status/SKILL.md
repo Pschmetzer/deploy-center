@@ -1,5 +1,5 @@
 ---
-description: Show what is building, live or failed on Vercel and Render (deploys status). Read-only.
+description: Show what is building, live or failed on every platform deploys knows (Vercel, Render, Netlify, Cloudflare Pages, Amplify, DigitalOcean, Coolify, deploy hooks) (deploys status). Read-only.
 disable-model-invocation: true
 allowed-tools: Bash(deploys status *)
 ---
