@@ -10,6 +10,7 @@ Passt bestens zu Claude Code: Der Agent pusht, du entscheidest, was live geht.</
   <a href="https://github.com/Pschmetzer/deploy-center/releases/latest"><img alt="Neueste Version" src="https://img.shields.io/github/v/release/Pschmetzer/deploy-center?label=release"></a>
   <img alt="macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-black?logo=apple">
   <a href="#installieren"><img alt="Homebrew Cask" src="https://img.shields.io/badge/brew-cask-orange?logo=homebrew&logoColor=white"></a>
+  <a href="https://github.com/Pschmetzer/deploy-center/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Pschmetzer/deploy-center/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
