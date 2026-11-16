@@ -60,23 +60,30 @@ hooks_install() {  # hooks_install <repo>
   mkdir -p "$d" || die "Could not make $d."
   if [ -e "$d/pre-push" ] && ! hooks_ours "$d/pre-push"; then
     [ ! -e "$d/pre-push.local" ] || die "$d has a pre-push and a pre-push.local already: nothing was changed. Move one of them away first."
-    mv "$d/pre-push" "$d/pre-push.local" || die "Could not move the old pre-push aside."
-    echo "The pre-push that was there is now pre-push.local and runs first."
   fi
-  cp "$src" "$d/pre-push.deploys" && chmod +x "$d/pre-push.deploys" || die "Could not copy the hook to $d."
-  cat > "$d/pre-push" <<HOOK || die "Could not write $d/pre-push."
+  # Everything new is written first; the old hook is only moved aside once that worked, so a full
+  # disk or a missing right never leaves the repo without a pre-push.
+  cp "$src" "$d/pre-push.deploys.new" && chmod +x "$d/pre-push.deploys.new" || { rm -f "$d/pre-push.deploys.new"; die "Could not copy the hook to $d."; }
+  local q_self; q_self="$(printf '%q' "$SELF")"
+  cat > "$d/pre-push.new" <<HOOK || { rm -f "$d/pre-push.new" "$d/pre-push.deploys.new"; die "Could not write $d/pre-push."; }
 #!/bin/bash
 # $HOOKS_MARK: written by \`deploys hooks install\`, removed by \`deploys hooks uninstall\`.
 # Runs pre-push.local (the hook that was here before) and then pre-push.deploys, both with the
 # refs git hands on stdin. A "no" from pre-push.local stops the push; the deploys check only warns
 # (unless git config deploys.prepush.block true).
+deploys_default=$q_self
 here="\$(cd "\$(dirname "\$0")" && pwd)"
 refs="\$(cat)"; [ -z "\$refs" ] || refs="\$refs"\$'\\n'
 if [ -x "\$here/pre-push.local" ]; then printf '%s' "\$refs" | "\$here/pre-push.local" "\$@" || exit \$?; fi
 [ -x "\$here/pre-push.deploys" ] || exit 0
-printf '%s' "\$refs" | DEPLOYS="\${DEPLOYS:-$SELF}" "\$here/pre-push.deploys" "\$@"
+printf '%s' "\$refs" | DEPLOYS="\${DEPLOYS:-\$deploys_default}" "\$here/pre-push.deploys" "\$@"
 HOOK
-  chmod +x "$d/pre-push"
+  chmod +x "$d/pre-push.new"
+  if [ -e "$d/pre-push" ] && ! hooks_ours "$d/pre-push"; then
+    mv "$d/pre-push" "$d/pre-push.local" || { rm -f "$d/pre-push.new" "$d/pre-push.deploys.new"; die "Could not move the old pre-push aside."; }
+    echo "The pre-push that was there is now pre-push.local and runs first."
+  fi
+  mv "$d/pre-push.deploys.new" "$d/pre-push.deploys" && mv "$d/pre-push.new" "$d/pre-push" || die "Could not install the hook in $d."
   echo "Installed: before each push, $repo says which builds the push would start ($d/pre-push)."
 }
 

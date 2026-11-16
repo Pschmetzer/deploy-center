@@ -518,7 +518,7 @@ netlify_url() {
 # The token on stdin. Tried against /user first, saved only when Netlify takes it.
 netlify_set_key() {
   local key=""
-  IFS= read -r key || true
+  if [ -t 0 ]; then IFS= read -rs key || true; echo >&2; else IFS= read -r key || true; fi
   # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
   key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys netlify set-key"

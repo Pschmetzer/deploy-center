@@ -442,7 +442,7 @@ cloudflare_url() {
 # Read from stdin, tried first, saved only when Cloudflare says it is active.
 cloudflare_set_key() {
   local key st
-  IFS= read -r key || true
+  if [ -t 0 ]; then IFS= read -rs key || true; echo >&2; else IFS= read -r key || true; fi
   key="$(printf '%s' "$key" | tr -d '[:space:]')"
   [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys cloudflare set-key"
   case "$key" in *\'*|*\"*|*\\*) die "That does not look like a Cloudflare API token";; esac

@@ -524,7 +524,7 @@ coolify_set_url() {
   d="$(coolify_config_dir)"; f="$d/coolify.json"; mkdir -p "$d"
   [ -s "$f" ] || echo '{}' > "$f"
   # The allowance belongs to one address: a new one starts without it.
-  tmp="$(mktemp)"; jq --arg u "$u" --argjson a "$allow" \
+  tmp="$(mktemp "$f.XXXXXX")"; jq --arg u "$u" --argjson a "$allow" \
     '(if $a then .allowHttp = true elif ((.url // "") != $u) then del(.allowHttp) else . end) | .url = $u' "$f" > "$tmp" && mv "$tmp" "$f"
   if [ "$allow" = true ]; then echo "Coolify instance set to $u (plain http allowed)"; else echo "Coolify instance set to $u"; fi
 }
@@ -539,7 +539,7 @@ coolify_cli_set_url() { coolify_set_url "$@"; }
 # The token on stdin. Tried against the instance first, saved only when Coolify takes it.
 coolify_set_key() {
   local key=""
-  IFS= read -r key || true
+  if [ -t 0 ]; then IFS= read -rs key || true; echo >&2; else IFS= read -r key || true; fi
   # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
   key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys coolify set-key"

@@ -31,6 +31,11 @@ if [ -f site/index.html ]; then
     grep -qF "$pat" site/index.html || die "site/index.html has no '$pat'; set the version there by hand"
   done
 fi
+# The same for the version files of the integrations: a stop halfway must not leave a half bump.
+for jf in integrations/mcp/package.json integrations/claude-code/.claude-plugin/plugin.json; do
+  [ ! -f "$jf" ] || grep -q '"version": "[0-9.]*"' "$jf" || die "$jf has no \"version\""
+done
+cur_re="${cur//./\\.}"   # the dots of the old version are no wildcards in sed
 
 tmp="$(mktemp)"
 awk -v v="$new" '!done && /^## Unreleased/ { print; print ""; print "## " v; done=1; next } { print }' CHANGELOG.md > "$tmp"
@@ -38,7 +43,7 @@ mv "$tmp" CHANGELOG.md
 echo "$new" > VERSION
 # The site's home page names the version twice (the line under the download button and the JSON-LD).
 if [ -f site/index.html ]; then
-  sed -i.bak -e "s/Version $cur ·/Version $new ·/" -e "s/\"softwareVersion\": \"$cur\"/\"softwareVersion\": \"$new\"/" site/index.html
+  sed -i.bak -e "s/Version $cur_re ·/Version $new ·/" -e "s/\"softwareVersion\": \"$cur_re\"/\"softwareVersion\": \"$new\"/" site/index.html
   rm -f site/index.html.bak
 fi
 # The MCP server and the Claude Code plugin ship inside the app, so they carry its version.

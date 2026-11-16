@@ -135,10 +135,14 @@ vercel_projects() {
 # Write down where a project deploys from. The first time auto-deploy was turned off (offAt)
 # is kept: a later run must not move the line costs and triggers measure from.
 remember_repo() {
-  local entry="$1" tmp
-  tmp="$(mktemp)"
+  local entry="$1" tmp lk=""
+  # Same folder as the file (a rename, never a copy across volumes) and one writer at a time: the
+  # guard and a manual `off --all` must not lose each other's offAt.
+  tmp="$(mktemp "$REPOS.XXXXXX")"
+  if type file_lock >/dev/null 2>&1 && file_lock "$REPOS"; then lk=1; fi
   jq --argjson e "$entry" 'reduce ($e | to_entries[] | select(.value.repo != null)) as $x (.;
-      .[$x.key] = ($x.value + (if .[$x.key].offAt then {offAt:.[$x.key].offAt} else {} end)))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
+      .[$x.key] = ($x.value + (if .[$x.key].offAt then {offAt:.[$x.key].offAt} else {} end)))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS" || rm -f "$tmp"
+  [ -z "$lk" ] || file_unlock "$REPOS"
 }
 
 vercel_off_one() {
@@ -566,13 +570,13 @@ vercel_cli_map() {
     local glh glp pid
     read -r glh glp < <(githost_split "$r"); r="$glh/$glp"
     pid="$(gitlab_project_id "$r" || true)"; [ -n "$pid" ] || die "GitLab project $r not found (is glab logged in, or GITLAB_TOKEN set?)"
-    tmp="$(mktemp)"
+    tmp="$(mktemp "$REPOS.XXXXXX")"
     jq --arg p "$p" --arg r "$r" --arg ref "$ref" --argjson pid "$pid" \
       '.[$p] = ({type:"gitlab", repo:$r, projectId:$pid, ref:$ref} + (if .[$p].offAt then {offAt:.[$p].offAt} else {} end))' "$REPOS" > "$tmp" && mv "$tmp" "$REPOS"
     echo "Vercel: $p deploys from $r ($ref)"; return 0
   fi
   type -P gh >/dev/null 2>&1 && rid="$(gh api "repos/$r" --jq .id 2>/dev/null || true)"
-  tmp="$(mktemp)"
+  tmp="$(mktemp "$REPOS.XXXXXX")"
   # The whole entry is replaced: an old repoId would win over the new repo name.
   jq --arg p "$p" --arg o "${r%%/*}" --arg n "${r#*/}" --arg ref "$ref" --arg rid "$rid" \
     '.[$p] = ({org:$o, repo:$n, ref:$ref} + (if .[$p].offAt then {offAt:.[$p].offAt} else {} end)

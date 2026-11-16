@@ -6,35 +6,92 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "$schema": { "type": "string" },
-    "version": { "const": 1, "description": "The format of this file. Only 1 exists." },
-    "approvals": { "$ref": "#/$defs/approvals", "description": "Default for every project that deploys from this repo." },
-    "health": { "$ref": "#/$defs/health", "description": "Default health path for every project that deploys from this repo." },
-    "window": { "$ref": "#/$defs/window", "description": "Default deploy window for every project that deploys from this repo." },
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "description": "The format of this file. Only 1 exists."
+    },
+    "approvals": {
+      "$ref": "#/$defs/approvals",
+      "description": "Default for every project that deploys from this repo."
+    },
+    "health": {
+      "$ref": "#/$defs/health",
+      "description": "Default health path for every project that deploys from this repo."
+    },
+    "window": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/windowOne"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/windowOne"
+          },
+          "minItems": 1
+        }
+      ],
+      "description": "Default deploy window for every project that deploys from this repo. A list of windows: any one open is enough."
+    },
     "projects": {
       "type": "object",
       "description": "Per project (the Vercel project or Render service name). A project named here deploys from this repo unless it says otherwise.",
-      "propertyNames": { "$ref": "#/$defs/name" },
-      "additionalProperties": { "$ref": "#/$defs/project" }
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/project"
+      }
     },
     "ignored": {
       "type": "array",
       "description": "Projects left out of `deploys changed` and `deploy-changed` (a Mac can count one again: deploys ignore <p> --undo).",
-      "items": { "$ref": "#/$defs/name" },
+      "items": {
+        "$ref": "#/$defs/name"
+      },
       "uniqueItems": true
     },
     "groups": {
       "type": "object",
       "description": "Projects deployed together, in order: `deploys deploy <group>` starts each one when the one before is live (backend before frontend).",
-      "propertyNames": { "$ref": "#/$defs/name" },
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
       "additionalProperties": {
         "oneOf": [
-          { "type": "array", "items": { "$ref": "#/$defs/name" }, "minItems": 1 },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/name"
+            },
+            "minItems": 1
+          },
           {
             "type": "object",
-            "required": ["order"],
+            "required": [
+              "order"
+            ],
             "additionalProperties": false,
-            "properties": { "order": { "type": "array", "items": { "$ref": "#/$defs/name" }, "minItems": 1 } }
+            "properties": {
+              "order": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/name"
+                },
+                "minItems": 1
+              },
+              "checks": {
+                "type": "boolean",
+                "description": "Run each member's health checks once it is live (and roll it back when one fails)."
+              },
+              "stopOnFail": {
+                "type": "boolean",
+                "description": "A failed check stops the rest of the group."
+              }
+            }
           }
         ]
       }
@@ -42,12 +99,40 @@
     "observers": {
       "type": "array",
       "description": "GitHub logins that may look but not deploy. Joined across all files and this Mac's overrides; a Mac cannot take a name off.",
-      "items": { "type": "string", "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$" },
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$"
+          },
+          {
+            "type": "object",
+            "required": [
+              "login"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "login": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$"
+              },
+              "until": {
+                "type": "string",
+                "description": "A day (YYYY-MM-DD, counts to its end in UTC) or a full ISO time."
+              }
+            }
+          }
+        ]
+      },
       "uniqueItems": true
     }
   },
   "$defs": {
-    "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
     "approvals": {
       "type": "integer",
       "minimum": 0,
@@ -59,32 +144,125 @@
       "pattern": "^/",
       "description": "Path checked after a deploy, e.g. /api/health."
     },
-    "window": {
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "platform": {
+          "enum": [
+            "vercel",
+            "render"
+          ]
+        },
+        "repo": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+          "description": "owner/name; default: the repo this file is in."
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The production branch."
+        },
+        "health": {
+          "$ref": "#/$defs/health"
+        },
+        "window": {
+          "$ref": "#/$defs/window"
+        },
+        "approvals": {
+          "$ref": "#/$defs/approvals"
+        },
+        "ignored": {
+          "type": "boolean"
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Paths asked after a deploy (deploys verify); each may name the status it expects.",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^/"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "pattern": "^/"
+                  },
+                  "expect": {
+                    "type": "string",
+                    "pattern": "^([1-5][0-9][0-9]|[1-5]xx)$"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "windowOne": {
       "type": "object",
       "description": "When production deploys are allowed. ~/.config/deploys/window.json on a Mac replaces it.",
       "properties": {
         "days": {
           "type": "array",
-          "items": { "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
+          "items": {
+            "enum": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ]
+          },
           "uniqueItems": true
         },
-        "from": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
-        "to": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
-        "tz": { "type": "string", "description": "An IANA time zone, e.g. Europe/Berlin. Default UTC." }
+        "from": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "tz": {
+          "type": "string",
+          "description": "An IANA time zone, e.g. Europe/Berlin. Without it the time zone of the machine that checks counts, so set it in a shared file."
+        },
+        "dates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "description": "Only on these days (YYYY-MM-DD)."
+        }
       }
     },
-    "project": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "platform": { "enum": ["vercel", "render"] },
-        "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "description": "owner/name; default: the repo this file is in." },
-        "branch": { "type": "string", "minLength": 1, "description": "The production branch." },
-        "health": { "$ref": "#/$defs/health" },
-        "window": { "$ref": "#/$defs/window" },
-        "approvals": { "$ref": "#/$defs/approvals" },
-        "ignored": { "type": "boolean" }
-      }
+    "window": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/windowOne"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/windowOne"
+          },
+          "minItems": 1
+        }
+      ],
+      "description": "When production deploys are allowed. ~/.config/deploys/window.json on a Mac replaces it."
     }
   }
 }
