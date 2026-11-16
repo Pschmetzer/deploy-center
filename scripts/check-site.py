@@ -27,6 +27,7 @@ class Page(HTMLParser):
         self.links, self.ids, self.meta, self.ld = [], set(), {}, []
         self.title, self._in_title, self._in_ld, self._buf = "", False, False, ""
         self.lang, self.h1, self.imgs = None, 0, []
+        self.alts = {}   # hreflang -> href of <link rel="alternate" hreflang=...>
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
@@ -45,6 +46,8 @@ class Page(HTMLParser):
             self.links.append(a["href"])
         if tag in ("img", "script", "source") and a.get("src"):
             self.links.append(a["src"])
+        if tag == "link" and "alternate" in rels and a.get("hreflang"):
+            self.alts[a["hreflang"]] = a.get("href", "")
         if tag == "link" and "canonical" in rels:
             self.meta["canonical"] = a.get("href", "")
         if tag == "meta":
@@ -154,6 +157,20 @@ for loc in locs:
 for p, pg in pages.items():
     if not pg.meta.get("robots", "").startswith("noindex") and pg.meta.get("canonical") not in locs:
         problems.append(f"{rel(p)}: canonical {pg.meta.get('canonical')} is not in sitemap.xml")
+
+# hreflang pairs point at each other: every alternate exists, is indexable, and names this page back
+by_canonical = {pg.meta.get("canonical"): (p, pg) for p, pg in pages.items() if pg.meta.get("canonical")}
+for p, pg in pages.items():
+    for lang, href in pg.alts.items():
+        if href == pg.meta.get("canonical"):
+            continue
+        other = by_canonical.get(href)
+        if not other:
+            problems.append(f"{rel(p)}: hreflang {lang} {href} is not the canonical of a page")
+        elif pg.meta.get("canonical") not in other[1].alts.values():
+            problems.append(f"{rel(p)}: hreflang {lang} {href} does not name this page back")
+    if pg.alts and pg.meta.get("canonical") not in pg.alts.values():
+        problems.append(f"{rel(p)}: hreflang list does not include the page itself")
 
 for d, _, files in os.walk(ROOT):
     for f in files:

@@ -46,6 +46,7 @@
 
 - [Deploy Center + Claude Code](https://deploycenter.app/claude-code/): Let the agent push, you decide what ships.
 - [Build cost calculator](https://deploycenter.app/vercel-build-cost-calculator/): What auto-deploy costs a month, and what deploying by hand would cost.
+- [Vercel-Build-Kosten-Rechner (Deutsch)](https://deploycenter.app/de/vercel-build-kosten-rechner/): The calculator in German.
 - [AI coding agents and your build bill](https://deploycenter.app/blog/ai-coding-agents-build-bill/): Your agent pushes 40 times. You deploy once.
 
 ## Optional

@@ -731,7 +731,7 @@ def site_entries():
             path = os.path.join(base, name, "index.html")
             if os.path.isfile(path):
                 entries.append(site_entry(path, f"/{sub}/{name}/"))
-    for name in ("vercel-build-cost-calculator", "claude-code"):
+    for name in ("vercel-build-cost-calculator", "de/vercel-build-kosten-rechner", "claude-code"):
         path = os.path.join(SITE, name, "index.html")
         if os.path.isfile(path):
             entries.append(site_entry(path, f"/{name}/"))
