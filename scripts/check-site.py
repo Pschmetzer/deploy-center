@@ -136,6 +136,12 @@ for p, pg in pages.items():
             problems.append(f"{rel(p)}: no {key}")
     if not pg.title.strip():
         problems.append(f"{rel(p)}: no <title>")
+    # search results cut a title at about 60 characters and a description at about 155 (a warning, not a failure)
+    tl, dl = len(pg.title.strip()), len(pg.meta.get("description", ""))
+    if tl and not 20 <= tl <= 70:
+        warnings.append(f"{rel(p)}: <title> is {tl} characters (20 to 70 reads well in search results)")
+    if dl and not 70 <= dl <= 170:
+        warnings.append(f"{rel(p)}: description is {dl} characters (70 to 170 reads well in search results)")
     if not pg.ld:
         problems.append(f"{rel(p)}: no JSON-LD")
 

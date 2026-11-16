@@ -12,7 +12,7 @@
 - Requirements: macOS 15 or later (app, universal); the `deploys` CLI is bash and installs on macOS, Linux, WSL and CI (`curl -fsSL https://deploycenter.app/install.sh | sh`).
 - Privacy: no account, no telemetry, no server of its own. Your own logins and keys in the macOS keychain. Claude features are opt-in, use your own Anthropic key and send only masked text.
 - Not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.
-- Topics: disable Vercel auto-deploy, Render auto-deploy off, Vercel Ignored Build Step, Vercel build cost, Claude Code Vercel, Claude Code deploy, Claude Code Vercel build cost, AI agent Vercel builds, fix failed Vercel build, auto fix build errors with AI.
+- Topics (each has a guide below): disable Vercel auto-deploy, Render auto-deploy off, Vercel Ignored Build Step, Vercel build cost, Netlify stop builds, deploy hooks, Claude Code with Vercel, fix failed Vercel builds with AI.
 
 ## Product
 
@@ -48,6 +48,8 @@
 - [FAQ](https://deploycenter.app/docs/faq/)
 - [Claude in the app](https://deploycenter.app/docs/claude/): explain a failure, release notes, ship check, with your own key.
 - [Safe deploys](https://deploycenter.app/docs/safe-deploy/)
+- [Bug scan and security check](https://deploycenter.app/docs/scan/): Claude Code looks for bugs and opens one fix PR; OSV-Scanner, gitleaks and Semgrep run locally.
+- [Widgets and iPhone app](https://deploycenter.app/docs/widgets-ios/)
 - [Team mode](https://deploycenter.app/docs/team/)
 - [Savings](https://deploycenter.app/docs/savings/)
 - [Auto-deploy guard](https://deploycenter.app/docs/guard/)
