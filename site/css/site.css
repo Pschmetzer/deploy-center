@@ -103,6 +103,7 @@ details p{color:var(--muted);margin:10px 0 0}
 .field{margin-bottom:20px}
 .field:last-child{margin-bottom:0}
 .field .fh{display:flex;justify-content:space-between;gap:12px;font-weight:600;font-size:15px;margin-bottom:8px}
+.field .fh input.num{width:5.5em;font:inherit;font-variant-numeric:tabular-nums;color:var(--accent);background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:2px 8px;text-align:right}
 .field .fh output{color:var(--accent);font-variant-numeric:tabular-nums;white-space:nowrap}
 input[type=range]{width:100%;accent-color:var(--accent)}
 .hint{font-size:13px;color:var(--muted);margin-top:4px}
@@ -156,3 +157,11 @@ article p a,article li a,.answer a,.note a{text-decoration:underline;text-underl
   pre{background:#fff;color:#000;border-color:#999;white-space:pre-wrap}
   article h2,article h3{break-after:avoid}pre,.note{break-inside:avoid}
 }
+
+/* theme switch and copy buttons, added by js/site.js */
+.theme{all:unset;cursor:pointer;color:var(--muted);width:36px;height:36px;display:grid;place-items:center;border-radius:8px;flex:none}
+.theme:hover{color:var(--text);background:var(--card)}
+.theme:focus-visible{outline:2px solid var(--accent)}
+.theme svg{width:17px;height:17px}
+pre .copy{position:absolute;top:8px;right:8px;font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#d7dbe6;background:#1a1f2c;border:1px solid #2d3447;border-radius:7px;padding:6px 10px;cursor:pointer;opacity:.85}
+pre .copy:hover,pre .copy:focus-visible{opacity:1;border-color:#4f7cff}
