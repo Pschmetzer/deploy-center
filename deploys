@@ -27,8 +27,10 @@
 #   deploys rollback <p> [<id>] | cancel <p> [<id>]   the project on whichever platform it is on
 #   deploys status [--watch] [--no-github]    what is building or failed (--no-github: no GitHub calls)
 #   deploys watch <p> [<id>] [--preview] [--timeout 30m]   follow a deploy until it is live or failed
+#     [--and <p2>]...                         several at once, each line starting with its project
 #   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>), keys masked
 #     [--runtime]                             the running service's log instead (providers with runtimeLogs)
+#     [--follow]                              read it again every few seconds, print what is new, until the build ends
 #   deploys history <project> [n] [--json]    the last n deploys (default 10): when, state, commit, source
 #   deploys explain <project>                 why a project is (not) counted as changed
 #   deploys diff <project>                    commits and files between what is live and the branch
@@ -144,6 +146,20 @@ elif [ -z "${DEPLOYS_CONFIG:-}" ]; then chmod 700 "$CONFIG_DIR" 2>/dev/null || t
 
 # BSD (macOS) and GNU (Linux) spell file times, date maths and base64 differently.
 # GNU first: GNU `stat -f` is the file system's status, and answers something that is no time.
+# One EXIT trap that runs every command added with trap_add (the newest first), so a later trap no longer replaces an
+# earlier one. trap_pop takes the newest off again (what `trap - EXIT` meant). $? inside a command is the exit status.
+EXIT_CMDS=()
+_exit_traps() {
+  local rc=$? i
+  for ((i = ${#EXIT_CMDS[@]} - 1; i >= 0; i--)); do eval "(exit $rc); ${EXIT_CMDS[$i]}" || true; done
+  return "$rc"
+}
+trap_add() { EXIT_CMDS[${#EXIT_CMDS[@]}]="$1"; trap '_exit_traps' EXIT; }
+trap_pop() {
+  local n=${#EXIT_CMDS[@]}
+  [ "$n" -gt 0 ] || return 0
+  if [ "$n" -eq 1 ]; then EXIT_CMDS=(); trap - EXIT; else EXIT_CMDS=("${EXIT_CMDS[@]:0:$((n - 1))}"); fi
+}
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 
 # A lock (file or folder) older than <seconds> is taken away, and only that one: it is renamed
@@ -1098,6 +1114,13 @@ site_url_of() {  # site_url_of <project> <platform>
 }
 
 # One start, through the same functions (and the same start lock) as the app.
+# The lines of <new> after the last line of <old> (all of <new> when that line is gone): a log that is read again
+# and again (logs --follow) shows only what is new.
+log_new_lines() {  # log_new_lines <old file> <new file>
+  local last; last="$(grep -v '^[[:space:]]*$' "$1" 2>/dev/null | tail -n 1)"
+  if [ -z "$last" ]; then cat "$2"; return 0; fi
+  awk -v L="$last" '{ a[NR] = $0; if ($0 == L) idx = NR } END { for (i = idx + 1; i <= NR; i++) print a[i] }' "$2"
+}
 # hooks.d: executable files named pre-deploy* or post-deploy* in $CONFIG_DIR/hooks.d, run around a start with
 # DEPLOYS_PLATFORM, DEPLOYS_PROJECT, DEPLOYS_SHA (and DEPLOYS_STATE after). A pre-deploy hook that exits non-zero
 # stops that start; a post-deploy hook cannot. A file others can write to is never run. Their output goes to stderr.
@@ -1617,7 +1640,8 @@ autofix_run() {  # autofix_run [dry] [<platform> <project> [again]]  (the two: -
   log_rotate DeployCenter-autofix
   # Whatever ends the run (set -e, a signal), the lock goes with it: else every run for 30 minutes
   # says "running already".
-  AF_RUN_LOCK="$lock"; trap 'rmdir "$AF_RUN_LOCK" 2>/dev/null || true' EXIT
+  # shellcheck disable=SC2034  # read inside the trap command, at exit
+  AF_RUN_LOCK="$lock"; trap_add 'rmdir "$AF_RUN_LOCK" 2>/dev/null || true' 
   now="$(date +%s)"; trig="$(af_routine)"
   all="$(af_all)" || rc=1
   st="$(af_state)"
@@ -1825,12 +1849,14 @@ scan_run() {  # scan_run <id> <owner/repo> <branch>: one scan, start to PR. Call
   slug="$(sc_slug "${repo#*/}")"; work="$SCAN_DIR/work/$id"
   log="$SCAN_DIR/logs/$id.md"; mkdir -p "$SCAN_DIR/logs"
   # Whatever ends this run early (set -e, a signal): marked failed, the worktree gone.
+  # shellcheck disable=SC2034  # read inside the trap command below
   SC_ID="$id"; SC_REPO="$repo"; SC_WORK="$work"
-  trap 'sc_update "$SC_ID" "{\"status\":\"failed\",\"error\":\"stopped early (exit $?)\"}" 2>/dev/null; sc_checkin "$SC_REPO" "$SC_WORK"; true' EXIT
+  : "$SC_REPO" "$SC_WORK"   # read by the trap command below
+  trap_add 'sc_update "$SC_ID" "{\"status\":\"failed\",\"error\":\"stopped early (exit $?)\"}" 2>/dev/null; sc_checkin "$SC_REPO" "$SC_WORK"; true' 
   sc_update "$id" "$(jq -nc --argjson p "$$" '{status:"running", step:"clone", pid:$p}')"
   # The branch name needs the commit, which the fetch brings: a temporary name, renamed after.
   if ! sha="$(sc_checkout "$repo" "$br" "$work" "claude/scan-$slug-tmp-${id##*-}" 2>"$SCAN_DIR/logs/$id.err")"; then
-    err="$(tail -1 "$SCAN_DIR/logs/$id.err")"; sc_update "$id" "$(jq -nc --arg e "${err:-checkout failed}" '{status:"failed", error:$e}')"; trap - EXIT; return 1
+    err="$(tail -1 "$SCAN_DIR/logs/$id.err")"; sc_update "$id" "$(jq -nc --arg e "${err:-checkout failed}" '{status:"failed", error:$e}')"; trap_pop; return 1
   fi
   fb="claude/scan-$slug-${sha:0:7}-${id##*-}"; git -C "$work" branch -q -m "$fb"
   sc_update "$id" "$(jq -nc --arg s "$sha" --arg b "$fb" '{step:"claude", sha:$s, branch:$b}')"
@@ -1863,7 +1889,7 @@ scan_run() {  # scan_run <id> <owner/repo> <branch>: one scan, start to PR. Call
     rm -f "$body"
   fi
   sc_checkin "$repo" "$work"
-  trap - EXIT
+  trap_pop
 }
 
 sc_args() {  # sc_args <owner/repo> <branch>: refuses what is no repo or branch name
@@ -1954,12 +1980,14 @@ ck_fail() { sc_edit '.checks = ((.checks // []) | map(if .id == $i then . + {sta
 check_run() {  # check_run <id> <owner/repo> <branch>: the three tools, then the counts in scan.json
   local id="$1" repo="$2" br="$3" work sha o g m err
   work="$SCAN_DIR/work/$id"; mkdir -p "$SCAN_DIR/checks" "$SCAN_DIR/logs"
+  # shellcheck disable=SC2034  # read inside the trap command below
   CK_ID="$id"; CK_REPO="$repo"; CK_WORK="$work"
-  trap 'ck_fail "$CK_ID" "stopped early" 2>/dev/null; sc_checkin "$CK_REPO" "$CK_WORK"; true' EXIT
+  : "$CK_REPO" "$CK_WORK"   # read by the trap command below
+  trap_add 'ck_fail "$CK_ID" "stopped early" 2>/dev/null; sc_checkin "$CK_REPO" "$CK_WORK"; true' 
   sc_edit '.checks = ((.checks // []) | map(if .id == $i then . + {pid:$p} else . end))' --arg i "$id" --argjson p "$$"
   if ! sha="$(sc_checkout "$repo" "$br" "$work" 2>"$SCAN_DIR/logs/$id.err")"; then
     err="$(tail -1 "$SCAN_DIR/logs/$id.err")"; ck_fail "$id" "${err:-checkout failed}"
-    trap - EXIT; return 1
+    trap_pop; return 1
   fi
   o="$(ck_osv "$work")"; g="$(ck_gitleaks "$work")"; m="$(ck_semgrep "$work")"
   jq -n --arg r "$repo" --arg b "$br" --arg s "$sha" --argjson o "$o" --argjson g "$g" --argjson m "$m" \
@@ -1967,7 +1995,7 @@ check_run() {  # check_run <id> <owner/repo> <branch>: the three tools, then the
   sc_edit '.checks = ((.checks // []) | map(if .id == $i then . + {status:"done", sha:$s, osv:$o.count, gitleaks:($g.count + ($m.secrets // [] | length)), semgrep:$m.count,
       tools:{osv:$o.status, gitleaks:$g.status, semgrep:$m.status}} else . end))' \
     --arg i "$id" --arg s "$sha" --argjson o "$o" --argjson g "$g" --argjson m "$m"
-  sc_checkin "$repo" "$work"; trap - EXIT
+  sc_checkin "$repo" "$work"; trap_pop
   af_notify "Security check of $repo: $(echo "$o" | jq .count) vulnerable packages, $(( $(echo "$g" | jq .count) + $(echo "$m" | jq '.secrets // [] | length') )) secrets, $(echo "$m" | jq .count) code findings."
 }
 
@@ -2372,7 +2400,7 @@ ai_run() {  # ai_run <explain|notes|ship> <project> [--json] [--lang en|de]
   while [ $# -gt 0 ]; do case "$1" in --json) export AI_JSON=1;; --question) [ $# -ge 2 ] || die "--question needs the question: deploys ai ask <project> --question \"…\""; q="$2"; shift;; --lang) [ $# -ge 2 ] || die "--lang needs en or de: deploys ai notes <project> --lang de"; lang="$2"; shift;; *) die "Unknown option $1";; esac; shift; done
   sys="$(mktemp)"; usr="$(mktemp)"
   # shellcheck disable=SC2064  # the two paths are fixed now, on purpose
-  trap "rm -f '$sys' '$usr'" EXIT
+  trap_add "rm -f '$sys' '$usr'"
   case "$what" in
     explain)
       cat > "$sys" <<'SYS'
@@ -2502,7 +2530,7 @@ usage_if_short() {
 }
 case "${1:-} ${2:-}" in
   "watch "*)       usage_if_short $# 2 "watch <project>" ;;
-  "logs "*)        usage_if_short $# 2 "logs <project> [lines] [--id <deploy>]" ;;
+  "logs "*)        usage_if_short $# 2 "logs <project> [lines] [--id <deploy>] [--follow]" ;;
   "open "*)        usage_if_short $# 2 "open <project> [--dashboard]" ;;
   "explain "*)     usage_if_short $# 2 "explain <project>" ;;
   "diff "*)        usage_if_short $# 2 "diff <project>" ;;
@@ -2593,7 +2621,7 @@ if is_provider "${1:-}"; then
 fi
 
 # The team merge of this process (lib/team.sh keeps it once per process) goes with it.
-if team_on && [ -z "${DEPLOYS_LIB:-}" ] && declare -F team_eff_forget >/dev/null; then trap 'team_eff_forget' EXIT; fi
+if team_on && [ -z "${DEPLOYS_LIB:-}" ] && declare -F team_eff_forget >/dev/null; then trap_add 'team_eff_forget'; fi
 
 # `deploys <p> <verb> [args]`: <p>_cli_<verb> where a provider keeps a command's old output for
 # people, else the contract function <p>_<verb> (docs/PROVIDERS.md). autodeploy-off is off,
@@ -2739,6 +2767,45 @@ case "${1:-} ${2:-}" in
       fi
     done
     group_json_out "$count" ;;
+
+  "metrics "*)
+    # metrics [--out <file>]: what the list shows, as Prometheus text (node_exporter's textfile collector, a cron job
+    # writing a file for Grafana alerts such as "a commit has waited three days"). Read-only; --out writes the file whole.
+    mout=""; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --out) [ -n "${2:-}" ] || die "--out takes a file"; mout="$2"; shift ;;
+        *) die "Unknown option $1. Usage: deploys metrics [--out <file>]" ;;
+      esac
+      shift
+    done
+    rc=0; all="$(all_json)" || rc=$?
+    mtext="$(echo "$all" | jq -r --argjson now "$(date +%s)" '
+      def esc: tostring | gsub("\\\\"; "\\\\") | gsub("\""; "\\\"") | gsub("\n"; " ");
+      def lbl: "{platform=\"\(.platform | esc)\",project=\"\(.name | esc)\"}";
+      "# HELP deploycenter_projects Projects read, per platform.",
+      "# TYPE deploycenter_projects gauge",
+      (group_by(.platform)[] | "deploycenter_projects{platform=\"\(.[0].platform | esc)\"} \(length)"),
+      "# HELP deploycenter_waiting_commits Commits on the branch that are not live yet.",
+      "# TYPE deploycenter_waiting_commits gauge",
+      (.[] | select(.pendingCommits != null) | "deploycenter_waiting_commits\(lbl) \(.pendingCommits)"),
+      "# HELP deploycenter_oldest_waiting_seconds Age of the oldest commit that is not live yet.",
+      "# TYPE deploycenter_oldest_waiting_seconds gauge",
+      (.[] | select(.oldestPendingAt != null) | "deploycenter_oldest_waiting_seconds\(lbl) \(($now - .oldestPendingAt) | floor)"),
+      "# HELP deploycenter_auto_deploy 1 when a push builds by itself.",
+      "# TYPE deploycenter_auto_deploy gauge",
+      (.[] | "deploycenter_auto_deploy\(lbl) \(if .auto == true then 1 else 0 end)"),
+      "# HELP deploycenter_building 1 while a deploy is running or queued.",
+      "# TYPE deploycenter_building gauge",
+      (.[] | "deploycenter_building\(lbl) \(if ((.phase // "") | IN("building", "queued")) then 1 else 0 end)"),
+      "# HELP deploycenter_failed 1 when the newest deploy failed.",
+      "# TYPE deploycenter_failed gauge",
+      (.[] | "deploycenter_failed\(lbl) \(if (.phase // "") == "failed" then 1 else 0 end)")' | grep -v '^$')" || exit 1
+    if [ -n "$mout" ]; then
+      mt="$(mktemp "$mout.XXXXXX")" || die "Cannot write next to $mout"
+      printf '%s\n' "$mtext" > "$mt" && mv -f "$mt" "$mout" || { rm -f "$mt"; die "Cannot write $mout"; }
+    else printf '%s\n' "$mtext"; fi
+    exit "$rc" ;;
 
   "journal "*)
     # journal verify [--json]: each line carries the SHA-256 of the line before it (prevHash); a changed or removed
@@ -2979,6 +3046,30 @@ case "${1:-} ${2:-}" in
     # Exit 0 live, 1 failed, 3 the platform could not be asked (or its answer not read) five times
     # in a row, 4 --timeout passed before it finished (it may still go live; default: no limit).
     p="${2:?Usage: deploys watch <project> [<deploy id>] [--preview] [--timeout 30m]}"; did=""; pv=""; maxw=""
+    # watch a --and b --and c: each followed at the same time, every line starting with its project; the exit code is
+    # 1 if any failed, else 4 if any timed out, else 3 if any could not be asked, else 0.
+    case " $* " in
+      *" --and "*)
+        wnames=("$p"); wshared=(); set -- "${@:3}"
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --and) [ -n "${2:-}" ] || die "--and takes a project name"; case "$2" in -*) die "--and takes a project name";; esac; wnames+=("$2"); shift ;;
+            *) wshared+=("$1") ;;
+          esac; shift
+        done
+        wd="$(mktemp -d)"; wi=0
+        for wn in "${wnames[@]}"; do
+          wi=$((wi + 1))
+          ( "$SELF" watch "$wn" ${wshared[@]+"${wshared[@]}"} 2>&1; echo $? > "$wd/$wi" ) | WNAME="$wn" perl -pe 'BEGIN { $| = 1 } s/^/[$ENV{WNAME}] /' &
+        done
+        wait
+        wrc=0
+        for ((wi = 1; wi <= ${#wnames[@]}; wi++)); do
+          c="$(cat "$wd/$wi" 2>/dev/null || echo 3)"
+          case "$c" in 0) ;; 1) wrc=1 ;; 4) [ "$wrc" = 1 ] || wrc=4 ;; *) [ "$wrc" = 1 ] || [ "$wrc" = 4 ] || wrc=3 ;; esac
+        done
+        rm -rf "$wd"; exit "$wrc" ;;
+    esac
     set -- "${@:3}"
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -3030,8 +3121,8 @@ case "${1:-} ${2:-}" in
     # Always masked (keys, tokens, passwords, email addresses), like everything that leaves through
     # autofix and ai: the log goes to terminals, the app, the MCP server and from there to models.
     # --masked is still taken (it is what callers of older versions ask for).
-    p="${2:?project}"; n=80; did=""; rt=""; shift 2
-    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>] [--runtime]}"; shift;; --runtime) rt=1;; --masked) ;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
+    p="${2:?project}"; n=80; did=""; rt=""; follow=""; shift 2
+    while [ $# -gt 0 ]; do case "$1" in --id) did="${2:?Usage: deploys logs <project> [lines] [--id <deploy>] [--runtime] [--follow]}"; shift;; --runtime) rt=1;; -f|--follow) follow=1;; --masked) ;; ''|*[!0-9]*) die "Unknown option $1";; *) n="$1";; esac; shift; done
     # 0 lines is no log at all, not the whole one (jq's .[-0:] is the whole array).
     [ "$n" -ge 1 ] || die "lines must be 1 or more"
     resolve "$p"; need_cap "$PLAT" logs "read build logs"
@@ -3039,6 +3130,27 @@ case "${1:-} ${2:-}" in
       [ -z "$did" ] || die "--runtime is the running service's log; --id is for a build log"
       meta_flag "$PLAT" runtimeLogs || die "$(meta_str "$PLAT" label) has no runtime log here"
       did=--runtime
+    fi
+    # --follow: read it again every few seconds and print only what is new, until the build is over (a runtime
+    # log goes on until Ctrl-C). Masked like the rest.
+    if [ -n "$follow" ]; then
+      lt="$(mktemp)"; prevl="$(mktemp)"; curl_="$(mktemp)"; trap_add 'rm -f "$lt" "$prevl" "$curl_"' 
+      first=1; fmiss=0
+      while :; do
+        lrc=0; ( "${PLAT}_logs" "$PID" "$n" "$did" ) > "$lt" 2>/dev/null || lrc=$?
+        af_mask < "$lt" > "$curl_" || exit 1
+        if [ "$first" = 1 ]; then cat "$curl_"; first=0; else log_new_lines "$prevl" "$curl_"; fi
+        cp "$curl_" "$prevl"
+        if [ -z "$rt" ]; then
+          if [ -n "$did" ]; then raw="$("${PLAT}_status" "$PID" "$did" 2>/dev/null)" || raw=""; else raw="$("${PLAT}_latest" "$PID" 2>/dev/null)" || raw=""; fi
+          fph="$(watch_line "$raw" | cut -f2)"
+          if [ -n "$fph" ] && watch_final "$fph"; then break; fi
+          # A status that cannot be read five times in a row ends it: the build may be over, nobody can tell.
+          if [ -z "$fph" ]; then fmiss=$((fmiss + 1)); [ "$fmiss" -lt 5 ] || { echo "Could not read the state of the build five times; stopped following." >&2; break; }; else fmiss=0; fi
+        fi
+        sleep "${DEPLOYS_FOLLOW_EVERY:-5}"
+      done
+      exit "$lrc"
     fi
     # The exit code of the read, not of the mask: a log that could not be read stays an error.
     lt="$(mktemp)"; lrc=0; ( "${PLAT}_logs" "$PID" "$n" "$did" ) > "$lt" || lrc=$?
@@ -3595,7 +3707,7 @@ BASH
     # The daily deploy: everything with changes. Without --yes it only shows what it would do.
     # Only what is known to have changes is started; what could not be read is named and left out.
     # --when-green: only commits whose CI passed; pending checks are waited for (--wait, default 30m).
-    yes=""; green=""; maxw=1800; strict=""; byrules=""; dryc=""; only=(); excl=(); platf=""; maxn=0
+    yes=""; green=""; maxw=1800; strict=""; byrules=""; dryc=""; only=(); excl=(); platf=""; maxn=0; wfw=""
     shift
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -3608,8 +3720,9 @@ BASH
         --exclude) [ -n "${2:-}" ] || die "--exclude takes a project name"; safe_name "$2"; excl+=("$2"); shift ;;
         --platform) [ -n "${2:-}" ] || die "--platform takes a platform"; is_provider "$2" || die "--platform: \"$2\" is not a platform here"; platf="$2"; shift ;;
         --max) case "${2:-}" in ''|*[!0-9]*|0) die "--max takes a number of projects, 1 or more" ;; esac; maxn="$2"; shift ;;
+        --wait-for-window) wfw="$(duration_s "${2:-}")" || die "--wait-for-window takes a time like 3h, 90m or 30m"; shift ;;
         --wait) maxw="$(duration_s "${2:-}")" || die "--wait takes a time like 30m, 90s or 1h"; shift ;;
-        *) die "Unknown option $1. Usage: deploys deploy-changed [--yes | --dry-run] [--when-green [--wait 30m] [--strict]] [--by-rules] [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>] [--force \"why\"] [--json]" ;;
+        *) die "Unknown option $1. Usage: deploys deploy-changed [--yes | --dry-run] [--when-green [--wait 30m] [--strict]] [--by-rules] [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>] [--wait-for-window 3h] [--force \"why\"] [--json]" ;;
       esac
       shift
     done
@@ -3650,6 +3763,15 @@ BASH
           "Would start \(c("would-deploy")) now, wait for \(c("would-wait")), skip \(c("would-skip")). Run again with --yes to start them."'
       else echo "Would deploy these $n. Run again with --yes to start them."; fi
       exit "$rc"
+    fi
+    # --wait-for-window: a closed window is waited for (a minute at a time, up to that long) instead of ending the run;
+    # still closed at the end, the refusal below is the same as without it. For cron and launchd.
+    if [ -n "$wfw" ] && [ "$forced" != 1 ]; then
+      ww=0
+      while [ "$(window_json | jq -r .denied)" = true ] && [ "$ww" -lt "$wfw" ]; do
+        [ "$json" = 1 ] || echo "The deploy window is closed ($(window_json | jq -r .reason)): looking again in 60s, $(( (wfw - ww) / 60 )) min left." >&2
+        sleep 60; ww=$((ww + 60))
+      done
     fi
     freeze_check
     # The budget brake (budget.json): over it, this run needs --force "why" as a closed window does.
@@ -3867,7 +3989,7 @@ BASH
     # so a row never says "fixing" for a PR that was merged hours ago. A run in progress does it already.
     af_reload
     lock="$(af_lock 2>/dev/null)" || { echo "autofix: a run is in progress; it syncs too."; exit 0; }
-    trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+    trap_add 'rmdir "$lock" 2>/dev/null || true'
     st="$(af_state)"; now="$(date +%s)"; dry=""; rc=0; all="[]"
     if [ -n "$(echo "$st" | jq -c --argjson t "$now" ".fires[] | select($AF_SYNC_SEL)")" ]; then
       all="$(af_all)" || rc=1
@@ -3988,7 +4110,19 @@ BASH
 
   "list "*)
     # Every project on every provider that is on and set up, each with its platform.
+    # --platform <p>, --auto (a push builds by itself) or --manual narrow it.
+    lplat=""; lauto=""; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --platform) is_provider "${2:-}" || die "--platform: \"${2:-}\" is not a platform here (deploys providers)"; lplat="$2"; shift ;;
+        --auto) lauto=auto ;;
+        --manual) lauto=manual ;;
+        *) die "Unknown option $1. Usage: deploys list [--platform <p>] [--auto|--manual] [--json]" ;;
+      esac
+      shift
+    done
     rc=0; all="$(all_json)" || rc=$?
+    all="$(echo "$all" | jq -c --arg p "$lplat" --arg a "$lauto" 'map(select(($p == "" or .platform == $p) and ($a == "" or (($a == "auto") == (.auto == true)))))')"
     if [ "$json" = 1 ]; then echo "$all"; exit "$rc"; fi
     echo "$all" | jq -r '.[] | [.platform, .name, (if .auto then "auto" else "manual" end), (.lastState // "-")] | @tsv' \
       | (printf 'PLATFORM\tPROJECT\tDEPLOYS\tSTATE\n'; cat) | table

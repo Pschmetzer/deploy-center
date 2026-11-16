@@ -149,7 +149,7 @@ expect "with_heads counts commits and PRs, open PRs split" \
 
 # --- commands for a person: usage lines, help, version, ignore, costs, completion ---
 cli() { env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" HOME="$tmp" NO_COLOR=1 /bin/bash ./deploys "$@" 2>&1; }
-expect "a missing name is a usage line" "$(cli logs; echo "rc=$?")" $'Error: Usage: deploys logs <project> [lines] [--id <deploy>]\nrc=1'
+expect "a missing name is a usage line" "$(cli logs; echo "rc=$?")" $'Error: Usage: deploys logs <project> [lines] [--id <deploy>] [--follow]\nrc=1'
 expect "--help lists history and exits 0" "$(cli --help | grep -c 'deploys history'; cli --help >/dev/null; echo $?)" $'1\n0'
 expect "--version is the VERSION file" "$(cli --version)" "$(cat VERSION)"
 expect "costs refuses a word" "$(cli costs abc | grep -c 'days a number')" "1"
@@ -522,6 +522,27 @@ expect "rollback with no project is a usage line" "$(run "$O" "$E" rollback; gre
 expect "rollback is refused in observer mode" "$(DEPLOYS_READONLY=1 run "$O" "$E" rollback web; rolled)" $'1\n1'
 fresh
 expect "doctor --text: one line per thing" "$(run "$O" "$E" doctor --text; grep -c '^ok   jq$' "$O")" $'0\n1'
+fresh
+expect "list --platform render: only Render" "$(run "$O" "$E" list --platform render; grep -c '^vercel ' "$O"; grep -c '^render ' "$O")" $'0\n0\n1'
+expect "list --auto and --manual together are the whole list" \
+  "$(run "$O" "$E" list --json; tot="$(jq length "$O")"; run "$O" "$E" list --json --auto >/dev/null; au="$(jq length "$O")"; run "$O" "$E" list --json --manual >/dev/null; ma="$(jq length "$O")"; [ "$tot" = "$((au + ma))" ] && echo same)" $'0\nsame'
+fresh
+expect "metrics: waiting commits per project, in Prometheus text" \
+  "$(run "$O" "$E" metrics; grep -c '^deploycenter_waiting_commits{platform="vercel",project="web"} 1$' "$O"; grep -c '^# TYPE deploycenter_failed gauge$' "$O")" $'0\n1\n1'
+expect "metrics --out: the file is written whole" "$(run "$O" "$E" metrics --out "$e2e/metrics.prom"; grep -c '^deploycenter_auto_deploy{' "$e2e/metrics.prom")" $'0\n2'
+expect "metrics: an unknown option is refused" "$(run "$O" "$E" metrics --nope; grep -c 'Usage: deploys metrics' "$E")" $'1\n1'
+fresh; rm -f "$e2e/polls"
+expect "watch --and: several at once, each line starts with its project" \
+  "$(run "$O" "$E" watch web --and api; grep -c '^\[web\] Nothing is building' "$O"; grep -c '^\[api\] ' "$O" | grep -c '^[1-9]')" $'0\n1\n1'
+expect "watch --and without a name is refused" "$(run "$O" "$E" watch web --and; grep -c 'takes a project name' "$E")" $'1\n1'
+fresh
+echo '{"deny":[{"days":["fri"],"from":"15:00"}]}' > "$e2e/config/window.json"; fresh
+expect "deploy-changed --wait-for-window: closed all along, it looks again, then refuses as before" \
+  "$(DEPLOYS_NOW='fri 16:00 2026-11-13' run "$O" "$E" deploy-changed --yes --wait-for-window 3m; started; grep -c 'looking again' "$E"; grep -c 'deploy window says' "$E")" $'1\n0\n3\n1'
+fresh
+expect "deploy-changed --wait-for-window: an open window does not wait" \
+  "$(DEPLOYS_NOW='thu 10:00 2026-11-12' run "$O" "$E" deploy-changed --yes --wait-for-window 3m; grep -c 'looking again' "$E")" $'0\n0'
+rm -f "$e2e/config/window.json"
 fresh
 expect "verify --tries 2 --need 2: one bad answer of two fails" \
   "$(SITE=flaky run "$O" "$E" verify web --tries 2 --need 2 --no-rollback --json; jq -c '[.healthy, .codes]' "$O"; rolled)" $'2\n[false,[502,200]]\n0'
@@ -1339,6 +1360,8 @@ esac
 VC
 chmod +x "$e2e/bin/vercel"
 expect "INT-014: logs masks tokens" "$(run "$O" "$E" logs web 10 --id dpl_x; cat "$O")" $'0\nVERCEL_TOKEN=[masked]\npush [masked]'
+expect "logs --follow: prints the log once, masked, and stops when the state cannot be read" \
+  "$(run "$O" "$E" logs web 10 --id dpl_x --follow; cat "$O"; grep -c 'stopped following' "$E")" $'0\nVERCEL_TOKEN=[masked]\npush [masked]\n1'
 mv "$e2e/bin/vercel.orig" "$e2e/bin/vercel"
 
 # CLI-010, CLI-011: <p>:<name> for risk; repo and ref of ci/details are checked before any call.

@@ -35,6 +35,29 @@ long="$(perl -e 'print "a." x 75000')"
 cut="$(printf '%s\n' "$long" | af_mask | wc -c | tr -d ' ')"
 [ "$cut" -lt 4100 ] && [ $((SECONDS - start)) -lt 10 ] && ok "mask: a 150000-character line is cut and handled fast" || fail "mask: long line" "bytes $cut, $((SECONDS - start)) s"
 
+# --- EXIT traps chain instead of replacing each other ---
+: > "$tmp/trap.log"
+rc=0; ( trap_add "echo first >> '$tmp/trap.log'"; trap_add "echo \"second rc=\$?\" >> '$tmp/trap.log'"; exit 3 ) || rc=$?
+expect "trap_add: both run, the newest first, with the exit status" "$rc:$(paste -sd, "$tmp/trap.log")" "3:second rc=3,first"
+: > "$tmp/trap.log"
+( trap_add "echo a >> '$tmp/trap.log'"; trap_add "echo b >> '$tmp/trap.log'"; trap_pop; exit 0 )
+expect "trap_pop: takes the newest off" "$(paste -sd, "$tmp/trap.log")" "a"
+: > "$tmp/trap.log"
+( trap_add "echo only >> '$tmp/trap.log'"; trap_pop; exit 0 )
+expect "trap_pop: the last one leaves no trap" "$(wc -c < "$tmp/trap.log" | tr -d ' ')" "0"
+
+# --- logs --follow: only the new lines of a log that is read again ---
+printf 'a\nb\nc\n' > "$tmp/old"; printf 'b\nc\nd\ne\n' > "$tmp/new"
+expect "log_new_lines: what comes after the last old line" "$(log_new_lines "$tmp/old" "$tmp/new" | paste -sd, -)" "d,e"
+printf 'x\n' > "$tmp/old"; printf 'p\nq\n' > "$tmp/new"
+expect "log_new_lines: no overlap, all of it is new" "$(log_new_lines "$tmp/old" "$tmp/new" | paste -sd, -)" "p,q"
+printf 'p\nq\n' > "$tmp/old"
+expect "log_new_lines: nothing new" "$(log_new_lines "$tmp/old" "$tmp/new" | paste -sd, -)" ""
+printf 'p\nq\n\n\n' > "$tmp/old"; printf 'q\nr\n' > "$tmp/new"
+expect "log_new_lines: blank lines at the end of the old log do not count" "$(log_new_lines "$tmp/old" "$tmp/new" | paste -sd, -)" "r"
+: > "$tmp/old"
+expect "log_new_lines: the first read is all of it" "$(log_new_lines "$tmp/old" "$tmp/new" | paste -sd, -)" "q,r"
+
 # --- hooks.d around a start ---
 fake_deploy_json() { echo '{"id":"x","state":"queued"}'; }
 hd="$CONFIG_DIR/hooks.d"; mkdir -p "$hd"
