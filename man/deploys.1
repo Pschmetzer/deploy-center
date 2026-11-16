@@ -17,28 +17,36 @@ No key is ever printed.
 .fi
 .SH COMMANDS
 .nf
-  deploys doctor                            check tools and access (JSON)
+  deploys doctor [\-\-text]                   check tools and access (JSON; \-\-text: one line each, with the fix)
   deploys changed [\-\-json]                  what has commits on GitHub that are not live
-  deploys deploy\-changed [\-\-yes]            deploy all of those (shows the list without \-\-yes)
+  deploys deploy\-changed [\-\-yes]            deploy all of those (shows the list without \-\-yes; \-\-dry\-run says so too)
+    [\-\-only <p>]... [\-\-exclude <p>]... [\-\-platform <p>] [\-\-max <n>]   narrow what it looks at
     [\-\-by\-rules]                            only what a "deploy" rule matches; "hold" rules always count
     [\-\-when\-green [\-\-wait 30m] [\-\-strict]]  only commits whose CI passed; waits for running checks
   deploys plan [\-\-when\-green] [\-\-json]      what deploy\-changed \-\-yes would start, and an estimate of its cost
   deploys schedule daily [HH:MM] [\-\-when\-green] [\-\-by\-rules] [\-\-strict] | off | status [\-\-json]
                                             deploy\-changed \-\-yes once a day (launchd; else the cron line)
   deploys rules check [\-\-json]              which rule of rules.json matches which waiting project, and why not
-  deploys deploy <p>|<group> [\-\-preview] [\-\-sha <c>] [\-\-wait] [\-\-force "reason"]
-                                            deploy one project, or a group in its order (docs/TEAM.md)
+  deploys deploy <p>|<group> [\-\-preview] [\-\-sha <c>] [\-\-wait] [\-\-dry\-run] [\-\-force "reason"]
+                                            deploy one project, or a group in its order (docs/TEAM.md);
+                                            \-\-dry\-run says what would start and starts nothing
+  deploys rollback <p> [<id>]               production back to the deploy before, on whichever platform it is on
+  deploys cancel <p> [<id>]                 stop a build that is running, on whichever platform it is on
+  deploys journal verify [\-\-json]           check the chain of the journal (each line holds the hash of the one before)
+  deploys metrics [\-\-out <file>]            waiting commits, their age, failures: Prometheus text (a textfile for Grafana)
   deploys status [\-\-watch] [\-\-no\-github]    what is building or failed (\-\-no\-github: no GitHub calls)
   deploys watch <p> [<id>] [\-\-preview] [\-\-timeout 30m]   follow a deploy until it is live or failed
+    [\-\-and <p2>]...                         several at once, each line starting with its project
   deploys logs <project> [lines] [\-\-id <d>] the end of the newest build log (or of deploy <d>), keys masked
     [\-\-runtime]                             the running service's log instead (providers with runtimeLogs)
+    [\-\-follow]                              read it again every few seconds, print what is new, until the build ends
   deploys history <project> [n] [\-\-json]    the last n deploys (default 10): when, state, commit, source
   deploys explain <project>                 why a project is (not) counted as changed
   deploys diff <project>                    commits and files between what is live and the branch
   deploys notes <project> [\-\-json]          the same as release notes (Markdown; \-\-json: author as a field)
   deploys open <project> [\-\-dashboard]      the site, or its page at the platform
   deploys ignore <p> [\-\-undo] | \-\-list      leave a project out of changed and deploy\-changed
-  deploys list [\-\-json]                     every project on every provider that is on, with its platform
+  deploys list [\-\-platform <p>] [\-\-auto|\-\-manual] [\-\-json]   every project on every provider that is on, with its platform
 
   deploys verify <p> [\-\-path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
     [\-\-rollback\-after 10] [\-\-no\-rollback]   count down, then roll back (Ctrl\-C stops it)
@@ -89,7 +97,7 @@ No key is ever printed.
   deploys check start <owner/repo> [branch] OSV\-Scanner, gitleaks and Semgrep (free, local, read\-only)
   deploys check show <id>                   the findings of one check (secrets redacted)
   deploys ai explain|notes|ship <p>         ask Claude (your own Anthropic key): why a build failed,
-                                            plain release notes (\-\-lang en|de), is it safe to ship
+                                            plain release notes (\-\-lang en|de|fr|...), is it safe to ship
   deploys ai ask <p> \-\-question "…"         your own question about a project (its commits and log go along)
   deploys ai slow <p> | risk <p>            why its builds take long; risk = ship
   deploys ai set\-key | verify | model [<id>] | cap [<n>] | status | forget\-key   (see docs/CLAUDE\-IN\-APP.md)
