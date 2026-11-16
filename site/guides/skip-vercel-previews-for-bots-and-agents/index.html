@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skip Vercel preview builds for Dependabot, Renovate and AI agent branches · Deploy Center</title>
+<meta name="description" content="An Ignored Build Step that skips preview builds for bot and agent branches, so automated pushes stop costing build minutes.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Skip Vercel preview builds for Dependabot, Renovate and AI agent branches · Deploy Center">
+<meta property="og:description" content="An Ignored Build Step that skips preview builds for bot and agent branches, so automated pushes stop costing build minutes.">
+<meta property="og:url" content="https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Skip Vercel preview builds for Dependabot, Renovate and AI agent branches · Deploy Center">
+<meta name="twitter:description" content="An Ignored Build Step that skips preview builds for bot and agent branches, so automated pushes stop costing build minutes.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Skip Vercel preview builds for Dependabot, Renovate and AI agent branches",
+  "description": "An Ignored Build Step that skips preview builds for bot and agent branches, so automated pushes stop costing build minutes.",
+  "url": "https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/",
+  "datePublished": "2026-11-16",
+  "dateModified": "2026-11-16",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Which exit code skips a build?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Exit 0 skips the build. Exit 1 lets it run."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does this stop production builds?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. It skips only the branches you list. Production and branches from people still build."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "How do I skip one commit by hand?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Check VERCEL_GIT_COMMIT_MESSAGE for a marker such as [skip deploy] in the Ignored Build Step."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does it work in a monorepo?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "The step runs per project. To skip projects a commit did not touch, see the guide on stopping Vercel building every push."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Skip Vercel previews for bots and agents",
+    "item": "https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>Skip Vercel preview builds for Dependabot, Renovate and AI agent branches</h1>
+<p class="answer">Set this as the Ignored Build Step: <code>bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*|claude/*|cursor/*) exit 0;; *) exit 1;; esac'</code>. Exit 0 skips the build, exit 1 builds it. Change the prefixes to the ones your tools use.</p>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<p>Dependabot, Renovate and coding agents push to their own branches, and each push builds a preview in every connected project. Nobody looks at most of them. A skipped build is cancelled before the build command runs.</p>
+<h2 id="script">1. The script</h2>
+<pre><code class="language-bash">bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*|claude/*|cursor/*) exit 0;; *) exit 1;; esac'</code></pre>
+<p><code>VERCEL_GIT_COMMIT_REF</code> is the branch of the commit. Branches from people, and production, still build.</p>
+<h2 id="where">2. Where to put it</h2>
+<p>In the project, <b>Settings → Git → Ignored Build Step</b>, or as <code>ignoreCommand</code> in <code>vercel.json</code>:</p>
+<pre><code class="language-json">{
+  "ignoreCommand": "bash -c 'case \"$VERCEL_GIT_COMMIT_REF\" in dependabot/*|renovate/*|claude/*|cursor/*) exit 0;; *) exit 1;; esac'"
+}</code></pre>
+<h2 id="agents">3. Agents that push to your own branches</h2>
+<p>If an agent pushes to branches without a fixed prefix, ask it to use one, or skip on a marker in the commit message: <code>VERCEL_GIT_COMMIT_MESSAGE</code> holds it, and only the newest commit of a push is checked. See the <a href="/guides/vercel-ignored-build-step/">Ignored Build Step guide</a> for more scripts and the pitfalls that make it build anyway.</p>
+<div class="note"><p><b>Trade-offs.</b> No preview for those branches means nothing to click in review. When a bot pull request needs a preview, push from a branch with another name, or build it by hand.</p></div>
+<h2>In Deploy Center</h2>
+<p>The ignore step only cuts previews. For production, <a href="/">Deploy Center</a> turns off auto-deploy so many pushes become one deploy, and the <a href="/claude-code/">Claude Code</a> plugin and the MCP server let an agent see what is waiting without deploying it. See <a href="/guides/stop-vercel-building-every-push/">stop Vercel building every push</a>.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Which exit code skips a build?</summary><p>Exit 0 skips the build. Exit 1 lets it run.</p></details>
+  <details><summary>Does this stop production builds?</summary><p>No. It skips only the branches you list. Production and branches from people still build.</p></details>
+  <details><summary>How do I skip one commit by hand?</summary><p>Check VERCEL_GIT_COMMIT_MESSAGE for a marker such as [skip deploy] in the Ignored Build Step.</p></details>
+  <details><summary>Does it work in a monorepo?</summary><p>The step runs per project. To skip projects a commit did not touch, see the guide on stopping Vercel building every push.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+</body>
+</html>

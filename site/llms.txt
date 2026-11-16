@@ -33,6 +33,9 @@
 - [Reduce Vercel costs](https://deploycenter.app/guides/reduce-vercel-costs/): A checklist: builds first, then functions, images and bandwidth.
 - [Auto-fix failed builds with Claude](https://deploycenter.app/guides/auto-fix-failed-vercel-builds-with-claude/): A failed Vercel or Render build goes to a Claude Code routine, which opens a fix PR.
 - [Deploy hooks for any host](https://deploycenter.app/guides/deploy-hooks/): What a deploy hook is, where each host keeps it, calling it with curl, keeping the URL secret.
+- [Vercel build minutes and the build queue](https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/): How builds add up from pushes, projects and branches, and how to measure them.
+- [Deploy to Vercel from GitHub Actions](https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/): A deploy hook on a label, a prebuilt deploy, or one daily deploy of what changed.
+- [Skip Vercel previews for bots and agents](https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/): An Ignored Build Step for Dependabot, Renovate and AI agent branches.
 - [Stop Cloudflare Pages builds](https://deploycenter.app/guides/cloudflare-pages-stop-builds/): Turn off production and preview deployments so a push no longer uses a build.
 - [Disable AWS Amplify auto-build](https://deploycenter.app/guides/aws-amplify-disable-auto-build/): One AWS CLI command per branch, and how to start a build yourself.
 - [Stop DigitalOcean App Platform builds](https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/): deploy_on_push: false on each component, and why the API needs the whole spec.
@@ -60,6 +63,8 @@
 - [Auto-deploy guard](https://deploycenter.app/docs/guard/)
 - [GitLab as a source](https://deploycenter.app/docs/gitlab/)
 - [Install the CLI](https://deploycenter.app/docs/install-cli/): install script, Homebrew, Docker, CI variables.
+- [Vercel](https://deploycenter.app/docs/vercel/)
+- [Render](https://deploycenter.app/docs/render/)
 - [Netlify](https://deploycenter.app/docs/netlify/)
 - [Cloudflare Pages](https://deploycenter.app/docs/cloudflare-pages/)
 - [AWS Amplify](https://deploycenter.app/docs/aws-amplify/)

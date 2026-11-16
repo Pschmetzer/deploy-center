@@ -72,6 +72,20 @@ for path in sorted(glob.glob(os.path.join(root, "docs", "*.md")) + glob.glob(os.
     if len(h1) > 1:
         problems.append(f"{name}: {len(h1)} top-level headings (one expected)")
 
+# 4. the Settings tabs named in docs/README.md are the tabs of the app
+if os.path.exists(os.path.join(root, "app", "SettingsSupport.swift")):
+    m = re.search(r"enum SettingsTab[^{]*\{\s*(?:///[^\n]*\n\s*)*case ([a-z, ]+)", read("app/SettingsSupport.swift"))
+    if m:
+        tabs = [t.strip() for t in m.group(1).split(",") if t.strip()]
+        words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"]
+        said = re.search(r"Settings window has (\w+) tabs", index)
+        if said and said.group(1) != words[len(tabs)]:
+            problems.append(f'docs/README.md: says "{said.group(1)} tabs", the app has {len(tabs)} ({", ".join(tabs)})')
+        first_cells = [ln.split("|")[1].strip().lower() for ln in index.splitlines() if ln.startswith("| ") and ln.count("|") >= 3]
+        for t in tabs:
+            if not any(c.startswith(t) for c in first_cells):
+                problems.append(f"docs/README.md: the Settings table has no row for the tab '{t}'")
+
 for line in problems:
     print(line)
 print(f"check-docs: {len(problems)} problems")

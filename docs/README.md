@@ -19,6 +19,7 @@
 | [CLAUDE-CODE.md](CLAUDE-CODE.md) | Using Deploy Center with Claude Code: the plugin, a CLAUDE.md block, the safety model |
 | [UNINSTALL.md](UNINSTALL.md) | Removing the app, the key and everything it kept |
 | [GITLAB.md](GITLAB.md) | GitLab as a source next to GitHub: `glab` or `GITLAB_TOKEN`, your own GitLab |
+| [providers/vercel.md](providers/vercel.md), [providers/render.md](providers/render.md) | The two default hosts: setup, turning auto-deploy off, deploying, undo |
 | [providers/README.md](providers/README.md) | Which host can do what: a table, then one page per host |
 | `providers/*.md` | The opt-in hosts: [Netlify](providers/netlify.md), [Cloudflare Pages](providers/cloudflare.md), [AWS Amplify](providers/amplify.md), [DigitalOcean](providers/digitalocean.md), [Coolify](providers/coolify.md), [deploy hook](providers/hook.md) |
 | [WIDGETS-IOS.md](WIDGETS-IOS.md) | The Mac widgets and the iPhone app: how they get their data, building them |

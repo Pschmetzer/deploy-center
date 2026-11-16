@@ -5,8 +5,8 @@ Vercel and Render are on by default; the others are opt-in (`deploys providers e
 
 | Host | Turn auto-deploy off | Deploy a given commit (`--sha`) | Cancel | Rollback | Build logs | Preview deploys |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Vercel | yes | yes | yes | yes | yes | yes |
-| Render | yes | yes | yes | yes | yes | no |
+| [Vercel](vercel.md) | yes | yes | yes | yes | yes | yes |
+| [Render](render.md) | yes | yes | yes | yes | yes | no |
 | [Netlify](netlify.md) | yes | no | yes | yes | no | no |
 | [Cloudflare Pages](cloudflare.md) | yes | no | no | yes | yes | yes |
 | [AWS Amplify](amplify.md) | yes | yes | yes | yes | yes | yes |

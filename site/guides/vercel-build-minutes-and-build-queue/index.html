@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vercel build minutes and the build queue: why many pushes cost and wait · Deploy Center</title>
+<meta name="description" content="How build minutes add up from pushes, projects and branches, how to measure them with your own numbers, and what shortens the queue.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Vercel build minutes and the build queue: why many pushes cost and wait · Deploy Center">
+<meta property="og:description" content="How build minutes add up from pushes, projects and branches, how to measure them with your own numbers, and what shortens the queue.">
+<meta property="og:url" content="https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Vercel build minutes and the build queue: why many pushes cost and wait · Deploy Center">
+<meta name="twitter:description" content="How build minutes add up from pushes, projects and branches, how to measure them with your own numbers, and what shortens the queue.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Vercel build minutes and the build queue: why many pushes cost and wait",
+  "description": "How build minutes add up from pushes, projects and branches, how to measure them with your own numbers, and what shortens the queue.",
+  "url": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/",
+  "datePublished": "2026-11-16",
+  "dateModified": "2026-11-16",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "How do build minutes add up?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Builds multiplied by how long each takes. Every push builds every connected project, so pushes, projects and branches drive the count."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Where do I find my price per build minute?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "On your Vercel usage page. Deploy Center takes it from the billing data where it can, or from deploys price set."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does a skipped build cost money?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "A skipped build is cancelled before the build command runs. Check your usage page to see how your plan counts it."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Are the numbers from deploys costs and simulate exact?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "costs reads what Vercel charged per day. simulate and the ledger are estimates and are marked as such."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Vercel build minutes and the build queue",
+    "item": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>Vercel build minutes and the build queue: why many pushes cost and wait</h1>
+<p class="answer">Build minutes are the number of builds multiplied by how long each takes. Every push builds every connected project, so the count grows with pushes, projects and branches, not with releases. Measure it, then cut builds before you tune build time.</p>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<p>A push does not build one thing. Vercel builds every project connected to the repository, production on the production branch and a preview on every other branch. Builds that do not fit into what your plan runs at once wait in a queue, so many pushes also mean waiting. The limits depend on your plan: read them on Vercel's pricing page instead of trusting a number from a blog.</p>
+<h2 id="count">1. Count the builds</h2>
+<p>Builds a month = pushes a day × projects that build from the repository × working days. Minutes = builds × the minutes one build takes. Cost = minutes × your price per build minute, which is on your Vercel usage page. Three projects, twenty pushes a day, twenty working days is 1,200 builds before a single bot branch.</p>
+<h2 id="measure">2. Measure with your own numbers</h2>
+<pre><code class="language-bash">deploys costs 14        <span class="c"># Vercel charges per day for the last 14 days</span>
+deploys simulate        <span class="c"># an estimate: auto-deploy for a month against one deploy a day</span></code></pre>
+<p>Both are estimates and say so. The <a href="/vercel-build-cost-calculator/">build cost calculator</a> does the same sum in the browser with the numbers you type in.</p>
+<h2 id="cut">3. Cut builds first, then build time</h2>
+<ol>
+  <li>Skip previews nobody looks at: <a href="/guides/skip-vercel-previews-for-bots-and-agents/">bot and agent branches</a>.</li>
+  <li>Skip projects a commit did not touch in a monorepo: <a href="/guides/stop-vercel-building-every-push/">stop Vercel building every push</a>.</li>
+  <li>Turn off auto-deploy for production and deploy once when you are ready: <a href="/guides/disable-vercel-auto-deploy/">disable Vercel auto-deploy</a>.</li>
+</ol>
+<p>A build that is skipped never reaches the build command. Faster builds help after that, but every build you remove is a build that never queues.</p>
+<div class="note"><p><b>Trade-offs.</b> Fewer builds mean fewer preview links in review and a fix that is not live until you deploy it. Keep previews where people review.</p></div>
+<h2>In Deploy Center</h2>
+<p><a href="/">Deploy Center</a> shows the charges, the simulation and, after you switched auto-deploy off, a ledger of the builds you did not start. <code>deploys deploy-changed --yes</code> deploys only what changed, and the setting for builds at the same time keeps a bulk deploy from queueing everything at once. See <a href="/docs/savings/">savings</a>.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>How do build minutes add up?</summary><p>Builds multiplied by how long each takes. Every push builds every connected project, so pushes, projects and branches drive the count.</p></details>
+  <details><summary>Where do I find my price per build minute?</summary><p>On your Vercel usage page. Deploy Center takes it from the billing data where it can, or from deploys price set.</p></details>
+  <details><summary>Does a skipped build cost money?</summary><p>A skipped build is cancelled before the build command runs. Check your usage page to see how your plan counts it.</p></details>
+  <details><summary>Are the numbers from deploys costs and simulate exact?</summary><p>costs reads what Vercel charged per day. simulate and the ledger are estimates and are marked as such.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+</body>
+</html>
