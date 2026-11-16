@@ -1077,16 +1077,20 @@ final class Store: ObservableObject {
         let name = items[p]![i].name, rowKey = Self.key(items[p]![i])
         // Only a deploy that really started has a duration; a row that never left the queue has none.
         let took = was.isActive && was != .queued ? items[p]![i].startedAt.map { Date().timeIntervalSince($0) } : nil
+        // The commit and deploy this row stands on, written with the entry so the history can say which.
+        let entrySha = items[p]![i].lastSha ?? items[p]![i].headSha, entryId = items[p]![i].deployId ?? items[p]![i].latestId
         switch s {
         case .done:
             // Not live: a finished preview keeps its id, a rollback does not.
             let r = countsAsLive ? "live" : (items[p]![i].previewId != nil ? "preview" : "rollback")
             let why = countsAsLive ? forcedReasons.removeValue(forKey: Self.key(items[p]![i])) : nil
             Journal.append(JournalEntry(platform: p.rawValue, name: name, result: why == nil ? r : "forced", seconds: took,
-                                        detail: why.map { L("Deployed inside the deploy window: ", "Im Deploy-Fenster deployt: ") + $0 }))
+                                        detail: why.map { L("Deployed inside the deploy window: ", "Im Deploy-Fenster deployt: ") + $0 },
+                                        sha: entrySha, deployId: entryId))
         case .failed(let m):
             forcedReasons[Self.key(items[p]![i])] = nil
-            Journal.append(JournalEntry(platform: p.rawValue, name: name, result: byPerson ? "cancelled" : "failed", seconds: took, detail: m))
+            Journal.append(JournalEntry(platform: p.rawValue, name: name, result: byPerson ? "cancelled" : "failed", seconds: took, detail: m,
+                                        sha: entrySha, deployId: entryId))
         case .skipped(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "skipped", seconds: took, detail: m))
         default: break
         }
@@ -1191,14 +1195,14 @@ final class Store: ObservableObject {
     /// build never replaced production: there it offers only the log). `row` (`Store.key`) ties the
     /// message to its row. Names scrubbed in demo mode: a Mac notification shows up in a screen recording too.
     private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil, key: String? = nil, row: String? = nil,
-                     rollBack: Bool = false, silent: Bool = false) {
+                     rollBack: Bool = false, silent: Bool = false, undoLabel: String? = nil, undo: (() -> Void)? = nil) {
         let all = allItems
         // Platform error texts can carry keys: masked before they reach the notification, the toast, messages.json or the journal.
         let title = LogTools.maskSecrets(Demo.scrub(title, items: all)), body = LogTools.maskSecrets(Demo.scrub(body, items: all))
         // The project ran again: a second reminder of its last failure is no longer true.
         if let key { Notify.dropEscalations(key) }
         Notify.post(title, body, project: project, key: key, failed: !ok, rollBack: rollBack, silent: silent)
-        show(Toast(text: title, ok: ok))
+        show(Toast(text: title, ok: ok, undoLabel: undoLabel, undo: undo))
         // With VoiceOver the toast is announced already; saying it twice would stutter.
         if UserDefaults.standard.bool(forKey: Speech.resultsKey), !NSWorkspace.shared.isVoiceOverEnabled { Speech.say(title) }
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok, project: row ?? key))
@@ -1389,7 +1393,18 @@ final class Store: ObservableObject {
         }
         if added > 0, undoSeconds > 0 {
             let n = undoSeconds
-            show(Toast(text: L("Starting in \(n) s – cancel in the row to stop", "Startet in \(n) s – in der Zeile abbrechen"), ok: true))
+            // More than one row: one click stops the whole run instead of one click per row.
+            if added > 1 {
+                let keys = queuedKeys
+                show(Toast(text: L("Starting \(added) deploys in \(n) s", "\(added) Deploys starten in \(n) s"), ok: true,
+                           undoLabel: L("Cancel all", "Alle abbrechen"),
+                           undo: { [weak self] in
+                               guard let self else { return }
+                               for k in keys { if let i = self.item(key: k) { self.cancel(i) } }
+                           }))
+            } else {
+                show(Toast(text: L("Starting in \(n) s – cancel in the row to stop", "Startet in \(n) s – in der Zeile abbrechen"), ok: true))
+            }
             Task { try? await Task.sleep(nanoseconds: UInt64(n) * 1_000_000_000 + 300_000_000); pump() }
         }
         pump()
@@ -1404,7 +1419,22 @@ final class Store: ObservableObject {
         guard batch.count >= 2 else { return }
         let states = batch.compactMap { (p, id) in items[p]?.first(where: { $0.id == id }).map { ($0.state, endedByCancel.contains(id)) } }
         let r = Self.summary(states)
-        say(r.title, L("Deploy run finished", "Deploy-Lauf beendet"), ok: r.ok)
+        // The ones that failed (not stopped by the person) are named, and one click starts them again.
+        let failedNow = batch.compactMap { (p, id) in
+            items[p]?.first(where: { $0.id == id }).flatMap { i -> Item? in
+                if case .failed = i.state, !endedByCancel.contains(id) { return i } else { return nil }
+            }
+        }
+        if failedNow.isEmpty {
+            say(r.title, L("Deploy run finished", "Deploy-Lauf beendet"), ok: r.ok)
+        } else {
+            let names = failedNow.map(\.name).sorted().joined(separator: ", ")
+            say(r.title, L("Failed: ", "Fehlgeschlagen: ") + names, ok: r.ok,
+                undoLabel: observer ? nil : L("Try the failed again", "Fehlgeschlagene nochmal"),
+                undo: observer ? nil : { [weak self] in
+                    for i in failedNow { self?.deployOne(i, preview: false) }
+                })
+        }
     }
     /// "5 live, 1 failed, 3 skipped": every way a row of the run ended, so none is left out of the sum.
     nonisolated static func summary(_ states: [(RunState, cancelled: Bool)]) -> (title: String, ok: Bool) {
