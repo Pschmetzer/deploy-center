@@ -266,8 +266,11 @@ printf '#!/bin/bash\nexit 0\n' > "$e2e/bin/clear"
 chmod +x "$e2e/bin"/*
 run() {  # run <stdout file> <stderr file> deploys args... ; prints the exit code
   local o="$1" e="$2"; shift 2
+  # A suite started with & (or by a CI step that ignores SIGINT) hands SIGINT-ignored to its children, and a
+  # signal ignored on entry cannot be trapped: perl resets it first, so the Ctrl-C test means the same everywhere.
+  local reset=(); [ -x /usr/bin/perl ] && reset=(/usr/bin/perl -e '$SIG{INT}="DEFAULT"; exec @ARGV')
   env -u DEPLOYS_LIB PATH="$e2e/bin:/usr/bin:/bin" E2E="$e2e" DEPLOYS_CONFIG="$e2e/config" DEPLOYS_VERCEL_TEAM=team_test \
-    HOME="$e2e" NO_COLOR=1 /bin/bash ./deploys "$@" > "$o" 2> "$e" </dev/null
+    HOME="$e2e" NO_COLOR=1 ${reset[@]+"${reset[@]}"} /bin/bash ./deploys "$@" > "$o" 2> "$e" </dev/null
   echo $?
 }
 fresh() { : > "$e2e/calls.log"; : > "$e2e/bodies.log"; : > "$e2e/sleeps.log"; rm -rf "$e2e/config/locks" "$e2e/ci" "$e2e/site"; }

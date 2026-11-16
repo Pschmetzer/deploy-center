@@ -1241,16 +1241,26 @@ af_mask() {
   # Without perl nothing is masked, so nothing goes out: a clear stop, not an empty log.
   command -v perl >/dev/null 2>&1 || { echo "Error: perl is missing, so secrets in logs cannot be masked; nothing is sent" >&2; return 1; }
   perl -pe 'BEGIN { $pem = 0 }
+    # A line this long is a dump, not a message: cut before the patterns run, so a crafted line cannot make them slow.
+    if (length($_) > 4000) { $_ = substr($_, 0, 4000) . "[line cut]\n" }
     # A private key: one line (an escaped \n in an env value), or a block over several lines.
     s/-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----.*?-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/[masked private key]/g;
     if ($pem) { $pem = 0 if /-----END [A-Z0-9 ]*PRIVATE KEY/; $_ = ""; next }
     if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY/) { $pem = 1; $_ = "[masked private key]\n"; next }
     # Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, Netlify, DigitalOcean, Supabase, SendGrid, Resend, Sentry, Linear, JWT.
     s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|nfp_[A-Za-z0-9]{8,}|dop_v1_[A-Fa-f0-9]{16,}|sbp_[A-Za-z0-9]{16,}|sb_secret_[A-Za-z0-9_-]{8,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|re_[A-Za-z0-9]{16,}|sntrys_[A-Za-z0-9+\/=_-]{16,}|lin_api_[A-Za-z0-9]{16,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
+    # Webhook URLs carry their secret in the path (Slack, Discord, Teams), a Telegram bot token has its own shape,
+    # and a few more prefixes: Hugging Face, Coolify (<id>|<40 characters>), Telegram.
+    s#(https?://hooks\.slack\.com/(?:services|workflows|triggers)/)[A-Za-z0-9/_-]+#${1}\[masked]#g;
+    s#(https?://(?:[a-z]+\.)?discord(?:app)?\.com/api/(?:v\d+/)?webhooks/)[0-9]+/[A-Za-z0-9._-]+#${1}\[masked]#g;
+    s#(https?://[a-z0-9.-]+\.webhook\.office\.com/webhookb2/)[A-Za-z0-9@./_-]+#${1}\[masked]#g;
+    s#(api\.telegram\.org/bot)[0-9]{6,12}:[A-Za-z0-9_-]{30,}#${1}\[masked]#g;
+    s/\b[0-9]{8,10}:[A-Za-z0-9_-]{35}\b/[masked]/g;
+    s/\b(hf_[A-Za-z0-9]{20,}|[0-9]{1,6}\|[A-Za-z0-9]{40})\b/[masked]/g;
     # NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret
     # (VERCEL_TOKEN, SECRET_KEY, aws_secret_access_key, DB_PASSWORD, x-api-key, Ocp-Apim-Subscription-Key,
     # AccountKey=, ...).
-    s/\b((?i:[A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn))["\x27]?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("[^"]*"|\x27[^\x27]*\x27|[^\s"\x27,;]+)/${1}${2}\[masked]/g;
+    s/\b((?i:[A-Za-z0-9_.-]{0,40}?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn))["\x27]?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("[^"]*"|\x27[^\x27]*\x27|[^\s"\x27,;]+)/${1}${2}\[masked]/g;
     # Bearer/Basic with no name before it, and whole cookies.
     s/\b((?i:bearer|basic)\s+)[A-Za-z0-9._~+\/=-]{12,}/${1}\[masked]/g;
     s/\b((?i:set-cookie|cookie)\s*:\s*).+/${1}\[masked]/g;
@@ -1260,6 +1270,10 @@ af_mask() {
     s/(--(?i:token|password|api-key|secret)(?:=|\s+))[^\s"\x27]+/${1}\[masked]/g;
     # user:password@ in a URL (database URLs).
     s#(://[^/\s:@]+):[^\s/]+@#${1}:\[masked]@#g;
+    # A long unbroken base64 or hex run on a line that talks about keys: whatever the other rules did not know.
+    if (/(?i:token|secret|passw|api[_-]?key|credential|authoriz|bearer)/) {
+      s/(?<![A-Za-z0-9+\/=_-])(?![0-9a-f]{40}(?![A-Za-z0-9]))(?=[A-Za-z0-9+\/=_-]*[0-9])(?=[A-Za-z0-9+\/=_-]*[A-Za-z])[A-Za-z0-9+\/=_-]{40,}(?![A-Za-z0-9+\/=_-])/[masked]/g;
+    }
     # An email address.
     s/\b(?!git@)(?![A-Za-z0-9._%+-]*\@users\.noreply\.github\.com)[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/[email]/g'
 }

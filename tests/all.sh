@@ -7,7 +7,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 quick=0; [ "${1:-}" = --quick ] && quick=1
 
-suites=(tests/script-tests.sh tests/team-tests.sh tests/install-tests.sh tests/release-tests.sh tests/ios-rule-tests.sh)
+suites=(tests/script-tests.sh tests/team-tests.sh tests/install-tests.sh tests/release-tests.sh tests/ios-rule-tests.sh tests/round8-tests.sh)
 if [ "$quick" = 0 ]; then
   [ "$(uname -s)" = Darwin ] && suites+=(tests/app-tests.sh)
   suites+=(integrations/tests/run.sh)
