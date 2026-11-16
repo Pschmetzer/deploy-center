@@ -101,6 +101,8 @@ case "\$*" in
   "status --json"|"status --json --no-github")
     jq -s --arg b "\${FAKE_BUILDING:-}" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
       | map({platform, name, building:(.name == \$b), state:"READY", changed})' "$tmp/vercel.json" "$tmp/render.json" ;;
+  "guard status --json") echo '{"on":true,"lastRun":"2026-01-01T00:00:00Z","turnedOff":[]}' ;;
+  "autodeploy allowed --json") echo '[]' ;;
   "explain "*) echo "explain: \$2" ;;
   "diff "*) echo "diff: \$2" ;;
   "history "*) echo "history \$2 \$3" ;;
@@ -220,6 +222,7 @@ echo '[{"name":"a<b>&\"c","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/e
 contains "badge: names are XML-escaped" "$(cat "$tmp/e/a_b___c.svg")" 'a&lt;b&gt;&amp;&quot;c: deployed never'
 echo '[{"name":"web","platform":"vercel","lastAt":1},{"name":"web","platform":"render","lastAt":1},{"name":"a/b","lastAt":1},{"name":"a_b","lastAt":1}]' | badge/badge.sh "$tmp/c" - >/dev/null
 expect "badge: colliding names do not overwrite each other" "$(cd "$tmp/c" && echo *.svg)" "a_b.svg other_a_b.svg render-web.svg vercel-web.svg"
+expect "badge: a shields.io endpoint JSON next to each SVG" "$(jq -c '[.schemaVersion, .label, .message, .color]' "$tmp/b/app-web.json")" '[1,"deployed","3 d ago · 4 commits waiting","9a6700"]'
 contains "badge: ids are per badge" "$(cat "$tmp/c/vercel-web.svg")" 'clip-path="url(#r-vercel-web)"'
 expect "badge: the width counts characters, not bytes" "$(echo '[{"name":"x","changed":false,"lastAt":1}]' | LC_ALL=C badge/badge.sh "$tmp/w" - >/dev/null; sed -n 's/^<svg[^>]* width="\([0-9]*\)".*/\1/p' "$tmp/w/x.svg")" \
   "$(echo '[{"name":"x","changed":false,"lastAt":1}]' | badge/badge.sh "$tmp/w2" - >/dev/null; sed -n 's/^<svg[^>]* width="\([0-9]*\)".*/\1/p' "$tmp/w2/x.svg")"
@@ -236,6 +239,11 @@ contains "notify: waiting with counts" "$out" 'Waiting (2): app-web (4 commits),
 contains "notify: Slack-style by default" "$out" 'format: slack'
 contains "notify: UTC by default" "$out" "Deploy Center, $(date -u +%Y-%m-%d) (UTC)"
 contains "notify: failed builds are named" "$out" 'Failed (1): api'
+two='[{"name":"web","platform":"vercel","changed":true,"pendingCommits":2},{"name":"web","platform":"render","changed":false,"lastAt":1},{"name":"solo","platform":"render","changed":true}]'
+contains "notify: a name on two platforms shows its platform" "$(echo "$two" | notify/notify.sh --dry-run - 2>&1)" 'vercel:web (2 commits), solo'
+expect "notify: custom: the jq template makes the body" "$(echo "$two" | DEPLOYS_NOTIFY_FORMAT=custom DEPLOYS_NOTIFY_TEMPLATE='{summary: (.text | split("\n") | length), link: .url}' notify/notify.sh --dry-run - 2>&1 | tail -1)" '{"summary":3,"link":""}'
+contains "notify: custom without a template is refused" "$(echo "$two" | DEPLOYS_NOTIFY_FORMAT=custom notify/notify.sh --dry-run - 2>&1)" 'needs DEPLOYS_NOTIFY_TEMPLATE'
+contains "notify: custom with a broken template is refused" "$(echo "$two" | DEPLOYS_NOTIFY_FORMAT=custom DEPLOYS_NOTIFY_TEMPLATE='{{' notify/notify.sh --dry-run - 2>&1)" 'not a valid jq program'
 contains "notify: German texts with DEPLOYS_LANG=de" "$(RENDER_API_KEY=x DEPLOYS_LANG=de notify/notify.sh --dry-run)" 'Fehlgeschlagen (1): api'
 expect "notify: a bad DEPLOYS_LANG is refused" "$(DEPLOYS_LANG=xx notify/notify.sh --dry-run >/dev/null 2>&1; echo $?)" 1
 contains "notify: --quiet-when-empty still posts when something is waiting" "$(RENDER_API_KEY=x notify/notify.sh --dry-run --quiet-when-empty)" 'Waiting (2)'
@@ -433,6 +441,16 @@ contains "statuspage strict: noindex" "$html" 'name="robots" content="noindex"'
 case "$(cat "$tmp/sph/index.html")" in *"<script>"*) ok "statuspage: without strict the script stays inline" ;; *) fail "statuspage: without strict the script stays inline" "gone" ;; esac
 echo '{"title":"x","projects":["app-web"],"showAuthors":true}' > "$tmp/sp-auth.json"
 expect "statuspage: authors only when asked" "$(sp --config "$tmp/sp-auth.json" --out "$tmp/spa" --no-check >/dev/null; jq -r '.projects[0].next[0]' "$tmp/spa/status.json")" "New billing page (#12) – Ana"
+# A site that does not answer: tried twice, then a feed entry. The page's own words replace the defaults.
+echo '{"title":"x","projects":[{"name":"app-web","url":"https://down.test/"}],"texts":{"recent":"History"}}' > "$tmp/sp-down.json"
+: > "$tmp/sp-curl.log"
+STATUSPAGE_RETRY_WAIT=0 sp --config "$tmp/sp-down.json" --out "$tmp/spd" >/dev/null
+expect "statuspage: a failed check is tried twice" "$(wc -l < "$tmp/sp-curl.log" | tr -d ' ')" 2
+contains "statuspage: a site that is down is a feed entry" "$(cat "$tmp/spd/feed.xml")" 'app-web is not reachable'
+contains "statuspage: feed entries have a summary" "$(cat "$tmp/spd/feed.xml")" '<summary type="text">'
+contains "statuspage: texts replace the default wording" "$(cat "$tmp/spd/index.html")" 'History'
+echo '{"title":"x","projects":["app-web"],"texts":{"live":5}}' > "$tmp/sp-badtexts.json"
+sp --config "$tmp/sp-badtexts.json" --out "$tmp/spbt" --no-check >/dev/null 2>&1; expect "statuspage: texts that are not strings are refused" "$?" 1
 echo '{"title":"x","projects":["app-web"],"baseUrl":"javascript:alert(1)"}' > "$tmp/sp-bad.json"
 sp --config "$tmp/sp-bad.json" --out "$tmp/spb" --no-check >/dev/null 2>&1; expect "statuspage: a baseUrl that is not http(s) is refused" "$?" 1
 echo '{"title":"x"}' > "$tmp/sp-empty.json"
@@ -529,6 +547,11 @@ if command -v ruby >/dev/null; then
   ONLY='a;b' run_step changed.sh; expect "action: only refuses what is not a name" "$?" 1
   rm -f "$DEPLOYS_CONFIG/ignored.json"
   run_step plan.sh; expect "action: dry-run shows the plan, starts nothing" "$?:$(grep -c 'Would deploy: app-web' "$tmp/sum")" "0:1"
+  expect "action: dry-run writes the plan as an output" "$(sed -n '/^plan<</,$p' "$tmp/out" | sed -n 2p | jq -c 'map(.name)')" '["app-web","api"]'
+  : > "$tmp/ac.log"; BY_RULES=true WHEN_GREEN=true STRICT=true FAKE_MCP_CALLS="$tmp/ac.log" run_step plan.sh
+  contains "action: by-rules, when-green and strict reach the CLI" "$(cat "$tmp/ac.log")" "deploy-changed --json --when-green --strict --by-rules"
+  : > "$tmp/ac.log"; STRICT=true FAKE_MCP_CALLS="$tmp/ac.log" run_step plan.sh
+  case "$(cat "$tmp/ac.log")" in *--strict*) fail "action: strict without when-green is not passed" "passed" ;; *) ok "action: strict without when-green is not passed" ;; esac
   expect "action: plan step only with deploy: dry-run" "$(step plan if)" "inputs.deploy == 'dry-run' && steps.changed.outputs.count != '0'"
   # wait: the JSON answer gives the ids; each build is followed to live or failed, under one deadline.
   mkdir -p "$tmp/rt"; : > "$tmp/deploy.log"
