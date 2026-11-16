@@ -10,6 +10,7 @@
 # The webhook URL is a secret (Telegram's carries the bot token): it goes to curl on stdin, never
 # on the command line. So does an ntfy access token (DEPLOYS_NOTIFY_TOKEN).
 #
+# custom:   DEPLOYS_NOTIFY_FORMAT=custom and DEPLOYS_NOTIFY_TEMPLATE='{summary: .text, link: .url}' (jq; input {text, url, label})
 # ntfy:     DEPLOYS_NOTIFY_PRIORITY (1-5 or min, low, default, high, urgent), DEPLOYS_NOTIFY_TAGS (a,b),
 #           DEPLOYS_NOTIFY_TOKEN (a protected topic)
 # Pushover: DEPLOYS_PUSHOVER_TOKEN (the app) and DEPLOYS_PUSHOVER_USER (you); the URL is
@@ -80,7 +81,15 @@ webhook_body() {
               # The keys are added in webhook_send, so a dry run never prints them.
               WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" \
                 '{title:"Deploy Center", message:$t} + (if $u != "" then {url:$u, url_title:$l} else {} end)')" ;;
-    *) echo "Unknown DEPLOYS_NOTIFY_FORMAT: $format (discord, slack, ntfy, telegram, teams, googlechat, matrix, pushover)" >&2; return 1 ;;
+    custom)   WEBHOOK_TYPE="application/json"
+              # Your own body for PagerDuty, Opsgenie, Zulip, Mattermost attachments or a Lambda:
+              # DEPLOYS_NOTIFY_TEMPLATE is a jq program. Its input is {text, url, label}; what it prints is the body.
+              [ -n "${DEPLOYS_NOTIFY_TEMPLATE:-}" ] \
+                || { echo "DEPLOYS_NOTIFY_FORMAT=custom needs DEPLOYS_NOTIFY_TEMPLATE (a jq program: input {text, url, label}, output the JSON body)" >&2; return 1; }
+              WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" "{text:\$t, url:\$u, label:\$l} | ${DEPLOYS_NOTIFY_TEMPLATE}")" \
+                || { echo "DEPLOYS_NOTIFY_TEMPLATE is not a valid jq program, or it failed on {text, url, label}" >&2; return 1; }
+              [ -n "$WEBHOOK_BODY" ] || { echo "DEPLOYS_NOTIFY_TEMPLATE printed nothing" >&2; return 1; } ;;
+    *) echo "Unknown DEPLOYS_NOTIFY_FORMAT: $format (discord, slack, ntfy, telegram, teams, googlechat, matrix, pushover, custom)" >&2; return 1 ;;
   esac
 }
 

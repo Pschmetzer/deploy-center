@@ -93,7 +93,8 @@ test("followStep: wait for the build, then live or failed", () => {
   assert.equal(followStep({ building: false, failed: false }, false, 1), "wait");
   assert.equal(followStep({ building: false, failed: false }, true, 2), "live");
   assert.equal(followStep({ building: false, failed: true }, true, 2), "failed");
-  assert.equal(followStep({ building: false, failed: false }, false, 4), "live");
+  assert.equal(followStep({ building: false, failed: false }, false, 4), "wait");
+  assert.equal(followStep({ building: false, failed: false }, false, 8), "live");
 });
 
 test("age rounds down: 23.6 h is 23 h, 36 h is 1 d", () => {

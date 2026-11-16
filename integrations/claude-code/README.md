@@ -61,7 +61,7 @@ to you as a notice (`systemMessage`), and to Claude as context, with "do not dep
 user says so".
 
 - **Read-only.** It calls `deploys changed --json` and nothing else.
-- **Fast.** It gives up after 15 seconds (`DEPLOYS_HOOK_TIMEOUT`) and says nothing.
+- **Fast.** It gives up after 8 seconds after a push, 15 at session start (`DEPLOYS_HOOK_TIMEOUT`) and says nothing.
 - **Silent** when `deploys` or `jq` is missing, the remote is not a git URL it knows, nothing is waiting,
   or the CLI does not answer. It always exits 0, so it never gets in the way of a push.
 - **Optional.** Turn it off with the plugin option `push_reminder` (`/plugin` > Installed >

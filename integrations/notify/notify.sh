@@ -8,8 +8,9 @@
 # Env:
 #   DEPLOYS_NOTIFY_URL     where to post. A secret (Telegram's carries the bot token): it goes to
 #                          curl on stdin, never on the command line.
-#   DEPLOYS_NOTIFY_FORMAT  discord | slack | ntfy | telegram. Default: guessed from the host,
-#                          anything unknown is sent Slack-style ({"text":…}, also Mattermost etc.).
+#   DEPLOYS_NOTIFY_FORMAT  discord | slack | ntfy | telegram | teams | googlechat | matrix | pushover |
+#                          custom (your own jq program in DEPLOYS_NOTIFY_TEMPLATE). Default: guessed from
+#                          the host, anything unknown is sent Slack-style ({"text":…}, also Mattermost etc.).
 #   DEPLOYS                the CLI to call (default: deploys on PATH)
 #   DEPLOYS_NOTIFY_TZ      the time zone of "today", e.g. Europe/Berlin. Default: DEPLOYS_TZ
 #                          (shared with the digest), else UTC.
@@ -49,16 +50,19 @@ else list="$(cat "$from")"
 fi
 
 text="$(echo "$list" | TZ="$tz" jq -r --argjson ign "$(ignored_names)" --argjson chg "$chg" --arg lang "$lang" --arg tz "$tz" '
+  # A name on two platforms is shown as platform:name, so "web" is one project, not two.
+  def lbl($twice): if (.name as $n | $twice | index($n)) and .platform then "\(.platform):\(.name)" else .name end;
   (now | strflocaltime("%Y-%m-%d")) as $today
   | map(select(.name)) as $all
+  | ($all | map(.name) | group_by(.) | map(select(length > 1) | .[0])) as $twice
   # Live today: the commit that went live (liveAt), or the last attempt when it did not fail
   # (a platform without liveAt must not count a failed attempt as live).
   | ($all | map(select(((.liveAt // (if ((.lastState // "") | ascii_downcase | test("fail|error")) or (.phase // "") == "failed" then 0 else .lastAt end) // 0)
-        | if . > 0 then strflocaltime("%Y-%m-%d") else "" end) == $today)) | map(.name)) as $live
+        | if . > 0 then strflocaltime("%Y-%m-%d") else "" end) == $today)) | map(lbl($twice))) as $live
   # The newest build failed (Render: an older one may still be live).
-  | ($all | map(select(((.lastState // "") | ascii_downcase | test("fail|error")) or (.phase // "") == "failed")) | map(.name)) as $failed
+  | ($all | map(select(((.lastState // "") | ascii_downcase | test("fail|error")) or (.phase // "") == "failed")) | map(lbl($twice))) as $failed
   | ($all | map(select(.changed and ((.name as $n | $ign | index($n)) | not) and (if $chg == null then true else (.name as $n | $chg | index($n)) != null end)))
-      | map(.name + (if .pendingCommits then " (\(.pendingCommits) \(if $lang == "de" then "Commits" else "commits" end))" else "" end))) as $wait
+      | map(lbl($twice) + (if .pendingCommits then " (\(.pendingCommits) \(if $lang == "de" then "Commits" else "commits" end))" else "" end))) as $wait
   | (if $lang == "de" then {live: "Heute live", wait: "Wartend", fail: "Fehlgeschlagen", none: "keine"} else {live: "Live today", wait: "Waiting", fail: "Failed", none: "none"} end) as $t
   | "Deploy Center, \($today) (\($tz))",
     "\($t.live) (\($live | length)): \(if ($live | length) > 0 then $live | join(", ") else $t.none end)",
