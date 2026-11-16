@@ -823,6 +823,7 @@ FOOTER_GUIDES = [
     ("/guides/vercel-build-minutes-and-build-queue/", "Vercel build minutes and the build queue"),
     ("/guides/deploy-to-vercel-from-github-actions/", "Deploy to Vercel from GitHub Actions"),
     ("/guides/skip-vercel-previews-for-bots-and-agents/", "Skip Vercel previews for bots and agents"),
+    ("/guides/ignored-build-step-or-auto-deploy-off/", "Ignored Build Step or auto-deploy off"),
     ("/guides/cloudflare-pages-stop-builds/", "Stop Cloudflare Pages builds"),
     ("/guides/aws-amplify-disable-auto-build/", "Disable AWS Amplify auto-build"),
     ("/guides/digitalocean-app-platform-deploy-on-push/", "Stop DigitalOcean App Platform builds"),

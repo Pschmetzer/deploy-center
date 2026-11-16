@@ -36,6 +36,7 @@
 - [Vercel build minutes and the build queue](https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/): How builds add up from pushes, projects and branches, and how to measure them.
 - [Deploy to Vercel from GitHub Actions](https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/): A deploy hook on a label, a prebuilt deploy, or one daily deploy of what changed.
 - [Skip Vercel previews for bots and agents](https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/): An Ignored Build Step for Dependabot, Renovate and AI agent branches.
+- [Ignored Build Step or auto-deploy off](https://deploycenter.app/guides/ignored-build-step-or-auto-deploy-off/): What each skips, what still creates a deployment, and when a script is the wrong tool.
 - [Stop Cloudflare Pages builds](https://deploycenter.app/guides/cloudflare-pages-stop-builds/): Turn off production and preview deployments so a push no longer uses a build.
 - [Disable AWS Amplify auto-build](https://deploycenter.app/guides/aws-amplify-disable-auto-build/): One AWS CLI command per branch, and how to start a build yourself.
 - [Stop DigitalOcean App Platform builds](https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/): deploy_on_push: false on each component, and why the API needs the whole spec.

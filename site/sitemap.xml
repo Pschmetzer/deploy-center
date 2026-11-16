@@ -13,6 +13,7 @@
   <url><loc>https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/</loc><lastmod>2026-11-16</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/ignored-build-step-or-auto-deploy-off/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/cloudflare-pages-stop-builds/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/aws-amplify-disable-auto-build/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/</loc><lastmod>2026-11-16</lastmod></url>
