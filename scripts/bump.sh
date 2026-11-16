@@ -41,9 +41,9 @@ tmp="$(mktemp)"
 awk -v v="$new" '!done && /^## Unreleased/ { print; print ""; print "## " v; done=1; next } { print }' CHANGELOG.md > "$tmp"
 mv "$tmp" CHANGELOG.md
 echo "$new" > VERSION
-# The site's home page names the version twice (the line under the download button and the JSON-LD).
+# The site's home page names the version three times (the line under the download button, softwareVersion and downloadUrl in the JSON-LD; fileSize follows after ./release.sh --publish).
 if [ -f site/index.html ]; then
-  sed -i.bak -e "s/Version $cur_re ·/Version $new ·/" -e "s/\"softwareVersion\": \"$cur_re\"/\"softwareVersion\": \"$new\"/" site/index.html
+  sed -i.bak -e "s/Version $cur_re ·/Version $new ·/" -e "s/\"softwareVersion\": \"$cur_re\"/\"softwareVersion\": \"$new\"/" -e "s#/download/v$cur_re/DeployCenter-$cur_re-#/download/v$new/DeployCenter-$new-#" site/index.html
   rm -f site/index.html.bak
 fi
 # The MCP server and the Claude Code plugin ship inside the app, so they carry its version.
