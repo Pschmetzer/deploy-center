@@ -69,7 +69,7 @@ struct BuildLog: View {
 
     private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
 
-    private func copy(_ s: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string) }
+    private func copy(_ s: String) { Pasteboard.copy(s) }
 
     /// Changes when a deploy starts or ends, so the log is read again then and not on every poll.
     private var reloadKey: String { "\(attempt)|\(lineCount)|\(live.state.isActive)|\(live.lastAt?.timeIntervalSince1970 ?? 0)|\(live.state == .idle)" }
@@ -309,7 +309,7 @@ struct ProjectDetail: View {
     static let ignoredBuildStep = "git diff --quiet ${VERCEL_GIT_PREVIOUS_SHA:-HEAD^} HEAD -- ."
 
     private var live: Item { store.items[item.platform]?.first { $0.id == item.id } ?? item }
-    private var allItems: [Item] { Platform.allCases.flatMap { store.items[$0] ?? [] } }
+    private var allItems: [Item] { store.allItems }
     /// Every project, gathered once per redraw for `scrub` (it runs for each commit line).
     @State private var scrubItems = ScrubItems()
     private func scrub(_ s: String) -> String {

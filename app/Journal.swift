@@ -276,7 +276,7 @@ struct JournalView: View {
                 Text(L("Deploy history", "Deploy-Verlauf")).font(.headline)
                 Spacer()
                 Button(L("Copy as CSV", "Als CSV kopieren")) {
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Journal.csv(shown, perBuild: costs?.perBuild), forType: .string)
+                    Pasteboard.copy(Journal.csv(shown, perBuild: costs?.perBuild))
                 }.disabled(shown.isEmpty)
                 Button(L("Save as CSV …", "Als CSV sichern …")) { save() }.disabled(shown.isEmpty)
                 Menu(L("Markdown", "Markdown")) {
@@ -370,7 +370,7 @@ struct JournalView: View {
         }
     }
 
-    private func copy(_ s: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string) }
+    private func copy(_ s: String) { Pasteboard.copy(s) }
 
     private func reload() {
         entries = Journal.load(limit: limit); failed = Journal.failureTable(entries)

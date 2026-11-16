@@ -114,7 +114,7 @@ struct TeamSettings: View {
         .task { await reload() }
     }
 
-    private var allItems: [Item] { store.items.values.flatMap { $0 } }
+    private var allItems: [Item] { store.allItems }
     private var canAdd: Bool { Self.ownerRepo(repo) != nil && !busy }
 
     /// "owner/repo" from what people paste: the name itself, a github.com address or a git remote.

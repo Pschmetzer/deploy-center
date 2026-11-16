@@ -121,7 +121,7 @@ final class Store: ObservableObject {
         let days = d.integer(forKey: "staleDays")
         let today = localDay()
         guard days > 0, d.string(forKey: "lastStaleAlarm") != today else { return }
-        let old = items.values.joined().filter { i in
+        let old = allItems.filter { i in
             i.hasNewCommits && i.state == .idle && i.deployable && !isHidden(i)
                 && (i.oldestPendingAt.map { Date().timeIntervalSince($0) > Double(days) * 86400 } ?? false)
         }
@@ -360,14 +360,14 @@ final class Store: ObservableObject {
         // job does this too, but it may not be running, and then a merged fix said "fixing" for hours.
         // Before the first status (nil): once, which also loads a schedule launchd dropped.
         if autofix?.fires.contains(where: { RowAutofix.needsSync($0) }) ?? true,
-           Date().timeIntervalSince(lastAutofixSync) > 180 {
+           Date().timeIntervalSince(lastAutofixSync) > Timing.autofixSync {
             lastAutofixSync = Date()
             // A failure is logged and marked, so a "fixing" that does not move has a reason somewhere;
             // a script without `autofix sync`, or one that failed, is not asked again for an hour.
             do { _ = try await Tool.run(["autofix", "sync"], timeout: 90); extrasFailedAt["autofix-sync"] = nil }
             catch is CancellationError {}
             catch {
-                lastAutofixSync = Date().addingTimeInterval(3600)
+                lastAutofixSync = Date().addingTimeInterval(Timing.autofixBackoff)
                 extrasFailedAt["autofix-sync"] = Date(); Log.write("autofix sync: \(error.localizedDescription)")
             }
         }
@@ -409,7 +409,7 @@ final class Store: ObservableObject {
     /// Failed builds a Claude session is working on, over both platforms (the menu bar).
     var fixingCount: Int {
         guard autofix != nil else { return 0 }
-        return items.values.joined().filter { if case .fixing? = autofixState($0) { return true } else { return false } }.count
+        return allItems.filter { if case .fixing? = autofixState($0) { return true } else { return false } }.count
     }
     /// The button: the last deploy failed and no session or fix PR is on it already.
     func canFixWithClaude(_ i: Item) -> Bool {
@@ -488,7 +488,7 @@ final class Store: ObservableObject {
 
     /// A toast and a line in the messages, names scrubbed in demo mode.
     private func tell(_ title: String, _ body: String, ok: Bool, key: String) {
-        let b = Demo.scrub(body, items: Array(items.values.joined()))
+        let b = Demo.scrub(body, items: allItems)
         let text = title + (b.isEmpty ? "" : " – " + b)
         show(Toast(text: text, ok: ok))
         let m = Message(date: Date(), text: text, ok: ok, project: key)
@@ -797,7 +797,7 @@ final class Store: ObservableObject {
             fromCache.remove(p); loadedAt[p] = Date(); lastLoadError[p] = nil
             recordHistory()
             writeSnapshot()
-            Spotlight.update(Array(items.values.joined()).filter { !isHidden($0) })
+            Spotlight.update(allItems.filter { !isHidden($0) })
             checkStale()
         } catch {
             guard loadGeneration[p] == gen else { return }
@@ -860,7 +860,7 @@ final class Store: ObservableObject {
     }
     /// "Turn off" from the toast or the notification, by `Store.key`.
     func turnOffAutoDeploy(key: String) {
-        guard !observer, let i = items.values.joined().first(where: { Self.key($0) == key }), i.auto else { return }
+        guard !observer, let i = item(key: key), i.auto else { return }
         Task { await turnOffAutoDeploy(i) }
     }
 
@@ -909,7 +909,7 @@ final class Store: ObservableObject {
         if doctor == nil { await start(); return }
         // Something was missing (a login, the Render key): ask again, at most every 30 minutes.
         if let d = doctor, !(d.vercelLoggedIn && d.vercelApi && d.renderKey && d.githubLoggedIn != false),
-           Date().timeIntervalSince(lastDoctor) > 1800 {
+           Date().timeIntervalSince(lastDoctor) > Timing.doctorEvery {
             lastDoctor = Date()
             if let fresh = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { doctor = fresh; doctorError = nil }
         }
@@ -923,7 +923,7 @@ final class Store: ObservableObject {
         await loadAgentStatus()
         // Costs and strays cost many calls: hourly. The status feeds are cheap: every time.
         // In Low Power Mode costs and strays wait (many calls); the status feeds stay.
-        if Date().timeIntervalSince(lastExtras) > 3600, !ProcessInfo.processInfo.isLowPowerModeEnabled { await loadExtras() } else { await checkProviders() }
+        if Date().timeIntervalSince(lastExtras) > Timing.extrasEvery, !ProcessInfo.processInfo.isLowPowerModeEnabled { await loadExtras() } else { await checkProviders() }
     }
 
     // MARK: What is waiting on GitHub, over both platforms
@@ -1184,9 +1184,7 @@ final class Store: ObservableObject {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         guard let d = try? enc.encode(list) else { return }
         messageQueue.async {
-            try? FileManager.default.createDirectory(at: AppDirs.support, withIntermediateDirectories: true)
-            try? d.write(to: messagesURL, options: .atomic)
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: messagesURL.path)
+            try? PrivateFile.write(d, to: messagesURL)
         }
     }
     /// `rollBack`: production is live and broken, so the notification offers "Roll back …" (a failed
@@ -1194,7 +1192,7 @@ final class Store: ObservableObject {
     /// message to its row. Names scrubbed in demo mode: a Mac notification shows up in a screen recording too.
     private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil, key: String? = nil, row: String? = nil,
                      rollBack: Bool = false, silent: Bool = false) {
-        let all = Array(items.values.joined())
+        let all = allItems
         // Platform error texts can carry keys: masked before they reach the notification, the toast, messages.json or the journal.
         let title = LogTools.maskSecrets(Demo.scrub(title, items: all)), body = LogTools.maskSecrets(Demo.scrub(body, items: all))
         // The project ran again: a second reminder of its last failure is no longer true.
@@ -1220,11 +1218,15 @@ final class Store: ObservableObject {
     @Published var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hidden") ?? []) { didSet { waitingCache = [:] } }
     @Published var notes: [String: String] = (UserDefaults.standard.dictionary(forKey: "notes") as? [String: String]) ?? [:]
     static func key(_ i: Item) -> String { "\(i.platform.cli)/\(i.id)" }
+    /// Every row of every platform, in one list. Use this instead of joining `items` by hand.
+    var allItems: [Item] { Platform.allCases.flatMap { items[$0] ?? [] } }
+    /// The row with this `Store.key`, if the lists hold it.
+    func item(key: String) -> Item? { allItems.first { Self.key($0) == key } }
     func isPinned(_ i: Item) -> Bool { pinned.contains(Self.key(i)) }
     func isHidden(_ i: Item) -> Bool { hidden.contains(Self.key(i)) }
     func note(_ i: Item) -> String? { notes[Self.key(i)] }
     /// A colour of the person's choice per project (FEA-171), as a dot before the name. Kept on this Mac.
-    nonisolated static let projectColorNames = ["red", "orange", "yellow", "green", "blue", "purple", "gray"]
+    nonisolated static let projectColorNames = ProjectColor.allCases.map(\.rawValue)
     @Published private(set) var projectColors: [String: String] = (UserDefaults.standard.dictionary(forKey: "projectColors") as? [String: String]) ?? [:]
     func projectColor(_ i: Item) -> String? { projectColors[Self.key(i)].flatMap { Self.projectColorNames.contains($0) ? $0 : nil } }
     func setProjectColor(_ i: Item, _ name: String?) {
@@ -1286,7 +1288,7 @@ final class Store: ObservableObject {
     /// A notification's "Show log" / "Roll back …": the key (Store.key) of the project, for the palette host.
     @Published var pendingLog: String?
     @Published var pendingRollback: String?
-    func itemNamed(key: String) -> Item? { items.values.joined().first { Self.key($0) == key } }
+    func itemNamed(key: String) -> Item? { item(key: key) }
     /// Counts up when code outside a view wants the main window in front (a notification click).
     @Published var windowRequest = 0
     /// Set by the menu bar: tick everything with changes and ask, in the window.
@@ -1355,7 +1357,7 @@ final class Store: ObservableObject {
 
     /// Starts that got no answer in time, by row: they may be building anyway (see `deploy`).
     private var unsureStarts: [String: Date] = [:]
-    private static let unsureWait: Double = 600
+    private static let unsureWait: Double = Timing.unsureWait
 
     /// Observer mode: says so and is true; deploys and rollbacks then start nothing.
     private func refusedAsObserver() -> Bool {
@@ -1395,7 +1397,7 @@ final class Store: ObservableObject {
     }
 
     /// Stops everything that is queued or building.
-    func cancelAll() { for i in Array(items.values.joined()) where i.state.isActive { cancel(i) } }
+    func cancelAll() { for i in allItems where i.state.isActive { cancel(i) } }
 
     private func summarize() {
         defer { batch = [] }
@@ -1697,7 +1699,7 @@ final class Store: ObservableObject {
     /// Between two status questions; tests make it short. nil: the pace of `pollSeconds`.
     nonisolated(unsafe) static var pollNanos: UInt64?
     /// When following says "no result" (40 minutes) and gives up (12 hours); tests make them short.
-    nonisolated(unsafe) static var followLimits: (overdue: Duration, deadline: Duration) = (.seconds(40 * 60), .seconds(12 * 3600))
+    nonisolated(unsafe) static var followLimits: (overdue: Duration, deadline: Duration) = (Timing.followOverdue, Timing.followDeadline)
 
     /// Shown when a build has no result after 40 minutes: still active, so no second build can start.
     nonisolated static var overdueState: RunState { .running(L("no result after 40 min – still asking, check the dashboard",
@@ -2065,7 +2067,7 @@ final class Store: ObservableObject {
     private func countDownToRollback(_ item: Item, _ link: String, _ code: Int?) {
         let key = Self.key(item), id = Self.rollbackPrefix + key, n = Self.rollbackSeconds
         guard rollbackCountdowns[key] == nil else { return }
-        let name = Demo.mask(item.name), shownLink = Demo.scrub(link, items: Array(items.values.joined()))
+        let name = Demo.mask(item.name), shownLink = Demo.scrub(link, items: allItems)
         let title = L("\(name) fails its check – rolling back in \(n) s", "\(name) besteht den Check nicht – Zurückrollen in \(n) s")
         Notify.countdown(title, shownLink + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), id: id)
         show(Toast(text: title, ok: false, undoLabel: L("Cancel", "Abbrechen"), undo: { [weak self] in self?.cancelRollback(key) }))
@@ -2123,18 +2125,10 @@ final class Store: ObservableObject {
     }
 
     /// Deploys queued or building; an update waits for them instead of quitting in the middle.
-    var deploysBusy: Bool { !queue.isEmpty || running > 0 || !ciWaits.isEmpty || items.values.joined().contains { $0.state.isActive } }
+    var deploysBusy: Bool { !queue.isEmpty || running > 0 || !ciWaits.isEmpty || allItems.contains { $0.state.isActive } }
 
     /// States the app knows; any other is shown as the platform sent it, and logged once.
-    static let knownStates: Set<String> = ["", "queued", "created", "initializing", "building", "build_in_progress",
-                                           "update_in_progress", "pre_deploy_in_progress"]
+    static var knownStates: Set<String> { DeployState.known }
     private static var loggedStates: Set<String> = []
-    static func stateName(_ s: String) -> String {
-        switch s {
-        case "queued", "created", "initializing": return L("queued", "wartet")
-        case "building", "build_in_progress": return L("building", "baut")
-        case "update_in_progress", "pre_deploy_in_progress": return L("going live", "geht live")
-        default: return s.isEmpty ? L("running", "läuft") : s.replacingOccurrences(of: "_", with: " ")
-        }
-    }
+    static func stateName(_ s: String) -> String { DeployState.running(s) }
 }

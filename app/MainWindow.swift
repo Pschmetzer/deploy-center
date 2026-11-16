@@ -202,7 +202,7 @@ struct ContentView: View {
 
     /// A project name as the screen may show it.
     private func shown(_ name: String?) -> String { Demo.mask(name ?? "") }
-    private var allItems: [Item] { Platform.allCases.flatMap { store.items[$0] ?? [] } }
+    private var allItems: [Item] { store.allItems }
     /// The project a message is about, while it is still in the list and has a build log.
     private func messageItem(_ m: Store.Message) -> Item? {
         guard let k = m.project, let i = allItems.first(where: { Store.key($0) == k }),
@@ -1407,12 +1407,12 @@ struct ContentView: View {
                     if let u = URL(string: GitHost.web(repo)) { SafeLink.open(u) }
                 }
                 Button(L("Copy the repo address", "Repo-Adresse kopieren")) {
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(GitHost.web(repo), forType: .string)
+                    Pasteboard.copy(GitHost.web(repo))
                 }
             }
             if let l = item.link, !Demo.on {
                 Button(L("Copy the site address", "Seiten-Adresse kopieren")) {
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(l, forType: .string)
+                    Pasteboard.copy(l)
                 }
             }
             if item.repo != nil {

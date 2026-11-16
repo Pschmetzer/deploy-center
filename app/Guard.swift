@@ -122,7 +122,7 @@ struct GuardSettings: View {
             let out = String(data: try await Tool.run(args, timeout: 300), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             // Only the names are replaced in demo mode; the rest of the report stays readable.
-            let shown = Demo.scrub(out, items: store.items.values.flatMap { $0 })
+            let shown = Demo.scrub(out, items: store.allItems)
             message = show ? (out.isEmpty ? L("Nothing to do.", "Nichts zu tun.") : shown) : (out.isEmpty ? nil : shown)
             failed = false
         } catch { message = error.localizedDescription; failed = true }

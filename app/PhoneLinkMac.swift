@@ -257,10 +257,8 @@ struct PhoneQRSheet: View {
                 if image != nil {
                     // Universal Clipboard takes it to the iPhone; it is cleared again when the code closes.
                     Button(copied ? L("Copied", "Kopiert") : L("Copy code", "Code kopieren")) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(code, forType: .string)
-                        // Clipboard managers that honour this marker do not keep the keys in their history.
-                        NSPasteboard.general.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+                        // Clipboard managers that honour the marker do not keep the keys in their history.
+                        Pasteboard.copy(code, concealed: true)
                         copied = true
                     }
                     .disabled(inactive)

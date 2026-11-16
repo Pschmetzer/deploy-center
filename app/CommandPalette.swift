@@ -113,7 +113,7 @@ enum PaletteCommands {
         if !looksOnly { add(.deployChanged, "Deploy all changed …", "Alles mit Änderungen deployen …", "paperplane.fill",
             detail: w.projects > 0 ? L("\(w.projects) waiting", "\(w.projects) warten") : L("nothing waits", "nichts wartet")) }
         add(.reload, "Reload", "Neu laden", "arrow.clockwise")
-        let active = store.items.values.joined().filter { $0.state.isActive }.count
+        let active = store.allItems.filter { $0.state.isActive }.count
         if active > 0 { add(.stopAll, "Stop all …", "Alles abbrechen …", "stop.circle", detail: L("\(active) running", "\(active) laufen")) }
         add(.journal, "Open journal (deploy history)", "Journal öffnen (Deploy-Verlauf)", "clock.arrow.circlepath")
         add(.settings, "Settings", "Einstellungen", "gear")
