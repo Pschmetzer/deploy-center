@@ -1229,6 +1229,17 @@ final class Store: ObservableObject {
     func isPinned(_ i: Item) -> Bool { pinned.contains(Self.key(i)) }
     func isHidden(_ i: Item) -> Bool { hidden.contains(Self.key(i)) }
     func note(_ i: Item) -> String? { notes[Self.key(i)] }
+    /// What the person marked on these projects, as lines for the deploy question: "shop: critical",
+    /// "shop: note – after the release mail". Led by a blank line; empty when nothing is marked.
+    func confirmMarks(_ items: [Item]) -> String {
+        let lines = items.flatMap { i -> [String] in
+            var l: [String] = []
+            if isCritical(i) { l.append("\(Demo.mask(i.name)): " + L("marked critical", "als kritisch markiert")) }
+            if let n = note(i), !n.isEmpty { l.append("\(Demo.mask(i.name)): " + L("note", "Notiz") + " – " + n) }
+            return l
+        }
+        return lines.isEmpty ? "" : "\n\n" + lines.joined(separator: "\n")
+    }
     /// A colour of the person's choice per project (FEA-171), as a dot before the name. Kept on this Mac.
     nonisolated static let projectColorNames = ProjectColor.allCases.map(\.rawValue)
     @Published private(set) var projectColors: [String: String] = (UserDefaults.standard.dictionary(forKey: "projectColors") as? [String: String]) ?? [:]

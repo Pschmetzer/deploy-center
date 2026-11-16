@@ -742,6 +742,11 @@ MainActor.assumeIsolated {
     st.clearSelection(.vercel)
     st.selectChanged(.vercel, only: ["vercel/zzz"])
     expect("select changed only among the rows shown", st.selected(.vercel).count, 0)
+    // The deploy question names the person's own note on a project; a project without marks adds nothing.
+    st.notes["vercel/app"] = "after the release mail"
+    expect("confirm marks name the note", st.confirmMarks([a]).contains("after the release mail"), true)
+    expect("confirm marks: nothing marked, nothing said", st.confirmMarks([b]), "")
+    st.notes = [:]
     st.hidden = []
 }
 

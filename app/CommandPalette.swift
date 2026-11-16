@@ -630,7 +630,7 @@ private struct PaletteQuestions: ViewModifier {
             // The window's own question, checkbox included; the window deploys once the sheet is gone.
             .sheet(item: $deployItem, onDismiss: {
                 if let i = confirmed { confirmed = nil; store.pendingDeploy = i }
-            }) { i in DeployConfirmSheet(items: [i], platforms: false) { confirmed = i } }
+            }) { i in DeployConfirmSheet(items: [i], platforms: false, marks: store.confirmMarks([i])) { confirmed = i } }
             .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"), isPresented: binding($unchangedItem)) {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
                 Button(L("Build anyway", "Trotzdem bauen")) { if let i = unchangedItem { store.pendingDeploy = i }; unchangedItem = nil }

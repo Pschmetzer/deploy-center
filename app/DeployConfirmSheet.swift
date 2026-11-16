@@ -12,6 +12,8 @@ struct DeployConfirmSheet: View {
     let platforms: Bool
     /// What the builds cost and whether the budget holds (`Store.costNote`, already led by a blank line); empty when unknown.
     var costNote: String = ""
+    /// The person's own marks on these projects (a note, "critical"); `Store.confirmMarks`. Empty when there are none.
+    var marks: String = ""
     let onDeploy: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -19,7 +21,7 @@ struct DeployConfirmSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L("Put this live now?", "Jetzt live schalten?")).font(.headline).accessibilityAddTraits(.isHeader)
             ScrollView {
-                Text(DeployConfirm.message(items, platforms: platforms) + DeployConfirm.unchangedNote(items) + costNote)
+                Text(DeployConfirm.message(items, platforms: platforms) + DeployConfirm.unchangedNote(items) + costNote + marks)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -27,7 +29,7 @@ struct DeployConfirmSheet: View {
             HStack {
                 Spacer()
                 // Many projects or a red risk: Return must not be the way to go live; Cancel is the default then.
-                let careful = items.count > 3 || items.contains { $0.risk?.isRed == true }
+                let careful = items.count > 3 || items.contains { $0.risk?.isRed == true } || !marks.isEmpty
                 Button(L("Cancel", "Abbrechen")) { dismiss() }.keyboardShortcut(careful ? .defaultAction : .cancelAction)
                 Button(L("Deploy", "Deployen")) { onDeploy(); dismiss() }
                     .keyboardShortcut(careful ? KeyboardShortcut("d", modifiers: .command) : .defaultAction)
