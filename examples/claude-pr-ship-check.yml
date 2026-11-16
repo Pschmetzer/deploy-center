@@ -1,7 +1,7 @@
 # Example: on each pull request, Claude comments "What this ships": which Vercel and Render projects
 # deploy from this repo, what is already waiting to go live, how risky the change looks, and whether
 # auto-deploy is off (then nothing ships until someone deploys).
-# Copy to .github/workflows/claude-pr-ship-check.yml in your app's repo. See docs/CLAUDE.md.
+# Copy to .github/workflows/claude-pr-ship-check.yml in your app's repo. See docs/CLAUDE-IN-APP.md.
 #
 # It uses two actions:
 #   Pschmetzer/deploy-center/integrations/action   reads `deploys changed --json` (never deploys here)

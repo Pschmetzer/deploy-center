@@ -86,7 +86,7 @@
 #                                             plain release notes (--lang en|de), is it safe to ship
 #   deploys ai ask <p> --question "…"         your own question about a project (its commits and log go along)
 #   deploys ai slow <p> | risk <p>            why its builds take long; risk = ship
-#   deploys ai set-key | verify | model [<id>] | cap [<n>] | status | forget-key   (see docs/CLAUDE.md)
+#   deploys ai set-key | verify | model [<id>] | cap [<n>] | status | forget-key   (see docs/CLAUDE-IN-APP.md)
 #
 #   deploys costs [days]                      Vercel charges per day (Vercel only)
 #   deploys triggers                          builds nobody started from here, deploying workflows, Blueprints
@@ -2192,7 +2192,7 @@ revoke_main() {
 # --- Claude in the app (deploys ai …): the user's own Anthropic API key, no server of ours in between.
 # Opt-in: nothing is sent unless one of these commands runs (the app offers them only when switched on).
 # Only masked text leaves the Mac (af_mask, the same as autofix), and a monthly token cap is
-# checked before every request. See docs/CLAUDE.md.
+# checked before every request. See docs/CLAUDE-IN-APP.md.
 AI_KEYCHAIN="deploy-center-anthropic"
 AI_API="${DEPLOYS_ANTHROPIC_API:-https://api.anthropic.com/v1}"
 api_url_ok "$AI_API" || die "DEPLOYS_ANTHROPIC_API must be an https address (it receives your API key)."
