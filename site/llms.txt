@@ -33,6 +33,11 @@
 - [Reduce Vercel costs](https://deploycenter.app/guides/reduce-vercel-costs/): A checklist: builds first, then functions, images and bandwidth.
 - [Auto-fix failed builds with Claude](https://deploycenter.app/guides/auto-fix-failed-vercel-builds-with-claude/): A failed Vercel or Render build goes to a Claude Code routine, which opens a fix PR.
 - [Deploy hooks for any host](https://deploycenter.app/guides/deploy-hooks/): What a deploy hook is, where each host keeps it, calling it with curl, keeping the URL secret.
+- [Stop Cloudflare Pages builds](https://deploycenter.app/guides/cloudflare-pages-stop-builds/): Turn off production and preview deployments so a push no longer uses a build.
+- [Disable AWS Amplify auto-build](https://deploycenter.app/guides/aws-amplify-disable-auto-build/): One AWS CLI command per branch, and how to start a build yourself.
+- [Stop DigitalOcean App Platform builds](https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/): deploy_on_push: false on each component, and why the API needs the whole spec.
+- [Coolify: Auto Deploy off](https://deploycenter.app/guides/coolify-auto-deploy-off/): No build storm on your own server: the switch, the API field, deploying by hand.
+- [Roll back a Vercel or Render deploy](https://deploycenter.app/guides/roll-back-vercel-render-deployment/): Back to the last good deployment from the dashboard or the CLI, and how to check.
 
 ## Tools and reading
 

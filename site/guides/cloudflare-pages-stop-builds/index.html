@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to stop Cloudflare Pages building on every push · Deploy Center</title>
+<meta name="description" content="Turn off production and preview deployments for a Cloudflare Pages project so a push no longer uses a build, then deploy when you decide.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/cloudflare-pages-stop-builds/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="How to stop Cloudflare Pages building on every push · Deploy Center">
+<meta property="og:description" content="Turn off production and preview deployments for a Cloudflare Pages project so a push no longer uses a build, then deploy when you decide.">
+<meta property="og:url" content="https://deploycenter.app/guides/cloudflare-pages-stop-builds/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How to stop Cloudflare Pages building on every push · Deploy Center">
+<meta name="twitter:description" content="Turn off production and preview deployments for a Cloudflare Pages project so a push no longer uses a build, then deploy when you decide.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How to stop Cloudflare Pages building on every push",
+  "description": "Turn off production and preview deployments for a Cloudflare Pages project so a push no longer uses a build, then deploy when you decide.",
+  "url": "https://deploycenter.app/guides/cloudflare-pages-stop-builds/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/cloudflare-pages-stop-builds/",
+  "datePublished": "2026-11-16",
+  "dateModified": "2026-11-16",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Does Cloudflare charge for each build?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. Pages plans have a build count limit per month instead. Every push to a connected repository uses one build, and so does each preview branch push."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Which settings stop push builds?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Production deployments and Preview deployments under Settings, Builds and deployments. Both have to be off for a push to build nothing."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Do direct upload projects build on push?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. A project made by direct upload with wrangler has no Git connection, so pushes never build it."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does Deploy Center support Cloudflare Pages?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes, as an opt-in host: deploys providers enable cloudflare. It turns both switches off, remembers their old values, and can turn them back on."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Stop Cloudflare Pages builds",
+    "item": "https://deploycenter.app/guides/cloudflare-pages-stop-builds/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>How to stop Cloudflare Pages building on every push</h1>
+<p class="answer">In the Pages project open <b>Settings → Builds &amp; deployments</b> and set <b>Production deployments</b> and <b>Preview deployments</b> to off (none). A push then builds nothing and no longer uses one of your monthly builds. Deploy by hand when you want to ship.</p>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<p>Cloudflare does not charge per build. Pages plans have a <b>build count limit</b>, and every push to a connected repository, and every push to a preview branch, uses one build. Pushing often does not cost more money, but it uses up the quota and builds queue behind each other.</p>
+<h2 id="dashboard">1. In the dashboard</h2>
+<ol>
+  <li>Open <b>Workers &amp; Pages</b>, then your project, then <b>Settings → Builds &amp; deployments</b>.</li>
+  <li>Choose <b>Configure Production deployments</b> and turn automatic production deployments off.</li>
+  <li>Choose <b>Configure Preview deployments</b> and set them to none.</li>
+</ol>
+<div class="note"><p><b>Trade-offs.</b> No push builds anything, preview deployments per pull request included. A project made by direct upload (wrangler) has no Git connection, so pushes never build it and there is nothing to turn off.</p></div>
+<h2 id="deploy">2. Deploying afterwards</h2>
+<p>Whether Cloudflare builds a deployment you create by hand while production deployments are off is not documented. It may build, or it may create a deployment that is skipped. Check with one real build before you rely on it, and keep an eye on the deployment's stage the first time.</p>
+<h2>Cloudflare Pages in Deploy Center</h2>
+<p><a href="/">Deploy Center</a> supports Cloudflare Pages as an opt-in host: <code>deploys providers enable cloudflare</code>, then <code>pbpaste | deploys cloudflare set-key</code> with an API token that has <b>Cloudflare Pages: Edit</b>. <code>deploys cloudflare off &lt;project&gt;</code> sets both switches off and remembers what they were, <code>deploys cloudflare selftest &lt;project&gt; --yes</code> runs the one real build described above, and <code>deploys cloudflare deploy &lt;project&gt;</code> deploys the newest commit of the production branch. <code>deploys cloudflare on &lt;project&gt;</code> puts the old values back. Details: <a href="/docs/cloudflare-pages/">the Cloudflare Pages provider docs</a>.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Does Cloudflare charge for each build?</summary><p>No. Pages plans have a build count limit per month instead. Every push to a connected repository uses one build, and so does each preview branch push.</p></details>
+  <details><summary>Which settings stop push builds?</summary><p>Production deployments and Preview deployments under Settings, Builds and deployments. Both have to be off for a push to build nothing.</p></details>
+  <details><summary>Do direct upload projects build on push?</summary><p>No. A project made by direct upload with wrangler has no Git connection, so pushes never build it.</p></details>
+  <details><summary>Does Deploy Center support Cloudflare Pages?</summary><p>Yes, as an opt-in host: deploys providers enable cloudflare. It turns both switches off, remembers their old values, and can turn them back on.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+</body>
+</html>
