@@ -38,3 +38,22 @@ Geprüft: `./tests/app-tests.sh` (en und de) grün auf dem Stand jedes Commits.
 - 89, 90, 91, 93–105, 107–113: je eigener UI-Schritt (Countdown-Toast, Wiederholen der Fehlgeschlagenen, Notiz in der Bestätigung, Zeitwähler, Auswahllisten); jeder braucht Layout und Sichtprüfung. 91 braucht zusätzlich den Store im Bestätigungsblatt.
 - 115–120, 122–136, 139, 140: neue Funktionen mit eigenem Datenmodell (Journal-Felder, Kosten-Zeitraum, Wochenplan, Pro-Projekt-Einstellungen); nicht risikoarm ohne UI-Test.
 - 141–143, 145–158: Refactorings über große Dateien (Store, Model); ohne Sichtprüfung und bei laufender Funktionsarbeit nicht sicher.
+
+## Runde 8 (Branch `feat/app-round-8`, auf dem Stand von PR #138)
+
+Geprüft: `bash tests/app-tests.sh` (en und de) grün nach jeder der drei Gruppen. `./build.sh` nicht ausgeführt.
+
+### Umgesetzt
+
+- **Code:** 141 teilweise (`Model.swift` verliert `Notify.swift` und `DeployWindowConfig.swift`; `Store.swift` bleibt eine Klasse, weil die Abschnitte gespeicherte Eigenschaften teilen), 142, 143 (`Decoding.swift`: `Lossy`, `AnyKey`, `Skippable`, `Lax` einmal), 146 (`Store.allItems`, `Store.item(key:)`), 147 (`Pasteboard.copy`, mit `concealed`), 148 teilweise (`Timing` für die sieben Wartezeiten des Stores), 151 (`PrivateFile.write`: 0600 schon beim Anlegen, atomar; für `window.json`, `rules.json`, `messages.json` und die Bilanz), 153 (`ProjectColor`), 154 (`DeployState`: eine Tabelle für Zeilen- und Laufwort).
+- **Features:** 117 (Journal-Einträge tragen `sha` und `deployId`; alte Zeilen lesen weiter; Anzeige und „Commit kopieren“), 118 teilweise (Zeitraum und Plattform; Datumsbereich frei wählbar fehlt).
+- **UX:** 89 („Alle abbrechen“ im Start-Toast ab zwei Zeilen), 90 und 129 (die fehlgeschlagenen Projekte werden genannt, ein Klick startet sie nochmal; nicht für Beobachter), 91 teilweise (Notiz und „kritisch“ stehen in der Bestätigung; Risikogründe und CI standen dort schon bzw. fehlen weiter), 108 (ein alter Fehler-Toast lässt nach zwei Minuten los).
+
+### Weiter offen, mit Grund
+
+- 119 (Kosten-Zeitraum wählbar): Budgetalarm und Tempo rechnen mit den 14 Tagen; ein anderer Zeitraum bräuchte einen zweiten Abruf und eigene Alarmlogik.
+- 73, 74, 75, 77–79, 82–87: nicht gemessen oder ein Umbau des Store auf `@Observable`; ohne Messung kein belegter Gewinn.
+- 93–105, 107, 109–113, 115, 116, 120, 122–128, 130–136, 139, 140: je eigener Bildschirm mit Layout und Sichtprüfung (Zeitwähler, Auswahllisten, Pro-Projekt-Einstellungen, Wochenpläne, Verlauf der Antwortzeit); ohne laufende App nicht belegbar.
+- 141 (Rest), 145, 149, 150, 152, 155–158: Store in weitere Dateien teilen verlangt, dass gespeicherte Eigenschaften und `private`-Zugriffe neu geordnet werden; `ProjectMarks`-Modell, `FileWriter`-Actor und Initializer-Injektion statt `nonisolated(unsafe)` sind je eigene Umbauten mit Testumbau.
+- 46–48, 54–57: Sichtprüfung (Layout, Kontrast, Fokusreihenfolge).
+- 12, 13, 15, 17, 18, 32, 34, 35, 59, 61–64, 70, 80: Gründe wie oben in Runde 7 (Skript oder MCP-Server nötig, oder Gegenbeleg).
