@@ -34,5 +34,13 @@ long="$(perl -e 'print "a." x 75000')"
 cut="$(printf '%s\n' "$long" | af_mask | wc -c | tr -d ' ')"
 [ "$cut" -lt 4100 ] && [ $((SECONDS - start)) -lt 10 ] && ok "mask: a 150000-character line is cut and handled fast" || fail "mask: long line" "bytes $cut, $((SECONDS - start)) s"
 
+# --- completion: commands come from the case labels, and the second word is completed for the multi-command ones ---
+cli() { env -u DEPLOYS_LIB bash ./deploys "$@"; }
+comp="$(cli completion bash)"
+expect "completion: a command of the case labels (rollback) is offered" "$(grep 'COMP_CWORD -eq 1 \]; then' <<<"$comp" | grep -c -w rollback)" "1"
+expect "completion bash: schedule completes daily off status" "$(grep -c 'COMP_WORDS\[1\]}" = schedule \]; then COMPREPLY=(\$(compgen -W "daily off status"' <<<"$comp")" "1"
+expect "completion zsh: autofix completes its subcommands" "$(cli completion zsh | grep -c 'words\[2\] == autofix && CURRENT == 3 \]\]; then compadd set-token routine')" "1"
+expect "completion fish: hooks completes install uninstall status" "$(cli completion fish | grep -c "seen_subcommand_from hooks' -a 'install uninstall status'")" "1"
+
 echo
 [ "$fails" -eq 0 ] && echo "All round-8 tests passed." || { echo "$fails failed."; exit 1; }

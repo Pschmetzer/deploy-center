@@ -11,17 +11,20 @@
 # No key is ever printed.
 #
 # Commands:
-#   deploys doctor                            check tools and access (JSON)
+#   deploys doctor [--text]                   check tools and access (JSON; --text: one line each, with the fix)
 #   deploys changed [--json]                  what has commits on GitHub that are not live
-#   deploys deploy-changed [--yes]            deploy all of those (shows the list without --yes)
+#   deploys deploy-changed [--yes]            deploy all of those (shows the list without --yes; --dry-run says so too)
+#     [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>]   narrow what it looks at
 #     [--by-rules]                            only what a "deploy" rule matches; "hold" rules always count
 #     [--when-green [--wait 30m] [--strict]]  only commits whose CI passed; waits for running checks
 #   deploys plan [--when-green] [--json]      what deploy-changed --yes would start, and an estimate of its cost
 #   deploys schedule daily [HH:MM] [--when-green] [--by-rules] [--strict] | off | status [--json]
 #                                             deploy-changed --yes once a day (launchd; else the cron line)
 #   deploys rules check [--json]              which rule of rules.json matches which waiting project, and why not
-#   deploys deploy <p>|<group> [--preview] [--sha <c>] [--wait] [--force "reason"]
-#                                             deploy one project, or a group in its order (docs/TEAM.md)
+#   deploys deploy <p>|<group> [--preview] [--sha <c>] [--wait] [--dry-run] [--force "reason"]
+#                                             deploy one project, or a group in its order (docs/TEAM.md);
+#                                             --dry-run says what would start and starts nothing
+#   deploys rollback <p> [<id>] | cancel <p> [<id>]   the project on whichever platform it is on
 #   deploys status [--watch] [--no-github]    what is building or failed (--no-github: no GitHub calls)
 #   deploys watch <p> [<id>] [--preview] [--timeout 30m]   follow a deploy until it is live or failed
 #   deploys logs <project> [lines] [--id <d>] the end of the newest build log (or of deploy <d>), keys masked
@@ -2470,14 +2473,19 @@ case "${1:-} ${2:-}" in
   "risk "*)        usage_if_short $# 2 "risk <project> [--json]" ;;
   "ci "*)          usage_if_short $# 2 "ci <owner/repo> [<sha or branch>] [--wait 30m] [--json]" ;;
   "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
-  "deploy "*)      usage_if_short $# 2 "deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force \"reason\"]" ;;
+  "deploy "*)      usage_if_short $# 2 "deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--dry-run] [--force \"reason\"]" ;;
+  "rollback "*)    usage_if_short $# 2 "rollback <project> [<deploy>]" ;;
+  "cancel "*)      usage_if_short $# 2 "cancel <project> [<deploy>]" ;;
   "vercel map")    usage_if_short $# 4 "vercel map <project> <owner/repo> [branch]" ;;
 esac
 
 # Observer mode: what changes something on Vercel, Render or GitHub is refused before it starts.
 # Reading, and this Mac's own settings (ignore, keys, team repos, readonly), stay allowed.
 case "${1:-} ${2:-}" in
-  "deploy "*|"vercel map"|"vercel autodeploy-off"|"vercel deploy"|"vercel deploy-json"|"vercel cancel"|"vercel rollback"\
+  # deploy --dry-run only reads: it says what would start.
+  "deploy "*) case " ${*:2} " in *" --dry-run "*|*" -n "*) ;; *) require_write "$1 $2" ;; esac ;;
+  "rollback "*|"cancel "*) require_write "$1 $2" ;;
+  "vercel map"|"vercel autodeploy-off"|"vercel deploy"|"vercel deploy-json"|"vercel cancel"|"vercel rollback"\
   |"render autodeploy-off"|"render deploy"|"render deploy-json"|"render cancel"|"render rollback"|"hook deploy" \
   |"autodeploy allow"|"autodeploy revoke")
     require_write "$1 $2" ;;
@@ -2523,7 +2531,7 @@ safe_ref() {
 case "${1:-} ${2:-}" in
   "watch "*|"logs "*|"open "*|"explain "*|"diff "*|"notes "*|"history "*) check_args "${@:2}" ;;
   # Names that are looked up on every provider (lookup -> <p>_has, an API path) before anything starts.
-  "deploy "*|"verify "*|"risk "*) safe_name "$2" ;;
+  "deploy "*|"verify "*|"risk "*|"rollback "*|"cancel "*) safe_name "$2" ;;
   "ai explain"|"ai notes"|"ai ship") safe_name "$3" ;;
   "autofix "*) _i=2; while [ "$_i" -lt "$#" ]; do
                  if [ "${!_i}" = --only ]; then _j=$((_i + 2)); [ "$_j" -gt "$#" ] || safe_name "${!_j}"; fi; _i=$((_i + 1)); done ;;
@@ -2596,17 +2604,17 @@ case "${1:-} ${2:-}" in
     # deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force "reason"]
     # One project on whichever platform it is on, or a group from deploy-center.json in its order:
     # each member waits until the one before it is live, and a failure stops the rest.
-    name="$2"; shift 2; pv=""; sha=""; wait_=""; force=""
+    name="$2"; shift 2; pv=""; sha=""; wait_=""; force=""; dry=""
     # --force "reason" was already taken out of the arguments at the top (it also opens a closed
     # window) and checked there: it is never among the arguments here.
     [ "$forced" = 1 ] && force="$(printf '%s' "$force_reason" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
     while [ $# -gt 0 ]; do
       case "$1" in
-        --preview) pv=1;; --wait) wait_=1;;
+        --preview) pv=1;; --wait) wait_=1;; --dry-run|-n) dry=1;;
         --sha) [ -n "${2:-}" ] || die "Usage: deploys deploy <project> --sha <commit>"; sha="$2"; shift
           case "$sha" in *[!0-9a-fA-F]*|"") die "--sha takes a commit id (7 to 40 hex digits), not \"$sha\"";; esac
           [ "${#sha}" -ge 7 ] && [ "${#sha}" -le 40 ] || die "--sha takes a commit id (7 to 40 hex digits), not \"$sha\"";;
-        *) die "Unknown option $1. Usage: deploys deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--force \"reason\"]";;
+        *) die "Unknown option $1. Usage: deploys deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--dry-run] [--force \"reason\"]";;
       esac; shift
     done
     # "group:<name>" is always the group. A bare name that is a group and a project as well is
@@ -2639,6 +2647,15 @@ case "${1:-} ${2:-}" in
       r="$(lookup "$p")" || group_stop "$p" "$count"
       plat="${r%%$'\t'*}"; pid="${r#*$'\t'}"; label="$(meta_str "$plat" label)"
       [ -z "$pv" ] || need_cap "$plat" preview "deploy a preview ($p)"
+      # --dry-run: what would start, nothing is started (an observer is not stopped by it either).
+      if [ -n "$dry" ]; then
+        dj="$(jq -nc --arg p "$plat" --arg n "${p#*:}" --arg s "$sha" --argjson pv "$([ -n "$pv" ] && echo true || echo false)" \
+          '{platform:$p, name:$n, wouldDeploy:true, preview:$pv, sha:(if $s == "" then null else $s end)}')"
+        if [ "$json" = 1 ]; then
+          if [ "$count" -gt 1 ]; then GROUP_STARTS="$(echo "$dj" | jq -c --argjson a "$GROUP_STARTS" '$a + [.]')"; else echo "$dj"; fi
+        else echo "Would deploy $label: ${p#*:}${pv:+ (preview)}${sha:+ at ${sha:0:7}}. Nothing was started."; fi
+        continue
+      fi
       out="$(DEPLOYS_FORCE_REASON="$force" "${plat}_deploy_json" "$pid" ${pv:+--preview} ${sha:+--sha "$sha"})" || group_stop "$p" "$count"
       journal_forced "$plat" "${p#*:}"
       did="$(echo "$out" | jq -r '.id // empty')"
@@ -2679,6 +2696,14 @@ case "${1:-} ${2:-}" in
       fi
     done
     group_json_out "$count" ;;
+
+  "rollback "*|"cancel "*)
+    # rollback|cancel <project> [<deploy>]: the project on whichever platform it is on; the provider's own
+    # command does the work (so the window, the journal and the observer rule are the same as there).
+    verb="$1"; name="$2"; r="$(lookup "$name")" || exit 1
+    plat="${r%%$'\t'*}"; pid="${r#*$'\t'}"
+    need_cap "$plat" "$verb" "$verb $name"
+    exec "$SELF" "$plat" "$verb" "$pid" "${@:3}" ;;
 
   "config "*)
     # config [--json] [--refresh]: every value in effect here, and where it came from.
@@ -2830,8 +2855,22 @@ case "${1:-} ${2:-}" in
     jqv="$(jq --version 2>/dev/null | sed 's/^jq-//' | tr -d '"\\')"
     ro=false; [ -z "$(readonly_from)" ] || ro=true
     # jobsMissing: "autofix:gh" = the autofix job's PATH no longer finds gh; deploys <job> schedule on renews it.
-    printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s,"perl":%s,"curl":%s,"jobsMissing":%s,"githubRateLimit":%s}\n' \
-      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" "$(job_missing_json)" "$grl" ;;
+    dj="$(printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s,"perl":%s,"curl":%s,"jobsMissing":%s,"githubRateLimit":%s}' \
+      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" "$(job_missing_json)" "$grl")"
+    # doctor --text: one line per thing, "ok" or "FIX" with the command that fixes it (the JSON stays the default:
+    # the app reads it). Without jq there is nothing to render with, so the JSON is printed.
+    if [ "${2:-}" = --text ] && [ "$(has jq)" = true ]; then
+      printf '%s' "$dj" | jq -r '
+        def m($b; $t; $fix): (if $b then "ok   " else "FIX  " end) + $t + (if $b then "" else "   -> " + $fix end);
+        m(.jq; "jq"; "brew install jq"), m(.githubCli; "gh (GitHub CLI)"; "brew install gh"),
+        m(.githubLoggedIn; "gh is logged in"; "gh auth login"), m(.perl; "perl"; "install perl (masking and time limits need it)"),
+        m(.curl; "curl"; "install curl"),
+        "     bash \(.bashVersion), jq \(.jqVersion)",
+        (if .readonly then "NOTE observer mode is on: deploys readonly off" else empty end),
+        (if .githubRateLimit then "     GitHub budget: \(.githubRateLimit.remaining) of \(.githubRateLimit.limit) calls left" else empty end),
+        (if (.jobsMissing | length) > 0 then "FIX  a scheduled job lost a tool on its PATH: \(.jobsMissing | join(", ")); run its schedule on again" else empty end),
+        (.providers // {} | to_entries[] | "     \(.key): \(.value | del(.provider) | tojson | .[0:150])")'
+    else printf '%s\n' "$dj"; fi ;;
 
   "github-budget "*)
     github_budget ;;
@@ -3023,7 +3062,27 @@ case "${1:-} ${2:-}" in
   "completion "*)
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
     # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    cmds="doctor where changed plan deploy deploy-changed verify risk ci window config team readonly status watch history logs open ignore hooks rules schedule explain diff notes costs triggers simulate ledger price budget details autofix scan check autodeploy guard providers list ${PROVIDERS[*]} ai gitlab completion --help --version"
+    # The commands are read from the case labels of this script (the same source as the typo hint), so a new
+    # command is completed the day it exists; the providers and the flags are added.
+    cmds="$( { sed -n 's/^  "\([a-z][a-z-]*\)[ "].*/\1/p' "$SELF"; printf '%s\n' "${PROVIDERS[@]}" completion --help --version; } | sort -u | paste -sd' ' -)"
+    # The words that follow a command (second place), one line per command: "<command>:<words>".
+    subs_table="autodeploy:allow allowed revoke
+guard:status schedule
+schedule:daily off status
+hooks:install uninstall status
+team:add remove list refresh journal init
+scan:start status list log
+check:start show
+autofix:set-token routine list forget-token prompt status sync schedule
+rules:check
+price:set unset
+budget:set off
+ignore:--list --undo
+readonly:on off
+config:--refresh
+doctor:--text
+rollback:
+cancel:"
     verbs_of() {
       local v="list deploy rollback status cancel autodeploy-off json" x
       for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
@@ -3035,6 +3094,11 @@ case "${1:-} ${2:-}" in
       zv="$zv  elif [[ \$words[2] == $p && CURRENT == 3 ]]; then compadd $(verbs_of "$p")"$'\n'
       bv="$bv  elif [ \$COMP_CWORD -eq 2 ] && [ \"\${COMP_WORDS[1]}\" = $p ]; then COMPREPLY=(\$(compgen -W \"$(verbs_of "$p")\" -- \"\$cur\"))"$'\n'
     done
+    while IFS=: read -r _c _w; do
+      [ -n "$_w" ] || continue
+      zv="$zv  elif [[ \$words[2] == $_c && CURRENT == 3 ]]; then compadd $_w"$'\n'
+      bv="$bv  elif [ \$COMP_CWORD -eq 2 ] && [ \"\${COMP_WORDS[1]}\" = $_c ]; then COMPREPLY=(\$(compgen -W \"$_w\" -- \"\$cur\"))"$'\n'
+    done <<< "$subs_table"
     case "${2:-zsh}" in
       zsh) cat <<ZSH
 _deploys() {
@@ -3072,6 +3136,9 @@ BASH
         echo "complete -c deploys -f"
         echo "complete -c deploys -n __fish_use_subcommand -a '$cmds'"
         for p in "${PROVIDERS[@]}"; do echo "complete -c deploys -n '__fish_seen_subcommand_from $p' -a '$(verbs_of "$p")'"; done
+        while IFS=: read -r _c _w; do
+          [ -n "$_w" ] && echo "complete -c deploys -n '__fish_seen_subcommand_from $_c' -a '$_w'"
+        done <<< "$subs_table"
         echo "complete -c deploys -n '__fish_seen_subcommand_from ai' -a 'explain notes ship ask slow risk set-key forget-key verify model cap status'"
         echo "complete -c deploys -n '__fish_seen_subcommand_from providers' -a 'enable disable'"
         echo "complete -c deploys -n '__fish_seen_subcommand_from completion' -a 'zsh bash fish'"
@@ -3448,7 +3515,7 @@ BASH
     # The daily deploy: everything with changes. Without --yes it only shows what it would do.
     # Only what is known to have changes is started; what could not be read is named and left out.
     # --when-green: only commits whose CI passed; pending checks are waited for (--wait, default 30m).
-    yes=""; green=""; maxw=1800; strict=""; byrules=""
+    yes=""; green=""; maxw=1800; strict=""; byrules=""; dryc=""; only=(); excl=(); platf=""; maxn=0
     shift
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -3456,14 +3523,32 @@ BASH
         --when-green) green=1 ;;
         --strict) strict=1 ;;   # exit 2 when anything was skipped (cron and CI see it)
         --by-rules) byrules=1 ;;  # only what a "deploy" rule in rules.json matches
+        --dry-run|-n) dryc=1 ;;   # what --yes would start; the same as leaving --yes out
+        --only) [ -n "${2:-}" ] || die "--only takes a project name"; safe_name "$2"; only+=("$2"); shift ;;
+        --exclude) [ -n "${2:-}" ] || die "--exclude takes a project name"; safe_name "$2"; excl+=("$2"); shift ;;
+        --platform) [ -n "${2:-}" ] || die "--platform takes a platform"; is_provider "$2" || die "--platform: \"$2\" is not a platform here"; platf="$2"; shift ;;
+        --max) case "${2:-}" in ''|*[!0-9]*|0) die "--max takes a number of projects, 1 or more" ;; esac; maxn="$2"; shift ;;
         --wait) maxw="$(duration_s "${2:-}")" || die "--wait takes a time like 30m, 90s or 1h"; shift ;;
-        *) die "Unknown option $1. Usage: deploys deploy-changed [--yes] [--when-green [--wait 30m] [--strict]] [--by-rules] [--force \"why\"] [--json]" ;;
+        *) die "Unknown option $1. Usage: deploys deploy-changed [--yes | --dry-run] [--when-green [--wait 30m] [--strict]] [--by-rules] [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>] [--force \"why\"] [--json]" ;;
       esac
       shift
     done
+    [ -z "$dryc" ] || [ -z "$yes" ] || die "--dry-run and --yes are opposites: --dry-run only shows what --yes would start."
     [ -z "$byrules" ] || rules_on || die "--by-rules needs rules.json with a rule that is on (see docs/CLI.md, Rules)."
     rc=0; list="$(changed_json)" || rc=$?
-    apply_rules "$byrules"; n="$(echo "$list" | jq length)"
+    apply_rules "$byrules"
+    # --only / --exclude / --platform / --max narrow what was found (names without a platform: every platform).
+    if [ "${#only[@]}" -gt 0 ] || [ "${#excl[@]}" -gt 0 ] || [ -n "$platf" ] || [ "$maxn" != 0 ]; then
+      list="$(echo "$list" | jq -c \
+        --argjson only "$(printf '%s\n' ${only[@]+"${only[@]}"} | jq -R . | jq -sc 'map(select(. != ""))')" \
+        --argjson ex "$(printf '%s\n' ${excl[@]+"${excl[@]}"} | jq -R . | jq -sc 'map(select(. != ""))')" \
+        --arg plat "$platf" --argjson max "$maxn" \
+        '[.[] | select((($only | length) == 0 or (.name as $n | $only | index($n)))
+                       and (.name as $n | ($ex | index($n)) | not)
+                       and ($plat == "" or .platform == $plat))]
+         | if $max > 0 then .[0:$max] else . end')"
+    fi
+    n="$(echo "$list" | jq length)"
     if [ "$held" != "[]" ] && [ "$json" != 1 ]; then
       echo "$held" | jq -r '.[] | "  \(.platform)  \(.name)  held by the rule \"\(.rule.name)\""'
     fi

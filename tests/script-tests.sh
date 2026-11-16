@@ -490,6 +490,30 @@ expect "verify: --no-rollback only reports (exit 2)" "$(SITE=down run "$O" "$E" 
 fresh
 expect "verify: Ctrl-C in the countdown stops the rollback" \
   "$(SITE=down CANCEL=1 run "$O" "$E" verify web --json; jq -c '{rolledBack, cancelled}' "$O"; rolled)" $'2\n{"rolledBack":false,"cancelled":true}\n0'
+# Round 8: --dry-run and filters for deploy-changed, deploy --dry-run, top-level rollback and cancel.
+fresh
+expect "deploy-changed --dry-run: lists, starts nothing" "$(run "$O" "$E" deploy-changed --dry-run; started)" $'0\n0'
+expect "deploy-changed --dry-run says what --yes would do" "$(grep -c 'Run again with --yes' "$O")" "1"
+fresh
+expect "deploy-changed --dry-run with --yes is refused" "$(run "$O" "$E" deploy-changed --dry-run --yes; grep -c 'opposites' "$E"; started)" $'1\n1\n0'
+fresh
+expect "deploy-changed --only: just that project" "$(run "$O" "$E" deploy-changed --dry-run --only web; grep -c '^  vercel  web' "$O"; grep -c '^  render  api' "$O")" $'0\n1\n0'
+expect "deploy-changed --exclude: that project is left out" "$(run "$O" "$E" deploy-changed --dry-run --exclude web; grep -c '^  vercel  web' "$O"; grep -c '^  render  api' "$O")" $'0\n0\n1'
+expect "deploy-changed --platform render: only Render" "$(run "$O" "$E" deploy-changed --dry-run --platform render; grep -c '^  vercel  ' "$O"; grep -c '^  render  ' "$O")" $'0\n0\n1'
+expect "deploy-changed --max 1: one project" "$(run "$O" "$E" deploy-changed --dry-run --max 1; grep -c '^  [a-z]*  ' "$O")" $'0\n1'
+expect "deploy-changed --max 0 is refused" "$(run "$O" "$E" deploy-changed --dry-run --max 0 >/dev/null; grep -c 'number of projects' "$E")" "1"
+expect "deploy-changed --platform nowhere is refused" "$(run "$O" "$E" deploy-changed --dry-run --platform nowhere >/dev/null; grep -c 'not a platform' "$E")" "1"
+fresh
+expect "deploy --dry-run: says what would start, starts nothing" "$(run "$O" "$E" deploy web --dry-run; cat "$O"; started)" $'0\nWould deploy Vercel: web. Nothing was started.\n0'
+expect "deploy --dry-run --json" "$(run "$O" "$E" deploy web --preview --dry-run --json; jq -c '[.wouldDeploy, .preview, .platform]' "$O")" $'0\n[true,true,"vercel"]'
+expect "deploy --dry-run is allowed in observer mode" "$(DEPLOYS_READONLY=1 run "$O" "$E" deploy web -n)" "0"
+fresh
+expect "rollback <project>: the provider rolls it back" "$(run "$O" "$E" rollback web; rolled)" $'0\n1'
+expect "rollback with no project is a usage line" "$(run "$O" "$E" rollback; grep -c 'Usage: deploys rollback' "$E")" $'1\n1'
+expect "rollback is refused in observer mode" "$(DEPLOYS_READONLY=1 run "$O" "$E" rollback web; rolled)" $'1\n1'
+fresh
+expect "doctor --text: one line per thing" "$(run "$O" "$E" doctor --text; grep -c '^ok   jq$' "$O")" $'0\n1'
+
 # FEA-033: the project's checks (overrides.json here, deploy-center.json in a repo) are each asked.
 echo '{"projects":{"web":{"checks":["/ok",{"path":"/moved","expect":"3xx"}]}}}' > "$e2e/config/overrides.json"; fresh
 expect "FEA-033: verify asks every check of the project" \
