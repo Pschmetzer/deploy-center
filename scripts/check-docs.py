@@ -2,6 +2,7 @@
 """Checks that the docs agree with each other, without a network:
 - every docs/*.md (not IDEEN*, not maintainer notes) is linked from docs/README.md, and linked once
 - README.md and README.de.md have the same number of "##" sections and the same docs/ links
+- man/deploys.1 is what scripts/build-man.py writes from the help and docs/CLI.md
 - no markdown file has two top-level "# " headings (a docs page becomes one <h1>)
     python3 -I scripts/check-docs.py [repo-dir]   exits 1 and lists the problems
 """
@@ -85,6 +86,14 @@ if os.path.exists(os.path.join(root, "app", "SettingsSupport.swift")):
         for t in tabs:
             if not any(c.startswith(t) for c in first_cells):
                 problems.append(f"docs/README.md: the Settings table has no row for the tab '{t}'")
+
+# 5. man/deploys.1 is what scripts/build-man.py writes from `deploys --help` and docs/CLI.md now
+builder = os.path.join(root, "scripts", "build-man.py")
+if os.path.exists(builder) and os.path.exists(os.path.join(root, "man", "deploys.1")):
+    import subprocess
+    r = subprocess.run([sys.executable, "-I", builder, "--check"], capture_output=True, text=True)
+    if r.returncode != 0:
+        problems.append("man/deploys.1 is out of date: run python3 scripts/build-man.py")
 
 for line in problems:
     print(line)

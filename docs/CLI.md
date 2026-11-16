@@ -3,6 +3,7 @@
 The app is a window over one bash script, `deploys`. You can use it on its own. It is inside the
 app at `Deploy Center.app/Contents/Resources/deploys`, and `./deploys` in this repo.
 `deploys --help` prints every command, and at its end the commands of each provider that is on.
+There is a manual page too: `man man/deploys.1` (written by `scripts/build-man.py` from this help and the table below).
 A mistyped command gets one line with the nearest ones (`Unknown command "chaged". Did you mean: changed?`).
 
 A project is named the same way everywhere: by its name, or as `<platform>:<name>` when two
