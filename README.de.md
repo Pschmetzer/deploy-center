@@ -73,7 +73,7 @@ Neu dabei? [Sicher ausprobieren](docs/SAFE-START.md) (Englisch): erst schauen, d
 - Eine Bash-CLI, `deploys`, die all das ohne die App kann, auch unter Linux und in CI. [CLI-Referenz](docs/CLI.md)
 - Erweiterungen: eine GitHub Action, Badges, eine tägliche Zusammenfassung an einen Webhook, ein Pre-Push-Hook, ein Docker-Image, ein MCP-Server, ein Claude-Code-Plugin, Erweiterungen für VS Code und Raycast, ein Agent-Digest. [Integrationen](integrations/)
 - Autofix: Ein fehlgeschlagener Build geht an eine Claude-Code-Routine, die einen Fix-PR öffnet. [Autofix](docs/AUTOFIX.md)
-- Claude fragen, mit deinem eigenen Anthropic-Key: warum ein Build scheiterte, Release-Notes, ist das sicher zu deployen. [Claude in der App](docs/CLAUDE.md) (Englisch)
+- Claude fragen, mit deinem eigenen Anthropic-Key: warum ein Build scheiterte, Release-Notes, ist das sicher zu deployen. [Claude in der App](docs/CLAUDE-IN-APP.md) (Englisch)
 - Sichere Deploys (nur grüne CI, Health-Check mit Rollback, Deploy-Fenster), ein Wächter, der Auto-Deploy wieder abschaltet, und ein Team-Modus ohne Server. [Sichere Deploys](docs/SAFE-DEPLOY.md) · [Wächter](docs/GUARD.md) · [Team](docs/TEAM.md) (Englisch)
 - Bug-Scan: Claude Code auf deinem Mac sucht im Repo nach Bugs und öffnet einen Fix-PR. [Bug-Scan](docs/SCAN.md) (Englisch)
 - Sicherheits-Check: OSV-Scanner, gitleaks und Semgrep (kostenlos, lokal); Funde können an den Bug-Scan gehen. [Sicherheits-Check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep) (Englisch)

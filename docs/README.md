@@ -13,7 +13,7 @@
 | [SAVINGS.md](SAVINGS.md) | `deploys simulate` and `deploys ledger`: what auto-deploy costs, what turning it off saved (estimates) |
 | [TEAM.md](TEAM.md) | Team mode: a shared `deploy-center.json`, observers, the two-person rule |
 | [GUARD.md](GUARD.md) | The guard that turns auto-deploy off again, and allowing it for a few hours |
-| [CLAUDE.md](CLAUDE.md) | Claude in the app with your own key: explain a failure, plain release notes, ship check; the PR workflow |
+| [CLAUDE-IN-APP.md](CLAUDE-IN-APP.md) | Claude in the app with your own key: explain a failure, plain release notes, ship check; the PR workflow |
 | [SCAN.md](SCAN.md) | Bug scan: Claude Code looks through a repo and opens one fix PR; the security check with OSV-Scanner, gitleaks and Semgrep |
 | [AUTOFIX.md](AUTOFIX.md) | A failed build handed to a Claude Code routine, the fix deployed after you merge |
 | [CLAUDE-CODE.md](CLAUDE-CODE.md) | Using Deploy Center with Claude Code: the plugin, a CLAUDE.md block, the safety model |
@@ -40,7 +40,7 @@ The pages write a setting as *Settings → tab → section*. The Mac app's Setti
 | Projects (Projekte) | hidden projects; marks |
 | Deploy | builds at the same time, the wait before a deploy starts, asking before a single deploy, the warning for commits that wait long, only when the checks are green, watching the site after going live, a tick before migrations, Touch ID before risky steps; the deploy window editor; the rule editor; the auto-deploy guard ([SAFE-DEPLOY.md](SAFE-DEPLOY.md), [GUARD.md](GUARD.md)) |
 | Costs (Kosten) | a monthly build budget; the savings estimate ([SAVINGS.md](SAVINGS.md)) |
-| Claude | Claude Desktop and Claude Code; Claude in the app ([CLAUDE.md](CLAUDE.md)); Autofix ([AUTOFIX.md](AUTOFIX.md)) |
+| Claude | Claude Desktop and Claude Code; Claude in the app ([CLAUDE-IN-APP.md](CLAUDE-IN-APP.md)); Autofix ([AUTOFIX.md](AUTOFIX.md)) |
 | iPhone | the iPhone link: iCloud Keychain or a QR code ([WIDGETS-IOS.md](WIDGETS-IOS.md)) |
 | Team | the shared `deploy-center.json` ([TEAM.md](TEAM.md)) |
 | Help (Hilfe) | open the error log, copy diagnostics, show the first-start guide again; the keyboard shortcuts |

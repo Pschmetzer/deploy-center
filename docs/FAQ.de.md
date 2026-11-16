@@ -67,4 +67,4 @@ Sie ist für den App Store gebaut: was wartet, Deploy und Rollback mit Face ID u
 Ja, ohne Server: eine gemeinsame `deploy-center.json` je Repo, Beobachter-Modus und eine optionale Zwei-Personen-Regel. Siehe [TEAM.md](TEAM.md) (englisch).
 
 ### Brauche ich einen Anthropic-Schlüssel?
-Nur für Claude in der App (Fehler erklären, Release-Notes, Ship-Check). Autofix nutzt stattdessen eine Claude-Code-Routine. Siehe [CLAUDE.md](CLAUDE.md) (englisch).
+Nur für Claude in der App (Fehler erklären, Release-Notes, Ship-Check). Autofix nutzt stattdessen eine Claude-Code-Routine. Siehe [CLAUDE-IN-APP.md](CLAUDE-IN-APP.md) (englisch).

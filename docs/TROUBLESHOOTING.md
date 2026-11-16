@@ -325,7 +325,7 @@ This Mac is an observer: you are on the `observers` list of the repo's `deploy-c
 
 ### "No Anthropic API key. Run: pbpaste | deploys ai set-key (or set ANTHROPIC_API_KEY)"
 
-Claude in the app needs your own Anthropic API key. Add it in **Settings → Claude**, or copy it and run `pbpaste | deploys ai set-key`. See [CLAUDE.md](CLAUDE.md#turning-it-on).
+Claude in the app needs your own Anthropic API key. Add it in **Settings → Claude**, or copy it and run `pbpaste | deploys ai set-key`. See [CLAUDE-IN-APP.md](CLAUDE-IN-APP.md#turning-it-on).
 
 ### "Anthropic refused the key (401). Check it in Settings > Claude in the app, or: deploys ai verify"
 

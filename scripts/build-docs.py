@@ -63,7 +63,7 @@ PAGES = [
      "deploys simulate estimates what auto-deploy would cost a month, deploys ledger what turning it off saved, on Vercel and Render."),
     ("team", "Team mode", "Using it", "docs/TEAM.md",
      "The same deploy rules on every teammate's Mac without a server: a shared config file, observers and a two-person rule."),
-    ("claude", "Claude in the app", "Using it", "docs/CLAUDE.md",
+    ("claude", "Claude in the app", "Using it", "docs/CLAUDE-IN-APP.md",
      "Ask Claude with your own Anthropic API key why a build failed, for release notes, and whether a deploy is safe to ship."),
     ("claude-code", "Claude Code", "Using it", "docs/CLAUDE-CODE.md",
      "Deploy Center with Claude Code: the MCP server, the plugin and Autofix. Claude writes and fixes the code, you decide what ships."),
