@@ -43,3 +43,9 @@ brauchen Plattform-Fakten, die hier nicht prüfbar sind (mit "(prüfen)" markier
 Der Ctrl-C-Test von verify braucht ein SIGINT, das in einem mit `&` gestarteten Hintergrundlauf ignoriert wird;
 er schlägt dort fehl, ohne dass der Code schuld ist. Die `watch ends`-Tests haben 20 Sekunden und scheitern
 bei sehr hoher Last. Beide einzeln und im Vordergrund prüfen.
+
+## Runde 8 (Branch `feat/cli-round-8`)
+
+Umgesetzt: Maskier-Muster (Webhooks, Bot-Tokens, lange Schlüssel, Zeilenkappung); `deploy --dry-run|-n`, `deploy-changed` (`--dry-run`, `--only`, `--exclude`, `--platform`, `--max`, `--wait-for-window`, Head-Recheck bei `--when-green`); Top-Level `rollback`/`cancel`; `logs --follow`; `watch --and`; `list`-Filter; `doctor --text`; `journal verify`; `metrics` (Prometheus); hooks.d (pre-/post-deploy); `DEPLOYS_NOTIFY_CMD`; `<VAR>_CMD` für Schlüssel; `verify`-Optionen (`--tries --every --need --max-time`); Completion für Unterbefehle; verkettete EXIT-Traps; Observer-Ablehnungen im Journal; `vercel map`-Validierung; Scan-Härtung (PID-Prüfung, Secret-Umgebung, engere Tools); `ai notes --lang`; Netlify `history`.
+
+Offen (Grund): Compare mit Head-SHA (Punkt 3, Provider-APIs ohne Fixture); 102 Exit-Code ohne Argument (ändert bestehendes Verhalten); 108 Meta-Cache und 153 Tarball-Inhalt (Risiko ohne Messung); `history` für Cloudflare, DigitalOcean, Coolify, Amplify (Deploy-Listen nicht einzeln gegen Fixtures geprüft); Profile, mehrere Teams/Workspaces/Hosts (124–128, das Konfigurationsmodell braucht eine Entscheidung); übrige F-Punkte 107–119 und H-Punkte 148–156 ohne belegte Messung.
