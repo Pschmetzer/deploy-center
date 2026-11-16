@@ -76,6 +76,18 @@ inputs:
       (deploy-changed --when-green). A project whose checks fail or are still running is left out.
     required: false
     default: "false"
+  strict:
+    description: >-
+      "true": with when-green, a project whose checks are still running after the wait is left out
+      instead of started (deploy-changed --when-green --strict). Has no effect without when-green.
+    required: false
+    default: "false"
+  by-rules:
+    description: >-
+      "true": with deploy: true or dry-run, only what a "deploy" rule of rules.json matches is started
+      (deploy-changed --by-rules); "hold" rules always count.
+    required: false
+    default: "false"
   vercel-cli-version:
     description: The vercel CLI version to install when none is on the runner.
     required: false
@@ -106,6 +118,9 @@ outputs:
   risky:
     description: The projects whose risk is yellow or red, comma-separated.
     value: ${{ steps.changed.outputs.risky }}
+  plan:
+    description: 'With deploy: dry-run: what would be started, as a JSON array ({platform, name, action}) from deploys deploy-changed --json. Nothing was started.'
+    value: ${{ steps.plan.outputs.plan }}
   states:
     description: 'With wait: a JSON object, project name to ready, failed, timeout or unknown (could not be asked).'
     value: ${{ steps.wait.outputs.states || '{}' }}
@@ -237,12 +252,22 @@ runs:
         VERCEL_TOKEN: ${{ inputs.vercel-token }}
         RENDER_API_KEY: ${{ inputs.render-api-key }}
         GH_TOKEN: ${{ inputs.github-token }}
+        WHEN_GREEN: ${{ inputs.when-green }}
+        STRICT: ${{ inputs.strict }}
+        BY_RULES: ${{ inputs.by-rules }}
       run: |
         set -euo pipefail
+        extra=(); [ "${WHEN_GREEN:-}" != true ] || { extra+=(--when-green); [ "${STRICT:-}" != true ] || extra+=(--strict); }
+        [ "${BY_RULES:-}" != true ] || extra+=(--by-rules)
         # Without --yes deploy-changed only shows the list; nothing starts.
-        out="$("$DEPLOYS" deploy-changed </dev/null)" || true
+        out="$("$DEPLOYS" deploy-changed ${extra[@]+"${extra[@]}"} </dev/null)" || true
         echo "$out"
         { echo "### Would deploy (dry run, nothing started)"; echo '```'; echo "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+        # The same as JSON, for later steps (a Slack message, an approval gate): the output `plan`.
+        plan="$("$DEPLOYS" deploy-changed --json ${extra[@]+"${extra[@]}"} </dev/null)" || plan=""
+        echo "$plan" | jq -e 'type == "array"' >/dev/null 2>&1 || plan='[]'
+        d="EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+        { echo "plan<<$d"; echo "$plan" | jq -c .; echo "$d"; } >> "$GITHUB_OUTPUT"
 
     - name: deploys deploy-changed --yes
       id: deploy
@@ -254,9 +279,12 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         REPO: ${{ inputs.repo }}
         WHEN_GREEN: ${{ inputs.when-green }}
+        STRICT: ${{ inputs.strict }}
+        BY_RULES: ${{ inputs.by-rules }}
       run: |
         set -euo pipefail
-        extra=(); [ "${WHEN_GREEN:-}" != true ] || extra+=(--when-green)
+        extra=(); [ "${WHEN_GREEN:-}" != true ] || { extra+=(--when-green); [ "${STRICT:-}" != true ] || extra+=(--strict); }
+        [ "${BY_RULES:-}" != true ] || extra+=(--by-rules)
         # Only this repo's projects: every other project the tokens see goes into ignored.json of
         # this run's own config (in RUNNER_TEMP, gone after the job). Fails closed: when the list
         # cannot be read, or a name is in this repo and in another, nothing is started.
