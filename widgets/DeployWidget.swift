@@ -12,6 +12,11 @@ import AppIntents
 struct Entry: TimelineEntry {
     let date: Date
     let snap: DeploySnapshot?
+    /// A failed build is what the person most wants to see: the widget rises in the Smart Stack.
+    var relevance: TimelineEntryRelevance? {
+        guard let s = snap, s.failed > 0 else { return nil }
+        return TimelineEntryRelevance(score: 10)
+    }
 }
 
 struct Provider: TimelineProvider {
@@ -118,12 +123,10 @@ struct BigNumber: View {
     }
     var body: some View {
         Text("\(snap.waitingPRs)").font(.system(size: size, weight: .bold, design: .rounded)).monospacedDigit()
-            .lineLimit(1).minimumScaleFactor(0.5)
+            .lineLimit(1).minimumScaleFactor(0.6)
             .contentTransition(.numericText())
             .foregroundStyle(snap.waitingPRs > 0 && !snap.isStale(at: date) ? Color.accentColor : .secondary)
             .widgetAccentable()
-            .minimumScaleFactor(0.6).lineLimit(1)
-            .contentTransition(.numericText())
     }
 }
 
@@ -427,18 +430,19 @@ struct DeployActivityWidget: Widget {
         } dynamicIsland: { ctx in
             let w = Words(german: ctx.attributes.german)
             return DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) { phaseIcon(ctx.state.phase).font(.title2) }
+                DynamicIslandExpandedRegion(.leading) { phaseIcon(ctx.state.phase, w).font(.title2) }
                 DynamicIslandExpandedRegion(.trailing) { elapsed(ctx).font(.title3.monospacedDigit()) }
                 DynamicIslandExpandedRegion(.center) { Text(ctx.attributes.project).font(.headline).lineLimit(1) }
                 DynamicIslandExpandedRegion(.bottom) {
                     Text(line(ctx, w)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
             } compactLeading: {
-                phaseIcon(ctx.state.phase)
+                phaseIcon(ctx.state.phase, w)
             } compactTrailing: {
-                elapsed(ctx).monospacedDigit().frame(maxWidth: 44)
+                // 1:00:00 and longer scale down instead of being cut off.
+                elapsed(ctx).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6).frame(maxWidth: 56)
             } minimal: {
-                phaseIcon(ctx.state.phase)
+                phaseIcon(ctx.state.phase, w)
             }
             .widgetURL(activityLink(ctx.attributes))
         }
@@ -451,14 +455,15 @@ private func activityLink(_ a: DeployActivity) -> URL {
     return c.url ?? URL(string: "deploycenter://")!
 }
 
-private func phaseIcon(_ p: DeployActivity.ContentState.Phase) -> some View {
-    let (name, color): (String, Color) = switch p {
-    case .running: ("hammer.fill", .orange)
-    case .live: ("checkmark.circle.fill", .green)
-    case .failed: ("xmark.octagon.fill", .red)
-    case .unknown: ("questionmark.circle.fill", .secondary)
+private func phaseIcon(_ p: DeployActivity.ContentState.Phase, _ w: Words) -> some View {
+    let (name, color, label): (String, Color, String) = switch p {
+    case .running: ("hammer.fill", .orange, w("Building", "Wird gebaut"))
+    case .live: ("checkmark.circle.fill", .green, w("Live", "Live"))
+    case .failed: ("xmark.octagon.fill", .red, w("Failed", "Fehlgeschlagen"))
+    case .unknown: ("questionmark.circle.fill", .secondary, w("Unknown", "Unbekannt"))
     }
-    return Image(systemName: name).foregroundStyle(color)
+    // VoiceOver reads the state ("Building"), not the symbol's name ("hammer fill").
+    return Image(systemName: name).foregroundStyle(color).accessibilityLabel(label)
 }
 
 /// Running: a clock from the start. Ended: the time it took.
@@ -483,7 +488,7 @@ struct DeployActivityView: View {
     var body: some View {
         let w = Words(german: ctx.attributes.german)
         HStack(spacing: 12) {
-            phaseIcon(ctx.state.phase).font(.title)
+            phaseIcon(ctx.state.phase, w).font(.title)
             VStack(alignment: .leading, spacing: 2) {
                 Text((ctx.attributes.rollback ? w("Rollback: ", "Zurückrollen: ") : "") + ctx.attributes.project).font(.headline).lineLimit(1)
                 Text(line(ctx, w)).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
