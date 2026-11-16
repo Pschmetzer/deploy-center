@@ -682,15 +682,15 @@ struct ProjectDetail: View {
             }
             }
             if d.open.count > listLimit {
-                moreOnGitHub(d.open.count - listLimit, live.repo.flatMap { URL(string: "https://github.com/\($0)/pulls") })
+                moreOnGitHub(d.open.count - listLimit, live.repo.flatMap { URL(string: GitHost.web($0) + (GitHost(repo: $0) == .github ? "/pulls" : "/-/merge_requests")) }, host: GitHost(live))
             }
         }
     }
 
-    private func moreOnGitHub(_ n: Int, _ url: URL?) -> some View {
+    private func moreOnGitHub(_ n: Int, _ url: URL?, host: GitHost = .github) -> some View {
         HStack {
             Text(L("and \(n) more", "und \(n) weitere")).font(.caption).foregroundStyle(.secondary)
-            if let url, !Demo.on { Button(L("on GitHub", "auf GitHub")) { NSWorkspace.shared.open(url) }.buttonStyle(.link).font(.caption) }
+            if let url, !Demo.on { Button(L("on \(host.name)", "auf \(host.name)")) { NSWorkspace.shared.open(url) }.buttonStyle(.link).font(.caption) }
         }
     }
 

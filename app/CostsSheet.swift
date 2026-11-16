@@ -26,7 +26,8 @@ struct CostsSheet: View {
     /// Settings → Costs; 0 = no budget, then neither the line nor the sentence.
     @AppStorage("monthlyBudget") private var budget = 0.0
     private static let dayFormat: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); return f
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); return f
     }()
     /// Today as the billing data names days (UTC).
     static func today() -> String { dayFormat.string(from: Date()) }

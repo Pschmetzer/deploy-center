@@ -390,12 +390,17 @@ final class Store: ObservableObject {
 
     /// Hand-overs the person waved away ("No fix PR" read and done with), kept on this Mac.
     @Published private(set) var dismissedFires: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "autofixDismissed") ?? [])
+    /// Oldest first, so the cap of 100 drops the oldest, not random ones.
+    private var dismissedOrder: [String] = UserDefaults.standard.stringArray(forKey: "autofixDismissed") ?? []
     nonisolated static func fireKey(_ i: Item, _ f: AutofixReport.Fire) -> String { "\(i.platform.cli)/\(i.name)@\(Int(f.at))" }
     /// Hides the row's autofix chip until a newer hand-over; the button is free again.
     func dismissAutofix(_ i: Item) {
         guard let f = (fireIndex[i.name] ?? []).filter({ ($0.platform?.lowercased() ?? i.platform.cli) == i.platform.cli }).max(by: { $0.at < $1.at }) else { return }
-        dismissedFires.insert(Self.fireKey(i, f))
-        UserDefaults.standard.set(Array(Array(dismissedFires).suffix(100)), forKey: "autofixDismissed")
+        let key = Self.fireKey(i, f)
+        dismissedOrder.removeAll { $0 == key }; dismissedOrder.append(key)
+        if dismissedOrder.count > 100 { dismissedOrder.removeFirst(dismissedOrder.count - 100) }
+        dismissedFires = Set(dismissedOrder)
+        UserDefaults.standard.set(dismissedOrder, forKey: "autofixDismissed")
     }
     func allowance(_ i: Item, now: Date = Date()) -> AutoDeployAllowance? {
         allowances.first { $0.covers(i) && $0.expiresAt > now }
@@ -599,16 +604,6 @@ final class Store: ObservableObject {
             MainActor.assumeIsolated { Notify.dropEscalations() }
         }
         // After sleep the lists can be hours old, and the daily reminder may be overdue.
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.screensAsleep = true }
-        }
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.screensAsleep else { return }
-                self.screensAsleep = false
-                await self.autoRefresh(); self.remindIfDue()
-            }
-        }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 5_000_000_000)   // the network needs a moment
@@ -918,8 +913,9 @@ final class Store: ObservableObject {
             if let fresh = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { doctor = fresh; doctorError = nil }
         }
         // Only the platform with a deploy under way is left alone; the other one stays current.
-        let v = canLoad(.vercel) && !(items[.vercel] ?? []).contains { $0.state.isActive }
-        let r = canLoad(.render) && !(items[.render] ?? []).contains { $0.state.isActive }
+        // A deploy that is "overdue" (no result after 40 min) no longer holds the list back: a reload keeps its state anyway.
+        let v = canLoad(.vercel) && !(items[.vercel] ?? []).contains { $0.state.isActive && $0.state != Self.overdueState }
+        let r = canLoad(.render) && !(items[.render] ?? []).contains { $0.state.isActive && $0.state != Self.overdueState }
         async let a: Void = v ? load(.vercel) : ()
         async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
@@ -1189,6 +1185,7 @@ final class Store: ObservableObject {
         messageQueue.async {
             try? FileManager.default.createDirectory(at: AppDirs.support, withIntermediateDirectories: true)
             try? d.write(to: messagesURL, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: messagesURL.path)
         }
     }
     /// `rollBack`: production is live and broken, so the notification offers "Roll back …" (a failed
@@ -1202,7 +1199,8 @@ final class Store: ObservableObject {
         if let key { Notify.dropEscalations(key) }
         Notify.post(title, body, project: project, key: key, failed: !ok, rollBack: rollBack, silent: silent)
         show(Toast(text: title, ok: ok))
-        if UserDefaults.standard.bool(forKey: Speech.resultsKey) { Speech.say(title) }
+        // With VoiceOver the toast is announced already; saying it twice would stutter.
+        if UserDefaults.standard.bool(forKey: Speech.resultsKey), !NSWorkspace.shared.isVoiceOverEnabled { Speech.say(title) }
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok, project: row ?? key))
     }
     /// Newest first; `messages`' didSet keeps 30 and writes them to disk.
@@ -1325,10 +1323,12 @@ final class Store: ObservableObject {
     /// `force` (a reason) goes out inside a closed deploy window, as the footer's dialog does.
     func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, whenGreen: Bool = false, force: String? = nil) {
         let job = Job(item: item, preview: preview, sha: sha, clearCache: clearCache, whenGreen: whenGreen, force: force)
-        guard namesTyped([item], preview: preview, sha: sha) else { return }
         // A preview is never held by the deploy window. A live deploy from a row, the details or the
         // palette is: the script would refuse it anyway, so say why here instead of a failed row.
-        guard !preview, !observer, force == nil else { enqueue([job]); return }
+        guard !preview, !observer, force == nil else {
+            guard namesTyped([item], preview: preview, sha: sha) else { return }
+            enqueue([job]); return
+        }
         Task {
             if let w = await deployWindow(), w.denied {
                 say(L("Deploy window closed", "Deploy-Fenster geschlossen"),
@@ -1336,6 +1336,8 @@ final class Store: ObservableObject {
                                                           "Um trotzdem zu deployen: Zeile anhaken und unten auf Deploy; dort mit Begründung."), ok: false)
                 return
             }
+            // The cheap check came first: nobody types a name and then hears the window is closed.
+            guard namesTyped([item], preview: preview, sha: sha) else { return }
             enqueue([job])
         }
     }
@@ -1529,8 +1531,12 @@ final class Store: ObservableObject {
             let today = Journal.load(limit: .max).filter { cal.isDate($0.at, inSameDayAs: now) }
             if let line = JournalStats.summaryLine(today) { Notify.remind(L("Today", "Heute"), line, id: "day-summary") }
         }
-        if d.bool(forKey: "weeklySummary"), cal.component(.weekday, from: now) == 2, cal.component(.hour, from: now) >= 9,
-           d.string(forKey: "lastWeekly") != localDay() {
+        // Monday from 9; a Mac that was off on Monday catches up on the next day it runs.
+        let lastWeekly = d.string(forKey: "lastWeekly")
+        let backToMonday = (cal.component(.weekday, from: now) + 5) % 7
+        let thisMonday = localDay(cal.date(byAdding: .day, value: -backToMonday, to: now) ?? now)
+        let weeklyDue = backToMonday == 0 || (lastWeekly.map { $0 < thisMonday } ?? false)
+        if d.bool(forKey: "weeklySummary"), weeklyDue, cal.component(.hour, from: now) >= 9, lastWeekly != localDay() {
             d.set(localDay(), forKey: "lastWeekly")
             let week = JournalStats.periods(Journal.load(limit: .max), days: 7, now: cal.startOfDay(for: now)).recent
             if let line = JournalStats.summaryLine(week) { Notify.remind(L("Last week", "Letzte Woche"), line, id: "week-summary") }
@@ -1726,6 +1732,12 @@ final class Store: ObservableObject {
                 // Network or login gone: say so instead of spinning for 40 minutes without a word.
                 misses += 1
                 if misses >= 5 { set(p, item.id, .running(L("status unavailable, retrying", "Status nicht abrufbar, neuer Versuch"))) }
+                // About 20 minutes of nothing (deleted deploy, lost login): stop holding the row; a start right away stays held.
+                if misses >= 80 {
+                    unsureStarts[Self.key(item)] = Date()
+                    set(p, item.id, .failed(L("Status not available – check the dashboard", "Status nicht abrufbar – im Dashboard nachsehen")))
+                    return
+                }
                 continue
             }
             misses = 0

@@ -706,7 +706,10 @@ struct MenuBarContent: View {
         }
         let failed = connected.filter { store.lastLoadError[$0] != nil }
         let unread = connected.filter { store.listState($0) == .notLoaded }
-        if store.doctor == nil {
+        if store.doctor == nil, store.doctorError != nil {
+            Text(L("Access check failed", "Zugangsprüfung fehlgeschlagen"))
+            Button(L("Try again", "Nochmal")) { Task { await store.start() } }
+        } else if store.doctor == nil {
             Text(L("Checking access …", "Prüfe Zugang …"))
         } else if connected.isEmpty {
             Text(L("Nothing connected yet", "Noch nichts verbunden"))
@@ -766,7 +769,13 @@ struct MenuBarContent: View {
                 Button(L("Cancel \(Demo.mask(i.name))", "\(Demo.mask(i.name)) abbrechen")) { store.cancel(i) }
             }
             if active.count > 1 {
-                Button(L("Cancel all \(active.count) deploys", "Alle \(active.count) Deploys abbrechen")) { store.cancelAll() }
+                Button(L("Cancel all \(active.count) deploys …", "Alle \(active.count) Deploys abbrechen …")) {
+                    let a = NSAlert()
+                    a.messageText = L("Cancel all \(active.count) deploys?", "Alle \(active.count) Deploys abbrechen?")
+                    a.addButton(withTitle: L("Cancel deploys", "Deploys abbrechen")); a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
+                    NSApp.activate(ignoringOtherApps: true)
+                    if a.runModal() == .alertFirstButtonReturn { store.cancelAll() }
+                }
             }
         }
         Divider()

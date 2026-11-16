@@ -83,8 +83,10 @@ enum Journal {
                 defer { try? h.close() }
                 try h.seekToEnd(); try h.write(contentsOf: line)
             } else {
-                try line.write(to: url)
-                private600(url)
+                // Created with 0600 at once, not chmod-ed after the write.
+                guard FileManager.default.createFile(atPath: url.path, contents: line, attributes: [.posixPermissions: 0o600]) else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
             }
         } catch {
             Log.write("journal: could not write (\(error.localizedDescription))")
