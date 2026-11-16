@@ -96,6 +96,10 @@ deploys autodeploy allowed | revoke vercel my-project
 deploys guard [--dry-run] | status | schedule on|off   # auto-deploy off where it came back on
 deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE.md
 deploys scan start owner/repo           # Claude Code looks for bugs and opens one fix PR (SCAN.md)
+deploys scan status | list | log <id>   # installed and logged in, the newest scans, one report
+deploys check start owner/repo [branch] # OSV-Scanner, gitleaks and Semgrep on a fresh copy, on this Mac (SCAN.md)
+deploys check show <id>                 # the findings, secrets redacted
+deploys config [--json] [--refresh]     # every setting in effect (shared files, this Mac) and where each came from
 deploys ai ask my-project --question "will this run a migration?"   # your own question; its commits and log go along
 deploys ai slow my-project              # why its builds take long (ai risk = ai ship)
 deploys autofix --preview --only vercel my-project --json   # what a hand-over would send; sends nothing

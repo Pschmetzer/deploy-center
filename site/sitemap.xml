@@ -21,8 +21,8 @@
   <url><loc>https://deploycenter.app/blog/ai-coding-agents-build-bill/</loc><lastmod>2026-11-16</lastmod></url>
   <!-- docs: written by scripts/build-docs.py -->
   <url><loc>https://deploycenter.app/docs/</loc><lastmod>2026-11-16</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/getting-started/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/safe-start/</loc><lastmod>2026-11-10</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/getting-started/</loc><lastmod>2026-11-16</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/safe-start/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/install-cli/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/cli/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/auto-deploy/</loc><lastmod>2026-11-10</lastmod></url>
@@ -43,9 +43,9 @@
   <url><loc>https://deploycenter.app/docs/digitalocean/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/coolify/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/ci/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/uninstall/</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/uninstall/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/numbers/</loc><lastmod>2026-11-10</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/glossary/</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/glossary/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/faq/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/troubleshooting/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/providers/</loc><lastmod>2026-11-12</lastmod></url>

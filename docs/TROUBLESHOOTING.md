@@ -251,6 +251,38 @@ Cloudflare does not document whether a deployment you create builds while push-d
 A deploy hook has no status API, so a 2xx answer counts as ready. The URL is a secret and lives in the keychain
 (or a 0600 file on Linux); `deploys hook set-key <name>` replaces it. See [the hook page](providers/hook.md).
 
+## Claude, MCP and scans
+
+### The agent says deploys are not allowed
+
+The MCP server is read-only by default. Deploying has to be turned on in the server's environment with
+`DEPLOYS_MCP_ALLOW_DEPLOY=1`, and then it still asks you before each deploy. See
+[integrations/mcp](../integrations/mcp/README.md).
+
+### The MCP server or the Claude Code plugin cannot find `deploys`
+
+It looks in this order: `DEPLOYS_BIN`, the copy inside `Deploy Center.app` (in `/Applications` or `~/Applications`),
+then `PATH`. Set `DEPLOYS_BIN` to the file you mean, and check that `deploys --version` runs in a terminal.
+
+### "Find bugs with Claude" does nothing, or says it is not set up
+
+The bug scan runs the Claude Code CLI on this Mac. Install it and log in once (`npm i -g @anthropic-ai/claude-code`, then
+`claude login`), and log `gh` in, because it clones and opens the pull request. `deploys scan status --json` shows what is
+missing. A second scan of a repo is refused while one runs or while its scan PR is open, and at most 4 scans run per 24 hours
+(`DEPLOYS_SCAN_PER_DAY`). A scan whose process is gone (restart, sleep) is marked failed: keep the Mac awake for 10 to 30
+minutes. See [SCAN.md](SCAN.md).
+
+### The security check shows a tool as missing
+
+`deploys check` needs `osv-scanner`, `gitleaks` and `semgrep` (`brew install osv-scanner gitleaks semgrep`). A missing tool is
+shown as missing and the others still run. Secrets it finds are never sent to Claude: rotate them.
+
+### Rollback did not do what I expected
+
+A rollback goes back to the deploy before the live one, on every host except a plain deploy hook. With auto-deploy on, the
+next push deploys again, so turn it off or fix forward. It does not undo database migrations or environment changes.
+`deploys verify <project>` rolls back by itself on a 5xx; `--no-rollback` only reports. See [SAFE-DEPLOY.md](SAFE-DEPLOY.md).
+
 ## A deploy was refused
 
 ### "deploy window closed"
