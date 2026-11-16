@@ -54,12 +54,15 @@ export function repoKey(remote: string): string | null {
   return `${host.replace(/^www\./i, "")}/${parts.join("/")}`.replace(/\.git$/i, "").toLowerCase();
 }
 
-/** The remote URLs in `git remote -v` output, once each. */
+/**
+ * The remote URLs in `git remote -v` output, once each. A remote named "upstream" is left out
+ * (the convention for the project one forked): its projects are not the ones this folder deploys.
+ */
 export function parseRemotes(gitRemoteV: string): string[] {
   const urls = new Set<string>();
   for (const line of gitRemoteV.split("\n")) {
-    const m = /^\S+\s+(\S+)/.exec(line.trim());
-    if (m) urls.add(m[1]);
+    const m = /^(\S+)\s+(\S+)/.exec(line.trim());
+    if (m && m[1] !== "upstream") urls.add(m[2]);
   }
   return [...urls];
 }

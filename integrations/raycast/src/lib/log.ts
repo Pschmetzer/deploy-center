@@ -47,7 +47,10 @@ const secrets: [RegExp, string][] = [
   [/\bsntrys_[A-Za-z0-9+/=_-]{20,}/g, "[SENTRY TOKEN]"],
   [/\b[0-9]{1,9}\|[A-Za-z0-9]{40}\b/g, "[COOLIFY TOKEN]"],
   [/\b[0-9]{8,10}:[A-Za-z0-9_-]{35}\b/g, "[TELEGRAM TOKEN]"],
-  [/https:\/\/(?:hooks\.slack\.com\/services|(?:discord|discordapp)\.com\/api\/webhooks)\/[A-Za-z0-9_/.-]+/g, "[WEBHOOK URL]"],
+  [
+    /https:\/\/(?:hooks\.slack\.com\/services|(?:discord|discordapp)\.com\/api\/webhooks)\/[A-Za-z0-9_/.-]+/g,
+    "[WEBHOOK URL]",
+  ],
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+/g, "[JWT]"],
   // NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret.
   [

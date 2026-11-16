@@ -253,7 +253,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   }
 
   private async startOne(run: Runner, p: Project): Promise<{ ok: boolean; text: string; url: string | null }> {
-    const r = await run(deployArgs(p), 90_000);
+    const r = await run(deployArgs(p, false, p.headSha), 90_000);
     const d = parseDeploy(r.stdout);
     if (r.code === 0 && d) return { ok: true, text: t("{0}: started ({1})", p.name, d.state ?? t("queued")), url: d.url };
     return { ok: false, text: `${p.name}: ${deployFailure(r)}`, url: null };
@@ -310,7 +310,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   /** A preview deploy (Vercel): asked first, not followed (the tree shows production). */
   async deployPreview(p: Project): Promise<void> {
     const run = this.need(); if (!run) return;
-    if (!canPreview(p)) { void vscode.window.showInformationMessage(t("{0} has no preview deploys here (Vercel only).", p.name)); return; }
+    if (!canPreview(p)) { void vscode.window.showInformationMessage(t("{0} has no preview deploys here.", p.name)); return; }
     const go = t("Deploy preview");
     const ok = await vscode.window.showWarningMessage(t("Deploy a preview of {0}?", p.name),
       { modal: true, detail: t("Builds the newest commit at a preview address. Production stays as it is.") }, go);

@@ -24,6 +24,11 @@ test("parseRemotes: each URL once", () => {
   assert.deepEqual(parseRemotes(""), []);
 });
 
+test("parseRemotes: a fork's upstream is not this folder's repo", () => {
+  const out = "origin\thttps://github.com/me/app (fetch)\nupstream\thttps://github.com/them/app (fetch)\n";
+  assert.deepEqual(parseRemotes(out), ["https://github.com/me/app"]);
+});
+
 const ps = [{ name: "a", repo: "me/app" }, { name: "b", repo: "Me/App" }, { name: "c", repo: "me/blog" }, { name: "d", repo: null }];
 
 test("scope auto: the folder's projects, else all", () => {

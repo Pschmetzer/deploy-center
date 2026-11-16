@@ -166,13 +166,17 @@ export async function loadProjects(run: Runner, timeoutMs: number): Promise<Load
 }
 
 /** The arguments that start one deploy: `deploys <provider> deploy-json <name> [--preview]`. */
-export function deployArgs(p: { platform: string; name: string }, preview = false): string[] {
-  return [p.platform, "deploy-json", p.name, ...(preview ? ["--preview"] : [])];
+export function deployArgs(p: { platform: string; name: string }, preview = false, sha?: string | null): string[] {
+  // --sha: the commit the person saw in the question, not whatever was pushed since (hex only).
+  // Only where the platform can deploy a given commit (caps.sha: Vercel, Render, Coolify, Amplify).
+  const pins = ["vercel", "render", "coolify", "amplify"].includes(p.platform);
+  const pin = !preview && pins && sha && /^[0-9a-f]{7,40}$/i.test(sha) ? ["--sha", sha] : [];
+  return [p.platform, "deploy-json", p.name, ...(preview ? ["--preview"] : []), ...pin];
 }
 
-/** Preview deploys: Vercel only (as the MCP server); a Render service has none here. */
+/** Preview deploys: the platforms whose `providers --json` says caps.preview (Vercel, Cloudflare Pages, Amplify). */
 export function canPreview(p: { platform: string }): boolean {
-  return p.platform === "vercel";
+  return p.platform === "vercel" || p.platform === "cloudflare" || p.platform === "amplify";
 }
 
 /** Rollback back to the deploy before the current one: Vercel and Render. */
