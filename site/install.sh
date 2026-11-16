@@ -41,7 +41,7 @@ Installs the deploys CLI (Deploy Center) from its GitHub release.
 
 Options:
   --prefix <dir>     install into <dir>/bin and <dir>/lib/deploys (default: ~/.local)
-  --version <x.y.z>  a given release instead of the latest
+  --version <x.y.z>  a given release instead of the latest (--version latest: the newest, also from a pinned copy)
   --uninstall        remove what this script installed under the prefix (config stays)
   --force            replace a deploys in <dir>/bin that this script did not install
   --sha256 <hash>    the SHA-256 the tarball must have (or DEPLOYS_INSTALL_SHA256); pins a release in CI
@@ -287,9 +287,13 @@ check_tools() {
   fi
 }
 
+# Empty here. scripts/build-docs.py writes the release into the copy at deploycenter.app/install/<x.y.z>.sh,
+# so that copy installs that release by default (--version latest still asks for the newest).
+PINNED_VERSION=""
+
 main() {
   prefix="${DEPLOYS_PREFIX:-}"
-  version=""
+  version="$PINNED_VERSION"
   action=install
   force=0
   dry=0

@@ -11,6 +11,7 @@ open an issue first.
 - Texts are English and German: use `L("English", "Deutsch")`.
 - Nothing may start a build without an explicit click or a command with `--yes`.
 - Add a line under `## Unreleased` in `CHANGELOG.md` for anything a user would notice.
+  A release with many lines may start with `### Highlights` (three to five bullets for the update window) and put the rest under `### All changes`; `release.sh` and the Sparkle notes take the whole section. A heading may carry a date (`## 0.11.0 - 2027-01-05`).
 
 ## Licence of your contribution
 

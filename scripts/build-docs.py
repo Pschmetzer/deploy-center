@@ -13,6 +13,7 @@ The Markdown converter covers what these files use: ATX headings, paragraphs, ne
 fenced code (also inside list items), tables, block quotes, rules, `code`, **bold**, *italic*
 and [links](url). Raw HTML is shown as text.
 """
+import base64
 import datetime
 import hashlib
 import html
@@ -99,6 +100,8 @@ PAGES = [
      "The error messages of Deploy Center and the deploys CLI, word for word, and what to do about each."),
     ("providers", "Adding a host", "Reference", "docs/PROVIDERS.md",
      "How a platform plugs into deploys: one file in providers/, its functions, its metadata and the contract tests."),
+    ("git-hosts", "Adding a git host", "Reference", "docs/GITHOSTS.md",
+     "How deploys asks a git host what is waiting: the repo slug, the functions a host provides, the token rule and the tests."),
     ("verify", "Verify a release", "Reference", "integrations/VERIFY.md",
      "Check a Deploy Center release before you open it: SHA-256, codesign and Gatekeeper."),
     ("integrations", "Overview", "Integrations", "integrations/README.md",
@@ -713,7 +716,41 @@ def search_index(pages):
                 continue
             entries.append({"p": p.title if p.slug else "Docs", "h": head or "", "u": p.url + (f"#{hid}" if hid else ""),
                             "t": text[:600]})
-    return entries
+    return entries + site_entries()
+
+
+def site_entries():
+    """The hand-written pages (guides, blog, calculator, Claude Code page) in the same index, so the
+    search on the guides, blog and 404 pages (site/js/site.js) finds them too: title, description and
+    the h2 headings as text."""
+    entries = []
+    for sub in ("guides", "blog"):
+        base = os.path.join(SITE, sub)
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            path = os.path.join(base, name, "index.html")
+            if os.path.isfile(path):
+                entries.append(site_entry(path, f"/{sub}/{name}/"))
+    for name in ("vercel-build-cost-calculator", "de/vercel-build-kosten-rechner", "claude-code"):
+        path = os.path.join(SITE, name, "index.html")
+        if os.path.isfile(path):
+            entries.append(site_entry(path, f"/{name}/"))
+    return [e for e in entries if e]
+
+
+def site_entry(path, url):
+    text = open(path, encoding="utf-8").read()
+    t = re.search(r"<title>(.*?)</title>", text, re.S)
+    d = re.search(r'<meta name="description" content="([^"]*)"', text)
+    if not t:
+        return None
+    title = re.sub(r"\s*[·|]\s*Deploy Center\s*$", "", html.unescape(t.group(1))).strip()
+    art = re.search(r"<article.*?</article>", text, re.S)
+    heads = [html.unescape(re.sub(r"<[^>]+>", "", h)).strip()
+             for h in re.findall(r"<h2[^>]*>(.*?)</h2>", art.group(0) if art else "", re.S)]
+    body = " ".join([html.unescape(d.group(1)) if d else ""] + heads)
+    return {"p": title, "h": "", "u": url, "t": re.sub(r"\s+", " ", body).strip()[:600]}
 
 
 def sync_hand_dates():
@@ -786,6 +823,7 @@ FOOTER_GUIDES = [
     ("/guides/vercel-build-minutes-and-build-queue/", "Vercel build minutes and the build queue"),
     ("/guides/deploy-to-vercel-from-github-actions/", "Deploy to Vercel from GitHub Actions"),
     ("/guides/skip-vercel-previews-for-bots-and-agents/", "Skip Vercel previews for bots and agents"),
+    ("/guides/ignored-build-step-or-auto-deploy-off/", "Ignored Build Step or auto-deploy off"),
     ("/guides/cloudflare-pages-stop-builds/", "Stop Cloudflare Pages builds"),
     ("/guides/aws-amplify-disable-auto-build/", "Disable AWS Amplify auto-build"),
     ("/guides/digitalocean-app-platform-deploy-on-push/", "Stop DigitalOcean App Platform builds"),
@@ -799,6 +837,81 @@ FOOTER_GUIDES = [
     ("/blog/ai-coding-agents-build-bill/", "AI coding agents and your build bill"),
 ]
 FOOTER_GUIDES_RE = re.compile(r"(<div><h2>Guides</h2><ul>)(.*?)(\n *</ul></div>)", re.S)
+
+
+# The Content-Security-Policy of every page, as a <meta> (GitHub Pages sends no headers). The only
+# inline script on a page is the one that sets the theme before the first paint: it is allowed by its
+# hash, so a changed script needs this build to run again (check-site.py fails when a hash is stale).
+# Nothing else is inline: no style="" attribute, no <style>, no on...= handler.
+CSP_TEMPLATE = ("default-src 'self'; script-src 'self'{hashes}; style-src 'self'; img-src 'self' data:; "
+                "connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'")
+INLINE_SCRIPT_RE = re.compile(r"<script(?![^>]*\b(?:src|type)=)[^>]*>(.*?)</script>", re.S)
+CSP_META_RE = re.compile(r'<meta http-equiv="Content-Security-Policy" content="[^"]*">\n?')
+
+
+def csp_for(text):
+    hashes = ""
+    for body in INLINE_SCRIPT_RE.findall(text):
+        digest = base64.b64encode(hashlib.sha256(body.encode("utf-8")).digest()).decode("ascii")
+        hashes += f" 'sha256-{digest}'"
+    return CSP_TEMPLATE.format(hashes=hashes)
+
+
+def sync_csp():
+    """Write the Content-Security-Policy <meta> into every page under site/ (docs pages included)."""
+    changed = 0
+    for dirpath, _, filenames in os.walk(SITE):
+        for name in filenames:
+            if not name.endswith(".html"):
+                continue
+            path = os.path.join(dirpath, name)
+            text = open(path, encoding="utf-8").read()
+            meta = f'<meta http-equiv="Content-Security-Policy" content="{csp_for(text)}">\n'
+            body = CSP_META_RE.sub("", text)
+            m = re.search(r'<meta charset="utf-8">\n', body)
+            if not m:
+                raise BuildError(f"{os.path.relpath(path, ROOT)}: no <meta charset> to put the Content-Security-Policy after")
+            new = body[:m.end()] + meta + body[m.end():]
+            if new != text:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(new)
+                changed += 1
+    if changed:
+        print(f"build-docs: Content-Security-Policy written into {changed} pages")
+
+
+
+PIN_LINE = 'PINNED_VERSION=""'
+
+
+def sync_install_copies(version):
+    """site/install/<x.y.z>.sh: install.sh pinned to one release, so a CI job can fetch a script that
+    cannot change under it. A release's copy is the script as of its tag, when that script knows about
+    pinning; VERSION itself (not yet tagged, or tagged before pinning existed) takes the working copy.
+    site/install/ is built, not committed (a tag never changes, so neither does its copy)."""
+    src = os.path.join(SITE, "install.sh")
+    if not os.path.isfile(src):
+        return
+    scripts = {}
+    tags = subprocess.run(["git", "-C", ROOT, "tag", "--list", "v[0-9]*.[0-9]*.[0-9]*"],
+                          capture_output=True, text=True).stdout.split()
+    for tag in tags:
+        v = tag[1:]
+        shown = subprocess.run(["git", "-C", ROOT, "show", f"{tag}:site/install.sh"], capture_output=True, text=True)
+        if shown.returncode == 0 and PIN_LINE in shown.stdout and re.fullmatch(VERSION_RE, v):
+            scripts[v] = shown.stdout
+    if version not in scripts:
+        scripts[version] = open(src, encoding="utf-8").read()
+    out = os.path.join(SITE, "install")
+    if os.path.isdir(out):
+        shutil.rmtree(out)
+    os.makedirs(out)
+    for v, text in sorted(scripts.items()):
+        if PIN_LINE not in text:
+            raise BuildError("site/install.sh has no PINNED_VERSION line to pin")
+        with open(os.path.join(out, f"{v}.sh"), "w", encoding="utf-8") as f:
+            f.write(text.replace(PIN_LINE, f'PINNED_VERSION="{v}"', 1))
+    print(f"build-docs: install/<version>.sh for {', '.join(sorted(scripts))}")
 
 
 def sync_footer_guides():
@@ -900,6 +1013,7 @@ def main():
     version = (open(os.path.join(ROOT, "VERSION")).read().strip() if os.path.exists(os.path.join(ROOT, "VERSION")) else "0")
     if version != "0":
         sync_site_version(version)
+        sync_install_copies(version)
     sync_footer_guides()
     # ?v= changes only when the file does, so browsers keep the cached copy across commits
     assets = {name: hashlib.sha256(open(os.path.join(ASSETS, name), "rb").read()).hexdigest()[:10]
@@ -920,6 +1034,7 @@ def main():
         f.write(llms_full(pages, version))
     update_sitemap([(index.url, index.updated)] + [(p.url, p.updated) for p in pages])
     sync_hand_dates()
+    sync_csp()
     print(f"build-docs: {len(pages) + 1} pages in site/docs/")
 
 

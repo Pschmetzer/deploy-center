@@ -7,6 +7,16 @@
 
 ## 0.10.0
 
+### Highlights
+
+- CLI: `deploys plan` and `deploys budget` say what the daily deploy costs before it starts, rules and `deploys schedule daily` run it by your rules, and `deploys hooks install` warns before a push.
+- Mac app: a rule editor, Touch ID or password before risky steps (opt-in), a site watch after going live with uptime per project, and a TLS certificate warning.
+- iPhone app: Live Activity, Siri and Shortcuts (read-only), Spotlight, cancel a build, Lock Screen and failed-builds widgets.
+- All eight hosts follow one status contract, so `watch` and `deploy --wait` end on every one of them.
+- MCP server: a client that cannot ask you first is refused by default; the GitHub Action can wait for builds.
+
+### All changes
+
 - **Fixed:** "Vercel could not be loaded … jq: invalid JSON text passed to --argjson" after a single failed Vercel call. Under macOS's bash 3.2 an empty fallback became `{\}`; the list now loads with `partial` rows instead of failing, and `vercel_call` has a time limit and retries reads (never writes).
 - CLI: `deploys plan [--when-green] [--json]` shows what `deploy-changed --yes` would start and roughly what it costs; `deploys price set`, `deploys budget set <usd> [--strict]` stops `deploy-changed` over budget unless `--force "why"`.
 - CLI: the app's rules (`~/.config/deploys/rules.json`) are acted on: `deploys rules check`, hold rules in `deploy-changed`/`plan`, `deploy-changed --by-rules`, and `deploys schedule daily [HH:MM]` (opt-in, off by default).

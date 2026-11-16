@@ -25,6 +25,7 @@
 | [WIDGETS-IOS.md](WIDGETS-IOS.md) | The Mac widgets and the iPhone app: how they get their data, building them |
 | [APP-STORE.md](APP-STORE.md) | Releasing the iPhone app (maintainer) |
 | [PROVIDERS.md](PROVIDERS.md) | Adding a platform: one file in `providers/`, the contract, the tests |
+| [GITHOSTS.md](GITHOSTS.md) | Adding a git host (Bitbucket, Gitea, …): the repo slug, the functions, the tests |
 | [../README-CLI.md](../README-CLI.md) | The CLI on its own: install on Linux, WSL and in CI, keys, Docker |
 | [GOOD-FIRST-ISSUES.md](GOOD-FIRST-ISSUES.md) | Small tasks for a first pull request |
 | [../examples/](../examples/) | Deploying without a Mac (CI) |
@@ -50,7 +51,7 @@ A link in the app that leads to a setting (for example the Autofix notice) opens
 ## Language
 
 - English: everything for users. The [README](../README.md), the website (`site/`), this folder's pages listed above, [CHANGELOG.md](../CHANGELOG.md), `examples/`, and code comments.
-- German: [README.de.md](../README.de.md), a translation of the README (a change to the README goes into it too), the legal pages on the website (`site/impressum.html`, `site/datenschutz.html`), [ZAHLEN.md](ZAHLEN.md) (the German original of [NUMBERS.md](NUMBERS.md)), [ERSPARNIS.md](ERSPARNIS.md) (the German version of [SAVINGS.md](SAVINGS.md)), [FAQ.de.md](FAQ.de.md) and [SAFE-START.de.md](SAFE-START.de.md) (the German versions of [FAQ.md](FAQ.md) and [SAFE-START.md](SAFE-START.md)), and the working notes `IDEEN*.md`.
+- German: [README.de.md](../README.de.md), a translation of the README (a change to the README goes into it too), the legal pages on the website (`site/impressum.html`, `site/datenschutz.html`), [ZAHLEN.md](ZAHLEN.md) (the German original of [NUMBERS.md](NUMBERS.md)), [ERSPARNIS.md](ERSPARNIS.md) (the German version of [SAVINGS.md](SAVINGS.md)), [FAQ.de.md](FAQ.de.md), [SAFE-START.de.md](SAFE-START.de.md) and [TROUBLESHOOTING.de.md](TROUBLESHOOTING.de.md) and [CLI.de.md](CLI.de.md) (the German versions of [FAQ.md](FAQ.md), [SAFE-START.md](SAFE-START.md) and [TROUBLESHOOTING.md](TROUBLESHOOTING.md), and a short German overview of [CLI.md](CLI.md)), and the working notes `IDEEN*.md`.
 - The app itself speaks English and German. It follows the language the Mac prefers until you pick one in Settings (since 0.9.1).
 
 A change to [NUMBERS.md](NUMBERS.md) goes into [ZAHLEN.md](ZAHLEN.md) too, and a change to [SAVINGS.md](SAVINGS.md) into [ERSPARNIS.md](ERSPARNIS.md).

@@ -9,6 +9,10 @@ CLI on Linux, WSL or in CI: `deploys --version` and `deploys where`) and the ste
 Deploy Center is maintained by one person in their spare time. The aim is a first answer within
 7 days, and a fix in a new release as soon as one is ready. There is no bug bounty.
 
+Please give me time to fix a problem before you write about it: a fix in a release, then a few days
+for people to update, then the details can be public. If nothing has happened after 90 days, you may
+publish what you found. The advisory is where I will credit you, if you want that.
+
 ## Supported versions
 
 Only the newest release gets fixes. Update with **Check for Updates …** in the app menu or

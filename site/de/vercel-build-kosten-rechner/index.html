@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vercel-Build-Kosten-Rechner: was Auto-Deploy kostet · Deploy Center</title>
+<meta name="description" content="Schätze, was Auto-Deploy bei Vercel oder Render im Monat kostet: Projekte × Pushes × Kosten pro Build, verglichen mit Deploy von Hand. Kostenlos, läuft in deinem Browser.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/vercel-build-kosten-rechner/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/vercel-build-cost-calculator/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/vercel-build-kosten-rechner/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/vercel-build-cost-calculator/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="og:title" content="Vercel-Build-Kosten-Rechner: was Auto-Deploy kostet · Deploy Center">
+<meta property="og:description" content="Schätze, was Auto-Deploy bei Vercel oder Render im Monat kostet: Projekte × Pushes × Kosten pro Build, verglichen mit Deploy von Hand. Kostenlos, läuft in deinem Browser.">
+<meta property="og:url" content="https://deploycenter.app/de/vercel-build-kosten-rechner/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Vercel-Build-Kosten-Rechner: was Auto-Deploy kostet · Deploy Center">
+<meta name="twitter:description" content="Schätze, was Auto-Deploy bei Vercel oder Render im Monat kostet: Projekte × Pushes × Kosten pro Build, verglichen mit Deploy von Hand. Kostenlos, läuft in deinem Browser.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "headline": "Vercel-Build-Kosten-Rechner",
+  "description": "Schätze, was Auto-Deploy bei Vercel oder Render im Monat kostet: Projekte × Pushes × Kosten pro Build, verglichen mit Deploy von Hand. Kostenlos, läuft in deinem Browser.",
+  "url": "https://deploycenter.app/de/vercel-build-kosten-rechner/",
+  "mainEntityOfPage": "https://deploycenter.app/de/vercel-build-kosten-rechner/",
+  "datePublished": "2026-11-10",
+  "dateModified": "2026-11-16",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Was kostet ein Vercel-Build?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Das hängt von deinem Tarif, der Build-Maschine und der Laufzeit des Builds ab. Teile die Build-Kosten des letzten Monats auf deiner Nutzungsseite durch die Zahl der Builds, dann hast du deine eigene Zahl."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Warum mit Deploy von Hand vergleichen?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Die meisten Pushes müssen nicht von allein live gehen. Wenn ein Deploy am Ende des Tages alle ausliefert, zahlst du für einen Build statt für einen pro Push."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Gilt das auch für Render?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. Die Formel ist dieselbe; nimm für die Kosten pro Build die Build-Minuten und den Preis von Render."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Wird etwas an einen Server geschickt?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nein. Der Rechner läuft in deinem Browser. Die Teilen-Schaltfläche öffnet einen Beitrag mit deinen Zahlen nur, wenn du sie anklickst."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Rechner",
+    "item": "https://deploycenter.app/de/vercel-build-kosten-rechner/"
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Vercel-Build-Kosten-Rechner",
+  "url": "https://deploycenter.app/de/vercel-build-kosten-rechner/",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Any (web browser)",
+  "offers": {
+   "@type": "Offer",
+   "price": "0",
+   "priceCurrency": "USD"
+  },
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  }
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/de/vercel-build-kosten-rechner/" aria-current="page">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a></p>
+<h1>Vercel-Build-Kosten-Rechner</h1>
+<p class="answer">Auto-Deploy kostet im Monat ungefähr <b>Projekte × Pushes pro Tag × Kosten pro Build × Arbeitstage</b>. Deploy von Hand kostet dieselbe Formel mit deiner Zahl an Deploys statt deiner Zahl an Pushes; verschiebe die Regler, um beides mit deinen Zahlen zu sehen.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-16">16. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+
+<div class="calc">
+  <div class="card">
+    <div class="presets" role="group" aria-label="Beispielszenarien">
+      <span class="hint">Beispiele zum Einstieg (Annahmen, keine Messwerte):</span>
+      <button class="btn" type="button" data-scenario="3,5,1">Einzelentwickler</button>
+      <button class="btn" type="button" data-scenario="12,8,1">Kleines Team</button>
+      <button class="btn" type="button" data-scenario="20,30,2">Coding-Agenten, die den ganzen Tag pushen</button>
+    </div>
+    <div class="field"><div class="fh"><label for="p">Mit Git verbundene Projekte</label><input class="num" id="pn" type="number" inputmode="numeric" step="1" aria-label="Mit Git verbundene Projekte, als Zahl"></div><input id="p" type="range" min="1" max="80" value="20"></div>
+    <div class="field"><div class="fh"><label for="u">Pushes pro Projekt und Arbeitstag</label><input class="num" id="un" type="number" inputmode="numeric" step="1" aria-label="Pushes pro Projekt und Arbeitstag, als Zahl"></div><input id="u" type="range" min="1" max="60" value="8"><div class="hint">Zähle jeden Push, nicht jeden Commit. KI-Coding-Agenten pushen oft nach jedem Schritt.</div></div>
+    <div class="field"><div class="fh"><label for="c">Durchschnittliche Kosten pro Build</label><input class="num" id="cn" type="number" inputmode="numeric" step="1" aria-label="Durchschnittliche Kosten pro Build in Cent, als Zahl"></div><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In Cent. Deine echte Zahl: die Build-Kosten des letzten Monats geteilt durch die Zahl der Builds, auf deiner Vercel- oder Render-Nutzungsseite.</div></div>
+    <div class="field"><div class="fh"><label for="d">Deploys von Hand pro Projekt und Tag</label><input class="num" id="dn" type="number" inputmode="numeric" step="1" aria-label="Deploys von Hand pro Projekt und Tag, als Zahl"></div><input id="d" type="range" min="1" max="5" value="1"></div>
+  </div>
+  <div class="card result">
+    <p class="sr" id="said" aria-live="polite"></p>
+    <div class="hint">Du würdest etwa sparen</div>
+    <div class="big" id="save">$0</div>
+    <div class="hint">im Monat (22 Arbeitstage)</div>
+    <div class="row"><span>Mit Auto-Deploy</span><b id="now">$0</b></div>
+    <div class="row"><span>Deploy von Hand</span><b id="after">$0</b></div>
+    <div class="share"><a class="btn" id="tweet" target="_blank" rel="noopener">Auf X teilen</a> <button class="btn" id="copylink" type="button">Link kopieren</button> <button class="btn" id="sharebtn" type="button" hidden>Teilen …</button></div>
+  </div>
+</div>
+
+<h2>So wird gerechnet</h2>
+<pre><code>mit Auto-Deploy    = Projekte × Pushes pro Tag × Kosten pro Build × 22
+Deploy von Hand    = Projekte × min(Deploys, Pushes) × Kosten pro Build × 22
+Ersparnis          = mit Auto-Deploy − Deploy von Hand</code></pre>
+<ul>
+  <li><b>22 Arbeitstage</b> im Monat. Pushes am Wochenende kommen zur ersten Zeile dazu. <code>deploys simulate</code> nutzt diese Annahme nicht: Es zählt die Pushes, die du in den letzten Tagen wirklich gemacht hast, und rechnet sie auf 30 Tage hoch, seine Zahl kann also von dieser Seite abweichen.</li>
+  <li><b>Ein Build pro Projekt und Push.</b> Sind mehrere Projekte mit einem Repository verbunden, baut ein Push jedes davon; zähle sie als getrennte Projekte.</li>
+  <li><b>Previews zählen.</b> Pushes auf jeden Branch bauen bei Vercel eine Vorschau. Rechne sie mit ein oder stelle die Regler nur für Produktion ein.</li>
+  <li><b>Nichts verlässt deinen Browser.</b> Die Zahlen bleiben auf dieser Seite; der Teilen-Link enthält nur die vier Reglerwerte.</li>
+</ul>
+
+<h2>Deine Kosten pro Build finden</h2>
+<ol>
+  <li>Öffne bei Vercel die Seite <b>Usage</b> deines Teams und lies die Build-Kosten des letzten Monats ab. Lies bei Render die Build-Minuten auf der Seite <b>Billing</b> ab.</li>
+  <li>Zähle die Builds im selben Zeitraum in der Liste der Deployments.</li>
+  <li>Teile die Kosten durch die Zahl der Builds.</li>
+</ol>
+<p><a href="/">Deploy Center</a> zeigt in seinem Fenster die Vercel-Build-Ausgaben der letzten 7 Tage und das Monatstempo, damit du die Schätzung an echten Zahlen prüfen kannst.</p>
+
+<div class="note"><p><b>Was nicht enthalten ist.</b> Kosten für Functions, Bilder und Bandbreite ändern sich nicht, wenn du seltener deployst. Tarife mit enthaltener Build-Zeit machen die ersten Builds eines Monats kostenlos. Das Ergebnis ist eine Schätzung, kein Angebot.</p></div>
+
+<h2 id="embed">Den Rechner auf der eigenen Seite einbauen</h2>
+<p>Kopiere das in eine Seite, einen Blogbeitrag oder ein Newsletter-Archiv. Der Rechner läuft im Frame, im Browser der Leserin oder des Lesers, und verlinkt hierher zurück.</p>
+<pre><code>&lt;iframe src="https://deploycenter.app/de/vercel-build-kosten-rechner/?embed=1"
+  title="Vercel-Build-Kosten-Rechner" width="100%" height="620"
+  loading="lazy" style="border:0"&gt;&lt;/iframe&gt;</code></pre>
+<p>Hänge <code>&amp;p=12&amp;u=8&amp;c=6&amp;d=1</code> an, um mit deinen eigenen Zahlen zu starten. Die englische Fassung: <a href="/vercel-build-cost-calculator/" hreflang="en" lang="en">Vercel build cost calculator</a>.</p>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Was kostet ein Vercel-Build?</summary><p>Das hängt von deinem Tarif, der Build-Maschine und der Laufzeit des Builds ab. Teile die Build-Kosten des letzten Monats auf deiner Nutzungsseite durch die Zahl der Builds, dann hast du deine eigene Zahl.</p></details>
+  <details><summary>Warum mit Deploy von Hand vergleichen?</summary><p>Die meisten Pushes müssen nicht von allein live gehen. Wenn ein Deploy am Ende des Tages alle ausliefert, zahlst du für einen Build statt für einen pro Push.</p></details>
+  <details><summary>Gilt das auch für Render?</summary><p>Ja. Die Formel ist dieselbe; nimm für die Kosten pro Build die Build-Minuten und den Preis von Render.</p></details>
+  <details><summary>Wird etwas an einen Server geschickt?</summary><p>Nein. Der Rechner läuft in deinem Browser. Die Teilen-Schaltfläche öffnet einen Beitrag mit deinen Zahlen nur, wenn du sie anklickst.</p></details>
+
+<div class="ctabox">
+  <h2>Zahle für einen Build am Tag, nicht für einen pro Push.</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel, Render, Netlify, Cloudflare Pages und mehr mit einem Klick ab, zeigt, was wartet, und deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für den Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<div class="related"><h2>Verwandt (englisch)</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+  <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+  <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+  <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+  <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+  <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+  <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+  <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+  <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+</ul></div>
+</article></main>
+<p class="embed-credit"><a href="https://deploycenter.app/de/vercel-build-kosten-rechner/" target="_blank" rel="noopener">Vercel-Build-Kosten-Rechner · Deploy Center</a></p>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/calculator.js" defer></script>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

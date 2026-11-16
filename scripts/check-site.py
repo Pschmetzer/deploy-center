@@ -9,7 +9,7 @@
 - .well-known/security.txt, when there, has Contact and an Expires date still in the future
     scripts/check-site.py [site]   exits 1 and lists the problems (default: site/ of this repo)
 """
-import importlib.util, json, os, re, sys
+import base64, hashlib, importlib.util, json, os, re, sys
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
@@ -27,6 +27,8 @@ class Page(HTMLParser):
         self.links, self.ids, self.meta, self.ld = [], set(), {}, []
         self.title, self._in_title, self._in_ld, self._buf = "", False, False, ""
         self.lang, self.h1, self.imgs = None, 0, []
+        self.csp, self.inline_scripts, self._in_inline, self.inline_style = None, [], False, 0
+        self.alts = {}   # hreflang -> href of <link rel="alternate" hreflang=...>
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
@@ -35,6 +37,12 @@ class Page(HTMLParser):
             self.ids.add(a["id"])
         if tag == "html":
             self.lang = a.get("lang")
+        if "style" in a or tag == "style" or any(k.startswith("on") for k in a):
+            self.inline_style += 1   # a style="" attribute, a <style> block or an on...= handler
+        if tag == "meta" and (a.get("http-equiv") or "").lower() == "content-security-policy":
+            self.csp = a.get("content", "")
+        if tag == "script" and not a.get("src") and a.get("type") != "application/ld+json":
+            self._in_inline, self._ibuf = True, ""
         if tag == "h1":
             self.h1 += 1
         if tag == "img":
@@ -45,6 +53,8 @@ class Page(HTMLParser):
             self.links.append(a["href"])
         if tag in ("img", "script", "source") and a.get("src"):
             self.links.append(a["src"])
+        if tag == "link" and "alternate" in rels and a.get("hreflang"):
+            self.alts[a["hreflang"]] = a.get("href", "")
         if tag == "link" and "canonical" in rels:
             self.meta["canonical"] = a.get("href", "")
         if tag == "meta":
@@ -62,12 +72,17 @@ class Page(HTMLParser):
         if tag == "script" and self._in_ld:
             self._in_ld = False
             self.ld.append(self._buf)
+        if tag == "script" and self._in_inline:
+            self._in_inline = False
+            self.inline_scripts.append(self._ibuf)
 
     def handle_data(self, data):
         if self._in_title:
             self.title += data
         if self._in_ld:
             self._buf += data
+        if self._in_inline:
+            self._ibuf += data
 
 
 # One way to map a link to a file, shared with check-links.py (its .html fallback included), so the
@@ -102,6 +117,10 @@ for d, _, files in os.walk(ROOT):
 def rel(p):
     return os.path.relpath(p, ROOT)
 
+# The Content-Security-Policy is checked in this repo's site/ (build-docs.py writes it), and in any
+# other site once one of its pages has one. A bare folder of test pages is not held to it.
+ENFORCE_CSP = os.path.exists(os.path.join(os.path.dirname(ROOT), "scripts", "build-docs.py")) or any(pg.csp for pg in pages.values())
+
 for p, pg in pages.items():
     for url in pg.links:
         target, frag = resolve(p, url)
@@ -121,6 +140,21 @@ for p, pg in pages.items():
             problems.append(f"{rel(p)}: invalid JSON-LD: {e}")
     if not pg.lang:
         problems.append(f"{rel(p)}: no <html lang>")
+    # Content-Security-Policy: present, allows exactly the inline scripts there are (by hash), and the
+    # page has no inline style or handler that the policy would block (run scripts/build-docs.py to refresh)
+    if not ENFORCE_CSP:
+        pass
+    elif not pg.csp:
+        problems.append(f"{rel(p)}: no Content-Security-Policy <meta> (run scripts/build-docs.py)")
+    else:
+        want = {"'sha256-" + base64.b64encode(hashlib.sha256(b.encode("utf-8")).digest()).decode("ascii") + "'" for b in pg.inline_scripts}
+        have = set(re.findall(r"'sha256-[^']+'", pg.csp))
+        if want != have:
+            problems.append(f"{rel(p)}: Content-Security-Policy hashes do not match the inline scripts (run scripts/build-docs.py)")
+        if "'unsafe-inline'" in pg.csp or "'unsafe-eval'" in pg.csp:
+            problems.append(f"{rel(p)}: Content-Security-Policy allows unsafe-inline or unsafe-eval")
+    if ENFORCE_CSP and pg.inline_style:
+        problems.append(f"{rel(p)}: {pg.inline_style} inline style attribute(s), <style> block(s) or on...= handler(s): the Content-Security-Policy blocks them")
     for img in pg.imgs:
         name = img.get("src", "?")
         if img.get("alt") is None:
@@ -154,6 +188,20 @@ for loc in locs:
 for p, pg in pages.items():
     if not pg.meta.get("robots", "").startswith("noindex") and pg.meta.get("canonical") not in locs:
         problems.append(f"{rel(p)}: canonical {pg.meta.get('canonical')} is not in sitemap.xml")
+
+# hreflang pairs point at each other: every alternate exists, is indexable, and names this page back
+by_canonical = {pg.meta.get("canonical"): (p, pg) for p, pg in pages.items() if pg.meta.get("canonical")}
+for p, pg in pages.items():
+    for lang, href in pg.alts.items():
+        if href == pg.meta.get("canonical"):
+            continue
+        other = by_canonical.get(href)
+        if not other:
+            problems.append(f"{rel(p)}: hreflang {lang} {href} is not the canonical of a page")
+        elif pg.meta.get("canonical") not in other[1].alts.values():
+            problems.append(f"{rel(p)}: hreflang {lang} {href} does not name this page back")
+    if pg.alts and pg.meta.get("canonical") not in pg.alts.values():
+        problems.append(f"{rel(p)}: hreflang list does not include the page itself")
 
 for d, _, files in os.walk(ROOT):
     for f in files:

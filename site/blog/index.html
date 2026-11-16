@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deploy Center blog: AI coding agents and build costs</title>
 <meta name="description" content="Articles from the Deploy Center project: what AI coding agents do to your build bill, and how to ship on purpose instead of on every push.">
@@ -84,6 +85,11 @@
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Blog</h1>
 <p class="answer">Longer pieces around deploying on purpose. For step-by-step answers, see the <a href="/guides/">guides</a>.</p>
+<div class="site-search" role="search" hidden>
+<label class="sr" for="site-q">Search the guides, blog and docs</label>
+<input id="site-q" type="search" data-site-search placeholder="Search guides, blog and docs" autocomplete="off" aria-controls="site-results">
+<ul id="site-results" hidden></ul>
+</div>
 <div class="cards">
   <a href="/blog/ai-coding-agents-build-bill/"><b>AI coding agents and your build bill</b><span>Your agent pushes 40 times. You deploy once.</span></a>
 </div>
@@ -100,6 +106,7 @@
       <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
       <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
       <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
       <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
       <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
       <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>

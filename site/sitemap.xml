@@ -13,6 +13,7 @@
   <url><loc>https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/</loc><lastmod>2026-11-16</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/ignored-build-step-or-auto-deploy-off/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/cloudflare-pages-stop-builds/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/aws-amplify-disable-auto-build/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/</loc><lastmod>2026-11-16</lastmod></url>
@@ -20,6 +21,7 @@
   <url><loc>https://deploycenter.app/guides/roll-back-vercel-render-deployment/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/claude-code/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/vercel-build-cost-calculator/</loc><lastmod>2026-11-16</lastmod></url>
+  <url><loc>https://deploycenter.app/de/vercel-build-kosten-rechner/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/blog/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/blog/ai-coding-agents-build-bill/</loc><lastmod>2026-11-16</lastmod></url>
   <!-- docs: written by scripts/build-docs.py -->
@@ -47,18 +49,19 @@
   <url><loc>https://deploycenter.app/docs/aws-amplify/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/digitalocean/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/coolify/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/ci/</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/ci/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/uninstall/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/numbers/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/glossary/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/faq/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/troubleshooting/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/providers/</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/git-hosts/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/verify/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/action/</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/action/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/badge/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/statuspage/</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/statuspage/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/notify/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/hooks/</loc><lastmod>2026-11-10</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/mcp/</loc><lastmod>2026-11-12</lastmod></url>

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to stop Netlify builds on every push · Deploy Center</title>
 <meta name="description" content="Two ways to stop Netlify building on every push: Stop builds, or an ignore command that only lets build hook builds through. Code, steps and trade-offs.">
@@ -202,6 +203,8 @@ netlify deploy --prod</code></pre>
   </div>
 </div>
 
+<p class="reference"><b>Reference:</b> <a href="/docs/auto-deploy/">Auto-deploy off and on</a> · <a href="/docs/cli/#platforms">CLI: platform commands</a></p>
+
 <div class="related"><h2>Related</h2><ul>
   <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
   <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
@@ -222,6 +225,7 @@ netlify deploy --prod</code></pre>
       <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
       <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
       <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
       <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
       <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
       <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>

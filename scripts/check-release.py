@@ -5,6 +5,7 @@
 
 - site/index.html names VERSION twice ("Version X ·" under the download button and
   "softwareVersion" in the JSON-LD). scripts/bump.sh sets both together with VERSION.
+- site/install/<x.y.z>.sh (built by build-docs.py) pins the release its name says.
 - The newest item in site/appcast.xml is not newer than VERSION.
 - Once the tag vVERSION exists (release.sh --publish made the release), the newest appcast
   item is VERSION: until the appcast PR is merged, installed copies are never offered it.
@@ -59,6 +60,23 @@ lv = re.findall(r"^- Version: (\d+\.\d+\.\d+)", llms, re.M)
 for v in lv:
     if v != version:
         problems.append(f'site/llms.txt: says "Version: {v}", VERSION is {version} (scripts/build-docs.py sets it)')
+
+# site/install/<x.y.z>.sh is built by scripts/build-docs.py (not committed). When it was built, the copy for
+# VERSION is install.sh with its PINNED_VERSION line set to VERSION, and no copy pins another release's number.
+inst_dir = os.path.join(root, "site", "install")
+if os.path.isdir(inst_dir) and os.path.exists(os.path.join(root, "site", "install.sh")):
+    base = read("site/install.sh")
+    mine = os.path.join(inst_dir, f"{version}.sh")
+    if not os.path.exists(mine):
+        problems.append(f"site/install/{version}.sh is missing (run scripts/build-docs.py)")
+    elif read(f"site/install/{version}.sh") != base.replace('PINNED_VERSION=""', f'PINNED_VERSION="{version}"', 1):
+        problems.append(f"site/install/{version}.sh differs from site/install.sh pinned to {version} (run scripts/build-docs.py)")
+    for name in sorted(os.listdir(inst_dir)):
+        m = re.fullmatch(r"(\d+\.\d+\.\d+)\.sh", name)
+        if not m:
+            problems.append(f"site/install/{name}: not a <x.y.z>.sh copy")
+        elif f'PINNED_VERSION="{m.group(1)}"' not in read(f"site/install/{name}"):
+            problems.append(f"site/install/{name} does not pin {m.group(1)}")
 
 items = []
 sizes = {}
