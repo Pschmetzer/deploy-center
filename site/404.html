@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Page not found · Deploy Center</title>
 <meta name="robots" content="noindex">
@@ -20,14 +21,14 @@
 </div></nav>
 
 <main id="main" class="wrap narrow"><article>
-<h1 style="margin-top:56px">This page is not live.</h1>
+<h1 class="top-gap">This page is not live.</h1>
 <p class="answer">Maybe it was never deployed. The rest of the site is.</p>
 <div class="site-search" role="search" hidden>
 <label class="sr" for="site-q">Search the guides, blog and docs</label>
 <input id="site-q" type="search" data-site-search placeholder="Search guides, blog and docs" autocomplete="off" aria-controls="site-results">
 <ul id="site-results" hidden></ul>
 </div>
-<div class="cta" style="justify-content:flex-start;margin:24px 0 8px"><a class="btn primary" href="/">Go to Deploy Center</a><a class="btn" href="/guides/">All guides</a></div>
+<div class="cta start"><a class="btn primary" href="/">Go to Deploy Center</a><a class="btn" href="/guides/">All guides</a></div>
 <h2>Docs</h2>
 <ul>
   <li><a href="/docs/getting-started/">Getting started</a></li>

@@ -183,3 +183,10 @@ code{font:.88em ui-monospace,Menlo,monospace;background:var(--card);border:1px s
   .sticky-dl a{flex:1;justify-content:center}
 }
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* what used to be style="" attributes (Content-Security-Policy without 'unsafe-inline') */
+.list.two.one{grid-template-columns:1fr}
+.two.wide.gap-top{margin-top:28px;align-items:start}
+.list li b.inl{display:inline}
+p.sub.center{margin:0 auto 20px}
+.small.gap-top-s{margin-top:14px}

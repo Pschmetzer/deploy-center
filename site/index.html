@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deploy Center: manual deploys for Vercel and Render</title>
 <meta name="description" content="Free, open-source Mac app and CLI: turn off auto-deploy on Vercel and Render, deploy what changed when you decide, and let Claude fix failed builds.">
@@ -155,7 +156,7 @@ shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip</pre><button type="button
   </div>
   <div id="savings">
     <span class="eyebrow">Savings, in numbers</span>
-    <ul class="list two" style="grid-template-columns:1fr">
+    <ul class="list two one">
       <li><b>Simulator</b>Your last 30 days of pushes: “auto-deploy ≈ $X a month” next to “once a day ≈ $Y”, before you switch.</li>
       <li><b>Ledger</b>“≈ $X saved since …” per project, in dollars and build minutes.</li>
       <li><b>Build costs</b>Vercel spend for 7 days, the monthly pace, a budget warning at 80 %.</li>
@@ -187,7 +188,7 @@ shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip</pre><button type="button
     <li><span><b>Fix PR opens</b>“Claude is fixing” on the row</span></li>
     <li class="you"><span><b>You merge, deploy</b>Claude never merges</span></li>
   </ol>
-  <div class="two wide" style="margin-top:28px;align-items:start">
+  <div class="two wide gap-top">
     <ul class="list two">
       <li><b>Claude in the app <span class="tag new">new</span></b>Explain a failure (then <i>Fix with Claude</i>), plain release notes in English or German, “Is this safe to ship?”. Your key, a monthly cap. <a href="/docs/claude/">More</a></li>
       <li><b>Connect in one click</b>Settings → Claude connects Claude Desktop and Claude Code. Claude deploys only if you allow it, and asks each time. <a href="/docs/integrations/mcp/">MCP server</a></li>
@@ -216,7 +217,7 @@ shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip</pre><button type="button
     <li><b>Deploy windows</b>No deploys on Friday night; “Deploy anyway…” is journaled with a reason.</li>
     <li><b>Risk score</b>Migrations, env files, lockfiles, build config: green, yellow or red.</li>
     <li><b>Auto-deploy guard <span class="tag new">new</span></b>Every 30 min it turns auto-deploy off again where it came back. Emergencies get a time limit.</li>
-    <li><b>A second to change your mind</b>A short wait with cancel, <b style="display:inline">Stop all</b>, and every deploy asks first.</li>
+    <li><b>A second to change your mind</b>A short wait with cancel, <b class="inl">Stop all</b>, and every deploy asks first.</li>
   </ul>
   <h3 class="mid" id="team">Team mode, without a server</h3>
   <ul class="list">
@@ -335,12 +336,12 @@ shasum -a 256 ~/Downloads/DeployCenter-*-universal.zip</pre><button type="button
 
 <section class="final"><div class="wrap">
   <h2>Ship when you decide.</h2>
-  <p class="sub" style="margin:0 auto 20px">Made by an indie dev whose Vercel bill hit $99 in 7 days. Free for macOS 15 and newer.</p>
+  <p class="sub center">Made by an indie dev whose Vercel bill hit $99 in 7 days. Free for macOS 15 and newer.</p>
   <div class="cta">
     <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a>
     <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
   </div>
-  <p class="small" style="margin-top:14px">Not on a Mac? <a href="/docs/install-cli/">Use the CLI</a>. Using Claude Code? <a href="/claude-code/">Add the plugin</a>. Ideas? <a href="https://github.com/Pschmetzer/deploy-center/issues">Open an issue</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/GOOD-FIRST-ISSUES.md">Good first issues</a></p>
+  <p class="small gap-top-s">Not on a Mac? <a href="/docs/install-cli/">Use the CLI</a>. Using Claude Code? <a href="/claude-code/">Add the plugin</a>. Ideas? <a href="https://github.com/Pschmetzer/deploy-center/issues">Open an issue</a> · <a href="https://github.com/Pschmetzer/deploy-center/blob/main/docs/GOOD-FIRST-ISSUES.md">Good first issues</a></p>
 </div></section>
 </main>
 

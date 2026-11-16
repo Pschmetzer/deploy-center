@@ -187,3 +187,7 @@ html.embed article>h2,html.embed article>pre,html.embed article>ul,html.embed ar
 html.embed article>.ctabox,html.embed article>.related,html.embed article>p:not(.embed-credit){display:none}
 html.embed main{padding-top:0}
 html.embed .embed-credit{display:block;text-align:center;font-size:13px;margin:8px 0 12px}
+
+/* what used to be style="" attributes, so a strict Content-Security-Policy needs no 'unsafe-inline' */
+article h1.top-gap{margin-top:56px}
+.cta.start{justify-content:flex-start;margin:24px 0 8px}

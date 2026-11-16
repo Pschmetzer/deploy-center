@@ -23,6 +23,7 @@ curl -fsSL https://deploycenter.app/install.sh | sh -s -- --uninstall           
 ```
 
 To read the script first: `curl -fsSLO https://deploycenter.app/install.sh`, then `sh install.sh --help`.
+In CI, fetch a copy that is pinned to one release and installs that release by default: `curl -fsSL https://deploycenter.app/install/<x.y.z>.sh | sh` (a release's copy is the script as of its tag; `--version latest` still asks for the newest). Add `--sha256 <hash>` to pin the tarball too.
 It installs the files into `<prefix>/lib/deploys/` and a small launcher into `<prefix>/bin/deploys`,
 then lists what is missing (`jq`, `gh`, `vercel`, …) with the install command for your system.
 

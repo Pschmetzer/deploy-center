@@ -13,6 +13,7 @@ The Markdown converter covers what these files use: ATX headings, paragraphs, ne
 fenced code (also inside list items), tables, block quotes, rules, `code`, **bold**, *italic*
 and [links](url). Raw HTML is shown as text.
 """
+import base64
 import datetime
 import hashlib
 import html
@@ -837,6 +838,81 @@ FOOTER_GUIDES = [
 FOOTER_GUIDES_RE = re.compile(r"(<div><h2>Guides</h2><ul>)(.*?)(\n *</ul></div>)", re.S)
 
 
+# The Content-Security-Policy of every page, as a <meta> (GitHub Pages sends no headers). The only
+# inline script on a page is the one that sets the theme before the first paint: it is allowed by its
+# hash, so a changed script needs this build to run again (check-site.py fails when a hash is stale).
+# Nothing else is inline: no style="" attribute, no <style>, no on...= handler.
+CSP_TEMPLATE = ("default-src 'self'; script-src 'self'{hashes}; style-src 'self'; img-src 'self' data:; "
+                "connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'")
+INLINE_SCRIPT_RE = re.compile(r"<script(?![^>]*\b(?:src|type)=)[^>]*>(.*?)</script>", re.S)
+CSP_META_RE = re.compile(r'<meta http-equiv="Content-Security-Policy" content="[^"]*">\n?')
+
+
+def csp_for(text):
+    hashes = ""
+    for body in INLINE_SCRIPT_RE.findall(text):
+        digest = base64.b64encode(hashlib.sha256(body.encode("utf-8")).digest()).decode("ascii")
+        hashes += f" 'sha256-{digest}'"
+    return CSP_TEMPLATE.format(hashes=hashes)
+
+
+def sync_csp():
+    """Write the Content-Security-Policy <meta> into every page under site/ (docs pages included)."""
+    changed = 0
+    for dirpath, _, filenames in os.walk(SITE):
+        for name in filenames:
+            if not name.endswith(".html"):
+                continue
+            path = os.path.join(dirpath, name)
+            text = open(path, encoding="utf-8").read()
+            meta = f'<meta http-equiv="Content-Security-Policy" content="{csp_for(text)}">\n'
+            body = CSP_META_RE.sub("", text)
+            m = re.search(r'<meta charset="utf-8">\n', body)
+            if not m:
+                raise BuildError(f"{os.path.relpath(path, ROOT)}: no <meta charset> to put the Content-Security-Policy after")
+            new = body[:m.end()] + meta + body[m.end():]
+            if new != text:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(new)
+                changed += 1
+    if changed:
+        print(f"build-docs: Content-Security-Policy written into {changed} pages")
+
+
+
+PIN_LINE = 'PINNED_VERSION=""'
+
+
+def sync_install_copies(version):
+    """site/install/<x.y.z>.sh: install.sh pinned to one release, so a CI job can fetch a script that
+    cannot change under it. A release's copy is the script as of its tag, when that script knows about
+    pinning; VERSION itself (not yet tagged, or tagged before pinning existed) takes the working copy.
+    site/install/ is built, not committed (a tag never changes, so neither does its copy)."""
+    src = os.path.join(SITE, "install.sh")
+    if not os.path.isfile(src):
+        return
+    scripts = {}
+    tags = subprocess.run(["git", "-C", ROOT, "tag", "--list", "v[0-9]*.[0-9]*.[0-9]*"],
+                          capture_output=True, text=True).stdout.split()
+    for tag in tags:
+        v = tag[1:]
+        shown = subprocess.run(["git", "-C", ROOT, "show", f"{tag}:site/install.sh"], capture_output=True, text=True)
+        if shown.returncode == 0 and PIN_LINE in shown.stdout and re.fullmatch(VERSION_RE, v):
+            scripts[v] = shown.stdout
+    if version not in scripts:
+        scripts[version] = open(src, encoding="utf-8").read()
+    out = os.path.join(SITE, "install")
+    if os.path.isdir(out):
+        shutil.rmtree(out)
+    os.makedirs(out)
+    for v, text in sorted(scripts.items()):
+        if PIN_LINE not in text:
+            raise BuildError("site/install.sh has no PINNED_VERSION line to pin")
+        with open(os.path.join(out, f"{v}.sh"), "w", encoding="utf-8") as f:
+            f.write(text.replace(PIN_LINE, f'PINNED_VERSION="{v}"', 1))
+    print(f"build-docs: install/<version>.sh for {', '.join(sorted(scripts))}")
+
+
 def sync_footer_guides():
     """Write FOOTER_GUIDES into the footer of every hand-written page that has a Guides column."""
     items = "".join(f'\n      <li><a href="{href}">{html.escape(label)}</a></li>' for href, label in FOOTER_GUIDES)
@@ -936,6 +1012,7 @@ def main():
     version = (open(os.path.join(ROOT, "VERSION")).read().strip() if os.path.exists(os.path.join(ROOT, "VERSION")) else "0")
     if version != "0":
         sync_site_version(version)
+        sync_install_copies(version)
     sync_footer_guides()
     # ?v= changes only when the file does, so browsers keep the cached copy across commits
     assets = {name: hashlib.sha256(open(os.path.join(ASSETS, name), "rb").read()).hexdigest()[:10]
@@ -956,6 +1033,7 @@ def main():
         f.write(llms_full(pages, version))
     update_sitemap([(index.url, index.updated)] + [(p.url, p.updated) for p in pages])
     sync_hand_dates()
+    sync_csp()
     print(f"build-docs: {len(pages) + 1} pages in site/docs/")
 
 
