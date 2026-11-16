@@ -5,6 +5,7 @@
 
 - site/index.html names VERSION twice ("Version X ·" under the download button and
   "softwareVersion" in the JSON-LD). scripts/bump.sh sets both together with VERSION.
+- site/install/<x.y.z>.sh (built by build-docs.py) pins the release its name says.
 - The newest item in site/appcast.xml is not newer than VERSION.
 - Once the tag vVERSION exists (release.sh --publish made the release), the newest appcast
   item is VERSION: until the appcast PR is merged, installed copies are never offered it.
@@ -49,17 +50,53 @@ for v in ld:
     if v != version:
         problems.append(f'site/index.html: "softwareVersion" is {v}, VERSION is {version}')
 
+dl = re.findall(r'"downloadUrl":\s*"([^"]*)"', index)
+for u in dl:
+    m = re.search(r"/v(\d+\.\d+\.\d+)/DeployCenter-(\d+\.\d+\.\d+)-universal\.zip", u)
+    if not m or m.group(1) != version or m.group(2) != version:
+        problems.append(f'site/index.html: JSON-LD "downloadUrl" does not name {version}: {u}')
+llms = read("site/llms.txt") if os.path.exists(os.path.join(root, "site/llms.txt")) else ""
+lv = re.findall(r"^- Version: (\d+\.\d+\.\d+)", llms, re.M)
+for v in lv:
+    if v != version:
+        problems.append(f'site/llms.txt: says "Version: {v}", VERSION is {version} (scripts/build-docs.py sets it)')
+
+# site/install/<x.y.z>.sh is built by scripts/build-docs.py (not committed). When it was built, the copy for
+# VERSION is install.sh with its PINNED_VERSION line set to VERSION, and no copy pins another release's number.
+inst_dir = os.path.join(root, "site", "install")
+if os.path.isdir(inst_dir) and os.path.exists(os.path.join(root, "site", "install.sh")):
+    base = read("site/install.sh")
+    mine = os.path.join(inst_dir, f"{version}.sh")
+    if not os.path.exists(mine):
+        problems.append(f"site/install/{version}.sh is missing (run scripts/build-docs.py)")
+    elif read(f"site/install/{version}.sh") != base.replace('PINNED_VERSION=""', f'PINNED_VERSION="{version}"', 1):
+        problems.append(f"site/install/{version}.sh differs from site/install.sh pinned to {version} (run scripts/build-docs.py)")
+    for name in sorted(os.listdir(inst_dir)):
+        m = re.fullmatch(r"(\d+\.\d+\.\d+)\.sh", name)
+        if not m:
+            problems.append(f"site/install/{name}: not a <x.y.z>.sh copy")
+        elif f'PINNED_VERSION="{m.group(1)}"' not in read(f"site/install/{name}"):
+            problems.append(f"site/install/{name} does not pin {m.group(1)}")
+
 items = []
+sizes = {}
 try:
     channel = ET.fromstring(read("site/appcast.xml")).find("channel")
     for item in channel.findall("item") if channel is not None else []:
         v = (item.findtext(SPARKLE + "shortVersionString") or item.findtext(SPARKLE + "version") or "").strip()
         if re.fullmatch(r"\d+\.\d+\.\d+", v):
             items.append(v)
+            enc = item.find("enclosure")
+            if enc is not None and enc.get("length", "").isdigit():
+                sizes[v] = int(enc.get("length"))
         else:
             problems.append(f"site/appcast.xml: an item without an x.y.z version ({v!r})")
 except (ET.ParseError, OSError) as e:
     problems.append(f"site/appcast.xml: {e}")
+
+fs = re.findall(r'"fileSize":\s*"([\d.]+) MB"', index)
+if fs and version in sizes and abs(float(fs[0]) - sizes[version] / 1e6) > 0.3:
+    problems.append(f'site/index.html: JSON-LD "fileSize" {fs[0]} MB, the appcast says {sizes[version] / 1e6:.1f} MB')
 
 tagged = subprocess.run(["git", "-C", root, "rev-parse", "-q", "--verify", f"refs/tags/v{version}"],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0

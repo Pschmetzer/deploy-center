@@ -11,7 +11,14 @@ export default function MenuBar() {
   const failed = all.filter((p) => !p.building && isFailedState(p.state));
   const building = all.filter((p) => p.building);
   const waiting = all.filter((p) => p.changed);
-  const title = error ? "!" : waiting.length ? String(waiting.length) : undefined;
+  // Text as well as colour: a failed build is "2 ✗" for people who do not see the red, and a "!" says the
+  // read was incomplete (the GitHub limit, a provider that did not answer).
+  const bits = [
+    waiting.length ? String(waiting.length) : "",
+    failed.length ? `${failed.length} ✗` : "",
+    data?.warning ? "!" : "",
+  ].filter(Boolean);
+  const title = error ? "!" : bits.length ? bits.join(" ") : undefined;
   const icon = { source: Icon.Rocket, tintColor: failed.length ? Color.Red : Color.PrimaryText };
   const openWaiting = () => launchCommand({ name: "waiting-deploys", type: LaunchType.UserInitiated });
 
@@ -47,7 +54,7 @@ export default function MenuBar() {
             icon={{ source: Icon.CircleProgress50, tintColor: Color.Blue }}
             title={p.name}
             subtitle={platformLabel(p.platform)}
-            onAction={() => open(deployCenterURL(p.name))}
+            onAction={() => open(deployCenterURL(`${p.platform}:${p.name}`))}
           />
         ))}
       </MenuBarExtra.Section>

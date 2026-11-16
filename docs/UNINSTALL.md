@@ -114,3 +114,14 @@ Deploy Center never had its own account. To revoke what it used:
 - GitLab: `glab auth logout`, or revoke the `GITLAB_TOKEN` in GitLab → Preferences → Access tokens.
 - iPhone: the keys it got are the Mac's (the Vercel token for the iPhone, the Render key, the `gh` token). Revoke them at Vercel, Render and GitHub if the phone or a QR code may have been seen by someone else.
 - Vercel and GitHub: it used your `vercel` and `gh` logins. `vercel logout` and `gh auth logout` end them, also for everything else that uses them.
+
+## The CLI on its own (Linux, WSL, CI)
+
+If you installed `deploys` with `install.sh`, remove it with the same `--prefix` you used:
+
+```bash
+curl -fsSL https://deploycenter.app/install.sh | sh -s -- --uninstall
+```
+
+Your config folder (`~/.config/deploys`) stays; delete it to remove it too. Also remove, where you added them,
+the GitHub Action workflow files that call Deploy Center and a Docker image you built from `integrations/docker`.

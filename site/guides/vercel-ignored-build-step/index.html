@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vercel Ignored Build Step: examples and pitfalls · Deploy Center</title>
 <meta name="description" content="Vercel&#x27;s Ignored Build Step skips a build when the command exits 0 and builds when it exits 1. Copy-paste scripts and the pitfalls that make it build anyway.">
@@ -39,7 +40,7 @@
   "url": "https://deploycenter.app/guides/vercel-ignored-build-step/",
   "mainEntityOfPage": "https://deploycenter.app/guides/vercel-ignored-build-step/",
   "datePublished": "2026-11-10",
-  "dateModified": "2026-11-12",
+  "dateModified": "2026-11-16",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -138,7 +139,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Vercel Ignored Build Step: script examples and pitfalls</h1>
 <p class="answer">The Ignored Build Step is a command Vercel runs before each Git build: <b>exit code 0 skips</b> the build, <b>exit code 1 builds</b>. Set it under Project → Settings → Git → Ignored Build Step, or as <code>ignoreCommand</code> in <code>vercel.json</code>.</p>
-<p class="meta">Last updated <time datetime="2026-11-12">12 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <h2>Where to put it</h2>
 <p>In the dashboard pick <b>Custom</b> and paste the command. Or keep it in the repository:</p>
@@ -203,11 +204,21 @@ git diff --quiet "$prev" HEAD -- "${paths[@]}"   # 0 = no change = skip</code></
   </div>
 </div>
 
+<p class="reference"><b>Reference:</b> <a href="/docs/glossary/#ignored-build-step">Glossary: Ignored Build Step</a> · <a href="/docs/vercel/">Vercel in Deploy Center</a> · <a href="/docs/auto-deploy/">Auto-deploy off and on</a></p>
+
 <div class="related"><h2>Related</h2><ul>
   <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
   <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
   <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
   <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+  <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+  <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+  <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+  <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+  <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+  <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+  <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+  <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
   <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
 </ul></div>
 </article></main>
@@ -220,6 +231,15 @@ git diff --quiet "$prev" HEAD -- "${paths[@]}"   # 0 = no change = skip</code></
       <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
       <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
       <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
       <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
       <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
       <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
@@ -241,5 +261,6 @@ git diff --quiet "$prev" HEAD -- "${paths[@]}"   # 0 = no change = skip</code></
   </div>
   <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
 </div></footer>
+<script src="/js/site.js" defer></script>
 </body>
 </html>

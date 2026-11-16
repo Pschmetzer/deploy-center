@@ -267,12 +267,10 @@ enum Tool {
                 // goes with what was read.
                 DispatchQueue.global().asyncAfter(deadline: .now() + 3) { finish(true) }
             }
-            if let stdin {
-                let inPipe = Pipe()
-                p.standardInput = inPipe
-                inPipe.fileHandleForWriting.write(Data((stdin + "\n").utf8))
-                try? inPipe.fileHandleForWriting.close()
-            }
+            // Written after the start, from a queue of its own: more than a pipe buffer (64 KB) would
+            // block here for good, and the old non-throwing write raises on a closed pipe.
+            var inPipe: Pipe?
+            if stdin != nil { let pipe = Pipe(); p.standardInput = pipe; inPipe = pipe }
             // Cancelled before it started: nothing is started at all.
             if running.isCancelled {
                 out.fileHandleForReading.readabilityHandler = nil
@@ -287,6 +285,13 @@ enum Tool {
                 cont.resume(throwing: error); return
             }
             if !running.started(p.processIdentifier) { killTree(p.processIdentifier) }
+            if let stdin, let inPipe {
+                let data = Data((stdin + "\n").utf8)
+                DispatchQueue.global().async {
+                    try? inPipe.fileHandleForWriting.write(contentsOf: data)
+                    try? inPipe.fileHandleForWriting.close()
+                }
+            }
             // Ending bash alone is not enough: `vercel`, node or curl under it keep the pipes open.
             // Whatever still holds them three seconds later, the caller gets its answer.
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
@@ -445,6 +450,12 @@ enum AppDirs {
 /// Errors go to ~/Library/Logs/DeployCenter.log, so one can be attached to an issue.
 /// What the script said and when, with keys and tokens masked: a CLI's error can quote one.
 enum Log {
+    /// Opens the log file (creating it with a first line, so there is something to open).
+    @MainActor static func reveal() {
+        if !FileManager.default.fileExists(atPath: url.path) { write("log started") }
+        NSWorkspace.shared.open(url)
+    }
+
     static var url: URL { testURL ?? AppDirs.log }
     /// Tests only: a log of their own, so they never write into the person's log. Never set in the app.
     nonisolated(unsafe) static var testURL: URL?

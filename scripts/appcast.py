@@ -63,13 +63,16 @@ def main(argv=None):
     if channel is None:
         sys.exit(f"appcast.py: {a.appcast} has no <channel>")
 
+    # A re-publish of the same version keeps its first date: the feed says when it came out.
+    pub_date = email.utils.formatdate(usegmt=True)
     for old in channel.findall("item"):
         if old.findtext(S + "version") == a.version:
+            pub_date = old.findtext("pubDate") or pub_date
             channel.remove(old)
 
     item = ET.Element("item")
     ET.SubElement(item, "title").text = f"Version {a.version}"
-    ET.SubElement(item, "pubDate").text = email.utils.formatdate(usegmt=True)
+    ET.SubElement(item, "pubDate").text = pub_date
     ET.SubElement(item, S + "version").text = a.version
     ET.SubElement(item, S + "shortVersionString").text = a.version
     ET.SubElement(item, S + "minimumSystemVersion").text = a.min_os

@@ -48,7 +48,7 @@ cat > "$tmp/bin/deploys" <<SH
 #!/bin/bash
 [ -n "\${FAKE_SLEEP:-}" ] && [ "\$1" = vercel ] && sleep "\$FAKE_SLEEP"
 [ -n "\${FAKE_SLEEP_ALL:-}" ] && sleep "\$FAKE_SLEEP_ALL"
-[ -n "\${MCP_CALLS:-}" ] && echo "\$*" >> "\$MCP_CALLS"
+[ -n "\${FAKE_MCP_CALLS:-}" ] && echo "\$*" >> "\$FAKE_MCP_CALLS"
 case "\$*" in
   "vercel list --json"|"vercel json") cat "$tmp/vercel.json" ;;
   "render list --json"|"render json") cat "$tmp/render.json" ;;
@@ -101,10 +101,16 @@ case "\$*" in
   "status --json"|"status --json --no-github")
     jq -s --arg b "\${FAKE_BUILDING:-}" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
       | map({platform, name, building:(.name == \$b), state:"READY", changed})' "$tmp/vercel.json" "$tmp/render.json" ;;
+  "guard status --json") echo '{"on":true,"lastRun":"2026-01-01T00:00:00Z","turnedOff":[]}' ;;
+  "autodeploy allowed --json") echo '[]' ;;
   "explain "*) echo "explain: \$2" ;;
   "diff "*) echo "diff: \$2" ;;
   "history "*) echo "history \$2 \$3" ;;
   "logs secret-app "*) cat "$tmp/secret.log" ;;
+  # The secret fixture all maskers share (the iPhone app, VS Code and Raycast read the same file).
+  "logs shared-app "*) cat "$here/../ios/Tests/fixtures/mask-in.txt" ;;
+  # One line of 150 000 characters like "a.a.a.", then a base64 block: the maskers must stay linear.
+  "logs huge-app "*) head -c 75000 /dev/zero | tr '\0' 'a' | sed 's/a/a./g'; echo; head -c 60000 /dev/zero | tr '\0' 'A'; echo ;;
   # The last lines of a log can start or end inside a key.
   "logs topkey-app "*) printf 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo1\\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo2\\n-----END RSA PRIVATE KEY-----\\nafter the key\\n' ;;
   "logs bottomkey-app "*) printf 'before the key\\n-----BEGIN RSA PRIVATE KEY-----\\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo3\\n' ;;
@@ -206,16 +212,17 @@ RENDER_API_KEY=x badge/badge.sh "$tmp/b" >/dev/null
 expect "one badge per project" "$(cd "$tmp/b" && echo *.svg)" "api.svg app-web.svg site.svg"
 contains "badge: days and commits" "$(cat "$tmp/b/app-web.svg")" "3 d ago · 4 commits waiting"
 contains "badge: Render shows the live commit's age, and a failed newest build" "$(cat "$tmp/b/api.svg")" "1 d ago · build failed"
-contains "badge: a failed build is red" "$(cat "$tmp/b/api.svg")" 'fill="#e05d44'
+contains "badge: a failed build is red" "$(cat "$tmp/b/api.svg")" 'fill="#c0392b'
 echo '[{"name":"busy","changed":false,"lastAt":1,"building":true}]' | badge/badge.sh "$tmp/bb" - >/dev/null
 contains "badge: a running build is blue, not up to date" "$(cat "$tmp/bb/busy.svg")" 'building'
-contains "badge: up to date is green" "$(cat "$tmp/b/site.svg")" 'fill="#4c1"'
+contains "badge: up to date is green" "$(cat "$tmp/b/site.svg")" 'fill="#2e7d32"'
 echo '[{"name":"web","platform":"vercel","changed":false,"lastAt":0},{"name":"web","platform":"netlify","changed":false,"lastAt":0},{"name":"solo","platform":"render","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/tw" - >/dev/null
 expect "badge: a name on two platforms gets one badge each" "$(cd "$tmp/tw" && echo *.svg)" "netlify-web.svg solo.svg vercel-web.svg"
 echo '[{"name":"a<b>&\"c","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/e" - >/dev/null
 contains "badge: names are XML-escaped" "$(cat "$tmp/e/a_b___c.svg")" 'a&lt;b&gt;&amp;&quot;c: deployed never'
 echo '[{"name":"web","platform":"vercel","lastAt":1},{"name":"web","platform":"render","lastAt":1},{"name":"a/b","lastAt":1},{"name":"a_b","lastAt":1}]' | badge/badge.sh "$tmp/c" - >/dev/null
 expect "badge: colliding names do not overwrite each other" "$(cd "$tmp/c" && echo *.svg)" "a_b.svg other_a_b.svg render-web.svg vercel-web.svg"
+expect "badge: a shields.io endpoint JSON next to each SVG" "$(jq -c '[.schemaVersion, .label, .message, .color]' "$tmp/b/app-web.json")" '[1,"deployed","3 d ago · 4 commits waiting","9a6700"]'
 contains "badge: ids are per badge" "$(cat "$tmp/c/vercel-web.svg")" 'clip-path="url(#r-vercel-web)"'
 expect "badge: the width counts characters, not bytes" "$(echo '[{"name":"x","changed":false,"lastAt":1}]' | LC_ALL=C badge/badge.sh "$tmp/w" - >/dev/null; sed -n 's/^<svg[^>]* width="\([0-9]*\)".*/\1/p' "$tmp/w/x.svg")" \
   "$(echo '[{"name":"x","changed":false,"lastAt":1}]' | badge/badge.sh "$tmp/w2" - >/dev/null; sed -n 's/^<svg[^>]* width="\([0-9]*\)".*/\1/p' "$tmp/w2/x.svg")"
@@ -232,6 +239,18 @@ contains "notify: waiting with counts" "$out" 'Waiting (2): app-web (4 commits),
 contains "notify: Slack-style by default" "$out" 'format: slack'
 contains "notify: UTC by default" "$out" "Deploy Center, $(date -u +%Y-%m-%d) (UTC)"
 contains "notify: failed builds are named" "$out" 'Failed (1): api'
+two='[{"name":"web","platform":"vercel","changed":true,"pendingCommits":2},{"name":"web","platform":"render","changed":false,"lastAt":1},{"name":"solo","platform":"render","changed":true}]'
+contains "notify: a name on two platforms shows its platform" "$(echo "$two" | notify/notify.sh --dry-run - 2>&1)" 'vercel:web (2 commits), solo'
+expect "notify: custom: the jq template makes the body" "$(echo "$two" | DEPLOYS_NOTIFY_FORMAT=custom DEPLOYS_NOTIFY_TEMPLATE='{summary: (.text | split("\n") | length), link: .url}' notify/notify.sh --dry-run - 2>&1 | tail -1)" '{"summary":3,"link":""}'
+contains "notify: custom without a template is refused" "$(echo "$two" | DEPLOYS_NOTIFY_FORMAT=custom notify/notify.sh --dry-run - 2>&1)" 'needs DEPLOYS_NOTIFY_TEMPLATE'
+contains "notify: custom with a broken template is refused" "$(echo "$two" | DEPLOYS_NOTIFY_FORMAT=custom DEPLOYS_NOTIFY_TEMPLATE='{{' notify/notify.sh --dry-run - 2>&1)" 'not a valid jq program'
+contains "notify: German texts with DEPLOYS_LANG=de" "$(RENDER_API_KEY=x DEPLOYS_LANG=de notify/notify.sh --dry-run)" 'Fehlgeschlagen (1): api'
+expect "notify: a bad DEPLOYS_LANG is refused" "$(DEPLOYS_LANG=xx notify/notify.sh --dry-run >/dev/null 2>&1; echo $?)" 1
+contains "notify: --quiet-when-empty still posts when something is waiting" "$(RENDER_API_KEY=x notify/notify.sh --dry-run --quiet-when-empty)" 'Waiting (2)'
+echo '[{"name":"site","changed":false,"lastAt":1,"lastState":"READY"}]' > "$tmp/quiet.json"
+contains "notify: --quiet-when-empty posts nothing on an empty day" "$(notify/notify.sh --dry-run --quiet-when-empty "$tmp/quiet.json")" 'Nothing to report'
+echo "[{\"name\":\"api\",\"changed\":false,\"lastAt\":$now,\"lastState\":\"build_failed\"}]" > "$tmp/failed-only.json"
+expect "notify: a failed attempt does not count as live today" "$(notify/notify.sh --dry-run "$tmp/failed-only.json" | grep -c 'Live today (0)')" 1
 contains "notify: DEPLOYS_TZ sets the day" "$(DEPLOYS_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "Deploy Center, $(TZ=Pacific/Kiritimati date +%Y-%m-%d) (Pacific/Kiritimati)"
 contains "notify: DEPLOYS_NOTIFY_TZ names its day" "$(RENDER_API_KEY=x DEPLOYS_NOTIFY_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "$(TZ=Pacific/Kiritimati date +%Y-%m-%d) (Pacific/Kiritimati)"
 contains "notify: DEPLOYS_NOTIFY_TZ wins over DEPLOYS_TZ" "$(DEPLOYS_TZ=UTC DEPLOYS_NOTIFY_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "(Pacific/Kiritimati)"
@@ -295,7 +314,7 @@ expect "telegram bot: /failed" "$(tg 42 /failed)" "No newest build failed."
 # --- Alfred script filter ---
 af="$(alfred/deploys-filter.sh)"
 expect "alfred: every project, as Alfred items" "$(jq -r '.items | length' <<<"$af")" 3
-expect "alfred: ↵ shows it in Deploy Center, ⌘ opens the site" "$(jq -r '.items[] | select(.title == "app-web") | .arg + " " + .mods.cmd.arg' <<<"$af")" "deploycenter://select?project=app-web open app-web"
+expect "alfred: ↵ shows it in Deploy Center (with its platform), ⌘ opens the site" "$(jq -r '.items[] | select(.title == "app-web") | .arg + " " + .mods.cmd.arg' <<<"$af")" "deploycenter://select?project=vercel%3Aapp-web open app-web"
 expect "alfred: waiting before up to date" "$(jq -c '[.items[].title]' <<<"$af")" '["api","app-web","site"]'
 expect "alfred: the query filters by name" "$(alfred/deploys-filter.sh WEB | jq -c '[.items[].title]')" '["app-web"]'
 expect "alfred: no match is one item" "$(alfred/deploys-filter.sh zzz | jq -r '.items[0].title')" "No project matches"
@@ -410,8 +429,28 @@ expect "statuspage hide: message is Updated" "$(jq -r '[.projects[0,1].message] 
 expect "statuspage hide: notes are one Updated" "$(jq -c '.projects[0].next' <<<"$st")" '["Updated"]'
 case "$all" in *login*|*billing*|*"Faster search"*|*"rate limits"*|*"Bump jq"*) fail "statuspage hide: no commit message anywhere" "found" ;; *) ok "statuspage hide: no commit message anywhere" ;; esac
 expect "statuspage: --no-check checks nothing" "$(jq -c '.projects[1].check' <<<"$st")" null
+# strict: hides messages, no inline script, a policy that only allows the page's own script, noindex.
+jq '. + {strict: true}' "$tmp/sp.json" > "$tmp/sp-strict.json"
+sp --config "$tmp/sp-strict.json" --out "$tmp/sps" --no-check >/dev/null
+html="$(cat "$tmp/sps/index.html")"
+expect "statuspage strict: messages hidden without hideMessages" "$(jq -r '[.projects[0,1].message] | join(",")' "$tmp/sps/status.json")" "Updated,Updated"
+case "$html" in *"<script>"*) fail "statuspage strict: no inline script" "found" ;; *'<script src="status.js"></script>'*) ok "statuspage strict: no inline script" ;; *) fail "statuspage strict: no inline script" "no script tag" ;; esac
+contains "statuspage strict: Content-Security-Policy with script-src 'self'" "$html" "script-src 'self'"
+contains "statuspage strict: noindex" "$html" 'name="robots" content="noindex"'
+[ -s "$tmp/sps/status.js" ] && ok "statuspage strict: status.js is written" || fail "statuspage strict: status.js is written" "missing"
+case "$(cat "$tmp/sph/index.html")" in *"<script>"*) ok "statuspage: without strict the script stays inline" ;; *) fail "statuspage: without strict the script stays inline" "gone" ;; esac
 echo '{"title":"x","projects":["app-web"],"showAuthors":true}' > "$tmp/sp-auth.json"
 expect "statuspage: authors only when asked" "$(sp --config "$tmp/sp-auth.json" --out "$tmp/spa" --no-check >/dev/null; jq -r '.projects[0].next[0]' "$tmp/spa/status.json")" "New billing page (#12) – Ana"
+# A site that does not answer: tried twice, then a feed entry. The page's own words replace the defaults.
+echo '{"title":"x","projects":[{"name":"app-web","url":"https://down.test/"}],"texts":{"recent":"History"}}' > "$tmp/sp-down.json"
+: > "$tmp/sp-curl.log"
+STATUSPAGE_RETRY_WAIT=0 sp --config "$tmp/sp-down.json" --out "$tmp/spd" >/dev/null
+expect "statuspage: a failed check is tried twice" "$(wc -l < "$tmp/sp-curl.log" | tr -d ' ')" 2
+contains "statuspage: a site that is down is a feed entry" "$(cat "$tmp/spd/feed.xml")" 'app-web is not reachable'
+contains "statuspage: feed entries have a summary" "$(cat "$tmp/spd/feed.xml")" '<summary type="text">'
+contains "statuspage: texts replace the default wording" "$(cat "$tmp/spd/index.html")" 'History'
+echo '{"title":"x","projects":["app-web"],"texts":{"live":5}}' > "$tmp/sp-badtexts.json"
+sp --config "$tmp/sp-badtexts.json" --out "$tmp/spbt" --no-check >/dev/null 2>&1; expect "statuspage: texts that are not strings are refused" "$?" 1
 echo '{"title":"x","projects":["app-web"],"baseUrl":"javascript:alert(1)"}' > "$tmp/sp-bad.json"
 sp --config "$tmp/sp-bad.json" --out "$tmp/spb" --no-check >/dev/null 2>&1; expect "statuspage: a baseUrl that is not http(s) is refused" "$?" 1
 echo '{"title":"x"}' > "$tmp/sp-empty.json"
@@ -508,6 +547,11 @@ if command -v ruby >/dev/null; then
   ONLY='a;b' run_step changed.sh; expect "action: only refuses what is not a name" "$?" 1
   rm -f "$DEPLOYS_CONFIG/ignored.json"
   run_step plan.sh; expect "action: dry-run shows the plan, starts nothing" "$?:$(grep -c 'Would deploy: app-web' "$tmp/sum")" "0:1"
+  expect "action: dry-run writes the plan as an output" "$(sed -n '/^plan<</,$p' "$tmp/out" | sed -n 2p | jq -c 'map(.name)')" '["app-web","api"]'
+  : > "$tmp/ac.log"; BY_RULES=true WHEN_GREEN=true STRICT=true FAKE_MCP_CALLS="$tmp/ac.log" run_step plan.sh
+  contains "action: by-rules, when-green and strict reach the CLI" "$(cat "$tmp/ac.log")" "deploy-changed --json --when-green --strict --by-rules"
+  : > "$tmp/ac.log"; STRICT=true FAKE_MCP_CALLS="$tmp/ac.log" run_step plan.sh
+  case "$(cat "$tmp/ac.log")" in *--strict*) fail "action: strict without when-green is not passed" "passed" ;; *) ok "action: strict without when-green is not passed" ;; esac
   expect "action: plan step only with deploy: dry-run" "$(step plan if)" "inputs.deploy == 'dry-run' && steps.changed.outputs.count != '0'"
   # wait: the JSON answer gives the ids; each build is followed to live or failed, under one deadline.
   mkdir -p "$tmp/rt"; : > "$tmp/deploy.log"
@@ -659,7 +703,7 @@ hk "git push" >/dev/null
 expect "claude-code hook: never deploys" "$(cat "$tmp/deploy.log" 2>/dev/null | wc -l)" "$deploy_calls_before"
 # --- the MCP server (needs node and `npm ci` in mcp/) ---
 if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
-  DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
+  DEPLOYS_BIN="$tmp/bin/deploys" FAKE_MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
   # 20.7: a length no other test sleeps, so only this test's child can match.
   [ -n "$(stray_sleep 20.7)" ] && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
 else

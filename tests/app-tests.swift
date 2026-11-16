@@ -742,6 +742,11 @@ MainActor.assumeIsolated {
     st.clearSelection(.vercel)
     st.selectChanged(.vercel, only: ["vercel/zzz"])
     expect("select changed only among the rows shown", st.selected(.vercel).count, 0)
+    // The deploy question names the person's own note on a project; a project without marks adds nothing.
+    st.notes["vercel/app"] = "after the release mail"
+    expect("confirm marks name the note", st.confirmMarks([a]).contains("after the release mail"), true)
+    expect("confirm marks: nothing marked, nothing said", st.confirmMarks([b]), "")
+    st.notes = [:]
     st.hidden = []
 }
 
@@ -754,6 +759,20 @@ expect("journal: an unknown word is other", jk[2].kind, JournalEntry.Kind.other)
 expect("journal: search finds the reason", Journal.filter(jk, text: "exploded", kind: nil).map(\.name), ["api"])
 expect("journal: filter by kind", Journal.filter(jk, text: "", kind: .failed).count, 1)
 expect("journal: newest day first", Journal.byDay(jk).first?.entries.first?.result ?? "", "brand-new")
+expect("journal: since drops the older ones", Journal.filter(jk, text: "", kind: nil, since: Date(timeIntervalSince1970: 1_800_100_000)).map(\.result), ["brand-new"])
+expect("journal: filter by platform", Journal.filter(jk, text: "", kind: nil, platform: "Vercel").map(\.name), ["shop"])
+// The commit and deploy id travel with the entry; an older line without them still reads.
+let withSha = JournalEntry(platform: "Vercel", name: "shop", result: "live", seconds: 3, detail: nil, sha: "abc1234def", deployId: "dpl_1")
+let shaData = try JSONEncoder().encode(withSha)
+let shaBack = try JSONDecoder().decode(JournalEntry.self, from: shaData)
+expect("journal: sha and deploy id round-trip", [shaBack.sha ?? "", shaBack.deployId ?? ""], ["abc1234def", "dpl_1"])
+let oldLine = Data(#"{"at":1800000000,"platform":"Vercel","name":"shop","result":"live"}"#.utf8)
+let oldDec = JSONDecoder(); oldDec.dateDecodingStrategy = .secondsSince1970
+expect("journal: an older line has no sha", (try? oldDec.decode(JournalEntry.self, from: oldLine))?.sha == nil, true)
+// One table for the words of a deploy state, and one list for the row colours.
+expect("state table: running label", DeployState.running("update_in_progress"), L("going live", "geht live"))
+expect("project colour: unknown reads as gray", ProjectColor(name: "chartreuse"), ProjectColor.gray)
+expect("project colour: names match the store", Store.projectColorNames, ProjectColor.allCases.map(\.rawValue))
 
 // Settings formats (LOG-068/074/118) and small guards.
 let guardJSON = #"{"enabled":true,"lastActions":[{"broken":1}],"allowances":[{"platform":"vercel","project":"web","expiresAt":1800000000000},{"platform":"render","project":"api","expiresAt":"2028-01-15T08:00:00Z"},{"nope":true}]}"#
@@ -1844,6 +1863,17 @@ if let dir = ProcessInfo.processInfo.environment["DC_CONTRACT"] {
 } else {
     print("skip contract tests (DC_CONTRACT not set; tests/app-tests.sh sets it)")
 }
+
+// Round 7: the ledger on open respects the GitHub budget; links and keys; numbers follow the app's language.
+expect("ledger on open: no budget known runs", SavingsModel.budgetAllows(nil), true)
+expect("ledger on open: plenty left runs", SavingsModel.budgetAllows(Store.Budget(remaining: 4000, limit: 5000, reset: 0)), true)
+expect("ledger on open: under a fifth left waits", SavingsModel.budgetAllows(Store.Budget(remaining: 500, limit: 5000, reset: 0)), false)
+expect("web links: https opens", SafeLink.ok(URL(string: "https://github.com/a/b/pull/1")!), true)
+expect("web links: file does not", SafeLink.ok(URL(string: "file:///etc/hosts")!), false)
+expect("web links: a custom scheme does not", SafeLink.ok(URL(string: "x-apple.systempreferences:com.apple")!), false)
+expect("masker: a SendGrid key", LogTools.maskSecrets("key SG.abcdefghijklmnop1234.abcdefghijklmnop5678 end").contains("abcdefghijklmnop1234"), false)
+expect("masker: a Supabase secret", LogTools.maskSecrets("sb_secret_abcdefgh1234").contains("abcdefgh1234"), false)
+expect("decimal: one digit", decimal(12.34), isGerman ? "12,3" : "12.3")
 
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

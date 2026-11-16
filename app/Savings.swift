@@ -8,56 +8,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Lenient decoding (a missing or odd field is "unknown", never a failed sheet)
-
-fileprivate struct AnyKey: CodingKey {
-    var stringValue: String
-    var intValue: Int? { nil }
-    init(_ s: String) { stringValue = s }
-    init?(stringValue: String) { self.stringValue = stringValue }
-    init?(intValue: Int) { return nil }
-}
-
-/// An element that could not be read becomes nil and is dropped, instead of failing the whole list.
-fileprivate struct Skippable<T: Decodable>: Decodable {
-    let value: T?
-    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
-}
-
-fileprivate struct Lax {
-    let c: KeyedDecodingContainer<AnyKey>?
-    init(_ d: Decoder) { c = try? d.container(keyedBy: AnyKey.self) }
-    init(container: KeyedDecodingContainer<AnyKey>?) { c = container }
-
-    func num(_ k: String) -> Double? {
-        guard let c else { return nil }
-        if let d = try? c.decodeIfPresent(Double.self, forKey: AnyKey(k)) { return d }
-        // A number sent as text still counts.
-        if let s = try? c.decodeIfPresent(String.self, forKey: AnyKey(k)) { return Double(s) }
-        return nil
-    }
-    func str(_ k: String) -> String? {
-        guard let c else { return nil }
-        return try? c.decodeIfPresent(String.self, forKey: AnyKey(k))
-    }
-    func bool(_ k: String) -> Bool? {
-        guard let c else { return nil }
-        return try? c.decodeIfPresent(Bool.self, forKey: AnyKey(k))
-    }
-    func obj<T: Decodable>(_ k: String) -> T? {
-        guard let c else { return nil }
-        return try? c.decodeIfPresent(T.self, forKey: AnyKey(k))
-    }
-    func list<T: Decodable>(_ k: String) -> [T] {
-        guard let c, let raw = try? c.decodeIfPresent([Skippable<T>].self, forKey: AnyKey(k)) else { return [] }
-        return raw.compactMap { $0.value }
-    }
-    func sub(_ k: String) -> Lax {
-        guard let c else { return Lax(container: nil) }
-        return Lax(container: try? c.nestedContainer(keyedBy: AnyKey.self, forKey: AnyKey(k)))
-    }
-}
-
 // MARK: - What the script says
 
 /// Builds, minutes and dollars for one stretch of time. Any of them may be unknown.
@@ -270,8 +220,7 @@ final class SavingsModel: ObservableObject {
         }
     }
     nonisolated static func save(_ data: Data, to url: URL) {
-        try? FileManager.default.createDirectory(at: AppDirs.support, withIntermediateDirectories: true)
-        do { try data.write(to: url, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
+        do { try PrivateFile.write(data, to: url) }
         catch { Log.write("savings: report not saved (\(error.localizedDescription))") }
     }
 
@@ -346,7 +295,15 @@ final class SavingsModel: ObservableObject {
     /// The ledger by itself once a week (it pages through GitHub and asks each platform per
     /// project); opening the ledger or "Estimate again" reads it any time. Not with less than a
     /// fifth of GitHub's hourly budget left.
+    /// The last GitHub budget the store saw, for the ledger that is opened later.
+    var lastBudget: Store.Budget?
+    /// Whether the budget leaves room for the many calls of a ledger run (not with under a fifth left).
+    nonisolated static func budgetAllows(_ b: Store.Budget?) -> Bool {
+        guard let b, b.limit > 0 else { return true }
+        return Double(b.remaining) >= Double(b.limit) * 0.2
+    }
     func refreshLedgerIfOld(budget: Store.Budget?) async {
+        lastBudget = budget
         if !Self.ledgerDue(at: ledgerAt, budget: budget) { return }
         await loadLedger()
     }
@@ -739,7 +696,9 @@ private struct SimulationProgress: View {
             TimelineView(.periodic(from: start, by: 1)) { ctx in
                 Text(L("\(Int(ctx.date.timeIntervalSince(start))) s", "\(Int(ctx.date.timeIntervalSince(start))) s"))
                     .monospacedDigit().foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
+            Text(L("Simulation running", "Simulation läuft")).accessibilityHidden(false).font(.caption).foregroundStyle(.secondary)
             Button(L("Cancel", "Abbrechen")) { model.cancelSimulation() }
         }
     }
@@ -784,7 +743,7 @@ struct LedgerView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // Opening the ledger reads it again when the last answer is older than half a day
         // (the automatic run is weekly, see refreshLedgerIfOld).
-        .task { if let at = model.ledgerAt, Date().timeIntervalSince(at) > 12 * 3600 { await model.loadLedger() } }
+        .task { if let at = model.ledgerAt, Date().timeIntervalSince(at) > 12 * 3600, SavingsModel.budgetAllows(model.lastBudget) { await model.loadLedger() } }
     }
 
     /// A goal of the person's own (FEA-013): how far the dollars saved since the start have come.

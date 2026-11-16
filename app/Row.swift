@@ -30,29 +30,9 @@ struct Row: View {
     @AppStorage("compactRows") private var compact = false
     @Environment(\.accessibilityDifferentiateWithoutColor) private var noColour
 
-    /// The colours of the row menu's "Colour" (Store.projectColorNames).
-    static func tagColor(_ name: String) -> Color {
-        switch name {
-        case "red": return .red
-        case "orange": return .orange
-        case "yellow": return .yellow
-        case "green": return .green
-        case "blue": return .blue
-        case "purple": return .purple
-        default: return .gray
-        }
-    }
-    static func tagName(_ name: String) -> String {
-        switch name {
-        case "red": return L("Red", "Rot")
-        case "orange": return L("Orange", "Orange")
-        case "yellow": return L("Yellow", "Gelb")
-        case "green": return L("Green", "Grün")
-        case "blue": return L("Blue", "Blau")
-        case "purple": return L("Purple", "Lila")
-        default: return L("Gray", "Grau")
-        }
-    }
+    /// The colours of the row menu's "Colour" (ProjectColor).
+    static func tagColor(_ name: String) -> Color { ProjectColor(name: name).color }
+    static func tagName(_ name: String) -> String { ProjectColor(name: name).label }
 
     /// How the search finds a text and how the row marks it: one rule for both, so a row the list
     /// keeps always shows why (any case, and "uber" finds "Über").
@@ -148,7 +128,7 @@ struct Row: View {
             }
             status
             if let showDetails {
-                Button(action: showDetails) { Image(systemName: "info.circle") }
+                Button(action: showDetails) { Image(systemName: "info.circle").hitArea() }
                     .buttonStyle(.borderless)
                     .help(L("Details: waiting commits, files, CI, open PRs", "Details: wartende Commits, Dateien, CI, offene PRs"))
                     .accessibilityLabel(L("Details for \(Demo.mask(item.name))", "Details zu \(Demo.mask(item.name))"))
@@ -169,7 +149,7 @@ struct Row: View {
     @ViewBuilder private var reasonLine: some View {
         switch item.state {
         case .failed(let m) where !m.isEmpty:
-            Text(Self.firstLine(Demo.scrub(m, items: [item]))).font(.caption).foregroundStyle(.red).lineLimit(1)
+            Text(Self.firstLine(Demo.scrub(m, items: [item]))).font(.caption).foregroundStyle(Color.dangerText).lineLimit(1)
                 .help(Demo.scrub(m, items: [item]))
         case .skipped(let m) where !m.isEmpty:
             Text(Self.firstLine(Demo.scrub(m, items: [item]))).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -190,7 +170,7 @@ struct Row: View {
         v
         // VoiceOver: one stop per project, its buttons as actions (VO-Command-Space).
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spoken)
+        .accessibilityLabel(NSWorkspace.shared.isVoiceOverEnabled ? spoken : Demo.mask(item.name))
         .accessibilityValue(item.deployable ? (item.selected ? L("selected", "ausgewählt") : L("not selected", "nicht ausgewählt")) : L("cannot be deployed here", "hier nicht deploybar"))
         .accessibilityAddTraits(item.deployable ? .isButton : [])
         .accessibilityAction { if item.deployable && !item.state.isActive { toggle() } }
@@ -201,6 +181,13 @@ struct Row: View {
             if let onAutofix, !autofixBusy { Button(L("Fix with Claude", "Mit Claude beheben"), action: onAutofix) }
             if item.state.isActive, let onCancel { Button(L("Cancel the deploy", "Deploy abbrechen"), action: onCancel) }
             if let u = item.link.flatMap(URL.init(string:)) { Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) } }
+            if let onDeployMerged { Button(L("Put the merged fix live", "Gemergten Fix live schalten"), action: onDeployMerged) }
+            if let onDismissAutofix { Button(L("Dismiss the fix chip", "Fix-Chip verwerfen"), action: onDismissAutofix) }
+            if case .failed(let m) = item.state, !m.isEmpty {
+                Button(L("Copy the error", "Fehler kopieren")) {
+                    Pasteboard.copy(Self.errorCopy(item, m))
+                }
+            }
         }
     }
 
@@ -216,7 +203,7 @@ struct Row: View {
         switch Self.keyFigure(item) {
         case .waiting:
             Label(Self.waitingText(item), systemImage: "arrow.up.circle.fill")
-                .font(.caption.weight(.semibold)).foregroundStyle(.blue)
+                .font(.caption.weight(.semibold)).foregroundStyle(Color.infoText)
         case .failed, .lastDeploy, .never:
             lastDeploy
         }
@@ -250,6 +237,8 @@ struct Row: View {
         if pinned { parts.append(L("pinned", "angeheftet")) }
         if item.hasNewCommits { parts.append(Self.waitingText(item)) }
         if item.hasNewCommits, item.risk?.isRed == true { parts.append(L("risky to ship", "riskant zum Ausliefern")) }
+        if let o = item.openPRs, o > 0 { parts.append(Self.openText(item, o)) }
+        if item.hasNewCommits, let r = item.risk, r.isRed { parts.append(contentsOf: r.reasons.prefix(3).map { r.text($0) }) }
         if let at = item.lastAt {
             let s = item.lastState ?? ""
             parts.append(L("last deploy ", "zuletzt deployt ") + Self.ago(at) + (Self.look(s) == .ok ? "" : ", " + Self.stateText(s)))
@@ -322,28 +311,8 @@ struct Row: View {
 
     static func ago(_ d: Date) -> String { relative.localizedString(for: d, relativeTo: Date()) }
 
-    /// Vercel's and Render's deploy states in words ("build_failed" → "Build failed").
-    static func stateText(_ raw: String) -> String {
-        switch raw.lowercased() {
-        case "": return L("unknown", "unbekannt")
-        case "ready", "live", "succeeded": return L("live", "live")
-        case "error": return L("failed", "fehlgeschlagen")
-        case "build_failed": return L("build failed", "Build fehlgeschlagen")
-        case "update_failed": return L("update failed", "Update fehlgeschlagen")
-        case "pre_deploy_failed": return L("pre-deploy step failed", "Pre-Deploy-Schritt fehlgeschlagen")
-        case "canceled", "cancelled": return L("cancelled", "abgebrochen")
-        case "deactivated": return L("deactivated", "deaktiviert")
-        case "building", "build_in_progress": return L("building", "baut")
-        case "update_in_progress": return L("updating", "wird aktualisiert")
-        case "pre_deploy_in_progress": return L("pre-deploy step running", "Pre-Deploy-Schritt läuft")
-        case "queued", "created": return L("queued", "wartet")
-        case "triggered": return L("triggered", "ausgelöst")
-        case "initializing": return L("starting", "startet")
-        case let s where s.hasPrefix("trigger failed"):
-            return L("trigger failed", "Auslösen fehlgeschlagen") + String(raw.dropFirst("trigger failed".count))
-        default: return raw.replacingOccurrences(of: "_", with: " ")
-        }
-    }
+    /// Vercel's and Render's deploy states in words ("build_failed" → "Build failed"); see DeployState.
+    static func stateText(_ raw: String) -> String { DeployState.text(raw) }
 
     /// How the last deploy's state looks: live, failed, stopped by someone, or still on its way.
     enum DeployLook: Equatable { case ok, failed, cancelled, other }
@@ -429,7 +398,7 @@ struct Row: View {
             HStack(spacing: 6) {
                 // A preview is not live: it says so, in blue.
                 if item.previewId != nil {
-                    Label(L("Preview ready", "Vorschau fertig"), systemImage: "eye.circle.fill").foregroundStyle(.blue).font(.caption.weight(.semibold))
+                    Label(L("Preview ready", "Vorschau fertig"), systemImage: "eye.circle.fill").foregroundStyle(Color.infoText).font(.caption.weight(.semibold))
                 } else {
                     Label("Live", systemImage: "checkmark.circle.fill").foregroundStyle(Color.good).font(.caption.weight(.semibold))
                 }
@@ -449,16 +418,16 @@ struct Row: View {
         case .failed(let msg):
             HStack(spacing: 4) {
                 Label(L("Failed", "Fehler"), systemImage: "xmark.octagon.fill")
-                    .foregroundStyle(.red).font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.dangerText).font(.caption.weight(.semibold))
                     .help(Demo.scrub(msg, items: [item]))
                 CopyButton(title: L("Copy the error", "Fehler kopieren"), systemImage: "doc.on.doc") { Self.errorCopy(item, msg) }
                     .buttonStyle(.borderless)
                 if let showLog {
-                    Button(action: showLog) { Image(systemName: "text.alignleft") }
+                    Button(action: showLog) { Image(systemName: "text.alignleft").hitArea() }
                         .buttonStyle(.borderless).help(L("Build log", "Build-Log")).accessibilityLabel(L("Build log", "Build-Log"))
                 }
                 if let onRetry {
-                    Button(action: onRetry) { Image(systemName: "arrow.clockwise") }
+                    Button(action: onRetry) { Image(systemName: "arrow.clockwise").hitArea() }
                         .buttonStyle(.borderless).help(L("Try again", "Nochmal versuchen")).accessibilityLabel(L("Try again", "Nochmal versuchen"))
                 }
             }
@@ -529,7 +498,7 @@ struct AgentChips: View {
         if let autofix { chip(autofix) }
         if let allowedUntil {
             Label(Self.allowedText(allowedUntil), systemImage: "bolt.badge.clock")
-                .font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+                .font(.caption2.weight(.semibold)).foregroundStyle(Color.warningText)
                 .help(L("A temporary allowance: pushes deploy by themselves until then, then auto-deploy goes off again",
                         "Vorübergehend erlaubt: Pushes deployen bis dahin von selbst, danach ist Auto-Deploy wieder aus"))
         }
@@ -563,7 +532,7 @@ struct AgentChips: View {
                 .buttonStyle(.link).font(.caption2.weight(.semibold)).foregroundStyle(colour)
                 .help(L("Tick it and put the fix live", "Anhaken und den Fix live schalten"))
         } else if let u = Self.link(a), !Demo.on {
-            Button { NSWorkspace.shared.open(u) } label: { Label(Self.text(a), systemImage: icon) }
+            Button { SafeLink.open(u) } label: { Label(Self.text(a), systemImage: icon) }
                 .buttonStyle(.link).font(.caption2.weight(.semibold)).foregroundStyle(colour)
                 .help(u.absoluteString)
         } else {
@@ -571,7 +540,7 @@ struct AgentChips: View {
                 .help(Self.help(a) ?? "")
         }
         if let onDismiss {
-            Button(action: onDismiss) { Image(systemName: "xmark.circle.fill") }
+            Button(action: onDismiss) { Image(systemName: "xmark.circle.fill").hitArea() }
                 .buttonStyle(.plain).font(.caption2).foregroundStyle(.secondary)
                 .help(L("Dismiss until the next hand-over", "Ausblenden bis zur nächsten Übergabe"))
                 .accessibilityLabel(L("Dismiss", "Verwerfen"))

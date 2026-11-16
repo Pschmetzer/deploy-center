@@ -1,0 +1,211 @@
+.TH DEPLOYS 1 "" "deploys 0.10.0" "Deploy Center"
+.SH NAME
+deploys \- turn off auto\-deploy on Vercel, Render and the other platforms in providers/ (deploys providers), then deploy by hand
+.SH SYNOPSIS
+.B deploys
+.I command
+[options]
+.SH DESCRIPTION
+Turn off auto\-deploy on Vercel, Render and the other platforms in providers/ (deploys providers), then deploy by hand.
+.PP
+Every git push builds every project. Build minutes cost money. Deploying once a day by hand costs a fraction.
+.SS Access
+.nf
+  Vercel  the `vercel` CLI login on this Mac (`vercel login`).
+  Render  an API key in the macOS keychain (`deploys render set\-key`, reads stdin).
+No key is ever printed.
+.fi
+.SH COMMANDS
+.nf
+  deploys doctor [\-\-text]                   check tools and access (JSON; \-\-text: one line each, with the fix)
+  deploys changed [\-\-json]                  what has commits on GitHub that are not live
+  deploys deploy\-changed [\-\-yes]            deploy all of those (shows the list without \-\-yes; \-\-dry\-run says so too)
+    [\-\-only <p>]... [\-\-exclude <p>]... [\-\-platform <p>] [\-\-max <n>]   narrow what it looks at
+    [\-\-by\-rules]                            only what a "deploy" rule matches; "hold" rules always count
+    [\-\-when\-green [\-\-wait 30m] [\-\-strict]]  only commits whose CI passed; waits for running checks
+  deploys plan [\-\-when\-green] [\-\-json]      what deploy\-changed \-\-yes would start, and an estimate of its cost
+  deploys schedule daily [HH:MM] [\-\-when\-green] [\-\-by\-rules] [\-\-strict] | off | status [\-\-json]
+                                            deploy\-changed \-\-yes once a day (launchd; else the cron line)
+  deploys rules check [\-\-json]              which rule of rules.json matches which waiting project, and why not
+  deploys deploy <p>|<group> [\-\-preview] [\-\-sha <c>] [\-\-wait] [\-\-dry\-run] [\-\-force "reason"]
+                                            deploy one project, or a group in its order (docs/TEAM.md);
+                                            \-\-dry\-run says what would start and starts nothing
+  deploys rollback <p> [<id>]               production back to the deploy before, on whichever platform it is on
+  deploys cancel <p> [<id>]                 stop a build that is running, on whichever platform it is on
+  deploys journal verify [\-\-json]           check the chain of the journal (each line holds the hash of the one before)
+  deploys metrics [\-\-out <file>]            waiting commits, their age, failures: Prometheus text (a textfile for Grafana)
+  deploys status [\-\-watch] [\-\-no\-github]    what is building or failed (\-\-no\-github: no GitHub calls)
+  deploys watch <p> [<id>] [\-\-preview] [\-\-timeout 30m]   follow a deploy until it is live or failed
+    [\-\-and <p2>]...                         several at once, each line starting with its project
+  deploys logs <project> [lines] [\-\-id <d>] the end of the newest build log (or of deploy <d>), keys masked
+    [\-\-runtime]                             the running service's log instead (providers with runtimeLogs)
+    [\-\-follow]                              read it again every few seconds, print what is new, until the build ends
+  deploys history <project> [n] [\-\-json]    the last n deploys (default 10): when, state, commit, source
+  deploys explain <project>                 why a project is (not) counted as changed
+  deploys diff <project>                    commits and files between what is live and the branch
+  deploys notes <project> [\-\-json]          the same as release notes (Markdown; \-\-json: author as a field)
+  deploys open <project> [\-\-dashboard]      the site, or its page at the platform
+  deploys ignore <p> [\-\-undo] | \-\-list      leave a project out of changed and deploy\-changed
+  deploys list [\-\-platform <p>] [\-\-auto|\-\-manual] [\-\-json]   every project on every provider that is on, with its platform
+
+  deploys verify <p> [\-\-path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
+    [\-\-rollback\-after 10] [\-\-no\-rollback]   count down, then roll back (Ctrl\-C stops it)
+    [\-\-expect 200|2xx] [\-\-follow]          only that status is healthy; follow up to 3 redirects
+  deploys risk <project> [\-\-json]           green/yellow/red for what waits: migrations, lockfiles, config, size
+  deploys ci <owner/repo> [<ref>] [\-\-wait 30m]  the CI verdict of a commit: green, pending, red, none
+  deploys window [\-\-json]                   is the deploy window (window.json) open now?
+  \-\-force "why"                             deploy inside a closed window; the reason goes to the journal
+
+  deploys providers [\-\-json]                the platforms (providers/*.sh): on or off, set up or not
+  deploys providers enable|disable <p>      switch one on or off (Vercel and Render are on by default)
+  deploys <p> <verb> ...                    any provider: list, deploy, status, latest, logs, url, on, off, ...
+                                            (docs/PROVIDERS.md); a name may be written <p>:<name>
+  deploys vercel list                       projects and whether a push still deploys them
+  deploys vercel autodeploy\-off <p>|\-\-all   disconnect Git (remembers the repo first)
+  deploys vercel autodeploy\-on <p>|\-\-all    connect Git again from the remembered repo (pushes build again)
+  deploys vercel deploy <p> [\-\-preview] [\-\-sha <c>] [\-\-wait]   \-\-wait follows it until live or failed
+  deploys vercel rollback <p>               production back to the previous deployment
+  deploys vercel map <p> <owner/repo> [br] [\-\-no\-check]   say where a project deploys from
+                                            (GitLab: gitlab.com/group/name, see docs/GITLAB.md)
+  deploys vercel team [<id>] [\-\-no\-check]   show or set the Vercel team
+  deploys render list                       services and their auto\-deploy setting
+  deploys render autodeploy\-off <s>|\-\-all
+  deploys render autodeploy\-on <s>|\-\-all    auto\-deploy "On Commit" again
+  deploys render deploy <service>           deploy the newest commit
+  deploys render rollback <service>         back to the deploy that was live before
+  deploys render set\-key | forget\-key       the Render API key in the keychain (set\-key reads stdin)
+  deploys gitlab set\-token | forget\-token   a GitLab token in the keychain (read from stdin; docs/GITLAB.md)
+
+  deploys autodeploy allow <platform|all> <p>|\-\-all <hours>   auto\-deploy on for a while (1\-168 h)
+  deploys autodeploy allowed [\-\-json] | revoke <platform|all> <p>|\-\-all
+  deploys guard [\-\-dry\-run]                 auto\-deploy off wherever it is on without an allowance
+  deploys guard status [\-\-json] | schedule on|off   (every 30 minutes; see docs/GUARD.md)
+
+  deploys config [\-\-json] [\-\-refresh]       the effective config, and where each value came from
+  deploys team add|remove <owner/repo> | list | refresh | journal   repos whose deploy\-center.json counts
+  deploys team init <owner/repo>            print a deploy\-center.json for that repo from this Mac's settings (writes nothing)
+  deploys hooks install|uninstall|status [<repo>]  the pre\-push check (integrations/hooks) in a repo,
+                                            after a pre\-push that is there already (core.hooksPath counts)
+  deploys readonly [on|off]                 observer mode: commands that change something are refused
+                                            (a guard against slips, not access control: docs/TEAM.md)
+
+  deploys autofix [\-\-dry\-run] [\-\-only <platform> <p> [\-\-again]]   a failed build goes to a Claude Code routine, which opens a fix PR (never deploys)
+  deploys autofix \-\-preview \-\-only <platform> <p> [\-\-json]   what a fire would send (masked log, prompt, routine id); sends nothing
+  deploys autofix set\-token | routine <id> | list | forget\-token | prompt | status | sync | schedule on|off
+  deploys scan start <owner/repo> [branch] [\-\-findings <check id>]   Claude Code on this Mac looks for bugs and opens one fix PR (never merges)
+  deploys scan status [\-\-json] | list | log <id>   the newest scans, their PRs and reports
+  deploys check start <owner/repo> [branch] OSV\-Scanner, gitleaks and Semgrep (free, local, read\-only)
+  deploys check show <id>                   the findings of one check (secrets redacted)
+  deploys ai explain|notes|ship <p>         ask Claude (your own Anthropic key): why a build failed,
+                                            plain release notes (\-\-lang en|de|fr|...), is it safe to ship
+  deploys ai ask <p> \-\-question "…"         your own question about a project (its commits and log go along)
+  deploys ai slow <p> | risk <p>            why its builds take long; risk = ship
+  deploys ai set\-key | verify | model [<id>] | cap [<n>] | status | forget\-key   (see docs/CLAUDE\-IN\-APP.md)
+
+  deploys costs [days]                      Vercel charges per day (Vercel only)
+  deploys triggers                          builds nobody started from here, deploying workflows, Blueprints
+  deploys simulate [\-\-days 30] [\-\-json]     estimate: what auto\-deploy costs a month vs. once a day
+  deploys ledger [\-\-json]                   estimate: builds skipped and money saved since auto\-deploy was off
+  deploys price [set <vercel|render> <usd> | unset <p>]   your price of one build minute (prices.json)
+  deploys budget [set <usd a month> [\-\-strict] | off]     deploy\-changed \-\-yes stops before going over it
+
+  deploys where                             config folder, version, key source, logins
+  deploys completion zsh|bash|fish          tab completion (eval "$(deploys completion zsh)";
+                                            fish: deploys completion fish | source)
+  deploys <command> \-\-help                  the help lines of one command
+  deploys \-\-help | \-\-version
+.fi
+.SH EXIT STATUS
+.nf
+0 done (also "nothing to deploy"), 1 an error, something failed to start, or the
+state of some project could not be read (it is named and left out, never counted as current).
+Per command (docs/CLI.md has the table):
+  watch            0 live, 1 failed or canceled, 3 the platform could not be asked, 4 \-\-timeout
+  verify           0 healthy, 1 failed and rolled back, 2 failed and not rolled back, 3 nothing checked
+  ci               0 green or no checks, 1 red, 2 still pending or GitHub not reachable
+  window           0 open, 1 closed, 2 window.json could not be read
+  deploy\-changed   with \-\-strict also 2 when something was skipped (red or pending CI)
+  autofix \-\-only   2 not failed, 3 handed over already or busy, 4 a cap, 5 no routine, 6 locked
+  deploy           with \-\-wait or a group, 3 started but its deploy id is unknown (not followed)
+.fi
+.SH FILES
+In the config folder (DEPLOYS_CONFIG, default ~/.config/deploys):
+.nf
+  vercel\-repos.json  which repo/branch each Vercel project deploys from
+  vercel\-team        team id (auto\-detected; empty for a personal account)
+  providers.json     which providers are on, when changed with `deploys providers`
+  prices.json        your price of one build minute, where no billing says it (deploys price)
+  rules.json         "when … then …" for the daily deploy (the app's rule editor; docs/CLI.md)
+  budget.json        {"monthlyUsd":50,"strict":false}: the budget brake (deploys budget)
+  window.json        when deploys are closed: {"deny":[{"days":["fri"],"from":"15:00"}]} (docs/SAFE\-DEPLOY.md)
+  overrides.json     this Mac's overrides of the shared deploy\-center.json (docs/TEAM.md)
+  readonly           present: observer mode (as DEPLOYS_READONLY=1)
+.fi
+.SH PROVIDER COMMANDS
+.nf
+  render       list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor on autodeploy\-on forget\-key
+  vercel       list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor on autodeploy\-on map team
+.fi
+.SH ENVIRONMENT
+.TP
+.B DEPLOYS_CONFIG
+the config folder (default ~/.config/deploys)
+.TP
+.B DEPLOYS_DIR
+where providers/ (and, without one next to the script, lib/) are
+.TP
+.B DEPLOYS_READONLY
+observer mode: any value but 0, false, no, off turns it on
+.TP
+.B DEPLOYS_NO_GITHUB
+ask no git host (as status \-\-no\-github)
+.TP
+.B DEPLOYS_JOURNAL
+the deploy journal file (default: the app's, on Linux in the config folder)
+.TP
+.B DEPLOYS_NOTIFY
+0: no macOS notifications from autofix and guard
+.TP
+.B DEPLOYS_TEAM_TTL
+seconds a shared deploy\-center.json is cached (default 600)
+.TP
+.B DEPLOYS_AUTOFIX_PER_DAY, DEPLOYS_AUTOFIX_PER_PROJECT
+autofix caps per 24 h (default 6 and 2)
+.TP
+.B DEPLOYS_GITLAB_HOSTS
+self\-managed GitLab hosts (docs/GITLAB.md)
+.TP
+.B DEPLOYS_ANTHROPIC_API_KEY
+the key for deploys ai, before ANTHROPIC_API_KEY and the keychain
+.TP
+.B DEPLOYS_VERCEL_USD_PER_MIN, DEPLOYS_RENDER_USD_PER_MIN
+build\-minute prices for simulate and ledger
+.TP
+.B DEPLOYS_TIMEOUT
+the older name of DEPLOYS_CLI_TIMEOUT, used where that is not set
+.TP
+.B DEPLOYS_LOG_MAX_BYTES
+size past which a launchd job log is renamed to .1 (default 1 MB)
+.TP
+.B DEPLOYS_CLI_TIMEOUT
+seconds a gh api, glab api or vercel api call may take (default 90; 0 no limit)
+.TP
+.B DEPLOYS_VERCEL_TEAM
+the Vercel team id, if the token sees several teams
+.TP
+.B DEPLOYS_AMPLIFY_PROFILE
+the aws CLI profile for Amplify
+.TP
+.B DEPLOYS_CLOUDFLARE_TOGGLE
+1: Cloudflare deploys switch push\-builds on for the start (providers/cloudflare.md)
+.TP
+.B DEPLOYS_COOLIFY_ALLOW_HTTP
+1: the Coolify token may go to a plain http:// instance that is not this machine
+.TP
+.B DEPLOYS_NETLIFY_POLLS
+how often a Netlify start looks for its new build (default 15)
+.TP
+.B NO_COLOR
+no colour
+.SH SEE ALSO
+The full reference: docs/CLI.md in the repository, and https://deploycenter.app/docs/cli/

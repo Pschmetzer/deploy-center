@@ -258,7 +258,9 @@ fi
 # --- the message: a short version of the digest, with the button ---
 if [ "$post" = 1 ]; then
   text="$(jq -r '
-    def safe: tostring | gsub("@"; "@\u200b");
+    # A PR title is written by whoever opened the PR: no @mentions, and no [text](url) or <url|text>
+    # (a fake "Approve" link next to the real button in Discord, Teams, Matrix or Slack).
+    def safe: tostring | gsub("@"; "@\u200b") | gsub("\\["; "(") | gsub("\\]"; ")") | gsub("<"; "\u2039") | gsub(">"; "\u203a") | gsub("[\u0000-\u001f\u202a-\u202e\u2066-\u2069]"; " ");
     "\(.title)",
     (if .partial then "(List incomplete: some projects could not be read.)" else empty end),
     (if (.projects | length) == 0 then "Nothing waiting." else

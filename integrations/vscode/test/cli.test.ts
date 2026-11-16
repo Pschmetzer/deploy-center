@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { APP_CLI, candidates, childEnv, deployArgs, deployFailure, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, urlIn } from "../src/cli";
+import { APP_CLI, candidates, canPreview, childEnv, deployArgs, deployFailure, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, urlIn } from "../src/cli";
 import { summarize } from "../src/model";
 import { scopeProjects } from "../src/repo";
 
@@ -132,6 +132,18 @@ test("projectArgs: logs, notes and open take the ref", () => {
   assert.deepEqual(projectArgs("logs", { ref: "render:web" }, "200"), ["logs", "render:web", "200"]);
   assert.deepEqual(projectArgs("open", { ref: "web" }, "--dashboard"), ["open", "web", "--dashboard"]);
   assert.deepEqual(deployArgs({ platform: "netlify", name: "site" }), ["netlify", "deploy-json", "site"]);
+});
+
+test("deployArgs pins the confirmed commit only where the platform can, and only real hex", () => {
+  assert.deepEqual(deployArgs({ platform: "vercel", name: "a" }, false, "abc1234"), ["vercel", "deploy-json", "a", "--sha", "abc1234"]);
+  assert.deepEqual(deployArgs({ platform: "netlify", name: "a" }, false, "abc1234"), ["netlify", "deploy-json", "a"]);
+  assert.deepEqual(deployArgs({ platform: "vercel", name: "a" }, true, "abc1234"), ["vercel", "deploy-json", "a", "--preview"]);
+  assert.deepEqual(deployArgs({ platform: "render", name: "a" }, false, "x; rm -rf"), ["render", "deploy-json", "a"]);
+});
+
+test("canPreview follows the platforms' caps", () => {
+  for (const p of ["vercel", "cloudflare", "amplify"]) assert.equal(canPreview({ platform: p }), true, p);
+  for (const p of ["render", "netlify", "coolify", "digitalocean", "hook"]) assert.equal(canPreview({ platform: p }), false, p);
 });
 
 test("an observer-mode refusal reaches the message as one line", async () => {

@@ -16,7 +16,7 @@
 # Input: the hook JSON on stdin (tool_input.command, cwd).
 # Output: JSON with systemMessage (shown to the user) and additionalContext (for Claude).
 # Env: DEPLOYS                 the CLI to call (default: the app bundle, then deploys on PATH)
-#      DEPLOYS_HOOK_TIMEOUT    seconds to wait for the CLI (default 15)
+#      DEPLOYS_HOOK_TIMEOUT    seconds to wait for the CLI (default 8 after a push, 15 at session start)
 
 input="$(cat)"   # read all of stdin first, so Claude Code never writes into a closed pipe
 mode=push; [ "${1:-}" = --session-start ] && mode=session
@@ -136,7 +136,8 @@ tmp="$(mktemp -d 2>/dev/null)" || exit 0
 trap 'rm -rf "$tmp"' EXIT
 killtree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do killtree "$c"; done; kill "$1" 2>/dev/null; }
 ( exec "$bin" changed --json >"$tmp/out" 2>/dev/null </dev/null ) & pid=$!
-limit="${DEPLOYS_HOOK_TIMEOUT:-15}"; case "$limit" in ''|*[!0-9]*) limit=15 ;; esac
+dflt=8; [ "$mode" = session ] && dflt=15
+limit="${DEPLOYS_HOOK_TIMEOUT:-$dflt}"; case "$limit" in ''|*[!0-9]*) limit=$dflt ;; esac
 waited=0
 while kill -0 "$pid" 2>/dev/null; do
   if [ "$waited" -ge $((limit * 5)) ]; then killtree "$pid"; exit 0; fi

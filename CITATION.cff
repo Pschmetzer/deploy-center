@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you mention Deploy Center in an article or a talk, please cite it like this."
+title: "Deploy Center"
+abstract: "Free, open-source Mac app and CLI that turns off Git auto-deploy on Vercel, Render and other hosts and deploys what changed when you decide."
+type: software
+authors:
+  - family-names: "Schmetzer"
+    given-names: "Patrick"
+repository-code: "https://github.com/Pschmetzer/deploy-center"
+url: "https://deploycenter.app/"
+license: MIT

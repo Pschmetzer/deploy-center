@@ -2,7 +2,7 @@
 description: Deploy one project to production after asking the user to confirm.
 argument-hint: <project>
 disable-model-invocation: true
-allowed-tools: Bash(deploys changed *) Bash(deploys notes *)
+allowed-tools: Bash(deploys changed *) Bash(deploys notes *) Bash(deploys risk *) Bash(deploys window *) Bash(deploys ci *)
 ---
 
 Deploy the project **$ARGUMENTS** to production, but only after the user confirms.
@@ -20,6 +20,10 @@ If no project was given, run `deploys changed --json`, list what is waiting, and
    is already live (or unknown) and stop.
 2. Show what would go live: platform, the number of commits, the newest commit message. For more
    detail, `deploys notes $ARGUMENTS` gives the commits as release notes.
+   Also run `deploys risk $ARGUMENTS --json` (green, yellow or red, with the reasons: migrations,
+   lockfiles, config) and `deploys window --json` (is the deploy window open?). For a repository on
+   GitHub, `deploys ci <owner/repo> <branch>` gives the CI verdict. Say so in the question: a red risk,
+   a red CI or a closed window must be named before the user answers.
 3. Ask: "Deploy $ARGUMENTS to production now? (yes/no)". **Stop and wait for the answer.** Running
    this command is not the confirmation. Only a clear yes in the user's next message is.
 4. On yes, deploy exactly this one project, on whichever platform it is (Vercel, Render, Netlify,

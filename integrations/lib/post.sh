@@ -10,6 +10,7 @@
 # The webhook URL is a secret (Telegram's carries the bot token): it goes to curl on stdin, never
 # on the command line. So does an ntfy access token (DEPLOYS_NOTIFY_TOKEN).
 #
+# custom:   DEPLOYS_NOTIFY_FORMAT=custom and DEPLOYS_NOTIFY_TEMPLATE='{summary: .text, link: .url}' (jq; input {text, url, label})
 # ntfy:     DEPLOYS_NOTIFY_PRIORITY (1-5 or min, low, default, high, urgent), DEPLOYS_NOTIFY_TAGS (a,b),
 #           DEPLOYS_NOTIFY_TOKEN (a protected topic)
 # Pushover: DEPLOYS_PUSHOVER_TOKEN (the app) and DEPLOYS_PUSHOVER_USER (you); the URL is
@@ -47,6 +48,9 @@ webhook_body() {
     discord)  WEBHOOK_TYPE="application/json"
               WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" '{content:($t + (if $u != "" then "\n\($l): <\($u)>" else "" end)), allowed_mentions:{parse:[]}}')" ;;
     slack)    WEBHOOK_TYPE="application/json"
+              # Slack reads <!channel>, <@U123> and <https://x|text> in any text: & < > are escaped
+              # (Slack's own rule), so a project name or PR title cannot ping a channel or fake a link.
+              text="$(jq -rn --arg t "$text" '$t | gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;")')"
               # Block Kit for Slack; other Slack-style hooks (Mattermost, …) show text, which has the link too.
               WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" '
                 ($t + (if $u != "" then "\n\($l): \($u)" else "" end)) as $full
@@ -77,7 +81,15 @@ webhook_body() {
               # The keys are added in webhook_send, so a dry run never prints them.
               WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" \
                 '{title:"Deploy Center", message:$t} + (if $u != "" then {url:$u, url_title:$l} else {} end)')" ;;
-    *) echo "Unknown DEPLOYS_NOTIFY_FORMAT: $format (discord, slack, ntfy, telegram, teams, googlechat, matrix, pushover)" >&2; return 1 ;;
+    custom)   WEBHOOK_TYPE="application/json"
+              # Your own body for PagerDuty, Opsgenie, Zulip, Mattermost attachments or a Lambda:
+              # DEPLOYS_NOTIFY_TEMPLATE is a jq program. Its input is {text, url, label}; what it prints is the body.
+              [ -n "${DEPLOYS_NOTIFY_TEMPLATE:-}" ] \
+                || { echo "DEPLOYS_NOTIFY_FORMAT=custom needs DEPLOYS_NOTIFY_TEMPLATE (a jq program: input {text, url, label}, output the JSON body)" >&2; return 1; }
+              WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" "{text:\$t, url:\$u, label:\$l} | ${DEPLOYS_NOTIFY_TEMPLATE}")" \
+                || { echo "DEPLOYS_NOTIFY_TEMPLATE is not a valid jq program, or it failed on {text, url, label}" >&2; return 1; }
+              [ -n "$WEBHOOK_BODY" ] || { echo "DEPLOYS_NOTIFY_TEMPLATE printed nothing" >&2; return 1; } ;;
+    *) echo "Unknown DEPLOYS_NOTIFY_FORMAT: $format (discord, slack, ntfy, telegram, teams, googlechat, matrix, pushover, custom)" >&2; return 1 ;;
   esac
 }
 
@@ -98,7 +110,12 @@ webhook_send() {
   local secret_header=""
   if [ "$format" = ntfy ]; then
     extra=(-H "Title: Deploy Center")
-    [ -n "${WEBHOOK_LINK:-}" ] && extra+=(-H "Actions: view, ${WEBHOOK_LABEL//,/ }, ${WEBHOOK_LINK}")
+    # The Actions header is "view, label, url" separated by , and ;: a , or ; in the label becomes a
+    # space, in the URL it is percent-encoded, or the action would silently be dropped.
+    if [ -n "${WEBHOOK_LINK:-}" ]; then
+      ntfy_label="${WEBHOOK_LABEL//[,;]/ }"; ntfy_url="${WEBHOOK_LINK//,/%2C}"; ntfy_url="${ntfy_url//;/%3B}"
+      extra+=(-H "Actions: view, ${ntfy_label}, ${ntfy_url}")
+    fi
     if [ -n "${DEPLOYS_NOTIFY_PRIORITY:-}" ]; then
       case "$DEPLOYS_NOTIFY_PRIORITY" in [1-5]|min|low|default|high|max|urgent) extra+=(-H "Priority: $DEPLOYS_NOTIFY_PRIORITY") ;;
         *) rm -f "$f"; echo "DEPLOYS_NOTIFY_PRIORITY must be 1-5 or min, low, default, high, urgent" >&2; return 1 ;; esac
@@ -113,12 +130,24 @@ webhook_send() {
       secret_header="$(printf 'header = "Authorization: Bearer %s"\n' "$DEPLOYS_NOTIFY_TOKEN")"
     fi
   fi
+  # An optional signature for receivers of your own (n8n, a Lambda, a Worker): HMAC-SHA256 over
+  # "<timestamp>.<body>" with DEPLOYS_NOTIFY_SECRET, in X-Deploy-Center-Signature, with the time in
+  # X-Deploy-Center-Timestamp (reject old ones to stop replays). The secret goes to perl through
+  # the environment, never through argv; the headers go to curl on stdin, like the token.
+  local sig_headers=""
+  if [ -n "${DEPLOYS_NOTIFY_SECRET:-}" ]; then
+    local ts sig
+    ts="$(date -u +%s)"
+    sig="$(DC_SECRET="$DEPLOYS_NOTIFY_SECRET" DC_TS="$ts" perl -MDigest::SHA=hmac_sha256_hex -e 'local $/; my $b = <STDIN>; print hmac_sha256_hex("$ENV{DC_TS}.$b", $ENV{DC_SECRET})' < "$f")" \
+      || { rm -f "$f"; echo "DEPLOYS_NOTIFY_SECRET: could not sign (perl with Digest::SHA is needed)" >&2; return 1; }
+    sig_headers="$(printf 'header = "X-Deploy-Center-Timestamp: %s"\nheader = "X-Deploy-Center-Signature: sha256=%s"' "$ts" "$sig")"
+  fi
   # curl reads the URL from its config on stdin (-K -), so the token is not in the process list.
-  # Bounded: a hanging webhook must not hold a cron job or workflow until its limit; 429 and 5xx
-  # are retried a few times. `|| rc=$?` so a caller's set -e still reaches the rm.
+  # Bounded: a hanging webhook must not hold a cron job or workflow until its limit; 408, 429 and 5xx
+  # are retried a few times (not --retry-all-errors: a POST that was delivered and then timed out would be sent twice). `|| rc=$?` so a caller's set -e still reaches the rm.
   local rc=0
-  { printf 'url = "%s"\n' "$url"; [ -z "$secret_header" ] || printf '%s\n' "$secret_header"; } \
-    | curl -fsS -K - --connect-timeout 5 --max-time 20 --retry 3 --retry-all-errors \
+  { printf 'url = "%s"\n' "$url"; [ -z "$secret_header" ] || printf '%s\n' "$secret_header"; [ -z "$sig_headers" ] || printf '%s\n' "$sig_headers"; } \
+    | curl -fsS -K - --connect-timeout 5 --max-time 20 --retry 3 \
         -X POST -H "Content-Type: $WEBHOOK_TYPE" ${extra[@]+"${extra[@]}"} --data-binary "@$f" -o /dev/null || rc=$?
   rm -f "$f"; return "$rc"
 }

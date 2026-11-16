@@ -1,0 +1,8 @@
+# Changes to what ships, signs or deploys need the owner's review.
+/release.sh @Pschmetzer
+/scripts/ @Pschmetzer
+/.github/ @Pschmetzer
+/providers/ @Pschmetzer
+/deploys @Pschmetzer
+/integrations/docker/ @Pschmetzer
+/integrations/action/ @Pschmetzer

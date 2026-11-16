@@ -250,6 +250,41 @@ final class PhoneStore: ObservableObject {
         return r
     }
 
+    /// What one provider answered: its rows and notes, or the error. Read concurrently in `load`.
+    private struct ProviderLoad {
+        let provider: ProviderKind
+        var list: [PhoneProject] = []
+        var notes: [String] = []
+        var teamNote: String? = nil
+        var error: Error? = nil
+    }
+
+    private func loadVercel(_ v: String?) async -> ProviderLoad? {
+        guard let v else { return nil }
+        var out = ProviderLoad(provider: .vercel)
+        do {
+            teamCache = nil   // a new load may follow a new team; the polls in between reuse it
+            let team = try await vercelTeam(v)
+            if team.id == nil && team.teams > 1 {
+                out.teamNote = L("Vercel: \(team.teams) teams, so only the personal account is shown. Enter a team id in Settings.",
+                                 "Vercel: \(team.teams) Teams, darum nur das persönliche Konto. Team-ID in den Einstellungen eintragen.")
+            }
+            let r = try await Vercel(token: v, team: team.id).projects()
+            out.list = r.list; out.notes = r.notes
+        } catch { out.error = error }
+        return out
+    }
+
+    private func loadRender(_ r: String?) async -> ProviderLoad? {
+        guard let r else { return nil }
+        var out = ProviderLoad(provider: .render)
+        do {
+            let x = try await Render(key: r).projects()
+            out.list = x.list; out.notes = x.notes
+        } catch { out.error = error }
+        return out
+    }
+
     private func load() async -> Bool {
         await refreshLink()
         if demo {
@@ -263,23 +298,13 @@ final class PhoneStore: ObservableObject {
             if (error as? APIError)?.isAuth == true { refused = true }
             errs.append(provider.rawValue + ": " + describe(error, provider)); failed.insert(provider)
         }
-        if let v = token(.vercel) {
-            do {
-                teamCache = nil   // a new load may follow a new team; the polls in between reuse it
-                let team = try await vercelTeam(v)
-                if team.id == nil && team.teams > 1 {
-                    errs.append(L("Vercel: \(team.teams) teams, so only the personal account is shown. Enter a team id in Settings.",
-                                  "Vercel: \(team.teams) Teams, darum nur das persönliche Konto. Team-ID in den Einstellungen eintragen."))
-                }
-                let r = try await Vercel(token: v, team: team.id).projects()
-                all += r.list; errs += r.notes.map { "Vercel: " + $0 }
-            } catch { note(.vercel, error) }
-        }
-        if let r = token(.render) {
-            do {
-                let x = try await Render(key: r).projects()
-                all += x.list; errs += x.notes.map { "Render: " + $0 }
-            } catch { note(.render, error) }
+        // Both providers at once: the wait is the slower one, not the sum.
+        async let vercelLoad = loadVercel(token(.vercel))
+        async let renderLoad = loadRender(token(.render))
+        for l in [await vercelLoad, await renderLoad].compactMap({ $0 }) {
+            if let t = l.teamNote { errs.append(t) }
+            if let e = l.error { note(l.provider, e); continue }
+            all += l.list; errs += l.notes.map { l.provider.rawValue + ": " + $0 }
         }
         // iOS ended the background time: keep what was there, write nothing half-done.
         if Task.isCancelled { return false }
@@ -359,12 +384,14 @@ final class PhoneStore: ObservableObject {
     func authenticate(_ reason: String) async -> Bool {
         let ctx = LAContext()
         var err: NSError?
-        // Face ID or Touch ID, with the passcode as a fallback.
-        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else {
+        // Face ID or Touch ID, with the passcode as a fallback; "Biometrics only" in Settings drops the
+        // fallback (someone who watched the passcode could otherwise deploy to production).
+        let policy: LAPolicy = UserDefaults.standard.bool(forKey: "biometricsOnly") ? .deviceOwnerAuthenticationWithBiometrics : .deviceOwnerAuthentication
+        guard ctx.canEvaluatePolicy(policy, error: &err) else {
             fail(L("Set a passcode on this device to deploy from it.", "Lege einen Code für dieses Gerät fest, um von hier zu deployen."))
             return false
         }
-        do { return try await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) }
+        do { return try await ctx.evaluatePolicy(policy, localizedReason: reason) }
         catch let e as LAError {
             switch e.code {
             case .userCancel, .systemCancel, .appCancel, .userFallback:

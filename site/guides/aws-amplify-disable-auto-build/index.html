@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to disable AWS Amplify auto-build for a branch · Deploy Center</title>
+<meta name="description" content="Turn off auto-build on an AWS Amplify Hosting branch with the AWS CLI, start a build when you decide, and what else can still build.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/aws-amplify-disable-auto-build/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="How to disable AWS Amplify auto-build for a branch · Deploy Center">
+<meta property="og:description" content="Turn off auto-build on an AWS Amplify Hosting branch with the AWS CLI, start a build when you decide, and what else can still build.">
+<meta property="og:url" content="https://deploycenter.app/guides/aws-amplify-disable-auto-build/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How to disable AWS Amplify auto-build for a branch · Deploy Center">
+<meta name="twitter:description" content="Turn off auto-build on an AWS Amplify Hosting branch with the AWS CLI, start a build when you decide, and what else can still build.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How to disable AWS Amplify auto-build for a branch",
+  "description": "Turn off auto-build on an AWS Amplify Hosting branch with the AWS CLI, start a build when you decide, and what else can still build.",
+  "url": "https://deploycenter.app/guides/aws-amplify-disable-auto-build/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/aws-amplify-disable-auto-build/",
+  "datePublished": "2026-11-16",
+  "dateModified": "2026-11-16",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Which command turns off Amplify auto-build?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "aws amplify update-branch with --no-enable-auto-build, once per branch. update-app with --no-enable-branch-auto-build covers branches created later."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "How do I start an Amplify build by hand?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "aws amplify start-job with --job-type RELEASE builds the newest commit of the branch. It works with auto-build off."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Do pull request previews still build?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes, if enablePullRequestPreview is on. That is a separate setting."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does Deploy Center support AWS Amplify?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes, as an opt-in host. It uses the aws CLI and a profile name, so it never stores an AWS key."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Disable AWS Amplify auto-build",
+    "item": "https://deploycenter.app/guides/aws-amplify-disable-auto-build/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>How to disable AWS Amplify auto-build for a branch</h1>
+<p class="answer">Run <code>aws amplify update-branch --app-id &lt;id&gt; --branch-name main --no-enable-auto-build</code>. Pushes to that branch then no longer start a build. Start one yourself with <code>aws amplify start-job --job-type RELEASE</code>. Other branches keep their own setting.</p>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<p>Amplify Hosting bills build minutes. On a Git-connected branch with auto-build on, every push builds. Check the current price per build minute on the AWS Amplify pricing page; what matters is that a branch pushed twenty times a day builds twenty times.</p>
+<h2 id="off">1. Turn auto-build off for a branch</h2>
+<pre><code class="language-bash">aws amplify update-branch --app-id APP_ID --branch-name main --no-enable-auto-build</code></pre>
+<p>Do the same for each branch that builds on push. The app also has a setting that auto-builds branches Amplify creates later:</p>
+<pre><code class="language-bash">aws amplify update-app --app-id APP_ID --no-enable-branch-auto-build</code></pre>
+<h2 id="deploy">2. Start a build yourself</h2>
+<pre><code class="language-bash">aws amplify start-job --app-id APP_ID --branch-name main --job-type RELEASE</code></pre>
+<p>A RELEASE job builds the newest commit of the branch, and it works the same with auto-build off.</p>
+<div class="note"><p><b>Trade-offs.</b> Pull request previews are a separate setting (<code>enablePullRequestPreview</code>). They build only when a pull request is opened or updated, and you switch them off in the Amplify console. Apps deployed by upload have no Git connection and nothing to turn off.</p></div>
+<h2>AWS Amplify in Deploy Center</h2>
+<p><a href="/">Deploy Center</a> supports Amplify as an opt-in host. It calls the <code>aws</code> CLI, so it never holds an AWS key: <code>echo my-profile | deploys amplify set-key</code> stores a profile name, <code>deploys amplify off &lt;app&gt;</code> runs the command above for the production branch (<code>--all</code> for the other branches and the new-branch setting), and <code>deploys amplify deploy &lt;app&gt;</code> starts the RELEASE job. <code>deploys amplify on &lt;app&gt;</code> turns it back on. Only apps in one region are listed at a time. Details: <a href="/docs/aws-amplify/">the AWS Amplify provider docs</a>.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Which command turns off Amplify auto-build?</summary><p>aws amplify update-branch with --no-enable-auto-build, once per branch. update-app with --no-enable-branch-auto-build covers branches created later.</p></details>
+  <details><summary>How do I start an Amplify build by hand?</summary><p>aws amplify start-job with --job-type RELEASE builds the newest commit of the branch. It works with auto-build off.</p></details>
+  <details><summary>Do pull request previews still build?</summary><p>Yes, if enablePullRequestPreview is on. That is a separate setting.</p></details>
+  <details><summary>Does Deploy Center support AWS Amplify?</summary><p>Yes, as an opt-in host. It uses the aws CLI and a profile name, so it never stores an AWS key.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<p class="reference"><b>Reference:</b> <a href="/docs/cli/#platforms">CLI: platform commands</a> · <a href="/docs/troubleshooting/">Troubleshooting</a></p>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

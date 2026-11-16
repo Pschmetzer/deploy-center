@@ -5,7 +5,9 @@
 #   TELEGRAM_BOT_TOKEN=… DEPLOYS_BOT_CHATS=12345,-100678 examples/telegram-waiting-bot.sh
 #   examples/telegram-waiting-bot.sh --reply '<update JSON>'   the answer to one update (for tests)
 #
-# Only chats in DEPLOYS_BOT_CHATS get an answer; every other message is ignored. Commands:
+# Only chats in DEPLOYS_BOT_CHATS get an answer; every other message is ignored. In a group,
+# every member of the chat could ask: DEPLOYS_BOT_USERS=111,222 (Telegram user ids) narrows it to
+# those people. Commands:
 # /waiting (what has commits that are not live), /failed (newest build failed), /help.
 # Runs where `deploys` and its logins are (your Mac, a small server). Long polling: no webhook,
 # no open port. The token goes to curl on stdin, never on the command line.
@@ -19,6 +21,11 @@ reply_to() {
   [ -n "$chat" ] && [ -n "$text" ] || return 0
   allowed="$(printf '%s' "${DEPLOYS_BOT_CHATS:-}" | tr ',' ' ' | tr -s ' ' '\n' | grep -cxF -- "$chat" || true)"
   [ "$allowed" -gt 0 ] || return 0
+  if [ -n "${DEPLOYS_BOT_USERS:-}" ]; then
+    local from
+    from="$(jq -r '.message.from.id // empty' <<<"$u")"
+    [ -n "$from" ] && [ "$(printf '%s' "$DEPLOYS_BOT_USERS" | tr ',' ' ' | tr -s ' ' '\n' | grep -cxF -- "$from" || true)" -gt 0 ] || return 0
+  fi
   case "${text%%[ @]*}" in
     /waiting)
       "$DEPLOYS" changed --json </dev/null 2>/dev/null | jq -r 'if type != "array" then "Could not read the projects."
@@ -43,12 +50,18 @@ api() {  # api <method> [JSON body]: the URL (with the token) on curl's stdin
   printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$TELEGRAM_BOT_TOKEN" "$1" \
     | curl -fsS -K - --max-time 70 -H 'Content-Type: application/json' --data-binary "${2:-{\}}"
 }
-offset=0
+# The next update id is kept in a file: after a restart Telegram would otherwise send the
+# unconfirmed updates of the last 24 hours again, and every one would be answered twice.
+state="${DEPLOYS_BOT_STATE:-$HOME/.local/state/deploys-telegram-bot.offset}"
+mkdir -p "$(dirname "$state")"
+offset="$(cat "$state" 2>/dev/null || echo 0)"; case "$offset" in ''|*[!0-9]*) offset=0 ;; esac
 while :; do
   updates="$(api getUpdates "$(jq -nc --argjson o "$offset" '{offset:$o, timeout:50, allowed_updates:["message"]}')")" || { sleep 10; continue; }
   while IFS= read -r u; do
-    offset="$(( $(jq -r '.update_id' <<<"$u") + 1 ))"
+    offset="$(( $(jq -r '.update_id' <<<"$u") + 1 ))"; printf '%s' "$offset" > "$state"
     r="$(reply_to "$u")"
+    # Telegram refuses more than 4096 characters (HTTP 400): a longer answer is cut, with a note.
+    r="$(jq -rn --arg t "$r" '$t | if length > 3900 then .[0:3900] + "\n… (cut, ask deploys changed for the rest)" else . end')"
     [ -n "$r" ] || continue
     api sendMessage "$(jq -nc --argjson c "$(jq '.message.chat.id' <<<"$u")" --arg t "$r" '{chat_id:$c, text:$t, disable_web_page_preview:true}')" >/dev/null || true
   done < <(jq -c '.result[]?' <<<"$updates")

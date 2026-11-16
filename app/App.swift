@@ -42,6 +42,7 @@ struct SettingsView: View {
     @AppStorage("monthlyBudget") private var monthlyBudget = 0.0
     /// The checkbox of the deploy confirmation, here too, so the remembered state can be seen.
     @AppStorage(OwnerCheck.key) private var ownerCheck = false
+    @AppStorage("neutralNotifications") private var neutralNotifications = false
     @AppStorage("watchMinutes") private var watchMinutes = 0
     @AppStorage(MigrationCheck.key) private var migrationCheck = true
     @AppStorage("confirmSingleDeploy") private var confirmSingle = true
@@ -139,7 +140,7 @@ struct SettingsView: View {
         }
     }
 
-    private var allItems: [Item] { Platform.allCases.flatMap { store.items[$0] ?? [] } }
+    private var allItems: [Item] { store.allItems }
 
     private func readSystemState() async {
         let st = await UNUserNotificationCenter.current().notificationSettings()
@@ -206,10 +207,10 @@ struct SettingsView: View {
             if let loginError { ErrorText(loginError) }
             Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
                 .help(L("Also in the View menu: ⇧⌘D", "Auch im Menü Darstellung: ⇧⌘D"))
-                .onChange(of: demoMode) { _, _ in Spotlight.update(Array(store.items.values.joined()).filter { !store.isHidden($0) }) }
+                .onChange(of: demoMode) { _, _ in Spotlight.update(store.allItems.filter { !store.isHidden($0) }) }
             Toggle(L("Find projects in Spotlight", "Projekte in Spotlight finden"), isOn: $spotlight)
                 .help(L("Only names and platforms, kept on this Mac; never in demo mode.", "Nur Namen und Plattformen, auf diesem Mac; nie im Demo-Modus."))
-                .onChange(of: spotlight) { _, _ in Spotlight.update(Array(store.items.values.joined()).filter { !store.isHidden($0) }) }
+                .onChange(of: spotlight) { _, _ in Spotlight.update(store.allItems.filter { !store.isHidden($0) }) }
             Toggle(L("Tip of the day in the menu bar", "Tipp des Tages in der Menüleiste"), isOn: $tipOn)
             Toggle(L("Compact list (less space between rows)", "Kompakte Liste (weniger Abstand zwischen den Zeilen)"), isOn: $compactRows)
             Toggle(L("Colour-blind friendly (blue instead of green)", "Farbenblind-freundlich (Blau statt Grün)"), isOn: $colorBlind)
@@ -230,7 +231,7 @@ struct SettingsView: View {
                     Button(L("Restart now", "Jetzt neu starten")) {
                         // relaunchApp asks itself; the quit check must not ask a second time.
                         AppDelegate.confirmed = true
-                        relaunchApp(running: store.items.values.joined().filter { $0.state.isActive }.count)
+                        relaunchApp(running: store.allItems.filter { $0.state.isActive }.count)
                         AppDelegate.confirmed = false
                     }
                 }
@@ -243,14 +244,14 @@ struct SettingsView: View {
             Toggle(L("Notify when a deploy ends", "Mitteilung, wenn ein Deploy fertig ist"), isOn: $notifications)
             Picker(L("Daily reminder to deploy", "Tägliche Erinnerung zum Deployen"), selection: $reminderHour) {
                 Text(L("Off", "Aus")).tag(0)
-                ForEach(1...23, id: \.self) { Text(L("from \($0):00", "ab \($0):00 Uhr")).tag($0) }
+                ForEach(1...23, id: \.self) { Text(L("from \(uiHour($0))", "ab \(uiHour($0)) Uhr")).tag($0) }
             }
             .onChange(of: reminderHour) { _, h in if h > 0 { Notify.ask() } }
             .help(L("Only a reminder, and only when something waits. Nothing is deployed by itself.",
                     "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
             Picker(L("Summary of the day", "Tagesabschluss"), selection: $summaryHour) {
                 Text(L("Off", "Aus")).tag(0)
-                ForEach(12...23, id: \.self) { Text(L("from \($0):00", "ab \($0):00 Uhr")).tag($0) }
+                ForEach(12...23, id: \.self) { Text(L("from \(uiHour($0))", "ab \(uiHour($0)) Uhr")).tag($0) }
             }
             .onChange(of: summaryHour) { _, h in if h > 0 { Notify.ask() } }
             .help(L("How many deploys ended today and how many failed, from the history. Only when something ended.",
@@ -455,12 +456,18 @@ struct SettingsView: View {
             }
             .help(L("Two failed answers in a row warn, or roll back where the project rolls back by itself (its details).",
                     "Zwei fehlgeschlagene Antworten hintereinander warnen, oder rollen zurück, wo das Projekt selbst zurückrollt (seine Details)."))
+            Toggle(L("Neutral notifications (no project names)", "Neutrale Mitteilungen (ohne Projektnamen)"), isOn: $neutralNotifications)
+                .help(L("The lock screen shows that a deploy needs a look, not which project or why.", "Der Sperrbildschirm zeigt, dass ein Deploy einen Blick braucht, nicht welches Projekt oder warum."))
             Toggle(L("Ask for a tick before database migrations go live", "Vor dem Live-Gang von Datenbank-Migrationen ein Häkchen verlangen"), isOn: $migrationCheck)
                 .help(L("When the waiting commits change migration files, every live deploy of them asks first.",
                         "Ändern die wartenden Commits Migrationsdateien, fragt jeder Live-Deploy davon erst nach."))
             Toggle(L("Ask for Touch ID or the password before risky steps", "Vor riskanten Schritten nach Touch ID oder dem Passwort fragen"), isOn: $ownerCheck)
                 .help(L("Deploying several projects at once, a rollback by hand, and allowing auto-deploy. The automatic rollback after a failed check does not wait.",
                         "Mehrere Projekte auf einmal deployen, ein Rollback von Hand und Auto-Deploy erlauben. Das automatische Zurückrollen nach einem fehlgeschlagenen Check wartet nicht."))
+            if ownerCheck, !OwnerCheck.available {
+                Text(L("This Mac cannot ask for Touch ID or a password, so nothing is asked.", "Dieser Mac kann nicht nach Touch ID oder Passwort fragen, daher wird nichts abgefragt."))
+                    .font(.caption).foregroundStyle(Color.warningText)
+            }
         }
     }
 
@@ -471,9 +478,11 @@ struct SettingsView: View {
                 Spacer()
                 TextField("0", value: $monthlyBudget, format: .currency(code: "USD").precision(.fractionLength(0...2)))
                     .frame(width: 90).multilineTextAlignment(.trailing)
+                    .accessibilityLabel(L("Monthly build budget in dollars", "Monatliches Build-Budget in Dollar"))
                     // A budget below zero means nothing; it becomes "off".
                     .onChange(of: monthlyBudget) { _, v in if v < 0 || !v.isFinite { monthlyBudget = 0 } }
                 Stepper("", value: $monthlyBudget, in: 0...100_000, step: 10).labelsHidden()
+                    .accessibilityLabel(L("Change the budget by 10 dollars", "Budget um 10 Dollar ändern"))
             }
             Text(SettingsText.budgetHint(budget: monthlyBudget, pace: store.costs.flatMap { Store.monthPace($0.days, today: CostsSheet.today()) }))
                 .font(.caption).foregroundStyle(.secondary)
@@ -510,8 +519,7 @@ struct SettingsView: View {
     @ViewBuilder private var helpSection: some View {
         Section(L("Help", "Hilfe")) {
             Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
-                if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
-                NSWorkspace.shared.open(Log.url)
+                Log.reveal()
             }
             CopyButton(title: L("Copy diagnostics", "Diagnose kopieren")) { diagnosticsText() }
             Button(L("Show the first-start guide again", "Erststart-Anleitung wieder zeigen")) { UserDefaults.standard.set(false, forKey: FirstStart.key) }
@@ -574,7 +582,7 @@ private func open(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.
         }
     }
 
-    private var running: Int { store.map { $0.items.values.joined().filter { $0.state.isActive }.count } ?? 0 }
+    private var running: Int { store.map { $0.allItems.filter { $0.state.isActive }.count } ?? 0 }
 
     /// Asks while deploys run; true when it may go on.
     func confirmLeaving(restart: Bool = false) -> Bool { confirmQuit(running: running, restart: restart) }
@@ -616,19 +624,19 @@ struct DeployCenterApp: App {
                     if let tab = SettingsNav.tab(from: url) { store.openSettings(tab); return }
                     guard url.host == "select",
                           let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "project" })?.value,
-                          let req = Store.showRequest(value, items: Array(store.items.values.joined())) else { return }
+                          let req = Store.showRequest(value, items: store.allItems) else { return }
                     store.pendingShow = req
                 }
                 // A Spotlight hit: the project is found in the window, never deployed.
                 .onContinueUserActivity(CSSearchableItemActionType) { a in
                     guard let key = a.userInfo?[CSSearchableItemActivityIdentifier] as? String,
-                          let i = store.items.values.joined().first(where: { Store.key($0) == key }) else { return }
+                          let i = store.item(key: key) else { return }
                     store.show(i)
                 }
                 // A project handed off from the iPhone app: shown, never deployed.
                 .onContinueUserActivity(Handoff.type) { a in
                     guard let key = a.userInfo?["project"] as? String,
-                          let i = Handoff.item(for: key, in: Array(store.items.values.joined())) else { return }
+                          let i = Handoff.item(for: key, in: store.allItems) else { return }
                     store.show(i)
                 }
         }
@@ -651,8 +659,7 @@ struct DeployCenterApp: App {
                 Button(L("Report a problem …", "Problem melden …")) { open("https://github.com/\(Updater.repo)/issues/new/choose") }
                 Divider()
                 Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
-                    if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
-                    NSWorkspace.shared.open(Log.url)
+                    Log.reveal()
                 }
             }
         }
@@ -698,7 +705,7 @@ struct MenuBarContent: View {
     var body: some View {
         let w = store.waiting
         // The same rule as the count (Store.isWaiting): hidden projects stay out.
-        let changed = Array(store.items.values.joined()).filter { store.isWaiting($0) }
+        let changed = store.allItems.filter { store.isWaiting($0) }
             .sorted { ($0.pendingCommits ?? 0) > ($1.pendingCommits ?? 0) }
         let connected = Platform.allCases.filter { p in
             guard let d = store.doctor else { return false }
@@ -706,7 +713,10 @@ struct MenuBarContent: View {
         }
         let failed = connected.filter { store.lastLoadError[$0] != nil }
         let unread = connected.filter { store.listState($0) == .notLoaded }
-        if store.doctor == nil {
+        if store.doctor == nil, store.doctorError != nil {
+            Text(L("Access check failed", "Zugangsprüfung fehlgeschlagen"))
+            Button(L("Try again", "Nochmal")) { Task { await store.start() } }
+        } else if store.doctor == nil {
             Text(L("Checking access …", "Prüfe Zugang …"))
         } else if connected.isEmpty {
             Text(L("Nothing connected yet", "Noch nichts verbunden"))
@@ -759,14 +769,20 @@ struct MenuBarContent: View {
         ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
         if tipOn { Text(L("Tip: ", "Tipp: ") + Tips.tip()).foregroundStyle(.secondary) }
         // Stopping needs no confirmation in the window either; it is the same cancel as the row's.
-        let active = Array(store.items.values.joined()).filter { $0.state.isActive }.sorted { $0.name < $1.name }
+        let active = store.allItems.filter { $0.state.isActive }.sorted { $0.name < $1.name }
         if !active.isEmpty {
             Divider()
             ForEach(active.prefix(8)) { i in
                 Button(L("Cancel \(Demo.mask(i.name))", "\(Demo.mask(i.name)) abbrechen")) { store.cancel(i) }
             }
             if active.count > 1 {
-                Button(L("Cancel all \(active.count) deploys", "Alle \(active.count) Deploys abbrechen")) { store.cancelAll() }
+                Button(L("Cancel all \(active.count) deploys …", "Alle \(active.count) Deploys abbrechen …")) {
+                    let a = NSAlert()
+                    a.messageText = L("Cancel all \(active.count) deploys?", "Alle \(active.count) Deploys abbrechen?")
+                    a.addButton(withTitle: L("Cancel deploys", "Deploys abbrechen")); a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
+                    NSApp.activate(ignoringOtherApps: true)
+                    if a.runModal() == .alertFirstButtonReturn { store.cancelAll() }
+                }
             }
         }
         Divider()
@@ -783,7 +799,7 @@ struct MenuBarContent: View {
         Button(store.loading.isEmpty ? L("Reload", "Neu laden") : L("Loading …", "Lädt …")) { Task { await store.autoRefresh() } }
             .disabled(!store.loading.isEmpty)
         if let at = store.loadedAt.values.min() {
-            Text(L("As of ", "Stand ") + at.formatted(date: .omitted, time: .shortened)
+            Text(L("As of ", "Stand ") + uiTime(at)
                  + (store.fromCache.isEmpty ? "" : L(" (saved copy)", " (gespeicherte Kopie)")))
         }
         Button(L("Settings …", "Einstellungen …")) {
@@ -824,7 +840,7 @@ struct ProjectWindow: View {
     let key: String
 
     var body: some View {
-        if let i = store.items.values.joined().first(where: { Store.key($0) == key }) {
+        if let i = store.item(key: key) {
             ProjectDetail(store: store, item: i, deployCommit: store.observer ? nil : { sha in store.deployOne(i, preview: false, sha: sha) })
                 .navigationTitle(Demo.mask(i.name))
         } else {

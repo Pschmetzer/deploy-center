@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Deploy Center + Claude Code: let the agent push, you decide what ships</title>
+<title>Deploy Center + Claude Code: you decide what ships</title>
 <meta name="description" content="Works with Claude Code: Claude pushes many small commits, Deploy Center batches them into one Vercel or Render deploy, and Autofix hands failed builds back to Claude.">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
@@ -39,7 +40,7 @@
   "url": "https://deploycenter.app/claude-code/",
   "mainEntityOfPage": "https://deploycenter.app/claude-code/",
   "datePublished": "2026-11-10",
-  "dateModified": "2026-11-12",
+  "dateModified": "2026-11-16",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -132,7 +133,7 @@
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Deploy Center + Claude Code: let the agent push, you decide what ships</h1>
 <p class="answer">Claude Code pushes many small commits, and with auto-deploy on, each one is a paid build on Vercel or Render. Deploy Center turns those builds off, ships everything waiting in one deploy when you decide, and hands failed builds back to Claude to fix.</p>
-<p class="meta">Last updated <time datetime="2026-11-12">12 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p><b>Claude writes and pushes the code. Deploy Center is the other half: you decide what ships, and Claude fixes what breaks.</b> Deploy Center is a free, open-source Mac app that works with Claude Code.</p>
 
@@ -211,6 +212,14 @@ deploys autofix schedule on            # check every 10 minutes</code></pre>
   <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
   <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
   <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+  <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+  <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+  <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+  <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+  <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+  <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+  <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+  <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
 </ul></div>
 </article></main>
 
@@ -222,6 +231,15 @@ deploys autofix schedule on            # check every 10 minutes</code></pre>
       <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
       <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
       <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
       <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
       <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
       <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
@@ -243,5 +261,6 @@ deploys autofix schedule on            # check every 10 minutes</code></pre>
   </div>
   <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
 </div></footer>
+<script src="/js/site.js" defer></script>
 </body>
 </html>

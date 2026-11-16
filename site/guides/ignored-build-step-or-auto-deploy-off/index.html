@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ignored Build Step or auto-deploy off: which one fits? · Deploy Center</title>
+<meta name="description" content="Compare Vercel&#x27;s Ignored Build Step with turning auto-deploy off: what each skips, what still creates a deployment, and when a script is the wrong tool.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/ignored-build-step-or-auto-deploy-off/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Ignored Build Step or auto-deploy off: which one fits? · Deploy Center">
+<meta property="og:description" content="Compare Vercel&#x27;s Ignored Build Step with turning auto-deploy off: what each skips, what still creates a deployment, and when a script is the wrong tool.">
+<meta property="og:url" content="https://deploycenter.app/guides/ignored-build-step-or-auto-deploy-off/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Ignored Build Step or auto-deploy off: which one fits? · Deploy Center">
+<meta name="twitter:description" content="Compare Vercel&#x27;s Ignored Build Step with turning auto-deploy off: what each skips, what still creates a deployment, and when a script is the wrong tool.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Ignored Build Step or auto-deploy off: which one fits?",
+  "description": "Compare Vercel's Ignored Build Step with turning auto-deploy off: what each skips, what still creates a deployment, and when a script is the wrong tool.",
+  "url": "https://deploycenter.app/guides/ignored-build-step-or-auto-deploy-off/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/ignored-build-step-or-auto-deploy-off/",
+  "datePublished": "2026-11-16",
+  "dateModified": "2026-11-16",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Can I keep preview builds and still deploy production by hand?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes, with an Ignored Build Step that skips production: exit 0 skips a build, so bash -c '[ \"$VERCEL_ENV\" = production ] && exit 0 || exit 1' builds previews and leaves production to you. With auto-deploy off in Deploy Center there is no Git connection on Vercel, so a push builds no preview; deploys vercel deploy <project> --preview builds one by hand."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does a skipped build cost anything?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "The Ignored Build Step runs after Vercel has created the deployment and cloned the repository, and it cancels the build before your build command runs. That is much cheaper than a build; your usage page shows how your plan counts it."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Which is less work for many projects?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "An Ignored Build Step is set per project and a broken script builds instead of skipping. deploys vercel autodeploy-off --all turns auto-deploy off for every Vercel project at once."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Can I go back?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes. Remove the Ignored Build Step setting, or run deploys vercel autodeploy-on <project> to connect Git again from the repo Deploy Center wrote down."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Ignored Build Step or auto-deploy off: which one fits?",
+    "item": "https://deploycenter.app/guides/ignored-build-step-or-auto-deploy-off/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>Ignored Build Step or auto-deploy off: which one fits?</h1>
+<p class="answer">Use an <b>Ignored Build Step</b> when most pushes should still build and you can describe the exceptions in a script. <b>Turn auto-deploy off</b> when you want to decide when production goes live: a push starts nothing, and you deploy what changed in one step.</p>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<p>Both stop a push from costing a full build. They work in different places: the Ignored Build Step is a script Vercel runs before each Git build, and turning auto-deploy off in Deploy Center removes the project's Git connection, so a push starts nothing. This page lines them up. Script examples are in <a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step: script examples and pitfalls</a>.</p>
+
+<h2 id="side-by-side">Side by side</h2>
+<table>
+<thead><tr><th></th><th>Ignored Build Step</th><th>Auto-deploy off (Deploy Center)</th></tr></thead>
+<tbody>
+<tr><th scope="row">On a push</th><td>Vercel creates the deployment, clones the repository, runs your check and cancels the build when it exits 0.</td><td>Nothing: the Git connection is removed, so no deployment is created.</td></tr>
+<tr><th scope="row">Who decides what goes live</th><td>The script, for every push.</td><td>You, when you deploy what changed.</td></tr>
+<tr><th scope="row">Preview builds</th><td>Kept for the branches your script lets through.</td><td>None on a push; <code>deploys vercel deploy &lt;project&gt; --preview</code> builds one by hand.</td></tr>
+<tr><th scope="row">Upkeep</th><td>A script per project (or a shared one) that has to be tested; an error builds instead of skipping.</td><td>One command for every project: <code>deploys vercel autodeploy-off --all</code>.</td></tr>
+<tr><th scope="row">Going back</th><td>Remove the setting.</td><td><code>deploys vercel autodeploy-on &lt;project&gt;</code> connects Git again from the repo Deploy Center wrote down.</td></tr>
+</tbody>
+</table>
+
+<h2 id="script">When the Ignored Build Step fits</h2>
+<ul>
+  <li><b>You want previews on feature branches</b> and only need to leave out a few: bot branches, a folder that did not change, a commit that says so.</li>
+  <li><b>One project, one rule.</b> The script is short and nobody else has to maintain it.</li>
+  <li><b>A monorepo</b> where each project should build only when its own folders changed.</li>
+</ul>
+<p>Examples for each are in the <a href="/guides/vercel-ignored-build-step/">script guide</a> and <a href="/guides/skip-vercel-previews-for-bots-and-agents/">skip previews for bots and agents</a>.</p>
+
+<h2 id="off">When turning auto-deploy off fits</h2>
+<ul>
+  <li><b>You want one deploy when you decide</b>, for example after the day's pushes, instead of one build per push.</li>
+  <li><b>Many projects.</b> A rule per project is a lot of upkeep; one command covers all of them.</li>
+  <li><b>Coding agents push all day.</b> Their pushes stop costing builds, and you see what is waiting before it goes live. Estimate the difference with the <a href="/vercel-build-cost-calculator/">build cost calculator</a>.</li>
+</ul>
+<p>Steps: <a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a>. What changes on Vercel and Render: <a href="/docs/auto-deploy/">Auto-deploy off and on</a>.</p>
+
+<h2 id="both">Using both</h2>
+<p>On Vercel the two do not stack. Once the Git connection is removed, a push starts no build, so there is nothing left for the step to skip. If you want previews on some branches, keep the Ignored Build Step and leave auto-deploy on for that project.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Can I keep preview builds and still deploy production by hand?</summary><p>Yes, with an Ignored Build Step that skips production: exit 0 skips a build, so bash -c '[ "$VERCEL_ENV" = production ] &amp;&amp; exit 0 || exit 1' builds previews and leaves production to you. With auto-deploy off in Deploy Center there is no Git connection on Vercel, so a push builds no preview; deploys vercel deploy &lt;project&gt; --preview builds one by hand.</p></details>
+  <details><summary>Does a skipped build cost anything?</summary><p>The Ignored Build Step runs after Vercel has created the deployment and cloned the repository, and it cancels the build before your build command runs. That is much cheaper than a build; your usage page shows how your plan counts it.</p></details>
+  <details><summary>Which is less work for many projects?</summary><p>An Ignored Build Step is set per project and a broken script builds instead of skipping. deploys vercel autodeploy-off --all turns auto-deploy off for every Vercel project at once.</p></details>
+  <details><summary>Can I go back?</summary><p>Yes. Remove the Ignored Build Step setting, or run deploys vercel autodeploy-on &lt;project&gt; to connect Git again from the repo Deploy Center wrote down.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<p class="reference"><b>Reference:</b> <a href="/docs/glossary/#ignored-build-step">Glossary: Ignored Build Step</a> · <a href="/docs/vercel/">Vercel in Deploy Center</a> · <a href="/docs/auto-deploy/">Auto-deploy off and on</a></p>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

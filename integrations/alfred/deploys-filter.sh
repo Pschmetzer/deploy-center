@@ -38,7 +38,7 @@ jq -c --arg q "$query" '
       uid: "\(.platform)/\(.name)",
       title: .name,
       subtitle: ((if .building then "Building" elif failed then "Newest deploy failed (\(.state))" elif .changed then "Changes waiting" else "Up to date" end) + " · \(.platform)"),
-      arg: "deploycenter://select?project=\(.name | @uri)",
+      arg: "deploycenter://select?project=\("\(.platform):\(.name)" | @uri)",
       autocomplete: .name,
       mods: {cmd: {arg: "open \(.name)", subtitle: "Open the site"}}
     }) end)}' <<<"$out"

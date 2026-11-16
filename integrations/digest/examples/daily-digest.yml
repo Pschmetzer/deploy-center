@@ -44,6 +44,8 @@ jobs:
           DEPLOYS_NOTIFY_URL: ${{ secrets.DEPLOYS_NOTIFY_URL }}
           DEPLOYS_AGENT_AUTHORS: ${{ vars.DEPLOYS_AGENT_AUTHORS }}
           DEPLOYS_AGENT_LABELS: ${{ vars.DEPLOYS_AGENT_LABELS }}
+          # The zone of the day in the issue title (e.g. Europe/Berlin); approve-deploy reads the same variable.
+          DEPLOYS_TZ: ${{ vars.DEPLOYS_TZ || 'UTC' }}
         run: |
           set -euo pipefail
           args=(--issue --out digest.md)

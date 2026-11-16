@@ -225,8 +225,8 @@ struct JournalStatsView: View {
             if !f.isEmpty {
                 Text(L("Costliest failures", "Teuerste Fehlschläge")).font(.headline)
                 ForEach(Array(f), id: \.name) { r in
-                    Text(L("\(Demo.mask(r.name)): \(r.failed) failed, about $\(String(format: "%.2f", r.usd))",
-                           "\(Demo.mask(r.name)): \(r.failed) fehlgeschlagen, etwa \(String(format: "%.2f", r.usd)) $")).font(.callout)
+                    Text(L("\(Demo.mask(r.name)): \(r.failed) failed, about $\(decimal(r.usd, 2))",
+                           "\(Demo.mask(r.name)): \(r.failed) fehlgeschlagen, etwa \(decimal(r.usd, 2)) $")).font(.callout)
                 }
             }
         }
@@ -268,11 +268,11 @@ struct JournalStatsView: View {
         }
     }
 
-    private func fmt(_ v: Double) -> String { String(format: "%.1f", v) }
+    private func fmt(_ v: Double) -> String { decimal(v) }
     private func pct(_ v: Double?) -> String { v.map { "\(Int(($0 * 100).rounded())) %" } ?? "–" }
     private func dur(_ s: Double?) -> String {
         guard let s else { return "–" }
         if s < 3600 { return "\(Int(s) / 60):\(String(format: "%02d", Int(s) % 60))" }
-        return String(format: "%.1f h", s / 3600)
+        return decimal(s / 3600) + " h"
     }
 }

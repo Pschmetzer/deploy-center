@@ -1,5 +1,5 @@
 ---
-description: Show what is waiting to go live on Vercel and Render (deploys changed). Read-only.
+description: Show what is waiting to go live on every platform deploys knows (Vercel, Render, Netlify, Cloudflare Pages, Amplify, DigitalOcean, Coolify, deploy hooks) (deploys changed). Read-only.
 disable-model-invocation: true
 allowed-tools: Bash(deploys changed *)
 ---

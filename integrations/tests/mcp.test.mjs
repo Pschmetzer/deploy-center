@@ -1,15 +1,16 @@
 // Tests for integrations/mcp/server.mjs, run from integrations/tests/run.sh.
 // A plain JSON-RPC client over stdio talks to the server; the server runs the stand-in
-// `deploys` from run.sh (DEPLOYS_BIN), which logs each call to $MCP_CALLS. No network.
+// `deploys` from run.sh (DEPLOYS_BIN), which logs each call to $FAKE_MCP_CALLS. No network.
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const server = join(here, "..", "mcp", "server.mjs");
 const fixture = (f) => JSON.parse(readFileSync(join(here, "..", "..", "tests", "fixtures", "savings", f), "utf8"));
-const calls = process.env.MCP_CALLS;
+const calls = process.env.FAKE_MCP_CALLS;
 let fails = 0;
 const ok = (name) => console.log(`ok   mcp: ${name}`);
 const fail = (name, why) => { console.log(`FAIL mcp: ${name}: ${why}`); fails++; };
@@ -21,7 +22,8 @@ const callLog = () => { try { return readFileSync(calls, "utf8"); } catch { retu
 // One server process; requests in, answers matched by id. `elicit` answers the server's own
 // questions (elicitation/create) with a result; without it the client has no elicitation.
 function start(env = {}, { elicit = null } = {}) {
-  const child = spawn(process.execPath, [server], { env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
+  // The hourly cap is kept in a file; tests turn it off unless they test it.
+  const child = spawn(process.execPath, [server], { env: { ...process.env, DEPLOYS_MCP_MAX_PER_HOUR: "0", ...env }, stdio: ["pipe", "pipe", "pipe"] });
   let buf = "", next = 1;
   const asked = [];
   const waiting = new Map();
@@ -69,8 +71,8 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_changed", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_history", "deploys_ledger", "deploys_list", "deploys_logs",
-  "deploys_notes", "deploys_plan", "deploys_risk", "deploys_simulate", "deploys_status"];
+const READ = ["deploys_allowed", "deploys_changed", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_guard_status", "deploys_history", "deploys_ledger", "deploys_list", "deploys_logs",
+  "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -88,6 +90,12 @@ check("prompts and resources are offered", info?.capabilities?.prompts && info?.
   const g = (await s.request("prompts/get", { name: "ship-check", arguments: { project: "app-web" } })).result;
   const gt = g?.messages?.[0]?.content?.text ?? "";
   check("ship-check names the project, the tools, and deploys nothing", /app-web/.test(gt) && /deploys_plan/.test(gt) && /deploys_notes/.test(gt) && /Deploy nothing/.test(gt), gt);
+  const fx = (await s.request("prompts/get", { name: "fix-failed-build", arguments: { project: "app-web" } })).result?.messages?.[0]?.content?.text ?? "";
+  check("fix-failed-build names the project and changes nothing", /app-web/.test(fx) && /deploys_explain/.test(fx) && /Change nothing/.test(fx), fx);
+  const rb = (await s.request("prompts/get", { name: "rollback-check", arguments: { project: "app-web" } })).result?.messages?.[0]?.content?.text ?? "";
+  check("rollback-check reads history and rolls back nothing", /deploys_history/.test(rb) && /Roll back nothing/.test(rb), rb);
+  const noproj = await s.request("prompts/get", { name: "rollback-check", arguments: {} });
+  check("rollback-check needs a project", !!noproj.error, JSON.stringify(noproj));
   const bad = await s.request("prompts/get", { name: "ship-check", arguments: { project: "a;b" } });
   check("ship-check refuses a name that is not one", !!bad.error, JSON.stringify(bad));
   const rl = (await s.request("resources/list")).result?.resources ?? [];
@@ -101,6 +109,32 @@ const names = await s.names();
 check("lists the read tools", JSON.stringify(names) === JSON.stringify(READ), JSON.stringify(names));
 check("no write tool without DEPLOYS_MCP_ALLOW_DEPLOY", !names.includes("deploys_deploy") && !names.includes("deploys_rollback"), JSON.stringify(names));
 check("read tools are marked read-only", (await s.tools()).every((t) => t.annotations?.readOnlyHint === true));
+
+{
+  const ts = await s.tools();
+  check("JSON tools declare an outputSchema", ["deploys_changed", "deploys_status", "deploys_list", "deploys_plan", "deploys_risk"].every((n) => ts.find((t) => t.name === n)?.outputSchema?.type === "object"), JSON.stringify(ts.map((t) => [t.name, !!t.outputSchema])));
+  check("every tool has a title, a description and an object inputSchema", ts.every((t) => t.annotations?.title && t.description?.length > 20 && t.inputSchema?.type === "object" && t.inputSchema.additionalProperties === false), JSON.stringify(ts.filter((t) => !(t.annotations?.title && t.inputSchema?.additionalProperties === false)).map((t) => t.name)));
+  const g = await s.call("deploys_guard_status");
+  check("guard status is read through the CLI, as JSON", !g.error && /guard status --json/.test(callLog()) && g.structured?.on === true, g.text);
+  const al = await s.call("deploys_allowed");
+  check("allowances are read through the CLI", !al.error && /autodeploy allowed --json/.test(callLog()), al.text);
+  await s.call("deploys_logs", { project: "app-web", runtime: true, lines: 20 });
+  check("logs: runtime passes --runtime", /logs app-web 20 --runtime/.test(callLog()), callLog().slice(-300));
+  await s.call("deploys_logs", { project: "app-web", id: "dpl_1" });
+  check("logs: id passes --id", /logs app-web 80 --id dpl_1/.test(callLog()), callLog().slice(-300));
+  const badId = await s.call("deploys_logs", { project: "app-web", id: "a b;c" });
+  check("logs: an id that is not one is refused", badId.error && /(Invalid id|deploy id)/.test(badId.text), badId.text);
+  const both = await s.call("deploys_logs", { project: "app-web", id: "x", runtime: true });
+  check("logs: id and runtime together are refused", both.error && /not both/.test(both.text), both.text);
+  const tl = (await s.request("resources/templates/list")).result?.resourceTemplates ?? [];
+  check("resource templates: status, notes, history of one project", tl.map((t) => t.uriTemplate).join() === "deploys://project/{name}/status,deploys://project/{name}/notes,deploys://project/{name}/history", JSON.stringify(tl));
+  const ps = (await s.request("resources/read", { uri: "deploys://project/app-web/status" })).result;
+  check("resource project status is that project's state", JSON.parse(ps?.contents?.[0]?.text ?? "[]")?.[0]?.name === "app-web", JSON.stringify(ps));
+  const pn = (await s.request("resources/read", { uri: "deploys://project/app-web/notes" })).result;
+  check("resource project notes come as untrusted data", /<untrusted-data/.test(pn?.contents?.[0]?.text ?? ""), JSON.stringify(pn));
+  const pb = await s.request("resources/read", { uri: "deploys://project/a%3Bb/notes" });
+  check("resource project: a name that is not one is an error", !!pb.error, JSON.stringify(pb));
+}
 
 let r = await s.call("deploys_changed");
 check("changed returns the JSON list", !r.error && JSON.stringify(JSON.parse(r.text).map((p) => p.name)) === '["app-web","api"]', r.text);
@@ -134,10 +168,11 @@ check("logs refuses 0 lines", r.error, r.text);
 r = await s.call("deploys_logs", { project: "app-web", lines: "80" });
 check("logs refuses lines as a string", r.error && /lines/.test(r.text), r.text);
 s.stop();
-s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "", ANTHROPIC_API_KEY: "test-key", FAKE_ENV_DUMP: "1", VERCEL_TOKEN: "vt" });
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "", ANTHROPIC_API_KEY: "test-key", FAKE_ENV_DUMP: "1", VERCEL_TOKEN: "vt", NPM_TOKEN: "npm-secret-x", SSH_AUTH_SOCK: "/tmp/agent.sock" });
 await s.init();
 r = await s.call("deploys_doctor");
 check("the CLI gets no model keys of the host, but provider keys", !r.error && !/ANTHROPIC_API_KEY/.test(r.text) && /VERCEL_TOKEN/.test(r.text), r.text.slice(0, 300));
+check("the CLI gets an allowlist: no npm token, no ssh agent of the host", !/NPM_TOKEN|SSH_AUTH_SOCK/.test(r.text) && /PATH/.test(r.text), r.text.slice(0, 300));
 s.stop();
 s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
 await s.init();
@@ -195,6 +230,14 @@ const leaked = ["ghp_abcdefghijklmnop1234", "s3cr3t-value", "hunter2pass", "sk_l
   .filter((x) => r.text.includes(x));
 check("logs: secrets are masked", !r.error && leaked.length === 0, leaked.join(", ") + "\n" + r.text);
 check("logs: the rest of the log stays", r.text.includes("Build failed: missing module") && r.text.includes("[masked]") && r.text.includes("[masked private key]"), r.text);
+{
+  const t0 = Date.now();
+  const rs = await s.call("deploys_logs", { project: "shared-app" });
+  const left = rs.text.split("\n").filter((l) => l.replace(/\[[A-Za-z ]+\]/g, "").replace(/SECRET_KEY=/g, "").includes("SECRET"));
+  check("logs: no secret of the shared fixture survives (same file as iPhone, VS Code, Raycast)", !rs.error && left.length === 0, left.join("\n"));
+  const rh = await s.call("deploys_logs", { project: "huge-app" });
+  check("logs: a 150 000 character line is masked in well under 5 s (no quadratic backtracking)", !rh.error && Date.now() - t0 < 5000, `${Date.now() - t0} ms ${rh.text.slice(0, 120)}`);
+}
 check("logs: names before the secret stay", r.text.includes("VERCEL_TOKEN=[masked]") && r.text.includes("postgres://admin:[masked]@db"), r.text);
 // The fixture the CLI, the iPhone app and the editor add-ons are checked against: every secret in
 // it carries the word SECRET, and none may survive (SECRET_KEY= is a name, not a secret).
@@ -396,6 +439,25 @@ await s.init();
 r = await s.call("deploys_deploy", { project: "app-web" });
 check("DEPLOYS_MCP_CONFIRM=client trusts the client's approval", !r.error && JSON.parse(r.text).id === "dpl_1" && s.asked.length === 0, r.text);
 s.stop();
+
+// The hourly cap survives a restart of the server: a second process sees the first one's starts.
+{
+  const dir = mkdtempSync(join(tmpdir(), "mcp-cap-"));
+  const capEnv = { DEPLOYS_MCP_ALLOW_DEPLOY: "1", DEPLOYS_MCP_MAX_PER_HOUR: "1", DEPLOYS_CONFIG: dir };
+  s = start(capEnv, { elicit: yes });
+  await s.init();
+  r = await s.call("deploys_deploy", { project: "app-web" });
+  s.stop();
+  s = start(capEnv, { elicit: yes });
+  await s.init();
+  const second = await s.call("deploys_deploy", { project: "app-web" });
+  check("the hourly cap holds across a restart of the server", !r.error && second.error && /DEPLOYS_MCP_MAX_PER_HOUR/.test(second.text), second.text);
+  let mode = "";
+  try { mode = (statSync(join(dir, "mcp-starts.json")).mode & 0o777).toString(8); } catch { /* none */ }
+  check("the start log is private (0600)", mode === "600", mode);
+  s.stop();
+  rmSync(dir, { recursive: true, force: true });
+}
 
 // At most DEPLOYS_MCP_MAX_DEPLOYS per run, and one at a time.
 s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", DEPLOYS_MCP_MAX_DEPLOYS: "1" }, { elicit: yes });

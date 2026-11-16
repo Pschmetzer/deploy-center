@@ -3,6 +3,32 @@
 import SwiftUI
 import AppKit
 
+extension View {
+    /// A small icon button still gets a target of about 24 pt (the glyph stays small).
+    func hitArea() -> some View { self.frame(minWidth: 24, minHeight: 24).contentShape(Rectangle()) }
+}
+
+/// The language the app shows, as a Locale: dates and times follow it, not only the Mac's region.
+var uiLocale: Locale { Locale(identifier: isGerman ? "de_DE" : "en_US") }
+/// "9:12 AM" / "09:12", in the app's language.
+func uiTime(_ d: Date) -> String { d.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(uiLocale)) }
+/// "5:00 AM" / "05:00" for a whole hour.
+func uiHour(_ h: Int) -> String {
+    let d = Calendar.current.date(bySettingHour: h, minute: 0, second: 0, of: Date()) ?? Date()
+    return uiTime(d)
+}
+
+/// A number with the decimal mark of the app's language ("12,5" in German), not the C locale's point.
+func decimal(_ v: Double, _ digits: Int = 1) -> String {
+    v.formatted(.number.precision(.fractionLength(digits)).locale(Locale(identifier: isGerman ? "de_DE" : "en_US")))
+}
+
+/// Links that came out of the script's JSON or a model open only as web pages: no file:, no custom schemes.
+enum SafeLink {
+    nonisolated static func ok(_ u: URL) -> Bool { ["https", "http"].contains(u.scheme?.lowercased() ?? "") && u.host?.isEmpty == false }
+    @MainActor static func open(_ u: URL) { if ok(u) { NSWorkspace.shared.open(u) } }
+}
+
 /// Opens Settings when the store asks (Store.openSettings), for code that is not a view; also from
 /// the menu bar, where no main window may be open.
 /// The main window too, when a notification was clicked (Store.windowRequest).
@@ -30,8 +56,7 @@ struct CopyButton: View {
 
     var body: some View {
         Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text(), forType: .string)
+            Pasteboard.copy(text())
             copied = true
             // VoiceOver hears it too, not only the changed label.
             AccessibilityNotification.Announcement(L("Copied", "Kopiert")).post()

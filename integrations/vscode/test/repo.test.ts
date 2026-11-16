@@ -1,27 +1,31 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseRemotes, repoKey, repoSlug, scopeProjects } from "../src/repo";
+import { parseRemotes, repoKey, scopeProjects } from "../src/repo";
 
-test("repoSlug reads every spelling of a remote", () => {
+test("repoKey reads every spelling of a remote", () => {
   for (const r of [
     "git@github.com:me/app.git", "git@github.com:me/app", "https://github.com/me/app", "https://github.com/me/app.git",
     "https://github.com/Me/App/", "ssh://git@github.com/me/app.git", "https://user:tok@github.com/me/app.git",
-    "git://github.com/me/app", "me/app", "Me/App", "  me/app.git\n", "ssh://git@github.com:22/me/app.git",
-  ]) assert.equal(repoSlug(r), "me/app", r);
+    "git://github.com/me/app", "me/app", "Me/App", "  me/app.git\n", "ssh://git@github.com:22/me/app.git", "github.com/me/app",
+  ]) assert.equal(repoKey(r), "github.com/me/app", r);
   // GitLab keeps its host and every subgroup, as the CLI writes it.
   for (const r of ["https://gitlab.com/group/sub/app.git", "git@gitlab.com:group/sub/app.git", "ssh://git@gitlab.com/Group/Sub/App",
-    "gitlab.com/group/sub/app"]) assert.equal(repoSlug(r), "gitlab.com/group/sub/app", r);
-  assert.equal(repoSlug("github.com/me/app"), "me/app");
-  assert.equal(repoSlug("https://git.example.test/me/app"), "git.example.test/me/app");
-  assert.equal(repoSlug(""), null);
-  assert.equal(repoSlug("app"), null);
-  assert.equal(repoSlug("https://github.com/"), null);
+    "gitlab.com/group/sub/app"]) assert.equal(repoKey(r), "gitlab.com/group/sub/app", r);
+  assert.equal(repoKey("https://git.example.test/me/app"), "git.example.test/me/app");
+  assert.equal(repoKey(""), null);
+  assert.equal(repoKey("app"), null);
+  assert.equal(repoKey("https://github.com/"), null);
 });
 
 test("parseRemotes: each URL once", () => {
   const out = "origin\tgit@github.com:me/app.git (fetch)\norigin\tgit@github.com:me/app.git (push)\nfork\thttps://github.com/you/app (fetch)\n\n";
   assert.deepEqual(parseRemotes(out), ["git@github.com:me/app.git", "https://github.com/you/app"]);
   assert.deepEqual(parseRemotes(""), []);
+});
+
+test("parseRemotes: a fork's upstream is not this folder's repo", () => {
+  const out = "origin\thttps://github.com/me/app (fetch)\nupstream\thttps://github.com/them/app (fetch)\n";
+  assert.deepEqual(parseRemotes(out), ["https://github.com/me/app"]);
 });
 
 const ps = [{ name: "a", repo: "me/app" }, { name: "b", repo: "Me/App" }, { name: "c", repo: "me/blog" }, { name: "d", repo: null }];

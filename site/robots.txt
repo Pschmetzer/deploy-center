@@ -1,6 +1,7 @@
 # Everyone, search engines and AI crawlers included, may read the whole site.
 User-agent: *
 Allow: /
+Disallow: /docs/search-index.json
 
 User-agent: GPTBot
 User-agent: OAI-SearchBot
@@ -12,6 +13,12 @@ User-agent: PerplexityBot
 User-agent: Google-Extended
 User-agent: Applebot-Extended
 User-agent: CCBot
+User-agent: Amazonbot
+User-agent: meta-externalagent
+User-agent: DuckAssistBot
+User-agent: MistralAI-User
+User-agent: cohere-ai
 Allow: /
+Disallow: /docs/search-index.json
 
 Sitemap: https://deploycenter.app/sitemap.xml

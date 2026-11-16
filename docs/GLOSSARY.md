@@ -76,3 +76,27 @@ Settings → General → Demo mode replaces project names and domains, for scree
 
 ### GitHub budget
 GitHub's hourly limit of API calls for your login. Under 300 left, Deploy Center reads only the branch heads. `deploys github-budget` shows what is left.
+
+### Deploy window
+A rule that says when deploys are closed (for example Friday afternoon). `deploys window` shows whether it is open and exits 1 while it is closed; `--force "why"` goes through and the reason is written to the journal. See [SAFE-DEPLOY.md](SAFE-DEPLOY.md).
+
+### Verify (health check)
+`deploys verify <project>` asks the live site after a deploy and rolls back on a 5xx answer, unless you pass `--no-rollback`.
+
+### Observer mode
+A mode in which `deploys` only reads: commands that change something are refused. It is turned on with `deploys readonly on`, `DEPLOYS_READONLY`, or an observers list in the shared `deploy-center.json`. See [TEAM.md](TEAM.md).
+
+### Two-person rule
+An optional team rule: a live deploy needs an approval from someone else, kept in the repo's shared `deploy-center.json`, without a server. See [TEAM.md](TEAM.md).
+
+### Autofix routine
+A Claude Code routine you set up once. When a build fails, `deploys autofix` sends it the masked build log and the routine opens a fix pull request. It never merges and never deploys. See [AUTOFIX.md](AUTOFIX.md).
+
+### Guard
+`deploys guard` notices when auto-deploy has come back on by itself and turns it off again; it can also allow auto-deploy for a few hours on purpose. See [GUARD.md](GUARD.md).
+
+### MCP server
+The `deploys` server that lets an AI agent in Claude Code, Cursor or Codex read what is waiting and, after your confirmation, deploy. See [integrations/mcp](../integrations/mcp/).
+
+### Simulate and ledger
+`deploys simulate` estimates what auto-deploy would cost a month before you switch it off; `deploys ledger` estimates what turning it off saved. Both are marked as estimates. See [SAVINGS.md](SAVINGS.md).

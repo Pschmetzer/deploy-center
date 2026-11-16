@@ -33,11 +33,6 @@ struct Doctor: Decodable {
             values = v
         }
     }
-    private struct AnyKey: CodingKey {
-        var stringValue: String; var intValue: Int? { nil }
-        init(stringValue: String) { self.stringValue = stringValue }
-        init?(intValue: Int) { nil }
-    }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // A provider's own field is read under "providers":{"<p>":{…}} (newer scripts send it there and,
@@ -60,13 +55,6 @@ struct Doctor: Decodable {
     private enum CodingKeys: String, CodingKey { case jq, vercelCli, vercelApi, vercelLoggedIn, githubCli, githubLoggedIn, renderKey, readonly, perl, curl, jobsMissing, providers }
 }
 
-/// One element of a list that may not decode; the rest of the list still does.
-struct Lossy<T: Decodable>: Decodable {
-    let value: T?; let error: String?
-    init(from decoder: Decoder) throws {
-        do { value = try T(from: decoder); error = nil } catch { value = nil; self.error = "\(error)" }
-    }
-}
 /// What the script prints instead of a list when a command fails with `--json`.
 struct ScriptFailure: Decodable { let error: String }
 /// A list where a broken element is skipped and named, not the reason the whole list is gone.
@@ -222,100 +210,6 @@ struct CIReply: Decodable { let state: String; let reason: String }
 /// `deploys window --json`: whether the deploy window is closed now, and by which rule.
 struct WindowReply: Decodable { let denied: Bool; let reason: String? }
 
-/// ~/.config/deploys/window.json, the rules `deploys window` reads (docs/SAFE-DEPLOY.md), for
-/// editing in the app. Keys the app does not know stay as they are when it is saved.
-struct DeployWindowConfig: Equatable {
-    struct Rule: Equatable, Identifiable {
-        var id = UUID()
-        /// "mon" … "sun"; empty is every day.
-        var days: [String] = []
-        /// "2026-12-24"; empty is any date.
-        var dates: [String] = []
-        /// "15:00"; nil is 00:00 (from) or 24:00 (to). A "from" after "to" runs over midnight.
-        var from: String? = nil
-        var to: String? = nil
-        var reason: String? = nil
-        static func == (a: Rule, b: Rule) -> Bool {
-            a.days == b.days && a.dates == b.dates && a.from == b.from && a.to == b.to && a.reason == b.reason
-        }
-    }
-    var deny: [Rule] = []
-
-    static var url: URL {
-        let dir = ProcessInfo.processInfo.environment["DEPLOYS_CONFIG"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/deploys")
-        return dir.appendingPathComponent("window.json")
-    }
-    /// The file exists but is not a JSON object (a typo by hand): the app does not write over it.
-    static func unreadable(_ data: Data?) -> Bool {
-        guard let data, !data.isEmpty else { return false }
-        return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]) == nil
-    }
-    static let weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-
-    /// "9:5" is not a time; "09:05" and "24:00" are.
-    static func validTime(_ s: String) -> Bool {
-        let p = s.split(separator: ":", omittingEmptySubsequences: false)
-        guard p.count == 2, p[0].count == 2, p[1].count == 2, let h = Int(p[0]), let m = Int(p[1]) else { return false }
-        return (0...23).contains(h) && (0...59).contains(m) || (h == 24 && m == 0)
-    }
-    /// Why the rules cannot be saved, or nil.
-    var problem: String? {
-        for r in deny {
-            for t in [r.from, r.to].compactMap({ $0 }) where !Self.validTime(t) {
-                return L("\"\(t)\" is not a time like 15:00", "\"\(t)\" ist keine Uhrzeit wie 15:00")
-            }
-            if let d = r.days.first(where: { !Self.weekdays.contains($0) }) { return L("Unknown day \"\(d)\"", "Unbekannter Tag \"\(d)\"") }
-        }
-        return nil
-    }
-
-    static func parse(_ data: Data?) -> DeployWindowConfig {
-        guard let data, let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let rules = root["deny"] as? [[String: Any]] else { return DeployWindowConfig() }
-        return DeployWindowConfig(deny: rules.map { r in
-            Rule(days: (r["days"] as? [String] ?? []).map { String($0.lowercased().prefix(3)) }, dates: r["dates"] as? [String] ?? [],
-                 from: r["from"] as? String, to: r["to"] as? String, reason: r["reason"] as? String)
-        })
-    }
-
-    /// The file's text with `deny` replaced; other keys of `old` are kept.
-    func encoded(over old: Data?) throws -> Data {
-        var root = old.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
-        root["deny"] = deny.map { r -> [String: Any] in
-            var o: [String: Any] = [:]
-            if !r.days.isEmpty { o["days"] = r.days }
-            if !r.dates.isEmpty { o["dates"] = r.dates }
-            if let f = r.from, !f.isEmpty { o["from"] = f }
-            if let t = r.to, !t.isEmpty { o["to"] = t }
-            if let w = r.reason, !w.isEmpty { o["reason"] = w }
-            return o
-        }
-        var d = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        d.append(0x0A)
-        return d
-    }
-
-    static func load() -> DeployWindowConfig { parse(try? Data(contentsOf: url)) }
-    /// Writes the rules (none: `"deny": []`, other keys stay). An error text when it failed.
-    func save() -> String? {
-        if let p = problem { return p }
-        let u = Self.url
-        let old = try? Data(contentsOf: u)
-        if Self.unreadable(old) {
-            return L("window.json is not valid JSON; nothing was changed. Fix it by hand first.",
-                     "window.json ist kein gültiges JSON; es wurde nichts geändert. Erst von Hand korrigieren.")
-        }
-        // No file and no rules: nothing to write.
-        if deny.isEmpty && old == nil { return nil }
-        do {
-            try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try encoded(over: old).write(to: u, options: .atomic)
-            return nil
-        } catch { return error.localizedDescription }
-    }
-}
-
 struct Started: Decodable { let id: String; let url: String?; let state: String? }
 struct StatusReply: Decodable { let id: String; let url: String?; let state: String?; let error: String? }
 
@@ -407,163 +301,6 @@ struct Item: Identifiable {
         guard let h = headAt else { return false }
         guard let l = lastAt else { return true }
         return h > l.addingTimeInterval(60)
-    }
-}
-
-/// A Mac notification when a deploy ends while the window is in the background.
-/// Permission is asked at the first deploy, when a reminder is turned on, or – if neither came first –
-/// when the first alarm (stale commits, budget) is due, which may be while the window is in the
-/// background. macOS asks the person only once.
-/// An ad-hoc build may be refused; then nothing shows.
-@MainActor
-enum Notify {
-    /// Notifications need an app bundle; a bare binary (the tests) would crash asking for them.
-    static var available: Bool { Bundle.main.bundleIdentifier != nil }
-    static func ask(then: (@Sendable (Bool) -> Void)? = nil) {
-        guard available else { then?(false); return }
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in then?(granted) }
-    }
-    /// A reminder the person set up themselves: shown whether or not the window is in front.
-    static func remind(_ title: String, _ body: String, id: String = NotifyRouter.reminderId) {
-        add(title, body, id: id)
-    }
-    /// `project`: a click on it shows that project in the window. `key` (Store.key) with `failed`:
-    /// the notification has "Show log" (and with `rollBack`, a live site that is broken, "Roll back …"),
-    /// which open the window there; nothing runs by itself.
-    /// `autoOn` with `key`: auto-deploy came back on; the notification offers "Turn off".
-    static func post(_ title: String, _ body: String, project: String? = nil, key: String? = nil, failed: Bool = false, rollBack: Bool = false, autoOn: Bool = false, silent: Bool = false) {
-        let d = UserDefaults.standard
-        guard available, !NSApp.isActive, d.object(forKey: "notifications") as? Bool ?? true else { return }
-        // Quiet hours (Settings → Notifications): only failures still come.
-        if !failed, quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo")) { return }
-        let category = autoOn && key != nil ? NotifyRouter.autoOnCategory
-            : failed && key != nil ? (rollBack ? NotifyRouter.brokenCategory : NotifyRouter.failedCategory) : nil
-        add(title, body, id: UUID().uuidString, category: category, project: project, key: key, silent: silent)
-        // A failure nobody looked at comes back once, 30 minutes later (Settings), unless the app was opened.
-        if failed, let key, d.bool(forKey: "remindFailures") {
-            add(L("Still failing: ", "Immer noch fehlgeschlagen: ") + title, body, id: escalationPrefix + key,
-                category: category, project: project, key: key, after: 30 * 60)
-        }
-    }
-    /// Whether a `post` that is not a failure would show now (the window in the background, the
-    /// switch on, outside quiet hours).
-    static var wouldShow: Bool {
-        let d = UserDefaults.standard
-        return available && !NSApp.isActive && d.object(forKey: "notifications") as? Bool ?? true
-            && !quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo"))
-    }
-    static let escalationPrefix = "again|"
-    static let soundsKey = "resultSounds"
-    /// The second reminders that wait: gone once the person is back in the app, or the project ran again.
-    static func dropEscalations(_ key: String? = nil) {
-        guard available else { return }
-        let center = UNUserNotificationCenter.current()
-        if let key { center.removePendingNotificationRequests(withIdentifiers: [escalationPrefix + key]); return }
-        center.getPendingNotificationRequests { reqs in
-            center.removePendingNotificationRequests(withIdentifiers: reqs.map(\.identifier).filter { $0.hasPrefix(escalationPrefix) })
-        }
-    }
-    /// Whether `hour` (0–23) is inside quiet hours from `from` to `to` (both 0: off). 22 to 7 runs over midnight.
-    nonisolated static func quiet(hour: Int, from: Int, to: Int) -> Bool {
-        guard from != to else { return false }
-        return from < to ? (from..<to).contains(hour) : (hour >= from || hour < to)
-    }
-    /// The countdown before an automatic rollback: shown even with the window in front, with Cancel.
-    static func countdown(_ title: String, _ body: String, id: String) {
-        add(title, body, id: id, category: NotifyRouter.rollbackCategory)
-    }
-    static func remove(_ id: String) {
-        guard available else { return }
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
-    }
-    /// Asks first only when the person was never asked, so the first alarm of a run is not lost.
-    private static func add(_ title: String, _ body: String, id: String, category: String? = nil, project: String? = nil,
-                            key: String? = nil, after: TimeInterval? = nil, silent: Bool = false) {
-        guard available else { return }
-        Task {
-            let center = UNUserNotificationCenter.current()
-            switch await center.notificationSettings().authorizationStatus {
-            case .authorized, .provisional: break
-            case .notDetermined:
-                guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
-            default: return
-            }
-            let c = UNMutableNotificationContent()
-            c.title = title; c.body = body
-            // A deploy's end with the result sounds on already rang once.
-            c.sound = silent ? nil : .default
-            if let category { c.categoryIdentifier = category }
-            var info: [String: String] = [:]
-            if let project { info["project"] = project }
-            if let key { info["key"] = key }
-            c.userInfo = info
-            // Many deploys ending together are one stack in Notification Center, not a wall.
-            if category != NotifyRouter.rollbackCategory && id != "daily-reminder" { c.threadIdentifier = "deploys" }
-            let trigger = after.map { UNTimeIntervalNotificationTrigger(timeInterval: $0, repeats: false) }
-            try? await center.add(UNNotificationRequest(identifier: id, content: c, trigger: trigger))
-        }
-    }
-}
-
-/// The Cancel button of the rollback countdown, and the countdown shown while the app is in front.
-/// Other notifications behave as before: not shown while the app is in front.
-final class NotifyRouter: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
-    static let shared = NotifyRouter()
-    static let rollbackCategory = "rollback-countdown"
-    /// The daily reminder: the person asked for it, so it shows with the app in front too.
-    static let reminderId = "daily-reminder"
-    static func showsInFront(_ n: UNNotificationRequest) -> Bool {
-        n.content.categoryIdentifier == rollbackCategory || n.identifier == reminderId
-    }
-    static let cancelAction = "cancel-rollback"
-    static let failedCategory = "deploy-failed"
-    static let brokenCategory = "live-broken"
-    static let logAction = "show-log"
-    static let rollbackAction = "ask-rollback"
-    static let autoOnCategory = "auto-on-again"
-    static let autoOffAction = "auto-off"
-    /// "Show log" / "Roll back …" of a failure, with the project's key: the window opens there.
-    var onAction: (@MainActor (_ action: String, _ key: String) -> Void)?
-    /// Gets the notification's id when Cancel is clicked.
-    var onCancel: (@MainActor (String) -> Void)?
-    /// A click on the notification itself, with the project it names (if any).
-    var onOpen: (@MainActor (String?) -> Void)?
-
-    func install() {
-        let center = UNUserNotificationCenter.current()
-        let cancel = UNNotificationAction(identifier: Self.cancelAction, title: L("Cancel", "Abbrechen"), options: [])
-        let log = UNNotificationAction(identifier: Self.logAction, title: L("Show log", "Log zeigen"), options: [.foreground])
-        let back = UNNotificationAction(identifier: Self.rollbackAction, title: L("Roll back …", "Zurückrollen …"), options: [.foreground])
-        let off = UNNotificationAction(identifier: Self.autoOffAction, title: L("Turn off", "Ausschalten"), options: [])
-        center.setNotificationCategories([UNNotificationCategory(identifier: Self.rollbackCategory, actions: [cancel],
-                                                                 intentIdentifiers: [], options: []),
-                                          UNNotificationCategory(identifier: Self.failedCategory, actions: [log],
-                                                                 intentIdentifiers: [], options: []),
-                                          UNNotificationCategory(identifier: Self.brokenCategory, actions: [log, back],
-                                                                 intentIdentifiers: [], options: []),
-                                          UNNotificationCategory(identifier: Self.autoOnCategory, actions: [off],
-                                                                 intentIdentifiers: [], options: [])])
-        center.delegate = self
-    }
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
-                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler(Self.showsInFront(notification.request) ? [.banner, .sound] : [])
-    }
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
-                                withCompletionHandler completionHandler: @escaping () -> Void) {
-        let id = response.notification.request.identifier
-        let info = response.notification.request.content.userInfo
-        if response.actionIdentifier == Self.cancelAction { Task { @MainActor in self.onCancel?(id) } }
-        else if [Self.logAction, Self.rollbackAction, Self.autoOffAction].contains(response.actionIdentifier), let key = info["key"] as? String {
-            let a = response.actionIdentifier
-            Task { @MainActor in self.onAction?(a, key) }
-        }
-        else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-            let project = response.notification.request.content.userInfo["project"] as? String
-            Task { @MainActor in self.onOpen?(project) }
-        }
-        completionHandler()
     }
 }
 
@@ -863,13 +600,7 @@ struct AllowanceReport: Decodable {
 
 // MARK: - Tolerant reading of the Settings parts: an older or newer script may leave a field out.
 
-private struct AnyKey: CodingKey {
-    var stringValue: String; var intValue: Int? { nil }
-    init(_ s: String) { stringValue = s }
-    init?(stringValue: String) { self.stringValue = stringValue }
-    init?(intValue: Int) { nil }
-}
-private extension KeyedDecodingContainer where K == AnyKey {
+extension KeyedDecodingContainer where K == AnyKey {
     func opt<T: Decodable>(_ key: String, _ type: T.Type = T.self) -> T? { (try? decodeIfPresent(T.self, forKey: AnyKey(key))) ?? nil }
 }
 

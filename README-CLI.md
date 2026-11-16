@@ -18,11 +18,12 @@ Options go after `sh -s --`:
 
 ```bash
 curl -fsSL https://deploycenter.app/install.sh | sh -s -- --prefix /usr/local     # /usr/local/bin; asks for sudo only if needed, and says so
-curl -fsSL https://deploycenter.app/install.sh | sh -s -- --version 0.8.0         # a given release
+curl -fsSL https://deploycenter.app/install.sh | sh -s -- --version <x.y.z>       # a given release
 curl -fsSL https://deploycenter.app/install.sh | sh -s -- --uninstall             # remove it again (config stays)
 ```
 
 To read the script first: `curl -fsSLO https://deploycenter.app/install.sh`, then `sh install.sh --help`.
+In CI, fetch a copy that is pinned to one release and installs that release by default: `curl -fsSL https://deploycenter.app/install/<x.y.z>.sh | sh` (a release's copy is the script as of its tag; `--version latest` still asks for the newest). Add `--sha256 <hash>` to pin the tarball too.
 It installs the files into `<prefix>/lib/deploys/` and a small launcher into `<prefix>/bin/deploys`,
 then lists what is missing (`jq`, `gh`, `vercel`, …) with the install command for your system.
 
@@ -95,6 +96,9 @@ No login, no keychain: keys come from the environment and are never printed.
 | `AWS_PROFILE` or `DEPLOYS_AMPLIFY_PROFILE`, `AWS_REGION` | AWS Amplify, through the `aws` CLI |
 | `DIGITALOCEAN_TOKEN` | DigitalOcean App Platform |
 | `COOLIFY_TOKEN`, `COOLIFY_URL` | Coolify, and the URL of your instance |
+| `DEPLOYS_VERCEL_TEAM` | the Vercel team id, if the token sees several teams |
+| `DEPLOYS_CLI_TIMEOUT` | seconds a `gh`, `glab` or `vercel` call may take (default 90; `0` no limit) |
+| `DEPLOYS_NO_GITHUB` | `1`: ask no git host (nothing counts as changed then) |
 | `DEPLOYS_CONFIG` | config folder (default `~/.config/deploys`); keep `vercel-repos.json` there between runs |
 
 The opt-in hosts are off until `deploys providers enable <name>`; see [docs/PROVIDERS.md](docs/PROVIDERS.md).
@@ -107,7 +111,7 @@ Vercel needs two things in CI that a Mac has already: the Vercel CLI, and `verce
 out; without the file, no Vercel project is deployable. Keep the config folder between runs:
 
 ```yaml
-- run: curl -fsSL https://deploycenter.app/install.sh | sh -s -- --version 0.9.1
+- run: curl -fsSL https://deploycenter.app/install.sh | sh -s -- --version <x.y.z>   # pin a release, see the Releases page
 - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 - run: npm i -g vercel
 - uses: actions/cache@v4

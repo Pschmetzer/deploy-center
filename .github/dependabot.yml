@@ -25,3 +25,7 @@ updates:
     directory: /integrations/docker
     schedule:
       interval: weekly
+    # Node's odd releases (23, 25, …) are never long-term supported: only LTS bases are proposed.
+    ignore:
+      - dependency-name: node
+        versions: ["23.x", "25.x", "27.x"]

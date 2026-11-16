@@ -2,9 +2,20 @@
 
 ## Unreleased
 
+- Round 7 (audit): ~230 fixes and additions across app, CLI, integrations and site. Security: masking is line-based (no ReDoS) and knows more key formats; error texts are masked before notifications, journal and exports; MCP asks with a sanitized commit line and passes only an allowed environment; Slack/Markdown injection in digests is escaped; install.sh bounds downloads, refuses unsafe archive paths and gains `--sha256`, `--dry-run`, `--quiet`. App: Touch ID for observer/guard/critical single deploys, VoiceOver rows and actions, locale-correct dates and numbers, no frozen list after an overdue deploy. CLI: quoting and `set -e` fixes, safer locks and temp files, schema matches the code. Site: five host guides plus three cost/automation guides, German FAQ and safe-start, host matrix, `AGENTS.md`, `CITATION.cff`. Details: `docs/IDEEN-7-*-status.md`, `integrations/STATUS-round-7.md`.
 - App: the switch "Only when checks are green" is gone (deploy confirmation and Settings → Deploy). A red CI is shown on the row and never holds a deploy started by hand back. The CLI keeps `--when-green`.
 
 ## 0.10.0
+
+### Highlights
+
+- CLI: `deploys plan` and `deploys budget` say what the daily deploy costs before it starts, rules and `deploys schedule daily` run it by your rules, and `deploys hooks install` warns before a push.
+- Mac app: a rule editor, Touch ID or password before risky steps (opt-in), a site watch after going live with uptime per project, and a TLS certificate warning.
+- iPhone app: Live Activity, Siri and Shortcuts (read-only), Spotlight, cancel a build, Lock Screen and failed-builds widgets.
+- All eight hosts follow one status contract, so `watch` and `deploy --wait` end on every one of them.
+- MCP server: a client that cannot ask you first is refused by default; the GitHub Action can wait for builds.
+
+### All changes
 
 - **Fixed:** "Vercel could not be loaded … jq: invalid JSON text passed to --argjson" after a single failed Vercel call. Under macOS's bash 3.2 an empty fallback became `{\}`; the list now loads with `partial` rows instead of failing, and `vercel_call` has a time limit and retries reads (never writes).
 - CLI: `deploys plan [--when-green] [--json]` shows what `deploy-changed --yes` would start and roughly what it costs; `deploys price set`, `deploys budget set <usd> [--strict]` stops `deploy-changed` over budget unless `--force "why"`.
@@ -196,7 +207,7 @@
 - The CLI installs on its own (macOS, Linux, WSL, CI): `curl -fsSL https://deploycenter.app/install.sh | sh` (SHA-256 checked, `~/.local/bin`, sudo only for a prefix that needs it; `--prefix`, `--version`, `--uninstall`) or `brew install pschmetzer/tap/deploys`. Releases carry `deploys-cli-<version>.tar.gz` and `checksums.txt` next to the app zip. See `README-CLI.md`.
 - Claude Code plugin in `integrations/claude-code/`: a skill, `/deploys-*` commands and a read-only reminder after `git push`; install with `/plugin marketplace add Pschmetzer/deploy-center`. See `docs/CLAUDE-CODE.md`.
 - `providers/amplify.sh`: AWS Amplify Hosting, opt-in. Auto-build off per branch, deploy (`start-job RELEASE`, with `--sha`), cancel, logs, and rollback by rebuilding an earlier commit, through the `aws` CLI. See `docs/providers/amplify.md`.
-- Claude in the app (opt-in, off by default, your own Anthropic API key): *Ask Claude* in the detail sheet and build log explains a failed build (with *Hand to Autofix*), writes plain release notes in English or German, and answers "Is this safe to ship?". Settings → Claude in the app: key in the keychain, Verify, model, monthly token cap and usage. CLI: `deploys ai explain|notes|ship <project>`. Only masked text is sent; the masker now also hides email addresses. See `docs/CLAUDE.md`.
+- Claude in the app (opt-in, off by default, your own Anthropic API key): *Ask Claude* in the detail sheet and build log explains a failed build (with *Hand to Autofix*), writes plain release notes in English or German, and answers "Is this safe to ship?". Settings → Claude in the app: key in the keychain, Verify, model, monthly token cap and usage. CLI: `deploys ai explain|notes|ship <project>`. Only masked text is sent; the masker now also hides email addresses. See `docs/CLAUDE-IN-APP.md`.
 - `examples/claude-pr-ship-check.yml`: on each PR, Anthropic's Claude Code GitHub Action comments "What this ships" from `deploys changed --json`.
 - `integrations/mcp/`: an MCP server for AI coding agents. Read-only by default (`changed`, `status`, `explain`, `notes`, `logs`, `doctor`); deploy and rollback of one project per call only with `DEPLOYS_MCP_ALLOW_DEPLOY=1`.
 - Safe deploys (see `docs/SAFE-DEPLOY.md`): `deploy-changed --when-green [--wait 30m]` deploys only commits whose CI passed (and waits for running checks); `deploys verify <project>` checks the site after a deploy and rolls back after a countdown; `window.json` closes deploy windows (`--force "why"` goes to the journal); `deploys risk <project>` scores the waiting diff green/yellow/red. New: `deploys deploy <project>`, `deploys ci`, `deploys window`.

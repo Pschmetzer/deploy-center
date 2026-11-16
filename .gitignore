@@ -5,5 +5,7 @@ docs/IDEEN-PRIVAT.md
 marketing/
 dist/
 site/docs/
+site/install/
 vendor/
 __pycache__/
+.claude/worktrees/

@@ -117,8 +117,7 @@ struct RulesConfig: Equatable {
         }
         if rules.isEmpty && old == nil { return nil }
         do {
-            try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try encoded(over: old).write(to: u, options: .atomic)
+            try PrivateFile.write(try encoded(over: old), to: u)
             return nil
         } catch { return error.localizedDescription }
     }
@@ -146,6 +145,12 @@ struct RulesSettings: View {
     @State private var error: String?
 
     var body: some View {
+        content.onAppear {
+            // Changed by the CLI or by hand while Settings was closed: read again, unless edits wait to be saved.
+            if config == saved { let fresh = RulesConfig.load(); config = fresh; saved = fresh }
+        }
+    }
+    @ViewBuilder private var content: some View {
         Section {
             if config.rules.isEmpty {
                 Text(L("No rules. A rule says what happens with waiting commits, e.g. docs go out by themselves once CI is green.",

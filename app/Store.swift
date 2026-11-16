@@ -39,7 +39,7 @@ final class Store: ObservableObject {
     func staleNote(_ part: String) -> String? {
         guard extrasFailedAt[part] != nil else { return nil }
         guard let at = extrasLoadedAt[part] else { return L("Could not be read", "Ließ sich nicht lesen") }
-        return L("As of ", "Stand ") + at.formatted(Calendar.current.isDateInToday(at) ? .dateTime.hour().minute() : .dateTime.day().month().hour().minute())
+        return L("As of ", "Stand ") + at.formatted((Calendar.current.isDateInToday(at) ? Date.FormatStyle().hour().minute() : Date.FormatStyle().day().month().hour().minute()).locale(uiLocale))
     }
     func loadExtras() async {
         guard !loadingExtras else { return }
@@ -63,7 +63,7 @@ final class Store: ObservableObject {
             note("costs", r)
         }
         if let r = await t { if case .success(let v) = r { triggers = v }; note("triggers", r) }
-        if let r = await b { if case .success(let v) = r { githubBudget = v; reloadWhenBudgetResets(v) }; note("github-budget", r) }
+        if let r = await b { if case .success(let v) = r { githubBudget = v; SavingsModel.shared.lastBudget = v; reloadWhenBudgetResets(v) }; note("github-budget", r) }
     }
 
     /// The GitHub budget is (nearly) spent: one reload shortly after it resets, so the counts come
@@ -121,7 +121,7 @@ final class Store: ObservableObject {
         let days = d.integer(forKey: "staleDays")
         let today = localDay()
         guard days > 0, d.string(forKey: "lastStaleAlarm") != today else { return }
-        let old = items.values.joined().filter { i in
+        let old = allItems.filter { i in
             i.hasNewCommits && i.state == .idle && i.deployable && !isHidden(i)
                 && (i.oldestPendingAt.map { Date().timeIntervalSince($0) > Double(days) * 86400 } ?? false)
         }
@@ -360,14 +360,14 @@ final class Store: ObservableObject {
         // job does this too, but it may not be running, and then a merged fix said "fixing" for hours.
         // Before the first status (nil): once, which also loads a schedule launchd dropped.
         if autofix?.fires.contains(where: { RowAutofix.needsSync($0) }) ?? true,
-           Date().timeIntervalSince(lastAutofixSync) > 180 {
+           Date().timeIntervalSince(lastAutofixSync) > Timing.autofixSync {
             lastAutofixSync = Date()
             // A failure is logged and marked, so a "fixing" that does not move has a reason somewhere;
             // a script without `autofix sync`, or one that failed, is not asked again for an hour.
             do { _ = try await Tool.run(["autofix", "sync"], timeout: 90); extrasFailedAt["autofix-sync"] = nil }
             catch is CancellationError {}
             catch {
-                lastAutofixSync = Date().addingTimeInterval(3600)
+                lastAutofixSync = Date().addingTimeInterval(Timing.autofixBackoff)
                 extrasFailedAt["autofix-sync"] = Date(); Log.write("autofix sync: \(error.localizedDescription)")
             }
         }
@@ -390,12 +390,17 @@ final class Store: ObservableObject {
 
     /// Hand-overs the person waved away ("No fix PR" read and done with), kept on this Mac.
     @Published private(set) var dismissedFires: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "autofixDismissed") ?? [])
+    /// Oldest first, so the cap of 100 drops the oldest, not random ones.
+    private var dismissedOrder: [String] = UserDefaults.standard.stringArray(forKey: "autofixDismissed") ?? []
     nonisolated static func fireKey(_ i: Item, _ f: AutofixReport.Fire) -> String { "\(i.platform.cli)/\(i.name)@\(Int(f.at))" }
     /// Hides the row's autofix chip until a newer hand-over; the button is free again.
     func dismissAutofix(_ i: Item) {
         guard let f = (fireIndex[i.name] ?? []).filter({ ($0.platform?.lowercased() ?? i.platform.cli) == i.platform.cli }).max(by: { $0.at < $1.at }) else { return }
-        dismissedFires.insert(Self.fireKey(i, f))
-        UserDefaults.standard.set(Array(Array(dismissedFires).suffix(100)), forKey: "autofixDismissed")
+        let key = Self.fireKey(i, f)
+        dismissedOrder.removeAll { $0 == key }; dismissedOrder.append(key)
+        if dismissedOrder.count > 100 { dismissedOrder.removeFirst(dismissedOrder.count - 100) }
+        dismissedFires = Set(dismissedOrder)
+        UserDefaults.standard.set(dismissedOrder, forKey: "autofixDismissed")
     }
     func allowance(_ i: Item, now: Date = Date()) -> AutoDeployAllowance? {
         allowances.first { $0.covers(i) && $0.expiresAt > now }
@@ -404,7 +409,7 @@ final class Store: ObservableObject {
     /// Failed builds a Claude session is working on, over both platforms (the menu bar).
     var fixingCount: Int {
         guard autofix != nil else { return 0 }
-        return items.values.joined().filter { if case .fixing? = autofixState($0) { return true } else { return false } }.count
+        return allItems.filter { if case .fixing? = autofixState($0) { return true } else { return false } }.count
     }
     /// The button: the last deploy failed and no session or fix PR is on it already.
     func canFixWithClaude(_ i: Item) -> Bool {
@@ -483,7 +488,7 @@ final class Store: ObservableObject {
 
     /// A toast and a line in the messages, names scrubbed in demo mode.
     private func tell(_ title: String, _ body: String, ok: Bool, key: String) {
-        let b = Demo.scrub(body, items: Array(items.values.joined()))
+        let b = Demo.scrub(body, items: allItems)
         let text = title + (b.isEmpty ? "" : " – " + b)
         show(Toast(text: text, ok: ok))
         let m = Message(date: Date(), text: text, ok: ok, project: key)
@@ -599,16 +604,6 @@ final class Store: ObservableObject {
             MainActor.assumeIsolated { Notify.dropEscalations() }
         }
         // After sleep the lists can be hours old, and the daily reminder may be overdue.
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.screensAsleep = true }
-        }
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.screensAsleep else { return }
-                self.screensAsleep = false
-                await self.autoRefresh(); self.remindIfDue()
-            }
-        }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 5_000_000_000)   // the network needs a moment
@@ -630,7 +625,8 @@ final class Store: ObservableObject {
         // More builds at once in Settings: start what waits now, not when a running deploy ends.
         knownParallel = maxParallel
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
+            // Every write to the preferences posts this (build times, site checks …): look first, start nothing.
+            MainActor.assumeIsolated {
                 guard let self, self.maxParallel != self.knownParallel else { return }
                 self.knownParallel = self.maxParallel; self.pump()
             }
@@ -801,7 +797,7 @@ final class Store: ObservableObject {
             fromCache.remove(p); loadedAt[p] = Date(); lastLoadError[p] = nil
             recordHistory()
             writeSnapshot()
-            Spotlight.update(Array(items.values.joined()).filter { !isHidden($0) })
+            Spotlight.update(allItems.filter { !isHidden($0) })
             checkStale()
         } catch {
             guard loadGeneration[p] == gen else { return }
@@ -864,7 +860,7 @@ final class Store: ObservableObject {
     }
     /// "Turn off" from the toast or the notification, by `Store.key`.
     func turnOffAutoDeploy(key: String) {
-        guard !observer, let i = items.values.joined().first(where: { Self.key($0) == key }), i.auto else { return }
+        guard !observer, let i = item(key: key), i.auto else { return }
         Task { await turnOffAutoDeploy(i) }
     }
 
@@ -913,20 +909,21 @@ final class Store: ObservableObject {
         if doctor == nil { await start(); return }
         // Something was missing (a login, the Render key): ask again, at most every 30 minutes.
         if let d = doctor, !(d.vercelLoggedIn && d.vercelApi && d.renderKey && d.githubLoggedIn != false),
-           Date().timeIntervalSince(lastDoctor) > 1800 {
+           Date().timeIntervalSince(lastDoctor) > Timing.doctorEvery {
             lastDoctor = Date()
             if let fresh = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { doctor = fresh; doctorError = nil }
         }
         // Only the platform with a deploy under way is left alone; the other one stays current.
-        let v = canLoad(.vercel) && !(items[.vercel] ?? []).contains { $0.state.isActive }
-        let r = canLoad(.render) && !(items[.render] ?? []).contains { $0.state.isActive }
+        // A deploy that is "overdue" (no result after 40 min) no longer holds the list back: a reload keeps its state anyway.
+        let v = canLoad(.vercel) && !(items[.vercel] ?? []).contains { $0.state.isActive && $0.state != Self.overdueState }
+        let r = canLoad(.render) && !(items[.render] ?? []).contains { $0.state.isActive && $0.state != Self.overdueState }
         async let a: Void = v ? load(.vercel) : ()
         async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
         await loadAgentStatus()
         // Costs and strays cost many calls: hourly. The status feeds are cheap: every time.
         // In Low Power Mode costs and strays wait (many calls); the status feeds stay.
-        if Date().timeIntervalSince(lastExtras) > 3600, !ProcessInfo.processInfo.isLowPowerModeEnabled { await loadExtras() } else { await checkProviders() }
+        if Date().timeIntervalSince(lastExtras) > Timing.extrasEvery, !ProcessInfo.processInfo.isLowPowerModeEnabled { await loadExtras() } else { await checkProviders() }
     }
 
     // MARK: What is waiting on GitHub, over both platforms
@@ -1080,16 +1077,20 @@ final class Store: ObservableObject {
         let name = items[p]![i].name, rowKey = Self.key(items[p]![i])
         // Only a deploy that really started has a duration; a row that never left the queue has none.
         let took = was.isActive && was != .queued ? items[p]![i].startedAt.map { Date().timeIntervalSince($0) } : nil
+        // The commit and deploy this row stands on, written with the entry so the history can say which.
+        let entrySha = items[p]![i].lastSha ?? items[p]![i].headSha, entryId = items[p]![i].deployId ?? items[p]![i].latestId
         switch s {
         case .done:
             // Not live: a finished preview keeps its id, a rollback does not.
             let r = countsAsLive ? "live" : (items[p]![i].previewId != nil ? "preview" : "rollback")
             let why = countsAsLive ? forcedReasons.removeValue(forKey: Self.key(items[p]![i])) : nil
             Journal.append(JournalEntry(platform: p.rawValue, name: name, result: why == nil ? r : "forced", seconds: took,
-                                        detail: why.map { L("Deployed inside the deploy window: ", "Im Deploy-Fenster deployt: ") + $0 }))
+                                        detail: why.map { L("Deployed inside the deploy window: ", "Im Deploy-Fenster deployt: ") + $0 },
+                                        sha: entrySha, deployId: entryId))
         case .failed(let m):
             forcedReasons[Self.key(items[p]![i])] = nil
-            Journal.append(JournalEntry(platform: p.rawValue, name: name, result: byPerson ? "cancelled" : "failed", seconds: took, detail: m))
+            Journal.append(JournalEntry(platform: p.rawValue, name: name, result: byPerson ? "cancelled" : "failed", seconds: took, detail: m,
+                                        sha: entrySha, deployId: entryId))
         case .skipped(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "skipped", seconds: took, detail: m))
         default: break
         }
@@ -1187,22 +1188,23 @@ final class Store: ObservableObject {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         guard let d = try? enc.encode(list) else { return }
         messageQueue.async {
-            try? FileManager.default.createDirectory(at: AppDirs.support, withIntermediateDirectories: true)
-            try? d.write(to: messagesURL, options: .atomic)
+            try? PrivateFile.write(d, to: messagesURL)
         }
     }
     /// `rollBack`: production is live and broken, so the notification offers "Roll back …" (a failed
     /// build never replaced production: there it offers only the log). `row` (`Store.key`) ties the
     /// message to its row. Names scrubbed in demo mode: a Mac notification shows up in a screen recording too.
     private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil, key: String? = nil, row: String? = nil,
-                     rollBack: Bool = false, silent: Bool = false) {
-        let all = Array(items.values.joined())
-        let title = Demo.scrub(title, items: all), body = Demo.scrub(body, items: all)
+                     rollBack: Bool = false, silent: Bool = false, undoLabel: String? = nil, undo: (() -> Void)? = nil) {
+        let all = allItems
+        // Platform error texts can carry keys: masked before they reach the notification, the toast, messages.json or the journal.
+        let title = LogTools.maskSecrets(Demo.scrub(title, items: all)), body = LogTools.maskSecrets(Demo.scrub(body, items: all))
         // The project ran again: a second reminder of its last failure is no longer true.
         if let key { Notify.dropEscalations(key) }
         Notify.post(title, body, project: project, key: key, failed: !ok, rollBack: rollBack, silent: silent)
-        show(Toast(text: title, ok: ok))
-        if UserDefaults.standard.bool(forKey: Speech.resultsKey) { Speech.say(title) }
+        show(Toast(text: title, ok: ok, undoLabel: undoLabel, undo: undo))
+        // With VoiceOver the toast is announced already; saying it twice would stutter.
+        if UserDefaults.standard.bool(forKey: Speech.resultsKey), !NSWorkspace.shared.isVoiceOverEnabled { Speech.say(title) }
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok, project: row ?? key))
     }
     /// Newest first; `messages`' didSet keeps 30 and writes them to disk.
@@ -1220,11 +1222,26 @@ final class Store: ObservableObject {
     @Published var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hidden") ?? []) { didSet { waitingCache = [:] } }
     @Published var notes: [String: String] = (UserDefaults.standard.dictionary(forKey: "notes") as? [String: String]) ?? [:]
     static func key(_ i: Item) -> String { "\(i.platform.cli)/\(i.id)" }
+    /// Every row of every platform, in one list. Use this instead of joining `items` by hand.
+    var allItems: [Item] { Platform.allCases.flatMap { items[$0] ?? [] } }
+    /// The row with this `Store.key`, if the lists hold it.
+    func item(key: String) -> Item? { allItems.first { Self.key($0) == key } }
     func isPinned(_ i: Item) -> Bool { pinned.contains(Self.key(i)) }
     func isHidden(_ i: Item) -> Bool { hidden.contains(Self.key(i)) }
     func note(_ i: Item) -> String? { notes[Self.key(i)] }
+    /// What the person marked on these projects, as lines for the deploy question: "shop: critical",
+    /// "shop: note – after the release mail". Led by a blank line; empty when nothing is marked.
+    func confirmMarks(_ items: [Item]) -> String {
+        let lines = items.flatMap { i -> [String] in
+            var l: [String] = []
+            if isCritical(i) { l.append("\(Demo.mask(i.name)): " + L("marked critical", "als kritisch markiert")) }
+            if let n = note(i), !n.isEmpty { l.append("\(Demo.mask(i.name)): " + L("note", "Notiz") + " – " + n) }
+            return l
+        }
+        return lines.isEmpty ? "" : "\n\n" + lines.joined(separator: "\n")
+    }
     /// A colour of the person's choice per project (FEA-171), as a dot before the name. Kept on this Mac.
-    nonisolated static let projectColorNames = ["red", "orange", "yellow", "green", "blue", "purple", "gray"]
+    nonisolated static let projectColorNames = ProjectColor.allCases.map(\.rawValue)
     @Published private(set) var projectColors: [String: String] = (UserDefaults.standard.dictionary(forKey: "projectColors") as? [String: String]) ?? [:]
     func projectColor(_ i: Item) -> String? { projectColors[Self.key(i)].flatMap { Self.projectColorNames.contains($0) ? $0 : nil } }
     func setProjectColor(_ i: Item, _ name: String?) {
@@ -1286,7 +1303,7 @@ final class Store: ObservableObject {
     /// A notification's "Show log" / "Roll back …": the key (Store.key) of the project, for the palette host.
     @Published var pendingLog: String?
     @Published var pendingRollback: String?
-    func itemNamed(key: String) -> Item? { items.values.joined().first { Self.key($0) == key } }
+    func itemNamed(key: String) -> Item? { item(key: key) }
     /// Counts up when code outside a view wants the main window in front (a notification click).
     @Published var windowRequest = 0
     /// Set by the menu bar: tick everything with changes and ask, in the window.
@@ -1325,17 +1342,24 @@ final class Store: ObservableObject {
     /// `force` (a reason) goes out inside a closed deploy window, as the footer's dialog does.
     func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, whenGreen: Bool = false, force: String? = nil) {
         let job = Job(item: item, preview: preview, sha: sha, clearCache: clearCache, whenGreen: whenGreen, force: force)
-        guard namesTyped([item], preview: preview, sha: sha) else { return }
         // A preview is never held by the deploy window. A live deploy from a row, the details or the
         // palette is: the script would refuse it anyway, so say why here instead of a failed row.
-        guard !preview, !observer, force == nil else { enqueue([job]); return }
+        guard !preview, !observer, force == nil else {
+            guard namesTyped([item], preview: preview, sha: sha) else { return }
+            enqueue([job]); return
+        }
         Task {
-            if let w = await deployWindow(), w.denied {
+            busyMessage = L("Checking the deploy window …", "Prüfe das Deploy-Fenster …")
+            let window = await deployWindow()
+            busyMessage = nil
+            if let w = window, w.denied {
                 say(L("Deploy window closed", "Deploy-Fenster geschlossen"),
                     (w.reason.map { $0 + " – " } ?? "") + L("To deploy anyway, tick the row and use Deploy below; it asks for a reason.",
                                                           "Um trotzdem zu deployen: Zeile anhaken und unten auf Deploy; dort mit Begründung."), ok: false)
                 return
             }
+            // The cheap check came first: nobody types a name and then hears the window is closed.
+            guard namesTyped([item], preview: preview, sha: sha) else { return }
             enqueue([job])
         }
     }
@@ -1348,7 +1372,7 @@ final class Store: ObservableObject {
 
     /// Starts that got no answer in time, by row: they may be building anyway (see `deploy`).
     private var unsureStarts: [String: Date] = [:]
-    private static let unsureWait: Double = 600
+    private static let unsureWait: Double = Timing.unsureWait
 
     /// Observer mode: says so and is true; deploys and rollbacks then start nothing.
     private func refusedAsObserver() -> Bool {
@@ -1380,7 +1404,18 @@ final class Store: ObservableObject {
         }
         if added > 0, undoSeconds > 0 {
             let n = undoSeconds
-            show(Toast(text: L("Starting in \(n) s – cancel in the row to stop", "Startet in \(n) s – in der Zeile abbrechen"), ok: true))
+            // More than one row: one click stops the whole run instead of one click per row.
+            if added > 1 {
+                let keys = queuedKeys
+                show(Toast(text: L("Starting \(added) deploys in \(n) s", "\(added) Deploys starten in \(n) s"), ok: true,
+                           undoLabel: L("Cancel all", "Alle abbrechen"),
+                           undo: { [weak self] in
+                               guard let self else { return }
+                               for k in keys { if let i = self.item(key: k) { self.cancel(i) } }
+                           }))
+            } else {
+                show(Toast(text: L("Starting in \(n) s – cancel in the row to stop", "Startet in \(n) s – in der Zeile abbrechen"), ok: true))
+            }
             Task { try? await Task.sleep(nanoseconds: UInt64(n) * 1_000_000_000 + 300_000_000); pump() }
         }
         pump()
@@ -1388,14 +1423,29 @@ final class Store: ObservableObject {
     }
 
     /// Stops everything that is queued or building.
-    func cancelAll() { for i in Array(items.values.joined()) where i.state.isActive { cancel(i) } }
+    func cancelAll() { for i in allItems where i.state.isActive { cancel(i) } }
 
     private func summarize() {
         defer { batch = [] }
         guard batch.count >= 2 else { return }
         let states = batch.compactMap { (p, id) in items[p]?.first(where: { $0.id == id }).map { ($0.state, endedByCancel.contains(id)) } }
         let r = Self.summary(states)
-        say(r.title, L("Deploy run finished", "Deploy-Lauf beendet"), ok: r.ok)
+        // The ones that failed (not stopped by the person) are named, and one click starts them again.
+        let failedNow = batch.compactMap { (p, id) in
+            items[p]?.first(where: { $0.id == id }).flatMap { i -> Item? in
+                if case .failed = i.state, !endedByCancel.contains(id) { return i } else { return nil }
+            }
+        }
+        if failedNow.isEmpty {
+            say(r.title, L("Deploy run finished", "Deploy-Lauf beendet"), ok: r.ok)
+        } else {
+            let names = failedNow.map(\.name).sorted().joined(separator: ", ")
+            say(r.title, L("Failed: ", "Fehlgeschlagen: ") + names, ok: r.ok,
+                undoLabel: observer ? nil : L("Try the failed again", "Fehlgeschlagene nochmal"),
+                undo: observer ? nil : { [weak self] in
+                    for i in failedNow { self?.deployOne(i, preview: false) }
+                })
+        }
     }
     /// "5 live, 1 failed, 3 skipped": every way a row of the run ended, so none is left out of the sum.
     nonisolated static func summary(_ states: [(RunState, cancelled: Bool)]) -> (title: String, ok: Bool) {
@@ -1529,8 +1579,12 @@ final class Store: ObservableObject {
             let today = Journal.load(limit: .max).filter { cal.isDate($0.at, inSameDayAs: now) }
             if let line = JournalStats.summaryLine(today) { Notify.remind(L("Today", "Heute"), line, id: "day-summary") }
         }
-        if d.bool(forKey: "weeklySummary"), cal.component(.weekday, from: now) == 2, cal.component(.hour, from: now) >= 9,
-           d.string(forKey: "lastWeekly") != localDay() {
+        // Monday from 9; a Mac that was off on Monday catches up on the next day it runs.
+        let lastWeekly = d.string(forKey: "lastWeekly")
+        let backToMonday = (cal.component(.weekday, from: now) + 5) % 7
+        let thisMonday = localDay(cal.date(byAdding: .day, value: -backToMonday, to: now) ?? now)
+        let weeklyDue = backToMonday == 0 || (lastWeekly.map { $0 < thisMonday } ?? false)
+        if d.bool(forKey: "weeklySummary"), weeklyDue, cal.component(.hour, from: now) >= 9, lastWeekly != localDay() {
             d.set(localDay(), forKey: "lastWeekly")
             let week = JournalStats.periods(Journal.load(limit: .max), days: 7, now: cal.startOfDay(for: now)).recent
             if let line = JournalStats.summaryLine(week) { Notify.remind(L("Last week", "Letzte Woche"), line, id: "week-summary") }
@@ -1686,7 +1740,7 @@ final class Store: ObservableObject {
     /// Between two status questions; tests make it short. nil: the pace of `pollSeconds`.
     nonisolated(unsafe) static var pollNanos: UInt64?
     /// When following says "no result" (40 minutes) and gives up (12 hours); tests make them short.
-    nonisolated(unsafe) static var followLimits: (overdue: Duration, deadline: Duration) = (.seconds(40 * 60), .seconds(12 * 3600))
+    nonisolated(unsafe) static var followLimits: (overdue: Duration, deadline: Duration) = (Timing.followOverdue, Timing.followDeadline)
 
     /// Shown when a build has no result after 40 minutes: still active, so no second build can start.
     nonisolated static var overdueState: RunState { .running(L("no result after 40 min – still asking, check the dashboard",
@@ -1726,6 +1780,12 @@ final class Store: ObservableObject {
                 // Network or login gone: say so instead of spinning for 40 minutes without a word.
                 misses += 1
                 if misses >= 5 { set(p, item.id, .running(L("status unavailable, retrying", "Status nicht abrufbar, neuer Versuch"))) }
+                // About 20 minutes of nothing (deleted deploy, lost login): stop holding the row; a start right away stays held.
+                if misses >= 80 {
+                    unsureStarts[Self.key(item)] = Date()
+                    set(p, item.id, .failed(L("Status not available – check the dashboard", "Status nicht abrufbar – im Dashboard nachsehen")))
+                    return
+                }
                 continue
             }
             misses = 0
@@ -1944,9 +2004,7 @@ final class Store: ObservableObject {
         // No answer at all: is it the site, or this Mac (offline, DNS, a VPN switching)? A second,
         // well-known address decides; production is never rolled back for the Mac's own network.
         var networkUp = true
-        if code == nil, let other = URL(string: "https://www.githubstatus.com/api/v2/status.json") {
-            networkUp = await Self.probe(other, timeout: 10) != nil
-        }
+        if code == nil { networkUp = await Self.networkUp() }
         let verdict = Self.siteVerdict(code: code, networkUp: networkUp)
         if verdict == .fine { return true }
         if verdict == .broken { SiteLog.note(Self.key(item), up: false) }
@@ -2014,8 +2072,11 @@ final class Store: ObservableObject {
         }
     }
     nonisolated private static func networkUp() async -> Bool {
-        guard let other = URL(string: "https://www.githubstatus.com/api/v2/status.json") else { return true }
-        return await probe(other, timeout: 10) != nil
+        // Any one answer means the Mac is online. One blocked domain (a company network) must not read as "offline".
+        for s in ["https://www.githubstatus.com/api/v2/status.json", "https://www.apple.com/library/test/success.html", "https://1.1.1.1/"] {
+            if let u = URL(string: s), await probe(u, timeout: 6) != nil { return true }
+        }
+        return false
     }
 
     // MARK: Roll back by itself when the check after going live fails (opt-in per project, in the details)
@@ -2047,7 +2108,7 @@ final class Store: ObservableObject {
     private func countDownToRollback(_ item: Item, _ link: String, _ code: Int?) {
         let key = Self.key(item), id = Self.rollbackPrefix + key, n = Self.rollbackSeconds
         guard rollbackCountdowns[key] == nil else { return }
-        let name = Demo.mask(item.name), shownLink = Demo.scrub(link, items: Array(items.values.joined()))
+        let name = Demo.mask(item.name), shownLink = Demo.scrub(link, items: allItems)
         let title = L("\(name) fails its check – rolling back in \(n) s", "\(name) besteht den Check nicht – Zurückrollen in \(n) s")
         Notify.countdown(title, shownLink + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), id: id)
         show(Toast(text: title, ok: false, undoLabel: L("Cancel", "Abbrechen"), undo: { [weak self] in self?.cancelRollback(key) }))
@@ -2105,18 +2166,10 @@ final class Store: ObservableObject {
     }
 
     /// Deploys queued or building; an update waits for them instead of quitting in the middle.
-    var deploysBusy: Bool { !queue.isEmpty || running > 0 || !ciWaits.isEmpty || items.values.joined().contains { $0.state.isActive } }
+    var deploysBusy: Bool { !queue.isEmpty || running > 0 || !ciWaits.isEmpty || allItems.contains { $0.state.isActive } }
 
     /// States the app knows; any other is shown as the platform sent it, and logged once.
-    static let knownStates: Set<String> = ["", "queued", "created", "initializing", "building", "build_in_progress",
-                                           "update_in_progress", "pre_deploy_in_progress"]
+    static var knownStates: Set<String> { DeployState.known }
     private static var loggedStates: Set<String> = []
-    static func stateName(_ s: String) -> String {
-        switch s {
-        case "queued", "created", "initializing": return L("queued", "wartet")
-        case "building", "build_in_progress": return L("building", "baut")
-        case "update_in_progress", "pre_deploy_in_progress": return L("going live", "geht live")
-        default: return s.isEmpty ? L("running", "läuft") : s
-        }
-    }
+    static func stateName(_ s: String) -> String { DeployState.running(s) }
 }

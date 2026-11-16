@@ -20,6 +20,14 @@ body:
         - Firebase Hosting
         - Azure Static Web Apps
         - Kamal
+        - Cloudflare Workers
+        - Cloud Run
+        - AWS App Runner
+        - Deno Deploy
+        - Dokploy
+        - CapRover
+        - Northflank
+        - Supabase
         - Other (say which below)
     validations:
       required: true

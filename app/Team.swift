@@ -58,7 +58,10 @@ struct TeamSettings: View {
 
             Toggle(L("Observer (look, never deploy)", "Beobachter (nur ansehen, nie deployen)"), isOn: Binding(
                 get: { config?.readonly.value ?? store.observer },
-                set: { on in Task { await run(["readonly", on ? "on" : "off"]) } }))
+                set: { on in Task {
+                    if !on, !(await OwnerCheck.confirm(L("leave observer mode", "den Beobachter-Modus verlassen"))) { return }
+                    await run(["readonly", on ? "on" : "off"])
+                } }))
                 .disabled(busy || forcedElsewhere || config == nil)
             if forcedElsewhere, let from = config?.readonly.from {
                 Text(L("Set by \(from).", "Gesetzt durch \(from).")).font(.caption).foregroundStyle(.secondary)
@@ -111,7 +114,7 @@ struct TeamSettings: View {
         .task { await reload() }
     }
 
-    private var allItems: [Item] { store.items.values.flatMap { $0 } }
+    private var allItems: [Item] { store.allItems }
     private var canAdd: Bool { Self.ownerRepo(repo) != nil && !busy }
 
     /// "owner/repo" from what people paste: the name itself, a github.com address or a git remote.

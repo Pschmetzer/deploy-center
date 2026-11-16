@@ -33,7 +33,7 @@ extension Store {
     func makeSnapshot() -> DeploySnapshot {
         let w = waiting
         var rows: [DeploySnapshot.Project] = []
-        for i in Array(items.values.joined()) where i.deployable && !isHidden(i) {
+        for i in allItems where i.deployable && !isHidden(i) {
             let status: DeploySnapshot.Project.Status
             if i.building || i.state.isActive { status = .building }
             else if i.failed { status = .failed }
@@ -42,7 +42,7 @@ extension Store {
             rows.append(.init(name: Demo.mask(i.name), platform: i.platform.rawValue, status: status,
                               commits: i.pendingCommits ?? 0, prs: i.pendingPRs ?? 0,
                               since: status == .waiting ? i.oldestPendingAt : (i.startedAt ?? i.lastAt),
-                              message: i.headMsg.map { Demo.scrub($0, items: Array(items.values.joined())) }))
+                              message: i.headMsg.map { Demo.scrub($0, items: allItems) }))
         }
         let order: [DeploySnapshot.Project.Status: Int] = [.building: 0, .failed: 1, .waiting: 2]
         rows.sort { (a: DeploySnapshot.Project, b: DeploySnapshot.Project) -> Bool in

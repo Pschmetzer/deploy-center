@@ -113,7 +113,7 @@ enum PaletteCommands {
         if !looksOnly { add(.deployChanged, "Deploy all changed …", "Alles mit Änderungen deployen …", "paperplane.fill",
             detail: w.projects > 0 ? L("\(w.projects) waiting", "\(w.projects) warten") : L("nothing waits", "nichts wartet")) }
         add(.reload, "Reload", "Neu laden", "arrow.clockwise")
-        let active = store.items.values.joined().filter { $0.state.isActive }.count
+        let active = store.allItems.filter { $0.state.isActive }.count
         if active > 0 { add(.stopAll, "Stop all …", "Alles abbrechen …", "stop.circle", detail: L("\(active) running", "\(active) laufen")) }
         add(.journal, "Open journal (deploy history)", "Journal öffnen (Deploy-Verlauf)", "clock.arrow.circlepath")
         add(.settings, "Settings", "Einstellungen", "gear")
@@ -630,7 +630,7 @@ private struct PaletteQuestions: ViewModifier {
             // The window's own question, checkbox included; the window deploys once the sheet is gone.
             .sheet(item: $deployItem, onDismiss: {
                 if let i = confirmed { confirmed = nil; store.pendingDeploy = i }
-            }) { i in DeployConfirmSheet(items: [i], platforms: false) { confirmed = i } }
+            }) { i in DeployConfirmSheet(items: [i], platforms: false, marks: store.confirmMarks([i])) { confirmed = i } }
             .alert(L("Nothing new to deploy", "Nichts Neues zu deployen"), isPresented: binding($unchangedItem)) {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { unchangedItem = nil }
                 Button(L("Build anyway", "Trotzdem bauen")) { if let i = unchangedItem { store.pendingDeploy = i }; unchangedItem = nil }
@@ -671,7 +671,7 @@ enum PaletteHotKey {
     static let choices: [(label: String, key: Int, mods: Int)] = [
         ("⌥⌘K", kVK_ANSI_K, cmdKey | optionKey),
         ("⌃⌥⌘K", kVK_ANSI_K, cmdKey | optionKey | controlKey),
-        ("⌥⌘D", kVK_ANSI_D, cmdKey | optionKey),
+        ("⌃⌥⌘D", kVK_ANSI_D, cmdKey | optionKey | controlKey),   // ⌥⌘D alone is the system's "Hide Dock"
         ("⌃⌥Space", kVK_Space, controlKey | optionKey),
     ]
     static var choice: Int { let c = UserDefaults.standard.integer(forKey: choiceKey); return choices.indices.contains(c) ? c : 0 }

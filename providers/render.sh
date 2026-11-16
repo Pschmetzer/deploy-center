@@ -118,7 +118,7 @@ render_has() { render_id_of "$1"; }
 render_off_one() {
   render_call PATCH "/services/$1" '{"autoDeployTrigger":"off"}' >/dev/null
   # When it was turned off, so a later push-triggered build can be told apart from earlier ones.
-  local f="$CONFIG_DIR/render-off.json" tmp; [ -f "$f" ] || (umask 077; echo '{}' > "$f"); tmp="$(mktemp)"
+  local f="$CONFIG_DIR/render-off.json" tmp; [ -f "$f" ] || (umask 077; echo '{}' > "$f"); tmp="$(mktemp "$f.XXXXXX")"
   jq --arg id "$1" '.[$id] = (.[$id] // (now|floor))' "$f" > "$tmp" && mv "$tmp" "$f"
   echo "Render: $2 no longer deploys on push"
 }
@@ -378,7 +378,7 @@ render_url() {
 
 render_set_key() {
   local key
-  IFS= read -r key || true
+  if [ -t 0 ]; then IFS= read -rs key || true; echo >&2; else IFS= read -r key || true; fi
   # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
   key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || die "Pipe the key in: pbpaste | deploys render set-key"

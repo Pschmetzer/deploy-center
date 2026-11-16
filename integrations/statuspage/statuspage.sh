@@ -36,11 +36,17 @@ cfg="$(jq -c '
      description: (.description // ""),
      # Only an http(s) address without spaces or quotes: it goes into the links and ids of the feed.
      baseUrl: ((.baseUrl // "") | if . == "" or test("^https?://[^\\s\"<>]+$") then . else error("baseUrl must be an http(s) address") end),
-     hideMessages: (.hideMessages // false),
+     # strict: for a page anyone may see. Implies hideMessages, no inline script (status.js beside the page,
+     # so a Content-Security-Policy of script-src 'self' holds) and a noindex robots tag.
+     strict: (.strict // false),
+     hideMessages: ((.hideMessages // false) or (.strict // false)),
      showAuthors: (.showAuthors // false),
      timeline: (.timeline // 30),
      # The language of the page: its texts, the feed titles and "Updated" in status.json.
      lang: ((.lang // "en") | if . == "en" or . == "de" then . else error("lang must be en or de") end),
+     # Your own wording for any text of the page (keys as in the text table below, e.g. "live", "failed",
+     # "recent", "noDeploys"): replaces the text of the chosen language. Plain strings only.
+     texts: ((.texts // {}) | if type == "object" and all(.[]; type == "string") then . else error("texts must map text keys to strings") end),
      # After this many hours the page warns that it is old (it is made by a job that may have stopped).
      staleHours: ((.staleHours // 48) | if type == "number" and . > 0 then . else error("staleHours must be a positive number") end),
      journal: (.journal // null),
@@ -81,8 +87,17 @@ notes_of() {
 # One site check: HTTP code and seconds. 2xx and 3xx count as up, and 401/403 too (a login
 # wall answers, so the site is up). At most 5 redirects, http and https only.
 check_of() {
-  curl -sS -o /dev/null -L --max-redirs 5 --proto '=http,https' --proto-redir '=http,https' --max-time 10 \
-    -w '%{http_code} %{time_total}' -- "$1" 2>/dev/null </dev/null || echo "000 0"
+  local r code try
+  for try in 1 2; do
+    r="$(curl -sS -o /dev/null -L --max-redirs 5 --proto '=http,https' --proto-redir '=http,https' --max-time 10 \
+      -w '%{http_code} %{time_total}' -- "$1" 2>/dev/null </dev/null)" || r="000 0"
+    code="${r%% *}"
+    # Up (2xx, 3xx, 401, 403) answers at once; anything else gets one more try after a pause, so one
+    # dropped packet does not put "not reachable" on a public page.
+    case "$code" in 2??|3??|401|403) break ;; esac
+    [ "$try" = 1 ] && sleep "${STATUSPAGE_RETRY_WAIT:-2}"
+  done
+  echo "$r"
 }
 
 tmp_hist="$(mktemp)"; trap 'rm -f "$tmp_hist"' EXIT
@@ -138,17 +153,17 @@ texts='{
         "failed":"Failed","building":"Deploying","notYet":"Not deployed yet","unknown":"Unknown","feed":"Feed","projects":"Projects",
         "unread":"Could not be read just now.","lastDeploy":"Last deploy","siteUp":"Site up","siteDown":"Site not reachable",
         "next":"Coming next","waiting":"Changes waiting to ship.","recent":"Recent deploys","noDeploys":"No deploys recorded yet.",
-        "wentLive":"went live","deployFailed":"deploy failed","footerUtc":"Made with Deploy Center. Times in UTC.",
+        "wentLive":"went live","deployFailed":"deploy failed","siteDown":"is not reachable","tookSeconds":"took","footerUtc":"Made with Deploy Center. Times in UTC.",
         "footer":"Made with Deploy Center.","stale":"This page was last made {n} hours ago and may be out of date.",
         "staleDays":"This page was last made {n} days ago and may be out of date."},
  "de": {"updated":"Aktualisiert","depUpdate":"Abhängigkeit aktualisiert: ","never":"nie","live":"Live","liveFailed":"Live · letzter Deploy fehlgeschlagen",
         "failed":"Fehlgeschlagen","building":"Wird deployt","notYet":"Noch nicht deployt","unknown":"Unbekannt","feed":"Feed","projects":"Projekte",
         "unread":"Ließ sich gerade nicht lesen.","lastDeploy":"Letzter Deploy","siteUp":"Seite erreichbar","siteDown":"Seite nicht erreichbar",
         "next":"Als Nächstes","waiting":"Änderungen warten darauf, live zu gehen.","recent":"Letzte Deploys","noDeploys":"Noch keine Deploys aufgezeichnet.",
-        "wentLive":"ging live","deployFailed":"Deploy fehlgeschlagen","footerUtc":"Erstellt mit Deploy Center. Zeiten in UTC.",
+        "wentLive":"ging live","deployFailed":"Deploy fehlgeschlagen","siteDown":"ist nicht erreichbar","tookSeconds":"dauerte","footerUtc":"Erstellt mit Deploy Center. Zeiten in UTC.",
         "footer":"Erstellt mit Deploy Center.","stale":"Diese Seite wurde vor {n} Stunden zuletzt erstellt und ist vielleicht nicht aktuell.",
         "staleDays":"Diese Seite wurde vor {n} Tagen zuletzt erstellt und ist vielleicht nicht aktuell."}}'
-L="$(jq -c --arg l "$(jq -r .lang <<<"$cfg")" '.[$l]' <<<"$texts")"
+L="$(jq -c --arg l "$(jq -r .lang <<<"$cfg")" --argjson o "$(jq -c .texts <<<"$cfg")" '.[$l] + $o' <<<"$texts")"
 
 mkdir -p "$out"
 # status.json is the source for the page and the feed.
@@ -217,6 +232,14 @@ jq -r --arg css "$(cat "$here/page.css")" --argjson L "$L" '
     + "const s=document.querySelector(\".stale\");if(s){const h=(Date.now()/1000-Number(s.dataset.generated))/3600;if(h>=Number(s.dataset.hours)){s.textContent=(h>=48?s.dataset.textDays:s.dataset.text).replace(\"{n}\",String(Math.floor(h>=48?h/24:h)));s.hidden=false}}</script>",
   "</body></html>"' "$out/status.json" > "$out/index.html"
 
+# strict: the script moves into status.js, and the page says what it may load. Not used when strict is off.
+if [ "$(jq -r '.strict' <<<"$cfg")" = true ]; then
+  sed -n 's#.*<script>\(.*\)</script>.*#\1#p' "$out/index.html" > "$out/status.js"
+  sed -e 's#<script>.*</script>#<script src="status.js"></script>#' \
+      -e "s#<meta charset=\"utf-8\">#<meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src data:; base-uri 'none'; form-action 'none'\"><meta name=\"robots\" content=\"noindex\">#" \
+      "$out/index.html" > "$out/index.html.tmp" && mv "$out/index.html.tmp" "$out/index.html"
+fi
+
 # --- feed.xml: Atom, one entry per deploy in the timeline ---
 jq -r --argjson L "$L" '
   def x: tostring | @html;
@@ -234,6 +257,17 @@ jq -r --argjson L "$L" '
     "    <title>\(.name | x) \(if .result == "live" then $L.wentLive else $L.deployFailed end | x)</title>",
     "    <id>urn:deploy-center:\(.platform | x):\(.name | @uri | x):\(.at)</id>",
     "    <updated>\(.at | todate)</updated>",
+    # A summary for readers that show one: what happened and how long it took. No commit text.
+    "    <summary type=\"text\">\(.name | x) \(if .result == "live" then $L.wentLive else $L.deployFailed end | x)\(if .seconds then " (\($L.tookSeconds | x) \(.seconds) s)" else "" end)</summary>",
+    (if $link != "" then "    <link href=\"\($link | x)\"/>" else empty end),
+    "  </entry>"),
+  # A site that did not answer when the page was made is an entry too, dated by the page.
+  ($s.projects[] | select(.check != null and .check.up == false) |
+    "  <entry>",
+    "    <title>\(.name | x) \($L.siteDown | x)</title>",
+    "    <id>urn:deploy-center:check:\(.platform // "" | x):\(.name | @uri | x):\($s.generatedAt)</id>",
+    "    <updated>\($s.generatedAt | todate)</updated>",
+    "    <summary type=\"text\">\(.name | x) \($L.siteDown | x) (HTTP \(.check.code))</summary>",
     (if $link != "" then "    <link href=\"\($link | x)\"/>" else empty end),
     "  </entry>"),
   "</feed>"' "$out/status.json" > "$out/feed.xml"

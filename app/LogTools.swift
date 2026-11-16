@@ -39,6 +39,12 @@ enum LogTools {
         (#"\bAKIA[0-9A-Z]{16}\b"#, "[AWS KEY]"),
         (#"\bxox[abprs]-[A-Za-z0-9-]{10,}"#, "[SLACK TOKEN]"),
         (#"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+"#, "[JWT]"),
+        (#"\b(sb_secret_|sbp_|dop_v1_|vercel_blob_rw_)[A-Za-z0-9_-]{8,}"#, "[API KEY]"),
+        (#"\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"#, "[SENDGRID KEY]"),
+        (#"\bre_[A-Za-z0-9]{16,}"#, "[RESEND KEY]"),
+        (#"\blin_(api|oauth)_[A-Za-z0-9]{16,}"#, "[LINEAR KEY]"),
+        (#"\bdp\.(st|pt|sa|ct)\.[A-Za-z0-9._-]{16,}"#, "[DOPPLER TOKEN]"),
+        (#"\bhttps?://[A-Fa-f0-9]{16,}@[A-Za-z0-9.-]*sentry[A-Za-z0-9./-]*"#, "[SENTRY DSN]"),
         // NAME=value, NAME: value, "name": "value", for names that say secret (VERCEL_TOKEN, x-api-key,
         // aws_secret_access_key, AccountKey=, ...): the script's rule, so "tokens: 12" stays as it is.
         (#"\b((?i:[A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn))["']?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("[^"]*"|'[^']*'|[^\s"',;]+)"#, "$1$2[HIDDEN]"),

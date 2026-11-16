@@ -283,7 +283,7 @@ rm -rf "$got_dir"
 # Only now public (a release that was public already stays so).
 gh release edit "$TAG" --repo "$REPO" --draft=false >/dev/null
 url="https://github.com/$REPO/releases/download/$TAG/$(basename "$ZIP")"
-got="$(curl -fsSL --retry 3 "$url" | shasum -a 256 | cut -d' ' -f1)"
+got="$(curl -fsSL --retry 6 --retry-all-errors --retry-delay 5 "$url" | shasum -a 256 | cut -d' ' -f1)"
 [ "$got" = "$SHA" ] || die "the published zip has SHA-256 $got, expected $SHA ($url)"
 echo "Published: https://github.com/$REPO/releases/tag/$TAG"
 

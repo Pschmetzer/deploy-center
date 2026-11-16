@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vercel build cost calculator: what auto-deploy costs · Deploy Center</title>
 <meta name="description" content="Estimate what auto-deploy costs a month on Vercel or Render: projects × pushes × cost per build, compared with deploying by hand. Free, runs in your browser.">
@@ -9,6 +10,9 @@
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <link rel="canonical" href="https://deploycenter.app/vercel-build-cost-calculator/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/vercel-build-cost-calculator/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/vercel-build-kosten-rechner/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/vercel-build-cost-calculator/">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
@@ -39,7 +43,7 @@
   "url": "https://deploycenter.app/vercel-build-cost-calculator/",
   "mainEntityOfPage": "https://deploycenter.app/vercel-build-cost-calculator/",
   "datePublished": "2026-11-10",
-  "dateModified": "2026-11-12",
+  "dateModified": "2026-11-16",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -150,14 +154,20 @@
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Vercel build cost calculator</h1>
 <p class="answer">Auto-deploy costs roughly <b>projects × pushes per day × cost per build × working days</b> a month. Deploying by hand costs the same formula with your number of deploys instead of your number of pushes; move the sliders to see both with your numbers.</p>
-<p class="meta">Last updated <time datetime="2026-11-12">12 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <div class="calc">
   <div class="card">
-    <div class="field"><div class="fh"><label for="p">Projects connected to Git</label><output id="po" for="p" aria-hidden="true"></output></div><input id="p" type="range" min="1" max="80" value="20"></div>
-    <div class="field"><div class="fh"><label for="u">Pushes per project per working day</label><output id="uo" for="u" aria-hidden="true"></output></div><input id="u" type="range" min="1" max="60" value="8"><div class="hint">Count each push, not each commit. AI coding agents often push after every step.</div></div>
-    <div class="field"><div class="fh"><label for="c">Average cost per build</label><output id="co" for="c" aria-hidden="true"></output></div><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In cents. Your real number: last month's build cost divided by the number of builds, on your Vercel or Render usage page.</div></div>
-    <div class="field"><div class="fh"><label for="d">Deploys by hand per project per day</label><output id="do" for="d" aria-hidden="true"></output></div><input id="d" type="range" min="1" max="5" value="1"></div>
+    <div class="presets" role="group" aria-label="Example scenarios">
+      <span class="hint">Examples to start from (assumptions, not measurements):</span>
+      <button class="btn" type="button" data-scenario="3,5,1">Solo developer</button>
+      <button class="btn" type="button" data-scenario="12,8,1">Small team</button>
+      <button class="btn" type="button" data-scenario="20,30,2">Coding agents pushing all day</button>
+    </div>
+    <div class="field"><div class="fh"><label for="p">Projects connected to Git</label><input class="num" id="pn" type="number" inputmode="numeric" step="1" aria-label="Projects connected to Git, as a number"></div><input id="p" type="range" min="1" max="80" value="20"></div>
+    <div class="field"><div class="fh"><label for="u">Pushes per project per working day</label><input class="num" id="un" type="number" inputmode="numeric" step="1" aria-label="Pushes per project per working day, as a number"></div><input id="u" type="range" min="1" max="60" value="8"><div class="hint">Count each push, not each commit. AI coding agents often push after every step.</div></div>
+    <div class="field"><div class="fh"><label for="c">Average cost per build</label><input class="num" id="cn" type="number" inputmode="numeric" step="1" aria-label="Average cost per build in cents, as a number"></div><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In cents. Your real number: last month's build cost divided by the number of builds, on your Vercel or Render usage page.</div></div>
+    <div class="field"><div class="fh"><label for="d">Deploys by hand per project per day</label><input class="num" id="dn" type="number" inputmode="numeric" step="1" aria-label="Deploys by hand per project per day, as a number"></div><input id="d" type="range" min="1" max="5" value="1"></div>
   </div>
   <div class="card result">
     <p class="sr" id="said" aria-live="polite"></p>
@@ -166,7 +176,7 @@
     <div class="hint">a month (22 working days)</div>
     <div class="row"><span>With auto-deploy</span><b id="now">$0</b></div>
     <div class="row"><span>Deploying by hand</span><b id="after">$0</b></div>
-    <div class="share"><a class="btn" id="tweet" target="_blank" rel="noopener">Share your number</a></div>
+    <div class="share"><a class="btn" id="tweet" target="_blank" rel="noopener">Share on X</a> <button class="btn" id="copylink" type="button">Copy link</button> <button class="btn" id="sharebtn" type="button" hidden>Share …</button></div>
   </div>
 </div>
 
@@ -175,7 +185,7 @@
 deploying by hand  = projects × min(deploys, pushes) × cost per build × 22
 saving             = with auto-deploy − deploying by hand</code></pre>
 <ul>
-  <li><b>22 working days</b> a month. Weekend pushes add to the first line.</li>
+  <li><b>22 working days</b> a month. Weekend pushes add to the first line. <code>deploys simulate</code> does not use this assumption: it counts the pushes you really made in the last days and scales them to 30 days, so its number can differ from this page.</li>
   <li><b>One build per project per push.</b> If several projects are connected to one repository, a push builds each of them; count them as separate projects.</li>
   <li><b>Previews count.</b> Pushes to any branch build a preview on Vercel. Include them, or set the sliders for production only.</li>
   <li><b>Nothing leaves your browser.</b> The numbers stay on this page; the share link only contains the four slider values.</li>
@@ -190,6 +200,13 @@ saving             = with auto-deploy − deploying by hand</code></pre>
 <p><a href="/">Deploy Center</a> shows the Vercel build spend of the last 7 days and the monthly pace in its window, so you can check the estimate against real numbers.</p>
 
 <div class="note"><p><b>What this does not include.</b> Function, image and bandwidth costs do not change when you deploy less often. Plans that include some build time make the first builds of a month free. The result is an estimate, not a quote.</p></div>
+
+<h2 id="embed">Put the calculator on your own page</h2>
+<p>Copy this into a page, a blog post or a newsletter archive. The calculator runs inside the frame, in the reader's browser, and links back here.</p>
+<pre><code>&lt;iframe src="https://deploycenter.app/vercel-build-cost-calculator/?embed=1"
+  title="Vercel build cost calculator" width="100%" height="620"
+  loading="lazy" style="border:0"&gt;&lt;/iframe&gt;</code></pre>
+<p>Add <code>&amp;p=12&amp;u=8&amp;c=6&amp;d=1</code> to start with your own numbers. A German version: <a href="/de/vercel-build-kosten-rechner/" hreflang="de" lang="de">Vercel-Build-Kosten-Rechner</a>.</p>
 
 <h2 id="faq">Questions</h2>
   <details><summary>How much does a Vercel build cost?</summary><p>It depends on your plan, the build machine and how long the build runs. Divide last month's build cost on your usage page by the number of builds to get your own number.</p></details>
@@ -212,8 +229,17 @@ saving             = with auto-deploy − deploying by hand</code></pre>
   <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
   <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
   <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+  <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+  <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+  <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+  <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+  <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+  <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+  <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+  <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
 </ul></div>
 </article></main>
+<p class="embed-credit"><a href="https://deploycenter.app/vercel-build-cost-calculator/" target="_blank" rel="noopener">Vercel build cost calculator · Deploy Center</a></p>
 
 <footer class="site"><div class="wrap">
   <div class="cols">
@@ -223,6 +249,15 @@ saving             = with auto-deploy − deploying by hand</code></pre>
       <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
       <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
       <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
       <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
       <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
       <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
@@ -244,33 +279,7 @@ saving             = with auto-deploy − deploying by hand</code></pre>
   </div>
   <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
 </div></footer>
-<script>
-(function(){
-  const $=id=>document.getElementById(id);
-  const ids=['p','u','c','d'];
-  // prefill from the link, e.g. ?p=12&u=30&c=8&d=1
-  const q=new URLSearchParams(location.search);
-  ids.forEach(id=>{const v=+q.get(id),el=$(id); if(v>=+el.min&&v<=+el.max) el.value=v;});
-  // under $10 with cents, so a small saving does not show as $0
-  const fmt=v=>v>0&&v<10?'$'+v.toFixed(2):'$'+Math.round(v).toLocaleString('en-US');
-  let moved=false;
-  function calc(){
-    const p=+$('p').value,u=+$('u').value,c=+$('c').value/100,d=+$('d').value;
-    $('po').textContent=p;$('uo').textContent=u;$('co').textContent='$'+c.toFixed(2);$('do').textContent=d;
-    $('c').setAttribute('aria-valuetext','$'+c.toFixed(2));
-    const days=22, now=p*u*c*days, after=p*Math.min(d,u)*c*days, save=Math.max(0,now-after);
-    $('now').textContent=fmt(now);$('after').textContent=fmt(after);$('save').textContent=fmt(save);
-    const link='https://deploycenter.app/vercel-build-cost-calculator/?'+ids.map(id=>id+'='+$(id).value).join('&');
-    const t=`Auto-deploy would cost me about ${fmt(now)}/month in builds. Deploying by hand: ${fmt(after)}. Calculated with Deploy Center`;
-    $('tweet').href='https://x.com/intent/post?text='+encodeURIComponent(t)+'&url='+encodeURIComponent(link);
-    // the address bar carries the numbers too, so a copied URL shows the same result
-    if(moved) try{history.replaceState(null,'','?'+ids.map(id=>id+'='+$(id).value).join('&'))}catch(e){}
-    return {now,after,save};
-  }
-  // read out only the saving, and only once a slider is let go
-  function say(){const r=calc();$('said').textContent='You would save about '+fmt(r.save)+' a month. With auto-deploy '+fmt(r.now)+', deploying by hand '+fmt(r.after)+'.'}
-  ids.forEach(id=>{$(id).addEventListener('input',()=>{moved=true;calc()});$(id).addEventListener('change',say)});calc();
-})();
-</script>
+<script src="/js/calculator.js" defer></script>
+<script src="/js/site.js" defer></script>
 </body>
 </html>

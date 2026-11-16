@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to reduce Vercel costs: a checklist · Deploy Center</title>
 <meta name="description" content="A checklist to cut your Vercel bill: find what you pay for, build less, pick the right build machine, then functions, images and bandwidth. With honest trade-offs.">
@@ -39,7 +40,7 @@
   "url": "https://deploycenter.app/guides/reduce-vercel-costs/",
   "mainEntityOfPage": "https://deploycenter.app/guides/reduce-vercel-costs/",
   "datePublished": "2026-11-10",
-  "dateModified": "2026-11-12",
+  "dateModified": "2026-11-16",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -138,7 +139,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>How to reduce Vercel costs: a checklist</h1>
 <p class="answer">Start on your Vercel usage page to see which line costs the most, then fix that line first. For most teams with many projects or many pushes it is builds, so the biggest lever is to build less: skip previews nobody opens, skip unchanged projects, and deploy production on your schedule instead of on every push.</p>
-<p class="meta">Last updated <time datetime="2026-11-12">12 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <h2>Find out what you pay for</h2>
 <ul class="checklist">
@@ -191,12 +192,22 @@
   </div>
 </div>
 
+<p class="reference"><b>Reference:</b> <a href="/docs/savings/">Savings: simulate and ledger</a> · <a href="/docs/safe-deploy/">Safe deploys</a> · <a href="/docs/cli/#more">CLI: costs, simulate, ledger</a></p>
+
 <div class="related"><h2>Related</h2><ul>
   <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
   <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
   <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
   <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
   <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+  <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+  <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+  <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+  <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+  <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+  <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+  <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+  <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
 </ul></div>
 </article></main>
 
@@ -208,6 +219,15 @@
       <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
       <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
       <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
       <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
       <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
       <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
@@ -229,5 +249,6 @@
   </div>
   <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
 </div></footer>
+<script src="/js/site.js" defer></script>
 </body>
 </html>

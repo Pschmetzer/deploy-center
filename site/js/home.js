@@ -65,7 +65,7 @@ document.addEventListener('click',e=>{document.querySelectorAll('details.menu[op
   const bA=document.getElementById('billA'),bB=document.getElementById('billB');
   const cA=document.getElementById('costA'),cB=document.getElementById('costB');
   const ctl=document.getElementById('animctl');
-  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const mq=matchMedia('(prefers-reduced-motion: reduce)');const reduce=mq.matches;
   const msgs=['fix typo','bump deps','wip','tweak css','add test','readme','refactor','fix lint','agent: step 3','agent: fix test','agent: rename','copy edits','try again','final'];
   const PER=0.06, PROJECTS=3, PUSHES=14;
   let n=0,a=0,paused=false,timer=null,started=false;
@@ -85,6 +85,12 @@ document.addEventListener('click',e=>{document.querySelectorAll('details.menu[op
   ctl.addEventListener('click',()=>{
     paused=!paused; ctl.setAttribute('aria-pressed',paused); ctl.textContent=paused?'Play animation':'Pause animation';
     if(!paused&&started){clearTimeout(timer);if(n>=PUSHES)reset();step()}
+  });
+  // the system setting may change while the page is open
+  mq.addEventListener&&mq.addEventListener('change',e=>{
+    clearTimeout(timer);timer=null;
+    if(e.matches){still();ctl.hidden=true}
+    else{ctl.hidden=false;paused=false;ctl.setAttribute('aria-pressed',false);ctl.textContent='Pause animation';reset();if(started)step()}
   });
   if(reduce){still();ctl.hidden=true;return}
   // a hidden tab pauses the loop; it goes on when the tab is visible again (unless paused by hand)

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { describe, mergeProjects, parseArray, platformLabel, statusText, summarize, followStep } from "../src/model";
+import { age, describe, mergeProjects, parseArray, platformLabel, statusText, summarize, followStep } from "../src/model";
 
 test("parseArray keeps an array, refuses anything else", () => {
   assert.deepEqual(parseArray('[{"a":1}]'), [{ a: 1 }]);
@@ -93,5 +93,18 @@ test("followStep: wait for the build, then live or failed", () => {
   assert.equal(followStep({ building: false, failed: false }, false, 1), "wait");
   assert.equal(followStep({ building: false, failed: false }, true, 2), "live");
   assert.equal(followStep({ building: false, failed: true }, true, 2), "failed");
-  assert.equal(followStep({ building: false, failed: false }, false, 4), "live");
+  assert.equal(followStep({ building: false, failed: false }, false, 4), "wait");
+  assert.equal(followStep({ building: false, failed: false }, false, 8), "live");
+});
+
+test("age rounds down: 23.6 h is 23 h, 36 h is 1 d", () => {
+  assert.equal(age(23.6 * 3600), "23 h");
+  assert.equal(age(36 * 3600), "1 d");
+  assert.equal(age(30), "1 min");
+});
+
+test("headSha of a waiting project is kept, a bad one is dropped", () => {
+  const [a, b] = mergeProjects([{ name: "a", platform: "vercel", headSha: "abc1234def" }, { name: "b", platform: "vercel", headSha: "x; rm" }], null);
+  assert.equal(a.headSha, "abc1234def");
+  assert.equal(b.headSha, undefined);
 });

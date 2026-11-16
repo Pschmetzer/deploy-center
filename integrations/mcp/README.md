@@ -107,7 +107,9 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_history(project, count?)` | `deploys history <p> <n>` | The last deploys (default 10): when, state, commit, source. Read it before a rollback. |
 | `deploys_explain(project)` | `deploys explain <p>` | Why a project is, or is not, counted as changed. |
 | `deploys_notes(project)` | `deploys notes <p>` | Release notes (Markdown) between what is live and the branch. |
-| `deploys_logs(project, lines)` | `deploys logs <p> <lines>` | The end of the newest build log. `lines` 1–2000, default 80. |
+| `deploys_logs(project, lines, id?, runtime?)` | `deploys logs <p> <lines> [--id <d>] [--runtime]` | The end of the newest build log, of one deploy (`id`, from `deploys_history`), or of the running service (`runtime: true`; platforms with runtime logs). `lines` 1–2000, default 80. |
+| `deploys_guard_status()` | `deploys guard status --json` | Is the auto-deploy guard on, when did it last run, what did it turn off. Read-only. |
+| `deploys_allowed()` | `deploys autodeploy allowed --json` | Projects with a time-limited auto-deploy allowance right now. Read-only; revoking is not offered. |
 | `deploys_doctor` | `deploys doctor` | Tools and logins, as JSON. No key is printed. |
 | `deploys_simulate(days?)` | `deploys simulate --days <n> --json` | Estimate: what auto-deploy would cost per month (builds, minutes, USD) vs. deploying once a day. `days` 1–90, default 30. |
 | `deploys_ledger` | `deploys ledger --json` | Estimate: builds skipped and minutes and USD saved since auto-deploy was turned off. |
@@ -246,6 +248,7 @@ and tells you to deploy in Deploy Center or with `deploys vercel deploy app-web`
 | `DEPLOYS_MCP_SLOW_TIMEOUT` | `300` | Seconds for `deploys_simulate` and `deploys_ledger`. |
 | `DEPLOYS_MCP_MAX_OUTPUT` | `20000` | Characters per answer. |
 | `DEPLOYS_MCP_MAX_DEPLOYS` | `3` | Deploys plus rollbacks one server process may start. |
+| `DEPLOYS_MCP_MAX_PER_HOUR` | `10` | The same across restarts of the server (a client that reconnects starts a new process): the last hour's starts are kept in `<config>/mcp-starts.json` (mode 0600). `0` turns it off. |
 | `DEPLOYS_MCP_ALLOW_PROJECTS` | any | Comma list (`web,vercel:api`): only these may be deployed or rolled back. |
 
 ## Tests

@@ -1,12 +1,12 @@
 /* The home page (index.html). Shared parts are in site.css. */
 :root{color-scheme:dark;
   --bg:#0b0d12; --bg2:#10131a; --card:#151924; --line:#232838; --text:#e9ecf3; --muted:#a3abbd;
-  --accent:#4f7cff; --accent2:#8b5cf6; --green:#34c759; --red:#ff5f57; --orange:#ff9f0a;
+  --accent:#4f7cff; --accent2:#8b5cf6; --btn-a:#3a62e0; --btn-b:#7a3fe0; --green:#34c759; --red:#ff5f57; --orange:#ff9f0a;
   --radius:12px; --max:1080px;
 }
-:root[data-theme="light"]{color-scheme:light;--bg:#fbfbfd;--bg2:#f3f4f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#535a6b;--accent:#2f5fe8;--accent2:#7c3aed;--green:#1f8f3a;--red:#d93025;--orange:#b25e00}
+:root[data-theme="light"]{color-scheme:light;--bg:#fbfbfd;--bg2:#f3f4f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#535a6b;--accent:#2f5fe8;--accent2:#7c3aed;--btn-a:#2f5fe8;--btn-b:#7c3aed;--green:#177a2e;--red:#d93025;--orange:#b25e00}
 @media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f3f4f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#535a6b;--accent:#2f5fe8;--accent2:#7c3aed;--green:#1f8f3a;--red:#d93025;--orange:#b25e00}
+  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f3f4f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#535a6b;--accent:#2f5fe8;--accent2:#7c3aed;--btn-a:#2f5fe8;--btn-b:#7c3aed;--green:#177a2e;--red:#d93025;--orange:#b25e00}
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth;scroll-padding-top:64px}
@@ -29,13 +29,13 @@ nav .links{margin-left:auto;display:flex;gap:16px;align-items:center;font-size:1
 nav .links a{color:var(--muted)}
 nav .links a:hover{color:var(--text);text-decoration:none}
 nav .links a.gh{color:var(--text)}
-nav .links a.dl{color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2));padding:5px 11px;border-radius:8px;font-weight:600}
-.theme{all:unset;cursor:pointer;color:var(--muted);width:30px;height:30px;display:grid;place-items:center;border-radius:8px;flex:none}
+nav .links a.dl{color:#fff;background:linear-gradient(135deg,var(--btn-a),var(--btn-b));padding:5px 11px;border-radius:8px;font-weight:600}
+.theme{all:unset;cursor:pointer;color:var(--muted);width:36px;height:36px;display:grid;place-items:center;border-radius:8px;flex:none}
 .theme:hover{color:var(--text);background:var(--card)}
 .theme:focus-visible{outline:2px solid var(--accent)}
 .theme svg{width:17px;height:17px}
 .menu{display:none}
-.menu summary{list-style:none;cursor:pointer;padding:5px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;color:var(--text)}
+.menu summary{list-style:none;cursor:pointer;padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;color:var(--text)}
 .menu summary::-webkit-details-marker{display:none}
 .menu .panel{display:flex;flex-direction:column;position:absolute;right:16px;top:48px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:210px;box-shadow:0 20px 50px -20px rgba(0,0,0,.5)}
 .menu .panel a{padding:9px 12px;border-radius:8px;color:var(--text)}
@@ -58,13 +58,13 @@ h1 .strike::after{content:"";position:absolute;left:-2%;right:-2%;top:55%;height
 .cta{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
 .btn{display:inline-flex;align-items:center;gap:9px;padding:10px 18px;border-radius:10px;font-weight:600;font-size:15px;border:1px solid var(--line);color:var(--text);background:var(--card)}
 .btn:hover{text-decoration:none;border-color:color-mix(in srgb,var(--accent) 60%,var(--line))}
-.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:0;color:#fff;box-shadow:0 8px 26px -10px color-mix(in srgb,var(--accent) 70%,transparent)}
+.btn.primary{background:linear-gradient(135deg,var(--btn-a),var(--btn-b));border:0;color:#fff;box-shadow:0 8px 26px -10px color-mix(in srgb,var(--accent) 70%,transparent)}
 .btn svg{width:17px;height:17px;flex:none}
 .small{font-size:13px;color:var(--muted);margin:10px 0 0}
 /* install tabs */
 .install{display:inline-block;margin-top:16px;max-width:100%;text-align:left}
 .tabs{display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-bottom:5px}
-.tabs button{all:unset;cursor:pointer;font-size:12px;color:var(--muted);padding:3px 9px;border-radius:7px;border:1px solid transparent}
+.tabs button{all:unset;cursor:pointer;font-size:12px;color:var(--muted);padding:7px 11px;border-radius:7px;border:1px solid transparent}
 .tabs button:focus-visible{outline:2px solid var(--accent)}
 .tabs button[aria-selected="true"]{color:var(--text);background:var(--card);border-color:var(--line)}
 .code{display:flex;align-items:flex-start;gap:12px;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);border:1px solid var(--line);padding:8px 11px;border-radius:9px;color:var(--text);max-width:100%}
@@ -183,3 +183,10 @@ code{font:.88em ui-monospace,Menlo,monospace;background:var(--card);border:1px s
   .sticky-dl a{flex:1;justify-content:center}
 }
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* what used to be style="" attributes (Content-Security-Policy without 'unsafe-inline') */
+.list.two.one{grid-template-columns:1fr}
+.two.wide.gap-top{margin-top:28px;align-items:start}
+.list li b.inl{display:inline}
+p.sub.center{margin:0 auto 20px}
+.small.gap-top-s{margin-top:14px}

@@ -55,8 +55,13 @@ struct DeploySnapshot: Codable, Equatable {
     /// English or German by a language code ("de", "de-DE" give German; nil gives the system's first).
     /// The iOS app and the widgets pick their texts with it, so both follow the same rule.
     static func localized(_ language: String?, _ en: String, _ de: String) -> String {
-        (language ?? Locale.preferredLanguages.first ?? "en").hasPrefix("de") ? de : en
+        isGerman(language ?? Self.systemLanguage(Locale.preferredLanguages)) ? de : en
     }
+    /// The first of the person's languages that the apps have texts in ("fr", "de" gives German, not English).
+    static func systemLanguage(_ preferred: [String]) -> String {
+        preferred.first { $0.hasPrefix("de") || $0.hasPrefix("en") } ?? "en"
+    }
+    private static func isGerman(_ code: String) -> Bool { code.hasPrefix("de") }
     /// A text in the language this snapshot was written in.
     func text(_ en: String, _ de: String) -> String { Self.localized(language, en, de) }
 

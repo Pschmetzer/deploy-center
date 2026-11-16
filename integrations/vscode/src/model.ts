@@ -31,6 +31,8 @@ export interface Project {
   state: string | null;
   /** The name the CLI is given: "name", or "platform:name" when the name is on two platforms. */
   ref: string;
+  /** The branch head that waits (from `changed`): a deploy is started with this commit (--sha), not a later push. */
+  headSha?: string;
 }
 
 /** The newest attempt failed: Vercel ERROR, Render build_failed / update_failed / pre_deploy_failed. */
@@ -110,6 +112,7 @@ export function mergeProjects(
       pendingCommits: num(c.pendingCommits), pendingPRs: num(c.pendingPRs),
       oldestPendingAt: num(c.oldestPendingAt),
       waiting: true, ...(prev ? { building: prev.building, failed: prev.failed } : phaseOf(c, state, false)), state,
+      ...(typeof c.headSha === "string" && /^[0-9a-f]{7,40}$/i.test(c.headSha) ? { headSha: c.headSha } : {}),
     });
   }
   const list = [...out.values()];
@@ -178,9 +181,10 @@ export function describe(p: Project, now = Date.now() / 1000): string {
 }
 
 export function age(seconds: number): string {
-  if (seconds < 3600) return t("{0} min", Math.max(1, Math.round(seconds / 60)));
-  if (seconds < 86400) return t("{0} h", Math.round(seconds / 3600));
-  return t("{0} d", Math.round(seconds / 86400));
+  // Rounded down: "waiting for 2 d" means two full days, not 1.6.
+  if (seconds < 3600) return t("{0} min", Math.max(1, Math.floor(seconds / 60)));
+  if (seconds < 86400) return t("{0} h", Math.floor(seconds / 3600));
+  return t("{0} d", Math.floor(seconds / 86400));
 }
 
 export type FollowState = "wait" | "live" | "failed" | "gone";
@@ -188,11 +192,13 @@ export type FollowState = "wait" | "live" | "failed" | "gone";
 /**
  * One look at a deploy that was just started. A new build may show up only after a while (the
  * platform queues it), so "live" needs either a build that was seen running and is done now, or
- * a few looks without any build (then the newest state is what there is).
+ * eight looks without any build (then the newest state is what there is).
  */
 export function followStep(p: Pick<Project, "building" | "failed"> | undefined, seenBuilding: boolean, looks: number): FollowState {
   if (!p) return "gone";
   if (p.building) return "wait";
-  if (!seenBuilding && looks < 4) return "wait";
+  // Eight looks (two minutes) for a build to appear: a queue longer than that is rare, and the old
+  // deploy's state (live, or failed) would otherwise be reported as this one's.
+  if (!seenBuilding && looks < 8) return "wait";
   return p.failed ? "failed" : "live";
 }

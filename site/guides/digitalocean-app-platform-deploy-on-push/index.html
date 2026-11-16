@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to stop DigitalOcean App Platform deploying on every push · Deploy Center</title>
+<meta name="description" content="Set deploy_on_push to false on each component of a DigitalOcean App Platform app, why the API needs the whole spec, and how to deploy by hand.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="How to stop DigitalOcean App Platform deploying on every push · Deploy Center">
+<meta property="og:description" content="Set deploy_on_push to false on each component of a DigitalOcean App Platform app, why the API needs the whole spec, and how to deploy by hand.">
+<meta property="og:url" content="https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How to stop DigitalOcean App Platform deploying on every push · Deploy Center">
+<meta name="twitter:description" content="Set deploy_on_push to false on each component of a DigitalOcean App Platform app, why the API needs the whole spec, and how to deploy by hand.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "How to stop DigitalOcean App Platform deploying on every push",
+  "description": "Set deploy_on_push to false on each component of a DigitalOcean App Platform app, why the API needs the whole spec, and how to deploy by hand.",
+  "url": "https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/",
+  "datePublished": "2026-11-16",
+  "dateModified": "2026-11-16",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "What turns off autodeploy on DigitalOcean App Platform?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "deploy_on_push set to false on the component source in the app spec, or the Autodeploy switch of the component in the control panel."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Can the API change just one component?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. PUT /v2/apps/{id} takes the whole spec, so read it first and send it back with only the flags changed."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "How do I deploy by hand?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Create a deployment in the control panel, or POST /v2/apps/{id}/deployments with force_build set to false."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does Deploy Center support DigitalOcean?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes, as an opt-in host. It sets deploy_on_push to false on every component and keeps the previous spec."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Stop DigitalOcean App Platform builds",
+    "item": "https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>How to stop DigitalOcean App Platform deploying on every push</h1>
+<p class="answer">Every component built from a repo has an <b>Autodeploy</b> switch, which is <code>deploy_on_push</code> in the app spec. Set it to <code>false</code> on each component and save the spec. Pushes then build nothing, and you deploy when you decide.</p>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+
+<p>App Platform builds and deploys a component every time you push to the branch it watches. Each build uses build minutes and each deploy restarts the app.</p>
+<h2 id="spec">1. In the app spec</h2>
+<p>In the <a href="https://docs.digitalocean.com/products/app-platform/reference/app-spec/">app spec</a>, each service, static site, worker, job or function built from a <code>github</code>, <code>gitlab</code> or <code>bitbucket</code> source carries <code>deploy_on_push</code>:</p>
+<pre><code class="language-yaml">services:
+  - name: web
+    github:
+      repo: my-org/my-repo
+      branch: main
+      deploy_on_push: false</code></pre>
+<p>For an image from the DigitalOcean container registry the flag is <code>image.deploy_on_push.enabled</code>. The same switch is the <b>Autodeploy</b> setting of the component in the control panel.</p>
+<div class="note"><p><b>Trade-offs.</b> The API cannot change one switch: <code>PUT /v2/apps/{id}</code> takes the whole spec. Read the spec first and send it back with only the flags changed, or edit it in the control panel, so you do not overwrite anything else.</p></div>
+<h2 id="deploy">2. Deploying by hand</h2>
+<p>Create a deployment in the control panel, or with <code>POST /v2/apps/{id}/deployments</code> and <code>force_build: false</code>. App Platform takes the newest commit of each component's branch and reuses a cached build where it can.</p>
+<h2>DigitalOcean in Deploy Center</h2>
+<p><a href="/">Deploy Center</a> supports App Platform as an opt-in host: <code>deploys providers enable digitalocean</code>, then <code>pbpaste | deploys digitalocean set-key</code> with a token that may read and update apps. <code>deploys digitalocean autodeploy-off &lt;app&gt;</code> reads the spec, sets <code>deploy_on_push</code> to <code>false</code> on every component, saves the old spec in your config folder, sends the spec back and checks the answer. Details: <a href="/docs/digitalocean/">the DigitalOcean provider docs</a>.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>What turns off autodeploy on DigitalOcean App Platform?</summary><p>deploy_on_push set to false on the component source in the app spec, or the Autodeploy switch of the component in the control panel.</p></details>
+  <details><summary>Can the API change just one component?</summary><p>No. PUT /v2/apps/{id} takes the whole spec, so read it first and send it back with only the flags changed.</p></details>
+  <details><summary>How do I deploy by hand?</summary><p>Create a deployment in the control panel, or POST /v2/apps/{id}/deployments with force_build set to false.</p></details>
+  <details><summary>Does Deploy Center support DigitalOcean?</summary><p>Yes, as an opt-in host. It sets deploy_on_push to false on every component and keeps the previous spec.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<p class="reference"><b>Reference:</b> <a href="/docs/cli/#platforms">CLI: platform commands</a> · <a href="/docs/troubleshooting/">Troubleshooting</a></p>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

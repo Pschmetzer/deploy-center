@@ -149,7 +149,7 @@ expect "with_heads counts commits and PRs, open PRs split" \
 
 # --- commands for a person: usage lines, help, version, ignore, costs, completion ---
 cli() { env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" HOME="$tmp" NO_COLOR=1 /bin/bash ./deploys "$@" 2>&1; }
-expect "a missing name is a usage line" "$(cli logs; echo "rc=$?")" $'Error: Usage: deploys logs <project> [lines] [--id <deploy>]\nrc=1'
+expect "a missing name is a usage line" "$(cli logs; echo "rc=$?")" $'Error: Usage: deploys logs <project> [lines] [--id <deploy>] [--follow]\nrc=1'
 expect "--help lists history and exits 0" "$(cli --help | grep -c 'deploys history'; cli --help >/dev/null; echo $?)" $'1\n0'
 expect "--version is the VERSION file" "$(cli --version)" "$(cat VERSION)"
 expect "costs refuses a word" "$(cli costs abc | grep -c 'days a number')" "1"
@@ -196,7 +196,9 @@ echo "gh $*" >> "$E2E/calls.log"
 [ "${GSTUB:-}" = down ] && { echo "gh: HTTP 401: Bad credentials" >&2; exit 1; }
 case "$*" in
   *rate_limit*) echo '{"limit":5000,"remaining":4000,"reset":0}' ;;
-  *"repos/me/app/commits/main"*) echo '{"sha":"bbbb","commit":{"message":"feat: new","committer":{"date":"2026-01-02T00:00:00Z"}}}' ;;
+  *"repos/me/app/commits/main"*) hn="$(cat "$E2E/head.n" 2>/dev/null || echo 0)"; echo $((hn + 1)) > "$E2E/head.n"; hs=bbbb
+    [ -n "${HEAD2:-}" ] && [ "$hn" -ge 1 ] && hs="$HEAD2"
+    printf '{"sha":"%s","commit":{"message":"feat: new","committer":{"date":"2026-01-02T00:00:00Z"}}}\n' "$hs" ;;
   *"compare/aaaa...main"*) [ -n "${BIG:-}" ] && { cat "$BIG"; exit 0; }
                            echo '{"status":"ahead","ahead_by":1,"behind_by":0,"commits":[{"sha":"bbbb","commit":{"message":"feat: new\n\nCo-Authored-By: Some Agent <agent@example.test>","committer":{"date":"2026-01-02T00:00:00Z"}},"author":{"type":"User"}}]}' ;;
   *"pulls?state=open"*) echo '{"key":"me/app","value":{"all":0,"drafts":0,"bots":0}}' ;;
@@ -266,11 +268,14 @@ printf '#!/bin/bash\nexit 0\n' > "$e2e/bin/clear"
 chmod +x "$e2e/bin"/*
 run() {  # run <stdout file> <stderr file> deploys args... ; prints the exit code
   local o="$1" e="$2"; shift 2
+  # A suite started with & (or by a CI step that ignores SIGINT) hands SIGINT-ignored to its children, and a
+  # signal ignored on entry cannot be trapped: perl resets it first, so the Ctrl-C test means the same everywhere.
+  local reset=(); [ -x /usr/bin/perl ] && reset=(/usr/bin/perl -e '$SIG{INT}="DEFAULT"; exec @ARGV')
   env -u DEPLOYS_LIB PATH="$e2e/bin:/usr/bin:/bin" E2E="$e2e" DEPLOYS_CONFIG="$e2e/config" DEPLOYS_VERCEL_TEAM=team_test \
-    HOME="$e2e" NO_COLOR=1 /bin/bash ./deploys "$@" > "$o" 2> "$e" </dev/null
+    HOME="$e2e" NO_COLOR=1 ${reset[@]+"${reset[@]}"} /bin/bash ./deploys "$@" > "$o" 2> "$e" </dev/null
   echo $?
 }
-fresh() { : > "$e2e/calls.log"; : > "$e2e/bodies.log"; : > "$e2e/sleeps.log"; rm -rf "$e2e/config/locks" "$e2e/ci" "$e2e/site"; }
+fresh() { : > "$e2e/calls.log"; : > "$e2e/bodies.log"; : > "$e2e/sleeps.log"; rm -rf "$e2e/config/locks" "$e2e/ci" "$e2e/site" "$e2e/head.n"; }
 O="$e2e/out"; E="$e2e/err"
 
 fresh; export RENDER_API_KEY=rnd_test
@@ -420,6 +425,13 @@ expect "when-green, no sha capability: started without --sha" "$rc:$(grep -c '^n
 expect "when-green, no sha capability: the record says why" \
   "$(echo "$out" | jq -r '.[] | select(.platform == "nosha") | "\(.action): \(.reason)"' | grep -c '^started: .*NoSha cannot deploy a given commit: the newest commit of the branch is built')" "1"
 expect "when-green, with sha capability: Vercel still gets the checked commit" "$(grep -c '"sha": *"bbbb"' "$e2e/bodies.log")" "1"
+# A push after the checks, on a host that builds the newest commit: not shipped unchecked.
+fresh
+out="$(env -u DEPLOYS_LIB PATH="$e2e/bin:/usr/bin:/bin" E2E="$e2e" HEAD2=cccc DEPLOYS_DIR="$nd" DEPLOYS_CONFIG="$nd/config" DEPLOYS_VERCEL_TEAM=team_test \
+  HOME="$e2e" NO_COLOR=1 /bin/bash ./deploys deploy-changed --yes --when-green --json 2>"$E" </dev/null)"; rc=$?
+expect "when-green, no sha capability: a newer commit than the checked one is not shipped" \
+  "$(echo "$out" | jq -r '.[] | select(.platform == "nosha") | "\(.action): \(.reason)"' | grep -c '^skipped: a newer commit (cccc) came in after the checks on bbbb')" "1"
+expect "when-green, no sha capability: and nothing was started on it" "$(grep -c '^nosha deploy n-1$' "$e2e/calls.log")" "0"
 expect "ci: green, exit 0" "$(run "$O" "$E" ci me/app bbbb --json; jq -c '{state, checks}' "$O")" $'0\n{"state":"green","checks":2}'
 expect "ci: red, exit 1" "$(CI=red run "$O" "$E" ci me/app bbbb; cat "$O")" $'1\nred: failed: test'
 expect "ci: still pending, exit 2 (with --json 0)" "$(CI=pending run "$O" "$E" ci me/app bbbb; CI=pending run "$O" "$E" ci me/app bbbb --json; jq -r .state "$O")" $'2\n0\npending'
@@ -487,6 +499,63 @@ expect "verify: --no-rollback only reports (exit 2)" "$(SITE=down run "$O" "$E" 
 fresh
 expect "verify: Ctrl-C in the countdown stops the rollback" \
   "$(SITE=down CANCEL=1 run "$O" "$E" verify web --json; jq -c '{rolledBack, cancelled}' "$O"; rolled)" $'2\n{"rolledBack":false,"cancelled":true}\n0'
+# Round 8: --dry-run and filters for deploy-changed, deploy --dry-run, top-level rollback and cancel.
+fresh
+expect "deploy-changed --dry-run: lists, starts nothing" "$(run "$O" "$E" deploy-changed --dry-run; started)" $'0\n0'
+expect "deploy-changed --dry-run says what --yes would do" "$(grep -c 'Run again with --yes' "$O")" "1"
+fresh
+expect "deploy-changed --dry-run with --yes is refused" "$(run "$O" "$E" deploy-changed --dry-run --yes; grep -c 'opposites' "$E"; started)" $'1\n1\n0'
+fresh
+expect "deploy-changed --only: just that project" "$(run "$O" "$E" deploy-changed --dry-run --only web; grep -c '^  vercel  web' "$O"; grep -c '^  render  api' "$O")" $'0\n1\n0'
+expect "deploy-changed --exclude: that project is left out" "$(run "$O" "$E" deploy-changed --dry-run --exclude web; grep -c '^  vercel  web' "$O"; grep -c '^  render  api' "$O")" $'0\n0\n1'
+expect "deploy-changed --platform render: only Render" "$(run "$O" "$E" deploy-changed --dry-run --platform render; grep -c '^  vercel  ' "$O"; grep -c '^  render  ' "$O")" $'0\n0\n1'
+expect "deploy-changed --max 1: one project" "$(run "$O" "$E" deploy-changed --dry-run --max 1; grep -c '^  [a-z]*  ' "$O")" $'0\n1'
+expect "deploy-changed --max 0 is refused" "$(run "$O" "$E" deploy-changed --dry-run --max 0 >/dev/null; grep -c 'number of projects' "$E")" "1"
+expect "deploy-changed --platform nowhere is refused" "$(run "$O" "$E" deploy-changed --dry-run --platform nowhere >/dev/null; grep -c 'not a platform' "$E")" "1"
+fresh
+expect "deploy --dry-run: says what would start, starts nothing" "$(run "$O" "$E" deploy web --dry-run; cat "$O"; started)" $'0\nWould deploy Vercel: web. Nothing was started.\n0'
+expect "deploy --dry-run --json" "$(run "$O" "$E" deploy web --preview --dry-run --json; jq -c '[.wouldDeploy, .preview, .platform]' "$O")" $'0\n[true,true,"vercel"]'
+expect "deploy --dry-run is allowed in observer mode" "$(DEPLOYS_READONLY=1 run "$O" "$E" deploy web -n)" "0"
+fresh
+expect "rollback <project>: the provider rolls it back" "$(run "$O" "$E" rollback web; rolled)" $'0\n1'
+expect "rollback with no project is a usage line" "$(run "$O" "$E" rollback; grep -c 'Usage: deploys rollback' "$E")" $'1\n1'
+expect "rollback is refused in observer mode" "$(DEPLOYS_READONLY=1 run "$O" "$E" rollback web; rolled)" $'1\n1'
+fresh
+expect "doctor --text: one line per thing" "$(run "$O" "$E" doctor --text; grep -c '^ok   jq$' "$O")" $'0\n1'
+fresh
+expect "vercel map: a repo with a query is refused before anything is written" "$(run "$O" "$E" vercel map web 'me/app?x=1'; grep -c 'Invalid repo' "$E")" $'1\n1'
+expect "vercel map: a branch with .. is refused" "$(run "$O" "$E" vercel map web me/app 'a..b'; grep -c 'Invalid commit or branch' "$E")" $'1\n1'
+fresh
+expect "list --platform render: only Render" "$(run "$O" "$E" list --platform render; grep -c '^vercel ' "$O"; grep -c '^render ' "$O")" $'0\n0\n1'
+expect "list --auto and --manual together are the whole list" \
+  "$(run "$O" "$E" list --json; tot="$(jq length "$O")"; run "$O" "$E" list --json --auto >/dev/null; au="$(jq length "$O")"; run "$O" "$E" list --json --manual >/dev/null; ma="$(jq length "$O")"; [ "$tot" = "$((au + ma))" ] && echo same)" $'0\nsame'
+fresh
+expect "metrics: waiting commits per project, in Prometheus text" \
+  "$(run "$O" "$E" metrics; grep -c '^deploycenter_waiting_commits{platform="vercel",project="web"} 1$' "$O"; grep -c '^# TYPE deploycenter_failed gauge$' "$O")" $'0\n1\n1'
+expect "metrics --out: the file is written whole" "$(run "$O" "$E" metrics --out "$e2e/metrics.prom"; grep -c '^deploycenter_auto_deploy{' "$e2e/metrics.prom")" $'0\n2'
+expect "metrics: an unknown option is refused" "$(run "$O" "$E" metrics --nope; grep -c 'Usage: deploys metrics' "$E")" $'1\n1'
+fresh; rm -f "$e2e/polls"
+expect "watch --and: several at once, each line starts with its project" \
+  "$(run "$O" "$E" watch web --and api; grep -c '^\[web\] Nothing is building' "$O"; grep -c '^\[api\] ' "$O" | grep -c '^[1-9]')" $'0\n1\n1'
+expect "watch --and without a name is refused" "$(run "$O" "$E" watch web --and; grep -c 'takes a project name' "$E")" $'1\n1'
+fresh
+echo '{"deny":[{"days":["fri"],"from":"15:00"}]}' > "$e2e/config/window.json"; fresh
+expect "deploy-changed --wait-for-window: closed all along, it looks again, then refuses as before" \
+  "$(DEPLOYS_NOW='fri 16:00 2026-11-13' run "$O" "$E" deploy-changed --yes --wait-for-window 3m; started; grep -c 'looking again' "$E"; grep -c 'deploy window says' "$E")" $'1\n0\n3\n1'
+fresh
+expect "deploy-changed --wait-for-window: an open window does not wait" \
+  "$(DEPLOYS_NOW='thu 10:00 2026-11-12' run "$O" "$E" deploy-changed --yes --wait-for-window 3m; grep -c 'looking again' "$E")" $'0\n0'
+rm -f "$e2e/config/window.json"
+fresh
+expect "verify --tries 2 --need 2: one bad answer of two fails" \
+  "$(SITE=flaky run "$O" "$E" verify web --tries 2 --need 2 --no-rollback --json; jq -c '[.healthy, .codes]' "$O"; rolled)" $'2\n[false,[502,200]]\n0'
+fresh
+expect "verify --tries 3 --need 2: one bad answer of three is healthy" \
+  "$(SITE=flaky run "$O" "$E" verify web --tries 3 --need 2 --json; jq -c '[.healthy, .codes]' "$O"; rolled)" $'0\n[true,[502,200,200]]\n0'
+expect "verify --tries 1: one answer is asked" "$(run "$O" "$E" verify web --tries 1 --json; jq -c '.codes' "$O")" $'0\n[200]'
+expect "verify: --need above --tries is refused" "$(run "$O" "$E" verify web --tries 2 --need 3; grep -c 'no check could pass' "$E")" $'3\n1'
+expect "verify: --tries 0 is refused" "$(run "$O" "$E" verify web --tries 0; grep -c 'number of answers' "$E")" $'3\n1'
+
 # FEA-033: the project's checks (overrides.json here, deploy-center.json in a repo) are each asked.
 echo '{"projects":{"web":{"checks":["/ok",{"path":"/moved","expect":"3xx"}]}}}' > "$e2e/config/overrides.json"; fresh
 expect "FEA-033: verify asks every check of the project" \
@@ -892,6 +961,11 @@ expect "ai: usage is tallied per month" "$(jq -r --arg m "$(date -u +%Y-%m)" '.[
 : > "$CALLS"; airun ai_run notes web --lang de >/dev/null
 expect "ai notes: German, bot commits counted not listed, no emails" \
   "$(jq -r .system "$AIBODY" | grep -c 'Write in German'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'bump x'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Dependency updates: 1'):$(grep -c 'ops@example.org' "$AIBODY")" "1:0:1:0"
+: > "$CALLS"; cp "$DEPLOYS_CONFIG/ai-usage.json" "$tmp/ai-usage.lang"; airun ai_run notes web --lang fr >/dev/null
+expect "ai notes: --lang fr writes in French" "$(jq -r .system "$AIBODY" | grep -c 'Write in French')" "1"
+: > "$CALLS"; airun ai_run notes web --lang xx >/dev/null
+expect "ai notes: an unknown two-letter code names its ISO code" "$(jq -r .system "$AIBODY" | grep -c 'Write in the language with the ISO 639-1 code xx')" "1"
+cp "$tmp/ai-usage.lang" "$DEPLOYS_CONFIG/ai-usage.json"
 airun ai_run ship web >/dev/null
 expect "ai ship: diff stats, risky files and auto-deploy go in" \
   "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Diff: 2 commits, 3 files, +40 -2'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'prisma/migrations'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'auto-deploy: off')" "1:1:1"
@@ -1176,8 +1250,19 @@ echo '{"runs":[{"id":"a","repo":"me/web","at":1,"status":"running"}]}' > "$SCAN_
 expect "scan: a run over the time limit is reaped" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
 echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":999999}]}' > "$SCAN_STATE"; sc_reap
 expect "scan: a run whose process is gone is reaped" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
-echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$$"'}]}' > "$SCAN_STATE"; sc_reap
+# A live scan: a process whose command line says "scan run", as nohup "$SELF" scan run does.
+bash -c 'perl -e "sleep 60"; :' scan run &
+livepid=$!
+perl -e 'select(undef,undef,undef,0.5)'   # until the new process has its own command line (sleep is a stub here)
+echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$livepid"'}]}' > "$SCAN_STATE"; sc_reap
 expect "scan: a live run is left alone" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "running"
+# A pid that is alive but is not a scan (the number was reused after a restart): the run is over, the process is left alone.
+perl -e 'sleep 60' &
+otherpid=$!
+echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$otherpid"'}]}' > "$SCAN_STATE"; sc_reap
+expect "scan: a reused pid is no running scan" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
+expect "scan: and that other process was not touched" "$(kill -0 "$otherpid" 2>/dev/null && echo alive)" "alive"
+kill "$otherpid" "$livepid" 2>/dev/null; wait "$otherpid" "$livepid" 2>/dev/null || true
 expect "scan: a bad branch name is refused" "$( ( scan_start me/web 'a..b' ) 2>&1 | grep -c 'not a branch name')" "1"
 expect "scan: a bad repo is refused" "$( ( scan_start 'me/web;rm' ) 2>&1 | grep -c 'not a GitHub repo')" "1"
 sc_reset; for i in 1 2 3 4; do jq -n --argjson t "$(date +%s)" --arg i "$i" '{id:$i, repo:"me/x", at:$t, status:"clean"}'; done | jq -s '{runs:.}' > "$SCAN_STATE"
@@ -1294,6 +1379,8 @@ esac
 VC
 chmod +x "$e2e/bin/vercel"
 expect "INT-014: logs masks tokens" "$(run "$O" "$E" logs web 10 --id dpl_x; cat "$O")" $'0\nVERCEL_TOKEN=[masked]\npush [masked]'
+expect "logs --follow: prints the log once, masked, and stops when the state cannot be read" \
+  "$(run "$O" "$E" logs web 10 --id dpl_x --follow; cat "$O"; grep -c 'stopped following' "$E")" $'0\nVERCEL_TOKEN=[masked]\npush [masked]\n1'
 mv "$e2e/bin/vercel.orig" "$e2e/bin/vercel"
 
 # CLI-010, CLI-011: <p>:<name> for risk; repo and ref of ci/details are checked before any call.
@@ -1525,7 +1612,7 @@ expect "CLI-028: the job carries DEPLOYS_LOG_ROTATE=1" "$(grep -c '<key>DEPLOYS_
 # CLI-030: without launchd, schedule on writes nothing and prints the cron line.
 mkdir -p "$tmp/nolc"; for b in sed dirname basename; do ln -sf "$(command -v "$b")" "$tmp/nolc/$b"; done
 # shellcheck disable=SC2123  # a PATH without launchctl is the point
-expect "CLI-030: no launchd: a cron line, no job file" "$( (PATH="$tmp/nolc"; DEPLOYS_LAUNCH_DIR="$tmp/j30"; job_on app.deploycenter.autofix 600 DeployCenter-autofix autofix) | grep -c "^\*/10 \* \* \* \* PATH=.* /bin/bash '.*deploys' 'autofix' >>"; [ -e "$tmp/j30" ] && echo file || echo none)" $'1\nnone'
+expect "CLI-030: no launchd: a cron line, no job file" "$( (PATH="$tmp/nolc"; DEPLOYS_LAUNCH_DIR="$tmp/j30"; job_on app.deploycenter.autofix 600 DeployCenter-autofix autofix) | grep -c "^\*/10 \* \* \* \* mkdir -p .* && PATH=.* /bin/bash '.*deploys' 'autofix' >>"; [ -e "$tmp/j30" ] && echo file || echo none)" $'1\nnone'
 # ===== CLI features track =====
 # INT-082: deploys hooks install chains an existing pre-push, uninstall puts it back.
 hk="$tmp/hk"; mkdir -p "$hk"; git -C "$hk" init -q
@@ -1618,7 +1705,7 @@ mkdir -p "$tmp/j68"
 expect "FEA-068: the job starts at 07:30, with the flags" \
   "$(grep -c '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>' "$tmp/j68/app.deploycenter.daily.plist"; grep -c '<string>deploy-changed</string><string>--yes</string><string>--when-green</string>' "$tmp/j68/app.deploycenter.daily.plist")" $'1\n1'
 # shellcheck disable=SC2123  # a PATH without launchctl is the point
-expect "FEA-068: without launchd the cron line runs at 07:30" "$( (PATH="$tmp/nolc"; job_on app.deploycenter.daily @07:30 DeployCenter-daily deploy-changed --yes) | grep -c "^30 7 \* \* \* PATH=.* 'deploy-changed' '--yes' >>")" "1"
+expect "FEA-068: without launchd the cron line runs at 07:30" "$( (PATH="$tmp/nolc"; job_on app.deploycenter.daily @07:30 DeployCenter-daily deploy-changed --yes) | grep -c "^30 7 \* \* \* mkdir -p .* && PATH=.* 'deploy-changed' '--yes' >>")" "1"
 expect "FEA-068: a time that is none is refused, nothing written" "$(run "$O" "$E" schedule daily 25:00; grep -c 'HH:MM' "$E"; [ -e "$e2e/config/schedule.json" ] && echo file || echo none)" $'1\n1\nnone'
 expect "FEA-068: status without a schedule" "$(run "$O" "$E" schedule status --json; jq -c '[.at, .scheduled]' "$O")" $'0\n[null,false]'
 expect "FEA-068: observers cannot schedule deploys" "$(DEPLOYS_READONLY=1 run "$O" "$E" schedule daily 08:00; grep -c 'Observer mode' "$E")" $'1\n1'

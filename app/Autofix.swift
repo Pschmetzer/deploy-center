@@ -9,7 +9,7 @@ struct AutofixSettings: View {
     /// The rows read the same status: after a run here they are brought up to date at once.
     @ObservedObject var store: Store
     /// The projects, so demo mode can replace their names in the script's output.
-    private var items: [Item] { store.items.values.flatMap { $0 } }
+    private var items: [Item] { store.allItems }
     /// Read so the output redraws at once when demo mode is switched (⇧⌘D).
     @AppStorage("demoMode") private var demoMode = false
     @State private var status: AutofixReport?
@@ -96,10 +96,10 @@ struct AutofixSettings: View {
                             if f.status == "failed" { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).accessibilityHidden(true) }
                             Text(Self.label(f)).foregroundStyle(f.status == "failed" ? .red : .secondary)
                             if let n = f.prNumber, let s = f.prUrl, let url = URL(string: s), !Demo.on {
-                                Button("PR #\(n)") { NSWorkspace.shared.open(url) }.buttonStyle(.link)
+                                Button("PR #\(n)") { SafeLink.open(url) }.buttonStyle(.link)
                             }
                             if let s = f.session, let url = URL(string: s) {
-                                Button(L("Session", "Sitzung")) { NSWorkspace.shared.open(url) }.buttonStyle(.link)
+                                Button(L("Session", "Sitzung")) { SafeLink.open(url) }.buttonStyle(.link)
                             }
                         }
                         .font(.caption)
@@ -155,7 +155,7 @@ struct AutofixSettings: View {
         } catch {
             message = L("Could not copy the prompt: ", "Prompt ließ sich nicht kopieren: ") + error.localizedDescription; failed = true; return
         }
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+        Pasteboard.copy(text)
         message = L("Prompt copied. Paste it into the new routine.", "Prompt kopiert. Füge ihn in die neue Routine ein."); failed = false
     }
 

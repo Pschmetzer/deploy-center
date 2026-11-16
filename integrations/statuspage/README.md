@@ -55,6 +55,8 @@ published.
 | `title` | `Deploys` | Page and feed title. |
 | `description` | empty | A line under the title. |
 | `baseUrl` | empty | Where the page will live. Used for the feed's links and ids. Must be an `http(s)://` address. |
+| `strict` | `false` | `true` is the setting for a page anyone may see: it implies `hideMessages`, moves the page's script into `status.js` (no inline script, so a `script-src 'self'` policy holds; the page carries one as a meta tag) and adds `noindex`. Off by default, so existing pages do not change. |
+| `texts` | none | Your own wording for any text of the page: `{"recent": "History", "noDeploys": "Nothing yet."}` replaces the text of the chosen `lang` under that key. Plain strings only. |
 | `hideMessages` | `false` | `true` shows "Updated" instead of every commit message, in the page, the feed and `status.json`. The example config sets it to `true`: commit messages and the titles of waiting commits ("Coming next") are often not meant for the public. Set `false` only for a page you would show anyone. |
 | `showAuthors` | `false` | Keep the author names that `deploys notes` adds. |
 | `timeline` | `30` | How many deploys the timeline keeps. |

@@ -8,7 +8,7 @@ allowed-tools: Bash(deploys changed *) Bash(deploys status *) Bash(deploys logs 
 # Deploy Center
 
 The user deploys with Deploy Center (the Mac app and its `deploys` CLI). Git auto-deploy is off on
-their Vercel and Render projects, so **a push does not go live**. A person decides what ships and
+their projects (Vercel, Render and the other platforms deploys knows), so **a push does not go live**. A person decides what ships and
 when. Your job is to write and fix code, say what is waiting, and deploy only when asked.
 
 If `deploys` is not installed (`command -v deploys` finds nothing), say so once and point to
@@ -24,6 +24,10 @@ https://deploycenter.app. Do not try to install it or work around it.
   approvals. If a deploy is refused for the window or an approval, say so; the user decides.
 - Never run `deploys autodeploy allow`, `deploys autodeploy-on`, `deploys guard`, or
   `deploys autofix --only` (it hands a build to a routine). They change what deploys on its own.
+- The same goes for every way around `deploys`: `vercel --prod`, `vercel deploy`, `vercel promote`,
+  `curl` to a deploy-hook URL, `gh workflow run` of a deploy workflow, `render deploys create`,
+  `netlify deploy`, `wrangler deploy`. They skip the deploy window, approvals and the journal, so
+  they need the same OK as `deploys deploy`, and you should prefer `deploys deploy` instead.
 - "Push it", "commit it", "fix the build" or "open a PR" are **not** an OK to deploy.
 - An OK covers one deploy. Ask again for the next one.
 - Never turn auto-deploy back on, reconnect Git, or change deploy settings on Vercel or Render.

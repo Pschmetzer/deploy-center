@@ -70,6 +70,24 @@ inputs:
       Empty: the risk is only reported.
     required: false
     default: ""
+  when-green:
+    description: >-
+      "true": with deploy: true, only commits whose CI checks passed are started
+      (deploy-changed --when-green). A project whose checks fail or are still running is left out.
+    required: false
+    default: "false"
+  strict:
+    description: >-
+      "true": with when-green, a project whose checks are still running after the wait is left out
+      instead of started (deploy-changed --when-green --strict). Has no effect without when-green.
+    required: false
+    default: "false"
+  by-rules:
+    description: >-
+      "true": with deploy: true or dry-run, only what a "deploy" rule of rules.json matches is started
+      (deploy-changed --by-rules); "hold" rules always count.
+    required: false
+    default: "false"
   vercel-cli-version:
     description: The vercel CLI version to install when none is on the runner.
     required: false
@@ -100,6 +118,9 @@ outputs:
   risky:
     description: The projects whose risk is yellow or red, comma-separated.
     value: ${{ steps.changed.outputs.risky }}
+  plan:
+    description: 'With deploy: dry-run: what would be started, as a JSON array ({platform, name, action}) from deploys deploy-changed --json. Nothing was started.'
+    value: ${{ steps.plan.outputs.plan }}
   states:
     description: 'With wait: a JSON object, project name to ready, failed, timeout or unknown (could not be asked).'
     value: ${{ steps.wait.outputs.states || '{}' }}
@@ -159,7 +180,8 @@ runs:
           # the log only when it fails.
           prefix="$RUNNER_TEMP/vercel-cli"
           if [ -x "$prefix/node_modules/.bin/vercel" ]; then echo "vercel $CLI_VERSION from the cache"
-          elif ! npm install --prefix "$prefix" --no-fund --no-audit "vercel@$CLI_VERSION" > "$RUNNER_TEMP/npm.log" 2>&1; then
+          # env -u: the install scripts of vercel's dependencies must not see the deploy token.
+          elif ! env -u VERCEL_TOKEN npm install --prefix "$prefix" --no-fund --no-audit "vercel@$CLI_VERSION" > "$RUNNER_TEMP/npm.log" 2>&1; then
             cat "$RUNNER_TEMP/npm.log"; echo "::error::could not install vercel@$CLI_VERSION"; exit 1
           fi
           echo "$prefix/node_modules/.bin" >> "$GITHUB_PATH"
@@ -230,12 +252,22 @@ runs:
         VERCEL_TOKEN: ${{ inputs.vercel-token }}
         RENDER_API_KEY: ${{ inputs.render-api-key }}
         GH_TOKEN: ${{ inputs.github-token }}
+        WHEN_GREEN: ${{ inputs.when-green }}
+        STRICT: ${{ inputs.strict }}
+        BY_RULES: ${{ inputs.by-rules }}
       run: |
         set -euo pipefail
+        extra=(); [ "${WHEN_GREEN:-}" != true ] || { extra+=(--when-green); [ "${STRICT:-}" != true ] || extra+=(--strict); }
+        [ "${BY_RULES:-}" != true ] || extra+=(--by-rules)
         # Without --yes deploy-changed only shows the list; nothing starts.
-        out="$("$DEPLOYS" deploy-changed </dev/null)" || true
+        out="$("$DEPLOYS" deploy-changed ${extra[@]+"${extra[@]}"} </dev/null)" || true
         echo "$out"
         { echo "### Would deploy (dry run, nothing started)"; echo '```'; echo "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+        # The same as JSON, for later steps (a Slack message, an approval gate): the output `plan`.
+        plan="$("$DEPLOYS" deploy-changed --json ${extra[@]+"${extra[@]}"} </dev/null)" || plan=""
+        echo "$plan" | jq -e 'type == "array"' >/dev/null 2>&1 || plan='[]'
+        d="EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+        { echo "plan<<$d"; echo "$plan" | jq -c .; echo "$d"; } >> "$GITHUB_OUTPUT"
 
     - name: deploys deploy-changed --yes
       id: deploy
@@ -246,8 +278,13 @@ runs:
         RENDER_API_KEY: ${{ inputs.render-api-key }}
         GH_TOKEN: ${{ inputs.github-token }}
         REPO: ${{ inputs.repo }}
+        WHEN_GREEN: ${{ inputs.when-green }}
+        STRICT: ${{ inputs.strict }}
+        BY_RULES: ${{ inputs.by-rules }}
       run: |
         set -euo pipefail
+        extra=(); [ "${WHEN_GREEN:-}" != true ] || { extra+=(--when-green); [ "${STRICT:-}" != true ] || extra+=(--strict); }
+        [ "${BY_RULES:-}" != true ] || extra+=(--by-rules)
         # Only this repo's projects: every other project the tokens see goes into ignored.json of
         # this run's own config (in RUNNER_TEMP, gone after the job). Fails closed: when the list
         # cannot be read, or a name is in this repo and in another, nothing is started.
@@ -270,7 +307,7 @@ runs:
           ign="$DEPLOYS_CONFIG/ignored.json"; [ -s "$ign" ] || echo '[]' > "$ign"
           jq -c --argjson o "$other" '. + $o | unique' "$ign" > "$ign.new" && mv "$ign.new" "$ign"
           # What deploy-changed would start now, checked before it starts anything.
-          plan="$("$DEPLOYS" deploy-changed --json </dev/null)" || true
+          plan="$("$DEPLOYS" deploy-changed --json ${extra[@]+"${extra[@]}"} </dev/null)" || true
           echo "$plan" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "::error::deploys deploy-changed --json did not answer a list, so what it would start is unknown. Nothing was started."; exit 1; }
           stray="$(echo "$plan" | jq -r --argjson m "$mine" '[.[] | .name | select(. as $n | $m | index($n) | not)] | join(", ")')"
           if [ -n "$stray" ]; then
@@ -280,7 +317,7 @@ runs:
         fi
         # Exits 1 when a start failed or a state could not be read; the outputs are written first.
         # --json: one record per project ({platform, name, action, reason, id, url}), not a text line to parse.
-        rc=0; out="$("$DEPLOYS" deploy-changed --yes --json </dev/null)" || rc=$?
+        rc=0; out="$("$DEPLOYS" deploy-changed --yes --json ${extra[@]+"${extra[@]}"} </dev/null)" || rc=$?
         if echo "$out" | jq -e 'type == "array"' >/dev/null 2>&1; then
           echo "$out" | jq -r '.[] | "\(.platform)  \(.name)  \(.action)\(if .reason then ": \(.reason)" else "" end)\(if .url then " -> \(.url)" else "" end)"'
           # For the wait step: the deploy id of each start, for deploys watch.
@@ -320,14 +357,16 @@ runs:
             "$DEPLOYS" watch "$plat:$name" ${id:+"$id"} </dev/null & pid=$!
             # Looked at once a second; past the deadline the watch is stopped.
             while kill -0 "$pid" 2>/dev/null; do
-              [ "$SECONDS" -lt "$end" ] || { kill "$pid" 2>/dev/null; break; }
+              [ "$SECONDS" -lt "$end" ] || { kids="$(pgrep -P "$pid" 2>/dev/null || true)"; kill "$pid" 2>/dev/null; [ -z "$kids" ] || kill $kids 2>/dev/null; break; }
               sleep 1
             done
             wait "$pid"; rc=$?
             case "$rc" in 0) st=ready ;; 1) st=failed ;; 3) st=unknown ;; *) st=timeout ;; esac
           fi
           echo "$plat $name: $st"
-          states="$(echo "$states" | jq -c --arg k "$name" --arg v "$st" '. + {($k): $v}')"
+          # Keyed by name; two projects of the same name on two platforms get "platform:name".
+          key="$name"; [ "$(echo "$states" | jq --arg k "$name" 'has($k)')" = true ] && key="$plat:$name"
+          states="$(echo "$states" | jq -c --arg k "$key" --arg v "$st" '. + {($k): $v}')"
         done < <(jq -r '.[] | [.platform, .name, (.id // "")] | @tsv' "$f")
         bad="$(echo "$states" | jq -r 'to_entries | map(select(.value == "failed") | .key) | join(",")')"
         live="$(echo "$states" | jq -r 'if (to_entries | all(.value == "ready")) then "true" else "false" end')"

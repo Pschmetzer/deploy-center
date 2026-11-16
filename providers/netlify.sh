@@ -459,6 +459,16 @@ netlify_latest() { netlify_latest_json "$@" | jq -r "$NETLIFY_TSV"; }
 netlify_cli_status() { netlify_status_json "$@"; }
 netlify_cli_latest() { netlify_latest_json "$@"; }
 
+# netlify_history <site> <n>: the last n deploys, a table (WHEN (UTC), STATE, COMMIT, TRIGGER = context, TOOK).
+netlify_history() {
+  local id; id="$(netlify_id_of "$1")" || return 1
+  netlify_call GET "/sites/$id/deploys?per_page=$2" | jq -r 'def t: sub("\\.[0-9]+Z$";"Z") | fromdateiso8601;
+    .[] | [(.created_at | t | strftime("%Y-%m-%d %H:%M")), (.state // "?"), ((.commit_ref // "")[0:7]), (.context // ""),
+       (if .published_at then "\(((.published_at | t) - (.created_at | t)))s" else "" end)]
+    | map(if . == "" or . == null then "-" else . end) | @tsv' \
+    | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | table
+}
+
 # netlify_cancel [<site>] <deploy-id>
 netlify_cancel() {
   local d="${2:-$1}"
@@ -518,7 +528,7 @@ netlify_url() {
 # The token on stdin. Tried against /user first, saved only when Netlify takes it.
 netlify_set_key() {
   local key=""
-  IFS= read -r key || true
+  if [ -t 0 ]; then IFS= read -rs key || true; echo >&2; else IFS= read -r key || true; fi
   # A key copied with a CR (Windows) or spaces around it: trimmed; spaces, quotes or a backslash inside are refused.
   key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
   [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys netlify set-key"

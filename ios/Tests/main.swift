@@ -158,6 +158,13 @@ check(rw.rewritten && rw.fetchError == nil && rw.pendingCommits == nil, "GitHub:
 // MARK: Snapshot texts
 
 check(DeploySnapshot.localized("de-DE", "en", "de") == "de" && DeploySnapshot.localized("en", "en", "de") == "en", "language pick")
+check(DeploySnapshot.systemLanguage(["fr-FR", "de-DE", "en"]) == "de-DE", "language list: the first one the apps speak, not the first one")
+check(DeploySnapshot.systemLanguage(["fr", "es"]) == "en" && DeploySnapshot.systemLanguage([]) == "en", "language list: none known gives English")
+check(DeploySnapshot.systemLanguage(["en-GB", "de"]) == "en-GB", "language list: English first stays English")
+// An older writer: only the fields it knew. A newer reader still decodes it, and says so by `nil`s.
+let oldJSON = #"{"version":1,"at":"2026-01-01T00:00:00Z","demo":false,"waitingProjects":2,"waitingCommits":4,"waitingPRs":1,"building":0,"failed":0,"projects":[]}"#
+let oldSnap = try? DeploySnapshot.decoder.decode(DeploySnapshot.self, from: Data(oldJSON.utf8))
+check(oldSnap?.waitingProjects == 2 && oldSnap?.language == nil && oldSnap?.connected == nil && oldSnap?.saving == nil, "an old snapshot without the newer fields still decodes")
 var later = DeploySnapshot.sample
 later = DeploySnapshot(at: Date().addingTimeInterval(60), demo: later.demo, waitingProjects: later.waitingProjects,
                        waitingCommits: later.waitingCommits, waitingPRs: later.waitingPRs, building: later.building,

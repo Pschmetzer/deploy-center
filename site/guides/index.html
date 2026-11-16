@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Guides: stop paying for builds on Vercel, Render, Netlify · Deploy Center</title>
+<title>Guides: stop paying for builds on Vercel, Render, Netlify</title>
 <meta name="description" content="Step-by-step guides to turn off auto-deploy, skip builds you do not need and cut build costs on Vercel, Render and Netlify.">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
@@ -37,7 +38,7 @@
   "name": "Deploy Center guides",
   "description": "Guides to turn off auto-deploy and cut build costs on Vercel, Render and Netlify.",
   "url": "https://deploycenter.app/guides/",
-  "dateModified": "2026-11-12",
+  "dateModified": "2026-11-16",
   "author": {
    "@type": "Person",
    "name": "Patrick Schmetzer",
@@ -106,18 +107,72 @@
     {
      "@type": "ListItem",
      "position": 9,
+     "url": "https://deploycenter.app/guides/cloudflare-pages-stop-builds/",
+     "name": "Stop Cloudflare Pages builds"
+    },
+    {
+     "@type": "ListItem",
+     "position": 10,
+     "url": "https://deploycenter.app/guides/aws-amplify-disable-auto-build/",
+     "name": "Disable AWS Amplify auto-build"
+    },
+    {
+     "@type": "ListItem",
+     "position": 11,
+     "url": "https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/",
+     "name": "Stop DigitalOcean App Platform builds"
+    },
+    {
+     "@type": "ListItem",
+     "position": 12,
+     "url": "https://deploycenter.app/guides/coolify-auto-deploy-off/",
+     "name": "Coolify: Auto Deploy off"
+    },
+    {
+     "@type": "ListItem",
+     "position": 13,
+     "url": "https://deploycenter.app/guides/roll-back-vercel-render-deployment/",
+     "name": "Roll back a Vercel or Render deploy"
+    },
+    {
+     "@type": "ListItem",
+     "position": 14,
+     "url": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/",
+     "name": "Vercel build minutes and the build queue"
+    },
+    {
+     "@type": "ListItem",
+     "position": 15,
+     "url": "https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/",
+     "name": "Deploy to Vercel from GitHub Actions"
+    },
+    {
+     "@type": "ListItem",
+     "position": 16,
+     "url": "https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/",
+     "name": "Skip Vercel previews for bots and agents"
+    },
+    {
+     "@type": "ListItem",
+     "position": 17,
+     "url": "https://deploycenter.app/guides/ignored-build-step-or-auto-deploy-off/",
+     "name": "Ignored Build Step or auto-deploy off"
+    },
+    {
+     "@type": "ListItem",
+     "position": 18,
      "url": "https://deploycenter.app/claude-code/",
      "name": "Deploy Center + Claude Code"
     },
     {
      "@type": "ListItem",
-     "position": 10,
+     "position": 19,
      "url": "https://deploycenter.app/vercel-build-cost-calculator/",
      "name": "Build cost calculator"
     },
     {
      "@type": "ListItem",
-     "position": 11,
+     "position": 20,
      "url": "https://deploycenter.app/blog/ai-coding-agents-build-bill/",
      "name": "AI coding agents and your build bill"
     }
@@ -130,13 +185,13 @@
   "itemListElement": [
    {
     "@type": "ListItem",
-    "position": 1,
+    "position": 20,
     "name": "Home",
     "item": "https://deploycenter.app/"
    },
    {
     "@type": "ListItem",
-    "position": 2,
+    "position": 21,
     "name": "Guides",
     "item": "https://deploycenter.app/guides/"
    }
@@ -156,7 +211,12 @@
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Guides</h1>
 <p class="answer">How to turn off auto-deploy, skip the builds you do not need and see what they cost, on Vercel, Render and Netlify. Each guide starts with the answer, then the steps and the trade-offs.</p>
-<p class="meta">Last updated <time datetime="2026-11-12">12 November 2026</time></p>
+<div class="site-search" role="search" hidden>
+<label class="sr" for="site-q">Search the guides, blog and docs</label>
+<input id="site-q" type="search" data-site-search placeholder="Search guides, blog and docs" autocomplete="off" aria-controls="site-results">
+<ul id="site-results" hidden></ul>
+</div>
+<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time></p>
 <div class="cards">
   <a href="/guides/disable-vercel-auto-deploy/"><b>Disable Vercel auto-deploy</b><span>Three ways to stop Vercel deploying on every push, and how to undo each.</span></a>
   <a href="/guides/stop-vercel-building-every-push/"><b>Stop Vercel building every push</b><span>Build less without turning Git off: previews, bots, monorepos, batching.</span></a>
@@ -166,6 +226,15 @@
   <a href="/guides/reduce-vercel-costs/"><b>Reduce Vercel costs</b><span>A checklist: builds first, then functions, images and bandwidth.</span></a>
   <a href="/guides/auto-fix-failed-vercel-builds-with-claude/"><b>Auto-fix failed builds with Claude</b><span>A failed Vercel or Render build goes to a Claude Code routine, which opens a fix PR.</span></a>
   <a href="/guides/deploy-hooks/"><b>Deploy hooks for any host</b><span>Where Vercel, Netlify, Cloudflare and others keep the hook, how to call it, how to keep it secret.</span></a>
+  <a href="/guides/cloudflare-pages-stop-builds/"><b>Stop Cloudflare Pages builds</b><span>Turn off production and preview deployments so a push no longer uses a build.</span></a>
+  <a href="/guides/aws-amplify-disable-auto-build/"><b>Disable AWS Amplify auto-build</b><span>One AWS CLI command per branch, and how to start a build yourself.</span></a>
+  <a href="/guides/digitalocean-app-platform-deploy-on-push/"><b>Stop DigitalOcean App Platform builds</b><span>deploy_on_push: false on each component, and why the API needs the whole spec.</span></a>
+  <a href="/guides/coolify-auto-deploy-off/"><b>Coolify: Auto Deploy off</b><span>No build storm on your own server: the switch, the API field, deploying by hand.</span></a>
+  <a href="/guides/roll-back-vercel-render-deployment/"><b>Roll back a Vercel or Render deploy</b><span>Back to the last good deployment from the dashboard or the CLI, and how to check.</span></a>
+  <a href="/guides/vercel-build-minutes-and-build-queue/"><b>Vercel build minutes and the build queue</b><span>How builds add up from pushes, projects and branches, and how to measure them.</span></a>
+  <a href="/guides/deploy-to-vercel-from-github-actions/"><b>Deploy to Vercel from GitHub Actions</b><span>A deploy hook on a label, a prebuilt deploy, or one daily deploy of what changed.</span></a>
+  <a href="/guides/skip-vercel-previews-for-bots-and-agents/"><b>Skip Vercel previews for bots and agents</b><span>An Ignored Build Step for Dependabot, Renovate and AI agent branches.</span></a>
+  <a href="/guides/ignored-build-step-or-auto-deploy-off/"><b>Ignored Build Step or auto-deploy off</b><span>What each skips, what still creates a deployment, and when a script is the wrong tool.</span></a>
 </div>
 <h2>Tools and reading</h2>
 <div class="cards">
@@ -191,6 +260,15 @@
       <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
       <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
       <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
       <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
       <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
       <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
@@ -212,5 +290,6 @@
   </div>
   <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
 </div></footer>
+<script src="/js/site.js" defer></script>
 </body>
 </html>

@@ -255,6 +255,13 @@ contains "formula: installs lib/" "$f" 'libexec.install "lib"'
 inst --prefix "$tmp/p-lib" >/dev/null
 [ -f "$tmp/p-lib/lib/deploys/lib/team.sh" ] && ok "install: lib/ next to deploys" || fail "install: lib/ next to deploys" "no lib/team.sh"
 expect "install: an installed deploys has team mode" "$(DEPLOYS_CONFIG="$tmp/cfg-lib" "$tmp/p-lib/bin/deploys" config --json 2>/dev/null | jq -r 'has("projects")')" "true"
+# A pinned copy (site/install/<x.y.z>.sh, written by scripts/build-docs.py) installs its own release by default.
+grep -q '^PINNED_VERSION=""$' site/install.sh && ok "pinned copy: install.sh has the PINNED_VERSION line to set" || fail "pinned copy: PINNED_VERSION line" "missing in site/install.sh"
+pin="$tmp/pinned-0.6.9.sh"; sed 's/^PINNED_VERSION=""$/PINNED_VERSION="0.6.9"/' site/install.sh > "$pin"
+"$sh_" "$pin" --prefix "$tmp/p-pin" >/dev/null 2>&1
+expect "pinned copy: installs its own release by default" "$("$tmp/p-pin/bin/deploys" --version 2>/dev/null)" "0.6.9"
+"$sh_" "$pin" --version latest --prefix "$tmp/p-pin2" >/dev/null 2>&1
+expect "pinned copy: --version latest still asks for the newest" "$("$tmp/p-pin2/bin/deploys" --version 2>/dev/null)" "$version"
 # ===== end CLI track =====
 
 echo
