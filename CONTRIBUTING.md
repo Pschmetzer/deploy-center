@@ -12,6 +12,11 @@ open an issue first.
 - Nothing may start a build without an explicit click or a command with `--yes`.
 - Add a line under `## Unreleased` in `CHANGELOG.md` for anything a user would notice.
 
+## Licence of your contribution
+
+Deploy Center is MIT licensed. With a pull request you agree that your contribution is under the same
+licence (inbound = outbound). There is no CLA.
+
 ## Build
 
 Needs macOS 15 and `swiftc` (Xcode or the Command Line Tools), plus `jq`.

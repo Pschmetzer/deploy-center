@@ -14,10 +14,12 @@
 | [TEAM.md](TEAM.md) | Team mode: a shared `deploy-center.json`, observers, the two-person rule |
 | [GUARD.md](GUARD.md) | The guard that turns auto-deploy off again, and allowing it for a few hours |
 | [CLAUDE.md](CLAUDE.md) | Claude in the app with your own key: explain a failure, plain release notes, ship check; the PR workflow |
+| [SCAN.md](SCAN.md) | Bug scan: Claude Code looks through a repo and opens one fix PR; the security check with OSV-Scanner, gitleaks and Semgrep |
 | [AUTOFIX.md](AUTOFIX.md) | A failed build handed to a Claude Code routine, the fix deployed after you merge |
 | [CLAUDE-CODE.md](CLAUDE-CODE.md) | Using Deploy Center with Claude Code: the plugin, a CLAUDE.md block, the safety model |
 | [UNINSTALL.md](UNINSTALL.md) | Removing the app, the key and everything it kept |
 | [GITLAB.md](GITLAB.md) | GitLab as a source next to GitHub: `glab` or `GITLAB_TOKEN`, your own GitLab |
+| [providers/README.md](providers/README.md) | Which host can do what: a table, then one page per host |
 | `providers/*.md` | The opt-in hosts: [Netlify](providers/netlify.md), [Cloudflare Pages](providers/cloudflare.md), [AWS Amplify](providers/amplify.md), [DigitalOcean](providers/digitalocean.md), [Coolify](providers/coolify.md), [deploy hook](providers/hook.md) |
 | [WIDGETS-IOS.md](WIDGETS-IOS.md) | The Mac widgets and the iPhone app: how they get their data, building them |
 | [APP-STORE.md](APP-STORE.md) | Releasing the iPhone app (maintainer) |

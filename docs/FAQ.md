@@ -51,3 +51,18 @@ See [NUMBERS.md](NUMBERS.md).
 
 ### Something does not work.
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
+### Does it do preview deploys?
+Where the host has them: `deploys deploy <project> --preview` (Vercel, Cloudflare Pages, AWS Amplify; see [the host table](providers/README.md)). Render, Netlify, DigitalOcean and Coolify have no preview deploy here.
+
+### Can I roll back?
+Yes, on every host except a plain deploy hook: the Rollback button in the app, or `deploys <host> rollback <project>`. `deploys verify` rolls back by itself when the site answers 5xx after a deploy, unless you pass `--no-rollback`. See [SAFE-DEPLOY.md](SAFE-DEPLOY.md).
+
+### Is there an iPhone app?
+It is built for the App Store: what waits, deploy and rollback with Face ID, and widgets. How it works: [WIDGETS-IOS.md](WIDGETS-IOS.md).
+
+### Can my team use it?
+Yes, without a server: a shared `deploy-center.json` per repo, observer mode and an optional two-person rule. See [TEAM.md](TEAM.md).
+
+### Do I need an Anthropic key?
+Only for Claude in the app (explain a failure, release notes, ship check). Autofix uses a Claude Code routine instead. See [CLAUDE.md](CLAUDE.md).

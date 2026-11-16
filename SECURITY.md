@@ -3,8 +3,8 @@
 ## Report a problem
 
 Open a [private security advisory](https://github.com/Pschmetzer/deploy-center/security/advisories/new)
-(Security tab), not a public issue. Please include the version (Settings → Help → "Copy diagnostics")
-and the steps to see the problem. Leave out real project names, domains and keys.
+(Security tab), not a public issue. Please include the version (app: Settings → Help → "Copy diagnostics";
+CLI on Linux, WSL or in CI: `deploys --version` and `deploys where`) and the steps to see the problem. Leave out real project names, domains and keys.
 
 Deploy Center is maintained by one person in their spare time. The aim is a first answer within
 7 days, and a fix in a new release as soon as one is ready. There is no bug bounty.

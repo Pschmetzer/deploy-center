@@ -221,6 +221,54 @@ The host is on, but no key is stored for it. The message says where to create on
 
 Netlify deploys by hand through a build hook, which `autodeploy-off` creates. Run it once for that site.
 
+### AWS Amplify: no apps, or the wrong ones
+
+Amplify is reached through the `aws` CLI, so `aws sts get-caller-identity --profile <name>` has to work first
+(`aws configure sso` or `aws configure`). Only apps in one region are listed: `AWS_REGION`, else the profile's region.
+Set `AWS_REGION` to the region of the app you expect. The identity needs the `amplify:` permissions listed in
+[the Amplify page](providers/amplify.md). Which profile is used: `DEPLOYS_AMPLIFY_PROFILE`, then `AWS_PROFILE`, then the keychain.
+
+### DigitalOcean: HTTP 401, or an app that still deploys on push
+
+401 means the token is wrong or expired: `pbpaste | deploys digitalocean set-key`. The token needs read and update scope
+for apps. If a component still deploys on push after `autodeploy-off`, the message names it; the previous spec is kept in
+`~/.config/deploys/do-specs/<app-id>.json`. See [the DigitalOcean page](providers/digitalocean.md).
+
+### Coolify: 403 "API is disabled", or 403 on every application
+
+In Coolify, turn on API access under Settings > Advanced. A token limited to some projects cannot use `/applications`
+at all: create one with team-wide scope and the permissions `read`, `write` and `deploy`. A plain `http://` instance
+that is not this machine is refused unless you set `DEPLOYS_COOLIFY_ALLOW_HTTP=1`. See [the Coolify page](providers/coolify.md).
+
+### Cloudflare Pages: "unverified" or a deployment that was skipped
+
+Cloudflare does not document whether a deployment you create builds while push-deploys are off. Run
+`deploys cloudflare selftest <project> --yes` once (it uses one build); `deploys cloudflare doctor` then says
+`verified` or `failed`. See [the Cloudflare page](providers/cloudflare.md).
+
+### Deploy hook: "triggered" and nothing more
+
+A deploy hook has no status API, so a 2xx answer counts as ready. The URL is a secret and lives in the keychain
+(or a 0600 file on Linux); `deploys hook set-key <name>` replaces it. See [the hook page](providers/hook.md).
+
+## A deploy was refused
+
+### "deploy window closed"
+
+A rule in `window.json` (or the shared `deploy-center.json`) says deploys are closed now. `deploys window` shows why and
+exits 1 while it is closed. In an emergency `--force "why"` goes through, and the reason is written to the journal.
+See [SAFE-DEPLOY.md](SAFE-DEPLOY.md).
+
+### Nothing can be changed (observer mode)
+
+With `DEPLOYS_READONLY` set (any value but `0`, `false`, `no`, `off`) or observer mode turned on, `deploys` only reads.
+Turn it off with `deploys readonly off`, or unset the variable. See [TEAM.md](TEAM.md).
+
+### `deploys` says jq (or curl, or bash) is missing
+
+`jq`, `curl` and `bash` are required, `perl` is optional. `install.sh` names what is missing and how to install it on your system;
+`deploys doctor` checks again.
+
 ## Auto-deploy guard
 
 ### The guard turned auto-deploy off again, but I wanted it on

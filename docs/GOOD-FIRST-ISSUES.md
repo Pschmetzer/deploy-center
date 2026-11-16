@@ -4,22 +4,20 @@ Small, self-contained tasks for a first pull request. The owner can turn each on
 with the label `good first issue`. Please read [CONTRIBUTING.md](../CONTRIBUTING.md) first:
 no real project names in examples, texts in English and German, nothing builds without `--yes`.
 
-1. **fish completion.** `deploys completion` knows `zsh` and `bash`. Add `fish`, in the same place in
-   [`deploys`](../deploys) (look for `completion`), and a test in `tests/script-tests.sh`.
-
-2. **`--json` examples in the CLI reference.** Add a short sample output of `deploys changed --json`
+1. **`--json` examples in the CLI reference.** Add a short sample output of `deploys changed --json`
    and `deploys status --json` to [docs/CLI.md](CLI.md), with made-up project names.
 
-3. **Fix and test the CI example.** [examples/daily-deploy.yml](../examples/daily-deploy.yml) downloads only
-   the single file `deploys`, which needs `providers/` next to it since 0.8.0. Switch it to
-   `install.sh --version` (SHA-256 checked) and run it in a test repo.
-
-4. **More screenshots.** Take a screenshot of the menu bar and of Settings in demo mode, add them to
+2. **More screenshots.** Take a screenshot of the menu bar and of Settings in demo mode, add them to
    `docs/images/`, and use them with a one-line caption in [docs/SAFE-START.md](SAFE-START.md).
 
-5. **Microsoft Teams in notify.** [integrations/notify/notify.sh](../integrations/notify/notify.sh)
-   knows Discord, Slack-style, ntfy and Telegram. Add a Teams format and a test in
-   [integrations/tests/run.sh](../integrations/tests/run.sh).
-
-6. **Troubleshooting entry from a real error.** Pick an error message in [`deploys`](../deploys) that
+3. **Troubleshooting entry from a real error.** Pick an error message in [`deploys`](../deploys) that
    is not in [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) yet and add what it means and what to do.
+
+4. **A test for the fish completion.** `deploys completion fish` exists; add a check to
+   `tests/script-tests.sh` that its output names the commands and loads in `fish` when `fish` is installed.
+
+5. **A git host guide.** `lib/githost.sh` serves GitHub and GitLab. Write `docs/GITHOSTS.md`: the functions a
+   new host has to provide and the fixture layout (`tests/fixtures/gitlab`), as [PROVIDERS.md](PROVIDERS.md)
+   does for hosts.
+
+6. **Screenshots for the Raycast and VS Code listings.** Both store listings have none yet; take them in demo mode.
