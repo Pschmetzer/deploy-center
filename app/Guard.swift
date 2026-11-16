@@ -64,7 +64,10 @@ struct GuardSettings: View {
 
             Toggle(L("Guard auto-deploy every 30 minutes", "Auto-Deploy alle 30 Minuten bewachen"), isOn: Binding(
                 get: { status?.enabled ?? false },
-                set: { on in Task { await run(["guard", "schedule", on ? "on" : "off"]) } }))
+                set: { on in Task {
+                    if !on, !(await OwnerCheck.confirm(L("switch the auto-deploy guard off", "den Auto-Deploy-Wächter ausschalten"))) { return }
+                    await run(["guard", "schedule", on ? "on" : "off"])
+                } }))
                 .disabled(busy || status == nil)
 
             GuardLastRun(status: status)
@@ -86,7 +89,10 @@ struct GuardSettings: View {
             }
 
             GuardAllowances(allowances: status?.allowances ?? [], busy: busy, expired: { Task { await reload(); await store.loadAgentStatus() } }) { a in
-                Task { await run(["autodeploy", "revoke", a.platform, a.project == "*" ? "--all" : a.project], show: true) }
+                Task {
+                    guard await OwnerCheck.confirm(L("revoke an auto-deploy allowance", "eine Auto-Deploy-Erlaubnis widerrufen")) else { return }
+                    await run(["autodeploy", "revoke", a.platform, a.project == "*" ? "--all" : a.project], show: true)
+                }
             }
 
             GuardAllowForm(store: store, busy: busy) { platform, project, hours in

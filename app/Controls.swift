@@ -3,6 +3,21 @@
 import SwiftUI
 import AppKit
 
+extension View {
+    /// A small icon button still gets a target of about 24 pt (the glyph stays small).
+    func hitArea() -> some View { self.frame(minWidth: 24, minHeight: 24).contentShape(Rectangle()) }
+}
+
+/// The language the app shows, as a Locale: dates and times follow it, not only the Mac's region.
+var uiLocale: Locale { Locale(identifier: isGerman ? "de_DE" : "en_US") }
+/// "9:12 AM" / "09:12", in the app's language.
+func uiTime(_ d: Date) -> String { d.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(uiLocale)) }
+/// "5:00 AM" / "05:00" for a whole hour.
+func uiHour(_ h: Int) -> String {
+    let d = Calendar.current.date(bySettingHour: h, minute: 0, second: 0, of: Date()) ?? Date()
+    return uiTime(d)
+}
+
 /// A number with the decimal mark of the app's language ("12,5" in German), not the C locale's point.
 func decimal(_ v: Double, _ digits: Int = 1) -> String {
     v.formatted(.number.precision(.fractionLength(digits)).locale(Locale(identifier: isGerman ? "de_DE" : "en_US")))

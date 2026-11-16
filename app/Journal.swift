@@ -337,7 +337,7 @@ struct JournalView: View {
                 Text(e.platform).font(.caption).foregroundStyle(.secondary)
                 if let f = failed["\(e.platform)/\(e.name)"], f.failed > 0 {
                     Text(L("\(f.failed) of last \(f.total) failed", "\(f.failed) der letzten \(f.total) fehlgeschlagen"))
-                        .font(.caption2).foregroundStyle(.orange)
+                        .font(.caption2).foregroundStyle(Color.warningText)
                 }
                 Spacer()
                 if let took { Text(took).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
@@ -352,6 +352,13 @@ struct JournalView: View {
         }
         .help(detail ?? "")
         .accessibilityElement(children: .combine)
+        .accessibilityActions {
+            Button(e.note == nil ? L("Add a comment", "Kommentar hinzufügen") : L("Edit the comment", "Kommentar ändern")) { noteText = e.note ?? ""; noteFor = e }
+            Button(L("Copy as Markdown", "Als Markdown kopieren")) { copy(JournalStats.markdown([e], mask: Demo.mask)) }
+            if k == .failed || k == .rollback {
+                Button(L("Copy a postmortem template", "Postmortem-Vorlage kopieren")) { copy(JournalStats.postmortem(e, mask: Demo.mask)) }
+            }
+        }
         .contextMenu {
             if k == .failed || k == .rollback {
                 Button(L("Copy a postmortem template", "Postmortem-Vorlage kopieren")) { copy(JournalStats.postmortem(e, mask: Demo.mask)) }

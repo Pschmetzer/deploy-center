@@ -147,6 +147,12 @@ struct RulesSettings: View {
     @State private var error: String?
 
     var body: some View {
+        content.onAppear {
+            // Changed by the CLI or by hand while Settings was closed: read again, unless edits wait to be saved.
+            if config == saved { let fresh = RulesConfig.load(); config = fresh; saved = fresh }
+        }
+    }
+    @ViewBuilder private var content: some View {
         Section {
             if config.rules.isEmpty {
                 Text(L("No rules. A rule says what happens with waiting commits, e.g. docs go out by themselves once CI is green.",

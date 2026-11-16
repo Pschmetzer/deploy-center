@@ -15,6 +15,15 @@ extension Color {
         a.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua]) != nil
             ? .systemOrange : NSColor(red: 0.70, green: 0.33, blue: 0.0, alpha: 1)
     })
+    /// Red and blue for small text: darker in light mode (≥ 4.5:1 on white), the system colours in dark mode.
+    static let dangerText = Color(nsColor: NSColor(name: nil) { a in
+        a.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua]) != nil
+            ? .systemRed : NSColor(red: 0.78, green: 0.10, blue: 0.10, alpha: 1)
+    })
+    static let infoText = Color(nsColor: NSColor(name: nil) { a in
+        a.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua]) != nil
+            ? .systemBlue : NSColor(red: 0.0, green: 0.36, blue: 0.80, alpha: 1)
+    })
     /// "Live", "merged", a clean deploy: green, or blue in Settings → General → "Colour-blind
     /// friendly" (FEA-128), so it never hangs on telling red from green. Red stays red; the
     /// symbols (checkmark, octagon) differ as well.
@@ -850,7 +859,7 @@ struct ContentView: View {
         let triggers = activeTriggers
         if !triggers.isEmpty {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundStyle(.red)
+                Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundStyle(.red).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L("Something else still starts builds", "Etwas anderes startet noch Builds")).font(.headline)
                     ForEach(triggers.prefix(6)) { tr in
@@ -877,7 +886,7 @@ struct ContentView: View {
     @ViewBuilder private var providerBanner: some View {
         if !store.providerIssues.isEmpty {
             HStack(spacing: 10) {
-                Image(systemName: "bolt.horizontal.circle.fill").foregroundStyle(.orange)
+                Image(systemName: "bolt.horizontal.circle.fill").foregroundStyle(.orange).accessibilityHidden(true)
                 Text(L("Problem at the provider: ", "Störung beim Anbieter: ") + store.providerIssues.joined(separator: " · "))
                     .font(.caption).textSelection(.enabled)
                 Spacer()
@@ -906,7 +915,7 @@ struct ContentView: View {
     private func startDeploy() {
         let chosen = scopes, count = selectedAll.count
         Task {
-            if OwnerCheck.needed(projects: count),
+            if OwnerCheck.needed(projects: count) || (OwnerCheck.on && selectedAll.contains { store.isCritical($0) }),
                !(await OwnerCheck.confirm(L("put \(count) projects live", "\(count) Projekte live schalten"))) { return }
             if let w = await store.deployWindow(), w.denied {
                 frozenRun = { why in chosen.forEach { store.deploySelected($0, force: why) } }
@@ -941,7 +950,7 @@ struct ContentView: View {
         let missing = store.doctor?.missingTools ?? []
         if !missing.isEmpty {
             HStack(spacing: 10) {
-                Image(systemName: "wrench.and.screwdriver").foregroundStyle(.orange)
+                Image(systemName: "wrench.and.screwdriver").foregroundStyle(.orange).accessibilityHidden(true)
                 Text(missing.contains("curl")
                      ? L("curl is missing on this Mac, so deploys cannot reach the platforms. Install it (Xcode Command Line Tools or Homebrew).",
                          "curl fehlt auf diesem Mac, darum erreicht deploys die Plattformen nicht. Installiere es (Xcode Command Line Tools oder Homebrew).")
@@ -957,7 +966,7 @@ struct ContentView: View {
     @ViewBuilder private var githubBanner: some View {
         if let d = store.doctor, d.githubCli, d.githubLoggedIn == false {
             HStack(spacing: 10) {
-                Image(systemName: "person.crop.circle.badge.exclamationmark").foregroundStyle(.orange)
+                Image(systemName: "person.crop.circle.badge.exclamationmark").foregroundStyle(.orange).accessibilityHidden(true)
                 Text(L("GitHub CLI is not logged in, so the waiting commits and PRs cannot be counted. In Terminal: gh auth login",
                        "Die GitHub-CLI ist nicht angemeldet, darum fehlen die Zahlen wartender Commits und PRs. Im Terminal: gh auth login"))
                     .font(.caption).textSelection(.enabled)
@@ -967,7 +976,7 @@ struct ContentView: View {
             .padding(.horizontal, 12).padding(.vertical, 6).background(ground(.orange, 0.08))
         } else if let b = store.githubBudget, b.remaining < 300 {
             HStack(spacing: 10) {
-                Image(systemName: "gauge.with.dots.needle.0percent").foregroundStyle(.orange)
+                Image(systemName: "gauge.with.dots.needle.0percent").foregroundStyle(.orange).accessibilityHidden(true)
                 // The time left, counted down once a minute, next to the clock time.
                 TimelineView(.everyMinute) { ctx in
                     let reset = Date(timeIntervalSince1970: b.reset)
@@ -1127,8 +1136,7 @@ struct ContentView: View {
                 HStack {
                     CopyButton(title: L("Copy the error", "Fehler kopieren")) { LogTools.maskSecrets(raw) }
                     Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
-                        if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
-                        NSWorkspace.shared.open(Log.url)
+                        Log.reveal()
                     }
                 }
                 .controlSize(.small)
@@ -1141,7 +1149,7 @@ struct ContentView: View {
         if let f = store.lastLoadError[p] {
             let raw = Demo.scrub(f.message, items: allItems)
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(loadFailedTitle(p, at: f.at))
                         .font(.callout.weight(.medium))
@@ -1161,7 +1169,7 @@ struct ContentView: View {
     @ViewBuilder private func setupBanner(_ p: Platform) -> some View {
         if let why = setupNeeded(p) {
             HStack(spacing: 10) {
-                Image(systemName: "link.circle").foregroundStyle(.secondary)
+                Image(systemName: "link.circle").foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(why).font(.callout)
                 Spacer()
                 Button(L("Set up", "Einrichten")) { select(.provider(p.cli)) }
@@ -1174,7 +1182,7 @@ struct ContentView: View {
         let on = store.autoOn(p)
         if !on.isEmpty {
             HStack(spacing: 10) {
-                Image(systemName: "dollarsign.circle.fill").font(.title2).foregroundStyle(.orange)
+                Image(systemName: "dollarsign.circle.fill").font(.title2).foregroundStyle(.orange).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text((on.count == 1 ? L("1 project builds on every push", "1 Projekt baut bei jedem Push") : L("\(on.count) projects build on every push", "\(on.count) Projekte bauen bei jedem Push"))
                          + (showsAll ? " (\(p.rawValue))" : ""))
@@ -1569,7 +1577,12 @@ struct ContentView: View {
                     }
                 }
                 Divider()
-                Button(L("Clear", "Leeren")) { store.messages.removeAll(); showMessages = false }
+                Button(L("Clear", "Leeren")) {
+                    let a = NSAlert()
+                    a.messageText = L("Clear all \(store.messages.count) messages?", "Alle \(store.messages.count) Meldungen leeren?")
+                    a.addButton(withTitle: L("Clear", "Leeren")); a.addButton(withTitle: L("Keep", "Behalten"))
+                    if a.runModal() == .alertFirstButtonReturn { store.messages.removeAll(); showMessages = false }
+                }
                     .buttonStyle(.link).font(.caption)
             }
             .padding(12).frame(width: 460, alignment: .leading)

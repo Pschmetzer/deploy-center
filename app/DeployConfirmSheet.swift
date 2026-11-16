@@ -26,8 +26,11 @@ struct DeployConfirmSheet: View {
             .frame(maxHeight: 300)
             HStack {
                 Spacer()
-                Button(L("Cancel", "Abbrechen")) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(L("Deploy", "Deployen")) { onDeploy(); dismiss() }.keyboardShortcut(.defaultAction)
+                // Many projects or a red risk: Return must not be the way to go live; Cancel is the default then.
+                let careful = items.count > 3 || items.contains { $0.risk?.isRed == true }
+                Button(L("Cancel", "Abbrechen")) { dismiss() }.keyboardShortcut(careful ? .defaultAction : .cancelAction)
+                Button(L("Deploy", "Deployen")) { onDeploy(); dismiss() }
+                    .keyboardShortcut(careful ? KeyboardShortcut("d", modifiers: .command) : .defaultAction)
             }
         }
         .padding(20)

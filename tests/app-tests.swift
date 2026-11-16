@@ -1845,5 +1845,16 @@ if let dir = ProcessInfo.processInfo.environment["DC_CONTRACT"] {
     print("skip contract tests (DC_CONTRACT not set; tests/app-tests.sh sets it)")
 }
 
+// Round 7: the ledger on open respects the GitHub budget; links and keys; numbers follow the app's language.
+expect("ledger on open: no budget known runs", SavingsModel.budgetAllows(nil), true)
+expect("ledger on open: plenty left runs", SavingsModel.budgetAllows(Store.Budget(remaining: 4000, limit: 5000, reset: 0)), true)
+expect("ledger on open: under a fifth left waits", SavingsModel.budgetAllows(Store.Budget(remaining: 500, limit: 5000, reset: 0)), false)
+expect("web links: https opens", SafeLink.ok(URL(string: "https://github.com/a/b/pull/1")!), true)
+expect("web links: file does not", SafeLink.ok(URL(string: "file:///etc/hosts")!), false)
+expect("web links: a custom scheme does not", SafeLink.ok(URL(string: "x-apple.systempreferences:com.apple")!), false)
+expect("masker: a SendGrid key", LogTools.maskSecrets("key SG.abcdefghijklmnop1234.abcdefghijklmnop5678 end").contains("abcdefghijklmnop1234"), false)
+expect("masker: a Supabase secret", LogTools.maskSecrets("sb_secret_abcdefgh1234").contains("abcdefgh1234"), false)
+expect("decimal: one digit", decimal(12.34), isGerman ? "12,3" : "12.3")
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

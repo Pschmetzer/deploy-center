@@ -39,7 +39,7 @@ final class Store: ObservableObject {
     func staleNote(_ part: String) -> String? {
         guard extrasFailedAt[part] != nil else { return nil }
         guard let at = extrasLoadedAt[part] else { return L("Could not be read", "Ließ sich nicht lesen") }
-        return L("As of ", "Stand ") + at.formatted(Calendar.current.isDateInToday(at) ? .dateTime.hour().minute() : .dateTime.day().month().hour().minute())
+        return L("As of ", "Stand ") + at.formatted((Calendar.current.isDateInToday(at) ? Date.FormatStyle().hour().minute() : Date.FormatStyle().day().month().hour().minute()).locale(uiLocale))
     }
     func loadExtras() async {
         guard !loadingExtras else { return }
@@ -63,7 +63,7 @@ final class Store: ObservableObject {
             note("costs", r)
         }
         if let r = await t { if case .success(let v) = r { triggers = v }; note("triggers", r) }
-        if let r = await b { if case .success(let v) = r { githubBudget = v; reloadWhenBudgetResets(v) }; note("github-budget", r) }
+        if let r = await b { if case .success(let v) = r { githubBudget = v; SavingsModel.shared.lastBudget = v; reloadWhenBudgetResets(v) }; note("github-budget", r) }
     }
 
     /// The GitHub budget is (nearly) spent: one reload shortly after it resets, so the counts come
@@ -625,7 +625,8 @@ final class Store: ObservableObject {
         // More builds at once in Settings: start what waits now, not when a running deploy ends.
         knownParallel = maxParallel
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
+            // Every write to the preferences posts this (build times, site checks …): look first, start nothing.
+            MainActor.assumeIsolated {
                 guard let self, self.maxParallel != self.knownParallel else { return }
                 self.knownParallel = self.maxParallel; self.pump()
             }
@@ -1331,7 +1332,10 @@ final class Store: ObservableObject {
             enqueue([job]); return
         }
         Task {
-            if let w = await deployWindow(), w.denied {
+            busyMessage = L("Checking the deploy window …", "Prüfe das Deploy-Fenster …")
+            let window = await deployWindow()
+            busyMessage = nil
+            if let w = window, w.denied {
                 say(L("Deploy window closed", "Deploy-Fenster geschlossen"),
                     (w.reason.map { $0 + " – " } ?? "") + L("To deploy anyway, tick the row and use Deploy below; it asks for a reason.",
                                                           "Um trotzdem zu deployen: Zeile anhaken und unten auf Deploy; dort mit Begründung."), ok: false)
@@ -1957,9 +1961,7 @@ final class Store: ObservableObject {
         // No answer at all: is it the site, or this Mac (offline, DNS, a VPN switching)? A second,
         // well-known address decides; production is never rolled back for the Mac's own network.
         var networkUp = true
-        if code == nil, let other = URL(string: "https://www.githubstatus.com/api/v2/status.json") {
-            networkUp = await Self.probe(other, timeout: 10) != nil
-        }
+        if code == nil { networkUp = await Self.networkUp() }
         let verdict = Self.siteVerdict(code: code, networkUp: networkUp)
         if verdict == .fine { return true }
         if verdict == .broken { SiteLog.note(Self.key(item), up: false) }
@@ -2027,8 +2029,11 @@ final class Store: ObservableObject {
         }
     }
     nonisolated private static func networkUp() async -> Bool {
-        guard let other = URL(string: "https://www.githubstatus.com/api/v2/status.json") else { return true }
-        return await probe(other, timeout: 10) != nil
+        // Any one answer means the Mac is online. One blocked domain (a company network) must not read as "offline".
+        for s in ["https://www.githubstatus.com/api/v2/status.json", "https://www.apple.com/library/test/success.html", "https://1.1.1.1/"] {
+            if let u = URL(string: s), await probe(u, timeout: 6) != nil { return true }
+        }
+        return false
     }
 
     // MARK: Roll back by itself when the check after going live fails (opt-in per project, in the details)
@@ -2129,7 +2134,7 @@ final class Store: ObservableObject {
         case "queued", "created", "initializing": return L("queued", "wartet")
         case "building", "build_in_progress": return L("building", "baut")
         case "update_in_progress", "pre_deploy_in_progress": return L("going live", "geht live")
-        default: return s.isEmpty ? L("running", "läuft") : s
+        default: return s.isEmpty ? L("running", "läuft") : s.replacingOccurrences(of: "_", with: " ")
         }
     }
 }

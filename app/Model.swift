@@ -437,6 +437,10 @@ enum Notify {
         guard available, !NSApp.isActive, d.object(forKey: "notifications") as? Bool ?? true else { return }
         // Quiet hours (Settings → Notifications): only failures still come.
         if !failed, quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo")) { return }
+        // Settings → General: a notification on the lock screen says that something happened, not which project.
+        let neutral = d.bool(forKey: "neutralNotifications")
+        let title = neutral ? (failed ? L("A deploy needs a look", "Ein Deploy braucht einen Blick") : L("Deploy Center", "Deploy Center")) : title
+        let body = neutral ? L("Open Deploy Center for details.", "Details im Deploy Center.") : body
         let category = autoOn && key != nil ? NotifyRouter.autoOnCategory
             : failed && key != nil ? (rollBack ? NotifyRouter.brokenCategory : NotifyRouter.failedCategory) : nil
         add(title, body, id: UUID().uuidString, category: category, project: project, key: key, silent: silent)
@@ -495,6 +499,8 @@ enum Notify {
             // A deploy's end with the result sounds on already rang once.
             c.sound = silent ? nil : .default
             if let category { c.categoryIdentifier = category }
+            // A broken production and the rollback countdown must get through a Focus mode.
+            if category == NotifyRouter.brokenCategory || category == NotifyRouter.rollbackCategory { c.interruptionLevel = .timeSensitive }
             var info: [String: String] = [:]
             if let project { info["project"] = project }
             if let key { info["key"] = key }

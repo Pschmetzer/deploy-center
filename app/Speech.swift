@@ -16,7 +16,7 @@ enum Speech {
             return
         }
         let u = AVSpeechUtterance(string: text)
-        u.voice = AVSpeechSynthesisVoice(language: isGerman ? "de-DE" : "en-US")
+        u.voice = AVSpeechSynthesisVoice(language: isGerman ? "de-DE" : "en-US") ?? AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
         synth.stopSpeaking(at: .immediate)
         synth.speak(u)
     }

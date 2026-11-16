@@ -346,7 +346,15 @@ final class SavingsModel: ObservableObject {
     /// The ledger by itself once a week (it pages through GitHub and asks each platform per
     /// project); opening the ledger or "Estimate again" reads it any time. Not with less than a
     /// fifth of GitHub's hourly budget left.
+    /// The last GitHub budget the store saw, for the ledger that is opened later.
+    var lastBudget: Store.Budget?
+    /// Whether the budget leaves room for the many calls of a ledger run (not with under a fifth left).
+    nonisolated static func budgetAllows(_ b: Store.Budget?) -> Bool {
+        guard let b, b.limit > 0 else { return true }
+        return Double(b.remaining) >= Double(b.limit) * 0.2
+    }
     func refreshLedgerIfOld(budget: Store.Budget?) async {
+        lastBudget = budget
         if !Self.ledgerDue(at: ledgerAt, budget: budget) { return }
         await loadLedger()
     }
@@ -739,7 +747,9 @@ private struct SimulationProgress: View {
             TimelineView(.periodic(from: start, by: 1)) { ctx in
                 Text(L("\(Int(ctx.date.timeIntervalSince(start))) s", "\(Int(ctx.date.timeIntervalSince(start))) s"))
                     .monospacedDigit().foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
+            Text(L("Simulation running", "Simulation läuft")).accessibilityHidden(false).font(.caption).foregroundStyle(.secondary)
             Button(L("Cancel", "Abbrechen")) { model.cancelSimulation() }
         }
     }
@@ -784,7 +794,7 @@ struct LedgerView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // Opening the ledger reads it again when the last answer is older than half a day
         // (the automatic run is weekly, see refreshLedgerIfOld).
-        .task { if let at = model.ledgerAt, Date().timeIntervalSince(at) > 12 * 3600 { await model.loadLedger() } }
+        .task { if let at = model.ledgerAt, Date().timeIntervalSince(at) > 12 * 3600, SavingsModel.budgetAllows(model.lastBudget) { await model.loadLedger() } }
     }
 
     /// A goal of the person's own (FEA-013): how far the dollars saved since the start have come.

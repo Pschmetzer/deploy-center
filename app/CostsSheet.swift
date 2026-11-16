@@ -168,7 +168,7 @@ struct CostsSheet: View {
                         }
                         .opacity(d.day == today ? 0.45 : 1)
                     if let off = costs.offDay, d.day == off {
-                        RuleMark(x: .value("Day", d.day)).foregroundStyle(.green).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
+                        RuleMark(x: .value("Day", d.day)).foregroundStyle(Color.good).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
                     }
                 }
                 if daily > 0 {
@@ -303,7 +303,7 @@ struct SavingCard: View {
                 Image(systemName: "arrow.right").foregroundStyle(.white.opacity(0.5))
                 VStack(alignment: .leading) {
                     Text(L("now", "jetzt")).font(.caption).foregroundStyle(.white.opacity(0.6))
-                    Text(after, format: .currency(code: "USD")).font(.title.weight(.bold).monospacedDigit()).foregroundStyle(.green)
+                    Text(after, format: .currency(code: "USD")).font(.title.weight(.bold).monospacedDigit()).foregroundStyle(Color.good)
                     Text(L("a day", "pro Tag")).font(.caption).foregroundStyle(.white.opacity(0.6))
                 }
             }

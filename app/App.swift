@@ -42,6 +42,7 @@ struct SettingsView: View {
     @AppStorage("monthlyBudget") private var monthlyBudget = 0.0
     /// The checkbox of the deploy confirmation, here too, so the remembered state can be seen.
     @AppStorage(OwnerCheck.key) private var ownerCheck = false
+    @AppStorage("neutralNotifications") private var neutralNotifications = false
     @AppStorage("watchMinutes") private var watchMinutes = 0
     @AppStorage(MigrationCheck.key) private var migrationCheck = true
     @AppStorage("confirmSingleDeploy") private var confirmSingle = true
@@ -243,14 +244,14 @@ struct SettingsView: View {
             Toggle(L("Notify when a deploy ends", "Mitteilung, wenn ein Deploy fertig ist"), isOn: $notifications)
             Picker(L("Daily reminder to deploy", "Tägliche Erinnerung zum Deployen"), selection: $reminderHour) {
                 Text(L("Off", "Aus")).tag(0)
-                ForEach(1...23, id: \.self) { Text(L("from \($0):00", "ab \($0):00 Uhr")).tag($0) }
+                ForEach(1...23, id: \.self) { Text(L("from \(uiHour($0))", "ab \(uiHour($0)) Uhr")).tag($0) }
             }
             .onChange(of: reminderHour) { _, h in if h > 0 { Notify.ask() } }
             .help(L("Only a reminder, and only when something waits. Nothing is deployed by itself.",
                     "Nur eine Erinnerung, und nur wenn etwas wartet. Es wird nichts von selbst deployt."))
             Picker(L("Summary of the day", "Tagesabschluss"), selection: $summaryHour) {
                 Text(L("Off", "Aus")).tag(0)
-                ForEach(12...23, id: \.self) { Text(L("from \($0):00", "ab \($0):00 Uhr")).tag($0) }
+                ForEach(12...23, id: \.self) { Text(L("from \(uiHour($0))", "ab \(uiHour($0)) Uhr")).tag($0) }
             }
             .onChange(of: summaryHour) { _, h in if h > 0 { Notify.ask() } }
             .help(L("How many deploys ended today and how many failed, from the history. Only when something ended.",
@@ -455,12 +456,18 @@ struct SettingsView: View {
             }
             .help(L("Two failed answers in a row warn, or roll back where the project rolls back by itself (its details).",
                     "Zwei fehlgeschlagene Antworten hintereinander warnen, oder rollen zurück, wo das Projekt selbst zurückrollt (seine Details)."))
+            Toggle(L("Neutral notifications (no project names)", "Neutrale Mitteilungen (ohne Projektnamen)"), isOn: $neutralNotifications)
+                .help(L("The lock screen shows that a deploy needs a look, not which project or why.", "Der Sperrbildschirm zeigt, dass ein Deploy einen Blick braucht, nicht welches Projekt oder warum."))
             Toggle(L("Ask for a tick before database migrations go live", "Vor dem Live-Gang von Datenbank-Migrationen ein Häkchen verlangen"), isOn: $migrationCheck)
                 .help(L("When the waiting commits change migration files, every live deploy of them asks first.",
                         "Ändern die wartenden Commits Migrationsdateien, fragt jeder Live-Deploy davon erst nach."))
             Toggle(L("Ask for Touch ID or the password before risky steps", "Vor riskanten Schritten nach Touch ID oder dem Passwort fragen"), isOn: $ownerCheck)
                 .help(L("Deploying several projects at once, a rollback by hand, and allowing auto-deploy. The automatic rollback after a failed check does not wait.",
                         "Mehrere Projekte auf einmal deployen, ein Rollback von Hand und Auto-Deploy erlauben. Das automatische Zurückrollen nach einem fehlgeschlagenen Check wartet nicht."))
+            if ownerCheck, !OwnerCheck.available {
+                Text(L("This Mac cannot ask for Touch ID or a password, so nothing is asked.", "Dieser Mac kann nicht nach Touch ID oder Passwort fragen, daher wird nichts abgefragt."))
+                    .font(.caption).foregroundStyle(Color.warningText)
+            }
         }
     }
 
@@ -512,8 +519,7 @@ struct SettingsView: View {
     @ViewBuilder private var helpSection: some View {
         Section(L("Help", "Hilfe")) {
             Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
-                if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
-                NSWorkspace.shared.open(Log.url)
+                Log.reveal()
             }
             CopyButton(title: L("Copy diagnostics", "Diagnose kopieren")) { diagnosticsText() }
             Button(L("Show the first-start guide again", "Erststart-Anleitung wieder zeigen")) { UserDefaults.standard.set(false, forKey: FirstStart.key) }
@@ -653,8 +659,7 @@ struct DeployCenterApp: App {
                 Button(L("Report a problem …", "Problem melden …")) { open("https://github.com/\(Updater.repo)/issues/new/choose") }
                 Divider()
                 Button(L("Open the error log", "Fehlerprotokoll öffnen")) {
-                    if !FileManager.default.fileExists(atPath: Log.url.path) { Log.write("log started") }
-                    NSWorkspace.shared.open(Log.url)
+                    Log.reveal()
                 }
             }
         }
@@ -794,7 +799,7 @@ struct MenuBarContent: View {
         Button(store.loading.isEmpty ? L("Reload", "Neu laden") : L("Loading …", "Lädt …")) { Task { await store.autoRefresh() } }
             .disabled(!store.loading.isEmpty)
         if let at = store.loadedAt.values.min() {
-            Text(L("As of ", "Stand ") + at.formatted(date: .omitted, time: .shortened)
+            Text(L("As of ", "Stand ") + uiTime(at)
                  + (store.fromCache.isEmpty ? "" : L(" (saved copy)", " (gespeicherte Kopie)")))
         }
         Button(L("Settings …", "Einstellungen …")) {

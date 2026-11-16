@@ -516,7 +516,7 @@ struct ClaudeSettings: View {
             case .connected: return (L("connected", "verbunden"), Color.good)
             case .notConnected: return (L("not connected", "nicht verbunden"), .secondary)
             case .notFound: return (L("not found", "nicht gefunden"), .secondary)
-            case .problem: return (L("problem", "Problem"), .orange)
+            case .problem: return (L("problem", "Problem"), Color.warningText)
             }
         }()
         return HStack(spacing: 4) {

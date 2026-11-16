@@ -450,6 +450,12 @@ enum AppDirs {
 /// Errors go to ~/Library/Logs/DeployCenter.log, so one can be attached to an issue.
 /// What the script said and when, with keys and tokens masked: a CLI's error can quote one.
 enum Log {
+    /// Opens the log file (creating it with a first line, so there is something to open).
+    @MainActor static func reveal() {
+        if !FileManager.default.fileExists(atPath: url.path) { write("log started") }
+        NSWorkspace.shared.open(url)
+    }
+
     static var url: URL { testURL ?? AppDirs.log }
     /// Tests only: a log of their own, so they never write into the person's log. Never set in the app.
     nonisolated(unsafe) static var testURL: URL?
