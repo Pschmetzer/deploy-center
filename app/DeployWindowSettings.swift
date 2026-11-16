@@ -38,6 +38,7 @@ struct DeployWindowSettings: View {
                         Spacer()
                         Button(role: .destructive) { config.deny.removeAll { $0.id == rule.id } } label: { Image(systemName: "trash") }
                             .buttonStyle(.borderless).help(L("Remove this rule", "Diese Regel entfernen"))
+                            .accessibilityLabel(L("Remove this rule", "Diese Regel entfernen"))
                     }
                     HStack {
                         TextField(L("from", "ab"), text: Binding(get: { rule.from ?? "" }, set: { rule.from = $0.isEmpty ? nil : $0 }), prompt: Text("00:00"))

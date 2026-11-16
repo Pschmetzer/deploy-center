@@ -563,7 +563,7 @@ struct AgentChips: View {
                 .buttonStyle(.link).font(.caption2.weight(.semibold)).foregroundStyle(colour)
                 .help(L("Tick it and put the fix live", "Anhaken und den Fix live schalten"))
         } else if let u = Self.link(a), !Demo.on {
-            Button { NSWorkspace.shared.open(u) } label: { Label(Self.text(a), systemImage: icon) }
+            Button { SafeLink.open(u) } label: { Label(Self.text(a), systemImage: icon) }
                 .buttonStyle(.link).font(.caption2.weight(.semibold)).foregroundStyle(colour)
                 .help(u.absoluteString)
         } else {

@@ -471,9 +471,11 @@ struct SettingsView: View {
                 Spacer()
                 TextField("0", value: $monthlyBudget, format: .currency(code: "USD").precision(.fractionLength(0...2)))
                     .frame(width: 90).multilineTextAlignment(.trailing)
+                    .accessibilityLabel(L("Monthly build budget in dollars", "Monatliches Build-Budget in Dollar"))
                     // A budget below zero means nothing; it becomes "off".
                     .onChange(of: monthlyBudget) { _, v in if v < 0 || !v.isFinite { monthlyBudget = 0 } }
                 Stepper("", value: $monthlyBudget, in: 0...100_000, step: 10).labelsHidden()
+                    .accessibilityLabel(L("Change the budget by 10 dollars", "Budget um 10 Dollar ändern"))
             }
             Text(SettingsText.budgetHint(budget: monthlyBudget, pace: store.costs.flatMap { Store.monthPace($0.days, today: CostsSheet.today()) }))
                 .font(.caption).foregroundStyle(.secondary)

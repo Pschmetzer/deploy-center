@@ -186,7 +186,7 @@ struct CostsSheet: View {
             .overlay(alignment: .topTrailing) {
                 // The value of the day under the pointer, with its full date.
                 if let h = hovered, let d = costs.days.first(where: { $0.day == h }) {
-                    Text(d.day + ": " + d.build.formatted(.currency(code: "USD")) + (d.day == today ? L(" (so far)", " (bisher)") : ""))
+                    Text(Self.axisLabel(d.day, first: true) + ": " + d.build.formatted(.currency(code: "USD")) + (d.day == today ? L(" (so far)", " (bisher)") : ""))
                         .font(.caption2.monospacedDigit()).padding(.horizontal, 5).padding(.vertical, 2)
                         .background(RoundedRectangle(cornerRadius: 4).fill(.regularMaterial))
                 }

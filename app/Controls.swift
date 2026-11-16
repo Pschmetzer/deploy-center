@@ -3,6 +3,17 @@
 import SwiftUI
 import AppKit
 
+/// A number with the decimal mark of the app's language ("12,5" in German), not the C locale's point.
+func decimal(_ v: Double, _ digits: Int = 1) -> String {
+    v.formatted(.number.precision(.fractionLength(digits)).locale(Locale(identifier: isGerman ? "de_DE" : "en_US")))
+}
+
+/// Links that came out of the script's JSON or a model open only as web pages: no file:, no custom schemes.
+enum SafeLink {
+    nonisolated static func ok(_ u: URL) -> Bool { ["https", "http"].contains(u.scheme?.lowercased() ?? "") && u.host?.isEmpty == false }
+    @MainActor static func open(_ u: URL) { if ok(u) { NSWorkspace.shared.open(u) } }
+}
+
 /// Opens Settings when the store asks (Store.openSettings), for code that is not a view; also from
 /// the menu bar, where no main window may be open.
 /// The main window too, when a notification was clicked (Store.windowRequest).

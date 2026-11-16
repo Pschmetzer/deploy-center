@@ -259,6 +259,8 @@ struct PhoneQRSheet: View {
                     Button(copied ? L("Copied", "Kopiert") : L("Copy code", "Code kopieren")) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(code, forType: .string)
+                        // Clipboard managers that honour this marker do not keep the keys in their history.
+                        NSPasteboard.general.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
                         copied = true
                     }
                     .disabled(inactive)

@@ -1394,6 +1394,19 @@ struct ContentView: View {
         }
         Divider()
         Menu(L("More", "Mehr")) {
+            if let repo = item.repo, !Demo.on {
+                Button(L("Open the repo on \(GitHost(item).name)", "Repo auf \(GitHost(item).name) öffnen")) {
+                    if let u = URL(string: GitHost.web(repo)) { SafeLink.open(u) }
+                }
+                Button(L("Copy the repo address", "Repo-Adresse kopieren")) {
+                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(GitHost.web(repo), forType: .string)
+                }
+            }
+            if let l = item.link, !Demo.on {
+                Button(L("Copy the site address", "Seiten-Adresse kopieren")) {
+                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(l, forType: .string)
+                }
+            }
             if item.repo != nil {
                 Button(L("Details …", "Details …")) { detailItem = item }
                 Button(L("Open in its own window", "In eigenem Fenster öffnen")) { openWindow(id: "project", value: Store.key(item)) }

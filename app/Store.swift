@@ -1194,7 +1194,8 @@ final class Store: ObservableObject {
     private func say(_ title: String, _ body: String, ok: Bool, project: String? = nil, key: String? = nil, row: String? = nil,
                      rollBack: Bool = false, silent: Bool = false) {
         let all = Array(items.values.joined())
-        let title = Demo.scrub(title, items: all), body = Demo.scrub(body, items: all)
+        // Platform error texts can carry keys: masked before they reach the notification, the toast, messages.json or the journal.
+        let title = LogTools.maskSecrets(Demo.scrub(title, items: all)), body = LogTools.maskSecrets(Demo.scrub(body, items: all))
         // The project ran again: a second reminder of its last failure is no longer true.
         if let key { Notify.dropEscalations(key) }
         Notify.post(title, body, project: project, key: key, failed: !ok, rollBack: rollBack, silent: silent)

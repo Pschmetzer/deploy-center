@@ -119,6 +119,7 @@ struct RulesConfig: Equatable {
         do {
             try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
             try encoded(over: old).write(to: u, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: u.path)
             return nil
         } catch { return error.localizedDescription }
     }
