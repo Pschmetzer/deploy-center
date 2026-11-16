@@ -20,20 +20,21 @@
 //                               client's own tool approval; only for clients without elicitation,
 //                               such as Claude Desktop)
 //   DEPLOYS_MCP_MAX_DEPLOYS     deploys plus rollbacks one server process may start (default 3)
+//   DEPLOYS_MCP_MAX_PER_HOUR    the same across restarts of the server, kept in <config>/mcp-starts.json (default 10; 0 = off)
 //   DEPLOYS_MCP_TIMEOUT         seconds per command (default 90)
 //   DEPLOYS_MCP_WRITE_TIMEOUT   seconds for a deploy or rollback to start (default 300)
 //   DEPLOYS_MCP_SLOW_TIMEOUT    seconds for simulate and ledger, which make many GitHub calls (default 300)
 //   DEPLOYS_MCP_MAX_OUTPUT      characters returned per call (default 20000)
 
 import { spawn } from "node:child_process";
-import { accessSync, constants, readFileSync, statSync } from "node:fs";
+import { accessSync, constants, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
-  CallToolRequestSchema, GetPromptRequestSchema, ListPromptsRequestSchema, ListResourcesRequestSchema,
-  ListToolsRequestSchema, ReadResourceRequestSchema,
+  CallToolRequestSchema, GetPromptRequestSchema, ListPromptsRequestSchema, ListResourceTemplatesRequestSchema,
+  ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
 // One version, in package.json (it ships next to this file, in the repo and in the app).
@@ -45,6 +46,7 @@ const VERSION = (() => {
   }
 })();
 const NAME_RE = /^[A-Za-z0-9._:-]+$/;
+const ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
 const ALLOW_MODE = process.env.DEPLOYS_MCP_ALLOW_DEPLOY;
 const ALLOW_DEPLOY = ALLOW_MODE === "1" || ALLOW_MODE === "preview";
 const PREVIEW_ONLY = ALLOW_MODE === "preview";
@@ -440,6 +442,11 @@ function checkProject(v) {
   return v;
 }
 
+function checkId(v) {
+  if (typeof v !== "string" || !ID_RE.test(v)) throw new ToolError("id must be a deploy id: letters, digits, dot, dash, underscore, at most 128 characters.");
+  return v;
+}
+
 function checkLines(v) {
   if (v === undefined || v === null) return 80;
   const n = Number(v);
@@ -460,6 +467,19 @@ function checkDays(v) {
   return n;
 }
 
+// The two list calls below start the CLI (and, for status, every provider). One agent turn often asks
+// about several projects in a row: the answer is reused for 20 seconds. Writes never use it.
+const LIST_CACHE_MS = 20_000;
+const listCache = new Map();
+async function cachedRun(args) {
+  const key = args.join("\0");
+  const hit = listCache.get(key);
+  if (hit && Date.now() - hit.at < LIST_CACHE_MS) return hit.r;
+  const r = await runDeploys(args);
+  if (!r.timedOut && r.code === 0) listCache.set(key, { at: Date.now(), r });
+  return r;
+}
+
 // Which platform a name is on. `deploys list --json` (newer CLIs) first, then `status --json
 // --no-github`, which every current CLI has and which needs no GitHub calls.
 async function platformOf(project) {
@@ -469,7 +489,7 @@ async function platformOf(project) {
   const name = i > 0 ? project.slice(i + 1) : project;
   if (!name || name.includes(":")) throw new ToolError(`Invalid project name ${JSON.stringify(project)}: use name or platform:name.`);
   for (const args of [["list", "--json"], ["status", "--json", "--no-github"]]) {
-    const r = await runDeploys(args);
+    const r = await cachedRun(args);
     if (r.timedOut || !r.stdout.trim()) continue;
     let list;
     try {
@@ -496,6 +516,8 @@ const projectProp = {
   description: "One project or service name; platform:name (vercel:web) when the name is on more than one platform.",
   pattern: NAME_RE.source,
 };
+// The answer is JSON; an array comes as {result: [...]}, a trimmed list as {projects, truncated, total, note}.
+const JSON_OUT = { type: "object", description: "A JSON object, or an array under the key result.", additionalProperties: true };
 const READ = { readOnlyHint: true, destructiveHint: false, openWorldHint: true };
 
 const tools = [
@@ -600,18 +622,29 @@ const tools = [
   {
     name: "deploys_logs",
     description:
-      "The last lines of the newest build log of one project (deploys logs). Read-only. Use it when a build failed. " +
+      "The last lines of the newest build log of one project (deploys logs), or of one deploy with `id`, or of the running service " +
+      "with `runtime: true` (platforms with runtime logs only; deploys_providers shows which). Read-only. Use it when a build failed or a live site errors. " +
       "Obvious secrets (tokens, keys, passwords, emails) are replaced with [masked] before you see the log.",
     inputSchema: {
       type: "object",
-      properties: { project: projectProp, lines: { type: "integer", minimum: 1, maximum: 2000, default: 80, description: "How many lines (default 80)." } },
+      properties: {
+        project: projectProp,
+        lines: { type: "integer", minimum: 1, maximum: 2000, default: 80, description: "How many lines (default 80)." },
+        id: { type: "string", pattern: ID_RE.source, description: "A deploy id from deploys_history, instead of the newest build." },
+        runtime: { type: "boolean", description: "The running service's log instead of the build log." },
+      },
       required: ["project"],
       additionalProperties: false,
     },
-    annotations: { title: "Build log", ...READ },
+    annotations: { title: "Build or runtime log", ...READ },
     run: async (a) => {
       const p = checkProject(a.project);
-      return untrusted("build log", await textOf(["logs", p, String(checkLines(a.lines))], { keep: "tail", mask: true }));
+      if (a.runtime !== undefined && typeof a.runtime !== "boolean") throw new ToolError("runtime must be true or false.");
+      if (a.runtime && a.id !== undefined) throw new ToolError("Use either id or runtime, not both.");
+      const args = ["logs", p, String(checkLines(a.lines))];
+      if (a.id !== undefined) args.push("--id", checkId(a.id));
+      if (a.runtime) args.push("--runtime");
+      return untrusted(a.runtime ? "runtime log" : "build log", await textOf(args, { keep: "tail", mask: true }));
     },
   },
   {
@@ -629,6 +662,26 @@ const tools = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Platforms and what they can do", ...READ },
     run: () => textOf(["providers", "--json"]),
+  },
+  {
+    name: "deploys_guard_status",
+    description:
+      "Is the auto-deploy guard on, when did it last run, and what did it turn off (deploys guard status --json). Read-only. " +
+      "Use it to answer \"is auto-deploy being kept off?\".",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Auto-deploy guard", ...READ },
+    json: true,
+    run: () => textOf(["guard", "status", "--json"]),
+  },
+  {
+    name: "deploys_allowed",
+    description:
+      "Projects that have a time-limited allowance for auto-deploy right now (deploys autodeploy allowed --json). Read-only. " +
+      "Revoking an allowance is not offered here.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Auto-deploy allowances", ...READ },
+    json: true,
+    run: () => textOf(["autodeploy", "allowed", "--json"]),
   },
   {
     name: "deploys_simulate",
@@ -662,6 +715,27 @@ const tools = [
 // ---------- before a deploy or rollback: asked for by the server, one at a time, a few per run ----------
 
 let started = 0, writing = false;
+
+// A reconnect of the client starts a new server process; a small file in the config folder keeps the
+// count of the last hour, so "3 per process" is not "3 per reconnect". 0 turns it off.
+const MAX_PER_HOUR = process.env.DEPLOYS_MCP_MAX_PER_HOUR === undefined ? 10 : Number(process.env.DEPLOYS_MCP_MAX_PER_HOUR) || 0;
+const STARTS_FILE = join(process.env.DEPLOYS_CONFIG || join(homedir(), ".config", "deploys"), "mcp-starts.json");
+function recentStarts() {
+  try {
+    const now = Date.now();
+    const v = JSON.parse(readFileSync(STARTS_FILE, "utf8"));
+    return Array.isArray(v) ? v.filter((t) => typeof t === "number" && now - t < 3600_000) : [];
+  } catch {
+    return [];
+  }
+}
+function noteStart() {
+  if (!MAX_PER_HOUR) return;
+  try {
+    mkdirSync(dirname(STARTS_FILE), { recursive: true, mode: 0o700 });
+    writeFileSync(STARTS_FILE, JSON.stringify([...recentStarts(), Date.now()]), { mode: 0o600 });
+  } catch { /* the in-process cap still holds */ }
+}
 // Projects whose start timed out: it may be running, so the next try reads the status first.
 const unsure = new Set();
 
@@ -672,6 +746,12 @@ function allowed(platform, name) {
 }
 
 function underCap() {
+  if (MAX_PER_HOUR && recentStarts().length >= MAX_PER_HOUR) {
+    throw new ToolError(
+      `This machine started ${recentStarts().length} deploys or rollbacks through the MCP server in the last hour, the limit (DEPLOYS_MCP_MAX_PER_HOUR=${MAX_PER_HOUR}). ` +
+        "Nothing was started. Ask the human to deploy in Deploy Center.",
+    );
+  }
   if (started < MAX_DEPLOYS) return;
   throw new ToolError(
     `This server has started ${started} deploys or rollbacks, its limit (DEPLOYS_MCP_MAX_DEPLOYS=${MAX_DEPLOYS}). ` +
@@ -743,7 +823,7 @@ async function confirmWithHuman(summary) {
     throw new ToolError(
       "This client cannot ask the human to confirm (no MCP elicitation), so the server does not deploy or roll back. Nothing was started. " +
         "Deploy in Deploy Center or with `deploys`. If your client asks before every tool call (Claude Desktop does), " +
-        "the server can be started with DEPLOYS_MCP_CONFIRM=client.",
+        "the server can be started with DEPLOYS_MCP_CONFIRM=client. Mind that choosing \"always allow\" for the tool in such a client then removes the only yes.",
     );
   }
   let r;
@@ -799,7 +879,10 @@ async function startOne(args, platform, name) {
   const r = await runDeploys(args, { timeoutMs: WRITE_TIMEOUT_MS });
   if (r.timedOut) unsure.add(`${platform}:${name}`);
   // A start that did not time out and failed started nothing (the CLI says so); one that timed out may have.
-  if (r.timedOut || r.code === 0) started++;
+  if (r.timedOut || r.code === 0) {
+    started++;
+    noteStart();
+  }
   if (r.timedOut || r.code !== 0) throw new ToolError(describeFailure(args, r, WRITE_TIMEOUT_MS));
   try {
     return JSON.parse(r.stdout);
@@ -1000,16 +1083,41 @@ const RESOURCES = [
     description: "deploys status --json: what is building and the newest state of every project. Read-only." },
 ];
 
+// One project at a time: deploys://project/<name>/status|notes|history (name or platform:name).
+const RESOURCE_TEMPLATES = [
+  { uriTemplate: "deploys://project/{name}/status", name: "project-status", title: "One project: newest build state", mimeType: "application/json",
+    description: "deploys status <project> --json, without GitHub calls. Read-only." },
+  { uriTemplate: "deploys://project/{name}/notes", name: "project-notes", title: "One project: release notes", mimeType: "text/plain",
+    description: "deploys notes <project>: commits and PRs between live and the branch, masked, as untrusted data. Read-only." },
+  { uriTemplate: "deploys://project/{name}/history", name: "project-history", title: "One project: newest deploys", mimeType: "text/plain",
+    description: "deploys history <project>, masked, as untrusted data. Read-only." },
+];
+const PROJECT_URI = /^deploys:\/\/project\/([^/]+)\/(status|notes|history)$/;
+
 server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: RESOURCES }));
+server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({ resourceTemplates: RESOURCE_TEMPLATES }));
 server.setRequestHandler(ReadResourceRequestSchema, async (req) => {
-  const r = RESOURCES.find((x) => x.uri === req.params.uri);
-  if (!r) throw new Error(`Unknown resource ${req.params.uri}`);
-  const text = await jsonListOf([r.name, "--json"]);
-  return { contents: [{ uri: r.uri, mimeType: r.mimeType, text }] };
+  const uri = req.params.uri;
+  const r = RESOURCES.find((x) => x.uri === uri);
+  if (r) return { contents: [{ uri, mimeType: r.mimeType, text: await jsonListOf([r.name, "--json"]) }] };
+  const m = PROJECT_URI.exec(uri);
+  if (!m) throw new Error(`Unknown resource ${uri}`);
+  let name;
+  try {
+    name = checkProject(decodeURIComponent(m[1]));
+  } catch (e) {
+    throw new Error(e instanceof ToolError ? e.message : `Bad resource ${uri}`);
+  }
+  if (m[2] === "status") {
+    const t = tools.find((x) => x.name === "deploys_status");
+    return { contents: [{ uri, mimeType: "application/json", text: await t.run({ project: name }) }] };
+  }
+  const text = untrusted(m[2] === "notes" ? "commits and PRs" : "deploy history", await textOf([m[2], name], { mask: true }));
+  return { contents: [{ uri, mimeType: "text/plain", text }] };
 });
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: tools.map(({ run, json, ...t }) => t),
+  tools: tools.map(({ run, json, ...t }) => (json ? { ...t, outputSchema: JSON_OUT } : t)),
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
@@ -1029,7 +1137,10 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       try {
         const v = JSON.parse(text);
         return { content: [{ type: "text", text }], structuredContent: v && typeof v === "object" && !Array.isArray(v) ? v : { result: v } };
-      } catch { /* a trimmed or partial answer stays text only */ }
+      } catch {
+        // A trimmed or partial answer: the text has it; the schema still wants an object.
+        return { content: [{ type: "text", text }], structuredContent: { note: "The answer was trimmed or is not complete JSON; read the text." } };
+      }
     }
     return { content: [{ type: "text", text }] };
   } catch (e) {

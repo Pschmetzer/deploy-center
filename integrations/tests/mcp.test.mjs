@@ -2,7 +2,8 @@
 // A plain JSON-RPC client over stdio talks to the server; the server runs the stand-in
 // `deploys` from run.sh (DEPLOYS_BIN), which logs each call to $FAKE_MCP_CALLS. No network.
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,7 +22,8 @@ const callLog = () => { try { return readFileSync(calls, "utf8"); } catch { retu
 // One server process; requests in, answers matched by id. `elicit` answers the server's own
 // questions (elicitation/create) with a result; without it the client has no elicitation.
 function start(env = {}, { elicit = null } = {}) {
-  const child = spawn(process.execPath, [server], { env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
+  // The hourly cap is kept in a file; tests turn it off unless they test it.
+  const child = spawn(process.execPath, [server], { env: { ...process.env, DEPLOYS_MCP_MAX_PER_HOUR: "0", ...env }, stdio: ["pipe", "pipe", "pipe"] });
   let buf = "", next = 1;
   const asked = [];
   const waiting = new Map();
@@ -69,7 +71,7 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_changed", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_history", "deploys_ledger", "deploys_list", "deploys_logs",
+const READ = ["deploys_allowed", "deploys_changed", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_guard_status", "deploys_history", "deploys_ledger", "deploys_list", "deploys_logs",
   "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
@@ -107,6 +109,32 @@ const names = await s.names();
 check("lists the read tools", JSON.stringify(names) === JSON.stringify(READ), JSON.stringify(names));
 check("no write tool without DEPLOYS_MCP_ALLOW_DEPLOY", !names.includes("deploys_deploy") && !names.includes("deploys_rollback"), JSON.stringify(names));
 check("read tools are marked read-only", (await s.tools()).every((t) => t.annotations?.readOnlyHint === true));
+
+{
+  const ts = await s.tools();
+  check("JSON tools declare an outputSchema", ["deploys_changed", "deploys_status", "deploys_list", "deploys_plan", "deploys_risk"].every((n) => ts.find((t) => t.name === n)?.outputSchema?.type === "object"), JSON.stringify(ts.map((t) => [t.name, !!t.outputSchema])));
+  check("every tool has a title, a description and an object inputSchema", ts.every((t) => t.annotations?.title && t.description?.length > 20 && t.inputSchema?.type === "object" && t.inputSchema.additionalProperties === false), JSON.stringify(ts.filter((t) => !(t.annotations?.title && t.inputSchema?.additionalProperties === false)).map((t) => t.name)));
+  const g = await s.call("deploys_guard_status");
+  check("guard status is read through the CLI, as JSON", !g.error && /guard status --json/.test(callLog()) && g.structured?.on === true, g.text);
+  const al = await s.call("deploys_allowed");
+  check("allowances are read through the CLI", !al.error && /autodeploy allowed --json/.test(callLog()), al.text);
+  await s.call("deploys_logs", { project: "app-web", runtime: true, lines: 20 });
+  check("logs: runtime passes --runtime", /logs app-web 20 --runtime/.test(callLog()), callLog().slice(-300));
+  await s.call("deploys_logs", { project: "app-web", id: "dpl_1" });
+  check("logs: id passes --id", /logs app-web 80 --id dpl_1/.test(callLog()), callLog().slice(-300));
+  const badId = await s.call("deploys_logs", { project: "app-web", id: "a b;c" });
+  check("logs: an id that is not one is refused", badId.error && /(Invalid id|deploy id)/.test(badId.text), badId.text);
+  const both = await s.call("deploys_logs", { project: "app-web", id: "x", runtime: true });
+  check("logs: id and runtime together are refused", both.error && /not both/.test(both.text), both.text);
+  const tl = (await s.request("resources/templates/list")).result?.resourceTemplates ?? [];
+  check("resource templates: status, notes, history of one project", tl.map((t) => t.uriTemplate).join() === "deploys://project/{name}/status,deploys://project/{name}/notes,deploys://project/{name}/history", JSON.stringify(tl));
+  const ps = (await s.request("resources/read", { uri: "deploys://project/app-web/status" })).result;
+  check("resource project status is that project's state", JSON.parse(ps?.contents?.[0]?.text ?? "[]")?.[0]?.name === "app-web", JSON.stringify(ps));
+  const pn = (await s.request("resources/read", { uri: "deploys://project/app-web/notes" })).result;
+  check("resource project notes come as untrusted data", /<untrusted-data/.test(pn?.contents?.[0]?.text ?? ""), JSON.stringify(pn));
+  const pb = await s.request("resources/read", { uri: "deploys://project/a%3Bb/notes" });
+  check("resource project: a name that is not one is an error", !!pb.error, JSON.stringify(pb));
+}
 
 let r = await s.call("deploys_changed");
 check("changed returns the JSON list", !r.error && JSON.stringify(JSON.parse(r.text).map((p) => p.name)) === '["app-web","api"]', r.text);
@@ -411,6 +439,25 @@ await s.init();
 r = await s.call("deploys_deploy", { project: "app-web" });
 check("DEPLOYS_MCP_CONFIRM=client trusts the client's approval", !r.error && JSON.parse(r.text).id === "dpl_1" && s.asked.length === 0, r.text);
 s.stop();
+
+// The hourly cap survives a restart of the server: a second process sees the first one's starts.
+{
+  const dir = mkdtempSync(join(tmpdir(), "mcp-cap-"));
+  const capEnv = { DEPLOYS_MCP_ALLOW_DEPLOY: "1", DEPLOYS_MCP_MAX_PER_HOUR: "1", DEPLOYS_CONFIG: dir };
+  s = start(capEnv, { elicit: yes });
+  await s.init();
+  r = await s.call("deploys_deploy", { project: "app-web" });
+  s.stop();
+  s = start(capEnv, { elicit: yes });
+  await s.init();
+  const second = await s.call("deploys_deploy", { project: "app-web" });
+  check("the hourly cap holds across a restart of the server", !r.error && second.error && /DEPLOYS_MCP_MAX_PER_HOUR/.test(second.text), second.text);
+  let mode = "";
+  try { mode = (statSync(join(dir, "mcp-starts.json")).mode & 0o777).toString(8); } catch { /* none */ }
+  check("the start log is private (0600)", mode === "600", mode);
+  s.stop();
+  rmSync(dir, { recursive: true, force: true });
+}
 
 // At most DEPLOYS_MCP_MAX_DEPLOYS per run, and one at a time.
 s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", DEPLOYS_MCP_MAX_DEPLOYS: "1" }, { elicit: yes });
