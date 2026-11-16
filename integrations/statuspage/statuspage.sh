@@ -36,7 +36,10 @@ cfg="$(jq -c '
      description: (.description // ""),
      # Only an http(s) address without spaces or quotes: it goes into the links and ids of the feed.
      baseUrl: ((.baseUrl // "") | if . == "" or test("^https?://[^\\s\"<>]+$") then . else error("baseUrl must be an http(s) address") end),
-     hideMessages: (.hideMessages // false),
+     # strict: for a page anyone may see. Implies hideMessages, no inline script (status.js beside the page,
+     # so a Content-Security-Policy of script-src 'self' holds) and a noindex robots tag.
+     strict: (.strict // false),
+     hideMessages: ((.hideMessages // false) or (.strict // false)),
      showAuthors: (.showAuthors // false),
      timeline: (.timeline // 30),
      # The language of the page: its texts, the feed titles and "Updated" in status.json.
@@ -216,6 +219,14 @@ jq -r --arg css "$(cat "$here/page.css")" --argjson L "$L" '
   "<script>for(const t of document.querySelectorAll(\"time\")){const d=new Date(t.dateTime);if(!isNaN(d))t.textContent=d.toLocaleString([], {dateStyle:\"medium\",timeStyle:\"short\"})}document.querySelector(\"footer\").textContent=\($L.footer | tojson | gsub("<"; "\\u003c"));"
     + "const s=document.querySelector(\".stale\");if(s){const h=(Date.now()/1000-Number(s.dataset.generated))/3600;if(h>=Number(s.dataset.hours)){s.textContent=(h>=48?s.dataset.textDays:s.dataset.text).replace(\"{n}\",String(Math.floor(h>=48?h/24:h)));s.hidden=false}}</script>",
   "</body></html>"' "$out/status.json" > "$out/index.html"
+
+# strict: the script moves into status.js, and the page says what it may load. Not used when strict is off.
+if [ "$(jq -r '.strict' <<<"$cfg")" = true ]; then
+  sed -n 's#.*<script>\(.*\)</script>.*#\1#p' "$out/index.html" > "$out/status.js"
+  sed -e 's#<script>.*</script>#<script src="status.js"></script>#' \
+      -e "s#<meta charset=\"utf-8\">#<meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src data:; base-uri 'none'; form-action 'none'\"><meta name=\"robots\" content=\"noindex\">#" \
+      "$out/index.html" > "$out/index.html.tmp" && mv "$out/index.html.tmp" "$out/index.html"
+fi
 
 # --- feed.xml: Atom, one entry per deploy in the timeline ---
 jq -r --argjson L "$L" '

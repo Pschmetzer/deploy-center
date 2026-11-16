@@ -49,6 +49,8 @@ jobs:
           # The account the digest runs as (it posts the list as a comment). github.token in the
           # daily digest workflow: github-actions[bot].
           DIGEST_BOT: ${{ vars.DEPLOYS_DIGEST_BOT || 'github-actions[bot]' }}
+          # The zone the digest names its issue in (the same variable as in the daily digest workflow).
+          DIGEST_TZ: ${{ vars.DEPLOYS_TZ || 'UTC' }}
         run: |
           set -euo pipefail
           no() { echo "::error::$1"; echo "reason=$1" >> "$GITHUB_OUTPUT"; exit 1; }
@@ -56,9 +58,9 @@ jobs:
           [ -n "$APPROVERS" ] || no "Set the repository variable DEPLOYS_APPROVERS (logins of the people who may approve)."
           printf '%s\n' "$APPROVERS" | tr ', ' '\n' | grep -qixF -- "$ACTOR" || no "$ACTOR is not in DEPLOYS_APPROVERS."
           if [ "$EVENT" = issues ]; then
-            # Only today's digest (UTC): when a daily run failed, yesterday's issue would otherwise
+            # Only today's digest (in the digest's zone): when a daily run failed, yesterday's issue would otherwise
             # still deploy whatever the branch head is now.
-            [ "$TITLE" = "Deploys waiting – $(date -u +%Y-%m-%d)" ] || no "Only today's digest issue can be approved, not \"$TITLE\"."
+            [ "$TITLE" = "Deploys waiting – $(TZ="${DIGEST_TZ:-UTC}" date +%Y-%m-%d)" ] || no "Only today's digest issue can be approved, not \"$TITLE\"."
             # From the digest's own newest comment, and only if nobody edited it: the issue body
             # can be changed by anyone with write access, and the approver would not see it.
             comments="$(gh api "repos/$REPO/issues/$ISSUE/comments" --paginate)" || no "The issue's comments could not be read."

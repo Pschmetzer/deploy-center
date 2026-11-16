@@ -70,7 +70,7 @@ function start(env = {}, { elicit = null } = {}) {
 }
 
 const READ = ["deploys_changed", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_history", "deploys_ledger", "deploys_list", "deploys_logs",
-  "deploys_notes", "deploys_plan", "deploys_risk", "deploys_simulate", "deploys_status"];
+  "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -88,6 +88,12 @@ check("prompts and resources are offered", info?.capabilities?.prompts && info?.
   const g = (await s.request("prompts/get", { name: "ship-check", arguments: { project: "app-web" } })).result;
   const gt = g?.messages?.[0]?.content?.text ?? "";
   check("ship-check names the project, the tools, and deploys nothing", /app-web/.test(gt) && /deploys_plan/.test(gt) && /deploys_notes/.test(gt) && /Deploy nothing/.test(gt), gt);
+  const fx = (await s.request("prompts/get", { name: "fix-failed-build", arguments: { project: "app-web" } })).result?.messages?.[0]?.content?.text ?? "";
+  check("fix-failed-build names the project and changes nothing", /app-web/.test(fx) && /deploys_explain/.test(fx) && /Change nothing/.test(fx), fx);
+  const rb = (await s.request("prompts/get", { name: "rollback-check", arguments: { project: "app-web" } })).result?.messages?.[0]?.content?.text ?? "";
+  check("rollback-check reads history and rolls back nothing", /deploys_history/.test(rb) && /Roll back nothing/.test(rb), rb);
+  const noproj = await s.request("prompts/get", { name: "rollback-check", arguments: {} });
+  check("rollback-check needs a project", !!noproj.error, JSON.stringify(noproj));
   const bad = await s.request("prompts/get", { name: "ship-check", arguments: { project: "a;b" } });
   check("ship-check refuses a name that is not one", !!bad.error, JSON.stringify(bad));
   const rl = (await s.request("resources/list")).result?.resources ?? [];
@@ -196,6 +202,14 @@ const leaked = ["ghp_abcdefghijklmnop1234", "s3cr3t-value", "hunter2pass", "sk_l
   .filter((x) => r.text.includes(x));
 check("logs: secrets are masked", !r.error && leaked.length === 0, leaked.join(", ") + "\n" + r.text);
 check("logs: the rest of the log stays", r.text.includes("Build failed: missing module") && r.text.includes("[masked]") && r.text.includes("[masked private key]"), r.text);
+{
+  const t0 = Date.now();
+  const rs = await s.call("deploys_logs", { project: "shared-app" });
+  const left = rs.text.split("\n").filter((l) => l.replace(/\[[A-Za-z ]+\]/g, "").replace(/SECRET_KEY=/g, "").includes("SECRET"));
+  check("logs: no secret of the shared fixture survives (same file as iPhone, VS Code, Raycast)", !rs.error && left.length === 0, left.join("\n"));
+  const rh = await s.call("deploys_logs", { project: "huge-app" });
+  check("logs: a 150 000 character line is masked in well under 5 s (no quadratic backtracking)", !rh.error && Date.now() - t0 < 5000, `${Date.now() - t0} ms ${rh.text.slice(0, 120)}`);
+}
 check("logs: names before the secret stay", r.text.includes("VERCEL_TOKEN=[masked]") && r.text.includes("postgres://admin:[masked]@db"), r.text);
 // The fixture the CLI, the iPhone app and the editor add-ons are checked against: every secret in
 // it carries the word SECRET, and none may survive (SECRET_KEY= is a name, not a secret).
