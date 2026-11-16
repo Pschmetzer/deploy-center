@@ -671,7 +671,7 @@ enum PaletteHotKey {
     static let choices: [(label: String, key: Int, mods: Int)] = [
         ("⌥⌘K", kVK_ANSI_K, cmdKey | optionKey),
         ("⌃⌥⌘K", kVK_ANSI_K, cmdKey | optionKey | controlKey),
-        ("⌥⌘D", kVK_ANSI_D, cmdKey | optionKey),
+        ("⌃⌥⌘D", kVK_ANSI_D, cmdKey | optionKey | controlKey),   // ⌥⌘D alone is the system's "Hide Dock"
         ("⌃⌥Space", kVK_Space, controlKey | optionKey),
     ]
     static var choice: Int { let c = UserDefaults.standard.integer(forKey: choiceKey); return choices.indices.contains(c) ? c : 0 }

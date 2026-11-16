@@ -64,6 +64,7 @@ enum ClaudeAI {
         private let lock = NSLock(); private var kept: [String: (at: Date, answer: ClaudeAnswer)] = [:]
         func get(_ k: String) -> ClaudeAnswer? {
             lock.lock(); defer { lock.unlock() }
+            if Demo.on { kept = [:]; return nil }   // explanations of real logs must not show in a screen recording
             guard let e = kept[k], Date().timeIntervalSince(e.at) < 1800 else { return nil }
             return e.answer
         }

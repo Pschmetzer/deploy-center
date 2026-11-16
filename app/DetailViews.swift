@@ -92,6 +92,7 @@ struct BuildLog: View {
                     }
                     Toggle(L("Errors only", "Nur Fehler"), isOn: $onlyErrors).toggleStyle(.button)
                         .disabled(firstError == nil)
+                        .help(firstError == nil ? L("No error line found in this log", "In diesem Log wurde keine Fehlerzeile gefunden") : L("Show only the lines around errors", "Nur Zeilen um Fehler zeigen"))
                     ClaudeMenu(store: store, item: live, waiting: false)
                     // The two copies in one menu: the header had too many buttons.
                     Menu(L("Copy", "Kopieren")) {
@@ -137,8 +138,8 @@ struct BuildLog: View {
                     // The log on screen is older than it looks: say so, with a way to try again.
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityHidden(true)
-                        Text(L("As of \(reloadFailed.formatted(date: .omitted, time: .shortened)) – reloading failed",
-                               "Stand von \(reloadFailed.formatted(date: .omitted, time: .shortened)) – Neuladen fehlgeschlagen"))
+                        Text(L("As of \(uiTime(reloadFailed)) – reloading failed",
+                               "Stand von \(uiTime(reloadFailed)) – Neuladen fehlgeschlagen"))
                         Button(L("Try again", "Nochmal")) { attempt += 1 }.buttonStyle(.link)
                         Spacer()
                     }
@@ -159,10 +160,14 @@ struct BuildLog: View {
         .task(id: reloadKey) {
             await load()
             // While the build runs, the log follows it: read again every 5 seconds.
+            var quiet = 0
             while self.live.state.isActive && !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                // 5 s while it grows, up to 20 s while nothing new comes.
+                try? await Task.sleep(nanoseconds: UInt64(min(5 + quiet * 5, 20)) * 1_000_000_000)
                 if Task.isCancelled { break }
+                let before = lines.count
                 await load()
+                quiet = lines.count == before ? quiet + 1 : 0
             }
         }
         .onChange(of: demoMode) { _, _ in shownLines = scrubbed(lines) }
@@ -368,8 +373,8 @@ struct ProjectDetail: View {
                 if let reloadFailed {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityHidden(true)
-                        Text(L("As of \(reloadFailed.formatted(date: .omitted, time: .shortened)) – reloading failed",
-                               "Stand von \(reloadFailed.formatted(date: .omitted, time: .shortened)) – Neuladen fehlgeschlagen"))
+                        Text(L("As of \(uiTime(reloadFailed)) – reloading failed",
+                               "Stand von \(uiTime(reloadFailed)) – Neuladen fehlgeschlagen"))
                         Button(L("Try again", "Nochmal")) { attempt += 1 }.buttonStyle(.link)
                         Spacer()
                     }
@@ -456,12 +461,12 @@ struct ProjectDetail: View {
                                 .disabled(!store.canScan(item))
                         }
                     } else if let c, c.status == "failed" {
-                        Text(scrub(c.error ?? L("Check failed", "Check fehlgeschlagen"))).font(.caption).foregroundStyle(.red).lineLimit(2)
+                        Text(scrub(c.error ?? L("Check failed", "Check fehlgeschlagen"))).font(.caption).foregroundStyle(Color.dangerText).lineLimit(2)
                     }
                 }
                 if let c, let leaks = store.checkLeaks[c.id], !leaks.isEmpty {
                     Text(L("Rotate these keys (a commit does not remove them from the history):",
-                           "Diese Keys neu erzeugen (ein Commit entfernt sie nicht aus der Historie):")).font(.caption).foregroundStyle(.red)
+                           "Diese Keys neu erzeugen (ein Commit entfernt sie nicht aus der Historie):")).font(.caption).foregroundStyle(Color.dangerText)
                     ForEach(leaks, id: \.self) { l in
                         Text("\(l.rule) – \(scrub(l.file))\(l.line.map { ":\($0)" } ?? "")\(l.commit.map { " (\($0))" } ?? "")")
                             .font(.caption.monospaced()).textSelection(.enabled)
@@ -492,7 +497,7 @@ struct ProjectDetail: View {
                         if let u = run.prUrl.flatMap(URL.init(string:)) {
                             Link(L("Fix PR with \(run.fixes ?? 0) fix(es)", "Fix-PR mit \(run.fixes ?? 0) Fix(es)"), destination: u).font(.caption)
                         }
-                    default: Text(scrub(run.error ?? L("Scan failed", "Scan fehlgeschlagen"))).font(.caption).foregroundStyle(.red).lineLimit(2)
+                    default: Text(scrub(run.error ?? L("Scan failed", "Scan fehlgeschlagen"))).font(.caption).foregroundStyle(Color.dangerText).lineLimit(2)
                     }
                 }
             }
@@ -525,8 +530,8 @@ struct ProjectDetail: View {
             waiting(d)
             let checks = SiteLog.checks(Store.key(item))
             if let up = SiteLog.uptime(checks) {
-                Text(L("Up in \(String(format: "%.1f", up * 100)) % of \(checks.count) checks after deploys (30 days, this Mac)",
-                       "Erreichbar bei \(String(format: "%.1f", up * 100)) % von \(checks.count) Prüfungen nach Deploys (30 Tage, dieser Mac)"))
+                Text(L("Up in \(decimal(up * 100)) % of \(checks.count) checks after deploys (30 days, this Mac)",
+                       "Erreichbar bei \(decimal(up * 100)) % von \(checks.count) Prüfungen nach Deploys (30 Tage, dieser Mac)"))
                     .font(.caption).foregroundStyle(up < 0.99 ? Color.warningText : .secondary)
             }
             Toggle(L("Roll back if the check fails", "Zurückrollen, wenn der Check fehlschlägt"),
@@ -682,15 +687,15 @@ struct ProjectDetail: View {
             }
             }
             if d.open.count > listLimit {
-                moreOnGitHub(d.open.count - listLimit, live.repo.flatMap { URL(string: "https://github.com/\($0)/pulls") })
+                moreOnGitHub(d.open.count - listLimit, live.repo.flatMap { URL(string: GitHost.web($0) + (GitHost(repo: $0) == .github ? "/pulls" : "/-/merge_requests")) }, host: GitHost(live))
             }
         }
     }
 
-    private func moreOnGitHub(_ n: Int, _ url: URL?) -> some View {
+    private func moreOnGitHub(_ n: Int, _ url: URL?, host: GitHost = .github) -> some View {
         HStack {
             Text(L("and \(n) more", "und \(n) weitere")).font(.caption).foregroundStyle(.secondary)
-            if let url, !Demo.on { Button(L("on GitHub", "auf GitHub")) { NSWorkspace.shared.open(url) }.buttonStyle(.link).font(.caption) }
+            if let url, !Demo.on { Button(L("on \(host.name)", "auf \(host.name)")) { NSWorkspace.shared.open(url) }.buttonStyle(.link).font(.caption) }
         }
     }
 

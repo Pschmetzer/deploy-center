@@ -50,6 +50,7 @@ enum NameCheck {
                     "\(name) ist als kritisch markiert. Zum Live-Schalten den Namen tippen.")
             let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
             field.placeholderString = name
+            field.setAccessibilityLabel(L("Project name", "Projektname"))
             a.accessoryView = field
             a.addButton(withTitle: L("Deploy", "Deployen"))
             a.addButton(withTitle: L("Cancel", "Abbrechen"))
@@ -91,6 +92,7 @@ enum MigrationCheck {
                     "\(names) bringt Migrationen mit. Prüfe, ob sie für die Daten sicher sind, die jetzt live sind.")
                 + (files.isEmpty ? "" : "\n\n" + Demo.scrub(files, items: items))
             let box = NSButton(checkboxWithTitle: L("I checked the migrations", "Ich habe die Migrationen geprüft"), target: nil, action: nil)
+            box.setAccessibilityLabel(L("I checked the migrations", "Ich habe die Migrationen geprüft"))
             a.accessoryView = box
             a.addButton(withTitle: L("Deploy", "Deployen"))
             a.addButton(withTitle: L("Cancel", "Abbrechen"))

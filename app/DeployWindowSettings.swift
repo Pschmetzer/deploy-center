@@ -10,12 +10,19 @@ struct DeployWindowSettings: View {
     @State private var done = false
 
     static func dayName(_ d: String) -> String {
-        let en = ["mon": "Mon", "tue": "Tue", "wed": "Wed", "thu": "Thu", "fri": "Fri", "sat": "Sat", "sun": "Sun"]
-        let de = ["mon": "Mo", "tue": "Di", "wed": "Mi", "thu": "Do", "fri": "Fr", "sat": "Sa", "sun": "So"]
-        return L(en[d] ?? d, de[d] ?? d)
+        let index = ["sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6]
+        guard let i = index[d] else { return d }
+        let f = DateFormatter(); f.locale = uiLocale
+        return f.shortStandaloneWeekdaySymbols[i].trimmingCharacters(in: CharacterSet(charactersIn: "."))
     }
 
     var body: some View {
+        content.onAppear {
+            // Changed by the CLI or by hand while Settings was closed: read again, unless edits wait to be saved.
+            if config == saved { let fresh = DeployWindowConfig.load(); config = fresh; saved = fresh }
+        }
+    }
+    @ViewBuilder private var content: some View {
         Section {
             if config.deny.isEmpty {
                 Text(L("No times without deploys. Add one, e.g. Friday from 15:00.",
@@ -38,6 +45,7 @@ struct DeployWindowSettings: View {
                         Spacer()
                         Button(role: .destructive) { config.deny.removeAll { $0.id == rule.id } } label: { Image(systemName: "trash") }
                             .buttonStyle(.borderless).help(L("Remove this rule", "Diese Regel entfernen"))
+                            .accessibilityLabel(L("Remove this rule", "Diese Regel entfernen"))
                     }
                     HStack {
                         TextField(L("from", "ab"), text: Binding(get: { rule.from ?? "" }, set: { rule.from = $0.isEmpty ? nil : $0 }), prompt: Text("00:00"))

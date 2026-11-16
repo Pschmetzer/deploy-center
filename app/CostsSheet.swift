@@ -26,7 +26,8 @@ struct CostsSheet: View {
     /// Settings → Costs; 0 = no budget, then neither the line nor the sentence.
     @AppStorage("monthlyBudget") private var budget = 0.0
     private static let dayFormat: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); return f
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); return f
     }()
     /// Today as the billing data names days (UTC).
     static func today() -> String { dayFormat.string(from: Date()) }
@@ -167,7 +168,7 @@ struct CostsSheet: View {
                         }
                         .opacity(d.day == today ? 0.45 : 1)
                     if let off = costs.offDay, d.day == off {
-                        RuleMark(x: .value("Day", d.day)).foregroundStyle(.green).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
+                        RuleMark(x: .value("Day", d.day)).foregroundStyle(Color.good).lineStyle(StrokeStyle(lineWidth: 1, dash: [3]))
                     }
                 }
                 if daily > 0 {
@@ -185,7 +186,7 @@ struct CostsSheet: View {
             .overlay(alignment: .topTrailing) {
                 // The value of the day under the pointer, with its full date.
                 if let h = hovered, let d = costs.days.first(where: { $0.day == h }) {
-                    Text(d.day + ": " + d.build.formatted(.currency(code: "USD")) + (d.day == today ? L(" (so far)", " (bisher)") : ""))
+                    Text(Self.axisLabel(d.day, first: true) + ": " + d.build.formatted(.currency(code: "USD")) + (d.day == today ? L(" (so far)", " (bisher)") : ""))
                         .font(.caption2.monospacedDigit()).padding(.horizontal, 5).padding(.vertical, 2)
                         .background(RoundedRectangle(cornerRadius: 4).fill(.regularMaterial))
                 }
@@ -302,7 +303,7 @@ struct SavingCard: View {
                 Image(systemName: "arrow.right").foregroundStyle(.white.opacity(0.5))
                 VStack(alignment: .leading) {
                     Text(L("now", "jetzt")).font(.caption).foregroundStyle(.white.opacity(0.6))
-                    Text(after, format: .currency(code: "USD")).font(.title.weight(.bold).monospacedDigit()).foregroundStyle(.green)
+                    Text(after, format: .currency(code: "USD")).font(.title.weight(.bold).monospacedDigit()).foregroundStyle(Color.good)
                     Text(L("a day", "pro Tag")).font(.caption).foregroundStyle(.white.opacity(0.6))
                 }
             }
