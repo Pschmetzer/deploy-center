@@ -14,6 +14,7 @@ export DEPLOYS_CONFIG="$tmp/config" DEPLOYS_LIB=1 DEPLOYS_TESTING=1 HOME="$tmp/h
 mkdir -p "$HOME"
 # shellcheck source=../deploys
 . ./deploys
+set +e   # deploys sets -e; the tests look at failures themselves
 
 # --- af_mask: more shapes, a line cap, and what stays readable ---
 m() { printf '%s\n' "$1" | af_mask; }
@@ -33,6 +34,51 @@ start=$SECONDS
 long="$(perl -e 'print "a." x 75000')"
 cut="$(printf '%s\n' "$long" | af_mask | wc -c | tr -d ' ')"
 [ "$cut" -lt 4100 ] && [ $((SECONDS - start)) -lt 10 ] && ok "mask: a 150000-character line is cut and handled fast" || fail "mask: long line" "bytes $cut, $((SECONDS - start)) s"
+
+# --- hooks.d around a start ---
+fake_deploy_json() { echo '{"id":"x","state":"queued"}'; }
+hd="$CONFIG_DIR/hooks.d"; mkdir -p "$hd"
+printf '#!/bin/bash\necho "$DEPLOYS_HOOK $DEPLOYS_PLATFORM $DEPLOYS_PROJECT $DEPLOYS_SHA $DEPLOYS_STATE" >> "%s"\n' "$tmp/hook.log" > "$hd/pre-deploy-1"
+cp "$hd/pre-deploy-1" "$hd/post-deploy-1"; chmod 755 "$hd/pre-deploy-1" "$hd/post-deploy-1"; : > "$tmp/hook.log"
+expect "hooks.d: the start's JSON is unchanged" "$(deploy_one fake web abc123 2>/dev/null)" '{"id":"x","state":"queued"}'
+expect "hooks.d: pre and post ran with the environment" "$(cat "$tmp/hook.log")" $'pre-deploy fake web abc123 \npost-deploy fake web abc123 queued'
+printf '#!/bin/bash\nexit 1\n' > "$hd/pre-deploy-2"; chmod 755 "$hd/pre-deploy-2"; : > "$tmp/hook.log"
+rc=0; out="$(deploy_one fake web abc123 2>"$tmp/err")" || rc=$?
+expect "hooks.d: a failing pre-deploy hook stops the start" "$rc:[$out]:$(grep -c 'pre-deploy hook refused web' "$tmp/err")" "1:[]:1"
+expect "hooks.d: and no post-deploy hook ran" "$(grep -c '^post-deploy' "$tmp/hook.log")" "0"
+chmod 757 "$hd/pre-deploy-2"
+rc=0; out="$(deploy_one fake web abc123 2>"$tmp/err")" || rc=$?
+expect "hooks.d: a hook everyone can write to is not run" "$rc:$(grep -c 'writable by everyone' "$tmp/err")" "0:1"
+rm -rf "$hd"
+
+# --- a command of your own for notifications ---
+DEPLOYS_NOTIFY=0 DEPLOYS_NOTIFY_CMD="cat > '$tmp/n.txt'" af_notify "build web failed" >/dev/null
+expect "notify: the command gets the message on stdin" "$(cat "$tmp/n.txt")" "build web failed"
+DEPLOYS_NOTIFY=0 DEPLOYS_NOTIFY_CMD="printf %s \"\$DEPLOYS_MESSAGE\" > '$tmp/n2.txt'" af_notify "second" >/dev/null
+expect "notify: and in DEPLOYS_MESSAGE" "$(cat "$tmp/n2.txt")" "second"
+
+# --- a key from a command ---
+fk_meta() { echo '{"id":"fk","label":"Fk","keyEnv":["FK_KEY"],"keychain":"x","caps":{}}'; }
+expect "key command: FK_KEY_CMD gives the key" "$(FK_KEY_CMD='echo secretvalue' key_of fk)" "secretvalue"
+expect "key command: the variable still wins" "$(FK_KEY=fromenv FK_KEY_CMD='echo secretvalue' key_of fk)" "fromenv"
+expect "key command: a key with a quote is refused" "$(FK_KEY_CMD="echo 'a\"b'" key_of fk 2>&1 | grep -c 'cannot be in one')" "1"
+expect "key command: a command that prints nothing is an error" "$(FK_KEY_CMD='true' key_of fk 2>&1 | grep -c 'printed no key')" "1"
+expect "key command: counts as a key in the environment" "$(FK_KEY_CMD='true'; export FK_KEY_CMD; key_of_env fk && echo yes)" "yes"
+
+# --- observer attempts are journaled, and the chain is checked ---
+export DEPLOYS_JOURNAL="$tmp/j.jsonl"
+( export DEPLOYS_READONLY=1; require_write "deploy web" ) >/dev/null 2>&1
+expect "observer: a refused attempt is in the journal" "$(jq -r '[.result, (.detail | startswith("Refused in observer mode"))] | join(":")' "$DEPLOYS_JOURNAL")" "skipped:true"
+rm -f "$DEPLOYS_JOURNAL"
+journal_add a1 n1 live "one"; journal_add a2 n2 live "two"; journal_add a3 n3 live "three"
+cli() { env -u DEPLOYS_LIB bash ./deploys "$@"; }
+expect "journal verify: an untouched chain" "$(cli journal verify; echo "rc=$?")" $'Journal: 3 lines, 2 linked to the line before, 0 without a link. No broken link.\nrc=0'
+perl -pi -e 's/"two"/"TWO"/ if $. == 2' "$DEPLOYS_JOURNAL"
+expect "journal verify: a changed line breaks the link after it" "$(cli journal verify | grep -c 'link before line 3')" "1"
+expect "journal verify --json names the line" "$(cli journal verify --json | jq -c '.broken')" "[3]"
+rc=0; cli journal verify >/dev/null || rc=$?
+expect "journal verify: a broken chain exits 1" "$rc" "1"
+unset DEPLOYS_JOURNAL
 
 # --- completion: commands come from the case labels, and the second word is completed for the multi-command ones ---
 cli() { env -u DEPLOYS_LIB bash ./deploys "$@"; }

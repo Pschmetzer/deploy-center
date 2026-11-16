@@ -522,6 +522,15 @@ expect "rollback with no project is a usage line" "$(run "$O" "$E" rollback; gre
 expect "rollback is refused in observer mode" "$(DEPLOYS_READONLY=1 run "$O" "$E" rollback web; rolled)" $'1\n1'
 fresh
 expect "doctor --text: one line per thing" "$(run "$O" "$E" doctor --text; grep -c '^ok   jq$' "$O")" $'0\n1'
+fresh
+expect "verify --tries 2 --need 2: one bad answer of two fails" \
+  "$(SITE=flaky run "$O" "$E" verify web --tries 2 --need 2 --no-rollback --json; jq -c '[.healthy, .codes]' "$O"; rolled)" $'2\n[false,[502,200]]\n0'
+fresh
+expect "verify --tries 3 --need 2: one bad answer of three is healthy" \
+  "$(SITE=flaky run "$O" "$E" verify web --tries 3 --need 2 --json; jq -c '[.healthy, .codes]' "$O"; rolled)" $'0\n[true,[502,200,200]]\n0'
+expect "verify --tries 1: one answer is asked" "$(run "$O" "$E" verify web --tries 1 --json; jq -c '.codes' "$O")" $'0\n[200]'
+expect "verify: --need above --tries is refused" "$(run "$O" "$E" verify web --tries 2 --need 3; grep -c 'no check could pass' "$E")" $'3\n1'
+expect "verify: --tries 0 is refused" "$(run "$O" "$E" verify web --tries 0; grep -c 'number of answers' "$E")" $'3\n1'
 
 # FEA-033: the project's checks (overrides.json here, deploy-center.json in a repo) are each asked.
 echo '{"projects":{"web":{"checks":["/ok",{"path":"/moved","expect":"3xx"}]}}}' > "$e2e/config/overrides.json"; fresh

@@ -307,6 +307,8 @@ require_write() {
   WRITING=1   # lookup then checks remembered ids (CLI-053)
   local why; why="$(readonly_from)"
   if [ -z "$why" ] && team_on; then why="$(team_observer_from)"; fi
+  # The refusal is written to the journal (as "skipped"), so a team can see who tried what in observer mode.
+  [ -z "$why" ] || journal_add cli "${1%% *}" skipped "Refused in observer mode ($why): deploys $1" 2>/dev/null || true
   [ -z "$why" ] || die "Observer mode ($why): \"deploys $1\" changes something and is refused. Observers can look, not deploy. To deploy from here: $(if [ -n "${DEPLOYS_READONLY:-}" ]; then echo "unset DEPLOYS_READONLY"; elif [ -e "$CONFIG_DIR/readonly" ]; then echo "deploys readonly off"; elif [[ "$why" == *"cannot tell who you are"* ]]; then echo "gh auth login"; else echo "ask to be taken off the observers list"; fi)."
   # Without lib/team.sh the two-person rule and the observers list are not read at all. When this
   # Mac has seen a team file (repos added with `deploys team add`, overrides.json, a cached shared
@@ -434,6 +436,17 @@ key_of() {
       printf '%s' "${!v}"; return 0
     fi
   done
+  # A command that prints the key (<NAME>_CMD, e.g. RENDER_API_KEY_CMD='op read op://vault/render/key'; pass, Vault,
+  # a company tool): asked after the variable, before the keychain. The command is yours, from your environment.
+  local c k
+  for v in $("${p}_meta" | grep -Eo '"keyEnv"[[:space:]]*:[[:space:]]*\[[^]]*\]' | sed -E 's/"keyEnv"[[:space:]]*://' | grep -o '[A-Za-z_][A-Za-z0-9_]*'); do
+    c="${v}_CMD"
+    [ -n "${!c:-}" ] || continue
+    k="$(with_timeout 20 bash -c "${!c}" </dev/null 2>/dev/null | head -n 1 | tr -d '\r')" || k=""
+    [ -n "$k" ] || { echo "Error: $c printed no key." >&2; return 1; }
+    case "$k" in *[\"\\]*) echo "Error: $c printed a key with a character that cannot be in one (quote or backslash)." >&2; return 1;; esac
+    printf '%s' "$k"; return 0
+  done
   security find-generic-password -a "$USER" -s "deploy-center-$p" -w 2>/dev/null
 }
 # Whether the keychain could not be read at all (locked under launchd or SSH, access denied), as
@@ -449,9 +462,10 @@ keychain_broken() {  # keychain_broken <p>: true when its key is not in the envi
 }
 key_env_names() { "${1}_meta" | grep -Eo '"keyEnv"[[:space:]]*:[[:space:]]*\[[^]]*\]' | sed -E 's/"keyEnv"[[:space:]]*://' | grep -o '[A-Za-z_][A-Za-z0-9_]*' | paste -sd' ' - | sed 's/ / or /g'; }
 key_of_env() {
-  local v
+  local v c
   for v in $("${1}_meta" | grep -Eo '"keyEnv"[[:space:]]*:[[:space:]]*\[[^]]*\]' | sed -E 's/"keyEnv"[[:space:]]*://' | grep -o '[A-Za-z_][A-Za-z0-9_]*'); do
     [ -n "${!v:-}" ] && return 0
+    c="${v}_CMD"; [ -n "${!c:-}" ] && return 0
   done
   return 1
 }
@@ -1084,10 +1098,32 @@ site_url_of() {  # site_url_of <project> <platform>
 }
 
 # One start, through the same functions (and the same start lock) as the app.
+# hooks.d: executable files named pre-deploy* or post-deploy* in $CONFIG_DIR/hooks.d, run around a start with
+# DEPLOYS_PLATFORM, DEPLOYS_PROJECT, DEPLOYS_SHA (and DEPLOYS_STATE after). A pre-deploy hook that exits non-zero
+# stops that start; a post-deploy hook cannot. A file others can write to is never run. Their output goes to stderr.
+hook_run() {  # hook_run <pre-deploy|post-deploy> <platform> <name> [<sha>] [<state>]
+  local d="$CONFIG_DIR/hooks.d" h perm rc
+  [ -d "$d" ] || return 0
+  for h in "$d/$1"*; do
+    [ -f "$h" ] && [ -x "$h" ] || continue
+    perm="$(ls -ld "$h" | cut -c1-10)"
+    if [ "${perm:8:1}" = w ]; then echo "hooks.d: $(basename "$h") is writable by everyone and was not run (chmod o-w)" >&2; continue; fi
+    rc=0
+    DEPLOYS_HOOK="$1" DEPLOYS_PLATFORM="$2" DEPLOYS_PROJECT="$3" DEPLOYS_SHA="${4:-}" DEPLOYS_STATE="${5:-}" "$h" </dev/null >&2 || rc=$?
+    if [ "$rc" != 0 ]; then
+      echo "hooks.d: $(basename "$h") exited $rc" >&2
+      [ "$1" != pre-deploy ] || return 1
+    fi
+  done
+  return 0
+}
 deploy_one() {  # deploy_one <platform> <name> [<sha>] [<id>]: the start as JSON
   # By its id when known (Render: srv-…): a name may hold characters an API path cannot (safe_arg refuses them).
-  local id="${4:--}"; [ "$id" != "-" ] || id="$2"
-  ( "${1}_deploy_json" "$id" ${3:+--sha "$3"} )
+  local id="${4:--}" out; [ "$id" != "-" ] || id="$2"
+  hook_run pre-deploy "$1" "$2" "${3:-}" || { echo "A pre-deploy hook refused $2: nothing was started." >&2; return 1; }
+  out="$( "${1}_deploy_json" "$id" ${3:+--sha "$3"} )" || return 1
+  printf '%s\n' "$out"
+  hook_run post-deploy "$1" "$2" "${3:-}" "$(printf '%s' "$out" | jq -r '.state // empty' 2>/dev/null)" || true
 }
 
 # Savings estimates and the plan, kept in lib/savings.sh and lib/plan.sh next to this script (or
@@ -1232,6 +1268,11 @@ af_notify() {
   echo "$1"
   [ "${DEPLOYS_NOTIFY:-1}" = 1 ] && command -v osascript >/dev/null 2>&1 \
     && osascript -e "display notification \"$(echo "$1" | tr -d '"\\')\" with title \"Deploy Center\"" >/dev/null 2>&1 || true
+  # A command of your own (ntfy, a webhook through curl, notify-send on Linux): the message is on its stdin and in
+  # $DEPLOYS_MESSAGE. The command is yours (an environment variable of the person running this), never read from a file.
+  if [ -n "${DEPLOYS_NOTIFY_CMD:-}" ]; then
+    printf '%s\n' "$1" | DEPLOYS_MESSAGE="$1" with_timeout 20 bash -c "$DEPLOYS_NOTIFY_CMD" >/dev/null 2>&1 || true
+  fi
 }
 # Seams the tests replace: what is live, a build log, a deploy.
 af_all() { DEPLOYS_NO_GITHUB=1 all_json; }
@@ -2469,7 +2510,7 @@ case "${1:-} ${2:-}" in
   "history "*)     usage_if_short $# 2 "history <project> [n]" ;;
   "ai explain"|"ai notes"|"ai ship"|"ai risk"|"ai slow") usage_if_short $# 3 "ai ${2} <project> [--json]" ;;
   "ai ask") usage_if_short $# 3 "ai ask <project> --question \"…\" [--json]" ;;
-  "verify "*)      usage_if_short $# 2 "verify <project> [--path /health] [--expect 200|2xx] [--follow] [--rollback-after 10] [--no-rollback]" ;;
+  "verify "*)      usage_if_short $# 2 "verify <project> [--path /health] [--expect 200|2xx] [--follow] [--tries 3] [--every 5] [--need 1] [--rollback-after 10] [--no-rollback]" ;;
   "risk "*)        usage_if_short $# 2 "risk <project> [--json]" ;;
   "ci "*)          usage_if_short $# 2 "ci <owner/repo> [<sha or branch>] [--wait 30m] [--json]" ;;
   "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
@@ -2656,7 +2697,9 @@ case "${1:-} ${2:-}" in
         else echo "Would deploy $label: ${p#*:}${pv:+ (preview)}${sha:+ at ${sha:0:7}}. Nothing was started."; fi
         continue
       fi
+      hook_run pre-deploy "$plat" "${p#*:}" "$sha" || { echo "A pre-deploy hook refused ${p#*:}: nothing was started." >&2; group_stop "$p" "$count"; }
       out="$(DEPLOYS_FORCE_REASON="$force" "${plat}_deploy_json" "$pid" ${pv:+--preview} ${sha:+--sha "$sha"})" || group_stop "$p" "$count"
+      hook_run post-deploy "$plat" "${p#*:}" "$sha" "$(echo "$out" | jq -r '.state // empty' 2>/dev/null)" || true
       journal_forced "$plat" "${p#*:}"
       did="$(echo "$out" | jq -r '.id // empty')"
       if [ "$json" = 1 ]; then
@@ -2696,6 +2739,34 @@ case "${1:-} ${2:-}" in
       fi
     done
     group_json_out "$count" ;;
+
+  "journal "*)
+    # journal verify [--json]: each line carries the SHA-256 of the line before it (prevHash); a changed or removed
+    # line shows as a broken link. The first line is not checked (the app shortens the file from the front).
+    [ "${2:-}" = verify ] || die "Usage: deploys journal verify [--json]"
+    jf="$(journal_file)"
+    [ -s "$jf" ] || { if [ "$json" = 1 ]; then echo '{"lines":0,"linked":0,"unlinked":0,"broken":[]}'; else echo "No journal yet."; fi; exit 0; }
+    hasher=""; command -v sha256sum >/dev/null 2>&1 && hasher="sha256sum"; [ -n "$hasher" ] || { command -v shasum >/dev/null 2>&1 && hasher="shasum -a 256"; }
+    [ -n "$hasher" ] || die "No sha256sum or shasum here: the chain cannot be checked."
+    n=0; linked=0; unlinked=0; broken=""; prevline=""
+    while IFS= read -r jl || [ -n "$jl" ]; do
+      n=$((n + 1))
+      if [ "$n" -gt 1 ]; then
+        ph="$(printf '%s' "$jl" | jq -r '.prevHash // empty' 2>/dev/null)" || ph=""
+        if [ -z "$ph" ]; then unlinked=$((unlinked + 1))
+        else
+          want="$(printf '%s\n' "$prevline" | $hasher | cut -d' ' -f1)"
+          if [ "$ph" = "$want" ]; then linked=$((linked + 1)); else broken="${broken:+$broken }$n"; fi
+        fi
+      fi
+      prevline="$jl"
+    done < "$jf"
+    bj="$(printf '%s\n' $broken | jq -R 'select(. != "") | tonumber' | jq -sc .)"
+    if [ "$json" = 1 ]; then jq -nc --argjson n "$n" --argjson l "$linked" --argjson u "$unlinked" --argjson b "$bj" '{lines:$n, linked:$l, unlinked:$u, broken:$b}'
+    elif [ -z "$broken" ]; then echo "Journal: $n lines, $linked linked to the line before, $unlinked without a link. No broken link."
+    else echo "Journal: the link before line $(echo "$broken" | sed 's/ /, line /g') does not match: a line there was changed or removed."; fi
+    [ -z "$broken" ] || exit 1
+    exit 0 ;;
 
   "rollback "*|"cancel "*)
     # rollback|cancel <project> [<deploy>]: the project on whichever platform it is on; the provider's own
@@ -3359,7 +3430,7 @@ BASH
     # --expect 200 (or 2xx): only that answer is healthy, so a 401 from deployment protection fails
     # too; an expected 3xx is asked without following. --follow is the default now (kept for scripts).
     die() { echo "${ERED}Error:${EPLAIN} $*" >&2; exit 3; }
-    p="$2"; path=""; after=10; norb=""; url=""; expect=""; follow=(-L --max-redirs 5); shift 2
+    p="$2"; path=""; after=10; norb=""; url=""; expect=""; follow=(-L --max-redirs 5); tries=3; every=5; need=1; mtime=20; shift 2
     while [ $# -gt 0 ]; do
       case "$1" in
         --path) path="${2:?Usage: deploys verify <project> --path /health}"; shift ;;
@@ -3369,10 +3440,19 @@ BASH
         --expect) [ $# -ge 2 ] || die "--expect takes a status like 200 or 2xx"; expect="$2"; shift
           case "$expect" in [1-5][0-9][0-9]|[1-5]xx) ;; *) die "--expect takes a status like 200 or 2xx" ;; esac ;;
         --follow) follow=(-L --max-redirs 3) ;;
-        *) die "Unknown option $1. Usage: deploys verify <project> [--path /health] [--expect 200|2xx] [--follow] [--rollback-after 10] [--no-rollback] [--url <address>] [--json]" ;;
+        # How hard it asks: --tries answers (default 3), --every seconds apart (5), at least --need of them good (1;
+        # a slow cold start wants fewer tries, a strict check wants all), each answer within --max-time seconds (20).
+        --tries) tries="${2:-}"; shift; case "$tries" in ''|*[!0-9]*|0) die "--tries takes a number of answers, 1 or more" ;; esac; tries="$((10#$tries))"; [ "$tries" -le 20 ] || die "--tries is at most 20" ;;
+        --every) every="${2:-}"; shift; case "$every" in ''|*[!0-9]*) die "--every takes seconds, a number" ;; esac; every="$((10#$every))" ;;
+        --need) need="${2:-}"; shift; case "$need" in ''|*[!0-9]*|0) die "--need takes how many good answers are enough, 1 or more" ;; esac; need="$((10#$need))" ;;
+        --max-time) mtime="${2:-}"; shift; case "$mtime" in ''|*[!0-9]*|0) die "--max-time takes seconds, 1 or more" ;; esac; mtime="$((10#$mtime))" ;;
+        *) die "Unknown option $1. Usage: deploys verify <project> [--path /health] [--expect 200|2xx] [--follow] [--tries 3] [--every 5] [--need 1] [--max-time 20] [--rollback-after 10] [--no-rollback] [--url <address>] [--json]" ;;
       esac
       shift
     done
+    [ "$need" -le "$tries" ] || die "--need $need is more than --tries $tries: no check could pass"
+    # The check failed when this many answers are bad (with the defaults: all three).
+    badlimit=$((tries - need + 1))
     case "$after" in ''|*[!0-9]*) die "--rollback-after takes seconds, a number";; esac
     after="$((10#$after))"   # 08 is eight: bash would read it as a bad octal number mid-countdown
     # "<p>:<name>" works too: the platform from it, the bare name for its API.
@@ -3408,21 +3488,21 @@ BASH
       ctarget="${url%/}$cpath"; [ -n "$cpath" ] || ctarget="$url"
       ccodes=""; cbad=0; cfollow=(${follow[@]+"${follow[@]}"})
       case "$cexp" in 3*) cfollow=() ;; esac
-      for i in 1 2 3; do
-        c="$(curl -sS -o /dev/null -w '%{http_code}' --proto =http,https --proto-redir =https ${cfollow[@]+"${cfollow[@]}"} --connect-timeout 10 --max-time 20 -A "DeployCenter (verify)" "$ctarget" 2>/dev/null)" || true
+      for ((i = 1; i <= tries; i++)); do
+        c="$(curl -sS -o /dev/null -w '%{http_code}' --proto =http,https --proto-redir =https ${cfollow[@]+"${cfollow[@]}"} --connect-timeout 10 --max-time "$mtime" -A "DeployCenter (verify)" "$ctarget" 2>/dev/null)" || true
         [ -n "$c" ] || c=000
         ccodes="$ccodes${ccodes:+ }$c"
         if [ -n "$cexp" ]; then
           case "$cexp" in *xx) [ "${c:0:1}" = "${cexp:0:1}" ] || cbad=$((cbad + 1)) ;; *) [ "$c" = "$cexp" ] || cbad=$((cbad + 1)) ;; esac
         else case "$c" in 000|5*) cbad=$((cbad + 1));; 4*) [ -z "$cpath" ] || cbad=$((cbad + 1));; esac; fi
         echo "$(date +%H:%M:%S)  $c  $ctarget" >&2
-        [ "$i" = 3 ] || sleep 5
+        [ "$i" = "$tries" ] || sleep "$every"
       done
-      cjson="$(echo "$cjson" | jq -c --arg u "$ctarget" --arg c "$ccodes" --argjson h "$([ "$cbad" -lt 3 ] && echo true || echo false)" \
+      cjson="$(echo "$cjson" | jq -c --arg u "$ctarget" --arg c "$ccodes" --argjson h "$([ "$cbad" -lt "$badlimit" ] && echo true || echo false)" \
         '. + [{url:$u, codes:($c | split(" ") | map(tonumber)), healthy:$h}]')"
       # The first failing check (else the first) is the one named, as one check was before.
-      if [ -z "$target" ] || { [ "$cbad" -ge 3 ] && [ "$failed" = 0 ]; }; then target="$ctarget"; codes="$ccodes"; fi
-      [ "$cbad" -lt 3 ] || failed=$((failed + 1))
+      if [ -z "$target" ] || { [ "$cbad" -ge "$badlimit" ] && [ "$failed" = 0 ]; }; then target="$ctarget"; codes="$ccodes"; fi
+      [ "$cbad" -lt "$badlimit" ] || failed=$((failed + 1))
     done 3<<< "$clist"
     report() {  # report <healthy> <rolledBack> <cancelled> <exit code>
       if [ "$json" = 1 ]; then
