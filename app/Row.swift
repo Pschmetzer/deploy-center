@@ -30,29 +30,9 @@ struct Row: View {
     @AppStorage("compactRows") private var compact = false
     @Environment(\.accessibilityDifferentiateWithoutColor) private var noColour
 
-    /// The colours of the row menu's "Colour" (Store.projectColorNames).
-    static func tagColor(_ name: String) -> Color {
-        switch name {
-        case "red": return .red
-        case "orange": return .orange
-        case "yellow": return .yellow
-        case "green": return .green
-        case "blue": return .blue
-        case "purple": return .purple
-        default: return .gray
-        }
-    }
-    static func tagName(_ name: String) -> String {
-        switch name {
-        case "red": return L("Red", "Rot")
-        case "orange": return L("Orange", "Orange")
-        case "yellow": return L("Yellow", "Gelb")
-        case "green": return L("Green", "Grün")
-        case "blue": return L("Blue", "Blau")
-        case "purple": return L("Purple", "Lila")
-        default: return L("Gray", "Grau")
-        }
-    }
+    /// The colours of the row menu's "Colour" (ProjectColor).
+    static func tagColor(_ name: String) -> Color { ProjectColor(name: name).color }
+    static func tagName(_ name: String) -> String { ProjectColor(name: name).label }
 
     /// How the search finds a text and how the row marks it: one rule for both, so a row the list
     /// keeps always shows why (any case, and "uber" finds "Über").
@@ -205,7 +185,7 @@ struct Row: View {
             if let onDismissAutofix { Button(L("Dismiss the fix chip", "Fix-Chip verwerfen"), action: onDismissAutofix) }
             if case .failed(let m) = item.state, !m.isEmpty {
                 Button(L("Copy the error", "Fehler kopieren")) {
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Self.errorCopy(item, m), forType: .string)
+                    Pasteboard.copy(Self.errorCopy(item, m))
                 }
             }
         }
@@ -331,28 +311,8 @@ struct Row: View {
 
     static func ago(_ d: Date) -> String { relative.localizedString(for: d, relativeTo: Date()) }
 
-    /// Vercel's and Render's deploy states in words ("build_failed" → "Build failed").
-    static func stateText(_ raw: String) -> String {
-        switch raw.lowercased() {
-        case "": return L("unknown", "unbekannt")
-        case "ready", "live", "succeeded": return L("live", "live")
-        case "error": return L("failed", "fehlgeschlagen")
-        case "build_failed": return L("build failed", "Build fehlgeschlagen")
-        case "update_failed": return L("update failed", "Update fehlgeschlagen")
-        case "pre_deploy_failed": return L("pre-deploy step failed", "Pre-Deploy-Schritt fehlgeschlagen")
-        case "canceled", "cancelled": return L("cancelled", "abgebrochen")
-        case "deactivated": return L("deactivated", "deaktiviert")
-        case "building", "build_in_progress": return L("building", "baut")
-        case "update_in_progress": return L("updating", "wird aktualisiert")
-        case "pre_deploy_in_progress": return L("pre-deploy step running", "Pre-Deploy-Schritt läuft")
-        case "queued", "created": return L("queued", "wartet")
-        case "triggered": return L("triggered", "ausgelöst")
-        case "initializing": return L("starting", "startet")
-        case let s where s.hasPrefix("trigger failed"):
-            return L("trigger failed", "Auslösen fehlgeschlagen") + String(raw.dropFirst("trigger failed".count))
-        default: return raw.replacingOccurrences(of: "_", with: " ")
-        }
-    }
+    /// Vercel's and Render's deploy states in words ("build_failed" → "Build failed"); see DeployState.
+    static func stateText(_ raw: String) -> String { DeployState.text(raw) }
 
     /// How the last deploy's state looks: live, failed, stopped by someone, or still on its way.
     enum DeployLook: Equatable { case ok, failed, cancelled, other }

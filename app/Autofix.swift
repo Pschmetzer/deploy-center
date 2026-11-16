@@ -9,7 +9,7 @@ struct AutofixSettings: View {
     /// The rows read the same status: after a run here they are brought up to date at once.
     @ObservedObject var store: Store
     /// The projects, so demo mode can replace their names in the script's output.
-    private var items: [Item] { store.items.values.flatMap { $0 } }
+    private var items: [Item] { store.allItems }
     /// Read so the output redraws at once when demo mode is switched (⇧⌘D).
     @AppStorage("demoMode") private var demoMode = false
     @State private var status: AutofixReport?
@@ -155,7 +155,7 @@ struct AutofixSettings: View {
         } catch {
             message = L("Could not copy the prompt: ", "Prompt ließ sich nicht kopieren: ") + error.localizedDescription; failed = true; return
         }
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+        Pasteboard.copy(text)
         message = L("Prompt copied. Paste it into the new routine.", "Prompt kopiert. Füge ihn in die neue Routine ein."); failed = false
     }
 

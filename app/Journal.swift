@@ -15,8 +15,14 @@ struct JournalEntry: Codable, Identifiable {
     let detail: String?
     /// The person's own comment, added later in the history (FEA-048). The script leaves it alone.
     var note: String? = nil
-    init(at: Date = Date(), platform: String, name: String, result: String, seconds: Double?, detail: String?) {
+    /// The commit and the platform's deploy id the entry is about, when the app knew them. Older
+    /// entries have neither; the history keeps working without them.
+    var sha: String? = nil
+    var deployId: String? = nil
+    init(at: Date = Date(), platform: String, name: String, result: String, seconds: Double?, detail: String?,
+         sha: String? = nil, deployId: String? = nil) {
         self.at = at; self.platform = platform; self.name = name; self.result = result; self.seconds = seconds; self.detail = detail
+        self.sha = sha; self.deployId = deployId
     }
 }
 
@@ -194,10 +200,13 @@ enum Journal {
     }
 
     /// Entries that match a search (project, platform or detail) and a kind; nil kind is all.
-    static func filter(_ list: [JournalEntry], text: String, kind: JournalEntry.Kind?) -> [JournalEntry] {
+    static func filter(_ list: [JournalEntry], text: String, kind: JournalEntry.Kind?,
+                       since: Date? = nil, platform: String? = nil) -> [JournalEntry] {
         let t = text.trimmingCharacters(in: .whitespaces)
         return list.filter { e in
             (kind == nil || e.kind == kind)
+                && (since == nil || e.at >= since!)
+                && (platform == nil || e.platform == platform)
                 && (t.isEmpty || e.name.localizedCaseInsensitiveContains(t) || e.platform.localizedCaseInsensitiveContains(t)
                     || (e.detail?.localizedCaseInsensitiveContains(t) ?? false) || (e.note?.localizedCaseInsensitiveContains(t) ?? false))
         }
@@ -263,8 +272,14 @@ struct JournalView: View {
     @State private var search = ""
     @State private var kind: JournalEntry.Kind?
     @State private var limit = 200
+    /// How far back the list reaches: 0 is all of it.
+    @State private var days = 0
+    @State private var platform: String?
 
-    private var shown: [JournalEntry] { Journal.filter(entries, text: search, kind: kind) }
+    private var shown: [JournalEntry] {
+        let since = days > 0 ? Calendar.current.date(byAdding: .day, value: -days, to: Date()) : nil
+        return Journal.filter(entries, text: search, kind: kind, since: since, platform: platform)
+    }
     /// Names in the details are scrubbed in demo mode, like everywhere on screen.
     private var names: [Item] {
         Set(entries.map(\.name)).map { Item(id: $0, name: $0, detail: "", platform: .vercel, deployable: false, auto: false, note: nil, link: nil) }
@@ -276,7 +291,7 @@ struct JournalView: View {
                 Text(L("Deploy history", "Deploy-Verlauf")).font(.headline)
                 Spacer()
                 Button(L("Copy as CSV", "Als CSV kopieren")) {
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Journal.csv(shown, perBuild: costs?.perBuild), forType: .string)
+                    Pasteboard.copy(Journal.csv(shown, perBuild: costs?.perBuild))
                 }.disabled(shown.isEmpty)
                 Button(L("Save as CSV …", "Als CSV sichern …")) { save() }.disabled(shown.isEmpty)
                 Menu(L("Markdown", "Markdown")) {
@@ -291,6 +306,16 @@ struct JournalView: View {
                 Picker(L("Result", "Ergebnis"), selection: $kind) {
                     Text(L("All", "Alle")).tag(JournalEntry.Kind?.none)
                     ForEach(JournalEntry.Kind.allCases, id: \.self) { k in Text(k.title).tag(JournalEntry.Kind?.some(k)) }
+                }.fixedSize()
+                Picker(L("Period", "Zeitraum"), selection: $days) {
+                    Text(L("All time", "Alles")).tag(0)
+                    Text(L("7 days", "7 Tage")).tag(7)
+                    Text(L("30 days", "30 Tage")).tag(30)
+                    Text(L("90 days", "90 Tage")).tag(90)
+                }.fixedSize()
+                Picker(L("Platform", "Plattform"), selection: $platform) {
+                    Text(L("All", "Alle")).tag(String?.none)
+                    ForEach(Array(Set(entries.map(\.platform))).sorted(), id: \.self) { p in Text(p).tag(String?.some(p)) }
                 }.fixedSize()
             }.padding(.horizontal, 12).padding(.bottom, 8)
             Divider()
@@ -335,6 +360,9 @@ struct JournalView: View {
                 Text(Demo.mask(e.name)).font(.body.weight(.medium))
                 Text(k.title).font(.caption).foregroundStyle(k.color == .secondary ? Color.secondary : k.color)
                 Text(e.platform).font(.caption).foregroundStyle(.secondary)
+                if let sha = e.sha, !sha.isEmpty {
+                    Text(String(sha.prefix(7))).font(.caption.monospaced()).foregroundStyle(.secondary)
+                }
                 if let f = failed["\(e.platform)/\(e.name)"], f.failed > 0 {
                     Text(L("\(f.failed) of last \(f.total) failed", "\(f.failed) der letzten \(f.total) fehlgeschlagen"))
                         .font(.caption2).foregroundStyle(Color.warningText)
@@ -360,6 +388,8 @@ struct JournalView: View {
             }
         }
         .contextMenu {
+            if let sha = e.sha, !sha.isEmpty { Button(L("Copy the commit", "Commit kopieren")) { copy(sha) } }
+            if let id = e.deployId, !id.isEmpty { Button(L("Copy the deploy id", "Deploy-ID kopieren")) { copy(id) } }
             if k == .failed || k == .rollback {
                 Button(L("Copy a postmortem template", "Postmortem-Vorlage kopieren")) { copy(JournalStats.postmortem(e, mask: Demo.mask)) }
             }
@@ -370,7 +400,7 @@ struct JournalView: View {
         }
     }
 
-    private func copy(_ s: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string) }
+    private func copy(_ s: String) { Pasteboard.copy(s) }
 
     private func reload() {
         entries = Journal.load(limit: limit); failed = Journal.failureTable(entries)

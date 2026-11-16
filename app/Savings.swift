@@ -8,56 +8,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Lenient decoding (a missing or odd field is "unknown", never a failed sheet)
-
-fileprivate struct AnyKey: CodingKey {
-    var stringValue: String
-    var intValue: Int? { nil }
-    init(_ s: String) { stringValue = s }
-    init?(stringValue: String) { self.stringValue = stringValue }
-    init?(intValue: Int) { return nil }
-}
-
-/// An element that could not be read becomes nil and is dropped, instead of failing the whole list.
-fileprivate struct Skippable<T: Decodable>: Decodable {
-    let value: T?
-    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
-}
-
-fileprivate struct Lax {
-    let c: KeyedDecodingContainer<AnyKey>?
-    init(_ d: Decoder) { c = try? d.container(keyedBy: AnyKey.self) }
-    init(container: KeyedDecodingContainer<AnyKey>?) { c = container }
-
-    func num(_ k: String) -> Double? {
-        guard let c else { return nil }
-        if let d = try? c.decodeIfPresent(Double.self, forKey: AnyKey(k)) { return d }
-        // A number sent as text still counts.
-        if let s = try? c.decodeIfPresent(String.self, forKey: AnyKey(k)) { return Double(s) }
-        return nil
-    }
-    func str(_ k: String) -> String? {
-        guard let c else { return nil }
-        return try? c.decodeIfPresent(String.self, forKey: AnyKey(k))
-    }
-    func bool(_ k: String) -> Bool? {
-        guard let c else { return nil }
-        return try? c.decodeIfPresent(Bool.self, forKey: AnyKey(k))
-    }
-    func obj<T: Decodable>(_ k: String) -> T? {
-        guard let c else { return nil }
-        return try? c.decodeIfPresent(T.self, forKey: AnyKey(k))
-    }
-    func list<T: Decodable>(_ k: String) -> [T] {
-        guard let c, let raw = try? c.decodeIfPresent([Skippable<T>].self, forKey: AnyKey(k)) else { return [] }
-        return raw.compactMap { $0.value }
-    }
-    func sub(_ k: String) -> Lax {
-        guard let c else { return Lax(container: nil) }
-        return Lax(container: try? c.nestedContainer(keyedBy: AnyKey.self, forKey: AnyKey(k)))
-    }
-}
-
 // MARK: - What the script says
 
 /// Builds, minutes and dollars for one stretch of time. Any of them may be unknown.
@@ -270,8 +220,7 @@ final class SavingsModel: ObservableObject {
         }
     }
     nonisolated static func save(_ data: Data, to url: URL) {
-        try? FileManager.default.createDirectory(at: AppDirs.support, withIntermediateDirectories: true)
-        do { try data.write(to: url, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path) }
+        do { try PrivateFile.write(data, to: url) }
         catch { Log.write("savings: report not saved (\(error.localizedDescription))") }
     }
 

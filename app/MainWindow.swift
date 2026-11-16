@@ -202,7 +202,7 @@ struct ContentView: View {
 
     /// A project name as the screen may show it.
     private func shown(_ name: String?) -> String { Demo.mask(name ?? "") }
-    private var allItems: [Item] { Platform.allCases.flatMap { store.items[$0] ?? [] } }
+    private var allItems: [Item] { store.allItems }
     /// The project a message is about, while it is still in the list and has a build log.
     private func messageItem(_ m: Store.Message) -> Item? {
         guard let k = m.project, let i = allItems.first(where: { Store.key($0) == k }),
@@ -435,6 +435,11 @@ struct ContentView: View {
             // Said out loud once, instead of a region that "updates frequently".
             AccessibilityNotification.Announcement(Demo.scrub(t.text, items: allItems)).post()
             stickyError = t.ok ? nil : t
+            // A failure that stays until it is closed is a stale one after a while: it lets go after two minutes
+            // (the messages list still has it).
+            if !t.ok {
+                Task { try? await Task.sleep(nanoseconds: 120 * 1_000_000_000); if stickyError == t { stickyError = nil } }
+            }
         }
         // Mission Control and the window title say what waits; the Dock badge is set by the app
         // delegate, so it stays current with the window closed.
@@ -515,13 +520,14 @@ struct ContentView: View {
         // One question for the footer, a row and the palette; the deploy starts once the sheet is gone.
         .sheet(item: $askDeployItem, onDismiss: {
             if let i = confirmedItem { confirmedItem = nil; deployOne(i) }
-        }) { i in DeployConfirmSheet(items: [i], platforms: false) { confirmedItem = i } }
+        }) { i in DeployConfirmSheet(items: [i], platforms: false, marks: store.confirmMarks([i])) { confirmedItem = i } }
         .sheet(isPresented: $confirming, onDismiss: {
             if confirmedAll { confirmedAll = false; startDeploy() }
         }) {
             DeployConfirmSheet(items: selectedAll, platforms: showsAll,
                                costNote: Store.costNote(perBuild: selectedAll.map { $0.platform == .vercel ? store.costs?.perBuild($0.name) : nil },
-                                                        month: store.monthPace, budget: UserDefaults.standard.double(forKey: "monthlyBudget"))) { confirmedAll = true }
+                                                        month: store.monthPace, budget: UserDefaults.standard.double(forKey: "monthlyBudget")),
+                               marks: store.confirmMarks(selectedAll)) { confirmedAll = true }
         }
         // Each on a view of its own: one long chain of alerts is too much for the type checker.
         .background {
@@ -1407,12 +1413,12 @@ struct ContentView: View {
                     if let u = URL(string: GitHost.web(repo)) { SafeLink.open(u) }
                 }
                 Button(L("Copy the repo address", "Repo-Adresse kopieren")) {
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(GitHost.web(repo), forType: .string)
+                    Pasteboard.copy(GitHost.web(repo))
                 }
             }
             if let l = item.link, !Demo.on {
                 Button(L("Copy the site address", "Seiten-Adresse kopieren")) {
-                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(l, forType: .string)
+                    Pasteboard.copy(l)
                 }
             }
             if item.repo != nil {

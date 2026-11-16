@@ -140,7 +140,7 @@ struct SettingsView: View {
         }
     }
 
-    private var allItems: [Item] { Platform.allCases.flatMap { store.items[$0] ?? [] } }
+    private var allItems: [Item] { store.allItems }
 
     private func readSystemState() async {
         let st = await UNUserNotificationCenter.current().notificationSettings()
@@ -207,10 +207,10 @@ struct SettingsView: View {
             if let loginError { ErrorText(loginError) }
             Toggle(L("Demo mode (hide project names, for screenshots)", "Demo-Modus (Projektnamen verbergen, für Screenshots)"), isOn: $demoMode)
                 .help(L("Also in the View menu: ⇧⌘D", "Auch im Menü Darstellung: ⇧⌘D"))
-                .onChange(of: demoMode) { _, _ in Spotlight.update(Array(store.items.values.joined()).filter { !store.isHidden($0) }) }
+                .onChange(of: demoMode) { _, _ in Spotlight.update(store.allItems.filter { !store.isHidden($0) }) }
             Toggle(L("Find projects in Spotlight", "Projekte in Spotlight finden"), isOn: $spotlight)
                 .help(L("Only names and platforms, kept on this Mac; never in demo mode.", "Nur Namen und Plattformen, auf diesem Mac; nie im Demo-Modus."))
-                .onChange(of: spotlight) { _, _ in Spotlight.update(Array(store.items.values.joined()).filter { !store.isHidden($0) }) }
+                .onChange(of: spotlight) { _, _ in Spotlight.update(store.allItems.filter { !store.isHidden($0) }) }
             Toggle(L("Tip of the day in the menu bar", "Tipp des Tages in der Menüleiste"), isOn: $tipOn)
             Toggle(L("Compact list (less space between rows)", "Kompakte Liste (weniger Abstand zwischen den Zeilen)"), isOn: $compactRows)
             Toggle(L("Colour-blind friendly (blue instead of green)", "Farbenblind-freundlich (Blau statt Grün)"), isOn: $colorBlind)
@@ -231,7 +231,7 @@ struct SettingsView: View {
                     Button(L("Restart now", "Jetzt neu starten")) {
                         // relaunchApp asks itself; the quit check must not ask a second time.
                         AppDelegate.confirmed = true
-                        relaunchApp(running: store.items.values.joined().filter { $0.state.isActive }.count)
+                        relaunchApp(running: store.allItems.filter { $0.state.isActive }.count)
                         AppDelegate.confirmed = false
                     }
                 }
@@ -582,7 +582,7 @@ private func open(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.
         }
     }
 
-    private var running: Int { store.map { $0.items.values.joined().filter { $0.state.isActive }.count } ?? 0 }
+    private var running: Int { store.map { $0.allItems.filter { $0.state.isActive }.count } ?? 0 }
 
     /// Asks while deploys run; true when it may go on.
     func confirmLeaving(restart: Bool = false) -> Bool { confirmQuit(running: running, restart: restart) }
@@ -624,19 +624,19 @@ struct DeployCenterApp: App {
                     if let tab = SettingsNav.tab(from: url) { store.openSettings(tab); return }
                     guard url.host == "select",
                           let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "project" })?.value,
-                          let req = Store.showRequest(value, items: Array(store.items.values.joined())) else { return }
+                          let req = Store.showRequest(value, items: store.allItems) else { return }
                     store.pendingShow = req
                 }
                 // A Spotlight hit: the project is found in the window, never deployed.
                 .onContinueUserActivity(CSSearchableItemActionType) { a in
                     guard let key = a.userInfo?[CSSearchableItemActivityIdentifier] as? String,
-                          let i = store.items.values.joined().first(where: { Store.key($0) == key }) else { return }
+                          let i = store.item(key: key) else { return }
                     store.show(i)
                 }
                 // A project handed off from the iPhone app: shown, never deployed.
                 .onContinueUserActivity(Handoff.type) { a in
                     guard let key = a.userInfo?["project"] as? String,
-                          let i = Handoff.item(for: key, in: Array(store.items.values.joined())) else { return }
+                          let i = Handoff.item(for: key, in: store.allItems) else { return }
                     store.show(i)
                 }
         }
@@ -705,7 +705,7 @@ struct MenuBarContent: View {
     var body: some View {
         let w = store.waiting
         // The same rule as the count (Store.isWaiting): hidden projects stay out.
-        let changed = Array(store.items.values.joined()).filter { store.isWaiting($0) }
+        let changed = store.allItems.filter { store.isWaiting($0) }
             .sorted { ($0.pendingCommits ?? 0) > ($1.pendingCommits ?? 0) }
         let connected = Platform.allCases.filter { p in
             guard let d = store.doctor else { return false }
@@ -769,7 +769,7 @@ struct MenuBarContent: View {
         ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
         if tipOn { Text(L("Tip: ", "Tipp: ") + Tips.tip()).foregroundStyle(.secondary) }
         // Stopping needs no confirmation in the window either; it is the same cancel as the row's.
-        let active = Array(store.items.values.joined()).filter { $0.state.isActive }.sorted { $0.name < $1.name }
+        let active = store.allItems.filter { $0.state.isActive }.sorted { $0.name < $1.name }
         if !active.isEmpty {
             Divider()
             ForEach(active.prefix(8)) { i in
@@ -840,7 +840,7 @@ struct ProjectWindow: View {
     let key: String
 
     var body: some View {
-        if let i = store.items.values.joined().first(where: { Store.key($0) == key }) {
+        if let i = store.item(key: key) {
             ProjectDetail(store: store, item: i, deployCommit: store.observer ? nil : { sha in store.deployOne(i, preview: false, sha: sha) })
                 .navigationTitle(Demo.mask(i.name))
         } else {

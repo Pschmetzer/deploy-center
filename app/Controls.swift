@@ -56,8 +56,7 @@ struct CopyButton: View {
 
     var body: some View {
         Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text(), forType: .string)
+            Pasteboard.copy(text())
             copied = true
             // VoiceOver hears it too, not only the changed label.
             AccessibilityNotification.Announcement(L("Copied", "Kopiert")).post()
