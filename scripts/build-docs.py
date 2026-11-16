@@ -99,6 +99,8 @@ PAGES = [
      "The error messages of Deploy Center and the deploys CLI, word for word, and what to do about each."),
     ("providers", "Adding a host", "Reference", "docs/PROVIDERS.md",
      "How a platform plugs into deploys: one file in providers/, its functions, its metadata and the contract tests."),
+    ("git-hosts", "Adding a git host", "Reference", "docs/GITHOSTS.md",
+     "How deploys asks a git host what is waiting: the repo slug, the functions a host provides, the token rule and the tests."),
     ("verify", "Verify a release", "Reference", "integrations/VERIFY.md",
      "Check a Deploy Center release before you open it: SHA-256, codesign and Gatekeeper."),
     ("integrations", "Overview", "Integrations", "integrations/README.md",

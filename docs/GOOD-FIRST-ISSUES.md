@@ -16,8 +16,8 @@ no real project names in examples, texts in English and German, nothing builds w
 4. **A test for the fish completion.** `deploys completion fish` exists; add a check to
    `tests/script-tests.sh` that its output names the commands and loads in `fish` when `fish` is installed.
 
-5. **A git host guide.** `lib/githost.sh` serves GitHub and GitLab. Write `docs/GITHOSTS.md`: the functions a
-   new host has to provide and the fixture layout (`tests/fixtures/gitlab`), as [PROVIDERS.md](PROVIDERS.md)
-   does for hosts.
+5. **A git host.** [GITHOSTS.md](GITHOSTS.md) says what a new host provides. Take Bitbucket or Gitea: the
+   three `*_head_of`, `*_pending_of` and `*_open_prs_of` functions, a test in the style of `tests/providers/gitlab.sh`,
+   and a docs page like [GITLAB.md](GITLAB.md).
 
 6. **Screenshots for the Raycast and VS Code listings.** Both store listings have none yet; take them in demo mode.
