@@ -196,7 +196,9 @@ echo "gh $*" >> "$E2E/calls.log"
 [ "${GSTUB:-}" = down ] && { echo "gh: HTTP 401: Bad credentials" >&2; exit 1; }
 case "$*" in
   *rate_limit*) echo '{"limit":5000,"remaining":4000,"reset":0}' ;;
-  *"repos/me/app/commits/main"*) echo '{"sha":"bbbb","commit":{"message":"feat: new","committer":{"date":"2026-01-02T00:00:00Z"}}}' ;;
+  *"repos/me/app/commits/main"*) hn="$(cat "$E2E/head.n" 2>/dev/null || echo 0)"; echo $((hn + 1)) > "$E2E/head.n"; hs=bbbb
+    [ -n "${HEAD2:-}" ] && [ "$hn" -ge 1 ] && hs="$HEAD2"
+    printf '{"sha":"%s","commit":{"message":"feat: new","committer":{"date":"2026-01-02T00:00:00Z"}}}\n' "$hs" ;;
   *"compare/aaaa...main"*) [ -n "${BIG:-}" ] && { cat "$BIG"; exit 0; }
                            echo '{"status":"ahead","ahead_by":1,"behind_by":0,"commits":[{"sha":"bbbb","commit":{"message":"feat: new\n\nCo-Authored-By: Some Agent <agent@example.test>","committer":{"date":"2026-01-02T00:00:00Z"}},"author":{"type":"User"}}]}' ;;
   *"pulls?state=open"*) echo '{"key":"me/app","value":{"all":0,"drafts":0,"bots":0}}' ;;
@@ -273,7 +275,7 @@ run() {  # run <stdout file> <stderr file> deploys args... ; prints the exit cod
     HOME="$e2e" NO_COLOR=1 ${reset[@]+"${reset[@]}"} /bin/bash ./deploys "$@" > "$o" 2> "$e" </dev/null
   echo $?
 }
-fresh() { : > "$e2e/calls.log"; : > "$e2e/bodies.log"; : > "$e2e/sleeps.log"; rm -rf "$e2e/config/locks" "$e2e/ci" "$e2e/site"; }
+fresh() { : > "$e2e/calls.log"; : > "$e2e/bodies.log"; : > "$e2e/sleeps.log"; rm -rf "$e2e/config/locks" "$e2e/ci" "$e2e/site" "$e2e/head.n"; }
 O="$e2e/out"; E="$e2e/err"
 
 fresh; export RENDER_API_KEY=rnd_test
@@ -423,6 +425,13 @@ expect "when-green, no sha capability: started without --sha" "$rc:$(grep -c '^n
 expect "when-green, no sha capability: the record says why" \
   "$(echo "$out" | jq -r '.[] | select(.platform == "nosha") | "\(.action): \(.reason)"' | grep -c '^started: .*NoSha cannot deploy a given commit: the newest commit of the branch is built')" "1"
 expect "when-green, with sha capability: Vercel still gets the checked commit" "$(grep -c '"sha": *"bbbb"' "$e2e/bodies.log")" "1"
+# A push after the checks, on a host that builds the newest commit: not shipped unchecked.
+fresh
+out="$(env -u DEPLOYS_LIB PATH="$e2e/bin:/usr/bin:/bin" E2E="$e2e" HEAD2=cccc DEPLOYS_DIR="$nd" DEPLOYS_CONFIG="$nd/config" DEPLOYS_VERCEL_TEAM=team_test \
+  HOME="$e2e" NO_COLOR=1 /bin/bash ./deploys deploy-changed --yes --when-green --json 2>"$E" </dev/null)"; rc=$?
+expect "when-green, no sha capability: a newer commit than the checked one is not shipped" \
+  "$(echo "$out" | jq -r '.[] | select(.platform == "nosha") | "\(.action): \(.reason)"' | grep -c '^skipped: a newer commit (cccc) came in after the checks on bbbb')" "1"
+expect "when-green, no sha capability: and nothing was started on it" "$(grep -c '^nosha deploy n-1$' "$e2e/calls.log")" "0"
 expect "ci: green, exit 0" "$(run "$O" "$E" ci me/app bbbb --json; jq -c '{state, checks}' "$O")" $'0\n{"state":"green","checks":2}'
 expect "ci: red, exit 1" "$(CI=red run "$O" "$E" ci me/app bbbb; cat "$O")" $'1\nred: failed: test'
 expect "ci: still pending, exit 2 (with --json 0)" "$(CI=pending run "$O" "$E" ci me/app bbbb; CI=pending run "$O" "$E" ci me/app bbbb --json; jq -r .state "$O")" $'2\n0\npending'

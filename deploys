@@ -3616,7 +3616,7 @@ BASH
     # repo also has a project on another platform in this batch starts last (sort_by is stable).
     todo="$(echo "$list" | jq -r '. as $all | sort_by(. as $x | if $x.platform == "vercel" and $x.repo
           and ($all | any(.platform != "vercel" and .repo == $x.repo)) then 1 else 0 end)
-        | .[] | "\(.platform)\t\(.name)\t\(.id // "-")\t\(.repo // "")\t\(.headSha // "")"')"
+        | .[] | "\(.platform)\t\(.name)\t\(.id // "-")\t\(.repo // "")\t\(.headSha // "")\t\(.ref // "")"')"
     if [ -z "$green" ]; then
       while IFS=$'\t' read -r plat name id _ _; do start "$plat" "$name" "" "" "$id"; done <<< "$todo"
     else
@@ -3626,15 +3626,25 @@ BASH
       while [ -n "$todo" ]; do
         t0=$SECONDS   # the asking (and starting) counts toward --wait too
         next=""
-        while IFS=$'\t' read -r plat name id repo sha; do
+        while IFS=$'\t' read -r plat name id repo sha ref; do
           if [ -z "$repo" ] || [ -z "$sha" ]; then skip=$((skip+1)); say "$plat" "$name" skipped "the commit or repo is unknown, so its checks are too"; continue; fi
           v="$(ci_of "$repo" "$sha" </dev/null)"; s="$(echo "$v" | jq -r .state)"; why="$(echo "$v" | jq -r .reason)"
           case "$s" in
-            green|none) start "$plat" "$name" "$sha" "$why" "$id" ;;
+            green|none)
+              # A host that cannot deploy a given commit builds the newest one of the branch: read the head
+              # again, and if a push came in after the checks, wait for the next run instead of shipping it unchecked.
+              if [ -n "$ref" ] && ! meta_flag "$plat" sha; then
+                hd="$(mktemp -d)"; githost_head_of "$repo" "$ref" "$hd" 2>/dev/null; now="$(cat "$hd"/*.json 2>/dev/null | jq -r '.value.sha // empty' 2>/dev/null)"; rm -rf "$hd"
+                if [ -n "$now" ] && [ "$now" != "$sha" ]; then
+                  skip=$((skip+1)); say "$plat" "$name" skipped "a newer commit (${now:0:7}) came in after the checks on ${sha:0:7}, and $(meta_str "$plat" label) builds the newest one; the next run checks it"
+                  continue
+                fi
+              fi
+              start "$plat" "$name" "$sha" "$why" "$id" ;;
             red) skip=$((skip+1)); say "$plat" "$name" skipped "CI is red on ${sha:0:7} ($why)" ;;
             *) if [ "$(echo "$v" | jq -r '.final // false')" = true ]; then skip=$((skip+1)); say "$plat" "$name" skipped "CI unknown: $why"
                elif [ "$waited" -ge "$maxw" ]; then skip=$((skip+1)); say "$plat" "$name" skipped "checks on ${sha:0:7} not done after $((maxw / 60))m ($why)"
-               else next="$next$plat"$'\t'"$name"$'\t'"$id"$'\t'"$repo"$'\t'"$sha"$'\n'; fi ;;
+               else next="$next$plat"$'\t'"$name"$'\t'"$id"$'\t'"$repo"$'\t'"$sha"$'\t'"$ref"$'\n'; fi ;;
           esac
         done <<< "$todo"
         todo="${next%$'\n'}"
