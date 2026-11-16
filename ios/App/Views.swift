@@ -309,7 +309,7 @@ struct ProjectList: View {
                     Label(auto == 1 ? L("1 project builds on every push (auto-deploy on).", "1 Projekt baut bei jedem Push (Auto-Deploy an).")
                                     : L("\(auto) projects build on every push (auto-deploy on).", "\(auto) Projekte bauen bei jedem Push (Auto-Deploy an)."),
                           systemImage: "bolt.fill")
-                        .font(.footnote).foregroundStyle(.orange)
+                        .font(.footnote).foregroundStyle(Color.warningText)
                 }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
@@ -806,6 +806,8 @@ struct SettingsView: View {
     @State private var saved: [Key: String] = [:]
     @AppStorage("notify") private var notify = false
     @AppStorage("lockOnOpen") private var lockOnOpen = false
+    @AppStorage("biometricsOnly") private var biometricsOnly = false
+    @AppStorage("noSpotlight") private var noSpotlight = false
     @State private var connect = false
     @State private var notesDenied = false
     @State private var testResults: [String] = []
@@ -849,7 +851,7 @@ struct SettingsView: View {
                     if !writeScopes.isEmpty {
                         Label(L("This GitHub token can also write (\(writeScopes.joined(separator: ", "))). The phone only reads: a fine-grained token with read-only access to contents and pull requests is enough.",
                                 "Dieses GitHub-Token darf auch schreiben (\(writeScopes.joined(separator: ", "))). Das iPhone liest nur: Ein fein granulares Token mit Nur-Lese-Zugriff auf Inhalte und Pull Requests genügt."),
-                              systemImage: "exclamationmark.shield").font(.footnote).foregroundStyle(.orange)
+                              systemImage: "exclamationmark.shield").font(.footnote).foregroundStyle(Color.warningText)
                     }
                     Button { Task { await test() } } label: {
                         HStack { Text(L("Test the keys", "Schlüssel testen")); if testing { Spacer(); ProgressView() } }
@@ -862,6 +864,9 @@ struct SettingsView: View {
                 }
                 Section {
                     Toggle(L("Unlock on open", "Beim Öffnen entsperren"), isOn: $lockOnOpen)
+                    Toggle(L("Face ID or Touch ID only (no passcode) to deploy", "Zum Deployen nur Face ID oder Touch ID (kein Code)"), isOn: $biometricsOnly)
+                    Toggle(L("Keep projects out of Spotlight", "Projekte nicht in Spotlight zeigen"), isOn: $noSpotlight)
+                        .onChange(of: noSpotlight) { _, _ in Spotlight.index(store.projects, demo: store.demo) }
                 } footer: {
                     Text(L("Asks for \(store.unlockName) when Deploy Center opens, and hides the list in the app switcher.",
                            "Fragt beim Öffnen nach \(store.unlockName) und verdeckt die Liste im App-Umschalter."))
@@ -889,7 +894,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L("Checks run in the background only when iOS allows it, which can be rarely or, in Low Power Mode, not at all. There is no server, so a note can come late or not at all.",
                                "Geprüft wird im Hintergrund nur, wenn iOS es erlaubt: manchmal selten, im Stromsparmodus gar nicht. Es gibt keinen Server, ein Hinweis kann also spät oder gar nicht kommen."))
-                        if notify, let e = backgroundProblem { Text(e).foregroundStyle(.orange) }
+                        if notify, let e = backgroundProblem { Text(e).foregroundStyle(Color.warningText) }
                     }
                 }
                 Section {
@@ -1006,4 +1011,10 @@ struct SettingsView: View {
         saved = fields
         return true
     }
+}
+
+
+extension Color {
+    /// Orange for small text: the system orange is about 2.3:1 on white; this one reaches 4.5:1 in light mode and is the system orange in dark mode.
+    static let warningText = Color(UIColor { $0.userInterfaceStyle == .dark ? .systemOrange : UIColor(red: 0.62, green: 0.30, blue: 0, alpha: 1) })
 }

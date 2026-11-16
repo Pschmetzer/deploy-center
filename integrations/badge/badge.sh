@@ -49,11 +49,12 @@ lines="$(echo "$list" | jq -r '
   # A name on two platforms gets the platform in its file name (vercel-web.svg), so one badge
   # does not overwrite the other; every other name keeps <name>.svg.
   | [(if (.name as $n | $twice | index($n)) and .platform then "\(.platform)-\(.name)" else .name end), "\($when) · \($what)",
-     (if $build == "failed" then "#e05d44" elif $build == "building" then "#007ec6"
-      elif (.liveAt // .lastAt // 0) == 0 then "#9f9f9f" elif .changed then "#dfb317" else "#4c1" end),
+     (if $build == "failed" then "#c0392b" elif $build == "building" then "#007ec6"
+      elif (.liveAt // .lastAt // 0) == 0 then "#6e6e6e" elif .changed then "#9a6700" else "#2e7d32" end),
      (.platform // "")]
   | @tsv')"
 
+# Colours: white text on each one reaches 4.5:1 (WCAG AA); shields.io's yellow and green do not.
 # XML-safe text; a rough width per character (Verdana 11 averages about 6.5 px).
 esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
 # Characters, not bytes, whatever the locale (Alpine and CI images often have no UTF-8 one).
@@ -66,8 +67,10 @@ while IFS=$'\t' read -r name text colour platform; do
   stem="$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '_')"
   # Two projects that come out as the same file (a/b and a_b, or one name on two platforms):
   # the second one gets its platform in front, instead of overwriting the first.
-  case "$written" in *$'\n'"$stem"$'\n'*) stem="$(printf '%s' "${platform:-other}" | tr -c 'A-Za-z0-9._-' '_')_$stem" ;; esac
-  written="$written$stem"$'\n'
+  # Compared in lower case: Web.svg and web.svg are one file on APFS and NTFS.
+  lc="$(printf '%s' "$stem" | tr 'A-Z' 'a-z')"
+  case "$written" in *$'\n'"$lc"$'\n'*) stem="$(printf '%s' "${platform:-other}" | tr -c 'A-Za-z0-9._-' '_')_$stem"; lc="$(printf '%s' "$stem" | tr 'A-Z' 'a-z')" ;; esac
+  written="$written$lc"$'\n'
   file="$out/$stem.svg"
   # IDs per badge: several badges inlined in one HTML page must not share a gradient or clip.
   id="$(printf '%s' "$stem" | tr -c 'A-Za-z0-9_-' '_')"

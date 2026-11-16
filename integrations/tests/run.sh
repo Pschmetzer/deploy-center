@@ -48,7 +48,7 @@ cat > "$tmp/bin/deploys" <<SH
 #!/bin/bash
 [ -n "\${FAKE_SLEEP:-}" ] && [ "\$1" = vercel ] && sleep "\$FAKE_SLEEP"
 [ -n "\${FAKE_SLEEP_ALL:-}" ] && sleep "\$FAKE_SLEEP_ALL"
-[ -n "\${MCP_CALLS:-}" ] && echo "\$*" >> "\$MCP_CALLS"
+[ -n "\${FAKE_MCP_CALLS:-}" ] && echo "\$*" >> "\$FAKE_MCP_CALLS"
 case "\$*" in
   "vercel list --json"|"vercel json") cat "$tmp/vercel.json" ;;
   "render list --json"|"render json") cat "$tmp/render.json" ;;
@@ -105,6 +105,10 @@ case "\$*" in
   "diff "*) echo "diff: \$2" ;;
   "history "*) echo "history \$2 \$3" ;;
   "logs secret-app "*) cat "$tmp/secret.log" ;;
+  # The secret fixture all maskers share (the iPhone app, VS Code and Raycast read the same file).
+  "logs shared-app "*) cat "$here/../ios/Tests/fixtures/mask-in.txt" ;;
+  # One line of 150 000 characters like "a.a.a.", then a base64 block: the maskers must stay linear.
+  "logs huge-app "*) head -c 75000 /dev/zero | tr '\0' 'a' | sed 's/a/a./g'; echo; head -c 60000 /dev/zero | tr '\0' 'A'; echo ;;
   # The last lines of a log can start or end inside a key.
   "logs topkey-app "*) printf 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo1\\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo2\\n-----END RSA PRIVATE KEY-----\\nafter the key\\n' ;;
   "logs bottomkey-app "*) printf 'before the key\\n-----BEGIN RSA PRIVATE KEY-----\\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo3\\n' ;;
@@ -206,10 +210,10 @@ RENDER_API_KEY=x badge/badge.sh "$tmp/b" >/dev/null
 expect "one badge per project" "$(cd "$tmp/b" && echo *.svg)" "api.svg app-web.svg site.svg"
 contains "badge: days and commits" "$(cat "$tmp/b/app-web.svg")" "3 d ago · 4 commits waiting"
 contains "badge: Render shows the live commit's age, and a failed newest build" "$(cat "$tmp/b/api.svg")" "1 d ago · build failed"
-contains "badge: a failed build is red" "$(cat "$tmp/b/api.svg")" 'fill="#e05d44'
+contains "badge: a failed build is red" "$(cat "$tmp/b/api.svg")" 'fill="#c0392b'
 echo '[{"name":"busy","changed":false,"lastAt":1,"building":true}]' | badge/badge.sh "$tmp/bb" - >/dev/null
 contains "badge: a running build is blue, not up to date" "$(cat "$tmp/bb/busy.svg")" 'building'
-contains "badge: up to date is green" "$(cat "$tmp/b/site.svg")" 'fill="#4c1"'
+contains "badge: up to date is green" "$(cat "$tmp/b/site.svg")" 'fill="#2e7d32"'
 echo '[{"name":"web","platform":"vercel","changed":false,"lastAt":0},{"name":"web","platform":"netlify","changed":false,"lastAt":0},{"name":"solo","platform":"render","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/tw" - >/dev/null
 expect "badge: a name on two platforms gets one badge each" "$(cd "$tmp/tw" && echo *.svg)" "netlify-web.svg solo.svg vercel-web.svg"
 echo '[{"name":"a<b>&\"c","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/e" - >/dev/null
@@ -232,6 +236,13 @@ contains "notify: waiting with counts" "$out" 'Waiting (2): app-web (4 commits),
 contains "notify: Slack-style by default" "$out" 'format: slack'
 contains "notify: UTC by default" "$out" "Deploy Center, $(date -u +%Y-%m-%d) (UTC)"
 contains "notify: failed builds are named" "$out" 'Failed (1): api'
+contains "notify: German texts with DEPLOYS_LANG=de" "$(RENDER_API_KEY=x DEPLOYS_LANG=de notify/notify.sh --dry-run)" 'Fehlgeschlagen (1): api'
+expect "notify: a bad DEPLOYS_LANG is refused" "$(DEPLOYS_LANG=xx notify/notify.sh --dry-run >/dev/null 2>&1; echo $?)" 1
+contains "notify: --quiet-when-empty still posts when something is waiting" "$(RENDER_API_KEY=x notify/notify.sh --dry-run --quiet-when-empty)" 'Waiting (2)'
+echo '[{"name":"site","changed":false,"lastAt":1,"lastState":"READY"}]' > "$tmp/quiet.json"
+contains "notify: --quiet-when-empty posts nothing on an empty day" "$(notify/notify.sh --dry-run --quiet-when-empty "$tmp/quiet.json")" 'Nothing to report'
+echo "[{\"name\":\"api\",\"changed\":false,\"lastAt\":$now,\"lastState\":\"build_failed\"}]" > "$tmp/failed-only.json"
+expect "notify: a failed attempt does not count as live today" "$(notify/notify.sh --dry-run "$tmp/failed-only.json" | grep -c 'Live today (0)')" 1
 contains "notify: DEPLOYS_TZ sets the day" "$(DEPLOYS_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "Deploy Center, $(TZ=Pacific/Kiritimati date +%Y-%m-%d) (Pacific/Kiritimati)"
 contains "notify: DEPLOYS_NOTIFY_TZ names its day" "$(RENDER_API_KEY=x DEPLOYS_NOTIFY_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "$(TZ=Pacific/Kiritimati date +%Y-%m-%d) (Pacific/Kiritimati)"
 contains "notify: DEPLOYS_NOTIFY_TZ wins over DEPLOYS_TZ" "$(DEPLOYS_TZ=UTC DEPLOYS_NOTIFY_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "(Pacific/Kiritimati)"
@@ -295,7 +306,7 @@ expect "telegram bot: /failed" "$(tg 42 /failed)" "No newest build failed."
 # --- Alfred script filter ---
 af="$(alfred/deploys-filter.sh)"
 expect "alfred: every project, as Alfred items" "$(jq -r '.items | length' <<<"$af")" 3
-expect "alfred: ↵ shows it in Deploy Center, ⌘ opens the site" "$(jq -r '.items[] | select(.title == "app-web") | .arg + " " + .mods.cmd.arg' <<<"$af")" "deploycenter://select?project=app-web open app-web"
+expect "alfred: ↵ shows it in Deploy Center (with its platform), ⌘ opens the site" "$(jq -r '.items[] | select(.title == "app-web") | .arg + " " + .mods.cmd.arg' <<<"$af")" "deploycenter://select?project=vercel%3Aapp-web open app-web"
 expect "alfred: waiting before up to date" "$(jq -c '[.items[].title]' <<<"$af")" '["api","app-web","site"]'
 expect "alfred: the query filters by name" "$(alfred/deploys-filter.sh WEB | jq -c '[.items[].title]')" '["app-web"]'
 expect "alfred: no match is one item" "$(alfred/deploys-filter.sh zzz | jq -r '.items[0].title')" "No project matches"
@@ -410,6 +421,16 @@ expect "statuspage hide: message is Updated" "$(jq -r '[.projects[0,1].message] 
 expect "statuspage hide: notes are one Updated" "$(jq -c '.projects[0].next' <<<"$st")" '["Updated"]'
 case "$all" in *login*|*billing*|*"Faster search"*|*"rate limits"*|*"Bump jq"*) fail "statuspage hide: no commit message anywhere" "found" ;; *) ok "statuspage hide: no commit message anywhere" ;; esac
 expect "statuspage: --no-check checks nothing" "$(jq -c '.projects[1].check' <<<"$st")" null
+# strict: hides messages, no inline script, a policy that only allows the page's own script, noindex.
+jq '. + {strict: true}' "$tmp/sp.json" > "$tmp/sp-strict.json"
+sp --config "$tmp/sp-strict.json" --out "$tmp/sps" --no-check >/dev/null
+html="$(cat "$tmp/sps/index.html")"
+expect "statuspage strict: messages hidden without hideMessages" "$(jq -r '[.projects[0,1].message] | join(",")' "$tmp/sps/status.json")" "Updated,Updated"
+case "$html" in *"<script>"*) fail "statuspage strict: no inline script" "found" ;; *'<script src="status.js"></script>'*) ok "statuspage strict: no inline script" ;; *) fail "statuspage strict: no inline script" "no script tag" ;; esac
+contains "statuspage strict: Content-Security-Policy with script-src 'self'" "$html" "script-src 'self'"
+contains "statuspage strict: noindex" "$html" 'name="robots" content="noindex"'
+[ -s "$tmp/sps/status.js" ] && ok "statuspage strict: status.js is written" || fail "statuspage strict: status.js is written" "missing"
+case "$(cat "$tmp/sph/index.html")" in *"<script>"*) ok "statuspage: without strict the script stays inline" ;; *) fail "statuspage: without strict the script stays inline" "gone" ;; esac
 echo '{"title":"x","projects":["app-web"],"showAuthors":true}' > "$tmp/sp-auth.json"
 expect "statuspage: authors only when asked" "$(sp --config "$tmp/sp-auth.json" --out "$tmp/spa" --no-check >/dev/null; jq -r '.projects[0].next[0]' "$tmp/spa/status.json")" "New billing page (#12) – Ana"
 echo '{"title":"x","projects":["app-web"],"baseUrl":"javascript:alert(1)"}' > "$tmp/sp-bad.json"
@@ -659,7 +680,7 @@ hk "git push" >/dev/null
 expect "claude-code hook: never deploys" "$(cat "$tmp/deploy.log" 2>/dev/null | wc -l)" "$deploy_calls_before"
 # --- the MCP server (needs node and `npm ci` in mcp/) ---
 if command -v node >/dev/null && [ -d mcp/node_modules/@modelcontextprotocol/sdk ]; then
-  DEPLOYS_BIN="$tmp/bin/deploys" MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
+  DEPLOYS_BIN="$tmp/bin/deploys" FAKE_MCP_CALLS="$tmp/mcp-calls.log" node tests/mcp.test.mjs || fails=$((fails+1))
   # 20.7: a length no other test sleeps, so only this test's child can match.
   [ -n "$(stray_sleep 20.7)" ] && fail "mcp: a timed-out CLI is stopped with its children" "still running" || ok "mcp: a timed-out CLI is stopped with its children"
 else

@@ -202,7 +202,7 @@ export async function confirmAndDeploy(p: { name: string; platform: string }, de
 }
 
 // The actions every project row shares, below the row's own primary action. projectRef is the
-// name, or platform:name for a name on two platforms; the Deploy Center link searches the plain name.
+// name, or platform:name for a name on two platforms; the Deploy Center link takes the same reference.
 export function ProjectActions(props: { name: string; projectRef?: string; onRefresh: () => void }) {
   const projectRef = props.projectRef ?? props.name;
   return (
@@ -229,7 +229,7 @@ export function ProjectActions(props: { name: string; projectRef?: string; onRef
         <Action.Open
           title="Show in Deploy Center"
           icon={{ source: "extension-icon.png" }}
-          target={deployCenterURL(props.name)}
+          target={deployCenterURL(projectRef)}
           shortcut={{ modifiers: ["cmd"], key: "d" }}
         />
       </ActionPanel.Section>

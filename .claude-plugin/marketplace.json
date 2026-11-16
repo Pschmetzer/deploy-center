@@ -9,7 +9,7 @@
     {
       "name": "deploy-center",
       "source": "./integrations/claude-code",
-      "description": "Skill, slash commands, a git push reminder and MCP notes for the deploys CLI (Vercel and Render, auto-deploy off).",
+      "description": "Skill, slash commands, a git push reminder and MCP notes for the deploys CLI (Vercel, Render, Netlify, Cloudflare Pages, Amplify, DigitalOcean, Coolify, deploy hooks; auto-deploy off).",
       "category": "deployment",
       "tags": ["vercel", "render", "deploy", "ci"]
     }

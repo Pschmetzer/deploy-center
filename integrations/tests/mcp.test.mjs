@@ -1,6 +1,6 @@
 // Tests for integrations/mcp/server.mjs, run from integrations/tests/run.sh.
 // A plain JSON-RPC client over stdio talks to the server; the server runs the stand-in
-// `deploys` from run.sh (DEPLOYS_BIN), which logs each call to $MCP_CALLS. No network.
+// `deploys` from run.sh (DEPLOYS_BIN), which logs each call to $FAKE_MCP_CALLS. No network.
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const server = join(here, "..", "mcp", "server.mjs");
 const fixture = (f) => JSON.parse(readFileSync(join(here, "..", "..", "tests", "fixtures", "savings", f), "utf8"));
-const calls = process.env.MCP_CALLS;
+const calls = process.env.FAKE_MCP_CALLS;
 let fails = 0;
 const ok = (name) => console.log(`ok   mcp: ${name}`);
 const fail = (name, why) => { console.log(`FAIL mcp: ${name}: ${why}`); fails++; };
@@ -70,7 +70,7 @@ function start(env = {}, { elicit = null } = {}) {
 }
 
 const READ = ["deploys_changed", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_history", "deploys_ledger", "deploys_list", "deploys_logs",
-  "deploys_notes", "deploys_plan", "deploys_risk", "deploys_simulate", "deploys_status"];
+  "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -88,6 +88,12 @@ check("prompts and resources are offered", info?.capabilities?.prompts && info?.
   const g = (await s.request("prompts/get", { name: "ship-check", arguments: { project: "app-web" } })).result;
   const gt = g?.messages?.[0]?.content?.text ?? "";
   check("ship-check names the project, the tools, and deploys nothing", /app-web/.test(gt) && /deploys_plan/.test(gt) && /deploys_notes/.test(gt) && /Deploy nothing/.test(gt), gt);
+  const fx = (await s.request("prompts/get", { name: "fix-failed-build", arguments: { project: "app-web" } })).result?.messages?.[0]?.content?.text ?? "";
+  check("fix-failed-build names the project and changes nothing", /app-web/.test(fx) && /deploys_explain/.test(fx) && /Change nothing/.test(fx), fx);
+  const rb = (await s.request("prompts/get", { name: "rollback-check", arguments: { project: "app-web" } })).result?.messages?.[0]?.content?.text ?? "";
+  check("rollback-check reads history and rolls back nothing", /deploys_history/.test(rb) && /Roll back nothing/.test(rb), rb);
+  const noproj = await s.request("prompts/get", { name: "rollback-check", arguments: {} });
+  check("rollback-check needs a project", !!noproj.error, JSON.stringify(noproj));
   const bad = await s.request("prompts/get", { name: "ship-check", arguments: { project: "a;b" } });
   check("ship-check refuses a name that is not one", !!bad.error, JSON.stringify(bad));
   const rl = (await s.request("resources/list")).result?.resources ?? [];
@@ -134,10 +140,11 @@ check("logs refuses 0 lines", r.error, r.text);
 r = await s.call("deploys_logs", { project: "app-web", lines: "80" });
 check("logs refuses lines as a string", r.error && /lines/.test(r.text), r.text);
 s.stop();
-s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "", ANTHROPIC_API_KEY: "test-key", FAKE_ENV_DUMP: "1", VERCEL_TOKEN: "vt" });
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "", ANTHROPIC_API_KEY: "test-key", FAKE_ENV_DUMP: "1", VERCEL_TOKEN: "vt", NPM_TOKEN: "npm-secret-x", SSH_AUTH_SOCK: "/tmp/agent.sock" });
 await s.init();
 r = await s.call("deploys_doctor");
 check("the CLI gets no model keys of the host, but provider keys", !r.error && !/ANTHROPIC_API_KEY/.test(r.text) && /VERCEL_TOKEN/.test(r.text), r.text.slice(0, 300));
+check("the CLI gets an allowlist: no npm token, no ssh agent of the host", !/NPM_TOKEN|SSH_AUTH_SOCK/.test(r.text) && /PATH/.test(r.text), r.text.slice(0, 300));
 s.stop();
 s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
 await s.init();
@@ -195,6 +202,14 @@ const leaked = ["ghp_abcdefghijklmnop1234", "s3cr3t-value", "hunter2pass", "sk_l
   .filter((x) => r.text.includes(x));
 check("logs: secrets are masked", !r.error && leaked.length === 0, leaked.join(", ") + "\n" + r.text);
 check("logs: the rest of the log stays", r.text.includes("Build failed: missing module") && r.text.includes("[masked]") && r.text.includes("[masked private key]"), r.text);
+{
+  const t0 = Date.now();
+  const rs = await s.call("deploys_logs", { project: "shared-app" });
+  const left = rs.text.split("\n").filter((l) => l.replace(/\[[A-Za-z ]+\]/g, "").replace(/SECRET_KEY=/g, "").includes("SECRET"));
+  check("logs: no secret of the shared fixture survives (same file as iPhone, VS Code, Raycast)", !rs.error && left.length === 0, left.join("\n"));
+  const rh = await s.call("deploys_logs", { project: "huge-app" });
+  check("logs: a 150 000 character line is masked in well under 5 s (no quadratic backtracking)", !rh.error && Date.now() - t0 < 5000, `${Date.now() - t0} ms ${rh.text.slice(0, 120)}`);
+}
 check("logs: names before the secret stay", r.text.includes("VERCEL_TOKEN=[masked]") && r.text.includes("postgres://admin:[masked]@db"), r.text);
 // The fixture the CLI, the iPhone app and the editor add-ons are checked against: every secret in
 // it carries the word SECRET, and none may survive (SECRET_KEY= is a name, not a secret).

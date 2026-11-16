@@ -39,6 +39,16 @@ expect("excerpt: no error, the last lines", quiet.lines, ["step 98", "step 99", 
 expect("excerpt: no error, nothing marked", quiet.errorAt == nil, true)
 expect("excerpt: '0 errors' is not an error", LogMask.excerpt(["Compiled, 0 errors", "done"]).errorAt == nil, true)
 
+// Round 7: platform tokens, webhooks, the clone URL of git, and a huge line.
+let extra = LogMask.mask(["git@github.com:me/app.git denied; mail me@x.com; dop_v1_" + String(repeating: "a", count: 20) + " postgres://u:p@ss@host/db https://hooks.slack.com/services/T1/B2/xyz"])?.first ?? ""
+expect("mask: git@host stays, so the clone error reads", extra.contains("git@github.com:me/app.git"), true)
+expect("mask: an email goes", extra.contains("me@x.com"), false)
+expect("mask: a DigitalOcean token goes", extra.contains("dop_v1_"), false)
+expect("mask: a password with an @ goes whole", extra.contains("p@ss"), false)
+expect("mask: a webhook URL goes", extra.contains("hooks.slack.com"), false)
+let huge = LogMask.mask([String(repeating: "a.", count: 40000)])?.first ?? ""
+expect("mask: a huge line is cut and says so", huge.contains("not scanned") && huge.count < 5000, true)
+
 // Provider formats.
 let v = LogMask.vercelLines(json("vercel-events.json"))
 expect("vercel: oldest first, blank dropped", v.count, 3)

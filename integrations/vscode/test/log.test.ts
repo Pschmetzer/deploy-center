@@ -84,3 +84,24 @@ test("no secret of the shared fixture survives", () => {
     .filter((l) => l.replace(/\[[A-Z ]+\]/g, "").replace(/SECRET_KEY=/g, "").includes("SECRET"));
   assert.deepEqual(left, []);
 });
+
+test("masking stays fast on huge lines (no quadratic backtracking)", () => {
+  const t = Date.now();
+  maskSecrets("a.".repeat(40000));
+  maskSecrets("A".repeat(145000) + "\n" + "ab+/".repeat(30000));
+  assert.ok(Date.now() - t < 2000, `took ${Date.now() - t} ms`);
+});
+
+test("private keys are cut out whole, from the top, and from the bottom", () => {
+  assert.equal(maskSecrets("-----BEGIN PRIVATE KEY-----\nMIIabcdefgh\n-----END PRIVATE KEY-----\nok"), "[PRIVATE KEY]\nok");
+  assert.equal(maskSecrets("MIIabcdefghij\nMIIabcdefghik\n-----END RSA PRIVATE KEY-----\nok"), "[PRIVATE KEY]\nok");
+  assert.equal(maskSecrets("a\n-----BEGIN PRIVATE KEY-----\nMIIabcdefgh"), "a\n[PRIVATE KEY]");
+});
+
+test("platform tokens, webhooks and the clone URL of git", () => {
+  const m = maskSecrets(
+    `git@github.com:me/app.git denied; dop_v1_${"a".repeat(20)} nfp_${"b".repeat(20)} https://hooks.slack.com/services/T1/B2/xyz 123456789:${"A".repeat(35)} postgres://u:p@ss@host/db mail@x.com`,
+  );
+  assert.ok(m.includes("git@github.com:me/app.git"), m);
+  for (const gone of ["dop_v1_", "nfp_", "hooks.slack.com", "123456789:", "p@ss", "mail@x.com"]) assert.ok(!m.includes(gone), `${gone}: ${m}`);
+});

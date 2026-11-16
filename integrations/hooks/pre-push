@@ -5,8 +5,8 @@
 #   git config deploys.prepush.skip true     do not check at all (or DEPLOYS_PREPUSH=off)
 #   DEPLOYS_PREPUSH_TIMEOUT=20               give up after this many seconds, and let the push go
 #
-# Vercel with Git connected builds every branch pushed (a preview, or production for the
-# production branch). Render builds only its own branch. Any error in here lets the push go.
+# Vercel, Cloudflare Pages and Amplify with Git connected build every branch pushed (a preview, or
+# production for the production branch). Render and the others build only their own branch. Any error in here lets the push go.
 #
 # Install: cp integrations/hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
 # Env: DEPLOYS  the CLI to call (default: deploys on PATH)
@@ -81,7 +81,7 @@ hits="$(jq -rn --argjson a "$a" --argjson v "$v" --argjson r "$r" --arg repo "$r
     + (($r | if type=="array" then . else [] end) | map(. + {platform:"render"}))
   | map(select(.auto and ((.repo // "") | ascii_downcase | sub("^github\\.com/"; "")) == ($repo | ascii_downcase)))
   | .[] as $p | $br[] as $b
-  | select($p.platform == "vercel" or $p.ref == $b)
+  | select(($p.platform | IN("vercel", "cloudflare", "amplify")) or $p.ref == $b)
   | "\($p.platform)  \($p.name)  (\(if $p.ref == $b then "production" else "preview" end), branch \($b))"
 ' "${branches[@]}" 2>/dev/null)" || exit 0
 [ -n "$hits" ] || exit 0

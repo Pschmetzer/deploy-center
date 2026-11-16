@@ -6,7 +6,7 @@
 
 - [ ] The tests CI runs pass: `bash tests/script-tests.sh`, `tests/team-tests.sh`, `tests/install-tests.sh`,
       `tests/release-tests.sh`, `tests/app-tests.sh`, `integrations/tests/run.sh` (see `.github/workflows/ci.yml`)
-- [ ] Integrations touched: `npm test` in `integrations/vscode` passes
+- [ ] Integrations touched: `npm test` passes in the one you changed (`integrations/vscode`, `integrations/raycast`, `integrations/mcp`); iPhone app: `ios/test.sh` and `ios/Tests/run.sh`
 - [ ] `shellcheck --severity=warning` is clean for changed shell scripts, and `scripts/check-public.sh` passes
 - [ ] `./build.sh` builds
 - [ ] `CHANGELOG.md` has a line under Unreleased (or the PR has the label `no-changelog`)
@@ -15,3 +15,4 @@
 - [ ] Nothing starts a build without an explicit click or a command with `--yes`
 - [ ] No real project names, team IDs, domains or personal paths (the repo is public)
 - [ ] Screenshots, if any, are taken in demo mode
+- [ ] iPhone app or widgets touched: tried with a large Dynamic Type size and VoiceOver, light and dark

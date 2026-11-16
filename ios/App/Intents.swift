@@ -75,22 +75,33 @@ enum Spotlight {
     /// The activity of an open project: continues on another iPhone or iPad of the same person.
     static let activity = "app.deploycenter.project"
     private static var indexed: [String] = []
+    private static var indexedIDs: Set<String> = []
 
-    /// Project names in Spotlight, opening the project. Demo projects are not indexed; only when the list changed.
+    /// Project names in Spotlight, opening the project. Demo projects are not indexed, and neither is anything when
+    /// "Keep out of Spotlight" is on (the domain would sit in the system-wide index); only when the list changed.
+    /// The new items are written first and only the ones that are gone are removed: no gap where a project is missing.
     @MainActor static func index(_ projects: [PhoneProject], demo: Bool) {
-        let keys = demo ? [] : projects.map { $0.key + "|" + $0.name }
+        let off = demo || UserDefaults.standard.bool(forKey: "noSpotlight")
+        let keys = off ? [] : projects.map { $0.key + "|" + $0.name + "|" + ($0.domain ?? "") }
         guard keys != indexed else { return }
         indexed = keys
         let idx = CSSearchableIndex.default()
-        idx.deleteAllSearchableItems { _ in
-            guard !demo else { return }
-            let items = projects.map { p in
-                let a = CSSearchableItemAttributeSet(contentType: .text)
-                a.title = p.name
-                a.contentDescription = p.provider.rawValue + (p.domain.map { " · " + $0 } ?? "")
-                return CSSearchableItem(uniqueIdentifier: p.key, domainIdentifier: "projects", attributeSet: a)
-            }
-            idx.indexSearchableItems(items) { _ in }
+        let now = off ? Set<String>() : Set(projects.map(\.key))
+        let gone = Array(indexedIDs.subtracting(now))
+        indexedIDs = now
+        if off {
+            // Also what an earlier launch left behind: the index outlives the process.
+            idx.deleteAllSearchableItems { _ in }
+            return
+        }
+        let items = projects.map { p in
+            let a = CSSearchableItemAttributeSet(contentType: .text)
+            a.title = p.name
+            a.contentDescription = p.provider.rawValue + (p.domain.map { " · " + $0 } ?? "")
+            return CSSearchableItem(uniqueIdentifier: p.key, domainIdentifier: "projects", attributeSet: a)
+        }
+        idx.indexSearchableItems(items) { _ in
+            if !gone.isEmpty { idx.deleteSearchableItems(withIdentifiers: gone) { _ in } }
         }
     }
 

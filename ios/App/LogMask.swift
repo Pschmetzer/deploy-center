@@ -16,7 +16,9 @@ enum LogMask {
     /// templates: `$1` for a group (empty when it did not match, as in perl), `[` is literal.
     static let rules: [(String, String)] = [
         // Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, JWT.
-        (#"\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)"#, "[masked]"),
+        (#"\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|dop_v1_[A-Za-z0-9]{16,}|nfp_[A-Za-z0-9]{16,}|sbp_[A-Za-z0-9]{16,}|sb_secret_[A-Za-z0-9_-]{8,}|hf_[A-Za-z0-9]{20,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|re_[A-Za-z0-9]{20,}|sntrys_[A-Za-z0-9+/=_-]{20,}|[0-9]{1,9}\|[A-Za-z0-9]{40}|[0-9]{8,10}:[A-Za-z0-9_-]{35}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)"#, "[masked]"),
+        // Webhook URLs are secrets by themselves (Slack, Discord).
+        (#"https://(?:hooks\.slack\.com/services|(?:discord|discordapp)\.com/api/webhooks)/[A-Za-z0-9_/.-]+"#, "[masked webhook]"),
         // NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret.
         (#"\b((?i:[A-Za-z0-9_.-]*?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn))["\x27]?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("[^"]*"|\x27[^\x27]*\x27|[^\s"\x27,;]+)"#, "$1$2[masked]"),
         // Bearer/Basic with no name before it, and whole cookies.
@@ -27,9 +29,9 @@ enum LogMask {
         // --token x, --token=x (vercel, npm and most CLIs).
         (#"(--(?i:token|password|api-key|secret)(?:=|\s+))[^\s"\x27]+"#, "$1[masked]"),
         // user:password@ in a URL (database URLs).
-        (#"(://[^/\s:@]+):[^@\s/]+@"#, "$1:[masked]@"),
-        // An email address.
-        (#"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#, "[email]"),
+        (#"(://[^/\s:@]+):[^/\s]+@(?=[^@/\s]+)"#, "$1:[masked]@"),
+        // An email address, but not git@host (the user of an SSH clone URL: the error needs it).
+        (#"\b(?!git@)[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#, "[email]"),
     ]
 
     private struct Compiled { let oneLine: NSRegularExpression; let begin: NSRegularExpression; let end: NSRegularExpression
@@ -43,6 +45,8 @@ enum LogMask {
     }()
     static var works: Bool { compiled != nil }
 
+    static let maxLine = 4000
+
     private static func sub(_ r: NSRegularExpression, _ s: String, _ t: String) -> String {
         r.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: t)
     }
@@ -54,7 +58,9 @@ enum LogMask {
     static func mask(_ lines: [String]) -> [String]? {
         guard let c = compiled else { return nil }
         var out: [String] = [], pem = false
-        for raw in lines {
+        for full in lines {
+            // One line over the cap is cut before any rule runs (quadratic backtracking on a line like "a.a.a.").
+            let raw = full.count > maxLine ? String(full.prefix(maxLine)) + " […line cut, not scanned]" : full
             var l = sub(c.oneLine, raw, "[masked private key]")
             if pem { if has(c.end, l) { pem = false }; continue }
             if has(c.begin, l) { pem = true; out.append("[masked private key]"); continue }

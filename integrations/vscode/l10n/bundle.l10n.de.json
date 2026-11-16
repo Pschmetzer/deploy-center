@@ -46,7 +46,7 @@
   "Copy for AI": "Für KI kopieren",
   "Show log": "Log zeigen",
   "{0}: the build failed.": "{0}: Der Build ist fehlgeschlagen.",
-  "{0} has no preview deploys here (Vercel only).": "{0} hat hier keine Vorschau-Deploys (nur Vercel).",
+  "{0} has no preview deploys here.": "{0} hat hier keine Vorschau-Deploys.",
   "Deploy preview": "Vorschau deployen",
   "Deploy a preview of {0}?": "Eine Vorschau von {0} deployen?",
   "Builds the newest commit at a preview address. Production stays as it is.": "Baut den neuesten Commit unter einer Vorschau-Adresse. Produktion bleibt, wie sie ist.",
