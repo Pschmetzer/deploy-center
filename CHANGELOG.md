@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0
+
 - Round 7 (audit): ~230 fixes and additions across app, CLI, integrations and site. Security: masking is line-based (no ReDoS) and knows more key formats; error texts are masked before notifications, journal and exports; MCP asks with a sanitized commit line and passes only an allowed environment; Slack/Markdown injection in digests is escaped; install.sh bounds downloads, refuses unsafe archive paths and gains `--sha256`, `--dry-run`, `--quiet`. App: Touch ID for observer/guard/critical single deploys, VoiceOver rows and actions, locale-correct dates and numbers, no frozen list after an overdue deploy. CLI: quoting and `set -e` fixes, safer locks and temp files, schema matches the code. Site: five host guides plus three cost/automation guides, German FAQ and safe-start, host matrix, `AGENTS.md`, `CITATION.cff`. Details: `docs/IDEEN-7-*-status.md`, `integrations/STATUS-round-7.md`.
 - App: the switch "Only when checks are green" is gone (deploy confirmation and Settings → Deploy). A red CI is shown on the row and never holds a deploy started by hand back. The CLI keeps `--when-green`.
 
