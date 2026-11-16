@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         Self.current = self
         UNUserNotificationCenter.current().delegate = self
         Notes.registerActions()
+        LiveDeploy.endOrphans()
         return true
     }
 

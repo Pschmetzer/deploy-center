@@ -359,12 +359,14 @@ final class PhoneStore: ObservableObject {
     func authenticate(_ reason: String) async -> Bool {
         let ctx = LAContext()
         var err: NSError?
-        // Face ID or Touch ID, with the passcode as a fallback.
-        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else {
+        // Face ID or Touch ID, with the passcode as a fallback; "Biometrics only" in Settings drops the
+        // fallback (someone who watched the passcode could otherwise deploy to production).
+        let policy: LAPolicy = UserDefaults.standard.bool(forKey: "biometricsOnly") ? .deviceOwnerAuthenticationWithBiometrics : .deviceOwnerAuthentication
+        guard ctx.canEvaluatePolicy(policy, error: &err) else {
             fail(L("Set a passcode on this device to deploy from it.", "Lege einen Code für dieses Gerät fest, um von hier zu deployen."))
             return false
         }
-        do { return try await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) }
+        do { return try await ctx.evaluatePolicy(policy, localizedReason: reason) }
         catch let e as LAError {
             switch e.code {
             case .userCancel, .systemCancel, .appCancel, .userFallback:

@@ -17,6 +17,14 @@ final class LiveDeploy {
         return l
     }
 
+    /// At launch nothing is followed yet: an activity that is still on the lock screen belongs to a run that
+    /// ended with the app (killed, or out of background time) and would say "Building" for hours. Ended now.
+    static func endOrphans() {
+        for a in Activity<DeployActivity>.activities {
+            Task { await a.end(content(.unknown, L("No longer followed", "Wird nicht mehr verfolgt"), final: true), dismissalPolicy: .immediate) }
+        }
+    }
+
     private static func content(_ phase: DeployActivity.ContentState.Phase, _ words: String, final: Bool = false) -> ActivityContent<DeployActivity.ContentState> {
         ActivityContent(state: .init(phase: phase, words: words, updated: Date()),
                         staleDate: final ? nil : Date().addingTimeInterval(DeployActivity.staleAfter))

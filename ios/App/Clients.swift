@@ -257,9 +257,11 @@ struct Vercel {
         http = HTTP(base: "https://api.vercel.com", token: token, session: session)
         self.team = (team?.isEmpty ?? true) ? nil : team
     }
+    /// A team id is letters, digits, _ and -: anything else (& or =, from a pasted value) is encoded, so it cannot add a parameter.
+    static let idCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
     private func t(_ path: String) -> String {
         guard let team else { return path }
-        return path + (path.contains("?") ? "&" : "?") + "teamId=" + (team.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? team)
+        return path + (path.contains("?") ? "&" : "?") + "teamId=" + (team.addingPercentEncoding(withAllowedCharacters: Vercel.idCharacters) ?? team)
     }
 
     /// With no team set: one team is used, none means the personal account.
@@ -340,7 +342,9 @@ struct Vercel {
         guard let repo = p.repo, let branch = p.branch else { throw APIError(status: 0, message: L("No repository is known for \(p.name).", "Für \(p.name) ist kein Repository bekannt.")) }
         var git: JSON = ["type": "github", "ref": branch]
         if let id = p.repoId { git["repoId"] = id } else {
-            let parts = repo.split(separator: "/"); git["org"] = String(parts[0]); git["repo"] = String(parts[1])
+            let parts = repo.split(separator: "/")
+            guard parts.count >= 2 else { throw APIError(status: 0, message: L("The repository \"\(repo)\" of \(p.name) is not in the form owner/name.", "Das Repository \"\(repo)\" von \(p.name) hat nicht die Form owner/name.")) }
+            git["org"] = String(parts[0]); git["repo"] = String(parts[1])
         }
         let r = try await http.request("POST", t("/v13/deployments"),
                                        body: ["name": p.name, "project": p.name, "target": "production", "gitSource": git]) as? JSON
