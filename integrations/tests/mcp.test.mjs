@@ -1,6 +1,6 @@
 // Tests for integrations/mcp/server.mjs, run from integrations/tests/run.sh.
 // A plain JSON-RPC client over stdio talks to the server; the server runs the stand-in
-// `deploys` from run.sh (DEPLOYS_BIN), which logs each call to $MCP_CALLS. No network.
+// `deploys` from run.sh (DEPLOYS_BIN), which logs each call to $FAKE_MCP_CALLS. No network.
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const server = join(here, "..", "mcp", "server.mjs");
 const fixture = (f) => JSON.parse(readFileSync(join(here, "..", "..", "tests", "fixtures", "savings", f), "utf8"));
-const calls = process.env.MCP_CALLS;
+const calls = process.env.FAKE_MCP_CALLS;
 let fails = 0;
 const ok = (name) => console.log(`ok   mcp: ${name}`);
 const fail = (name, why) => { console.log(`FAIL mcp: ${name}: ${why}`); fails++; };
@@ -134,10 +134,11 @@ check("logs refuses 0 lines", r.error, r.text);
 r = await s.call("deploys_logs", { project: "app-web", lines: "80" });
 check("logs refuses lines as a string", r.error && /lines/.test(r.text), r.text);
 s.stop();
-s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "", ANTHROPIC_API_KEY: "test-key", FAKE_ENV_DUMP: "1", VERCEL_TOKEN: "vt" });
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "", ANTHROPIC_API_KEY: "test-key", FAKE_ENV_DUMP: "1", VERCEL_TOKEN: "vt", NPM_TOKEN: "npm-secret-x", SSH_AUTH_SOCK: "/tmp/agent.sock" });
 await s.init();
 r = await s.call("deploys_doctor");
 check("the CLI gets no model keys of the host, but provider keys", !r.error && !/ANTHROPIC_API_KEY/.test(r.text) && /VERCEL_TOKEN/.test(r.text), r.text.slice(0, 300));
+check("the CLI gets an allowlist: no npm token, no ssh agent of the host", !/NPM_TOKEN|SSH_AUTH_SOCK/.test(r.text) && /PATH/.test(r.text), r.text.slice(0, 300));
 s.stop();
 s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
 await s.init();
