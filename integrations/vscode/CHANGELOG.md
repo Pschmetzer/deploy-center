@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- The deploy start passes the confirmed commit (`--sha`), so a push between the dialog and the start cannot change what ships; previews follow the host's own capabilities.
+- A remote named `upstream` no longer counts as the project's repo; "waiting since" rounds down.
+- Following a deploy waits longer before it trusts an old state as "live".
+- Secret masking works line by line and knows more key formats.
+
 ## 0.3.0
 
 - German: every text, command and setting follows the editor's language (English and Deutsch). "Copy for AI" stays English, it is written for the AI.
