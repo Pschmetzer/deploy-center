@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- App: saved searches (bookmark button next to the search field): keep a search such as `is:failed host:render`, run it again with one click, remove it.
 - VS Code: the status bar says how many commits wait ("7 commits waiting"); it counts projects only when a commit count is not known for all of them.
 - App: the deploy confirmation shows the newest commit message of each project with changes waiting (up to 5; not in demo mode).
 - Website: five guide pages have shorter search titles (and one a shorter description).
