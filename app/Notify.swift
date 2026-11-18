@@ -51,7 +51,17 @@ enum Notify {
         let d = UserDefaults.standard
         guard available, !NSApp.isActive, d.object(forKey: "notifications") as? Bool ?? true else { return }
         // Quiet hours (Settings → Notifications): only failures still come.
-        if !failed, quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo")) { return }
+        let inQuiet = quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo"))
+        if !failed, inQuiet {
+            // Kept, and delivered as one note when the quiet hours end (the same id replaces the earlier note).
+            let held = QuietDigest.adding(title + (body.isEmpty ? "" : ": " + body), to: d.stringArray(forKey: QuietDigest.key) ?? [])
+            d.set(held, forKey: QuietDigest.key)
+            let n = QuietDigest.note(held, neutral: d.bool(forKey: "neutralNotifications"))
+            add(n.title, n.body, id: QuietDigest.id, after: QuietDigest.seconds(until: d.integer(forKey: "quietTo")))
+            return
+        }
+        // Outside the quiet hours the earlier note has been delivered: start the next night empty.
+        if !inQuiet, d.object(forKey: QuietDigest.key) != nil { d.removeObject(forKey: QuietDigest.key) }
         // Settings → General: a notification on the lock screen says that something happened, not which project.
         let neutral = d.bool(forKey: "neutralNotifications")
         let title = neutral ? (failed ? L("A deploy needs a look", "Ein Deploy braucht einen Blick") : L("Deploy Center", "Deploy Center")) : title

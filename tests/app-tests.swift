@@ -2012,4 +2012,18 @@ do {
     expect("update forgets signed out", TokenAge.update(["vercel": old], signedIn: ["vercel": false], now: now)["vercel"] == nil, true)
 }
 
+// Quiet hours bundle the good news into one note.
+do {
+    var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+    let night = Date(timeIntervalSince1970: TimeInterval(1_800_000_000 - 1_800_000_000 % 86400 + 23 * 3600))   // 23:00 UTC
+    expect("digest: seconds until 07:00", QuietDigest.seconds(until: 7, now: night, calendar: cal), 8 * 3600)
+    var held = QuietDigest.adding("a: one", to: [], now: night)
+    held = QuietDigest.adding("b: two", to: held, now: night.addingTimeInterval(60))
+    expect("digest: two held", held.count, 2)
+    expect("digest: old line falls out", QuietDigest.adding("c", to: held, now: night.addingTimeInterval(21 * 3600)).count, 1)
+    expect("digest: note body", QuietDigest.note(held, neutral: false).body, "a: one\nb: two")
+    expect("digest: more than shown", QuietDigest.note(held, neutral: false, shown: 1).body.hasPrefix("a: one\n"), true)
+    expect("digest: neutral hides the text", QuietDigest.note(held, neutral: true).body.contains("a: one"), false)
+}
+
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
