@@ -64,7 +64,7 @@ func paletteOrder(query: String, entries: [(id: String, texts: [String])], recen
 
 enum PaletteAction: String, CaseIterable {
     case deployChanged, reload, stopAll, journal, settings, costs
-    case selectChanged, clearSelection, toggleFilter, showAll, demoMode
+    case selectChanged, clearSelection, toggleFilter, showAll, demoMode, failedOnly
 }
 enum PaletteVerb: String, CaseIterable {
     case deploy, log, open, dashboard, rollback, notes, preview, pin, hide, show
@@ -88,7 +88,7 @@ enum PaletteVerb: String, CaseIterable {
 }
 
 struct PaletteCommand: Identifiable {
-    enum Kind { case action(PaletteAction), project(PaletteVerb, Item) }
+    enum Kind { case action(PaletteAction), project(PaletteVerb, Item), search(String) }
     let id: String
     let title: String
     let detail: String?
@@ -126,6 +126,11 @@ enum PaletteCommands {
             add(.clearSelection, "Clear the selection", "Auswahl leeren", "circle")
         }
         add(.toggleFilter, "Changed only (on/off)", "Nur mit Änderungen (an/aus)", "line.3.horizontal.decrease.circle")
+        add(.failedOnly, "Failed only (on/off)", "Nur Fehlgeschlagene (an/aus)", "xmark.octagon")
+        // Searches the person saved next to the search field: one line each, running one only fills the search box.
+        for q in SavedSearches.parse(UserDefaults.standard.string(forKey: "savedSearches") ?? "") {
+            out.append(PaletteCommand(id: "search." + q, title: L("Search: ", "Suche: ") + q, detail: nil, symbol: "bookmark", texts: [q, "search", "suche"], kind: .search(q)))
+        }
         add(.showAll, "Show all platforms", "Alle Plattformen zeigen", "square.grid.2x2")
         add(.demoMode, Demo.on ? "Turn off demo mode" : "Turn on demo mode", Demo.on ? "Demo-Modus ausschalten" : "Demo-Modus einschalten", "theatermasks")
 
@@ -436,6 +441,9 @@ final class PaletteCenter: ObservableObject {
     @Published var requests = 0
     /// Bumped by the palette's "Changed only (on/off)": the window flips its filter.
     @Published var filterToggles = 0
+    @Published var failedToggles = 0
+    /// A saved search the palette asks the window to put into its search box (a counter makes equal texts fire again).
+    @Published var searchRequest: (n: Int, text: String) = (0, "")
     /// Main windows on screen that can show the palette.
     var hosts = 0
     /// Set when there was no window: the next one to appear opens the palette.
@@ -581,11 +589,14 @@ struct CommandPaletteHost: ViewModifier {
                 Platform.allCases.forEach { store.selectChanged($0) }
             case .clearSelection: Platform.allCases.forEach { store.clearSelection($0) }
             case .toggleFilter: PaletteCenter.shared.filterToggles += 1
+            case .failedOnly: PaletteCenter.shared.failedToggles += 1
             case .showAll: UserDefaults.standard.set(true, forKey: "showAll")
             case .demoMode:
                 let d = UserDefaults.standard
                 d.set(!d.bool(forKey: "demoMode"), forKey: "demoMode")
             }
+        case .search(let q):
+            PaletteCenter.shared.searchRequest = (PaletteCenter.shared.searchRequest.n + 1, q)
         case .project(let v, let item):
             // The row as it is now, not as it was when the palette listed it.
             let i = store.items[item.platform]?.first { $0.id == item.id } ?? item
