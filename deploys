@@ -3846,8 +3846,13 @@ BASH
     af_mask < "$sraw" > "$smask" || exit 1
     hits="$(awk -F'\t' 'NR==FNR { m[$1]=$0; next } { if (!($1 in m) || m[$1] != $0) print $1 }' "$smask" "$sraw")"
     sj='[]'
+    sprev=-5; sprevmiss=""
     for n in $hits; do
-      f="$(sed -n "${n}p" "$sfile" | cut -f1)"; ml="$(grep "^$n"$'\t' "$smask" | head -n 1 | cut -f2- | cut -c1-120)"
+      # the lines after the first of a private key block vanish from the masked text: one finding, not one per line
+      smiss=""; grep -q "^$n"$'\t' "$smask" || smiss=1
+      if [ -n "$smiss" ] && [ -n "$sprevmiss" ] && [ "$n" -eq $((sprev + 1)) ]; then sprev="$n"; continue; fi
+      sprev="$n"; sprevmiss="$smiss"
+      f="$(sed -n "${n}p" "$sfile" | cut -f1)"; ml="$(grep "^$n"$'\t' "$smask" | head -n 1 | cut -f2- | cut -c1-120)" || ml=""; [ -n "$ml" ] || ml="[masked: part of a private key]"
       sj="$(echo "$sj" | jq -c --arg f "$f" --arg l "$ml" '. + [{file:$f, masked:$l}]')"
     done
     cnt="$(echo "$sj" | jq length)"

@@ -51,5 +51,20 @@ mkdir -p "$tmp/tf/lk"; : > "$tmp/tf/a b"; : > "$tmp/tf/c"
 ( export DEPLOYS_LIB=1 DEPLOYS_CONFIG="$tmp/tfc"; . ./deploys; trap_fn exit_rm "$tmp/tf/a b" "$tmp/tf/c"; trap_fn exit_rmdir "$tmp/tf/lk"; trap_add 'echo "late $?" > "$tmp/tf.out"'; exit 3 ) 2>/dev/null; rc=$?
 expect "trap_fn: files and folder removed, old-style trap still runs, status kept" "$rc:$(ls "$tmp/tf" | wc -l | tr -d ' '):$(cat "$tmp/tf.out")" "3:0:late 3"
 
+# secrets (idea 32): added lines that look like keys; the secret itself is never printed
+sd='+++ b/src/a.env
++API=ok
++TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789
++-----BEGIN RSA PRIVATE KEY-----
++MIIabcsecretbody
++-----END RSA PRIVATE KEY-----
++plain'
+printf '%s\n' "$sd" | cli secrets --stdin >"$tmp/s.out" 2>&1; rc=$?
+expect "secrets: a diff with a token and a key exits 1" "$rc" "1"
+expect "secrets: the secret is not printed" "$(grep -c 'abcdefghijklmnop\|MIIabcsecretbody' "$tmp/s.out")" "0"
+expect "secrets: both hits are counted" "$(printf '%s\n' "$sd" | cli secrets --stdin --json | jq .found)" "2"
+expect "secrets: a clean diff exits 0" "$(printf '+++ b/a\n+hello\n' | cli secrets --stdin >/dev/null; echo $?)" "0"
+expect "secrets: without a project or --stdin is a usage line" "$(cli secrets >/dev/null 2>&1; echo $?)" "1"
+
 echo
 [ "$fails" -eq 0 ] && echo "All round-9 tests passed." || { echo "$fails failed."; exit 1; }
