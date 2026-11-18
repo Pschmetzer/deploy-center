@@ -37,6 +37,10 @@ Projekte desselben Repos stehen unter einem Repo-Kopf. Ein Klick auf den Kopf kl
 
 Die Befehlspalette hat **Nur fehlgeschlagene (an/aus)** und eine Zeile je gespeicherte Suche. Eine Zeile füllt das Suchfeld; es läuft nichts. Wahl-Befehl-F tut dasselbe wie **Nur fehlgeschlagene**. Rechtsklick auf einen Repo-Kopf bietet **Nur dieses Repo zeigen**, das die Suche mit `repo:name` füllt.
 
+## Logs durchsuchen
+
+Die Befehlspalette hat **Logs fehlgeschlagener Projekte durchsuchen**: eine Suche über die Logs jedes fehlgeschlagenen Projekts. Ohne Suchtext gruppiert sie die Fehler nach derselben Fehlerzeile, zehn Projekte mit demselben Fehler erscheinen also als eine Gruppe. Es liest nur.
+
 ## Gemergte Fixes
 
 Wird ein [Autofix](AUTOFIX.md)-Pull-Request gemergt, fällt seine Zeile auf, bis der Fix live ist. **Mehr → Die N gemergten Fixes anhaken** hakt alle an. Es hakt nur an; zum Deployen braucht es weiter deinen Klick.

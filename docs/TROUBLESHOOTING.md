@@ -4,6 +4,8 @@ Each heading is a message the app or `deploys` shows, word for word. Search this
 
 In the app, an error in the log or details window has a **Help** button that opens the matching section here.
 
+Under **Settings → Platforms → Health**, a Vercel or Render login that has been in use for 90 days gets a note to consider renewing it. The age counts from the day the app first saw the login, so it is a nudge, not a fact about the token.
+
 First steps for any problem:
 
 - `deploys doctor` prints what is connected as JSON: `jq`, `jqVersion`, `bashVersion`, `githubCli`, `githubLoggedIn`, `gitlabCli`, `gitlabLoggedIn`, `readonly`, and the fields of each platform that is on (Vercel: `vercelCli`, `vercelApi`, `vercelLoggedIn`; Render: `renderKey`, `renderKeySource`; deploy hooks: `hookReady`, `hooks`). For Netlify, Cloudflare, Amplify, DigitalOcean and Coolify ask the platform itself, for example `deploys netlify doctor`: their answers share field names (`provider`, and `key`, `tokenOk`, `error` for three of them), and in the combined answer only the last one of each is left.

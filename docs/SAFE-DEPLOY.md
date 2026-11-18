@@ -183,6 +183,16 @@ computed from the comparison already read for the commit count, so it costs no e
 **In the app**, a row shows a red dot only when the risk is red. Yellow stays quiet. The details
 show the level and every reason.
 
+## 4b. Secrets check
+
+```bash
+deploys secrets <project>
+deploys secrets web && deploys deploy web --yes     # a gate in a script
+git diff A..B | deploys secrets --stdin             # a diff you pipe in (GitLab, or any repo)
+```
+
+This looks only at the lines that were *added* in what waits to go live, with the same patterns that mask logs (keys, tokens, private keys). It prints file names and the masked line, never the secret, and exits `1` when it finds one. It needs `perl`. For a GitLab project, pipe a diff in. This is not a full scanner: [SCAN.md](SCAN.md) covers `deploys check` (gitleaks and more).
+
 ## 5. More brakes in the app
 
 All opt-in, in **Settings → Deploy** unless the row menu is named:

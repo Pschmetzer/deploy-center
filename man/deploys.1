@@ -33,7 +33,6 @@ No key is ever printed.
   deploys rollback <p> [<id>]               production back to the deploy before, on whichever platform it is on
   deploys cancel <p> [<id>]                 stop a build that is running, on whichever platform it is on
   deploys journal verify [\-\-json]           check the chain of the journal (each line holds the hash of the one before)
-  deploys secrets <project>|\-\-stdin   added lines that look like a key or token (exit 1)
   deploys journal export [\-\-since D] [\-\-project <p>]   the journal as CSV
   deploys journal report [\-\-month YYYY\-MM]  the month as Markdown: results and projects
   deploys metrics [\-\-out <file>]            waiting commits, their age, failures: Prometheus text (a textfile for Grafana)
@@ -55,6 +54,7 @@ No key is ever printed.
   deploys verify <p> [\-\-path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
     [\-\-rollback\-after 10] [\-\-no\-rollback] [\-\-watch\-timeout 30m]   count down, then roll back (Ctrl\-C stops it)
     [\-\-expect 200|2xx] [\-\-follow]          only that status is healthy; follow up to 3 redirects
+  deploys secrets <project>|\-\-stdin [\-\-json]  added lines that look like a key or token (exit 1: a gate for scripts)
   deploys risk <project> [\-\-json]           green/yellow/red for what waits: migrations, lockfiles, config, size
   deploys ci <owner/repo> [<ref>] [\-\-wait 30m]  the CI verdict of a commit: green, pending, red, none
   deploys window [\-\-json]                   is the deploy window (window.json) open now?
@@ -148,7 +148,7 @@ In the config folder (DEPLOYS_CONFIG, default ~/.config/deploys):
 .SH PROVIDER COMMANDS
 .nf
   render       list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor on autodeploy\-on forget\-key
-  vercel       list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor on autodeploy\-on map team
+  vercel       list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor on autodeploy\-on map previews team
 .fi
 .SH ENVIRONMENT
 .TP

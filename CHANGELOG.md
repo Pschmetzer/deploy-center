@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Widgets: the icon column of a project row grows with Dynamic Type.
+- Docs: `deploys secrets` (safe-deploy page and CLI reference), `previews`, the 90-day login note, searching the logs, and a contributor note on `trap_fn` and `atomic_write`.
 - Providers: reading all Netlify sites or Render services no longer loops for ever when a page has no cursor or repeats, and says so when a page is not a list.
 - Providers: `deploys <vercel|netlify|cloudflare> previews <project>` lists the newest preview deployment per pull request (or branch) with its URL, as JSON. Read-only.
 - Docs: `--no-cache` in the CLI reference, the Help button on the troubleshooting page, the week in review, "Check the site now" and the window subtitle (English and German).
