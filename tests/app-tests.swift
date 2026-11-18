@@ -2036,4 +2036,15 @@ do {
     expect("quiet hint: same day has no midnight note", SettingsText.quietHint(from: 12, to: 14).contains("12:00"), true)
 }
 
+// Cost trend.
+do {
+    func days(_ v: [Double]) -> [Costs.Day] { v.enumerated().map { Costs.Day(day: "2026-11-\(String(format: "%02d", $0.offset + 1))", total: $0.element, build: $0.element) } }
+    expect("trend up", CostInsights.trend(days(Array(repeating: 1, count: 7) + Array(repeating: 2, count: 7))) ?? 0, 100.0)
+    expect("trend short data", CostInsights.trend(days([1, 2, 3])) == nil, true)
+    expect("trend from zero", CostInsights.trend(days(Array(repeating: 0, count: 7) + Array(repeating: 2, count: 7))) == nil, true)
+    expect("arrow up", CostInsights.arrow(20), "↑")
+    expect("arrow down", CostInsights.arrow(-20), "↓")
+    expect("arrow flat", CostInsights.arrow(3), "→")
+}
+
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

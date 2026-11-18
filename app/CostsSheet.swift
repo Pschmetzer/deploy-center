@@ -114,6 +114,11 @@ struct CostsSheet: View {
             HStack(spacing: 10) {
                 Text(costs.week, format: .currency(code: "USD")).font(.title3.weight(.semibold).monospacedDigit())
                 Sparkline(values: CostInsights.series(costs.days))
+                if let t = CostInsights.trend(costs.days) {
+                    Text(CostInsights.arrow(t) + " " + String(format: "%+.0f %%", t)).font(.caption.monospacedDigit())
+                        .foregroundStyle(t > 5 ? Color.orange : .secondary)
+                        .help(L("Against the 7 days before", "Gegenüber den 7 Tagen davor"))
+                }
             }
             Text(L("≈ ", "≈ ") + (average * 30).formatted(.currency(code: "USD")) + L(" a month at this pace", " im Monat bei diesem Tempo"))
                 .font(.caption).foregroundStyle(.secondary)
@@ -125,6 +130,15 @@ struct CostsSheet: View {
                 if s.after < s.before {
                     Button(L("Share the saving …", "Ersparnis teilen …")) { sharing = true }
                         .buttonStyle(.link).font(.caption)
+            Button(L("Save report as file …", "Bericht als Datei sichern …")) {
+                let panel = NSSavePanel()
+                panel.nameFieldStringValue = "build-costs-\(Self.today()).md"
+                panel.allowedContentTypes = [.plainText]
+                guard panel.runModal() == .OK, let url = panel.url else { return }
+                let md = CostInsights.report(costs, budget: budget, today: Self.today(), names: !Demo.on)
+                do { try md.write(to: url, atomically: true, encoding: .utf8) } catch { Log.write("costs: report not saved (\(error.localizedDescription))") }
+            }
+            .buttonStyle(.link).font(.caption)
                         .popover(isPresented: $sharing) { SavingShare(before: s.before, after: s.after) }
                         .help(L("Copies a picture and a sentence with your saving, without project names",
                                 "Kopiert ein Bild und einen Satz mit deiner Ersparnis, ohne Projektnamen"))

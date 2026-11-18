@@ -26,6 +26,18 @@ enum CostInsights {
         }
     }
 
+    /// The last 7 days against the 7 before: the change in percent, nil with fewer than 14 days or a
+    /// previous week without cost (a percentage of nothing says nothing).
+    static func trend(_ days: [Costs.Day]) -> Double? {
+        guard days.count >= 14 else { return nil }
+        let recent = days.suffix(7).map(\.build).reduce(0, +)
+        let before = days.suffix(14).prefix(7).map(\.build).reduce(0, +)
+        guard before > 0, recent.isFinite, before.isFinite else { return nil }
+        return (recent - before) / before * 100
+    }
+    /// ↑ above +5 %, ↓ below −5 %, else →.
+    static func arrow(_ pct: Double) -> String { pct > 5 ? "↑" : (pct < -5 ? "↓" : "→") }
+
     /// The last `n` days' build costs, oldest first, for the sparkline.
     static func series(_ days: [Costs.Day], _ n: Int = 7) -> [Double] { days.suffix(n).map(\.build) }
 
