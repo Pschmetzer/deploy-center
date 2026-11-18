@@ -410,6 +410,74 @@ struct ProblemsView: View {
     }
 }
 
+/// The next deploy a schedule will start: the name and a live countdown. Only reads the snapshot.
+struct NextDeployWidget: Widget {
+    static let kind = "DeployCenterNext"
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: Self.kind, provider: Provider()) { NextDeployView(entry: $0) }
+            .configurationDisplayName(Words(DeploySnapshot.read())("Next scheduled deploy", "Nächster geplanter Deploy"))
+            .description(Words(DeploySnapshot.read())("Which project a schedule deploys next, and when.",
+                                                      "Welches Projekt ein Zeitplan als Nächstes deployt, und wann."))
+            .supportedFamilies(Self.families)
+    }
+    static var families: [WidgetFamily] {
+        #if os(iOS)
+        [.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline]
+        #else
+        [.systemSmall, .systemMedium]
+        #endif
+    }
+}
+
+struct NextDeployView: View {
+    @Environment(\.widgetFamily) var family
+    let entry: Entry
+    var body: some View {
+        Group {
+            if let s = entry.snap, s.connected != false { NextDeployContent(snap: s, date: entry.date, family: family) }
+            else { NoSnapshotView(notConnected: entry.snap?.connected == false) }
+        }
+        .environment(\.words, Words(entry.snap))
+        .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(URL(string: "deploycenter://"))
+    }
+}
+
+struct NextDeployContent: View {
+    let snap: DeploySnapshot
+    let date: Date
+    let family: WidgetFamily
+    @Environment(\.words) private var w
+    var body: some View {
+        // An old snapshot cannot say that nothing is planned, and a time in the past is not "next".
+        let run = snap.nextScheduled.flatMap { $0.at > date ? $0 : nil }
+        let stale = snap.isStale(at: date)
+        switch family {
+        #if os(iOS)
+        case .accessoryInline:
+            if let r = run { Label { Text(w("Deploy ", "Deploy ")) + Text(r.at, style: .relative) } icon: { Image(systemName: "clock") } }
+            else { Label(stale ? w("Out of date", "Veraltet") : w("No deploy planned", "Kein Deploy geplant"), systemImage: "clock") }
+        #endif
+        default:
+            VStack(alignment: .leading, spacing: 4) {
+                Label(w("Next deploy", "Nächster Deploy"), systemImage: "clock.fill").font(.caption.weight(.semibold)).foregroundStyle(.secondary).widgetAccentable()
+                if let r = run {
+                    Text(r.name).font(.headline).lineLimit(1).minimumScaleFactor(0.7).privacySensitive()
+                    Text(r.at, style: .relative).font(.title3.weight(.bold).monospacedDigit()).minimumScaleFactor(0.6)
+                    Text(r.platform + " · " + r.at.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Spacer(minLength: 0)
+                    Text(stale ? w("Out of date: open the app", "Veraltet: App öffnen") : w("No deploy planned", "Kein Deploy geplant"))
+                        .font(.callout.weight(.medium)).foregroundStyle(stale ? Color.orange : Color.secondary)
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
 #if os(iOS)
 /// Control Center, lock screen and Action button (iOS 18): the waiting PRs, a tap opens the app.
 /// Only reads the snapshot: the extension holds no keys, so it cannot read the accounts itself.
@@ -523,6 +591,7 @@ struct DeployWidgets: WidgetBundle {
     var body: some Widget {
         DeployWidget()
         ProblemsWidget()
+        NextDeployWidget()
         #if os(iOS)
         DeployActivityWidget()
         WaitingControl()

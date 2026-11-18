@@ -247,6 +247,7 @@ of "Data Not Collected".
   another iPhone or iPad; the Mac app does not take it yet.
 - **Notification actions (IOS-124).** Open, and Mute for today (news from the background refresh only;
   the end of a deploy started in the app still comes).
+- **Next scheduled deploy (IDEEN-9 #61).** A third widget shows the project a schedule deploys next and a live countdown (`Text(date, style: .relative)`); small, medium, lock screen rectangular and inline. It reads the optional `nextScheduled` of the snapshot; without it, or when the time has passed, it says "No deploy planned" (or "Out of date" for an old snapshot). The Mac app fills the field in a follow-up.
 - **Widgets.** A second widget, "Failed deploys", lists only what failed or builds (Mac and iPhone).
   On iOS 18 a control for Control Center, the lock screen and the Action button shows the waiting PRs
   and opens the app; it reads the snapshot only, the extension holds no keys.
