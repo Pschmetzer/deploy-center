@@ -2001,6 +2001,8 @@ do {
     expect("search: hits", h.map { "\($0.project):\($0.line)" }, ["one:2", "two:1"])
     expect("search: empty query", LogGroups.search("  ", in: logs).count, 0)
     expect("search: cap per project", LogGroups.search("x", in: [("p", String(repeating: "x\n", count: 50))], perProject: 5).count, 5)
+}
+
 // Token age.
 do {
     let now = Date(), old = now.addingTimeInterval(-100 * 86400).timeIntervalSince1970
