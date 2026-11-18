@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Docs: new page "Search and saved searches" (also in German) and glossary entries for repo group, saved search and merged fix.
 - App: a search shows how many rows match ("3/41"); a repo header also counts its failed projects.
 - App: "More" → "Collapse all repo groups" / "Expand all repo groups".
 - App: "More" → "Copy list of waiting projects" puts a Markdown list of what waits to go live on the clipboard (names masked in demo mode).
