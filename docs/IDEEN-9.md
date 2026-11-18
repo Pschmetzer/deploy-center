@@ -7,6 +7,7 @@ Erledigte Punkte stehen unter „Stand“.
 
 - 14 „Nur Fehlgeschlagene anhaken“ pro Repo-Gruppe und 16 klappbare Gruppenköpfe (merkt sich den Zustand) sind umgesetzt. 18 „Alle Fixes anhaken“ (Sammelaktion, nur Haken) ist umgesetzt. 15 Kosten in der unteren Leiste ist umgesetzt. 21 Suchfilter `repo:`, `host:` und `is:waiting` sind umgesetzt.
 - 68 (Erststart-Rundgang als Doc `FIRST-START.md`, beschreibt den echten Ablauf) und 70 (`SETTINGS.md` mit Beispiel je Einstellung) sind als Seiten umgesetzt, auch auf Deutsch.
+- 25 Sparkline, 36 Budget pro Projekt mit Ampel, 37 Was-wäre-wenn (ein Build pro Tag) und 38 Monatsbericht (Markdown) sind in der Kostenansicht umgesetzt.
 
 ## Wartung und Repo
 
