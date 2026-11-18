@@ -5,6 +5,7 @@ Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 66 Plan als PR-Kommentar ist umgesetzt (`examples/plan-pr-comment.yml`, kommentiert beim Merge; Kostenschätzung, nichts wird deployt).
 - 65 VS-Code-Statusleiste „N Commits warten“ ist umgesetzt.
 - 64 Raycast und Alfred zeigen die Kosten des nächsten Deploys (Schätzung aus `deploys plan --json`) sind umgesetzt.
 - 14 „Nur Fehlgeschlagene anhaken“ pro Repo-Gruppe und 16 klappbare Gruppenköpfe (merkt sich den Zustand) sind umgesetzt. 18 „Alle Fixes anhaken“ (Sammelaktion, nur Haken) ist umgesetzt. 15 Kosten in der unteren Leiste ist umgesetzt. 21 Suchfilter `repo:`, `host:` und `is:waiting` sind umgesetzt. 45 Vorschau des neuesten Commits in der Bestätigung ist umgesetzt. 22 Gespeicherte Ansichten (als gespeicherte Suchen) sind umgesetzt.
