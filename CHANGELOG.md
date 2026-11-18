@@ -5,6 +5,8 @@
 - Raycast: new command "Idle Projects" lists projects with no deploy for 90 days or more (`deploys idle --json`). It only reads.
 - Providers: the failure test also covers refused keys (401, 403, not asked again) and rate limits (429, at most three reads) for every HTTP provider.
 - App: a word with @ in a project's note (like `@pay`) is a shortcut in the command palette: "pay deploy" finds that project's deploy command.
+- Costs: a trend arrow (last 7 days against the 7 before) and "Save report as file" for the Markdown report.
+
 - DigitalOcean: when two apps match one name or domain, the command is refused with their ids instead of acting on the first one.
 - Providers: an empty or non-JSON answer (a proxy page) to a deploy start (Render) or a status read (Render, Netlify, Coolify) is now an error with a reason, not a silent success or a false "no deploy" that stopped `watch`.
 - Site: `llms.txt` lists the new docs pages.
