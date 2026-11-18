@@ -51,6 +51,15 @@ struct DeploySnapshot: Codable, Equatable {
     var language: String? = nil
     /// false: the iOS app has no account yet, so "nothing waits" would not be true. Nil from the Mac.
     var connected: Bool? = nil
+    /// The next deploy that a schedule will start (a deploy window or a timer). Nil: none is planned, or an
+    /// older app that does not write it. The widget only shows it; nothing here starts a deploy.
+    var nextScheduled: NextRun? = nil
+
+    struct NextRun: Codable, Equatable {
+        let name: String          // already masked when the Mac app was in demo mode
+        let platform: String
+        let at: Date
+    }
 
     /// English or German by a language code ("de", "de-DE" give German; nil gives the system's first).
     /// The iOS app and the widgets pick their texts with it, so both follow the same rule.

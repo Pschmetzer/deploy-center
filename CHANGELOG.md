@@ -8,6 +8,7 @@
 - Docs: new pages "First start" (the tour, step by step) and "Settings with examples", both also in German.
 - Costs: a 7-day sparkline, a monthly budget per project with a traffic light (right-click a project), a "what if one build a day" estimate and a Markdown report you can copy.
 
+- iPhone and Mac widgets: new widget "Next scheduled deploy" (name and live countdown; lock screen too). It stays empty until the app writes the next run into the snapshot; it never starts a deploy.
 - App: search understands `is:waiting`, `host:render` (same as `platform:`) and `repo:name`.
 - App: repo headers fold and unfold (remembered), and a header offers "Tick failed N" next to "Tick all" when only some of its projects failed.
 - Rules: new conditions `minCommits`, `minPRs` and `minAgeDays` (also in the rule editor) to collect changes and deploy only when enough have piled up, e.g. 3 days and 200 PRs. Still only runs through `deploy-changed --by-rules` or `schedule daily --by-rules`; the app never deploys by itself.

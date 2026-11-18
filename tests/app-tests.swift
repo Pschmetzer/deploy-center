@@ -998,6 +998,9 @@ do {
 } catch { expect("linked keys decode", "\(error)", "no error") }
 let snapEN = DeploySnapshot(at: Date(), demo: false, waitingProjects: 1, waitingCommits: 1, waitingPRs: 0, building: 0, failed: 0,
                             saving: nil, projects: [], language: "en")
+var snapNext = snapEN; snapNext.nextScheduled = .init(name: "Atlas-214", platform: "Vercel", at: Date().addingTimeInterval(600))
+expect("a snapshot with a planned deploy round-trips",
+       (try? JSONDecoder().decode(DeploySnapshot.self, from: JSONEncoder().encode(snapNext)))?.nextScheduled?.name ?? "", "Atlas-214")
 var snapDE = snapEN; snapDE.language = "de"
 expect("a language switch is a change for the widgets", snapEN.sameContent(as: snapDE), false)
 expect("only the time is not", snapEN.sameContent(as: DeploySnapshot(at: .distantPast, demo: false, waitingProjects: 1, waitingCommits: 1, waitingPRs: 0,
