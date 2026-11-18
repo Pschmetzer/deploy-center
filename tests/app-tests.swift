@@ -1973,4 +1973,18 @@ do {
     expect("idle skips one with a fresh deploy", WeekGoals.idle([old, fresh, JournalEntry(at: now, platform: "vercel", name: "old", result: "live", seconds: nil, detail: nil)], now: now).count, 0)
 }
 
+// Error messages link to their section of TROUBLESHOOTING.md.
+do {
+    expect("help: known message", ErrorHelp.url(for: "Deploy window closed (09:00)", german: false)?.absoluteString.hasSuffix("TROUBLESHOOTING.md#deploy-window-closed") ?? false, true)
+    expect("help: german file", ErrorHelp.url(for: "no anthropic api key", german: true)?.absoluteString.contains("TROUBLESHOOTING.de.md#") ?? false, true)
+    expect("help: unknown message goes to the top", ErrorHelp.url(for: "something odd", german: false)?.absoluteString.hasSuffix("TROUBLESHOOTING.md") ?? false, true)
+    expect("help: empty message", ErrorHelp.url(for: "  ", german: false) == nil, true)
+    for file in ["docs/TROUBLESHOOTING.md", "docs/TROUBLESHOOTING.de.md"] {
+        let text = (try? String(contentsOfFile: file, encoding: .utf8)) ?? ""
+        let slugs = Set(text.components(separatedBy: "\n").filter { $0.hasPrefix("### ") }.map { ErrorHelp.slug(String($0.dropFirst(4)).trimmingCharacters(in: .whitespaces)) })
+        let missing = ErrorHelp.topics.filter { !slugs.contains($0.anchor) }.map(\.needle)
+        expect("help: anchors exist in \(file)", missing, [String]())
+    }
+}
+
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
