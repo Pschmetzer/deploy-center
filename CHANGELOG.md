@@ -6,6 +6,7 @@
 - Mac app: the widget snapshot now carries the next run of the daily deploy (`deploys schedule daily`), so the "Next scheduled deploy" widget shows it. Read only.
 - Docs: new page "Search and saved searches" (also in German) and glossary entries for repo group, saved search and merged fix.
 - iPhone: a "project is waiting" notification has a "Deploy with Face ID" action. It opens the app, checks the project still waits and asks Face ID like every deploy; a tap on the note alone starts nothing.
+- App: the deploy confirmation warns about a project deployed less than 5 minutes ago and about a waiting project whose newest commit is over 30 days old.
 - App: a search shows how many rows match ("3/41"); a repo header also counts its failed projects.
 - Docker: `--build-arg WITH_VERCEL=0` builds an image without the Vercel CLI, about half the size (567 MB instead of 1.09 GB), for Render, Netlify and the other hosts.
 - App: "More" → "Collapse all repo groups" / "Expand all repo groups".

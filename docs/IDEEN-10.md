@@ -4,7 +4,7 @@ Neue Ideen nach Runde 9. Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
-- 2 Trefferzahl der Suche und 8 rote Projekte im Gruppenkopf sind umgesetzt.
+- 2 Trefferzahl der Suche und 8 rote Projekte im Gruppenkopf sind umgesetzt. 12 Warnung bei altem Commit und 14 „gerade erst deployt“ in der Bestätigung sind umgesetzt.
 
 ## Hauptfenster
 

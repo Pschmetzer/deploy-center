@@ -46,6 +46,15 @@ do {
 }
 expect("waiting list empty", DeployConfirm.waitingList([item(changed: false)]), "")
 expect("waiting list line", DeployConfirm.waitingList([item(changed: true, commits: 2, prs: 0)]).hasPrefix("- ") ? "y" : "n", "y")
+do {
+    var a = item(changed: true, commits: 1, prs: 0)
+    a.lastAt = Date().addingTimeInterval(-60)
+    expect("freshness: just deployed", DeployConfirm.freshnessNote([a]).contains("5") ? "y" : "n", "y")
+    var b = item(changed: true, commits: 1, prs: 0)
+    b.headAt = Date().addingTimeInterval(-40 * 86400)
+    expect("freshness: old commit", DeployConfirm.freshnessNote([b]).contains("30") ? "y" : "n", "y")
+    expect("freshness: nothing", DeployConfirm.freshnessNote([item(changed: false)]), "")
+}
 expect("commits and PRs", Row.waitingText(item(changed: true, commits: 5, prs: 3)), L("5 commits · 3 PRs waiting", "5 Commits · 3 PRs warten"))
 expect("one of each", Row.waitingText(item(changed: true, commits: 1, prs: 1)), L("1 commit · 1 PR waiting", "1 Commit · 1 PR wartet"))
 expect("commits only", Row.waitingText(item(changed: true, commits: 2, prs: 0)), L("2 commits waiting", "2 Commits warten"))
