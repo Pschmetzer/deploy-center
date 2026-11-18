@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- App: search understands `is:waiting`, `host:render` (same as `platform:`) and `repo:name`.
 - App: repo headers fold and unfold (remembered), and a header offers "Tick failed N" next to "Tick all" when only some of its projects failed.
 - Rules: new conditions `minCommits`, `minPRs` and `minAgeDays` (also in the rule editor) to collect changes and deploy only when enough have piled up, e.g. 3 days and 200 PRs. Still only runs through `deploy-changed --by-rules` or `schedule daily --by-rules`; the app never deploys by itself.
 - App: search finds notes, branch and commit text and understands `is:failed` and `platform:render`; double-click opens a row's details; the build log jumps to the previous or next error; "Copy live commit (SHA)"; clearing messages can be undone and all 30 are scrollable; the reload button only blocks the platform that is loading; budgets accept `1.500` and reject `1e3`. Logo downloads refuse hosts that resolve to private addresses.

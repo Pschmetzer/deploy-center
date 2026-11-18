@@ -23,6 +23,13 @@ expect("no word: different commits", item().hasNewCommits, true)
 expect("no word: same commit", item(head: "a").hasNewCommits, false)
 
 // What the row says.
+do {
+    let q = SearchQuery("is:waiting host:render repo:shop api")
+    expect("search: waiting", q.waiting ? "y" : "n", "y")
+    expect("search: host", q.platform ?? "", "render")
+    expect("search: repo", q.repo ?? "", "shop")
+    expect("search: text", q.text, "api")
+}
 expect("commits and PRs", Row.waitingText(item(changed: true, commits: 5, prs: 3)), L("5 commits · 3 PRs waiting", "5 Commits · 3 PRs warten"))
 expect("one of each", Row.waitingText(item(changed: true, commits: 1, prs: 1)), L("1 commit · 1 PR waiting", "1 Commit · 1 PR wartet"))
 expect("commits only", Row.waitingText(item(changed: true, commits: 2, prs: 0)), L("2 commits waiting", "2 Commits warten"))
