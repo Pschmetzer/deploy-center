@@ -3,6 +3,7 @@
 ## Unreleased
 
 - VS Code: the status bar says how many commits wait ("7 commits waiting"); it counts projects only when a commit count is not known for all of them.
+- App: the deploy confirmation shows the newest commit message of each project with changes waiting (up to 5; not in demo mode).
 - Website: five guide pages have shorter search titles (and one a shorter description).
 - App: "More" → "Tick the N merged fixes" ticks every project whose autofix PR was merged and is waiting to go live (ticks only; deploying still needs its click).
 - Integrations: Raycast "Waiting Deploys" shows the estimated cost of the next deploy (`deploys plan --json`) in its header, and Alfred gets a second Script Filter, `deploys-plan.sh`, with the sum and a price per project. Both only read; nothing starts.
