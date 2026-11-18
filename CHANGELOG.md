@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- App: a row's menu has "Check the site now": one request, the answer and its time in a note. It only looks; nothing is rolled back.
 - Docs: `idle`, `list --format tsv` and `doctor --text` in the CLI reference; weekly goal and idle projects in the settings page; the command palette, Copy list and Copy summary on the search and deploy pages (English and German).
 - App: the window subtitle also says how many projects failed their last deploy.
 - Settings → Costs: the week in review (last 7 days against the 7 before) is shown in the app, not only as a Monday notification.
