@@ -24,6 +24,9 @@ struct CostsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var hovered: String?
     @State private var sharing = false
+    @State private var reportCopied = false
+    @State private var editing: String?
+    @State private var budgets = ProjectBudgets.all()
     /// Settings → Costs; 0 = no budget, then neither the line nor the sentence.
     @AppStorage("monthlyBudget") private var budget = 0.0
     private static let dayFormat: DateFormatter = {
@@ -106,7 +109,10 @@ struct CostsSheet: View {
     private var summary: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(L("Vercel builds, last 7 days", "Vercel-Builds, letzte 7 Tage")).font(.caption).foregroundStyle(.secondary)
-            Text(costs.week, format: .currency(code: "USD")).font(.title3.weight(.semibold).monospacedDigit())
+            HStack(spacing: 10) {
+                Text(costs.week, format: .currency(code: "USD")).font(.title3.weight(.semibold).monospacedDigit())
+                Sparkline(values: CostInsights.series(costs.days))
+            }
             Text(L("≈ ", "≈ ") + (average * 30).formatted(.currency(code: "USD")) + L(" a month at this pace", " im Monat bei diesem Tempo"))
                 .font(.caption).foregroundStyle(.secondary)
                 .help(L("From the last 7 whole days; today is not over yet", "Aus den letzten 7 ganzen Tagen; heute ist noch nicht vorbei"))
@@ -128,6 +134,19 @@ struct CostsSheet: View {
             if let line = Self.budgetLine(budget: budget, days: costs.days, today: Self.today()) {
                 Text(line.text).font(.caption.weight(.medium)).foregroundStyle(line.over ? Color.warningText : .secondary)
             }
+            let once = CostInsights.onceADaySaving(costs)
+            if once >= 0.01 {
+                Text(L("What if: one build a day per project would have saved ≈ \(once.formatted(.currency(code: "USD"))) this week",
+                       "Was wäre wenn: ein Build pro Tag und Projekt hätte diese Woche ≈ \(once.formatted(.currency(code: "USD"))) gespart"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Button(reportCopied ? L("Copied ✓", "Kopiert ✓") : L("Copy report (Markdown)", "Bericht kopieren (Markdown)")) {
+                let md = CostInsights.report(costs, budget: budget, today: Self.today(), names: !Demo.on)
+                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(md, forType: .string)
+                reportCopied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { reportCopied = false }
+            }
+            .buttonStyle(.link).font(.caption)
         }
     }
 
@@ -139,6 +158,10 @@ struct CostsSheet: View {
                 Text(L("By project, 7 days", "Nach Projekt, 7 Tage")).font(.caption).foregroundStyle(.secondary)
                 ForEach(Array(top), id: \.name) { p in
                     HStack {
+                        if let b = budgets[p.name], let l = CostInsights.light(week: p.build, budget: b) {
+                            Circle().fill(l == .green ? Color.good : (l == .yellow ? Color.orange : Color.red)).frame(width: 8, height: 8)
+                                .help(L("Budget \(b.formatted(.currency(code: "USD"))) a month", "Budget \(b.formatted(.currency(code: "USD"))) im Monat"))
+                        }
                         Text(Demo.mask(p.name)).lineLimit(1)
                         Spacer()
                         if let n = p.builds { Text(L("\(n) builds", "\(n) Builds")).foregroundStyle(.secondary) }
@@ -146,6 +169,10 @@ struct CostsSheet: View {
                     }
                     .font(.callout)
                     .accessibilityElement(children: .combine)
+                    .contextMenu { Button(L("Set a budget …", "Budget festlegen …")) { editing = p.name } }
+                    .popover(isPresented: Binding(get: { editing == p.name }, set: { if !$0 { editing = nil; budgets = ProjectBudgets.all() } })) {
+                        ProjectBudgetEditor(name: p.name)
+                    }
                 }
             }
         }
