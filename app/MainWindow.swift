@@ -314,7 +314,10 @@ struct ContentView: View {
             let q = SearchQuery(appliedSearch)
             all = all.filter { i in
                 if q.failed && !i.failed { return false }
+                if q.waiting && !i.hasNewCommits { return false }
                 if let p = q.platform, i.platform.cli != p { return false }
+                // In demo mode the real repo name must not be searchable.
+                if let r = q.repo, Demo.on || !(i.repo ?? "").lowercased().contains(r) { return false }
                 if q.text.isEmpty { return true }
                 // In demo mode only the stand-in counts: typing a real name must not find the project.
                 if Demo.on { return Row.matches(Demo.mask(i.name), q.text) }
@@ -1691,17 +1694,22 @@ struct ContentView: View {
     }
 }
 
-/// The search box text split into operators (`is:failed`, `platform:render`) and the words to find.
+/// The search box text split into operators (`is:failed`, `is:waiting`, `platform:render` or `host:render`, `repo:name`) and the words to find.
 struct SearchQuery {
     var failed = false
+    var waiting = false
     var platform: String?
+    var repo: String?
     var text = ""
     init(_ raw: String) {
         var words: [String] = []
         for w in raw.split(separator: " ") {
             let l = w.lowercased()
             if l == "is:failed" { failed = true }
+            else if l == "is:waiting" { waiting = true }
             else if l.hasPrefix("platform:"), Platform.allCases.contains(where: { $0.cli == String(l.dropFirst(9)) }) { platform = String(l.dropFirst(9)) }
+            else if l.hasPrefix("host:"), Platform.allCases.contains(where: { $0.cli == String(l.dropFirst(5)) }) { platform = String(l.dropFirst(5)) }
+            else if l.hasPrefix("repo:"), l.count > 5 { repo = String(l.dropFirst(5)) }
             else { words.append(String(w)) }
         }
         text = words.joined(separator: " ")

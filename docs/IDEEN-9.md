@@ -5,7 +5,7 @@ Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
-- 14 „Nur Fehlgeschlagene anhaken“ pro Repo-Gruppe und 16 klappbare Gruppenköpfe (merkt sich den Zustand) sind umgesetzt.
+- 14 „Nur Fehlgeschlagene anhaken“ pro Repo-Gruppe und 16 klappbare Gruppenköpfe (merkt sich den Zustand) sind umgesetzt. 21 Suchfilter `repo:`, `host:` und `is:waiting` sind umgesetzt.
 
 ## Wartung und Repo
 
