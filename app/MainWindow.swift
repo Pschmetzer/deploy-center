@@ -632,6 +632,8 @@ struct ContentView: View {
         // The palette flips the filter that is on screen (through this counter), not only the stored one.
         // Received, not observed: the window does not redraw for every palette request.
         .onReceive(PaletteCenter.shared.$filterToggles.dropFirst()) { _ in onlyChanged.toggle() }
+        .onReceive(PaletteCenter.shared.$failedToggles.dropFirst()) { _ in search = SearchQuery.toggledFailed(search) }
+        .onReceive(PaletteCenter.shared.$searchRequest.dropFirst()) { search = $0.text }
         .onChange(of: store.pendingShow) { _, req in
             guard let req else { return }
             // Exactly this project: "app" as a plain search would also show "app-backend".
