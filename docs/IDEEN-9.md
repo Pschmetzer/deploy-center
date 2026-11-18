@@ -14,6 +14,7 @@ Erledigte Punkte stehen unter „Stand“.
 - 61 Widget „Nächster geplanter Deploy“ ist da (Snapshot-Feld `nextScheduled`, Widget in `widgets/`); die Mac-App muss das Feld noch befüllen.
 - 27 (Verlauf als CSV: `deploys journal export`) und 38 (Monatsbericht als Markdown: `deploys journal report`) sind umgesetzt.
 - 14 „Nur Fehlgeschlagene anhaken“ pro Repo-Gruppe und 16 klappbare Gruppenköpfe (merkt sich den Zustand) sind umgesetzt. 21 Suchfilter `repo:`, `host:` und `is:waiting` sind umgesetzt.
+- 63 Deploy per Face ID aus der Benachrichtigung ist umgesetzt (Aktion „Mit Face ID deployen“, prüft, dass das Projekt noch wartet; Face ID wie bei jedem Deploy).
 
 ## Wartung und Repo
 

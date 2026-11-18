@@ -411,6 +411,18 @@ final class PhoneStore: ObservableObject {
         } catch { say(error.localizedDescription, error: true); return false }
     }
 
+    /// The "Deploy with Face ID" action of a note: only a project that still waits, and never without Face ID.
+    func deployFromNote(key: String) async {
+        if projects.isEmpty { await reload() }
+        guard let p = projects.first(where: { $0.key == key }) else { return }
+        openKey = key
+        guard p.group == .waiting else {
+            say(L("\(p.name) no longer waits. Nothing was started.", "\(p.name) wartet nicht mehr. Es wurde nichts gestartet."))
+            return
+        }
+        await deploy(p)
+    }
+
     func deploy(_ p: PhoneProject) async {
         // Taken before Face ID: a second tap meanwhile must not start a second build.
         guard running[p.key] == nil else { return }
@@ -723,14 +735,20 @@ final class PhoneStore: ObservableObject {
 /// Actions on a notification: open the project, or no more news today (a deploy started here still reports its end).
 enum Notes {
     static let category = "deploy-center.news"
-    static let openAction = "open", muteAction = "mute-today"
+    static let waitingCategory = "deploy-center.waiting"
+    static let openAction = "open", muteAction = "mute-today", deployAction = "deploy-now"
     static let mutedKey = "notesMutedUntil"
 
     static func registerActions() {
         let open = UNNotificationAction(identifier: openAction, title: L("Open", "Öffnen"), options: [.foreground])
         let mute = UNNotificationAction(identifier: muteAction, title: L("Mute for today", "Heute stumm"), options: [])
+        // "Deploy": opens the app (it needs the screen for Face ID) and needs the device unlocked. Face ID
+        // is asked by the same path as every deploy, so a tap on the note alone starts nothing.
+        let deploy = UNNotificationAction(identifier: deployAction, title: L("Deploy with Face ID", "Mit Face ID deployen"),
+                                          options: [.foreground, .authenticationRequired])
         UNUserNotificationCenter.current().setNotificationCategories([
-            UNNotificationCategory(identifier: category, actions: [open, mute], intentIdentifiers: [], options: [])
+            UNNotificationCategory(identifier: category, actions: [open, mute], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: waitingCategory, actions: [deploy, open, mute], intentIdentifiers: [], options: [])
         ])
     }
     /// Until the start of tomorrow, in this device's calendar.
@@ -745,7 +763,7 @@ enum Notes {
         let c = UNMutableNotificationContent()
         c.title = "Deploy Center"; c.body = body; c.sound = .default
         c.threadIdentifier = "deploy-center"
-        c.categoryIdentifier = category
+        c.categoryIdentifier = (id ?? "").hasPrefix("waiting:") ? waitingCategory : category
         if let project { c.userInfo = ["project": project] }
         let r = UNNotificationRequest(identifier: id ?? "deploy-\(project ?? "")", content: c, trigger: nil)
         try? await UNUserNotificationCenter.current().add(r)
