@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- App: the error shown in the log and details windows has a "Help" button that opens the matching section of the troubleshooting page (English or German).
 - MCP: new read-only tool `deploys_cost` (`deploys plan --json`): what the next deploy would start and cost, as an estimate. Starts nothing.
 - App: a row's menu has "Check the site now": one request, the answer and its time in a note. It only looks; nothing is rolled back.
 - Docs: `idle`, `list --format tsv` and `doctor --text` in the CLI reference; weekly goal and idle projects in the settings page; the command palette, Copy list and Copy summary on the search and deploy pages (English and German).

@@ -131,7 +131,13 @@ struct BuildLog: View {
             if let error {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(Demo.scrub(error, items: [live])).foregroundStyle(.secondary).textSelection(.enabled)
-                    Button(L("Try again", "Nochmal versuchen")) { self.error = nil; attempt += 1 }
+                    HStack {
+                        Button(L("Try again", "Nochmal versuchen")) { self.error = nil; attempt += 1 }
+                        if let u = ErrorHelp.url(for: error) {
+                            Button(L("Help", "Hilfe")) { NSWorkspace.shared.open(u) }
+                                .help(L("Open the troubleshooting page for this message", "Die Hilfeseite zu dieser Meldung öffnen"))
+                        }
+                    }
                 }
                 .padding(16)
             }
@@ -406,7 +412,13 @@ struct ProjectDetail: View {
             if let error {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(scrub(error)).foregroundStyle(.secondary).textSelection(.enabled)
-                    Button(L("Try again", "Nochmal versuchen")) { self.error = nil; attempt += 1 }
+                    HStack {
+                        Button(L("Try again", "Nochmal versuchen")) { self.error = nil; attempt += 1 }
+                        if let u = ErrorHelp.url(for: error) {
+                            Button(L("Help", "Hilfe")) { NSWorkspace.shared.open(u) }
+                                .help(L("Open the troubleshooting page for this message", "Die Hilfeseite zu dieser Meldung öffnen"))
+                        }
+                    }
                 }
                 .padding(20)
             } else if let d = details {
