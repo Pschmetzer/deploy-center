@@ -191,7 +191,11 @@ export async function deployOne(p: { name: string; platform: string; headSha?: s
   }
 }
 
-export async function confirmAndDeploy(p: { name: string; platform: string; headSha?: string | null }, detail: string, onDone?: () => void) {
+export async function confirmAndDeploy(
+  p: { name: string; platform: string; headSha?: string | null },
+  detail: string,
+  onDone?: () => void,
+) {
   const ok = await confirmAlert({
     title: `Deploy ${p.name}?`,
     message: `${platformLabel(p.platform)} builds the newest commit to production.${detail ? `\n\n${detail}` : ""}`,
