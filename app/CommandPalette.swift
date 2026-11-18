@@ -63,7 +63,7 @@ func paletteOrder(query: String, entries: [(id: String, texts: [String])], recen
 // MARK: - Commands
 
 enum PaletteAction: String, CaseIterable {
-    case deployChanged, reload, stopAll, journal, settings, costs
+    case deployChanged, reload, stopAll, journal, settings, costs, logSearch
     case selectChanged, clearSelection, toggleFilter, showAll, demoMode, failedOnly
 }
 enum PaletteVerb: String, CaseIterable {
@@ -121,6 +121,9 @@ enum PaletteCommands {
         add(.journal, "Open journal (deploy history)", "Journal öffnen (Deploy-Verlauf)", "clock.arrow.circlepath")
         add(.settings, "Settings", "Einstellungen", "gear")
         add(.costs, "Costs", "Kosten", "dollarsign.circle")
+        if store.allItems.contains(where: { $0.failed }) {
+            add(.logSearch, "Search the logs of failed projects", "Logs fehlgeschlagener Projekte durchsuchen", "text.magnifyingglass")
+        }
         if !looksOnly && w.projects > 0 { add(.selectChanged, "Tick all changed", "Alle mit Änderungen anhaken", "checkmark.circle") }
         if store.items.values.contains(where: { $0.contains { $0.selected } }) {
             add(.clearSelection, "Clear the selection", "Auswahl leeren", "circle")
@@ -500,9 +503,9 @@ struct CommandPaletteHost: ViewModifier {
     @State private var stopping = false
 
     enum PaletteSheet: Identifiable {
-        case log(Item), journal, costs
+        case log(Item), journal, costs, logSearch
         var id: String {
-            switch self { case .log(let i): return "log|\(i.platform.cli)/\(i.id)"; case .journal: return "journal"; case .costs: return "costs" }
+            switch self { case .log(let i): return "log|\(i.platform.cli)/\(i.id)"; case .journal: return "journal"; case .costs: return "costs"; case .logSearch: return "logsearch" }
         }
     }
 
@@ -522,6 +525,7 @@ struct CommandPaletteHost: ViewModifier {
                 switch s {
                 case .log(let i): BuildLog(store: store, item: i)
                 case .journal: JournalView(costs: store.costs)
+                case .logSearch: LogSearchView(store: store)
                 case .costs: if let c = store.costs { CostsSheet(costs: c) } else { PaletteCosts() }
                 }
             }
@@ -583,6 +587,7 @@ struct CommandPaletteHost: ViewModifier {
             case .journal: sheet = .journal
             case .settings: NSApp.activate(ignoringOtherApps: true); openSettings()
             case .costs: sheet = .costs
+            case .logSearch: sheet = .logSearch
             case .selectChanged:
                 guard !store.observer else { return }
                 // Like ⌘A in the window: hidden projects stay out (Store.isWaiting).
