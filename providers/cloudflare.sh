@@ -181,7 +181,7 @@ CF_PHASE='def cf_skipped: (.is_skipped == true) or (.skip_reason != null) or (.l
     else "building" end;
   # The platform'"'"'s own word for it (the contract'"'"'s state): stage and status, e.g. build/active.
   def cf_raw: if .stage and .status then "\(.stage)/\(.status)" else (.status // .phase) end;
-  def cf_t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | fromdateiso8601) else null end;
+  def cf_t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
   def cf_dep: {id, phase:cf_phase, stage:(.latest_stage.name // null), status:(.latest_stage.status // null),
     environment, branch:(.deployment_trigger.metadata.branch // null),
     sha:(.deployment_trigger.metadata.commit_hash // null),
@@ -265,7 +265,7 @@ cloudflare_json() {
          lastMsg:($live.deployment_trigger.metadata.commit_message // null | if . then split("\n")[0] else null end),
          fetchError:null,
          phase:(if $new then ($new | cf_phase) else null end)}]
-    | sort_by(.name | ascii_downcase)'
+    | sort_by((.name // "") | ascii_downcase)'
 }
 
 # PATCH the whole source.config (partial PATCH is not documented as safe): GET, merge, PATCH.

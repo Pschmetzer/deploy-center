@@ -246,7 +246,7 @@ amplify_json() {
   done < <(echo "$apps" | jq -c '.[]')
   # ${pids[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
   wait ${pids[@]+"${pids[@]}"}
-  out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s 'sort_by(.name | ascii_downcase)')" || out=""
+  out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s 'sort_by((.name // "") | ascii_downcase)')" || out=""
   rm -rf "$tmpd"
   [ -n "$out" ] || die "Amplify: the apps could not be read"
   printf '%s\n' "$out"

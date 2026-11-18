@@ -166,7 +166,7 @@ hook_json() {
       # No status API: a 2xx answer is as far as anyone can see. For a while after it the build
       # is likely still running, so the list says queued, then ready (PRV-125).
       phase:(if $s.at == null then null elif $s.ok then (if ($now - $s.at) < $qs then "queued" else "ready" end) else "failed" end)}]
-    | sort_by(.name | ascii_downcase)')"
+    | sort_by((.name // "") | ascii_downcase)')"
   # No GitHub calls here: `deploys hook json` adds the branch heads (provider_json).
   echo "$list"
 }

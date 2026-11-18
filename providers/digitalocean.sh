@@ -169,7 +169,7 @@ digitalocean_id_fast() {
 # jq definitions shared by the readers below.
 # shellcheck disable=SC2016
 DIGITALOCEAN_JQ='
-  def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | fromdateiso8601) else null end;
+  def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
   # App Platform deployment phase -> contract phase. UNKNOWN is what a deployment has before
   # App Platform gave it a phase: it has not started, so it counts as queued.
   def phase: if . == null then null
@@ -289,7 +289,7 @@ digitalocean_json() {
          lastSha:(($live | sha_of) // ($new | sha_of)),
          lastMsg:($live.cause // $new.cause // null),
          fetchError:(._d.fetchError // null), phase:($new.phase // null | phase)} ]
-    | sort_by(.name | ascii_downcase)'
+    | sort_by((.name // "") | ascii_downcase)'
 }
 
 # digitalocean_off <app>: deploy_on_push=false on every component. GET the spec, change only the
