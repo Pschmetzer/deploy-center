@@ -4,6 +4,7 @@ Neue Ideen nach Runde 9. Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 1 Rechtsklick „Nur dieses Repo zeigen“ am Gruppenkopf ist umgesetzt.
 - 6 Gespeicherte Suchen in der Befehlspalette (und „Nur Fehlgeschlagene“) sind umgesetzt.
 - 3 Tastenkürzel ⌥⌘F ist umgesetzt.
 - 2 Trefferzahl der Suche und 8 rote Projekte im Gruppenkopf sind umgesetzt. 12 Warnung bei altem Commit und 14 „gerade erst deployt“ in der Bestätigung sind umgesetzt.

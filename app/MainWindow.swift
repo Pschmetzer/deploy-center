@@ -1492,6 +1492,13 @@ struct ContentView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("Repository \(Demo.mask(repo)), ", "Repository \(Demo.mask(repo)), ") + Self.repoSummary(items))
+        .contextMenu {
+            // Not in demo mode: the real repo name must not be typed into the search there.
+            if !Demo.on && !repo.contains(" ") {
+                Button(L("Show only this repo", "Nur dieses Repo zeigen")) { search = "repo:" + repo }
+            }
+            Button(collapsed ? L("Expand", "Aufklappen") : L("Collapse", "Zuklappen")) { toggleCollapsed(repo) }
+        }
     }
 
     /// Repo headers the user folded, remembered across launches (one repo per line).
