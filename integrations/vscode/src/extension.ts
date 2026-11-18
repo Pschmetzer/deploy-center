@@ -3,11 +3,11 @@
 
 import { execFile } from "node:child_process";
 import * as vscode from "vscode";
-import { canPreview, canRollback, deployArgs, deployFailure, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, rollbackArgs, Runner, urlIn } from "./cli";
+import { canPreview, canRollback, deployArgs, deployFailure, errorLine, findCli, loadPlanTotal, loadProjects, makeRunner, parseDeploy, projectArgs, rollbackArgs, Runner, urlIn } from "./cli";
 import { count, setTranslator, t } from "./i18n";
 import { coalesce } from "./coalesce";
 import { aiPrompt, maskSecrets } from "./log";
-import { describe, platformLabel, Project, statusText, summarize, followStep } from "./model";
+import { costLine, describe, platformLabel, Project, statusText, summarize, followStep } from "./model";
 import { parseRemotes, Scope, scopeProjects } from "./repo";
 
 // Every text for people in the editor's language (l10n/bundle.l10n.<lang>.json), English otherwise.
@@ -53,6 +53,8 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   shown: Project[] = [];
   matched = false;
   private warning: string | null = null;
+  /** The estimate of the next deploy, read after the list so a slow plan never holds it back. */
+  private cost = "";
   private state: ViewState = "loading";
   private lastRefresh = 0;
   /** One read at a time; a call during one (a changed setting) reads once more after it. */
@@ -129,8 +131,18 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     this.shown = scoped.projects;
     this.matched = scoped.matched;
     if (loaded.failed) return this.render("error");
-    if (!this.shown.length) return this.render(this.all.length && cfg().scope === "repo" ? "nomatch" : "empty");
+    if (!this.shown.length) { this.cost = ""; return this.render(this.all.length && cfg().scope === "repo" ? "nomatch" : "empty"); }
     this.render("ok");
+    void this.loadCost();
+  }
+
+  private async loadCost(): Promise<void> {
+    const run = this.run;
+    if (!run) return;
+    const line = costLine(await loadPlanTotal(run, cfg().timeoutMs).catch(() => null));
+    if (this.disposed || line === this.cost) return;
+    this.cost = line;
+    if (this.state === "ok") this.render("ok");
   }
 
   private render(state: ViewState): void {
@@ -160,6 +172,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     if (!this.shown.length) md.appendMarkdown((state === "nomatch" ? t("No project deploys from this folder's repo.") : t("Nothing is waiting.")) + "\n\n");
     for (const p of this.shown.slice(0, 15)) md.appendText(`${p.name}: ${describe(p)}\n`).appendMarkdown("\n");
     if (this.shown.length > 15) md.appendText(t("… and {0} more", this.shown.length - 15) + "\n");
+    if (this.cost) md.appendText(this.cost + "\n").appendMarkdown("\n");
     if (this.warning) md.appendMarkdown("\n").appendText(`⚠ ${this.warning}`);
     s.tooltip = md;
   }
