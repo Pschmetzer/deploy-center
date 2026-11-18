@@ -208,7 +208,7 @@ private struct GuardAllowances: View {
 
     private func row(_ a: GuardStatus.Allowance, now: Date) -> some View {
         HStack {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityLabel(L("Warning", "Warnung"))
             Text(scope(a))
             Spacer()
             Text(left(a, now: now)).foregroundStyle(.secondary).monospacedDigit()
