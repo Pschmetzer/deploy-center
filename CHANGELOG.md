@@ -7,6 +7,7 @@
 - App: the window subtitle also says how many projects failed their last deploy.
 - Settings → Costs: the week in review (last 7 days against the 7 before) is shown in the app, not only as a Monday notification.
 
+- CLI: exit clean-up now runs functions (`trap_fn`) instead of text through `eval`, for the temp files and locks that took paths.
 - App: a row's menu has "Copy summary" (name, platform and what waits, one line).
 - CLI: the state files (autofix, scan, allow, guard) are written through one `atomic_write` helper: whole or not at all.
 - App: the deploy confirmation has "Copy list" for the projects about to go live.
