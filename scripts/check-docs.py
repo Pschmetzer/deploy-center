@@ -60,7 +60,8 @@ if sections(en) != sections(de):
 # the German pages that stand in for an English one
 ALIAS = {"docs/NUMBERS.md": "docs/ZAHLEN.md", "docs/SAVINGS.md": "docs/ERSPARNIS.md",
          "docs/FAQ.md": "docs/FAQ.de.md", "docs/SAFE-START.md": "docs/SAFE-START.de.md",
-         "docs/TROUBLESHOOTING.md": "docs/TROUBLESHOOTING.de.md", "docs/CLI.md": "docs/CLI.de.md"}
+         "docs/TROUBLESHOOTING.md": "docs/TROUBLESHOOTING.de.md", "docs/CLI.md": "docs/CLI.de.md",
+         "docs/FIRST-START.md": "docs/FIRST-START.de.md", "docs/SETTINGS.md": "docs/SETTINGS.de.md"}
 de_links = set(doclinks(de))
 missing = [d for d in doclinks(en) if d not in de_links and ALIAS.get(d) not in de_links]
 if missing:
