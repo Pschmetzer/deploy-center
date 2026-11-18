@@ -44,6 +44,14 @@ struct GoalsSection: View {
                 Text(L("This week: \(n) of \(goal)", "Diese Woche: \(n) von \(goal)"))
                     .foregroundStyle(s == .over ? Color.red : (s == .last ? Color.orange : Color.secondary))
             }
+            // The week in review: the last 7 days, and the 7 before them for comparison.
+            let p = JournalStats.periods(entries, days: 7)
+            if let line = JournalStats.summaryLine(p.recent) {
+                Text(L("Last 7 days: ", "Letzte 7 Tage: ") + line)
+                if let before = JournalStats.summaryLine(p.before) {
+                    Text(L("The 7 days before: ", "Die 7 Tage davor: ") + before).font(.caption).foregroundStyle(.secondary)
+                }
+            }
             let idle = WeekGoals.idle(entries)
             if !idle.isEmpty {
                 Text(L("No deploy for 90 days (consider pausing):", "Seit 90 Tagen kein Deploy (Pausieren erwägen):")).font(.caption)
