@@ -71,13 +71,17 @@ render_call() {
 }
 
 render_services() {
-  local cursor="" page all="[]"
+  local cursor="" page all="[]" pages=0
   while :; do
     # `|| return`: inside $(...) set -e is off, and a failed page used to loop here for ever.
     page="$(render_call GET "/services?limit=100${cursor:+&cursor=$(jq -rn --arg c "$cursor" '$c|@uri')}")" || return 1
+    echo "$page" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "Render: a page of the services is not a list" >&2; return 1; }
     all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$page"))"
     [ "$(echo "$page" | jq 'length')" -lt 100 ] && break
-    cursor="$(echo "$page" | jq -r '.[-1].cursor')"
+    cursor="$(echo "$page" | jq -r '.[-1].cursor // empty')"
+    # No cursor on the last row: asking again with none would start over, and over, for ever.
+    [ -n "$cursor" ] || break
+    pages=$((pages + 1)); [ "$pages" -lt 100 ] || { echo "Render: more than 100 pages of services; the list stops here" >&2; break; }
   done
   echo "$all" | jq '[.[].service]'
 }

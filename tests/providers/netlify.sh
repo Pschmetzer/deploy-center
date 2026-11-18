@@ -304,6 +304,15 @@ expect "set-key: exit 0" "$rc" 0
 expect "set-key: checked with /user" "$(calls 'curl GET .*/api/v1/user')" 1
 expect "set-key: saved via stdin" "$(grep -c 'security -i STDIN\[add-generic-password -U -a tester -s deploy-center-netlify -w good-token\]' "$CALLS")" 1
 expect "set-key: token never an argument" "$(grep -- 'good-token' "$CALLS" | grep -vc 'STDIN\[')" 0
+# Pagination edges: exactly 100 on page 1 asks for page 2 (empty: done); a page that is not a list
+# ends the read with a reason; a host that ignores `page` stops at 100 pages.
+full100='[0'; for i in $(seq 1 99); do full100="$full100,$i"; done; full100="$full100]"
+out="$( netlify_call() { if [[ "$2" == *page=1 ]]; then echo "$full100"; else echo '[]'; fi; }; netlify_sites | jq length )"
+expect "sites: exactly 100 then an empty page" "$out" 100
+out="$( netlify_call() { if [[ "$2" == *page=1 ]]; then echo "$full100"; else echo '{"message":"slow down"}'; fi; }; netlify_sites 2>&1 )"; rc=$?
+expect "sites: a page that is not a list is an error" "$rc:$(grep -c 'is not a list' <<< "$out")" "1:1"
+out="$( netlify_call() { echo "$full100"; }; netlify_sites 2>&1 | grep -c 'more than 100 pages' )"
+expect "sites: a host that ignores page stops" "$out" 1
 out="$(printf '' | netlify_set_key 2>&1)"; rc=$?
 expect "set-key: empty refused" "$rc" 1
 
