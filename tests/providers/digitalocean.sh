@@ -187,6 +187,13 @@ out="$(digitalocean_on blog 2>&1)"; rc=$?
 expect "on blog without backup: refused" "$rc" 1
 has "on blog: points to the dashboard" "$out" "cloud.digitalocean.com/apps/app-blog/settings"
 
+# --- two apps with one name: refused, never picked at random ---
+out="$( digitalocean_apps() { echo '[{"id":"a-1","spec":{"name":"twin"}},{"id":"a-2","spec":{"name":"twin"}},{"id":"a-3","spec":{"name":"solo"}}]'; }
+        digitalocean_id_of twin 2>&1 )"; rc=$?
+expect "twin names: refused with the ids" "$rc:$(grep -c 'Several DigitalOcean apps match "twin"; use the app id: a-1 a-2' <<< "$out")" "1:1"
+out="$( digitalocean_apps() { echo '[{"id":"a-1","spec":{"name":"twin"}},{"id":"a-3","spec":{"name":"solo"}}]'; }; digitalocean_id_of solo )"
+expect "one match: its id" "$out" "a-3"
+
 # --- deploy ---
 reset
 out="$(digitalocean_deploy_json shop 2>&1)"; rc=$?

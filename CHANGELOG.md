@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- DigitalOcean: when two apps match one name or domain, the command is refused with their ids instead of acting on the first one.
 - Providers: an empty or non-JSON answer (a proxy page) to a deploy start (Render) or a status read (Render, Netlify, Coolify) is now an error with a reason, not a silent success or a false "no deploy" that stopped `watch`.
 - Site: `llms.txt` lists the new docs pages.
 - Docs: `deploys certs` and `deploys creds` in the CLI reference and the troubleshooting page, `plan --since` in the German CLI page.
