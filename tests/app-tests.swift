@@ -55,6 +55,8 @@ do {
     expect("freshness: old commit", DeployConfirm.freshnessNote([b]).contains("30") ? "y" : "n", "y")
     expect("freshness: nothing", DeployConfirm.freshnessNote([item(changed: false)]), "")
 }
+expect("toggle failed on", SearchQuery.toggledFailed("api"), "api is:failed")
+expect("toggle failed off", SearchQuery.toggledFailed("api is:failed"), "api")
 expect("commits and PRs", Row.waitingText(item(changed: true, commits: 5, prs: 3)), L("5 commits · 3 PRs waiting", "5 Commits · 3 PRs warten"))
 expect("one of each", Row.waitingText(item(changed: true, commits: 1, prs: 1)), L("1 commit · 1 PR waiting", "1 Commit · 1 PR wartet"))
 expect("commits only", Row.waitingText(item(changed: true, commits: 2, prs: 0)), L("2 commits waiting", "2 Commits warten"))

@@ -1710,6 +1710,10 @@ struct ContentView: View {
             Button(L("Select all changed", "Alle mit Änderungen anhaken")) { selectAllCommand() }
                 .keyboardShortcut("a")
                 .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+            // ⌥⌘F: only failed projects, i.e. the search operator `is:failed` on or off.
+            Button(L("Show failed only", "Nur Fehlgeschlagene zeigen")) { search = SearchQuery.toggledFailed(search) }
+                .keyboardShortcut("f", modifiers: [.command, .option])
+                .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
         }
     }
 
@@ -1814,6 +1818,12 @@ enum SavedSearches {
 
 /// The search box text split into operators (`is:failed`, `is:waiting`, `platform:render` or `host:render`, `repo:name`) and the words to find.
 struct SearchQuery {
+    /// The search text with `is:failed` added, or removed when it is there.
+    static func toggledFailed(_ raw: String) -> String {
+        let words = raw.split(separator: " ").map(String.init)
+        if words.contains(where: { $0.lowercased() == "is:failed" }) { return words.filter { $0.lowercased() != "is:failed" }.joined(separator: " ") }
+        return (words + ["is:failed"]).joined(separator: " ")
+    }
     var failed = false
     var waiting = false
     var platform: String?
