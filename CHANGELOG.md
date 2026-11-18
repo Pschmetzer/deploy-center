@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- MCP: new read-only tool `deploys_cost` (`deploys plan --json`): what the next deploy would start and cost, as an estimate. Starts nothing.
 - App: a row's menu has "Copy summary" (name, platform and what waits, one line).
 - CLI: the state files (autofix, scan, allow, guard) are written through one `atomic_write` helper: whole or not at all.
 - App: the deploy confirmation has "Copy list" for the projects about to go live.

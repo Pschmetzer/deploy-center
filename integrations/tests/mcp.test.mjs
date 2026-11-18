@@ -71,7 +71,7 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_allowed", "deploys_changed", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_guard_status", "deploys_history", "deploys_ledger", "deploys_list", "deploys_logs",
+const READ = ["deploys_allowed", "deploys_changed", "deploys_cost", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_guard_status", "deploys_history", "deploys_ledger", "deploys_list", "deploys_logs",
   "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
@@ -188,6 +188,11 @@ check("simulate takes days 1–90, default 30", JSON.stringify(listed.find((t) =
   JSON.stringify({ type: "integer", minimum: 1, maximum: 90, default: 30, description: "How many past days to count pushes over (1–90, default 30)." }));
 check("instructions mention the estimates", /deploys_simulate/.test(info?.instructions ?? "") && /estimate/.test(info?.instructions ?? ""), info?.instructions);
 
+writeFileSync(calls, "");
+r = await s.call("deploys_cost");
+const cost = r.error ? {} : JSON.parse(r.text);
+check("cost returns the plan with its sum and runs plan --json", cost.estimate === true && cost.total?.builds === 2 && cost.total?.usd === 1.2 && callLog().trim() === "plan --json", r.text.slice(0, 300));
+check("cost says the numbers are estimates", /estimate/i.test(listed.find((t) => t.name === "deploys_cost")?.description ?? "") && /`method`/.test(listed.find((t) => t.name === "deploys_cost")?.description ?? ""));
 writeFileSync(calls, "");
 r = await s.call("deploys_simulate");
 let rep = r.error ? {} : JSON.parse(r.text);
