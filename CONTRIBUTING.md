@@ -56,6 +56,7 @@ CI (`.github/workflows/ci.yml`) runs these on macOS, and they must pass:
 
 ```bash
 scripts/check-public.sh             # no personal data in tracked files
+scripts/check-size.sh               # line ceilings for deploys, lib/, providers/ and the Swift files
 actionlint .github/workflows/*.yml docs/deploy-on-label.yml examples/*.yml integrations/*/examples/*.yml
 shellcheck --severity=warning deploys providers/*.sh build.sh release.sh scripts/*.sh tests/*.sh tests/lib/*.sh tests/providers/*.sh lib/*.sh
 shellcheck --severity=warning integrations/*/*.sh integrations/claude-code/scripts/*.sh integrations/hooks/pre-push integrations/tests/*.sh

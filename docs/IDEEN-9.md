@@ -5,6 +5,8 @@ Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 4 (Dateilänge) ist umgesetzt: `scripts/check-size.sh` läuft im CI und setzt Obergrenzen für `deploys`, `lib/`, `providers/` und die Swift-Dateien.
+- 1 (Agent-Worktrees): Hinweis unten. `git worktree list` zeigt sie, `git worktree prune` entfernt nur verwaiste Einträge; saubere Worktrees entfernt man mit `git worktree remove <pfad>`. Nichts davon geschieht automatisch.
 - 59 Wochenrückblick in den Einstellungen (Kosten). 24 gibt es schon (Bilanz mit aufklappbarer Rechnung je Projekt), 35 steht in der Gesundheitskarte. 30 bleibt offen: das Skript liefert kein Token-Alter.
 - 6 (`trap` ohne `eval`) ist für Temp-Dateien und Sperren umgesetzt (`trap_fn`); die Aufräumer in den Anbieter-Dateien und im Scan behalten ihren Text.
 - 5 (`atomic_write`) ist umgesetzt.

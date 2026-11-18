@@ -36,6 +36,8 @@ jobs:
         run: brew install jq shellcheck actionlint
       - name: No personal data in the public repo
         run: scripts/check-public.sh
+      - name: File sizes stay under their ceilings
+        run: scripts/check-size.sh
       - name: actionlint (workflows and the example workflows people copy)
         run: actionlint .github/workflows/*.yml docs/deploy-on-label.yml examples/*.yml integrations/*/examples/*.yml
       - name: shellcheck
