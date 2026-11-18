@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Docs: `idle`, `list --format tsv` and `doctor --text` in the CLI reference; weekly goal and idle projects in the settings page; the command palette, Copy list and Copy summary on the search and deploy pages (English and German).
+- App: the window subtitle also says how many projects failed their last deploy.
 - App: a row's menu has "Copy summary" (name, platform and what waits, one line).
 - CLI: the state files (autofix, scan, allow, guard) are written through one `atomic_write` helper: whole or not at all.
 - App: the deploy confirmation has "Copy list" for the projects about to go live.
