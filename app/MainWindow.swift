@@ -82,6 +82,13 @@ enum DeployConfirm {
         return "\n\n" + L("Newest commit:", "Neuester Commit:") + "\n" + lines.prefix(5).joined(separator: "\n") + more
     }
 
+    /// A Markdown list of what waits to go live, for a chat or a ticket: one line per project, names masked in demo mode.
+    static func waitingList(_ items: [Item]) -> String {
+        let rows = items.filter { $0.hasNewCommits }
+        guard !rows.isEmpty else { return "" }
+        return rows.map { "- " + Demo.mask($0.name) + ($0.pendingCommits ?? 0 > 0 ? " – " + Row.waitingText($0) : "") }.joined(separator: "\n")
+    }
+
     /// The ticked ones already on their newest commit: building them costs and changes nothing.
     static func unchangedNote(_ items: [Item]) -> String {
         let same = items.filter { !$0.hasNewCommits && $0.headSha != nil }.map { Demo.mask($0.name) }
@@ -1709,6 +1716,13 @@ struct ContentView: View {
                 previewScopes.forEach { store.deploySelected($0, preview: true) }
             }
             .disabled(previewScopes.isEmpty || store.observer)
+            let waitingRows = visible.filter { $0.hasNewCommits }
+            Button(L("Copy list of waiting projects", "Liste der wartenden Projekte kopieren")) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(DeployConfirm.waitingList(waitingRows), forType: .string)
+                store.show(Store.Toast(text: L("\(waitingRows.count) projects copied", "\(waitingRows.count) Projekte kopiert"), ok: true))
+            }
+            .disabled(waitingRows.isEmpty)
             Divider()
             Button(L("Deploy history …", "Deploy-Verlauf …")) { showJournal = true }
             Button(L("Latest messages …", "Letzte Meldungen …")) { showMessages = true }

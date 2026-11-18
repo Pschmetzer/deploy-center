@@ -44,6 +44,8 @@ do {
     for n in 0..<20 { many = SavedSearches.adding("q\(n)", to: many) }
     expect("saved searches: limit", String(SavedSearches.parse(many).count), String(SavedSearches.limit))
 }
+expect("waiting list empty", DeployConfirm.waitingList([item(changed: false)]), "")
+expect("waiting list line", DeployConfirm.waitingList([item(changed: true, commits: 2, prs: 0)]).hasPrefix("- ") ? "y" : "n", "y")
 expect("commits and PRs", Row.waitingText(item(changed: true, commits: 5, prs: 3)), L("5 commits · 3 PRs waiting", "5 Commits · 3 PRs warten"))
 expect("one of each", Row.waitingText(item(changed: true, commits: 1, prs: 1)), L("1 commit · 1 PR waiting", "1 Commit · 1 PR wartet"))
 expect("commits only", Row.waitingText(item(changed: true, commits: 2, prs: 0)), L("2 commits waiting", "2 Commits warten"))
