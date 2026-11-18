@@ -1987,4 +1987,20 @@ do {
     }
 }
 
+// Log search and grouping of identical build errors across projects.
+do {
+    let a = "Error: Cannot find module '/build/abc1234/app/x.js' at 12:03"
+    let b = "error: cannot find module '/work/def5678/shop/x.js' at 40:9"
+    expect("group: same signature", LogGroups.signature(a), LogGroups.signature(b))
+    expect("group: different error", LogGroups.signature(a) == LogGroups.signature("Error: out of memory") ? "same" : "differs", "differs")
+    let logs: [(project: String, text: String)] = [("one", "ok\n" + a), ("two", b + "\nmore"), ("three", "Error: out of memory"), ("four", "all fine")]
+    let g = LogGroups.group(logs)
+    expect("group: count", g.count, 2)
+    expect("group: biggest first", g[0].projects, ["one", "two"])
+    let h = LogGroups.search("MODULE  cannot", in: logs)
+    expect("search: hits", h.map { "\($0.project):\($0.line)" }, ["one:2", "two:1"])
+    expect("search: empty query", LogGroups.search("  ", in: logs).count, 0)
+    expect("search: cap per project", LogGroups.search("x", in: [("p", String(repeating: "x\n", count: 50))], perProject: 5).count, 5)
+}
+
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
