@@ -74,6 +74,15 @@ expect "FEA-110: through deploys render autodeploy-on" "$(echo "$out" | jq -c .o
 out="$(lib 'render_logs srv-a 5 --runtime')"
 expect "runtime log: the app's lines, oldest first, colours removed" "$out" "$(printf 'listening on 10000\nGET / 200')"
 expect "runtime log: type=app, no deploy window" "$(grep -c 'type=app&limit=5&direction=backward$' "$CALLS")" 1
+# Pagination edges: the last row has no cursor, a page is not a list, a host that repeats forever.
+full100='[{"cursor":"c0","service":{"id":"srv-0"}}'; for i in $(seq 1 99); do full100="$full100,{\"cursor\":\"c$i\",\"service\":{\"id\":\"srv-$i\"}}"; done; full100="$full100]"
+nocur="$(printf '%s' "$full100" | jq -c '.[-1] |= del(.cursor)')"
+out="$(lib "render_call() { echo '$nocur'; }; render_services | jq length")"
+expect "services: no cursor on the last row ends the read, no loop" "$out" 100
+out="$(lib "render_call() { echo '{\"message\":\"x\"}'; }; render_services; echo rc=\$?")"
+expect "services: a page that is not a list is an error" "$(grep -c 'not a list' "$tmp/err"):$(echo "$out" | tail -1)" "1:rc=1"
+out="$(lib "render_call() { echo '$full100'; }; render_services 2>&1 >/dev/null | grep -c 'more than 100 pages'")"
+expect "services: a host that repeats a page stops at 100 pages" "$out" 1
 expect "meta says runtimeLogs" "$(lib 'render_meta' | jq .runtimeLogs)" true
 
 echo
