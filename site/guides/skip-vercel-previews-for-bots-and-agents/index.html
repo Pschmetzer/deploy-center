@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Skip Vercel preview builds for Dependabot, Renovate and AI agent branches · Deploy Center</title>
+<title>Skip Vercel previews for Dependabot and AI agents · Deploy Center</title>
 <meta name="description" content="An Ignored Build Step that skips preview builds for bot and agent branches, so automated pushes stop costing build minutes.">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
@@ -14,7 +14,7 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
-<meta property="og:title" content="Skip Vercel preview builds for Dependabot, Renovate and AI agent branches · Deploy Center">
+<meta property="og:title" content="Skip Vercel previews for Dependabot and AI agents · Deploy Center">
 <meta property="og:description" content="An Ignored Build Step that skips preview builds for bot and agent branches, so automated pushes stop costing build minutes.">
 <meta property="og:url" content="https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
@@ -23,7 +23,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Skip Vercel preview builds for Dependabot, Renovate and AI agent branches · Deploy Center">
+<meta name="twitter:title" content="Skip Vercel previews for Dependabot and AI agents · Deploy Center">
 <meta name="twitter:description" content="An Ignored Build Step that skips preview builds for bot and agent branches, so automated pushes stop costing build minutes.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
 <meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -38,7 +38,7 @@
  {
   "@context": "https://schema.org",
   "@type": "TechArticle",
-  "headline": "Skip Vercel preview builds for Dependabot, Renovate and AI agent branches",
+  "headline": "Skip Vercel previews for Dependabot and AI agents",
   "description": "An Ignored Build Step that skips preview builds for bot and agent branches, so automated pushes stop costing build minutes.",
   "url": "https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/",
   "mainEntityOfPage": "https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/",
@@ -140,7 +140,7 @@
 
 <main id="main" class="wrap narrow"><article>
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
-<h1>Skip Vercel preview builds for Dependabot, Renovate and AI agent branches</h1>
+<h1>Skip Vercel previews for Dependabot and AI agents</h1>
 <p class="answer">Set this as the Ignored Build Step: <code>bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*|claude/*|cursor/*) exit 0;; *) exit 1;; esac'</code>. Exit 0 skips the build, exit 1 builds it. Change the prefixes to the ones your tools use.</p>
 <p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
