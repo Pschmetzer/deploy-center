@@ -1578,6 +1578,8 @@ struct ContentView: View {
         }
         if let l = item.link, let u = URL(string: l) {
             Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) }
+            // One request, nothing rolled back.
+            Button(L("Check the site now", "Seite jetzt prüfen")) { Task { await store.checkSiteNow(item) } }
         }
         Divider()
         Menu(L("More", "Mehr")) {
