@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Docs: new pages "The deploy journal" (verify, CSV export, monthly report) and "Deploying from the app" (cost in the bar, the confirmation, costs sheet), both also in German.
+- Mac app: the widget snapshot now carries the next run of the daily deploy (`deploys schedule daily`), so the "Next scheduled deploy" widget shows it. Read only.
 - Docs: new page "Search and saved searches" (also in German) and glossary entries for repo group, saved search and merged fix.
 - iPhone: a "project is waiting" notification has a "Deploy with Face ID" action. It opens the app, checks the project still waits and asks Face ID like every deploy; a tap on the note alone starts nothing.
 - App: a search shows how many rows match ("3/41"); a repo header also counts its failed projects.
