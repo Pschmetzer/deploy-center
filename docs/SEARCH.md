@@ -31,6 +31,10 @@ The bookmark button next to the field keeps the current search, such as `is:fail
 
 Projects that share a repo sit under one repo header. Click a header to fold it (the state is remembered). A header counts its failed projects and offers **Tick failed N** next to **Tick all** when only some failed. **More → Collapse all repo groups** and **Expand all repo groups** do all headers at once.
 
+## In the command palette
+
+The command palette has **Failed only (on/off)** and one line per saved search. A line fills the search box; nothing runs. Option-Command-F does the same as **Failed only**. Right-click a repo header for **Show only this repo**, which fills the search with `repo:name`.
+
 ## Merged fixes
 
 When an [Autofix](AUTOFIX.md) pull request is merged, its row stands out until the fix is live. **More → Tick the N merged fixes** ticks all of them. It only ticks; deploying still needs your click.

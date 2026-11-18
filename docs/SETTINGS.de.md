@@ -39,6 +39,13 @@ Das Fenster Einstellungen hat die Reiter Allgemein, Plattformen, Projekte, Deplo
 | Neutrale Mitteilungen | An: „Ein Deploy ist fertig“ ohne Projektnamen, sicher auf dem gesperrten Bildschirm. |
 | Vor riskanten Schritten nach Touch ID fragen | An: mehrere Projekte auf einmal deployen, ein Rollback von Hand und Auto-Deploy erlauben fragen nach Fingerabdruck oder Passwort. Das automatische Zurückrollen nach einem fehlgeschlagenen Check wartet nicht. |
 
+## Kosten: Ziele und ruhende Projekte
+
+| Option | Beispiel |
+| --- | --- |
+| Wochenziel für Deploys | 10: „Diese Woche: 7 von 10“ wird beim letzten Deploy orange und darüber rot. 0 schaltet es aus. Gezählt ab Montag. |
+| Ruhende Projekte | Listet Projekte ohne Deploy seit 90 Tagen, als Kandidaten zum Pausieren. Dieselbe Liste im Terminal: `deploys idle`. |
+
 ## Budget
 
 `deploys budget set 50` (oder der Abschnitt Budget) begrenzt die Vercel-Build-Ausgaben auf 50 $ im Monat: `deploy-changed --yes` hält an, bevor es darüber geht. Mit `--strict` auch, wenn die Ausgaben unbekannt sind. Siehe [CLI.de.md](CLI.de.md).

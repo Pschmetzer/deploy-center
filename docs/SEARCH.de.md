@@ -33,6 +33,10 @@ Der Lesezeichen-Knopf neben dem Feld merkt sich die aktuelle Suche, etwa `is:fai
 
 Projekte desselben Repos stehen unter einem Repo-Kopf. Ein Klick auf den Kopf klappt ihn zu (der Zustand wird gemerkt). Ein Kopf zählt seine fehlgeschlagenen Projekte und bietet **Fehlgeschlagene N anhaken** neben **Alle N anhaken**, wenn nur einige fehlschlugen. **Mehr → Alle Repo-Gruppen zuklappen** und **aufklappen** wirken auf alle Köpfe.
 
+## In der Befehlspalette
+
+Die Befehlspalette hat **Nur fehlgeschlagene (an/aus)** und eine Zeile je gespeicherte Suche. Eine Zeile füllt das Suchfeld; es läuft nichts. Wahl-Befehl-F tut dasselbe wie **Nur fehlgeschlagene**. Rechtsklick auf einen Repo-Kopf bietet **Nur dieses Repo zeigen**, das die Suche mit `repo:name` füllt.
+
 ## Gemergte Fixes
 
 Wird ein [Autofix](AUTOFIX.md)-Pull-Request gemergt, fällt seine Zeile auf, bis der Fix live ist. **Mehr → Die N gemergten Fixes anhaken** hakt alle an. Es hakt nur an; zum Deployen braucht es weiter deinen Klick.
