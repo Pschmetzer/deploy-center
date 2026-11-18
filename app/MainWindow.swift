@@ -69,6 +69,19 @@ enum DeployConfirm {
             + "\n\n" + newest
     }
 
+    /// The newest commit message of up to 5 projects with changes waiting, first line only, so the
+    /// person sees what goes live. Not in demo mode: a message could carry a real name.
+    static func headNote(_ items: [Item]) -> String {
+        guard !Demo.on else { return "" }
+        let lines: [String] = items.filter { $0.hasNewCommits }.compactMap { i in
+            guard let m = i.headMsg?.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init), !m.isEmpty else { return nil }
+            return "• " + i.name + ": " + (m.count > 80 ? String(m.prefix(79)) + "…" : m)
+        }
+        guard !lines.isEmpty else { return "" }
+        let more = lines.count > 5 ? "\n" + L("and \(lines.count - 5) more", "und \(lines.count - 5) weitere") : ""
+        return "\n\n" + L("Newest commit:", "Neuester Commit:") + "\n" + lines.prefix(5).joined(separator: "\n") + more
+    }
+
     /// The ticked ones already on their newest commit: building them costs and changes nothing.
     static func unchangedNote(_ items: [Item]) -> String {
         let same = items.filter { !$0.hasNewCommits && $0.headSha != nil }.map { Demo.mask($0.name) }
