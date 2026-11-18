@@ -347,7 +347,7 @@ coolify_unpin() {  # coolify_unpin <id> <value before> <pinned sha> [<name>]
 # The commit an app builds put back after a --sha deploy: <uuid> <pinned before> <app> <sha>.
 
 coolify_deploy_json() {
-  local app="$1" sha="" id info pinned="" out did lock="" one base rc saved_traps
+  local app="$1" sha="" force="" id info pinned="" out did lock="" one base rc saved_traps
   shift || true
   # The caller's own INT/TERM/HUP traps: put back after ours, never wiped.
   saved_traps="$(trap -p INT TERM HUP)"
@@ -355,8 +355,9 @@ coolify_deploy_json() {
     case "$1" in
       --preview) die "Coolify cannot deploy a preview from here (preview deploys need a pull request)" ;;
       --sha) sha="${2:-}"; [ -n "$sha" ] || die "Usage: deploy-json <application> --sha <commit>"; shift ;;
+      --no-cache) force="&force=true" ;;
       "") ;;
-      *) die "Unknown option $1. Usage: deploy-json <application> [--sha <commit>]" ;;
+      *) die "Unknown option $1. Usage: deploy-json <application> [--sha <commit>] [--no-cache]" ;;
     esac; shift
   done
   if [ -n "$sha" ]; then
@@ -385,7 +386,7 @@ coolify_deploy_json() {
     trap 'coolify_unpin "$id" "$pinned" "$sha" "$app"; rm -f "$lock"; eval "trap - INT TERM HUP; $saved_traps"; exit 130' INT TERM HUP
   fi
   # `|| rc=$?`, not `; rc=$?`: under set -e a failed POST would end the script before the unpin.
-  rc=0; out="$(coolify_call POST "/deploy?uuid=$id" 2>&1)" || rc=$?
+  rc=0; out="$(coolify_call POST "/deploy?uuid=$id$force" 2>&1)" || rc=$?
   if [ -n "$pinned" ]; then
     eval "trap - INT TERM HUP; $saved_traps"
     coolify_unpin "$id" "$pinned" "$sha" "$app"

@@ -62,6 +62,8 @@ they exist). Where a capability is `false` in `_meta`, the function still exists
 | `<p>_set_key` | Read a key from stdin, try it, save it in the keychain as `deploy-center-<p>`. |
 | `<p>_doctor` | One JSON object of checks (`{"<p>Key":true, …}`). Its fields join `deploys doctor`. Prefer `printf`; a provider whose checks carry free text (an error line) may build it with `jq -n` for the escaping (Netlify, Cloudflare, Amplify, Coolify, DigitalOcean do), and then `doctor` without jq loses only its fields. Providers with `"provider"` in it also give `expiresAt` (Unix seconds, when the key ends) and `rateLimit` (`{remaining, resetAt}`, Unix seconds) from the call the doctor makes anyway, `null` where the platform does not say (below). |
 
+Optional flag `--no-cache` on `<p>_deploy_json`: build without the host's cache (Render `clearCache`, Netlify `clear_cache=true` on the hook, DigitalOcean `force_build`, Coolify `force=true`). A host that cannot refuses it with `die` before sending anything; never ignore it silently.
+
 Optional: `<p>_where` (lines for `deploys where`), `<p>_history <id> <n>` (a table for
 `deploys history`), `<p>_usage <argc> <verb>` (usage lines for verbs with more arguments), and
 `<p>_cli_<verb>` for a command people type whose output is not the contract's. For example,

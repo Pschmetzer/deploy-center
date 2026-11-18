@@ -351,14 +351,15 @@ digitalocean_on() {
 
 # digitalocean_deploy_json <app> — a new deployment of the branch's newest commit.
 digitalocean_deploy_json() {
-  local app="$1" id info out lock=""
+  local app="$1" id info out lock="" force=false
   shift || true
   while [ $# -gt 0 ]; do
     case "$1" in
       --preview) die "DigitalOcean App Platform cannot deploy a preview (it has no preview deploys)" ;;
       --sha) die "DigitalOcean App Platform cannot deploy a given commit: a deployment always builds the newest commit of the branch" ;;
+      --no-cache) force=true ;;
       "") ;;
-      *) die "Unknown option $1. Usage: deploy-json <app>" ;;
+      *) die "Unknown option $1. Usage: deploy-json <app> [--no-cache]" ;;
     esac; shift
   done
   id="$(digitalocean_id_of "$app")" || die "DigitalOcean app $app not found"
@@ -366,7 +367,7 @@ digitalocean_deploy_json() {
   [ "$(echo "$info" | jq '.app.pinned_deployment != null')" = true ] \
     && die "DigitalOcean: $app is pinned to a rollback. Commit or revert it in the dashboard first: $DIGITALOCEAN_DASHBOARD/$id"
   if declare -F start_lock >/dev/null; then lock="$(start_lock "digitalocean-$id")" || exit 1; fi
-  out="$(digitalocean_call POST "/v2/apps/$id/deployments" '{"force_build":false}')" \
+  out="$(digitalocean_call POST "/v2/apps/$id/deployments" "{\"force_build\":$force}")" \
     || { rm -f "$lock"; die "DigitalOcean: could not start a deployment of $app"; }
   echo "$out" | jq -e '.deployment.id' >/dev/null 2>&1 || { rm -f "$lock"; die "DigitalOcean: $(echo "$out" | head -c 400)"; }
   echo "$out" | jq --argjson a "$(echo "$info" | jq -c .app)" "$DIGITALOCEAN_JQ"'

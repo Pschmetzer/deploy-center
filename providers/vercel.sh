@@ -341,7 +341,7 @@ vercel_start() {
 vercel_deploy_json() {
   local p="${1:?project}" pv="" sha=""; shift || true
   # An unknown flag (--sah) is refused: ignored, the newest commit would go live instead.
-  while [ $# -gt 0 ]; do case "$1" in --preview) pv=1;; --sha) sha="${2:?commit}"; shift;; "") ;; *) die "Unknown option $1. Usage: deploy-json <project> [--preview] [--sha <commit>]";; esac; shift; done
+  while [ $# -gt 0 ]; do case "$1" in --preview) pv=1;; --sha) sha="${2:?commit}"; shift;; --no-cache) die "Vercel cannot redeploy without the build cache from here (do it in the dashboard: Redeploy, cache off)";; "") ;; *) die "Unknown option $1. Usage: deploy-json <project> [--preview] [--sha <commit>]";; esac; shift; done
   vercel_start "$p" "$pv" "$sha"
 }
 
