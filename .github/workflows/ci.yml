@@ -262,8 +262,8 @@ jobs:
           cache: npm
           cache-dependency-path: integrations/raycast/package-lock.json
       - run: npm ci --no-audit --no-fund
-      - name: npm audit (production dependencies)
-        run: npm audit --omit=dev --audit-level=high
+      - name: npm audit (production dependencies; audit-allow.txt lists the reasoned exceptions)
+        run: ./audit-gate.sh
       - name: Build (ray build, offline)
         run: npx --no-install ray build -e dist
       - name: ESLint

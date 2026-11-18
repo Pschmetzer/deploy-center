@@ -157,10 +157,27 @@ elif [ -z "${DEPLOYS_CONFIG:-}" ]; then chmod 700 "$CONFIG_DIR" 2>/dev/null || t
 EXIT_CMDS=()
 _exit_traps() {
   local rc=$? i
-  for ((i = ${#EXIT_CMDS[@]} - 1; i >= 0; i--)); do eval "(exit $rc); ${EXIT_CMDS[$i]}" || true; done
+  local e
+  for ((i = ${#EXIT_CMDS[@]} - 1; i >= 0; i--)); do
+    e="${EXIT_CMDS[$i]}"
+    if [ "${e:0:1}" = $'\x1e' ]; then   # trap_fn: a function and its words, called without eval
+      local w=() sep=$'\x1f'; e="${e:1}"
+      while :; do w[${#w[@]}]="${e%%"$sep"*}"; case "$e" in *"$sep"*) e="${e#*"$sep"}" ;; *) break ;; esac; done
+      # shellcheck disable=SC2034  # read by the functions called here
+      EXIT_RC=$rc; "${w[@]}" || true
+    else eval "(exit $rc); $e" || true; fi
+  done
   return "$rc"
 }
 trap_add() { EXIT_CMDS[${#EXIT_CMDS[@]}]="$1"; trap '_exit_traps' EXIT; }
+# trap_fn <function> [word...]: the same at exit, but a function with its words (no text that is run as code, so no
+# quoting to get wrong). The words are fixed when it is added. Not for empty words. $EXIT_RC is the exit status.
+trap_fn() {
+  local IFS=$'\x1f'
+  EXIT_CMDS[${#EXIT_CMDS[@]}]=$'\x1e'"$*"; trap '_exit_traps' EXIT
+}
+exit_rm() { rm -f "$@"; }
+exit_rmdir() { rmdir "$@" 2>/dev/null || true; }
 trap_pop() {
   local n=${#EXIT_CMDS[@]}
   [ "$n" -gt 0 ] || return 0
@@ -1708,7 +1725,7 @@ autofix_run() {  # autofix_run [dry] [<platform> <project> [again]]  (the two: -
   # Whatever ends the run (set -e, a signal), the lock goes with it: else every run for 30 minutes
   # says "running already".
   # shellcheck disable=SC2034  # read inside the trap command, at exit
-  AF_RUN_LOCK="$lock"; trap_add 'rmdir "$AF_RUN_LOCK" 2>/dev/null || true' 
+  AF_RUN_LOCK="$lock"; trap_fn exit_rmdir "$AF_RUN_LOCK" 
   now="$(date +%s)"; trig="$(af_routine)"
   all="$(af_all)" || rc=1
   st="$(af_state)"
@@ -2486,7 +2503,7 @@ ai_run() {  # ai_run <explain|notes|ship> <project> [--json] [--lang en|de|fr|â€
   while [ $# -gt 0 ]; do case "$1" in --json) export AI_JSON=1;; --question) [ $# -ge 2 ] || die "--question needs the question: deploys ai ask <project> --question \"â€¦\""; q="$2"; shift;; --lang) [ $# -ge 2 ] || die "--lang needs en or de: deploys ai notes <project> --lang de"; lang="$2"; shift;; *) die "Unknown option $1";; esac; shift; done
   sys="$(mktemp)"; usr="$(mktemp)"
   # shellcheck disable=SC2064  # the two paths are fixed now, on purpose
-  trap_add "rm -f '$sys' '$usr'"
+  trap_fn exit_rm "$sys" "$usr"
   case "$what" in
     explain)
       cat > "$sys" <<'SYS'
@@ -2714,7 +2731,7 @@ if is_provider "${1:-}"; then
 fi
 
 # The team merge of this process (lib/team.sh keeps it once per process) goes with it.
-if team_on && [ -z "${DEPLOYS_LIB:-}" ] && declare -F team_eff_forget >/dev/null; then trap_add 'team_eff_forget'; fi
+if team_on && [ -z "${DEPLOYS_LIB:-}" ] && declare -F team_eff_forget >/dev/null; then trap_fn team_eff_forget; fi
 
 # `deploys <p> <verb> [args]`: <p>_cli_<verb> where a provider keeps a command's old output for
 # people, else the contract function <p>_<verb> (docs/PROVIDERS.md). autodeploy-off is off,
@@ -2919,7 +2936,7 @@ case "${1:-} ${2:-}" in
       [ -s "$jf" ] || exit 0
       jq -rR --arg since "$since" --arg proj "$proj" 'fromjson? | select(type == "object")
         | select($since == "" or ((.at // "") >= $since)) | select($proj == "" or .name == $proj)
-        | [.at, .platform, .name, .result, .detail] | map(. // "" | tostring | if test("^[=+@-]") then "\u0027" + . else . end) | @csv' "$jf"
+        | [.at, .platform, .name, .result, .detail] | map(. // "" | tostring | if test("^[=+@\t\r-]") then "\u0027" + . else . end) | @csv' "$jf"
       exit 0 ;;
     report)
       # journal report [--month YYYY-MM]: what happened in a month, as Markdown (idea 38).
@@ -2930,7 +2947,7 @@ case "${1:-} ${2:-}" in
       [[ "$mon" =~ ^[0-9]{4}-[0-9]{2}$ ]] || die "--month wants a month like 2025-01."
       printf '# Deploy Center: %s\n\n' "$mon"
       if [ ! -s "$jf" ]; then echo "No journal yet."; exit 0; fi
-      jq -rRs --arg m "$mon" '[split("\n")[] | fromjson? | select(type == "object") | select((.at // "") | startswith($m))] as $l
+      jq -rRs --arg m "$mon" '[split("\n")[] | fromjson? | select(type == "object") | select((.at // "") | tostring | startswith($m)) | .result = (.result // "" | tostring) | .name = (.name // "" | tostring) | .platform = (.platform // "" | tostring)] as $l
         | if ($l | length) == 0 then "Nothing in this month."
           else "\($l | length) entries.\n\n| Result | Count |\n| --- | ---: |\n"
             + ($l | group_by(.result) | map("| \(.[0].result | gsub("[|\n]"; " ")) | \(length) |") | join("\n"))
@@ -3275,7 +3292,7 @@ case "${1:-} ${2:-}" in
     # --follow: read it again every few seconds and print only what is new, until the build is over (a runtime
     # log goes on until Ctrl-C). Masked like the rest.
     if [ -n "$follow" ]; then
-      lt="$(mktemp)"; prevl="$(mktemp)"; curl_="$(mktemp)"; trap_add 'rm -f "$lt" "$prevl" "$curl_"' 
+      lt="$(mktemp)"; prevl="$(mktemp)"; curl_="$(mktemp)"; trap_fn exit_rm "$lt" "$prevl" "$curl_" 
       first=1; fmiss=0
       while :; do
         lrc=0; ( "${PLAT}_logs" "$PID" "$n" "$did" ) > "$lt" 2>/dev/null || lrc=$?
@@ -4137,7 +4154,7 @@ BASH
     # so a row never says "fixing" for a PR that was merged hours ago. A run in progress does it already.
     af_reload
     lock="$(af_lock 2>/dev/null)" || { echo "autofix: a run is in progress; it syncs too."; exit 0; }
-    trap_add 'rmdir "$lock" 2>/dev/null || true'
+    trap_fn exit_rmdir "$lock"
     st="$(af_state)"; now="$(date +%s)"; dry=""; rc=0; all="[]"
     if [ -n "$(echo "$st" | jq -c --argjson t "$now" ".fires[] | select($AF_SYNC_SEL)")" ]; then
       all="$(af_all)" || rc=1

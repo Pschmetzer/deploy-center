@@ -20,6 +20,10 @@ With more than 3 projects, a red risk score or a mark, **Cancel** is the default
 
 After you confirm, **Settings → Deploy → Wait before a deploy starts** can give you a few seconds to cancel. See [SETTINGS.md](SETTINGS.md).
 
+## Copying
+
+**Copy list** in the confirmation puts the projects about to go live on the clipboard. A row's menu has **Copy summary**: name, platform and what waits, in one line.
+
 ## Costs
 
 **Costs …** opens the costs sheet. It has a 7-day sparkline, a chart of 7 or 14 days, the dearest project of the week, a monthly budget per project with a traffic light (right-click a project), a "what if one build a day" estimate and a Markdown report you can copy. A monthly cap for the CLI is `deploys budget set 50` ([CLI.md](CLI.md)).
