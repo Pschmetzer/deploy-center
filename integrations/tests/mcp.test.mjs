@@ -71,8 +71,7 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_allowed", "deploys_changed", "deploys_cost", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_ledger", "deploys_list", "deploys_logs",
-  "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_simulate", "deploys_status"];
+const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -188,6 +187,19 @@ check("simulate takes days 1–90, default 30", JSON.stringify(listed.find((t) =
   JSON.stringify({ type: "integer", minimum: 1, maximum: 90, default: 30, description: "How many past days to count pushes over (1–90, default 30)." }));
 check("instructions mention the estimates", /deploys_simulate/.test(info?.instructions ?? "") && /estimate/.test(info?.instructions ?? ""), info?.instructions);
 
+writeFileSync(calls, "");
+r = await s.call("deploys_certs");
+check("certs defaults to 14 days", !r.error && callLog().trim() === "certs --days 14 --json" && JSON.parse(r.text)[0]?.expiring === true, r.text + callLog());
+r = await s.call("deploys_certs", { days: 366 });
+check("certs refuses more than 365 days", r.error === true || /days must be/.test(r.text), r.text);
+writeFileSync(calls, "");
+r = await s.call("deploys_creds", { max_age: 30 });
+check("creds passes max_age and shows no key", !r.error && callLog().trim() === "creds --max-age 30 --json" && JSON.parse(r.text)[0]?.rotate === true && !/key"/.test(r.text.replace(/keyAgeDays/g, "")), r.text + callLog());
+writeFileSync(calls, "");
+r = await s.call("deploys_journal_report", { month: "2026-03" });
+check("journal report passes the month", !r.error && /2026-03/.test(r.text) && callLog().trim() === "journal report --month 2026-03", r.text + callLog());
+r = await s.call("deploys_journal_report", { month: "2026-13; rm" });
+check("journal report refuses a bad month", r.error === true || /month must/.test(r.text), r.text);
 writeFileSync(calls, "");
 r = await s.call("deploys_idle");
 check("idle defaults to 90 days and lists the project", !r.error && callLog().trim() === "idle --days 90 --json" && /old-api/.test(r.text) && /"days":90/.test(r.text), r.text + callLog());
