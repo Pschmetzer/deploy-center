@@ -1014,6 +1014,25 @@ let snapEN = DeploySnapshot(at: Date(), demo: false, waitingProjects: 1, waiting
 var snapNext = snapEN; snapNext.nextScheduled = .init(name: "Atlas-214", platform: "Vercel", at: Date().addingTimeInterval(600))
 expect("a snapshot with a planned deploy round-trips",
        (try? JSONDecoder().decode(DeploySnapshot.self, from: JSONEncoder().encode(snapNext)))?.nextScheduled?.name ?? "", "Atlas-214")
+do {
+    var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+    func at(_ d: String) -> Date { let f = ISO8601DateFormatter(); return f.date(from: d)! }
+    let fri = at("2026-11-20T10:00:00Z")   // a Friday
+    expect("next daily: later today", DeploySnapshot.nextDaily(at: "18:30", weekdaysOnly: false, after: fri, calendar: cal) == at("2026-11-20T18:30:00Z"), true)
+    expect("next daily: already past is tomorrow", DeploySnapshot.nextDaily(at: "09:00", weekdaysOnly: false, after: fri, calendar: cal) == at("2026-11-21T09:00:00Z"), true)
+    expect("next daily: weekdays skip the weekend", DeploySnapshot.nextDaily(at: "09:00", weekdaysOnly: true, after: fri, calendar: cal) == at("2026-11-23T09:00:00Z"), true)
+    expect("next daily: a bad time is none", DeploySnapshot.nextDaily(at: "25:00", weekdaysOnly: false, after: fri, calendar: cal) == nil, true)
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("nx-\(UUID().uuidString)")
+    let cfg = tmp.appendingPathComponent("cfg"), launch = tmp.appendingPathComponent("launch")
+    try? FileManager.default.createDirectory(at: cfg, withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(at: launch, withIntermediateDirectories: true)
+    try? Data(#"{"daily":{"at":"07:15","args":[]}}"#.utf8).write(to: cfg.appendingPathComponent("schedule.json"))
+    let env = ["DEPLOYS_CONFIG": cfg.path, "DEPLOYS_LAUNCH_DIR": launch.path]
+    expect("no launchd job: nothing planned", Store.nextScheduled(german: false, home: tmp, env: env) == nil, true)
+    FileManager.default.createFile(atPath: launch.appendingPathComponent("app.deploycenter.daily.plist").path, contents: Data())
+    expect("a daily job is planned", Store.nextScheduled(german: true, home: tmp, env: env)?.name ?? "", "Täglicher Deploy")
+    try? FileManager.default.removeItem(at: tmp)
+}
 var snapDE = snapEN; snapDE.language = "de"
 expect("a language switch is a change for the widgets", snapEN.sameContent(as: snapDE), false)
 expect("only the time is not", snapEN.sameContent(as: DeploySnapshot(at: .distantPast, demo: false, waitingProjects: 1, waitingCommits: 1, waitingPRs: 0,
