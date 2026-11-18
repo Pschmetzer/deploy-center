@@ -1716,6 +1716,19 @@ struct ContentView: View {
                 previewScopes.forEach { store.deploySelected($0, preview: true) }
             }
             .disabled(previewScopes.isEmpty || store.observer)
+            let groupRepos = RepoGroup.groups(visible).filter(\.showsHeader).compactMap(\.repo)
+            if !groupRepos.isEmpty {
+                if groupRepos.contains(where: { !collapsedRepos.contains($0) }) {
+                    Button(L("Collapse all repo groups", "Alle Repo-Gruppen zuklappen")) {
+                        collapsedReposRaw = collapsedRepos.union(groupRepos).sorted().joined(separator: "\n")
+                    }
+                }
+                if groupRepos.contains(where: { collapsedRepos.contains($0) }) {
+                    Button(L("Expand all repo groups", "Alle Repo-Gruppen aufklappen")) {
+                        collapsedReposRaw = collapsedRepos.subtracting(groupRepos).sorted().joined(separator: "\n")
+                    }
+                }
+            }
             let waitingRows = visible.filter { $0.hasNewCommits }
             Button(L("Copy list of waiting projects", "Liste der wartenden Projekte kopieren")) {
                 NSPasteboard.general.clearContents()
