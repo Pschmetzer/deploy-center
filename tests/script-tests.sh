@@ -1644,6 +1644,9 @@ run "$O" "$E" deploy-changed --json >/dev/null; dc="$(jq -c 'map([.platform, .na
 expect "FEA-114: plan --json lists what deploy-changed would start, each with a price field" \
   "$(run "$O" "$E" plan --json; jq -c '[.kind, .estimate, (.projects | map([.platform, .name, .action])), (.projects | all(has("usd") and has("priceSource"))), .total.builds]' "$O"; grep -c POST "$e2e/calls.log")" \
   $'0\n["plan",true,'"$dc"',true,'"$(echo "$dc" | jq length)"']'$'\n0'
+expect "plan --since: a window that holds the old commit keeps the list, a short one empties it" \
+  "$(run "$O" "$E" plan --json --since 100000d >/dev/null; jq '.projects | length' "$O"; run "$O" "$E" plan --json --since 1h >/dev/null; jq '.projects | length' "$O")" "$(jq length <<<"$dc")"$'\n0'
+expect "plan --since: a bad time is refused" "$(run "$O" "$E" plan --since soon)" "1"
 expect "FEA-114: deploy-changed --json is unchanged (no price fields)" "$(run "$O" "$E" deploy-changed --json; jq -c '.[0] | keys' "$O")" $'0\n["action","commits","name","platform","risk","sha"]'
 expect "FEA-010: price set is read by plan (a rate, not billing)" \
   "$(run "$O" "$E" price set render 0.5; run "$O" "$E" price --json; jq -c '[.renderUsdPerMinute, .source.render]' "$O")" $'0\n0\n[0.5,"file"]'

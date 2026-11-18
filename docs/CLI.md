@@ -23,7 +23,7 @@ deploys deploy-changed --when-green --yes  # only commits whose CI passed (waits
 deploys deploy my-project               # one project to production, on whichever platform it is
 deploys deploy-json my-project --no-cache --yes   # build without the host's cache (Render, Netlify, DigitalOcean, Coolify; other hosts refuse it)
 deploys deploy my-group                 # a group from deploy-center.json, in its order (TEAM.md)
-deploys plan [--when-green]             # the same list with an estimate per build and the sum (starts nothing)
+deploys plan [--when-green] [--since 1d]  # the same list with an estimate per build and the sum (starts nothing); --since: only what changed in that time
 deploys status                          # what is building now, and what failed last
 deploys watch my-project [--timeout 30m]  # follow the newest deploy until live or failed
 deploys logs my-project                 # the end of the newest build log, keys and tokens always masked

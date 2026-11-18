@@ -4,6 +4,7 @@ Neue Ideen nach Runde 9. Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 21 (`deploys plan --since 1d`) ist umgesetzt.
 - 22 (Exit-Codes: stehen in `CLI.md`, einige jetzt getestet) ist umgesetzt.
 - 15 „Liste kopieren“ in der Bestätigung ist umgesetzt.
 - 1 Rechtsklick „Nur dieses Repo zeigen“ am Gruppenkopf ist umgesetzt.

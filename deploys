@@ -17,7 +17,7 @@
 #     [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>]   narrow what it looks at
 #     [--by-rules]                            only what a "deploy" rule matches; "hold" rules always count
 #     [--when-green [--wait 30m] [--strict]]  only commits whose CI passed; waits for running checks
-#   deploys plan [--when-green] [--json]      what deploy-changed --yes would start, and an estimate of its cost
+#   deploys plan [--when-green] [--since 1d] [--json]      what deploy-changed --yes would start, and an estimate of its cost
 #   deploys schedule daily [HH:MM] [--weekdays] [--when-green] [--by-rules] [--strict] [--only <p>] [--exclude <p>] [--platform <p>] [--max <n>] | off | status [--json]
 #                                             deploy-changed --yes once a day (launchd; else the cron line)
 #   deploys rules check [--json]              which rule of rules.json matches which waiting project, and why not
@@ -900,8 +900,8 @@ github_budget() { gh api rate_limit --jq '.resources.core | {remaining, limit, r
 
 # "30m", "90s", "1h" or plain seconds, as seconds. Anything else is refused.
 duration_s() {
-  [[ "${1:-}" =~ ^([0-9]+)([smh]?)$ ]] || return 1
-  case "${BASH_REMATCH[2]}" in h) echo $(( BASH_REMATCH[1] * 3600 ));; m) echo $(( BASH_REMATCH[1] * 60 ));; *) echo "${BASH_REMATCH[1]}";; esac
+  [[ "${1:-}" =~ ^([0-9]+)([smhd]?)$ ]] || return 1
+  case "${BASH_REMATCH[2]}" in d) echo $(( BASH_REMATCH[1] * 86400 ));; h) echo $(( BASH_REMATCH[1] * 3600 ));; m) echo $(( BASH_REMATCH[1] * 60 ));; *) echo "${BASH_REMATCH[1]}";; esac
 }
 
 # One answer of <p>_status or <p>_latest as "id<TAB>phase<TAB>state" (docs/PROVIDERS.md), or
@@ -3914,11 +3914,12 @@ BASH
   "plan "*)
     # What deploy-changed would do, and what it would cost: its preview with a price per build.
     # --when-green asks CI as deploy-changed --when-green does. Starts nothing.
-    green=""; shift
+    green=""; since=""; shift
     while [ $# -gt 0 ]; do
       case "$1" in
         --when-green) green=1 ;;
-        *) die "Unknown option $1. Usage: deploys plan [--when-green] [--json]" ;;
+        --since) since="$(duration_s "${2:-}")" || die "--since takes a time like 1d, 12h or 30m"; [ "$since" -gt 0 ] || die "--since takes a time like 1d, 12h or 30m"; shift ;;
+        *) die "Unknown option $1. Usage: deploys plan [--when-green] [--since 1d] [--json]" ;;
       esac
       shift
     done
@@ -3926,6 +3927,8 @@ BASH
     rc=0; list="$(changed_json)" || rc=$?
     [ "$rc" = 0 ] || [ "$(echo "$list" | jq length)" != 0 ] || die "Could not tell what has changes (see above)."
     apply_rules ""
+    # --since: only what changed in that time (the newest commit on the branch is not older)
+    [ -z "$since" ] || list="$(echo "$list" | jq -c --argjson cut "$(( $(date +%s) - since ))" 'map(select((.headAt // 0) >= $cut))')"
     [ -z "$green" ] || [ "$(echo "$list" | jq length)" = 0 ] || list="$(with_ci_preview "$list")"
     rows="$(echo "$list" | jq -c "$PREVIEW_ROWS"' as $r | [., $r] | transpose | map(.[1] + {id:(.[0].id // null)})' 2>/dev/null \
       || echo "$list" | jq -c "$PREVIEW_ROWS")"
