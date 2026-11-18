@@ -273,8 +273,10 @@ struct ContentView: View {
         let n = items.count
         let waiting = items.filter { $0.hasNewCommits }.compactMap(\.pendingCommits).max() ?? 0
         let projects = L("\(n) \(n == 1 ? "project" : "projects")", "\(n) \(n == 1 ? "Projekt" : "Projekte")")
-        guard waiting > 0 else { return projects }
-        return projects + " · " + L("\(waiting) \(waiting == 1 ? "commit waits" : "commits waiting")",
+        let failed = items.filter { Row.keyFigure($0) == .failed }.count
+        let failedText = failed > 0 ? " · " + L("\(failed) failed", "\(failed) fehlgeschlagen") : ""
+        guard waiting > 0 else { return projects + failedText }
+        return projects + failedText + " · " + L("\(waiting) \(waiting == 1 ? "commit waits" : "commits waiting")",
                                     "\(waiting) \(waiting == 1 ? "Commit wartet" : "Commits warten")")
     }
 
@@ -726,6 +728,12 @@ struct ContentView: View {
                 .focused($searchFocused)
                 .onExitCommand { search = ""; searchFocused = false }
 
+            if !appliedSearch.isEmpty {
+                let total = scopes.reduce(0) { $0 + (store.items[$1]?.count ?? 0) }
+                Text("\(visible.count)/\(total)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    .help(L("Rows that match the search, of all rows", "Zeilen, die zur Suche passen, von allen Zeilen"))
+                    .accessibilityLabel(L("\(visible.count) of \(total) match", "\(visible.count) von \(total) passen"))
+            }
             savedSearchMenu
 
             Toggle(isOn: Binding(get: { onlyChanged }, set: { onlyChanged = $0 })) {

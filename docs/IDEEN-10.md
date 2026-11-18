@@ -4,7 +4,7 @@ Neue Ideen nach Runde 9. Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
-- (noch nichts umgesetzt)
+- 2 Trefferzahl der Suche und 8 rote Projekte im Gruppenkopf sind umgesetzt.
 
 ## Hauptfenster
 
