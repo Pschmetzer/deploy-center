@@ -3,7 +3,7 @@
 # from $FIXTURES/<p>/<METHOD>_<path>.json, where <p> is the folder whose HOST file names the
 # URL's host and <path> is the URL path and query with every other character as "_".
 # A fixture holds the body, a newline and the HTTP status (what `-w '\n%{http_code}'` prints).
-# No fixture: 404. CURLSTUB=401|503|empty|html|down answers every call with that error instead.
+# No fixture: 404. CURLSTUB=401|403|429|503|empty|html|down answers every call with that error instead.
 # The key comes on stdin (-K -) and must never be needed here. A provider that puts the URL
 # itself in that config (hook: `curl -K -` with url, request, output and write-out lines) gets
 # them read from it: then the body goes to the output file and only the status is printed.
@@ -23,6 +23,8 @@ echo "curl $m $url" >> "${CALLS:-/dev/null}"
 case "${CURLSTUB:-}" in
   401) answer "$(printf '%s\n401' '{"message":"unauthorized"}')"; exit 0 ;;
   503) answer "$(printf '%s\n503' '{"message":"unavailable"}')"; exit 0 ;;
+  403) answer "$(printf '%s\n403' '{"message":"forbidden"}')"; exit 0 ;;
+  429) answer "$(printf '%s\n429' '{"message":"too many requests"}')"; exit 0 ;;
   empty) answer "$(printf '\n200')"; exit 0 ;;
   html) answer "$(printf '<html><body>502 Bad Gateway</body></html>\n200')"; exit 0 ;;
   down) echo "curl: (28) Operation timed out" >&2; exit 28 ;;

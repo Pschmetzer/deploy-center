@@ -90,7 +90,7 @@ for f in providers/*.sh; do
   # talks HTTP through curl. A read ends (an error with a reason, or a list marked partial); a
   # write is never repeated: at most one POST, and no deploy is reported as started.
   if grep -q '^curl ' "$CALLS"; then
-    for stub in 503 down empty html; do
+    for stub in 401 403 429 503 down empty html; do
       : > "$CALLS"
       export CURLSTUB="$stub"
       lib "$p" "${p}_json" > "$tmp/fo"; frc=$?
@@ -108,6 +108,11 @@ for f in providers/*.sh; do
           expect "$p: $v under $stub is an error with no line" "$frc:$(grep -c . "$tmp/fo2")" "1:0"
         fi
       done
+      # A key the host refuses (401, 403) is not asked again for the same read; a 429 at most three times.
+      : > "$CALLS"; lib "$p" "${p}_latest $CONTRACT_ID" >/dev/null
+      reads="$(grep -c '^curl GET ' "$CALLS")"; want=1; [ "$stub" = 401 ] || [ "$stub" = 403 ] || want=3
+      case "$stub" in 401|403|429) expect "$p: a $stub read is asked at most $want time(s)" "$([ "$reads" -le "$want" ] && echo ok || echo "$reads reads")" ok;; esac
+      : > "$CALLS"
       lib "$p" "${p}_deploy_json $CONTRACT_ID" > "$tmp/fo"; frc=$?
       unset CURLSTUB
       expect "$p: deploy under $stub is not reported as started" "$frc" "1"
