@@ -1677,6 +1677,10 @@ expect "FEA-066: rules check says why not, and ignores a rule without a conditio
   $'0\n[["docs ship",false,"the changed files are not known"],["all",false,"a deploy rule without a condition is ignored"]]'
 echo '{"rules":[{"name":"young","when":{"minAgeHours":999999},"then":"deploy"}]}' > "$e2e/config/rules.json"
 expect "FEA-074: minAgeHours: too young does not match" "$(run "$O" "$E" deploy-changed --by-rules --json; jq length "$O")" $'0\n0'
+echo '{"rules":[{"name":"many","when":{"minCommits":999999},"then":"deploy"}]}' > "$e2e/config/rules.json"
+expect "rules: minCommits: too few waiting does not match" "$(run "$O" "$E" deploy-changed --by-rules --json; jq length "$O")" $'0\n0'
+echo '{"rules":[{"name":"prs","when":{"minPRs":999999,"minAgeDays":1000},"then":"deploy"}]}' > "$e2e/config/rules.json"
+expect "rules: minPRs and minAgeDays are AND, and say why not" "$(run "$O" "$E" rules check --json; jq -c 'map(select(.matched | not)) | map(.unmet | length) | max' "$O")" $'0\n2'
 echo '{"rules":' > "$e2e/config/rules.json"; fresh
 expect "FEA-066: a broken rules.json stops deploys" "$(run "$O" "$E" deploy-changed --yes; started; grep -c 'rules.json could not be read' "$E")" $'1\n0\n1'
 rm -f "$e2e/config/rules.json"

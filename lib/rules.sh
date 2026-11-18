@@ -18,6 +18,10 @@
 #   onlyPaths    true: every changed file matches paths; false or left out: at least one does
 #   labels       a pull request of the head commit has one of these labels
 #   minAgeHours  the oldest waiting commit is at least this many hours old
+#   minAgeDays   the same in days (both given: the longer one counts)
+#   minCommits   at least this many commits wait (collect, then ship)
+#   minPRs       at least this many pull requests wait
+# Together they are AND ("3 days and 200 PRs"); for OR use two rules, the first match decides.
 # Sourced by deploys; uses ci_of, gh, cat_all from there.
 
 RULES="$CONFIG_DIR/rules.json"
@@ -67,7 +71,7 @@ rules_facts() {  # rules_facts <changed list JSON> <rules list JSON>
         labels="$(gh api --cache 5m "repos/$repo/commits/$sha/pulls" 2>/dev/null </dev/null | jq -c '[.[].labels[]?.name] | unique' 2>/dev/null)" || labels=null
         [ -n "$labels" ] || labels=null
       fi
-      echo "$list" | jq -c ".[$i] | {platform, name, oldestPendingAt:(.oldestPendingAt // null), headAt:(.headAt // null)}
+      echo "$list" | jq -c ".[$i] | {platform, name, oldestPendingAt:(.oldestPendingAt // null), headAt:(.headAt // null), pendingCommits:(.pendingCommits // null), pendingPRs:(.pendingPRs // null)}
         + {files:$files, ci:$ci, labels:$labels}" > "$t/$(printf '%04d' "$i").json"
     ) &
   done
@@ -99,11 +103,20 @@ def unmet($w; $p; $now):
        if $p.labels == null then "the pull request labels are not known"
        elif any($p.labels[]; . as $l | $w.labels | index($l)) then empty
        else "no pull request has a label \($w.labels | join(", "))" end else empty end),
-    (if ($w.minAgeHours // null) != null then
-       (($p.oldestPendingAt // $p.headAt) // null) as $at
+    (if ($w.minAgeHours // null) != null or ($w.minAgeDays // null) != null then
+       ([($w.minAgeHours // 0), (($w.minAgeDays // 0) * 24)] | max) as $need
+       | (($p.oldestPendingAt // $p.headAt) // null) as $at
        | if $at == null then "the age of the waiting commits is not known"
-         elif ($now - $at) / 3600 >= $w.minAgeHours then empty
-         else "the oldest waiting commit is \((($now - $at) / 3600) | floor) h old, not \($w.minAgeHours)" end else empty end) ];
+         elif ($now - $at) / 3600 >= $need then empty
+         else "the oldest waiting commit is \((($now - $at) / 3600) | floor) h old, not \($need)" end else empty end),
+    (if ($w.minCommits // null) != null then
+       if $p.pendingCommits == null then "the number of waiting commits is not known"
+       elif $p.pendingCommits >= $w.minCommits then empty
+       else "\($p.pendingCommits) commits wait, not \($w.minCommits)" end else empty end),
+    (if ($w.minPRs // null) != null then
+       if $p.pendingPRs == null then "the number of waiting pull requests is not known"
+       elif $p.pendingPRs >= $w.minPRs then empty
+       else "\($p.pendingPRs) pull requests wait, not \($w.minPRs)" end else empty end) ];
 [ $facts[] as $p | $rules[] as $r
   | (if $r.problem then [$r.problem] else unmet($r.when; $p; $now) end) as $u
   | {rule:$r.name, index:$r.index, project:"\($p.platform)/\($p.name)", platform:$p.platform, name:$p.name,

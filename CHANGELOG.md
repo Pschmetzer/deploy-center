@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rules: new conditions `minCommits`, `minPRs` and `minAgeDays` (also in the rule editor) to collect changes and deploy only when enough have piled up, e.g. 3 days and 200 PRs. Still only runs through `deploy-changed --by-rules` or `schedule daily --by-rules`; the app never deploys by itself.
 - App: search finds notes, branch and commit text and understands `is:failed` and `platform:render`; double-click opens a row's details; the build log jumps to the previous or next error; "Copy live commit (SHA)"; clearing messages can be undone and all 30 are scrollable; the reload button only blocks the platform that is loading; budgets accept `1.500` and reject `1e3`. Logo downloads refuse hosts that resolve to private addresses.
 - App: the reminder and the day and week summaries count as sent only after the notification was added and respect quiet hours; the list refreshes while a deploy runs; error texts are masked before they reach the journal; two journal entries in the same second no longer share an id.
 - CLI: `schedule daily` takes `--only`, `--exclude`, `--platform`, `--max`, `--wait` and `--weekdays`; `verify --watch-timeout` (default 30m); hooks time out (`DEPLOYS_HOOK_TIMEOUT`, default 300 s) and must not be group-writable; `logs` strips terminal escape sequences on a TTY; risk and secret scans report `partial` for 300 or more files; more token formats are masked; `changed --platform` tells you when a host is off; the bug scan runs git without repo hooks.
