@@ -170,7 +170,7 @@ coolify_id_of() {
 # jq definitions shared by the readers below. $base is the instance URL.
 # shellcheck disable=SC2016
 COOLIFY_JQ='
-  def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | sub("\\+00:00$";"Z") | fromdateiso8601) else null end;
+  def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
   def phase: if . == null then null
     elif . == "queued" then "queued"
     elif . == "finished" then "ready"
@@ -274,7 +274,7 @@ coolify_json() {
          lastSha:(($live.commit // null) | if . == "HEAD" then null else . end),
          lastMsg:(($live.commit_message // null) | if . then split("\n")[0] else null end),
          fetchError:(._d.fetchError // null), phase:($new.status // null | phase)} ]
-    | sort_by(.name | ascii_downcase)'
+    | sort_by((.name // "") | ascii_downcase)'
 }
 
 # coolify_off <app> [--previews]: Auto Deploy off. --previews also stops PR preview builds.

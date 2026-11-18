@@ -190,7 +190,7 @@ netlify_id_fast() {
 # jq definitions shared by the readers below.
 # shellcheck disable=SC2016
 NETLIFY_JQ='
-  def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | fromdateiso8601) else null end;
+  def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
   def phase: if . == null then null
     elif test("^(new|enqueued|accepted|pending_review)$") then "queued"
     elif . == "ready" then "ready"
@@ -324,7 +324,7 @@ netlify_json() {
          lastSha:($live.commit_ref // null),
          lastMsg:(($live.title // null) | if . then split("\n")[0] else null end),
          fetchError:(._d.fetchError // null), phase:($new.state // null | phase)} ]
-    | sort_by(.name | ascii_downcase)'
+    | sort_by((.name // "") | ascii_downcase)'
 }
 
 # netlify_off <site> [--rule-added]: build hook + the netlify.toml step. --rule-added records the
@@ -482,9 +482,9 @@ netlify_cli_previews() {
 # netlify_history <site> <n>: the last n deploys, a table (WHEN (UTC), STATE, COMMIT, TRIGGER = context, TOOK).
 netlify_history() {
   local id; id="$(netlify_id_of "$1")" || return 1
-  netlify_call GET "/sites/$id/deploys?per_page=$2" | jq -r 'def t: sub("\\.[0-9]+Z$";"Z") | fromdateiso8601;
-    .[] | [(.created_at | t | strftime("%Y-%m-%d %H:%M")), (.state // "?"), ((.commit_ref // "")[0:7]), (.context // ""),
-       (if .published_at then "\(((.published_at | t) - (.created_at | t)))s" else "" end)]
+  netlify_call GET "/sites/$id/deploys?per_page=$2" | jq -r 'def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end; def when: t | if . then strftime("%Y-%m-%d %H:%M") else null end; def took($a; $b): ($a | t) as $x | ($b | t) as $y | if $x and $y then "\($y - $x)s" else "" end;
+    .[] | [(.created_at | when), (.state // "?"), ((.commit_ref // "")[0:7]), (.context // ""),
+       (if .published_at then took(.created_at; .published_at) else "" end)]
     | map(if . == "" or . == null then "-" else . end) | @tsv' \
     | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | table
 }

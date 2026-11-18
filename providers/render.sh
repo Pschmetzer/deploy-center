@@ -250,7 +250,7 @@ render_last_of() {
     [[ "$code" != 2* ]] || body="${raw%$'\n'*}"
   fi
   printf '%s' "$body" \
-    | jq -c --arg id "$id" 'def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) else null end;
+    | jq -c --arg id "$id" 'def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
         [.[].deploy] as $d | ($d[0] // {}) as $new | (($d | map(select(.status=="live")) | .[0]) // {}) as $live
         # The status is the newest attempt (a failure shows), the commit is what is live: a failed
         # deploy of the newest commit must not make the project look up to date.
@@ -270,7 +270,7 @@ render_json() {
     dashboardUrl:(.dashboardUrl // null),
     domain:((.serviceDetails.url // "") | sub("^https?://";"") | if . == "" then null else . end),
     repo:((.repo // "") | '"$GITHOST_SLUG_JQ"' | if . == "" then null else . end),
-    ref:(.branch // null)}] | sort_by(.name | ascii_downcase)')" || exit 1
+    ref:(.branch // null)}] | sort_by((.name // "") | ascii_downcase)')" || exit 1
   tmp="$(mktemp -d)"; kf="$tmp/key"
   # The key file goes on every way out: a failed key read or xargs must not leave it behind.
   if ! (umask 077; render_key > "$kf"); then rm -rf "$tmp"; exit 1; fi
@@ -414,9 +414,9 @@ render_where() {
 }
 
 render_history() {
-  render_call GET "/services/$(render_id_of "$1")/deploys?limit=$2" | jq -r 'def t: sub("\\.[0-9]+Z$";"Z") | fromdateiso8601;
-    .[].deploy | [(.createdAt | t | strftime("%Y-%m-%d %H:%M")), .status, ((.commit.id // "")[0:7]), (.trigger // ""),
-       (if .finishedAt then "\(((.finishedAt | t) - (.createdAt | t)))s" else "" end)]
+  render_call GET "/services/$(render_id_of "$1")/deploys?limit=$2" | jq -r 'def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end; def when: t | if . then strftime("%Y-%m-%d %H:%M") else null end; def took($a; $b): ($a | t) as $x | ($b | t) as $y | if $x and $y then "\($y - $x)s" else "" end;
+    .[].deploy | [(.createdAt | when), .status, ((.commit.id // "")[0:7]), (.trigger // ""),
+       (if .finishedAt then took(.createdAt; .finishedAt) else "" end)]
     | map(if . == "" or . == null then "-" else . end) | @tsv' \
     | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | table
 }

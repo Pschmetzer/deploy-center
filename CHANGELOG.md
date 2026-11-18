@@ -6,6 +6,7 @@
 - Docs: `deploys certs` and `deploys creds` in the CLI reference and the troubleshooting page, `plan --since` in the German CLI page.
 - Mac app: VoiceOver reads the saved/not saved marks in the auto-fix setup and the warning icon of an allowance; purely decorative icons in the setup screens and the Claude hint are hidden from it.
 - CLI: tab completion knows the words of `journal`, `idle`, `creds`, `certs`, `secrets`, `plan` and `list`.
+- Providers: a time with a numeric offset (+02:00), no fraction, or no date at all, and a project without a name, no longer end the whole list or history of Netlify, Render, Coolify, DigitalOcean and Cloudflare; the odd row shows no time.
 - CLI: `deploys certs [--days 14]` shows how long the TLS certificate of every project's address lasts (the platform's own domain too) and exits 1 when one runs out soon.
 - CLI: `deploys plan --since 1d` (also `12h`, `30m`) plans only what changed in that time.
 - Docs: the auto-deploy guard page in German (`GUARD.de.md`).

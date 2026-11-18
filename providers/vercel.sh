@@ -403,7 +403,7 @@ vercel_json() {
     # A build under way in either the newest attempt or the production target counts.
     | ([.latestState, .lastState] | map(vphase)) as $ph
     | . + {phase:(if ($ph | index("building")) then "building" elif ($ph | index("queued")) then "queued"
-                  else ((.latestState // .lastState) | vphase) end)}] | sort_by(.name | ascii_downcase)'
+                  else ((.latestState // .lastState) | vphase) end)}] | sort_by((.name // "") | ascii_downcase)'
 }
 
 # Exit 1: no such project. Exit 2: Vercel could not be asked (the reason on stderr), which is not
