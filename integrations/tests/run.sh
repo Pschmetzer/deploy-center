@@ -669,7 +669,7 @@ contains "claude-code hook: a push after other commands" "$(hk "git add -A && gi
 contains "claude-code hook: bash -c \"git push\" is a push" "$(hk "bash -c 'git push origin main'" | head -1)" "app-web"
 contains "claude-code hook: sh -lc with cd and a push" "$(hk "zsh -lc \"cd $tmp/cc && git push\"" "$tmp/cc-other" | head -1)" "app-web"
 expect "claude-code hook: bash -c without a push is silent" "$(hk "bash -c 'echo hi'")" "exit=0"
-git init -q "$tmp/cc-alias" && git -C "$tmp/cc-alias" remote add origin git@github-work:me/app.git
+git init -q -b main "$tmp/cc-alias" && git -C "$tmp/cc-alias" remote add origin git@github-work:me/app.git
 contains "claude-code hook: an ssh host alias remote is the GitHub repo" "$(hk "git push" "$tmp/cc-alias" | head -1)" "app-web"
 hk_err() { jq -nc --arg c "git push" --arg d "$tmp/cc" --arg e "$1" '{hook_event_name:"PostToolUse",tool_name:"Bash",cwd:$d,tool_input:{command:$c},tool_response:{stdout:"",stderr:$e,interrupted:false}}' | "$hook"; echo "exit=$?"; }
 expect "claude-code hook: a rejected push, silent" "$(hk_err $' ! [rejected]        main -> main (fetch first)\nerror: failed to push some refs')" "exit=0"

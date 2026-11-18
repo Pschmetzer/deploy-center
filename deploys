@@ -2912,7 +2912,7 @@ case "${1:-} ${2:-}" in
       [ -s "$jf" ] || exit 0
       jq -rR --arg since "$since" --arg proj "$proj" 'fromjson? | select(type == "object")
         | select($since == "" or ((.at // "") >= $since)) | select($proj == "" or .name == $proj)
-        | [.at, .platform, .name, .result, .detail] | map(. // "" | tostring | if test("^[=+@-]") then "\u0027" + . else . end) | @csv' "$jf"
+        | [.at, .platform, .name, .result, .detail] | map(. // "" | tostring | if test("^[=+@\t\r-]") then "\u0027" + . else . end) | @csv' "$jf"
       exit 0 ;;
     report)
       # journal report [--month YYYY-MM]: what happened in a month, as Markdown (idea 38).
@@ -2923,7 +2923,7 @@ case "${1:-} ${2:-}" in
       [[ "$mon" =~ ^[0-9]{4}-[0-9]{2}$ ]] || die "--month wants a month like 2025-01."
       printf '# Deploy Center: %s\n\n' "$mon"
       if [ ! -s "$jf" ]; then echo "No journal yet."; exit 0; fi
-      jq -rRs --arg m "$mon" '[split("\n")[] | fromjson? | select(type == "object") | select((.at // "") | startswith($m))] as $l
+      jq -rRs --arg m "$mon" '[split("\n")[] | fromjson? | select(type == "object") | select((.at // "") | tostring | startswith($m)) | .result = (.result // "" | tostring) | .name = (.name // "" | tostring) | .platform = (.platform // "" | tostring)] as $l
         | if ($l | length) == 0 then "Nothing in this month."
           else "\($l | length) entries.\n\n| Result | Count |\n| --- | ---: |\n"
             + ($l | group_by(.result) | map("| \(.[0].result | gsub("[|\n]"; " ")) | \(length) |") | join("\n"))
