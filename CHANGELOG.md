@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Site: `llms.txt` lists the new docs pages.
+- Docs: `deploys certs` and `deploys creds` in the CLI reference and the troubleshooting page, `plan --since` in the German CLI page.
 - CLI: `deploys certs [--days 14]` shows how long the TLS certificate of every project's address lasts (the platform's own domain too) and exits 1 when one runs out soon.
 - CLI: `deploys plan --since 1d` (also `12h`, `30m`) plans only what changed in that time.
 - Docs: the auto-deploy guard page in German (`GUARD.de.md`).

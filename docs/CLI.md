@@ -14,6 +14,8 @@ are refused before anything is asked; only Amplify ids have one `/` (`amplify:<a
 
 ```bash
 deploys doctor                          # what is connected (JSON)
+deploys certs [--days 14] [--json]      # TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out within N days. A host that cannot be reached is "unknown", not a failure.
+deploys creds [--max-age 90] [--json]   # per platform: where its key comes from (environment, keychain, login), if it works, how old a keychain key is. Reads only; never shows a key.
 deploys doctor --text                   # one line each (ok or the problem), with the fix
 deploys list --format tsv               # platform, project, auto or manual, last state: tabs, no header, for scripts without jq
 deploys idle [--days 90] [--json]       # projects with no deploy for N days: candidates to pause (read only)

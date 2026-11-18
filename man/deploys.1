@@ -23,7 +23,7 @@ No key is ever printed.
     [\-\-only <p>]... [\-\-exclude <p>]... [\-\-platform <p>] [\-\-max <n>]   narrow what it looks at
     [\-\-by\-rules]                            only what a "deploy" rule matches; "hold" rules always count
     [\-\-when\-green [\-\-wait 30m] [\-\-strict]]  only commits whose CI passed; waits for running checks
-  deploys plan [\-\-when\-green] [\-\-json]      what deploy\-changed \-\-yes would start, and an estimate of its cost
+  deploys plan [\-\-when\-green] [\-\-since 1d] [\-\-json]      what deploy\-changed \-\-yes would start, and an estimate of its cost
   deploys schedule daily [HH:MM] [\-\-weekdays] [\-\-when\-green] [\-\-by\-rules] [\-\-strict] [\-\-only <p>] [\-\-exclude <p>] [\-\-platform <p>] [\-\-max <n>] | off | status [\-\-json]
                                             deploy\-changed \-\-yes once a day (launchd; else the cron line)
   deploys rules check [\-\-json]              which rule of rules.json matches which waiting project, and why not
@@ -48,8 +48,8 @@ No key is ever printed.
   deploys notes <project> [\-\-json]          the same as release notes (Markdown; \-\-json: author as a field)
   deploys open <project> [\-\-dashboard]      the site, or its page at the platform
   deploys ignore <p> [\-\-undo] | \-\-list      leave a project out of changed and deploy\-changed
-  deploys creds [\-\-max\-age 90] [\-\-json]   key source, state and age per platform
-  deploys certs [\-\-days 14] [\-\-json]   TLS certificate of every project's address
+  deploys certs [\-\-days 14] [\-\-json]        TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out soon
+  deploys creds [\-\-max\-age 90] [\-\-json]     where each platform's key comes from, if it works, how old a keychain key is
   deploys idle [\-\-days 90] [\-\-json]         projects with no deploy for N days (candidates to pause)
   deploys list [\-\-platform <p>] [\-\-auto|\-\-manual] [\-\-format tsv] [\-\-json]   every project on every provider that is on, with its platform
 
