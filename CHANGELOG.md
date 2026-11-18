@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Website: five guide pages have shorter search titles (and one a shorter description).
+- App: "More" → "Tick the N merged fixes" ticks every project whose autofix PR was merged and is waiting to go live (ticks only; deploying still needs its click).
 - App: the bottom bar shows about what the ticked Vercel builds cost, before you press "Deploy live".
 - Docs: new pages "First start" (the tour, step by step) and "Settings with examples", both also in German.
 - App: search understands `is:waiting`, `host:render` (same as `platform:`) and `repo:name`.
