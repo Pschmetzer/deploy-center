@@ -337,7 +337,10 @@ async function pinsCommit(platform: string): Promise<boolean> {
 // With `sha` (the branch head the person was asked about) the platform deploys that commit, not a later push,
 // where it can (deploys providers --json: caps.sha); elsewhere the newest commit is built, as before.
 export async function deploy(p: { name: string; platform: string; headSha?: string | null }): Promise<DeployStarted> {
-  const sha = typeof p.headSha === "string" && /^[0-9a-f]{7,40}$/i.test(p.headSha) && (await pinsCommit(p.platform)) ? p.headSha : null;
+  const sha =
+    typeof p.headSha === "string" && /^[0-9a-f]{7,40}$/i.test(p.headSha) && (await pinsCommit(p.platform))
+      ? p.headSha
+      : null;
   const { data } = await runJson<DeployStarted>(
     [p.platform, "deploy-json", p.name, ...(sha ? ["--sha", sha] : [])],
     TIMEOUT.deploy,
