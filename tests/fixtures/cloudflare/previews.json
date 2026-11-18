@@ -1,0 +1,7 @@
+{"success":true,"errors":[],"result":[
+ {"id":"d-p2","environment":"preview","url":"https://p2.site.pages.dev","created_on":"2026-11-05T10:00:00.000Z",
+  "deployment_trigger":{"metadata":{"branch":"feat/cart"}},"latest_stage":{"name":"deploy","status":"success"}},
+ {"id":"d-p1","environment":"preview","url":"https://p1.site.pages.dev","created_on":"2026-11-04T10:00:00.000Z",
+  "deployment_trigger":{"metadata":{"branch":"feat/cart"}},"latest_stage":{"name":"deploy","status":"success"}},
+ {"id":"d-p3","environment":"preview","url":"https://p3.site.pages.dev","created_on":"2026-11-03T10:00:00.000Z",
+  "deployment_trigger":{"metadata":{"branch":"fix/tax"}},"latest_stage":{"name":"build","status":"failure"}}]}

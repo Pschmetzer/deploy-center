@@ -409,6 +409,14 @@ cloudflare_latest() { local j; j="$(cf_call GET "$(cf_proj "$1")/deployments?per
 cloudflare_cli_status() { cloudflare_status_json "$@"; }
 cloudflare_cli_latest() { cloudflare_latest_json "$@"; }
 
+# cloudflare_cli_previews <project>: the newest preview deployment per branch:
+# [{id, branch, url, phase, at}]. A branch with a pull request is a preview of it.
+cloudflare_cli_previews() {
+  local out; out="$(cf_call GET "$(cf_proj "${1:?project}")/deployments?env=preview&per_page=50")" || exit 1
+  printf '%s' "$out" | jq "$CF_PHASE"'[.[] | select(.environment == "preview") | {id, branch:(.deployment_trigger.metadata.branch // null),
+      url:(.url // null), phase:cf_phase, at:(.created_on | cf_t)}] | group_by(.branch // .id) | map(max_by(.at // 0)) | sort_by(-(.at // 0))'
+}
+
 cloudflare_cancel() { die "Cloudflare Pages cannot cancel a deployment from here: it has no documented way. Stop it in the dashboard: $(cloudflare_url "$1" --dashboard)"; }
 
 # cloudflare_rollback <project> [<id>]: production back to <id>, or to the newest good one before live.
@@ -559,7 +567,8 @@ cloudflare_cmd() {
     doctor) cloudflare_doctor ;;
     selftest) cloudflare_cli_selftest "$@" ;;
     account) cloudflare_cli_account "$@" ;;
-    *) die "Usage: deploys cloudflare meta|list|has|off|on|deploy|deploy-json|status|latest|rollback|logs|url|set-key|doctor|selftest|account" ;;
+    previews) cloudflare_cli_previews "$@" ;;
+    *) die "Usage: deploys cloudflare meta|list|has|off|on|deploy|deploy-json|status|latest|rollback|logs|url|set-key|doctor|selftest|account|previews" ;;
   esac
 }
 

@@ -1,0 +1,7 @@
+{"deployments":[
+ {"uid":"dpl_p3","url":"alpha-git-feat-cart.example.test","state":"READY","created":1767400000000,"target":null,"meta":{"githubPrId":"12","githubCommitRef":"feat/cart"}},
+ {"uid":"dpl_p2","url":"alpha-old.example.test","state":"READY","created":1767300000000,"target":null,"meta":{"githubPrId":"12","githubCommitRef":"feat/cart"}},
+ {"uid":"dpl_p1","url":"alpha-git-fix-tax.example.test","state":"ERROR","created":1767200000000,"target":null,"meta":{"githubCommitRef":"fix/tax"}},
+ {"uid":"dpl_prod","url":"alpha.example.test","state":"READY","created":1767225600000,"target":"production","meta":{"githubCommitRef":"main"}}
+]}
+200

@@ -429,6 +429,17 @@ vercel_latest() {
     | jq -r "$VERCEL_PHASE"'(.deployments[0] // {uid:"none"}) | "\(.uid)\t\(.state | vphase // "")\t\(.state // "?")"'
 }
 
+# vercel_cli_previews <project>: the newest preview deployment per pull request (per branch when
+# no PR is named): [{id, pr, branch, url, state, phase, at}]. Vercel does not say whether the PR is
+# still open; the list is what the newest 50 deployments hold.
+vercel_cli_previews() {
+  vercel_call "/v6/deployments?app=${1:?project}&limit=50" | jq "$VERCEL_PHASE$VERCEL_META"'[.deployments[]?
+      | select((.target // "preview") != "production")
+      | {id:.uid, pr:(.meta.githubPrId // .meta.gitlabMergeRequestId // null), branch:(.meta.githubCommitRef // .meta.gitlabCommitRef // null),
+         url:(if .url then "https://\(.url)" else null end), state, phase:(.state | vphase), at:((.created // 0) / 1000 | floor)}]
+    | map(select(.pr != null or .branch != null)) | group_by(.pr // .branch) | map(max_by(.at)) | sort_by(-.at)'
+}
+
 vercel_cancel() {
   vercel_call "/v12/deployments/${2:?deployment id}/cancel" --method PATCH >/dev/null || die "Vercel: could not cancel ${2}"
   echo '{"state":"CANCELED"}'

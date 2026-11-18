@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Providers: `deploys <vercel|netlify|cloudflare> previews <project>` lists the newest preview deployment per pull request (or branch) with its URL, as JSON. Read-only.
 - Docs: `--no-cache` in the CLI reference, the Help button on the troubleshooting page, the week in review, "Check the site now" and the window subtitle (English and German).
 - App: command palette "Search the logs of failed projects": one search over the logs of every failed project, and without a search the failures grouped by the same error line (read only).
 - Providers: the contract test now checks every HTTP provider against a failing host (503 and no answer): a read ends with a reason, a deploy is never reported as started and never sent twice.

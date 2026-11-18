@@ -463,6 +463,18 @@ netlify_latest() { netlify_latest_json "$@" | jq -r "$NETLIFY_TSV"; }
 netlify_cli_status() { netlify_status_json "$@"; }
 netlify_cli_latest() { netlify_latest_json "$@"; }
 
+# netlify_cli_previews <site>: the deploy previews of pull requests, newest per pull request:
+# [{id, pr, branch, url, state, phase, at, title}]. Netlify does not say whether the PR is still
+# open; the list is what the newest 50 deploys hold.
+netlify_cli_previews() {
+  local id out
+  id="$(netlify_id_of "${1:?site}")" || die "Netlify site $1 not found"
+  out="$(netlify_call GET "/sites/$id/deploys?per_page=50&context=deploy-preview")" || die "Netlify: could not read the deploys of $1"
+  echo "$out" | jq "$NETLIFY_JQ"'[.[] | select(.context == "deploy-preview") | {id, pr:(.review_id // null), branch:(.branch // null),
+      url:(.deploy_ssl_url // .deploy_url // null), state, phase:(.state | phase), at:(.created_at | t), title:(.title // null)}]
+    | group_by(.pr // .id) | map(max_by(.at // 0)) | sort_by(-(.at // 0))'
+}
+
 # netlify_history <site> <n>: the last n deploys, a table (WHEN (UTC), STATE, COMMIT, TRIGGER = context, TOOK).
 netlify_history() {
   local id; id="$(netlify_id_of "$1")" || return 1

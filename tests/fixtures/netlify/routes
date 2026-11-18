@@ -2,6 +2,7 @@
 # First match wins. A line marked "hooked" only matches after a POST to a build hook.
 GET   */api/v1/user                                  user.json
 GET   */api/v1/sites?filter=all*                     sites.json
+GET   */api/v1/sites/site-shop/deploys?per_page=50&context=deploy-preview  previews-shop.json
 GET   */api/v1/sites/site-shop/deploys?per_page=*    deploys-shop-after.json   200  hooked
 GET   */api/v1/sites/site-shop/deploys?*             deploys-shop.json
 GET   */api/v1/sites/site-blog/deploys?*             deploys-blog.json
