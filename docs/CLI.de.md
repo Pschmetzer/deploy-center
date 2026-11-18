@@ -12,6 +12,8 @@ Ein Projekt heißt überall gleich: mit seinem Namen, oder als `<plattform>:<nam
 
 ```bash
 deploys doctor                          # was verbunden ist (JSON)
+deploys secrets my-project              # hinzugefügte Zeilen, die wie ein Schlüssel oder Token aussehen; Exit 1, wenn es welche gibt (ein Tor)
+deploys <vercel|netlify|cloudflare> previews <project>   # neueste Vorschau je Pull Request mit URL (JSON, nur lesend)
 deploys doctor --text                   # eine Zeile je Prüfung (ok oder das Problem), mit der Lösung
 deploys list --format tsv               # Plattform, Projekt, auto oder manuell, letzter Stand: Tabs, ohne Kopfzeile, für Skripte ohne jq
 deploys idle [--days 90] [--json]       # Projekte ohne Deploy seit N Tagen: Kandidaten zum Pausieren (nur lesend)

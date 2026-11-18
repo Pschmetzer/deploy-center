@@ -37,6 +37,8 @@ deploys list                            # every project on every provider that i
 ```bash
 deploys verify my-project [--path /health] [--no-rollback]   # ask the site; roll back on 5xx
 deploys risk my-project                 # green/yellow/red for what waits
+deploys secrets my-project              # added lines that look like a key or token; exit 1 if any (a gate)
+git diff A..B | deploys secrets --stdin # the same on a diff you pipe in (for GitLab or any repo)
 deploys ci owner/repo [<ref>] [--wait 30m]   # the CI verdict of a commit
 deploys window                          # is the deploy window (window.json) open now?
 deploys deploy my-project --force "hotfix"   # inside a closed window; the reason is journaled
@@ -56,6 +58,7 @@ deploys <p> autodeploy-off <name>|--all # pushes stop building
 deploys <p> autodeploy-on <name>        # back on
 deploys <p> deploy <name> [--preview]   # start one deploy
 deploys <p> rollback <name>
+deploys <vercel|netlify|cloudflare> previews <project>   # newest preview per pull request, with its URL (JSON, read only)
 deploys <p> set-key                     # store its key in the keychain (reads stdin)
 ```
 
