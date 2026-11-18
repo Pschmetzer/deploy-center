@@ -34,6 +34,16 @@ expect("selection cost none", Store.selectionCost(perBuild: [nil, nil]), "")
 expect("selection cost partial", Store.selectionCost(perBuild: [0.5, nil]).hasSuffix("+") ? "y" : "n", "y")
 expect("selection cost all", Store.selectionCost(perBuild: [0.5, 0.25]).hasSuffix("+") ? "y" : "n", "n")
 expect("head note empty without changes", DeployConfirm.headNote([item(changed: false)]), "")
+do {
+    var raw = SavedSearches.adding("is:failed", to: "")
+    raw = SavedSearches.adding("host:render", to: raw)
+    raw = SavedSearches.adding("is:failed", to: raw)
+    expect("saved searches: newest first, no duplicate", SavedSearches.parse(raw).joined(separator: "|"), "is:failed|host:render")
+    expect("saved searches: remove", SavedSearches.parse(SavedSearches.removing("is:failed", from: raw)).joined(separator: "|"), "host:render")
+    var many = ""
+    for n in 0..<20 { many = SavedSearches.adding("q\(n)", to: many) }
+    expect("saved searches: limit", String(SavedSearches.parse(many).count), String(SavedSearches.limit))
+}
 expect("commits and PRs", Row.waitingText(item(changed: true, commits: 5, prs: 3)), L("5 commits · 3 PRs waiting", "5 Commits · 3 PRs warten"))
 expect("one of each", Row.waitingText(item(changed: true, commits: 1, prs: 1)), L("1 commit · 1 PR waiting", "1 Commit · 1 PR wartet"))
 expect("commits only", Row.waitingText(item(changed: true, commits: 2, prs: 0)), L("2 commits waiting", "2 Commits warten"))

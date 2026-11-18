@@ -719,6 +719,8 @@ struct ContentView: View {
                 .focused($searchFocused)
                 .onExitCommand { search = ""; searchFocused = false }
 
+            savedSearchMenu
+
             Toggle(isOn: Binding(get: { onlyChanged }, set: { onlyChanged = $0 })) {
                 Text(L("Changed only", "Nur mit Änderungen") + " (\(scopes.map { Self.changedShown(store, $0) }.reduce(0, +)))")
             }
@@ -1394,6 +1396,38 @@ struct ContentView: View {
         }
     }
 
+    /// Searches kept by the person (one per line), e.g. `is:failed host:render`. Only text; nothing runs.
+    @AppStorage("savedSearches") private var savedSearchesRaw = ""
+    private var savedSearches: [String] { SavedSearches.parse(savedSearchesRaw) }
+
+    private var savedSearchMenu: some View {
+        Menu {
+            let current = search.trimmingCharacters(in: .whitespaces)
+            if !current.isEmpty && !savedSearches.contains(current) {
+                Button(L("Save this search", "Diese Suche speichern")) { savedSearchesRaw = SavedSearches.adding(current, to: savedSearchesRaw) }
+            }
+            ForEach(savedSearches, id: \.self) { q in
+                Button(q) { search = q }
+            }
+            if !savedSearches.isEmpty {
+                Divider()
+                Menu(L("Remove a saved search", "Gespeicherte Suche entfernen")) {
+                    ForEach(savedSearches, id: \.self) { q in
+                        Button(q, role: .destructive) { savedSearchesRaw = SavedSearches.removing(q, from: savedSearchesRaw) }
+                    }
+                }
+            }
+            if current.isEmpty && savedSearches.isEmpty {
+                Text(L("Type a search (e.g. is:failed host:render), then save it here", "Suche eintippen (z. B. is:failed host:render) und hier speichern"))
+            }
+        } label: {
+            Image(systemName: "bookmark")
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .help(L("Saved searches", "Gespeicherte Suchen"))
+        .accessibilityLabel(L("Saved searches", "Gespeicherte Suchen"))
+    }
+
     private func isMerged(_ a: RowAutofix?) -> Bool { if case .merged = a { return true } else { return false } }
 
     /// The repo above its projects; its menu ticks all of them that can go live.
@@ -1719,6 +1753,18 @@ struct ContentView: View {
             .padding(12).frame(width: 460, alignment: .leading)
         }
     }
+}
+
+/// The list of saved searches: one per line in a user default, at most 12, newest first, no duplicates.
+enum SavedSearches {
+    static let limit = 12
+    static func parse(_ raw: String) -> [String] { raw.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
+    static func adding(_ q: String, to raw: String) -> String {
+        let t = q.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
+        guard !t.isEmpty else { return raw }
+        return ([t] + parse(raw).filter { $0 != t }).prefix(limit).joined(separator: "\n")
+    }
+    static func removing(_ q: String, from raw: String) -> String { parse(raw).filter { $0 != q }.joined(separator: "\n") }
 }
 
 /// The search box text split into operators (`is:failed`, `is:waiting`, `platform:render` or `host:render`, `repo:name`) and the words to find.
