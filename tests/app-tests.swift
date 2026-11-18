@@ -2016,7 +2016,7 @@ do {
 do {
     var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
     let night = Date(timeIntervalSince1970: TimeInterval(1_800_000_000 - 1_800_000_000 % 86400 + 23 * 3600))   // 23:00 UTC
-    expect("digest: seconds until 07:00", QuietDigest.seconds(until: 7, now: night, calendar: cal), 8 * 3600)
+    expect("digest: seconds until 07:00", Int(QuietDigest.seconds(until: 7, now: night, calendar: cal)), 8 * 3600)
     var held = QuietDigest.adding("a: one", to: [], now: night)
     held = QuietDigest.adding("b: two", to: held, now: night.addingTimeInterval(60))
     expect("digest: two held", held.count, 2)
