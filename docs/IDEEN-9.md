@@ -5,6 +5,7 @@ Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 25 Sparkline, 36 Budget pro Projekt mit Ampel, 37 Was-wäre-wenn (ein Build pro Tag) und 38 Monatsbericht (Markdown) sind in der Kostenansicht umgesetzt.
 - 14 „Nur Fehlgeschlagene anhaken“ pro Repo-Gruppe und 16 klappbare Gruppenköpfe (merkt sich den Zustand) sind umgesetzt. 21 Suchfilter `repo:`, `host:` und `is:waiting` sind umgesetzt.
 
 ## Wartung und Repo
