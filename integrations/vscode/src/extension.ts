@@ -55,6 +55,8 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   private warning: string | null = null;
   /** The estimate of the next deploy, read after the list so a slow plan never holds it back. */
   private cost = "";
+  /** The running cost read; tests wait for it so no call outlives them. */
+  costLoad: Promise<void> = Promise.resolve();
   private state: ViewState = "loading";
   private lastRefresh = 0;
   /** One read at a time; a call during one (a changed setting) reads once more after it. */
@@ -133,7 +135,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     if (loaded.failed) return this.render("error");
     if (!this.shown.length) { this.cost = ""; return this.render(this.all.length && cfg().scope === "repo" ? "nomatch" : "empty"); }
     this.render("ok");
-    void this.loadCost();
+    this.costLoad = this.loadCost();
   }
 
   private async loadCost(): Promise<void> {

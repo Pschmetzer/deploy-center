@@ -29,6 +29,7 @@ afterEach(() => {
 async function ready(followMs = 5): Promise<Controller> {
   ctl = new Controller(followMs);
   await ctl.refresh();
+  await ctl.costLoad;
   return ctl;
 }
 const project = (c: Controller, name: string) => { const p = c.shown.find((x) => x.name === name); assert.ok(p, name); return p; };
