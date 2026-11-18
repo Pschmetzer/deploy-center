@@ -1362,7 +1362,9 @@ struct ContentView: View {
                 ForEach(RepoGroup.groups(visible)) { g in
                     if g.showsHeader, let repo = g.repo {
                         Section {
-                            ForEach(g.items) { item in row(item, costRows, complete) }
+                            if !collapsedRepos.contains(repo) {
+                                ForEach(g.items) { item in row(item, costRows, complete) }
+                            }
                     } header: {
                             repoHeader(repo, g.items)
                         }
@@ -1381,9 +1383,28 @@ struct ContentView: View {
     /// The repo above its projects; its menu ticks all of them that can go live.
     private func repoHeader(_ repo: String, _ items: [Item]) -> some View {
         let tickable = items.filter { $0.deployable && $0.hasNewCommits && !$0.state.isActive && !$0.selected }
+        let failedTickable = tickable.filter { Row.keyFigure($0) == .failed }
+        let collapsed = collapsedRepos.contains(repo)
         return HStack {
-            Text(Demo.mask(repo) + " · " + Self.repoSummary(items)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Button { toggleCollapsed(repo) } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: collapsed ? "chevron.right" : "chevron.down").font(.caption2).frame(width: 10)
+                    Text(Demo.mask(repo) + " · " + Self.repoSummary(items)).font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(collapsed ? L("Show the projects of this repo", "Projekte dieses Repos zeigen") : L("Hide the projects of this repo", "Projekte dieses Repos ausblenden"))
+            .accessibilityLabel(collapsed ? L("Expand repository \(Demo.mask(repo))", "Repository \(Demo.mask(repo)) aufklappen")
+                                          : L("Collapse repository \(Demo.mask(repo))", "Repository \(Demo.mask(repo)) zuklappen"))
             Spacer()
+            if !failedTickable.isEmpty && failedTickable.count < tickable.count && !store.observer {
+                Button(L("Tick failed \(failedTickable.count)", "Fehlgeschlagene \(failedTickable.count) anhaken")) {
+                    failedTickable.forEach { store.toggle($0.platform, $0.id) }
+                }
+                .buttonStyle(.link).font(.caption)
+                .help(L("Ticks only the projects of this repo whose last deploy failed", "Hakt nur die Projekte dieses Repos an, deren letzter Deploy fehlgeschlagen ist"))
+            }
             if !tickable.isEmpty && !store.observer {
                 Button(L("Tick all \(tickable.count)", "Alle \(tickable.count) anhaken")) {
                     tickable.forEach { store.toggle($0.platform, $0.id) }
@@ -1394,6 +1415,15 @@ struct ContentView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("Repository \(Demo.mask(repo)), ", "Repository \(Demo.mask(repo)), ") + Self.repoSummary(items))
+    }
+
+    /// Repo headers the user folded, remembered across launches (one repo per line).
+    @AppStorage("collapsedRepos") private var collapsedReposRaw = ""
+    private var collapsedRepos: Set<String> { Set(collapsedReposRaw.split(separator: "\n").map(String.init)) }
+    private func toggleCollapsed(_ repo: String) {
+        var s = collapsedRepos
+        if s.contains(repo) { s.remove(repo) } else { s.insert(repo) }
+        collapsedReposRaw = s.sorted().joined(separator: "\n")
     }
 
     private func row(_ item: Item, _ costRows: [String: Costs.Project], _ complete: Bool) -> some View {
