@@ -32,9 +32,9 @@ No key is ever printed.
                                             \-\-dry\-run says what would start and starts nothing
   deploys rollback <p> [<id>]               production back to the deploy before, on whichever platform it is on
   deploys cancel <p> [<id>]                 stop a build that is running, on whichever platform it is on
-  deploys journal export [\-\-since D] [\-\-project p]   the journal as CSV
-  deploys journal report [\-\-month YYYY\-MM]   the month as Markdown
   deploys journal verify [\-\-json]           check the chain of the journal (each line holds the hash of the one before)
+  deploys journal export [\-\-since D] [\-\-project <p>]   the journal as CSV
+  deploys journal report [\-\-month YYYY\-MM]  the month as Markdown: results and projects
   deploys metrics [\-\-out <file>]            waiting commits, their age, failures: Prometheus text (a textfile for Grafana)
   deploys status [\-\-watch] [\-\-no\-github]    what is building or failed (\-\-no\-github: no GitHub calls)
   deploys watch <p> [<id>] [\-\-preview] [\-\-timeout 30m]   follow a deploy until it is live or failed
