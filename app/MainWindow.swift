@@ -1648,6 +1648,13 @@ struct ContentView: View {
             Button(waitsForFreshList ? L("Select all changed (waits for the fresh list)", "Alle mit Änderungen anhaken (wartet auf die frische Liste)")
                                      : L("Select all changed (⌘A)", "Alle mit Änderungen anhaken (⌘A)")) { selectAllCommand() }
                 .disabled(changedHere == 0 || waitsForFreshList)
+            // Ticks only; the deploy still needs its own click and confirmation.
+            let fixed = visible.filter { $0.deployable && $0.hasNewCommits && !$0.state.isActive && !$0.selected && isMerged(store.autofixState($0)) }
+            if !fixed.isEmpty && !store.observer {
+                Button(L("Tick the \(fixed.count) merged fixes", "Die \(fixed.count) gemergten Fixes anhaken")) {
+                    fixed.forEach { store.toggle($0.platform, $0.id) }
+                }
+            }
             if count > 0 {
                 Button(L("Clear the selection", "Auswahl leeren")) { scopes.forEach { store.clearSelection($0) } }
             }
