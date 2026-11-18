@@ -532,6 +532,7 @@ case "$1" in s_client) cat > /dev/null ;; x509) cat > /dev/null; echo "notAfter=
 OSSL
 chmod +x "$e2e/bin/openssl"
 expect "certs --json: a list (the fake projects have no address: empty)" "$(run "$O" "$E" certs --json; jq -r type "$O")" $'0\narray'
+expect "--json contract: idle, creds, certs and journal verify print one JSON value each" "$(for c in "idle --json" "creds --json" "certs --json" "journal verify --json"; do run "$O" "$E" $c >/dev/null; jq -e . "$O" >/dev/null 2>&1 && printf 'ok '; done)" "ok ok ok ok "
 expect "certs: a bad --days is refused" "$(run "$O" "$E" certs --days x)" "1"
 expect "list --platform render: only Render" "$(run "$O" "$E" list --platform render; grep -c '^vercel ' "$O"; grep -c '^render ' "$O")" $'0\n0\n1'
 expect "list --auto and --manual together are the whole list" \
