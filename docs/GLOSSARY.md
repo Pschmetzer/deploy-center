@@ -71,6 +71,15 @@ A project left out of `changed` and `deploy-changed`: `deploys ignore my-project
 ### Hidden project
 A row hidden in the app. Hidden projects are listed in Settings → General, where **Show** brings them back.
 
+### Repo group
+Projects that share one GitHub repo, shown under one header in the list. The header folds (the state is remembered) and counts failed projects. See [SEARCH.md](SEARCH.md#repo-groups).
+
+### Saved search
+A search such as `is:failed host:render` that you keep with the bookmark button next to the search field. It is only text on this Mac; running it changes nothing. See [SEARCH.md](SEARCH.md#saved-searches).
+
+### Merged fix
+An [Autofix](AUTOFIX.md) pull request that was merged but is not live yet. Its row stands out, and **More → Tick the N merged fixes** ticks them all. Deploying still needs a click.
+
 ### Demo mode
 Settings → General → Demo mode replaces project names and domains, for screenshots.
 

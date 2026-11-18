@@ -50,6 +50,8 @@ PAGES = [
      "Install the deploys CLI alone on macOS, Linux, WSL or in CI: the install script, Homebrew, Docker, and the variables CI needs."),
     ("cli", "CLI reference", "Start", "docs/CLI.md",
      "Every command of the deploys CLI: changed, deploy-changed, status, watch, logs, Vercel, Render, autofix, CI variables, exit codes and settings."),
+    ("search", "Search and saved searches", "Using it", "docs/SEARCH.md",
+     "Search operators such as is:failed and host:render, saved searches, repo groups, merged fixes and copying the list of waiting projects."),
     ("auto-deploy", "Auto-deploy off and on", "Using it", "docs/AUTO-DEPLOY.md",
      "What turning off auto-deploy changes on Vercel and Render, and how to turn it back on."),
     ("autofix", "Autofix", "Using it", "docs/AUTOFIX.md",
