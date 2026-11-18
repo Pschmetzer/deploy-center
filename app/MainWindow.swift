@@ -89,6 +89,16 @@ enum DeployConfirm {
         return rows.map { "- " + Demo.mask($0.name) + ($0.pendingCommits ?? 0 > 0 ? " – " + Row.waitingText($0) : "") }.joined(separator: "\n")
     }
 
+    /// Two small warnings: a project deployed less than 5 minutes ago, and a waiting project whose newest commit is over 30 days old.
+    static func freshnessNote(_ items: [Item], now: Date = Date()) -> String {
+        let recent = items.filter { ($0.lastAt.map { now.timeIntervalSince($0) } ?? .infinity) < 300 }.map { Demo.mask($0.name) }
+        let old = items.filter { $0.hasNewCommits && ($0.headAt.map { now.timeIntervalSince($0) } ?? 0) > 30 * 86400 }.map { Demo.mask($0.name) }
+        var out = ""
+        if !recent.isEmpty { out += "\n\n" + L("Deployed less than 5 minutes ago: ", "Vor weniger als 5 Minuten deployt: ") + recent.joined(separator: ", ") }
+        if !old.isEmpty { out += "\n\n" + L("Newest commit is over 30 days old: ", "Neuester Commit ist über 30 Tage alt: ") + old.joined(separator: ", ") }
+        return out
+    }
+
     /// The ticked ones already on their newest commit: building them costs and changes nothing.
     static func unchangedNote(_ items: [Item]) -> String {
         let same = items.filter { !$0.hasNewCommits && $0.headSha != nil }.map { Demo.mask($0.name) }

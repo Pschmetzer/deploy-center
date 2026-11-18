@@ -21,7 +21,7 @@ struct DeployConfirmSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L("Put this live now?", "Jetzt live schalten?")).font(.headline).accessibilityAddTraits(.isHeader)
             ScrollView {
-                Text(DeployConfirm.message(items, platforms: platforms) + DeployConfirm.headNote(items) + DeployConfirm.unchangedNote(items) + costNote + marks)
+                Text(DeployConfirm.message(items, platforms: platforms) + DeployConfirm.headNote(items) + DeployConfirm.freshnessNote(items) + DeployConfirm.unchangedNote(items) + costNote + marks)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
