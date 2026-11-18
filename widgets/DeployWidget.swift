@@ -216,9 +216,11 @@ struct ListView: View {
 struct ProjectRow: View {
     let p: DeploySnapshot.Project
     @Environment(\.words) private var w
+    /// The icon column grows with Dynamic Type, so a larger icon does not push into the name.
+    @ScaledMetric(relativeTo: .caption) private var iconWidth: CGFloat = 14
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).foregroundStyle(tint).font(.caption).frame(width: 14).widgetAccentable().accessibilityHidden(true)
+            Image(systemName: icon).foregroundStyle(tint).font(.caption).frame(width: iconWidth).widgetAccentable().accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 // Names and commit lines are hidden on a locked device's lock screen; the counts are not.
                 Text(p.name).font(.caption.weight(.semibold)).lineLimit(1).privacySensitive()
