@@ -49,6 +49,12 @@ Run `deploys triggers`. It lists builds of the last 24 hours that nobody started
 ### How are "commits waiting" and "PRs waiting" counted?
 See [NUMBERS.md](NUMBERS.md).
 
+### Where can I see what was deployed, and export it?
+The deploy journal on your Mac lists every deploy. `deploys journal export` writes it as CSV and `deploys journal report` as a monthly Markdown report. See [JOURNAL.md](JOURNAL.md).
+
+### How do I find the failed Render services quickly?
+Type `is:failed host:render` in the search field and save it with the bookmark button. See [SEARCH.md](SEARCH.md).
+
 ### Something does not work.
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
