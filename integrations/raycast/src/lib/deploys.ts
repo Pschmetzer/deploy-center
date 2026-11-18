@@ -3,7 +3,7 @@ import { ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
-import { DeploysErrorKind, classify, clean, lastLines } from "./text";
+import { DeploysErrorKind, PlanTotal, classify, clean, lastLines } from "./text";
 
 // Pure helpers (no Raycast API) live in ./text, so they can be tested with node --test.
 export { isFailedState, platformLabel, plural } from "./text";
@@ -316,6 +316,18 @@ export async function changed(): Promise<JsonResult<ChangedProject[]>> {
     ),
   ]);
   return { ...r, data: withRefs<ChangedProject>(r.data, all) };
+}
+
+// The estimate for the next deploy (`deploys plan --json`). Starts nothing. null when it cannot
+// be worked out: the cost is an extra, never a reason to hide the list.
+export async function planCost(): Promise<PlanTotal | null> {
+  try {
+    const r = await runJson<{ total?: PlanTotal }>(["plan", "--json"]);
+    const total = (r.data as { total?: PlanTotal } | undefined)?.total;
+    return total && typeof total.builds === "number" ? total : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function status(): Promise<JsonResult<StatusProject[]>> {

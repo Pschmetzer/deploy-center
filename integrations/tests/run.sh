@@ -70,6 +70,7 @@ case "\$*" in
   "notes broken") printf '\033[31mpartial notes\033[0m\n'; echo "Error: GitHub rate limit" >&2; exit 1 ;;
   "notes "*) exit 1 ;;
   "simulate --days "*" --json") jq --argjson d "\$3" '.days = \$d' "$here/../tests/fixtures/savings/simulate-report.json" ;;
+  "plan --json") echo '{"estimate":true,"total":{"builds":2,"usd":1.2,"unpriced":0,"minutes":6},"projects":[{"platform":"vercel","name":"app-web","action":"would-deploy","usd":0.8},{"platform":"render","name":"api","action":"would-deploy","usd":0.4},{"platform":"vercel","name":"site","action":"would-skip","usd":null}]}' ;;
   "ledger --json") cat "$here/../tests/fixtures/savings/ledger-report.json" ;;
   "doctor") [ -n "\${FAKE_ENV_DUMP:-}" ] && { env | cut -d= -f1; exit 0; }
     [ -n "\${FAKE_DOCTOR_SLEEP:-}" ] && sleep "\$FAKE_DOCTOR_SLEEP"; echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
@@ -320,6 +321,11 @@ expect "alfred: waiting before up to date" "$(jq -c '[.items[].title]' <<<"$af")
 expect "alfred: the query filters by name" "$(alfred/deploys-filter.sh WEB | jq -c '[.items[].title]')" '["app-web"]'
 expect "alfred: no match is one item" "$(alfred/deploys-filter.sh zzz | jq -r '.items[0].title')" "No project matches"
 expect "alfred: a CLI that gives no list says so" "$(DEPLOYS=/usr/bin/false alfred/deploys-filter.sh | jq -r '.items[0].title')" "Could not read the projects"
+ap="$(alfred/deploys-plan.sh)"
+expect "alfred plan: the sum first, then every project" "$(jq -c '[.items[].title]' <<<"$ap")" '["2 builds, about $1.2","app-web","api","site"]'
+expect "alfred plan: a skipped project says so" "$(jq -r '.items[3].subtitle' <<<"$ap")" "Would not start · vercel"
+expect "alfred plan: the query filters, the sum stays" "$(alfred/deploys-plan.sh API | jq -c '[.items[].title]')" '["2 builds, about $1.2","api"]'
+expect "alfred plan: a CLI without a plan says so" "$(DEPLOYS=/usr/bin/false alfred/deploys-plan.sh | jq -r '.items[0].title')" "Could not work out the plan"
 expect "alfred open: only a project name" "$(alfred/deploys-open.sh 'open a;b' 2>&1; echo "rc=$?")" $'Not a project: open a;b\nrc=1'
 DEPLOYS_NOTIFY_URL='http://api.telegram.org/botT/sendMessage' notify/notify.sh >/dev/null 2>&1; expect "notify: refuses http:// to another host" "$?" 1
 DEPLOYS_NOTIFY_URL='http://localhost:8080/topic' notify/notify.sh >/dev/null 2>&1; expect "notify: http:// to localhost is fine" "$?" 0

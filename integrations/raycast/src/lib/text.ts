@@ -81,3 +81,18 @@ export function waitingSentence(p: ChangedProject): string {
 export function sortByAge(list: ChangedProject[]): ChangedProject[] {
   return [...list].sort((a, b) => (a.oldestPendingAt ?? Infinity) - (b.oldestPendingAt ?? Infinity));
 }
+
+// What `deploys plan --json` says about the next deploy (only the sum is used here).
+export interface PlanTotal {
+  builds: number;
+  usd: number | null;
+  unpriced?: number;
+}
+
+// "≈ $1.20" for the sum of the next deploy; "" when there is no estimate. A sum with unpriced
+// builds says so ("≈ $1.20 + 1 unpriced"), as the estimate then covers only part of the run.
+export function costText(t: PlanTotal | null | undefined): string {
+  if (!t || typeof t.usd !== "number" || !Number.isFinite(t.usd) || t.builds <= 0) return "";
+  const usd = `≈ $${(Math.round(t.usd * 100) / 100).toFixed(2)}`;
+  return (t.unpriced ?? 0) > 0 ? `${usd} + ${t.unpriced} unpriced` : usd;
+}
