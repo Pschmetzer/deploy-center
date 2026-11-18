@@ -22,6 +22,10 @@ Bei mehr als 3 Projekten, rotem Risiko oder einer Markierung ist **Abbrechen** d
 
 Nach dem Bestätigen kann **Einstellungen → Deploy → Warten, bevor ein Deploy startet** dir ein paar Sekunden zum Abbrechen geben. Siehe [SETTINGS.de.md](SETTINGS.de.md).
 
+## Kopieren
+
+**Liste kopieren** in der Bestätigung legt die Projekte, die live gehen sollen, in die Zwischenablage. Das Zeilenmenü hat **Zusammenfassung kopieren**: Name, Plattform und was wartet, in einer Zeile.
+
 ## Kosten
 
 **Kosten …** öffnet das Kosten-Blatt: eine Kurve über 7 oder 14 Tage, das teuerste Projekt der Woche, ein Monatsbudget je Projekt mit Ampel (Rechtsklick auf ein Projekt), eine Schätzung „was wäre bei einem Build am Tag“ und ein Markdown-Bericht zum Kopieren. Eine Monatsgrenze für die CLI ist `deploys budget set 50` ([CLI.de.md](CLI.de.md)).
