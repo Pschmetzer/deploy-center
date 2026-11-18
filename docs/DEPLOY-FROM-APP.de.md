@@ -15,6 +15,7 @@ Die untere Leiste zeigt ungefähr, was die angehakten Vercel-Builds kosten. Es i
 - die neueste Commit-Nachricht jedes Projekts mit wartenden Änderungen (bis zu 5; im Demo-Modus verborgen),
 - ein Hinweis, wenn ein Projekt schon auf dem neuesten Commit ist (der Build kostet und ändert nichts),
 - was die Builds kosten und ob dein Budget hält,
+- eine Warnung für ein Projekt, das vor weniger als 5 Minuten deployt wurde, und für ein wartendes Projekt, dessen neuester Commit über 30 Tage alt ist,
 - deine eigenen Markierungen an den Projekten (eine Notiz, „kritisch“).
 
 Bei mehr als 3 Projekten, rotem Risiko oder einer Markierung ist **Abbrechen** die Standardtaste, damit Return dich nicht aus Versehen live schaltet.
@@ -23,7 +24,9 @@ Nach dem Bestätigen kann **Einstellungen → Deploy → Warten, bevor ein Deplo
 
 ## Kosten
 
-**Kosten …** öffnet das Kosten-Blatt: eine 7-Tage-Kurve, ein Monatsbudget je Projekt mit Ampel (Rechtsklick auf ein Projekt), eine Schätzung „was wäre bei einem Build am Tag“ und ein Markdown-Bericht zum Kopieren. Eine Monatsgrenze für die CLI ist `deploys budget set 50` ([CLI.de.md](CLI.de.md)).
+**Kosten …** öffnet das Kosten-Blatt: eine Kurve über 7 oder 14 Tage, das teuerste Projekt der Woche, ein Monatsbudget je Projekt mit Ampel (Rechtsklick auf ein Projekt), eine Schätzung „was wäre bei einem Build am Tag“ und ein Markdown-Bericht zum Kopieren. Eine Monatsgrenze für die CLI ist `deploys budget set 50` ([CLI.de.md](CLI.de.md)).
+
+Das Menüleisten-Symbol wird zu einem Dollarzeichen, wenn der Monat im aktuellen Tempo über dem Budget liegt.
 
 ## Nach einem Deploy
 
