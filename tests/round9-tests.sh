@@ -78,5 +78,16 @@ expect "keychain_age_days: a key saved in 2020 is over 2000 days old" "$([ "${ag
 expect "creds --json: a list with a rotate flag" "$(PATH="$tmp/fakebin:$PATH" cli creds --json 2>/dev/null | jq -r 'map(has("rotate")) | all')" "true"
 expect "creds: a bad --max-age is refused" "$(cli creds --max-age 0 >/dev/null 2>&1; echo $?)" "1"
 
+# cert_days_left (idea 34) with a fake openssl
+cat > "$tmp/fakebin/openssl" <<'OSSL'
+#!/bin/bash
+case "$1" in s_client) cat > /dev/null ;; x509) cat > /dev/null; echo "notAfter=Jan  1 00:00:00 ${CERT_YEAR:-2020} GMT" ;; esac
+OSSL
+chmod +x "$tmp/fakebin/openssl"
+cd1="$( export DEPLOYS_LIB=1 DEPLOYS_CONFIG="$tmp/certcfg" PATH="$tmp/fakebin:$PATH"; . ./deploys; cert_days_left example.test )"
+cd2="$( export DEPLOYS_LIB=1 DEPLOYS_CONFIG="$tmp/certcfg" PATH="$tmp/fakebin:$PATH" CERT_YEAR=2099; . ./deploys; cert_days_left example.test )"
+expect "cert_days_left: an expired certificate is negative" "$([ "${cd1:-0}" -lt 0 ] && echo yes || echo "no:$cd1")" "yes"
+expect "cert_days_left: a certificate in 2099 has years left" "$([ "${cd2:-0}" -gt 3000 ] && echo yes || echo "no:$cd2")" "yes"
+
 echo
 [ "$fails" -eq 0 ] && echo "All round-9 tests passed." || { echo "$fails failed."; exit 1; }
