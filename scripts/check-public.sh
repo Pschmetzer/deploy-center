@@ -27,7 +27,6 @@ patterns=(
   'team_[A-Za-z0-9]{20,}'                       # Vercel team ID
   'prj_[A-Za-z0-9]{20,}'                        # Vercel project ID
   '(srv|crn|usr|tea)-[a-z0-9]{16,}'             # Render IDs
-  'rnd_[A-Za-z0-9]{20,}'                        # Render API key
 )
 # Placeholders that may appear in docs and examples.
 allowed='/Users/(YOURNAME|you|me|name)\b'
@@ -41,6 +40,7 @@ tokens=(
   '\bAKIA[0-9A-Z]{16}\b'                                         # AWS access key
   '\bxox[abprs]-[A-Za-z0-9-]{10,}'                               # Slack
   '-----BEGIN ([A-Z]+ )*PRIVATE KEY-----'                        # a private key block
+  '\brnd_[A-Za-z0-9]{20,}'                                       # Render API key
 )
 is_test_path() { case "$1" in tests/*|*/tests/*|*/Tests/*|*/test/*) return 0 ;; *) return 1 ;; esac; }
 

@@ -4,8 +4,14 @@ Neue Ideen nach Runde 9. Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 22 (Exit-Codes: stehen in `CLI.md`, einige jetzt getestet) ist umgesetzt.
+- 15 „Liste kopieren“ in der Bestätigung ist umgesetzt.
+- 1 Rechtsklick „Nur dieses Repo zeigen“ am Gruppenkopf ist umgesetzt.
+- 6 Gespeicherte Suchen in der Befehlspalette (und „Nur Fehlgeschlagene“) sind umgesetzt.
+- 3 Tastenkürzel ⌥⌘F ist umgesetzt.
 - 2 Trefferzahl der Suche und 8 rote Projekte im Gruppenkopf sind umgesetzt. 12 Warnung bei altem Commit und 14 „gerade erst deployt“ in der Bestätigung sind umgesetzt.
 - 17 Budget-Hinweis im Menüleistensymbol und 18 teuerstes Projekt der Woche (in der Kostenansicht) sind umgesetzt.
+- 19 (`deploys list --format tsv`) und 20 (`doctor` prüft den Einstellungsordner) sind umgesetzt.
 - 2 Trefferzahl der Suche und 8 rote Projekte im Gruppenkopf sind umgesetzt.
 
 ## Hauptfenster

@@ -48,7 +48,8 @@ No key is ever printed.
   deploys notes <project> [\-\-json]          the same as release notes (Markdown; \-\-json: author as a field)
   deploys open <project> [\-\-dashboard]      the site, or its page at the platform
   deploys ignore <p> [\-\-undo] | \-\-list      leave a project out of changed and deploy\-changed
-  deploys list [\-\-platform <p>] [\-\-auto|\-\-manual] [\-\-json]   every project on every provider that is on, with its platform
+  deploys idle [\-\-days 90] [\-\-json]         projects with no deploy for N days (candidates to pause)
+  deploys list [\-\-platform <p>] [\-\-auto|\-\-manual] [\-\-format tsv] [\-\-json]   every project on every provider that is on, with its platform
 
   deploys verify <p> [\-\-path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
     [\-\-rollback\-after 10] [\-\-no\-rollback] [\-\-watch\-timeout 30m]   count down, then roll back (Ctrl\-C stops it)

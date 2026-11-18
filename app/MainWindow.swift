@@ -324,7 +324,10 @@ struct ContentView: View {
 
     private var waitingSubtitle: String {
         let n = store.waiting.projects
-        return n == 0 ? "" : L("\(n) \(n == 1 ? "project waits" : "projects wait")", "\(n) \(n == 1 ? "Projekt wartet" : "Projekte warten")")
+        let failed = store.items.values.flatMap { $0 }.filter { Row.keyFigure($0) == .failed }.count
+        let waits = n == 0 ? "" : L("\(n) \(n == 1 ? "project waits" : "projects wait")", "\(n) \(n == 1 ? "Projekt wartet" : "Projekte warten")")
+        let bad = failed == 0 ? "" : L("\(failed) failed", "\(failed) fehlgeschlagen")
+        return [waits, bad].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private static func tabLabel(_ store: Store, _ p: Platform) -> String {
@@ -632,6 +635,8 @@ struct ContentView: View {
         // The palette flips the filter that is on screen (through this counter), not only the stored one.
         // Received, not observed: the window does not redraw for every palette request.
         .onReceive(PaletteCenter.shared.$filterToggles.dropFirst()) { _ in onlyChanged.toggle() }
+        .onReceive(PaletteCenter.shared.$failedToggles.dropFirst()) { _ in search = SearchQuery.toggledFailed(search) }
+        .onReceive(PaletteCenter.shared.$searchRequest.dropFirst()) { search = $0.text }
         .onChange(of: store.pendingShow) { _, req in
             guard let req else { return }
             // Exactly this project: "app" as a plain search would also show "app-backend".
@@ -1490,6 +1495,13 @@ struct ContentView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L("Repository \(Demo.mask(repo)), ", "Repository \(Demo.mask(repo)), ") + Self.repoSummary(items))
+        .contextMenu {
+            // Not in demo mode: the real repo name must not be typed into the search there.
+            if !Demo.on && !repo.contains(" ") {
+                Button(L("Show only this repo", "Nur dieses Repo zeigen")) { search = "repo:" + repo }
+            }
+            Button(collapsed ? L("Expand", "Aufklappen") : L("Collapse", "Zuklappen")) { toggleCollapsed(repo) }
+        }
     }
 
     /// Repo headers the user folded, remembered across launches (one repo per line).
@@ -1566,9 +1578,13 @@ struct ContentView: View {
         }
         if let l = item.link, let u = URL(string: l) {
             Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) }
+            // One request, nothing rolled back.
+            Button(L("Check the site now", "Seite jetzt prüfen")) { Task { await store.checkSiteNow(item) } }
         }
         Divider()
         Menu(L("More", "Mehr")) {
+            // One line for a chat or a ticket: name, platform, what waits (names masked in demo mode).
+            Button(L("Copy summary", "Zusammenfassung kopieren")) { Pasteboard.copy(DeployConfirm.line(item, platform: true)) }
             if let repo = item.repo, !Demo.on {
                 Button(L("Open the repo on \(GitHost(item).name)", "Repo auf \(GitHost(item).name) öffnen")) {
                     if let u = URL(string: GitHost.web(repo)) { SafeLink.open(u) }
@@ -1710,6 +1726,10 @@ struct ContentView: View {
             Button(L("Select all changed", "Alle mit Änderungen anhaken")) { selectAllCommand() }
                 .keyboardShortcut("a")
                 .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+            // ⌥⌘F: only failed projects, i.e. the search operator `is:failed` on or off.
+            Button(L("Show failed only", "Nur Fehlgeschlagene zeigen")) { search = SearchQuery.toggledFailed(search) }
+                .keyboardShortcut("f", modifiers: [.command, .option])
+                .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
         }
     }
 
@@ -1814,6 +1834,12 @@ enum SavedSearches {
 
 /// The search box text split into operators (`is:failed`, `is:waiting`, `platform:render` or `host:render`, `repo:name`) and the words to find.
 struct SearchQuery {
+    /// The search text with `is:failed` added, or removed when it is there.
+    static func toggledFailed(_ raw: String) -> String {
+        let words = raw.split(separator: " ").map(String.init)
+        if words.contains(where: { $0.lowercased() == "is:failed" }) { return words.filter { $0.lowercased() != "is:failed" }.joined(separator: " ") }
+        return (words + ["is:failed"]).joined(separator: " ")
+    }
     var failed = false
     var waiting = false
     var platform: String?
