@@ -73,6 +73,7 @@ deploys hook add <name> <url> | remove <name> | list
 ```bash
 deploys config [--json] [--refresh]     # the effective config, and where each value came from
 deploys team add|remove owner/repo | list | refresh | journal
+deploys journal verify | export [--since D] [--project p] | report [--month YYYY-MM]   # see JOURNAL.md
 deploys readonly [on|off]               # observer mode: every command that changes something is refused
 ```
 
