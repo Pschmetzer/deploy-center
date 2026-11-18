@@ -27,6 +27,12 @@ struct DeployConfirmSheet: View {
             }
             .frame(maxHeight: 300)
             HStack {
+                Button(L("Copy list", "Liste kopieren")) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(DeployConfirm.message(items, platforms: platforms), forType: .string)
+                }
+                .buttonStyle(.link).font(.caption)
+                .help(L("Copies the projects of this deploy as text", "Kopiert die Projekte dieses Deploys als Text"))
                 Spacer()
                 // Many projects or a red risk: Return must not be the way to go live; Cancel is the default then.
                 let careful = items.count > 3 || items.contains { $0.risk?.isRed == true } || !marks.isEmpty
