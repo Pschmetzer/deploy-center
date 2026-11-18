@@ -42,7 +42,8 @@
 #   deploys notes <project> [--json]          the same as release notes (Markdown; --json: author as a field)
 #   deploys open <project> [--dashboard]      the site, or its page at the platform
 #   deploys ignore <p> [--undo] | --list      leave a project out of changed and deploy-changed
-#   deploys list [--platform <p>] [--auto|--manual] [--json]   every project on every provider that is on, with its platform
+#   deploys idle [--days 90] [--json]         projects with no deploy for N days (candidates to pause)
+#   deploys list [--platform <p>] [--auto|--manual] [--format tsv] [--json]   every project on every provider that is on, with its platform
 #
 #   deploys verify <p> [--path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
 #     [--rollback-after 10] [--no-rollback] [--watch-timeout 30m]   count down, then roll back (Ctrl-C stops it)
@@ -3118,9 +3119,10 @@ case "${1:-} ${2:-}" in
     # The versions that matter (jq 1.6+ for the date functions).
     jqv="$(jq --version 2>/dev/null | sed 's/^jq-//' | tr -d '"\\')"
     ro=false; [ -z "$(readonly_from)" ] || ro=true
+    cfgw=false; { mkdir -p "$CONFIG_DIR" 2>/dev/null && [ -w "$CONFIG_DIR" ]; } && cfgw=true
     # jobsMissing: "autofix:gh" = the autofix job's PATH no longer finds gh; deploys <job> schedule on renews it.
-    dj="$(printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s,"perl":%s,"curl":%s,"jobsMissing":%s,"githubRateLimit":%s}' \
-      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" "$(job_missing_json)" "$grl")"
+    dj="$(printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s,"perl":%s,"curl":%s,"jobsMissing":%s,"githubRateLimit":%s,"configWritable":%s}' \
+      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" "$(job_missing_json)" "$grl" "$cfgw")"
     # doctor --text: one line per thing, "ok" or "FIX" with the command that fixes it (the JSON stays the default:
     # the app reads it). Without jq there is nothing to render with, so the JSON is printed.
     if [ "${2:-}" = --text ] && [ "$(has jq)" = true ]; then
@@ -3129,6 +3131,7 @@ case "${1:-} ${2:-}" in
         m(.jq; "jq"; "brew install jq"), m(.githubCli; "gh (GitHub CLI)"; "brew install gh"),
         m(.githubLoggedIn; "gh is logged in"; "gh auth login"), m(.perl; "perl"; "install perl (masking and time limits need it)"),
         m(.curl; "curl"; "install curl"),
+        m(.configWritable; "the settings folder is writable"; "chmod u+w the folder in DEPLOYS_CONFIG (default ~/.config/deploys)"),
         "     bash \(.bashVersion), jq \(.jqVersion)",
         (if .readonly then "NOTE observer mode is on: deploys readonly off" else empty end),
         (if .githubRateLimit then "     GitHub budget: \(.githubRateLimit.remaining) of \(.githubRateLimit.limit) calls left" else empty end),
@@ -4250,21 +4253,46 @@ BASH
   "list "*)
     # Every project on every provider that is on and set up, each with its platform.
     # --platform <p>, --auto (a push builds by itself) or --manual narrow it.
-    lplat=""; lauto=""; shift
+    lplat=""; lauto=""; lfmt=table; shift
     while [ $# -gt 0 ]; do
       case "$1" in
         --platform) is_provider "${2:-}" || die "--platform: \"${2:-}\" is not a platform here (deploys providers)"; lplat="$2"; shift ;;
         --auto) lauto=auto ;;
         --manual) lauto=manual ;;
-        *) die "Unknown option $1. Usage: deploys list [--platform <p>] [--auto|--manual] [--json]" ;;
+        --format) case "${2:-}" in tsv|table) lfmt="$2" ;; json) json=1 ;; *) die "--format takes tsv, table or json" ;; esac; shift ;;
+        *) die "Unknown option $1. Usage: deploys list [--platform <p>] [--auto|--manual] [--format tsv|table|json] [--json]" ;;
       esac
       shift
     done
     rc=0; all="$(all_json)" || rc=$?
     all="$(echo "$all" | jq -c --arg p "$lplat" --arg a "$lauto" 'map(select(($p == "" or .platform == $p) and ($a == "" or (($a == "auto") == (.auto == true)))))')"
     if [ "$json" = 1 ]; then echo "$all"; exit "$rc"; fi
+    if [ "$lfmt" = tsv ]; then   # for scripts without jq: no header, tabs, one project per line
+      echo "$all" | jq -r '.[] | [.platform, .name, (if .auto then "auto" else "manual" end), (.lastState // "-")] | @tsv'; exit "$rc"
+    fi
     echo "$all" | jq -r '.[] | [.platform, .name, (if .auto then "auto" else "manual" end), (.lastState // "-")] | @tsv' \
       | (printf 'PLATFORM\tPROJECT\tDEPLOYS\tSTATE\n'; cat) | table
+    exit "$rc" ;;
+
+  "idle "*)
+    # idle [--days 90] [--json]: projects whose live deploy is older than N days (or that never deployed): a candidate
+    # to pause. Nothing is paused here.
+    idays=90; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; idays="$2"; shift ;;
+        *) die "Unknown option $1. Usage: deploys idle [--days 90] [--json]" ;;
+      esac
+      shift
+    done
+    rc=0; all="$(all_json)" || rc=$?
+    idle="$(echo "$all" | jq -c --argjson d "$idays" --argjson now "$(date +%s)" '
+      map(select((.paused // false) | not)) | map({platform, name, lastAt, days:(if .lastAt then (($now - .lastAt) / 86400 | floor) else null end)})
+      | map(select(.days == null or .days >= $d)) | sort_by(-(.days // 1e9))')"
+    if [ "$json" = 1 ]; then echo "$idle"; exit "$rc"; fi
+    if [ "$(echo "$idle" | jq length)" = 0 ]; then echo "No project has been idle for $idays days or more."; exit "$rc"; fi
+    echo "$idle" | jq -r '.[] | [.platform, .name, (if .days == null then "never" else "\(.days) days" end)] | @tsv' \
+      | (printf 'PLATFORM\tPROJECT\tIDLE\n'; cat) | table
     exit "$rc" ;;
 
   "simulate "*|"ledger "*)

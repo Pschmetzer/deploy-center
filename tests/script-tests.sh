@@ -530,6 +530,11 @@ expect "list --platform render: only Render" "$(run "$O" "$E" list --platform re
 expect "list --auto and --manual together are the whole list" \
   "$(run "$O" "$E" list --json; tot="$(jq length "$O")"; run "$O" "$E" list --json --auto >/dev/null; au="$(jq length "$O")"; run "$O" "$E" list --json --manual >/dev/null; ma="$(jq length "$O")"; [ "$tot" = "$((au + ma))" ] && echo same)" $'0\nsame'
 fresh
+expect "list --format tsv: no header, one line per project" "$(run "$O" "$E" list --json >/dev/null; n="$(jq length "$O")"; run "$O" "$E" list --format tsv >/dev/null; echo "$n:$(wc -l < "$O" | tr -d ' '):$(grep -c PLATFORM "$O")")" "2:2:0"
+expect "list --format xml is refused" "$(run "$O" "$E" list --format xml)" "1"
+expect "idle --json: a list, sorted, nothing paused" "$(run "$O" "$E" idle --days 1 --json; jq -r 'type' "$O")" $'0\narray'
+expect "idle: a bad --days is refused" "$(run "$O" "$E" idle --days 0)" "1"
+expect "doctor --text: the settings folder is checked" "$(run "$O" "$E" doctor --text; grep -c 'ok   the settings folder is writable' "$O")" $'0\n1'
 expect "metrics: waiting commits per project, in Prometheus text" \
   "$(run "$O" "$E" metrics; grep -c '^deploycenter_waiting_commits{platform="vercel",project="web"} 1$' "$O"; grep -c '^# TYPE deploycenter_failed gauge$' "$O")" $'0\n1\n1'
 expect "metrics --out: the file is written whole" "$(run "$O" "$E" metrics --out "$e2e/metrics.prom"; grep -c '^deploycenter_auto_deploy{' "$e2e/metrics.prom")" $'0\n2'

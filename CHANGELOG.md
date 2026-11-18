@@ -18,6 +18,7 @@
 - App: the deploy confirmation warns about a project deployed less than 5 minutes ago and about a waiting project whose newest commit is over 30 days old.
 - Costs: choose 7 or 14 days for the chart, see the dearest project of the week, and the menu bar icon turns into a dollar sign when the month is over budget at this pace.
 
+- CLI: `deploys idle [--days 90]` lists projects with no deploy for that long (candidates to pause); `deploys list --format tsv` prints plain tab-separated lines for scripts; `deploys doctor` checks that the settings folder is writable.
 - App: a search shows how many rows match ("3/41"); a repo header also counts its failed projects.
 - Docker: `--build-arg WITH_VERCEL=0` builds an image without the Vercel CLI, about half the size (567 MB instead of 1.09 GB), for Render, Netlify and the other hosts.
 - App: "More" → "Collapse all repo groups" / "Expand all repo groups".
