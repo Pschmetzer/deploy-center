@@ -4,6 +4,8 @@
 # tests/fixtures/team. Run: tests/team-tests.sh
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
+# No test may wait on the terminal: stand-ins such as the fake `security` read stdin.
+exec </dev/null
 fails=0
 ok()   { echo "ok   $1"; }
 fail() { echo "FAIL $1: $2"; fails=$((fails+1)); }
