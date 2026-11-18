@@ -5,7 +5,7 @@ Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
-- (noch nichts umgesetzt)
+- 14 „Nur Fehlgeschlagene anhaken“ pro Repo-Gruppe und 16 klappbare Gruppenköpfe (merkt sich den Zustand) sind umgesetzt.
 
 ## Wartung und Repo
 
