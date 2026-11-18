@@ -114,6 +114,7 @@ struct AutofixSettings: View {
 
     private func check(_ ok: Bool) -> some View {
         Image(systemName: ok ? "checkmark.circle.fill" : "circle").foregroundStyle(ok ? Color.good : .secondary)
+            .accessibilityLabel(ok ? L("Saved", "Gespeichert") : L("Not saved", "Nicht gespeichert"))
     }
 
     static func label(_ f: AutofixReport.Fire) -> String {

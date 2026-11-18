@@ -11,7 +11,7 @@ struct Setup: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "link.circle").font(.system(size: 40)).foregroundStyle(.secondary)
+            Image(systemName: "link.circle").font(.system(size: 40)).foregroundStyle(.secondary).accessibilityHidden(true)
             Text(title).font(.title2.weight(.semibold))
             Text(text).foregroundStyle(.secondary).multilineTextAlignment(.center)
             ForEach(commands, id: \.self) { c in
@@ -35,7 +35,7 @@ struct RenderKeySetup: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "key.fill").font(.system(size: 36)).foregroundStyle(.secondary)
+            Image(systemName: "key.fill").font(.system(size: 36)).foregroundStyle(.secondary).accessibilityHidden(true)
             Text(L("Connect Render", "Render verbinden")).font(.title2.weight(.semibold))
             Text(L("Create an API key at dashboard.render.com → Account Settings → API Keys and paste it here. It is stored in your macOS keychain, nowhere else.",
                    "Erstelle einen API-Key unter dashboard.render.com → Account Settings → API Keys und füge ihn hier ein. Er wird nur im macOS-Schlüsselbund gespeichert."))
