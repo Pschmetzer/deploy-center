@@ -2026,4 +2026,11 @@ do {
     expect("digest: neutral hides the text", QuietDigest.note(held, neutral: true).body.contains("a: one"), false)
 }
 
+// The quiet hours example in Settings.
+do {
+    expect("quiet hint: off mentions an example", SettingsText.quietHint(from: 0, to: 0).contains("22:00"), true)
+    expect("quiet hint: over midnight", SettingsText.quietHint(from: 22, to: 7).contains("22:00") && SettingsText.quietHint(from: 22, to: 7).contains("07:00"), true)
+    expect("quiet hint: same day has no midnight note", SettingsText.quietHint(from: 12, to: 14).contains("12:00"), true)
+}
+
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

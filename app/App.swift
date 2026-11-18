@@ -274,6 +274,7 @@ struct SettingsView: View {
             }
             .help(L("Inside these hours only failures notify; the rest comes as one note when they end. The same hour twice: off. macOS Focus applies as well.",
                     "In diesen Stunden melden sich nur Fehler; alles andere kommt gebündelt, wenn sie enden. Zweimal dieselbe Stunde: aus. Der macOS-Fokus gilt zusätzlich."))
+            Text(SettingsText.quietHint(from: quietFrom, to: quietTo)).font(.caption).foregroundStyle(.secondary)
             Toggle(L("Remind again after 30 minutes when a failure was not looked at", "Nach 30 Minuten noch einmal erinnern, wenn ein Fehler nicht angesehen wurde"),
                    isOn: $remindFailures)
             if notificationsDenied {
