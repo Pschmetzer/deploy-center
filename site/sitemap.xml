@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://deploycenter.app/</loc><lastmod>2026-11-16</lastmod></url>
+  <url><loc>https://deploycenter.app/</loc><lastmod>2026-11-17</lastmod></url>
   <url><loc>https://deploycenter.app/guides/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/disable-vercel-auto-deploy/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/guides/stop-vercel-building-every-push/</loc><lastmod>2026-11-16</lastmod></url>
@@ -60,12 +60,12 @@
   <url><loc>https://deploycenter.app/docs/verify/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/action/</loc><lastmod>2026-11-16</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/badge/</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/badge/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/statuspage/</loc><lastmod>2026-11-16</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/notify/</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/notify/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/hooks/</loc><lastmod>2026-11-10</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/mcp/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/claude-code/</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/mcp/</loc><lastmod>2026-11-16</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/claude-code/</loc><lastmod>2026-11-16</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/digest/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/raycast/</loc><lastmod>2026-11-12</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/vscode/</loc><lastmod>2026-11-12</lastmod></url>

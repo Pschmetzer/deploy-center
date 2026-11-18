@@ -53,6 +53,9 @@
 (function () {
   var q = document.querySelector('input[data-site-search]'), list = document.getElementById('site-results');
   if (!q || !list) return;
+  var st = document.createElement('div');
+  st.className = 'sr'; st.setAttribute('role', 'status'); st.setAttribute('aria-live', 'polite');
+  list.parentNode.insertBefore(st, list);
   q.closest('.site-search').hidden = false;   // shown only when this script runs
   var index = null, loading = null;
   function load() {
@@ -66,7 +69,7 @@
   function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function render() {
     var terms = q.value.toLowerCase().split(/\s+/).filter(Boolean), found = [];
-    if (!terms.length || !index) { list.hidden = true; list.innerHTML = ''; return; }
+    if (!terms.length || !index) { list.hidden = true; list.innerHTML = ''; st.textContent = ''; return; }
     index.forEach(function (x) {
       var score = 0;
       for (var i = 0; i < terms.length; i++) {
@@ -82,6 +85,7 @@
       return '<li><a href="' + esc(r.e.u) + '">' + esc(title) + '</a><small>' + esc(r.e.t.slice(0, 120)) + '</small></li>';
     }).join('') : '<li class="empty">No results for \u201c' + esc(q.value.trim()) + '\u201d</li>';
     list.hidden = false;
+    st.textContent = found.length ? found.length + (found.length === 1 ? ' result' : ' results') : 'No results';
   }
   q.addEventListener('focus', load);
   q.addEventListener('input', function () { load().then(render); });

@@ -83,6 +83,7 @@ struct RootView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { settings = true } label: { Image(systemName: "gearshape") }
                         .accessibilityLabel(L("Settings", "Einstellungen"))
+                        .accessibilityInputLabels([L("Settings", "Einstellungen"), L("Preferences", "Optionen")])
                 }
             }
         } detail: {
@@ -114,11 +115,22 @@ struct RootView: View {
         .onContinueUserActivity(CSSearchableItemActionType) { a in if let k = Spotlight.key(a) { selection = k } }
         .onContinueUserActivity(Spotlight.activity) { a in if let k = Spotlight.key(a) { selection = k } }
         .onChange(of: store.openKey, initial: true) { _, k in if let k { selection = k; store.openKey = nil } }
-        .onChange(of: store.projects) { _, _ in if let w = pendingOpen { open(name: w[0], platform: w.count > 1 ? w[1] : nil) } }
+        .onChange(of: store.projects) { _, _ in
+            guard let w = pendingOpen, let first = w.first else { return }
+            if first.hasPrefix("key:") {
+                let k = String(first.dropFirst(4))
+                if store.projects.contains(where: { $0.key == k }) { selection = k; pendingOpen = nil }
+            } else { open(name: first, platform: w.count > 1 ? w[1] : nil) }
+        }
         // deploycenter://select?project=<name>&platform=<Vercel|Render>, from the widget. It only shows the project.
         .onOpenURL { url in
-            guard url.scheme == "deploycenter", let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
-                  let name = items.first(where: { $0.name == "project" })?.value else { return }
+            guard url.scheme == "deploycenter", let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return }
+            // The key is exact; name and platform are the fallback for links from an older widget or the Mac.
+            if let key = items.first(where: { $0.name == "key" })?.value, !key.isEmpty {
+                if store.projects.contains(where: { $0.key == key }) { selection = key; pendingOpen = nil } else { pendingOpen = ["key:" + key] }
+                return
+            }
+            guard let name = items.first(where: { $0.name == "project" })?.value else { return }
             open(name: name, platform: items.first { $0.name == "platform" }?.value)
         }
         .task {
@@ -230,6 +242,7 @@ struct Toast: View {
             Button { store.message = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("Close message", "Meldung schließen"))
+                .accessibilityInputLabels([L("Close", "Schließen"), L("Dismiss", "Ausblenden")])
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16).padding(.bottom, 12)
@@ -343,6 +356,7 @@ struct ProjectList: View {
                                     if asks.canDeploy(p, store) {
                                         Button { asks.deploy = p } label: { Label(L("Deploy", "Deployen"), systemImage: "paperplane") }
                                             .tint(.accentColor)
+                                            .accessibilityInputLabels([L("Deploy", "Deployen")])
                                     }
                                 }
                                 // VoiceOver: the same actions as the detail view, without opening it.
@@ -372,8 +386,10 @@ struct ProjectList: View {
     @ViewBuilder private func menu(_ p: PhoneProject) -> some View {
         Button { asks.deploy = p } label: { Label(L("Deploy …", "Deployen …"), systemImage: "paperplane") }
             .disabled(!asks.canDeploy(p, store))
+            .accessibilityInputLabels([L("Deploy", "Deployen")])
         Button(role: .destructive) { asks.askRollback(p, store) } label: { Label(L("Roll back …", "Zurückrollen …"), systemImage: "arrow.uturn.backward") }
             .disabled(!asks.canRollBack(p, store))
+            .accessibilityInputLabels([L("Roll back", "Zurückrollen")])
         if let d = p.domain, let url = URL(string: "https://" + d) {
             Button { openURL(url) } label: { Label(L("Open domain", "Domain öffnen"), systemImage: "safari") }
         }
@@ -440,7 +456,10 @@ struct Summary: View {
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
+        // One sentence instead of the numbers and words read as separate pieces.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("\(plural(n, ("PR", "PR"), ("PRs", "PRs"))) waiting in \(plural(w, ("project", "Projekt"), ("projects", "Projekten"))), \(store.projects.filter(\.building).count) building, \(store.projects.filter(\.failed).count) failed",
+                              "\(plural(n, ("PR", "PR"), ("PRs", "PRs"))) \(n == 1 ? "wartet" : "warten") in \(plural(w, ("project", "Projekt"), ("projects", "Projekten"))), \(store.projects.filter(\.building).count) im Bau, \(store.projects.filter(\.failed).count) fehlgeschlagen"))
     }
 }
 
@@ -468,7 +487,7 @@ extension PhoneProject {
         // Before `changed`: after a force push the compare fails and the count is unknown, not 0.
         if rewritten && changed { return L("history rewritten · count unknown", "Verlauf neu geschrieben · Anzahl unbekannt") }
         if changed {
-            let prs = (pendingPRs ?? 0) > 0 ? plural(pendingPRs!, ("PR", "PR"), ("PRs", "PRs"), atLeast: pendingCapped) + " · " : ""
+            let prs = (pendingPRs ?? 0) > 0 ? plural(pendingPRs!, ("PR", "PR"), ("PRs", "PRs"), atLeast: prsAtLeast) + " · " : ""
             guard let n = pendingCommits else { return prs + L("waiting, count unknown", "wartet, Anzahl unbekannt") }
             return prs + (n == 1 ? L("1 commit waiting", "1 Commit wartet") : L("\(n) commits waiting", "\(n) Commits warten"))
         }
@@ -486,7 +505,7 @@ extension PhoneProject {
         var s = headMsg.map { L("\"\($0)\"\(sha) ", "„\($0)“\(sha) ") } ?? ""
         if let n = pendingCommits, n > 0 {
             s += L("and \(plural(n, ("commit", "Commit"), ("commits", "Commits"))) in all", "und insgesamt \(plural(n, ("commit", "Commit"), ("commits", "Commits")))")
-            if let k = pendingPRs, k > 0 { s += L(" from \(plural(k, ("PR", "PR"), ("PRs", "PRs"), atLeast: pendingCapped))", " aus \(plural(k, ("PR", "PR"), ("PRs", "PRs"), atLeast: pendingCapped))") }
+            if let k = pendingPRs, k > 0 { s += L(" from \(plural(k, ("PR", "PR"), ("PRs", "PRs"), atLeast: prsAtLeast))", " aus \(plural(k, ("PR", "PR"), ("PRs", "PRs"), atLeast: prsAtLeast))") }
             s += " "
         }
         let branch = branch ?? L("the branch", "dem Branch")
@@ -538,7 +557,7 @@ struct ProjectDetail: View {
                 LabeledContent(L("Platform", "Plattform"), value: p.provider.rawValue)
                 LabeledContent(L("Auto-deploy", "Auto-Deploy")) {
                     Text(p.autoDeploy ? L("on: every push builds", "an: jeder Push baut") : L("off", "aus"))
-                        .foregroundStyle(p.autoDeploy ? .orange : .secondary)
+                        .foregroundStyle(p.autoDeploy ? Color.warningText : .secondary)
                 }
                 if let r = p.repo { LabeledContent(L("Repository", "Repository"), value: r + (p.branch.map { " · \($0)" } ?? "")) }
                 if let h = p.otherHost { LabeledContent(L("Repository", "Repository"), value: L("on \(h) (only GitHub is read)", "auf \(h) (gelesen wird nur GitHub)")) }
@@ -670,11 +689,18 @@ struct DeployHistoryView: View {
     let project: PhoneProject
     @State private var records: [DeployRecord]?
     @State private var again: DeployRecord?
+    /// The list could not be read: that is not "no deploys yet".
+    @State private var loadFailed = false
 
     var body: some View {
         List {
             if let records {
-                if records.isEmpty { Text(L("No deploys yet.", "Noch keine Deploys.")).foregroundStyle(.secondary) }
+                if records.isEmpty && loadFailed {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(L("The history could not be loaded.", "Der Verlauf konnte nicht geladen werden.")).foregroundStyle(.secondary)
+                        Button(L("Try again", "Noch einmal versuchen")) { Task { await load() } }
+                    }
+                } else if records.isEmpty { Text(L("No deploys yet.", "Noch keine Deploys.")).foregroundStyle(.secondary) }
                 ForEach(records) { r in
                     NavigationLink { BuildLogView(store: store, project: project, record: r) } label: { row(r) }
                         .swipeActions {
@@ -689,17 +715,25 @@ struct DeployHistoryView: View {
             } else { HStack { Spacer(); ProgressView(); Spacer() } }
         }
         .navigationTitle(L("History", "Verlauf"))
-        .task { records = await store.history(project) ?? [] }
-        .refreshable { records = await store.history(project) ?? records }
+        .task { await load() }
+        .refreshable { await load() }
         .confirmationDialog(L("Make this deploy live again?", "Diesen Deploy wieder live schalten?"),
-                            isPresented: Binding(get: { again != nil }, set: { if !$0 { again = nil } }), titleVisibility: .visible) {
+                            isPresented: Binding(get: { again != nil }, set: { if !$0 { again = nil } }), titleVisibility: .visible,
+                            presenting: again) { r in
             Button(L("Make live again", "Wieder live schalten"), role: .destructive) {
-                if let r = again { Task { await store.rollback(project, to: r.target) } }
+                Task { await store.rollback(project, to: r.target) }
             }
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
-        } message: {
-            Text((again?.title.map { L("\"\($0)\"", "„\($0)“") } ?? L("This deploy", "Dieser Deploy")) + L(" goes live again. Asks for Face ID.", " geht wieder live. Fragt nach Face ID."))
+        } message: { r in
+            Text((r.title.map { L("\"\($0)\"", "„\($0)“") } ?? L("This deploy", "Dieser Deploy"))
+                 + L(" goes live again. Asks for \(store.unlockName).", " geht wieder live. Fragt nach \(store.unlockName)."))
         }
+    }
+
+    /// A failed read keeps what is shown (refresh) and says so (first load) instead of an empty list.
+    private func load() async {
+        if let r = await store.history(project) { records = r; loadFailed = false }
+        else { loadFailed = true; if records == nil { records = [] } }
     }
 
     private func row(_ r: DeployRecord) -> some View {
@@ -708,7 +742,7 @@ struct DeployHistoryView: View {
                 Text(PhoneProject.stateWord(r.state)).foregroundStyle(r.failed ? .red : r.current ? .green : .secondary)
                 if r.current { Text(L("live now", "jetzt live")).font(.caption).foregroundStyle(.green) }
                 Spacer()
-                if let a = r.at { Text(a.formatted(.relative(presentation: .named))).font(.caption).foregroundStyle(.secondary) }
+                if let a = r.at { Text(relative(a)).font(.caption).foregroundStyle(.secondary) }
             }
             HStack(spacing: 6) {
                 if let s = r.sha { Text(s.prefix(7)).monospaced().font(.caption) }

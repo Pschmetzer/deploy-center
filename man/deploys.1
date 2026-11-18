@@ -1,4 +1,4 @@
-.TH DEPLOYS 1 "" "deploys 0.10.0" "Deploy Center"
+.TH DEPLOYS 1 "" "deploys 0.11.0" "Deploy Center"
 .SH NAME
 deploys \- turn off auto\-deploy on Vercel, Render and the other platforms in providers/ (deploys providers), then deploy by hand
 .SH SYNOPSIS
@@ -24,7 +24,7 @@ No key is ever printed.
     [\-\-by\-rules]                            only what a "deploy" rule matches; "hold" rules always count
     [\-\-when\-green [\-\-wait 30m] [\-\-strict]]  only commits whose CI passed; waits for running checks
   deploys plan [\-\-when\-green] [\-\-json]      what deploy\-changed \-\-yes would start, and an estimate of its cost
-  deploys schedule daily [HH:MM] [\-\-when\-green] [\-\-by\-rules] [\-\-strict] | off | status [\-\-json]
+  deploys schedule daily [HH:MM] [\-\-weekdays] [\-\-when\-green] [\-\-by\-rules] [\-\-strict] [\-\-only <p>] [\-\-exclude <p>] [\-\-platform <p>] [\-\-max <n>] | off | status [\-\-json]
                                             deploy\-changed \-\-yes once a day (launchd; else the cron line)
   deploys rules check [\-\-json]              which rule of rules.json matches which waiting project, and why not
   deploys deploy <p>|<group> [\-\-preview] [\-\-sha <c>] [\-\-wait] [\-\-dry\-run] [\-\-force "reason"]
@@ -49,7 +49,7 @@ No key is ever printed.
   deploys list [\-\-platform <p>] [\-\-auto|\-\-manual] [\-\-json]   every project on every provider that is on, with its platform
 
   deploys verify <p> [\-\-path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
-    [\-\-rollback\-after 10] [\-\-no\-rollback]   count down, then roll back (Ctrl\-C stops it)
+    [\-\-rollback\-after 10] [\-\-no\-rollback] [\-\-watch\-timeout 30m]   count down, then roll back (Ctrl\-C stops it)
     [\-\-expect 200|2xx] [\-\-follow]          only that status is healthy; follow up to 3 redirects
   deploys risk <project> [\-\-json]           green/yellow/red for what waits: migrations, lockfiles, config, size
   deploys ci <owner/repo> [<ref>] [\-\-wait 30m]  the CI verdict of a commit: green, pending, red, none

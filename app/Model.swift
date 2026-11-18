@@ -313,7 +313,8 @@ func localDay(_ d: Date = Date(), timeZone: TimeZone = .current) -> String {
     return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
 }
 
-func date(_ secs: Double?) -> Date? { secs.flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0) : nil } }
+/// Seconds since 1970; a value past 1e12 is milliseconds (some platforms answer in those).
+func date(_ secs: Double?) -> Date? { secs.flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0 > 1e12 ? $0 / 1000 : $0) : nil } }
 
 // MARK: - Autofix and auto-deploy allowances, as the rows show them
 

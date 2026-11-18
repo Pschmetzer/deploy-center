@@ -62,6 +62,8 @@ private func money(_ v: Double) -> String { v.formatted(.currency(code: "USD").p
 private func link(_ p: DeploySnapshot.Project) -> URL {
     var c = URLComponents(); c.scheme = "deploycenter"; c.host = "select"
     c.queryItems = [URLQueryItem(name: "project", value: p.name), URLQueryItem(name: "platform", value: p.platform)]
+    // The provider's own id when the snapshot has it: two projects of one name (two teams) stay apart.
+    if let k = p.key { c.queryItems?.append(URLQueryItem(name: "key", value: k)) }
     return c.url ?? URL(string: "deploycenter://")!
 }
 
@@ -197,8 +199,10 @@ struct ListView: View {
                     Spacer()
                 } else {
                     ForEach(snap.projects.prefix(rows)) { p in Link(destination: link(p)) { ProjectRow(p: p) } }
-                    if snap.projects.count > rows {
-                        Text(w("+\(snap.projects.count - rows) more", "+\(snap.projects.count - rows) weitere")).font(.caption2).foregroundStyle(.secondary)
+                    // The snapshot lists at most ten rows: the rest is counted from the totals.
+                    let more = snap.waitingProjects + snap.building + snap.failed - rows
+                    if more > 0 {
+                        Text(w("+\(more) more", "+\(more) weitere")).font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                 }
@@ -383,7 +387,13 @@ struct ProblemsView: View {
         let bad = snap.projects.filter { $0.status != .waiting }
         VStack(alignment: .leading, spacing: 6) {
             Header(snap: snap, date: date, compact: true)
-            if bad.isEmpty {
+            if bad.isEmpty && snap.isStale(at: date) {
+                // An old snapshot cannot say that nothing failed.
+                Spacer(minLength: 0)
+                Label(w("Out of date: open the app", "Veraltet: App öffnen"), systemImage: "clock.badge.exclamationmark")
+                    .font(.callout.weight(.medium)).foregroundStyle(.orange)
+                Spacer(minLength: 0)
+            } else if bad.isEmpty {
                 Spacer(minLength: 0)
                 Label(w("Nothing failed", "Nichts fehlgeschlagen"), systemImage: "checkmark.circle.fill")
                     .font(.callout.weight(.medium)).foregroundStyle(.green).widgetAccentable()
@@ -406,13 +416,18 @@ struct ProblemsView: View {
 struct WaitingControl: ControlWidget {
     struct Value: ControlValueProvider {
         var previewValue: Int { 3 }
-        func currentValue() async throws -> Int { DeploySnapshot.read()?.waitingPRs ?? 0 }
+        /// -1: not known (no snapshot yet, no account, or an old one): never "0 PRs" then.
+        func currentValue() async throws -> Int {
+            guard let s = DeploySnapshot.read(), s.connected != false, !s.isStale(at: Date()) else { return -1 }
+            return s.waitingPRs
+        }
     }
     var body: some ControlWidgetConfiguration {
         let w = Words(DeploySnapshot.read())
         return StaticControlConfiguration(kind: "app.deploycenter.ios.control.waiting", provider: Value()) { n in
             ControlWidgetButton(action: OpenURLIntent(URL(string: "deploycenter://")!)) {
-                Label(w.n(n, ("PR waiting", "PR wartet"), ("PRs waiting", "PRs warten")), systemImage: n > 0 ? "arrow.up.circle.fill" : "paperplane")
+                if n < 0 { Label(w("Open Deploy Center", "Deploy Center öffnen"), systemImage: "paperplane") }
+                else { Label(w.n(n, ("PR waiting", "PR wartet"), ("PRs waiting", "PRs warten")), systemImage: n > 0 ? "arrow.up.circle.fill" : "paperplane") }
             }
         }
         .displayName(LocalizedStringResource(String.LocalizationValue(w("Waiting PRs", "Wartende PRs"))))
@@ -430,19 +445,19 @@ struct DeployActivityWidget: Widget {
         } dynamicIsland: { ctx in
             let w = Words(german: ctx.attributes.german)
             return DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) { phaseIcon(ctx.state.phase, w).font(.title2) }
+                DynamicIslandExpandedRegion(.leading) { phaseIcon(ctx.state.phase, w, rollback: ctx.attributes.rollback).font(.title2) }
                 DynamicIslandExpandedRegion(.trailing) { elapsed(ctx).font(.title3.monospacedDigit()) }
                 DynamicIslandExpandedRegion(.center) { Text(ctx.attributes.project).font(.headline).lineLimit(1) }
                 DynamicIslandExpandedRegion(.bottom) {
                     Text(line(ctx, w)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
             } compactLeading: {
-                phaseIcon(ctx.state.phase, w)
+                phaseIcon(ctx.state.phase, w, rollback: ctx.attributes.rollback)
             } compactTrailing: {
                 // 1:00:00 and longer scale down instead of being cut off.
                 elapsed(ctx).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6).frame(maxWidth: 56)
             } minimal: {
-                phaseIcon(ctx.state.phase, w)
+                phaseIcon(ctx.state.phase, w, rollback: ctx.attributes.rollback)
             }
             .widgetURL(activityLink(ctx.attributes))
         }
@@ -452,11 +467,13 @@ struct DeployActivityWidget: Widget {
 private func activityLink(_ a: DeployActivity) -> URL {
     var c = URLComponents(); c.scheme = "deploycenter"; c.host = "select"
     c.queryItems = [URLQueryItem(name: "project", value: a.project), URLQueryItem(name: "platform", value: a.platform)]
+    if let k = a.key { c.queryItems?.append(URLQueryItem(name: "key", value: k)) }
     return c.url ?? URL(string: "deploycenter://")!
 }
 
-private func phaseIcon(_ p: DeployActivity.ContentState.Phase, _ w: Words) -> some View {
+private func phaseIcon(_ p: DeployActivity.ContentState.Phase, _ w: Words, rollback: Bool = false) -> some View {
     let (name, color, label): (String, Color, String) = switch p {
+    case .running where rollback: ("arrow.uturn.backward.circle.fill", .orange, w("Rolling back", "Wird zurückgerollt"))
     case .running: ("hammer.fill", .orange, w("Building", "Wird gebaut"))
     case .live: ("checkmark.circle.fill", .green, w("Live", "Live"))
     case .failed: ("xmark.octagon.fill", .red, w("Failed", "Fehlgeschlagen"))
@@ -488,7 +505,7 @@ struct DeployActivityView: View {
     var body: some View {
         let w = Words(german: ctx.attributes.german)
         HStack(spacing: 12) {
-            phaseIcon(ctx.state.phase, w).font(.title)
+            phaseIcon(ctx.state.phase, w, rollback: ctx.attributes.rollback).font(.title)
             VStack(alignment: .leading, spacing: 2) {
                 Text((ctx.attributes.rollback ? w("Rollback: ", "Zurückrollen: ") : "") + ctx.attributes.project).font(.headline).lineLimit(1)
                 Text(line(ctx, w)).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)

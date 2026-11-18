@@ -6,7 +6,7 @@ import * as vscode from "vscode";
 import { canPreview, canRollback, deployArgs, deployFailure, errorLine, findCli, loadProjects, makeRunner, parseDeploy, projectArgs, rollbackArgs, Runner, urlIn } from "./cli";
 import { count, setTranslator, t } from "./i18n";
 import { coalesce } from "./coalesce";
-import { aiPrompt } from "./log";
+import { aiPrompt, maskSecrets } from "./log";
 import { describe, platformLabel, Project, statusText, summarize, followStep } from "./model";
 import { parseRemotes, Scope, scopeProjects } from "./repo";
 
@@ -384,7 +384,9 @@ export class Controller implements vscode.TreeDataProvider<Project> {
 
   async showLog(p: Project): Promise<void> {
     const run = this.need(); if (!run) return;
-    const log = await this.readLog(run, p); if (log === null) return;
+    const raw = await this.readLog(run, p); if (raw === null) return;
+    // What the editor shows is masked like what is copied: a log may print keys.
+    const log = maskSecrets(raw);
     // A read-only document per project: the output channel keeps its warnings and deploy results.
     const head = `── ${p.name} (${platformLabel(p.platform)}) · ${t("newest build log")}${p.state ? ` · ${p.state}` : ""} · ${new Date().toLocaleTimeString()} ──\n`;
     const uri = vscode.Uri.from({ scheme: LOG_SCHEME, path: `/${p.platform}/${p.name}.log` });

@@ -1,0 +1,12 @@
+POST https://outlook.office.com/webhook/aaaa-bbbb/IncomingWebhook/cccc/dddd failed
+curl https://contoso.webhook.office.com/webhookb2/aaaa@bbbb/IncomingWebhook/cccc/dddd
+curl https://chat.googleapis.com/v1/spaces/AAAA/messages?key=KEYSECRET&token=TOKSECRET done
+GET https://api.telegram.org/bot123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw/sendMessage
+https://hooks.slack.com/workflows/T1/A2/3/xyzSECRET
+Authorization: Bearer abcd1234
+got Bearer shortTok9 here
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7
+AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/AbCdEfGhIjKlMnOp
+-----END PRIVATE KEY-----
+after the key
+[2Kerased [1;31mred[0m [?25l hidden ]0;title end

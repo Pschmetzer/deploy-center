@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deploy to Vercel from GitHub Actions, on a label or on a schedule · Deploy Center</title>
 <meta name="description" content="Deploy on your terms from GitHub Actions: a deploy hook on a label, a prebuilt deploy with the Vercel CLI, or a daily deploy of only what changed.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="Deploy on your terms from GitHub Actions: a deploy hook on a label, a prebuilt deploy with the Vercel CLI, or a daily deploy of only what changed.">
 <meta property="og:url" content="https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="Deploy to Vercel from GitHub Actions, on a label or on a schedule · Deploy Center">
 <meta name="twitter:description" content="Deploy on your terms from GitHub Actions: a deploy hook on a label, a prebuilt deploy with the Vercel CLI, or a daily deploy of only what changed.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -144,7 +147,7 @@
 <p>With Git auto-deploy on, every push builds. A workflow gives you the same automation on a rule you choose. Pick one of three.</p>
 <h2 id="label">1. A deploy hook on a label</h2>
 <p>Create a deploy hook in <b>Project → Settings → Git → Deploy Hooks</b> and store its URL as a secret named <code>VERCEL_DEPLOY_HOOK</code>. A hook always builds the newest commit of its branch.</p>
-<pre><code class="language-yaml">name: Deploy on label
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-yaml">name: Deploy on label
 on:
   pull_request:
     types: [closed, labeled]
@@ -163,7 +166,7 @@ jobs:
 <p>A merged pull request with the label <code>deploy</code> starts one build. Other merges cost nothing. The hook URL is a secret: anyone who has it can start a build.</p>
 <h2 id="prebuilt">2. A prebuilt deploy with the Vercel CLI</h2>
 <p>Build in the runner and upload the result, so Vercel does not build at all. The token is a secret named <code>VERCEL_TOKEN</code>; pin the CLI version you tested.</p>
-<pre><code class="language-bash">npm install -g vercel@VERSION
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">npm install -g vercel@VERSION
 vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
 vercel build --prod --token "$VERCEL_TOKEN"
 vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"</code></pre>

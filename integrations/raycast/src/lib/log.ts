@@ -6,7 +6,7 @@ import { platformLabel } from "./text";
 // so the unit tests run without the Raycast API.
 
 const errorPattern =
-  /\b(error|errors|failed|failure|fatal|exception|traceback)\b|\berr!|cannot find|not found|exited with \d+/i;
+  /\b(error|errors|failed|failure|fatal|exception|traceback)\b|\berr!|cannot find|not found|exited with [1-9]\d*/i;
 const harmless =
   /\b(0|no|zero) (errors?|failed|failures?)\b|\berrors?: 0\b|\bfailed: 0\b|cache not found|build cache|no cache found|\bif not found\b|deprecat|\bwarn(ing)?\b/i;
 

@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to disable AWS Amplify auto-build for a branch · Deploy Center</title>
 <meta name="description" content="Turn off auto-build on an AWS Amplify Hosting branch with the AWS CLI, start a build when you decide, and what else can still build.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="Turn off auto-build on an AWS Amplify Hosting branch with the AWS CLI, start a build when you decide, and what else can still build.">
 <meta property="og:url" content="https://deploycenter.app/guides/aws-amplify-disable-auto-build/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="How to disable AWS Amplify auto-build for a branch · Deploy Center">
 <meta name="twitter:description" content="Turn off auto-build on an AWS Amplify Hosting branch with the AWS CLI, start a build when you decide, and what else can still build.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -143,11 +146,11 @@
 
 <p>Amplify Hosting bills build minutes. On a Git-connected branch with auto-build on, every push builds. Check the current price per build minute on the AWS Amplify pricing page; what matters is that a branch pushed twenty times a day builds twenty times.</p>
 <h2 id="off">1. Turn auto-build off for a branch</h2>
-<pre><code class="language-bash">aws amplify update-branch --app-id APP_ID --branch-name main --no-enable-auto-build</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">aws amplify update-branch --app-id APP_ID --branch-name main --no-enable-auto-build</code></pre>
 <p>Do the same for each branch that builds on push. The app also has a setting that auto-builds branches Amplify creates later:</p>
-<pre><code class="language-bash">aws amplify update-app --app-id APP_ID --no-enable-branch-auto-build</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">aws amplify update-app --app-id APP_ID --no-enable-branch-auto-build</code></pre>
 <h2 id="deploy">2. Start a build yourself</h2>
-<pre><code class="language-bash">aws amplify start-job --app-id APP_ID --branch-name main --job-type RELEASE</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">aws amplify start-job --app-id APP_ID --branch-name main --job-type RELEASE</code></pre>
 <p>A RELEASE job builds the newest commit of the branch, and it works the same with auto-build off.</p>
 <div class="note"><p><b>Trade-offs.</b> Pull request previews are a separate setting (<code>enablePullRequestPreview</code>). They build only when a pull request is opened or updated, and you switch them off in the Amplify console. Apps deployed by upload have no Git connection and nothing to turn off.</p></div>
 <h2>AWS Amplify in Deploy Center</h2>

@@ -41,6 +41,7 @@ nav .links a.dl{color:#fff;background:linear-gradient(135deg,var(--btn-a),var(--
 .menu .panel a{padding:9px 12px;border-radius:8px;color:var(--text)}
 .menu .panel a:hover{background:var(--bg2);text-decoration:none}
 .mobile-tools{display:none;margin-left:auto;align-items:center;gap:6px}
+@media (max-width:1240px){nav .links .opt2{display:none}}
 @media (max-width:1000px){nav .links .opt{display:none}}
 @media (max-width:700px){nav .links{display:none}.mobile-tools{display:flex}.menu{display:block}}
 /* hero */
@@ -64,13 +65,13 @@ h1 .strike::after{content:"";position:absolute;left:-2%;right:-2%;top:55%;height
 /* install tabs */
 .install{display:inline-block;margin-top:16px;max-width:100%;text-align:left}
 .tabs{display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-bottom:5px}
-.tabs button{all:unset;cursor:pointer;font-size:12px;color:var(--muted);padding:7px 11px;border-radius:7px;border:1px solid transparent}
+.tabs button{all:unset;cursor:pointer;min-height:24px;box-sizing:border-box;font-size:12px;color:var(--muted);padding:7px 11px;border-radius:7px;border:1px solid transparent}
 .tabs button:focus-visible{outline:2px solid var(--accent)}
 .tabs button[aria-selected="true"]{color:var(--text);background:var(--card);border-color:var(--line)}
 .code{display:flex;align-items:flex-start;gap:12px;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);border:1px solid var(--line);padding:8px 11px;border-radius:9px;color:var(--text);max-width:100%}
 .code[hidden]{display:none}
 .code pre{margin:0;white-space:pre-wrap;word-break:break-word;font:inherit;flex:1;min-width:0}
-.code button{all:unset;cursor:pointer;color:var(--muted);font:12px -apple-system,sans-serif;padding-top:2px;flex:none}
+.code button{all:unset;cursor:pointer;min-height:24px;min-width:24px;box-sizing:border-box;color:var(--muted);font:12px -apple-system,sans-serif;padding-top:2px;flex:none}
 .code button:hover{color:var(--text)}
 .code button:focus-visible{outline:2px solid var(--accent)}
 .shot{margin:32px auto 0;max-width:920px;border-radius:12px;box-shadow:0 30px 90px -30px rgba(0,0,0,.6),0 0 0 1px var(--line);overflow:hidden}
@@ -190,3 +191,16 @@ code{font:.88em ui-monospace,Menlo,monospace;background:var(--card);border:1px s
 .list li b.inl{display:inline}
 p.sub.center{margin:0 auto 20px}
 .small.gap-top-s{margin-top:14px}
+
+/* Windows high contrast and "more contrast": keep borders, links and focus visible */
+@media (forced-colors:active){
+  a{text-decoration:underline}
+  :focus-visible{outline:2px solid Highlight}
+  .btn,button,.tag,.pill,.tablewrap,table,th,td,pre,.code,.card,.cards a,details,summary{border-color:CanvasText}
+  .tabs button[aria-selected="true"]{border-color:Highlight;outline:1px solid Highlight}
+}
+@media (prefers-contrast:more){
+  :root,:root[data-theme]{--muted:var(--text);--line:var(--text)}
+  a{text-decoration:underline}
+}
+.tag{min-height:24px;display:inline-flex;align-items:center}

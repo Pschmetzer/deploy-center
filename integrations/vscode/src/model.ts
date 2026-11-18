@@ -165,7 +165,7 @@ export function plural(n: number, word: string): string {
 /** One line per project, for the tree and the quick pick: "4 commits, 1 PR waiting · vercel". */
 export function describe(p: Project, now = Date.now() / 1000): string {
   const bits: string[] = [];
-  if (p.failed) bits.push(t("failed ({0})", p.state ?? ""));
+  if (p.failed) bits.push(p.state ? t("failed ({0})", p.state) : t("failed"));
   if (p.building) bits.push(t("building"));
   if (p.waiting) {
     const c = p.pendingCommits === null ? null : count(p.pendingCommits, "{0} commit", "{0} commits");

@@ -7,8 +7,9 @@ import Foundation
 enum Spoken {
     /// One answer for "what waits": PRs and projects waiting, failures by name, and how old the state is.
     static func waiting(_ projects: [PhoneProject], at: Date?, now: Date = Date()) -> String {
-        let waiting = projects.filter(\.changed), failed = projects.filter(\.failed)
-        let prs = waiting.reduce(0) { $0 + ($1.pendingPRs ?? 0) }
+        // The same rule and count as the app and the widgets (PhoneStore.waitingPRs).
+        let waiting = projects.waitingOnly, failed = projects.filter(\.failed)
+        let prs = projects.waitingPRCount
         var out = waiting.isEmpty ? L("Nothing waits.", "Nichts wartet.")
             : L("\(plural(prs, ("PR", "PR"), ("PRs", "PRs"))) waiting in \(plural(waiting.count, ("project", "Projekt"), ("projects", "Projekten"))).",
                 "\(plural(prs, ("PR", "PR"), ("PRs", "PRs"))) \(prs == 1 ? "wartet" : "warten") in \(plural(waiting.count, ("project", "Projekt"), ("projects", "Projekten"))).")
@@ -35,6 +36,8 @@ enum Spoken {
 struct WaitingIntent: AppIntent {
     static let title: LocalizedStringResource = "What waits to deploy"
     static let description = IntentDescription("Waiting pull requests and failed deploys, from the state Deploy Center read last.")
+    /// Project names and failures are not for a locked phone.
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let text = await MainActor.run {
@@ -48,6 +51,7 @@ struct WaitingIntent: AppIntent {
 struct FailuresIntent: AppIntent {
     static let title: LocalizedStringResource = "Failed deploys"
     static let description = IntentDescription("Which projects failed, from the state Deploy Center read last.")
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let text = await MainActor.run {
@@ -74,14 +78,16 @@ import CoreSpotlight
 enum Spotlight {
     /// The activity of an open project: continues on another iPhone or iPad of the same person.
     static let activity = "app.deploycenter.project"
-    private static var indexed: [String] = []
+    /// nil: not written in this launch yet (an earlier launch may have left items behind).
+    private static var indexed: [String]? = nil
     private static var indexedIDs: Set<String> = []
 
     /// Project names in Spotlight, opening the project. Demo projects are not indexed, and neither is anything when
     /// "Keep out of Spotlight" is on (the domain would sit in the system-wide index); only when the list changed.
     /// The new items are written first and only the ones that are gone are removed: no gap where a project is missing.
     @MainActor static func index(_ projects: [PhoneProject], demo: Bool) {
-        let off = demo || UserDefaults.standard.bool(forKey: "noSpotlight")
+        // No key (or "Remove all keys"): nothing of the account may stay in the system-wide index.
+        let off = demo || projects.isEmpty || UserDefaults.standard.bool(forKey: "noSpotlight")
         let keys = off ? [] : projects.map { $0.key + "|" + $0.name + "|" + ($0.domain ?? "") }
         guard keys != indexed else { return }
         indexed = keys

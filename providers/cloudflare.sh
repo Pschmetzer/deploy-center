@@ -360,15 +360,15 @@ cloudflare_deploy_json() {
   if [ "$branch" != "$prod" ]; then sw="preview_deployment_setting"; onval='"all"'; fi
   blocked="$(echo "$cfg" | jq --arg s "$sw" 'if $s == "preview_deployment_setting" then (.[$s] // "all") == "none" else .[$s] == false end')"
   if [ "$blocked" = true ] && [ "$sw" = production_deployments_enabled ] && [ "$toggle" = 0 ] && [ "$(cf_verified "$p")" != verified ]; then
-    die "Unverified: Cloudflare may skip a build while push-deploys are off. Run once: deploys cloudflare selftest $p --yes (or pass --toggle, see docs/providers/cloudflare.md)"
+    die "Unverified: Cloudflare may skip a build while push-deploys are off. Run once: deploys cloudflare selftest $p --yes (or pass --toggle, see https://deploycenter.app/docs/cloudflare-pages/)"
   fi
   lock="$(start_lock "cloudflare-$p")" || exit 1
   out="$(cf_post_deploy "$p" "$branch")" || { rm -f "$lock"; exit 1; }
-  local toggled=false
+  local toggled=false saved_traps; saved_traps="$(trap -p INT TERM)"
   if [ "$(echo "$out" | jq "$CF_PHASE"' cf_dep | .skipped')" = true ]; then
     if [ "$toggle" = 0 ]; then
       rm -f "$lock"
-      die "Cloudflare skipped the build ($(echo "$out" | jq -r '.skip_reason // "push-deploys are off"')). Nothing was built. To turn push-deploys on for a moment and start it: add --toggle (see docs/providers/cloudflare.md for the race window)"
+      die "Cloudflare skipped the build ($(echo "$out" | jq -r '.skip_reason // "push-deploys are off"')). Nothing was built. To turn push-deploys on for a moment and start it: add --toggle (see https://deploycenter.app/docs/cloudflare-pages/ for the race window)"
     fi
     # The fallback: switch on, start, switch back to exactly what it was. Switched back even when
     # the start fails. A push in between is built too.
@@ -377,11 +377,11 @@ cloudflare_deploy_json() {
     # Written down first, and switched back on Ctrl-C too: push builds left on cost builds.
     # `doctor` names any that stayed open (togglesOpen).
     cf_state_set '.toggling[$p] = {before:$b, at:(now|floor)}' --arg p "$p" --argjson b "$before"
-    trap 'cf_toggle_back "$p" "$before" "$sw"; rm -f "$lock"; exit 130' INT TERM
-    cf_patch_config "$p" "{\"$sw\":$onval}" || { trap - INT TERM; cf_state_set 'del(.toggling[$p])' --arg p "$p"; rm -f "$lock"; exit 1; }
+    trap 'cf_toggle_back "$p" "$before" "$sw"; rm -f "$lock"; eval "trap - INT TERM; $saved_traps"; exit 130' INT TERM
+    cf_patch_config "$p" "{\"$sw\":$onval}" || { eval "trap - INT TERM; $saved_traps"; cf_state_set 'del(.toggling[$p])' --arg p "$p"; rm -f "$lock"; exit 1; }
     local rc=0; out="$(cf_post_deploy "$p" "$branch")" || rc=$?
     cf_toggle_back "$p" "$before" "$sw"
-    trap - INT TERM
+    eval "trap - INT TERM; $saved_traps"
     [ "$rc" = 0 ] || { rm -f "$lock"; exit 1; }
     toggled=true
     [ "$(echo "$out" | jq "$CF_PHASE"' cf_dep | .skipped')" = true ] && { rm -f "$lock"; die "Cloudflare skipped the build even with $sw on"; }
@@ -502,7 +502,7 @@ cloudflare_selftest() {
   st="$(echo "$out" | jq -c "$CF_PHASE"' cf_dep')"
   if [ "$(echo "$st" | jq '.skipped')" = true ]; then
     cf_state_set '.selftest = {result:"failed", at:(now|floor), project:$p, reason:($s.skipReason // "skipped")} | .selftests[$p] = .selftest' --arg p "$p" --argjson s "$st"
-    echo "Self-test: Cloudflare skipped the build ($(echo "$st" | jq -r '.skipReason // "skipped"')). Deploys need --toggle; see docs/providers/cloudflare.md."
+    echo "Self-test: Cloudflare skipped the build ($(echo "$st" | jq -r '.skipReason // "skipped"')). Deploys need --toggle; see https://deploycenter.app/docs/cloudflare-pages/."
     return 1
   fi
   id="$(echo "$st" | jq -r '.id')"

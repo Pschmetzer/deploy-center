@@ -130,11 +130,48 @@ actor LogoCache {
         return true
     }
 
+    /// The names resolve to public addresses: a host that looks public but points at localhost or the
+    /// local network is refused. A name that does not resolve passes (the request fails by itself).
+    nonisolated static func resolvesPublic(_ host: String) -> Bool {
+        var hints = addrinfo(); hints.ai_socktype = SOCK_STREAM
+        var res: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(host, nil, &hints, &res) == 0, let first = res else { return true }
+        defer { freeaddrinfo(first) }
+        var p: UnsafeMutablePointer<addrinfo>? = first
+        while let ai = p {
+            if let sa = ai.pointee.ai_addr {
+                if sa.pointee.sa_family == sa_family_t(AF_INET) {
+                    let v4 = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { UInt32(bigEndian: $0.pointee.sin_addr.s_addr) }
+                    if !publicV4(v4) { return false }
+                } else if sa.pointee.sa_family == sa_family_t(AF_INET6) {
+                    let b = sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { withUnsafeBytes(of: $0.pointee.sin6_addr) { Array($0) } }
+                    if b.count == 16 {
+                        if b[0..<15].allSatisfy({ $0 == 0 }) && (b[15] == 0 || b[15] == 1) { return false }      // :: and ::1
+                        if b[0] & 0xFE == 0xFC || (b[0] == 0xFE && b[1] & 0xC0 == 0x80) { return false }         // fc00::/7, fe80::/10
+                        if b[0..<10].allSatisfy({ $0 == 0 }) && b[10] == 0xFF && b[11] == 0xFF {                // ::ffff:a.b.c.d
+                            let v4 = UInt32(b[12]) << 24 | UInt32(b[13]) << 16 | UInt32(b[14]) << 8 | UInt32(b[15])
+                            if !publicV4(v4) { return false }
+                        }
+                    }
+                }
+            }
+            p = ai.pointee.ai_next
+        }
+        return true
+    }
+    private nonisolated static func publicV4(_ v: UInt32) -> Bool {
+        let a = Int(v >> 24), b = Int((v >> 16) & 0xFF)
+        return !(a == 10 || a == 127 || a == 0 || a >= 224 || (a == 169 && b == 254) || (a == 172 && (16...31).contains(b)) || (a == 192 && b == 168) || (a == 100 && (64...127).contains(b)))
+    }
+
+    /// Its own session: no shared cookies or cache with the rest of the app, nothing kept on disk.
+    private static let session = URLSession(configuration: .ephemeral)
+
     /// Refuses a redirect to an address that `allowed` would refuse.
     private final class Guard: NSObject, URLSessionTaskDelegate {
         func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                         newRequest request: URLRequest) async -> URLRequest? {
-            guard let u = request.url, LogoCache.allowed(u) else { return nil }
+            guard let u = request.url, LogoCache.allowed(u), LogoCache.resolvesPublic(u.host ?? "") else { return nil }
             return request
         }
     }
@@ -143,10 +180,10 @@ actor LogoCache {
     /// a front page's <head> is enough for the icon links); `transient` when the answer says
     /// nothing about the site (no answer, 429, 5xx).
     private func get(_ url: URL, limit: Int, cut: Bool = false) async -> (data: Data?, transient: Bool) {
-        guard Self.allowed(url) else { return (nil, false) }
+        guard Self.allowed(url), Self.resolvesPublic(url.host ?? "") else { return (nil, false) }
         var req = URLRequest(url: url, timeoutInterval: 8)
         req.setValue("Mozilla/5.0 (Macintosh) DeployCenter", forHTTPHeaderField: "User-Agent")
-        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req, delegate: Guard()),
+        guard let (bytes, resp) = try? await Self.session.bytes(for: req, delegate: Guard()),
               let http = resp as? HTTPURLResponse else { return (nil, true) }
         if http.statusCode == 429 || http.statusCode >= 500 { return (nil, true) }
         guard http.statusCode == 200 else { return (nil, false) }

@@ -210,8 +210,9 @@ rm -f "$DEPLOYS_CONFIG/ignored.json"
 # --- badge ---
 RENDER_API_KEY=x badge/badge.sh "$tmp/b" >/dev/null
 expect "one badge per project" "$(cd "$tmp/b" && echo *.svg)" "api.svg app-web.svg site.svg"
-contains "badge: days and commits" "$(cat "$tmp/b/app-web.svg")" "3 d ago · 4 commits waiting"
-contains "badge: Render shows the live commit's age, and a failed newest build" "$(cat "$tmp/b/api.svg")" "1 d ago · build failed"
+d3="$(date -u -r $((now - 3*86400)) +%Y-%m-%d)"; d1="$(date -u -r $((now - 26*3600)) +%Y-%m-%d)"
+contains "badge: the date and commits, not a relative age" "$(cat "$tmp/b/app-web.svg")" "$d3 · 4 commits waiting"
+contains "badge: Render shows the live commit's date, and a failed newest build" "$(cat "$tmp/b/api.svg")" "$d1 · build failed"
 contains "badge: a failed build is red" "$(cat "$tmp/b/api.svg")" 'fill="#c0392b'
 echo '[{"name":"busy","changed":false,"lastAt":1,"building":true}]' | badge/badge.sh "$tmp/bb" - >/dev/null
 contains "badge: a running build is blue, not up to date" "$(cat "$tmp/bb/busy.svg")" 'building'
@@ -222,7 +223,7 @@ echo '[{"name":"a<b>&\"c","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/e
 contains "badge: names are XML-escaped" "$(cat "$tmp/e/a_b___c.svg")" 'a&lt;b&gt;&amp;&quot;c: deployed never'
 echo '[{"name":"web","platform":"vercel","lastAt":1},{"name":"web","platform":"render","lastAt":1},{"name":"a/b","lastAt":1},{"name":"a_b","lastAt":1}]' | badge/badge.sh "$tmp/c" - >/dev/null
 expect "badge: colliding names do not overwrite each other" "$(cd "$tmp/c" && echo *.svg)" "a_b.svg other_a_b.svg render-web.svg vercel-web.svg"
-expect "badge: a shields.io endpoint JSON next to each SVG" "$(jq -c '[.schemaVersion, .label, .message, .color]' "$tmp/b/app-web.json")" '[1,"deployed","3 d ago · 4 commits waiting","9a6700"]'
+expect "badge: a shields.io endpoint JSON next to each SVG" "$(jq -c '[.schemaVersion, .label, .message, .color]' "$tmp/b/app-web.json")" "[1,\"deployed\",\"$d3 · 4 commits waiting\",\"9a6700\"]"
 contains "badge: ids are per badge" "$(cat "$tmp/c/vercel-web.svg")" 'clip-path="url(#r-vercel-web)"'
 expect "badge: the width counts characters, not bytes" "$(echo '[{"name":"x","changed":false,"lastAt":1}]' | LC_ALL=C badge/badge.sh "$tmp/w" - >/dev/null; sed -n 's/^<svg[^>]* width="\([0-9]*\)".*/\1/p' "$tmp/w/x.svg")" \
   "$(echo '[{"name":"x","changed":false,"lastAt":1}]' | badge/badge.sh "$tmp/w2" - >/dev/null; sed -n 's/^<svg[^>]* width="\([0-9]*\)".*/\1/p' "$tmp/w2/x.svg")"
@@ -377,7 +378,7 @@ cat > "$tmp/sp-bin/curl" <<'SH'
 #!/bin/bash
 for a in "$@"; do u="$a"; done
 echo "$u" >> "${SP_CURL_LOG:?}"
-case "$u" in *.up.test*) printf '200 0.123' ;; *) printf '503 0.050' ;; esac
+case "$u" in *.up.test*) printf '200 0.123 ' ;; *.redir.test*) printf '302 0.010 http://127.0.0.1:8080/admin' ;; *.hop.test*) printf '301 0.010 https://next.up.test/' ;; *) printf '503 0.050 ' ;; esac
 SH
 chmod +x "$tmp/sp-bin/curl"
 {
@@ -408,6 +409,13 @@ expect "statuspage: notes from deploys notes, no authors by default" "$(jq -c '.
 expect "statuspage: Render shows the live time, not the failed attempt" "$(jq -r '.projects[1] | "\(.state) \(.at)"' <<<"$st")" "live-failed $((now - 26*3600))"
 expect "statuspage: site check" "$(jq -c '.projects[1].check' <<<"$st")" '{"up":true,"code":200,"ms":123}'
 expect "statuspage: only the configured URL is checked" "$(cat "$tmp/sp-curl.log")" "https://api.up.test/health"
+# A redirect into the runner's own network is not followed; one to a public host is.
+echo '{"title":"x","projects":[{"name":"app-web","url":"https://a.redir.test/"},{"name":"api","url":"https://b.hop.test/"}]}' > "$tmp/sp-redir.json"
+: > "$tmp/sp-curl.log"
+STATUSPAGE_RETRY_WAIT=0 sp --config "$tmp/sp-redir.json" --out "$tmp/spr" >/dev/null
+expect "statuspage: a redirect to localhost is not followed" "$(grep -c '127.0.0.1' "$tmp/sp-curl.log")" 0
+expect "statuspage: a redirect to a public host is followed" "$(grep -c 'next.up.test' "$tmp/sp-curl.log")" 1
+expect "statuspage: the hop's final answer counts" "$(jq -c '[.projects[] | .check.up]' "$tmp/spr/status.json")" '[false,true]'
 expect "statuspage: timeline is the last 30" "$(jq '.timeline | length' <<<"$st")" 30
 expect "statuspage: timeline newest first, only listed, live and failed" "$(jq -r '.timeline[0] | "\(.name) \(.result)"' <<<"$st")" "API failed"
 case "$st$page$feed" in *SECRET*|*/Users/*|*"nothing to do"*|*abc1234*|*aaaa111*|*bbbb222*|*me/app*) fail "statuspage: no journal detail, SHA or repo" "found" ;; *) ok "statuspage: no journal detail, SHA or repo" ;; esac
@@ -650,6 +658,11 @@ contains "claude-code hook: cd dir && git push reads that repo" "$(hk "cd $tmp/c
 contains "claude-code hook: git -C dir push reads that repo" "$(hk "git -C $tmp/cc push origin main" "$tmp/cc-other" | head -1)" "app-web"
 expect "claude-code hook: git -C another repo, silent" "$(hk "git -C $tmp/cc-other push")" "exit=0"
 contains "claude-code hook: a push after other commands" "$(hk "git add -A && git commit -m x; git push" | head -1)" "app-web"
+contains "claude-code hook: bash -c \"git push\" is a push" "$(hk "bash -c 'git push origin main'" | head -1)" "app-web"
+contains "claude-code hook: sh -lc with cd and a push" "$(hk "zsh -lc \"cd $tmp/cc && git push\"" "$tmp/cc-other" | head -1)" "app-web"
+expect "claude-code hook: bash -c without a push is silent" "$(hk "bash -c 'echo hi'")" "exit=0"
+git init -q "$tmp/cc-alias" && git -C "$tmp/cc-alias" remote add origin git@github-work:me/app.git
+contains "claude-code hook: an ssh host alias remote is the GitHub repo" "$(hk "git push" "$tmp/cc-alias" | head -1)" "app-web"
 hk_err() { jq -nc --arg c "git push" --arg d "$tmp/cc" --arg e "$1" '{hook_event_name:"PostToolUse",tool_name:"Bash",cwd:$d,tool_input:{command:$c},tool_response:{stdout:"",stderr:$e,interrupted:false}}' | "$hook"; echo "exit=$?"; }
 expect "claude-code hook: a rejected push, silent" "$(hk_err $' ! [rejected]        main -> main (fetch first)\nerror: failed to push some refs')" "exit=0"
 contains "claude-code hook: a normal push's stderr still counts" "$(hk_err $'To github.com:me/app.git\n   abc..def  main -> main' | head -1)" "app-web"

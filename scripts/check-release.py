@@ -6,6 +6,7 @@
 - site/index.html names VERSION twice ("Version X ·" under the download button and
   "softwareVersion" in the JSON-LD). scripts/bump.sh sets both together with VERSION.
 - site/install/<x.y.z>.sh (built by build-docs.py) pins the release its name says.
+- man/deploys.1 names VERSION in its .TH line (scripts/build-man.py writes it).
 - The newest item in site/appcast.xml is not newer than VERSION.
 - Once the tag vVERSION exists (release.sh --publish made the release), the newest appcast
   item is VERSION: until the appcast PR is merged, installed copies are never offered it.
@@ -60,6 +61,14 @@ lv = re.findall(r"^- Version: (\d+\.\d+\.\d+)", llms, re.M)
 for v in lv:
     if v != version:
         problems.append(f'site/llms.txt: says "Version: {v}", VERSION is {version} (scripts/build-docs.py sets it)')
+
+man = os.path.join(root, "man", "deploys.1")
+if os.path.exists(man):
+    m = re.search(r'^\.TH DEPLOYS 1 "[^"]*" "deploys (\d+\.\d+\.\d+)"', read("man/deploys.1"), re.M)
+    if not m:
+        problems.append("man/deploys.1: no .TH line with a version (run python3 scripts/build-man.py)")
+    elif m.group(1) != version:
+        problems.append(f"man/deploys.1: says deploys {m.group(1)}, VERSION is {version} (run python3 scripts/build-man.py)")
 
 # site/install/<x.y.z>.sh is built by scripts/build-docs.py (not committed). When it was built, the copy for
 # VERSION is install.sh with its PINNED_VERSION line set to VERSION, and no copy pins another release's number.

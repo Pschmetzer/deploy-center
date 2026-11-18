@@ -1875,5 +1875,21 @@ expect("masker: a SendGrid key", LogTools.maskSecrets("key SG.abcdefghijklmnop12
 expect("masker: a Supabase secret", LogTools.maskSecrets("sb_secret_abcdefgh1234").contains("abcdefgh1234"), false)
 expect("decimal: one digit", decimal(12.34), isGerman ? "12,3" : "12.3")
 
+// Round 10: journal, dates, run-state keys.
+let jm = Journal.masked(JournalEntry(platform: "vercel", name: "a", result: "failed", seconds: 1, detail: "clone https://user:hunter2secret@host.example/x.git failed", sha: "abc", deployId: "d1"))
+expect("journal: error text is masked before it is written", (jm.detail ?? "").contains("hunter2secret"), false)
+expect("journal: masking keeps sha and deploy id", "\(jm.sha ?? "")|\(jm.deployId ?? "")", "abc|d1")
+let jplain = JournalEntry(platform: "vercel", name: "a", result: "failed", seconds: 1, detail: "build failed", sha: nil, deployId: nil)
+expect("journal: a plain text stays", Journal.masked(jplain).detail ?? "", "build failed")
+let jt = Date(timeIntervalSince1970: 1_700_000_000)
+let j1 = JournalEntry(at: jt, platform: "vercel", name: "a", result: "live", seconds: 1, detail: nil, sha: nil, deployId: "dpl_1")
+let j2 = JournalEntry(at: jt, platform: "vercel", name: "a", result: "live", seconds: 1, detail: nil, sha: nil, deployId: "dpl_2")
+expect("journal: two entries in the same second have two ids", j1.id != j2.id, true)
+expect("date: seconds", Int(date(1_700_000_000)?.timeIntervalSince1970 ?? 0), 1_700_000_000)
+expect("date: milliseconds are divided", Int(date(1_700_000_000_000)?.timeIntervalSince1970 ?? 0), 1_700_000_000)
+expect("date: zero is none", date(0) == nil, true)
+expect("quiet hours over midnight", Notify.quiet(hour: 23, from: 22, to: 7), true)
+expect("quiet hours: outside", Notify.quiet(hour: 12, from: 22, to: 7), false)
+
 print("")
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

@@ -163,11 +163,20 @@ final class PhoneStore: ObservableObject {
         guard locked, !unlocking else { return }
         unlocking = true
         defer { unlocking = false }
-        let ctx = LAContext()
-        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else { locked = false; return }
-        if (try? await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: L("Unlock Deploy Center", "Deploy Center entsperren"))) == true {
-            locked = false
+        // "Face ID or Touch ID only" (Settings) also holds for the lock: no code on the way in. Only a locked-out
+        // biometry (iOS asks for the device code to reset it anyway) or one that is not set up falls back to the code.
+        var policy: LAPolicy = .deviceOwnerAuthentication
+        if UserDefaults.standard.bool(forKey: "biometricsOnly"), LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) {
+            policy = .deviceOwnerAuthenticationWithBiometrics
         }
+        let reason = L("Unlock Deploy Center", "Deploy Center entsperren")
+        let ctx = LAContext()
+        guard ctx.canEvaluatePolicy(policy, error: nil) else { locked = false; return }
+        do {
+            if try await ctx.evaluatePolicy(policy, localizedReason: reason) { locked = false }
+        } catch let e as LAError where e.code == .biometryLockout && policy == .deviceOwnerAuthenticationWithBiometrics {
+            if (try? await LAContext().evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) == true { locked = false }
+        } catch {}
     }
     private var unlocking = false
     /// Only on going to the background: the Face ID sheet itself makes the app inactive.
@@ -204,12 +213,7 @@ final class PhoneStore: ObservableObject {
     }
 
     var waiting: [PhoneProject] { projects.filter { $0.group == .waiting } }
-    var waitingPRs: Int {
-        // Projects of one repo share commits and PRs: count each repo once.
-        var perRepo: [String: Int] = [:]
-        for p in waiting { perRepo[p.repo ?? p.key] = max(perRepo[p.repo ?? p.key] ?? 0, p.pendingPRs ?? 0) }
-        return perRepo.values.reduce(0, +)
-    }
+    var waitingPRs: Int { projects.waitingPRCount }
 
     func say(_ text: String, error: Bool = false) {
         message = text; messageIsError = error    // the toast shows it and VoiceOver hears it there
@@ -580,6 +584,10 @@ final class PhoneStore: ObservableObject {
             try? await Task.sleep(for: .seconds(6))
             let s: String
             do { s = try await (check ?? { try await self.status(p, id) })().lowercased() }
+            catch let e as APIError where e.status == 401 || e.status == 404 {
+                // A refused key or a deploy that is gone will not get better in 20 minutes of polling.
+                outcome = "\(p.name): " + describe(e, p.provider); break
+            }
             catch { lastError = explain(error); continue }
             lastError = nil
             if !rollback { running[p.key] = s }

@@ -1,0 +1,10 @@
+POST [masked webhook] failed
+curl [masked webhook]
+curl [masked webhook] done
+GET https://api.telegram.org/bot[masked]/sendMessage
+[masked webhook]
+Authorization: Bearer [masked]
+got Bearer [masked] here
+[masked private key]
+after the key
+erased red  hidden  end

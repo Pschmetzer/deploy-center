@@ -17,6 +17,18 @@ Passt bestens zu Claude Code: Der Agent pusht, du entscheidest, was live geht.</
 <p align="center"><img src="docs/images/app.png" width="900" alt="Deploy Center: 149 PRs warten aufs Deploy, die Vercel-Buildkosten der letzten 7 Tage und die Projekte mit wartenden Commits"></p>
 <p align="center"><sub>Die echte Build-Rechnung des Autors: 99 $ in 7 Tagen. Projektnamen im Demo-Modus ausgeblendet.</sub></p>
 
+<details>
+<summary><b>Mehr Screenshots</b></summary>
+
+| | |
+|---|---|
+| <img src="docs/images/main-dark.webp" width="430" alt="Hauptfenster im Dunkelmodus: Projekte mit wartenden Commits und die Buildkosten der letzten 14 Tage"><br><sub>Was wartet, und was Builds kosten</sub> | <img src="docs/images/details-dark.png" width="430" alt="Detailfenster eines Projekts: der Commit, der live ist, der CI-Status und die drei wartenden Commits"><br><sub>Details: was live ist, was wartet, CI-Status</sub> |
+| <img src="docs/images/log-dark.webp" width="430" alt="Build-Log mit hervorgehobenem ersten Fehler und den Knöpfen Zum ersten Fehler springen und Für Claude kopieren"><br><sub>Build-Log: zum ersten Fehler springen, für Claude kopieren</sub> | <img src="docs/images/settings-dark.png" width="430" alt="Einstellungen, Bereich Autofix: Routine, API-Token, Prüfung alle 10 Minuten, Test ohne Senden"><br><sub>Autofix: Ein fehlgeschlagener Build wird zum Fix-PR</sub> |
+| <img src="docs/images/menu-dark.webp" width="300" alt="Menüleisten-Menü: wartende Commits pro Projekt, Deploy Center öffnen, Alles mit Änderungen deployen"><br><sub>Die Menüleiste: was wartet, auf einen Blick</sub> | |
+
+<sub>Demo-Modus: Die Projektnamen sind Platzhalter.</sub>
+</details>
+
 ## Installieren
 
 ```bash
@@ -26,6 +38,16 @@ brew tap pschmetzer/tap && brew trust pschmetzer/tap && brew install --cask depl
 Oder [das Zip herunterladen](https://github.com/Pschmetzer/deploy-center/releases/latest), entpacken und
 **Deploy Center** in *Programme* ziehen. Kostenlos, MIT, von Apple signiert und notarisiert.
 Website: [deploycenter.app](https://deploycenter.app).
+
+**Nur die CLI** (macOS, Linux, WSL, CI; ohne App): `deploys` allein, gegen die SHA-256 der Version geprüft,
+nach `~/.local/bin` ohne sudo. Oder mit Homebrew auf macOS und Linux:
+
+```bash
+curl -fsSL https://deploycenter.app/install.sh | sh
+brew install pschmetzer/tap/deploys
+```
+
+Docker, CI-Keys und erste Schritte: [README-CLI.md](README-CLI.md) (Englisch).
 
 <details>
 <summary>Hinweise zu Homebrew und Voraussetzungen</summary>
@@ -42,7 +64,7 @@ Homebrew 6 fragt einmal, ob du einem fremden Tap vertraust (`brew trust`). Ohne 
 | GitHub CLI `gh` | optional: was wartet (*Neue Änderungen*, Commits und PRs) | `brew install gh`, dann `gh auth login` |
 
 Die App findet `vercel` aus nvm, volta oder fnm nur, wenn deine Login-Shell sie einrichtet (`~/.zprofile`, nicht nur `~/.zshrc`).
-Siehe [Troubleshooting](docs/TROUBLESHOOTING.md#vercel-is-installed-nvm-volta-fnm-but-the-app-does-not-find-it) (Englisch).
+Siehe [Fehlerbehebung](docs/TROUBLESHOOTING.de.md).
 </details>
 
 ## Warum
@@ -57,7 +79,9 @@ und nichts geht aus Versehen live. Probier den [Kostenrechner](https://deploycen
 2. **Auto-Deploy abschalten.** Ein Klick für alle Projekte. Ein Push baut ab jetzt nichts mehr.
 3. **Deployen, wann du willst.** Die App zeigt, was wartet. *Alle mit Änderungen anhaken* + *Deployen* ist das tägliche Deploy.
 
-Neu dabei? [Sicher ausprobieren](docs/SAFE-START.md) (Englisch): erst schauen, dann ein Projekt, dann alle.
+Neu dabei? [Sicher ausprobieren](docs/SAFE-START.de.md): erst schauen, dann ein Projekt, dann alle.
+
+Viele Pushes auf einmal (KI-Agenten)? [Sichere Deploys](docs/SAFE-DEPLOY.md) (Englisch): grüne CI in der CLI, ein Health-Check mit Rollback, Deploy-Fenster und eine Risikoampel.
 
 ## Funktionen
 
@@ -70,11 +94,11 @@ Neu dabei? [Sicher ausprobieren](docs/SAFE-START.md) (Englisch): erst schauen, d
 - Schätzt, was Auto-Deploy im Monat kosten würde und was das Abschalten seitdem gespart hat. [Wie geschätzt wird](docs/ERSPARNIS.md)
 - Menüleisten-Symbol mit der Zahl wartender PRs, eine Mitteilung, wenn ein Deploy fertig ist, Mac-Widgets, eine Befehlspalette (⌘K, oder ⌥⌘K aus jeder App) und Projekte in Spotlight
 - Preview-Deploys und Rollback auf das vorige Live-Deploy, bei den Hosts, die das können
-- Eine Bash-CLI, `deploys`, die all das ohne die App kann, auch unter Linux und in CI. [CLI-Referenz](docs/CLI.md)
+- Eine Bash-CLI, `deploys`, die all das ohne die App kann, auch unter Linux und in CI. [CLI-Referenz](docs/CLI.de.md)
 - Erweiterungen: eine GitHub Action, Badges, eine tägliche Zusammenfassung an einen Webhook, ein Pre-Push-Hook, ein Docker-Image, ein MCP-Server, ein Claude-Code-Plugin, Erweiterungen für VS Code und Raycast, ein Agent-Digest. [Integrationen](integrations/)
 - Autofix: Ein fehlgeschlagener Build geht an eine Claude-Code-Routine, die einen Fix-PR öffnet. [Autofix](docs/AUTOFIX.md)
 - Claude fragen, mit deinem eigenen Anthropic-Key: warum ein Build scheiterte, Release-Notes, ist das sicher zu deployen. [Claude in der App](docs/CLAUDE-IN-APP.md) (Englisch)
-- Sichere Deploys (nur grüne CI, Health-Check mit Rollback, Deploy-Fenster), ein Wächter, der Auto-Deploy wieder abschaltet, und ein Team-Modus ohne Server. [Sichere Deploys](docs/SAFE-DEPLOY.md) · [Wächter](docs/GUARD.md) · [Team](docs/TEAM.md) (Englisch)
+- Sichere Deploys (CLI: nur bei grüner CI mit `--when-green`, Health-Check mit Rollback, Deploy-Fenster), ein Wächter, der Auto-Deploy wieder abschaltet, und ein Team-Modus ohne Server. [Sichere Deploys](docs/SAFE-DEPLOY.md) · [Wächter](docs/GUARD.md) · [Team](docs/TEAM.md) (Englisch)
 - Bug-Scan: Claude Code auf deinem Mac sucht im Repo nach Bugs und öffnet einen Fix-PR. [Bug-Scan](docs/SCAN.md) (Englisch)
 - Sicherheits-Check: OSV-Scanner, gitleaks und Semgrep (kostenlos, lokal); Funde können an den Bug-Scan gehen. [Sicherheits-Check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep) (Englisch)
 - Englisch und Deutsch: die Sprache des Macs, oder wähle eine unter Einstellungen → Allgemein → Sprache
@@ -115,7 +139,7 @@ deploys ledger                # Schätzung: gespart, seit Auto-Deploy aus ist
 ```
 
 Liegt in der App unter `Deploy Center.app/Contents/Resources/deploys`. Alle Befehle, CI-Variablen und
-Einstellungen: [docs/CLI.md](docs/CLI.md) (Englisch).
+Einstellungen: [docs/CLI.de.md](docs/CLI.de.md), die vollständige englische Referenz: [docs/CLI.md](docs/CLI.md).
 
 ## Roadmap
 
@@ -165,7 +189,7 @@ Deploy, und einmal am Tag mit deploycenter.app/appcast.xml wegen Updates, die vo
 
 **Windows oder Linux?** Die App braucht macOS 15. Die `deploys`-CLI ist Bash und läuft unter Linux, in WSL und in CI: `curl -fsSL https://deploycenter.app/install.sh | sh`.
 
-Mehr (Englisch): [FAQ](docs/FAQ.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Glossar](docs/GLOSSARY.md) · [Alle Docs](docs/README.md)
+Mehr: [FAQ](docs/FAQ.de.md) · [Fehlerbehebung](docs/TROUBLESHOOTING.de.md) · [Sicher ausprobieren](docs/SAFE-START.de.md) · [CLI](docs/CLI.de.md) · Englisch: [Glossar](docs/GLOSSARY.md) · [Alle Docs](docs/README.md)
 
 ## Mitmachen
 

@@ -20,6 +20,8 @@ struct DeployActivity: ActivityAttributes {
     let rollback: Bool
     /// The app's language when it started: the extension cannot read the app's choice.
     let german: Bool
+    /// The project's key ("Vercel/prj_…") for the link; nil in activities from an older app.
+    var key: String? = nil
 
     /// After this long without an update iOS marks the activity as stale; the view then says "open the app".
     static let staleAfter: TimeInterval = 90

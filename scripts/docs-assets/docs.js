@@ -118,8 +118,10 @@
     }).join('') : '<li class="empty">No results for “' + esc(v) + '”</li>';
     list.hidden = false;
     q.setAttribute('aria-expanded', 'true');
+    var st = document.getElementById('rstatus');
+    if (st) st.textContent = shown.length ? shown.length + (shown.length === 1 ? ' result' : ' results') : 'No results';
   }
-  function close() { list.hidden = true; q.setAttribute('aria-expanded', 'false'); q.removeAttribute('aria-activedescendant'); }
+  function close() { var st = document.getElementById('rstatus'); if (st) st.textContent = ''; list.hidden = true; q.setAttribute('aria-expanded', 'false'); q.removeAttribute('aria-activedescendant'); }
   function move(d) {
     if (!shown.length) return;
     var items = list.querySelectorAll('li[role=option]');

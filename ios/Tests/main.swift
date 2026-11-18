@@ -155,6 +155,35 @@ var rw = PhoneProject(provider: .vercel, id: "prj_4", name: "epsilon"); rw.repo 
 await GitHub(token: "g", session: Stub.session).fill(&rw)
 check(rw.rewritten && rw.fetchError == nil && rw.pendingCommits == nil, "GitHub: a failed compare after a force push is rewritten history")
 
+// MARK: Round 10: the confirmed commit is pinned, PR counts that are minimums, one waiting rule
+
+var dp = PhoneProject(provider: .vercel, id: "prj_9", name: "zeta"); dp.repo = "o/r"; dp.repoId = 77; dp.branch = "main"; dp.headSha = "abc123"
+let vbody = (try? Vercel.deployBody(dp)) ?? [:]
+let vgit = vbody["gitSource"] as? JSON
+check(vgit?["sha"] as? String == "abc123" && vgit?["ref"] as? String == "main" && vgit?["repoId"] as? Int == 77,
+      "Vercel deploy: the commit the person saw is pinned by sha")
+dp.headSha = nil
+check((try? Vercel.deployBody(dp))?["gitSource"].flatMap { $0 as? JSON }?["sha"] == nil, "Vercel deploy: no known head, no sha")
+var rp = PhoneProject(provider: .render, id: "srv-9", name: "eta"); rp.headSha = "def456"
+check(Render.deployBody(rp)["commitId"] as? String == "def456", "Render deploy: the seen commit is pinned by commitId")
+rp.otherHost = "GitLab"
+check(Render.deployBody(rp).isEmpty, "Render deploy: a repo outside GitHub has no pinned commit")
+
+Stub.reset()
+let manyCommits = (1...12).map { #"{"sha":"s\#($0)","commit":{"message":"plain \#($0)","committer":{"date":"2026-01-02T03:04:05Z"}}}"# }.joined(separator: ",")
+Stub.routes["/repos/o/r/commits/main"] = (200, [:], #"{"sha":"new","commit":{"message":"x","committer":{"date":"2026-01-02T03:04:05Z"}}}"#)
+Stub.routes["/repos/o/r/compare/old...main"] = (200, [:], #"{"ahead_by":12,"status":"ahead","commits":["# + manyCommits + "]}")
+Stub.routes["/repos/o/r/pulls?state=open&per_page=100"] = (200, [:], "[]")
+var many = PhoneProject(provider: .vercel, id: "prj_5", name: "theta"); many.repo = "o/r"; many.branch = "main"; many.liveSha = "old"
+await GitHub(token: "g", session: Stub.session).fill(&many)
+check(many.pendingPRs == 0 && many.pendingPRsAtLeast && many.prsAtLeast, "GitHub: commits whose PRs are not looked up make the PR count a minimum")
+
+var w1 = PhoneProject(provider: .vercel, id: "a", name: "a"); w1.deployable = true; w1.repo = "o/r"; w1.liveSha = "1"; w1.headSha = "2"; w1.pendingPRs = 3
+var w2 = w1; w2.latestState = "ERROR"      // failed: not "waiting"
+var w3 = PhoneProject(provider: .render, id: "b", name: "b"); w3.deployable = true; w3.repo = "o/r"; w3.liveSha = "1"; w3.headSha = "2"; w3.pendingPRs = 2
+check([w1, w2, w3].waitingOnly.count == 2 && [w1, w2, w3].waitingPRCount == 3,
+      "Siri and the app count the same: failed ones do not wait, projects of one repo count their PRs once")
+
 // MARK: Snapshot texts
 
 check(DeploySnapshot.localized("de-DE", "en", "de") == "de" && DeploySnapshot.localized("en", "en", "de") == "en", "language pick")

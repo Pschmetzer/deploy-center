@@ -30,7 +30,10 @@ command -v jq >/dev/null 2>&1 || exit 0
 hostpath="$(printf '%s' "$remote_url" | sed -E 's#^(ssh://)?([^@/]*@)?##; s#^https?://([^@/]*@)?##; s#^([^:/]+):([0-9]+/)?#\1/#; s#\.git$##; s#/$##')"
 case "$hostpath" in
   github.com/*/*) repo="${hostpath#github.com/}"; case "$repo" in */*/*) exit 0 ;; esac ;;
-  */*/*) repo="$hostpath" ;;
+  */*/*)
+    repo="$hostpath"
+    # An SSH host alias from ~/.ssh/config (git@github-work:me/app.git): a host without a dot is no host; owner/name is GitHub's.
+    case "${hostpath%%/*}" in *.*) ;; *) repo="${hostpath#*/}"; case "$repo" in */*/*) exit 0 ;; esac ;; esac ;;
   *) exit 0 ;;
 esac
 case "$repo" in *[!A-Za-z0-9._/-]*|'') exit 0 ;; esac

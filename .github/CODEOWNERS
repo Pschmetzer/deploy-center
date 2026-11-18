@@ -6,3 +6,5 @@
 /deploys @Pschmetzer
 /integrations/docker/ @Pschmetzer
 /integrations/action/ @Pschmetzer
+/lib/ @Pschmetzer
+/site/install.sh @Pschmetzer

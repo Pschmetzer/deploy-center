@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deploy Center + Claude Code: you decide what ships</title>
 <meta name="description" content="Works with Claude Code: Claude pushes many small commits, Deploy Center batches them into one Vercel or Render deploy, and Autofix hands failed builds back to Claude.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="Works with Claude Code: Claude pushes many small commits, Deploy Center batches them into one Vercel or Render deploy, and Autofix hands failed builds back to Claude.">
 <meta property="og:url" content="https://deploycenter.app/claude-code/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="Deploy Center + Claude Code: let the agent push, you decide what ships">
 <meta name="twitter:description" content="Works with Claude Code: Claude pushes many small commits, Deploy Center batches them into one Vercel or Render deploy, and Autofix hands failed builds back to Claude.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -163,11 +166,11 @@
 <p>The MCP server in <a href="https://github.com/Pschmetzer/deploy-center/tree/main/integrations/mcp"><code>integrations/mcp</code></a> lets Claude Code ask Deploy Center what is waiting to go live, read release notes and build logs, and, only if you turn it on, deploy one project after you said yes. It is read-only by default, and there is no “deploy everything” tool.</p>
 <p><b>In one click:</b> in the app, <b>Settings → Claude</b> connects Claude Desktop and Claude Code to the MCP server that comes with the app (it needs Node.js 18 or newer). Deploys stay off unless you allow them there.</p>
 <p><b>The Claude Code plugin</b> brings the MCP server, a skill, four commands and a push hook. In a Claude Code session:</p>
-<pre><code class="language-text">/plugin marketplace add Pschmetzer/deploy-center
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-text">/plugin marketplace add Pschmetzer/deploy-center
 /plugin install deploy-center@deploy-center</code></pre>
 <p>Then run <code>/deploy-center:deploys-waiting</code>, or see <a href="https://github.com/Pschmetzer/deploy-center/tree/main/integrations/claude-code">what the plugin contains</a>.</p>
 <p><b>By hand</b>, from a clone of the repo:</p>
-<pre><code class="language-bash"><span class="c"># needs Node 18+; replace /path/to/deploy-center with your clone of the repo</span>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash"><span class="c"># needs Node 18+; replace /path/to/deploy-center with your clone of the repo</span>
 cd /path/to/deploy-center/integrations/mcp &amp;&amp; npm ci
 
 <span class="c"># read-only: what is waiting, notes, logs</span>
@@ -186,7 +189,7 @@ claude mcp add deploys -e DEPLOYS_MCP_ALLOW_DEPLOY=1 -- node /path/to/deploy-cen
   <li>Click <b>Turn off auto-deploy</b>. Claude's pushes now wait instead of building.</li>
   <li>Optional: set up Autofix in <b>Settings → Claude → Autofix</b>, or in the terminal:</li>
 </ol>
-<pre><code class="language-bash">pbpaste | deploys autofix set-token     # the routine's API token
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">pbpaste | deploys autofix set-token     # the routine's API token
 deploys autofix routine trig_XXXXXXXX  # the routine's trigger id
 deploys autofix --dry-run              # see what would be handed over
 deploys autofix schedule on            # check every 10 minutes</code></pre>

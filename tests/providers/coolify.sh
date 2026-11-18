@@ -180,6 +180,11 @@ out="$(coolify_deploy_json shop --sha abc1234 2>&1)"; rc=$?
 expect "deploy --sha: exit 0" "$rc" 0
 expect "deploy --sha: pin, deploy, restore" "$(grep -oE 'curl (PATCH|POST) [^ ]+|DATA\[[^]]*\]' "$CALLS" | grep -vE 'DATA\[\]' | tr '\n' ' ')" \
   'curl PATCH https://coolify.example.com/api/v1/applications/app-shop DATA[{"git_commit_sha":"abc1234"}] curl POST https://coolify.example.com/api/v1/deploy?uuid=app-shop curl PATCH https://coolify.example.com/api/v1/applications/app-shop DATA[{"git_commit_sha":"HEAD"}] '
+# The pin's own traps give the caller's back: INT, TERM and HUP are what they were before the call.
+trap 'echo caller-term' TERM; trap 'echo caller-hup' HUP   # not INT: a suite started with & has INT ignored, which cannot be trapped
+coolify_deploy_json shop --sha abc1234 >/dev/null 2>&1 </dev/null
+expect "deploy --sha: the caller's TERM and HUP traps are still there" "$(x="$(trap -p TERM HUP)"; echo "${x//$'\n'/ }")" "trap -- 'echo caller-term' SIGTERM trap -- 'echo caller-hup' SIGHUP"
+trap - TERM HUP
 out="$(coolify_deploy_json shop --sha 'abc;rm' 2>&1)"; rc=$?
 expect "deploy --sha: not a sha refused" "$rc" 1
 reset

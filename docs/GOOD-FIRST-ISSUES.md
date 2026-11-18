@@ -13,11 +13,8 @@ no real project names in examples, texts in English and German, nothing builds w
 3. **Troubleshooting entry from a real error.** Pick an error message in [`deploys`](../deploys) that
    is not in [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) yet and add what it means and what to do.
 
-4. **A test for the fish completion.** `deploys completion fish` exists; add a check to
-   `tests/script-tests.sh` that its output names the commands and loads in `fish` when `fish` is installed.
-
-5. **A git host.** [GITHOSTS.md](GITHOSTS.md) says what a new host provides. Take Bitbucket or Gitea: the
+4. **A git host.** [GITHOSTS.md](GITHOSTS.md) says what a new host provides. Take Bitbucket or Gitea: the
    three `*_head_of`, `*_pending_of` and `*_open_prs_of` functions, a test in the style of `tests/providers/gitlab.sh`,
    and a docs page like [GITLAB.md](GITLAB.md).
 
-6. **Screenshots for the Raycast and VS Code listings.** Both store listings have none yet; take them in demo mode.
+5. **Screenshots for the Raycast and VS Code listings.** Both store listings have none yet; take them in demo mode.

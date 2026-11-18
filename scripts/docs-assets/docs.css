@@ -100,7 +100,7 @@ code{font:.88em/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(-
 .code{position:relative;margin:0 0 16px;background:var(--code);border:1px solid var(--line);border-radius:var(--radius)}
 .code pre{margin:0;padding:14px 16px;overflow-x:auto;font:13.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;tab-size:4}
 .code pre code{background:none;border:0;padding:0;font:inherit;overflow-wrap:normal;white-space:pre}
-.copy{position:absolute;top:8px;right:8px;font:12px -apple-system,BlinkMacSystemFont,sans-serif;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:3px 9px;cursor:pointer;opacity:.85}
+.copy{min-height:24px;min-width:24px;position:absolute;top:8px;right:8px;font:12px -apple-system,BlinkMacSystemFont,sans-serif;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:3px 9px;cursor:pointer;opacity:.85}
 .copy:hover,.copy:focus-visible{color:var(--text);opacity:1}
 .copy.done{color:var(--green)}
 @media (hover:hover){.code .copy{opacity:0}.code:hover .copy,.code .copy:focus-visible,.code .copy.done{opacity:1}}
@@ -149,3 +149,15 @@ footer a{color:var(--muted)}
   .search kbd{display:none}
 }
 @media print{.top,.side,.toc,.copy,footer{display:none}.layout{display:block}}
+
+/* Windows high contrast and "more contrast": keep borders, links and focus visible */
+@media (forced-colors:active){
+  a{text-decoration:underline}
+  :focus-visible{outline:2px solid Highlight}
+  .btn,button,.tag,.pill,.tablewrap,table,th,td,pre,.code,.card,.cards a,details,summary{border-color:CanvasText}
+  .tabs button[aria-selected="true"]{border-color:Highlight;outline:1px solid Highlight}
+}
+@media (prefers-contrast:more){
+  :root,:root[data-theme]{--muted:var(--text);--line:var(--text)}
+  a{text-decoration:underline}
+}

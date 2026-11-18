@@ -43,6 +43,11 @@ webhook_body() {
     telegram) text="$(cut_text "$text" 3900)" ;;
     pushover) text="$(cut_text "$text" 1000)" ;;
     googlechat) text="$(cut_text "$text" 4000)" ;;
+    # Teams takes a card of about 28 KB, Slack 40 000 characters (3000 per block, handled below; escaping
+    # grows a text), Matrix hookshot a message of a few 10 KB: a long list is cut with a note, not refused.
+    teams)    text="$(cut_text "$text" 15000)" ;;
+    slack)    text="$(cut_text "$text" 25000)" ;;
+    matrix)   text="$(cut_text "$text" 15000)" ;;
   esac
   case "$format" in
     discord)  WEBHOOK_TYPE="application/json"

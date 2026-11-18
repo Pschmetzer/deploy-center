@@ -7,7 +7,7 @@ import { aiPrompt, fence, firstErrorBlock, isErrorLine, maskSecrets } from "../s
 test("error lines, not their look-alikes", () => {
   for (const l of ["Error: Cannot find module 'x'", "npm ERR! code 1", "Build failed", "Command \"npm run build\" exited with 1", "Traceback (most recent call last):", "src/a.ts(3,1): error TS2304"])
     assert.ok(isErrorLine(l), l);
-  for (const l of ["Compiled ErrorBoundary.tsx", "onError handler set", "Found 0 errors", "warning: deprecated", "Build cache not found", "Done"])
+  for (const l of ["Compiled ErrorBoundary.tsx", "process exited with 0", "onError handler set", "Found 0 errors", "warning: deprecated", "Build cache not found", "Done"])
     assert.ok(!isErrorLine(l), l);
 });
 

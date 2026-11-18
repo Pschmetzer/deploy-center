@@ -142,6 +142,8 @@ struct Row: View {
         .contentShape(Rectangle())
         // Not dimmed as a whole (the text would fall under 3:1): the tick is faint and a line says why.
         .onTapGesture { if !item.state.isActive { toggle() } }
+        // A double click opens the details; the two single clicks inside it tick and untick again.
+        .simultaneousGesture(TapGesture(count: 2).onEnded { showDetails?() })
     }
 
     /// Why a deploy failed or was skipped, and why a project cannot be ticked: on screen, not only
@@ -170,7 +172,9 @@ struct Row: View {
         v
         // VoiceOver: one stop per project, its buttons as actions (VO-Command-Space).
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(NSWorkspace.shared.isVoiceOverEnabled ? spoken : Demo.mask(item.name))
+        .accessibilityLabel(spoken)
+        // Voice Control and Switch Control name the row by the project, not by the whole sentence.
+        .accessibilityInputLabels([Demo.mask(item.name)])
         .accessibilityValue(item.deployable ? (item.selected ? L("selected", "ausgewählt") : L("not selected", "nicht ausgewählt")) : L("cannot be deployed here", "hier nicht deploybar"))
         .accessibilityAddTraits(item.deployable ? .isButton : [])
         .accessibilityAction { if item.deployable && !item.state.isActive { toggle() } }

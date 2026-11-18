@@ -63,7 +63,7 @@ amp_profile_source() {
 
 # amp_aws <service> <command> [args...]: the CLI, JSON on stdout. A failure dies with a hint.
 amp_aws() {
-  command -v aws >/dev/null 2>&1 || die "The aws CLI is not installed. brew install awscli (see docs/providers/amplify.md)"
+  command -v aws >/dev/null 2>&1 || die "The aws CLI is not installed. brew install awscli (see https://deploycenter.app/docs/aws-amplify/)"
   local prof args=() err out rc=0
   prof="$(amp_profile)"
   [ -z "$prof" ] || args+=(--profile "$prof")

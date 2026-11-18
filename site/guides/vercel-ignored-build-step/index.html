@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vercel Ignored Build Step: examples and pitfalls · Deploy Center</title>
 <meta name="description" content="Vercel&#x27;s Ignored Build Step skips a build when the command exits 0 and builds when it exits 1. Copy-paste scripts and the pitfalls that make it build anyway.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="Vercel&#x27;s Ignored Build Step skips a build when the command exits 0 and builds when it exits 1. Copy-paste scripts and the pitfalls that make it build anyway.">
 <meta property="og:url" content="https://deploycenter.app/guides/vercel-ignored-build-step/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="Vercel Ignored Build Step: examples and pitfalls · Deploy Center">
 <meta name="twitter:description" content="Vercel&#x27;s Ignored Build Step skips a build when the command exits 0 and builds when it exits 1. Copy-paste scripts and the pitfalls that make it build anyway.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -143,27 +146,27 @@
 
 <h2>Where to put it</h2>
 <p>In the dashboard pick <b>Custom</b> and paste the command. Or keep it in the repository:</p>
-<pre><code class="language-json">{
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-json">{
   "ignoreCommand": "bash scripts/vercel-ignore.sh"
 }</code></pre>
 <p>The command runs in the project's root directory after the repository is cloned. A script file is easier to read and test than a long one-liner.</p>
 
 <h2>Examples</h2>
 <h3>Only build production</h3>
-<pre><code class="language-bash">bash -c '[ "$VERCEL_ENV" = production ] &amp;&amp; exit 1 || exit 0'</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">bash -c '[ "$VERCEL_ENV" = production ] &amp;&amp; exit 1 || exit 0'</code></pre>
 <h3>Only build when this folder changed</h3>
-<pre><code class="language-bash">git diff --quiet HEAD^ HEAD -- .</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">git diff --quiet HEAD^ HEAD -- .</code></pre>
 <p><code>git diff --quiet</code> exits 0 when nothing changed (skip) and 1 when something did (build), which is exactly what Vercel expects. Add shared folders after the dot, for example <code>-- . ../../packages/ui</code>.</p>
 <h3>Skip bot branches</h3>
-<pre><code class="language-bash">bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*) exit 0;; *) exit 1;; esac'</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*) exit 0;; *) exit 1;; esac'</code></pre>
 <h3>Skip when the commit message says so</h3>
-<pre><code class="language-bash">bash -c 'echo "$VERCEL_GIT_COMMIT_MESSAGE" | grep -qiF "[skip deploy]" &amp;&amp; exit 0 || exit 1'</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">bash -c 'echo "$VERCEL_GIT_COMMIT_MESSAGE" | grep -qiF "[skip deploy]" &amp;&amp; exit 0 || exit 1'</code></pre>
 <p>Only the newest commit of a push is checked.</p>
 <h3>Turborepo</h3>
-<pre><code class="language-bash">npx turbo-ignore</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">npx turbo-ignore</code></pre>
 <h3>A script that compares with the last deployment</h3>
 <p><code>HEAD^</code> only looks at the newest commit. If you push five commits, a change in the third is missed. This script compares with the commit of the last successful deployment instead, and builds whenever it cannot tell:</p>
-<pre><code class="language-bash"><span class="c">#!/usr/bin/env bash</span>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash"><span class="c">#!/usr/bin/env bash</span>
 <span class="c"># scripts/vercel-ignore.sh  ·  exit 0 = skip the build, exit 1 = build</span>
 set -u
 paths=(. ../../packages)            # what this project depends on

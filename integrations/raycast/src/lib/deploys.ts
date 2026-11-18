@@ -25,6 +25,7 @@ export interface ChangedProject {
   pendingPartial?: boolean;
   oldestPendingAt?: number | null; // Unix seconds
   headMsg?: string | null;
+  headSha?: string | null;
   headAt?: number | null;
   lastAt?: number | null;
   rewritten?: boolean;
@@ -163,6 +164,21 @@ function killGroup(child: ChildProcess, signal: NodeJS.Signals) {
   }
 }
 
+// The environment for `deploys`: an allowlist, like the MCP server's. Everything else of Raycast's
+// (other extensions' tokens, model keys, agents) stays out; GIT_ASKPASS and GIT_SSH_COMMAND run programs.
+const FOR_CLI = new RegExp(
+  "^(?:PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TERM|TZ|LANG|LANGUAGE|LC_[A-Z_]+|XDG_[A-Z_]+|" +
+    "(?:HTTPS?|NO|ALL)_PROXY|(?:https?|no|all)_proxy|SSL_CERT_(?:FILE|DIR)|NODE_EXTRA_CA_CERTS|CURL_CA_BUNDLE|" +
+    "DEPLOYS_[A-Z0-9_]+|VERCEL_[A-Z0-9_]+|RENDER_[A-Z0-9_]+|NETLIFY_[A-Z0-9_]+|CLOUDFLARE_[A-Z0-9_]+|CF_[A-Z0-9_]+|" +
+    "COOLIFY_[A-Z0-9_]+|DIGITALOCEAN_[A-Z0-9_]+|DO_[A-Z0-9_]+|AWS_[A-Z0-9_]+|GH_[A-Z0-9_]+|GITHUB_TOKEN|GITLAB_[A-Z0-9_]+|" +
+    "GIT_TERMINAL_PROMPT|GIT_SSL_CAINFO|GIT_SSL_CAPATH|GIT_CONFIG_NOSYSTEM)$",
+);
+export function cliEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(env)) if (FOR_CLI.test(k)) out[k] = v;
+  return out;
+}
+
 // Runs deploys with an argument array (no shell), stdin closed, a timeout and the wider PATH.
 // Resolves for every exit code; rejects only when it could not run or ran out of time.
 export function run(args: string[], timeout = TIMEOUT.read): Promise<RunResult> {
@@ -173,7 +189,7 @@ export function run(args: string[], timeout = TIMEOUT.read): Promise<RunResult> 
       child = spawn(bin, args, {
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, PATH: searchPath(), NO_COLOR: "1", TERM: "dumb" },
+        env: { ...cliEnv(process.env), PATH: searchPath(), NO_COLOR: "1", TERM: "dumb" },
       });
     } catch (e) {
       reject(new DeploysError("missing", `Could not start ${bin}: ${(e as Error).message}`));
@@ -307,9 +323,25 @@ export async function status(): Promise<JsonResult<StatusProject[]>> {
   return { ...r, data: withRefs<StatusProject>(r.data) };
 }
 
+// Whether the platform can deploy a given commit. Unknown counts as no.
+async function pinsCommit(platform: string): Promise<boolean> {
+  try {
+    const { data } = await runJson<{ id?: string; caps?: { sha?: boolean } }[]>(["providers", "--json"]);
+    return Array.isArray(data) && data.some((x) => x?.id === platform && x.caps?.sha === true);
+  } catch {
+    return false;
+  }
+}
+
 // `deploys <platform> deploy-json <name>`: the CLI's provider id as it is (vercel, netlify, …).
-export async function deploy(p: { name: string; platform: string }): Promise<DeployStarted> {
-  const { data } = await runJson<DeployStarted>([p.platform, "deploy-json", p.name], TIMEOUT.deploy);
+// With `sha` (the branch head the person was asked about) the platform deploys that commit, not a later push,
+// where it can (deploys providers --json: caps.sha); elsewhere the newest commit is built, as before.
+export async function deploy(p: { name: string; platform: string; headSha?: string | null }): Promise<DeployStarted> {
+  const sha = typeof p.headSha === "string" && /^[0-9a-f]{7,40}$/i.test(p.headSha) && (await pinsCommit(p.platform)) ? p.headSha : null;
+  const { data } = await runJson<DeployStarted>(
+    [p.platform, "deploy-json", p.name, ...(sha ? ["--sha", sha] : [])],
+    TIMEOUT.deploy,
+  );
   // A start is a deploy id. Anything else ({} or a list) is not "started", whatever the exit code.
   if (!data || typeof data !== "object" || Array.isArray(data) || typeof (data as { id?: unknown }).id !== "string") {
     throw new Error(`deploys ${p.platform} deploy-json ${p.name} gave no deploy id`);

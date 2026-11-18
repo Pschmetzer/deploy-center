@@ -97,6 +97,23 @@ duplicate rules and lock apply. Exit codes:
 since this version `prNumber`, `prState` (`open`, `merged`, `closed`, or null before a PR is seen)
 and `prUrl`. The PR is looked up on each run (branch `claude/autofix-<project>-<sha7>`).
 
+Each fire also carries `class` and `reason`: what kind of failure the masked build log shows, and the
+log line that says so. The first class whose pattern matches wins, in this order:
+
+| `class` | Meaning |
+| --- | --- |
+| `env` | a missing environment variable or secret |
+| `auth` | an expired or invalid token or key, 401 or 403 |
+| `quota` | a rate or usage limit, or no space left |
+| `outage` | the host or the network failed (502, 503, 504, timeout, connection reset) |
+| `dependency` | a package could not be resolved or found, a lockfile problem |
+| `code` | a compile, type, lint or test error in the code |
+| `unknown` | none of the above |
+
+The first four are not in the code, so the routine is told not to guess a code change for them. The class is a hint for
+you and the app, never a gate: it does not stop a hand-over. `class` is `null` for fires from before it existed.
+`deploys autofix --preview --only <platform> <project> --json` shows the class before anything is sent.
+
 ## What the row in the app says
 
 The app reads `deploys autofix status --json` and shows the newest hand-over of a project as a chip

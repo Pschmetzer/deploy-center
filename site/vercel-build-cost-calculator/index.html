@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vercel build cost calculator: what auto-deploy costs · Deploy Center</title>
 <meta name="description" content="Estimate what auto-deploy costs a month on Vercel or Render: projects × pushes × cost per build, compared with deploying by hand. Free, runs in your browser.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -20,6 +21,7 @@
 <meta property="og:description" content="Estimate what auto-deploy costs a month on Vercel or Render: projects × pushes × cost per build, compared with deploying by hand. Free, runs in your browser.">
 <meta property="og:url" content="https://deploycenter.app/vercel-build-cost-calculator/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -27,6 +29,7 @@
 <meta name="twitter:title" content="Vercel build cost calculator: what auto-deploy costs · Deploy Center">
 <meta name="twitter:description" content="Estimate what auto-deploy costs a month on Vercel or Render: projects × pushes × cost per build, compared with deploying by hand. Free, runs in your browser.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -181,7 +184,7 @@
 </div>
 
 <h2>How it is calculated</h2>
-<pre><code>with auto-deploy   = projects × pushes per day × cost per build × 22
+<pre tabindex="0" role="region" aria-label="Code example"><code>with auto-deploy   = projects × pushes per day × cost per build × 22
 deploying by hand  = projects × min(deploys, pushes) × cost per build × 22
 saving             = with auto-deploy − deploying by hand</code></pre>
 <ul>
@@ -203,7 +206,7 @@ saving             = with auto-deploy − deploying by hand</code></pre>
 
 <h2 id="embed">Put the calculator on your own page</h2>
 <p>Copy this into a page, a blog post or a newsletter archive. The calculator runs inside the frame, in the reader's browser, and links back here.</p>
-<pre><code>&lt;iframe src="https://deploycenter.app/vercel-build-cost-calculator/?embed=1"
+<pre tabindex="0" role="region" aria-label="Code example"><code>&lt;iframe src="https://deploycenter.app/vercel-build-cost-calculator/?embed=1"
   title="Vercel build cost calculator" width="100%" height="620"
   loading="lazy" style="border:0"&gt;&lt;/iframe&gt;</code></pre>
 <p>Add <code>&amp;p=12&amp;u=8&amp;c=6&amp;d=1</code> to start with your own numbers. A German version: <a href="/de/vercel-build-kosten-rechner/" hreflang="de" lang="de">Vercel-Build-Kosten-Rechner</a>.</p>

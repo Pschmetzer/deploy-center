@@ -7,7 +7,7 @@ integrations/badge/badge.sh badges/                  # read every project throug
 deploys vercel list --json > v.json && integrations/badge/badge.sh badges/ v.json
 ```
 
-A badge reads, for example, `deployed | 3 d ago · 4 commits waiting`. It is green when the project
+A badge reads, for example, `deployed | 2027-01-05 · 4 commits waiting` (the date of the live deploy, UTC: the file is read long after it was written). It is green when the project
 is up to date, yellow when commits are waiting, red when the newest build failed, blue while one
 is building, and grey when the project was never deployed.
 The age is that of the commit that is live. On Render, a newer failed attempt does not reset it.

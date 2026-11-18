@@ -14,6 +14,8 @@ struct ConnectMacView: View {
     @State private var checking = false
     @State private var nothingYet = false
     @State private var found: LinkedKeys?
+    /// The code came from the clipboard: it is cleared once the keys are taken (a code holds keys).
+    @State private var foundByPaste = false
     @State private var confirmForget = false
 
     var body: some View {
@@ -36,7 +38,10 @@ struct ConnectMacView: View {
                     Section {
                         Text(Self.describe(k))
                         Button(L("Connect", "Verbinden")) {
-                            if store.adopt(k) { dismiss() }
+                            UsedCodes.mark(k.once)
+                            let adopted = store.adopt(k)
+                            if foundByPaste { UIPasteboard.general.items = []; foundByPaste = false }
+                            if adopted { dismiss() }
                             found = nil
                         }
                         .buttonStyle(.borderedProminent)
@@ -73,7 +78,7 @@ struct ConnectMacView: View {
                     Button(L("Scan the code …", "Code scannen …")) { scanError = nil; cameraDenied = false; scanning = true }
                     // Without a camera (or with VoiceOver): the code's text, copied on the Mac.
                     PasteButton(payloadType: String.self) { texts in
-                        Task { @MainActor in handle(texts.first ?? "") }
+                        Task { @MainActor in handle(texts.first ?? "", pasted: true) }
                     }
                     if let e = scanError { Text(e).foregroundStyle(.red) }
                     if cameraDenied { Button(L("Open Settings …", "Einstellungen öffnen …")) { if let u = URL(string: UIApplication.openSettingsURLString) { openURL(u) } } }
@@ -128,8 +133,9 @@ struct ConnectMacView: View {
     }
 
     /// A pasted code: a wrong one says why here.
-    private func handle(_ text: String) {
+    private func handle(_ text: String, pasted: Bool = false) {
         scanError = reason(text)
+        foundByPaste = pasted && found != nil
         if let e = scanError {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             AccessibilityNotification.Announcement(e).post()
@@ -140,6 +146,10 @@ struct ConnectMacView: View {
     private func reason(_ text: String) -> String? {
         switch PhoneLink.read(qr: text.trimmingCharacters(in: .whitespacesAndNewlines)) {
         case .keys(let k):
+            // A code carries a fresh id: one that was used here is refused (a photo of the screen, a second scan).
+            if UsedCodes.isUsed(k.once) {
+                return L("This code was already used. Show a new one on the Mac.", "Dieser Code wurde schon benutzt. Zeig auf dem Mac einen neuen.")
+            }
             found = k; scanError = nil
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             return nil
@@ -163,6 +173,21 @@ struct ConnectMacView: View {
     }
 }
 
+/// The ids of QR codes taken on this iPhone (the last 20): a code works once.
+enum UsedCodes {
+    private static let key = "usedQRCodes"
+    static func isUsed(_ id: String?) -> Bool {
+        guard let id, !id.isEmpty else { return false }
+        return (UserDefaults.standard.stringArray(forKey: key) ?? []).contains(id)
+    }
+    static func mark(_ id: String?) {
+        guard let id, !id.isEmpty else { return }
+        var ids = UserDefaults.standard.stringArray(forKey: key) ?? []
+        if !ids.contains(id) { ids.append(id) }
+        UserDefaults.standard.set(Array(ids.suffix(20)), forKey: key)
+    }
+}
+
 /// The camera, reading one QR code.
 struct QRScanner: UIViewControllerRepresentable {
     /// Returns why the code was not taken (the camera stays open), or nil when it was.
@@ -178,6 +203,8 @@ struct QRScanner: UIViewControllerRepresentable {
         var found: ((String) -> String?)?
         var cancel: ((String?, Bool) -> Void)?
         private let session = AVCaptureSession()
+        /// start/stopRunning block: both go through one serial queue, in order, never on the main thread.
+        private let sessionQueue = DispatchQueue(label: "app.deploycenter.ios.camera", qos: .userInitiated)
         private var preview: AVCaptureVideoPreviewLayer?
         private var camera: AVCaptureDevice?
         private var done = false
@@ -258,7 +285,7 @@ struct QRScanner: UIViewControllerRepresentable {
             view.layer.insertSublayer(layer, at: 0)
             preview = layer
             rotate()
-            DispatchQueue.global(qos: .userInitiated).async { self.session.startRunning() }
+            sessionQueue.async { [session] in session.startRunning() }
         }
 
         // iPad and landscape: the preview follows the view and the way the device is held.
@@ -301,7 +328,7 @@ struct QRScanner: UIViewControllerRepresentable {
         private func finish(_ f: (ScannerController) -> Void) {
             guard !done else { return }
             done = true
-            if session.isRunning { DispatchQueue.global().async { self.session.stopRunning() } }
+            sessionQueue.async { [session] in if session.isRunning { session.stopRunning() } }
             f(self)
         }
     }

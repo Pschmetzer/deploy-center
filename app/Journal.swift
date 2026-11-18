@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 
 struct JournalEntry: Codable, Identifiable {
     /// Stable across loads, so a list does not redraw every row when it is read again.
-    var id: String { "\(at.timeIntervalSince1970)|\(platform)|\(name)|\(result)" }
+    /// The deploy id (or commit) is part of it: two entries of one project in the same second differ.
+    var id: String { "\(at.timeIntervalSince1970)|\(platform)|\(name)|\(result)|\(deployId ?? "")|\(sha ?? "")" }
     let at: Date
     let platform: String
     let name: String
@@ -35,6 +36,11 @@ enum Journal {
     /// Lines in the file, counted once; trimmed only past a margin, so an entry does not
     /// read and decode the whole file.
     private static var lines: Int?
+    /// The file's modification time when `lines` was last known: another writer (the script) changed it otherwise.
+    private static var linesStamp: Date?
+    private static func stamp() -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
     private static let lock = NSLock()
 
     /// The journal of older versions, moved once out of the Caches folder.
@@ -52,7 +58,16 @@ enum Journal {
     /// all) runs on a queue of its own.
     private static let writer = DispatchQueue(label: "app.deploycenter.journal", qos: .utility)
     static func append(_ e: JournalEntry) {
-        writer.async { appendNow(e) }
+        writer.async { appendNow(masked(e)) }
+    }
+    /// An error text may carry a token or a URL with a password: never written as it is.
+    static func masked(_ e: JournalEntry) -> JournalEntry {
+        guard let d = e.detail else { return e }
+        let m = LogTools.maskSecrets(d)
+        guard m != d else { return e }
+        var out = JournalEntry(at: e.at, platform: e.platform, name: e.name, result: e.result, seconds: e.seconds, detail: m, sha: e.sha, deployId: e.deployId)
+        out.note = e.note
+        return out
     }
     /// Waits for entries still being written (tests, and before reading right after a write).
     static func flush() { writer.sync {} }
@@ -83,6 +98,7 @@ enum Journal {
         let line = data + Data("\n".utf8)
         // The throwing calls: the old seekToEndOfFile/write raise an Objective-C exception on a full
         // disk, which no catch stops.
+        let priorStamp = stamp()
         do {
             if FileManager.default.fileExists(atPath: url.path) {
                 let h = try FileHandle(forWritingTo: url)
@@ -98,13 +114,15 @@ enum Journal {
             Log.write("journal: could not write (\(error.localizedDescription))")
             return
         }
-        let n = (lines ?? countLines()) + (lines == nil ? 0 : 1)
-        lines = n
+        // The count is trusted only while the file is as this app left it; the script appends too.
+        let known = lines != nil && linesStamp == priorStamp
+        let n = known ? lines! + 1 : countLines()
+        lines = n; linesStamp = stamp()
         // Kept small: past 500 lines (and a margin) the oldest go.
         if n > maxEntries + 50 {
             let all = load(limit: .max)
             rewrite(Array(all.suffix(maxEntries)))
-            lines = min(all.count, maxEntries)
+            lines = min(all.count, maxEntries); linesStamp = stamp()
         }
         DispatchQueue.main.async { NotificationCenter.default.post(name: didAppend, object: nil) }
     }

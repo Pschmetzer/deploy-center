@@ -84,13 +84,42 @@ notes_of() {
   md="$("$DEPLOYS" notes "$1" 2>/dev/null </dev/null)" || return 0
   printf '%s\n' "$md" | awk '/^Dependency updates:/ {dep=1; next} /^- / {sub(/^- /, ""); print (dep ? "dep\t" : "msg\t") $0}'
 }
+# A redirect target that points into this machine or its network (localhost, loopback, link-local, private
+# ranges, .local/.internal names, a bare host name) is not followed: the page's author lists public sites,
+# a redirect must not be able to make the runner call an address behind its firewall.
+public_url() {
+  local host
+  case "$1" in https://*|http://*) ;; *) return 1 ;; esac
+  host="$(printf '%s' "$1" | sed -E 's#^[a-zA-Z]+://([^/?#]*@)?##; s#[/?#].*$##')"
+  case "$host" in \[*) return 1 ;; esac
+  host="$(printf '%s' "${host%%:*}" | tr 'A-Z' 'a-z')"
+  case "$host" in
+    ''|localhost|*.localhost|*.local|*.internal|*.lan|*.home|*.corp|127.*|10.*|192.168.*|169.254.*|0.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|100.6[4-9].*|100.[7-9][0-9].*|100.1[01][0-9].*|100.12[0-7].*) return 1 ;;
+    *.*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 # One site check: HTTP code and seconds. 2xx and 3xx count as up, and 401/403 too (a login
-# wall answers, so the site is up). At most 5 redirects, http and https only.
+# wall answers, so the site is up). At most 5 redirects, followed by hand: http and https only, and only to public hosts.
 check_of() {
-  local r code try
+  local r code try url hop out secs total
   for try in 1 2; do
-    r="$(curl -sS -o /dev/null -L --max-redirs 5 --proto '=http,https' --proto-redir '=http,https' --max-time 10 \
-      -w '%{http_code} %{time_total}' -- "$1" 2>/dev/null </dev/null)" || r="000 0"
+    url="$1"; total=0; r="000 0"
+    for hop in 1 2 3 4 5 6; do
+      out="$(curl -sS -o /dev/null --proto '=http,https' --max-time 10 \
+        -w '%{http_code} %{time_total} %{redirect_url}' -- "$url" 2>/dev/null </dev/null)" || { r="000 $total"; break; }
+      code="${out%% *}"; secs="${out#* }"; secs="${secs%% *}"
+      total="$(awk -v a="$total" -v b="$secs" 'BEGIN { printf "%.3f", a + b }')"
+      r="$code $total"
+      case "$code" in
+        301|302|303|307|308)
+          url="${out#* * }"
+          # No Location (or none worth following): the answer is the redirect itself, which counts as up.
+          if [ "$hop" = 6 ] || [ -z "$url" ] || [ "$url" = "$out" ]; then break; fi
+          public_url "$url" || { r="000 $total"; break; } ;;
+        *) break ;;
+      esac
+    done
     code="${r%% *}"
     # Up (2xx, 3xx, 401, 403) answers at once; anything else gets one more try after a pause, so one
     # dropped packet does not put "not reachable" on a public page.

@@ -39,6 +39,9 @@ struct PhoneProject: Identifiable, Equatable, Codable {
     /// GitHub lists at most 100 open PRs per page and 250 commits per compare: the counts are then "at least".
     var openPRsCapped = false
     var pendingCapped = false
+    /// Some waiting commits could not be matched to a PR (too many, or a failed lookup): the PR count is a minimum.
+    var pendingPRsAtLeast = false
+    var prsAtLeast: Bool { pendingCapped || pendingPRsAtLeast }
     /// The repo is on a host this app does not read (GitLab, Bitbucket): no "waiting" for it.
     var otherHost: String? = nil
     /// A repo outside GitHub (GitLab, Bitbucket): deployable, but only GitHub is compared.
@@ -131,8 +134,19 @@ extension PhoneProject {
         x.headSha = filled.headSha; x.headAt = filled.headAt; x.headMsg = filled.headMsg
         x.pendingCommits = filled.pendingCommits; x.pendingPRs = filled.pendingPRs; x.oldestPendingAt = filled.oldestPendingAt
         x.compareStatus = filled.compareStatus; x.rewritten = filled.rewritten; x.openPRs = filled.openPRs
-        x.pendingTitles = filled.pendingTitles; x.openPRsCapped = filled.openPRsCapped; x.pendingCapped = filled.pendingCapped
+        x.pendingTitles = filled.pendingTitles; x.openPRsCapped = filled.openPRsCapped; x.pendingCapped = filled.pendingCapped; x.pendingPRsAtLeast = filled.pendingPRsAtLeast
         x.fetchError = own.fetchError ?? filled.fetchError
         return x
+    }
+}
+
+extension Array where Element == PhoneProject {
+    /// The projects the app counts as "waiting" (not building, not failed): one rule for the app, the widgets and Siri.
+    var waitingOnly: [PhoneProject] { filter { $0.group == .waiting } }
+    /// PRs that wait. Projects of one repo share commits and PRs: each repo counts once.
+    var waitingPRCount: Int {
+        var perRepo: [String: Int] = [:]
+        for p in waitingOnly { perRepo[p.repo ?? p.key] = Swift.max(perRepo[p.repo ?? p.key] ?? 0, p.pendingPRs ?? 0) }
+        return perRepo.values.reduce(0, +)
     }
 }

@@ -18,7 +18,7 @@
 #     [--by-rules]                            only what a "deploy" rule matches; "hold" rules always count
 #     [--when-green [--wait 30m] [--strict]]  only commits whose CI passed; waits for running checks
 #   deploys plan [--when-green] [--json]      what deploy-changed --yes would start, and an estimate of its cost
-#   deploys schedule daily [HH:MM] [--when-green] [--by-rules] [--strict] | off | status [--json]
+#   deploys schedule daily [HH:MM] [--weekdays] [--when-green] [--by-rules] [--strict] [--only <p>] [--exclude <p>] [--platform <p>] [--max <n>] | off | status [--json]
 #                                             deploy-changed --yes once a day (launchd; else the cron line)
 #   deploys rules check [--json]              which rule of rules.json matches which waiting project, and why not
 #   deploys deploy <p>|<group> [--preview] [--sha <c>] [--wait] [--dry-run] [--force "reason"]
@@ -43,7 +43,7 @@
 #   deploys list [--platform <p>] [--auto|--manual] [--json]   every project on every provider that is on, with its platform
 #
 #   deploys verify <p> [--path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
-#     [--rollback-after 10] [--no-rollback]   count down, then roll back (Ctrl-C stops it)
+#     [--rollback-after 10] [--no-rollback] [--watch-timeout 30m]   count down, then roll back (Ctrl-C stops it)
 #     [--expect 200|2xx] [--follow]          only that status is healthy; follow up to 3 redirects
 #   deploys risk <project> [--json]           green/yellow/red for what waits: migrations, lockfiles, config, size
 #   deploys ci <owner/repo> [<ref>] [--wait 30m]  the CI verdict of a commit: green, pending, red, none
@@ -207,6 +207,9 @@ with_timeout() {  # with_timeout <seconds> <command...>
   local s="$1"; shift
   case "$s" in ''|*[!0-9]*) s=0 ;; esac
   if [ "$s" -gt 0 ] && command -v perl >/dev/null 2>&1; then perl -e 'alarm shift @ARGV; exec { $ARGV[0] } @ARGV or exit 127' "$s" "$@"
+  # No perl: timeout (coreutils) or gtimeout (Homebrew's coreutils) does the same; then as it is.
+  elif [ "$s" -gt 0 ] && command -v timeout >/dev/null 2>&1; then timeout "$s" "$@"
+  elif [ "$s" -gt 0 ] && command -v gtimeout >/dev/null 2>&1; then gtimeout "$s" "$@"
   else command "$@"; fi
 }
 export -f with_timeout
@@ -776,8 +779,8 @@ remember_names() {  # remember_names <p>, the list on stdin
         > "$t" 2>/dev/null && mv -f "$t" "$CONFIG_DIR/names.json" 2>/dev/null; rm -f "$t"
   t="$(mktemp "$CONFIG_DIR/names.XXXXXX" 2>/dev/null)" || return 0
   # Only plain names: the completion scripts read this file, and a name like $(cmd) from a
-  # platform list must never reach a shell.
-  jq -r '.[]? | .name' "$CONFIG_DIR/names.json" 2>/dev/null | { grep -E '^[[:alnum:]._:@ +,=-]+$' || true; } | sort -u > "$t" 2>/dev/null \
+  # platform list must never reach a shell. ASCII classes in the C locale: [[:alnum:]] means other things in other locales.
+  jq -r '.[]? | .name' "$CONFIG_DIR/names.json" 2>/dev/null | { LC_ALL=C grep -E '^[A-Za-z0-9._:@ +,=-]+$' || true; } | sort -u > "$t" 2>/dev/null \
     && mv -f "$t" "$CONFIG_DIR/names" 2>/dev/null; rm -f "$t" "$CONFIG_DIR/names.tmp" "$CONFIG_DIR/names.new"
   return 0
 }
@@ -910,14 +913,16 @@ ci_of() {  # ci_of <owner/repo> <sha or branch>: the verdict as one line of JSON
     unknown) jq -nc --arg r "$1" '{state:"unknown", final:true, reason:"the CI of \($r) cannot be read (only GitHub and GitLab)"}'; return 0 ;;
   esac
   local t rc=0; t="$(mktemp -d)"
-  gh api "repos/$1/commits/$2/status?per_page=100" > "$t/s" 2>/dev/null || rc=$((rc + 1))
+  # The combined status is paged as well (statuses, 100 to a page): one page of green must not hide a red on the next.
+  gh api --paginate "repos/$1/commits/$2/status?per_page=100" > "$t/s" 2>/dev/null || rc=$((rc + 1))
   # Every page: a monorepo matrix can have more than 100 check runs, and a red one on page 2
   # must not read as green. --paginate prints one object per page; they are joined below.
   gh api --paginate "repos/$1/commits/$2/check-runs?per_page=100" > "$t/r" 2>/dev/null || rc=$((rc + 1))
   # Neither answer: GitHub is down or gh is not logged in. That is not "no checks".
   if [ "$rc" = 2 ]; then echo '{"state":"unknown","reason":"GitHub could not be asked (is gh logged in?)"}'
   else
-    jq -e . "$t/s" >/dev/null 2>&1 || : > "$t/s"
+    # One object per page: the first one has the state, the statuses of every page are joined.
+    jq -sc '(.[0] // {}) + {statuses:[.[] | (.statuses // [])[]]}' "$t/s" > "$t/s.t" 2>/dev/null && mv "$t/s.t" "$t/s" || : > "$t/s"
     jq -sc '{check_runs:[.[] | (.check_runs // [])[]]}' "$t/r" > "$t/r.t" 2>/dev/null && mv "$t/r.t" "$t/r" || : > "$t/r"
     jq -nc --slurpfile s "$t/s" --slurpfile r "$t/r" "$CI_RULE"
   fi
@@ -1051,10 +1056,11 @@ freeze_check() {
 }
 # A start inside a window, and why, goes to the journal the app shows.
 # The app writes its own entry for what it starts (DEPLOYS_CALLER=app): one line, not two.
-journal_forced() {  # journal_forced <platform> <name>
+journal_forced() {  # journal_forced <platform> <name> [failed]: "failed" when the forced start did not happen
   [ -n "$frozen" ] || return 0
   [ "${DEPLOYS_CALLER:-}" != app ] || return 0
-  journal_add "$1" "$2" forced "Deployed in the window \"$frozen\": $force_reason"
+  if [ "${3:-}" = failed ]; then journal_add "$1" "$2" forced "Tried to deploy in the window \"$frozen\" and it did not start: $force_reason"
+  else journal_add "$1" "$2" forced "Deployed in the window \"$frozen\": $force_reason"; fi
 }
 
 # The app's journal (Deploy history), so what the terminal did shows there too.
@@ -1067,7 +1073,7 @@ journal_add() {  # journal_add <platform> <name> <result> <detail>
   local f p; f="$(journal_file)"
   # The provider's own label (Netlify, Cloudflare Pages …), as the app writes it.
   p=""; if is_provider "$1"; then p="$(meta_str "$1" label 2>/dev/null)"; fi; [ -n "$p" ] || p="$1"
-  mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
+  mkdir -p "$(dirname "$f")" 2>/dev/null || { echo "Warning: could not write the history (no folder for $f); this action is not in it" >&2; return 0; }
   # The app shortens the file now and then: both take "<file>.lock" (a folder) for that moment.
   # Waited for two seconds at most; a line is never lost to a stale lock.
   local locked=""; file_lock "$f" 0 && locked=1
@@ -1078,22 +1084,29 @@ journal_add() {  # journal_add <platform> <name> <result> <detail>
     prev="$(tail -n 1 "$f" | { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; } | cut -d' ' -f1)" || prev=""
   fi
   jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$4" --arg h "$prev" \
-    '{at:(now | floor | todate), platform:$p, name:$n, result:$r, seconds:null, detail:$d, prevHash:(if $h == "" then null else $h end)}' >> "$f" 2>/dev/null || true
+    '{at:(now | floor | todate), platform:$p, name:$n, result:$r, seconds:null, detail:$d, prevHash:(if $h == "" then null else $h end)}' >> "$f" 2>/dev/null \
+    || echo "Warning: could not write the history ($f): the disk may be full or the file read-only; this action is not in it" >&2
   [ -z "$locked" ] || file_unlock "$f"
 }
 
+# One list of "files that change how it runs" (re_*), used by risk and by details .risky.
 # What a pending diff touches, from a GitHub comparison (its .files): migrations are red, lockfiles,
 # environment files and config yellow, a large diff yellow and a very large one red. The worst wins.
 # Each reason has a kind, so the app can say it in its own language.
 # shellcheck disable=SC2089,SC2090  # a jq program, handed to jq as one argument
-RISK_DEF='def risk:
+RISK_DEF='def re_mig: "(^|/)(migrations?|migrate|prisma)/|\\.sql$|(^|/)schema\\.(prisma|rb)$";
+  def re_lock: "(^|/)(package-lock\\.json|npm-shrinkwrap\\.json|pnpm-lock\\.yaml|yarn\\.lock|bun\\.lockb?|Pipfile\\.lock|poetry\\.lock|uv\\.lock|Gemfile\\.lock|Cargo\\.lock|go\\.sum|composer\\.lock|package\\.json|requirements\\.txt|go\\.mod)$";
+  def re_env: "(^|/)\\.env($|\\.)";
+  def re_cfg: "(^|/)(vercel\\.json|render\\.yaml|Dockerfile|docker-compose\\.ya?ml|Procfile|(next|vite|nuxt|astro|svelte|remix)\\.config\\.[a-z]+)$|^\\.github/workflows/";
+  def risky_files: [(.files // [])[] | .filename | select(test(re_mig) or test(re_lock) or test(re_env) or test(re_cfg))];
+  def risk:
   [(.files // [])[] | .filename] as $f
   | def hits(re): [$f[] | select(test(re))];
     def some(fs): fs[0:3] | join(", ") + (if (fs | length) > 3 then " and \((fs | length) - 3) more" else "" end);
-  hits("(^|/)(migrations?|migrate|prisma)/|\\.sql$|(^|/)schema\\.(prisma|rb)$") as $mig
-  | hits("(^|/)(package-lock\\.json|npm-shrinkwrap\\.json|pnpm-lock\\.yaml|yarn\\.lock|bun\\.lockb?|Pipfile\\.lock|poetry\\.lock|uv\\.lock|Gemfile\\.lock|Cargo\\.lock|go\\.sum|composer\\.lock)$") as $lock
-  | hits("(^|/)\\.env($|\\.)") as $env
-  | hits("(^|/)(vercel\\.json|render\\.yaml|Dockerfile|docker-compose\\.ya?ml|Procfile|(next|vite|nuxt|astro|svelte|remix)\\.config\\.[a-z]+)$|^\\.github/workflows/") as $cfg
+  hits(re_mig) as $mig
+  | hits(re_lock) as $lock
+  | hits(re_env) as $env
+  | hits(re_cfg) as $cfg
   | ([(.files // [])[] | (.additions // 0) + (.deletions // 0)] | add // 0) as $lines
   | ($f | length) as $n
   | [ (if ($mig | length) > 0 then {kind:"migrations", level:"red", files:$mig[0:10], text:"database migrations: \(some($mig))"} else empty end),
@@ -1103,7 +1116,9 @@ RISK_DEF='def risk:
       (if $lines > 3000 or $n >= 100 then {kind:"size", level:"red", files:[], text:"a very large diff: \($n) files, \($lines) lines"}
        elif $lines > 500 or $n > 30 then {kind:"size", level:"yellow", files:[], text:"a large diff: \($n) files, \($lines) lines"} else empty end) ] as $r
   | {level:(if any($r[]; .level == "red") then "red" elif ($r | length) > 0 then "yellow" else "green" end),
-     reasons:$r, files:$n, lines:$lines};'
+     reasons:$r, files:$n, lines:$lines,
+     # GitHub lists 300 files of a comparison at most: from there the picture is a floor, not the whole diff.
+     partial:($n >= 300)};'
 # shellcheck disable=SC2090
 export RISK_DEF
 
@@ -1126,18 +1141,24 @@ log_new_lines() {  # log_new_lines <old file> <new file>
 }
 # hooks.d: executable files named pre-deploy* or post-deploy* in $CONFIG_DIR/hooks.d, run around a start with
 # DEPLOYS_PLATFORM, DEPLOYS_PROJECT, DEPLOYS_SHA (and DEPLOYS_STATE after). A pre-deploy hook that exits non-zero
-# stops that start; a post-deploy hook cannot. A file others can write to is never run. Their output goes to stderr.
+# stops that start; a post-deploy hook cannot. A file that others or the group can write to, or that another account owns
+# (root excepted), is never run. A hook that runs longer than DEPLOYS_HOOK_TIMEOUT seconds (default 300, 0 = no limit)
+# is stopped and counts as failed. Their output goes to stderr.
 hook_run() {  # hook_run <pre-deploy|post-deploy> <platform> <name> [<sha>] [<state>]
-  local d="$CONFIG_DIR/hooks.d" h perm rc
+  local d="$CONFIG_DIR/hooks.d" h perm rc owner me hto="${DEPLOYS_HOOK_TIMEOUT:-300}"
   [ -d "$d" ] || return 0
+  me="$(id -un 2>/dev/null)"
   for h in "$d/$1"*; do
     [ -f "$h" ] && [ -x "$h" ] || continue
     perm="$(ls -ld "$h" | cut -c1-10)"
     if [ "${perm:8:1}" = w ]; then echo "hooks.d: $(basename "$h") is writable by everyone and was not run (chmod o-w)" >&2; continue; fi
+    if [ "${perm:5:1}" = w ]; then echo "hooks.d: $(basename "$h") is writable by its group and was not run (chmod g-w)" >&2; continue; fi
+    owner="$(ls -ld "$h" | awk '{print $3}')"
+    if [ -n "$me" ] && [ "$owner" != "$me" ] && [ "$owner" != root ]; then echo "hooks.d: $(basename "$h") belongs to $owner, not to you, and was not run" >&2; continue; fi
     rc=0
-    DEPLOYS_HOOK="$1" DEPLOYS_PLATFORM="$2" DEPLOYS_PROJECT="$3" DEPLOYS_SHA="${4:-}" DEPLOYS_STATE="${5:-}" "$h" </dev/null >&2 || rc=$?
+    DEPLOYS_HOOK="$1" DEPLOYS_PLATFORM="$2" DEPLOYS_PROJECT="$3" DEPLOYS_SHA="${4:-}" DEPLOYS_STATE="${5:-}" with_timeout "$hto" "$h" </dev/null >&2 || rc=$?
     if [ "$rc" != 0 ]; then
-      echo "hooks.d: $(basename "$h") exited $rc" >&2
+      case "$rc" in 124|142) echo "hooks.d: $(basename "$h") ran longer than ${hto}s (DEPLOYS_HOOK_TIMEOUT) and was stopped" >&2 ;; *) echo "hooks.d: $(basename "$h") exited $rc" >&2 ;; esac
       [ "$1" != pre-deploy ] || return 1
     fi
   done
@@ -1215,6 +1236,14 @@ SECRETS_JQ='def kinds: [
     {k:"anthropic-key", r:"sk-ant-[A-Za-z0-9_-]{20,}"},
     {k:"openai-key", r:"sk-(proj-)?[A-Za-z0-9]{32,}"},
     {k:"google-api-key", r:"AIza[0-9A-Za-z_-]{35}"},
+    {k:"gitlab-token", r:"glpat-[A-Za-z0-9_-]{20,}"},
+    {k:"npm-token", r:"npm_[A-Za-z0-9]{36}"},
+    {k:"render-key", r:"rnd_[A-Za-z0-9]{20,}"},
+    {k:"vercel-token", r:"(vcp|vck)_[A-Za-z0-9]{20,}"},
+    {k:"cloudflare-token", r:"cf(ut|at)_[A-Za-z0-9]{20,}"},
+    {k:"heroku-key", r:"HRKU-[A-Za-z0-9_-]{20,}"},
+    {k:"fly-token", r:"fo1_[A-Za-z0-9_-]{20,}"},
+    {k:"digitalocean-token", r:"dop_v1_[A-Fa-f0-9]{40,}|dp\\.st\\.[A-Za-z0-9._-]{20,}"},
     {k:"private-key", r:"-----BEGIN [A-Z ]*PRIVATE KEY-----"},
     {k:"assignment", r:"(?i)(secret|token|passw(or)?d|api[_-]?key|private[_-]?key)[A-Za-z0-9_]*[\"'"'"']?[ \t]*[:=][ \t]*[\"'"'"']?[A-Za-z0-9/+_=.-]{16,}"}];
   def scan_patch($file):
@@ -1224,7 +1253,9 @@ SECRETS_JQ='def kinds: [
         | . as $st | .out += [kinds[] | . as $k | select($l[1:] | test($k.r)) | {file:$file, line:$st.n, kind:$k.k}]
       elif ($l | startswith("-")) then .
       else .n += 1 end) | .out);
-  .secrets = ([(.files // [])[] | select(.patch) | . as $f | .patch | scan_patch($f.filename)[]] | unique_by([.file, .line]) | .[0:50])'
+  .secrets = ([(.files // [])[] | select(.patch) | . as $f | .patch | scan_patch($f.filename)[]] | unique_by([.file, .line]) | .[0:50])
+  # GitHub lists 300 files of a comparison at most (and may leave out a patch): a scan over a full list is a floor, not "clean".
+  | .secretsPartial = (((.files // []) | length) >= 300 or ([(.files // [])[] | select(.patch == null and ((.changes // 0) > 0))] | length) > 0)'
 
 # ---------- Costs (Vercel billing, one UTC day per request) ----------
 
@@ -1300,6 +1331,21 @@ af_notify() {
     printf '%s\n' "$1" | DEPLOYS_MESSAGE="$1" with_timeout 20 bash -c "$DEPLOYS_NOTIFY_CMD" >/dev/null 2>&1 || true
   fi
 }
+# The docs page of a provider on the website (a path like docs/providers/x.md is not there for a Homebrew or curl install).
+provider_doc_url() {  # provider_doc_url <provider>
+  local slug="$1"
+  case "$1" in hook) slug=deploy-hooks ;; cloudflare) slug=cloudflare-pages ;; amplify) slug=aws-amplify ;; esac
+  echo "https://deploycenter.app/docs/$slug/"
+}
+# A build log is text from outside: on a terminal, its escape sequences (move the cursor, retitle the window, clear the
+# screen, fake a prompt) and other control characters are cut out, in place in <file>. A pipe or a file gets the log
+# as it is (colours included); DEPLOYS_STRIP_ESC=1 filters there too (tests, scripts that want plain text).
+log_clean() {  # log_clean <file>
+  { [ -t 1 ] || [ -n "${DEPLOYS_STRIP_ESC:-}" ]; } || return 0
+  command -v perl >/dev/null 2>&1 || return 0
+  perl -pe 's/\e\[[0-?]*[ -\/]*[\@-~]//g; s/\e\][^\a\e]*(?:\a|\e\\)?//g; s/\e[PX^_].*?(?:\e\\|$)//g; s/\e[ -\/]*[0-~]?//g; s/\xc2[\x80-\x9f]//g; tr/\x00-\x08\x0b-\x1f\x7f//d' "$1" > "$1.c" 2>/dev/null && mv -f "$1.c" "$1"
+  rm -f "$1.c"; return 0
+}
 # Seams the tests replace: what is live, a build log, a deploy.
 af_all() { DEPLOYS_NO_GITHUB=1 all_json; }
 af_logs() { "$SELF" logs "$1" 200 --id "$2"; }
@@ -1317,8 +1363,8 @@ af_mask() {
     s/-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----.*?-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/[masked private key]/g;
     if ($pem) { $pem = 0 if /-----END [A-Z0-9 ]*PRIVATE KEY/; $_ = ""; next }
     if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY/) { $pem = 1; $_ = "[masked private key]\n"; next }
-    # Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, Netlify, DigitalOcean, Supabase, SendGrid, Resend, Sentry, Linear, JWT.
-    s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|nfp_[A-Za-z0-9]{8,}|dop_v1_[A-Fa-f0-9]{16,}|sbp_[A-Za-z0-9]{16,}|sb_secret_[A-Za-z0-9_-]{8,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|re_[A-Za-z0-9]{16,}|sntrys_[A-Za-z0-9+\/=_-]{16,}|lin_api_[A-Za-z0-9]{16,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
+    # Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, Netlify, DigitalOcean (dop_v1_, dp.st.), Vercel (vcp_, vck_), Cloudflare (cfut_, cfat_), Heroku (HRKU-), Fly (fo1_), Supabase, SendGrid, Resend, Sentry, Linear, JWT.
+    s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|(?:vcp|vck|cfut|cfat|fo1)_[A-Za-z0-9_-]{8,}|HRKU-[A-Za-z0-9_-]{8,}|dp\.st\.[A-Za-z0-9._-]{8,}|nfp_[A-Za-z0-9]{8,}|dop_v1_[A-Fa-f0-9]{16,}|sbp_[A-Za-z0-9]{16,}|sb_secret_[A-Za-z0-9_-]{8,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|re_[A-Za-z0-9]{16,}|sntrys_[A-Za-z0-9+\/=_-]{16,}|lin_api_[A-Za-z0-9]{16,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
     # Webhook URLs carry their secret in the path (Slack, Discord, Teams), a Telegram bot token has its own shape,
     # and a few more prefixes: Hugging Face, Coolify (<id>|<40 characters>), Telegram.
     s#(https?://hooks\.slack\.com/(?:services|workflows|triggers)/)[A-Za-z0-9/_-]+#${1}\[masked]#g;
@@ -1469,8 +1515,8 @@ job_on() {
     local q="" m when
     for a in "$@"; do q="$q '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'"; done
     case "$every" in
-      @*) m="${every#@}"; when="$((10#${m#*:})) $((10#${m%%:*})) * * *"
-          echo "No launchd here, so nothing was installed. To run it every day at ${every#@}, add this line with crontab -e:" ;;
+      @*) m="${every#@}"; when="$((10#${m#*:})) $((10#${m%%:*})) * * ${JOB_WEEKDAYS:+1-5}"; [ -n "${JOB_WEEKDAYS:-}" ] || when="${when}*"
+          echo "No launchd here, so nothing was installed. To run it ${JOB_WEEKDAYS:+Monday to Friday, }every day at ${every#@}, add this line with crontab -e:" ;;
       *) m=$(( every / 60 )); [ "$m" -ge 1 ] || m=1; when="*/$m * * * *"
          echo "No launchd here, so nothing was installed. To run it every $m minutes, add this line with crontab -e:" ;;
     esac
@@ -1481,7 +1527,13 @@ job_on() {
   for a in "$@"; do pargs="$pargs<string>$(xml_text "$a")</string>"; done
   local start="<key>StartInterval</key><integer>$every</integer>"
   case "$every" in @*) local hm="${every#@}"
-    start="<key>StartCalendarInterval</key><dict><key>Hour</key><integer>$((10#${hm%%:*}))</integer><key>Minute</key><integer>$((10#${hm#*:}))</integer></dict>" ;; esac
+    start="<key>StartCalendarInterval</key><dict><key>Hour</key><integer>$((10#${hm%%:*}))</integer><key>Minute</key><integer>$((10#${hm#*:}))</integer></dict>"
+    # --weekdays (JOB_WEEKDAYS): one calendar entry per day, Monday (1) to Friday (5).
+    if [ -n "${JOB_WEEKDAYS:-}" ]; then
+      start="<key>StartCalendarInterval</key><array>"
+      for wd in 1 2 3 4 5; do start="$start<dict><key>Weekday</key><integer>$wd</integer><key>Hour</key><integer>$((10#${hm%%:*}))</integer><key>Minute</key><integer>$((10#${hm#*:}))</integer></dict>"; done
+      start="$start</array>"
+    fi ;; esac
   # Written with the PATH of whoever turns it on (the app passes the login shell's): launchd
   # starts jobs with a bare one, and autofix needs jq, gh, perl and the vercel CLI.
   # Background priority: a check every few minutes must not compete with the person's work.
@@ -1546,14 +1598,17 @@ job_missing_json() {  # ["autofix:gh", "guard:vercel"], without jq (doctor)
 # emptied file would fill with zeros up to its old length. This run's lines go to the .1 copy,
 # the next run's to a new file.
 log_rotate() {  # log_rotate <log name, e.g. DeployCenter-guard>
-  local f="$HOME/Library/Logs/$1.log" max="${DEPLOYS_LOG_MAX_BYTES:-1048576}" n
+  local f max="${DEPLOYS_LOG_MAX_BYTES:-1048576}" n
   # Only in a run launchd started (it names the job in XPC_SERVICE_NAME): a run by hand or a
   # test leaves the person's logs alone.
   case "${XPC_SERVICE_NAME:-}" in app.deploycenter.*) ;; *) [ -n "${DEPLOYS_LOG_ROTATE:-}" ] || return 0 ;; esac
-  [ -f "$f" ] || return 0
-  n="$(wc -c < "$f" 2>/dev/null | tr -d ' ')" || return 0
-  [ "${n:-0}" -gt "$max" ] || return 0
-  mv -f "$f" "$f.1" 2>/dev/null || true
+  # launchd writes to ~/Library/Logs; the cron line job_on prints writes to ~/.local/state/deploys-<name>.log.
+  for f in "$HOME/Library/Logs/$1.log" "$HOME/.local/state/deploys-$1.log"; do
+    [ -f "$f" ] || continue
+    n="$(wc -c < "$f" 2>/dev/null | tr -d ' ')" || continue
+    [ "${n:-0}" -gt "$max" ] || continue
+    mv -f "$f" "$f.1" 2>/dev/null || true
+  done
 }
 job_off() {
   command -v launchctl >/dev/null 2>&1 || { echo "No launchd here: remove the deploys line with crontab -e, if you added one."; return 0; }
@@ -1886,14 +1941,16 @@ scan_run() {  # scan_run <id> <owner/repo> <branch>: one scan, start to PR. Call
     sc_update "$id" '{"step":"pr"}'
     local n body url; n="$(sed -n '/^## Fixed/,/^## /p' "$log" | grep -c '^- ' || true)"
     body="$(mktemp)"
-    { cat "$log"; printf '\n---\nFound and fixed by a local Claude Code bug scan from Deploy Center. Review before merging; it is never merged or deployed by itself.\n'; } > "$body"
+    # The report goes into a public PR: masked like every log that leaves this Mac (withheld when perl is missing).
+    { af_mask < "$log" 2>/dev/null || echo "(The report is withheld: it could not be masked. See the scan log on the Mac.)"
+      printf '\n---\nFound and fixed by a local Claude Code bug scan from Deploy Center. Review before merging; it is never merged or deployed by itself.\n'; } > "$body"
     # Changed files, and new files only when they look like tests: a build or install may have
     # left other files behind, and the PR is public.
     git -C "$work" add -u
     git -C "$work" ls-files -z --others --exclude-standard | grep -zE '(^|/)(tests?|__tests__|spec)/|[._-](test|spec)\.[A-Za-z]+$|_test\.(go|py)$|^test_.*\.py$' \
       | xargs -0 -r git -C "$work" add -- 2>/dev/null || true
-    if ! git -C "$work" diff --cached --quiet && git -C "$work" -c user.name="Deploy Center" -c user.email="deploy-center@users.noreply.github.com" commit -q -m "Bug scan: $n fix(es) by Claude" \
-       && git -C "$work" push -q origin "$fb" && url="$(sc_pr "$repo" "$fb" "$br" "Bug scan: $n fix(es) by Claude" "$body")"; then
+    if ! git -C "$work" diff --cached --quiet && git -C "$work" -c core.hooksPath=/dev/null -c user.name="Deploy Center" -c user.email="deploy-center@users.noreply.github.com" commit -q --no-verify -m "Bug scan: $n fix(es) by Claude" \
+       && git -C "$work" -c core.hooksPath=/dev/null push -q --no-verify origin "$fb" && url="$(sc_pr "$repo" "$fb" "$br" "Bug scan: $n fix(es) by Claude" "$body")"; then
       url="$(echo "$url" | grep -Eo 'https://[^ ]+' | tail -1)"
       sc_update "$id" "$(jq -nc --arg u "$url" --argjson n "${n:-0}" '{status:"pr", step:"done", prUrl:$u, fixes:$n}')"
       af_notify "Bug scan: $repo has a fix PR with $n fix(es). $url"
@@ -2565,7 +2622,7 @@ case "${1:-} ${2:-}" in
   "history "*)     usage_if_short $# 2 "history <project> [n]" ;;
   "ai explain"|"ai notes"|"ai ship"|"ai risk"|"ai slow") usage_if_short $# 3 "ai ${2} <project> [--json]" ;;
   "ai ask") usage_if_short $# 3 "ai ask <project> --question \"…\" [--json]" ;;
-  "verify "*)      usage_if_short $# 2 "verify <project> [--path /health] [--expect 200|2xx] [--follow] [--tries 3] [--every 5] [--need 1] [--rollback-after 10] [--no-rollback]" ;;
+  "verify "*)      usage_if_short $# 2 "verify <project> [--path /health] [--expect 200|2xx] [--follow] [--tries 3] [--every 5] [--need 1] [--watch-timeout 30m] [--rollback-after 10] [--no-rollback]" ;;
   "risk "*)        usage_if_short $# 2 "risk <project> [--json]" ;;
   "ci "*)          usage_if_short $# 2 "ci <owner/repo> [<sha or branch>] [--wait 30m] [--json]" ;;
   "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
@@ -2753,7 +2810,7 @@ case "${1:-} ${2:-}" in
         continue
       fi
       hook_run pre-deploy "$plat" "${p#*:}" "$sha" || { echo "A pre-deploy hook refused ${p#*:}: nothing was started." >&2; group_stop "$p" "$count"; }
-      out="$(DEPLOYS_FORCE_REASON="$force" "${plat}_deploy_json" "$pid" ${pv:+--preview} ${sha:+--sha "$sha"})" || group_stop "$p" "$count"
+      out="$(DEPLOYS_FORCE_REASON="$force" "${plat}_deploy_json" "$pid" ${pv:+--preview} ${sha:+--sha "$sha"})" || { journal_forced "$plat" "${p#*:}" failed; group_stop "$p" "$count"; }
       hook_run post-deploy "$plat" "${p#*:}" "$sha" "$(echo "$out" | jq -r '.state // empty' 2>/dev/null)" || true
       journal_forced "$plat" "${p#*:}"
       did="$(echo "$out" | jq -r '.id // empty')"
@@ -2830,6 +2887,7 @@ case "${1:-} ${2:-}" in
       (.[] | "deploycenter_failed\(lbl) \(if (.phase // "") == "failed" then 1 else 0 end)")' | grep -v '^$')" || exit 1
     if [ -n "$mout" ]; then
       mt="$(mktemp "$mout.XXXXXX")" || die "Cannot write next to $mout"
+      chmod 644 "$mt" 2>/dev/null   # mktemp makes 0600; a metrics file is read by another account (node_exporter)
       printf '%s\n' "$mtext" > "$mt" && mv -f "$mt" "$mout" || { rm -f "$mt"; die "Cannot write $mout"; }
     else printf '%s\n' "$mtext"; fi
     exit "$rc" ;;
@@ -2908,13 +2966,18 @@ case "${1:-} ${2:-}" in
       add)
         r="${3:-}"; [ -n "$r" ] || die "Usage: deploys team add <owner/repo>"
         r="$(team_repo_arg "$r")" || exit 1
+        # Two adds at once would both read the old list, and one repo would be lost.
+        tl=""; file_lock "$TEAM_REPOS" && tl=1
         { cat "$TEAM_REPOS" 2>/dev/null; echo "$r"; } | sort -u > "$TEAM_REPOS.tmp" && mv "$TEAM_REPOS.tmp" "$TEAM_REPOS"
+        [ -z "$tl" ] || file_unlock "$TEAM_REPOS"
         DEPLOYS_TEAM_REFRESH=1 team_sources "$r" | jq -r --arg r "$r" '.[] | select(.repo == $r)
           | if .found // .config then "\($r): \(.path) found" elif .error then "\($r): \(.error)" else "\($r): added; no deploy-center.json there (yet)" end' ;;
       remove)
         r="${3:-}"; [ -n "$r" ] || die "Usage: deploys team remove <owner/repo>"
         r="$(team_repo_arg "$r")" || exit 1
+        tl=""; file_lock "$TEAM_REPOS" && tl=1
         grep -vxF "$r" "$TEAM_REPOS" > "$TEAM_REPOS.tmp" 2>/dev/null || true; mv "$TEAM_REPOS.tmp" "$TEAM_REPOS"
+        [ -z "$tl" ] || file_unlock "$TEAM_REPOS"
         rm -f "$TEAM_CACHE/$(printf '%s' "$r" | sed 's#/#__#').json"*; echo "$r removed" ;;
       list) team_repo_list ;;
       refresh) DEPLOYS_TEAM_REFRESH=1 team_sources | jq -r '.[] | "\(.repo): \(if .config then .path elif .error then .error else "no file" end)"' ;;
@@ -3084,6 +3147,12 @@ case "${1:-} ${2:-}" in
             *) wshared+=("$1") ;;
           esac; shift
         done
+        # A deploy id belongs to one project: handing it to every project would watch the wrong (or no) deploy.
+        wprev=""
+        for wa in ${wshared[@]+"${wshared[@]}"}; do
+          case "$wa" in -*) ;; *) [ "$wprev" = --timeout ] || die "A deploy id belongs to one project; with --and, watch the newest deploy of each (drop \"$wa\")." ;; esac
+          wprev="$wa"
+        done
         wd="$(mktemp -d)"; wi=0
         for wn in "${wnames[@]}"; do
           wi=$((wi + 1))
@@ -3165,6 +3234,7 @@ case "${1:-} ${2:-}" in
       first=1; fmiss=0
       while :; do
         lrc=0; ( "${PLAT}_logs" "$PID" "$n" "$did" ) > "$lt" 2>/dev/null || lrc=$?
+        log_clean "$lt"
         af_mask < "$lt" > "$curl_" || exit 1
         if [ "$first" = 1 ]; then cat "$curl_"; first=0; else log_new_lines "$prevl" "$curl_"; fi
         cp "$curl_" "$prevl"
@@ -3181,7 +3251,7 @@ case "${1:-} ${2:-}" in
     fi
     # The exit code of the read, not of the mask: a log that could not be read stays an error.
     lt="$(mktemp)"; lrc=0; ( "${PLAT}_logs" "$PID" "$n" "$did" ) > "$lt" || lrc=$?
-    af_mask < "$lt"; rm -f "$lt"; exit "$lrc" ;;
+    log_clean "$lt"; af_mask < "$lt"; rm -f "$lt"; exit "$lrc" ;;
 
   "open "*)
     # The site, or with --dashboard the project's page at its platform.
@@ -3394,7 +3464,7 @@ BASH
                         | if length == 0 then "none" elif any(. == "FAILURE" or . == "ERROR" or . == "TIMED_OUT") then "failed"
                           elif any(. == "" or . == "PENDING" or . == "IN_PROGRESS" or . == "QUEUED") then "running" else "passed" end)}]' 2>/dev/null || echo '[]')"
     echo "$open" > "$dt/open"
-    jq -n --slurpfile c "$dt/cmp" --argjson checks "$checks" --slurpfile open "$dt/open" --arg repo "$repo" '
+    jq -n --slurpfile c "$dt/cmp" --argjson checks "$checks" --slurpfile open "$dt/open" --arg repo "$repo" "$RISK_DEF"'
       ($c[0] // {}) as $c | $open[0] as $open |
       {commits:[($c.commits // [])[] | {sha:.sha[0:7], full:.sha, url:.html_url,
                  msg:(.commit.message | split("\n")[0]), author:(.author.login // .commit.author.name),
@@ -3406,8 +3476,9 @@ BASH
        files:(($c.files // []) | length), additions:(($c.files // []) | map(.additions) | add // 0),
        deletions:(($c.files // []) | map(.deletions) | add // 0),
        # Files that change how the thing runs, not only what it shows: worth a look before going live.
-       risky:[($c.files // [])[] | .filename
-              | select(test("(^|/)(migrations?|prisma)/|schema\\.(prisma|sql|rb)$|(^|/)\\.env|(^|/)(package\\.json|package-lock\\.json|pnpm-lock\\.yaml|yarn\\.lock|requirements\\.txt|Pipfile\\.lock|poetry\\.lock|go\\.mod|Gemfile\\.lock|Cargo\\.lock)$|Dockerfile|render\\.yaml$|vercel\\.json$|\\.github/workflows/"))],
+       risky:($c | risky_files),
+       # More than GitHub lists (300 files): the risk and the secret scan cover only what it lists.
+       scanPartial:((($c.files // []) | length) >= 300 or ($c.secretsPartial // false)),
        # FEA-032: lines that look like a secret, added in this diff: {file, line, kind}. No values.
        secrets:($c.secrets // []),
        # FEA-029: each lockfile the diff touches, with its added and removed lines.
@@ -3510,7 +3581,8 @@ BASH
     only=""; shift
     while [ $# -gt 0 ]; do
       case "$1" in
-        --platform) is_provider "${2:-}" || die "--platform takes one of: ${PROVIDERS[*]}"; only="$2"; shift ;;
+        --platform) is_provider "${2:-}" || die "--platform takes one of: ${PROVIDERS[*]}"; only="$2"; shift
+          is_enabled "$only" || die "$(meta_str "$only" label) is off. Turn it on: deploys providers enable $only" ;;
         *) die "Unknown option $1. Usage: deploys changed [--platform <provider>] [--json]" ;;
       esac; shift
     done
@@ -3569,7 +3641,7 @@ BASH
     # --expect 200 (or 2xx): only that answer is healthy, so a 401 from deployment protection fails
     # too; an expected 3xx is asked without following. --follow is the default now (kept for scripts).
     die() { echo "${ERED}Error:${EPLAIN} $*" >&2; exit 3; }
-    p="$2"; path=""; after=10; norb=""; url=""; expect=""; follow=(-L --max-redirs 5); tries=3; every=5; need=1; mtime=20; shift 2
+    p="$2"; path=""; after=10; norb=""; url=""; expect=""; follow=(-L --max-redirs 5); tries=3; every=5; need=1; mtime=20; wto=30m; shift 2
     while [ $# -gt 0 ]; do
       case "$1" in
         --path) path="${2:?Usage: deploys verify <project> --path /health}"; shift ;;
@@ -3585,7 +3657,9 @@ BASH
         --every) every="${2:-}"; shift; case "$every" in ''|*[!0-9]*) die "--every takes seconds, a number" ;; esac; every="$((10#$every))" ;;
         --need) need="${2:-}"; shift; case "$need" in ''|*[!0-9]*|0) die "--need takes how many good answers are enough, 1 or more" ;; esac; need="$((10#$need))" ;;
         --max-time) mtime="${2:-}"; shift; case "$mtime" in ''|*[!0-9]*|0) die "--max-time takes seconds, 1 or more" ;; esac; mtime="$((10#$mtime))" ;;
-        *) die "Unknown option $1. Usage: deploys verify <project> [--path /health] [--expect 200|2xx] [--follow] [--tries 3] [--every 5] [--need 1] [--max-time 20] [--rollback-after 10] [--no-rollback] [--url <address>] [--json]" ;;
+        # How long to wait for the build to finish before checking (default 30m): a stuck build must not hold this for ever.
+        --watch-timeout) wto="${2:-}"; shift; duration_s "$wto" >/dev/null 2>&1 || die "--watch-timeout takes a time: 90s, 30m or 2h" ;;
+        *) die "Unknown option $1. Usage: deploys verify <project> [--path /health] [--expect 200|2xx] [--follow] [--tries 3] [--every 5] [--need 1] [--max-time 20] [--watch-timeout 30m] [--rollback-after 10] [--no-rollback] [--url <address>] [--json]" ;;
       esac
       shift
     done
@@ -3598,7 +3672,9 @@ BASH
     # The platform's own id for its calls, the bare name for people and the journal.
     safe_arg "$p"; resolve "$p"; plat="$PLAT"; vid="$PID"; p="$PNAME"
     # A check while the build still runs would test what was live before.
-    "$SELF" watch "$plat:$p" >&2 || die "The newest deploy of $p is not live; nothing to check"
+    wrc=0; "$SELF" watch "$plat:$p" --timeout "$wto" >&2 || wrc=$?
+    [ "$wrc" != 4 ] || die "The newest deploy of $p did not finish within $wto (--watch-timeout); nothing was checked"
+    [ "$wrc" = 0 ] || die "The newest deploy of $p is not live; nothing to check"
     # A failed lookup is "no address known", with the hint below, not a silent stop.
     [ -n "$url" ] || url="$(site_url_of "$vid" "$plat")" || url=""
     [ -n "$url" ] || die "No address known for $p (give one with --url)"
@@ -4117,8 +4193,8 @@ BASH
           if ! ( "${p}_ready" ) >/dev/null 2>&1; then
             if declare -F "${p}_setup_hint" >/dev/null; then echo "Next: $("${p}_setup_hint")"
             elif "${p}_meta" | grep -q '"keychain":"'; then
-              echo "Next: pbpaste | deploys $p set-key$( k="$(key_env_names "$p")"; [ -z "$k" ] || echo "   (or set $k)")   (docs/providers/$p.md)"
-            else echo "Next: see docs/providers/$p.md (deploys $p doctor says what is missing)"; fi
+              echo "Next: pbpaste | deploys $p set-key$( k="$(key_env_names "$p")"; [ -z "$k" ] || echo "   (or set $k)")   (docs: $(provider_doc_url "$p"))"
+            else echo "Next: see $(provider_doc_url "$p") (deploys $p doctor says what is missing)"; fi
           fi
         else echo "$(meta_str "$p" label) is off: no command reads it any more."; fi ;;
       "")
@@ -4163,18 +4239,27 @@ BASH
     sf="$CONFIG_DIR/schedule.json"; DAILY_LABEL="app.deploycenter.daily"
     case "${2:-}" in
       daily)
-        at="09:00"; extra=()
-        for a in "${@:3}"; do
+        at="09:00"; extra=(); wkd=""; sd_usage="Usage: deploys schedule daily [HH:MM] [--weekdays] [--when-green [--wait 30m]] [--by-rules] [--strict] [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>] [--wait-for-window 3h]"
+        set -- "${@:3}"
+        while [ $# -gt 0 ]; do
+          a="$1"
           case "$a" in
             [0-2][0-9]:[0-5][0-9]) [ "$((10#${a%%:*}))" -le 23 ] || die "The time is HH:MM, 00:00 to 23:59."; at="$a" ;;
+            --weekdays) wkd=1 ;;
             --when-green|--by-rules|--strict) extra+=("$a") ;;
-            *) die "Usage: deploys schedule daily [HH:MM] [--when-green] [--by-rules] [--strict]" ;;
+            # The options of deploy-changed that take a value, checked the way it checks them.
+            --only|--exclude) [ -n "${2:-}" ] || die "$a takes a project name"; safe_name "$2"; extra+=("$a" "$2"); shift ;;
+            --platform) [ -n "${2:-}" ] || die "--platform takes a platform"; is_provider "$2" || die "--platform: \"$2\" is not a platform here"; extra+=("$a" "$2"); shift ;;
+            --max) case "${2:-}" in ''|*[!0-9]*|0) die "--max takes a number of projects, 1 or more" ;; esac; extra+=("$a" "$2"); shift ;;
+            --wait|--wait-for-window) duration_s "${2:-}" >/dev/null 2>&1 || die "$a takes a time like 30m, 90s or 3h"; extra+=("$a" "$2"); shift ;;
+            *) die "$sd_usage" ;;
           esac
+          shift
         done
         require_write "schedule daily"
-        job_on "$DAILY_LABEL" "@$at" DeployCenter-daily deploy-changed --yes ${extra[@]+"${extra[@]}"}
-        jq -n --arg at "$at" --args '{daily:{at:$at, args:$ARGS.positional}}' -- ${extra[@]+"${extra[@]}"} > "$sf"
-        command -v launchctl >/dev/null 2>&1 && echo "deploy-changed --yes${extra[*]:+ ${extra[*]}} runs every day at $at (log: ~/Library/Logs/DeployCenter-daily.log)." ;;
+        JOB_WEEKDAYS="$wkd" job_on "$DAILY_LABEL" "@$at" DeployCenter-daily deploy-changed --yes ${extra[@]+"${extra[@]}"}
+        jq -n --arg at "$at" --argjson wd "$([ -n "$wkd" ] && echo true || echo false)" --args '{daily:({at:$at, args:$ARGS.positional} + (if $wd then {weekdays:true} else {} end))}' -- ${extra[@]+"${extra[@]}"} > "$sf"
+        command -v launchctl >/dev/null 2>&1 && echo "deploy-changed --yes${extra[*]:+ ${extra[*]}} runs every $([ -n "$wkd" ] && echo "weekday (Monday to Friday)" || echo day) at $at (log: ~/Library/Logs/DeployCenter-daily.log)." ;;
       off) job_off "$DAILY_LABEL"; rm -f "$sf"; echo "The daily deploy no longer runs by itself." ;;
       ""|status)
         on=false; [ -f "$(job_plist "$DAILY_LABEL")" ] && command -v launchctl >/dev/null 2>&1 && launchctl print "gui/$(id -u)/$DAILY_LABEL" >/dev/null 2>&1 && on=true

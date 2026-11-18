@@ -252,7 +252,7 @@ class Converter:
                 i += 1
                 cls = f' class="language-{lang}"' if lang else ""
                 label = f' data-lang="{lang}"' if lang and lang != "text" else ""
-                out.append(f'<div class="code"{label}><pre><code{cls}>{html.escape(chr(10).join(body), quote=False)}</code></pre></div>')
+                out.append(f'<div class="code"{label}><pre tabindex="0" role="region" aria-label="Code example"><code{cls}>{html.escape(chr(10).join(body), quote=False)}</code></pre></div>')
                 continue
             m = re.match(r"^(#{1,6}) +(.*?)\s*#*\s*$", line)
             if m:
@@ -302,7 +302,7 @@ class Converter:
         if level in (2, 3):
             self.headings.append((level, hid, text))
         return (f'<h{level} id="{hid}">{self.inline(md)}'
-                f'<a class="anchor" href="#{hid}" aria-label="Link to this section">#</a></h{level}>')
+                f'<a class="anchor" href="#{hid}" aria-label="Link to section: {html.escape(text)}">#</a></h{level}>')
 
     def table(self, rows):
         def cells(row):
@@ -318,7 +318,7 @@ class Converter:
         h = "".join(f"<th>{self.inline(c)}</th>" for c in head)
         b = "".join("<tr>" + "".join(f"<td>{self.inline(c)}</td>" for c in r) + "</tr>" for r in body)
         thead = f"<thead><tr>{h}</tr></thead>" if any(head) else ""  # | | | has no header to show
-        return f'<div class="tablewrap"><table>{thead}<tbody>{b}</tbody></table></div>'
+        return f'<div class="tablewrap" role="region" aria-label="Table" tabindex="0"><table>{thead}<tbody>{b}</tbody></table></div>'
 
     def list_(self, lines, i):
         m = LIST_RE.match(lines[i])
@@ -608,6 +608,7 @@ def render(page, pages, assets):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
 <meta name="description" content="{esc(page.description)}">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -643,7 +644,8 @@ def render(page, pages, assets):
   <a class="section" href="/docs/">Docs</a>
   <div class="search" role="search">
     <label class="sr" for="q">Search the docs</label>
-    <input id="q" type="search" placeholder="Search docs" autocomplete="off" spellcheck="false" aria-controls="results" aria-expanded="false">
+    <input id="q" type="search" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" placeholder="Search docs" autocomplete="off" spellcheck="false" aria-controls="results" aria-expanded="false">
+    <div class="sr" id="rstatus" role="status" aria-live="polite"></div>
     <kbd>/</kbd>
     <ul id="results" role="listbox" hidden></ul>
   </div>
@@ -691,7 +693,7 @@ def index_page(pages):
         items = [x for x in pages if x.group == g]
         hid = slugify(g, set())
         p.headings.append((2, hid, g))
-        body.append(f'<h2 id="{hid}">{esc(g)}<a class="anchor" href="#{hid}" aria-label="Link to this section">#</a></h2>'
+        body.append(f'<h2 id="{hid}">{esc(g)}<a class="anchor" href="#{hid}" aria-label="Link to section: {html.escape(g)}">#</a></h2>'
                     '<div class="cards">')
         for x in items:
             body.append(f'<a class="cardlink" href="{x.url}"><b>{esc(x.label)}</b><span>{esc(x.description)}</span></a>')
