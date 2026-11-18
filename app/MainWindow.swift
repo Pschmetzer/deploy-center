@@ -1596,6 +1596,13 @@ struct ContentView: View {
                             : L("\(count) selected", "\(count) ausgewählt"))
                 .foregroundStyle(.secondary)
                 .help(L("Shift-click ticks everything between the last tick and this one", "Mit ⇧-Klick wird alles zwischen dem letzten Haken und diesem angehakt"))
+            // What these builds cost, before the button is pressed (an average build of the week each).
+            let cost = Store.selectionCost(perBuild: selectedAll.map { $0.platform == .vercel ? store.costs?.perBuild($0.name) : nil })
+            if count > 0, !cost.isEmpty {
+                Text(cost).font(.caption).foregroundStyle(.secondary)
+                    .help(L("About what the ticked builds cost, an average build of the week each (Vercel only)",
+                            "Ungefähr, was die angehakten Builds kosten, je ein Durchschnitts-Build der Woche (nur Vercel)"))
+            }
             // Ticks on another tab still count there: say they exist.
             let elsewhere = providers.compactMap(\.platform).filter { !scopes.contains($0) }.map { p in (p, store.selected(p).count) }.filter { $0.1 > 0 }
             ForEach(elsewhere, id: \.0) { p, n in
