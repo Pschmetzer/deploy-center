@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- CLI: `deploys journal export [--since D] [--project p]` writes the deploy history as CSV (spreadsheet formulas defused); `deploys journal report [--month YYYY-MM]` writes a monthly report as Markdown.
 - App: search understands `is:waiting`, `host:render` (same as `platform:`) and `repo:name`.
 - App: repo headers fold and unfold (remembered), and a header offers "Tick failed N" next to "Tick all" when only some of its projects failed.
 - Rules: new conditions `minCommits`, `minPRs` and `minAgeDays` (also in the rule editor) to collect changes and deploy only when enough have piled up, e.g. 3 days and 200 PRs. Still only runs through `deploy-changed --by-rules` or `schedule daily --by-rules`; the app never deploys by itself.
