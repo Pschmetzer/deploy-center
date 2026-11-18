@@ -477,6 +477,12 @@ function checkCount(v) {
   return v;
 }
 
+function checkIdleDays(v) {
+  if (v === undefined || v === null) return 90;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 365) throw new ToolError("days must be a whole number from 1 to 365.");
+  return v;
+}
+
 function checkDays(v) {
   if (v === undefined || v === null) return 30;
   const n = v;
@@ -570,6 +576,20 @@ const tools = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Cost of the next deploy (estimate)", ...READ },
     run: () => textOf(["plan", "--json"], { timeoutMs: SLOW_TIMEOUT_MS }),
+  },
+  {
+    name: "deploys_idle",
+    description:
+      "Projects with no deploy for `days` days (default 90) or that never deployed: candidates to pause (deploys idle --json). Read-only; " +
+      "nothing is paused or deleted, that stays the human's decision. Returns a JSON array of {platform, name, lastAt, days}, the longest idle first.",
+    inputSchema: {
+      type: "object",
+      properties: { days: { type: "integer", minimum: 1, maximum: 365, default: 90, description: "Idle for at least this many days (1–365, default 90)." } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Idle projects", ...READ },
+    json: true,
+    run: (a) => jsonListOf(["idle", "--days", String(checkIdleDays(a.days)), "--json"]),
   },
   {
     name: "deploys_status",
