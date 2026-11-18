@@ -205,3 +205,12 @@ export function followStep(p: Pick<Project, "building" | "failed"> | undefined, 
   if (!seenBuilding && looks < 8) return "wait";
   return p.failed ? "failed" : "live";
 }
+
+export interface PlanTotal { builds: number; usd: number | null; unpriced?: number }
+
+/** The estimate of the next deploy for the status bar tooltip, or "" when there is none. */
+export function costLine(p: PlanTotal | null | undefined): string {
+  if (!p || typeof p.usd !== "number" || !Number.isFinite(p.usd) || p.builds <= 0) return "";
+  const usd = `≈ $${(Math.round(p.usd * 100) / 100).toFixed(2)}`;
+  return (p.unpriced ?? 0) > 0 ? t("Next deploy: {0} + {1} without a price (estimate)", usd, p.unpriced ?? 0) : t("Next deploy: {0} (estimate)", usd);
+}

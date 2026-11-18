@@ -77,6 +77,8 @@
   "$(error) {0} failed": "$(error) {0} fehlgeschlagen",
   "$(sync~spin) {0} building": "$(sync~spin) {0} im Build",
   "⏳ {0} waiting": "⏳ {0} wartend",
+  "Next deploy: {0} (estimate)": "Nächster Deploy: {0} (Schätzung)",
+  "Next deploy: {0} + {1} without a price (estimate)": "Nächster Deploy: {0} + {1} ohne Preis (Schätzung)",
   "⏳ {0} commit waiting": "⏳ {0} Commit wartet",
   "⏳ {0} commits waiting": "⏳ {0} Commits warten",
   "$(check) up to date": "$(check) aktuell",

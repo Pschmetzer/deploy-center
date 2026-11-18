@@ -12,6 +12,7 @@
 - Providers: the contract test now checks every HTTP provider against a failing host (503 and no answer): a read ends with a reason, a deploy is never reported as started and never sent twice.
 - Health: a note when a Vercel or Render login has been in use for 90 days (counted from the day the app first saw it).
 
+- VS Code: the status bar tooltip shows the estimated cost of the next deploy (`deploys plan --json`), read after the list so it never slows it down.
 - App: the error shown in the log and details windows has a "Help" button that opens the matching section of the troubleshooting page (English or German).
 - Providers: `deploy-json <p> --no-cache` starts a build without the cache on Render, Netlify, DigitalOcean and Coolify; Vercel, Cloudflare, Amplify and deploy hooks refuse it with the reason. Needs `--yes` like every deploy.
 - MCP: new read-only tool `deploys_cost` (`deploys plan --json`): what the next deploy would start and cost, as an estimate. Starts nothing.
