@@ -85,7 +85,7 @@ Viele Pushes auf einmal (KI-Agenten)? [Sichere Deploys](docs/SAFE-DEPLOY.md) (En
 
 ## Funktionen
 
-- Schaltet Auto-Deploy für alle Vercel-Projekte und Render-Services auf einmal ab, und mit `deploys vercel|render autodeploy-on` wieder ein. [Was sich ändert](docs/AUTO-DEPLOY.md)
+- Schaltet Auto-Deploy für alle Vercel-Projekte und Render-Services auf einmal ab, und mit `deploys vercel|render autodeploy-on` wieder ein. [Was sich ändert](docs/AUTO-DEPLOY.de.md)
 - Weitere Hosts zum Einschalten: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify und jeder Deploy-Hook (`deploys providers enable <name>`). [Provider](docs/PROVIDERS.md) (Englisch)
 - Liest, was wartet, von GitHub oder GitLab (gitlab.com oder eigene Instanz). [GitLab](docs/GITLAB.md) (Englisch)
 - Deployt den neuesten Commit, für ein Projekt oder viele, und verfolgt jedes Deploy, bis es live oder fehlgeschlagen ist
@@ -127,7 +127,7 @@ Auto-Deploy wieder einschalten: `deploys vercel autodeploy-on <projekt>|--all` u
 Deinstallieren schaltet es nicht wieder ein. Deploy-Hooks und GitHub-Workflows, die deployen, laufen weiter;
 `deploys triggers` listet sie auf. Bei Render kann ein Blueprint mit Auto-Sync Auto-Deploy wieder einschalten:
 Trag `autoDeployTrigger: off` bei deinen Services in `render.yaml` ein.
-Details (Englisch): [Auto-Deploy aus und wieder an](docs/AUTO-DEPLOY.md) · [Deinstallieren](docs/UNINSTALL.md).
+Details: [Auto-Deploy aus und wieder an](docs/AUTO-DEPLOY.de.md) · [Deinstallieren](docs/UNINSTALL.md) (Englisch).
 
 ## Kommandozeile
 
