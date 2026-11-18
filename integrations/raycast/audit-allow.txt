@@ -1,0 +1,8 @@
+# Advisories the audit gate (audit-gate.sh) lets through. One GHSA id per line, with the reason.
+#
+# GHSA-fc5q-39xc-vjpf  picomatch <= 4.0.7, ReDoS through repeated extglobs. No patched version
+# exists (checked 2026-11-18). picomatch is reached only through @raycast/api's build tooling
+# (@oclif/core -> tinyglobby -> fdir) and typescript-eslint, which match this repo's own file
+# globs on a developer machine or in CI, never input from outside. The extension does not bundle it.
+# Delete this line when picomatch has a patched release.
+GHSA-fc5q-39xc-vjpf
