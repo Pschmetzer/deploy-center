@@ -201,7 +201,9 @@ Every condition given must hold. `projects` are `<platform>/<name>` (`*` matches
 `paths` are globs (`**` any folders, `*` within one; without `/` the file name anywhere);
 `onlyPaths: true` means every changed file matches, otherwise one is enough (GitHub only, up to
 300 files). `labels`: a pull request of the head commit has one. `minAgeHours`: the oldest
-waiting commit is that old. `ciGreen`: CI of the head is green or has no checks.
+waiting commit is that old; `minAgeDays` is the same in days. `minCommits` and `minPRs`: at least
+that many commits or pull requests wait (collect first, then ship). Conditions are AND: `{"minAgeDays":3,"minPRs":200}`
+means three days and 200 PRs; for "50 commits or 3 days" write two rules. `ciGreen`: CI of the head is green or has no checks.
 
 The first enabled rule that matches a project decides: `hold` leaves it out of `deploy-changed`
 and `plan` (named, counted as skipped); `deploy` is what `deploy-changed --by-rules` starts (the

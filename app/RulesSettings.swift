@@ -33,13 +33,17 @@ struct RulesConfig: Equatable {
         var onlyPaths = false           // every changed file matches `paths`, not only one
         var labels: [String] = []       // a PR label of the waiting commits
         var minAgeHours: Int? = nil     // the oldest waiting commit is at least this old
+        var minAgeDays: Int? = nil      // the same in days (collect for 3 days, then ship)
+        var minCommits: Int? = nil      // at least this many commits wait
+        var minPRs: Int? = nil          // at least this many pull requests wait
         var then: Action = .notify
         /// Keys of this rule the app does not know, written back unchanged.
         var extra: [String: Any] = [:]
         var extraWhen: [String: Any] = [:]
         static func == (a: Rule, b: Rule) -> Bool {
             a.name == b.name && a.enabled == b.enabled && a.projects == b.projects && a.ciGreen == b.ciGreen && a.paths == b.paths
-                && a.onlyPaths == b.onlyPaths && a.labels == b.labels && a.minAgeHours == b.minAgeHours && a.then == b.then
+                && a.onlyPaths == b.onlyPaths && a.labels == b.labels && a.minAgeHours == b.minAgeHours && a.minAgeDays == b.minAgeDays
+                && a.minCommits == b.minCommits && a.minPRs == b.minPRs && a.then == b.then
                 && NSDictionary(dictionary: a.extra).isEqual(to: b.extra) && NSDictionary(dictionary: a.extraWhen).isEqual(to: b.extraWhen)
         }
     }
@@ -57,8 +61,12 @@ struct RulesConfig: Equatable {
             if r.name.trimmingCharacters(in: .whitespaces).isEmpty { return L("Every rule needs a name", "Jede Regel braucht einen Namen") }
             if r.onlyPaths && r.paths.isEmpty { return L("\"Only these files\" needs file patterns", "„Nur diese Dateien“ braucht Dateimuster") }
             if let h = r.minAgeHours, h < 0 { return L("An age is 0 hours or more", "Ein Alter ist 0 Stunden oder mehr") }
+            if (r.minAgeDays ?? 0) < 0 || (r.minCommits ?? 0) < 0 || (r.minPRs ?? 0) < 0 {
+                return L("Days, commits and PRs are 0 or more", "Tage, Commits und PRs sind 0 oder mehr")
+            }
             // A rule that deploys with no condition at all would ship every push: auto-deploy again.
-            if r.then == .deploy && !r.ciGreen && r.paths.isEmpty && r.labels.isEmpty && r.minAgeHours == nil {
+            if r.then == .deploy && !r.ciGreen && r.paths.isEmpty && r.labels.isEmpty && r.minAgeHours == nil
+                && r.minAgeDays == nil && r.minCommits == nil && r.minPRs == nil {
                 return L("\"\(r.name)\" would deploy everything: give it a condition", "„\(r.name)“ würde alles deployen: gib ihr eine Bedingung")
             }
         }
@@ -73,13 +81,14 @@ struct RulesConfig: Equatable {
         guard let data, let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let rules = root["rules"] as? [[String: Any]] else { return RulesConfig() }
         let known: Set<String> = ["name", "enabled", "when", "then"]
-        let knownWhen: Set<String> = ["projects", "ciGreen", "paths", "onlyPaths", "labels", "minAgeHours"]
+        let knownWhen: Set<String> = ["projects", "ciGreen", "paths", "onlyPaths", "labels", "minAgeHours", "minAgeDays", "minCommits", "minPRs"]
         return RulesConfig(rules: rules.map { r in
             let w = r["when"] as? [String: Any] ?? [:]
             return Rule(name: r["name"] as? String ?? "", enabled: r["enabled"] as? Bool ?? true,
                         projects: w["projects"] as? [String] ?? [], ciGreen: w["ciGreen"] as? Bool ?? false,
                         paths: w["paths"] as? [String] ?? [], onlyPaths: w["onlyPaths"] as? Bool ?? false,
-                        labels: w["labels"] as? [String] ?? [], minAgeHours: w["minAgeHours"] as? Int,
+                        labels: w["labels"] as? [String] ?? [], minAgeHours: w["minAgeHours"] as? Int, minAgeDays: w["minAgeDays"] as? Int,
+                        minCommits: w["minCommits"] as? Int, minPRs: w["minPRs"] as? Int,
                         then: Action(rawValue: r["then"] as? String ?? "") ?? .notify,
                         extra: r.filter { !known.contains($0.key) }, extraWhen: w.filter { !knownWhen.contains($0.key) })
         })
@@ -96,6 +105,9 @@ struct RulesConfig: Equatable {
             if r.onlyPaths { w["onlyPaths"] = true }
             if !r.labels.isEmpty { w["labels"] = r.labels }
             if let h = r.minAgeHours { w["minAgeHours"] = h }
+            if let d = r.minAgeDays { w["minAgeDays"] = d }
+            if let c = r.minCommits { w["minCommits"] = c }
+            if let n = r.minPRs { w["minPRs"] = n }
             var o = r.extra
             o["name"] = r.name; o["enabled"] = r.enabled; o["when"] = w; o["then"] = r.then.rawValue
             return o
@@ -133,6 +145,9 @@ struct RulesConfig: Equatable {
         }
         if !r.labels.isEmpty { c.append(L("a PR has ", "ein PR hat ") + r.labels.joined(separator: ", ")) }
         if let h = r.minAgeHours { c.append(L("it waits \(h) h or more", "es \(h) h oder länger wartet")) }
+        if let d = r.minAgeDays { c.append(L("it waits \(d) days or more", "es \(d) Tage oder länger wartet")) }
+        if let n = r.minCommits { c.append(L("\(n)+ commits wait", "\(n)+ Commits warten")) }
+        if let n = r.minPRs { c.append(L("\(n)+ PRs wait", "\(n)+ PRs warten")) }
         let and: String = L(" and ", " und ")
         let when: String = c.isEmpty ? L("Always", "Immer") : L("When ", "Wenn ") + c.joined(separator: and)
         return when + ": " + r.then.title
@@ -171,6 +186,18 @@ struct RulesSettings: View {
                     Picker(L("Waiting at least", "Wartet mindestens"), selection: $r.minAgeHours) {
                         Text(L("any time", "beliebig")).tag(Int?.none)
                         ForEach([1, 2, 6, 24, 48], id: \.self) { Text("\($0) h").tag(Int?.some($0)) }
+                    }
+                    Picker(L("Waiting at least (days)", "Wartet mindestens (Tage)"), selection: $r.minAgeDays) {
+                        Text(L("any time", "beliebig")).tag(Int?.none)
+                        ForEach([1, 2, 3, 5, 7, 14, 30], id: \.self) { Text(L("\($0) days", "\($0) Tage")).tag(Int?.some($0)) }
+                    }
+                    Picker(L("At least this many commits", "Mindestens so viele Commits"), selection: $r.minCommits) {
+                        Text(L("any number", "beliebig viele")).tag(Int?.none)
+                        ForEach([10, 25, 50, 100, 200, 500], id: \.self) { Text("\($0)").tag(Int?.some($0)) }
+                    }
+                    Picker(L("At least this many PRs", "Mindestens so viele PRs"), selection: $r.minPRs) {
+                        Text(L("any number", "beliebig viele")).tag(Int?.none)
+                        ForEach([5, 10, 25, 50, 100, 200, 500], id: \.self) { Text("\($0)").tag(Int?.some($0)) }
                     }
                     Picker(L("Then", "Dann"), selection: $r.then) { ForEach(RulesConfig.Action.allCases) { Text($0.title).tag($0) } }
                     Button(L("Remove this rule", "Diese Regel entfernen"), role: .destructive) { config.rules.removeAll { $0.id == r.id } }
