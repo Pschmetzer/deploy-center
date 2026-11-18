@@ -66,5 +66,17 @@ expect "secrets: both hits are counted" "$(printf '%s\n' "$sd" | cli secrets --s
 expect "secrets: a clean diff exits 0" "$(printf '+++ b/a\n+hello\n' | cli secrets --stdin >/dev/null; echo $?)" "0"
 expect "secrets: without a project or --stdin is a usage line" "$(cli secrets >/dev/null 2>&1; echo $?)" "1"
 
+# keychain_age_days / creds (ideas 30, 31): a fake `security` that reports a creation date
+mkdir -p "$tmp/fakebin"
+cat > "$tmp/fakebin/security" <<'SEC'
+#!/bin/bash
+printf '    "cdat"<timedate>=0x32303230303130313132303030305A00  "20200101120000Z\\000"\n'
+SEC
+chmod +x "$tmp/fakebin/security"
+age="$( export DEPLOYS_LIB=1 DEPLOYS_CONFIG="$tmp/agecfg" PATH="$tmp/fakebin:$PATH"; . ./deploys; keychain_age_days render )"
+expect "keychain_age_days: a key saved in 2020 is over 2000 days old" "$([ "${age:-0}" -gt 2000 ] && echo yes || echo "no:$age")" "yes"
+expect "creds --json: a list with a rotate flag" "$(PATH="$tmp/fakebin:$PATH" cli creds --json 2>/dev/null | jq -r 'map(has("rotate")) | all')" "true"
+expect "creds: a bad --max-age is refused" "$(cli creds --max-age 0 >/dev/null 2>&1; echo $?)" "1"
+
 echo
 [ "$fails" -eq 0 ] && echo "All round-9 tests passed." || { echo "$fails failed."; exit 1; }

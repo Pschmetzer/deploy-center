@@ -42,6 +42,7 @@
 #   deploys notes <project> [--json]          the same as release notes (Markdown; --json: author as a field)
 #   deploys open <project> [--dashboard]      the site, or its page at the platform
 #   deploys ignore <p> [--undo] | --list      leave a project out of changed and deploy-changed
+#   deploys creds [--max-age 90] [--json]     where each platform's key comes from, if it works, how old a keychain key is
 #   deploys idle [--days 90] [--json]         projects with no deploy for N days (candidates to pause)
 #   deploys list [--platform <p>] [--auto|--manual] [--format tsv] [--json]   every project on every provider that is on, with its platform
 #
@@ -508,6 +509,16 @@ keychain_broken() {  # keychain_broken <p>: true when its key is not in the envi
   security find-generic-password -a "$USER" -s "deploy-center-$p" -w >/dev/null 2>&1 || rc=$?
   case "$rc" in 0|44|127) return 1 ;; esac
   return 0
+}
+# keychain_age_days <p>: how many days ago the key of <p> was saved in the keychain (its creation date), or nothing when
+# there is no keychain item or no date. A key in the environment has no age we can read.
+keychain_age_days() {
+  local out ts t now
+  out="$(security find-generic-password -a "${USER:-$(id -un)}" -s "deploy-center-$1" 2>/dev/null)" || return 0
+  ts="$(printf '%s\n' "$out" | grep -Eo '"cdat"<timedate>=[^"]*"[0-9]{14}' | grep -Eo '[0-9]{14}$')" || return 0
+  [ -n "$ts" ] || return 0
+  t="$(date -j -u -f %Y%m%d%H%M%S "$ts" +%s 2>/dev/null || date -u -d "${ts:0:4}-${ts:4:2}-${ts:6:2} ${ts:8:2}:${ts:10:2}:${ts:12:2}" +%s 2>/dev/null)" || return 0
+  now="$(date +%s)"; echo $(( (now - t) / 86400 ))
 }
 key_env_names() { "${1}_meta" | grep -Eo '"keyEnv"[[:space:]]*:[[:space:]]*\[[^]]*\]' | sed -E 's/"keyEnv"[[:space:]]*://' | grep -o '[A-Za-z_][A-Za-z0-9_]*' | paste -sd' ' - | sed 's/ / or /g'; }
 key_of_env() {
@@ -4342,6 +4353,36 @@ BASH
     echo "$all" | jq -r '.[] | [.platform, .name, (if .auto then "auto" else "manual" end), (.lastState // "-")] | @tsv' \
       | (printf 'PLATFORM\tPROJECT\tDEPLOYS\tSTATE\n'; cat) | table
     exit "$rc" ;;
+
+  "creds "*)
+    # creds [--max-age 90] [--json]: for each platform that is on: where its key comes from (environment, keychain, the
+    # platform's own login), whether it is accepted, and how old a keychain key is (older than --max-age days: rotate it).
+    # Reads only; the key is never shown.
+    cmax=90; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --max-age) case "${2:-}" in ''|*[!0-9]*|0) die "--max-age takes a number of days, 1 or more" ;; esac; cmax="$2"; shift ;;
+        *) die "Unknown option $1. Usage: deploys creds [--max-age 90] [--json]" ;;
+      esac
+      shift
+    done
+    cj="[]"; crc=0
+    for p in $(enabled_providers); do
+      src="login"; age=""
+      if key_of_env "$p"; then src="environment"
+      elif "${p}_meta" | grep -q '"keychain":"' && security find-generic-password -a "${USER:-$(id -un)}" -s "deploy-center-$p" >/dev/null 2>&1; then src="keychain"; age="$(keychain_age_days "$p")"
+      elif "${p}_meta" | grep -q '"keychain":"'; then src="missing"; fi
+      acc=false; ( "${p}_ready" ) >/dev/null 2>&1 && acc=true
+      [ "$src" != missing ] || [ "$acc" != true ] || src="keychain (older name)"
+      old=false; [ -z "$age" ] || [ "$age" -lt "$cmax" ] || old=true
+      [ "$acc" = true ] || crc=1
+      cj="$(echo "$cj" | jq -c --arg p "$p" --arg l "$(meta_str "$p" label)" --arg s "$src" --arg a "$age" --argjson acc "$acc" --argjson old "$old" \
+        '. + [{platform:$p, label:$l, source:$s, accepted:$acc, keyAgeDays:(if $a == "" then null else ($a | tonumber) end), rotate:$old}]')"
+    done
+    if [ "$json" = 1 ]; then echo "$cj"; exit "$crc"; fi
+    echo "$cj" | jq -r --argjson m "$cmax" '.[] | [.label, .source, (if .accepted then "ok" else "NOT accepted" end), (if .keyAgeDays == null then "-" else "\(.keyAgeDays) days" end), (if .rotate then "older than \($m) days: rotate it" else "" end)] | @tsv' \
+      | (printf 'PLATFORM\tKEY FROM\tSTATE\tKEY AGE\tNOTE\n'; cat) | table
+    exit "$crc" ;;
 
   "idle "*)
     # idle [--days 90] [--json]: projects whose live deploy is older than N days (or that never deployed): a candidate
