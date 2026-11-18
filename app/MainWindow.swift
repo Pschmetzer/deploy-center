@@ -324,7 +324,10 @@ struct ContentView: View {
 
     private var waitingSubtitle: String {
         let n = store.waiting.projects
-        return n == 0 ? "" : L("\(n) \(n == 1 ? "project waits" : "projects wait")", "\(n) \(n == 1 ? "Projekt wartet" : "Projekte warten")")
+        let failed = store.items.values.flatMap { $0 }.filter { Row.keyFigure($0) == .failed }.count
+        let waits = n == 0 ? "" : L("\(n) \(n == 1 ? "project waits" : "projects wait")", "\(n) \(n == 1 ? "Projekt wartet" : "Projekte warten")")
+        let bad = failed == 0 ? "" : L("\(failed) failed", "\(failed) fehlgeschlagen")
+        return [waits, bad].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private static func tabLabel(_ store: Store, _ p: Platform) -> String {
