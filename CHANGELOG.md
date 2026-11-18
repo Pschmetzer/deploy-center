@@ -4,6 +4,7 @@
 
 - FAQ: two new answers (journal export, finding failed services), also in German; a shorter title on the GitHub Actions guide.
 - Docs: "Deploying from the app" covers the confirmation warnings, the 7 or 14 day cost chart and the menu bar dollar sign; the widget page says the Mac app now fills "Next scheduled deploy".
+- Raycast: the confirmation of "Deploy All Changed" shows the estimated cost of the next deploy. Nothing starts until you confirm.
 - Docs: new pages "The deploy journal" (verify, CSV export, monthly report) and "Deploying from the app" (cost in the bar, the confirmation, costs sheet), both also in German.
 - Mac app: the widget snapshot now carries the next run of the daily deploy (`deploys schedule daily`), so the "Next scheduled deploy" widget shows it. Read only.
 - Docs: new page "Search and saved searches" (also in German) and glossary entries for repo group, saved search and merged fix.
