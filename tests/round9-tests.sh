@@ -89,5 +89,10 @@ cd2="$( export DEPLOYS_LIB=1 DEPLOYS_CONFIG="$tmp/certcfg" PATH="$tmp/fakebin:$P
 expect "cert_days_left: an expired certificate is negative" "$([ "${cd1:-0}" -lt 0 ] && echo yes || echo "no:$cd1")" "yes"
 expect "cert_days_left: a certificate in 2099 has years left" "$([ "${cd2:-0}" -gt 3000 ] && echo yes || echo "no:$cd2")" "yes"
 
+# completion knows the new commands and their words
+comp="$(cli completion bash 2>/dev/null)"
+expect "completion: journal completes export and report" "$(grep -c 'journal.*verify export report' <<<"$comp")" "1"
+expect "completion: certs, creds, idle and secrets are commands" "$(for c in certs creds idle secrets; do grep -c "COMP_WORDS\\[1\\]}\" = $c" <<<"$comp"; done | tr '\n' ' ')" "1 1 1 1 "
+
 echo
 [ "$fails" -eq 0 ] && echo "All round-9 tests passed." || { echo "$fails failed."; exit 1; }
