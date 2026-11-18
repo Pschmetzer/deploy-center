@@ -18,6 +18,7 @@ deploys idle [--days 90] [--json]       # Projekte ohne Deploy seit N Tagen: Kan
 deploys changed                         # was auf GitHub gemergt und nicht live ist: Commits und PRs je Projekt
 deploys deploy-changed                  # das tägliche Deploy: zeigt die Liste; mit --yes startet es
 deploys deploy-changed --when-green --yes  # nur Commits, deren CI bestanden hat (wartet auf laufende Checks)
+deploys deploy-json my-project --no-cache --yes   # Build ohne den Cache des Anbieters (Render, Netlify, DigitalOcean, Coolify; andere Anbieter lehnen es ab)
 deploys deploy mein-projekt             # ein Projekt nach Produktion, auf welcher Plattform auch immer
 deploys plan [--when-green]             # dieselbe Liste mit Schätzung je Build und Summe (startet nichts)
 deploys status                          # was gerade baut und was zuletzt fehlschlug

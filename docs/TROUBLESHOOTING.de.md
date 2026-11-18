@@ -2,6 +2,8 @@
 
 Die deutsche Fassung von [TROUBLESHOOTING.md](TROUBLESHOOTING.md). Die Überschriften sind die Meldungen, die App und `deploys` zeigen, **wörtlich und auf Englisch**: Suche auf dieser Seite nach dem Text, den du siehst. Verlinkte Seiten ohne eigene deutsche Fassung sind englisch.
 
+In der App hat ein Fehler im Log- oder Detailfenster einen **Hilfe**-Knopf, der den passenden Abschnitt hier öffnet.
+
 Erste Schritte bei jedem Problem:
 
 - `deploys doctor` gibt als JSON aus, was verbunden ist: `jq`, `jqVersion`, `bashVersion`, `githubCli`, `githubLoggedIn`, `gitlabCli`, `gitlabLoggedIn`, `readonly` und die Felder jeder eingeschalteten Plattform (Vercel: `vercelCli`, `vercelApi`, `vercelLoggedIn`; Render: `renderKey`, `renderKeySource`; Deploy-Hooks: `hookReady`, `hooks`). Für Netlify, Cloudflare, Amplify, DigitalOcean und Coolify frag die Plattform selbst, zum Beispiel `deploys netlify doctor`: ihre Antworten teilen sich Feldnamen (`provider`, und `key`, `tokenOk`, `error` bei dreien), und in der gemeinsamen Antwort bleibt von jedem nur das letzte übrig.

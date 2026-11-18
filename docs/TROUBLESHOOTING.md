@@ -2,6 +2,8 @@
 
 Each heading is a message the app or `deploys` shows, word for word. Search this page for the text you see.
 
+In the app, an error in the log or details window has a **Help** button that opens the matching section here.
+
 First steps for any problem:
 
 - `deploys doctor` prints what is connected as JSON: `jq`, `jqVersion`, `bashVersion`, `githubCli`, `githubLoggedIn`, `gitlabCli`, `gitlabLoggedIn`, `readonly`, and the fields of each platform that is on (Vercel: `vercelCli`, `vercelApi`, `vercelLoggedIn`; Render: `renderKey`, `renderKeySource`; deploy hooks: `hookReady`, `hooks`). For Netlify, Cloudflare, Amplify, DigitalOcean and Coolify ask the platform itself, for example `deploys netlify doctor`: their answers share field names (`provider`, and `key`, `tokenOk`, `error` for three of them), and in the combined answer only the last one of each is left.

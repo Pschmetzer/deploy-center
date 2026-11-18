@@ -24,6 +24,7 @@ Das Fenster Einstellungen hat die Reiter Allgemein, Plattformen, Projekte, Deplo
 | Mitteilung, wenn ein Deploy fertig ist | „my-shop ist live“, sobald der Build durch ist. |
 | Tägliche Erinnerung zum Deployen | 09:00: eine Mitteilung mit der Zahl wartender Commits. |
 | Tagesabschluss | 17:00: was heute live ging und was noch wartet. |
+| Wochenrückblick am Montag | Eine Mitteilung am Montag: die letzten 7 Tage gegen die 7 davor. Derselbe Rückblick steht in Einstellungen → Kosten. |
 | Ruhezeit (von / bis) | 22:00 bis 07:00: dazwischen keine Mitteilung. |
 | Nach 30 Minuten noch einmal erinnern | Ein Fehler, den du nicht geöffnet hast, kommt einmal wieder. |
 

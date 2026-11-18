@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Docs: `--no-cache` in the CLI reference, the Help button on the troubleshooting page, the week in review, "Check the site now" and the window subtitle (English and German).
 - App: the error shown in the log and details windows has a "Help" button that opens the matching section of the troubleshooting page (English or German).
 - Providers: `deploy-json <p> --no-cache` starts a build without the cache on Render, Netlify, DigitalOcean and Coolify; Vercel, Cloudflare, Amplify and deploy hooks refuse it with the reason. Needs `--yes` like every deploy.
 - MCP: new read-only tool `deploys_cost` (`deploys plan --json`): what the next deploy would start and cost, as an estimate. Starts nothing.
