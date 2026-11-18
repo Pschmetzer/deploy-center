@@ -21,7 +21,9 @@ if [ -z "$bin" ]; then
 fi
 say() { jq -nc --arg t "$1" --arg s "$2" '{items:[{title:$t, subtitle:$s, valid:false}]}'; exit 0; }
 command -v jq >/dev/null 2>&1 || { printf '{"items":[{"title":"jq is missing","subtitle":"brew install jq","valid":false}]}\n'; exit 0; }
-[ -n "$bin" ] && command -v "$bin" >/dev/null 2>&1 || say "deploys not found" "Install Deploy Center, or set DEPLOYS in the workflow's environment"
+if [ -z "$bin" ] || ! command -v "$bin" >/dev/null 2>&1; then
+  say "deploys not found" "Install Deploy Center, or set DEPLOYS in the workflow's environment"
+fi
 
 # `plan --json` exits 1 when the list could not be read completely; what it printed still counts.
 out="$("$bin" plan --json </dev/null 2>/dev/null)"
