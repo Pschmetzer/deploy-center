@@ -14,6 +14,9 @@ are refused before anything is asked; only Amplify ids have one `/` (`amplify:<a
 
 ```bash
 deploys doctor                          # what is connected (JSON)
+deploys doctor --text                   # one line each (ok or the problem), with the fix
+deploys list --format tsv               # platform, project, auto or manual, last state: tabs, no header, for scripts without jq
+deploys idle [--days 90] [--json]       # projects with no deploy for N days: candidates to pause (read only)
 deploys changed                         # what is merged on GitHub and not live: commits and PRs per project
 deploys deploy-changed                  # the daily deploy: shows the list; add --yes to start it
 deploys deploy-changed --when-green --yes  # only commits whose CI passed (waits for running checks)
@@ -73,6 +76,7 @@ deploys hook add <name> <url> | remove <name> | list
 ```bash
 deploys config [--json] [--refresh]     # the effective config, and where each value came from
 deploys team add|remove owner/repo | list | refresh | journal
+deploys journal verify | export [--since D] [--project p] | report [--month YYYY-MM]   # see JOURNAL.md
 deploys readonly [on|off]               # observer mode: every command that changes something is refused
 ```
 

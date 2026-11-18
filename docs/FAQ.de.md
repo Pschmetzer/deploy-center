@@ -51,6 +51,12 @@ Führe `deploys triggers` aus. Es listet Builds der letzten 24 Stunden, die niem
 ### Wie werden „wartende Commits“ und „wartende PRs“ gezählt?
 Siehe [ZAHLEN.md](ZAHLEN.md).
 
+### Wo sehe ich, was deployt wurde, und kann ich es exportieren?
+Das Deploy-Journal auf deinem Mac listet jeden Deploy. `deploys journal export` schreibt es als CSV, `deploys journal report` als Monatsbericht in Markdown. Siehe [JOURNAL.de.md](JOURNAL.de.md).
+
+### Wie finde ich schnell die fehlgeschlagenen Render-Dienste?
+Tippe `is:failed host:render` ins Suchfeld und speichere es mit dem Lesezeichen-Knopf. Siehe [SEARCH.de.md](SEARCH.de.md).
+
 ### Etwas funktioniert nicht.
 Siehe [TROUBLESHOOTING.md](TROUBLESHOOTING.md) (englisch).
 

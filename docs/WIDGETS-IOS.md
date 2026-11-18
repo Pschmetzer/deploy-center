@@ -247,7 +247,7 @@ of "Data Not Collected".
   another iPhone or iPad; the Mac app does not take it yet.
 - **Notification actions (IOS-124).** Open, and Mute for today (news from the background refresh only;
   the end of a deploy started in the app still comes).
-- **Next scheduled deploy (IDEEN-9 #61).** A third widget shows the project a schedule deploys next and a live countdown (`Text(date, style: .relative)`); small, medium, lock screen rectangular and inline. It reads the optional `nextScheduled` of the snapshot; without it, or when the time has passed, it says "No deploy planned" (or "Out of date" for an old snapshot). The Mac app fills the field in a follow-up.
+- **Next scheduled deploy (IDEEN-9 #61).** A third widget shows the project a schedule deploys next and a live countdown (`Text(date, style: .relative)`); small and medium, Mac only (the schedule lives on the Mac; the iPhone snapshot never carries it, so a widget there would always say "No deploy planned"). It reads the optional `nextScheduled` of the snapshot; without it, or when the time has passed, it says "No deploy planned" (or "Out of date" for an old snapshot). The Mac app fills the field from `deploys schedule daily`; it is read only and never starts a deploy.
 - **Deploy from a note (IDEEN-9 #63).** The "is waiting" note has the action "Deploy with Face ID" (needs the unlocked device, opens the app). The app reloads if needed, deploys only when the project still waits, and goes through the same Face ID step as a tap in the list.
 - **Widgets.** A second widget, "Failed deploys", lists only what failed or builds (Mac and iPhone).
   On iOS 18 a control for Control Center, the lock screen and the Action button shows the waiting PRs

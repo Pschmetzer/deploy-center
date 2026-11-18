@@ -1987,6 +1987,19 @@ final class Store: ObservableObject {
         return (resp as? HTTPURLResponse)?.statusCode
     }
 
+    /// "Check the site now" from a row's menu: one request, the answer in a note. Looks only: it never rolls back.
+    func checkSiteNow(_ item: Item) async {
+        guard let link = item.link, let url = URL(string: link), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+        let t0 = Date()
+        let code = await Self.probe(url, timeout: 20)
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        let name = Demo.mask(item.name)
+        let fine = code != nil && Self.siteVerdict(code: code, networkUp: true) == .fine
+        show(Toast(text: code.map { fine ? L("\(name) answers \($0) in \(ms) ms", "\(name) antwortet mit \($0) in \(ms) ms")
+                                         : L("\(name) answers \($0)", "\(name) antwortet mit \($0)") }
+                         ?? L("\(name) does not answer", "\(name) antwortet nicht"), ok: fine))
+    }
+
     /// After going live: every address in turn; the first is timed and watched.
     private func checkSite(_ item: Item, _ links: [String], mayRollBack: Bool) async {
         var first: URL?

@@ -57,8 +57,23 @@ struct DeploySnapshot: Codable, Equatable {
 
     struct NextRun: Codable, Equatable {
         let name: String          // already masked when the Mac app was in demo mode
-        let platform: String
+        let platform: String      // empty for a schedule that covers every platform
         let at: Date
+    }
+
+    /// The next time a daily schedule ("HH:MM", optionally Monday to Friday) fires after `now`; nil for a bad time.
+    static func nextDaily(at hhmm: String, weekdaysOnly: Bool, after now: Date, calendar: Calendar = .current) -> Date? {
+        let parts = hhmm.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2, (0..<24).contains(parts[0]), (0..<60).contains(parts[1]) else { return nil }
+        var comps = DateComponents(); comps.hour = parts[0]; comps.minute = parts[1]; comps.second = 0
+        var from = now
+        for _ in 0..<8 {
+            guard let d = calendar.nextDate(after: from, matching: comps, matchingPolicy: .nextTime) else { return nil }
+            let wd = calendar.component(.weekday, from: d)   // 1 = Sunday, 7 = Saturday
+            if !weekdaysOnly || (2...6).contains(wd) { return d }
+            from = d
+        }
+        return nil
     }
 
     /// English or German by a language code ("de", "de-DE" give German; nil gives the system's first).

@@ -25,6 +25,8 @@ struct CostsSheet: View {
     @State private var hovered: String?
     @State private var sharing = false
     @State private var reportCopied = false
+    /// 7 or 14 days for the chart (the billing data holds 14).
+    @AppStorage("costsSpan") private var span = 14
     @State private var editing: String?
     @State private var budgets = ProjectBudgets.all()
     /// Settings → Costs; 0 = no budget, then neither the line nor the sentence.
@@ -134,6 +136,10 @@ struct CostsSheet: View {
             if let line = Self.budgetLine(budget: budget, days: costs.days, today: Self.today()) {
                 Text(line.text).font(.caption.weight(.medium)).foregroundStyle(line.over ? Color.warningText : .secondary)
             }
+            if let top = costs.projects.max(by: { $0.build < $1.build }), top.build > 0 {
+                Text(L("Dearest project: ", "Teuerstes Projekt: ") + Demo.mask(top.name) + " · " + top.build.formatted(.currency(code: "USD")))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             let once = CostInsights.onceADaySaving(costs)
             if once >= 0.01 {
                 Text(L("What if: one build a day per project would have saved ≈ \(once.formatted(.currency(code: "USD"))) this week",
@@ -178,19 +184,21 @@ struct CostsSheet: View {
         }
     }
 
+    private var shown: [Costs.Day] { Array(costs.days.suffix(span == 7 ? 7 : 14)) }
+
     private var chart: some View {
         let today = Self.today()
         // The budget as a day's share of it, so it sits on the same scale as the bars.
         let daily = budget > 0 ? budget / Double(Self.daysInMonth(today)) : 0
         return VStack(alignment: .leading, spacing: 4) {
             Chart {
-                ForEach(costs.days) { d in
+                ForEach(shown) { d in
                     // A day over twice the average stands out; today is lighter: it is not over yet.
                     BarMark(x: .value("Day", d.day), y: .value("USD", d.build))
                         .foregroundStyle(d.build > 2 * average && average > 0 ? Color.orange.gradient : Color.accentColor.gradient)
                         // The dearest day carries its value, without hovering.
                         .annotation(position: .top) {
-                            if d.day == costs.days.max(by: { $0.build < $1.build })?.day, d.build > 0 {
+                            if d.day == shown.max(by: { $0.build < $1.build })?.day, d.build > 0 {
                                 Text(usd0(d.build)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                             }
                         }
@@ -207,25 +215,28 @@ struct CostsSheet: View {
             // "Nov 1" on the first day of a month and the first bar, else the day: the month change is seen.
             .chartXAxis {
                 AxisMarks { v in
-                    AxisValueLabel { Text(v.as(String.self).map { Self.axisLabel($0, first: $0 == costs.days.first?.day) } ?? "") }
+                    AxisValueLabel { Text(v.as(String.self).map { Self.axisLabel($0, first: $0 == shown.first?.day) } ?? "") }
                 }
             }
             .chartXSelection(value: $hovered)
             .overlay(alignment: .topTrailing) {
                 // The value of the day under the pointer, with its full date.
-                if let h = hovered, let d = costs.days.first(where: { $0.day == h }) {
+                if let h = hovered, let d = shown.first(where: { $0.day == h }) {
                     Text(Self.axisLabel(d.day, first: true) + ": " + d.build.formatted(.currency(code: "USD")) + (d.day == today ? L(" (so far)", " (bisher)") : ""))
                         .font(.caption2.monospacedDigit()).padding(.horizontal, 5).padding(.vertical, 2)
                         .background(RoundedRectangle(cornerRadius: 4).fill(reduceTransparency ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor)) : AnyShapeStyle(.regularMaterial)))
                 }
             }
             .frame(height: 140)
-            .accessibilityChartDescriptor(CostChartDescriptor(days: costs.days))
+            .accessibilityChartDescriptor(CostChartDescriptor(days: shown))
             // What the chart spans (14 days, the total above is 7), and what its colours mean.
+            Picker("", selection: $span) { Text(L("7 days", "7 Tage")).tag(7); Text(L("14 days", "14 Tage")).tag(14) }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 140)
+                .accessibilityLabel(L("Period of the chart", "Zeitraum des Diagramms"))
             HStack(spacing: 10) {
-                Text(L("last \(costs.days.count) days", "letzte \(costs.days.count) Tage"))
+                Text(L("last \(shown.count) days", "letzte \(shown.count) Tage"))
                 HStack(spacing: 3) { RoundedRectangle(cornerRadius: 1).fill(Color.orange).frame(width: 7, height: 7); Text(L("over 2× the average", "über 2× Schnitt")) }
-                if costs.days.contains(where: { $0.day == today }) {
+                if shown.contains(where: { $0.day == today }) {
                     HStack(spacing: 3) { RoundedRectangle(cornerRadius: 1).fill(Color.accentColor.opacity(0.45)).frame(width: 7, height: 7); Text(L("today, so far", "heute, bisher")) }
                 }
                 if costs.offDay != nil {

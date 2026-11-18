@@ -5,7 +5,13 @@ Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 59 Wochenrückblick in den Einstellungen (Kosten). 24 gibt es schon (Bilanz mit aufklappbarer Rechnung je Projekt), 35 steht in der Gesundheitskarte. 30 bleibt offen: das Skript liefert kein Token-Alter.
+- 6 (`trap` ohne `eval`) ist für Temp-Dateien und Sperren umgesetzt (`trap_fn`); die Aufräumer in den Anbieter-Dateien und im Scan behalten ihren Text.
+- 5 (`atomic_write`) ist umgesetzt.
+- 60 Wochenziel und 40 ruhende Projekte (aus dem Journal) stehen in den Einstellungen unter Kosten.
 - 67 Kleineres Docker-Image: `WITH_VERCEL=0` lässt die Vercel-CLI weg (567 MB statt 1,09 GB, gemessen).
+- 41 Zeitraum 7/14 Tage im Kostendiagramm ist umgesetzt; 53 (Störungen) gibt es schon im Store.
+- 40 (Projekte ohne Deploy: `deploys idle`) ist umgesetzt.
 - 66 Plan als PR-Kommentar ist umgesetzt (`examples/plan-pr-comment.yml`, kommentiert beim Merge; Kostenschätzung, nichts wird deployt).
 - 65 VS-Code-Statusleiste „N Commits warten“ ist umgesetzt.
 - 64 Raycast und Alfred zeigen die Kosten des nächsten Deploys (Schätzung aus `deploys plan --json`) sind umgesetzt.
@@ -16,7 +22,7 @@ Erledigte Punkte stehen unter „Stand“.
 - 27 (Verlauf als CSV: `deploys journal export`) und 38 (Monatsbericht als Markdown: `deploys journal report`) sind umgesetzt.
 - 14 „Nur Fehlgeschlagene anhaken“ pro Repo-Gruppe und 16 klappbare Gruppenköpfe (merkt sich den Zustand) sind umgesetzt. 21 Suchfilter `repo:`, `host:` und `is:waiting` sind umgesetzt.
 - 63 Deploy per Face ID aus der Benachrichtigung ist umgesetzt (Aktion „Mit Face ID deployen“, prüft, dass das Projekt noch wartet; Face ID wie bei jedem Deploy).
-- 62 Komplikation für die Apple Watch: nicht umgesetzt. Es gibt kein watchOS-Target; die Lock-Screen-Widgets der iPhone-App erscheinen ab watchOS 11 schon im Smart Stack der Uhr. Ein eigenes Target wäre ein größerer Eingriff ins Xcode-Projekt und braucht Apple-Konto-Schritte.
+- 62 Komplikation für die Apple Watch: bewusst nicht umgesetzt. Es braucht ein watchOS-App-Target mit Widget-Erweiterung in der von Hand gepflegten `project.pbxproj`, dazu WatchConnectivity (iPhone und Uhr teilen keine App Group) und Prüfung auf einer echten Uhr. Ein Fehler dort bricht den iPhone-Build für die Veröffentlichung. Dafür ist ein Mensch mit Xcode und Uhr nötig. (Nur Live Activities der iPhone-App erscheinen von selbst auf der Uhr, Widgets nicht.)
 - Barrierefreiheit und Dynamic Type der iPhone-App und der Widgets geprüft: Beschriftungen, `@ScaledMetric` und Skalierung sind vorhanden, Leer- und Veraltet-Zustände gibt es in allen Widgets.
 
 ## Wartung und Repo
