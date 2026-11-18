@@ -554,11 +554,22 @@ const tools = [
       "What a daily deploy would start, without starting anything (deploys deploy-changed --json, no --yes): each project with " +
       "the commit it would deploy, how many commits wait and its risk (green, yellow, red). Read-only. " +
       "Use it to show the human a plan before any deploy; deploying stays a separate step that the human confirms. " +
-      "It has no cost estimate; deploys_simulate estimates what auto-deploy costs.",
+      "It has no cost estimate; deploys_cost prices what the next deploy would start, deploys_simulate estimates what auto-deploy costs.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Plan the daily deploy", ...READ },
     json: true,
     run: () => jsonListOf(["deploy-changed", "--json"]),
+  },
+  {
+    name: "deploys_cost",
+    description:
+      "What the next deploy would start and what it would cost: a price per project and the sum (deploys plan --json). Read-only, starts nothing. " +
+      "The numbers are ESTIMATES (build minutes times a rate), not a bill: read the `method` field and say so when you quote them. " +
+      "`total.unpriced` counts builds without a price; `window` and `budget` say whether the deploy window is closed or the monthly budget would be passed. " +
+      "Use it to answer \"what would deploying now cost?\"; deploying stays a separate step that the human confirms.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Cost of the next deploy (estimate)", ...READ },
+    run: () => textOf(["plan", "--json"], { timeoutMs: SLOW_TIMEOUT_MS }),
   },
   {
     name: "deploys_status",
