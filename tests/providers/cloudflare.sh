@@ -134,6 +134,13 @@ routes "GET /pages/projects/site$ project-upload.json"
 out="$(cf off site 2>&1)"; rc=$?
 [ "$rc" = 1 ] && [[ "$out" == *"direct upload"* ]] && ok "off: direct upload explained" || fail "off: direct upload explained" "$rc $out"
 
+# --- previews: the newest per branch ---
+routes "GET /pages/projects/site/deployments" "never"
+routes "GET /pages/projects/site/deployments.env=preview previews.json"
+out="$(cf previews site 2>&1)"; rc=$?
+expect "previews: newest per branch" "$rc/$(echo "$out" | jq -c '[.[] | [.branch, .id, .phase]]')" '0/[["feat/cart","d-p2","ready"],["fix/tax","d-p3","failed"]]'
+expect "previews: asks for the preview environment" "$(grep -c 'deployments?env=preview' "$CALLS")" 1
+
 # --- deploy ---
 routes "GET /pages/projects/site$ project-on.json" "POST /deployments$ deploy-queued.json"
 out="$(cf deploy-json site)"; rc=$?

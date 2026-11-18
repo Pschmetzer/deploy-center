@@ -233,6 +233,15 @@ has "deploy --sha: says why" "$out" "Netlify cannot deploy a given commit"
 out="$(netlify_deploy_json shop --preview 2>&1)"; rc=$?
 expect "deploy --preview: refused" "$rc" 1
 
+# --- previews: one per pull request, the newest ---
+reset
+out="$(netlify_cli_previews shop 2>&1)"; rc=$?
+expect "previews: exit 0" "$rc" 0
+expect "previews: newest per pull request, production left out" "$(echo "$out" | jq -c '[.[] | [.pr, .id, .url, .phase]]')" \
+  '[[9,"d-pr-9b","https://deploy-preview-9--shop.netlify.app","ready"],[7,"d-pr-7","https://deploy-preview-7--shop.netlify.app","building"]]'
+out="$(netlify_cli_previews nosuch 2>&1)"; rc=$?
+expect "previews: unknown site refused" "$rc" 1
+
 # --- status, latest, cancel, rollback, logs, url, has ---
 reset
 expect "status" "$(netlify_status_json d-shop-3 | jq -c '[.id, .phase, .sha, .dashboardUrl]')" \

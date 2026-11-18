@@ -77,6 +77,7 @@ they only read and print what they would switch back on, one line each, or with 
 (`autodeploy-on --all --dry-run`: `deploys` checks the third word as a name). Their `_meta` says
 `"onDryRun":true`; a caller checks that first, because an older provider ignores `--dry-run` and
 really switches everything on.
+`<p>_cli_previews <id>` (Vercel, Netlify, Cloudflare; optional) prints `[{id, pr, branch, url, phase, at, …}]`: the newest preview deployment per pull request, or per branch where the host names no PR. It only reads, and the host does not say whether a PR is still open.
 Platform extras that are not part of the contract stay where they are: `vercel map`,
 `vercel team`, `costs`, `triggers`.
 
