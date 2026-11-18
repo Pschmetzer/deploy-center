@@ -5,6 +5,7 @@ Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 5 (`atomic_write`) ist umgesetzt.
 - 60 Wochenziel und 40 ruhende Projekte (aus dem Journal) stehen in den Einstellungen unter Kosten.
 - 67 Kleineres Docker-Image: `WITH_VERCEL=0` lässt die Vercel-CLI weg (567 MB statt 1,09 GB, gemessen).
 - 41 Zeitraum 7/14 Tage im Kostendiagramm ist umgesetzt; 53 (Störungen) gibt es schon im Store.

@@ -29,5 +29,18 @@ expect "report: a bad month is refused" "$(cli journal report --month 2025-13x >
 rm "$tmp/j.jsonl"
 expect "export: no journal gives only the header" "$(cli journal export | wc -l | tr -d ' ')" "1"
 
+# atomic_write (idea 5) and the documented exit codes (idea 22, docs/CLI.md)
+(
+  export DEPLOYS_LIB=1; cd "$tmp" || exit 1; . "$OLDPWD/deploys" 2>/dev/null
+  set +e
+  printf 'one\n' | atomic_write "$tmp/aw/state.json"; r1=$?
+  printf 'two\n' | atomic_write "$tmp/aw/state.json"
+  echo "$r1:$(cat "$tmp/aw/state.json"):$(ls "$tmp/aw" | wc -l | tr -d ' ')" > "$tmp/aw.out"
+)
+expect "atomic_write: creates the folder, replaces whole, leaves no temp file" "$(cat "$tmp/aw.out")" "0:two:1"
+expect "exit code: an unknown command is 1" "$(cli frobnicate >/dev/null 2>&1; echo $?)" "1"
+expect "exit code: journal with a bad verb is 1" "$(cli journal bogus >/dev/null 2>&1; echo $?)" "1"
+expect "exit code: idle --days 0 is 1" "$(cli idle --days 0 >/dev/null 2>&1; echo $?)" "1"
+
 echo
 [ "$fails" -eq 0 ] && echo "All round-9 tests passed." || { echo "$fails failed."; exit 1; }

@@ -3,6 +3,7 @@
 ## Unreleased
 
 - App: a row's menu has "Copy summary" (name, platform and what waits, one line).
+- CLI: the state files (autofix, scan, allow, guard) are written through one `atomic_write` helper: whole or not at all.
 - App: the deploy confirmation has "Copy list" for the projects about to go live.
 - App: right-click a repo header for "Show only this repo" (fills the search with `repo:name`) and Collapse/Expand.
 - App: the command palette has "Failed only (on/off)" and one line per saved search (it fills the search box; nothing runs).

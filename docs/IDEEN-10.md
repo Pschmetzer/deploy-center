@@ -4,6 +4,7 @@ Neue Ideen nach Runde 9. Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 22 (Exit-Codes: stehen in `CLI.md`, einige jetzt getestet) ist umgesetzt.
 - 15 „Liste kopieren“ in der Bestätigung ist umgesetzt.
 - 1 Rechtsklick „Nur dieses Repo zeigen“ am Gruppenkopf ist umgesetzt.
 - 6 Gespeicherte Suchen in der Befehlspalette (und „Nur Fehlgeschlagene“) sind umgesetzt.
