@@ -315,6 +315,16 @@ expect "telegram bot: no list, no answers" "$(CHATS='' tg 42 /waiting)" ""
 expect "telegram bot: other text is ignored" "$(tg 42 'deploy app-web')" ""
 expect "telegram bot: /failed" "$(tg 42 /failed)" "No newest build failed."
 
+# --- examples/plan-comment.sh: the plan as a PR comment ---
+pc="$(../examples/plan-comment.sh <<<'{"total":{"builds":2,"usd":1.2,"unpriced":0},"window":{"denied":true,"reason":"weekend"},"budget":{"monthlyUsd":50,"spentUsd":12.5,"over":true},"projects":[{"platform":"vercel","name":"app|web `x`","action":"would-deploy","usd":0.8},{"platform":"render","name":"api","action":"held-by-rule","usd":null}]}')"
+expect "plan comment: starts with the marker" "$(head -1 <<<"$pc")" "<!-- deploy-center-plan -->"
+contains "plan comment: the sum" "$pc" '**2 builds**, about **$1.20**.'
+contains "plan comment: names are escaped" "$pc" '| app\|web \`x\` | vercel | would-deploy | $0.80 |'
+contains "plan comment: a held project is left out of the estimate" "$pc" '| api | render | left out (held-by-rule) | – |'
+contains "plan comment: window and budget" "$pc" 'The deploy window is closed now (weekend).'
+contains "plan comment: over budget" "$pc" 'would go over it'
+expect "plan comment: not a plan is refused" "$(../examples/plan-comment.sh <<<'[]' 2>&1; echo "rc=$?")" $'plan-comment: input is not the JSON of deploys plan --json\nrc=1'
+
 # --- Alfred script filter ---
 af="$(alfred/deploys-filter.sh)"
 expect "alfred: every project, as Alfred items" "$(jq -r '.items | length' <<<"$af")" 3

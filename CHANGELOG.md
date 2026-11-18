@@ -5,6 +5,7 @@
 - App: "More" → "Collapse all repo groups" / "Expand all repo groups".
 - App: "More" → "Copy list of waiting projects" puts a Markdown list of what waits to go live on the clipboard (names masked in demo mode).
 - App: saved searches (bookmark button next to the search field): keep a search such as `is:failed host:render`, run it again with one click, remove it.
+- Examples: `plan-pr-comment.yml` and `plan-comment.sh` comment on a merged PR what the next deploy would start and what it would cost (`deploys plan --json`, an estimate). Read-only; nothing deploys.
 - VS Code: the status bar says how many commits wait ("7 commits waiting"); it counts projects only when a commit count is not known for all of them.
 - App: the deploy confirmation shows the newest commit message of each project with changes waiting (up to 5; not in demo mode).
 - Website: five guide pages have shorter search titles (and one a shorter description).
