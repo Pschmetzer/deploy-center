@@ -195,6 +195,10 @@ expect "deploy --sha on an image app: nothing changed" "$(calls 'curl PATCH')" 0
 out="$(coolify_deploy_json cache 2>&1)"; rc=$?
 expect "deploy not queued: exit 1" "$rc" 1
 has "deploy not queued: Coolify's reason" "$out" "Unauthorized to deploy this application"
+reset
+out="$(coolify_deploy_json shop --no-cache 2>&1)"; rc=$?
+expect "deploy --no-cache: exit 0" "$rc" 0
+expect "deploy --no-cache: force=true on the deploy call" "$(calls 'curl POST .*/deploy?uuid=app-shop&force=true')" 1
 out="$(coolify_deploy_json shop --preview 2>&1)"; rc=$?
 expect "deploy --preview: refused" "$rc" 1
 

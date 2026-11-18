@@ -194,6 +194,10 @@ expect "deploy shop: exit 0" "$rc" 0
 expect "deploy shop: the new deployment" "$(echo "$out" | jq -c '[.id, .phase, .state, .url]')" '["d-shop-new","queued","PENDING_BUILD","https://shop.example.com"]'
 expect "deploy shop: one POST, no forced build" "$(calls 'curl POST .*/v2/apps/app-shop/deployments ')" 1
 expect "deploy shop: body" "$(last_body)" '{"force_build":false}'
+reset
+out="$(digitalocean_deploy_json shop --no-cache 2>&1)"; rc=$?
+expect "deploy --no-cache: exit 0" "$rc" 0
+expect "deploy --no-cache: forced build" "$(last_body)" '{"force_build":true}'
 out="$(digitalocean_deploy_json shop --sha abc123 2>&1)"; rc=$?
 expect "deploy --sha: refused" "$rc" 1
 has "deploy --sha: says why" "$out" "cannot deploy a given commit"

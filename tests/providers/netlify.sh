@@ -223,6 +223,10 @@ expect "deploy shop: the hook got no token (IDEEN-6 335)" "$(calls 'TOKEN-TO-HOO
 reset
 expect "a foreign hook URL is refused (IDEEN-6 335)" \
   "$( (netlify_call POST https://evil.example.test/build_hooks/x '{}' >/dev/null 2>&1; echo $?); calls 'curl POST https://evil')" $'1\n0'
+reset
+out="$(netlify_deploy_json shop --no-cache 2>&1)"; rc=$?
+expect "deploy --no-cache: exit 0" "$rc" 0
+expect "deploy --no-cache: the hook gets clear_cache=true" "$(calls 'curl POST https://api.netlify.com/build_hooks/hook-shop.clear_cache=true')" 1
 out="$(netlify_deploy_json shop --sha abc123 2>&1)"; rc=$?
 expect "deploy --sha: refused" "$rc" 1
 has "deploy --sha: says why" "$out" "Netlify cannot deploy a given commit"

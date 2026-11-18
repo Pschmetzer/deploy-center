@@ -343,6 +343,7 @@ cloudflare_deploy_json() {
       --preview|preview) preview=1 ;;
       --branch) branch="${2:-}"; shift ;;
       --toggle) toggle=1 ;;
+      --no-cache) die "Cloudflare Pages cannot deploy without the build cache from here (it has no such option in the API)" ;;
       --sha) die "Cloudflare Pages cannot deploy a given commit, only the newest one of a branch (--branch)" ;;
       "") ;;
       *) die "Unknown option $1. Usage: deploy-json <project> [--preview] [--branch <b>] [--toggle]" ;;

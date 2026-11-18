@@ -332,6 +332,7 @@ amplify_deploy_json() {
       --branch) branch="${2:-}"; shift ;;
       --sha) sha="${2:-}"; shift ;;
       --message) msg="${2:-}"; shift ;;
+      --no-cache) die "Amplify cannot deploy without the build cache from here (set the cache off in the app build settings)" ;;
       "") ;;
       *) die "Unknown option $1. Usage: deploy-json <project> [--sha <commit>] [--preview --branch <b>]" ;;
     esac; shift

@@ -400,14 +400,15 @@ EOF
 
 # netlify_deploy_json <site> [--preview] [--sha <commit>] — post to the hook, then find the deploy it started.
 netlify_deploy_json() {
-  local site="$1" id hk before list new lock="" i polls
+  local site="$1" id hk before list new lock="" i polls hurl nocache=""
   shift || true
   while [ $# -gt 0 ]; do
     case "$1" in
       --preview) die "Netlify cannot deploy a preview from here (the build hook deploys the production branch)" ;;
       --sha) die "Netlify cannot deploy a given commit: a build hook always builds the newest commit of the branch" ;;
+      --no-cache) nocache=1 ;;
       "") ;;
-      *) die "Unknown option $1. Usage: deploy-json <site>" ;;
+      *) die "Unknown option $1. Usage: deploy-json <site> [--no-cache]" ;;
     esac; shift
   done
   id="$(netlify_id_of "$site")" || die "Netlify site $site not found"
@@ -421,7 +422,10 @@ netlify_deploy_json() {
   # times, so a clock that is off by a minute cannot pick an old deploy.
   before="$(netlify_call GET "/sites/$id/deploys?per_page=20")" || { rm -f "$lock"; die "Netlify: could not read the deploys of $site"; }
   before="$(echo "$before" | jq -c '[.[].id]')"
-  netlify_call POST "$(echo "$hk" | jq -r '.url')" '{"source":"deploy-center"}' >/dev/null \
+  hurl="$(echo "$hk" | jq -r '.url')"
+  # clear_cache=true: the build hook starts the build without the cached dependencies.
+  if [ -n "$nocache" ]; then case "$hurl" in *\?*) hurl="$hurl&clear_cache=true" ;; *) hurl="$hurl?clear_cache=true" ;; esac; fi
+  netlify_call POST "$hurl" '{"source":"deploy-center"}' >/dev/null \
     || { rm -f "$lock"; die "Netlify: the build hook of $site did not take the deploy"; }
   polls="${DEPLOYS_NETLIFY_POLLS:-15}"
   for ((i = 0; i < polls; i++)); do
