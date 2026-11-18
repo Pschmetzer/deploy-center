@@ -347,8 +347,10 @@ coolify_unpin() {  # coolify_unpin <id> <value before> <pinned sha> [<name>]
 # The commit an app builds put back after a --sha deploy: <uuid> <pinned before> <app> <sha>.
 
 coolify_deploy_json() {
-  local app="$1" sha="" id info pinned="" out did lock="" one base rc
+  local app="$1" sha="" id info pinned="" out did lock="" one base rc saved_traps
   shift || true
+  # The caller's own INT/TERM/HUP traps: put back after ours, never wiped.
+  saved_traps="$(trap -p INT TERM HUP)"
   while [ $# -gt 0 ]; do
     case "$1" in
       --preview) die "Coolify cannot deploy a preview from here (preview deploys need a pull request)" ;;
@@ -369,22 +371,23 @@ coolify_deploy_json() {
     pinned="$(echo "$info" | jq -r '.git_commit_sha // "HEAD" | if . == "" then "HEAD" else . end')"
     # Interrupted between pin and unpin: put the commit back before going, or every later push
     # would build the pinned one.
-    trap 'coolify_unpin "$id" "$pinned" "$sha" "$app"; rm -f "$lock"; exit 130' INT TERM
+    trap 'coolify_unpin "$id" "$pinned" "$sha" "$app"; rm -f "$lock"; eval "trap - INT TERM HUP; $saved_traps"; exit 130' INT TERM
     coolify_call PATCH "/applications/$id" "$(jq -nc --arg s "$sha" '{git_commit_sha:$s}')" >/dev/null \
-      || { trap - INT TERM; rm -f "$lock"; die "Coolify: could not pin $app to $sha"; }
+      || { eval "trap - INT TERM HUP; $saved_traps"; rm -f "$lock"; die "Coolify: could not pin $app to $sha"; }
   fi
   # From the pin to its undoing, Ctrl-C or a kill must not leave the app pinned for good (every
   # later auto-deploy would build that commit): the trap puts the old value back first. No EXIT
   # trap: the call below runs in a subshell, so a failure there cannot end this one early, and an
   # EXIT trap would replace one the caller has.
   if [ -n "$pinned" ]; then
-    # shellcheck disable=SC2064  # the values now, not when it fires
-    trap "coolify_unpin '$id' '$pinned' '$sha'; rm -f '$lock'; trap - INT TERM HUP; exit 130" INT TERM HUP
+    # Single quotes: the values are read when it fires (this function is still running then), never pasted into
+    # the trap text, where a quote in a value read from the API would become code.
+    trap 'coolify_unpin "$id" "$pinned" "$sha" "$app"; rm -f "$lock"; eval "trap - INT TERM HUP; $saved_traps"; exit 130' INT TERM HUP
   fi
   # `|| rc=$?`, not `; rc=$?`: under set -e a failed POST would end the script before the unpin.
   rc=0; out="$(coolify_call POST "/deploy?uuid=$id" 2>&1)" || rc=$?
   if [ -n "$pinned" ]; then
-    trap - INT TERM HUP
+    eval "trap - INT TERM HUP; $saved_traps"
     coolify_unpin "$id" "$pinned" "$sha" "$app"
   fi
   [ "$rc" = 0 ] || { rm -f "$lock"; die "Coolify: the deploy of $app was not taken: $out"; }

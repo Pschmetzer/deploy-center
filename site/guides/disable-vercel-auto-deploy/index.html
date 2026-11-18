@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to disable Vercel auto-deploy: 3 ways · Deploy Center</title>
 <meta name="description" content="Stop Vercel deploying on every push: disconnect Git, set git.deploymentEnabled in vercel.json, or add an Ignored Build Step. Steps, code and trade-offs.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="Stop Vercel deploying on every push: disconnect Git, set git.deploymentEnabled in vercel.json, or add an Ignored Build Step. Steps, code and trade-offs.">
 <meta property="og:url" content="https://deploycenter.app/guides/disable-vercel-auto-deploy/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="How to disable Vercel auto-deploy: 3 ways · Deploy Center">
 <meta name="twitter:description" content="Stop Vercel deploying on every push: disconnect Git, set git.deploymentEnabled in vercel.json, or add an Ignored Build Step. Steps, code and trade-offs.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -149,7 +152,7 @@
 <p class="answer">To stop Vercel from deploying on every push, disconnect the Git repository in Project → Settings → Git, set <code>git.deploymentEnabled</code> to <code>false</code> in <code>vercel.json</code>, or add an Ignored Build Step that cancels the builds you do not want. Disconnecting stops every Git build; the other two keep the repository connected and skip builds by rule.</p>
 <p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
-<div class="tablewrap"><table>
+<div class="tablewrap" role="region" aria-label="Table" tabindex="0"><table>
   <thead><tr><th>Way</th><th>Stops</th><th>Keeps</th><th>Best for</th></tr></thead>
   <tbody>
     <tr><th scope="row"><a href="#disconnect">1. Disconnect Git</a></th><td>All Git builds, production and preview</td><td>Deployments, domains, env vars</td><td>Deploying on your schedule</td></tr>
@@ -166,7 +169,7 @@
   <li>Under <b>Connected Git Repository</b>, click <b>Disconnect</b> and confirm.</li>
   <li>Deploy by hand from a checkout of the branch:</li>
 </ol>
-<pre><code class="language-bash"><span class="c"># production deploy of the folder you are in (the build runs on Vercel)</span>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash"><span class="c"># production deploy of the folder you are in (the build runs on Vercel)</span>
 vercel deploy --prod
 
 <span class="c"># or build on your machine or in CI and upload the result</span>
@@ -177,13 +180,13 @@ vercel deploy --prebuilt --prod</code></pre>
 <h2 id="deployment-enabled">2. <code>git.deploymentEnabled</code> in vercel.json</h2>
 <p>The repository stays connected, but Vercel skips Git deployments for the branches you turn off. Put <code>vercel.json</code> in the project's root directory.</p>
 <p>Off for every branch:</p>
-<pre><code class="language-json">{
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-json">{
   "git": {
     "deploymentEnabled": false
   }
 }</code></pre>
 <p>Off for production only, previews keep working:</p>
-<pre><code class="language-json">{
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-json">{
   "git": {
     "deploymentEnabled": {
       "main": false
@@ -195,7 +198,7 @@ vercel deploy --prebuilt --prod</code></pre>
 
 <h2 id="ignored-build-step">3. Ignored Build Step</h2>
 <p>Vercel runs a command before each Git build. Exit code <b>0 cancels</b> the build, exit code <b>1 lets it run</b>. Set it in <b>Settings → Git → Ignored Build Step</b> (choose <b>Custom</b>), or in <code>vercel.json</code>:</p>
-<pre><code class="language-json">{
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-json">{
   "ignoreCommand": "git diff --quiet HEAD^ HEAD -- ."
 }</code></pre>
 <p>This example builds only when the last commit changed something in the project's folder. To cancel every Git build, the command is simply <code>exit 0</code>.</p>
@@ -207,7 +210,7 @@ vercel deploy --prebuilt --prod</code></pre>
   <li>Install the app and connect with your <code>vercel</code> CLI login.</li>
   <li>Click <b>Turn off auto-deploy</b> on the banner. Or in the terminal:</li>
 </ol>
-<pre><code class="language-bash">deploys vercel autodeploy-off --all   # disconnect Git, remember repo and branch
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys vercel autodeploy-off --all   # disconnect Git, remember repo and branch
 deploys changed                        # what is waiting to go live
 deploys deploy-changed --yes           # ship the newest commit of each</code></pre>
 <p>The repositories are recorded in <code>~/.config/deploys/vercel-repos.json</code>, so you can reconnect any project later.</p>

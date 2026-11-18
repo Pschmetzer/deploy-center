@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vercel build minutes and the build queue: why many pushes cost and wait · Deploy Center</title>
 <meta name="description" content="How build minutes add up from pushes, projects and branches, how to measure them with your own numbers, and what shortens the queue.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="How build minutes add up from pushes, projects and branches, how to measure them with your own numbers, and what shortens the queue.">
 <meta property="og:url" content="https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="Vercel build minutes and the build queue: why many pushes cost and wait · Deploy Center">
 <meta name="twitter:description" content="How build minutes add up from pushes, projects and branches, how to measure them with your own numbers, and what shortens the queue.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -145,7 +148,7 @@
 <h2 id="count">1. Count the builds</h2>
 <p>Builds a month = pushes a day × projects that build from the repository × working days. Minutes = builds × the minutes one build takes. Cost = minutes × your price per build minute, which is on your Vercel usage page. Three projects, twenty pushes a day, twenty working days is 1,200 builds before a single bot branch.</p>
 <h2 id="measure">2. Measure with your own numbers</h2>
-<pre><code class="language-bash">deploys costs 14        <span class="c"># Vercel charges per day for the last 14 days</span>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys costs 14        <span class="c"># Vercel charges per day for the last 14 days</span>
 deploys simulate        <span class="c"># an estimate: auto-deploy for a month against one deploy a day</span></code></pre>
 <p>Both are estimates and say so. The <a href="/vercel-build-cost-calculator/">build cost calculator</a> does the same sum in the browser with the numbers you type in.</p>
 <h2 id="cut">3. Cut builds first, then build time</h2>

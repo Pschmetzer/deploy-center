@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stop Vercel building on every push · Deploy Center</title>
 <meta name="description" content="Why Vercel builds on every push, and how to build less: skip bot and agent previews, skip unchanged monorepo apps, batch pushes, deploy on your schedule.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="Why Vercel builds on every push, and how to build less: skip bot and agent previews, skip unchanged monorepo apps, batch pushes, deploy on your schedule.">
 <meta property="og:url" content="https://deploycenter.app/guides/stop-vercel-building-every-push/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="Stop Vercel building on every push · Deploy Center">
 <meta name="twitter:description" content="Why Vercel builds on every push, and how to build less: skip bot and agent previews, skip unchanged monorepo apps, batch pushes, deploy on your schedule.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -143,12 +146,12 @@
 
 <h2>1. See what is building</h2>
 <p>Open the project's <b>Deployments</b> tab and filter by <b>Preview</b>. Look for the patterns that cost the most: bot branches (Dependabot, Renovate), agent branches, and several projects building from one push to the same repository.</p>
-<pre><code class="language-bash"><span class="c"># the last deployments of a project, with branch and state</span>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash"><span class="c"># the last deployments of a project, with branch and state</span>
 vercel ls my-project</code></pre>
 
 <h2>2. Skip previews for bot and agent branches</h2>
 <p>Add this as the Ignored Build Step (Settings → Git, or <code>ignoreCommand</code> in vercel.json). Exit 0 skips, exit 1 builds.</p>
-<pre><code class="language-bash">bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*|claude/*|cursor/*) exit 0;; *) exit 1;; esac'</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*|claude/*|cursor/*) exit 0;; *) exit 1;; esac'</code></pre>
 <p>Change the branch prefixes to the ones your tools use. Previews for those branches stop; pull requests from people still get one.</p>
 
 <h2>3. Skip projects a commit did not touch</h2>
@@ -160,7 +163,7 @@ vercel ls my-project</code></pre>
 </ul>
 
 <h2>4. Skip on demand with a commit message</h2>
-<pre><code class="language-bash">bash -c 'echo "$VERCEL_GIT_COMMIT_MESSAGE" | grep -qiF "[skip deploy]" &amp;&amp; exit 0 || exit 1'</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">bash -c 'echo "$VERCEL_GIT_COMMIT_MESSAGE" | grep -qiF "[skip deploy]" &amp;&amp; exit 0 || exit 1'</code></pre>
 <p>A commit with <code>[skip deploy]</code> in its message then builds nothing. Only the newest commit of a push is checked.</p>
 
 <h2>5. Push less often</h2>
@@ -168,7 +171,7 @@ vercel ls my-project</code></pre>
 
 <h2>6. Deploy production on your schedule</h2>
 <p>The steps above cut previews. For production, turn off auto-deploy and deploy once when you are ready, for example at the end of the day. The <a href="/guides/disable-vercel-auto-deploy/">disable auto-deploy guide</a> has three ways; <a href="/">Deploy Center</a> does it for every project at once and then deploys only what changed:</p>
-<pre><code class="language-bash">deploys vercel autodeploy-off --all
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys vercel autodeploy-off --all
 deploys deploy-changed --yes</code></pre>
 
 <div class="note"><p><b>Trade-offs.</b> Fewer previews means fewer links to click in review. Deploying by hand means a fix is not live until you deploy it. Keep previews where people review, and skip them where nobody does.</p></div>

@@ -32,6 +32,9 @@ func fuzzyScore(_ query: String, _ text: String) -> Int? {
     guard qi == q.count else { return nil }
     let folded = String(t)
     for w in words where folded.contains(w) { score += 4 * w.count }
+    // A word that starts a word of the text ("api" in "shop-api") beats the same letters inside one.
+    let starts = folded.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+    for w in words where starts.contains(where: { $0.hasPrefix(w) }) { score += 3 * w.count }
     if folded.hasPrefix(words.joined(separator: " ")) { score += 15 }
     return score * 10 - min(t.count, 99)
 }
@@ -301,13 +304,24 @@ struct CommandPalette: View {
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
                 // Keys in another window (Settings, say) are not the palette's.
                 guard let w = home.window, e.window === w else { return e }
+                // An input method (Japanese, Chinese ...) is composing: Return and the arrows are its.
+                if let tv = w.firstResponder as? NSTextView, tv.hasMarkedText() { return e }
                 let code = e.keyCode
                 let handled = MainActor.assumeIsolated { key(code) }
                 return handled ? nil : e
             }
         }
         .onDisappear { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil }
-        .onChange(of: query) { _, _ in reorder(); selection = results.first?.id }
+        .onChange(of: query) { _, q in
+            reorder(); selection = results.first?.id
+            // Said aloud: the list changes under the field, where VoiceOver would not notice.
+            if !q.trimmingCharacters(in: .whitespaces).isEmpty {
+                let n = Self.order(commands, query: q, recent: PaletteCommands.recent).total
+                NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                                     userInfo: [.announcement: n == 0 ? L("No results", "Keine Treffer") : L("\(n) results", "\(n) Treffer"),
+                                                .priority: NSAccessibilityPriorityLevel.low.rawValue])
+            }
+        }
         // Demo mode switched while open (⇧⌘D): real names must not stay on screen or be searchable.
         .onChange(of: demoMode) { _, _ in rebuild() }
     }

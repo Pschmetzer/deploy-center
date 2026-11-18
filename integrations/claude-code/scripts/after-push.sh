@@ -74,6 +74,10 @@ segment() {
   pushdir="$d"; pushargs=(${args[@]+"${args[@]}"})
 }
 words="$cmd"
+# `bash -c "git push"` (also sh, zsh, -lc): the quoted script is a command of its own.
+case "$words" in
+  *sh\ -*c\ *) words="$(printf '%s' "$words" | sed -E "s/(^|[[:space:];&|])(ba|z|da)?sh +-[a-z]*c +/ ; /g; s/[\"']/ /g")" ;;
+esac
 for sep in '&&' '||' ';' '|' $'\n'; do words="${words//"$sep"/ ; }"; done
 seg=()
 set -f   # split the command into words on purpose, without expanding globs
@@ -126,7 +130,10 @@ url="$(git -C "$cwd" remote get-url "$remote" 2>/dev/null)" || exit 0
 hostpath="$(printf '%s' "$url" | sed -E 's#^(ssh://)?([^@/]*@)?##; s#^https?://([^@/]*@)?##; s#^([^:/]+):([0-9]+/)?#\1/#; s#\.git$##; s#/$##')"
 case "$hostpath" in
   github.com/*/*) repo="${hostpath#github.com/}"; case "$repo" in */*/*) exit 0 ;; esac ;;
-  */*/*) repo="$hostpath" ;;
+  */*/*)
+    repo="$hostpath"
+    # An SSH host alias from ~/.ssh/config (git@github-work:me/app.git): a host without a dot is no host; owner/name is GitHub's.
+    case "${hostpath%%/*}" in *.*) ;; *) repo="${hostpath#*/}"; case "$repo" in */*/*) exit 0 ;; esac ;; esac ;;
   *) exit 0 ;;
 esac
 case "$repo" in *[!A-Za-z0-9._/-]*|'') exit 0 ;; esac

@@ -56,6 +56,8 @@ struct BuildLog: View {
     @State private var error: String?
     @State private var onlyErrors = false
     @State private var jump = 0
+    @State private var nextError = 0
+    @State private var prevError = 0
     @State private var attempt = 0
     /// The last lines first; "Load more" asks for ten times as many.
     @State private var lineCount = 200
@@ -145,12 +147,19 @@ struct BuildLog: View {
                     }
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 4)
                 }
-                LogText(lines: shownLines, onlyErrors: onlyErrors, firstError: firstError, jump: jump, fontSize: fontSize,
+                LogText(lines: shownLines, onlyErrors: onlyErrors, firstError: firstError, jump: jump, nextError: nextError, prevError: prevError, fontSize: fontSize,
                         label: L("Build log of \(Demo.mask(live.name))", "Build-Log von \(Demo.mask(live.name))"))
                     .overlay(alignment: .bottomTrailing) {
                         if firstError != nil {
-                            Button(L("Jump to the first error", "Zum ersten Fehler")) { jump += 1 }
-                                .buttonStyle(.borderedProminent).padding(12)
+                            HStack(spacing: 6) {
+                                Button { prevError += 1 } label: { Image(systemName: "chevron.up") }
+                                    .help(L("Previous error", "Voriger Fehler")).accessibilityLabel(L("Previous error", "Voriger Fehler"))
+                                Button { nextError += 1 } label: { Image(systemName: "chevron.down") }
+                                    .help(L("Next error", "Nächster Fehler")).accessibilityLabel(L("Next error", "Nächster Fehler"))
+                                Button(L("Jump to the first error", "Zum ersten Fehler")) { jump += 1 }
+                                    .buttonStyle(.borderedProminent)
+                            }
+                            .padding(12)
                         }
                     }
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
@@ -164,6 +173,8 @@ struct BuildLog: View {
             while self.live.state.isActive && !Task.isCancelled {
                 // 5 s while it grows, up to 20 s while nothing new comes.
                 try? await Task.sleep(nanoseconds: UInt64(min(5 + quiet * 5, 20)) * 1_000_000_000)
+                // The app is in the background: nobody reads, so no request until it is back.
+                while !NSApp.isActive && !Task.isCancelled { try? await Task.sleep(nanoseconds: 1_000_000_000) }
                 if Task.isCancelled { break }
                 let before = lines.count
                 await load()
@@ -209,11 +220,27 @@ struct BuildLog: View {
 /// The log as one text view: several lines can be marked and copied at once, which a list of
 /// separate lines does not allow. Set again only when the lines or the filter change, so a poll
 /// in the background keeps the selection and the scroll position.
+/// GitHub's details of a project, kept for 60 seconds per repo, deployed commit and branch.
+@MainActor enum DetailsCache {
+    private static var entries: [String: (at: Date, details: Details)] = [:]
+    static func hit(_ key: String) -> Details? {
+        guard let e = entries[key], Date().timeIntervalSince(e.at) < 60 else { return nil }
+        return e.details
+    }
+    static func when(_ key: String) -> Date? { entries[key]?.at }
+    static func put(_ key: String, _ d: Details) {
+        if entries.count > 40 { entries = entries.filter { Date().timeIntervalSince($0.value.at) < 60 } }
+        entries[key] = (Date(), d)
+    }
+}
+
 struct LogText: NSViewRepresentable {
     let lines: [String]
     let onlyErrors: Bool
     let firstError: Int?
     let jump: Int
+    var nextError = 0
+    var prevError = 0
     var fontSize = Double(NSFont.smallSystemFontSize)
     /// What VoiceOver calls the text view ("Build log of shop").
     var label = ""
@@ -222,7 +249,9 @@ struct LogText: NSViewRepresentable {
     /// An error line as the log shows it: with "Differentiate without colour" a mark in front, not red alone.
     static func shown(_ line: String, bad: Bool, noColour: Bool) -> String { bad && noColour ? "✖ " + line : line }
 
-    final class Coordinator { var shown: [String]?; var filter = false; var noColour = false; var jump = 0; var errorRange: NSRange?; var size = 0.0 }
+    final class Coordinator { var shown: [String]?; var filter = false; var noColour = false; var jump = 0; var errorRange: NSRange?; var size = 0.0
+        // Error flags are worked out once per text, not on every update; the ranges serve next/previous.
+        var flagsFor: [String]?; var flags: [Bool] = []; var errorRanges: [NSRange] = []; var cursor = -1; var next = 0; var prev = 0 }
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -251,9 +280,10 @@ struct LogText: NSViewRepresentable {
             let font = NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular)
             let bold = NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .bold)
             let out = NSMutableAttributedString()
-            c.errorRange = nil
+            c.errorRange = nil; c.errorRanges = []; c.cursor = -1
+            if c.flagsFor != lines { c.flags = lines.map(LogTools.isErrorLine); c.flagsFor = lines }
             for (n, raw) in lines.enumerated() {
-                let bad = LogTools.isErrorLine(raw)
+                let bad = c.flags[n]
                 if onlyErrors && !bad { continue }
                 let line = Self.shown(raw, bad: bad, noColour: noColour)
                 var attrs: [NSAttributedString.Key: Any] = [.font: bad && noColour ? bold : font,
@@ -261,6 +291,7 @@ struct LogText: NSViewRepresentable {
                 if n == firstError { attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.12) }
                 let start = out.length
                 out.append(NSAttributedString(string: line + "\n", attributes: attrs))
+                if bad { c.errorRanges.append(NSRange(location: start, length: (line as NSString).length)) }
                 if n == firstError { c.errorRange = NSRange(location: start, length: (line as NSString).length) }
             }
             tv.textStorage?.setAttributedString(out)
@@ -269,8 +300,17 @@ struct LogText: NSViewRepresentable {
             else { tv.scrollToEndOfDocument(nil) }
         }
         if c.jump != jump {
-            c.jump = jump
+            c.jump = jump; c.cursor = c.errorRange.flatMap { r in c.errorRanges.firstIndex(of: r) } ?? -1
             if let r = c.errorRange { tv.scrollRangeToVisible(r); tv.showFindIndicator(for: r) }
+        }
+        // Next and previous error: the ranges are rebuilt with the text, so the place is the index.
+        let step = (nextError != c.next ? 1 : 0) - (prevError != c.prev ? 1 : 0)
+        c.next = nextError; c.prev = prevError
+        if step != 0, !c.errorRanges.isEmpty {
+            let n = c.errorRanges.count
+            c.cursor = c.cursor < 0 ? (step > 0 ? 0 : n - 1) : (c.cursor + step + n) % n
+            let r = c.errorRanges[c.cursor]
+            tv.scrollRangeToVisible(r); tv.showFindIndicator(for: r)
         }
     }
 }
@@ -403,7 +443,11 @@ struct ProjectDetail: View {
             do {
                 // Without a known branch the branch's newest commit stands in for it: "main" would
                 // compare the wrong branch in a repo on "master" or "develop".
+                let ck = "\(repo)|\(item.lastSha ?? "")|\(item.ref ?? item.headSha ?? "main")"
+                // Opened again within a minute (a sheet closed and reopened): the same answer, no new GitHub requests.
+                if attempt == 0, let hit = DetailsCache.hit(ck) { details = hit; error = nil; loadedAt = DetailsCache.when(ck); reloadFailed = nil; return }
                 details = try await Tool.json(["details", repo, item.lastSha ?? "", item.ref ?? item.headSha ?? "main"], as: Details.self)
+                if let d = details { DetailsCache.put(ck, d) }
                 error = nil; loadedAt = Date(); reloadFailed = nil
             } catch {
                 if details == nil { self.error = error.localizedDescription } else { reloadFailed = loadedAt ?? Date() }

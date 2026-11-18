@@ -79,6 +79,7 @@
   "⏳ {0} waiting": "⏳ {0} wartend",
   "$(check) up to date": "$(check) aktuell",
   "failed ({0})": "fehlgeschlagen ({0})",
+  "failed": "fehlgeschlagen",
   "building": "im Build",
   "changes, {0} waiting": "Änderungen, {0} warten",
   "changes waiting": "Änderungen warten",

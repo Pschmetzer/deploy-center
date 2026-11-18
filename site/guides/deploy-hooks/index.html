@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deploy hooks: deploy any host with one URL · Deploy Center</title>
 <meta name="description" content="What a deploy hook is, where Vercel, Netlify, Cloudflare Pages, Coolify and DigitalOcean keep it, how to call it with curl, how to keep the URL secret, and how to stop builds on push.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="What a deploy hook is, where the big hosts keep it, how to call it with curl, how to keep the URL secret, and how to stop builds on push.">
 <meta property="og:url" content="https://deploycenter.app/guides/deploy-hooks/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for manual deploys.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="Deploy hooks: deploy any host with one URL · Deploy Center">
 <meta name="twitter:description" content="What a deploy hook is, where the big hosts keep it, how to call it with curl, how to keep the URL secret, and how to stop builds on push.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for manual deploys.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -142,7 +145,7 @@
 <p class="answer">A deploy hook is a secret URL from your host: one request to it starts a build of a branch you picked. Create it in the host's settings, call it with <code>curl</code> when you want to deploy, and turn off the host's build on every push, so the hook is the only thing that builds.</p>
 <p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time></p>
 
-<div class="tablewrap"><table>
+<div class="tablewrap" role="region" aria-label="Table" tabindex="0"><table>
   <thead><tr><th scope="col">Host</th><th scope="col">Where the hook is</th><th scope="col">Stop builds on push</th></tr></thead>
   <tbody>
     <tr><th scope="row">Vercel</th><td>Project → Settings → Git → <b>Deploy Hooks</b></td><td>Needs the Git connection, see <a href="#vercel">below</a></td></tr>
@@ -156,10 +159,10 @@
 
 <h2 id="call">Call a hook</h2>
 <p>Most hooks take an empty POST. Keep the URL in a variable or a secret store, never in the repository:</p>
-<pre><code class="language-bash">curl -fsS -X POST "$DEPLOY_HOOK_URL"</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">curl -fsS -X POST "$DEPLOY_HOOK_URL"</code></pre>
 <p>A 2xx answer means the build was <b>started</b>, nothing more. The build can still fail at the host, so check it there. Do not retry blindly on a timeout: the first request may have started a build already, and a retry starts a second one.</p>
 <p>Some endpoints need a token in a header. Coolify's deploy webhook is a GET with an API token; DigitalOcean's new-deployment endpoint is a POST with a token and a small body:</p>
-<pre><code class="language-bash">curl -fsS -H "Authorization: Bearer $COOLIFY_TOKEN" \
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">curl -fsS -H "Authorization: Bearer $COOLIFY_TOKEN" \
   "https://coolify.example.com/api/v1/deploy?uuid=$UUID&amp;force=false"
 
 curl -fsS -X POST -H "Authorization: Bearer $DO_TOKEN" -H "Content-Type: application/json" \
@@ -178,7 +181,7 @@ curl -fsS -X POST -H "Authorization: Bearer $DO_TOKEN" -H "Content-Type: applica
 
 <h2 id="deploy-center">Deploy hooks in Deploy Center</h2>
 <p><a href="/">Deploy Center</a> turns any such URL into a project you deploy by hand, next to Vercel and Render. It is opt-in:</p>
-<pre><code class="language-bash">deploys providers enable hook
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys providers enable hook
 pbpaste | deploys hook add blog - --repo me/blog --site https://blog.example.com
 deploys changed          # commits on the branch since the last trigger
 deploys hook deploy blog # one request, never retried</code></pre>

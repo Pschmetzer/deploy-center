@@ -18,8 +18,30 @@ enum Notify {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in then?(granted) }
     }
     /// A reminder the person set up themselves: shown whether or not the window is in front.
-    static func remind(_ title: String, _ body: String, id: String = NotifyRouter.reminderId) {
-        add(title, body, id: id)
+    /// Quiet hours hold it back too. `then` (main actor) gets whether the notification was really
+    /// handed to the system, so a caller marks it as sent only then.
+    static func remind(_ title: String, _ body: String, id: String = NotifyRouter.reminderId, then: (@MainActor (Bool) -> Void)? = nil) {
+        let d = UserDefaults.standard
+        guard available, !quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo")) else {
+            then?(false); return
+        }
+        add(title, body, id: id, then: then)
+    }
+    /// One authorization request at a time: two alarms at once would ask twice.
+    private static var authorization: Task<Bool, Never>?
+    private static func authorized() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        switch await center.notificationSettings().authorizationStatus {
+        case .authorized, .provisional: return true
+        case .notDetermined:
+            if let t = authorization { return await t.value }
+            let t = Task { (try? await center.requestAuthorization(options: [.alert, .sound])) == true }
+            authorization = t
+            let ok = await t.value
+            authorization = nil
+            return ok
+        default: return false
+        }
     }
     /// `project`: a click on it shows that project in the window. `key` (Store.key) with `failed`:
     /// the notification has "Show log" (and with `rollBack`, a live site that is broken, "Roll back …"),
@@ -77,16 +99,12 @@ enum Notify {
     }
     /// Asks first only when the person was never asked, so the first alarm of a run is not lost.
     private static func add(_ title: String, _ body: String, id: String, category: String? = nil, project: String? = nil,
-                            key: String? = nil, after: TimeInterval? = nil, silent: Bool = false) {
-        guard available else { return }
+                            key: String? = nil, after: TimeInterval? = nil, silent: Bool = false,
+                            then: (@MainActor (Bool) -> Void)? = nil) {
+        guard available else { then?(false); return }
         Task {
             let center = UNUserNotificationCenter.current()
-            switch await center.notificationSettings().authorizationStatus {
-            case .authorized, .provisional: break
-            case .notDetermined:
-                guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
-            default: return
-            }
+            guard await authorized() else { then?(false); return }
             let c = UNMutableNotificationContent()
             c.title = title; c.body = body
             // A deploy's end with the result sounds on already rang once.
@@ -99,9 +117,10 @@ enum Notify {
             if let key { info["key"] = key }
             c.userInfo = info
             // Many deploys ending together are one stack in Notification Center, not a wall.
-            if category != NotifyRouter.rollbackCategory && id != "daily-reminder" { c.threadIdentifier = "deploys" }
+            if category != NotifyRouter.rollbackCategory && id != NotifyRouter.reminderId { c.threadIdentifier = "deploys" }
             let trigger = after.map { UNTimeIntervalNotificationTrigger(timeInterval: $0, repeats: false) }
-            try? await center.add(UNNotificationRequest(identifier: id, content: c, trigger: trigger))
+            do { try await center.add(UNNotificationRequest(identifier: id, content: c, trigger: trigger)); then?(true) }
+            catch { then?(false) }
         }
     }
 }

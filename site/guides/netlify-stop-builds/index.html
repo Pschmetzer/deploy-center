@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to stop Netlify builds on every push · Deploy Center</title>
 <meta name="description" content="Two ways to stop Netlify building on every push: Stop builds, or an ignore command that only lets build hook builds through. Code, steps and trade-offs.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="Two ways to stop Netlify building on every push: Stop builds, or an ignore command that only lets build hook builds through. Code, steps and trade-offs.">
 <meta property="og:url" content="https://deploycenter.app/guides/netlify-stop-builds/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="How to stop Netlify builds on every push · Deploy Center">
 <meta name="twitter:description" content="Two ways to stop Netlify building on every push: Stop builds, or an ignore command that only lets build hook builds through. Code, steps and trade-offs.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -141,7 +144,7 @@
 <p class="answer">Netlify has two ways: turn on <b>Stop builds</b>, which stops every build including build hooks, or add an <code>ignore</code> command to <code>netlify.toml</code> that skips every build not started by a build hook. Stop builds is simplest if you deploy from your machine; the ignore command keeps Netlify building, but only when you call the hook.</p>
 <p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
-<div class="tablewrap"><table>
+<div class="tablewrap" role="region" aria-label="Table" tabindex="0"><table>
   <thead><tr><th scope="col">What</th><th>Stop builds</th><th><code>ignore</code> + build hook</th></tr></thead>
   <tbody>
     <tr><th scope="row">Git pushes</th><td>No build</td><td>Cancelled by the ignore command</td></tr>
@@ -157,10 +160,10 @@
   <li>Under <b>Build settings</b>, choose <b>Configure</b>, then <b>Stop builds</b>, and save.</li>
   <li>Build locally or in CI and upload the result:</li>
 </ol>
-<pre><code class="language-bash">netlify build
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">netlify build
 netlify deploy --prod</code></pre>
 <p>The same switch is the <code>stop_builds</code> field in the site's build settings in the Netlify API:</p>
-<pre><code class="language-bash">curl -s -X PATCH "https://api.netlify.com/api/v1/sites/$SITE_ID" \
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">curl -s -X PATCH "https://api.netlify.com/api/v1/sites/$SITE_ID" \
   -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"build_settings":{"stop_builds":true}}'</code></pre>
@@ -168,7 +171,7 @@ netlify deploy --prod</code></pre>
 
 <h2 id="ignore">2. An ignore command that only lets build hooks through</h2>
 <p>Netlify runs the <code>ignore</code> command before each build: <b>exit 0 cancels</b>, <b>exit 1 builds</b>. For builds started by a build hook, Netlify sets <code>INCOMING_HOOK_TITLE</code> (and <code>INCOMING_HOOK_URL</code>, <code>INCOMING_HOOK_BODY</code>); for pushes it is empty. So this skips everything except hook builds:</p>
-<pre><code class="language-toml"><span class="c"># netlify.toml</span>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-toml"><span class="c"># netlify.toml</span>
 [build]
   ignore = 'test -z "$INCOMING_HOOK_TITLE"'</code></pre>
 <p><code>test -z</code> exits 0 when the variable is empty (a push: skip) and 1 when it is set (a hook: build). Single quotes make it a literal TOML string, so the double quotes reach the shell unchanged.</p>
@@ -177,12 +180,12 @@ netlify deploy --prod</code></pre>
   <li>Commit the <code>netlify.toml</code> above. That push is the last one that builds by itself.</li>
   <li>Deploy when you want:</li>
 </ol>
-<pre><code class="language-bash">curl -s -X POST -d '{}' "https://api.netlify.com/build_hooks/$HOOK_ID"</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">curl -s -X POST -d '{}' "https://api.netlify.com/build_hooks/$HOOK_ID"</code></pre>
 <div class="note"><p><b>Trade-offs.</b> Each push still shows up as a cancelled deploy. A deploy started with <b>Trigger deploy</b> in the Netlify UI has no hook title, so this rule cancels it too; use the hook. Deploy previews for pull requests are skipped as well. The hook URL is a secret: anyone with it can start a build.</p></div>
 
 <h2>Only some branches</h2>
 <p>To keep deploy previews and only stop production builds from pushes, check the context Netlify sets in <code>CONTEXT</code>:</p>
-<pre><code class="language-toml">[build]
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-toml">[build]
   ignore = '[ "$CONTEXT" = production ] &amp;&amp; [ -z "$INCOMING_HOOK_TITLE" ]'</code></pre>
 
 <h2>Netlify in Deploy Center</h2>

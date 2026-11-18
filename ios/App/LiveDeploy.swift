@@ -12,7 +12,7 @@ final class LiveDeploy {
     static func start(_ p: PhoneProject, rollback: Bool) -> LiveDeploy {
         let l = LiveDeploy()
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return l }
-        let attrs = DeployActivity(project: p.name, platform: p.provider.rawValue, started: Date(), rollback: rollback, german: appIsGerman)
+        let attrs = DeployActivity(project: p.name, platform: p.provider.rawValue, started: Date(), rollback: rollback, german: appIsGerman, key: p.key)
         l.activity = try? Activity.request(attributes: attrs, content: content(.running, PhoneProject.stateWord("queued")), pushType: nil)
         return l
     }

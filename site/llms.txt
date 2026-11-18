@@ -4,7 +4,7 @@
 
 - Version: 0.11.0 (macOS app and `deploys` CLI).
 - Hosts: Vercel and Render on by default; Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify and any deploy hook opt-in. Sources: GitHub and GitLab.
-- Safe deploys: only when CI is green, a site check with automatic rollback, deploy windows, a risk score, and a guard that turns auto-deploy off again every 30 minutes.
+- Safe deploys: in the CLI only when CI is green (`--when-green`), a site check with automatic rollback, deploy windows, a risk score, and a guard that turns auto-deploy off again every 30 minutes.
 - Savings: a simulator before you switch and a ledger afterwards, all marked as estimates.
 - Everywhere: window, menu bar, Dock badge, Mac widgets, command palette (Cmd-K); an iPhone and iPad app with Face ID is on its way to the App Store.
 - Teams: a shared deploy-center.json per repo, observer mode, and an optional two-person rule, without a server.

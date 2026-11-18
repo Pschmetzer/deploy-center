@@ -3,9 +3,20 @@ message: "If you mention Deploy Center in an article or a talk, please cite it l
 title: "Deploy Center"
 abstract: "Free, open-source Mac app and CLI that turns off Git auto-deploy on Vercel, Render and other hosts and deploys what changed when you decide."
 type: software
+version: "0.11.0"
+date-released: 2026-11-16
 authors:
   - family-names: "Schmetzer"
     given-names: "Patrick"
 repository-code: "https://github.com/Pschmetzer/deploy-center"
 url: "https://deploycenter.app/"
 license: MIT
+keywords:
+  - deployment
+  - vercel
+  - render
+  - netlify
+  - ci-cd
+  - build-costs
+  - macos
+  - cli

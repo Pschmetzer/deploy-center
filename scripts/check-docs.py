@@ -58,7 +58,9 @@ en, de = read("README.md"), read("README.de.md")
 if sections(en) != sections(de):
     problems.append(f'README.de.md has {sections(de)} "##" sections, README.md {sections(en)}')
 # the German pages that stand in for an English one
-ALIAS = {"docs/NUMBERS.md": "docs/ZAHLEN.md", "docs/SAVINGS.md": "docs/ERSPARNIS.md"}
+ALIAS = {"docs/NUMBERS.md": "docs/ZAHLEN.md", "docs/SAVINGS.md": "docs/ERSPARNIS.md",
+         "docs/FAQ.md": "docs/FAQ.de.md", "docs/SAFE-START.md": "docs/SAFE-START.de.md",
+         "docs/TROUBLESHOOTING.md": "docs/TROUBLESHOOTING.de.md", "docs/CLI.md": "docs/CLI.de.md"}
 de_links = set(doclinks(de))
 missing = [d for d in doclinks(en) if d not in de_links and ALIAS.get(d) not in de_links]
 if missing:

@@ -25,6 +25,15 @@ export function repoKey(remote: string): string | null {
   return `${host.replace(/^www\./i, "")}/${parts.join("/")}`.replace(/\.git$/i, "").toLowerCase();
 }
 
+/** "owner/name" of a remote whose host has no dot (an ssh alias such as github-work), else null. */
+export function aliasPath(remote: string): string | null {
+  const k = repoKey(remote);
+  if (!k) return null;
+  const i = k.indexOf("/");
+  const host = k.slice(0, i);
+  return host.includes(".") || host === "localhost" ? null : k.slice(i + 1);
+}
+
 /**
  * The remote URLs in `git remote -v` output, once each. A remote named "upstream" is left out
  * (the convention for the project one forked): its projects are not the ones this folder deploys.
@@ -53,7 +62,14 @@ export interface Scoped<T> {
 export function scopeProjects<T extends { repo: string | null }>(projects: T[], remotes: string[], scope: Scope): Scoped<T> {
   if (scope === "all") return { projects, matched: false };
   const keys = new Set(remotes.map(repoKey).filter((s): s is string => !!s));
-  const mine = projects.filter((p) => p.repo !== null && keys.has(repoKey(p.repo) ?? ""));
+  // An SSH host alias from ~/.ssh/config (git@github-work:me/app) is no real host: its path is compared with
+  // the projects on GitHub, the only host with a short "owner/name".
+  const aliasPaths = new Set(remotes.map(aliasPath).filter((s): s is string => !!s));
+  const mine = projects.filter((p) => {
+    if (p.repo === null) return false;
+    const k = repoKey(p.repo) ?? "";
+    return keys.has(k) || (k.startsWith("github.com/") && aliasPaths.has(k.slice("github.com/".length)));
+  });
   if (mine.length || scope === "repo") return { projects: mine, matched: mine.length > 0 };
   return { projects, matched: false };
 }

@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to turn off Render auto-deploy · Deploy Center</title>
 <meta name="description" content="Turn off auto-deploy on Render: in the dashboard, with autoDeployTrigger: off in render.yaml, or with one PATCH to the Render API. Then deploy by hand.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="Turn off auto-deploy on Render: in the dashboard, with autoDeployTrigger: off in render.yaml, or with one PATCH to the Render API. Then deploy by hand.">
 <meta property="og:url" content="https://deploycenter.app/guides/render-auto-deploy-off/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="How to turn off Render auto-deploy · Deploy Center">
 <meta name="twitter:description" content="Turn off auto-deploy on Render: in the dashboard, with autoDeployTrigger: off in render.yaml, or with one PATCH to the Render API. Then deploy by hand.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -153,7 +156,7 @@
 
 <h2>2. In render.yaml (Blueprints)</h2>
 <p>If your services come from a Blueprint with auto-sync, set it in the file. Otherwise the next sync can switch auto-deploy back on.</p>
-<pre><code class="language-yaml">services:
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-yaml">services:
   - type: web
     name: api
     runtime: node
@@ -163,23 +166,23 @@
 
 <h2>3. With the Render API</h2>
 <p>Create an API key under <b>Account Settings → API Keys</b>. List your services and their current setting:</p>
-<pre><code class="language-bash">curl -s "https://api.render.com/v1/services?limit=100" \
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">curl -s "https://api.render.com/v1/services?limit=100" \
   -H "Authorization: Bearer $RENDER_API_KEY" \
   | jq -r '.[].service | [.id, .name, (.autoDeployTrigger // .autoDeploy)] | @tsv'</code></pre>
 <p>This returns at most 100 services. With more, pass the <code>cursor</code> of the last item as <code>&amp;cursor=…</code> to get the next page, or some services are missing from the list.</p>
 <p>Turn it off for one service:</p>
-<pre><code class="language-bash">curl -s -X PATCH "https://api.render.com/v1/services/$SERVICE_ID" \
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">curl -s -X PATCH "https://api.render.com/v1/services/$SERVICE_ID" \
   -H "Authorization: Bearer $RENDER_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"autoDeployTrigger":"off"}'</code></pre>
 <p>Older responses carry <code>autoDeploy: "yes" | "no"</code> instead; the jq line above prints whichever is there. Deploy the latest commit by hand:</p>
-<pre><code class="language-bash">curl -s -X POST "https://api.render.com/v1/services/$SERVICE_ID/deploys" \
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">curl -s -X POST "https://api.render.com/v1/services/$SERVICE_ID/deploys" \
   -H "Authorization: Bearer $RENDER_API_KEY" \
   -H "Content-Type: application/json" -d '{}'</code></pre>
 
 <h2>4. Every service at once: Deploy Center</h2>
 <p><a href="/">Deploy Center</a> keeps the API key in your macOS keychain, turns auto-deploy off for every service in one click, and lists the commits and PRs each service is behind.</p>
-<pre><code class="language-bash">deploys render set-key                 # store the API key in the keychain
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys render set-key                 # store the API key in the keychain
 deploys render autodeploy-off --all
 deploys changed
 deploys deploy-changed --yes</code></pre>

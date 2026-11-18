@@ -23,7 +23,7 @@ const callLog = () => { try { return readFileSync(calls, "utf8"); } catch { retu
 // questions (elicitation/create) with a result; without it the client has no elicitation.
 function start(env = {}, { elicit = null } = {}) {
   // The hourly cap is kept in a file; tests turn it off unless they test it.
-  const child = spawn(process.execPath, [server], { env: { ...process.env, DEPLOYS_MCP_MAX_PER_HOUR: "0", ...env }, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [server], { env: { ...process.env, DEPLOYS_MCP_MAX_PER_HOUR: "0", DEPLOYS_MCP_TEST: "1", ...env }, stdio: ["pipe", "pipe", "pipe"] });
   let buf = "", next = 1;
   const asked = [];
   const waiting = new Map();
@@ -112,7 +112,7 @@ check("read tools are marked read-only", (await s.tools()).every((t) => t.annota
 
 {
   const ts = await s.tools();
-  check("JSON tools declare an outputSchema", ["deploys_changed", "deploys_status", "deploys_list", "deploys_plan", "deploys_risk"].every((n) => ts.find((t) => t.name === n)?.outputSchema?.type === "object"), JSON.stringify(ts.map((t) => [t.name, !!t.outputSchema])));
+  check("JSON tools declare an outputSchema", ["deploys_changed", "deploys_status", "deploys_list", "deploys_plan"].every((n) => ts.find((t) => t.name === n)?.outputSchema?.type === "object"), JSON.stringify(ts.map((t) => [t.name, !!t.outputSchema])));
   check("every tool has a title, a description and an object inputSchema", ts.every((t) => t.annotations?.title && t.description?.length > 20 && t.inputSchema?.type === "object" && t.inputSchema.additionalProperties === false), JSON.stringify(ts.filter((t) => !(t.annotations?.title && t.inputSchema?.additionalProperties === false)).map((t) => t.name)));
   const g = await s.call("deploys_guard_status");
   check("guard status is read through the CLI, as JSON", !g.error && /guard status --json/.test(callLog()) && g.structured?.on === true, g.text);
@@ -142,7 +142,7 @@ check("changed also returns structuredContent", JSON.stringify(r.structured?.res
 r = await s.call("deploys_list");
 check("list returns every project with its platform", !r.error && JSON.parse(r.text).every((p) => p.platform), r.text);
 r = await s.call("deploys_risk", { project: "app-web" });
-check("risk passes the name and --json", !r.error && JSON.parse(r.text).hints[0].hint === "touches the database schema", r.text);
+check("risk passes the name and --json, framed as untrusted data", !r.error && /^<untrusted-data source="deploys risk">/.test(r.text) && JSON.parse(inner(r.text)).hints[0].hint === "touches the database schema", r.text);
 r = await s.call("deploys_history", { project: "app-web", count: 3 });
 check("history passes the count", !r.error && r.text.includes("history app-web 3"), r.text);
 r = await s.call("deploys_history", { project: "app-web", count: 0 });
@@ -168,11 +168,12 @@ check("logs refuses 0 lines", r.error, r.text);
 r = await s.call("deploys_logs", { project: "app-web", lines: "80" });
 check("logs refuses lines as a string", r.error && /lines/.test(r.text), r.text);
 s.stop();
-s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "", ANTHROPIC_API_KEY: "test-key", FAKE_ENV_DUMP: "1", VERCEL_TOKEN: "vt", NPM_TOKEN: "npm-secret-x", SSH_AUTH_SOCK: "/tmp/agent.sock" });
+s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "", ANTHROPIC_API_KEY: "test-key", FAKE_ENV_DUMP: "1", VERCEL_TOKEN: "vt", NPM_TOKEN: "npm-secret-x", SSH_AUTH_SOCK: "/tmp/agent.sock", GIT_ASKPASS: "/tmp/x", GIT_SSH_COMMAND: "ssh -o x" });
 await s.init();
 r = await s.call("deploys_doctor");
 check("the CLI gets no model keys of the host, but provider keys", !r.error && !/ANTHROPIC_API_KEY/.test(r.text) && /VERCEL_TOKEN/.test(r.text), r.text.slice(0, 300));
 check("the CLI gets an allowlist: no npm token, no ssh agent of the host", !/NPM_TOKEN|SSH_AUTH_SOCK/.test(r.text) && /PATH/.test(r.text), r.text.slice(0, 300));
+check("git variables that run programs are not passed on", !/GIT_ASKPASS|GIT_SSH_COMMAND/.test(r.text), r.text.slice(0, 300));
 s.stop();
 s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
 await s.init();
@@ -452,6 +453,18 @@ s.stop();
   await s.init();
   const second = await s.call("deploys_deploy", { project: "app-web" });
   check("the hourly cap holds across a restart of the server", !r.error && second.error && /DEPLOYS_MCP_MAX_PER_HOUR/.test(second.text), second.text);
+  s.stop();
+  // A typo in the cap does not switch it off: the default of 10 holds.
+  const dir2 = mkdtempSync(join(tmpdir(), "mcp-cap2-"));
+  writeFileSync(join(dir2, "mcp-starts.json"), JSON.stringify(Array.from({ length: 10 }, () => Date.now())));
+  s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "1", DEPLOYS_MCP_MAX_PER_HOUR: "ten", DEPLOYS_CONFIG: dir2 }, { elicit: yes });
+  await s.init();
+  r = await s.call("deploys_deploy", { project: "app-web" });
+  check("a mistyped DEPLOYS_MCP_MAX_PER_HOUR keeps the default cap", r.error && /DEPLOYS_MCP_MAX_PER_HOUR/.test(r.text), r.text);
+  rmSync(dir2, { recursive: true, force: true });
+  s.stop();
+  s = start(capEnv, { elicit: yes });
+  await s.init();
   let mode = "";
   try { mode = (statSync(join(dir, "mcp-starts.json")).mode & 0o777).toString(8); } catch { /* none */ }
   check("the start log is private (0600)", mode === "600", mode);

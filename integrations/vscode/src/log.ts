@@ -3,7 +3,7 @@ import { platformLabel } from "./model";
 // Reading a build log: the first error block, and a prompt to hand it to an AI. The same rules
 // as the Mac app (app/LogTools.swift), so both copy the same excerpt.
 
-const errorPattern = /\b(error|errors|failed|failure|fatal|exception|traceback)\b|\berr!|cannot find|not found|exited with \d+/i;
+const errorPattern = /\b(error|errors|failed|failure|fatal|exception|traceback)\b|\berr!|cannot find|not found|exited with [1-9]\d*/i;
 const harmless = /\b(0|no|zero) (errors?|failed|failures?)\b|\berrors?: 0\b|\bfailed: 0\b|cache not found|build cache|no cache found|\bif not found\b|deprecat|\bwarn(ing)?\b/i;
 
 /** Whole words, so ErrorBoundary.tsx or onError is not a failure; "0 errors" is not one either. */

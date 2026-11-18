@@ -73,7 +73,9 @@ enum QuickActions {
     static let reload = "app.deploycenter.ios.reload", open = "app.deploycenter.ios.open"
 
     static func update(_ projects: [PhoneProject]) {
-        let look = projects.filter { $0.group != .live }.prefix(3)
+        // Names on the home screen are visible without the app lock: not with "Lock when opened" or "Keep out of Spotlight".
+        let hide = PhoneStore.lockOnOpen || UserDefaults.standard.bool(forKey: "noSpotlight")
+        let look = hide ? [] : Array(projects.filter { $0.group != .live }.prefix(3))
         UIApplication.shared.shortcutItems = look.map { p in
             UIApplicationShortcutItem(type: open, localizedTitle: p.name, localizedSubtitle: p.stateText,
                                       icon: UIApplicationShortcutIcon(systemImageName: p.failed ? "exclamationmark.triangle" : "clock"),
@@ -156,6 +158,9 @@ enum Background {
         // Application Support does not exist in a fresh sandbox.
         try? FileManager.default.createDirectory(at: lastURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? JSONEncoder().encode(projects).write(to: lastURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        // Project names, domains and commit titles: not for iCloud or a device backup.
+        var url = lastURL, v = URLResourceValues(); v.isExcludedFromBackup = true
+        try? url.setResourceValues(v)
         try? FileManager.default.removeItem(at: oldLastURL)
     }
 

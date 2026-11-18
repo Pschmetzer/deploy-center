@@ -121,7 +121,13 @@ struct ContentView: View {
     @AppStorage("lastPlatform") private var platformRaw = "vercel"
     // Read by Color.good; here so the list draws again when it is switched.
     @AppStorage(Color.colorBlindKey) private var colorBlind = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    /// Floating notes: frosted glass, or plain when "Reduce transparency" is on.
+    private var panelFill: AnyShapeStyle { reduceTransparency ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor)) : AnyShapeStyle(.regularMaterial) }
     @State private var search = ""
+    /// What the list filters by: `search` after a short pause, so typing does not re-filter every key.
+    @State private var appliedSearch = ""
+    @State private var searchDebounce: Task<Void, Never>?
     @State private var confirming = false
     @State private var confirmingOff = false
     /// The checkbox in the deploy confirmation: only commits whose CI passed go out. Remembered.
@@ -304,10 +310,18 @@ struct ContentView: View {
             all = all.filter { Store.key($0) == key }
         } else if let exact = exactName {
             all = all.filter { $0.name == exact }
-        } else if !search.isEmpty {
-            // In demo mode only the stand-in counts: typing a real name must not find the project.
-            all = all.filter { Demo.on ? Row.matches(Demo.mask($0.name), search)
-                : Row.matches($0.name, search) || Row.matches($0.detail, search) || Row.matches($0.domain ?? "", search) }
+        } else if !appliedSearch.isEmpty {
+            let q = SearchQuery(appliedSearch)
+            all = all.filter { i in
+                if q.failed && !i.failed { return false }
+                if let p = q.platform, i.platform.cli != p { return false }
+                if q.text.isEmpty { return true }
+                // In demo mode only the stand-in counts: typing a real name must not find the project.
+                if Demo.on { return Row.matches(Demo.mask(i.name), q.text) }
+                return Row.matches(i.name, q.text) || Row.matches(i.detail, q.text) || Row.matches(i.domain ?? "", q.text)
+                    || Row.matches(store.note(i) ?? "", q.text) || Row.matches(i.ref ?? "", q.text)
+                    || Row.matches(i.headMsg ?? "", q.text) || Row.matches(i.lastMsg ?? "", q.text)
+            }
         }
         // Pinned first, then what waits to go live (most commits first), then the rest by name.
         let pins = all.filter { store.isPinned($0) }
@@ -394,7 +408,7 @@ struct ContentView: View {
                     if let msg = store.busyMessage {
                         HStack { ProgressView().controlSize(.small); Text(msg).font(.callout) }
                             .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(Capsule().fill(.regularMaterial))
+                            .background(Capsule().fill(panelFill))
                             .padding(.top, 8)
                             .transition(.opacity)
                     }
@@ -415,7 +429,7 @@ struct ContentView: View {
                 }
                     .font(.callout.weight(.medium))
                     .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(Capsule().fill(.regularMaterial))
+                    .background(Capsule().fill(panelFill))
                     .overlay(Capsule().stroke(t.ok ? Color.good.opacity(0.5) : Color.red.opacity(0.5)))
                     // The pointer on it holds it, so a long message can be read to the end.
                     .onHover { store.holdToast($0) }
@@ -562,7 +576,7 @@ struct ContentView: View {
             TextField("USD", text: $budgetText)
             Button(L("Cancel", "Abbrechen"), role: .cancel) { budgetItem = nil }
             Button(L("Save", "Speichern")) {
-                if let i = budgetItem { store.setProjectBudget(i, Double(budgetText.replacingOccurrences(of: ",", with: "."))) }
+                if let i = budgetItem { store.setProjectBudget(i, Self.parseBudget(budgetText)) }
                 budgetItem = nil
             }
         } message: {
@@ -589,7 +603,16 @@ struct ContentView: View {
             showAllNow = true; onlyChangedNow = false; search = Demo.mask(req.name); exactName = req.name; exactKey = req.key
             store.pendingShow = nil
         }
-        .onChange(of: search) { _, s in if let n = exactName, s != Demo.mask(n) { exactName = nil; exactKey = nil } }
+        .onChange(of: search) { _, s in
+            var exact = false
+            if let n = exactName { if s != Demo.mask(n) { exactName = nil; exactKey = nil } else { exact = true } }
+            searchDebounce?.cancel()
+            if s.isEmpty || exact { appliedSearch = s; return }
+            searchDebounce = Task {
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                if !Task.isCancelled { appliedSearch = s }
+            }
+        }
         .onChange(of: store.settingsRequest) { _, tab in
             guard tab != nil else { return }
             store.settingsRequest = nil
@@ -700,15 +723,16 @@ struct ContentView: View {
             // When the lists were read: here, and not as text in the header.
             .help(L("Reload (⌘R)", "Neu laden (⌘R)") + (reloadStamps.isEmpty ? "" : "\n" + reloadStamps))
             .keyboardShortcut("r")
-            .disabled(busy)
+            // Only what is loading is locked: under "All" the other platform can still be reloaded.
+            .disabled(scopes.allSatisfy { store.loading.contains($0) })
         }
         .padding(12)
     }
 
     /// The platforms at the same time, not one after the other; then the extras.
     private func reloadNow() {
-        let chosen = scopes
-        guard !chosen.contains(where: { store.loading.contains($0) }) else { return }
+        let chosen = scopes.filter { !store.loading.contains($0) }
+        guard !chosen.isEmpty else { return }
         Task {
             await withTaskGroup(of: Void.self) { g in for p in chosen { g.addTask { await store.load(p) } } }
             await store.loadExtras()
@@ -907,6 +931,28 @@ struct ContentView: View {
         }
     }
 
+    /// A budget typed the local way: "1.500", "1,5", "1 500,50". Plain digits with one separator only;
+    /// "1e3", "inf", "nan" and negatives are refused (nil = no budget).
+    static func parseBudget(_ text: String) -> Double? {
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\u{202F}", with: "").replacingOccurrences(of: "\u{00A0}", with: "").replacingOccurrences(of: " ", with: "")
+        guard !t.isEmpty, t.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == "." || $0 == ",") }) else { return nil }
+        let dot = t.filter { $0 == "." }.count, comma = t.filter { $0 == "," }.count
+        if dot > 0 && comma > 0 {
+            // The last separator is the decimal one.
+            let dec: Character = (t.lastIndex(of: ".")! > t.lastIndex(of: ",")!) ? "." : ","
+            let grp: Character = dec == "." ? "," : "."
+            t = t.replacingOccurrences(of: String(grp), with: "").replacingOccurrences(of: String(dec), with: ".")
+        } else if dot + comma > 0 {
+            let sep: Character = dot > 0 ? "." : ","
+            let parts = t.split(separator: sep, omittingEmptySubsequences: false)
+            let groups = parts.count > 2 || (parts.count == 2 && parts[1].count == 3 && !parts[0].isEmpty && parts[0].count <= 3 && parts[0] != "0")
+            if groups { t = parts.joined() } else { t = t.replacingOccurrences(of: String(sep), with: ".") }
+        }
+        guard let v = Double(t), v.isFinite, v >= 0 else { return nil }
+        return v
+    }
+
     static func triggerName(_ k: String) -> String {
         switch k {
         case "workflow": return L("GitHub workflow deploys", "GitHub-Workflow deployt")
@@ -919,14 +965,24 @@ struct ContentView: View {
 
     /// What the confirmation's Deploy does: inside a closed deploy window it asks first.
     private func startDeploy() {
+        // Freeze what was confirmed: the ticks may change while the owner check or the window
+        // check waits, and exactly these projects go out.
         let chosen = scopes, count = selectedAll.count
+        let frozen = Set(selectedAll.map { Store.key($0) })
+        let restore = {
+            chosen.forEach { p in
+                store.clearSelection(p)
+                for i in store.items[p] ?? [] where frozen.contains(Store.key(i)) && !i.selected { store.toggle(p, i.id) }
+            }
+        }
         Task {
             if OwnerCheck.needed(projects: count) || (OwnerCheck.on && selectedAll.contains { store.isCritical($0) }),
                !(await OwnerCheck.confirm(L("put \(count) projects live", "\(count) Projekte live schalten"))) { return }
             if let w = await store.deployWindow(), w.denied {
-                frozenRun = { why in chosen.forEach { store.deploySelected($0, force: why) } }
+                frozenRun = { why in restore(); chosen.forEach { store.deploySelected($0, force: why) } }
                 freezeReason = w.reason ?? ""; return
             }
+            restore()
             chosen.forEach { store.deploySelected($0) }
         }
     }
@@ -1252,16 +1308,16 @@ struct ContentView: View {
             .padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if scopes.contains(where: { store.loading.contains($0) }) && scopes.allSatisfy({ (store.items[$0] ?? []).isEmpty }) {
             ProgressView(L("Loading \(scopes.map(\.rawValue).joined(separator: ", ")) …", "Lade \(scopes.map(\.rawValue).joined(separator: ", ")) …")).frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if visible.isEmpty && (onlyChanged || !search.isEmpty) {
+        } else if visible.isEmpty && (onlyChanged || !appliedSearch.isEmpty) {
             let inScope = scopes.flatMap { store.items[$0] ?? [] }
             // Nothing waits here, but maybe on another tab: say where, instead of "everything is live".
-            let elsewhere = search.isEmpty ? providers.compactMap(\.platform).filter { !scopes.contains($0) && store.changedCount($0) > 0 } : []
-            let hiddenHits = search.isEmpty ? 0 : inScope.filter { store.isHidden($0)
-                && Row.matches(Demo.on ? Demo.mask($0.name) : $0.name, search) }.count
+            let elsewhere = appliedSearch.isEmpty ? providers.compactMap(\.platform).filter { !scopes.contains($0) && store.changedCount($0) > 0 } : []
+            let hiddenHits = appliedSearch.isEmpty ? 0 : inScope.filter { store.isHidden($0)
+                && Row.matches(Demo.on ? Demo.mask($0.name) : $0.name, SearchQuery(appliedSearch).text) }.count
             VStack(spacing: 8) {
-                Image(systemName: !search.isEmpty ? "magnifyingglass" : elsewhere.isEmpty ? "checkmark.seal.fill" : "checkmark.circle").font(.system(size: 34))
-                    .foregroundStyle(search.isEmpty && elsewhere.isEmpty ? Color.good : .secondary)
-                Text(!search.isEmpty ? L("Nothing matches “\(search)”", "Nichts passt zu „\(search)“")
+                Image(systemName: !appliedSearch.isEmpty ? "magnifyingglass" : elsewhere.isEmpty ? "checkmark.seal.fill" : "checkmark.circle").font(.system(size: 34))
+                    .foregroundStyle(appliedSearch.isEmpty && elsewhere.isEmpty ? Color.good : .secondary)
+                Text(!appliedSearch.isEmpty ? L("Nothing matches “\(appliedSearch)”", "Nichts passt zu „\(appliedSearch)“")
                      : elsewhere.isEmpty ? L("Everything is live", "Alles ist live")
                      : L("Nothing waits on \(currentLabel)", "Bei \(currentLabel) wartet nichts"))
                     .font(.headline)
@@ -1278,7 +1334,7 @@ struct ContentView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
-                    if !search.isEmpty { Button(L("Clear the search", "Suche leeren")) { search = "" } }
+                    if !appliedSearch.isEmpty { Button(L("Clear the search", "Suche leeren")) { search = "" } }
                     if onlyChanged { Button(L("Show all projects", "Alle Projekte zeigen")) { onlyChanged = false } }
                 }
             }
@@ -1352,7 +1408,7 @@ struct ContentView: View {
             showLog: store.provider(item.platform)?.caps.logs == false ? nil : { logItem = item },
             onCancel: { store.cancel(item) },
             onRetry: item.deployable && !store.observer ? { deployOne(item) } : nil,
-            usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: search,
+            usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: SearchQuery(appliedSearch).text,
             autofix: fix, allowedUntil: store.allowance(item)?.expiresAt,
             autofixBusy: store.autofixBusy(item),
             onAutofix: store.canFixWithClaude(item) ? { Task { await store.fixWithClaude(item) } } : nil,
@@ -1420,6 +1476,9 @@ struct ContentView: View {
                 Button(L("Copy the site address", "Seiten-Adresse kopieren")) {
                     Pasteboard.copy(l)
                 }
+            }
+            if let sha = item.lastSha, !sha.isEmpty, !item.triggered, !Demo.on {
+                Button(L("Copy the live commit (SHA)", "Live-Commit (SHA) kopieren")) { Pasteboard.copy(sha) }
             }
             if item.repo != nil {
                 Button(L("Details …", "Details …")) { detailItem = item }
@@ -1568,7 +1627,9 @@ struct ContentView: View {
         .accessibilityLabel(L("More actions", "Weitere Aktionen"))
         .popover(isPresented: $showMessages) {
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(store.messages.prefix(15)) { m in
+                ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                ForEach(store.messages) { m in
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: m.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(m.ok ? Color.good : .red)
                         Text(m.date.formatted(date: .omitted, time: .shortened)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -1582,16 +1643,37 @@ struct ContentView: View {
                         }
                     }
                 }
+                }
+                }
+                .frame(maxHeight: 360)
                 Divider()
                 Button(L("Clear", "Leeren")) {
-                    let a = NSAlert()
-                    a.messageText = L("Clear all \(store.messages.count) messages?", "Alle \(store.messages.count) Meldungen leeren?")
-                    a.addButton(withTitle: L("Clear", "Leeren")); a.addButton(withTitle: L("Keep", "Behalten"))
-                    if a.runModal() == .alertFirstButtonReturn { store.messages.removeAll(); showMessages = false }
+                    // No modal: the list comes back with "Undo" while the note shows.
+                    let old = store.messages, n = old.count
+                    store.messages.removeAll(); showMessages = false
+                    store.show(Store.Toast(text: L("\(n) messages cleared", "\(n) Meldungen geleert"), ok: true,
+                                     undoLabel: L("Undo", "Rückgängig"), undo: { [weak store] in store?.messages = old }))
                 }
                     .buttonStyle(.link).font(.caption)
             }
             .padding(12).frame(width: 460, alignment: .leading)
         }
+    }
+}
+
+/// The search box text split into operators (`is:failed`, `platform:render`) and the words to find.
+struct SearchQuery {
+    var failed = false
+    var platform: String?
+    var text = ""
+    init(_ raw: String) {
+        var words: [String] = []
+        for w in raw.split(separator: " ") {
+            let l = w.lowercased()
+            if l == "is:failed" { failed = true }
+            else if l.hasPrefix("platform:"), Platform.allCases.contains(where: { $0.cli == String(l.dropFirst(9)) }) { platform = String(l.dropFirst(9)) }
+            else { words.append(String(w)) }
+        }
+        text = words.joined(separator: " ")
     }
 }

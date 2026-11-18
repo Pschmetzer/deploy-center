@@ -167,7 +167,7 @@ export async function copyBuildError(p: {
 }
 
 // One project, after the person confirmed. Shows a toast with what deploy-json answered.
-export async function deployOne(p: { name: string; platform: string }, onDone?: () => void) {
+export async function deployOne(p: { name: string; platform: string; headSha?: string | null }, onDone?: () => void) {
   const toast = await showToast({
     style: Toast.Style.Animated,
     title: `Deploying ${p.name}`,
@@ -191,7 +191,7 @@ export async function deployOne(p: { name: string; platform: string }, onDone?: 
   }
 }
 
-export async function confirmAndDeploy(p: { name: string; platform: string }, detail: string, onDone?: () => void) {
+export async function confirmAndDeploy(p: { name: string; platform: string; headSha?: string | null }, detail: string, onDone?: () => void) {
   const ok = await confirmAlert({
     title: `Deploy ${p.name}?`,
     message: `${platformLabel(p.platform)} builds the newest commit to production.${detail ? `\n\n${detail}` : ""}`,

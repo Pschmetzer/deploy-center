@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skip Vercel preview builds for Dependabot, Renovate and AI agent branches · Deploy Center</title>
 <meta name="description" content="An Ignored Build Step that skips preview builds for bot and agent branches, so automated pushes stop costing build minutes.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="An Ignored Build Step that skips preview builds for bot and agent branches, so automated pushes stop costing build minutes.">
 <meta property="og:url" content="https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="Skip Vercel preview builds for Dependabot, Renovate and AI agent branches · Deploy Center">
 <meta name="twitter:description" content="An Ignored Build Step that skips preview builds for bot and agent branches, so automated pushes stop costing build minutes.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -143,11 +146,11 @@
 
 <p>Dependabot, Renovate and coding agents push to their own branches, and each push builds a preview in every connected project. Nobody looks at most of them. A skipped build is cancelled before the build command runs.</p>
 <h2 id="script">1. The script</h2>
-<pre><code class="language-bash">bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*|claude/*|cursor/*) exit 0;; *) exit 1;; esac'</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*|claude/*|cursor/*) exit 0;; *) exit 1;; esac'</code></pre>
 <p><code>VERCEL_GIT_COMMIT_REF</code> is the branch of the commit. Branches from people, and production, still build.</p>
 <h2 id="where">2. Where to put it</h2>
 <p>In the project, <b>Settings → Git → Ignored Build Step</b>, or as <code>ignoreCommand</code> in <code>vercel.json</code>:</p>
-<pre><code class="language-json">{
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-json">{
   "ignoreCommand": "bash -c 'case \"$VERCEL_GIT_COMMIT_REF\" in dependabot/*|renovate/*|claude/*|cursor/*) exit 0;; *) exit 1;; esac'"
 }</code></pre>
 <h2 id="agents">3. Agents that push to your own branches</h2>

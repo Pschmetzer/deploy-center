@@ -59,6 +59,10 @@ jobs:
         run: bash tests/app-tests.sh
       - name: The "waiting" rule in deploys and in the iPhone app agree
         run: bash tests/ios-rule-tests.sh
+      - name: Round 8 tests (masker and small commands)
+        run: bash tests/round8-tests.sh
+      - name: Round 10 tests (file modes, options, paging, hooks, traps, escapes)
+        run: bash tests/welle10-tests.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -132,6 +136,10 @@ jobs:
         run: bash tests/release-tests.sh
       - name: The script's "waiting" rule against the shared cases
         run: bash tests/ios-rule-tests.sh
+      - name: Round 8 tests
+        run: bash tests/round8-tests.sh
+      - name: Round 10 tests
+        run: bash tests/welle10-tests.sh
 
   integrations:
     # integrations/tests/run.sh: Action, digest, statuspage, badge, notify, hooks, the Claude Code

@@ -221,10 +221,11 @@ do_install() {
 
   installed="$("$bindir/deploys" --version 2>/dev/null || true)"
   say "Installed deploys $installed: $bindir/deploys (files in $libdir)"
-  case "$installed" in
-    *"$version"*) ;;
-    *) warn "expected version $version, but the installed deploys says '${installed:-nothing}'. Run: deploys doctor" ;;
-  esac
+  # the last word of the first line, compared exactly: "0.1.1" must not pass for "10.1.10"
+  installed_v="$(printf '%s\n' "$installed" | head -n 1 | awk '{print $NF}')"
+  if [ "$installed_v" != "$version" ]; then
+    warn "expected version $version, but the installed deploys says '${installed:-nothing}'. Run: deploys doctor"
+  fi
 }
 
 path_hint() {

@@ -19,6 +19,7 @@ struct CostChartDescriptor: AXChartDescriptorRepresentable {
 }
 
 struct CostsSheet: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     let costs: Costs
     @Environment(\.dismiss) private var dismiss
     @State private var hovered: String?
@@ -188,7 +189,7 @@ struct CostsSheet: View {
                 if let h = hovered, let d = costs.days.first(where: { $0.day == h }) {
                     Text(Self.axisLabel(d.day, first: true) + ": " + d.build.formatted(.currency(code: "USD")) + (d.day == today ? L(" (so far)", " (bisher)") : ""))
                         .font(.caption2.monospacedDigit()).padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(.regularMaterial))
+                        .background(RoundedRectangle(cornerRadius: 4).fill(reduceTransparency ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor)) : AnyShapeStyle(.regularMaterial)))
                 }
             }
             .frame(height: 140)

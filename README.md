@@ -80,7 +80,7 @@ and nothing ships by accident. Try the [cost calculator](https://deploycenter.ap
 
 New to it? [Try it safely](docs/SAFE-START.md): look first, then one project, then all.
 
-Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only green CI, a health check with rollback, deploy windows and a risk light.
+Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): green CI in the CLI, a health check with rollback, deploy windows and a risk light.
 
 ## Features
 
@@ -97,7 +97,7 @@ Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): only gree
 - Add-ons: a GitHub Action, badges, a daily summary to a webhook, a pre-push hook, a Docker image, an MCP server, a Claude Code plugin, VS Code and Raycast extensions, an agent digest. [Integrations](integrations/)
 - Autofix: a failed build goes to a Claude Code routine that opens a fix PR. [Autofix](docs/AUTOFIX.md)
 - Ask Claude, with your own Anthropic key: why a build failed, release notes, is it safe to ship. [Claude in the app](docs/CLAUDE-IN-APP.md)
-- Safe deploys (only green CI, health check with rollback, deploy windows), a guard that turns auto-deploy off again, and a team mode without a server. [Safe deploys](docs/SAFE-DEPLOY.md) · [Guard](docs/GUARD.md) · [Team](docs/TEAM.md)
+- Safe deploys (CLI: only green CI with `--when-green`, health check with rollback, deploy windows), a guard that turns auto-deploy off again, and a team mode without a server. [Safe deploys](docs/SAFE-DEPLOY.md) · [Guard](docs/GUARD.md) · [Team](docs/TEAM.md)
 - Bug scan: Claude Code on your Mac looks through a repo for bugs and opens one fix PR. [Bug scan](docs/SCAN.md)
 - Security check: OSV-Scanner, gitleaks and Semgrep (free, local); findings can go to the bug scan. [Security check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep)
 - English and German: the Mac's language, or pick one in Settings → General → Language (it takes effect after a restart)

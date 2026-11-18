@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to turn off Auto Deploy in Coolify and stop build storms · Deploy Center</title>
 <meta name="description" content="Why every push builds on your own server with Coolify, how to turn Auto Deploy off for an application, and how to deploy when you choose.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -17,6 +18,7 @@
 <meta property="og:description" content="Why every push builds on your own server with Coolify, how to turn Auto Deploy off for an application, and how to deploy when you choose.">
 <meta property="og:url" content="https://deploycenter.app/guides/coolify-auto-deploy-off/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
@@ -24,6 +26,7 @@
 <meta name="twitter:title" content="How to turn off Auto Deploy in Coolify and stop build storms · Deploy Center">
 <meta name="twitter:description" content="Why every push builds on your own server with Coolify, how to turn Auto Deploy off for an application, and how to deploy when you choose.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
@@ -144,13 +147,13 @@
 <p>On Vercel or Netlify, too many builds show up on a bill. On Coolify they show up on your own server: it builds on the machine that runs your apps unless you set up a separate build server. Five quick pushes are five builds back to back, and only the last was ever going to stay live.</p>
 <h2 id="switch">1. Turn Auto Deploy off</h2>
 <p>In the application's settings, switch <b>Auto Deploy</b> off. Through the API, the field is <code>is_auto_deploy_enabled</code> (API access has to be on under Settings, Advanced, and the token needs the <code>write</code> permission):</p>
-<pre><code class="language-bash">curl -s -X PATCH "$COOLIFY_URL/api/v1/applications/$APP_UUID" \
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">curl -s -X PATCH "$COOLIFY_URL/api/v1/applications/$APP_UUID" \
   -H "Authorization: Bearer $COOLIFY_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"is_auto_deploy_enabled": false}'</code></pre>
 <p>Pull request preview deployments are a separate setting; turn them off too if they are on.</p>
 <h2 id="deploy">2. Deploy when you choose</h2>
-<pre><code class="language-bash">curl -s -X POST "$COOLIFY_URL/api/v1/deploy?uuid=$APP_UUID" \
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">curl -s -X POST "$COOLIFY_URL/api/v1/deploy?uuid=$APP_UUID" \
   -H "Authorization: Bearer $COOLIFY_TOKEN"</code></pre>
 <p>The token needs the <code>deploy</code> permission. Coolify builds the newest commit of the branch.</p>
 <div class="note"><p><b>Trade-offs.</b> Nothing builds from a push any more, so a forgotten deploy means the old version keeps running. A token limited to some projects cannot list applications; give it team-wide scope.</p></div>

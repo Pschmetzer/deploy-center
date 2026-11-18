@@ -30,10 +30,8 @@ fi
 
 # name<TAB>right-hand text<TAB>colour, one line per project. Times: seconds since 1970 (UTC).
 lines="$(echo "$list" | jq -r '
-  def age: (now - .) as $s
-    | if $s < 3600 then "\(($s / 60) | floor) min ago"
-      elif $s < 86400 then "\(($s / 3600) | floor) h ago"
-      else "\(($s / 86400) | floor) d ago" end;
+  # A date, not "3 d ago": the SVG is a file and is read long after it was written.
+  def age: strftime("%Y-%m-%d");
   (map(select(.name) | .name) | group_by(.) | map(select(length > 1) | .[0])) as $twice
   | .[] | select(.name)
   # The commit that is live (Render: liveAt), not the newest attempt, which may have failed.

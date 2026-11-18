@@ -913,10 +913,9 @@ final class Store: ObservableObject {
             lastDoctor = Date()
             if let fresh = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { doctor = fresh; doctorError = nil }
         }
-        // Only the platform with a deploy under way is left alone; the other one stays current.
-        // A deploy that is "overdue" (no result after 40 min) no longer holds the list back: a reload keeps its state anyway.
-        let v = canLoad(.vercel) && !(items[.vercel] ?? []).contains { $0.state.isActive && $0.state != Self.overdueState }
-        let r = canLoad(.render) && !(items[.render] ?? []).contains { $0.state.isActive && $0.state != Self.overdueState }
+        // Both platforms load, a deploy under way too: `merge` keeps the state of an active row
+        // (deploy id, timer, preview id), so the list stays current and the row is not touched.
+        let v = canLoad(.vercel), r = canLoad(.render)
         async let a: Void = v ? load(.vercel) : ()
         async let b: Void = r ? load(.render) : ()
         _ = await (a, b)
@@ -1056,7 +1055,8 @@ final class Store: ObservableObject {
         let was = items[p]![i].state
         items[p]![i].state = s
         holdAwake()
-        if byPerson { endedByCancel.insert(id) } else if !s.isActive || s == .queued { endedByCancel.remove(id) }
+        let runKey = "\(p.cli)/\(id)"
+        if byPerson { endedByCancel.insert(runKey) } else if !s.isActive || s == .queued { endedByCancel.remove(runKey) }
         // A new start: the id of the last deploy must not be the one a cancel goes to.
         if case .starting = s { items[p]![i].startedAt = Date(); items[p]![i].deployId = nil }
         // Queued again: an older start time must not become this deploy's duration.
@@ -1225,7 +1225,12 @@ final class Store: ObservableObject {
     /// Every row of every platform, in one list. Use this instead of joining `items` by hand.
     var allItems: [Item] { Platform.allCases.flatMap { items[$0] ?? [] } }
     /// The row with this `Store.key`, if the lists hold it.
-    func item(key: String) -> Item? { allItems.first { Self.key($0) == key } }
+    func item(key: String) -> Item? {
+        // "<cli>/<id>": only that platform's list is searched, nothing is joined.
+        guard let slash = key.firstIndex(of: "/"), let p = Platform.allCases.first(where: { $0.cli == key[..<slash] }) else { return nil }
+        let id = key[key.index(after: slash)...]
+        return items[p]?.first { $0.id == id }
+    }
     func isPinned(_ i: Item) -> Bool { pinned.contains(Self.key(i)) }
     func isHidden(_ i: Item) -> Bool { hidden.contains(Self.key(i)) }
     func note(_ i: Item) -> String? { notes[Self.key(i)] }
@@ -1277,9 +1282,13 @@ final class Store: ObservableObject {
     @Published var history: [String: Int] = (UserDefaults.standard.dictionary(forKey: "waitingHistory") as? [String: Int]) ?? [:]
     private func recordHistory() {
         let day = localDay()
-        history[day] = max(history[day] ?? 0, waiting.prs)
-        let keep = history.keys.sorted().suffix(30)
-        history = history.filter { keep.contains($0.key) }
+        var next = history
+        next[day] = max(next[day] ?? 0, waiting.prs)
+        let keep = Set(next.keys.sorted().suffix(30))
+        next = next.filter { keep.contains($0.key) }
+        // Written only when something changed: a refresh every minute would rewrite the same numbers.
+        guard next != history else { return }
+        history = next
         UserDefaults.standard.set(history, forKey: "waitingHistory")
     }
 
@@ -1428,12 +1437,12 @@ final class Store: ObservableObject {
     private func summarize() {
         defer { batch = [] }
         guard batch.count >= 2 else { return }
-        let states = batch.compactMap { (p, id) in items[p]?.first(where: { $0.id == id }).map { ($0.state, endedByCancel.contains(id)) } }
+        let states = batch.compactMap { (p, id) in items[p]?.first(where: { $0.id == id }).map { ($0.state, endedByCancel.contains("\(p.cli)/\(id)")) } }
         let r = Self.summary(states)
         // The ones that failed (not stopped by the person) are named, and one click starts them again.
         let failedNow = batch.compactMap { (p, id) in
             items[p]?.first(where: { $0.id == id }).flatMap { i -> Item? in
-                if case .failed = i.state, !endedByCancel.contains(id) { return i } else { return nil }
+                if case .failed = i.state, !endedByCancel.contains("\(p.cli)/\(id)") { return i } else { return nil }
             }
         }
         if failedNow.isEmpty {
@@ -1473,7 +1482,7 @@ final class Store: ObservableObject {
         // Waiting for green checks takes no build slot; the job comes back to the queue once they are green.
         while let k = queue.firstIndex(where: { $0.whenGreen && !$0.preview && $0.readyAt <= Date() && waitsFor($0) == nil }) {
             let job = queue.remove(at: k)
-            ciWaits[job.item.id] = Task { await waitForChecks(job) }
+            ciWaits[Self.key(job.item)] = Task { await waitForChecks(job) }
         }
         while running < maxParallel, let k = queue.firstIndex(where: { $0.readyAt <= Date() && waitsFor($0) == nil }) {
             let job = queue.remove(at: k)
@@ -1484,9 +1493,9 @@ final class Store: ObservableObject {
         for job in queue {
             let backend = waitsFor(job)
             if case .failed? = backend.flatMap({ itemNow($0)?.state }) {
-                queue.removeAll { $0.item.id == job.item.id }
+                queue.removeAll { Self.key($0.item) == Self.key(job.item) }
                 // The person stopped the backend: the frontend simply does not go, it did not fail.
-                if let b = backend, endedByCancel.contains(b.id) { set(job.item.platform, job.item.id, .idle); continue }
+                if let b = backend, endedByCancel.contains(Self.key(b)) { set(job.item.platform, job.item.id, .idle); continue }
                 // Never started: skipped, not a failed build in the journal.
                 set(job.item.platform, job.item.id, .skipped(L("Not started: the backend of the same repo failed",
                                                              "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
@@ -1508,7 +1517,7 @@ final class Store: ObservableObject {
         guard job.item.platform == .vercel, !job.preview, let repo = job.item.repo else { return nil }
         return (items[.render] ?? []).first { b in
             guard b.repo == repo else { return false }
-            if b.state.isActive || queue.contains(where: { $0.item.id == b.id }) { return true }
+            if b.state.isActive || queue.contains(where: { Self.key($0.item) == Self.key(b) }) { return true }
             if case .failed = b.state, queueBatch.contains(b.id) { return true }
             return false
         }
@@ -1517,20 +1526,20 @@ final class Store: ObservableObject {
     private var queueBatch: Set<String> = []
 
     func cancel(_ item: Item) {
-        if let k = queue.firstIndex(where: { $0.item.id == item.id }) {
+        if let k = queue.firstIndex(where: { Self.key($0.item) == Self.key(item) }) {
             queue.remove(at: k); set(item.platform, item.id, .idle); return
         }
-        if let t = ciWaits.removeValue(forKey: item.id) {   // still waiting for checks: nothing was started
+        if let t = ciWaits.removeValue(forKey: Self.key(item)) {   // still waiting for checks: nothing was started
             t.cancel(); set(item.platform, item.id, .idle); pump(); return
         }
         guard let id = itemNow(item)?.deployId else {
             show(Toast(text: L("\(item.name) is still starting – try again in a moment", "\(item.name) startet noch – gleich nochmal versuchen"), ok: false))
             return
         }
-        guard !cancelled.contains(item.id) else { return }
+        guard !cancelled.contains(Self.key(item)) else { return }
         // Following goes on until the platform says the deploy ended, so the row can never be
         // left "running" when the cancel fails or comes too late.
-        cancelled.insert(item.id)
+        cancelled.insert(Self.key(item))
         let before = itemNow(item)?.state
         set(item.platform, item.id, .running(L("cancelling", "wird abgebrochen")))
         Task {
@@ -1538,7 +1547,7 @@ final class Store: ObservableObject {
             let args = item.platform == .vercel ? ["vercel", "cancel", id] : [item.platform.cli, "cancel", item.id, id]
             do { _ = try await Tool.run(args) }
             catch {
-                cancelled.remove(item.id)
+                cancelled.remove(Self.key(item))
                 if let before, itemNow(item)?.state == .running(L("cancelling", "wird abgebrochen")) { set(item.platform, item.id, before) }
                 say(L("Could not cancel \(item.name)", "\(item.name) ließ sich nicht abbrechen"), error.localizedDescription, ok: false, project: Self.key(item))
             }
@@ -1556,8 +1565,9 @@ final class Store: ObservableObject {
         guard d.string(forKey: "lastReminder") != today else { return }
         let w = waiting
         guard w.projects > 0 else { return }
-        d.set(today, forKey: "lastReminder")
-        Notify.remind(L("Time for the daily deploy", "Zeit für den täglichen Deploy"), Self.reminderText(w))
+        Notify.remind(L("Time for the daily deploy", "Zeit für den täglichen Deploy"), Self.reminderText(w)) { sent in
+            if sent { UserDefaults.standard.set(today, forKey: "lastReminder") }
+        }
     }
 
     /// "3 PRs in 2 projects wait to go live."; commits when no PR is counted.
@@ -1575,9 +1585,11 @@ final class Store: ObservableObject {
         let d = UserDefaults.standard, cal = Calendar.current
         let hour = d.integer(forKey: "summaryHour")
         if hour > 0, cal.component(.hour, from: now) >= hour, d.string(forKey: "lastSummary") != localDay() {
-            d.set(localDay(), forKey: "lastSummary")
+            let day = localDay()
             let today = Journal.load(limit: .max).filter { cal.isDate($0.at, inSameDayAs: now) }
-            if let line = JournalStats.summaryLine(today) { Notify.remind(L("Today", "Heute"), line, id: "day-summary") }
+            if let line = JournalStats.summaryLine(today) {
+                Notify.remind(L("Today", "Heute"), line, id: "day-summary") { sent in if sent { UserDefaults.standard.set(day, forKey: "lastSummary") } }
+            } else { d.set(day, forKey: "lastSummary") }
         }
         // Monday from 9; a Mac that was off on Monday catches up on the next day it runs.
         let lastWeekly = d.string(forKey: "lastWeekly")
@@ -1585,9 +1597,11 @@ final class Store: ObservableObject {
         let thisMonday = localDay(cal.date(byAdding: .day, value: -backToMonday, to: now) ?? now)
         let weeklyDue = backToMonday == 0 || (lastWeekly.map { $0 < thisMonday } ?? false)
         if d.bool(forKey: "weeklySummary"), weeklyDue, cal.component(.hour, from: now) >= 9, lastWeekly != localDay() {
-            d.set(localDay(), forKey: "lastWeekly")
+            let day = localDay()
             let week = JournalStats.periods(Journal.load(limit: .max), days: 7, now: cal.startOfDay(for: now)).recent
-            if let line = JournalStats.summaryLine(week) { Notify.remind(L("Last week", "Letzte Woche"), line, id: "week-summary") }
+            if let line = JournalStats.summaryLine(week) {
+                Notify.remind(L("Last week", "Letzte Woche"), line, id: "week-summary") { sent in if sent { UserDefaults.standard.set(day, forKey: "lastWeekly") } }
+            } else { d.set(day, forKey: "lastWeekly") }
         }
     }
 
@@ -1674,7 +1688,7 @@ final class Store: ObservableObject {
         let item = job.item, p = item.platform
         if p == .render { queueBatch.insert(item.id) }
         // Cancelled in the row: cancel() already took it out (a new wait for the row may be there now).
-        defer { if !Task.isCancelled { ciWaits[item.id] = nil; pump() } }
+        defer { if !Task.isCancelled { ciWaits[Self.key(item)] = nil; pump() } }
         // The commit that is checked is the one that goes out: a newer push waits for the next deploy.
         guard let repo = item.repo, let commit = job.sha ?? item.headSha else {
             set(p, item.id, .skipped(L("Checks unknown: no commit or repo known", "Checks unbekannt: kein Commit oder Repo bekannt"))); return
@@ -1704,7 +1718,7 @@ final class Store: ObservableObject {
         guard Self.safeArg(item.id) else { set(p, item.id, .failed(L("Not started: the name starts with \"-\"", "Nicht gestartet: der Name beginnt mit \"-\""))); return }
         if p == .render { queueBatch.insert(item.id) }
         set(p, item.id, .starting)
-        cancelled.remove(item.id)
+        cancelled.remove(Self.key(item))
         clearPreview(item)   // an older preview must not be promoted over what this deploy brings
         do {
             let sha = job.sha   // with "only when green" the checked commit, see waitForChecks
@@ -1753,7 +1767,7 @@ final class Store: ObservableObject {
         let p = item.platform
         remember(Followed(platform: p.cli, id: item.id, deployId: deployId,
                           startedAt: (itemNow(item)?.startedAt ?? Date()).timeIntervalSince1970, preview: preview, rolledBack: rolledBack, sha: sha))
-        defer { cancelled.remove(item.id); forget(p, item.id) }   // however it ended, a later deploy can be cancelled again
+        defer { cancelled.remove(Self.key(item)); forget(p, item.id) }   // however it ended, a later deploy can be cancelled again
         var misses = 0
         // A deadline, not a count of rounds: slow status answers must not stretch 40 minutes to hours.
         // On the suspending clock, which stands still while the Mac sleeps: a lid closed for an hour
@@ -1769,7 +1783,7 @@ final class Store: ObservableObject {
                 let wait = clock.now < overdue ? Self.pollSeconds(elapsed: TimeInterval(elapsed), usualMinutes: usual) : 30
                 try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000_000)
             }
-            if !toldOverdue, clock.now >= overdue, !cancelled.contains(item.id) {
+            if !toldOverdue, clock.now >= overdue, !cancelled.contains(Self.key(item)) {
                 toldOverdue = true
                 set(p, item.id, Self.overdueState)
                 say(L("\(item.name) has no result after 40 minutes", "\(item.name) hat nach 40 Minuten kein Ergebnis"),
@@ -1816,7 +1830,7 @@ final class Store: ObservableObject {
     private func ended(_ item: Item, _ s: StatusReply, deployId: String, url: String?, preview: Bool, rolledBack: Bool, sha: String?, resumed: Bool = false, overdue: Bool = false) -> Bool {
         let p = item.platform
         let state = (s.state ?? "").lowercased()
-        if state == "canceled", cancelled.remove(item.id) != nil {
+        if state == "canceled", cancelled.remove(Self.key(item)) != nil {
             set(p, item.id, .failed(L("Cancelled", "Abgebrochen")), cancelled: true); return true
         }
         switch (p, state) {
@@ -1850,7 +1864,7 @@ final class Store: ObservableObject {
             if !Self.knownStates.contains(state), Self.loggedStates.insert(state).inserted {
                 Log.write("\(p.cli) status: unknown state \"\(state)\" for \(item.name), shown as it is")
             }
-            if !cancelled.contains(item.id) { set(p, item.id, overdue ? Self.overdueState : .running(Self.stateName(state))) }
+            if !cancelled.contains(Self.key(item)) { set(p, item.id, overdue ? Self.overdueState : .running(Self.stateName(state))) }
             return false
         }
     }
@@ -2122,7 +2136,7 @@ final class Store: ObservableObject {
             Notify.remove(id)
             let now = self.itemNow(item)
             // A newer deploy (a fix) is queued, waiting or building, or already went out: it is not rolled back.
-            let newer = self.queue.contains { $0.item.id == item.id } || self.ciWaits[item.id] != nil
+            let newer = self.queue.contains { Self.key($0.item) == Self.key(item) } || self.ciWaits[Self.key(item)] != nil
             guard Self.rollbackStillDue(now, checkedId: checkedId, newerQueued: newer) else {
                 self.say(L("Rollback skipped", "Zurückrollen ausgelassen"),
                          L("A newer deploy of \(item.name) is under way or live.", "Ein neuerer Deploy von \(item.name) läuft oder ist live."), ok: true)
@@ -2166,7 +2180,7 @@ final class Store: ObservableObject {
     }
 
     /// Deploys queued or building; an update waits for them instead of quitting in the middle.
-    var deploysBusy: Bool { !queue.isEmpty || running > 0 || !ciWaits.isEmpty || allItems.contains { $0.state.isActive } }
+    var deploysBusy: Bool { !queue.isEmpty || running > 0 || !ciWaits.isEmpty || !rollbackCountdowns.isEmpty || allItems.contains { $0.state.isActive } }
 
     /// States the app knows; any other is shown as the platform sent it, and logged once.
     static var knownStates: Set<String> { DeployState.known }

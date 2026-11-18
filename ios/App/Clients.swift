@@ -338,7 +338,9 @@ struct Vercel {
         return (list, notes)
     }
 
-    func deploy(_ p: PhoneProject) async throws -> String {
+    /// The request body of a production deploy. The commit the person saw (`headSha`) is pinned, so a push that
+    /// landed after the confirmation is not deployed unseen. Nil when the repo is not readable here.
+    static func deployBody(_ p: PhoneProject) throws -> JSON {
         guard let repo = p.repo, let branch = p.branch else { throw APIError(status: 0, message: L("No repository is known for \(p.name).", "Für \(p.name) ist kein Repository bekannt.")) }
         var git: JSON = ["type": "github", "ref": branch]
         if let id = p.repoId { git["repoId"] = id } else {
@@ -346,8 +348,12 @@ struct Vercel {
             guard parts.count >= 2 else { throw APIError(status: 0, message: L("The repository \"\(repo)\" of \(p.name) is not in the form owner/name.", "Das Repository \"\(repo)\" von \(p.name) hat nicht die Form owner/name.")) }
             git["org"] = String(parts[0]); git["repo"] = String(parts[1])
         }
-        let r = try await http.request("POST", t("/v13/deployments"),
-                                       body: ["name": p.name, "project": p.name, "target": "production", "gitSource": git]) as? JSON
+        if let sha = p.headSha, !p.foreignRepo, !sha.isEmpty { git["sha"] = sha }
+        return ["name": p.name, "project": p.name, "target": "production", "gitSource": git]
+    }
+
+    func deploy(_ p: PhoneProject) async throws -> String {
+        let r = try await http.request("POST", t("/v13/deployments"), body: try Self.deployBody(p)) as? JSON
         guard let id = r?.str("id") else { throw APIError(status: 0, message: "Vercel returned no deployment id.") }
         return id
     }
@@ -502,8 +508,14 @@ struct Render {
         return x
     }
 
+    /// The commit the person saw is pinned (`commitId`); without a known head Render builds the branch head.
+    static func deployBody(_ p: PhoneProject) -> JSON {
+        var b = JSON()
+        if let sha = p.headSha, !p.foreignRepo, !sha.isEmpty { b["commitId"] = sha }
+        return b
+    }
     func deploy(_ p: PhoneProject) async throws -> String {
-        let r = try await http.request("POST", "/services/\(p.id)/deploys", body: JSON()) as? JSON
+        let r = try await http.request("POST", "/services/\(p.id)/deploys", body: Self.deployBody(p)) as? JSON
         guard let id = r?.str("id") else { throw APIError(status: 0, message: "Render returned no deploy id.") }
         return id
     }
@@ -611,7 +623,7 @@ struct GitHub {
             p.openPRs = open.count; p.openPRsCapped = open.count == 100
         }
         guard let live = p.liveSha, let head = p.headSha else { return }
-        if live == head { p.pendingCommits = 0; p.pendingPRs = 0; p.pendingTitles = []; return }
+        if live == head { p.pendingCommits = 0; p.pendingPRs = 0; p.pendingPRsAtLeast = false; p.pendingTitles = []; return }
         do {
             let c = try await http.get("/repos/\(repo)/compare/\(live)...\(ref)") as? JSON
             p.pendingCommits = c?.int("ahead_by")
@@ -626,22 +638,26 @@ struct GitHub {
                 if let n = Self.prNumber(m.str("commit.message") ?? "") { numbers.insert(n) } else if let s = m.str("sha") { without.append(s) }
             }
             var extra = Set<Int>()
+            // More than ten commits without a PR number are not looked up one by one: the count is a minimum.
+            var atLeast = without.count > 10
             if !without.isEmpty && without.count <= 10 {
                 // At most four at a time.
                 let http = self.http
-                await withTaskGroup(of: [Int].self) { g in
+                // nil: the lookup failed (rate limit, outage), so that commit's PRs are unknown.
+                await withTaskGroup(of: [Int]?.self) { g in
                     var n = 0
                     for s in without {
-                        if n >= 4, let found = await g.next() { found.forEach { extra.insert($0) }; n -= 1 }
+                        if n >= 4, let found = await g.next() { if let f = found { f.forEach { extra.insert($0) } } else { atLeast = true }; n -= 1 }
                         g.addTask {
-                            ((try? await http.get("/repos/\(repo)/commits/\(s)/pulls")) as? [JSON] ?? []).compactMap { $0.int("number") }
+                            ((try? await http.get("/repos/\(repo)/commits/\(s)/pulls")) as? [JSON])?.compactMap { $0.int("number") }
                         }
                         n += 1
                     }
-                    for await found in g { found.forEach { extra.insert($0) } }
+                    for await found in g { if let f = found { f.forEach { extra.insert($0) } } else { atLeast = true } }
                 }
             }
             p.pendingPRs = numbers.count + extra.count
+            p.pendingPRsAtLeast = atLeast
         } catch let e as APIError where e.status == 404 || e.message.contains("No common ancestor") {
             p.rewritten = true
         } catch {

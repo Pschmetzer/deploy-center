@@ -49,6 +49,16 @@ expect("mask: a webhook URL goes", extra.contains("hooks.slack.com"), false)
 let huge = LogMask.mask([String(repeating: "a.", count: 40000)])?.first ?? ""
 expect("mask: a huge line is cut and says so", huge.contains("not scanned") && huge.count < 5000, true)
 
+// Round 10: an END without its BEGIN, short bearer tokens, more webhooks, ANSI beyond colours.
+// mask-extra-in.txt/-out.txt are held against LogMask only (af_mask in the CLI does not have all of these rules yet).
+let extraIn = LogMask.lines(trimmed(fixture("mask-extra-in.txt"))).map { LogMask.stripANSI($0) }
+let extraWant = LogMask.lines(trimmed(fixture("mask-extra-out.txt")))
+let extraGot = LogMask.mask(extraIn) ?? []
+expect("extra: same number of lines", extraGot.count, extraWant.count)
+for (i, (g, w)) in zip(extraGot, extraWant).enumerated() where g != w { expect("extra: line \(i + 1)", g, w) }
+expect("extra: nothing secret survives", extraGot.filter { $0.contains("SECRET") || $0.contains("AAHdq") || $0.contains("IncomingWebhook") }.count, 0)
+expect("ansi: cursor moves and window titles go too", LogMask.stripANSI("a\u{1b}[2Kb\u{1b}[?25lc\u{1b}]0;t\u{7}d"), "abcd")
+
 // Provider formats.
 let v = LogMask.vercelLines(json("vercel-events.json"))
 expect("vercel: oldest first, blank dropped", v.count, 3)

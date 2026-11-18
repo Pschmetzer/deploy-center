@@ -64,3 +64,10 @@ test("repoKey keeps the host: GitLab's me/app is not GitHub's", () => {
   assert.deepEqual(scopeProjects(both, ["git@gitlab.com:me/app.git"], "repo").projects.map((p) => p.name), ["gl"]);
   assert.deepEqual(scopeProjects(both, ["git@github.com:me/app.git"], "repo").projects.map((p) => p.name), ["gh"]);
 });
+
+test("an ssh host alias still finds the project", () => {
+  const projects = [{ repo: "me/app" }, { repo: "me/other" }, { repo: "gitlab.com/me/app" }];
+  const r = scopeProjects(projects, ["git@github-work:me/app.git"], "repo");
+  assert.deepEqual(r.projects.map((p) => p.repo), ["me/app"]);
+  assert.equal(scopeProjects(projects, ["git@gitlab.com:me/app.git"], "repo").projects.length, 1);
+});
