@@ -6,6 +6,7 @@ Erledigte Punkte stehen unter „Stand“.
 ## Stand
 
 - 14 „Nur Fehlgeschlagene anhaken“ pro Repo-Gruppe und 16 klappbare Gruppenköpfe (merkt sich den Zustand) sind umgesetzt. 15 Kosten in der unteren Leiste ist umgesetzt. 21 Suchfilter `repo:`, `host:` und `is:waiting` sind umgesetzt.
+- 68 (Erststart-Rundgang als Doc `FIRST-START.md`, beschreibt den echten Ablauf) und 70 (`SETTINGS.md` mit Beispiel je Einstellung) sind als Seiten umgesetzt, auch auf Deutsch.
 
 ## Wartung und Repo
 

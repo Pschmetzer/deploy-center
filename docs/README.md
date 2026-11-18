@@ -2,6 +2,8 @@
 
 | Page | For |
 |---|---|
+| [FIRST-START.md](FIRST-START.md) | The first-start tour, step by step |
+| [SETTINGS.md](SETTINGS.md) | The Settings options, with an example each |
 | [SAFE-START.md](SAFE-START.md) | Trying it safely: look first, then one project, then all |
 | [SAFE-DEPLOY.md](SAFE-DEPLOY.md) | Deploys that are safe to batch: green CI, health check with rollback, deploy windows, risk light |
 | [AUTO-DEPLOY.md](AUTO-DEPLOY.md) | What turning auto-deploy off changes, and how to turn it back on |
@@ -51,7 +53,7 @@ A link in the app that leads to a setting (for example the Autofix notice) opens
 ## Language
 
 - English: everything for users. The [README](../README.md), the website (`site/`), this folder's pages listed above, [CHANGELOG.md](../CHANGELOG.md), `examples/`, and code comments.
-- German: [README.de.md](../README.de.md), a translation of the README (a change to the README goes into it too), the legal pages on the website (`site/impressum.html`, `site/datenschutz.html`), [ZAHLEN.md](ZAHLEN.md) (the German original of [NUMBERS.md](NUMBERS.md)), [ERSPARNIS.md](ERSPARNIS.md) (the German version of [SAVINGS.md](SAVINGS.md)), [FAQ.de.md](FAQ.de.md), [SAFE-START.de.md](SAFE-START.de.md) and [TROUBLESHOOTING.de.md](TROUBLESHOOTING.de.md) and [CLI.de.md](CLI.de.md) (the German versions of [FAQ.md](FAQ.md), [SAFE-START.md](SAFE-START.md) and [TROUBLESHOOTING.md](TROUBLESHOOTING.md), and a short German overview of [CLI.md](CLI.md)), and the working notes `IDEEN*.md`.
+- German: [README.de.md](../README.de.md), a translation of the README (a change to the README goes into it too), the legal pages on the website (`site/impressum.html`, `site/datenschutz.html`), [ZAHLEN.md](ZAHLEN.md) (the German original of [NUMBERS.md](NUMBERS.md)), [ERSPARNIS.md](ERSPARNIS.md) (the German version of [SAVINGS.md](SAVINGS.md)), [FAQ.de.md](FAQ.de.md), [SAFE-START.de.md](SAFE-START.de.md), [FIRST-START.de.md](FIRST-START.de.md), [SETTINGS.de.md](SETTINGS.de.md) and [TROUBLESHOOTING.de.md](TROUBLESHOOTING.de.md) and [CLI.de.md](CLI.de.md) (the German versions of [FAQ.md](FAQ.md), [SAFE-START.md](SAFE-START.md) and [TROUBLESHOOTING.md](TROUBLESHOOTING.md), and a short German overview of [CLI.md](CLI.md)), and the working notes `IDEEN*.md`.
 - The app itself speaks English and German. It follows the language the Mac prefers until you pick one in Settings (since 0.9.1).
 
 A change to [NUMBERS.md](NUMBERS.md) goes into [ZAHLEN.md](ZAHLEN.md) too, and a change to [SAVINGS.md](SAVINGS.md) into [ERSPARNIS.md](ERSPARNIS.md).
