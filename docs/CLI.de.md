@@ -12,6 +12,9 @@ Ein Projekt heißt überall gleich: mit seinem Namen, oder als `<plattform>:<nam
 
 ```bash
 deploys doctor                          # was verbunden ist (JSON)
+deploys doctor --text                   # eine Zeile je Prüfung (ok oder das Problem), mit der Lösung
+deploys list --format tsv               # Plattform, Projekt, auto oder manuell, letzter Stand: Tabs, ohne Kopfzeile, für Skripte ohne jq
+deploys idle [--days 90] [--json]       # Projekte ohne Deploy seit N Tagen: Kandidaten zum Pausieren (nur lesend)
 deploys changed                         # was auf GitHub gemergt und nicht live ist: Commits und PRs je Projekt
 deploys deploy-changed                  # das tägliche Deploy: zeigt die Liste; mit --yes startet es
 deploys deploy-changed --when-green --yes  # nur Commits, deren CI bestanden hat (wartet auf laufende Checks)

@@ -421,11 +421,7 @@ struct NextDeployWidget: Widget {
             .supportedFamilies(Self.families)
     }
     static var families: [WidgetFamily] {
-        #if os(iOS)
-        [.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline]
-        #else
         [.systemSmall, .systemMedium]
-        #endif
     }
 }
 
@@ -464,7 +460,7 @@ struct NextDeployContent: View {
                 if let r = run {
                     Text(r.name).font(.headline).lineLimit(1).minimumScaleFactor(0.7).privacySensitive()
                     Text(r.at, style: .relative).font(.title3.weight(.bold).monospacedDigit()).minimumScaleFactor(0.6)
-                    Text(r.platform + " · " + r.at.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary)
+                    Text((r.platform.isEmpty ? "" : r.platform + " · ") + r.at.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary)
                 } else {
                     Spacer(minLength: 0)
                     Text(stale ? w("Out of date: open the app", "Veraltet: App öffnen") : w("No deploy planned", "Kein Deploy geplant"))
@@ -591,7 +587,9 @@ struct DeployWidgets: WidgetBundle {
     var body: some Widget {
         DeployWidget()
         ProblemsWidget()
-        NextDeployWidget()
+        #if os(macOS)
+        NextDeployWidget()    // the Mac app writes the schedule; the iPhone has none to show
+        #endif
         #if os(iOS)
         DeployActivityWidget()
         WaitingControl()

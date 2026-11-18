@@ -55,7 +55,21 @@ extension Store {
         return DeploySnapshot(at: Date(), demo: Demo.on, waitingProjects: w.projects, waitingCommits: w.commits,
                               waitingPRs: w.prs, building: rows.filter { $0.status == .building }.count,
                               failed: rows.filter { $0.status == .failed }.count, byPlatform: Self.counts(rows), saving: snapshotSaving,
-                              projects: Array(rows.prefix(10)), language: isGerman ? "de" : "en")
+                              projects: Array(rows.prefix(10)), language: isGerman ? "de" : "en",
+                              nextScheduled: Self.nextScheduled(german: isGerman))
+    }
+
+    /// The daily deploy (`deploys schedule daily`): its file and its launchd job. Read only; this starts nothing.
+    nonisolated static func nextScheduled(german: Bool, now: Date = Date(), home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                                          env: [String: String] = ProcessInfo.processInfo.environment) -> DeploySnapshot.NextRun? {
+        let config = env["DEPLOYS_CONFIG"].map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".config/deploys")
+        let launch = env["DEPLOYS_LAUNCH_DIR"].map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent("Library/LaunchAgents")
+        guard FileManager.default.fileExists(atPath: launch.appendingPathComponent("app.deploycenter.daily.plist").path),
+              let data = try? Data(contentsOf: config.appendingPathComponent("schedule.json")),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let daily = obj["daily"] as? [String: Any], let at = daily["at"] as? String,
+              let when = DeploySnapshot.nextDaily(at: at, weekdaysOnly: (daily["weekdays"] as? Bool) ?? false, after: now) else { return nil }
+        return .init(name: german ? "Täglicher Deploy" : "Daily deploy", platform: "", at: when)
     }
 
     /// Per platform, sorted by name; platforms with nothing to say are left out.
@@ -89,7 +103,7 @@ extension DeploySnapshot {
     private func dated(_ d: Date) -> DeploySnapshot {
         var c = DeploySnapshot(at: d, demo: demo, waitingProjects: waitingProjects, waitingCommits: waitingCommits,
                                waitingPRs: waitingPRs, building: building, failed: failed, byPlatform: byPlatform,
-                               saving: saving, projects: projects, language: language)
+                               saving: saving, projects: projects, language: language, nextScheduled: nextScheduled)
         c.version = version
         return c
     }

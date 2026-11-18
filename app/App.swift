@@ -488,6 +488,7 @@ struct SettingsView: View {
                 .font(.caption).foregroundStyle(.secondary)
             if let s = store.staleNote("costs") { Text(s).font(.caption).foregroundStyle(Color.warningText) }
         }
+        GoalsSection()
         Section(L("Savings", "Ersparnis")) { SavingsLink() }
     }
 
@@ -677,7 +678,10 @@ struct DeployCenterApp: App {
             // No array of all items: this label is built on every change of the store.
             let active = store.items.values.contains { $0.contains { $0.state.isActive } }
             let failed = !active && store.items.values.contains { $0.contains { if case .failed = $0.state { return true } else { return false } } }
-            Image(systemName: active ? "paperplane.fill" : (failed ? "exclamationmark.triangle.fill" : "paperplane"))
+            // Over the monthly budget at this pace: a dollar sign, unless something more urgent shows.
+            let budget = UserDefaults.standard.double(forKey: "monthlyBudget")
+            let overBudget = budget > 0 && (store.monthPace ?? 0) > budget
+            Image(systemName: active ? "paperplane.fill" : (failed ? "exclamationmark.triangle.fill" : (overBudget ? "dollarsign.circle.fill" : "paperplane")))
                 .task { appDelegate.attach(store); store.boot() }
                 .modifier(OpensSettingsOnRequest(store: store))
                 .accessibilityLabel("Deploy Center")

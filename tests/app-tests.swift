@@ -46,6 +46,17 @@ do {
 }
 expect("waiting list empty", DeployConfirm.waitingList([item(changed: false)]), "")
 expect("waiting list line", DeployConfirm.waitingList([item(changed: true, commits: 2, prs: 0)]).hasPrefix("- ") ? "y" : "n", "y")
+do {
+    var a = item(changed: true, commits: 1, prs: 0)
+    a.lastAt = Date().addingTimeInterval(-60)
+    expect("freshness: just deployed", DeployConfirm.freshnessNote([a]).contains("5") ? "y" : "n", "y")
+    var b = item(changed: true, commits: 1, prs: 0)
+    b.headAt = Date().addingTimeInterval(-40 * 86400)
+    expect("freshness: old commit", DeployConfirm.freshnessNote([b]).contains("30") ? "y" : "n", "y")
+    expect("freshness: nothing", DeployConfirm.freshnessNote([item(changed: false)]), "")
+}
+expect("toggle failed on", SearchQuery.toggledFailed("api"), "api is:failed")
+expect("toggle failed off", SearchQuery.toggledFailed("api is:failed"), "api")
 expect("commits and PRs", Row.waitingText(item(changed: true, commits: 5, prs: 3)), L("5 commits · 3 PRs waiting", "5 Commits · 3 PRs warten"))
 expect("one of each", Row.waitingText(item(changed: true, commits: 1, prs: 1)), L("1 commit · 1 PR waiting", "1 Commit · 1 PR wartet"))
 expect("commits only", Row.waitingText(item(changed: true, commits: 2, prs: 0)), L("2 commits waiting", "2 Commits warten"))
@@ -1014,6 +1025,25 @@ let snapEN = DeploySnapshot(at: Date(), demo: false, waitingProjects: 1, waiting
 var snapNext = snapEN; snapNext.nextScheduled = .init(name: "Atlas-214", platform: "Vercel", at: Date().addingTimeInterval(600))
 expect("a snapshot with a planned deploy round-trips",
        (try? JSONDecoder().decode(DeploySnapshot.self, from: JSONEncoder().encode(snapNext)))?.nextScheduled?.name ?? "", "Atlas-214")
+do {
+    var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+    func at(_ d: String) -> Date { let f = ISO8601DateFormatter(); return f.date(from: d)! }
+    let fri = at("2026-11-20T10:00:00Z")   // a Friday
+    expect("next daily: later today", DeploySnapshot.nextDaily(at: "18:30", weekdaysOnly: false, after: fri, calendar: cal) == at("2026-11-20T18:30:00Z"), true)
+    expect("next daily: already past is tomorrow", DeploySnapshot.nextDaily(at: "09:00", weekdaysOnly: false, after: fri, calendar: cal) == at("2026-11-21T09:00:00Z"), true)
+    expect("next daily: weekdays skip the weekend", DeploySnapshot.nextDaily(at: "09:00", weekdaysOnly: true, after: fri, calendar: cal) == at("2026-11-23T09:00:00Z"), true)
+    expect("next daily: a bad time is none", DeploySnapshot.nextDaily(at: "25:00", weekdaysOnly: false, after: fri, calendar: cal) == nil, true)
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("nx-\(UUID().uuidString)")
+    let cfg = tmp.appendingPathComponent("cfg"), launch = tmp.appendingPathComponent("launch")
+    try? FileManager.default.createDirectory(at: cfg, withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(at: launch, withIntermediateDirectories: true)
+    try? Data(#"{"daily":{"at":"07:15","args":[]}}"#.utf8).write(to: cfg.appendingPathComponent("schedule.json"))
+    let env = ["DEPLOYS_CONFIG": cfg.path, "DEPLOYS_LAUNCH_DIR": launch.path]
+    expect("no launchd job: nothing planned", Store.nextScheduled(german: false, home: tmp, env: env) == nil, true)
+    FileManager.default.createFile(atPath: launch.appendingPathComponent("app.deploycenter.daily.plist").path, contents: Data())
+    expect("a daily job is planned", Store.nextScheduled(german: true, home: tmp, env: env)?.name ?? "", "Täglicher Deploy")
+    try? FileManager.default.removeItem(at: tmp)
+}
 var snapDE = snapEN; snapDE.language = "de"
 expect("a language switch is a change for the widgets", snapEN.sameContent(as: snapDE), false)
 expect("only the time is not", snapEN.sameContent(as: DeploySnapshot(at: .distantPast, demo: false, waitingProjects: 1, waitingCommits: 1, waitingPRs: 0,
@@ -1928,6 +1958,19 @@ do {
     expect("once a day saving", CostInsights.onceADaySaving(c), 3.0)
     expect("series", CostInsights.series(c.days), [1.0, 2.0])
     expect("report masks names", CostInsights.report(c, budget: 0, today: "2026-11-02", names: false).contains("| a |"), false)
+}
+
+// Weekly goal and idle projects.
+do {
+    expect("goal off", WeekGoals.state(count: 3, goal: 0), WeekGoals.State.off)
+    expect("goal ok", WeekGoals.state(count: 2, goal: 5), WeekGoals.State.ok)
+    expect("goal last", WeekGoals.state(count: 5, goal: 5), WeekGoals.State.last)
+    expect("goal over", WeekGoals.state(count: 6, goal: 5), WeekGoals.State.over)
+    let now = Date()
+    let old = JournalEntry(at: now.addingTimeInterval(-100 * 86400), platform: "vercel", name: "old", result: "live", seconds: nil, detail: nil)
+    let fresh = JournalEntry(at: now.addingTimeInterval(-3600), platform: "vercel", name: "new", result: "live", seconds: nil, detail: nil)
+    expect("idle finds the old one", WeekGoals.idle([old, fresh], now: now).map(\.project), ["vercel/old"])
+    expect("idle skips one with a fresh deploy", WeekGoals.idle([old, fresh, JournalEntry(at: now, platform: "vercel", name: "old", result: "live", seconds: nil, detail: nil)], now: now).count, 0)
 }
 
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

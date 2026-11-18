@@ -2,9 +2,27 @@
 
 ## Unreleased
 
+- Docs: `idle`, `list --format tsv` and `doctor --text` in the CLI reference; weekly goal and idle projects in the settings page; the command palette, Copy list and Copy summary on the search and deploy pages (English and German).
+- App: the window subtitle also says how many projects failed their last deploy.
+- App: a row's menu has "Copy summary" (name, platform and what waits, one line).
+- CLI: the state files (autofix, scan, allow, guard) are written through one `atomic_write` helper: whole or not at all.
+- App: the deploy confirmation has "Copy list" for the projects about to go live.
+- App: right-click a repo header for "Show only this repo" (fills the search with `repo:name`) and Collapse/Expand.
+- App: the command palette has "Failed only (on/off)" and one line per saved search (it fills the search box; nothing runs).
+- FAQ: two new answers (journal export, finding failed services), also in German; a shorter title on the GitHub Actions guide.
+- Docs: "Deploying from the app" covers the confirmation warnings, the 7 or 14 day cost chart and the menu bar dollar sign; the widget page says the Mac app now fills "Next scheduled deploy".
+- Raycast: the confirmation of "Deploy All Changed" shows the estimated cost of the next deploy. Nothing starts until you confirm.
+- App: ⌥⌘F shows only failed projects (adds or removes `is:failed` in the search).
+- Settings → Costs: a weekly goal ("at most N deploys", counted from Monday) and a list of projects without a deploy for 90 days.
+
 - Docs: new pages "The deploy journal" (verify, CSV export, monthly report) and "Deploying from the app" (cost in the bar, the confirmation, costs sheet), both also in German.
+- Mac app: the widget snapshot now carries the next run of the daily deploy (`deploys schedule daily`), so the "Next scheduled deploy" widget shows it. Read only.
 - Docs: new page "Search and saved searches" (also in German) and glossary entries for repo group, saved search and merged fix.
 - iPhone: a "project is waiting" notification has a "Deploy with Face ID" action. It opens the app, checks the project still waits and asks Face ID like every deploy; a tap on the note alone starts nothing.
+- App: the deploy confirmation warns about a project deployed less than 5 minutes ago and about a waiting project whose newest commit is over 30 days old.
+- Costs: choose 7 or 14 days for the chart, see the dearest project of the week, and the menu bar icon turns into a dollar sign when the month is over budget at this pace.
+
+- CLI: `deploys idle [--days 90]` lists projects with no deploy for that long (candidates to pause); `deploys list --format tsv` prints plain tab-separated lines for scripts; `deploys doctor` checks that the settings folder is writable.
 - App: a search shows how many rows match ("3/41"); a repo header also counts its failed projects.
 - Docker: `--build-arg WITH_VERCEL=0` builds an image without the Vercel CLI, about half the size (567 MB instead of 1.09 GB), for Render, Netlify and the other hosts.
 - App: "More" → "Collapse all repo groups" / "Expand all repo groups".
@@ -20,7 +38,7 @@
 - Docs: new pages "First start" (the tour, step by step) and "Settings with examples", both also in German.
 - Costs: a 7-day sparkline, a monthly budget per project with a traffic light (right-click a project), a "what if one build a day" estimate and a Markdown report you can copy.
 
-- iPhone and Mac widgets: new widget "Next scheduled deploy" (name and live countdown; lock screen too). It stays empty until the app writes the next run into the snapshot; it never starts a deploy.
+- Mac widgets: new widget "Next scheduled deploy" (name and live countdown; Mac only, because the schedule lives on the Mac). It stays empty until the app writes the next run into the snapshot; it never starts a deploy.
 - CLI: `deploys journal report` no longer stops with a jq error when a journal line has no result or platform; `journal export` also defuses a tab or carriage return at the start of a cell.
 - CLI: `deploys journal export [--since D] [--project p]` writes the deploy history as CSV (spreadsheet formulas defused); `deploys journal report [--month YYYY-MM]` writes a monthly report as Markdown.
 - App: search understands `is:waiting`, `host:render` (same as `platform:`) and `repo:name`.

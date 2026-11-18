@@ -42,7 +42,8 @@
 #   deploys notes <project> [--json]          the same as release notes (Markdown; --json: author as a field)
 #   deploys open <project> [--dashboard]      the site, or its page at the platform
 #   deploys ignore <p> [--undo] | --list      leave a project out of changed and deploy-changed
-#   deploys list [--platform <p>] [--auto|--manual] [--json]   every project on every provider that is on, with its platform
+#   deploys idle [--days 90] [--json]         projects with no deploy for N days (candidates to pause)
+#   deploys list [--platform <p>] [--auto|--manual] [--format tsv] [--json]   every project on every provider that is on, with its platform
 #
 #   deploys verify <p> [--path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
 #     [--rollback-after 10] [--no-rollback] [--watch-timeout 30m]   count down, then roll back (Ctrl-C stops it)
@@ -219,6 +220,12 @@ days_ago() { date -u -v-"$1"d +%Y-%m-%d 2>/dev/null || date -u -d "$1 days ago" 
 b64d() { base64 -D 2>/dev/null || base64 -d; }
 
 die() { echo "${ERED:-}Error:${EPLAIN:-} $*" >&2; exit 1; }
+# atomic_write <file>: stdin becomes the whole file or nothing (a temp file next to it, then mv), mode 600.
+atomic_write() {
+  local t; mkdir -p "$(dirname "$1")" 2>/dev/null; t="$(mktemp "$1.XXXXXX")" || return 1
+  if cat > "$t" && mv "$t" "$1"; then return 0; fi
+  rm -f "$t"; return 1
+}
 # The files a glob names, or nothing when it names none: a bare `cat dir/*.json` fails then, and
 # under pipefail that ended a whole `vercel json` that simply had nothing to compare.
 cat_all() { cat "$@" 2>/dev/null || true; }
@@ -1316,7 +1323,7 @@ AUTOFIX_FAILED='((.platform == "vercel" and ((.latestState // .lastState) == "ER
 AUTOFIX_REPORT_ONLY='(.platform == "render" and ((.lastState == "update_failed") or (.lastState == "pre_deploy_failed")))'
 
 af_state() { [ -s "$AUTOFIX_STATE" ] && cat "$AUTOFIX_STATE" || echo '{"fires":[]}'; }
-af_save() { local t; t="$(mktemp "$CONFIG_DIR/.autofix.XXXXXX")"; cat > "$t" && mv "$t" "$AUTOFIX_STATE"; }
+af_save() { atomic_write "$AUTOFIX_STATE"; }
 af_token() {
   if [ -n "${DEPLOYS_ROUTINE_TOKEN:-}" ]; then printf '%s' "$DEPLOYS_ROUTINE_TOKEN"; return; fi
   security find-generic-password -a "$USER" -s "$AUTOFIX_KEYCHAIN" -w 2>/dev/null || true
@@ -1815,7 +1822,7 @@ SCAN_TOOLS=(Read Grep Glob Edit Write MultiEdit TodoWrite
 
 sc_state() { [ -s "$SCAN_STATE" ] && cat "$SCAN_STATE" || echo '{"runs":[]}'; }
 # Same directory, so mv is atomic.
-sc_save() { local t; mkdir -p "$(dirname "$SCAN_STATE")"; t="$(mktemp "$SCAN_STATE.XXXXXX")"; cat > "$t" && mv "$t" "$SCAN_STATE"; }
+sc_save() { atomic_write "$SCAN_STATE"; }
 sc_slug() { echo "$1" | tr '/' '-' | tr -cd 'A-Za-z0-9._-'; }
 # Every read-change-write of scan.json under one lock: the app reads status while scans write.
 sc_lock() {
@@ -2126,7 +2133,7 @@ GUARD_LABEL="app.deploycenter.guard"
 allow_read() {
   if [ -s "$ALLOW_FILE" ] && jq -e 'type == "object"' "$ALLOW_FILE" >/dev/null 2>&1; then cat "$ALLOW_FILE"; else echo '{}'; fi
 }
-allow_write() { local t; t="$(mktemp "$CONFIG_DIR/.allow.XXXXXX")"; cat > "$t" && mv "$t" "$ALLOW_FILE"; }
+allow_write() { atomic_write "$ALLOW_FILE"; }
 # allow_covers <platform> <name> [now]: an allowance for the project, its platform, or everything is still running.
 allow_covers() {
   allow_read | jq -e --arg k "$1:$2" --arg pk "$1:*" --argjson t "${3:-$(date +%s)}" \
@@ -2237,7 +2244,7 @@ guard_run() {
 }
 
 guard_state() { if [ -s "$GUARD_STATE" ] && jq -e 'type == "object"' "$GUARD_STATE" >/dev/null 2>&1; then cat "$GUARD_STATE"; else echo '{}'; fi; }
-guard_save() { local t; t="$(mktemp "$CONFIG_DIR/.guard.XXXXXX")"; cat > "$t" && mv "$t" "$GUARD_STATE"; }
+guard_save() { atomic_write "$GUARD_STATE"; }
 # On means loaded, as for autofix: a job file launchd dropped is not "on".
 guard_scheduled() { [ -f "$(job_plist "$GUARD_LABEL")" ] && launchctl print "gui/$(id -u)/$GUARD_LABEL" >/dev/null 2>&1; }
 # The job file is there but launchd lost it: load it again (the person turned the guard on).
@@ -3118,9 +3125,10 @@ case "${1:-} ${2:-}" in
     # The versions that matter (jq 1.6+ for the date functions).
     jqv="$(jq --version 2>/dev/null | sed 's/^jq-//' | tr -d '"\\')"
     ro=false; [ -z "$(readonly_from)" ] || ro=true
+    cfgw=false; { mkdir -p "$CONFIG_DIR" 2>/dev/null && [ -w "$CONFIG_DIR" ]; } && cfgw=true
     # jobsMissing: "autofix:gh" = the autofix job's PATH no longer finds gh; deploys <job> schedule on renews it.
-    dj="$(printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s,"perl":%s,"curl":%s,"jobsMissing":%s,"githubRateLimit":%s}' \
-      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" "$(job_missing_json)" "$grl")"
+    dj="$(printf '{"jq":%s%s,"githubCli":%s,"githubLoggedIn":%s,"gitlabCli":%s,"gitlabLoggedIn":%s,"jqVersion":"%s","bashVersion":"%s","readonly":%s,"perl":%s,"curl":%s,"jobsMissing":%s,"githubRateLimit":%s,"configWritable":%s}' \
+      "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" "$(job_missing_json)" "$grl" "$cfgw")"
     # doctor --text: one line per thing, "ok" or "FIX" with the command that fixes it (the JSON stays the default:
     # the app reads it). Without jq there is nothing to render with, so the JSON is printed.
     if [ "${2:-}" = --text ] && [ "$(has jq)" = true ]; then
@@ -3129,6 +3137,7 @@ case "${1:-} ${2:-}" in
         m(.jq; "jq"; "brew install jq"), m(.githubCli; "gh (GitHub CLI)"; "brew install gh"),
         m(.githubLoggedIn; "gh is logged in"; "gh auth login"), m(.perl; "perl"; "install perl (masking and time limits need it)"),
         m(.curl; "curl"; "install curl"),
+        m(.configWritable; "the settings folder is writable"; "chmod u+w the folder in DEPLOYS_CONFIG (default ~/.config/deploys)"),
         "     bash \(.bashVersion), jq \(.jqVersion)",
         (if .readonly then "NOTE observer mode is on: deploys readonly off" else empty end),
         (if .githubRateLimit then "     GitHub budget: \(.githubRateLimit.remaining) of \(.githubRateLimit.limit) calls left" else empty end),
@@ -4250,21 +4259,46 @@ BASH
   "list "*)
     # Every project on every provider that is on and set up, each with its platform.
     # --platform <p>, --auto (a push builds by itself) or --manual narrow it.
-    lplat=""; lauto=""; shift
+    lplat=""; lauto=""; lfmt=table; shift
     while [ $# -gt 0 ]; do
       case "$1" in
         --platform) is_provider "${2:-}" || die "--platform: \"${2:-}\" is not a platform here (deploys providers)"; lplat="$2"; shift ;;
         --auto) lauto=auto ;;
         --manual) lauto=manual ;;
-        *) die "Unknown option $1. Usage: deploys list [--platform <p>] [--auto|--manual] [--json]" ;;
+        --format) case "${2:-}" in tsv|table) lfmt="$2" ;; json) json=1 ;; *) die "--format takes tsv, table or json" ;; esac; shift ;;
+        *) die "Unknown option $1. Usage: deploys list [--platform <p>] [--auto|--manual] [--format tsv|table|json] [--json]" ;;
       esac
       shift
     done
     rc=0; all="$(all_json)" || rc=$?
     all="$(echo "$all" | jq -c --arg p "$lplat" --arg a "$lauto" 'map(select(($p == "" or .platform == $p) and ($a == "" or (($a == "auto") == (.auto == true)))))')"
     if [ "$json" = 1 ]; then echo "$all"; exit "$rc"; fi
+    if [ "$lfmt" = tsv ]; then   # for scripts without jq: no header, tabs, one project per line
+      echo "$all" | jq -r '.[] | [.platform, .name, (if .auto then "auto" else "manual" end), (.lastState // "-")] | @tsv'; exit "$rc"
+    fi
     echo "$all" | jq -r '.[] | [.platform, .name, (if .auto then "auto" else "manual" end), (.lastState // "-")] | @tsv' \
       | (printf 'PLATFORM\tPROJECT\tDEPLOYS\tSTATE\n'; cat) | table
+    exit "$rc" ;;
+
+  "idle "*)
+    # idle [--days 90] [--json]: projects whose live deploy is older than N days (or that never deployed): a candidate
+    # to pause. Nothing is paused here.
+    idays=90; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; idays="$2"; shift ;;
+        *) die "Unknown option $1. Usage: deploys idle [--days 90] [--json]" ;;
+      esac
+      shift
+    done
+    rc=0; all="$(all_json)" || rc=$?
+    idle="$(echo "$all" | jq -c --argjson d "$idays" --argjson now "$(date +%s)" '
+      map(select((.paused // false) | not)) | map({platform, name, lastAt, days:(if .lastAt then (($now - .lastAt) / 86400 | floor) else null end)})
+      | map(select(.days == null or .days >= $d)) | sort_by(-(.days // 1e9))')"
+    if [ "$json" = 1 ]; then echo "$idle"; exit "$rc"; fi
+    if [ "$(echo "$idle" | jq length)" = 0 ]; then echo "No project has been idle for $idays days or more."; exit "$rc"; fi
+    echo "$idle" | jq -r '.[] | [.platform, .name, (if .days == null then "never" else "\(.days) days" end)] | @tsv' \
+      | (printf 'PLATFORM\tPROJECT\tIDLE\n'; cat) | table
     exit "$rc" ;;
 
   "simulate "*|"ledger "*)

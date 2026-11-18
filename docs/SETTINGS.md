@@ -37,6 +37,13 @@ The window Settings has the tabs General, Platforms, Projects, Deploy, Costs, Cl
 | Neutral notifications | On: a notification says "A deploy ended" without the project name, safe on a locked screen. |
 | Ask for Touch ID before risky steps | On: deploying several projects at once, a rollback by hand and allowing auto-deploy ask for your fingerprint or password. The automatic rollback after a failed check does not wait. |
 
+## Costs: goals and idle projects
+
+| Option | Example |
+| --- | --- |
+| Weekly deploy goal | 10: "This week: 7 of 10" turns orange at the last deploy and red when over. 0 turns it off. Counted from Monday. |
+| Idle projects | Lists projects with no deploy for 90 days, as candidates to pause. The same list in Terminal: `deploys idle`. |
+
 ## Budget
 
 `deploys budget set 50` (or the Budget section) caps Vercel build spend at $50 a month: `deploy-changed --yes` stops before going over. Add `--strict` to stop when spending is unknown. See [CLI.md](CLI.md).
