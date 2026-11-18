@@ -1578,6 +1578,8 @@ struct ContentView: View {
         }
         Divider()
         Menu(L("More", "Mehr")) {
+            // One line for a chat or a ticket: name, platform, what waits (names masked in demo mode).
+            Button(L("Copy summary", "Zusammenfassung kopieren")) { Pasteboard.copy(DeployConfirm.line(item, platform: true)) }
             if let repo = item.repo, !Demo.on {
                 Button(L("Open the repo on \(GitHost(item).name)", "Repo auf \(GitHost(item).name) öffnen")) {
                     if let u = URL(string: GitHost.web(repo)) { SafeLink.open(u) }
