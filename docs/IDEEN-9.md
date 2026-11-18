@@ -5,6 +5,7 @@ Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 32 (Geheimnis-Scanner vor dem Deploy: `deploys secrets`, Exit 1 bei Treffer, nutzbar als Sperre in Skripten) ist umgesetzt.
 - 59 Wochenrückblick in den Einstellungen (Kosten). 24 gibt es schon (Bilanz mit aufklappbarer Rechnung je Projekt), 35 steht in der Gesundheitskarte. 30 bleibt offen: das Skript liefert kein Token-Alter.
 - 6 (`trap` ohne `eval`) ist für Temp-Dateien und Sperren umgesetzt (`trap_fn`); die Aufräumer in den Anbieter-Dateien und im Scan behalten ihren Text.
 - 5 (`atomic_write`) ist umgesetzt.

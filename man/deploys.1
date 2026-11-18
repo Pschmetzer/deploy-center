@@ -33,6 +33,7 @@ No key is ever printed.
   deploys rollback <p> [<id>]               production back to the deploy before, on whichever platform it is on
   deploys cancel <p> [<id>]                 stop a build that is running, on whichever platform it is on
   deploys journal verify [\-\-json]           check the chain of the journal (each line holds the hash of the one before)
+  deploys secrets <project>|\-\-stdin   added lines that look like a key or token (exit 1)
   deploys journal export [\-\-since D] [\-\-project <p>]   the journal as CSV
   deploys journal report [\-\-month YYYY\-MM]  the month as Markdown: results and projects
   deploys metrics [\-\-out <file>]            waiting commits, their age, failures: Prometheus text (a textfile for Grafana)
