@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- App: right-click a repo header for "Show only this repo" (fills the search with `repo:name`) and Collapse/Expand.
 - App: the command palette has "Failed only (on/off)" and one line per saved search (it fills the search box; nothing runs).
 - FAQ: two new answers (journal export, finding failed services), also in German; a shorter title on the GitHub Actions guide.
 - Docs: "Deploying from the app" covers the confirmation warnings, the 7 or 14 day cost chart and the menu bar dollar sign; the widget page says the Mac app now fills "Next scheduled deploy".
