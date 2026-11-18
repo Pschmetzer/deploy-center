@@ -8,6 +8,7 @@ Erledigte Punkte stehen unter „Stand“.
 - 60 Wochenziel und 40 ruhende Projekte (aus dem Journal) stehen in den Einstellungen unter Kosten.
 - 67 Kleineres Docker-Image: `WITH_VERCEL=0` lässt die Vercel-CLI weg (567 MB statt 1,09 GB, gemessen).
 - 41 Zeitraum 7/14 Tage im Kostendiagramm ist umgesetzt; 53 (Störungen) gibt es schon im Store.
+- 40 (Projekte ohne Deploy: `deploys idle`) ist umgesetzt.
 - 66 Plan als PR-Kommentar ist umgesetzt (`examples/plan-pr-comment.yml`, kommentiert beim Merge; Kostenschätzung, nichts wird deployt).
 - 65 VS-Code-Statusleiste „N Commits warten“ ist umgesetzt.
 - 64 Raycast und Alfred zeigen die Kosten des nächsten Deploys (Schätzung aus `deploys plan --json`) sind umgesetzt.
