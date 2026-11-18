@@ -3,6 +3,7 @@
 ## Unreleased
 
 - App: a search shows how many rows match ("3/41"); a repo header also counts its failed projects.
+- Docker: `--build-arg WITH_VERCEL=0` builds an image without the Vercel CLI, about half the size (567 MB instead of 1.09 GB), for Render, Netlify and the other hosts.
 - App: "More" → "Collapse all repo groups" / "Expand all repo groups".
 - App: "More" → "Copy list of waiting projects" puts a Markdown list of what waits to go live on the clipboard (names masked in demo mode).
 - App: saved searches (bookmark button next to the search field): keep a search such as `is:failed host:render`, run it again with one click, remove it.

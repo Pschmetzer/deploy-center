@@ -188,6 +188,11 @@ jobs:
         run: docker run --rm -i hadolint/hadolint:v2.12.0 hadolint --failure-threshold error - < integrations/docker/Dockerfile
       - name: Build
         run: docker build -f integrations/docker/Dockerfile -t deploys .
+      - name: Build without the Vercel CLI (WITH_VERCEL=0)
+        run: |
+          docker build --build-arg WITH_VERCEL=0 -f integrations/docker/Dockerfile -t deploys-slim .
+          docker run --rm deploys-slim --version
+          docker run --rm --entrypoint bash deploys-slim -c '! command -v vercel'
       - name: deploys runs and finds its providers (no keys, no network)
         run: |
           docker run --rm deploys --version
