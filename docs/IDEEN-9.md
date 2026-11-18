@@ -5,6 +5,7 @@ Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 30 Token-Alter: Hinweis in der Gesundheitskarte nach 90 Tagen, gezählt ab dem ersten Sehen durch die App (das Skript liefert kein echtes Alter).
 - 59 Wochenrückblick in den Einstellungen (Kosten). 24 gibt es schon (Bilanz mit aufklappbarer Rechnung je Projekt), 35 steht in der Gesundheitskarte. 30 bleibt offen: das Skript liefert kein Token-Alter.
 - 6 (`trap` ohne `eval`) ist für Temp-Dateien und Sperren umgesetzt (`trap_fn`); die Aufräumer in den Anbieter-Dateien und im Scan behalten ihren Text.
 - 5 (`atomic_write`) ist umgesetzt.

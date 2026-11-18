@@ -15,7 +15,7 @@ struct HealthCheck: Identifiable, Equatable {
 
 enum Health {
     /// The checklist, from what is known. `on` are the platforms switched on (`providers`).
-    nonisolated static func checks(_ d: Doctor?, budget: Store.Budget?, on: Set<String>, now: Date = Date()) -> [HealthCheck] {
+    nonisolated static func checks(_ d: Doctor?, budget: Store.Budget?, on: Set<String>, now: Date = Date(), seen: [String: Double] = [:]) -> [HealthCheck] {
         guard let d else {
             return [HealthCheck(id: "script", group: "deploys", ok: false,
                                 text: L("The deploys script did not answer.", "Das deploys-Skript hat nicht geantwortet."),
@@ -68,6 +68,14 @@ enum Health {
             add("renderkey", "Render", d.renderKey, L("A Render API key is stored.", "Ein Render-API-Schlüssel ist gespeichert."),
                 L("No Render API key: no services show.", "Kein Render-API-Schlüssel: keine Dienste erscheinen."), "deploys render set-key")
         }
+        // A login in use for a long time: the app counts from the day it first saw it (see TokenAge).
+        for (id, name, ok) in [("vercel", "Vercel", on.contains("vercel") && d.vercelLoggedIn), ("render", "Render", on.contains("render") && d.renderKey)] where ok {
+            if let n = TokenAge.days(seen, id: id, now: now), n >= TokenAge.limitDays {
+                add("age-" + id, name, false, "", L("The \(name) login has been in use for \(n) days.", "Die \(name)-Anmeldung ist seit \(n) Tagen in Gebrauch."),
+                    L("Consider renewing the token or key; the age counts from when this app first saw it.",
+                      "Token oder Schlüssel erneuern erwägen; das Alter zählt ab dem ersten Sehen durch diese App."))
+            }
+        }
         add("jobs", L("Scheduled jobs", "Geplante Aufgaben"), d.jobsMissing.isEmpty,
             L("Scheduled jobs find their tools.", "Geplante Aufgaben finden ihre Werkzeuge."),
             L("Scheduled jobs miss tools: \(d.jobsMissing.joined(separator: ", ")).", "Geplanten Aufgaben fehlen Werkzeuge: \(d.jobsMissing.joined(separator: ", "))."),
@@ -94,7 +102,7 @@ struct HealthCard: View {
     @State private var checking = false
 
     var body: some View {
-        let checks = Health.checks(store.doctor, budget: store.githubBudget, on: Set(store.enabledProviders.map(\.id)))
+        let checks = Health.checks(store.doctor, budget: store.githubBudget, on: Set(store.enabledProviders.map(\.id)), seen: TokenAge.load())
         Section(L("Health", "Zustand")) {
             ForEach(checks) { c in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -118,6 +126,10 @@ struct HealthCard: View {
                     }
                 }.disabled(checking)
                 CopyButton(title: L("Copy problems", "Probleme kopieren")) { Health.summary(checks) }
+            }
+            Color.clear.frame(height: 0).task(id: store.doctor?.vercelLoggedIn) {
+                guard let d = store.doctor else { return }
+                TokenAge.save(TokenAge.update(TokenAge.load(), signedIn: ["vercel": d.vercelLoggedIn, "render": d.renderKey]))
             }
             Text(L("Key expiry and the platforms' own request limits are not reported by the script yet.",
                    "Ablauf der Schlüssel und die Anfragegrenzen der Plattformen meldet das Skript noch nicht."))

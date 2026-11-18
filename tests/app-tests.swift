@@ -1987,4 +1987,13 @@ do {
     }
 }
 
+// Token age.
+do {
+    let now = Date(), old = now.addingTimeInterval(-100 * 86400).timeIntervalSince1970
+    expect("age days", TokenAge.days(["vercel": old], id: "vercel", now: now) ?? -1, 100)
+    expect("age unknown", TokenAge.days([:], id: "vercel", now: now) == nil, true)
+    expect("update keeps first day", TokenAge.update(["vercel": old], signedIn: ["vercel": true], now: now)["vercel"] ?? 0, old)
+    expect("update forgets signed out", TokenAge.update(["vercel": old], signedIn: ["vercel": false], now: now)["vercel"] == nil, true)
+}
+
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
