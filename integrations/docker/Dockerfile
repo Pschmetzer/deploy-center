@@ -8,6 +8,8 @@
 FROM node:26-bookworm-slim@sha256:5df79989ed685e09f0a98019db4cebfb22fb9df1a53c0161664a011f7ff6b0f1
 
 ARG VERCEL_CLI_VERSION=65.12.1
+# WITH_VERCEL=0 leaves the Vercel CLI out (about 250 MB less): for Render, Netlify and the other hosts that need only curl.
+ARG WITH_VERCEL=1
 
 # bsdextrautils has `column`, used by the table output of status and the lists.
 # gh comes from GitHub's own apt repo (Debian's is far behind), as cli/cli's docs/install_linux.md says.
@@ -20,8 +22,7 @@ RUN apt-get update \
  && apt-get update \
  && apt-get install -y --no-install-recommends gh \
  && rm -rf /var/lib/apt/lists/* \
- && npm install -g --no-fund --no-audit "vercel@${VERCEL_CLI_VERSION}" \
- && npm cache clean --force
+ && if [ "$WITH_VERCEL" = 1 ]; then npm install -g --no-fund --no-audit "vercel@${VERCEL_CLI_VERSION}" && npm cache clean --force; fi
 
 COPY deploys /usr/local/bin/deploys
 # VERSION next to the script, so `deploys --version` names the release.

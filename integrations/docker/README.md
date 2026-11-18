@@ -19,6 +19,9 @@ docker run --rm -e VERCEL_TOKEN -e RENDER_API_KEY -e GH_TOKEN \
 - Only `deploys`, `providers/` and `lib/` are sent to the build (`Dockerfile.dockerignore`), not
   the whole repository.
 - To use another Vercel CLI version: `--build-arg VERCEL_CLI_VERSION=…`.
+- **A smaller image** when you do not use Vercel: `--build-arg WITH_VERCEL=0` leaves the Vercel CLI
+  out. Measured here: 567 MB instead of 1.09 GB. Render, Netlify and the other hosts need only
+  curl; a Vercel command then says that `vercel` is missing.
 
 Tested locally. The image builds, `doctor` runs, and the Vercel CLI reads `VERCEL_TOKEN`: a wrong
 token gets a 403 from Vercel instead of "not logged in". The integration tests also pass inside
