@@ -488,6 +488,7 @@ struct SettingsView: View {
                 .font(.caption).foregroundStyle(.secondary)
             if let s = store.staleNote("costs") { Text(s).font(.caption).foregroundStyle(Color.warningText) }
         }
+        GoalsSection()
         Section(L("Savings", "Ersparnis")) { SavingsLink() }
     }
 

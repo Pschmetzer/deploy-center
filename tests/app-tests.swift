@@ -1960,4 +1960,17 @@ do {
     expect("report masks names", CostInsights.report(c, budget: 0, today: "2026-11-02", names: false).contains("| a |"), false)
 }
 
+// Weekly goal and idle projects.
+do {
+    expect("goal off", WeekGoals.state(count: 3, goal: 0), WeekGoals.State.off)
+    expect("goal ok", WeekGoals.state(count: 2, goal: 5), WeekGoals.State.ok)
+    expect("goal last", WeekGoals.state(count: 5, goal: 5), WeekGoals.State.last)
+    expect("goal over", WeekGoals.state(count: 6, goal: 5), WeekGoals.State.over)
+    let now = Date()
+    let old = JournalEntry(at: now.addingTimeInterval(-100 * 86400), platform: "vercel", name: "old", result: "live", seconds: nil, detail: nil)
+    let fresh = JournalEntry(at: now.addingTimeInterval(-3600), platform: "vercel", name: "new", result: "live", seconds: nil, detail: nil)
+    expect("idle finds the old one", WeekGoals.idle([old, fresh], now: now).map(\.project), ["vercel/old"])
+    expect("idle skips one with a fresh deploy", WeekGoals.idle([old, fresh, JournalEntry(at: now, platform: "vercel", name: "old", result: "live", seconds: nil, detail: nil)], now: now).count, 0)
+}
+
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }
