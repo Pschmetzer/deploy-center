@@ -22,7 +22,7 @@ deploys deploy-changed                  # das tägliche Deploy: zeigt die Liste;
 deploys deploy-changed --when-green --yes  # nur Commits, deren CI bestanden hat (wartet auf laufende Checks)
 deploys deploy-json my-project --no-cache --yes   # Build ohne den Cache des Anbieters (Render, Netlify, DigitalOcean, Coolify; andere Anbieter lehnen es ab)
 deploys deploy mein-projekt             # ein Projekt nach Produktion, auf welcher Plattform auch immer
-deploys plan [--when-green]             # dieselbe Liste mit Schätzung je Build und Summe (startet nichts)
+deploys plan [--when-green] [--since 1d]  # dieselbe Liste mit Schätzung je Build und Summe (startet nichts); --since: nur was sich in dieser Zeit geändert hat
 deploys status                          # was gerade baut und was zuletzt fehlschlug
 deploys watch mein-projekt [--timeout 30m]  # dem neuesten Deploy folgen, bis es live oder fehlgeschlagen ist
 deploys logs mein-projekt               # das Ende des neuesten Build-Logs, Schlüssel und Tokens immer maskiert
