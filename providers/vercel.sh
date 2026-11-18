@@ -315,10 +315,20 @@ vercel_start() {
                   + (if $sha != "" then {sha:$sha} else {} end))}' <<< "$repos" > "$body"
   local errf u rc=0; u="$(with_team /v13/deployments)" || { rm -f "$lock" "$body"; exit 1; }
   errf="$(mktemp)"
-  # Never repeated: a POST without an answer may have started a build already.
-  out="$(vercel_run api "$u" --method POST --input "$body" 2>"$errf")" || rc=$?
+  # A POST without an answer may have started a build already, so it is asked again only after the
+  # list shows no deploy of this project newer than the first try (a list that cannot be read: no retry).
+  local t0 try newest; t0="$(( $(date +%s) * 1000 - 5000 ))"
+  for try in 1 2 3; do
+    rc=0; out="$(vercel_run api "$u" --method POST --input "$body" 2>"$errf")" || rc=$?
+    [ "$rc" != 0 ] || break
+    [ "$try" -lt 3 ] && vercel_transient "$rc" "$errf" || break
+    newest="$(vercel_call "/v6/deployments?app=$target&limit=1" 2>/dev/null | jq -r '.deployments[0].created // empty' 2>/dev/null)" || newest=""
+    [ -n "$newest" ] && [ "$newest" -lt "$t0" ] || break
+    sleep $((try * 3))
+  done
   if [ "$rc" != 0 ]; then
-    local e; e="$(tail -c 400 "$errf")"; rm -f "$errf" "$lock" "$body"
+    # The CLI's own hint lines (<claude-code-hint .../>) are not the reason.
+    local e; e="$(grep -v 'claude-code-hint' "$errf" | tail -c 400)"; rm -f "$errf" "$lock" "$body"
     [ "$rc" != 142 ] || die "Vercel: no answer within ${VERCEL_TIMEOUT} s. A build may have started anyway: look at the list before starting another"
     die "Vercel: $e $(echo "$out" | jq -r '.error.message // empty' 2>/dev/null)"
   fi
