@@ -210,7 +210,9 @@ rm -f "$DEPLOYS_CONFIG/ignored.json"
 # --- badge ---
 RENDER_API_KEY=x badge/badge.sh "$tmp/b" >/dev/null
 expect "one badge per project" "$(cd "$tmp/b" && echo *.svg)" "api.svg app-web.svg site.svg"
-d3="$(date -u -r $((now - 3*86400)) +%Y-%m-%d)"; d1="$(date -u -r $((now - 26*3600)) +%Y-%m-%d)"
+# BSD date takes -r <epoch>, GNU date -d @<epoch> (its -r wants a file).
+day() { date -u -r "$1" +%Y-%m-%d 2>/dev/null || date -u -d "@$1" +%Y-%m-%d; }
+d3="$(day $((now - 3*86400)))"; d1="$(day $((now - 26*3600)))"
 contains "badge: the date and commits, not a relative age" "$(cat "$tmp/b/app-web.svg")" "$d3 · 4 commits waiting"
 contains "badge: Render shows the live commit's date, and a failed newest build" "$(cat "$tmp/b/api.svg")" "$d1 · build failed"
 contains "badge: a failed build is red" "$(cat "$tmp/b/api.svg")" 'fill="#c0392b'
