@@ -2036,4 +2036,12 @@ do {
     expect("quiet hint: same day has no midnight note", SettingsText.quietHint(from: 12, to: 14).contains("12:00"), true)
 }
 
+// Palette shortcuts from notes.
+do {
+    expect("alias: words with @", PaletteAlias.aliases("api for shop @pay, and @x. mail@home @"), ["pay", "x"])
+    expect("alias: none", PaletteAlias.aliases(nil), [String]())
+    expect("alias: texts", PaletteAlias.texts(note: "@pay", "deploy", "deployen"), ["pay deploy", "pay deployen"])
+    expect("alias: found by shortcut", fuzzyScore("pay dep", "pay deploy") != nil, true)
+}
+
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

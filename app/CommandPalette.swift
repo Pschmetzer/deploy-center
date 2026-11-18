@@ -179,7 +179,8 @@ enum PaletteCommands {
                 let title = v == .pin && store.isPinned(i) ? L("unpin", "nicht mehr anheften") : L(words.en, words.de)
                 out.append(PaletteCommand(id: v.rawValue + "|" + Store.key(i), title: title + " " + name,
                                           detail: detail, symbol: symbol,
-                                          texts: ["\(words.en) \(name)", "\(words.de) \(name)"], kind: .project(v, i)))
+                                          texts: ["\(words.en) \(name)", "\(words.de) \(name)"] + PaletteAlias.texts(note: store.note(i), words.en, words.de),
+                                          kind: .project(v, i)))
             }
         }
         // Hidden projects can be found too, with one command: show them again.
@@ -680,8 +681,23 @@ private struct PaletteQuestions: ViewModifier {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { noteItem = nil }
                 Button(L("Save", "Speichern")) { if let i = noteItem { store.setNote(i, noteText) }; noteItem = nil }
             } message: {
-                Text(L("Shown under \(shown(noteItem)). Kept on this Mac only.", "Steht unter \(shown(noteItem)). Bleibt nur auf diesem Mac."))
+                Text(L("Shown under \(shown(noteItem)). Kept on this Mac only. A word with @ in front (like @pay) is a shortcut: type it in the palette, then a command.",
+                       "Steht unter \(shown(noteItem)). Bleibt nur auf diesem Mac. Ein Wort mit @ davor (etwa @pay) ist ein Kürzel: in der Palette eingeben, dann ein Befehl."))
             }
+    }
+}
+
+/// Shortcuts a person writes into a project's note: `@pay` finds that project's commands by "pay deploy".
+enum PaletteAlias {
+    static func aliases(_ note: String?) -> [String] {
+        (note ?? "").split(whereSeparator: { $0.isWhitespace }).compactMap { w in
+            guard w.hasPrefix("@"), w.count > 1 else { return nil }
+            return String(w.dropFirst()).trimmingCharacters(in: .punctuationCharacters)
+        }.filter { !$0.isEmpty }
+    }
+    /// Extra search texts, the shortcut first, so "pay dep" ranks the project's deploy command.
+    static func texts(note: String?, _ en: String, _ de: String) -> [String] {
+        aliases(note).flatMap { ["\($0) \(en)", "\($0) \(de)"] }
     }
 }
 
