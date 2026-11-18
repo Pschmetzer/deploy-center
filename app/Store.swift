@@ -163,6 +163,13 @@ final class Store: ObservableObject {
         }
         return parts.isEmpty ? "" : "\n\n" + parts.joined(separator: " ")
     }
+    /// The short form for the bottom bar: "≈ $0.42" for the known builds, "≈ $0.42+" when some are unknown, "" when none is.
+    nonisolated static func selectionCost(perBuild: [Double?]) -> String {
+        let known = perBuild.compactMap { $0 }
+        guard !known.isEmpty else { return "" }
+        let sum = known.reduce(0, +).formatted(.currency(code: "USD"))
+        return "≈ " + sum + (known.count < perBuild.count ? "+" : "")
+    }
     /// Build costs a month at the pace of the last 7 whole days. Today is not over yet: half a day
     /// of builds would pull the pace down (billing days are UTC, like `today`).
     nonisolated static func monthPace(_ days: [Costs.Day], today: String) -> Double? {
