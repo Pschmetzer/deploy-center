@@ -54,6 +54,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let key = response.notification.request.content.userInfo["project"] as? String
         if response.actionIdentifier == Notes.muteAction { Notes.muteToday(); return }
+        if response.actionIdentifier == Notes.deployAction, let key {
+            await MainActor.run { Task { await store.deployFromNote(key: key) } }
+            return
+        }
         await MainActor.run { if let key { store.openKey = key } }
     }
 }
