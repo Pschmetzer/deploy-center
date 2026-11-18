@@ -9,6 +9,7 @@ import { aiPrompt, firstErrorBlock, isErrorLine, maskSecrets } from "../src/lib/
 import {
   classify,
   costText,
+  idleText,
   commitsText,
   isFailedState,
   lastLines,
@@ -134,4 +135,11 @@ test("costText: the sum of the next deploy, rounded, with a note for unpriced bu
   assert.equal(costText({ builds: 0, usd: 0 }), "");
   assert.equal(costText({ builds: 2, usd: null }), "");
   assert.equal(costText(null), "");
+});
+
+test("idleText: days idle, or never deployed", () => {
+  assert.equal(idleText(142), "142 days idle");
+  assert.equal(idleText(1), "1 day idle");
+  assert.equal(idleText(null), "never deployed");
+  assert.equal(idleText(undefined), "never deployed");
 });

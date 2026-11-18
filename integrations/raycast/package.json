@@ -34,6 +34,13 @@
       "mode": "view"
     },
     {
+      "name": "idle-projects",
+      "title": "Idle Projects",
+      "subtitle": "Deploy Center",
+      "description": "Projects with no deploy for 90 days or more: candidates to pause. Only reads.",
+      "mode": "view"
+    },
+    {
       "name": "deploy-all-changed",
       "title": "Deploy All Changed",
       "subtitle": "Deploy Center",
