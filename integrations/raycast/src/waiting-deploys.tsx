@@ -1,6 +1,7 @@
 import { Action, ActionPanel, Icon, List } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
-import { changed, plural } from "./lib/deploys";
+import { changed, planCost, plural } from "./lib/deploys";
+import { costText } from "./lib/text";
 import { changedItemProps, sortByAge, waitingSentence } from "./lib/changed";
 import { ErrorView, ProjectActions, WarningItem, confirmAndDeploy } from "./lib/ui";
 
@@ -11,6 +12,9 @@ export default function WaitingDeploys() {
     // Errors are shown in the list itself, not as an extra toast.
     onError: () => undefined,
   });
+  // The estimate is read apart from the list, so a slow or failing plan never holds the list back.
+  const { data: plan } = useCachedPromise(planCost, [], { keepPreviousData: true, onError: () => undefined });
+  const cost = costText(plan);
   const list = sortByAge(data?.data ?? []);
   const commits = list.reduce((n, p) => n + (p.pendingCommits ?? 0), 0);
 
@@ -33,7 +37,11 @@ export default function WaitingDeploys() {
           <WarningItem warning={data?.warning} onRetry={revalidate} />
           <List.Section
             title="Waiting"
-            subtitle={list.length ? `${plural(list.length, "project")}, ${plural(commits, "commit")}` : undefined}
+            subtitle={
+              list.length
+                ? `${plural(list.length, "project")}, ${plural(commits, "commit")}${cost ? `, next deploy ${cost}` : ""}`
+                : undefined
+            }
           >
             {list.map((p) => (
               <List.Item

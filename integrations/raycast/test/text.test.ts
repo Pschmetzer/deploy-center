@@ -8,6 +8,7 @@ import type { ChangedProject } from "../src/lib/deploys";
 import { aiPrompt, firstErrorBlock, isErrorLine, maskSecrets } from "../src/lib/log";
 import {
   classify,
+  costText,
   commitsText,
   isFailedState,
   lastLines,
@@ -124,4 +125,13 @@ test("no secret of the shared fixture survives", () => {
         .includes("SECRET"),
     );
   assert.deepEqual(left, []);
+});
+
+test("costText: the sum of the next deploy, rounded, with a note for unpriced builds", () => {
+  assert.equal(costText({ builds: 3, usd: 1.2 }), "≈ $1.20");
+  assert.equal(costText({ builds: 1, usd: 0.333 }), "≈ $0.33");
+  assert.equal(costText({ builds: 2, usd: 0.5, unpriced: 1 }), "≈ $0.50 + 1 unpriced");
+  assert.equal(costText({ builds: 0, usd: 0 }), "");
+  assert.equal(costText({ builds: 2, usd: null }), "");
+  assert.equal(costText(null), "");
 });

@@ -21,6 +21,8 @@ it reads what is waiting and starts a deploy only when you confirm one.
 | **Deploy Project** | Type a project name after the command (`platform:name` when a name is on two platforms). | Deploy (asks first) |
 | **Deploy All Changed** | The same list as Waiting Deploys. Nothing starts until you press ↵ and confirm. | Deploy All (asks first, with every project named) |
 
+The **Waiting Deploys** header also shows what the next deploy would cost ("next deploy ≈ $1.20"), read from `deploys plan --json` apart from the list. It is an estimate; when it cannot be worked out, the list simply shows no figure.
+
 Copy Build Error copies the first error block of the newest build log, with keys and tokens masked
 the same way as the Mac app and the VS Code extension, ready to paste into Claude Code or a chat.
 The extension's texts are English only: Raycast extensions have no localization.
