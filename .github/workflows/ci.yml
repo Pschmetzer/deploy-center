@@ -61,6 +61,8 @@ jobs:
         run: bash tests/ios-rule-tests.sh
       - name: Round 8 tests (masker and small commands)
         run: bash tests/round8-tests.sh
+      - name: Round 9 tests (journal export and report)
+        run: bash tests/round9-tests.sh
       - name: Round 10 tests (file modes, options, paging, hooks, traps, escapes)
         run: bash tests/welle10-tests.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -138,6 +140,8 @@ jobs:
         run: bash tests/ios-rule-tests.sh
       - name: Round 8 tests
         run: bash tests/round8-tests.sh
+      - name: Round 9 tests (journal export and report)
+        run: bash tests/round9-tests.sh
       - name: Round 10 tests
         run: bash tests/welle10-tests.sh
 

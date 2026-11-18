@@ -27,6 +27,8 @@
 #   deploys rollback <p> [<id>]               production back to the deploy before, on whichever platform it is on
 #   deploys cancel <p> [<id>]                 stop a build that is running, on whichever platform it is on
 #   deploys journal verify [--json]           check the chain of the journal (each line holds the hash of the one before)
+#   deploys journal export [--since D] [--project <p>]   the journal as CSV
+#   deploys journal report [--month YYYY-MM]  the month as Markdown: results and projects
 #   deploys metrics [--out <file>]            waiting commits, their age, failures: Prometheus text (a textfile for Grafana)
 #   deploys status [--watch] [--no-github]    what is building or failed (--no-github: no GitHub calls)
 #   deploys watch <p> [<id>] [--preview] [--timeout 30m]   follow a deploy until it is live or failed
@@ -2895,8 +2897,42 @@ case "${1:-} ${2:-}" in
   "journal "*)
     # journal verify [--json]: each line carries the SHA-256 of the line before it (prevHash); a changed or removed
     # line shows as a broken link. The first line is not checked (the app shortens the file from the front).
-    [ "${2:-}" = verify ] || die "Usage: deploys journal verify [--json]"
     jf="$(journal_file)"
+    case "${2:-}" in
+    export)
+      # journal export [--since YYYY-MM-DD] [--project <name>]: the journal as CSV (idea 27). Text that a spreadsheet
+      # could read as a formula (= + - @ first) gets a ' in front.
+      since=""; proj=""; shift 2
+      while [ $# -gt 0 ]; do case "$1" in
+        --since) since="${2:-}"; shift 2 || die "Usage: deploys journal export [--since YYYY-MM-DD] [--project <name>]" ;;
+        --project) proj="${2:-}"; shift 2 || die "Usage: deploys journal export [--since YYYY-MM-DD] [--project <name>]" ;;
+        *) die "Usage: deploys journal export [--since YYYY-MM-DD] [--project <name>]" ;; esac; done
+      [ -z "$since" ] || [[ "$since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "--since wants a date like 2025-01-31."
+      echo "at,platform,name,result,detail"
+      [ -s "$jf" ] || exit 0
+      jq -rR --arg since "$since" --arg proj "$proj" 'fromjson? | select(type == "object")
+        | select($since == "" or ((.at // "") >= $since)) | select($proj == "" or .name == $proj)
+        | [.at, .platform, .name, .result, .detail] | map(. // "" | tostring | if test("^[=+@-]") then "\u0027" + . else . end) | @csv' "$jf"
+      exit 0 ;;
+    report)
+      # journal report [--month YYYY-MM]: what happened in a month, as Markdown (idea 38).
+      mon="$(date +%Y-%m)"; shift 2
+      while [ $# -gt 0 ]; do case "$1" in
+        --month) mon="${2:-}"; shift 2 || die "Usage: deploys journal report [--month YYYY-MM]" ;;
+        *) die "Usage: deploys journal report [--month YYYY-MM]" ;; esac; done
+      [[ "$mon" =~ ^[0-9]{4}-[0-9]{2}$ ]] || die "--month wants a month like 2025-01."
+      printf '# Deploy Center: %s\n\n' "$mon"
+      if [ ! -s "$jf" ]; then echo "No journal yet."; exit 0; fi
+      jq -rRs --arg m "$mon" '[split("\n")[] | fromjson? | select(type == "object") | select((.at // "") | startswith($m))] as $l
+        | if ($l | length) == 0 then "Nothing in this month."
+          else "\($l | length) entries.\n\n| Result | Count |\n| --- | ---: |\n"
+            + ($l | group_by(.result) | map("| \(.[0].result | gsub("[|\n]"; " ")) | \(length) |") | join("\n"))
+            + "\n\n| Project | Platform | Entries |\n| --- | --- | ---: |\n"
+            + ($l | group_by([.name, .platform]) | sort_by(-length) | map("| \(.[0].name | gsub("[|\n]"; " ")) | \(.[0].platform | gsub("[|\n]"; " ")) | \(length) |") | join("\n")) end' "$jf"
+      exit 0 ;;
+    verify) ;;
+    *) die "Usage: deploys journal verify [--json] | export [--since D] [--project p] | report [--month YYYY-MM]" ;;
+    esac
     [ -s "$jf" ] || { if [ "$json" = 1 ]; then echo '{"lines":0,"linked":0,"unlinked":0,"broken":[]}'; else echo "No journal yet."; fi; exit 0; }
     hasher=""; command -v sha256sum >/dev/null 2>&1 && hasher="sha256sum"; [ -n "$hasher" ] || { command -v shasum >/dev/null 2>&1 && hasher="shasum -a 256"; }
     [ -n "$hasher" ] || die "No sha256sum or shasum here: the chain cannot be checked."
