@@ -1044,6 +1044,9 @@ do {
     expect("a daily job is planned", Store.nextScheduled(german: true, home: tmp, env: env)?.name ?? "", "Täglicher Deploy")
     try? FileManager.default.removeItem(at: tmp)
 }
+expect("a11y: saved mark", AutofixSettings.savedLabel(true), L("Saved", "Gespeichert"))
+expect("a11y: not saved mark", AutofixSettings.savedLabel(false), L("Not saved", "Nicht gespeichert"))
+expect("a11y: the two marks differ", AutofixSettings.savedLabel(true) != AutofixSettings.savedLabel(false), true)
 var snapDE = snapEN; snapDE.language = "de"
 expect("a language switch is a change for the widgets", snapEN.sameContent(as: snapDE), false)
 expect("only the time is not", snapEN.sameContent(as: DeploySnapshot(at: .distantPast, demo: false, waitingProjects: 1, waitingCommits: 1, waitingPRs: 0,
