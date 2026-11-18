@@ -71,7 +71,7 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_allowed", "deploys_changed", "deploys_cost", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_guard_status", "deploys_history", "deploys_ledger", "deploys_list", "deploys_logs",
+const READ = ["deploys_allowed", "deploys_changed", "deploys_cost", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_ledger", "deploys_list", "deploys_logs",
   "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
@@ -188,6 +188,13 @@ check("simulate takes days 1–90, default 30", JSON.stringify(listed.find((t) =
   JSON.stringify({ type: "integer", minimum: 1, maximum: 90, default: 30, description: "How many past days to count pushes over (1–90, default 30)." }));
 check("instructions mention the estimates", /deploys_simulate/.test(info?.instructions ?? "") && /estimate/.test(info?.instructions ?? ""), info?.instructions);
 
+writeFileSync(calls, "");
+r = await s.call("deploys_idle");
+check("idle defaults to 90 days and lists the project", !r.error && callLog().trim() === "idle --days 90 --json" && /old-api/.test(r.text) && /"days":90/.test(r.text), r.text + callLog());
+r = await s.call("deploys_idle", { days: 0 });
+check("idle refuses days below 1", r.error === true || /days must be/.test(r.text), r.text);
+r = await s.call("deploys_idle", { days: "7; rm" });
+check("idle refuses a non-number", r.error === true || /days must be/.test(r.text), r.text);
 writeFileSync(calls, "");
 r = await s.call("deploys_cost");
 const cost = r.error ? {} : JSON.parse(r.text);

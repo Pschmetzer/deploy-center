@@ -71,6 +71,7 @@ case "\$*" in
   "notes "*) exit 1 ;;
   "simulate --days "*" --json") jq --argjson d "\$3" '.days = \$d' "$here/../tests/fixtures/savings/simulate-report.json" ;;
   "plan --json") echo '{"estimate":true,"total":{"builds":2,"usd":1.2,"unpriced":0,"minutes":6},"projects":[{"platform":"vercel","name":"app-web","action":"would-deploy","usd":0.8},{"platform":"render","name":"api","action":"would-deploy","usd":0.4},{"platform":"vercel","name":"site","action":"would-skip","usd":null}]}' ;;
+  "idle --days "*" --json") echo "[{\"platform\":\"render\",\"name\":\"old-api\",\"lastAt\":1,\"days\":\$3}]" ;;
   "ledger --json") cat "$here/../tests/fixtures/savings/ledger-report.json" ;;
   "doctor") [ -n "\${FAKE_ENV_DUMP:-}" ] && { env | cut -d= -f1; exit 0; }
     [ -n "\${FAKE_DOCTOR_SLEEP:-}" ] && sleep "\$FAKE_DOCTOR_SLEEP"; echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;

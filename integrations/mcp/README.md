@@ -101,6 +101,7 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_changed` | `deploys changed --json` | Projects with commits or PRs that are not live yet. |
 | `deploys_plan` | `deploys deploy-changed --json` (no `--yes`) | What a daily deploy would start: project, commit, commits waiting, risk. Starts nothing. No cost estimate (see `deploys_simulate`). |
 | `deploys_cost` | `deploys plan --json` | Estimate: what the next deploy would start, a price per project and the sum; window and budget. Starts nothing. |
+| `deploys_idle(days?)` | `deploys idle --days <n> --json` | Projects with no deploy for N days (default 90): candidates to pause. Nothing is paused. |
 | `deploys_status(project?)` | `deploys status --json` | What is building, and the newest state of each project (failed ones too). With `project`: only that one, via `--no-github` (no GitHub calls), to follow a deploy. |
 | `deploys_list` | `deploys list --json` | Every project with its platform, repo, branch and auto-deploy flag. No GitHub calls. |
 | `deploys_risk(project)` | `deploys risk <p> --json` | Green, yellow or red for what waits: migrations, lockfiles, config, size. |
