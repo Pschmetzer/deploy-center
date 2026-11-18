@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Docs: the auto-deploy guard page in German (`GUARD.de.md`).
 - Docs: "Turning auto-deploy off, and back on" in German (`AUTO-DEPLOY.de.md`), linked from the German README.
 - Widgets: the icon column of a project row grows with Dynamic Type.
 - Docs: `deploys secrets` (safe-deploy page and CLI reference), `previews`, the 90-day login note, searching the logs, and a contributor note on `trap_fn` and `atomic_write`.

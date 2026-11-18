@@ -25,7 +25,7 @@ deploys vercel autodeploy-on my-project   # oder --all: verbindet Git wieder aus
 deploys render autodeploy-on my-service   # oder --all: Auto-Deploy „On Commit“
 ```
 
-Für ein paar Stunden (der [Guard](GUARD.md) schaltet es danach wieder aus):
+Für ein paar Stunden (der [Guard](GUARD.de.md) schaltet es danach wieder aus):
 
 ```bash
 deploys autodeploy allow vercel my-project 4
@@ -35,6 +35,6 @@ Vercel braucht das Repo in `~/.config/deploys/vercel-repos.json` (jeder Eintrag 
 
 **Render** im Dashboard: Service → Settings → Build & Deploy → Auto-Deploy → *On Commit*.
 
-Die App zeigt die Zeile dann wieder als **deployt bei jedem Push**, und die Menüleiste zählt sie bei „Auto-Deploy ist noch an für … Projekte“. Ist der [Guard](GUARD.md) an, schaltet er es innerhalb von 30 Minuten wieder aus, außer eine Freigabe deckt es ab.
+Die App zeigt die Zeile dann wieder als **deployt bei jedem Push**, und die Menüleiste zählt sie bei „Auto-Deploy ist noch an für … Projekte“. Ist der [Guard](GUARD.de.md) an, schaltet er es innerhalb von 30 Minuten wieder aus, außer eine Freigabe deckt es ab.
 
 Bevor du Deploy Center deinstallierst, behalte `~/.config/deploys/vercel-repos.json`, bis jedes Vercel-Projekt wieder verbunden ist. Für ein Projekt, das du mit Deploy Center getrennt hast, ist es die einzige Aufzeichnung, woher es deployt hat.
