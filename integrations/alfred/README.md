@@ -10,6 +10,14 @@ projects are building, failed or waiting, from `deploys status --json`. It deplo
 
 Building comes first, then failed, then waiting, then the rest. Typing filters by name.
 
+## What the next deploy costs
+
+A second Script Filter, `deploys-plan.sh` (keyword `dcp`), reads `deploys plan --json`: the first
+item is the sum ("3 builds, about $1.20"), then one item per project with its price. The numbers
+are an estimate (minutes times the rate you set with `deploys prices`); a project without a price
+is counted apart. ↵ shows the project in Deploy Center. It starts nothing. Set it up like the first
+filter, with its own keyword.
+
 ## Set it up
 
 1. Alfred Preferences → Workflows → **+** → Blank Workflow, name it "Deploy Center".

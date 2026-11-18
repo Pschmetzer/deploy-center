@@ -4,6 +4,7 @@
 
 - Website: five guide pages have shorter search titles (and one a shorter description).
 - App: "More" → "Tick the N merged fixes" ticks every project whose autofix PR was merged and is waiting to go live (ticks only; deploying still needs its click).
+- Integrations: Raycast "Waiting Deploys" shows the estimated cost of the next deploy (`deploys plan --json`) in its header, and Alfred gets a second Script Filter, `deploys-plan.sh`, with the sum and a price per project. Both only read; nothing starts.
 - App: the bottom bar shows about what the ticked Vercel builds cost, before you press "Deploy live".
 - Docs: new pages "First start" (the tour, step by step) and "Settings with examples", both also in German.
 - Costs: a 7-day sparkline, a monthly budget per project with a traffic light (right-click a project), a "what if one build a day" estimate and a Markdown report you can copy.
