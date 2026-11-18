@@ -136,6 +136,16 @@ enum SettingsText {
         return lines.joined(separator: "\n")
     }
 
+    /// Under the quiet hours: what the two pickers mean right now, as an example in words.
+    static func quietHint(from: Int, to: Int) -> String {
+        guard from != to else { return L("Off: every notification comes when it happens. Example: 22:00 to 07:00 keeps the night quiet.",
+                                         "Aus: jede Meldung kommt sofort. Beispiel: 22:00 bis 07:00 hält die Nacht ruhig.") }
+        let a = String(format: "%02d:00", from), b = String(format: "%02d:00", to)
+        let over = from > to
+        return L("Quiet from \(a) to \(b)" + (over ? " (over midnight)" : "") + ": failures still come at once, the rest as one note at \(b).",
+                 "Ruhe von \(a) bis \(b)" + (over ? " (über Mitternacht)" : "") + ": Fehler kommen sofort, der Rest gebündelt um \(b).")
+    }
+
     /// Under the budget: when the warning comes, and where the pace is now.
     static func budgetHint(budget: Double, pace: Double?) -> String {
         guard budget > 0 else { return L("No warning while the budget is 0.", "Keine Warnung, solange das Budget 0 ist.") }
