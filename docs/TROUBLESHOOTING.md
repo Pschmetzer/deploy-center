@@ -4,6 +4,8 @@ Each heading is a message the app or `deploys` shows, word for word. Search this
 
 In the app, an error in the log or details window has a **Help** button that opens the matching section here.
 
+`deploys creds` shows where each platform's key comes from, whether it is accepted and how old a keychain key is. `deploys certs` shows which TLS certificates run out soon.
+
 Under **Settings → Platforms → Health**, a Vercel or Render login that has been in use for 90 days gets a note to consider renewing it. The age counts from the day the app first saw the login, so it is a nudge, not a fact about the token.
 
 First steps for any problem:

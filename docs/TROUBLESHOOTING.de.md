@@ -4,6 +4,8 @@ Die deutsche Fassung von [TROUBLESHOOTING.md](TROUBLESHOOTING.md). Die Überschr
 
 In der App hat ein Fehler im Log- oder Detailfenster einen **Hilfe**-Knopf, der den passenden Abschnitt hier öffnet.
 
+`deploys creds` zeigt, woher der Schlüssel jeder Plattform kommt, ob er angenommen wird und wie alt ein Schlüsselbund-Schlüssel ist. `deploys certs` zeigt, welche TLS-Zertifikate bald ablaufen.
+
 Unter **Einstellungen → Plattformen → Health** bekommt eine Vercel- oder Render-Anmeldung, die seit 90 Tagen in Gebrauch ist, den Hinweis, sie zu erneuern. Das Alter zählt ab dem Tag, an dem die App die Anmeldung zuerst sah; es ist ein Anstoß, keine Aussage über das Token.
 
 Erste Schritte bei jedem Problem:

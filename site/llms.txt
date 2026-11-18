@@ -74,3 +74,8 @@
 - [Coolify](https://deploycenter.app/docs/coolify/)
 - [Deploy hooks (any host)](https://deploycenter.app/docs/deploy-hooks/)
 - [All docs as one text file](https://deploycenter.app/docs/llms-full.txt)
+- [First start](https://deploycenter.app/docs/first-start/): the three-step tour, nothing changes until you confirm.
+- [Settings with examples](https://deploycenter.app/docs/settings/)
+- [Search and saved searches](https://deploycenter.app/docs/search/)
+- [Deploying from the app](https://deploycenter.app/docs/deploy-from-app/)
+- [The deploy journal](https://deploycenter.app/docs/journal/): verify, CSV export, monthly report.
