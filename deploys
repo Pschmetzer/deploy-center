@@ -3445,6 +3445,13 @@ autofix:set-token routine list forget-token prompt status sync schedule
 rules:check
 price:set unset
 budget:set off
+journal:verify export report
+idle:--days --json
+creds:--max-age --json
+certs:--days --json
+secrets:--stdin --json
+plan:--when-green --since --json
+list:--platform --auto --manual --format --json
 ignore:--list --undo
 readonly:on off
 config:--refresh
