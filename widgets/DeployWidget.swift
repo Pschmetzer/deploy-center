@@ -421,11 +421,7 @@ struct NextDeployWidget: Widget {
             .supportedFamilies(Self.families)
     }
     static var families: [WidgetFamily] {
-        #if os(iOS)
-        [.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline]
-        #else
         [.systemSmall, .systemMedium]
-        #endif
     }
 }
 
@@ -591,7 +587,9 @@ struct DeployWidgets: WidgetBundle {
     var body: some Widget {
         DeployWidget()
         ProblemsWidget()
-        NextDeployWidget()
+        #if os(macOS)
+        NextDeployWidget()    // the Mac app writes the schedule; the iPhone has none to show
+        #endif
         #if os(iOS)
         DeployActivityWidget()
         WaitingControl()

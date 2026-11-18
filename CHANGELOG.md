@@ -36,7 +36,7 @@
 - Docs: new pages "First start" (the tour, step by step) and "Settings with examples", both also in German.
 - Costs: a 7-day sparkline, a monthly budget per project with a traffic light (right-click a project), a "what if one build a day" estimate and a Markdown report you can copy.
 
-- iPhone and Mac widgets: new widget "Next scheduled deploy" (name and live countdown; lock screen too). It stays empty until the app writes the next run into the snapshot; it never starts a deploy.
+- Mac widgets: new widget "Next scheduled deploy" (name and live countdown; Mac only, because the schedule lives on the Mac). It stays empty until the app writes the next run into the snapshot; it never starts a deploy.
 - CLI: `deploys journal export [--since D] [--project p]` writes the deploy history as CSV (spreadsheet formulas defused); `deploys journal report [--month YYYY-MM]` writes a monthly report as Markdown.
 - App: search understands `is:waiting`, `host:render` (same as `platform:`) and `repo:name`.
 - App: repo headers fold and unfold (remembered), and a header offers "Tick failed N" next to "Tick all" when only some of its projects failed.
