@@ -77,6 +77,8 @@
   "$(error) {0} failed": "$(error) {0} fehlgeschlagen",
   "$(sync~spin) {0} building": "$(sync~spin) {0} im Build",
   "⏳ {0} waiting": "⏳ {0} wartend",
+  "⏳ {0} commit waiting": "⏳ {0} Commit wartet",
+  "⏳ {0} commits waiting": "⏳ {0} Commits warten",
   "$(check) up to date": "$(check) aktuell",
   "failed ({0})": "fehlgeschlagen ({0})",
   "failed": "fehlgeschlagen",

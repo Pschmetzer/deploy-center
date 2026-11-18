@@ -149,12 +149,15 @@ export function summarize(projects: Project[]): Summary {
   };
 }
 
-/** The status bar text: "⏳ 3 waiting", and building / failed when there are any. */
+/** The status bar text: "⏳ 7 commits waiting" (the project count when a commit count is not known for all), and building / failed when there are any. */
 export function statusText(s: Summary): string {
   const parts: string[] = [];
   if (s.failed) parts.push(t("$(error) {0} failed", s.failed));
   if (s.building) parts.push(t("$(sync~spin) {0} building", s.building));
-  if (s.waiting) parts.push(t("⏳ {0} waiting", s.waiting));
+  if (s.waiting) {
+    if (s.commits > 0 && !s.commitsPartial) parts.push(s.commits === 1 ? t("⏳ {0} commit waiting", s.commits) : t("⏳ {0} commits waiting", s.commits));
+    else parts.push(t("⏳ {0} waiting", s.waiting));
+  }
   return parts.length ? parts.join("  ") : t("$(check) up to date");
 }
 

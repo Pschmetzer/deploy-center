@@ -41,7 +41,10 @@ test("summary and status bar text", () => {
   assert.deepEqual(s, { waiting: 3, commits: 4, commitsPartial: true, building: 0, failed: 0 });
   assert.equal(statusText(s), "⏳ 3 waiting");
   assert.equal(statusText({ waiting: 0, commits: 0, commitsPartial: false, building: 0, failed: 0 }), "$(check) up to date");
-  assert.equal(statusText({ waiting: 1, commits: 1, commitsPartial: false, building: 2, failed: 1 }), "$(error) 1 failed  $(sync~spin) 2 building  ⏳ 1 waiting");
+  assert.equal(statusText({ waiting: 1, commits: 1, commitsPartial: false, building: 2, failed: 1 }), "$(error) 1 failed  $(sync~spin) 2 building  ⏳ 1 commit waiting");
+  assert.equal(statusText({ waiting: 2, commits: 7, commitsPartial: false, building: 0, failed: 0 }), "⏳ 7 commits waiting");
+  // A commit count that is not known for every project would understate: the project count shows.
+  assert.equal(statusText({ waiting: 2, commits: 7, commitsPartial: true, building: 0, failed: 0 }), "⏳ 2 waiting");
 });
 
 test("describe", () => {
