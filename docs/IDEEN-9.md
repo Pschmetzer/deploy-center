@@ -5,6 +5,7 @@ Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 35 (GitHub-Rate-Limit mit Countdown, wenn weniger als 300 Anfragen bleiben) und 53 (Störungsbanner mit Links zu den Statusseiten, schließbar) gibt es im Hauptfenster schon; 24 als aufklappbare Rechnung je Projekt in der Bilanz.
 - 34 (Zertifikatswarnung auch für Standard-Domains der Anbieter) ist im CLI umgesetzt: `deploys certs`.
 - 30 (Token-Alter: `deploys creds`, Keychain-Erstelldatum) und 31 (Zugangsdaten je Anbieter: `deploys creds`, zeigt Quelle und ob angenommen; Rechte je Token lesen die Anbieter-APIs nicht einheitlich) sind im CLI umgesetzt.
 - 32 (Geheimnis-Scanner vor dem Deploy: `deploys secrets`, Exit 1 bei Treffer, nutzbar als Sperre in Skripten) ist umgesetzt.
