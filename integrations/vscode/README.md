@@ -5,12 +5,12 @@ in one click. It is the editor side of [Deploy Center](https://deploycenter.app)
 stays off, and nothing builds unless you click **Deploy** and confirm.
 
 Made for AI coding. When Claude Code or Cursor merges a few PRs, the status bar says
-`⏳ 3 waiting`. When a build fails, **Copy for AI** puts the first error block on the clipboard,
+`⏳ 7 commits waiting`. When a build fails, **Copy for AI** puts the first error block on the clipboard,
 ready to paste back into the agent.
 
 ## What it shows
 
-- **Status bar:** `⏳ 3 waiting` for the projects whose repo matches this folder's git remote
+- **Status bar:** `⏳ 7 commits waiting` (`⏳ 3 waiting`, counting projects, when a commit count is not known for all) for the projects whose repo matches this folder's git remote
   (or all projects when none match), plus `1 failed` and `2 building` when there are any.
   Click it for **Deploy** (with confirmation), **Open site**, **Show log** and **Copy release notes**.
 - **Tree "Deploy Center"** in the Explorer: each project with its waiting commits and PRs, how
