@@ -22,6 +22,7 @@ The window Settings has the tabs General, Platforms, Projects, Deploy, Costs, Cl
 | Notify when a deploy ends | A notification "my-shop is live" when the build finishes. |
 | Daily reminder to deploy | 09:00: one notification with the number of commits waiting. |
 | Summary of the day | 17:00: what went live today and what still waits. |
+| Week in review on Mondays | A Monday note: the last 7 days against the 7 before. The same review is shown in Settings → Costs. |
 | Quiet hours (from / to) | 22:00 to 07:00: no notification in between. |
 | Remind again after 30 minutes | A failure you did not open comes back once. |
 

@@ -21,6 +21,7 @@ deploys changed                         # what is merged on GitHub and not live:
 deploys deploy-changed                  # the daily deploy: shows the list; add --yes to start it
 deploys deploy-changed --when-green --yes  # only commits whose CI passed (waits for running checks)
 deploys deploy my-project               # one project to production, on whichever platform it is
+deploys deploy-json my-project --no-cache --yes   # build without the host's cache (Render, Netlify, DigitalOcean, Coolify; other hosts refuse it)
 deploys deploy my-group                 # a group from deploy-center.json, in its order (TEAM.md)
 deploys plan [--when-green]             # the same list with an estimate per build and the sum (starts nothing)
 deploys status                          # what is building now, and what failed last

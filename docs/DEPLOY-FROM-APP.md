@@ -20,6 +20,10 @@ With more than 3 projects, a red risk score or a mark, **Cancel** is the default
 
 After you confirm, **Settings → Deploy → Wait before a deploy starts** can give you a few seconds to cancel. See [SETTINGS.md](SETTINGS.md).
 
+## Looking without deploying
+
+A row's menu has **Check the site now**: one request, with the answer and its time in a note. It only looks; nothing is rolled back. The window subtitle says how many projects failed their last deploy.
+
 ## Copying
 
 **Copy list** in the confirmation puts the projects about to go live on the clipboard. A row's menu has **Copy summary**: name, platform and what waits, in one line.

@@ -22,6 +22,10 @@ Bei mehr als 3 Projekten, rotem Risiko oder einer Markierung ist **Abbrechen** d
 
 Nach dem Bestätigen kann **Einstellungen → Deploy → Warten, bevor ein Deploy startet** dir ein paar Sekunden zum Abbrechen geben. Siehe [SETTINGS.de.md](SETTINGS.de.md).
 
+## Ansehen ohne Deploy
+
+Das Zeilenmenü hat **Seite jetzt prüfen**: eine Anfrage, die Antwort und ihre Zeit stehen in einer Notiz. Es schaut nur; nichts wird zurückgerollt. Der Fenster-Untertitel nennt, wie viele Projekte beim letzten Deploy fehlschlugen.
+
 ## Kopieren
 
 **Liste kopieren** in der Bestätigung legt die Projekte, die live gehen sollen, in die Zwischenablage. Das Zeilenmenü hat **Zusammenfassung kopieren**: Name, Plattform und was wartet, in einer Zeile.
