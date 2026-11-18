@@ -526,6 +526,13 @@ fresh
 expect "vercel map: a repo with a query is refused before anything is written" "$(run "$O" "$E" vercel map web 'me/app?x=1'; grep -c 'Invalid repo' "$E")" $'1\n1'
 expect "vercel map: a branch with .. is refused" "$(run "$O" "$E" vercel map web me/app 'a..b'; grep -c 'Invalid commit or branch' "$E")" $'1\n1'
 fresh
+cat > "$e2e/bin/openssl" <<'OSSL'
+#!/bin/bash
+case "$1" in s_client) cat > /dev/null ;; x509) cat > /dev/null; echo "notAfter=Jan  1 00:00:00 ${CERT_YEAR:-2020} GMT" ;; esac
+OSSL
+chmod +x "$e2e/bin/openssl"
+expect "certs --json: a list (the fake projects have no address: empty)" "$(run "$O" "$E" certs --json; jq -r type "$O")" $'0\narray'
+expect "certs: a bad --days is refused" "$(run "$O" "$E" certs --days x)" "1"
 expect "list --platform render: only Render" "$(run "$O" "$E" list --platform render; grep -c '^vercel ' "$O"; grep -c '^render ' "$O")" $'0\n0\n1'
 expect "list --auto and --manual together are the whole list" \
   "$(run "$O" "$E" list --json; tot="$(jq length "$O")"; run "$O" "$E" list --json --auto >/dev/null; au="$(jq length "$O")"; run "$O" "$E" list --json --manual >/dev/null; ma="$(jq length "$O")"; [ "$tot" = "$((au + ma))" ] && echo same)" $'0\nsame'

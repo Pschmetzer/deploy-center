@@ -42,6 +42,7 @@
 #   deploys notes <project> [--json]          the same as release notes (Markdown; --json: author as a field)
 #   deploys open <project> [--dashboard]      the site, or its page at the platform
 #   deploys ignore <p> [--undo] | --list      leave a project out of changed and deploy-changed
+#   deploys certs [--days 14] [--json]        TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out soon
 #   deploys creds [--max-age 90] [--json]     where each platform's key comes from, if it works, how old a keychain key is
 #   deploys idle [--days 90] [--json]         projects with no deploy for N days (candidates to pause)
 #   deploys list [--platform <p>] [--auto|--manual] [--format tsv] [--json]   every project on every provider that is on, with its platform
@@ -519,6 +520,18 @@ keychain_age_days() {
   [ -n "$ts" ] || return 0
   t="$(date -j -u -f %Y%m%d%H%M%S "$ts" +%s 2>/dev/null || date -u -d "${ts:0:4}-${ts:4:2}-${ts:6:2} ${ts:8:2}:${ts:10:2}:${ts:12:2}" +%s 2>/dev/null)" || return 0
   now="$(date +%s)"; echo $(( (now - t) / 86400 ))
+}
+# cert_days_left <host>: days until the TLS certificate of <host>:443 runs out (negative: it has), nothing when it could
+# not be read. A time limit of 10 seconds when perl is there.
+cert_days_left() {
+  local lim=() end t now
+  command -v openssl >/dev/null 2>&1 || return 0
+  command -v perl >/dev/null 2>&1 && lim=(perl -e 'alarm 10; exec @ARGV')
+  end="$(echo | ${lim[@]+"${lim[@]}"} openssl s_client -connect "$1:443" -servername "$1" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | sed -n 's/^notAfter=//p')"
+  [ -n "$end" ] || return 0
+  t="$(date -j -u -f '%b %e %T %Y %Z' "$end" +%s 2>/dev/null || date -u -d "$end" +%s 2>/dev/null)" || return 0
+  [ -n "$t" ] || return 0
+  now="$(date +%s)"; echo $(( (t - now) / 86400 ))
 }
 key_env_names() { "${1}_meta" | grep -Eo '"keyEnv"[[:space:]]*:[[:space:]]*\[[^]]*\]' | sed -E 's/"keyEnv"[[:space:]]*://' | grep -o '[A-Za-z_][A-Za-z0-9_]*' | paste -sd' ' - | sed 's/ / or /g'; }
 key_of_env() {
@@ -4352,6 +4365,35 @@ BASH
     fi
     echo "$all" | jq -r '.[] | [.platform, .name, (if .auto then "auto" else "manual" end), (.lastState // "-")] | @tsv' \
       | (printf 'PLATFORM\tPROJECT\tDEPLOYS\tSTATE\n'; cat) | table
+    exit "$rc" ;;
+
+  "certs "*)
+    # certs [--days 14] [--json]: the TLS certificate of every project's address, the platform's own (name.vercel.app,
+    # onrender.com ...) as well as a custom domain. Exit 1 when one runs out within --days (or has); a host that cannot be
+    # reached is "unknown", not a failure.
+    cdays=14; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; cdays="$2"; shift ;;
+        *) die "Unknown option $1. Usage: deploys certs [--days 14] [--json]" ;;
+      esac
+      shift
+    done
+    command -v openssl >/dev/null 2>&1 || die "openssl is missing: the certificates cannot be read."
+    rc=0; all="$(all_json)" || rc=$?
+    hosts="$(echo "$all" | jq -r '.[] | .platform as $pl | .name as $n | [.domain, .url] | map(select(. != null and . != "") | sub("^[a-z]+://"; "") | sub("[/:].*$"; "")) | unique | .[] | "\($pl)\t\($n)\t\(.)"')"
+    cj="[]"; cbad=0
+    while IFS=$'\t' read -r pl nm h; do
+      [ -n "$h" ] || continue
+      d="$(cert_days_left "$h")"
+      bad=false; [ -z "$d" ] || [ "$d" -ge "$cdays" ] || { bad=true; cbad=1; }
+      cj="$(echo "$cj" | jq -c --arg pl "$pl" --arg n "$nm" --arg h "$h" --arg d "$d" --argjson b "$bad" '. + [{platform:$pl, name:$n, host:$h, daysLeft:(if $d == "" then null else ($d | tonumber) end), expiring:$b}]')"
+    done <<< "$hosts"
+    if [ "$json" = 1 ]; then echo "$cj"; else
+      echo "$cj" | jq -r '.[] | [.platform, .name, .host, (if .daysLeft == null then "unknown" else "\(.daysLeft) days" end), (if .expiring then "EXPIRES SOON" else "" end)] | @tsv' \
+        | (printf 'PLATFORM\tPROJECT\tHOST\tCERT LEFT\tNOTE\n'; cat) | table
+    fi
+    [ "$cbad" = 0 ] || exit 1
     exit "$rc" ;;
 
   "creds "*)
