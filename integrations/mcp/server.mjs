@@ -483,6 +483,18 @@ function checkIdleDays(v) {
   return v;
 }
 
+function checkRange(v, name, def, max) {
+  if (v === undefined || v === null) return def;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > max) throw new ToolError(`${name} must be a whole number from 1 to ${max}.`);
+  return v;
+}
+
+function checkMonth(v) {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "string" || !/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(v)) throw new ToolError("month must look like 2026-11.");
+  return v;
+}
+
 function checkDays(v) {
   if (v === undefined || v === null) return 30;
   const n = v;
@@ -590,6 +602,48 @@ const tools = [
     annotations: { title: "Idle projects", ...READ },
     json: true,
     run: (a) => jsonListOf(["idle", "--days", String(checkIdleDays(a.days)), "--json"]),
+  },
+  {
+    name: "deploys_certs",
+    description:
+      "The TLS certificate of every project's address: days left, and which ones run out within `days` (deploys certs --json). Read-only. " +
+      "Returns a JSON array of {platform, name, host, daysLeft, expiring}; a host that cannot be reached has daysLeft null (unknown, not a failure). " +
+      "It opens a connection to each host, so it can take a while.",
+    inputSchema: {
+      type: "object",
+      properties: { days: { type: "integer", minimum: 1, maximum: 365, default: 14, description: "Flag certificates that run out within this many days (1–365, default 14)." } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Certificates running out", ...READ },
+    json: true,
+    run: (a) => jsonListOf(["certs", "--days", String(checkRange(a.days, "days", 14, 365)), "--json"]),
+  },
+  {
+    name: "deploys_creds",
+    description:
+      "For each host that is on: where its key comes from (environment, keychain, the host's own login), whether the host accepts it, and how old a keychain key is " +
+      "(deploys creds --json). Read-only. The key itself is never shown. `rotate` is true for a key older than `max_age` days.",
+    inputSchema: {
+      type: "object",
+      properties: { max_age: { type: "integer", minimum: 1, maximum: 3650, default: 90, description: "A keychain key older than this many days is flagged for rotation (default 90)." } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Which keys are in use", ...READ },
+    json: true,
+    run: (a) => jsonListOf(["creds", "--max-age", String(checkRange(a.max_age, "max_age", 90, 3650)), "--json"]),
+  },
+  {
+    name: "deploys_journal_report",
+    description:
+      "What happened in a month, as Markdown, from the local deploy journal (deploys journal report [--month YYYY-MM]). Read-only. " +
+      "Without `month`, the current month. Use it to answer \"what did we deploy in March?\".",
+    inputSchema: {
+      type: "object",
+      properties: { month: { type: "string", pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$", description: "A month like 2026-11 (default: this month)." } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Journal report for a month", ...READ },
+    run: (a) => { const mo = checkMonth(a.month); return textOf(["journal", "report", ...(mo ? ["--month", mo] : [])], { mask: true }); },
   },
   {
     name: "deploys_status",
