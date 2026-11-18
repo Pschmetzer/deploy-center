@@ -1,7 +1,8 @@
 import { Action, ActionPanel, Alert, Color, Icon, List, Toast, confirmAlert, showToast } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { useState } from "react";
-import { ChangedProject, changed, deployChanged, platformLabel, plural } from "./lib/deploys";
+import { ChangedProject, changed, deployChanged, planCost, platformLabel, plural } from "./lib/deploys";
+import { costText } from "./lib/text";
 import { changedItemProps, commitsText, sortByAge } from "./lib/changed";
 import { ErrorView, ProjectActions, WarningItem, errorMessage } from "./lib/ui";
 
@@ -67,9 +68,12 @@ export default function DeployAllChanged() {
     const gone = list.filter((p) => !fresh.some((f) => key(f) === key(p))).map((p) => p.name);
     const lines = fresh.map((p) => `• ${p.name} (${platformLabel(p.platform)}, ${commitsText(p)})`).join("\n");
     const note = gone.length ? `\n\nNo longer waiting, left out: ${gone.join(", ")}` : "";
+    // An estimate for the confirmed run, when the CLI can work it out; never a reason to hold back.
+    const cost = costText(await planCost());
+    const costLine = cost ? `\n\nEstimated cost of the next deploy: ${cost}` : "";
     const ok = await confirmAlert({
       title: `Deploy ${plural(fresh.length, "project")}?`,
-      message: `Each one builds its newest commit to production:\n\n${lines}${note}`,
+      message: `Each one builds its newest commit to production:\n\n${lines}${note}${costLine}`,
       icon: { source: "extension-icon.png" },
       primaryAction: { title: `Deploy ${fresh.length}`, style: Alert.ActionStyle.Destructive },
     });
