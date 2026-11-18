@@ -17,7 +17,7 @@ Erledigte Punkte stehen unter „Stand“.
 - 27 (Verlauf als CSV: `deploys journal export`) und 38 (Monatsbericht als Markdown: `deploys journal report`) sind umgesetzt.
 - 14 „Nur Fehlgeschlagene anhaken“ pro Repo-Gruppe und 16 klappbare Gruppenköpfe (merkt sich den Zustand) sind umgesetzt. 21 Suchfilter `repo:`, `host:` und `is:waiting` sind umgesetzt.
 - 63 Deploy per Face ID aus der Benachrichtigung ist umgesetzt (Aktion „Mit Face ID deployen“, prüft, dass das Projekt noch wartet; Face ID wie bei jedem Deploy).
-- 62 Komplikation für die Apple Watch: nicht umgesetzt. Es gibt kein watchOS-Target; die Lock-Screen-Widgets der iPhone-App erscheinen ab watchOS 11 schon im Smart Stack der Uhr. Ein eigenes Target wäre ein größerer Eingriff ins Xcode-Projekt und braucht Apple-Konto-Schritte.
+- 62 Komplikation für die Apple Watch: bewusst nicht umgesetzt. Es braucht ein watchOS-App-Target mit Widget-Erweiterung in der von Hand gepflegten `project.pbxproj`, dazu WatchConnectivity (iPhone und Uhr teilen keine App Group) und Prüfung auf einer echten Uhr. Ein Fehler dort bricht den iPhone-Build für die Veröffentlichung. Dafür ist ein Mensch mit Xcode und Uhr nötig. (Nur Live Activities der iPhone-App erscheinen von selbst auf der Uhr, Widgets nicht.)
 - Barrierefreiheit und Dynamic Type der iPhone-App und der Widgets geprüft: Beschriftungen, `@ScaledMetric` und Skalierung sind vorhanden, Leer- und Veraltet-Zustände gibt es in allen Widgets.
 
 ## Wartung und Repo
