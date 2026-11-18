@@ -90,7 +90,7 @@ for f in providers/*.sh; do
   # talks HTTP through curl. A read ends (an error with a reason, or a list marked partial); a
   # write is never repeated: at most one POST, and no deploy is reported as started.
   if grep -q '^curl ' "$CALLS"; then
-    for stub in 503 down; do
+    for stub in 503 down empty html; do
       : > "$CALLS"
       export CURLSTUB="$stub"
       lib "$p" "${p}_json" > "$tmp/fo"; frc=$?
@@ -99,6 +99,15 @@ for f in providers/*.sh; do
       elif jq -e 'type == "array"' "$tmp/fo" >/dev/null 2>&1; then verdict=ok; fi
       expect "$p: json under $stub ends with an error or a list" "$verdict" "ok"
       : > "$CALLS"
+      # An empty answer or a proxy's page never reads as a deploy: no TSV line on stdout (watch reads
+      # the first line only), and an error.
+      for v in status latest; do
+        if [ "$v" = status ]; then lib "$p" "${p}_status $CONTRACT_ID $CONTRACT_DEPLOY" > "$tmp/fo2"; else lib "$p" "${p}_latest $CONTRACT_ID" > "$tmp/fo2"; fi
+        frc=$?
+        if [ "$stub" = empty ] || [ "$stub" = html ]; then
+          expect "$p: $v under $stub is an error with no line" "$frc:$(grep -c . "$tmp/fo2")" "1:0"
+        fi
+      done
       lib "$p" "${p}_deploy_json $CONTRACT_ID" > "$tmp/fo"; frc=$?
       unset CURLSTUB
       expect "$p: deploy under $stub is not reported as started" "$frc" "1"

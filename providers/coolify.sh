@@ -426,7 +426,8 @@ coolify_latest_json() {
 # The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
 # The JSON stays in coolify_status_json/_latest_json, and `deploys coolify status|latest` prints it.
 COOLIFY_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
-coolify_status() { local j; j="$(coolify_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$COOLIFY_TSV"; }
+# A deploy asked for by id that comes back empty is an error, not "no deploy" (`watch` would stop at "none").
+coolify_status() { local j; j="$(coolify_status_json "$@")" || return 1; [ -n "$j" ] || { echo "Coolify: no answer for the deployment" >&2; return 1; }; printf '%s\n' "$j" | jq -r "$COOLIFY_TSV"; }
 coolify_latest() { local j; j="$(coolify_latest_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$COOLIFY_TSV"; }
 coolify_cli_status() { coolify_status_json "$@"; }
 coolify_cli_latest() { coolify_latest_json "$@"; }

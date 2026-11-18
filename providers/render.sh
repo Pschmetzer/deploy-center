@@ -295,6 +295,7 @@ render_deploy_json() {
   # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
   # Render has no deploy for cron jobs (HTTP 400): they run the latest commit by themselves.
   svc="$(render_call GET "/services/$id")" || exit 1
+  echo "$svc" | jq -e 'type == "object"' >/dev/null 2>&1 || die "Render: the answer for $name is not a service (nothing was started): $(printf '%s' "$svc" | head -c 200)"
   [ "$(echo "$svc" | jq -r '.type // ""')" != cron_job ] || die "Render cron jobs cannot be deployed; $name runs the latest commit on its next schedule."
   if team_on; then
     # By its name, as the shared config knows it, also when it was given by its srv- id.
@@ -305,19 +306,25 @@ render_deploy_json() {
   lock="$(start_lock "render-$id")" || exit 1
   body="$(jq -nc --arg sha "$sha" --arg cc "$cc" '(if $sha != "" then {commitId:$sha} else {} end) + (if $cc != "" then {clearCache:"clear"} else {} end)')"
   out="$(render_call POST "/services/$id/deploys" "$body")" || { rm -f "$lock"; exit 1; }
+  # A 2xx without a deploy id (an empty body, a proxy's page) is not a started deploy: said, not printed as nothing.
+  echo "$out" | jq -e '.id' >/dev/null 2>&1 || { rm -f "$lock"; die "Render answered without a deploy id: the deploy of $name may not have started. Check: deploys render latest $name"; }
   echo "$out" | jq --arg s "$id" "$RENDER_PHASE"'{id, serviceId:$s, url:null, state:.status, phase:(.status | rphase)}'
 }
 
 # deployId<TAB>phase<TAB>raw state. The service id is resolved by the caller (lookup).
 render_status() {
-  (render_call GET "/services/${1:?service id}/deploys/${2:?deploy id}") \
-    | jq -r "$RENDER_PHASE"'"\(.id)\t\(.status | rphase // "")\t\(.status // "?")"'
+  # Into a variable: an empty answer or a proxy's page must fail here, not print nothing and exit 0
+  # (`watch` reads the first line only).
+  local j; j="$(render_call GET "/services/${1:?service id}/deploys/${2:?deploy id}")" || return 1
+  echo "$j" | jq -e 'type == "object" and .id' >/dev/null 2>&1 || { echo "Render: no deploy in the answer for ${2}" >&2; return 1; }
+  echo "$j" | jq -r "$RENDER_PHASE"'"\(.id)\t\(.status | rphase // "")\t\(.status // "?")"'
 }
 
 # The newest deploy. Render has no previews: --preview changes nothing (the newest is the only kind).
 render_latest() {
-  (render_call GET "/services/${1:?service id}/deploys?limit=1") \
-    | jq -r "$RENDER_PHASE"'(.[0].deploy // {id:"none"}) | "\(.id)\t\(.status | rphase // "")\t\(.status // "?")"'
+  local j; j="$(render_call GET "/services/${1:?service id}/deploys?limit=1")" || return 1
+  echo "$j" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "Render: the answer is not a deploy list" >&2; return 1; }
+  echo "$j" | jq -r "$RENDER_PHASE"'(.[0].deploy // {id:"none"}) | "\(.id)\t\(.status | rphase // "")\t\(.status // "?")"'
 }
 
 render_cancel() {

@@ -461,8 +461,9 @@ netlify_latest_json() {
 
 # The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
 NETLIFY_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // "?")" end'
-netlify_status() { netlify_status_json "$@" | jq -r "$NETLIFY_TSV"; }
-netlify_latest() { netlify_latest_json "$@" | jq -r "$NETLIFY_TSV"; }
+# A failed or empty read fails here (a pipe would hide it and print nothing with exit 0).
+netlify_status() { local j; j="$(netlify_status_json "$@")" || return 1; [ -n "$j" ] || { echo "Netlify: no answer for the deploy" >&2; return 1; }; printf '%s\n' "$j" | jq -r "$NETLIFY_TSV"; }
+netlify_latest() { local j; j="$(netlify_latest_json "$@")" || return 1; [ -n "$j" ] || { echo "Netlify: no answer for the latest deploy" >&2; return 1; }; printf '%s\n' "$j" | jq -r "$NETLIFY_TSV"; }
 # `deploys netlify status|latest` keeps printing the JSON.
 netlify_cli_status() { netlify_status_json "$@"; }
 netlify_cli_latest() { netlify_latest_json "$@"; }
