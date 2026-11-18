@@ -153,8 +153,11 @@ digitalocean_id_of() {
   # An app id (a UUID) needs no listing of every app; a wrong one fails at the next call.
   if [[ "$n" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then echo "$n"; return 0; fi
   id="$(digitalocean_apps | jq -r --arg n "$n" '.[] | select(.id==$n or .spec.name==$n
-    or .live_domain==$n or ([.spec.domains[]?.domain] | index($n))) | .id' | head -n 1)" || return 1
+    or .live_domain==$n or ([.spec.domains[]?.domain] | index($n))) | .id')" || return 1
   [ -n "$id" ] || { echo "No DigitalOcean app named \"$n\". See: deploys digitalocean list" >&2; return 1; }
+  # Two apps may share a name (or a domain after a move): never pick one at random, a deploy would go to the wrong app.
+  [ "$(printf '%s\n' "$id" | wc -l | tr -d ' ')" = 1 ] \
+    || { echo "Several DigitalOcean apps match \"$n\"; use the app id: $(printf '%s' "$id" | tr '\n' ' ')" >&2; return 1; }
   echo "$id"
 }
 # An app id (a UUID, what watch passes every 6 s) as it is, without listing every app again.
