@@ -43,8 +43,10 @@ render_call() {
   key="$(render_key)" || exit 1
   # A hung connection must not hang the app: 10 s to connect, 60 s in all.
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
-  [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
-  local try err hdr; err="$(mktemp)"; hdr="$(mktemp)"
+  # The body through a file (0600), not --data on the command line: it can hold an environment
+  # variable's value, and `ps` shows every argument to every account on this Mac.
+  local try err hdr bodyf=""; err="$(mktemp)"; hdr="$(mktemp)"
+  if [ -n "$body" ]; then bodyf="$(mktemp)"; printf '%s' "$body" > "$bodyf"; args+=(-H "Content-Type: application/json" --data-binary "@$bodyf"); fi
   args+=(-D "$hdr")
   for try in 1 2 3; do
     : > "$hdr"
@@ -60,7 +62,7 @@ render_call() {
     break
   done
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
-  rm -f "$err" "$hdr"
+  rm -f "$err" "$hdr" ${bodyf:+"$bodyf"}
   if [[ "$code" != 2* ]]; then
     local hint="" fix="deploys render set-key"
     [ -n "${RENDER_API_KEY:-}" ] && fix="check RENDER_API_KEY in the environment"
@@ -421,7 +423,10 @@ render_where() {
 }
 
 render_history() {
-  render_call GET "/services/$(render_id_of "$1")/deploys?limit=$2" | jq -r 'def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end; def when: t | if . then strftime("%Y-%m-%d %H:%M") else null end; def took($a; $b): ($a | t) as $x | ($b | t) as $y | if $x and $y then "\($y - $x)s" else "" end;
+  local n="${2:-20}"
+  [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -ge 1 ] || die "History: the number of deploys is 1 to 100, not \"$n\""
+  [ "$n" -le 100 ] || n=100
+  render_call GET "/services/$(render_id_of "$1")/deploys?limit=$n" | jq -r 'def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end; def when: t | if . then strftime("%Y-%m-%d %H:%M") else null end; def took($a; $b): ($a | t) as $x | ($b | t) as $y | if $x and $y then "\($y - $x)s" else "" end;
     .[].deploy | [(.createdAt | when), .status, ((.commit.id // "")[0:7]), (.trigger // ""),
        (if .finishedAt then took(.createdAt; .finishedAt) else "" end)]
     | map(if . == "" or . == null then "-" else . end) | @tsv' \

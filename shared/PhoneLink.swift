@@ -26,6 +26,9 @@ struct LinkedKeys: Codable, Equatable {
     func sameContent(as o: LinkedKeys) -> Bool {
         var a = self, b = o
         a.updated = .distantPast; b.updated = .distantPast; a.once = nil; b.once = nil
+        // To the cent: a figure that moves in the decimals must not rewrite the item (every write syncs to every device).
+        func cents(_ v: Double?) -> Double? { v.map { ($0 * 100).rounded() / 100 } }
+        a.savingPerMonth = cents(a.savingPerMonth); b.savingPerMonth = cents(b.savingPerMonth)
         return a == b
     }
 }
@@ -106,8 +109,11 @@ enum PhoneLink {
         case expired        // made more than qrMaxAge ago: a photo of the screen, not the screen
         case empty          // no Vercel or Render key in it
     }
-    /// The Mac shows the code for a minute; the rest allows for clocks that differ a little.
-    static let qrMaxAge: TimeInterval = 5 * 60
+    /// The Mac shows the code for 60 seconds; the rest is for scanning it and for a little clock difference.
+    /// A photo of the screen is therefore good for 90 seconds at most (it was 5 minutes).
+    static let qrMaxAge: TimeInterval = 90
+    /// A code made "in the future" by this much is a clock that differs (or a made-up time), not a fresh code.
+    static let qrMaxAhead: TimeInterval = 30
 
     static func read(qr: String, now: Date = Date()) -> QRResult {
         let ours = "deploycenter-link:"
@@ -115,7 +121,9 @@ enum PhoneLink {
         guard qr.hasPrefix(qrPrefix) else { return .newerVersion }
         guard let d = Data(base64Encoded: String(qr.dropFirst(qrPrefix.count))),
               let k = try? JSONDecoder().decode(LinkedKeys.self, from: d) else { return .notOurs }
-        guard abs(now.timeIntervalSince(k.updated)) <= qrMaxAge else { return .expired }
+        // Age and clock difference apart: a code from the future is as wrong as an old one, but allowed a little.
+        let age = now.timeIntervalSince(k.updated)
+        guard age <= qrMaxAge, age >= -qrMaxAhead else { return .expired }
         return k.isEmpty ? .empty : .keys(k)
     }
 

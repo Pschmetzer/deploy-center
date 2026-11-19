@@ -43,7 +43,7 @@
   "url": "https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/",
   "mainEntityOfPage": "https://deploycenter.app/guides/skip-vercel-previews-for-bots-and-agents/",
   "datePublished": "2026-11-16",
-  "dateModified": "2026-11-16",
+  "dateModified": "2026-11-18",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -142,7 +142,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Skip Vercel previews for Dependabot and AI agents</h1>
 <p class="answer">Set this as the Ignored Build Step: <code>bash -c 'case "$VERCEL_GIT_COMMIT_REF" in dependabot/*|renovate/*|claude/*|cursor/*) exit 0;; *) exit 1;; esac'</code>. Exit 0 skips the build, exit 1 builds it. Change the prefixes to the ones your tools use.</p>
-<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-18">18 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p>Dependabot, Renovate and coding agents push to their own branches, and each push builds a preview in every connected project. Nobody looks at most of them. A skipped build is cancelled before the build command runs.</p>
 <h2 id="script">1. The script</h2>

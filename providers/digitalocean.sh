@@ -425,8 +425,19 @@ digitalocean_rollback() {
       | (if $i == null then . else .[($i + 1):] end)
       | [.[] | select(.id != $live and (.phase == "SUPERSEDED" or .phase == "ACTIVE"))] | .[:5][] | .id')"
   fi
+  local verr
   for c in $cands; do
-    v="$(digitalocean_call POST "/v2/apps/$id/rollback/validate" "$(jq -nc --arg d "$c" '{deployment_id:$d, skip_pin:true}')")" || continue
+    verr="$(mktemp)"
+    v="$(digitalocean_call POST "/v2/apps/$id/rollback/validate" "$(jq -nc --arg d "$c" '{deployment_id:$d, skip_pin:true}')" 2>"$verr")" || {
+      # "This one cannot be rolled back to" (400/404/409/422) is a reason to try the next candidate;
+      # a bad token, a rate limit, a 5xx or no answer is not: say so, never "no earlier deployment".
+      if grep -qE 'HTTP (400|404|409|422)' "$verr"; then
+        [ -z "$want" ] || { local r; r="$(cat "$verr")"; rm -f "$verr"; die "DigitalOcean: cannot roll $app back to $c: ${r#*-> }"; }
+        rm -f "$verr"; continue
+      fi
+      local r; r="$(cat "$verr")"; rm -f "$verr"; die "${r:-DigitalOcean: could not validate the rollback of $app}"
+    }
+    rm -f "$verr"
     if [ "$(echo "$v" | jq '.valid == true')" = true ]; then
       target="$c"
       echo "$v" | jq -r '.warnings[]? | "DigitalOcean warns: \(.message)"' >&2

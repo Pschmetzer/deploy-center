@@ -259,7 +259,7 @@ netlify_has() { netlify_id_of "$1" 2>/dev/null; }
 netlify_site_deploys() {
   local s="$1" id d
   id="$(echo "$s" | jq -r '.id')"
-  if d="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=50" 2>&1)"; then
+  if d="$(netlify_deploys_paged "$id" 50 2>&1)"; then
     # A 200 that is not a deploy list (a proxy's login page) is this site's error, not an
     # empty --argjson that breaks the whole list.
     d="$(echo "$d" | jq -c 'if type == "array" then {deploys:.} else error("no list") end' 2>/dev/null)" \
@@ -451,11 +451,32 @@ netlify_status_json() {
   echo "$out" | jq "$NETLIFY_JQ"'deploy_out'
 }
 
+# netlify_deploys_paged <site id> <per_page>: the production deploys, newest first. A page that
+# is all "skipped" (the ignore rule skips many pushes) says nothing about the site, so the next
+# page is read too, up to 5 pages, until one has a deploy that was not skipped.
+netlify_deploys_paged() {
+  local id="$1" n="$2" page=1 acc="[]" chunk q
+  while [ "$page" -le 5 ]; do
+    q=""; [ "$page" -gt 1 ] && q="&page=$page"
+    chunk="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=$n$q")" || return 1
+    if ! echo "$chunk" | jq -e 'type == "array"' >/dev/null 2>&1; then
+      # Page 1 not a list: hand it back as it is (the caller reports it); later pages: stop here.
+      [ "$page" -eq 1 ] && { printf '%s' "$chunk"; return 0; }
+      break
+    fi
+    acc="$(jq -nc --argjson a "$acc" --argjson b "$chunk" '$a + $b')"
+    [ "$(echo "$chunk" | jq 'length')" -ge "$n" ] || break
+    [ "$(echo "$chunk" | jq '[.[] | select(((.skipped == true) or (.state == "skipped")) | not)] | length')" -eq 0 ] || break
+    page=$((page + 1))
+  done
+  printf '%s' "$acc"
+}
+
 # The newest production deploy that was not skipped by the ignore rule, as JSON (null: none).
 netlify_latest_json() {
   local id out
   id="$(netlify_id_fast "$1")" || die "Netlify site $1 not found"
-  out="$(netlify_call GET "/sites/$id/deploys?production=true&per_page=20")" || die "Netlify: could not read the deploys of $1"
+  out="$(netlify_deploys_paged "$id" 20)" || die "Netlify: could not read the deploys of $1"
   echo "$out" | jq "$NETLIFY_JQ"'map(select(skipped | not)) | .[0] // null | if . then deploy_out else null end'
 }
 
@@ -482,8 +503,11 @@ netlify_cli_previews() {
 
 # netlify_history <site> <n>: the last n deploys, a table (WHEN (UTC), STATE, COMMIT, TRIGGER = context, TOOK).
 netlify_history() {
+  local n="${2:-20}"
+  [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -ge 1 ] || die "History: the number of deploys is 1 to 100, not \"$n\""
+  [ "$n" -le 100 ] || n=100
   local id; id="$(netlify_id_of "$1")" || return 1
-  netlify_call GET "/sites/$id/deploys?per_page=$2" | jq -r 'def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end; def when: t | if . then strftime("%Y-%m-%d %H:%M") else null end; def took($a; $b): ($a | t) as $x | ($b | t) as $y | if $x and $y then "\($y - $x)s" else "" end;
+  netlify_call GET "/sites/$id/deploys?per_page=$n" | jq -r 'def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end; def when: t | if . then strftime("%Y-%m-%d %H:%M") else null end; def took($a; $b): ($a | t) as $x | ($b | t) as $y | if $x and $y then "\($y - $x)s" else "" end;
     .[] | [(.created_at | when), (.state // "?"), ((.commit_ref // "")[0:7]), (.context // ""),
        (if .published_at then took(.created_at; .published_at) else "" end)]
     | map(if . == "" or . == null then "-" else . end) | @tsv' \

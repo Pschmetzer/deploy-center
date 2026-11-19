@@ -161,8 +161,8 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             if let m = store.message { Toast(store: store, text: m) }
         }
-        .sensoryFeedback(trigger: store.message) { _, new in
-            guard new != nil else { return nil }
+        .sensoryFeedback(trigger: store.messageSerial) { _, _ in
+            guard store.message != nil else { return nil }
             return store.messageIsError ? .error : .success
         }
         // App lock (optional) and the cover in the app switcher: nothing of the list shows.
@@ -247,7 +247,7 @@ struct Toast: View {
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16).padding(.bottom, 12)
         .accessibilityElement(children: .contain)
-        .task(id: text) {
+        .task(id: store.messageSerial) {
             AccessibilityNotification.Announcement(store.messageIsError ? L("Error: ", "Fehler: ") + text : text).post()
             guard !store.messageIsError, !UIAccessibility.isVoiceOverRunning else { return }
             try? await Task.sleep(for: .seconds(5))
@@ -522,6 +522,7 @@ struct Row: View {
         HStack(spacing: 12) {
             if let r = running {
                 ProgressView().frame(width: iconWidth).accessibilityLabel(PhoneProject.stateWord(r))
+                    .accessibilityValue(p.latestAt.map { relative($0) } ?? "")
             } else {
                 Image(systemName: p.icon).foregroundStyle(p.tint).font(.title3).frame(width: iconWidth).accessibilityHidden(true)
             }
@@ -647,7 +648,8 @@ struct ProjectDetail: View {
         }
         .navigationTitle(p.name)
         .refreshable { await store.reload() }
-        .userActivity(Spotlight.activity, isActive: !store.demo) { a in
+        // With the app lock on, the project's name does not leave for other devices through Handoff.
+        .userActivity(Spotlight.activity, isActive: !store.demo && !PhoneStore.lockOnOpen) { a in
             a.title = p.name; a.userInfo = ["project": p.key]
             a.isEligibleForHandoff = true; a.isEligibleForSearch = false
         }
@@ -701,6 +703,11 @@ struct DeployHistoryView: View {
                         Button(L("Try again", "Noch einmal versuchen")) { Task { await load() } }
                     }
                 } else if records.isEmpty { Text(L("No deploys yet.", "Noch keine Deploys.")).foregroundStyle(.secondary) }
+                else if loadFailed {
+                    // The refresh failed: what is shown is the last read, and the list says so.
+                    Label(L("Could not refresh. This is the last state read.", "Konnte nicht aktualisieren. Das ist der zuletzt gelesene Stand."),
+                          systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(Color.warningText)
+                }
                 ForEach(records) { r in
                     NavigationLink { BuildLogView(store: store, project: project, record: r) } label: { row(r) }
                         .swipeActions {
@@ -847,6 +854,7 @@ struct SettingsView: View {
     @State private var testResults: [String] = []
     @State private var saveFailed = false
     @State private var confirmRemove = false
+    @State private var confirmDemo = false
     @State private var githubScopes: [String]?
     @State private var testing = false
 
@@ -906,7 +914,11 @@ struct SettingsView: View {
                            "Fragt beim Öffnen nach \(store.unlockName) und verdeckt die Liste im App-Umschalter."))
                 }
                 Section {
-                    Toggle(L("Demo mode (made-up projects)", "Demo-Modus (erfundene Projekte)"), isOn: $store.demo)
+                    // Turning it on replaces the real list with made-up projects: with keys in place, ask first.
+                    Toggle(L("Demo mode (made-up projects)", "Demo-Modus (erfundene Projekte)"),
+                           isOn: Binding(get: { store.demo }, set: { on in
+                               if on && store.hasAccount { confirmDemo = true } else { store.demo = on }
+                           }))
                     Toggle(L("Notify when something waits or fails", "Melden, wenn etwas wartet oder fehlschlägt"), isOn: $notify)
                         .onChange(of: notify) { _, on in
                             // Switched back off when iOS says no; the system settings can change that later.
@@ -975,6 +987,13 @@ struct SettingsView: View {
             .task(id: store.token(.github)) { githubScopes = await GitHub(token: store.token(.github)).scopes() }
             // A QR code scanned from here writes the keychain: read it again, or "Done" would save the old fields over it.
             .sheet(isPresented: $connect, onDismiss: loadFields) { ConnectMacView(store: store) }
+            .confirmationDialog(L("Switch to demo data?", "Zu Demodaten wechseln?"), isPresented: $confirmDemo, titleVisibility: .visible) {
+                Button(L("Show demo projects", "Demo-Projekte zeigen")) { store.demo = true }
+                Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+            } message: {
+                Text(L("The list shows made-up projects until you switch it off. Your keys stay.",
+                       "Die Liste zeigt erfundene Projekte, bis du es ausschaltest. Deine Schlüssel bleiben."))
+            }
             .confirmationDialog(L("Remove all keys from this iPhone?", "Alle Schlüssel von diesem iPhone entfernen?"),
                                 isPresented: $confirmRemove, titleVisibility: .visible) {
                 Button(L("Remove", "Entfernen"), role: .destructive) {
@@ -1038,7 +1057,10 @@ struct SettingsView: View {
 
     private func save() -> Bool {
         guard dirty else { return true }
-        let ok = Key.allCases.map { store.setOwnToken($0, fields[$0] ?? "") }.allSatisfy { $0 }
+        // Only what was changed: a key that could not be read (locked keychain) shows as an empty field,
+        // and writing that field back would delete it.
+        let ok = Key.allCases.filter { (fields[$0] ?? "") != (saved[$0] ?? "") }
+            .map { store.setOwnToken($0, fields[$0] ?? "") }.allSatisfy { $0 }
         Background.schedule()
         Task { await store.reload() }
         if !ok { saveFailed = true; return false }

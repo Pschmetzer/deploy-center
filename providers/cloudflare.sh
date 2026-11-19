@@ -298,15 +298,21 @@ cloudflare_off() {
 }
 
 cloudflare_off_one() {
-  local p="$1" cfg
+  local p="$1" cfg had
   cfg="$(cf_config "$p")" || exit 1
   [ "$cfg" != null ] || die "Cloudflare: $p is not connected to Git (direct upload): pushes do not build it"
   if [ "$(echo "$cfg" | jq '(.production_deployments_enabled == false) and (.preview_deployment_setting == "none")')" = true ]; then
     echo "Cloudflare: $p was already manual"; return
   fi
+  # The note is written first (a crash between the two must not lose the old settings), but a
+  # PATCH that fails takes it back: `on` would restore values from a state that never changed.
+  had="$(cf_state | jq -r --arg p "$p" 'if .off[$p] then "yes" else "no" end')"
   cf_state_set '.off[$p] = (.off[$p] // ($c | {production_deployments_enabled:(.production_deployments_enabled != false),
       preview_deployment_setting:(.preview_deployment_setting // "all"), offAt:(now|floor)}))' --arg p "$p" --argjson c "$cfg"
-  cf_patch_config "$p" '{"production_deployments_enabled":false,"preview_deployment_setting":"none"}'
+  if ! ( cf_patch_config "$p" '{"production_deployments_enabled":false,"preview_deployment_setting":"none"}' ); then
+    [ "$had" = yes ] || cf_state_set 'del(.off[$p])' --arg p "$p"
+    exit 1
+  fi
   cfg="$(cf_config "$p")" || exit 1
   [ "$(echo "$cfg" | jq '(.production_deployments_enabled == false) and (.preview_deployment_setting == "none")')" = true ] \
     || die "Cloudflare: asked to turn off push-deploys for $p, but it still shows them on"
@@ -390,9 +396,11 @@ cloudflare_deploy_json() {
   echo "$out" | jq --argjson tg "$toggled" --arg b "$branch" "$CF_PHASE"' cf_dep | {id, url, state:cf_raw, phase, branch:$b, toggled:$tg}'
 }
 
+# Production unless --preview: a newer preview deployment must not pass as the live state.
 cloudflare_latest_json() {
   # A failed call is that failure (cf_call says why); no deployment is null, not an error.
-  local out; out="$(cf_call GET "$(cf_proj "$1")/deployments?per_page=1")" || exit 1
+  local out env="&env=production"; [ "${2:-}" = --preview ] && env=""
+  out="$(cf_call GET "$(cf_proj "$1")/deployments?per_page=1$env")" || exit 1
   printf '%s' "$out" | jq "$CF_PHASE"' .[0] // null | if . then cf_dep else null end'
 }
 # cloudflare_status_json <project> [<id>]: one deployment (the newest without an id).
@@ -405,7 +413,7 @@ cloudflare_status_json() {
 # The JSON stays in cloudflare_status_json/_latest_json, and `deploys cloudflare status|latest` prints it.
 CLOUDFLARE_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // (if .stage and .status then "\(.stage)/\(.status)" else null end) // .status // .phase // "?")" end'
 cloudflare_status() { local j; j="$(cloudflare_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
-cloudflare_latest() { local j; j="$(cf_call GET "$(cf_proj "$1")/deployments?per_page=1")" || return 1; j="$(echo "$j" | jq -c "$CF_PHASE"' .[0] // null | if . then cf_dep else null end')" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
+cloudflare_latest() { local j env="&env=production"; [ "${2:-}" = --preview ] && env=""; j="$(cf_call GET "$(cf_proj "$1")/deployments?per_page=1$env")" || return 1; j="$(echo "$j" | jq -c "$CF_PHASE"' .[0] // null | if . then cf_dep else null end')" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
 cloudflare_cli_status() { cloudflare_status_json "$@"; }
 cloudflare_cli_latest() { cloudflare_latest_json "$@"; }
 

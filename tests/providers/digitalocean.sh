@@ -39,6 +39,7 @@ case "$url" in https://logs-store.example.com/*)
   printf 'Step 1/3 : npm ci\nStep 2/3 : npm run build\nbuild complete\n'; exit 0 ;;
 esac
 case "$conf" in *"Authorization: Bearer "*) ;; *) echo "no token on stdin" >&2; exit 2 ;; esac
+if [ -n "${FAKE_VALIDATE:-}" ] && [[ "$url" == */rollback/validate ]]; then printf '%s\n%s' "$(cat "$FIX/error-$FAKE_VALIDATE.json")" "$FAKE_VALIDATE"; exit 0; fi
 if [ -n "${FAKE_STATUS:-}" ]; then printf '%s\n%s' "$(cat "$FIX/error-$FAKE_STATUS.json")" "$FAKE_STATUS"; exit 0; fi
 path="${url#https://api.digitalocean.com}"
 if [[ "$path" =~ ^/v2/apps/([a-z-]+)$ ]]; then
@@ -236,6 +237,13 @@ expect "rollback: exit 0" "$rc" 0
 has "rollback: to the one live before, skipping the failed one" "$out" "rolling back to deployment d-shop-1"
 has "rollback: warnings shown" "$out" "missing an image digest"
 expect "rollback: validated, then rolled back, unpinned" "$(calls 'rollback/validate'):$(last_body)" '1:{"deployment_id":"d-shop-1","skip_pin":true}'
+reset
+out="$(FAKE_VALIDATE=401 digitalocean_rollback shop 2>&1)"; rc=$?
+expect "rollback: an expired token is an auth error, not \"no earlier deployment\"" "$rc:$(grep -c 'token is wrong or expired' <<< "$out"):$(grep -c 'no earlier deployment' <<< "$out"):$(calls 'rollback/validate')" "1:1:0:1"
+reset
+out="$(FAKE_VALIDATE=422 digitalocean_rollback shop 2>&1)"; rc=$?
+has "rollback: a 422 on validate tries the next candidate, then says none fits" "$out" "no earlier deployment that can be rolled back to"
+expect "rollback: the candidate was asked" "$(( $(calls 'rollback/validate') >= 1 ))" 1
 expect "url" "$(digitalocean_url shop)" https://shop.example.com
 expect "url: default ingress" "$(digitalocean_url blog)" https://blog-xyz.ondigitalocean.app
 expect "url --dashboard" "$(digitalocean_url shop --dashboard)" https://cloud.digitalocean.com/apps/app-shop

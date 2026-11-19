@@ -108,6 +108,16 @@ done
 for u in http://localhost:3000/x http://127.0.0.1/x "http://[::1]:8080/x"; do
   ( hook_check_url "$u" ) >/dev/null 2>&1; expect "plain http to $u is allowed (this Mac)" "$?" "0"
 done
+for u in https://169.254.169.254/latest https://metadata.google.internal/x https://10.0.0.5/h https://192.168.1.2/h https://172.16.0.1/h https://172.31.9.9/h https://127.0.0.2/h https://0.0.0.0/h https://2130706433/h https://0x7f.0.0.1/h https://017.0.0.1/h "https://[::1]/h" "https://[fd00:ec2::254]/h" "https://[fe80::1]/h" https://100.64.0.1/h https://intranet/h https://nas.local/h https://app.localhost/h; do
+  ( hook_check_url "$u" ) >/dev/null 2>&1; expect "https to $u is refused (private/metadata)" "$?" "1"
+done
+for u in https://hooks.example.com/x https://172.32.0.1/x https://8.8.8.8/x https://100.128.0.1/x https://api.github.com/x; do
+  ( hook_check_url "$u" ) >/dev/null 2>&1; expect "https to $u is allowed" "$?" "0"
+done
+( HOOK_ALLOW_PRIVATE=1 hook_check_url https://10.0.0.5/h ) >/dev/null 2>&1; expect "private https with HOOK_ALLOW_PRIVATE" "$?" "0"
+hook_cli add priv "https://10.0.0.5/deploy/x" --allow-private >/dev/null 2>&1; expect "add --allow-private stores a private hook" "$?" "0"
+unset HOOK_ALLOW_PRIVATE; hook_cli remove priv >/dev/null 2>&1
+out="$(hook_cli add priv2 "https://169.254.169.254/x" 2>&1)"; expect "add without the flag refuses metadata" "$?:$(grep -c 'private or local' <<< "$out")" "1:1"
 expect "a body over several lines stays one config value" "$(hook_cq "$(printf '{\n  "ref": "main"\n}')")" '"{\n  \"ref\": \"main\"\n}"'
 out="$(hook_cli add bad "not a url" 2>&1)"; expect "a non-URL is refused" "$?" "1"
 out="$(hook_cli add 'bad name' "$SECRET" 2>&1)"; expect "a bad name is refused" "$?" "1"
@@ -120,7 +130,7 @@ expect "nothing was saved by the refusals" "$(hook_list_raw | jq length)" "1"
 # --- trigger: success ---
 : > "$CALLS"
 out="$(GH_HEAD=aaaa hook_deploy_json site 2>&1)"
-expect "a 2xx trigger succeeds" "$?:$(echo "$out" | jq -r '"\(.phase) \(.state) \(.http) \(.sha)"')" "0:ready triggered 204 aaaa"
+expect "a 2xx trigger succeeds" "$?:$(echo "$out" | jq -r '"\(.phase) \(.state) \(.http) \(.sha)"')" "0:queued triggered 204 aaaa"
 expect "the URL was not on curl's command line" "$(leaks "$(cat "$CALLS")")" "0"
 expect "the URL went to curl on stdin" "$(grep -c "^url = \"$SECRET\"" "$CURLCFG")" "1"
 expect "POST is the default method" "$(grep -c '^request = "POST"' "$CURLCFG")" "1"

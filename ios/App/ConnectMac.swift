@@ -328,6 +328,10 @@ struct QRScanner: UIViewControllerRepresentable {
         private func finish(_ f: (ScannerController) -> Void) {
             guard !done else { return }
             done = true
+            // The light would stay on after the camera closed.
+            if let cam = camera, cam.hasTorch, cam.torchMode == .on, (try? cam.lockForConfiguration()) != nil {
+                cam.torchMode = .off; cam.unlockForConfiguration()
+            }
             sessionQueue.async { [session] in if session.isRunning { session.stopRunning() } }
             f(self)
         }

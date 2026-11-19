@@ -2,10 +2,20 @@
 
 ## Unreleased
 
+- CLI: `deploy`, `deploy-changed --yes`, `rollback` and `cancel` from the terminal now write a line to the journal (the app still writes its own).
+- CLI: the launchd job (and the cron line) of `schedule`, `autofix` and `guard` carries `DEPLOYS_CONFIG` and `DEPLOYS_NOTIFY_CMD`; the daily job's log is rotated like the others.
+- CLI: `--when-green` no longer reads "no checks" as green for a commit younger than `DEPLOYS_CI_GRACE` seconds (default 90): CI may not have started yet.
+- CLI: request bodies (Render environment variables among them) no longer show in `ps`; `check start` is refused in observer mode; `ai ask --question "… --help …"` is a question, not a help request; the scan of a repo gets only a short list of environment variables, not everything that does not look like a secret.
+- Site: the build cost calculator has a "working days a month" slider (it was fixed at 22) and says that the allowance included in a plan is not subtracted. `/de/` is a German landing page instead of a 404.
+- CI: a push to main is no longer cancelled by the next push. Tests: the scan test waits for the process by polling, not by a fixed pause; release tests use `mktemp -d` for scratch folders.
 - Raycast: new command "Idle Projects" lists projects with no deploy for 90 days or more (`deploys idle --json`). It only reads.
 - Providers: the failure test also covers refused keys (401, 403, not asked again) and rate limits (429, at most three reads) for every HTTP provider.
 - App: a word with @ in a project's note (like `@pay`) is a shortcut in the command palette: "pay deploy" finds that project's deploy command.
 - Costs: a trend arrow (last 7 days against the 7 before) and "Save report as file" for the Markdown report.
+- iPhone: the time shown (list, widget, Siri) is the oldest provider's, not "now" when one provider failed; rows of a provider that cannot be read are dropped after 24 hours.
+- iPhone: saving the settings no longer deletes a key that could not be read from a locked keychain; "Remove all keys" also clears delivered notes, Live Activities and the remembered state.
+- iPhone: a deploy asks for notifications the first time (the end is reported), checks the network before Face ID, and a failed end no longer replaces the note of an earlier one; a Render deploy replaced by a newer one is no failure.
+- iPhone: a QR code from the Mac is good for 90 seconds (was 5 minutes); Render build logs read older pages until the first error; clearer messages for a login page or proxy instead of JSON.
 
 - DigitalOcean: when two apps match one name or domain, the command is refused with their ids instead of acting on the first one.
 - Providers: an empty or non-JSON answer (a proxy page) to a deploy start (Render) or a status read (Render, Netlify, Coolify) is now an error with a reason, not a silent success or a false "no deploy" that stopped `watch`.

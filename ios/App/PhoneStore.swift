@@ -19,6 +19,8 @@ final class PhoneStore: ObservableObject {
     @Published var running: [String: String] = [:]      // project key → state of the deploy being followed
     @Published var message: String?
     @Published var messageIsError = false
+    /// Counts every message, so the same text twice in a row is announced and felt twice.
+    @Published var messageSerial = 0
     /// A project to show, from a widget link or a notification.
     @Published var openKey: String?
     /// The iCloud Keychain item was read once (off the main thread); until then "no account" is not sure.
@@ -93,23 +95,27 @@ final class PhoneStore: ObservableObject {
     /// The keychain is read once per key, not on every redraw. A failed read (the device still locked
     /// after a restart) is not kept, so it does not count as "no key" until the app quits.
     private var ownCache: [TokenKey: String?] = [:]
+    /// A failed read is only remembered for two seconds: the view body asks on every redraw, and each ask
+    /// would hit the keychain on the main thread again.
+    private var failedReadAt: [TokenKey: Date] = [:]
     func ownToken(_ k: TokenKey) -> String? {
         if let kept = ownCache[k] { return kept }
+        if let at = failedReadAt[k], Date().timeIntervalSince(at) < 2 { return nil }
         switch Keychain.lookup(k.rawValue) {
-        case .found(let v): let t = v.isEmpty ? nil : v; ownCache[k] = .some(t); return t
-        case .missing: ownCache[k] = .some(nil); return nil
-        case .failed: return nil
+        case .found(let v): let t = v.isEmpty ? nil : v; ownCache[k] = .some(t); failedReadAt[k] = nil; return t
+        case .missing: ownCache[k] = .some(nil); failedReadAt[k] = nil; return nil
+        case .failed: failedReadAt[k] = Date(); return nil
         }
     }
     /// Every write goes through here, so the kept copy never differs from the keychain.
     @discardableResult
     func setOwnToken(_ k: TokenKey, _ value: String) -> Bool {
         let ok = Keychain.set(k.rawValue, value)
-        ownCache[k] = nil
+        ownCache[k] = nil; failedReadAt[k] = nil
         return ok
     }
     /// The keychain may have changed while the app was away (or was locked): read it again.
-    func forgetKeptTokens() { ownCache = [:] }
+    func forgetKeptTokens() { ownCache = [:]; failedReadAt = [:] }
     func linkedToken(_ k: TokenKey) -> String? {
         guard let l = linked, !ignoreLink else { return nil }
         let v: String
@@ -150,7 +156,8 @@ final class PhoneStore: ObservableObject {
     /// Removes every key typed or scanned on this phone. The Mac's iCloud item stays (it is the Mac's).
     func forgetOwnKeys() {
         for k in TokenKey.allCases { setOwnToken(k, "") }
-        teamCache = nil
+        // Without the Mac's keys too nothing is left to show: clear what the keys' data left behind, as "Remove all keys" does.
+        if linkedToken(.vercel) == nil && linkedToken(.render) == nil { wipeTraces() } else { teamCache = nil }
         Task { await reload() }
     }
 
@@ -200,23 +207,34 @@ final class PhoneStore: ObservableObject {
     /// keep theirs), and clears what the widget and the notes kept.
     func removeAllKeys() {
         for k in TokenKey.allCases { setOwnToken(k, "") }
+        wipeTraces()
+        if !ignoreLink { ignoreLink = true }    // reloads: with no key nothing is read
+    }
+
+    /// Everything the phone kept from the accounts' data: the list, the widget picture, the names in
+    /// quick actions and Spotlight, the badge, delivered notes (they name projects), Live Activities
+    /// on the lock screen and the little state that belongs to them.
+    private func wipeTraces() {
         teamCache = nil
         ETags.shared.removeAll()
         projects = []; errors = []; stale = []; loadedAt = nil; keyRefused = false
         try? FileManager.default.removeItem(at: Background.lastURL)
         if let url = DeploySnapshot.groupURL { try? FileManager.default.removeItem(at: url) }
+        let d = UserDefaults.standard
+        for k in [Background.providerTimesKey, "widgetReloadAt", Notes.mutedKey, "usedQRCodes"] { d.removeObject(forKey: k) }
         WidgetCenter.shared.reloadAllTimelines()
-        // Names also live in the quick actions, in Spotlight and as the badge count.
         QuickActions.update([]); Spotlight.index([], demo: demo)
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        LiveDeploy.endAll()
         Task { await updateBadge() }
-        if !ignoreLink { ignoreLink = true }    // reloads: with no key nothing is read
     }
 
     var waiting: [PhoneProject] { projects.filter { $0.group == .waiting } }
     var waitingPRs: Int { projects.waitingPRCount }
 
     func say(_ text: String, error: Bool = false) {
-        message = text; messageIsError = error    // the toast shows it and VoiceOver hears it there
+        message = text; messageIsError = error; messageSerial += 1    // the toast shows it and VoiceOver hears it there
     }
     func fail(_ text: String) { say(text, error: true) }
 
@@ -243,6 +261,8 @@ final class PhoneStore: ObservableObject {
         return lastLoadComplete
     }
     private var lastLoadComplete = false
+    /// Rows of a provider that cannot be read are shown for a day at most.
+    static let rowsExpire: TimeInterval = 24 * 3600
 
     /// The resolved Vercel team, per token: asked once, not on every status poll.
     private var teamCache: (token: String, team: String?, teams: Int)?
@@ -292,12 +312,14 @@ final class PhoneStore: ObservableObject {
     private func load() async -> Bool {
         await refreshLink()
         if demo {
-            projects = DemoData.projects(); loadedAt = Date(); errors = []; stale = []; keyRefused = false; writeSnapshot(); return true
+            projects = DemoData.projects(); loadedAt = Date(); errors = []; stale = []; keyRefused = false
+            Background.providerTimes = [:]; writeSnapshot(); return true
         }
         // Offline: keep what is there; the list says so, and the path monitor reloads when it is back.
         if offline { return false }
         let previous = projects.isEmpty ? (Background.readLast() ?? []) : projects
         var all: [PhoneProject] = [], errs: [String] = [], failed: Set<ProviderKind> = [], refused = false
+        var configured: Set<String> = [], read: Set<ProviderKind> = []
         func note(_ provider: ProviderKind, _ error: Error) {
             if (error as? APIError)?.isAuth == true { refused = true }
             errs.append(provider.rawValue + ": " + describe(error, provider)); failed.insert(provider)
@@ -306,8 +328,10 @@ final class PhoneStore: ObservableObject {
         async let vercelLoad = loadVercel(token(.vercel))
         async let renderLoad = loadRender(token(.render))
         for l in [await vercelLoad, await renderLoad].compactMap({ $0 }) {
+            configured.insert(l.provider.rawValue)
             if let t = l.teamNote { errs.append(t) }
             if let e = l.error { note(l.provider, e); continue }
+            read.insert(l.provider)
             all += l.list; errs += l.notes.map { l.provider.rawValue + ": " + $0 }
         }
         // iOS ended the background time: keep what was there, write nothing half-done.
@@ -315,9 +339,26 @@ final class PhoneStore: ObservableObject {
         await fillFromGitHub(&all)
         if Task.isCancelled { return false }
         // A provider that failed keeps its last rows: an outage or a spent limit is not "nothing waits".
-        for k in failed { all += previous.filter { $0.provider == k } }
+        // But not for ever: rows older than a day are dropped, and the time shown is the oldest provider's, not now.
+        let now = Date()
+        var times = Background.providerTimes.filter { configured.contains($0.key) }
+        for k in read { times[k.rawValue] = now }
+        for k in failed {
+            let kept = previous.filter { $0.provider == k }
+            if kept.isEmpty { continue }
+            let since = times[k.rawValue] ?? loadedAt ?? now
+            if now.timeIntervalSince(since) > Self.rowsExpire {
+                let when = since.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(appLocale))
+                errs.append(k.rawValue + ": " + L("The rows from \(when) are too old and were removed.", "Die Zeilen vom \(when) sind zu alt und wurden entfernt."))
+                times[k.rawValue] = nil
+            } else {
+                all += kept; times[k.rawValue] = since
+            }
+        }
+        Background.providerTimes = times
         projects = Self.sorted(all)
-        errors = errs; stale = failed; loadedAt = Date(); keyRefused = refused
+        errors = errs; stale = failed; keyRefused = refused
+        loadedAt = times.values.min() ?? now
         writeSnapshot()
         await updateBadge()
         // What the person has seen; the background refresh only notes what is new after this.
@@ -385,6 +426,13 @@ final class PhoneStore: ObservableObject {
 
     // MARK: Deploy, cancel and rollback (Face ID first)
 
+    /// Before Face ID: with no network the request would wait for one, and could start the build much later.
+    private func requireOnline() -> Bool {
+        guard offline else { return true }
+        fail(L("You are offline. Nothing was started.", "Du bist offline. Es wurde nichts gestartet."))
+        return false
+    }
+
     func authenticate(_ reason: String) async -> Bool {
         let ctx = LAContext()
         var err: NSError?
@@ -429,6 +477,7 @@ final class PhoneStore: ObservableObject {
         running[p.key] = "starting"; defer { running[p.key] = nil; deployIds[p.key] = nil }
         // The demo deploys nothing: no device code needed (App Review devices may have none).
         if demo { await simulate(p, L("Deploy started (demo).", "Deploy gestartet (Demo)."), L("\(p.name) is live (demo).", "\(p.name) ist live (Demo).")); return }
+        guard requireOnline() else { return }
         guard await authenticate(L("Deploy \(p.name)", "\(p.name) deployen")) else { return }
         let started = Date()
         do {
@@ -462,6 +511,7 @@ final class PhoneStore: ObservableObject {
     func cancelBuild(_ p: PhoneProject) async {
         guard let id = buildId(p) else { return }
         if demo { say(L("Build of \(p.name) canceled (demo).", "Build von \(p.name) abgebrochen (Demo).")); return }
+        guard requireOnline() else { return }
         guard await authenticate(L("Cancel the build of \(p.name)", "Build von \(p.name) abbrechen")) else { return }
         do {
             switch p.provider {
@@ -489,6 +539,7 @@ final class PhoneStore: ObservableObject {
         guard running[p.key] == nil else { return }
         running[p.key] = "rollback"; defer { running[p.key] = nil; deployIds[p.key] = nil }
         if demo { await simulate(p, L("Rolling back (demo).", "Wird zurückgerollt (Demo)."), L("Rolled back (demo).", "Zurückgerollt (Demo).")); return }
+        guard requireOnline() else { return }
         guard await authenticate(L("Roll back \(p.name)", "\(p.name) zurückrollen")) else { return }
         do {
             switch p.provider {
@@ -518,6 +569,7 @@ final class PhoneStore: ObservableObject {
         guard p.provider == .render, running[p.key] == nil else { return }
         running[p.key] = "starting"; defer { running[p.key] = nil }
         if demo { say("\(p.name): \(a.done) (demo)."); return }
+        guard requireOnline() else { return }
         guard await authenticate(a.title.replacingOccurrences(of: " …", with: "") + ": " + p.name) else { return }
         do {
             try await Render(key: token(.render) ?? "").service(p, a)
@@ -591,13 +643,16 @@ final class PhoneStore: ObservableObject {
                                    subtitle: p.provider.rawValue)
         let live = LiveDeploy.start(p, rollback: rollback)
         let start = Date(), end = start.addingTimeInterval(limit)
-        var outcome: String?, ok = false, failed = false, lastError: String?
+        var outcome: String?, ok = false, failed = false, replaced = false, lastError: String?
+        // The person may never have been asked: the end of this deploy is reported to them in the background.
+        Task { await Notes.askOnce() }
         while Date() < end && !Task.isCancelled {
             try? await Task.sleep(for: .seconds(6))
             let s: String
             do { s = try await (check ?? { try await self.status(p, id) })().lowercased() }
-            catch let e as APIError where e.status == 401 || e.status == 404 {
+            catch let e as APIError where e.status == 401 || (e.status == 404 && Date().timeIntervalSince(start) > 15) {
                 // A refused key or a deploy that is gone will not get better in 20 minutes of polling.
+                // Right after the start a 404 can still be the provider catching up: the first 15 s do not count.
                 outcome = "\(p.name): " + describe(e, p.provider); break
             }
             catch { lastError = explain(error); continue }
@@ -616,19 +671,26 @@ final class PhoneStore: ObservableObject {
                 outcome = rollback ? L("\(p.name) is rolled back.", "\(p.name) ist zurückgerollt.") : L("\(p.name) is live.", "\(p.name) ist live.")
                 break
             }
-            if PhoneProject.failedStates.contains(s) || ["deactivated", "cancelled"].contains(s) {
+            // Render: a newer deploy took over ("deactivated"). Not a failure of this one.
+            if s == "deactivated" && !rollback {
+                outcome = "\(p.name): \(PhoneProject.stateWord(s))"; replaced = true; break
+            }
+            if PhoneProject.failedStates.contains(s) || ["deactivated", "cancelled", "canceled"].contains(s) {
                 outcome = "\(p.name): \(PhoneProject.stateWord(s))"; failed = true; break
             }
         }
         let text = outcome ?? L("\(p.name): no final state after \(Int(limit / 60)) minutes. Check it on \(p.provider.rawValue).",
                                 "\(p.name): nach \(Int(limit / 60)) Minuten kein Endstand. Prüfe es bei \(p.provider.rawValue).")
             + (lastError.map { " (\($0))" } ?? "")
-        say(text, error: !ok)
+        say(text, error: !ok && !replaced)
         keep.finish(success: ok)
         live.finish(ok ? .live : failed ? .failed : .unknown,
                     ok ? (rollback ? L("Rolled back", "Zurückgerollt") : L("Live", "Live")) : failed ? text.replacingOccurrences(of: "\(p.name): ", with: "")
                        : L("No final state", "Kein Endstand"))
-        if UIApplication.shared.applicationState != .active { await Notes.post(text, project: p.key) }
+        // One note per project replaces the last good news; an end that is not good stays (it has its own id).
+        if UIApplication.shared.applicationState != .active {
+            await Notes.post(text, project: p.key, id: ok || replaced ? nil : "deploy-\(p.key)-\(Int(Date().timeIntervalSince1970))")
+        }
         await reload()
     }
 
@@ -688,7 +750,10 @@ final class PhoneStore: ObservableObject {
         let snap = makeSnapshot()
         let old = DeploySnapshot.read(url)
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? DeploySnapshot.encoder.encode(snap).write(to: url, options: .atomic)
+        // After the first unlock (the widget reads it with the phone locked), and out of backups, like the last list.
+        try? DeploySnapshot.encoder.encode(snap).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        var res = url, v = URLResourceValues(); v.isExcludedFromBackup = true
+        try? res.setResourceValues(v)
         // Widget reloads have a daily budget: only when the picture changed, or every 15 minutes so its
         // "as of" time stays true.
         let last = UserDefaults.standard.object(forKey: "widgetReloadAt") as? Date ?? .distantPast
@@ -757,6 +822,14 @@ enum Notes {
         UserDefaults.standard.set(cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)), forKey: mutedKey)
     }
     static var muted: Bool { (UserDefaults.standard.object(forKey: mutedKey) as? Date).map { Date() < $0 } ?? false }
+
+    /// Asks once, the first time a deploy is followed, when the person never answered: the end of a deploy
+    /// is reported even if "Notify" in Settings was never switched on. A "no" is not asked again.
+    static func askOnce() async {
+        let s = await UNUserNotificationCenter.current().notificationSettings()
+        guard s.authorizationStatus == .notDetermined else { return }
+        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+    }
 
     static func post(_ body: String, project: String?, id: String? = nil, news: Bool = false) async {
         if news && muted { return }

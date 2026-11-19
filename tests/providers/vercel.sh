@@ -204,5 +204,28 @@ GHCMP=diverged lib 'vercel_deploy_json alpha --preview --sha abc1234def' >/dev/n
 expect "FEA-042: a preview is not checked" "$(calls '/compare/')" 0
 rm -f "$tmp/bin/gh"
 
+# --- rollback: the right base, the reason; cancel: the real state ---
+RB="$tmp/fx/vercel/GET_v6_deployments_projectId_alpha_target_production_state_READY_limit_20.json"
+fresh
+printf '{"deployments":[{"uid":"dpl_n3","meta":{"githubCommitSha":"c3"}},{"uid":"dpl_alpha1","meta":{"githubCommitSha":"c2"}},{"uid":"dpl_o1","meta":{"githubCommitSha":"c1"}}]}\n200\n' > "$RB"
+printf '{}\n200\n' > "$tmp/fx/vercel/POST_v1_projects_prj_alpha_rollback_dpl_o1.json"
+out="$(lib 'vercel_rollback alpha')"; rc=$?
+expect "rollback: relative to the live deployment, not the newest" "$rc:$(echo "$out" | jq -r .id)" "0:dpl_o1"
+fresh
+printf '{"deployments":[{"uid":"dpl_n3"},{"uid":"dpl_o1"}]}\n200\n' > "$RB"
+lib 'vercel_rollback alpha' >/dev/null; rc=$?
+expect "rollback: the live deployment is not in the list: refused, nothing posted" "$rc:$(calls -- '--method POST'):$(grep -c 'not among its 20 newest' "$tmp/err")" "1:0:1"
+fresh
+printf '{"deployments":[{"uid":"dpl_alpha1"},{"uid":"dpl_o1"}]}\n200\n' > "$RB"
+printf '{"error":{"message":"Deployment is not promotable"}}\n400\n' > "$tmp/fx/vercel/POST_v1_projects_prj_alpha_rollback_dpl_o1.json"
+lib 'vercel_rollback alpha' >/dev/null; rc=$?
+expect "rollback: the API's reason is in the message" "$rc:$(grep -c 'not promotable' "$tmp/err")" "1:1"
+fresh
+printf '{"id":"dpl_x","readyState":"READY"}\n200\n' > "$tmp/fx/vercel/PATCH_v12_deployments_dpl_x_cancel.json"
+lib 'vercel_cancel alpha dpl_x' >/dev/null; rc=$?
+expect "cancel: an already finished deployment is not reported as canceled" "$rc:$(grep -c 'already READY' "$tmp/err")" "1:1"
+printf '{"id":"dpl_x","readyState":"CANCELED"}\n200\n' > "$tmp/fx/vercel/PATCH_v12_deployments_dpl_x_cancel.json"
+expect "cancel: a canceled one says so" "$(lib 'vercel_cancel alpha dpl_x')" '{"state":"CANCELED"}'
+
 : "$root"
 echo; [ "$fails" = 0 ] && echo "All vercel tests passed." || { echo "$fails vercel tests failed."; exit 1; }

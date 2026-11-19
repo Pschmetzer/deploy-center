@@ -18,7 +18,8 @@ g() { git -C "$1" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=f
 
 # A repo with VERSION, a home page and an appcast. $1 VERSION, $2 site version, $3.. appcast items.
 release_repo() {
-  local d="$tmp/rel-$RANDOM$RANDOM" v="$1" site="$2"; shift 2
+  local d v="$1" site="$2"; shift 2
+  d="$(mktemp -d "$tmp/rel-XXXXXX")"
   mkdir -p "$d/site"
   echo "$v" > "$d/VERSION"
   printf '<script type="application/ld+json">{"@type": "SoftwareApplication", "softwareVersion": "%s"}</script>\n<p id="version">Version %s · <a href="/">notes</a></p>\n' "$site" "$site" > "$d/site/index.html"
@@ -66,7 +67,7 @@ out="$(gate "$d")"; expect "gate: a broken appcast fails" "$?" 1
 
 # --- bump.sh: VERSION, CHANGELOG.md and the home page move together ------------------------
 bump_repo() {
-  local d="$tmp/bump-$RANDOM$RANDOM"
+  local d; d="$(mktemp -d "$tmp/bump-XXXXXX")"
   mkdir -p "$d/scripts" "$d/site"
   cp "$repo/scripts/bump.sh" "$d/scripts/"
   echo "$1" > "$d/VERSION"

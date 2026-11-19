@@ -43,7 +43,7 @@
   "url": "https://deploycenter.app/guides/aws-amplify-disable-auto-build/",
   "mainEntityOfPage": "https://deploycenter.app/guides/aws-amplify-disable-auto-build/",
   "datePublished": "2026-11-16",
-  "dateModified": "2026-11-16",
+  "dateModified": "2026-11-18",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -142,7 +142,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>How to disable AWS Amplify auto-build for a branch</h1>
 <p class="answer">Run <code>aws amplify update-branch --app-id &lt;id&gt; --branch-name main --no-enable-auto-build</code>. Pushes to that branch then no longer start a build. Start one yourself with <code>aws amplify start-job --job-type RELEASE</code>. Other branches keep their own setting.</p>
-<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-18">18 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p>Amplify Hosting bills build minutes. On a Git-connected branch with auto-build on, every push builds. Check the current price per build minute on the AWS Amplify pricing page; what matters is that a branch pushed twenty times a day builds twenty times.</p>
 <h2 id="off">1. Turn auto-build off for a branch</h2>

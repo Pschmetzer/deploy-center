@@ -49,7 +49,7 @@ enum Notify {
     /// `autoOn` with `key`: auto-deploy came back on; the notification offers "Turn off".
     static func post(_ title: String, _ body: String, project: String? = nil, key: String? = nil, failed: Bool = false, rollBack: Bool = false, autoOn: Bool = false, silent: Bool = false) {
         let d = UserDefaults.standard
-        guard available, !NSApp.isActive, d.object(forKey: "notifications") as? Bool ?? true else { return }
+        guard available, !windowInFront, d.object(forKey: "notifications") as? Bool ?? true else { return }
         // Quiet hours (Settings → Notifications): only failures still come.
         let inQuiet = quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo"))
         if !failed, inQuiet {
@@ -75,11 +75,16 @@ enum Notify {
                 category: category, project: project, key: key, after: 30 * 60)
         }
     }
+    /// The person is looking at the app: active and a visible, key window (not just the app being frontmost in the menu bar).
+    static var windowInFront: Bool {
+        guard NSApp.isActive, let w = NSApp.keyWindow else { return false }
+        return w.isVisible && !w.isMiniaturized
+    }
     /// Whether a `post` that is not a failure would show now (the window in the background, the
     /// switch on, outside quiet hours).
     static var wouldShow: Bool {
         let d = UserDefaults.standard
-        return available && !NSApp.isActive && d.object(forKey: "notifications") as? Bool ?? true
+        return available && !windowInFront && d.object(forKey: "notifications") as? Bool ?? true
             && !quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo"))
     }
     static let escalationPrefix = "again|"

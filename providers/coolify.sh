@@ -387,12 +387,25 @@ coolify_deploy_json() {
   fi
   # `|| rc=$?`, not `; rc=$?`: under set -e a failed POST would end the script before the unpin.
   rc=0; out="$(coolify_call POST "/deploy?uuid=$id$force" 2>&1)" || rc=$?
+  did=""
+  [ "$rc" != 0 ] || did="$(echo "$out" | jq -r '[.deployments[]? | select(.deployment_uuid != null)][0].deployment_uuid // empty')"
+  # The worker reads the application's git_commit_sha when the job STARTS, not when it is queued:
+  # unpinning right after the POST could build the newest commit. Keep the pin until the
+  # deployment has left "queued" (COOLIFY_PIN_WAIT seconds at most; the pin is put back anyway).
+  if [ -n "$pinned" ] && [ -n "$did" ]; then
+    local waited=0 st=queued
+    while [ "$waited" -lt "${COOLIFY_PIN_WAIT:-60}" ]; do
+      st="$(coolify_call GET "/deployments/$did" 2>/dev/null | jq -r '.status // "queued"' 2>/dev/null)" || st=queued
+      [ "${st:-queued}" != queued ] && break
+      sleep 2; waited=$((waited + 2))
+    done
+    [ "${st:-queued}" != queued ] || echo "Warning: the Coolify deployment of $app was still queued after ${COOLIFY_PIN_WAIT:-60}s; the pin to $sha is put back now." >&2
+  fi
   if [ -n "$pinned" ]; then
     eval "trap - INT TERM HUP; $saved_traps"
     coolify_unpin "$id" "$pinned" "$sha" "$app"
   fi
   [ "$rc" = 0 ] || { rm -f "$lock"; die "Coolify: the deploy of $app was not taken: $out"; }
-  did="$(echo "$out" | jq -r '[.deployments[]? | select(.deployment_uuid != null)][0].deployment_uuid // empty')"
   if [ -z "$did" ]; then
     rm -f "$lock"
     die "Coolify did not queue $app: $(echo "$out" | jq -r '[.deployments[]?.message, .message] | map(select(. != null)) | first // "no reason given"')"
