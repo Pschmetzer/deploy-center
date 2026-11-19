@@ -290,6 +290,8 @@ reset
 table() { cat; }   # the real one lives in deploys
 out="$(netlify_history site-shop 20 2>&1)"
 has "history: header" "$out" "WHEN (UTC)"
+( netlify_history site-shop 'x&y' ) >/dev/null 2>&1; expect "history: a non-number is refused" "$?" 1
+expect "history: more than 100 is asked as 100" "$( : > "$CALLS"; netlify_history site-shop 999999 >/dev/null 2>&1; calls 'deploys?per_page=100')" 1
 has "history: a ready deploy with its commit and time" "$out" "2222222"
 expect "history: one line per deploy plus the header" "$(echo "$out" | grep -c .)" "$(( $(jq length "$FIX/deploys-shop.json") + 1 ))"
 
