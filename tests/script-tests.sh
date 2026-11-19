@@ -1266,7 +1266,8 @@ expect "scan: a run whose process is gone is reaped" "$(jq -r '.runs[0].status' 
 # A live scan: a process whose command line says "scan run", as nohup "$SELF" scan run does.
 bash -c 'perl -e "sleep 60"; :' scan run &
 livepid=$!
-perl -e 'select(undef,undef,undef,0.5)'   # until the new process has its own command line (sleep is a stub here)
+# until the new process has its own command line (sleep is a stub here): poll, at most 5 s
+for _ in $(seq 50); do case "$(ps -o command= -p "$livepid" 2>/dev/null)" in *"scan run"*) break ;; esac; perl -e 'select(undef,undef,undef,0.1)'; done
 echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$livepid"'}]}' > "$SCAN_STATE"; sc_reap
 expect "scan: a live run is left alone" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "running"
 # A pid that is alive but is not a scan (the number was reused after a restart): the run is over, the process is left alone.
