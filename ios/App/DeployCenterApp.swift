@@ -152,11 +152,26 @@ enum Background {
         let data = (try? Data(contentsOf: lastURL)) ?? (try? Data(contentsOf: oldLastURL))
         return data.flatMap { try? JSONDecoder().decode([PhoneProject].self, from: $0) }
     }
-    /// The last list with the time it was written (the file's date): for the list at launch, Siri and Spotlight.
+    /// When each provider's rows were last read in full (a failed read keeps the old time, so rows that are
+    /// only remembered do not look fresh). Kept next to the list; "Remove all keys" clears it.
+    static let providerTimesKey = "providerLoadedAt"
+    static var providerTimes: [String: Date] {
+        get { ((UserDefaults.standard.dictionary(forKey: providerTimesKey) as? [String: Double]) ?? [:]).mapValues { Date(timeIntervalSince1970: $0) } }
+        set { UserDefaults.standard.set(newValue.mapValues(\.timeIntervalSince1970), forKey: providerTimesKey) }
+    }
+    /// The age of a list: its oldest provider (the file's date for a list written before providers had their own time).
+    static func listAge(_ projects: [PhoneProject], fileDate: Date) -> Date {
+        let times = providerTimes
+        let used = Set(projects.map { $0.provider.rawValue })
+        let known = used.compactMap { times[$0] }
+        return known.count == used.count ? (known.min() ?? fileDate) : min(fileDate, known.min() ?? fileDate)
+    }
+    /// The last list with the time it was read: for the list at launch, Siri and Spotlight.
     static func loadLast() -> (projects: [PhoneProject], at: Date)? {
         guard let p = readLast() else { return nil }
         let url = FileManager.default.fileExists(atPath: lastURL.path) ? lastURL : oldLastURL
-        return (p, (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date ?? Date())
+        let file = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date ?? Date()
+        return (p, listAge(p, fileDate: file))
     }
     static func writeLast(_ projects: [PhoneProject]) {
         // Application Support does not exist in a fresh sandbox.

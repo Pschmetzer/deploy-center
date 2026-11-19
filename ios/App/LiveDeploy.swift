@@ -25,6 +25,13 @@ final class LiveDeploy {
         }
     }
 
+    /// Every activity at once and without a lock-screen stay: their text names projects (keys removed).
+    static func endAll() {
+        for a in Activity<DeployActivity>.activities {
+            Task { await a.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
     private static func content(_ phase: DeployActivity.ContentState.Phase, _ words: String, final: Bool = false) -> ActivityContent<DeployActivity.ContentState> {
         ActivityContent(state: .init(phase: phase, words: words, updated: Date()),
                         staleDate: final ? nil : Date().addingTimeInterval(DeployActivity.staleAfter))

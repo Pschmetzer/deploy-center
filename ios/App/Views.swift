@@ -1038,7 +1038,10 @@ struct SettingsView: View {
 
     private func save() -> Bool {
         guard dirty else { return true }
-        let ok = Key.allCases.map { store.setOwnToken($0, fields[$0] ?? "") }.allSatisfy { $0 }
+        // Only what was changed: a key that could not be read (locked keychain) shows as an empty field,
+        // and writing that field back would delete it.
+        let ok = Key.allCases.filter { (fields[$0] ?? "") != (saved[$0] ?? "") }
+            .map { store.setOwnToken($0, fields[$0] ?? "") }.allSatisfy { $0 }
         Background.schedule()
         Task { await store.reload() }
         if !ok { saveFailed = true; return false }
