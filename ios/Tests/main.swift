@@ -214,5 +214,19 @@ later = DeploySnapshot(at: Date().addingTimeInterval(60), demo: later.demo, wait
                        failed: later.failed, saving: later.saving, projects: later.projects, language: later.language)
 check(later.sameShown(as: DeploySnapshot.sample), "a snapshot that differs only in time shows the same")
 
+// The QR code: the Mac shows it for 60 s; a photo of it is good for 90 s, a code from the future for 30 s of clock difference.
+func qrAt(_ updated: Date) -> String { var k = LinkedKeys(); k.vercel = "tok"; k.updated = updated; return PhoneLink.qrText(k) ?? "" }
+let qrNow = Date()
+func qrIs(_ t: TimeInterval, _ want: PhoneLink.QRResult) -> Bool { PhoneLink.read(qr: qrAt(qrNow.addingTimeInterval(-t)), now: qrNow) == want }
+check(qrIs(30, .keys({ var k = LinkedKeys(); k.vercel = "tok"; k.updated = qrNow.addingTimeInterval(-30); return k }())), "qr: 30 s old is taken")
+check(qrIs(200, .expired), "qr: 200 s old is too old (was 5 minutes)")
+check(qrIs(-10, .keys({ var k = LinkedKeys(); k.vercel = "tok"; k.updated = qrNow.addingTimeInterval(10); return k }())), "qr: a few seconds ahead (clock) is taken")
+check(qrIs(-120, .expired), "qr: two minutes in the future is refused")
+var kA = LinkedKeys(); kA.vercel = "t"; kA.savingPerMonth = 12.341
+var kB = kA; kB.savingPerMonth = 12.3449
+check(kA.sameContent(as: kB), "same content: a saving that differs below the cent is the same")
+kB.savingPerMonth = 12.36
+check(!kA.sameContent(as: kB), "same content: a different cent is not")
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)

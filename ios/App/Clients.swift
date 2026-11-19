@@ -42,8 +42,22 @@ func explain(_ error: Error) -> String {
         case .timedOut: return L("No answer in time. Try again.", "Keine Antwort in der Zeit. Versuch es noch einmal.")
         case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
             return L("The service cannot be reached.", "Der Dienst ist nicht erreichbar.")
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateNotYetValid, .clientCertificateRejected:
+            return L("The secure connection failed. A network with a login page or a proxy can cause this.",
+                     "Die sichere Verbindung ist fehlgeschlagen. Ein Netz mit Anmeldeseite oder ein Proxy kann der Grund sein.")
+        case .cancelled: return L("Canceled.", "Abgebrochen.")
+        case .cannotParseResponse, .badServerResponse:
+            return L("The answer could not be read. Try again.", "Die Antwort konnte nicht gelesen werden. Versuch es noch einmal.")
+        case .internationalRoamingOff:
+            return L("Data roaming is off, so there is no connection.", "Datenroaming ist aus, daher gibt es keine Verbindung.")
+        case .callIsActive:
+            return L("A phone call is active and blocks the data connection. Try again after it.", "Ein Anruf blockiert die Datenverbindung. Versuch es danach noch einmal.")
         default: break
         }
+    }
+    // HTML from a login page or a proxy instead of JSON.
+    if error is DecodingError || (error as NSError).domain == NSCocoaErrorDomain && (error as NSError).code == 3840 {
+        return L("The answer is not JSON. Is this network asking for a login?", "Die Antwort ist kein JSON. Verlangt dieses Netz eine Anmeldung?")
     }
     return error.localizedDescription
 }
@@ -67,6 +81,19 @@ struct HTTP {
         c.requestCachePolicy = .reloadIgnoringLocalCacheData
         c.urlCache = nil
         c.waitsForConnectivity = true
+        c.timeoutIntervalForRequest = 30
+        c.timeoutIntervalForResource = 60
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1"
+        c.httpAdditionalHeaders = ["User-Agent": "DeployCenter-iOS/\(v)"]
+        return URLSession(configuration: c)
+    }()
+    /// For what must not wait for a network: writes (a deploy that starts a minute later is a surprise) and
+    /// the background refresh (about 30 s in all).
+    static let noWaitSession: URLSession = {
+        let c = URLSessionConfiguration.ephemeral
+        c.requestCachePolicy = .reloadIgnoringLocalCacheData
+        c.urlCache = nil
+        c.waitsForConnectivity = false
         c.timeoutIntervalForRequest = 30
         c.timeoutIntervalForResource = 60
         let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1"
@@ -97,6 +124,8 @@ struct HTTP {
             r.setValue("application/json", forHTTPHeaderField: "Content-Type")
             r.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
+        // Tests pass their own session: only the default one is swapped.
+        let via = session === HTTP.defaultSession && (method != "GET" || Self.inBackground) ? HTTP.noWaitSession : session
         let tag = conditional && method == "GET" ? ETags.shared.key(url, token) : nil
         let cached = tag.flatMap { ETags.shared.get($0) }
         if let cached { r.setValue(cached.etag, forHTTPHeaderField: "If-None-Match") }
@@ -104,7 +133,7 @@ struct HTTP {
         while true {
             attempt += 1
             let fresh: Data, resp: URLResponse
-            do { (fresh, resp) = try await session.data(for: r) }
+            do { (fresh, resp) = try await via.data(for: r) }
             catch let e as URLError where method == "GET" && attempt < 3 && Self.retryable.contains(e.code) {
                 try await Task.sleep(for: .seconds(min(Double(2 * attempt), Self.longestWait))); continue
             }
@@ -169,16 +198,22 @@ final class ETags: @unchecked Sendable {
     private var items: [String: (etag: String, data: Data)] = [:]
     private var order: [String] = []
     private let limit = 500
+    /// A `compare` answer can hold 250 commits: the count alone does not bound the memory.
+    private let byteLimit = 4_000_000
+    private var bytes = 0
 
     func key(_ url: URL, _ token: String) -> String { String(token.hashValue) + " " + url.absoluteString }
     func get(_ k: String) -> (etag: String, data: Data)? { lock.lock(); defer { lock.unlock() }; return items[k] }
     func set(_ k: String, etag: String, data: Data) {
         lock.lock(); defer { lock.unlock() }
-        if items[k] == nil { order.append(k) }
-        items[k] = (etag, data)
-        while order.count > limit { items[order.removeFirst()] = nil }
+        if let old = items[k] { bytes -= old.data.count } else { order.append(k) }
+        items[k] = (etag, data); bytes += data.count
+        while order.count > limit || (bytes > byteLimit && order.count > 1) {
+            let gone = order.removeFirst()
+            if let o = items.removeValue(forKey: gone) { bytes -= o.data.count }
+        }
     }
-    func removeAll() { lock.lock(); items = [:]; order = []; lock.unlock() }
+    func removeAll() { lock.lock(); items = [:]; order = []; bytes = 0; lock.unlock() }
 }
 
 extension Dictionary where Key == String, Value == Any {
@@ -491,8 +526,10 @@ struct Render {
         x.domain = s.str("serviceDetails.url").map { $0.replacingOccurrences(of: "https://", with: "") }
         // Render builds from its own Git connection, so GitLab and Bitbucket services deploy too.
         x.deployable = !x.paused
+        // A paused service builds nothing: no read for it. Ten deploys hold the live one and the newest attempt.
+        if x.paused { return x }
         do {
-            let deps = ((try await http.get("/services/\(id)/deploys?limit=50")) as? [JSON] ?? []).compactMap { $0["deploy"] as? JSON }
+            let deps = ((try await http.get("/services/\(id)/deploys?limit=10")) as? [JSON] ?? []).compactMap { $0["deploy"] as? JSON }
             if let n = deps.first {
                 x.latestState = n.str("status"); x.latestId = n.str("id")
                 x.latestAt = isoDate(n.str("createdAt"))
@@ -557,11 +594,22 @@ struct Render {
         if owner == nil { owner = (try await http.get("/services/\(p.id)") as? JSON)?.str("ownerId") }
         guard let owner else { throw APIError(status: 0, message: L("Render did not name the workspace of \(p.name).", "Render hat den Workspace von \(p.name) nicht genannt.")) }
         func q(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? s }
-        var path = "/logs?ownerId=\(q(owner))&resource=\(q(p.id))&type=build&limit=200&direction=backward"
+        let base = "/logs?ownerId=\(q(owner))&resource=\(q(p.id))&type=build&limit=200&direction=backward"
         let iso = ISO8601DateFormatter()
-        if let a = d.at { path += "&startTime=" + q(iso.string(from: a.addingTimeInterval(-5))) }
-        if let b = d.finishedAt { path += "&endTime=" + q(iso.string(from: b.addingTimeInterval(5))) }
-        return LogMask.renderLines(try await http.get(path))
+        var start = ""
+        if let a = d.at { start = "&startTime=" + q(iso.string(from: a.addingTimeInterval(-5))) }
+        var end = d.finishedAt.map { iso.string(from: $0.addingTimeInterval(5)) }
+        // The newest 200 lines come first. A long build has its first error before them, and the tail then
+        // shows only a later consequence: older pages are read (at most five) until a line says error.
+        var lines: [String] = []
+        for _ in 0..<5 {
+            let json = try await http.get(base + start + (end.map { "&endTime=" + q($0) } ?? ""))
+            lines = LogMask.renderLines(json) + lines
+            guard let page = json as? JSON, page["hasMore"] as? Bool == true, let next = page["nextEndTime"] as? String, next != end else { break }
+            if LogMask.hasErrorLine(lines) { break }
+            end = next
+        }
+        return lines
     }
     /// Pause, resume or restart a service (Render's suspend, resume, restart).
     func service(_ p: PhoneProject, _ action: RenderAction) async throws {
