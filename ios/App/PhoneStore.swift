@@ -659,6 +659,8 @@ final class PhoneStore: ObservableObject {
                                    subtitle: p.provider.rawValue)
         let live = LiveDeploy.start(p, rollback: rollback)
         let start = Date(), end = start.addingTimeInterval(limit)
+        // The usual build time of this project, from its history: the progress bar is not a guess of five minutes.
+        let typical = BuildTime.typical(await history(p) ?? [])
         var outcome: String?, ok = false, failed = false, replaced = false, lastError: String?
         // The person may never have been asked: the end of this deploy is reported to them in the background.
         Task { await Notes.askOnce() }
@@ -674,7 +676,7 @@ final class PhoneStore: ObservableObject {
             catch { lastError = explain(error); continue }
             lastError = nil
             if !rollback { running[p.key] = s }
-            keep.update(PhoneProject.stateWord(s), fraction: min(Date().timeIntervalSince(start) / 300, 0.95))
+            keep.update(PhoneProject.stateWord(s), fraction: BuildTime.fraction(elapsed: Date().timeIntervalSince(start), typical: typical))
             live.update(rollback ? PhoneProject.stateWord("rollback") : PhoneProject.stateWord(s))
             if ["ready", "live", "succeeded"].contains(s) {
                 // After an Instant Rollback a ready deploy keeps no domain until one is promoted (Vercel docs).
