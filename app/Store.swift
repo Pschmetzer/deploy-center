@@ -1494,7 +1494,7 @@ final class Store: ObservableObject {
         while running < maxParallel, let k = queue.firstIndex(where: { $0.readyAt <= Date() && waitsFor($0) == nil }) {
             let job = queue.remove(at: k)
             running += 1
-            Task { await deploy(job); running -= 1; pump() }
+            Task { defer { running -= 1; pump() }; await deploy(job) }
         }
         // A frontend whose backend failed in this batch does not go out alone.
         for job in queue {
@@ -1508,7 +1508,6 @@ final class Store: ObservableObject {
                                                              "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
             }
         }
-        holdAwake()
         if queue.isEmpty && running == 0 && ciWaits.isEmpty {
             queueBatch = []
             let hadRun = !batch.isEmpty
@@ -1936,10 +1935,19 @@ final class Store: ObservableObject {
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
         guard let (bytes, _) = try? await probeSession.bytes(for: req) else { return nil }
+        defer { bytes.task.cancel() }
         var data = Data()
-        do { for try await b in bytes { data.append(b); if data.count >= 512 * 1024 { break } } } catch { return nil }
-        bytes.task.cancel()
-        return String(decoding: data, as: UTF8.self)
+        var chunk = [UInt8](); chunk.reserveCapacity(4096)
+        let limit = 512 * 1024
+        do {
+            for try await b in bytes {
+                chunk.append(b)
+                if chunk.count >= 4096 { data.append(contentsOf: chunk); chunk.removeAll(keepingCapacity: true) }
+                if data.count + chunk.count >= limit { break }
+            }
+        } catch { return nil }
+        data.append(contentsOf: chunk)
+        return String(decoding: data.prefix(limit), as: UTF8.self)
     }
     /// "/health", with a leading slash; spaces and other characters a URL cannot hold are encoded,
     /// so the check after going live is not silently skipped.
@@ -2084,7 +2092,9 @@ final class Store: ObservableObject {
         watches[key]?.cancel()
         watches[key] = Task { [weak self] in
             var seen: [SiteVerdict] = []
-            for _ in 0..<minutes {
+            // Wall-clock deadline: a Mac that slept or a slow probe does not stretch the watch.
+            let deadline = Date().addingTimeInterval(Double(minutes) * 60)
+            while Date() < deadline {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
                 guard !Task.isCancelled, let self else { return }
                 // A new deploy of the row is checked on its own.
@@ -2107,10 +2117,15 @@ final class Store: ObservableObject {
     }
     nonisolated private static func networkUp() async -> Bool {
         // Any one answer means the Mac is online. One blocked domain (a company network) must not read as "offline".
-        for s in ["https://www.githubstatus.com/api/v2/status.json", "https://www.apple.com/library/test/success.html", "https://1.1.1.1/"] {
-            if let u = URL(string: s), await probe(u, timeout: 6) != nil { return true }
+        // All three are asked at once; the first answer wins.
+        let hosts = ["https://www.githubstatus.com/api/v2/status.json", "https://www.apple.com/library/test/success.html", "https://1.1.1.1/"]
+        return await withTaskGroup(of: Bool.self) { group in
+            for s in hosts {
+                group.addTask { if let u = URL(string: s) { return await probe(u, timeout: 4) != nil } else { return false } }
+            }
+            for await ok in group where ok { group.cancelAll(); return true }
+            return false
         }
-        return false
     }
 
     // MARK: Roll back by itself when the check after going live fails (opt-in per project, in the details)
