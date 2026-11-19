@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 struct JournalEntry: Codable, Identifiable {
     /// Stable across loads, so a list does not redraw every row when it is read again.
     /// The deploy id (or commit) is part of it: two entries of one project in the same second differ.
-    var id: String { "\(at.timeIntervalSince1970)|\(platform)|\(name)|\(result)|\(deployId ?? "")|\(sha ?? "")" }
+    var id: String { "\(at.timeIntervalSince1970)|\(platform)|\(name)|\(result)|\(deployId ?? "")|\(sha ?? "")|\(Int(seconds ?? -1))|\(detail ?? "")" }
     let at: Date
     let platform: String
     let name: String
@@ -172,6 +172,12 @@ enum Journal {
         return nil
     }
 
+    /// "2:05" under an hour (minutes:seconds), "2 h 05" from an hour on (IDEEN-11 392).
+    static func duration(_ s: Double) -> String {
+        let n = Int(s)
+        return n >= 3600 ? "\(n / 3600) h \(String(format: "%02d", n % 3600 / 60))" : "\(n / 60):\(String(format: "%02d", n % 60))"
+    }
+
     /// Oldest first.
     static func load(limit: Int) -> [JournalEntry] {
         migrate()
@@ -226,7 +232,8 @@ enum Journal {
                 && (since == nil || e.at >= since!)
                 && (platform == nil || e.platform == platform)
                 && (t.isEmpty || e.name.localizedCaseInsensitiveContains(t) || e.platform.localizedCaseInsensitiveContains(t)
-                    || (e.detail?.localizedCaseInsensitiveContains(t) ?? false) || (e.note?.localizedCaseInsensitiveContains(t) ?? false))
+                    || (e.detail?.localizedCaseInsensitiveContains(t) ?? false) || (e.note?.localizedCaseInsensitiveContains(t) ?? false)
+                    || (e.sha?.localizedCaseInsensitiveContains(t) ?? false) || (e.deployId?.localizedCaseInsensitiveContains(t) ?? false))
         }
     }
 
@@ -378,7 +385,7 @@ struct JournalView: View {
 
     private func row(_ e: JournalEntry) -> some View {
         let k = e.kind, detail = e.detail.map { Demo.on ? Demo.scrub($0, items: names) : $0 }
-        let took = e.seconds.map { "\(Int($0) / 60):\(String(format: "%02d", Int($0) % 60))" }
+        let took = e.seconds.map { Journal.duration($0) }
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
                 Image(systemName: k.symbol).foregroundStyle(k.color).accessibilityHidden(true)

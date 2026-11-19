@@ -12,7 +12,10 @@ enum Speech {
 
     static func say(_ text: String) {
         if NSWorkspace.shared.isVoiceOverEnabled {
-            AccessibilityNotification.Announcement(text).post()
+            // High priority: a long summary is not cut off by the next announcement (IDEEN-11 200).
+            var a = AttributedString(text)
+            a.accessibilitySpeechAnnouncementPriority = .high
+            AccessibilityNotification.Announcement(a).post()
             return
         }
         let u = AVSpeechUtterance(string: text)

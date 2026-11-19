@@ -41,13 +41,18 @@ enum JournalStats {
     nonisolated static func dora(_ list: [JournalEntry], days: Int) -> Dora {
         let o = outcomes(list).sorted { $0.at < $1.at }
         let good = o.filter { $0.kind == .live || $0.kind == .forced }.count
-        let bad = o.filter { $0.kind == .failed || $0.kind == .rollback }.count
+        var bad = 0
         var restore: [Double] = []
         var openFail: [String: Date] = [:]
         for e in o {
             let k = "\(e.platform)/\(e.name)"
-            if e.kind == .failed || e.kind == .rollback { if openFail[k] == nil { openFail[k] = e.at } }
-            else if let f = openFail.removeValue(forKey: k) { restore.append(e.at.timeIntervalSince(f)) }
+            if e.kind == .rollback, let f = openFail.removeValue(forKey: k) {
+                // failed → rollback: the rollback is the recovery, not a second failure (IDEEN-11 182).
+                restore.append(e.at.timeIntervalSince(f))
+            } else if e.kind == .failed || e.kind == .rollback {
+                bad += 1
+                if openFail[k] == nil { openFail[k] = e.at }
+            } else if let f = openFail.removeValue(forKey: k) { restore.append(e.at.timeIntervalSince(f)) }
         }
         return Dora(perWeek: days > 0 ? Double(good) / Double(days) * 7 : 0,
                     failRate: o.isEmpty ? nil : Double(bad) / Double(o.count),
@@ -262,7 +267,7 @@ struct JournalStatsView: View {
                         RoundedRectangle(cornerRadius: 3)
                             .fill((f > 0 ? Color.red : Color.accentColor).opacity(n == 0 ? 0.06 : 0.2 + 0.8 * Double(n) / Double(top)))
                             .frame(width: 56, height: 18)
-                            .overlay(Text(n == 0 ? "" : "\(n)").font(.caption2.monospacedDigit()))
+                            .overlay(Text(n == 0 ? "" : (f > 0 ? "\(n)·\(f)✕" : "\(n)")).font(.caption2.monospacedDigit()))   // failures as a mark, not only red (IDEEN-11 240)
                             .help(L("\(n) deploys, \(f) failed", "\(n) Deploys, \(f) fehlgeschlagen"))
                             .accessibilityLabel(cal.weekdaySymbols[w - 1] + ": " + L("\(n) deploys, \(f) failed", "\(n) Deploys, \(f) fehlgeschlagen"))
                     }
