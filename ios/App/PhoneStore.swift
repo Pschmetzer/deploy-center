@@ -19,6 +19,8 @@ final class PhoneStore: ObservableObject {
     @Published var running: [String: String] = [:]      // project key → state of the deploy being followed
     @Published var message: String?
     @Published var messageIsError = false
+    /// Counts every message, so the same text twice in a row is announced and felt twice.
+    @Published var messageSerial = 0
     /// A project to show, from a widget link or a notification.
     @Published var openKey: String?
     /// The iCloud Keychain item was read once (off the main thread); until then "no account" is not sure.
@@ -232,7 +234,7 @@ final class PhoneStore: ObservableObject {
     var waitingPRs: Int { projects.waitingPRCount }
 
     func say(_ text: String, error: Bool = false) {
-        message = text; messageIsError = error    // the toast shows it and VoiceOver hears it there
+        message = text; messageIsError = error; messageSerial += 1    // the toast shows it and VoiceOver hears it there
     }
     func fail(_ text: String) { say(text, error: true) }
 
@@ -748,7 +750,10 @@ final class PhoneStore: ObservableObject {
         let snap = makeSnapshot()
         let old = DeploySnapshot.read(url)
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? DeploySnapshot.encoder.encode(snap).write(to: url, options: .atomic)
+        // After the first unlock (the widget reads it with the phone locked), and out of backups, like the last list.
+        try? DeploySnapshot.encoder.encode(snap).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        var res = url, v = URLResourceValues(); v.isExcludedFromBackup = true
+        try? res.setResourceValues(v)
         // Widget reloads have a daily budget: only when the picture changed, or every 15 minutes so its
         // "as of" time stays true.
         let last = UserDefaults.standard.object(forKey: "widgetReloadAt") as? Date ?? .distantPast

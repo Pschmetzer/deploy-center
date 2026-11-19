@@ -145,8 +145,13 @@ extension Array where Element == PhoneProject {
     var waitingOnly: [PhoneProject] { filter { $0.group == .waiting } }
     /// PRs that wait. Projects of one repo share commits and PRs: each repo counts once.
     var waitingPRCount: Int {
+        // One repo, one live commit: the same PRs wait for both projects. A project at another live commit
+        // of the same repo has its own count (the PRs since that commit differ), so the key holds the commit too.
         var perRepo: [String: Int] = [:]
-        for p in waitingOnly { perRepo[p.repo ?? p.key] = Swift.max(perRepo[p.repo ?? p.key] ?? 0, p.pendingPRs ?? 0) }
+        for p in waitingOnly {
+            let k = p.repo.map { $0 + "@" + (p.liveSha ?? "") } ?? p.key
+            perRepo[k] = Swift.max(perRepo[k] ?? 0, p.pendingPRs ?? 0)
+        }
         return perRepo.values.reduce(0, +)
     }
 }

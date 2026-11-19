@@ -6,6 +6,10 @@
 - Providers: the failure test also covers refused keys (401, 403, not asked again) and rate limits (429, at most three reads) for every HTTP provider.
 - App: a word with @ in a project's note (like `@pay`) is a shortcut in the command palette: "pay deploy" finds that project's deploy command.
 - Costs: a trend arrow (last 7 days against the 7 before) and "Save report as file" for the Markdown report.
+- iPhone: the time shown (list, widget, Siri) is the oldest provider's, not "now" when one provider failed; rows of a provider that cannot be read are dropped after 24 hours.
+- iPhone: saving the settings no longer deletes a key that could not be read from a locked keychain; "Remove all keys" also clears delivered notes, Live Activities and the remembered state.
+- iPhone: a deploy asks for notifications the first time (the end is reported), checks the network before Face ID, and a failed end no longer replaces the note of an earlier one; a Render deploy replaced by a newer one is no failure.
+- iPhone: a QR code from the Mac is good for 90 seconds (was 5 minutes); Render build logs read older pages until the first error; clearer messages for a login page or proxy instead of JSON.
 
 - DigitalOcean: when two apps match one name or domain, the command is refused with their ids instead of acting on the first one.
 - Providers: an empty or non-JSON answer (a proxy page) to a deploy start (Render) or a status read (Render, Netlify, Coolify) is now an error with a reason, not a silent success or a false "no deploy" that stopped `watch`.
