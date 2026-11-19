@@ -1521,13 +1521,6 @@ expect "CLI-055: start_lock takes over a stale start, refuses a fresh one" "$( (
 expect "CLI-056: ai usage adds under a lock and leaves none behind" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . "$deploys_src"; set +e
   sleep() { /bin/sleep "$@"; }
   AI_USAGE="$tmp/l55/ai-usage.json"; ai_add_usage 5 & ai_add_usage 7 & wait; ai_add_usage 1; ai_used; [ -e "$AI_USAGE.lock" ] && echo left || echo clean) )" $'13\nclean'
-# DEBUG-TEMP
-( DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . "$deploys_src"; set +e; sleep() { /bin/sleep "$@"; }
-  bad=0; for i in $(seq 1 30); do
-    AI_USAGE="$tmp/l55/dbg$i.json"
-    ai_add_usage 5 & ai_add_usage 7 & wait; ai_add_usage 1; v=$(ai_used)
-    [ "$v" = 13 ] || { bad=$((bad+1)); echo "DBG iter $i got $v"; date +%s; ls -la --time-style=+%s "$tmp/l55" | head; cat "$AI_USAGE"; }
-  done; echo "DBG bad=$bad" ) 2>&1
 expect "CLI-056: a dead holder's lock does not cost every later call the wait" "$( (DEPLOYS_CONFIG="$tmp/l55" DEPLOYS_LIB=1 . "$deploys_src"; set +e
   mkdir "$tmp/l55/x.lock"; touch -t 202001010000 "$tmp/l55/x.lock"; file_lock "$tmp/l55/x" && echo got; file_unlock "$tmp/l55/x"; [ -e "$tmp/l55/x.lock" ] || echo clean) )" $'got\nclean'
 # CLI-062 (with main's names.json): the completion list holds plain names only; a name like

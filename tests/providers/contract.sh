@@ -21,6 +21,9 @@ printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/sleep"
 for f in tests/fixtures/*/bin/*; do [ -f "$f" ] && cp "$f" "$tmp/bin/"; done
 chmod +x "$tmp/bin"/*
 export FIXTURES="$root/tests/fixtures" CALLS="$tmp/calls.log"
+# No git-host enrichment (heads, MRs): a gh in the runner's /usr/bin (Linux CI) would make the rows
+# call gitlab.com through curl, and a non-HTTP provider (Amplify: aws) would then look like an HTTP one.
+export DEPLOYS_NO_GITHUB=1
 STUBPATH="$tmp/bin:/usr/bin:/bin"
 
 FUNCS="meta ready json has off deploy_json status latest cancel rollback logs url set_key doctor"
