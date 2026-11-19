@@ -63,7 +63,7 @@ hook_mask() {
 # address or a cloud metadata name: a hook URL there is a request into the user's own network
 # (an agent could aim `hook add` at http://169.254.169.254/ and read what comes back as an error).
 hook_private_host() {
-  local h="$1" o1 o2 o3 o4 rest
+  local h="$1" o o1 o2 o3 o4 rest
   h="$(printf '%s' "$h" | tr '[:upper:]' '[:lower:]')"; h="${h#[}"; h="${h%]}"; h="${h%.}"
   case "$h" in
     localhost|*.localhost|*.local|*.internal|*.localdomain|*.lan|*.home.arpa|metadata|instance-data) return 0 ;;
