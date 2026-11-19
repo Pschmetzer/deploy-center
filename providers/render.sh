@@ -43,8 +43,10 @@ render_call() {
   key="$(render_key)" || exit 1
   # A hung connection must not hang the app: 10 s to connect, 60 s in all.
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
-  [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
-  local try err hdr; err="$(mktemp)"; hdr="$(mktemp)"
+  # The body through a file (0600), not --data on the command line: it can hold an environment
+  # variable's value, and `ps` shows every argument to every account on this Mac.
+  local try err hdr bodyf=""; err="$(mktemp)"; hdr="$(mktemp)"
+  if [ -n "$body" ]; then bodyf="$(mktemp)"; printf '%s' "$body" > "$bodyf"; args+=(-H "Content-Type: application/json" --data-binary "@$bodyf"); fi
   args+=(-D "$hdr")
   for try in 1 2 3; do
     : > "$hdr"
@@ -60,7 +62,7 @@ render_call() {
     break
   done
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
-  rm -f "$err" "$hdr"
+  rm -f "$err" "$hdr" ${bodyf:+"$bodyf"}
   if [[ "$code" != 2* ]]; then
     local hint="" fix="deploys render set-key"
     [ -n "${RENDER_API_KEY:-}" ] && fix="check RENDER_API_KEY in the environment"

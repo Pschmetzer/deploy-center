@@ -27,13 +27,16 @@ http_retry_after() {  # http_retry_after <header file>
 }
 
 http_call() {
-  local label="$1" method="$2" url="$3" body="${4:-}" out code try err hdr own="" wait
+  local label="$1" method="$2" url="$3" body="${4:-}" out code try err hdr own="" wait bodyf=""
   local args=(-sS --connect-timeout 10 --max-time "${HTTP_MAX_TIME:-60}" -X "$method" -H "Accept: application/json" -K -)
   case "$body" in
     "") ;;
     @*) [ -r "${body#@}" ] || die "$label: the body file ${body#@} cannot be read"
         args+=(-H "Content-Type: application/json" --data-binary "$body") ;;
-    *) args+=(-H "Content-Type: application/json" --data "$body") ;;
+    # A JSON body goes in through a file of our own (0600), never as --data on the command line:
+    # a body can hold a secret (an environment variable's value) and `ps` shows every argument.
+    *) bodyf="$(mktemp)"; printf '%s' "$body" > "$bodyf"
+       args+=(-H "Content-Type: application/json" --data-binary "@$bodyf") ;;
   esac
   err="$(mktemp)"
   # The headers are needed for Retry-After: a file of our own when the caller gave none.
@@ -49,7 +52,7 @@ http_call() {
     break
   done
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
-  rm -f "$err"; [ -z "$own" ] || rm -f "$hdr"
+  rm -f "$err" ${bodyf:+"$bodyf"}; [ -z "$own" ] || rm -f "$hdr"
   if [[ "$code" != 2* ]]; then
     local hint="" rest="${url#*://}" path
     path="/${rest#*/}"; [ "$rest" != "${rest#*/}" ] || path="/"
@@ -60,6 +63,8 @@ http_call() {
       429) hint=" (rate limit: try again in a minute)" ;;
       5*) hint=" ($label had a problem: try again later)" ;;
     esac
+    # One line, 300 characters: an error page (HTML) must not fill the terminal.
+    out="$(printf '%s' "$out" | tr '\r\n\t' '   ' | cut -c1-300)"
     die "$label $method $path -> HTTP $code$hint: $out"
   fi
   printf '%s' "$out"
