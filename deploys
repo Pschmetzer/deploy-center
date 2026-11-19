@@ -208,10 +208,12 @@ lock_clear_stale() {  # lock_clear_stale <path> <seconds>
 file_lock() {  # file_lock <file> [stale seconds, default 10]; then file_unlock <file>
   local i=0
   [ "${2:-10}" = 0 ] || lock_clear_stale "$1.lock" "${2:-10}"
-  while [ "$i" -lt 50 ]; do mkdir "$1.lock" 2>/dev/null && return 0; i=$((i + 1)); sleep 0.1; done
+  # A lock file made by the shell itself (noclobber: open with O_EXCL), not by mkdir: the Rust
+  # coreutils of Ubuntu 26.04 answer a mkdir of an existing folder with success when two run at once.
+  while [ "$i" -lt 50 ]; do ( set -C; : > "$1.lock" ) 2>/dev/null && return 0; i=$((i + 1)); sleep 0.1; done
   return 1
 }
-file_unlock() { rmdir "$1.lock" 2>/dev/null || true; }
+file_unlock() { rm -rf "$1.lock" 2>/dev/null || true; }
 export -f mtime   # team_fetch_one runs under xargs
 # A file name for a key like owner/repo@ref: "/" and "@" become "_", as always. A key that has
 # a "_" of its own also gets its checksum, so a_b/c and a/b_c no longer meet in one file (one
