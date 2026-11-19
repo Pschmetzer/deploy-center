@@ -5,7 +5,12 @@ import Foundation
 import Security
 
 final class CertificateProbe: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    private var notAfter: Date?
+    private let lock = NSLock()
+    private var _notAfter: Date?
+    private var notAfter: Date? {
+        get { lock.lock(); defer { lock.unlock() }; return _notAfter }
+        set { lock.lock(); defer { lock.unlock() }; _notAfter = newValue }
+    }
 
     /// The leaf certificate's end, nil when nothing answered or it could not be read.
     static func expiry(_ url: URL) async -> Date? {
