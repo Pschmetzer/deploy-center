@@ -23,6 +23,8 @@ final class PhoneStore: ObservableObject {
     @Published var messageSerial = 0
     /// A project to show, from a widget link or a notification.
     @Published var openKey: String?
+    /// A note asked to deploy this project: the window opens the confirmation for it.
+    @Published var confirmDeployKey: String?
     /// The iCloud Keychain item was read once (off the main thread); until then "no account" is not sure.
     @Published var booted = false
     @Published var demo: Bool {
@@ -261,6 +263,16 @@ final class PhoneStore: ObservableObject {
         return lastLoadComplete
     }
     private var lastLoadComplete = false
+
+    /// Pull to refresh: offline there is nothing to read, and the spinner must not just vanish.
+    func refreshByHand() async {
+        if offline && !demo {
+            let when = loadedAt.map { $0.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(appLocale)) }
+            say(when.map { L("Offline. Showing the state of \($0).", "Offline. Stand von \($0).") } ?? L("Offline.", "Offline."))
+            return
+        }
+        await reload()
+    }
     /// Rows of a provider that cannot be read are shown for a day at most.
     static let rowsExpire: TimeInterval = 24 * 3600
 
@@ -438,7 +450,10 @@ final class PhoneStore: ObservableObject {
         var err: NSError?
         // Face ID or Touch ID, with the passcode as a fallback; "Biometrics only" in Settings drops the
         // fallback (someone who watched the passcode could otherwise deploy to production).
-        let policy: LAPolicy = UserDefaults.standard.bool(forKey: "biometricsOnly") ? .deviceOwnerAuthenticationWithBiometrics : .deviceOwnerAuthentication
+        var policy: LAPolicy = UserDefaults.standard.bool(forKey: "biometricsOnly") ? .deviceOwnerAuthenticationWithBiometrics : .deviceOwnerAuthentication
+        // No Face ID set up (or locked out): "biometrics only" cannot be met, so the passcode stays the way in
+        // instead of a message about a passcode that exists.
+        if policy == .deviceOwnerAuthenticationWithBiometrics, !ctx.canEvaluatePolicy(policy, error: nil) { policy = .deviceOwnerAuthentication }
         guard ctx.canEvaluatePolicy(policy, error: &err) else {
             fail(L("Set a passcode on this device to deploy from it.", "Lege einen Code für dieses Gerät fest, um von hier zu deployen."))
             return false
@@ -459,16 +474,17 @@ final class PhoneStore: ObservableObject {
         } catch { say(error.localizedDescription, error: true); return false }
     }
 
-    /// The "Deploy with Face ID" action of a note: only a project that still waits, and never without Face ID.
+    /// The "Deploy with Face ID" action of a note: the list is read again first (a cold start shows the list of
+    /// the last run, and a deploy pins the newest commit), then the usual confirmation opens; Face ID follows it.
     func deployFromNote(key: String) async {
-        if projects.isEmpty { await reload() }
+        _ = await reload()
         guard let p = projects.first(where: { $0.key == key }) else { return }
         openKey = key
         guard p.group == .waiting else {
             say(L("\(p.name) no longer waits. Nothing was started.", "\(p.name) wartet nicht mehr. Es wurde nichts gestartet."))
             return
         }
-        await deploy(p)
+        confirmDeployKey = key
     }
 
     func deploy(_ p: PhoneProject) async {
@@ -828,7 +844,7 @@ enum Notes {
     static func askOnce() async {
         let s = await UNUserNotificationCenter.current().notificationSettings()
         guard s.authorizationStatus == .notDetermined else { return }
-        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
     }
 
     static func post(_ body: String, project: String?, id: String? = nil, news: Bool = false) async {

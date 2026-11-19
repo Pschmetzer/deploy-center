@@ -152,7 +152,7 @@ struct HTTP {
                 if limited { throw APIError(status: code, message: Self.limitText(http), rateLimited: true) }
                 let obj = try? JSONSerialization.jsonObject(with: data) as? JSON
                 let msg = ((obj?["error"] as? JSON)?["message"] as? String) ?? (obj?["message"] as? String)
-                    ?? String(data: data.prefix(200), encoding: .utf8) ?? ""
+                    ?? Self.plainBody(data)
                 throw APIError(status: code, message: msg, rateLimited: limited)
             }
             if let tag, http?.statusCode == 200, let etag = http?.value(forHTTPHeaderField: "etag") {
@@ -164,6 +164,11 @@ struct HTTP {
     }
 
     /// GitHub's primary limit comes as 403 (or 429) with `x-ratelimit-remaining: 0`.
+    /// The start of a plain-text error body. An HTML page (a proxy or CDN error) says nothing: empty then.
+    static func plainBody(_ data: Data) -> String {
+        let t = (String(data: data.prefix(200), encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.hasPrefix("<") ? "" : t
+    }
     static func rateLimited(_ r: HTTPURLResponse?) -> Bool {
         guard let r, r.statusCode == 403 || r.statusCode == 429 else { return false }
         return r.value(forHTTPHeaderField: "x-ratelimit-remaining") == "0" || r.value(forHTTPHeaderField: "retry-after") != nil

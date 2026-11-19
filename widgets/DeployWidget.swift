@@ -58,6 +58,21 @@ extension EnvironmentValues {
 
 private func money(_ v: Double) -> String { v.formatted(.currency(code: "USD").precision(.fractionLength(0))) }
 
+/// Orange for small text: the system orange is about 2.3:1 on white; this one reaches 4.5:1 in light mode
+/// (the app's `warningText`), and is the system orange in dark mode. `warn` false gives `other`.
+private struct WarnText<S: ShapeStyle>: ViewModifier {
+    let warn: Bool
+    let other: S
+    @Environment(\.colorScheme) private var scheme
+    func body(content: Content) -> some View {
+        if warn { content.foregroundStyle(scheme == .dark ? Color.orange : Color(red: 0.62, green: 0.30, blue: 0)) }
+        else { content.foregroundStyle(other) }
+    }
+}
+private extension View {
+    func warnText<S: ShapeStyle>(_ warn: Bool = true, otherwise other: S = Color.secondary) -> some View { modifier(WarnText(warn: warn, other: other)) }
+}
+
 /// A link that shows one project in the app: deploycenter://select?project=…&platform=… (Mac and iPhone).
 private func link(_ p: DeploySnapshot.Project) -> URL {
     var c = URLComponents(); c.scheme = "deploycenter"; c.host = "select"
@@ -106,7 +121,7 @@ struct Header: View {
             let when = Calendar.current.isDate(snap.at, inSameDayAs: date) ? snap.at.formatted(date: .omitted, time: .shortened)
                                                                            : snap.at.formatted(.dateTime.day().month().hour().minute())
             Text(snap.isStale(at: date) ? w("old: ", "alt: ") + when : when)
-                .foregroundStyle(snap.isStale(at: date) ? Color.orange : .secondary)
+                .warnText(snap.isStale(at: date))
                 .lineLimit(1)
             #endif
         }
@@ -376,7 +391,9 @@ struct ProblemsWidgetView: View {
         }
         .environment(\.words, Words(entry.snap))
         .containerBackground(.fill.tertiary, for: .widget)
-        .widgetURL(URL(string: "deploycenter://"))
+        // A small widget has no Link: the one tap opens the first project that needs a look (the app otherwise).
+        .widgetURL(family == .systemSmall ? entry.snap?.projects.first(where: { $0.status != .waiting }).map(link)
+                   ?? URL(string: "deploycenter://") : URL(string: "deploycenter://"))
     }
 }
 
@@ -393,7 +410,7 @@ struct ProblemsView: View {
                 // An old snapshot cannot say that nothing failed.
                 Spacer(minLength: 0)
                 Label(w("Out of date: open the app", "Veraltet: App öffnen"), systemImage: "clock.badge.exclamationmark")
-                    .font(.callout.weight(.medium)).foregroundStyle(.orange)
+                    .font(.callout.weight(.medium)).warnText()
                 Spacer(minLength: 0)
             } else if bad.isEmpty {
                 Spacer(minLength: 0)
@@ -466,7 +483,7 @@ struct NextDeployContent: View {
                 } else {
                     Spacer(minLength: 0)
                     Text(stale ? w("Out of date: open the app", "Veraltet: App öffnen") : w("No deploy planned", "Kein Deploy geplant"))
-                        .font(.callout.weight(.medium)).foregroundStyle(stale ? Color.orange : Color.secondary)
+                        .font(.callout.weight(.medium)).warnText(stale)
                     Spacer(minLength: 0)
                 }
             }

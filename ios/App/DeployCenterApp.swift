@@ -137,8 +137,21 @@ enum Background {
             g.cancelAll()
             return first ?? false
         }
-        guard complete, !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return }
+        // An expired or revoked key makes every run fail quietly: say it, once a day.
+        if store.keyRefused { await notifyRefusedKey() }
+        guard complete else { return }
         if let before { await store.notifyChanges(from: before) }
+    }
+
+    private static let refusedKey = "keyRefusedNotedOn"
+    /// One note a day that a provider refused the key; it names no project.
+    @MainActor private static func notifyRefusedKey(now: Date = Date()) async {
+        let day = Calendar.current.startOfDay(for: now)
+        if let last = UserDefaults.standard.object(forKey: refusedKey) as? Date, last >= day { return }
+        UserDefaults.standard.set(day, forKey: refusedKey)
+        await Notes.post(L("A key was refused. Open Deploy Center and check the keys in Settings.",
+                           "Ein Schlüssel wurde abgelehnt. Öffne Deploy Center und prüfe die Schlüssel in den Einstellungen."), project: nil, id: "key-refused")
     }
 
     /// In Application Support, not Caches: iOS may empty Caches, and then every waiting project looked new.
