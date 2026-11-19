@@ -220,6 +220,15 @@ expect("failures of the last deploys", "\(Journal.failures(of: "a\"b", in: je))"
 // The journal: formulas, platforms, stable ids.
 let fx = [JournalEntry(platform: "Vercel", name: "=HYPERLINK(1)", result: "failed", seconds: nil, detail: "@x")]
 expect("csv defuses formulas", Journal.csv(fx).contains("\"'=HYPERLINK(1)\",failed,,\"'@x\""), true)
+// IDEEN-11 203/204/224: names are masked, tokens in a detail or a note never reach an export.
+var tok = JournalEntry(platform: "Vercel", name: "shop", result: "failed", seconds: nil, detail: "deploy failed with token ghp_abcdefgh12345678")
+tok.note = "key sk-abcdefghijklmnopqrstu"
+let tokCSV = Journal.csv([tok], mask: { $0 == "shop" ? "Atlas-1" : $0 }, scrub: { $0.replacingOccurrences(of: "deploy", with: "ship") })
+expect("csv masks name", tokCSV.contains("Atlas-1") && !tokCSV.contains(",\"shop\""), true)
+expect("csv masks tokens", tokCSV.contains("ghp_abcdefgh") || tokCSV.contains("sk-abcdef"), false)
+expect("csv scrubs names in details", tokCSV.contains("ship failed"), true)
+expect("markdown masks tokens", JournalStats.markdown([tok]).contains("ghp_abcdefgh"), false)
+expect("postmortem masks tokens", JournalStats.postmortem(tok).contains("ghp_abcdefgh") || JournalStats.postmortem(tok).contains("sk-abcdef"), false)
 let mix = [JournalEntry(platform: "Vercel", name: "shop", result: "failed", seconds: nil, detail: nil),
            JournalEntry(platform: "Render", name: "shop", result: "live", seconds: nil, detail: nil)]
 expect("failures per platform", "\(Journal.failures(of: "shop", platform: "Render", in: mix))", "(failed: 0, total: 1)")
@@ -281,6 +290,11 @@ expect("npm ERR!", LogTools.isErrorLine("npm ERR! code ELIFECYCLE"), true)
 expect("command failed", LogTools.isErrorLine("Command \"npm run build\" exited with 1"), true)
 expect("GitHub token masked", LogTools.maskSecrets("using ghp_abcdefghijklmnopqrstuvwxyz0123 now"), "using [GITHUB TOKEN] now")
 expect("bearer masked", LogTools.maskSecrets("Authorization: Bearer abc.def-123456"), "Authorization: Bearer [HIDDEN]")
+for k in ["shpat_0123456789abcdef0123", "hf_abcdefghijklmnopqrstuvwx", "gsk_abcdefghijkl", "r8_abcdefghijkl", "ntn_abcdefghijkl", "nfp_abcdefghijkl", "fo1_abcdefghijkl", "pscale_tkn_abcdefghij", "napi_abcdefghijkl", "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678"] {
+    expect("more keys masked: \(k.prefix(6))", LogTools.maskSecrets("x \(k) y").contains(k), false)
+}
+expect("OSC hyperlink removed", LogTools.clean("a\u{1B}]8;;http://evil.example\u{07}link\u{1B}]8;;\u{07}b"), "alinkb")
+expect("author and tokens count stay", LogTools.maskSecrets("author: Anna, tokens: 12"), "author: Anna, tokens: 12")
 expect("env value masked", LogTools.maskSecrets("STRIPE_SECRET_KEY=sk_live_1234"), "STRIPE_SECRET_KEY=[HIDDEN]")
 expect("sk- key masked", LogTools.maskSecrets("key sk-proj-ABCDEFGHIJKLMNOPQRST"), "key [API KEY]")
 expect("password in a URL masked", LogTools.maskSecrets("postgres://app:hunter2@db:5432/x"), "postgres://app:[HIDDEN]@db:5432/x")
@@ -578,10 +592,11 @@ expect("prompt template", LogTools.fill("Fix {name} at {sha}: {log} {other}", ["
 do {
     let now = Date(timeIntervalSince1970: 10_000_000)
     let old = SiteLog.Check(t: now.timeIntervalSince1970 - 40 * 86_400, ok: false)
-    let list = [old] + (0..<310).map { SiteLog.Check(t: now.timeIntervalSince1970 - Double($0), ok: $0 % 10 != 0) }
+    let list = [old] + (0..<(SiteLog.keep + 10)).map { SiteLog.Check(t: now.timeIntervalSince1970 - Double($0), ok: $0 % 10 != 0) }
     let t = SiteLog.trim(list, now: now)
-    expect("site log: old and too many dropped", "\(t.count) \(t.contains(old))", "300 false")
+    expect("site log: old and too many dropped", "\(t.count) \(t.contains(old))", "\(SiteLog.keep) false")
     expect("site log: uptime", SiteLog.uptime([SiteLog.Check(t: 1, ok: true), SiteLog.Check(t: 2, ok: false)]) ?? -1, 0.5)
+    expect("site log: ten quick checks do not outweigh a long up time", SiteLog.uptime([SiteLog.Check(t: 0, ok: true), SiteLog.Check(t: 20_000, ok: false)] + (1...9).map { SiteLog.Check(t: 20_000 + Double($0), ok: false) }) ?? -1 > 0.5, true)
     expect("site log: no checks, no uptime", SiteLog.uptime([]) == nil, true)
 }
 do {
@@ -640,6 +655,13 @@ do {
     expect("merge replaces, not duplicates", ((obj(again)["mcpServers"] as? NSDictionary)?.count ?? 0), 2)
     expect("allow deploy written", ClaudeConfig.allowsDeploy(ClaudeConfig.entry(again)), true)
 
+    // IDEEN-11 188: hand-added env variables and args survive a reconnect; the allow switch follows the new entry.
+    let custom = js(#"{"mcpServers":{"deploy-center":{"command":"/o","args":["/s","--x"],"env":{"DEPLOYS_BIN":"/o","DEPLOYS_CONFIG":"/c","DEPLOYS_MCP_ALLOW_DEPLOY":"1"},"type":"stdio"}}}"#)
+    let keep = ClaudeConfig.entry(try ClaudeConfig.merge(custom, entry: entry))
+    expect("merge keeps a custom env variable", (keep?["env"] as? [String: Any])?["DEPLOYS_CONFIG"] as? String ?? "", "/c")
+    expect("merge keeps more args", keep?["args"] as? [String] ?? [], ["/A B/server.mjs", "--x"])
+    expect("merge keeps other keys", keep?["type"] as? String ?? "", "stdio")
+    expect("merge drops the allow switch when off", ClaudeConfig.allowsDeploy(keep), false)
     let back = try ClaudeConfig.unmerge(merged)
     expect("unmerge restores the original", obj(back) == obj(fixture), true)
     let alone = try ClaudeConfig.merge(js(#"{"a":[1,true]}"#), entry: entry)
@@ -675,7 +697,7 @@ do {
     func mode(_ p: String) -> Int { ((try? FileManager.default.attributesOfItem(atPath: p))?[.posixPermissions] as? NSNumber)?.intValue ?? -1 }
     expect("write keeps the mode", mode(file), 0o640)
     expect("backup has the old content", bak.map { FileManager.default.contents(atPath: $0) == fixture } ?? false, true)
-    expect("backup has the same mode", bak.map(mode) ?? -1, 0o640)
+    expect("backup is private (600), whatever the original mode (IDEEN-11 209)", bak.map(mode) ?? -1, 0o600)
     expect("symlink stays a symlink", (try? FileManager.default.destinationOfSymbolicLink(atPath: link)) == file, true)
     expect("written through the link", FileManager.default.contents(atPath: file) == merged, true)
     expect("no temp file left", (try FileManager.default.contentsOfDirectory(atPath: dir)).filter { $0.hasSuffix(".tmp") }.count, 0)
@@ -1056,6 +1078,7 @@ expect("team: owner/repo stays", TeamSettings.ownerRepo(" me/app ") ?? "", "me/a
 expect("team: a github.com address", TeamSettings.ownerRepo("https://github.com/me/app.git") ?? "", "me/app")
 expect("team: a git remote", TeamSettings.ownerRepo("git@github.com:me/app.git") ?? "", "me/app")
 expect("team: a page of the repo", TeamSettings.ownerRepo("github.com/me/app/tree/main") ?? "", "me/app")
+expect("team: another host is not a repo", TeamSettings.ownerRepo("https://gitlab.com/me/app") == nil, true)
 expect("team: no slash is no repo", TeamSettings.ownerRepo("app") == nil, true)
 expect("autofix list: an open PR is said",
        AutofixSettings.label(F(at: 1, project: "a", platform: "vercel", status: "fired", prNumber: 3, prState: "open")), L("fix PR open", "Fix-PR offen"))
@@ -2012,7 +2035,10 @@ do {
     expect("age days", TokenAge.days(["vercel": old], id: "vercel", now: now) ?? -1, 100)
     expect("age unknown", TokenAge.days([:], id: "vercel", now: now) == nil, true)
     expect("update keeps first day", TokenAge.update(["vercel": old], signedIn: ["vercel": true], now: now)["vercel"] ?? 0, old)
-    expect("update forgets signed out", TokenAge.update(["vercel": old], signedIn: ["vercel": false], now: now)["vercel"] == nil, true)
+    let blip = TokenAge.update(["vercel": old], signedIn: ["vercel": false], now: now)
+    expect("one failed check keeps the age", blip["vercel"] ?? 0, old)
+    expect("signed out for a day forgets", TokenAge.update(blip, signedIn: ["vercel": false], now: now.addingTimeInterval(90_000))["vercel"] == nil, true)
+    expect("signed in again clears the blip", TokenAge.update(blip, signedIn: ["vercel": true], now: now)["vercel.off"] == nil, true)
 }
 
 // Quiet hours bundle the good news into one note.
@@ -2050,6 +2076,8 @@ do {
     expect("trend up", CostInsights.trend(days(Array(repeating: 1, count: 7) + Array(repeating: 2, count: 7))) ?? 0, 100.0)
     expect("trend short data", CostInsights.trend(days([1, 2, 3])) == nil, true)
     expect("trend from zero", CostInsights.trend(days(Array(repeating: 0, count: 7) + Array(repeating: 2, count: 7))) == nil, true)
+    // Today's unfinished day is left out (IDEEN-11 163): 14 full days + a tiny today is still "up".
+    expect("trend ignores today", CostInsights.trend(days(Array(repeating: 1, count: 7) + Array(repeating: 2, count: 7) + [0.1]), today: "2026-11-15") ?? 0, 100.0)
     expect("arrow up", CostInsights.arrow(20), "↑")
     expect("arrow down", CostInsights.arrow(-20), "↓")
     expect("arrow flat", CostInsights.arrow(3), "→")

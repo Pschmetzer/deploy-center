@@ -32,18 +32,20 @@ struct RulesConfig: Equatable {
         var paths: [String] = []        // globs of changed files
         var onlyPaths = false           // every changed file matches `paths`, not only one
         var labels: [String] = []       // a PR label of the waiting commits
-        var minAgeHours: Int? = nil     // the oldest waiting commit is at least this old
+        var minAgeHours: Double? = nil  // the oldest waiting commit is at least this old
         var minAgeDays: Int? = nil      // the same in days (collect for 3 days, then ship)
         var minCommits: Int? = nil      // at least this many commits wait
         var minPRs: Int? = nil          // at least this many pull requests wait
         var then: Action = .notify
+        /// An action this app does not know (a newer script): kept as text and written back as it was.
+        var rawThen: String? = nil
         /// Keys of this rule the app does not know, written back unchanged.
         var extra: [String: Any] = [:]
         var extraWhen: [String: Any] = [:]
         static func == (a: Rule, b: Rule) -> Bool {
             a.name == b.name && a.enabled == b.enabled && a.projects == b.projects && a.ciGreen == b.ciGreen && a.paths == b.paths
                 && a.onlyPaths == b.onlyPaths && a.labels == b.labels && a.minAgeHours == b.minAgeHours && a.minAgeDays == b.minAgeDays
-                && a.minCommits == b.minCommits && a.minPRs == b.minPRs && a.then == b.then
+                && a.minCommits == b.minCommits && a.minPRs == b.minPRs && a.then == b.then && a.rawThen == b.rawThen
                 && NSDictionary(dictionary: a.extra).isEqual(to: b.extra) && NSDictionary(dictionary: a.extraWhen).isEqual(to: b.extraWhen)
         }
     }
@@ -84,13 +86,17 @@ struct RulesConfig: Equatable {
         let knownWhen: Set<String> = ["projects", "ciGreen", "paths", "onlyPaths", "labels", "minAgeHours", "minAgeDays", "minCommits", "minPRs"]
         return RulesConfig(rules: rules.map { r in
             let w = r["when"] as? [String: Any] ?? [:]
+            // A number with decimals (1.5 days) is not an Int: it stays in the file as it is, never dropped (IDEEN-11 174).
+            func whole(_ k: String) -> Int? { (w[k] as? NSNumber).flatMap { $0.doubleValue == $0.doubleValue.rounded() ? $0.intValue : nil } }
+            let wholeKeys = ["minAgeDays", "minCommits", "minPRs"].filter { whole($0) == nil }
+            let thenRaw = r["then"] as? String ?? ""
             return Rule(name: r["name"] as? String ?? "", enabled: r["enabled"] as? Bool ?? true,
                         projects: w["projects"] as? [String] ?? [], ciGreen: w["ciGreen"] as? Bool ?? false,
                         paths: w["paths"] as? [String] ?? [], onlyPaths: w["onlyPaths"] as? Bool ?? false,
-                        labels: w["labels"] as? [String] ?? [], minAgeHours: w["minAgeHours"] as? Int, minAgeDays: w["minAgeDays"] as? Int,
-                        minCommits: w["minCommits"] as? Int, minPRs: w["minPRs"] as? Int,
-                        then: Action(rawValue: r["then"] as? String ?? "") ?? .notify,
-                        extra: r.filter { !known.contains($0.key) }, extraWhen: w.filter { !knownWhen.contains($0.key) })
+                        labels: w["labels"] as? [String] ?? [], minAgeHours: (w["minAgeHours"] as? NSNumber)?.doubleValue, minAgeDays: whole("minAgeDays"),
+                        minCommits: whole("minCommits"), minPRs: whole("minPRs"),
+                        then: Action(rawValue: thenRaw) ?? .notify, rawThen: Action(rawValue: thenRaw) == nil && r["then"] != nil ? thenRaw : nil,
+                        extra: r.filter { !known.contains($0.key) }, extraWhen: w.filter { !knownWhen.contains($0.key) || wholeKeys.contains($0.key) })
         })
     }
 
@@ -104,12 +110,12 @@ struct RulesConfig: Equatable {
             if !r.paths.isEmpty { w["paths"] = r.paths }
             if r.onlyPaths { w["onlyPaths"] = true }
             if !r.labels.isEmpty { w["labels"] = r.labels }
-            if let h = r.minAgeHours { w["minAgeHours"] = h }
+            if let h = r.minAgeHours { w["minAgeHours"] = h == h.rounded() ? (Int(h) as Any) : (h as Any) }
             if let d = r.minAgeDays { w["minAgeDays"] = d }
             if let c = r.minCommits { w["minCommits"] = c }
             if let n = r.minPRs { w["minPRs"] = n }
             var o = r.extra
-            o["name"] = r.name; o["enabled"] = r.enabled; o["when"] = w; o["then"] = r.then.rawValue
+            o["name"] = r.name; o["enabled"] = r.enabled; o["when"] = w; o["then"] = r.rawThen ?? r.then.rawValue
             return o
         }
         var d = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
@@ -144,13 +150,13 @@ struct RulesConfig: Equatable {
             c.append(only + r.paths.joined(separator: ", ") + L(" changed", " geändert"))
         }
         if !r.labels.isEmpty { c.append(L("a PR has ", "ein PR hat ") + r.labels.joined(separator: ", ")) }
-        if let h = r.minAgeHours { c.append(L("it waits \(h) h or more", "es \(h) h oder länger wartet")) }
+        if let h = r.minAgeHours { let t = h == h.rounded() ? String(Int(h)) : String(h); c.append(L("it waits \(t) h or more", "es \(t) h oder länger wartet")) }
         if let d = r.minAgeDays { c.append(L("it waits \(d) days or more", "es \(d) Tage oder länger wartet")) }
         if let n = r.minCommits { c.append(L("\(n)+ commits wait", "\(n)+ Commits warten")) }
         if let n = r.minPRs { c.append(L("\(n)+ PRs wait", "\(n)+ PRs warten")) }
         let and: String = L(" and ", " und ")
         let when: String = c.isEmpty ? L("Always", "Immer") : L("When ", "Wenn ") + c.joined(separator: and)
-        return when + ": " + r.then.title
+        return when + ": " + (r.rawThen.map { L("unknown action \"\($0)\" (kept)", "unbekannte Aktion „\($0)“ (bleibt erhalten)") } ?? r.then.title)
     }
 }
 
@@ -164,6 +170,11 @@ struct RulesSettings: View {
             // Changed by the CLI or by hand while Settings was closed: read again, unless edits wait to be saved.
             if config == saved { let fresh = RulesConfig.load(); config = fresh; saved = fresh }
         }
+    }
+    /// The fixed choices plus a value set by hand, so the picker never shows an empty selection (IDEEN-11 175).
+    private static func options<T: Comparable & Hashable>(_ base: [T], _ current: T?) -> [T] {
+        guard let c = current, !base.contains(c) else { return base }
+        return (base + [c]).sorted()
     }
     @ViewBuilder private var content: some View {
         Section {
@@ -184,22 +195,26 @@ struct RulesSettings: View {
                     TextField(L("PR labels (e.g. ship)", "PR-Labels (z. B. ship)"),
                               text: Binding(get: { r.labels.joined(separator: ", ") }, set: { r.labels = RulesConfig.list($0) }))
                     Picker(L("Waiting at least", "Wartet mindestens"), selection: $r.minAgeHours) {
-                        Text(L("any time", "beliebig")).tag(Int?.none)
-                        ForEach([1, 2, 6, 24, 48], id: \.self) { Text("\($0) h").tag(Int?.some($0)) }
+                        Text(L("any time", "beliebig")).tag(Double?.none)
+                        ForEach(Self.options([1, 2, 6, 24, 48], r.minAgeHours), id: \.self) { Text("\($0 == $0.rounded() ? String(Int($0)) : String($0)) h").tag(Double?.some($0)) }
                     }
                     Picker(L("Waiting at least (days)", "Wartet mindestens (Tage)"), selection: $r.minAgeDays) {
                         Text(L("any time", "beliebig")).tag(Int?.none)
-                        ForEach([1, 2, 3, 5, 7, 14, 30], id: \.self) { Text(L("\($0) days", "\($0) Tage")).tag(Int?.some($0)) }
+                        ForEach(Self.options([1, 2, 3, 5, 7, 14, 30], r.minAgeDays), id: \.self) { Text(L("\($0) days", "\($0) Tage")).tag(Int?.some($0)) }
                     }
                     Picker(L("At least this many commits", "Mindestens so viele Commits"), selection: $r.minCommits) {
                         Text(L("any number", "beliebig viele")).tag(Int?.none)
-                        ForEach([10, 25, 50, 100, 200, 500], id: \.self) { Text("\($0)").tag(Int?.some($0)) }
+                        ForEach(Self.options([10, 25, 50, 100, 200, 500], r.minCommits), id: \.self) { Text("\($0)").tag(Int?.some($0)) }
                     }
                     Picker(L("At least this many PRs", "Mindestens so viele PRs"), selection: $r.minPRs) {
                         Text(L("any number", "beliebig viele")).tag(Int?.none)
-                        ForEach([5, 10, 25, 50, 100, 200, 500], id: \.self) { Text("\($0)").tag(Int?.some($0)) }
+                        ForEach(Self.options([5, 10, 25, 50, 100, 200, 500], r.minPRs), id: \.self) { Text("\($0)").tag(Int?.some($0)) }
                     }
-                    Picker(L("Then", "Dann"), selection: $r.then) { ForEach(RulesConfig.Action.allCases) { Text($0.title).tag($0) } }
+                    if let raw = r.rawThen {
+                        Text(L("Unknown action \"\(raw)\": kept as it is, change it with the picker below.", "Unbekannte Aktion „\(raw)“: bleibt unverändert, mit der Auswahl darunter änderbar."))
+                            .font(.caption).foregroundStyle(Color.warningText)
+                    }
+                    Picker(L("Then", "Dann"), selection: Binding(get: { r.then }, set: { r.then = $0; r.rawThen = nil })) { ForEach(RulesConfig.Action.allCases) { Text($0.title).tag($0) } }
                     Button(L("Remove this rule", "Diese Regel entfernen"), role: .destructive) { config.rules.removeAll { $0.id == r.id } }
                 } label: {
                     Toggle(isOn: $r.enabled) {
@@ -212,7 +227,7 @@ struct RulesSettings: View {
             }
             HStack {
                 Button(L("Add a rule", "Regel hinzufügen")) {
-                    config.rules.append(.init(name: L("Docs go out by themselves", "Doku geht von selbst raus"), ciGreen: true,
+                    config.rules.append(.init(name: L("Docs changed: tell me", "Doku geändert: melden"), ciGreen: true,
                                               paths: ["docs/**", "*.md"], onlyPaths: true, then: .notify))
                 }
                 Spacer()

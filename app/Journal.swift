@@ -127,10 +127,6 @@ enum Journal {
         DispatchQueue.main.async { NotificationCenter.default.post(name: didAppend, object: nil) }
     }
 
-    /// Project names and error texts: readable by this user only, like the log.
-    private static func private600(_ u: URL) {
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: u.path)
-    }
 
     private static func countLines() -> Int {
         guard let data = try? Data(contentsOf: url) else { return 0 }
@@ -140,7 +136,7 @@ enum Journal {
     private static func rewrite(_ list: [JournalEntry]) {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         let text = list.compactMap { try? enc.encode($0) }.map { String(decoding: $0, as: UTF8.self) }.joined(separator: "\n") + "\n"
-        do { try Data(text.utf8).write(to: url, options: .atomic); private600(url) }
+        do { try PrivateFile.write(Data(text.utf8), to: url) }
         catch { Log.write("journal: could not trim (\(error.localizedDescription))") }
     }
 
@@ -158,7 +154,7 @@ enum Journal {
     /// this app does not know, lines it cannot read).
     static func setNoteLocked(_ id: String, _ t: String) {
         guard let text = try? String(contentsOf: url, encoding: .utf8), let out = withNote(text, id: id, note: t) else { return }
-        do { try Data(out.utf8).write(to: url, options: .atomic); private600(url) }
+        do { try PrivateFile.write(Data(out.utf8), to: url) }
         catch { Log.write("journal: comment not saved (\(error.localizedDescription))") }
     }
     /// The file's text with the comment set on the one entry; nil when it is not there.
@@ -168,7 +164,7 @@ enum Journal {
         for (n, line) in lines.enumerated().reversed() where !line.isEmpty {
             guard let e = try? dec.decode(JournalEntry.self, from: Data(line.utf8)), e.id == id,
                   var obj = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any] else { continue }
-            if t.isEmpty { obj.removeValue(forKey: "note") } else { obj["note"] = String(t.prefix(500)) }
+            if t.isEmpty { obj.removeValue(forKey: "note") } else { obj["note"] = String(LogTools.maskSecrets(t).prefix(500)) }
             guard let out = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys, .withoutEscapingSlashes]) else { return nil }
             lines[n] = String(decoding: out, as: UTF8.self)
             return lines.joined(separator: "\n")
@@ -187,7 +183,10 @@ enum Journal {
 
     /// `perBuild`: an average Vercel build's price by project (Costs); a build that ran (live,
     /// failed, forced, preview, rollback) gets it in the last column as an estimate (FEA-014).
-    static func csv(_ list: [JournalEntry], perBuild: ((String) -> Double?)? = nil) -> String {
+    /// `mask` stands in for project names (demo mode), `scrub` for names inside texts; a token in a
+    /// detail or a comment never leaves (IDEEN-11 203, 224).
+    static func csv(_ list: [JournalEntry], perBuild: ((String) -> Double?)? = nil,
+                    mask: (String) -> String = { $0 }, scrub: (String) -> String = { $0 }) -> String {
         // Quoted, and a cell that a spreadsheet would read as a formula starts with ' instead.
         func q(_ s: String) -> String {
             let safe = s.first.map { "=+-@\t\r".contains($0) } == true ? "'" + s : s
@@ -199,7 +198,8 @@ enum Journal {
             return String(format: "%.2f", p)
         }
         return (["time,platform,project,result,seconds,detail,note,usd_estimate"] + list.map {
-            [$0.at.formatted(.iso8601), $0.platform, q($0.name), $0.result, $0.seconds.map { String(Int($0)) } ?? "", q($0.detail ?? ""), q($0.note ?? ""), usd($0)].joined(separator: ",")
+            [$0.at.formatted(.iso8601), $0.platform, q(mask($0.name)), $0.result, $0.seconds.map { String(Int($0)) } ?? "",
+             q(scrub(LogTools.maskSecrets($0.detail ?? ""))), q(scrub(LogTools.maskSecrets($0.note ?? ""))), usd($0)].joined(separator: ",")
         }).joined(separator: "\n")
     }
 
@@ -292,6 +292,7 @@ struct JournalView: View {
     @State private var limit = 200
     /// How far back the list reaches: 0 is all of it.
     @State private var days = 0
+    @State private var saveError: String?
     @State private var platform: String?
 
     private var shown: [JournalEntry] {
@@ -303,17 +304,23 @@ struct JournalView: View {
         Set(entries.map(\.name)).map { Item(id: $0, name: $0, detail: "", platform: .vercel, deployable: false, auto: false, note: nil, link: nil) }
     }
 
+    /// Names inside detail texts, replaced in demo mode (the list's own rule), for what is copied.
+    private func scrub(_ s: String) -> String { Demo.on ? Demo.scrub(s, items: names) : s }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let e = saveError {
+                Text(L("Not saved: ", "Nicht gespeichert: ") + e).font(.caption).foregroundStyle(Color.warningText).padding(.horizontal, 12)
+            }
             HStack {
                 Text(L("Deploy history", "Deploy-Verlauf")).font(.headline)
                 Spacer()
                 Button(L("Copy as CSV", "Als CSV kopieren")) {
-                    Pasteboard.copy(Journal.csv(shown, perBuild: costs?.perBuild))
+                    Pasteboard.copy(Journal.csv(shown, perBuild: costs?.perBuild, mask: Demo.mask, scrub: scrub))
                 }.disabled(shown.isEmpty)
                 Button(L("Save as CSV …", "Als CSV sichern …")) { save() }.disabled(shown.isEmpty)
                 Menu(L("Markdown", "Markdown")) {
-                    Button(L("Copy the list as a table", "Liste als Tabelle kopieren")) { copy(JournalStats.markdown(shown, mask: Demo.mask)) }
+                    Button(L("Copy the list as a table", "Liste als Tabelle kopieren")) { copy(JournalStats.markdown(shown, mask: Demo.mask, scrub: scrub)) }
                     Button(L("Copy this month's report", "Bericht dieses Monats kopieren")) { copy(JournalStats.monthReport(entries, mask: Demo.mask)) }
                 }.fixedSize().disabled(entries.isEmpty)
                 Toggle(L("Figures", "Zahlen"), isOn: $stats).toggleStyle(.button).disabled(entries.isEmpty)
@@ -400,21 +407,21 @@ struct JournalView: View {
         .accessibilityElement(children: .combine)
         .accessibilityActions {
             Button(e.note == nil ? L("Add a comment", "Kommentar hinzufügen") : L("Edit the comment", "Kommentar ändern")) { noteText = e.note ?? ""; noteFor = e }
-            Button(L("Copy as Markdown", "Als Markdown kopieren")) { copy(JournalStats.markdown([e], mask: Demo.mask)) }
+            Button(L("Copy as Markdown", "Als Markdown kopieren")) { copy(JournalStats.markdown([e], mask: Demo.mask, scrub: scrub)) }
             if k == .failed || k == .rollback {
-                Button(L("Copy a postmortem template", "Postmortem-Vorlage kopieren")) { copy(JournalStats.postmortem(e, mask: Demo.mask)) }
+                Button(L("Copy a postmortem template", "Postmortem-Vorlage kopieren")) { copy(JournalStats.postmortem(e, mask: Demo.mask, scrub: scrub)) }
             }
         }
         .contextMenu {
             if let sha = e.sha, !sha.isEmpty { Button(L("Copy the commit", "Commit kopieren")) { copy(sha) } }
             if let id = e.deployId, !id.isEmpty { Button(L("Copy the deploy id", "Deploy-ID kopieren")) { copy(id) } }
             if k == .failed || k == .rollback {
-                Button(L("Copy a postmortem template", "Postmortem-Vorlage kopieren")) { copy(JournalStats.postmortem(e, mask: Demo.mask)) }
+                Button(L("Copy a postmortem template", "Postmortem-Vorlage kopieren")) { copy(JournalStats.postmortem(e, mask: Demo.mask, scrub: scrub)) }
             }
             Button(e.note == nil ? L("Add a comment …", "Kommentar hinzufügen …") : L("Edit the comment …", "Kommentar ändern …")) {
                 noteText = e.note ?? ""; noteFor = e
             }
-            Button(L("Copy as Markdown", "Als Markdown kopieren")) { copy(JournalStats.markdown([e], mask: Demo.mask)) }
+            Button(L("Copy as Markdown", "Als Markdown kopieren")) { copy(JournalStats.markdown([e], mask: Demo.mask, scrub: scrub)) }
         }
     }
 
@@ -429,7 +436,10 @@ struct JournalView: View {
         panel.nameFieldStringValue = "deploy-history.csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         guard panel.runModal() == .OK, let u = panel.url else { return }
-        do { try Data(Journal.csv(shown, perBuild: costs?.perBuild).utf8).write(to: u, options: .atomic) }
-        catch { Log.write("journal: CSV not saved (\(error.localizedDescription))") }
+        do { try PrivateFile.write(Data(Journal.csv(shown, perBuild: costs?.perBuild, mask: Demo.mask, scrub: scrub).utf8), to: u) }
+        catch {
+            Log.write("journal: CSV not saved (\(error.localizedDescription))")
+            saveError = error.localizedDescription
+        }
     }
 }

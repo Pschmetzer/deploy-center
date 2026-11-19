@@ -28,7 +28,10 @@ enum CostInsights {
 
     /// The last 7 days against the 7 before: the change in percent, nil with fewer than 14 days or a
     /// previous week without cost (a percentage of nothing says nothing).
-    static func trend(_ days: [Costs.Day]) -> Double? {
+    /// With `today`, the unfinished current day is left out (it would always look like a drop).
+    static func trend(_ days: [Costs.Day], today: String? = nil) -> Double? {
+        var days = days
+        if let t = today, days.last?.day == t { days.removeLast() }
         guard days.count >= 14 else { return nil }
         let recent = days.suffix(7).map(\.build).reduce(0, +)
         let before = days.suffix(14).prefix(7).map(\.build).reduce(0, +)

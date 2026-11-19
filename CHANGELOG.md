@@ -3,6 +3,8 @@
 ## Unreleased
 
 - iPhone: "Deploy with Face ID" in a note reads the list again and asks the usual confirmation first (it could deploy an older commit without it); "Biometrics only" without Face ID set up falls back to the passcode; Siri and Spotlight respect "Unlock on open" (names hidden); a refused key in the background run is noted once a day; a pasted QR code leaves the pasteboard also when discarded or refused; the QR text says 90 seconds; the small "Failed deploys" widget opens the first project; widget warning text is readable in light mode; offline pull-to-refresh says so; HTML error pages no longer show as text.
+- Costs: "Share the saving" opens its popover at its own button again, "Save report as file" is always there and shows an error if the save fails, the trend leaves out today's unfinished day, and the monthly estimate uses the real month length.
+- History, log search: CSV, Markdown and postmortem exports and the log search no longer show tokens; the CSV follows demo mode; a token typed into a comment is masked; files are written private from the start.
 - CLI: `deploy`, `deploy-changed --yes`, `rollback` and `cancel` from the terminal now write a line to the journal (the app still writes its own).
 - CLI: the launchd job (and the cron line) of `schedule`, `autofix` and `guard` carries `DEPLOYS_CONFIG` and `DEPLOYS_NOTIFY_CMD`; the daily job's log is rotated like the others.
 - CLI: `--when-green` no longer reads "no checks" as green for a commit younger than `DEPLOYS_CI_GRACE` seconds (default 90): CI may not have started yet.

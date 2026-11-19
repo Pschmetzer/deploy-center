@@ -42,6 +42,13 @@ enum LogTools {
         (#"\b(sb_secret_|sbp_|dop_v1_|vercel_blob_rw_)[A-Za-z0-9_-]{8,}"#, "[API KEY]"),
         (#"\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"#, "[SENDGRID KEY]"),
         (#"\bre_[A-Za-z0-9]{16,}"#, "[RESEND KEY]"),
+        // More key shapes (IDEEN-11 211): the script's list (vcp_, cfut_, fo1_, nfp_, hf_ …) plus Shopify, Groq, Replicate, Notion, PlanetScale, Neon.
+        (#"\b((vcp|vck|cfut|cfat|fo1|nfp|ntn|gsk|r8|napi)_[A-Za-z0-9_-]{8,}|HRKU-[A-Za-z0-9_-]{8,}|hf_[A-Za-z0-9]{20,}|sntrys_[A-Za-z0-9+/=_-]{16,})"#, "[API KEY]"),
+        (#"\b(shp(at|ss|ca|pa)_[A-Fa-f0-9]{16,}|pscale_(tkn|pw|oauth)_[A-Za-z0-9_-]{8,})"#, "[API KEY]"),
+        (#"\bsecret_[A-Za-z0-9]{30,}"#, "[NOTION KEY]"),
+        (#"\b\d{8,10}:[A-Za-z0-9_-]{35}\b"#, "[TELEGRAM TOKEN]"),
+        (#"(https?://hooks\.slack\.com/(?:services|workflows|triggers)/)[A-Za-z0-9/_-]+"#, "$1[HIDDEN]"),
+        (#"(https?://(?:[a-z]+\.)?discord(?:app)?\.com/api/(?:v\d+/)?webhooks/)\d+/[A-Za-z0-9._-]+"#, "$1[HIDDEN]"),
         (#"\blin_(api|oauth)_[A-Za-z0-9]{16,}"#, "[LINEAR KEY]"),
         (#"\bdp\.(st|pt|sa|ct)\.[A-Za-z0-9._-]{16,}"#, "[DOPPLER TOKEN]"),
         (#"\bhttps?://[A-Fa-f0-9]{16,}@[A-Za-z0-9.-]*sentry[A-Za-z0-9./-]*"#, "[SENTRY DSN]"),
@@ -60,7 +67,8 @@ enum LogTools {
         secrets.reduce(text) { t, s in s.0.stringByReplacingMatches(in: t, range: NSRange(t.startIndex..., in: t), withTemplate: s.1) }
     }
 
-    private static let ansi = try! NSRegularExpression(pattern: #"\u001B\[[0-9;?]*[ -/]*[@-~]"#)
+    /// Colour and cursor codes (CSI) and operating-system commands (OSC: hidden hyperlinks, window titles, IDEEN-11 212).
+    private static let ansi = try! NSRegularExpression(pattern: #"\u001B\[[0-9;?]*[ -/]*[@-~]|\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)?"#)
     /// Colour codes out, and a line of minified code cut to something a reader (or Claude) can use.
     static func clean(_ line: String, max: Int = 400) -> String {
         let l = ansi.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: "")

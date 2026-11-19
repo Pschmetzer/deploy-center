@@ -45,6 +45,7 @@ struct TeamSettings: View {
     @State private var busy = false
     @State private var message: String?
     @State private var failed = false
+    @State private var readError = false
 
     /// The switch is this Mac's file; DEPLOYS_READONLY and the observers list are shown, not switched.
     private var fromFile: Bool { config?.readonly.from.hasSuffix("/readonly exists") ?? false }
@@ -128,7 +129,8 @@ struct TeamSettings: View {
         guard parts.count >= 2 else { return nil }
         let owner = parts[0], name = parts[1]
         let ok = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
-        guard !owner.isEmpty, !name.isEmpty, !owner.hasPrefix("-"),
+        // GitHub owners have no dot: "gitlab.com/o/r" is another host, not an owner (IDEEN-11 179).
+        guard !owner.isEmpty, !name.isEmpty, !owner.hasPrefix("-"), !owner.contains("."),
               owner.unicodeScalars.allSatisfy(ok.contains), name.unicodeScalars.allSatisfy(ok.contains) else { return nil }
         // A deeper path is a page of the repo (…/tree/main): the repo is the first two parts.
         return "\(owner)/\(name)"
@@ -147,8 +149,10 @@ struct TeamSettings: View {
         // A failed read keeps the last good config; the reason goes under the buttons.
         do {
             config = try await Tool.json(["config", "--json"], as: TeamConfig.self, timeout: 60)
+            // A read error of earlier stays on screen otherwise (IDEEN-11 180).
+            if readError { message = nil; failed = false; readError = false }
         } catch {
-            if message == nil { message = L("Could not read the team config: ", "Team-Konfiguration nicht lesbar: ") + error.localizedDescription; failed = true }
+            if message == nil { message = L("Could not read the team config: ", "Team-Konfiguration nicht lesbar: ") + error.localizedDescription; failed = true; readError = true }
         }
         if let c = config { store.teamObserver = c.readonly.value }
     }
@@ -158,8 +162,8 @@ struct TeamSettings: View {
         do {
             let out = String(data: try await Tool.run(args, timeout: 60), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            message = show && !out.isEmpty ? out : nil; failed = false
-        } catch { message = error.localizedDescription; failed = true }
+            message = show && !out.isEmpty ? LogTools.maskSecrets(out) : nil; failed = false
+        } catch { message = LogTools.maskSecrets(error.localizedDescription); failed = true }
         await reload()
         // The doctor carries the observer flag for the window; read it again.
         if let d = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { store.doctor = d }

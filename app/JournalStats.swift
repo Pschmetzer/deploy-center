@@ -125,11 +125,11 @@ enum JournalStats {
     // MARK: Markdown
 
     /// The entries as a Markdown table (Notion, Obsidian), oldest first.
-    nonisolated static func markdown(_ list: [JournalEntry], mask: (String) -> String = { $0 }) -> String {
+    nonisolated static func markdown(_ list: [JournalEntry], mask: (String) -> String = { $0 }, scrub: (String) -> String = { $0 }) -> String {
         func cell(_ s: String) -> String { s.replacingOccurrences(of: "|", with: "\\|").replacingOccurrences(of: "\n", with: " ") }
         let head = "| " + [L("Time", "Zeit"), L("Platform", "Plattform"), L("Project", "Projekt"), L("Result", "Ergebnis"), L("Seconds", "Sekunden"), L("Detail", "Detail")].joined(separator: " | ") + " |\n|---|---|---|---|---|---|"
         return ([head] + list.map { e in
-            "| " + [e.at.formatted(.iso8601), e.platform, cell(mask(e.name)), e.kind.title, e.seconds.map { String(Int($0)) } ?? "", cell(e.detail ?? "")].joined(separator: " | ") + " |"
+            "| " + [e.at.formatted(.iso8601), e.platform, cell(mask(e.name)), e.kind.title, e.seconds.map { String(Int($0)) } ?? "", cell(scrub(LogTools.maskSecrets(e.detail ?? "")))].joined(separator: " | ") + " |"
         }).joined(separator: "\n")
     }
 
@@ -152,12 +152,13 @@ enum JournalStats {
     }
 
     /// A postmortem to fill in, from a failed or rolled-back entry.
-    nonisolated static func postmortem(_ e: JournalEntry, mask: (String) -> String = { $0 }) -> String {
+    nonisolated static func postmortem(_ e: JournalEntry, mask: (String) -> String = { $0 }, scrub: (String) -> String = { $0 }) -> String {
         [ "# " + L("Postmortem: \(mask(e.name))", "Postmortem: \(mask(e.name))"), "",
           "- " + L("When", "Wann") + ": " + e.at.formatted(date: .long, time: .shortened),
           "- " + L("Platform", "Plattform") + ": " + e.platform,
           "- " + L("Result", "Ergebnis") + ": " + e.kind.title,
-          e.detail.map { "- " + L("Detail", "Detail") + ": " + $0 } ?? nil,
+          e.detail.map { "- " + L("Detail", "Detail") + ": " + scrub(LogTools.maskSecrets($0)) } ?? nil,
+          e.note.map { "- " + L("Note", "Notiz") + ": " + scrub(LogTools.maskSecrets($0)) } ?? nil,
           "", "## " + L("What happened", "Was ist passiert"), "",
           "## " + L("Impact", "Auswirkung"), "",
           "## " + L("Cause", "Ursache"), "",

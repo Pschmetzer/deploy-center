@@ -25,6 +25,7 @@ struct CostsSheet: View {
     @State private var hovered: String?
     @State private var sharing = false
     @State private var reportCopied = false
+    @State private var saveError: String?
     /// 7 or 14 days for the chart (the billing data holds 14).
     @AppStorage("costsSpan") private var span = 14
     @State private var editing: String?
@@ -114,13 +115,13 @@ struct CostsSheet: View {
             HStack(spacing: 10) {
                 Text(costs.week, format: .currency(code: "USD")).font(.title3.weight(.semibold).monospacedDigit())
                 Sparkline(values: CostInsights.series(costs.days))
-                if let t = CostInsights.trend(costs.days) {
+                if let t = CostInsights.trend(costs.days, today: Self.today()) {
                     Text(CostInsights.arrow(t) + " " + String(format: "%+.0f %%", t)).font(.caption.monospacedDigit())
                         .foregroundStyle(t > 5 ? Color.orange : .secondary)
                         .help(L("Against the 7 days before", "Gegenüber den 7 Tagen davor"))
                 }
             }
-            Text(L("≈ ", "≈ ") + (average * 30).formatted(.currency(code: "USD")) + L(" a month at this pace", " im Monat bei diesem Tempo"))
+            Text(L("≈ ", "≈ ") + (average * Double(Self.daysInMonth(Self.today()))).formatted(.currency(code: "USD")) + L(" a month at this pace", " im Monat bei diesem Tempo"))
                 .font(.caption).foregroundStyle(.secondary)
                 .help(L("From the last 7 whole days; today is not over yet", "Aus den letzten 7 ganzen Tagen; heute ist noch nicht vorbei"))
             if let s = costs.saving(today: Self.today()) {
@@ -130,15 +131,6 @@ struct CostsSheet: View {
                 if s.after < s.before {
                     Button(L("Share the saving …", "Ersparnis teilen …")) { sharing = true }
                         .buttonStyle(.link).font(.caption)
-            Button(L("Save report as file …", "Bericht als Datei sichern …")) {
-                let panel = NSSavePanel()
-                panel.nameFieldStringValue = "build-costs-\(Self.today()).md"
-                panel.allowedContentTypes = [.plainText]
-                guard panel.runModal() == .OK, let url = panel.url else { return }
-                let md = CostInsights.report(costs, budget: budget, today: Self.today(), names: !Demo.on)
-                do { try md.write(to: url, atomically: true, encoding: .utf8) } catch { Log.write("costs: report not saved (\(error.localizedDescription))") }
-            }
-            .buttonStyle(.link).font(.caption)
                         .popover(isPresented: $sharing) { SavingShare(before: s.before, after: s.after) }
                         .help(L("Copies a picture and a sentence with your saving, without project names",
                                 "Kopiert ein Bild und einen Satz mit deiner Ersparnis, ohne Projektnamen"))
@@ -162,11 +154,26 @@ struct CostsSheet: View {
             }
             Button(reportCopied ? L("Copied ✓", "Kopiert ✓") : L("Copy report (Markdown)", "Bericht kopieren (Markdown)")) {
                 let md = CostInsights.report(costs, budget: budget, today: Self.today(), names: !Demo.on)
-                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(md, forType: .string)
+                Pasteboard.copy(md)
                 reportCopied = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { reportCopied = false }
             }
             .buttonStyle(.link).font(.caption)
+            Button(L("Save report as file …", "Bericht als Datei sichern …")) {
+                let panel = NSSavePanel()
+                panel.nameFieldStringValue = "build-costs-\(Self.today()).md"
+                panel.allowedContentTypes = [.plainText]
+                guard panel.runModal() == .OK, let url = panel.url else { return }
+                let md = CostInsights.report(costs, budget: budget, today: Self.today(), names: !Demo.on)
+                do { try md.write(to: url, atomically: true, encoding: .utf8) } catch {
+                    Log.write("costs: report not saved (\(error.localizedDescription))")
+                    saveError = error.localizedDescription
+                }
+            }
+            .buttonStyle(.link).font(.caption)
+            if let e = saveError {
+                Text(L("Not saved: ", "Nicht gespeichert: ") + e).font(.caption).foregroundStyle(Color.warningText)
+            }
         }
     }
 

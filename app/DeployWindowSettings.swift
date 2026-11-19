@@ -1,5 +1,5 @@
 // Deploy Center — Settings > Deploy & guard > Deploy window: the times without deploys, edited here
-// instead of by hand (DeployWindowConfig in Model.swift reads and writes the file `deploys window` reads).
+// instead of by hand (DeployWindowConfig in DeployWindowConfig.swift reads and writes the file `deploys window` reads).
 
 import SwiftUI
 
