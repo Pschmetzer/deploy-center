@@ -543,7 +543,7 @@ struct SettingsView: View {
     }
 }
 
-private func open(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.open(u) } }
+@MainActor private func open(_ s: String) { if let u = URL(string: s) { SafeLink.open(u) } }
 
 /// Every way out (⌘Q, the Dock's Quit, the menu bar, logging out) asks first while deploys run,
 /// and the Dock badge follows the store even with the window closed.

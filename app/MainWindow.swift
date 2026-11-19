@@ -209,6 +209,8 @@ struct ContentView: View {
     /// Deploy was clicked in the question: started once its sheet is gone.
     @State private var confirmedItem: Item?
     @State private var confirmedAll = false
+    /// The rows that were ticked when "Deploy" was clicked in the confirmation: exactly these go out.
+    @State private var confirmedKeys: Set<String> = []
     @AppStorage("confirmSingleDeploy") private var confirmSingle = true
     @State private var confirmingStop = false
     /// The project a menu-bar click or a link asked for: the list shows exactly that one (by its
@@ -579,7 +581,7 @@ struct ContentView: View {
             DeployConfirmSheet(items: selectedAll, platforms: showsAll,
                                costNote: Store.costNote(perBuild: selectedAll.map { $0.platform == .vercel ? store.costs?.perBuild($0.name) : nil },
                                                         month: store.monthPace, budget: UserDefaults.standard.double(forKey: "monthlyBudget")),
-                               marks: store.confirmMarks(selectedAll)) { confirmedAll = true }
+                               marks: store.confirmMarks(selectedAll)) { confirmedKeys = Set(selectedAll.map { Store.key($0) }); confirmedAll = true }
         }
         // Each on a view of its own: one long chain of alerts is too much for the type checker.
         .background {
@@ -783,7 +785,7 @@ struct ContentView: View {
         guard !chosen.isEmpty else { return }
         Task {
             await withTaskGroup(of: Void.self) { g in for p in chosen { g.addTask { await store.load(p) } } }
-            await store.loadExtras()
+            await store.loadExtrasIfDue()
         }
     }
 
@@ -969,7 +971,7 @@ struct ContentView: View {
                     .font(.caption).textSelection(.enabled)
                 Spacer()
                 ForEach(store.statusLinks.filter { p in store.providerIssues.contains { $0.hasPrefix(p.label + ":") } }, id: \.label) { p in
-                    Button(L("\(p.label) status", "Status \(p.label)")) { NSWorkspace.shared.open(p.url) }.buttonStyle(.link).font(.caption)
+                    Button(L("\(p.label) status", "Status \(p.label)")) { SafeLink.open(p.url) }.buttonStyle(.link).font(.caption)
                 }
                 Button { closedIssuesRaw = Self.issuesKey(store.providerIssues) } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless).help(L("Close until it changes", "Schließen, bis sich etwas ändert"))
@@ -1015,8 +1017,10 @@ struct ContentView: View {
     private func startDeploy() {
         // Freeze what was confirmed: the ticks may change while the owner check or the window
         // check waits, and exactly these projects go out.
-        let chosen = scopes, count = selectedAll.count
-        let frozen = Set(selectedAll.map { Store.key($0) })
+        let chosen = scopes
+        let frozen = confirmedKeys.isEmpty ? Set(selectedAll.map { Store.key($0) }) : confirmedKeys
+        let count = frozen.count
+        let critical = allItems.contains { frozen.contains(Store.key($0)) && store.isCritical($0) }
         let restore = {
             chosen.forEach { p in
                 store.clearSelection(p)
@@ -1024,7 +1028,7 @@ struct ContentView: View {
             }
         }
         Task {
-            if OwnerCheck.needed(projects: count) || (OwnerCheck.on && selectedAll.contains { store.isCritical($0) }),
+            if OwnerCheck.needed(projects: count) || (OwnerCheck.on && critical),
                !(await OwnerCheck.confirm(L("put \(count) projects live", "\(count) Projekte live schalten"))) { return }
             if let w = await store.deployWindow(), w.denied {
                 frozenRun = { why in restore(); chosen.forEach { store.deploySelected($0, force: why) } }
@@ -1207,18 +1211,20 @@ struct ContentView: View {
     /// A script error in words a person can act on; nil when it is not a known kind.
     static func friendlyError(_ raw: String, _ platform: String) -> String? {
         let m = raw.lowercased()
+        // Whole words only: a project called "offline-first" or "timeout-service" is not a network error.
+        let word = { (w: String) in m.range(of: "(?<![\\w-])\(w)(?![\\w-])", options: .regularExpression) != nil }
         if m.contains("invalid json") || m.contains("jq: error") || m.contains("parse error") {
             return L("\(platform)'s answer could not be read. Try again in a moment.", "Die Antwort von \(platform) war nicht lesbar. Gleich nochmal versuchen.")
         }
-        if m.contains("timed out") || m.contains("timeout") {
+        if m.contains("timed out") || word("timeout") {
             return L("\(platform) did not answer in time.", "\(platform) hat nicht rechtzeitig geantwortet.")
         }
-        if m.contains("could not resolve host") || m.contains("network is unreachable") || m.contains("offline") || m.contains("connection refused") {
+        if m.contains("could not resolve host") || m.contains("network is unreachable") || word("offline") || m.contains("connection refused") {
             return L("No connection to \(platform). Is the Mac online?", "Keine Verbindung zu \(platform). Ist der Mac online?")
         }
         // Status codes as words around them, so "4013" in some id is not taken for a 401.
         let code = { (n: String) in m.contains("http \(n)") || m.contains("status \(n)") || m.contains("code \(n)") || m.contains(" \(n) ") || m.hasPrefix("\(n) ") }
-        if code("401") || code("403") || m.contains("unauthorized") || m.contains("forbidden") || m.contains("not logged in") {
+        if code("401") || code("403") || word("unauthorized") || word("forbidden") || m.contains("not logged in") {
             return L("\(platform) refused the login. Connect it again.", "\(platform) lehnt die Anmeldung ab. Bitte neu verbinden.")
         }
         if code("429") || m.contains("rate limit") {
@@ -1574,10 +1580,10 @@ struct ContentView: View {
             Button(L("Build log …", "Build-Log …")) { logItem = item }
         }
         if let a = store.autofixState(item), let u = AgentChips.link(a), !Demo.on {
-            Button(L("Open the fix on GitHub / claude.ai", "Fix auf GitHub / claude.ai öffnen")) { NSWorkspace.shared.open(u) }
+            Button(L("Open the fix on GitHub / claude.ai", "Fix auf GitHub / claude.ai öffnen")) { SafeLink.open(u) }
         }
         if let l = item.link, let u = URL(string: l) {
-            Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) }
+            Button(L("Open site", "Seite öffnen")) { SafeLink.open(u) }
             // One request, nothing rolled back.
             Button(L("Check the site now", "Seite jetzt prüfen")) { Task { await store.checkSiteNow(item) } }
         }
@@ -1618,10 +1624,10 @@ struct ContentView: View {
             }
             if let u = item.compareURL {
                 let host = GitHost(item).name
-                Button(L("Show the waiting commits on \(host)", "Wartende Commits auf \(host) ansehen")) { NSWorkspace.shared.open(u) }
+                Button(L("Show the waiting commits on \(host)", "Wartende Commits auf \(host) ansehen")) { SafeLink.open(u) }
             }
             if let u = item.dashboardURL {
-                Button(L("Open in the Render dashboard", "Im Render-Dashboard öffnen")) { NSWorkspace.shared.open(u) }
+                Button(L("Open in the Render dashboard", "Im Render-Dashboard öffnen")) { SafeLink.open(u) }
             } else if item.platform == .vercel {
                 // Vercel's address needs the team's slug; the script knows it, as in the palette.
                 Button(L("Open in the Vercel dashboard", "Im Vercel-Dashboard öffnen")) {
@@ -1645,7 +1651,7 @@ struct ContentView: View {
             }
             if item.platform == .vercel {
                 Button(L("Monthly budget …", "Monatsbudget …")) {
-                    budgetText = store.projectBudget(item).map { String(format: "%.0f", $0) } ?? ""; budgetItem = item
+                    budgetText = store.projectBudget(item).map { $0 == $0.rounded() ? String(format: "%.0f", $0) : String(format: "%.2f", $0) } ?? ""; budgetItem = item
                 }
             }
             Toggle(L("Critical: type the name to go live", "Kritisch: zum Live-Schalten Namen tippen"),

@@ -134,7 +134,7 @@ struct BuildLog: View {
                     HStack {
                         Button(L("Try again", "Nochmal versuchen")) { self.error = nil; attempt += 1 }
                         if let u = ErrorHelp.url(for: error) {
-                            Button(L("Help", "Hilfe")) { NSWorkspace.shared.open(u) }
+                            Button(L("Help", "Hilfe")) { SafeLink.open(u) }
                                 .help(L("Open the troubleshooting page for this message", "Die Hilfeseite zu dieser Meldung öffnen"))
                         }
                     }
@@ -257,7 +257,7 @@ struct LogText: NSViewRepresentable {
 
     final class Coordinator { var shown: [String]?; var filter = false; var noColour = false; var jump = 0; var errorRange: NSRange?; var size = 0.0
         // Error flags are worked out once per text, not on every update; the ranges serve next/previous.
-        var flagsFor: [String]?; var flags: [Bool] = []; var errorRanges: [NSRange] = []; var cursor = -1; var next = 0; var prev = 0 }
+        var firstError: Int?; var flagsFor: [String]?; var flags: [Bool] = []; var errorRanges: [NSRange] = []; var cursor = -1; var next = 0; var prev = 0 }
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -282,25 +282,30 @@ struct LogText: NSViewRepresentable {
             let first = c.shown == nil, filterChanged = c.filter != onlyErrors, sizeChanged = c.size != fontSize && !first
             let visible = sv.contentView.documentVisibleRect
             let atEnd = first || visible.maxY >= tv.bounds.height - 30
-            c.shown = lines; c.filter = onlyErrors; c.size = fontSize; c.noColour = noColour
+            // Only new lines at the end: they are appended, so a marked text and the find indicator stay.
+            let old = c.shown ?? []
+            let appendOnly = !first && !filterChanged && !sizeChanged && c.noColour == noColour && c.firstError == firstError
+                && lines.count >= old.count && Array(lines.prefix(old.count)) == old && tv.textStorage != nil
+            let base = appendOnly ? (tv.textStorage?.length ?? 0) : 0, from = appendOnly ? old.count : 0
+            c.shown = lines; c.filter = onlyErrors; c.size = fontSize; c.noColour = noColour; c.firstError = firstError
             let font = NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular)
             let bold = NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .bold)
             let out = NSMutableAttributedString()
-            c.errorRange = nil; c.errorRanges = []; c.cursor = -1
+            if !appendOnly { c.errorRange = nil; c.errorRanges = []; c.cursor = -1 }
             if c.flagsFor != lines { c.flags = lines.map(LogTools.isErrorLine); c.flagsFor = lines }
-            for (n, raw) in lines.enumerated() {
+            for (n, raw) in lines.enumerated() where n >= from {
                 let bad = c.flags[n]
                 if onlyErrors && !bad { continue }
                 let line = Self.shown(raw, bad: bad, noColour: noColour)
                 var attrs: [NSAttributedString.Key: Any] = [.font: bad && noColour ? bold : font,
                                                             .foregroundColor: bad ? NSColor.systemRed : NSColor.textColor]
                 if n == firstError { attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.12) }
-                let start = out.length
+                let start = base + out.length
                 out.append(NSAttributedString(string: line + "\n", attributes: attrs))
                 if bad { c.errorRanges.append(NSRange(location: start, length: (line as NSString).length)) }
                 if n == firstError { c.errorRange = NSRange(location: start, length: (line as NSString).length) }
             }
-            tv.textStorage?.setAttributedString(out)
+            if appendOnly { tv.textStorage?.append(out) } else { tv.textStorage?.setAttributedString(out) }
             if filterChanged, let r = c.errorRange { tv.scrollRangeToVisible(r) }
             else if sizeChanged || !atEnd { tv.scroll(visible.origin) }
             else { tv.scrollToEndOfDocument(nil) }
@@ -395,7 +400,7 @@ struct ProjectDetail: View {
                         .buttonStyle(.borderless).help(L("Build log", "Build-Log")).accessibilityLabel(L("Build log", "Build-Log"))
                 }
                 if let u = item.link.flatMap(URL.init(string:)) {
-                    Button { NSWorkspace.shared.open(u) } label: { Image(systemName: "safari") }
+                    Button { SafeLink.open(u) } label: { Image(systemName: "safari") }
                         .buttonStyle(.borderless).help(L("Open site", "Seite öffnen")).accessibilityLabel(L("Open site", "Seite öffnen"))
                 }
                 Button { attempt += 1 } label: { Image(systemName: "arrow.clockwise") }
@@ -415,7 +420,7 @@ struct ProjectDetail: View {
                     HStack {
                         Button(L("Try again", "Nochmal versuchen")) { self.error = nil; attempt += 1 }
                         if let u = ErrorHelp.url(for: error) {
-                            Button(L("Help", "Hilfe")) { NSWorkspace.shared.open(u) }
+                            Button(L("Help", "Hilfe")) { SafeLink.open(u) }
                                 .help(L("Open the troubleshooting page for this message", "Die Hilfeseite zu dieser Meldung öffnen"))
                         }
                     }
@@ -651,7 +656,7 @@ struct ProjectDetail: View {
                     }
                     Spacer()
                     if let u = d.compareUrl.flatMap(URL.init(string:)) {
-                        Button(L("On \(GitHost(item).name)", "Auf \(GitHost(item).name)")) { NSWorkspace.shared.open(u) }.buttonStyle(.link)
+                        Button(L("On \(GitHost(item).name)", "Auf \(GitHost(item).name)")) { SafeLink.open(u) }.buttonStyle(.link)
                     }
                 }
                 Text(L(plural(d.files, "file", "files") + ", +\(d.additions) −\(d.deletions) lines",
@@ -674,10 +679,10 @@ struct ProjectDetail: View {
                 ForEach(commits.prefix(showAllCommits ? listLimit : Self.commitsShown)) { c in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         if let pr = c.pr, let repo = item.repo, let u = GitHost.prURL(repo, pr) {
-                            Button(GitHost.prLabel(repo, pr)) { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospacedDigit())
+                            Button(GitHost.prLabel(repo, pr)) { SafeLink.open(u) }.buttonStyle(.link).font(.caption.monospacedDigit())
                                 .accessibilityLabel(L("Open pull request \(pr): \(scrub(c.msg))", "Pull Request \(pr) öffnen: \(scrub(c.msg))"))
                         } else if let u = c.url.flatMap(URL.init(string:)) {
-                            Button(c.sha) { NSWorkspace.shared.open(u) }.buttonStyle(.link).font(.caption.monospaced())
+                            Button(c.sha) { SafeLink.open(u) }.buttonStyle(.link).font(.caption.monospaced())
                                 .accessibilityLabel(L("Open commit \(c.sha): \(scrub(c.msg))", "Commit \(c.sha) öffnen: \(scrub(c.msg))"))
                         }
                         Text(scrub(c.msg)).font(.callout).lineLimit(2).help(scrub(c.msg))
@@ -729,7 +734,7 @@ struct ProjectDetail: View {
             LazyVStack(alignment: .leading, spacing: 6) {
             ForEach(d.open.prefix(listLimit)) { pr in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Button(GitHost.prLabel(live.repo, pr.number)) { if let u = URL(string: pr.url) { NSWorkspace.shared.open(u) } }
+                    Button(GitHost.prLabel(live.repo, pr.number)) { if let u = URL(string: pr.url) { SafeLink.open(u) } }
                         .buttonStyle(.link).font(.caption.monospacedDigit())
                         .accessibilityLabel(L("Open pull request \(pr.number): \(scrub(pr.title))", "Pull Request \(pr.number) öffnen: \(scrub(pr.title))"))
                     Text(scrub(pr.title)).font(.callout).lineLimit(2)
@@ -751,7 +756,7 @@ struct ProjectDetail: View {
     private func moreOnGitHub(_ n: Int, _ url: URL?, host: GitHost = .github) -> some View {
         HStack {
             Text(L("and \(n) more", "und \(n) weitere")).font(.caption).foregroundStyle(.secondary)
-            if let url, !Demo.on { Button(L("on \(host.name)", "auf \(host.name)")) { NSWorkspace.shared.open(url) }.buttonStyle(.link).font(.caption) }
+            if let url, !Demo.on { Button(L("on \(host.name)", "auf \(host.name)")) { SafeLink.open(url) }.buttonStyle(.link).font(.caption) }
         }
     }
 

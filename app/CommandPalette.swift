@@ -615,9 +615,9 @@ struct CommandPaletteHost: ViewModifier {
                 guard i.deployable && !i.state.isActive && !store.observer else { return }
                 rollbackItem = i
             case .log: sheet = .log(i)
-            case .open: if let l = i.link, let u = URL(string: l) { NSWorkspace.shared.open(u) }
+            case .open: if let l = i.link, let u = URL(string: l) { SafeLink.open(u) }
             case .dashboard:
-                if let u = i.dashboardURL { NSWorkspace.shared.open(u) }
+                if let u = i.dashboardURL { SafeLink.open(u) }
                 else {
                     // Vercel's address needs the team's slug; the script knows it and opens the page.
                     Task {

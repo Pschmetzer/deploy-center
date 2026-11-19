@@ -200,9 +200,13 @@ struct RepoGroup: Identifiable {
     static func groups(_ rows: [Item]) -> [RepoGroup] {
         var out: [RepoGroup] = []
         var current: [Item] = []
+        var seen: [String: Int] = [:]
         func close() {
             guard let first = current.first else { return }
-            out.append(RepoGroup(id: "\(first.platform.cli)/\(first.id)", repo: first.repo, items: current))
+            // A repo's group keeps its id when another row of it sorts to the top: SwiftUI keeps its state.
+            var id = "\(first.platform.cli)/\(first.id)"
+            if let r = first.repo, current.count > 1 { let n = seen[r, default: 0]; seen[r] = n + 1; id = "repo|\(r)|\(n)" }
+            out.append(RepoGroup(id: id, repo: first.repo, items: current))
             current = []
         }
         for i in rows {

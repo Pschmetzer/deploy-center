@@ -196,12 +196,15 @@ enum Tool {
     /// The lock keeps them apart, and the answer is given exactly once.
     private final class Collect: @unchecked Sendable {
         let lock = NSLock()
-        var out = Data(), err = Data(), timedOut = false, answered = false, openPipes = 2, exited = false
+        var out = Data(), err = Data(), timedOut = false, capped = false, answered = false, openPipes = 2, exited = false
         let deliver: (Result<Data, Error>) -> Void
         init(_ deliver: @escaping (Result<Data, Error>) -> Void) { self.deliver = deliver }
         /// True for the one caller that may answer.
         func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if answered { return false }; answered = true; return true }
     }
+
+    /// What one command may print before it is ended (stdout and stderr together).
+    nonisolated static let maxOutput = 32_000_000
 
     private static func runProcess(_ args: [String], stdin: String?, timeout: Double, running: Running) async throws -> Data {
         try await withCheckedThrowingContinuation { cont in
@@ -234,10 +237,14 @@ enum Tool {
             let finish: @Sendable (Bool) -> Void = { force in
                 c.lock.lock()
                 guard c.exited, force || c.openPipes == 0 else { c.lock.unlock(); return }
-                let late = c.timedOut, data = c.out, errText = c.err
+                let late = c.timedOut, data = c.out, errText = c.err, tooBig = c.capped
                 c.lock.unlock()
                 guard c.claim() else { return }
                 if late { c.deliver(.failure(timeoutError)); return }
+                if tooBig {
+                    Log.write("deploys \(args.joined(separator: " ")): more than \(maxOutput / 1_000_000) MB of output, ended")
+                    c.deliver(.failure(ToolError(message: L("The command printed far too much and was stopped.", "Der Befehl gab viel zu viel aus und wurde gestoppt."), exitCode: nil))); return
+                }
                 if p.terminationStatus == 0 { c.deliver(.success(data)); return }
                 let msg = String(data: errText, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 // With --json a newer script also says the error on stdout ({"error":…,"exit":N}):
@@ -251,12 +258,21 @@ enum Tool {
             }
             out.fileHandleForReading.readabilityHandler = { h in
                 let d = h.availableData
-                c.lock.lock(); if d.isEmpty { c.openPipes -= 1 } else { c.out.append(d) }; c.lock.unlock()
+                c.lock.lock(); if d.isEmpty { c.openPipes -= 1 } else { c.out.append(d) }
+                // A command with endless output must not fill the memory until the timeout: end it.
+                let over = !c.capped && c.out.count + c.err.count > maxOutput
+                if over { c.capped = true }
+                c.lock.unlock()
+                if over, p.isRunning { killTree(p.processIdentifier) }
                 if d.isEmpty { h.readabilityHandler = nil; finish(false) }
             }
             err.fileHandleForReading.readabilityHandler = { h in
                 let d = h.availableData
-                c.lock.lock(); if d.isEmpty { c.openPipes -= 1 } else { c.err.append(d) }; c.lock.unlock()
+                c.lock.lock(); if d.isEmpty { c.openPipes -= 1 } else { c.err.append(d) }
+                let over = !c.capped && c.out.count + c.err.count > maxOutput
+                if over { c.capped = true }
+                c.lock.unlock()
+                if over, p.isRunning { killTree(p.processIdentifier) }
                 if d.isEmpty { h.readabilityHandler = nil; finish(false) }
             }
             p.terminationHandler = { _ in
@@ -472,6 +488,7 @@ enum Log {
     }
     /// Waits until everything written so far is in the file (tests, before reading it).
     static func flush() { queue.sync {} }
+    nonisolated(unsafe) private static var written = 0, sized = false   // only touched on `queue`
     private static func append(_ text: String) {
         _ = privateOnce
         let fm = FileManager.default
@@ -479,6 +496,10 @@ enum Log {
         if let h = try? FileHandle(forWritingTo: url) { _ = try? h.seekToEnd(); try? h.write(contentsOf: Data(text.utf8)); try? h.close() }
         else { if AppDirs.override != nil { try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true) }
                fm.createFile(atPath: url.path, contents: Data(text.utf8), attributes: [.posixPermissions: 0o600]) }
+        // The size is looked at once, then after every 64 KB written: not a stat call per line.
+        written += text.utf8.count
+        guard !sized || written >= 65_536 else { return }
+        sized = true; written = 0
         if let size = try? fm.attributesOfItem(atPath: url.path)[.size] as? Int, size > 1_000_000,
            let data = try? Data(contentsOf: url) {
             var tail = data.suffix(500_000)

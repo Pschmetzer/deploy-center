@@ -574,12 +574,13 @@ struct AutoDeployAllowance: Decodable, Equatable {
 
     /// Epoch seconds, milliseconds or an ISO 8601 date: whichever the script sends. Shared with
     /// Settings > Guard, so both read the same.
+    /// Made once: a formatter per decoded allowance was a cost on every refresh.
+    private static let isoPlain = ISO8601DateFormatter()
+    private static let isoFraction: ISO8601DateFormatter = { let g = ISO8601DateFormatter(); g.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return g }()
     static func expiry<Key: CodingKey>(_ c: KeyedDecodingContainer<Key>, _ key: Key) throws -> Date {
         if let n = try? c.decode(Double.self, forKey: key) { return Date(timeIntervalSince1970: n > 1e12 ? n / 1000 : n) }
         let s = try c.decode(String.self, forKey: key)
-        let f = ISO8601DateFormatter(), g = ISO8601DateFormatter()
-        g.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let d = f.date(from: s) ?? g.date(from: s) else {
+        guard let d = isoPlain.date(from: s) ?? isoFraction.date(from: s) else {
             throw DecodingError.dataCorruptedError(forKey: key, in: c, debugDescription: "not a date: \(s)")
         }
         return d
