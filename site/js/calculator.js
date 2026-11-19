@@ -17,7 +17,7 @@
     share: function (now, after) { return 'Auto-deploy would cost me about ' + now + '/month in builds. Deploying by hand: ' + after + '.'; },
     shareTitle: 'Vercel build cost calculator', copy: 'Copy link', copied: 'Copied', failed: 'Copy failed', valuetext: function (c) { return '$' + c.toFixed(2); }
   };
-  var ids = ['p', 'u', 'c', 'd'];
+  var ids = ['p', 'u', 'c', 'd', 'w'];
   if (!$('p')) return;
   var q = new URLSearchParams(location.search);
   if (q.get('embed') === '1') document.documentElement.classList.add('embed');
@@ -41,10 +41,11 @@
     return base + '?' + ids.map(function (id) { return id + '=' + $(id).value; }).join('&');
   }
   function calc() {
-    var p = +$('p').value, u = +$('u').value, c = +$('c').value / 100, d = +$('d').value;
+    var p = +$('p').value, u = +$('u').value, c = +$('c').value / 100, d = +$('d').value, days = +$('w').value || 22;
     ids.forEach(function (id) { var n = $(id + 'n'); if (document.activeElement !== n) n.value = $(id).value; });
     $('c').setAttribute('aria-valuetext', T.valuetext(c));
-    var days = 22, now = p * u * c * days, after = p * Math.min(d, u) * c * days, save = Math.max(0, now - after);
+    var now = p * u * c * days, after = p * Math.min(d, u) * c * days, save = Math.max(0, now - after);
+    $('wd').textContent = days;
     $('now').textContent = fmt(now); $('after').textContent = fmt(after); $('save').textContent = fmt(save);
     $('tweet').href = 'https://x.com/intent/post?text=' + encodeURIComponent(T.tweet(fmt(now), fmt(after))) + '&url=' + encodeURIComponent(link());
     // the address bar carries the numbers too, so a copied URL shows the same result

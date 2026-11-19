@@ -46,7 +46,7 @@
   "url": "https://deploycenter.app/de/vercel-build-kosten-rechner/",
   "mainEntityOfPage": "https://deploycenter.app/de/vercel-build-kosten-rechner/",
   "datePublished": "2026-11-10",
-  "dateModified": "2026-11-16",
+  "dateModified": "2026-11-18",
   "inLanguage": "de",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -171,12 +171,13 @@
     <div class="field"><div class="fh"><label for="u">Pushes pro Projekt und Arbeitstag</label><input class="num" id="un" type="number" inputmode="numeric" step="1" aria-label="Pushes pro Projekt und Arbeitstag, als Zahl"></div><input id="u" type="range" min="1" max="60" value="8"><div class="hint">Zähle jeden Push, nicht jeden Commit. KI-Coding-Agenten pushen oft nach jedem Schritt.</div></div>
     <div class="field"><div class="fh"><label for="c">Durchschnittliche Kosten pro Build</label><input class="num" id="cn" type="number" inputmode="numeric" step="1" aria-label="Durchschnittliche Kosten pro Build in Cent, als Zahl"></div><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In Cent. Deine echte Zahl: die Build-Kosten des letzten Monats geteilt durch die Zahl der Builds, auf deiner Vercel- oder Render-Nutzungsseite.</div></div>
     <div class="field"><div class="fh"><label for="d">Deploys von Hand pro Projekt und Tag</label><input class="num" id="dn" type="number" inputmode="numeric" step="1" aria-label="Deploys von Hand pro Projekt und Tag, als Zahl"></div><input id="d" type="range" min="1" max="5" value="1"></div>
+    <div class="field"><div class="fh"><label for="w">Arbeitstage im Monat</label><input class="num" id="wn" type="number" inputmode="numeric" step="1" aria-label="Arbeitstage im Monat, als Zahl"></div><input id="w" type="range" min="5" max="31" value="22"></div>
   </div>
   <div class="card result">
     <p class="sr" id="said" aria-live="polite"></p>
     <div class="hint">Du würdest etwa sparen</div>
     <div class="big" id="save">$0</div>
-    <div class="hint">im Monat (22 Arbeitstage)</div>
+    <div class="hint">im Monat (<span id="wd">22</span> Arbeitstage)</div>
     <div class="row"><span>Mit Auto-Deploy</span><b id="now">$0</b></div>
     <div class="row"><span>Deploy von Hand</span><b id="after">$0</b></div>
     <div class="share"><a class="btn" id="tweet" target="_blank" rel="noopener">Auf X teilen</a> <button class="btn" id="copylink" type="button">Link kopieren</button> <button class="btn" id="sharebtn" type="button" hidden>Teilen …</button></div>
@@ -184,14 +185,15 @@
 </div>
 
 <h2>So wird gerechnet</h2>
-<pre tabindex="0" role="region" aria-label="Code example"><code>mit Auto-Deploy    = Projekte × Pushes pro Tag × Kosten pro Build × 22
-Deploy von Hand    = Projekte × min(Deploys, Pushes) × Kosten pro Build × 22
+<pre tabindex="0" role="region" aria-label="Code example"><code>mit Auto-Deploy    = Projekte × Pushes pro Tag × Kosten pro Build × Arbeitstage
+Deploy von Hand    = Projekte × min(Deploys, Pushes) × Kosten pro Build × Arbeitstage
 Ersparnis          = mit Auto-Deploy − Deploy von Hand</code></pre>
 <ul>
-  <li><b>22 Arbeitstage</b> im Monat. Pushes am Wochenende kommen zur ersten Zeile dazu. <code>deploys simulate</code> nutzt diese Annahme nicht: Es zählt die Pushes, die du in den letzten Tagen wirklich gemacht hast, und rechnet sie auf 30 Tage hoch, seine Zahl kann also von dieser Seite abweichen.</li>
+  <li><b>22 Arbeitstage</b> im Monat als Startwert, du kannst sie oben ändern. Pushes am Wochenende kommen zur ersten Zeile dazu. <code>deploys simulate</code> nutzt diese Annahme nicht: Es zählt die Pushes, die du in den letzten Tagen wirklich gemacht hast, und rechnet sie auf 30 Tage hoch, seine Zahl kann also von dieser Seite abweichen.</li>
   <li><b>Ein Build pro Projekt und Push.</b> Sind mehrere Projekte mit einem Repository verbunden, baut ein Push jedes davon; zähle sie als getrennte Projekte.</li>
   <li><b>Previews zählen.</b> Pushes auf jeden Branch bauen bei Vercel eine Vorschau. Rechne sie mit ein oder stelle die Regler nur für Produktion ein.</li>
-  <li><b>Nichts verlässt deinen Browser.</b> Die Zahlen bleiben auf dieser Seite; der Teilen-Link enthält nur die vier Reglerwerte.</li>
+  <li><b>Freikontingent nicht abgezogen.</b> Enthaltene Build-Minuten deines Tarifs (z. B. bei Vercel Pro) sind in der Rechnung nicht abgezogen; die Zahlen sind eine Obergrenze. Nimm bei den Kosten pro Build nur den Teil, den du wirklich bezahlst.</li>
+  <li><b>Nichts verlässt deinen Browser.</b> Die Zahlen bleiben auf dieser Seite; der Teilen-Link enthält nur die fünf Reglerwerte.</li>
 </ul>
 
 <h2>Deine Kosten pro Build finden</h2>

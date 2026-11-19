@@ -46,7 +46,7 @@
   "url": "https://deploycenter.app/vercel-build-cost-calculator/",
   "mainEntityOfPage": "https://deploycenter.app/vercel-build-cost-calculator/",
   "datePublished": "2026-11-10",
-  "dateModified": "2026-11-16",
+  "dateModified": "2026-11-18",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -157,7 +157,7 @@
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Vercel build cost calculator</h1>
 <p class="answer">Auto-deploy costs roughly <b>projects × pushes per day × cost per build × working days</b> a month. Deploying by hand costs the same formula with your number of deploys instead of your number of pushes; move the sliders to see both with your numbers.</p>
-<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-18">18 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <div class="calc">
   <div class="card">
@@ -171,12 +171,13 @@
     <div class="field"><div class="fh"><label for="u">Pushes per project per working day</label><input class="num" id="un" type="number" inputmode="numeric" step="1" aria-label="Pushes per project per working day, as a number"></div><input id="u" type="range" min="1" max="60" value="8"><div class="hint">Count each push, not each commit. AI coding agents often push after every step.</div></div>
     <div class="field"><div class="fh"><label for="c">Average cost per build</label><input class="num" id="cn" type="number" inputmode="numeric" step="1" aria-label="Average cost per build in cents, as a number"></div><input id="c" type="range" min="1" max="100" value="6"><div class="hint">In cents. Your real number: last month's build cost divided by the number of builds, on your Vercel or Render usage page.</div></div>
     <div class="field"><div class="fh"><label for="d">Deploys by hand per project per day</label><input class="num" id="dn" type="number" inputmode="numeric" step="1" aria-label="Deploys by hand per project per day, as a number"></div><input id="d" type="range" min="1" max="5" value="1"></div>
+    <div class="field"><div class="fh"><label for="w">Working days a month</label><input class="num" id="wn" type="number" inputmode="numeric" step="1" aria-label="Working days a month, as a number"></div><input id="w" type="range" min="5" max="31" value="22"></div>
   </div>
   <div class="card result">
     <p class="sr" id="said" aria-live="polite"></p>
     <div class="hint">You would save about</div>
     <div class="big" id="save">$0</div>
-    <div class="hint">a month (22 working days)</div>
+    <div class="hint">a month (<span id="wd">22</span> working days)</div>
     <div class="row"><span>With auto-deploy</span><b id="now">$0</b></div>
     <div class="row"><span>Deploying by hand</span><b id="after">$0</b></div>
     <div class="share"><a class="btn" id="tweet" target="_blank" rel="noopener">Share on X</a> <button class="btn" id="copylink" type="button">Copy link</button> <button class="btn" id="sharebtn" type="button" hidden>Share …</button></div>
@@ -184,14 +185,15 @@
 </div>
 
 <h2>How it is calculated</h2>
-<pre tabindex="0" role="region" aria-label="Code example"><code>with auto-deploy   = projects × pushes per day × cost per build × 22
-deploying by hand  = projects × min(deploys, pushes) × cost per build × 22
+<pre tabindex="0" role="region" aria-label="Code example"><code>with auto-deploy   = projects × pushes per day × cost per build × working days
+deploying by hand  = projects × min(deploys, pushes) × cost per build × working days
 saving             = with auto-deploy − deploying by hand</code></pre>
 <ul>
-  <li><b>22 working days</b> a month. Weekend pushes add to the first line. <code>deploys simulate</code> does not use this assumption: it counts the pushes you really made in the last days and scales them to 30 days, so its number can differ from this page.</li>
+  <li><b>22 working days</b> a month as the starting value; you can change it above. Weekend pushes add to the first line. <code>deploys simulate</code> does not use this assumption: it counts the pushes you really made in the last days and scales them to 30 days, so its number can differ from this page.</li>
   <li><b>One build per project per push.</b> If several projects are connected to one repository, a push builds each of them; count them as separate projects.</li>
   <li><b>Previews count.</b> Pushes to any branch build a preview on Vercel. Include them, or set the sliders for production only.</li>
-  <li><b>Nothing leaves your browser.</b> The numbers stay on this page; the share link only contains the four slider values.</li>
+  <li><b>Included allowance is not subtracted.</b> Build minutes included in your plan (for example on Vercel Pro) are not deducted, so the numbers are an upper bound. Use only the part you really pay in the cost per build.</li>
+  <li><b>Nothing leaves your browser.</b> The numbers stay on this page; the share link only contains the five slider values.</li>
 </ul>
 
 <h2>Find your cost per build</h2>
