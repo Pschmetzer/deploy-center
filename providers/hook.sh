@@ -59,6 +59,37 @@ hook_mask() {
   echo "${u%%://*}://$host/•••"
 }
 
+# hook_private_host <host>: succeeds when the host is this machine, a private or link-local
+# address or a cloud metadata name: a hook URL there is a request into the user's own network
+# (an agent could aim `hook add` at http://169.254.169.254/ and read what comes back as an error).
+hook_private_host() {
+  local h="$1" o o1 o2 o3 o4 rest
+  h="$(printf '%s' "$h" | tr '[:upper:]' '[:lower:]')"; h="${h#[}"; h="${h%]}"; h="${h%.}"
+  case "$h" in
+    localhost|*.localhost|*.local|*.internal|*.localdomain|*.lan|*.home.arpa|metadata|instance-data) return 0 ;;
+  esac
+  case "$h" in
+    *:*)  # IPv6: loopback, unspecified, unique-local, link-local, IPv4-mapped.
+      case "$h" in ::|::1|fc*|fd*|fe8*|fe9*|fea*|feb*|::ffff:*|0:0:0:0:0:0:0:*) return 0 ;; esac
+      return 1 ;;
+  esac
+  # An IPv4 written any other way than four decimal numbers (2130706433, 0x7f.1, 017.0.0.1)
+  # is the same address to curl: refuse it rather than parse every spelling.
+  if [[ "$h" =~ ^[0-9.]+$ ]] || [[ "$h" =~ ^0x[0-9a-f]+ ]] || [[ "$h" =~ \.0x ]]; then
+    [[ "$h" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 0
+    IFS=. read -r o1 o2 o3 o4 <<< "$h"; rest="$o1$o2$o3$o4"
+    for o in "$o1" "$o2" "$o3" "$o4"; do case "$o" in 0?*) return 0 ;; esac; [ "$o" -le 255 ] || return 0; done
+    case "$o1" in 0|10|127) return 0 ;; esac
+    [ "$o1" = 169 ] && [ "$o2" = 254 ] && return 0
+    [ "$o1" = 172 ] && [ "$o2" -ge 16 ] && [ "$o2" -le 31 ] && return 0
+    [ "$o1" = 192 ] && [ "$o2" = 168 ] && return 0
+    [ "$o1" = 100 ] && [ "$o2" -ge 64 ] && [ "$o2" -le 127 ] && return 0
+    return 1
+  fi
+  # A name with no dot ("intranet") only resolves inside someone's network.
+  case "$h" in *.*) return 1 ;; *) return 0 ;; esac
+}
+
 hook_check_url() {
   local u="$1" a h
   # The host exactly, not a prefix: http://localhost.example.com is someone else's machine.
@@ -71,6 +102,9 @@ hook_check_url() {
       case "$h" in localhost|127.0.0.1|\[::1\]) ;;
         *) die "Use the https:// address of the hook: over http the secret URL travels in the clear (only localhost may use http)";; esac ;;
     *) die "That is not a hook URL (it should start with https://)";; esac
+  case "$u" in https://*) if [ -z "${HOOK_ALLOW_PRIVATE:-}" ] && hook_private_host "$h"; then
+    die "The hook URL points at a private or local address ($h). Use --allow-private (or HOOK_ALLOW_PRIVATE=1) if that is meant."
+  fi ;; esac
   case "$u" in *[[:space:]\"\'\\]*) die "The hook URL contains spaces, quotes or backslashes";; esac
   [ "${#u}" -le 2048 ] || die "The hook URL is longer than 2048 characters"
 }
@@ -249,7 +283,7 @@ hook_deploy_json() {
   if [ "$rc" = 0 ] && [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
     rec="$(jq -nc --argjson sha "$sha" --argjson msg "$msg" --argjson at "$now" --arg c "$code" '{ok:true, http:($c|tonumber), at:$at, sha:$sha, msg:$msg}')"
     hook_record "$n" "$rec"; rm -f "$out.err"
-    jq -nc --arg n "$n" --argjson r "$rec" --arg site "$(echo "$e" | jq -r '.site // empty')" '{name:$n, id:"\($n)@\($r.at)", url:(if $site == "" then null else $site end), phase:"ready", state:"triggered", http:$r.http, sha:$r.sha, at:$r.at,
+    jq -nc --arg n "$n" --argjson r "$rec" --arg site "$(echo "$e" | jq -r '.site // empty')" '{name:$n, id:"\($n)@\($r.at)", url:(if $site == "" then null else $site end), phase:"queued", state:"triggered", http:$r.http, sha:$r.sha, at:$r.at,
       note:"The host accepted the trigger; it reports no build status."}'
     return 0
   fi
@@ -324,13 +358,14 @@ hook_doctor() {
 
 hook_add() {
   local n="${1:-}" u="${2:-}" repo="" ref="" site="" method="" body="" headers='{}' h k v
-  [ -n "$n" ] && [ -n "$u" ] || die "Usage: deploys hook add <name> <url|-> [--repo owner/name] [--ref main] [--site https://…] [--method POST] [--header 'Name: value'] [--body '{…}']"
+  [ -n "$n" ] && [ -n "$u" ] || die "Usage: deploys hook add <name> <url|-> [--repo owner/name] [--ref main] [--site https://…] [--method POST] [--header 'Name: value'] [--body '{…}'] [--allow-private]"
   hook_valid_name "$n"; shift 2
   while [ $# -gt 0 ]; do
     case "$1" in
       --repo) repo="${2:?--repo owner/name}"; shift;;
       --ref) ref="${2:?--ref <branch>}"; shift;;
       --site) site="${2:?--site https://…}"; shift;;
+      --allow-private) HOOK_ALLOW_PRIVATE=1;;
       --method) method="$(echo "${2:?--method POST}" | tr '[:lower:]' '[:upper:]')"; shift;;
       --body) body="${2:?--body '{…}'}"; shift;;
       --header) h="${2:?--header 'Name: value'}"; shift

@@ -7,6 +7,8 @@ GET   */api/v1/sites/site-shop/deploys?per_page=*    deploys-shop-after.json   2
 GET   */api/v1/sites/site-shop/deploys?*             deploys-shop.json
 GET   */api/v1/sites/site-blog/deploys?*             deploys-blog.json
 GET   */api/v1/sites/site-paused/deploys?*           deploys-paused.json
+GET   */api/v1/sites/site-static/deploys?production=true&per_page=20&page=2  deploys-static-page2.json
+GET   */api/v1/sites/site-static/deploys?production=true&per_page=20  deploys-static-skipped20.json
 GET   */api/v1/sites/site-static/deploys?*           deploys-static.json
 GET   */api/v1/sites/site-shop/build_hooks           hooks-shop.json
 GET   */api/v1/sites/site-blog/build_hooks           hooks-blog.json

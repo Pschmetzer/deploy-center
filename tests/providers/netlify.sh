@@ -249,6 +249,7 @@ expect "status" "$(netlify_status_json d-shop-3 | jq -c '[.id, .phase, .sha, .da
 expect "status: site and deploy" "$(netlify_status_json shop d-shop-3 | jq -r .id)" d-shop-3
 expect "status: the contract line" "$(netlify_status shop d-shop-3 | cut -f1,2)" "d-shop-3	building"
 expect "latest: skips the skipped build" "$(netlify_latest_json shop | jq -r .id)" d-shop-3
+expect "latest: 20 skipped deploys in a row: the next page is read" "$(netlify_latest_json static | jq -r .id)" d-static-real
 expect "latest: the contract line" "$(netlify_latest shop | cut -f1,2)" "d-shop-3	building"
 for u in "https://github.com/me/app.git|me/app" "https://gitlab.com/g/sub/n|gitlab.com/g/sub/n" "https://bitbucket.org/o/r|bitbucket.org/o/r" "|null"; do
   expect "repo of ${u%%|*}: the git host's form" "$(jq -nr --arg u "${u%%|*}" "$NETLIFY_JQ"'{build_settings:{repo_url:(if $u == "" then null else $u end)}} | repo_of')" "${u#*|}"
@@ -289,6 +290,8 @@ reset
 table() { cat; }   # the real one lives in deploys
 out="$(netlify_history site-shop 20 2>&1)"
 has "history: header" "$out" "WHEN (UTC)"
+( netlify_history site-shop 'x&y' ) >/dev/null 2>&1; expect "history: a non-number is refused" "$?" 1
+expect "history: more than 100 is asked as 100" "$( : > "$CALLS"; netlify_history site-shop 999999 >/dev/null 2>&1; calls 'deploys?per_page=100')" 1
 has "history: a ready deploy with its commit and time" "$out" "2222222"
 expect "history: one line per deploy plus the header" "$(echo "$out" | grep -c .)" "$(( $(jq length "$FIX/deploys-shop.json") + 1 ))"
 

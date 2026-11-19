@@ -53,7 +53,7 @@ echo "security $* STDIN[$(cat)]" >> "$CALLS"
 case "$1" in find-generic-password) exit 44 ;; esac
 exit 0
 SEC
-printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/sleep"
+printf '#!/bin/bash\n[ -n "${SLEEP_STARTS:-}" ] && touch "$FAKE_STATE/started"\nexit 0\n' > "$tmp/bin/sleep"
 chmod +x "$tmp/bin"/*
 export PATH="$tmp/bin:$PATH"
 calls() { grep -c -- "$1" "$CALLS" 2>/dev/null || true; }
@@ -180,6 +180,15 @@ out="$(coolify_deploy_json shop --sha abc1234 2>&1)"; rc=$?
 expect "deploy --sha: exit 0" "$rc" 0
 expect "deploy --sha: pin, deploy, restore" "$(grep -oE 'curl (PATCH|POST) [^ ]+|DATA\[[^]]*\]' "$CALLS" | grep -vE 'DATA\[\]' | tr '\n' ' ')" \
   'curl PATCH https://coolify.example.com/api/v1/applications/app-shop DATA[{"git_commit_sha":"abc1234"}] curl POST https://coolify.example.com/api/v1/deploy?uuid=app-shop curl PATCH https://coolify.example.com/api/v1/applications/app-shop DATA[{"git_commit_sha":"HEAD"}] '
+# The pin stays until the deployment has left "queued" (the worker reads it when the job starts).
+reset
+out="$(SLEEP_STARTS=1 coolify_deploy_json shop --sha abc1234 2>&1)"; rc=$?
+expect "deploy --sha: deployment polled, pin put back after it" "$(grep -oE 'curl (GET|PATCH|POST) [^ ]+' "$CALLS" | grep -E 'deploy|PATCH' | sed 's#https://coolify.example.com/api/v1/##' | tr '\n' ' ')" \
+  'curl PATCH applications/app-shop curl POST deploy?uuid=app-shop curl GET deployments/dep-new curl GET deployments/dep-new curl PATCH applications/app-shop curl GET deployments/dep-new '
+reset
+out="$(COOLIFY_PIN_WAIT=4 coolify_deploy_json shop --sha abc1234 2>&1)"; rc=$?
+expect "deploy --sha: still queued after the wait: pin put back anyway" "$rc" 0
+has "deploy --sha: still queued: warns" "$out" "still queued"
 # The pin's own traps give the caller's back: INT, TERM and HUP are what they were before the call.
 trap 'echo caller-term' TERM; trap 'echo caller-hup' HUP   # not INT: a suite started with & has INT ignored, which cannot be trapped
 coolify_deploy_json shop --sha abc1234 >/dev/null 2>&1 </dev/null

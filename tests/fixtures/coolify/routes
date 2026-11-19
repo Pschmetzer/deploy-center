@@ -27,6 +27,7 @@ GET    */api/v1/deployments/applications/app-api?*    -  error-500.json         
 POST   */api/v1/deploy?uuid=app-shop               -  deploy-shop.json            200  -           -
 POST   */api/v1/deploy?uuid=app-shop&force=true    -  deploy-shop.json            200  -           -
 POST   */api/v1/deploy?uuid=app-cache              -  deploy-skipped.json         200  -           -
+GET    */api/v1/deployments/dep-new                -  deployment-new-running.json 200  started     -
 GET    */api/v1/deployments/dep-new                -  deployment-new.json         200  -           -
 GET    */api/v1/deployments/dep-shop-3             -  deployment-shop-3.json      200  -           -
 GET    */api/v1/deployments/dep-blog-5             -  deployment-blog-5.json      200  -           -
