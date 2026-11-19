@@ -428,3 +428,17 @@ fresh
 run "$O" "$E" deploy-changed --yes >/dev/null
 expect "320: Render (backend) before Vercel (frontend) of one repo" \
   "$(grep -E '^vercel api /v13/deployments|^curl POST https://api.render.com/v1/services/srv-1/deploys' "$e2e/calls.log" | cut -c1-4 | paste -sd, -)" "curl,verc"
+
+# Journal of the terminal: a start, a rollback and a cancel are in it (the app writes its own, DEPLOYS_CALLER=app).
+fresh; : > "$DEPLOYS_JOURNAL"
+run "$O" "$E" deploy web >/dev/null
+expect "journal: deploy <project> writes one line" "$(jq -sc 'map([.platform, .name, .result])' "$DEPLOYS_JOURNAL")" '[["Vercel","web","other"]]'
+: > "$DEPLOYS_JOURNAL"; fresh
+run "$O" "$E" rollback web >/dev/null
+expect "journal: rollback writes a rollback line" "$(jq -sc 'map([.platform, .result])' "$DEPLOYS_JOURNAL")" '[["Vercel","rollback"]]'
+: > "$DEPLOYS_JOURNAL"; fresh
+DEPLOYS_CALLER=app run "$O" "$E" deploy web >/dev/null
+expect "journal: DEPLOYS_CALLER=app adds no line (the app writes its own)" "$(wc -l < "$DEPLOYS_JOURNAL" | tr -d ' ')" "0"
+: > "$DEPLOYS_JOURNAL"; fresh
+run "$O" "$E" deploy-changed --yes >/dev/null
+expect "journal: deploy-changed --yes writes a line for each start" "$(wc -l < "$DEPLOYS_JOURNAL" | tr -d ' ')" "2"

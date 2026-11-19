@@ -975,7 +975,18 @@ ci_of() {  # ci_of <owner/repo> <sha or branch>: the verdict as one line of JSON
     # One object per page: the first one has the state, the statuses of every page are joined.
     jq -sc '(.[0] // {}) + {statuses:[.[] | (.statuses // [])[]]}' "$t/s" > "$t/s.t" 2>/dev/null && mv "$t/s.t" "$t/s" || : > "$t/s"
     jq -sc '{check_runs:[.[] | (.check_runs // [])[]]}' "$t/r" > "$t/r.t" 2>/dev/null && mv "$t/r.t" "$t/r" || : > "$t/r"
-    jq -nc --slurpfile s "$t/s" --slurpfile r "$t/r" "$CI_RULE"
+    local v grace="${DEPLOYS_CI_GRACE:-90}" cdate age
+    v="$(jq -nc --slurpfile s "$t/s" --slurpfile r "$t/r" "$CI_RULE")"
+    # "No checks" a few seconds after a push is CI not having started yet, not a repo without CI:
+    # for a young commit that reads as pending (the waits ask again), for DEPLOYS_CI_GRACE seconds (90).
+    if [ "$grace" != 0 ] && [ "$(printf '%s' "$v" | jq -r .state 2>/dev/null)" = none ]; then
+      cdate="$(gh api "repos/$1/commits/$2" --jq .commit.committer.date 2>/dev/null | head -n 1)" || cdate=""
+      age="$(jq -nr --arg d "$cdate" --argjson now "$(date +%s)" 'try (($now - ($d | fromdateiso8601)) | floor) catch empty' 2>/dev/null)" || age=""
+      case "$age" in ""|*[!0-9-]*) ;; *) if [ "$age" -lt "$grace" ] 2>/dev/null; then
+        v="$(printf '%s' "$v" | jq -c --argjson a "$age" '. + {state:"pending", reason:"no checks yet: the commit is \($a)s old and CI may not have started"}')"
+      fi ;; esac
+    fi
+    printf '%s\n' "$v"
   fi
   rm -rf "$t"
 }
@@ -1114,6 +1125,17 @@ journal_forced() {  # journal_forced <platform> <name> [failed]: "failed" when t
   else journal_add "$1" "$2" forced "Deployed in the window \"$frozen\": $force_reason"; fi
 }
 
+# What a start, rollback or cancel from the terminal did: one entry (the app writes its own for
+# what it starts, DEPLOYS_CALLER=app; verify journals its rollback itself, DEPLOYS_NO_JOURNAL=1).
+journal_cli() {  # journal_cli <platform> <name> <result> <detail>
+  [ "${DEPLOYS_CALLER:-}" != app ] || return 0
+  [ -z "${DEPLOYS_NO_JOURNAL:-}" ] || return 0
+  # A start in a closed window or over the budget has its "forced" line already (journal_forced).
+  [ -z "${budget_over:-}" ] || return 0
+  [ -z "${frozen:-}" ] || return 0
+  journal_add "$1" "$2" "$3" "$4" 2>/dev/null || true
+}
+
 # The app's journal (Deploy history), so what the terminal did shows there too.
 journal_file() {
   if [ -n "${DEPLOYS_JOURNAL:-}" ]; then echo "$DEPLOYS_JOURNAL"
@@ -1219,7 +1241,8 @@ deploy_one() {  # deploy_one <platform> <name> [<sha>] [<id>]: the start as JSON
   # By its id when known (Render: srv-…): a name may hold characters an API path cannot (safe_arg refuses them).
   local id="${4:--}" out; [ "$id" != "-" ] || id="$2"
   hook_run pre-deploy "$1" "$2" "${3:-}" || { echo "A pre-deploy hook refused $2: nothing was started." >&2; return 1; }
-  out="$( "${1}_deploy_json" "$id" ${3:+--sha "$3"} )" || return 1
+  out="$( "${1}_deploy_json" "$id" ${3:+--sha "$3"} )" || { journal_cli "$1" "$2" failed "deploy-changed: the start failed${3:+ (${3:0:7})}"; return 1; }
+  journal_cli "$1" "$2" other "Started by deploy-changed from the terminal${3:+ at ${3:0:7}} ($(printf '%s' "$out" | jq -r '.id // "no id"' 2>/dev/null))"
   printf '%s\n' "$out"
   hook_run post-deploy "$1" "$2" "${3:-}" "$(printf '%s' "$out" | jq -r '.state // empty' 2>/dev/null)" || true
 }
@@ -1571,7 +1594,11 @@ job_on() {
       *) m=$(( every / 60 )); [ "$m" -ge 1 ] || m=1; when="*/$m * * * *"
          echo "No launchd here, so nothing was installed. To run it every $m minutes, add this line with crontab -e:" ;;
     esac
-    echo "$when mkdir -p \"\$HOME/.local/state\" && PATH='$(printf '%s' "$PATH" | sed "s/'/'\\\\''/g")' DEPLOYS_LOG_ROTATE=1 /bin/bash '$self'$q >> \"\$HOME/.local/state/deploys-$(basename "$log" .log).log\" 2>&1"
+    local envc="" ev
+    for ev in DEPLOYS_CONFIG DEPLOYS_NOTIFY_CMD; do
+      [ -z "${!ev:-}" ] || envc="$envc $ev='$(printf '%s' "${!ev}" | sed "s/'/'\\\\''/g")'"
+    done
+    echo "$when mkdir -p \"\$HOME/.local/state\" && PATH='$(printf '%s' "$PATH" | sed "s/'/'\\\\''/g")' DEPLOYS_LOG_ROTATE=1$envc /bin/bash '$self'$q >> \"\$HOME/.local/state/deploys-$(basename "$log" .log).log\" 2>&1"
     return 0
   fi
   plist="$(job_plist "$label")"; mkdir -p "$(dirname "$plist")"
@@ -1589,12 +1616,19 @@ job_on() {
   # starts jobs with a bare one, and autofix needs jq, gh, perl and the vercel CLI.
   # Background priority: a check every few minutes must not compete with the person's work.
   new="$plist.new"
+  # The DEPLOYS_* settings of whoever turns it on go along: a job that reads the default
+  # configuration instead of the DEPLOYS_CONFIG in use would run against other settings.
+  local envx="" ev
+  for ev in DEPLOYS_CONFIG DEPLOYS_NOTIFY_CMD; do
+    [ -z "${!ev:-}" ] || envx="$envx<key>$ev</key><string>$(xml_text "${!ev}")</string>"
+  done
+  [[ "$(declare -p DEPLOYS_DIR 2>/dev/null)" == "declare -x"* ]] && [ -n "${DEPLOYS_DIR:-}" ] && envx="$envx<key>DEPLOYS_DIR</key><string>$(xml_text "$DEPLOYS_DIR")</string>"
   cat > "$new" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$(xml_text "$label")</string>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(xml_text "$PATH")</string><key>DEPLOYS_LOG_ROTATE</key><string>1</string></dict>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(xml_text "$PATH")</string><key>DEPLOYS_LOG_ROTATE</key><string>1</string>$envx</dict>
   <key>ProgramArguments</key><array><string>/bin/bash</string><string>$(xml_text "$self")</string>$pargs</array>
   <key>StandardOutPath</key><string>$(xml_text "$log")</string>
   <key>StandardErrorPath</key><string>$(xml_text "$log")</string>
@@ -1886,13 +1920,14 @@ sc_claude_bin() { command -v claude 2>/dev/null || { for b in "$HOME/.local/bin/
 # every other settings file, --strict-mcp-config its .mcp.json; file tools stay in the worktree.
 # Bash is there only for the commands in SCAN_TOOLS. A watchdog ends it after SCAN_TIMEOUT seconds.
 SCAN_TIMEOUT="${DEPLOYS_SCAN_TIMEOUT:-5400}"
-# The names of the environment variables that look like a secret (tokens, keys, passwords, the hosts' own variables),
-# except the ones of the Claude CLI itself (CLAUDE_*, ANTHROPIC_*: its login may live there). The repo of a scan is not
+# The names of the environment variables the scan does NOT need: every one except a short list (path,
+# home, locale, terminal, temp folder, proxy and certificate settings, and the Claude CLI's own
+# CLAUDE_* / ANTHROPIC_*: its login may live there). A list of what stays, not of what goes:
+# DATABASE_URL, STRIPE_*, SENTRY_*, *_DSN and the like are secrets too. The repo of a scan is not
 # trusted and `npm install` runs its scripts: none of these reaches that process.
 sc_secret_env_names() {
   env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' \
-    | grep -E '(^|_)(TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?|AUTH)($|_)|^(GH|GITHUB|NPM|AWS|AZURE|GOOGLE|GCP|VERCEL|RENDER|NETLIFY|CLOUDFLARE|DIGITALOCEAN|COOLIFY|DEPLOYS_ROUTINE|DEPLOYS_ANTHROPIC|SSH_AUTH)_' \
-    | grep -vE '^(CLAUDE|ANTHROPIC)_' || true
+    | grep -vE '^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|LC_[A-Z_]+|TERM|COLORTERM|TMPDIR|TZ|PWD|OLDPWD|SHLVL|_|XPC_SERVICE_NAME|XDG_[A-Z_]+|HTTPS?_PROXY|https?_proxy|NO_PROXY|no_proxy|ALL_PROXY|all_proxy|SSL_CERT_FILE|SSL_CERT_DIR|NODE_EXTRA_CA_CERTS|CLAUDE_[A-Za-z0-9_]*|ANTHROPIC_[A-Za-z0-9_]*)$' || true
 }
 sc_claude() {  # sc_claude <dir> <prompt>: the report on stdout. The CLI's own login, not an API key.
   local cleanenv=(-u ANTHROPIC_API_KEY) v
@@ -2640,21 +2675,31 @@ provider_verbs() {
 }
 case "${1:-}" in
   -h|--help|help)
-    sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//'
     # The providers that are on, with every command each one takes (their own ones too).
     echo "Provider commands (deploys <p> <command>; the providers that are on here):"
     for _p in $(enabled_providers 2>/dev/null); do printf '  %-13s%s\n' "$_p" "$(provider_verbs "$_p")"; done
     exit 0 ;;
   -v|--version|version) deploys_version; exit 0 ;;
 esac
+# Is one of these flags an argument of its own? Not the text of `--question "what does --help show?"`
+# or `--force "…"`: the value after an option that takes free text is skipped.
+args_has() {  # args_has "<flag> <flag>…" <args…>
+  local want=" $1 " a skip=""; shift
+  for a in "$@"; do
+    if [ -n "$skip" ]; then skip=""; continue; fi
+    case "$a" in --question|--force|--path|--expect|--note|--reason) skip=1; continue ;; esac
+    case "$want" in *" $a "*) return 0 ;; esac
+  done
+  return 1
+}
 # deploys <command> --help (or -h): the help lines about that command, not a project named --help.
-case " ${*:2} " in
-  *" --help "*|*" -h "*)
-    h="$(sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//' | grep -E "^  deploys $1( |$)" || true)"
-    if [ -z "$h" ] && is_provider "$1"; then h="$(sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//' | grep -E '^  deploys <p> ' || true)"; fi
-    [ -n "$h" ] || die "No help for \"$1\". All commands: deploys --help"
-    echo "$h"; exit 0 ;;
-esac
+if args_has "--help -h" "${@:2}"; then
+  h="$(sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//' | grep -E "^  deploys $1( |$)" || true)"
+  if [ -z "$h" ] && is_provider "$1"; then h="$(sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//' | grep -E '^  deploys <p> ' || true)"; fi
+  [ -n "$h" ] || die "No help for \"$1\". All commands: deploys --help"
+  echo "$h"; exit 0
+fi
 
 # A missing name is a usage line, not bash's "line 425: 2: project".
 # An option where the project belongs (`watch --timeout 30m`) counts as missing too.
@@ -2688,22 +2733,22 @@ esac
 # Reading, and this Mac's own settings (ignore, keys, team repos, readonly), stay allowed.
 case "${1:-} ${2:-}" in
   # deploy --dry-run only reads: it says what would start.
-  "deploy "*) case " ${*:2} " in *" --dry-run "*|*" -n "*) ;; *) require_write "$1 $2" ;; esac ;;
+  "deploy "*) args_has "--dry-run -n" "${@:2}" || require_write "$1 $2" ;;
   "rollback "*|"cancel "*) require_write "$1 $2" ;;
   "vercel map"|"vercel autodeploy-off"|"vercel deploy"|"vercel deploy-json"|"vercel cancel"|"vercel rollback"\
   |"render autodeploy-off"|"render deploy"|"render deploy-json"|"render cancel"|"render rollback"|"hook deploy" \
   |"autodeploy allow"|"autodeploy revoke")
     require_write "$1 $2" ;;
   # --yes wherever it stands: `deploy-changed --when-green --yes` starts deploys as well.
-  "deploy-changed "*) case " ${*:2} " in *" --yes "*) require_write "deploy-changed --yes" ;; esac ;;
+  "deploy-changed "*) ! args_has "--yes" "${@:2}" || require_write "deploy-changed --yes" ;;
   # verify rolls production back when the check fails, unless --no-rollback.
-  "verify "*) case " ${*:3} " in *" --no-rollback "*) ;; *) require_write "verify (it may roll back; add --no-rollback to only check)" ;; esac ;;
+  "verify "*) args_has "--no-rollback" "${@:3}" || require_write "verify (it may roll back; add --no-rollback to only check)" ;;
   # autofix hands failed builds to a routine that opens pull requests, and guard turns auto-deploy
   # off: both change something unless --dry-run (also after --only). Their settings and status only read.
   "scan start"|"scan run") require_write "scan" ;;
-  "check run") require_write "check" ;;
+  "check start"|"check run") require_write "check" ;;
   "autofix "|"autofix --"*|"guard "|"guard --"*)
-    case " ${*:2} " in *" --dry-run "*|*" --preview "*) ;; *) require_write "$1" ;; esac ;;
+    args_has "--dry-run --preview" "${@:2}" || require_write "$1" ;;
 esac
 # FEA-110: "--dry-run" for turning auto-deploy on goes only to a provider that says it knows it
 # ("onDryRun": true in its meta). An older provider file ignores the flag and really turns it on,
@@ -2772,11 +2817,19 @@ provider_cmd() {
   # `deploys <p> deploy <name>` without a provider's own wording: the contract start (JSON).
   elif [ "$verb" = deploy ]; then fn="${p}_deploy_json"
   elif { [ "$verb" = on ] || [ "$verb" = autodeploy_on ]; } && declare -F "${p}_on" >/dev/null; then fn="${p}_on"
-  elif [ -z "$verb" ]; then sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1
+  elif [ -z "$verb" ]; then sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1
   else die "$(meta_str "$p" label) has no command \"$asked\". Its commands: $(provider_verbs "$p")"; fi
   # Production starts wait for the deploy window (docs/SAFE-DEPLOY.md); a forced one is journaled.
   case "$verb" in
     deploy|deploy_json) [[ " $* " == *" --preview "* ]] || freeze_check "${1:-}"; journal_forced "$p" "${1:-}" ;;
+  esac
+  case "$verb" in
+    rollback|cancel)
+      local prc=0 jr=rollback jd="Rolled back"; [ "$verb" = cancel ] && { jr=cancelled; jd="Cancelled"; }
+      "$fn" "$@" || prc=$?
+      if [ "$prc" = 0 ]; then journal_cli "$p" "${1:-}" "$jr" "$jd from the terminal${2:+ ($2)}"
+      else journal_cli "$p" "${1:-}" failed "$verb failed from the terminal"; fi
+      return "$prc" ;;
   esac
   "$fn" "$@"
 }
@@ -2862,7 +2915,8 @@ case "${1:-} ${2:-}" in
         continue
       fi
       hook_run pre-deploy "$plat" "${p#*:}" "$sha" || { echo "A pre-deploy hook refused ${p#*:}: nothing was started." >&2; group_stop "$p" "$count"; }
-      out="$(DEPLOYS_FORCE_REASON="$force" "${plat}_deploy_json" "$pid" ${pv:+--preview} ${sha:+--sha "$sha"})" || { journal_forced "$plat" "${p#*:}" failed; group_stop "$p" "$count"; }
+      out="$(DEPLOYS_FORCE_REASON="$force" "${plat}_deploy_json" "$pid" ${pv:+--preview} ${sha:+--sha "$sha"})" || { journal_forced "$plat" "${p#*:}" failed; journal_cli "$plat" "${p#*:}" failed "deploy: the start failed${sha:+ (${sha:0:7})}"; group_stop "$p" "$count"; }
+      journal_cli "$plat" "${p#*:}" "$([ -n "$pv" ] && echo preview || echo other)" "Started from the terminal${sha:+ at ${sha:0:7}} ($(echo "$out" | jq -r '.id // "no id"' 2>/dev/null))"
       hook_run post-deploy "$plat" "${p#*:}" "$sha" "$(echo "$out" | jq -r '.state // empty' 2>/dev/null)" || true
       journal_forced "$plat" "${p#*:}"
       did="$(echo "$out" | jq -r '.id // empty')"
@@ -3068,7 +3122,7 @@ case "${1:-} ${2:-}" in
       list) team_repo_list ;;
       refresh) DEPLOYS_TEAM_REFRESH=1 team_sources | jq -r '.[] | "\(.repo): \(if .config then .path elif .error then .error else "no file" end)"' ;;
       journal) if [ "$json" = 1 ]; then jq -s . "$TEAM_JOURNAL" 2>/dev/null || echo '[]'
-               else jq -r '[(.at | strftime("%Y-%m-%d %H:%M")), .kind, .project, (.sha[0:7]), .by, ([.approvals[]?.user] | join(",") | if . == "" then "-" else . end), (.reason // "-")] | @tsv' "$TEAM_JOURNAL" 2>/dev/null \
+               else jq -r '[(.at | strftime("%Y-%m-%d %H:%M")), .kind, .project, ((.sha // "")[0:7]), .by, ([.approvals[]?.user] | join(",") | if . == "" then "-" else . end), (.reason // "-")] | @tsv' "$TEAM_JOURNAL" 2>/dev/null \
                  | (printf 'WHEN (UTC)\tKIND\tPROJECT\tCOMMIT\tBY\tAPPROVED BY\tREASON\n'; cat) | table; fi ;;
       init)
         # FEA-112: a deploy-center.json for one repo from this Mac's settings (repos, branches,
@@ -3840,7 +3894,7 @@ BASH
       journal_add "$plat" "$p" skipped "Check failed ($codes), rollback stopped by hand"
       report false false true 2
     fi
-    if out="$("$SELF" "$plat" rollback "$vid" 2>&1)"; then
+    if out="$(DEPLOYS_NO_JOURNAL=1 "$SELF" "$plat" rollback "$vid" 2>&1)"; then
       journal_add "$plat" "$p" other "Rolled back: $target answered $codes"
       [ "$json" = 1 ] || echo "Rolled back $p to the deploy before."
       report false true false 1
@@ -3952,6 +4006,7 @@ BASH
     # The daily deploy: everything with changes. Without --yes it only shows what it would do.
     # Only what is known to have changes is started; what could not be read is named and left out.
     # --when-green: only commits whose CI passed; pending checks are waited for (--wait, default 30m).
+    log_rotate DeployCenter-daily   # the daily job's log: only a run launchd (or the cron line) started rotates it
     yes=""; green=""; maxw=1800; strict=""; byrules=""; dryc=""; only=(); excl=(); platf=""; maxn=0; wfw=""
     shift
     while [ $# -gt 0 ]; do
@@ -4529,7 +4584,7 @@ BASH
     # A typo gets one line with the nearest commands, not the whole help. The commands are read
     # from the case labels of this script, so the list cannot fall behind.
     if [ -n "${1:-}" ]; then
-      sug="$( { sed -n 's/^  "\([a-z][a-z-]*\)[ "].*/\1/p' "$0"; printf '%s\n' "${PROVIDERS[@]}" help version; } | sort -u \
+      sug="$( { sed -n 's/^  "\([a-z][a-z-]*\)[ "].*/\1/p' "$SELF"; printf '%s\n' "${PROVIDERS[@]}" help version; } | sort -u \
         | awk -v w="$1" 'function lev(a, b,   i, j, la, lb, d, c) { la = length(a); lb = length(b)
               for (i = 0; i <= la; i++) d[i, 0] = i; for (j = 0; j <= lb; j++) d[0, j] = j
               for (i = 1; i <= la; i++) for (j = 1; j <= lb; j++) { c = (substr(a, i, 1) != substr(b, j, 1))
@@ -4540,5 +4595,5 @@ BASH
         | sort -n | head -n 3 | cut -f2 | paste -sd, - | sed 's/,/, /g')"
       die "Unknown command \"$1\".${sug:+ Did you mean: $sug?} All commands: deploys --help"
     fi
-    sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
