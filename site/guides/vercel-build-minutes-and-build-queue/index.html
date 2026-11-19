@@ -43,7 +43,7 @@
   "url": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/",
   "mainEntityOfPage": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/",
   "datePublished": "2026-11-16",
-  "dateModified": "2026-11-16",
+  "dateModified": "2026-11-18",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -142,7 +142,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Vercel build minutes and the build queue: why many pushes cost and wait</h1>
 <p class="answer">Build minutes are the number of builds multiplied by how long each takes. Every push builds every connected project, so the count grows with pushes, projects and branches, not with releases. Measure it, then cut builds before you tune build time.</p>
-<p class="meta">Last updated <time datetime="2026-11-16">16 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-18">18 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p>A push does not build one thing. Vercel builds every project connected to the repository, production on the production branch and a preview on every other branch. Builds that do not fit into what your plan runs at once wait in a queue, so many pushes also mean waiting. The limits depend on your plan: read them on Vercel's pricing page instead of trusting a number from a blog.</p>
 <h2 id="count">1. Count the builds</h2>
