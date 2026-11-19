@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- iPhone: a key with a line break inside (or a Render key without rnd_) is refused when saving, not later as a 401; the progress of a deploy follows the project's usual build time; the toast's close button is 44 pt, solid with "Reduce Transparency"; loading indicators and key test results are announced by VoiceOver; ⌘F focuses the search on the iPad. CI runs `ios/test.sh`.
 - iPhone: "Deploy with Face ID" in a note reads the list again and asks the usual confirmation first (it could deploy an older commit without it); "Biometrics only" without Face ID set up falls back to the passcode; Siri and Spotlight respect "Unlock on open" (names hidden); a refused key in the background run is noted once a day; a pasted QR code leaves the pasteboard also when discarded or refused; the QR text says 90 seconds; the small "Failed deploys" widget opens the first project; widget warning text is readable in light mode; offline pull-to-refresh says so; HTML error pages no longer show as text.
 - CLI: `deploy`, `deploy-changed --yes`, `rollback` and `cancel` from the terminal now write a line to the journal (the app still writes its own).
 - CLI: the launchd job (and the cron line) of `schedule`, `autofix` and `guard` carries `DEPLOYS_CONFIG` and `DEPLOYS_NOTIFY_CMD`; the daily job's log is rotated like the others.

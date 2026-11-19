@@ -74,7 +74,7 @@ struct RootView: View {
     var body: some View {
         NavigationSplitView {
             Group {
-                if !store.booted && store.projects.isEmpty && !store.demo { ProgressView() }
+                if !store.booted && store.projects.isEmpty && !store.demo { ProgressView().accessibilityLabel(L("Loading projects", "Projekte werden geladen")) }
                 else if !store.demo && !store.hasAccount { Welcome(store: store, settings: $settings, connect: $connect) }
                 else { ProjectList(store: store, asks: asks, selection: $selection, settings: $settings) }
             }
@@ -247,19 +247,24 @@ struct DeployQuestions: ViewModifier {
 /// A short note at the bottom. VoiceOver hears it; errors (and everything while VoiceOver runs)
 /// stay until closed, other notes for a few seconds.
 struct Toast: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @ObservedObject var store: PhoneStore
     let text: String
     var body: some View {
         HStack(spacing: 10) {
             if store.messageIsError { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).accessibilityHidden(true) }
             Text(text).font(.callout)
-            Button { store.message = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+            Button { store.message = nil } label: {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+            }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("Close message", "Meldung schließen"))
                 .accessibilityInputLabels([L("Close", "Schließen"), L("Dismiss", "Ausblenden")])
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16).padding(.bottom, 12)
+        .padding(.leading, 16).padding(.trailing, 6).padding(.vertical, 2)
+        .background(reduceTransparency ? AnyShapeStyle(Color(.secondarySystemBackground)) : AnyShapeStyle(.regularMaterial), in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 16).padding(.bottom, 12)
         .accessibilityElement(children: .contain)
         .task(id: store.messageSerial) {
             AccessibilityNotification.Announcement(store.messageIsError ? L("Error: ", "Fehler: ") + text : text).post()
@@ -316,6 +321,7 @@ struct ProjectList: View {
     @Binding var selection: String?
     @Binding var settings: Bool
     @State private var query = ""
+    @FocusState private var searchFocus: Bool
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -387,8 +393,11 @@ struct ProjectList: View {
             }
         }
         .searchable(text: $query, prompt: L("Projects", "Projekte"))
+        .searchFocused($searchFocus)
+        // ⌘F, for a keyboard on the iPad.
+        .background { Button("") { searchFocus = true }.keyboardShortcut("f").opacity(0).accessibilityHidden(true) }
         .refreshable { await store.refreshByHand() }
-        .overlay { if store.loading && store.projects.isEmpty { ProgressView() } }
+        .overlay { if store.loading && store.projects.isEmpty { ProgressView().accessibilityLabel(L("Loading projects", "Projekte werden geladen")) } }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 ShareLink(item: store.shareText) { Image(systemName: "square.and.arrow.up") }
@@ -733,7 +742,7 @@ struct DeployHistoryView: View {
                             if r.reusable { Button(L("Make live again …", "Wieder live schalten …"), systemImage: "arrow.uturn.backward") { again = r } }
                         }
                 }
-            } else { HStack { Spacer(); ProgressView(); Spacer() } }
+            } else { HStack { Spacer(); ProgressView().accessibilityLabel(L("Loading history", "Verlauf wird geladen")); Spacer() } }
         }
         .navigationTitle(L("History", "Verlauf"))
         .task { await load() }
@@ -808,7 +817,7 @@ struct BuildLogView: View {
                             .font(.footnote).foregroundStyle(.secondary).padding(8).frame(maxWidth: .infinity).background(.bar)
                     }
                 }
-            } else { ProgressView() }
+            } else { ProgressView().accessibilityLabel(L("Loading log", "Log wird geladen")) }
         }
         .navigationTitle(L("Build log", "Build-Log"))
         .navigationBarTitleDisplayMode(.inline)
@@ -867,6 +876,7 @@ struct SettingsView: View {
     @State private var notesDenied = false
     @State private var testResults: [String] = []
     @State private var saveFailed = false
+    @State private var badKey: String?
     @State private var confirmRemove = false
     @State private var confirmDemo = false
     @State private var githubScopes: [String]?
@@ -993,6 +1003,9 @@ struct SettingsView: View {
             }
             // Swiping the sheet down would drop typed keys without a word.
             .interactiveDismissDisabled(dirty)
+            .alert(L("This key looks wrong", "Dieser Schlüssel sieht falsch aus"), isPresented: Binding(get: { badKey != nil }, set: { if !$0 { badKey = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: { Text(badKey ?? "") }
             .alert(L("Could not save every key", "Konnte nicht jeden Schlüssel sichern"), isPresented: $saveFailed) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -1067,6 +1080,7 @@ struct SettingsView: View {
         if let r { testResults.append("Render: " + (await result { try await Render(key: r).whoami() })) }
         if let g { testResults.append("GitHub: " + (await result { try await GitHub(token: g).whoami() })) }
         if testResults.isEmpty { testResults = [L("No key to test.", "Kein Schlüssel zum Testen.")] }
+        AccessibilityNotification.Announcement(testResults.joined(separator: ". ")).post()
     }
     private func result(_ f: () async throws -> String) async -> String {
         do { return try await f() } catch { return explain(error) }
@@ -1074,6 +1088,9 @@ struct SettingsView: View {
 
     private func save() -> Bool {
         guard dirty else { return true }
+        for k in Key.allCases where (fields[k] ?? "") != (saved[k] ?? "") && k != .vercelTeam {
+            if let why = TokenShape.problem(fields[k] ?? "", render: k == .render) { badKey = why; return false }
+        }
         // Only what was changed: a key that could not be read (locked keychain) shows as an empty field,
         // and writing that field back would delete it.
         let ok = Key.allCases.filter { (fields[$0] ?? "") != (saved[$0] ?? "") }

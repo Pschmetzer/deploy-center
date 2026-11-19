@@ -121,6 +121,8 @@ jobs:
             -derivedDataPath build/ios-dd CODE_SIGNING_ALLOWED=NO build -quiet
       - name: iPhone tests without a simulator (the log masking against the script's af_mask)
         run: bash ios/Tests/run.sh
+      - name: iPhone logic tests (rule, API clients, snapshot, from made-up JSON)
+        run: bash ios/test.sh
 
   linux-cli:
     # The CLI on Linux (GNU date/stat/sed, bash 5), as README, Docker image and Action promise.

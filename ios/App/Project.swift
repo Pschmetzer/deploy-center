@@ -155,3 +155,22 @@ extension Array where Element == PhoneProject {
         return perRepo.values.reduce(0, +)
     }
 }
+
+
+/// A key that was cut up on its way (a line break in the middle from a clipboard or a handoff) only ever
+/// gives a 401 later. Checked before it is saved; nil when the shape is fine.
+enum TokenShape {
+    static func problem(_ value: String, render: Bool) -> String? {
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if v.isEmpty { return nil }
+        if v.contains(where: { $0.isWhitespace || $0.isNewline }) {
+            return L("The key contains a space or a line break. Paste it again as one piece.",
+                     "Der Schlüssel enthält ein Leerzeichen oder einen Zeilenumbruch. Füge ihn noch einmal als ein Stück ein.")
+        }
+        if render, !v.hasPrefix("rnd_") {
+            return L("A Render key starts with rnd_. Check that it is the whole key.",
+                     "Ein Render-Schlüssel beginnt mit rnd_. Prüfe, ob es der ganze Schlüssel ist.")
+        }
+        return nil
+    }
+}
