@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- CLI: `deploy`, `deploy-changed --yes`, `rollback` and `cancel` from the terminal now write a line to the journal (the app still writes its own).
+- CLI: the launchd job (and the cron line) of `schedule`, `autofix` and `guard` carries `DEPLOYS_CONFIG` and `DEPLOYS_NOTIFY_CMD`; the daily job's log is rotated like the others.
+- CLI: `--when-green` no longer reads "no checks" as green for a commit younger than `DEPLOYS_CI_GRACE` seconds (default 90): CI may not have started yet.
+- CLI: request bodies (Render environment variables among them) no longer show in `ps`; `check start` is refused in observer mode; `ai ask --question "… --help …"` is a question, not a help request; the scan of a repo gets only a short list of environment variables, not everything that does not look like a secret.
 - Raycast: new command "Idle Projects" lists projects with no deploy for 90 days or more (`deploys idle --json`). It only reads.
 - Providers: the failure test also covers refused keys (401, 403, not asked again) and rate limits (429, at most three reads) for every HTTP provider.
 - App: a word with @ in a project's note (like `@pay`) is a shortcut in the command palette: "pay deploy" finds that project's deploy command.

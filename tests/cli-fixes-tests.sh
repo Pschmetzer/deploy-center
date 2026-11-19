@@ -93,9 +93,12 @@ out="$(run check start me/app)"; rc=$?
 expect "observer: check start is refused" "$rc:$(echo "$out" | grep -c 'Observer mode')" "1:1"
 out="$(run deploy shop --force "tried --dry-run here")"; rc=$?
 expect "observer: --dry-run inside --force text does not open the guard" "$rc:$(echo "$out" | grep -c 'Observer mode')" "1:1"
-out="$(env -u DEPLOYS_LIB DEPLOYS_CONFIG="$tmp/config2" HOME="$tmp/home" NO_COLOR=1 /bin/bash ./deploys ai ask shop --question "what does --help show?" 2>&1)"
-expect "ai ask: --help inside the question is not a help request" "$(echo "$out" | grep -c '^  deploys ai ask')" "0"
 out="$(env -u DEPLOYS_LIB DEPLOYS_CONFIG="$tmp/config2" HOME="$tmp/home" NO_COLOR=1 /bin/bash ./deploys ai ask --help 2>&1)"
+# args_has (the help and observer checks): a flag inside the text of --question/--force is not a flag.
+eval "$(sed -n '/^args_has() {/,/^}/p' ./deploys)"
+expect "args_has: --help inside the question is not a flag" "$(args_has "--help -h" shop --question "what does --help show?" && echo yes || echo no)" "no"
+expect "args_has: a real --help is" "$(args_has "--help -h" shop --question "x" --help && echo yes || echo no)" "yes"
+expect "args_has: -n after --force text is" "$(args_has "--dry-run -n" web --force "why --dry-run" -n && echo yes || echo no)" "yes"
 expect "ai ask --help still shows its help line" "$(echo "$out" | grep -c '^  deploys ai ask')" "1"
 
 echo

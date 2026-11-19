@@ -67,6 +67,8 @@ jobs:
         run: bash tests/round9-tests.sh
       - name: Round 10 tests (file modes, options, paging, hooks, traps, escapes)
         run: bash tests/welle10-tests.sh
+      - name: CLI fixes tests (journal, launchd env, CI grace, request bodies)
+        run: bash tests/cli-fixes-tests.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -146,6 +148,8 @@ jobs:
         run: bash tests/round9-tests.sh
       - name: Round 10 tests
         run: bash tests/welle10-tests.sh
+      - name: CLI fixes tests
+        run: bash tests/cli-fixes-tests.sh
 
   integrations:
     # integrations/tests/run.sh: Action, digest, statuspage, badge, notify, hooks, the Claude Code
