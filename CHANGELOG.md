@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Claude answers: links open only when they are http(s), headings and code are announced by VoiceOver, a note says to check the answer, and kept answers are forgotten when the key changes. The monthly limit accepts "1.000.000" or "2 Mio".
+- iPhone link: a failed keychain write and a code too big for a QR code are said instead of showing "saved" or a spinner; the clipboard is emptied when the app quits with the code open.
+- Certificate check follows every host of a redirect (earliest end) and refuses redirects to private addresses; logo files are named by a hash of the domain; new private folders are 0700.
 - iPhone: a key with a line break inside (or a Render key without rnd_) is refused when saving, not later as a 401; the progress of a deploy follows the project's usual build time; the toast's close button is 44 pt, solid with "Reduce Transparency"; loading indicators and key test results are announced by VoiceOver; ⌘F focuses the search on the iPad. CI runs `ios/test.sh`.
 - iPhone: "Deploy with Face ID" in a note reads the list again and asks the usual confirmation first (it could deploy an older commit without it); "Biometrics only" without Face ID set up falls back to the passcode; Siri and Spotlight respect "Unlock on open" (names hidden); a refused key in the background run is noted once a day; a pasted QR code leaves the pasteboard also when discarded or refused; the QR text says 90 seconds; the small "Failed deploys" widget opens the first project; widget warning text is readable in light mode; offline pull-to-refresh says so; HTML error pages no longer show as text.
 - Costs: "Share the saving" opens its popover at its own button again, "Save report as file" is always there and shows an error if the save fails, the trend leaves out today's unfinished day, and the monthly estimate uses the real month length.

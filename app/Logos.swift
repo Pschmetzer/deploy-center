@@ -2,6 +2,7 @@
 
 import SwiftUI
 import AppKit
+import CryptoKit
 
 // MARK: - Logos
 
@@ -107,7 +108,11 @@ actor LogoCache {
         return img
     }
 
-    private static func file(_ domain: String) -> URL { dir.appendingPathComponent(domain.replacingOccurrences(of: "/", with: "_")) }
+    /// A hash of the domain as the file name: "..", slashes or odd characters in a configured domain never reach the path (IDEEN-11 219).
+    private static func file(_ domain: String) -> URL {
+        let h = SHA256.hash(data: Data(domain.lowercased().utf8)).map { String(format: "%02x", $0) }.joined()
+        return dir.appendingPathComponent(h)
+    }
 
     /// The logo on disk, however old.
     private func stale(_ domain: String) -> NSImage? {
