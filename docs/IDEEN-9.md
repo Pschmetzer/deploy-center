@@ -5,6 +5,8 @@ Erledigte Punkte stehen unter „Stand“.
 
 ## Stand
 
+- 4 (Dateilänge) ist umgesetzt: `scripts/check-size.sh` läuft im CI und setzt Obergrenzen für `deploys`, `lib/`, `providers/` und die Swift-Dateien.
+- 1 (Agent-Worktrees): Hinweis unten. `git worktree list` zeigt sie, `git worktree prune` entfernt nur verwaiste Einträge; saubere Worktrees entfernt man mit `git worktree remove <pfad>`. Nichts davon geschieht automatisch.
 - 35 (GitHub-Rate-Limit mit Countdown, wenn weniger als 300 Anfragen bleiben) und 53 (Störungsbanner mit Links zu den Statusseiten, schließbar) gibt es im Hauptfenster schon; 24 als aufklappbare Rechnung je Projekt in der Bilanz.
 - 69 (Fehlermeldungen mit „Hilfe“-Link zu `TROUBLESHOOTING.md`), 57 und 58 (Log-Suche und gruppierte Fehler, Befehlspalette) und 48 (Ruhezeit bündelt Meldungen) sind in der Mac-App umgesetzt. 68 beschreibt der Erststart in der App schon mit echten Daten (Doctor, Projekte mit Auto-Deploy). 70: die Ruhezeit zeigt ihr Beispiel in den Einstellungen; weitere Einstellungen folgen.
 - 50 Tastenkürzel pro Projekt: ein Wort mit @ in der Notiz (`@pay`) ist ein Kürzel in der Befehlspalette („pay deploy“). Globale Tasten je Projekt bleiben offen (Zeilenmenü und Fensterbefehle).
