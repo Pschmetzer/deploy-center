@@ -33,6 +33,20 @@ enum ClaudeAI {
     static let keyChanged = Notification.Name("claudeAIKeyChanged")
     static var enabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
 
+    /// A token limit as people write it: "1000000", "1.000.000", "1 000 000", "500k", "1 Mio", "2m"; nil when it is not a positive number (IDEEN-11 257).
+    nonisolated static func parseCap(_ text: String) -> Int? {
+        var t = text.lowercased().filter { !$0.isWhitespace && $0 != "." && $0 != "," && $0 != "'" && $0 != "_" }
+        var mult = 1
+        for (suffix, m) in [("mio", 1_000_000), ("m", 1_000_000), ("k", 1_000), ("t", 1_000)] where t.hasSuffix(suffix) {
+            t.removeLast(suffix.count); mult = m; break
+        }
+        guard let n = Int(t), n > 0, n <= Int.max / mult else { return nil }
+        return n * mult
+    }
+
+    /// Forgets the kept answers (key deleted or changed).
+    static func forgetAnswers() { answers.clear() }
+
     static func status() async -> ClaudeAIStatus? {
         try? await Tool.json(["ai", "status"], as: ClaudeAIStatus.self, timeout: 15)
     }
@@ -69,6 +83,8 @@ enum ClaudeAI {
             return e.answer
         }
         func set(_ k: String, _ a: ClaudeAnswer) { lock.lock(); kept[k] = (Date(), a); lock.unlock() }
+        /// After the key was deleted or replaced: answers about real logs do not stay in memory (IDEEN-11 223).
+        func clear() { lock.lock(); kept = [:]; lock.unlock() }
     }
 
     /// Always asks anew: without the build it is about, a kept answer could be about another one.
@@ -171,7 +187,7 @@ struct ClaudeAISettings: View {
                     HStack {
                         TextField(L("Monthly cap (tokens)", "Monatslimit (Tokens)"), text: $cap, prompt: Text("\(s.cap)"))
                             .onSubmit { Task { await saveCap() } }
-                        Button(L("Set", "Setzen")) { Task { await saveCap() } }.disabled(Int(cap) == nil || busy)
+                        Button(L("Set", "Setzen")) { Task { await saveCap() } }.disabled(ClaudeAI.parseCap(cap) == nil || busy)
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         ProgressView(value: Double(min(s.used, s.cap)), total: Double(max(s.cap, 1)))
@@ -195,7 +211,7 @@ struct ClaudeAISettings: View {
     private func reload() async {
         let had = status?.key
         status = await ClaudeAI.status()
-        if status?.key != had { NotificationCenter.default.post(name: ClaudeAI.keyChanged, object: nil) }
+        if status?.key != had { ClaudeAI.forgetAnswers(); NotificationCenter.default.post(name: ClaudeAI.keyChanged, object: nil) }
     }
 
     private func saveKey() async {
@@ -208,7 +224,7 @@ struct ClaudeAISettings: View {
     }
 
     private func saveCap() async {
-        guard let n = Int(cap.trimmingCharacters(in: .whitespaces)), n > 0 else { return }
+        guard let n = ClaudeAI.parseCap(cap) else { return }
         await run(["ai", "cap", "\(n)"]); cap = ""
     }
 
@@ -260,13 +276,18 @@ struct MarkdownText: View {
             ForEach(blocks) { b in
                 if b.code {
                     Text(b.text).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                        .accessibilityLabel(L("Code: ", "Code: ") + b.text)
                         .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
                 } else {
                     Text(inline(b.text)).textSelection(.enabled)
+                        .accessibilityAddTraits(b.text.hasPrefix("#") ? .isHeader : [])
                 }
             }
         }
+        // A link in an answer is data from a log or a commit text that may carry an injection:
+        // only http(s) opens, anything else (file:, custom schemes) is dropped (IDEEN-11 206).
+        .environment(\.openURL, OpenURLAction { SafeLink.ok($0) ? .systemAction : .discarded })
     }
 }
 
@@ -367,6 +388,9 @@ struct ClaudeAnswerSheet: View {
                     // Markdown as it is meant (lists, bold, code); "Copy" still copies the raw text.
                     ScrollView {
                         MarkdownText(text: Demo.scrub(answer.text, items: [item])).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(L("AI answer: logs and commit texts are untrusted input, so check it before you act on it.",
+                               "KI-Antwort: Logs und Commit-Texte sind unvertraute Eingaben, bitte prüfen, bevor du handelst."))
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 } else if let error {
                     VStack(alignment: .leading, spacing: 8) {

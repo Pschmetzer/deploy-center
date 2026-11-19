@@ -161,10 +161,16 @@ struct PhoneLinkSettings: View {
     @AppStorage(PhoneLinkModel.githubKey) private var shareGitHub = false
     @State private var github = ""
     @State private var hasGitHub = MacSecret.get(PhoneLinkModel.githubOwnKey) != nil
+    /// The keychain refused the last token: "saved" would be the old one (IDEEN-11 217).
+    @State private var keychainFailed = false
     @AppStorage("demoMode") private var demoMode = false
 
     var body: some View {
         Section {
+            if keychainFailed {
+                ErrorText(L("The keychain did not take the token; the old one (if any) is still there. Unlock the keychain and try again.",
+                            "Das Schlüsselbund hat das Token nicht angenommen; ein altes (falls vorhanden) gilt weiter. Schlüsselbund entsperren und erneut versuchen."))
+            }
             if link.available {
                 Toggle(L("Connect the iPhone app (iCloud Keychain)", "Mit der iPhone-App verbinden (iCloud-Schlüsselbund)"), isOn: $on)
                     .onChange(of: on) { _, v in Task { if v { await link.push() } else { link.turnOff() } } }
@@ -176,7 +182,7 @@ struct PhoneLinkSettings: View {
                 SecureField(hasVercel ? L("Vercel token for the iPhone: saved", "Vercel-Token fürs iPhone: gespeichert")
                                       : L("Vercel token for the iPhone", "Vercel-Token fürs iPhone"), text: $vercel)
                 Button(L("Save", "Sichern")) {
-                    MacSecret.set("deploy-center-phone-vercel", vercel); vercel = ""
+                    keychainFailed = !MacSecret.set("deploy-center-phone-vercel", vercel); vercel = ""
                     hasVercel = MacSecret.get("deploy-center-phone-vercel") != nil
                     Task { await link.pushIfOn() }
                 }.disabled(vercel.isEmpty)
@@ -187,7 +193,7 @@ struct PhoneLinkSettings: View {
                 SecureField(hasGitHub ? L("GitHub token for the iPhone: saved", "GitHub-Token fürs iPhone: gespeichert")
                                       : L("GitHub token for the iPhone (read-only)", "GitHub-Token fürs iPhone (nur lesen)"), text: $github)
                 Button(L("Save", "Sichern")) {
-                    MacSecret.set(PhoneLinkModel.githubOwnKey, github); github = ""
+                    keychainFailed = !MacSecret.set(PhoneLinkModel.githubOwnKey, github); github = ""
                     hasGitHub = MacSecret.get(PhoneLinkModel.githubOwnKey) != nil
                     Task { await link.pushIfOn() }
                 }.disabled(github.isEmpty)
@@ -229,6 +235,8 @@ struct PhoneQRSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var image: NSImage?
     @State private var empty = false
+    /// The code held too much for a QR code: said, not an endless spinner (IDEEN-11 181).
+    @State private var tooLong = false
     @State private var left = 60
     /// The code is covered while Deploy Center is not the front app (someone else may look).
     @State private var inactive = false
@@ -252,6 +260,10 @@ struct PhoneQRSheet: View {
                 Text(L("No keys to hand over yet: save a Vercel token for the iPhone or set up Render first.",
                        "Noch keine Schlüssel zum Übergeben: zuerst ein Vercel-Token fürs iPhone sichern oder Render einrichten."))
                     .frame(width: 300)
+            } else if tooLong {
+                Text(L("The keys do not fit into one QR code. Use \"Copy code\" in Settings or hand them over with iCloud Keychain.",
+                       "Die Schlüssel passen nicht in einen QR-Code. Nimm in den Einstellungen den iCloud-Schlüsselbund."))
+                    .frame(width: 300)
             } else { ProgressView() }
             HStack {
                 if image != nil {
@@ -271,6 +283,8 @@ struct PhoneQRSheet: View {
         .padding(24)
         // The keys must not stay on the clipboard.
         .onDisappear { Self.clearClipboard(code) }
+        // Quitting with the sheet open: the code does not stay on the clipboard (IDEEN-11 215).
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in Self.clearClipboard(code) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in inactive = true }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in inactive = false }
         // Left out of screenshots, recordings and screen sharing (as far as macOS honours it).
@@ -286,6 +300,7 @@ struct PhoneQRSheet: View {
             keys.once = UUID().uuidString
             code = PhoneLink.qrText(keys) ?? ""
             image = PhoneQRSheet.make(code)
+            if image == nil { tooLong = true; code = ""; return }
             // Cancelled (the sheet closed): stop, instead of 60 turns without a pause.
             while left > 0 {
                 do { try await Task.sleep(for: .seconds(1)) } catch { return }

@@ -12,7 +12,7 @@ enum WeekGoals {
     }
 
     enum State: Equatable { case off, ok, last, over }
-    /// "At most N": green below, "last one" at N−1, over above N. 0 = no goal.
+    /// "At most N": green below N, "last" when N is reached (one more is over), over above N. 0 = no goal.
     nonisolated static func state(count: Int, goal: Int) -> State {
         guard goal > 0 else { return .off }
         return count > goal ? .over : (count >= goal ? .last : .ok)

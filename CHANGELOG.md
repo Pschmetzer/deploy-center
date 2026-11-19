@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Claude answers: links open only when they are http(s), headings and code are announced by VoiceOver, a note says to check the answer, and kept answers are forgotten when the key changes. The monthly limit accepts "1.000.000" or "2 Mio".
+- iPhone link: a failed keychain write and a code too big for a QR code are said instead of showing "saved" or a spinner; the clipboard is emptied when the app quits with the code open.
+- Certificate check follows every host of a redirect (earliest end) and refuses redirects to private addresses; logo files are named by a hash of the domain; new private folders are 0700.
 - iPhone: a key with a line break inside (or a Render key without rnd_) is refused when saving, not later as a 401; the progress of a deploy follows the project's usual build time; the toast's close button is 44 pt, solid with "Reduce Transparency"; loading indicators and key test results are announced by VoiceOver; ⌘F focuses the search on the iPad. CI runs `ios/test.sh`.
 - CLI: the short lock around small files (AI usage count, remembered repos, team list) is a file made with `set -C`, not a `mkdir`: on Ubuntu 26.04 (Rust coreutils) two runs at once could both take it and lose a count.
 - Tests: the provider contract test no longer takes Amplify for an HTTP provider on Linux CI (a `gh` in /usr/bin made the rows call gitlab.com via curl); it runs without git-host enrichment.
