@@ -105,6 +105,12 @@ enum LogMask {
         return (Array(masked.suffix(tail)), nil)
     }
 
+    /// Whether a line (not yet masked: the words are the same) says error. For paging through a long log.
+    static func hasErrorLine(_ lines: [String]) -> Bool {
+        guard let r = errorWord else { return false }
+        return lines.contains { has(r, $0) }
+    }
+
     // MARK: Provider log formats (pure, so the tests read fixtures)
 
     /// Vercel `/v3/deployments/{id}/events`: oldest first, text of each event, blank ones dropped.
