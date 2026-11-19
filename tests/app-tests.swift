@@ -85,6 +85,11 @@ do {
     expect("stats: clean share", JournalStats.cleanShare(l).map { Int(($0 * 100).rounded()) } ?? -1, 60)
     let d = JournalStats.dora(l, days: 7)
     expect("stats: dora", "\(d.perWeek) \(Int((d.failRate ?? 0) * 100)) \(Int(d.restoreMedian ?? 0))", "3.0 40 1200")
+    let fr = [je(0, "z", "live"), je(10, "z", "failed"), je(20, "z", "rollback"), je(30, "z", "live")]
+    let df = JournalStats.dora(fr, days: 7)
+    expect("stats: failed then rollback is one failure, recovered by the rollback", "\(Int((df.failRate ?? 0) * 100)) \(Int(df.restoreMedian ?? 0))", "25 600")
+    expect("journal: duration", "\(Journal.duration(125)) \(Journal.duration(7500))", "2:05 2 h 05")
+    expect("journal: search by sha", Journal.filter([JournalEntry(platform: "Vercel", name: "x", result: "live", seconds: nil, detail: nil, sha: "a1b2c3d4", deployId: "dpl_9")], text: "a1b2c3", kind: nil).count, 1)
     expect("stats: costly failures", JournalStats.costlyFailures(l, perBuild: { $0 == "a" ? 0.5 : nil }).map { "\($0.name) \($0.failed) \($0.usd)" }, ["a 1 0.5"])
     let tr = (0..<10).map { je(Double($0), "c", "live", $0 < 5 ? 60 : 120) }
     expect("stats: slower builds", JournalStats.trends(tr).map { "\($0.before) \($0.recent)" }, ["60.0 120.0"])

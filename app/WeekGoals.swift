@@ -41,7 +41,8 @@ struct GoalsSection: View {
             let n = WeekGoals.thisWeek(entries)
             if goal > 0 {
                 let s = WeekGoals.state(count: n, goal: goal)
-                Text(L("This week: \(n) of \(goal)", "Diese Woche: \(n) von \(goal)"))
+                Text(L("This week: \(n) of \(goal)", "Diese Woche: \(n) von \(goal)")
+                     + (s == .over ? L(" · over the goal", " · über dem Ziel") : (s == .last ? L(" · goal reached", " · Ziel erreicht") : "")))
                     .foregroundStyle(s == .over ? Color.red : (s == .last ? Color.orange : Color.secondary))
             }
             // The week in review: the last 7 days, and the 7 before them for comparison.
