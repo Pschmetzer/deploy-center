@@ -85,6 +85,8 @@ check(isoDate("2026-01-02T03:04:05Z") != nil, "plain ISO date")
 check(isoDate("2026-01-02T03:04:05.123Z") != nil, "ISO date with milliseconds")
 check(isoDate("nonsense") == nil, "no date from nonsense")
 
+check(HTTP.plainBody(Data("<html><body>Bad gateway</body></html>".utf8)) == "", "an HTML error page says nothing")
+check(HTTP.plainBody(Data("  slow down ".utf8)) == "slow down", "a plain error body is kept")
 check(APIError(status: 401, message: "x").isAuth, "401 is a key problem")
 check(!APIError(status: 403, message: "x", rateLimited: true).isAuth, "a rate limit is no key problem")
 check(APIError(status: 401, message: "x").errorDescription?.contains("401") == true, "the 401 text keeps the status")

@@ -115,12 +115,26 @@ struct RootView: View {
         .onContinueUserActivity(CSSearchableItemActionType) { a in if let k = Spotlight.key(a) { selection = k } }
         .onContinueUserActivity(Spotlight.activity) { a in if let k = Spotlight.key(a) { selection = k } }
         .onChange(of: store.openKey, initial: true) { _, k in if let k { selection = k; store.openKey = nil } }
+        .onChange(of: store.confirmDeployKey, initial: true) { _, k in
+            guard let k else { return }
+            store.confirmDeployKey = nil
+            if let p = store.projects.first(where: { $0.key == k }), asks.canDeploy(p, store) { asks.deploy = p }
+        }
         .onChange(of: store.projects) { _, _ in
             guard let w = pendingOpen, let first = w.first else { return }
             if first.hasPrefix("key:") {
                 let k = String(first.dropFirst(4))
                 if store.projects.contains(where: { $0.key == k }) { selection = k; pendingOpen = nil }
             } else { open(name: first, platform: w.count > 1 ? w[1] : nil) }
+        }
+        // A link to a project the first full list does not hold is dropped: a later list must not open it by surprise.
+        .onChange(of: store.loadedAt) { _, t in
+            guard t != nil, let w = pendingOpen, let first = w.first else { return }
+            if first.hasPrefix("key:") {
+                let k = String(first.dropFirst(4))
+                if store.projects.contains(where: { $0.key == k }) { selection = k }
+            } else { open(name: first, platform: w.count > 1 ? w[1] : nil) }
+            pendingOpen = nil
         }
         // deploycenter://select?project=<name>&platform=<Vercel|Render>, from the widget. It only shows the project.
         .onOpenURL { url in
@@ -373,7 +387,7 @@ struct ProjectList: View {
             }
         }
         .searchable(text: $query, prompt: L("Projects", "Projekte"))
-        .refreshable { await store.reload() }
+        .refreshable { await store.refreshByHand() }
         .overlay { if store.loading && store.projects.isEmpty { ProgressView() } }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -647,7 +661,7 @@ struct ProjectDetail: View {
             }
         }
         .navigationTitle(p.name)
-        .refreshable { await store.reload() }
+        .refreshable { await store.refreshByHand() }
         // With the app lock on, the project's name does not leave for other devices through Handoff.
         .userActivity(Spotlight.activity, isActive: !store.demo && !PhoneStore.lockOnOpen) { a in
             a.title = p.name; a.userInfo = ["project": p.key]
@@ -906,6 +920,9 @@ struct SettingsView: View {
                 }
                 Section {
                     Toggle(L("Unlock on open", "Beim Öffnen entsperren"), isOn: $lockOnOpen)
+                        .onChange(of: lockOnOpen) { _, _ in
+                            Spotlight.index(store.projects, demo: store.demo); QuickActions.update(store.projects)
+                        }
                     Toggle(L("Face ID or Touch ID only (no passcode) to deploy", "Zum Deployen nur Face ID oder Touch ID (kein Code)"), isOn: $biometricsOnly)
                     Toggle(L("Keep projects out of Spotlight", "Projekte nicht in Spotlight zeigen"), isOn: $noSpotlight)
                         .onChange(of: noSpotlight) { _, _ in Spotlight.index(store.projects, demo: store.demo) }

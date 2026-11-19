@@ -45,7 +45,10 @@ struct ConnectMacView: View {
                             found = nil
                         }
                         .buttonStyle(.borderedProminent)
-                        Button(L("Discard", "Verwerfen"), role: .cancel) { found = nil }
+                        Button(L("Discard", "Verwerfen"), role: .cancel) {
+                            if foundByPaste { UIPasteboard.general.items = []; foundByPaste = false }
+                            found = nil
+                        }
                     } header: { Text(L("Code read", "Code gelesen")) } footer: {
                         Text(L("The keys replace the ones typed on this iPhone. Fields the code leaves empty stay as they are.",
                                "Die Schlüssel ersetzen die auf diesem iPhone eingetragenen. Felder, die der Code leer lässt, bleiben, wie sie sind."))
@@ -83,8 +86,8 @@ struct ConnectMacView: View {
                     if let e = scanError { Text(e).foregroundStyle(.red) }
                     if cameraDenied { Button(L("Open Settings …", "Einstellungen öffnen …")) { if let u = URL(string: UIApplication.openSettingsURLString) { openURL(u) } } }
                 } header: { Text(L("With a QR code", "Mit einem QR-Code")) } footer: {
-                    Text(L("On the Mac: Settings → iPhone → Show a QR code for the iPhone. The code holds your keys and works for a few minutes; the keys are then kept on this iPhone only.",
-                           "Auf dem Mac: Einstellungen → iPhone → QR-Code fürs iPhone zeigen. Der Code enthält deine Schlüssel und gilt einige Minuten; die Schlüssel bleiben dann nur auf diesem iPhone."))
+                    Text(L("On the Mac: Settings → iPhone → Show a QR code for the iPhone. The code holds your keys and works for 90 seconds; the keys are then kept on this iPhone only.",
+                           "Auf dem Mac: Einstellungen → iPhone → QR-Code fürs iPhone zeigen. Der Code enthält deine Schlüssel und gilt 90 Sekunden; die Schlüssel bleiben dann nur auf diesem iPhone."))
                 }
                 Section {
                     Button(L("Delete the keys on this iPhone …", "Schlüssel auf diesem iPhone löschen …"), role: .destructive) { confirmForget = true }
@@ -95,6 +98,7 @@ struct ConnectMacView: View {
             }
             .navigationTitle(L("Connect to the Mac", "Mit dem Mac verbinden"))
             .navigationBarTitleDisplayMode(.inline)
+            .onDisappear { if foundByPaste { UIPasteboard.general.items = []; foundByPaste = false } }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Done", "Fertig")) { dismiss() } } }
             .confirmationDialog(L("Delete the keys on this iPhone?", "Schlüssel auf diesem iPhone löschen?"), isPresented: $confirmForget, titleVisibility: .visible) {
                 Button(L("Delete", "Löschen"), role: .destructive) { store.forgetOwnKeys() }
@@ -136,6 +140,8 @@ struct ConnectMacView: View {
     private func handle(_ text: String, pasted: Bool = false) {
         scanError = reason(text)
         foundByPaste = pasted && found != nil
+        // A pasted code that was refused (old, used, empty) still holds keys: do not leave it on the pasteboard.
+        if pasted, found == nil, text.contains("deploycenter-link:") { UIPasteboard.general.items = [] }
         if let e = scanError {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             AccessibilityNotification.Announcement(e).post()

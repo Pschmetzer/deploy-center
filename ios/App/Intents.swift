@@ -6,17 +6,22 @@ import Foundation
 
 enum Spoken {
     /// One answer for "what waits": PRs and projects waiting, failures by name, and how old the state is.
-    static func waiting(_ projects: [PhoneProject], at: Date?, now: Date = Date()) -> String {
+    static func waiting(_ projects: [PhoneProject], at: Date?, now: Date = Date(), hideNames: Bool = false) -> String {
         // The same rule and count as the app and the widgets (PhoneStore.waitingPRs).
         let waiting = projects.waitingOnly, failed = projects.filter(\.failed)
         let prs = projects.waitingPRCount
         var out = waiting.isEmpty ? L("Nothing waits.", "Nichts wartet.")
             : L("\(plural(prs, ("PR", "PR"), ("PRs", "PRs"))) waiting in \(plural(waiting.count, ("project", "Projekt"), ("projects", "Projekten"))).",
                 "\(plural(prs, ("PR", "PR"), ("PRs", "PRs"))) \(prs == 1 ? "wartet" : "warten") in \(plural(waiting.count, ("project", "Projekt"), ("projects", "Projekten"))).")
-        if !failed.isEmpty { out += " " + failures(failed) }
+        if !failed.isEmpty { out += " " + failures(failed, hideNames: hideNames) }
         return out + age(at, now: now)
     }
-    static func failures(_ failed: [PhoneProject]) -> String {
+    /// With "Unlock on open" on, Siri and Shortcuts say numbers only: the names are behind the app lock.
+    static func failures(_ failed: [PhoneProject], hideNames: Bool = false) -> String {
+        if hideNames, !failed.isEmpty {
+            return L("\(plural(failed.count, ("project", "Projekt"), ("projects", "Projekte"))) failed. Open the app for the names.",
+                     "\(plural(failed.count, ("project", "Projekt"), ("projects", "Projekte"))) \(failed.count == 1 ? "ist" : "sind") fehlgeschlagen. Die Namen zeigt die App.")
+        }
         let names = failed.prefix(5).map(\.name).joined(separator: ", ") + (failed.count > 5 ? L(" and \(failed.count - 5) more", " und \(failed.count - 5) weitere") : "")
         return failed.isEmpty ? L("Nothing failed.", "Nichts ist fehlgeschlagen.")
             : L("Failed: \(names).", "Fehlgeschlagen: \(names).")
@@ -42,7 +47,7 @@ struct WaitingIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let text = await MainActor.run {
             guard let l = Spoken.last() else { return L("Nothing read yet: open Deploy Center once.", "Noch nichts gelesen: öffne Deploy Center einmal.") }
-            return Spoken.waiting(l.projects, at: l.at)
+            return Spoken.waiting(l.projects, at: l.at, hideNames: PhoneStore.lockOnOpen)
         }
         return .result(dialog: IntentDialog(stringLiteral: text))
     }
@@ -56,7 +61,7 @@ struct FailuresIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let text = await MainActor.run {
             guard let l = Spoken.last() else { return L("Nothing read yet: open Deploy Center once.", "Noch nichts gelesen: öffne Deploy Center einmal.") }
-            return Spoken.failures(l.projects.filter(\.failed)) + Spoken.age(l.at)
+            return Spoken.failures(l.projects.filter(\.failed), hideNames: PhoneStore.lockOnOpen) + Spoken.age(l.at)
         }
         return .result(dialog: IntentDialog(stringLiteral: text))
     }
@@ -87,7 +92,7 @@ enum Spotlight {
     /// The new items are written first and only the ones that are gone are removed: no gap where a project is missing.
     @MainActor static func index(_ projects: [PhoneProject], demo: Bool) {
         // No key (or "Remove all keys"): nothing of the account may stay in the system-wide index.
-        let off = demo || projects.isEmpty || UserDefaults.standard.bool(forKey: "noSpotlight")
+        let off = demo || projects.isEmpty || UserDefaults.standard.bool(forKey: "noSpotlight") || PhoneStore.lockOnOpen
         let keys = off ? [] : projects.map { $0.key + "|" + $0.name + "|" + ($0.domain ?? "") }
         guard keys != indexed else { return }
         indexed = keys
