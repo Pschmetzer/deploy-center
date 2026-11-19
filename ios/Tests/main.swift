@@ -184,6 +184,20 @@ var w3 = PhoneProject(provider: .render, id: "b", name: "b"); w3.deployable = tr
 check([w1, w2, w3].waitingOnly.count == 2 && [w1, w2, w3].waitingPRCount == 3,
       "Siri and the app count the same: failed ones do not wait, projects of one repo count their PRs once")
 
+// MARK: Snapshot compatibility and the schedule
+do {
+    let old = Data(#"{"version":1,"at":"2026-01-01T00:00:00Z","demo":false,"waitingProjects":1,"waitingCommits":2,"waitingPRs":3,"building":0,"failed":0,"saving":null,"projects":[]}"#.utf8)
+    let snap = try? DeploySnapshot.decoder.decode(DeploySnapshot.self, from: old)
+    check(snap != nil && snap?.nextScheduled == nil && snap?.language == nil && snap?.connected == nil,
+          "a snapshot from an older app (no language, connected or nextScheduled) still reads")
+    var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+    let sat = ISO8601DateFormatter().date(from: "2026-11-21T10:00:00Z")!
+    let mon = ISO8601DateFormatter().date(from: "2026-11-23T08:00:00Z")!
+    check(DeploySnapshot.nextDaily(at: "08:00", weekdaysOnly: true, after: sat, calendar: cal) == mon, "weekday schedule: Saturday waits for Monday")
+    check(DeploySnapshot.nextDaily(at: "8", weekdaysOnly: false, after: sat, calendar: cal) == nil && DeploySnapshot.nextDaily(at: "", weekdaysOnly: false, after: sat, calendar: cal) == nil,
+          "a schedule time that is not HH:MM is none")
+}
+
 // MARK: Snapshot texts
 
 check(DeploySnapshot.localized("de-DE", "en", "de") == "de" && DeploySnapshot.localized("en", "en", "de") == "en", "language pick")

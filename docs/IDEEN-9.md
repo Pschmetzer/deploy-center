@@ -7,6 +7,13 @@ Erledigte Punkte stehen unter „Stand“.
 
 - 4 (Dateilänge) ist umgesetzt: `scripts/check-size.sh` läuft im CI und setzt Obergrenzen für `deploys`, `lib/`, `providers/` und die Swift-Dateien.
 - 1 (Agent-Worktrees): Hinweis unten. `git worktree list` zeigt sie, `git worktree prune` entfernt nur verwaiste Einträge; saubere Worktrees entfernt man mit `git worktree remove <pfad>`. Nichts davon geschieht automatisch.
+- 35 (GitHub-Rate-Limit mit Countdown, wenn weniger als 300 Anfragen bleiben) und 53 (Störungsbanner mit Links zu den Statusseiten, schließbar) gibt es im Hauptfenster schon; 24 als aufklappbare Rechnung je Projekt in der Bilanz.
+- 69 (Fehlermeldungen mit „Hilfe“-Link zu `TROUBLESHOOTING.md`), 57 und 58 (Log-Suche und gruppierte Fehler, Befehlspalette) und 48 (Ruhezeit bündelt Meldungen) sind in der Mac-App umgesetzt. 68 beschreibt der Erststart in der App schon mit echten Daten (Doctor, Projekte mit Auto-Deploy). 70: die Ruhezeit zeigt ihr Beispiel in den Einstellungen; weitere Einstellungen folgen.
+- 50 Tastenkürzel pro Projekt: ein Wort mit @ in der Notiz (`@pay`) ist ein Kürzel in der Befehlspalette („pay deploy“). Globale Tasten je Projekt bleiben offen (Zeilenmenü und Fensterbefehle).
+- 34 (Zertifikatswarnung auch für Standard-Domains der Anbieter) ist im CLI umgesetzt: `deploys certs`.
+- 30 (Token-Alter: `deploys creds`, Keychain-Erstelldatum) und 31 (Zugangsdaten je Anbieter: `deploys creds`, zeigt Quelle und ob angenommen; Rechte je Token lesen die Anbieter-APIs nicht einheitlich) sind im CLI umgesetzt.
+- 32 (Geheimnis-Scanner vor dem Deploy: `deploys secrets`, Exit 1 bei Treffer, nutzbar als Sperre in Skripten) ist umgesetzt.
+- 30 Token-Alter: Hinweis in der Gesundheitskarte nach 90 Tagen, gezählt ab dem ersten Sehen durch die App (das Skript liefert kein echtes Alter).
 - 59 Wochenrückblick in den Einstellungen (Kosten). 24 gibt es schon (Bilanz mit aufklappbarer Rechnung je Projekt), 35 steht in der Gesundheitskarte. 30 bleibt offen: das Skript liefert kein Token-Alter.
 - 6 (`trap` ohne `eval`) ist für Temp-Dateien und Sperren umgesetzt (`trap_fn`); die Aufräumer in den Anbieter-Dateien und im Scan behalten ihren Text.
 - 5 (`atomic_write`) ist umgesetzt.

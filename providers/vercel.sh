@@ -341,7 +341,7 @@ vercel_start() {
 vercel_deploy_json() {
   local p="${1:?project}" pv="" sha=""; shift || true
   # An unknown flag (--sah) is refused: ignored, the newest commit would go live instead.
-  while [ $# -gt 0 ]; do case "$1" in --preview) pv=1;; --sha) sha="${2:?commit}"; shift;; "") ;; *) die "Unknown option $1. Usage: deploy-json <project> [--preview] [--sha <commit>]";; esac; shift; done
+  while [ $# -gt 0 ]; do case "$1" in --preview) pv=1;; --sha) sha="${2:?commit}"; shift;; --no-cache) die "Vercel cannot redeploy without the build cache from here (do it in the dashboard: Redeploy, cache off)";; "") ;; *) die "Unknown option $1. Usage: deploy-json <project> [--preview] [--sha <commit>]";; esac; shift; done
   vercel_start "$p" "$pv" "$sha"
 }
 
@@ -403,7 +403,7 @@ vercel_json() {
     # A build under way in either the newest attempt or the production target counts.
     | ([.latestState, .lastState] | map(vphase)) as $ph
     | . + {phase:(if ($ph | index("building")) then "building" elif ($ph | index("queued")) then "queued"
-                  else ((.latestState // .lastState) | vphase) end)}] | sort_by(.name | ascii_downcase)'
+                  else ((.latestState // .lastState) | vphase) end)}] | sort_by((.name // "") | ascii_downcase)'
 }
 
 # Exit 1: no such project. Exit 2: Vercel could not be asked (the reason on stderr), which is not
@@ -427,6 +427,17 @@ vercel_latest() {
   local tgt="&target=production"; [ "${2:-}" = --preview ] && tgt=""
   vercel_call "/v6/deployments?app=$1&limit=1$tgt" \
     | jq -r "$VERCEL_PHASE"'(.deployments[0] // {uid:"none"}) | "\(.uid)\t\(.state | vphase // "")\t\(.state // "?")"'
+}
+
+# vercel_cli_previews <project>: the newest preview deployment per pull request (per branch when
+# no PR is named): [{id, pr, branch, url, state, phase, at}]. Vercel does not say whether the PR is
+# still open; the list is what the newest 50 deployments hold.
+vercel_cli_previews() {
+  vercel_call "/v6/deployments?app=${1:?project}&limit=50" | jq "$VERCEL_PHASE$VERCEL_META"'[.deployments[]?
+      | select((.target // "preview") != "production")
+      | {id:.uid, pr:(.meta.githubPrId // .meta.gitlabMergeRequestId // null), branch:(.meta.githubCommitRef // .meta.gitlabCommitRef // null),
+         url:(if .url then "https://\(.url)" else null end), state, phase:(.state | vphase), at:((.created // 0) / 1000 | floor)}]
+    | map(select(.pr != null or .branch != null)) | group_by(.pr // .branch) | map(max_by(.at)) | sort_by(-.at)'
 }
 
 vercel_cancel() {

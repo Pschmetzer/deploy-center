@@ -526,6 +526,14 @@ fresh
 expect "vercel map: a repo with a query is refused before anything is written" "$(run "$O" "$E" vercel map web 'me/app?x=1'; grep -c 'Invalid repo' "$E")" $'1\n1'
 expect "vercel map: a branch with .. is refused" "$(run "$O" "$E" vercel map web me/app 'a..b'; grep -c 'Invalid commit or branch' "$E")" $'1\n1'
 fresh
+cat > "$e2e/bin/openssl" <<'OSSL'
+#!/bin/bash
+case "$1" in s_client) cat > /dev/null ;; x509) cat > /dev/null; echo "notAfter=Jan  1 00:00:00 ${CERT_YEAR:-2020} GMT" ;; esac
+OSSL
+chmod +x "$e2e/bin/openssl"
+expect "certs --json: a list (the fake projects have no address: empty)" "$(run "$O" "$E" certs --json; jq -r type "$O")" $'0\narray'
+expect "--json contract: idle, creds, certs and journal verify print one JSON value each" "$(for c in "idle --json" "creds --json" "certs --json" "journal verify --json"; do run "$O" "$E" $c >/dev/null; jq -e . "$O" >/dev/null 2>&1 && printf 'ok '; done)" "ok ok ok ok "
+expect "certs: a bad --days is refused" "$(run "$O" "$E" certs --days x)" "1"
 expect "list --platform render: only Render" "$(run "$O" "$E" list --platform render; grep -c '^vercel ' "$O"; grep -c '^render ' "$O")" $'0\n0\n1'
 expect "list --auto and --manual together are the whole list" \
   "$(run "$O" "$E" list --json; tot="$(jq length "$O")"; run "$O" "$E" list --json --auto >/dev/null; au="$(jq length "$O")"; run "$O" "$E" list --json --manual >/dev/null; ma="$(jq length "$O")"; [ "$tot" = "$((au + ma))" ] && echo same)" $'0\nsame'
@@ -1644,6 +1652,9 @@ run "$O" "$E" deploy-changed --json >/dev/null; dc="$(jq -c 'map([.platform, .na
 expect "FEA-114: plan --json lists what deploy-changed would start, each with a price field" \
   "$(run "$O" "$E" plan --json; jq -c '[.kind, .estimate, (.projects | map([.platform, .name, .action])), (.projects | all(has("usd") and has("priceSource"))), .total.builds]' "$O"; grep -c POST "$e2e/calls.log")" \
   $'0\n["plan",true,'"$dc"',true,'"$(echo "$dc" | jq length)"']'$'\n0'
+expect "plan --since: a window that holds the old commit keeps the list, a short one empties it" \
+  "$(run "$O" "$E" plan --json --since 100000d >/dev/null; jq '.projects | length' "$O"; run "$O" "$E" plan --json --since 1h >/dev/null; jq '.projects | length' "$O")" "$(jq length <<<"$dc")"$'\n0'
+expect "plan --since: a bad time is refused" "$(run "$O" "$E" plan --since soon)" "1"
 expect "FEA-114: deploy-changed --json is unchanged (no price fields)" "$(run "$O" "$E" deploy-changed --json; jq -c '.[0] | keys' "$O")" $'0\n["action","commits","name","platform","risk","sha"]'
 expect "FEA-010: price set is read by plan (a rate, not billing)" \
   "$(run "$O" "$E" price set render 0.5; run "$O" "$E" price --json; jq -c '[.renderUsdPerMinute, .source.render]' "$O")" $'0\n0\n[0.5,"file"]'

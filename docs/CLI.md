@@ -14,6 +14,8 @@ are refused before anything is asked; only Amplify ids have one `/` (`amplify:<a
 
 ```bash
 deploys doctor                          # what is connected (JSON)
+deploys certs [--days 14] [--json]      # TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out within N days. A host that cannot be reached is "unknown", not a failure.
+deploys creds [--max-age 90] [--json]   # per platform: where its key comes from (environment, keychain, login), if it works, how old a keychain key is. Reads only; never shows a key.
 deploys doctor --text                   # one line each (ok or the problem), with the fix
 deploys list --format tsv               # platform, project, auto or manual, last state: tabs, no header, for scripts without jq
 deploys idle [--days 90] [--json]       # projects with no deploy for N days: candidates to pause (read only)
@@ -21,8 +23,9 @@ deploys changed                         # what is merged on GitHub and not live:
 deploys deploy-changed                  # the daily deploy: shows the list; add --yes to start it
 deploys deploy-changed --when-green --yes  # only commits whose CI passed (waits for running checks)
 deploys deploy my-project               # one project to production, on whichever platform it is
+deploys deploy-json my-project --no-cache --yes   # build without the host's cache (Render, Netlify, DigitalOcean, Coolify; other hosts refuse it)
 deploys deploy my-group                 # a group from deploy-center.json, in its order (TEAM.md)
-deploys plan [--when-green]             # the same list with an estimate per build and the sum (starts nothing)
+deploys plan [--when-green] [--since 1d]  # the same list with an estimate per build and the sum (starts nothing); --since: only what changed in that time
 deploys status                          # what is building now, and what failed last
 deploys watch my-project [--timeout 30m]  # follow the newest deploy until live or failed
 deploys logs my-project                 # the end of the newest build log, keys and tokens always masked
@@ -36,6 +39,8 @@ deploys list                            # every project on every provider that i
 ```bash
 deploys verify my-project [--path /health] [--no-rollback]   # ask the site; roll back on 5xx
 deploys risk my-project                 # green/yellow/red for what waits
+deploys secrets my-project              # added lines that look like a key or token; exit 1 if any (a gate)
+git diff A..B | deploys secrets --stdin # the same on a diff you pipe in (for GitLab or any repo)
 deploys ci owner/repo [<ref>] [--wait 30m]   # the CI verdict of a commit
 deploys window                          # is the deploy window (window.json) open now?
 deploys deploy my-project --force "hotfix"   # inside a closed window; the reason is journaled
@@ -55,6 +60,7 @@ deploys <p> autodeploy-off <name>|--all # pushes stop building
 deploys <p> autodeploy-on <name>        # back on
 deploys <p> deploy <name> [--preview]   # start one deploy
 deploys <p> rollback <name>
+deploys <vercel|netlify|cloudflare> previews <project>   # newest preview per pull request, with its URL (JSON, read only)
 deploys <p> set-key                     # store its key in the keychain (reads stdin)
 ```
 

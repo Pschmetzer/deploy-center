@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { age, describe, mergeProjects, parseArray, platformLabel, statusText, summarize, followStep } from "../src/model";
+import { age, costLine, describe, mergeProjects, parseArray, platformLabel, statusText, summarize, followStep } from "../src/model";
 
 test("parseArray keeps an array, refuses anything else", () => {
   assert.deepEqual(parseArray('[{"a":1}]'), [{ a: 1 }]);
@@ -110,4 +110,12 @@ test("headSha of a waiting project is kept, a bad one is dropped", () => {
   const [a, b] = mergeProjects([{ name: "a", platform: "vercel", headSha: "abc1234def" }, { name: "b", platform: "vercel", headSha: "x; rm" }], null);
   assert.equal(a.headSha, "abc1234def");
   assert.equal(b.headSha, undefined);
+});
+
+test("costLine: the estimate for the tooltip, empty without one", () => {
+  assert.equal(costLine({ builds: 3, usd: 1.2 }), "Next deploy: ≈ $1.20 (estimate)");
+  assert.equal(costLine({ builds: 2, usd: 0.5, unpriced: 1 }), "Next deploy: ≈ $0.50 + 1 without a price (estimate)");
+  assert.equal(costLine({ builds: 0, usd: 0 }), "");
+  assert.equal(costLine({ builds: 1, usd: null }), "");
+  assert.equal(costLine(null), "");
 });

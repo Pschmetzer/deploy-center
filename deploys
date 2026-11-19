@@ -17,7 +17,7 @@
 #     [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>]   narrow what it looks at
 #     [--by-rules]                            only what a "deploy" rule matches; "hold" rules always count
 #     [--when-green [--wait 30m] [--strict]]  only commits whose CI passed; waits for running checks
-#   deploys plan [--when-green] [--json]      what deploy-changed --yes would start, and an estimate of its cost
+#   deploys plan [--when-green] [--since 1d] [--json]      what deploy-changed --yes would start, and an estimate of its cost
 #   deploys schedule daily [HH:MM] [--weekdays] [--when-green] [--by-rules] [--strict] [--only <p>] [--exclude <p>] [--platform <p>] [--max <n>] | off | status [--json]
 #                                             deploy-changed --yes once a day (launchd; else the cron line)
 #   deploys rules check [--json]              which rule of rules.json matches which waiting project, and why not
@@ -42,12 +42,15 @@
 #   deploys notes <project> [--json]          the same as release notes (Markdown; --json: author as a field)
 #   deploys open <project> [--dashboard]      the site, or its page at the platform
 #   deploys ignore <p> [--undo] | --list      leave a project out of changed and deploy-changed
+#   deploys certs [--days 14] [--json]        TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out soon
+#   deploys creds [--max-age 90] [--json]     where each platform's key comes from, if it works, how old a keychain key is
 #   deploys idle [--days 90] [--json]         projects with no deploy for N days (candidates to pause)
 #   deploys list [--platform <p>] [--auto|--manual] [--format tsv] [--json]   every project on every provider that is on, with its platform
 #
 #   deploys verify <p> [--path /health]       after a deploy: ask the site 3 times; on 5xx or no answer
 #     [--rollback-after 10] [--no-rollback] [--watch-timeout 30m]   count down, then roll back (Ctrl-C stops it)
 #     [--expect 200|2xx] [--follow]          only that status is healthy; follow up to 3 redirects
+#   deploys secrets <project>|--stdin [--json]  added lines that look like a key or token (exit 1: a gate for scripts)
 #   deploys risk <project> [--json]           green/yellow/red for what waits: migrations, lockfiles, config, size
 #   deploys ci <owner/repo> [<ref>] [--wait 30m]  the CI verdict of a commit: green, pending, red, none
 #   deploys window [--json]                   is the deploy window (window.json) open now?
@@ -508,6 +511,28 @@ keychain_broken() {  # keychain_broken <p>: true when its key is not in the envi
   case "$rc" in 0|44|127) return 1 ;; esac
   return 0
 }
+# keychain_age_days <p>: how many days ago the key of <p> was saved in the keychain (its creation date), or nothing when
+# there is no keychain item or no date. A key in the environment has no age we can read.
+keychain_age_days() {
+  local out ts t now
+  out="$(security find-generic-password -a "${USER:-$(id -un)}" -s "deploy-center-$1" 2>/dev/null)" || return 0
+  ts="$(printf '%s\n' "$out" | grep -Eo '"cdat"<timedate>=[^"]*"[0-9]{14}' | grep -Eo '[0-9]{14}$')" || return 0
+  [ -n "$ts" ] || return 0
+  t="$(date -j -u -f %Y%m%d%H%M%S "$ts" +%s 2>/dev/null || date -u -d "${ts:0:4}-${ts:4:2}-${ts:6:2} ${ts:8:2}:${ts:10:2}:${ts:12:2}" +%s 2>/dev/null)" || return 0
+  now="$(date +%s)"; echo $(( (now - t) / 86400 ))
+}
+# cert_days_left <host>: days until the TLS certificate of <host>:443 runs out (negative: it has), nothing when it could
+# not be read. A time limit of 10 seconds when perl is there.
+cert_days_left() {
+  local lim=() end t now
+  command -v openssl >/dev/null 2>&1 || return 0
+  command -v perl >/dev/null 2>&1 && lim=(perl -e 'alarm 10; exec @ARGV')
+  end="$(echo | ${lim[@]+"${lim[@]}"} openssl s_client -connect "$1:443" -servername "$1" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | sed -n 's/^notAfter=//p')"
+  [ -n "$end" ] || return 0
+  t="$(date -j -u -f '%b %e %T %Y %Z' "$end" +%s 2>/dev/null || date -u -d "$end" +%s 2>/dev/null)" || return 0
+  [ -n "$t" ] || return 0
+  now="$(date +%s)"; echo $(( (t - now) / 86400 ))
+}
 key_env_names() { "${1}_meta" | grep -Eo '"keyEnv"[[:space:]]*:[[:space:]]*\[[^]]*\]' | sed -E 's/"keyEnv"[[:space:]]*://' | grep -o '[A-Za-z_][A-Za-z0-9_]*' | paste -sd' ' - | sed 's/ / or /g'; }
 key_of_env() {
   local v c
@@ -875,8 +900,8 @@ github_budget() { gh api rate_limit --jq '.resources.core | {remaining, limit, r
 
 # "30m", "90s", "1h" or plain seconds, as seconds. Anything else is refused.
 duration_s() {
-  [[ "${1:-}" =~ ^([0-9]+)([smh]?)$ ]] || return 1
-  case "${BASH_REMATCH[2]}" in h) echo $(( BASH_REMATCH[1] * 3600 ));; m) echo $(( BASH_REMATCH[1] * 60 ));; *) echo "${BASH_REMATCH[1]}";; esac
+  [[ "${1:-}" =~ ^([0-9]+)([smhd]?)$ ]] || return 1
+  case "${BASH_REMATCH[2]}" in d) echo $(( BASH_REMATCH[1] * 86400 ));; h) echo $(( BASH_REMATCH[1] * 3600 ));; m) echo $(( BASH_REMATCH[1] * 60 ));; *) echo "${BASH_REMATCH[1]}";; esac
 }
 
 # One answer of <p>_status or <p>_latest as "id<TAB>phase<TAB>state" (docs/PROVIDERS.md), or
@@ -2649,6 +2674,7 @@ case "${1:-} ${2:-}" in
   "ai explain"|"ai notes"|"ai ship"|"ai risk"|"ai slow") usage_if_short $# 3 "ai ${2} <project> [--json]" ;;
   "ai ask") usage_if_short $# 3 "ai ask <project> --question \"…\" [--json]" ;;
   "verify "*)      usage_if_short $# 2 "verify <project> [--path /health] [--expect 200|2xx] [--follow] [--tries 3] [--every 5] [--need 1] [--watch-timeout 30m] [--rollback-after 10] [--no-rollback]" ;;
+  "secrets "*)     [ "${2:-}" = --stdin ] || usage_if_short $# 2 "secrets <project>|--stdin [--json]" ;;
   "risk "*)        usage_if_short $# 2 "risk <project> [--json]" ;;
   "ci "*)          usage_if_short $# 2 "ci <owner/repo> [<sha or branch>] [--wait 30m] [--json]" ;;
   "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
@@ -3419,6 +3445,13 @@ autofix:set-token routine list forget-token prompt status sync schedule
 rules:check
 price:set unset
 budget:set off
+journal:verify export report
+idle:--days --json
+creds:--max-age --json
+certs:--days --json
+secrets:--stdin --json
+plan:--when-green --since --json
+list:--platform --auto --manual --format --json
 ignore:--list --undo
 readonly:on off
 config:--refresh
@@ -3816,6 +3849,50 @@ BASH
     journal_add "$plat" "$p" failed "Check failed ($codes) and the rollback failed too"
     report false false false 2 ;;
 
+  "secrets "*)
+    # secrets <project> | secrets --stdin [--json]: added lines (what is waiting to go live, or a diff on stdin) that look
+    # like a key, token or private key, found with the same patterns that mask logs. Exit 1 when there is one, so it
+    # can gate a deploy in a script: `deploys secrets web && deploys deploy web --yes`. Only file names and the masked
+    # line are shown, never the secret.
+    command -v perl >/dev/null 2>&1 || die "perl is missing: the patterns need it."
+    sfile="$(mktemp)"; sraw="$(mktemp)"; smask="$(mktemp)"; trap_fn exit_rm "$sfile" "$sraw" "$smask"
+    if [ "${2:-}" = --stdin ]; then
+      # unified diff: "+++ b/file" starts a file, "+text" is an added line
+      awk '/^\+\+\+ /{f=$2; sub(/^b\//,"",f); next} /^\+/{print f "\t" substr($0,2)}' > "$sfile"
+    else
+      safe_arg "$2"; resolve "$2"; plat="$PLAT"; p="$PNAME"
+      j="$("$SELF" "$plat" json | jq -c --arg p "$p" --arg id "$PID" '[.[] | select(.id == $id or .name == $p)][0] // empty')"
+      [ -n "$j" ] || die "$p not found"
+      repo="$(echo "$j" | jq -r '.repo // empty')"; [ -n "$repo" ] || die "$p has no known repo"
+      base="$(echo "$j" | jq -r '.lastSha // empty')"; ref="$(echo "$j" | jq -r '.ref // empty')"
+      [ -n "$base" ] || die "The live commit of $p is not known, so there is nothing to compare."
+      if [ -z "$ref" ]; then ref="$(default_branch_of "$repo")"; [ -n "$ref" ] || die "$p has no known branch"; fi
+      [ "$(githost_of "$repo")" != gitlab ] || die "secrets reads GitHub compare data; for GitLab pipe a diff in: git diff A..B | deploys secrets --stdin"
+      gh api --cache 5m "repos/$repo/compare/$base...$ref" 2>/dev/null \
+        | jq -r '.files[]? | .filename as $f | (.patch // "") | split("\n")[] | select(startswith("+")) | "\($f)\t\(.[1:])"' > "$sfile" \
+        || die "GitHub could not compare what is live with $ref (rewritten branch, or gh not logged in?)"
+    fi
+    # number every line, mask the text, and see which ones changed (or vanished: a private key block)
+    awk -F'\t' '{ n=NR; t=$0; sub(/^[^\t]*\t/,"",t); print n "\t" t }' "$sfile" > "$sraw"
+    af_mask < "$sraw" > "$smask" || exit 1
+    hits="$(awk -F'\t' 'NR==FNR { m[$1]=$0; next } { if (!($1 in m) || m[$1] != $0) print $1 }' "$smask" "$sraw")"
+    sj='[]'
+    sprev=-5; sprevmiss=""
+    for n in $hits; do
+      # the lines after the first of a private key block vanish from the masked text: one finding, not one per line
+      smiss=""; grep -q "^$n"$'\t' "$smask" || smiss=1
+      if [ -n "$smiss" ] && [ -n "$sprevmiss" ] && [ "$n" -eq $((sprev + 1)) ]; then sprev="$n"; continue; fi
+      sprev="$n"; sprevmiss="$smiss"
+      f="$(sed -n "${n}p" "$sfile" | cut -f1)"; ml="$(grep "^$n"$'\t' "$smask" | head -n 1 | cut -f2- | cut -c1-120)" || ml=""; [ -n "$ml" ] || ml="[masked: part of a private key]"
+      sj="$(echo "$sj" | jq -c --arg f "$f" --arg l "$ml" '. + [{file:$f, masked:$l}]')"
+    done
+    cnt="$(echo "$sj" | jq length)"
+    if [ "$json" = 1 ]; then echo "$sj" | jq -c --argjson n "$cnt" '{found:$n, hits:.}'
+    elif [ "$cnt" = 0 ]; then echo "No added line looks like a secret."
+    else echo "$sj" | jq -r '.[] | "\(.file): \(.masked)"'; echo "$cnt added line(s) look like a secret. Check them before you deploy."; fi
+    [ "$cnt" = 0 ] || exit 1
+    exit 0 ;;
+
   "risk "*)
     # risk <project>: green, yellow or red for what waits to go live, and why (see RISK_DEF).
     safe_arg "$2"; resolve "$2"; plat="$PLAT"; p="$PNAME"
@@ -3844,11 +3921,12 @@ BASH
   "plan "*)
     # What deploy-changed would do, and what it would cost: its preview with a price per build.
     # --when-green asks CI as deploy-changed --when-green does. Starts nothing.
-    green=""; shift
+    green=""; since=""; shift
     while [ $# -gt 0 ]; do
       case "$1" in
         --when-green) green=1 ;;
-        *) die "Unknown option $1. Usage: deploys plan [--when-green] [--json]" ;;
+        --since) since="$(duration_s "${2:-}")" || die "--since takes a time like 1d, 12h or 30m"; [ "$since" -gt 0 ] || die "--since takes a time like 1d, 12h or 30m"; shift ;;
+        *) die "Unknown option $1. Usage: deploys plan [--when-green] [--since 1d] [--json]" ;;
       esac
       shift
     done
@@ -3856,6 +3934,8 @@ BASH
     rc=0; list="$(changed_json)" || rc=$?
     [ "$rc" = 0 ] || [ "$(echo "$list" | jq length)" != 0 ] || die "Could not tell what has changes (see above)."
     apply_rules ""
+    # --since: only what changed in that time (the newest commit on the branch is not older)
+    [ -z "$since" ] || list="$(echo "$list" | jq -c --argjson cut "$(( $(date +%s) - since ))" 'map(select((.headAt // 0) >= $cut))')"
     [ -z "$green" ] || [ "$(echo "$list" | jq length)" = 0 ] || list="$(with_ci_preview "$list")"
     rows="$(echo "$list" | jq -c "$PREVIEW_ROWS"' as $r | [., $r] | transpose | map(.[1] + {id:(.[0].id // null)})' 2>/dev/null \
       || echo "$list" | jq -c "$PREVIEW_ROWS")"
@@ -4296,6 +4376,65 @@ BASH
     echo "$all" | jq -r '.[] | [.platform, .name, (if .auto then "auto" else "manual" end), (.lastState // "-")] | @tsv' \
       | (printf 'PLATFORM\tPROJECT\tDEPLOYS\tSTATE\n'; cat) | table
     exit "$rc" ;;
+
+  "certs "*)
+    # certs [--days 14] [--json]: the TLS certificate of every project's address, the platform's own (name.vercel.app,
+    # onrender.com ...) as well as a custom domain. Exit 1 when one runs out within --days (or has); a host that cannot be
+    # reached is "unknown", not a failure.
+    cdays=14; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; cdays="$2"; shift ;;
+        *) die "Unknown option $1. Usage: deploys certs [--days 14] [--json]" ;;
+      esac
+      shift
+    done
+    command -v openssl >/dev/null 2>&1 || die "openssl is missing: the certificates cannot be read."
+    rc=0; all="$(all_json)" || rc=$?
+    hosts="$(echo "$all" | jq -r '.[] | .platform as $pl | .name as $n | [.domain, .url] | map(select(. != null and . != "") | sub("^[a-z]+://"; "") | sub("[/:].*$"; "")) | unique | .[] | "\($pl)\t\($n)\t\(.)"')"
+    cj="[]"; cbad=0
+    while IFS=$'\t' read -r pl nm h; do
+      [ -n "$h" ] || continue
+      d="$(cert_days_left "$h")"
+      bad=false; [ -z "$d" ] || [ "$d" -ge "$cdays" ] || { bad=true; cbad=1; }
+      cj="$(echo "$cj" | jq -c --arg pl "$pl" --arg n "$nm" --arg h "$h" --arg d "$d" --argjson b "$bad" '. + [{platform:$pl, name:$n, host:$h, daysLeft:(if $d == "" then null else ($d | tonumber) end), expiring:$b}]')"
+    done <<< "$hosts"
+    if [ "$json" = 1 ]; then echo "$cj"; else
+      echo "$cj" | jq -r '.[] | [.platform, .name, .host, (if .daysLeft == null then "unknown" else "\(.daysLeft) days" end), (if .expiring then "EXPIRES SOON" else "" end)] | @tsv' \
+        | (printf 'PLATFORM\tPROJECT\tHOST\tCERT LEFT\tNOTE\n'; cat) | table
+    fi
+    [ "$cbad" = 0 ] || exit 1
+    exit "$rc" ;;
+
+  "creds "*)
+    # creds [--max-age 90] [--json]: for each platform that is on: where its key comes from (environment, keychain, the
+    # platform's own login), whether it is accepted, and how old a keychain key is (older than --max-age days: rotate it).
+    # Reads only; the key is never shown.
+    cmax=90; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --max-age) case "${2:-}" in ''|*[!0-9]*|0) die "--max-age takes a number of days, 1 or more" ;; esac; cmax="$2"; shift ;;
+        *) die "Unknown option $1. Usage: deploys creds [--max-age 90] [--json]" ;;
+      esac
+      shift
+    done
+    cj="[]"; crc=0
+    for p in $(enabled_providers); do
+      src="login"; age=""
+      if key_of_env "$p"; then src="environment"
+      elif "${p}_meta" | grep -q '"keychain":"' && security find-generic-password -a "${USER:-$(id -un)}" -s "deploy-center-$p" >/dev/null 2>&1; then src="keychain"; age="$(keychain_age_days "$p")"
+      elif "${p}_meta" | grep -q '"keychain":"'; then src="missing"; fi
+      acc=false; ( "${p}_ready" ) >/dev/null 2>&1 && acc=true
+      [ "$src" != missing ] || [ "$acc" != true ] || src="keychain (older name)"
+      old=false; [ -z "$age" ] || [ "$age" -lt "$cmax" ] || old=true
+      [ "$acc" = true ] || crc=1
+      cj="$(echo "$cj" | jq -c --arg p "$p" --arg l "$(meta_str "$p" label)" --arg s "$src" --arg a "$age" --argjson acc "$acc" --argjson old "$old" \
+        '. + [{platform:$p, label:$l, source:$s, accepted:$acc, keyAgeDays:(if $a == "" then null else ($a | tonumber) end), rotate:$old}]')"
+    done
+    if [ "$json" = 1 ]; then echo "$cj"; exit "$crc"; fi
+    echo "$cj" | jq -r --argjson m "$cmax" '.[] | [.label, .source, (if .accepted then "ok" else "NOT accepted" end), (if .keyAgeDays == null then "-" else "\(.keyAgeDays) days" end), (if .rotate then "older than \($m) days: rotate it" else "" end)] | @tsv' \
+      | (printf 'PLATFORM\tKEY FROM\tSTATE\tKEY AGE\tNOTE\n'; cat) | table
+    exit "$crc" ;;
 
   "idle "*)
     # idle [--days 90] [--json]: projects whose live deploy is older than N days (or that never deployed): a candidate

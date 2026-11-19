@@ -597,7 +597,7 @@ struct ClaudeSettings: View {
         LabeledContent {
             HStack {
                 HStack(spacing: 4) {
-                    Image(systemName: ready ? "checkmark.circle.fill" : "circle")
+                    Image(systemName: ready ? "checkmark.circle.fill" : "circle").accessibilityHidden(true)
                     Text(ready ? (a?.scheduled == true ? L("on", "an") : L("set up, not scheduled", "eingerichtet, nicht geplant"))
                          : L("not set up", "nicht eingerichtet"))
                 }
@@ -655,7 +655,7 @@ struct ClaudeNudgeLine: View {
 
     var body: some View {
         HStack {
-            Image(systemName: "sparkles").foregroundStyle(.purple)
+            Image(systemName: "sparkles").foregroundStyle(.purple).accessibilityHidden(true)
             Text(L("Claude found. Connect it so Claude can see what's waiting.", "Claude gefunden. Verbinde es, damit Claude sieht, was wartet."))
                 .font(.callout)
             // Straight to the Claude tab, not to whichever tab was open last.

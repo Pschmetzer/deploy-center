@@ -85,7 +85,7 @@ Viele Pushes auf einmal (KI-Agenten)? [Sichere Deploys](docs/SAFE-DEPLOY.md) (En
 
 ## Funktionen
 
-- Schaltet Auto-Deploy für alle Vercel-Projekte und Render-Services auf einmal ab, und mit `deploys vercel|render autodeploy-on` wieder ein. [Was sich ändert](docs/AUTO-DEPLOY.md)
+- Schaltet Auto-Deploy für alle Vercel-Projekte und Render-Services auf einmal ab, und mit `deploys vercel|render autodeploy-on` wieder ein. [Was sich ändert](docs/AUTO-DEPLOY.de.md)
 - Weitere Hosts zum Einschalten: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify und jeder Deploy-Hook (`deploys providers enable <name>`). [Provider](docs/PROVIDERS.md) (Englisch)
 - Liest, was wartet, von GitHub oder GitLab (gitlab.com oder eigene Instanz). [GitLab](docs/GITLAB.md) (Englisch)
 - Deployt den neuesten Commit, für ein Projekt oder viele, und verfolgt jedes Deploy, bis es live oder fehlgeschlagen ist
@@ -98,7 +98,7 @@ Viele Pushes auf einmal (KI-Agenten)? [Sichere Deploys](docs/SAFE-DEPLOY.md) (En
 - Erweiterungen: eine GitHub Action, Badges, eine tägliche Zusammenfassung an einen Webhook, ein Pre-Push-Hook, ein Docker-Image, ein MCP-Server, ein Claude-Code-Plugin, Erweiterungen für VS Code und Raycast, ein Agent-Digest. [Integrationen](integrations/)
 - Autofix: Ein fehlgeschlagener Build geht an eine Claude-Code-Routine, die einen Fix-PR öffnet. [Autofix](docs/AUTOFIX.md)
 - Claude fragen, mit deinem eigenen Anthropic-Key: warum ein Build scheiterte, Release-Notes, ist das sicher zu deployen. [Claude in der App](docs/CLAUDE-IN-APP.md) (Englisch)
-- Sichere Deploys (CLI: nur bei grüner CI mit `--when-green`, Health-Check mit Rollback, Deploy-Fenster), ein Wächter, der Auto-Deploy wieder abschaltet, und ein Team-Modus ohne Server. [Sichere Deploys](docs/SAFE-DEPLOY.md) · [Wächter](docs/GUARD.md) · [Team](docs/TEAM.md) (Englisch)
+- Sichere Deploys (CLI: nur bei grüner CI mit `--when-green`, Health-Check mit Rollback, Deploy-Fenster), ein Wächter, der Auto-Deploy wieder abschaltet, und ein Team-Modus ohne Server. [Sichere Deploys](docs/SAFE-DEPLOY.md) · [Wächter](docs/GUARD.de.md) · [Team](docs/TEAM.md) (Englisch)
 - Bug-Scan: Claude Code auf deinem Mac sucht im Repo nach Bugs und öffnet einen Fix-PR. [Bug-Scan](docs/SCAN.md) (Englisch)
 - Sicherheits-Check: OSV-Scanner, gitleaks und Semgrep (kostenlos, lokal); Funde können an den Bug-Scan gehen. [Sicherheits-Check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep) (Englisch)
 - Englisch und Deutsch: die Sprache des Macs, oder wähle eine unter Einstellungen → Allgemein → Sprache
@@ -127,7 +127,7 @@ Auto-Deploy wieder einschalten: `deploys vercel autodeploy-on <projekt>|--all` u
 Deinstallieren schaltet es nicht wieder ein. Deploy-Hooks und GitHub-Workflows, die deployen, laufen weiter;
 `deploys triggers` listet sie auf. Bei Render kann ein Blueprint mit Auto-Sync Auto-Deploy wieder einschalten:
 Trag `autoDeployTrigger: off` bei deinen Services in `render.yaml` ein.
-Details (Englisch): [Auto-Deploy aus und wieder an](docs/AUTO-DEPLOY.md) · [Deinstallieren](docs/UNINSTALL.md).
+Details: [Auto-Deploy aus und wieder an](docs/AUTO-DEPLOY.de.md) · [Deinstallieren](docs/UNINSTALL.md) (Englisch).
 
 ## Kommandozeile
 

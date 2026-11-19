@@ -5,7 +5,7 @@ import { ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { mergeProjects, parseArray, Project } from "./model";
+import { mergeProjects, parseArray, PlanTotal, Project } from "./model";
 import { t } from "./i18n";
 
 export const APP_CLI = "/Applications/Deploy Center.app/Contents/Resources/deploys";
@@ -163,6 +163,17 @@ export async function loadProjects(run: Runner, timeoutMs: number): Promise<Load
     warning: warnings.length ? [...new Set(warnings)].join(" ") : null,
     failed: !changed && !status,
   };
+}
+
+/** `deploys plan --json`: what the next deploy would cost (an estimate). Null when it cannot be read. */
+export async function loadPlanTotal(run: Runner, timeoutMs: number): Promise<PlanTotal | null> {
+  const r = await run(["plan", "--json"], timeoutMs);
+  try {
+    const total = (JSON.parse(r.stdout) as { total?: PlanTotal } | null)?.total;
+    return total && typeof total.builds === "number" ? total : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The arguments that start one deploy: `deploys <provider> deploy-json <name> [--preview]`. */

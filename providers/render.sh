@@ -71,13 +71,17 @@ render_call() {
 }
 
 render_services() {
-  local cursor="" page all="[]"
+  local cursor="" page all="[]" pages=0
   while :; do
     # `|| return`: inside $(...) set -e is off, and a failed page used to loop here for ever.
     page="$(render_call GET "/services?limit=100${cursor:+&cursor=$(jq -rn --arg c "$cursor" '$c|@uri')}")" || return 1
+    echo "$page" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "Render: a page of the services is not a list" >&2; return 1; }
     all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$page"))"
     [ "$(echo "$page" | jq 'length')" -lt 100 ] && break
-    cursor="$(echo "$page" | jq -r '.[-1].cursor')"
+    cursor="$(echo "$page" | jq -r '.[-1].cursor // empty')"
+    # No cursor on the last row: asking again with none would start over, and over, for ever.
+    [ -n "$cursor" ] || break
+    pages=$((pages + 1)); [ "$pages" -lt 100 ] || { echo "Render: more than 100 pages of services; the list stops here" >&2; break; }
   done
   echo "$all" | jq '[.[].service]'
 }
@@ -246,7 +250,7 @@ render_last_of() {
     [[ "$code" != 2* ]] || body="${raw%$'\n'*}"
   fi
   printf '%s' "$body" \
-    | jq -c --arg id "$id" 'def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z")|fromdateiso8601) else null end;
+    | jq -c --arg id "$id" 'def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
         [.[].deploy] as $d | ($d[0] // {}) as $new | (($d | map(select(.status=="live")) | .[0]) // {}) as $live
         # The status is the newest attempt (a failure shows), the commit is what is live: a failed
         # deploy of the newest commit must not make the project look up to date.
@@ -266,7 +270,7 @@ render_json() {
     dashboardUrl:(.dashboardUrl // null),
     domain:((.serviceDetails.url // "") | sub("^https?://";"") | if . == "" then null else . end),
     repo:((.repo // "") | '"$GITHOST_SLUG_JQ"' | if . == "" then null else . end),
-    ref:(.branch // null)}] | sort_by(.name | ascii_downcase)')" || exit 1
+    ref:(.branch // null)}] | sort_by((.name // "") | ascii_downcase)')" || exit 1
   tmp="$(mktemp -d)"; kf="$tmp/key"
   # The key file goes on every way out: a failed key read or xargs must not leave it behind.
   if ! (umask 077; render_key > "$kf"); then rm -rf "$tmp"; exit 1; fi
@@ -287,10 +291,11 @@ render_deploy_json() {
   local id sha="" cc="" lock body out
   local name="${1:?service}" svc
   id="$(render_id_of "$name")"; shift || true
-  while [ $# -gt 0 ]; do case "$1" in --sha) sha="${2:?commit}"; shift;; --clear-cache) cc=1;; --preview) die "Render cannot deploy a preview";; "") ;; *) die "Unknown option $1. Usage: deploy-json <service> [--sha <commit>] [--clear-cache]";; esac; shift; done
+  while [ $# -gt 0 ]; do case "$1" in --sha) sha="${2:?commit}"; shift;; --clear-cache|--no-cache) cc=1;; --preview) die "Render cannot deploy a preview";; "") ;; *) die "Unknown option $1. Usage: deploy-json <service> [--sha <commit>] [--no-cache]";; esac; shift; done
   # Production waits for its approvals (two-person rule); the commit checked is the one deployed.
   # Render has no deploy for cron jobs (HTTP 400): they run the latest commit by themselves.
   svc="$(render_call GET "/services/$id")" || exit 1
+  echo "$svc" | jq -e 'type == "object"' >/dev/null 2>&1 || die "Render: the answer for $name is not a service (nothing was started): $(printf '%s' "$svc" | head -c 200)"
   [ "$(echo "$svc" | jq -r '.type // ""')" != cron_job ] || die "Render cron jobs cannot be deployed; $name runs the latest commit on its next schedule."
   if team_on; then
     # By its name, as the shared config knows it, also when it was given by its srv- id.
@@ -301,19 +306,25 @@ render_deploy_json() {
   lock="$(start_lock "render-$id")" || exit 1
   body="$(jq -nc --arg sha "$sha" --arg cc "$cc" '(if $sha != "" then {commitId:$sha} else {} end) + (if $cc != "" then {clearCache:"clear"} else {} end)')"
   out="$(render_call POST "/services/$id/deploys" "$body")" || { rm -f "$lock"; exit 1; }
+  # A 2xx without a deploy id (an empty body, a proxy's page) is not a started deploy: said, not printed as nothing.
+  echo "$out" | jq -e '.id' >/dev/null 2>&1 || { rm -f "$lock"; die "Render answered without a deploy id: the deploy of $name may not have started. Check: deploys render latest $name"; }
   echo "$out" | jq --arg s "$id" "$RENDER_PHASE"'{id, serviceId:$s, url:null, state:.status, phase:(.status | rphase)}'
 }
 
 # deployId<TAB>phase<TAB>raw state. The service id is resolved by the caller (lookup).
 render_status() {
-  (render_call GET "/services/${1:?service id}/deploys/${2:?deploy id}") \
-    | jq -r "$RENDER_PHASE"'"\(.id)\t\(.status | rphase // "")\t\(.status // "?")"'
+  # Into a variable: an empty answer or a proxy's page must fail here, not print nothing and exit 0
+  # (`watch` reads the first line only).
+  local j; j="$(render_call GET "/services/${1:?service id}/deploys/${2:?deploy id}")" || return 1
+  echo "$j" | jq -e 'type == "object" and .id' >/dev/null 2>&1 || { echo "Render: no deploy in the answer for ${2}" >&2; return 1; }
+  echo "$j" | jq -r "$RENDER_PHASE"'"\(.id)\t\(.status | rphase // "")\t\(.status // "?")"'
 }
 
 # The newest deploy. Render has no previews: --preview changes nothing (the newest is the only kind).
 render_latest() {
-  (render_call GET "/services/${1:?service id}/deploys?limit=1") \
-    | jq -r "$RENDER_PHASE"'(.[0].deploy // {id:"none"}) | "\(.id)\t\(.status | rphase // "")\t\(.status // "?")"'
+  local j; j="$(render_call GET "/services/${1:?service id}/deploys?limit=1")" || return 1
+  echo "$j" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "Render: the answer is not a deploy list" >&2; return 1; }
+  echo "$j" | jq -r "$RENDER_PHASE"'(.[0].deploy // {id:"none"}) | "\(.id)\t\(.status | rphase // "")\t\(.status // "?")"'
 }
 
 render_cancel() {
@@ -410,9 +421,9 @@ render_where() {
 }
 
 render_history() {
-  render_call GET "/services/$(render_id_of "$1")/deploys?limit=$2" | jq -r 'def t: sub("\\.[0-9]+Z$";"Z") | fromdateiso8601;
-    .[].deploy | [(.createdAt | t | strftime("%Y-%m-%d %H:%M")), .status, ((.commit.id // "")[0:7]), (.trigger // ""),
-       (if .finishedAt then "\(((.finishedAt | t) - (.createdAt | t)))s" else "" end)]
+  render_call GET "/services/$(render_id_of "$1")/deploys?limit=$2" | jq -r 'def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end; def when: t | if . then strftime("%Y-%m-%d %H:%M") else null end; def took($a; $b): ($a | t) as $x | ($b | t) as $y | if $x and $y then "\($y - $x)s" else "" end;
+    .[].deploy | [(.createdAt | when), .status, ((.commit.id // "")[0:7]), (.trigger // ""),
+       (if .finishedAt then took(.createdAt; .finishedAt) else "" end)]
     | map(if . == "" or . == null then "-" else . end) | @tsv' \
     | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | table
 }

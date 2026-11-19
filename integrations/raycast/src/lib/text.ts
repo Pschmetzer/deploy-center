@@ -83,6 +83,20 @@ export function sortByAge(list: ChangedProject[]): ChangedProject[] {
 }
 
 // What `deploys plan --json` says about the next deploy (only the sum is used here).
+// What `deploys idle --json` returns per project.
+export interface IdleProject {
+  name: string;
+  platform: string;
+  lastAt: number | null; // Unix seconds, null: never deployed
+  days: number | null;
+}
+
+/** "never deployed" or "142 days idle" (one day: "1 day idle"). */
+export function idleText(days: number | null | undefined): string {
+  if (days === null || days === undefined) return "never deployed";
+  return `${days} ${days === 1 ? "day" : "days"} idle`;
+}
+
 export interface PlanTotal {
   builds: number;
   usd: number | null;

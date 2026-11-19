@@ -223,11 +223,24 @@ expect "deploy shop: the hook got no token (IDEEN-6 335)" "$(calls 'TOKEN-TO-HOO
 reset
 expect "a foreign hook URL is refused (IDEEN-6 335)" \
   "$( (netlify_call POST https://evil.example.test/build_hooks/x '{}' >/dev/null 2>&1; echo $?); calls 'curl POST https://evil')" $'1\n0'
+reset
+out="$(netlify_deploy_json shop --no-cache 2>&1)"; rc=$?
+expect "deploy --no-cache: exit 0" "$rc" 0
+expect "deploy --no-cache: the hook gets clear_cache=true" "$(calls 'curl POST https://api.netlify.com/build_hooks/hook-shop.clear_cache=true')" 1
 out="$(netlify_deploy_json shop --sha abc123 2>&1)"; rc=$?
 expect "deploy --sha: refused" "$rc" 1
 has "deploy --sha: says why" "$out" "Netlify cannot deploy a given commit"
 out="$(netlify_deploy_json shop --preview 2>&1)"; rc=$?
 expect "deploy --preview: refused" "$rc" 1
+
+# --- previews: one per pull request, the newest ---
+reset
+out="$(netlify_cli_previews shop 2>&1)"; rc=$?
+expect "previews: exit 0" "$rc" 0
+expect "previews: newest per pull request, production left out" "$(echo "$out" | jq -c '[.[] | [.pr, .id, .url, .phase]]')" \
+  '[[9,"d-pr-9b","https://deploy-preview-9--shop.netlify.app","ready"],[7,"d-pr-7","https://deploy-preview-7--shop.netlify.app","building"]]'
+out="$(netlify_cli_previews nosuch 2>&1)"; rc=$?
+expect "previews: unknown site refused" "$rc" 1
 
 # --- status, latest, cancel, rollback, logs, url, has ---
 reset
@@ -291,6 +304,15 @@ expect "set-key: exit 0" "$rc" 0
 expect "set-key: checked with /user" "$(calls 'curl GET .*/api/v1/user')" 1
 expect "set-key: saved via stdin" "$(grep -c 'security -i STDIN\[add-generic-password -U -a tester -s deploy-center-netlify -w good-token\]' "$CALLS")" 1
 expect "set-key: token never an argument" "$(grep -- 'good-token' "$CALLS" | grep -vc 'STDIN\[')" 0
+# Pagination edges: exactly 100 on page 1 asks for page 2 (empty: done); a page that is not a list
+# ends the read with a reason; a host that ignores `page` stops at 100 pages.
+full100='[0'; for i in $(seq 1 99); do full100="$full100,$i"; done; full100="$full100]"
+out="$( netlify_call() { if [[ "$2" == *page=1 ]]; then echo "$full100"; else echo '[]'; fi; }; netlify_sites | jq length )"
+expect "sites: exactly 100 then an empty page" "$out" 100
+out="$( netlify_call() { if [[ "$2" == *page=1 ]]; then echo "$full100"; else echo '{"message":"slow down"}'; fi; }; netlify_sites 2>&1 )"; rc=$?
+expect "sites: a page that is not a list is an error" "$rc:$(grep -c 'is not a list' <<< "$out")" "1:1"
+out="$( netlify_call() { echo "$full100"; }; netlify_sites 2>&1 | grep -c 'more than 100 pages' )"
+expect "sites: a host that ignores page stops" "$out" 1
 out="$(printf '' | netlify_set_key 2>&1)"; rc=$?
 expect "set-key: empty refused" "$rc" 1
 

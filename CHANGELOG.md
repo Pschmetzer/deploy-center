@@ -2,7 +2,41 @@
 
 ## Unreleased
 
+- Raycast: new command "Idle Projects" lists projects with no deploy for 90 days or more (`deploys idle --json`). It only reads.
+- Providers: the failure test also covers refused keys (401, 403, not asked again) and rate limits (429, at most three reads) for every HTTP provider.
+- App: a word with @ in a project's note (like `@pay`) is a shortcut in the command palette: "pay deploy" finds that project's deploy command.
+- Costs: a trend arrow (last 7 days against the 7 before) and "Save report as file" for the Markdown report.
+
+- DigitalOcean: when two apps match one name or domain, the command is refused with their ids instead of acting on the first one.
+- Providers: an empty or non-JSON answer (a proxy page) to a deploy start (Render) or a status read (Render, Netlify, Coolify) is now an error with a reason, not a silent success or a false "no deploy" that stopped `watch`.
+- Site: `llms.txt` lists the new docs pages.
+- Docs: `deploys certs` and `deploys creds` in the CLI reference and the troubleshooting page, `plan --since` in the German CLI page.
+- Mac app: VoiceOver reads the saved/not saved marks in the auto-fix setup and the warning icon of an allowance; purely decorative icons in the setup screens and the Claude hint are hidden from it.
+- CLI: tab completion knows the words of `journal`, `idle`, `creds`, `certs`, `secrets`, `plan` and `list`.
+- Providers: a time with a numeric offset (+02:00), no fraction, or no date at all, and a project without a name, no longer end the whole list or history of Netlify, Render, Coolify, DigitalOcean and Cloudflare; the odd row shows no time.
+- Settings → Notifications: under the quiet hours a line says what the two hours mean (with an example while they are off).
+- MCP: new read-only tools `deploys_certs`, `deploys_creds` (never shows a key) and `deploys_journal_report`, over `deploys certs`, `creds` and `journal report`.
+- CLI: `deploys certs [--days 14]` shows how long the TLS certificate of every project's address lasts (the platform's own domain too) and exits 1 when one runs out soon.
+- CLI: `deploys plan --since 1d` (also `12h`, `30m`) plans only what changed in that time.
+- Docs: the auto-deploy guard page in German (`GUARD.de.md`).
+- Docs: "Turning auto-deploy off, and back on" in German (`AUTO-DEPLOY.de.md`), linked from the German README.
+- Widgets: the icon column of a project row grows with Dynamic Type.
+- Docs: `deploys secrets` (safe-deploy page and CLI reference), `previews`, the 90-day login note, searching the logs, and a contributor note on `trap_fn` and `atomic_write`.
+- CLI: `deploys creds [--max-age 90]` shows for each platform where its key comes from, whether it is accepted, and how old a keychain key is (older than the limit: rotate it).
+- MCP: new read-only tool `deploys_idle(days?)` (`deploys idle --json`): projects with no deploy for N days, candidates to pause. Nothing is paused.
+- App: during quiet hours the good-news notifications are bundled into one note ("N updates while it was quiet") that arrives when they end; failures still come at once.
+- Providers: reading all Netlify sites or Render services no longer loops for ever when a page has no cursor or repeats, and says so when a page is not a list.
+- Providers: `deploys <vercel|netlify|cloudflare> previews <project>` lists the newest preview deployment per pull request (or branch) with its URL, as JSON. Read-only.
+- Docs: `--no-cache` in the CLI reference, the Help button on the troubleshooting page, the week in review, "Check the site now" and the window subtitle (English and German).
+- App: command palette "Search the logs of failed projects": one search over the logs of every failed project, and without a search the failures grouped by the same error line (read only).
+- Providers: the contract test now checks every HTTP provider against a failing host (503 and no answer): a read ends with a reason, a deploy is never reported as started and never sent twice.
+- Health: a note when a Vercel or Render login has been in use for 90 days (counted from the day the app first saw it).
+
+- VS Code: the status bar tooltip shows the estimated cost of the next deploy (`deploys plan --json`), read after the list so it never slows it down.
+- App: the error shown in the log and details windows has a "Help" button that opens the matching section of the troubleshooting page (English or German).
+- Providers: `deploy-json <p> --no-cache` starts a build without the cache on Render, Netlify, DigitalOcean and Coolify; Vercel, Cloudflare, Amplify and deploy hooks refuse it with the reason. Needs `--yes` like every deploy.
 - MCP: new read-only tool `deploys_cost` (`deploys plan --json`): what the next deploy would start and cost, as an estimate. Starts nothing.
+- CLI: `deploys secrets <project>` (or `--stdin` with a diff) finds added lines that look like a key, token or private key and exits 1, so a script can stop before `deploy --yes`.
 - App: a row's menu has "Check the site now": one request, the answer and its time in a note. It only looks; nothing is rolled back.
 - Docs: `idle`, `list --format tsv` and `doctor --text` in the CLI reference; weekly goal and idle projects in the settings page; the command palette, Copy list and Copy summary on the search and deploy pages (English and German).
 - App: the window subtitle also says how many projects failed their last deploy.

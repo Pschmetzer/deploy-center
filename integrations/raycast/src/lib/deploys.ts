@@ -3,7 +3,7 @@ import { ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
-import { DeploysErrorKind, PlanTotal, classify, clean, lastLines } from "./text";
+import { DeploysErrorKind, IdleProject, PlanTotal, classify, clean, lastLines } from "./text";
 
 // Pure helpers (no Raycast API) live in ./text, so they can be tested with node --test.
 export { isFailedState, platformLabel, plural } from "./text";
@@ -328,6 +328,11 @@ export async function planCost(): Promise<PlanTotal | null> {
   } catch {
     return null;
   }
+}
+
+// Projects with no deploy for 90 days or more (`deploys idle --json`): candidates to pause. Read-only.
+export async function idleProjects(): Promise<JsonResult<IdleProject[]>> {
+  return runJson<IdleProject[]>(["idle", "--json"]);
 }
 
 export async function status(): Promise<JsonResult<StatusProject[]>> {

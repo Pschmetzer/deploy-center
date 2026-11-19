@@ -63,7 +63,7 @@ func paletteOrder(query: String, entries: [(id: String, texts: [String])], recen
 // MARK: - Commands
 
 enum PaletteAction: String, CaseIterable {
-    case deployChanged, reload, stopAll, journal, settings, costs
+    case deployChanged, reload, stopAll, journal, settings, costs, logSearch
     case selectChanged, clearSelection, toggleFilter, showAll, demoMode, failedOnly
 }
 enum PaletteVerb: String, CaseIterable {
@@ -121,6 +121,9 @@ enum PaletteCommands {
         add(.journal, "Open journal (deploy history)", "Journal öffnen (Deploy-Verlauf)", "clock.arrow.circlepath")
         add(.settings, "Settings", "Einstellungen", "gear")
         add(.costs, "Costs", "Kosten", "dollarsign.circle")
+        if store.allItems.contains(where: { $0.failed }) {
+            add(.logSearch, "Search the logs of failed projects", "Logs fehlgeschlagener Projekte durchsuchen", "text.magnifyingglass")
+        }
         if !looksOnly && w.projects > 0 { add(.selectChanged, "Tick all changed", "Alle mit Änderungen anhaken", "checkmark.circle") }
         if store.items.values.contains(where: { $0.contains { $0.selected } }) {
             add(.clearSelection, "Clear the selection", "Auswahl leeren", "circle")
@@ -176,7 +179,8 @@ enum PaletteCommands {
                 let title = v == .pin && store.isPinned(i) ? L("unpin", "nicht mehr anheften") : L(words.en, words.de)
                 out.append(PaletteCommand(id: v.rawValue + "|" + Store.key(i), title: title + " " + name,
                                           detail: detail, symbol: symbol,
-                                          texts: ["\(words.en) \(name)", "\(words.de) \(name)"], kind: .project(v, i)))
+                                          texts: ["\(words.en) \(name)", "\(words.de) \(name)"] + PaletteAlias.texts(note: store.note(i), words.en, words.de),
+                                          kind: .project(v, i)))
             }
         }
         // Hidden projects can be found too, with one command: show them again.
@@ -500,9 +504,9 @@ struct CommandPaletteHost: ViewModifier {
     @State private var stopping = false
 
     enum PaletteSheet: Identifiable {
-        case log(Item), journal, costs
+        case log(Item), journal, costs, logSearch
         var id: String {
-            switch self { case .log(let i): return "log|\(i.platform.cli)/\(i.id)"; case .journal: return "journal"; case .costs: return "costs" }
+            switch self { case .log(let i): return "log|\(i.platform.cli)/\(i.id)"; case .journal: return "journal"; case .costs: return "costs"; case .logSearch: return "logsearch" }
         }
     }
 
@@ -522,6 +526,7 @@ struct CommandPaletteHost: ViewModifier {
                 switch s {
                 case .log(let i): BuildLog(store: store, item: i)
                 case .journal: JournalView(costs: store.costs)
+                case .logSearch: LogSearchView(store: store)
                 case .costs: if let c = store.costs { CostsSheet(costs: c) } else { PaletteCosts() }
                 }
             }
@@ -583,6 +588,7 @@ struct CommandPaletteHost: ViewModifier {
             case .journal: sheet = .journal
             case .settings: NSApp.activate(ignoringOtherApps: true); openSettings()
             case .costs: sheet = .costs
+            case .logSearch: sheet = .logSearch
             case .selectChanged:
                 guard !store.observer else { return }
                 // Like ⌘A in the window: hidden projects stay out (Store.isWaiting).
@@ -675,8 +681,23 @@ private struct PaletteQuestions: ViewModifier {
                 Button(L("Cancel", "Abbrechen"), role: .cancel) { noteItem = nil }
                 Button(L("Save", "Speichern")) { if let i = noteItem { store.setNote(i, noteText) }; noteItem = nil }
             } message: {
-                Text(L("Shown under \(shown(noteItem)). Kept on this Mac only.", "Steht unter \(shown(noteItem)). Bleibt nur auf diesem Mac."))
+                Text(L("Shown under \(shown(noteItem)). Kept on this Mac only. A word with @ in front (like @pay) is a shortcut: type it in the palette, then a command.",
+                       "Steht unter \(shown(noteItem)). Bleibt nur auf diesem Mac. Ein Wort mit @ davor (etwa @pay) ist ein Kürzel: in der Palette eingeben, dann ein Befehl."))
             }
+    }
+}
+
+/// Shortcuts a person writes into a project's note: `@pay` finds that project's commands by "pay deploy".
+enum PaletteAlias {
+    static func aliases(_ note: String?) -> [String] {
+        (note ?? "").split(whereSeparator: { $0.isWhitespace }).compactMap { w in
+            guard w.hasPrefix("@"), w.count > 1 else { return nil }
+            return String(w.dropFirst()).trimmingCharacters(in: .punctuationCharacters)
+        }.filter { !$0.isEmpty }
+    }
+    /// Extra search texts, the shortcut first, so "pay dep" ranks the project's deploy command.
+    static func texts(note: String?, _ en: String, _ de: String) -> [String] {
+        aliases(note).flatMap { ["\($0) \(en)", "\($0) \(de)"] }
     }
 }
 

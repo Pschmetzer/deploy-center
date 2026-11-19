@@ -153,8 +153,11 @@ digitalocean_id_of() {
   # An app id (a UUID) needs no listing of every app; a wrong one fails at the next call.
   if [[ "$n" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then echo "$n"; return 0; fi
   id="$(digitalocean_apps | jq -r --arg n "$n" '.[] | select(.id==$n or .spec.name==$n
-    or .live_domain==$n or ([.spec.domains[]?.domain] | index($n))) | .id' | head -n 1)" || return 1
+    or .live_domain==$n or ([.spec.domains[]?.domain] | index($n))) | .id')" || return 1
   [ -n "$id" ] || { echo "No DigitalOcean app named \"$n\". See: deploys digitalocean list" >&2; return 1; }
+  # Two apps may share a name (or a domain after a move): never pick one at random, a deploy would go to the wrong app.
+  [ "$(printf '%s\n' "$id" | wc -l | tr -d ' ')" = 1 ] \
+    || { echo "Several DigitalOcean apps match \"$n\"; use the app id: $(printf '%s' "$id" | tr '\n' ' ')" >&2; return 1; }
   echo "$id"
 }
 # An app id (a UUID, what watch passes every 6 s) as it is, without listing every app again.
@@ -169,7 +172,7 @@ digitalocean_id_fast() {
 # jq definitions shared by the readers below.
 # shellcheck disable=SC2016
 DIGITALOCEAN_JQ='
-  def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | fromdateiso8601) else null end;
+  def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
   # App Platform deployment phase -> contract phase. UNKNOWN is what a deployment has before
   # App Platform gave it a phase: it has not started, so it counts as queued.
   def phase: if . == null then null
@@ -289,7 +292,7 @@ digitalocean_json() {
          lastSha:(($live | sha_of) // ($new | sha_of)),
          lastMsg:($live.cause // $new.cause // null),
          fetchError:(._d.fetchError // null), phase:($new.phase // null | phase)} ]
-    | sort_by(.name | ascii_downcase)'
+    | sort_by((.name // "") | ascii_downcase)'
 }
 
 # digitalocean_off <app>: deploy_on_push=false on every component. GET the spec, change only the
@@ -351,14 +354,15 @@ digitalocean_on() {
 
 # digitalocean_deploy_json <app> — a new deployment of the branch's newest commit.
 digitalocean_deploy_json() {
-  local app="$1" id info out lock=""
+  local app="$1" id info out lock="" force=false
   shift || true
   while [ $# -gt 0 ]; do
     case "$1" in
       --preview) die "DigitalOcean App Platform cannot deploy a preview (it has no preview deploys)" ;;
       --sha) die "DigitalOcean App Platform cannot deploy a given commit: a deployment always builds the newest commit of the branch" ;;
+      --no-cache) force=true ;;
       "") ;;
-      *) die "Unknown option $1. Usage: deploy-json <app>" ;;
+      *) die "Unknown option $1. Usage: deploy-json <app> [--no-cache]" ;;
     esac; shift
   done
   id="$(digitalocean_id_of "$app")" || die "DigitalOcean app $app not found"
@@ -366,7 +370,7 @@ digitalocean_deploy_json() {
   [ "$(echo "$info" | jq '.app.pinned_deployment != null')" = true ] \
     && die "DigitalOcean: $app is pinned to a rollback. Commit or revert it in the dashboard first: $DIGITALOCEAN_DASHBOARD/$id"
   if declare -F start_lock >/dev/null; then lock="$(start_lock "digitalocean-$id")" || exit 1; fi
-  out="$(digitalocean_call POST "/v2/apps/$id/deployments" '{"force_build":false}')" \
+  out="$(digitalocean_call POST "/v2/apps/$id/deployments" "{\"force_build\":$force}")" \
     || { rm -f "$lock"; die "DigitalOcean: could not start a deployment of $app"; }
   echo "$out" | jq -e '.deployment.id' >/dev/null 2>&1 || { rm -f "$lock"; die "DigitalOcean: $(echo "$out" | head -c 400)"; }
   echo "$out" | jq --argjson a "$(echo "$info" | jq -c .app)" "$DIGITALOCEAN_JQ"'

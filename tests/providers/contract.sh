@@ -86,6 +86,40 @@ for f in providers/*.sh; do
   expect "$p: names are remembered with platform and id" \
     "$(jq -c --arg p "$p" '[.[] | select(.platform == $p)] | length' "$tmp/config-$p/names.json" 2>&1)" "$(echo "$out" | jq length)"
 
+  # Failure modes (CURLSTUB: every call answers 503, or never answers). Only for a provider that
+  # talks HTTP through curl. A read ends (an error with a reason, or a list marked partial); a
+  # write is never repeated: at most one POST, and no deploy is reported as started.
+  if grep -q '^curl ' "$CALLS"; then
+    for stub in 401 403 429 503 down empty html; do
+      : > "$CALLS"
+      export CURLSTUB="$stub"
+      lib "$p" "${p}_json" > "$tmp/fo"; frc=$?
+      verdict="no reason on stderr"
+      if [ "$frc" != 0 ]; then [ -s "$tmp/err" ] && verdict=ok
+      elif jq -e 'type == "array"' "$tmp/fo" >/dev/null 2>&1; then verdict=ok; fi
+      expect "$p: json under $stub ends with an error or a list" "$verdict" "ok"
+      : > "$CALLS"
+      # An empty answer or a proxy's page never reads as a deploy: no TSV line on stdout (watch reads
+      # the first line only), and an error.
+      for v in status latest; do
+        if [ "$v" = status ]; then lib "$p" "${p}_status $CONTRACT_ID $CONTRACT_DEPLOY" > "$tmp/fo2"; else lib "$p" "${p}_latest $CONTRACT_ID" > "$tmp/fo2"; fi
+        frc=$?
+        if [ "$stub" = empty ] || [ "$stub" = html ]; then
+          expect "$p: $v under $stub is an error with no line" "$frc:$(grep -c . "$tmp/fo2")" "1:0"
+        fi
+      done
+      # A key the host refuses (401, 403) is not asked again for the same read; a 429 at most three times.
+      : > "$CALLS"; lib "$p" "${p}_latest $CONTRACT_ID" >/dev/null
+      reads="$(grep -c '^curl GET ' "$CALLS")"; want=1; [ "$stub" = 401 ] || [ "$stub" = 403 ] || want=3
+      case "$stub" in 401|403|429) expect "$p: a $stub read is asked at most $want time(s)" "$([ "$reads" -le "$want" ] && echo ok || echo "$reads reads")" ok;; esac
+      : > "$CALLS"
+      lib "$p" "${p}_deploy_json $CONTRACT_ID" > "$tmp/fo"; frc=$?
+      unset CURLSTUB
+      expect "$p: deploy under $stub is not reported as started" "$frc" "1"
+      posts="$(grep -c '^curl POST ' "$CALLS")"
+      expect "$p: deploy under $stub is never repeated" "$([ "$posts" -le 1 ] && echo ok || echo "$posts POSTs")" "ok"
+    done
+  fi
   expect "$p: _has gives the id" "$(lib "$p" "${p}_has $CONTRACT_NAME")" "$CONTRACT_ID"
   for v in status latest; do
     if [ "$v" = status ]; then s="$(lib "$p" "${p}_status $CONTRACT_ID $CONTRACT_DEPLOY")"; else s="$(lib "$p" "${p}_latest $CONTRACT_ID")"; fi

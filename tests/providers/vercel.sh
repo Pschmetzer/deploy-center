@@ -85,6 +85,10 @@ fresh
 VFAIL=/v12/deployments lib 'vercel_cancel alpha dpl_x' >/dev/null; rc=$?
 expect "a write is never repeated, and the reason is named" "$rc:$(calls 'v12/deployments'):$(grep -c 'fetch failed' "$tmp/err")" "1:1:1"
 fresh
+out="$(lib 'vercel_cli_previews alpha')"
+expect "previews: newest per pull request or branch, production left out" "$(echo "$out" | jq -c '[.[] | [.id, .pr, .branch, .url, .phase]]')" \
+  '[["dpl_p3","12","feat/cart","https://alpha-git-feat-cart.example.test","ready"],["dpl_p1",null,"fix/tax","https://alpha-git-fix-tax.example.test","failed"]]'
+fresh
 VFAIL=/v6/deployments VFAIL_MSG='Error: Not Found (404)' lib 'vercel_latest alpha' >/dev/null
 expect "a 404 is not asked again" "$(calls 'v6/deployments?app=alpha')" "1"
 fresh

@@ -187,6 +187,13 @@ out="$(digitalocean_on blog 2>&1)"; rc=$?
 expect "on blog without backup: refused" "$rc" 1
 has "on blog: points to the dashboard" "$out" "cloud.digitalocean.com/apps/app-blog/settings"
 
+# --- two apps with one name: refused, never picked at random ---
+out="$( digitalocean_apps() { echo '[{"id":"a-1","spec":{"name":"twin"}},{"id":"a-2","spec":{"name":"twin"}},{"id":"a-3","spec":{"name":"solo"}}]'; }
+        digitalocean_id_of twin 2>&1 )"; rc=$?
+expect "twin names: refused with the ids" "$rc:$(grep -c 'Several DigitalOcean apps match "twin"; use the app id: a-1 a-2' <<< "$out")" "1:1"
+out="$( digitalocean_apps() { echo '[{"id":"a-1","spec":{"name":"twin"}},{"id":"a-3","spec":{"name":"solo"}}]'; }; digitalocean_id_of solo )"
+expect "one match: its id" "$out" "a-3"
+
 # --- deploy ---
 reset
 out="$(digitalocean_deploy_json shop 2>&1)"; rc=$?
@@ -194,6 +201,10 @@ expect "deploy shop: exit 0" "$rc" 0
 expect "deploy shop: the new deployment" "$(echo "$out" | jq -c '[.id, .phase, .state, .url]')" '["d-shop-new","queued","PENDING_BUILD","https://shop.example.com"]'
 expect "deploy shop: one POST, no forced build" "$(calls 'curl POST .*/v2/apps/app-shop/deployments ')" 1
 expect "deploy shop: body" "$(last_body)" '{"force_build":false}'
+reset
+out="$(digitalocean_deploy_json shop --no-cache 2>&1)"; rc=$?
+expect "deploy --no-cache: exit 0" "$rc" 0
+expect "deploy --no-cache: forced build" "$(last_body)" '{"force_build":true}'
 out="$(digitalocean_deploy_json shop --sha abc123 2>&1)"; rc=$?
 expect "deploy --sha: refused" "$rc" 1
 has "deploy --sha: says why" "$out" "cannot deploy a given commit"

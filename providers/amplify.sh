@@ -246,7 +246,7 @@ amplify_json() {
   done < <(echo "$apps" | jq -c '.[]')
   # ${pids[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
   wait ${pids[@]+"${pids[@]}"}
-  out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s 'sort_by(.name | ascii_downcase)')" || out=""
+  out="$(cat "$tmpd"/*.json 2>/dev/null | jq -s 'sort_by((.name // "") | ascii_downcase)')" || out=""
   rm -rf "$tmpd"
   [ -n "$out" ] || die "Amplify: the apps could not be read"
   printf '%s\n' "$out"
@@ -332,6 +332,7 @@ amplify_deploy_json() {
       --branch) branch="${2:-}"; shift ;;
       --sha) sha="${2:-}"; shift ;;
       --message) msg="${2:-}"; shift ;;
+      --no-cache) die "Amplify cannot deploy without the build cache from here (set the cache off in the app build settings)" ;;
       "") ;;
       *) die "Unknown option $1. Usage: deploy-json <project> [--sha <commit>] [--preview --branch <b>]" ;;
     esac; shift

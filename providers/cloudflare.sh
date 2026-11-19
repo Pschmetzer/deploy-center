@@ -181,7 +181,7 @@ CF_PHASE='def cf_skipped: (.is_skipped == true) or (.skip_reason != null) or (.l
     else "building" end;
   # The platform'"'"'s own word for it (the contract'"'"'s state): stage and status, e.g. build/active.
   def cf_raw: if .stage and .status then "\(.stage)/\(.status)" else (.status // .phase) end;
-  def cf_t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | fromdateiso8601) else null end;
+  def cf_t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
   def cf_dep: {id, phase:cf_phase, stage:(.latest_stage.name // null), status:(.latest_stage.status // null),
     environment, branch:(.deployment_trigger.metadata.branch // null),
     sha:(.deployment_trigger.metadata.commit_hash // null),
@@ -265,7 +265,7 @@ cloudflare_json() {
          lastMsg:($live.deployment_trigger.metadata.commit_message // null | if . then split("\n")[0] else null end),
          fetchError:null,
          phase:(if $new then ($new | cf_phase) else null end)}]
-    | sort_by(.name | ascii_downcase)'
+    | sort_by((.name // "") | ascii_downcase)'
 }
 
 # PATCH the whole source.config (partial PATCH is not documented as safe): GET, merge, PATCH.
@@ -343,6 +343,7 @@ cloudflare_deploy_json() {
       --preview|preview) preview=1 ;;
       --branch) branch="${2:-}"; shift ;;
       --toggle) toggle=1 ;;
+      --no-cache) die "Cloudflare Pages cannot deploy without the build cache from here (it has no such option in the API)" ;;
       --sha) die "Cloudflare Pages cannot deploy a given commit, only the newest one of a branch (--branch)" ;;
       "") ;;
       *) die "Unknown option $1. Usage: deploy-json <project> [--preview] [--branch <b>] [--toggle]" ;;
@@ -407,6 +408,14 @@ cloudflare_status() { local j; j="$(cloudflare_status_json "$@")" || return 1; p
 cloudflare_latest() { local j; j="$(cf_call GET "$(cf_proj "$1")/deployments?per_page=1")" || return 1; j="$(echo "$j" | jq -c "$CF_PHASE"' .[0] // null | if . then cf_dep else null end')" || return 1; printf '%s\n' "${j:-null}" | jq -r "$CLOUDFLARE_TSV"; }
 cloudflare_cli_status() { cloudflare_status_json "$@"; }
 cloudflare_cli_latest() { cloudflare_latest_json "$@"; }
+
+# cloudflare_cli_previews <project>: the newest preview deployment per branch:
+# [{id, branch, url, phase, at}]. A branch with a pull request is a preview of it.
+cloudflare_cli_previews() {
+  local out; out="$(cf_call GET "$(cf_proj "${1:?project}")/deployments?env=preview&per_page=50")" || exit 1
+  printf '%s' "$out" | jq "$CF_PHASE"'[.[] | select(.environment == "preview") | {id, branch:(.deployment_trigger.metadata.branch // null),
+      url:(.url // null), phase:cf_phase, at:(.created_on | cf_t)}] | group_by(.branch // .id) | map(max_by(.at // 0)) | sort_by(-(.at // 0))'
+}
 
 cloudflare_cancel() { die "Cloudflare Pages cannot cancel a deployment from here: it has no documented way. Stop it in the dashboard: $(cloudflare_url "$1" --dashboard)"; }
 
@@ -558,7 +567,8 @@ cloudflare_cmd() {
     doctor) cloudflare_doctor ;;
     selftest) cloudflare_cli_selftest "$@" ;;
     account) cloudflare_cli_account "$@" ;;
-    *) die "Usage: deploys cloudflare meta|list|has|off|on|deploy|deploy-json|status|latest|rollback|logs|url|set-key|doctor|selftest|account" ;;
+    previews) cloudflare_cli_previews "$@" ;;
+    *) die "Usage: deploys cloudflare meta|list|has|off|on|deploy|deploy-json|status|latest|rollback|logs|url|set-key|doctor|selftest|account|previews" ;;
   esac
 }
 

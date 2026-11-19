@@ -272,8 +272,9 @@ struct SettingsView: View {
                 Picker(L("to", "bis"), selection: $quietTo) { ForEach(0...23, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) } }
                     .labelsHidden().frame(width: 90)
             }
-            .help(L("Inside these hours only failures notify. The same hour twice: off. macOS Focus applies as well.",
-                    "In diesen Stunden melden sich nur Fehler. Zweimal dieselbe Stunde: aus. Der macOS-Fokus gilt zusätzlich."))
+            .help(L("Inside these hours only failures notify; the rest comes as one note when they end. The same hour twice: off. macOS Focus applies as well.",
+                    "In diesen Stunden melden sich nur Fehler; alles andere kommt gebündelt, wenn sie enden. Zweimal dieselbe Stunde: aus. Der macOS-Fokus gilt zusätzlich."))
+            Text(SettingsText.quietHint(from: quietFrom, to: quietTo)).font(.caption).foregroundStyle(.secondary)
             Toggle(L("Remind again after 30 minutes when a failure was not looked at", "Nach 30 Minuten noch einmal erinnern, wenn ein Fehler nicht angesehen wurde"),
                    isOn: $remindFailures)
             if notificationsDenied {

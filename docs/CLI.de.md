@@ -12,14 +12,19 @@ Ein Projekt heißt überall gleich: mit seinem Namen, oder als `<plattform>:<nam
 
 ```bash
 deploys doctor                          # was verbunden ist (JSON)
+deploys secrets my-project              # hinzugefügte Zeilen, die wie ein Schlüssel oder Token aussehen; Exit 1, wenn es welche gibt (ein Tor)
+deploys <vercel|netlify|cloudflare> previews <project>   # neueste Vorschau je Pull Request mit URL (JSON, nur lesend)
+deploys certs [--days 14] [--json]      # TLS-Zertifikat der Adresse jedes Projekts (auch der Anbieter-Domain); Exit 1, wenn eines innerhalb von N Tagen abläuft. Ein nicht erreichbarer Host ist „unknown“, kein Fehler.
+deploys creds [--max-age 90] [--json]   # je Plattform: woher der Schlüssel kommt (Umgebung, Schlüsselbund, Login), ob er geht, wie alt ein Schlüsselbund-Schlüssel ist. Nur lesend; zeigt nie einen Schlüssel.
 deploys doctor --text                   # eine Zeile je Prüfung (ok oder das Problem), mit der Lösung
 deploys list --format tsv               # Plattform, Projekt, auto oder manuell, letzter Stand: Tabs, ohne Kopfzeile, für Skripte ohne jq
 deploys idle [--days 90] [--json]       # Projekte ohne Deploy seit N Tagen: Kandidaten zum Pausieren (nur lesend)
 deploys changed                         # was auf GitHub gemergt und nicht live ist: Commits und PRs je Projekt
 deploys deploy-changed                  # das tägliche Deploy: zeigt die Liste; mit --yes startet es
 deploys deploy-changed --when-green --yes  # nur Commits, deren CI bestanden hat (wartet auf laufende Checks)
+deploys deploy-json my-project --no-cache --yes   # Build ohne den Cache des Anbieters (Render, Netlify, DigitalOcean, Coolify; andere Anbieter lehnen es ab)
 deploys deploy mein-projekt             # ein Projekt nach Produktion, auf welcher Plattform auch immer
-deploys plan [--when-green]             # dieselbe Liste mit Schätzung je Build und Summe (startet nichts)
+deploys plan [--when-green] [--since 1d]  # dieselbe Liste mit Schätzung je Build und Summe (startet nichts); --since: nur was sich in dieser Zeit geändert hat
 deploys status                          # was gerade baut und was zuletzt fehlschlug
 deploys watch mein-projekt [--timeout 30m]  # dem neuesten Deploy folgen, bis es live oder fehlgeschlagen ist
 deploys logs mein-projekt               # das Ende des neuesten Build-Logs, Schlüssel und Tokens immer maskiert

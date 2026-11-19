@@ -35,6 +35,8 @@ The first builds `build/Deploy Center.app`; `--install` also copies it to `~/App
 Without a Developer ID certificate the app is signed ad hoc: it runs, but macOS refuses it as a
 login item.
 
+In `deploys`, clean up temp files and locks with `trap_fn` (it runs functions at exit), not with text passed to `trap` or `eval`. Write state files through `atomic_write`.
+
 The logic lives in one bash script, `deploys`, which the app calls; it also works alone
 (`./deploys` without arguments prints the help). Each platform is one file in `providers/`
 (such as `vercel.sh` or `netlify.sh`), sourced by `deploys`. To add a platform, add one file there and its

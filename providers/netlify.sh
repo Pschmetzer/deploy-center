@@ -158,8 +158,12 @@ netlify_sites() {
   local page=1 all="[]" chunk
   while :; do
     chunk="$(netlify_call GET "/sites?filter=all&per_page=100&page=$page")" || return 1
+    # An answer that is not a list ends the read with a reason; a page that cannot be added must
+    # not wipe the pages before it. At most 100 pages: a host that ignores `page` would loop for ever.
+    echo "$chunk" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "Netlify: page $page of the sites is not a list" >&2; return 1; }
     all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$chunk"))"
     [ "$(echo "$chunk" | jq 'length')" -lt 100 ] && break
+    [ "$page" -lt 100 ] || { echo "Netlify: more than 100 pages of sites; the list stops here" >&2; break; }
     page=$((page + 1))
   done
   echo "$all"
@@ -186,7 +190,7 @@ netlify_id_fast() {
 # jq definitions shared by the readers below.
 # shellcheck disable=SC2016
 NETLIFY_JQ='
-  def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | fromdateiso8601) else null end;
+  def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
   def phase: if . == null then null
     elif test("^(new|enqueued|accepted|pending_review)$") then "queued"
     elif . == "ready" then "ready"
@@ -320,7 +324,7 @@ netlify_json() {
          lastSha:($live.commit_ref // null),
          lastMsg:(($live.title // null) | if . then split("\n")[0] else null end),
          fetchError:(._d.fetchError // null), phase:($new.state // null | phase)} ]
-    | sort_by(.name | ascii_downcase)'
+    | sort_by((.name // "") | ascii_downcase)'
 }
 
 # netlify_off <site> [--rule-added]: build hook + the netlify.toml step. --rule-added records the
@@ -400,14 +404,15 @@ EOF
 
 # netlify_deploy_json <site> [--preview] [--sha <commit>] — post to the hook, then find the deploy it started.
 netlify_deploy_json() {
-  local site="$1" id hk before list new lock="" i polls
+  local site="$1" id hk before list new lock="" i polls hurl nocache=""
   shift || true
   while [ $# -gt 0 ]; do
     case "$1" in
       --preview) die "Netlify cannot deploy a preview from here (the build hook deploys the production branch)" ;;
       --sha) die "Netlify cannot deploy a given commit: a build hook always builds the newest commit of the branch" ;;
+      --no-cache) nocache=1 ;;
       "") ;;
-      *) die "Unknown option $1. Usage: deploy-json <site>" ;;
+      *) die "Unknown option $1. Usage: deploy-json <site> [--no-cache]" ;;
     esac; shift
   done
   id="$(netlify_id_of "$site")" || die "Netlify site $site not found"
@@ -421,7 +426,10 @@ netlify_deploy_json() {
   # times, so a clock that is off by a minute cannot pick an old deploy.
   before="$(netlify_call GET "/sites/$id/deploys?per_page=20")" || { rm -f "$lock"; die "Netlify: could not read the deploys of $site"; }
   before="$(echo "$before" | jq -c '[.[].id]')"
-  netlify_call POST "$(echo "$hk" | jq -r '.url')" '{"source":"deploy-center"}' >/dev/null \
+  hurl="$(echo "$hk" | jq -r '.url')"
+  # clear_cache=true: the build hook starts the build without the cached dependencies.
+  if [ -n "$nocache" ]; then case "$hurl" in *\?*) hurl="$hurl&clear_cache=true" ;; *) hurl="$hurl?clear_cache=true" ;; esac; fi
+  netlify_call POST "$hurl" '{"source":"deploy-center"}' >/dev/null \
     || { rm -f "$lock"; die "Netlify: the build hook of $site did not take the deploy"; }
   polls="${DEPLOYS_NETLIFY_POLLS:-15}"
   for ((i = 0; i < polls; i++)); do
@@ -453,18 +461,31 @@ netlify_latest_json() {
 
 # The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
 NETLIFY_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // "?")" end'
-netlify_status() { netlify_status_json "$@" | jq -r "$NETLIFY_TSV"; }
-netlify_latest() { netlify_latest_json "$@" | jq -r "$NETLIFY_TSV"; }
+# A failed or empty read fails here (a pipe would hide it and print nothing with exit 0).
+netlify_status() { local j; j="$(netlify_status_json "$@")" || return 1; [ -n "$j" ] || { echo "Netlify: no answer for the deploy" >&2; return 1; }; printf '%s\n' "$j" | jq -r "$NETLIFY_TSV"; }
+netlify_latest() { local j; j="$(netlify_latest_json "$@")" || return 1; [ -n "$j" ] || { echo "Netlify: no answer for the latest deploy" >&2; return 1; }; printf '%s\n' "$j" | jq -r "$NETLIFY_TSV"; }
 # `deploys netlify status|latest` keeps printing the JSON.
 netlify_cli_status() { netlify_status_json "$@"; }
 netlify_cli_latest() { netlify_latest_json "$@"; }
 
+# netlify_cli_previews <site>: the deploy previews of pull requests, newest per pull request:
+# [{id, pr, branch, url, state, phase, at, title}]. Netlify does not say whether the PR is still
+# open; the list is what the newest 50 deploys hold.
+netlify_cli_previews() {
+  local id out
+  id="$(netlify_id_of "${1:?site}")" || die "Netlify site $1 not found"
+  out="$(netlify_call GET "/sites/$id/deploys?per_page=50&context=deploy-preview")" || die "Netlify: could not read the deploys of $1"
+  echo "$out" | jq "$NETLIFY_JQ"'[.[] | select(.context == "deploy-preview") | {id, pr:(.review_id // null), branch:(.branch // null),
+      url:(.deploy_ssl_url // .deploy_url // null), state, phase:(.state | phase), at:(.created_at | t), title:(.title // null)}]
+    | group_by(.pr // .id) | map(max_by(.at // 0)) | sort_by(-(.at // 0))'
+}
+
 # netlify_history <site> <n>: the last n deploys, a table (WHEN (UTC), STATE, COMMIT, TRIGGER = context, TOOK).
 netlify_history() {
   local id; id="$(netlify_id_of "$1")" || return 1
-  netlify_call GET "/sites/$id/deploys?per_page=$2" | jq -r 'def t: sub("\\.[0-9]+Z$";"Z") | fromdateiso8601;
-    .[] | [(.created_at | t | strftime("%Y-%m-%d %H:%M")), (.state // "?"), ((.commit_ref // "")[0:7]), (.context // ""),
-       (if .published_at then "\(((.published_at | t) - (.created_at | t)))s" else "" end)]
+  netlify_call GET "/sites/$id/deploys?per_page=$2" | jq -r 'def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end; def when: t | if . then strftime("%Y-%m-%d %H:%M") else null end; def took($a; $b): ($a | t) as $x | ($b | t) as $y | if $x and $y then "\($y - $x)s" else "" end;
+    .[] | [(.created_at | when), (.state // "?"), ((.commit_ref // "")[0:7]), (.context // ""),
+       (if .published_at then took(.created_at; .published_at) else "" end)]
     | map(if . == "" or . == null then "-" else . end) | @tsv' \
     | (printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n'; cat) | table
 }

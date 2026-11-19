@@ -51,5 +51,48 @@ mkdir -p "$tmp/tf/lk"; : > "$tmp/tf/a b"; : > "$tmp/tf/c"
 ( export DEPLOYS_LIB=1 DEPLOYS_CONFIG="$tmp/tfc"; . ./deploys; trap_fn exit_rm "$tmp/tf/a b" "$tmp/tf/c"; trap_fn exit_rmdir "$tmp/tf/lk"; trap_add 'echo "late $?" > "$tmp/tf.out"'; exit 3 ) 2>/dev/null; rc=$?
 expect "trap_fn: files and folder removed, old-style trap still runs, status kept" "$rc:$(ls "$tmp/tf" | wc -l | tr -d ' '):$(cat "$tmp/tf.out")" "3:0:late 3"
 
+# secrets (idea 32): added lines that look like keys; the secret itself is never printed
+sd='+++ b/src/a.env
++API=ok
++TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789
++-----BEGIN RSA PRIVATE KEY-----
++MIIabcsecretbody
++-----END RSA PRIVATE KEY-----
++plain'
+printf '%s\n' "$sd" | cli secrets --stdin >"$tmp/s.out" 2>&1; rc=$?
+expect "secrets: a diff with a token and a key exits 1" "$rc" "1"
+expect "secrets: the secret is not printed" "$(grep -c 'abcdefghijklmnop\|MIIabcsecretbody' "$tmp/s.out")" "0"
+expect "secrets: both hits are counted" "$(printf '%s\n' "$sd" | cli secrets --stdin --json | jq .found)" "2"
+expect "secrets: a clean diff exits 0" "$(printf '+++ b/a\n+hello\n' | cli secrets --stdin >/dev/null; echo $?)" "0"
+expect "secrets: without a project or --stdin is a usage line" "$(cli secrets >/dev/null 2>&1; echo $?)" "1"
+
+# keychain_age_days / creds (ideas 30, 31): a fake `security` that reports a creation date
+mkdir -p "$tmp/fakebin"
+cat > "$tmp/fakebin/security" <<'SEC'
+#!/bin/bash
+printf '    "cdat"<timedate>=0x32303230303130313132303030305A00  "20200101120000Z\\000"\n'
+SEC
+chmod +x "$tmp/fakebin/security"
+age="$( export DEPLOYS_LIB=1 DEPLOYS_CONFIG="$tmp/agecfg" PATH="$tmp/fakebin:$PATH"; . ./deploys; keychain_age_days render )"
+expect "keychain_age_days: a key saved in 2020 is over 2000 days old" "$([ "${age:-0}" -gt 2000 ] && echo yes || echo "no:$age")" "yes"
+expect "creds --json: a list with a rotate flag" "$(PATH="$tmp/fakebin:$PATH" cli creds --json 2>/dev/null | jq -r 'map(has("rotate")) | all')" "true"
+expect "creds: a bad --max-age is refused" "$(cli creds --max-age 0 >/dev/null 2>&1; echo $?)" "1"
+
+# cert_days_left (idea 34) with a fake openssl
+cat > "$tmp/fakebin/openssl" <<'OSSL'
+#!/bin/bash
+case "$1" in s_client) cat > /dev/null ;; x509) cat > /dev/null; echo "notAfter=Jan  1 00:00:00 ${CERT_YEAR:-2020} GMT" ;; esac
+OSSL
+chmod +x "$tmp/fakebin/openssl"
+cd1="$( export DEPLOYS_LIB=1 DEPLOYS_CONFIG="$tmp/certcfg" PATH="$tmp/fakebin:$PATH"; . ./deploys; cert_days_left example.test )"
+cd2="$( export DEPLOYS_LIB=1 DEPLOYS_CONFIG="$tmp/certcfg" PATH="$tmp/fakebin:$PATH" CERT_YEAR=2099; . ./deploys; cert_days_left example.test )"
+expect "cert_days_left: an expired certificate is negative" "$([ "${cd1:-0}" -lt 0 ] && echo yes || echo "no:$cd1")" "yes"
+expect "cert_days_left: a certificate in 2099 has years left" "$([ "${cd2:-0}" -gt 3000 ] && echo yes || echo "no:$cd2")" "yes"
+
+# completion knows the new commands and their words
+comp="$(cli completion bash 2>/dev/null)"
+expect "completion: journal completes export and report" "$(grep -c 'journal.*verify export report' <<<"$comp")" "1"
+expect "completion: certs, creds, idle and secrets are commands" "$(for c in certs creds idle secrets; do grep -c "COMP_WORDS\\[1\\]}\" = $c" <<<"$comp"; done | tr '\n' ' ')" "1 1 1 1 "
+
 echo
 [ "$fails" -eq 0 ] && echo "All round-9 tests passed." || { echo "$fails failed."; exit 1; }

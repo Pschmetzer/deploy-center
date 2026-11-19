@@ -166,7 +166,7 @@ hook_json() {
       # No status API: a 2xx answer is as far as anyone can see. For a while after it the build
       # is likely still running, so the list says queued, then ready (PRV-125).
       phase:(if $s.at == null then null elif $s.ok then (if ($now - $s.at) < $qs then "queued" else "ready" end) else "failed" end)}]
-    | sort_by(.name | ascii_downcase)')"
+    | sort_by((.name // "") | ascii_downcase)')"
   # No GitHub calls here: `deploys hook json` adds the branch heads (provider_json).
   echo "$list"
 }
@@ -208,7 +208,7 @@ hook_record() {
 hook_deploy_json() {
   local n="${1:-}" e u method headers body cfg out code rc=0 h hv miss head sha=null msg=null now rec repo ref
   hook_known "$n" || die "No hook named \"$n\""
-  local _a; for _a in "${@:2}"; do case "$_a" in --preview|--sha) ;; -*) die "Deploy hook: unknown option $_a";; esac; done
+  local _a; for _a in "${@:2}"; do case "$_a" in --preview|--sha) ;; --no-cache) die "Deploy hook cannot clear the build cache: the hook builds what the host is set to build.";; -*) die "Deploy hook: unknown option $_a";; esac; done
   case " ${*:2} " in
     *" --preview "*) die "Deploy hook cannot start a preview: the hook builds what the host is set to build.";;
     *" --sha "*) die "Deploy hook cannot deploy a given commit: the hook builds what the host is set to build.";;

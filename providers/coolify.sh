@@ -170,7 +170,7 @@ coolify_id_of() {
 # jq definitions shared by the readers below. $base is the instance URL.
 # shellcheck disable=SC2016
 COOLIFY_JQ='
-  def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | sub("\\+00:00$";"Z") | fromdateiso8601) else null end;
+  def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
   def phase: if . == null then null
     elif . == "queued" then "queued"
     elif . == "finished" then "ready"
@@ -274,7 +274,7 @@ coolify_json() {
          lastSha:(($live.commit // null) | if . == "HEAD" then null else . end),
          lastMsg:(($live.commit_message // null) | if . then split("\n")[0] else null end),
          fetchError:(._d.fetchError // null), phase:($new.status // null | phase)} ]
-    | sort_by(.name | ascii_downcase)'
+    | sort_by((.name // "") | ascii_downcase)'
 }
 
 # coolify_off <app> [--previews]: Auto Deploy off. --previews also stops PR preview builds.
@@ -347,7 +347,7 @@ coolify_unpin() {  # coolify_unpin <id> <value before> <pinned sha> [<name>]
 # The commit an app builds put back after a --sha deploy: <uuid> <pinned before> <app> <sha>.
 
 coolify_deploy_json() {
-  local app="$1" sha="" id info pinned="" out did lock="" one base rc saved_traps
+  local app="$1" sha="" force="" id info pinned="" out did lock="" one base rc saved_traps
   shift || true
   # The caller's own INT/TERM/HUP traps: put back after ours, never wiped.
   saved_traps="$(trap -p INT TERM HUP)"
@@ -355,8 +355,9 @@ coolify_deploy_json() {
     case "$1" in
       --preview) die "Coolify cannot deploy a preview from here (preview deploys need a pull request)" ;;
       --sha) sha="${2:-}"; [ -n "$sha" ] || die "Usage: deploy-json <application> --sha <commit>"; shift ;;
+      --no-cache) force="&force=true" ;;
       "") ;;
-      *) die "Unknown option $1. Usage: deploy-json <application> [--sha <commit>]" ;;
+      *) die "Unknown option $1. Usage: deploy-json <application> [--sha <commit>] [--no-cache]" ;;
     esac; shift
   done
   if [ -n "$sha" ]; then
@@ -385,7 +386,7 @@ coolify_deploy_json() {
     trap 'coolify_unpin "$id" "$pinned" "$sha" "$app"; rm -f "$lock"; eval "trap - INT TERM HUP; $saved_traps"; exit 130' INT TERM HUP
   fi
   # `|| rc=$?`, not `; rc=$?`: under set -e a failed POST would end the script before the unpin.
-  rc=0; out="$(coolify_call POST "/deploy?uuid=$id" 2>&1)" || rc=$?
+  rc=0; out="$(coolify_call POST "/deploy?uuid=$id$force" 2>&1)" || rc=$?
   if [ -n "$pinned" ]; then
     eval "trap - INT TERM HUP; $saved_traps"
     coolify_unpin "$id" "$pinned" "$sha" "$app"
@@ -425,7 +426,8 @@ coolify_latest_json() {
 # The contract (watch, deploy --wait): deployId<TAB>phase<TAB>state, "none" when there is none.
 # The JSON stays in coolify_status_json/_latest_json, and `deploys coolify status|latest` prints it.
 COOLIFY_TSV='if . == null then "none\t\t?" else "\(.id // "none")\t\(.phase // "")\t\(.state // .status // .phase // "?")" end'
-coolify_status() { local j; j="$(coolify_status_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$COOLIFY_TSV"; }
+# A deploy asked for by id that comes back empty is an error, not "no deploy" (`watch` would stop at "none").
+coolify_status() { local j; j="$(coolify_status_json "$@")" || return 1; [ -n "$j" ] || { echo "Coolify: no answer for the deployment" >&2; return 1; }; printf '%s\n' "$j" | jq -r "$COOLIFY_TSV"; }
 coolify_latest() { local j; j="$(coolify_latest_json "$@")" || return 1; printf '%s\n' "${j:-null}" | jq -r "$COOLIFY_TSV"; }
 coolify_cli_status() { coolify_status_json "$@"; }
 coolify_cli_latest() { coolify_latest_json "$@"; }

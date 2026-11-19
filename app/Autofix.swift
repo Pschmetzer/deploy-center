@@ -114,7 +114,11 @@ struct AutofixSettings: View {
 
     private func check(_ ok: Bool) -> some View {
         Image(systemName: ok ? "checkmark.circle.fill" : "circle").foregroundStyle(ok ? Color.good : .secondary)
+            .accessibilityLabel(Self.savedLabel(ok))
     }
+
+    /// What VoiceOver says for the saved / not saved mark.
+    static func savedLabel(_ ok: Bool) -> String { ok ? L("Saved", "Gespeichert") : L("Not saved", "Nicht gespeichert") }
 
     static func label(_ f: AutofixReport.Fire) -> String {
         if let r = f.redeployedSha { return L("fix deployed", "Fix deployt") + " (\(r.prefix(7)))" }

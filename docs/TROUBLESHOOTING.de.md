@@ -2,6 +2,12 @@
 
 Die deutsche Fassung von [TROUBLESHOOTING.md](TROUBLESHOOTING.md). Die Überschriften sind die Meldungen, die App und `deploys` zeigen, **wörtlich und auf Englisch**: Suche auf dieser Seite nach dem Text, den du siehst. Verlinkte Seiten ohne eigene deutsche Fassung sind englisch.
 
+In der App hat ein Fehler im Log- oder Detailfenster einen **Hilfe**-Knopf, der den passenden Abschnitt hier öffnet.
+
+`deploys creds` zeigt, woher der Schlüssel jeder Plattform kommt, ob er angenommen wird und wie alt ein Schlüsselbund-Schlüssel ist. `deploys certs` zeigt, welche TLS-Zertifikate bald ablaufen.
+
+Unter **Einstellungen → Plattformen → Health** bekommt eine Vercel- oder Render-Anmeldung, die seit 90 Tagen in Gebrauch ist, den Hinweis, sie zu erneuern. Das Alter zählt ab dem Tag, an dem die App die Anmeldung zuerst sah; es ist ein Anstoß, keine Aussage über das Token.
+
 Erste Schritte bei jedem Problem:
 
 - `deploys doctor` gibt als JSON aus, was verbunden ist: `jq`, `jqVersion`, `bashVersion`, `githubCli`, `githubLoggedIn`, `gitlabCli`, `gitlabLoggedIn`, `readonly` und die Felder jeder eingeschalteten Plattform (Vercel: `vercelCli`, `vercelApi`, `vercelLoggedIn`; Render: `renderKey`, `renderKeySource`; Deploy-Hooks: `hookReady`, `hooks`). Für Netlify, Cloudflare, Amplify, DigitalOcean und Coolify frag die Plattform selbst, zum Beispiel `deploys netlify doctor`: ihre Antworten teilen sich Feldnamen (`provider`, und `key`, `tokenOk`, `error` bei dreien), und in der gemeinsamen Antwort bleibt von jedem nur das letzte übrig.

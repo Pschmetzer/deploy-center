@@ -6,6 +6,17 @@
     <description>Updates for Deploy Center</description>
     <language>en</language>
     <item>
+      <title>Version 0.11.0</title>
+      <pubDate>Thu, 19 Nov 2026 03:18:27 GMT</pubDate>
+      <sparkle:version>0.11.0</sparkle:version>
+      <sparkle:shortVersionString>0.11.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>https://github.com/Pschmetzer/deploy-center/releases/tag/v0.11.0</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown">- Round 7 (audit): ~230 fixes and additions across app, CLI, integrations and site. Security: masking is line-based (no ReDoS) and knows more key formats; error texts are masked before notifications, journal and exports; MCP asks with a sanitized commit line and passes only an allowed environment; Slack/Markdown injection in digests is escaped; install.sh bounds downloads, refuses unsafe archive paths and gains `--sha256`, `--dry-run`, `--quiet`. App: Touch ID for observer/guard/critical single deploys, VoiceOver rows and actions, locale-correct dates and numbers, no frozen list after an overdue deploy. CLI: quoting and `set -e` fixes, safer locks and temp files, schema matches the code. Site: five host guides plus three cost/automation guides, German FAQ and safe-start, host matrix, `AGENTS.md`, `CITATION.cff`. Details: `docs/IDEEN-7-*-status.md`, `integrations/STATUS-round-7.md`.
+- App: the switch "Only when checks are green" is gone (deploy confirmation and Settings → Deploy). A red CI is shown on the row and never holds a deploy started by hand back. The CLI keeps `--when-green`.</description>
+      <enclosure url="https://github.com/Pschmetzer/deploy-center/releases/download/v0.11.0/DeployCenter-0.11.0-universal.zip" length="16319748" type="application/octet-stream" sparkle:edSignature="JUIHUBWGxZOFz13/RxBGiRfstoDL25BNbD8q5EypWsLoVGQMOVwkLmbLXjoOLHZDHjvuhKuILz4Gk6v4oZ15Bw==" />
+    </item>
+    <item>
       <title>Version 0.10.0</title>
       <pubDate>Thu, 12 Nov 2026 10:06:43 GMT</pubDate>
       <sparkle:version>0.10.0</sparkle:version>
