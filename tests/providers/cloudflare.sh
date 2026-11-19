@@ -130,6 +130,9 @@ expect "on: forgets it" "$(jq -c '.off.site' "$DEPLOYS_CONFIG/cloudflare.json")"
 routes "GET /pages/projects/site$ project-on.json,project-on.json,project-on.json" "PATCH /pages/projects/site$ ok.json"
 out="$(cf off site 2>&1)"; rc=$?
 expect "off: a PATCH that did not take is an error" "$rc" 1
+routes "GET /pages/projects/site$ project-on.json" "PATCH /pages/projects/site$ unauthorized.json:403"
+out="$(cf off site 2>&1)"; rc=$?
+expect "off: a PATCH that fails leaves no note behind (on would restore from it)" "$rc:$(jq -c '.off.site // null' "$DEPLOYS_CONFIG/cloudflare.json" 2>/dev/null || echo null)" "1:null"
 routes "GET /pages/projects/site$ project-upload.json"
 out="$(cf off site 2>&1)"; rc=$?
 [ "$rc" = 1 ] && [[ "$out" == *"direct upload"* ]] && ok "off: direct upload explained" || fail "off: direct upload explained" "$rc $out"
@@ -258,8 +261,9 @@ out="$(CLOUDFLARE_API_TOKEN=bad cf doctor)"
 expect "doctor: a rejected token" "$(echo "$out" | jq .tokenValid)" false
 
 # --- status, latest, rollback, logs, url, cancel ---
-routes "GET /deployments\\?per_page=1 deployments-prod.json" "GET /deployments/d-q$ deployment-build.json"
+routes "GET /deployments\\?per_page=1&env=production deployments-prod.json" "GET /deployments/d-q$ deployment-build.json"
 expect "latest: newest, mapped" "$(cf latest site | jq -c '[.id, .phase]')" '["d-fail","failed"]'
+expect "latest: production only (a newer preview must not pass for live)" "$(grep -c 'deployments?per_page=1&env=production' "$CALLS")" 1
 expect "status: one deployment" "$(cf status site d-q | jq -c '[.phase, .stage, .sha, .msg]')" '["building","build","cccc333","feat: new"]'
 routes "GET /pages/projects/site$ project-on.json" "GET /deployments\\?env=production deployments-prod.json" "POST /deployments/[^/]+/rollback$ rollback.json"
 out="$(cf rollback site)"
