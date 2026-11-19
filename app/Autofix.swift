@@ -184,9 +184,11 @@ struct AutofixSettings: View {
         do {
             let out = String(data: try await Tool.run(args, timeout: 300), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            message = show ? (out.isEmpty ? L("Nothing to do: no failed build.", "Nichts zu tun: kein fehlgeschlagener Build.") : out) : (out.isEmpty ? nil : out)
+            // A platform error may carry a token: masked before it is shown (IDEEN-11 213).
+            let safe = LogTools.maskSecrets(out)
+            message = show ? (safe.isEmpty ? L("Nothing to do: no failed build.", "Nichts zu tun: kein fehlgeschlagener Build.") : safe) : (safe.isEmpty ? nil : safe)
             failed = false
-        } catch { message = error.localizedDescription; failed = true }
+        } catch { message = LogTools.maskSecrets(error.localizedDescription); failed = true }
         await reload()
         // The rows show the new hand-over now, not at the next refresh (a dry run changes nothing).
         if !args.contains("--dry-run") { await store.loadAgentStatus() }

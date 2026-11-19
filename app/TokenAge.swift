@@ -9,11 +9,19 @@ enum TokenAge {
     static let limitDays = 90
 
     /// Adds today for every platform that is signed in and not yet known; forgets the ones signed out
-    /// (a new login starts a new count).
+    /// for more than a day (a new login starts a new count; one failed check does not, IDEEN-11 169).
+    /// "<id>.off" remembers since when a platform was seen signed out.
     nonisolated static func update(_ seen: [String: Double], signedIn: [String: Bool], now: Date = Date()) -> [String: Double] {
         var out = seen
         for (id, on) in signedIn {
-            if on { if out[id] == nil { out[id] = now.timeIntervalSince1970 } } else { out.removeValue(forKey: id) }
+            if on {
+                if out[id] == nil { out[id] = now.timeIntervalSince1970 }
+                out.removeValue(forKey: id + ".off")
+            } else if out[id] != nil {
+                let since = out[id + ".off"] ?? now.timeIntervalSince1970
+                if now.timeIntervalSince1970 - since >= 86_400 { out.removeValue(forKey: id); out.removeValue(forKey: id + ".off") }
+                else { out[id + ".off"] = since }
+            }
         }
         return out
     }

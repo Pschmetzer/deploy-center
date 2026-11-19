@@ -15,13 +15,13 @@ enum QuietDigest {
         return max(60, next.timeIntervalSince(now))
     }
 
-    /// "epoch|text" lines still of this night, plus the new one; the oldest fall out beyond 50.
+    /// "epoch|text" lines still of this night, plus the new one; the oldest fall out beyond 200.
     static func adding(_ text: String, to held: [String], now: Date = Date()) -> [String] {
         let fresh = held.filter { l in
             guard let t = l.split(separator: "|", maxSplits: 1).first.flatMap({ Double($0) }) else { return false }
             return now.timeIntervalSince1970 - t < maxAge
         }
-        return Array((fresh + ["\(Int(now.timeIntervalSince1970))|" + text.replacingOccurrences(of: "\n", with: " ")]).suffix(50))
+        return Array((fresh + ["\(Int(now.timeIntervalSince1970))|" + text.replacingOccurrences(of: "\n", with: " ")]).suffix(200))
     }
 
     /// The note for the held lines: how many, and the first few. `neutral` (lock screen) says only the number.
