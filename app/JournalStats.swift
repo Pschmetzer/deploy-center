@@ -153,17 +153,19 @@ enum JournalStats {
 
     /// A postmortem to fill in, from a failed or rolled-back entry.
     nonisolated static func postmortem(_ e: JournalEntry, mask: (String) -> String = { $0 }, scrub: (String) -> String = { $0 }) -> String {
-        [ "# " + L("Postmortem: \(mask(e.name))", "Postmortem: \(mask(e.name))"), "",
-          "- " + L("When", "Wann") + ": " + e.at.formatted(date: .long, time: .shortened),
-          "- " + L("Platform", "Plattform") + ": " + e.platform,
-          "- " + L("Result", "Ergebnis") + ": " + e.kind.title,
-          e.detail.map { "- " + L("Detail", "Detail") + ": " + scrub(LogTools.maskSecrets($0)) } ?? nil,
-          e.note.map { "- " + L("Note", "Notiz") + ": " + scrub(LogTools.maskSecrets($0)) } ?? nil,
-          "", "## " + L("What happened", "Was ist passiert"), "",
-          "## " + L("Impact", "Auswirkung"), "",
-          "## " + L("Cause", "Ursache"), "",
-          "## " + L("What we change", "Was wir ändern"), ""
-        ].compactMap { $0 }.joined(separator: "\n")
+        func safe(_ t: String) -> String { scrub(LogTools.maskSecrets(t)) }
+        let title: String = "# " + L("Postmortem: \(mask(e.name))", "Postmortem: \(mask(e.name))")
+        var lines: [String] = [title, ""]
+        lines.append("- " + L("When", "Wann") + ": " + e.at.formatted(date: .long, time: .shortened))
+        lines.append("- " + L("Platform", "Plattform") + ": " + e.platform)
+        lines.append("- " + L("Result", "Ergebnis") + ": " + e.kind.title)
+        if let d = e.detail { lines.append("- " + L("Detail", "Detail") + ": " + safe(d)) }
+        if let n = e.note { lines.append("- " + L("Note", "Notiz") + ": " + safe(n)) }
+        lines += ["", "## " + L("What happened", "Was ist passiert"), ""]
+        lines += ["## " + L("Impact", "Auswirkung"), ""]
+        lines += ["## " + L("Cause", "Ursache"), ""]
+        lines += ["## " + L("What we change", "Was wir ändern"), ""]
+        return lines.joined(separator: "\n")
     }
 }
 
