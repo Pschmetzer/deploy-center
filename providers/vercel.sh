@@ -441,19 +441,30 @@ vercel_cli_previews() {
 }
 
 vercel_cancel() {
-  vercel_call "/v12/deployments/${2:?deployment id}/cancel" --method PATCH >/dev/null || die "Vercel: could not cancel ${2}"
-  echo '{"state":"CANCELED"}'
+  local out st
+  out="$(vercel_call "/v12/deployments/${2:?deployment id}/cancel" --method PATCH)" || die "Vercel: could not cancel ${2}"
+  # The answer is the deployment: one that had already finished was not canceled, whatever the PATCH said.
+  st="$(echo "$out" | jq -r '.readyState // .status // empty' 2>/dev/null)"
+  case "$st" in
+    READY|ERROR) die "Vercel: ${2} is already $st, there is nothing to cancel" ;;
+  esac
+  jq -nc --arg s "${st:-CANCELED}" '{state:$s}'
 }
 
 # Production back to the previous ready production deployment.
 vercel_rollback() {
-  local p="${1:?project}" cur prev pid proj
+  local p="${1:?project}" cur prev pid proj list err
   # "Before" means before the deployment that is live now, which after an earlier rollback or a
   # promotion is not always the newest one. One read of the project gives that and its id.
   proj="$(vercel_call "/v9/projects/$p")" || die "Could not read the Vercel project $p"
   cur="$(echo "$proj" | jq -r '.targets.production.id // empty' 2>/dev/null)"
-  prev="$(vercel_call "/v6/deployments?projectId=$p&target=production&state=READY&limit=20" \
-    | jq -r --arg cur "$cur" "$VERCEL_META"'.deployments as $d | (($d | map(.uid) | index($cur)) // 0) as $i
+  [ -n "$cur" ] || die "Vercel: could not tell which deployment of $p is live; nothing was rolled back"
+  list="$(vercel_call "/v6/deployments?projectId=$p&target=production&state=READY&limit=20")" || die "Could not read the deployments of $p"
+  # The live one is not among the 20 newest ready production deployments: "before it" cannot be
+  # told from here, and guessing from the newest one would roll back relative to the wrong base.
+  echo "$list" | jq -e --arg cur "$cur" '(.deployments // []) | map(.uid) | index($cur) != null' >/dev/null 2>&1 \
+    || die "Vercel: the live deployment of $p is not among its 20 newest ready production deployments; nothing was rolled back"
+  prev="$(echo "$list" | jq -r --arg cur "$cur" "$VERCEL_META"'.deployments as $d | (($d | map(.uid) | index($cur)) // 0) as $i
         | ($d[$i].meta // {} | vsha) as $sha
         # An older deploy of the same commit (a redeploy) would change nothing: skip to a different one.
         | ($d | to_entries | map(select(.key > $i) | .value)
@@ -461,7 +472,7 @@ vercel_rollback() {
   [ -n "$prev" ] || die "No earlier production deployment of $p to roll back to"
   # The project's id, not its name: Vercel answers 404 to a name on these endpoints.
   pid="$(echo "$proj" | jq -r '.id // empty' 2>/dev/null)"
-  vercel_call "/v1/projects/${pid:-$p}/rollback/$prev" --method POST >/dev/null || die "Vercel: rollback of $p failed"
+  err="$(vercel_call "/v1/projects/${pid:-$p}/rollback/$prev" --method POST 2>&1 >/dev/null)" || die "Vercel: rollback of $p failed${err:+ ($err)}"
   echo "{\"id\":\"$prev\",\"state\":\"READY\"}"
 }
 
