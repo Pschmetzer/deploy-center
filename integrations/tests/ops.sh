@@ -248,6 +248,7 @@ expect "docker: the compose file passes keys by name, not by value" "$(grep -cE 
 expect "docker: no key has a value in the examples" "$(grep -ciE '(token|api_key)=[^ ]' docker/compose.example.yml docker/jobs.example.conf | awk -F: '{s+=$2} END {print s+0}')" 0
 if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
   mkdir -p "$tmp/cc" && cp docker/compose.example.yml "$tmp/cc/" && (cd "$tmp/cc" && docker compose -f compose.example.yml config -q 2>/dev/null) && ok "docker: the compose example is valid" || fail "docker: the compose example is valid" "docker compose config"
+elif [ "$(uname)" = Darwin ]; then echo "note: the compose check runs in the Linux job (the macOS runner has no Docker)"
 else skip "docker: the compose check needs docker compose"; fi
 
 # ============ Claude Code: the deploy hooks and the two skills ============

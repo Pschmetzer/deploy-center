@@ -102,6 +102,9 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_plan` | `deploys deploy-changed --json` (no `--yes`) | What a daily deploy would start: project, commit, commits waiting, risk. Starts nothing. No cost estimate (see `deploys_simulate`). |
 | `deploys_cost` | `deploys plan --json` | Estimate: what the next deploy would start, a price per project and the sum; window and budget. Starts nothing. |
 | `deploys_idle(days?)` | `deploys idle --days <n> --json` | Projects with no deploy for N days (default 90): candidates to pause. Nothing is paused. |
+| `deploys_digest(days?)` | `deploys digest --days <n> --json` | The last N days (default 7) from the journal: deploys, failures and their rate, rollbacks, forced starts, busiest day, estimated saving. Read-only. |
+| `deploys_freeze()` | `deploys freeze status --json` | Are deploys closed now by the closed times of `window.json`, and which times are set. Read-only: no time is added or removed. |
+| `deploys_ci(repo, ref?)` | `deploys ci <owner/repo> [ref] --json` | The CI verdict of a commit or branch: green, pending, red or none, and why. Does not wait. |
 | `deploys_certs(days?)` | `deploys certs --days <n> --json` | TLS certificate days left per project address; which run out within N days (default 14). |
 | `deploys_creds(max_age?)` | `deploys creds --max-age <n> --json` | Where each host's key comes from, whether it is accepted, and its age. The key is never shown. |
 | `deploys_journal_report(month?)` | `deploys journal report [--month YYYY-MM]` | What happened in a month, as Markdown, from the local journal. |
