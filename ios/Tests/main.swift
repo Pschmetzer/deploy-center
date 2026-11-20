@@ -411,5 +411,13 @@ check(Keychain.lookup("github") == .failed, "keychain: a locked device is 'faile
 fk.lockedDevice = false
 Keychain.backend = SystemKeychain()
 
+// MARK: Widget words (IDEEN-12 C59)
+check(Words(german: false)("Live", "Live!") == "Live" && Words(german: true)("Live", "Live!") == "Live!", "words: picks the language")
+check(Words(german: false).n(1, ("PR waiting", "PR wartet"), ("PRs waiting", "PRs warten")) == "1 PR waiting", "words: one")
+check(Words(german: true).n(3, ("PR waiting", "PR wartet"), ("PRs waiting", "PRs warten")) == "3 PRs warten", "words: many")
+check(Words(german: false).n(0, ("project", "Projekt"), ("projects", "Projekte")) == "0 projects", "words: zero is plural")
+check(Words(DeploySnapshot.sample).german == (DeploySnapshot.localized(DeploySnapshot.sample.language, "en", "de") == "de"), "words: follows the snapshot's language")
+check(Words.staleAfter == 3 * 3600, "words: a snapshot is old after three hours")
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
