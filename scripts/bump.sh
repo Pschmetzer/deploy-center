@@ -23,6 +23,13 @@ grep -q '^## Unreleased' CHANGELOG.md || die "CHANGELOG.md has no \"## Unrelease
 grep -q "^## \[\{0,1\}$new\]\{0,1\}\( \|$\)" CHANGELOG.md && die "CHANGELOG.md has \"## $new\" already"
 awk '/^## Unreleased/{f=1;next} /^## /{f=0} f&&/^- /{n++} END{exit n?0:1}' CHANGELOG.md \
   || die "nothing under \"## Unreleased\" to release"
+# A minor or major release has many changes: the update window shows the whole section, so it should start with
+# "### Highlights" (three to five bullets, see CONTRIBUTING.md). Only a warning: a patch release needs none.
+case "$new" in
+  *.0)
+    awk '/^## Unreleased/{f=1;next} /^## /{f=0} f&&/^### Highlights/{n++} END{exit n?0:1}' CHANGELOG.md \
+      || echo "bump.sh: warning: \"## Unreleased\" has no \"### Highlights\"; a minor release should start with three to five bullets for the update window" >&2 ;;
+esac
 # Both version mentions on the home page must be found before anything changes: a replacement
 # without a hit would leave the old version there silently, and a stop halfway would leave
 # VERSION and CHANGELOG.md bumped.
@@ -38,7 +45,8 @@ done
 cur_re="${cur//./\\.}"   # the dots of the old version are no wildcards in sed
 
 tmp="$(mktemp)"
-awk -v v="$new" '!done && /^## Unreleased/ { print; print ""; print "## " v; done=1; next } { print }' CHANGELOG.md > "$tmp"
+# The heading carries the date ("## 0.12.0 - 2027-01-05"); release.sh and the Sparkle notes accept it.
+awk -v v="$new" -v d="$(date +%Y-%m-%d)" '!done && /^## Unreleased/ { print; print ""; print "## " v " - " d; done=1; next } { print }' CHANGELOG.md > "$tmp"
 mv "$tmp" CHANGELOG.md
 echo "$new" > VERSION
 # The site's home page names the version three times (the line under the download button, softwareVersion and downloadUrl in the JSON-LD; fileSize follows after ./release.sh --publish).

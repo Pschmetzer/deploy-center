@@ -16,6 +16,7 @@ Uninstalling does not turn auto-deploy back on. Your projects stay manual until 
   Both remove their file in `~/Library/LaunchAgents/`. Without `deploys`, run
   `launchctl bootout gui/$(id -u)/app.deploycenter.autofix` (or `.guard`) and delete
   `~/Library/LaunchAgents/app.deploycenter.autofix.plist` (or `.guard.plist`).
+- For tests or an account that may not write to `~/Library/LaunchAgents`, `DEPLOYS_LAUNCH_DIR` names another folder for the job files; use the same value when you remove them.
 - The daily deploy, if you set it up with `deploys schedule daily` (launchd job `app.deploycenter.daily`):
   ```bash
   deploys schedule off

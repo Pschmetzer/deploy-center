@@ -146,4 +146,5 @@ Three more rules:
 - Secrets in the log are masked when they are recognized: known token prefixes (GitHub, GitLab, Stripe, AWS, Slack, Google, npm, Render, Anthropic/OpenAI, JWTs), `Authorization:` headers, `NAME=value` where the name says token, secret, password or key, `--token` arguments, URLs with passwords and private key blocks. The full list is in [SECURITY.md](../SECURITY.md#autofix-log-masking). Masking is a help, not a guarantee. If your build logs may print secrets, do not use autofix.
 - Detection runs only while this Mac is awake.
 - Every hand-over costs one routine run, including the ones that end in "nothing to fix in code".
-- The routines API is a research preview and may change.
+- The routines API is a research preview and may change. The calls go to `DEPLOYS_ROUTINE_API` (default Anthropic's routines endpoint, https only) with the beta header `DEPLOYS_ROUTINE_BETA` (default `experimental-cc-routine-2026-04-01`). When Anthropic renames the beta and autofix starts answering with an API error about the header, set the new name in that variable (in the launchd job's environment too).
+- No macOS notification on Linux: set `DEPLOYS_NOTIFY_CMD` to a command of yours (ntfy, `notify-send`, a webhook through `curl`); the text is in `DEPLOYS_MESSAGE` and on its stdin.

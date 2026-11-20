@@ -1,11 +1,11 @@
 // The build cost calculator (English and German page). Runs in the browser; nothing is sent anywhere.
-// The numbers are in the address (?p=&u=&c=&d=), so a copied link shows the same result.
+// The numbers are in the address (?p=&u=&c=&d=&w=), so a copied link shows the same result.
 // ?embed=1 hides the site frame, for an <iframe> on another page.
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var de = (document.documentElement.lang || 'en').slice(0, 2) === 'de';
   var T = de ? {
-    locale: 'de-DE', unit: ' $',
+    locale: 'de-DE', unit: '\u00a0$',
     said: function (save, now, after) { return 'Du würdest etwa ' + save + ' im Monat sparen. Mit Auto-Deploy ' + now + ', mit Deploy von Hand ' + after + '.'; },
     tweet: function (now, after) { return 'Auto-Deploy würde mich etwa ' + now + ' im Monat an Builds kosten. Von Hand deployen: ' + after + '. Berechnet mit Deploy Center'; },
     share: function (now, after) { return 'Auto-Deploy würde mich etwa ' + now + ' im Monat an Builds kosten. Von Hand deployen: ' + after + '.'; },
@@ -57,19 +57,21 @@
     }
     return { now: now, after: after, save: save };
   }
-  // read out only the saving, and only once a slider is let go
+  // read out the saving once the typing or the sliding stops (300 ms), not on every key: a slider fires input
+  // and change together, and a number field would be read out only after it loses focus
   function say() { var r = calc(); $('said').textContent = T.said(fmt(r.save), fmt(r.now), fmt(r.after)); }
+  var sayTimer = null;
+  function sayLater() { clearTimeout(sayTimer); sayTimer = setTimeout(say, 300); }
 
   ids.forEach(function (id) {
     var r = $(id), n = $(id + 'n');
-    r.addEventListener('input', function () { moved = true; calc(); });
-    r.addEventListener('change', say);
+    r.addEventListener('input', function () { moved = true; calc(); sayLater(); });
     // the number field sets the slider, within its limits
     n.min = r.min; n.max = r.max;
-    n.addEventListener('input', function () { var v = Math.round(+n.value); if (v >= +r.min && v <= +r.max) { r.value = v; moved = true; calc(); } });
+    n.addEventListener('input', function () { var v = Math.round(+n.value); if (v >= +r.min && v <= +r.max) { r.value = v; moved = true; calc(); sayLater(); } });
     n.addEventListener('change', function () {
       var v = Math.min(+r.max, Math.max(+r.min, Math.round(+n.value) || +r.min));
-      r.value = v; n.value = v; moved = true; say();
+      r.value = v; n.value = v; moved = true; sayLater();
     });
   });
 
@@ -96,4 +98,14 @@
     });
   }
   calc();
+  // In a frame, tell the page around it how tall this view is, so it can set the height of the iframe
+  // (the snippet on the calculator page listens for it). Only a number leaves the frame.
+  if (q.get('embed') === '1' && window.parent !== window) {
+    var tell = function () {
+      try { window.parent.postMessage({ deploycenterCalculatorHeight: Math.ceil(document.documentElement.scrollHeight) }, '*'); } catch (e) { /* no parent to tell */ }
+    };
+    tell();
+    if (window.ResizeObserver) new ResizeObserver(tell).observe(document.documentElement);
+    else window.addEventListener('resize', tell);
+  }
 })();

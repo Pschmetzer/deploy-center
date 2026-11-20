@@ -41,7 +41,7 @@ The pages write a setting as *Settings → tab → section*. The Mac app's Setti
 
 | Tab (Deutsch) | What is on it |
 |---|---|
-| General (Allgemein) | reload interval, menu bar and Dock, open at login, demo mode, projects in Spotlight, tip of the day, compact list, colour-blind friendly colours, site logos, language; notifications (daily reminder, summary of the day, sounds, spoken result, week in review, quiet hours, a second reminder for a failure); updates; the global shortcut for the command palette (⌥⌘K) |
+| General (Allgemein) | reload interval, menu bar and Dock, open at login, demo mode, projects in Spotlight, tip of the day, compact list, colorblind-friendly colors, site logos, language; notifications (daily reminder, summary of the day, sounds, spoken result, week in review, quiet hours, a second reminder for a failure); updates; the global shortcut for the command palette (⌥⌘K) |
 | Platforms (Plattformen) | which platforms are on; **Health**: what `deploys doctor` says per platform, with what to do |
 | Projects (Projekte) | hidden projects; marks |
 | Deploy | builds at the same time, the wait before a deploy starts, asking before a single deploy, the warning for commits that wait long, a red CI shown on the row (the CLI has `--when-green`), watching the site after going live, a tick before migrations, Touch ID before risky steps; the deploy window editor; the rule editor; the auto-deploy guard ([SAFE-DEPLOY.md](SAFE-DEPLOY.md), [GUARD.md](GUARD.md)) |

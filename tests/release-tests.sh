@@ -78,7 +78,8 @@ bump_repo() {
 d="$(bump_repo 1.2.0 1.2.0)"
 out="$(bash "$d/scripts/bump.sh" patch 2>&1)"; expect "bump: patch works" "$?" 0
 expect "bump: VERSION" "$(cat "$d/VERSION")" 1.2.1
-contains "bump: CHANGELOG has the new section" "$(cat "$d/CHANGELOG.md")" $'## Unreleased\n\n## 1.2.1\n\n- A change.'
+contains "bump: CHANGELOG has the new section" "$(cat "$d/CHANGELOG.md")" $'## Unreleased\n\n## 1.2.1 - 20'
+contains "bump: CHANGELOG moves the entries under it" "$(cat "$d/CHANGELOG.md")" $'\n\n- A change.'
 contains "bump: home page line" "$(cat "$d/site/index.html")" "Version 1.2.1 ·"
 contains "bump: home page JSON-LD" "$(cat "$d/site/index.html")" '"softwareVersion": "1.2.1"'
 
@@ -258,6 +259,24 @@ expect "indexnow: a docs source means every docs URL" "$(iu docs/FAQ.md)" '["htt
 expect "indexnow: a page not in the sitemap and CSS ping nothing" "$(iu site/404.html site/css/site.css app/Store.swift)" '[]'
 expect "indexnow: a plain .html page" "$(iu site/impressum.html)" '["https://deploycenter.app/impressum.html"]'
 expect "indexnow: --all is the sitemap" "$(python3 -I "$repo/scripts/indexnow-urls.py" "$sm" --all | jq length)" 5
+
+# tests/suites.txt is the one list of suites that all.sh runs (welle10-tests.sh checks it against the files and ci.yml).
+expect "suites: all.sh --list names script-tests.sh" "$(bash tests/all.sh --list | grep -c '^tests/script-tests.sh$')" 1
+expect "suites: all.sh --only team picks one" "$(bash tests/all.sh --only team --list | tr '\n' ' ')" "tests/team-tests.sh "
+
+# check-docs.py: every page in docs/README.md, README.md and README.de.md alike, one h1, and the man page is current.
+out="$(python3 -I scripts/check-docs.py 2>&1)"; expect "check-docs: the repo passes" "$?" 0
+
+# build-man.py: the date field is set, so mandoc has nothing to warn about.
+expect "man: .TH has a date" "$(sed -n 1p man/deploys.1 | grep -cE '^\.TH DEPLOYS 1 "[0-9]{4}-[0-9]{2}-[0-9]{2}" ')" 1
+
+# The cask's oldest macOS comes from MIN_OS in build.sh.
+min_os="$(sed -n 's/^MIN_OS="\([0-9][0-9]*\)[."].*/\1/p' build.sh | head -n 1)"
+cask_out="$(RELEASE_REPO=fork/deploy-center scripts/homebrew-cask.sh 1.2.3 "$(printf 'a%.0s' $(seq 1 64))" 2>&1)"
+case "$min_os" in 14) sym=sonoma ;; 15) sym=sequoia ;; 26) sym=tahoe ;; *) sym="?$min_os" ;; esac
+contains "cask: depends_on macos follows MIN_OS ($min_os)" "$cask_out" "depends_on macos: :$sym"
+contains "cask: a fork release names its own repo" "$cask_out" "github.com/fork/deploy-center/releases"
+contains "cask: uninstall removes the launchd jobs" "$cask_out" '"app.deploycenter.guard"'
 
 echo
 if [ "$fails" -gt 0 ]; then echo "$fails failed"; exit 1; fi

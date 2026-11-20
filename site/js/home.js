@@ -26,13 +26,17 @@
 // copy buttons, with a fallback and a message for screen readers
 (function(){
   const live=document.getElementById('copied');
+  // the shortcut of this system: Cmd-C on a Mac or an iPhone, Ctrl-C elsewhere (the CLI tab is for Linux, WSL and CI)
+  const plat=(navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||'';
+  const copyKey=/mac|iphone|ipad|ipod/i.test(plat)?'Cmd-C':'Ctrl-C';
   function fallback(text){const t=document.createElement('textarea');t.value=text;t.setAttribute('readonly','');t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);t.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}t.remove();return ok}
   document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',async()=>{
     const text=b.dataset.copy; let ok=false;
     try{await navigator.clipboard.writeText(text);ok=true}catch(e){ok=fallback(text)}
     if(!ok){const pre=b.parentElement.querySelector('pre');if(pre){const r=document.createRange();r.selectNodeContents(pre);const sel=getSelection();sel.removeAllRanges();sel.addRange(r)}}
-    b.textContent=ok?'Copied':'Selected: press Cmd-C';
-    if(live) live.textContent=ok?'Copied to the clipboard':'Copying failed; the command is selected, press Command-C';
+    b.textContent=ok?'Copied':'Selected: press '+copyKey;
+    // Cleared first and set in the next tick: a second copy has the same text, and a live region says nothing for an unchanged one.
+    if(live){live.textContent='';setTimeout(()=>{live.textContent=ok?'Copied to the clipboard':'Copying failed; the command is selected, press '+copyKey},60)}
     setTimeout(()=>{b.textContent='Copy'},1600);
   }));
 })();
@@ -52,12 +56,16 @@ document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;document.quer
 document.addEventListener('click',e=>{document.querySelectorAll('details.menu[open]').forEach(d=>{if(!d.contains(e.target))d.removeAttribute('open')})});
 // sticky download on phones, once the hero button is out of view and before the final call to action
 (function(){
-  const s=document.getElementById('sticky'), dl=document.getElementById('dl'), fin=document.querySelector('.final');
+  const s=document.getElementById('sticky'), dl=document.getElementById('dl'), fin=document.querySelector('.final'), foot=document.querySelector('footer');
   if(!s||!dl||!fin||!('IntersectionObserver' in window)) return;
-  let heroOut=false, finalIn=false;
-  const upd=()=>s.classList.toggle('show',heroOut&&!finalIn);
+  // Hidden (not only moved away) while it is not shown: out of the tab order and invisible to screen readers.
+  s.inert=true;
+  let heroOut=false, finalIn=false, footIn=false;
+  const upd=()=>{const on=heroOut&&!finalIn&&!footIn;s.classList.toggle('show',on);s.inert=!on};
   new IntersectionObserver(es=>{heroOut=!es[0].isIntersecting&&es[0].boundingClientRect.top<0;upd()}).observe(dl);
   new IntersectionObserver(es=>{finalIn=es[0].isIntersecting;upd()}).observe(fin);
+  // in the footer the bar would cover its links
+  if(foot) new IntersectionObserver(es=>{footIn=es[0].isIntersecting;upd()}).observe(foot);
 })();
 // push simulation: 14 pushes, 3 connected projects, about 6 cents a build
 (function(){

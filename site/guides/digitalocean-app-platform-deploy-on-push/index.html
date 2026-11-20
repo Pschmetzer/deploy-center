@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stop DigitalOcean App Platform deploying on every push · Deploy Center</title>
 <meta name="description" content="Set deploy_on_push to false on each component of a DigitalOcean App Platform app, why the API needs the whole spec, and how to deploy by hand.">
+<meta name="author" content="Deploy Center">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
@@ -14,6 +15,9 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-16">
 <meta property="og:title" content="Stop DigitalOcean App Platform deploying on every push · Deploy Center">
 <meta property="og:description" content="Set deploy_on_push to false on each component of a DigitalOcean App Platform app, why the API needs the whole spec, and how to deploy by hand.">
 <meta property="og:url" content="https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/">
@@ -43,7 +47,7 @@
   "url": "https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/",
   "mainEntityOfPage": "https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/",
   "datePublished": "2026-11-16",
-  "dateModified": "2026-11-18",
+  "dateModified": "2026-11-20",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -127,6 +131,26 @@
     "item": "https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/"
    }
   ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Stop DigitalOcean App Platform deploying on every push",
+  "description": "Set deploy_on_push to false on each component of a DigitalOcean App Platform app, why the API needs the whole spec, and how to deploy by hand.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "In the app spec",
+    "url": "https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/#spec"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "Deploying by hand",
+    "url": "https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/#deploy"
+   }
+  ]
  }
 ]
 </script>
@@ -142,7 +166,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Stop DigitalOcean App Platform deploying on every push</h1>
 <p class="answer">Every component built from a repo has an <b>Autodeploy</b> switch, which is <code>deploy_on_push</code> in the app spec. Set it to <code>false</code> on each component and save the spec. Pushes then build nothing, and you deploy when you decide.</p>
-<p class="meta">Last updated <time datetime="2026-11-18">18 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p>App Platform builds and deploys a component every time you push to the branch it watches. Each build uses build minutes and each deploy restarts the app.</p>
 <h2 id="spec">1. In the app spec</h2>

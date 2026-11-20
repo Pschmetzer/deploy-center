@@ -4,7 +4,9 @@ Die deutsche Fassung von [TROUBLESHOOTING.md](TROUBLESHOOTING.md). Die Überschr
 
 In der App hat ein Fehler im Log- oder Detailfenster einen **Hilfe**-Knopf, der den passenden Abschnitt hier öffnet.
 
-`deploys creds` zeigt, woher der Schlüssel jeder Plattform kommt, ob er angenommen wird und wie alt ein Schlüsselbund-Schlüssel ist. `deploys certs` zeigt, welche TLS-Zertifikate bald ablaufen.
+`deploys creds` zeigt, woher der Schlüssel jeder Plattform kommt, ob er angenommen wird und wie alt ein Schlüsselbund-Schlüssel ist. `deploys certs` zeigt, welche TLS-Zertifikate bald ablaufen. Wo der Schlüsselbund nicht infrage kommt (CI, SSH, gesperrter Login-Schlüsselbund), hilft `<NAME>_CMD`, ein Befehl, der den Schlüssel ausgibt: `RENDER_API_KEY_CMD='op read op://tresor/render/key'` (1Password, pass, Vault); er wird nach der Variablen und vor dem Schlüsselbund gefragt ([CLI.md](CLI.md#environment-variables), englisch).
+
+`deploys hooks install` (ein Git-`pre-push`-Hook in einem Repo) und der Ordner `hooks.d` (Skripte rund um einen Deploy, [CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd), englisch) haben nichts miteinander zu tun. Läuft ein pre-deploy-Skript nicht, steht in der Zeile `hooks.d: <Datei> … was not run`, warum: Eine Datei, die Gruppe oder andere beschreiben dürfen oder die nicht Ihnen gehört, wird übersprungen (`chmod go-w`).
 
 Unter **Einstellungen → Plattformen → Health** bekommt eine Vercel- oder Render-Anmeldung, die seit 90 Tagen in Gebrauch ist, den Hinweis, sie zu erneuern. Das Alter zählt ab dem Tag, an dem die App die Anmeldung zuerst sah; es ist ein Anstoß, keine Aussage über das Token.
 

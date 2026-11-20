@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to disable Vercel auto-deploy: 3 ways · Deploy Center</title>
 <meta name="description" content="Stop Vercel deploying on every push: disconnect Git, set git.deploymentEnabled in vercel.json, or add an Ignored Build Step. Steps, code and trade-offs.">
+<meta name="author" content="Deploy Center">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
@@ -14,6 +15,9 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-10">
 <meta property="og:title" content="How to disable Vercel auto-deploy: 3 ways · Deploy Center">
 <meta property="og:description" content="Stop Vercel deploying on every push: disconnect Git, set git.deploymentEnabled in vercel.json, or add an Ignored Build Step. Steps, code and trade-offs.">
 <meta property="og:url" content="https://deploycenter.app/guides/disable-vercel-auto-deploy/">
@@ -43,7 +47,7 @@
   "url": "https://deploycenter.app/guides/disable-vercel-auto-deploy/",
   "mainEntityOfPage": "https://deploycenter.app/guides/disable-vercel-auto-deploy/",
   "datePublished": "2026-11-10",
-  "dateModified": "2026-11-18",
+  "dateModified": "2026-11-20",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -135,6 +139,38 @@
     "item": "https://deploycenter.app/guides/disable-vercel-auto-deploy/"
    }
   ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to disable Vercel auto-deploy",
+  "description": "Stop Vercel deploying on every push: disconnect Git, set git.deploymentEnabled in vercel.json, or add an Ignored Build Step. Steps, code and trade-offs.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Disconnect the Git repository",
+    "url": "https://deploycenter.app/guides/disable-vercel-auto-deploy/#disconnect"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "git.deploymentEnabled in vercel.json",
+    "url": "https://deploycenter.app/guides/disable-vercel-auto-deploy/#deployment-enabled"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "Ignored Build Step",
+    "url": "https://deploycenter.app/guides/disable-vercel-auto-deploy/#ignored-build-step"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 4,
+    "name": "All projects in one click: Deploy Center",
+    "url": "https://deploycenter.app/guides/disable-vercel-auto-deploy/#deploy-center"
+   }
+  ]
  }
 ]
 </script>
@@ -150,7 +186,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>How to disable Vercel auto-deploy</h1>
 <p class="answer">To stop Vercel from deploying on every push, disconnect the Git repository in Project → Settings → Git, set <code>git.deploymentEnabled</code> to <code>false</code> in <code>vercel.json</code>, or add an Ignored Build Step that cancels the builds you do not want. Disconnecting stops every Git build; the other two keep the repository connected and skip builds by rule.</p>
-<p class="meta">Last updated <time datetime="2026-11-18">18 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <div class="tablewrap" role="region" aria-label="Table" tabindex="0"><table>
   <thead><tr><th>Way</th><th>Stops</th><th>Keeps</th><th>Best for</th></tr></thead>

@@ -82,9 +82,18 @@ deploys where                           # Konfigurationsordner, Version, Schlüs
 deploys autofix [--dry-run]             # siehe AUTOFIX.md
 deploys guard [--dry-run] | status | schedule on|off   # Auto-Deploy wieder aus, wo es zurückkam
 deploys schedule daily 09:00 [--when-green] [--by-rules]   # deploy-changed --yes einmal am Tag (launchd oder Cron-Zeile)
-deploys hooks install [<repo>]          # vor jedem Push: welche Builds er starten würde
+deploys hooks install [<repo>]          # vor jedem Push: welche Builds er starten würde (ein Git-Hook, nicht hooks.d)
+deploys logs mein-projekt --follow      # Build-Log laufend lesen (DEPLOYS_FOLLOW_EVERY Sekunden)
+deploys rollback mein-projekt | cancel mein-projekt   # zurück auf den Deploy davor, oder einen laufenden Build stoppen
+deploys metrics --out datei.prom        # wartende Commits, Alter, Fehler als Prometheus-Text (Grafana)
 eval "$(deploys completion zsh)"        # Tab-Vervollständigung (auch bash; fish: deploys completion fish | source)
 ```
+
+## Hooks rund um einen Start (`hooks.d`)
+
+Ausführbare Dateien `pre-deploy*` und `post-deploy*` in `~/.config/deploys/hooks.d` laufen vor und nach jedem Start aus dem Terminal (`DEPLOYS_PLATFORM`, `DEPLOYS_PROJECT`, `DEPLOYS_SHA`, danach `DEPLOYS_STATE`). Ein `pre-deploy`-Skript mit Exit-Code ungleich null stoppt diesen Start. Läuft es länger als `DEPLOYS_HOOK_TIMEOUT` Sekunden (Standard 300), wird es beendet. Dateien, die Gruppe oder andere beschreiben dürfen oder die einem anderen Konto gehören, laufen nie. Beispiele und Regeln: [CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd). Nicht zu verwechseln mit `deploys hooks install` (ein Git-Hook im Repo).
+
+Schlüssel aus einem Passwortmanager: `RENDER_API_KEY_CMD='op read op://tresor/render/key'` (jede `<NAME>_CMD` wird nach der Variablen und vor dem Schlüsselbund gefragt). Eigene Mitteilung statt macOS: `DEPLOYS_NOTIFY_CMD` (Text in `DEPLOYS_MESSAGE`).
 
 ## JSON und Exit-Codes
 

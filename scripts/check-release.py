@@ -5,7 +5,7 @@
 
 - site/index.html names VERSION twice ("Version X ·" under the download button and
   "softwareVersion" in the JSON-LD). scripts/bump.sh sets both together with VERSION.
-- site/install/<x.y.z>.sh (built by build-docs.py) pins the release its name says.
+- site/install/<x.y.z>.sh (built by build-docs.py) pins the release its name says (the script as of the tag, once tagged).
 - man/deploys.1 names VERSION in its .TH line (scripts/build-man.py writes it).
 - The newest item in site/appcast.xml is not newer than VERSION.
 - Once the tag vVERSION exists (release.sh --publish made the release), the newest appcast
@@ -75,6 +75,10 @@ if os.path.exists(man):
 inst_dir = os.path.join(root, "site", "install")
 if os.path.isdir(inst_dir) and os.path.exists(os.path.join(root, "site", "install.sh")):
     base = read("site/install.sh")
+    # A tagged release keeps its copy as of the tag (build-docs.py), so install.sh may move on after the release.
+    t_inst = subprocess.run(["git", "-C", root, "show", f"v{version}:site/install.sh"], capture_output=True, text=True)
+    if t_inst.returncode == 0 and 'PINNED_VERSION=""' in t_inst.stdout:
+        base = t_inst.stdout
     mine = os.path.join(inst_dir, f"{version}.sh")
     if not os.path.exists(mine):
         problems.append(f"site/install/{version}.sh is missing (run scripts/build-docs.py)")
@@ -86,6 +90,16 @@ if os.path.isdir(inst_dir) and os.path.exists(os.path.join(root, "site", "instal
             problems.append(f"site/install/{name}: not a <x.y.z>.sh copy")
         elif f'PINNED_VERSION="{m.group(1)}"' not in read(f"site/install/{name}"):
             problems.append(f"site/install/{name} does not pin {m.group(1)}")
+
+# The Homebrew cask's oldest macOS is derived from MIN_OS in build.sh: it must have a Homebrew name there.
+if os.path.exists(os.path.join(root, "build.sh")) and os.path.exists(os.path.join(root, "scripts", "homebrew-cask.sh")):
+    made = subprocess.run(["bash", os.path.join(root, "scripts", "homebrew-cask.sh"), version, "0" * 64],
+                          capture_output=True, text=True, cwd=root)
+    min_os = re.search(r'^MIN_OS="(\d+)', read("build.sh"), re.M)
+    if made.returncode != 0:
+        problems.append(f"scripts/homebrew-cask.sh fails: {made.stderr.strip()}")
+    elif min_os and not re.search(r"depends_on macos: :\w+", made.stdout):
+        problems.append(f"the Homebrew cask names no oldest macOS for MIN_OS {min_os.group(1)}")
 
 items = []
 sizes = {}

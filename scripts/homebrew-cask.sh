@@ -34,7 +34,19 @@ if [ -z "$sha" ]; then
 fi
 [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || die "not a SHA-256: $sha"
 
-url="https://github.com/Pschmetzer/deploy-center/releases/download/v${version}/DeployCenter-${version}-universal.zip"
+# Forks release under their own name: RELEASE_REPO=owner/name (release.sh passes it on).
+repo="${RELEASE_REPO:-Pschmetzer/deploy-center}"
+url="https://github.com/${repo}/releases/download/v${version}/DeployCenter-${version}-universal.zip"
+
+# The oldest macOS comes from build.sh (MIN_OS), so the cask cannot say something else.
+min_os="$(sed -n 's/^MIN_OS="\([0-9][0-9]*\)[."].*/\1/p' build.sh | head -n 1)"
+case "$min_os" in
+  13) macos_sym=ventura ;;
+  14) macos_sym=sonoma ;;
+  15) macos_sym=sequoia ;;
+  26) macos_sym=tahoe ;;
+  *) die "MIN_OS ${min_os:-?} in build.sh has no Homebrew name here; add it to the table in $0" ;;
+esac
 
 cask() {
 cat <<CASK
@@ -42,9 +54,9 @@ cask "deploy-center" do
   version "${version}"
   sha256 "${sha}"
 
-  url "https://github.com/Pschmetzer/deploy-center/releases/download/v#{version}/DeployCenter-#{version}-universal.zip"
+  url "https://github.com/${repo}/releases/download/v#{version}/DeployCenter-#{version}-universal.zip"
   name "Deploy Center"
-  desc "Deploy Vercel and Render projects by hand and keep build costs down"
+  desc "Turn off Git auto-deploy on Vercel, Render and more, and deploy by hand"
   homepage "https://deploycenter.app/"
 
   livecheck do
@@ -53,7 +65,7 @@ cask "deploy-center" do
   end
 
   depends_on formula: "jq"
-  depends_on macos: :sequoia
+  depends_on macos: :${macos_sym}
 
   # The app updates itself (Sparkle, signed appcast on deploycenter.app), so "brew upgrade"
   # leaves it alone unless --greedy is given; brew still sees the new version via livecheck.
@@ -61,7 +73,13 @@ cask "deploy-center" do
 
   app "Deploy Center.app"
 
-  uninstall quit: "app.deploycenter.mac"
+  # The launchd jobs of guard, autofix and the daily deploy would call a deleted program otherwise.
+  uninstall launchctl: [
+              "app.deploycenter.guard",
+              "app.deploycenter.autofix",
+              "app.deploycenter.daily",
+            ],
+            quit:      "app.deploycenter.mac"
 
   # ~/.config/deploys stays: it holds which repo each disconnected Vercel project came from.
   zap trash: [

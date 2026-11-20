@@ -6,6 +6,8 @@ Status:
   Home Screen (small to extra large) and the Lock Screen. Connects to the Mac app through iCloud
   Keychain or a QR code. In TestFlight; the QR code was tried on a real iPhone (see "What was verified").
 
+The iPhone app and its widgets show **Vercel and Render** projects only; the other hosts are on the Mac and in the CLI.
+
 The Mac widget is decision 1; everything after it is about the iOS app.
 
 Steps in the owner's Apple Developer account are listed at the end and in `docs/APP-STORE.md`.

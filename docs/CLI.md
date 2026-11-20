@@ -3,7 +3,7 @@
 The app is a window over one bash script, `deploys`. You can use it on its own. It is inside the
 app at `Deploy Center.app/Contents/Resources/deploys`, and `./deploys` in this repo.
 `deploys --help` prints every command, and at its end the commands of each provider that is on.
-There is a manual page too: `man man/deploys.1` (written by `scripts/build-man.py` from this help and the table below).
+There is a manual page too: `man deploys` after a Homebrew or `install.sh` install, `man man/deploys.1` in a checkout (written by `scripts/build-man.py` from this help and the table below).
 A mistyped command gets one line with the nearest ones (`Unknown command "chaged". Did you mean: changed?`).
 
 A project is named the same way everywhere: by its name, or as `<platform>:<name>` when two
@@ -93,6 +93,11 @@ deploys explain my-project              # why a project is (not) counted as chan
 deploys diff my-project                 # commits and files between what is live and the branch
 deploys notes my-project                # the same as release notes (Markdown)
 deploys history my-project [n]          # the last n deploys
+deploys logs my-project [lines] [--follow]  # the end of the newest build log; --follow reads it again (DEPLOYS_FOLLOW_EVERY) until the build ends
+deploys rollback my-project [<id>]      # production back to the deploy before, on whichever platform it is on (asks first; --yes in scripts)
+deploys cancel my-project [<id>]        # stop a build that is running, on whichever platform
+deploys metrics --out /var/lib/node_exporter/deploys.prom   # waiting commits, their age, failures: Prometheus text
+deploys gitlab set-token                # a GitLab token into the keychain, read from stdin (GITLAB.md)
 deploys costs [days]                    # Vercel charges per day (Vercel only)
 deploys simulate [--days 30]            # estimate: auto-deploy a month vs. once a day, see SAVINGS.md
 deploys ledger                          # estimate: builds and money saved since auto-deploy was off
@@ -123,6 +128,34 @@ eval "$(deploys completion zsh)"        # tab completion (also: bash; fish: depl
 deploys deploy --help                   # the help lines of one command
 ```
 
+## Hooks: scripts around a start (`hooks.d`)
+
+Executable files named `pre-deploy*` or `post-deploy*` in `~/.config/deploys/hooks.d` (the config
+folder, see `DEPLOYS_CONFIG`) run around every start from the terminal, `deploy-changed` and the
+scheduled job. They get `DEPLOYS_HOOK` (`pre-deploy` or `post-deploy`), `DEPLOYS_PLATFORM`,
+`DEPLOYS_PROJECT`, `DEPLOYS_SHA` and, after the start, `DEPLOYS_STATE`. Their output goes to stderr.
+
+```bash
+mkdir -p ~/.config/deploys/hooks.d
+cat > ~/.config/deploys/hooks.d/pre-deploy-smoke <<'SH'
+#!/bin/sh
+# no deploy on Friday afternoon: a non-zero exit stops this start
+[ "$(date +%u%H)" -lt 515 ] || { echo "no deploys on Friday afternoon" >&2; exit 1; }
+SH
+cat > ~/.config/deploys/hooks.d/post-deploy-ping <<'SH'
+#!/bin/sh
+curl -fsS -d "$DEPLOYS_PLATFORM/$DEPLOYS_PROJECT started at ${DEPLOYS_SHA:-?}: $DEPLOYS_STATE" https://ntfy.example.com/deploys >/dev/null
+SH
+chmod 700 ~/.config/deploys/hooks.d/*
+```
+
+- A `pre-deploy` hook that exits non-zero stops that start (the rest of a group goes on); a `post-deploy` hook cannot stop anything.
+- A hook that runs longer than `DEPLOYS_HOOK_TIMEOUT` seconds (default 300, `0` no limit) is stopped and counts as failed.
+- A file that the group or others can write to, or that belongs to another account (root excepted), is never run; the line says what to `chmod`.
+- Hooks are yours: they are read from your config folder only, never from a repo or a shared `deploy-center.json`.
+
+**Not the same as `deploys hooks install`.** That puts a Git `pre-push` hook into one repo (it shows which builds a push would start). `hooks.d` has nothing to do with Git: it holds scripts that run around a deploy started here.
+
 ## JSON
 
 `--json` gives the machine answer of: `changed`, `deploy-changed`, `deploy` (one object; for a
@@ -135,6 +168,18 @@ them). `watch`, `logs`, `explain` and `diff` are text only. With `--json` an
 error still goes to stderr as text, with a non-zero exit code; stdout holds only what was done
 before it (a group that stopped halfway prints the array of the starts so far), else nothing.
 Everything after `--` is passed on as it is (a value `--json` stays a value).
+
+An example (made-up names), `deploys changed --json`: one object per project that has commits
+which are not live. The fields are those of [PROVIDERS.md](PROVIDERS.md) (`_json` fields); unknown values are `null`.
+
+```json
+[{"name":"shop-web","platform":"vercel","id":"shop-web","repo":"acme/shop-web","ref":"main",
+  "auto":false,"deployable":true,"lastState":"READY","lastSha":"3f9c2ab","lastAt":1767225600,
+  "lastMsg":"Fix cart total","changed":true,"headSha":"a41d7e0","pendingCommits":3,
+  "pendingPRs":2,"compareStatus":"ahead","risk":"green"}]
+```
+
+`jq -r '.[] | "\(.platform)/\(.name): \(.pendingCommits) waiting"'` turns it into one line per project.
 
 ## Exit codes
 
@@ -167,14 +212,29 @@ Everything after `--` is passed on as it is (a value `--json` stays a value).
 | `DEPLOYS_ANTHROPIC_API_KEY` | the key for `deploys ai`, before `ANTHROPIC_API_KEY` and the keychain |
 | `DEPLOYS_VERCEL_USD_PER_MIN`, `DEPLOYS_RENDER_USD_PER_MIN` | build-minute prices for `simulate` and `ledger` |
 | `DEPLOYS_TIMEOUT` | the older name of `DEPLOYS_CLI_TIMEOUT`, used where that is not set |
-| `DEPLOYS_LOG_MAX_BYTES` | size past which a launchd job log is renamed to `.1` (default 1 MB) |
-| `DEPLOYS_CLI_TIMEOUT` | seconds a `gh api`, `glab api` or `vercel api` call may take (default 90; `0` no limit) |
+| `DEPLOYS_LOG_MAX_BYTES` | size past which a job log is renamed to `.1` (default 1 MB); runs from launchd rotate by themselves, others with `DEPLOYS_LOG_ROTATE=1` |
+| `DEPLOYS_CLI_TIMEOUT` | seconds a `gh api`, `glab api` or `vercel api` call may take (default 90; `0` no limit). The Vercel CLI asks `DEPLOYS_VERCEL_TIMEOUT` first (default 60), then this one |
+| `DEPLOYS_VERCEL_TIMEOUT` | seconds one `vercel` call may take (default 60; falls back to `DEPLOYS_CLI_TIMEOUT` when that is set) |
 | `DEPLOYS_VERCEL_TEAM` | the Vercel team id, if the token sees several teams |
 | `DEPLOYS_AMPLIFY_PROFILE` | the aws CLI profile for Amplify |
 | `DEPLOYS_CLOUDFLARE_TOGGLE` | `1`: Cloudflare deploys switch push-builds on for the start ([providers/cloudflare.md](providers/cloudflare.md)) |
 | `DEPLOYS_COOLIFY_ALLOW_HTTP` | `1`: the Coolify token may go to a plain `http://` instance that is not this machine |
 | `DEPLOYS_NETLIFY_POLLS` | how often a Netlify start looks for its new build (default 15) |
-| `NO_COLOR` | no colour |
+| `<NAME>_CMD` | a command that prints a key, asked after the variable `<NAME>` and before the keychain (`RENDER_API_KEY_CMD='op read op://vault/render/key'`; 1Password, pass, Vault, a company tool). First line of its output, 20 s limit. For CI and for Macs where the keychain is off limits |
+| `DEPLOYS_NOTIFY_CMD` | your own command for notifications (ntfy, a webhook through `curl`, `notify-send` on Linux): the text is on its stdin and in `DEPLOYS_MESSAGE`, 20 s limit |
+| `DEPLOYS_CI_GRACE` | seconds a young commit without any check counts as "CI not started yet" for `--when-green` (default 90; [SAFE-DEPLOY.md](SAFE-DEPLOY.md)) |
+| `DEPLOYS_CI_IGNORE` | a regex for check names that do not count for `--when-green` (an optional check that is always red) |
+| `DEPLOYS_NO_JOURNAL` | `1`: a start from the terminal writes no journal line (tests, containers) |
+| `DEPLOYS_HOOK_TIMEOUT` | seconds one `hooks.d` script may run (default 300; `0` no limit; see "Hooks" below) |
+| `DEPLOYS_LOG_ROTATE` | `1`: rotate the job log of this run (the jobs from `schedule`, `guard schedule` and `autofix schedule` set it; `DEPLOYS_LOG_MAX_BYTES` is the size) |
+| `DEPLOYS_FOLLOW_EVERY` | seconds between two reads of `logs --follow` (default 5) |
+| `DEPLOYS_STRIP_ESC` | `1`: cut colors and control characters out of build logs also on a pipe or into a file (for text that goes into a ticket) |
+| `DEPLOYS_ROUTINE_API` | where autofix hand-overs go (default Anthropic's routines API; https only, it receives your token) |
+| `DEPLOYS_ROUTINE_BETA` | the `anthropic-beta` header of those calls (default `experimental-cc-routine-2026-04-01`); set it when Anthropic renames the beta and autofix answers with an API error ([AUTOFIX.md](AUTOFIX.md)) |
+| `DEPLOYS_SCAN_FOREGROUND` | `1`: `scan start` and `check start` run in the foreground instead of a background process, so a CI job ends after the scan ([SCAN.md](SCAN.md)) |
+| `DEPLOYS_TEAM_REFRESH` | `1`: read the shared files from GitHub again whatever the cache's age (as `team refresh`; the age is `DEPLOYS_TEAM_TTL`) |
+| `DEPLOYS_LAUNCH_DIR` | another folder for the launchd job files (default `~/Library/LaunchAgents`; for tests and sandboxed accounts) |
+| `NO_COLOR` | no color |
 
 **Budget brake.** `budget.json` (`deploys budget set 50`) holds dollars a month of Vercel build
 charges. Before `deploy-changed --yes` starts anything it adds this month's charges up to yesterday

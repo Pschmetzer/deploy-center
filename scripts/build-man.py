@@ -60,15 +60,48 @@ def env_rows():
     return rows
 
 
+def man_date():
+    """A date that only a release changes: SOURCE_DATE_EPOCH, else the date in the CHANGELOG heading of VERSION,
+    else the pubDate of that version in the appcast (so the page does not change with every commit)."""
+    import datetime
+    import email.utils
+    epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    if epoch and epoch.isdigit():
+        return datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc).strftime("%Y-%m-%d")
+    version = open(os.path.join(ROOT, "VERSION"), encoding="utf-8").read().strip()
+    try:
+        log = open(os.path.join(ROOT, "CHANGELOG.md"), encoding="utf-8").read()
+        m = re.search(r"^## \[?" + re.escape(version) + r"\]? - (\d{4}-\d{2}-\d{2})", log, re.M)
+        if m:
+            return m.group(1)
+        feed = open(os.path.join(ROOT, "site", "appcast.xml"), encoding="utf-8").read()
+        for item in re.findall(r"<item>(.*?)</item>", feed, re.S):
+            if re.search(r"shortVersionString>" + re.escape(version) + "<", item):
+                pub = re.search(r"<pubDate>(.*?)</pubDate>", item)
+                if pub:
+                    return email.utils.parsedate_to_datetime(pub.group(1)).strftime("%Y-%m-%d")
+    except (OSError, TypeError, ValueError):
+        pass
+    return ""
+
+
 def render():
     version = open(os.path.join(ROOT, "VERSION"), encoding="utf-8").read().strip()
-    help_text = subprocess.run([os.path.join(ROOT, "deploys"), "--help"], capture_output=True, text=True,
-                               env=dict(os.environ, NO_COLOR="1")).stdout
+    # With every host on, in an empty config folder: the page must not depend on the providers.json of whoever builds it.
+    import glob
+    import json
+    import tempfile
+    names = sorted(os.path.basename(f)[:-3] for f in glob.glob(os.path.join(ROOT, "providers", "*.sh")))
+    with tempfile.TemporaryDirectory() as cfg:
+        with open(os.path.join(cfg, "providers.json"), "w", encoding="utf-8") as f:
+            json.dump({"enabled": names}, f)
+        help_text = subprocess.run([os.path.join(ROOT, "deploys"), "--help"], capture_output=True, text=True,
+                                   env=dict(os.environ, NO_COLOR="1", DEPLOYS_CONFIG=cfg)).stdout
     s = sections(help_text)
     intro = s.get("", "").split("\n\n")[0]
     name_line = re.sub(r"\s+", " ", intro.split("\n\n")[0]).strip()
     name_desc = name_line.split("—", 1)[1].strip().rstrip(".") if "—" in name_line else "deploy by hand"
-    out = [f'.TH DEPLOYS 1 "" "deploys {version}" "Deploy Center"\n',
+    out = [f'.TH DEPLOYS 1 "{man_date()}" "deploys {version}" "Deploy Center"\n',
            ".SH NAME\n", f"deploys \\- {esc(name_desc)}\n",
            ".SH SYNOPSIS\n", ".B deploys\n", ".I command\n", "[options]\n",
            ".SH DESCRIPTION\n", para(name_line.split("—", 1)[-1] if "—" in name_line else name_line)]
@@ -87,8 +120,15 @@ def render():
     if rows:
         out.append(".SH ENVIRONMENT\n")
         for name, what in rows:
+            if not what.strip():
+                sys.exit(f"build-man: the environment variable {name} has no description in docs/CLI.md")
             out += [".TP\n", f".B {esc(name)}\n", esc(what) + "\n"]
-    out += [".SH SEE ALSO\n", "The full reference: docs/CLI.md in the repository, and https://deploycenter.app/docs/cli/\n"]
+    out += [".SH BUGS\n", "Report problems at https://github.com/Pschmetzer/deploy-center/issues; "
+            "security problems as described in SECURITY.md in the repository.\n",
+            ".SH AUTHORS\n", "Deploy Center contributors (see the repository).\n",
+            ".SH LICENSE\n", "MIT.\n",
+            ".SH SEE ALSO\n", "The full reference: docs/CLI.md in the repository, and https://deploycenter.app/docs/cli/\n",
+            ".PP\n", ".BR jq (1),\n", ".BR curl (1),\n", ".BR gh (1)\n"]
     return "".join(out)
 
 

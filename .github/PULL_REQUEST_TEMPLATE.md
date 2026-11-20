@@ -2,12 +2,19 @@
 
 <!-- One or two sentences. Link the issue if there is one. -->
 
+## AI help
+
+- [ ] Parts of this were written with an AI tool (Claude, Copilot, ...). Which parts, and did you read and run them yourself?
+
+## Screenshots
+
+<!-- A change to the app, the iPhone app or the website: before and after, taken in demo mode. Write "none" for anything else. -->
+
 ## Checks
 
-- [ ] The tests CI runs pass: `bash tests/script-tests.sh`, `tests/team-tests.sh`, `tests/install-tests.sh`,
-      `tests/release-tests.sh`, `tests/app-tests.sh`, `integrations/tests/run.sh` (see `.github/workflows/ci.yml`)
+- [ ] The tests pass: `bash tests/all.sh` (every suite; `--list` shows them, `--only <name>` runs one; CI runs the same, see `tests/suites.txt`)
 - [ ] Integrations touched: `npm test` passes in the one you changed (`integrations/vscode`, `integrations/raycast`, `integrations/mcp`); iPhone app: `ios/test.sh` and `ios/Tests/run.sh`
-- [ ] `shellcheck --severity=warning` is clean for changed shell scripts, and `scripts/check-public.sh` passes
+- [ ] `scripts/lint.sh` passes (shellcheck, actionlint, `scripts/check-public.sh`, `scripts/check-size.sh`)
 - [ ] `./build.sh` builds
 - [ ] `CHANGELOG.md` has a line under Unreleased (or the PR has the label `no-changelog`)
 - [ ] Docs changed with the behaviour; a change to `README.md`, `docs/NUMBERS.md` or `docs/SAVINGS.md` also goes into its German twin

@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vercel build minutes and the build queue · Deploy Center</title>
 <meta name="description" content="How build minutes add up from pushes, projects and branches, how to measure them with your own numbers, and what shortens the queue.">
+<meta name="author" content="Deploy Center">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
@@ -14,6 +15,9 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-16">
 <meta property="og:title" content="Vercel build minutes and the build queue · Deploy Center">
 <meta property="og:description" content="How build minutes add up from pushes, projects and branches, how to measure them with your own numbers, and what shortens the queue.">
 <meta property="og:url" content="https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/">
@@ -43,7 +47,7 @@
   "url": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/",
   "mainEntityOfPage": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/",
   "datePublished": "2026-11-16",
-  "dateModified": "2026-11-18",
+  "dateModified": "2026-11-20",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -127,6 +131,32 @@
     "item": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/"
    }
   ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Vercel build minutes and the build queue: why many pushes cost and wait",
+  "description": "How build minutes add up from pushes, projects and branches, how to measure them with your own numbers, and what shortens the queue.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Count the builds",
+    "url": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/#count"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "Measure with your own numbers",
+    "url": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/#measure"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "Cut builds first, then build time",
+    "url": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/#cut"
+   }
+  ]
  }
 ]
 </script>
@@ -142,7 +172,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Vercel build minutes and the build queue: why many pushes cost and wait</h1>
 <p class="answer">Build minutes are the number of builds multiplied by how long each takes. Every push builds every connected project, so the count grows with pushes, projects and branches, not with releases. Measure it, then cut builds before you tune build time.</p>
-<p class="meta">Last updated <time datetime="2026-11-18">18 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p>A push does not build one thing. Vercel builds every project connected to the repository, production on the production branch and a preview on every other branch. Builds that do not fit into what your plan runs at once wait in a queue, so many pushes also mean waiting. The limits depend on your plan: read them on Vercel's pricing page instead of trusting a number from a blog.</p>
 <h2 id="count">1. Count the builds</h2>

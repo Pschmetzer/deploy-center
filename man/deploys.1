@@ -1,4 +1,4 @@
-.TH DEPLOYS 1 "" "deploys 0.11.0" "Deploy Center"
+.TH DEPLOYS 1 "2026-11-19" "deploys 0.11.0" "Deploy Center"
 .SH NAME
 deploys \- turn off auto\-deploy on Vercel, Render and the other platforms in providers/ (deploys providers), then deploy by hand
 .SH SYNOPSIS
@@ -149,6 +149,12 @@ In the config folder (DEPLOYS_CONFIG, default ~/.config/deploys):
 .fi
 .SH PROVIDER COMMANDS
 .nf
+  amplify      list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor on
+  cloudflare   list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor on account previews selftest
+  coolify      list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor on set\-url
+  digitalocean list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor on
+  hook         list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor add remove rm
+  netlify      list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor previews
   render       list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor on autodeploy\-on forget\-key
   vercel       list deploy meta ready json has off deploy\-json status latest cancel rollback logs url set\-key doctor on autodeploy\-on map previews team
 .fi
@@ -191,10 +197,13 @@ build\-minute prices for simulate and ledger
 the older name of DEPLOYS_CLI_TIMEOUT, used where that is not set
 .TP
 .B DEPLOYS_LOG_MAX_BYTES
-size past which a launchd job log is renamed to .1 (default 1 MB)
+size past which a job log is renamed to .1 (default 1 MB); runs from launchd rotate by themselves, others with DEPLOYS_LOG_ROTATE=1
 .TP
 .B DEPLOYS_CLI_TIMEOUT
-seconds a gh api, glab api or vercel api call may take (default 90; 0 no limit)
+seconds a gh api, glab api or vercel api call may take (default 90; 0 no limit). The Vercel CLI asks DEPLOYS_VERCEL_TIMEOUT first (default 60), then this one
+.TP
+.B DEPLOYS_VERCEL_TIMEOUT
+seconds one vercel call may take (default 60; falls back to DEPLOYS_CLI_TIMEOUT when that is set)
 .TP
 .B DEPLOYS_VERCEL_TEAM
 the Vercel team id, if the token sees several teams
@@ -211,7 +220,59 @@ the aws CLI profile for Amplify
 .B DEPLOYS_NETLIFY_POLLS
 how often a Netlify start looks for its new build (default 15)
 .TP
+.B <NAME>_CMD
+a command that prints a key, asked after the variable <NAME> and before the keychain (RENDER_API_KEY_CMD='op read op://vault/render/key'; 1Password, pass, Vault, a company tool). First line of its output, 20 s limit. For CI and for Macs where the keychain is off limits
+.TP
+.B DEPLOYS_NOTIFY_CMD
+your own command for notifications (ntfy, a webhook through curl, notify\-send on Linux): the text is on its stdin and in DEPLOYS_MESSAGE, 20 s limit
+.TP
+.B DEPLOYS_CI_GRACE
+seconds a young commit without any check counts as "CI not started yet" for \-\-when\-green (default 90; SAFE\-DEPLOY.md)
+.TP
+.B DEPLOYS_CI_IGNORE
+a regex for check names that do not count for \-\-when\-green (an optional check that is always red)
+.TP
+.B DEPLOYS_NO_JOURNAL
+1: a start from the terminal writes no journal line (tests, containers)
+.TP
+.B DEPLOYS_HOOK_TIMEOUT
+seconds one hooks.d script may run (default 300; 0 no limit; see "Hooks" below)
+.TP
+.B DEPLOYS_LOG_ROTATE
+1: rotate the job log of this run (the jobs from schedule, guard schedule and autofix schedule set it; DEPLOYS_LOG_MAX_BYTES is the size)
+.TP
+.B DEPLOYS_FOLLOW_EVERY
+seconds between two reads of logs \-\-follow (default 5)
+.TP
+.B DEPLOYS_STRIP_ESC
+1: cut colors and control characters out of build logs also on a pipe or into a file (for text that goes into a ticket)
+.TP
+.B DEPLOYS_ROUTINE_API
+where autofix hand\-overs go (default Anthropic's routines API; https only, it receives your token)
+.TP
+.B DEPLOYS_ROUTINE_BETA
+the anthropic\-beta header of those calls (default experimental\-cc\-routine\-2026\-04\-01); set it when Anthropic renames the beta and autofix answers with an API error (AUTOFIX.md)
+.TP
+.B DEPLOYS_SCAN_FOREGROUND
+1: scan start and check start run in the foreground instead of a background process, so a CI job ends after the scan (SCAN.md)
+.TP
+.B DEPLOYS_TEAM_REFRESH
+1: read the shared files from GitHub again whatever the cache's age (as team refresh; the age is DEPLOYS_TEAM_TTL)
+.TP
+.B DEPLOYS_LAUNCH_DIR
+another folder for the launchd job files (default ~/Library/LaunchAgents; for tests and sandboxed accounts)
+.TP
 .B NO_COLOR
-no colour
+no color
+.SH BUGS
+Report problems at https://github.com/Pschmetzer/deploy-center/issues; security problems as described in SECURITY.md in the repository.
+.SH AUTHORS
+Deploy Center contributors (see the repository).
+.SH LICENSE
+MIT.
 .SH SEE ALSO
 The full reference: docs/CLI.md in the repository, and https://deploycenter.app/docs/cli/
+.PP
+.BR jq (1),
+.BR curl (1),
+.BR gh (1)

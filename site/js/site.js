@@ -22,7 +22,8 @@
       try { localStorage.setItem('theme', next); } catch (e) { /* private window: the choice lasts for this page */ }
       label();
     });
-    links.appendChild(btn);
+    var dl = links.querySelector('a.dl');
+    if (dl) links.insertBefore(btn, dl); else links.appendChild(btn);   // before "Download", as on the home page
   }
 
   // copy button on code blocks
@@ -57,18 +58,28 @@
   st.className = 'sr'; st.setAttribute('role', 'status'); st.setAttribute('aria-live', 'polite');
   list.parentNode.insertBefore(st, list);
   q.closest('.site-search').hidden = false;   // shown only when this script runs
-  var index = null, loading = null;
+  var index = null, loading = null, offline = false;
+  // "auto-deploy" and "autodeploy" are one word here (as in the docs search)
+  function norm(s) { return s.toLowerCase().replace(/[-_`<>]/g, ''); }
   function load() {
     if (!loading) {
-      loading = fetch('/docs/search-index.json').then(function (r) { return r.json(); }).then(function (d) {
-        index = d.map(function (e) { return { e: e, k: (e.p + ' ' + e.h + ' ' + e.t).toLowerCase(), p: e.p.toLowerCase() }; });
-      }).catch(function () { index = []; });
+      loading = fetch('/docs/search-index.json').then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }).then(function (d) {
+        offline = false;
+        index = d.map(function (e) { return { e: e, k: norm(e.p + ' ' + e.h + ' ' + e.t), p: norm(e.p) }; });
+      }).catch(function () {
+        // a failure is not kept: the next focus asks again (offline, a changed network)
+        index = null; loading = null; offline = true;
+      });
     }
     return loading;
   }
   function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function render() {
-    var terms = q.value.toLowerCase().split(/\s+/).filter(Boolean), found = [];
+    var terms = norm(q.value).split(/\s+/).filter(Boolean), found = [];
+    if (terms.length && offline) {
+      list.innerHTML = '<li class="empty">Search is not available offline. Try again when you are back online.</li>';
+      list.hidden = false; st.textContent = 'Search is not available offline'; return;
+    }
     if (!terms.length || !index) { list.hidden = true; list.innerHTML = ''; st.textContent = ''; return; }
     index.forEach(function (x) {
       var score = 0;

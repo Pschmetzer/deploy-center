@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deploy to Vercel from GitHub Actions: label or schedule</title>
 <meta name="description" content="Deploy on your terms from GitHub Actions: a deploy hook on a label, a prebuilt deploy with the Vercel CLI, or a daily deploy of only what changed.">
+<meta name="author" content="Deploy Center">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
@@ -14,6 +15,9 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-16">
 <meta property="og:title" content="Deploy to Vercel from GitHub Actions: label or schedule">
 <meta property="og:description" content="Deploy on your terms from GitHub Actions: a deploy hook on a label, a prebuilt deploy with the Vercel CLI, or a daily deploy of only what changed.">
 <meta property="og:url" content="https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/">
@@ -43,7 +47,7 @@
   "url": "https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/",
   "mainEntityOfPage": "https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/",
   "datePublished": "2026-11-16",
-  "dateModified": "2026-11-18",
+  "dateModified": "2026-11-20",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -127,6 +131,32 @@
     "item": "https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/"
    }
   ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Deploy to Vercel from GitHub Actions: label or schedule",
+  "description": "Deploy on your terms from GitHub Actions: a deploy hook on a label, a prebuilt deploy with the Vercel CLI, or a daily deploy of only what changed.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "A deploy hook on a label",
+    "url": "https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/#label"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "A prebuilt deploy with the Vercel CLI",
+    "url": "https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/#prebuilt"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "One daily deploy of what changed",
+    "url": "https://deploycenter.app/guides/deploy-to-vercel-from-github-actions/#daily"
+   }
+  ]
  }
 ]
 </script>
@@ -142,7 +172,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Deploy to Vercel from GitHub Actions: label or schedule</h1>
 <p class="answer">Turn off Git auto-deploy, then let a workflow deploy when you decide: a deploy hook called when a pull request with the label <code>deploy</code> is merged, a prebuilt deploy with the Vercel CLI, or a daily job that deploys only the projects that changed.</p>
-<p class="meta">Last updated <time datetime="2026-11-18">18 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p>With Git auto-deploy on, every push builds. A workflow gives you the same automation on a rule you choose. Pick one of three.</p>
 <h2 id="label">1. A deploy hook on a label</h2>

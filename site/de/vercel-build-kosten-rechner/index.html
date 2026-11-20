@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vercel-Build-Kosten-Rechner: was Auto-Deploy kostet · Deploy Center</title>
 <meta name="description" content="Schätze, was Auto-Deploy bei Vercel oder Render im Monat kostet: Projekte × Pushes × Kosten pro Build, verglichen mit Deploy von Hand. Kostenlos, läuft in deinem Browser.">
+<meta name="author" content="Deploy Center">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
@@ -14,7 +15,7 @@
 <link rel="alternate" hreflang="en" href="https://deploycenter.app/vercel-build-cost-calculator/">
 <link rel="alternate" hreflang="de" href="https://deploycenter.app/de/vercel-build-kosten-rechner/">
 <link rel="alternate" hreflang="x-default" href="https://deploycenter.app/vercel-build-cost-calculator/">
-<meta property="og:type" content="article">
+<meta property="og:type" content="website">
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="de_DE">
 <meta property="og:title" content="Vercel-Build-Kosten-Rechner: was Auto-Deploy kostet · Deploy Center">
@@ -46,7 +47,7 @@
   "url": "https://deploycenter.app/de/vercel-build-kosten-rechner/",
   "mainEntityOfPage": "https://deploycenter.app/de/vercel-build-kosten-rechner/",
   "datePublished": "2026-11-10",
-  "dateModified": "2026-11-18",
+  "dateModified": "2026-11-20",
   "inLanguage": "de",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -147,10 +148,10 @@
 </script>
 </head>
 <body>
-<a class="skip" href="#main">Skip to content</a>
-<nav class="top" aria-label="Main"><div class="wrap">
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
-  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/de/vercel-build-kosten-rechner/" aria-current="page">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/guides/" lang="en">Guides</a><a href="/de/vercel-build-kosten-rechner/" aria-current="page">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
 </div></nav>
 
 <main id="main" class="wrap narrow"><article>
@@ -208,10 +209,22 @@ Ersparnis          = mit Auto-Deploy − Deploy von Hand</code></pre>
 
 <h2 id="embed">Den Rechner auf der eigenen Seite einbauen</h2>
 <p>Kopiere das in eine Seite, einen Blogbeitrag oder ein Newsletter-Archiv. Der Rechner läuft im Frame, im Browser der Leserin oder des Lesers, und verlinkt hierher zurück.</p>
+<pre tabindex="0" role="region" aria-label="Code example"><code>&lt;iframe id="dc-calc" src="https://deploycenter.app/de/vercel-build-kosten-rechner/?embed=1"
+  title="Vercel-Build-Kosten-Rechner" width="100%" height="620"
+  loading="lazy" style="border:0"&gt;&lt;/iframe&gt;
+&lt;script&gt;
+addEventListener("message", function (e) {
+  if (e.origin === "https://deploycenter.app" &amp;&amp; e.data &amp;&amp; e.data.deploycenterCalculatorHeight)
+    document.getElementById("dc-calc").style.height = e.data.deploycenterCalculatorHeight + "px";
+});
+&lt;/script&gt;</code></pre>
+<p>Der Frame meldet seine Höhe, braucht also bei keiner Breite Scrollbalken; ohne das Skript bleibt er 620 Pixel hoch. Hänge <code>&amp;p=12&amp;u=8&amp;c=6&amp;d=1&amp;w=22</code> an, um mit deinen eigenen Zahlen zu starten (Projekte, Pushes, Cent je Build, Deploys von Hand, Arbeitstage).
+Manche Seiten entfernen Frames (Newsletter-Archive zum Beispiel). Diese Fassung behält einen Link zum Rechner:</p>
 <pre tabindex="0" role="region" aria-label="Code example"><code>&lt;iframe src="https://deploycenter.app/de/vercel-build-kosten-rechner/?embed=1"
   title="Vercel-Build-Kosten-Rechner" width="100%" height="620"
-  loading="lazy" style="border:0"&gt;&lt;/iframe&gt;</code></pre>
-<p>Hänge <code>&amp;p=12&amp;u=8&amp;c=6&amp;d=1</code> an, um mit deinen eigenen Zahlen zu starten. Die englische Fassung: <a href="/vercel-build-cost-calculator/" hreflang="en" lang="en">Vercel build cost calculator</a>.</p>
+  loading="lazy" style="border:0"&gt;&lt;/iframe&gt;
+&lt;p&gt;Quelle: &lt;a href="https://deploycenter.app/de/vercel-build-kosten-rechner/"&gt;Deploy-Center-Kostenrechner&lt;/a&gt;&lt;/p&gt;</code></pre>
+<p> Die englische Fassung: <a href="/vercel-build-cost-calculator/" hreflang="en" lang="en">Vercel build cost calculator</a>.</p>
 
 <h2 id="faq">Fragen</h2>
   <details><summary>Was kostet ein Vercel-Build?</summary><p>Das hängt von deinem Tarif, der Build-Maschine und der Laufzeit des Builds ab. Teile die Build-Kosten des letzten Monats auf deiner Nutzungsseite durch die Zahl der Builds, dann hast du deine eigene Zahl.</p></details>
@@ -246,7 +259,7 @@ Ersparnis          = mit Auto-Deploy − Deploy von Hand</code></pre>
 </article></main>
 <p class="embed-credit"><a href="https://deploycenter.app/de/vercel-build-kosten-rechner/" target="_blank" rel="noopener">Vercel-Build-Kosten-Rechner · Deploy Center</a></p>
 
-<footer class="site"><div class="wrap">
+<footer class="site" lang="en"><div class="wrap">
   <div class="cols">
     <div><h2>Guides</h2><ul>
       <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
@@ -278,8 +291,8 @@ Ersparnis          = mit Auto-Deploy − Deploy von Hand</code></pre>
       <li><a href="/llms.txt">llms.txt</a></li>
     </ul></div>
     <div><h2>Legal</h2><ul>
-      <li><a href="/impressum.html">Impressum</a></li>
-      <li><a href="/datenschutz.html">Datenschutz</a></li>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
     </ul></div>
   </div>
   <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>

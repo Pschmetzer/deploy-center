@@ -1,0 +1,13 @@
+/* The color tokens of the whole site: the home page (home.css), the guides, blog, calculator and 404 (site.css)
+   and the docs (docs.css) import this one file, so a color cannot drift between them. Dark by default, light
+   when the system asks; data-theme is the choice made with the theme switch (read in <head> of each page).
+   Light values keep 4.5:1 on white for text and links (WCAG 1.4.3). */
+:root{color-scheme:dark;
+  --bg:#0b0d12; --bg2:#10131a; --card:#151924; --line:#232838; --text:#e9ecf3; --muted:#a3abbd;
+  --accent:#4f7cff; --accent2:#8b5cf6; --btn-a:#3a62e0; --btn-b:#7a3fe0; --green:#34c759; --red:#ff5f57; --orange:#ff9f0a;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f3f4f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#535a6b;--accent:#2f5fe8;--accent2:#7c3aed;--btn-a:#2f5fe8;--btn-b:#7c3aed;--green:#177a2e;--red:#d93025;--orange:#b25e00}
+}
+:root[data-theme="light"]{color-scheme:light;--bg:#fbfbfd;--bg2:#f3f4f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#535a6b;--accent:#2f5fe8;--accent2:#7c3aed;--btn-a:#2f5fe8;--btn-b:#7c3aed;--green:#177a2e;--red:#d93025;--orange:#b25e00}
+:root[data-theme="dark"]{color-scheme:dark}

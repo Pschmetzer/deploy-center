@@ -100,7 +100,7 @@ Viele Pushes auf einmal (KI-Agenten)? [Sichere Deploys](docs/SAFE-DEPLOY.md) (En
 - Claude fragen, mit deinem eigenen Anthropic-Key: warum ein Build scheiterte, Release-Notes, ist das sicher zu deployen. [Claude in der App](docs/CLAUDE-IN-APP.md) (Englisch)
 - Sichere Deploys (CLI: nur bei grüner CI mit `--when-green`, Health-Check mit Rollback, Deploy-Fenster), ein Wächter, der Auto-Deploy wieder abschaltet, und ein Team-Modus ohne Server. [Sichere Deploys](docs/SAFE-DEPLOY.md) · [Wächter](docs/GUARD.de.md) · [Team](docs/TEAM.md) (Englisch)
 - Bug-Scan: Claude Code auf deinem Mac sucht im Repo nach Bugs und öffnet einen Fix-PR. [Bug-Scan](docs/SCAN.md) (Englisch)
-- Sicherheits-Check: OSV-Scanner, gitleaks und Semgrep (kostenlos, lokal); Funde können an den Bug-Scan gehen. [Sicherheits-Check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep) (Englisch)
+- Sicherheits-Check: OSV-Scanner, gitleaks und Semgrep (kostenlos; gitleaks arbeitet offline, OSV-Scanner und Semgrep fragen `api.osv.dev` und `semgrep.dev`; kein Code verlässt Ihren Mac); Funde können an den Bug-Scan gehen. [Sicherheits-Check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep) (Englisch)
 - Englisch und Deutsch: die Sprache des Macs, oder wähle eine unter Einstellungen → Allgemein → Sprache
 
 ## Deploy Center + Claude Code

@@ -18,12 +18,12 @@ Three parts:
 ## 1. Shared config: `deploy-center.json`
 
 Put it at the root of the repo, on the default branch. `.deploy-center.json` works too.
-The schema is [`deploy-center.schema.json`](deploy-center.schema.json); point `$schema` at it and
+The schema is [`deploy-center.schema.json`](deploy-center.schema.json), also served at `https://deploycenter.app/schema/deploy-center.schema.json` (a stable address with the right content type). Point `$schema` at it and
 your editor checks the file as you type.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/Pschmetzer/deploy-center/main/docs/deploy-center.schema.json",
+  "$schema": "https://deploycenter.app/schema/deploy-center.schema.json",
   "version": 1,
   "approvals": 1,
   "health": "/api/health",
@@ -61,7 +61,7 @@ after a deploy, deploy windows). This file only says what they are.
 
 Each file is read with `gh api repos/<repo>/contents/deploy-center.json` and kept for ten minutes
 in `~/.config/deploys/team-cache/`. If GitHub cannot be reached, the saved copy is used and
-marked as stale. Read again now with `deploys team refresh` or `deploys config --refresh`.
+marked as stale. Read again now with `deploys team refresh` or `deploys config --refresh` (or `DEPLOYS_TEAM_REFRESH=1` in any command); the cache age is `DEPLOYS_TEAM_TTL` seconds (default 600).
 
 ### Merge order
 

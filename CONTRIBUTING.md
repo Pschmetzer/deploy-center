@@ -13,12 +13,14 @@ open an issue first.
 - Add a line under `## Unreleased` in `CHANGELOG.md` for anything a user would notice.
   A release with many lines may start with `### Highlights` (three to five bullets for the update window) and put the rest under `### All changes`; `release.sh` and the Sparkle notes take the whole section. A heading may carry a date (`## 0.11.0 - 2027-01-05`).
 
-## Licence of your contribution
+## License of your contribution
 
 Deploy Center is MIT licensed. With a pull request you agree that your contribution is under the same
-licence (inbound = outbound). There is no CLA.
+license (inbound = outbound). There is no CLA.
 
 ## Build
+
+The Python scripts (`scripts/*.py`) need **Python 3.9 or newer** (the `python3` of the Command Line Tools is 3.9; the checks were run on 3.9.6 and CI uses the runner's newer Python, since no 3.9 is offered for Ubuntu 26.04). Only the standard library is used.
 
 Needs macOS 15 and `swiftc` (Xcode or the Command Line Tools), plus `jq`.
 There is no Xcode project: `build.sh` compiles `app/*.swift` and `shared/*.swift` into a universal app (widgets and the iOS app: docs/WIDGETS-IOS.md).
@@ -50,19 +52,20 @@ All suites at once, with a summary at the end (no network, no real projects):
 ```bash
 bash tests/all.sh            # CLI, team, install, release, app (on macOS) and integration tests
 bash tests/all.sh --quick    # without the app and integration tests (no Swift build, no node)
+bash tests/all.sh --list     # the suites, one per line (the list is tests/suites.txt)
+bash tests/all.sh --only team   # only the suites whose path contains "team"
 ```
 
 The integration tests need `npm ci` in `integrations/mcp` and `integrations/vscode` first.
 
-CI (`.github/workflows/ci.yml`) runs these on macOS, and they must pass:
+CI (`.github/workflows/ci.yml`) runs these, and they must pass. The two checks for personal data and file sizes run on Ubuntu, shellcheck and the tests on macOS:
 
 ```bash
+scripts/lint.sh                     # all lint steps at once: shellcheck, actionlint, check-public, check-size, plutil
 scripts/check-public.sh             # no personal data in tracked files
 scripts/check-size.sh               # line ceilings for deploys, lib/, providers/ and the Swift files
 actionlint .github/workflows/*.yml docs/deploy-on-label.yml examples/*.yml integrations/*/examples/*.yml
 shellcheck --severity=warning deploys providers/*.sh build.sh release.sh scripts/*.sh tests/*.sh tests/lib/*.sh tests/providers/*.sh lib/*.sh
-shellcheck --severity=warning integrations/*/*.sh integrations/claude-code/scripts/*.sh integrations/hooks/pre-push integrations/tests/*.sh
-shellcheck site/install.sh
 plutil -lint scripts/*.plist.example
 swiftc -typecheck scripts/make-icon.swift
 bash tests/script-tests.sh          # the rules in deploys, and tests/providers/*.sh
@@ -88,7 +91,7 @@ The other CI jobs:
 - **public-commits:** on a pull request, `scripts/check-public.sh --stdin` over the commit messages.
 - **changelog:** on a pull request that changes `deploys` or `app/` but not `CHANGELOG.md`, a warning. The label `no-changelog` silences it.
 
-Not in CI, run it by hand when you touch the app:
+The app's sources are compiled by CI (`./build.sh --widgets`). For a faster check while you work on the app, only the type check:
 
 ```bash
 swiftc -parse-as-library -swift-version 5 -typecheck app/*.swift shared/*.swift

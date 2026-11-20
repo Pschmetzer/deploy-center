@@ -1,13 +1,8 @@
-/* Deploy Center docs. Same tokens as site/index.html: dark by default, light when the system asks. */
-:root{color-scheme:dark;
-  --bg:#0b0d12; --bg2:#11141b; --card:#151924; --line:#232838; --text:#e9ecf3; --muted:#9aa3b5;
-  --accent:#4f7cff; --accent2:#8b5cf6; --green:#34c759; --red:#ff5f57; --orange:#ff9f0a;
-  --code:#0f1219; --radius:12px; --top:56px;
-}
-@media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]){color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475;--accent:#3462e8;--code:#f4f5f9}
-}
-:root[data-theme="light"]{color-scheme:light;--bg:#fbfbfd;--bg2:#f2f3f7;--card:#ffffff;--line:#e3e5ec;--text:#14161c;--muted:#5d6475;--accent:#3462e8;--code:#f4f5f9}
+/* Deploy Center docs. The color tokens (dark by default, light when the system asks) are in /css/tokens.css. */
+@import url("/css/tokens.css");
+:root{--code:#0f1219; --radius:12px; --top:56px}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--code:#f4f5f9}}
+:root[data-theme="light"]{--code:#f4f5f9}
 *{box-sizing:border-box}
 html{scroll-padding-top:calc(var(--top) + 16px)}
 @media (prefers-reduced-motion: no-preference){html{scroll-behavior:smooth}}
@@ -40,7 +35,7 @@ footer .fine{flex-basis:100%;font-size:12px}
 .search input:focus + kbd{display:none}
 #results{position:absolute;right:0;top:calc(100% + 6px);width:min(480px,calc(100vw - 32px));max-height:min(70vh,520px);overflow:auto;margin:0;padding:6px;list-style:none;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 24px 60px -20px rgba(0,0,0,.55)}
 #results li a{display:block;padding:8px 10px;border-radius:8px;color:var(--text)}
-#results li a:hover,#results li[aria-selected="true"] a{background:color-mix(in srgb,var(--accent) 14%,transparent);text-decoration:none}
+#results li a:hover,#results li a:focus-visible{background:color-mix(in srgb,var(--accent) 14%,transparent);text-decoration:none}
 #results small{display:block;color:var(--muted);font-size:13px;line-height:1.4;margin-top:2px}
 #results .empty{padding:10px;color:var(--muted)}
 #results mark{background:none;color:var(--accent);font-weight:600}
@@ -50,6 +45,12 @@ footer .fine{flex-basis:100%;font-size:12px}
   grid-template-columns:220px minmax(0,1fr) 220px;grid-template-areas:"side head toc" "side body toc";grid-template-rows:auto 1fr}
 .side{grid-area:side}
 .head{grid-area:head;padding-top:34px}
+/* the landmark wraps the heading, the table of contents and the text; the grid still sees them as its own children */
+.main{display:contents}
+.theme{all:unset;cursor:pointer;color:var(--muted);width:36px;height:36px;display:grid;place-items:center;border-radius:8px;flex:none}
+.theme:hover{color:var(--text);background:var(--card)}
+.theme:focus-visible{outline:2px solid var(--accent)}
+.theme[hidden]{display:none}
 .prose{grid-area:body;min-width:0;padding-bottom:80px;max-width:780px}
 .toc{grid-area:toc}
 .side,.toc{position:sticky;top:var(--top);align-self:start;max-height:calc(100vh - var(--top));overflow:auto;padding:30px 0}
@@ -75,6 +76,7 @@ details[open]>summary::after{content:"–"}
 .crumbs{display:flex;flex-wrap:wrap;gap:4px;list-style:none;margin:0 0 10px;padding:0;font-size:14px;color:var(--muted)}
 .crumbs li+li::before{content:"›";margin-right:4px;color:var(--muted)}
 .crumbs a{color:var(--muted)}
+.head h1:focus{outline:none}
 .head h1{font-size:clamp(30px,4.4vw,42px);line-height:1.12;letter-spacing:-.025em;margin:0 0 10px}
 .meta{margin:0 0 22px;font-size:14px;color:var(--muted)}
 
@@ -148,7 +150,7 @@ footer a{color:var(--muted)}
   .brand{font-size:0;gap:0}
   .search kbd{display:none}
 }
-@media print{.top,.side,.toc,.copy,footer{display:none}.layout{display:block}}
+@media print{.top,.side,.toc,.copy,.theme,footer{display:none}.layout{display:block}}
 
 /* Windows high contrast and "more contrast": keep borders, links and focus visible */
 @media (forced-colors:active){

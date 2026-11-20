@@ -33,7 +33,8 @@ if [ -z "$sha" ]; then
 fi
 [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || die "not a SHA-256: $sha"
 
-url="https://github.com/Pschmetzer/deploy-center/releases/download/v${version}/deploys-cli-${version}.tar.gz"
+repo="${RELEASE_REPO:-Pschmetzer/deploy-center}"
+url="https://github.com/${repo}/releases/download/v${version}/deploys-cli-${version}.tar.gz"
 
 # The script lives in libexec with VERSION (and providers/, once there); bin/deploys is a small
 # wrapper that execs it, so it finds them next to itself. No generated completions: the
@@ -41,7 +42,7 @@ url="https://github.com/Pschmetzer/deploy-center/releases/download/v${version}/d
 formula() {
 cat <<FORMULA
 class Deploys < Formula
-  desc "Turn off auto-deploy on Vercel and Render, then deploy what changed by hand"
+  desc "Turn off Git auto-deploy on Vercel, Render and more, then deploy by hand"
   homepage "https://deploycenter.app/"
   url "${url}"
   sha256 "${sha}"
@@ -64,6 +65,7 @@ class Deploys < Formula
     libexec.install "lib" if File.directory?("lib")
     (bin/"deploys").write_env_script libexec/"deploys", {}
     doc.install "README-CLI.md"
+    man1.install "man/deploys.1" if File.exist?("man/deploys.1")
   end
 
   def caveats
@@ -72,6 +74,7 @@ class Deploys < Formula
         brew trust pschmetzer/tap
       For Vercel install the Vercel CLI (npm install -g vercel); for what is waiting
       to deploy, the GitHub CLI (brew install gh). Then run: deploys doctor
+      Manual page: man deploys.
       Tab completion: eval "\$(deploys completion zsh)" in ~/.zshrc (or bash in ~/.bashrc).
     EOS
   end

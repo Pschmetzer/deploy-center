@@ -48,6 +48,8 @@ if [ -n "$ref" ]; then
   # lib/ (team mode, GitLab, savings) is sourced by deploys; without it those fall away in silence.
   git cat-file -e "$ref:lib" 2>/dev/null && paths+=(lib)
   git cat-file -e "$ref:integrations/hooks/pre-push" 2>/dev/null && paths+=(integrations/hooks/pre-push)
+  # The manual page (install.sh and the Homebrew formula put it where `man` looks).
+  git cat-file -e "$ref:man/deploys.1" 2>/dev/null && paths+=(man/deploys.1)
   name="deploys-cli-$version"
   tarball="$out/$name.tar.gz"
   git -c tar.umask=022 archive --format=tar --prefix="$name/" "$ref" -- "${paths[@]}" | gzip -n -9 > "$tarball"
@@ -61,6 +63,7 @@ else
   cp deploys VERSION LICENSE README-CLI.md "$dir/"
   [ -d providers ] && cp -R providers "$dir/providers"
   [ -d lib ] && cp -R lib "$dir/lib"
+  if [ -f man/deploys.1 ]; then mkdir -p "$dir/man" && cp man/deploys.1 "$dir/man/"; fi
   if [ -f integrations/hooks/pre-push ]; then mkdir -p "$dir/integrations/hooks" && cp integrations/hooks/pre-push "$dir/integrations/hooks/"; fi
   chmod -R u=rwX,go=rX "$dir"
   chmod 0755 "$dir/deploys"

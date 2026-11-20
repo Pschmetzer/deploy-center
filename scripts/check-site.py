@@ -9,7 +9,7 @@
 - .well-known/security.txt, when there, has Contact and an Expires date still in the future
     scripts/check-site.py [site]   exits 1 and lists the problems (default: site/ of this repo)
 """
-import base64, hashlib, importlib.util, json, os, re, sys
+import base64, hashlib, html, importlib.util, json, os, re, sys
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
@@ -136,6 +136,16 @@ for p, pg in pages.items():
             for item in data if isinstance(data, list) else [data]:
                 if "@context" not in item or "@type" not in item:
                     problems.append(f"{rel(p)}: JSON-LD item without @context/@type")
+            # FAQPage: the question and the answer must be on the page in the same words (Google's rule for FAQ rich results)
+            for item in data if isinstance(data, list) else [data]:
+                if item.get("@type") != "FAQPage":
+                    continue
+                with open(p, encoding="utf-8") as fh:
+                    shown = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"<script.*?</script>", "", fh.read(), flags=re.S))))
+                for q in item.get("mainEntity", []):
+                    for what, val in (("question", q.get("name", "")), ("answer", q.get("acceptedAnswer", {}).get("text", ""))):
+                        if re.sub(r"\s+", " ", val).strip() not in shown:
+                            problems.append(f"{rel(p)}: FAQPage JSON-LD {what} is not on the page in the same words: {val[:60]!r} (run scripts/build-docs.py)")
         except ValueError as e:
             problems.append(f"{rel(p)}: invalid JSON-LD: {e}")
     if not pg.lang:
