@@ -448,7 +448,12 @@ final class PhoneStore: ObservableObject {
         return false
     }
 
+    /// True while a Face ID question of a deploy is open: the app is inactive then, but nothing needs covering.
+    @Published var authenticating = false
+
     func authenticate(_ reason: String) async -> Bool {
+        authenticating = true
+        defer { authenticating = false }
         let ctx = LAContext()
         var err: NSError?
         // Face ID or Touch ID, with the passcode as a fallback; "Biometrics only" in Settings drops the

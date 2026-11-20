@@ -25,9 +25,10 @@ final class Asks: ObservableObject {
             else if store.message == nil { store.say(L("Nothing to roll back to.", "Nichts zum Zurückrollen.")) }
         }
     }
-    func canDeploy(_ p: PhoneProject, _ store: PhoneStore) -> Bool { p.deployable && !p.building && store.running[p.key] == nil }
+    /// Offline: off, and the list says why (a banner), instead of a deploy that fails after the question.
+    func canDeploy(_ p: PhoneProject, _ store: PhoneStore) -> Bool { p.deployable && !p.building && store.running[p.key] == nil && !store.offline }
     func canRollBack(_ p: PhoneProject, _ store: PhoneStore) -> Bool {
-        finding == nil && !p.paused && !p.building && store.running[p.key] == nil
+        finding == nil && !p.paused && !p.building && store.running[p.key] == nil && !store.offline
     }
 }
 
@@ -66,6 +67,7 @@ struct RootView: View {
     @SceneStorage("selection") private var selection: String?
     @State private var settings = false
     @State private var connect = false
+    @State private var captured = UIScreen.main.isCaptured
     /// A widget link that came before the list was read: name and platform.
     @State private var pendingOpen: [String]?
     /// When it was set: a link the first list does not hold is dropped after DeepLink.patience.
@@ -185,7 +187,8 @@ struct RootView: View {
             }
             #endif
         }
-        .overlay(alignment: .bottom) {
+        // Under the list, not over its last row (IDEEN-12 C10).
+        .safeAreaInset(edge: .bottom) {
             if let m = store.message { Toast(store: store, text: m) }
         }
         .sensoryFeedback(trigger: store.messageSerial) { _, _ in
@@ -194,10 +197,15 @@ struct RootView: View {
         }
         // App lock (optional) and the cover in the app switcher: nothing of the list shows.
         .overlay {
-            if store.locked || (PhoneStore.lockOnOpen && !store.demo && phase != .active) {
+            // Not while Face ID asks: its sheet makes the app inactive too, and the cover would flicker over the question (IDEEN-12 C8).
+            if store.locked || (PhoneStore.lockOnOpen && !store.demo && phase != .active && !store.authenticating) {
                 LockCover(store: store)
+            } else if captured && !store.demo {
+                // Screen recording or mirroring: the names stay out of it (IDEEN-12 C41).
+                CapturedCover()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in captured = UIScreen.main.isCaptured }
         .onChange(of: phase) { _, p in if p == .active && store.locked { Task { await store.unlock() } } }
         // Sheets lie above the cover: close them when locking (the settings sheet takes its own QR sheet along).
         .onChange(of: store.locked) { _, on in if on { settings = false; connect = false } }
@@ -286,8 +294,24 @@ struct Toast: View {
         .task(id: store.messageSerial) {
             AccessibilityNotification.Announcement(store.messageIsError ? L("Error: ", "Fehler: ") + text : text).post()
             guard !store.messageIsError, !UIAccessibility.isVoiceOverRunning else { return }
-            try? await Task.sleep(for: .seconds(5))
+            // Switch Control and Voice Control need longer to reach the close button (IDEEN-12 C48).
+            let slow = UIAccessibility.isSwitchControlRunning || UIAccessibility.isVoiceControlRunning
+            try? await Task.sleep(for: .seconds(slow ? 20 : 5))
             if store.message == text { store.message = nil }
+        }
+    }
+}
+
+/// Shown while the screen is recorded or mirrored.
+struct CapturedCover: View {
+    var body: some View {
+        ZStack {
+            Rectangle().fill(.background).ignoresSafeArea()
+            VStack(spacing: 12) {
+                Image(systemName: "record.circle").font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
+                Text(L("Hidden while the screen is recorded", "Verdeckt, solange der Bildschirm aufgenommen wird"))
+                    .font(.headline).multilineTextAlignment(.center)
+            }.padding()
         }
     }
 }
@@ -338,11 +362,17 @@ struct ProjectList: View {
     @Binding var selection: String?
     @Binding var settings: Bool
     @State private var query = ""
+    @State private var scope = Scope.all
+    @State private var showAllLive = false
     @FocusState private var searchFocus: Bool
     @Environment(\.openURL) private var openURL
+    static let collapseAbove = 15, collapseTo = 10
+    /// What the search covers besides the text (the scope bar under the search field).
+    enum Scope: Hashable { case all, failed, vercel, render }
 
     var body: some View {
-        if store.projects.isEmpty && !store.loading && store.loadedAt != nil {
+        // Also offline at the first start: nothing was ever read, and an empty list says nothing (IDEEN-12 C7).
+        if store.projects.isEmpty && !store.loading && (store.loadedAt != nil || store.offline) {
             EmptyState(store: store, settings: $settings)
         } else {
             list
@@ -352,6 +382,11 @@ struct ProjectList: View {
     private var list: some View {
         List(selection: $selection) {
             Section {
+                if store.offline {
+                    Label(L("Offline. You can read the list; deploying and rolling back are off until the connection is back.",
+                            "Offline. Du kannst die Liste lesen; Deployen und Zurückrollen sind aus, bis die Verbindung wieder da ist."),
+                          systemImage: "wifi.slash").font(.footnote).foregroundStyle(.secondary)
+                }
                 Summary(store: store)
                 let auto = store.projects.filter(\.autoDeploy).count
                 if auto > 0 {
@@ -384,9 +419,12 @@ struct ProjectList: View {
                 }
             }
             ForEach(PhoneProject.Group.allCases, id: \.self) { g in
-                let rows = store.projects.filter { $0.group == g && matches($0) }
+                let all = store.projects.filter { $0.group == g && matches($0) }
+                // A long "Up to date" list is cut to its first rows until asked for (IDEEN-12 C52); a search shows everything it finds.
+                let cut = g == .live && all.count > Self.collapseAbove && !showAllLive && query.isEmpty
+                let rows = cut ? Array(all.prefix(Self.collapseTo)) : all
                 if !rows.isEmpty {
-                    Section(g.title) {
+                    Section {
                         ForEach(rows) { p in
                             Row(p: p, running: store.running[p.key]).tag(p.key)
                                 .contextMenu { menu(p) }
@@ -406,11 +444,20 @@ struct ProjectList: View {
                                     }
                                 }
                         }
-                    }
+                        if cut {
+                            Button(L("Show all \(all.count)", "Alle \(all.count) zeigen")) { showAllLive = true }
+                        }
+                    } header: { Text(g.title) }
                 }
             }
         }
         .searchable(text: $query, prompt: L("Projects", "Projekte"))
+        .searchScopes($scope) {
+            Text(L("All", "Alle")).tag(Scope.all)
+            Text(L("Failed", "Fehler")).tag(Scope.failed)
+            Text("Vercel").tag(Scope.vercel)
+            Text("Render").tag(Scope.render)
+        }
         .searchFocused($searchFocus)
         // ⌘F, for a keyboard on the iPad.
         .background { Button("") { searchFocus = true }.keyboardShortcut("f").opacity(0).accessibilityHidden(true) }
@@ -443,6 +490,12 @@ struct ProjectList: View {
     }
 
     private func matches(_ p: PhoneProject) -> Bool {
+        switch scope {
+        case .all: break
+        case .failed: if !p.failed { return false }
+        case .vercel: if p.provider != .vercel { return false }
+        case .render: if p.provider != .render { return false }
+        }
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return true }
         return [p.name, p.repo ?? "", p.domain ?? "", p.provider.rawValue].contains { $0.localizedCaseInsensitiveContains(q) }
@@ -455,13 +508,18 @@ struct EmptyState: View {
     @Binding var settings: Bool
     var body: some View {
         ContentUnavailableView {
-            if store.errors.isEmpty {
+            if store.offline && store.loadedAt == nil {
+                Label(L("You are offline", "Du bist offline"), systemImage: "wifi.slash")
+            } else if store.errors.isEmpty {
                 Label(L("No projects found", "Keine Projekte gefunden"), systemImage: "tray")
             } else {
                 Label(L("Could not read your projects", "Konnte deine Projekte nicht lesen"), systemImage: "exclamationmark.triangle")
             }
         } description: {
-            if store.errors.isEmpty {
+            if store.offline && store.loadedAt == nil {
+                Text(L("Deploy Center needs a connection to read your projects. They load when you are back online.",
+                       "Deploy Center braucht eine Verbindung, um deine Projekte zu lesen. Sie laden, sobald du wieder online bist."))
+            } else if store.errors.isEmpty {
                 Text(L("The keys work, but these accounts show no projects or services. For a Vercel team, enter its team id in Settings.",
                        "Die Schlüssel funktionieren, aber diese Konten zeigen keine Projekte oder Dienste. Für ein Vercel-Team trage seine Team-ID in den Einstellungen ein."))
             } else {
