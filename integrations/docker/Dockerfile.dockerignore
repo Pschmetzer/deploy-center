@@ -5,3 +5,4 @@
 !VERSION
 !providers/
 !lib/
+!integrations/docker/healthcheck.sh

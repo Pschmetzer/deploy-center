@@ -1,0 +1,6 @@
+{"days":7,"since":"2027-01-01T12:00:00Z","until":"2027-01-08T12:00:00Z","entries":14,"deploys":9,"failures":1,"rollbacks":1,"forced":0,"previews":2,"skipped":1,"cancelled":0,
+ "failureRate":10,
+ "projects":[{"name":"app-web","platform":"vercel","deploys":6,"failures":1},{"name":"api","platform":"render","deploys":3,"failures":0},{"name":"x|y_<z>","platform":"netlify","deploys":0,"failures":0}],
+ "lastFailures":[{"at":"2027-01-05T09:30:00Z","name":"app-web","detail":"build failed in /Users/example/app: token abc123"}],
+ "busiestDay":{"day":"2027-01-05","deploys":4},
+ "savings":{"estimate":true,"since":"2026-12-01T00:00:00Z","skippedBuilds":42,"usd":12.4,"usdComplete":true},"savingsAsked":true}

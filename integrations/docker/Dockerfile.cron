@@ -1,0 +1,29 @@
+# The cron variant: the CLI image plus a small scheduler that runs read-only jobs (a status page, badges, a weekly
+# report, `deploys changed --json` into a file) on a schedule, and nothing that deploys. Build the CLI image first,
+# then this one, both from the repository root:
+#   docker build -f integrations/docker/Dockerfile -t deploys .
+#   docker build -f integrations/docker/Dockerfile.cron -t deploys-cron .
+# Run it with the jobs in /config/jobs.conf (integrations/docker/jobs.example.conf) and keys from the environment:
+#   docker run -d --name deploys-cron -e VERCEL_TOKEN -e RENDER_API_KEY -e GH_TOKEN \
+#     -v "$PWD/deploys-config:/config" -v "$PWD/deploys-data:/data" deploys-cron
+# The compose file next to this one does the same. `--once` runs every job now and exits; `--check` reads the file.
+ARG BASE=deploys
+FROM ${BASE}
+
+USER root
+# The integrations the jobs call. Only the scripts (Dockerfile.cron.dockerignore): no examples, no tests.
+COPY integrations/docker/scheduler.sh /usr/local/bin/deploys-scheduler
+COPY integrations/lib /opt/deploy-center/integrations/lib
+COPY integrations/statuspage /opt/deploy-center/integrations/statuspage
+COPY integrations/badge /opt/deploy-center/integrations/badge
+COPY integrations/digest /opt/deploy-center/integrations/digest
+RUN chmod 0755 /usr/local/bin/deploys-scheduler /opt/deploy-center/integrations/*/*.sh \
+ && mkdir -p /data && chown node:node /data
+
+# The heartbeat is a file the scheduler writes at every look; the HEALTHCHECK says "unhealthy" when it stops.
+ENV DEPLOYS_INTEGRATIONS=/opt/deploy-center/integrations \
+    DEPLOYS_HEARTBEAT_FILE=/tmp/scheduler.heartbeat \
+    DEPLOYS_JOBS=/config/jobs.conf
+USER node
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 CMD ["/usr/local/bin/deploys-healthcheck"]
+ENTRYPOINT ["deploys-scheduler"]

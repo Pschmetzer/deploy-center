@@ -1102,6 +1102,12 @@ else
   skip "examples: their steps need ruby"
 fi
 
+# --- operations: status page maintenance and feeds, report, statistic badges, Docker healthcheck and scheduler, the deploy hooks ---
+# Its own file (tests/ops.sh, fixtures in tests/fixtures/ops); a failure there prints its FAIL lines here.
+if ops_out="$(tests/ops.sh --quiet 2>&1)"; then ok "ops: $(grep -c '^ok' <<<"$ops_out") checks (status page, report, badges, Docker, deploy hooks)"
+else fail "ops: status page, report, badges, Docker, deploy hooks" "$(grep '^FAIL' <<<"$ops_out" | head -8)"; fi
+skips=$((skips + $(grep -c '^skip' <<<"$ops_out")))
+
 echo
 if [ "$skips" -gt 0 ] && [ "${REQUIRE_ALL:-0}" = 1 ]; then
   echo "$skips skipped, and REQUIRE_ALL=1 counts a skip as a failure."; fails=$((fails + skips))

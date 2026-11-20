@@ -1,0 +1,8 @@
+# Build context is the repository root; BuildKit reads <Dockerfile>.dockerignore next to the Dockerfile.
+*
+!integrations/docker/scheduler.sh
+!integrations/lib/
+!integrations/statuspage/statuspage.sh
+!integrations/statuspage/page.css
+!integrations/badge/*.sh
+!integrations/digest/report.sh

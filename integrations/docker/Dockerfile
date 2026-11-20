@@ -1,5 +1,6 @@
 # The deploys CLI on Linux, for CI. Build from the repository root:
 #   docker build -f integrations/docker/Dockerfile -t deploys .
+# A schedule in a container (read-only jobs, a heartbeat): Dockerfile.cron, on top of this image.
 # Run (keys from the environment, never baked into the image):
 #   docker run --rm -e VERCEL_TOKEN -e RENDER_API_KEY -e GH_TOKEN \
 #     -v "$PWD/deploys-config:/config" deploys changed --json
@@ -31,7 +32,9 @@ COPY VERSION /usr/local/bin/VERSION
 COPY providers /usr/local/lib/deploys/providers
 # lib/ (team mode, GitLab) is found next to the script itself.
 COPY lib /usr/local/bin/lib
-RUN chmod 0755 /usr/local/bin/deploys && chmod 0644 /usr/local/lib/deploys/providers/*.sh
+# The HEALTHCHECK script: reads only, never asks the network (integrations/docker/README.md).
+COPY integrations/docker/healthcheck.sh /usr/local/bin/deploys-healthcheck
+RUN chmod 0755 /usr/local/bin/deploys /usr/local/bin/deploys-healthcheck && chmod 0644 /usr/local/lib/deploys/providers/*.sh
 ENV DEPLOYS_DIR=/usr/local/lib/deploys
 
 # Config (vercel-repos.json, vercel-team, ignored.json) lives in a volume, not in the image.
@@ -39,6 +42,9 @@ ENV DEPLOYS_CONFIG=/config USER=node
 RUN mkdir -p /config && chown node:node /config
 USER node
 WORKDIR /home/node
+
+# For a container that stays up (the cron variant, a compose service). A one-off `docker run` is gone before it matters.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=10s --retries=3 CMD ["/usr/local/bin/deploys-healthcheck"]
 
 ENTRYPOINT ["deploys"]
 CMD ["doctor"]
