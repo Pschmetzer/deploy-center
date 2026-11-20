@@ -62,10 +62,10 @@ freeze_days() {
     esac
   done
   # In week order, once each.
-  local out=() d
-  for d in $days; do case " $list " in *" $d "*) out+=("$d") ;; esac; done
-  [ "${#out[@]}" -gt 0 ] || return 1
-  printf '%s\n' "${out[@]}" | jq -Rsc 'split("\n") | map(select(. != ""))'
+  local picked=() d
+  for d in $days; do case " $list " in *" $d "*) picked+=("$d") ;; esac; done
+  [ "${#picked[@]}" -gt 0 ] || return 1
+  printf '%s\n' "${picked[@]}" | jq -Rsc 'split("\n") | map(select(. != ""))'
 }
 
 # freeze_add_json <window.json text> <days json> <from> <to> <reason>: the file with one more deny rule.
