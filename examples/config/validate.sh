@@ -38,12 +38,15 @@ for f in rules-docs-ship rules-api-waits rules-collect-then-ship; do
     "$(jq -r '[.rules[].when // {} | keys[]] - ["projects","ciGreen","paths","onlyPaths","labels","minAgeHours","minAgeDays","minCommits","minPRs"] | length' "$here/$f.json")" 0
 done
 
+check "rules-api-waits: the deploy rule comes before the hold rule of the same project" \
+  "$(jq -r '[.rules[] | select(.when.projects == ["render/example-api"]) | .then] == ["deploy","hold"]' "$here/rules-api-waits.json")" true
+
 # 3. budget: what `deploys budget set 50` writes
 check "budget.json: monthlyUsd is a number and strict a boolean" \
   "$(jq -r '(.monthlyUsd | type) == "number" and (.strict | type) == "boolean"' "$here/budget.json")" true
 
 # 4. shared config against the schema (skipped without python3 + jsonschema)
-if python3 -c 'import jsonschema' 2>/dev/null; then
+if python3 -I -c 'import jsonschema' 2>/dev/null; then
   python3 -I - "$root/docs/deploy-center.schema.json" "$here/deploy-center-monorepo.json" <<'PY' && ok "deploy-center-monorepo.json fits the schema" || bad "deploy-center-monorepo.json does not fit the schema"
 import json, sys, jsonschema
 jsonschema.validate(json.load(open(sys.argv[2])), json.load(open(sys.argv[1])))
@@ -70,13 +73,21 @@ git -C "$repo" init -q . && git -C "$repo" config user.email demo@example.invali
 git -C "$repo" config commit.gpgsign false
 echo 1 > "$repo/apps/web/a.txt"; echo 1 > "$repo/apps/docs/a.txt"; echo 1 > "$repo/packages/ui/a.txt"
 git -C "$repo" add -A && git -C "$repo" commit -q -m one
-ign() { (cd "$repo/apps/web" && PATHS="${PATHS:-. ../../packages}" sh "$here/vercel-ignored-build-step.sh" >/dev/null 2>&1; echo $?); }
-check "ignored build step: the first commit builds" "$(ign)" 1
+# VERCEL_GIT_PREVIOUS_SHA is the last commit Vercel deployed on the branch; PATHS are relative to the Root Directory.
+sha() { git -C "$repo" rev-parse HEAD; }
+ign() { (cd "$repo/apps/web" && VERCEL_GIT_PREVIOUS_SHA="$1" PATHS=". ../../packages/ui" sh "$here/vercel-ignored-build-step.sh" >/dev/null 2>&1; echo $?); }
+first="$(sha)"
+check "ignored build step: no previous deployment builds" "$(ign '')" 1
+check "ignored build step: an unknown commit builds (shallow clone)" "$(ign 0123456789012345678901234567890123456789)" 1
 echo 2 > "$repo/apps/docs/a.txt"; git -C "$repo" commit -q -am docs
-check "ignored build step: a change in another app skips" "$(ign)" 0
+check "ignored build step: a change in another app skips" "$(ign "$first")" 0
 echo 2 > "$repo/apps/web/a.txt"; git -C "$repo" commit -q -am web
-check "ignored build step: a change in the app builds" "$(ign)" 1
+check "ignored build step: a change in the app builds" "$(ign "$first")" 1
+second="$(sha)"
+echo 3 > "$repo/apps/docs/a.txt"; git -C "$repo" commit -q -am docs2
+check "ignored build step: another app's later commit does not hide the app's earlier change" "$(ign "$first")" 1
+check "ignored build step: nothing since the last deployment skips" "$(ign "$second")" 0
 echo 2 > "$repo/packages/ui/a.txt"; git -C "$repo" commit -q -am ui
-check "ignored build step: a change in a shared package builds" "$(ign)" 1
+check "ignored build step: a change in a shared package builds" "$(ign "$second")" 1
 
 [ "$fail" = 0 ] && echo "all examples are fine" || { echo "some examples are broken"; exit 1; }

@@ -15,7 +15,7 @@ Eine gesperrte Zeit im Deploy-Fenster, etwa Freitag ab 15:00 oder die Tage um ei
 Ein Start in einer Sperrzeit oder über dem Budget, mit `--force "Grund"` bewusst gemacht. Der Grund und die Sperrzeit oder das Budget, das überschritten wurde, stehen als `forced`-Eintrag im Journal.
 
 ## Hook (`hooks.d`)
-Eine ausführbare Datei namens `pre-deploy*` oder `post-deploy*` im Ordner `hooks.d` der Konfiguration. Sie läuft um jeden Start aus dem Terminal, um `deploy-changed` und um den geplanten Job. Ein `pre-deploy`-Hook mit Exit-Code ungleich 0 stoppt diesen Start; ein `post-deploy`-Hook kann das nicht. Nicht der Git-`pre-push`-Hook von `deploys hooks install`. Siehe [CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd) (englisch).
+Eine ausführbare Datei namens `pre-deploy*` oder `post-deploy*` im Ordner `hooks.d` der Konfiguration. Sie läuft um `deploys deploy <Projekt>`, um `deploy-changed` und um den geplanten Job; die Form mit vorangestelltem Anbieter (`deploys vercel deploy <Name>`) führt keine Hooks aus. Ein `pre-deploy`-Hook mit Exit-Code ungleich 0 stoppt diesen Start; ein `post-deploy`-Hook kann das nicht. Nicht der Git-`pre-push`-Hook von `deploys hooks install`. Siehe [CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd) (englisch).
 
 ## Budget-Bremse
 `budget.json` (`deploys budget set 50`): die Dollar im Monat an Vercel-Build-Kosten, die `deploy-changed --yes` ohne `--force "Grund"` nicht überschreiten darf. Mit `strict` hält es auch an, wenn die Kosten nicht lesbar sind.

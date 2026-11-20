@@ -28,10 +28,10 @@ accounts. Run each one by hand once and read the log; please report what you fin
 | [config/rules-collect-then-ship.json](config/rules-collect-then-ship.json) | `rules.json`: a `ship` label goes now, five waiting commits or three days go too, the rest is only named. | `deploys rules check` |
 | [config/budget.json](config/budget.json) | `budget.json`: $50 a month of Vercel build charges, without `strict`. The same as `deploys budget set 50`. | `deploys budget` |
 | [config/deploy-center-monorepo.json](config/deploy-center-monorepo.json) | `deploy-center.json` at the root of a monorepo: three projects, one ignored, a group that deploys the API before the web project and checks each. | `deploys config`, [the schema](../docs/deploy-center.schema.json) |
-| [config/vercel-ignored-build-step.sh](config/vercel-ignored-build-step.sh) | Vercel's Ignored Build Step for a monorepo: skip the build when nothing under the project's folder or the shared packages changed. | `sh config/validate.sh` |
-| [config/hooks.d/pre-deploy-friday](config/hooks.d/pre-deploy-friday) | `hooks.d`: refuses a start from Friday 15:00 on and on weekends. | `sh config/validate.sh` |
-| [config/hooks.d/pre-deploy-require-sha](config/hooks.d/pre-deploy-require-sha) | `hooks.d`: refuses a start that names no commit. | `sh config/validate.sh` |
-| [config/hooks.d/post-deploy-notify](config/hooks.d/post-deploy-notify) | `hooks.d`: tells a plain-text webhook (such as ntfy) what was started; does nothing without `DEPLOY_NOTIFY_URL`. | `sh config/validate.sh` |
+| [config/vercel-ignored-build-step.sh](config/vercel-ignored-build-step.sh) | Vercel's Ignored Build Step for a monorepo: skip the build when nothing under the project's folder or the shared packages changed. | `sh examples/config/validate.sh` |
+| [config/hooks.d/pre-deploy-friday](config/hooks.d/pre-deploy-friday) | `hooks.d`: refuses a start from Friday 15:00 on and on weekends. | `sh examples/config/validate.sh` |
+| [config/hooks.d/pre-deploy-require-sha](config/hooks.d/pre-deploy-require-sha) | `hooks.d`: refuses a start that names no commit. | `sh examples/config/validate.sh` |
+| [config/hooks.d/post-deploy-notify](config/hooks.d/post-deploy-notify) | `hooks.d`: tells a plain-text webhook (such as ntfy) what was started; does nothing without `DEPLOY_NOTIFY_URL`. | `sh examples/config/validate.sh` |
 
 `sh examples/config/validate.sh` runs them all in a throwaway folder and repo: the windows at fixed times, the rules and the budget through their shape, the shared config against the schema (when Python has `jsonschema`), the hooks with the variables `deploys` sets, and the Vercel script on a few commits. It needs no account and no network. A hook goes into `hooks.d` with `chmod 700` ([CLI.md](../docs/CLI.md#hooks-scripts-around-a-start-hooksd)).
 

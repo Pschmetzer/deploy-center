@@ -13,8 +13,9 @@ Each task says what to do, where, and when it is done. Add one line under `## Un
    [SAFE-START.md](SAFE-START.md). *Done when:* the page shows both pictures and none contains a real name.
 
 2. **Screenshots for the Raycast and VS Code listings.** Both store listings have none yet; take them
-   in demo mode. *Done when:* the files are where `integrations/raycast/PUBLISHING.md` and
-   `integrations/vscode/PUBLISHING.md` say listings take them, and no real name is on them.
+   in demo mode. Raycast: 2000×1250 PNGs in `integrations/raycast/metadata/` as `deploy-center-1.png`, … (see its `PUBLISHING.md`).
+   VS Code: PNGs in `integrations/vscode/media/`, shown from that README with a relative image link (the Marketplace page is the README).
+   *Done when:* the files are in those places and no real name is on them.
 
 ## Docs
 

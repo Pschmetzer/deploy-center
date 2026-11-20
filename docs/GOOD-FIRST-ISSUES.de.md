@@ -14,8 +14,9 @@ wo, und wann sie fertig ist. Für alles, was Nutzer bemerken, kommt eine Zeile u
    *Fertig, wenn:* die Seite beide Bilder zeigt und keins einen echten Namen enthält.
 
 2. **Screenshots für die Raycast- und VS-Code-Einträge.** Beide Store-Einträge haben noch keine; mach sie im Demo-Modus.
-   *Fertig, wenn:* die Dateien dort liegen, wo `integrations/raycast/PUBLISHING.md` und `integrations/vscode/PUBLISHING.md` sagen, dass
-   Einträge sie nehmen, und kein echter Name darauf steht.
+   Raycast: PNGs mit 2000×1250 in `integrations/raycast/metadata/` als `deploy-center-1.png`, … (siehe dessen `PUBLISHING.md`).
+   VS Code: PNGs in `integrations/vscode/media/`, in dessen README mit relativem Bildlink gezeigt (die Marketplace-Seite ist die README).
+   *Fertig, wenn:* die Dateien an diesen Stellen liegen und kein echter Name darauf steht.
 
 ## Doku
 

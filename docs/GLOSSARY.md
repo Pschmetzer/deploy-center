@@ -117,7 +117,7 @@ A closed time in the deploy window, such as Friday from 15:00 or the days around
 A start inside a closed window or over the budget, made on purpose with `--force "why"`. The reason and the window or budget it went past are written to the journal as a `forced` entry.
 
 ## Hook (`hooks.d`)
-An executable file named `pre-deploy*` or `post-deploy*` in the config folder's `hooks.d`. It runs around every start from the terminal, `deploy-changed` and the scheduled job. A `pre-deploy` hook that exits non-zero stops that start; a `post-deploy` hook cannot. Not the Git `pre-push` hook of `deploys hooks install`. See [CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd).
+An executable file named `pre-deploy*` or `post-deploy*` in the config folder's `hooks.d`. It runs around `deploys deploy <project>`, `deploy-changed` and the scheduled job; the provider-prefixed form (`deploys vercel deploy <name>`) runs no hooks. A `pre-deploy` hook that exits non-zero stops that start; a `post-deploy` hook cannot. Not the Git `pre-push` hook of `deploys hooks install`. See [CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd).
 
 ## Budget brake
 `budget.json` (`deploys budget set 50`): the dollars a month of Vercel build charges that `deploy-changed --yes` may not go over without `--force "why"`. With `strict` it also stops when the charges cannot be read.

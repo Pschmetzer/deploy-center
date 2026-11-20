@@ -94,13 +94,13 @@ Lege eine ausführbare Datei namens `pre-deploy*` oder `post-deploy*` in `~/.con
 Nein. Hooks werden nur aus deinem eigenen Konfigurationsordner gelesen, nie aus einem Repo oder einer gemeinsamen `deploy-center.json`. Eine Hook-Datei, in die die Gruppe oder andere schreiben dürfen oder die einem anderen Konto gehört (root ausgenommen), läuft nicht; die Meldung sagt, was du mit `chmod` ändern musst.
 
 ## Was, wenn ein Hook hängt?
-Nach `DEPLOYS_HOOK_TIMEOUT` Sekunden (Standard 300; `0` heißt ohne Grenze) wird der Hook gestoppt und gilt als fehlgeschlagen. Bei einem `pre-deploy`-Hook heißt das: Der Start wird abgelehnt.
+Nach `DEPLOYS_HOOK_TIMEOUT` Sekunden (Standard 300; `0` heißt ohne Grenze) wird der Hook gestoppt und gilt als fehlgeschlagen. Bei einem `pre-deploy`-Hook heißt das: Der Start wird abgelehnt. Die Grenze setzt `perl`, `timeout` oder `gtimeout` auf dem Rechner voraus; ohne eines davon läuft ein hängender Hook ohne Limit und kann den Start blockieren.
 
 ## Ist `hooks.d` dasselbe wie `deploys hooks install`?
 Nein. `deploys hooks install` legt einen Git-`pre-push`-Hook in ein Repo, der zeigt, welche Builds ein Push starten würde. `hooks.d` hat mit Git nichts zu tun: Seine Skripte laufen um ein Deploy herum, das du aus Deploy Center startest.
 
 ## Kann ich begrenzen, was Builds im Monat kosten?
-Ja, für Vercel: `deploys budget set 50` (Dollar im Monat; auch `--strict`). Bevor `deploy-changed --yes` etwas startet, addiert es die Kosten dieses Monats bis gestern und die Schätzung des Plans; über dem Budget hält es an, außer du gibst `--force "Grund"` an, was ins Journal kommt. Ohne `--strict` warnt es und macht weiter, wenn die Kosten nicht lesbar sind; mit `--strict` hält es an. Render hat keine Abrechnungs-API und zählt nicht mit. [examples/config/budget.json](../examples/config/budget.json) ist die Datei, die es schreibt.
+Ja, für Vercel: `deploys budget set 50` (Dollar im Monat; auch `--strict`). Das ist eine Prüfung, keine harte Obergrenze: Sie nutzt die Kosten bis gestern plus eine Schätzung, ein Monat kann also trotzdem über der Zahl enden. Bevor `deploy-changed --yes` etwas startet, addiert es die Kosten dieses Monats bis gestern und die Schätzung des Plans; über dem Budget hält es an, außer du gibst `--force "Grund"` an, was ins Journal kommt. Ohne `--strict` warnt es und macht weiter, wenn die Kosten nicht lesbar sind; mit `--strict` hält es an. Render hat keine Abrechnungs-API und zählt nicht mit. [examples/config/budget.json](../examples/config/budget.json) ist die Datei, die es schreibt.
 
 ## Wie lasse ich reine Doku-Änderungen von allein live gehen?
 Mit einer Regel in `rules.json`: `when` die geänderten Pfade nur `docs/**` sind und CI grün ist, `then` `deploy`, und das tägliche Deploy mit `--by-rules` laufen lassen. Sperrzeit und Budget zählen weiter. `deploys rules check` zeigt jede Regel gegen jedes wartende Projekt und was nicht erfüllt war. Beispiel: [examples/config/rules-docs-ship.json](../examples/config/rules-docs-ship.json). Siehe [CLI.md](CLI.md#rules) (englisch).

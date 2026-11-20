@@ -92,13 +92,13 @@ Put an executable file named `pre-deploy*` or `post-deploy*` into `~/.config/dep
 No. Hooks are read from your own config folder only, never from a repo or a shared `deploy-center.json`. A hook file that the group or others can write to, or that another account owns (root excepted), is not run; the message says what to `chmod`.
 
 ## What if a hook hangs?
-After `DEPLOYS_HOOK_TIMEOUT` seconds (default 300; `0` means no limit) the hook is stopped and counts as failed. For a `pre-deploy` hook that means the start is refused.
+After `DEPLOYS_HOOK_TIMEOUT` seconds (default 300; `0` means no limit) the hook is stopped and counts as failed. For a `pre-deploy` hook that means the start is refused. The limit needs `perl`, `timeout` or `gtimeout` on the machine; with none of them a hanging hook runs without a limit and can block the start.
 
 ## Is `hooks.d` the same as `deploys hooks install`?
 No. `deploys hooks install` puts a Git `pre-push` hook into one repo, which shows which builds a push would start. `hooks.d` has nothing to do with Git: its scripts run around a deploy started from Deploy Center.
 
 ## Can I cap what builds cost in a month?
-Yes, for Vercel: `deploys budget set 50` (dollars a month; `--strict` too). Before `deploy-changed --yes` starts anything it adds this month's charges up to yesterday and the plan's estimate; over the budget it stops unless you give `--force "why"`, which goes to the journal. Without `--strict` it warns and goes ahead when the charges cannot be read; with it, it stops. Render has no billing API and is not in the sum. [examples/config/budget.json](../examples/config/budget.json) is the file it writes.
+Yes, for Vercel: `deploys budget set 50` (dollars a month; `--strict` too). This is a check, not a hard cap: it uses charges up to yesterday plus an estimate, so a month can still end above the number. Before `deploy-changed --yes` starts anything it adds this month's charges up to yesterday and the plan's estimate; over the budget it stops unless you give `--force "why"`, which goes to the journal. Without `--strict` it warns and goes ahead when the charges cannot be read; with it, it stops. Render has no billing API and is not in the sum. [examples/config/budget.json](../examples/config/budget.json) is the file it writes.
 
 ## How do I let docs-only changes ship by themselves?
 With a rule in `rules.json`: `when` the changed paths are only `docs/**` and CI is green, `then` `deploy`, and run the daily deploy with `--by-rules`. The window and the budget still count. `deploys rules check` shows each rule against each waiting project and what was unmet. Examples: [examples/config/rules-docs-ship.json](../examples/config/rules-docs-ship.json). See [CLI.md](CLI.md#rules).
