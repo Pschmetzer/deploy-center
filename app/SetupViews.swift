@@ -41,7 +41,7 @@ struct RenderKeySetup: View {
                    "Erstelle einen API-Key unter dashboard.render.com → Account Settings → API Keys und füge ihn hier ein. Er wird nur im macOS-Schlüsselbund gespeichert."))
                 .foregroundStyle(.secondary).multilineTextAlignment(.center)
             SecureField(L("Render API key", "Render-API-Key"), text: $key, prompt: Text("rnd_…"))
-                .textFieldStyle(.roundedBorder).frame(width: 320)
+                .textFieldStyle(.roundedBorder).frame(minWidth: 280, idealWidth: 320, maxWidth: 420)
                 .onSubmit { if canSave { save() } }
             if !key.isEmpty && !looksRight {
                 Text(L("A Render API key starts with rnd_.", "Ein Render-API-Key beginnt mit rnd_."))
@@ -49,6 +49,11 @@ struct RenderKeySetup: View {
             }
             if let error { ErrorText(error).multilineTextAlignment(.center) }
             HStack {
+                // Offered only when the clipboard holds something that looks like a key; nothing is read otherwise.
+                if key.isEmpty, let clip = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   clip.hasPrefix("rnd_"), clip.count >= 10, clip.count < 200 {
+                    Button(L("Paste key", "Key einfügen")) { key = clip }
+                }
                 Button(L("Open Render", "Render öffnen")) {
                     NSWorkspace.shared.open(URL(string: "https://dashboard.render.com/u/settings#api-keys")!)
                 }
@@ -64,6 +69,12 @@ struct RenderKeySetup: View {
     private var canSave: Bool { looksRight && !saving }
     private func save() {
         saving = true
-        Task { error = await store.saveRenderKey(key); saving = false; if error == nil { key = "" } }
+        Task {
+            error = await store.saveRenderKey(key); saving = false
+            if error == nil {
+                key = ""
+                AccessibilityNotification.Announcement(L("Render key saved", "Render-Key gespeichert")).post()
+            }
+        }
     }
 }
