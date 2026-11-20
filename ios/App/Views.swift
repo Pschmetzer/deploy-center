@@ -1009,6 +1009,13 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // The toast lies under this sheet: an error is shown here as text, not only said to VoiceOver (IDEEN-12 C11).
+                if let m = store.message, store.messageIsError {
+                    Section {
+                        Label(m, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                        Button(L("Dismiss", "Ausblenden")) { store.message = nil }
+                    }
+                }
                 Section {
                     if store.linked != nil && !store.ignoreLink {
                         Label(L("Connected to the Mac (iCloud Keychain)", "Mit dem Mac verbunden (iCloud-Schlüsselbund)"), systemImage: "checkmark.circle.fill")
@@ -1042,11 +1049,11 @@ struct SettingsView: View {
                            "Hier eingetragene Schlüssel bleiben im Schlüsselbund dieses Geräts, nie synchronisiert. Gesendet nur an api.vercel.com, api.render.com und api.github.com."))
                 }
                 Section {
-                    Toggle(L("Unlock on open", "Beim Öffnen entsperren"), isOn: $lockOnOpen)
+                    Toggle(L("Unlock on open", "Beim Öffnen entsperren"), isOn: guarded($lockOnOpen, L("Turn off the lock", "Sperre ausschalten")))
                         .onChange(of: lockOnOpen) { _, _ in
                             Spotlight.index(store.projects, demo: store.demo); QuickActions.update(store.projects)
                         }
-                    Toggle(L("Face ID or Touch ID only (no passcode) to deploy", "Zum Deployen nur Face ID oder Touch ID (kein Code)"), isOn: $biometricsOnly)
+                    Toggle(L("Face ID or Touch ID only (no passcode) to deploy", "Zum Deployen nur Face ID oder Touch ID (kein Code)"), isOn: guarded($biometricsOnly, L("Allow the passcode to deploy", "Code zum Deployen erlauben")))
                     Toggle(L("Keep projects out of Spotlight", "Projekte nicht in Spotlight zeigen"), isOn: $noSpotlight)
                         .onChange(of: noSpotlight) { _, _ in Spotlight.index(store.projects, demo: store.demo) }
                 } footer: {
@@ -1081,6 +1088,14 @@ struct SettingsView: View {
                         Text(L("Checks run in the background only when iOS allows it, which can be rarely or, in Low Power Mode, not at all. There is no server, so a note can come late or not at all.",
                                "Geprüft wird im Hintergrund nur, wenn iOS es erlaubt: manchmal selten, im Stromsparmodus gar nicht. Es gibt keinen Server, ein Hinweis kann also spät oder gar nicht kommen."))
                         if notify, let e = backgroundProblem { Text(e).foregroundStyle(Color.warningText) }
+                        if notify {
+                            // The last time iOS let the background check run (IDEEN-12 C19).
+                            if let at = Background.lastRun {
+                                Text(L("Last background check: ", "Letzte Prüfung im Hintergrund: ") + relative(at))
+                            } else {
+                                Text(L("No background check has run yet.", "Im Hintergrund wurde noch nichts geprüft."))
+                            }
+                        }
                     }
                 }
                 Section {
@@ -1100,6 +1115,9 @@ struct SettingsView: View {
                 Section {
                     Link(L("Privacy policy", "Datenschutz"), destination: URL(string: "https://deploycenter.app/datenschutz.html")!)
                     Link(L("Website and help", "Website und Hilfe"), destination: URL(string: "https://deploycenter.app")!)
+                    LabeledContent(L("Version", "Version"), value: store.versionText)
+                    // The report holds the version, the system and what is connected, never a key or a project name (IDEEN-12 C55).
+                    if let u = store.reportURL { Link(L("Report a problem …", "Fehler melden …"), destination: u) }
                 } footer: {
                     Text(L("Deploy Center is not affiliated with Vercel, Render or GitHub.",
                            "Deploy Center ist nicht mit Vercel, Render oder GitHub verbunden."))
@@ -1140,11 +1158,24 @@ struct SettingsView: View {
             .confirmationDialog(L("Remove all keys from this iPhone?", "Alle Schlüssel von diesem iPhone entfernen?"),
                                 isPresented: $confirmRemove, titleVisibility: .visible) {
                 Button(L("Remove", "Entfernen"), role: .destructive) {
-                    store.removeAllKeys(); loadFields()
+                    // With the lock or Face ID on, whoever holds an unlocked phone must not strip the protection or the keys (IDEEN-12 C38).
+                    Task {
+                        if !(lockOnOpen || biometricsOnly) || (await store.authenticate(L("Remove all keys from this iPhone", "Alle Schlüssel von diesem iPhone entfernen"))) {
+                            store.removeAllKeys(); loadFields()
+                        }
+                    }
                 }
                 Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             }
         }
+    }
+
+    /// A switch that protects: turning it ON is free, turning it OFF asks for Face ID, Touch ID or the code first.
+    private func guarded(_ b: Binding<Bool>, _ reason: String) -> Binding<Bool> {
+        Binding(get: { b.wrappedValue }, set: { on in
+            if on { b.wrappedValue = true; return }
+            Task { if await store.authenticate(reason) { b.wrappedValue = false } }
+        })
     }
 
     private func loadFields() {
@@ -1211,6 +1242,8 @@ struct SettingsView: View {
         Background.schedule()
         Task { await store.reload() }
         if !ok { saveFailed = true; return false }
+        // A token pasted into a field must not wait on the clipboard (Universal Clipboard, clipboard managers) (IDEEN-12 C39).
+        if let c = UIPasteboard.general.string, !c.isEmpty, Key.allCases.contains(where: { fields[$0] == c }) { UIPasteboard.general.items = [] }
         saved = fields
         return true
     }
