@@ -1,0 +1,2 @@
+{"total_count":1,"workflow_runs":[{"id":5000000020,"status":"completed","conclusion":"failure","head_sha":"3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c","head_branch":"main","event":"workflow_dispatch","head_commit":{"message":"chore: deps"},"created_at":"2026-03-02T12:00:00Z","updated_at":"2026-03-02T12:00:00Z","html_url":"https://github.com/example/gamma/actions/runs/5000000020"}]}
+200

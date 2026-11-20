@@ -1,0 +1,2 @@
+{"total_apps":4,"apps":[{"id":"app_1","name":"gamma","machine_count":1,"network":"default"},{"id":"app_2","name":"alpha","machine_count":2,"network":"default"},{"id":"app_3","name":"delta","machine_count":0,"network":"default"},{"id":"app_4","name":"beta","machine_count":1,"network":"default"}]}
+200

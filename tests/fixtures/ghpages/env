@@ -1,0 +1,3 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+export GITHUB_PAGES_TOKEN=ghp_fixture DEPLOYS_GHPAGES_SITES="example/alpha:pages.yml@main example/beta:deploy.yml@main example/gamma example/delta"
+CONTRACT_ID=example/alpha CONTRACT_NAME=alpha CONTRACT_DEPLOY=5000000002

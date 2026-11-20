@@ -1,0 +1,3 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+export HEROKU_API_KEY=hk_fixture
+CONTRACT_ID=alpha CONTRACT_NAME=alpha CONTRACT_DEPLOY=3f1b8d9a-0001-4a2e-8c3b-5d6e7f8a9b01

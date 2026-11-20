@@ -1,0 +1,5 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+export FLY_API_TOKEN=fm_fixture FLY_ORG=fixture-org
+CONTRACT_ID=alpha CONTRACT_NAME=alpha CONTRACT_DEPLOY=e2865e1a3b0c08
+# A machine that is still starting turns into a started one for the `deploys watch` check.
+CONTRACT_DONE='s/"state": *"starting"/"state": "started"/g'
