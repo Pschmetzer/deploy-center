@@ -3,7 +3,8 @@
 
 import { execFile } from "node:child_process";
 import * as vscode from "vscode";
-import { canPreview, canRollback, deployArgs, deployFailure, errorLine, findCli, loadPlanTotal, loadProjects, makeRunner, parseDeploy, projectArgs, rollbackArgs, Runner, urlIn } from "./cli";
+import { canPreview, canRollback, deployArgs, deployFailure, errorLine, findCli, loadFreeze, loadHistory, loadMonthCost, loadPlanTotal, loadProjects, makeRunner, parseDeploy, projectArgs, rollbackArgs, Runner, urlIn } from "./cli";
+import { costStatusText, costTooltip, Freeze, freezeStatusText, freezeTooltip, MonthCost, pendingDetails, pendingLabel, pendingRows, PendingRow, pendingSummary, rollbackPreview, rollbackPreviewText } from "./insights";
 import { count, setTranslator, t } from "./i18n";
 import { coalesce } from "./coalesce";
 import { aiPrompt, maskSecrets } from "./log";
@@ -20,6 +21,8 @@ const SITE = "https://deploycenter.app";
 const FOCUS_STALE_MS = 60_000;
 /** Build logs open as documents of this scheme: read-only, never saved, no "unsaved" prompt. */
 const LOG_SCHEME = "deploy-center-log";
+/** The month's costs are read at most this often: the CLI asks the billing API once per day of the month. */
+const COST_STALE_MS = 30 * 60_000;
 
 function cfg() {
   const c = vscode.workspace.getConfiguration("deployCenter");
@@ -29,6 +32,7 @@ function cfg() {
     pollMs: Math.max(1, c.get<number>("pollMinutes", 5)) * 60_000,
     timeoutMs: Math.max(10, c.get<number>("timeoutSeconds", 120)) * 1000,
     logLines: Math.max(20, Math.floor(c.get<number>("logLines", 200))),
+    showCosts: c.get<boolean>("showCosts", true),
   };
 }
 
@@ -59,6 +63,16 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   private cost = "";
   /** The running cost read; tests wait for it so no call outlives them. */
   costLoad: Promise<void> = Promise.resolve();
+  /** This month's Vercel charges and the deploy freeze: read-only extras, each in its own status bar item. */
+  readonly costItem = vscode.window.createStatusBarItem("deployCenter.cost", vscode.StatusBarAlignment.Left, 49);
+  readonly freezeItem = vscode.window.createStatusBarItem("deployCenter.freeze", vscode.StatusBarAlignment.Left, 48);
+  private monthCost: MonthCost | null = null;
+  private freeze: Freeze | null = null;
+  private lastCostRead = 0;
+  /** The running read of costs and freeze; tests wait for it so no call outlives them. */
+  extrasLoad: Promise<void> = Promise.resolve();
+  /** Told after every render, for the "waiting commits" view. */
+  readonly pendingChanged = new vscode.EventEmitter<void>();
   private state: ViewState = "loading";
   private lastRefresh = 0;
   /** One read at a time; a call during one (a changed setting) reads once more after it. */
@@ -79,6 +93,8 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   /** followMs: the pause between two looks at a started deploy (tests make it short). */
   constructor(private readonly followMs = 15_000) {
     this.status.name = "Deploy Center";
+    this.costItem.name = "Deploy Center: costs"; this.costItem.command = "deployCenter.costs";
+    this.freezeItem.name = "Deploy Center: deploy freeze"; this.freezeItem.command = "deployCenter.showFreeze";
     this.status.command = "deployCenter.menu";
     this.status.text = "$(sync~spin) Deploy Center";
     this.status.show();
@@ -118,6 +134,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     for (const t of this.pending) clearTimeout(t);
     this.pending.clear();
     if (this.timer) clearInterval(this.timer);
+    this.costItem.dispose(); this.freezeItem.dispose(); this.pendingChanged.dispose();
     this.status.dispose(); this.output.dispose(); this.changed.dispose(); this.logChanged.dispose();
   }
 
@@ -127,6 +144,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     if (!this.run) { this.all = []; this.warning = null; return this.render("missing"); }
     if (this.state === "loading" || this.state === "missing") this.render("loading");
     this.status.text = this.status.text.replace(/^\$\([^)]*\)/, "$(sync~spin)");
+    this.extrasLoad = this.loadExtras();
     const [loaded, remotes] = await Promise.all([loadProjects(this.run, cfg().timeoutMs), workspaceRemotes()]);
     this.all = loaded.projects;
     this.warning = loaded.warning;
@@ -149,8 +167,40 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     if (this.state === "ok") this.render("ok");
   }
 
+  /** The freeze (a local file) at every read, the month's costs at most every 30 minutes and only if the setting is on. */
+  private async loadExtras(): Promise<void> {
+    const run = this.run;
+    if (!run) return;
+    const ms = cfg().timeoutMs;
+    const wantCosts = cfg().showCosts;
+    const stale = Date.now() - this.lastCostRead > COST_STALE_MS;
+    if (wantCosts && stale) this.lastCostRead = Date.now();
+    const [freeze, cost] = await Promise.all([
+      loadFreeze(run, ms).catch(() => null),
+      wantCosts && stale ? loadMonthCost(run, ms).catch(() => null) : Promise.resolve(undefined),
+    ]);
+    if (this.disposed) return;
+    this.freeze = freeze;
+    if (cost !== undefined) { this.monthCost = cost; if (!cost) this.lastCostRead = 0; }
+    this.paintExtras();
+    if (this.state === "ok") this.render("ok");
+  }
+
+  private paintExtras(): void {
+    const c = cfg().showCosts ? this.monthCost : null;
+    if (c) { this.costItem.text = costStatusText(c); this.costItem.tooltip = costTooltip(c); this.costItem.show(); }
+    else this.costItem.hide();
+    const ft = freezeStatusText(this.freeze);
+    if (ft && this.freeze) {
+      this.freezeItem.text = ft; this.freezeItem.tooltip = freezeTooltip(this.freeze);
+      this.freezeItem.backgroundColor = this.freeze.closedNow ? new vscode.ThemeColor("statusBarItem.warningBackground") : undefined;
+      this.freezeItem.show();
+    } else this.freezeItem.hide();
+  }
+
   private render(state: ViewState): void {
     this.state = state;
+    this.pendingChanged.fire();
     void vscode.commands.executeCommand("setContext", "deployCenter.state", state);
     void vscode.commands.executeCommand("setContext", "deployCenter.repoWaiting", this.matched && this.shown.some((p) => p.waiting));
     this.changed.fire(undefined);
@@ -178,6 +228,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     for (const p of this.shown.slice(0, 15)) md.appendText(`${p.name}: ${describe(p)}\n`).appendMarkdown("\n");
     if (this.shown.length > 15) md.appendText(t("… and {0} more", this.shown.length - 15) + "\n");
     if (this.cost) md.appendText(this.cost + "\n").appendMarkdown("\n");
+    if (this.freeze?.closedNow) md.appendText(t("$(lock) Deploys are closed now (deploy freeze).") + "\n").appendMarkdown("\n");
     if (this.warning) md.appendMarkdown("\n").appendText(`⚠ ${this.warning}`);
     s.tooltip = md;
   }
@@ -251,6 +302,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     const preview: Item | null = canPreview(p) ? { label: t("$(eye) Deploy preview…"), description: t("production stays as it is"), id: "preview" } : null;
     if (p.waiting && preview) items.unshift(preview);
     if (p.failed) items.unshift({ label: t("$(copy) Copy for AI"), description: t("the first error block, ready to paste"), id: "ai" });
+    if (canRollback(p)) items.push({ label: t("$(history) Preview a rollback"), description: t("what it would go back to; changes nothing"), id: "rollback-preview" });
     if (canRollback(p)) items.push({ label: t("$(history) Roll back…"), description: t("production to the deploy before"), id: "rollback" });
     // With something waiting, deploying is what the menu is for: first. With nothing waiting it
     // only rebuilds the same commit (a paid build), so it goes last with the preview, where a
@@ -269,6 +321,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
       case "notes": return this.copyNotes(p);
       case "preview": return this.deployPreview(p);
       case "rollback": return this.rollback(p);
+      case "rollback-preview": return this.rollbackPreview(p);
     }
   }
 
@@ -346,6 +399,40 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     const btn = await (d.url ? vscode.window.showInformationMessage(text, openIt) : vscode.window.showInformationMessage(text));
     if (btn === openIt && d.url) void vscode.env.openExternal(vscode.Uri.parse(d.url));
   }
+
+  /** What a rollback would do, from the deploy history. It only reads; going back is the separate "Roll back…" after it. */
+  async rollbackPreview(p: Project): Promise<void> {
+    const run = this.need(); if (!run) return;
+    if (!canRollback(p)) { void vscode.window.showInformationMessage(t("{0} cannot be rolled back from here (Vercel and Render only).", p.name)); return; }
+    const rows = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t("Reading the deploys of {0}…", p.name) },
+      () => loadHistory(run, p, cfg().timeoutMs).catch(() => null));
+    if (!rows) { void vscode.window.showErrorMessage(t("{0}: the deploy history could not be read.", p.name)); return; }
+    const prev = rollbackPreview(rows);
+    const { message, detail } = rollbackPreviewText(p.name, prev);
+    if (!prev) { void vscode.window.showInformationMessage(message, { modal: true, detail }); return; }
+    const go = t("Roll back…");
+    // The button only opens the usual confirmation of "Roll back"; nothing changes before that one is confirmed.
+    const pick = await vscode.window.showInformationMessage(message, { modal: true, detail }, go);
+    if (pick === go) await this.rollback(p);
+  }
+
+  async showFreeze(): Promise<void> {
+    if (!this.run) { await this.missingMenu(); return; }
+    await this.loadExtras();
+    if (!this.freeze || !this.freeze.configured) { void vscode.window.showInformationMessage(t("No closed times are set. Deploys are allowed at any time."), { detail: t("Set one in a terminal: deploys freeze add fri 15:00") }); return; }
+    void vscode.window.showInformationMessage(freezeStatusText(this.freeze) ?? "", { modal: true, detail: freezeTooltip(this.freeze) });
+  }
+
+  /** The month's costs, read again now (the status bar item's click). */
+  async showCosts(): Promise<void> {
+    if (!this.run) { await this.missingMenu(); return; }
+    this.lastCostRead = 0;
+    await this.loadExtras();
+    if (!this.monthCost) { void vscode.window.showInformationMessage(t("The costs could not be read (Vercel's charges only; Vercel must be on).")); return; }
+    void vscode.window.showInformationMessage(costTooltip(this.monthCost).split("\n").join(" "));
+  }
+
+  get pendingList(): PendingRow[] { return this.state === "ok" ? pendingRows(this.shown) : []; }
 
   /** Production back to the deploy before the current one: a live site changes, so asked first. */
   async rollback(p: Project): Promise<void> {
@@ -458,6 +545,36 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   }
 }
 
+type PendingNode = { row: PendingRow } | { line: string; id: string };
+
+/** The "Waiting commits" view: each waiting project with its commit count, most first; its lines say what waits. */
+export class PendingProvider implements vscode.TreeDataProvider<PendingNode> {
+  readonly onDidChangeTreeData: vscode.Event<PendingNode | undefined | void>;
+  constructor(private readonly c: Controller) { this.onDidChangeTreeData = c.pendingChanged.event; }
+
+  getChildren(el?: PendingNode): PendingNode[] {
+    if (!el) return this.c.pendingList.map((row) => ({ row }));
+    if ("row" in el) return pendingDetails(el.row).map((line, i) => ({ line, id: `${el.row.project.platform}:${el.row.project.name}:${i}` }));
+    return [];
+  }
+
+  getTreeItem(n: PendingNode): vscode.TreeItem {
+    if ("line" in n) {
+      const item = new vscode.TreeItem(n.line, vscode.TreeItemCollapsibleState.None);
+      item.id = n.id;
+      return item;
+    }
+    const p = n.row.project;
+    const item = new vscode.TreeItem(p.name, vscode.TreeItemCollapsibleState.Collapsed);
+    item.id = `pending:${p.platform}:${p.name}`;
+    item.description = pendingLabel(n.row);
+    item.iconPath = new vscode.ThemeIcon("git-commit");
+    item.contextValue = ["project", "waiting", p.failed && "failed", canPreview(p) && "can-preview", canRollback(p) && "can-rollback"].filter(Boolean).join(" ");
+    item.accessibilityInformation = { label: `${p.name}, ${pendingLabel(n.row)}`, role: "treeitem" };
+    return item;
+  }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const c = new Controller();
   const reg = (id: string, fn: (...a: unknown[]) => unknown) => context.subscriptions.push(vscode.commands.registerCommand(id, fn));
@@ -466,6 +583,9 @@ export function activate(context: vscode.ExtensionContext): void {
   reg("deployCenter.deployRepo", () => c.deployRepo());
   reg("deployCenter.deployProject", async (a) => { const p = await c.pick(a); if (p) await c.deploy(p); });
   reg("deployCenter.deployPreview", async (a) => { const p = await c.pick(a, canPreview); if (p) await c.deployPreview(p); });
+  reg("deployCenter.rollbackPreview", async (a) => { const p = await c.pick(a, canRollback); if (p) await c.rollbackPreview(p); });
+  reg("deployCenter.showFreeze", () => c.showFreeze());
+  reg("deployCenter.costs", () => c.showCosts());
   reg("deployCenter.rollback", async (a) => { const p = await c.pick(a, canRollback); if (p) await c.rollback(p); });
   reg("deployCenter.openSite", async (a) => { const p = await c.pick(a); if (p) await c.open(p, false); });
   reg("deployCenter.openDashboard", async (a) => { const p = await c.pick(a); if (p) await c.open(p, true); });
@@ -474,11 +594,14 @@ export function activate(context: vscode.ExtensionContext): void {
   reg("deployCenter.copyNotes", async (a) => { const p = await c.pick(a, (x) => x.waiting || !c.shown.some((y) => y.waiting)); if (p) await c.copyNotes(p); });
 
   const tree = vscode.window.createTreeView("deployCenter.projects", { treeDataProvider: c, showCollapseAll: false });
+  const pendingProvider = new PendingProvider(c);
+  const pendingTree = vscode.window.createTreeView("deployCenter.pending", { treeDataProvider: pendingProvider, showCollapseAll: true });
+  c.pendingChanged.event(() => { pendingTree.description = pendingSummary(c.pendingList) || undefined; });
   c.onShown = (waiting) => {
     // The Activity Bar icon shows how many projects wait; nothing (undefined) when none does.
     tree.badge = waiting > 0 ? { value: waiting, tooltip: count(waiting, "{0} project waiting", "{0} projects waiting") } : undefined;
   };
-  context.subscriptions.push(c, tree,
+  context.subscriptions.push(c, tree, pendingTree,
     vscode.workspace.registerTextDocumentContentProvider(LOG_SCHEME, c.logProvider),
     vscode.window.onDidChangeWindowState((s) => { if (s.focused) c.onFocus(); }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => void c.refresh()),

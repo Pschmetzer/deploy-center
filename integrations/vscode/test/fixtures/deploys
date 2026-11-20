@@ -14,6 +14,23 @@ case "$*" in
   "status --json --no-github")
     [ -n "${DEPLOYS_FAKE_OLD_STATUS:-}" ] && { jq 'map(del(.repo))' "$here/status.json"; exit 0; }
     cat "$here/status.json" ;;
+  "costs 31")
+    [ -n "${DEPLOYS_FAKE_COSTS_FAIL:-}" ] && { echo "Error: Vercel is off here" >&2; exit 1; }
+    m="${DEPLOYS_FAKE_MONTH:-$(date -u +%Y-%m)}"
+    printf '{"currency":"USD","offDay":null,"buildsComplete":true,"missingDays":%s,"days":[],"months":[{"month":"2000-01","total":1,"build":1,"days":3},{"month":"%s","total":12.345,"build":8.1,"days":14}],"projects":[]}\n' "${DEPLOYS_FAKE_MISSING:-0}" "$m" ;;
+  "freeze --json")
+    [ -n "${DEPLOYS_FAKE_FREEZE_NONE:-}" ] && { echo '{"file":"/x/window.json","configured":false,"closedNow":false,"reason":null,"now":"Mon 10:00","tz":null,"rules":[]}'; exit 0; }
+    printf '{"file":"/x/window.json","configured":true,"closedNow":%s,"reason":"release freeze","now":"Fri 16:00","tz":null,"rules":[{"n":1,"days":["fri"],"from":"15:00","to":"24:00","reason":"release freeze"},{"n":2,"days":null,"from":"00:00","to":"06:00","reason":null}]}\n' "${DEPLOYS_FAKE_FREEZE_CLOSED:-false}" ;;
+  "history app-web 20 --json")
+    cat <<'JSON'
+[{"when":"2026-11-19 09:00","target":"preview","state":"READY","commit":"fff9999","source":"git","build":"40s","platform":"vercel","at":1763542800},
+ {"when":"2026-11-18 14:05","target":"production","state":"READY","commit":"cccc333","source":"cli","build":"61s","platform":"vercel","at":1763474700},
+ {"when":"2026-11-18 14:00","target":"production","state":"READY","commit":"cccc333","source":"cli","build":"58s","platform":"vercel","at":1763474400},
+ {"when":"2026-11-17 10:00","target":"production","state":"ERROR","commit":"bbbb222","source":"git","build":null,"platform":"vercel","at":1763373600},
+ {"when":"2026-11-16 08:30","target":"production","state":"READY","commit":"aaaa111","source":"git","build":"52s","platform":"vercel","at":1763281800}]
+JSON
+    ;;
+  "history api 20 --json") echo '[{"when":"2026-11-18 14:00","state":"live","commit":"dddd444","trigger":"api","took":"90s","platform":"render"}]' ;;
   "vercel deploy-json app-web") echo '{"id":"dpl_1","url":"https://app-web-abc.vercel.app","state":"QUEUED"}' ;;
   "vercel deploy-json app-web --preview") echo '{"id":"dpl_p","url":"https://app-web-p.vercel.app","state":"QUEUED"}' ;;
   "vercel rollback app-web") [ -n "${DEPLOYS_FAKE_ROLLBACK_EMPTY:-}" ] && { echo '{}'; exit 0; }; echo '{"id":"dpl_0","state":"READY"}' ;;

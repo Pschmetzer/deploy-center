@@ -36,12 +36,16 @@ shows what it loaded. More in [docs/CLAUDE-CODE.md](../../docs/CLAUDE-CODE.md).
 | Skill | `deploy-center` | Claude loads it on its own when you push, deploy, or a build failed. The rules: never deploy without your OK; after a push run `deploys changed --json` and say what is waiting; on a failed build read `deploys logs <p>`, find the first error, fix it; explain why auto-deploy is off; use `deploys explain` when numbers look odd. |
 | Command | `/deploy-center:deploys-waiting` | What is waiting to go live (`deploys changed --json`). Read-only. |
 | Command | `/deploy-center:deploys-status` | What is building, live or failed (`deploys status --json`). Read-only. |
+| Command | `/deploy-center:deploys-precheck <project>` | Before a deploy, read-only: what waits, the notes, the risk, secrets in the diff, the deploy window and freeze, CI, the plan. Ends with **ship now**, **check first** or **wait**. Never deploys. |
+| Command | `/deploy-center:deploys-diagnose <project>` | After a failed build or deploy, read-only: the first error in the log, whether it is code, a dependency, settings or the platform, the commit that fits, and the fix it would make. Changes nothing. |
 | Command | `/deploy-center:deploys-fix <project>` | Reads the build log and fixes the cause in the current repository. Never deploys. |
 | Command | `/deploy-center:deploys-ship <project>` | Shows what would go live, asks "Deploy … now? (yes/no)", and deploys only on yes. |
 | Command | `/deploy-center:deploys-notes <project>` | The release notes of what waits, and one or two sentences on what changes for users. |
 | Command | `/deploy-center:deploys-rollback <project>` | Shows the last deploys, asks "Roll back … ? (yes/no)", and rolls back only on yes. |
 | Subagent | `ship-reviewer` | Read-only: plan, notes and risk per project, then ship now / check first / wait. Never deploys. |
 | Hook | PostToolUse on `git push` | One line after Claude pushes, for example `3 commits waiting on app-web: deploy when ready (deploys changed)`. |
+| Hook | PreToolUse on a deploy | When Claude is about to run `deploys deploy`, `deploys deploy-changed --yes` or `deploys rollback`, the user is asked first, with the risk and the deploy window in the question. [Details](#before-a-deploy-and-after-a-failure) |
+| Hook | PostToolUseFailure on a deploy | After a failed deploy, one line that points Claude to `/deploy-center:deploys-diagnose <project>`. Runs nothing itself. |
 | MCP | optional, not loaded | See [MCP server](#mcp-server). |
 
 Plugin commands carry the plugin name, so type `/deploys` and pick from the menu. They are
@@ -76,6 +80,27 @@ user says so".
 - After a push, the line names a project whose newest build failed (`/deploy-center:deploys-fix <project>`), and
   says so when auto-deploy is still on for one of the projects instead of claiming the push did not go live.
 
+## Before a deploy and after a failure
+
+Two more hooks, both read-only, both on by default and each with its own switch.
+
+- [`scripts/before-deploy.sh`](scripts/before-deploy.sh) (PreToolUse, Bash) finds a command that starts a deploy or a
+  rollback through `deploys` (also behind `cd dir &&`, `bash -c`, and a platform word as in `deploys vercel deploy web`;
+  `--dry-run` and `deploys deploy-changed` without `--yes` are not deploys). It answers **ask**: Claude Code shows its
+  permission question, and the text names the project, `Risk: yellow (a lockfile changed).` from `deploys risk` and
+  `Deploy window: closed (…)` from `deploys window`. It never answers *allow* and never *deny*, so your own permission
+  rules stay as they are; it only makes sure a person sees the question. It waits at most `DEPLOYS_HOOK_TIMEOUT`
+  seconds (8) for each read and asks without the extra line when the CLI does not answer. Off with the option
+  `deploy_gate` or `DEPLOYS_DEPLOY_GATE=off`.
+- [`scripts/after-failure.sh`](scripts/after-failure.sh) (PostToolUseFailure, and PostToolUse for a deploy whose
+  output says it failed) tells you and Claude, in one line, that the deploy failed and that
+  `/deploy-center:deploys-diagnose <project>` reads the log. It calls nothing, and the note to Claude says: do not deploy
+  again, do not roll back, do not change code unless you say so. Off with the option `failure_hint` or
+  `DEPLOYS_FAILURE_HINT=off`.
+
+The project name from the command goes into those lines only when it is one plain word of letters, digits and `. _ : -`.
+A user who runs a deploy by hand in the terminal is not asked: the hooks see only what Claude runs.
+
 ## MCP server
 
 The MCP server in `integrations/mcp/` (read-only tools `deploys_changed`, `deploys_status`,
@@ -99,13 +124,16 @@ after `npm ci` there. The skill and commands work without it: they call the CLI.
 ```text
 .claude-plugin/marketplace.json        (repo root) the marketplace: deploy-center
 integrations/claude-code/
-├── .claude-plugin/plugin.json         the manifest (name, version, push_reminder and session_hint)
+├── .claude-plugin/plugin.json         the manifest (name, version, the options push_reminder, session_hint, deploy_gate, failure_hint)
 ├── .claude-plugin/icon.png
 ├── skills/deploy-center/SKILL.md      the skill Claude loads by itself
-├── skills/deploys-*/SKILL.md          the six commands
+├── skills/deploys-*/SKILL.md          the commands (waiting, status, precheck, diagnose, fix, ship, notes, rollback)
 ├── agents/ship-reviewer.md            the read-only review subagent
-├── hooks/hooks.json                   PostToolUse, matcher Bash (the script finds the git push); SessionStart
-├── scripts/after-push.sh              the hook (--session-start for the session hint)
+├── hooks/hooks.json                   PreToolUse and PostToolUse(Failure), matcher Bash (the scripts find the command); SessionStart
+├── scripts/after-push.sh              the push hook (--session-start for the session hint)
+├── scripts/before-deploy.sh           asks before a deploy, with risk and window
+├── scripts/after-failure.sh           points to the read-only diagnosis after a failed deploy
+├── scripts/deploys-call.sh            finds a deploy in a Bash command (sourced by the two above)
 └── mcp/deploys.mcp.json               optional MCP config (the app's bundled server), not loaded by the plugin
 ```
 
@@ -115,7 +143,8 @@ integrations/claude-code/
 which checks both JSON files, `hooks.json` and every `SKILL.md` against the documented format
 (and runs `claude plugin validate --strict` when `claude` is installed). It also runs shellcheck on the
 hook, and runs the hook against a stand-in `deploys`, including without any `deploys` at all, where it
-must print nothing.
+must print nothing. `integrations/tests/ops.sh` runs the two deploy hooks against stand-ins (they must ask before a
+deploy, never allow, stay silent for anything else, and name a failed deploy) and checks the two new skills.
 
 To try local changes: `claude --plugin-dir integrations/claude-code`.
 

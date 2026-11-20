@@ -9,4 +9,5 @@
 - **Deploy All Changed**: shows every project with waiting commits, and deploys exactly those after a confirmation, in one `deploys deploy-changed` run. If the CLI would start a different set by then, nothing starts. After a run the list is read again and "Deploy All" stays off.
 - Every platform `deploys` knows, not only Vercel and Render; a name on two platforms is passed as `platform:name` to notes and open.
 - A timeout ends the CLI and everything it started. "Not logged in" only from the CLI's errors (an HTTP 401/403), never from a commit text.
+- **Costs**, **Search Journal** and **Guard Status**, and a **Costs Menu Bar** with this month's charges, the deploy freeze and the guard. They only read: nothing starts, rolls back or runs the guard from them.
 - Waiting Deploys and Deploy Status show the last list at once and read it again in the background.

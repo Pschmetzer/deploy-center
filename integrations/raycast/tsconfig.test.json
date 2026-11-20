@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["test/**/*.ts", "src/lib/text.ts", "src/lib/log.ts"],
+  "include": ["test/**/*.ts", "src/lib/text.ts", "src/lib/log.ts", "src/lib/insights.ts"],
   "compilerOptions": {
     "outDir": ".test-out",
     "rootDir": ".",

@@ -1,5 +1,5 @@
 #!/bin/bash
-# statuspage.sh — a static "what shipped when" page: index.html, feed.xml (Atom) and status.json.
+# statuspage.sh — a static "what shipped when" page: index.html, feed.xml (Atom), feed.json (JSON Feed) and status.json.
 #
 #   integrations/statuspage/statuspage.sh [--config statuspage.json] [--out public] [--no-check] [--no-notes]
 #
@@ -8,8 +8,12 @@
 # Below that, the last deploys from the app's journal. With a `url` for a project, the site is
 # checked once while the page is made. Nothing is deployed; the files go to any static host.
 #
+# A project may list `components` (each a name and a url, checked on its own), and the config may list
+# `maintenance` windows (title, start, end, optional id, note, projects). Both feeds carry stable ids.
+#
 # Env: DEPLOYS            the CLI to call (default: deploys on PATH)
 #      DEPLOYS_JOURNAL    the journal (default: the app's, in ~/Library/Application Support)
+#      STATUSPAGE_NOW     the time to make the page for, in seconds since 1970 (tests; default: now)
 set -euo pipefail
 DEPLOYS="${DEPLOYS:-deploys}"
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -17,6 +21,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/../lib/projects.sh"
 
 config="statuspage.json"; out="public"; check=1; notes=1
+now="${STATUSPAGE_NOW:-$(date +%s)}"; case "$now" in ''|*[!0-9]*) echo "STATUSPAGE_NOW must be seconds since 1970." >&2; exit 1 ;; esac
 while [ $# -gt 0 ]; do
   case "$1" in
     --config) config="${2:?--config needs a file}"; shift ;;
@@ -52,11 +57,25 @@ cfg="$(jq -c '
      # After this many hours the page warns that it is old (it is made by a job that may have stopped).
      staleHours: ((.staleHours // 48) | if type == "number" and . > 0 then . else error("staleHours must be a positive number") end),
      journal: (.journal // null),
-     # "name", "platform/name" or {name, platform?, label?, url?}
+     # Planned maintenance: {title, start, end, id?, note?, projects?}. Times like 2027-01-05T22:00:00Z.
+     # Without projects the window concerns every project. The id keeps the feed entry the same when
+     # the title changes; without one it is made from the title and the start day.
+     maintenance: ((.maintenance // []) | if type == "array" then . else error("maintenance must be a list") end
+       | map(if type == "object" and (.title | type) == "string" and (.start | type) == "string" and (.end | type) == "string" then
+               {id: (.id // null | if . == null or (type == "string" and test("^[A-Za-z0-9._-]+$")) then . else error("a maintenance id may hold letters, digits and . _ - only") end),
+                title, note: (.note // ""),
+                start: (.start | sub("\\.[0-9]+Z$"; "Z") | (fromdateiso8601? // error("maintenance start must look like 2027-01-05T22:00:00Z"))),
+                end: (.end | sub("\\.[0-9]+Z$"; "Z") | (fromdateiso8601? // error("maintenance end must look like 2027-01-05T22:00:00Z"))),
+                projects: ((.projects // []) | map(tostring))}
+               | if .end <= .start then error("a maintenance window must end after it starts") else . end
+             else error("each maintenance window needs a title, a start and an end") end)),
+     # "name", "platform/name" or {name, platform?, label?, url?, components?}
      projects: ((.projects // []) | map(
         if type == "string" then
-          (if test("^[a-z][a-z0-9]*/[^/]") then {platform: split("/")[0], name: (split("/")[1:] | join("/"))} else {name: .} end)
-        elif type == "object" and (.name | type) == "string" then {name, platform: (.platform // null), label: (.label // null), url: (.url // null)}
+          (if test("^[a-z][a-z0-9]*/[^/]") then {platform: split("/")[0], name: (split("/")[1:] | join("/"))} else {name: .} end) + {components: []}
+        elif type == "object" and (.name | type) == "string" then {name, platform: (.platform // null), label: (.label // null), url: (.url // null),
+          # Parts of one project (website, API, login ...), each with an address that is checked on its own.
+          components: ((.components // []) | if type == "array" and all(.[]; type == "object" and (.name | type) == "string" and (.url | type) == "string") then map({name, url}) else error("components must be a list of {name, url}") end)}
         else error("each project is a name or an object with a name") end))}' "$config")" \
   || { echo "Could not read $config" >&2; exit 1; }
 [ "$(jq '.projects | length' <<<"$cfg")" -gt 0 ] || { echo "No projects in $config: the page shows only the ones listed there." >&2; exit 1; }
@@ -141,8 +160,20 @@ extra='{}'
 # round gets a budget (STATUSPAGE_CHECK_BUDGET seconds, default 480); a site not reached by then
 # is left unchecked (no card line) and said on stderr, so the job still ends in time.
 check_start=$SECONDS; budget="${STATUSPAGE_CHECK_BUDGET:-480}"; case "$budget" in ''|*[!0-9]*) budget=480 ;; esac
+# One site check as JSON ({up, code, ms}), or null when nothing is checked: --no-check, no address, or the budget is used up.
+site_check() {  # site_check <what> <url>
+  local code secs
+  if [ "$check" != 1 ] || [ -z "$2" ]; then echo null; return 0; fi
+  if [ $((SECONDS - check_start)) -ge "$budget" ]; then
+    echo "Site check of $1 skipped: the ${budget}s budget for site checks is used up (STATUSPAGE_CHECK_BUDGET)." >&2
+    echo null; return 0
+  fi
+  read -r code secs <<<"$(check_of "$2")"
+  jq -n -c --arg code "$code" --arg s "$secs" '($code | tonumber? // 0) as $c
+    | {up: (($c >= 200 and $c < 400) or $c == 401 or $c == 403), code: $c, ms: (($s | tonumber? // 0) * 1000 | round)}'
+}
 while IFS=$'\t' read -r i name changed url; do
-  n='[]'; c='null'
+  n='[]'; comps='[]'
   if [ "$notes" = 1 ] && [ "$changed" = true ]; then
     # A CLI with `notes --json` gives the author as a field; an older one only Markdown lines.
     if nj="$("$DEPLOYS" notes "$name" --json 2>/dev/null </dev/null)" && jq -e '.commits | type == "array"' >/dev/null 2>&1 <<<"$nj"; then
@@ -152,14 +183,14 @@ while IFS=$'\t' read -r i name changed url; do
       n="$(notes_of "$name" | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {kind: .[0], text: (.[1:] | join("\t")), author: false})')"
     fi
   fi
-  if [ "$check" = 1 ] && [ -n "$url" ] && [ $((SECONDS - check_start)) -ge "$budget" ]; then
-    echo "Site check of $name skipped: the ${budget}s budget for site checks is used up (STATUSPAGE_CHECK_BUDGET)." >&2
-  elif [ "$check" = 1 ] && [ -n "$url" ]; then
-    read -r code secs <<<"$(check_of "$url")"
-    c="$(jq -n -c --arg code "$code" --arg s "$secs" '($code | tonumber? // 0) as $c
-      | {up: (($c >= 200 and $c < 400) or $c == 401 or $c == 403), code: $c, ms: (($s | tonumber? // 0) * 1000 | round)}')"
-  fi
-  extra="$(jq -c --arg i "$i" --argjson n "$n" --argjson c "$c" '. + {($i): {notes: $n, check: $c}}' <<<"$extra")"
+  c="$(site_check "$name" "$url")"
+  # The components of this project (the config's list is in the order of the projects), each checked on its own.
+  while IFS=$'\t' read -r cname curl_; do
+    [ -n "$cname" ] || continue
+    cc="$(site_check "$name / $cname" "$curl_")"
+    comps="$(jq -c --arg n "$cname" --argjson c "$cc" '. + [{name: $n, check: $c}]' <<<"$comps")"
+  done < <(jq -r --argjson i "$i" '.projects[$i].components[] | [.name, .url] | @tsv' <<<"$cfg")
+  extra="$(jq -c --arg i "$i" --argjson n "$n" --argjson c "$c" --argjson k "$comps" '. + {($i): {notes: $n, check: $c, components: $k}}' <<<"$extra")"
 done < <(jq -r 'to_entries[] | [.key, .value.name, (.value.changed // false), (.value.url // "")] | @tsv' <<<"$picked")
 
 # The journal: one JSON object per line, oldest first (app/Journal.swift). Lines that do not
@@ -193,6 +224,8 @@ texts='{
  "en": {"updated":"Updated","depUpdate":"Dependency update: ","never":"never","live":"Live","liveFailed":"Live · last deploy failed",
         "failed":"Failed","building":"Deploying","notYet":"Not deployed yet","unknown":"Unknown","feed":"Feed","projects":"Projects",
         "unread":"Could not be read just now.","lastDeploy":"Last deploy","siteUp":"Site up","siteDown":"Site not reachable",
+        "maintenance":"Maintenance","maintScheduled":"Scheduled","maintActive":"In progress","maintCompleted":"Completed","maintAffects":"Affects",
+        "maintAll":"all projects","siteMaint":"Not reachable during planned maintenance","maintVerb":"maintenance","jsonFeed":"JSON feed",
         "next":"Coming next","waiting":"Changes waiting to ship.","recent":"Recent deploys","noDeploys":"No deploys recorded yet.",
         "wentLive":"went live","deployFailed":"deploy failed","siteDownVerb":"is not reachable","tookSeconds":"took","footerUtc":"Made with Deploy Center. Times in UTC.",
         "footer":"Made with Deploy Center.","stale":"This page was last made {n} hours ago and may be out of date.",
@@ -200,6 +233,8 @@ texts='{
  "de": {"updated":"Aktualisiert","depUpdate":"Abhängigkeit aktualisiert: ","never":"nie","live":"Live","liveFailed":"Live · letzter Deploy fehlgeschlagen",
         "failed":"Fehlgeschlagen","building":"Wird deployt","notYet":"Noch nicht deployt","unknown":"Unbekannt","feed":"Feed","projects":"Projekte",
         "unread":"Ließ sich gerade nicht lesen.","lastDeploy":"Letzter Deploy","siteUp":"Seite erreichbar","siteDown":"Seite nicht erreichbar",
+        "maintenance":"Wartung","maintScheduled":"Geplant","maintActive":"Läuft","maintCompleted":"Abgeschlossen","maintAffects":"Betrifft",
+        "maintAll":"alle Projekte","siteMaint":"Während der geplanten Wartung nicht erreichbar","maintVerb":"Wartung","jsonFeed":"JSON-Feed",
         "next":"Als Nächstes","waiting":"Änderungen warten darauf, live zu gehen.","recent":"Letzte Deploys","noDeploys":"Noch keine Deploys aufgezeichnet.",
         "wentLive":"ging live","deployFailed":"Deploy fehlgeschlagen","siteDownVerb":"ist nicht erreichbar","tookSeconds":"dauerte","footerUtc":"Erstellt mit Deploy Center. Zeiten in UTC.",
         "footer":"Erstellt mit Deploy Center.","stale":"Diese Seite wurde vor {n} Stunden zuletzt erstellt und ist vielleicht nicht aktuell.",
@@ -208,12 +243,19 @@ L="$(jq -c --arg l "$(jq -r .lang <<<"$cfg")" --argjson o "$(jq -c .texts <<<"$c
 
 mkdir -p "$out"
 # status.json is the source for the page and the feed.
-jq -n --argjson cfg "$cfg" --argjson p "$picked" --argjson x "$extra" --argjson t "$timeline" --argjson L "$L" '
+jq -n --argjson cfg "$cfg" --argjson p "$picked" --argjson x "$extra" --argjson t "$timeline" --argjson L "$L" --argjson now "$now" '
   def updated: $L.updated;
+  def slug: ascii_downcase | gsub("[^a-z0-9]+"; "-") | sub("^-+"; "") | sub("-+$"; "");
+  # A window is scheduled, active or completed; a completed one stays for a week.
+  def mstate: if $now < .start then "scheduled" elif $now < .end then "active" else "completed" end;
+  def concerns($v): (.projects | length) == 0 or any(.projects[]; . == $v.label or . == $v.name);
+  [$cfg.maintenance[] | . + {state: mstate} | select(.state != "completed" or $now - .end <= 604800)] as $maint
+  # A check that failed while a window is active is planned, not an outage.
+  | def during($v; $c): if $c != null and $c.up == false and any($maint[]; .state == "active" and concerns($v)) then $c + {maintenance: true} else $c end;
   # author false: a Markdown line "msg – author" (an older CLI), cut at the last " – ".
   def strip_author($a): if $a == false then (if $cfg.showAuthors then . else sub(" – [^–]*$"; "") end)
                         elif $cfg.showAuthors and $a != null then . + " – " + $a else . end;
-  {schema: 1, title: $cfg.title, description: $cfg.description, generatedAt: (now | floor), lang: $cfg.lang, staleHours: $cfg.staleHours,
+  {schema: 1, title: $cfg.title, description: $cfg.description, generatedAt: $now, lang: $cfg.lang, staleHours: $cfg.staleHours,
    url: ($cfg.baseUrl | if . != "" and (endswith("/") | not) then . + "/" else . end),
    projects: [$p | to_entries[] | .value as $v | ($x[.key | tostring] // {notes: [], check: null}) as $e
      | {name: $v.label, platform: $v.platform, state: (if $v.found then $v.state else "unknown" end),
@@ -222,7 +264,12 @@ jq -n --argjson cfg "$cfg" --argjson p "$picked" --argjson x "$extra" --argjson 
         waiting: ($v.changed // false),
         next: (if $cfg.hideMessages then (if ($e.notes | length) > 0 then [updated] else [] end)
                else ($e.notes | map(if .kind == "dep" then $L.depUpdate + (.author as $a | .text | strip_author($a)) else (.author as $a | .text | strip_author($a)) end)) end),
-        check: $e.check}],
+        check: during($v; $e.check),
+        # Parts of the project that are checked on their own.
+        components: [($e.components // [])[] | {name, check: during($v; .check)}],
+        maintenance: any($maint[]; .state == "active" and concerns($v))}],
+   maintenance: [$maint[] | . as $m | {id: (.id // ((.title | slug) + "-" + (.start | strftime("%Y%m%d")))), title, note, start, end, state,
+                  projects: [$p[] | . as $pv | select($m | concerns($pv)) | .label]}],
    timeline: [$t[] | {name: .label, platform, result, at, seconds}]}' > "$out/status.json"
 
 # --- index.html: one file, no external assets, light and dark, readable on a phone ---
@@ -241,19 +288,34 @@ jq -r --arg css "$(cat "$here/page.css")" --argjson L "$L" '
   "<title>\(.title | h)</title>",
   (if .description != "" then "<meta name=\"description\" content=\"\(.description | h)\">" else empty end),
   "<link rel=\"alternate\" type=\"application/atom+xml\" title=\"\(.title | h)\" href=\"feed.xml\">",
+  "<link rel=\"alternate\" type=\"application/feed+json\" title=\"\(.title | h)\" href=\"feed.json\">",
   "<style>\($css)</style></head><body><main>",
   "<header><h1>\(.title | h)</h1>",
   (if .description != "" then "<p class=\"lead\">\(.description | h)</p>" else empty end),
-  "<p class=\"meta\">\($L.updated | h) \(.generatedAt | when) · <a href=\"feed.xml\">\($L.feed | h)</a> · <a href=\"status.json\">JSON</a></p>",
+  "<p class=\"meta\">\($L.updated | h) \(.generatedAt | when) · <a href=\"feed.xml\">\($L.feed | h)</a> · <a href=\"feed.json\">\($L.jsonFeed | h)</a> · <a href=\"status.json\">JSON</a></p>",
   # Shown by the script below when the page is older than staleHours (the job that makes it may have stopped).
   "<p class=\"stale\" role=\"alert\" hidden data-generated=\"\(.generatedAt)\" data-hours=\"\(.staleHours)\" data-text=\"\($L.stale | h)\" data-text-days=\"\($L.staleDays | h)\"></p></header>",
+  (if (.maintenance | length) > 0 then
+    "<section aria-labelledby=\"mt\"><h2 id=\"mt\">\($L.maintenance | h)</h2><ul class=\"cards\">",
+    (.maintenance[] | ({scheduled: ["busy", $L.maintScheduled], active: ["warn", $L.maintActive], completed: ["muted", $L.maintCompleted]}[.state]) as $b |
+      "<li class=\"card maint \(.state)\"><div class=\"row\"><h3>\(.title | h)</h3><span class=\"pill \($b[0])\">\($b[1] | h)</span></div>",
+      "<p class=\"when\">\(.start | when) – \(.end | when)</p>",
+      (if .note != "" then "<p class=\"msg\">\(.note | h)</p>" else empty end),
+      "<p class=\"muted\">\($L.maintAffects | h): \(if (.projects | length) == 0 then $L.maintAll else (.projects | map(h) | join(", ")) end)</p></li>"),
+    "</ul></section>" else empty end),
   "<section aria-labelledby=\"now\"><h2 id=\"now\">\($L.projects | h)</h2><ul class=\"cards\">",
   (.projects[] | (.state | badge) as $b |
     "<li class=\"card\"><div class=\"row\"><h3>\(.name | h)</h3><span class=\"pill \($b[0])\">\($b[1] | h)</span></div>",
+    (if .maintenance then "<p class=\"maintnote\"><span class=\"pill warn\">\($L.maintenance | h)</span></p>" else empty end),
     (if .state == "unknown" then "<p class=\"when\">\($L.unread | h)</p>" else "<p class=\"when\">\($L.lastDeploy | h) \(.at | when)</p>" end),
     (if .message then "<p class=\"msg\">\(.message | h)</p>" else empty end),
-    (if .check then "<p class=\"check \(if .check.up then "up" else "down" end)\">\(if .check.up then $L.siteUp else $L.siteDown end | h)"
+    (if .check then "<p class=\"check \(if .check.up then "up" elif .check.maintenance then "maint" else "down" end)\">\(if .check.up then $L.siteUp elif .check.maintenance then $L.siteMaint else $L.siteDown end | h)"
        + (if .check.code > 0 then " · HTTP \(.check.code)" + (if .check.up then " · \(.check.ms) ms" else "" end) else "" end) + "</p>" else empty end),
+    (if (.components | length) > 0 then "<ul class=\"comps\">"
+       + (.components | map(. as $k | "<li><span>\(.name | h)</span> <span class=\"check \(if $k.check == null then "unchecked" elif $k.check.up then "up" elif $k.check.maintenance then "maint" else "down" end)\">"
+          + (if $k.check == null then "–" else (if $k.check.up then $L.siteUp elif $k.check.maintenance then $L.siteMaint else $L.siteDown end | h)
+             + (if $k.check.code > 0 then " · HTTP \($k.check.code)" else "" end) end) + "</span></li>") | join(""))
+       + "</ul>" else empty end),
     (if (.next | length) > 0 then "<details><summary>\($L.next | h) (\(.next | length))</summary><ul class=\"next\">"
        + (.next | map("<li>\(h)</li>") | join("")) + "</ul></details>"
      elif .waiting then "<p class=\"muted\">\($L.waiting | h)</p>" else empty end),
@@ -281,37 +343,67 @@ if [ "$(jq -r '.strict' <<<"$cfg")" = true ]; then
       "$out/index.html" > "$out/index.html.tmp" && mv "$out/index.html.tmp" "$out/index.html"
 fi
 
-# --- feed.xml: Atom, one entry per deploy in the timeline ---
-jq -r --argjson L "$L" '
+# --- the feeds: one list of entries, written as Atom (feed.xml) and as JSON Feed 1.1 (feed.json) ---
+# The ids are stable: a deploy is its platform, name and time; an ongoing outage is one entry (no date in its id, so
+# a daily run does not make a new one); a maintenance window keeps its id (or title and start day) while its state
+# changes from scheduled to active to completed. A reader that shows each id once therefore never shows a repeat.
+entries_jq='
+  def slug: ascii_downcase | gsub("[^a-z0-9]+"; "-") | sub("^-+"; "") | sub("-+$"; "");
+  def verb($L): if .result == "live" then $L.wentLive else $L.deployFailed end;
+  def entries($L): . as $s | (
+    ($s.maintenance[] | . as $m | {kind: "maintenance", id: ("urn:deploy-center:maintenance:" + ($m.id | @uri)),
+       title: "\($L.maintenance): \($m.title)",
+       summary: ({scheduled: $L.maintScheduled, active: $L.maintActive, completed: $L.maintCompleted}[$m.state]
+                 + ": " + ($m.start | strftime("%Y-%m-%d %H:%M UTC")) + " – " + ($m.end | strftime("%Y-%m-%d %H:%M UTC"))
+                 + (if $m.note != "" then ". " + ($m.note | sub("[.]+$"; "")) else "" end)
+                 + ". " + $L.maintAffects + ": " + (if ($m.projects | length) == 0 then $L.maintAll else ($m.projects | join(", ")) end)),
+       published: $m.start, updated: (if $m.state == "completed" then $m.end else $m.start end), tag: "maintenance"}),
+    ($s.timeline[] | {kind: "deploy", id: "urn:deploy-center:\(.platform | tostring):\(.name | @uri):\(.at)",
+       title: "\(.name) \(verb($L))",
+       summary: "\(.name) \(verb($L))\(if .seconds then " (\($L.tookSeconds) \(.seconds) s)" else "" end)",
+       published: .at, updated: .at, tag: (if .result == "live" then "deploy" else "failure" end)}),
+    # A site (or a part of one) that did not answer when the page was made, dated by the page. Not during a window.
+    ($s.projects[] | . as $p
+      | ([{part: null, check: $p.check}] + [$p.components[] | {part: .name, check: .check}])[]
+      | select(.check != null and .check.up == false and (.check.maintenance | not))
+      | (if .part then "\($p.name) – \(.part)" else $p.name end) as $what
+      | {kind: "outage", id: ("urn:deploy-center:check:" + ($p.platform // "") + ":" + ($p.name | @uri) + (if .part then ":" + (.part | @uri) else "" end)),
+         title: "\($what) \($L.siteDownVerb)", summary: "\($what) \($L.siteDownVerb) (HTTP \(.check.code))",
+         published: $s.generatedAt, updated: $s.generatedAt, tag: "outage"})
+  );'
+
+# --- feed.xml: Atom ---
+jq -r --argjson L "$L" "$entries_jq"'
   def x: tostring | @html;
-  . as $s | ($s.url // "") as $link |
+  . as $s | ($s.url // "") as $link | [entries($L)] as $e |
   (if $link != "" then $link else "urn:deploy-center:statuspage:" + ($s.title | @uri) end) as $id |
   "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
   "<feed xmlns=\"http://www.w3.org/2005/Atom\">",
   "  <title>\($s.title | x)</title>",
   "  <id>\($id | x)</id>",
-  "  <updated>\((($s.timeline[0].at) // $s.generatedAt) | todate)</updated>",
+  "  <updated>\((([$e | .[] | select(.kind != "outage") | .updated] | max) // $s.generatedAt) | todate)</updated>",
   "  <author><name>\($s.title | x)</name></author>",
   (if $link != "" then "  <link rel=\"alternate\" href=\"\($link | x)\"/>", "  <link rel=\"self\" href=\"\($link | x)feed.xml\"/>" else empty end),
-  ($s.timeline[] |
+  ($e | sort_by(-.updated)[] |
     "  <entry>",
-    "    <title>\(.name | x) \(if .result == "live" then $L.wentLive else $L.deployFailed end | x)</title>",
-    "    <id>urn:deploy-center:\(.platform | x):\(.name | @uri | x):\(.at)</id>",
-    "    <updated>\(.at | todate)</updated>",
+    "    <title>\(.title | x)</title>",
+    "    <id>\(.id | x)</id>",
+    "    <updated>\(.updated | todate)</updated>",
+    "    <category term=\"\(.tag | x)\"/>",
     # A summary for readers that show one: what happened and how long it took. No commit text.
-    "    <summary type=\"text\">\(.name | x) \(if .result == "live" then $L.wentLive else $L.deployFailed end | x)\(if .seconds then " (\($L.tookSeconds | x) \(.seconds) s)" else "" end)</summary>",
-    (if $link != "" then "    <link href=\"\($link | x)\"/>" else empty end),
-    "  </entry>"),
-  # A site that did not answer when the page was made is an entry too, dated by the page.
-  ($s.projects[] | select(.check != null and .check.up == false) |
-    "  <entry>",
-    "    <title>\(.name | x) \($L.siteDownVerb | x)</title>",
-    # The id has no date: the same ongoing outage is one entry, not a new one for every daily run.
-    "    <id>urn:deploy-center:check:\(.platform // "" | x):\(.name | @uri | x)</id>",
-    "    <updated>\($s.generatedAt | todate)</updated>",
-    "    <summary type=\"text\">\(.name | x) \($L.siteDownVerb | x) (HTTP \(.check.code))</summary>",
+    "    <summary type=\"text\">\(.summary | x)</summary>",
     (if $link != "" then "    <link href=\"\($link | x)\"/>" else empty end),
     "  </entry>"),
   "</feed>"' "$out/status.json" > "$out/feed.xml"
+
+# --- feed.json: JSON Feed 1.1 (https://jsonfeed.org/version/1.1), the same entries and ids ---
+jq --argjson L "$L" "$entries_jq"'
+  . as $s | ($s.url // "") as $link |
+  {version: "https://jsonfeed.org/version/1.1", title: $s.title, language: $s.lang}
+  + (if $s.description != "" then {description: $s.description} else {} end)
+  + (if $link != "" then {home_page_url: $link, feed_url: ($link + "feed.json")} else {} end)
+  + {items: ([entries($L)] | sort_by(-.updated) | map({id, title, content_text: .summary,
+       date_published: (.published | todate), date_modified: (.updated | todate), tags: [.tag]}
+       + (if $link != "" then {url: $link} else {} end)))}' "$out/status.json" > "$out/feed.json"
 
 echo "$(jq '.projects | length' "$out/status.json") project(s), $(jq '.timeline | length' "$out/status.json") deploy(s) in $out/"

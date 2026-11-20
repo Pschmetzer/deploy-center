@@ -1,0 +1,57 @@
+# Example only: copy it next to your own deploys-config/ and deploys-data/ folders. Nothing here deploys: the
+# scheduler runs the reading jobs of jobs.conf (see jobs.example.conf) and refuses anything with --yes.
+#
+# Build the two images from the repository root first:
+#   docker build -f integrations/docker/Dockerfile -t deploys .
+#   docker build -f integrations/docker/Dockerfile.cron -t deploys-cron .
+# Then:  docker compose -f integrations/docker/compose.example.yml up -d
+#        docker compose -f integrations/docker/compose.example.yml logs -f
+#
+# Keys are passed from your shell (or a .env file that stays out of git); a bare name takes its value from there.
+name: deploys
+
+services:
+  cron:
+    image: deploys-cron
+    restart: unless-stopped
+    environment:
+      - VERCEL_TOKEN
+      - RENDER_API_KEY
+      - GH_TOKEN
+      - TZ=UTC
+    volumes:
+      # config/: vercel-repos.json, jobs.conf, statuspage.json. The CLI keeps small state files there, so not read only.
+      - ./deploys-config:/config
+      # data/: what the jobs write (status page, badges, reports). Serve it with any static host.
+      - ./deploys-data:/data
+    # Run as your own user so the folders keep their owner: UID:GID of the host (id -u, id -g).
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+      - /home/node:uid=1000,gid=1000,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # The image's HEALTHCHECK, with the compose timings: unhealthy when the scheduler's heartbeat is older than 5 minutes.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/deploys-healthcheck"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+  # A one-off: `docker compose -f ... run --rm once` runs every job now and exits (the same image, `--once`).
+  once:
+    image: deploys-cron
+    profiles: ["manual"]
+    command: ["--once"]
+    environment:
+      - VERCEL_TOKEN
+      - RENDER_API_KEY
+      - GH_TOKEN
+    volumes:
+      - ./deploys-config:/config
+      - ./deploys-data:/data
+    user: "1000:1000"
