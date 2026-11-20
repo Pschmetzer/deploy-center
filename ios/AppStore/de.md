@@ -33,7 +33,7 @@ PRIVAT VON ANFANG AN
 • Kein Konto und kein Server von uns: Die App spricht direkt mit api.vercel.com, api.render.com und api.github.com
 • Verbinde dich mit Deploy Center auf deinem Mac: Er übergibt seine Schlüssel über deinen iCloud-Schlüsselbund (Ende-zu-Ende-verschlüsselt) oder einen QR-Code. Deine Apple-ID ist das Konto
 • Selbst eingetragene Schlüssel bleiben nur im Schlüsselbund dieses Geräts
-• Spotlight und Handoff lassen sich ausschalten; mit „Beim Öffnen entsperren“ erreicht kein Projektname den Sperrbildschirm, Siri oder Spotlight
+• Spotlight und Handoff lassen sich ausschalten; mit „Beim Öffnen entsperren“ erreicht kein Projektname Mitteilungen, Siri oder Spotlight. Live-Aktivitäten auf dem Sperrbildschirm zeigen den Projektnamen weiterhin
 • Die Kamera liest nur den QR-Code der Mac-App, ihr Bild verlässt das Gerät nicht
 • Keine Analyse, kein Tracking, keine Werbung
 

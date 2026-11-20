@@ -35,7 +35,7 @@ PRIVATE BY DESIGN
 • No account and no server of ours: the app talks directly to api.vercel.com, api.render.com and api.github.com
 • Connect to Deploy Center on your Mac: it hands over its keys through your iCloud Keychain (end-to-end encrypted) or a QR code. Your Apple ID is the account
 • Keys you type in stay in this device's keychain only
-• Spotlight and Handoff can be switched off; with "Unlock on open" no project name reaches the lock screen, Siri or Spotlight
+• Spotlight and Handoff can be switched off; with "Unlock on open" no project name reaches notifications, Siri or Spotlight. Live Activities on the lock screen still show the project name
 • The camera only reads the QR code of the Mac app, and its picture never leaves the device
 • No analytics, no tracking, no ads
 

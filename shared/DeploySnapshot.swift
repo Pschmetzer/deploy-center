@@ -107,7 +107,7 @@ struct DeploySnapshot: Codable, Equatable {
         if let platform {
             let c = byPlatform?.first { $0.platform == platform }
             s.waitingProjects = c?.waiting ?? projects.filter { $0.platform == platform && $0.status == .waiting }.count
-            s.waitingPRs = c?.prs ?? 0
+            s.waitingPRs = c?.prs ?? projects.filter { $0.platform == platform && $0.status == .waiting }.map(\.prs).reduce(0, +)
             s.building = c?.building ?? projects.filter { $0.platform == platform && $0.status == .building }.count
             s.failed = c?.failed ?? projects.filter { $0.platform == platform && $0.status == .failed }.count
             s.waitingCommits = projects.filter { $0.platform == platform && $0.status == .waiting }.map(\.commits).reduce(0, +)

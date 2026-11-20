@@ -559,7 +559,10 @@ struct FilteredProvider: AppIntentTimelineProvider {
     func snapshot(for configuration: FilterIntent, in context: Context) async -> Entry { entry(configuration, preview: context.isPreview) }
     func timeline(for configuration: FilterIntent, in context: Context) async -> Timeline<Entry> {
         let e = entry(configuration, preview: false)
-        return Timeline(entries: [e], policy: .after(Date().addingTimeInterval(30 * 60)))
+        var entries = [e]
+        // A second entry once the snapshot is three hours old, so "out of date" shows without the app (as in Provider).
+        if let s = e.snap, s.at.addingTimeInterval(Words.staleAfter) > e.date { entries.append(Entry(date: s.at.addingTimeInterval(Words.staleAfter), snap: s)) }
+        return Timeline(entries: entries, policy: .after(Date().addingTimeInterval(30 * 60)))
     }
 }
 

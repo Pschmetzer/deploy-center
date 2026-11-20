@@ -115,6 +115,8 @@ final class PhoneStore: ObservableObject {
     @discardableResult
     func setOwnToken(_ k: TokenKey, _ value: String) -> Bool {
         let ok = Keychain.set(k.rawValue, value)
+        // A limit belongs to the token that hit it: a new GitHub token is tried at once.
+        if k == .github { RateGate.clear() }
         ownCache[k] = nil; failedReadAt[k] = nil
         return ok
     }
