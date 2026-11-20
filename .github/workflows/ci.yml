@@ -103,7 +103,8 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
       - name: Integration tests (MCP, Action, Claude Code plugin, digest, hooks)
         # REQUIRE_ALL=1: a part that cannot run here fails the job instead of being skipped.
-        run: REQUIRE_ALL=1 bash integrations/tests/run.sh
+        # NO_DOCKER_OK=1: this runner has no Docker; the Linux job runs the compose check.
+        run: REQUIRE_ALL=1 NO_DOCKER_OK=1 bash integrations/tests/run.sh
       - name: Sparkle download (cached; scripts/sparkle.sh checks its SHA-256 either way)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
