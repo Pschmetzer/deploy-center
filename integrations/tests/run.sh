@@ -116,6 +116,9 @@ case "\$*" in
   "status --json"|"status --json --no-github")
     jq -s --arg b "\${FAKE_BUILDING:-}" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
       | map({platform, name, building:(.name == \$b), state:"READY", changed})' "$tmp/vercel.json" "$tmp/render.json" ;;
+  "digest --days "*" --json") echo '{"days":14,"deploys":7,"failures":1}' ;;
+  "freeze status --json") echo '{"configured":false,"closedNow":false,"reason":null,"rules":[]}' ;;
+  "ci "*" --json") echo '{"repo":"'"\$2"'","ref":"'"\$3"'","state":"green","reason":"all checks passed"}' ;;
   "guard status --json") echo '{"on":true,"lastRun":"2026-01-01T00:00:00Z","turnedOff":[]}' ;;
   "autodeploy allowed --json") echo '[]' ;;
   "explain "*) echo "explain: \$2" ;;
@@ -1107,8 +1110,6 @@ fi
 if ops_out="$(tests/ops.sh --quiet 2>&1)"; then ok "ops: $(grep -c '^ok' <<<"$ops_out") checks (status page, report, badges, Docker, deploy hooks)"
 else fail "ops: status page, report, badges, Docker, deploy hooks" "$(grep '^FAIL' <<<"$ops_out" | head -8)"; fi
 skips=$((skips + $(grep -c '^skip' <<<"$ops_out")))
-# A check a runner is allowed to leave to another one (NO_DOCKER_OK=1) is said in the log, not counted as a skip.
-grep '^note ' <<<"$ops_out" || true
 
 echo
 if [ "$skips" -gt 0 ] && [ "${REQUIRE_ALL:-0}" = 1 ]; then

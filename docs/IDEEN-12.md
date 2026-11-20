@@ -221,8 +221,147 @@ Aus dem Code gelesen, gegen IDEEN-2 bis 11 abgeglichen. „(prüfen)“ = nur ge
 
 # D. Mac-App Kern (Store/Model/Row/MainWindow/Savings/Journal)
 
-Bericht ausstehend; wird als Anhang ergänzt.
+1. [Bug] Store.swift:1187 – nachrückender Toast ohne `logged: true`, doppelt in Meldungen.
+2. [Bug] Store.swift:519-521 (`tell`) – `show` loggt, danach noch `log(m)`: doppelt.
+3. [Security] Store.swift:516-521 – `log(m)`/`autofixResult[key]` nicht durch `LogTools.maskSecrets`.
+4. [Bug] Store.swift:1477-1482 vs 1204 – „Alle abbrechen“ 10 s sichtbar, `undoSeconds` 8 s: bricht laufende Builds ab; nur `.queued`.
+5. [Bug] MainWindow.swift:461/465/491-496 – `stickyError` hält „Abbrechen“ des Rollback-Countdowns 110 s ohne Wirkung.
+6. [Bug] MainWindow.swift:329, Store.swift:1077/436 – Zähler für fehlgeschlagene Projekte schließen ausgeblendete ein (prüfen).
+7. [Bug] Store.swift:821+905 – `decodeLossy` (bis 30 %) lässt Zeilen samt Haken/Build-Zeiten verschwinden.
+8. [UX] Store.swift:905-913 – leise Zeile „2 von 40 Projekten nicht lesbar“.
+9. [Bug] Store.swift:51-54 – `lastExtras` vor dem Lesen gesetzt; bei Fehler kurzer Backoff (prüfen).
+10. [Bug] Store.swift:59-61 – ein Doctor-Lauf mit `vercelLoggedIn == false` löscht `costs`; erst nach zwei Läufen (prüfen).
+11. [Bug] Store.swift:712/937 – fehlendes `jq` nur beim Start geprüft (prüfen).
+12. [Bug] Store.swift:1669 – Wochenrückblick-Nachholen nutzt `now` statt `thisMonday`.
+13. [Bug] Store.swift:226-229 – Projektbudget rechnet angefangenen heutigen Tag mit, `monthPace` nicht.
+14. [Bug] Store.swift:1133 – `entrySha` bei Fehlschlag/Abbruch falscher SHA (prüfen).
+15. [Bug] Store.swift:1934-1936 – Render „canceled“ (überholt) als `.failed` gezählt (prüfen).
+16. [Bug] Store.swift:2085-2089 – bei `.unreachable` nie nachgeprüft; Nachprüfung nach Netzrückkehr.
+17. [Bug] Store.swift:2095-2097 – fehlender Seitentext bietet „Zurückrollen“ an, widerspricht Kommentar Z.1987.
+18. [UX] Store.swift:2067-2077 – „Seite jetzt prüfen“ ignoriert Prüfpfade/Seitentext; gleiche Kette (`checkLinks`, `pageHas`).
+19. [Security] Store.swift:2131-2133/2249 – Prüflink mit Token-Query in Mitteilung/messages.json; Query kürzen (prüfen).
+20. [Feature] Store.swift:1595-1598 – `cancel()` in `.starting` vormerken.
+21. [Bug] Store.swift:311-320 – `scanPoll` unbegrenzt; Obergrenze, Pause bei Bildschirmschlaf (prüfen).
+22. [Bug] Store.swift:1419-1421/1033 – `busyMessage` Einzel-Slot; Zähler/Token.
+23. [Bug] Store.swift:853-867 – gehaltener `.done` nimmt alten `lastSha`, „N Commits warten“ kehrt zurück (prüfen).
+24. [Code] Store.swift:1228, 933-934 – veraltete Kommentare.
+25. [UX] Store.swift:1459-1465 – gemeinsame Meldung bei „baut vielleicht schon“.
+26. [UX] Store.swift:1153-1170 – ab drei Projekten „live“-Mitteilungen `silent`.
+27. [UX] Store.swift:1775-1776 – „keine Checks gefunden, startet“ anzeigen.
+28. [UX] Store.swift:214-219 – ein Namensdialog für alle kritischen Projekte.
+29. [Feature] Store.swift:1546 – „Diesen zuerst“ in der Warteschlange.
+30. [Feature] Store.swift:146-151 – `queueText` mit geschätzter Zeit.
+31. [UX] MainWindow.swift:1017-1040 – Deploy-Fenster-Hinweis im Bestätigungsblatt vorab.
+32. [UX] MainWindow.swift:575-577 – Einzel-Bestätigung ohne `costNote`.
+33. [Bug] MainWindow.swift:229-231/882 – `Trigger.id`/`ignoredTriggers` fragil (prüfen).
+34. [UX] MainWindow.swift:1800 – Tagesüberschriften in Meldungen.
+35. [Bug] MainWindow.swift:1823-1826 – „Leeren“+Rückgängig überschreibt neue Zeilen.
+36. [Perf] MainWindow.swift:1803-1809 – `LazyVStack`, Scrub nur im Demo-Modus (prüfen).
+37. [UX] MainWindow.swift:1272-1279 – Knopf „Neu verbinden“ im Anmeldefehler-Banner.
+38. [Perf] MainWindow.swift:750/1750/1763/1776 – `visible` je Render mehrfach; cachen.
+39. [Perf] MainWindow.swift:1534-1537 – `SearchQuery`/`canFixWithClaude` je Zeile.
+40. [Feature] MainWindow.swift:1747-1757 – „Alle Fehlgeschlagenen anhaken“ global.
+41. [UX] Row.swift:271-272 – „mindestens 0 PRs“ vermeiden.
+42. [Bug] Row.swift:202 – `keyFigure` verlangt `lastAt != nil`; nur-ERROR-Projekt zeigt „Noch nie deployt“ (prüfen).
+43. [UX] Row.swift:386-400 – `lineLimit` für 40-Min-Text.
+44. [UX] DeployState.swift – `pre_deploy_in_progress` ≠ „geht live“.
+45. [UX] Store.swift:1686-1688/1919 – Median statt Mittelwert, `clearCache`-Builds ausnehmen.
+46. [Feature] Store.swift:1681 – `durations` aus Journal auffüllen.
+47. [Feature] Store.swift:1936 – erste Fehlerzeile (maskiert) als `detail` im Journal.
+48. [Feature] Store.swift:1737-1747/1139 – Rollback-Ziel im Journal.
+49. [Bug] Journal.swift:122-141 – `rewrite` verliert unlesbare Zeilen (prüfen).
+50. [Bug] Journal.swift:77-87 – verwaister `journal.jsonl.lock` nie entfernt (prüfen).
+51. [Feature] Journal.swift:288-433 – Einträge/Verlauf löschen mit Undo.
+52. [Feature] Journal.swift:386-433 – Verlaufszeilen: Hauptfenster, Build-Log, „nochmal deployen“.
+53. [Feature] JournalStats.swift:133-174 – SHA, Deploy-ID, Dauer in Markdown/Postmortem.
+54. [Feature] JournalStats.swift:119-128 – Tagesmeldung nennt bis zu drei fehlgeschlagene Namen.
+55. [Perf] Journal.swift:305-308 – `shown` cachen.
+56. [Bug] Savings.swift:310-314/430-432 – Backoff nach fehlgeschlagenem Ledger-Lauf.
+57. [UX] Savings.swift:253-264/741 – Abbrechen-Knopf und Laufzeit für Bilanz.
+58. [Feature] Savings.swift:842-848 – SHA anklickbar (prüfen `repo` je Ledger-Zeile).
+59. [Bug] Model.swift:43 – `Doctor.flag` Dictionary-Reihenfolge (prüfen).
+60. [Bug] Model.swift:592 – `AutoDeployAllowance.expiry` ohne Zeitzone (prüfen).
+61. [Bug] Model.swift:600 – `covers` case-sensitiv.
+62. [UX] Model.swift:161-165 – `Costs.perBuild` bei unvollständiger Woche als „≈ (unvollständig)“.
+63-71. [Test] Tests für: Toast-Nachrücken/`tell` (je eine Zeile), Journal.rewrite/withNote, merge mit `.done` und `decodeLossy` 25 %, `checkProviders` (injizierbar), `DeployState.text` Tabelle DE/EN, `Row.keyFigure` Wahrheitstabelle, Decoder-Varianten (Doctor, Allowance, Autofix), Projektbudget mit festem `today`, `SavingsModel.milestone/whatIf` Grenzen.
 
 # E. Integrationen, Site, Tests, CI, Docs, Nutzer-Features
 
-Bericht ausstehend; wird als Anhang ergänzt.
+1. [Doku] raycast/package.json:5,11-16, src/deploy-all-changed.tsx:111, action/action.yml:2-4 – nennen nur Vercel/Render, es laufen sieben Hosts.
+2. [SEO] vscode/package.json:22-27, claude-code plugin.json:10-15, raycast package.json:11-16 – Keywords um netlify, cloudflare-pages, amplify, digitalocean, coolify, auto-deploy ergänzen.
+3. [UX] raycast deploy-all-changed.tsx:22,30 – `failed.push(r.name)` ohne Plattform.
+4. [UX] raycast deploy-all-changed.tsx:25,139-141 – Grund „not started“ nur im Tooltip.
+5. [UX] raycast deploy-all-changed.tsx:44,92 – „Deploy All“ verschwindet nach Lauf ohne Hinweis (prüfen).
+6. [Bug] alfred/deploys-filter.sh:34 – Suche nur in `.name`, rollback-Filter auch `platform:name`.
+7. [UX] alfred/deploys-filter.sh:33,46 – Rang aus Regex statt `.phase`; Untertitel ohne `.pendingCommits`.
+8. [Feature] alfred – CLI-Suche dreimal kopiert; nach `integrations/lib/`, fertiges `.alfredworkflow`.
+9. [Bug] badge/badge.sh:2, integrations/README.md:11 – versprechen „3 d ago“, Code schreibt Datum.
+10. [Bug] badge/badge.sh:77,95 – nicht atomar schreiben (tmp + mv).
+11. [Bug] badge/badge.sh:64-110 – SVG/JSON gelöschter Projekte werden nie entfernt (prüfen).
+12. [Bug] badge/badge.sh:72-75 – gleichnamige Projekte derselben Plattform überschreiben sich (prüfen).
+13. [Bug] badge/badge.sh:63 – `width()` Zeichenzahl×6,5, breite Zeichen laufen über (prüfen).
+14. [Doku] integrations/README.md:36-37 – Testtabelle veraltet gegenüber ci.yml.
+15. [Bug] vscode/src/repo.ts:13-21 – scp-Remote ohne Nutzer falsch geparst.
+16. [Bug] vscode/src/repo.ts:16, hooks/pre-push:29 – `ssh://git@ssh.github.com:443/…` ergibt falschen Host (prüfen).
+17. [Feature] vscode – `contributes.walkthroughs`.
+18. [UX] vscode/package.json:35-37 – `onStartupFinished` → `workspaceContains:.git` (prüfen).
+19. [CI] ci.yml:229-247 – .vsix-Dateiliste prüfen (`vsce ls`).
+20. [CI] pages.yml:116 – Smoke-Test um sitemap.xml, robots.txt, llms.txt, feed.xml, IndexNow-Key.
+21. [CI] ci.yml:36 – macOS-Job nur bei relevanten Pfaden (`paths`-Filter).
+22. [CI] ci.yml:366-380 – `external-links` legt Issue „Tote Links“ an.
+23. [CI] ci.yml:65-86 – macOS-Suiten explizit mit `/bin/bash` (3.2).
+24. [CI] ruff-/Node-Pins ohne dependabot; Wochen-Check.
+25. [CI] ci.yml:348-363 – Changelog-Check nur Warning, `site/` fehlt im Regex.
+26. [Doku] PULL_REQUEST_TEMPLATE.md:7 – Zwillingsregel um FAQ/GUARD/CLI/TROUBLESHOOTING .de ergänzen (prüfen).
+27. [Security] docs/IDEEN-2..12.md getrackt mit unbehobenen Sicherheitsfunden (Datei:Zeile); in private Ablage/ignorieren oder nach Behebung kürzen (prüfen, ob Repo öffentlich).
+28. [Security] site/index.html:4, 404.html:5 – CSP als `<meta>`, `frame-ancestors` wirkungslos; calculator.js:3 `?embed=1` (prüfen).
+29. [SEO] `site/.well-known/security.txt` fehlt; check-site.py Pflicht (scripts/check-site.py:9,223).
+30. [SEO] site/docs/search-index.json – nur 1 von 423 Einträgen `/de/`.
+31. [SEO] site/de/blog/feed.xml getrackt, EN-Feed ignoriert; vereinheitlichen (prüfen).
+32. [UX] site/js/site.js:93-104 – Suche ohne Pfeiltasten/Combobox-Rollen, Esc löscht Eingabe (prüfen).
+33. [Test] app/HealthCard.swift:7-100 – `Health`-Regeln ohne Tests.
+34. [Test] tests/app-tests.sh:20-23 – auch `-AppleLocale de_DE` (Dezimalkomma).
+35. [Test] integrations/tests/run.sh – Badge: gleichnamige Projekte, Entfernen alter Badges.
+36. [Test] Alfred: Hauptfilter und Rollback-Filter gleiche Suche.
+37. [Feature] Team-Budget in `deploy-center.json` (`"budget":{"usd":300}`).
+38. [Feature] Agenten-Richtlinie in `deploy-center.json` statt Env (`DEPLOYS_MCP_ALLOW_*`, mcp/server.mjs:51-60).
+39. [Feature] Agenten-Build-Budget pro Tag (digest/classify.sh, pre-push-Warnung).
+40. [Feature] Prognose „Budget erreicht am TT.MM.“ (prüfen `monthPace`).
+41. [Feature] Action: `cost-label` am PR.
+42. [Feature] Kostenstellen `costCenter`, `deploys cost --by center --csv`.
+43. [Feature] Branch-Hotspots im Digest und `plan`.
+44. [Feature] Erste-Woche-Bilanz-Mitteilung aus `ledger`.
+45. [Feature] Freigabe-Vertretung `deputies`.
+46. [Feature] Wochenrotation `onCall`.
+47. [Feature] `deploys handoff [--to name]`.
+48. [Feature] Besitzer je Projekt `owners`, Erwähnung in integrations/lib/post.sh.
+49. [Feature] Merge-Queue-Branches (`gh-readonly-queue/…`) nicht als „wartend“ zählen (prüfen).
+50. [Feature] Kundentext-Changelog via app/ClaudeAI.swift, Statusseite.
+51. [Feature] Notify.swift:170-173 – Snooze-Aktion „In 1 Stunde erinnern“.
+52. [Feature] Eskalation nach N Minuten (`DEPLOYS_NOTIFY_ESCALATE_AFTER`, lib/post.sh:14).
+53. [Feature] Kanal je Schwere in notify.sh (`DEPLOYS_NOTIFY_ONLY=failed`).
+54. [Feature] `deploys team invite` (Einzeiler zum Weitergeben).
+55. [Feature] Rechner „Mein Team“ mit teilbarem Link (calculator.js).
+56. [Feature] `deploys ledger --card out.png` ohne Projektnamen.
+57. [Feature] `deploys guard simulate` (Pre-Mortem; prüfen `guard status`).
+58. [Feature] PR-Kommentarbefehl `/deploy-center plan|preview` plus Beispiel-Workflow.
+59. [Feature] statuspage.sh liest `notes/`-Datei je Projekt.
+60. [Feature] `deploys report --month --md`.
+61. [Doku] README(.de).md:142-162 – Roadmap um „Nicht geplant“.
+62. [Doku] GOOD-FIRST-ISSUES.md – Zeitrahmen, Datei, Prüfbefehl je Aufgabe.
+63. [Doku] integrations/README.md:5-6 – Spalte „Schreibt?“.
+64. [Doku] einheitlicher Kopf je Add-on-README, Prüfung in scripts/check-docs.py.
+65. [Doku] Teilübersetzungen (CLI.de.md 111 vs 362, GUARD.de.md 65 vs 112) kennzeichnen.
+66. [Doku] SECURITY.md – Abschnitt „Was du als Nutzer prüfen kannst“.
+67. [CI] ci.yml – `workflow_dispatch`.
+68. [CI] ci.yml:98-103 – `codesign --verify --deep` und `plutil -lint` am Artefakt.
+69. [CI] pages.yml:24 – Vorschau-Artefakt `site-preview` für PRs.
+70. [Test] check-site.py – CSP-Hash des Theme-Skripts prüfen (prüfen).
+71. [Test] tests/release-tests.sh – Add-on-Versionen/CHANGELOG-Köpfe, `scripts/bump.sh`.
+72. [UX] raycast/package.json:41-47 – Intervall 1m bei laufendem Build (prüfen).
+73. [UX] vscode – Aktivitätsleiste/SCM-Titelsymbol (prüfen).
+74. [Security] claude-code/hooks/hooks.json:5-14 – Hook nur für `git push*` (prüfen `if`-Unterstützung).
+75. [Feature] `deploys prompt` als `statusLine`-Beispiel in integrations/claude-code/README.md.
+76. [Feature] `deploys start` CLI-Onboarding (prüfen `deploys setup`).
+77. [Doku] docs/FIRST-START.md – nach Zielen gruppieren.
+78. [Feature] `deploys where --support` (Textblock für Issues).
