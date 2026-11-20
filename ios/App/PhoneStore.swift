@@ -226,7 +226,7 @@ final class PhoneStore: ObservableObject {
         try? FileManager.default.removeItem(at: Background.lastURL)
         if let url = DeploySnapshot.groupURL { try? FileManager.default.removeItem(at: url) }
         let d = UserDefaults.standard
-        for k in [Background.providerTimesKey, Background.lastRunKey, "widgetReloadAt", Notes.mutedKey, "usedQRCodes"] { d.removeObject(forKey: k) }
+        for k in [Background.providerTimesKey, Background.lastRunKey, RateGate.key, "widgetReloadAt", Notes.mutedKey, "usedQRCodes"] { d.removeObject(forKey: k) }
         WidgetCenter.shared.reloadAllTimelines()
         QuickActions.update([]); Spotlight.index([], demo: demo)
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()

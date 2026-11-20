@@ -11,6 +11,8 @@ struct APIError: LocalizedError {
     /// GitHub answers a spent rate limit with 403 and X-RateLimit-Remaining: 0, others with 429.
     /// The status stays as it came: callers decide by it.
     var rateLimited = false
+    /// When the limit is free again, if the answer said so (`Retry-After`, `x-ratelimit-reset`).
+    var retryAt: Date? = nil
 
     /// What to do about it, not only the HTTP code.
     var errorDescription: String? {
@@ -149,7 +151,10 @@ struct HTTP {
                 if wait <= Self.longestWait { try await Task.sleep(for: .seconds(max(1, wait))); continue }
             }
             guard (200..<300).contains(code) else {
-                if limited { throw APIError(status: code, message: Self.limitText(http), rateLimited: true) }
+                if limited {
+                    throw APIError(status: code, message: Self.limitText(http), rateLimited: true,
+                                   retryAt: Self.retryAfter(http).map { Date().addingTimeInterval($0) })
+                }
                 let obj = try? JSONSerialization.jsonObject(with: data) as? JSON
                 let raw = ((obj?["error"] as? JSON)?["message"] as? String) ?? (obj?["message"] as? String)
                     ?? Self.plainBody(data)
@@ -697,6 +702,12 @@ struct GitHub {
     /// repo when it is already known (projects of one repo share it).
     func fill(_ p: inout PhoneProject, openPRs known: (Int, Bool)? = nil) async {
         guard let repo = p.repo, let branch = p.branch else { return }
+        // A spent limit is remembered across launches and background runs: no calls until it is free (IDEEN-12 C17).
+        if let until = RateGate.until {
+            p.fetchError = L("GitHub's rate limit is reached, free again at \(until.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(appLocale))). A GitHub token in Settings raises it.",
+                             "Das Abruflimit von GitHub ist erreicht, wieder frei um \(until.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(appLocale))). Ein GitHub-Token in den Einstellungen erhöht es.")
+            return
+        }
         let ref = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? branch
         do {
             let head = try await http.get("/repos/\(repo)/commits/\(ref)") as? JSON
@@ -708,7 +719,7 @@ struct GitHub {
             p.fetchError = L("Repository not found. If it is private, add a GitHub token in Settings.",
                              "Repository nicht gefunden. Ist es privat, ein GitHub-Token in den Einstellungen eintragen.")
             return
-        } catch { p.fetchError = explain(error); return }
+        } catch { RateGate.note(error); p.fetchError = explain(error); return }
         if let known { p.openPRs = known.0; p.openPRsCapped = known.1 }
         else if let open = try? await http.get("/repos/\(repo)/pulls?state=open&per_page=100") as? [JSON] {
             p.openPRs = open.count; p.openPRsCapped = open.count == 100
@@ -753,6 +764,7 @@ struct GitHub {
             p.rewritten = true
         } catch {
             // A rate limit or an outage: say "state unknown", never "0 commits waiting".
+            RateGate.note(error)
             p.fetchError = explain(error)
         }
     }
@@ -767,6 +779,22 @@ struct GitHub {
         }
         return nil
     }
+}
+
+/// When GitHub's rate limit is free again, kept in UserDefaults (the app and the background run share it).
+enum RateGate {
+    static let key = "githubLimitUntil"
+    /// nil when there is no limit or it has passed.
+    static var until: Date? {
+        guard let d = UserDefaults.standard.object(forKey: key) as? Date, d > Date() else { return nil }
+        return d
+    }
+    /// Remembers the end of a spent limit (at most an hour ahead: a wrong header must not lock GitHub out for a day).
+    static func note(_ error: Error, now: Date = Date()) {
+        guard let e = error as? APIError, e.rateLimited, let at = e.retryAt else { return }
+        UserDefaults.standard.set(min(at, now.addingTimeInterval(3600)), forKey: key)
+    }
+    static func clear() { UserDefaults.standard.removeObject(forKey: key) }
 }
 
 /// What the log screen shows: masked lines around the first error, or why there are none.
