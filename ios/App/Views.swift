@@ -177,6 +177,7 @@ struct RootView: View {
         .task {
             Background.schedule()
             await store.reload()
+            Task { await store.resumeFollowed() }
             #if DEBUG
             // For screenshots: -open <name> selects a project, -settings shows the settings.
             let args = ProcessInfo.processInfo.arguments
@@ -1081,8 +1082,8 @@ struct SettingsView: View {
                     .disabled(testing)
                     ForEach(testResults, id: \.self) { Text($0).font(.footnote) }
                 } header: { Text(L("Accounts", "Konten")) } footer: {
-                    Text(L("Keys typed here stay in this device's keychain, never synced. Sent only to api.vercel.com, api.render.com and api.github.com.",
-                           "Hier eingetragene Schlüssel bleiben im Schlüsselbund dieses Geräts, nie synchronisiert. Gesendet nur an api.vercel.com, api.render.com und api.github.com."))
+                    Text(L("Keys typed here stay in this device's keychain, never synced. Sent only to api.vercel.com, api.render.com and api.github.com. Use the smallest scope and a short lifetime: a Vercel token for one team that expires, a read-only GitHub token.",
+                           "Hier eingetragene Schlüssel bleiben im Schlüsselbund dieses Geräts, nie synchronisiert. Gesendet nur an api.vercel.com, api.render.com und api.github.com. Nimm den kleinsten Bereich und eine kurze Laufzeit: ein Vercel-Token für ein Team, das abläuft, ein Nur-Lese-GitHub-Token."))
                 }
                 Section {
                     Toggle(L("Unlock on open", "Beim Öffnen entsperren"), isOn: guarded($lockOnOpen, L("Turn off the lock", "Sperre ausschalten")))

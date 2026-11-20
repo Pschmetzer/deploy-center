@@ -226,7 +226,7 @@ final class PhoneStore: ObservableObject {
         try? FileManager.default.removeItem(at: Background.lastURL)
         if let url = DeploySnapshot.groupURL { try? FileManager.default.removeItem(at: url) }
         let d = UserDefaults.standard
-        for k in [Background.providerTimesKey, Background.lastRunKey, RateGate.key, "widgetReloadAt", Notes.mutedKey, "usedQRCodes"] { d.removeObject(forKey: k) }
+        for k in [Background.providerTimesKey, Background.lastRunKey, RateGate.key, FollowedRuns.defaultsKey, "widgetReloadAt", Notes.mutedKey, "usedQRCodes"] { d.removeObject(forKey: k) }
         WidgetCenter.shared.reloadAllTimelines()
         QuickActions.update([]); Spotlight.index([], demo: demo)
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
@@ -549,6 +549,15 @@ final class PhoneStore: ObservableObject {
         await follow(p, id)
     }
 
+    /// At launch: the deploys that were followed when the app was killed are followed again (their Live Activity is kept).
+    func resumeFollowed() async {
+        guard !demo else { return }
+        for run in FollowedRuns.fresh() {
+            guard let p = projects.first(where: { $0.key == run.key }), running[p.key] == nil else { FollowedRuns.remove(run.key); continue }
+            Task { defer { running[p.key] = nil; deployIds[p.key] = nil }; await follow(p, run.id) }
+        }
+    }
+
     func buildId(_ p: PhoneProject) -> String? { deployIds[p.key] ?? (p.building ? p.latestId : nil) }
 
     /// Keys of followed deploys the person canceled in the app: their "canceled" end is not a failure.
@@ -697,6 +706,9 @@ final class PhoneStore: ObservableObject {
                         check: (() async throws -> String)? = nil) async {
         deployIds[p.key] = rollback ? nil : id
         running[p.key] = rollback ? "rollback" : "queued"
+        // Kept while this loop runs: an app that is killed meanwhile follows the deploy again at its next launch.
+        if !rollback { FollowedRuns.add(key: p.key, id: id) }
+        defer { FollowedRuns.remove(p.key) }
         let keep = KeepAlive.start(title: rollback ? L("Rolling back \(p.name)", "\(p.name) wird zurückgerollt") : L("Deploying \(p.name)", "\(p.name) wird deployt"),
                                    subtitle: p.provider.rawValue)
         let live = LiveDeploy.start(p, rollback: rollback)
