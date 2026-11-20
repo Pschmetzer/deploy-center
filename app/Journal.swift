@@ -290,6 +290,8 @@ struct JournalView: View {
     var costs: Costs? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var stats = false
+    /// The week digest (WeekDigest.swift); it and "Figures" replace the list, never both.
+    @State private var week = false
     @State private var noteFor: JournalEntry?
     @State private var noteText = ""
     @State private var entries: [JournalEntry] = []
@@ -330,7 +332,11 @@ struct JournalView: View {
                     Button(L("Copy the list as a table", "Liste als Tabelle kopieren")) { copy(JournalStats.markdown(shown, mask: Demo.mask, scrub: scrub)) }
                     Button(L("Copy this month's report", "Bericht dieses Monats kopieren")) { copy(JournalStats.monthReport(entries, mask: Demo.mask)) }
                 }.fixedSize().disabled(entries.isEmpty)
-                Toggle(L("Figures", "Zahlen"), isOn: $stats).toggleStyle(.button).disabled(entries.isEmpty)
+                Toggle(L("Figures", "Zahlen"), isOn: Binding(get: { stats }, set: { stats = $0; if $0 { week = false } }))
+                    .toggleStyle(.button).disabled(entries.isEmpty)
+                Toggle(L("Week", "Woche"), isOn: Binding(get: { week }, set: { week = $0; if $0 { stats = false } }))
+                    .toggleStyle(.button).disabled(entries.isEmpty)
+                    .help(L("The last 7 days at a glance", "Die letzten 7 Tage auf einen Blick"))
                 Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(12)
             HStack {
@@ -351,7 +357,9 @@ struct JournalView: View {
                 }.fixedSize()
             }.padding(.horizontal, 12).padding(.bottom, 8)
             Divider()
-            if stats && !entries.isEmpty {
+            if week && !entries.isEmpty {
+                WeekDigestView(entries: entries, scrub: scrub)
+            } else if stats && !entries.isEmpty {
                 JournalStatsView(entries: entries, costs: costs)
             } else if entries.isEmpty {
                 Text(L("Nothing yet. Deploys that end are listed here.", "Noch nichts. Beendete Deploys stehen hier."))

@@ -187,6 +187,7 @@ struct Row: View {
             if let u = item.link.flatMap(URL.init(string:)) { Button(L("Open site", "Seite öffnen")) { SafeLink.open(u) } }
             if let onDeployMerged { Button(L("Put the merged fix live", "Gemergten Fix live schalten"), action: onDeployMerged) }
             if let onDismissAutofix { Button(L("Dismiss the fix chip", "Fix-Chip verwerfen"), action: onDismissAutofix) }
+            if let copy = Self.waitingCopy(item) { Button(L("Copy the waiting commits", "Wartende Commits kopieren")) { Pasteboard.copy(copy) } }
             if case .failed(let m) = item.state, !m.isEmpty {
                 Button(L("Copy the error", "Fehler kopieren")) {
                     Pasteboard.copy(Self.errorCopy(item, m))
@@ -207,8 +208,14 @@ struct Row: View {
     @ViewBuilder private var keyFigure: some View {
         switch Self.keyFigure(item) {
         case .waiting:
-            Label(Self.waitingText(item), systemImage: "arrow.up.circle.fill")
-                .font(.caption.weight(.semibold)).foregroundStyle(Color.infoText)
+            HStack(spacing: 4) {
+                Label(Self.waitingText(item), systemImage: "arrow.up.circle.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(Color.infoText)
+                if let copy = Self.waitingCopy(item) {
+                    CopyButton(title: L("Copy the waiting commits", "Wartende Commits kopieren"), systemImage: "doc.on.doc") { copy }
+                        .buttonStyle(.borderless)
+                }
+            }
         case .failed, .lastDeploy, .never:
             lastDeploy
         }
@@ -274,6 +281,17 @@ struct Row: View {
         let commits = L("\(c) \(c == 1 ? "commit" : "commits")", "\(c) \(c == 1 ? "Commit" : "Commits")")
         return prs > 0 ? commits + " · " + L("\(prs) \(prs == 1 ? "PR" : "PRs") waiting", "\(prs) \(prs == 1 ? "PR wartet" : "PRs warten")")
                        : commits + L(" waiting", c == 1 ? " wartet" : " warten")
+    }
+
+    /// "Copy the commits": what the row knows about the waiting changes, for a chat message. Nil when nothing waits.
+    /// Tokens are masked like the error copy; in demo mode names and messages are the stand-ins.
+    static func waitingCopy(_ i: Item) -> String? {
+        guard i.hasNewCommits else { return nil }
+        var s = (Demo.on ? Demo.mask(i.name) : i.name) + ": " + waitingText(i)
+        if let m = i.headMsg, !m.isEmpty, !Demo.on {
+            s += "\n" + L("Newest: ", "Neuester: ") + (i.headSha.map { String($0.prefix(7)) + " " } ?? "") + m
+        }
+        return LogTools.maskSecrets(s)
     }
 
     /// "Copy the error": tokens masked like the log's Copy; in demo mode with the stand-ins the screen shows.

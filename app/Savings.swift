@@ -402,6 +402,9 @@ struct SavingsEntry: View {
     @ObservedObject var store: Store
     @ObservedObject private var model = SavingsModel.shared
     @AppStorage("savingsBannerDismissed") private var dismissed = false
+    /// Folded to one slim line; remembered between launches (the "Savings" bar is always there once auto-deploy was off).
+    @AppStorage(SavingsEntry.collapsedKey) private var collapsed = false
+    static let collapsedKey = "savingsBannerCollapsed"
     @State private var sheet: SavingsSheet.Tab?
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -439,11 +442,21 @@ struct SavingsEntry: View {
 
     private func bar(icon: String, text: String, button: String, neutral: Bool = false, close: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
+            Button { collapsed.toggle() } label: { Image(systemName: collapsed ? "chevron.right" : "chevron.down").frame(width: 10) }
+                .buttonStyle(.borderless)
+                .help(collapsed ? L("Show the savings line", "Ersparnis-Zeile zeigen") : L("Fold the savings line", "Ersparnis-Zeile einklappen"))
+                .accessibilityLabel(collapsed ? L("Show the savings line", "Ersparnis-Zeile zeigen") : L("Fold the savings line", "Ersparnis-Zeile einklappen"))
+                .accessibilityValue(collapsed ? L("folded", "eingeklappt") : L("shown", "sichtbar"))
             Image(systemName: icon).foregroundStyle(neutral ? Color.secondary : Color.good)
-            Text(text).font(.callout)
-            Spacer()
-            Button(button, action: action).buttonStyle(.link)
-            if let close {
+            if collapsed {
+                Text(L("Savings", "Ersparnis")).font(.callout).foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                Text(text).font(.callout)
+                Spacer()
+                Button(button, action: action).buttonStyle(.link)
+            }
+            if let close, !collapsed {
                 Button(action: close) { Image(systemName: "xmark") }
                     .buttonStyle(.borderless).help(L("Close", "Schließen")).accessibilityLabel(L("Close", "Schließen"))
             }
