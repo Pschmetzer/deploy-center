@@ -142,7 +142,7 @@
 <a class="skip" href="#main">Zum Inhalt springen</a>
 <nav class="top" aria-label="Hauptmenü"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
-  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/guides/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
 </div></nav>
 
 <main id="main" class="wrap narrow"><article>
@@ -172,7 +172,7 @@
 <h2 id="actions">GitHub Actions</h2>
 <p>Ein Workflow kann einen Hook aufrufen, wenn ein Pull Request ein Label bekommt, oder einmal am Tag deployen. Er läuft ohne deinen Mac und lässt sich als Code prüfen. Die Prüfungen schreibst du selbst, und geplante Workflows stoppen nach 60 Tagen ohne Aktivität im Repository. Siehe <a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a> (englisch).</p>
 <h2 id="dc">Deploy Center</h2>
-<p>Deploy Center listet die wartenden Commits und Pull Requests je Projekt, deployt, wenn du klickst oder einen Befehl mit <code>--yes</code> ausführst, und bietet die Prüfungen, die die anderen Wege dir überlassen: <a href="/de/guides/nur-bei-gruenem-ci-deployen/">CI muss grün sein</a>, ein <a href="/de/guides/deploy-freeze-freitag/">Deploy-Freeze</a>, ein <a href="/de/guides/automatischer-rollback-nach-deploy/">automatischer Rollback</a>. Es ist eine Mac-App und eine Bash-CLI; die App selbst braucht macOS 15 oder neuer, die CLI läuft auch unter Linux und in CI.</p>
+<p>Deploy Center listet die wartenden Commits und Pull Requests je Projekt, deployt, wenn du klickst oder einen Befehl mit <code>--yes</code> ausführst, und bietet die Prüfungen, die die anderen Wege dir überlassen: <a href="/de/anleitungen/nur-bei-gruenem-ci-deployen/">CI muss grün sein</a>, ein <a href="/de/anleitungen/deploy-freeze-freitag/">Deploy-Freeze</a>, ein <a href="/de/anleitungen/automatischer-rollback-nach-deploy/">automatischer Rollback</a>. Es ist eine Mac-App und eine Bash-CLI; die App selbst braucht macOS 15 oder neuer, die CLI läuft auch unter Linux und in CI.</p>
 <div class="note"><p><b>Du kannst sie mischen.</b> Deploy Center ruft auch Deploy-Hooks für Anbieter auf, die nichts anderes bieten, und die CLI läuft in einem GitHub-Actions-Workflow.</p></div>
 
 <h2 id="faq">Fragen</h2>
@@ -193,8 +193,8 @@
 <p class="reference"><b>Nachschlagen:</b> <a href="/docs/deploy-hooks/" lang="en">Deploy hooks</a> · <a href="/docs/ci/" lang="en">Deploy from CI</a></p>
 
 <div class="related"><h2>Verwandt</h2><ul>
-  <li><a href="/de/guides/taeglicher-deploy-nach-zeitplan/">Einmal am Tag nach Zeitplan deployen</a></li>
-  <li><a href="/de/guides/deploy-warteschlange/">Deine Deploy-Warteschlange: gemergt, aber nicht live</a></li>
+  <li><a href="/de/anleitungen/taeglicher-deploy-nach-zeitplan/">Einmal am Tag nach Zeitplan deployen</a></li>
+  <li><a href="/de/anleitungen/deploy-warteschlange/">Deine Deploy-Warteschlange: gemergt, aber nicht live</a></li>
   <li><a href="/guides/deploy-hooks/" lang="en">Deploy hooks for any host</a></li>
   <li><a href="/guides/deploy-to-vercel-from-github-actions/" lang="en">Deploy to Vercel from GitHub Actions</a></li>
   <li><a href="/de/vergleich/geplante-deploys-vergleich/">Geplante Deploys: Cron, GitHub Actions oder deploys schedule</a></li>

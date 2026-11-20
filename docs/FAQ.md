@@ -74,4 +74,4 @@ Yes, without a server: a shared `deploy-center.json` per repo, observer mode and
 Only for Claude in the app (explain a failure, release notes, ship check). Autofix uses a Claude Code routine instead. See [CLAUDE-IN-APP.md](CLAUDE-IN-APP.md).
 
 ## Where are the step-by-step guides?
-On the website: [all guides](https://deploycenter.app/guides/) (build minutes, deploy queue, automatic rollback, monorepo ignore rules, deploy freeze, status page, daily deploy, risk checks, one per host), [comparisons](https://deploycenter.app/compare/) and the [blog](https://deploycenter.app/blog/). A German set is at [deploycenter.app/de/guides/](https://deploycenter.app/de/guides/).
+On the website: [all guides](https://deploycenter.app/guides/) (build minutes, deploy queue, automatic rollback, monorepo ignore rules, deploy freeze, status page, daily deploy, risk checks, one per host), [comparisons](https://deploycenter.app/compare/) and the [blog](https://deploycenter.app/blog/). A German set is at [deploycenter.app/de/anleitungen/](https://deploycenter.app/de/anleitungen/).

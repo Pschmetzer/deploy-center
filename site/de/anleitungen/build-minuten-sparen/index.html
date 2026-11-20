@@ -11,9 +11,9 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
-<link rel="canonical" href="https://deploycenter.app/de/guides/build-minuten-sparen/">
+<link rel="canonical" href="https://deploycenter.app/de/anleitungen/build-minuten-sparen/">
 <link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/save-build-minutes/">
-<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/build-minuten-sparen/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/build-minuten-sparen/">
 <link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/save-build-minutes/">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
@@ -23,7 +23,7 @@
 <meta property="article:published_time" content="2026-11-20">
 <meta property="og:title" content="Build-Minuten sparen, bei jedem Hosting-Anbieter · Deploy Center">
 <meta property="og:description" content="Build-Minuten sind Builds mal Build-Dauer. Builds zählen, überflüssige streichen, den Rest verkürzen: bei Vercel, Netlify, Render und Cloudflare.">
-<meta property="og:url" content="https://deploycenter.app/de/guides/build-minuten-sparen/">
+<meta property="og:url" content="https://deploycenter.app/de/anleitungen/build-minuten-sparen/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
@@ -47,8 +47,8 @@
   "@type": "TechArticle",
   "headline": "Build-Minuten sparen, bei jedem Hosting-Anbieter",
   "description": "Build-Minuten sind Builds mal Build-Dauer. Builds zählen, überflüssige streichen, den Rest verkürzen: bei Vercel, Netlify, Render und Cloudflare.",
-  "url": "https://deploycenter.app/de/guides/build-minuten-sparen/",
-  "mainEntityOfPage": "https://deploycenter.app/de/guides/build-minuten-sparen/",
+  "url": "https://deploycenter.app/de/anleitungen/build-minuten-sparen/",
+  "mainEntityOfPage": "https://deploycenter.app/de/anleitungen/build-minuten-sparen/",
   "datePublished": "2026-11-20",
   "dateModified": "2026-11-20",
   "inLanguage": "de",
@@ -125,45 +125,13 @@
     "@type": "ListItem",
     "position": 2,
     "name": "Anleitungen",
-    "item": "https://deploycenter.app/de/guides/"
+    "item": "https://deploycenter.app/de/anleitungen/"
    },
    {
     "@type": "ListItem",
     "position": 3,
     "name": "Build-Minuten sparen",
-    "item": "https://deploycenter.app/de/guides/build-minuten-sparen/"
-   }
-  ]
- },
- {
-  "@context": "https://schema.org",
-  "@type": "HowTo",
-  "name": "Build-Minuten sparen, bei jedem Hosting-Anbieter",
-  "description": "Build-Minuten sind Builds mal Build-Dauer. Builds zählen, überflüssige streichen, den Rest verkürzen: bei Vercel, Netlify, Render und Cloudflare.",
-  "step": [
-   {
-    "@type": "HowToStep",
-    "position": 1,
-    "name": "Zähle, was baut",
-    "url": "https://deploycenter.app/de/guides/build-minuten-sparen/#count"
-   },
-   {
-    "@type": "HowToStep",
-    "position": 2,
-    "name": "Streiche Builds, die größten zuerst",
-    "url": "https://deploycenter.app/de/guides/build-minuten-sparen/#cut"
-   },
-   {
-    "@type": "HowToStep",
-    "position": 3,
-    "name": "Danach die verbleibenden Builds verkürzen",
-    "url": "https://deploycenter.app/de/guides/build-minuten-sparen/#shorten"
-   },
-   {
-    "@type": "HowToStep",
-    "position": 4,
-    "name": "Prüfe, was du gespart hast",
-    "url": "https://deploycenter.app/de/guides/build-minuten-sparen/#check"
+    "item": "https://deploycenter.app/de/anleitungen/build-minuten-sparen/"
    }
   ]
  }
@@ -174,11 +142,11 @@
 <a class="skip" href="#main">Zum Inhalt springen</a>
 <nav class="top" aria-label="Hauptmenü"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
-  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/guides/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
 </div></nav>
 
 <main id="main" class="wrap narrow"><article>
-<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/guides/">Anleitungen</a></p>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/anleitungen/">Anleitungen</a></p>
 <h1>Build-Minuten sparen, bei jedem Hosting-Anbieter</h1>
 <p class="answer">Build-Minuten sind die Zahl der Builds mal die Dauer jedes Builds. Senke zuerst die Zahl: lass Pushes aus, die nicht live müssen, lass Projekte aus, die ein Commit nicht berührt hat, und lass einen Deploy viele Commits abdecken. Erst danach lohnt es, einen einzelnen Build zu beschleunigen.</p>
 <p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
@@ -193,8 +161,8 @@ deploys history web 20  # die letzten 20 Deploys eines Projekts
 deploys triggers        # Builds der letzten 24 Stunden, die niemand von hier gestartet hat</code></pre>
 <h2 id="cut">2. Streiche Builds, die größten zuerst</h2>
 <ol>
-  <li><b>Bots und Agenten.</b> Dependabot, Renovate und Coding-Agenten pushen auf eigene Branches. Lass deren Previews aus: <a href="/guides/skip-vercel-previews-for-bots-and-agents/">Vercel</a> (englisch), <a href="/de/guides/preview-builds-fuer-bots-vermeiden/">Netlify, Cloudflare Pages und Render</a>.</li>
-  <li><b>Projekte, die ein Commit nicht berührt hat.</b> In einem Monorepo baut ein Push jedes Projekt. Siehe <a href="/de/guides/monorepo-unveraenderte-builds-ueberspringen/">Ignore-Regeln für Monorepos</a>.</li>
+  <li><b>Bots und Agenten.</b> Dependabot, Renovate und Coding-Agenten pushen auf eigene Branches. Lass deren Previews aus: <a href="/guides/skip-vercel-previews-for-bots-and-agents/">Vercel</a> (englisch), <a href="/de/anleitungen/preview-builds-fuer-bots-vermeiden/">Netlify, Cloudflare Pages und Render</a>.</li>
+  <li><b>Projekte, die ein Commit nicht berührt hat.</b> In einem Monorepo baut ein Push jedes Projekt. Siehe <a href="/de/anleitungen/monorepo-unveraenderte-builds-ueberspringen/">Ignore-Regeln für Monorepos</a>.</li>
   <li><b>Production nach deinem Zeitplan.</b> Schalte Auto-Deploy ab und deploye einmal, wenn die Arbeit fertig ist: <a href="/guides/disable-vercel-auto-deploy/">Vercel</a>, <a href="/guides/render-auto-deploy-off/">Render</a>, <a href="/guides/netlify-stop-builds/">Netlify</a>, <a href="/guides/cloudflare-pages-stop-builds/">Cloudflare Pages</a> (alle englisch).</li>
   <li><b>Commits, die keinen Build brauchen.</b> Eine Änderung an der README oder an einem Kommentar braucht keinen Deploy. Render hat Build-Filter und <code>[skip render]</code> in der Commit-Nachricht; bei Vercel kann ein Ignored Build Step die Commit-Nachricht lesen.</li>
 </ol>
@@ -231,7 +199,7 @@ deploys price set vercel 0.008   # dein Preis pro Build-Minute, wo keine Abrechn
 <p class="reference"><b>Nachschlagen:</b> <a href="/docs/savings/" lang="en">Savings: simulate and ledger</a> · <a href="/docs/cli/" lang="en">CLI reference</a></p>
 
 <div class="related"><h2>Verwandt</h2><ul>
-  <li><a href="/de/guides/deploy-warteschlange/">Deine Deploy-Warteschlange: gemergt, aber nicht live</a></li>
+  <li><a href="/de/anleitungen/deploy-warteschlange/">Deine Deploy-Warteschlange: gemergt, aber nicht live</a></li>
   <li><a href="/guides/vercel-build-minutes-and-build-queue/" lang="en">Vercel build minutes and the build queue</a></li>
   <li><a href="/guides/reduce-vercel-costs/" lang="en">Reduce Vercel costs</a></li>
   <li><a href="/guides/stop-vercel-building-every-push/" lang="en">Stop Vercel building every push</a></li>

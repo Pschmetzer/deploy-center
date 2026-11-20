@@ -143,7 +143,7 @@
 <a class="skip" href="#main">Zum Inhalt springen</a>
 <nav class="top" aria-label="Hauptmenü"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
-  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/guides/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
 </div></nav>
 
 <main id="main" class="wrap narrow"><article>
@@ -160,11 +160,11 @@
 <p>Ein Freeze ohne Ausweg wird auf schlechtere Art umgangen: Jemand schaltet das Werkzeug ab. Gib ihm also eine Vordertür. <code>deploys deploy-changed --yes --force "Grund"</code> startet den Deploy trotzdem, und das Projekt bekommt einen <code>forced</code>-Eintrag im Deploy-Verlauf mit dem Fenster und dem Grund. Nächste Woche kannst du lesen, welche Freitags-Deploys stattfanden und warum, statt zu raten.</p>
 <p>Das ändert die Frage von „Hat jemand den Freeze gebrochen?“ zu „War das ein guter Grund?“, und über diese lohnt es sich zu sprechen.</p>
 <h2 id="open">Was absichtlich offen bleibt</h2>
-<p>Rollbacks, Previews und <code>verify</code> laufen auch in einem geschlossenen Fenster. Ein Freeze, der einen Rollback blockiert, verlängert einen Vorfall, und der Sinn eines Freezes sind weniger Vorfälle. Ist ein durchgerutschter Deploy kaputt, kann <code>deploys verify</code> ihn von selbst zurückrollen, wenn die Seite mit 5xx antwortet. Siehe die Anleitung zur <a href="/de/guides/automatischer-rollback-nach-deploy/">Gesundheitsprüfung</a>.</p>
+<p>Rollbacks, Previews und <code>verify</code> laufen auch in einem geschlossenen Fenster. Ein Freeze, der einen Rollback blockiert, verlängert einen Vorfall, und der Sinn eines Freezes sind weniger Vorfälle. Ist ein durchgerutschter Deploy kaputt, kann <code>deploys verify</code> ihn von selbst zurückrollen, wenn die Seite mit 5xx antwortet. Siehe die Anleitung zur <a href="/de/anleitungen/automatischer-rollback-nach-deploy/">Gesundheitsprüfung</a>.</p>
 <h2 id="side-doors">Schließe die Seitentüren</h2>
 <p>Das Fenster schützt Deploys, die mit Deploy Center gestartet werden. Einen Push, den dein Anbieter von selbst deployt, fragt das Fenster nie. Ist Auto-Deploy noch an, ist der Freeze eine höfliche Anregung. Schalte Auto-Deploy beim Anbieter ab und lass den Guard es wieder abschalten, falls es je zurückkommt; dann geht jeder Production-Deploy durch eine Tür. Der Vergleich zum <a href="/de/vergleich/push-builds-stoppen-vergleich/">Stoppen von Push-Builds</a> nennt den Schalter je Anbieter.</p>
 <h2 id="start">Ein kleiner Anfang</h2>
-<p>Beginne mit einer Regel, <code>{ "days": ["fri"], "from": "15:00" }</code>, und den Daten deiner Feiertage. Nimm das Wochenende nur dazu, wenn niemand Bereitschaft hat. Lies das Journal nach einem Monat und verschiebe die Grenze dorthin, wo sich die Ausnahmen häufen. Das Dateiformat steht in <a href="/de/guides/deploy-freeze-freitag/">einen Deploy-Freeze einrichten</a>.</p>
+<p>Beginne mit einer Regel, <code>{ "days": ["fri"], "from": "15:00" }</code>, und den Daten deiner Feiertage. Nimm das Wochenende nur dazu, wenn niemand Bereitschaft hat. Lies das Journal nach einem Monat und verschiebe die Grenze dorthin, wo sich die Ausnahmen häufen. Das Dateiformat steht in <a href="/de/anleitungen/deploy-freeze-freitag/">einen Deploy-Freeze einrichten</a>.</p>
 
 <h2 id="faq">Fragen</h2>
   <details><summary>Ist ein Deploy-Freeze dasselbe wie keine Deploys?</summary><p>Nein. Er lehnt Production-Deploys im Fenster ab. Previews, Rollbacks und <code>verify</code> laufen weiter, und ein Deploy mit <code>--force</code> und einem Grund geht durch.</p></details>
@@ -184,9 +184,9 @@
 <p class="reference"><b>Nachschlagen:</b> <a href="/docs/safe-deploy/" lang="en">Safe deploys</a></p>
 
 <div class="related"><h2>Verwandt</h2><ul>
-  <li><a href="/de/guides/deploy-freeze-freitag/">Einen Deploy-Freeze für Freitagnachmittag einrichten</a></li>
-  <li><a href="/de/guides/automatischer-rollback-nach-deploy/">Automatisch zurückrollen, wenn ein Deploy die Seite kaputt macht</a></li>
-  <li><a href="/de/guides/taeglicher-deploy-nach-zeitplan/">Einmal am Tag nach Zeitplan deployen</a></li>
+  <li><a href="/de/anleitungen/deploy-freeze-freitag/">Einen Deploy-Freeze für Freitagnachmittag einrichten</a></li>
+  <li><a href="/de/anleitungen/automatischer-rollback-nach-deploy/">Automatisch zurückrollen, wenn ein Deploy die Seite kaputt macht</a></li>
+  <li><a href="/de/anleitungen/taeglicher-deploy-nach-zeitplan/">Einmal am Tag nach Zeitplan deployen</a></li>
   <li><a href="/blog/ai-coding-agents-build-bill/" lang="en">AI coding agents and your build bill</a></li>
 </ul></div>
 </article></main>

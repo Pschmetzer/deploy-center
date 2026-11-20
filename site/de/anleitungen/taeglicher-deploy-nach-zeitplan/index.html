@@ -11,9 +11,9 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
-<link rel="canonical" href="https://deploycenter.app/de/guides/taeglicher-deploy-nach-zeitplan/">
+<link rel="canonical" href="https://deploycenter.app/de/anleitungen/taeglicher-deploy-nach-zeitplan/">
 <link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/scheduled-daily-deploy/">
-<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/taeglicher-deploy-nach-zeitplan/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/taeglicher-deploy-nach-zeitplan/">
 <link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/scheduled-daily-deploy/">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
@@ -23,7 +23,7 @@
 <meta property="article:published_time" content="2026-11-20">
 <meta property="og:title" content="Einmal am Tag nach Zeitplan deployen · Deploy Center">
 <meta property="og:description" content="Lass einen Job einmal täglich deployen, was sich geändert hat, nur bei grünem CI: deploys schedule auf dem Mac oder ein GitHub-Actions-Workflow.">
-<meta property="og:url" content="https://deploycenter.app/de/guides/taeglicher-deploy-nach-zeitplan/">
+<meta property="og:url" content="https://deploycenter.app/de/anleitungen/taeglicher-deploy-nach-zeitplan/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
@@ -47,8 +47,8 @@
   "@type": "TechArticle",
   "headline": "Einmal am Tag nach Zeitplan deployen",
   "description": "Lass einen Job einmal täglich deployen, was sich geändert hat, nur bei grünem CI: deploys schedule auf dem Mac oder ein GitHub-Actions-Workflow.",
-  "url": "https://deploycenter.app/de/guides/taeglicher-deploy-nach-zeitplan/",
-  "mainEntityOfPage": "https://deploycenter.app/de/guides/taeglicher-deploy-nach-zeitplan/",
+  "url": "https://deploycenter.app/de/anleitungen/taeglicher-deploy-nach-zeitplan/",
+  "mainEntityOfPage": "https://deploycenter.app/de/anleitungen/taeglicher-deploy-nach-zeitplan/",
   "datePublished": "2026-11-20",
   "dateModified": "2026-11-20",
   "inLanguage": "de",
@@ -125,45 +125,13 @@
     "@type": "ListItem",
     "position": 2,
     "name": "Anleitungen",
-    "item": "https://deploycenter.app/de/guides/"
+    "item": "https://deploycenter.app/de/anleitungen/"
    },
    {
     "@type": "ListItem",
     "position": 3,
     "name": "Täglicher Deploy",
-    "item": "https://deploycenter.app/de/guides/taeglicher-deploy-nach-zeitplan/"
-   }
-  ]
- },
- {
-  "@context": "https://schema.org",
-  "@type": "HowTo",
-  "name": "Einmal am Tag nach Zeitplan deployen",
-  "description": "Lass einen Job einmal täglich deployen, was sich geändert hat, nur bei grünem CI: deploys schedule auf dem Mac oder ein GitHub-Actions-Workflow.",
-  "step": [
-   {
-    "@type": "HowToStep",
-    "position": 1,
-    "name": "Sieh nach, bevor du planst",
-    "url": "https://deploycenter.app/de/guides/taeglicher-deploy-nach-zeitplan/#look"
-   },
-   {
-    "@type": "HowToStep",
-    "position": 2,
-    "name": "Auf deinem Mac",
-    "url": "https://deploycenter.app/de/guides/taeglicher-deploy-nach-zeitplan/#mac"
-   },
-   {
-    "@type": "HowToStep",
-    "position": 3,
-    "name": "Aus GitHub Actions",
-    "url": "https://deploycenter.app/de/guides/taeglicher-deploy-nach-zeitplan/#actions"
-   },
-   {
-    "@type": "HowToStep",
-    "position": 4,
-    "name": "Halte einen täglichen Deploy sicher",
-    "url": "https://deploycenter.app/de/guides/taeglicher-deploy-nach-zeitplan/#safe"
+    "item": "https://deploycenter.app/de/anleitungen/taeglicher-deploy-nach-zeitplan/"
    }
   ]
  }
@@ -174,11 +142,11 @@
 <a class="skip" href="#main">Zum Inhalt springen</a>
 <nav class="top" aria-label="Hauptmenü"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
-  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/guides/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
 </div></nav>
 
 <main id="main" class="wrap narrow"><article>
-<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/guides/">Anleitungen</a></p>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/anleitungen/">Anleitungen</a></p>
 <h1>Einmal am Tag nach Zeitplan deployen</h1>
 <p class="answer">Führe <code>deploys schedule daily 09:00 --when-green</code> auf deinem Mac aus. Es richtet einen Job ein (launchd oder eine Cron-Zeile), der einmal täglich <code>deploy-changed --yes</code> ausführt. Ohne Mac macht ein GitHub-Actions-Workflow dasselbe auf einem Runner.</p>
 <p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
@@ -192,15 +160,15 @@ deploys deploy-changed --when-green   # die Liste mit CI-Urteilen; startet nicht
 <pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys schedule daily 09:00 --when-green   # einmal täglich um 09:00, nur grüne Commits
 deploys schedule status                     # ist es eingerichtet, und mit welchen Argumenten
 deploys schedule off                        # entfernen</code></pre>
-<p>Der Job führt <code>deploys deploy-changed --yes</code> mit den Optionen aus, die du angegeben hast, über launchd, oder gibt die Cron-Zeile aus. Es gelten dieselben Regeln wie bei einem Deploy von Hand: Das <a href="/de/guides/deploy-freeze-freitag/">Deploy-Fenster</a> kann ihn ablehnen, deine <code>pre-deploy</code>- und <code>post-deploy</code>-Hooks laufen darum herum, und ein Budget aus <code>deploys budget set</code> hält ihn an, bevor er darüber geht.</p>
+<p>Der Job führt <code>deploys deploy-changed --yes</code> mit den Optionen aus, die du angegeben hast, über launchd, oder gibt die Cron-Zeile aus. Es gelten dieselben Regeln wie bei einem Deploy von Hand: Das <a href="/de/anleitungen/deploy-freeze-freitag/">Deploy-Fenster</a> kann ihn ablehnen, deine <code>pre-deploy</code>- und <code>post-deploy</code>-Hooks laufen darum herum, und ein Budget aus <code>deploys budget set</code> hält ihn an, bevor er darüber geht.</p>
 <p>Der Job lebt auf diesem Mac. Für einen Zeitplan, der nicht von einem Rechner abhängt, nimm einen Workflow.</p>
 <h2 id="actions">3. Aus GitHub Actions</h2>
 <p>Die Datei <code>examples/daily-deploy.yml</code> im Repository läuft jeden Werktag und deployt alles mit Commits, die nicht live sind. Von Hand gestartet zeigt sie nur die Liste. Sie braucht <code>gh</code>, angemeldet über <code>GH_TOKEN</code>, das Token deines Anbieters (zum Beispiel <code>VERCEL_TOKEN</code> oder <code>RENDER_API_KEY</code>) und das CLI-Release-Tarball. Führe sie einmal von Hand aus und lies das Log, bevor du ihr vertraust. Siehe <a href="/docs/ci/">Deploy from CI</a> und <a href="/guides/deploy-to-vercel-from-github-actions/">die GitHub-Actions-Anleitung</a> (beide englisch).</p>
 <div class="note"><p><b>Geplante Workflows stoppen nach 60 Tagen.</b> GitHub schaltet einen <code>schedule:</code>-Workflow ab, wenn im Repository 60 Tage lang nichts passiert ist. Ein Repository, in das niemand pusht, ist genau das; der Workflow meldet sich, wenn er fehlschlägt, und du solltest ihn ab und zu prüfen.</p></div>
 <h2 id="safe">4. Halte einen täglichen Deploy sicher</h2>
 <ol>
-  <li>Ergänze <code>--when-green</code>, damit ein roter Commit bis morgen wartet: <a href="/de/guides/nur-bei-gruenem-ci-deployen/">nur bei grünem CI deployen</a>.</li>
-  <li>Ergänze eine Gesundheitsprüfung, die zurückrollt: <a href="/de/guides/automatischer-rollback-nach-deploy/">automatischer Rollback</a>.</li>
+  <li>Ergänze <code>--when-green</code>, damit ein roter Commit bis morgen wartet: <a href="/de/anleitungen/nur-bei-gruenem-ci-deployen/">nur bei grünem CI deployen</a>.</li>
+  <li>Ergänze eine Gesundheitsprüfung, die zurückrollt: <a href="/de/anleitungen/automatischer-rollback-nach-deploy/">automatischer Rollback</a>.</li>
   <li>Schalte Auto-Deploy beim Anbieter ab, sonst deployen Pushes zusätzlich von selbst. <code>deploys triggers</code> listet Builds, die niemand von hier gestartet hat.</li>
 </ol>
 
@@ -222,9 +190,9 @@ deploys schedule off                        # entfernen</code></pre>
 <p class="reference"><b>Nachschlagen:</b> <a href="/docs/ci/" lang="en">Deploy from CI</a> · <a href="/docs/cli/" lang="en">CLI reference</a></p>
 
 <div class="related"><h2>Verwandt</h2><ul>
-  <li><a href="/de/guides/nur-bei-gruenem-ci-deployen/">Nur bei grünem CI deployen</a></li>
-  <li><a href="/de/guides/deploy-freeze-freitag/">Einen Deploy-Freeze für Freitagnachmittag einrichten</a></li>
-  <li><a href="/de/guides/deploy-warteschlange/">Deine Deploy-Warteschlange: gemergt, aber nicht live</a></li>
+  <li><a href="/de/anleitungen/nur-bei-gruenem-ci-deployen/">Nur bei grünem CI deployen</a></li>
+  <li><a href="/de/anleitungen/deploy-freeze-freitag/">Einen Deploy-Freeze für Freitagnachmittag einrichten</a></li>
+  <li><a href="/de/anleitungen/deploy-warteschlange/">Deine Deploy-Warteschlange: gemergt, aber nicht live</a></li>
   <li><a href="/de/vergleich/geplante-deploys-vergleich/">Geplante Deploys: Cron, GitHub Actions oder deploys schedule</a></li>
   <li><a href="/guides/deploy-to-vercel-from-github-actions/" lang="en">Deploy to Vercel from GitHub Actions</a></li>
 </ul></div>

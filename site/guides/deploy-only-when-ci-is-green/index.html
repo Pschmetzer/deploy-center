@@ -13,7 +13,7 @@
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <link rel="canonical" href="https://deploycenter.app/guides/deploy-only-when-ci-is-green/">
 <link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/deploy-only-when-ci-is-green/">
-<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/nur-bei-gruenem-ci-deployen/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/">
 <link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/deploy-only-when-ci-is-green/">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
@@ -188,7 +188,7 @@
 <h1>Deploy only when CI is green</h1>
 <p class="answer">Run <code>deploys deploy-changed --when-green --yes</code>. For each project it reads the head commit's checks, waits while they run, skips the project if they failed, and deploys exactly the commit it checked.</p>
 <p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
-<p class="langnote"><a href="/de/guides/nur-bei-gruenem-ci-deployen/" hreflang="de" lang="de">Deutsche Fassung</a></p>
+<p class="langnote"><a href="/de/anleitungen/nur-bei-gruenem-ci-deployen/" hreflang="de" lang="de">Deutsche Fassung</a></p>
 
 <h2 id="run">1. Turn it on for a deploy</h2>
 <pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys deploy-changed --when-green --yes

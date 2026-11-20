@@ -13,7 +13,7 @@
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <link rel="canonical" href="https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/">
 <link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/">
-<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/preview-builds-fuer-bots-vermeiden/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/preview-builds-fuer-bots-vermeiden/">
 <link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
@@ -188,7 +188,7 @@
 <h1>Skip preview builds for bots on Netlify, Cloudflare and Render</h1>
 <p class="answer">On Netlify add an <code>ignore</code> script that exits 0 for bot branches. On Cloudflare Pages restrict the preview branches or turn previews off. On Render a service builds only the branch it is set to, so bot branches matter only through pull request previews, which have their own setting.</p>
 <p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
-<p class="langnote"><a href="/de/guides/preview-builds-fuer-bots-vermeiden/" hreflang="de" lang="de">Deutsche Fassung</a></p>
+<p class="langnote"><a href="/de/anleitungen/preview-builds-fuer-bots-vermeiden/" hreflang="de" lang="de">Deutsche Fassung</a></p>
 
 <h2 id="who">1. Know the branch names</h2>
 <p>Bots and agents use predictable branch prefixes: <code>dependabot/…</code> for Dependabot, <code>renovate/…</code> for Renovate, and for coding agents whatever prefix the tool uses, such as <code>claude/…</code> or <code>cursor/…</code>. Check the branches in your own repository, then use those prefixes in the rules below. For Vercel see <a href="/guides/skip-vercel-previews-for-bots-and-agents/">the Vercel guide</a>.</p>

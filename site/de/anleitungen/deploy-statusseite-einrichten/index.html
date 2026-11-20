@@ -11,9 +11,9 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
-<link rel="canonical" href="https://deploycenter.app/de/guides/deploy-statusseite-einrichten/">
+<link rel="canonical" href="https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/">
 <link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/deploy-status-page/">
-<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/deploy-statusseite-einrichten/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/">
 <link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/deploy-status-page/">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
@@ -23,7 +23,7 @@
 <meta property="article:published_time" content="2026-11-20">
 <meta property="og:title" content="Eine Statusseite für deine Deploys einrichten · Deploy Center">
 <meta property="og:description" content="Veröffentliche eine statische Seite „Was wurde wann ausgeliefert“ mit Atom-Feed und status.json aus deinem Deploy-Verlauf, ohne Commit-Nachrichten.">
-<meta property="og:url" content="https://deploycenter.app/de/guides/deploy-statusseite-einrichten/">
+<meta property="og:url" content="https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
@@ -47,8 +47,8 @@
   "@type": "TechArticle",
   "headline": "Eine Statusseite für deine Deploys einrichten",
   "description": "Veröffentliche eine statische Seite „Was wurde wann ausgeliefert“ mit Atom-Feed und status.json aus deinem Deploy-Verlauf, ohne Commit-Nachrichten.",
-  "url": "https://deploycenter.app/de/guides/deploy-statusseite-einrichten/",
-  "mainEntityOfPage": "https://deploycenter.app/de/guides/deploy-statusseite-einrichten/",
+  "url": "https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/",
+  "mainEntityOfPage": "https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/",
   "datePublished": "2026-11-20",
   "dateModified": "2026-11-20",
   "inLanguage": "de",
@@ -125,51 +125,13 @@
     "@type": "ListItem",
     "position": 2,
     "name": "Anleitungen",
-    "item": "https://deploycenter.app/de/guides/"
+    "item": "https://deploycenter.app/de/anleitungen/"
    },
    {
     "@type": "ListItem",
     "position": 3,
     "name": "Statusseite",
-    "item": "https://deploycenter.app/de/guides/deploy-statusseite-einrichten/"
-   }
-  ]
- },
- {
-  "@context": "https://schema.org",
-  "@type": "HowTo",
-  "name": "Eine Statusseite für deine Deploys einrichten",
-  "description": "Veröffentliche eine statische Seite „Was wurde wann ausgeliefert“ mit Atom-Feed und status.json aus deinem Deploy-Verlauf, ohne Commit-Nachrichten.",
-  "step": [
-   {
-    "@type": "HowToStep",
-    "position": 1,
-    "name": "Was du bekommst",
-    "url": "https://deploycenter.app/de/guides/deploy-statusseite-einrichten/#what"
-   },
-   {
-    "@type": "HowToStep",
-    "position": 2,
-    "name": "Schreibe die Konfiguration",
-    "url": "https://deploycenter.app/de/guides/deploy-statusseite-einrichten/#config"
-   },
-   {
-    "@type": "HowToStep",
-    "position": 3,
-    "name": "Erzeuge die Seite",
-    "url": "https://deploycenter.app/de/guides/deploy-statusseite-einrichten/#run"
-   },
-   {
-    "@type": "HowToStep",
-    "position": 4,
-    "name": "Bevor Fremde sie sehen",
-    "url": "https://deploycenter.app/de/guides/deploy-statusseite-einrichten/#public"
-   },
-   {
-    "@type": "HowToStep",
-    "position": 5,
-    "name": "Halte sie aktuell",
-    "url": "https://deploycenter.app/de/guides/deploy-statusseite-einrichten/#fresh"
+    "item": "https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/"
    }
   ]
  }
@@ -180,11 +142,11 @@
 <a class="skip" href="#main">Zum Inhalt springen</a>
 <nav class="top" aria-label="Hauptmenü"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
-  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/guides/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
 </div></nav>
 
 <main id="main" class="wrap narrow"><article>
-<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/guides/">Anleitungen</a></p>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/anleitungen/">Anleitungen</a></p>
 <h1>Eine Statusseite für deine Deploys einrichten</h1>
 <p class="answer">Kopiere <code>statuspage.example.json</code> nach <code>statuspage.json</code>, trage die anzuzeigenden Projekte ein und führe <code>integrations/statuspage/statuspage.sh</code> aus. Es schreibt <code>index.html</code>, <code>feed.xml</code> und <code>status.json</code> nach <code>public/</code> und deployt nichts: Den Ordner lädst du bei einem beliebigen statischen Host hoch.</p>
 <p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
@@ -248,8 +210,8 @@ integrations/statuspage/statuspage.sh                  # liest ./statuspage.json
 
 <div class="related"><h2>Verwandt</h2><ul>
   <li><a href="/de/vergleich/statusseite-vergleich/">Deploy-Statusseite: statische Datei oder gehosteter Statusdienst</a></li>
-  <li><a href="/de/guides/taeglicher-deploy-nach-zeitplan/">Einmal am Tag nach Zeitplan deployen</a></li>
-  <li><a href="/de/guides/deploy-warteschlange/">Deine Deploy-Warteschlange: gemergt, aber nicht live</a></li>
+  <li><a href="/de/anleitungen/taeglicher-deploy-nach-zeitplan/">Einmal am Tag nach Zeitplan deployen</a></li>
+  <li><a href="/de/anleitungen/deploy-warteschlange/">Deine Deploy-Warteschlange: gemergt, aber nicht live</a></li>
   <li><a href="/guides/deploy-hooks/" lang="en">Deploy hooks for any host</a></li>
   <li><a href="/de/blog/builds-zaehlen-bevor-du-kuerzt/">Zähle deine Builds, bevor du sie kürzt</a></li>
 </ul></div>

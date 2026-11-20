@@ -71,7 +71,7 @@
 - [A Friday freeze should be a setting, not a rule](https://deploycenter.app/blog/friday-freeze-is-a-setting/): A deploy freeze that depends on people remembering fails when it matters. Put it in a file, record the exceptions, keep rollbacks open and close the side doors.
 - [Count your builds before you cut them](https://deploycenter.app/blog/count-your-builds-before-you-cut/): Before you change a single setting, find out where your builds come from. A formula, four commands and the order in which cutting builds pays off.
 - [Previews are for people: a policy for bots and agents](https://deploycenter.app/blog/previews-are-for-people/): A preview build earns its cost when a person looks at it. A short policy: previews for pull requests people review, none for bot and agent branches.
-- German versions: [Anleitungen](https://deploycenter.app/de/guides/), [Vergleiche](https://deploycenter.app/de/vergleich/), [Blog](https://deploycenter.app/de/blog/).
+- German versions: [Anleitungen](https://deploycenter.app/de/anleitungen/), [Vergleiche](https://deploycenter.app/de/vergleich/), [Blog](https://deploycenter.app/de/blog/).
 
 ## Optional
 

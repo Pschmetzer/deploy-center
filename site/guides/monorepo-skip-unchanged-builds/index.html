@@ -13,7 +13,7 @@
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <link rel="canonical" href="https://deploycenter.app/guides/monorepo-skip-unchanged-builds/">
 <link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/monorepo-skip-unchanged-builds/">
-<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/monorepo-unveraenderte-builds-ueberspringen/">
 <link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/monorepo-skip-unchanged-builds/">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
@@ -200,7 +200,7 @@
 <h1>Monorepo ignore rules: build only the app that changed</h1>
 <p class="answer">In a monorepo one push builds every connected project, even if only one folder changed. Give each project a rule that compares its own folders and the shared packages it uses: a skip setting or Ignored Build Step on Vercel, an <code>ignore</code> command on Netlify, Build Filters on Render, build watch paths on Cloudflare Pages.</p>
 <p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
-<p class="langnote"><a href="/de/guides/monorepo-unveraenderte-builds-ueberspringen/" hreflang="de" lang="de">Deutsche Fassung</a></p>
+<p class="langnote"><a href="/de/anleitungen/monorepo-unveraenderte-builds-ueberspringen/" hreflang="de" lang="de">Deutsche Fassung</a></p>
 
 <h2 id="why">1. Why one push builds everything</h2>
 <p>Each project in your host connects to the same repository, and each one builds on a push. A web app, a docs site and an admin app in one repository build three times when only the docs changed. A rule per project tells the host which folders matter to it.</p>

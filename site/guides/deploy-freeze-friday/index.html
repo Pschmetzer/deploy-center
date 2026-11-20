@@ -13,7 +13,7 @@
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <link rel="canonical" href="https://deploycenter.app/guides/deploy-freeze-friday/">
 <link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/deploy-freeze-friday/">
-<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/deploy-freeze-freitag/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/deploy-freeze-freitag/">
 <link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/deploy-freeze-friday/">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
@@ -188,7 +188,7 @@
 <h1>Set up a deploy freeze for Friday afternoon</h1>
 <p class="answer">Create <code>~/.config/deploys/window.json</code> with a <code>deny</code> rule such as <code>{"days": ["fri"], "from": "15:00"}</code>. Inside that window <code>deploys deploy</code> and <code>deploy-changed --yes</code> refuse to start production deploys, unless you pass <code>--force "reason"</code>.</p>
 <p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
-<p class="langnote"><a href="/de/guides/deploy-freeze-freitag/" hreflang="de" lang="de">Deutsche Fassung</a></p>
+<p class="langnote"><a href="/de/anleitungen/deploy-freeze-freitag/" hreflang="de" lang="de">Deutsche Fassung</a></p>
 
 <h2 id="file">1. Write the window</h2>
 <p>The file is <code>~/.config/deploys/window.json</code> (or <code>$DEPLOYS_CONFIG/window.json</code>). Each entry in <code>deny</code> is a time when production deploys are not allowed:</p>

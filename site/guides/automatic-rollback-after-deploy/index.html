@@ -13,7 +13,7 @@
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <link rel="canonical" href="https://deploycenter.app/guides/automatic-rollback-after-deploy/">
 <link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/automatic-rollback-after-deploy/">
-<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/automatischer-rollback-nach-deploy/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/automatischer-rollback-nach-deploy/">
 <link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/automatic-rollback-after-deploy/">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
@@ -182,7 +182,7 @@
 <h1>Roll back automatically when a deploy breaks the site</h1>
 <p class="answer">Run <code>deploys verify &lt;project&gt; --path /health</code> after a deploy. It asks the site three times and, if all three answers are 5xx or nothing, counts down 10 seconds and rolls production back, unless you press Ctrl-C or pass <code>--no-rollback</code>.</p>
 <p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
-<p class="langnote"><a href="/de/guides/automatischer-rollback-nach-deploy/" hreflang="de" lang="de">Deutsche Fassung</a></p>
+<p class="langnote"><a href="/de/anleitungen/automatischer-rollback-nach-deploy/" hreflang="de" lang="de">Deutsche Fassung</a></p>
 
 <h2 id="run">1. Run the check after a deploy</h2>
 <pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys deploy web &amp;&amp; deploys verify web --path /api/health</code></pre>
