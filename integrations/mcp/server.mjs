@@ -642,6 +642,56 @@ const tools = [
     run: (a) => jsonListOf(["idle", "--days", String(checkIdleDays(a.days)), "--json"]),
   },
   {
+    name: "deploys_digest",
+    description:
+      "The last `days` days (default 7) from the local journal: deploys, failures and their rate, rollbacks, forced starts, the busiest day, the projects, " +
+      "and the estimated saving (deploys digest --json). Read-only. The saving is an ESTIMATE: say so when you quote it. Project names and failure details come from the journal.",
+    inputSchema: {
+      type: "object",
+      properties: { days: { type: "integer", minimum: 1, maximum: 90, default: 7, description: "How many days to look back (1–90, default 7)." } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Week digest from the journal", ...READ },
+    json: true,
+    run: (a) => textOf(["digest", "--days", String(checkRange(a.days, "days", 7, 90)), "--json"]),
+  },
+  {
+    name: "deploys_freeze",
+    description:
+      "Are deploys closed right now by the closed times of window.json, and which times are set (deploys freeze status --json). Read-only: " +
+      "no time is added or removed here. Returns {configured, closedNow, reason, rules}. Check it before suggesting a deploy; a deploy inside a closed time needs a human's reason.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Deploy freeze", ...READ },
+    json: true,
+    run: () => textOf(["freeze", "status", "--json"]),
+  },
+  {
+    name: "deploys_ci",
+    description:
+      "The CI verdict of one commit or branch on GitHub: green, pending, red or none, and why (deploys ci <owner/repo> [ref] --json). Read-only; it does not wait. " +
+      "Without `ref` the default branch is used. Use it to answer \"is it safe to deploy this commit?\".",
+    inputSchema: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "GitHub repository as owner/name." },
+        ref: { type: "string", description: "A commit SHA or branch name (default: the default branch)." },
+      },
+      required: ["repo"],
+      additionalProperties: false,
+    },
+    annotations: { title: "CI verdict of a commit", ...READ },
+    json: true,
+    run: (a) => {
+      if (typeof a.repo !== "string" || !/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(a.repo) || a.repo.startsWith("-")) throw new ToolError("repo must look like owner/name.");
+      const args = ["ci", a.repo];
+      if (a.ref !== undefined && a.ref !== null) {
+        if (typeof a.ref !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_./-]{0,199}$/.test(a.ref) || a.ref.includes("..")) throw new ToolError("ref must be a commit SHA or a branch name.");
+        args.push(a.ref);
+      }
+      return textOf([...args, "--json"], { timeoutMs: SLOW_TIMEOUT_MS });
+    },
+  },
+  {
     name: "deploys_certs",
     description:
       "The TLS certificate of every project's address: days left, and which ones run out within `days` (deploys certs --json). Read-only. " +

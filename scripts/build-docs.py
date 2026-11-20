@@ -126,7 +126,7 @@ INTEGRATIONS = {
     "statuspage": ("Status page", "A static what-shipped-when page with an Atom feed and status.json, for any static host."),
     "hooks": ("pre-push hook", "A git pre-push hook that warns how many Vercel and Render builds a push would start."),
     "mcp": ("MCP server", "An MCP server for Claude Code, Claude Desktop, Cursor and VS Code: what is waiting, release notes, logs, and opt-in deploys."),
-    "docker": ("Docker image", "A Linux image with the deploys CLI and its tools, for CI."),
+    "docker": ("Docker image", "A Linux image with the deploys CLI, jq, curl, git and gh, for CI and a read-only cron job."),
     "claude-code": ("Claude Code plugin", "A Claude Code plugin: the MCP server, a skill, commands and a push hook, so Claude knows how deploys work."),
     "digest": ("Agent digest", "Once a day, what coding agents pushed per project, with a one-click approval through a GitHub workflow."),
     "raycast": ("Raycast extension", "See which projects have commits waiting and deploy them by hand, from Raycast."),
@@ -738,7 +738,7 @@ def page_title(page):
     """<title>: the page, then the brand. A page whose own title names Deploy Center does not get it twice, and a title
     that would run past 60 characters (a search result cuts it there) is shortened at a word."""
     if not page.slug:
-        return "Deploy Center docs"
+        return "Deploy Center docs: install, CLI, hosts, integrations"
     t = page.title
     full = t if "Deploy Center" in t else f"{t} · Deploy Center docs"
     if len(full) <= 60:
