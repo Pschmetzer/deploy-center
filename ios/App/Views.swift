@@ -316,8 +316,8 @@ struct Toast: View {
         .task(id: store.messageSerial) {
             AccessibilityNotification.Announcement(store.messageIsError ? L("Error: ", "Fehler: ") + text : text).post()
             guard !store.messageIsError, !UIAccessibility.isVoiceOverRunning else { return }
-            // Switch Control and Voice Control need longer to reach the close button (IDEEN-12 C48).
-            let slow = UIAccessibility.isSwitchControlRunning || UIAccessibility.isVoiceControlRunning
+            // Switch Control needs longer to reach the close button (IDEEN-12 C48).
+            let slow = UIAccessibility.isSwitchControlRunning
             try? await Task.sleep(for: .seconds(slow ? 20 : 5))
             if store.message == text { store.message = nil }
         }
@@ -1197,9 +1197,9 @@ struct SettingsView: View {
                 Button(L("Remove", "Entfernen"), role: .destructive) {
                     // With the lock or Face ID on, whoever holds an unlocked phone must not strip the protection or the keys (IDEEN-12 C38).
                     Task {
-                        if !(lockOnOpen || biometricsOnly) || (await store.authenticate(L("Remove all keys from this iPhone", "Alle Schlüssel von diesem iPhone entfernen"))) {
-                            store.removeAllKeys(); loadFields()
-                        }
+                        var allowed = !(lockOnOpen || biometricsOnly)
+                        if !allowed { allowed = await store.authenticate(L("Remove all keys from this iPhone", "Alle Schlüssel von diesem iPhone entfernen")) }
+                        if allowed { store.removeAllKeys(); loadFields() }
                     }
                 }
                 Button(L("Cancel", "Abbrechen"), role: .cancel) {}
