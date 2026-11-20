@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blog: bewusst deployen statt bei jedem Push · Deploy Center</title>
+<meta name="description" content="Artikel aus dem Deploy-Center-Projekt: ein Freitags-Freeze als Einstellung, Builds zählen vor dem Kürzen und Previews nur für Menschen.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/blog/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/blog/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/blog/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/blog/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="og:title" content="Blog: bewusst deployen statt bei jedem Push · Deploy Center">
+<meta property="og:description" content="Artikel aus dem Deploy-Center-Projekt: ein Freitags-Freeze als Einstellung, Builds zählen vor dem Kürzen und Previews nur für Menschen.">
+<meta property="og:url" content="https://deploycenter.app/de/blog/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Blog: bewusst deployen statt bei jedem Push · Deploy Center">
+<meta name="twitter:description" content="Artikel aus dem Deploy-Center-Projekt: ein Freitags-Freeze als Einstellung, Builds zählen vor dem Kürzen und Previews nur für Menschen.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="alternate" type="application/atom+xml" title="Deploy Center blog" href="/de/blog/feed.xml">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "CollectionPage",
+  "name": "Blog: bewusst deployen statt bei jedem Push",
+  "description": "Artikel aus dem Deploy-Center-Projekt: ein Freitags-Freeze als Einstellung, Builds zählen vor dem Kürzen und Previews nur für Menschen.",
+  "url": "https://deploycenter.app/de/blog/",
+  "inLanguage": "de",
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "mainEntity": {
+   "@type": "ItemList",
+   "itemListElement": [
+    {
+     "@type": "ListItem",
+     "position": 1,
+     "url": "https://deploycenter.app/de/blog/freitags-freeze-ist-eine-einstellung/",
+     "name": "Ein Freitags-Freeze sollte eine Einstellung sein, keine Regel"
+    },
+    {
+     "@type": "ListItem",
+     "position": 2,
+     "url": "https://deploycenter.app/de/blog/builds-zaehlen-bevor-du-kuerzt/",
+     "name": "Zähle deine Builds, bevor du sie kürzt"
+    },
+    {
+     "@type": "ListItem",
+     "position": 3,
+     "url": "https://deploycenter.app/de/blog/previews-sind-fuer-menschen/",
+     "name": "Previews sind für Menschen: eine Regel für Bots und Agenten"
+    }
+   ]
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Blog",
+    "item": "https://deploycenter.app/de/blog/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a></p>
+<h1>Blog: bewusst deployen statt bei jedem Push</h1>
+<p class="answer">Längere Texte rund ums bewusste Deployen. Für Schritt-für-Schritt-Antworten siehe die <a href="/de/anleitungen/">Anleitungen</a>.</p>
+<p class="langnote"><a href="/blog/" hreflang="en" lang="en">English version</a></p>
+
+<div class="cards">
+  <a href="/de/blog/freitags-freeze-ist-eine-einstellung/"><b>Ein Freitags-Freeze sollte eine Einstellung sein, keine Regel</b><span>Ein Deploy-Freeze, der davon abhängt, dass sich Menschen erinnern, versagt, wenn es zählt. Lege ihn in eine Datei, protokolliere Ausnahmen, lass Rollbacks offen.</span></a>
+  <a href="/de/blog/builds-zaehlen-bevor-du-kuerzt/"><b>Zähle deine Builds, bevor du sie kürzt</b><span>Finde heraus, woher deine Builds kommen, bevor du eine Einstellung änderst. Eine Formel, vier Befehle und die Reihenfolge, in der sich das Kürzen lohnt.</span></a>
+  <a href="/de/blog/previews-sind-fuer-menschen/"><b>Previews sind für Menschen: eine Regel für Bots und Agenten</b><span>Ein Preview-Build lohnt sich, wenn ihn ein Mensch ansieht. Eine kurze Regel: Previews für Pull Requests, die Menschen prüfen, keine für Bot- und Agenten-Branches.</span></a>
+</div>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/blog/" lang="en">Der englische Blog, mit dem Artikel über Coding-Agenten und deine Build-Rechnung</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

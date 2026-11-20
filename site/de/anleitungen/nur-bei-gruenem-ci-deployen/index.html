@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nur bei grünem CI deployen · Deploy Center</title>
+<meta name="description" content="Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt den geprüften Commit, wo der Anbieter das kann.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/deploy-only-when-ci-is-green/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/deploy-only-when-ci-is-green/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Nur bei grünem CI deployen · Deploy Center">
+<meta property="og:description" content="Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt den geprüften Commit, wo der Anbieter das kann.">
+<meta property="og:url" content="https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Nur bei grünem CI deployen · Deploy Center">
+<meta name="twitter:description" content="Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt den geprüften Commit, wo der Anbieter das kann.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Nur bei grünem CI deployen",
+  "description": "Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt den geprüften Commit, wo der Anbieter das kann.",
+  "url": "https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/",
+  "mainEntityOfPage": "https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Deployt --when-green ein Projekt ganz ohne CI?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. Ohne Checks gibt es nichts abzuwarten, also deployt es. Ein Commit, der jünger als DEPLOYS_CI_GRACE Sekunden ist und noch keinen Check hat, zählt stattdessen als ausstehend."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Was, wenn ein optionaler Check immer rot ist?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Setze DEPLOYS_CI_IGNORE auf einen regulären Ausdruck für seinen Namen, damit er nicht jeden Deploy aufhält."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Welcher Commit wird deployt?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Der geprüfte Commit (--sha), bei Anbietern, die einen bestimmten Commit deployen können, etwa Vercel, Render und AWS Amplify. Netlify und Cloudflare Pages können das nicht; dort startet ein Build vom neuesten Commit des Branches, der neuer sein kann als der geprüfte. Bei den anderen geht ein neuerer Push im nächsten Lauf raus."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Funktioniert es in CI oder einem geplanten Job?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. Kombiniere es mit einem Zeitplan, siehe täglicher Deploy, und gib dem Job ein GH_TOKEN."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Anleitungen",
+    "item": "https://deploycenter.app/de/anleitungen/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Deploy bei grünem CI",
+    "item": "https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/anleitungen/">Anleitungen</a></p>
+<h1>Nur bei grünem CI deployen</h1>
+<p class="answer">Führe <code>deploys deploy-changed --when-green --yes</code> aus. Je Projekt liest es die Checks des Head-Commits, wartet, solange sie laufen, überspringt das Projekt, wenn sie fehlschlugen, und deployt, bei Anbietern, die einen bestimmten Commit deployen können, genau den Commit, den es geprüft hat.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+<p class="langnote"><a href="/guides/deploy-only-when-ci-is-green/" hreflang="en" lang="en">English version</a></p>
+
+<h2 id="run">1. Schalte es für einen Deploy ein</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys deploy-changed --when-green --yes
+deploys deploy-changed --when-green --wait 45m --yes --json   # ein JSON-Eintrag je Projekt</code></pre>
+<p>Ohne <code>--yes</code> zeigt es nur, was es deployen würde. Die CLI liest den kombinierten Status und die Check-Runs des Head-Commits über <code>gh api</code>; <code>gh</code> muss also angemeldet sein.</p>
+<h2 id="table">2. Was jeder CI-Zustand bewirkt</h2>
+<div class="tablewrap" role="region" aria-label="Tabelle" tabindex="0"><table>
+  <thead><tr><th scope="col">CI</th><th scope="col">Was passiert</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">grün (bestanden, übersprungen oder neutral)</th><td>deployt, genau auf diesem Commit, wo der Anbieter einen bestimmten Commit deployen kann</td></tr>
+    <tr><th scope="row">gar keine Checks</th><td>deployt, denn es gibt nichts abzuwarten</td></tr>
+    <tr><th scope="row">ausstehend (wartet oder läuft)</th><td>wird nach 10 s, 20 s, 40 s usw. erneut gefragt (höchstens 2 Minuten Abstand), bis <code>--wait</code> (Standard <code>30m</code>)</td></tr>
+    <tr><th scope="row">rot (Fehler, Timeout, Abbruch, Aktion nötig)</th><td>übersprungen, mit den fehlgeschlagenen Checks</td></tr>
+    <tr><th scope="row">GitHub nicht erreichbar</th><td>wie ausstehend behandelt; übersprungen, sobald <code>--wait</code> abläuft</td></tr>
+  </tbody>
+</table></div>
+<p>Die Projekte werden in Runden geprüft, ein langsames CI hält die anderen also nicht auf. Ein Push, der während des Wartens ankommt, geht im nächsten Lauf raus, nicht ungeprüft in diesem.</p>
+<h2 id="tune">3. Zwei Einstellungen</h2>
+<ul>
+  <li><code>DEPLOYS_CI_GRACE</code> (Standard 90 Sekunden): Ein Commit, der jünger ist und noch keinen Check hat, zählt als „CI hat nicht begonnen“, also ausstehend, nicht als „keine Checks“. Erhöhe den Wert bei langsamen Runnern.</li>
+  <li><code>DEPLOYS_CI_IGNORE</code>: ein regulärer Ausdruck für Check-Namen, die nicht zählen, für einen optionalen Check, der immer rot ist, zum Beispiel <code>DEPLOYS_CI_IGNORE='^(codecov|lint-optional)'</code>. Ohne ihn hält ein solcher Check jeden Deploy auf.</li>
+</ul>
+<h2 id="one">4. Frage nach einem Commit</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys ci owner/repo &lt;sha-or-branch&gt; --wait 10m</code></pre>
+<p>Exit-Code 0 heißt grün oder keine Checks, 1 heißt rot, und 2 heißt: Checks laufen noch oder GitHub ist nicht erreichbar. Mit <code>--json</code> ist der Exit-Code immer 0 und das Urteil steht in der Antwort, was zu einem Skript passt, das selbst entscheidet.</p>
+<div class="note"><p><b>In der App hält ein rotes CI keinen Deploy auf.</b> Die Zeile zeigt „CI ist rot“ mit den fehlgeschlagenen Checks, und Deploy startet trotzdem. Die Regel oben gilt für die CLI, CI-Jobs und geplante Deploys.</p></div>
+<h2 id="host">5. Stattdessen beim Anbieter</h2>
+<p>Render hat denselben Gedanken eingebaut: Stelle Auto-Deploy auf <b>After CI Checks Pass</b>, und ein Push, dessen Checks fehlschlagen, deployt nicht. Dabei bleibt Auto-Deploy an; mit <code>--when-green</code> bleibt die Entscheidung bei dir. Siehe <a href="/guides/render-auto-deploy-off/">Render Auto-Deploy</a> (englisch).</p>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Deployt <code>--when-green</code> ein Projekt ganz ohne CI?</summary><p>Ja. Ohne Checks gibt es nichts abzuwarten, also deployt es. Ein Commit, der jünger als <code>DEPLOYS_CI_GRACE</code> Sekunden ist und noch keinen Check hat, zählt stattdessen als ausstehend.</p></details>
+  <details><summary>Was, wenn ein optionaler Check immer rot ist?</summary><p>Setze <code>DEPLOYS_CI_IGNORE</code> auf einen regulären Ausdruck für seinen Namen, damit er nicht jeden Deploy aufhält.</p></details>
+  <details><summary>Welcher Commit wird deployt?</summary><p>Der geprüfte Commit (<code>--sha</code>), bei Anbietern, die einen bestimmten Commit deployen können, etwa Vercel, Render und AWS Amplify. Netlify und Cloudflare Pages können das nicht; dort startet ein Build vom neuesten Commit des Branches, der neuer sein kann als der geprüfte. Bei den anderen geht ein neuerer Push im nächsten Lauf raus.</p></details>
+  <details><summary>Funktioniert es in CI oder einem geplanten Job?</summary><p>Ja. Kombiniere es mit einem Zeitplan, siehe <a href="/de/anleitungen/taeglicher-deploy-nach-zeitplan/">täglicher Deploy</a>, und gib dem Job ein <code>GH_TOKEN</code>.</p></details>
+
+<div class="ctabox">
+  <h2>Du nutzt Vercel oder Render?</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel und Render mit einem Klick ab, Netlify und andere Hosts sind optional, und es deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für den Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<p class="reference"><b>Nachschlagen:</b> <a href="/docs/safe-deploy/" lang="en">Safe deploys</a> · <a href="/docs/cli/" lang="en">CLI reference</a></p>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/de/anleitungen/automatischer-rollback-nach-deploy/">Automatisch zurückrollen, wenn ein Deploy die Seite kaputt macht</a></li>
+  <li><a href="/de/anleitungen/taeglicher-deploy-nach-zeitplan/">Einmal am Tag nach Zeitplan deployen</a></li>
+  <li><a href="/de/anleitungen/vor-dem-deploy-pruefen/">Prüfen, was ein Deploy ausliefert: Risiko, Diff, Secrets</a></li>
+  <li><a href="/guides/deploy-to-vercel-from-github-actions/" lang="en">Deploy to Vercel from GitHub Actions</a></li>
+  <li><a href="/guides/render-auto-deploy-off/" lang="en">Turn off Render auto-deploy</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

@@ -42,6 +42,25 @@
 - [Stop DigitalOcean App Platform builds](https://deploycenter.app/guides/digitalocean-app-platform-deploy-on-push/): deploy_on_push: false on each component, and why the API needs the whole spec.
 - [Coolify: Auto Deploy off](https://deploycenter.app/guides/coolify-auto-deploy-off/): No build storm on your own server: the switch, the API field, deploying by hand.
 - [Roll back a Vercel or Render deploy](https://deploycenter.app/guides/roll-back-vercel-render-deployment/): Back to the last good deployment from the dashboard or the CLI, and how to check.
+- [How to save build minutes on any host](https://deploycenter.app/guides/save-build-minutes/): Build minutes are builds times build time. Count your builds, cut the ones nobody needs, then shorten the rest, on Vercel, Netlify, Render or Cloudflare.
+- [Your deploy queue: what is merged but not live](https://deploycenter.app/guides/deploy-queue/): See which commits and pull requests are merged but not live, plan the next deploy, start it on purpose and watch or cancel it, with the deploys CLI.
+- [Roll back automatically when a deploy breaks the site](https://deploycenter.app/guides/automatic-rollback-after-deploy/): Ask the live site after every deploy and go back to the previous deployment on a 5xx: deploys verify, its exit codes, and the countdown in the app.
+- [Skip preview builds for bots on Netlify, Cloudflare and Render](https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/): Stop Dependabot, Renovate and coding-agent branches from starting preview builds on Netlify, Cloudflare Pages and Render, and keep previews for people.
+- [Monorepo ignore rules: build only the app that changed](https://deploycenter.app/guides/monorepo-skip-unchanged-builds/): One push builds every project connected to a monorepo. Skip the unchanged ones on Vercel, Netlify, Render and Cloudflare Pages, and avoid the usual pitfalls.
+- [Set up a deploy freeze for Friday afternoon](https://deploycenter.app/guides/deploy-freeze-friday/): Block production deploys on Friday afternoon, on weekends and on holidays with a deploy window, and let a hotfix through with a reason that is journaled.
+- [Set up a status page for your deploys](https://deploycenter.app/guides/deploy-status-page/): Publish a static what-shipped-when page with an Atom feed and status.json from your deploy history, on any static host, without exposing commit messages.
+- [Reduce build costs on Netlify, Render and Cloudflare Pages](https://deploycenter.app/guides/reduce-build-costs-netlify-render-cloudflare/): A per-host checklist to cut builds on Netlify, Render and Cloudflare Pages: stop push builds, skip what nobody needs and deploy on your schedule.
+- [Deploy only when CI is green](https://deploycenter.app/guides/deploy-only-when-ci-is-green/): Ship only commits whose checks passed: deploys deploy-changed --when-green waits for running checks, skips red ones and deploys exactly the checked commit.
+- [Deploy once a day on a schedule](https://deploycenter.app/guides/scheduled-daily-deploy/): Let one scheduled job deploy what changed, once a day, only when CI is green: deploys schedule on a Mac, or a GitHub Actions workflow, and what to watch out for.
+- [Check what a deploy would ship: risk, diff and secrets](https://deploycenter.app/guides/check-before-you-deploy/): Before you deploy, read the diff, the risk score and a secrets check of what is merged but not live: deploys risk, diff, notes and secrets, with the rules they use.
+
+## Comparisons
+
+- [All comparisons](https://deploycenter.app/compare/)
+- [Stop push builds: Vercel, Netlify, Render, Cloudflare compared](https://deploycenter.app/compare/stop-push-builds-compared/): The switch that stops a push from building on Vercel, Netlify, Render and Cloudflare Pages, side by side: what it stops, what it keeps, and what to watch out for.
+- [Deploy on demand: hook, CLI, Actions or Deploy Center](https://deploycenter.app/compare/ways-to-deploy-on-demand/): Four ways to ship when you decide, after push builds are off: a deploy hook, the host's own CLI or button, GitHub Actions, and Deploy Center. What each gives you.
+- [Scheduled deploys: cron, GitHub Actions or deploys schedule](https://deploycenter.app/compare/scheduled-deploys-compared/): Three ways to deploy on a timetable: cron with a deploy hook, a GitHub Actions schedule, and deploys schedule. Where each runs, what it checks and when it stops.
+- [Deploy status page: static file or hosted status service](https://deploycenter.app/compare/status-page-compared/): A static what-shipped-when page from Deploy Center against a hosted status service: what each shows, who runs it, what leaves your machine and what it cannot do.
 
 ## Tools and reading
 
@@ -49,6 +68,10 @@
 - [Build cost calculator](https://deploycenter.app/vercel-build-cost-calculator/): What auto-deploy costs a month, and what deploying by hand would cost.
 - [Vercel-Build-Kosten-Rechner (Deutsch)](https://deploycenter.app/de/vercel-build-kosten-rechner/): The calculator in German.
 - [AI coding agents and your build bill](https://deploycenter.app/blog/ai-coding-agents-build-bill/): Your agent pushes 40 times. You deploy once.
+- [A Friday freeze should be a setting, not a rule](https://deploycenter.app/blog/friday-freeze-is-a-setting/): A deploy freeze that depends on people remembering fails when it matters. Put it in a file, record the exceptions, keep rollbacks open and close the side doors.
+- [Count your builds before you cut them](https://deploycenter.app/blog/count-your-builds-before-you-cut/): Before you change a single setting, find out where your builds come from. A formula, four commands and the order in which cutting builds pays off.
+- [Previews are for people: a policy for bots and agents](https://deploycenter.app/blog/previews-are-for-people/): A preview build earns its cost when a person looks at it. A short policy: previews for pull requests people review, none for bot and agent branches.
+- German versions: [Anleitungen](https://deploycenter.app/de/anleitungen/), [Vergleiche](https://deploycenter.app/de/vergleich/), [Blog](https://deploycenter.app/de/blog/).
 
 ## Optional
 

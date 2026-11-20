@@ -12,6 +12,9 @@
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <link rel="canonical" href="https://deploycenter.app/guides/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
@@ -179,6 +182,72 @@
      "position": 20,
      "url": "https://deploycenter.app/blog/ai-coding-agents-build-bill/",
      "name": "AI coding agents and your build bill"
+    },
+    {
+     "@type": "ListItem",
+     "position": 21,
+     "url": "https://deploycenter.app/guides/save-build-minutes/",
+     "name": "How to save build minutes on any host"
+    },
+    {
+     "@type": "ListItem",
+     "position": 22,
+     "url": "https://deploycenter.app/guides/deploy-queue/",
+     "name": "Your deploy queue: what is merged but not live"
+    },
+    {
+     "@type": "ListItem",
+     "position": 23,
+     "url": "https://deploycenter.app/guides/automatic-rollback-after-deploy/",
+     "name": "Roll back automatically when a deploy breaks the site"
+    },
+    {
+     "@type": "ListItem",
+     "position": 24,
+     "url": "https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/",
+     "name": "Skip preview builds for bots on Netlify, Cloudflare and Render"
+    },
+    {
+     "@type": "ListItem",
+     "position": 25,
+     "url": "https://deploycenter.app/guides/monorepo-skip-unchanged-builds/",
+     "name": "Monorepo ignore rules: build only the app that changed"
+    },
+    {
+     "@type": "ListItem",
+     "position": 26,
+     "url": "https://deploycenter.app/guides/deploy-freeze-friday/",
+     "name": "Set up a deploy freeze for Friday afternoon"
+    },
+    {
+     "@type": "ListItem",
+     "position": 27,
+     "url": "https://deploycenter.app/guides/deploy-status-page/",
+     "name": "Set up a status page for your deploys"
+    },
+    {
+     "@type": "ListItem",
+     "position": 28,
+     "url": "https://deploycenter.app/guides/reduce-build-costs-netlify-render-cloudflare/",
+     "name": "Reduce build costs on Netlify, Render and Cloudflare Pages"
+    },
+    {
+     "@type": "ListItem",
+     "position": 29,
+     "url": "https://deploycenter.app/guides/deploy-only-when-ci-is-green/",
+     "name": "Deploy only when CI is green"
+    },
+    {
+     "@type": "ListItem",
+     "position": 30,
+     "url": "https://deploycenter.app/guides/scheduled-daily-deploy/",
+     "name": "Deploy once a day on a schedule"
+    },
+    {
+     "@type": "ListItem",
+     "position": 31,
+     "url": "https://deploycenter.app/guides/check-before-you-deploy/",
+     "name": "Check what a deploy would ship: risk, diff and secrets"
     }
    ]
   }
@@ -239,9 +308,22 @@
   <a href="/guides/deploy-to-vercel-from-github-actions/"><b>Deploy to Vercel from GitHub Actions</b><span>A deploy hook on a label, a prebuilt deploy, or one daily deploy of what changed.</span></a>
   <a href="/guides/skip-vercel-previews-for-bots-and-agents/"><b>Skip Vercel previews for bots and agents</b><span>An Ignored Build Step for Dependabot, Renovate and AI agent branches.</span></a>
   <a href="/guides/ignored-build-step-or-auto-deploy-off/"><b>Ignored Build Step or auto-deploy off</b><span>What each skips, what still creates a deployment, and when a script is the wrong tool.</span></a>
+  <a href="/guides/save-build-minutes/"><b>How to save build minutes on any host</b><span>Build minutes are builds times build time. Count your builds, cut the ones nobody needs, then shorten the rest, on Vercel, Netlify, Render or Cloudflare.</span></a>
+  <a href="/guides/deploy-queue/"><b>Your deploy queue: what is merged but not live</b><span>See which commits and pull requests are merged but not live, plan the next deploy, start it on purpose and watch or cancel it, with the deploys CLI.</span></a>
+  <a href="/guides/automatic-rollback-after-deploy/"><b>Roll back automatically when a deploy breaks the site</b><span>Ask the live site after every deploy and go back to the previous deployment on a 5xx: deploys verify, its exit codes, and the countdown in the app.</span></a>
+  <a href="/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/"><b>Skip preview builds for bots on Netlify, Cloudflare and Render</b><span>Stop Dependabot, Renovate and coding-agent branches from starting preview builds on Netlify, Cloudflare Pages and Render, and keep previews for people.</span></a>
+  <a href="/guides/monorepo-skip-unchanged-builds/"><b>Monorepo ignore rules: build only the app that changed</b><span>One push builds every project connected to a monorepo. Skip the unchanged ones on Vercel, Netlify, Render and Cloudflare Pages, and avoid the usual pitfalls.</span></a>
+  <a href="/guides/deploy-freeze-friday/"><b>Set up a deploy freeze for Friday afternoon</b><span>Block production deploys on Friday afternoon, on weekends and on holidays with a deploy window, and let a hotfix through with a reason that is journaled.</span></a>
+  <a href="/guides/deploy-status-page/"><b>Set up a status page for your deploys</b><span>Publish a static what-shipped-when page with an Atom feed and status.json from your deploy history, on any static host, without exposing commit messages.</span></a>
+  <a href="/guides/reduce-build-costs-netlify-render-cloudflare/"><b>Reduce build costs on Netlify, Render and Cloudflare Pages</b><span>A per-host checklist to cut builds on Netlify, Render and Cloudflare Pages: stop push builds, skip what nobody needs and deploy on your schedule.</span></a>
+  <a href="/guides/deploy-only-when-ci-is-green/"><b>Deploy only when CI is green</b><span>Ship only commits whose checks passed: deploys deploy-changed --when-green waits for running checks, skips red ones and deploys exactly the checked commit.</span></a>
+  <a href="/guides/scheduled-daily-deploy/"><b>Deploy once a day on a schedule</b><span>Let one scheduled job deploy what changed, once a day, only when CI is green: deploys schedule on a Mac, or a GitHub Actions workflow, and what to watch out for.</span></a>
+  <a href="/guides/check-before-you-deploy/"><b>Check what a deploy would ship: risk, diff and secrets</b><span>Before you deploy, read the diff, the risk score and a secrets check of what is merged but not live: deploys risk, diff, notes and secrets, with the rules they use.</span></a>
 </div>
 <h2>Tools and reading</h2>
 <div class="cards">
+  <a href="/compare/"><b>Compare</b><span>Push builds on four hosts, ways to deploy on demand, scheduled deploys and status pages, side by side.</span></a>
+  <a href="/de/anleitungen/"><b>Anleitungen auf Deutsch</b><span>Build-Minuten, Deploy-Freeze, Rollback, Monorepo-Regeln, Statusseite und mehr.</span></a>
   <a href="/claude-code/"><b>Deploy Center + Claude Code</b><span>Let the agent push, you decide what ships.</span></a>
   <a href="/vercel-build-cost-calculator/"><b>Build cost calculator</b><span>What auto-deploy costs a month, and what deploying by hand would cost.</span></a>
   <a href="/blog/ai-coding-agents-build-bill/"><b>AI coding agents and your build bill</b><span>Your agent pushes 40 times. You deploy once.</span></a>

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zähle deine Builds, bevor du sie kürzt · Deploy Center</title>
+<meta name="description" content="Finde heraus, woher deine Builds kommen, bevor du eine Einstellung änderst. Eine Formel, vier Befehle und die Reihenfolge, in der sich das Kürzen lohnt.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/blog/builds-zaehlen-bevor-du-kuerzt/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/blog/count-your-builds-before-you-cut/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/blog/builds-zaehlen-bevor-du-kuerzt/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/blog/count-your-builds-before-you-cut/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Zähle deine Builds, bevor du sie kürzt · Deploy Center">
+<meta property="og:description" content="Finde heraus, woher deine Builds kommen, bevor du eine Einstellung änderst. Eine Formel, vier Befehle und die Reihenfolge, in der sich das Kürzen lohnt.">
+<meta property="og:url" content="https://deploycenter.app/de/blog/builds-zaehlen-bevor-du-kuerzt/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Zähle deine Builds, bevor du sie kürzt · Deploy Center">
+<meta name="twitter:description" content="Finde heraus, woher deine Builds kommen, bevor du eine Einstellung änderst. Eine Formel, vier Befehle und die Reihenfolge, in der sich das Kürzen lohnt.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="alternate" type="application/atom+xml" title="Deploy Center blog" href="/de/blog/feed.xml">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Zähle deine Builds, bevor du sie kürzt",
+  "description": "Finde heraus, woher deine Builds kommen, bevor du eine Einstellung änderst. Eine Formel, vier Befehle und die Reihenfolge, in der sich das Kürzen lohnt.",
+  "url": "https://deploycenter.app/de/blog/builds-zaehlen-bevor-du-kuerzt/",
+  "mainEntityOfPage": "https://deploycenter.app/de/blog/builds-zaehlen-bevor-du-kuerzt/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Warum zählen, bevor ich Einstellungen ändere?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Weil wenige Quellen meist den größten Teil der Builds machen und das Kürzen der falschen wenig spart. Die Zählung zeigt auf die richtige."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Sind die Zahlen im Beispiel echt?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nein. Sie sind ausgedacht, um die Formel zu zeigen. Echte Zahlen findest du auf der Nutzungsseite deines Anbieters."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Misst Deploy Center meine Rechnung?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Es schätzt aus deinem Deploy-Verlauf und liest bei Vercel die Kosten pro Tag. Die Rechnung deines Anbieters ist die maßgebliche Quelle."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Und wenn ich Vercel nicht nutze?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Die Formel und die Reihenfolge sind dieselben. Nimm die Nutzungsseite deines Anbieters und deploys history für das Projekt."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Blog",
+    "item": "https://deploycenter.app/de/blog/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Erst Builds zählen",
+    "item": "https://deploycenter.app/de/blog/builds-zaehlen-bevor-du-kuerzt/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/blog/">Blog</a></p>
+<h1>Zähle deine Builds, bevor du sie kürzt</h1>
+<p class="answer">Fang nicht bei der Einstellung an. Fang beim Zählen an: Builds sind Pushes mal verbundene Projekte, und wenige Quellen machen meist den größten Teil aus. Finde sie, kürze sie der Reihe nach und miss erneut, mit deinen eigenen Zahlen.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+<p class="langnote"><a href="/blog/count-your-builds-before-you-cut/" hreflang="en" lang="en">English version</a></p>
+
+<h2 id="formula">Die Formel</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-text">Builds pro Tag = Pushes x Projekte, die mit dem Repository verbunden sind</code></pre>
+<p>Die Zahlen unten sind ausgedacht, um die Rechnung zu zeigen, keine Messwerte. Bekommt ein Repository mit 3 verbundenen Projekten 10 Pushes am Tag, sind das 30 Builds. Zwei dieser 10 Pushes kommen von einem Bot, und das sind trotzdem 6 der 30 Builds. Hat sich in jedem Push nur ein Projekt geändert, waren 2 der 3 Builds umsonst.</p>
+<h2 id="measure">Finde heraus, woher deine kommen</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys history web 20     # die letzten 20 Deploys eines Projekts
+deploys costs 14           # Vercel: Kosten pro Tag der letzten 14 Tage
+deploys triggers           # Builds, die niemand von hier gestartet hat, letzte 24 Stunden
+deploys simulate --days 30 # eine Schätzung gegen einen Deploy am Tag</code></pre>
+<p>Die Nutzungsseite deines Anbieters ist die Referenz dafür, was er abgerechnet hat. Die Befehle helfen dir zu sehen, welche Projekte und Tage auffallen. Jede Schätzung von Deploy Center ist als Schätzung gekennzeichnet.</p>
+<h2 id="order">Kürze in dieser Reihenfolge</h2>
+<ol>
+  <li><b>Bots und Agenten.</b> Ihre Branches sind viele, und niemand öffnet die Previews: <a href="/de/blog/previews-sind-fuer-menschen/">Previews sind für Menschen</a>.</li>
+  <li><b>Projekte, die ein Commit nicht berührt hat.</b> Siehe <a href="/de/anleitungen/monorepo-unveraenderte-builds-ueberspringen/">Ignore-Regeln für Monorepos</a>.</li>
+  <li><b>Production-Pushes.</b> Schalte Auto-Deploy ab und deploye einmal, was sich geändert hat, wenn du es entscheidest.</li>
+  <li><b>Build-Dauer.</b> Erst jetzt lohnt sich ein schnellerer Build, denn jeder frühere Schritt entfernt ganze Builds.</li>
+</ol>
+<h2 id="again">Miss erneut</h2>
+<p>Führe nach einer Woche <code>deploys ledger</code> für eine Schätzung deiner Ersparnis aus und vergleiche die Nutzungsseite des Anbieters mit der Woche davor. Taucht ein Build auf, den du nicht erwartet hast, sagen dir <code>deploys explain &lt;project&gt;</code> und <code>deploys triggers</code>, was ihn gestartet hat.</p>
+<h2 id="trade">Worauf du verzichtest</h2>
+<p>Weniger Builds heißt weniger Previews und einen Fix, der erst nach deinem Deploy live ist. Die Zählung sagt dir, welcher dieser Tausche billig ist: Eine Preview, die niemand öffnet, kostet Build-Zeit und gibt nichts zurück. Die ganze Liste steht in der <a href="/de/anleitungen/build-minuten-sparen/">Anleitung zu Build-Minuten</a>.</p>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Warum zählen, bevor ich Einstellungen ändere?</summary><p>Weil wenige Quellen meist den größten Teil der Builds machen und das Kürzen der falschen wenig spart. Die Zählung zeigt auf die richtige.</p></details>
+  <details><summary>Sind die Zahlen im Beispiel echt?</summary><p>Nein. Sie sind ausgedacht, um die Formel zu zeigen. Echte Zahlen findest du auf der Nutzungsseite deines Anbieters.</p></details>
+  <details><summary>Misst Deploy Center meine Rechnung?</summary><p>Es schätzt aus deinem Deploy-Verlauf und liest bei Vercel die Kosten pro Tag. Die Rechnung deines Anbieters ist die maßgebliche Quelle.</p></details>
+  <details><summary>Und wenn ich Vercel nicht nutze?</summary><p>Die Formel und die Reihenfolge sind dieselben. Nimm die Nutzungsseite deines Anbieters und <code>deploys history</code> für das Projekt.</p></details>
+
+<div class="ctabox">
+  <h2>Du nutzt Vercel oder Render?</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel und Render mit einem Klick ab, Netlify und andere Hosts sind optional, und es deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für den Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<p class="reference"><b>Nachschlagen:</b> <a href="/docs/savings/" lang="en">Savings: simulate and ledger</a></p>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/de/anleitungen/build-minuten-sparen/">Build-Minuten sparen, bei jedem Hosting-Anbieter</a></li>
+  <li><a href="/de/anleitungen/deploy-statusseite-einrichten/">Eine Statusseite für deine Deploys einrichten</a></li>
+  <li><a href="/de/vercel-build-kosten-rechner/">Vercel-Build-Kosten-Rechner</a></li>
+  <li><a href="/guides/vercel-build-minutes-and-build-queue/" lang="en">Vercel build minutes and the build queue</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

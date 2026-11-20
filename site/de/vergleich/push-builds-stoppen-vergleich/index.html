@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Push-Builds stoppen: vier Anbieter im Vergleich · Deploy Center</title>
+<meta name="description" content="Der Schalter, der einen Push am Bauen hindert, bei Vercel, Netlify, Render und Cloudflare Pages nebeneinander: was er stoppt, was er lässt und worauf du achtest.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/vergleich/push-builds-stoppen-vergleich/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/compare/stop-push-builds-compared/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/vergleich/push-builds-stoppen-vergleich/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/compare/stop-push-builds-compared/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Push-Builds stoppen: vier Anbieter im Vergleich · Deploy Center">
+<meta property="og:description" content="Der Schalter, der einen Push am Bauen hindert, bei Vercel, Netlify, Render und Cloudflare Pages nebeneinander: was er stoppt, was er lässt und worauf du achtest.">
+<meta property="og:url" content="https://deploycenter.app/de/vergleich/push-builds-stoppen-vergleich/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Push-Builds stoppen: vier Anbieter im Vergleich · Deploy Center">
+<meta name="twitter:description" content="Der Schalter, der einen Push am Bauen hindert, bei Vercel, Netlify, Render und Cloudflare Pages nebeneinander: was er stoppt, was er lässt und worauf du achtest.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "Push-Builds stoppen: Vercel, Netlify, Render, Cloudflare im Vergleich",
+  "description": "Der Schalter, der einen Push am Bauen hindert, bei Vercel, Netlify, Render und Cloudflare Pages nebeneinander: was er stoppt, was er lässt und worauf du achtest.",
+  "url": "https://deploycenter.app/de/vergleich/push-builds-stoppen-vergleich/",
+  "mainEntityOfPage": "https://deploycenter.app/de/vergleich/push-builds-stoppen-vergleich/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Welcher Anbieter hat den einfachsten Schalter?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Render: eine Einstellung, Auto-Deploy Off, je Dienst. Vercel bietet drei Wege und Netlify zwei, das gibt mehr Kontrolle und mehr Auswahl."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Stoppen auch Previews?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Bei Netlify und Cloudflare Pages ja, außer du behältst sie mit einer Regel oder lässt den Preview-Schalter an. Bei Render sind Pull-Request-Previews eine eigene Einstellung. Bei Vercel entscheidet der Ignored Build Step je Branch."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Kann ich jeden Schalter rückgängig machen?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. Jede Anleitung hat einen Abschnitt zum Rückgängigmachen, und Deploy Center merkt sich bei Cloudflare Pages die vorigen Werte."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Reicht ein Schalter für Production?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Für Push-Builds ja. Ein Blueprint-Sync bei Render oder ein anderes Werkzeug kann trotzdem Deploys starten; deploys triggers zeigt Builds, die niemand von hier gestartet hat."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Vergleiche",
+    "item": "https://deploycenter.app/de/vergleich/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Push-Builds stoppen",
+    "item": "https://deploycenter.app/de/vergleich/push-builds-stoppen-vergleich/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/vergleich/">Vergleiche</a></p>
+<h1>Push-Builds stoppen: Vercel, Netlify, Render, Cloudflare im Vergleich</h1>
+<p class="answer">Jeder Anbieter hat einen Schalter, und sie unterscheiden sich darin, was sie stoppen. Vercel kann Git trennen oder per Regel überspringen, Netlify hat Stop builds oder einen <code>ignore</code>-Befehl, Render hat Auto-Deploy Off, und Cloudflare Pages hat zwei Schalter, einen für Production und einen für Previews.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+<p class="langnote"><a href="/compare/stop-push-builds-compared/" hreflang="en" lang="en">English version</a></p>
+
+<h2 id="table">Die Schalter nebeneinander</h2>
+<div class="tablewrap" role="region" aria-label="Tabelle" tabindex="0"><table>
+  <thead><tr><th scope="col">Anbieter</th><th scope="col">Der Schalter</th><th scope="col">Was er stoppt</th><th scope="col">Worauf du achtest</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Vercel</th><td>Git trennen, <code>git.deploymentEnabled: false</code> in <code>vercel.json</code> oder ein Ignored Build Step</td><td>Trennen stoppt jeden Git-Build; die anderen beiden lassen das Repository verbunden und überspringen per Regel</td><td>Ein Ignored Build Step legt trotzdem ein Deployment an, das dann abgebrochen wird</td></tr>
+    <tr><th scope="row">Netlify</th><td>Stop builds oder ein <code>ignore</code>-Befehl in <code>netlify.toml</code></td><td>Stop builds stoppt jeden Build, auch Build Hooks; <code>ignore</code> kann Build Hooks durchlassen</td><td>Deploy-Previews für Pull Requests stoppen mit</td></tr>
+    <tr><th scope="row">Render</th><td>Auto-Deploy auf Off (Dashboard, <code>autoDeployTrigger: off</code> in <code>render.yaml</code> oder die API)</td><td>Pushes starten keine Deploys mehr; das Repository bleibt verbunden</td><td>Ein Blueprint-Sync kann es wieder einschalten; Pull-Request-Previews sind eine eigene Einstellung</td></tr>
+    <tr><th scope="row">Cloudflare Pages</th><td>Production deployments und Preview deployments auf aus</td><td>Keine Push-Builds, Previews eingeschlossen</td><td>Ob ein von Hand angelegtes Deployment baut, solange beide aus sind, ist nicht dokumentiert; teste es einmal</td></tr>
+  </tbody>
+</table></div>
+<h2 id="how">So wählst du</h2>
+<ul>
+  <li><b>Du willst Production nach deinem Zeitplan und Previews behalten:</b> Renders Auto-Deploy Off oder ein Vercel-Ignored-Build-Step, der <code>VERCEL_ENV</code> prüft, lassen Previews in Ruhe. Netlifys <code>ignore</code> mit <code>CONTEXT</code> kann dasselbe.</li>
+  <li><b>Du willst nie, dass ein Push baut:</b> Vercels Git-Trennung, Netlifys Stop builds und Cloudflares zwei Schalter tun das, und du deployst per CLI oder Hook.</li>
+  <li><b>Du nutzt mehrere Anbieter:</b> Eine Regel pro Anbieter ist Pflegeaufwand. Deploy Center setzt den Schalter bei jedem Anbieter von einem Ort aus und deployt dann, was sich geändert hat: <code>deploys vercel autodeploy-off --all</code>, <code>deploys render autodeploy-off --all</code>, <code>deploys netlify autodeploy-off &lt;site&gt;</code>, <code>deploys cloudflare off &lt;project&gt;</code>.</li>
+</ul>
+<h2 id="support">Was Deploy Center abdeckt</h2>
+<p>Vercel und Render sind standardmäßig an; Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify und jeder Deploy-Hook sind optional (<code>deploys providers enable &lt;host&gt;</code>). Die Anleitung jedes Anbieters hat die Schritte und das Rückgängigmachen: <a href="/guides/disable-vercel-auto-deploy/">Vercel</a>, <a href="/guides/netlify-stop-builds/">Netlify</a>, <a href="/guides/render-auto-deploy-off/">Render</a>, <a href="/guides/cloudflare-pages-stop-builds/">Cloudflare Pages</a> (alle englisch).</p>
+<div class="note"><p><b>Diese Seite vergleicht Schalter, keine Preise.</b> Tarife und Limits ändern sich; was ein Build dich kostet, siehst du auf den Preis- und Nutzungsseiten deines Anbieters.</p></div>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Welcher Anbieter hat den einfachsten Schalter?</summary><p>Render: eine Einstellung, Auto-Deploy Off, je Dienst. Vercel bietet drei Wege und Netlify zwei, das gibt mehr Kontrolle und mehr Auswahl.</p></details>
+  <details><summary>Stoppen auch Previews?</summary><p>Bei Netlify und Cloudflare Pages ja, außer du behältst sie mit einer Regel oder lässt den Preview-Schalter an. Bei Render sind Pull-Request-Previews eine eigene Einstellung. Bei Vercel entscheidet der Ignored Build Step je Branch.</p></details>
+  <details><summary>Kann ich jeden Schalter rückgängig machen?</summary><p>Ja. Jede Anleitung hat einen Abschnitt zum Rückgängigmachen, und Deploy Center merkt sich bei Cloudflare Pages die vorigen Werte.</p></details>
+  <details><summary>Reicht ein Schalter für Production?</summary><p>Für Push-Builds ja. Ein Blueprint-Sync bei Render oder ein anderes Werkzeug kann trotzdem Deploys starten; <code>deploys triggers</code> zeigt Builds, die niemand von hier gestartet hat.</p></details>
+
+<div class="ctabox">
+  <h2>Du nutzt Vercel oder Render?</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel und Render mit einem Klick ab, Netlify und andere Hosts sind optional, und es deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für den Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<p class="reference"><b>Nachschlagen:</b> <a href="/docs/providers/" lang="en">Adding a host</a> · <a href="/docs/auto-deploy/" lang="en">Auto-deploy</a></p>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/de/anleitungen/build-kosten-senken-netlify-render-cloudflare/">Build-Kosten bei Netlify, Render und Cloudflare Pages senken</a></li>
+  <li><a href="/de/anleitungen/build-minuten-sparen/">Build-Minuten sparen, bei jedem Hosting-Anbieter</a></li>
+  <li><a href="/guides/disable-vercel-auto-deploy/" lang="en">Disable Vercel auto-deploy</a></li>
+  <li><a href="/guides/netlify-stop-builds/" lang="en">Stop Netlify builds</a></li>
+  <li><a href="/guides/render-auto-deploy-off/" lang="en">Turn off Render auto-deploy</a></li>
+  <li><a href="/guides/cloudflare-pages-stop-builds/" lang="en">Stop Cloudflare Pages builds</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

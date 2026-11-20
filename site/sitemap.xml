@@ -24,6 +24,58 @@
   <url><loc>https://deploycenter.app/de/vercel-build-kosten-rechner/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/blog/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/blog/ai-coding-agents-build-bill/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/save-build-minutes/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/build-minuten-sparen/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/deploy-queue/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/deploy-warteschlange/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/automatic-rollback-after-deploy/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/automatischer-rollback-nach-deploy/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/preview-builds-fuer-bots-vermeiden/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/monorepo-skip-unchanged-builds/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/monorepo-unveraenderte-builds-ueberspringen/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/deploy-freeze-friday/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/deploy-freeze-freitag/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/deploy-status-page/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/reduce-build-costs-netlify-render-cloudflare/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/build-kosten-senken-netlify-render-cloudflare/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/deploy-only-when-ci-is-green/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/scheduled-daily-deploy/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/taeglicher-deploy-nach-zeitplan/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/check-before-you-deploy/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/vor-dem-deploy-pruefen/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/compare/stop-push-builds-compared/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/vergleich/push-builds-stoppen-vergleich/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/compare/ways-to-deploy-on-demand/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/vergleich/deploy-auf-abruf-vergleich/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/compare/scheduled-deploys-compared/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/vergleich/geplante-deploys-vergleich/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/compare/status-page-compared/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/vergleich/statusseite-vergleich/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/blog/friday-freeze-is-a-setting/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/blog/freitags-freeze-ist-eine-einstellung/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/blog/count-your-builds-before-you-cut/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/blog/builds-zaehlen-bevor-du-kuerzt/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/blog/previews-are-for-people/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/blog/previews-sind-fuer-menschen/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/compare/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/vergleich/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/blog/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/build-minuten-sparen/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/deploy-warteschlange/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/automatischer-rollback-nach-deploy/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/preview-builds-fuer-bots-vermeiden/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/monorepo-unveraenderte-builds-ueberspringen/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/deploy-freeze-freitag/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/build-kosten-senken-netlify-render-cloudflare/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/taeglicher-deploy-nach-zeitplan/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/vor-dem-deploy-pruefen/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/</loc><lastmod>2026-11-20</lastmod></url>
   <!-- docs: written by scripts/build-docs.py -->
   <url><loc>https://deploycenter.app/docs/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/docs/getting-started/</loc><lastmod>2026-11-20</lastmod></url>

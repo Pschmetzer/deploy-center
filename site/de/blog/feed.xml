@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="de">
+  <title>Deploy Center Blog (Deutsch)</title>
+  <link href="https://deploycenter.app/de/blog/feed.xml" rel="self"/>
+  <link href="https://deploycenter.app/de/blog/"/>
+  <id>https://deploycenter.app/de/blog/</id>
+  <updated>2026-11-20T00:00:00Z</updated>
+  <author><name>Deploy Center</name></author>
+  <entry>
+    <title>Zähle deine Builds, bevor du sie kürzt</title>
+    <link href="https://deploycenter.app/de/blog/builds-zaehlen-bevor-du-kuerzt/"/>
+    <id>https://deploycenter.app/de/blog/builds-zaehlen-bevor-du-kuerzt/</id>
+    <published>2026-11-20T00:00:00Z</published>
+    <updated>2026-11-20T00:00:00Z</updated>
+    <summary>Finde heraus, woher deine Builds kommen, bevor du eine Einstellung änderst. Eine Formel, vier Befehle und die Reihenfolge, in der sich das Kürzen lohnt.</summary>
+  </entry>
+  <entry>
+    <title>Ein Freitags-Freeze sollte eine Einstellung sein, keine Regel</title>
+    <link href="https://deploycenter.app/de/blog/freitags-freeze-ist-eine-einstellung/"/>
+    <id>https://deploycenter.app/de/blog/freitags-freeze-ist-eine-einstellung/</id>
+    <published>2026-11-20T00:00:00Z</published>
+    <updated>2026-11-20T00:00:00Z</updated>
+    <summary>Ein Deploy-Freeze, der davon abhängt, dass sich Menschen erinnern, versagt, wenn es zählt. Lege ihn in eine Datei, protokolliere Ausnahmen, lass Rollbacks offen.</summary>
+  </entry>
+  <entry>
+    <title>Previews sind für Menschen: eine Regel für Bots und Agenten</title>
+    <link href="https://deploycenter.app/de/blog/previews-sind-fuer-menschen/"/>
+    <id>https://deploycenter.app/de/blog/previews-sind-fuer-menschen/</id>
+    <published>2026-11-20T00:00:00Z</published>
+    <updated>2026-11-20T00:00:00Z</updated>
+    <summary>Ein Preview-Build lohnt sich, wenn ihn ein Mensch ansieht. Eine kurze Regel: Previews für Pull Requests, die Menschen prüfen, keine für Bot- und Agenten-Branches.</summary>
+  </entry>
+</feed>

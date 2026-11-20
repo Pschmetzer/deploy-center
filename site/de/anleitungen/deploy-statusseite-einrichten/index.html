@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eine Statusseite für deine Deploys einrichten · Deploy Center</title>
+<meta name="description" content="Veröffentliche eine statische Seite „Was wurde wann ausgeliefert“ mit Atom-Feed und status.json aus deinem Deploy-Verlauf, ohne Commit-Nachrichten.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/deploy-status-page/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/deploy-status-page/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Eine Statusseite für deine Deploys einrichten · Deploy Center">
+<meta property="og:description" content="Veröffentliche eine statische Seite „Was wurde wann ausgeliefert“ mit Atom-Feed und status.json aus deinem Deploy-Verlauf, ohne Commit-Nachrichten.">
+<meta property="og:url" content="https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Eine Statusseite für deine Deploys einrichten · Deploy Center">
+<meta name="twitter:description" content="Veröffentliche eine statische Seite „Was wurde wann ausgeliefert“ mit Atom-Feed und status.json aus deinem Deploy-Verlauf, ohne Commit-Nachrichten.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Eine Statusseite für deine Deploys einrichten",
+  "description": "Veröffentliche eine statische Seite „Was wurde wann ausgeliefert“ mit Atom-Feed und status.json aus deinem Deploy-Verlauf, ohne Commit-Nachrichten.",
+  "url": "https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/",
+  "mainEntityOfPage": "https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Deployt die Statusseite etwas?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nein. Das Skript schreibt nur drei Dateien. Du entscheidest, wohin sie gehen."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Zeigt sie Commit-Nachrichten?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nicht, wenn hideMessages an ist, wie in der Beispielkonfiguration. Mit strict ist es von selbst an."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Ist sie ein Uptime-Monitor?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nein. Die optionale Seitenprüfung ist eine Anfrage, wenn die Seite entsteht. Für Verfügbarkeit über die Zeit brauchst du einen Monitor, der die Seite regelmäßig abfragt."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Können andere Werkzeuge sie lesen?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. status.json hat dieselben Daten und eine schema-Nummer, damit ein Werkzeug merkt, wenn sich das Format ändert."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Anleitungen",
+    "item": "https://deploycenter.app/de/anleitungen/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Statusseite",
+    "item": "https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/anleitungen/">Anleitungen</a></p>
+<h1>Eine Statusseite für deine Deploys einrichten</h1>
+<p class="answer">Kopiere <code>statuspage.example.json</code> nach <code>statuspage.json</code>, trage die anzuzeigenden Projekte ein und führe <code>integrations/statuspage/statuspage.sh</code> aus. Es schreibt <code>index.html</code>, <code>feed.xml</code> und <code>status.json</code> nach <code>public/</code> und deployt nichts: Den Ordner lädst du bei einem beliebigen statischen Host hoch.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+<p class="langnote"><a href="/guides/deploy-status-page/" hreflang="en" lang="en">English version</a></p>
+
+<h2 id="what">1. Was du bekommst</h2>
+<p>Drei Dateien, kein Server und keine externen Assets:</p>
+<div class="tablewrap" role="region" aria-label="Tabelle" tabindex="0"><table>
+  <thead><tr><th scope="col">Datei</th><th scope="col">Inhalt</th></tr></thead>
+  <tbody>
+    <tr><th scope="row"><code>index.html</code></th><td>Eine Seite, hell und dunkel, auf dem Handy lesbar.</td></tr>
+    <tr><th scope="row"><code>feed.xml</code></th><td>Ein Atom-Feed mit einem Eintrag je Deploy in der Zeitleiste.</td></tr>
+    <tr><th scope="row"><code>status.json</code></th><td>Dieselben Daten für andere Werkzeuge, mit <code>schema: 1</code>.</td></tr>
+  </tbody>
+</table></div>
+<p>Für jedes Projekt zeigt die Seite Zustand und Zeit des Live-Deploys (Live, Deploying, Failed), was gemergt, aber noch nicht live ist („Coming next“), eine optionale Seitenprüfung und darunter die letzten Deploys aus dem Journal der App.</p>
+<h2 id="config">2. Schreibe die Konfiguration</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-json">{
+  "title": "Acme deploys",
+  "description": "What shipped when.",
+  "baseUrl": "https://status.example.com/",
+  "projects": [
+    "app-web",
+    "render/worker",
+    { "name": "api", "platform": "render", "label": "API", "url": "https://api.example.com/health" }
+  ],
+  "hideMessages": true,
+  "showAuthors": false,
+  "timeline": 30
+}</code></pre>
+<p><code>projects</code> ist eine Allowlist: Nur diese werden angezeigt, in dieser Reihenfolge, und ohne sie hält das Skript an und schreibt nichts. <code>hideMessages: true</code> zeigt „Updated“ statt der Commit-Nachrichten, in der Seite, im Feed und in <code>status.json</code>.</p>
+<h2 id="run">3. Erzeuge die Seite</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">cp integrations/statuspage/statuspage.example.json statuspage.json   # dann bearbeiten
+integrations/statuspage/statuspage.sh                  # liest ./statuspage.json, schreibt ./public/</code></pre>
+<p>Öffne <code>public/index.html</code> zuerst lokal. Lade <code>public/</code> dann bei einem beliebigen statischen Host hoch: S3, Cloudflare Pages, einen Webserver mit <code>rsync -a public/ host:/var/www/status/</code> oder ziehe den Ordner auf Netlify Drop. Auf dem Server läuft nichts.</p>
+<h2 id="public">4. Bevor Fremde sie sehen</h2>
+<ul>
+  <li>Setze <code>"strict": true</code> für eine Seite, die jeder sehen darf. Es schließt <code>hideMessages</code> ein, verlegt das Skript der Seite nach <code>status.js</code>, damit eine <code>script-src 'self'</code>-Richtlinie hält, und setzt <code>noindex</code>.</li>
+  <li>Nie veröffentlicht werden: Projekte, die nicht in der Liste stehen, Repositories, Commit-SHAs, Fehlertexte und die URLs der Seitenprüfungen.</li>
+  <li>Die Seitenprüfung ruft die Adresse einmal ab, während die Seite entsteht. Sie ist das Ergebnis in diesem Moment, keine Verfügbarkeit über die Zeit.</li>
+</ul>
+<h2 id="fresh">5. Halte sie aktuell</h2>
+<p>Die Seite ist eine Momentaufnahme. Führe das Skript über launchd oder cron aus und lade danach hoch. Bleibt der Job stehen, setzt <code>staleHours</code> (Standard 48) eine rote Zeile auf die Seite, die sagt, wie alt sie ist.</p>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Deployt die Statusseite etwas?</summary><p>Nein. Das Skript schreibt nur drei Dateien. Du entscheidest, wohin sie gehen.</p></details>
+  <details><summary>Zeigt sie Commit-Nachrichten?</summary><p>Nicht, wenn <code>hideMessages</code> an ist, wie in der Beispielkonfiguration. Mit <code>strict</code> ist es von selbst an.</p></details>
+  <details><summary>Ist sie ein Uptime-Monitor?</summary><p>Nein. Die optionale Seitenprüfung ist eine Anfrage, wenn die Seite entsteht. Für Verfügbarkeit über die Zeit brauchst du einen Monitor, der die Seite regelmäßig abfragt.</p></details>
+  <details><summary>Können andere Werkzeuge sie lesen?</summary><p>Ja. <code>status.json</code> hat dieselben Daten und eine <code>schema</code>-Nummer, damit ein Werkzeug merkt, wenn sich das Format ändert.</p></details>
+
+<div class="ctabox">
+  <h2>Du nutzt Vercel oder Render?</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel und Render mit einem Klick ab, Netlify und andere Hosts sind optional, und es deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für den Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<p class="reference"><b>Nachschlagen:</b> <a href="/docs/integrations/statuspage/" lang="en">Status page integration</a> · <a href="/docs/journal/" lang="en">Journal</a></p>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/de/vergleich/statusseite-vergleich/">Deploy-Statusseite: statische Datei oder gehosteter Statusdienst</a></li>
+  <li><a href="/de/anleitungen/taeglicher-deploy-nach-zeitplan/">Einmal am Tag nach Zeitplan deployen</a></li>
+  <li><a href="/de/anleitungen/deploy-warteschlange/">Deine Deploy-Warteschlange: gemergt, aber nicht live</a></li>
+  <li><a href="/guides/deploy-hooks/" lang="en">Deploy hooks for any host</a></li>
+  <li><a href="/de/blog/builds-zaehlen-bevor-du-kuerzt/">Zähle deine Builds, bevor du sie kürzt</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

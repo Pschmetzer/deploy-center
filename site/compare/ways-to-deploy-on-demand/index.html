@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deploy on demand: hook, CLI, Actions or Deploy Center · Deploy Center</title>
+<meta name="description" content="Four ways to ship when you decide, after push builds are off: a deploy hook, the host&#x27;s own CLI or button, GitHub Actions, and Deploy Center. What each gives you.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/compare/ways-to-deploy-on-demand/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/compare/ways-to-deploy-on-demand/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/vergleich/deploy-auf-abruf-vergleich/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/compare/ways-to-deploy-on-demand/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Deploy on demand: hook, CLI, Actions or Deploy Center · Deploy Center">
+<meta property="og:description" content="Four ways to ship when you decide, after push builds are off: a deploy hook, the host&#x27;s own CLI or button, GitHub Actions, and Deploy Center. What each gives you.">
+<meta property="og:url" content="https://deploycenter.app/compare/ways-to-deploy-on-demand/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Deploy on demand: hook, CLI, Actions or Deploy Center · Deploy Center">
+<meta name="twitter:description" content="Four ways to ship when you decide, after push builds are off: a deploy hook, the host&#x27;s own CLI or button, GitHub Actions, and Deploy Center. What each gives you.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "Deploy on demand: hook, CLI, Actions or Deploy Center",
+  "description": "Four ways to ship when you decide, after push builds are off: a deploy hook, the host's own CLI or button, GitHub Actions, and Deploy Center. What each gives you.",
+  "url": "https://deploycenter.app/compare/ways-to-deploy-on-demand/",
+  "mainEntityOfPage": "https://deploycenter.app/compare/ways-to-deploy-on-demand/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Which is the smallest setup?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "A deploy hook and curl. It has no checks and shows nothing about what waits."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Can I use Deploy Center without a Mac?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "The CLI is bash and runs on Linux, WSL and in CI. The app and the widgets need macOS."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Is a deploy hook less safe?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "It is the same as any secret URL: keep it out of the repository and logs, and rotate it if it leaks."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Which should I pick for many projects?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "A tool that lists what waits across all of them, since the cost of the other ways is looking at each project in turn."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Compare",
+    "item": "https://deploycenter.app/compare/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Ways to deploy on demand",
+    "item": "https://deploycenter.app/compare/ways-to-deploy-on-demand/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/compare/">Compare</a></p>
+<h1>Deploy on demand: hook, CLI, Actions or Deploy Center</h1>
+<p class="answer">Once push builds are off you need a way to ship. A deploy hook is the smallest, the host's own button or CLI needs nothing extra, GitHub Actions adds triggers like a label, and Deploy Center adds a list of what waits, CI and window checks, and rollback.</p>
+<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="langnote"><a href="/de/vergleich/deploy-auf-abruf-vergleich/" hreflang="de" lang="de">Deutsche Fassung</a></p>
+
+<h2 id="table">The four ways</h2>
+<div class="tablewrap" role="region" aria-label="Table" tabindex="0"><table>
+  <thead><tr><th scope="col"></th><th scope="col">Deploy hook</th><th scope="col">Host button or CLI</th><th scope="col">GitHub Actions</th><th scope="col">Deploy Center</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Setup</th><td>Create a hook, call its URL</td><td>Nothing extra</td><td>A workflow file and secrets</td><td>Install the app or the CLI</td></tr>
+    <tr><th scope="row">Shows what waits</th><td>No</td><td>The host's own deploy list</td><td>Only what you build into it</td><td>Yes, per project, across hosts</td></tr>
+    <tr><th scope="row">CI gate</th><td>No</td><td>Your host's own CI setting, if it has one</td><td>You write it</td><td><code>--when-green</code></td></tr>
+    <tr><th scope="row">Deploy freeze</th><td>No</td><td>No</td><td>You write it</td><td><code>window.json</code></td></tr>
+    <tr><th scope="row">Rollback check</th><td>No</td><td>A manual rollback</td><td>You write it</td><td><code>deploys verify</code></td></tr>
+    <tr><th scope="row">Runs where</th><td>Anywhere that can call a URL</td><td>Your host's dashboard or your terminal</td><td>GitHub's runners</td><td>Your Mac, or the CLI on Linux and in CI</td></tr>
+    <tr><th scope="row">Secret to guard</th><td>The hook URL</td><td>Your host login or token</td><td>Repository secrets</td><td>Keys in the keychain or the environment</td></tr>
+  </tbody>
+</table></div>
+<h2 id="hook">Deploy hook</h2>
+<p>A deploy hook is a URL that starts a build when you call it. It works on any host that has one, and needs no software. The URL is a secret: anyone who has it can start a build. It tells you nothing about what is waiting and has no checks of its own. See <a href="/guides/deploy-hooks/">deploy hooks for any host</a>.</p>
+<h2 id="host">The host's button or CLI</h2>
+<p>Render has Manual Deploy and Vercel has its CLI; each host has its own. This is the right choice for one or two projects on one host. With several projects on several hosts you visit several dashboards to find out what is behind.</p>
+<h2 id="actions">GitHub Actions</h2>
+<p>A workflow can call a hook when a pull request gets a label, or deploy once a day. It runs without your Mac and you can review it as code. You write the checks yourself, and scheduled workflows stop after 60 days without activity in the repository. See <a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a>.</p>
+<h2 id="dc">Deploy Center</h2>
+<p>Deploy Center lists the commits and pull requests waiting per project, deploys when you click or run a command with <code>--yes</code>, and offers the checks the other ways leave to you: <a href="/guides/deploy-only-when-ci-is-green/">CI must be green</a>, a <a href="/guides/deploy-freeze-friday/">deploy freeze</a>, an <a href="/guides/automatic-rollback-after-deploy/">automatic rollback</a>. It is a Mac app and a bash CLI, so the app itself needs macOS 15 or later; the CLI also runs on Linux and in CI.</p>
+<div class="note"><p><b>You can mix them.</b> Deploy Center also calls deploy hooks for hosts that offer nothing else, and the CLI runs inside a GitHub Actions workflow.</p></div>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Which is the smallest setup?</summary><p>A deploy hook and curl. It has no checks and shows nothing about what waits.</p></details>
+  <details><summary>Can I use Deploy Center without a Mac?</summary><p>The CLI is bash and runs on Linux, WSL and in CI. The app and the widgets need macOS.</p></details>
+  <details><summary>Is a deploy hook less safe?</summary><p>It is the same as any secret URL: keep it out of the repository and logs, and rotate it if it leaks.</p></details>
+  <details><summary>Which should I pick for many projects?</summary><p>A tool that lists what waits across all of them, since the cost of the other ways is looking at each project in turn.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<p class="reference"><b>Reference:</b> <a href="/docs/deploy-hooks/">Deploy hooks</a> · <a href="/docs/ci/">Deploy from CI</a></p>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/scheduled-daily-deploy/">Deploy once a day on a schedule</a></li>
+  <li><a href="/guides/deploy-queue/">Your deploy queue: what is merged but not live</a></li>
+  <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+  <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+  <li><a href="/compare/scheduled-deploys-compared/">Scheduled deploys: cron, GitHub Actions or deploys schedule</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

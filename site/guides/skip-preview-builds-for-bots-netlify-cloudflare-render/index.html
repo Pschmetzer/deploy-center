@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skip preview builds for bots on Netlify and more · Deploy Center</title>
+<meta name="description" content="Stop Dependabot, Renovate and coding-agent branches from starting preview builds on Netlify, Cloudflare Pages and Render, and keep previews for people.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/preview-builds-fuer-bots-vermeiden/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Skip preview builds for bots on Netlify and more · Deploy Center">
+<meta property="og:description" content="Stop Dependabot, Renovate and coding-agent branches from starting preview builds on Netlify, Cloudflare Pages and Render, and keep previews for people.">
+<meta property="og:url" content="https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Skip preview builds for bots on Netlify and more · Deploy Center">
+<meta name="twitter:description" content="Stop Dependabot, Renovate and coding-agent branches from starting preview builds on Netlify, Cloudflare Pages and Render, and keep previews for people.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Skip preview builds for bots on Netlify, Cloudflare and Render",
+  "description": "Stop Dependabot, Renovate and coding-agent branches from starting preview builds on Netlify, Cloudflare Pages and Render, and keep previews for people.",
+  "url": "https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Which branch prefixes do bots use?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Dependabot uses dependabot/ and Renovate uses renovate/ by default. Coding agents use their own prefix, so look at the branches they created in your repository."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does a skipped Netlify build still appear?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes. Netlify cancels it, and it shows in the deploy list as a cancelled deploy."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Will the production branch be affected?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Only if your rule matches it. The prefixes above never match main. If you also want production on your schedule, turn auto-deploy off instead."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Can I keep previews for pull requests people open?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes. The rules match branch names, so a pull request from a branch without a bot prefix still gets its preview."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Bot previews on other hosts",
+    "item": "https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/"
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Skip preview builds for bots on Netlify, Cloudflare and Render",
+  "description": "Stop Dependabot, Renovate and coding-agent branches from starting preview builds on Netlify, Cloudflare Pages and Render, and keep previews for people.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Know the branch names",
+    "url": "https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/#who"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "Netlify: an ignore script",
+    "url": "https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/#netlify"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "Cloudflare Pages: limit the preview branches",
+    "url": "https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/#cloudflare"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 4,
+    "name": "Render: previews have their own setting",
+    "url": "https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/#render"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 5,
+    "name": "See what a push would build",
+    "url": "https://deploycenter.app/guides/skip-preview-builds-for-bots-netlify-cloudflare-render/#dc"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>Skip preview builds for bots on Netlify, Cloudflare and Render</h1>
+<p class="answer">On Netlify add an <code>ignore</code> script that exits 0 for bot branches. On Cloudflare Pages restrict the preview branches or turn previews off. On Render a service builds only the branch it is set to, so bot branches matter only through pull request previews, which have their own setting.</p>
+<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="langnote"><a href="/de/anleitungen/preview-builds-fuer-bots-vermeiden/" hreflang="de" lang="de">Deutsche Fassung</a></p>
+
+<h2 id="who">1. Know the branch names</h2>
+<p>Bots and agents use predictable branch prefixes: <code>dependabot/…</code> for Dependabot, <code>renovate/…</code> for Renovate, and for coding agents whatever prefix the tool uses, such as <code>claude/…</code> or <code>cursor/…</code>. Check the branches in your own repository, then use those prefixes in the rules below. For Vercel see <a href="/guides/skip-vercel-previews-for-bots-and-agents/">the Vercel guide</a>.</p>
+<h2 id="netlify">2. Netlify: an ignore script</h2>
+<p>Netlify runs the <code>ignore</code> command before each build: exit 0 cancels the build, exit 1 builds. It sets <code>BRANCH</code> to the branch being built.</p>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-toml"><span class="c"># netlify.toml</span>
+[build]
+  ignore = "bash scripts/netlify-ignore.sh"</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash"><span class="c">#!/usr/bin/env bash</span>
+<span class="c"># scripts/netlify-ignore.sh  -  exit 0 = skip the build, exit 1 = build</span>
+case "$BRANCH" in
+  dependabot/*|renovate/*|claude/*|cursor/*) exit 0 ;;
+esac
+exit 1</code></pre>
+<p>Test it locally with <code>BRANCH=renovate/x bash scripts/netlify-ignore.sh; echo $?</code>, which should print 0. The cancelled builds still show in the deploy list. If you also use the build-hook rule from <a href="/guides/netlify-stop-builds/">the Netlify guide</a>, put both checks in one script, because Netlify reads one <code>ignore</code> command.</p>
+<h2 id="cloudflare">3. Cloudflare Pages: limit the preview branches</h2>
+<p>In the Pages project open <b>Settings → Builds &amp; deployments</b> and look at <b>Preview deployments</b>. If your dashboard offers a choice of branches, include only the branches people use or exclude the bot prefixes. If it only offers all or none, set it to none and open previews by hand. Cloudflare counts every build against a monthly build limit, so skipped previews also leave room for the builds that matter. Details are in <a href="/guides/cloudflare-pages-stop-builds/">the Cloudflare Pages guide</a>.</p>
+<h2 id="render">4. Render: previews have their own setting</h2>
+<p>A Render service deploys the branch it is configured for, so a push to a bot branch does not build it. Builds come from pull request previews, which are a separate setting per service, from auto-deploy of the service's own branch, and from the bot's pull requests merging into it. Turn pull request previews off or to manual where nobody reviews them, and use <b>Build Filters</b> or <code>[skip render]</code> for commits that need no build. See <a href="/guides/render-auto-deploy-off/">the Render guide</a>.</p>
+<div class="note"><p><b>Trade-offs.</b> A bot pull request without a preview has to be reviewed from its diff and CI. If a dependency update is risky, build it by hand: that is one deploy you chose, not one per push.</p></div>
+<h2 id="dc">5. See what a push would build</h2>
+<p><code>deploys hooks install</code> puts a Git pre-push hook into a repository. Before each push it shows which Vercel and Render builds the push would start, so you notice a bot branch building before it does.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Which branch prefixes do bots use?</summary><p>Dependabot uses <code>dependabot/</code> and Renovate uses <code>renovate/</code> by default. Coding agents use their own prefix, so look at the branches they created in your repository.</p></details>
+  <details><summary>Does a skipped Netlify build still appear?</summary><p>Yes. Netlify cancels it, and it shows in the deploy list as a cancelled deploy.</p></details>
+  <details><summary>Will the production branch be affected?</summary><p>Only if your rule matches it. The prefixes above never match <code>main</code>. If you also want production on your schedule, turn auto-deploy off instead.</p></details>
+  <details><summary>Can I keep previews for pull requests people open?</summary><p>Yes. The rules match branch names, so a pull request from a branch without a bot prefix still gets its preview.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<p class="reference"><b>Reference:</b> <a href="/docs/netlify/">Netlify in Deploy Center</a> · <a href="/docs/cloudflare-pages/">Cloudflare Pages in Deploy Center</a> · <a href="/docs/render/">Render in Deploy Center</a></p>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+  <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+  <li><a href="/guides/monorepo-skip-unchanged-builds/">Monorepo ignore rules: build only the app that changed</a></li>
+  <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+  <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+  <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

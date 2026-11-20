@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deploy status page: static or hosted service · Deploy Center</title>
+<meta name="description" content="A static what-shipped-when page from Deploy Center against a hosted status service: what each shows, who runs it, what leaves your machine and what it cannot do.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/compare/status-page-compared/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/compare/status-page-compared/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/vergleich/statusseite-vergleich/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/compare/status-page-compared/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Deploy status page: static or hosted service · Deploy Center">
+<meta property="og:description" content="A static what-shipped-when page from Deploy Center against a hosted status service: what each shows, who runs it, what leaves your machine and what it cannot do.">
+<meta property="og:url" content="https://deploycenter.app/compare/status-page-compared/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Deploy status page: static or hosted service · Deploy Center">
+<meta name="twitter:description" content="A static what-shipped-when page from Deploy Center against a hosted status service: what each shows, who runs it, what leaves your machine and what it cannot do.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "Deploy status page: static file or hosted status service",
+  "description": "A static what-shipped-when page from Deploy Center against a hosted status service: what each shows, who runs it, what leaves your machine and what it cannot do.",
+  "url": "https://deploycenter.app/compare/status-page-compared/",
+  "mainEntityOfPage": "https://deploycenter.app/compare/status-page-compared/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Can the deploy page replace a hosted status service?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Only if all you need is a record of what shipped. It has no uptime monitoring and no subscriber emails."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Is it safe to publish?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "With strict on, the page hides commit messages, moves its script into a separate file for a strict content policy and carries noindex. Only the projects you list are shown."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Do I need a server?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. It is three static files that any static host serves."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Can other tools read it?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes. status.json has the same data and a schema number."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Compare",
+    "item": "https://deploycenter.app/compare/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Status page",
+    "item": "https://deploycenter.app/compare/status-page-compared/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/compare/">Compare</a></p>
+<h1>Deploy status page: static file or hosted status service</h1>
+<p class="answer">Deploy Center's status page is a static snapshot of what shipped when, made from your deploy history and hosted anywhere. A hosted status service is built for incidents, subscribers and uptime. They answer different questions, and you can run both.</p>
+<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="langnote"><a href="/de/vergleich/statusseite-vergleich/" hreflang="de" lang="de">Deutsche Fassung</a></p>
+
+<h2 id="table">Side by side</h2>
+<div class="tablewrap" role="region" aria-label="Table" tabindex="0"><table>
+  <thead><tr><th scope="col"></th><th scope="col">Deploy Center status page</th><th scope="col">A hosted status service</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Main question</th><td>What shipped, and when?</td><td>Is the service up, and what is the incident?</td></tr>
+    <tr><th scope="row">How it is made</th><td>A script writes <code>index.html</code>, <code>feed.xml</code> and <code>status.json</code></td><td>Run by the vendor; you post updates or connect monitors</td></tr>
+    <tr><th scope="row">Where it lives</th><td>Any static host you choose</td><td>The vendor's platform</td></tr>
+    <tr><th scope="row">Uptime over time</th><td>No. The optional site check is one request when the page is made</td><td>Services of this kind typically monitor continuously; check what yours does</td></tr>
+    <tr><th scope="row">Subscribers and incident posts</th><td>An Atom feed of deploys; no email or SMS</td><td>Typically offered; check your service</td></tr>
+    <tr><th scope="row">What leaves your machine</th><td>Only the allowlisted projects; never repositories, commit SHAs, error texts or check URLs</td><td>Whatever you send or connect</td></tr>
+    <tr><th scope="row">Cost</th><td>Free and open source (MIT)</td><td>Varies by vendor and plan</td></tr>
+  </tbody>
+</table></div>
+<h2 id="when">When to use which</h2>
+<ul>
+  <li><b>Customers or a team ask "did the fix go out?":</b> the deploy page answers that without anyone writing an update. See <a href="/guides/deploy-status-page/">set up a status page for your deploys</a>.</li>
+  <li><b>Customers ask "is it down?":</b> you need monitoring and incident posts, which a deploy snapshot does not provide.</li>
+  <li><b>Both:</b> keep the deploy page for what shipped and link to your incident page from it.</li>
+</ul>
+<div class="note"><p><b>Honest limit.</b> The deploy page is as fresh as the last time the script ran and the folder was uploaded. If the job stops, a red line with the page's age appears after <code>staleHours</code> (default 48), which only shows with scripts enabled in the browser.</p></div>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Can the deploy page replace a hosted status service?</summary><p>Only if all you need is a record of what shipped. It has no uptime monitoring and no subscriber emails.</p></details>
+  <details><summary>Is it safe to publish?</summary><p>With <code>strict</code> on, the page hides commit messages, moves its script into a separate file for a strict content policy and carries <code>noindex</code>. Only the projects you list are shown.</p></details>
+  <details><summary>Do I need a server?</summary><p>No. It is three static files that any static host serves.</p></details>
+  <details><summary>Can other tools read it?</summary><p>Yes. <code>status.json</code> has the same data and a <code>schema</code> number.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<p class="reference"><b>Reference:</b> <a href="/docs/integrations/statuspage/">Status page integration</a></p>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/deploy-status-page/">Set up a status page for your deploys</a></li>
+  <li><a href="/guides/deploy-queue/">Your deploy queue: what is merged but not live</a></li>
+  <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+  <li><a href="/blog/count-your-builds-before-you-cut/">Count your builds before you cut them</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

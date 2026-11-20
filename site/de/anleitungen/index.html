@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anleitungen: Build-Kosten senken und sicher deployen · Deploy Center</title>
+<meta name="description" content="Anleitungen zu Build-Minuten, Deploy-Freeze, Rollback, Monorepo-Regeln, Statusseite und täglichem Deploy, für Vercel, Netlify, Render und Cloudflare Pages.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/anleitungen/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="og:title" content="Anleitungen: Build-Kosten senken und sicher deployen · Deploy Center">
+<meta property="og:description" content="Anleitungen zu Build-Minuten, Deploy-Freeze, Rollback, Monorepo-Regeln, Statusseite und täglichem Deploy, für Vercel, Netlify, Render und Cloudflare Pages.">
+<meta property="og:url" content="https://deploycenter.app/de/anleitungen/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Anleitungen: Build-Kosten senken und sicher deployen · Deploy Center">
+<meta name="twitter:description" content="Anleitungen zu Build-Minuten, Deploy-Freeze, Rollback, Monorepo-Regeln, Statusseite und täglichem Deploy, für Vercel, Netlify, Render und Cloudflare Pages.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "CollectionPage",
+  "name": "Anleitungen: Build-Kosten senken und sicher deployen",
+  "description": "Anleitungen zu Build-Minuten, Deploy-Freeze, Rollback, Monorepo-Regeln, Statusseite und täglichem Deploy, für Vercel, Netlify, Render und Cloudflare Pages.",
+  "url": "https://deploycenter.app/de/anleitungen/",
+  "inLanguage": "de",
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "mainEntity": {
+   "@type": "ItemList",
+   "itemListElement": [
+    {
+     "@type": "ListItem",
+     "position": 1,
+     "url": "https://deploycenter.app/de/anleitungen/build-minuten-sparen/",
+     "name": "Build-Minuten sparen, bei jedem Hosting-Anbieter"
+    },
+    {
+     "@type": "ListItem",
+     "position": 2,
+     "url": "https://deploycenter.app/de/anleitungen/deploy-warteschlange/",
+     "name": "Deine Deploy-Warteschlange: gemergt, aber nicht live"
+    },
+    {
+     "@type": "ListItem",
+     "position": 3,
+     "url": "https://deploycenter.app/de/anleitungen/automatischer-rollback-nach-deploy/",
+     "name": "Automatisch zurückrollen, wenn ein Deploy die Seite kaputt macht"
+    },
+    {
+     "@type": "ListItem",
+     "position": 4,
+     "url": "https://deploycenter.app/de/anleitungen/preview-builds-fuer-bots-vermeiden/",
+     "name": "Preview-Builds für Bots bei Netlify, Cloudflare und Render vermeiden"
+    },
+    {
+     "@type": "ListItem",
+     "position": 5,
+     "url": "https://deploycenter.app/de/anleitungen/monorepo-unveraenderte-builds-ueberspringen/",
+     "name": "Monorepo: nur die geänderte App bauen"
+    },
+    {
+     "@type": "ListItem",
+     "position": 6,
+     "url": "https://deploycenter.app/de/anleitungen/deploy-freeze-freitag/",
+     "name": "Einen Deploy-Freeze für Freitagnachmittag einrichten"
+    },
+    {
+     "@type": "ListItem",
+     "position": 7,
+     "url": "https://deploycenter.app/de/anleitungen/deploy-statusseite-einrichten/",
+     "name": "Eine Statusseite für deine Deploys einrichten"
+    },
+    {
+     "@type": "ListItem",
+     "position": 8,
+     "url": "https://deploycenter.app/de/anleitungen/build-kosten-senken-netlify-render-cloudflare/",
+     "name": "Build-Kosten bei Netlify, Render und Cloudflare Pages senken"
+    },
+    {
+     "@type": "ListItem",
+     "position": 9,
+     "url": "https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/",
+     "name": "Nur bei grünem CI deployen"
+    },
+    {
+     "@type": "ListItem",
+     "position": 10,
+     "url": "https://deploycenter.app/de/anleitungen/taeglicher-deploy-nach-zeitplan/",
+     "name": "Einmal am Tag nach Zeitplan deployen"
+    },
+    {
+     "@type": "ListItem",
+     "position": 11,
+     "url": "https://deploycenter.app/de/anleitungen/vor-dem-deploy-pruefen/",
+     "name": "Prüfen, was ein Deploy ausliefert: Risiko, Diff, Secrets"
+    }
+   ]
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Anleitungen",
+    "item": "https://deploycenter.app/de/anleitungen/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a></p>
+<h1>Anleitungen: Build-Kosten senken und sicher deployen</h1>
+<p class="answer">Anleitungen zu dem, was Entwickler am häufigsten suchen: Build-Minuten und Kosten senken, Deploys planen und prüfen, bei Problemen zurückrollen und eine Statusseite veröffentlichen. Die Anleitungen zu einzelnen Anbietern (Vercel, Render, Netlify und mehr) gibt es auf Englisch.</p>
+<p class="langnote"><a href="/guides/" hreflang="en" lang="en">English version</a></p>
+
+<div class="cards">
+  <a href="/de/anleitungen/build-minuten-sparen/"><b>Build-Minuten sparen, bei jedem Hosting-Anbieter</b><span>Build-Minuten sind Builds mal Build-Dauer. Builds zählen, überflüssige streichen, den Rest verkürzen: bei Vercel, Netlify, Render und Cloudflare.</span></a>
+  <a href="/de/anleitungen/deploy-warteschlange/"><b>Deine Deploy-Warteschlange: gemergt, aber nicht live</b><span>Sieh, welche Commits und Pull Requests gemergt, aber nicht live sind, plane den nächsten Deploy, starte ihn bewusst und beobachte oder brich ihn ab.</span></a>
+  <a href="/de/anleitungen/automatischer-rollback-nach-deploy/"><b>Automatisch zurückrollen, wenn ein Deploy die Seite kaputt macht</b><span>Frage nach jedem Deploy die Live-Seite und gehe bei einem 5xx zum vorigen Deployment zurück: deploys verify, die Exit-Codes und der Countdown in der App.</span></a>
+  <a href="/de/anleitungen/preview-builds-fuer-bots-vermeiden/"><b>Preview-Builds für Bots bei Netlify, Cloudflare und Render vermeiden</b><span>Verhindere, dass Dependabot-, Renovate- und Coding-Agenten-Branches Preview-Builds bei Netlify, Cloudflare Pages und Render starten, und behalte Previews für Menschen.</span></a>
+  <a href="/de/anleitungen/monorepo-unveraenderte-builds-ueberspringen/"><b>Monorepo: nur die geänderte App bauen</b><span>Ein Push baut jedes mit einem Monorepo verbundene Projekt. Lass unveränderte bei Vercel, Netlify, Render und Cloudflare Pages aus und meide die üblichen Fallen.</span></a>
+  <a href="/de/anleitungen/deploy-freeze-freitag/"><b>Einen Deploy-Freeze für Freitagnachmittag einrichten</b><span>Sperre Production-Deploys am Freitagnachmittag, am Wochenende und an Feiertagen mit einem Deploy-Fenster und lass einen Hotfix mit protokolliertem Grund durch.</span></a>
+  <a href="/de/anleitungen/deploy-statusseite-einrichten/"><b>Eine Statusseite für deine Deploys einrichten</b><span>Veröffentliche eine statische Seite „Was wurde wann ausgeliefert“ mit Atom-Feed und status.json aus deinem Deploy-Verlauf, auf jedem statischen Host, ohne Commit-Nachrichten.</span></a>
+  <a href="/de/anleitungen/build-kosten-senken-netlify-render-cloudflare/"><b>Build-Kosten bei Netlify, Render und Cloudflare Pages senken</b><span>Eine Checkliste je Anbieter, um Builds bei Netlify, Render und Cloudflare Pages zu senken: Push-Builds stoppen, Unnötiges überspringen, nach Zeitplan deployen.</span></a>
+  <a href="/de/anleitungen/nur-bei-gruenem-ci-deployen/"><b>Nur bei grünem CI deployen</b><span>Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf laufende Checks, überspringt rote und deployt genau den geprüften Commit.</span></a>
+  <a href="/de/anleitungen/taeglicher-deploy-nach-zeitplan/"><b>Einmal am Tag nach Zeitplan deployen</b><span>Lass einen geplanten Job einmal täglich deployen, was sich geändert hat, nur bei grünem CI: deploys schedule auf dem Mac oder ein GitHub-Actions-Workflow, mit Stolperfallen.</span></a>
+  <a href="/de/anleitungen/vor-dem-deploy-pruefen/"><b>Prüfen, was ein Deploy ausliefert: Risiko, Diff, Secrets</b><span>Lies vor dem Deploy den Diff, die Risikobewertung und einen Secrets-Check von allem, was gemergt, aber nicht live ist: deploys risk, diff, notes und secrets mit ihren Regeln.</span></a>
+</div>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/guides/" lang="en">Alle Anleitungen auf Englisch, mit den Schritten für jeden Anbieter</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>
