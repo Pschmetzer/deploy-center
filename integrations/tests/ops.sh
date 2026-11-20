@@ -115,9 +115,9 @@ contains "report: a project with no deploys has no rate" "$md" '| netlify | 0 | 
 contains "report: the saving is an estimate in dollars" "$md" 'about $12.40 (42 builds skipped since auto-deploy went off on 2026-12-01). An estimate'
 contains "report: Markdown special characters in names are escaped" "$md" 'x\|y\_\<z\>'
 contains "report: HTML escapes names" "$html" 'x|y_&lt;z&gt;'
-lacks "report: the error text of a failure is not in it by default" "$md$html" '/Users/example'
+lacks "report: the error text of a failure is not in it by default" "$md$html" '/Users/me'
 rp --out "$tmp/rep2" --details --format md >/dev/null
-contains "report: --details adds the error text" "$(cat "$tmp/rep2"/*.md)" '/Users/example'
+contains "report: --details adds the error text" "$(cat "$tmp/rep2"/*.md)" '/Users/me'
 case "$(cat "$tmp/calls.log")" in *deploy\ *|*rollback*|*--yes*) fail "report: it only reads" "$(cat "$tmp/calls.log")" ;; *) ok "report: it only reads" ;; esac
 rp --period month --print --no-savings | grep -q '^Period: .* (30 days)' && ok "report: a month is 30 days" || fail "report: a month is 30 days" "no 30 days line"
 expect "report: --no-savings leaves the saving out (and says so)" "$(rp --print --no-savings | grep -c 'Not available')" 1
