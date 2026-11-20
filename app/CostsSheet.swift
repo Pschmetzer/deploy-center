@@ -185,7 +185,7 @@ struct CostsSheet: View {
                 Text(L("By project, 7 days", "Nach Projekt, 7 Tage")).font(.caption).foregroundStyle(.secondary)
                 ForEach(Array(top), id: \.name) { p in
                     HStack {
-                        if let b = budgets[p.name], let l = CostInsights.light(week: p.build, budget: b) {
+                        if let b = budgets[BudgetKey.key(platform: "vercel", name: p.name)], let l = CostInsights.light(week: p.build, budget: b) {
                             Circle().fill(l == .green ? Color.good : (l == .yellow ? Color.orange : Color.red)).frame(width: 8, height: 8)
                                 .help(L("Budget \(b.formatted(.currency(code: "USD"))) a month", "Budget \(b.formatted(.currency(code: "USD"))) im Monat"))
                         }

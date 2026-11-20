@@ -195,7 +195,8 @@ struct BuildLog: View {
             // Through the project's own platform, the way the store cancels and rolls back:
             // a name on two platforms is not ambiguous then.
             let data = try await Tool.run([item.platform.cli, "logs", item.id, "\(lineCount)"])
-            let t = String(data: data, encoding: .utf8).map { $0.isEmpty ? L("(empty)", "(leer)") : $0 } ?? ""
+            let raw = String(decoding: data, as: UTF8.self)   // bad bytes become U+FFFD, the log is not blank
+            let t = raw.isEmpty ? L("(empty)", "(leer)") : raw
             // Split, searched and scrubbed once per load, not on every redraw.
             let l = t.components(separatedBy: "\n")
             if l != lines { lines = l; firstError = LogTools.firstErrorLine(l); shownLines = scrubbed(l) }
@@ -373,7 +374,7 @@ struct ProjectDetail: View {
         let notes = LogTools.releaseNotes(name: Demo.mask(item.name), commits: Demo.on ? commits.map {
             Details.Commit(sha: $0.sha, full: $0.full, url: $0.url, msg: Demo.scrub($0.msg, items: all), author: Demo.person($0.author),
                            bot: $0.bot, at: $0.at, pr: $0.pr)
-        } : commits)
+        } : commits, prMark: GitHost(item) == .github ? "#" : "!")
         return notes
     }
 
@@ -703,7 +704,7 @@ struct ProjectDetail: View {
                     Button(L("Show \(min(commits.count, listLimit) - Self.commitsShown) more commits", "\(min(commits.count, listLimit) - Self.commitsShown) weitere Commits zeigen")) { showAllCommits = true }
                         .buttonStyle(.link).font(.caption)
                 } else if showAllCommits && commits.count > listLimit {
-                    moreOnGitHub(commits.count - listLimit, d.compareUrl.flatMap(URL.init(string:)))
+                    moreOnGitHub(commits.count - listLimit, d.compareUrl.flatMap(URL.init(string:)), host: GitHost(item))
                 }
             }
         } else if item.hasNewCommits {

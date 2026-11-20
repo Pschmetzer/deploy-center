@@ -51,13 +51,23 @@ struct AutofixSettings: View {
                 TextField(L("Routine ID", "Routinen-ID"), text: $routineId, prompt: Text("trig_…"))
                 Button(L("Save", "Speichern")) { Task { await saveRoutine() } }
                     .disabled(!routineId.hasPrefix("trig_") || busy)
+                    .help(busy ? L("Wait for the running step.", "Auf den laufenden Schritt warten.")
+                               : L("A routine ID starts with trig_.", "Eine Routinen-ID beginnt mit trig_."))
                 check(status?.routine != nil)
+            }
+            if !routineId.isEmpty, !routineId.hasPrefix("trig_") {
+                Text(L("A routine ID starts with trig_.", "Eine Routinen-ID beginnt mit trig_.")).font(.caption).foregroundStyle(.secondary)
             }
             HStack {
                 SecureField(L("API token", "API-Token"), text: $token, prompt: Text("sk-ant-…"))
                 Button(L("Save", "Speichern")) { Task { await saveToken() } }
                     .disabled(!token.hasPrefix("sk-ant-") || busy)
+                    .help(busy ? L("Wait for the running step.", "Auf den laufenden Schritt warten.")
+                               : L("An API token starts with sk-ant-.", "Ein API-Token beginnt mit sk-ant-."))
                 check(status?.token == true)
+            }
+            if !token.isEmpty, !token.hasPrefix("sk-ant-") {
+                Text(L("An API token starts with sk-ant-.", "Ein API-Token beginnt mit sk-ant-.")).font(.caption).foregroundStyle(.secondary)
             }
 
             // 3. Every 10 minutes through launchd, also while the app is closed.

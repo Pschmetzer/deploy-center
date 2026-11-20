@@ -332,6 +332,21 @@ let f3 = Details.Commit(sha: "c", full: nil, url: nil, msg: "Tidy up", author: n
 expect("release notes grouped", LogTools.releaseNotes(name: "web", commits: [f3, f2, f1]),
        "## web\n\n### Features\n- Dark mode (#3)\n\n### Fixes\n- Login loop\n\n### Other\n- Tidy up")
 
+// Round 12: log lines, release-note marks, budget keys, the owner check.
+expect("error-boundary file name is no error", LogTools.isErrorLine("  dist/error-boundary.js  1.2 kB"), false)
+expect("error.js file name is no error", LogTools.isErrorLine("  src/error.js"), false)
+expect("a path with error in it is no error", LogTools.isErrorLine("compiling packages/error/index.ts"), false)
+expect("plain error: still an error", LogTools.isErrorLine("error: something broke"), true)
+expect("Error at the end of a sentence", LogTools.isErrorLine("Build failed."), true)
+let g1 = Details.Commit(sha: "a", full: nil, url: nil, msg: "Tidy up", author: nil, bot: false, at: 0, pr: 7)
+expect("GitLab release notes use !", LogTools.releaseNotes(name: "web", commits: [g1], prMark: "!"), "## web\n- Tidy up (!7)")
+expect("GitHub release notes use #", LogTools.releaseNotes(name: "web", commits: [g1]), "## web\n- Tidy up (#7)")
+expect("budget key", BudgetKey.key(platform: "vercel", name: "shop"), "vercel/shop")
+expect("budget migration", BudgetKey.migrate(["shop": 5, "render/api": 3, "vercel/prj_1": 2]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" },
+       ["render/api=3.0", "vercel/prj_1=2.0", "vercel/shop=5.0"])
+expect("cancelling the owner check is silent", OwnerCheck.silent(.userCancel), true)
+expect("a technical failure is not silent", OwnerCheck.silent(.biometryNotAvailable), false)
+
 // Decoding: one broken entry does not take the list with it.
 let mixed = Data(#"[{"name":"ok","auto":false,"deployable":true},{"name":"broken"}]"#.utf8)
 expect("lossy list keeps the good entry", ((try? decodeLossy(VercelProject.self, from: mixed, label: "test")) ?? []).map(\.name), ["ok"])

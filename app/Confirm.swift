@@ -17,12 +17,35 @@ enum OwnerCheck {
         guard on else { return true }
         let ctx = LAContext()
         ctx.localizedCancelTitle = L("Cancel", "Abbrechen")
-        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else {
-            Log.write("owner check: not available on this Mac, the action goes on without it")
-            return true
+        // Fail closed: the person switched this on, so a check that cannot run does not wave the action through.
+        var probe: NSError?
+        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &probe) else {
+            Log.write("owner check: cannot run (\(probe?.code ?? 0)), the action is not done")
+            notify(L("The owner check could not run, so nothing was done. Set a login password for this Mac, or switch the check off in Settings.",
+                     "Die Eigentümerprüfung konnte nicht laufen, darum wurde nichts getan. Lege ein Anmeldepasswort für diesen Mac fest oder schalte die Prüfung in den Einstellungen aus."))
+            return false
         }
         do { return try await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) }
-        catch { return false }
+        catch {
+            let code = (error as? LAError)?.code
+            // Cancelling is an answer; a technical failure is said.
+            if !silent(code) { notify(L("The owner check failed, so nothing was done: ", "Die Eigentümerprüfung ist fehlgeschlagen, darum wurde nichts getan: ") + error.localizedDescription) }
+            return false
+        }
+    }
+
+    /// The person said no (Cancel, or the system closed the prompt): no message.
+    nonisolated static func silent(_ code: LAError.Code?) -> Bool {
+        guard let code else { return false }
+        return [.userCancel, .appCancel, .systemCancel].contains(code)
+    }
+
+    @MainActor private static func notify(_ text: String) {
+        let a = NSAlert()
+        a.messageText = L("Owner check", "Eigentümerprüfung"); a.informativeText = text
+        a.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        a.runModal()
     }
 
     /// When several projects go live at once, it asks; one project alone does not.

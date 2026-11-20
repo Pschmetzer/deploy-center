@@ -188,11 +188,17 @@ final class Store: ObservableObject {
     /// Once a day: if the pace of the last 7 days passes 80 % of the monthly budget (Settings), say so.
     // MARK: A budget per project (Vercel builds, from the week's costs), next to the monthly one
 
-    private(set) var projectBudgets: [String: Double] = (UserDefaults.standard.dictionary(forKey: "projectBudgets") as? [String: Double]) ?? [:]
-    func projectBudget(_ i: Item) -> Double? { projectBudgets[Self.key(i)] }
+    var projectBudgets: [String: Double] { ProjectBudgets.all() }
+    func projectBudget(_ i: Item) -> Double? {
+        let b = projectBudgets
+        return b[BudgetKey.key(platform: i.platform.cli, name: i.name)] ?? b[Self.key(i)]
+    }
     func setProjectBudget(_ i: Item, _ v: Double?) {
-        projectBudgets[Self.key(i)] = v.flatMap { $0 > 0 && $0.isFinite ? $0 : nil }
-        UserDefaults.standard.set(projectBudgets, forKey: "projectBudgets")
+        var b = projectBudgets
+        b[Self.key(i)] = nil   // the older id-based key
+        let k = BudgetKey.key(platform: i.platform.cli, name: i.name)
+        if let v, v > 0, v.isFinite { b[k] = v } else { b[k] = nil }
+        ProjectBudgets.write(b)
         objectWillChange.send()
     }
     /// Projects that go live only after their name is typed (FEA-030), by `Store.key`.
@@ -1067,6 +1073,15 @@ final class Store: ObservableObject {
 
     /// Rows whose last deploy was cancelled by the person: not a failure in the journal or the summary.
     private var endedByCancel: Set<String> = []
+    /// A deploy ended in an error; one the person cancelled is not an error (menu bar badge).
+    var hasFailedDeploy: Bool {
+        items.contains { p, list in
+            list.contains { i in
+                if case .failed = i.state { return !endedByCancel.contains("\(p.cli)/\(i.id)") }
+                return false
+            }
+        }
+    }
     /// Names of rows a deploy was started for, so the result survives the row leaving the list.
     private var rowNames: [String: String] = [:]
     /// Started inside a closed deploy window, with the reason given: journaled as "forced".
@@ -1125,8 +1140,10 @@ final class Store: ObservableObject {
                                         detail: why.map { L("Deployed inside the deploy window: ", "Im Deploy-Fenster deployt: ") + $0 },
                                         sha: entrySha, deployId: entryId))
         case .failed(let m):
-            forcedReasons[Self.key(items[p]![i])] = nil
-            Journal.append(JournalEntry(platform: p.rawValue, name: name, result: byPerson ? "cancelled" : "failed", seconds: took, detail: m,
+            // The reason for forcing it inside the deploy window stays in the entry, though the deploy failed.
+            let why = forcedReasons.removeValue(forKey: Self.key(items[p]![i]))
+            let detail = why.map { L("Forced inside the deploy window (\($0)): ", "Im Deploy-Fenster erzwungen (\($0)): ") + m } ?? m
+            Journal.append(JournalEntry(platform: p.rawValue, name: name, result: byPerson ? "cancelled" : "failed", seconds: took, detail: detail,
                                         sha: entrySha, deployId: entryId))
         case .skipped(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "skipped", seconds: took, detail: m,
                                                                             sha: entrySha, deployId: entryId))
@@ -1305,9 +1322,9 @@ final class Store: ObservableObject {
     }
     /// Hide with a way back: the toast offers "Undo" for a few seconds.
     func hideWithUndo(_ i: Item) {
-        toggleHidden(i)
+        if !hidden.contains(Self.key(i)) { toggleHidden(i) }
         show(Toast(text: L("\(i.name) hidden", "\(i.name) ausgeblendet"), ok: true,
-                   undoLabel: L("Undo", "Rückgängig"), undo: { [weak self] in self?.toggleHidden(i) }))
+                   undoLabel: L("Undo", "Rückgängig"), undo: { [weak self] in self?.unhide(Self.key(i)) }))
     }
     func unhide(_ key: String) {
         hidden.remove(key); UserDefaults.standard.set(Array(hidden), forKey: "hidden")
