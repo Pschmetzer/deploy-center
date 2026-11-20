@@ -1,0 +1,8 @@
+#!/bin/sh
+# Install: cp post-deploy-notify ~/.config/deploys/hooks.d/ && chmod 700 ~/.config/deploys/hooks.d/post-deploy-notify
+# Tells a webhook that takes plain text (ntfy and the like) what was started. Set DEPLOY_NOTIFY_URL in the
+# environment that runs deploys; without it the hook does nothing. A post-deploy hook cannot stop a deploy.
+[ -n "${DEPLOY_NOTIFY_URL:-}" ] || exit 0
+msg="$DEPLOYS_PLATFORM/$DEPLOYS_PROJECT started at ${DEPLOYS_SHA:-?}: ${DEPLOYS_STATE:-unknown}"
+curl -fsS --max-time 10 -d "$msg" "$DEPLOY_NOTIFY_URL" >/dev/null || echo "post-deploy: the notification failed" >&2
+exit 0

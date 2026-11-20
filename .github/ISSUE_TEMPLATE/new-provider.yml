@@ -1,0 +1,74 @@
+name: I will write a provider
+description: You want to add a hosting platform to Deploy Center yourself (one file in providers/)
+title: "Provider: "
+labels: [platform-request, help wanted]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. A provider is one file, `providers/<host>.sh`, plus fixtures and a test; nothing else changes.
+        Read [docs/PROVIDERS.md](https://github.com/Pschmetzer/deploy-center/blob/main/docs/PROVIDERS.md) (the functions and `_meta`)
+        and [CONTRIBUTING.md](https://github.com/Pschmetzer/deploy-center/blob/main/CONTRIBUTING.md) first.
+        Only want to ask for a platform? Use "Platform request" instead. The repo is public: no real project names, team IDs or keys; tests use fixtures, never a real account.
+  - type: input
+    id: host
+    attributes:
+      label: Platform
+      description: Its name, and the id you will use (the file name without `.sh`).
+      placeholder: Example Host, example
+    validations:
+      required: true
+  - type: input
+    id: api
+    attributes:
+      label: Link to its public API documentation
+    validations:
+      required: true
+  - type: textarea
+    id: auth
+    attributes:
+      label: How does a script log in?
+      description: A token in an environment variable, a CLI login, a keychain item. Never paste a key.
+    validations:
+      required: true
+  - type: checkboxes
+    id: caps
+    attributes:
+      label: What can the platform's API do?
+      description: These become `caps` in `_meta`. Leave out what it cannot do; the function then says so instead of failing silently.
+      options:
+        - label: Turn off the build on push (`off`)
+        - label: Start a deploy of a given commit (`sha`)
+        - label: Cancel a running build (`cancel`)
+        - label: Roll production back (`rollback`)
+        - label: Read build logs (`logs`)
+        - label: Start a preview deploy (`preview`)
+  - type: textarea
+    id: plan
+    attributes:
+      label: How will you turn off the build on push, and how will you start one?
+      description: The calls you plan to use. If the platform has no such switch, say how a deploy hook or an ignore rule would do it.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: The pull request will have
+      options:
+        - label: "`providers/<id>.sh` with every function of the contract, and `<id>_meta` on one line"
+          required: true
+        - label: Fixtures in `tests/fixtures/<id>/` with made-up names, and `tests/providers/<id>.sh`
+          required: true
+        - label: "`docs/providers/<id>.md` and a row in `docs/providers/README.md`"
+          required: true
+        - label: A line under `## Unreleased` in `CHANGELOG.md`
+          required: true
+        - label: Nothing that starts a build without `--yes` or a click
+          required: true
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Help
+      options:
+        - label: I can test it on my own account
+        - label: I would like the owner to answer questions on the design first

@@ -1,0 +1,43 @@
+title: "[Show] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Show how you use Deploy Center: a config file, a hook, a rule, a CI workflow. Examples that work for others may find their way into
+        [examples/](https://github.com/Pschmetzer/deploy-center/tree/main/examples).
+        Use stand-in names (`example-web`, `example.com`) and no keys, team IDs or real paths.
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you set up, and why?
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: The file or the commands
+      description: Paste it with stand-in names. Check it for secrets first.
+      render: shell
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of setup
+      multiple: true
+      options:
+        - Deploy window / freeze
+        - Rules
+        - Budget
+        - Hooks (hooks.d)
+        - Team config (deploy-center.json)
+        - CI / GitHub Actions
+        - Monorepo
+        - Notifications
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: share
+    attributes:
+      label: May it become an example?
+      options:
+        - label: Yes, under the MIT license of the repo

@@ -1,0 +1,34 @@
+title: "[Idea] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An idea that is not yet a task. When it is clear what to build, it becomes an "Idea or feature" issue.
+        One idea per post. For a new hosting platform, use "Platform request" in Issues.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What gets in your way today?
+      description: The situation, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like instead?
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you work around it now?
+      description: A command, a script, a config file. Stand-in names only.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: It would keep the rules
+      description: Deploy Center never starts a build, a deploy or a rollback without a click or a command with `--yes`.
+      options:
+        - label: Nothing in my idea starts a build by itself
+          required: true

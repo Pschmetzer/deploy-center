@@ -1,0 +1,9 @@
+#!/bin/sh
+# Install: cp pre-deploy-friday ~/.config/deploys/hooks.d/ && chmod 700 ~/.config/deploys/hooks.d/pre-deploy-friday
+# A non-zero exit stops this start. Friday from 15:00 and the weekend are closed; HOOK_NOW ("fri 15" style:
+# the weekday number 1-7 and the hour) stands in for the clock in tests.
+now="${HOOK_NOW:-$(date +%u%H)}"
+if [ "$now" -ge 515 ]; then
+  echo "pre-deploy: no deploys on Friday afternoon or the weekend ($DEPLOYS_PLATFORM/$DEPLOYS_PROJECT not started)" >&2
+  exit 1
+fi

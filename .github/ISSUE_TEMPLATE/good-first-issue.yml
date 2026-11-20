@@ -1,0 +1,45 @@
+name: Good first issue (maintainers)
+description: A small, self-contained task for someone's first pull request
+title: "Good first issue: "
+labels: [good first issue]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For maintainers. The list to draw from is [docs/GOOD-FIRST-ISSUES.md](https://github.com/Pschmetzer/deploy-center/blob/main/docs/GOOD-FIRST-ISSUES.md).
+        A good first issue is one that someone can finish in an evening without reading the whole repo.
+  - type: textarea
+    id: task
+    attributes:
+      label: The task
+      description: What to do, in two or three sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where to look
+      description: The files or pages, and an example to copy the style from.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: What a reviewer can check, for example a command that passes.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Docs
+        - Examples
+        - Tests
+        - CLI (bash)
+        - App (Swift)
+        - Website
+        - Integrations
+    validations:
+      required: true

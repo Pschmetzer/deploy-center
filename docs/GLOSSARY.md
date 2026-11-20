@@ -109,3 +109,27 @@ The `deploys` server that lets an AI agent in Claude Code, Cursor or Codex read 
 
 ## Simulate and ledger
 `deploys simulate` estimates what auto-deploy would cost a month before you switch it off; `deploys ledger` estimates what turning it off saved. Both are marked as estimates. See [SAVINGS.md](SAVINGS.md).
+
+## Freeze
+A closed time in the deploy window, such as Friday from 15:00 or the days around a holiday. `deploys freeze add fri 15:00 --reason "…"` writes it into `window.json`; `deploys freeze` lists the closed times. See [SAFE-DEPLOY.md](SAFE-DEPLOY.md) and [examples/config/](../examples/config/).
+
+## Forced start
+A start inside a closed window or over the budget, made on purpose with `--force "why"`. The reason and the window or budget it went past are written to the journal as a `forced` entry.
+
+## Hook (`hooks.d`)
+An executable file named `pre-deploy*` or `post-deploy*` in the config folder's `hooks.d`. It runs around every start from the terminal, `deploy-changed` and the scheduled job. A `pre-deploy` hook that exits non-zero stops that start; a `post-deploy` hook cannot. Not the Git `pre-push` hook of `deploys hooks install`. See [CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd).
+
+## Budget brake
+`budget.json` (`deploys budget set 50`): the dollars a month of Vercel build charges that `deploy-changed --yes` may not go over without `--force "why"`. With `strict` it also stops when the charges cannot be read.
+
+## Rule (`rules.json`)
+A "when … then …" line for the daily deploy: `when` names conditions (projects, changed paths, CI green, labels, age, number of commits or PRs), `then` is `deploy`, `hold` or `notify`. The first enabled rule that matches a project decides. `deploys rules check` shows why a rule did or did not match. See [CLI.md](CLI.md#rules).
+
+## Config folder
+Where Deploy Center keeps its files on a Mac or in CI: `~/.config/deploys`, or the folder `DEPLOYS_CONFIG` names. `window.json`, `rules.json`, `budget.json`, `ignored.json` and `hooks.d` live here. `deploys where` prints it.
+
+## Shared config (`deploy-center.json`)
+A file at the root of a repo (or `.deploy-center.json`) that gives every teammate's Mac the same projects, groups, windows and approvals, without a server. This Mac's own files are merged on top. See [TEAM.md](TEAM.md).
+
+## Deploy group
+Projects deployed together, in order: `deploys deploy <group>` starts each one once the one before is live (backend before frontend). Defined under `groups` in `deploy-center.json`; with `checks` it runs each member's health checks and with `stopOnFail` stops the rest after a failure.
