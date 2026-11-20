@@ -293,5 +293,123 @@ check(mkSnap([mkProj(.building, 20 * 60)]).relevanceScore(at: rnow) == 6, "relev
 check(mkSnap([mkProj(.waiting, 30 * 3600)]).relevanceScore(at: rnow) == 3, "relevance: a project waiting over a day is 3")
 check(mkSnap([mkProj(.waiting, 3600)]).relevanceScore(at: rnow) == nil, "relevance: a short wait is not raised")
 
+// MARK: Round 12 (iOS)
+
+// Spoken: the age is said only for a state older than 15 minutes
+let sNow = Date()
+check(Spoken.age(sNow.addingTimeInterval(-60), now: sNow) == "", "spoken: a fresh state says no age")
+check(Spoken.age(sNow.addingTimeInterval(-20 * 60), now: sNow) != "", "spoken: an old state says its age")
+check(Spoken.age(nil, now: sNow) == "", "spoken: no time, no age")
+check(Spoken.failures([], hideNames: true) == L("Nothing failed.", "Nichts ist fehlgeschlagen."), "spoken: nothing failed")
+let sFailed: PhoneProject = { var p = PhoneProject(provider: .vercel, id: "p1", name: "alpha"); p.latestState = "ERROR"; p.liveState = "READY"; return p }()
+check(Spoken.failures([sFailed]).contains("alpha"), "spoken: failures name the project")
+check(!Spoken.failures([sFailed], hideNames: true).contains("alpha"), "spoken: with the lock on no name is said")
+
+// The remembered GitHub limit
+RateGate.clear()
+check(RateGate.until == nil, "rate gate: none at first")
+RateGate.note(APIError(status: 403, message: "x", rateLimited: true, retryAt: sNow.addingTimeInterval(600)), now: sNow)
+check(RateGate.until != nil, "rate gate: a spent limit is remembered")
+RateGate.clear()
+RateGate.note(APIError(status: 403, message: "x", rateLimited: true, retryAt: sNow.addingTimeInterval(86400)), now: sNow)
+check((RateGate.until?.timeIntervalSince(sNow) ?? 9e9) <= 3601, "rate gate: at most an hour ahead")
+RateGate.clear()
+RateGate.note(APIError(status: 500, message: "x"), now: sNow)
+check(RateGate.until == nil, "rate gate: another error sets nothing")
+RateGate.note(APIError(status: 403, message: "x", rateLimited: true, retryAt: sNow.addingTimeInterval(-5)), now: sNow)
+check(RateGate.until == nil, "rate gate: a limit that has passed is no limit")
+
+// Render: the last good deploys stand in for a failed read, for ten minutes
+RenderDeps.shared.removeAll()
+RenderDeps.shared.set("srv-1", [["status": "live"]])
+check(RenderDeps.shared.recent("srv-1") != nil, "render deps: kept")
+check(RenderDeps.shared.recent("srv-1", now: Date().addingTimeInterval(700)) == nil, "render deps: not after ten minutes")
+check(RenderDeps.shared.recent("srv-2") == nil, "render deps: unknown service")
+
+// History cache
+HistoryCache.clear()
+check(HistoryCache.load("Vercel/a") == nil, "history cache: empty at first")
+HistoryCache.save([DeployRecord(id: "d1", state: "READY", at: sNow, sha: "abc1234", title: "Fix")], for: "Vercel/a")
+check(HistoryCache.load("Vercel/a")?.first?.id == "d1" && HistoryCache.load("Vercel/a")?.first?.title == "Fix", "history cache: round trip")
+for i in 0..<45 { HistoryCache.save([], for: "k\(i)") }
+check(HistoryCache.load("Vercel/a") == nil, "history cache: the oldest are dropped past 40")
+HistoryCache.clear()
+check(HistoryCache.load("k44") == nil, "history cache: clear")
+
+// Followed runs
+UserDefaults.standard.removeObject(forKey: FollowedRuns.defaultsKey)
+FollowedRuns.add(key: "Vercel/a", id: "d1", now: sNow)
+FollowedRuns.add(key: "Vercel/a", id: "d2", now: sNow)
+check(FollowedRuns.fresh(now: sNow).count == 1 && FollowedRuns.fresh(now: sNow).first?.id == "d2", "followed runs: one per project, the newest id")
+check(FollowedRuns.fresh(now: sNow.addingTimeInterval(21 * 60)).isEmpty, "followed runs: none after 20 minutes")
+FollowedRuns.remove("Vercel/a")
+check(FollowedRuns.fresh(now: sNow).isEmpty, "followed runs: removed at the end")
+
+// The filtered widget picture
+let fSnap = DeploySnapshot(at: sNow, demo: false, waitingProjects: 2, waitingCommits: 3, waitingPRs: 2, building: 1, failed: 1,
+                           byPlatform: nil, saving: nil, projects: [
+    .init(name: "a", platform: "Vercel", status: .failed, commits: 1, prs: 0, since: sNow, message: nil),
+    .init(name: "b", platform: "Render", status: .waiting, commits: 2, prs: 2, since: sNow, message: nil),
+    .init(name: "c", platform: "Vercel", status: .building, commits: 0, prs: 0, since: sNow, message: nil),
+    .init(name: "d", platform: "Vercel", status: .waiting, commits: 1, prs: 0, since: sNow, message: nil)])
+var fWithSplit = fSnap
+fWithSplit.byPlatform = DeploySnapshot.platformCounts(fSnap.projects)
+check(fWithSplit.byPlatform?.first { $0.platform == "Render" }?.prs == 2, "platform counts: PRs of Render")
+check(fWithSplit.filtered(platform: "Vercel", onlyFailed: false).projects.map(\.name) == ["a", "c", "d"], "filtered: one platform's rows")
+check(fWithSplit.filtered(platform: "Vercel", onlyFailed: false).failed == 1 && fWithSplit.filtered(platform: "Vercel", onlyFailed: false).waitingPRs == 0, "filtered: one platform's numbers")
+check(fWithSplit.filtered(platform: nil, onlyFailed: true).projects.map(\.name) == ["a"], "filtered: only failed rows")
+check(fWithSplit.filtered(platform: nil, onlyFailed: true).waitingProjects == 0 && fWithSplit.filtered(platform: nil, onlyFailed: true).failed == 1, "filtered: only failed numbers")
+check(fSnap.filtered(platform: nil, onlyFailed: false) == fSnap, "filtered: nothing asked, nothing changed")
+
+// An error body is masked before it reaches a toast
+check(!(LogMask.mask("vercel deploy --token abcdefSECRET123456 --prod") ?? "").contains("abcdefSECRET123456"), "error body: a token is masked")
+
+// A saved Mac figure: the snapshot's saving is the monthly figure
+check(DeploySnapshot.Saving(before: 120.0 / 30, after: 0).month == 120, "saving: a month's figure round-trips")
+
+// MARK: Keychain logic against a fake (IDEEN-12 C58)
+
+final class FakeKeychain: KeychainBackend {
+    var items: [String: Data] = [:]            // "group|key"
+    var missingEntitlement: Set<String> = []   // groups that are "not in the signature"
+    var lockedDevice = false
+    private func id(_ k: String, _ g: String?) -> String { (g ?? "-") + "|" + k }
+    func copy(_ key: String, group: String?) -> (status: OSStatus, data: Data?) {
+        if lockedDevice { return (errSecInteractionNotAllowed, nil) }
+        if let g = group, missingEntitlement.contains(g) { return (errSecMissingEntitlement, nil) }
+        guard let d = items[id(key, group)] else { return (errSecItemNotFound, nil) }
+        return (errSecSuccess, d)
+    }
+    func write(_ key: String, _ value: Data, group: String?) -> OSStatus {
+        if let g = group, missingEntitlement.contains(g) { return errSecMissingEntitlement }
+        items[id(key, group)] = value; return errSecSuccess
+    }
+    func delete(_ key: String, group: String?) -> OSStatus {
+        if let g = group, missingEntitlement.contains(g) { return errSecMissingEntitlement }
+        return items.removeValue(forKey: id(key, group)) == nil ? errSecItemNotFound : errSecSuccess
+    }
+}
+let fk = FakeKeychain()
+Keychain.backend = fk; Keychain.ownGroup = "TEAM.app.test"; Keychain.sharedGroup = "TEAM.app.deploycenter.shared"
+check(Keychain.lookup("vercel") == .missing, "keychain: nothing at first")
+check(Keychain.set("vercel", "  tok123  ") && Keychain.get("vercel") == "tok123", "keychain: set trims and reads back")
+check(fk.items["TEAM.app.test|vercel"] != nil, "keychain: written into the app's own group")
+fk.items = [:]
+fk.items["-|render"] = Data("old-key".utf8)
+check(Keychain.lookup("render") == .found("old-key"), "keychain: an old item outside the own group is found")
+check(fk.items["TEAM.app.test|render"] != nil, "keychain: ... and moved into the own group")
+fk.items = ["TEAM.app.deploycenter.shared|render": Data("team-key".utf8)]
+// the migration reads with no group: the fake keeps the team item apart, so it stays missing; a delete of both places works
+check(Keychain.set("render", ""), "keychain: an empty value deletes (own and team group)")
+check(fk.items.isEmpty, "keychain: nothing is left after the delete")
+fk.missingEntitlement = ["TEAM.app.test"]
+check(Keychain.set("github", "ghp-abc") && fk.items["-|github"] != nil, "keychain: own group not in the signature: writes without a group")
+check(Keychain.get("github") == "ghp-abc", "keychain: ... and reads it back the same way")
+fk.missingEntitlement = []
+fk.lockedDevice = true
+check(Keychain.lookup("github") == .failed, "keychain: a locked device is 'failed', not 'missing'")
+fk.lockedDevice = false
+Keychain.backend = SystemKeychain()
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
