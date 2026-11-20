@@ -27,6 +27,19 @@ production would go back to (the newest earlier one that went live), and the new
 a rollback is done in Deploy Center or the CLI, which asks first. Set it up like the first filter,
 with its own keyword.
 
+## Costs, journal and guard
+
+Three more Script Filters, each read-only (they start, roll back and run nothing):
+
+| Script | Keyword | What it shows |
+|---|---|---|
+| `deploys-costs.sh` | `dcc` | This month's Vercel charges (`deploys costs 31`), then each project of the last 7 days with its price and, where the count is known, the price of one build. ↵ shows the project in Deploy Center. Alfred keeps the answer for 5 minutes: the CLI makes one billing call per day. |
+| `deploys-journal.sh` | `dcj` | Search the journal of the last 90 days (`deploys journal export`): every word of the query must be in the project, platform, result or text. Newest first, 40 at most. ↵ shows the project, ⌘C copies the line. |
+| `deploys-guard.sh` | `dcg` | Is the guard on, when it ran last, what it did, the running allowances, and whether deploys are closed now (`deploys freeze`). It never runs the guard. |
+
+Set each up like the first filter (Script Filter, `/bin/bash`, "with input as argv", the script with `"$1"`),
+with its own keyword and an **Open URL** action with `{query}` for ↵ (the costs and journal items).
+
 ## Set it up
 
 1. Alfred Preferences → Workflows → **+** → Blank Workflow, name it "Deploy Center".
@@ -41,5 +54,5 @@ The scripts find `deploys` in the Deploy Center app, then on `PATH` (Homebrew's 
 added), or in `DEPLOYS` if you set it in the workflow's environment variables. A deploy stays in
 Deploy Center, the terminal or Raycast, where it asks first.
 
-Tested here: the filter's JSON against a stand-in `deploys` (`integrations/tests/run.sh`). Not
-tested: inside Alfred.
+Tested here: the filter's JSON against a stand-in `deploys` (`integrations/tests/run.sh`), and the costs, journal
+and guard filters with `integrations/alfred/test.sh`. Not tested: inside Alfred.

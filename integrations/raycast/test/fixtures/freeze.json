@@ -1,0 +1,12 @@
+{
+  "file": "/x/window.json",
+  "configured": true,
+  "closedNow": true,
+  "reason": "release freeze",
+  "now": "Fri 16:00",
+  "tz": null,
+  "rules": [
+    { "n": 1, "days": ["fri"], "from": "15:00", "to": "24:00", "reason": "release freeze" },
+    { "n": 2, "days": null, "from": "00:00", "to": "06:00", "reason": null }
+  ]
+}

@@ -4,6 +4,17 @@ import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import {
+  Costs,
+  Freeze,
+  Guard,
+  JournalRow,
+  parseCosts,
+  parseFreeze,
+  parseGuard,
+  parseJournal,
+  sinceDate,
+} from "./insights";
+import {
   DeploysErrorKind,
   HistoryEntry,
   IdleProject,
@@ -426,4 +437,38 @@ export async function openProject(ref: string, dashboard: boolean): Promise<stri
 
 export function deployCenterURL(name: string): string {
   return `deploycenter://select?project=${encodeURIComponent(name)}`;
+}
+
+// ---- read-only extras: costs, journal, guard, deploy freeze (src/lib/insights.ts reads their answers) ----
+
+async function readParsed<T>(args: string[], parse: (stdout: string) => T | null, timeout = TIMEOUT.read): Promise<T> {
+  const r = await run(args, timeout);
+  const v = r.code === 0 ? parse(r.stdout) : null;
+  if (v === null) throw failure(args, r);
+  return v;
+}
+
+// This month's Vercel charges and the days and projects behind them (`deploys costs 31`: 31 days always
+// cover the current month). Reads Vercel's billing API only.
+export function monthCosts(): Promise<Costs> {
+  return readParsed(["costs", "31"], (s) => parseCosts(s));
+}
+
+// The journal of the last `days` days (`deploys journal export --since`), newest first. A local file; no network.
+export function journalRows(days = 90): Promise<JournalRow[]> {
+  return readParsed(
+    ["journal", "export", "--since", sinceDate(new Date(), days)],
+    (s) => (s.startsWith("at,platform,name,result,detail") ? parseJournal(s) : null),
+    TIMEOUT.quick,
+  );
+}
+
+// `deploys guard status --json`: is the guard on, what it did last, the allowances. Reads only; it never runs the guard.
+export function guardStatus(): Promise<Guard> {
+  return readParsed(["guard", "status", "--json"], parseGuard, TIMEOUT.quick);
+}
+
+// `deploys freeze --json`: the closed times of window.json and whether deploys are closed now. A local file.
+export function freezeStatus(): Promise<Freeze> {
+  return readParsed(["freeze", "--json"], parseFreeze, TIMEOUT.quick);
 }

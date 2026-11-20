@@ -23,5 +23,11 @@
   "welcome.empty": "Nothing is waiting. Every project is on its newest commit.\n[Refresh](command:deployCenter.refresh)",
   "welcome.nomatch": "No project deploys from this folder's repo. To see every project, set Deploy Center › Scope to all.\n[Open Settings](command:workbench.action.openSettings?%22deployCenter.scope%22)",
   "welcome.error": "Could not read the projects. See the Deploy Center output for the reason.\n[Refresh](command:deployCenter.refresh)",
-  "welcome.loading": "Reading projects…"
+  "welcome.loading": "Reading projects…",
+  "command.rollbackPreview": "Preview a Rollback",
+  "command.showFreeze": "Show Deploy Freeze",
+  "command.costs": "Show This Month's Costs",
+  "view.pending": "Waiting Commits",
+  "welcome.pending": "No commits are waiting, or the projects are still loading.",
+  "config.showCosts.description": "Show this month's Vercel charges in the status bar (read from `deploys costs`, at most every 30 minutes)."
 }

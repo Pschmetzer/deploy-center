@@ -70,6 +70,35 @@
       "interval": "10m"
     },
     {
+      "name": "costs",
+      "title": "Costs",
+      "subtitle": "Deploy Center",
+      "description": "What Vercel charged this month, by day and by project. Only reads.",
+      "mode": "view"
+    },
+    {
+      "name": "journal-search",
+      "title": "Search Journal",
+      "subtitle": "Deploy Center",
+      "description": "Search the journal of the last 90 days: deploys, failures, rollbacks, forced starts. Only reads.",
+      "mode": "view"
+    },
+    {
+      "name": "guard-status",
+      "title": "Guard Status",
+      "subtitle": "Deploy Center",
+      "description": "Is the guard on, what it did last, the running allowances and whether deploys are closed (deploy freeze). Only reads.",
+      "mode": "view"
+    },
+    {
+      "name": "costs-menu-bar",
+      "title": "Deploy Center Costs Menu Bar",
+      "subtitle": "Deploy Center",
+      "description": "This month's charges, the deploy freeze and the guard, in the menu bar. Only reads.",
+      "mode": "menu-bar",
+      "interval": "30m"
+    },
+    {
       "name": "deploy-project",
       "title": "Deploy Project",
       "subtitle": "Deploy Center",

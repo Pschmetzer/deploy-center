@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The status bar shows this month's Vercel charges (`deployCenter.showCosts`), and `Deploys closed` or `Deploy window open` when `window.json` has closed times.
+- **Preview a Rollback**: what a rollback would go back to, read from the deploy history; it changes nothing.
+- A view **Waiting Commits** lists the waiting projects with their commit counts, the newest commit's message and how long it has waited.
+
 ## 0.4.0
 
 - The deploy start passes the confirmed commit (`--sha`), so a push between the dialog and the start cannot change what ships; previews follow the host's own capabilities.

@@ -23,5 +23,11 @@
   "welcome.empty": "Nichts wartet. Jedes Projekt ist auf seinem neuesten Commit.\n[Aktualisieren](command:deployCenter.refresh)",
   "welcome.nomatch": "Kein Projekt deployt aus dem Repo dieses Ordners. Um alle Projekte zu sehen, setze Deploy Center › Scope auf all.\n[Einstellungen öffnen](command:workbench.action.openSettings?%22deployCenter.scope%22)",
   "welcome.error": "Die Projekte ließen sich nicht lesen. Den Grund zeigt die Ausgabe „Deploy Center“.\n[Aktualisieren](command:deployCenter.refresh)",
-  "welcome.loading": "Projekte werden gelesen …"
+  "welcome.loading": "Projekte werden gelesen …",
+  "command.rollbackPreview": "Rollback-Vorschau",
+  "command.showFreeze": "Deploy-Freeze anzeigen",
+  "command.costs": "Kosten des Monats anzeigen",
+  "view.pending": "Wartende Commits",
+  "welcome.pending": "Es warten keine Commits, oder die Projekte werden noch geladen.",
+  "config.showCosts.description": "Zeigt die Vercel-Kosten des Monats in der Statusleiste (aus `deploys costs`, höchstens alle 30 Minuten)."
 }

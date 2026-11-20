@@ -30,6 +30,7 @@ async function ready(followMs = 5): Promise<Controller> {
   ctl = new Controller(followMs);
   await ctl.refresh();
   await ctl.costLoad;
+  await ctl.extrasLoad;
   return ctl;
 }
 const project = (c: Controller, name: string) => { const p = c.shown.find((x) => x.name === name); assert.ok(p, name); return p; };
@@ -174,4 +175,105 @@ test("rollback: exit 0 without a readable answer is not called a failure", async
     assert.deepEqual(said("error"), []);
     assert.match(said("warning")[1], /the rollback ran, but its answer could not be read/);
   } finally { delete process.env.DEPLOYS_FAKE_ROLLBACK_EMPTY; }
+});
+
+// ---- read-only extras: costs, freeze, waiting commits, rollback preview ----
+
+test("costs and freeze are read at a refresh and shown; nothing deploys or rolls back", async () => {
+  const c = await ready();
+  assert.match(cliCalls(), /costs\n31/);
+  assert.match(cliCalls(), /freeze\n--json/);
+  assert.equal(c.costItem.text, "$(credit-card) $12.35");
+  assert.equal((c.costItem as unknown as { shown: boolean }).shown, true);
+  assert.equal(c.freezeItem.text, "$(unlock) Deploy window open");
+  assert.doesNotMatch(cliCalls(), /deploy-json|rollback/);
+});
+
+test("a closed freeze says so in the status bar and the tooltip", async () => {
+  process.env.DEPLOYS_FAKE_FREEZE_CLOSED = "true";
+  try {
+    const c = await ready();
+    assert.equal(c.freezeItem.text, "$(lock) Deploys closed");
+    assert.match(String(c.freezeItem.tooltip), /Closed now: release freeze/);
+    assert.match(String((c.status.tooltip as { value: string }).value), /Deploys are closed now/);
+  } finally { delete process.env.DEPLOYS_FAKE_FREEZE_CLOSED; }
+});
+
+test("without closed times the freeze item stays hidden; the setting turns the costs off", async () => {
+  process.env.DEPLOYS_FAKE_FREEZE_NONE = "1";
+  vs.settings.showCosts = false;
+  try {
+    const c = await ready();
+    assert.equal((c.freezeItem as unknown as { shown: boolean }).shown, false);
+    assert.equal((c.costItem as unknown as { shown: boolean }).shown, false);
+    assert.doesNotMatch(cliCalls(), /costs/);
+  } finally { delete process.env.DEPLOYS_FAKE_FREEZE_NONE; }
+});
+
+test("a failing costs read hides the item and is tried again at the next refresh", async () => {
+  process.env.DEPLOYS_FAKE_COSTS_FAIL = "1";
+  try {
+    const c = await ready();
+    assert.equal((c.costItem as unknown as { shown: boolean }).shown, false);
+    delete process.env.DEPLOYS_FAKE_COSTS_FAIL;
+    c.locate(); // the runner takes the environment when it is made
+    await c.refresh(); await c.extrasLoad;
+    assert.equal(c.costItem.text, "$(credit-card) $12.35");
+  } finally { delete process.env.DEPLOYS_FAKE_COSTS_FAIL; }
+});
+
+test("the costs are not read at every refresh", async () => {
+  const c = await ready();
+  await c.refresh(); await c.extrasLoad;
+  assert.equal(cliCalls().split("\n").filter((l) => l === "costs").length, 1);
+});
+
+test("the waiting-commits list: most commits first, as plain rows", async () => {
+  const c = await ready();
+  assert.deepEqual(c.pendingList.map((r) => r.project.name), ["app-web", "blog", "api"]);
+  const blog = c.pendingList[1];
+  assert.equal(blog.project.headMsg, "Fix <b>login</b> flow");
+});
+
+test("rollback preview reads the history, changes nothing, and only a click opens the usual question", async () => {
+  const c = await ready();
+  await c.rollbackPreview(project(c, "app-web"));
+  assert.match(cliCalls(), /history\napp-web\n20\n--json/);
+  assert.doesNotMatch(cliCalls(), /rollback/);
+  const info = vs.calls.filter((x) => x.kind === "info")[0];
+  assert.equal(info.args[0], "Rolling back app-web would put aaaa111 live again.");
+  assert.equal(vs.calls.filter((x) => x.kind === "warning").length, 0);
+});
+
+test("rollback preview: the button goes on to the usual confirmation; declining that rolls nothing back", async () => {
+  const c = await ready();
+  const orig = vs.window.showInformationMessage;
+  vs.window.showInformationMessage = ((...a: unknown[]) => { vs.calls.push({ kind: "info", args: a }); return Promise.resolve("Roll back…"); }) as never;
+  vs.answers.warning.push(undefined);
+  try { await c.rollbackPreview(project(c, "app-web")); } finally { vs.window.showInformationMessage = orig; }
+  assert.match(said("warning")[0], /Roll back app-web on Vercel\?/);
+  assert.doesNotMatch(cliCalls(), /vercel\nrollback/);
+});
+
+test("rollback preview for a project that cannot be rolled back says so", async () => {
+  const c = await ready();
+  c.shown.push({ ...project(c, "blog"), platform: "netlify", name: "nl", ref: "nl" });
+  await c.rollbackPreview(c.shown[c.shown.length - 1]);
+  assert.match(said("info")[0], /cannot be rolled back from here/);
+  assert.doesNotMatch(cliCalls(), /history/);
+});
+
+test("the new commands are registered and the status-bar clicks read only", async () => {
+  const subs: { dispose(): void }[] = [];
+  activate({ subscriptions: subs } as never);
+  for (const id of ["deployCenter.rollbackPreview", "deployCenter.showFreeze", "deployCenter.costs"]) assert.ok(vs.commandsRun[id], id);
+  for (const s of subs) s.dispose();
+});
+
+test("show freeze: the rules in a dialog without buttons", async () => {
+  const c = await ready();
+  await c.showFreeze();
+  const info = vs.calls.filter((x) => x.kind === "info").pop()!;
+  assert.match(String(info.args[1].detail), /1\. fri 15:00–24:00 \(release freeze\)/);
+  assert.equal(info.args.length, 2);
 });
