@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Einen Deploy-Freeze für Freitagnachmittag einrichten · Deploy Center</title>
+<meta name="description" content="Sperre Production-Deploys am Freitagnachmittag, am Wochenende und an Feiertagen mit einem Deploy-Fenster und lass einen Hotfix mit protokolliertem Grund durch.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/guides/deploy-freeze-freitag/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/deploy-freeze-friday/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/deploy-freeze-freitag/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/deploy-freeze-friday/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Einen Deploy-Freeze für Freitagnachmittag einrichten · Deploy Center">
+<meta property="og:description" content="Sperre Production-Deploys am Freitagnachmittag, am Wochenende und an Feiertagen mit einem Deploy-Fenster und lass einen Hotfix mit protokolliertem Grund durch.">
+<meta property="og:url" content="https://deploycenter.app/de/guides/deploy-freeze-freitag/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Einen Deploy-Freeze für Freitagnachmittag einrichten · Deploy Center">
+<meta name="twitter:description" content="Sperre Production-Deploys am Freitagnachmittag, am Wochenende und an Feiertagen mit einem Deploy-Fenster und lass einen Hotfix mit protokolliertem Grund durch.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Einen Deploy-Freeze für Freitagnachmittag einrichten",
+  "description": "Sperre Production-Deploys am Freitagnachmittag, am Wochenende und an Feiertagen mit einem Deploy-Fenster und lass einen Hotfix mit protokolliertem Grund durch.",
+  "url": "https://deploycenter.app/de/guides/deploy-freeze-freitag/",
+  "mainEntityOfPage": "https://deploycenter.app/de/guides/deploy-freeze-freitag/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Stoppt der Freeze einen Rollback?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nein. Rollbacks, Previews und verify laufen in einem Fenster weiter, denn ein Rollback ist ein Fix."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Wie deploye ich einen Hotfix während des Freezes?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Gib --force mit einem Grund an oder nutze in der App Trotzdem deployen …. Der Grund landet im Deploy-Verlauf."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Deployt ein Push trotzdem, wenn Auto-Deploy beim Anbieter an ist?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. Das Fenster schützt nur Deploys, die mit Deploy Center gestartet werden. Schalte Auto-Deploy beim Anbieter ab, damit Production-Deploys durch das Fenster gehen."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Welche Zeitzone nutzt das Fenster?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Die Ortszeit des Macs oder Rechners, der den Befehl ausführt, denn from und to sind Ortszeiten."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Anleitungen",
+    "item": "https://deploycenter.app/de/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Deploy-Freeze am Freitag",
+    "item": "https://deploycenter.app/de/guides/deploy-freeze-freitag/"
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Einen Deploy-Freeze für Freitagnachmittag einrichten",
+  "description": "Sperre Production-Deploys am Freitagnachmittag, am Wochenende und an Feiertagen mit einem Deploy-Fenster und lass einen Hotfix mit protokolliertem Grund durch.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Schreibe das Fenster",
+    "url": "https://deploycenter.app/de/guides/deploy-freeze-freitag/#file"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "Frage, ob es offen ist",
+    "url": "https://deploycenter.app/de/guides/deploy-freeze-freitag/#check"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "Was es sperrt und was nicht",
+    "url": "https://deploycenter.app/de/guides/deploy-freeze-freitag/#blocked"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 4,
+    "name": "Lass einen Hotfix durch",
+    "url": "https://deploycenter.app/de/guides/deploy-freeze-freitag/#force"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 5,
+    "name": "Ein Skript statt einer Datei",
+    "url": "https://deploycenter.app/de/guides/deploy-freeze-freitag/#other"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/guides/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/guides/">Anleitungen</a></p>
+<h1>Einen Deploy-Freeze für Freitagnachmittag einrichten</h1>
+<p class="answer">Lege <code>~/.config/deploys/window.json</code> mit einer <code>deny</code>-Regel wie <code>{"days": ["fri"], "from": "15:00"}</code> an. In diesem Fenster starten <code>deploys deploy</code> und <code>deploy-changed --yes</code> keine Production-Deploys, außer du gibst <code>--force "Grund"</code> an.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+<p class="langnote"><a href="/guides/deploy-freeze-friday/" hreflang="en" lang="en">English version</a></p>
+
+<h2 id="file">1. Schreibe das Fenster</h2>
+<p>Die Datei ist <code>~/.config/deploys/window.json</code> (oder <code>$DEPLOYS_CONFIG/window.json</code>). Jeder Eintrag in <code>deny</code> ist eine Zeit, in der Production-Deploys nicht erlaubt sind:</p>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-json">{
+  "deny": [
+    { "days": ["fri"], "from": "15:00" },
+    { "days": ["sat", "sun"] },
+    { "from": "22:00", "to": "06:00", "reason": "nobody is awake to fix it" },
+    { "dates": ["2026-12-24", "2026-12-31"] }
+  ]
+}</code></pre>
+<ul>
+  <li><code>days</code>: <code>mon</code> bis <code>sun</code>. Weglassen gilt für jeden Tag.</li>
+  <li><code>dates</code>: <code>YYYY-MM-DD</code>, für Feiertage.</li>
+  <li><code>from</code> und <code>to</code>: Ortszeit, <code>HH:MM</code>. Sie stehen standardmäßig auf <code>00:00</code> und <code>24:00</code>. Liegt <code>from</code> nach <code>to</code>, läuft die Regel über Mitternacht.</li>
+  <li><code>reason</code>: der angezeigte Text. Ohne ihn wird die Regel beschrieben, zum Beispiel <code>fri 15:00-24:00</code>.</li>
+</ul>
+<h2 id="check">2. Frage, ob es offen ist</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys window          # Open oder Closed, und welche Regel
+deploys window --json   # {"denied":true,"reason":"fri 15:00-24:00",...}</code></pre>
+<p><code>deploys window</code> endet mit Exit 1, solange das Fenster geschlossen ist; ein Skript kann daran anhalten. Mit <code>--json</code> endet es immer mit 0.</p>
+<h2 id="blocked">3. Was es sperrt und was nicht</h2>
+<p>In einem geschlossenen Fenster starten diese keine Production-Deploys: <code>deploys deploy</code>, <code>deploys deploy-changed --yes</code>, <code>deploys vercel deploy</code>, <code>deploys render deploy</code> und der Deploy-Befehl, den die App nutzt.</p>
+<p>Diese laufen weiter, weil sie Fixes oder harmlos sind: Previews (<code>--preview</code>), Rollbacks und <code>verify</code>.</p>
+<div class="note"><p><b>Was es nicht stoppen kann.</b> Das Fenster schützt Deploys, die mit Deploy Center gestartet werden. Einen Push, den dein Anbieter von selbst deployt, hält es nicht auf. Schalte Auto-Deploy ab und lass den <a href="/docs/guard/">Guard</a> (englisch) es wieder abschalten, falls es zurückkommt, damit jeder Production-Deploy durch das Fenster geht.</p></div>
+<h2 id="force">4. Lass einen Hotfix durch</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys deploy-changed --yes --force "Hotfix für die Login-Seite"</code></pre>
+<p>Jedes so gestartete Projekt bekommt einen <code>forced</code>-Eintrag im Deploy-Verlauf, mit dem Fenster und deinem Grund. In der App fragt die Bestätigung zuerst nach, wenn das Fenster geschlossen ist; <b>Trotzdem deployen …</b> nimmt den Grund auf. <b>Einstellungen → Deploy → Deploy-Fenster</b> bearbeitet dieselbe Datei.</p>
+<h2 id="other">5. Ein Skript statt einer Datei</h2>
+<p>Für eine Regel, die eine Zeittabelle nicht ausdrücken kann, hält ein <code>pre-deploy</code>-Skript in <code>~/.config/deploys/hooks.d</code> einen Start mit einem Exit ungleich 0 an:</p>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash"><span class="c">#!/bin/sh</span>
+<span class="c"># keine Deploys am Freitagnachmittag</span>
+[ "$(date +%u%H)" -lt 515 ] || { echo "keine Deploys am Freitagnachmittag" &gt;&amp;2; exit 1; }</code></pre>
+<p>Mach es mit <code>chmod 700</code> ausführbar. Hooks werden nur aus deinem eigenen Konfigurationsordner gelesen, nie aus einem Repository.</p>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Stoppt der Freeze einen Rollback?</summary><p>Nein. Rollbacks, Previews und <code>verify</code> laufen in einem Fenster weiter, denn ein Rollback ist ein Fix.</p></details>
+  <details><summary>Wie deploye ich einen Hotfix während des Freezes?</summary><p>Gib <code>--force</code> mit einem Grund an oder nutze in der App <b>Trotzdem deployen …</b>. Der Grund landet im Deploy-Verlauf.</p></details>
+  <details><summary>Deployt ein Push trotzdem, wenn Auto-Deploy beim Anbieter an ist?</summary><p>Ja. Das Fenster schützt nur Deploys, die mit Deploy Center gestartet werden. Schalte Auto-Deploy beim Anbieter ab, damit Production-Deploys durch das Fenster gehen.</p></details>
+  <details><summary>Welche Zeitzone nutzt das Fenster?</summary><p>Die Ortszeit des Macs oder Rechners, der den Befehl ausführt, denn <code>from</code> und <code>to</code> sind Ortszeiten.</p></details>
+
+<div class="ctabox">
+  <h2>Du nutzt Vercel oder Render?</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel und Render mit einem Klick ab, Netlify und andere Hosts sind optional, und es deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für den Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<p class="reference"><b>Nachschlagen:</b> <a href="/docs/safe-deploy/" lang="en">Safe deploys</a> · <a href="/docs/cli/" lang="en">CLI reference</a></p>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/de/guides/automatischer-rollback-nach-deploy/">Automatisch zurückrollen, wenn ein Deploy die Seite kaputt macht</a></li>
+  <li><a href="/de/guides/taeglicher-deploy-nach-zeitplan/">Einmal am Tag nach Zeitplan deployen</a></li>
+  <li><a href="/de/guides/nur-bei-gruenem-ci-deployen/">Nur bei grünem CI deployen</a></li>
+  <li><a href="/docs/guard/" lang="en">Auto-deploy guard</a></li>
+  <li><a href="/de/blog/freitags-freeze-ist-eine-einstellung/">Ein Freitags-Freeze sollte eine Einstellung sein, keine Regel</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

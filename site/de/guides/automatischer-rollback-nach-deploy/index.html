@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Automatischer Rollback nach einem kaputten Deploy · Deploy Center</title>
+<meta name="description" content="Frage nach jedem Deploy die Live-Seite und gehe bei einem 5xx zum vorigen Deployment zurück: deploys verify, die Exit-Codes und der Countdown in der App.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/guides/automatischer-rollback-nach-deploy/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/automatic-rollback-after-deploy/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/automatischer-rollback-nach-deploy/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/automatic-rollback-after-deploy/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Automatischer Rollback nach einem kaputten Deploy · Deploy Center">
+<meta property="og:description" content="Frage nach jedem Deploy die Live-Seite und gehe bei einem 5xx zum vorigen Deployment zurück: deploys verify, die Exit-Codes und der Countdown in der App.">
+<meta property="og:url" content="https://deploycenter.app/de/guides/automatischer-rollback-nach-deploy/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Automatischer Rollback nach einem kaputten Deploy · Deploy Center">
+<meta name="twitter:description" content="Frage nach jedem Deploy die Live-Seite und gehe bei einem 5xx zum vorigen Deployment zurück: deploys verify, die Exit-Codes und der Countdown in der App.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Automatisch zurückrollen, wenn ein Deploy die Seite kaputt macht",
+  "description": "Frage nach jedem Deploy die Live-Seite und gehe bei einem 5xx zum vorigen Deployment zurück: deploys verify, die Exit-Codes und der Countdown in der App.",
+  "url": "https://deploycenter.app/de/guides/automatischer-rollback-nach-deploy/",
+  "mainEntityOfPage": "https://deploycenter.app/de/guides/automatischer-rollback-nach-deploy/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Rollt verify bei jedem Anbieter zurück?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Der automatische Rollback ist für Vercel- und Render-Projekte gebaut. Bei anderen Anbietern ist ein Rollback ein eigener Befehl, deploys <host> rollback <project>; ein einfacher Deploy-Hook hat keinen Rollback. Siehe die Host-Tabelle in den Docs."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Kann ich nur melden und nie zurückrollen?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. Mit --no-rollback meldet verify nur, mit Exit-Code 2, wenn die Prüfung fehlschlägt."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Und wenn die Seite langsam, aber nicht down ist?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Eine langsame Antwort ist für verify kein Fehler. Die Einstellung \"Seite nach dem Live-Gang beobachten\" der App fragt einige Minuten lang weiter und sagt, wenn die Seite langsamer antwortet als vor dem Deploy."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Zählt ein Rollback als Deploy für den Deploy-Freeze?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nein. Previews, Rollbacks und verify stoppt das Deploy-Fenster nicht."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Anleitungen",
+    "item": "https://deploycenter.app/de/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Automatischer Rollback",
+    "item": "https://deploycenter.app/de/guides/automatischer-rollback-nach-deploy/"
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Automatisch zurückrollen, wenn ein Deploy die Seite kaputt macht",
+  "description": "Frage nach jedem Deploy die Live-Seite und gehe bei einem 5xx zum vorigen Deployment zurück: deploys verify, die Exit-Codes und der Countdown in der App.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Führe die Prüfung nach dem Deploy aus",
+    "url": "https://deploycenter.app/de/guides/automatischer-rollback-nach-deploy/#run"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "Was als kaputt zählt",
+    "url": "https://deploycenter.app/de/guides/automatischer-rollback-nach-deploy/#fail"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "Exit-Codes für Skripte und CI",
+    "url": "https://deploycenter.app/de/guides/automatischer-rollback-nach-deploy/#exit"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 4,
+    "name": "In der App",
+    "url": "https://deploycenter.app/de/guides/automatischer-rollback-nach-deploy/#app"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/guides/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/guides/">Anleitungen</a></p>
+<h1>Automatisch zurückrollen, wenn ein Deploy die Seite kaputt macht</h1>
+<p class="answer">Führe nach einem Deploy <code>deploys verify &lt;project&gt; --path /health</code> aus. Es fragt die Seite dreimal ab und rollt Production nach 10 Sekunden Countdown zurück, wenn alle drei Antworten 5xx oder gar keine sind, außer du drückst Ctrl-C oder gibst <code>--no-rollback</code> an.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+<p class="langnote"><a href="/guides/automatic-rollback-after-deploy/" hreflang="en" lang="en">English version</a></p>
+
+<h2 id="run">1. Führe die Prüfung nach dem Deploy aus</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys deploy web &amp;&amp; deploys verify web --path /api/health</code></pre>
+<p><code>verify</code> wartet zuerst, bis der neueste Production-Deploy live ist. Ist dieser Deploy fehlgeschlagen, gibt es nichts zu prüfen. Danach fragt es die Seite, plus <code>--path</code>, wenn du einen angibst, dreimal im Abstand von fünf Sekunden ab. Weiterleitungen werden verfolgt.</p>
+<h2 id="fail">2. Was als kaputt zählt</h2>
+<ul>
+  <li>Die Prüfung schlägt nur fehl, wenn <b>alle drei</b> Antworten 5xx oder gar keine sind (Timeout oder keine Verbindung). Ein frischer Render-Dienst kann ein paar Sekunden lang mit 502 antworten, deshalb reicht eine schlechte Antwort nicht.</li>
+  <li>Ohne <code>--path</code> ist ein 4xx kein Fehler: Meist steckt eine geschützte Seite dahinter, und ein Rollback würde daran nichts ändern.</li>
+  <li>Mit <code>--path</code> muss die Adresse existieren. Ein 4xx dort, etwa bei einem fehlenden <code>/health</code>, zählt als Fehler.</li>
+</ul>
+<p>Wähle einen Pfad, der das Wichtige berührt: deine Health-Route oder eine Seite, die aus der Datenbank liest.</p>
+<h2 id="exit">3. Exit-Codes für Skripte und CI</h2>
+<div class="tablewrap" role="region" aria-label="Tabelle" tabindex="0"><table>
+  <thead><tr><th scope="col">Exit</th><th scope="col">Bedeutung</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">0</th><td>gesund</td></tr>
+    <tr><th scope="row">1</th><td>die Prüfung schlug fehl und Production wurde zurückgerollt</td></tr>
+    <tr><th scope="row">2</th><td>die Prüfung schlug fehl und nichts wurde zurückgerollt (<code>--no-rollback</code>, Ctrl-C oder der Rollback schlug fehl)</td></tr>
+    <tr><th scope="row">3</th><td>nichts wurde geprüft: unbekanntes Projekt, der neueste Deploy ist nicht live, keine Adresse, eine falsche Option</td></tr>
+  </tbody>
+</table></div>
+<p>Der Rollback, oder der gestoppte Rollback, wird ins Journal geschrieben.</p>
+<h2 id="app">4. In der App</h2>
+<p>Öffne die Details eines Projekts und setze das Häkchen bei <b>Zurückrollen, wenn der Check fehlschlägt</b>. Es gilt je Projekt und bleibt auf diesem Mac. Ein 5xx oder keine Antwort startet dann einen 10-Sekunden-Countdown, als Benachrichtigung und als Zeile im Fenster, beide mit <b>Abbrechen</b>. Ein 404 startet keinen Rollback, und die Prüfung nach einem Rollback auch nicht.</p>
+<div class="note"><p><b>Was ein Rollback nicht rückgängig macht.</b> Er zeigt Production auf ein früheres Deployment. Datenbank-Migrationen und geänderte Umgebungsvariablen bleiben, wie sie sind; sieh dir deshalb vor dem Deploy an, <a href="/de/guides/vor-dem-deploy-pruefen/">was ein Deploy ausliefern würde</a>. Rollback und <code>verify</code> sind auch in einem <a href="/de/guides/deploy-freeze-freitag/">Deploy-Freeze</a> erlaubt, denn ein Rollback ist ein Fix.</p></div>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Rollt <code>verify</code> bei jedem Anbieter zurück?</summary><p>Der automatische Rollback ist für Vercel- und Render-Projekte gebaut. Bei anderen Anbietern ist ein Rollback ein eigener Befehl, <code>deploys &lt;host&gt; rollback &lt;project&gt;</code>; ein einfacher Deploy-Hook hat keinen Rollback. Siehe die Host-Tabelle in den Docs.</p></details>
+  <details><summary>Kann ich nur melden und nie zurückrollen?</summary><p>Ja. Mit <code>--no-rollback</code> meldet <code>verify</code> nur, mit Exit-Code 2, wenn die Prüfung fehlschlägt.</p></details>
+  <details><summary>Und wenn die Seite langsam, aber nicht down ist?</summary><p>Eine langsame Antwort ist für <code>verify</code> kein Fehler. Die Einstellung "Seite nach dem Live-Gang beobachten" der App fragt einige Minuten lang weiter und sagt, wenn die Seite langsamer antwortet als vor dem Deploy.</p></details>
+  <details><summary>Zählt ein Rollback als Deploy für den Deploy-Freeze?</summary><p>Nein. Previews, Rollbacks und <code>verify</code> stoppt das Deploy-Fenster nicht.</p></details>
+
+<div class="ctabox">
+  <h2>Du nutzt Vercel oder Render?</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel und Render mit einem Klick ab, Netlify und andere Hosts sind optional, und es deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für den Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<p class="reference"><b>Nachschlagen:</b> <a href="/docs/safe-deploy/" lang="en">Safe deploys</a> · <a href="/docs/cli/#exit-codes" lang="en">CLI: exit codes</a></p>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/guides/roll-back-vercel-render-deployment/" lang="en">Roll back a Vercel or Render deploy</a></li>
+  <li><a href="/de/guides/deploy-freeze-freitag/">Einen Deploy-Freeze für Freitagnachmittag einrichten</a></li>
+  <li><a href="/de/guides/nur-bei-gruenem-ci-deployen/">Nur bei grünem CI deployen</a></li>
+  <li><a href="/de/guides/vor-dem-deploy-pruefen/">Prüfen, was ein Deploy ausliefert: Risiko, Diff, Secrets</a></li>
+  <li><a href="/guides/deploy-hooks/" lang="en">Deploy hooks for any host</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

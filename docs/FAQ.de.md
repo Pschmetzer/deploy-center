@@ -74,3 +74,6 @@ Ja, ohne Server: eine gemeinsame `deploy-center.json` je Repo, Beobachter-Modus 
 
 ## Brauche ich einen Anthropic-Schlüssel?
 Nur für Claude in der App (Fehler erklären, Release-Notes, Ship-Check). Autofix nutzt stattdessen eine Claude-Code-Routine. Siehe [CLAUDE-IN-APP.md](CLAUDE-IN-APP.md) (englisch).
+
+## Wo finde ich die Schritt-für-Schritt-Anleitungen?
+Auf der Website: [alle Anleitungen auf Englisch](https://deploycenter.app/guides/), die [deutschen Anleitungen](https://deploycenter.app/de/guides/) (Build-Minuten, Deploy-Warteschlange, automatischer Rollback, Monorepo-Regeln, Deploy-Freeze, Statusseite, täglicher Deploy, Risiko-Prüfung), die [Vergleiche](https://deploycenter.app/de/vergleich/) und der [Blog](https://deploycenter.app/de/blog/).

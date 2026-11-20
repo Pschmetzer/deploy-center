@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geplante Deploys: Cron, Actions, deploys schedule · Deploy Center</title>
+<meta name="description" content="Drei Wege, nach Zeitplan zu deployen: Cron mit Deploy-Hook, ein GitHub-Actions-Zeitplan und deploys schedule. Wo jeder läuft, was er prüft und wann er stoppt.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/vergleich/geplante-deploys-vergleich/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/compare/scheduled-deploys-compared/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/vergleich/geplante-deploys-vergleich/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/compare/scheduled-deploys-compared/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Geplante Deploys: Cron, Actions, deploys schedule · Deploy Center">
+<meta property="og:description" content="Drei Wege, nach Zeitplan zu deployen: Cron mit Deploy-Hook, ein GitHub-Actions-Zeitplan und deploys schedule. Wo jeder läuft, was er prüft und wann er stoppt.">
+<meta property="og:url" content="https://deploycenter.app/de/vergleich/geplante-deploys-vergleich/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Geplante Deploys: Cron, Actions, deploys schedule · Deploy Center">
+<meta name="twitter:description" content="Drei Wege, nach Zeitplan zu deployen: Cron mit Deploy-Hook, ein GitHub-Actions-Zeitplan und deploys schedule. Wo jeder läuft, was er prüft und wann er stoppt.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "Geplante Deploys: Cron, GitHub Actions oder deploys schedule",
+  "description": "Drei Wege, nach Zeitplan zu deployen: Cron mit Deploy-Hook, ein GitHub-Actions-Zeitplan und deploys schedule. Wo jeder läuft, was er prüft und wann er stoppt.",
+  "url": "https://deploycenter.app/de/vergleich/geplante-deploys-vergleich/",
+  "mainEntityOfPage": "https://deploycenter.app/de/vergleich/geplante-deploys-vergleich/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Deployt Deploy Center standardmäßig nach Zeitplan?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nein. Einen Zeitplan richtest du mit deploys schedule oder einem Workflow ein."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Was hat die meisten Prüfungen eingebaut?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "deploys schedule, denn CI-Gate, Deploy-Fenster, Hooks und Budget gehören zu deploy-changed. In einem Workflow ergänzt du sie selbst."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Was übersteht einen zugeklappten Laptop?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ein Workflow oder Cron auf einem Server. Der Job von deploys schedule lebt auf dem Mac, der ihn eingerichtet hat."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Kann ich sie kombinieren?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. Die CLI läuft in einem GitHub-Actions-Workflow, so bekommst du einen Runner-Zeitplan mit derselben --when-green-Regel."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Vergleiche",
+    "item": "https://deploycenter.app/de/vergleich/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Geplante Deploys",
+    "item": "https://deploycenter.app/de/vergleich/geplante-deploys-vergleich/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/guides/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/vergleich/">Vergleiche</a></p>
+<h1>Geplante Deploys: Cron, GitHub Actions oder deploys schedule</h1>
+<p class="answer">Cron mit einem Deploy-Hook ist am kleinsten und prüft nichts. Ein GitHub-Actions-Zeitplan läuft ohne deinen Mac, stoppt aber nach 60 Tagen ohne Aktivität. <code>deploys schedule</code> läuft auf deinem Mac und wendet CI-, Fenster- und Budget-Regeln an, aber nur, solange dieser Mac den Job ausführt.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+<p class="langnote"><a href="/compare/scheduled-deploys-compared/" hreflang="en" lang="en">English version</a></p>
+
+<h2 id="table">Nebeneinander</h2>
+<div class="tablewrap" role="region" aria-label="Tabelle" tabindex="0"><table>
+  <thead><tr><th scope="col"></th><th scope="col">Cron und ein Deploy-Hook</th><th scope="col">GitHub Actions <code>schedule:</code></th><th scope="col"><code>deploys schedule</code></th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Läuft wo</th><td>Auf jedem Rechner mit Cron</td><td>Auf GitHubs Runnern</td><td>Auf deinem Mac (launchd oder eine Cron-Zeile)</td></tr>
+    <tr><th scope="row">Was es deployt</th><td>Was der Hook baut</td><td>Was dein Workflow tut, zum Beispiel <code>deploy-changed --yes</code></td><td>Was sich geändert hat: <code>deploy-changed --yes</code></td></tr>
+    <tr><th scope="row">Nur bei grünem CI</th><td>Nein</td><td>Du ergänzt <code>--when-green</code></td><td><code>--when-green</code></td></tr>
+    <tr><th scope="row">Deploy-Freeze</th><td>Nein</td><td>Die Fenster-Datei ist nicht Teil des Runners, außer du ergänzt sie</td><td><code>window.json</code> gilt</td></tr>
+    <tr><th scope="row">Budget-Stopp</th><td>Nein</td><td>Schreibst du selbst</td><td><code>deploys budget set</code> gilt</td></tr>
+    <tr><th scope="row">Wann es stoppt</th><td>Wenn der Rechner aus ist</td><td>Nach 60 Tagen ohne Aktivität im Repository schaltet GitHub ihn ab</td><td>Wenn der Mac aus ist oder der Job entfernt wird</td></tr>
+    <tr><th scope="row">Zu schützendes Geheimnis</th><td>Die Hook-URL</td><td>Repository-Secrets</td><td>Schlüssel im Schlüsselbund oder in der Umgebung</td></tr>
+  </tbody>
+</table></div>
+<h2 id="pick">Was du nimmst</h2>
+<ul>
+  <li><b>Ein Projekt, ein Anbieter, keine Prüfungen:</b> Cron und ein Hook genügen.</li>
+  <li><b>Kein Mac im Spiel, ein Team-Repository:</b> ein Workflow. Führe ihn einmal von Hand aus und lies das Log. Behalte ihn im Auge, denn GitHub stoppt geplante Workflows in ruhigen Repositories.</li>
+  <li><b>Dein eigener Mac, mit Regeln:</b> <code>deploys schedule daily 09:00 --when-green</code>. Richte es mit der Anleitung zum <a href="/de/guides/taeglicher-deploy-nach-zeitplan/">täglichen Deploy</a> ein.</li>
+</ul>
+<div class="note"><p><b>Was du auch nimmst: Schalte Push-Builds beim Anbieter ab.</b> Sonst deployen Pushes zusätzlich von selbst, und der Zeitplan ist nur ein weiterer Deploy. <code>deploys triggers</code> listet Builds, die niemand von hier gestartet hat.</p></div>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Deployt Deploy Center standardmäßig nach Zeitplan?</summary><p>Nein. Einen Zeitplan richtest du mit <code>deploys schedule</code> oder einem Workflow ein.</p></details>
+  <details><summary>Was hat die meisten Prüfungen eingebaut?</summary><p><code>deploys schedule</code>, denn CI-Gate, Deploy-Fenster, Hooks und Budget gehören zu <code>deploy-changed</code>. In einem Workflow ergänzt du sie selbst.</p></details>
+  <details><summary>Was übersteht einen zugeklappten Laptop?</summary><p>Ein Workflow oder Cron auf einem Server. Der Job von <code>deploys schedule</code> lebt auf dem Mac, der ihn eingerichtet hat.</p></details>
+  <details><summary>Kann ich sie kombinieren?</summary><p>Ja. Die CLI läuft in einem GitHub-Actions-Workflow, so bekommst du einen Runner-Zeitplan mit derselben <code>--when-green</code>-Regel.</p></details>
+
+<div class="ctabox">
+  <h2>Du nutzt Vercel oder Render?</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel und Render mit einem Klick ab, Netlify und andere Hosts sind optional, und es deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für den Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<p class="reference"><b>Nachschlagen:</b> <a href="/docs/ci/" lang="en">Deploy from CI</a> · <a href="/docs/cli/" lang="en">CLI reference</a></p>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/de/guides/taeglicher-deploy-nach-zeitplan/">Einmal am Tag nach Zeitplan deployen</a></li>
+  <li><a href="/de/guides/nur-bei-gruenem-ci-deployen/">Nur bei grünem CI deployen</a></li>
+  <li><a href="/de/guides/deploy-freeze-freitag/">Einen Deploy-Freeze für Freitagnachmittag einrichten</a></li>
+  <li><a href="/de/vergleich/deploy-auf-abruf-vergleich/">Deploy auf Abruf: Hook, CLI, Actions oder Deploy Center</a></li>
+  <li><a href="/guides/deploy-to-vercel-from-github-actions/" lang="en">Deploy to Vercel from GitHub Actions</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

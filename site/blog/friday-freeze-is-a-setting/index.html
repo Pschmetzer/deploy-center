@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Friday freeze should be a setting, not a rule · Deploy Center</title>
+<meta name="description" content="A deploy freeze that depends on people remembering fails when it matters. Put it in a file, record the exceptions, keep rollbacks open and close the side doors.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/blog/friday-freeze-is-a-setting/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/blog/friday-freeze-is-a-setting/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/blog/freitags-freeze-ist-eine-einstellung/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/blog/friday-freeze-is-a-setting/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="A Friday freeze should be a setting, not a rule · Deploy Center">
+<meta property="og:description" content="A deploy freeze that depends on people remembering fails when it matters. Put it in a file, record the exceptions, keep rollbacks open and close the side doors.">
+<meta property="og:url" content="https://deploycenter.app/blog/friday-freeze-is-a-setting/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="A Friday freeze should be a setting, not a rule · Deploy Center">
+<meta name="twitter:description" content="A deploy freeze that depends on people remembering fails when it matters. Put it in a file, record the exceptions, keep rollbacks open and close the side doors.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="alternate" type="application/atom+xml" title="Deploy Center blog" href="/blog/feed.xml">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "A Friday freeze should be a setting, not a rule",
+  "description": "A deploy freeze that depends on people remembering fails when it matters. Put it in a file, record the exceptions, keep rollbacks open and close the side doors.",
+  "url": "https://deploycenter.app/blog/friday-freeze-is-a-setting/",
+  "mainEntityOfPage": "https://deploycenter.app/blog/friday-freeze-is-a-setting/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Is a deploy freeze the same as no deploys?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. It refuses production deploys inside the window. Previews, rollbacks and verify still run, and a deploy with --force and a reason goes through."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does it stop my host's auto-deploy?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. It only guards deploys started with Deploy Center. Turn auto-deploy off on the host so production deploys go through it."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Where is the reason for a forced deploy kept?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "In the deploy history, the app's journal, with the window and the reason."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Can I run it from a script?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes. deploys window exits 1 while the window is closed."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Blog",
+    "item": "https://deploycenter.app/blog/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "A Friday freeze is a setting",
+    "item": "https://deploycenter.app/blog/friday-freeze-is-a-setting/"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/blog/">Blog</a></p>
+<h1>A Friday freeze should be a setting, not a rule</h1>
+<p class="answer">A rule that says "no deploys on Friday afternoon" works until someone is in a hurry. A setting that refuses the deploy does not depend on memory, and a reason you must type for the exception turns a quiet bypass into a record.</p>
+<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="langnote"><a href="/de/blog/freitags-freeze-ist-eine-einstellung/" hreflang="de" lang="de">Deutsche Fassung</a></p>
+
+<h2 id="why">Why rules fail and settings hold</h2>
+<p>A team agrees not to deploy late on Friday. The agreement lives in a chat message and in people's heads. The day it matters, the person who deploys is tired, wants the fix out and has forgotten the agreement, or remembers it and decides this one is small.</p>
+<p>A file does not forget and does not decide. In Deploy Center, <code>window.json</code> lists the times when production deploys are refused. The agreement is then something the tool enforces and the team can read in one place.</p>
+<h2 id="exception">The exception is where the value is</h2>
+<p>A freeze with no way out gets bypassed in a worse way: someone turns the tool off. So give it a front door. <code>deploys deploy-changed --yes --force "reason"</code> starts the deploy anyway, and the project gets a <code>forced</code> entry in the deploy history with the window and the reason. Next week you can read which Friday deploys happened and why, instead of guessing.</p>
+<p>This changes the question from "did anyone break the freeze?" to "was that a good reason?", which is the one worth discussing.</p>
+<h2 id="open">What stays open on purpose</h2>
+<p>Rollbacks, previews and <code>verify</code> still run inside a closed window. A freeze that blocks a rollback makes an incident longer, and the point of a freeze is fewer incidents. If a deploy that slipped through is broken, <code>deploys verify</code> can roll it back by itself when the site answers 5xx. See the guide on <a href="/guides/automatic-rollback-after-deploy/">the health check</a>.</p>
+<h2 id="side-doors">Close the side doors</h2>
+<p>The window guards deploys started with Deploy Center. A push that your host deploys on its own never asks the window. If auto-deploy is still on, the freeze is a polite suggestion. Turn auto-deploy off on the host and let the guard turn it off again if it ever comes back; then every production deploy goes through one door. The guides on <a href="/compare/stop-push-builds-compared/">stopping push builds</a> list the switch per host.</p>
+<h2 id="start">A small start</h2>
+<p>Begin with one rule, <code>{ "days": ["fri"], "from": "15:00" }</code>, and the dates of your holidays. Add the weekend only if nobody is on call. Read the journal after a month, and move the line where the exceptions pile up. See <a href="/guides/deploy-freeze-friday/">set up a deploy freeze</a> for the file format.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Is a deploy freeze the same as no deploys?</summary><p>No. It refuses production deploys inside the window. Previews, rollbacks and <code>verify</code> still run, and a deploy with <code>--force</code> and a reason goes through.</p></details>
+  <details><summary>Does it stop my host's auto-deploy?</summary><p>No. It only guards deploys started with Deploy Center. Turn auto-deploy off on the host so production deploys go through it.</p></details>
+  <details><summary>Where is the reason for a forced deploy kept?</summary><p>In the deploy history, the app's journal, with the window and the reason.</p></details>
+  <details><summary>Can I run it from a script?</summary><p>Yes. <code>deploys window</code> exits 1 while the window is closed.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<p class="reference"><b>Reference:</b> <a href="/docs/safe-deploy/">Safe deploys</a></p>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/deploy-freeze-friday/">Set up a deploy freeze for Friday afternoon</a></li>
+  <li><a href="/guides/automatic-rollback-after-deploy/">Roll back automatically when a deploy breaks the site</a></li>
+  <li><a href="/guides/scheduled-daily-deploy/">Deploy once a day on a schedule</a></li>
+  <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

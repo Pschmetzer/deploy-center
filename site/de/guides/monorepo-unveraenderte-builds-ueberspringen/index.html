@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monorepo: nur die geänderte App bauen · Deploy Center</title>
+<meta name="description" content="Ein Push baut jedes mit einem Monorepo verbundene Projekt. Lass unveränderte bei Vercel, Netlify, Render und Cloudflare Pages aus und meide die üblichen Fallen.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/monorepo-skip-unchanged-builds/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/monorepo-skip-unchanged-builds/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Monorepo: nur die geänderte App bauen · Deploy Center">
+<meta property="og:description" content="Ein Push baut jedes mit einem Monorepo verbundene Projekt. Lass unveränderte bei Vercel, Netlify, Render und Cloudflare Pages aus und meide die üblichen Fallen.">
+<meta property="og:url" content="https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Monorepo: nur die geänderte App bauen · Deploy Center">
+<meta name="twitter:description" content="Ein Push baut jedes mit einem Monorepo verbundene Projekt. Lass unveränderte bei Vercel, Netlify, Render und Cloudflare Pages aus und meide die üblichen Fallen.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Monorepo: nur die geänderte App bauen",
+  "description": "Ein Push baut jedes mit einem Monorepo verbundene Projekt. Lass unveränderte bei Vercel, Netlify, Render und Cloudflare Pages aus und meide die üblichen Fallen.",
+  "url": "https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/",
+  "mainEntityOfPage": "https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Funktioniert eine Regel bei allen Anbietern?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nein. Jeder Anbieter liest seine eigene Einstellung, mit derselben Idee: die Ordner, von denen ein Projekt abhängt, mit dem letzten Build vergleichen."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Warum baut Vercel weiter, obwohl ich git diff eingetragen habe?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Meist schlägt das Skript fehl, oder HEAD^ hat nur den neuesten Commit eines Pushes mit mehreren angesehen. Führe es lokal aus und gib den Exit-Code aus."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Was, wenn ich ein geteiltes Paket vergesse?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Das Projekt baut nicht neu, wenn sich nur dieses Paket ändert. Trage den Paketordner in die Regel ein und halte die Liste in einem Skript, das du prüfst."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Ist Auto-Deploy abzuschalten einfacher?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Oft ja. Eine Einstellung pro Projekt ersetzt eine Regel pro Projekt, und du deployst, was sich geändert hat, wenn du es entscheidest."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Anleitungen",
+    "item": "https://deploycenter.app/de/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Ignore-Regeln für Monorepos",
+    "item": "https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/"
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Monorepo: nur die geänderte App bauen",
+  "description": "Ein Push baut jedes mit einem Monorepo verbundene Projekt. Lass unveränderte bei Vercel, Netlify, Render und Cloudflare Pages aus und meide die üblichen Fallen.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Warum ein Push alles baut",
+    "url": "https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/#why"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "Vercel",
+    "url": "https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/#vercel"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "Netlify",
+    "url": "https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/#netlify"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 4,
+    "name": "Render",
+    "url": "https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/#render"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 5,
+    "name": "Cloudflare Pages",
+    "url": "https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/#cloudflare"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 6,
+    "name": "Fallen",
+    "url": "https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/#pitfalls"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 7,
+    "name": "Was Deploy Center ergänzt",
+    "url": "https://deploycenter.app/de/guides/monorepo-unveraenderte-builds-ueberspringen/#dc"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/guides/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/guides/">Anleitungen</a></p>
+<h1>Monorepo: nur die geänderte App bauen</h1>
+<p class="answer">In einem Monorepo baut ein Push jedes verbundene Projekt, auch wenn sich nur ein Ordner geändert hat. Gib jedem Projekt eine Regel, die seine eigenen Ordner und die geteilten Pakete vergleicht: eine Überspringen-Einstellung oder einen Ignored Build Step bei Vercel, einen <code>ignore</code>-Befehl bei Netlify, Build Filters bei Render, Build Watch Paths bei Cloudflare Pages.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+<p class="langnote"><a href="/guides/monorepo-skip-unchanged-builds/" hreflang="en" lang="en">English version</a></p>
+
+<h2 id="why">1. Warum ein Push alles baut</h2>
+<p>Jedes Projekt bei deinem Anbieter ist mit demselben Repository verbunden, und jedes baut bei einem Push. Eine Web-App, eine Docs-Seite und eine Admin-App in einem Repository bauen dreimal, wenn sich nur die Docs geändert haben. Eine Regel pro Projekt sagt dem Anbieter, welche Ordner für es zählen.</p>
+<h2 id="vercel">2. Vercel</h2>
+<p>Drei Möglichkeiten, vom kleinsten zum größten Aufwand:</p>
+<ul>
+  <li>Bei npm-, yarn- oder pnpm-Workspaces schaltest du die Einstellung ein, die ein Deployment überspringt, wenn sich das Root-Verzeichnis des Projekts und seine Abhängigkeiten nicht geändert haben (Build-Einstellungen, unter Root Directory).</li>
+  <li>Bei Turborepo setzt du den Ignored Build Step auf <code>npx turbo-ignore</code>.</li>
+  <li>Sonst vergleichst du die Ordner selbst:</li>
+</ul>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">git diff --quiet HEAD^ HEAD -- . ../../packages/ui</code></pre>
+<p>Exit 0 heißt: nichts hat sich geändert, Vercel überspringt den Build. <code>HEAD^</code> sieht nur den neuesten Commit eines Pushes; die <a href="/guides/vercel-ignored-build-step/">Anleitung zum Ignored Build Step</a> (englisch) hat ein Skript, das stattdessen mit dem letzten Deployment vergleicht.</p>
+<h2 id="netlify">3. Netlify</h2>
+<p>Netlify setzt <code>CACHED_COMMIT_REF</code> (der Commit des letzten Builds) und <code>COMMIT_REF</code> (der Commit, der gebaut wird). Vergleiche die Ordner dazwischen:</p>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-toml"><span class="c"># netlify.toml, im Ordner der Site</span>
+[build]
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ../../packages/ui"</code></pre>
+<p>Schlägt der Befehl fehl, etwa weil es keinen früheren Build zum Vergleichen gibt, endet er mit einem Wert ungleich 0, und Netlify baut: die sichere Richtung.</p>
+<h2 id="render">4. Render</h2>
+<p>Nutze in <b>Settings → Build &amp; Deploy</b> des Dienstes die <b>Build Filters</b>: Pfade, die einbezogen, und Pfade, die ignoriert werden. Eine Änderung außerhalb der einbezogenen Pfade deployt nicht. Trage die geteilten Pakete, die der Dienst importiert, als einbezogene Pfade ein, sonst verpasst er eine Änderung, die ihn betrifft.</p>
+<h2 id="cloudflare">5. Cloudflare Pages</h2>
+<p>Öffne <b>Settings → Builds &amp; deployments</b> und suche nach Build Watch Paths, wo du die Pfade einträgst, die einen Build starten sollen, und die, die es nicht sollen. Zeigt dein Projekt sie nicht, nimm ein Pages-Projekt pro App und stelle die Production-Deployments wie in <a href="/guides/cloudflare-pages-stop-builds/">der Cloudflare-Pages-Anleitung</a> (englisch) ein.</p>
+<h2 id="pitfalls">6. Fallen</h2>
+<ul>
+  <li><b>Geteilter Code.</b> Eine Änderung in <code>packages/ui</code> muss jede App bauen, die es importiert. Trage geteilte Ordner in jede Regel ein.</li>
+  <li><b>Dateien im Wurzelverzeichnis.</b> Eine geänderte Lockfile, eine Konfiguration im Root oder eine CI-Datei kann jede App betreffen. Entscheide, ob sie zählen.</li>
+  <li><b>Ein übersprungener Build ist kein Deploy.</b> Der Anbieter bricht ihn ab, Production bleibt auf dem letzten Build. Prüfe, dass eine echte Änderung weiter baut.</li>
+  <li><b>Teste die Regel.</b> Führe sie lokal aus und gib den Exit-Code aus, bevor du dich darauf verlässt.</li>
+</ul>
+<div class="note"><p><b>Wenn Regeln zu viel sind.</b> Soll Production einfach live gehen, wenn du es entscheidest, ist <a href="/guides/ignored-build-step-or-auto-deploy-off/">Auto-Deploy abzuschalten</a> (englisch) ein Schalter pro Projekt statt einer Regel pro Projekt.</p></div>
+<h2 id="dc">7. Was Deploy Center ergänzt</h2>
+<p><code>deploys changed</code> zählt Commits je Projekt, und <code>deploys explain &lt;project&gt;</code> sagt, warum ein Projekt als geändert zählt oder nicht. Prüfe damit eine Regel: Nach einem Push, der einen Ordner berührt hat, sollte nur dieses Projekt wartende Commits zeigen.</p>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Funktioniert eine Regel bei allen Anbietern?</summary><p>Nein. Jeder Anbieter liest seine eigene Einstellung, mit derselben Idee: die Ordner, von denen ein Projekt abhängt, mit dem letzten Build vergleichen.</p></details>
+  <details><summary>Warum baut Vercel weiter, obwohl ich <code>git diff</code> eingetragen habe?</summary><p>Meist schlägt das Skript fehl, oder <code>HEAD^</code> hat nur den neuesten Commit eines Pushes mit mehreren angesehen. Führe es lokal aus und gib den Exit-Code aus.</p></details>
+  <details><summary>Was, wenn ich ein geteiltes Paket vergesse?</summary><p>Das Projekt baut nicht neu, wenn sich nur dieses Paket ändert. Trage den Paketordner in die Regel ein und halte die Liste in einem Skript, das du prüfst.</p></details>
+  <details><summary>Ist Auto-Deploy abzuschalten einfacher?</summary><p>Oft ja. Eine Einstellung pro Projekt ersetzt eine Regel pro Projekt, und du deployst, was sich geändert hat, wenn du es entscheidest.</p></details>
+
+<div class="ctabox">
+  <h2>Du nutzt Vercel oder Render?</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel und Render mit einem Klick ab, Netlify und andere Hosts sind optional, und es deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für den Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<p class="reference"><b>Nachschlagen:</b> <a href="/docs/faq/" lang="en">FAQ</a> · <a href="/docs/glossary/" lang="en">Glossary</a></p>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/de/guides/build-minuten-sparen/">Build-Minuten sparen, bei jedem Hosting-Anbieter</a></li>
+  <li><a href="/de/guides/preview-builds-fuer-bots-vermeiden/">Preview-Builds für Bots bei Netlify, Cloudflare und Render vermeiden</a></li>
+  <li><a href="/guides/vercel-ignored-build-step/" lang="en">Vercel Ignored Build Step</a></li>
+  <li><a href="/guides/stop-vercel-building-every-push/" lang="en">Stop Vercel building every push</a></li>
+  <li><a href="/guides/ignored-build-step-or-auto-deploy-off/" lang="en">Ignored Build Step or auto-deploy off</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

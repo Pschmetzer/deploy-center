@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Check what a deploy would ship: risk, diff and secrets · Deploy Center</title>
+<meta name="description" content="Before you deploy, read the diff, the risk score and a secrets check of what is merged but not live: deploys risk, diff, notes and secrets, with the rules they use.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/check-before-you-deploy/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/check-before-you-deploy/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/guides/vor-dem-deploy-pruefen/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/check-before-you-deploy/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-20">
+<meta property="og:title" content="Check what a deploy would ship: risk, diff and secrets · Deploy Center">
+<meta property="og:description" content="Before you deploy, read the diff, the risk score and a secrets check of what is merged but not live: deploys risk, diff, notes and secrets, with the rules they use.">
+<meta property="og:url" content="https://deploycenter.app/guides/check-before-you-deploy/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Check what a deploy would ship: risk, diff and secrets · Deploy Center">
+<meta name="twitter:description" content="Before you deploy, read the diff, the risk score and a secrets check of what is merged but not live: deploys risk, diff, notes and secrets, with the rules they use.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Check what a deploy would ship: risk, diff and secrets",
+  "description": "Before you deploy, read the diff, the risk score and a secrets check of what is merged but not live: deploys risk, diff, notes and secrets, with the rules they use.",
+  "url": "https://deploycenter.app/guides/check-before-you-deploy/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/check-before-you-deploy/",
+  "datePublished": "2026-11-20",
+  "dateModified": "2026-11-20",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Does a red risk stop the deploy?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. It names a risk and the reasons. You decide, and deploy-changed without --yes shows it next to the project."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Which files make a diff red?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Migrations, a diff of more than 3000 lines or at least 100 files. Lockfiles, .env files, host config and a diff over 500 lines or 30 files make it yellow."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does secrets send my code anywhere?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. It reads the diff on your machine with the patterns that mask logs, and prints only file names and the masked line."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Does it work for GitLab?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Pipe a diff into deploys secrets --stdin."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Check before you deploy",
+    "item": "https://deploycenter.app/guides/check-before-you-deploy/"
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Check what a deploy would ship: risk, diff and secrets",
+  "description": "Before you deploy, read the diff, the risk score and a secrets check of what is merged but not live: deploys risk, diff, notes and secrets, with the rules they use.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Read what changes",
+    "url": "https://deploycenter.app/guides/check-before-you-deploy/#diff"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "The risk score",
+    "url": "https://deploycenter.app/guides/check-before-you-deploy/#risk"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "Look for secrets in what waits",
+    "url": "https://deploycenter.app/guides/check-before-you-deploy/#secrets"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 4,
+    "name": "Put the checks in front of the deploy",
+    "url": "https://deploycenter.app/guides/check-before-you-deploy/#plan"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>Check what a deploy would ship: risk, diff and secrets</h1>
+<p class="answer">Before a deploy, run <code>deploys risk &lt;project&gt;</code> for a green, yellow or red score of the waiting diff, <code>deploys secrets &lt;project&gt;</code> to find added lines that look like a key, and <code>deploys diff &lt;project&gt;</code> to read what changes.</p>
+<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="langnote"><a href="/de/guides/vor-dem-deploy-pruefen/" hreflang="de" lang="de">Deutsche Fassung</a></p>
+
+<h2 id="diff">1. Read what changes</h2>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys changed         # commits and PRs waiting, per project
+deploys diff web        # the commits and files between what is live and the branch
+deploys notes web       # the same as release notes (Markdown)</code></pre>
+<h2 id="risk">2. The risk score</h2>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys risk web --json</code></pre>
+<p>It scores the diff between what is live and the branch (from GitHub's comparison, at most 300 files). The worst finding sets the level:</p>
+<div class="tablewrap" role="region" aria-label="Table" tabindex="0"><table>
+  <thead><tr><th scope="col">Found</th><th scope="col">Level</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">migrations: <code>migrations/</code>, <code>migrate/</code>, <code>prisma/</code>, <code>*.sql</code>, <code>schema.prisma</code>, <code>schema.rb</code></th><td>red</td></tr>
+    <tr><th scope="row">lockfiles such as <code>package-lock.json</code>, <code>pnpm-lock.yaml</code>, <code>yarn.lock</code>, <code>Cargo.lock</code>, <code>go.sum</code></th><td>yellow</td></tr>
+    <tr><th scope="row"><code>.env</code> and <code>.env.*</code></th><td>yellow</td></tr>
+    <tr><th scope="row">config such as <code>vercel.json</code>, <code>render.yaml</code>, <code>Dockerfile</code>, <code>.github/workflows/</code></th><td>yellow</td></tr>
+    <tr><th scope="row">more than 500 changed lines or 30 files</th><td>yellow</td></tr>
+    <tr><th scope="row">more than 3000 changed lines or at least 100 files</th><td>red</td></tr>
+  </tbody>
+</table></div>
+<p><code>deploy-changed</code> without <code>--yes</code> names a red risk next to the project. In the app a row shows a red dot only for red; yellow stays quiet, and the details list every reason.</p>
+<h2 id="secrets">3. Look for secrets in what waits</h2>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys secrets web &amp;&amp; deploys deploy web --yes     # a gate in a script
+git diff A..B | deploys secrets --stdin             # a diff you pipe in</code></pre>
+<p>It looks only at the lines that were added in what waits to go live, with the same patterns that mask logs (keys, tokens, private keys). It prints file names and the masked line, never the secret, and exits 1 when it finds one. It needs <code>perl</code>.</p>
+<div class="note"><p><b>Not a full scanner.</b> <code>deploys secrets</code> is a quick gate. For gitleaks, OSV-Scanner and Semgrep on a fresh copy of the repository, use <code>deploys check start owner/repo</code>, see <a href="/docs/scan/">the scan docs</a>.</p></div>
+<h2 id="plan">4. Put the checks in front of the deploy</h2>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys plan --when-green        # the list with an estimate per build, nothing starts
+deploys risk web &amp;&amp; deploys secrets web &amp;&amp; deploys deploy web --yes</code></pre>
+<p>A red risk is information, not a block: you read the reasons and decide. Combine it with <a href="/guides/deploy-only-when-ci-is-green/">CI that must be green</a> and <a href="/guides/automatic-rollback-after-deploy/">a rollback check</a>.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Does a red risk stop the deploy?</summary><p>No. It names a risk and the reasons. You decide, and <code>deploy-changed</code> without <code>--yes</code> shows it next to the project.</p></details>
+  <details><summary>Which files make a diff red?</summary><p>Migrations, a diff of more than 3000 lines or at least 100 files. Lockfiles, <code>.env</code> files, host config and a diff over 500 lines or 30 files make it yellow.</p></details>
+  <details><summary>Does <code>secrets</code> send my code anywhere?</summary><p>No. It reads the diff on your machine with the patterns that mask logs, and prints only file names and the masked line.</p></details>
+  <details><summary>Does it work for GitLab?</summary><p>Pipe a diff into <code>deploys secrets --stdin</code>.</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<p class="reference"><b>Reference:</b> <a href="/docs/safe-deploy/">Safe deploys</a> · <a href="/docs/scan/">Bug scan and security check</a></p>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/deploy-only-when-ci-is-green/">Deploy only when CI is green</a></li>
+  <li><a href="/guides/automatic-rollback-after-deploy/">Roll back automatically when a deploy breaks the site</a></li>
+  <li><a href="/guides/deploy-queue/">Your deploy queue: what is merged but not live</a></li>
+  <li><a href="/guides/deploy-freeze-friday/">Set up a deploy freeze for Friday afternoon</a></li>
+  <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>
