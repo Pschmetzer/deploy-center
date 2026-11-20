@@ -366,13 +366,16 @@ function scrub(v) {
 // For changed and status: the JSON list, compact, and never cut in the middle. When the whole
 // list does not fit, whole entries are left out from the end and the answer says how many:
 // {"projects":[…], "truncated": n, "total": N, "note": "…"}.
-async function jsonListOf(args) {
+async function jsonListOf(args, filter) {
   const r = await runDeploys(args);
   if (r.timedOut || (r.code !== 0 && !r.stdout.trim())) throw new ToolError(describeFailure(args, r));
   let out;
   let list;
   try {
     list = r.cut ? undefined : scrub(JSON.parse(r.stdout));
+    // The caller's filters (platform, query, only_failed, limit): the agent asks for the part it needs
+    // instead of getting a cut list whose end it never sees.
+    if (filter && Array.isArray(list)) list = filter(list);
   } catch {
     list = undefined;
   }
@@ -552,6 +555,23 @@ const projectProp = {
   pattern: NAME_RE.source,
 };
 // The answer is JSON; an array comes as {result: [...]}, a trimmed list as {projects, truncated, total, note}.
+// Filters for the list tools: the list is cut by what is asked, not by the size limit.
+const FILTER_PROPS = {
+  platform: { type: "string", pattern: "^[a-z0-9]+$", description: "Only this platform (vercel, render, netlify, …)." },
+  query: { type: "string", pattern: "^[A-Za-z0-9._:-]+$", description: "Only projects whose name contains this text (case does not matter)." },
+  limit: { type: "integer", minimum: 1, maximum: 500, description: "At most this many projects (the first ones)." },
+};
+function listFilter(a, { failed = false } = {}) {
+  return (list) => {
+    let out = list;
+    if (a.platform !== undefined) out = out.filter((x) => x && x.platform === a.platform);
+    if (a.query !== undefined) out = out.filter((x) => x && typeof x.name === "string" && x.name.toLowerCase().includes(a.query.toLowerCase()));
+    if (failed && a.only_failed === true) out = out.filter((x) => x && (x.phase === "failed" || /fail|error/i.test(String(x.state ?? ""))));
+    if (a.limit !== undefined) out = out.slice(0, a.limit);
+    return out;
+  };
+}
+
 const JSON_OUT = { type: "object", description: "A JSON object, or an array under the key result.", additionalProperties: true };
 const READ = { readOnlyHint: true, destructiveHint: false, openWorldHint: true };
 
@@ -560,11 +580,12 @@ const tools = [
     name: "deploys_changed",
     description:
       "List the projects that have commits or merged PRs on GitHub that are not live yet (deploys changed --json). Read-only. Use it to answer \"what is waiting to go live?\". " +
-      "Returns a JSON array; when it is too long, an object {projects, truncated, total, note} with whole entries left out.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      "Returns a JSON array; when it is too long, an object {projects, truncated, total, note} with whole entries left out. " +
+      "`platform`, `query` and `limit` narrow the list before it is cut.",
+    inputSchema: { type: "object", properties: { ...FILTER_PROPS }, additionalProperties: false },
     annotations: { title: "What is waiting to go live", ...READ },
     json: true,
-    run: () => jsonListOf(["changed", "--json"]),
+    run: (a) => jsonListOf(["changed", "--json"], listFilter(a)),
   },
   {
     name: "deploys_plan",
@@ -650,12 +671,17 @@ const tools = [
     description:
       "What is building right now and the newest state of every project, including failed ones (deploys status --json). Read-only. " +
       "Returns a JSON array; when it is too long, an object {projects, truncated, total, note} with whole entries left out. " +
-      "With `project`, only that project's build state, without GitHub calls: use it to follow a deploy you started.",
-    inputSchema: { type: "object", properties: { project: projectProp }, additionalProperties: false },
+      "With `project`, only that project's build state, without GitHub calls: use it to follow a deploy you started. " +
+      "Without it, `platform`, `query`, `only_failed` and `limit` narrow the list before it is cut.",
+    inputSchema: {
+      type: "object",
+      properties: { project: projectProp, ...FILTER_PROPS, only_failed: { type: "boolean", description: "Only projects whose newest build failed." } },
+      additionalProperties: false,
+    },
     annotations: { title: "Building or failed", ...READ },
     json: true,
     run: async (a) => {
-      if (a.project === undefined) return jsonListOf(["status", "--json"]);
+      if (a.project === undefined) return jsonListOf(["status", "--json"], listFilter(a, { failed: true }));
       const p = checkProject(a.project);
       const i = p.indexOf(":");
       const want = i > 0 ? p.slice(0, i) : null;
@@ -675,11 +701,11 @@ const tools = [
   },
   {
     name: "deploys_list",
-    description: "Every project on every provider that is set up, with its platform, repo, branch and whether a push still deploys it (auto) (deploys list --json). Read-only, no GitHub calls.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    description: "Every project on every provider that is set up, with its platform, repo, branch and whether a push still deploys it (auto) (deploys list --json). Read-only, no GitHub calls. `platform`, `query` and `limit` narrow the list before it is cut.",
+    inputSchema: { type: "object", properties: { ...FILTER_PROPS }, additionalProperties: false },
     annotations: { title: "All projects", ...READ },
     json: true,
-    run: () => jsonListOf(["list", "--json"]),
+    run: (a) => jsonListOf(["list", "--json"], listFilter(a)),
   },
   {
     name: "deploys_risk",

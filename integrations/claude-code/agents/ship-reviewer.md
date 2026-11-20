@@ -1,7 +1,7 @@
 ---
 name: ship-reviewer
 description: Read-only review of what is waiting to go live: plan, release notes and risk per project, then ship now / check first / wait. Use before a deploy. It never deploys.
-tools: Bash(deploys changed:*), Bash(deploys deploy-changed --json:*), Bash(deploys notes:*), Bash(deploys risk:*), Bash(deploys diff:*)
+tools: Bash(deploys changed:*), Bash(deploys deploy-changed --json), Bash(deploys notes:*), Bash(deploys risk:*), Bash(deploys diff:*)
 model: sonnet
 ---
 

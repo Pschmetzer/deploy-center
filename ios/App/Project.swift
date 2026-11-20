@@ -4,6 +4,22 @@ import Foundation
 
 enum ProviderKind: String, Codable, CaseIterable { case vercel = "Vercel", render = "Render" }
 
+/// `deploycenter://select?project=…` as the Mac app, Alfred and Raycast write it: a name, or `platform:name`
+/// (the platform in any case), with the platform optionally in a parameter of its own.
+enum DeepLink {
+    static func target(project: String, platform: String?) -> (name: String, platform: String?) {
+        if let i = project.firstIndex(of: ":") {
+            let p = String(project[..<i]), n = String(project[project.index(after: i)...])
+            if !n.isEmpty && ProviderKind.allCases.contains(where: { $0.rawValue.lowercased() == p.lowercased() }) { return (n, p) }
+        }
+        return (project, platform)
+    }
+    /// No platform asked, or the same one, whatever its case.
+    static func samePlatform(_ raw: String, _ asked: String?) -> Bool { asked.map { raw.lowercased() == $0.lowercased() } ?? true }
+    /// A link that arrived before the list was read waits this long for it; later it is dropped.
+    static let patience: TimeInterval = 60
+}
+
 struct PhoneProject: Identifiable, Equatable, Codable {
     let provider: ProviderKind
     let id: String

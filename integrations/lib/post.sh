@@ -13,8 +13,25 @@
 # custom:   DEPLOYS_NOTIFY_FORMAT=custom and DEPLOYS_NOTIFY_TEMPLATE='{summary: .text, link: .url}' (jq; input {text, url, label})
 # ntfy:     DEPLOYS_NOTIFY_PRIORITY (1-5 or min, low, default, high, urgent), DEPLOYS_NOTIFY_TAGS (a,b),
 #           DEPLOYS_NOTIFY_TOKEN (a protected topic)
+# plain:    {"text": ...} only, no blocks (Mattermost, Rocket.Chat, Zulip-style hooks)
 # Pushover: DEPLOYS_PUSHOVER_TOKEN (the app) and DEPLOYS_PUSHOVER_USER (you); the URL is
 #           https://api.pushover.net/1/messages.json
+
+# The destination URLs, one per line: DEPLOYS_NOTIFY_URL, DEPLOYS_NOTIFY_URLS (comma-separated) and the
+# first line of DEPLOYS_NOTIFY_URL_FILE. The file keeps the URL (a secret) out of a plist or crontab; it
+# must not be readable by group or others (chmod 600). Returns 1 on a bad file.
+webhook_urls() {
+  local f="${DEPLOYS_NOTIFY_URL_FILE:-}" mode u
+  [ -z "${DEPLOYS_NOTIFY_URL:-}" ] || printf '%s\n' "$DEPLOYS_NOTIFY_URL"
+  [ -z "${DEPLOYS_NOTIFY_URLS:-}" ] || printf '%s\n' "$DEPLOYS_NOTIFY_URLS" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed '/^$/d'
+  if [ -n "$f" ]; then
+    [ -f "$f" ] || { echo "DEPLOYS_NOTIFY_URL_FILE: $f is not a file" >&2; return 1; }
+    mode="$(stat -f %Lp "$f" 2>/dev/null || stat -c %a "$f" 2>/dev/null)" || mode=""
+    case "$mode" in *[1-7]?|*[1-7]) echo "DEPLOYS_NOTIFY_URL_FILE: $f must not be readable by group or others (chmod 600)" >&2; return 1 ;; esac
+    u="$(head -n 1 "$f" | tr -d '\r')"; [ -z "$u" ] || printf '%s\n' "$u"
+  fi
+  return 0
+}
 
 webhook_format() {
   local host
@@ -33,7 +50,8 @@ webhook_format() {
 
 # Discord takes 2000 characters, Telegram 4096: a longer text is cut, with a note, instead of
 # the whole message being refused (HTTP 400).
-cut_text() { jq -rn --arg t "$1" --argjson n "$2" '$t | if length > $n then .[0:$n] + "\n… (cut, see the full list in the issue or with deploys changed)" else . end'; }
+# The note says where the full list is: the caller sets WEBHOOK_CUT_HINT (the digest has an issue, notify has not).
+cut_text() { jq -rn --arg t "$1" --argjson n "$2" --arg h "${WEBHOOK_CUT_HINT:-see the full list in the issue or with deploys changed}" '$t | if length > $n then .[0:$n] + "\n… (cut, \($h))" else . end'; }
 
 webhook_body() {
   local format="$1" text="$2" link="${3:-}" label="${4:-Open}"
@@ -48,6 +66,7 @@ webhook_body() {
     teams)    text="$(cut_text "$text" 15000)" ;;
     slack)    text="$(cut_text "$text" 25000)" ;;
     matrix)   text="$(cut_text "$text" 15000)" ;;
+    plain)    text="$(cut_text "$text" 15000)" ;;
   esac
   case "$format" in
     discord)  WEBHOOK_TYPE="application/json"
@@ -55,18 +74,23 @@ webhook_body() {
     slack)    WEBHOOK_TYPE="application/json"
               # Slack reads <!channel>, <@U123> and <https://x|text> in any text: & < > are escaped
               # (Slack's own rule), so a project name or PR title cannot ping a channel or fake a link.
-              text="$(jq -rn --arg t "$text" '$t | gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;")')"
-              # Block Kit for Slack; other Slack-style hooks (Mattermost, …) show text, which has the link too.
-              WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" '
-                ($t + (if $u != "" then "\n\($l): \($u)" else "" end)) as $full
+              # The block text is cut before escaping (to a length that still fits afterwards), so the cut
+              # cannot fall inside "&amp;".
+              WEBHOOK_BODY="$(jq -nc --arg raw "$text" --arg u "$link" --arg l "$label" '
+                def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
+                def fit($n): if $n <= 0 or (.[0:$n] | esc | length) <= 2899 then .[0:$n] else fit($n - 50) end;
+                ($raw | esc) as $t
+                | ($t + (if $u != "" then "\n\($l): \($u)" else "" end)) as $full
                 | {text:$full}
                 + (if $u == "" then {} else {blocks:[
-                    {type:"section", text:{type:"mrkdwn", text:($t | if length > 2900 then .[0:2900] + "…" else . end)}},
+                    {type:"section", text:{type:"mrkdwn", text:(if ($t | length) > 2900 then ($raw | fit(2900) | esc) + "…" else $t end)}},
                     {type:"actions", elements:[{type:"button", style:"primary", text:{type:"plain_text", text:$l}, url:$u}]}]} end)')" ;;
     telegram) WEBHOOK_TYPE="application/json"
               WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" '{text:$t, disable_web_page_preview:true}
                 + (if $u != "" then {reply_markup:{inline_keyboard:[[{text:$l, url:$u}]]}} else {} end)')" ;;
     ntfy)     WEBHOOK_TYPE="text/plain; charset=utf-8"; WEBHOOK_BODY="$text" ;;
+    plain)    WEBHOOK_TYPE="application/json"
+              WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" '{text:($t + (if $u != "" then "\n\($l): \($u)" else "" end))}')" ;;
     teams)    WEBHOOK_TYPE="application/json"
               # A Teams workflow ("Post to a channel when a webhook request is received") takes an
               # Adaptive Card; the link is a button.
@@ -94,7 +118,7 @@ webhook_body() {
               WEBHOOK_BODY="$(jq -nc --arg t "$text" --arg u "$link" --arg l "$label" "{text:\$t, url:\$u, label:\$l} | ${DEPLOYS_NOTIFY_TEMPLATE}")" \
                 || { echo "DEPLOYS_NOTIFY_TEMPLATE is not a valid jq program, or it failed on {text, url, label}" >&2; return 1; }
               [ -n "$WEBHOOK_BODY" ] || { echo "DEPLOYS_NOTIFY_TEMPLATE printed nothing" >&2; return 1; } ;;
-    *) echo "Unknown DEPLOYS_NOTIFY_FORMAT: $format (discord, slack, ntfy, telegram, teams, googlechat, matrix, pushover, custom)" >&2; return 1 ;;
+    *) echo "Unknown DEPLOYS_NOTIFY_FORMAT: $format (discord, slack, ntfy, telegram, teams, googlechat, matrix, pushover, plain, custom)" >&2; return 1 ;;
   esac
 }
 
@@ -139,13 +163,27 @@ webhook_send() {
   # "<timestamp>.<body>" with DEPLOYS_NOTIFY_SECRET, in X-Deploy-Center-Signature, with the time in
   # X-Deploy-Center-Timestamp (reject old ones to stop replays). The secret goes to perl through
   # the environment, never through argv; the headers go to curl on stdin, like the token.
+  # Rotation without an outage: DEPLOYS_NOTIFY_SECRET_PREV (the old secret) adds the header
+  # X-Deploy-Center-Signature-Previous, and DEPLOYS_NOTIFY_KEY_ID (letters, digits, . _ -) names the
+  # current key in X-Deploy-Center-Key-Id. The receiver accepts either signature, then drops the old one.
   local sig_headers=""
   if [ -n "${DEPLOYS_NOTIFY_SECRET:-}" ]; then
-    local ts sig
+    local ts sig sigp=""
     ts="$(date -u +%s)"
     sig="$(DC_SECRET="$DEPLOYS_NOTIFY_SECRET" DC_TS="$ts" perl -MDigest::SHA=hmac_sha256_hex -e 'local $/; my $b = <STDIN>; print hmac_sha256_hex("$ENV{DC_TS}.$b", $ENV{DC_SECRET})' < "$f")" \
       || { rm -f "$f"; echo "DEPLOYS_NOTIFY_SECRET: could not sign (perl with Digest::SHA is needed)" >&2; return 1; }
     sig_headers="$(printf 'header = "X-Deploy-Center-Timestamp: %s"\nheader = "X-Deploy-Center-Signature: sha256=%s"' "$ts" "$sig")"
+    if [ -n "${DEPLOYS_NOTIFY_SECRET_PREV:-}" ]; then
+      sigp="$(DC_SECRET="$DEPLOYS_NOTIFY_SECRET_PREV" DC_TS="$ts" perl -MDigest::SHA=hmac_sha256_hex -e 'local $/; my $b = <STDIN>; print hmac_sha256_hex("$ENV{DC_TS}.$b", $ENV{DC_SECRET})' < "$f")" \
+        || { rm -f "$f"; echo "DEPLOYS_NOTIFY_SECRET_PREV: could not sign" >&2; return 1; }
+      sig_headers="$sig_headers
+$(printf 'header = "X-Deploy-Center-Signature-Previous: sha256=%s"' "$sigp")"
+    fi
+    if [ -n "${DEPLOYS_NOTIFY_KEY_ID:-}" ]; then
+      case "$DEPLOYS_NOTIFY_KEY_ID" in *[!A-Za-z0-9._-]*) rm -f "$f"; echo "DEPLOYS_NOTIFY_KEY_ID: letters, digits, . _ - only" >&2; return 1 ;; esac
+      sig_headers="$sig_headers
+$(printf 'header = "X-Deploy-Center-Key-Id: %s"' "$DEPLOYS_NOTIFY_KEY_ID")"
+    fi
   fi
   # curl reads the URL from its config on stdin (-K -), so the token is not in the process list.
   # Bounded: a hanging webhook must not hold a cron job or workflow until its limit; 408, 429 and 5xx

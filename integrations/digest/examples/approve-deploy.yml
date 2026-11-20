@@ -33,6 +33,9 @@ jobs:
       (github.event.label.name == 'deploy-approved' && startsWith(github.event.issue.title, 'Deploys waiting – '))
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # A second lock next to DEPLOYS_APPROVERS: uncomment, create the environment in the repo's
+    # settings and add "Required reviewers". The job then waits for one of them to confirm.
+    # environment: production
     steps:
       - name: Who approved, and what
         id: approved
@@ -60,7 +63,7 @@ jobs:
           if [ "$EVENT" = issues ]; then
             # Only today's digest (in the digest's zone): when a daily run failed, yesterday's issue would otherwise
             # still deploy whatever the branch head is now.
-            [ "$TITLE" = "Deploys waiting – $(TZ="${DIGEST_TZ:-UTC}" date +%Y-%m-%d)" ] || no "Only today's digest issue can be approved, not \"$TITLE\"."
+            [ "$TITLE" = "Deploys waiting – $(TZ="${DIGEST_TZ:-UTC}" date +%Y-%m-%d)" ] || no "Only today's digest issue can be approved."
             # From the digest's own newest comment, and only if nobody edited it: the issue body
             # can be changed by anyone with write access, and the approver would not see it.
             comments="$(gh api "repos/$REPO/issues/$ISSUE/comments" --paginate)" || no "The issue's comments could not be read."

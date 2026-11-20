@@ -5,7 +5,7 @@
 #   integrations/alfred/deploys-filter.sh [query]
 #
 # ↵ shows the project in Deploy Center (deploycenter://select?project=…), ⌘↵ opens its site
-# (the arg is "open <name>" for deploys-open.sh). Set up in Alfred: a Script Filter (bash,
+# (the arg is "open <platform>:<name>" for deploys-open.sh). Set up in Alfred: a Script Filter (bash,
 # "with input as argv") that runs this file with "$1", then an Open URL action for ↵ and a Run
 # Script action with deploys-open.sh for ⌘. See README.md.
 #
@@ -34,11 +34,17 @@ jq -c --arg q "$query" '
   map(select($q == "" or (.name | ascii_downcase | contains($q))))
   | map(. + {rank: (if .building then 0 elif failed then 1 elif .changed then 2 else 3 end)})
   | sort_by(.rank, .name)
-  | {items: (if length == 0 then [{title: "No project matches", valid: false}] else map({
-      uid: "\(.platform)/\(.name)",
+  | (any(.[]; .building)) as $busy
+  # cache: Alfred runs this at every key press; it reuses the answer for 30 s and refreshes in the
+  # background. rerun: while a build runs the list refreshes itself every 5 s.
+  | {cache: {seconds: 30, loose_reload: true}}
+    + (if $busy then {rerun: 5} else {} end)
+    + {items: (if length == 0 then [{title: "No project matches", valid: false}] else map({
+      # skipknowledge: Alfred must not re-order by use; a failed build stays above a favourite.
+      skipknowledge: true,
       title: .name,
       subtitle: ((if .building then "Building" elif failed then "Newest deploy failed (\(.state))" elif .changed then "Changes waiting" else "Up to date" end) + " · \(.platform)"),
       arg: "deploycenter://select?project=\("\(.platform):\(.name)" | @uri)",
       autocomplete: .name,
-      mods: {cmd: {arg: "open \(.name)", subtitle: "Open the site"}}
+      mods: {cmd: {arg: "open \(.platform):\(.name)", subtitle: "Open the site"}}
     }) end)}' <<<"$out"

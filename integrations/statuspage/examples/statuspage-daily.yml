@@ -22,9 +22,6 @@ jobs:
   page:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -32,31 +29,42 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Pin to a release tag or a full commit SHA, not a branch.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The action brings deploys (its own checkout of that release, with the vercel CLI cached) and
+      # asks nothing. Pin to a release tag or a full commit SHA, not a branch. The tokens go only to
+      # the steps that need them, not to the whole job.
+      - uses: Pschmetzer/deploy-center/integrations/action@v0.11.0
         with:
-          repository: Pschmetzer/deploy-center
-          ref: main
-          path: .deploy-center
-          persist-credentials: false
-      - name: Vercel CLI
-        if: env.VERCEL_TOKEN != ''
-        run: npm install -g --no-fund --no-audit vercel@65.12.1 >/dev/null
+          deploy: setup
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
+          repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
       - name: Make the page
+        id: make
         env:
-          DEPLOYS_VERCEL_TEAM: ${{ vars.DEPLOYS_VERCEL_TEAM }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           # Reads commits for "Coming next". Private repos need a token that can read them.
           GH_TOKEN: ${{ secrets.DEPLOYS_GH_TOKEN || github.token }}
-          REPOS_JSON: ${{ vars.DEPLOYS_REPOS_JSON }}
         run: |
           set -euo pipefail
-          export DEPLOYS_CONFIG="$RUNNER_TEMP/deploys-config" USER="${USER:-$(id -un)}"
-          export DEPLOYS="$PWD/.deploy-center/deploys"
-          mkdir -p "$DEPLOYS_CONFIG"
-          [ -z "$REPOS_JSON" ] || printf '%s' "$REPOS_JSON" > "$DEPLOYS_CONFIG/vercel-repos.json"
+          # $DEPLOYS and $DEPLOYS_CONFIG come from the action's setup step.
           # The journal is written by the Mac app. Commit a copy (status/journal.jsonl) to get the timeline.
           [ ! -f status/journal.jsonl ] || export DEPLOYS_JOURNAL="$PWD/status/journal.jsonl"
-          .deploy-center/integrations/statuspage/statuspage.sh --config statuspage.json --out public
+          "$(dirname "$DEPLOYS")/integrations/statuspage/statuspage.sh" --config statuspage.json --out public
+      # When the page cannot be made the old one stays up, and "staleHours" warns only after two days.
+      # With a DEPLOYS_NOTIFY_URL secret this tells your chat the same day.
+      - name: Say that the page was not built
+        if: failure() && steps.make.outcome == 'failure'
+        env:
+          DEPLOYS_NOTIFY_URL: ${{ secrets.DEPLOYS_NOTIFY_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -n "$DEPLOYS_NOTIFY_URL" ] || { echo "No DEPLOYS_NOTIFY_URL secret; nothing sent."; exit 0; }
+          # shellcheck source=/dev/null
+          . "$(dirname "$DEPLOYS")/integrations/lib/post.sh"
+          format="$(webhook_format "$DEPLOYS_NOTIFY_URL")"
+          webhook_body "$format" "The status page could not be built." "$RUN_URL" "Open the run"
+          webhook_send "$DEPLOYS_NOTIFY_URL" "$format" || true
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

@@ -240,5 +240,58 @@ check(kA.sameContent(as: kB), "same content: a saving that differs below the cen
 kB.savingPerMonth = 12.36
 check(!kA.sameContent(as: kB), "same content: a different cent is not")
 
+// MARK: Repo addresses, deep links, polling, the snapshot file (IDEEN-12)
+
+func gh(_ s: String) -> String? { RepoRef.parse(s).github }
+check(gh("https://github.com/o/n.git") == "o/n" && gh("git@github.com:o/n.git") == "o/n" && gh("o/n") == "o/n", "repo: the usual forms")
+check(gh("ssh://git@github.com/o/n") == "o/n", "repo: ssh:// with a user is GitHub")
+check(gh("https://user@github.com/o/n") == "o/n" && gh("https://user:tok@github.com/o/n.git") == "o/n", "repo: a user (and password) in front of the host is dropped")
+check(gh("https://github.com:443/o/n") == "o/n" && gh("ssh://git@github.com:22/o/n") == "o/n", "repo: a port is not part of the path")
+check(RepoRef.parse("git@gitlab.com:g/n.git").otherHost == "GitLab" && RepoRef.parse("ssh://git@git.example.test:2222/g/n").otherHost == "git.example.test",
+      "repo: another host is named without user and port")
+let pl = DeepLink.target(project: "vercel:web", platform: nil)
+check(pl.name == "web" && pl.platform == "vercel", "deep link: platform:name is split")
+check(DeepLink.target(project: "Render:api", platform: nil).name == "api", "deep link: the platform may be any case")
+check(DeepLink.target(project: "team:web", platform: nil).name == "team:web", "deep link: a colon that is no platform stays in the name")
+check(DeepLink.target(project: "web", platform: "Vercel").platform == "Vercel", "deep link: a platform parameter is kept")
+check(DeepLink.samePlatform("Vercel", "vercel") && DeepLink.samePlatform("Render", nil) && !DeepLink.samePlatform("Render", "vercel"), "deep link: platforms compare without case")
+check(PollEvery.seconds(elapsed: 10) == 6 && PollEvery.seconds(elapsed: 300) == 15 && PollEvery.seconds(elapsed: 900) == 30, "polling slows down for long builds")
+var pollAsks = 0.0, pollT = 0.0
+while pollT < 20 * 60 { pollT += PollEvery.seconds(elapsed: pollT); pollAsks += 1 }
+check(pollAsks < 100, "polling: fewer than 100 asks in 20 minutes")
+
+// stateWord
+check(PhoneProject.stateWord("BUILD_FAILED") == L("build failed", "Build fehlgeschlagen") && PhoneProject.stateWord("canceled") == L("canceled", "abgebrochen"), "stateWord: known states")
+check(PhoneProject.stateWord("some_new_state") == "some new state", "stateWord: an unknown state reads as words")
+
+// The snapshot file: missing, unreadable, from a newer app, fine
+let tdir = FileManager.default.temporaryDirectory.appendingPathComponent("dc-snap-\(UUID().uuidString)")
+try? FileManager.default.createDirectory(at: tdir, withIntermediateDirectories: true)
+let tfile = tdir.appendingPathComponent("snap.json")
+check(DeploySnapshot.readOutcome(tfile).problem == .missing, "snapshot file: none yet is 'missing'")
+try? Data("not json".utf8).write(to: tfile)
+check(DeploySnapshot.readOutcome(tfile).problem == .unreadable, "snapshot file: garbage is 'unreadable'")
+try? Data(#"{"version":99,"at":"2026-01-01T00:00:00Z","somethingNew":{"x":1}}"#.utf8).write(to: tfile)
+check(DeploySnapshot.readOutcome(tfile).problem == .appNewer, "snapshot file: a newer app's file says the widget is old")
+try? DeploySnapshot.encoder.encode(DeploySnapshot.sample).write(to: tfile)
+check(DeploySnapshot.readOutcome(tfile).snapshot != nil && DeploySnapshot.readOutcome(tfile).problem == nil && DeploySnapshot.read(tfile) != nil, "snapshot file: a good file reads")
+try? FileManager.default.removeItem(at: tdir)
+
+// The Smart Stack: failures first, then a long build, then an old wait
+let rnow = Date()
+func mkProj(_ s: DeploySnapshot.Project.Status, _ ago: TimeInterval) -> DeploySnapshot.Project {
+    .init(name: "x", platform: "Vercel", status: s, commits: 1, prs: 0, since: rnow.addingTimeInterval(-ago), message: nil)
+}
+func mkSnap(_ ps: [DeploySnapshot.Project]) -> DeploySnapshot {
+    DeploySnapshot(at: rnow, demo: false, waitingProjects: 0, waitingCommits: 0, waitingPRs: 0,
+                   building: ps.filter { $0.status == .building }.count, failed: ps.filter { $0.status == .failed }.count,
+                   saving: nil, projects: ps)
+}
+check(mkSnap([mkProj(.failed, 60)]).relevanceScore(at: rnow) == 10, "relevance: a failure is 10")
+check(mkSnap([mkProj(.building, 60)]).relevanceScore(at: rnow) == nil, "relevance: a fresh build is not raised")
+check(mkSnap([mkProj(.building, 20 * 60)]).relevanceScore(at: rnow) == 6, "relevance: a build over 15 minutes is 6")
+check(mkSnap([mkProj(.waiting, 30 * 3600)]).relevanceScore(at: rnow) == 3, "relevance: a project waiting over a day is 3")
+check(mkSnap([mkProj(.waiting, 3600)]).relevanceScore(at: rnow) == nil, "relevance: a short wait is not raised")
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)

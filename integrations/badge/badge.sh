@@ -57,7 +57,7 @@ lines="$(echo "$list" | jq -r '
 
 # Colours: white text on each one reaches 4.5:1 (WCAG AA); shields.io's yellow and green do not.
 # XML-safe text; a rough width per character (Verdana 11 averages about 6.5 px).
-esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
+esc() { printf '%s' "$1" | tr -d '\000-\010\013\014\016-\037\177' | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
 # Characters, not bytes, whatever the locale (Alpine and CI images often have no UTF-8 one).
 width() { local n; n="$(jq -rn --arg s "$1" '$s | length')"; echo $(( n * 65 / 10 + 12 )); }
 
@@ -92,7 +92,11 @@ while IFS=$'\t' read -r name text colour platform; do
 </svg>
 SVG
   # The same badge as a shields.io endpoint (schemaVersion 1): <stem>.json, for a dynamic README badge.
-  jq -n --arg l "$left" --arg m "$text" --arg c "${colour#\#}" '{schemaVersion: 1, label: $l, message: $m, color: $c}' > "$out/$stem.json"
+  # isError turns a failed build red in shields.io; cacheSeconds is its minimum (300) so a README badge
+  # is not a day behind; labelColor matches the SVG's left half.
+  iserr=false; [ "$colour" != "#c0392b" ] || iserr=true
+  jq -n --arg l "$left" --arg m "$text" --arg c "${colour#\#}" --argjson e "$iserr" \
+    '{schemaVersion: 1, label: $l, message: $m, color: $c, labelColor: "555555", cacheSeconds: 300} + (if $e then {isError: true} else {} end)' > "$out/$stem.json"
   n=$((n + 1))
 done <<< "$lines"
 echo "$n badge(s) in $out/"

@@ -27,6 +27,8 @@ export interface Project {
   waiting: boolean;
   building: boolean;
   failed: boolean;
+  /** The newest attempt was canceled (neither building nor failed). */
+  canceled?: boolean;
   /** The newest attempt's state as the platform spells it (READY, ERROR, build_failed, …). */
   state: string | null;
   /** The name the CLI is given: "name", or "platform:name" when the name is on two platforms. */
@@ -56,11 +58,11 @@ const BUSY = ["queued", "building"];
  * Building and failed from the shared `phase` (queued, building, ready, failed, canceled) when the
  * CLI has it; from the platform's own words otherwise (CLIs before providers).
  */
-function phaseOf(row: Record<string, unknown>, state: string | null, fallbackBuilding: boolean): { building: boolean; failed: boolean } {
+function phaseOf(row: Record<string, unknown>, state: string | null, fallbackBuilding: boolean): { building: boolean; failed: boolean; canceled: boolean } {
   const phase = str(row.phase);
-  if (phase) return { building: BUSY.includes(phase), failed: phase === "failed" };
+  if (phase) return { building: BUSY.includes(phase), failed: phase === "failed", canceled: phase === "canceled" };
   const building = row.building === true || fallbackBuilding;
-  return { building, failed: !building && isFailedState(state) };
+  return { building, failed: !building && isFailedState(state), canceled: !building && /cancel/i.test(state ?? "") };
 }
 
 /**
@@ -111,7 +113,7 @@ export function mergeProjects(
       repo: str(c.repo) ?? prev?.repo ?? null,
       pendingCommits: num(c.pendingCommits), pendingPRs: num(c.pendingPRs),
       oldestPendingAt: num(c.oldestPendingAt),
-      waiting: true, ...(prev ? { building: prev.building, failed: prev.failed } : phaseOf(c, state, false)), state,
+      waiting: true, ...(prev ? { building: prev.building, failed: prev.failed, canceled: prev.canceled } : phaseOf(c, state, false)), state,
       ...(typeof c.headSha === "string" && /^[0-9a-f]{7,40}$/i.test(c.headSha) ? { headSha: c.headSha } : {}),
     });
   }
@@ -161,10 +163,6 @@ export function statusText(s: Summary): string {
   return parts.length ? parts.join("  ") : t("$(check) up to date");
 }
 
-export function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
-}
-
 /** One line per project, for the tree and the quick pick: "4 commits, 1 PR waiting · vercel". */
 export function describe(p: Project, now = Date.now() / 1000): string {
   const bits: string[] = [];
@@ -190,20 +188,21 @@ export function age(seconds: number): string {
   return t("{0} d", Math.floor(seconds / 86400));
 }
 
-export type FollowState = "wait" | "live" | "failed" | "gone";
+export type FollowState = "wait" | "live" | "failed" | "canceled" | "gone";
 
 /**
  * One look at a deploy that was just started. A new build may show up only after a while (the
  * platform queues it), so "live" needs either a build that was seen running and is done now, or
  * eight looks without any build (then the newest state is what there is).
  */
-export function followStep(p: Pick<Project, "building" | "failed"> | undefined, seenBuilding: boolean, looks: number): FollowState {
+export function followStep(p: Pick<Project, "building" | "failed" | "canceled"> | undefined, seenBuilding: boolean, looks: number): FollowState {
   if (!p) return "gone";
   if (p.building) return "wait";
   // Eight looks (two minutes) for a build to appear: a queue longer than that is rare, and the old
   // deploy's state (live, or failed) would otherwise be reported as this one's.
   if (!seenBuilding && looks < 8) return "wait";
-  return p.failed ? "failed" : "live";
+  // A canceled build is neither live nor a failure: its own message, never "is live".
+  return p.failed ? "failed" : p.canceled ? "canceled" : "live";
 }
 
 export interface PlanTotal { builds: number; usd: number | null; unpriced?: number }

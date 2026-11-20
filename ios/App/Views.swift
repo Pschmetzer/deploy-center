@@ -68,6 +68,8 @@ struct RootView: View {
     @State private var connect = false
     /// A widget link that came before the list was read: name and platform.
     @State private var pendingOpen: [String]?
+    /// When it was set: a link the first list does not hold is dropped after DeepLink.patience.
+    @State private var pendingAt = Date.distantPast
 
     private var selected: PhoneProject? { selection.flatMap { key in store.projects.first { $0.key == key } } }
 
@@ -122,6 +124,8 @@ struct RootView: View {
         }
         .onChange(of: store.projects) { _, _ in
             guard let w = pendingOpen, let first = w.first else { return }
+            // A link from an hour ago must not open a project that appears now.
+            if Date().timeIntervalSince(pendingAt) > DeepLink.patience { pendingOpen = nil; return }
             if first.hasPrefix("key:") {
                 let k = String(first.dropFirst(4))
                 if store.projects.contains(where: { $0.key == k }) { selection = k; pendingOpen = nil }
@@ -130,6 +134,7 @@ struct RootView: View {
         // A link to a project the first full list does not hold is dropped: a later list must not open it by surprise.
         .onChange(of: store.loadedAt) { _, t in
             guard t != nil, let w = pendingOpen, let first = w.first else { return }
+            if Date().timeIntervalSince(pendingAt) > DeepLink.patience { pendingOpen = nil; return }
             if first.hasPrefix("key:") {
                 let k = String(first.dropFirst(4))
                 if store.projects.contains(where: { $0.key == k }) { selection = k }
@@ -141,7 +146,7 @@ struct RootView: View {
             guard url.scheme == "deploycenter", let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return }
             // The key is exact; name and platform are the fallback for links from an older widget or the Mac.
             if let key = items.first(where: { $0.name == "key" })?.value, !key.isEmpty {
-                if store.projects.contains(where: { $0.key == key }) { selection = key; pendingOpen = nil } else { pendingOpen = ["key:" + key] }
+                if store.projects.contains(where: { $0.key == key }) { selection = key; pendingOpen = nil } else { pendingOpen = ["key:" + key]; pendingAt = Date() }
                 return
             }
             guard let name = items.first(where: { $0.name == "project" })?.value else { return }
@@ -191,9 +196,13 @@ struct RootView: View {
     }
 
     private func open(name: String, platform: String?) {
-        if let p = store.projects.first(where: { $0.name == name && (platform == nil || $0.provider.rawValue == platform) }) {
+        // "vercel:web" (the Mac, Alfred and Raycast write it so) or a name with a platform parameter; any case.
+        let t = DeepLink.target(project: name, platform: platform)
+        if let p = store.projects.first(where: { $0.name == t.name && DeepLink.samePlatform($0.provider.rawValue, t.platform) }) {
             selection = p.key; pendingOpen = nil
-        } else { pendingOpen = [name] + (platform.map { [$0] } ?? []) }
+        } else if pendingOpen == nil || pendingOpen?.first != t.name {
+            pendingOpen = [t.name] + (t.platform.map { [$0] } ?? []); pendingAt = Date()
+        }
     }
 }
 
@@ -355,7 +364,8 @@ struct ProjectList: View {
                     } else if store.offline {
                         Text(L("Offline", "Offline"))
                     }
-                    ForEach(store.errors, id: \.self) { Text($0).foregroundStyle(.red) }
+                    // By position: two notes with the same wording are two rows, not one id twice.
+                    ForEach(Array(store.errors.enumerated()), id: \.offset) { Text($0.element).foregroundStyle(.red) }
                     if !store.stale.isEmpty {
                         Text(L("Shown as last read: ", "Angezeigt wie zuletzt gelesen: ") + store.stale.map(\.rawValue).sorted().joined(separator: ", "))
                     }
@@ -702,6 +712,9 @@ struct ProjectDetail: View {
             if let s = p.headSha, let c = URL(string: u.absoluteString + "/commit/" + s) { out.append((L("Newest commit on GitHub", "Neuester Commit auf GitHub"), c)) }
             if let l = p.liveSha, let h = p.headSha, l != h, let c = URL(string: u.absoluteString + "/compare/\(l)...\(h)") {
                 out.append((L("What waits, on GitHub", "Was wartet, auf GitHub"), c))
+            }
+            if (p.openPRs ?? 0) > 0, let c = URL(string: u.absoluteString + "/pulls") {
+                out.append((L("Open pull requests on GitHub", "Offene Pull Requests auf GitHub"), c))
             }
         }
         return out

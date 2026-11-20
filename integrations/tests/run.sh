@@ -139,6 +139,8 @@ case "\$*" in
   "details gitlab.com/grp/sub/app bbbb222 main") cat "$tmp/details-api.json" ;;
   "details me/app bbbb222 main") cat "$tmp/details-api.json" ;;
   "--help") echo "deploys changed [--json]"; [ -n "\${FAKE_RISK:-}" ] && echo "  deploys risk <project> [--json]" ;;
+  # As the real one: without a project `risk` prints its usage; an older CLI does not know the command.
+  "risk") if [ -n "\${FAKE_RISK:-}" ]; then echo "Error: Usage: deploys risk <project> [--json]" >&2; else echo "Error: Unknown command \"risk\". All commands: deploys --help" >&2; fi; exit 1 ;;
   "risk app-web --json") echo '{"hints":[{"hint":"touches the database schema"}]}' ;;
   "risk api --json") echo 'needs a new env var' ;;
   *) echo "unexpected: \$*" >&2; exit 1 ;;
@@ -232,6 +234,10 @@ contains "badge: names are XML-escaped" "$(cat "$tmp/e/a_b___c.svg")" 'a&lt;b&gt
 echo '[{"name":"web","platform":"vercel","lastAt":1},{"name":"web","platform":"render","lastAt":1},{"name":"a/b","lastAt":1},{"name":"a_b","lastAt":1}]' | badge/badge.sh "$tmp/c" - >/dev/null
 expect "badge: colliding names do not overwrite each other" "$(cd "$tmp/c" && echo *.svg)" "a_b.svg other_a_b.svg render-web.svg vercel-web.svg"
 expect "badge: a shields.io endpoint JSON next to each SVG" "$(jq -c '[.schemaVersion, .label, .message, .color]' "$tmp/b/app-web.json")" "[1,\"deployed\",\"$d3 · 4 commits waiting\",\"9a6700\"]"
+expect "badge: a failed build is an error for shields, and the cache is set" "$(jq -c '[.isError, .cacheSeconds, .labelColor]' "$tmp/b/api.json")" '[true,300,"555555"]'
+expect "badge: a healthy one has no isError" "$(jq -c 'has("isError")' "$tmp/b/site.json")" false
+printf '[{"name":"a\\u0001b\\u001fc","changed":false,"lastAt":0}]' | badge/badge.sh "$tmp/ctl" - >/dev/null
+case "$(cat "$tmp/ctl"/*.svg)" in *$'\001'*|*$'\037'*) fail "badge: control characters are dropped from the SVG text" "found" ;; *) ok "badge: control characters are dropped from the SVG text" ;; esac
 contains "badge: ids are per badge" "$(cat "$tmp/c/vercel-web.svg")" 'clip-path="url(#r-vercel-web)"'
 expect "badge: the width counts characters, not bytes" "$(echo '[{"name":"x","changed":false,"lastAt":1}]' | LC_ALL=C badge/badge.sh "$tmp/w" - >/dev/null; sed -n 's/^<svg[^>]* width="\([0-9]*\)".*/\1/p' "$tmp/w/x.svg")" \
   "$(echo '[{"name":"x","changed":false,"lastAt":1}]' | badge/badge.sh "$tmp/w2" - >/dev/null; sed -n 's/^<svg[^>]* width="\([0-9]*\)".*/\1/p' "$tmp/w2/x.svg")"
@@ -265,6 +271,13 @@ contains "notify: DEPLOYS_NOTIFY_TZ names its day" "$(RENDER_API_KEY=x DEPLOYS_N
 contains "notify: DEPLOYS_NOTIFY_TZ wins over DEPLOYS_TZ" "$(DEPLOYS_TZ=UTC DEPLOYS_NOTIFY_TZ=Pacific/Kiritimati notify/notify.sh --dry-run)" "(Pacific/Kiritimati)"
 expect "notify: a bad DEPLOYS_TZ is refused" "$(DEPLOYS_TZ='x;y' notify/notify.sh --dry-run >/dev/null 2>&1; echo $?)" 1
 expect "notify: a bad DEPLOYS_NOTIFY_TZ is refused" "$(DEPLOYS_NOTIFY_TZ='x;y' notify/notify.sh --dry-run >/dev/null 2>&1; echo $?)" 1
+# Options after the list file count too; an unknown one is refused (before, `list.json --dry-run` posted for real).
+: > "$tmp/curl.args"
+DEPLOYS_NOTIFY_URL=https://hooks.example.test/T/x notify/notify.sh "$tmp/quiet.json" --dry-run >/dev/null 2>&1
+expect "notify: --dry-run after the list file posts nothing" "$(wc -c < "$tmp/curl.args" | tr -d ' ')" 0
+notify/notify.sh --dry-run --bogus >/dev/null 2>&1; expect "notify: an unknown option is refused" "$?" 1
+expect "notify: --link becomes a button" "$(RENDER_API_KEY=x notify/notify.sh --dry-run --link https://status.example.test | sed -n 2p | jq '.blocks | length')" 2
+expect "notify: DEPLOYS_NOTIFY_FORMAT=plain is {text} only" "$(RENDER_API_KEY=x DEPLOYS_NOTIFY_FORMAT=plain notify/notify.sh --dry-run --link https://status.example.test | sed -n 2p | jq -c 'keys')" '["text"]'
 expect "notify: Discord never pings" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -c .allowed_mentions)" '{"parse":[]}'
 expect "notify: Discord by host" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -r 'has("content")')" true
 expect "notify: Telegram by host" "$(DEPLOYS_NOTIFY_URL='https://api.telegram.org/botT/sendMessage?chat_id=1' notify/notify.sh --dry-run | head -1)" "format: telegram"
@@ -272,11 +285,27 @@ contains "notify: ntfy is plain text" "$(DEPLOYS_NOTIFY_URL=https://ntfy.sh/topi
 . lib/post.sh
 webhook_body discord "$(printf 'x%.0s' $(seq 1 2500))"
 expect "post: a long Discord message is cut below 2000" "$(jq -r '.content | length < 2000 and test("cut")' <<<"$WEBHOOK_BODY")" true
+WEBHOOK_CUT_HINT="see deploys changed" webhook_body discord "$(printf 'x%.0s' $(seq 1 2500))"
+contains "post: the cut note names where the list is" "$(jq -r .content <<<"$WEBHOOK_BODY")" "(cut, see deploys changed)"
+webhook_body slack "$(printf '&%.0s' $(seq 1 2000))" https://example.test/x Go
+expect "post: Slack's cut never splits an entity" "$(jq -r '.blocks[0].text.text | length <= 3000 and test("&amp;…$")' <<<"$WEBHOOK_BODY")" true
 expect "notify: plain http is refused" "$(RENDER_API_KEY=x DEPLOYS_NOTIFY_URL=http://hooks.example.test/x notify/notify.sh 2>&1; echo "rc=$?")" $'DEPLOYS_NOTIFY_URL must start with https:// (http:// only for localhost)\nrc=1'
 DEPLOYS_NOTIFY_URL='https://hooks.example.test/T/secret' notify/notify.sh >/dev/null
 expect "notify: the URL goes to curl on stdin" "$(cat "$tmp/curl.stdin")" 'url = "https://hooks.example.test/T/secret"'
 case "$(cat "$tmp/curl.args")" in *secret*) fail "notify: URL not in curl's arguments" "found" ;; *) ok "notify: URL not in curl's arguments" ;; esac
 expect "notify: posts the summary" "$(jq -r '.text' "$tmp/curl.body" | sed -n 2p)" 'Live today (1): site'
+out="$(DEPLOYS_NOTIFY_URLS='https://a.example.test/x, https://ntfy.sh/topic' notify/notify.sh 2>&1)"
+expect "notify: DEPLOYS_NOTIFY_URLS posts to every target" "$(grep -c '^Posted' <<<"$out")" 2
+printf 'https://hooks.example.test/T/fromfile\n' > "$tmp/url.txt"; chmod 600 "$tmp/url.txt"
+DEPLOYS_NOTIFY_URL_FILE="$tmp/url.txt" notify/notify.sh >/dev/null 2>&1
+expect "notify: DEPLOYS_NOTIFY_URL_FILE supplies the URL" "$(cat "$tmp/curl.stdin")" 'url = "https://hooks.example.test/T/fromfile"'
+chmod 644 "$tmp/url.txt"
+DEPLOYS_NOTIFY_URL_FILE="$tmp/url.txt" notify/notify.sh >/dev/null 2>&1; expect "notify: a URL file others can read is refused" "$?" 1
+if command -v perl >/dev/null && perl -MDigest::SHA -e1 2>/dev/null; then
+  DEPLOYS_NOTIFY_SECRET=new1 DEPLOYS_NOTIFY_SECRET_PREV=old0 DEPLOYS_NOTIFY_KEY_ID=k2 DEPLOYS_NOTIFY_URL=https://hooks.example.test/x notify/notify.sh >/dev/null 2>&1
+  contains "notify: rotation signs with both secrets" "$(cat "$tmp/curl.stdin")" 'X-Deploy-Center-Signature-Previous: sha256='
+  contains "notify: the key id is sent" "$(cat "$tmp/curl.stdin")" 'X-Deploy-Center-Key-Id: k2'
+else skip "notify: secret rotation needs perl with Digest::SHA"; fi
 DEPLOYS_NOTIFY_URL='ftp://x' notify/notify.sh >/dev/null 2>&1; expect "notify: refuses a non-http URL" "$?" 1
 # More formats: Teams, Google Chat, Matrix hookshot, Pushover; ntfy priority, tags and a token.
 expect "notify: Teams by host, an Adaptive Card" "$(DEPLOYS_NOTIFY_URL='https://x.webhook.office.com/webhookb2/1' notify/notify.sh --dry-run | sed -n 2p | jq -r '.attachments[0].content.type + " " + (.attachments[0].content.body[0].text | split("\n")[1])')" "AdaptiveCard Live today (1): site"
@@ -333,15 +362,17 @@ expect "plan comment: not a plan is refused" "$(../examples/plan-comment.sh <<<'
 # --- Alfred script filter ---
 af="$(alfred/deploys-filter.sh)"
 expect "alfred: every project, as Alfred items" "$(jq -r '.items | length' <<<"$af")" 3
-expect "alfred: ↵ shows it in Deploy Center (with its platform), ⌘ opens the site" "$(jq -r '.items[] | select(.title == "app-web") | .arg + " " + .mods.cmd.arg' <<<"$af")" "deploycenter://select?project=vercel%3Aapp-web open app-web"
+expect "alfred: ↵ shows it in Deploy Center (with its platform), ⌘ opens the site" "$(jq -r '.items[] | select(.title == "app-web") | .arg + " " + .mods.cmd.arg' <<<"$af")" "deploycenter://select?project=vercel%3Aapp-web open vercel:app-web"
 expect "alfred: waiting before up to date" "$(jq -c '[.items[].title]' <<<"$af")" '["api","app-web","site"]'
 expect "alfred: the query filters by name" "$(alfred/deploys-filter.sh WEB | jq -c '[.items[].title]')" '["app-web"]'
 expect "alfred: no match is one item" "$(alfred/deploys-filter.sh zzz | jq -r '.items[0].title')" "No project matches"
 expect "alfred: a CLI that gives no list says so" "$(DEPLOYS=/usr/bin/false alfred/deploys-filter.sh | jq -r '.items[0].title')" "Could not read the projects"
 ap="$(alfred/deploys-plan.sh)"
-expect "alfred plan: the sum first, then every project" "$(jq -c '[.items[].title]' <<<"$ap")" '["2 builds, about $1.2","app-web","api","site"]'
+expect "alfred plan: the sum first, then every project" "$(jq -c '[.items[].title]' <<<"$ap")" '["2 builds, about $1.20","app-web","api","site"]'
 expect "alfred plan: a skipped project says so" "$(jq -r '.items[3].subtitle' <<<"$ap")" "Would not start · vercel"
-expect "alfred plan: the query filters, the sum stays" "$(alfred/deploys-plan.sh API | jq -c '[.items[].title]')" '["2 builds, about $1.2","api"]'
+expect "alfred: Alfred may cache the list for 30 s" "$(jq -c '.cache' <<<"$af")" '{"seconds":30,"loose_reload":true}'
+expect "alfred: Alfred does not re-order by use" "$(jq -c '[.items[].skipknowledge] | unique' <<<"$af")" '[true]'
+expect "alfred plan: the query filters, the sum stays" "$(alfred/deploys-plan.sh API | jq -c '[.items[].title]')" '["2 builds, about $1.20","api"]'
 expect "alfred plan: a CLI without a plan says so" "$(DEPLOYS=/usr/bin/false alfred/deploys-plan.sh | jq -r '.items[0].title')" "Could not work out the plan"
 expect "alfred open: only a project name" "$(alfred/deploys-open.sh 'open a;b' 2>&1; echo "rc=$?")" $'Not a project: open a;b\nrc=1'
 DEPLOYS_NOTIFY_URL='http://api.telegram.org/botT/sendMessage' notify/notify.sh >/dev/null 2>&1; expect "notify: refuses http:// to another host" "$?" 1
@@ -356,6 +387,7 @@ contains "pre-push: Render auto-deploy on the pushed branch is counted" "$out" "
 contains "pre-push: warns only, by default" "$out" "exit=0"
 out="$(push "refs/heads/main $s1 refs/heads/main $z" https://github.com/me/site.git)"
 contains "pre-push: Vercel Git-connected production" "$out" "vercel  site  (production, branch main)"
+contains "pre-push: names the command that turns it off" "$out" "deploys vercel autodeploy-off site"
 out="$(push "refs/heads/feature $s1 refs/heads/feature $z" https://github.com/me/site)"
 contains "pre-push: Vercel builds a preview of any branch" "$out" "(preview, branch feature)"
 out="$(push "refs/heads/feature $s1 refs/heads/feature $z" git@github.com:me/app.git)"
@@ -412,7 +444,7 @@ chmod +x "$tmp/sp-bin/curl"
   printf '{"at":"%s","platform":"vercel","name":"app-web","result":"skipped","seconds":0,"detail":"nothing to do"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$tmp/journal.jsonl"
 cat > "$tmp/sp.json" <<'JSON'
-{"title":"Acme <deploys>","baseUrl":"https://status.example.test",
+{"title":"Acme <deploys>","baseUrl":"https://status.example.test","timelinePerProject":30,
  "projects":["app-web",{"name":"api","platform":"render","label":"API","url":"https://api.up.test/health"},"vercel/missing"]}
 JSON
 sp() { SP_CURL_LOG="$tmp/sp-curl.log" PATH="$tmp/sp-bin:$PATH" RENDER_API_KEY=x DEPLOYS_JOURNAL="$tmp/journal.jsonl" statuspage/statuspage.sh "$@"; }
@@ -443,6 +475,16 @@ expect "statuspage: timeline is the last 30" "$(jq '.timeline | length' <<<"$st"
 expect "statuspage: timeline newest first, only listed, live and failed" "$(jq -r '.timeline[0] | "\(.name) \(.result)"' <<<"$st")" "API failed"
 case "$st$page$feed" in *SECRET*|*/Users/*|*"nothing to do"*|*abc1234*|*aaaa111*|*bbbb222*|*me/app*) fail "statuspage: no journal detail, SHA or repo" "found" ;; *) ok "statuspage: no journal detail, SHA or repo" ;; esac
 expect "statuspage: feed has an entry per deploy" "$(grep -c '<entry>' <<<"$feed")" 30
+expect "statuspage: status.json says which schema it is" "$(jq -r .schema <<<"$st")" 1
+jq 'del(.timelinePerProject)' "$tmp/sp.json" > "$tmp/sp-cap.json"
+sp --config "$tmp/sp-cap.json" --out "$tmp/spcap" >/dev/null
+expect "statuspage: one busy project keeps at most 10 timeline entries" "$(jq '[.timeline[] | select(.name == "app-web")] | length' "$tmp/spcap/status.json")" 10
+expect "statuspage: the others stay in the timeline" "$(jq -r '[.timeline[].name] | index("API") != null' "$tmp/spcap/status.json")" true
+expect "statuspage: a site that is down says what is down (card)" "$(grep -c 'Site not reachable' "$tmp/spr/index.html")" 1
+expect "statuspage: the feed entry of an outage has a subject and a verb" "$(grep -c 'app-web is not reachable' "$tmp/spr/feed.xml")" 2
+case "$(grep -o 'urn:deploy-center:check:[^<]*' "$tmp/spr/feed.xml" | head -1)" in *[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*) fail "statuspage: the id of an ongoing outage has no date" "has a number" ;; *) ok "statuspage: the id of an ongoing outage has no date" ;; esac
+STATUSPAGE_CHECK_BUDGET=0 sp --config "$tmp/sp.json" --out "$tmp/spb" >/dev/null 2>&1
+expect "statuspage: an used-up check budget leaves sites unchecked" "$(jq -c '[.projects[].check]' "$tmp/spb/status.json")" '[null,null,null]'
 contains "statuspage: feed links the page" "$feed" '<link rel="self" href="https://status.example.test/feed.xml"/>'
 case "$page" in *'src="http'*|*'href="http'*|*"@import"*|*"url("*) fail "statuspage: no external assets" "found" ;; *) ok "statuspage: no external assets" ;; esac
 contains "statuspage: dark mode" "$page" "prefers-color-scheme:dark"
@@ -524,7 +566,7 @@ sp --config "$tmp/sp-fr.json" --out "$tmp/spf" --no-check >/dev/null 2>&1; expec
 
 # --- one Vercel CLI version everywhere (the action's default is the source) ---
 pin="$(sed -n '/vercel-cli-version:/,/default:/s/^ *default: "\([0-9.]*\)"/\1/p' action/action.yml)"
-for f in docker/Dockerfile statuspage/examples/statuspage-daily.yml ../examples/daily-deploy.yml ../examples/dependency-updates-weekly.yml; do
+for f in docker/Dockerfile ../examples/daily-deploy.yml ../examples/dependency-updates-weekly.yml; do
   others="$(grep -oE '(vercel@|VERCEL_CLI_VERSION[=:] *"?)[0-9]+\.[0-9]+\.[0-9]+' "$f" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u | tr '\n' ' ')"
   expect "vercel CLI pin in $f is the action's ($pin)" "$others" "$pin "
 done
@@ -543,11 +585,12 @@ if command -v ruby >/dev/null; then
   FAKE_RC=1 run_step changed.sh; expect "action: an unread project warns, does not fail" "$?" 0
   # repo: "*" is the whole account, as before.
   REPO='*' run_step deploy.sh; expect "action: deploy step calls deploy-changed --yes" "$(cat "$tmp/deploy.log")" "deploy-changed --yes --json"
-  expect "action: outputs after starting" "$(tr '\n' ' ' < "$tmp/out")" "started=2 failed=0 deployed=true "
+  expect "action: started-json lists the started deploys" "$(sed -n 's/^started-json=//p' "$tmp/out" | jq -c 'map(.name)')" '["app-web","api"]'
+  expect "action: outputs after starting" "$(grep -v "^started-json=" "$tmp/out" | tr "\n" " ")" "started=2 failed=0 deployed=true "
   REPO='*' FAKE_RC=1 run_step deploy.sh; expect "action: a failed start fails the step" "$?" 1
-  expect "action: outputs are written before failing" "$(tr '\n' ' ' < "$tmp/out")" "started=1 failed=1 deployed=false "
+  expect "action: outputs are written before failing" "$(grep -v "^started-json=" "$tmp/out" | tr "\n" " ")" "started=1 failed=1 deployed=false "
   REPO='*' FAKE_TEXT=1 run_step deploy.sh; expect "action: an answer that is not JSON fails the step" "$?" 1
-  expect "action: and says the counts are unknown" "$(tr '\n' ' ' < "$tmp/out")" "started=0 failed=0 deployed=false "
+  expect "action: and says the counts are unknown" "$(grep -v "^started-json=" "$tmp/out" | tr "\n" " ")" "started=0 failed=0 deployed=false "
   expect "action: repo defaults to the workflow's repository" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["inputs"]["repo"]["default"]' action/action.yml)" '${{ github.repository }}'
   # Only this repo: the other repos' projects go into this run's ignored.json, then deploy-changed.
   mkdir -p "$DEPLOYS_CONFIG"; : > "$tmp/deploy.log"; rm -f "$DEPLOYS_CONFIG/ignored.json"
@@ -588,7 +631,7 @@ if command -v ruby >/dev/null; then
   mkdir -p "$tmp/rt"; : > "$tmp/deploy.log"
   REPO="*" DEPLOYS_WAIT_S=60 RUNNER_TEMP="$tmp/rt" run_step deploy.sh
   expect "action wait: deploy asks for JSON" "$?:$(cat "$tmp/deploy.log")" "0:deploy-changed --yes --json"
-  expect "action wait: outputs from the JSON answer" "$(tr '\n' ' ' < "$tmp/out")" "started=2 failed=0 deployed=true "
+  expect "action wait: outputs from the JSON answer" "$(grep -v "^started-json=" "$tmp/out" | tr "\n" " ")" "started=2 failed=0 deployed=true "
   expect "action wait: the started ids are kept for the wait step" "$(jq -c 'map(.id)' "$tmp/rt/deploys-started.json")" '["dpl_1","dep-1"]'
   DEPLOYS_WAIT_S=60 RUNNER_TEMP="$tmp/rt" run_step wait.sh
   expect "action wait: both live" "$?:$(tr '\n' ' ' < "$tmp/out")" '0:states={"app-web":"ready","api":"ready"} failed-builds= live=true '
@@ -608,6 +651,9 @@ if command -v ruby >/dev/null; then
   FAKE_LEVEL=yellow FAIL_ON_RISK=yellow run_step changed.sh; expect "action risk: yellow fails fail-on-risk: yellow" "$?" 1
   FAIL_ON_RISK=red run_step changed.sh; expect "action risk: no risk known passes" "$?:$(grep '^risk=' "$tmp/out")" "0:risk="
   FAIL_ON_RISK=orange run_step changed.sh; expect "action risk: an unknown level is refused" "$?" 1
+  MAX_COST=1 run_step changed.sh; expect "action max-cost: an estimate above the limit fails" "$?" 1
+  MAX_COST=5 run_step changed.sh; expect "action max-cost: an estimate below the limit passes" "$?" 0
+  MAX_COST=abc run_step changed.sh; expect "action max-cost: a limit that is no number is refused" "$?" 1
   setup() { : > "$tmp/out"; : > "$tmp/genv"; env GITHUB_ENV="$tmp/genv" GITHUB_PATH="$tmp/gpath" RUNNER_TEMP="$tmp/rt" ACTION_PATH="$here/action" \
       VERCEL_TOKEN="${VT:-}" VERCEL_TEAM="${TEAM:-}" REPOS_JSON="${RJ:-}" CLI_VERSION="${CV:-65.12.1}" WAIT="${WT:-}" PATH="$PATH" bash "$tmp/setup.sh" >/dev/null 2>&1; echo $?; }
   mkdir -p "$tmp/rt"
@@ -662,7 +708,7 @@ git -C "$tmp/cc" remote add mirror https://github.com/me/site.git
 hk() { jq -nc --arg c "$1" --arg d "${2:-$tmp/cc}" '{hook_event_name:"PostToolUse",tool_name:"Bash",cwd:$d,tool_input:{command:$c},tool_response:{stdout:"",stderr:"",interrupted:false}}' | "$hook"; echo "exit=$?"; }
 out="$(hk "git push")"
 expect "claude-code hook: one line for the pushed repo" "$(head -1 <<<"$out" | jq -r .systemMessage)" \
-  "4 commits waiting on app-web, changes waiting on api: deploy when ready (deploys changed)"
+  "4 commits waiting on app-web, changes waiting on api (its last build failed: /deploy-center:deploys-fix api): deploy when ready (deploys changed)"
 contains "claude-code hook: tells Claude not to deploy" "$(head -1 <<<"$out" | jq -r .hookSpecificOutput.additionalContext)" "Do not deploy unless the user explicitly says so"
 expect "claude-code hook: event name" "$(head -1 <<<"$out" | jq -r .hookSpecificOutput.hookEventName)" PostToolUse
 contains "claude-code hook: always exit 0" "$out" "exit=0"
@@ -703,7 +749,7 @@ expect "claude-code hook: off with DEPLOYS_PUSH_REMINDER=off" "$(DEPLOYS_PUSH_RE
 ss() { jq -nc --arg d "${1:-$tmp/cc}" '{hook_event_name:"SessionStart",source:"startup",cwd:$d}' | "$hook" --session-start; echo "exit=$?"; }
 expect "claude-code session hint: off by default" "$(ss)" "exit=0"
 out="$(CLAUDE_PLUGIN_OPTION_SESSION_HINT=true ss)"
-expect "claude-code session hint: the folder's repo" "$(head -1 <<<"$out" | jq -r .systemMessage)" "Deploy Center: 4 commits waiting on app-web, changes waiting on api: deploy when ready (deploys changed)"
+expect "claude-code session hint: the folder's repo" "$(head -1 <<<"$out" | jq -r .systemMessage)" "Deploy Center: 4 commits waiting on app-web, changes waiting on api (its last build failed: /deploy-center:deploys-fix api): deploy when ready (deploys changed)"
 expect "claude-code session hint: event name" "$(head -1 <<<"$out" | jq -r .hookSpecificOutput.hookEventName)" SessionStart
 expect "claude-code session hint: quiet for another repo" "$(CLAUDE_PLUGIN_OPTION_SESSION_HINT=true ss "$tmp/cc-other")" "exit=0"
 expect "claude-code session hint: DEPLOYS_SESSION_HINT=off wins" "$(DEPLOYS_SESSION_HINT=off CLAUDE_PLUGIN_OPTION_SESSION_HINT=true ss)" "exit=0"
@@ -765,6 +811,9 @@ expect "classify: own lists replace the defaults; @ patterns match co-author ema
   '["human","agent","agent","human","agent"]'
 expect "classify: . in a pattern is a dot, not any character" "$(echo '[{"author":"ciXhelper"}]' | DEPLOYS_AGENT_AUTHORS='ci.helper' classify | jq -r '.[0].kind')" human
 expect "classify: no commits, no list" "$(echo 'null' | classify | jq -c .)" '[]'
+expect "classify: a person called Devin or Claude is not the agent" "$(echo '[{"author":"dev-one","coAuthors":[{"name":"Devin Miller","email":"devin@example.test"}]},{"author":"dev-one","coAuthors":[{"name":"Claude Martin","email":"claude@example.test"}]}]' | classify | jq -c 'map(.kind)')" '["human","human"]'
+expect "classify: the agent's own co-author lines still count" "$(echo '[{"author":"x","coAuthors":[{"name":"Claude Opus 4.5"}]},{"author":"x","coAuthors":[{"name":"X","email":"noreply@anthropic.com"}]},{"author":"x","coAuthors":[{"name":"Copilot","email":"175728472+Copilot@users.noreply.github.com"}]}]' | classify | jq -c 'map(.kind)')" '["agent","agent","agent"]'
+expect "classify: a bot's pull request with a human commit" "$(echo '[{"author":"ana","prBot":true},{"author":"ana"}]' | classify | jq -c 'map(.kind)')" '["agent","human"]'
 expect "classify: runs alone too" "$(echo '[{"author":"devin"}]' | digest/classify.sh | jq -r '.[0].kind')" agent
 
 # --- digest ---
@@ -793,6 +842,8 @@ expect "digest: a pull request shared by two projects read at once" "$(FAKE_GH_S
 mv "$tmp/details-api.keep" "$tmp/details-api.json"
 expect "digest: without gh, commit messages stand in for PR titles" \
   "$(PATH="$nogh" RENDER_API_KEY=x digest/digest.sh --json | jq -c '.projects[0].prs | map(.title)')" '["Add login page (#12)","Update copy (#13)"]'
+expect "digest: no gh, no author: the unread pull requests are counted" "$(PATH="$nogh" RENDER_API_KEY=x digest/digest.sh --json | jq -c '[.prsUnread, .projects[0].prsUnread]')" '[3,2]'
+contains "digest: and said in the text" "$(PATH="$nogh" RENDER_API_KEY=x digest/digest.sh)" "pull requests could not be read"
 j="$(FAKE_GITLAB=1 RENDER_API_KEY=x digest/digest.sh --json)"
 expect "digest: GitLab merge requests through glab" "$(jq -c '.projects[0].prs | map([.number, .title, .url])' <<<"$j")" \
   '[[12,"MR login","https://gitlab.com/grp/sub/app/-/merge_requests/12"],[13,"MR copy","https://gitlab.com/grp/sub/app/-/merge_requests/13"]]'

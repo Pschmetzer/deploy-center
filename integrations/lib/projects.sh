@@ -13,16 +13,16 @@ DEPLOYS="${DEPLOYS:-deploys}"
 
 all_projects() {
   local out rc=0 err
-  err="$(mktemp)"
+  err="$(mktemp)" || return 1
+  # Removed when the function returns, also when a caller's set -e stops it half way.
+  trap 'rm -f "$err"; trap - RETURN' RETURN
   out="$("$DEPLOYS" list --json 2>"$err" </dev/null)" || rc=$?
   if jq -e 'type=="array"' <<<"${out:-null}" >/dev/null 2>&1; then
     [ "$rc" = 0 ] || echo "Warning: deploys list could not read every provider; the list may be short. $(tail -n 1 "$err")" >&2
-    rm -f "$err"
     jq -c . <<<"$out"
     return 0
   fi
   echo "Error: deploys list --json gave no list (exit $rc). $(tail -n 1 "$err")" >&2
-  rm -f "$err"
   echo '[]'
   return 1
 }
@@ -38,17 +38,17 @@ ignored_names() {
 # project could not be read; the list of the others is still used.
 changed_projects() {
   local out rc=0 err
-  err="$(mktemp)"
+  err="$(mktemp)" || return 1
+  # Removed when the function returns, also when a caller's set -e stops it half way.
+  trap 'rm -f "$err"; trap - RETURN' RETURN
   out="$("$DEPLOYS" changed --json 2>"$err" </dev/null)" || rc=$?
   if jq -e 'type=="array"' <<<"${out:-null}" >/dev/null 2>&1; then
     [ "$rc" = 0 ] || echo "Warning: deploys changed could not read every project; the list may be short. $(tail -n 1 "$err")" >&2
-    rm -f "$err"
     jq -c . <<<"$out"
     return 0
   fi
   # No list at all: never stand for "nothing waiting".
   echo "Error: deploys changed --json gave no list (exit $rc). $(tail -n 1 "$err")" >&2
-  rm -f "$err"
   echo '[]'
   return 1
 }

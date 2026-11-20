@@ -100,6 +100,23 @@ test("followStep: wait for the build, then live or failed", () => {
   assert.equal(followStep({ building: false, failed: false }, false, 8), "live");
 });
 
+test("followStep: a canceled build is not live", () => {
+  assert.equal(followStep({ building: false, failed: false, canceled: true }, true, 2), "canceled");
+  assert.equal(followStep({ building: false, failed: false, canceled: true }, false, 8), "canceled");
+  assert.equal(followStep({ building: false, failed: false, canceled: true }, false, 2), "wait");
+  assert.equal(followStep({ building: false, failed: true, canceled: false }, true, 2), "failed");
+});
+
+test("a canceled phase is read, and a project with only canceled builds is not failed", () => {
+  const [p] = mergeProjects(null, [{ name: "a", platform: "vercel", phase: "canceled", state: "CANCELED" }]);
+  assert.equal(p.canceled, true);
+  assert.equal(p.failed, false);
+  assert.equal(p.building, false);
+  const [q] = mergeProjects(null, [{ name: "b", platform: "vercel", state: "CANCELED" }]);
+  assert.equal(q.canceled, true);
+  assert.equal(statusText(summarize([p, q])), "$(check) up to date");
+});
+
 test("age rounds down: 23.6 h is 23 h, 36 h is 1 d", () => {
   assert.equal(age(23.6 * 3600), "23 h");
   assert.equal(age(36 * 3600), "1 d");

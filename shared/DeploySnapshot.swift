@@ -121,9 +121,28 @@ struct DeploySnapshot: Codable, Equatable {
 
     /// Any version that decodes: a newer app may add optional fields, and an older widget still shows
     /// what it knows instead of "Open the app". A change that breaks this must rename a field.
-    static func read(_ url: URL? = groupURL) -> DeploySnapshot? {
-        guard let url, let data = try? Data(contentsOf: url) else { return nil }
-        return try? decoder.decode(DeploySnapshot.self, from: data)
+    static func read(_ url: URL? = groupURL) -> DeploySnapshot? { readOutcome(url).snapshot }
+
+    /// Why there is no snapshot to show: no file yet, a file that does not read, or a file that a newer app wrote
+    /// (this widget is older than the app and needs the update). The widget says which, instead of always
+    /// asking to open the app.
+    enum ReadProblem: Equatable { case missing, unreadable, appNewer }
+
+    static func readOutcome(_ url: URL? = groupURL) -> (snapshot: DeploySnapshot?, problem: ReadProblem?) {
+        guard let url, let data = try? Data(contentsOf: url) else { return (nil, .missing) }
+        if let s = try? decoder.decode(DeploySnapshot.self, from: data) { return (s, nil) }
+        struct Head: Decodable { let version: Int? }
+        if let v = (try? decoder.decode(Head.self, from: data))?.version, v > Self.version { return (nil, .appNewer) }
+        return (nil, .unreadable)
+    }
+
+    /// How much the Smart Stack should raise the widget: 10 for a failed deploy, 6 for a build that runs longer
+    /// than 15 minutes, 3 for a project that has waited over a day, else nil.
+    func relevanceScore(at now: Date) -> Float? {
+        if failed > 0 { return 10 }
+        if projects.contains(where: { $0.status == .building && ($0.since.map { now.timeIntervalSince($0) > 15 * 60 } ?? false) }) { return 6 }
+        if projects.contains(where: { $0.status == .waiting && ($0.since.map { now.timeIntervalSince($0) > 24 * 3600 } ?? false) }) { return 3 }
+        return nil
     }
 
     /// Made-up numbers for the widget gallery, the simulator and screenshots.

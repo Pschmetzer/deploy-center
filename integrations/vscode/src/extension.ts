@@ -51,6 +51,8 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   private run: Runner | null = null;
   private all: Project[] = [];
   shown: Project[] = [];
+  /** Told how many shown projects wait, after every render (the Activity Bar badge). */
+  onShown?: (waiting: number) => void;
   matched = false;
   private warning: string | null = null;
   /** The estimate of the next deploy, read after the list so a slow plan never holds it back. */
@@ -152,6 +154,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     void vscode.commands.executeCommand("setContext", "deployCenter.state", state);
     void vscode.commands.executeCommand("setContext", "deployCenter.repoWaiting", this.matched && this.shown.some((p) => p.waiting));
     this.changed.fire(undefined);
+    this.onShown?.(state === "ok" ? this.shown.filter((p) => p.waiting).length : 0);
     const s = this.status;
     s.backgroundColor = undefined;
     if (state === "missing") {
@@ -196,7 +199,9 @@ export class Controller implements vscode.TreeDataProvider<Project> {
       : new vscode.ThemeIcon("check", new vscode.ThemeColor("charts.green"));
     item.contextValue = ["project", p.waiting && "waiting", p.failed && "failed", p.building && "building",
       canPreview(p) && "can-preview", canRollback(p) && "can-rollback"].filter(Boolean).join(" ");
-    item.command = { command: "deployCenter.menu", title: "Actions", arguments: [p] };
+    item.command = { command: "deployCenter.menu", title: t("Actions"), arguments: [p] };
+    // Screen readers: the name and the state in words, not only a colour and an icon.
+    item.accessibilityInformation = { label: `${p.name}, ${describe(p)}`, role: "treeitem" };
     return item;
   }
 
@@ -312,6 +317,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
       const step = followStep(now, seen, looks);
       if (step === "wait") continue;
       if (step === "live") void vscode.window.showInformationMessage(t("{0} is live.", p.name));
+      if (step === "canceled") void vscode.window.showWarningMessage(t("{0}: the build was canceled.", p.name));
       if (step === "failed" && now) {
         const ai = t("Copy for AI"), logBtn = t("Show log");
         const btn = await vscode.window.showErrorMessage(t("{0}: the build failed.", p.name), ai, logBtn);
@@ -383,6 +389,8 @@ export class Controller implements vscode.TreeDataProvider<Project> {
       return out;
     });
     for (const r of results) this.output.appendLine(r.text);
+    // A failed build of one of them is said at its end, as after a single deploy.
+    results.forEach((r, i) => { if (r.ok) void this.follow(waiting[i]); });
     const bad = results.filter((r) => !r.ok);
     const msg = t("{0} started, {1} failed to start.", results.length - bad.length, bad.length);
     if (bad.length) void vscode.window.showErrorMessage(`${msg} ${bad.map((b) => b.text).join("; ")}`, t("Show output")).then((b) => { if (b) this.output.show(); });
@@ -409,7 +417,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     this.logChanged.fire(uri);
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: true });
-    this.output.appendLine(`[${new Date().toLocaleTimeString()}] Opened the build log of ${p.name}.`);
+    this.output.appendLine(`[${new Date().toLocaleTimeString()}] ${t("Opened the build log of {0}.", p.name)}`);
     if (p.failed) {
       const b = await vscode.window.showWarningMessage(t("The newest build of {0} failed.", p.name), t("Copy for AI"));
       if (b) await this.copyForAi(p, log);
@@ -466,6 +474,10 @@ export function activate(context: vscode.ExtensionContext): void {
   reg("deployCenter.copyNotes", async (a) => { const p = await c.pick(a, (x) => x.waiting || !c.shown.some((y) => y.waiting)); if (p) await c.copyNotes(p); });
 
   const tree = vscode.window.createTreeView("deployCenter.projects", { treeDataProvider: c, showCollapseAll: false });
+  c.onShown = (waiting) => {
+    // The Activity Bar icon shows how many projects wait; nothing (undefined) when none does.
+    tree.badge = waiting > 0 ? { value: waiting, tooltip: count(waiting, "{0} project waiting", "{0} projects waiting") } : undefined;
+  };
   context.subscriptions.push(c, tree,
     vscode.workspace.registerTextDocumentContentProvider(LOG_SCHEME, c.logProvider),
     vscode.window.onDidChangeWindowState((s) => { if (s.focused) c.onFocus(); }),

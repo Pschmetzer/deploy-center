@@ -13,7 +13,7 @@
 #   DEPLOYS_DIGEST_REPO      owner/repo that holds approve-deploy.yml (and gets the issue). Without
 #                            it the message has no button and --issue refuses.
 #   DEPLOYS_DIGEST_WORKFLOW  the workflow file in that repo (default approve-deploy.yml)
-#   DEPLOYS_NOTIFY_URL, DEPLOYS_NOTIFY_FORMAT   as for notify.sh (the URL is a secret)
+#   DEPLOYS_NOTIFY_URL, DEPLOYS_NOTIFY_URL_FILE, DEPLOYS_NOTIFY_FORMAT   as for notify.sh (the URL is a secret)
 #   DEPLOYS_AGENT_AUTHORS, DEPLOYS_AGENT_LABELS who counts as an agent (see classify.sh)
 #   DEPLOYS                  the CLI to call (default: deploys on PATH)
 #   GH_TOKEN                 for gh: reads pull requests, writes the issue
@@ -45,7 +45,8 @@ done
 [ "$json" = 1 ] && { [ "$issue" = 1 ] || [ "$post" = 1 ]; } && { echo "--json prints the digest only; use it without --issue and --post" >&2; exit 1; }
 repo="${DEPLOYS_DIGEST_REPO:-}"
 workflow="${DEPLOYS_DIGEST_WORKFLOW:-approve-deploy.yml}"
-url="${DEPLOYS_NOTIFY_URL:-}"
+urls="$(webhook_urls)" || exit 1
+url="$(printf '%s\n' "$urls" | head -n 1)"
 if [ -n "$repo" ]; then
   [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "DEPLOYS_DIGEST_REPO must be owner/repo" >&2; exit 1; }
   [[ "$workflow" =~ ^[A-Za-z0-9_.-]+\.ya?ml$ ]] || { echo "DEPLOYS_DIGEST_WORKFLOW must be a file name like approve-deploy.yml" >&2; exit 1; }
@@ -67,7 +68,11 @@ partial=false; [ "$rc" = 0 ] || partial=true
 
 has_gh=0; command -v gh >/dev/null 2>&1 && has_gh=1
 has_glab=0; command -v glab >/dev/null 2>&1 && has_glab=1
-has_risk=0; "$DEPLOYS" --help 2>/dev/null | grep -qE '^[[:space:]]*deploys risk' && has_risk=1
+# Does this CLI have `risk`? Asked by running it (`risk` with no project prints its usage and exits
+# 2), not by reading the help text, whose layout may change. 127 or "unknown command" means no.
+has_risk=0
+rk_rc=0; rk="$("$DEPLOYS" risk </dev/null 2>&1)" || rk_rc=$?
+if [ "$rk_rc" != 127 ] && ! grep -qiE 'unknown (command|subcommand)|no such command|not a command' <<<"$rk"; then has_risk=1; fi
 
 # The facts of one pull request (GitHub) or merge request (GitLab), read once per repo and number.
 # A repo is owner/name on GitHub and host/group[/sub]/name elsewhere, as deploys writes it. Any
@@ -90,7 +95,8 @@ pr_facts() {
               prBot:((.author.bot // false) or ((.author.username // "") | test("\\[bot\\]|dependabot|renovate|^(project|group)_[0-9]+_bot"; "i"))),
               prLabels:((.labels // []) | map(if type == "object" then .name else . end)), prBranch:.source_branch}' 2>/dev/null; } > "$t" || true
     fi
-    jq -e 'type == "object" and .number != null' "$t" >/dev/null 2>&1 || echo "{\"number\":$n}" > "$t"
+    # A pull request that could not be read (rate limit, no token, 403) is marked, not taken for a person's.
+    jq -e 'type == "object" and .number != null' "$t" >/dev/null 2>&1 || echo "{\"number\":$n,\"unread\":true}" > "$t"
     mv -f "$t" "$f"
   fi
   cat "$f"
@@ -123,8 +129,8 @@ one_project() {
   commits="$(jq -c --slurpfile prs "$prs" '
     ($prs | map({key:(.number | tostring), value:.}) | from_entries) as $by
     | (.commits // []) | map(. + (if .pr then ($by[.pr | tostring] // {} | {prAuthor, prBot, prLabels, prBranch, prTitle:.title, prUrl:.url} | with_entries(select(.value != null))) else {} end))' <<<"$d" | classify)"
-  jq -c --argjson d "$d" --argjson c "$commits" --argjson risk "$(risk_hints "$name")" '
-    {name, platform:(.platform // null), repo:(.repo // null), ref:(.ref // null), pending:(.pendingCommits // null),
+  jq -c --argjson d "$d" --argjson c "$commits" --argjson risk "$(risk_hints "$name")" --argjson unread "$(jq -s --arg r "$prepo" 'map(select(.unread == true) | "\($r)#\(.number)")' "$prs")" '
+    {name, platform:(.platform // null), repo:(.repo // null), ref:(.ref // null), pending:(.pendingCommits // null), unreadPrs:$unread, prsUnread:($unread | length),
      known:($d != null), compareUrl:($d.compareUrl // null),
      agent:($c | map(select(.kind == "agent")) | length), human:($c | map(select(.kind == "human")) | length),
      prs:($c | map(select(.pr)) | group_by(.pr) | map({number:.[0].pr, title:(.[0].prTitle // .[0].msg), url:(.[0].prUrl // null),
@@ -155,8 +161,16 @@ done
 
 digest="$(jq -s --arg date "$today" --arg title "$title" --argjson partial "$partial" '
   {date:$date, title:$title, partial:$partial, projects:.,
-   names:(map(.name | select(test("^[A-Za-z0-9._-]+$")))),
+   # A name on two platforms is listed as platform:name (approve-deploy.yml reads that form). A name
+   # with other characters cannot be approved by name and is left out (said on stderr below).
+   names:(. as $all | map(.name as $n | (if (($all | map(select(.name == $n)) | length) > 1) and .platform then "\(.platform):\($n)" else $n end)
+            | select(test("^([a-z0-9]+:)?[A-Za-z0-9._-]+$")))
+          | reduce .[] as $x ([]; if index($x) then . else . + [$x] end)),
+   # Distinct pull requests (two projects of one repo share them), not one per project.
+   prsUnread:([.[].unreadPrs // []] | add | unique | length),
    agent:(map(.agent) | add // 0), human:(map(.human) | add // 0)}' "$tmp/projects.jsonl")"
+skipped="$(jq -r '[.projects[].name] - [.names[] | sub("^[a-z0-9]+:"; "")] | join(", ")' <<<"$digest")"
+[ -z "$skipped" ] || echo "Left out of the approval list (the name has characters a list cannot carry): $skipped" >&2
 
 if [ "$json" = 1 ]; then echo "$digest"; [ -n "$out" ] && echo "$digest" > "$out"; exit 0; fi
 
@@ -171,6 +185,7 @@ markdown="$(jq -r '
   (if (.projects | length) == 0 then "Nothing waiting: every project is on its newest commit."
    else "\(.projects | length) project\(if (.projects | length) == 1 then "" else "s" end) waiting: \(.agent) commit\(if .agent == 1 then "" else "s" end) by agents, \(.human) by people." end),
   (if .partial then "", "Some projects could not be read and are left out (see `deploys changed`)." else empty end),
+  (if (.prsUnread // 0) > 0 then "", "\(.prsUnread) pull request\(if .prsUnread == 1 then "" else "s" end) could not be read (author and labels unknown); their commits count as human." else empty end),
   (.projects[] |
     "", "## \(.name | safe)" + ([.platform, .repo] | map(select(.) | safe) | if length > 0 then " (\(join(", ")))" else "" end), "",
     (if .known then "\(.agent + .human) commit\(if (.agent + .human) == 1 then "" else "s" end) waiting: \(.agent) agent, \(.human) human"
@@ -263,6 +278,7 @@ if [ "$post" = 1 ]; then
     def safe: tostring | gsub("@"; "@\u200b") | gsub("\\["; "(") | gsub("\\]"; ")") | gsub("<"; "\u2039") | gsub(">"; "\u203a") | gsub("[\u0000-\u001f\u202a-\u202e\u2066-\u2069]"; " ");
     "\(.title)",
     (if .partial then "(List incomplete: some projects could not be read.)" else empty end),
+    (if (.prsUnread // 0) > 0 then "(\(.prsUnread) PR(s) could not be read: counted as human.)" else empty end),
     (if (.projects | length) == 0 then "Nothing waiting." else
       "\(.agent) agent and \(.human) human commit\(if .human == 1 then "" else "s" end) in \(.projects | length) project\(if (.projects | length) == 1 then "" else "s" end).",
       (.projects[] | "• \(.name): " + (if .known then "\(.agent) agent, \(.human) human" else "changes waiting" end)

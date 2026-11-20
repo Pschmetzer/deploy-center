@@ -110,3 +110,18 @@ export function costText(t: PlanTotal | null | undefined): string {
   const usd = `≈ $${(Math.round(t.usd * 100) / 100).toFixed(2)}`;
   return (t.unpriced ?? 0) > 0 ? `${usd} + ${t.unpriced} unpriced` : usd;
 }
+
+// The environment for `deploys`: an allowlist, like the MCP server's. Everything else of Raycast's
+// (other extensions' tokens, model keys, agents) stays out; GIT_ASKPASS and GIT_SSH_COMMAND run programs.
+const FOR_CLI = new RegExp(
+  "^(?:PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TERM|TZ|LANG|LANGUAGE|LC_[A-Z_]+|XDG_[A-Z_]+|" +
+    "(?:HTTPS?|NO|ALL)_PROXY|(?:https?|no|all)_proxy|SSL_CERT_(?:FILE|DIR)|NODE_EXTRA_CA_CERTS|CURL_CA_BUNDLE|" +
+    "DEPLOYS_[A-Z0-9_]+|VERCEL_[A-Z0-9_]+|RENDER_[A-Z0-9_]+|NETLIFY_[A-Z0-9_]+|CLOUDFLARE_[A-Z0-9_]+|CF_[A-Z0-9_]+|" +
+    "COOLIFY_[A-Z0-9_]+|DIGITALOCEAN_[A-Z0-9_]+|DO_[A-Z0-9_]+|AWS_[A-Z0-9_]+|GH_[A-Z0-9_]+|GITHUB_TOKEN|GITLAB_[A-Z0-9_]+|" +
+    "GIT_TERMINAL_PROMPT|GIT_SSL_CAINFO|GIT_SSL_CAPATH|GIT_CONFIG_NOSYSTEM)$",
+);
+export function cliEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(env)) if (FOR_CLI.test(k)) out[k] = v;
+  return out;
+}

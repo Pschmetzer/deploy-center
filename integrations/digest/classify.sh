@@ -12,7 +12,7 @@
 #   1. bot       GitHub says the author is a bot account (bot or prBot)
 #   2. author    the author login matches a pattern in DEPLOYS_AGENT_AUTHORS
 #   3. co-author a Co-Authored-By trailer names one (pattern with @ is matched against the email,
-#                otherwise against the name and its first word)
+#                otherwise against the whole name: "Devin Miller" is a person, not the agent "devin")
 #   4. label     the pull request has a label in DEPLOYS_AGENT_LABELS
 #   5. pr author the pull request was opened by a matching login
 #   6. branch    the pull request's branch starts with a prefix in DEPLOYS_AGENT_BRANCHES
@@ -23,7 +23,7 @@
 #   DEPLOYS_AGENT_LABELS   exact label names. Default: see DEFAULT_AGENT_LABELS below.
 #   DEPLOYS_AGENT_BRANCHES branch prefixes. Default: see DEFAULT_AGENT_BRANCHES below.
 
-DEFAULT_AGENT_AUTHORS='*[bot] claude claude-code cursor cursoragent cursor-agent devin devin-ai-integration codex chatgpt-codex-connector copilot copilot-swe-agent'
+DEFAULT_AGENT_AUTHORS='*[bot] claude claude-code cursor cursoragent cursor-agent devin devin-ai-integration codex chatgpt-codex-connector copilot copilot-swe-agent *@anthropic.com claude?opus* claude?sonnet* claude?haiku* *copilot*@users.noreply.github.com cursoragent@cursor.com'
 DEFAULT_AGENT_LABELS='agent ai-generated ai claude codex cursor devin copilot'
 DEFAULT_AGENT_BRANCHES='claude/ cursor/ codex/ copilot/ devin/'
 
@@ -39,7 +39,7 @@ classify() {
     | ($authors | map(select(contains("@")) | glob_re)) as $emails
     | def login_hit: (. // "" | ascii_downcase) as $l | ($l != "") and any($names[]; . as $r | $l | test($r));
       def coauthor_hit:
-        ((.name // "" | ascii_downcase) as $n | ($n != "") and any($names[]; . as $r | ($n | test($r)) or (($n | split(" ")[0]) | test($r))))
+        ((.name // "" | ascii_downcase) as $n | ($n != "") and any($names[]; . as $r | $n | test($r)))
         or ((.email // "" | ascii_downcase) as $e | ($e != "") and any($emails[]; . as $r | $e | test($r)));
     if type != "array" then [] else . end
     | map(. as $c

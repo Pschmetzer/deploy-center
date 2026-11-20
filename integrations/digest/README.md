@@ -94,7 +94,7 @@ It reads JSON and calls only jq, so it also works alone:
 |---|---|
 | `digest.sh` | Print the digest as Markdown. `--out file` also writes it, `--json` prints JSON. |
 | `--issue` | Open or update today's issue in `DEPLOYS_DIGEST_REPO` (needs `gh`). |
-| `--post` | Send a short version to `DEPLOYS_NOTIFY_URL`, with the button when `DEPLOYS_DIGEST_REPO` is set. |
+| `--post` | Send a short version to `DEPLOYS_NOTIFY_URL` (or the URL in the file `DEPLOYS_NOTIFY_URL_FILE`), with the button when `DEPLOYS_DIGEST_REPO` is set. |
 | `--dry-run` | With `--issue`/`--post`: print what would be sent. |
 
 It reads `deploys changed --json` (so `deploys ignore` applies), then `deploys details` per

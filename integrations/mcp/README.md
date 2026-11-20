@@ -106,7 +106,7 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_creds(max_age?)` | `deploys creds --max-age <n> --json` | Where each host's key comes from, whether it is accepted, and its age. The key is never shown. |
 | `deploys_journal_report(month?)` | `deploys journal report [--month YYYY-MM]` | What happened in a month, as Markdown, from the local journal. |
 | `deploys_status(project?)` | `deploys status --json` | What is building, and the newest state of each project (failed ones too). With `project`: only that one, via `--no-github` (no GitHub calls), to follow a deploy. |
-| `deploys_list` | `deploys list --json` | Every project with its platform, repo, branch and auto-deploy flag. No GitHub calls. |
+| `deploys_list(platform?, query?, limit?)` | `deploys list --json` | Every project with its platform, repo, branch and auto-deploy flag. No GitHub calls. The filters narrow the list before it is cut to fit (`deploys_changed` and `deploys_status` take them too; `deploys_status` also `only_failed`). |
 | `deploys_risk(project)` | `deploys risk <p> --json` | Green, yellow or red for what waits: migrations, lockfiles, config, size. |
 | `deploys_diff(project)` | `deploys diff <p>` | Commits and files between what is live and the branch. |
 | `deploys_history(project, count?)` | `deploys history <p> <n>` | The last deploys (default 10): when, state, commit, source. Read it before a rollback. |
@@ -116,6 +116,7 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_guard_status()` | `deploys guard status --json` | Is the auto-deploy guard on, when did it last run, what did it turn off. Read-only. |
 | `deploys_allowed()` | `deploys autodeploy allowed --json` | Projects with a time-limited auto-deploy allowance right now. Read-only; revoking is not offered. |
 | `deploys_doctor` | `deploys doctor` | Tools and logins, as JSON. No key is printed. |
+| `deploys_providers` | `deploys providers --json` | The platforms `deploys` knows with what each can do: off, sha, cancel, rollback, logs, preview. Read it before suggesting a preview or a rollback on a platform. |
 | `deploys_simulate(days?)` | `deploys simulate --days <n> --json` | Estimate: what auto-deploy would cost per month (builds, minutes, USD) vs. deploying once a day. `days` 1–90, default 30. |
 | `deploys_ledger` | `deploys ledger --json` | Estimate: builds skipped and minutes and USD saved since auto-deploy was turned off. |
 | `deploys_deploy(project, preview?, force?)` | `deploys <platform> deploy-json <p> [--preview]` | Only with `DEPLOYS_MCP_ALLOW_DEPLOY=1` (or `preview`). Any platform `deploys` knows; the CLI checks the deploy window and approvals. Returns `id`, `url`, `state`. No preview on Render. A production deploy of a project with nothing waiting needs `force: true`. |

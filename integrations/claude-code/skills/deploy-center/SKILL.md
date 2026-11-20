@@ -2,7 +2,7 @@
 name: deploy-center
 description: Works with the Deploy Center `deploys` CLI for Vercel, Render, Netlify and other hosts whose Git auto-deploy is off. Use after a git push, when the user asks what is waiting to go live, when a deploy or build failed, when asked to deploy or ship, or when asked why a push did not go live.
 when_to_use: "Triggers: git push, deploy, ship it, go live, release, build failed, deploy failed, Vercel, Render, auto-deploy, deploys changed."
-allowed-tools: Bash(deploys changed *) Bash(deploys status *) Bash(deploys logs *) Bash(deploys explain *) Bash(deploys notes *) Bash(deploys diff *) Bash(deploys history *) Bash(deploys doctor *)
+allowed-tools: Bash(deploys changed *) Bash(deploys status *) Bash(deploys logs *) Bash(deploys explain *) Bash(deploys notes *) Bash(deploys diff *) Bash(deploys history *) Bash(deploys doctor *) Bash(deploys costs *) Bash(deploys risk *) Bash(deploys ci *) Bash(deploys window *)
 ---
 
 # Deploy Center
@@ -11,8 +11,8 @@ The user deploys with Deploy Center (the Mac app and its `deploys` CLI). Git aut
 their projects (Vercel, Render and the other platforms deploys knows), so **a push does not go live**. A person decides what ships and
 when. Your job is to write and fix code, say what is waiting, and deploy only when asked.
 
-If `deploys` is not installed (`command -v deploys` finds nothing), say so once and point to
-https://deploycenter.app. Do not try to install it or work around it.
+The plugin puts a small `deploys` on the PATH that finds the CLI inside the Mac app too. If it says
+that `deploys` is not installed, say so once and point to https://deploycenter.app. Do not try to install it or work around it.
 
 ## Rule 1: never deploy without an explicit OK
 

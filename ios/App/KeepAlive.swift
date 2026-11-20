@@ -5,6 +5,7 @@
 // app reads the state again.
 
 import BackgroundTasks
+import os
 import UIKit
 
 @MainActor
@@ -48,7 +49,11 @@ final class KeepAlive {
         guard registered else { return }
         let r = BGContinuedProcessingTaskRequest(identifier: id, title: title, subtitle: subtitle)
         r.strategy = .fail     // only now, while the person waits for it, never queued for later
-        try? BGTaskScheduler.shared.submit(r)
+        // A refusal (too many pending requests, not permitted) is noted in the log: the follow then goes on only
+        // while the app runs, and the end still comes as a notification.
+        do { try BGTaskScheduler.shared.submit(r) } catch {
+            Logger(subsystem: "app.deploycenter.ios", category: "follow").notice("continued task refused: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// The state in words and a rough share of a typical build, for the system's progress.

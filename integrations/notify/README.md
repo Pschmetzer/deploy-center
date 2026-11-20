@@ -17,7 +17,17 @@ so a broken setup never looks like "nothing waiting".
 export DEPLOYS_NOTIFY_URL='https://hooks.slack.com/services/…'   # keep it secret
 integrations/notify/notify.sh
 integrations/notify/notify.sh --dry-run                          # print instead of posting
+integrations/notify/notify.sh list.json --dry-run                # options may stand before or after the list
+integrations/notify/notify.sh --link https://status.example.com  # a button (or a link line) to your status page
 ```
+
+**More than one target.** `DEPLOYS_NOTIFY_URLS` takes several URLs separated by commas (Slack and ntfy at
+once); one that fails does not stop the others, and the exit code is 1 if any failed.
+**Keep the URL out of a plist or crontab.** `DEPLOYS_NOTIFY_URL_FILE` names a file (`chmod 600`) whose first
+line is the URL; a file that group or others can read is refused. **Rotate a signing secret without an
+outage:** besides `DEPLOYS_NOTIFY_SECRET` set `DEPLOYS_NOTIFY_SECRET_PREV` (the old one) and
+`DEPLOYS_NOTIFY_KEY_ID`: the post then carries `X-Deploy-Center-Signature` (new), `X-Deploy-Center-Signature-Previous`
+(old) and `X-Deploy-Center-Key-Id`, and the receiver accepts either until the old secret is dropped.
 
 The format is guessed from the host. To choose it yourself, set `DEPLOYS_NOTIFY_FORMAT`.
 
@@ -31,7 +41,8 @@ The format is guessed from the host. To choose it yourself, set `DEPLOYS_NOTIFY_
 | `matrix` | (set `DEPLOYS_NOTIFY_FORMAT=matrix`) | `{"text": …, "username": …}` for a [matrix-hookshot](https://github.com/matrix-org/matrix-hookshot) generic webhook |
 | `custom` | never guessed: set `DEPLOYS_NOTIFY_FORMAT=custom` | Your own body for PagerDuty, Opsgenie, Zulip, a Lambda: `DEPLOYS_NOTIFY_TEMPLATE` is a jq program whose input is `{text, url, label}` and whose output is the JSON body, e.g. `{summary: .text}`. |
 | `pushover` | api.pushover.net | JSON with your keys from `DEPLOYS_PUSHOVER_TOKEN` (the app) and `DEPLOYS_PUSHOVER_USER`. URL: `https://api.pushover.net/1/messages.json` |
-| `slack` | anything else | `{"text": …}`. Slack, Mattermost, Rocket.Chat and other compatible hooks. |
+| `slack` | anything else | `{"text": …}`, with Block Kit blocks when there is a link. Slack and most compatible hooks. |
+| `plain` | never guessed: set `DEPLOYS_NOTIFY_FORMAT=plain` | `{"text": …}` and nothing else, no blocks: for a self-hosted Mattermost, Rocket.Chat or Zulip-style hook that dislikes Slack's blocks. |
 
 ntfy also takes `DEPLOYS_NOTIFY_PRIORITY` (`1`–`5`, or `min`, `low`, `default`, `high`, `urgent`),
 `DEPLOYS_NOTIFY_TAGS` (`rocket,warning`) and `DEPLOYS_NOTIFY_TOKEN`, an access token for a protected

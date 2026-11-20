@@ -44,8 +44,9 @@ const ERROR_TITLE: Record<DeploysErrorKind, string> = {
 };
 
 const AUTH_HINT =
-  "Log in to Vercel (vercel login), save a Render key (deploys render set-key) and log in to GitHub (gh auth login). " +
-  "Deploy Center's window shows what is missing.";
+  "Log in to your host (for example vercel login, or deploys render set-key for Render; Netlify, Cloudflare Pages, " +
+  "AWS Amplify, DigitalOcean and Coolify have their own keys) and to GitHub (gh auth login). " +
+  "Run deploys doctor, or open Deploy Center's window: both show which login is missing.";
 
 export function ErrorView(props: { error: unknown; onRetry: () => void }) {
   const kind = errorKind(props.error);
@@ -167,7 +168,7 @@ export async function copyBuildError(p: {
 }
 
 // One project, after the person confirmed. Shows a toast with what deploy-json answered.
-export async function deployOne(p: { name: string; platform: string; headSha?: string | null }, onDone?: () => void) {
+export async function deployOne(p: { name: string; platform: string; headSha?: string | null; projectRef?: string }, onDone?: () => void) {
   const toast = await showToast({
     style: Toast.Style.Animated,
     title: `Deploying ${p.name}`,
@@ -181,7 +182,7 @@ export async function deployOne(p: { name: string; platform: string; headSha?: s
     if (r.url) {
       toast.primaryAction = { title: "Open Deploy", onAction: () => open(r.url as string) };
     }
-    toast.secondaryAction = { title: "Show in Deploy Center", onAction: () => open(deployCenterURL(p.name)) };
+    toast.secondaryAction = { title: "Show in Deploy Center", onAction: () => open(deployCenterURL(p.projectRef ?? p.name)) };
   } catch (e) {
     toast.style = Toast.Style.Failure;
     toast.title = `${p.name}: deploy did not start`;
@@ -192,7 +193,7 @@ export async function deployOne(p: { name: string; platform: string; headSha?: s
 }
 
 export async function confirmAndDeploy(
-  p: { name: string; platform: string; headSha?: string | null },
+  p: { name: string; platform: string; headSha?: string | null; projectRef?: string },
   detail: string,
   onDone?: () => void,
 ) {

@@ -9,7 +9,8 @@ import { scopeProjects } from "../src/repo";
 
 // The bundle lives in out/test/; the fixtures stay in test/fixtures/.
 const FAKE = path.resolve(__dirname, "../../test/fixtures/deploys");
-const runner = (env: Record<string, string> = {}) => makeRunner(FAKE, childEnv({ ...process.env, ...env }));
+// The test's own DEPLOYS_FAKE_* switches are added after childEnv, which lets only the allowlisted variables through.
+const runner = (env: Record<string, string> = {}) => makeRunner(FAKE, { ...childEnv(process.env), ...env });
 
 test("findCli: setting, then the app, then ~/Applications, then PATH", () => {
   const home = "/h";
@@ -41,14 +42,14 @@ test("loadProjects: both reads merged; the folder's repo picks its projects", as
 });
 
 test("loadProjects: a partial read keeps the list and warns", async () => {
-  const l = await loadProjects(runner({ FAKE_PARTIAL: "1" }), 10_000);
+  const l = await loadProjects(runner({ DEPLOYS_FAKE_PARTIAL: "1" }), 10_000);
   assert.equal(l.failed, false);
   assert.equal(l.projects.filter((p) => p.waiting).length, 3);
   assert.equal(l.warning, "render api: branch head unknown");
 });
 
 test("loadProjects: changed failing still shows building and failed", async () => {
-  const l = await loadProjects(runner({ FAKE_CHANGED_FAIL: "1" }), 10_000);
+  const l = await loadProjects(runner({ DEPLOYS_FAKE_CHANGED_FAIL: "1" }), 10_000);
   assert.equal(l.failed, false);
   assert.equal(l.projects.filter((p) => p.waiting).length, 0);
   assert.equal(l.projects.filter((p) => p.failed).length, 1);
@@ -56,14 +57,14 @@ test("loadProjects: changed failing still shows building and failed", async () =
 });
 
 test("loadProjects: an older CLI without repo in status still matches waiting projects", async () => {
-  const l = await loadProjects(runner({ FAKE_OLD_STATUS: "1" }), 10_000);
+  const l = await loadProjects(runner({ DEPLOYS_FAKE_OLD_STATUS: "1" }), 10_000);
   const mine = scopeProjects(l.projects, ["https://github.com/me/app"], "repo");
   assert.deepEqual(mine.projects.map((p) => p.name), ["api", "app-web"]);
 });
 
 test("a CLI that does not answer is stopped at the timeout", async () => {
   const t = Date.now();
-  const l = await loadProjects(runner({ FAKE_SLEEP: "20.31" }), 500);
+  const l = await loadProjects(runner({ DEPLOYS_FAKE_SLEEP: "20.31" }), 500);
   assert.ok(Date.now() - t < 5000, "gave up in time");
   assert.equal(l.failed, true);
   assert.match(l.warning ?? "", /did not answer in time/);
@@ -73,7 +74,7 @@ test("a timeout also stops what the CLI started (its process group)", async () =
   const dir = mkdtempSync(path.join(tmpdir(), "dc-"));
   try {
     const pidfile = path.join(dir, "pid");
-    const r = await runner({ FAKE_SLEEP: "20.32", FAKE_PIDFILE: pidfile })(["changed", "--json"], 500);
+    const r = await runner({ DEPLOYS_FAKE_SLEEP: "20.32", DEPLOYS_FAKE_PIDFILE: pidfile })(["changed", "--json"], 500);
     assert.equal(r.timedOut, true);
     const pid = Number(readFileSync(pidfile, "utf8").trim());
     assert.ok(pid > 0, "the child wrote its pid");
@@ -97,7 +98,7 @@ test("arguments are passed as they are, never through a shell", async () => {
   try {
     const log = path.join(dir, "args");
     const name = "x; touch pwned $(id) `id` 'q\"";
-    const r = await runner({ FAKE_ARGS_LOG: log })(deployArgs({ platform: "vercel", name }), 5000);
+    const r = await runner({ DEPLOYS_FAKE_ARGS_LOG: log })(deployArgs({ platform: "vercel", name }), 5000);
     assert.equal(r.code, 2);
     assert.deepEqual(readFileSync(log, "utf8").split("\n").slice(0, 4), ["3", "vercel", "deploy-json", name]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -118,6 +119,9 @@ test("logs come back with stdin closed and NO_COLOR set", async () => {
   assert.equal(r.code, 0);
   assert.match(r.stdout, /npm ERR! missing script/);
   assert.equal(childEnv({ PATH: "/x" }).NO_COLOR, "1");
+  // An allowlist: the editor's own tokens and programs-running variables stay out, the CLI's own keys go in.
+  const e = childEnv({ PATH: "/x", HOME: "/h", NPM_TOKEN: "t", OPENAI_API_KEY: "k", GIT_ASKPASS: "/bin/evil", GIT_SSH_COMMAND: "x", VERCEL_TOKEN: "v", DEPLOYS_CONFIG: "/c", RENDER_API_KEY: "r" });
+  assert.deepEqual(Object.keys(e).sort(), ["DEPLOYS_CONFIG", "HOME", "NO_COLOR", "PATH", "RENDER_API_KEY", "VERCEL_TOKEN"]);
   assert.ok(childEnv({ PATH: "/x" }).PATH?.startsWith("/x:"));
 });
 
@@ -147,13 +151,13 @@ test("canPreview follows the platforms' caps", () => {
 });
 
 test("an observer-mode refusal reaches the message as one line", async () => {
-  const r = await runner({ FAKE_OBSERVER: "1" })(deployArgs({ platform: "vercel", name: "app-web" }), 5000);
+  const r = await runner({ DEPLOYS_FAKE_OBSERVER: "1" })(deployArgs({ platform: "vercel", name: "app-web" }), 5000);
   assert.equal(r.code, 1);
   assert.match(errorLine(r, "deploy"), /^Observer mode/);
 });
 
 test("a deploy start that timed out may have started: the text says so", async () => {
-  const r = await runner({ FAKE_SLEEP: "20.33" })(["vercel", "deploy-json", "app-web"], 300);
+  const r = await runner({ DEPLOYS_FAKE_SLEEP: "20.33" })(["vercel", "deploy-json", "app-web"], 300);
   assert.equal(r.timedOut, true);
   assert.match(deployFailure(r), /may have started anyway/);
   assert.equal(deployFailure({ code: 1, stdout: "", stderr: "Error: boom", timedOut: false }), "boom");

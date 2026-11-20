@@ -107,6 +107,12 @@ check("prompts and resources are offered", info?.capabilities?.prompts && info?.
 const names = await s.names();
 check("lists the read tools", JSON.stringify(names) === JSON.stringify(READ), JSON.stringify(names));
 check("no write tool without DEPLOYS_MCP_ALLOW_DEPLOY", !names.includes("deploys_deploy") && !names.includes("deploys_rollback"), JSON.stringify(names));
+{
+  // The README's tool table keeps up: every tool the server lists (and the two write tools) has a row.
+  const readme = readFileSync(join(here, "..", "mcp", "README.md"), "utf8");
+  const missing = [...names, "deploys_deploy", "deploys_rollback"].filter((n) => !readme.includes("| `" + n));
+  check("README: every tool has a row in the table", missing.length === 0, missing.join());
+}
 check("read tools are marked read-only", (await s.tools()).every((t) => t.annotations?.readOnlyHint === true));
 
 {
@@ -138,6 +144,12 @@ check("read tools are marked read-only", (await s.tools()).every((t) => t.annota
 let r = await s.call("deploys_changed");
 check("changed returns the JSON list", !r.error && JSON.stringify(JSON.parse(r.text).map((p) => p.name)) === '["app-web","api"]', r.text);
 check("changed also returns structuredContent", JSON.stringify(r.structured?.result?.map((p) => p.name)) === '["app-web","api"]', JSON.stringify(r.structured));
+r = await s.call("deploys_changed", { platform: "render" });
+check("changed: platform narrows the list before it is cut", !r.error && JSON.stringify(JSON.parse(r.text).map((p) => p.name)) === '["api"]', r.text);
+r = await s.call("deploys_changed", { query: "WEB", limit: 1 });
+check("changed: query (any case) and limit", !r.error && JSON.stringify(JSON.parse(r.text).map((p) => p.name)) === '["app-web"]', r.text);
+r = await s.call("deploys_changed", { platform: "Render!" });
+check("changed: a platform with odd characters is refused", r.error && /platform/.test(r.text), r.text);
 r = await s.call("deploys_list");
 check("list returns every project with its platform", !r.error && JSON.parse(r.text).every((p) => p.platform), r.text);
 r = await s.call("deploys_risk", { project: "app-web" });
