@@ -29,6 +29,18 @@
       "title": "Hint at session start",
       "description": "At the start of a session, one line with what is waiting to go live for this folder's repo (read-only; asks GitHub, so it is off by default).",
       "default": false
+    },
+    "deploy_gate": {
+      "type": "boolean",
+      "title": "Ask before a deploy",
+      "description": "When Claude is about to run a deploy or a rollback through deploys, ask first and show the risk and the deploy window (read-only). It never allows anything by itself.",
+      "default": true
+    },
+    "failure_hint": {
+      "type": "boolean",
+      "title": "Hint after a failed deploy",
+      "description": "After a failed deploy through deploys, point Claude to the read-only log analysis (/deploy-center:deploys-diagnose). Nothing is retried or changed.",
+      "default": true
     }
   }
 }

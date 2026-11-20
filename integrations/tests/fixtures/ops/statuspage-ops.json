@@ -1,0 +1,17 @@
+{
+  "title": "Acme status",
+  "baseUrl": "https://status.example.test/",
+  "hideMessages": true,
+  "projects": [
+    { "name": "app-web", "label": "Website", "components": [
+        { "name": "Pages", "url": "https://pages.up.test/" },
+        { "name": "Login", "url": "https://login.down.test/" } ] },
+    { "name": "api", "platform": "render", "label": "API", "url": "https://api.down.test/health" }
+  ],
+  "maintenance": [
+    { "id": "db-upgrade", "title": "Database <upgrade>", "start": "2027-01-10T22:00:00Z", "end": "2027-01-11T00:00:00Z",
+      "note": "Read-only for a short while.", "projects": ["API"] },
+    { "title": "Old window", "start": "2027-01-08T10:00:00Z", "end": "2027-01-08T11:00:00Z" },
+    { "title": "Ancient", "start": "2026-01-01T10:00:00Z", "end": "2026-01-01T11:00:00Z" }
+  ]
+}

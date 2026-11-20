@@ -42,7 +42,16 @@ An empty list means everything is live. Exit code 1 means some projects could no
 which ones (stderr names them) and still report the rest. Then stop. Do not offer to deploy in
 every message; one mention is enough.
 
+## Before a deploy
+
+When the user is about to ship, `/deploy-center:deploys-precheck <project>` reads what waits, the risk, secrets in the
+diff, the deploy window and CI, and ends with ship now, check first or wait. It deploys nothing. A hook also asks the
+user before a `deploys deploy` or `rollback` that you run, and shows the risk and the window in the question.
+
 ## When a build failed
+
+`/deploy-center:deploys-diagnose <project>` does steps 1 to 3 below read-only and names the cause without changing
+anything; a hook points to it after a failed deploy.
 
 1. `deploys status --json` shows what is building or failed.
 2. `deploys logs <project>` prints the end of the newest build log (`deploys logs <project> 200` for more).
