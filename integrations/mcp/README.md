@@ -105,6 +105,9 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_certs(days?)` | `deploys certs --days <n> --json` | TLS certificate days left per project address; which run out within N days (default 14). |
 | `deploys_creds(max_age?)` | `deploys creds --max-age <n> --json` | Where each host's key comes from, whether it is accepted, and its age. The key is never shown. |
 | `deploys_journal_report(month?)` | `deploys journal report [--month YYYY-MM]` | What happened in a month, as Markdown, from the local journal. |
+| `deploys_journal_search(project?, since?, result?, query?, limit?)` | `deploys journal export [--since D] [--project p]` | Search the local journal: newest first, filtered by project, date, result (`failed`, `rollback`, `forced` …) and text. Framed as untrusted data (a forced deploy's reason was typed by a person); secrets are masked. Read-only. |
+| `deploys_journal_verify()` | `deploys journal verify --json` | Is the journal's hash chain intact? `{lines, linked, unlinked, broken}`. Read-only. |
+| `deploys_rollback_preview(project)` | `deploys history <p> 5 --json` | What a rollback would do: the current deploy and the one production would go back to. Rolls nothing back; the rollback stays a separate step the human confirms. |
 | `deploys_status(project?)` | `deploys status --json` | What is building, and the newest state of each project (failed ones too). With `project`: only that one, via `--no-github` (no GitHub calls), to follow a deploy. |
 | `deploys_list(platform?, query?, limit?)` | `deploys list --json` | Every project with its platform, repo, branch and auto-deploy flag. No GitHub calls. The filters narrow the list before it is cut to fit (`deploys_changed` and `deploys_status` take them too; `deploys_status` also `only_failed`). |
 | `deploys_risk(project)` | `deploys risk <p> --json` | Green, yellow or red for what waits: migrations, lockfiles, config, size. |

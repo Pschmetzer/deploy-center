@@ -10,6 +10,10 @@ import {
   classify,
   cliEnv,
   costText,
+  historyLine,
+  planRowText,
+  rollbackPreview,
+  usdText,
   idleText,
   commitsText,
   isFailedState,
@@ -166,4 +170,42 @@ test("cliEnv: an allowlist, the editor's tokens and program-running variables st
     "RENDER_API_KEY",
     "VERCEL_TOKEN",
   ]);
+});
+
+test("usdText: two decimals, ? without a price", () => {
+  assert.equal(usdText(1.2), "$1.20");
+  assert.equal(usdText(0), "$0.00");
+  assert.equal(usdText(null), "?");
+  assert.equal(usdText(Number.NaN), "?");
+});
+
+test("planRowText: a price, or would not start", () => {
+  assert.equal(planRowText({ name: "web", platform: "vercel", action: "would-deploy", usd: 0.8 }), "about $0.80");
+  assert.equal(planRowText({ name: "web", platform: "vercel", action: "would-deploy", usd: null }), "about ?");
+  assert.equal(planRowText({ name: "web", platform: "vercel", action: "would-skip", usd: null }), "would not start");
+  assert.equal(planRowText({ name: "web", platform: "vercel", action: "held-by-rule" }), "would not start");
+});
+
+test("rollbackPreview: the target is the newest earlier deploy that went live", () => {
+  const r = rollbackPreview([
+    { state: "BUILDING", commit: "cccc333" },
+    { state: "ERROR", commit: "bbbb222" },
+    { state: "READY", commit: "aaaa111" },
+  ]);
+  assert.equal(r.current?.commit, "cccc333");
+  assert.equal(r.target?.commit, "aaaa111");
+});
+
+test("rollbackPreview: no earlier live deploy, or no history", () => {
+  assert.equal(rollbackPreview([{ state: "READY" }]).target, null);
+  assert.deepEqual(rollbackPreview([]), { current: null, target: null });
+  assert.deepEqual(rollbackPreview(undefined), { current: null, target: null });
+});
+
+test("historyLine: 7 characters of the commit, the state, and the time", () => {
+  assert.equal(
+    historyLine({ commit: "aaaa1111bbbb", state: "READY", when: "yesterday" }),
+    "aaaa111 · READY · yesterday",
+  );
+  assert.equal(historyLine({ state: "ERROR" }), "ERROR");
 });

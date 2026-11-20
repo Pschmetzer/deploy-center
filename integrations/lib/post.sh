@@ -122,6 +122,73 @@ webhook_body() {
   esac
 }
 
+# One finished deploy as a rich message: Slack blocks, a Discord embed, a Teams Adaptive Card; every other format
+# gets the same facts as text. The event is JSON:
+#   {"project":"web", "status":"live|failed|building|rolledback", "platform":"vercel", "duration":125,
+#    "commit":"abc1234", "url":"https://…"}      (project and status are required; duration in seconds)
+# Its link ("url") wins over the link argument. Nothing here deploys or rolls back: for a live or failed deploy the
+# message carries a rollback HINT (the commands to look and decide), as text. DEPLOYS_LANG=de for German.
+# Sets $WEBHOOK_BODY and $WEBHOOK_TYPE like webhook_body; returns 1 with a message for a bad event.
+webhook_event_body() {
+  local format="$1" ev="$2" link="${3:-}" label="${4:-Open}" norm text
+  norm="$(jq -c --arg lang "${DEPLOYS_LANG:-en}" --arg u "$link" '
+    def pad: tostring | if length < 2 then "0" + . else . end;
+    def dur: floor as $s | if $s >= 3600 then "\($s / 3600 | floor) h \(($s % 3600) / 60 | floor | pad)"
+      elif $s >= 60 then "\($s / 60 | floor) min \($s % 60 | pad) s" else "\($s) s" end;
+    (if $lang == "de" then {live:"Live", failed:"Fehlgeschlagen", building:"Baut", rolledback:"Zurückgerollt",
+        project:"Projekt", status:"Status", duration:"Dauer", commit:"Commit", platform:"Plattform",
+        is:"ist", hint:"Rollback nur nach Prüfung: deploys history %s, dann deploys rollback %s --yes. Diese Nachricht rollt nichts zurück."}
+     else {live:"Live", failed:"Failed", building:"Building", rolledback:"Rolled back",
+        project:"Project", status:"Status", duration:"Duration", commit:"Commit", platform:"Platform",
+        is:"is", hint:"Roll back only after checking: deploys history %s, then deploys rollback %s --yes. This message rolls nothing back."} end) as $t
+    | if type != "object" then error("the event must be a JSON object") else . end
+    | if (.project | type) != "string" or (.project | test("^[A-Za-z0-9._:-]{1,100}$") | not) then error("event.project must be a project name") else . end
+    | if ([.status] | inside(["live", "failed", "building", "rolledback"]) | not) then error("event.status must be live, failed, building or rolledback") else . end
+    | if .duration != null and ((.duration | type) != "number" or .duration < 0) then error("event.duration must be seconds (a number)") else . end
+    | if .commit != null and ((.commit | type) != "string" or (.commit | test("^[0-9a-fA-F]{4,40}$") | not)) then error("event.commit must be a commit id") else . end
+    | if .platform != null and ((.platform | type) != "string" or (.platform | test("^[a-z0-9]{1,30}$") | not)) then error("event.platform must be a platform id like vercel") else . end
+    | (.url // $u) as $link
+    | (if $link == null or $link == "" then ""
+       elif ($link | test("^https://[^ \"\\\\<>]+$")) or ($link | test("^http://(localhost|127\\.0\\.0\\.1)([:/][^ \"\\\\<>]*)?$")) then $link
+       else error("event.url must be an https:// address") end) as $url
+    | {project, status, title: "\(.project) \($t.is) \($t[.status])",
+       color: ({live: 3066993, failed: 15158332, building: 15844367, rolledback: 9807270}[.status]),
+       fields: ([[$t.project, .project], [$t.status, $t[.status]]]
+         + (if .platform then [[$t.platform, .platform]] else [] end)
+         + (if .duration != null then [[$t.duration, (.duration | dur)]] else [] end)
+         + (if .commit then [[$t.commit, .commit[0:7]]] else [] end)),
+       hint: (if .status == "live" or .status == "failed" then ($t.hint | sub("%s"; $ev) | sub("%s"; $ev)) else "" end),
+       url: $url}' --arg ev "$(jq -r '.project // empty' <<<"$ev" 2>/dev/null)" <<<"$ev" 2>&1)" \
+    || { echo "Bad event: $(printf '%s' "$norm" | sed -n 's/^jq: error (at [^)]*): //p' | head -n 1)" >&2; return 1; }
+  WEBHOOK_LINK="$(jq -r '.url' <<<"$norm")"; WEBHOOK_LABEL="$label"
+  case "$format" in
+    slack)   WEBHOOK_TYPE="application/json"
+             # & < > escaped (Slack's own rule), so a name cannot ping a channel or fake a link.
+             WEBHOOK_BODY="$(jq -c --arg l "$label" '
+               def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
+               {text: (.title | esc), blocks: ([
+                 {type:"header", text:{type:"plain_text", text:(.title | .[0:150])}},
+                 {type:"section", fields: (.fields | map({type:"mrkdwn", text:"*\(.[0] | esc)*\n\(.[1] | esc)"}))}]
+                + (if .hint != "" then [{type:"context", elements:[{type:"mrkdwn", text:(.hint | esc)}]}] else [] end)
+                + (if .url != "" then [{type:"actions", elements:[{type:"button", style:(if .status == "failed" then "danger" else "primary" end), text:{type:"plain_text", text:$l}, url:.url}]}] else [] end))}' <<<"$norm")" ;;
+    discord) WEBHOOK_TYPE="application/json"
+             WEBHOOK_BODY="$(jq -c '{allowed_mentions:{parse:[]}, embeds:[{title:.title, color:.color,
+               fields: (.fields | map({name:.[0], value:.[1], inline:true}))}
+               + (if .hint != "" then {footer:{text:.hint}} else {} end)
+               + (if .url != "" then {url:.url} else {} end)]}' <<<"$norm")" ;;
+    teams)   WEBHOOK_TYPE="application/json"
+             WEBHOOK_BODY="$(jq -c --arg l "$label" '{type:"message", attachments:[{contentType:"application/vnd.microsoft.card.adaptive", contentUrl:null, content:({
+               "$schema":"http://adaptivecards.io/schemas/adaptive-card.json", type:"AdaptiveCard", version:"1.4",
+               body: ([{type:"TextBlock", text:.title, weight:"Bolder", size:"Medium", wrap:true,
+                         color:({live:"Good", failed:"Attention", building:"Warning", rolledback:"Default"}[.status])},
+                       {type:"FactSet", facts:(.fields | map({title:.[0], value:.[1]}))}]
+                      + (if .hint != "" then [{type:"TextBlock", text:.hint, isSubtle:true, wrap:true, size:"Small"}] else [] end))}
+               + (if .url != "" then {actions:[{type:"Action.OpenUrl", title:$l, url:.url}]} else {} end))}]}' <<<"$norm")" ;;
+    *)       text="$(jq -r '[.title] + (.fields | map("\(.[0]): \(.[1])")) + (if .hint != "" then [.hint] else [] end) | join("\n")' <<<"$norm")"
+             webhook_body "$format" "$text" "$WEBHOOK_LINK" "$label"; return ;;
+  esac
+}
+
 webhook_send() {
   local url="$1" format="$2" f extra=()
   # http:// only to this machine (a local ntfy, a test server): elsewhere a token in the URL

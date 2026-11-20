@@ -18,6 +18,15 @@ are an estimate (minutes times the rate you set with `deploys prices`); a projec
 is counted apart. ↵ shows the project in Deploy Center. It starts nothing. Set it up like the first
 filter, with its own keyword.
 
+## What a rollback would do
+
+A third Script Filter, `deploys-rollback.sh` (keyword `dcr`), previews a rollback. Type part of a
+name, press Tab to complete it ("web "), and the list shows the newest deploy ("Now"), the deploy
+production would go back to (the newest earlier one that went live), and the newest deploys, from
+`deploys history <project> 5 --json`. ↵ shows the project in Deploy Center. It rolls nothing back:
+a rollback is done in Deploy Center or the CLI, which asks first. Set it up like the first filter,
+with its own keyword.
+
 ## Set it up
 
 1. Alfred Preferences → Workflows → **+** → Blank Workflow, name it "Deploy Center".

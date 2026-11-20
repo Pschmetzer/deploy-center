@@ -1,0 +1,46 @@
+# Example only: copy to .github/workflows/ in your own repo and adjust.
+#
+# On a pull request: what is waiting to go live and what a deploy would start, as one comment that is
+# updated on every push. It starts nothing: `dry-run: true` wins over any `deploy` value. A deploy
+# stays a separate workflow with a person's approval (see deploy-on-marker.yml).
+name: deploy plan on pull requests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # A pull request from a fork gets no secrets and a read-only token: the comment is skipped there.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # Pin to a release tag or a full commit SHA, not a branch: this step holds your tokens.
+      # @main is only here because these inputs are newer than the v0.9.1 tag.
+      - uses: Pschmetzer/deploy-center/integrations/action@main
+        id: dc
+        with:
+          deploy: dry-run
+          dry-run: "true"
+          only-changed: "true"
+          comment-on-pr: "true"
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
+          render-api-key: ${{ secrets.RENDER_API_KEY }}
+          repos-json: ${{ vars.DEPLOYS_REPOS_JSON }}
+
+      - name: Report
+        env:
+          COUNT: ${{ steps.dc.outputs.count }}
+          SKIPPED: ${{ steps.dc.outputs.skipped }}
+        run: echo "$COUNT with changes, skipped=$SKIPPED"
