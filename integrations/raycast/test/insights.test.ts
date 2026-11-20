@@ -66,10 +66,13 @@ test("parseCsv: quotes, doubled quotes, line breaks inside a field, CRLF", () =>
 test("parseJournal: newest first, the formula guard quote is taken off, multi-line details stay together", () => {
   const rows = parseJournal(fixture("journal.csv"));
   assert.equal(rows.length, 5);
-  assert.deepEqual(rows.map((r) => r.name), ["site", "api", "app-web", "app-web", "blog"]);
+  assert.deepEqual(
+    rows.map((r) => r.name),
+    ["site", "api", "app-web", "app-web", "blog"],
+  );
   assert.equal(rows[2].result, "failed");
   assert.equal(rows[2].detail, "Build failed\nsecond line of the error");
-  assert.equal(rows[4].detail, "-- forced: release \"hotfix\"");
+  assert.equal(rows[4].detail, '-- forced: release "hotfix"');
   assert.equal(rows[0].detail, "");
   assert.deepEqual(parseJournal("not,the,header\n1,2,3"), []);
 });
@@ -77,9 +80,18 @@ test("parseJournal: newest first, the formula guard quote is taken off, multi-li
 test("searchJournal: every word must match, any case; empty keeps all; a limit", () => {
   const rows = parseJournal(fixture("journal.csv"));
   assert.equal(searchJournal(rows, "").length, 5);
-  assert.deepEqual(searchJournal(rows, "APP-web failed").map((r) => r.result), ["failed"]);
-  assert.deepEqual(searchJournal(rows, "render rolled").map((r) => r.name), ["api"]);
-  assert.deepEqual(searchJournal(rows, "hotfix").map((r) => r.name), ["blog"]);
+  assert.deepEqual(
+    searchJournal(rows, "APP-web failed").map((r) => r.result),
+    ["failed"],
+  );
+  assert.deepEqual(
+    searchJournal(rows, "render rolled").map((r) => r.name),
+    ["api"],
+  );
+  assert.deepEqual(
+    searchJournal(rows, "hotfix").map((r) => r.name),
+    ["blog"],
+  );
   assert.deepEqual(searchJournal(rows, "app-web nothing"), []);
   assert.equal(searchJournal(rows, "", 2).length, 2);
 });
