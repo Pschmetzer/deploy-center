@@ -137,6 +137,18 @@ jobs:
         run: bash ios/Tests/run.sh
       - name: iPhone logic tests (rule, API clients, snapshot, from made-up JSON)
         run: bash ios/test.sh
+      - name: Smoke test on iPhone and iPad simulators (demo data, standard and largest text)
+        # Reports only for now: a simulator that will not boot must not block a PR. Make it required once it has run green a few times.
+        continue-on-error: true
+        run: bash ios/smoke.sh build/ios-dd/Build/Products/Debug-iphonesimulator/DeployCenter.app
+      - name: Smoke test screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-smoke
+          path: build/ios-smoke
+          if-no-files-found: ignore
+          retention-days: 7
 
   linux-cli:
     # The CLI on Linux (GNU date/stat/sed, bash 5), as README, Docker image and Action promise.
