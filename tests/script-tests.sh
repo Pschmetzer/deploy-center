@@ -1149,8 +1149,10 @@ expect "githost_of: an ssh remote" "$(githost_of git@gitlab.com:g/app.git)" "git
 expect "githost_of: the .repo slug" "$(githost_of gitlab.com/g/app)" "gitlab"
 expect "githost_of: a self-managed host needs GITLAB_HOST" \
   "$(githost_of git.example.com/g/app):$(GITLAB_HOST=https://git.example.com/ githost_of https://git.example.com/g/app)" "unknown:gitlab"
-expect "githost_of: or DEPLOYS_GITLAB_HOSTS, or gitlab in the name" \
-  "$(DEPLOYS_GITLAB_HOSTS="a.io code.b.io" githost_of code.b.io/g/app):$(githost_of gitlab.corp.io/g/app)" "gitlab:gitlab"
+glabcfg="$(mktemp -d)"; printf 'hosts:\n  gitlab.corp.io:\n    token: x\n' > "$glabcfg/config.yml"
+expect "githost_of: or DEPLOYS_GITLAB_HOSTS, or a gitlab host that glab knows (a name alone is not enough)" \
+  "$(DEPLOYS_GITLAB_HOSTS="a.io code.b.io" githost_of code.b.io/g/app):$(GLAB_CONFIG_DIR="$glabcfg" githost_of gitlab.corp.io/g/app):$(GLAB_CONFIG_DIR="$glabcfg" githost_of gitlab.attacker.example/g/app)" "gitlab:gitlab:unknown"
+rm -rf "$glabcfg"
 expect "githost_of: Bitbucket is neither" "$(githost_of https://bitbucket.org/me/app)" "unknown"
 expect "slug: GitHub stays owner/name, GitLab keeps its host" \
   "$(jq -nc "[\"https://github.com/me/app.git\", \"https://gitlab.com/g/s/app.git\"] | map($GITHOST_SLUG_JQ)")" '["me/app","gitlab.com/g/s/app"]'

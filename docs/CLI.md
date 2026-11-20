@@ -198,12 +198,19 @@ which are not live. The fields are those of [PROVIDERS.md](PROVIDERS.md) (`_json
 | `watch` | `0` live, `1` failed or canceled, `3` the platform could not be asked (or its answer read) five times in a row, `4` `--timeout` passed first (it may still go live) |
 | `deploy --wait`, `deploy <group>` | as `watch` for the member that stopped: `1` it failed, `3` it could not be followed, also when the platform accepted the start but named no deploy id (a group stops there) |
 | `verify` | `0` healthy, `1` failed and rolled back, `2` failed and not rolled back, `3` nothing was checked |
-| `ci` | `0` green (or no checks), `1` red, `2` still pending or GitHub not reachable; with `--json` always `0` |
+| `ci` | `0` green (or no checks), `1` red, `2` still pending or GitHub not reachable; with `--json` always `0`, unless `--exit-code` is given |
+| `certs` | `1` a certificate ends soon |
+| `creds` | `1` a key is not accepted |
+| `secrets` | `1` something that looks like a secret was found |
+| `journal verify` | `1` the hash chain is broken |
+| `doctor --text --strict` | `1` when a line says `FIX`; without `--strict` (and with the JSON) always `0` |
+| `idle` | always `0` |
 | `window` | `0` open, `1` closed, `2` window.json could not be read; with `--json` `0` unless it could not be read |
 | `autofix --only` | `2` the build did not fail, `3` a fix is already under way, `4` a cap is reached, `5` no routine set up, `6` another autofix run holds the lock ([AUTOFIX.md](AUTOFIX.md)) |
 | `deploy-changed --strict` | also `2` when a project was skipped (red or pending CI) |
 | `deploy-changed --yes` with a budget | `1` over budget (or, with `--strict`, spending unknown) without `--force "why"` |
 | a GitHub, GitLab or Vercel CLI call | `124` when it gave no answer within `DEPLOYS_CLI_TIMEOUT` seconds |
+| `with_timeout` (a hook, a provider call) | `124` when the time ran out (the perl alarm's `142` is mapped to it) |
 
 ## Environment variables
 

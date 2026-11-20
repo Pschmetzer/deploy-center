@@ -119,6 +119,26 @@ They keep their own code where `http_call` would lose something:
 stderr (without `Error:`), Cloudflare ends the command. `tests/fixtures/http/stub.sh` gives the
 provider tests an `http_call` (the real one when `lib/http.sh` is there).
 
+### Capabilities and rate limits
+
+A capability that `_meta.caps` reports as `false` must end in `die "<host> cannot <thing>"` **without
+any API call** (the contract tests may put a stub `curl` in front that must not be called).
+`deploys providers --json` shows the capabilities next to each provider.
+
+Which header asks a run to wait, where a provider reads one:
+
+| Provider | Header |
+| --- | --- |
+| everything on `http_call` (Coolify, DigitalOcean, Cloudflare calls) | `Retry-After`, a number of seconds, at most 60 (`http_retry_after` in `lib/http.sh`); an HTTP date is not read |
+| Render | `Retry-After` |
+| Netlify | `Retry-After`, and `X-RateLimit-Reset` |
+| Cloudflare (doctor, remaining calls) | `Ratelimit` (the structured header, `r=` and `t=`) |
+| Coolify (doctor, remaining calls) | `X-RateLimit-Remaining`, `X-RateLimit-Reset` (also without `X-`) |
+
+Locks around a provider's own state file are `file_lock` / `file_unlock` (a lock file made with
+`set -C`), never `mkdir`: the Rust coreutils of Ubuntu 26.04 answer a second `mkdir` of an
+existing folder with success when two run at once.
+
 ### Dispatch
 
 `deploys <p> <verb> [args]` runs `<p>_cli_<verb>` if it exists, else `<p>_<verb>` for a contract

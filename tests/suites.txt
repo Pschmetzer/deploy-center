@@ -10,6 +10,7 @@ tests/release-tests.sh
 tests/ios-rule-tests.sh
 tests/round8-tests.sh
 tests/round9-tests.sh
+tests/round12-tests.sh
 tests/welle10-tests.sh
 tests/cli-fixes-tests.sh
 tests/app-tests.sh mac full

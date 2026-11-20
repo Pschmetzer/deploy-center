@@ -49,16 +49,11 @@ netlify_hooks_file() {
 # A mkdir lock: two runs at once (a list refresh and an autodeploy-off) must not lose each
 # other's change. A lock older than a minute is a crashed run's.
 netlify_hooks_edit() {
-  local f tmp lock i=0 m rc=0; f="$(netlify_hooks_file)"; lock="$f.lock"
-  while ! mkdir "$lock" 2>/dev/null; do
-    m="$(mtime "$lock" 2>/dev/null)" || m=""
-    [ -z "$m" ] || [ $(( $(date +%s) - m )) -lt 60 ] || { rmdir "$lock" 2>/dev/null; continue; }
-    i=$((i + 1)); [ "$i" -lt 50 ] || { echo "Netlify: $f is locked by another run" >&2; return 1; }
-    sleep 0.1
-  done
+  local f tmp rc=0; f="$(netlify_hooks_file)"
+  file_lock "$f" 60 || { echo "Netlify: $f is locked by another run" >&2; return 1; }
   tmp="$(umask 077; mktemp)"
   if jq "$@" "$f" > "$tmp"; then mv "$tmp" "$f" && chmod 600 "$f" || rc=1; else rm -f "$tmp"; rc=1; fi
-  rmdir "$lock" 2>/dev/null || true
+  file_unlock "$f"
   return "$rc"
 }
 declare -F b64d >/dev/null || b64d() { base64 -D 2>/dev/null || base64 -d; }

@@ -38,7 +38,13 @@ githost_split() {
 
 # github | gitlab | unknown, from a repo URL or the slug in `.repo`.
 # GitLab: gitlab.com, the host in GITLAB_HOST, a host in DEPLOYS_GITLAB_HOSTS (spaces between),
-# or any host with "gitlab" in its name. Anything else (Bitbucket, Gitea, ...) is unknown.
+# or a host with "gitlab" in its name that glab itself knows (its config.yml lists it): a name alone
+# is not enough, or a shared deploy-center.json could send project paths to any "gitlab.<other>" host
+# that glab holds a token for. Anything else (Bitbucket, Gitea, ...) is unknown.
+glab_knows_host() {  # glab_knows_host <host>
+  local c="${GLAB_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/glab-cli}/config.yml"
+  [ -f "$c" ] && grep -qE "^[[:space:]]+$(printf '%s' "$1" | sed 's/[.[\*^$]/\\&/g'):[[:space:]]*$" "$c" 2>/dev/null
+}
 githost_of() {
   local host path h
   read -r host path < <(githost_split "${1:-}")
@@ -48,7 +54,7 @@ githost_of() {
     gitlab.com|"$(gitlab_host)") echo gitlab; return ;;
   esac
   for h in ${DEPLOYS_GITLAB_HOSTS:-}; do [ "$host" = "$h" ] && { echo gitlab; return; }; done
-  case "$host" in *gitlab*) echo gitlab ;; *) echo unknown ;; esac
+  case "$host" in *gitlab*) if glab_knows_host "$host"; then echo gitlab; else echo unknown; fi ;; *) echo unknown ;; esac
 }
 
 # jq: a platform's repo URL to the `.repo` slug. GitHub stays owner/name, as before; any other

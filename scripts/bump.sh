@@ -20,7 +20,7 @@ esac
 [[ "$new" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "not a version: $new"
 [ "$new" != "$cur" ] || die "VERSION is $cur already"
 grep -q '^## Unreleased' CHANGELOG.md || die "CHANGELOG.md has no \"## Unreleased\""
-grep -q "^## \[\{0,1\}$new\]\{0,1\}\( \|$\)" CHANGELOG.md && die "CHANGELOG.md has \"## $new\" already"
+grep -q "^## \[\{0,1\}${new//./\\.}\]\{0,1\}\( \|$\)" CHANGELOG.md && die "CHANGELOG.md has \"## $new\" already"
 awk '/^## Unreleased/{f=1;next} /^## /{f=0} f&&/^- /{n++} END{exit n?0:1}' CHANGELOG.md \
   || die "nothing under \"## Unreleased\" to release"
 # A minor or major release has many changes: the update window shows the whole section, so it should start with

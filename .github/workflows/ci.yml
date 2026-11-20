@@ -78,6 +78,8 @@ jobs:
         run: bash tests/round8-tests.sh
       - name: Round 9 tests (journal export and report)
         run: bash tests/round9-tests.sh
+      - name: Round 12 tests (locks, time limits, hooks.d, risk rules)
+        run: bash tests/round12-tests.sh
       - name: Round 10 tests (file modes, options, paging, hooks, traps, escapes)
         run: bash tests/welle10-tests.sh
       - name: CLI fixes tests (journal, launchd env, CI grace, request bodies)
@@ -161,6 +163,8 @@ jobs:
         run: bash tests/round8-tests.sh
       - name: Round 9 tests (journal export and report)
         run: bash tests/round9-tests.sh
+      - name: Round 12 tests (locks, time limits, hooks.d, risk rules)
+        run: bash tests/round12-tests.sh
       - name: Round 10 tests
         run: bash tests/welle10-tests.sh
       - name: CLI fixes tests
