@@ -20,6 +20,7 @@ declare -F die >/dev/null 2>&1 || die() { echo "Error: $*" >&2; exit 1; }
 
 # The seconds a Retry-After header asks for (a number, at most 60), or nothing.
 http_retry_after() {  # http_retry_after <header file>
+  [ -r "$1" ] || return 0
   local v; v="$(tr -d '\r' < "$1" 2>/dev/null | awk 'tolower($1) == "retry-after:" { print $2 }' | tail -n 1)"
   case "$v" in ""|*[!0-9]*) return 0 ;; esac
   [ "$v" -le 60 ] || v=60
