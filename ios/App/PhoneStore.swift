@@ -530,6 +530,14 @@ final class PhoneStore: ObservableObject {
     }
 
     /// The build this app follows, else the newest attempt the list shows.
+    /// A build that a push started (nobody pressed "Deploy" here): follow it like one started here, so the end is
+    /// reported and the Live Activity runs (IDEEN-12 C20). Starts nothing; it only watches.
+    func followBuild(_ p: PhoneProject) async {
+        guard running[p.key] == nil, p.building, let id = p.latestId, !demo else { return }
+        defer { running[p.key] = nil; deployIds[p.key] = nil }
+        await follow(p, id)
+    }
+
     func buildId(_ p: PhoneProject) -> String? { deployIds[p.key] ?? (p.building ? p.latestId : nil) }
 
     /// Keys of followed deploys the person canceled in the app: their "canceled" end is not a failure.
@@ -783,11 +791,15 @@ final class PhoneStore: ObservableObject {
         }
         let order: [DeploySnapshot.Project.Status: Int] = [.building: 0, .failed: 1, .waiting: 2]
         let sorted = rows.sorted { (order[$0.status]!, -$0.prs, $0.name) < (order[$1.status]!, -$1.prs, $1.name) }
-        // No saving on the phone: the Mac app knows what auto-deploy cost before; the widget hides the line.
+        // The saving is the Mac app's figure (handed over with the keys, a month's worth); without it the widget hides the line (IDEEN-12 C37).
+        let saving: DeploySnapshot.Saving? = {
+            guard !demo, !ignoreLink, let m = linked?.savingPerMonth, m > 0 else { return nil }
+            return .init(before: m / 30, after: 0)
+        }()
         return DeploySnapshot(at: loadedAt ?? Date(), demo: demo, waitingProjects: waiting.count,
                               waitingCommits: waiting.reduce(0) { $0 + ($1.pendingCommits ?? 0) }, waitingPRs: waitingPRs,
                               building: rows.filter { $0.status == .building }.count,
-                              failed: rows.filter { $0.status == .failed }.count, saving: nil, projects: Array(sorted.prefix(10)),
+                              failed: rows.filter { $0.status == .failed }.count, saving: saving, projects: Array(sorted.prefix(10)),
                               language: appLanguage, connected: demo || hasAccount)
     }
 
@@ -834,6 +846,10 @@ final class PhoneStore: ObservableObject {
             if p.failed && !(o?.failed ?? false) { events.append(("failed:" + p.key, p.key, L("\(p.name) failed", "\(p.name) fehlgeschlagen"))) }
             else if (o?.failed ?? false) && !p.failed && !p.building && p.liveState != nil {
                 events.append(("recovered:" + p.key, p.key, L("\(p.name) is live again", "\(p.name) ist wieder live")))
+            }
+            // A build that ran and is now live: the news that a push or deploy is through (IDEEN-12 C22).
+            else if (o?.building ?? false) && !p.building && !p.failed && p.liveState != nil && !p.canceled {
+                events.append(("live:" + p.key, p.key, L("\(p.name) is live", "\(p.name) ist live")))
             }
             else if p.group == .waiting && o?.group != .waiting { events.append(("waiting:" + p.key, p.key, L("\(p.name) is waiting", "\(p.name) wartet"))) }
         }
@@ -898,7 +914,9 @@ enum Notes {
         // One thread per project groups its history; failures rise in the notification summary, news falls.
         c.threadIdentifier = project.map { "deploy-center-" + $0 } ?? "deploy-center"
         let kind = (id ?? "").split(separator: ":").first.map(String.init) ?? ""
-        c.relevanceScore = kind == "failed" ? 1.0 : kind == "waiting" ? 0.3 : kind == "recovered" ? 0.5 : 0.7
+        c.relevanceScore = kind == "failed" ? 1.0 : kind == "waiting" ? 0.3 : kind == "recovered" ? 0.5 : kind == "live" ? 0.5 : 0.7
+        // A failure may interrupt a Focus that allows it; news that something waits or is live does not (IDEEN-12 C24).
+        c.interruptionLevel = kind == "failed" ? .active : .passive
         c.categoryIdentifier = (id ?? "").hasPrefix("waiting:") ? waitingCategory : category
         if let project { c.userInfo = ["project": project] }
         let r = UNNotificationRequest(identifier: id ?? "deploy-\(project ?? "")", content: c, trigger: nil)

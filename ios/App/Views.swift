@@ -727,6 +727,10 @@ struct ProjectDetail: View {
                           systemImage: "paperplane")
                 }
                 .disabled(!asks.canDeploy(p, store))
+                // A build that a push started: watch it here for the end note and the Live Activity.
+                if p.building, store.running[p.key] == nil, p.latestId != nil, !store.offline {
+                    Button { Task { await store.followBuild(p) } } label: { Label(L("Follow the build", "Build verfolgen"), systemImage: "eye") }
+                }
                 if store.buildId(p) != nil && (p.building || store.running[p.key].map { $0 != "rollback" && $0 != "starting" } == true) {
                     Button(role: .destructive) { confirmCancel = true } label: {
                         Label(L("Cancel the build …", "Build abbrechen …"), systemImage: "stop.circle")
@@ -759,6 +763,8 @@ struct ProjectDetail: View {
         .userActivity(Spotlight.activity, isActive: !store.demo && !PhoneStore.lockOnOpen) { a in
             a.title = p.name; a.userInfo = ["project": p.key]
             a.isEligibleForHandoff = true; a.isEligibleForSearch = false
+            // A Mac continues with the project's dashboard in its browser (IDEEN-12 C35); nothing is started by it.
+            a.webpageURL = p.dashboardURL
         }
         .confirmationDialog(renderAction.map { $0.title.replacingOccurrences(of: " …", with: "?") } ?? "",
                             isPresented: Binding(get: { renderAction != nil }, set: { if !$0 { renderAction = nil } }), titleVisibility: .visible) {
