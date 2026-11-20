@@ -2125,10 +2125,9 @@ final class Store: ObservableObject {
             let t0 = Date()
             code = await Self.probe(url, timeout: 20)
             if Self.siteVerdict(code: code, networkUp: true) == .fine {
-                if timed {
-                    noteResponseTime(item, Date().timeIntervalSince(t0)); SiteLog.note(Self.key(item), up: true)
-                    if let c = code { noteAccessChange(item, c, url: url) }
-                }
+                // Every address keeps its own last status; only the first is timed and watched.
+                if let c = code { noteAccessChange(item, c, url: url) }
+                if timed { noteResponseTime(item, Date().timeIntervalSince(t0)); SiteLog.note(Self.key(item), up: true) }
                 return true
             }
             // A 4xx is an answer (a wrong path, say): asking again will not change it.
