@@ -60,6 +60,10 @@ No key is ever printed.
   deploys risk <project> [\-\-json]           green/yellow/red for what waits: migrations, lockfiles, config, size
   deploys ci <owner/repo> [<ref>] [\-\-wait 30m]  the CI verdict of a commit: green, pending, red, none
   deploys window [\-\-json]                   is the deploy window (window.json) open now?
+  deploys freeze [status] [\-\-json]          the closed times of window.json and whether deploys are closed now
+  deploys freeze add <days> <from> [<to>] [\-\-reason "why"] | remove <n> | clear   e.g. freeze add fri 15:00
+  deploys digest [\-\-days 7] [\-\-json] [\-\-no\-savings]   the last week from the journal: deploys, failures, savings
+  deploys doctor \-\-fix [\-\-json]             what to do about each problem (shown only, nothing is run)
   \-\-force "why"                             deploy inside a closed window; the reason goes to the journal
 
   deploys providers [\-\-json]                the platforms (providers/*.sh): on or off, set up or not

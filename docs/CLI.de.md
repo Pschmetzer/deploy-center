@@ -17,6 +17,8 @@ deploys <vercel|netlify|cloudflare> previews <project>   # neueste Vorschau je P
 deploys certs [--days 14] [--json]      # TLS-Zertifikat der Adresse jedes Projekts (auch der Anbieter-Domain); Exit 1, wenn eines innerhalb von N Tagen abläuft. Ein nicht erreichbarer Host ist „unknown“, kein Fehler.
 deploys creds [--max-age 90] [--json]   # je Plattform: woher der Schlüssel kommt (Umgebung, Schlüsselbund, Login), ob er geht, wie alt ein Schlüsselbund-Schlüssel ist. Nur lesend; zeigt nie einen Schlüssel.
 deploys doctor --text                   # eine Zeile je Prüfung (ok oder das Problem), mit der Lösung
+deploys doctor --fix [--json]           # was bei jedem Problem zu tun ist, als Befehle zum Selbsttippen; zeigt nur an, führt nichts aus und ändert nichts
+deploys digest [--days 7] [--json] [--no-savings]   # die letzte Woche aus dem Journal: Deploys, Fehler, Rollbacks, aktivster Tag, Projekte und die Ersparnis aus `ledger` (eine Schätzung; --no-savings lässt sie weg, sie braucht das Netz)
 deploys list --format tsv               # Plattform, Projekt, auto oder manuell, letzter Stand: Tabs, ohne Kopfzeile, für Skripte ohne jq
 deploys idle [--days 90] [--json]       # Projekte ohne Deploy seit N Tagen: Kandidaten zum Pausieren (nur lesend)
 deploys changed                         # was auf GitHub gemergt und nicht live ist: Commits und PRs je Projekt
@@ -33,6 +35,9 @@ deploys ignore mein-projekt             # aus changed / deploy-changed herauslas
 deploys list                            # jedes Projekt jeder eingeschalteten Plattform
 ```
 
+`freeze` schreibt nur die `deny`-Liste von `window.json` (`tz` und andere Schlüssel bleiben) und startet nichts; im Beobachter-Modus ist es erlaubt, weil es nur Zeiten sperrt. Eine `window.json`, die nicht lesbar ist, wird nie überschrieben.
+`--json` gibt es bei jedem Befehl, der etwas auflistet: `list`, `idle`, `certs`, `creds`, `plan`, `history`, `providers`, `window`, `freeze`, `digest`, `doctor --fix`, `ignore --list`, `team list`, `scan list` und `autofix list`.
+
 ## Sicher deployen ([SAFE-DEPLOY.md](SAFE-DEPLOY.md), englisch)
 
 ```bash
@@ -40,6 +45,10 @@ deploys verify mein-projekt [--path /health] [--no-rollback]   # die Seite frage
 deploys risk mein-projekt               # grün/gelb/rot für das, was wartet
 deploys ci owner/repo [<ref>] [--wait 30m]   # das CI-Urteil eines Commits
 deploys window                          # ist das Deploy-Fenster (window.json) jetzt offen?
+deploys freeze                          # die gesperrten Zeiten aus window.json, nummeriert, und ob Deploys jetzt gesperrt sind (auch --json)
+deploys freeze add fri 15:00            # freitags ab 15 Uhr sperren (<Tage>: fri, fri,sat, mon-fri, weekend, weekdays, daily; <bis> ist 24:00, wenn es fehlt)
+deploys freeze add sat,sun 0 --reason "Wochenende"   # ein Grund steht in der Absage
+deploys freeze remove 2 | clear         # Regel 2 entfernen (die Nummern zeigt `freeze`), oder alle
 deploys deploy mein-projekt --force "hotfix"   # im geschlossenen Fenster; der Grund kommt ins Journal
 ```
 

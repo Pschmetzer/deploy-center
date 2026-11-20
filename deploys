@@ -54,6 +54,10 @@
 #   deploys risk <project> [--json]           green/yellow/red for what waits: migrations, lockfiles, config, size
 #   deploys ci <owner/repo> [<ref>] [--wait 30m]  the CI verdict of a commit: green, pending, red, none
 #   deploys window [--json]                   is the deploy window (window.json) open now?
+#   deploys freeze [status] [--json]          the closed times of window.json and whether deploys are closed now
+#   deploys freeze add <days> <from> [<to>] [--reason "why"] | remove <n> | clear   e.g. freeze add fri 15:00
+#   deploys digest [--days 7] [--json] [--no-savings]   the last week from the journal: deploys, failures, savings
+#   deploys doctor --fix [--json]             what to do about each problem (shown only, nothing is run)
 #   --force "why"                             deploy inside a closed window; the reason goes to the journal
 #
 #   deploys providers [--json]                the platforms (providers/*.sh): on or off, set up or not
@@ -347,6 +351,14 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 # A rules.json without lib/rules.sh to read it stops the run rather than ignore its hold rules.
 if [ -f "$LIB_DIR/rules.sh" ]; then . "$LIB_DIR/rules.sh"
 else rules_on() { [ ! -f "$CONFIG_DIR/rules.json" ] || die "rules.json is there, but lib/rules.sh is not next to deploys to read it."; return 1; }; fi
+# digest, freeze and doctor --fix (lib/digest.sh, lib/freeze.sh, lib/fixes.sh): each its own file, so an old
+# install without them says so for that command only.
+# shellcheck source=lib/digest.sh
+if [ -f "$LIB_DIR/digest.sh" ]; then . "$LIB_DIR/digest.sh"; fi
+# shellcheck source=lib/freeze.sh
+if [ -f "$LIB_DIR/freeze.sh" ]; then . "$LIB_DIR/freeze.sh"; fi
+# shellcheck source=lib/fixes.sh
+if [ -f "$LIB_DIR/fixes.sh" ]; then . "$LIB_DIR/fixes.sh"; fi
 # Signs on this Mac that a team file counts here: read without lib/team.sh, from local files only.
 team_traces() {
   [ -s "$CONFIG_DIR/team-repos" ] && grep -q '/' "$CONFIG_DIR/team-repos" 2>/dev/null && return 0
@@ -3121,7 +3133,7 @@ case "${1:-} ${2:-}" in
         grep -vxF "$r" "$TEAM_REPOS" > "$TEAM_REPOS.tmp" 2>/dev/null || true; mv "$TEAM_REPOS.tmp" "$TEAM_REPOS"
         [ -z "$tl" ] || file_unlock "$TEAM_REPOS"
         rm -f "$TEAM_CACHE/$(printf '%s' "$r" | sed 's#/#__#').json"*; echo "$r removed" ;;
-      list) team_repo_list ;;
+      list) if [ "$json" = 1 ]; then team_repo_list | jq -R -s -c 'split("\n") | map(select(. != ""))'; else team_repo_list; fi ;;
       refresh) DEPLOYS_TEAM_REFRESH=1 team_sources | jq -r '.[] | "\(.repo): \(if .config then .path elif .error then .error else "no file" end)"' ;;
       journal) if [ "$json" = 1 ]; then jq -s . "$TEAM_JOURNAL" 2>/dev/null || echo '[]'
                else jq -r '[(.at | strftime("%Y-%m-%d %H:%M")), .kind, .project, ((.sha // "")[0:7]), .by, ([.approvals[]?.user] | join(",") | if . == "" then "-" else . end), (.reason // "-")] | @tsv' "$TEAM_JOURNAL" 2>/dev/null \
@@ -3230,7 +3242,11 @@ case "${1:-} ${2:-}" in
       "$(has jq)" "$pf" "$(has gh)" "$glogin" "$(has glab)" "$gllogin" "$jqv" "${BASH_VERSION%%(*}" "$ro" "$(has perl)" "$(has curl)" "$(job_missing_json)" "$grl" "$cfgw")"
     # doctor --text: one line per thing, "ok" or "FIX" with the command that fixes it (the JSON stays the default:
     # the app reads it). Without jq there is nothing to render with, so the JSON is printed.
-    if [ "${2:-}" = --text ] && [ "$(has jq)" = true ]; then
+    if [ "${2:-}" = --fix ]; then
+      [ "$(has jq)" = true ] || die "doctor --fix needs jq to read its own answer: brew install jq"
+      declare -F fixes_main >/dev/null || die "lib/fixes.sh is not next to deploys."
+      fixes_main "$dj"
+    elif [ "${2:-}" = --text ] && [ "$(has jq)" = true ]; then
       printf '%s' "$dj" | jq -r '
         def m($b; $t; $fix): (if $b then "ok   " else "FIX  " end) + $t + (if $b then "" else "   -> " + $fix end);
         m(.jq; "jq"; "brew install jq"), m(.githubCli; "gh (GitHub CLI)"; "brew install gh"),
@@ -3416,7 +3432,9 @@ case "${1:-} ${2:-}" in
   "ignore "*)
     # Leave a project out of `changed` and `deploy-changed` (again with: ignore <p> --undo).
     f="$CONFIG_DIR/ignored.json"; [ -f "$f" ] || echo '[]' 2>/dev/null > "$f" || true
-    if [ "${2:-}" = "--list" ] || [ -z "${2:-}" ]; then jq -r '.[]' "$f"; exit 0; fi
+    if [ "${2:-}" = "--list" ] || [ -z "${2:-}" ]; then
+      if [ "$json" = 1 ]; then jq -c . "$f"; else jq -r '.[]' "$f"; fi; exit 0
+    fi
     # ignore <p> [--undo], --undo before or after the name; <provider>:<name> is the name.
     p=""; undo=""
     for a in "${@:2}"; do
@@ -3508,10 +3526,12 @@ certs:--days --json
 secrets:--stdin --json
 plan:--when-green --since --json
 list:--platform --auto --manual --format --json
-ignore:--list --undo
+ignore:--list --undo --json
 readonly:on off
 config:--refresh
-doctor:--text
+doctor:--text --fix --json
+freeze:status add remove clear --json
+digest:--days --json --no-savings
 rollback:
 cancel:"
     verbs_of() {
@@ -3780,6 +3800,14 @@ BASH
     elif [ "$(echo "$w" | jq -r .denied)" = true ]; then echo "${RED}Closed${PLAIN}: $(echo "$w" | jq -r .reason). Deploys need --force \"why\"."
     else echo "${GREEN}Open${PLAIN}: no rule in $WINDOW applies now."; fi
     [ "$(echo "$w" | jq -r .denied)" != true ] ;;
+
+  "freeze "*)
+    declare -F freeze_main >/dev/null || die "lib/freeze.sh is not next to deploys."
+    freeze_main "${@:2}" ;;
+
+  "digest "*)
+    declare -F digest_main >/dev/null || die "lib/digest.sh is not next to deploys."
+    digest_main "${@:2}" ;;
 
   "verify "*)
     # verify <project> [--path /health] [--rollback-after 10] [--no-rollback] [--url <address>]
@@ -4314,6 +4342,7 @@ BASH
           session:(.session // null), error:(.error // .reason // null), redeployedSha:(.redeployedSha // null), mergedSha:(.mergedSha // null), pr:(.pr // .prNumber // null),
           prNumber:(.prNumber // .pr // null), prState:(.prState // (if .mergedSha then "merged" else null end)), prUrl:(.prUrl // null), done:(.done // false), class:(.class // null), reason:(.classReason // null)}))}' ;;
   "autofix list")
+    if [ "$json" = 1 ]; then af_state | jq -c '[.fires[] | {at:(.at | todate), project, status, sha:(.sha // null), session:(.session // null), error:(.error // null), reason:(.reason // null), pr:(.pr // null), mergedSha:(.mergedSha // null), redeployedSha:(.redeployedSha // null)}]'; exit 0; fi
     af_state | jq -r '.fires[] | [(.at | strftime("%Y-%m-%d %H:%M")), .project, .status, ((.sha // "")[0:7]), (.session // .error // .reason // ""), (if .mergedSha then "merged \(.mergedSha[0:7]) (PR #\(.pr)), deploy by hand" elif .redeployedSha then "redeployed \(.redeployedSha[0:7]) (PR #\(.pr))" else "" end)] | @tsv' \
       | (printf 'WHEN\tPROJECT\tSTATUS\tCOMMIT\tSESSION\tREDEPLOY\n'; cat) | table ;;
   "scan start")
@@ -4346,7 +4375,9 @@ BASH
     case "$3" in *[!A-Za-z0-9._-]*) die "bad id";; esac
     cat "$SCAN_DIR/logs/$3.md" 2>/dev/null || die "no report for $3" ;;
   "scan list")
-    sc_reap; sc_state | jq -r '.runs[] | [(.at | strftime("%Y-%m-%d %H:%M")), .repo, .status, (.prUrl // .error // "")] | @tsv' \
+    sc_reap
+    if [ "$json" = 1 ]; then sc_state | jq -c '[.runs[] | {at:(.at | todate), repo, status, prUrl:(.prUrl // null), error:(.error // null)}]'; exit 0; fi
+    sc_state | jq -r '.runs[] | [(.at | strftime("%Y-%m-%d %H:%M")), .repo, .status, (.prUrl // .error // "")] | @tsv' \
       | (printf 'WHEN\tREPO\tSTATUS\tRESULT\n'; cat) | table ;;
   "autofix "*)
     # autofix [--dry-run]: hand a failed build to the routine, deploy a merged fix. For launchd.

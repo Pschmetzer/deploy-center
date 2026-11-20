@@ -17,6 +17,8 @@ deploys doctor                          # what is connected (JSON)
 deploys certs [--days 14] [--json]      # TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out within N days. A host that cannot be reached is "unknown", not a failure.
 deploys creds [--max-age 90] [--json]   # per platform: where its key comes from (environment, keychain, login), if it works, how old a keychain key is. Reads only; never shows a key.
 deploys doctor --text                   # one line each (ok or the problem), with the fix
+deploys doctor --fix [--json]           # what to do about each problem, as commands for you to type; shows only, runs and changes nothing
+deploys digest [--days 7] [--json] [--no-savings]   # the last week from the journal: deploys, failures, rollbacks, busiest day, projects, and the saving of `ledger` (an estimate; --no-savings skips it, it needs the network)
 deploys list --format tsv               # platform, project, auto or manual, last state: tabs, no header, for scripts without jq
 deploys idle [--days 90] [--json]       # projects with no deploy for N days: candidates to pause (read only)
 deploys changed                         # what is merged on GitHub and not live: commits and PRs per project
@@ -34,6 +36,9 @@ deploys ignore my-project               # leave it out of changed / deploy-chang
 deploys list                            # every project on every provider that is on
 ```
 
+`freeze` writes only the `deny` list of `window.json` (its `tz` and other keys stay) and starts nothing; it is allowed in observer mode, since it only closes times. A `window.json` that cannot be read is never overwritten.
+`--json` is on every command that lists something: `list`, `idle`, `certs`, `creds`, `plan`, `history`, `providers`, `window`, `freeze`, `digest`, `doctor --fix`, `ignore --list`, `team list`, `scan list` and `autofix list`.
+
 ## Safe deploys ([SAFE-DEPLOY.md](SAFE-DEPLOY.md))
 
 ```bash
@@ -43,6 +48,10 @@ deploys secrets my-project              # added lines that look like a key or to
 git diff A..B | deploys secrets --stdin # the same on a diff you pipe in (for GitLab or any repo)
 deploys ci owner/repo [<ref>] [--wait 30m]   # the CI verdict of a commit
 deploys window                          # is the deploy window (window.json) open now?
+deploys freeze                          # the closed times of window.json, numbered, and whether deploys are closed now (--json too)
+deploys freeze add fri 15:00            # close Fridays from 15:00 (<days>: fri, fri,sat, mon-fri, weekend, weekdays, daily; <to> is 24:00 unless given)
+deploys freeze add sat,sun 0 --reason "weekend"   # a reason is shown in the refusal
+deploys freeze remove 2 | clear         # take away rule 2 (the numbers `freeze` shows), or every rule
 deploys deploy my-project --force "hotfix"   # inside a closed window; the reason is journaled
 ```
 
