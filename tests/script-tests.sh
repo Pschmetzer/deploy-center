@@ -934,6 +934,8 @@ unset -f render_call
 unset DEPLOYS_LAUNCH_DIR
 # Savings (simulate, ledger) have their own file with fixtures.
 bash tests/savings-tests.sh || fails=$((fails+1))
+# Round 12: digest, freeze, doctor --fix, --json on more lists, and direct tests of lib/ helpers.
+bash tests/cli12-unit.sh || fails=$((fails+1))
 
 # --- Claude in the app (deploys ai): masked body, key only on stdin, cap before the call, tally, refusals ---
 # A fake curl: logs argv and stdin, copies the body it was given, answers what AISTUB says. No network.
