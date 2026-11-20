@@ -107,7 +107,7 @@ struct HealthCard: View {
             ForEach(checks) { c in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: c.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(c.ok ? Color.good : Color.orange)
+                        .foregroundStyle(c.ok ? Color.good : Color.warningText)
                         .accessibilityLabel(c.ok ? L("fine", "in Ordnung") : L("problem", "Problem"))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(c.text)
@@ -116,17 +116,21 @@ struct HealthCard: View {
                     Spacer()
                     Text(c.group).font(.caption).foregroundStyle(.secondary)
                 }
+                // One VoiceOver element per row: the state, the text, the fix and the group together.
+                .accessibilityElement(children: .combine)
             }
             HStack {
                 Button(checking ? L("Checking …", "Prüfe …") : L("Check again", "Erneut prüfen")) {
                     checking = true
                     Task {
-                        if let d = try? await Tool.json(["doctor"], as: Doctor.self, timeout: 60) { store.doctor = d; store.doctorError = nil }
+                        do { store.doctor = try await Tool.json(["doctor"], as: Doctor.self, timeout: 60); store.doctorError = nil }
+                        catch { store.doctorError = error.localizedDescription }
                         checking = false
                     }
                 }.disabled(checking)
                 CopyButton(title: L("Copy problems", "Probleme kopieren")) { Health.summary(checks) }
             }
+            if let e = store.doctorError { ErrorText(e) }
             Color.clear.frame(height: 0).task(id: store.doctor?.vercelLoggedIn) {
                 guard let d = store.doctor else { return }
                 TokenAge.save(TokenAge.update(TokenAge.load(), signedIn: ["vercel": d.vercelLoggedIn, "render": d.renderKey]))

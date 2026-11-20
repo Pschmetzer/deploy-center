@@ -12,6 +12,7 @@ struct AutofixSettings: View {
     private var items: [Item] { store.allItems }
     /// Read so the output redraws at once when demo mode is switched (⇧⌘D).
     @AppStorage("demoMode") private var demoMode = false
+    @State private var confirmRun = false
     @State private var status: AutofixReport?
     /// A failed read keeps the last good status on screen, with this under it.
     @State private var readError: String?
@@ -83,7 +84,7 @@ struct AutofixSettings: View {
                 Button(L("Test (sends nothing)", "Testen (sendet nichts)")) { Task { await run(["autofix", "--dry-run"], show: true) } }
                     .disabled(busy)
                 // One hand-over at a time: a row's "Fix with Claude" holds the script's lock too.
-                Button(L("Run now", "Jetzt ausführen")) { Task { await run(["autofix"], show: true) } }
+                Button(L("Run now", "Jetzt ausführen")) { confirmRun = true }
                     .disabled(!ready || busy || !store.autofixRunning.isEmpty)
                 if busy { ProgressView().controlSize(.small) }
             }
@@ -96,8 +97,9 @@ struct AutofixSettings: View {
             }
 
             if let fires = status?.fires, !fires.isEmpty {
+                // The last ten only, newest first.
                 DisclosureGroup(L("Last hand-overs (\(fires.count))", "Letzte Übergaben (\(fires.count))")) {
-                    ForEach(fires) { f in
+                    ForEach(fires.sorted { $0.at > $1.at }.prefix(10)) { f in
                         HStack {
                             Text(Date(timeIntervalSince1970: f.at).formatted(date: .abbreviated, time: .shortened))
                                 .foregroundStyle(.secondary)
@@ -120,6 +122,13 @@ struct AutofixSettings: View {
             Text("Autofix")
         }
         .task { await reload() }
+        .confirmationDialog(L("Send build logs to your Claude routine?", "Build-Logs an deine Claude-Routine senden?"), isPresented: $confirmRun, titleVisibility: .visible) {
+            Button(L("Run now", "Jetzt ausführen")) { Task { await run(["autofix"], show: true) } }
+            Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+        } message: {
+            Text(L("Failed builds' logs go to the cloud routine, which may open a pull request. Nothing is merged or deployed by it. Use Test to see which projects would be sent.",
+                   "Die Logs fehlgeschlagener Builds gehen an die Cloud-Routine, die einen Pull Request öffnen kann. Gemergt oder deployt wird dadurch nichts. Mit Testen siehst du, welche Projekte gesendet würden."))
+        }
     }
 
     private func check(_ ok: Bool) -> some View {
