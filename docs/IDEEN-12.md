@@ -219,6 +219,72 @@ Aus dem Code gelesen, gegen IDEEN-2 bis 11 abgeglichen. „(prüfen)“ = nur ge
 63. [Doku] docs/APP-STORE.md – deutsche Screenshots, Screenshots 4-6.
 64. [Doku] docs/APP-STORE.md – App-Vorschau als Release-Schritt.
 
+# D. Mac-App Kern (Store/Model/Row/MainWindow/Savings/Journal)
+
+1. [Bug] Store.swift:1187 – nachrückender Toast ohne `logged: true`, doppelt in Meldungen.
+2. [Bug] Store.swift:519-521 (`tell`) – `show` loggt, danach noch `log(m)`: doppelt.
+3. [Security] Store.swift:516-521 – `log(m)`/`autofixResult[key]` nicht durch `LogTools.maskSecrets`.
+4. [Bug] Store.swift:1477-1482 vs 1204 – „Alle abbrechen“ 10 s sichtbar, `undoSeconds` 8 s: bricht laufende Builds ab; nur `.queued`.
+5. [Bug] MainWindow.swift:461/465/491-496 – `stickyError` hält „Abbrechen“ des Rollback-Countdowns 110 s ohne Wirkung.
+6. [Bug] MainWindow.swift:329, Store.swift:1077/436 – Zähler für fehlgeschlagene Projekte schließen ausgeblendete ein (prüfen).
+7. [Bug] Store.swift:821+905 – `decodeLossy` (bis 30 %) lässt Zeilen samt Haken/Build-Zeiten verschwinden.
+8. [UX] Store.swift:905-913 – leise Zeile „2 von 40 Projekten nicht lesbar“.
+9. [Bug] Store.swift:51-54 – `lastExtras` vor dem Lesen gesetzt; bei Fehler kurzer Backoff (prüfen).
+10. [Bug] Store.swift:59-61 – ein Doctor-Lauf mit `vercelLoggedIn == false` löscht `costs`; erst nach zwei Läufen (prüfen).
+11. [Bug] Store.swift:712/937 – fehlendes `jq` nur beim Start geprüft (prüfen).
+12. [Bug] Store.swift:1669 – Wochenrückblick-Nachholen nutzt `now` statt `thisMonday`.
+13. [Bug] Store.swift:226-229 – Projektbudget rechnet angefangenen heutigen Tag mit, `monthPace` nicht.
+14. [Bug] Store.swift:1133 – `entrySha` bei Fehlschlag/Abbruch falscher SHA (prüfen).
+15. [Bug] Store.swift:1934-1936 – Render „canceled“ (überholt) als `.failed` gezählt (prüfen).
+16. [Bug] Store.swift:2085-2089 – bei `.unreachable` nie nachgeprüft; Nachprüfung nach Netzrückkehr.
+17. [Bug] Store.swift:2095-2097 – fehlender Seitentext bietet „Zurückrollen“ an, widerspricht Kommentar Z.1987.
+18. [UX] Store.swift:2067-2077 – „Seite jetzt prüfen“ ignoriert Prüfpfade/Seitentext; gleiche Kette (`checkLinks`, `pageHas`).
+19. [Security] Store.swift:2131-2133/2249 – Prüflink mit Token-Query in Mitteilung/messages.json; Query kürzen (prüfen).
+20. [Feature] Store.swift:1595-1598 – `cancel()` in `.starting` vormerken.
+21. [Bug] Store.swift:311-320 – `scanPoll` unbegrenzt; Obergrenze, Pause bei Bildschirmschlaf (prüfen).
+22. [Bug] Store.swift:1419-1421/1033 – `busyMessage` Einzel-Slot; Zähler/Token.
+23. [Bug] Store.swift:853-867 – gehaltener `.done` nimmt alten `lastSha`, „N Commits warten“ kehrt zurück (prüfen).
+24. [Code] Store.swift:1228, 933-934 – veraltete Kommentare.
+25. [UX] Store.swift:1459-1465 – gemeinsame Meldung bei „baut vielleicht schon“.
+26. [UX] Store.swift:1153-1170 – ab drei Projekten „live“-Mitteilungen `silent`.
+27. [UX] Store.swift:1775-1776 – „keine Checks gefunden, startet“ anzeigen.
+28. [UX] Store.swift:214-219 – ein Namensdialog für alle kritischen Projekte.
+29. [Feature] Store.swift:1546 – „Diesen zuerst“ in der Warteschlange.
+30. [Feature] Store.swift:146-151 – `queueText` mit geschätzter Zeit.
+31. [UX] MainWindow.swift:1017-1040 – Deploy-Fenster-Hinweis im Bestätigungsblatt vorab.
+32. [UX] MainWindow.swift:575-577 – Einzel-Bestätigung ohne `costNote`.
+33. [Bug] MainWindow.swift:229-231/882 – `Trigger.id`/`ignoredTriggers` fragil (prüfen).
+34. [UX] MainWindow.swift:1800 – Tagesüberschriften in Meldungen.
+35. [Bug] MainWindow.swift:1823-1826 – „Leeren“+Rückgängig überschreibt neue Zeilen.
+36. [Perf] MainWindow.swift:1803-1809 – `LazyVStack`, Scrub nur im Demo-Modus (prüfen).
+37. [UX] MainWindow.swift:1272-1279 – Knopf „Neu verbinden“ im Anmeldefehler-Banner.
+38. [Perf] MainWindow.swift:750/1750/1763/1776 – `visible` je Render mehrfach; cachen.
+39. [Perf] MainWindow.swift:1534-1537 – `SearchQuery`/`canFixWithClaude` je Zeile.
+40. [Feature] MainWindow.swift:1747-1757 – „Alle Fehlgeschlagenen anhaken“ global.
+41. [UX] Row.swift:271-272 – „mindestens 0 PRs“ vermeiden.
+42. [Bug] Row.swift:202 – `keyFigure` verlangt `lastAt != nil`; nur-ERROR-Projekt zeigt „Noch nie deployt“ (prüfen).
+43. [UX] Row.swift:386-400 – `lineLimit` für 40-Min-Text.
+44. [UX] DeployState.swift – `pre_deploy_in_progress` ≠ „geht live“.
+45. [UX] Store.swift:1686-1688/1919 – Median statt Mittelwert, `clearCache`-Builds ausnehmen.
+46. [Feature] Store.swift:1681 – `durations` aus Journal auffüllen.
+47. [Feature] Store.swift:1936 – erste Fehlerzeile (maskiert) als `detail` im Journal.
+48. [Feature] Store.swift:1737-1747/1139 – Rollback-Ziel im Journal.
+49. [Bug] Journal.swift:122-141 – `rewrite` verliert unlesbare Zeilen (prüfen).
+50. [Bug] Journal.swift:77-87 – verwaister `journal.jsonl.lock` nie entfernt (prüfen).
+51. [Feature] Journal.swift:288-433 – Einträge/Verlauf löschen mit Undo.
+52. [Feature] Journal.swift:386-433 – Verlaufszeilen: Hauptfenster, Build-Log, „nochmal deployen“.
+53. [Feature] JournalStats.swift:133-174 – SHA, Deploy-ID, Dauer in Markdown/Postmortem.
+54. [Feature] JournalStats.swift:119-128 – Tagesmeldung nennt bis zu drei fehlgeschlagene Namen.
+55. [Perf] Journal.swift:305-308 – `shown` cachen.
+56. [Bug] Savings.swift:310-314/430-432 – Backoff nach fehlgeschlagenem Ledger-Lauf.
+57. [UX] Savings.swift:253-264/741 – Abbrechen-Knopf und Laufzeit für Bilanz.
+58. [Feature] Savings.swift:842-848 – SHA anklickbar (prüfen `repo` je Ledger-Zeile).
+59. [Bug] Model.swift:43 – `Doctor.flag` Dictionary-Reihenfolge (prüfen).
+60. [Bug] Model.swift:592 – `AutoDeployAllowance.expiry` ohne Zeitzone (prüfen).
+61. [Bug] Model.swift:600 – `covers` case-sensitiv.
+62. [UX] Model.swift:161-165 – `Costs.perBuild` bei unvollständiger Woche als „≈ (unvollständig)“.
+63-71. [Test] Tests für: Toast-Nachrücken/`tell` (je eine Zeile), Journal.rewrite/withNote, merge mit `.done` und `decodeLossy` 25 %, `checkProviders` (injizierbar), `DeployState.text` Tabelle DE/EN, `Row.keyFigure` Wahrheitstabelle, Decoder-Varianten (Doctor, Allowance, Autofix), Projektbudget mit festem `today`, `SavingsModel.milestone/whatIf` Grenzen.
+
 # E. Integrationen, Site, Tests, CI, Docs, Nutzer-Features
 
 1. [Doku] raycast/package.json:5,11-16, src/deploy-all-changed.tsx:111, action/action.yml:2-4 – nennen nur Vercel/Render, es laufen sieben Hosts.
