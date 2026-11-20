@@ -67,7 +67,7 @@ wo, und wann sie fertig ist. Für alles, was Nutzer bemerken, kommt eine Zeile u
 14. **Ein Git-Host.** [GITHOSTS.md](GITHOSTS.md) sagt, was ein neuer Host liefert. Nimm Bitbucket oder Gitea: die drei Funktionen
     `*_head_of`, `*_pending_of` und `*_open_prs_of`, einen Test im Stil von `tests/providers/gitlab.sh` und eine Doku-Seite wie [GITLAB.md](GITLAB.md).
 
-15. **Eine Anleitung für die Website.** Schreib `site/guides/<slug>/index.html` darüber, Deploys am Freitagnachmittag mit `deploys freeze` zu
-    sperren (Quellen: [SAFE-DEPLOY.md](SAFE-DEPLOY.md), [FAQ.md](FAQ.md)). Wo eine neue Anleitung überall eingetragen wird (Sitemap, `llms.txt`,
+15. **Eine Anleitung für die Website.** Schreib `site/guides/<slug>/index.html` darüber, vor und nach einem Deploy ein eigenes Skript mit
+    `hooks.d` laufen zu lassen (Quellen: [CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd), [examples/config/hooks.d/](../examples/config/hooks.d/); nicht die Anleitung `deploy-hooks`, die von Build-Trigger-URLs handelt). Wo eine neue Anleitung überall eingetragen wird (Sitemap, `llms.txt`,
     Fußzeilen, verwandte Links), steht in [CONTRIBUTING.md](../CONTRIBUTING.md#website). *Fertig, wenn:* `python3 -I scripts/check-site.py` und
     `scripts/check-links.py site` bestehen.

@@ -67,7 +67,7 @@ Each task says what to do, where, and when it is done. Add one line under `## Un
     three `*_head_of`, `*_pending_of` and `*_open_prs_of` functions, a test in the style of
     `tests/providers/gitlab.sh`, and a docs page like [GITLAB.md](GITLAB.md).
 
-15. **A guide for the website.** Write `site/guides/<slug>/index.html` about closing deploys on Friday afternoons
-    with `deploys freeze` (sources: [SAFE-DEPLOY.md](SAFE-DEPLOY.md), [FAQ.md](FAQ.md)). The list of places a new guide
+15. **A guide for the website.** Write `site/guides/<slug>/index.html` about running your own script before and after
+    a deploy with `hooks.d` (sources: [CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd), [examples/config/hooks.d/](../examples/config/hooks.d/); not the `deploy-hooks` guide, which is about build-trigger URLs). The list of places a new guide
     goes (sitemap, `llms.txt`, footers, related links) is in [CONTRIBUTING.md](../CONTRIBUTING.md#website).
     *Done when:* `python3 -I scripts/check-site.py` and `scripts/check-links.py site` pass.
