@@ -72,8 +72,13 @@ enum Notify {
         add(title, body, id: UUID().uuidString, category: category, project: project, key: key, silent: silent)
         // A failure nobody looked at comes back once, 30 minutes later (Settings), unless the app was opened.
         if failed, let key, d.bool(forKey: "remindFailures") {
+            // The repeat does not wake anyone in quiet hours: it waits for them to end.
+            let due = Date().addingTimeInterval(30 * 60)
+            let q = (from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo"))
+            let wait = quiet(hour: Calendar.current.component(.hour, from: due), from: q.from, to: q.to)
+                ? max(30 * 60, QuietDigest.seconds(until: q.to)) : 30 * 60
             add(L("Still failing: ", "Immer noch fehlgeschlagen: ") + title, body, id: escalationPrefix + key,
-                category: category, project: project, key: key, after: 30 * 60)
+                category: category, project: project, key: key, after: wait)
         }
     }
     /// The person is looking at the app: active and a visible, key window (not just the app being frontmost in the menu bar).
@@ -87,6 +92,16 @@ enum Notify {
         let d = UserDefaults.standard
         return available && !windowInFront && d.object(forKey: "notifications") as? Bool ?? true
             && !quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo"))
+    }
+    /// The quiet hours changed: a held digest is scheduled again for the new end, or dropped when quiet hours went off.
+    static func rescheduleDigest() {
+        guard available else { return }
+        let d = UserDefaults.standard
+        let held = d.stringArray(forKey: QuietDigest.key) ?? []
+        let from = d.integer(forKey: "quietFrom"), to = d.integer(forKey: "quietTo")
+        guard !held.isEmpty, from != to else { remove(QuietDigest.id); return }
+        let n = QuietDigest.note(held, neutral: d.bool(forKey: "neutralNotifications"))
+        add(n.title, n.body, id: QuietDigest.id, after: QuietDigest.seconds(until: to))
     }
     static let escalationPrefix = "again|"
     static let soundsKey = "resultSounds"
@@ -133,7 +148,11 @@ enum Notify {
             if let key { info["key"] = key }
             c.userInfo = info
             // Many deploys ending together are one stack in Notification Center, not a wall.
-            if category != NotifyRouter.rollbackCategory && id != NotifyRouter.reminderId { c.threadIdentifier = "deploys" }
+            // One stack per platform; the summary line names the project.
+            if category != NotifyRouter.rollbackCategory && id != NotifyRouter.reminderId {
+                c.threadIdentifier = key.flatMap { $0.split(separator: "/").first.map { "deploys-" + $0 } } ?? "deploys"
+                if let project { c.summaryArgument = project }
+            }
             let trigger = after.map { UNTimeIntervalNotificationTrigger(timeInterval: $0, repeats: false) }
             do { try await center.add(UNNotificationRequest(identifier: id, content: c, trigger: trigger)); then?(true) }
             catch { then?(false) }
