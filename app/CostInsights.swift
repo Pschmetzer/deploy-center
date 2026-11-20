@@ -44,16 +44,21 @@ enum CostInsights {
     /// The last `n` days' build costs, oldest first, for the sparkline.
     static func series(_ days: [Costs.Day], _ n: Int = 7) -> [Double] { days.suffix(n).map(\.build) }
 
+    /// A name inside a Markdown table cell: `|` would split the cell, a line break would end the row.
+    static func mdCell(_ s: String) -> String {
+        s.replacingOccurrences(of: "|", with: "\\|").replacingOccurrences(of: "\n", with: " ")
+    }
+
     /// A Markdown report of the costs; project names are included only when `names` is true.
     static func report(_ c: Costs, budget: Double, today: String, names: Bool = true) -> String {
-        let usd = FloatingPointFormatStyle<Double>.Currency(code: "USD")
+        let usd = FloatingPointFormatStyle<Double>.Currency(code: "USD").locale(uiLocale)
         var out = ["# " + L("Build costs", "Build-Kosten") + " — " + today, ""]
         out.append(L("Last 7 days: ", "Letzte 7 Tage: ") + c.week.formatted(usd))
         out.append(L("≈ per month at this pace: ", "≈ pro Monat bei diesem Tempo: ") + monthly(week: c.week).formatted(usd))
         if budget > 0 { out.append(L("Monthly budget: ", "Monatsbudget: ") + budget.formatted(usd)) }
         out += ["", "| " + L("Project", "Projekt") + " | " + L("Builds", "Builds") + " | USD |", "| --- | ---: | ---: |"]
         for (i, p) in c.projects.filter({ $0.build > 0 }).sorted(by: { $0.build > $1.build }).enumerated() {
-            out.append("| " + (names ? p.name : "#\(i + 1)") + " | " + (p.builds.map(String.init) ?? "–") + " | " + p.build.formatted(usd) + " |")
+            out.append("| " + (names ? mdCell(p.name) : "#\(i + 1)") + " | " + (p.builds.map(String.init) ?? "–") + " | " + p.build.formatted(usd) + " |")
         }
         return out.joined(separator: "\n") + "\n"
     }

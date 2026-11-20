@@ -2009,6 +2009,9 @@ expect("date: seconds", Int(date(1_700_000_000)?.timeIntervalSince1970 ?? 0), 1_
 expect("date: milliseconds are divided", Int(date(1_700_000_000_000)?.timeIntervalSince1970 ?? 0), 1_700_000_000)
 expect("date: zero is none", date(0) == nil, true)
 expect("quiet hours over midnight", Notify.quiet(hour: 23, from: 22, to: 7), true)
+expect("quiet hours: midnight itself", Notify.quiet(hour: 0, from: 22, to: 7), true)
+expect("quiet hours: same hour is off", Notify.quiet(hour: 5, from: 5, to: 5), false)
+expect("digest waits at least a minute", QuietDigest.seconds(until: 7) >= 60, true)
 expect("quiet hours: outside", Notify.quiet(hour: 12, from: 22, to: 7), false)
 
 print("")
@@ -2021,6 +2024,9 @@ do {
     let c = try! JSONDecoder().decode(Costs.self, from: Data(#"{"days":[{"day":"2026-11-01","total":2,"build":1},{"day":"2026-11-02","total":3,"build":2}],"projects":[{"name":"a","build":10,"builds":10},{"name":"b","build":4,"builds":2}],"offDay":null,"buildsComplete":true}"#.utf8))
     expect("once a day saving", CostInsights.onceADaySaving(c), 3.0)
     expect("series", CostInsights.series(c.days), [1.0, 2.0])
+    expect("report escapes a pipe in a name", CostInsights.mdCell("a|b\nc"), "a\\|b c")
+    expect("plural one", plural(1, "project", "projects"), "1 project")
+    expect("plural many", plural(3, "project", "projects"), "3 projects")
     expect("report masks names", CostInsights.report(c, budget: 0, today: "2026-11-02", names: false).contains("| a |"), false)
 }
 
