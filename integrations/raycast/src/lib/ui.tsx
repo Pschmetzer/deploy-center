@@ -168,7 +168,10 @@ export async function copyBuildError(p: {
 }
 
 // One project, after the person confirmed. Shows a toast with what deploy-json answered.
-export async function deployOne(p: { name: string; platform: string; headSha?: string | null; projectRef?: string }, onDone?: () => void) {
+export async function deployOne(
+  p: { name: string; platform: string; headSha?: string | null; projectRef?: string },
+  onDone?: () => void,
+) {
   const toast = await showToast({
     style: Toast.Style.Animated,
     title: `Deploying ${p.name}`,
@@ -182,7 +185,10 @@ export async function deployOne(p: { name: string; platform: string; headSha?: s
     if (r.url) {
       toast.primaryAction = { title: "Open Deploy", onAction: () => open(r.url as string) };
     }
-    toast.secondaryAction = { title: "Show in Deploy Center", onAction: () => open(deployCenterURL(p.projectRef ?? p.name)) };
+    toast.secondaryAction = {
+      title: "Show in Deploy Center",
+      onAction: () => open(deployCenterURL(p.projectRef ?? p.name)),
+    };
   } catch (e) {
     toast.style = Toast.Style.Failure;
     toast.title = `${p.name}: deploy did not start`;
