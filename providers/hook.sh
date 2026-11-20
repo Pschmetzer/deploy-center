@@ -9,7 +9,7 @@
 # Opt-in: it shows up only once a hook is added.
 #
 #   deploys hook add <name> <url|-> [--repo owner/name] [--ref main] [--site https://…]
-#                    [--method POST] [--header 'Name: value'] [--body '{…}']
+#                    [--status-url https://…] [--method POST] [--header 'Name: value'] [--body '{…}']
 #   deploys hook remove <name>
 #   deploys hook list
 #   deploys hook deploy <name>          trigger the hook

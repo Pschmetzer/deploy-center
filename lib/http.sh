@@ -27,6 +27,38 @@ curl_cfg_quote() {  # curl_cfg_quote <value>
   printf '%s' "$v"
 }
 
+# A URL for curl's config on stdin (`curl -K -`): a signed URL holds its secret in the query, and
+# `ps` shows every argument. Status 1 for a URL with a line break in it.
+curl_url_cfg() {  # curl_url_cfg <url>
+  local q; q="$(curl_cfg_quote "$1")" || return 1
+  printf 'url = "%s"\n' "$q"
+}
+
+# Functions the parallel readers (xargs bash -c) need are named with par_fn and exported by xargs_par for that one
+# xargs only (not for the whole script: a BASH_FUNC_* variable in every child process, git and the user's hooks too).
+# deploys defines the same two before it loads this; they are here for a provider run on its own.
+declare -F par_fn >/dev/null 2>&1 || {
+  PAR_FNS=()
+  par_fn() { PAR_FNS=(${PAR_FNS[@]+"${PAR_FNS[@]}"} "$@"); }
+  xargs_par() {
+    (
+      local f
+      # shellcheck disable=SC2163  # the name is in $f on purpose: export -f of each function par_fn named
+      for f in ${PAR_FNS[@]+"${PAR_FNS[@]}"}; do ! declare -F "$f" >/dev/null 2>&1 || export -f "$f"; done
+      exec xargs "$@"
+    )
+  }
+}
+
+# How many reads run at once in a list: DEPLOYS_PARALLEL (1 to 32), else the default the caller names.
+# One place for amplify, coolify, digitalocean and render (a rate limit is hit by the sum of them).
+parallel_limit() {  # parallel_limit <default>
+  local n="${DEPLOYS_PARALLEL:-$1}"
+  case "$n" in ""|*[!0-9]*) n="$1" ;; esac
+  [ "$n" -ge 1 ] 2>/dev/null || n="$1"; [ "$n" -le 32 ] || n=32
+  printf '%s' "$n"
+}
+
 # The seconds a Retry-After header asks for: a number ("30") or a date ("Wed, 21 Oct 2026 07:28:00
 # GMT", as seconds from now), or nothing. Not capped here: http_call stops when it is over a minute.
 http_retry_after() {  # http_retry_after <header file>
@@ -63,6 +95,8 @@ http_notfound_hint() {  # http_notfound_hint <path without query>
 
 http_call() {
   local label="$1" method="$2" url="$3" body="${4:-}" out code try err hdr own="" wait bodyf="" rc t0 deadline limit_hit="" auth q
+  # Under `bash -x` the trace would print the key (and the body): off for this call, on again at its end.
+  local xt=""; case $- in *x*) xt=1; set +x ;; esac
   local args=(-sS --connect-timeout 10 --max-time "${HTTP_MAX_TIME:-60}" -X "$method" -H "Accept: application/json" -K -)
   auth="${HTTP_AUTH:-}"
   # The key goes into a curl config line: a quote or line break must not add directives, and an
@@ -133,5 +167,6 @@ http_call() {
     out="$(printf '%s' "$out" | tr '\r\n\t' '   ' | cut -c1-300)"
     die "$label $method $path -> HTTP $code$hint: $out"
   fi
+  [ -z "$xt" ] || set -x
   printf '%s' "$out"
 }
