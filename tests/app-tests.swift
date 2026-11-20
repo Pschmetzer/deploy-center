@@ -524,6 +524,12 @@ expect("fixing ends when green again", RowAutofix.of(green, F(at: 1, project: "a
 expect("PR open", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, prState: "open")) == .prOpen(number: 4, url: nil), true)
 var waiting = failedItem(); waiting.changed = true; waiting.headSha = "bbbbbbb2"
 expect("merged, not live", RowAutofix.of(waiting, F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, mergedSha: "bbbbbbb2ffff")) == .merged(sha: "bbbbbbb2ffff", pr: 4, url: nil), true)
+var brokeAgain = waiting; brokeAgain.latestSha = "ccccccc3"
+expect("merged, but a newer build failed: not 'deploy the fix'", RowAutofix.of(brokeAgain, F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, mergedSha: "bbbbbbb2ffff", sha: "aaaaaaa1")) == nil, true)
+var fixFailed = waiting; fixFailed.latestSha = "bbbbbbb2"
+expect("merged fix that itself failed is handed back", RowAutofix.of(fixFailed, F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, mergedSha: "bbbbbbb2ffff", sha: "aaaaaaa1")) == .handedBack(.fixFailed), true)
+var stillOld = waiting; stillOld.latestSha = "aaaaaaa1"
+expect("merged, the handed-over failure still newest: deploy the fix", RowAutofix.of(stillOld, F(at: 1, project: "app", platform: "vercel", status: "fired", prNumber: 4, mergedSha: "bbbbbbb2ffff", sha: "aaaaaaa1")) == .merged(sha: "bbbbbbb2ffff", pr: 4, url: nil), true)
 var shipped = waiting; shipped.lastSha = "bbbbbbb2"; shipped.changed = false
 expect("merged ends once live", RowAutofix.of(shipped, F(at: 1, project: "app", platform: "vercel", status: "fired", mergedSha: "bbbbbbb2ffff")) == nil, true)
 expect("fix failed too", RowAutofix.of(failedItem(), F(at: 1, project: "app", platform: "vercel", status: "skipped")) == .handedBack(.fixFailed), true)
