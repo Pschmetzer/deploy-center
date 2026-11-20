@@ -107,6 +107,24 @@
         "command": "deployCenter.copyNotes",
         "title": "%command.copyNotes%",
         "category": "Deploy Center"
+      },
+      {
+        "command": "deployCenter.rollbackPreview",
+        "title": "%command.rollbackPreview%",
+        "category": "Deploy Center",
+        "icon": "$(history)"
+      },
+      {
+        "command": "deployCenter.showFreeze",
+        "title": "%command.showFreeze%",
+        "category": "Deploy Center",
+        "icon": "$(lock)"
+      },
+      {
+        "command": "deployCenter.costs",
+        "title": "%command.costs%",
+        "category": "Deploy Center",
+        "icon": "$(credit-card)"
       }
     ],
     "views": {
@@ -115,6 +133,12 @@
           "id": "deployCenter.projects",
           "name": "Deploy Center",
           "icon": "$(rocket)",
+          "contextualTitle": "Deploy Center"
+        },
+        {
+          "id": "deployCenter.pending",
+          "name": "%view.pending%",
+          "icon": "$(git-commit)",
           "contextualTitle": "Deploy Center"
         }
       ]
@@ -144,6 +168,10 @@
         "view": "deployCenter.projects",
         "contents": "%welcome.loading%",
         "when": "!deployCenter.state || deployCenter.state == loading"
+      },
+      {
+        "view": "deployCenter.pending",
+        "contents": "%welcome.pending%"
       }
     ],
     "menus": {
@@ -209,6 +237,21 @@
           "command": "deployCenter.copyNotes",
           "when": "view == deployCenter.projects && viewItem =~ /project/",
           "group": "4_notes"
+        },
+        {
+          "command": "deployCenter.rollbackPreview",
+          "when": "view == deployCenter.projects && viewItem =~ /can-rollback/",
+          "group": "1_deploy@4"
+        },
+        {
+          "command": "deployCenter.deployProject",
+          "when": "view == deployCenter.pending && viewItem =~ /project/",
+          "group": "1_deploy"
+        },
+        {
+          "command": "deployCenter.rollbackPreview",
+          "when": "view == deployCenter.pending && viewItem =~ /can-rollback/",
+          "group": "1_deploy@4"
         }
       ],
       "commandPalette": [
@@ -259,6 +302,11 @@
           "default": 200,
           "minimum": 20,
           "description": "%config.logLines.description%"
+        },
+        "deployCenter.showCosts": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.showCosts.description%"
         }
       }
     }

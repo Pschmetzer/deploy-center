@@ -21,6 +21,10 @@ it reads what is waiting and starts a deploy only when you confirm one.
 | **Idle Projects** | Projects with no deploy for 90 days or more, or never deployed (`deploys idle --json`): candidates to pause. | Copy Name, Refresh. Pausing is yours to do. |
 | **Deploy Costs** | What the next deploy would start and what it would cost, per project (`deploys plan --json`). An estimate (build minutes times a rate), not a bill. | Show in Deploy Center, Copy Name, Refresh. Nothing starts here. |
 | **Rollback Preview** | Pick a project: the deploy that is current and the one production would go back to (`deploys history <project> 5 --json`). | Show in Deploy Center. Nothing is rolled back here; a rollback is done in Deploy Center, which asks first. |
+| **Costs** | What Vercel charged this month, by project (last 7 days, with the price of one build) and by day (`deploys costs 31`). | Copy Summary, Refresh. Only reads. |
+| **Search Journal** | The journal of the last 90 days (`deploys journal export`): every word you type must be in the project, platform, result or text. | Copy Line, Show in Deploy Center, Refresh. Only reads. |
+| **Guard Status** | Is the guard on, when it ran last and what it did, the running allowances, and whether deploys are closed now (deploy freeze, with its rules). | Refresh. Only reads; it never runs the guard. |
+| **Deploy Center Costs Menu Bar** | This month's charges (`$12.35`, a `+` when days could not be read) and a lock while deploys are closed; its menu has the freeze and the guard. Read every 30 minutes. | Open Costs, Search the Journal, Refresh. Only reads. |
 | **Deploy Project** | Type a project name after the command (`platform:name` when a name is on two platforms). | Deploy (asks first) |
 | **Deploy All Changed** | The same list as Waiting Deploys. Nothing starts until you press ↵ and confirm. | Deploy All (asks first, with every project named) |
 

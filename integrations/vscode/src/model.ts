@@ -35,6 +35,8 @@ export interface Project {
   ref: string;
   /** The branch head that waits (from `changed`): a deploy is started with this commit (--sha), not a later push. */
   headSha?: string;
+  /** The first line of the newest waiting commit's message (from `changed`), shown as text only. */
+  headMsg?: string;
 }
 
 /** The newest attempt failed: Vercel ERROR, Render build_failed / update_failed / pre_deploy_failed. */
@@ -115,6 +117,7 @@ export function mergeProjects(
       oldestPendingAt: num(c.oldestPendingAt),
       waiting: true, ...(prev ? { building: prev.building, failed: prev.failed, canceled: prev.canceled } : phaseOf(c, state, false)), state,
       ...(typeof c.headSha === "string" && /^[0-9a-f]{7,40}$/i.test(c.headSha) ? { headSha: c.headSha } : {}),
+      ...(typeof c.headMsg === "string" && c.headMsg.trim() ? { headMsg: c.headMsg.split("\n")[0].slice(0, 200) } : {}),
     });
   }
   const list = [...out.values()];
