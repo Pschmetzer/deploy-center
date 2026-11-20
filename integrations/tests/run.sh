@@ -139,7 +139,7 @@ case "\$*" in
   "details gitlab.com/grp/sub/app bbbb222 main") cat "$tmp/details-api.json" ;;
   "details me/app bbbb222 main") cat "$tmp/details-api.json" ;;
   "--help") echo "deploys changed [--json]"; [ -n "\${FAKE_RISK:-}" ] && echo "  deploys risk <project> [--json]" ;;
-  # As the real one: without a project `risk` prints its usage; an older CLI does not know the command.
+  # As the real one: without a project risk prints its usage; an older CLI does not know the command.
   "risk") if [ -n "\${FAKE_RISK:-}" ]; then echo "Error: Usage: deploys risk <project> [--json]" >&2; else echo "Error: Unknown command \"risk\". All commands: deploys --help" >&2; fi; exit 1 ;;
   "risk app-web --json") echo '{"hints":[{"hint":"touches the database schema"}]}' ;;
   "risk api --json") echo 'needs a new env var' ;;
