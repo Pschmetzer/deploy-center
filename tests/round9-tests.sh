@@ -65,7 +65,7 @@ expect "secrets: a diff with a token and a key exits 1" "$rc" "1"
 expect "secrets: the secret is not printed" "$(grep -c 'abcdefghijklmnop\|MIIabcsecretbody' "$tmp/s.out")" "0"
 expect "secrets: both hits are counted" "$(printf '%s\n' "$sd" | cli secrets --stdin --json | jq .found)" "2"
 expect "secrets: a clean diff exits 0" "$(printf '+++ b/a\n+hello\n' | cli secrets --stdin >/dev/null; echo $?)" "0"
-expect "secrets: without a project or --stdin is a usage line" "$(cli secrets >/dev/null 2>&1; echo $?)" "1"
+expect "secrets: without a project or --stdin is a usage line (exit 2: a wrong call)" "$(cli secrets >/dev/null 2>&1; echo $?)" "2"
 
 # keychain_age_days / creds (ideas 30, 31): a fake `security` that reports a creation date
 mkdir -p "$tmp/fakebin"
@@ -93,7 +93,7 @@ expect "cert_days_left: a certificate in 2099 has years left" "$([ "${cd2:-0}" -
 # completion knows the new commands and their words
 comp="$(cli completion bash 2>/dev/null)"
 expect "completion: journal completes export and report" "$(grep -c 'journal.*verify export report' <<<"$comp")" "1"
-expect "completion: certs, creds, idle and secrets are commands" "$(for c in certs creds idle secrets; do grep -c "COMP_WORDS\\[1\\]}\" = $c" <<<"$comp"; done | tr '\n' ' ')" "1 1 1 1 "
+expect "completion: certs, creds, idle and secrets are commands" "$(for c in certs creds idle secrets; do bash -c 'eval "$1"; COMP_WORDS=(deploys "$2" ""); COMP_CWORD=2; _deploys; [ -n "${COMPREPLY[*]}" ] && echo 1 || echo 0' _ "$comp" "$c"; done | tr '\n' ' ')" "1 1 1 1 "
 
 echo
 [ "$fails" -eq 0 ] && echo "All round-9 tests passed." || { echo "$fails failed."; exit 1; }
