@@ -2115,4 +2115,47 @@ do {
     expect("arrow flat", CostInsights.arrow(3), "→")
 }
 
+// Round 12: quick filter chips, freeze note, week digest, waiting copy, savings fold.
+do {
+    expect("chip: toggled on", SearchQuery.toggled("shop", "is:running"), "shop is:running")
+    expect("chip: toggled off", SearchQuery.toggled("shop is:Running", "is:running"), "shop")
+    expect("chip: active", QuickFilter.waiting.active(in: "is:waiting x") && !QuickFilter.failed.active(in: "is:waiting x"), true)
+    expect("chip: running operator parsed", SearchQuery("is:running api").running && SearchQuery("is:running api").text == "api", true)
+    expect("chip: platform cycles", [
+        SearchQuery.cycledPlatform("", ids: ["vercel", "render"]),
+        SearchQuery.cycledPlatform("platform:vercel", ids: ["vercel", "render"]),
+        SearchQuery.cycledPlatform("a platform:render", ids: ["vercel", "render"]),
+    ], ["platform:vercel", "platform:render", "a"])
+    expect("chip: platform keeps other operators", SearchQuery.cycledPlatform("is:failed host:vercel", ids: ["vercel", "render"]), "is:failed platform:render")
+    expect("chip: keys differ", Set(QuickFilter.allCases.map(\.key)).count, QuickFilter.allCases.count)
+
+    let closed = try! JSONDecoder().decode(FreezeReply.self, from: Data(#"{"configured":true,"closedNow":true,"reason":"Release week","rules":[{"n":1,"days":["fri"],"from":"15:00","to":"24:00","reason":"Release week"}]}"#.utf8))
+    expect("freeze: closed text", closed.visible && closed.closed && closed.footerText().contains("Release week"), true)
+    expect("freeze: demo hides the reason", closed.footerText(demo: true).contains("Release week"), false)
+    expect("freeze: rule text", FreezeReply.ruleText(closed.rules![0]), "fri 15:00-24:00")
+    let open = try! JSONDecoder().decode(FreezeReply.self, from: Data(#"{"configured":true,"closedNow":false,"reason":null,"rules":[{"n":1,"days":null,"from":"22:00","to":"24:00"},{"n":2}]}"#.utf8))
+    expect("freeze: open with two rules", "\(open.visible) \(open.closed) \(open.ruleCount)", "true false 2")
+    expect("freeze: no rules, nothing shown", try! JSONDecoder().decode(FreezeReply.self, from: Data(#"{"configured":false,"closedNow":false,"rules":[]}"#.utf8)).visible, false)
+
+    let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+    func e(_ days: Double, _ n: String, _ r: String, _ d: String? = nil) -> JournalEntry {
+        JournalEntry(at: t0.addingTimeInterval(-days * 86400), platform: "vercel", name: n, result: r, seconds: nil, detail: d)
+    }
+    let list = [e(0.5, "a", "live"), e(1, "a", "failed", "Build error"), e(2, "b", "live"), e(3, "a", "rollback"), e(4, "b", "forced"), e(5, "c", "preview"),
+                e(9, "a", "live"), e(10, "a", "live"), e(30, "z", "live")]
+    let w = WeekDigest.make(list, now: t0)
+    expect("digest: counts", "\(w.deploys) \(w.failed) \(w.rollbacks) \(w.forced) \(w.previousDeploys)", "5 1 1 1 2")
+    expect("digest: projects, preview not counted", w.projects.map { "\($0.name)\($0.count)" }, ["a3", "b2"])
+    expect("digest: latest failure", w.latestFailures.map(\.name), ["a"])
+    expect("digest: delta", "\(WeekDigest.delta(5, 2)) \(WeekDigest.delta(2, 5)) \(WeekDigest.delta(3, 3))", "+3 −3 ±0")
+    expect("digest: empty", WeekDigest.make([], now: t0).isEmpty, true)
+    expect("digest: markdown masks names and scrubs", WeekDigest.make(list, now: t0).markdown(mask: { "X-" + $0 }, scrub: { $0.replacingOccurrences(of: "error", with: "###") }).contains("X-a: Build ###"), true)
+
+    var waiting = Item(id: "1", name: "shop", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil)
+    waiting.changed = true; waiting.pendingCommits = 2; waiting.headMsg = "Fix cart"; waiting.headSha = "abcdef1234"
+    expect("copy: waiting commits", Row.waitingCopy(waiting)?.contains("abcdef1 Fix cart") ?? false, true)
+    expect("copy: nothing waiting, nothing to copy", Row.waitingCopy(Item(id: "2", name: "calm", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil)) == nil, true)
+    expect("savings: fold key", SavingsEntry.collapsedKey, "savingsBannerCollapsed")
+}
+
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

@@ -352,6 +352,7 @@ struct ContentView: View {
             all = all.filter { i in
                 if q.failed && !i.failed { return false }
                 if q.waiting && !i.hasNewCommits { return false }
+                if q.running && !i.state.isActive { return false }
                 if let p = q.platform, i.platform.cli != p { return false }
                 // In demo mode the real repo name must not be searchable.
                 if let r = q.repo, Demo.on || !(i.repo ?? "").lowercased().contains(r) { return false }
@@ -441,6 +442,10 @@ struct ContentView: View {
             Divider()
             noticeArea
             summaryBar
+            if !allItems.isEmpty {
+                QuickFilterBar(search: $search, items: scopes.flatMap { store.items[$0] ?? [] }.filter { !store.isHidden($0) },
+                               platforms: providers.compactMap(\.platform).map(\.cli))
+            }
             SavingsEntry(store: store)
             content
                 // Over the list, not above it: the list does not jump when the line comes and goes.
@@ -1690,6 +1695,7 @@ struct ContentView: View {
                             : L("\(count) selected", "\(count) ausgewählt"))
                 .foregroundStyle(.secondary)
                 .help(L("Shift-click ticks everything between the last tick and this one", "Mit ⇧-Klick wird alles zwischen dem letzten Haken und diesem angehakt"))
+            FreezeNote()
             // What these builds cost, before the button is pressed (an average build of the week each).
             let cost = Store.selectionCost(perBuild: selectedAll.map { $0.platform == .vercel ? store.costs?.perBuild($0.name) : nil })
             if count > 0, !cost.isEmpty {
@@ -1848,6 +1854,7 @@ struct SearchQuery {
     }
     var failed = false
     var waiting = false
+    var running = false
     var platform: String?
     var repo: String?
     var text = ""
@@ -1857,6 +1864,7 @@ struct SearchQuery {
             let l = w.lowercased()
             if l == "is:failed" { failed = true }
             else if l == "is:waiting" { waiting = true }
+            else if l == "is:running" { running = true }
             else if l.hasPrefix("platform:"), Platform.allCases.contains(where: { $0.cli == String(l.dropFirst(9)) }) { platform = String(l.dropFirst(9)) }
             else if l.hasPrefix("host:"), Platform.allCases.contains(where: { $0.cli == String(l.dropFirst(5)) }) { platform = String(l.dropFirst(5)) }
             else if l.hasPrefix("repo:"), l.count > 5 { repo = String(l.dropFirst(5)) }
