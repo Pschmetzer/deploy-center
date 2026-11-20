@@ -420,8 +420,8 @@ struct ContentView: View {
     private var noteMessage: String {
         let base: String = L("Shown under \(shown(noteItem?.name)). Kept on this Mac only.", "Steht unter \(shown(noteItem?.name)). Bleibt nur auf diesem Mac.")
         guard LogTools.maskSecrets(noteText) != noteText else { return base }
-        return base + " " + L("This looks like a token: keep no secrets in notes, they are stored as plain text.",
-                              "Das sieht wie ein Token aus: keine Geheimnisse in Notizen, sie liegen als Klartext.")
+        return base + " " + L("This may hold a secret or personal data: notes are stored as plain text.",
+                              "Das enthält vielleicht ein Geheimnis oder persönliche Daten: Notizen liegen als Klartext.")
     }
     private var selectedAll: [Item] { scopes.flatMap { store.selected($0) } }
 

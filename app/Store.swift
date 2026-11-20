@@ -710,6 +710,8 @@ final class Store: ObservableObject {
             doctorError = error.localizedDescription; return
         }
         guard doctor?.jq == true else { return }
+        // Before anything that asks `observer`: a team observer Mac must not act as a normal one in the meantime.
+        Task { await readTeamObserver() }
         if scriptVersion == nil {
             Task { if let v = try? await Tool.run(["--version"], timeout: 10) {
                 scriptVersion = String(decoding: v, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) } }
@@ -2052,10 +2054,10 @@ final class Store: ObservableObject {
     }
     /// The last status code of each project's first address, this run only.
     private var lastCodes: [String: Int] = [:]
-    private func noteAccessChange(_ item: Item, _ code: Int) {
-        let k = Self.key(item)
-        defer { lastCodes[k] = code }
-        guard Self.accessLost(before: lastCodes[k], now: code) else { return }
+    private func noteAccessChange(_ item: Item, _ code: Int, url: URL) {
+        let k = Self.key(item), seen = k + "|" + url.absoluteString   // per address: a new check path is no change
+        defer { lastCodes[seen] = code }
+        guard Self.accessLost(before: lastCodes[seen], now: code) else { return }
         say(L("\(item.name) now answers \(code)", "\(item.name) antwortet jetzt mit \(code)"),
             L("It answered fine before. Check the environment variables and any firewall or protection rule.",
               "Vorher antwortete die Seite normal. Umgebungsvariablen und Firewall- oder Schutzregeln prüfen."), ok: false,
@@ -2125,7 +2127,7 @@ final class Store: ObservableObject {
             if Self.siteVerdict(code: code, networkUp: true) == .fine {
                 if timed {
                     noteResponseTime(item, Date().timeIntervalSince(t0)); SiteLog.note(Self.key(item), up: true)
-                    if let c = code { noteAccessChange(item, c) }
+                    if let c = code { noteAccessChange(item, c, url: url) }
                 }
                 return true
             }
@@ -2197,6 +2199,7 @@ final class Store: ObservableObject {
                 let code = await Self.probe(url, timeout: 20)
                 let up = code != nil ? true : await Self.networkUp()
                 let v = Self.siteVerdict(code: code, networkUp: up)
+                if let c = code { self.noteAccessChange(item, c, url: url) }
                 seen.append(v)
                 if v == .fine || v == .broken { SiteLog.note(key, up: v == .fine) }
                 guard Self.watchFails(seen) else { continue }
