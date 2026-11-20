@@ -23,7 +23,7 @@ TEAM_JOURNAL="$CONFIG_DIR/team-journal.jsonl"
 # file that is not a JSON object ({error}). A network error or a rate limit is not cached: the
 # old copy stays (and reads as stale), or a .err note says why there is none.
 team_fetch_one() {
-  local repo="$1" dir="$2" ttl="$3" only="${4:-}" f now age p out err
+  local repo="$1" dir="$2" ttl="$3" only="${4:-}" f now age p out err raw
   f="$dir/$(printf '%s' "$repo" | sed 's#/#__#').json"; now="$(date +%s)"
   if [ -f "$f" ]; then
     age=$(( now - $(mtime "$f") ))
@@ -34,6 +34,13 @@ team_fetch_one() {
   err="$(mktemp)"
   for p in deploy-center.json .deploy-center.json; do
     if out="$(gh api "repos/$repo/contents/$p" 2>"$err")"; then
+      # Over 1 MB the contents API sends no "content" (encoding "none"): the file is asked again as raw text
+      # (the raw media type goes up to 100 MB) and put in as base64, so the parse below stays the same.
+      if [ "$(printf '%s' "$out" | jq -r '((.content // "") == "") and ((.size // 0) > 0)' 2>/dev/null)" = true ]; then
+        if raw="$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$repo/contents/$p" 2>"$err")"; then
+          out="$(printf '%s' "$out" | jq -c --arg c "$(printf '%s' "$raw" | base64 | tr -d '\n')" '.content = $c')"
+        fi
+      fi
       printf '%s' "$out" | jq -c --arg r "$repo" --arg p "$p" --argjson now "$now" '
           {repo:$r, path:$p, sha:(.sha // null), fetchedAt:$now}
           + ((try (.content // "" | gsub("\\s"; "") | @base64d | fromjson) catch null) as $c
@@ -45,13 +52,20 @@ team_fetch_one() {
     : > "$err"
   done
   if [ -s "$err" ]; then
-    grep -v '^[[:space:]]*$' "$err" | tail -n 1 | cut -c1-200 > "$f.err"
+    # Why there is no file, in words (the .err note is shown by `deploys team list`): a rate limit, no access, or a
+    # repo that is gone are different things to do something about. Not cached: the next read asks again.
+    if grep -qiE 'rate limit|secondary rate|HTTP 429' "$err"; then echo "GitHub's rate limit is reached; try again later" > "$f.err"
+    elif grep -qE 'HTTP 40[13]|Bad credentials|auth login' "$err"; then echo "no access to the repo (HTTP 401/403): gh auth login, or ask for access" > "$f.err"
+    else grep -v '^[[:space:]]*$' "$err" | tail -n 1 | cut -c1-200 > "$f.err"; fi
+  elif gh api "repos/$repo" --jq .id 2>&1 </dev/null | grep -q 'HTTP 404'; then
+    # 404 on both file names: the repo has no such file, or it was deleted or renamed, or this login cannot see it.
+    echo "the repo was not found: deleted, renamed, or no access for this login" > "$f.err"
   else
     printf '{"repo":"%s","none":true,"fetchedAt":%s}\n' "$repo" "$now" > "$f"; rm -f "$f.err"
   fi
   rm -f "$err"
 }
-export -f team_fetch_one
+par_fn team_fetch_one
 
 # The repos whose shared file counts here: every remembered Vercel repo, the repos added with
 # `deploys team add`, and any given as arguments (a Render service's repo, for one deploy).
@@ -72,7 +86,7 @@ team_sources() {
   [ "${DEPLOYS_TEAM_REFRESH:-}" != 1 ] || ttl=0
   list="$(team_repo_list "$@")"
   if [ -n "$list" ]; then
-    printf '%s\n' "$list" | tr '\n' '\000' | xargs -0 -r -P 8 -n 1 bash -c 'team_fetch_one "$4" "$1" "$2" "$3"' _ "$TEAM_CACHE" "$ttl" "$only" 2>/dev/null || true
+    printf '%s\n' "$list" | tr '\n' '\000' | xargs_par -0 -r -P "$(parallel_limit 8)" -n 1 bash -c 'team_fetch_one "$4" "$1" "$2" "$3"' _ "$TEAM_CACHE" "$ttl" "$only" 2>/dev/null || true
   fi
   while IFS= read -r r; do
     [ -n "$r" ] || continue

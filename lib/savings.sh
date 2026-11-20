@@ -255,13 +255,33 @@ sv_print() {  # stdin: simulate or ledger JSON
     end'
 }
 
-savings_main() {  # savings_main simulate|ledger [--days N]
-  local mode="$1" days=30 out gotdays=""
+# The same numbers as Markdown: a heading, a table per project, the method as a note.
+sv_markdown() {  # stdin: simulate or ledger JSON
+  jq -r 'def usd: if . == null then "?" else "$\(. * 100 | round / 100)" end;
+    def cell: tostring | gsub("[|]"; "\\|") | gsub("[\r\n]"; " ");
+    if .kind == "simulate" then
+      "## Estimate over the last \(.days) days, per month", "",
+      "| Project | Platform | Pushes | Auto-deploy | Once a day |", "|---|---|---:|---:|---:|",
+      (.projects[] | "| \(.name | cell) | \(.platform | cell) | \(.pushes) | \(.autoMonth.usd | usd) | \(.dailyMonth.usd | usd) |"),
+      "", "Auto-deploy would cost about \(.total.autoMonth.usd | usd) a month; deploying once a day about \(.total.dailyMonth.usd | usd).",
+      "", "_\(.method | cell)_"
+    else
+      "## Saved since auto-deploy went off", "",
+      (if .since then "Since \(.since): about **\(.total.usd | usd)** saved, \(.total.skipped) builds skipped." else "Auto-deploy was not turned off here yet: nothing saved so far." end),
+      "", "| Project | Platform | Off since | Pushes not built | Saved |", "|---|---|---|---:|---:|",
+      (.projects[] | "| \(.name | cell) | \(.platform | cell) | \(.offDay) | \(.skipped) of \(.pushes) | \(.savedUsd | usd) |"),
+      "", "_\(.method | cell)_"
+    end'
+}
+
+savings_main() {  # savings_main simulate|ledger [--days N] [--format markdown]
+  local mode="$1" days=30 out gotdays="" fmt=""
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
       --days) days="${2:-}"; gotdays=1; shift ;;
-      *) die "Unknown option $1. Usage: deploys simulate [--days N] [--json] | deploys ledger [--json]" ;;
+      --format) fmt="${2:-}"; shift; case "$fmt" in markdown|text|json) ;; *) die "--format is markdown, text or json" ;; esac ;;
+      *) die "Unknown option $1. Usage: deploys simulate [--days N] [--json | --format markdown] | deploys ledger [--json | --format markdown]" ;;
     esac
     shift
   done
@@ -273,5 +293,8 @@ savings_main() {  # savings_main simulate|ledger [--days N]
   # gh is asked for per GitHub project (sv_pushes): projects on GitLab alone need none.
   if [ "$mode" = simulate ]; then out="$(sv_facts simulate "$days" | sv_simulate_from)"
   else out="$(sv_facts ledger "$days" | sv_ledger_from)"; fi
-  if [ "${json:-0}" = 1 ]; then echo "$out"; else echo "$out" | sv_print; fi
+  [ "$fmt" != json ] || json=1
+  if [ "${json:-0}" = 1 ]; then echo "$out"
+  elif [ "$fmt" = markdown ]; then echo "$out" | sv_markdown
+  else echo "$out" | sv_print; fi
 }
