@@ -71,7 +71,7 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_rollback_preview", "deploys_simulate", "deploys_status"];
+const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_digest", "deploys_doctor", "deploys_explain", "deploys_freeze", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_rollback_preview", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -229,6 +229,14 @@ check("journal report passes the month", !r.error && /2026-03/.test(r.text) && c
   check("journal search: a bad date is refused", jb.error === true, jb.text);
   const jv = await s.call("deploys_journal_verify");
   check("journal verify: reads the chain through the CLI", !jv.error && /journal verify --json/.test(callLog()) && jv.structured?.linked === 3, jv.text);
+  const dg = await s.call("deploys_digest", { days: 14 });
+  check("digest: days go to the CLI, as JSON", !dg.error && /digest --days 14 --json/.test(callLog()) && dg.structured?.deploys === 7, dg.text);
+  check("digest: days out of range are refused", (await s.call("deploys_digest", { days: 400 })).error === true);
+  const fz = await s.call("deploys_freeze");
+  check("freeze: status through the CLI, nothing added", !fz.error && /freeze status --json/.test(callLog()) && fz.structured?.closedNow === false && !/freeze add|freeze clear/.test(callLog()), fz.text);
+  const ci = await s.call("deploys_ci", { repo: "acme/web", ref: "main" });
+  check("ci: repo and ref go to the CLI, no --wait", !ci.error && /ci acme\/web main --json/.test(callLog()) && !/--wait/.test(callLog()) && ci.structured?.state === "green", ci.text);
+  check("ci: a repo that is not owner/name is refused", (await s.call("deploys_ci", { repo: "--help" })).error === true && (await s.call("deploys_ci", { repo: "a/b", ref: "-x" })).error === true);
   const rp = await s.call("deploys_rollback_preview", { project: "app-web" });
   check("rollback preview: current, target and nothing rolled back", !rp.error && rp.structured?.current?.commit === "cccc333" && rp.structured?.target?.commit === "aaaa111" && /Nothing was rolled back/.test(rp.structured?.note) && !/rollback app-web/.test(callLog()), rp.text);
   const rp2 = await s.call("deploys_rollback_preview", { project: "site" });
