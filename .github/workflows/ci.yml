@@ -31,6 +31,10 @@ jobs:
         run: scripts/check-public.sh
       - name: File sizes stay under their ceilings
         run: scripts/check-size.sh
+      - name: Nothing bash 3.2 (macOS) does not have
+        run: scripts/check-bash32.sh
+      - name: shellcheck disables stay under their ceiling
+        run: scripts/check-disables.sh
 
   test:
     runs-on: macos-15
@@ -84,6 +88,10 @@ jobs:
         run: bash tests/welle10-tests.sh
       - name: CLI fixes tests (journal, launchd env, CI grace, request bodies)
         run: bash tests/cli-fixes-tests.sh
+      - name: CLI parses with the bash macOS ships (3.2)
+        run: |
+          /bin/bash --version | head -n 1
+          scripts/check-bash32.sh
       - name: CLI round 12 B tests (http, hooks, watch, verify, completion, release)
         run: bash tests/cli-r12b-tests.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

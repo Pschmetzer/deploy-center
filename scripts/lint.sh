@@ -31,6 +31,9 @@ if [ -z "$only" ]; then
   step "personal data and file sizes"
   run scripts/check-public.sh
   run scripts/check-size.sh
+  step "bash 3.2 and shellcheck disables"
+  run scripts/check-bash32.sh
+  run scripts/check-disables.sh
   step plutil
   if have plutil; then run plutil -lint scripts/*.plist.example; fi
 fi

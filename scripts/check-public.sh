@@ -42,6 +42,10 @@ tokens=(
   '-----BEGIN ([A-Z]+ )*PRIVATE KEY-----'                        # a private key block
   '\brnd_[A-Za-z0-9]{20,}'                                       # Render API key
 )
+# The masker of `deploys` (af_mask: logs, autofix, ai) knows more prefixes than the list above. Its list is read from
+# deploys itself, so a prefix added there is checked here the same day: one source (tests/cli-r12b-tests.sh runs a
+# sample of every prefix through both). Needs perl, which the masker needs too.
+mask_re="$(sed -n -e 's#^    s/\\b(\(sk-.*\))/\[masked\]/g;$#\1#p' -e 's#^    s/\\b(\(hf_.*\))\\b/\[masked\]/g;$#\1#p' deploys | paste -sd'|' -)"
 is_test_path() { case "$1" in tests/*|*/tests/*|*/Tests/*|*/test/*) return 0 ;; *) return 1 ;; esac; }
 
 # Email addresses: not after ":" or "/" (user:password@host in a URL), and not the placeholders,
@@ -72,6 +76,10 @@ check() {
     for p in "${tokens[@]}"; do
       if hits="$(grep -nIE -e "$p" "$file")"; then report "$name" "$hits"; fi
     done
+    if [ -n "$mask_re" ] && command -v perl >/dev/null 2>&1 \
+      && hits="$(RE="$mask_re" perl -ne 'BEGIN { $re = qr/\b($ENV{RE})/ } print "$.:$_" if -T $ARGV && /$re/' "$file")" && [ -n "$hits" ]; then
+      report "$name" "$hits"
+    fi
   fi
   if ! [[ "$name" =~ $email_files ]] && hits="$(grep -nIE -e "$email" "$file" | grep -vE "$email_ok")"; then
     report "$name" "$hits"
