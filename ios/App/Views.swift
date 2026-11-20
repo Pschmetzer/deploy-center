@@ -652,7 +652,15 @@ struct ProjectDetail: View {
         List {
             Section {
                 LabeledContent(L("Status", "Status")) {
-                    HStack(spacing: 6) { Image(systemName: p.icon).accessibilityHidden(true); Text(p.stateText) }.foregroundStyle(p.tint)
+                    // A deploy followed here shows its live state, like the row does (IDEEN-12 C9).
+                    if let r = store.running[p.key] {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small).accessibilityHidden(true)
+                            Text(r == "rollback" ? PhoneProject.stateWord(r) : L("deploying: ", "deployt: ") + PhoneProject.stateWord(r))
+                        }.foregroundStyle(.blue)
+                    } else {
+                        HStack(spacing: 6) { Image(systemName: p.icon).accessibilityHidden(true); Text(p.stateText) }.foregroundStyle(p.tint)
+                    }
                 }
                 LabeledContent(L("Platform", "Plattform"), value: p.provider.rawValue)
                 LabeledContent(L("Auto-deploy", "Auto-Deploy")) {
@@ -869,25 +877,41 @@ struct BuildLogView: View {
     let record: DeployRecord?
     @State private var log: BuildLog?
     @State private var copied = false
+    /// Filters the lines shown (the copied and shared text stays the whole masked log).
+    @State private var find = ""
+
+    private func load() async { log = nil; log = await store.buildLog(project, record) }
 
     var body: some View {
         Group {
             if let log {
                 if let problem = log.problem {
-                    ContentUnavailableView(L("No log", "Kein Log"), systemImage: "doc.text.magnifyingglass", description: Text(problem))
+                    ContentUnavailableView {
+                        Label(L("No log", "Kein Log"), systemImage: "doc.text.magnifyingglass")
+                    } description: { Text(problem) } actions: {
+                        // A log that is not there yet (a deploy that just started) or a failed read: ask again (IDEEN-12 C50).
+                        Button(L("Try again", "Erneut versuchen")) { Task { await load() } }
+                    }
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
                             ForEach(Array(log.lines.enumerated()), id: \.offset) { i, l in
-                                Text(l.isEmpty ? " " : l).font(.caption.monospaced())
-                                    .foregroundStyle(i == log.errorAt ? .red : .primary)
-                                    .fontWeight(i == log.errorAt ? .bold : .regular)
+                                if find.isEmpty || l.localizedCaseInsensitiveContains(find) {
+                                    Text(l.isEmpty ? " " : l).font(.caption.monospaced())
+                                        .foregroundStyle(i == log.errorAt ? .red : .primary)
+                                        .fontWeight(i == log.errorAt ? .bold : .regular)
+                                        // Colour is no information for VoiceOver: the first error line says so (IDEEN-12 C45).
+                                        .accessibilityLabel(i == log.errorAt ? L("Error: ", "Fehler: ") + l : l)
+                                        .accessibilityAddTraits(i == log.errorAt ? .isHeader : [])
+                                }
                             }
                         }
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                     }
+                    .refreshable { await load() }
+                    .searchable(text: $find, prompt: L("Find in the log", "Im Log suchen"))
                     .safeAreaInset(edge: .bottom) {
                         Text(log.errorAt != nil ? L("From shortly before the first error line. Secrets are masked as well as known, check before sharing.",
                                                     "Ab kurz vor der ersten Fehlerzeile. Geheimnisse sind nach bestem Wissen maskiert, vor dem Teilen prüfen.")
@@ -908,9 +932,19 @@ struct BuildLogView: View {
                                                   options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(600)])
                     copied = true
                 } label: { Label(copied ? L("Copied", "Kopiert") : L("Copy", "Kopieren"), systemImage: copied ? "checkmark" : "doc.on.doc") }
+                // The masked text only, like Copy (IDEEN-12 C50).
+                ShareLink(item: full) { Image(systemName: "square.and.arrow.up") }
+                    .accessibilityLabel(L("Share the masked log", "Maskiertes Log teilen"))
             }
         }
-        .task { log = await store.buildLog(project, record) }
+        // "Copied" is said once and goes back to "Copy" (IDEEN-12 C44).
+        .task(id: copied) {
+            guard copied else { return }
+            AccessibilityNotification.Announcement(L("Copied", "Kopiert")).post()
+            try? await Task.sleep(for: .seconds(3))
+            copied = false
+        }
+        .task { await load() }
     }
 }
 
