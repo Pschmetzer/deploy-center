@@ -678,7 +678,7 @@ struct DeployCenterApp: App {
             let n = w.projects
             // No array of all items: this label is built on every change of the store.
             let active = store.items.values.contains { $0.contains { $0.state.isActive } }
-            let failed = !active && store.items.values.contains { $0.contains { if case .failed = $0.state { return true } else { return false } } }
+            let failed = !active && store.hasFailedDeploy
             // Over the monthly budget at this pace: a dollar sign, unless something more urgent shows.
             let budget = UserDefaults.standard.double(forKey: "monthlyBudget")
             let overBudget = budget > 0 && (store.monthPace ?? 0) > budget
@@ -784,9 +784,11 @@ struct MenuBarContent: View {
                 Button(L("Cancel all \(active.count) deploys …", "Alle \(active.count) Deploys abbrechen …")) {
                     let a = NSAlert()
                     a.messageText = L("Cancel all \(active.count) deploys?", "Alle \(active.count) Deploys abbrechen?")
-                    a.addButton(withTitle: L("Cancel deploys", "Deploys abbrechen")); a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
+                    // The safe answer is the default (Return); stopping is the second button.
+                    a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
+                    a.addButton(withTitle: L("Cancel deploys", "Deploys abbrechen")).hasDestructiveAction = true
                     NSApp.activate(ignoringOtherApps: true)
-                    if a.runModal() == .alertFirstButtonReturn { store.cancelAll() }
+                    if a.runModal() == .alertSecondButtonReturn { store.cancelAll() }
                 }
             }
         }

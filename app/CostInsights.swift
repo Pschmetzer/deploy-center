@@ -84,15 +84,35 @@ struct Sparkline: View {
     }
 }
 
+/// The one way a project budget is keyed: "<platform>/<name>". Older versions wrote a bare name (costs sheet)
+/// or "<platform>/<id>" (project menu); `migrate` and `Store.projectBudget` still read those.
+enum BudgetKey {
+    nonisolated static func key(platform: String, name: String) -> String { "\(platform)/\(name)" }
+    /// Bare names (no "/") were Vercel projects from the costs sheet.
+    nonisolated static func migrate(_ d: [String: Double]) -> [String: Double] {
+        var out: [String: Double] = [:]
+        for (k, v) in d { out[k.contains("/") ? k : key(platform: "vercel", name: k)] = v }
+        return out
+    }
+}
+
 /// One dot per project that has a budget: green, yellow, red. The budgets live in the app's defaults.
 enum ProjectBudgets {
     static let key = "projectBudgets"
-    static func all() -> [String: Double] { (UserDefaults.standard.dictionary(forKey: key) as? [String: Double]) ?? [:] }
-    static func set(_ name: String, _ value: Double) {
-        var d = all()
-        if value > 0, value.isFinite { d[name] = value } else { d.removeValue(forKey: name) }
-        UserDefaults.standard.set(d, forKey: key)
+    static func all() -> [String: Double] {
+        let raw = (UserDefaults.standard.dictionary(forKey: key) as? [String: Double]) ?? [:]
+        let m = BudgetKey.migrate(raw)
+        if m != raw { UserDefaults.standard.set(m, forKey: key) }
+        return m
     }
+    static func write(_ d: [String: Double]) { UserDefaults.standard.set(d, forKey: key) }
+    /// A Vercel project's budget by name (the costs sheet only knows names).
+    static func set(_ name: String, _ value: Double) {
+        var d = all(); let k = BudgetKey.key(platform: "vercel", name: name)
+        if value > 0, value.isFinite { d[k] = value } else { d.removeValue(forKey: k) }
+        write(d)
+    }
+    static func value(name: String) -> Double? { all()[BudgetKey.key(platform: "vercel", name: name)] }
 }
 
 struct ProjectBudgetEditor: View {
@@ -105,6 +125,6 @@ struct ProjectBudgetEditor: View {
                 .frame(width: 140).onSubmit { ProjectBudgets.set(name, value) }
             Button(L("Save", "Sichern")) { ProjectBudgets.set(name, value) }
         }
-        .padding(12).onAppear { value = ProjectBudgets.all()[name] ?? 0 }
+        .padding(12).onAppear { value = ProjectBudgets.value(name: name) ?? 0 }
     }
 }

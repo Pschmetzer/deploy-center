@@ -6,7 +6,7 @@ enum LogTools {
     /// Words that mark a failing line in the logs of npm, pnpm, tsc, pip, Docker, Vercel and Render.
     /// Matched as whole words, so `ErrorBoundary.tsx` or `onError` is not a failure.
     private static let errorPattern = try! NSRegularExpression(
-        pattern: #"\b(error|errors|failed|failure|fatal|exception|traceback)\b|\berr!|cannot find|not found|exited with \d+"#,
+        pattern: #"(?<![\w/-])(error|errors|failed|failure|fatal|exception|traceback)(?![\w/-]|\.\w)|\berr!|cannot find|not found|exited with \d+"#,
         options: [.caseInsensitive])
     /// Good news and noise that contain those words.
     private static let harmless = try! NSRegularExpression(
@@ -119,7 +119,7 @@ enum LogTools {
 extension LogTools {
     /// What is about to go live, as Markdown for a release mail or a chat message: features, fixes,
     /// the rest, and bot commits last. A "feat:"/"fix(x):" prefix decides the group and is dropped.
-    static func releaseNotes(name: String, commits: [Details.Commit]) -> String {
+    static func releaseNotes(name: String, commits: [Details.Commit], prMark: String = "#") -> String {
         let human = commits.filter { !($0.bot ?? false) }, bots = commits.filter { $0.bot ?? false }
         func split(_ msg: String) -> (kind: String?, text: String) {
             guard let m = conventional.firstMatch(in: msg, range: NSRange(msg.startIndex..., in: msg)),
@@ -127,7 +127,7 @@ extension LogTools {
             return (msg[k].lowercased(), String(msg[rest]))
         }
         func line(_ c: Details.Commit, _ text: String) -> String {
-            "- \(text)" + (c.pr.map { " (#\($0)" + ")" } ?? "") + (c.author.map { " – \($0)" } ?? "")
+            "- \(text)" + (c.pr.map { " (\(prMark)\($0))" } ?? "") + (c.author.map { " – \($0)" } ?? "")
         }
         let parsed = human.map { ($0, split($0.msg)) }
         // Without any prefix the list stays as it was: one plain list.

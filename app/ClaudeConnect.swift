@@ -343,19 +343,21 @@ final class ClaudeLink: ObservableObject {
 
         let dData = ClaudeFiles.read(ClaudeEnv.desktopConfig)
         let dFound = ClaudeEnv.desktopApp != nil || dData != nil
+        let dEntry = ClaudeConfig.entry(dData)   // parsed once
         if !dFound { desktop = .notFound }
         else if (try? ClaudeConfig.parse(dData)) == nil {
             desktop = .problem(L("Its config file is not valid JSON. Nothing is changed.", "Seine Konfigurationsdatei ist kein gültiges JSON. Es wird nichts geändert."))
         }
-        else if let e = ClaudeConfig.entry(dData) { desktop = .connected; desktopAllows = ClaudeConfig.allowsDeploy(e) }
+        else if let e = dEntry { desktop = .connected; desktopAllows = ClaudeConfig.allowsDeploy(e) }
         else { desktop = .notConnected; desktopAllows = false }
         var stale: [String] = []
-        if desktop == .connected, let e = ClaudeConfig.entry(dData), ClaudeConfig.stale(e) { stale.append("Claude Desktop") }
+        if desktop == .connected, let e = dEntry, ClaudeConfig.stale(e) { stale.append("Claude Desktop") }
 
         let cData = await Task.detached { ClaudeFiles.read(ClaudeEnv.codeConfig) }.value
-        if let e = ClaudeConfig.entry(cData) { code = .connected; codeAllows = ClaudeConfig.allowsDeploy(e) }
+        let cEntry = ClaudeConfig.entry(cData)   // parsed once
+        if let e = cEntry { code = .connected; codeAllows = ClaudeConfig.allowsDeploy(e) }
         else { code = cli == nil ? .notFound : .notConnected; codeAllows = false }
-        if code == .connected, let e = ClaudeConfig.entry(cData), ClaudeConfig.stale(e) { stale.append("Claude Code") }
+        if code == .connected, let e = cEntry, ClaudeConfig.stale(e) { stale.append("Claude Code") }
         if !stale.isEmpty {
             say(L("Out of date: \(stale.joined(separator: ", ")) points to a place the app is no longer in. Connect again.",
                   "Veraltet: \(stale.joined(separator: ", ")) zeigt auf einen Ort, an dem die App nicht mehr liegt. Neu verbinden."), failed: true)
