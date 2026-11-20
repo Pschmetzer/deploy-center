@@ -119,7 +119,9 @@ lacks "report: the error text of a failure is not in it by default" "$md$html" '
 rp --out "$tmp/rep2" --details --format md >/dev/null
 contains "report: --details adds the error text" "$(cat "$tmp/rep2"/*.md)" '/Users/me'
 case "$(cat "$tmp/calls.log")" in *deploy\ *|*rollback*|*--yes*) fail "report: it only reads" "$(cat "$tmp/calls.log")" ;; *) ok "report: it only reads" ;; esac
-rp --period month --print --no-savings | grep -q '^Period: .* (30 days)' && ok "report: a month is 30 days" || fail "report: a month is 30 days" "no 30 days line"
+# The output goes into a variable first: `grep -q` closing the pipe early is a SIGPIPE, which pipefail counts (macOS only).
+month="$(rp --period month --print --no-savings)"
+case "$month" in *"(30 days)"*) ok "report: a month is 30 days" ;; *) fail "report: a month is 30 days" "no 30 days line" ;; esac
 expect "report: --no-savings leaves the saving out (and says so)" "$(rp --print --no-savings | grep -c 'Not available')" 1
 expect "report: German texts" "$(rp --print --lang de | grep -c '^| Fehlerquote')" 1
 rp --out "$tmp/rep3" --format html --lang de >/dev/null
