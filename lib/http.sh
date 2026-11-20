@@ -18,53 +18,118 @@
 
 declare -F die >/dev/null 2>&1 || die() { echo "Error: $*" >&2; exit 1; }
 
-# The seconds a Retry-After header asks for (a number, at most 60), or nothing.
-http_retry_after() {  # http_retry_after <header file>
-  [ -r "$1" ] || return 0
-  local v; v="$(tr -d '\r' < "$1" 2>/dev/null | awk 'tolower($1) == "retry-after:" { print $2 }' | tail -n 1)"
-  case "$v" in ""|*[!0-9]*) return 0 ;; esac
-  [ "$v" -le 60 ] || v=60
+# A value inside a curl config line ("..."): backslash and quote escaped, as curl reads it. A line
+# break (or any other control character) would end the line and start a directive of its own, so
+# it is refused (status 1) - and the caller says so without printing the value.
+curl_cfg_quote() {  # curl_cfg_quote <value>
+  case "$1" in *[[:cntrl:]]*) return 1 ;; esac
+  local v="${1//\\/\\\\}"; v="${v//\"/\\\"}"
   printf '%s' "$v"
 }
 
+# The seconds a Retry-After header asks for: a number ("30") or a date ("Wed, 21 Oct 2026 07:28:00
+# GMT", as seconds from now), or nothing. Not capped here: http_call stops when it is over a minute.
+http_retry_after() {  # http_retry_after <header file>
+  [ -r "$1" ] || return 0
+  local v; v="$(tr -d '\r' < "$1" 2>/dev/null | awk 'tolower($1) == "retry-after:" { $1 = ""; sub(/^ +/, ""); print }' | tail -n 1)"
+  case "$v" in
+    "") return 0 ;;
+    *[!0-9]*) local t now   # the date form: GNU date -d, BSD date -j -f
+      t="$(date -u -d "$v" +%s 2>/dev/null || date -j -u -f '%a, %d %b %Y %H:%M:%S GMT' "$v" +%s 2>/dev/null)" || return 0
+      [ -n "$t" ] || return 0
+      now="$(date +%s)"; v=$((t - now)); [ "$v" -ge 0 ] || v=0 ;;
+  esac
+  printf '%s' "$v"
+}
+
+# One line per call on stderr when DEPLOYS_HTTP_TRACE is set: method, path (no query: a query can
+# hold a token), status and milliseconds. Never a header, never a body.
+http_trace() {  # http_trace <method> <url> <code> <start seconds-ms>
+  [ -n "${DEPLOYS_HTTP_TRACE:-}" ] || return 0
+  local rest="${2#*://}" path ms
+  path="/${rest#*/}"; [ "$rest" != "${rest#*/}" ] || path="/"; path="${path%%[?#]*}"
+  ms="$(( ($(date +%s) - $4) * 1000 ))"
+  printf 'http: %s %s -> %s (~%s ms)\n' "$1" "$path" "$3" "$ms" >&2
+}
+
+# 404: what kind of thing was not found, from the path (/services/srv-1 -> service "srv-1").
+http_notfound_hint() {  # http_notfound_hint <path without query>
+  local p="${1%/}" id kind
+  id="${p##*/}"; p="${p%/*}"; kind="${p##*/}"
+  case "$kind" in ""|v[0-9]*|api) echo " (not found: the path $1; renamed or deleted?)"; return ;; esac
+  kind="${kind%s}"
+  echo " (not found: no $kind \"$id\"; renamed or deleted?)"
+}
+
 http_call() {
-  local label="$1" method="$2" url="$3" body="${4:-}" out code try err hdr own="" wait bodyf=""
+  local label="$1" method="$2" url="$3" body="${4:-}" out code try err hdr own="" wait bodyf="" rc t0 deadline limit_hit="" auth q
   local args=(-sS --connect-timeout 10 --max-time "${HTTP_MAX_TIME:-60}" -X "$method" -H "Accept: application/json" -K -)
+  auth="${HTTP_AUTH:-}"
+  # The key goes into a curl config line: a quote or line break must not add directives, and an
+  # error must not print what was typed (a key with a line break is a paste mistake, but still a key).
+  q="$(curl_cfg_quote "$auth")" || die "$label: the key has a line break or control character in it (a paste mistake?): set it again without"
   case "$body" in
     "") ;;
     @*) [ -r "${body#@}" ] || die "$label: the body file ${body#@} cannot be read"
         args+=(-H "Content-Type: application/json" --data-binary "$body") ;;
     # A JSON body goes in through a file of our own (0600), never as --data on the command line:
     # a body can hold a secret (an environment variable's value) and `ps` shows every argument.
-    *) bodyf="$(mktemp)"; printf '%s' "$body" > "$bodyf"
+    *) bodyf="$(umask 077; mktemp)"; printf '%s' "$body" > "$bodyf"
        args+=(-H "Content-Type: application/json" --data-binary "@$bodyf") ;;
   esac
-  err="$(mktemp)"
+  err="$(umask 077; mktemp)"
   # The headers are needed for Retry-After: a file of our own when the caller gave none.
-  hdr="${HTTP_HEADERS:-}"; [ -n "$hdr" ] || { hdr="$(mktemp)"; own=1; }
+  hdr="${HTTP_HEADERS:-}"; [ -n "$hdr" ] || { hdr="$(umask 077; mktemp)"; own=1; }
   args+=(-D "$hdr")
+  # Ctrl-C or kill: the files (a body can hold a secret) go, then the signal's exit status.
+  local old_int old_term; old_int="$(trap -p INT)"; old_term="$(trap -p TERM)"
+  # shellcheck disable=SC2064  # the file names are fixed now on purpose
+  trap "rm -f '$err' '$bodyf' ${own:+'$hdr'}; exit 130" INT
+  # shellcheck disable=SC2064
+  trap "rm -f '$err' '$bodyf' ${own:+'$hdr'}; exit 143" TERM
+  t0="$(date +%s)"; deadline="${HTTP_DEADLINE:-120}"
   for try in 1 2 3; do
-    out="$(printf 'header = "%s"\n' "${HTTP_AUTH:-}" | curl "${args[@]}" -w '\n%{http_code}' "$url" 2>"$err")" || out=$'\n000'
+    rc=0
+    out="$(printf 'header = "%s"\n' "$q" | curl "${args[@]}" -w '\n%{http_code}' "$url" 2>"$err")" || { rc=$?; out=$'\n000'; }
     code="${out##*$'\n'}"; out="${out%$'\n'*}"
+    # How long to wait before the next try, and whether the whole budget allows another one.
+    wait=""
     case "$code" in
-      429) if [ "$try" -lt 3 ]; then wait="$(http_retry_after "$hdr")"; sleep "${wait:-$((try * 3 + RANDOM % 3))}"; continue; fi ;;
-      5*|000) case "$method" in GET|PUT|PATCH|DELETE) if [ "$try" -lt 3 ]; then wait="$(http_retry_after "$hdr")"; sleep "${wait:-$((try * 2 + RANDOM % 2))}"; continue; fi ;; esac ;;
+      429) wait="$(http_retry_after "$hdr")"
+           if [ -n "$wait" ] && [ "$wait" -gt 60 ]; then limit_hit="$wait"; break; fi
+           [ "$try" -lt 3 ] && { wait="${wait:-$((try * 3 + RANDOM % 3))}"; } ;;
+      5*|000)
+        if [ "$try" -lt 3 ]; then
+          case "$method" in
+            GET|PUT|PATCH|DELETE) wait="$(http_retry_after "$hdr")"; wait="${wait:-$((try * 2 + RANDOM % 2))}" ;;
+            # A POST is asked again only when nothing can have arrived: curl 6 (host not found) or 7 (no connection).
+            *) case "$rc" in 6|7) wait=$((try * 2)) ;; esac ;;
+          esac
+        fi ;;
     esac
-    break
+    [ -n "$wait" ] || break
+    # The budget for all tries together: no sleeping past it.
+    if [ "$(( $(date +%s) - t0 + wait ))" -gt "$deadline" ]; then break; fi
+    sleep "$wait"
   done
+  http_trace "$method" "$url" "$code" "$t0"
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
   rm -f "$err" ${bodyf:+"$bodyf"}; [ -z "$own" ] || rm -f "$hdr"
+  trap - INT TERM; [ -z "$old_int" ] || eval "$old_int"; [ -z "$old_term" ] || eval "$old_term"
   if [[ "$code" != 2* ]]; then
     local hint="" rest="${url#*://}" path
     path="/${rest#*/}"; [ "$rest" != "${rest#*/}" ] || path="/"
     case "$code" in
       000) hint=" (no answer: network or timeout)" ;;
       401|403) hint=" (the key is wrong or expired${HTTP_FIX:+: $HTTP_FIX})" ;;
-      404) hint=" (not found: renamed or deleted?)" ;;
-      429) hint=" (rate limit: try again in a minute)" ;;
+      404) hint="$(http_notfound_hint "${path%%[?#]*}")" ;;
+      429) if [ -n "$limit_hit" ]; then hint=" (rate limit: the server asks to wait ${limit_hit} s; try again later)"
+           else hint=" (rate limit: try again in a minute)"; fi ;;
       5*) hint=" ($label had a problem: try again later)" ;;
     esac
-    # One line, 300 characters: an error page (HTML) must not fill the terminal.
+    # One line, 300 characters: an error page (HTML) must not fill the terminal. A secret the
+    # platform echoes back (a token in an error message) is masked like a log is.
+    if declare -F af_mask >/dev/null 2>&1; then out="$(printf '%s' "$out" | af_mask 2>/dev/null)" || out="(the answer is not shown: it could not be masked)"; fi
     out="$(printf '%s' "$out" | tr '\r\n\t' '   ' | cut -c1-300)"
     die "$label $method $path -> HTTP $code$hint: $out"
   fi

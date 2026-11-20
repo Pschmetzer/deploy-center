@@ -84,6 +84,8 @@ jobs:
         run: bash tests/welle10-tests.sh
       - name: CLI fixes tests (journal, launchd env, CI grace, request bodies)
         run: bash tests/cli-fixes-tests.sh
+      - name: CLI round 12 B tests (http, hooks, watch, verify, completion, release)
+        run: bash tests/cli-r12b-tests.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -169,6 +171,8 @@ jobs:
         run: bash tests/welle10-tests.sh
       - name: CLI fixes tests
         run: bash tests/cli-fixes-tests.sh
+      - name: CLI round 12 B tests
+        run: bash tests/cli-r12b-tests.sh
 
   integrations:
     # integrations/tests/run.sh: Action, digest, statuspage, badge, notify, hooks, the Claude Code
