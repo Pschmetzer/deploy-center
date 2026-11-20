@@ -290,7 +290,7 @@ expect "notify: --link becomes a button" "$(RENDER_API_KEY=x notify/notify.sh --
 cat > "$tmp/event.json" <<'JSON'
 {"project":"app-web","status":"failed","platform":"vercel","duration":125,"commit":"abc1234def","url":"https://status.example.test/app-web"}
 JSON
-ev() { notify/notify.sh --dry-run --event "$tmp/event.json" "$@"; }
+ev() { notify/notify.sh --dry-run --event "$tmp/event.json"; }
 expect "notify event: Slack blocks, header first" "$(ev | sed -n 2p | jq -c '[.blocks[].type]')" '["header","section","context","actions"]'
 expect "notify event: Slack facts: status, duration, commit" "$(ev | sed -n 2p | jq -r '.blocks[1].fields | map(.text | gsub("\n"; " ")) | join("|")')" '*Project* app-web|*Status* Failed|*Platform* vercel|*Duration* 2 min 05 s|*Commit* abc1234'
 expect "notify event: Slack link is a danger button for a failure" "$(ev | sed -n 2p | jq -c '.blocks[3].elements[0] | [.style, .url]')" '["danger","https://status.example.test/app-web"]'
