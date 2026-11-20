@@ -20,13 +20,21 @@ WAS ES KANN
 • Deployt den neuesten Commit des Produktions-Branches, nach Face ID
 • Rollt auf den vorigen Live-Deploy zurück, nach Face ID
 • Verfolgt einen Deploy, bis er live ist oder fehlschlägt
-• Widgets für den Home-Bildschirm: wartende Pull Requests, Builds und Fehler
-• Optionale Hinweise, wenn etwas neu wartet oder fehlschlägt (geprüft im Hintergrund, wenn iOS es erlaubt)
+• Live-Aktivität auf dem Sperrbildschirm und in der Dynamic Island, solange ein Deploy läuft, mit einem Balken über die übliche Build-Zeit
+• Widgets für den Home- und den Sperrbildschirm: wartende Pull Requests, Builds und Fehler, auf Wunsch für eine Plattform
+• Kontrollzentrum und Action-Taste: wartende Pull Requests oder die Liste neu lesen
+• Siri und Kurzbefehle: „Was wartet in Deploy Center“, fehlgeschlagene Deploys, ein Projekt öffnen oder einen Deploy vorbereiten (er fragt weiter nach Face ID)
+• Spotlight findet deine Projekte; Handoff setzt ein Projekt auf deinen anderen Geräten fort
+• Optionale Hinweise, wenn etwas neu wartet, fehlschlägt oder live geht (geprüft im Hintergrund, wenn iOS es erlaubt)
+• Alle wartenden Projekte mit einer Face-ID-Frage deployen
+• Liest den letzten Verlauf auch offline
 
 PRIVAT VON ANFANG AN
 • Kein Konto und kein Server von uns: Die App spricht direkt mit api.vercel.com, api.render.com und api.github.com
 • Verbinde dich mit Deploy Center auf deinem Mac: Er übergibt seine Schlüssel über deinen iCloud-Schlüsselbund (Ende-zu-Ende-verschlüsselt) oder einen QR-Code. Deine Apple-ID ist das Konto
 • Selbst eingetragene Schlüssel bleiben nur im Schlüsselbund dieses Geräts
+• Spotlight und Handoff lassen sich ausschalten; mit „Beim Öffnen entsperren“ erreicht kein Projektname den Sperrbildschirm, Siri oder Spotlight
+• Die Kamera liest nur den QR-Code der Mac-App, ihr Bild verlässt das Gerät nicht
 • Keine Analyse, kein Tracking, keine Werbung
 
 OHNE KONTO AUSPROBIEREN
@@ -40,7 +48,7 @@ Deploy Center ist Open Source (MIT) und hat eine Begleit-App für den Mac.
 Deploy Center steht in keiner Verbindung zu Vercel, Render, GitHub oder Anthropic und wird von ihnen weder unterstützt noch gesponsert.
 
 ## Schlüsselwörter (100)
-deploy,deployment,devops,ci,cd,rollback,build,hosting,serverless,entwickler,release,web,api
+deployment,devops,ci,cd,rollback,build,hosting,serverless,entwickler,release,web,api,widget,siri
 
 ## Support-URL
 https://deploycenter.app

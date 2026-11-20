@@ -22,13 +22,21 @@ WHAT IT DOES
 • Deploys the newest commit of the production branch, after Face ID
 • Rolls back to the previous live deploy, after Face ID
 • Follows a deploy until it is live or fails
-• Widgets for the Home Screen: waiting pull requests, builds and failures
-• Optional notes when something newly waits or fails (checked in the background when iOS allows it)
+• Live Activity on the lock screen and in the Dynamic Island while a deploy runs, with a bar over the usual build time
+• Widgets for the Home Screen and the lock screen: waiting pull requests, builds and failures, for one platform if you like
+• Control Center and Action button: waiting pull requests, or read the list again
+• Siri and Shortcuts: "What waits in Deploy Center", failed deploys, open a project or prepare a deploy (it still asks for Face ID)
+• Spotlight finds your projects; Handoff continues a project on your other devices
+• Optional notes when something newly waits, fails or goes live (checked in the background when iOS allows it)
+• Deploy all waiting projects with one Face ID question
+• Reads your last history offline
 
 PRIVATE BY DESIGN
 • No account and no server of ours: the app talks directly to api.vercel.com, api.render.com and api.github.com
 • Connect to Deploy Center on your Mac: it hands over its keys through your iCloud Keychain (end-to-end encrypted) or a QR code. Your Apple ID is the account
 • Keys you type in stay in this device's keychain only
+• Spotlight and Handoff can be switched off; with "Unlock on open" no project name reaches the lock screen, Siri or Spotlight
+• The camera only reads the QR code of the Mac app, and its picture never leaves the device
 • No analytics, no tracking, no ads
 
 TRY IT WITHOUT AN ACCOUNT
@@ -42,7 +50,7 @@ Deploy Center is open source (MIT) and has a companion app for the Mac.
 Deploy Center is not affiliated with, endorsed by or sponsored by Vercel, Render, GitHub or Anthropic.
 
 ## Keywords (100)
-deploy,deployment,devops,ci,cd,rollback,build,hosting,serverless,developer,release,ship,web,api
+deployment,devops,ci,cd,rollback,build,hosting,serverless,developer,release,ship,web,api,widget,siri
 
 ## Note on names
 Third-party names (Vercel, Render, GitHub) appear only in the description, where they say what the app works with. They are kept out of the name, subtitle and keywords (App Review Guideline 2.3.7). Adding them there is the owner's decision.
