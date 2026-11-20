@@ -4,7 +4,9 @@ Each heading is a message the app or `deploys` shows, word for word. Search this
 
 In the app, an error in the log or details window has a **Help** button that opens the matching section here.
 
-`deploys creds` shows where each platform's key comes from, whether it is accepted and how old a keychain key is. `deploys certs` shows which TLS certificates run out soon.
+`deploys creds` shows where each platform's key comes from, whether it is accepted and how old a keychain key is. Where the keychain is off limits (CI, SSH, a locked login keychain), set `<NAME>_CMD`, a command that prints the key: `RENDER_API_KEY_CMD='op read op://vault/render/key'` (1Password, pass, Vault); it is asked after the variable and before the keychain ([CLI.md](CLI.md#environment-variables)).
+
+`deploys hooks install` (a Git `pre-push` hook in one repo) and the `hooks.d` folder (scripts that run around a deploy, [CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd)) have nothing to do with each other. If a pre-deploy script does not run, look at the line `hooks.d: <file> ... was not run`: a file the group or others can write to, or one that is not yours, is skipped (`chmod go-w`). `deploys certs` shows which TLS certificates run out soon.
 
 Under **Settings → Platforms → Health**, a Vercel or Render login that has been in use for 90 days gets a note to consider renewing it. The age counts from the day the app first saw the login, so it is a nudge, not a fact about the token.
 

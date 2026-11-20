@@ -204,8 +204,8 @@ for s in tests/*-tests.sh; do
 done
 expect "ci.yml runs every shell suite (the app suite aside)" "$miss" ""
 miss=""
-for s in tests/*-tests.sh; do case "$s" in tests/app-tests.sh|tests/cli-tests.sh|tests/savings-tests.sh) continue ;; esac; grep -q "$s" tests/all.sh || miss="$miss $s"; done
-expect "all.sh runs every shell suite" "$miss" ""
+for s in tests/*-tests.sh; do case "$s" in tests/app-tests.sh|tests/cli-tests.sh|tests/savings-tests.sh) continue ;; esac; grep -q "$s" tests/suites.txt || miss="$miss $s"; done
+expect "suites.txt (the list all.sh runs) names every shell suite" "$miss" ""
 expect "CODEOWNERS: lib/ and site/install.sh" "$(grep -c '^/lib/ \|^/site/install.sh ' .github/CODEOWNERS)" "2"
 expect "examples pin the current release" "$(grep -h 'DEPLOYS_VERSION: "' examples/*.yml | grep -vc "\"$(cat VERSION)\"")" "0"
 

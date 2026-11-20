@@ -9,3 +9,19 @@ site/install/
 vendor/
 __pycache__/
 .claude/worktrees/
+# Secrets and signing material never belong in the repo (build.sh reads the profile from ~/.config).
+.env
+.env.*
+*.p12
+*.pem
+*.cer
+*.provisionprofile
+*.mobileprovision
+.release.env.*
+# Editors and Xcode
+.vscode/
+.idea/
+DerivedData/
+ios/build/
+site/blog/feed.xml
+site/schema/

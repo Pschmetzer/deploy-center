@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Once a week, on main: a new runner image (Xcode, bash), a changed gh or vercel output or an expired pin
+  # shows up here, not at the next unrelated pull request. The Website workflow publishes after a push only.
+  schedule:
+    - cron: "23 5 * * 1"
 
 permissions:
   contents: read
@@ -14,6 +18,21 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  lint:
+    # What needs no macOS: the personal-data and size checks and shellcheck. Fails fast and cheap.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: No personal data in the public repo
+        run: scripts/check-public.sh
+      - name: File sizes stay under their ceilings
+        run: scripts/check-size.sh
+      - name: shellcheck (the same as scripts/lint.sh)
+        run: scripts/lint.sh shellcheck
+
   test:
     runs-on: macos-15
     timeout-minutes: 30
@@ -34,18 +53,10 @@ jobs:
           if [ ! -d "$x" ]; then for d in /Applications/Xcode_16*.app; do x="$d"; done; fi
           sudo xcode-select -s "$x"
       - name: Tools
-        run: brew install jq shellcheck actionlint
-      - name: No personal data in the public repo
-        run: scripts/check-public.sh
-      - name: File sizes stay under their ceilings
-        run: scripts/check-size.sh
+        run: brew install jq actionlint
       - name: actionlint (workflows and the example workflows people copy)
         run: actionlint .github/workflows/*.yml docs/deploy-on-label.yml examples/*.yml integrations/*/examples/*.yml
-      - name: shellcheck
-        run: |
-          shellcheck --severity=warning deploys providers/*.sh build.sh release.sh scripts/*.sh tests/*.sh tests/lib/*.sh tests/providers/*.sh lib/*.sh
-          shellcheck --severity=warning integrations/*/*.sh integrations/lib/*.sh integrations/claude-code/scripts/*.sh integrations/hooks/pre-push integrations/tests/*.sh
-          shellcheck site/install.sh
+      # shellcheck, check-public and check-size run in the lint job (Ubuntu): macOS minutes count tenfold.
       - name: Lint the example LaunchAgents and the icon script
         run: |
           plutil -lint scripts/*.plist.example
@@ -218,7 +229,7 @@ jobs:
           persist-credentials: false
       - name: shellcheck install.sh (POSIX sh, all severities)
         run: |
-          shellcheck site/install.sh
+          shellcheck --severity=style site/install.sh
           shellcheck --severity=warning scripts/package-cli.sh scripts/homebrew-formula.sh tests/install-tests.sh
       - name: Install tests (dash)
         run: INSTALL_SH=dash bash tests/install-tests.sh
@@ -304,6 +315,20 @@ jobs:
         run: python3 -I scripts/check-strings.py
       - name: Release gate (VERSION, home page and appcast name the same release)
         run: python3 -I scripts/check-release.py
+      - name: Docs agree (every page in docs/README.md, README.md and README.de.md alike, one h1, the man page is current)
+        run: python3 -I scripts/check-docs.py
+      - name: The scripts run on Python 3.9 (the one of the Command Line Tools)
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.9"
+      - name: Check links, the site, the strings and the docs on Python 3.9
+        run: |
+          python3 --version
+          python3 -I scripts/check-links.py site
+          python3 -I scripts/check-site.py
+          python3 -I scripts/check-strings.py
+          python3 -I scripts/check-release.py
+          python3 -I scripts/check-docs.py
       - name: ruff (syntax errors and pyflakes in scripts/*.py)
         run: pipx run ruff==0.16.7 check --isolated --select E9,F scripts/*.py
 
@@ -326,7 +351,7 @@ jobs:
         run: git log --format=%B "$BASE..HEAD" | scripts/check-public.sh --stdin
 
   changelog:
-    # A change to the CLI, its providers and lib/, the integrations or the app should say so in CHANGELOG.md. A warning, not a failure:
+    # A change to the CLI, its providers and lib/, the integrations, the app, the iPhone app and widgets, the install script, the scripts or the docs should say so in CHANGELOG.md. A warning, not a failure:
     # the label "no-changelog" silences it.
     if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no-changelog')
     runs-on: ubuntu-latest
@@ -341,6 +366,22 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           files="$(git diff --name-only "$BASE"...HEAD)"
-          if grep -qE '^(deploys|app/|providers/|lib/|integrations/)' <<<"$files" && ! grep -qx CHANGELOG.md <<<"$files"; then
-            echo "::warning file=CHANGELOG.md::This PR changes deploys, providers/, lib/, integrations/ or app/ but not CHANGELOG.md. Add a line under Unreleased, or the label no-changelog."
+          if grep -qE '^(deploys|app/|providers/|lib/|integrations/|shared/|widgets/|ios/|scripts/|site/install\.sh|docs/)' <<<"$files" && ! grep -qx CHANGELOG.md <<<"$files"; then
+            echo "::warning file=CHANGELOG.md::This PR changes something users see (deploys, providers/, lib/, integrations/, app/, shared/, widgets/, ios/, scripts/, docs/ or site/install.sh) but not CHANGELOG.md. Add a line under Unreleased, or the label no-changelog."
           fi
+
+  external-links:
+    # Once a week: every https link in the built site is asked once. Dead links to other sites (docs.vercel.com,
+    # code.claude.com ...) change all the time and cannot be caught by a normal run, which never goes online.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build docs
+        run: python3 scripts/build-docs.py
+      - name: Ask every external link
+        run: python3 scripts/check-links.py --external site

@@ -31,6 +31,8 @@ want="deploys-cli-$version/ deploys-cli-$version/LICENSE deploys-cli-$version/RE
 if [ -f integrations/hooks/pre-push ]; then
   want+="deploys-cli-$version/integrations/ deploys-cli-$version/integrations/hooks/ deploys-cli-$version/integrations/hooks/pre-push "
 fi
+# The manual page, which install.sh and the Homebrew formula put where `man` looks.
+if [ -f man/deploys.1 ]; then want+="deploys-cli-$version/man/ deploys-cli-$version/man/deploys.1 "; fi
 if [ -d providers ]; then
   want+="deploys-cli-$version/providers/ "
   while IFS= read -r f; do want+="deploys-cli-$version/$f "; done < <(find providers -type f | LC_ALL=C sort)
@@ -121,6 +123,10 @@ expect "deploys --version" "$("$prefix/bin/deploys" --version)" "$version"
 if [ -d lib ]; then
   [ -f "$prefix/lib/deploys/lib/team.sh" ] && ok "install: lib/ next to deploys" || fail "install: lib/ next to deploys" "no lib/team.sh"
 fi
+if [ -f man/deploys.1 ]; then
+  [ -f "$prefix/share/man/man1/deploys.1" ] && ok "install: the man page goes to share/man/man1" || fail "install: the man page goes to share/man/man1" "no deploys.1"
+fi
+contains "install: names tab completion" "$out" "deploys completion zsh"
 contains "install: PATH hint when bin is not on PATH" "$out" "is not on your PATH"
 contains "install: dependency check runs" "$out" "Checking what deploys uses"
 out="$(PATH="$prefix/bin:$PATH" inst --prefix "$prefix")"; rc=$?
@@ -180,6 +186,7 @@ mkdir -p "$DEPLOYS_CONFIG"; echo '{}' > "$DEPLOYS_CONFIG/vercel-repos.json"
 out="$(inst --prefix "$prefix" --uninstall)"; rc=$?
 expect "uninstall: exit 0" "$rc" 0
 [ ! -e "$prefix/bin/deploys" ] && [ ! -e "$prefix/lib/deploys" ] && ok "uninstall: files gone" || fail "uninstall: files gone" "still there"
+[ ! -e "$prefix/share/man/man1/deploys.1" ] && ok "uninstall: the man page is gone too" || fail "uninstall: the man page is gone too" "still there"
 [ -f "$DEPLOYS_CONFIG/vercel-repos.json" ] && ok "uninstall: config stays" || fail "uninstall: config stays" "removed"
 out="$(inst --prefix "$prefix" --uninstall)"
 contains "uninstall twice: nothing to remove" "$out" "Nothing to remove"

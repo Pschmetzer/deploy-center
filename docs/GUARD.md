@@ -44,7 +44,7 @@ all, for 1, 4 or 24 hours.
   With `--all`, Vercel projects whose repo is not known stay manual (counted in the output).
 - The guard reads every Vercel project and Render service. Where auto-deploy is on and no running
   allowance covers it, it turns it off: on Vercel the repo is remembered first (as with
-  `autodeploy-off`), on Render the trigger goes to `off`. Then it sends a notification.
+  `autodeploy-off`), on Render the trigger goes to `off`. Then it sends a notification (macOS; on Linux set `DEPLOYS_NOTIFY_CMD`, see [CLI.md](CLI.md#environment-variables)).
 - Right before each switch the guard takes a lock shared with `allow` and `revoke`, and reads the
   allowances again. An allowance given a moment ago wins.
 - Expired allowances are removed at the start of each run (not in a dry run).

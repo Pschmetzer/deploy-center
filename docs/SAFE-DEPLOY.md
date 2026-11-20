@@ -27,6 +27,8 @@ through `gh api`:
 | red (a failure, timeout, cancel, action required) | skipped, with the checks that failed |
 | GitHub not reachable | treated like pending; skipped once `--wait` runs out |
 
+Two settings tune the rule. `DEPLOYS_CI_GRACE` (default 90 seconds): a commit younger than that with no check yet counts as "CI has not started", i.e. pending, not as "no checks"; raise it for slow runners, which matters with `--when-green --strict` in CI. `DEPLOYS_CI_IGNORE`: a regex for check names that do not count, for an optional check that is always red (`DEPLOYS_CI_IGNORE='^(codecov|lint-optional)'`); without it one such check holds every deploy back.
+
 All projects are checked in rounds, so one slow CI does not hold up the others. A project starts
 as soon as its own commit is green. The checked commit is what deploys (`--sha`), so a push that
 lands during the wait goes out in the next run, not unchecked in this one.

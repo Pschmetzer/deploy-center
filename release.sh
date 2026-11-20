@@ -96,6 +96,23 @@ want_feed="$(sed -n 's/^FEED_URL="\${SPARKLE_FEED_URL:-\(.*\)}"$/\1/p' build.sh)
 [ -n "$want_key" ] && [ -n "$want_feed" ] || die "could not read the Sparkle key and feed from build.sh"
 
 # --- checks before anything slow ---------------------------------------------------------
+# Every tool the release uses, found now: a missing one must not turn up after an hour of building.
+# The macOS tools only on a Mac: the tests run a dry run on Linux too, where there is nothing to build.
+tools="jq git shasum python3"
+if publishing; then tools="$tools gh"; fi
+if [ "$(uname -s)" = Darwin ]; then
+  tools="$tools ditto codesign xcrun"
+  if [ "$mode" != publish-only ]; then tools="$tools npm plutil lipo swiftc"; fi
+fi
+for t in $tools; do command -v "$t" >/dev/null || die "$t is missing (install Xcode or the Command Line Tools: xcode-select --install; jq, gh, node: brew install jq gh node)"; done
+if [ "$(uname -s)" = Darwin ]; then
+  for t in /usr/libexec/PlistBuddy /usr/sbin/spctl; do [ -x "$t" ] || die "$t is missing"; done
+  # (not in a dry run, which only reads and must not call xcrun: the tests count its calls)
+  if [ -z "$dry" ]; then
+    xcrun --find notarytool >/dev/null 2>&1 || die "xcrun notarytool is missing (Xcode 13 or newer)"
+    xcrun --find stapler >/dev/null 2>&1 || die "xcrun stapler is missing (Xcode)"
+  fi
+fi
 if publishing; then
   command -v gh >/dev/null || die "gh is missing (brew install gh)"
   REPO="${RELEASE_REPO:-$(gh repo view "$(git remote get-url origin)" --json nameWithOwner -q .nameWithOwner)}"
@@ -154,6 +171,17 @@ fi
 
 # --dry-run: the checks above passed (they only read); this is what a real run would do next.
 if [ -n "$dry" ]; then
+  # The two usual reasons for a stop after an hour of waiting, looked at now.
+  if [ "$mode" != publish-only ] && [ "$(uname -s)" = Darwin ]; then
+    if [ -n "${NOTARY_PROFILE:-}" ]; then
+      xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 \
+        || die "the notarization profile \"$NOTARY_PROFILE\" does not work (xcrun notarytool store-credentials)"
+    fi
+    if [ -n "${DEVELOPER_ID:-}" ] && [ "${DEVELOPER_ID:-}" != "-" ]; then
+      security find-identity -v -p codesigning 2>/dev/null | grep -qF "$DEVELOPER_ID" \
+        || die "no signing certificate \"$DEVELOPER_ID\" in the keychain (security find-identity -v -p codesigning)"
+    fi
+  fi
   if [ "$mode" = build ] || [ "$mode" = publish ]; then built="built from $COMMIT"; else built="the one in $ZIP"; fi
   echo "Dry run: nothing was built, notarized, tagged, uploaded or written."
   echo "  version     $VERSION (tag $TAG)"
@@ -312,8 +340,8 @@ if [ -z "${TAP_DIR:-}" ]; then
   rm -rf "$tap"
   gh repo clone "$TAP_REPO" "$tap" -- --quiet --depth 1
 fi
-scripts/homebrew-cask.sh --write "$tap" "$VERSION" "$SHA"
-scripts/homebrew-formula.sh --write "$tap" "$VERSION" "$CLI_SHA"
+RELEASE_REPO="$REPO" scripts/homebrew-cask.sh --write "$tap" "$VERSION" "$SHA"
+RELEASE_REPO="$REPO" scripts/homebrew-formula.sh --write "$tap" "$VERSION" "$CLI_SHA"
 branch="deploy-center-$VERSION"
 cat <<NEXT
 

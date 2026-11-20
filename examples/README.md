@@ -25,4 +25,6 @@ accounts. Run each one by hand once and read the log; please report what you fin
 - `DEPLOYS_CONFIG`: a folder with your `vercel-repos.json` (copied from `~/.config/deploys/`). Without it, Vercel projects have no remembered repo and cannot be deployed.
 - `DEPLOYS_VERCEL_TEAM`: the team id, if the token sees several teams.
 
+**Scheduled workflows stop after 60 days.** GitHub switches a `schedule:` workflow off when the repo has had no activity for 60 days, and a private "ops" repo that nobody pushes to is exactly that: the daily deploy then stops without an error. Look at the Actions tab now and then, or keep it alive with a small workflow of your own that runs `gh workflow enable daily-deploy.yml` every few weeks (a token that may manage workflows is needed; the workflow's own `GITHUB_TOKEN` cannot). The daily example ends with a step that POSTs to `NOTIFY_URL` (a secret; ntfy or a Slack webhook) when a run fails, so a failed deploy is not only a line in the Actions log.
+
 The commands that turn auto-deploy off are best run once from a Mac or a terminal, where you can watch them.

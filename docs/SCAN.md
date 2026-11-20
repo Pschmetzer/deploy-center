@@ -37,6 +37,7 @@ The scan uses the CLI's own login, for example a Claude subscription. An `ANTHRO
 | `DEPLOYS_SCAN_PER_DAY` | `4` | scans per 24 hours |
 | `DEPLOYS_SCAN_TIMEOUT` | `5400` | seconds before a scan is ended |
 | `DEPLOYS_SCAN_DIR` | `~/.config/deploys/scan` | clones, worktrees, reports |
+| `DEPLOYS_SCAN_FOREGROUND` | unset | `1`: `scan start` and `check start` run in the foreground instead of a background process. Set it in CI, or the job may end before the scan does |
 
 ## Commands
 
@@ -53,15 +54,15 @@ deploys scan log <id>           Claude's report of one scan
 
 | Tool | Finds | |
 |---|---|---|
-| OSV-Scanner | packages with known vulnerabilities (lockfiles, requirements) | free, open source |
+| OSV-Scanner | packages with known vulnerabilities (lockfiles, requirements) | free, open source; asks `api.osv.dev` for the package names and versions |
 | gitleaks | keys and passwords in the code and the git history | free, offline |
-| Semgrep CE | bug and security patterns in the code (`p/default`, metrics off) | free CLI |
+| Semgrep CE | bug and security patterns in the code (`p/default`, metrics off) | free CLI; downloads the `p/default` rules from the Semgrep registry |
 
 ```bash
 brew install osv-scanner gitleaks semgrep
 ```
 
-A missing tool is shown as missing; the others still run. The check runs **no code of the repo**, so it is safe on any repo.
+Only gitleaks works fully offline. OSV-Scanner sends the names and versions of your dependencies to `api.osv.dev`, and Semgrep fetches its rules from `semgrep.dev`; no source code and no secret leaves the Mac ([SECURITY.md](../SECURITY.md#what-is-sent-where)). A missing tool is shown as missing; the others still run. The check runs **no code of the repo**, so it is safe on any repo.
 
 **"Fix with Claude"** next to the result starts a bug scan (above) with the OSV and Semgrep findings: rule, file, line and message, at most 30, no code snippets. For a vulnerable package the scan may raise that package to a fixed version, the one exception to "no new dependencies".
 

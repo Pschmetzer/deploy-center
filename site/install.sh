@@ -87,6 +87,7 @@ on_signal() { cleanup; trap - EXIT; warn "stopped by $1"; exit "$2"; }
 hint() {
   case "$1" in
     vercel) say "npm install -g vercel   (needs Node.js: https://nodejs.org), then: vercel login (or VERCEL_TOKEN in CI)"; return ;;
+    aws) say "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"; return ;;
   esac
   case "$pm:$1" in
     brew:column) say "part of macOS" ;;
@@ -132,6 +133,7 @@ do_uninstall() {
     warn "$bindir/deploys was not installed by this script (Homebrew or by hand?); left alone"
   fi
   if [ -f "$libdir/deploys" ]; then run rm -rf "$libdir"; say "Removed $libdir"; removed=1; fi
+  if [ "$removed" = 1 ] && [ -f "$prefix/share/man/man1/deploys.1" ]; then run rm -f "$prefix/share/man/man1/deploys.1"; say "Removed $prefix/share/man/man1/deploys.1"; fi
   [ "$removed" = 1 ] || say "Nothing to remove under $prefix."
   say "Kept: your config in \${DEPLOYS_CONFIG:-~/.config/deploys}. Delete that folder to remove it too."
   if has deploys; then say "Another deploys is still on your PATH: $(command -v deploys)"; fi
@@ -218,6 +220,12 @@ do_install() {
   run cp "$tmp/launcher" "$bindir/deploys.new"
   run chmod 0755 "$bindir/deploys.new"
   run mv -f "$bindir/deploys.new" "$bindir/deploys"
+  # The manual page, where `man` looks next to the prefix (MANPATH covers $prefix/share/man when bin/ is on PATH).
+  if [ -f "$libdir/man/deploys.1" ]; then
+    run mkdir -p "$prefix/share/man/man1"
+    run cp "$libdir/man/deploys.1" "$prefix/share/man/man1/deploys.1"
+    run chmod 0644 "$prefix/share/man/man1/deploys.1"
+  fi
 
   installed="$("$bindir/deploys" --version 2>/dev/null || true)"
   say "Installed deploys $installed: $bindir/deploys (files in $libdir)"
@@ -242,6 +250,9 @@ path_hint() {
   if has deploys && [ "$(command -v deploys)" != "$bindir/deploys" ]; then
     say "Note: \`deploys\` on your PATH is $(command -v deploys), which comes first."
   fi
+  say ""
+  say "Tab completion (optional): add to ~/.zshrc  eval \"\$(deploys completion zsh)\"   (bash: ~/.bashrc, fish: deploys completion fish | source)."
+  say "Manual page: man deploys   (installed to $prefix/share/man/man1; if man does not find it, add that folder to MANPATH)."
 }
 
 check_tools() {
@@ -277,9 +288,12 @@ check_tools() {
     # GitLab works with glab or with GITLAB_TOKEN alone, so glab is named only without a token.
     [ -n "${GITLAB_TOKEN:-}" ] || report glab optional "only for repos on GitLab; then: glab auth login (or GITLAB_TOKEN)"
     report column optional "the tables of status, history and changed"
+    report git optional "deploys hooks install (a pre-push check in a repo)"
+    report openssl optional "deploys certs (TLS certificate dates)"
+    report aws optional "AWS Amplify (through the aws CLI)"
   )"
   if [ -z "$out" ]; then
-    say "  all there (bash, jq, curl, perl, vercel, gh, glab, column)."
+    say "  all there (bash, jq, curl, perl, vercel, gh, glab, column, git, openssl, aws)."
   else
     say "$out"
   fi
@@ -376,7 +390,9 @@ main() {
   say "Keys: vercel login or VERCEL_TOKEN; RENDER_API_KEY for Render (on a Mac also: deploys render set-key)."
   say "Docs: https://deploycenter.app/docs/cli/"
   if ! { has bash && has jq && has curl; }; then
-    warn "deploys is installed, but needs the required tools above before it can run."
+    missing=""
+    for t in bash jq curl; do has "$t" || missing="$missing $t"; done
+    warn "deploys is installed, but needs the required tools before it can run, and these are missing:$missing"
     # In CI, DEPLOYS_REQUIRE_DEPS=1 makes that a failure (exit 3) instead of a warning.
     [ "${DEPLOYS_REQUIRE_DEPS:-}" != 1 ] || exit 3
   fi

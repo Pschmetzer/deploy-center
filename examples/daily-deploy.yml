@@ -13,13 +13,19 @@
 # Commit deploys-config/vercel-repos.json to this repo: copy it from ~/.config/deploys/ on the Mac
 # where you turned auto-deploy off. It says which repo and branch each Vercel project deploys from.
 #
-# deploys comes from the release tarball (deploys plus providers/ and, in releases after 0.9.1,
-# lib/ for team files, GitLab, simulate and ledger), checked against the release's checksums.txt.
+# deploys comes from the release tarball (deploys plus providers/ and lib/ for team files, GitLab,
+# simulate and ledger), checked against the release's checksums.txt.
 # Update DEPLOYS_VERSION and VERCEL_CLI_VERSION by hand.
+#
+# GitHub switches a scheduled workflow off after 60 days without activity in the repo (a private "ops"
+# repo that nobody pushes to is exactly that). Look at the Actions tab now and then, or add a keep-alive
+# (see examples/README.md). Failures: the last step tells you through NOTIFY_URL (below).
+# Optional secret: NOTIFY_URL, an address that takes a POST (ntfy.sh topic, a Slack incoming webhook).
 name: Daily deploy
 on:
   schedule:
-    - cron: "0 17 * * 1-5"   # 17:00 UTC, Monday to Friday
+    - cron: "0 17 * * 1-5"   # 17:00, Monday to Friday, in the time zone below
+      timezone: "Europe/Berlin"   # an IANA name (America/New_York ...); summer time is followed. Remove the line for UTC
   workflow_dispatch:
     inputs:
       dry_run:
@@ -73,3 +79,12 @@ jobs:
           else
             deploys deploy-changed --yes
           fi
+      - name: Tell me when it failed
+        # Optional: a POST to NOTIFY_URL (ntfy, Slack). On a Mac or a server, DEPLOYS_NOTIFY_CMD does the same for autofix and guard (docs/CLI.md).
+        if: failure()
+        env:
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -n "$NOTIFY_URL" ] || { echo "No NOTIFY_URL secret: nobody is told"; exit 0; }
+          curl -fsS --max-time 20 -d "The daily deploy failed: $RUN_URL" "$NOTIFY_URL"

@@ -20,13 +20,14 @@ jq -e 'type == "array"' >/dev/null 2>&1 <<<"$list" || { echo "deploys changed --
 [ "$rc" = 0 ] || echo "Warning: some projects could not be read and are left out." >&2
 
 bot=(); other=(); unknown=()
-while IFS=$'\t' read -r name repo sha ref; do
+# The unit separator, not a tab: a tab is white space for read, and an empty repo would shift the fields.
+while IFS=$'\x1f' read -r name repo sha ref; do
   d=""
   [ -n "$repo" ] && [ -n "$sha" ] && d="$("$DEPLOYS" details "$repo" "$sha" "$ref" </dev/null 2>/dev/null)" || true
   kind="$(jq -r 'if type == "object" and (.commits | type) == "array" and (.commits | length) > 0
                  then (if (.commits | all(.bot == true)) then "bot" else "other" end) else "unknown" end' <<<"${d:-null}" 2>/dev/null || echo unknown)"
   case "$kind" in bot) bot+=("$name") ;; other) other+=("$name") ;; *) unknown+=("$name") ;; esac
-done < <(jq -r '.[] | [.name, (.repo // ""), (.lastSha // ""), (.ref // "main")] | @tsv' <<<"$list")
+done < <(jq -r '.[] | [.name, (.repo // ""), (.lastSha // ""), (.ref // "main")] | join("\u001f")' <<<"$list")
 
 arr() { if [ $# -eq 0 ]; then echo '[]'; else printf '%s\n' "$@" | jq -Rnc '[inputs]'; fi; }
 b="$(arr ${bot[@]+"${bot[@]}"})"; o="$(arr ${other[@]+"${other[@]}"})"; u="$(arr ${unknown[@]+"${unknown[@]}"})"

@@ -78,6 +78,8 @@ the vendor).
 | A deploy hook: the POST that starts a build, with the method, headers and body you set | the hook URL you added (`deploys hook add`) | `curl` over HTTPS (or `http://` to `localhost`); the URL from the keychain, on stdin |
 | Claude in the app / `deploys ai` (opt-in, your own key): the masked log excerpt around the first error, or the titles of waiting commits and PRs, or diff stats and risky file names ([details](docs/CLAUDE-IN-APP.md#privacy)) | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after you turn it on and save a key, only when you ask, with a monthly token cap |
 | Autofix: project, repo, branch, commit, deploy id and the last 60 KB of the build log, masked | `api.anthropic.com` (your routine) | `curl` over HTTPS; the token on stdin; only after you set up a routine and a token |
+| The security check (`deploys check`, the app's "Security check"): the package names and versions found in the lockfiles; the Semgrep rule set (`p/default`, downloaded, metrics off) | `api.osv.dev` (OSV-Scanner), `semgrep.dev` (rules) | the tools' own HTTPS requests from this Mac; no code of the repo and no secrets are sent; gitleaks works offline |
+| The bug scan (`deploys scan`): the repo, in a Claude Code session started on this Mac | Anthropic, through the `claude` CLI and your login | only when you start a scan |
 | A daily summary of project names and counts | the webhook you set in `DEPLOYS_NOTIFY_URL` | `integrations/notify/notify.sh`, only when you run it |
 | The agent digest: project names, commit titles and authors, PR titles, risk hints | the webhook you set, and an issue in a GitHub repo of yours | `integrations/digest/`, only when you run it (usually from your own GitHub workflow) |
 
@@ -121,7 +123,7 @@ GitHub sees the IP address and time of each download, as for any download from G
 
 ### Autofix log masking
 
-Before a build log goes to the routine, `deploys` masks what it recognises: `Authorization: Bearer …`
+Before a build log goes to the routine, `deploys` masks what it recognizes: `Authorization: Bearer …`
 headers; `NAME=value`, `NAME: value` and `"name": "value"` where the name ends in `token`, `secret`,
 `password`, `api_key`, `access_key`, `_key`, `auth`, `credentials` or `dsn`; `--token`/`--password`
 arguments; passwords in URLs; private key blocks; and tokens with a known prefix (Anthropic/OpenAI

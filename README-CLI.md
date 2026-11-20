@@ -62,9 +62,29 @@ unpack, and put the folder anywhere; run `deploys` from inside it (it reads `VER
 | GitHub CLI `gh` | optional: what is waiting to deploy (commits, PRs) on GitHub |
 | GitLab CLI `glab`, or `GITLAB_TOKEN` | optional: the same for repos on GitLab ([docs/GITLAB.md](docs/GITLAB.md)) |
 | `aws` CLI | only for AWS Amplify |
+| `openssl` | only for `deploys certs` (TLS certificate dates) |
+| `git` | only for `deploys hooks install` |
 | `perl` | `autofix` and `ai` (masking keys in logs), `check`, and the time limit on `gh`/`vercel` calls; on every Mac, and in most Linux images |
 | `security` (macOS) | the keychain; on Linux and in CI the keys come from environment variables instead (below) |
 | `column` | optional: without it the tables are padded by awk (`bsdextrautils` on Debian/Ubuntu) |
+
+## Where each command is described
+
+`deploys --help` lists all of them. The full reference is [docs/CLI.md](docs/CLI.md) ([online](https://deploycenter.app/docs/cli/)); the manual page is installed with the script and with Homebrew (`man deploys`).
+
+| Commands | Page |
+| --- | --- |
+| `list`, `changed`, `deploy`, `deploy-changed`, `watch`, `logs`, `rollback`, `cancel`, `open`, `diff`, `notes`, `history`, `explain` | [docs/CLI.md](docs/CLI.md) |
+| `plan`, `ci`, `window`, `verify`, `readonly`, `rules`, `risk`, `simulate`, `idle`, `status` | [docs/SAFE-DEPLOY.md](docs/SAFE-DEPLOY.md) |
+| `guard`, `autodeploy allow\|allowed\|revoke` | [docs/GUARD.md](docs/GUARD.md) |
+| `autofix`, `ai` | [docs/AUTOFIX.md](docs/AUTOFIX.md), [docs/CLAUDE-IN-APP.md](docs/CLAUDE-IN-APP.md) |
+| `scan`, `check` | [docs/SCAN.md](docs/SCAN.md) |
+| `costs`, `ledger`, `price`, `budget` | [docs/SAVINGS.md](docs/SAVINGS.md), [docs/CLI.md](docs/CLI.md) |
+| `journal`, `triggers`, `certs`, `metrics`, `creds`, `schedule`, `watch` | [docs/CLI.md](docs/CLI.md), [docs/JOURNAL.md](docs/JOURNAL.md) |
+| `team`, `config` | [docs/TEAM.md](docs/TEAM.md) |
+| `providers`, `netlify`, `cloudflare`, `amplify`, `coolify`, `hook` | [docs/PROVIDERS.md](docs/PROVIDERS.md), [docs/providers/](docs/providers/README.md) |
+| `gitlab` | [docs/GITLAB.md](docs/GITLAB.md) |
+| `hooks install` (a Git hook in one repo) and the `hooks.d` folder (scripts around a deploy) | [docs/CLI.md](docs/CLI.md) |
 
 ## First steps
 
@@ -96,6 +116,9 @@ No login, no keychain: keys come from the environment and are never printed.
 | `AWS_PROFILE` or `DEPLOYS_AMPLIFY_PROFILE`, `AWS_REGION` | AWS Amplify, through the `aws` CLI |
 | `DIGITALOCEAN_TOKEN` | DigitalOcean App Platform |
 | `COOLIFY_TOKEN`, `COOLIFY_URL` | Coolify, and the URL of your instance |
+| `<NAME>_CMD` | a command that prints a key when the variable is not set, e.g. `RENDER_API_KEY_CMD='op read op://vault/render/key'` (1Password, pass, Vault; no keychain needed) |
+| `DEPLOYS_NOTIFY_CMD` | your own notification command (ntfy, Slack through `curl`); the text is in `DEPLOYS_MESSAGE` and on stdin |
+| `DEPLOYS_SCAN_FOREGROUND` | `1`: `scan` and `check` finish before the command returns, so a CI job does not end first |
 | `DEPLOYS_VERCEL_TEAM` | the Vercel team id, if the token sees several teams |
 | `DEPLOYS_CLI_TIMEOUT` | seconds a `gh`, `glab` or `vercel` call may take (default 90; `0` no limit) |
 | `DEPLOYS_NO_GITHUB` | `1`: ask no git host (nothing counts as changed then) |

@@ -1,0 +1,18 @@
+# The test suites, one per line: the one list that tests/all.sh runs (the rows of .github/workflows/ci.yml and the
+# PR template point here). A line is `<path> [mac] [full]`:
+#   mac   runs only on macOS (Swift)
+#   full  not in `all.sh --quick` (needs a Swift build or node)
+# tests/release-tests.sh checks that every tests/*-tests.sh is listed here and has a step in ci.yml.
+tests/script-tests.sh
+tests/team-tests.sh
+tests/install-tests.sh
+tests/release-tests.sh
+tests/ios-rule-tests.sh
+tests/round8-tests.sh
+tests/round9-tests.sh
+tests/welle10-tests.sh
+tests/cli-fixes-tests.sh
+tests/app-tests.sh mac full
+ios/Tests/run.sh mac full
+ios/test.sh mac full
+integrations/tests/run.sh full

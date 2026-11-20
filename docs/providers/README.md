@@ -17,8 +17,8 @@ Vercel and Render are on by default; the others are opt-in (`deploys providers e
 A "no" is what the host's API allows today or what Deploy Center has not checked against a live
 account; the page of each host says which. A deploy hook only starts a build: a 2xx answer counts as ready.
 
-Every host page follows the same order: what it saves you, setup (with the token permissions it needs),
-turning push-deploys off, deploying, other commands, undo. To add a host, see [PROVIDERS.md](../PROVIDERS.md).
+Host pages follow roughly the same order: what it saves you, setup (with the token permissions it needs),
+turning push-deploys off, deploying, other commands, undo (Amplify calls it Rollback, Coolify lists its commands in one section). To add a host, see [PROVIDERS.md](../PROVIDERS.md).
 
 ## Page template
 

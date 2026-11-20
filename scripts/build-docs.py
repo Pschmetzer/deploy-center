@@ -160,10 +160,25 @@ def git(*args):
 
 
 TODAY = datetime.date.today().isoformat()
+_warned = []
+
+
+def _history_warning(path):
+    """With a .git folder but no answer from `git log` (a shallow checkout, git missing), every date falls back to
+    today: say so once, because "Last updated", dateModified and sitemap lastmod would all be the build date."""
+    if _warned or not os.path.exists(os.path.join(ROOT, ".git")):
+        return
+    _warned.append(1)
+    shallow = git("rev-parse", "--is-shallow-repository") == "true"
+    why = "this is a shallow checkout (use fetch-depth: 0)" if shallow else "git gave no history for it"
+    print(f"build-docs: warning: no git history for {path}: {why}; the date falls back to today ({TODAY})", file=sys.stderr)
 
 
 def last_updated(path):
-    return git("log", "-1", "--format=%cs", "--", path) or TODAY
+    out = git("log", "-1", "--format=%cs", "--", path)
+    if not out:
+        _history_warning(path)
+    return out or TODAY
 
 
 def first_published(path):
@@ -396,6 +411,26 @@ def page_list():
     return pages
 
 
+_md_anchor_cache = {}
+
+
+def md_anchors(source):
+    """The heading ids of a Markdown file (GitHub's rule, outside code fences) and its explicit id="..." anchors."""
+    if source not in _md_anchor_cache:
+        text = open(os.path.join(ROOT, source), encoding="utf-8").read()
+        seen, ids, fence = set(), set(), False
+        for line in text.split("\n"):
+            if line.lstrip().startswith("```"):
+                fence = not fence
+                continue
+            m = None if fence else re.match(r"^#{1,6}\s+(.*?)\s*#*$", line)
+            if m:
+                ids.add(slugify(plain(m.group(1)), seen))
+        ids.update(re.findall(r'<a\s+(?:id|name)="([^"]+)"', text))
+        _md_anchor_cache[source] = ids
+    return _md_anchor_cache[source]
+
+
 def link_rewriter(source, by_source, anchors_of):
     """Return link(url) for Markdown in `source`: docs pages for converted files, GitHub otherwise."""
     src_dir = posixpath.dirname(source)
@@ -407,6 +442,9 @@ def link_rewriter(source, by_source, anchors_of):
         if not path:
             if source == "README.md" and frag and frag not in anchors_of("README.md"):
                 return f"{REPO}/blob/{BRANCH}/README.md#{frag}"
+            if frag and source != "README.md" and source.endswith(".md") and os.path.isfile(os.path.join(ROOT, source)) \
+                    and frag not in md_anchors(source):
+                raise BuildError(f"{source}: link #{frag} has no heading with that id in the same file")
             return "#" + frag
         target = posixpath.normpath(posixpath.join(src_dir, path))
         if target.startswith(".."):
@@ -529,7 +567,7 @@ def build_pages(pages):
             m = re.search(r"<p>(.*?)</p>", p.body, re.S)
             p.description = re.sub(r"<[^>]+>", "", html.unescape(m.group(1))) if m else p.title
         if p.slug == "faq":
-            for q, a in re.findall(r'<h3 id="[^"]*">(.*?)<a class="anchor".*?</h3>\s*(.*?)(?=<h[23] |\Z)', p.body, re.S):
+            for q, a in re.findall(r'<h[23] id="[^"]*">(.*?)<a class="anchor".*?</h[23]>\s*(.*?)(?=<h[23] |\Z)', p.body, re.S):
                 text = lambda s: re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", s))).strip()
                 p.faq.append((text(q), text(a)))
         srcs = getattr(p, "dates_from", [p.source])
@@ -605,7 +643,7 @@ def render(page, pages, assets):
     crumb_html = " ".join(
         (f'<li><a href="{h}">{esc(n)}</a></li>' if k < len(crumbs) - 1 else f'<li aria-current="page">{esc(n)}</li>')
         for k, (n, h) in enumerate(crumbs))
-    title = f"{page.title} · Deploy Center docs" if page.slug else "Deploy Center docs"
+    title = page_title(page)
     edit = (f' · <a href="{REPO}/edit/{BRANCH}/{page.source}" rel="noopener">Edit on GitHub</a>'
             if page.source else "")
     ud = datetime.date.fromisoformat(page.updated)
@@ -618,6 +656,7 @@ def render(page, pages, assets):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
 <meta name="description" content="{esc(page.description)}">
+<meta name="author" content="Deploy Center">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
@@ -634,7 +673,9 @@ def render(page, pages, assets):
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="{OG_ALT}">
 <meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="{page.published}">
 <meta property="article:modified_time" content="{page.updated}">
+<meta property="article:author" content="{BASE}/">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{esc(page.title)}">
 <meta name="twitter:description" content="{esc(page.description)}">
@@ -654,13 +695,14 @@ def render(page, pages, assets):
   <a class="section" href="/docs/">Docs</a>
   <div class="search" role="search">
     <label class="sr" for="q">Search the docs</label>
-    <input id="q" type="search" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" placeholder="Search docs" autocomplete="off" spellcheck="false" aria-controls="results" aria-expanded="false">
+    <input id="q" type="search" placeholder="Search docs" autocomplete="off" spellcheck="false" aria-controls="results">
     <div class="sr" id="rstatus" role="status" aria-live="polite"></div>
     <kbd>/</kbd>
-    <ul id="results" role="listbox" hidden></ul>
+    <ul id="results" hidden></ul>
   </div>
   <a class="nav" href="/guides/">Guides</a>
   <a class="gh" href="{REPO}" rel="noopener">GitHub<span aria-hidden="true"> ★</span></a>
+  <button class="theme" type="button" aria-label="Switch to light mode" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
   <a class="dl" href="{REPO}/releases/latest">Download</a>
 </div></header>
 <div class="layout">
@@ -669,14 +711,16 @@ def render(page, pages, assets):
 <p class="group"><a href="/docs/"{' aria-current="page"' if not page.slug else ''}>Docs home</a></p>
 {sidebar(pages, page)}
 </nav></details></aside>
+<main class="main">
 <div class="head">
 <nav aria-label="Breadcrumb"><ol class="crumbs">{crumb_html}</ol></nav>
-<h1>{esc(page.title)}</h1>
+<h1 id="content" tabindex="-1">{esc(page.title)}</h1>
 <p class="meta">Last updated <time datetime="{page.updated}">{updated}</time>{edit}</p>
 </div>
 {toc_html}
-<main id="content" class="prose">
+<div class="prose">
 {page.body}
+</div>
 </main>
 </div>
 <footer><div class="bar">
@@ -688,6 +732,21 @@ def render(page, pages, assets):
 </body>
 </html>
 """
+
+
+def page_title(page):
+    """<title>: the page, then the brand. A page whose own title names Deploy Center does not get it twice, and a title
+    that would run past 60 characters (a search result cuts it there) is shortened at a word."""
+    if not page.slug:
+        return "Deploy Center docs"
+    t = page.title
+    full = t if "Deploy Center" in t else f"{t} · Deploy Center docs"
+    if len(full) <= 60:
+        return full
+    if "Deploy Center" not in t and len(t) <= 60:
+        return t
+    cut = full[:59].rsplit(" ", 1)[0].rstrip(" ,:;·-")
+    return cut + "…"
 
 
 def index_page(pages):
@@ -1046,8 +1105,184 @@ def main():
         f.write(llms_full(pages, version))
     update_sitemap([(index.url, index.updated)] + [(p.url, p.updated) for p in pages])
     sync_hand_dates()
+    sync_home_faq()
+    sync_page_seo()
+    sync_blog_feed()
+    sync_schema_copy()
     sync_csp()
     print(f"build-docs: {len(pages) + 1} pages in site/docs/")
+
+
+# ---------------------------------------------------------------- what the hand-written pages derive
+
+LD_RE = re.compile(r'(<script type="application/ld\+json">)(.*?)(</script>)', re.S)
+
+
+def _site_pages():
+    """Every hand-written HTML page of site/ (not the generated docs/ and install/)."""
+    for dirpath, dirs, files in os.walk(SITE):
+        rel_dir = os.path.relpath(dirpath, SITE)
+        if rel_dir == "." or rel_dir.split(os.sep)[0] not in ("docs", "install", "img", "css", "js", ".well-known"):
+            for name in files:
+                if name.endswith(".html"):
+                    yield os.path.join(dirpath, name)
+        dirs[:] = [d for d in dirs if not (rel_dir == "." and d in ("docs", "install", "img", "css", "js", ".well-known"))]
+
+
+def _plain_text(fragment):
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", fragment))).strip()
+
+
+def home_faq_entities(text):
+    """The questions and answers of the visible FAQ on the home page: the <details class="q"> blocks."""
+    out = []
+    for q, a in re.findall(r'<details class="q"[^>]*><summary>(.*?)</summary>\s*<p>(.*?)</p>\s*</details>', text, re.S):
+        out.append({"@type": "Question", "name": _plain_text(q),
+                    "acceptedAnswer": {"@type": "Answer", "text": _plain_text(a)}})
+    return out
+
+
+def sync_home_faq():
+    """The FAQPage JSON-LD of the home page is made from its visible FAQ (Google wants the same text in both)."""
+    path = os.path.join(SITE, "index.html")
+    if not os.path.exists(path):
+        return
+    text = open(path, encoding="utf-8").read()
+    ents = home_faq_entities(text)
+    m = re.search(r'\{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": ', text)
+    if not ents or not m:
+        raise BuildError("site/index.html: the FAQ (<details class=\"q\">) or its FAQPage JSON-LD is missing")
+    _, end = json.JSONDecoder().raw_decode(text[m.start():])
+    new = json.dumps({"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": ents},
+                     ensure_ascii=False).replace("</", "<\\/")
+    out = text[:m.start()] + new + text[m.start() + end:]
+    if out != text:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(out)
+        print("build-docs: FAQPage JSON-LD of site/index.html made from the visible FAQ")
+
+
+def _ld_blocks(text):
+    """[(match, parsed list)] of the JSON-LD blocks of a page."""
+    res = []
+    for m in LD_RE.finditer(text):
+        try:
+            data = json.loads(m.group(2))
+        except ValueError:
+            continue
+        res.append((m, data if isinstance(data, list) else [data]))
+    return res
+
+
+def _howto_steps(text):
+    """Numbered steps of a guide: <h2 id="x">1. Title</h2> and the first paragraph after it."""
+    steps = []
+    for m in re.finditer(r'<h2 id="([^"]+)">\s*(\d+)\.\s*(.*?)</h2>(.*?)(?=<h2 |\Z)', text, re.S):
+        hid, num, title, rest = m.groups()
+        p = re.search(r"<p[^>]*>(.*?)</p>", rest, re.S)
+        steps.append((int(num), hid, _plain_text(title), _plain_text(p.group(1)) if p else ""))
+    return steps
+
+
+def sync_page_seo():
+    """author and article times in <head>, a HowTo for guides with numbered steps."""
+    for path in _site_pages():
+        text = open(path, encoding="utf-8").read()
+        if "<title>" not in text or 'name="robots" content="noindex' in text:
+            continue
+        new = text
+        # <meta name="author"> on every page
+        if 'name="author"' not in new:
+            new = re.sub(r'(<meta name="description" content="[^"]*">\n)', r'\1<meta name="author" content="Deploy Center">\n', new, count=1)
+        blocks = _ld_blocks(new)
+        article = next((it for _, items in blocks for it in items if it.get("@type") in ("TechArticle", "BlogPosting", "Article")), None)
+        if article and article.get("datePublished"):
+            tags = [("article:published_time", article["datePublished"]),
+                    ("article:modified_time", article.get("dateModified") or article["datePublished"]),
+                    ("article:author", BASE + "/")]
+            for prop, val in tags:
+                line = f'<meta property="{prop}" content="{val}">\n'
+                if f'property="{prop}"' in new:
+                    new = re.sub(rf'<meta property="{prop}" content="[^"]*">\n', line, new, count=1)
+                else:
+                    new = re.sub(r'(<meta property="og:locale" content="[^"]*">\n)', lambda m: m.group(1) + line, new, count=1)
+            # a HowTo from numbered <h2> steps (two or more), once
+            steps = _howto_steps(new) if "/guides/" in path.replace(os.sep, "/") else []
+            if len(steps) >= 2:
+                url = article.get("url") or ""
+                how = {"@context": "https://schema.org", "@type": "HowTo", "name": article.get("headline", ""),
+                       "description": article.get("description", ""),
+                       "step": [{"@type": "HowToStep", "position": i + 1, "name": t, "url": f"{url}#{hid}"}
+                                for i, (n, hid, t, tx) in enumerate(steps)]}
+                for m, items in _ld_blocks(new):
+                    if any(it.get("@type") == "HowTo" for it in items):
+                        items = [how if it.get("@type") == "HowTo" else it for it in items]
+                        new = new[:m.start(2)] + "\n" + json.dumps(items, indent=1, ensure_ascii=False).replace("</", "<\\/") + "\n" + new[m.end(2):]
+                        break
+                else:
+                    m, items = _ld_blocks(new)[0]
+                    items = items + [how]
+                    new = new[:m.start(2)] + "\n" + json.dumps(items, indent=1, ensure_ascii=False).replace("</", "<\\/") + "\n" + new[m.end(2):]
+        if new != text:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(new)
+            print(f"build-docs: head and JSON-LD updated in {os.path.relpath(path, ROOT)}")
+
+
+def sync_blog_feed():
+    """site/blog/feed.xml (Atom) from the posts, and the <link rel="alternate"> in the blog pages. Built, not committed."""
+    blog = os.path.join(SITE, "blog")
+    if not os.path.isdir(blog):
+        return
+    posts = []
+    for name in sorted(os.listdir(blog)):
+        path = os.path.join(blog, name, "index.html")
+        if not os.path.isfile(path):
+            continue
+        text = open(path, encoding="utf-8").read()
+        article = next((it for _, items in _ld_blocks(text) for it in items if it.get("@type") in ("TechArticle", "BlogPosting", "Article")), None)
+        if not article:
+            continue
+        posts.append({"url": f"{BASE}/blog/{name}/", "title": article.get("headline", name), "summary": article.get("description", ""),
+                      "published": article.get("datePublished", ""), "updated": article.get("dateModified") or article.get("datePublished", "")})
+    if not posts:
+        return
+    posts.sort(key=lambda p: p["published"], reverse=True)
+    updated = max(p["updated"] for p in posts)
+    entries = "".join(
+        f"  <entry>\n    <title>{html.escape(p['title'])}</title>\n    <link href=\"{p['url']}\"/>\n    <id>{p['url']}</id>\n"
+        f"    <published>{p['published']}T00:00:00Z</published>\n    <updated>{p['updated']}T00:00:00Z</updated>\n"
+        f"    <summary>{html.escape(p['summary'])}</summary>\n  </entry>\n" for p in posts)
+    feed = ('<?xml version="1.0" encoding="utf-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">\n'
+            f'  <title>Deploy Center blog</title>\n  <link href="{BASE}/blog/feed.xml" rel="self"/>\n  <link href="{BASE}/blog/"/>\n'
+            f'  <id>{BASE}/blog/</id>\n  <updated>{updated}T00:00:00Z</updated>\n  <author><name>Deploy Center</name></author>\n{entries}</feed>\n')
+    with open(os.path.join(blog, "feed.xml"), "w", encoding="utf-8") as f:
+        f.write(feed)
+    link = '<link rel="alternate" type="application/atom+xml" title="Deploy Center blog" href="/blog/feed.xml">\n'
+    pages = [os.path.join(blog, "index.html")] + [os.path.join(blog, n, "index.html") for n in sorted(os.listdir(blog))]
+    for path in pages:
+        if not os.path.isfile(path):
+            continue
+        text = open(path, encoding="utf-8").read()
+        if 'type="application/atom+xml"' in text:
+            continue
+        new = text.replace('<link rel="manifest" href="/site.webmanifest">\n', '<link rel="manifest" href="/site.webmanifest">\n' + link, 1)
+        if new != text:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(new)
+    print(f"build-docs: blog/feed.xml with {len(posts)} post(s)")
+
+
+def sync_schema_copy():
+    """docs/deploy-center.schema.json also at https://deploycenter.app/schema/deploy-center.schema.json: a stable URL with
+    the right content type, and no GitHub rate limit for editors that fetch it. Built, not committed."""
+    src = os.path.join(ROOT, "docs", "deploy-center.schema.json")
+    if not os.path.isfile(src):
+        return
+    d = os.path.join(SITE, "schema")
+    os.makedirs(d, exist_ok=True)
+    shutil.copy(src, os.path.join(d, "deploy-center.schema.json"))
+    print("build-docs: schema/deploy-center.schema.json")
 
 
 if __name__ == "__main__":

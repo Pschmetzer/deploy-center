@@ -1,0 +1,13 @@
+# Shell scripts keep LF on every system (a CR in a bash script breaks it).
+* text=auto
+*.sh text eol=lf
+deploys text eol=lf
+integrations/hooks/pre-push text eol=lf
+
+# Generated or binary: no diff noise, no line-ending conversion.
+site/appcast.xml -diff linguist-generated
+docs/images/*.png binary
+site/img/*.png binary
+*.png binary
+*.jpg binary
+*.icns binary

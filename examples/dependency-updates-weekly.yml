@@ -10,6 +10,7 @@
 # before, with its dependency updates. Copy examples/bot-only.sh into the repo too.
 #
 # Secrets and variables: the same as daily-deploy.yml.
+# GitHub switches a scheduled workflow off after 60 days without activity in the repo: see daily-deploy.yml.
 name: Weekly dependency updates
 on:
   schedule:

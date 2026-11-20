@@ -17,14 +17,14 @@
 <link rel="stylesheet" href="/css/site.css">
 </head>
 <body>
-<a class="skip" href="#main">Zum Inhalt</a>
+<a class="skip" href="#main">Zum Inhalt springen</a>
 <nav class="top" aria-label="Hauptmenü"><div class="wrap">
   <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
-  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/guides/" lang="en">Guides</a><a href="/vercel-build-cost-calculator/" lang="en">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
 </div></nav>
 <main id="main" class="wrap narrow legal">
   <h1>Datenschutzerklärung</h1>
-  <p class="lead">Stand: 10. November 2026. Diese Erklärung gilt für die Website deploycenter.app und für die App Deploy Center.</p>
+  <p class="lead">Stand: 20. November 2026. Diese Erklärung gilt für die Website deploycenter.app und für die App Deploy Center.</p>
 
   <section><h2>Verantwortlicher</h2>
     <p>Multi Media Design Patrick Schmetzer, Adam-Foßhag-Straße 37, 65428 Rüsselsheim am Main, Deutschland<br>
@@ -57,6 +57,8 @@
       <li><b>Autofix</b> (Anthropic PBC, USA): Wenn Sie eine Claude-Code-Routine und deren Token hinterlegen, sendet die App bzw. die CLI bei einem fehlgeschlagenen Build an <code>api.anthropic.com</code>: Projekt, Repository, Branch, Commit, Deploy-ID und das Ende des Build-Logs (höchstens 60 KB, maskiert). Die Routine läuft in der Cloud von Anthropic unter Ihrem Claude-Konto, liest dort Ihr Repository und öffnet einen Pull Request.</li>
       <li><b>GitLab</b> (GitLab Inc., USA, oder Ihre eigene GitLab-Instanz): Liegt ein Repository auf GitLab, liest die App über <code>glab</code> oder Ihren <code>GITLAB_TOKEN</code> Commits und Merge Requests von <code>gitlab.com</code> bzw. von der Adresse in <code>GITLAB_HOST</code>.</li>
       <li><b>Weitere Hosting-Anbieter</b>: Schalten Sie Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform oder Coolify ein, spricht die App mit deren Schnittstellen (<code>api.netlify.com</code>, <code>api.cloudflare.com</code>, AWS über die <code>aws</code>-CLI, <code>api.digitalocean.com</code>, Ihre Coolify-Instanz), um Projekte zu lesen und auf Ihren Wunsch zu deployen oder zurückzurollen.</li>
+      <li><b>Sicherheitsprüfung und Fehlersuche</b> (<code>deploys check</code> und <code>deploys scan</code>, in der App „Sicherheitsprüfung“ und „Fehler mit Claude suchen“): Die Sicherheitsprüfung läuft auf Ihrem Mac. gitleaks arbeitet offline. OSV-Scanner fragt die Namen und Versionen Ihrer Abhängigkeiten bei <code>api.osv.dev</code> (Google LLC, USA) ab, Semgrep lädt seine Regeln von <code>semgrep.dev</code> (Semgrep, Inc., USA); Quellcode und Schlüssel werden dabei nicht gesendet. Die Fehlersuche startet die Claude-Code-CLI auf Ihrem Mac, die mit Ihrem Claude-Konto Daten an Anthropic (USA) überträgt, nach den Bedingungen von Anthropic.</li>
+      <li><b>Erweiterungen und Werkzeuge</b>: Der MCP-Server und das Claude-Code-Plugin laufen auf Ihrem Rechner und geben Antworten an den MCP-Client weiter, den Sie nutzen (zum Beispiel Claude Desktop oder Claude Code; dort gilt dessen Datenschutzerklärung). Die Erweiterungen für VS Code und Raycast, Alfred, die GitHub Action und das Docker-Image rufen die Kommandozeile <code>deploys</code> auf und senden selbst nichts an uns; ihre Datenflüsse sind die der Kommandozeile (Vercel, Render, GitHub und die anderen Anbieter oben, mit Ihrem Zugang). In einer GitHub Action oder einem Container läuft das auf den Servern von GitHub bzw. Ihres Anbieters.</li>
       <li><b>Deploy-Hooks und Webhooks</b>: Eine Deploy-Hook-Adresse, die Sie hinterlegen, wird beim Deployen aufgerufen. Die Zusatzwerkzeuge für eine tägliche Zusammenfassung und den Agent-Digest senden Projektnamen, Zahlen und bei Digest auch Commit- und PR-Titel samt Autorennamen an die Webhook-Adresse, die Sie angeben (zum Beispiel Slack, Discord, Telegram oder ntfy), und legen beim Digest ein Issue in einem GitHub-Repository von Ihnen an. Empfänger ist der Dienst, den Sie wählen.</li>
     </ul></section>
 
@@ -68,6 +70,12 @@
     <p>Auch die iOS-App sendet keine Telemetrie, hat kein Konto bei uns und nutzt keinen Server von uns; wir erhalten keine Daten. Ihre Vercel-, Render- und GitHub-Zugangsschlüssel liegen im Schlüsselbund Ihres Geräts. Wenn Sie in der Mac-App „Mit der iPhone-App verbinden“ einschalten, legt sie diese Schlüssel in Ihren iCloud-Schlüsselbund; Apple überträgt sie Ende-zu-Ende-verschlüsselt auf Ihre Geräte mit derselben Apple-ID, wir haben darauf keinen Zugriff. Alternativ zeigt die Mac-App die Schlüssel eine Minute lang als QR-Code, den die iOS-App mit der Kamera liest; das Kamerabild verlässt das Gerät nicht. Die Schlüssel werden nur direkt an api.vercel.com, api.render.com und api.github.com gesendet, um Ihre Projekte zu lesen und auf Ihren Wunsch zu deployen oder zurückzurollen. Vor jedem Deploy und jedem Zurückrollen fragt die App nach Face ID oder dem Gerätecode; diese Prüfung übernimmt iOS, die App erhält keine biometrischen Daten. Hinweise werden als lokale Mitteilungen auf dem Gerät erzeugt. Der Demo-Modus zeigt erfundene Daten und sendet nichts.</p>
   </section>
 
+  <!-- ENTWURF: rechtlich prüfen (eine feste Löschfrist für E-Mails, falls gewünscht, hier nennen) -->
+  <section><h2>Speicherdauer und lokale Daten</h2>
+    <p><b>Server-Protokolle.</b> Die technisch nötigen Daten beim Aufruf dieser Website (siehe „Hosting bei GitHub Pages“) verarbeitet GitHub; wir erhalten sie nicht und können sie nicht einsehen. Wie lange GitHub sie speichert, bestimmt GitHub und steht in dessen Datenschutzerklärung (Link oben).</p>
+    <p><b>E-Mails.</b> Wir speichern Ihre Nachricht und unsere Antwort, solange es für die Bearbeitung nötig ist, und löschen sie, sobald sie dafür nicht mehr nötig sind und keine gesetzliche Aufbewahrungspflicht besteht.</p>
+    <p><b>Dateien der App und der Kommandozeile.</b> Die App und <code>deploys</code> speichern auf Ihrem Gerät, nie bei uns: das Deploy-Journal (wer wann was gestartet hat), Logdateien, Einstellungen und Regeln im Ordner <code>~/.config/deploys</code>, die gemerkten Repositories der Vercel-Projekte, Zwischenspeicher und die Ergebnisse von Prüfungen. Zugangsschlüssel liegen im Schlüsselbund (oder, in CI, in Umgebungsvariablen). Sie bestimmen, wie lange das bleibt: Die Dateien lassen sich jederzeit löschen. Welche Pfade es gibt und wie Sie alles entfernen, steht in der <a href="/docs/uninstall/" lang="en">Anleitung zum Deinstallieren</a> (englisch).</p></section>
+
   <section><h2>Kontakt per E-Mail</h2>
     <p>Wenn Sie uns schreiben, verarbeiten wir Ihre Angaben, um Ihre Anfrage zu beantworten (Art. 6 Abs. 1 lit. b oder f DSGVO), und löschen sie, wenn sie dafür nicht mehr nötig sind und keine Aufbewahrungspflicht besteht. Für Fehlermeldungen und Ideen können Sie auch die öffentlichen Issues auf GitHub nutzen; dort gilt die Datenschutzerklärung von GitHub.</p></section>
 
@@ -75,7 +83,7 @@
     <p>Sie haben das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch gegen Verarbeitungen auf Grundlage berechtigter Interessen (Art. 21). Schreiben Sie dazu an die oben genannte Adresse.</p>
     <p>Sie können sich außerdem bei einer Datenschutz-Aufsichtsbehörde beschweren, zum Beispiel beim Hessischen Beauftragten für Datenschutz und Informationsfreiheit, Gustav-Stresemann-Ring 1, 65189 Wiesbaden.</p></section>
 </main>
-<footer class="site"><div class="wrap"><p class="fine"><a href="/">← Zurück zu Deploy Center</a> · <a href="/impressum.html">Impressum</a> · <a href="/docs/getting-started/">Docs</a> · <a href="/guides/">Guides</a></p></div></footer>
+<footer class="site"><div class="wrap"><p class="fine"><a href="/">← Zurück zu Deploy Center</a> · <a href="/impressum.html">Impressum</a> · <a href="/docs/getting-started/" lang="en">Docs</a> · <a href="/guides/" lang="en">Guides</a></p></div></footer>
 <script src="/js/site.js" defer></script>
 </body>
 </html>

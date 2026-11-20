@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to disable AWS Amplify auto-build for a branch · Deploy Center</title>
 <meta name="description" content="Turn off auto-build on an AWS Amplify Hosting branch with the AWS CLI, start a build when you decide, and what else can still build.">
+<meta name="author" content="Deploy Center">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
@@ -14,6 +15,9 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:published_time" content="2026-11-16">
 <meta property="og:title" content="How to disable AWS Amplify auto-build for a branch · Deploy Center">
 <meta property="og:description" content="Turn off auto-build on an AWS Amplify Hosting branch with the AWS CLI, start a build when you decide, and what else can still build.">
 <meta property="og:url" content="https://deploycenter.app/guides/aws-amplify-disable-auto-build/">
@@ -43,7 +47,7 @@
   "url": "https://deploycenter.app/guides/aws-amplify-disable-auto-build/",
   "mainEntityOfPage": "https://deploycenter.app/guides/aws-amplify-disable-auto-build/",
   "datePublished": "2026-11-16",
-  "dateModified": "2026-11-18",
+  "dateModified": "2026-11-20",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -127,6 +131,26 @@
     "item": "https://deploycenter.app/guides/aws-amplify-disable-auto-build/"
    }
   ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to disable AWS Amplify auto-build for a branch",
+  "description": "Turn off auto-build on an AWS Amplify Hosting branch with the AWS CLI, start a build when you decide, and what else can still build.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Turn auto-build off for a branch",
+    "url": "https://deploycenter.app/guides/aws-amplify-disable-auto-build/#off"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "Start a build yourself",
+    "url": "https://deploycenter.app/guides/aws-amplify-disable-auto-build/#deploy"
+   }
+  ]
  }
 ]
 </script>
@@ -142,7 +166,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>How to disable AWS Amplify auto-build for a branch</h1>
 <p class="answer">Run <code>aws amplify update-branch --app-id &lt;id&gt; --branch-name main --no-enable-auto-build</code>. Pushes to that branch then no longer start a build. Start one yourself with <code>aws amplify start-job --job-type RELEASE</code>. Other branches keep their own setting.</p>
-<p class="meta">Last updated <time datetime="2026-11-18">18 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p>Amplify Hosting bills build minutes. On a Git-connected branch with auto-build on, every push builds. Check the current price per build minute on the AWS Amplify pricing page; what matters is that a branch pushed twenty times a day builds twenty times.</p>
 <h2 id="off">1. Turn auto-build off for a branch</h2>

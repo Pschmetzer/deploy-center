@@ -95,6 +95,10 @@ build_slices DeployCenter -O -parse-as-library -swift-version 5 \
   app/*.swift shared/*.swift
 lipo -create "${slices[@]}" -output "$BUILD/Contents/MacOS/DeployCenter"
 rm -f "${slices[@]}"
+# The binary must hold every architecture asked for (a slice that went missing would ship as a half universal app).
+have_archs="$(lipo -archs "$BUILD/Contents/MacOS/DeployCenter" | tr ' ' '\n' | sort | tr '\n' ' ')"
+want_archs="$(printf '%s\n' $archs | sort | tr '\n' ' ')"
+[ "$have_archs" = "$want_archs" ] || die "the binary has the architectures \"${have_archs% }\", expected \"${want_archs% }\""
 
 # Sparkle.framework without what a non-sandboxed app does not need: the XPC services (only for
 # sandboxed apps) and the headers.
@@ -289,6 +293,10 @@ elif [ -n "${DEVELOPER_ID:-}" ]; then
   fi
 else
   codesign --force --deep -s - "$BUILD"
+fi
+# A Developer ID build must carry the Hardened Runtime flag, or Apple refuses it after the long wait.
+if [ -n "${DEVELOPER_ID:-}" ] && [ "${DEVELOPER_ID:-}" != "-" ]; then
+  codesign -dvv "$BUILD" 2>&1 | grep -q 'flags=.*runtime' || die "the app is signed without the Hardened Runtime flag (codesign -dvv shows it); not packing"
 fi
 (cd build && ditto -c -k --keepParent "Deploy Center.app" "$(basename "$ZIP")")
 echo "Built: $BUILD and $ZIP"
