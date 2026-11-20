@@ -17,7 +17,7 @@ No key is ever printed.
 .fi
 .SH COMMANDS
 .nf
-  deploys doctor [\-\-text]                   check tools and access (JSON; \-\-text: one line each, with the fix)
+  deploys doctor [\-\-text [\-\-strict]]        check tools and access (JSON; \-\-text: one line each, with the fix; \-\-strict: exit 1 on a FIX)
   deploys changed [\-\-json]                  what has commits on GitHub that are not live
   deploys deploy\-changed [\-\-yes]            deploy all of those (shows the list without \-\-yes; \-\-dry\-run says so too)
     [\-\-only <p>]... [\-\-exclude <p>]... [\-\-platform <p>] [\-\-max <n>]   narrow what it looks at
@@ -27,7 +27,7 @@ No key is ever printed.
   deploys schedule daily [HH:MM] [\-\-weekdays] [\-\-when\-green] [\-\-by\-rules] [\-\-strict] [\-\-only <p>] [\-\-exclude <p>] [\-\-platform <p>] [\-\-max <n>] | off | status [\-\-json]
                                             deploy\-changed \-\-yes once a day (launchd; else the cron line)
   deploys rules check [\-\-json]              which rule of rules.json matches which waiting project, and why not
-  deploys deploy <p>|<group> [\-\-preview] [\-\-sha <c>] [\-\-wait] [\-\-dry\-run] [\-\-force "reason"]
+  deploys deploy <p>|<group> [\-\-preview] [\-\-sha <c>] [\-\-wait [\-\-timeout 30m]] [\-\-dry\-run] [\-\-force "reason"]
                                             deploy one project, or a group in its order (docs/TEAM.md);
                                             \-\-dry\-run says what would start and starts nothing
   deploys rollback <p> [<id>]               production back to the deploy before, on whichever platform it is on
@@ -46,7 +46,7 @@ No key is ever printed.
   deploys explain <project>                 why a project is (not) counted as changed
   deploys diff <project>                    commits and files between what is live and the branch
   deploys notes <project> [\-\-json]          the same as release notes (Markdown; \-\-json: author as a field)
-  deploys open <project> [\-\-dashboard]      the site, or its page at the platform
+  deploys open <project> [\-\-dashboard] [\-\-print]   the site, or its page at the platform (\-\-print: only the address)
   deploys ignore <p> [\-\-undo] | \-\-list      leave a project out of changed and deploy\-changed
   deploys certs [\-\-days 14] [\-\-json]        TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out soon
   deploys creds [\-\-max\-age 90] [\-\-json]     where each platform's key comes from, if it works, how old a keychain key is
@@ -58,7 +58,7 @@ No key is ever printed.
     [\-\-expect 200|2xx] [\-\-follow]          only that status is healthy; follow up to 3 redirects
   deploys secrets <project>|\-\-stdin [\-\-json]  added lines that look like a key or token (exit 1: a gate for scripts)
   deploys risk <project> [\-\-json]           green/yellow/red for what waits: migrations, lockfiles, config, size
-  deploys ci <owner/repo> [<ref>] [\-\-wait 30m]  the CI verdict of a commit: green, pending, red, none
+  deploys ci <owner/repo> [<ref>] [\-\-wait 30m] [\-\-exit\-code]  the CI verdict of a commit: green, pending, red, none
   deploys window [\-\-json]                   is the deploy window (window.json) open now?
   deploys freeze [status] [\-\-json]          the closed times of window.json and whether deploys are closed now
   deploys freeze add <days> <from> [<to>] [\-\-reason "why"] | remove <n> | clear   e.g. freeze add fri 15:00
@@ -132,7 +132,10 @@ state of some project could not be read (it is named and left out, never counted
 Per command (docs/CLI.md has the table):
   watch            0 live, 1 failed or canceled, 3 the platform could not be asked, 4 \-\-timeout
   verify           0 healthy, 1 failed and rolled back, 2 failed and not rolled back, 3 nothing checked
-  ci               0 green or no checks, 1 red, 2 still pending or GitHub not reachable
+  ci               0 green or no checks, 1 red, 2 still pending or GitHub not reachable (\-\-json: always 0, unless \-\-exit\-code)
+  doctor \-\-text \-\-strict   1 when a line says FIX
+  certs 1 a certificate expires soon; creds 1 a key is not accepted; secrets 1 a hit; journal verify 1 the chain is broken
+  idle, doctor (without \-\-strict)   always 0
   window           0 open, 1 closed, 2 window.json could not be read
   deploy\-changed   with \-\-strict also 2 when something was skipped (red or pending CI)
   autofix \-\-only   2 not failed, 3 handed over already or busy, 4 a cap, 5 no routine, 6 locked
