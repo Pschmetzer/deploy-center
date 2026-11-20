@@ -23,6 +23,8 @@ final class PhoneStore: ObservableObject {
     @Published var messageSerial = 0
     /// A project to show, from a widget link or a notification.
     @Published var openKey: String?
+    /// The first followed deploy: the window explains the end-of-deploy note before the system asks.
+    @Published var askNotes = false
     /// A note asked to deploy this project: the window opens the confirmation for it.
     @Published var confirmDeployKey: String?
     /// The iCloud Keychain item was read once (off the main thread); until then "no account" is not sure.
@@ -219,6 +221,7 @@ final class PhoneStore: ObservableObject {
     private func wipeTraces() {
         teamCache = nil
         ETags.shared.removeAll()
+        HistoryCache.clear()
         projects = []; errors = []; stale = []; loadedAt = nil; keyRefused = false
         try? FileManager.default.removeItem(at: Background.lastURL)
         if let url = DeploySnapshot.groupURL { try? FileManager.default.removeItem(at: url) }
@@ -602,14 +605,23 @@ final class PhoneStore: ObservableObject {
 
     // MARK: History and build logs (read only)
 
-    func history(_ p: PhoneProject) async -> [DeployRecord]? {
+    /// `quiet`: a failure is not shown as a toast (the caller only wants the numbers, e.g. the typical build time).
+    /// Offline or failing, the last list read is returned (metadata only: ids, states, times, commit titles), not nothing.
+    func history(_ p: PhoneProject, quiet: Bool = false) async -> [DeployRecord]? {
         if demo { return DemoData.history(p) }
         do {
+            let r: [DeployRecord]
             switch p.provider {
-            case .vercel: return try await vercel().history(p)
-            case .render: return try await Render(key: token(.render) ?? "").history(p)
+            case .vercel: r = try await vercel().history(p)
+            case .render: r = try await Render(key: token(.render) ?? "").history(p)
             }
-        } catch { say(describe(error, p.provider), error: true); return nil }
+            HistoryCache.save(r, for: p.key)
+            return r
+        } catch {
+            if let old = HistoryCache.load(p.key) { return old }
+            if !quiet { say(describe(error, p.provider), error: true) }
+            return nil
+        }
     }
 
     /// The log of one deploy (else the newest attempt), masked before it is kept, shown or copied.
@@ -666,11 +678,12 @@ final class PhoneStore: ObservableObject {
         let live = LiveDeploy.start(p, rollback: rollback)
         let start = Date(), end = start.addingTimeInterval(limit)
         // The usual build time of this project, from its history: the progress bar is not a guess of five minutes.
-        let typical = BuildTime.typical(await history(p) ?? [])
+        let typical = BuildTime.typical(await history(p, quiet: true) ?? [])
         var outcome: String?, ok = false, failed = false, replaced = false, lastError: String?
         var canceledByUser = false
         // The person may never have been asked: the end of this deploy is reported to them in the background.
-        Task { await Notes.askOnce() }
+        // The system question comes after our own sentence (an alert in the window), not in the middle of the deploy.
+        if await Notes.needsAsk { askNotes = true }
         while Date() < end && !Task.isCancelled {
             try? await Task.sleep(for: .seconds(PollEvery.seconds(elapsed: Date().timeIntervalSince(start))))
             let s: String
@@ -848,8 +861,10 @@ enum Notes {
         let deploy = UNNotificationAction(identifier: deployAction, title: L("Deploy with Face ID", "Mit Face ID deployen"),
                                           options: [.foreground, .authenticationRequired])
         UNUserNotificationCenter.current().setNotificationCategories([
-            UNNotificationCategory(identifier: category, actions: [open, mute], intentIdentifiers: [], options: []),
-            UNNotificationCategory(identifier: waitingCategory, actions: [deploy, open, mute], intentIdentifiers: [], options: [])
+            UNNotificationCategory(identifier: category, actions: [open, mute], intentIdentifiers: [],
+                                   hiddenPreviewsBodyPlaceholder: L("Deploy Center news", "Neuigkeit von Deploy Center"), options: []),
+            UNNotificationCategory(identifier: waitingCategory, actions: [deploy, open, mute], intentIdentifiers: [],
+                                   hiddenPreviewsBodyPlaceholder: L("A project is waiting", "Ein Projekt wartet"), options: [])
         ])
     }
     /// Until the start of tomorrow, in this device's calendar.
@@ -861,16 +876,20 @@ enum Notes {
 
     /// Asks once, the first time a deploy is followed, when the person never answered: the end of a deploy
     /// is reported even if "Notify" in Settings was never switched on. A "no" is not asked again.
+    static var needsAsk: Bool {
+        get async { await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .notDetermined }
+    }
     static func askOnce() async {
-        let s = await UNUserNotificationCenter.current().notificationSettings()
-        guard s.authorizationStatus == .notDetermined else { return }
+        guard await needsAsk else { return }
         _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
     }
 
     static func post(_ body: String, project: String?, id: String? = nil, news: Bool = false) async {
         if news && muted { return }
         let c = UNMutableNotificationContent()
-        c.title = "Deploy Center"; c.body = body; c.sound = .default
+        // With "Unlock on open" the lock screen must not name projects either (IDEEN-12 C23).
+        c.title = "Deploy Center"; c.sound = .default
+        c.body = UserDefaults.standard.bool(forKey: "lockOnOpen") ? L("A project has news. Open the app.", "Ein Projekt hat Neuigkeiten. App öffnen.") : body
         // One thread per project groups its history; failures rise in the notification summary, news falls.
         c.threadIdentifier = project.map { "deploy-center-" + $0 } ?? "deploy-center"
         let kind = (id ?? "").split(separator: ":").first.map(String.init) ?? ""
@@ -880,4 +899,24 @@ enum Notes {
         let r = UNNotificationRequest(identifier: id ?? "deploy-\(project ?? "")", content: c, trigger: nil)
         try? await UNUserNotificationCenter.current().add(r)
     }
+}
+
+/// The last history of each project, metadata only (no log text), so the list reads offline.
+/// Kept in UserDefaults; at most 40 projects, oldest dropped.
+enum HistoryCache {
+    private static let key = "historyCache.v1"
+    private struct Entry: Codable { var at: Date; var records: [DeployRecord] }
+
+    private static func all() -> [String: Entry] {
+        guard let d = UserDefaults.standard.data(forKey: key) else { return [:] }
+        return (try? JSONDecoder().decode([String: Entry].self, from: d)) ?? [:]
+    }
+    static func save(_ r: [DeployRecord], for project: String) {
+        var a = all()
+        a[project] = Entry(at: Date(), records: r)
+        if a.count > 40 { for k in a.sorted(by: { $0.value.at < $1.value.at }).prefix(a.count - 40).map(\.key) { a[k] = nil } }
+        if let d = try? JSONEncoder().encode(a) { UserDefaults.standard.set(d, forKey: key) }
+    }
+    static func load(_ project: String) -> [DeployRecord]? { all()[project]?.records }
+    static func clear() { UserDefaults.standard.removeObject(forKey: key) }
 }

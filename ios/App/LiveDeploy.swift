@@ -8,6 +8,9 @@ import Foundation
 final class LiveDeploy {
     private var activity: Activity<DeployActivity>?
     private var last: String?
+    private var lastUpdate = Date.distantPast
+    /// The same words are sent again after this long, so the activity does not go stale while the app follows it.
+    static let refreshEvery: TimeInterval = 60
 
     static func start(_ p: PhoneProject, rollback: Bool) -> LiveDeploy {
         let l = LiveDeploy()
@@ -40,7 +43,10 @@ final class LiveDeploy {
     /// A new state, or the same one again so that it does not go stale while the app follows it.
     func update(_ words: String) {
         guard let a = activity else { return }
-        last = words
+        // Not on every poll: a changed text, or the minute's refresh (IDEEN-12 C5).
+        let now = Date()
+        guard words != last || now.timeIntervalSince(lastUpdate) >= Self.refreshEvery else { return }
+        last = words; lastUpdate = now
         Task { await a.update(Self.content(.running, words)) }
     }
 

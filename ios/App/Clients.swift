@@ -151,8 +151,10 @@ struct HTTP {
             guard (200..<300).contains(code) else {
                 if limited { throw APIError(status: code, message: Self.limitText(http), rateLimited: true) }
                 let obj = try? JSONSerialization.jsonObject(with: data) as? JSON
-                let msg = ((obj?["error"] as? JSON)?["message"] as? String) ?? (obj?["message"] as? String)
+                let raw = ((obj?["error"] as? JSON)?["message"] as? String) ?? (obj?["message"] as? String)
                     ?? Self.plainBody(data)
+                // An error text can echo a token or a header: it goes through the log masking before a toast shows it (IDEEN-12 C18).
+                let msg = LogMask.mask(String(raw.prefix(300))) ?? ""
                 throw APIError(status: code, message: msg, rateLimited: limited)
             }
             if let tag, http?.statusCode == 200, let etag = http?.value(forHTTPHeaderField: "etag") {
@@ -309,7 +311,7 @@ enum BuildTime {
     }
 }
 
-struct DeployRecord: Identifiable, Equatable {
+struct DeployRecord: Identifiable, Equatable, Codable {
     let id: String
     let state: String
     let at: Date?

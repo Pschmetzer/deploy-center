@@ -38,8 +38,9 @@ struct ConnectMacView: View {
                     Section {
                         Text(Self.describe(k))
                         Button(L("Connect", "Verbinden")) {
-                            UsedCodes.mark(k.once)
                             let adopted = store.adopt(k)
+                            // Marked as used only once the keys are saved: a failed save lets the same code be tried again (IDEEN-12 C3).
+                            if adopted { UsedCodes.mark(k.once) }
                             if foundByPaste { UIPasteboard.general.items = []; foundByPaste = false }
                             if adopted { dismiss() }
                             found = nil
