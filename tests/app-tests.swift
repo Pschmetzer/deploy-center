@@ -781,6 +781,10 @@ expect("done fire, PR open, a day later: gone", RowAutofix.of(green, doneOpen, n
 
 // LOG-001/021: the check after going live.
 expect("site: 200 fine", Store.siteVerdict(code: 200, networkUp: true), Store.SiteVerdict.fine)
+expect("site: 200 then 403 is a lost access", Store.accessLost(before: 200, now: 403), true)
+expect("site: 403 then 403 is no change", Store.accessLost(before: 403, now: 403), false)
+expect("site: first answer 403 is no change", Store.accessLost(before: nil, now: 401), false)
+expect("site: 200 then 500 is not an access change", Store.accessLost(before: 200, now: 500), false)
 expect("site: 429 is bot protection, fine", Store.siteVerdict(code: 429, networkUp: true), Store.SiteVerdict.fine)
 expect("site: 503 broken", Store.siteVerdict(code: 503, networkUp: true), Store.SiteVerdict.broken)
 expect("site: 404 odd, no rollback", Store.siteVerdict(code: 404, networkUp: true), Store.SiteVerdict.odd)

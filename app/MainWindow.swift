@@ -416,6 +416,13 @@ struct ContentView: View {
         .accessibilityLabel(L("Sort", "Sortieren"))
     }
 
+    /// The note dialog's text; a note that looks like a token says so, as notes are kept in plain text.
+    private var noteMessage: String {
+        let base: String = L("Shown under \(shown(noteItem?.name)). Kept on this Mac only.", "Steht unter \(shown(noteItem?.name)). Bleibt nur auf diesem Mac.")
+        guard LogTools.maskSecrets(noteText) != noteText else { return base }
+        return base + " " + L("This looks like a token: keep no secrets in notes, they are stored as plain text.",
+                              "Das sieht wie ein Token aus: keine Geheimnisse in Notizen, sie liegen als Klartext.")
+    }
     private var selectedAll: [Item] { scopes.flatMap { store.selected($0) } }
 
     /// A tick; with Shift held, everything between the last tick and this one (as the list shows it).
@@ -633,7 +640,7 @@ struct ContentView: View {
             Button(L("Cancel", "Abbrechen"), role: .cancel) { noteItem = nil }
             Button(L("Save", "Speichern")) { if let i = noteItem { store.setNote(i, noteText) }; noteItem = nil }
         } message: {
-            Text(L("Shown under \(shown(noteItem?.name)). Kept on this Mac only.", "Steht unter \(shown(noteItem?.name)). Bleibt nur auf diesem Mac."))
+            Text(noteMessage)
         }
         // A write to the remembered filter or tab from elsewhere (the menu bar) wins over a
         // session-only setting; the palette's toggle flips what is shown.
