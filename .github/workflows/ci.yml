@@ -19,7 +19,8 @@ concurrency:
 
 jobs:
   lint:
-    # What needs no macOS: the personal-data and size checks and shellcheck. Fails fast and cheap.
+    # What needs no macOS: the personal-data and size checks. Fails fast and cheap. (shellcheck stays in the macOS job:
+    # on a stock Ubuntu runner it was killed after about two minutes on the 300 KB `deploys`.)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -30,8 +31,6 @@ jobs:
         run: scripts/check-public.sh
       - name: File sizes stay under their ceilings
         run: scripts/check-size.sh
-      - name: shellcheck (the same as scripts/lint.sh)
-        run: scripts/lint.sh shellcheck
 
   test:
     runs-on: macos-15
@@ -53,10 +52,12 @@ jobs:
           if [ ! -d "$x" ]; then for d in /Applications/Xcode_16*.app; do x="$d"; done; fi
           sudo xcode-select -s "$x"
       - name: Tools
-        run: brew install jq actionlint
+        run: brew install jq shellcheck actionlint
       - name: actionlint (workflows and the example workflows people copy)
         run: actionlint .github/workflows/*.yml docs/deploy-on-label.yml examples/*.yml integrations/*/examples/*.yml
-      # shellcheck, check-public and check-size run in the lint job (Ubuntu): macOS minutes count tenfold.
+      - name: shellcheck (the same as scripts/lint.sh shellcheck)
+        run: scripts/lint.sh shellcheck
+      # check-public and check-size run in the lint job (Ubuntu): macOS minutes count tenfold.
       - name: Lint the example LaunchAgents and the icon script
         run: |
           plutil -lint scripts/*.plist.example

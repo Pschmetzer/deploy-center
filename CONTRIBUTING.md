@@ -58,7 +58,7 @@ bash tests/all.sh --only team   # only the suites whose path contains "team"
 
 The integration tests need `npm ci` in `integrations/mcp` and `integrations/vscode` first.
 
-CI (`.github/workflows/ci.yml`) runs these, and they must pass. The lint steps run on Ubuntu (`scripts/lint.sh shellcheck` and the two checks below), the tests on macOS:
+CI (`.github/workflows/ci.yml`) runs these, and they must pass. The two checks for personal data and file sizes run on Ubuntu, shellcheck and the tests on macOS:
 
 ```bash
 scripts/lint.sh                     # all lint steps at once: shellcheck, actionlint, check-public, check-size, plutil
