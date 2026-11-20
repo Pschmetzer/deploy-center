@@ -1,0 +1,9 @@
+{
+  "rules": [
+    {
+      "name": "docs ship by themselves",
+      "when": { "projects": ["vercel/*-docs"], "paths": ["docs/**", "*.md"], "onlyPaths": true, "ciGreen": true },
+      "then": "deploy"
+    }
+  ]
+}

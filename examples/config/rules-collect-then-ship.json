@@ -1,0 +1,24 @@
+{
+  "rules": [
+    {
+      "name": "ship label goes now",
+      "when": { "projects": ["*/example-*"], "labels": ["ship"], "ciGreen": true },
+      "then": "deploy"
+    },
+    {
+      "name": "five commits are waiting",
+      "when": { "projects": ["*/example-*"], "minCommits": 5 },
+      "then": "deploy"
+    },
+    {
+      "name": "three days old",
+      "when": { "projects": ["*/example-*"], "minAgeDays": 3 },
+      "then": "deploy"
+    },
+    {
+      "name": "tell me about the rest",
+      "when": { "projects": ["*/example-*"] },
+      "then": "notify"
+    }
+  ]
+}

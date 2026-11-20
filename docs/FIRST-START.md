@@ -26,3 +26,14 @@ To undo it, see [AUTO-DEPLOY.md](AUTO-DEPLOY.md#back-to-auto-deploy).
 - Read [SAFE-START.md](SAFE-START.md) for the same three steps in Terminal.
 - If a connection is missing or an error appears, look it up word for word in [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 - All settings, with an example each: [SETTINGS.md](SETTINGS.md).
+
+## When you want more than the tour
+
+Each of these is a file in your config folder (`~/.config/deploys`, shown by `deploys where`) and starts nothing by itself. Ready-made files you can copy are in [examples/config/](../examples/config/); `sh examples/config/validate.sh` checks them without an account.
+
+- **Close a time.** `deploys freeze add fri 15:00 --reason "no deploys before the weekend"`, then `deploys freeze` to read it back ([SAFE-DEPLOY.md](SAFE-DEPLOY.md)).
+- **Watch the cost.** `deploys budget set 50` makes `deploy-changed --yes` stop when charges so far this month (up to yesterday) plus the run's estimate would pass $50 of Vercel charges; it is a check, not a hard cap, and without `--strict` it goes ahead when the charges cannot be read ([CLI.md](CLI.md)).
+- **Let small things ship.** A rule in `rules.json` and `deploys rules check` to see what it would do ([CLI.md](CLI.md#rules)).
+- **Run your own script.** A `pre-deploy` or `post-deploy` file in `hooks.d` ([CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd)).
+- **A monorepo that builds everything.** Vercel's Ignored Build Step: [examples/config/vercel-ignored-build-step.sh](../examples/config/vercel-ignored-build-step.sh) and the [Glossary](GLOSSARY.md#ignored-build-step).
+- **Questions.** [FAQ.md](FAQ.md) has short answers, and [GLOSSARY.md](GLOSSARY.md) the words.

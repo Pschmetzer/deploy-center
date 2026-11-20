@@ -28,3 +28,14 @@ Zurücknehmen: [AUTO-DEPLOY.md](AUTO-DEPLOY.md#back-to-auto-deploy).
 - [SAFE-START.de.md](SAFE-START.de.md) zeigt dieselben drei Schritte im Terminal.
 - Fehlt eine Verbindung oder erscheint ein Fehler, such ihn wörtlich in [TROUBLESHOOTING.de.md](TROUBLESHOOTING.de.md).
 - Alle Einstellungen mit je einem Beispiel: [SETTINGS.md](SETTINGS.md).
+
+## Wenn dir der Rundgang nicht reicht
+
+Jedes davon ist eine Datei in deinem Konfigurationsordner (`~/.config/deploys`, `deploys where` zeigt ihn) und startet nichts von allein. Fertige Dateien zum Kopieren liegen in [examples/config/](../examples/config/); `sh examples/config/validate.sh` prüft sie ohne Konto.
+
+- **Eine Zeit sperren.** `deploys freeze add fri 15:00 --reason "kein Deploy vor dem Wochenende"`, danach `deploys freeze`, um es nachzulesen ([SAFE-DEPLOY.md](SAFE-DEPLOY.md), englisch).
+- **Kosten im Blick.** `deploys budget set 50` lässt `deploy-changed --yes` anhalten, wenn die Kosten dieses Monats bis gestern plus die Schätzung des Laufs 50 $ Vercel-Kosten überschritten; das ist eine Prüfung, keine harte Obergrenze, und ohne `--strict` läuft es weiter, wenn die Kosten nicht lesbar sind ([CLI.de.md](CLI.de.md)).
+- **Kleines von allein live gehen lassen.** Eine Regel in `rules.json` und `deploys rules check`, um zu sehen, was sie täte ([CLI.md](CLI.md#rules), englisch).
+- **Eigenes Skript ausführen.** Eine `pre-deploy`- oder `post-deploy`-Datei in `hooks.d` ([CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd), englisch).
+- **Ein Monorepo, das alles baut.** Der Ignored Build Step von Vercel: [examples/config/vercel-ignored-build-step.sh](../examples/config/vercel-ignored-build-step.sh) und das [Glossar](GLOSSARY.md#ignored-build-step).
+- **Fragen.** [FAQ.de.md](FAQ.de.md) hat kurze Antworten, [GLOSSARY.de.md](GLOSSARY.de.md) die Wörter.

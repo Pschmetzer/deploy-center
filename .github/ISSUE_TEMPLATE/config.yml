@@ -18,3 +18,9 @@ contact_links:
   - name: Website and cost calculator
     url: https://deploycenter.app
     about: What the app does and how much auto-deploy costs you
+  - name: Ready-made config files
+    url: https://github.com/Pschmetzer/deploy-center/tree/main/examples/config
+    about: A deploy freeze, rules, a budget, hooks and a monorepo ignore step to copy
+  - name: Good first issues
+    url: https://github.com/Pschmetzer/deploy-center/blob/main/docs/GOOD-FIRST-ISSUES.md
+    about: Small tasks for a first pull request

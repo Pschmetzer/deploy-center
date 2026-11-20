@@ -1,0 +1,7 @@
+{
+  "tz": "Europe/Berlin",
+  "deny": [
+    { "days": ["fri"], "from": "15:00", "reason": "no deploys on Friday afternoon" },
+    { "days": ["sat", "sun"], "reason": "weekend" }
+  ]
+}

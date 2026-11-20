@@ -15,6 +15,26 @@ accounts. Run each one by hand once and read the log; please report what you fin
 | [../docs/deploy-on-label.yml](../docs/deploy-on-label.yml) | GitHub Actions in your app's repo: a merged PR with the label `deploy` calls a Render deploy hook. |
 | [../scripts/daily-deploy.plist.example](../scripts/daily-deploy.plist.example) | macOS LaunchAgent: the daily deploy on your own Mac at 18:00. |
 
+## Ready-made config files
+
+[config/](config/) holds files for your config folder (`~/.config/deploys`, shown by `deploys where`, or the folder `DEPLOYS_CONFIG` names), a shared config for a repo, and a Vercel setting. Copy one, change the made-up names (`example-web`, `example-api`) to yours, and read it back with the command in the last column. None of them starts a build.
+
+| File | What it does | Check it with |
+|---|---|---|
+| [config/window-friday-freeze.json](config/window-friday-freeze.json) | `window.json`: closed on Friday from 15:00 and on weekends, in Berlin time. | `deploys window`, `deploys freeze` |
+| [config/window-holiday-freeze.json](config/window-holiday-freeze.json) | `window.json`: closed on four year-end dates and every night from 22:00 to 06:00. | `deploys window` |
+| [config/rules-docs-ship.json](config/rules-docs-ship.json) | `rules.json`: a Vercel project whose name ends in `-docs` ships by itself when only `docs/**` or `*.md` changed and CI is green. | `deploys rules check` |
+| [config/rules-api-waits.json](config/rules-api-waits.json) | `rules.json`: an API service waits until its oldest commit is a day old; a web project ships when CI is green. | `deploys rules check` |
+| [config/rules-collect-then-ship.json](config/rules-collect-then-ship.json) | `rules.json`: a `ship` label goes now, five waiting commits or three days go too, the rest is only named. | `deploys rules check` |
+| [config/budget.json](config/budget.json) | `budget.json`: $50 a month of Vercel build charges, without `strict`. The same as `deploys budget set 50`. | `deploys budget` |
+| [config/deploy-center-monorepo.json](config/deploy-center-monorepo.json) | `deploy-center.json` at the root of a monorepo: three projects, one ignored, a group that deploys the API before the web project and checks each. | `deploys config`, [the schema](../docs/deploy-center.schema.json) |
+| [config/vercel-ignored-build-step.sh](config/vercel-ignored-build-step.sh) | Vercel's Ignored Build Step for a monorepo: skip the build when nothing under the project's folder or the shared packages changed. | `sh examples/config/validate.sh` |
+| [config/hooks.d/pre-deploy-friday](config/hooks.d/pre-deploy-friday) | `hooks.d`: refuses a start from Friday 15:00 on and on weekends. | `sh examples/config/validate.sh` |
+| [config/hooks.d/pre-deploy-require-sha](config/hooks.d/pre-deploy-require-sha) | `hooks.d`: refuses a start that names no commit. | `sh examples/config/validate.sh` |
+| [config/hooks.d/post-deploy-notify](config/hooks.d/post-deploy-notify) | `hooks.d`: tells a plain-text webhook (such as ntfy) what was started; does nothing without `DEPLOY_NOTIFY_URL`. | `sh examples/config/validate.sh` |
+
+`sh examples/config/validate.sh` runs them all in a throwaway folder and repo: the windows at fixed times, the rules and the budget through their shape, the shared config against the schema (when Python has `jsonschema`), the hooks with the variables `deploys` sets, and the Vercel script on a few commits. It needs no account and no network. A hook goes into `hooks.d` with `chmod 700` ([CLI.md](../docs/CLI.md#hooks-scripts-around-a-start-hooksd)).
+
 ## What `deploys` needs outside a Mac
 
 - The CLI tarball of a release (`deploys`, `VERSION`, `providers/`), not the `deploys` file alone; see [integrations/VERIFY.md](../integrations/VERIFY.md).

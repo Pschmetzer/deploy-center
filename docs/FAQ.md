@@ -75,3 +75,48 @@ Only for Claude in the app (explain a failure, release notes, ship check). Autof
 
 ## Where are the step-by-step guides?
 On the website: [all guides](https://deploycenter.app/guides/) (build minutes, deploy queue, automatic rollback, monorepo ignore rules, deploy freeze, status page, daily deploy, risk checks, one per host), [comparisons](https://deploycenter.app/compare/) and the [blog](https://deploycenter.app/blog/). A German set is at [deploycenter.app/de/anleitungen/](https://deploycenter.app/de/anleitungen/).
+
+## How do I close deploys on Friday afternoon?
+`deploys freeze add fri 15:00 --reason "no deploys before the weekend"` writes a closed time into `window.json` without editing JSON; `deploys freeze` lists the rules, numbered, and says whether deploys are closed now. Inside a closed time `deploy`, `deploy-changed --yes` and the app's deploy refuse to start. A ready file is [examples/config/window-friday-freeze.json](../examples/config/window-friday-freeze.json). See [SAFE-DEPLOY.md](SAFE-DEPLOY.md#3-deploy-window--freeze).
+
+## Can I deploy inside a closed window anyway?
+Yes, with a reason: `deploys deploy-changed --yes --force "hotfix for the login page"`. Every project started this way gets a `forced` entry in the journal with the window and your reason. Previews, rollbacks and `verify` are never held back by a window, since a rollback is a fix.
+
+## Which day does a window over midnight belong to, and which time zone does it use?
+A rule such as `"from": "22:00", "to": "06:00"` belongs to the day it starts. The clock is the one of this Mac, unless `window.json` names a zone: `{"tz": "Europe/Berlin", "deny": [...]}`. `deploys window` warns about keys, times and days it does not understand ([CLI.md](CLI.md)).
+
+## How do I run a script before or after a deploy?
+Put an executable file named `pre-deploy*` or `post-deploy*` into `~/.config/deploys/hooks.d`. It gets `DEPLOYS_PLATFORM`, `DEPLOYS_PROJECT`, `DEPLOYS_SHA` and, after the start, `DEPLOYS_STATE`. A `pre-deploy` hook that exits non-zero stops that start; a `post-deploy` hook cannot stop anything. Three examples are in [examples/config/hooks.d/](../examples/config/hooks.d/); the rules are in [CLI.md](CLI.md#hooks-scripts-around-a-start-hooksd).
+
+## Can a repo make `hooks.d` run a script on my Mac?
+No. Hooks are read from your own config folder only, never from a repo or a shared `deploy-center.json`. A hook file that the group or others can write to, or that another account owns (root excepted), is not run; the message says what to `chmod`.
+
+## What if a hook hangs?
+After `DEPLOYS_HOOK_TIMEOUT` seconds (default 300; `0` means no limit) the hook is stopped and counts as failed. For a `pre-deploy` hook that means the start is refused. The limit needs `perl`, `timeout` or `gtimeout` on the machine; with none of them a hanging hook runs without a limit and can block the start.
+
+## Is `hooks.d` the same as `deploys hooks install`?
+No. `deploys hooks install` puts a Git `pre-push` hook into one repo, which shows which builds a push would start. `hooks.d` has nothing to do with Git: its scripts run around a deploy started from Deploy Center.
+
+## Can I cap what builds cost in a month?
+Yes, for Vercel: `deploys budget set 50` (dollars a month; `--strict` too). This is a check, not a hard cap: it uses charges up to yesterday plus an estimate, so a month can still end above the number. Before `deploy-changed --yes` starts anything it adds this month's charges up to yesterday and the plan's estimate; over the budget it stops unless you give `--force "why"`, which goes to the journal. Without `--strict` it warns and goes ahead when the charges cannot be read; with it, it stops. Render has no billing API and is not in the sum. [examples/config/budget.json](../examples/config/budget.json) is the file it writes.
+
+## How do I let docs-only changes ship by themselves?
+With a rule in `rules.json`: `when` the changed paths are only `docs/**` and CI is green, `then` `deploy`, and run the daily deploy with `--by-rules`. The window and the budget still count. `deploys rules check` shows each rule against each waiting project and what was unmet. Examples: [examples/config/rules-docs-ship.json](../examples/config/rules-docs-ship.json). See [CLI.md](CLI.md#rules).
+
+## Which rule wins when two match, and how do I write "or"?
+The first enabled rule that matches a project decides. All conditions inside one rule must hold (AND). For "five commits or three days" write two rules, as in [examples/config/rules-collect-then-ship.json](../examples/config/rules-collect-then-ship.json). A `deploy` rule without any condition is ignored, because it would deploy everything.
+
+## How do I leave one project out of the list?
+`deploys ignore my-project` leaves it out of `changed` and `deploy-changed`; `deploys ignore my-project --undo` counts it again and `deploys ignore --list` shows what is ignored. A team can ignore a project for everyone with `ignored` in `deploy-center.json`; a Mac can still count it again for itself ([TEAM.md](TEAM.md)).
+
+## Where does a setting come from, and where is my config folder?
+`deploys config` shows every setting in effect and where it came from (a shared file in a repo, or this Mac); `--json` gives the same for scripts. `deploys where` prints the config folder (`~/.config/deploys`, or `DEPLOYS_CONFIG`), the version and where the keys come from.
+
+## Can a teammate or a CI job look without being able to deploy?
+Yes: observer mode. Set `DEPLOYS_READONLY=1`, create the file `~/.config/deploys/readonly` (`deploys readonly on`), or list a GitHub login under `observers` in `deploy-center.json`. Every command that only reads still works; commands that start, stop or switch something refuse before they call anything. `freeze` stays allowed, since it only closes times ([TEAM.md](TEAM.md#2-observer-mode)).
+
+## Does the two-person rule stop someone who has a Vercel login?
+No. Team mode keeps a team consistent but enforces nothing: anyone with a Vercel or Render login can still deploy from the dashboard. To enforce it, use the platforms' roles and GitHub branch protection. Deploy Center makes the agreed way the easy way and writes down every exception ([TEAM.md](TEAM.md)).
+
+## My scheduled GitHub workflow stopped without an error.
+GitHub switches a `schedule:` workflow off when the repo has had no activity for 60 days, and a private repo that only holds the daily deploy is exactly that. Look at the Actions tab now and then, and let the workflow tell you when a run fails ([examples/README.md](../examples/README.md)).

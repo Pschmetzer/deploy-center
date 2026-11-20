@@ -1,0 +1,7 @@
+{
+  "tz": "Europe/Berlin",
+  "deny": [
+    { "dates": ["2026-12-24", "2026-12-25", "2026-12-26", "2026-12-31"], "reason": "year-end freeze" },
+    { "from": "22:00", "to": "06:00", "reason": "nobody is awake to fix it" }
+  ]
+}

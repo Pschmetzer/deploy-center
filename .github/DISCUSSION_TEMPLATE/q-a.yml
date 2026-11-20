@@ -1,0 +1,41 @@
+title: "[Question] "
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for asking. Please look at the [FAQ](https://github.com/Pschmetzer/deploy-center/blob/main/docs/FAQ.md) and
+        [Troubleshooting](https://github.com/Pschmetzer/deploy-center/blob/main/docs/TROUBLESHOOTING.md) first.
+        The repo is public: replace project names, repos and domains with stand-ins (`my-app`, `example.com`) and never paste a key.
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you want to do, or what is unclear?
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What did you try?
+      description: The command or the steps in the app, and what you saw. For an error, paste the text.
+      render: text
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Mac app
+        - deploys CLI
+        - CI or GitHub Actions
+        - iPhone app
+        - Team mode
+        - Integration (VS Code, Raycast, MCP, ...)
+        - Docs or website
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`deploys --version`, or the app's About window."

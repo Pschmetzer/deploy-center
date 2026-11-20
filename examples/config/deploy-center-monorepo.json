@@ -1,0 +1,12 @@
+{
+  "$schema": "https://deploycenter.app/schema/deploy-center.schema.json",
+  "version": 1,
+  "approvals": 0,
+  "projects": {
+    "example-web": { "platform": "vercel", "branch": "main", "health": "/api/health" },
+    "example-docs": { "platform": "vercel", "branch": "main" },
+    "example-api": { "platform": "render", "branch": "main", "approvals": 1 }
+  },
+  "ignored": ["example-playground"],
+  "groups": { "example": { "order": ["example-api", "example-web"], "checks": true, "stopOnFail": true } }
+}

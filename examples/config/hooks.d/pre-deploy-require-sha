@@ -1,0 +1,8 @@
+#!/bin/sh
+# Install: cp pre-deploy-require-sha ~/.config/deploys/hooks.d/ && chmod 700 ~/.config/deploys/hooks.d/pre-deploy-require-sha
+# Refuses a start that has no commit to name (DEPLOYS_SHA empty), so the journal never gets a deploy of "unknown".
+# A start that names only a project (no commit) is refused too; ALLOW_NO_SHA=1 in the shell that runs deploys lets it through.
+if [ -z "${DEPLOYS_SHA:-}" ] && [ "${ALLOW_NO_SHA:-}" != 1 ]; then
+  echo "pre-deploy: $DEPLOYS_PLATFORM/$DEPLOYS_PROJECT has no commit to deploy (ALLOW_NO_SHA=1 allows it)" >&2
+  exit 1
+fi

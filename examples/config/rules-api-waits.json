@@ -1,0 +1,19 @@
+{
+  "rules": [
+    {
+      "name": "api ships once its oldest commit is a day old",
+      "when": { "projects": ["render/example-api"], "minAgeHours": 24 },
+      "then": "deploy"
+    },
+    {
+      "name": "api waits a day",
+      "when": { "projects": ["render/example-api"] },
+      "then": "hold"
+    },
+    {
+      "name": "web ships when CI is green",
+      "when": { "projects": ["vercel/example-web"], "ciGreen": true },
+      "then": "deploy"
+    }
+  ]
+}
