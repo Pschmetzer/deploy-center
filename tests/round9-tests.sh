@@ -53,6 +53,7 @@ expect "trap_fn: files and folder removed, old-style trap still runs, status kep
 
 # secrets (idea 32): added lines that look like keys; the secret itself is never printed
 sd='+++ b/src/a.env
+@@ -0,0 +1,6 @@
 +API=ok
 +TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789
 +-----BEGIN RSA PRIVATE KEY-----
