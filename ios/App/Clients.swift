@@ -576,20 +576,27 @@ struct Render {
         x.deployable = !x.paused
         // A paused service builds nothing: no read for it. Ten deploys hold the live one and the newest attempt.
         if x.paused { return x }
+        // One read of the newest deploys per service. When it fails (a limit, a drop in the connection) the last good answer of
+        // the last ten minutes stands in, so one bad call does not blank a row that was fine (IDEEN-12 C16).
+        let deps: [JSON]
         do {
-            let deps = ((try await http.get("/services/\(id)/deploys?limit=10")) as? [JSON] ?? []).compactMap { $0["deploy"] as? JSON }
-            if let n = deps.first {
-                x.latestState = n.str("status"); x.latestId = n.str("id")
-                x.latestAt = isoDate(n.str("createdAt"))
-            }
-            // The time of what is live, not of the newest attempt (that one may have failed).
-            if let live = deps.first(where: { $0.str("status") == "live" }) {
-                x.liveId = live.str("id"); x.liveSha = live.str("commit.id")
-                x.liveAt = isoDate(live.str("finishedAt") ?? live.str("createdAt"))
-                x.liveMsg = firstLine(live.str("commit.message"))
-            }
-            x.liveState = deps.first?.str("status")
-        } catch { x.fetchError = explain(error) }
+            deps = ((try await http.get("/services/\(id)/deploys?limit=10")) as? [JSON] ?? []).compactMap { $0["deploy"] as? JSON }
+            RenderDeps.shared.set(id, deps)
+        } catch {
+            guard let old = RenderDeps.shared.recent(id) else { x.fetchError = explain(error); return x }
+            deps = old
+        }
+        if let n = deps.first {
+            x.latestState = n.str("status"); x.latestId = n.str("id")
+            x.latestAt = isoDate(n.str("createdAt"))
+        }
+        // The time of what is live, not of the newest attempt (that one may have failed).
+        if let live = deps.first(where: { $0.str("status") == "live" }) {
+            x.liveId = live.str("id"); x.liveSha = live.str("commit.id")
+            x.liveAt = isoDate(live.str("finishedAt") ?? live.str("createdAt"))
+            x.liveMsg = firstLine(live.str("commit.message"))
+        }
+        x.liveState = deps.first?.str("status")
         return x
     }
 
@@ -779,6 +786,20 @@ struct GitHub {
         }
         return nil
     }
+}
+
+/// The last good list of deploys per Render service, in memory only (gone when the app quits).
+final class RenderDeps: @unchecked Sendable {
+    static let shared = RenderDeps()
+    private let lock = NSLock()
+    private var items: [String: (at: Date, deps: [JSON])] = [:]
+    func set(_ id: String, _ deps: [JSON]) { lock.lock(); items[id] = (Date(), deps); lock.unlock() }
+    func recent(_ id: String, now: Date = Date(), within: TimeInterval = 600) -> [JSON]? {
+        lock.lock(); defer { lock.unlock() }
+        guard let e = items[id], now.timeIntervalSince(e.at) <= within else { return nil }
+        return e.deps
+    }
+    func removeAll() { lock.lock(); items = [:]; lock.unlock() }
 }
 
 /// When GitHub's rate limit is free again, kept in UserDefaults (the app and the background run share it).

@@ -221,7 +221,7 @@ final class PhoneStore: ObservableObject {
     private func wipeTraces() {
         teamCache = nil
         ETags.shared.removeAll()
-        HistoryCache.clear()
+        HistoryCache.clear(); RenderDeps.shared.removeAll(); RateGate.clear()
         projects = []; errors = []; stale = []; loadedAt = nil; keyRefused = false
         try? FileManager.default.removeItem(at: Background.lastURL)
         if let url = DeploySnapshot.groupURL { try? FileManager.default.removeItem(at: url) }
