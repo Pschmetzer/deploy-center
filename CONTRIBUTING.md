@@ -20,7 +20,7 @@ license (inbound = outbound). There is no CLA.
 
 ## Build
 
-The Python scripts (`scripts/*.py`) need **Python 3.9 or newer** (the `python3` of the Command Line Tools is 3.9; CI runs 3.9 and 3.12). Only the standard library is used.
+The Python scripts (`scripts/*.py`) need **Python 3.9 or newer** (the `python3` of the Command Line Tools is 3.9; the checks were run on 3.9.6 and CI uses the runner's newer Python, since no 3.9 is offered for Ubuntu 26.04). Only the standard library is used.
 
 Needs macOS 15 and `swiftc` (Xcode or the Command Line Tools), plus `jq`.
 There is no Xcode project: `build.sh` compiles `app/*.swift` and `shared/*.swift` into a universal app (widgets and the iOS app: docs/WIDGETS-IOS.md).
