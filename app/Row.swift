@@ -86,7 +86,7 @@ struct Row: View {
                             .accessibilityHidden(true)   // said in `spoken`
                     }
                     if let d = item.domain, let u = item.link.flatMap(URL.init(string:)) {
-                        Button { NSWorkspace.shared.open(u) } label: { Text(Demo.on ? AttributedString(Demo.mask(d)) : highlighted(d)).font(.caption) }
+                        Button { SafeLink.open(u) } label: { Text(Demo.on ? AttributedString(Demo.mask(d)) : highlighted(d)).font(.caption) }
                             .buttonStyle(.link).help(L("Open site", "Seite öffnen"))
                     }
                 }
@@ -151,8 +151,8 @@ struct Row: View {
     @ViewBuilder private var reasonLine: some View {
         switch item.state {
         case .failed(let m) where !m.isEmpty:
-            Text(Self.firstLine(Demo.scrub(m, items: [item]))).font(.caption).foregroundStyle(Color.dangerText).lineLimit(1)
-                .help(Demo.scrub(m, items: [item]))
+            Text(Self.firstLine(LogTools.maskSecrets(Demo.scrub(m, items: [item])))).font(.caption).foregroundStyle(Color.dangerText).lineLimit(1)
+                .help(LogTools.maskSecrets(Demo.scrub(m, items: [item])))
         case .skipped(let m) where !m.isEmpty:
             Text(Self.firstLine(Demo.scrub(m, items: [item]))).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 .help(Demo.scrub(m, items: [item]))
@@ -184,7 +184,7 @@ struct Row: View {
             if case .failed = item.state, let onRetry { Button(L("Try again", "Nochmal versuchen"), action: onRetry) }
             if let onAutofix, !autofixBusy { Button(L("Fix with Claude", "Mit Claude beheben"), action: onAutofix) }
             if item.state.isActive, let onCancel { Button(L("Cancel the deploy", "Deploy abbrechen"), action: onCancel) }
-            if let u = item.link.flatMap(URL.init(string:)) { Button(L("Open site", "Seite öffnen")) { NSWorkspace.shared.open(u) } }
+            if let u = item.link.flatMap(URL.init(string:)) { Button(L("Open site", "Seite öffnen")) { SafeLink.open(u) } }
             if let onDeployMerged { Button(L("Put the merged fix live", "Gemergten Fix live schalten"), action: onDeployMerged) }
             if let onDismissAutofix { Button(L("Dismiss the fix chip", "Fix-Chip verwerfen"), action: onDismissAutofix) }
             if case .failed(let m) = item.state, !m.isEmpty {
@@ -198,7 +198,8 @@ struct Row: View {
     /// What the row's one line shows: a failed last deploy first, then what waits, then the last deploy.
     enum KeyFigure: Equatable { case failed, waiting, lastDeploy, never }
     static func keyFigure(_ i: Item) -> KeyFigure {
-        if i.lastAt != nil, look(i.lastState ?? "") == .failed { return .failed }
+        // The same rule as the widget (`Item.failed`): the newest attempt counts, not only production.
+        if i.lastAt != nil, look(i.lastState ?? "") == .failed || i.lastFailed { return .failed }
         if i.hasNewCommits { return .waiting }
         return i.lastAt == nil ? .never : .lastDeploy
     }
@@ -313,7 +314,8 @@ struct Row: View {
         return f
     }()
 
-    static func ago(_ d: Date) -> String { relative.localizedString(for: d, relativeTo: Date()) }
+    // A time a little ahead (clock skew, GitHub's clock) reads "now", never "in 3 minutes".
+    static func ago(_ d: Date) -> String { let now = Date(); return relative.localizedString(for: min(d, now), relativeTo: now) }
 
     /// Vercel's and Render's deploy states in words ("build_failed" → "Build failed"); see DeployState.
     static func stateText(_ raw: String) -> String { DeployState.text(raw) }
@@ -407,7 +409,7 @@ struct Row: View {
                     Label("Live", systemImage: "checkmark.circle.fill").foregroundStyle(Color.good).font(.caption.weight(.semibold))
                 }
                 if let url, let u = URL(string: url) {
-                    Button { NSWorkspace.shared.open(u) } label: { Image(systemName: "arrow.up.right.square") }
+                    Button { SafeLink.open(u) } label: { Image(systemName: "arrow.up.right.square") }
                         .buttonStyle(.borderless).help(url).accessibilityLabel(L("Open the deployed site", "Deployte Seite öffnen"))
                     if item.previewId != nil {
                         CopyButton(title: L("Copy the preview link", "Vorschau-Link kopieren"), systemImage: "link") { url }

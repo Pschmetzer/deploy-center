@@ -15,7 +15,8 @@ enum Notify {
     static var available: Bool { Bundle.main.bundleIdentifier != nil }
     static func ask(then: (@Sendable (Bool) -> Void)? = nil) {
         guard available else { then?(false); return }
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in then?(granted) }
+        // The same single request as `add`: the first deploy asks from both places at once.
+        Task { then?(await authorized()) }
     }
     /// A reminder the person set up themselves: shown whether or not the window is in front.
     /// Quiet hours hold it back too. `then` (main actor) gets whether the notification was really

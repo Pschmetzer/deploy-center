@@ -1351,6 +1351,12 @@ expect("budget pace with only today", Store.monthPace(Array(budgetDays.suffix(1)
 let sum = Store.summary([(.done(nil), false), (.failed("x"), false), (.skipped("red"), false), (.skipped("red"), false), (.failed("c"), true)])
 expect("summary counts skipped rows", sum.title, L("1 live, 1 failed, 2 skipped, 1 cancelled", "1 live, 1 fehlgeschlagen, 2 übersprungen, 1 abgebrochen"))
 expect("summary ok only without failures", sum.ok, false)
+expect("summary: stopped in the queue counts as cancelled", Store.summary([(.done(nil), false), (.idle, true)]).title, L("1 live, 0 failed, 1 cancelled", "1 live, 0 fehlgeschlagen, 1 abgebrochen"))
+expect("median of the last measurements", [Store.median([]) as Any?, Store.median([0.2, 0.1, 5, 0.3, 0.2]) as Any?, Store.median([1, 3]) as Any?].map { "\($0 ?? "nil")" }, ["nil", "0.2", "2.0"])
+expect("friendlyError: a repo called offline-first is no network error", ContentView.friendlyError("repo offline-first: build failed", "Vercel") ?? "nil", "nil")
+expect("friendlyError: the word offline is", ContentView.friendlyError("Mac is offline", "Vercel") != nil, true)
+expect("friendlyError: timeout-service is no timeout", ContentView.friendlyError("deploy of timeout-service failed", "Render") ?? "nil", "nil")
+expect("ago: a time ahead reads now", !Row.ago(Date().addingTimeInterval(180)).lowercased().contains("in 3") && !Row.ago(Date().addingTimeInterval(180)).lowercased().contains("in drei"), true)
 expect("summary without skips", Store.summary([(.done(nil), false), (.done(nil), false)]).title, L("2 live, 0 failed", "2 live, 0 fehlgeschlagen"))
 let undoA = Store.Toast(text: "a", ok: false, undoLabel: "Cancel", undo: {}), undoB = Store.Toast(text: "b", ok: false, undoLabel: "Cancel", undo: {})
 let plain = (1...3).map { Store.Toast(text: "p\($0)", ok: true) }
@@ -1651,12 +1657,12 @@ func pump(_ seconds: Double = 20, _ work: @escaping @MainActor () async -> Void)
 }
 MainActor.assumeIsolated {
     let st = Store()
-    st.messages = (0..<35).map { Store.Message(date: Date(), text: "m\($0)", ok: true) }
-    expect("messages: at most 30, the newest kept", "\(st.messages.count) \(st.messages.first?.text ?? "")", "30 m0")
+    st.messages = (0..<(Timing.messageLimit + 5)).map { Store.Message(date: Date(), text: "m\($0)", ok: true) }
+    expect("messages: at most the limit, the newest kept", "\(st.messages.count) \(st.messages.first?.text ?? "")", "\(Timing.messageLimit) m0")
     st.messages.insert(Store.Message(date: Date(), text: "newest", ok: true), at: 0)
     Store.flushMessages()
     let onDisk = Store.readMessages()
-    expect("messages: a full list is still written", "\(onDisk.count) \(onDisk.first?.text ?? "")", "30 newest")
+    expect("messages: a full list is still written", "\(onDisk.count) \(onDisk.first?.text ?? "")", "\(Timing.messageLimit) newest")
 
     // Ticking what changed: never a hidden row, a running one or one without changes.
     func row(_ id: String, changed: Bool, state: RunState = .idle) -> Item {
@@ -1963,6 +1969,7 @@ expect("ledger on open: under a fifth left waits", SavingsModel.budgetAllows(Sto
 expect("web links: https opens", SafeLink.ok(URL(string: "https://github.com/a/b/pull/1")!), true)
 expect("web links: file does not", SafeLink.ok(URL(string: "file:///etc/hosts")!), false)
 expect("web links: a custom scheme does not", SafeLink.ok(URL(string: "x-apple.systempreferences:com.apple")!), false)
+expect("web links: http only for localhost", [SafeLink.ok(URL(string: "http://example.com")!), SafeLink.ok(URL(string: "http://localhost:3000")!)], [false, true])
 expect("masker: a SendGrid key", LogTools.maskSecrets("key SG.abcdefghijklmnop1234.abcdefghijklmnop5678 end").contains("abcdefghijklmnop1234"), false)
 expect("masker: a Supabase secret", LogTools.maskSecrets("sb_secret_abcdefgh1234").contains("abcdefgh1234"), false)
 expect("decimal: one digit", decimal(12.34), isGerman ? "12,3" : "12.3")

@@ -25,7 +25,15 @@ func decimal(_ v: Double, _ digits: Int = 1) -> String {
 
 /// Links that came out of the script's JSON or a model open only as web pages: no file:, no custom schemes.
 enum SafeLink {
-    nonisolated static func ok(_ u: URL) -> Bool { ["https", "http"].contains(u.scheme?.lowercased() ?? "") && u.host?.isEmpty == false }
+    nonisolated static func ok(_ u: URL) -> Bool {
+        guard let host = u.host?.lowercased(), !host.isEmpty else { return false }
+        switch u.scheme?.lowercased() {
+        case "https": return true
+        // Every platform and GitHub link is https; plain http only for a project on this Mac.
+        case "http": return host == "localhost" || host == "127.0.0.1" || host == "[::1]" || host == "::1" || host.hasSuffix(".localhost")
+        default: return false
+        }
+    }
     @MainActor static func open(_ u: URL) { if ok(u) { NSWorkspace.shared.open(u) } }
 }
 

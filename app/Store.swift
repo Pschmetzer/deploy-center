@@ -2,6 +2,7 @@
 
 import SwiftUI
 import AppKit
+import Network
 
 // MARK: - Model
 
@@ -40,6 +41,12 @@ final class Store: ObservableObject {
         guard extrasFailedAt[part] != nil else { return nil }
         guard let at = extrasLoadedAt[part] else { return L("Could not be read", "Ließ sich nicht lesen") }
         return L("As of ", "Stand ") + at.formatted((Calendar.current.isDateInToday(at) ? Date.FormatStyle().hour().minute() : Date.FormatStyle().day().month().hour().minute()).locale(uiLocale))
+    }
+    /// ⌘R and the reload button: the costs, triggers and GitHub budget wait for `manualExtrasEvery`
+    /// (and Low Power Mode), like the automatic refresh; the cheap status feeds are read every time.
+    func loadExtrasIfDue() async {
+        if Date().timeIntervalSince(lastExtras) > Timing.manualExtrasEvery, !ProcessInfo.processInfo.isLowPowerModeEnabled { await loadExtras() }
+        else { await checkProviders() }
     }
     func loadExtras() async {
         guard !loadingExtras else { return }
@@ -213,9 +220,10 @@ final class Store: ObservableObject {
         for i in items[.vercel] ?? [] {
             guard let b = projectBudget(i), let p = c.projects.first(where: { $0.name == i.name }),
                   let m = Self.projectMonth(build: p.build, days: min(c.days.count, 14)), m > b * 0.8 else { continue }
-            let k = "budgetAlarm|" + Self.key(i)
+            // "Near" and "over" each get their own say a day: morning's "near" must not hide the afternoon's "over".
+            let k = (m > b ? "budgetOverAlarm|" : "budgetAlarm|") + Self.key(i)
             guard d.string(forKey: k) != today else { continue }
-            d.set(today, forKey: k)
+            d.set(today, forKey: k); d.set(today, forKey: "budgetAlarm|" + Self.key(i))
             say(m > b ? L("\(i.name) over its budget", "\(i.name) über seinem Budget") : L("\(i.name) near its budget", "\(i.name) nahe an seinem Budget"),
                 L("At this pace ≈ \(m.formatted(.currency(code: "USD"))) a month, budget \(b.formatted(.currency(code: "USD")))",
                   "Bei diesem Tempo ≈ \(m.formatted(.currency(code: "USD"))) im Monat, Budget \(b.formatted(.currency(code: "USD")))"), ok: false)
@@ -248,21 +256,26 @@ final class Store: ObservableObject {
     func checkProviders() async {
         let feeds = enabledProviders.compactMap { p in p.statusFeed.map { (p.label, $0.absoluteString) } }
             + ProviderInfo.gitHosts.map { ($0.label, $0.feed) }
-        let found = await withTaskGroup(of: (Int, String?).self) { group -> [(Int, String)] in
+        // (index, the issue text, or nil when fine; `failed`: the page itself could not be read)
+        let found = await withTaskGroup(of: (Int, String?, Bool).self) { group -> [(Int, String?, Bool)] in
             for (k, feed) in feeds.enumerated() {
                 group.addTask {
                     guard let url = URL(string: feed.1),
                           let (data, _) = try? await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 10)),
                           let st = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["status"] as? [String: Any],
-                          let indicator = st["indicator"] as? String, indicator != "none" else { return (k, nil) }
-                    return (k, "\(feed.0): \(st["description"] as? String ?? indicator)")
+                          let indicator = st["indicator"] as? String else { return (k, nil, true) }
+                    // Planned maintenance is no outage.
+                    guard indicator != "none", indicator != "maintenance" else { return (k, nil, false) }
+                    return (k, "\(feed.0): \(st["description"] as? String ?? indicator)", false)
                 }
             }
-            var out: [(Int, String)] = []
-            for await (k, text) in group { if let text { out.append((k, text)) } }
+            var out: [(Int, String?, Bool)] = []
+            for await r in group { out.append(r) }
             return out
         }
-        let issues = found.sorted { $0.0 < $1.0 }.map(\.1)
+        // A status page that could not be read says nothing: what it said before stays.
+        let kept = found.filter { $0.2 }.compactMap { r in providerIssues.first { $0.hasPrefix(feeds[r.0].0 + ":") }.map { (r.0, $0) } }
+        let issues = (found.compactMap { r in r.1.map { (r.0, $0) } } + kept).sorted { $0.0 < $1.0 }.map(\.1)
         if providerIssues != issues { providerIssues = issues }
     }
 
@@ -568,8 +581,8 @@ final class Store: ObservableObject {
     }
 
     private func writeCache(_ p: Platform, _ data: Data) {
-        try? FileManager.default.createDirectory(at: Self.cacheDir, withIntermediateDirectories: true)
-        try? data.write(to: cacheURL(p), options: .atomic)
+        // Project, repo and commit texts: readable by this user only, like the messages.
+        try? PrivateFile.write(data, to: cacheURL(p))
     }
 
     /// Started once, by whichever comes first: the window or the menu bar. The refresh loop lives
@@ -1054,11 +1067,28 @@ final class Store: ObservableObject {
 
     /// Rows whose last deploy was cancelled by the person: not a failure in the journal or the summary.
     private var endedByCancel: Set<String> = []
+    /// Names of rows a deploy was started for, so the result survives the row leaving the list.
+    private var rowNames: [String: String] = [:]
     /// Started inside a closed deploy window, with the reason given: journaled as "forced".
     private var forcedReasons: [String: String] = [:]
     private func set(_ p: Platform, _ id: String, _ s: RunState, countsAsLive: Bool = true, cancelled byPerson: Bool = false, deployedSha: String? = nil) {
-        guard let i = items[p]?.firstIndex(where: { $0.id == id }) else { return }
+        guard let i = items[p]?.firstIndex(where: { $0.id == id }) else {
+            // The row is gone (project deleted, platform switched off, list reloaded): the result of a
+            // deploy that just ended still goes into the journal and the messages.
+            if let name = rowNames["\(p.cli)/\(id)"] {
+                switch s {
+                case .done: Journal.append(JournalEntry(platform: p.rawValue, name: name, result: countsAsLive ? "live" : "rollback", seconds: nil, detail: nil))
+                           say(L("\(name) is live", "\(name) ist live"), p.rawValue, ok: true)
+                case .failed(let m):
+                    Journal.append(JournalEntry(platform: p.rawValue, name: name, result: byPerson ? "cancelled" : "failed", seconds: nil, detail: m))
+                    say(byPerson ? L("\(name) cancelled", "\(name) abgebrochen") : L("\(name) failed", "\(name) fehlgeschlagen"), m, ok: byPerson)
+                default: break
+                }
+            }
+            return
+        }
         defer { holdAwake() }
+        rowNames["\(p.cli)/\(id)"] = items[p]![i].name
         let was = items[p]![i].state
         items[p]![i].state = s
         holdAwake()
@@ -1098,7 +1128,8 @@ final class Store: ObservableObject {
             forcedReasons[Self.key(items[p]![i])] = nil
             Journal.append(JournalEntry(platform: p.rawValue, name: name, result: byPerson ? "cancelled" : "failed", seconds: took, detail: m,
                                         sha: entrySha, deployId: entryId))
-        case .skipped(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "skipped", seconds: took, detail: m))
+        case .skipped(let m): Journal.append(JournalEntry(platform: p.rawValue, name: name, result: "skipped", seconds: took, detail: m,
+                                                                            sha: entrySha, deployId: entryId))
         default: break
         }
         // Settings → Notifications: a sound of its own per result (FEA-063), opt-in.
@@ -1146,7 +1177,10 @@ final class Store: ObservableObject {
         while q.filter({ $0.undo == nil }).count > 2, let k = q.firstIndex(where: { $0.undo == nil }) { q.remove(at: k) }
         return q
     }
-    func show(_ t: Toast) {
+    /// `logged`: `say` has written the line to the messages itself; any other toast leaves its trace
+    /// here, so one that is pushed away by an "Undo" toast can still be read afterwards.
+    func show(_ t: Toast, logged: Bool = false) {
+        if !logged { log(Message(date: Date(), text: LogTools.maskSecrets(t.text), ok: t.ok)) }
         if let cur = toast, cur.undo != nil { toastQueue = Self.queued(toastQueue, t); return }
         toast = t
         // "Undo" gets longer to be reached.
@@ -1177,7 +1211,7 @@ final class Store: ObservableObject {
     /// At most 30, also for lines added without `say` (a rollback countdown).
     @Published var messages: [Message] = Store.readMessages() {
         didSet {
-            if messages.count > 30 { messages = Array(messages.prefix(30)) }   // no second didSet: written below
+            if messages.count > Timing.messageLimit { messages = Array(messages.prefix(Timing.messageLimit)) }   // no second didSet: written below
             Self.writeMessages(messages)
         }
     }
@@ -1185,7 +1219,7 @@ final class Store: ObservableObject {
     nonisolated static func readMessages() -> [Message] {
         guard let d = try? Data(contentsOf: messagesURL) else { return [] }
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
-        return Array(((try? dec.decode([Message].self, from: d)) ?? []).prefix(30))
+        return Array(((try? dec.decode([Message].self, from: d)) ?? []).prefix(Timing.messageLimit))
     }
     /// In order: the newest list is the one that stays on disk.
     nonisolated private static let messageQueue = DispatchQueue(label: "app.deploycenter.messages", qos: .utility)
@@ -1209,7 +1243,7 @@ final class Store: ObservableObject {
         // The project ran again: a second reminder of its last failure is no longer true.
         if let key { Notify.dropEscalations(key) }
         Notify.post(title, body, project: project, key: key, failed: !ok, rollBack: rollBack, silent: silent)
-        show(Toast(text: title, ok: ok, undoLabel: undoLabel, undo: undo))
+        show(Toast(text: title, ok: ok, undoLabel: undoLabel, undo: undo), logged: true)
         // With VoiceOver the toast is announced already; saying it twice would stutter.
         if UserDefaults.standard.bool(forKey: Speech.resultsKey), !NSWorkspace.shared.isVoiceOverEnabled { Speech.say(title) }
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok, project: row ?? key))
@@ -1471,6 +1505,7 @@ final class Store: ObservableObject {
             case .done: ok += 1
             case .failed: if byPerson { stopped += 1 } else { bad += 1 }
             case .skipped: skipped += 1
+            case .idle: if byPerson { stopped += 1 }   // stopped in the queue, before it started
             default: break
             }
         }
@@ -1523,6 +1558,8 @@ final class Store: ObservableObject {
         guard job.item.platform == .vercel, !job.preview, let repo = job.item.repo else { return nil }
         return (items[.render] ?? []).first { b in
             guard b.repo == repo else { return false }
+            // A cron job, a worker or a static site is independent: the frontend does not wait for it.
+            if let k = b.kind, !["web_service", "private_service"].contains(k) { return false }
             if b.state.isActive || queue.contains(where: { Self.key($0.item) == Self.key(b) }) { return true }
             if case .failed = b.state, queueBatch.contains(b.id) { return true }
             return false
@@ -1533,10 +1570,10 @@ final class Store: ObservableObject {
 
     func cancel(_ item: Item) {
         if let k = queue.firstIndex(where: { Self.key($0.item) == Self.key(item) }) {
-            queue.remove(at: k); set(item.platform, item.id, .idle); return
+            queue.remove(at: k); set(item.platform, item.id, .idle, cancelled: true); pump(); return
         }
         if let t = ciWaits.removeValue(forKey: Self.key(item)) {   // still waiting for checks: nothing was started
-            t.cancel(); set(item.platform, item.id, .idle); pump(); return
+            t.cancel(); set(item.platform, item.id, .idle, cancelled: true); pump(); return
         }
         guard let id = itemNow(item)?.deployId else {
             show(Toast(text: L("\(item.name) is still starting – try again in a moment", "\(item.name) startet noch – gleich nochmal versuchen"), ok: false))
@@ -1566,7 +1603,9 @@ final class Store: ObservableObject {
     private func remindIfDue() {
         let d = UserDefaults.standard
         let hour = d.integer(forKey: "reminderHour")   // 0 = off
-        guard hour > 0, Calendar.current.component(.hour, from: Date()) >= hour else { return }
+        // From the hour for three hours: a Mac started at 23:50 does not say "time for the daily deploy".
+        let now = Calendar.current.component(.hour, from: Date())
+        guard hour > 0, now >= hour, now < hour + 3 else { return }
         let today = localDay()
         guard d.string(forKey: "lastReminder") != today else { return }
         let w = waiting
@@ -1587,14 +1626,20 @@ final class Store: ObservableObject {
 
     /// The day's close (FEA-061) at the hour set, and on Mondays the week before (FEA-101); only
     /// when something ended. From the journal; nothing is sent anywhere.
+    /// A refused or held-back notification (no permission, quiet hours) is tried again after a while,
+    /// not at every refresh with the whole journal read again.
+    private var summaryBlockedUntil = Date.distantPast
     private func summaryIfDue(now: Date = Date()) {
+        guard now >= summaryBlockedUntil else { return }
         let d = UserDefaults.standard, cal = Calendar.current
         let hour = d.integer(forKey: "summaryHour")
         if hour > 0, cal.component(.hour, from: now) >= hour, d.string(forKey: "lastSummary") != localDay() {
             let day = localDay()
             let today = Journal.load(limit: .max).filter { cal.isDate($0.at, inSameDayAs: now) }
             if let line = JournalStats.summaryLine(today) {
-                Notify.remind(L("Today", "Heute"), line, id: "day-summary") { sent in if sent { UserDefaults.standard.set(day, forKey: "lastSummary") } }
+                Notify.remind(L("Today", "Heute"), line, id: "day-summary") { [weak self] sent in
+                    if sent { UserDefaults.standard.set(day, forKey: "lastSummary") } else { self?.summaryBlockedUntil = now.addingTimeInterval(900) }
+                }
             } else { d.set(day, forKey: "lastSummary") }
         }
         // Monday from 9; a Mac that was off on Monday catches up on the next day it runs.
@@ -1606,7 +1651,9 @@ final class Store: ObservableObject {
             let day = localDay()
             let week = JournalStats.periods(Journal.load(limit: .max), days: 7, now: cal.startOfDay(for: now)).recent
             if let line = JournalStats.summaryLine(week) {
-                Notify.remind(L("Last week", "Letzte Woche"), line, id: "week-summary") { sent in if sent { UserDefaults.standard.set(day, forKey: "lastWeekly") } }
+                Notify.remind(L("Last week", "Letzte Woche"), line, id: "week-summary") { [weak self] sent in
+                    if sent { UserDefaults.standard.set(day, forKey: "lastWeekly") } else { self?.summaryBlockedUntil = now.addingTimeInterval(900) }
+                }
             } else { d.set(day, forKey: "lastWeekly") }
         }
     }
@@ -1670,7 +1717,11 @@ final class Store: ObservableObject {
             do {
                 let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self, timeout: 300)
                 unsureStarts[Self.key(item)] = nil
-                if p == .vercel { set(p, item.id, .done(item.link), countsAsLive: false); markBehind(p, item.id) }
+                if p == .vercel {
+                    set(p, item.id, .done(item.link), countsAsLive: false); markBehind(p, item.id)
+                    // The rolled-back production is checked like a Render rollback is (never rolled back again).
+                    if let l = item.link { Task { await checkSite(item, Self.checkLinks(l, healthPaths(item)), mayRollBack: false) } }
+                }
                 else {
                     // Kept, so the rollback can be cancelled like a deploy.
                     if let k = items[p]?.firstIndex(where: { $0.id == item.id }) { items[p]![k].deployId = r.id }
@@ -2013,7 +2064,8 @@ final class Store: ObservableObject {
         var first: URL?
         for link in links {
             guard let url = URL(string: link) else { continue }
-            guard await checkSite(item, link, url, mayRollBack: mayRollBack, timed: first == nil) else { return }
+            // Every address is asked, also after one failed: its warning is its own.
+            guard await checkSite(item, link, url, mayRollBack: mayRollBack, timed: first == nil) else { continue }
             if first == nil { first = url }
         }
         guard let url = first else { return }
@@ -2041,6 +2093,8 @@ final class Store: ObservableObject {
                 if timed { noteResponseTime(item, Date().timeIntervalSince(t0)); SiteLog.note(Self.key(item), up: true) }
                 return true
             }
+            // A 4xx is an answer (a wrong path, say): asking again will not change it.
+            if Self.siteVerdict(code: code, networkUp: true) == .odd { break }
             if attempt < 2 { try? await Task.sleep(nanoseconds: 6_000_000_000) }
         }
         // No answer at all: is it the site, or this Mac (offline, DNS, a VPN switching)? A second,
@@ -2059,7 +2113,7 @@ final class Store: ObservableObject {
         }
         say(L("\(name) is live, but the site answers \(code.map(String.init) ?? "nothing")",
               "\(name) ist live, aber die Seite antwortet mit \(code.map(String.init) ?? "nichts")"), link, ok: false,
-            project: name, key: Self.key(item), rollBack: true)
+            project: name, key: Self.key(item), rollBack: verdict == .broken)   // a 404 may be a wrong path: no rollback offer
         return false
     }
 
@@ -2069,12 +2123,17 @@ final class Store: ObservableObject {
     @Published private(set) var responseTimes: [String: [TimeInterval]] = [:]
     private func noteResponseTime(_ item: Item, _ t: TimeInterval) {
         let k = Self.key(item)
-        let before = responseTimes[k]?.last
-        responseTimes[k] = Array(((responseTimes[k] ?? []) + [t]).suffix(2))
+        // The median of the last five: one cold start right after a deploy is not "slower".
+        let before = Self.median(responseTimes[k] ?? [])
+        responseTimes[k] = Array(((responseTimes[k] ?? []) + [t]).suffix(5))
         if let b = before, Self.slower(before: b, after: t) {
             say(L("\(item.name) answers slower since this deploy", "\(item.name) antwortet seit diesem Deploy langsamer"),
                 L("\(Int(b * 1000)) ms before, \(Int(t * 1000)) ms now", "vorher \(Int(b * 1000)) ms, jetzt \(Int(t * 1000)) ms"), ok: false)
         }
+    }
+    nonisolated static func median(_ v: [TimeInterval]) -> TimeInterval? {
+        guard !v.isEmpty else { return nil }
+        let s = v.sorted(); return s.count % 2 == 1 ? s[s.count / 2] : (s[s.count / 2 - 1] + s[s.count / 2]) / 2
     }
     /// Twice as slow and at least half a second more: worth a word, not every jitter.
     nonisolated static func slower(before: TimeInterval, after: TimeInterval) -> Bool { after > before * 2 && after - before > 0.5 }
@@ -2115,17 +2174,28 @@ final class Store: ObservableObject {
             self?.watches[key] = nil
         }
     }
+    /// Is this Mac online? Asked of the system itself (no third-party server sees the address): a
+    /// path monitor's first answer. When it gives none within two seconds, the Mac counts as online.
     nonisolated private static func networkUp() async -> Bool {
-        // Any one answer means the Mac is online. One blocked domain (a company network) must not read as "offline".
-        // All three are asked at once; the first answer wins.
-        let hosts = ["https://www.githubstatus.com/api/v2/status.json", "https://www.apple.com/library/test/success.html", "https://1.1.1.1/"]
-        return await withTaskGroup(of: Bool.self) { group in
-            for s in hosts {
-                group.addTask { if let u = URL(string: s) { return await probe(u, timeout: 4) != nil } else { return false } }
+        await withCheckedContinuation { cont in
+            let monitor = NWPathMonitor()
+            let once = OnceFlag()
+            monitor.pathUpdateHandler = { path in
+                guard once.claim() else { return }
+                monitor.cancel()
+                cont.resume(returning: path.status == .satisfied)
             }
-            for await ok in group where ok { group.cancelAll(); return true }
-            return false
+            monitor.start(queue: DispatchQueue.global())
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+                guard once.claim() else { return }
+                monitor.cancel()
+                cont.resume(returning: true)
+            }
         }
+    }
+    private final class OnceFlag: @unchecked Sendable {
+        private let lock = NSLock(); private var done = false
+        func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
     }
 
     // MARK: Roll back by itself when the check after going live fails (opt-in per project, in the details)
@@ -2160,7 +2230,7 @@ final class Store: ObservableObject {
         let name = Demo.mask(item.name), shownLink = Demo.scrub(link, items: allItems)
         let title = L("\(name) fails its check – rolling back in \(n) s", "\(name) besteht den Check nicht – Zurückrollen in \(n) s")
         Notify.countdown(title, shownLink + " → " + (code.map(String.init) ?? L("no answer", "keine Antwort")), id: id)
-        show(Toast(text: title, ok: false, undoLabel: L("Cancel", "Abbrechen"), undo: { [weak self] in self?.cancelRollback(key) }))
+        show(Toast(text: title, ok: false, undoLabel: L("Cancel", "Abbrechen"), undo: { [weak self] in self?.cancelRollback(key) }), logged: true)
         log(Message(date: Date(), text: title + " – " + shownLink, ok: false))
         defer { holdAwake() }
         let checkedId = itemNow(item)?.deployId
