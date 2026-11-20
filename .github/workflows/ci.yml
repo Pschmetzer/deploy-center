@@ -34,7 +34,8 @@ jobs:
 
   test:
     runs-on: macos-15
-    timeout-minutes: 30
+    # shellcheck and the script tests alone take 20-25 minutes on a slow runner; 30 cut the integration step off.
+    timeout-minutes: 45
     env:
       # macOS minutes count tenfold: no brew self-update and no cleanup on every run.
       HOMEBREW_NO_AUTO_UPDATE: "1"
