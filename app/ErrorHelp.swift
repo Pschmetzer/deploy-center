@@ -22,7 +22,7 @@ enum ErrorHelp {
     static let base = "https://github.com/Pschmetzer/deploy-center/blob/main/docs/"
 
     /// The link for an error text: its section when one matches, else the top of the page. nil for an empty text.
-    static func url(for message: String, german: Bool = Locale.preferredLanguages.first?.hasPrefix("de") == true) -> URL? {
+    static func url(for message: String, german: Bool = isGerman) -> URL? {
         let m = message.lowercased()
         guard !m.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         let file = german ? "TROUBLESHOOTING.de.md" : "TROUBLESHOOTING.md"

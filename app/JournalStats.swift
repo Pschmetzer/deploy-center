@@ -41,13 +41,18 @@ enum JournalStats {
     nonisolated static func dora(_ list: [JournalEntry], days: Int) -> Dora {
         let o = outcomes(list).sorted { $0.at < $1.at }
         let good = o.filter { $0.kind == .live || $0.kind == .forced }.count
-        let bad = o.filter { $0.kind == .failed || $0.kind == .rollback }.count
+        var bad = 0
         var restore: [Double] = []
         var openFail: [String: Date] = [:]
         for e in o {
             let k = "\(e.platform)/\(e.name)"
-            if e.kind == .failed || e.kind == .rollback { if openFail[k] == nil { openFail[k] = e.at } }
-            else if let f = openFail.removeValue(forKey: k) { restore.append(e.at.timeIntervalSince(f)) }
+            if e.kind == .rollback, let f = openFail.removeValue(forKey: k) {
+                // failed → rollback: the rollback is the recovery, not a second failure (IDEEN-11 182).
+                restore.append(e.at.timeIntervalSince(f))
+            } else if e.kind == .failed || e.kind == .rollback {
+                bad += 1
+                if openFail[k] == nil { openFail[k] = e.at }
+            } else if let f = openFail.removeValue(forKey: k) { restore.append(e.at.timeIntervalSince(f)) }
         }
         return Dora(perWeek: days > 0 ? Double(good) / Double(days) * 7 : 0,
                     failRate: o.isEmpty ? nil : Double(bad) / Double(o.count),
@@ -125,11 +130,11 @@ enum JournalStats {
     // MARK: Markdown
 
     /// The entries as a Markdown table (Notion, Obsidian), oldest first.
-    nonisolated static func markdown(_ list: [JournalEntry], mask: (String) -> String = { $0 }) -> String {
+    nonisolated static func markdown(_ list: [JournalEntry], mask: (String) -> String = { $0 }, scrub: (String) -> String = { $0 }) -> String {
         func cell(_ s: String) -> String { s.replacingOccurrences(of: "|", with: "\\|").replacingOccurrences(of: "\n", with: " ") }
         let head = "| " + [L("Time", "Zeit"), L("Platform", "Plattform"), L("Project", "Projekt"), L("Result", "Ergebnis"), L("Seconds", "Sekunden"), L("Detail", "Detail")].joined(separator: " | ") + " |\n|---|---|---|---|---|---|"
         return ([head] + list.map { e in
-            "| " + [e.at.formatted(.iso8601), e.platform, cell(mask(e.name)), e.kind.title, e.seconds.map { String(Int($0)) } ?? "", cell(e.detail ?? "")].joined(separator: " | ") + " |"
+            "| " + [e.at.formatted(.iso8601), e.platform, cell(mask(e.name)), e.kind.title, e.seconds.map { String(Int($0)) } ?? "", cell(scrub(LogTools.maskSecrets(e.detail ?? "")))].joined(separator: " | ") + " |"
         }).joined(separator: "\n")
     }
 
@@ -152,17 +157,20 @@ enum JournalStats {
     }
 
     /// A postmortem to fill in, from a failed or rolled-back entry.
-    nonisolated static func postmortem(_ e: JournalEntry, mask: (String) -> String = { $0 }) -> String {
-        [ "# " + L("Postmortem: \(mask(e.name))", "Postmortem: \(mask(e.name))"), "",
-          "- " + L("When", "Wann") + ": " + e.at.formatted(date: .long, time: .shortened),
-          "- " + L("Platform", "Plattform") + ": " + e.platform,
-          "- " + L("Result", "Ergebnis") + ": " + e.kind.title,
-          e.detail.map { "- " + L("Detail", "Detail") + ": " + $0 } ?? nil,
-          "", "## " + L("What happened", "Was ist passiert"), "",
-          "## " + L("Impact", "Auswirkung"), "",
-          "## " + L("Cause", "Ursache"), "",
-          "## " + L("What we change", "Was wir ändern"), ""
-        ].compactMap { $0 }.joined(separator: "\n")
+    nonisolated static func postmortem(_ e: JournalEntry, mask: (String) -> String = { $0 }, scrub: (String) -> String = { $0 }) -> String {
+        func safe(_ t: String) -> String { scrub(LogTools.maskSecrets(t)) }
+        let title: String = "# " + L("Postmortem: \(mask(e.name))", "Postmortem: \(mask(e.name))")
+        var lines: [String] = [title, ""]
+        lines.append("- " + L("When", "Wann") + ": " + e.at.formatted(date: .long, time: .shortened))
+        lines.append("- " + L("Platform", "Plattform") + ": " + e.platform)
+        lines.append("- " + L("Result", "Ergebnis") + ": " + e.kind.title)
+        if let d = e.detail { lines.append("- " + L("Detail", "Detail") + ": " + safe(d)) }
+        if let n = e.note { lines.append("- " + L("Note", "Notiz") + ": " + safe(n)) }
+        lines += ["", "## " + L("What happened", "Was ist passiert"), ""]
+        lines += ["## " + L("Impact", "Auswirkung"), ""]
+        lines += ["## " + L("Cause", "Ursache"), ""]
+        lines += ["## " + L("What we change", "Was wir ändern"), ""]
+        return lines.joined(separator: "\n")
     }
 }
 
@@ -259,7 +267,7 @@ struct JournalStatsView: View {
                         RoundedRectangle(cornerRadius: 3)
                             .fill((f > 0 ? Color.red : Color.accentColor).opacity(n == 0 ? 0.06 : 0.2 + 0.8 * Double(n) / Double(top)))
                             .frame(width: 56, height: 18)
-                            .overlay(Text(n == 0 ? "" : "\(n)").font(.caption2.monospacedDigit()))
+                            .overlay(Text(n == 0 ? "" : (f > 0 ? "\(n)·\(f)✕" : "\(n)")).font(.caption2.monospacedDigit()))   // failures as a mark, not only red (IDEEN-11 240)
                             .help(L("\(n) deploys, \(f) failed", "\(n) Deploys, \(f) fehlgeschlagen"))
                             .accessibilityLabel(cal.weekdaySymbols[w - 1] + ": " + L("\(n) deploys, \(f) failed", "\(n) Deploys, \(f) fehlgeschlagen"))
                     }

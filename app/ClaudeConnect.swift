@@ -42,10 +42,26 @@ enum ClaudeConfig {
     static func merge(_ data: Data?, name: String = serverName, entry: [String: Any]) throws -> Data {
         var root = try parse(data)
         var servers = root["mcpServers"] as? [String: Any] ?? [:]
-        servers[name] = entry
+        servers[name] = keepingExtras(of: servers[name] as? [String: Any], in: entry)
         root["mcpServers"] = servers
         let out = try encode(root)
         _ = try parse(out)   // what is written must read back
+        return out
+    }
+
+    /// `entry` is what this app wants; what a person added to the old entry by hand (more `env`
+    /// variables such as DEPLOYS_CONFIG, more `args`, other keys) stays (IDEEN-11 188). The allow
+    /// switch follows `entry` alone: without it in `entry` it goes.
+    static func keepingExtras(of old: [String: Any]?, in entry: [String: Any]) -> [String: Any] {
+        guard let old else { return entry }
+        var out = entry
+        if var env = old["env"] as? [String: Any] {
+            env.removeValue(forKey: allowKey)
+            for (k, v) in (entry["env"] as? [String: Any] ?? [:]) { env[k] = v }
+            out["env"] = env
+        }
+        if let a = old["args"] as? [String], a.count > 1, let mine = entry["args"] as? [String] { out["args"] = mine + a.dropFirst() }
+        for (k, v) in old where out[k] == nil { out[k] = v }
         return out
     }
 
@@ -128,6 +144,17 @@ enum ClaudeFiles {
         for name in baks.dropLast(keep) { try? fm.removeItem(atPath: (dir as NSString).appendingPathComponent(name)) }
     }
 
+    /// A temp file `.<name>.<uuid>.tmp` of a write that was cut off holds the whole configuration with
+    /// other servers' tokens: those older than a minute go (IDEEN-11 210).
+    static func removeStaleTemps(of real: String, now: Date = Date()) {
+        let fm = FileManager.default
+        let dir = (real as NSString).deletingLastPathComponent, prefix = "." + (real as NSString).lastPathComponent + "."
+        for name in (try? fm.contentsOfDirectory(atPath: dir)) ?? [] where name.hasPrefix(prefix) && name.hasSuffix(".tmp") {
+            let p = (dir as NSString).appendingPathComponent(name)
+            if let m = (try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date, now.timeIntervalSince(m) > 60 { try? fm.removeItem(atPath: p) }
+        }
+    }
+
     /// Writes through a temp file in the same folder and a rename, so the file is never half
     /// written. A symlink is followed (the link stays), the mode is kept (600 for a new file), and
     /// an existing file is first copied to `<file>.bak-<time>`. Returns the backup's path.
@@ -136,6 +163,7 @@ enum ClaudeFiles {
         let fm = FileManager.default
         let real = (path as NSString).resolvingSymlinksInPath
         let dir = (real as NSString).deletingLastPathComponent
+        removeStaleTemps(of: real)
         var mode = 0o600
         var backup: String?
         if fm.fileExists(atPath: real) {
@@ -144,7 +172,7 @@ enum ClaudeFiles {
             var n = 1
             while fm.fileExists(atPath: bak) { n += 1; bak = real + ".bak-" + stamp() + "-\(n)" }
             try fm.copyItem(atPath: real, toPath: bak)
-            try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: bak)
+            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: bak)   // the backups hold other servers' tokens: never wider than 600
             backup = bak
             pruneBackups(of: real, keep: 3)
         } else {
@@ -495,7 +523,16 @@ struct ClaudeSettings: View {
         }
         .task { await link.refresh() }
         .alert(L("Let Claude deploy?", "Claude deployen lassen?"), isPresented: $askAllow) {
-            Button(L("Allow", "Erlauben"), role: .destructive) { allowDeploy = true; Task { await link.applyAllowDeploy(true) } }
+            Button(L("Allow", "Erlauben"), role: .destructive) {
+                // Production rights for Claude: the owner check like every other step of this kind (IDEEN-11 208),
+                // and the switch stays off when writing the config failed (IDEEN-11 190).
+                Task {
+                    guard await OwnerCheck.confirm(L("let Claude deploy", "Claude deployen lassen")) else { return }
+                    allowDeploy = true
+                    await link.applyAllowDeploy(true)
+                    if link.failed { allowDeploy = false }
+                }
+            }
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
         } message: {
             Text(L("Claude Desktop and Claude Code get two more tools: deploy one project and roll one back. Claude asks you before it uses them. Auto-deploy stays off.",

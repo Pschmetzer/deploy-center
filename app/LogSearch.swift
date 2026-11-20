@@ -64,7 +64,7 @@ struct LogSearchView: View {
     @AppStorage("demoMode") private var demoMode = false
 
     private var failed: [Item] { store.allItems.filter { $0.failed } }
-    private func shown(_ s: String) -> String { Demo.scrub(s, items: failed) }
+    private func shown(_ s: String) -> String { Demo.scrub(LogTools.maskSecrets(s), items: failed) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

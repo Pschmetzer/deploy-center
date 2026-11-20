@@ -273,6 +273,24 @@ struct RollbackTarget: Equatable {
 }
 
 /// One deploy in a project's history (newest first in lists).
+/// How long this project's builds usually take: the median of the finished ones in the history. Nil with
+/// fewer than three (then the progress shows the old five-minute guess).
+enum BuildTime {
+    static func typical(_ records: [DeployRecord]) -> TimeInterval? {
+        let d = records.compactMap { r -> TimeInterval? in
+            guard !r.failed, let a = r.at, let b = r.finishedAt else { return nil }
+            let t = b.timeIntervalSince(a)
+            return t >= 5 && t <= 3600 ? t : nil
+        }.sorted()
+        return d.count >= 3 ? d[d.count / 2] : nil
+    }
+    /// Progress for the system bar: never full before the end, and not stuck at 95 % for a slow build.
+    static func fraction(elapsed: TimeInterval, typical: TimeInterval?) -> Double {
+        let t = max(typical ?? 300, 10)
+        return min(elapsed / t, 0.95)
+    }
+}
+
 struct DeployRecord: Identifiable, Equatable {
     let id: String
     let state: String

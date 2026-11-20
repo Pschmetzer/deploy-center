@@ -15,8 +15,11 @@ struct DeployWindowConfig: Equatable {
         var from: String? = nil
         var to: String? = nil
         var reason: String? = nil
+        /// Keys of the rule this app does not know (projects, tz …), written back unchanged (IDEEN-11 177).
+        var extra: [String: Any] = [:]
         static func == (a: Rule, b: Rule) -> Bool {
             a.days == b.days && a.dates == b.dates && a.from == b.from && a.to == b.to && a.reason == b.reason
+                && NSDictionary(dictionary: a.extra).isEqual(to: b.extra)
         }
     }
     var deny: [Rule] = []
@@ -55,7 +58,8 @@ struct DeployWindowConfig: Equatable {
               let rules = root["deny"] as? [[String: Any]] else { return DeployWindowConfig() }
         return DeployWindowConfig(deny: rules.map { r in
             Rule(days: (r["days"] as? [String] ?? []).map { String($0.lowercased().prefix(3)) }, dates: r["dates"] as? [String] ?? [],
-                 from: r["from"] as? String, to: r["to"] as? String, reason: r["reason"] as? String)
+                 from: r["from"] as? String, to: r["to"] as? String, reason: r["reason"] as? String,
+                 extra: r.filter { !["days", "dates", "from", "to", "reason"].contains($0.key) })
         })
     }
 
@@ -63,7 +67,7 @@ struct DeployWindowConfig: Equatable {
     func encoded(over old: Data?) throws -> Data {
         var root = old.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
         root["deny"] = deny.map { r -> [String: Any] in
-            var o: [String: Any] = [:]
+            var o: [String: Any] = r.extra
             if !r.days.isEmpty { o["days"] = r.days }
             if !r.dates.isEmpty { o["dates"] = r.dates }
             if let f = r.from, !f.isEmpty { o["from"] = f }

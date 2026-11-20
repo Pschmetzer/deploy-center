@@ -122,10 +122,10 @@ struct GuardSettings: View {
             let out = String(data: try await Tool.run(args, timeout: 300), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             // Only the names are replaced in demo mode; the rest of the report stays readable.
-            let shown = Demo.scrub(out, items: store.allItems)
+            let shown = Demo.scrub(LogTools.maskSecrets(out), items: store.allItems)
             message = show ? (out.isEmpty ? L("Nothing to do.", "Nichts zu tun.") : shown) : (out.isEmpty ? nil : shown)
             failed = false
-        } catch { message = error.localizedDescription; failed = true }
+        } catch { message = LogTools.maskSecrets(error.localizedDescription); failed = true }
         await reload()
         // A test run changes nothing; allow, revoke and the schedule do.
         guard !args.contains("--dry-run") else { return }
@@ -224,7 +224,10 @@ private struct GuardAllowances: View {
     }
 
     private func left(_ a: GuardStatus.Allowance, now: Date) -> String {
-        let m = max(0, Int((a.expiresAt - now.timeIntervalSince1970) / 60))
+        let secs = a.expiresAt - now.timeIntervalSince1970
+        // Rounded up: the last minute still says "1 min", the last seconds "less than a minute" (IDEEN-11 253).
+        if secs > 0 && secs < 60 { return L("less than 1 min left", "weniger als 1 min") }
+        let m = max(0, Int((secs / 60).rounded(.up)))
         // Under an hour only the minutes: "5 min", not "0 h 5 min".
         if m < 60 { return L("\(m) min left", "noch \(m) min") }
         return L("\(m / 60) h \(m % 60) min left", "noch \(m / 60) h \(m % 60) min")
@@ -283,10 +286,14 @@ private struct GuardAllowForm: View {
         let shown = names.prefix(8).joined(separator: ", ") + (names.count > 8 ? L(" and \(names.count - 8) more", " und \(names.count - 8) weitere") : "")
         var head = L("\(plural(names.count, "project", "projects")) will build on every push: ", "\(plural(names.count, "Projekt", "Projekte")) bauen bei jedem Push: ") + shown + "."
         if let c = store.costs, c.days.count > 0 {
-            let perHour = c.days.suffix(7).map(\.build).reduce(0, +) / Double(min(7, c.days.count)) / 24
+            // The dearest 7 days of the history, not the last 7: with auto-deploy off (the guard's normal
+            // state) those are close to nothing and the warning would play it down (IDEEN-11 165).
+            let b = c.days.map(\.build), n = min(7, b.count)
+            let peak = (0...(b.count - n)).map { b[$0..<($0 + n)].reduce(0, +) }.max() ?? 0
+            let perHour = peak / Double(n) / 24
             if perHour >= 0.01 {
-                head += " " + L("Vercel builds cost ≈ \(perHour.formatted(.currency(code: "USD"))) an hour on average lately.",
-                                "Vercel-Builds kosteten zuletzt im Schnitt ≈ \(perHour.formatted(.currency(code: "USD"))) pro Stunde.")
+                head += " " + L("Vercel builds cost ≈ \(perHour.formatted(.currency(code: "USD"))) an hour in the dearest week of the history.",
+                                "Vercel-Builds kosteten in der teuersten Woche des Verlaufs ≈ \(perHour.formatted(.currency(code: "USD"))) pro Stunde.")
             }
         }
         return head + "\n\n" + base

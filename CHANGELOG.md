@@ -2,9 +2,23 @@
 
 ## Unreleased
 
+- Claude answers: links open only when they are http(s), headings and code are announced by VoiceOver, a note says to check the answer, and kept answers are forgotten when the key changes. The monthly limit accepts "1.000.000" or "2 Mio".
+- iPhone link: a failed keychain write and a code too big for a QR code are said instead of showing "saved" or a spinner; the clipboard is emptied when the app quits with the code open.
+- Certificate check follows every host of a redirect (earliest end) and refuses redirects to private addresses; logo files are named by a hash of the domain; new private folders are 0700.
+- History: a failed deploy followed by a rollback counts as one failure that the rollback recovered; the search finds a commit or deploy id; a duration over an hour reads "2 h 05"; the heatmap marks failures with a sign, not only a colour; the week goal says "goal reached" or "over the goal".
+- Savings: the look-back can be changed after a result too, and the weekly balance is read again when the app comes to the front. VoiceOver announcements get a high priority.
+- iPhone: a key with a line break inside (or a Render key without rnd_) is refused when saving, not later as a 401; the progress of a deploy follows the project's usual build time; the toast's close button is 44 pt, solid with "Reduce Transparency"; loading indicators and key test results are announced by VoiceOver; ⌘F focuses the search on the iPad. CI runs `ios/test.sh`.
+- CLI: the short lock around small files (AI usage count, remembered repos, team list) is a file made with `set -C`, not a `mkdir`: on Ubuntu 26.04 (Rust coreutils) two runs at once could both take it and lose a count.
+- Tests: the provider contract test no longer takes Amplify for an HTTP provider on Linux CI (a `gh` in /usr/bin made the rows call gitlab.com via curl); it runs without git-host enrichment.
+
 - iPhone: "Deploy with Face ID" in a note reads the list again and asks the usual confirmation first (it could deploy an older commit without it); "Biometrics only" without Face ID set up falls back to the passcode; Siri and Spotlight respect "Unlock on open" (names hidden); a refused key in the background run is noted once a day; a pasted QR code leaves the pasteboard also when discarded or refused; the QR text says 90 seconds; the small "Failed deploys" widget opens the first project; widget warning text is readable in light mode; offline pull-to-refresh says so; HTML error pages no longer show as text.
+<<<<<<< HEAD
 - App: stopping a queued deploy now lets the next one start and counts as "cancelled" in the run's summary; the result of a deploy whose row left the list is still journaled and announced. A rollback on Vercel is checked like one on Render. A 404 after a deploy is not retried and does not offer a rollback; every check path is asked even if one fails. The slower-answer warning compares with the median of five measurements.
 - App: ⌘R and the reload button read costs and triggers at most every 10 minutes; the confirmation freezes exactly the projects shown when you click Deploy; a budget with cents is no longer rounded in its field; "offline-first" in a project name is not a network error; links open only as https (http only for localhost); one command may print 32 MB at most; the "is the Mac online" test no longer asks three third-party servers; the failed state in the row matches the widget; the project cache is private (0600); messages keep 200 entries and toasts leave a line there; planned maintenance is no outage banner.
+=======
+- Costs: "Share the saving" opens its popover at its own button again, "Save report as file" is always there and shows an error if the save fails, the trend leaves out today's unfinished day, and the monthly estimate uses the real month length.
+- History, log search: CSV, Markdown and postmortem exports and the log search no longer show tokens; the CSV follows demo mode; a token typed into a comment is masked; files are written private from the start.
+>>>>>>> origin/main
 - CLI: `deploy`, `deploy-changed --yes`, `rollback` and `cancel` from the terminal now write a line to the journal (the app still writes its own).
 - CLI: the launchd job (and the cron line) of `schedule`, `autofix` and `guard` carries `DEPLOYS_CONFIG` and `DEPLOYS_NOTIFY_CMD`; the daily job's log is rotated like the others.
 - CLI: `--when-green` no longer reads "no checks" as green for a commit younger than `DEPLOYS_CI_GRACE` seconds (default 90): CI may not have started yet.

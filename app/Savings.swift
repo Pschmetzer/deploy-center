@@ -349,7 +349,6 @@ enum SavingsFormat {
     static func unit(_ u: String) -> String {
         u.hasPrefix("pipeline") ? L("pipeline minutes", "Pipeline-Minuten") : L("build minutes", "Build-Minuten")
     }
-    /// "2026-01-20" as a date for the reader.
     /// "2026-01-20" as a date in words, the same day everywhere: read and written in UTC, so a Mac
     /// west of UTC does not show the 19th.
     /// The script's method in German for the two texts it has (simulation, ledger); a text the app
@@ -393,7 +392,6 @@ enum SavingsFormat {
 
 // MARK: - The two hooks
 
-/// Under the cost bar: before anything was turned off an offer to simulate, afterwards the ledger total.
 /// "1 build", "≈ 3 builds": the word that fits a formatted count ("1" is the only singular).
 private func counted(_ formatted: String, _ one: String, _ other: String) -> String { formatted + " " + (formatted == "1" ? one : other) }
 
@@ -428,6 +426,10 @@ struct SavingsEntry: View {
         }
         .sheet(item: $sheet) { tab in SavingsSheet(start: tab) }
         .task(id: everOff) { if everOff { await model.refreshLedgerIfOld(budget: store.githubBudget) } }
+        // A menu-bar app runs for weeks: the weekly balance is looked at again whenever the app comes forward (IDEEN-11 166).
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if everOff { Task { await model.refreshLedgerIfOld(budget: store.githubBudget) } }
+        }
     }
 
     private func ledgerLine(_ l: LedgerReport) -> some View {
@@ -553,6 +555,13 @@ struct SimulatorView: View {
                 start
             }
             if let e = model.simulationError { ErrorText(e) }
+            if model.simulation != nil {
+                // The look-back can be changed after a result too, not only at the start (IDEEN-11 167).
+                Picker(L("Look back", "Zurückschauen"), selection: $days) {
+                    ForEach([7, 14, 30, 60, 90], id: \.self) { Text(L("\($0) days", "\($0) Tage")).tag($0) }
+                }
+                .frame(width: 220).disabled(model.loadingSimulation)
+            }
             if let s = model.simulation {
                 EstimateFooter(kind: .simulator, method: s.method, at: model.simulatedAt, loading: model.loadingSimulation) {
                     Task { await model.loadSimulation(days: days) }

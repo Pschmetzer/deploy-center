@@ -12,7 +12,7 @@ enum WeekGoals {
     }
 
     enum State: Equatable { case off, ok, last, over }
-    /// "At most N": green below, "last one" at N−1, over above N. 0 = no goal.
+    /// "At most N": green below N, "last" when N is reached (one more is over), over above N. 0 = no goal.
     nonisolated static func state(count: Int, goal: Int) -> State {
         guard goal > 0 else { return .off }
         return count > goal ? .over : (count >= goal ? .last : .ok)
@@ -41,7 +41,8 @@ struct GoalsSection: View {
             let n = WeekGoals.thisWeek(entries)
             if goal > 0 {
                 let s = WeekGoals.state(count: n, goal: goal)
-                Text(L("This week: \(n) of \(goal)", "Diese Woche: \(n) von \(goal)"))
+                Text(L("This week: \(n) of \(goal)", "Diese Woche: \(n) von \(goal)")
+                     + (s == .over ? L(" · over the goal", " · über dem Ziel") : (s == .last ? L(" · goal reached", " · Ziel erreicht") : "")))
                     .foregroundStyle(s == .over ? Color.red : (s == .last ? Color.orange : Color.secondary))
             }
             // The week in review: the last 7 days, and the 7 before them for comparison.
