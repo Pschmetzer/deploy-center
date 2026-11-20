@@ -1231,15 +1231,16 @@ RISK_DEF='def re_mig: "(^|/)(migrations?|migrate|prisma|drizzle|alembic|flyway|l
   | hits(re_cfg) as $cfg
   | hits(re_runtime) as $rt
   # Lockfiles, snapshots and generated code have their own note: they do not make a diff "very large".
-  | ([(.files // [])[] | select(.filename | test(re_gen) | not) | (.additions // 0) + (.deletions // 0)] | add // 0) as $lines
+  | ([(.files // [])[] | select(.filename | test(re_gen) | not) | (.additions // 0) + (.deletions // 0)] | add // 0) as $sized
+  | ([(.files // [])[] | (.additions // 0) + (.deletions // 0)] | add // 0) as $lines
   | ($f | length) as $n
   | [ (if ($mig | length) > 0 then {kind:"migrations", level:"red", files:$mig[0:10], text:"database migrations: \(some($mig))"} else empty end),
       (if ($lock | length) > 0 then {kind:"lockfile", level:"yellow", files:$lock[0:10], text:"dependencies changed: \(some($lock))"} else empty end),
       (if ($rt | length) > 0 then {kind:"runtime", level:"yellow", files:$rt[0:10], text:"runtime version changed: \(some($rt))"} else empty end),
       (if ($env | length) > 0 then {kind:"env", level:"yellow", files:$env[0:10], text:"environment files: \(some($env))"} else empty end),
       (if ($cfg | length) > 0 then {kind:"config", level:"yellow", files:$cfg[0:10], text:"build or platform config: \(some($cfg))"} else empty end),
-      (if $lines > 3000 or $n >= 100 then {kind:"size", level:"red", files:[], text:"a very large diff: \($n) files, \($lines) lines"}
-       elif $lines > 500 or $n > 30 then {kind:"size", level:"yellow", files:[], text:"a large diff: \($n) files, \($lines) lines"} else empty end) ] as $r
+      (if $sized > 3000 or $n >= 100 then {kind:"size", level:"red", files:[], text:"a very large diff: \($n) files, \($sized) lines"}
+       elif $sized > 500 or $n > 30 then {kind:"size", level:"yellow", files:[], text:"a large diff: \($n) files, \($sized) lines"} else empty end) ] as $r
   | {level:(if any($r[]; .level == "red") then "red" elif ($r | length) > 0 then "yellow" else "green" end),
      reasons:$r, files:$n, lines:$lines,
      # GitHub lists 300 files of a comparison at most: from there the picture is a floor, not the whole diff.

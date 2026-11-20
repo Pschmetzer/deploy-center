@@ -32,6 +32,14 @@ NETLIFY_IGNORE_LINE='ignore = "[ -z \"$INCOMING_HOOK_TITLE\" ]"'
 declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
 # GNU first: on Linux `stat -f` means the file system and "succeeds" with the wrong answer.
 declare -F mtime >/dev/null || mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+# file_lock / file_unlock come from deploys; run alone, this stand-in does the same (noclobber lock file).
+declare -F file_lock >/dev/null || file_lock() {
+  local i=0
+  if [ -e "$1.lock" ] && [ "${2:-10}" != 0 ] && [ $(( $(date +%s) - $(mtime "$1.lock" 2>/dev/null || date +%s) )) -ge "${2:-10}" ]; then rm -rf "$1.lock"; fi
+  while [ "$i" -lt 50 ]; do ( set -C; : > "$1.lock" ) 2>/dev/null && return 0; i=$((i + 1)); sleep 0.1; done
+  return 1
+}
+declare -F file_unlock >/dev/null || file_unlock() { rm -rf "$1.lock" 2>/dev/null || true; }
 netlify_config_dir() { echo "${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}"; }
 netlify_hooks_file() {
   local d f; d="$(netlify_config_dir)"; f="$d/netlify-hooks.json"

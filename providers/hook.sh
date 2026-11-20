@@ -30,6 +30,15 @@ HOOK_CAPS='{"off":false,"sha":false,"cancel":false,"rollback":false,"logs":false
 HOOK_KEYCHAIN_PREFIX="deploy-center-hook-"
 
 hook_config() { echo "$CONFIG_DIR/hooks.json"; }
+# file_lock / file_unlock come from deploys; run alone, this stand-in does the same (noclobber lock file).
+declare -F mtime >/dev/null || mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+declare -F file_lock >/dev/null || file_lock() {
+  local i=0
+  if [ -e "$1.lock" ] && [ "${2:-10}" != 0 ] && [ $(( $(date +%s) - $(mtime "$1.lock" 2>/dev/null || date +%s) )) -ge "${2:-10}" ]; then rm -rf "$1.lock"; fi
+  while [ "$i" -lt 50 ]; do ( set -C; : > "$1.lock" ) 2>/dev/null && return 0; i=$((i + 1)); sleep 0.1; done
+  return 1
+}
+declare -F file_unlock >/dev/null || file_unlock() { rm -rf "$1.lock" 2>/dev/null || true; }
 hook_state_file() { echo "$CONFIG_DIR/hook-state.json"; }
 hook_list_raw() { local f; f="$(hook_config)"; if [ -s "$f" ]; then cat "$f"; else echo '[]'; fi; }
 hook_state() { local f; f="$(hook_state_file)"; if [ -s "$f" ]; then cat "$f"; else echo '{}'; fi; }
