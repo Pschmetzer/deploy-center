@@ -43,7 +43,7 @@ struct GoalsSection: View {
                 let s = WeekGoals.state(count: n, goal: goal)
                 Text(L("This week: \(n) of \(goal)", "Diese Woche: \(n) von \(goal)")
                      + (s == .over ? L(" · over the goal", " · über dem Ziel") : (s == .last ? L(" · goal reached", " · Ziel erreicht") : "")))
-                    .foregroundStyle(s == .over ? Color.red : (s == .last ? Color.orange : Color.secondary))
+                    .foregroundStyle(s == .over ? Color.warningText : (s == .last ? Color.warningText : Color.secondary))
             }
             // The week in review: the last 7 days, and the 7 before them for comparison.
             let p = JournalStats.periods(entries, days: 7)
@@ -57,7 +57,12 @@ struct GoalsSection: View {
             if !idle.isEmpty {
                 Text(L("No deploy for 90 days (consider pausing):", "Seit 90 Tagen kein Deploy (Pausieren erwägen):")).font(.caption)
                 ForEach(idle.prefix(8), id: \.project) { i in
-                    Text(Demo.mask(i.project) + " · " + i.last.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary)
+                    // "platform/name": only the name is a project's, so only it is masked in demo mode.
+                    let parts = i.project.split(separator: "/", maxSplits: 1).map(String.init)
+                    Text((parts.count == 2 ? parts[0] + "/" + Demo.mask(parts[1]) : Demo.mask(i.project)) + " · " + i.last.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary)
+                }
+                if idle.count > 8 {
+                    Text(L("+\(idle.count - 8) more", "+\(idle.count - 8) weitere")).font(.caption).foregroundStyle(.secondary)
                 }
             }
         }

@@ -24,7 +24,7 @@ struct FirstStartView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(L("Try it safely", "Sicher ausprobieren")).font(.title2.bold())
+                Text(L("Try it safely", "Sicher ausprobieren")).font(.title2.bold()).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Text(L("Step \(step) of 3", "Schritt \(step) von 3")).foregroundStyle(.secondary)
             }.padding(16)
@@ -48,6 +48,11 @@ struct FirstStartView: View {
             }.padding(12)
         }
         .frame(minWidth: 620, idealWidth: 680, minHeight: 480, idealHeight: 560)
+        // Esc or the close button counts as seen too: the guide does not come back on its own.
+        .onDisappear { done = true }
+        .onChange(of: step) { _, n in
+            AccessibilityNotification.Announcement(L("Step \(n) of 3", "Schritt \(n) von 3")).post()
+        }
         .alert(L("Turn off auto-deploy?", "Auto-Deploy ausschalten?"), isPresented: $confirming) {
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             Button(L("Turn off", "Ausschalten")) { if let i = picked { Task { await store.turnOffAutoDeploy(i) } } }
@@ -61,7 +66,7 @@ struct FirstStartView: View {
         Text(L("1. Only look", "1. Nur ansehen")).font(.headline)
         Text(L("Opening the app changes nothing on Vercel, Render or GitHub. Nothing changes until you press a button and confirm.",
                "Die App zu öffnen ändert nichts bei Vercel, Render oder GitHub. Es ändert sich erst etwas, wenn du einen Knopf drückst und bestätigst."))
-        Text(L("\(autoOn.count) projects still build on every push.", "\(autoOn.count) Projekte bauen noch bei jedem Push."))
+        Text(L("\(plural(autoOn.count, "project", "projects")) still build on every push.", "\(plural(autoOn.count, "Projekt", "Projekte")) bauen noch bei jedem Push."))
         let bad = Health.checks(store.doctor, budget: store.githubBudget, on: Set(store.enabledProviders.map(\.id))).filter { !$0.ok }
         if bad.isEmpty {
             Label(L("Everything needed is connected.", "Alles Nötige ist verbunden."), systemImage: "checkmark.circle.fill").foregroundStyle(Color.good)
