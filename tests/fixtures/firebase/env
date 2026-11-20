@@ -1,0 +1,3 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+export FIREBASE_ACCESS_TOKEN=ya29.fixture FIREBASE_PROJECT=fixture-project
+CONTRACT_ID=alpha CONTRACT_NAME=alpha CONTRACT_DEPLOY=r-live-2

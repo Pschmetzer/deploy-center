@@ -1,0 +1,5 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+# Railway has one GraphQL URL, so POST_graphql_v2.json answers every query and mutation with all
+# the fields at once; the provider reads the ones it asked for. Its newest deployment is already live.
+export RAILWAY_API_TOKEN=rw_fixture
+CONTRACT_ID=a0000000-0000-4000-8000-000000000002:7e3b1d20-2222-4c4d-8e1f-1a2b3c4d5e6f CONTRACT_NAME=worker CONTRACT_DEPLOY=dep-live-3

@@ -1,0 +1,2 @@
+{"id":"d8d4e1f6a7b219","name":"d8d4e1f6a7b219-machine","state":"started","region":"fra","instance_id":"01Hd8d4e1f6a7b219","created_at":"2026-03-01T08:00:00Z","updated_at":"2026-03-02T10:00:05Z","image_ref":{"registry":"registry.fly.io","repository":"fixture/web","tag":"deployment-01FIXTURE"},"config":{"metadata":{"fly_release_version":"7"}}}
+200

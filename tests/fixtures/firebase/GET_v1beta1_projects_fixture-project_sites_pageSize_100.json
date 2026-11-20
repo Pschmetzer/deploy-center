@@ -1,0 +1,2 @@
+{"sites":[{"name":"projects/fixture-project/sites/gamma","defaultUrl":"https://gamma.web.app","type":"USER_SITE"},{"name":"projects/fixture-project/sites/alpha","defaultUrl":"https://alpha.web.app","type":"DEFAULT_SITE"},{"name":"projects/fixture-project/sites/delta","defaultUrl":"https://delta.web.app","type":"USER_SITE"},{"name":"projects/fixture-project/sites/beta","defaultUrl":"https://beta.web.app","type":"USER_SITE"}]}
+200

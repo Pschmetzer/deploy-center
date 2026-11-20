@@ -2,7 +2,7 @@
 
 Each platform `deploys` can deploy to is one file: `providers/<p>.sh`. Today these are
 `vercel.sh` and `render.sh` (on by default), and `netlify.sh`, `cloudflare.sh`, `amplify.sh`,
-`digitalocean.sh`, `coolify.sh` and `hook.sh` (a generic deploy hook), each off until turned on
+`digitalocean.sh`, `coolify.sh`, `fly.sh`, `railway.sh`, `heroku.sh`, `firebase.sh`, `ghpages.sh` (GitHub Pages, deployed by a workflow dispatch) and `hook.sh` (a generic deploy hook), each off until turned on
 (`ls providers` is the list). `deploys` sources every `providers/*.sh` at start. There is no
 list to edit: adding the file adds the provider, and its id is the file name without `.sh`.
 The shared commands (`changed`, `deploy-changed`, `status`, `watch`, `logs`, `open`, `explain`,
@@ -90,6 +90,9 @@ Platform extras that are not part of the contract stay where they are: `vercel m
 | DigitalOcean | null | `ratelimit-remaining`, `ratelimit-reset` of `GET /v2/account` (per hour) |
 | Coolify | null | `X-RateLimit-Remaining`; `resetAt` null (Laravel sends a reset only with a 429) |
 | Amplify | null (an SSO session end would need the credentials read out) | null |
+| Fly.io, Railway, Firebase Hosting | null | null (the API sends neither in a form read here) |
+| Heroku | null | `RateLimit-Remaining` (`resetAt` null: Heroku sends no reset) |
+| GitHub Pages | null | `resources.core` of `GET /rate_limit` (`remaining`, `reset`) |
 | Vercel, Render, Hook | left out: their fields also join the top level of `deploys doctor` | left out |
 
 The headers come from the provider's own curl code (`<P>_HEADERS=<file>` makes `<p>_call` keep
@@ -211,6 +214,28 @@ For tests and unusual setups; none is needed in normal use.
 | `DEPLOYS_AMPLIFY_PARALLEL` | Amplify apps read at once in a list (4) |
 | `DEPLOYS_AMPLIFY_LOG_BYTES` | Bytes read from the end of each Amplify log step (262144) |
 | `DEPLOYS_HOOK_STORE` | `keychain` or `file`: where hook URLs are kept (file: tests, Linux) |
+| `FLY_API`, `RAILWAY_API`, `HEROKU_API`, `FIREBASE_API`, `GHPAGES_API` | Another API address (test servers) |
+| `FLY_ORG`, `FIREBASE_PROJECT` | The Fly.io organization (default `personal`) and the Firebase project whose sites are listed |
+| `DEPLOYS_GHPAGES_SITES` | GitHub Pages sites, `owner/repo[:workflow.yml[@branch]]` separated by spaces (or `deploys ghpages add`) |
+| `DEPLOYS_RAILWAY_POLLS`, `DEPLOYS_GHPAGES_POLLS` | How often a Railway redeploy or a GitHub workflow dispatch looks for its new deployment or run (5, 6) |
+
+## Hosts whose API cannot build
+
+Not every platform lets an API start a build from a commit. The providers for such hosts say what
+"deploy" means in their `_meta` caps and their page, and refuse the rest before anything is sent
+(`die "<label> cannot …"`, which `contract.sh` checks):
+
+| Provider | `deploy` is | Refused |
+|---|---|---|
+| `fly` | a restart of the started machines on their current image | `--sha`, `--preview`, `--no-cache`, `off`, `cancel`, `rollback`, `logs` |
+| `railway` | `serviceInstanceRedeploy` of the newest deployment | `--sha`, `--preview`, `--no-cache`, `off` |
+| `heroku` | a restart of the dynos (a deploy id is a release id; `status` also looks at the dynos) | `--sha`, `--preview`, `--no-cache`, `off`, `cancel` |
+| `firebase` | releasing the newest finished version that is newer than the live one | `--sha`, `--preview`, `--no-cache`, `off`, `cancel`, `logs` |
+| `ghpages` | a `workflow_dispatch` of the site's workflow on its branch | `--sha`, `--preview`, `--no-cache`, `off`, `rollback`, `logs` |
+
+A GraphQL API (Railway) has one URL for every call, so `tests/fixtures/railway/POST_graphql_v2.json`
+answers every query with all fields at once, and the provider reads the ones it asked for.
+Railway makes its own single-try POSTs instead of `http_call` (which asks again after a 429).
 
 ## Keys
 

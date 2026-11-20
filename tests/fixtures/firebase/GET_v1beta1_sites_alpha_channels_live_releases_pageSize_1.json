@@ -1,0 +1,2 @@
+{"releases":[{"name":"sites/alpha/channels/live/releases/r-live-2","version":{"name":"sites/alpha/versions/aaa111","status":"FINALIZED","createTime":"2026-03-01T08:00:00.123456789Z","fileCount":"12","versionBytes":"34567"},"type":"ROLLBACK","releaseTime":"2026-03-04T09:00:00Z","message":"rollback"}]}
+200
