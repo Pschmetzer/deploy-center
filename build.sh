@@ -296,7 +296,9 @@ else
 fi
 # A Developer ID build must carry the Hardened Runtime flag, or Apple refuses it after the long wait.
 if [ -n "${DEVELOPER_ID:-}" ] && [ "${DEVELOPER_ID:-}" != "-" ]; then
-  codesign -dvv "$BUILD" 2>&1 | grep -q 'flags=.*runtime' || die "the app is signed without the Hardened Runtime flag (codesign -dvv shows it); not packing"
+  # Read whole first: with pipefail, grep -q closing the pipe early fails codesign (SIGPIPE).
+  sig="$(codesign -dvv "$BUILD" 2>&1 || true)"
+  [[ "$sig" == *flags=*runtime* ]] || die "the app is signed without the Hardened Runtime flag (codesign -dvv shows it); not packing"
 fi
 (cd build && ditto -c -k --keepParent "Deploy Center.app" "$(basename "$ZIP")")
 echo "Built: $BUILD and $ZIP"
