@@ -549,6 +549,61 @@ struct NextDeployContent: View {
 }
 
 #if os(iOS)
+/// Which platform the configurable widget shows.
+enum WidgetPlatform: String, AppEnum {
+    case all, vercel, render
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Platform"
+    static let caseDisplayRepresentations: [WidgetPlatform: DisplayRepresentation] = [.all: "All", .vercel: "Vercel", .render: "Render"]
+    var name: String? { self == .vercel ? "Vercel" : self == .render ? "Render" : nil }
+}
+
+struct FilterIntent: WidgetConfigurationIntent {
+    static let title: LocalizedStringResource = "What to show"
+    static let description = IntentDescription("One platform, or only failed deploys.")
+    @Parameter(title: "Platform", default: .all) var platform: WidgetPlatform
+    @Parameter(title: "Only failed deploys", default: false) var onlyFailed: Bool
+}
+
+struct FilteredProvider: AppIntentTimelineProvider {
+    private func entry(_ c: FilterIntent, preview: Bool) -> Entry {
+        let r = DeploySnapshot.readOutcome()
+        let base: DeploySnapshot? = r.snapshot ?? (preview ? DeploySnapshot.sample : nil)
+        let snap = base?.filtered(platform: c.platform.name, onlyFailed: c.onlyFailed)
+        return Entry(date: Date(), snap: snap, problem: r.problem)
+    }
+    func placeholder(in context: Context) -> Entry { Entry(date: Date(), snap: .sample) }
+    func snapshot(for configuration: FilterIntent, in context: Context) async -> Entry { entry(configuration, preview: context.isPreview) }
+    func timeline(for configuration: FilterIntent, in context: Context) async -> Timeline<Entry> {
+        let e = entry(configuration, preview: false)
+        return Timeline(entries: [e], policy: .after(Date().addingTimeInterval(30 * 60)))
+    }
+}
+
+/// The same picture as the first widget, for one platform or only failures. Configured by long press → Edit Widget.
+struct FilteredWidget: Widget {
+    static let kind = "DeployCenterFiltered"
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: Self.kind, intent: FilterIntent.self, provider: FilteredProvider()) { DeployWidgetView(entry: $0) }
+            .configurationDisplayName(Words(DeploySnapshot.read())("Deploy Center, filtered", "Deploy Center, gefiltert"))
+            .description(Words(DeploySnapshot.read())("One platform, or only failed deploys.", "Eine Plattform oder nur fehlgeschlagene Deploys."))
+            .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+/// Control Center and the Action button: reads the list again. A tap opens the app, which reads it (the extension holds no keys).
+struct RefreshControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        let w = Words(DeploySnapshot.read())
+        return StaticControlConfiguration(kind: "app.deploycenter.ios.control.refresh") {
+            ControlWidgetButton(action: OpenURLIntent(URL(string: "deploycenter://reload")!)) {
+                Label(w("Refresh now", "Jetzt aktualisieren"), systemImage: "arrow.clockwise")
+            }
+        }
+        .displayName(LocalizedStringResource(String.LocalizationValue(w("Refresh now", "Jetzt aktualisieren"))))
+        .description(LocalizedStringResource(String.LocalizationValue(w("Opens Deploy Center and reads your projects again.", "Öffnet Deploy Center und liest deine Projekte neu."))))
+    }
+}
+
 /// Control Center, lock screen and Action button (iOS 18): the waiting PRs, a tap opens the app.
 /// Only reads the snapshot: the extension holds no keys, so it cannot read the accounts itself.
 struct WaitingControl: ControlWidget {
@@ -688,6 +743,8 @@ struct DeployWidgets: WidgetBundle {
         #if os(iOS)
         DeployActivityWidget()
         WaitingControl()
+        RefreshControl()
+        FilteredWidget()
         #endif
     }
 }

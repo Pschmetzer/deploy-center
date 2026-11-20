@@ -26,8 +26,10 @@ enum Spoken {
         return failed.isEmpty ? L("Nothing failed.", "Nichts ist fehlgeschlagen.")
             : L("Failed: \(names).", "Fehlgeschlagen: \(names).")
     }
+    /// A state older than this gets its age said; a fresh one is just the answer (IDEEN-12 C30).
+    static let ageSaidAfter: TimeInterval = 15 * 60
     static func age(_ at: Date?, now: Date = Date()) -> String {
-        guard let at else { return "" }
+        guard let at, now.timeIntervalSince(at) > ageSaidAfter else { return "" }
         let rel = at.formatted(Date.RelativeFormatStyle(presentation: .named, unitsStyle: .wide, locale: appLocale))
         return L(" As of \(rel); open the app for the newest state.", " Stand \(rel); die App zeigt den neuesten.")
     }
@@ -44,12 +46,13 @@ struct WaitingIntent: AppIntent {
     /// Project names and failures are not for a locked phone.
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
-        let text = await MainActor.run {
-            guard let l = Spoken.last() else { return L("Nothing read yet: open Deploy Center once.", "Noch nichts gelesen: öffne Deploy Center einmal.") }
-            return Spoken.waiting(l.projects, at: l.at, hideNames: PhoneStore.lockOnOpen)
+    /// The dialog for Siri, and the number of waiting PRs as a value a Shortcut can use (-1: nothing read yet).
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<Int> {
+        let (text, prs) = await MainActor.run { () -> (String, Int) in
+            guard let l = Spoken.last() else { return (L("Nothing read yet: open Deploy Center once.", "Noch nichts gelesen: öffne Deploy Center einmal."), -1) }
+            return (Spoken.waiting(l.projects, at: l.at, hideNames: PhoneStore.lockOnOpen), l.projects.waitingPRCount)
         }
-        return .result(dialog: IntentDialog(stringLiteral: text))
+        return .result(value: prs, dialog: IntentDialog(stringLiteral: text))
     }
 }
 
@@ -64,6 +67,54 @@ struct FailuresIntent: AppIntent {
             return Spoken.failures(l.projects.filter(\.failed), hideNames: PhoneStore.lockOnOpen) + Spoken.age(l.at)
         }
         return .result(dialog: IntentDialog(stringLiteral: text))
+    }
+}
+
+/// A project as Shortcuts and Siri know it: from the last state read. With "Unlock on open" none is offered (the names stay behind the lock).
+struct ProjectEntity: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Project"
+    static let defaultQuery = ProjectQuery()
+    var id: String
+    var name: String
+    var platform: String
+    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)", subtitle: "\(platform)") }
+}
+
+struct ProjectQuery: EntityQuery {
+    private func all() async -> [ProjectEntity] {
+        await MainActor.run {
+            guard !PhoneStore.lockOnOpen, let l = Spoken.last() else { return [] }
+            return l.projects.map { ProjectEntity(id: $0.key, name: $0.name, platform: $0.provider.rawValue) }
+        }
+    }
+    func entities(for identifiers: [String]) async throws -> [ProjectEntity] { await all().filter { identifiers.contains($0.id) } }
+    func suggestedEntities() async throws -> [ProjectEntity] { await all() }
+}
+
+/// Opens a project in the app. Shows it; starts nothing.
+struct OpenProjectIntent: OpenIntent {
+    static let title: LocalizedStringResource = "Open a project"
+    static let description = IntentDescription("Shows a project in Deploy Center.")
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+    @Parameter(title: "Project") var target: ProjectEntity
+
+    @MainActor func perform() async throws -> some IntentResult {
+        PhoneStore.shared.openKey = target.id
+        return .result()
+    }
+}
+
+/// Opens the question "Deploy this project?" in the app. Nothing starts: the question still needs a tap and Face ID, Touch ID or the code.
+struct PrepareDeployIntent: AppIntent {
+    static let title: LocalizedStringResource = "Prepare a deploy"
+    static let description = IntentDescription("Opens the confirmation for a deploy. Nothing starts until you confirm it with Face ID.")
+    static let openAppWhenRun = true
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+    @Parameter(title: "Project") var project: ProjectEntity
+
+    @MainActor func perform() async throws -> some IntentResult {
+        PhoneStore.shared.confirmDeployKey = project.id
+        return .result()
     }
 }
 
@@ -109,6 +160,8 @@ enum Spotlight {
             let a = CSSearchableItemAttributeSet(contentType: .text)
             a.title = p.name
             a.contentDescription = p.provider.rawValue + (p.domain.map { " · " + $0 } ?? "")
+            // Found by "deploy", "vercel" or the like too, not only by the name (IDEEN-12 C36).
+            a.keywords = ["deploy", p.provider.rawValue, "Deploy Center"]
             return CSSearchableItem(uniqueIdentifier: p.key, domainIdentifier: "projects", attributeSet: a)
         }
         idx.indexSearchableItems(items) { _ in

@@ -799,7 +799,7 @@ final class PhoneStore: ObservableObject {
         return DeploySnapshot(at: loadedAt ?? Date(), demo: demo, waitingProjects: waiting.count,
                               waitingCommits: waiting.reduce(0) { $0 + ($1.pendingCommits ?? 0) }, waitingPRs: waitingPRs,
                               building: rows.filter { $0.status == .building }.count,
-                              failed: rows.filter { $0.status == .failed }.count, saving: saving, projects: Array(sorted.prefix(10)),
+                              failed: rows.filter { $0.status == .failed }.count, byPlatform: DeploySnapshot.platformCounts(rows), saving: saving, projects: Array(sorted.prefix(10)),
                               language: appLanguage, connected: demo || hasAccount)
     }
 

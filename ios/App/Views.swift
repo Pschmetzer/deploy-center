@@ -153,7 +153,17 @@ struct RootView: View {
         }
         // deploycenter://select?project=<name>&platform=<Vercel|Render>, from the widget. It only shows the project.
         .onOpenURL { url in
-            guard url.scheme == "deploycenter", let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return }
+            guard url.scheme == "deploycenter" else { return }
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            // deploycenter://settings and deploycenter://reload: harmless. deploycenter://deploy?key=…: only opens the question; a tap and Face ID still start it (IDEEN-12 C34).
+            switch url.host {
+            case "settings": settings = true; return
+            case "reload": Task { await store.reload() }; return
+            case "deploy":
+                if let key = items.first(where: { $0.name == "key" })?.value { store.confirmDeployKey = key; selection = key }
+                return
+            default: break
+            }
             // The key is exact; name and platform are the fallback for links from an older widget or the Mac.
             if let key = items.first(where: { $0.name == "key" })?.value, !key.isEmpty {
                 if store.projects.contains(where: { $0.key == key }) { selection = key; pendingOpen = nil } else { pendingOpen = ["key:" + key]; pendingAt = Date() }
