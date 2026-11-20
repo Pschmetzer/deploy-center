@@ -13,6 +13,9 @@ ready to paste back into the agent.
 - **Status bar:** `⏳ 7 commits waiting` (`⏳ 3 waiting`, counting projects, when a commit count is not known for all) for the projects whose repo matches this folder's git remote
   (or all projects when none match), plus `1 failed` and `2 building` when there are any.
   Click it for **Deploy** (with confirmation), **Open site**, **Show log** and **Copy release notes**.
+- **Costs of the month:** a second status bar item, `$ 12.35`, with this month's Vercel charges (from `deploys costs`; a `+` means some days could not be read). It is read at most every 30 minutes; the setting `deployCenter.showCosts` turns it off.
+- **Deploy freeze:** when `window.json` has closed times (`deploys freeze`), a status bar item says `Deploys closed` (with the rules and the reason in its tooltip) or `Deploy window open`. The main tooltip repeats it while it is closed. Nothing is shown without closed times.
+- **View "Waiting Commits"** in the Explorer: each waiting project with its commit count, most first. Open one for the newest commit's message, the pull requests, how long it has waited and its repo.
 - **Tree "Deploy Center"** in the Explorer: each project with its waiting commits and PRs, how
   long they have waited, and whether it is building or failed. Refresh is in the view's title bar.
 - **Failed builds:** **Show log** opens the build log as a read-only document (the "Deploy Center" output channel keeps its warnings and deploy results).
@@ -27,6 +30,8 @@ ready to paste back into the agent.
 | Deploy Center: Show Actions | The status bar's quick pick |
 | Deploy Center: Show Build Log / Copy Build Error for AI / Copy Release Notes / Open Site / Open Dashboard | For one project |
 | Deploy Center: Deploy Preview | Vercel: the newest commit at a preview address, after a confirmation; production stays |
+| Deploy Center: Preview a Rollback | Vercel and Render: what a rollback would go back to, read from the deploy history. It changes nothing; its "Roll back…" button only opens the confirmation of Roll Back Production |
+| Deploy Center: Show Deploy Freeze / Show This Month's Costs | The closed times and the month's charges, read now |
 | Deploy Center: Roll Back Production | Vercel and Render: production back to the deploy before, after a confirmation |
 
 ## Languages
@@ -58,6 +63,7 @@ there, so with `deployCenter.scope` set to `auto` it shows every project.
 | `deployCenter.pollMinutes` | `5` | How often to check while the window has focus. It also checks when the window gets focus again (at most once a minute) |
 | `deployCenter.timeoutSeconds` | `120` | How long one CLI call may take |
 | `deployCenter.logLines` | `200` | Lines of build log to show |
+| `deployCenter.showCosts` | `true` | The month's Vercel charges in the status bar |
 
 ## How it works
 

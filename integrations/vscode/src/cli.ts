@@ -5,6 +5,7 @@ import { ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { Freeze, HistoryRow, MonthCost, parseFreeze, parseHistory, parseMonthCost } from "./insights";
 import { mergeProjects, parseArray, PlanTotal, Project } from "./model";
 import { t } from "./i18n";
 
@@ -187,6 +188,24 @@ export async function loadPlanTotal(run: Runner, timeoutMs: number): Promise<Pla
   } catch {
     return null;
   }
+}
+
+/** `deploys costs 31`: this month's Vercel charges (31 days always cover the current month). Null when unreadable. */
+export async function loadMonthCost(run: Runner, timeoutMs: number, now = new Date()): Promise<MonthCost | null> {
+  const r = await run(["costs", "31"], timeoutMs);
+  return r.code === 0 ? parseMonthCost(r.stdout, now) : null;
+}
+
+/** `deploys freeze --json`: the closed times and whether deploys are closed now. Reads a local file. */
+export async function loadFreeze(run: Runner, timeoutMs: number): Promise<Freeze | null> {
+  const r = await run(["freeze", "--json"], timeoutMs);
+  return r.code === 0 ? parseFreeze(r.stdout) : null;
+}
+
+/** `deploys history <project> 20 --json`: the newest deploys, for the rollback preview. Null when unreadable. */
+export async function loadHistory(run: Runner, p: { ref: string }, timeoutMs: number): Promise<HistoryRow[] | null> {
+  const r = await run(["history", p.ref, "20", "--json"], timeoutMs);
+  return r.code === 0 ? parseHistory(r.stdout) : null;
 }
 
 /** The arguments that start one deploy: `deploys <provider> deploy-json <name> [--preview]`. */

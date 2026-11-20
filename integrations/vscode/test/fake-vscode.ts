@@ -29,9 +29,9 @@ export class EventEmitter<T> {
 
 export class ThemeColor { constructor(readonly id: string) {} }
 export class ThemeIcon { constructor(readonly id: string, readonly color?: ThemeColor) {} }
-export enum TreeItemCollapsibleState { None = 0 }
+export enum TreeItemCollapsibleState { None = 0, Collapsed = 1 }
 export class TreeItem {
-  id?: string; description?: string; tooltip?: unknown; iconPath?: unknown; contextValue?: string; command?: unknown;
+  id?: string; description?: string; tooltip?: unknown; iconPath?: unknown; contextValue?: string; command?: unknown; accessibilityInformation?: unknown;
   constructor(readonly label: string, readonly collapsibleState: TreeItemCollapsibleState) {}
 }
 export class MarkdownString {
@@ -54,8 +54,8 @@ export const window = {
   state: { focused: true },
   channels: [] as ReturnType<typeof channel>[],
   createOutputChannel(name: string) { const c = channel(name); window.channels.push(c); return c; },
-  createStatusBarItem() { return { name: "", text: "", tooltip: undefined as unknown, command: "", backgroundColor: undefined as unknown, show() {}, dispose() {} }; },
-  createTreeView() { return { dispose() {} }; },
+  createStatusBarItem() { return { name: "", text: "", tooltip: undefined as unknown, command: "", backgroundColor: undefined as unknown, shown: false, show() { this.shown = true; }, hide() { this.shown = false; }, dispose() {} }; },
+  createTreeView() { return { description: undefined as unknown, dispose() {} }; },
   showInformationMessage: record("info"),
   showErrorMessage: record("error"),
   showWarningMessage(...args: any[]) { calls.push({ kind: "warning", args }); return Promise.resolve(answers.warning.shift()); },

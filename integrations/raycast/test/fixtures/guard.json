@@ -1,0 +1,4 @@
+{"enabled":true,"lastRun":1763630000,"lastDry":false,"firstRunPending":false,
+ "lastActions":[{"action":"auto-deploy-off","platform":"vercel","project":"app-web"},{"action":"auto-deploy-off","platform":"render","project":"api","error":"HTTP 401"}],
+ "allowances":[{"platform":"vercel","project":"blog","expiresAt":1763640000}],
+ "pathMissing":["jq"]}
