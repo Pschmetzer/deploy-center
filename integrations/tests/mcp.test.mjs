@@ -71,7 +71,7 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_simulate", "deploys_status"];
+const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_doctor", "deploys_explain", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_rollback_preview", "deploys_simulate", "deploys_status"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -210,6 +210,32 @@ check("creds passes max_age and shows no key", !r.error && callLog().trim() === 
 writeFileSync(calls, "");
 r = await s.call("deploys_journal_report", { month: "2026-03" });
 check("journal report passes the month", !r.error && /2026-03/.test(r.text) && callLog().trim() === "journal report --month 2026-03", r.text + callLog());
+{
+  // Journal search: read-only, filtered, newest first, masked, framed as data.
+  const js = await s.call("deploys_journal_search", {});
+  const body = (t) => JSON.parse(t.split("\n").slice(1, -2).join("\n"));
+  const all = body(js.text);
+  check("journal search: reads the export, newest first", !js.error && /journal export/.test(callLog()) && all.total === 4 && all.entries[0].result === "rollback", js.text);
+  check("journal search: framed as untrusted data", /<untrusted-data source="deploy journal">/.test(js.text), js.text);
+  check("journal search: a secret in a detail is masked", !/s3cr3t-value/.test(js.text) && /hotfix/.test(js.text), js.text);
+  check("journal search: the formula guard quote is dropped", all.entries.some((e) => e.detail.startsWith("=SUM(1)")), js.text);
+  const jf = body((await s.call("deploys_journal_search", { result: "failed" })).text);
+  check("journal search: result filter", jf.total === 1 && jf.entries[0].detail.includes("missing module"), JSON.stringify(jf));
+  const jq = body((await s.call("deploys_journal_search", { query: "FREEZE", limit: 1 })).text);
+  check("journal search: query is case-insensitive and limit applies", jq.total === 1 && jq.shown === 1 && jq.entries[0].name === "api", JSON.stringify(jq));
+  await s.call("deploys_journal_search", { project: "app-web", since: "2026-11-02" });
+  check("journal search: project and since go to the CLI", /journal export --since 2026-11-02 --project app-web/.test(callLog()), callLog().slice(-200));
+  const jb = await s.call("deploys_journal_search", { since: "yesterday; rm" });
+  check("journal search: a bad date is refused", jb.error === true, jb.text);
+  const jv = await s.call("deploys_journal_verify");
+  check("journal verify: reads the chain through the CLI", !jv.error && /journal verify --json/.test(callLog()) && jv.structured?.linked === 3, jv.text);
+  const rp = await s.call("deploys_rollback_preview", { project: "app-web" });
+  check("rollback preview: current, target and nothing rolled back", !rp.error && rp.structured?.current?.commit === "cccc333" && rp.structured?.target?.commit === "aaaa111" && /Nothing was rolled back/.test(rp.structured?.note) && !/rollback app-web/.test(callLog()), rp.text);
+  const rp2 = await s.call("deploys_rollback_preview", { project: "site" });
+  check("rollback preview: no earlier live deploy gives a null target", !rp2.error && rp2.structured?.target === null, rp2.text);
+  const rp3 = await s.call("deploys_rollback_preview", { project: "a;b" });
+  check("rollback preview: a bad name is refused", rp3.error === true, rp3.text);
+}
 r = await s.call("deploys_journal_report", { month: "2026-13; rm" });
 check("journal report refuses a bad month", r.error === true || /month must/.test(r.text), r.text);
 writeFileSync(calls, "");

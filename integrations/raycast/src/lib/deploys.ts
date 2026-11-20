@@ -3,7 +3,17 @@ import { ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
-import { DeploysErrorKind, IdleProject, PlanTotal, classify, clean, cliEnv, lastLines } from "./text";
+import {
+  DeploysErrorKind,
+  HistoryEntry,
+  IdleProject,
+  PlanProject,
+  PlanTotal,
+  classify,
+  clean,
+  cliEnv,
+  lastLines,
+} from "./text";
 
 // Pure helpers (no Raycast API) live in ./text, so they can be tested with node --test.
 export { isFailedState, platformLabel, plural } from "./text";
@@ -313,6 +323,20 @@ export async function planCost(): Promise<PlanTotal | null> {
   } catch {
     return null;
   }
+}
+
+// The next deploy, per project, with the estimate (`deploys plan --json`). Starts nothing.
+export async function planDetails(): Promise<JsonResult<{ total: PlanTotal | null; projects: PlanProject[] }>> {
+  const r = await runJson<{ total?: PlanTotal; projects?: PlanProject[] }>(["plan", "--json"]);
+  const total = r.data?.total && typeof r.data.total.builds === "number" ? r.data.total : null;
+  return { ...r, data: { total, projects: Array.isArray(r.data?.projects) ? r.data.projects : [] } };
+}
+
+// The newest deploys of one project, newest first (`deploys history <project> 5 --json`). Read-only:
+// it is what a rollback would go back to. The rollback itself is done in Deploy Center or the CLI.
+export async function history(projectRef: string): Promise<JsonResult<HistoryEntry[]>> {
+  const r = await runJson<HistoryEntry[]>(["history", projectRef, "5", "--json"]);
+  return { ...r, data: Array.isArray(r.data) ? r.data : [] };
 }
 
 // Projects with no deploy for 90 days or more (`deploys idle --json`): candidates to pause. Read-only.

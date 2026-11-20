@@ -95,6 +95,27 @@ inputs:
       (deploy-changed --by-rules); "hold" rules always count.
     required: false
     default: "false"
+  dry-run:
+    description: >-
+      "true": nothing is started, even with deploy: true. The plan is written to the job summary and the
+      `plan` output, like deploy: dry-run. One switch for a workflow that deploys on `main` but only
+      plans on a pull request (dry-run: ${{ github.event_name == 'pull_request' }}).
+    required: false
+    default: "false"
+  only-changed:
+    description: >-
+      "true": a quiet run when nothing waits: the summary says so in one line, no pull request comment is
+      written, and the output `skipped` is "true" for later steps. Without it, a run with nothing waiting
+      still reports "0 projects" and comments.
+    required: false
+    default: "false"
+  comment-on-pr:
+    description: >-
+      "true": on a pull request, write what waits, its risk and the plan (or what was started) as one comment,
+      and update that comment on the next run instead of adding another. Needs `pull-requests: write` for
+      the github-token. A comment that cannot be written warns and does not fail the run.
+    required: false
+    default: "false"
   vercel-cli-version:
     description: The vercel CLI version to install when none is on the runner.
     required: false
@@ -110,6 +131,9 @@ outputs:
   projects:
     description: The full JSON array, from deploys changed --json.
     value: ${{ steps.changed.outputs.projects }}
+  skipped:
+    description: '"true" with only-changed when nothing waits: later steps can skip their work.'
+    value: ${{ steps.changed.outputs.skipped || 'false' }}
   started:
     description: How many deploys were started in this run.
     value: ${{ steps.deploy.outputs.started || '0' }}
@@ -209,6 +233,7 @@ runs:
         EXCLUDE: ${{ inputs.exclude }}
         FAIL_ON_RISK: ${{ inputs.fail-on-risk }}
         MAX_COST: ${{ inputs.max-cost }}
+        ONLY_CHANGED: ${{ inputs.only-changed }}
       run: |
         set -euo pipefail
         # Exit 1 with a list: some project's state could not be read (named above, left out).
@@ -236,12 +261,13 @@ runs:
           echo "count=$count"
           echo "names=$(echo "$list" | jq -r 'map(.name) | join(",")')"
           echo "risk=$risk"
+          echo "skipped=$([ "${ONLY_CHANGED:-}" = true ] && [ "$count" = 0 ] && echo true || echo false)"
           echo "risky=$(echo "$list" | jq -r 'map(select(.risk.level == "red" or .risk.level == "yellow") | .name) | join(",")')"
           d="EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
           echo "projects<<$d"; echo "$list" | jq -c .; echo "$d"
         } >> "$GITHUB_OUTPUT"
         {
-          echo "### Projects with changes: $count"
+          if [ "${ONLY_CHANGED:-}" = true ] && [ "$count" = 0 ]; then echo "### Nothing waiting (only-changed: no report)"; else echo "### Projects with changes: $count"; fi
           echo "$list" | jq -r '.[] | "- \(.platform) **\(.name)**: \(.pendingCommits // "?") commit(s) waiting\(if .risk.level then ", risk \(.risk.level)\(if (.risk.reasons // []) | map(select(.level != "green")) | length > 0 then ": " + ((.risk.reasons | map(select(.level != "green") | .text)) | join("; ")) else "" end)" else "" end)"'
         } >> "$GITHUB_STEP_SUMMARY"
         # fail-on-risk: the gate. Fails before the deploy step, so nothing starts.
@@ -271,7 +297,7 @@ runs:
 
     - name: Plan (dry run)
       id: plan
-      if: inputs.deploy == 'dry-run' && steps.changed.outputs.count != '0'
+      if: (inputs.deploy == 'dry-run' || (inputs.dry-run == 'true' && inputs.deploy == 'true')) && steps.changed.outputs.count != '0'
       shell: bash
       env:
         VERCEL_TOKEN: ${{ inputs.vercel-token }}
@@ -296,7 +322,7 @@ runs:
 
     - name: deploys deploy-changed --yes
       id: deploy
-      if: inputs.deploy == 'true' && steps.changed.outputs.count != '0'
+      if: inputs.deploy == 'true' && inputs.dry-run != 'true' && steps.changed.outputs.count != '0'
       shell: bash
       env:
         VERCEL_TOKEN: ${{ inputs.vercel-token }}
@@ -363,7 +389,7 @@ runs:
 
     - name: Wait for the builds
       id: wait
-      if: ${{ !cancelled() && inputs.deploy == 'true' && inputs.wait != '' && inputs.wait != '0' && steps.deploy.outputs.started != '' && steps.deploy.outputs.started != '0' }}
+      if: ${{ !cancelled() && inputs.deploy == 'true' && inputs.dry-run != 'true' && inputs.wait != '' && inputs.wait != '0' && steps.deploy.outputs.started != '' && steps.deploy.outputs.started != '0' }}
       shell: bash
       env:
         VERCEL_TOKEN: ${{ inputs.vercel-token }}
@@ -400,3 +426,50 @@ runs:
         { echo "### Builds"; echo "$states" | jq -r 'to_entries[] | "- **\(.key)**: \(.value)"'; } >> "$GITHUB_STEP_SUMMARY"
         [ -z "$bad" ] || { echo "::error::build failed: $bad"; exit 1; }
         [ "$live" = true ] || echo "::warning::not every build was live in time: $(echo "$states" | jq -r 'to_entries | map(select(.value != "ready") | "\(.key) \(.value)") | join(", ")')"
+
+    - name: Comment on the pull request
+      id: comment
+      if: ${{ !cancelled() && inputs.comment-on-pr == 'true' && inputs.deploy != 'setup' && steps.changed.outputs.skipped != 'true' && (github.event.pull_request.number || github.event.issue.number) != '' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        REPO_SLUG: ${{ github.repository }}
+        CHANGED: ${{ steps.changed.outputs.projects }}
+        RISK: ${{ steps.changed.outputs.risk }}
+        PLAN: ${{ steps.plan.outputs.plan }}
+        STARTED: ${{ steps.deploy.outputs.started-json }}
+      run: |
+        set -uo pipefail
+        # One comment, found again by its marker and updated: a busy pull request is not filled with one per push.
+        marker='<!-- deploy-center-action -->'
+        [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || { echo "::warning::comment-on-pr: no pull request number, nothing written."; exit 0; }
+        [[ "$REPO_SLUG" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || { echo "::warning::comment-on-pr: not a repository name."; exit 0; }
+        # Only names that look like project names go into the text, in code spans: a name cannot add Markdown or a mention.
+        names() { printf '%s' "${2:-}" | jq -r --arg bt '`' "${1:-.}"' | map(.name | select(type == "string" and test("^[A-Za-z0-9._:-]+$")) | $bt + . + $bt) | join(", ")' 2>/dev/null; }
+        waiting="$(names . "${CHANGED:-[]}")" || waiting=""
+        n="$(printf '%s' "${CHANGED:-[]}" | jq '[.[].name | select(type == "string" and test("^[A-Za-z0-9._:-]+$"))] | length' 2>/dev/null)" || n=0
+        {
+          echo "$marker"
+          echo "### Deploy Center"
+          if [ "${n:-0}" = 0 ]; then echo "Nothing is waiting to go live."
+          else
+            echo "$n project(s) with commits that are not live yet: ${waiting:-?}."
+            [ -z "${RISK:-}" ] || echo "Highest risk: **$RISK**."
+          fi
+          plan="$(names 'map(select(.action == "would-deploy"))' "${PLAN:-}")" || plan=""
+          [ -z "$plan" ] || echo "Dry run, nothing was started. Would deploy: $plan."
+          started="$(names . "${STARTED:-}")" || started=""
+          [ -z "$started" ] || echo "Started: $started."
+          echo
+          echo "_Nothing here deploys by itself: a deploy starts only with deploy: true in the workflow, or with an explicit click or --yes._"
+        } > "${RUNNER_TEMP:-/tmp}/dc-comment.md"
+        id="$(gh api "repos/$REPO_SLUG/issues/$PR_NUMBER/comments" --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" 2>/dev/null | head -n 1)" || id=""
+        if [[ "$id" =~ ^[0-9]+$ ]]; then
+          gh api -X PATCH "repos/$REPO_SLUG/issues/comments/$id" -F "body=@${RUNNER_TEMP:-/tmp}/dc-comment.md" >/dev/null \
+            || echo "::warning::comment-on-pr: could not update the comment (the token needs pull-requests: write)."
+        else
+          gh api -X POST "repos/$REPO_SLUG/issues/$PR_NUMBER/comments" -F "body=@${RUNNER_TEMP:-/tmp}/dc-comment.md" >/dev/null \
+            || echo "::warning::comment-on-pr: could not write the comment (the token needs pull-requests: write)."
+        fi
+        exit 0

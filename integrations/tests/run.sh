@@ -76,6 +76,15 @@ case "\$*" in
   "creds --max-age "*" --json") echo '[{"platform":"vercel","label":"Vercel","source":"keychain","accepted":true,"keyAgeDays":120,"rotate":true}]' ;;
   "journal report --month "*) printf '# Deploy Center: %s\n\n3 deploys.\n' "\$4" ;;
   "journal report") printf '# Deploy Center: this month\n\nNo journal yet.\n' ;;
+  # The journal as CSV (a made-up one: a forced deploy with a reason, a secret in a detail, a formula-looking detail).
+  "journal export"*) printf '%s\n' 'at,platform,name,result,detail' \
+    '2026-11-01T10:00:00Z,vercel,app-web,live,"Deployed at aaaa111"' \
+    '2026-11-03T09:00:00Z,vercel,app-web,failed,"build failed, missing module"' \
+    '2026-11-04T09:00:00Z,render,api,forced,"Deployed in the window ""freeze"": VERCEL_TOKEN=s3cr3t-value hotfix"' \
+    "2026-11-05T09:00:00Z,vercel,app-web,rollback,\"'=SUM(1) rolled back\"" ;;
+  "journal verify --json") echo '{"lines":4,"linked":3,"unlinked":0,"broken":[]}' ;;
+  "history vercel:app-web 5 --json") echo '[{"when":"now","state":"BUILDING","commit":"cccc333","at":3},{"when":"b","state":"ERROR","commit":"bbbb222","at":2},{"when":"a","state":"READY","commit":"aaaa111","at":1}]' ;;
+  "history vercel:site 5 --json") echo '[{"when":"now","state":"READY","commit":"dddd444","at":2}]' ;;
   "ledger --json") cat "$here/../tests/fixtures/savings/ledger-report.json" ;;
   "doctor") [ -n "\${FAKE_ENV_DUMP:-}" ] && { env | cut -d= -f1; exit 0; }
     [ -n "\${FAKE_DOCTOR_SLEEP:-}" ] && sleep "\$FAKE_DOCTOR_SLEEP"; echo "{\"renderKey\":\${FAKE_RENDER_KEY:-false}}" ;;
@@ -277,6 +286,35 @@ DEPLOYS_NOTIFY_URL=https://hooks.example.test/T/x notify/notify.sh "$tmp/quiet.j
 expect "notify: --dry-run after the list file posts nothing" "$(wc -c < "$tmp/curl.args" | tr -d ' ')" 0
 notify/notify.sh --dry-run --bogus >/dev/null 2>&1; expect "notify: an unknown option is refused" "$?" 1
 expect "notify: --link becomes a button" "$(RENDER_API_KEY=x notify/notify.sh --dry-run --link https://status.example.test | sed -n 2p | jq '.blocks | length')" 2
+# One deploy as an event: Slack blocks, a Discord embed, a Teams Adaptive Card; other formats get text.
+cat > "$tmp/event.json" <<'JSON'
+{"project":"app-web","status":"failed","platform":"vercel","duration":125,"commit":"abc1234def","url":"https://status.example.test/app-web"}
+JSON
+ev() { notify/notify.sh --dry-run --event "$tmp/event.json"; }
+expect "notify event: Slack blocks, header first" "$(ev | sed -n 2p | jq -c '[.blocks[].type]')" '["header","section","context","actions"]'
+expect "notify event: Slack facts: status, duration, commit" "$(ev | sed -n 2p | jq -r '.blocks[1].fields | map(.text | gsub("\n"; " ")) | join("|")')" '*Project* app-web|*Status* Failed|*Platform* vercel|*Duration* 2 min 05 s|*Commit* abc1234'
+expect "notify event: Slack link is a danger button for a failure" "$(ev | sed -n 2p | jq -c '.blocks[3].elements[0] | [.style, .url]')" '["danger","https://status.example.test/app-web"]'
+contains "notify event: the rollback hint says nothing is rolled back" "$(ev | sed -n 2p | jq -r '.blocks[2].elements[0].text')" 'deploys rollback app-web --yes. This message rolls nothing back.'
+expect "notify event: Discord embed with a red color and no pings" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x ev | sed -n 2p | jq -c '[.embeds[0].color, .allowed_mentions, (.embeds[0].fields | length), .embeds[0].url]')" '[15158332,{"parse":[]},5,"https://status.example.test/app-web"]'
+expect "notify event: Teams Adaptive Card with facts and a button" "$(DEPLOYS_NOTIFY_URL=https://x.webhook.office.com/w ev | sed -n 2p | jq -c '.attachments[0].content | [.type, .body[0].color, (.body[1].facts | length), .actions[0].type]')" '["AdaptiveCard","Attention",5,"Action.OpenUrl"]'
+contains "notify event: ntfy gets the facts as text" "$(DEPLOYS_NOTIFY_URL=https://ntfy.sh/topic ev)" $'Duration: 2 min 05 s\nCommit: abc1234'
+contains "notify event: German texts with DEPLOYS_LANG=de" "$(DEPLOYS_LANG=de ev | sed -n 2p | jq -r '.text')" 'app-web ist Fehlgeschlagen'
+echo '{"project":"app-web","status":"live","duration":42}' > "$tmp/event-live.json"
+expect "notify event: live has a green card and no button without a link" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run --event "$tmp/event-live.json" | sed -n 2p | jq -c '[.embeds[0].color, (.embeds[0] | has("url"))]')" '[3066993,false]'
+echo '{"project":"app-web","status":"building"}' > "$tmp/event-building.json"
+expect "notify event: building has no rollback hint" "$(notify/notify.sh --dry-run --event "$tmp/event-building.json" | sed -n 2p | jq -c '[.blocks[].type]')" '["header","section"]'
+echo '{"project":"<!channel> & co","status":"live"}' > "$tmp/event-bad.json"
+contains "notify event: a project name that is no name is refused" "$(notify/notify.sh --dry-run --event "$tmp/event-bad.json" 2>&1)" 'event.project must be a project name'
+echo '{"project":"web","status":"live","url":"javascript:alert(1)"}' > "$tmp/event-bad.json"
+contains "notify event: a link that is not https is refused" "$(notify/notify.sh --dry-run --event "$tmp/event-bad.json" 2>&1)" 'event.url must be an https:// address'
+echo '{"project":"web","status":"done"}' > "$tmp/event-bad.json"
+expect "notify event: an unknown status is refused with rc 1" "$(notify/notify.sh --dry-run --event "$tmp/event-bad.json" >/dev/null 2>&1; echo $?)" 1
+echo '{"project":"web","status":"live","commit":"zz;rm"}' > "$tmp/event-bad.json"
+contains "notify event: a commit that is no commit id is refused" "$(notify/notify.sh --dry-run --event "$tmp/event-bad.json" 2>&1)" 'event.commit must be a commit id'
+expect "notify event: from stdin too" "$(notify/notify.sh --dry-run --event - < "$tmp/event-live.json" | head -1)" "format: slack"
+: > "$tmp/curl.body"
+DEPLOYS_NOTIFY_URL=https://hooks.example.test/T/secret notify/notify.sh --event "$tmp/event.json" >/dev/null
+expect "notify event: posts the blocks" "$(jq -r '.blocks[0].text.text' "$tmp/curl.body")" "app-web is Failed"
 expect "notify: DEPLOYS_NOTIFY_FORMAT=plain is {text} only" "$(RENDER_API_KEY=x DEPLOYS_NOTIFY_FORMAT=plain notify/notify.sh --dry-run --link https://status.example.test | sed -n 2p | jq -c 'keys')" '["text"]'
 expect "notify: Discord never pings" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -c .allowed_mentions)" '{"parse":[]}'
 expect "notify: Discord by host" "$(DEPLOYS_NOTIFY_URL=https://discord.com/api/webhooks/1/x notify/notify.sh --dry-run | sed -n 2p | jq -r 'has("content")')" true
@@ -370,6 +408,18 @@ expect "alfred: a CLI that gives no list says so" "$(DEPLOYS=/usr/bin/false alfr
 ap="$(alfred/deploys-plan.sh)"
 expect "alfred plan: the sum first, then every project" "$(jq -c '[.items[].title]' <<<"$ap")" '["2 builds, about $1.20","app-web","api","site"]'
 expect "alfred plan: a skipped project says so" "$(jq -r '.items[3].subtitle' <<<"$ap")" "Would not start · vercel"
+# Alfred rollback preview: a name and a space shows the current deploy and the one a rollback would restore. Read-only.
+: > "$tmp/ar.log"
+ar="$(FAKE_MCP_CALLS="$tmp/ar.log" alfred/deploys-rollback.sh "app-web ")"
+expect "alfred rollback: now, then where it would go back to, then the newest deploys" "$(jq -c '[.items[0].title, .items[1].title]' <<<"$ar")" '["Now: cccc333 · BUILDING · now","Would go back to: aaaa111 · READY · a"]'
+expect "alfred rollback: three deploys listed after the two lines" "$(jq '.items | length' <<<"$ar")" 5
+expect "alfred rollback: ↵ shows the project in Deploy Center" "$(jq -r '.items[1].arg' <<<"$ar")" "deploycenter://select?project=vercel%3Aapp-web"
+case "$(cat "$tmp/ar.log")" in *rollback\ *) fail "alfred rollback: rolls nothing back" "$(cat "$tmp/ar.log")" ;; *) ok "alfred rollback: rolls nothing back" ;; esac
+expect "alfred rollback: a project with one deploy has no target" "$(alfred/deploys-rollback.sh "site " | jq -r '.items[1].title')" "No earlier deploy that went live in the newest five"
+expect "alfred rollback: a part of a name lists projects and completes with a space" "$(alfred/deploys-rollback.sh WEB | jq -c '[.items[].title, .items[].autocomplete]')" '["app-web","app-web "]'
+expect "alfred rollback: an unknown name is said" "$(alfred/deploys-rollback.sh "zzz " | jq -r '.items[0].title')" "No single project called zzz"
+expect "alfred rollback: a name that is no name is not passed to the CLI" "$(FAKE_MCP_CALLS="$tmp/ar2.log" alfred/deploys-rollback.sh 'a;b ' >/dev/null; grep -c history "$tmp/ar2.log" 2>/dev/null || true)" 0
+expect "alfred rollback: a CLI that gives no list says so" "$(DEPLOYS=/usr/bin/false alfred/deploys-rollback.sh | jq -r '.items[0].title')" "Could not read the projects"
 expect "alfred: Alfred may cache the list for 30 s" "$(jq -c '.cache' <<<"$af")" '{"seconds":30,"loose_reload":true}'
 expect "alfred: Alfred does not re-order by use" "$(jq -c '[.items[].skipknowledge] | unique' <<<"$af")" '[true]'
 expect "alfred plan: the query filters, the sum stays" "$(alfred/deploys-plan.sh API | jq -c '[.items[].title]')" '["2 builds, about $1.20","api"]'
@@ -614,7 +664,7 @@ if command -v ruby >/dev/null; then
   expect "action: repo: and starts nothing" "$(cat "$tmp/deploy.log")$(tr '\n' ' ' < "$tmp/out")" "started=0 failed=0 deployed=true "
   REPO='me/app;x' run_step deploy.sh; expect "action: repo: a strange value is refused" "$?" 1
   rm -f "$DEPLOYS_CONFIG/ignored.json"
-  expect "action: deploy step only with deploy: true" "$(step deploy if)" "inputs.deploy == 'true' && steps.changed.outputs.count != '0'"
+  expect "action: deploy step only with deploy: true" "$(step deploy if)" "inputs.deploy == 'true' && inputs.dry-run != 'true' && steps.changed.outputs.count != '0'"
   ONLY=api run_step changed.sh; expect "action: only keeps the named projects" "$(grep '^names=' "$tmp/out")" "names=api"
   expect "action: only writes the others to this run's ignored.json" "$(jq -c . "$DEPLOYS_CONFIG/ignored.json")" '["app-web"]'
   EXCLUDE='api, x' run_step changed.sh; expect "action: exclude leaves projects out" "$(grep '^count=' "$tmp/out"):$(jq -c . "$DEPLOYS_CONFIG/ignored.json")" 'count=1:["api"]'
@@ -626,7 +676,7 @@ if command -v ruby >/dev/null; then
   contains "action: by-rules, when-green and strict reach the CLI" "$(cat "$tmp/ac.log")" "deploy-changed --json --when-green --strict --by-rules"
   : > "$tmp/ac.log"; STRICT=true FAKE_MCP_CALLS="$tmp/ac.log" run_step plan.sh
   case "$(cat "$tmp/ac.log")" in *--strict*) fail "action: strict without when-green is not passed" "passed" ;; *) ok "action: strict without when-green is not passed" ;; esac
-  expect "action: plan step only with deploy: dry-run" "$(step plan if)" "inputs.deploy == 'dry-run' && steps.changed.outputs.count != '0'"
+  expect "action: plan step only with deploy: dry-run" "$(step plan if)" "(inputs.deploy == 'dry-run' || (inputs.dry-run == 'true' && inputs.deploy == 'true')) && steps.changed.outputs.count != '0'"
   # wait: the JSON answer gives the ids; each build is followed to live or failed, under one deadline.
   mkdir -p "$tmp/rt"; : > "$tmp/deploy.log"
   REPO="*" DEPLOYS_WAIT_S=60 RUNNER_TEMP="$tmp/rt" run_step deploy.sh
@@ -641,7 +691,7 @@ if command -v ruby >/dev/null; then
   expect "action wait: a platform that cannot be asked is unknown, not failed" "$?:$(grep -c '"api":"unknown"' "$tmp/out")" "0:1"
   t0=$SECONDS; FAKE_WATCH_SLOW=1 DEPLOYS_WAIT_S=1 RUNNER_TEMP="$tmp/rt" run_step wait.sh; rc=$?
   expect "action wait: the deadline stops a slow watch" "$rc:$(grep '^live=' "$tmp/out"):$(grep -c '"app-web":"timeout"' "$tmp/out"):$(( SECONDS - t0 < 4 ))" "0:live=false:1:1"
-  expect "action wait: only after deploy: true with a wait" "$(step wait if)" "\${{ !cancelled() && inputs.deploy == 'true' && inputs.wait != '' && inputs.wait != '0' && steps.deploy.outputs.started != '' && steps.deploy.outputs.started != '0' }}"
+  expect "action wait: only after deploy: true with a wait" "$(step wait if)" "\${{ !cancelled() && inputs.deploy == 'true' && inputs.dry-run != 'true' && inputs.wait != '' && inputs.wait != '0' && steps.deploy.outputs.started != '' && steps.deploy.outputs.started != '0' }}"
   # fail-on-risk: the risk of what waits, and a gate before anything starts.
   FAKE_LEVEL=red run_step changed.sh
   expect "action risk: highest risk and who has it" "$(grep -E '^risk(y)?=' "$tmp/out" | tr '\n' ' ')" "risk=red risky=app-web "
@@ -654,6 +704,42 @@ if command -v ruby >/dev/null; then
   MAX_COST=1 run_step changed.sh; expect "action max-cost: an estimate above the limit fails" "$?" 1
   MAX_COST=5 run_step changed.sh; expect "action max-cost: an estimate below the limit passes" "$?" 0
   MAX_COST=abc run_step changed.sh; expect "action max-cost: a limit that is no number is refused" "$?" 1
+  # dry-run: one switch that wins over deploy: true; only-changed: quiet when nothing waits.
+  expect "action dry-run: the plan step also runs for deploy: true" "$(step plan if)" "(inputs.deploy == 'dry-run' || (inputs.dry-run == 'true' && inputs.deploy == 'true')) && steps.changed.outputs.count != '0'"
+  expect "action dry-run: the deploy step never runs with dry-run: true" "$(step deploy if)" "inputs.deploy == 'true' && inputs.dry-run != 'true' && steps.changed.outputs.count != '0'"
+  expect "action dry-run: defaults to false" "$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["inputs"]["dry-run"]["default"]' action/action.yml)" false
+  run_step changed.sh; expect "action only-changed: off by default, skipped=false" "$(grep '^skipped=' "$tmp/out")" "skipped=false"
+  ONLY_CHANGED=true run_step changed.sh; expect "action only-changed: something waits, not skipped" "$(grep '^skipped=' "$tmp/out")" "skipped=false"
+  echo '[]' > "$tmp/nothing.json"
+  ONLY_CHANGED=true FAKE_NOTHING=1 run_step changed.sh; expect "action only-changed: nothing waits, skipped=true" "$?:$(grep '^skipped=' "$tmp/out")" "0:skipped=true"
+  expect "action only-changed: one line in the summary" "$(head -1 "$tmp/sum")" "### Nothing waiting (only-changed: no report)"
+  # comment-on-pr: a stand-in gh records its calls; no network, no real pull request.
+  step comment > "$tmp/comment.sh"
+  mkdir -p "$tmp/ghbin" "$tmp/crt"
+  cat > "$tmp/ghbin/gh" <<'GH'
+#!/bin/bash
+echo "$*" >> "$GH_LOG"
+case "$*" in
+  *"--paginate"*) [ -n "${GH_OLD:-}" ] && echo "$GH_OLD"; exit 0 ;;
+  *"-F body=@"*) a="$*"; f="${a#*body=@}"; cat "${f%% *}" > "$GH_BODY"; [ -z "${GH_FAIL:-}" ] || exit 1 ;;
+esac
+exit 0
+GH
+  chmod +x "$tmp/ghbin/gh"
+  comment() { : > "$tmp/gh.log"; : > "$tmp/gh.body"; PATH="$tmp/ghbin:$PATH" GH_LOG="$tmp/gh.log" GH_BODY="$tmp/gh.body" RUNNER_TEMP="$tmp/crt" REPO_SLUG=me/app PR_NUMBER="${PR_NUMBER-7}" bash "$tmp/comment.sh" >"$tmp/comment.out" 2>&1; }
+  CHANGED='[{"name":"app-web"},{"name":"api"},{"name":"bad`name"}]' RISK=yellow PLAN='[{"name":"app-web","action":"would-deploy"}]' comment
+  expect "action comment: posts one new comment" "$?:$(grep -c 'POST repos/me/app/issues/7/comments' "$tmp/gh.log")" "0:1"
+  contains "action comment: the marker, the names and the risk" "$(cat "$tmp/gh.body")" '<!-- deploy-center-action -->'
+  contains "action comment: waiting projects in code spans" "$(cat "$tmp/gh.body")" '2 project(s) with commits that are not live yet: `app-web`, `api`.'
+  contains "action comment: the highest risk" "$(cat "$tmp/gh.body")" 'Highest risk: **yellow**'
+  contains "action comment: the plan says nothing was started" "$(cat "$tmp/gh.body")" 'Dry run, nothing was started. Would deploy: `app-web`.'
+  case "$(cat "$tmp/gh.body")" in *'bad`name'*) fail "action comment: a name with a backtick is left out" "found" ;; *) ok "action comment: a name with a backtick is left out" ;; esac
+  GH_OLD=4242 CHANGED='[]' comment
+  expect "action comment: an earlier comment is updated, not added" "$(grep -c 'PATCH repos/me/app/issues/comments/4242' "$tmp/gh.log"):$(grep -c POST "$tmp/gh.log")" "1:0"
+  contains "action comment: nothing waiting says so" "$(cat "$tmp/gh.body")" 'Nothing is waiting to go live.'
+  GH_FAIL=1 CHANGED='[]' comment; expect "action comment: a failed write warns, does not fail" "$?:$(grep -c '::warning::comment-on-pr' "$tmp/comment.out")" "0:1"
+  PR_NUMBER=x CHANGED='[]' comment; expect "action comment: no pull request number writes nothing" "$?:$(grep -c POST "$tmp/gh.log")" "0:0"
+  expect "action comment: only when asked, and not for setup" "$(step comment if)" "\${{ !cancelled() && inputs.comment-on-pr == 'true' && inputs.deploy != 'setup' && steps.changed.outputs.skipped != 'true' && (github.event.pull_request.number || github.event.issue.number) != '' }}"
   setup() { : > "$tmp/out"; : > "$tmp/genv"; env GITHUB_ENV="$tmp/genv" GITHUB_PATH="$tmp/gpath" RUNNER_TEMP="$tmp/rt" ACTION_PATH="$here/action" \
       VERCEL_TOKEN="${VT:-}" VERCEL_TEAM="${TEAM:-}" REPOS_JSON="${RJ:-}" CLI_VERSION="${CV:-65.12.1}" WAIT="${WT:-}" PATH="$PATH" bash "$tmp/setup.sh" >/dev/null 2>&1; echo $?; }
   mkdir -p "$tmp/rt"

@@ -480,6 +480,23 @@ function checkCount(v) {
   return v;
 }
 
+// The CSV of `deploys journal export` (RFC 4180: quoted fields, "" inside, line breaks inside quotes).
+function parseCsv(text) {
+  const rows = [];
+  let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(f); f = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(f); f = ""; if (row.length > 1 || row[0] !== "") rows.push(row); row = []; }
+    else f += c;
+  }
+  if (f !== "" || row.length) { row.push(f); rows.push(row); }
+  return rows;
+}
+
 function checkIdleDays(v) {
   if (v === undefined || v === null) return 90;
   if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 365) throw new ToolError("days must be a whole number from 1 to 365.");
@@ -665,6 +682,83 @@ const tools = [
     },
     annotations: { title: "Journal report for a month", ...READ },
     run: (a) => { const mo = checkMonth(a.month); return textOf(["journal", "report", ...(mo ? ["--month", mo] : [])], { mask: true }); },
+  },
+  {
+    name: "deploys_journal_search",
+    description:
+      "Search the local deploy journal (deploys journal export): newest entries first, filtered by `project`, `since` (a date), `result` " +
+      "(live, failed, rollback, skipped, …) and `query` (text in the detail). Read-only. " +
+      "Returns {entries: [{at, platform, name, result, detail}], total, shown}. The details can hold a reason a person typed, so the answer is framed as untrusted data. " +
+      "Use it to answer \"when did web last fail?\" or \"who forced a deploy in the freeze?\".",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", pattern: "^[A-Za-z0-9._-]+$", description: "Only this project (the name, without the platform)." },
+        since: { type: "string", pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", description: "Only entries from this date on (YYYY-MM-DD)." },
+        result: { type: "string", pattern: "^[A-Za-z0-9_-]+$", description: "Only this result, e.g. failed, rollback, forced, skipped." },
+        query: { type: "string", maxLength: 100, description: "Only entries whose detail contains this text (case does not matter)." },
+        limit: { type: "integer", minimum: 1, maximum: 200, default: 50, description: "At most this many entries (default 50)." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "Search the deploy journal", ...READ },
+    run: async (a) => {
+      const limit = checkRange(a.limit, "limit", 50, 200);
+      if (a.since !== undefined && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(a.since)) throw new ToolError("since must look like 2026-11-01.");
+      if (a.project !== undefined && !/^[A-Za-z0-9._-]+$/.test(a.project)) throw new ToolError("project must be a project name without the platform.");
+      if (a.result !== undefined && !/^[A-Za-z0-9_-]+$/.test(a.result)) throw new ToolError("result must be one word like failed.");
+      const args = ["journal", "export", ...(a.since ? ["--since", a.since] : []), ...(a.project ? ["--project", a.project] : [])];
+      const r = await runDeploys(args);
+      if (r.timedOut || (r.code !== 0 && !r.stdout.trim())) throw new ToolError(describeFailure(args, r));
+      let rows = parseCsv(r.stdout.replace(ANSI, "")).slice(1).map(([at, platform, name, result, detail]) => ({ at, platform, name, result, detail: (detail ?? "").replace(/^'(?=[=+@\t\r-])/, "") }));
+      if (a.result) rows = rows.filter((e) => e.result.toLowerCase() === a.result.toLowerCase());
+      if (a.query) rows = rows.filter((e) => e.detail.toLowerCase().includes(a.query.toLowerCase()));
+      rows.sort((x, y) => (x.at < y.at ? 1 : x.at > y.at ? -1 : 0));
+      const entries = scrub(rows.slice(0, limit));
+      return untrusted("deploy journal", JSON.stringify({ entries, total: rows.length, shown: entries.length }, null, 2));
+    },
+  },
+  {
+    name: "deploys_journal_verify",
+    description:
+      "Check the chain of the deploy journal: each line holds the hash of the one before, so a changed or removed line shows as a broken link (deploys journal verify --json). " +
+      "Read-only. Returns {lines, linked, unlinked, broken: [line numbers]}. Use it before trusting the journal as evidence.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Check the deploy journal", ...READ },
+    json: true,
+    run: () => textOf(["journal", "verify", "--json"]),
+  },
+  {
+    name: "deploys_rollback_preview",
+    description:
+      "What a rollback of one project would do, without doing it: the newest deploys, current first, and the one production would go back to (deploys history). " +
+      "Read-only: nothing is rolled back. Returns {project, platform, current, target, recent, note}; `target` is null when there is no earlier deploy that went live. " +
+      "A rollback stays a separate step that the human confirms (deploys_rollback, when it is offered at all, or the CLI with --yes).",
+    inputSchema: { type: "object", properties: { project: projectProp }, required: ["project"], additionalProperties: false },
+    annotations: { title: "Preview a rollback", ...READ },
+    json: true,
+    run: async (a) => {
+      const p = checkProject(a.project);
+      const { platform, name } = await platformOf(p);
+      const args = ["history", `${platform}:${name}`, "5", "--json"];
+      const r = await runDeploys(args);
+      if (r.timedOut || (r.code !== 0 && !r.stdout.trim())) throw new ToolError(describeFailure(args, r));
+      let list;
+      try {
+        list = JSON.parse(r.stdout);
+      } catch {
+        throw new ToolError("deploys history --json did not answer with JSON: this CLI is too old for a rollback preview.");
+      }
+      if (!Array.isArray(list)) throw new ToolError("deploys history --json did not answer with a list.");
+      const recent = scrub(list.slice(0, 5));
+      const isLive = (d) => /^(ready|live|succe|success|active)/i.test(String(d?.state ?? ""));
+      const current = recent[0] ?? null;
+      const target = recent.slice(1).find(isLive) ?? null;
+      return JSON.stringify({
+        project: name, platform, current, target, recent,
+        note: target ? "Nothing was rolled back. A rollback goes back to `target`; the human confirms it." : "Nothing was rolled back. No earlier deploy that went live is in the newest five.",
+      }, null, 2);
+    },
   },
   {
     name: "deploys_status",

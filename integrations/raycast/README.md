@@ -19,6 +19,8 @@ it reads what is waiting and starts a deploy only when you confirm one.
 | **Deploy Status** | Projects building right now, and projects whose newest deploy failed (`deploys status --json`). | Copy Build Error and Show Log (failed ones), Open Site, Open Dashboard, Copy Release Notes, Show in Deploy Center |
 | **Deploy Center Menu Bar** | In the menu bar: how many projects wait, the icon red when a newest build failed. Reads `deploys status --json` every 10 minutes. | Click a failed project to copy its build error; open Waiting Deploys |
 | **Idle Projects** | Projects with no deploy for 90 days or more, or never deployed (`deploys idle --json`): candidates to pause. | Copy Name, Refresh. Pausing is yours to do. |
+| **Deploy Costs** | What the next deploy would start and what it would cost, per project (`deploys plan --json`). An estimate (build minutes times a rate), not a bill. | Show in Deploy Center, Copy Name, Refresh. Nothing starts here. |
+| **Rollback Preview** | Pick a project: the deploy that is current and the one production would go back to (`deploys history <project> 5 --json`). | Show in Deploy Center. Nothing is rolled back here; a rollback is done in Deploy Center, which asks first. |
 | **Deploy Project** | Type a project name after the command (`platform:name` when a name is on two platforms). | Deploy (asks first) |
 | **Deploy All Changed** | The same list as Waiting Deploys. Nothing starts until you press ↵ and confirm. | Deploy All (asks first, with every project named) |
 

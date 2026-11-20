@@ -41,6 +41,20 @@
       "mode": "view"
     },
     {
+      "name": "deploy-costs",
+      "title": "Deploy Costs",
+      "subtitle": "Deploy Center",
+      "description": "What the next deploy would start and what it would cost (an estimate), per project. Only reads.",
+      "mode": "view"
+    },
+    {
+      "name": "rollback-preview",
+      "title": "Rollback Preview",
+      "subtitle": "Deploy Center",
+      "description": "Pick a project and see which deploy production would go back to. Only reads; a rollback is done in Deploy Center.",
+      "mode": "view"
+    },
+    {
       "name": "deploy-all-changed",
       "title": "Deploy All Changed",
       "subtitle": "Deploy Center",

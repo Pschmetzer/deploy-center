@@ -21,6 +21,22 @@ integrations/notify/notify.sh list.json --dry-run                # options may s
 integrations/notify/notify.sh --link https://status.example.com  # a button (or a link line) to your status page
 ```
 
+**One deploy as a rich message.** `--event <event.json|->` posts one finished deploy instead of the daily
+summary: Slack blocks (header, facts, a context line, a button), a Discord embed (colored by status, never
+pings) or a Microsoft Teams Adaptive Card (facts and an `Action.OpenUrl` button); every other format gets the
+same facts as text. The event is JSON, `project` and `status` are required:
+
+```json
+{"project": "web", "status": "failed", "platform": "vercel", "duration": 125, "commit": "abc1234", "url": "https://status.example.com/web"}
+```
+
+`status` is `live`, `failed`, `building` or `rolledback`; `duration` is in seconds ("2 min 05 s"); `url` (https
+only) or `--link` becomes the button. A `live` or `failed` message carries a rollback hint: the commands to look
+at first (`deploys history web`, then `deploys rollback web --yes`) and the line "This message rolls nothing
+back." Nothing is rolled back or deployed by posting it. A failed event sets ntfy's priority to high. A bad
+event (a name that is no project name, an unknown status, a link that is not https) is refused with a message.
+`DEPLOYS_LANG=de` for German. `--dry-run` prints the body instead of posting.
+
 **More than one target.** `DEPLOYS_NOTIFY_URLS` takes several URLs separated by commas (Slack and ntfy at
 once); one that fails does not stop the others, and the exit code is 1 if any failed.
 **Keep the URL out of a plist or crontab.** `DEPLOYS_NOTIFY_URL_FILE` names a file (`chmod 600`) whose first

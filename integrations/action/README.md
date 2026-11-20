@@ -41,6 +41,9 @@ Renovate can keep the tag current. Give the job a `timeout-minutes`: with a wron
 | `by-rules` | `false` | `true`: only what a `deploy` rule of `rules.json` matches is started; `hold` rules always count (`--by-rules`). Applies to `deploy: dry-run` as well. |
 | `max-cost` | none | A number of US dollars: fail before anything is deployed when the estimate of the next deploy (`deploys plan --json`) is higher. An estimate, not a bill; when it cannot be priced the action warns and goes on. |
 | `fail-on-risk` | none | `red` (or `yellow`): fail before anything is deployed when a project with changes has that risk or higher (migrations, lockfiles, config, size; see `deploys risk`). Empty only reports it. |
+| `dry-run` | `false` | `true`: nothing is started, even with `deploy: true`; the plan goes to the job summary and the `plan` output (like `deploy: dry-run`). One switch for a workflow that deploys on `main` and only plans on a pull request: `dry-run: ${{ github.event_name == 'pull_request' }}`. |
+| `only-changed` | `false` | `true`: a quiet run when nothing waits: one line in the summary, no pull request comment, and the output `skipped` is `true`. |
+| `comment-on-pr` | `false` | `true`: on a pull request, one comment with what waits, its highest risk and the plan (or what was started), updated on the next run instead of adding another. The job needs `pull-requests: write`; a comment that cannot be written warns and does not fail the run. Only names that look like project names go into it, in code spans. |
 | `vercel-cli-version` | `65.12.1` | Installed only when no `vercel` is on the runner, into the runner's temp folder (no global install), and kept in the Actions cache per version and runner type, so later runs skip the npm install. |
 
 | Output | |
@@ -54,11 +57,15 @@ Renovate can keep the tag current. Give the job a `timeout-minutes`: with a wron
 | `deployed` | `true` when every start succeeded and every state could be read. Otherwise the step fails, after writing the outputs. |
 | `risk`, `risky` | The highest risk of what waits (`green`, `yellow`, `red`; empty when nothing was compared), and the projects that are yellow or red. |
 | `states` | With `wait`: JSON, project name to `ready`, `failed`, `timeout` or `unknown` (the platform could not be asked). |
+| `skipped` | With `only-changed`: `true` when nothing waits, so later steps can skip their work. |
 | `failed-builds`, `live` | With `wait`: the projects whose build failed, and `true` when every build went live in time. |
 
 As a gate on pull requests or before a scheduled deploy, `fail-on-risk: red` turns a red risk into
 a failed check, so a migration or a lockfile change gets a look first. `max-cost: 5` does the same
 for the estimated cost of the next deploy.
+
+On a pull request, `dry-run: true` with `comment-on-pr: true` shows the plan as a comment and starts
+nothing; see `examples/pr-plan-comment.yml`.
 
 `plan` feeds an approval step: run the action with `deploy: dry-run`, show `steps.<id>.outputs.plan`
 in a job summary or a message, and let a second job with `environment:` (required reviewers) run

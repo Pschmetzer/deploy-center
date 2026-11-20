@@ -125,3 +125,51 @@ export function cliEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   for (const [k, v] of Object.entries(env)) if (FOR_CLI.test(k)) out[k] = v;
   return out;
 }
+
+// What `deploys plan --json` says per project (the next deploy, as an estimate). Read-only.
+export interface PlanProject {
+  name: string;
+  platform: string;
+  action?: string | null;
+  usd?: number | null;
+}
+
+/** "$1.20" with two decimals; "?" when there is no price. */
+export function usdText(usd: number | null | undefined): string {
+  return typeof usd === "number" && Number.isFinite(usd) ? `$${(Math.round(usd * 100) / 100).toFixed(2)}` : "?";
+}
+
+const NOT_STARTED = new Set(["would-skip", "held-by-rule"]);
+
+/** "about $0.80", or "would not start" for a project the plan leaves out. */
+export function planRowText(p: PlanProject): string {
+  return NOT_STARTED.has(p.action ?? "") ? "would not start" : `about ${usdText(p.usd)}`;
+}
+
+// What `deploys history <project> <n> --json` returns per deploy (only the fields used here).
+export interface HistoryEntry {
+  when?: string | null;
+  state?: string | null;
+  commit?: string | null;
+  at?: number | null; // Unix seconds
+}
+
+const WENT_LIVE = /^(ready|live|succe|success|active)/i;
+
+export interface RollbackPreview {
+  current: HistoryEntry | null;
+  // The newest earlier deploy that went live: what production would go back to. null: none in the list.
+  target: HistoryEntry | null;
+}
+
+/** The newest deploy and the one a rollback would restore (newest first, as the CLI lists them). Nothing is rolled back. */
+export function rollbackPreview(list: HistoryEntry[] | null | undefined): RollbackPreview {
+  const l = Array.isArray(list) ? list : [];
+  return { current: l[0] ?? null, target: l.slice(1).find((d) => WENT_LIVE.test(d?.state ?? "")) ?? null };
+}
+
+/** "abc1234 · READY · 2 h ago"-style line for one deploy: commit (7 characters), state, and the time when known. */
+export function historyLine(d: HistoryEntry): string {
+  const when = typeof d.at === "number" && d.at > 0 ? new Date(d.at * 1000).toLocaleString() : (d.when ?? "");
+  return [(d.commit ?? "").slice(0, 7), d.state ?? "", when].filter(Boolean).join(" · ");
+}
