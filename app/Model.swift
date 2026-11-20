@@ -518,6 +518,15 @@ enum RowAutofix: Equatable {
         let pr = f.prUrl.flatMap(URL.init(string:))
         if let m = f.mergedSha {
             if f.redeployedSha != nil { return nil }
+            // The newest build failed again. On the fix's own commit: the fix did not work. On a
+            // commit that is neither the fix nor the failure handed over: the branch broke anew
+            // after the merge, so "deploy the fix" would only repeat that failure; say nothing
+            // and let the new failure be handed over in its own right.
+            if i.lastFailed, let cur = i.latestSha, !cur.isEmpty {
+                func same(_ a: String, _ b: String) -> Bool { a.hasPrefix(b) || b.hasPrefix(a) }
+                if same(cur, m) { return .handedBack(.fixFailed) }
+                if let fs = f.sha, !fs.isEmpty, !same(cur, fs) { return nil }
+            }
             // Live already, or nothing on the branch left to deploy.
             if !i.triggered, let live = i.lastSha, !live.isEmpty, live.hasPrefix(m) || m.hasPrefix(live) { return nil }
             return i.hasNewCommits ? .merged(sha: m, pr: f.prNumber, url: pr) : nil
