@@ -640,7 +640,8 @@ private func line(_ ctx: ActivityViewContext<DeployActivity>, _ w: Words) -> Str
     let what = ctx.state.words + " · " + ctx.attributes.platform
     guard ctx.isStale && ctx.state.phase == .running else { return what }
     let t = ctx.state.updated.formatted(date: .omitted, time: .shortened)
-    return what + w(" · as of \(t), open the app to update", " · Stand \(t), App öffnen zum Aktualisieren")
+    // Plain: the time of the last update, not an instruction (IDEEN-12 C27).
+    return what + w(" · as of \(t)", " · Stand \(t)")
 }
 
 struct DeployActivityView: View {
@@ -648,6 +649,7 @@ struct DeployActivityView: View {
     @ScaledMetric(relativeTo: .title3) private var timeWidth = 80.0
     var body: some View {
         let w = Words(german: ctx.attributes.german)
+        VStack(alignment: .leading, spacing: 8) {
         HStack(spacing: 12) {
             phaseIcon(ctx.state.phase, w, rollback: ctx.attributes.rollback).font(.title)
             VStack(alignment: .leading, spacing: 2) {
@@ -660,6 +662,17 @@ struct DeployActivityView: View {
                 .frame(maxWidth: timeWidth, alignment: .trailing)
         }
         .accessibilityElement(children: .combine)
+        // A bar over the usual build time (it runs on its own clock, no updates needed), and the domain once it is live.
+        VStack(alignment: .leading, spacing: 6) {
+            if ctx.state.phase == .running, !ctx.isStale, let t = ctx.state.expected, t >= 10 {
+                ProgressView(timerInterval: ctx.attributes.started...ctx.attributes.started.addingTimeInterval(t), countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
+                    .accessibilityHidden(true)
+            }
+            if ctx.state.phase == .live, !ctx.attributes.rollback, let d = ctx.attributes.domain, let u = URL(string: "https://" + d) {
+                Link(w("Open \(d)", "\(d) öffnen"), destination: u).font(.subheadline)
+            }
+        }
+        }
     }
 }
 #endif

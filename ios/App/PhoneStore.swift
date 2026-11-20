@@ -710,7 +710,7 @@ final class PhoneStore: ObservableObject {
             lastError = nil
             if !rollback { running[p.key] = s }
             keep.update(PhoneProject.stateWord(s), fraction: BuildTime.fraction(elapsed: Date().timeIntervalSince(start), typical: typical))
-            live.update(rollback ? PhoneProject.stateWord("rollback") : PhoneProject.stateWord(s))
+            live.update(rollback ? PhoneProject.stateWord("rollback") : PhoneProject.stateWord(s), expected: typical)
             if ["ready", "live", "succeeded"].contains(s) {
                 // After an Instant Rollback a ready deploy keeps no domain until one is promoted (Vercel docs).
                 if !rollback, p.provider == .vercel, await stagedOnly(id) {

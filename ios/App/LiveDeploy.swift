@@ -15,7 +15,7 @@ final class LiveDeploy {
     static func start(_ p: PhoneProject, rollback: Bool) -> LiveDeploy {
         let l = LiveDeploy()
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return l }
-        let attrs = DeployActivity(project: p.name, platform: p.provider.rawValue, started: Date(), rollback: rollback, german: appIsGerman, key: p.key)
+        let attrs = DeployActivity(project: p.name, platform: p.provider.rawValue, started: Date(), rollback: rollback, german: appIsGerman, key: p.key, domain: p.domain)
         l.activity = try? Activity.request(attributes: attrs, content: content(.running, PhoneProject.stateWord("queued")), pushType: nil)
         return l
     }
@@ -35,19 +35,20 @@ final class LiveDeploy {
         }
     }
 
-    private static func content(_ phase: DeployActivity.ContentState.Phase, _ words: String, final: Bool = false) -> ActivityContent<DeployActivity.ContentState> {
-        ActivityContent(state: .init(phase: phase, words: words, updated: Date()),
+    private static func content(_ phase: DeployActivity.ContentState.Phase, _ words: String, final: Bool = false,
+                                expected: TimeInterval? = nil) -> ActivityContent<DeployActivity.ContentState> {
+        ActivityContent(state: .init(phase: phase, words: words, updated: Date(), expected: expected),
                         staleDate: final ? nil : Date().addingTimeInterval(DeployActivity.staleAfter))
     }
 
     /// A new state, or the same one again so that it does not go stale while the app follows it.
-    func update(_ words: String) {
+    func update(_ words: String, expected: TimeInterval? = nil) {
         guard let a = activity else { return }
         // Not on every poll: a changed text, or the minute's refresh (IDEEN-12 C5).
         let now = Date()
         guard words != last || now.timeIntervalSince(lastUpdate) >= Self.refreshEvery else { return }
         last = words; lastUpdate = now
-        Task { await a.update(Self.content(.running, words)) }
+        Task { await a.update(Self.content(.running, words, expected: expected)) }
     }
 
     /// The end: shown for a quarter of an hour on the lock screen, then gone.

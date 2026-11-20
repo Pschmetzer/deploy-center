@@ -13,6 +13,9 @@ struct DeployActivity: ActivityAttributes {
         /// The provider's state in words ("Building", "Build failed"), in the app's language.
         var words: String
         var updated: Date
+        /// The usual build time of the project in seconds, from its history: the lock screen draws a bar over it.
+        /// Nil: not known (older app, or less than three builds read).
+        var expected: TimeInterval? = nil
     }
     let project: String
     let platform: String
@@ -22,6 +25,8 @@ struct DeployActivity: ActivityAttributes {
     let german: Bool
     /// The project's key ("Vercel/prj_…") for the link; nil in activities from an older app.
     var key: String? = nil
+    /// The project's domain, for "Open domain" once it is live; nil when unknown.
+    var domain: String? = nil
 
     /// After this long without an update iOS marks the activity as stale; the view then says "open the app".
     static let staleAfter: TimeInterval = 90
